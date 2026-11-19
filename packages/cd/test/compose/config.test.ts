@@ -33,6 +33,10 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 				[CD_COMPOSE_ENV.postgresFleet]: "neon-eu:neon-claimable, supabase",
 				[CD_COMPOSE_ENV.postgresWitnesses]: "prisma",
 				[CD_COMPOSE_ENV.replicas]: "2",
+				[CD_COMPOSE_ENV.s3Endpoint]: "https://s3.example.test",
+				[CD_COMPOSE_ENV.s3Bucket]: "fixture",
+				[CD_COMPOSE_ENV.s3Region]: "fixture",
+				[CD_COMPOSE_ENV.s3CredentialRef]: "fixture",
 			},
 			home,
 			simulate: false,
@@ -161,5 +165,28 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 		});
 		expect(bad.ok).toBe(false);
 		if (!bad.ok) expect(bad.reasons[0]?.code).toBe("compose-artifacts-invalid");
+	});
+
+	it("requires shared artifact storage for multiple replicas", () => {
+		const env = {
+			[CD_COMPOSE_ENV.replicas]: "2",
+			[CD_COMPOSE_ENV.postgresUrl]: "postgres://fixture@db.test/cd",
+		};
+		const local = parseCdComposeConfig({ env, home, simulate: false });
+		expect(local.ok).toBe(false);
+		if (!local.ok)
+			expect(local.reasons[0]?.code).toBe("compose-artifacts-invalid");
+		const shared = parseCdComposeConfig({
+			env: {
+				...env,
+				[CD_COMPOSE_ENV.s3Endpoint]: "https://s3.example.test",
+				[CD_COMPOSE_ENV.s3Bucket]: "fixture",
+				[CD_COMPOSE_ENV.s3Region]: "fixture",
+				[CD_COMPOSE_ENV.s3CredentialRef]: "fixture",
+			},
+			home,
+			simulate: false,
+		});
+		expect(shared.ok && shared.value.artifacts.backend).toBe("s3-compatible");
 	});
 });

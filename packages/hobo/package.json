@@ -23,6 +23,14 @@
 		"./hosting-mutation-journal": {
 			"types": "./dist/hosting-mutation-journal.d.ts",
 			"default": "./dist/hosting-mutation-journal.js"
+		},
+		"./cd-runtime": {
+			"types": "./dist/cd-runtime.d.ts",
+			"default": "./dist/cd-runtime.js"
+		},
+		"./cd-serve": {
+			"types": "./dist/cd-serve.d.ts",
+			"default": "./dist/cd-serve.js"
 		}
 	},
 	"publishConfig": {

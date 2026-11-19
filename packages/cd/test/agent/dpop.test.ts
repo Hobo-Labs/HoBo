@@ -106,6 +106,23 @@ describe("DPoP proofs", () => {
 		});
 		const code = (r: ReturnType<typeof verifyDpopProof>) =>
 			r.ok ? "ok" : r.reasons[0]?.code;
+		const wrongScheme = createDpopProof({
+			privateJwk: key.privateJwk,
+			method: "POST",
+			url: "http://station.test/v1/cd/svid/refresh",
+			iatSeconds: 1000,
+			jti: "wrong-scheme",
+		});
+		expect(
+			code(
+				verifyDpopProof(wrongScheme, {
+					method: "POST",
+					url: URL_REFRESH,
+					nowMs: 1_000_000,
+					skewMs: 60_000,
+				}),
+			),
+		).toBe("dpop-url-mismatch");
 		expect(
 			code(
 				verifyDpopProof(proof, {

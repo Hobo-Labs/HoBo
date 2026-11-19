@@ -7,6 +7,7 @@ import {
 	type KeyObject,
 	randomBytes,
 	randomUUID,
+	verify,
 } from "node:crypto";
 import { z } from "zod";
 
@@ -114,39 +115,60 @@ function unavailable(): Error {
 const CANDIDATE_NAME = /^HOBO_CD_ISSUER_(?:[A-Fa-f0-9]{32}|[A-Fa-f0-9]{64})$/u;
 
 export function createIssuerKms(key: CdIssuerSigningKey): CdIssuerKms {
-	if (
-		!key.available() ||
-		key.publicKey.asymmetricKeyType !== "rsa" ||
-		(key.publicKey.asymmetricKeyDetails?.modulusLength ?? 0) < 2048 ||
-		fingerprint(key.publicKey) !== key.keyId
-	)
-		throw unavailable();
-	const jwk = key.publicKey.export({ format: "jwk" });
-	if (!jwk.n || !jwk.e) throw unavailable();
-	const publicJwk = Object.freeze({
-		kty: "RSA" as const,
-		n: jwk.n,
-		e: jwk.e,
-		kid: key.keyId,
-		alg: "RS256" as const,
-		use: "sig" as const,
-	});
-	return Object.freeze({
-		hasKey(keyId: string) {
-			return keyId === key.keyId && key.available();
-		},
-		generateRsaKey() {
+	try {
+		const expectedKeyId = key.keyId;
+		const publicKey = key.publicKey;
+		if (
+			key.available() !== true ||
+			publicKey.asymmetricKeyType !== "rsa" ||
+			(publicKey.asymmetricKeyDetails?.modulusLength ?? 0) < 2048 ||
+			fingerprint(publicKey) !== expectedKeyId
+		)
 			throw unavailable();
-		},
-		sign(keyId: string, payload: string) {
-			if (keyId !== key.keyId) throw unavailable();
-			return key.sign(payload);
-		},
-		publicJwk(keyId: string) {
-			if (keyId !== key.keyId) throw unavailable();
-			return publicJwk;
-		},
-	});
+		const jwk = publicKey.export({ format: "jwk" });
+		if (!jwk.n || !jwk.e) throw unavailable();
+		const publicJwk = Object.freeze({
+			kty: "RSA" as const,
+			n: jwk.n,
+			e: jwk.e,
+			kid: expectedKeyId,
+			alg: "RS256" as const,
+			use: "sig" as const,
+		});
+		return Object.freeze({
+			hasKey(keyId: string) {
+				try {
+					return keyId === expectedKeyId && key.available() === true;
+				} catch {
+					return false;
+				}
+			},
+			generateRsaKey() {
+				throw unavailable();
+			},
+			sign(keyId: string, payload: string) {
+				try {
+					if (keyId !== expectedKeyId || key.available() !== true)
+						throw unavailable();
+					const signature = key.sign(payload);
+					if (
+						!Buffer.isBuffer(signature) ||
+						!verify("RSA-SHA256", Buffer.from(payload), publicKey, signature)
+					)
+						throw unavailable();
+					return signature;
+				} catch {
+					throw unavailable();
+				}
+			},
+			publicJwk(keyId: string) {
+				if (keyId !== expectedKeyId) throw unavailable();
+				return publicJwk;
+			},
+		});
+	} catch {
+		throw unavailable();
+	}
 }
 
 export function createIssuerCandidatesFromSecrets(

@@ -104,7 +104,8 @@ private candidate again, checks its RSA key and fingerprint, and binds it to the
 configured HTTPS origin. Closing the returned signing handle releases its key
 reference. `createIssuerKms`
 adapts that handle to the existing JWT-SVID issuer interface without generating
-or rotating another key.
+or rotating another key. It verifies returned signatures against the public key
+and translates signing-handle failures to a fixed error.
 
 The host must explicitly provide two private authorities. A
 `PrivateIssuerCandidates` implementation must allocate a separate owner-store

@@ -322,6 +322,55 @@ describe("private CD issuer bootstrap", () => {
 		expect(() => createIssuerKms(first)).toThrow();
 		restarted.close();
 	});
+
+	it("redacts failures from a replacement signing handle", async () => {
+		const key = await prepareCdIssuer({
+			origin,
+			candidates: new Candidates(),
+			journal: new Journal(),
+		});
+		const privateError = "synthetic-private-provider.invalid secret material";
+		try {
+			expect(() =>
+				createIssuerKms({
+					...key,
+					available() {
+						throw new Error(privateError);
+					},
+				}),
+			).toThrow(expect.objectContaining({ code: "cd-issuer-unavailable" }));
+			let unavailable = false;
+			const kms = createIssuerKms({
+				...key,
+				available() {
+					if (unavailable) throw new Error(privateError);
+					return true;
+				},
+				sign() {
+					throw new Error(privateError);
+				},
+			});
+			expect(() => kms.sign(key.keyId, "fixture")).toThrow(
+				expect.objectContaining({ code: "cd-issuer-unavailable" }),
+			);
+			const invalidSignature = createIssuerKms({
+				...key,
+				sign() {
+					return Buffer.alloc(256);
+				},
+			});
+			expect(() => invalidSignature.sign(key.keyId, "fixture")).toThrow(
+				expect.objectContaining({ code: "cd-issuer-unavailable" }),
+			);
+			unavailable = true;
+			expect(kms.hasKey(key.keyId)).toBe(false);
+			expect(() => kms.sign(key.keyId, "fixture")).toThrow(
+				expect.objectContaining({ code: "cd-issuer-unavailable" }),
+			);
+		} finally {
+			key.close();
+		}
+	});
 	it("uses a supplied atomic event store to select one winner across contenders", async () => {
 		const store = new JournalStore();
 		const candidates = new Candidates();
