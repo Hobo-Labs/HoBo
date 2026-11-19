@@ -268,6 +268,12 @@ export async function runBillingSync(
 		) {
 			return reject("INVALID_SYNC_INPUT", "provider billing period is invalid");
 		}
+		if (chargeStart < periodStart || chargeEnd > periodEnd) {
+			return reject(
+				"INVALID_SYNC_INPUT",
+				`provider charge ${parsed.providerChargeId} falls outside the requested billing period`,
+			);
+		}
 		if (!/^[A-Z]{3}$/u.test(parsed.currency)) {
 			return reject(
 				"INVALID_SYNC_INPUT",

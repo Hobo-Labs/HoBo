@@ -57,6 +57,7 @@ Pass previously recorded charges for the same reservation and billing period as
 `knownActualCharges`. Reconciliation compares their total plus newly imported
 charges with the quote, emits only new charges, and rejects a reused provider
 charge ID when its contents differ.
+Provider charge periods must fall inside the requested billing period.
 
 The reconciliation hash is `stableHash` of the event ID,
 occurrence time, reservation ID, and ordered actual charges as
