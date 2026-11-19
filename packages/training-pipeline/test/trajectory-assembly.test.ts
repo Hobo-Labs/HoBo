@@ -211,6 +211,7 @@ test("capture and promotion facts ride the same event families", () => {
 			rubricRef: "rubric://support/classifier@1.0.0",
 			scores: { accuracy: 0.95 },
 			sampleCount: 128,
+			metricSampleCounts: { accuracy: 128 },
 			source: "live-eval",
 		}),
 		thresholds: parsePromotionThresholds({

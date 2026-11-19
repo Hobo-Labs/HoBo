@@ -3614,6 +3614,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@pact-foundation/pact':
+        specifier: 17.1.4
+        version: 17.1.4
       '@types/node':
         specifier: ^22.15.3
         version: 22.20.0
@@ -3626,6 +3629,9 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
 
   packages/trust:
     dependencies:

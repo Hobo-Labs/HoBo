@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "vitest";
 
 import {
@@ -21,6 +20,7 @@ function evalResult(accuracy: number, sampleCount = 128) {
 		rubricRef: "rubric://support/classification@1.0.0",
 		scores: { accuracy },
 		sampleCount,
+		metricSampleCounts: { accuracy: sampleCount },
 		source: "live-eval",
 	});
 }
@@ -109,6 +109,7 @@ test("reports a metric named in the floors but missing from the eval result", ()
 			rubricRef: "rubric://support/classification@1.0.0",
 			scores: { latency: 0.9 },
 			sampleCount: 128,
+			metricSampleCounts: { latency: 128 },
 			source: "live-eval",
 		}),
 		thresholds,
@@ -128,24 +129,4 @@ test("rejects an eval score outside the unit interval at the parse boundary", ()
 			}),
 		PromotionGateParseError,
 	);
-});
-
-test("the promote pact fixture round-trips through the gate", () => {
-	const pact = JSON.parse(
-		readFileSync(
-			new URL("../contracts/pacts/promotion_gate.pact.json", import.meta.url),
-			"utf8",
-		),
-	);
-	const promote = pact.interactions[0];
-	const decision = evaluatePromotionGate({
-		candidateId: promote.request.body.candidateId,
-		conformance: promote.request.body.conformance,
-		policy: promote.request.body.policy,
-		championId: promote.request.body.championId,
-		evalResult: parseEvalResult(promote.request.body.evalResult),
-		thresholds: parsePromotionThresholds(promote.request.body.thresholds),
-	});
-	assert.equal(decision.outcome, PromotionOutcome.PROMOTE);
-	assert.equal(decision.candidateId, promote.response.body.candidateId);
 });
