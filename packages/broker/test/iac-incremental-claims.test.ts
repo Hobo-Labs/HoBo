@@ -96,27 +96,27 @@ describe("incrementalEntitlementClaims", () => {
 	});
 
 	it("keeps credit and commitment rows with the same source id separate", () => {
-		const claims = incrementalEntitlementClaims(
-			[
-				row("credit", "wallet-a", "1", "USD"),
-				row("commitment", "wallet-a", "2", "USD"),
-			],
-			[],
-			"USD",
-		);
+		const full = [
+			row("credit", "wallet-a", "1", "USD"),
+			row("commitment", "wallet-a", "2", "USD"),
+		];
+		const claims = incrementalEntitlementClaims(full, [], "USD");
 		expect(claims).toEqual([
-			{
-				bucketId: "wallet-a",
-				unit: "USD.micros",
-				units: 1_000_000,
-				kind: "credit",
-			},
 			{
 				bucketId: "wallet-a",
 				unit: "USD.micros",
 				units: 2_000_000,
 				kind: "commitment",
 			},
+			{
+				bucketId: "wallet-a",
+				unit: "USD.micros",
+				units: 1_000_000,
+				kind: "credit",
+			},
 		]);
+		expect(
+			incrementalEntitlementClaims([...full].reverse(), [], "USD"),
+		).toEqual(claims);
 	});
 });

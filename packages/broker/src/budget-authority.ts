@@ -122,6 +122,27 @@ function boundedName(value: string, limit = 200): boolean {
 	);
 }
 
+function validEntitlementKind(kind: string): boolean {
+	return ["allowance", "credit", "commitment"].includes(kind);
+}
+
+type EntitlementScope = { kind: string; bucketId: string; unit: string };
+
+function entitlementScopeKey(row: EntitlementScope): string {
+	return JSON.stringify([row.kind, row.bucketId, row.unit]);
+}
+
+function sameEntitlementScope(
+	left: EntitlementScope,
+	right: EntitlementScope,
+): boolean {
+	return (
+		left.kind === right.kind &&
+		left.bucketId === right.bucketId &&
+		left.unit === right.unit
+	);
+}
+
 function unboundedFingerprint(input: {
 	requestDigest: string;
 	inventoryHash: string;
@@ -347,7 +368,7 @@ export function validateBudgetSnapshot(
 	if (
 		new Set(snapshot.providerAccounts.map((row) => row.providerAccountId))
 			.size !== snapshot.providerAccounts.length ||
-		new Set(snapshot.entitlements.map((row) => row.bucketId)).size !==
+		new Set(snapshot.entitlements.map(entitlementScopeKey)).size !==
 			snapshot.entitlements.length
 	)
 		throw new TypeError("duplicate financial scope");
@@ -364,6 +385,7 @@ export function validateBudgetSnapshot(
 	}
 	for (const row of snapshot.entitlements) {
 		if (
+			!validEntitlementKind(row.kind) ||
 			!row.bucketId ||
 			!row.unit ||
 			!row.periodId ||
@@ -420,11 +442,8 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 	if (
 		new Set(quote.providerAccounts.map((row) => row.providerAccountId)).size !==
 			quote.providerAccounts.length ||
-		new Set(
-			quote.entitlementClaims.map(
-				(row) => `${row.kind}\u0000${row.bucketId}\u0000${row.unit}`,
-			),
-		).size !== quote.entitlementClaims.length
+		new Set(quote.entitlementClaims.map(entitlementScopeKey)).size !==
+			quote.entitlementClaims.length
 	)
 		throw new TypeError("duplicate quote financial scope");
 	if (
@@ -437,6 +456,8 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 			"provider-account exposures must itemize the liability bound",
 		);
 	for (const row of quote.entitlementClaims) {
+		if (!validEntitlementKind(row.kind))
+			throw new TypeError("unsupported entitlement kind");
 		if (!row.bucketId || !row.unit)
 			throw new TypeError("entitlement scope missing");
 		budgetMicros(row.units);
@@ -571,7 +592,9 @@ export function createBudgetAdmissionAuthority(options: {
 				.map((row) => row.providerAccountId)
 				.sort(),
 			entitlements: snapshot.entitlements
-				.map((row) => [row.bucketId, row.unit, row.periodId].join("\u0000"))
+				.map((row) =>
+					[row.kind, row.bucketId, row.unit, row.periodId].join("\u0000"),
+				)
 				.sort(),
 		});
 	const policyBindings = new Map<string, string>();
@@ -587,7 +610,7 @@ export function createBudgetAdmissionAuthority(options: {
 	>();
 	const entitlementKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) => JSON.stringify([bucket.periodId, bucket.bucketId]);
+	) => JSON.stringify([bucket.periodId, bucket.kind, bucket.bucketId]);
 	function assertFinancialHistory(
 		next: BudgetLedgerSnapshot,
 		type: string,
@@ -1018,7 +1041,7 @@ export function createBudgetAdmissionAuthority(options: {
 				claims.length !== old.entitlementClaims.length ||
 				new Set(accounts.map((account) => account.providerAccountId)).size !==
 					accounts.length ||
-				new Set(claims.map((claim) => claim.bucketId)).size !== claims.length ||
+				new Set(claims.map(entitlementScopeKey)).size !== claims.length ||
 				(accounts.length > 0 &&
 					add(...accounts.map((account) => account.liabilityMicros)) !==
 						row.actualMicros)
@@ -1041,15 +1064,13 @@ export function createBudgetAdmissionAuthority(options: {
 				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
 			}
 			for (const claim of claims) {
-				const target = expected.entitlements.find(
-					(entry) =>
-						entry.bucketId === claim.bucketId && entry.unit === claim.unit,
+				const target = expected.entitlements.find((entry) =>
+					sameEntitlementScope(entry, claim),
 				);
 				if (
 					!target ||
-					!old.entitlementClaims.some(
-						(entry) =>
-							entry.bucketId === claim.bucketId && entry.unit === claim.unit,
+					!old.entitlementClaims.some((entry) =>
+						sameEntitlementScope(entry, claim),
 					)
 				)
 					throw new Error("foreign entitlement settlement");
@@ -1148,7 +1169,7 @@ export function createBudgetAdmissionAuthority(options: {
 			entitlement.reservedUnits = add(
 				...holding.flatMap((row) =>
 					row.entitlementClaims
-						.filter((entry) => entry.bucketId === entitlement.bucketId)
+						.filter((entry) => sameEntitlementScope(entry, entitlement))
 						.map((entry) => entry.units),
 				),
 			);
@@ -1163,8 +1184,8 @@ export function createBudgetAdmissionAuthority(options: {
 				) ||
 				row.entitlementClaims.some(
 					(entry) =>
-						!snapshot.entitlements.some(
-							(bucket) => bucket.bucketId === entry.bucketId,
+						!snapshot.entitlements.some((bucket) =>
+							sameEntitlementScope(bucket, entry),
 						),
 				)
 			)
@@ -1292,7 +1313,7 @@ export function createBudgetAdmissionAuthority(options: {
 				claims.length !== existing.entitlementClaims.length ||
 				new Set(accounts.map((row) => row.providerAccountId)).size !==
 					accounts.length ||
-				new Set(claims.map((row) => row.bucketId)).size !== claims.length
+				new Set(claims.map(entitlementScopeKey)).size !== claims.length
 			)
 				throw new Error(
 					"complete account and entitlement usage evidence required",
@@ -1316,13 +1337,13 @@ export function createBudgetAdmissionAuthority(options: {
 				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
 			}
 			for (const claim of claims) {
-				const target = next.entitlements.find(
-					(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
+				const target = next.entitlements.find((row) =>
+					sameEntitlementScope(row, claim),
 				);
 				if (
 					!target ||
-					!existing.entitlementClaims.some(
-						(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
+					!existing.entitlementClaims.some((row) =>
+						sameEntitlementScope(row, claim),
 					)
 				)
 					throw new Error("foreign entitlement settlement");
@@ -1535,8 +1556,8 @@ export function createBudgetAdmissionAuthority(options: {
 					);
 			}
 			for (const claim of input.quote.entitlementClaims) {
-				const bucket = current.entitlements.find(
-					(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
+				const bucket = current.entitlements.find((row) =>
+					sameEntitlementScope(row, claim),
 				);
 				if (
 					!bucket ||
@@ -1695,6 +1716,7 @@ export function createBudgetAdmissionAuthority(options: {
 					liabilityMicros: 0,
 				})),
 				entitlementClaims: current.entitlements.map((row) => ({
+					kind: row.kind,
 					bucketId: row.bucketId,
 					unit: row.unit,
 					units: 0,
@@ -1953,8 +1975,8 @@ export function createBudgetAdmissionAuthority(options: {
 						);
 				}
 			for (const bucket of snapshot.entitlements) {
-				const old = current.entitlements.find(
-					(row) => row.bucketId === bucket.bucketId,
+				const old = current.entitlements.find((row) =>
+					sameEntitlementScope(row, bucket),
 				);
 				if (
 					old &&

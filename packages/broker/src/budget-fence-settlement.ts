@@ -510,22 +510,30 @@ export function canonicalBudgetFenceSettlement(
 		.map((row) => [row.providerAccountId, row.liabilityMicros] as const)
 		.sort((a, b) => compare(a[0], b[0]));
 	const claims = [...(evidence.entitlementClaims ?? [])]
-		.map((row) => [row.bucketId, row.unit, row.units] as const)
-		.sort((a, b) => compare(a[0], b[0]));
+		.map((row) => [row.kind, row.bucketId, row.unit, row.units] as const)
+		.sort(
+			(a, b) =>
+				compare(a[0], b[0]) || compare(a[1], b[1]) || compare(a[2], b[2]),
+		);
 	if (
 		accounts.some(
 			([id, amount]) =>
 				!text(id) || !Number.isSafeInteger(amount) || amount < 0,
 		) ||
 		claims.some(
-			([id, unit, count]) =>
-				!text(id) || !text(unit) || !Number.isSafeInteger(count) || count < 0,
+			([kind, id, unit, count]) =>
+				!["allowance", "credit", "commitment"].includes(kind) ||
+				!text(id) ||
+				!text(unit) ||
+				!Number.isSafeInteger(count) ||
+				count < 0,
 		)
 	)
 		throw new Error("invalid fenced settlement dimensions");
 	if (
 		new Set(accounts.map((row) => row[0])).size !== accounts.length ||
-		new Set(claims.map((row) => row[0])).size !== claims.length
+		new Set(claims.map((row) => JSON.stringify(row.slice(0, 3)))).size !==
+			claims.length
 	)
 		throw new Error("duplicate fenced settlement dimensions");
 	return JSON.stringify([

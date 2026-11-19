@@ -26,7 +26,7 @@ import "list"
 	unboundedExposureCount?: int & >=0 & <=256
 }
 #BudgetProviderAccount: {providerAccountId: string & !="", limitMicros: #Micros, spentMicros: #Micros, reservedMicros: #Micros, externalCommittedMicros?: #Micros}
-#BudgetEntitlement: {bucketId: string & !="", unit: string & !="", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
+#BudgetEntitlement: {bucketId: string & !="", unit: string & !="", kind: #EntitlementKind, periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
 #ProviderAccountExposure: {providerAccountId: string & !="", liabilityMicros: #Micros}
 #EntitlementClaim: {
 	bucketId: string & !=""
@@ -202,7 +202,7 @@ import "list"
 		iacEvidence: #IacTargetLiabilityEvidence & {
 			targetId:      iacDecision.targetId
 			tenantId:      iacDecision.quote.ownerTenantId
-			planDigest:    iacDecision.quote.financialPlanHash
+			planDigest:    iacDecision.reservation.iacPricingPin.planDigest
 			inventoryHash: iacDecision.inventoryHash
 			modelHash:     iacDecision.modelHash
 			quoteHash:     iacDecision.quoteHash

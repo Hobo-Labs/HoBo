@@ -51,12 +51,14 @@ export function incrementalEntitlementClaims(
 	full: readonly Consumption[],
 	base: readonly Consumption[],
 	currency: string,
-): {
-	bucketId: string;
-	unit: string;
-	units: number;
-	kind: "allowance" | "credit" | "commitment";
-}[] | undefined {
+):
+	| {
+			bucketId: string;
+			unit: string;
+			units: number;
+			kind: "allowance" | "credit" | "commitment";
+	  }[]
+	| undefined {
 	type Row = {
 		bucketId: string;
 		unit: string;
@@ -69,11 +71,7 @@ export function incrementalEntitlementClaims(
 		for (const row of rows) {
 			const quantity = row.quantity;
 			const kind = row.kind;
-			if (
-				kind !== "allowance" &&
-				kind !== "credit" &&
-				kind !== "commitment"
-			)
+			if (kind !== "allowance" && kind !== "credit" && kind !== "commitment")
 				return undefined;
 			if (
 				!safeName(row.sourceId) ||
@@ -126,6 +124,7 @@ export function incrementalEntitlementClaims(
 	return claims.sort(
 		(left, right) =>
 			compareIds(left.bucketId, right.bucketId) ||
-			compareIds(left.unit, right.unit),
+			compareIds(left.unit, right.unit) ||
+			compareIds(left.kind, right.kind),
 	);
 }

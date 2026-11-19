@@ -32,6 +32,7 @@ function snapshot() {
 		entitlements: [
 			{
 				bucketId: "credit",
+				kind: "credit",
 				unit: "micros",
 				periodId: "p1",
 				remainingUnits: 10,
@@ -56,7 +57,9 @@ function consume(authority: ReturnType<typeof createBudgetAdmissionAuthority>) {
 		validUntil: "2026-10-31T00:00:00Z",
 		components: [{ name: "usage", costMicros: 0 }],
 		requestDigest: "request",
-		entitlementClaims: [{ bucketId: "credit", unit: "micros", units: 10 }],
+		entitlementClaims: [
+			{ bucketId: "credit", kind: "credit", unit: "micros", units: 10 },
+		],
 	});
 	authority.reserve({
 		reservationId: "work",

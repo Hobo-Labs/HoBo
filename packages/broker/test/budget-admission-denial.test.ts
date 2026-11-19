@@ -83,6 +83,7 @@ describe("definitive budget admission denial", () => {
 			base.entitlements = [
 				create(BudgetEntitlementSchema, {
 					bucketId: "credit",
+					kind: "allowance",
 					unit: "runner-ms",
 					periodId: "p1",
 					remainingUnits: 0,
@@ -93,6 +94,7 @@ describe("definitive budget admission denial", () => {
 			q.entitlementClaims = [
 				create(EntitlementClaimSchema, {
 					bucketId: "credit",
+					kind: "allowance",
 					unit: "runner-ms",
 					units: 1,
 				}),
@@ -125,6 +127,7 @@ describe("definitive budget admission denial", () => {
 		base.entitlements = [
 			create(BudgetEntitlementSchema, {
 				bucketId: "credit",
+				kind: "allowance",
 				unit: "runner-ms",
 				periodId: "p1",
 				remainingUnits: 10,
@@ -136,6 +139,7 @@ describe("definitive budget admission denial", () => {
 		q.entitlementClaims = [
 			create(EntitlementClaimSchema, {
 				bucketId: "credit",
+				kind: "allowance",
 				unit: "runner-ms",
 				units: 1,
 			}),
@@ -148,6 +152,26 @@ describe("definitive budget admission denial", () => {
 		} catch (error) {
 			expect(error).not.toBeInstanceOf(BudgetAdmissionDeniedError);
 		}
+	});
+
+	it.each([
+		"",
+		"grant",
+		"ALLOWANCE",
+	])("rejects unsupported entitlement kind %j before admission", (kind) => {
+		const q = quote();
+		q.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "credit",
+				kind,
+				unit: "runner-ms",
+				units: 1,
+			}),
+		];
+		const authority = createBudgetAdmissionAuthority({ snapshot: snapshot() });
+		expect(() => reserve(authority, q)).toThrow("unsupported entitlement kind");
+		expect(authority.lookup("work")).toBeUndefined();
+		expect(authority.read(NOW).seq).toBe(0);
 	});
 
 	it("preserves unsupported financial scope failures instead of treating them as queueable exhaustion", () => {

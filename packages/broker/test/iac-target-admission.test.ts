@@ -134,6 +134,7 @@ function authority(
 			entitlements: entitlementIds.map((bucketId) =>
 				create(BudgetEntitlementSchema, {
 					bucketId,
+					kind: bucketId === "commitment-a" ? "commitment" : "credit",
 					unit: "USD.micros",
 					periodId: "2026-01",
 					remainingUnits: 10_000_000,
