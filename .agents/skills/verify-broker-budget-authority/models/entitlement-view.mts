@@ -6,7 +6,7 @@ export const state = (v) => {
 	if (v.phase === 'released') return 'Unused reservation released';
 	if (v.phase === 'uncertain')
 		return v.claimed
-			? 'Outcome uncertain; hold retained'
+			? 'Outcome uncertain; claimed hold retained'
 			: 'Outcome uncertain; hold retained';
 	if (v.attempted) {
 		return matches(v)
