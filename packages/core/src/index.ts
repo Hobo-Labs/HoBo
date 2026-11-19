@@ -556,6 +556,7 @@ export type {
 	TopicSpec,
 } from "./ports/messaging.js";
 export {
+	assertDeadLetterSupported,
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	createPublishResult,
@@ -563,6 +564,7 @@ export {
 	MESSAGING_WIT_INTERFACE,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	MessagingParseError,
 	MessagingSettlementCommittedError,
 	PORTABLE_MESSAGING_CAPABILITIES,

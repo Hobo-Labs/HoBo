@@ -95,6 +95,23 @@ describe("@hobo/provider-kafka", () => {
 		const auth = JSON.parse(docs["/.well-known/capability-manifest/auth.json"]);
 		expect(auth.staticSecrets).toBe(false);
 		expect(auth.mode).toBe("secretless-first");
+		const capabilities = JSON.parse(
+			docs["/.well-known/capability-manifest/capabilities.json"],
+		);
+		expect(capabilities.capabilities[0].features).not.toContain("dead-letter");
+		expect(provider.capabilities.deadLetter).toBe(false);
+		expect(() =>
+			provider.realize({
+				topics: [
+					{
+						name: "t",
+						partitions: 1,
+						replicationFactor: 1,
+						deadLetterTopic: "dead",
+					},
+				],
+			}),
+		).toThrow(/dead-letter/);
 		const realized = provider.realize({
 			topics: [{ name: "t", partitions: 1, replicationFactor: 1 }],
 		});

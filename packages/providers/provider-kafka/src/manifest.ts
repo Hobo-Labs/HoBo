@@ -40,7 +40,6 @@ export function publishCapabilityManifest(
 						"transactional-produce",
 						"idempotent-produce",
 						"schema-registry",
-						"dead-letter",
 						"partition-aware",
 						"cross-yard-federation",
 					],

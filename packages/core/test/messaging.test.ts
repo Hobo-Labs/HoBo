@@ -1,18 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	assertDeliverySupported,
 	createInMemoryMessaging,
 	MESSAGING_WIT_INTERFACE,
+	MessagingDeliveryExhaustedError,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
 	parseConsumerGroupId,
 	parseDeliveryGuarantee,
 	parseMessagingSpec,
+	parseSubscriptionName,
 	parseTopicName,
 	parseTopicSpec,
 	tenantScopedTopicName,
 } from "../src/ports/messaging.js";
+import { parseTenantId } from "../src/ports/tenant.js";
 import { first } from "../src/total-access.js";
 
 describe("@hobo/core messaging port", () => {
@@ -108,37 +111,60 @@ describe("@hobo/core messaging port", () => {
 		expect(types).toContain("messaging.acked");
 	});
 
-	it("dead-letters after max attempts", async () => {
+	it("leaves exhausted deliveries unsettled and rejects unavailable dead-letter configuration", async () => {
 		const bus = createInMemoryMessaging({ tenantId: "t1" });
-		await bus.ensureSubscription({
-			// SAFETY: assertion required at this I/O or test boundary.
-			name: "s1" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
-			topic: "fail" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
-			consumerGroup: "g1" as never,
-			// SAFETY: assertion required at this I/O or test boundary.
-			tenantId: "t1" as never,
-			delivery: "at-least-once",
+		const spec = {
+			name: parseSubscriptionName("s1"),
+			topic: parseTopicName("fail"),
+			consumerGroup: parseConsumerGroupId("g1"),
+			tenantId: parseTenantId("t1"),
+			delivery: "at-least-once" as const,
 			maxDeliveryAttempts: 2,
-		});
-		// SAFETY: assertion required at this I/O or test boundary.
-		await bus.publish("fail" as never, { x: 1 });
-		// SAFETY: assertion required at this I/O or test boundary.
-		const r1 = await bus.subscribe("fail" as never, "g1" as never, async () => {
+		};
+		expect(bus.capabilities.deadLetter).toBe(false);
+		await expect(
+			bus.ensureSubscription({
+				...spec,
+				deadLetterTopic: parseTopicName("dead"),
+			}),
+		).rejects.toMatchObject({ code: "MESSAGING_CAPABILITY" });
+		await bus.ensureSubscription(spec);
+		await bus.publish(parseTopicName("fail"), { x: 1 });
+		const fail = async () => {
 			throw new Error("boom");
-		});
-		expect(r1.handled).toBe(0);
-		// SAFETY: assertion required at this I/O or test boundary.
-		const r2 = await bus.subscribe("fail" as never, "g1" as never, async () => {
-			throw new Error("boom");
-		});
-		expect(r2.deadLettered).toBe(1);
+		};
+		await bus.subscribe(
+			parseTopicName("fail"),
+			parseConsumerGroupId("g1"),
+			fail,
+		);
+		const error = await bus
+			.subscribe(parseTopicName("fail"), parseConsumerGroupId("g1"), fail)
+			.catch((caught: Error) => caught);
+		expect(error).toBeInstanceOf(MessagingDeliveryExhaustedError);
+		if (!(error instanceof MessagingDeliveryExhaustedError))
+			throw new Error("expected exhaustion");
+		expect(error.handled).toBe(0);
 		expect(
-			bus
-				.events()
-				.some((e) => e.type === "messaging.delivery.permanent_failure"),
-		).toBe(true);
+			bus.events().some((event) => event.type === "messaging.dead_lettered"),
+		).toBe(false);
+		await bus.nack(error.delivery.messageId, error.delivery.leaseId);
+		const redelivered = await bus.consume(
+			parseTopicName("fail"),
+			parseConsumerGroupId("g1"),
+		);
+		expect(redelivered[0]?.messageId).toBe(error.delivery.messageId);
+		const claim = first(redelivered);
+		await bus.nack(claim.messageId, claim.leaseId);
+		const handler = vi.fn(async () => {});
+		await expect(
+			bus.subscribe(
+				parseTopicName("fail"),
+				parseConsumerGroupId("g1"),
+				handler,
+			),
+		).rejects.toBeInstanceOf(MessagingDeliveryExhaustedError);
+		expect(handler).not.toHaveBeenCalled();
 	});
 
 	it("rejects expired leases while keeping consumer groups independent", async () => {

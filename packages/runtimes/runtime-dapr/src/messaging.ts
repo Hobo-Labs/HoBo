@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+	assertDeadLetterSupported,
 	type ConsumedMessage,
 	createInMemoryMessaging,
 	createMessagingSettlementTracker,
@@ -13,6 +14,7 @@ import {
 	type Messaging,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	type MessagingEvent,
 	type MessagingLeaseId,
 	type MessagingMessageId,
@@ -66,7 +68,7 @@ export function createDaprMessaging(
 		transactionalProduce: false,
 		idempotentProduce: false,
 		schemaRegistry: false,
-		deadLetter: true,
+		deadLetter: false,
 		partitionAware: false,
 		crossYardFederation: true,
 	};
@@ -155,12 +157,14 @@ export function createDaprMessaging(
 		client,
 
 		async ensureTopic(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const name = tenantScopedTopicName(spec.tenantId, spec.name);
 			emit({ type: "messaging.topic.created", topic: name });
 			return Object.freeze({ ...spec, name });
 		},
 
 		async ensureSubscription(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const topic = tenantScopedTopicName(spec.tenantId, spec.topic);
 			const group = tenantScopedConsumerGroup(
 				spec.tenantId,
@@ -313,39 +317,37 @@ export function createDaprMessaging(
 				...opts,
 			});
 			let handled = 0;
-			let deadLettered = 0;
-			for (const message of batch) {
+			for (const [index, message] of batch.entries()) {
+				const exhausted = (): never => {
+					emit({
+						type: "messaging.delivery.exhausted",
+						topic: message.topic,
+						messageId: message.messageId,
+						consumerGroup: group,
+						reason: "max_delivery_attempts",
+					});
+					throw new MessagingDeliveryExhaustedError(
+						message,
+						Object.freeze(batch.slice(index + 1)),
+						handled,
+					);
+				};
+				if (message.deliveryAttempt > maxAttempts) exhausted();
 				try {
 					await handler(message);
 				} catch (err) {
-					const reason = err instanceof Error ? err.message : String(err);
-					if (message.deliveryAttempt >= maxAttempts) {
-						// Permanent: ack under the real consumer group (do not nack first).
-						await live.ack(message.messageId, message.leaseId);
-						deadLettered += 1;
-						emit({
-							type: "messaging.dead_lettered",
-							topic: message.topic,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						emit({
-							type: "messaging.delivery.permanent_failure",
-							topic: message.topic,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: reason || "max_delivery_attempts",
-						});
-					} else {
-						await live.nack(message.messageId, message.leaseId, reason);
-					}
+					if (message.deliveryAttempt >= maxAttempts) exhausted();
+					await live.nack(
+						message.messageId,
+						message.leaseId,
+						err instanceof Error ? err.message : String(err),
+					);
 					continue;
 				}
 				await live.ack(message.messageId, message.leaseId);
 				handled += 1;
 			}
-			return { handled, deadLettered };
+			return { handled, deadLettered: 0 };
 		},
 
 		async ack(messageId, leaseId) {

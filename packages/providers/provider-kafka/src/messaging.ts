@@ -10,6 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+	assertDeadLetterSupported,
 	type ConsumedMessage,
 	type ConsumerGroupId,
 	createInMemoryMessaging,
@@ -21,6 +22,7 @@ import {
 	type MessagingCapabilities,
 	MessagingCapabilityError,
 	MessagingDeliveryError,
+	MessagingDeliveryExhaustedError,
 	type MessagingEvent,
 	type MessagingLeaseId,
 	type MessagingMessageId,
@@ -195,6 +197,7 @@ export function createKafkaMessaging(
 		},
 
 		async ensureTopic(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const scoped: TopicSpec = Object.freeze({
 				...spec,
 				name: tenantScopedTopicName(spec.tenantId, spec.name),
@@ -206,6 +209,7 @@ export function createKafkaMessaging(
 		},
 
 		async ensureSubscription(spec) {
+			assertDeadLetterSupported(capabilities, spec);
 			const topic = tenantScopedTopicName(spec.tenantId, spec.topic);
 			const group = tenantScopedConsumerGroup(
 				spec.tenantId,
@@ -373,7 +377,6 @@ export function createKafkaMessaging(
 				...consumeOptions,
 			});
 			let handled = 0;
-			let deadLettered = 0;
 			const physical = tenantScopedTopicName(tenantId, topic);
 			const group = tenantScopedConsumerGroup(tenantId, consumerGroup);
 			const sub = [...subscriptions.values()].find(
@@ -381,40 +384,37 @@ export function createKafkaMessaging(
 			);
 			const maxAttempts = sub?.maxDeliveryAttempts ?? 5;
 
-			for (const message of batch) {
+			for (const [index, message] of batch.entries()) {
+				const exhausted = (): never => {
+					emitLocal({
+						type: "messaging.delivery.exhausted",
+						topic: physical,
+						messageId: message.messageId,
+						consumerGroup: group,
+						reason: "max_delivery_attempts",
+					});
+					throw new MessagingDeliveryExhaustedError(
+						message,
+						Object.freeze(batch.slice(index + 1)),
+						handled,
+					);
+				};
+				if (message.deliveryAttempt > maxAttempts) exhausted();
 				try {
 					await handler(message);
 				} catch (err) {
-					const reason = err instanceof Error ? err.message : String(err);
-					if (message.deliveryAttempt >= maxAttempts) {
-						// Permanent: commit under the still-held lease (do not nack first —
-						// release drops inflight and makes commit fail with lease mismatch).
-						await live.ack(message.messageId, message.leaseId);
-						deadLettered += 1;
-						emitLocal({
-							type: "messaging.dead_lettered",
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: "max_delivery_attempts",
-						});
-						emitLocal({
-							type: "messaging.delivery.permanent_failure",
-							topic: physical,
-							messageId: message.messageId,
-							consumerGroup: group,
-							reason: reason || "max_delivery_attempts",
-						});
-					} else {
-						// Transient: release for redelivery.
-						await live.nack(message.messageId, message.leaseId, reason);
-					}
+					if (message.deliveryAttempt >= maxAttempts) exhausted();
+					await live.nack(
+						message.messageId,
+						message.leaseId,
+						err instanceof Error ? err.message : String(err),
+					);
 					continue;
 				}
 				await live.ack(message.messageId, message.leaseId);
 				handled += 1;
 			}
-			return { handled, deadLettered };
+			return { handled, deadLettered: 0 };
 		},
 
 		async ack(messageId, leaseId) {
