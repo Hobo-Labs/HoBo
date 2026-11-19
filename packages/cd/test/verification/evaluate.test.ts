@@ -1,5 +1,3 @@
-// The pure verdict function: every WP9 Accept bullet that does not need the
-// journal is pinned here (the engine tests repeat them end to end).
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -222,6 +220,63 @@ describe("thresholds per aggregation", () => {
 		[Aggregation.SUM, 145],
 	])("aggregation %s", (aggregation, expected) => {
 		expect(aggregate(values, aggregation)).toBe(expected);
+	});
+
+	it("keeps the mean finite when the sum of finite samples overflows", () => {
+		expect(
+			aggregate([Number.MAX_VALUE, Number.MAX_VALUE], Aggregation.MEAN),
+		).toBe(Number.MAX_VALUE);
+		expect(
+			aggregate([-Number.MAX_VALUE, Number.MAX_VALUE], Aggregation.MEAN),
+		).toBe(0);
+		expect(
+			aggregate(
+				[Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE],
+				Aggregation.MEAN,
+			),
+		).toBe(Number.MAX_VALUE);
+		expect(
+			aggregate(
+				[
+					-Number.MAX_VALUE,
+					-Number.MAX_VALUE,
+					Number.MAX_VALUE,
+					Number.MAX_VALUE,
+				],
+				Aggregation.MEAN,
+			),
+		).toBe(0);
+		expect(
+			aggregate([Number.MIN_VALUE, Number.MIN_VALUE], Aggregation.MEAN),
+		).toBe(Number.MIN_VALUE);
+	});
+
+	it("fails a threshold when its aggregate is not finite", () => {
+		const spec = parsed(
+			thresholdSpec({
+				thresholds: [
+					{
+						query: query("latency_ms", { unit: "ms" }),
+						aggregation: Aggregation.SUM,
+						comparator: Comparator.GTE,
+						value: 1,
+					},
+				],
+			}),
+		);
+		const result = evaluateVerification({
+			spec,
+			cohortAware: false,
+			startedAtMs: T0,
+			atMs: WINDOW_END,
+			evidence: evidence("threshold:latency_ms", [
+				Number.MAX_VALUE,
+				Number.MAX_VALUE,
+				1,
+			]),
+		});
+		expect(result.verdict).toBe(VerificationVerdict.FAIL);
+		expect(result.checks[0]?.reason?.code).toBe("verification-invalid-sample");
 	});
 
 	it.each([
