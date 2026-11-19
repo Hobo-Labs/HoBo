@@ -69,6 +69,16 @@ The finite `model/RivetKv.tla` checks one set or delete, a lost reply, late
 commit and fenced retirement. It assumes an independently effective host fence
 and does not prove the implementation, host callbacks or provider behavior.
 
+`@hobo/iac-alchemy/rivet/http-kv` binds an HTTP application and its asynchronous
+key-value actor in one Rivet program. The host must attest the exact registry,
+source, transport, pool and isolation domain. HTTP authorization, storage
+authorization and response disclosure remain distinct decisions, and an
+uncertain write must be reconciled before retrying. This binding does not
+implement the synchronous HoBo WASI store or Bindle storage dependencies.
+The bounded `model/RivetHttpKv.tla` checks one HTTP request and one write under
+the host authority, fencing and draining assumptions described in the model;
+it does not prove those assumptions or the implementation.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.

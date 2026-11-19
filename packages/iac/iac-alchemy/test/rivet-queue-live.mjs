@@ -351,6 +351,8 @@ try {
 	const runnerEnv = {
 		PATH: process.env.PATH,
 		NODE_ENV: "test",
+		NODE_OPTIONS: "--v8-pool-size=1",
+		UV_THREADPOOL_SIZE: "1",
 		RIVET_ENDPOINT: publicUrl,
 		RIVET_TOKEN: token,
 		RIVET_POOL: "default",
