@@ -272,3 +272,28 @@ stateDiagram-v2
   UnclaimedHold --> Released: confirm unused work
   ClaimedHold --> Settled: accept both signed proofs
 ```
+
+The active entitlement-scope model follows zero-unit claims as well as claims
+that consume an allocation. TLC explored 35 states and 81 steps; this view draws
+eight states and 16 arrows and hides 38 steps within a displayed state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NoReservation
+  NoReservation --> Reserved: reserve entitlement claim
+  Reserved --> Claimed: claim execution
+  Reserved --> Uncertain: execution outcome uncertain
+  Reserved --> ScopeRefused: refuse scope change while active
+  Reserved --> Released: release unused reservation
+  Reserved --> Settled: settle final usage
+  Uncertain --> Claimed: claim execution
+  Uncertain --> ScopeRefused: refuse scope change while active
+  Uncertain --> Released: release unused reservation
+  Uncertain --> Settled: settle final usage
+  Claimed --> ClaimedScopeRefused: refuse scope change while active
+  Claimed --> Settled: settle final usage
+  ScopeRefused --> ClaimedScopeRefused: claim execution
+  ScopeRefused --> Released: release unused reservation
+  ScopeRefused --> Settled: settle final usage
+  ClaimedScopeRefused --> Settled: settle final usage
+```
