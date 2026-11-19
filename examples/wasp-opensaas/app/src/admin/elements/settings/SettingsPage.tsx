@@ -28,6 +28,8 @@ type Profile = {
 export function SettingsPage({ user }: { user: AuthUser }) {
   const { refetch: refetchAuth } = useAuth();
   const photoReadGeneration = useRef(0);
+  const activePhotoReader = useRef<FileReader | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const [layoutUser, setLayoutUser] = useState(user);
   const [saved, setSaved] = useState<Profile>({
     fullName: user.fullName,
@@ -41,9 +43,23 @@ export function SettingsPage({ user }: { user: AuthUser }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  function clearPhotoFileInput() {
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
+    }
+  }
+
+  function cancelPhotoRead() {
+    photoReadGeneration.current += 1;
+    activePhotoReader.current?.abort();
+    activePhotoReader.current = null;
+    setReadingPhoto(false);
+  }
+
   function changePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
+    clearPhotoFileInput();
+    cancelPhotoRead();
     if (!file) return;
     if (
       !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
@@ -52,20 +68,21 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       setError("Choose a PNG, JPEG, or WebP image no larger than 256 KB.");
       return;
     }
-    const generation = photoReadGeneration.current + 1;
-    photoReadGeneration.current = generation;
+    const generation = photoReadGeneration.current;
     const reader = new FileReader();
+    activePhotoReader.current = reader;
     setReadingPhoto(true);
+    setError("");
+    setNotice("");
     reader.onerror = () => {
       if (generation !== photoReadGeneration.current) return;
+      activePhotoReader.current = null;
       setReadingPhoto(false);
       setError("The image could not be read.");
     };
     reader.onload = () => {
-      if (generation !== photoReadGeneration.current) {
-        setReadingPhoto(false);
-        return;
-      }
+      if (generation !== photoReadGeneration.current) return;
+      activePhotoReader.current = null;
       setReadingPhoto(false);
       const result = z.string().safeParse(reader.result);
       if (!result.success) {
@@ -81,6 +98,9 @@ export function SettingsPage({ user }: { user: AuthUser }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (readingPhoto || saving) {
+      return;
+    }
     setSaving(true);
     setError("");
     setNotice("");
@@ -189,6 +209,7 @@ export function SettingsPage({ user }: { user: AuthUser }) {
               <div className="space-y-2">
                 <Label htmlFor="profile-photo">Choose a photo</Label>
                 <Input
+                  ref={photoInputRef}
                   id="profile-photo"
                   type="file"
                   disabled={saving || readingPhoto}
@@ -205,7 +226,8 @@ export function SettingsPage({ user }: { user: AuthUser }) {
                   variant="outline"
                   disabled={saving || readingPhoto}
                   onClick={() => {
-                    photoReadGeneration.current += 1;
+                    cancelPhotoRead();
+                    clearPhotoFileInput();
                     setDraft((current) => ({ ...current, profilePhoto: null }));
                   }}
                 >
@@ -222,7 +244,8 @@ export function SettingsPage({ user }: { user: AuthUser }) {
               variant="outline"
               disabled={saving || readingPhoto}
               onClick={() => {
-                photoReadGeneration.current += 1;
+                cancelPhotoRead();
+                clearPhotoFileInput();
                 setDraft(saved);
                 setError("");
                 setNotice("");
