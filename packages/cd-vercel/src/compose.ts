@@ -35,18 +35,19 @@ export function holderIdOf(env: Env): string {
 	return `hobo-cd-vercel:${env.VERCEL_DEPLOYMENT_ID ?? "local"}:${randomUUID()}`;
 }
 
+export function productionDeploymentRefusal(
+	env: Env,
+): CdStoreBindingError | undefined {
+	if (env.VERCEL_ENV === "production") return undefined;
+	return new CdStoreBindingError(
+		"cd-non-production-deployment",
+		"HoBo.CD runs only on production deployments; this deployment does not open the production journal.",
+	);
+}
+
 export async function composeVercelCdHost(deps: CdHostDeps): Promise<CdHost> {
-	const vercelEnv = deps.env.VERCEL_ENV;
-	if (
-		vercelEnv !== "production" &&
-		!(
-			vercelEnv === undefined && deps.env.HOBO_CD_ALLOW_UNSET_VERCEL_ENV === "1"
-		)
-	)
-		throw new CdStoreBindingError(
-			"cd-non-production-deployment",
-			"HoBo.CD runs only on production deployments; this deployment does not open the production journal.",
-		);
+	const refusal = productionDeploymentRefusal(deps.env);
+	if (refusal !== undefined) throw refusal;
 	let store: Awaited<ReturnType<CdHostDeps["open"]>>;
 	try {
 		store = await deps.open();

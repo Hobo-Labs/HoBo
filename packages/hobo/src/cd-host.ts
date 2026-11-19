@@ -110,6 +110,17 @@ function passSucceededAtMs(data: unknown): number | undefined {
 	return undefined;
 }
 
+function passSucceededCamps(data: unknown): number | undefined {
+	if (data === null || typeof data !== "object") return undefined;
+	for (const [key, value] of Object.entries(data)) {
+		if (key !== "camps") continue;
+		return typeof value === "number" && Number.isFinite(value)
+			? value
+			: undefined;
+	}
+	return undefined;
+}
+
 function refusalCodeOf(error: unknown): string {
 	if (
 		error instanceof Error &&
@@ -241,6 +252,9 @@ export async function composeCdHost(
 					: stored;
 				if (candidate === undefined) continue;
 				if (candidate - now > HOST_PASS_FUTURE_SKEW_MS) continue;
+				const camps = passSucceededCamps(event.data);
+				if (camps === undefined || camps < 0) continue;
+				if (managed.length > 0 && camps < managed.length) continue;
 				atMs = candidate;
 			}
 			return atMs;
@@ -363,7 +377,13 @@ export async function composeCdHost(
 			if (signal.aborted) throw abortErrorOf(signal);
 			const tick = await service.tick();
 			if (signal.aborted) throw abortErrorOf(signal);
-			if (reconciled.every((entry) => entry.ok) && tick.store) {
+			const passCounts =
+				refusals.length === 0 &&
+				(camps.length === 0 || managed.length > 0) &&
+				reconciled.length === managed.length &&
+				reconciled.every((entry) => entry.ok) &&
+				tick.store;
+			if (passCounts) {
 				if (signal.aborted) throw abortErrorOf(signal);
 				await recordSuccessfulPass(reconciled.length);
 			}
@@ -381,37 +401,47 @@ export async function composeCdHost(
 
 	function pass(external?: AbortSignal): Promise<CdPassReport> {
 		if (inFlightPass !== undefined) return inFlightPass;
-		const deadline = new AbortController();
+		const deadline = AbortSignal.timeout(passDeadlineMs);
 		const signal =
-			external === undefined
-				? deadline.signal
-				: AbortSignal.any([deadline.signal, external]);
-		const timer = setTimeout(() => {
-			deadline.abort(
-				new Error(`cd pass deadline exceeded after ${passDeadlineMs} ms`),
-			);
-		}, passDeadlineMs);
-		timer.unref?.();
-		let onAbort: (() => void) | undefined;
-		const abortRejection = new Promise<never>((_, reject) => {
-			onAbort = () => reject(abortErrorOf(signal));
-			if (signal.aborted) onAbort();
-			else signal.addEventListener("abort", onAbort, { once: true });
+			external === undefined ? deadline : AbortSignal.any([deadline, external]);
+		const deadlineMessage = `cd pass deadline exceeded after ${passDeadlineMs} ms`;
+		const deadlineRejection = new Promise<never>((_, reject) => {
+			const onDeadline = () => {
+				reject(new Error(deadlineMessage));
+			};
+			if (deadline.aborted) onDeadline();
+			else deadline.addEventListener("abort", onDeadline, { once: true });
 		});
+		void deadlineRejection.catch(() => undefined);
+		let onExternalAbort: (() => void) | undefined;
+		const abortRejection =
+			external === undefined
+				? undefined
+				: new Promise<never>((_, reject) => {
+						onExternalAbort = () => reject(abortErrorOf(external));
+						if (external.aborted) onExternalAbort();
+						else
+							external.addEventListener("abort", onExternalAbort, {
+								once: true,
+							});
+					});
 		const running = runPass(signal);
+		void running.catch(() => undefined);
+		const racers: Promise<CdPassReport>[] = [running, deadlineRejection];
+		if (abortRejection !== undefined) racers.push(abortRejection);
 		const bounded = (async (): Promise<CdPassReport> => {
 			try {
-				return await Promise.race([running, abortRejection]);
+				return await Promise.race(racers);
 			} finally {
-				clearTimeout(timer);
-				if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
+				if (onExternalAbort !== undefined)
+					external?.removeEventListener("abort", onExternalAbort);
 			}
 		})();
 		inFlightPass = bounded;
 		const release = () => {
 			if (inFlightPass === bounded) inFlightPass = undefined;
 		};
-		void running.then(release, release);
+		void bounded.then(release, release);
 		return bounded;
 	}
 

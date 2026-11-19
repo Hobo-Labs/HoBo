@@ -230,6 +230,12 @@ describe("composeCdHost", () => {
 			expect(host.refusals).toContain("cd-no-managed-camps");
 			const report = await host.pass();
 			expect(report.skipped).toBe(false);
+			const recorded: string[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.type);
+			expect(recorded).toEqual([]);
 			const ready = await host.handle(
 				get("/readyz"),
 				AbortSignal.timeout(5_000),
@@ -265,6 +271,12 @@ describe("composeCdHost", () => {
 			const report = await host.pass();
 			expect(report.skipped).toBe(false);
 			expect(report.reconciled.every((entry) => !entry.ok)).toBe(true);
+			const recorded: string[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.type);
+			expect(recorded).toEqual([]);
 			const ready = await host.handle(
 				get("/readyz"),
 				AbortSignal.timeout(5_000),
@@ -289,6 +301,12 @@ describe("composeCdHost", () => {
 			expect(host.managed).toEqual(["edge/prod"]);
 			expect(reconciled.map((r) => r.campId)).toEqual(["edge/prod"]);
 			expect(tick.steps.length).toBeGreaterThan(0);
+			const recorded: unknown[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.data);
+			expect(recorded).toEqual([{ atMs: Date.UTC(2026, 10, 17), camps: 1 }]);
 		});
 	});
 
@@ -337,7 +355,7 @@ describe("composeCdHost", () => {
 		});
 	});
 
-	it("bounds a pass by its deadline and holds the flight until the pass settles", async () => {
+	it("bounds a pass by its deadline and frees the slot once the bounded pass settles", async () => {
 		await withRuntime(async (runtime) => {
 			const signals: (AbortSignal | undefined)[] = [];
 			let calls = 0;
@@ -391,6 +409,83 @@ describe("composeCdHost", () => {
 			await expect(third).rejects.toThrow("cd pass deadline exceeded");
 			expect(calls).toBe(2);
 			expect(signals[1]?.aborted).toBe(true);
+		});
+	});
+
+	it("frees the pass slot at the deadline while the ghost run keeps the fleet lease", async () => {
+		await withRuntime(async (runtime) => {
+			let releaseGate = () => {};
+			const gate = new Promise<void>((resolve) => {
+				releaseGate = resolve;
+			});
+			let signalEntered = () => {};
+			const entered = new Promise<void>((resolve) => {
+				signalEntered = resolve;
+			});
+			const gated: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(async () => {
+						signalEntered();
+						await gate;
+						return { reasons: [], status: 0 } as never;
+					}),
+			};
+			const stalled = await composeCdHost({
+				runtime: gated,
+				holderId: "test-deadline-lease-a",
+				readiness: "composed",
+				fleetPassLease: true,
+				passDeadlineMs: 30,
+			});
+			const peer = await composeCdHost({
+				runtime: gated,
+				holderId: "test-deadline-lease-b",
+				readiness: "composed",
+				fleetPassLease: true,
+			});
+			const ghost = stalled.pass();
+			await entered;
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			const successor = stalled.pass();
+			expect(successor).not.toBe(ghost);
+			const queued = await peer.pass();
+			expect(queued.skipped).toBe(true);
+			expect(queued.skipReason).toBe("fleet-pass-lease-held");
+			releaseGate();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await expect(ghost).rejects.toThrow("cd pass deadline exceeded");
+			const settled = await stalled.pass();
+			expect(settled.skipped).toBe(false);
+		});
+	});
+
+	it("ignores a pass record that reconciled fewer camps than it manages", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-forged-record",
+				readiness: "composed",
+			});
+			await runtime.store.append(
+				`${runtime.config.tenant}:cd-host-pass`,
+				[
+					{
+						type: HOST_PASS_SUCCEEDED,
+						data: { atMs: Date.UTC(2026, 10, 17), camps: 0 },
+					},
+				],
+				{
+					expectedSeq: 0,
+					actor: { kind: "service", id: "test-forged-record" },
+					tenant: runtime.config.tenant,
+				},
+			);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
 		});
 	});
 

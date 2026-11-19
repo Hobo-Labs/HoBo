@@ -4,6 +4,7 @@ export {
 	holderIdOf,
 	journalFleetEnvProvisioned,
 	memoizedCdHost,
+	productionDeploymentRefusal,
 	topologyFilesOf,
 } from "./compose.js";
 export {

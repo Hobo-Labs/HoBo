@@ -17,6 +17,7 @@ import {
 	readCdStoreCoordinates,
 	topologyFilesOf,
 } from "../src/index.js";
+import { loadCdHost } from "../src/entry.js";
 
 const servers: Server[] = [];
 afterEach(async () => {
@@ -339,6 +340,10 @@ describe("the owner's store, and the journal fleet in it", () => {
 
 	it("reads the committed coordinates, and refuses a malformed binding", () => {
 		const parsed = parseCdStoreCoordinates(JSON.stringify(binding));
+		expect(parsed.binding.siteUrl).toBe("https://app.infisical.com");
+		expect(parsed.binding.projectId).toBe(binding.projectId);
+		expect(parsed.binding.environment).toBe("prod");
+		expect(parsed.binding.secretPath).toBe("/hobo-cd");
 		expect(parsed.identityId).toBe(binding.relayIdentityId);
 		expect(() => parseCdStoreCoordinates("{}")).toThrow(
 			expect.objectContaining({ code: "cd-store-binding-invalid" }),
@@ -366,7 +371,11 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(first).toMatch(/^hobo-cd-vercel:dpl_123:[0-9a-f-]{36}$/u);
 		expect(second).toMatch(/^hobo-cd-vercel:dpl_123:[0-9a-f-]{36}$/u);
 		expect(first).not.toBe(second);
-		expect(holderIdOf({})).not.toBe("hobo-cd-vercel:local");
+		const unsetFirst = holderIdOf({});
+		const unsetSecond = holderIdOf({});
+		expect(unsetFirst).toMatch(/^hobo-cd-vercel:[^:]*:[0-9a-f-]{36}$/u);
+		expect(unsetSecond).toMatch(/^hobo-cd-vercel:[^:]*:[0-9a-f-]{36}$/u);
+		expect(unsetFirst).not.toBe(unsetSecond);
 	});
 
 	it("refuses a non-production deployment before opening the store", async () => {
@@ -399,32 +408,62 @@ describe("the owner's store, and the journal fleet in it", () => {
 		expect(opened).toBe(0);
 	});
 
-	it("allows an unset VERCEL_ENV only with the test escape", async () => {
+	it("refuses an unset VERCEL_ENV even with the allowance flag set", async () => {
+		let opened = 0;
 		await expect(
 			composeVercelCdHost({
 				env: { HOBO_CD_ALLOW_UNSET_VERCEL_ENV: "1" },
 				cwd: "/tmp",
-				open: () => ({
-					id: "infisical",
-					port: createMemorySecretsPort({ id: "memory" }),
-					reference: (name) => `infisical://test/${name}`,
-				}),
+				open: () => {
+					opened += 1;
+					throw new Error("must not open");
+				},
 			}),
-		).rejects.toMatchObject({ code: "cd-journal-not-provisioned" });
+		).rejects.toMatchObject({ code: "cd-non-production-deployment" });
+		expect(opened).toBe(0);
+	});
+
+	it("refuses a preview deployment even with the allowance flag set", async () => {
+		let opened = 0;
+		await expect(
+			composeVercelCdHost({
+				env: {
+					VERCEL_ENV: "preview",
+					HOBO_CD_ALLOW_UNSET_VERCEL_ENV: "1",
+				},
+				cwd: "/tmp",
+				open: () => {
+					opened += 1;
+					throw new Error("must not open");
+				},
+			}),
+		).rejects.toMatchObject({ code: "cd-non-production-deployment" });
+		expect(opened).toBe(0);
 	});
 
 	it("refuses to start on a store with no journal fleet, never on SQLite", async () => {
+		let opened = 0;
 		await expect(
 			composeVercelCdHost({
 				env: { VERCEL_ENV: "production" },
 				cwd: "/tmp",
-				open: () => ({
-					id: "infisical",
-					port: createMemorySecretsPort({ id: "memory" }),
-					reference: (name) => `infisical://test/${name}`,
-				}),
+				open: () => {
+					opened += 1;
+					return {
+						id: "infisical",
+						port: createMemorySecretsPort({ id: "memory" }),
+						reference: (name) => `infisical://test/${name}`,
+					};
+				},
 			}),
 		).rejects.toMatchObject({ code: "cd-journal-not-provisioned" });
+		expect(opened).toBe(1);
+	});
+
+	it("loadCdHost refuses a non-production deployment before reading the binding", async () => {
+		await expect(loadCdHost()).rejects.toMatchObject({
+			code: "cd-non-production-deployment",
+		});
 	});
 
 	it("reads the topology files a deployment declares", () => {

@@ -1,7 +1,8 @@
 import type { CdPassReport } from "@hobo/hobo/cd-platform";
 import { QueueClient } from "@vercel/queue";
+import { productionDeploymentRefusal } from "./compose.js";
 import { loadCdHost, runCdPass } from "./entry.js";
-import { cdStoreBindingErrorOf } from "./store.js";
+import { CdStoreBindingError } from "./store.js";
 
 const queue = new QueueClient();
 
@@ -17,34 +18,35 @@ function singleFlight<T>(run: () => Promise<T>): () => Promise<T> {
 	};
 }
 
-async function runTick(): Promise<void> {
-	const vercelEnv = process.env.VERCEL_ENV;
-	if (
-		vercelEnv !== "production" &&
-		!(
-			vercelEnv === undefined &&
-			process.env.HOBO_CD_ALLOW_UNSET_VERCEL_ENV === "1"
-		)
-	) {
-		process.stdout.write(
+export type TickDeps = Readonly<{
+	env?: Readonly<Record<string, string | undefined>>;
+	runPass?: () => Promise<CdPassReport>;
+	write?: (line: string) => void;
+}>;
+
+export async function runTick(deps: TickDeps = {}): Promise<void> {
+	const env = deps.env ?? process.env;
+	const write = deps.write ?? ((line: string) => void process.stdout.write(line));
+	const refusal = productionDeploymentRefusal(env);
+	if (refusal !== undefined) {
+		write(
 			`${JSON.stringify({
 				event: "cd.pass.skipped",
-				reason: "cd-non-production-deployment",
-				vercelEnv,
+				reason: refusal.code,
+				vercelEnv: env.VERCEL_ENV,
 			})}\n`,
 		);
 		return;
 	}
 	let report: CdPassReport;
 	try {
-		report = await runCdPass(loadCdHost);
+		report = await (deps.runPass ?? (() => runCdPass(loadCdHost)))();
 	} catch (error) {
-		const permanent = cdStoreBindingErrorOf(error);
-		if (permanent !== undefined) {
-			process.stdout.write(
+		if (error instanceof CdStoreBindingError) {
+			write(
 				`${JSON.stringify({
 					event: "cd.pass.refused",
-					reason: permanent.code,
+					reason: error.code,
 				})}\n`,
 			);
 			return;
@@ -52,7 +54,7 @@ async function runTick(): Promise<void> {
 		throw error;
 	}
 	if (report.skipped) {
-		process.stdout.write(
+		write(
 			`${JSON.stringify({
 				event: "cd.pass.skipped",
 				reason: report.skipReason ?? "fleet-pass-lease-held",
@@ -62,7 +64,7 @@ async function runTick(): Promise<void> {
 	}
 	const { tick, reconciled } = report;
 	const failed = reconciled.filter((camp) => !camp.ok);
-	process.stdout.write(
+	write(
 		`${JSON.stringify({
 			event: "cd.pass",
 			camps: reconciled.length,
@@ -72,6 +74,6 @@ async function runTick(): Promise<void> {
 	);
 }
 
-export const onTick = singleFlight(runTick);
+export const onTick = singleFlight(() => runTick());
 
 export const consume = queue.handleNodeCallback(onTick);

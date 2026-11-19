@@ -110,10 +110,20 @@ export function readCdStoreCoordinates(
 	let text: string;
 	try {
 		text = readFileSync(url, "utf8");
-	} catch {
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			"code" in error &&
+			isString(error.code) &&
+			error.code === "ENOENT"
+		)
+			throw new CdStoreBindingError(
+				"cd-store-binding-missing",
+				"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json). hobo cd up writes it once the CD workload identity exists.",
+			);
 		throw new CdStoreBindingError(
-			"cd-store-binding-missing",
-			"No store binding is committed for HoBo.CD (deploy/secret-store.binding.json). hobo cd up writes it once the CD workload identity exists.",
+			"cd-store-binding-unreadable",
+			"deploy/secret-store.binding.json exists but could not be read.",
 		);
 	}
 	return parseCdStoreCoordinates(text);

@@ -95,6 +95,7 @@ export async function startCdServer(
 			try {
 				const path = (req.url ?? "/").split("?")[0] ?? "/";
 				const probe = path === "/healthz" || path === "/readyz";
+				if (probe) req.resume();
 				const request: FeedRequest = {
 					method: req.method ?? "GET",
 					path: req.url ?? path,
@@ -106,7 +107,10 @@ export async function startCdServer(
 				res.on("close", () => perRequest.abort());
 				const signal = AbortSignal.any([abort.signal, perRequest.signal]);
 				await send(res, await host.handle(request, signal));
-			} catch {
+			} catch (error) {
+				input.log(
+					`hobo serve cd: request failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				if (!res.headersSent)
 					await send(
 						res,

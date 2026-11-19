@@ -39,8 +39,8 @@ CD has composed with no refusals, the journal holds a durable record of
 a fully successful pass within the readiness window, and a live journal
 probe succeeds. Until then it answers 503 with a `code`:
 
-- `cd-non-production-deployment`: a preview or development deployment; it
-  never opens the production journal.
+- `cd-non-production-deployment`: `VERCEL_ENV` is not `production` (preview,
+  development, or unset); it never opens the production journal.
 - `cd-store-binding-missing`: no binding is committed yet.
 - `cd-store-binding-invalid`: the committed binding is malformed.
 - `cd-journal-not-provisioned`: the owner's store holds no journal fleet.
@@ -53,8 +53,9 @@ Readiness is fleet-wide: whichever instance completes a pass appends a
 `host.PassSucceeded` event to the journal's `<tenant>:cd-host-pass` stream, so
 the `cd` function and the `tick` function — separate, short-lived
 instances — agree on readiness without sharing process state. A pass
-counts only when every reconciled Camp is ok and the journal store is
-healthy; the record decays after two pass deadlines.
+counts only when the composition has no refusals, every managed Camp
+reconciled ok, and the journal store is healthy; the record decays after two
+pass deadlines.
 
 Unexpected request failures return a generic `cd-serve-error` response without
 exposing internal error details to HTTP clients.
