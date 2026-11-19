@@ -7,16 +7,20 @@ import { copyBuiltStarter } from "./support/built-starter.js";
 import { slow } from "./support/slow.js";
 
 describe("starter to executable application", () => {
-	it.each(["todo", "api", "agent", "fullstack"] as const)(
-		"scaffolds, generates, builds and executes %s in plain Node",
-		async (template) => {
+	it.each([
+		{ template: "todo", path: "/todos" },
+		{ template: "api", path: "/api/hello" },
+		{ template: "agent", path: "/agent/run" },
+		{ template: "fullstack", path: "/app" },
+	] as const)(
+		"scaffolds, generates, builds and executes $template in plain Node",
+		async ({ template, path }) => {
 			const root = await mkdtemp(join(tmpdir(), "hobo-starter-e2e-"));
 			try {
-				// new -> codegen -> build, each asserted to exit 0 by the fixture.
 				const project = await copyBuiltStarter(template, root);
 				await rm(join(project, "src"), { recursive: true, force: true });
 				const script =
-					'import {pathToFileURL} from "node:url"; const client=await import(pathToFileURL(process.argv[1]).href); const app=client.getAppModule("app.ts"); const response=await app.api.run({path:"/proof"}); process.stdout.write(JSON.stringify(response));';
+					'import {pathToFileURL} from "node:url"; const client=await import(pathToFileURL(process.argv[1]).href); const app=client.getAppModule("app.ts"); const response=await app.api.run({path:process.argv[2]}); const unknown=await app.api.run({path:"/proof"}); const home=await app.api.run({path:"/"}); process.stdout.write(JSON.stringify({response,unknown,home}));';
 				const output = execFileSync(
 					process.execPath,
 					[
@@ -24,13 +28,20 @@ describe("starter to executable application", () => {
 						"-e",
 						script,
 						join(project, ".hobo/build/node-app/app.mjs"),
+						path,
 					],
 					{ encoding: "utf8", env: {} },
 				);
-				expect(JSON.parse(output)).toMatchObject({
+				const result = JSON.parse(output);
+				expect(result.response).toMatchObject({
 					status: 200,
-					body: { template, path: "/proof" },
+					body: { template, path },
 				});
+				if (template === "fullstack") {
+					expect(result.unknown.status).toBe(404);
+					expect(result.home.status).toBe(200);
+					expect(result.home.body).toContain("Your first note");
+				}
 			} finally {
 				await rm(root, { recursive: true, force: true });
 			}
