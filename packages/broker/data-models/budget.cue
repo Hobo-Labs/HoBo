@@ -255,7 +255,7 @@ import (
 		_inventoryID:  inventoryHash
 		_identity:     reservation.identity
 		_policy:       unpricedPolicyProof
-		reservation: {status: "held", unboundedExposure: true, requestDigest: _requestID, financialPlanHash: _inventoryID, executionDigest: string & !="", unpricedPolicyProof: _policy, unpricedScopeProof: {identity: _identity}}
+		reservation: {status: "held", unboundedExposure: true, requestDigest: _requestID, financialPlanHash: _inventoryID, executionDigest: string & =~"^sha256:[a-f0-9]{64}$", unpricedPolicyProof: _policy, unpricedScopeProof: {identity: _identity}}
 		unpricedPolicyProof: {requestDigest: _requestID, inventoryHash: _inventoryID, identity: _identity, effect: "allow" | "allow-degraded", obligationsSatisfied: true}
 	}
 	if status == "admitted" {budget: {evaluation: "allowed" | "bypassed"}}
