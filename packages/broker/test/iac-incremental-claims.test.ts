@@ -33,7 +33,7 @@ describe("incrementalEntitlementClaims", () => {
 			"USD",
 		);
 		expect(claims).toEqual([
-			{ bucketId: "allowance-a", unit: "minute", units: 2 },
+			{ bucketId: "allowance-a", unit: "minute", units: 2, kind: "allowance" },
 		]);
 	});
 
@@ -45,8 +45,43 @@ describe("incrementalEntitlementClaims", () => {
 		const base = [row("allowance", "allowance-a", "400000", "minute")];
 		const claims = incrementalEntitlementClaims(full, base, "USD");
 		expect(claims).toEqual([
-			{ bucketId: "allowance-a", unit: "minute", units: 100_000 },
-			{ bucketId: "credit-a", unit: "USD.micros", units: 1_500_000 },
+			{
+				bucketId: "allowance-a",
+				unit: "minute",
+				units: 100_000,
+				kind: "allowance",
+			},
+			{
+				bucketId: "credit-a",
+				unit: "USD.micros",
+				units: 1_500_000,
+				kind: "credit",
+			},
+		]);
+	});
+
+	it("keeps credit and commitment rows with the same source id separate", () => {
+		const claims = incrementalEntitlementClaims(
+			[
+				row("credit", "wallet-a", "1", "USD"),
+				row("commitment", "wallet-a", "2", "USD"),
+			],
+			[],
+			"USD",
+		);
+		expect(claims).toEqual([
+			{
+				bucketId: "wallet-a",
+				unit: "USD.micros",
+				units: 1_000_000,
+				kind: "credit",
+			},
+			{
+				bucketId: "wallet-a",
+				unit: "USD.micros",
+				units: 2_000_000,
+				kind: "commitment",
+			},
 		]);
 	});
 });

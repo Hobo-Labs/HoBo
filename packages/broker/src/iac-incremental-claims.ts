@@ -24,7 +24,14 @@ function compareIds(left: string, right: string): number {
 }
 
 function ceilUnits(value: Decimal, scale: number): number | undefined {
-	if (value.coefficient < 0n || value.scale > 128) return undefined;
+	if (
+		value.coefficient < 0n ||
+		value.scale > 128 ||
+		!Number.isInteger(scale) ||
+		scale < 0 ||
+		scale > 128
+	)
+		return undefined;
 	const numerator = value.coefficient * 10n ** BigInt(scale);
 	const denominator = 10n ** BigInt(value.scale);
 	const amount = (numerator + denominator - 1n) / denominator;
@@ -33,38 +40,60 @@ function ceilUnits(value: Decimal, scale: number): number | undefined {
 
 function readDecimal(value: string): Decimal | undefined {
 	if (value.length > 128) return undefined;
-	return parseDecimal(value);
+	try {
+		return parseDecimal(value);
+	} catch {
+		return undefined;
+	}
 }
 
 export function incrementalEntitlementClaims(
 	full: readonly Consumption[],
 	base: readonly Consumption[],
 	currency: string,
-): { bucketId: string; unit: string; units: number }[] | undefined {
-	type Row = { bucketId: string; unit: string; scale: number; amount: Decimal };
+): {
+	bucketId: string;
+	unit: string;
+	units: number;
+	kind: "allowance" | "credit" | "commitment";
+}[] | undefined {
+	type Row = {
+		bucketId: string;
+		unit: string;
+		scale: number;
+		amount: Decimal;
+		kind: "allowance" | "credit" | "commitment";
+	};
 	function collect(rows: readonly Consumption[]): Map<string, Row> | undefined {
 		const result = new Map<string, Row>();
 		for (const row of rows) {
 			const quantity = row.quantity;
+			const kind = row.kind;
+			if (
+				kind !== "allowance" &&
+				kind !== "credit" &&
+				kind !== "commitment"
+			)
+				continue;
 			if (
 				!safeName(row.sourceId) ||
 				quantity === undefined ||
-				!safeName(quantity.unit) ||
-				!new Set(["allowance", "credit", "commitment"]).has(row.kind)
+				!safeName(quantity.unit)
 			)
 				return undefined;
 			const decimal = readDecimal(quantity.decimal);
 			if (decimal === undefined || decimal.coefficient < 0n) return undefined;
-			const money = row.kind === "credit" || row.kind === "commitment";
+			const money = kind === "credit" || kind === "commitment";
 			if (money && quantity.unit !== currency) return undefined;
 			const unit = money ? `${currency}.micros` : quantity.unit;
 			const scale = money ? 6 : 0;
-			const key = `${row.kind}\u0000${row.sourceId}\u0000${unit}\u0000${scale}`;
+			const key = `${kind}\u0000${row.sourceId}\u0000${unit}\u0000${scale}`;
 			const prior = result.get(key);
 			result.set(key, {
 				bucketId: row.sourceId,
 				unit,
 				scale,
+				kind,
 				amount: addDecimal(prior?.amount ?? DECIMAL_ZERO, decimal),
 			});
 		}
@@ -73,7 +102,12 @@ export function incrementalEntitlementClaims(
 	const current = collect(full);
 	const before = collect(base);
 	if (current === undefined || before === undefined) return undefined;
-	const claims: { bucketId: string; unit: string; units: number }[] = [];
+	const claims: {
+		bucketId: string;
+		unit: string;
+		units: number;
+		kind: "allowance" | "credit" | "commitment";
+	}[] = [];
 	for (const [key, row] of current) {
 		const difference = subtractDecimal(
 			row.amount,
@@ -82,7 +116,12 @@ export function incrementalEntitlementClaims(
 		if (compareDecimal(difference, DECIMAL_ZERO) <= 0) continue;
 		const units = ceilUnits(difference, row.scale);
 		if (units === undefined) return undefined;
-		claims.push({ bucketId: row.bucketId, unit: row.unit, units });
+		claims.push({
+			bucketId: row.bucketId,
+			unit: row.unit,
+			units,
+			kind: row.kind,
+		});
 	}
 	return claims.sort(
 		(left, right) =>

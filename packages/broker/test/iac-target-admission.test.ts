@@ -90,7 +90,15 @@ function fixture() {
 	return { inventory, pricing, evidence };
 }
 
-function authority(limit = 3_000_000) {
+function authority(
+	options: {
+		readonly budgetLimitMicros?: number;
+		readonly providerAccountLimitMicros?: number;
+	} = {},
+) {
+	const budgetLimitMicros = options.budgetLimitMicros ?? 3_000_000;
+	const providerAccountLimitMicros =
+		options.providerAccountLimitMicros ?? budgetLimitMicros;
 	const dir = mkdtempSync(join(tmpdir(), "hobo-iac-budget-"));
 	directories.push(dir);
 	const ledger = createSqliteBudgetAdmissionAuthority({
@@ -103,13 +111,13 @@ function authority(limit = 3_000_000) {
 				periodId: "2026-01",
 				policyRevision: "r1",
 			},
-			limitMicros: limit,
+			limitMicros: budgetLimitMicros,
 			observedAt: "2026-01-01T00:00:00Z",
 			validUntil: END,
 			providerAccounts: [
 				create(BudgetProviderAccountSchema, {
 					providerAccountId: "account-a",
-					limitMicros: limit,
+					limitMicros: providerAccountLimitMicros,
 				}),
 			],
 		}),
@@ -322,7 +330,7 @@ describe("provider-neutral IaC target budget admission", () => {
 					value: "fee",
 					enumerable: true,
 				});
-			if (kind === "sparse-array") charges.length = 2;
+			if (kind === "sparse-array") charges.push(null!);
 			if (kind === "accessor")
 				Object.defineProperty(charge, "fee", {
 					enumerable: true,
@@ -337,7 +345,9 @@ describe("provider-neutral IaC target budget admission", () => {
 					value: scenario,
 					enumerable: true,
 				});
-			if (kind === "oversized") charges.length = 1025;
+			if (kind === "oversized")
+				for (let index = charges.length; index < 1025; index++)
+					charges.push(charge);
 			const deps = dependencies(ledger);
 			expect(() =>
 				createIacFinancialServices({
@@ -353,7 +363,9 @@ describe("provider-neutral IaC target budget admission", () => {
 						return evidence;
 					},
 				}),
-			).toThrow();
+			).toThrow(
+				/invalid(?: or unbounded)? (?:pricing configuration|infrastructure plan)|unsupported or malformed data/u,
+			);
 			expect(calls).toBe(0);
 			expect(ledger.read(NOW).reservedMicros).toBe(0);
 		} finally {
@@ -378,13 +390,17 @@ describe("provider-neutral IaC target budget admission", () => {
 					return undefined;
 				},
 			});
-			expect(() => createIacFinancialServices(options)).toThrow();
+			expect(() => createIacFinancialServices(options)).toThrow(
+				/invalid(?: or unbounded)? pricing configuration|unsupported or malformed data/u,
+			);
 			expect(calls).toBe(0);
 			Object.defineProperty(options, "pricing", {
 				value: undefined,
 				enumerable: true,
 			});
-			expect(() => createIacFinancialServices(options)).toThrow();
+			expect(() => createIacFinancialServices(options)).toThrow(
+				/invalid(?: or unbounded)? pricing configuration|unsupported or malformed data/u,
+			);
 			expect(ledger.read(NOW).reservedMicros).toBe(0);
 		} finally {
 			ledger.close();
@@ -443,7 +459,7 @@ describe("provider-neutral IaC target budget admission", () => {
 					...financialPlan(),
 					targetId: "x".repeat(10_000),
 				}),
-			).toThrow("unbounded");
+			).toThrow(/invalid or unbounded infrastructure plan/u);
 		} finally {
 			ledger.close();
 		}
@@ -483,6 +499,7 @@ describe("provider-neutral IaC target budget admission", () => {
 				status: "denied",
 				code: "ROUTING_QUOTE_CHANGED",
 			});
+			expect(ledger.read(NOW).reservedMicros).toBe(0);
 		} finally {
 			ledger.close();
 		}
@@ -589,6 +606,55 @@ describe("provider-neutral IaC target budget admission", () => {
 					(claim) => claim.unit === "USD.micros",
 				),
 			).toBe(true);
+			const minuteClaim = decision.quote?.entitlementClaims.find(
+				(claim) => claim.unit === "minute",
+			);
+			const creditClaim = decision.quote?.entitlementClaims.find(
+				(claim) => claim.unit === "USD.micros",
+			);
+			expect(minuteClaim).toMatchObject({
+				bucketId: "allowance-a",
+				unit: "minute",
+				kind: "allowance",
+				units: 5,
+			});
+			expect(creditClaim).toMatchObject({
+				bucketId: "credit-a",
+				unit: "USD.micros",
+				kind: "credit",
+				units: 1_250_000,
+			});
+			expect(decision.reservation?.entitlementClaims).toEqual(
+				decision.quote?.entitlementClaims,
+			);
+			const snapshot = ledger.read(NOW);
+			expect(snapshot.reservedMicros).toBe(5_000_000);
+			const allowance = snapshot.entitlements?.find(
+				(row) => row.bucketId === "allowance-a",
+			);
+			const credit = snapshot.entitlements?.find(
+				(row) => row.bucketId === "credit-a",
+			);
+			expect(allowance?.reservedUnits).toBe(5);
+			expect(credit?.reservedUnits).toBe(1_250_000);
+			const replay = await admitIacTarget(
+				{ requestId: "entitlement-path", inventory, pricing, evidence },
+				dependencies(ledger),
+			);
+			expect(replay).toMatchObject({
+				status: "replay",
+				code: "EXECUTION_ALREADY_CLAIMED",
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(5_000_000);
+			const exhausted = await admitIacTarget(
+				{ requestId: "entitlement-exhausted", inventory, pricing, evidence },
+				dependencies(ledger),
+			);
+			expect(exhausted).toMatchObject({
+				status: "denied",
+				code: "provider.exhausted",
+			});
+			expect(ledger.read(NOW).reservedMicros).toBe(5_000_000);
 		} finally {
 			ledger.close();
 		}
@@ -600,8 +666,32 @@ describe("provider-neutral IaC target budget admission", () => {
 			const { inventory, pricing, evidence } = fixture();
 			if (pricing.state.case !== "model" || !pricing.state.value.scenario)
 				throw new Error("fixture model missing");
+			let verifyCalls = 0;
+			let authorizeCalls = 0;
+			let reserveCalls = 0;
+			let claimCalls = 0;
+			const ledgerSnapshot = ledger.read(NOW);
 			const financial = createIacFinancialServices({
 				...dependencies(ledger),
+				verifyLiability: async () => {
+					verifyCalls++;
+					return true;
+				},
+				authorize: async (input) => {
+					authorizeCalls++;
+					return dependencies(ledger).authorize(input);
+				},
+				authority: {
+					...ledger,
+					reserve: (...args) => {
+						reserveCalls++;
+						return ledger.reserve(...args);
+					},
+					claimExecution: (...args) => {
+						claimCalls++;
+						return ledger.claimExecution(...args);
+					},
+				},
 				pricing: {
 					modelId: "terms",
 					revision: "1",
@@ -614,6 +704,14 @@ describe("provider-neutral IaC target budget admission", () => {
 				quote: { ok: true },
 				budget: { evaluation: "not-evaluated", reservation: "not-created" },
 			});
+			expect(verifyCalls).toBe(0);
+			expect(authorizeCalls).toBe(0);
+			expect(reserveCalls).toBe(0);
+			expect(claimCalls).toBe(0);
+			const after = ledger.read(NOW);
+			expect(after.reservedMicros).toBe(ledgerSnapshot.reservedMicros);
+			expect(after.spentMicros).toBe(ledgerSnapshot.spentMicros);
+			expect(after.entitlements ?? []).toEqual(ledgerSnapshot.entitlements ?? []);
 		} finally {
 			ledger.close();
 		}
@@ -747,14 +845,22 @@ describe("provider-neutral IaC target budget admission", () => {
 		const ledger = authority();
 		try {
 			const request = { requestId: `bad-${kind}`, ...fixture() };
+			const expectedCode =
+				kind === "unverified"
+					? "LIABILITY_EVIDENCE_UNVERIFIED"
+					: "LIABILITY_EVIDENCE_INVALID";
 			if (kind === "wrong-plan")
 				request.evidence.planDigest = `sha256:${"b".repeat(64)}`;
 			if (kind === "expired") request.evidence.validUntil = NOW;
-			if (kind === "too-small") request.evidence.maximumMicros = 1;
+			if (kind === "too-small") {
+				request.evidence.maximumMicros = 1;
+				request.evidence.providerAccounts[0].liabilityMicros = 1;
+			}
 			const deps = dependencies(ledger);
 			if (kind === "unverified") deps.verifyLiability = async () => false;
 			expect(await admitIacTarget(request, deps)).toMatchObject({
 				status: "denied",
+				code: expectedCode,
 			});
 			expect(ledger.read(NOW).reservedMicros).toBe(0);
 		} finally {
@@ -784,7 +890,10 @@ describe("provider-neutral IaC target budget admission", () => {
 	});
 
 	it("returns a definitive budget refusal before making a hold", async () => {
-		const ledger = authority(1_000_000);
+		const ledger = authority({
+			budgetLimitMicros: 3_000_000,
+			providerAccountLimitMicros: 1_000_000,
+		});
 		try {
 			const decision = await admitIacTarget(
 				{ requestId: "exhausted", ...fixture() },
@@ -839,15 +948,34 @@ describe("provider-neutral IaC target budget admission", () => {
 					throw new Error("lost response");
 				};
 			deps.authority = wrapped;
-			const decision = await admitIacTarget(
-				{ requestId: `lost-${operation}`, ...fixture() },
-				deps,
-			);
+			const request = { requestId: `lost-${operation}`, ...fixture() };
+			const decision = await admitIacTarget(request, deps);
 			expect(decision).toMatchObject({
 				status: "uncertain",
-				budget: { evaluation: "unavailable" },
+				budget: { evaluation: "unavailable", reservation: "held" },
+			});
+			const held = ledger.lookup(`iac:lost-${operation}`);
+			expect(held?.status).toMatch(/^(held|uncertain)$/u);
+			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			const retry = await admitIacTarget(request, deps);
+			expect(retry.status).toMatch(/^(admitted|replay|uncertain)$/u);
+			expect(retry.budget?.reservation).toMatch(/^(held|uncertain)$/u);
+			deps.authority = ledger;
+			const converged = await admitIacTarget(request, deps);
+			expect(converged.status).toMatch(/^(admitted|replay)$/u);
+			expect(converged.budget).toMatchObject({
+				evaluation: "allowed",
+				reservation: "held",
 			});
 			expect(ledger.read(NOW).reservedMicros).toBe(1_500_000);
+			if (converged.status === "admitted") {
+				expect(
+					await admitIacTarget(request, dependencies(ledger)),
+				).toMatchObject({
+					status: "replay",
+					code: "EXECUTION_ALREADY_CLAIMED",
+				});
+			}
 		} finally {
 			ledger.close();
 		}
@@ -937,7 +1065,7 @@ describe("provider-neutral IaC target budget admission", () => {
 	});
 
 	it("uses one durable request across target fallback and refuses a later duplicate", async () => {
-		const ledger = authority(1_200_000);
+		const ledger = authority({ budgetLimitMicros: 1_200_000 });
 		try {
 			const first = fixture();
 			const second = fixture();

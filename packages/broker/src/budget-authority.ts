@@ -186,8 +186,11 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 	if (
 		new Set(quote.providerAccounts.map((row) => row.providerAccountId)).size !==
 			quote.providerAccounts.length ||
-		new Set(quote.entitlementClaims.map((row) => row.bucketId)).size !==
-			quote.entitlementClaims.length
+		new Set(
+			quote.entitlementClaims.map(
+				(row) => `${row.kind}\u0000${row.bucketId}\u0000${row.unit}`,
+			),
+		).size !== quote.entitlementClaims.length
 	)
 		throw new TypeError("duplicate quote financial scope");
 	if (

@@ -19,6 +19,7 @@ import {
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
+	EntitlementClaimSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
 	type IacTargetLiabilityEvidence,
@@ -94,7 +95,11 @@ function ceilUnits(value: Decimal, scale: number): number | undefined {
 
 function readDecimal(value: string): Decimal | undefined {
 	if (value.length > 128) return undefined;
-	return parseDecimal(value);
+	try {
+		return parseDecimal(value);
+	} catch {
+		return undefined;
+	}
 }
 
 function denial(
@@ -136,6 +141,20 @@ function uncertain(
 	});
 }
 
+function liabilityMicros(
+	value: bigint | number | undefined,
+): number | undefined {
+	if (value === undefined) return undefined;
+	if (Number.isSafeInteger(value)) {
+		const numeric = Number(value);
+		const asBig = BigInt(numeric);
+		if (asBig < 0n || asBig > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
+		return numeric;
+	}
+	if (value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) return undefined;
+	return Number(value);
+}
+
 function compareAccountIds(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -164,6 +183,9 @@ function substantiveEvidenceHash(
 ): string {
 	const accounts = sortedProviderAccounts(evidence.providerAccounts);
 	return stableHash({
+		evidenceRef: evidence.evidenceRef,
+		observedAt: evidence.observedAt,
+		validUntil: evidence.validUntil,
 		targetId: evidence.targetId,
 		tenantId: evidence.tenantId,
 		planDigest: evidence.planDigest,
@@ -205,12 +227,73 @@ function isReservationReplayConflict(cause: unknown): boolean {
 	return cause.message === "budget reservation replay differs";
 }
 
+async function denyWhenUnheld(
+	deps: IacTargetAdmissionDeps,
+	requestId: string,
+	targetId: string,
+	code: string,
+	message: string,
+	unavailable = true,
+	requestDigest = "",
+): Promise<IacTargetAdmissionDecision> {
+	const existing = await Promise.resolve(
+		deps.authority.lookup(`iac:${requestId}`),
+	);
+	if (
+		existing &&
+		(existing.status === "held" || existing.status === "uncertain")
+	) {
+		if (
+			requestDigest &&
+			existing.requestDigest &&
+			existing.requestDigest !== requestDigest
+		)
+			return denial(
+				requestId,
+				targetId,
+				"RESERVATION_REQUEST_CONFLICT",
+				"request id is already bound to a different financial plan",
+				false,
+			);
+		return uncertain(
+			requestId,
+			targetId,
+			"REQUEST_ALREADY_RESERVED",
+			existing.status,
+			existing.requestDigest || requestDigest,
+		);
+	}
+	return denial(requestId, targetId, code, message, unavailable);
+}
+
+function normalizeLiabilityEvidence(
+	evidence: IacTargetLiabilityEvidence,
+): IacTargetLiabilityEvidence {
+	const maximum = liabilityMicros(evidence.maximumMicros);
+	const maximumMicros =
+		maximum === undefined ? evidence.maximumMicros : BigInt(maximum);
+	return create(IacTargetLiabilityEvidenceSchema, {
+		evidenceRef: evidence.evidenceRef,
+		targetId: evidence.targetId,
+		tenantId: evidence.tenantId,
+		planDigest: evidence.planDigest,
+		inventoryHash: evidence.inventoryHash,
+		modelHash: evidence.modelHash,
+		quoteHash: evidence.quoteHash,
+		maximumMicros,
+		observedAt: evidence.observedAt,
+		validUntil: evidence.validUntil,
+		providerAccounts: evidence.providerAccounts,
+	});
+}
+
 export async function admitIacTarget(
 	input: IacTargetAdmissionInput,
 	deps: IacTargetAdmissionDeps,
 ): Promise<IacTargetAdmissionDecision> {
 	const { requestId } = input;
 	const targetId = input.inventory.targetId;
+	const rawEvidence = input.evidence == null ? undefined : input.evidence;
 	if (!safeName(requestId))
 		return denial(
 			requestId,
@@ -228,17 +311,39 @@ export async function admitIacTarget(
 			"PRICING_INPUT_TOO_LARGE",
 			"financial input exceeds the bounded data limits",
 		);
-	if (
-		input.evidence !== undefined &&
-		(!isExactProtoMessage(IacTargetLiabilityEvidenceSchema, input.evidence) ||
-			input.evidence.providerAccounts.length > 256)
-	)
+	if (rawEvidence !== undefined && !isBoundedPricingInput(rawEvidence))
 		return denial(
 			requestId,
 			targetId,
 			"LIABILITY_EVIDENCE_INVALID",
 			"liability evidence is malformed or exceeds the bounded data limits",
 		);
+	const evidenceInput =
+		rawEvidence === undefined ? undefined : normalizeLiabilityEvidence(rawEvidence);
+	if (rawEvidence !== undefined && evidenceInput !== undefined) {
+		const exactOnRaw = isExactProtoMessage(
+			IacTargetLiabilityEvidenceSchema,
+			rawEvidence,
+		);
+		const exactOnNormalized = isExactProtoMessage(
+			IacTargetLiabilityEvidenceSchema,
+			evidenceInput,
+		);
+		const microsCoercionOnly =
+			!exactOnRaw &&
+			Number.isSafeInteger(rawEvidence.maximumMicros) &&
+			exactOnNormalized;
+		if (
+			!(exactOnRaw || microsCoercionOnly) ||
+			evidenceInput.providerAccounts.length > 256
+		)
+			return denial(
+				requestId,
+				targetId,
+				"LIABILITY_EVIDENCE_INVALID",
+				"liability evidence is malformed or exceeds the bounded data limits",
+			);
+	}
 	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, input.pricing))
 		return denial(
 			requestId,
@@ -254,9 +359,9 @@ export async function admitIacTarget(
 		inventory = clone(TargetPricingInventorySchema, input.inventory);
 		pricing = clone(TargetPricingAvailabilitySchema, input.pricing);
 		evidence =
-			input.evidence === undefined
+			evidenceInput === undefined
 				? undefined
-				: clone(IacTargetLiabilityEvidenceSchema, input.evidence);
+				: clone(IacTargetLiabilityEvidenceSchema, evidenceInput);
 		priced = quoteTargetPricing(inventory, pricing);
 	} catch {
 		return denial(
@@ -287,7 +392,8 @@ export async function admitIacTarget(
 		);
 	const scenario = pricing.state.value.scenario;
 	if (deps.authority.persistence !== "durable-cas")
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"BUDGET_AUTHORITY_UNAVAILABLE",
@@ -297,7 +403,8 @@ export async function admitIacTarget(
 	try {
 		now = deps.now();
 	} catch {
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"TIME_UNAVAILABLE",
@@ -319,7 +426,8 @@ export async function admitIacTarget(
 		total?.currency !== "USD" ||
 		totalMicros === undefined
 	)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"PRICING_NOT_COMPARABLE",
@@ -334,15 +442,15 @@ export async function admitIacTarget(
 		evidence.inventoryHash !== priced.inventoryHash ||
 		evidence.modelHash !== priced.modelHash ||
 		evidence.quoteHash !== priced.quote.quoteHash ||
-		evidence.maximumMicros === undefined ||
-		!Number.isSafeInteger(evidence.maximumMicros) ||
-		evidence.maximumMicros < totalMicros ||
+		liabilityMicros(evidence.maximumMicros) === undefined ||
+		liabilityMicros(evidence.maximumMicros)! < totalMicros ||
 		!Number.isFinite(Date.parse(evidence.observedAt)) ||
 		Date.parse(evidence.observedAt) > nowMs ||
 		!Number.isFinite(Date.parse(evidence.validUntil)) ||
 		Date.parse(evidence.validUntil) <= nowMs
 	)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"LIABILITY_EVIDENCE_INVALID",
@@ -363,9 +471,10 @@ export async function admitIacTarget(
 		accounts.reduce(
 			(sum, account) => sum + BigInt(account.liabilityMicros),
 			0n,
-		) !== BigInt(evidence.maximumMicros)
+		) !== BigInt(liabilityMicros(evidence.maximumMicros)!)
 	)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"LIABILITY_EVIDENCE_INVALID",
@@ -380,14 +489,16 @@ export async function admitIacTarget(
 				quote: clone(QuoteVectorSchema, priced.quote),
 			})) !== true
 		)
-			return denial(
+			return denyWhenUnheld(
+				deps,
 				requestId,
 				targetId,
 				"LIABILITY_EVIDENCE_UNVERIFIED",
 				"liability evidence was not authenticated",
 			);
 	} catch {
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"LIABILITY_VERIFIER_UNAVAILABLE",
@@ -398,7 +509,8 @@ export async function admitIacTarget(
 	baseline.candidate = [];
 	const baselineQuote = quoteScenario(baseline);
 	if (!isQuoteVector(baselineQuote))
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			baselineQuote.code,
@@ -410,16 +522,15 @@ export async function admitIacTarget(
 		"USD",
 	);
 	if (claims === undefined)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
 		);
-	const evidenceHash = substantiveEvidenceHash(
-		evidence,
-		evidence.maximumMicros,
-	);
+	const maximumMicros = liabilityMicros(evidence.maximumMicros)!;
+	const evidenceHash = substantiveEvidenceHash(evidence, maximumMicros);
 	const financialPlanHash = stableHash({
 		planDigest: inventory.planDigest,
 		inventoryHash: priced.inventoryHash,
@@ -438,11 +549,14 @@ export async function admitIacTarget(
 	];
 	const firstProvider = providers[0];
 	if (firstProvider === undefined)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"TARGET_INVENTORY_INCOMPLETE",
 			"target has no provider",
+			true,
+			requestDigest,
 		);
 	const validUntil =
 		Date.parse(evidence.validUntil) < horizon
@@ -455,13 +569,15 @@ export async function admitIacTarget(
 		ownerTenantId: inventory.tenantId,
 		currency: "USD",
 		totalMicros,
-		liabilityBoundMicros: evidence.maximumMicros,
+		liabilityBoundMicros: maximumMicros,
 		observedAt: evidence.observedAt,
 		validUntil,
 		components: [{ name: "joint-target-quote", costMicros: totalMicros }],
 		requestDigest,
 		providerAccounts: accounts,
-		entitlementClaims: claims,
+		entitlementClaims: claims.map((claim) =>
+			create(EntitlementClaimSchema, claim),
+		),
 		financialPlanHash,
 	});
 	let ledger: ReturnType<BudgetAdmissionAuthority["read"]>;
@@ -469,20 +585,26 @@ export async function admitIacTarget(
 		validateHostingQuote(quote, deps.now());
 		ledger = await deps.authority.read(deps.now());
 	} catch {
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"BUDGET_AUTHORITY_UNAVAILABLE",
 			"budget or quote evidence is unavailable",
+			true,
+			requestDigest,
 		);
 	}
 	const identity = ledger.identity;
 	if (identity === undefined || identity.tenantId !== inventory.tenantId)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"BUDGET_SCOPE_MISMATCH",
 			"the budget does not belong to the target tenant",
+			true,
+			requestDigest,
 		);
 	let policy: { gate: GateDecision; proof: HostingPolicyProof };
 	try {
@@ -492,11 +614,14 @@ export async function admitIacTarget(
 			identity: cloneIdentity(identity),
 		});
 	} catch {
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"POLICY_UNAVAILABLE",
 			"budget policy authorization failed",
+			true,
+			requestDigest,
 		);
 	}
 	let proof: HostingPolicyProof;
@@ -512,11 +637,14 @@ export async function admitIacTarget(
 			throw new Error("malformed policy decision");
 		proof = clone(HostingPolicyProofSchema, policy.proof);
 	} catch {
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"POLICY_UNAVAILABLE",
 			"budget policy proof is malformed",
+			true,
+			requestDigest,
 		);
 	}
 	if (
@@ -531,12 +659,14 @@ export async function admitIacTarget(
 		proof.identity === undefined ||
 		budgetIdentityKey(proof.identity) !== budgetIdentityKey(identity)
 	)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"POLICY_NOT_ALLOWED",
 			"policy denied, requires approval or has unfulfilled obligations",
 			false,
+			requestDigest,
 		);
 	const reservationId = `iac:${requestId}`;
 	let reservation: ReturnType<BudgetAdmissionAuthority["reserve"]>;
@@ -544,22 +674,28 @@ export async function admitIacTarget(
 		validateHostingQuote(quote, deps.now());
 		ledger = await deps.authority.read(deps.now());
 	} catch {
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"BUDGET_AUTHORITY_UNAVAILABLE",
 			"budget or quote evidence is unavailable",
+			true,
+			requestDigest,
 		);
 	}
 	if (
 		ledger.identity === undefined ||
 		budgetIdentityKey(ledger.identity) !== budgetIdentityKey(identity)
 	)
-		return denial(
+		return denyWhenUnheld(
+			deps,
 			requestId,
 			targetId,
 			"BUDGET_POLICY_CHANGED",
 			"budget identity changed during authorization",
+			true,
+			requestDigest,
 		);
 	try {
 		reservation = await deps.authority.reserve({
@@ -572,14 +708,38 @@ export async function admitIacTarget(
 		});
 	} catch (error) {
 		if (error instanceof BudgetAdmissionDeniedError)
-			return denial(requestId, targetId, error.code, error.message, false);
+			return denyWhenUnheld(
+				deps,
+				requestId,
+				targetId,
+				error.code,
+				error.message,
+				false,
+				requestDigest,
+			);
 		if (isReservationReplayConflict(error))
-			return denial(
+			return denyWhenUnheld(
+				deps,
 				requestId,
 				targetId,
 				"RESERVATION_REQUEST_CONFLICT",
 				"request id is already bound to a different financial plan",
 				false,
+				requestDigest,
+			);
+		const reserved = await Promise.resolve(
+			deps.authority.lookup(`iac:${requestId}`),
+		);
+		if (
+			reserved &&
+			(reserved.status === "held" || reserved.status === "uncertain")
+		)
+			return uncertain(
+				requestId,
+				targetId,
+				"RESERVATION_OUTCOME_UNKNOWN",
+				reserved.status,
+				requestDigest,
 			);
 		return uncertain(
 			requestId,

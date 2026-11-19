@@ -1,4 +1,22 @@
 {
+  "iacEvidence": {
+    "evidenceRef": "evidence:1",
+    "targetId": "yard-a",
+    "tenantId": "tenant-a",
+    "planDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "quoteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "maximumMicros": 1500000,
+    "observedAt": "2026-01-01T00:00:00Z",
+    "validUntil": "2026-02-01T00:00:00Z",
+    "providerAccounts": [
+      {
+        "providerAccountId": "account-a",
+        "liabilityMicros": 1500000
+      }
+    ]
+  },
   "iacDecision": {
     "requestId": "request-1",
     "targetId": "yard-a",
@@ -24,6 +42,14 @@
       "observedAt": "2026-01-01T00:00:00Z",
       "validUntil": "2026-02-01T00:00:00Z",
       "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "financialPlanHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "providerAccounts": [
+        {
+          "providerAccountId": "account-a",
+          "liabilityMicros": 1500000
+        }
+      ],
+      "entitlementClaims": [],
       "components": [
         {
           "name": "target",
@@ -45,7 +71,15 @@
       "status": "held",
       "actualMicros": 0,
       "ledgerSeq": 1,
-      "quoteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "quoteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "providerAccounts": [
+        {
+          "providerAccountId": "account-a",
+          "liabilityMicros": 1500000
+        }
+      ],
+      "entitlementClaims": [],
+      "financialPlanHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "policyProof": {
       "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

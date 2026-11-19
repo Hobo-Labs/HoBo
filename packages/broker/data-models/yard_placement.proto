@@ -130,6 +130,8 @@ message EntitlementClaim {
   string bucket_id = 1;
   string unit = 2;
   double units = 3;
+  // allowance | credit | commitment
+  string kind = 4;
 }
 message BudgetSettlementEvidence {
   string usage_evidence_ref = 1;
@@ -253,20 +255,23 @@ message IacTargetLiabilityEvidence {
   string inventory_hash = 5;
   string model_hash = 6;
   string quote_hash = 7;
-  optional double maximum_micros = 8;
+  int64 maximum_micros = 8;
   string observed_at = 9;
   string valid_until = 10;
   repeated ProviderAccountExposure provider_accounts = 11;
 }
 
 message IacBudgetDisclosure {
+  // allowed | denied | unavailable
   string evaluation = 1;
+  // not-created | held | uncertain | settled | released | unknown
   string reservation = 2;
 }
 
 message IacTargetAdmissionDecision {
   string request_id = 1;
   string target_id = 2;
+  // admitted | denied | replay | uncertain
   string status = 3;
   string code = 4;
   string message = 5;
