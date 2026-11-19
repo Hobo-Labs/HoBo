@@ -130,7 +130,9 @@ function ConnectPage() {
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`view failed (${response.status})`);
-		setView(viewFromParsedConnect(ConnectViewSchema.parse(await response.json())));
+		setView(
+			viewFromParsedConnect(ConnectViewSchema.parse(await response.json())),
+		);
 	}, []);
 
 	useEffect(() => {
