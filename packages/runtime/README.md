@@ -94,12 +94,21 @@ The verification runner also checks that a resume which writes a second
 terminal fact violates the model's invariant.
 This projection hides ten transitions that do not change the displayed state;
 it shows the modeled flow, rather than a trace of one execution.
+The diagram adds the step-failure path the step-journal model checks:
+`run.StepFailed` is a step outcome, not a terminal fact, so it can remain in
+the journal before a legal `run.Completed` once the workflow catches the
+failure (catch-and-compensate); uncaught, it propagates to `run.Failed`. A sealed
+journal ending in `run.Completed` after a `run.StepFailed` therefore resumes
+to that completed outcome. Only `run.Completed` and `run.Failed` are terminal.
 
 ```mermaid
 stateDiagram-v2
   [*] --> Running
-  Running --> Completed: record terminal outcome
-  Running --> Failed: record terminal outcome
+  Running --> StepFailedRecorded: record run.StepFailed
+  StepFailedRecorded --> Running: catch failure and compensate
+  StepFailedRecorded --> Failed: propagate failure and record run.Failed
+  Running --> Completed: record run.Completed
+  Running --> Failed: record run.Failed
   Completed --> ResultReturned: return recorded outcome
   Failed --> FailureReturned: return recorded outcome
 ```
