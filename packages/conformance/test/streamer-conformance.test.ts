@@ -28,6 +28,7 @@ interface Defects {
 	writeAfterTeardown?: boolean;
 	noBackfill?: boolean;
 	sharedReader?: boolean;
+	skipWorkflow?: boolean;
 }
 
 const BUFFER_LIMIT = 32;
@@ -144,6 +145,26 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 			stateFor(runId);
 			return handleFor(runId) as StreamerRunHandle<TChunk>;
 		},
+		start<TChunk>(
+			workflow: (
+				context: Pick<StreamerRunHandle<TChunk>, "runId" | "getWritable">,
+			) => void | PromiseLike<void>,
+			options?: { runId?: RunId },
+		) {
+			const run = this.createRun<TChunk>(options);
+			const done = Promise.resolve().then(async () => {
+				if (!defects.skipWorkflow) {
+					await workflow({ runId: run.runId, getWritable: run.getWritable });
+				}
+				stateFor(run.runId).closed = true;
+				return {
+					runId: run.runId,
+					status: "completed" as const,
+					reason: "done",
+				};
+			});
+			return { ...run, done };
+		},
 		getRun<TChunk>(runId: RunId) {
 			return handleFor(runId) as StreamerRunHandle<TChunk>;
 		},
@@ -161,6 +182,7 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 
 const ALL_ASSERTIONS: StreamerAssertionName[] = [
 	"orderedRunReadable",
+	"workflowStart",
 	"multiplexedStreamsOrdered",
 	"boundedBackpressure",
 	"teardownClosesStream",
@@ -174,6 +196,7 @@ describe("runStreamerConformance against a faithful implementation", () => {
 
 		expect(report.assertions).toEqual({
 			orderedRunReadable: "pass",
+			workflowStart: "pass",
 			multiplexedStreamsOrdered: "pass",
 			boundedBackpressure: "pass",
 			teardownClosesStream: "pass",
@@ -213,6 +236,11 @@ describe("each assertion catches the defect it exists to catch", () => {
 		);
 		return report.assertions;
 	}
+
+	it("workflowStart fails when the workflow is not executed", async () => {
+		const assertions = await assertionsFor({ skipWorkflow: true });
+		expect(assertions.workflowStart).toBe("fail");
+	});
 
 	it("orderedRunReadable fails when frames arrive out of order", async () => {
 		const assertions = await assertionsFor({ reverseOrder: true });
@@ -272,6 +300,7 @@ describe("failure isolation", () => {
 				writeAfterTeardown: true,
 				noBackfill: true,
 				sharedReader: true,
+				skipWorkflow: true,
 			}),
 		);
 		expect(Object.values(report.assertions)).not.toContain("pass");
