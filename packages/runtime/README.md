@@ -82,12 +82,16 @@ the same path. The workflow cannot record either terminal state while a prior
 outcome remains unconsumed. The bounded models check these paths and guards.
 
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. A journal with multiple
+calling the workflow or appending another event. Live `appendEvent` refuses
+further `run.*` facts once a terminal is already in the in-memory journal, so
+an unawaited step cannot corrupt a sealed run. A journal with multiple
 terminal facts is rejected before returning an outcome. New failure records preserve
 the failed step when present; older failure records without a step cannot
 reconstruct that detail.
 
 The terminal-outcome model explores 15 distinct states and 18 transitions.
+The verification runner also checks that a resume which writes a second
+terminal fact violates the model's invariant.
 This projection hides ten transitions that do not change the displayed state;
 it shows the modeled flow, rather than a trace of one execution.
 
