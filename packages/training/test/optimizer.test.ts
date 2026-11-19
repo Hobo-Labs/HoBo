@@ -170,7 +170,6 @@ describe("keep-best invariant", () => {
 		const program = parseTrainingArtifactProgram(
 			candidate.body.value.programJson,
 		);
-		// SAFETY: `const payload = JSON.parse(program.enginePayloadJson) as {` is required at this I/O or test boundary.
 		const payload = JSON.parse(program.enginePayloadJson) as {
 			winnerScore: number;
 		};
@@ -209,8 +208,6 @@ describe("trace capture", () => {
 describe("port conformance", () => {
 	it("satisfies core's TrainingEnginePort", async () => {
 		const engine = createBuiltinTrainingEngine(CONFIG);
-		// Type-level: BuiltinTrainingEngine extends TrainingEnginePort, and the
-		// assignment below only compiles if the shapes agree.
 		const port: TrainingEnginePort = engine;
 
 		expect(isJsonString(port.engineId)).toBe(true);
@@ -251,7 +248,6 @@ describe("malformed config typed rejections", () => {
 			expect.unreachable("parse must throw");
 		} catch (error) {
 			expect(error).toBeInstanceOf(TrainingOptimizerParseError);
-			// SAFETY: `const parseError = error as TrainingOptimizerParseError;` is required at this I/O or test boundary.
 			const parseError = error as TrainingOptimizerParseError;
 			expect(parseError.name).toBe("TrainingOptimizerParseError");
 			expect(parseError.code).toBe("HOBO_TRAINING_OPTIMIZER_PARSE");
@@ -269,9 +265,7 @@ describe("malformed config typed rejections", () => {
 	it("rejects a request stripped of its trajectories at the port boundary", async () => {
 		const engine = createBuiltinTrainingEngine(CONFIG);
 		const parsed = fixtureRequest();
-		// SAFETY: `const hollow = Object.create(` is required at this I/O or test boundary.
 		const hollow = Object.create(
-			// SAFETY: `Object.getPrototypeOf(parsed) as object,` is required at this I/O or test boundary.
 			Object.getPrototypeOf(parsed) as object,
 		) as typeof parsed;
 		Object.assign(hollow, parsed, { trajectories: [] });
