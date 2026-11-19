@@ -571,13 +571,18 @@ The emulator bounds request bodies and its `fetch` responses to 32 MiB.
 
 The supported slice uploads content addressed by SHA-1, creates file-based preview
 or staged production deployments, reads and lists them, serves the saved source
-bytes from synthetic deployment origins, and changes an existing production
-alias. `seedDeployment`, `seedAlias`, `setState`, and `failNext` let tests model
-an earlier deployment, build completion, and a response lost before or after an
-operation. A staged production deployment receives no production alias until an
-explicit alias operation. Preview deployments cannot be promoted by this model;
-Vercel can rebuild previews with production settings, which the emulator does
-not simulate. It does not require or create a Git-connected project.
+bytes from synthetic deployment origins, and moves existing production aliases.
+`seedDeployment`, `seedAlias`, `setState`, and `failNext` let tests model an
+earlier deployment, project production aliases, build completion, and a response
+lost before or after an operation. A staged production deployment receives no
+production alias automatically. The simulated project promotion and rollback
+endpoints immediately move the project's seeded production aliases; the provider
+may process those operations asynchronously. Manual alias assignment to a staged
+deployment is refused because this double does not model how Vercel updates its
+production substate in that case. A manual assignment to an already promoted
+deployment only moves the named alias. Preview promotion is unsupported; Vercel
+can rebuild previews with production settings, which the emulator does not
+simulate. It does not require or create a Git-connected project.
 
 This is a deterministic test double, not evidence of Vercel behavior: it does
 not unpack source archives, build source, execute functions, model billing or
@@ -588,7 +593,8 @@ source-archive paths are refused unless the opaque seam below is enabled. File
 and alias state is process-local and is not durable. A synthetic lost response does not prove that
 a real provider request is terminal. `test/deployment-emulator.test.ts`
 exercises the HoBo resolver through the shared transport and the staged
-upload/alias flow.
+upload, project-promotion, rollback, and alias flow. These fixtures do not prove
+that a live provider has accepted or finished a promotion.
 
 For tests of the source uploader, `opaqueSourceArchives: true` accepts exactly
 one `.vercel/source.tgz.part1` reference whose uploaded bytes, SHA-1 and size

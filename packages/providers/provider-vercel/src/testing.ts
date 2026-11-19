@@ -182,6 +182,7 @@ export function createVercelDeploymentEmulator(
 	const deployments = new Map<string, Deployment>();
 	const uploads = new Map<string, Uint8Array>();
 	const aliases = new Map<string, string>();
+	const productionAliases = new Map<string, Set<string>>();
 	let nextId = 0;
 	let fault: Fault | undefined;
 	const team = options.teamId;
@@ -208,7 +209,7 @@ export function createVercelDeploymentEmulator(
 			readyState: deployment.state,
 			meta: deployment.meta,
 		};
-		return deployment.target === "production"
+		return deployment.target === "production" && deployment.state === "READY"
 			? { ...base, readySubstate: deployment.staged ? "STAGED" : "PROMOTED" }
 			: base;
 	};
@@ -515,6 +516,33 @@ export function createVercelDeploymentEmulator(
 		}
 		if (
 			method === "POST" &&
+			parts[1] === "projects" &&
+			parts.length === 5 &&
+			((parts[0] === "v10" && parts[3] === "promote") ||
+				(parts[0] === "v1" && parts[3] === "rollback"))
+		) {
+			const projectId = safePart(parts[2] ?? "");
+			const deploymentId = safePart(parts[4] ?? "");
+			const project =
+				projectId === undefined ? undefined : projects.get(projectId);
+			const deployment =
+				deploymentId === undefined ? undefined : deployments.get(deploymentId);
+			if (!project || !deployment || deployment.project.id !== project.id)
+				return error(404, "not_found");
+			if (
+				deployment.target !== "production" ||
+				deployment.state !== "READY" ||
+				(parts[3] === "promote" && !deployment.staged) ||
+				(parts[3] === "rollback" && deployment.staged)
+			)
+				return error(409, "promotion_unavailable");
+			for (const alias of productionAliases.get(project.id) ?? [])
+				aliases.set(alias, deployment.id);
+			deployment.staged = false;
+			return answer(201, {});
+		}
+		if (
+			method === "POST" &&
 			parts[0] === "v2" &&
 			parts[1] === "deployments" &&
 			parts[3] === "aliases" &&
@@ -535,8 +563,8 @@ export function createVercelDeploymentEmulator(
 				deployment.state !== "READY"
 			)
 				return error(409, "alias_unavailable");
+			if (deployment.staged) return error(501, "staged_alias_unsupported");
 			aliases.set(input.alias, deployment.id);
-			deployment.staged = false;
 			return answer(200, {
 				alias: input.alias,
 				uid: `alias_${nextId}`,
@@ -648,13 +676,22 @@ export function createVercelDeploymentEmulator(
 		},
 		seedAlias(alias, deploymentId) {
 			const deployment = deployments.get(deploymentId);
+			const existingId = aliases.get(alias);
+			const existing =
+				existingId === undefined ? undefined : deployments.get(existingId);
 			if (
 				deployment?.target !== "production" ||
 				deployment.state !== "READY" ||
+				(existing !== undefined &&
+					existing.project.id !== deployment.project.id) ||
 				!/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/u.test(alias)
 			)
 				throw new TypeError("Invalid emulator alias.");
 			aliases.set(alias, deploymentId);
+			const configured =
+				productionAliases.get(deployment.project.id) ?? new Set();
+			configured.add(alias);
+			productionAliases.set(deployment.project.id, configured);
 			deployment.staged = false;
 		},
 		readOpaqueArchive(deploymentId) {

@@ -154,7 +154,7 @@ describe("Vercel deployment emulator", () => {
 		expect((await list.json()).deployments).toHaveLength(1);
 	});
 
-	it("uploads source bytes, stages production, and moves only the selected alias", async () => {
+	it("uploads source bytes, stages, promotes, and rolls back project aliases", async () => {
 		const f = fixture();
 		f.emulator.seedDeployment({
 			id: "dpl_previous",
@@ -163,6 +163,7 @@ describe("Vercel deployment emulator", () => {
 			files: { "index.html": "old" },
 		});
 		f.emulator.seedAlias("fixture.vercel.app", "dpl_previous");
+		f.emulator.seedAlias("second.vercel.app", "dpl_previous");
 		const source = new TextEncoder().encode("new source");
 		const sha = createHash("sha1").update(source).digest("hex");
 		const upload = await f.send("/v2/files", {
@@ -189,9 +190,9 @@ describe("Vercel deployment emulator", () => {
 		const deployment = await created.json();
 		expect(deployment).toMatchObject({
 			readyState: "BUILDING",
-			readySubstate: "STAGED",
 			projectId: f.project.uid,
 		});
+		expect(deployment).not.toHaveProperty("readySubstate");
 		expect(
 			await (
 				await f.send(
@@ -201,26 +202,51 @@ describe("Vercel deployment emulator", () => {
 		).toMatchObject({ deploymentId: "dpl_previous" });
 		expect(
 			(
-				await f.send(`/v2/deployments/${deployment.id}/aliases`, {
-					method: "POST",
-					body: JSON.stringify({ alias: "fixture.vercel.app" }),
-				})
+				await f.send(
+					`/v10/projects/${f.project.uid}/promote/${deployment.id}`,
+					{
+						method: "POST",
+					},
+				)
 			).status,
 		).toBe(409);
 		f.emulator.setState(deployment.id, "READY");
-		const promotion = await f.send(`/v2/deployments/${deployment.id}/aliases`, {
-			method: "POST",
-			body: JSON.stringify({ alias: "fixture.vercel.app" }),
-		});
-		expect(await promotion.json()).toMatchObject({
-			alias: "fixture.vercel.app",
-			oldDeploymentId: "dpl_previous",
-		});
+		expect(
+			await (await f.send(`/v13/deployments/${deployment.id}`)).json(),
+		).toMatchObject({ readyState: "READY", readySubstate: "STAGED" });
+		const stagedAlias = await f.send(
+			`/v2/deployments/${deployment.id}/aliases`,
+			{
+				method: "POST",
+				body: JSON.stringify({ alias: "fixture.vercel.app" }),
+			},
+		);
+		expect(stagedAlias.status).toBe(501);
 		expect(
 			await (
 				await f.send(
 					`/v4/aliases/fixture.vercel.app?projectId=${f.project.uid}`,
 				)
+			).json(),
+		).toMatchObject({ deploymentId: "dpl_previous" });
+		const promotion = await f.send(
+			`/v10/projects/${f.project.uid}/promote/${deployment.id}`,
+			{ method: "POST" },
+		);
+		expect(promotion.status).toBe(201);
+		expect(
+			await (await f.send(`/v13/deployments/${deployment.id}`)).json(),
+		).toMatchObject({ readyState: "READY", readySubstate: "PROMOTED" });
+		expect(
+			await (
+				await f.send(
+					`/v4/aliases/fixture.vercel.app?projectId=${f.project.uid}`,
+				)
+			).json(),
+		).toMatchObject({ deploymentId: deployment.id });
+		expect(
+			await (
+				await f.send(`/v4/aliases/second.vercel.app?projectId=${f.project.uid}`)
 			).json(),
 		).toMatchObject({ deploymentId: deployment.id });
 		expect(
@@ -241,6 +267,43 @@ describe("Vercel deployment emulator", () => {
 		expect(
 			matching.deployments.map((item: { uid: string }) => item.uid),
 		).toEqual([deployment.id]);
+		const rollback = await f.send(
+			`/v1/projects/${f.project.uid}/rollback/dpl_previous`,
+			{ method: "POST" },
+		);
+		expect(rollback.status).toBe(201);
+		expect(
+			await (
+				await f.send(
+					`/v4/aliases/fixture.vercel.app?projectId=${f.project.uid}`,
+				)
+			).json(),
+		).toMatchObject({ deploymentId: "dpl_previous" });
+		expect(
+			await (
+				await f.send(`/v4/aliases/second.vercel.app?projectId=${f.project.uid}`)
+			).json(),
+		).toMatchObject({ deploymentId: "dpl_previous" });
+		const manualAlias = await f.send(
+			`/v2/deployments/${deployment.id}/aliases`,
+			{
+				method: "POST",
+				body: JSON.stringify({ alias: "fixture.vercel.app" }),
+			},
+		);
+		expect(manualAlias.status).toBe(200);
+		expect(await manualAlias.json()).toMatchObject({
+			alias: "fixture.vercel.app",
+			oldDeploymentId: "dpl_previous",
+		});
+		expect(
+			await (await f.send(`/v13/deployments/${deployment.id}`)).json(),
+		).toMatchObject({ readyState: "READY", readySubstate: "PROMOTED" });
+		expect(
+			await (
+				await f.send(`/v4/aliases/second.vercel.app?projectId=${f.project.uid}`)
+			).json(),
+		).toMatchObject({ deploymentId: "dpl_previous" });
 	});
 
 	it("rejects invalid or foreign requests without changing the selected project", async () => {
@@ -332,10 +395,10 @@ describe("Vercel deployment emulator", () => {
 			body: JSON.stringify(payload),
 		});
 		const deployment = await preview.json();
-		const promoted = await f.send(`/v2/deployments/${deployment.id}/aliases`, {
-			method: "POST",
-			body: JSON.stringify({ alias: "fixture.vercel.app" }),
-		});
+		const promoted = await f.send(
+			`/v10/projects/${f.project.uid}/promote/${deployment.id}`,
+			{ method: "POST" },
+		);
 		expect(promoted.status).toBe(409);
 		expect(
 			await (
@@ -413,12 +476,53 @@ describe("Vercel deployment emulator", () => {
 		});
 		expect(promotion.status).toBe(409);
 		expect(
+			(
+				await f.send(`/v10/projects/${f.project.uid}/promote/dpl_other`, {
+					method: "POST",
+				})
+			).status,
+		).toBe(404);
+		expect(() =>
+			f.emulator.seedAlias("fixture.vercel.app", "dpl_other"),
+		).toThrow("Invalid emulator alias");
+		expect(
 			await (
 				await f.send(
 					`/v4/aliases/fixture.vercel.app?projectId=${f.project.uid}`,
 				)
 			).json(),
 		).toMatchObject({ deploymentId: "dpl_previous" });
+	});
+
+	it("keeps promotion readback separate from a lost promotion response", async () => {
+		const f = fixture("READY");
+		f.emulator.seedDeployment({
+			id: "dpl_previous",
+			projectId: f.project.uid,
+			target: "production",
+		});
+		f.emulator.seedAlias("fixture.vercel.app", "dpl_previous");
+		f.emulator.seedDeployment({
+			id: "dpl_candidate",
+			projectId: f.project.uid,
+			target: "production",
+			staged: true,
+		});
+		const path = `/v10/projects/${f.project.uid}/promote/dpl_candidate`;
+		f.emulator.failNext({ method: "POST", path, when: "after" });
+		await expect(f.send(path, { method: "POST" })).rejects.toThrow(
+			"Synthetic response loss",
+		);
+		expect(
+			await (await f.send("/v13/deployments/dpl_candidate")).json(),
+		).toMatchObject({ readyState: "READY", readySubstate: "PROMOTED" });
+		expect(
+			await (
+				await f.send(
+					`/v4/aliases/fixture.vercel.app?projectId=${f.project.uid}`,
+				)
+			).json(),
+		).toMatchObject({ deploymentId: "dpl_candidate" });
 	});
 
 	it("enforces the shared transport deadline and cancels a stalled project fetch", async () => {
@@ -623,12 +727,14 @@ describe("Vercel deployment emulator", () => {
 		});
 		expect(
 			(
-				await f.send(`/v2/deployments/${deployment.id}/aliases`, {
-					method: "POST",
-					body: JSON.stringify({ alias: "fixture.vercel.app" }),
-				})
+				await f.send(
+					`/v10/projects/${f.project.uid}/promote/${deployment.id}`,
+					{
+						method: "POST",
+					},
+				)
 			).status,
-		).toBe(200);
+		).toBe(201);
 		expect(
 			await (
 				await f.emulator.fetch("https://fixture.vercel.app/healthz")
