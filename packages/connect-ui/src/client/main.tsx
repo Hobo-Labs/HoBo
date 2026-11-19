@@ -1,4 +1,4 @@
-import type { Spec } from "@json-render/core";
+import { isNonEmptySpec, type Spec } from "@json-render/core";
 import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
 import { shadcnComponents } from "@json-render/shadcn";
 import { StrictMode, useCallback, useEffect, useState } from "react";
@@ -84,6 +84,20 @@ const ConnectViewSchema = z.object({
 	directive: DirectiveSchema,
 });
 
+function parseConnectView(input: unknown): View {
+	const parsed = ConnectViewSchema.parse(input);
+	if (!isNonEmptySpec(parsed.spec)) {
+		throw new Error("invalid connect view spec");
+	}
+	return {
+		step: parsed.step,
+		terminal: parsed.terminal,
+		composedBy: parsed.composedBy,
+		spec: parsed.spec,
+		directive: parsed.directive,
+	};
+}
+
 const rootElement = document.getElementById("root");
 const base = rootElement?.dataset.base ?? "./";
 
@@ -115,7 +129,7 @@ function ConnectPage() {
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`view failed (${response.status})`);
-		setView(ConnectViewSchema.parse(await response.json()));
+		setView(parseConnectView(await response.json()));
 	}, []);
 
 	useEffect(() => {
@@ -138,7 +152,7 @@ function ConnectPage() {
 				body: JSON.stringify({ action, params }),
 			});
 			if (!response.ok) throw new Error(`action failed (${response.status})`);
-			const next = ConnectViewSchema.parse(await response.json());
+			const next = parseConnectView(await response.json());
 			setView(next);
 			follow(next.directive);
 		} catch (reason) {

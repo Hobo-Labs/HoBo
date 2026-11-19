@@ -216,6 +216,7 @@ export async function startConnectPage(
 			composedBy: composed.composedBy,
 			spec: composed.spec,
 			directive,
+			view: stepView(step),
 		});
 	};
 
