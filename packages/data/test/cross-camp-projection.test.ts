@@ -341,6 +341,40 @@ describe("cross-camp projection replication", () => {
 		expect(transitions[1]?.data).toMatchObject({ observedLagMs: "0" });
 	});
 
+	it("records replica configuration changes and rejects a different projection identity", async () => {
+		const f = fixture();
+		const original = createCrossCampProjection(f.options);
+		await original.replicate();
+		f.setNow(1_200);
+		const updated = createCrossCampProjection({
+			...f.options,
+			maxStalenessMs: 300,
+		});
+		expect((await updated.read()).staleness.status).toBe("within-bound");
+		const configurations = [];
+		for await (const event of f.replica.read("replica:tickets")) {
+			if (event.type === "projection.ReplicaConfigured")
+				configurations.push(event.data);
+		}
+		expect(configurations).toMatchObject([
+			{
+				projection: "tickets",
+				ownerCampId: "camp-east",
+				replicaCampId: "camp-west",
+				boundMs: "100",
+			},
+			{
+				projection: "tickets",
+				ownerCampId: "camp-east",
+				replicaCampId: "camp-west",
+				boundMs: "300",
+			},
+		]);
+		await expect(
+			createCrossCampProjection({ ...f.options, ownerCampId: "other" }).read(),
+		).rejects.toThrow("invalid configuration");
+	});
+
 	it("stores replica and lag records accepted by their CUE contracts", async () => {
 		const f = fixture();
 		const runtime = createCrossCampProjection(f.options);
@@ -368,14 +402,16 @@ describe("cross-camp projection replication", () => {
 			const records = [];
 			for await (const event of f.replica.read("replica:tickets"))
 				records.push(event);
-			expect(records).toHaveLength(5);
+			expect(records).toHaveLength(6);
 			for (const record of records) {
 				const definition =
 					record.type === "projection.EventReplicated"
 						? "#ProjectionReplicatedEventData"
 						: record.type === "projection.ReplicationChecked"
 							? "#ProjectionReplicationCheckedData"
-							: "#CrossCampProjectionLagData";
+							: record.type === "projection.ReplicaConfigured"
+								? "#ProjectionReplicaConfiguredData"
+								: "#CrossCampProjectionLagData";
 				const path = join(directory, "record.json");
 				writeFileSync(path, JSON.stringify(record.data));
 				execFileSync(cue, ["vet", schema, path, "-d", definition]);

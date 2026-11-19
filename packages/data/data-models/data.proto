@@ -160,6 +160,14 @@ message ProjectionReplicationCheckedData {
   bool caught_up = 4;
 }
 
+message ProjectionReplicaConfiguredData {
+  string projection = 1;
+  string owner_camp_id = 2;
+  string replica_camp_id = 3;
+  string source_stream_id = 4;
+  uint64 bound_ms = 5;
+}
+
 message CrossCampProjectionLagData {
   string projection = 1;
   string owner_camp_id = 2;
