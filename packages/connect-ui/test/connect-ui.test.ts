@@ -184,7 +184,10 @@ describe("composeConnectSpec", () => {
 			}),
 		).toBeTypeOf("function");
 		expect(
-			evaluatorFromEnv({ VERCEL_OIDC_TOKEN: "t", HOBO_CONNECT_UI_COMPOSE: "ON" }),
+			evaluatorFromEnv({
+				VERCEL_OIDC_TOKEN: "t",
+				HOBO_CONNECT_UI_COMPOSE: "ON",
+			}),
 		).toBeUndefined();
 		expect(
 			evaluatorFromEnv({
