@@ -51,9 +51,11 @@ with `--follow`, it emits one JSON log or gap record per line. A gap record
 means a rotation or truncation may have caused some output to be missed. Local
 logs are stored in `.hobo/local-deployment.log` and retained across restarts.
 
-The local component host loads HTTP components after their declared HTTP
-component dependencies and tears them down in reverse order. A cycle among
-those components stops startup.
+The local component host initializes HTTP components after their declared HTTP
+component dependencies are serving and makes dependency addresses available
+through service discovery before calling each component's entrypoint. Bindle
+environment values are also available during initialization. The host tears
+components down in reverse dependency order; a cycle stops startup.
 
 `hobo doctor` reports quarantined event incidents from the current tenant's
 durable journal. `hobo inspect quarantines --json` returns their source and
