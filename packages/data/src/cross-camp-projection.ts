@@ -41,9 +41,17 @@ export interface CrossCampProjectionOptions<Row> {
 	readonly maxBatchEvents?: number;
 }
 
+export type ProjectionReadEvidence =
+	| Readonly<{ source: "owner"; readClass: "session" }>
+	| Readonly<{
+			source: "replica";
+			readClass: "bounded-staleness" | "eventual";
+	  }>;
+
 export interface CrossCampProjectionView<Row> {
 	readonly snapshot: ProjectionSnapshot<Row>;
 	readonly sourcePosition: string;
+	readonly evidence: Extract<ProjectionReadEvidence, { source: "replica" }>;
 	readonly staleness: {
 		readonly status: "unknown" | "within-bound" | "exceeds-bound";
 		readonly boundMs: number;
@@ -195,6 +203,7 @@ export function createCrossCampProjection<Row>(
 
 	async function view(
 		initial: ReplicaState,
+		readClass: "bounded-staleness" | "eventual" = "bounded-staleness",
 	): Promise<CrossCampProjectionView<Row>> {
 		let state = initial;
 		for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -244,6 +253,7 @@ export function createCrossCampProjection<Row>(
 					state.events.map(({ event }) => event),
 				),
 				sourcePosition: String(state.events.at(-1)?.position ?? 0n),
+				evidence: { source: "replica", readClass },
 				staleness: {
 					status,
 					boundMs: options.maxStalenessMs,
@@ -341,29 +351,56 @@ export function createCrossCampProjection<Row>(
 		);
 	}
 
+	async function ownerSnapshot(
+		write?: EventEnvelope,
+	): Promise<ProjectionSnapshot<Row>> {
+		const required = write === undefined ? undefined : sourceEvent(write);
+		const events: EventEnvelope[] = [];
+		let observed = required === undefined;
+		let position = 0n;
+		let count: number;
+		do {
+			count = 0;
+			for await (const record of readSource(
+				position,
+				EVENTSTORE_LIMITS.maxReadPage,
+			)) {
+				if (record.position <= position)
+					throw new Error("source positions are not increasing");
+				position = record.position;
+				const event = sourceEvent(record.event);
+				if (
+					required &&
+					event.id === required.id &&
+					event.streamId === required.streamId &&
+					event.seq === required.seq
+				)
+					observed = true;
+				events.push(event);
+				count += 1;
+			}
+		} while (count === EVENTSTORE_LIMITS.maxReadPage);
+		if (!observed)
+			throw new Error("owner read did not observe the required session write");
+		return options.projection.fold(events);
+	}
+
 	return Object.freeze({
 		replicate,
-		async read(): Promise<CrossCampProjectionView<Row>> {
-			return view(await loadReplica());
+		async read(
+			readClass: "bounded-staleness" | "eventual" = "bounded-staleness",
+		): Promise<CrossCampProjectionView<Row>> {
+			if (readClass !== "bounded-staleness" && readClass !== "eventual")
+				throw new TypeError("unsupported replica read class");
+			return view(await loadReplica(), readClass);
 		},
-		async readOwner(): Promise<ProjectionSnapshot<Row>> {
-			const events: EventEnvelope[] = [];
-			let position = 0n;
-			let count: number;
-			do {
-				count = 0;
-				for await (const record of readSource(
-					position,
-					EVENTSTORE_LIMITS.maxReadPage,
-				)) {
-					if (record.position <= position)
-						throw new Error("source positions are not increasing");
-					position = record.position;
-					events.push(sourceEvent(record.event));
-					count += 1;
-				}
-			} while (count === EVENTSTORE_LIMITS.maxReadPage);
-			return options.projection.fold(events);
+		readOwner: () => ownerSnapshot(),
+		async readSession(write: EventEnvelope) {
+			const evidence = {
+				source: "owner",
+				readClass: "session",
+			} satisfies ProjectionReadEvidence;
+			return { snapshot: await ownerSnapshot(write), evidence };
 		},
 		async append(
 			campId: string,

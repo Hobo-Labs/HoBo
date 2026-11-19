@@ -169,6 +169,11 @@ message CrossCampProjectionLagData {
   uint64 observed_lag_ms = 6;
 }
 
+message ProjectionReadEvidence {
+  string source = 1;
+  string read_class = 2;
+}
+
 message PaginatedChangeData {
   string resource = 1;
   string key = 2;

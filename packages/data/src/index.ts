@@ -32,6 +32,7 @@ export {
 	type CrossCampProjectionView,
 	type CrossCampReplicationResult,
 	createCrossCampProjection,
+	type ProjectionReadEvidence,
 } from "./cross-camp-projection.js";
 export {
 	type ActorLeaseGrant,

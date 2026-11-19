@@ -189,6 +189,71 @@ describe("cross-camp projection replication", () => {
 		expect((await reopened.replicate()).copied).toBe(0);
 	});
 
+	it("labels replica reads and confirms a session write at the owner", async () => {
+		const f = fixture();
+		const runtime = createCrossCampProjection(f.options);
+		await runtime.replicate();
+		const result = await runtime.append(
+			"camp-west",
+			"tickets",
+			[{ type: "ticket.Opened", data: {} }],
+			append,
+		);
+		const write = result.appended[0];
+		if (!write) throw new Error("write was not appended");
+		const eventual = await runtime.read("eventual");
+		expect(eventual.evidence).toEqual({
+			source: "replica",
+			readClass: "eventual",
+		});
+		expect(eventual.snapshot.rows.tickets).toBeUndefined();
+		expect((await runtime.read()).evidence).toEqual({
+			source: "replica",
+			readClass: "bounded-staleness",
+		});
+		const session = await runtime.readSession(write);
+		expect(session.evidence).toEqual({ source: "owner", readClass: "session" });
+		expect(session.snapshot.rows.tickets).toEqual({ count: 1 });
+		await expect(
+			runtime.readSession({ ...write, id: `${write.id}-missing` }),
+		).rejects.toThrow("owner read did not observe the required session write");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-projection-evidence-"));
+		try {
+			const schema = fileURLToPath(
+				new URL("../data-models/data.cue", import.meta.url),
+			);
+			const cue =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+				);
+			const path = join(directory, "evidence.json");
+			for (const evidence of [eventual.evidence, session.evidence]) {
+				writeFileSync(path, JSON.stringify(evidence));
+				execFileSync(cue, [
+					"vet",
+					schema,
+					path,
+					"-d",
+					"#ProjectionReadEvidence",
+				]);
+			}
+			writeFileSync(
+				path,
+				JSON.stringify({ source: "replica", readClass: "session" }),
+			);
+			expect(() =>
+				execFileSync(
+					cue,
+					["vet", schema, path, "-d", "#ProjectionReadEvidence"],
+					{ stdio: "pipe" },
+				),
+			).toThrow();
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
 	it("retains the last completed watermark across partial pulls and emits actual lag facts", async () => {
 		const f = fixture(1);
 		const runtime = createCrossCampProjection(f.options);
