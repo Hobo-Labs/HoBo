@@ -45,7 +45,6 @@ export interface SubscriptionHandle<S> {
 	readonly subscriptionId: string;
 	current(): MaterializedSnapshot<S>;
 	currentStream(streamId: string): MaterializedSnapshot<S>;
-	awaitSeq(seq: number): Promise<MaterializedSnapshot<S>>;
 	awaitStreamSeq(
 		streamId: string,
 		seq: number,
@@ -132,7 +131,7 @@ export function createReactor(deps: {
 				}),
 			];
 			const waiters: Array<{
-				streamId: string | undefined;
+				streamId: string;
 				seq: number;
 				resolve: (result: MaterializedSnapshot<typeof state>) => void;
 				reject: (error: Error) => void;
@@ -194,10 +193,7 @@ export function createReactor(deps: {
 				for (let index = waiters.length - 1; index >= 0; index -= 1) {
 					const waiter = waiters[index];
 					if (!waiter) continue;
-					const position =
-						waiter.streamId === undefined
-							? lastSeq
-							: (streamSeqs.get(waiter.streamId) ?? 0);
+					const position = streamSeqs.get(waiter.streamId) ?? 0;
 					if (position >= waiter.seq) {
 						waiters.splice(index, 1);
 						waiter.resolve(snapshot(waiter.streamId));
@@ -318,14 +314,14 @@ export function createReactor(deps: {
 			}
 
 			function waitFor(
-				streamId: string | undefined,
+				streamId: string,
 				seq: number,
 			): Promise<MaterializedSnapshot<typeof state>> {
 				if (!Number.isSafeInteger(seq) || seq < 0)
 					return Promise.reject(
 						new RangeError("seq must be a non-negative safe integer"),
 					);
-				if (streamId !== undefined && !streamId)
+				if (!streamId)
 					return Promise.reject(new TypeError("streamId is required"));
 				if (closed) return Promise.reject(terminalError);
 				const current = snapshot(streamId);
@@ -389,7 +385,6 @@ export function createReactor(deps: {
 					if (!streamId) throw new TypeError("streamId is required");
 					return snapshot(streamId);
 				},
-				awaitSeq: (seq) => waitFor(undefined, seq),
 				awaitStreamSeq: (streamId, seq) => waitFor(streamId, seq),
 				facts: () => [...facts],
 				close: (reason = "client-closed") => terminate(reason),

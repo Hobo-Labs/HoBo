@@ -86,7 +86,7 @@ describe("reactor reads-your-writes", () => {
 			CTX,
 		);
 
-		const observed = await sub.awaitSeq(result.seq);
+		const observed = await sub.awaitStreamSeq(result.streamId, result.seq);
 		expect(observed.seq).toBeGreaterThanOrEqual(result.seq);
 		expect(observed.value).toEqual([{ orderId: "1001", totalCents: 4200 }]);
 
@@ -98,7 +98,7 @@ describe("reactor reads-your-writes", () => {
 		expect(factTypes).toContain("subscription.Recomputed");
 	});
 
-	it("advances monotonically and never regresses across appends", async () => {
+	it("tracks progress independently for each command stream", async () => {
 		const s = store();
 		const streamer = createLocalStreamer();
 		const reactor = createReactor({ store: s, streamer });
@@ -114,8 +114,8 @@ describe("reactor reads-your-writes", () => {
 			{ id: "2001", totalCents: 100 },
 			CTX,
 		);
-		await sub.awaitSeq(first.seq);
-		const afterFirst = sub.current().seq;
+		await sub.awaitStreamSeq(first.streamId, first.seq);
+		const afterFirst = sub.currentStream(first.streamId).seq;
 
 		const second = await orders.execute(
 			deps,
@@ -123,10 +123,10 @@ describe("reactor reads-your-writes", () => {
 			{ id: "2002", totalCents: 200 },
 			CTX,
 		);
-		await sub.awaitSeq(second.seq);
-		const afterSecond = sub.current().seq;
+		await sub.awaitStreamSeq(second.streamId, second.seq);
 
-		expect(afterSecond).toBeGreaterThanOrEqual(afterFirst);
+		expect(sub.currentStream(first.streamId).seq).toBe(afterFirst);
+		expect(sub.currentStream(second.streamId).seq).toBe(second.seq);
 		expect(sub.current().value).toHaveLength(2);
 	});
 
