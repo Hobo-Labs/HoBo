@@ -7,7 +7,7 @@ import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_clock_port: GenFile = /*@__PURE__*/
-  fileDesc("ChBjbG9ja19wb3J0LnByb3RvEgxob2JvLmNvcmUudjEisAEKClNsZWVwVGltZXISEAoIdGltZXJfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIQCghkZWxheV9tcxgEIAEoAxIXCg9zY2hlZHVsZWRfYXRfbXMYBSABKAMSEgoKZmlyZV9hdF9tcxgGIAEoAxITCgtmaXJlZF9hdF9tcxgHIAEoAxITCgtmaXJlZF9vcmRlchgIIAEoBSLpAQoMQ3JvblNjaGVkdWxlEhMKC3NjaGVkdWxlX2lkGAEgASgJEhAKCGV2ZXJ5X21zGAIgASgDEhMKC3N0YXJ0X2F0X21zGAMgASgDEhcKD25leHRfZmlyZV9hdF9tcxgEIAEoAxISCgpvY2N1cnJlbmNlGAUgASgFEhcKCmV4cHJlc3Npb24YBiABKAlIAIgBARIVCgh0aW1lem9uZRgHIAEoCUgBiAEBEhYKCWppdHRlcl9tcxgIIAEoA0gCiAEBQg0KC19leHByZXNzaW9uQgsKCV90aW1lem9uZUIMCgpfaml0dGVyX21zIuwCCg9DbG9ja1RyYWNlRW50cnkSDAoEdHlwZRgBIAEoCRIMCgRzZWVkGAIgASgJEg0KBWF0X21zGAMgASgDEhAKCGRlbHRhX21zGAQgASgDEg8KB2ZpcmVfaWQYBSABKAkSEgoKb2NjdXJyZW5jZRgGIAEoBRINCgVvcmRlchgHIAEoBRIXCgpleHByZXNzaW9uGAggASgJSACIAQESFQoIdGltZXpvbmUYCSABKAlIAYgBARIYCgtzY2hlZHVsZV9pZBgKIAEoCUgCiAEBEhgKC3N0YXJ0X2F0X21zGAsgASgDSAOIAQESFQoIZXZlcnlfbXMYDCABKANIBIgBARIWCglqaXR0ZXJfbXMYDSABKANIBYgBAUINCgtfZXhwcmVzc2lvbkILCglfdGltZXpvbmVCDgoMX3NjaGVkdWxlX2lkQg4KDF9zdGFydF9hdF9tc0ILCglfZXZlcnlfbXNCDAoKX2ppdHRlcl9tcyKLAQoNQ2xvY2tTbmFwc2hvdBIMCgRzZWVkGAEgASgJEg4KBm5vd19tcxgCIAEoAxIoCgZ0aW1lcnMYAyADKAsyGC5ob2JvLmNvcmUudjEuU2xlZXBUaW1lchIyCg5jcm9uX3NjaGVkdWxlcxgEIAMoCzIaLmhvYm8uY29yZS52MS5Dcm9uU2NoZWR1bGViBnByb3RvMw");
+  fileDesc("ChBjbG9ja19wb3J0LnByb3RvEgxob2JvLmNvcmUudjEisAEKClNsZWVwVGltZXISEAoIdGltZXJfaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIQCghkZWxheV9tcxgEIAEoAxIXCg9zY2hlZHVsZWRfYXRfbXMYBSABKAMSEgoKZmlyZV9hdF9tcxgGIAEoAxITCgtmaXJlZF9hdF9tcxgHIAEoAxITCgtmaXJlZF9vcmRlchgIIAEoBSLpAQoMQ3JvblNjaGVkdWxlEhMKC3NjaGVkdWxlX2lkGAEgASgJEhAKCGV2ZXJ5X21zGAIgASgDEhMKC3N0YXJ0X2F0X21zGAMgASgDEhcKD25leHRfZmlyZV9hdF9tcxgEIAEoAxISCgpvY2N1cnJlbmNlGAUgASgFEhcKCmV4cHJlc3Npb24YBiABKAlIAIgBARIVCgh0aW1lem9uZRgHIAEoCUgBiAEBEhYKCWppdHRlcl9tcxgIIAEoA0gCiAEBQg0KC19leHByZXNzaW9uQgsKCV90aW1lem9uZUIMCgpfaml0dGVyX21zIuwCCg9DbG9ja1RyYWNlRW50cnkSDAoEdHlwZRgBIAEoCRIMCgRzZWVkGAIgASgJEg0KBWF0X21zGAMgASgDEhAKCGRlbHRhX21zGAQgASgDEg8KB2ZpcmVfaWQYBSABKAkSEgoKb2NjdXJyZW5jZRgGIAEoBRINCgVvcmRlchgHIAEoBRIXCgpleHByZXNzaW9uGAggASgJSACIAQESFQoIdGltZXpvbmUYCSABKAlIAYgBARIYCgtzY2hlZHVsZV9pZBgKIAEoCUgCiAEBEhgKC3N0YXJ0X2F0X21zGAsgASgDSAOIAQESFQoIZXZlcnlfbXMYDCABKANIBIgBARIWCglqaXR0ZXJfbXMYDSABKANIBYgBAUINCgtfZXhwcmVzc2lvbkILCglfdGltZXpvbmVCDgoMX3NjaGVkdWxlX2lkQg4KDF9zdGFydF9hdF9tc0ILCglfZXZlcnlfbXNCDAoKX2ppdHRlcl9tcyKLAQoNQ2xvY2tTbmFwc2hvdBIMCgRzZWVkGAEgASgJEg4KBm5vd19tcxgCIAEoAxIoCgZ0aW1lcnMYAyADKAsyGC5ob2JvLmNvcmUudjEuU2xlZXBUaW1lchIyCg5jcm9uX3NjaGVkdWxlcxgEIAMoCzIaLmhvYm8uY29yZS52MS5Dcm9uU2NoZWR1bGUidgoSU2NoZWR1bGVyRXZlcnlTcGVjEhAKCGV2ZXJ5X21zGAEgASgEEhgKC3N0YXJ0X2F0X21zGAIgASgESACIAQESFgoJaml0dGVyX21zGAMgASgESAGIAQFCDgoMX3N0YXJ0X2F0X21zQgwKCl9qaXR0ZXJfbXMiMwoRU2NoZWR1bGVyQ3JvblNwZWMSDAoEZXhwchgBIAEoCRIQCgh0aW1lem9uZRgCIAEoCSKCAQoUU2NoZWR1bGVyVHJpZ2dlclNwZWMSMQoFZXZlcnkYASABKAsyIC5ob2JvLmNvcmUudjEuU2NoZWR1bGVyRXZlcnlTcGVjSAASLwoEY3JvbhgCIAEoCzIfLmhvYm8uY29yZS52MS5TY2hlZHVsZXJDcm9uU3BlY0gAQgYKBGtpbmQiWwoSU2NoZWR1bGVyUmVmZXJlbmNlEhMKC3NjaGVkdWxlX2lkGAEgASgJEjAKBHNwZWMYAiABKAsyIi5ob2JvLmNvcmUudjEuU2NoZWR1bGVyVHJpZ2dlclNwZWNiBnByb3RvMw");
 
 export type SleepTimer = Message<"hobo.core.v1.SleepTimer"> & {
   timerId: string;
@@ -94,4 +94,46 @@ export type ClockSnapshot = Message<"hobo.core.v1.ClockSnapshot"> & {
 
 export const ClockSnapshotSchema: GenMessage<ClockSnapshot> = /*@__PURE__*/
   messageDesc(file_clock_port, 3);
+
+export type SchedulerEverySpec = Message<"hobo.core.v1.SchedulerEverySpec"> & {
+  everyMs: bigint;
+
+  startAtMs?: bigint | undefined;
+
+  jitterMs?: bigint | undefined;
+};
+
+export const SchedulerEverySpecSchema: GenMessage<SchedulerEverySpec> = /*@__PURE__*/
+  messageDesc(file_clock_port, 4);
+
+export type SchedulerCronSpec = Message<"hobo.core.v1.SchedulerCronSpec"> & {
+  expr: string;
+
+  timezone: string;
+};
+
+export const SchedulerCronSpecSchema: GenMessage<SchedulerCronSpec> = /*@__PURE__*/
+  messageDesc(file_clock_port, 5);
+
+export type SchedulerTriggerSpec = Message<"hobo.core.v1.SchedulerTriggerSpec"> & {
+  kind: {
+    value: SchedulerEverySpec;
+    case: "every";
+  } | {
+    value: SchedulerCronSpec;
+    case: "cron";
+  } | { case: undefined; value?: undefined };
+};
+
+export const SchedulerTriggerSpecSchema: GenMessage<SchedulerTriggerSpec> = /*@__PURE__*/
+  messageDesc(file_clock_port, 6);
+
+export type SchedulerReference = Message<"hobo.core.v1.SchedulerReference"> & {
+  scheduleId: string;
+
+  spec?: SchedulerTriggerSpec | undefined;
+};
+
+export const SchedulerReferenceSchema: GenMessage<SchedulerReference> = /*@__PURE__*/
+  messageDesc(file_clock_port, 7);
 

@@ -8,6 +8,7 @@ import { expect, it } from "vitest";
 import {
 	ClockTraceEntrySchema,
 	CronScheduleSchema,
+	SchedulerReferenceSchema,
 } from "../src/_generated/clock_port_pb.js";
 
 it("round-trips expression schedule and trace records", () => {
@@ -41,6 +42,29 @@ it("round-trips expression schedule and trace records", () => {
 		startAtMs: 1_000n,
 		expression: "0 3 * * *",
 		timezone: "UTC",
+	});
+});
+
+it("round-trips a scheduler reference", () => {
+	const reference = create(SchedulerReferenceSchema, {
+		scheduleId: "scheduler:1",
+		spec: {
+			kind: {
+				case: "every",
+				value: { everyMs: 1_000n, jitterMs: 200n },
+			},
+		},
+	});
+	expect(
+		fromBinary(
+			SchedulerReferenceSchema,
+			toBinary(SchedulerReferenceSchema, reference),
+		),
+	).toMatchObject({
+		scheduleId: "scheduler:1",
+		spec: {
+			kind: { case: "every", value: { everyMs: 1_000n, jitterMs: 200n } },
+		},
 	});
 });
 

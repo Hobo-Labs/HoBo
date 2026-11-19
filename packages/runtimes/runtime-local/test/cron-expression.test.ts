@@ -104,7 +104,7 @@ describe("cron expression schedules", () => {
 		expect(() => replayClockTrace(trace)).toThrow(/registration time/);
 	});
 
-	it("exposes a WIT-compatible cron reference and deterministic default id", () => {
+	it("returns independent cron references for repeated registrations", () => {
 		const runtime = createRuntimeLocalQueueClock({
 			startInstant: "2030-01-01T00:00:00.000Z",
 		});
@@ -118,9 +118,8 @@ describe("cron expression schedules", () => {
 			tag: "cron",
 			val: { expr: "*/5 * * * *", timezone: "UTC" },
 		});
-		expect(second.scheduleId).toBe(first.scheduleId);
-		expect(second.deduped).toBe(true);
-		expect(runtime.clock.advance(5 * 60_000)).toHaveLength(1);
+		expect(second.scheduleId).not.toBe(first.scheduleId);
+		expect(runtime.clock.advance(5 * 60_000)).toHaveLength(2);
 	});
 
 	it("rejects invalid expressions, timezones, and conflicting schedule ids", () => {

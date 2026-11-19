@@ -84,7 +84,11 @@ it("accepts jitter through the local scheduler provider", () => {
 	const { scheduler, runtime } = fixture();
 	const port = scheduler.providerExports()[SCHEDULER_PORT];
 	if (!port) throw new Error("scheduler port missing");
-	port.every({ scheduleId, everyMs: 1_000, jitterMs: 200 });
+	const reference = port.every({ everyMs: 1_000, jitterMs: 200 });
+	expect(reference.spec).toEqual({
+		tag: "every",
+		val: { everyMs: 1_000, jitterMs: 200 },
+	});
 	const fired = scheduler.advance(1_200);
 	expect(fired).toHaveLength(1);
 	expect(Date.parse(fired[0]?.at ?? "") - startMs).toBeGreaterThanOrEqual(
