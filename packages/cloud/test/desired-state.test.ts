@@ -633,10 +633,16 @@ describe("create/destroy cycle", () => {
 		});
 		const failure = { resourceId: "first", reason: "rollback requested" };
 		const results = await Promise.all([
-			runCompensation(runtime, plan, "parallel-rollback", failure, {
-				tenant,
-				actor,
-			}),
+			runCompensation(
+				runtime,
+				plan,
+				"parallel-rollback",
+				{ resourceId: "second", reason: "second failure" },
+				{
+					tenant,
+					actor,
+				},
+			),
 			runCompensation(runtime, plan, "parallel-rollback", failure, {
 				tenant,
 				actor,
