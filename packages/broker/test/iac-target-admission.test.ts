@@ -1571,6 +1571,7 @@ describe("provider-neutral IaC target budget admission", () => {
 		const ledger = authority();
 		try {
 			const request = fixture();
+			request.evidence.maximumMicros = 1_500_000;
 			request.evidence.maximumMicrosExact = maximumMicrosExact;
 			const deps = dependencies(ledger);
 			const verifyLiability = vi.fn(deps.verifyLiability);

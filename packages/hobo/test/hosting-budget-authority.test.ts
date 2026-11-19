@@ -509,7 +509,10 @@ describe("durable core hosting financial authority composition", () => {
 				?.reservedUnits,
 		).toBe(1);
 	});
-	it("preserves kindless entitlement evidence for a legacy v1 fence", async () => {
+	it.each([
+		"",
+		"allowance",
+	] as const)("canonicalizes %s entitlement evidence for a legacy v1 fence", async (kind) => {
 		const fx = fixture(),
 			commitment = proposal(input(fx.authority));
 		await reserve(fx.bridge(), "one", commitment);
@@ -539,7 +542,7 @@ describe("durable core hosting financial authority composition", () => {
 						bucketId: "legacy",
 						unit: "request",
 						units: 1,
-						kind: "",
+						kind,
 					}),
 				],
 			}),

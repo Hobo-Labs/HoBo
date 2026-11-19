@@ -201,6 +201,8 @@ function exactEvidenceMaximumMicros(
 		evidence.maximumMicrosExact !== undefined
 			? exactInt64Micros(evidence.maximumMicrosExact)
 			: undefined;
+	if (evidence.maximumMicrosExact !== undefined && exactMicros === undefined)
+		return undefined;
 	if (exactMicros !== undefined) {
 		if (
 			legacyMicros !== undefined &&
