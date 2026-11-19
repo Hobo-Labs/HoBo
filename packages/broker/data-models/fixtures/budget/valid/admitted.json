@@ -16,7 +16,13 @@
         "liabilityMicros": 1500000
       }
     ],
-    "entitlementClaims": []
+    "entitlementClaims": [
+      {
+        "bucketId": "free-requests",
+        "unit": "request",
+        "units": 1
+      }
+    ]
   },
   "iacDecision": {
     "requestId": "request-1",
@@ -50,7 +56,13 @@
           "liabilityMicros": 1500000
         }
       ],
-      "entitlementClaims": [],
+      "entitlementClaims": [
+        {
+          "bucketId": "free-requests",
+          "unit": "request",
+          "units": 1
+        }
+      ],
       "components": [
         {
           "name": "target",
@@ -67,6 +79,7 @@
         "policyRevision": "r1"
       },
       "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "executionDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "quoteId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "reservedMicros": 1500000,
       "status": "held",
@@ -79,7 +92,13 @@
           "liabilityMicros": 1500000
         }
       ],
-      "entitlementClaims": [],
+      "entitlementClaims": [
+        {
+          "bucketId": "free-requests",
+          "unit": "request",
+          "units": 1
+        }
+      ],
       "financialPlanHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "iacPricingPin": {
         "planDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",

@@ -404,6 +404,21 @@ describe("durable budget history fences", () => {
 		]);
 	});
 
+	it("rejects a kindless fresh memory seed but reopens a persisted base", () => {
+		const legacy = snapshot();
+		const entitlement = legacy.entitlements[0];
+		if (!entitlement) throw new Error("legacy entitlement missing");
+		entitlement.kind = "";
+		expect(() => createBudgetAdmissionAuthority({ snapshot: legacy })).toThrow(
+			"entitlement scope",
+		);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: legacy,
+			priorEvents: [],
+		});
+		expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
+	});
+
 	it("reopens a legacy SQLite snapshot with an implicit allowance kind", () => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-legacy-budget-kind-"));
 		directories.push(directory);

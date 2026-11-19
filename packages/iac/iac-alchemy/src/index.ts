@@ -432,6 +432,7 @@ interface InspectedFinancialDecision
 	reservation?:
 		| {
 				reservationId: string;
+				executionDigest?: string;
 				unboundedExposure?: boolean;
 				unpricedScopeProof?: UnpricedScopeProof;
 		  }
@@ -1431,6 +1432,7 @@ function readFinancialDecision(
 		)
 			return undefined;
 		let reservationId: string | undefined;
+		let executionDigest: string | undefined;
 		let unboundedExposure: boolean | undefined;
 		let unpricedScopeProof: UnpricedScopeProof | undefined;
 		if (reservationInput !== undefined) {
@@ -1455,6 +1457,16 @@ function readFinancialDecision(
 			)
 				return undefined;
 			reservationId = id.value;
+			const execution = getOwnDescriptor(reservationInput, "executionDigest");
+			if (execution !== undefined) {
+				if (
+					!hasOwnDescriptor(execution, "value") ||
+					typeof execution.value !== "string" ||
+					execution.value.length > 200
+				)
+					return undefined;
+				executionDigest = execution.value;
+			}
 			const unbounded = getOwnDescriptor(reservationInput, "unboundedExposure");
 			if (unbounded !== undefined) {
 				if (
@@ -1507,6 +1519,8 @@ function readFinancialDecision(
 		};
 		if (reservationId !== undefined) {
 			result.reservation = { reservationId };
+			if (executionDigest !== undefined)
+				result.reservation.executionDigest = executionDigest;
 			if (unboundedExposure !== undefined)
 				result.reservation.unboundedExposure = unboundedExposure;
 			if (unpricedScopeProof !== undefined)
@@ -2516,6 +2530,9 @@ export function createAlchemyIacProvider<
 								decision.reservation.unboundedExposure !== true &&
 								decision.unpricedPolicyProof === undefined &&
 								decision.reservation.unpricedScopeProof === undefined &&
+								/^sha256:[a-f0-9]{64}$/u.test(
+									decision.reservation.executionDigest ?? "",
+								) &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.requestDigest ?? "") &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.inventoryHash ?? "") &&
 								/^sha256:[a-f0-9]{64}$/u.test(decision.modelHash ?? "") &&
@@ -2611,6 +2628,7 @@ export function createAlchemyIacProvider<
 							budget: { evaluation: "bypassed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,
+								executionDigest: decision.reservation.executionDigest,
 								unboundedExposure: true,
 								unpricedScopeProof: scope,
 							},
@@ -2626,6 +2644,7 @@ export function createAlchemyIacProvider<
 							budget: { evaluation: "allowed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,
+								executionDigest: decision.reservation.executionDigest,
 								unboundedExposure: false,
 							},
 						};

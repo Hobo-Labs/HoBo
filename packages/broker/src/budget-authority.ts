@@ -582,7 +582,10 @@ export function createBudgetAdmissionAuthority(options: {
 		evidence?: { liabilityResolutionEvidenceRef?: string },
 	): void;
 } {
-	let current = normalizeLegacyBudgetSnapshot(options.snapshot);
+	let current =
+		options.priorEvents === undefined
+			? clone(BudgetLedgerSnapshotSchema, options.snapshot)
+			: normalizeLegacyBudgetSnapshot(options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	const scopeTrust = captureIacUnpricedScopeTrust(options.unpricedScopeTrust);

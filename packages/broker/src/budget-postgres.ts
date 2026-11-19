@@ -12,6 +12,7 @@ import {
 	createBudgetAdmissionAuthority,
 	type IacPricedSettlementTrust,
 	type IacUnpricedScopeTrust,
+	validateBudgetSnapshot,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -110,10 +111,17 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 			await client.query(
 				"CREATE TABLE IF NOT EXISTS hobo_budget_events (partition_id text NOT NULL REFERENCES hobo_budget_partitions(id), seq bigint NOT NULL, body text NOT NULL, PRIMARY KEY (partition_id, seq))",
 			);
-			await client.query(
-				"INSERT INTO hobo_budget_partitions(id,base_body) VALUES($1,$2) ON CONFLICT(id) DO NOTHING",
-				[partition, toJsonString(BudgetLedgerSnapshotSchema, options.snapshot)],
+			const seed = await client.query(
+				"SELECT 1 FROM hobo_budget_partitions WHERE id=$1",
+				[partition],
 			);
+			if (seed.rowCount === 0) {
+				validateBudgetSnapshot(options.snapshot, options.snapshot.observedAt);
+				await client.query(
+					"INSERT INTO hobo_budget_partitions(id,base_body) VALUES($1,$2) ON CONFLICT(id) DO NOTHING",
+					[partition, toJsonString(BudgetLedgerSnapshotSchema, options.snapshot)],
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK").catch(() => undefined);

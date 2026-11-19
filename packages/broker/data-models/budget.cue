@@ -30,16 +30,19 @@ import (
 	unboundedExposureCount?:  int & >=0 & <=256
 }
 #BudgetProviderAccount: {providerAccountId: string & !="", limitMicros: #Micros, spentMicros: #Micros, reservedMicros: #Micros, externalCommittedMicros?: #Micros}
-#BudgetEntitlement: {bucketId: string & !="", unit: string & !="", kind: #EntitlementKind | "", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
+#BudgetEntitlement: {bucketId: string & !="", unit: string & !="", kind?: #EntitlementKind | "", periodId: string & !="", remainingUnits: #Micros, reservedUnits: #Micros, observedAt: string & !="", validUntil: string & !=""}
 #ProviderAccountExposure: {providerAccountId: string & !="", liabilityMicros: #Micros}
 #EntitlementClaim: {
 	bucketId:   string & !=""
 	unit:       string & !=""
 	units:      #Micros
-	kind:       #EntitlementKind | ""
+	kind?:      #EntitlementKind | ""
 	_scopeKind: #EntitlementKind
-	if kind == "" {_scopeKind: "allowance"}
-	if kind != "" {_scopeKind: kind}
+	if kind == _|_ {_scopeKind: "allowance"}
+	if kind != _|_ {
+		if kind == "" {_scopeKind: "allowance"}
+		if kind != "" {_scopeKind: kind}
+	}
 }
 #UniqueEntitlementClaims: {
 	claims: [...#EntitlementClaim]
@@ -226,10 +229,11 @@ import (
 			ownerTenantId: reservation.identity.tenantId
 		}
 		reservation: {
-			requestDigest:  _requestID
-			quoteId:        _quoteID
-			status:         "held"
-			reservedMicros: quote.liabilityBoundMicros
+			requestDigest:   _requestID
+			quoteId:         _quoteID
+			status:          "held"
+			reservedMicros:  quote.liabilityBoundMicros
+			executionDigest: string & =~"^sha256:[a-f0-9]{64}$"
 		}
 		policyProof: {
 			requestDigest:        _requestID

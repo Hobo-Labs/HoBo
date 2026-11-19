@@ -39,6 +39,7 @@ type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
 interface FixtureReservation {
 	reservationId: string;
+	executionDigest?: string;
 	unboundedExposure?: boolean;
 	unpricedScopeProof?: UnpricedScopeProof;
 }
@@ -188,6 +189,7 @@ function admitted(
 ) {
 	const reservation: FixtureReservation = {
 		reservationId: `iac:${requestId}`,
+		executionDigest: `sha256:${"4".repeat(64)}`,
 	};
 	if (unboundedExposure !== undefined)
 		reservation.unboundedExposure = unboundedExposure;
@@ -341,6 +343,7 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 		},
 		reservation: {
 			reservationId: base.reservation.reservationId,
+			executionDigest: base.reservation.executionDigest,
 			unboundedExposure: false,
 			identity,
 			requestDigest: base.requestDigest,
@@ -2593,6 +2596,44 @@ describe("financial admission modes", () => {
 		expect(f.applies()).toBe(0);
 		expect(f.uncertain).toEqual(["iac:attempt"]);
 	});
+
+	it("preserves a priced execution claim through revalidation", async () => {
+		let executionDigest: string | undefined;
+		const f = fixture(
+			(id) => generatedAdmission(id, "priced"),
+			(admission) => {
+				executionDigest = admission.reservation?.executionDigest;
+				return true;
+			},
+		);
+		await f.provider.preview(f.program);
+		await f.provider.applyWithAdmission(f.program, "attempt");
+		expect(executionDigest).toBe(`sha256:${"4".repeat(64)}`);
+		expect(f.applies()).toBe(1);
+	});
+
+	it.each(["missing", "empty", "malformed"] as const)(
+		"refuses a priced direct apply with a %s execution claim",
+		async (kind) => {
+			const f = fixture((id) => {
+				const decision = admitted(id, "allowed", false);
+				if (kind === "missing") delete decision.reservation.executionDigest;
+				else
+					decision.reservation.executionDigest =
+						kind === "empty" ? "" : "sha256:not-a-digest";
+				return decision;
+			});
+			await f.provider.preview(f.program);
+			await expect(
+				f.provider.applyWithAdmission(f.program, "attempt"),
+			).rejects.toMatchObject({
+				code: "ADMISSION_RECEIPT_INVALID",
+				requiresReconciliation: true,
+			});
+			expect(f.applies()).toBe(0);
+			expect(f.uncertain).toEqual(["iac:attempt"]);
+		},
+	);
 
 	it.each([
 		"requestDigest",
