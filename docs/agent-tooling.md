@@ -11,8 +11,13 @@ Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
 design documents. Agent edit hooks, the shared pre-commit hook, and CI run the
 common `source:guard` for the languages and source templates listed in
-`AGENTS.md`. Commit checks read staged content, CI checks the PR diff, and the
-worktree check also finds ignored agent planning artifacts.
+`AGENTS.md`. Hooks check the worktree and commits since their last clean
+checkpoint on each branch, using the latest commit to start a session or resume
+after 12 hours of inactivity. A failing committed check keeps its checkpoint until the changes
+are fixed. Checkpoints live in the system temporary directory, or in
+`HOBO_AGENT_POLICY_STATE_DIR` when set. Commit checks read staged content, CI
+checks the PR diff, and the worktree check also finds ignored agent planning
+artifacts.
 
 The anti-slop installer leaves its comment-required assertion rule disabled so
 the lint configuration follows the same source policy.
