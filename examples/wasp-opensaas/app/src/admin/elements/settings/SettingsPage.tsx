@@ -20,6 +20,7 @@ import {
   clearPhotoFileInput,
   handlePhotoFileChange,
   invalidatePhotoRead,
+  type PhotoDataUrlParser,
   type PhotoReadControl,
 } from "./settingsPhotoRead";
 
@@ -70,10 +71,10 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       photoCallbacks,
       file,
       maxPhotoBytes,
-      (value) => {
-        const result = z.string().safeParse(value);
-        return result.success ? result.data : null;
-      },
+      ((result) => {
+        const parsed = z.string().safeParse(result);
+        return parsed.success ? parsed.data : null;
+      }) satisfies PhotoDataUrlParser,
     );
   }
 

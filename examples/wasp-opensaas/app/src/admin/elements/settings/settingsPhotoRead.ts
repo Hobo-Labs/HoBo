@@ -1,4 +1,8 @@
-const allowedPhotoTypes = ["image/png", "image/jpeg", "image/webp"] as const;
+const allowedPhotoTypes: readonly string[] = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+];
 
 export type PhotoReadControl = {
   generation: number;
@@ -16,7 +20,9 @@ export type PhotoReadCallbacks = {
 export const invalidPhotoMessage =
   "Choose a PNG, JPEG, or WebP image no larger than 256 KB.";
 
-export function clearPhotoFileInput(input: HTMLInputElement | null) {
+export function clearPhotoFileInput(
+  input: Pick<HTMLInputElement, "value"> | null,
+) {
   if (input) {
     input.value = "";
   }
@@ -36,11 +42,15 @@ export function canSubmitSettings(readingPhoto: boolean, saving: boolean) {
   return !readingPhoto && !saving;
 }
 
+export type PhotoDataUrlParser = (
+  result: string | ArrayBuffer | null,
+) => string | null;
+
 function startPhotoFileRead(
   control: PhotoReadControl,
   callbacks: PhotoReadCallbacks,
   file: File,
-  parseDataUrl: (value: unknown) => string | null,
+  parseDataUrl: PhotoDataUrlParser,
 ) {
   const generation = control.generation;
   const reader = new FileReader();
@@ -58,7 +68,7 @@ function startPhotoFileRead(
     if (generation !== control.generation) return;
     control.activeReader = null;
     callbacks.setReading(false);
-    const dataUrl = parseDataUrl(reader.result);
+    const dataUrl = parseDataUrl(reader.result ?? null);
     if (!dataUrl) {
       callbacks.setError("The image could not be read.");
       return;
@@ -75,16 +85,11 @@ export function handlePhotoFileChange(
   callbacks: PhotoReadCallbacks,
   file: File | undefined,
   maxPhotoBytes: number,
-  parseDataUrl: (value: unknown) => string | null,
+  parseDataUrl: PhotoDataUrlParser,
 ) {
   invalidatePhotoRead(control, callbacks);
   if (!file) return;
-  if (
-    !allowedPhotoTypes.includes(
-      file.type as (typeof allowedPhotoTypes)[number],
-    ) ||
-    file.size > maxPhotoBytes
-  ) {
+  if (!allowedPhotoTypes.includes(file.type) || file.size > maxPhotoBytes) {
     callbacks.setError(invalidPhotoMessage);
     return;
   }

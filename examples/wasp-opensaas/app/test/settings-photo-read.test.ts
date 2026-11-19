@@ -1,11 +1,13 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as z from "zod";
 import {
   canSubmitSettings,
   clearPhotoFileInput,
   handlePhotoFileChange,
   invalidatePhotoRead,
   invalidPhotoMessage,
+  type PhotoDataUrlParser,
   type PhotoReadCallbacks,
   type PhotoReadControl,
 } from "../src/admin/elements/settings/settingsPhotoRead";
@@ -33,12 +35,19 @@ class MockFileReader {
   }
 }
 
-function createCallbacks(): PhotoReadCallbacks & {
+type CallbackState = {
   draftPhoto: string | null;
   error: string;
   reading: boolean;
-} {
-  const state: { draftPhoto: string | null; error: string; reading: boolean } = {
+};
+
+const parseTestDataUrl: PhotoDataUrlParser = (result) => {
+  const parsed = z.string().safeParse(result);
+  return parsed.success ? parsed.data : null;
+};
+
+function createCallbacks(): PhotoReadCallbacks & CallbackState {
+  const state: CallbackState = {
     draftPhoto: null,
     error: "",
     reading: false,
@@ -86,7 +95,7 @@ describe("settings photo read", () => {
       callbacks,
       valid,
       256 * 1024,
-      (value) => (typeof value === "string" ? value : null),
+      parseTestDataUrl,
     );
     const superseded = pendingReaders[0];
     expect(superseded.abort).not.toHaveBeenCalled();
@@ -96,7 +105,7 @@ describe("settings photo read", () => {
       callbacks,
       invalid,
       256 * 1024,
-      (value) => (typeof value === "string" ? value : null),
+      parseTestDataUrl,
     );
     expect(superseded.abort).toHaveBeenCalled();
     expect(callbacks.error).toBe(invalidPhotoMessage);
@@ -115,8 +124,7 @@ describe("settings photo read", () => {
 
   it("clears a file input value", () => {
     const input = { value: "C:\\fakepath\\keep.png" };
-    // SAFETY: clearPhotoFileInput only reads and writes `value`.
-    clearPhotoFileInput(input as HTMLInputElement);
+    clearPhotoFileInput(input);
     expect(input.value).toBe("");
   });
 
@@ -129,7 +137,7 @@ describe("settings photo read", () => {
       callbacks,
       file,
       256 * 1024,
-      (value) => (typeof value === "string" ? value : null),
+      parseTestDataUrl,
     );
     expect(control.activeReader).not.toBeNull();
     invalidatePhotoRead(control, callbacks);
