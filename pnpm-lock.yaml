@@ -3625,6 +3625,9 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
       '@pact-foundation/pact':
         specifier: 17.1.4
@@ -3641,9 +3644,6 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
-      zod:
-        specifier: ^4.1.13
-        version: 4.4.3
 
   packages/trust:
     dependencies:
@@ -18235,7 +18235,6 @@ snapshots:
       '@bytecodealliance/wizer': 10.0.0
       es-module-lexer: 1.7.0
       oxc-parser: 0.76.0
-
   '@bytecodealliance/componentize-js@0.19.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
       '@bytecodealliance/jco': 1.24.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
