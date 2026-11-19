@@ -499,7 +499,6 @@
         "src/draft/technical-proofs/s2-04-planner-deployment-plan-dag-poc/**",
         "src/draft/technical-proofs/s5-05-forge-signing-registry-certification-contract/**",
         "src/draft/technical-proofs/shared-cost-attribution-contract/**",
-        "src/draft/technical-proofs/slo-rollback-decision-correctness-spike/**",
         "src/draft/technical-proofs/sre-mttd-mttr-postmortem-contract/**",
         "src/draft/technical-proofs/telemetry-envelope-contract/**",
         "src/draft/technical-proofs/training-data-poisoning-guard-contract/**",

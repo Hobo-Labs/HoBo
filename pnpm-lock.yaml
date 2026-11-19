@@ -5103,8 +5103,6 @@ importers:
 
   src/draft/technical-proofs/slo-promotion-gate-contract: {}
 
-  src/draft/technical-proofs/slo-rollback-decision-correctness-spike: {}
-
   src/draft/technical-proofs/slsa-provenance-certification-contract: {}
 
   src/draft/technical-proofs/snapshot-compaction-contract: {}
