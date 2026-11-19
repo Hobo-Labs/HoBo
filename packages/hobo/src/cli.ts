@@ -30,6 +30,7 @@ import { createAccessCommand } from "./access-command.js";
 import { createAddCommand, registerInstallable } from "./add-command.js";
 import { createAttestCommand } from "./attest-command.js";
 import { createAuthMdIdentityCommand } from "./auth-md-command.js";
+import { normalizeComponentHostKind } from "./bare-metal-yard.js";
 import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
@@ -220,14 +221,8 @@ export function createComposedHoboCli(
 									...(isJsonString(hoboHome) && hoboHome.length > 0
 										? { hoboHome }
 										: undefined),
-									...(hostEnv === "local" ||
-									hostEnv === "wasm" ||
-									hostEnv === "oci" ||
-									hostEnv === "cloud-native" ||
-									hostEnv === "isolated-wasm" ||
-									hostEnv === "bare-metal" ||
-									hostEnv === "runtime-local"
-										? { componentHost: hostEnv }
+									...(hostEnv !== undefined && hostEnv.length > 0
+										? { componentHost: normalizeComponentHostKind(hostEnv) }
 										: undefined),
 									emitProgress,
 								});

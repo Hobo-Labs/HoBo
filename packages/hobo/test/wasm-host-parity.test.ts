@@ -16,7 +16,6 @@ import {
 	resolvePrivateWasmGuest,
 	serveBindleOnLocalYard,
 	serveProjectOnIsolatedWasm,
-	serveProjectOnLocalYard,
 } from "../src/index.js";
 
 const helloBindleDir = fileURLToPath(
@@ -38,10 +37,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		expect(probe.componentHosts.wasm).toContain("wasmtime OS-process");
 		expect(probe.componentHosts.oci).toContain("Kubernetes");
 		expect(probe.componentHosts["cloud-native"]).toContain("multi-cloud");
-		// Legacy alias key still present on probe.
-		expect(probe.componentHosts["isolated-wasm"]).toContain(
-			"wasmtime OS-process",
-		);
 	});
 
 	it("hobo yard ensure installs host runtimes under HOBO_HOME", async () => {
@@ -73,12 +68,12 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		expect(wasmHost?.details?.wasmtimeVersion).toMatch(/^\d+\.\d+\.\d+$/);
 	}, 180_000);
 
-	it("hobo yard init --host wasm (and isolated-wasm alias) records config", async () => {
+	it("hobo yard init --host wasm records config", async () => {
 		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-iso-home-"));
 		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
 		const cli = createComposedHoboCli();
 		const init = await cli.run(
-			["yard", "init", "--home", hoboHome, "--host", "isolated-wasm", "--json"],
+			["yard", "init", "--home", hoboHome, "--host", "wasm", "--json"],
 			{ cwd: hoboHome },
 		);
 		// SAFETY: assertion required at this I/O or test boundary.
@@ -86,14 +81,12 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 			ok: boolean;
 			message: string;
 			data: {
-				config: { componentHost: string; host: string };
+				config: { componentHost: string };
 				hostEnsure?: { ready: boolean; details?: { wasmtimeVersion?: string } };
 			};
 		};
 		expect(envelope.ok).toBe(true);
-		// Alias isolated-wasm normalizes to wasm.
 		expect(envelope.data.config.componentHost).toBe("wasm");
-		expect(envelope.data.config.host).toBe("wasm");
 		expect(envelope.message).toContain("componentHost=wasm");
 		expect(envelope.data.hostEnsure?.ready).toBe(true);
 		expect(envelope.data.hostEnsure?.details?.wasmtimeVersion).toMatch(
@@ -172,21 +165,6 @@ describe("Yard / Camp / component host + hobo-managed sandboxes", () => {
 		const html = await (await fetch(`${serve.primaryUrl}/?name=Iso`)).text();
 		expect(html).toContain("howdy, Iso");
 	}, 180_000);
-
-	it("legacy host aliases normalize to local component host", async () => {
-		const hoboHome = await mkdtemp(join(tmpdir(), "hobo-legacy-"));
-		cleanups.push(() => rm(hoboHome, { recursive: true, force: true }));
-		initBareMetalYard({ hoboHome, componentHost: "local" });
-		const port = 25000 + Math.floor(Math.random() * 500);
-		const serve = await serveProjectOnLocalYard({
-			projectDir: helloBindleDir,
-			hoboHome,
-			port,
-			componentHost: "runtime-local",
-		});
-		cleanups.push(() => serve.close());
-		expect(serve.componentHost).toBe("local");
-	});
 
 	it("pins wasmtime floor for sandboxes", () => {
 		expect(PINNED_WASMTIME_VERSION).toBe("46.0.1");

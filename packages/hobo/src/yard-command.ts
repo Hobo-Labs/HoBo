@@ -13,13 +13,6 @@ import { ensureAllRuntimeHosts, getRuntimeHost } from "./host-registry.js";
 import { isJsonNumber, isJsonString, type JsonValue } from "./json.js";
 import { probeWasmHostInstall } from "./wasm-host.js";
 
-// `hobo yard` — install/inspect a **Yard** (glossary: provider-specific control
-// plane). Camps are placement targets the Yard creates when serving Bindles.
-//   hobo yard init [--force] [--port <n>] [--host local|wasm|oci|cloud-native]
-//     aliases: isolated-wasm→wasm, bare-metal|runtime-local→local
-//   hobo yard ensure  — ensure all registered host runtimes
-//   hobo yard status | doctor
-
 function parseComponentHostFlag(
 	raw: JsonValue | undefined,
 ): ComponentHostKind | undefined {
@@ -36,7 +29,6 @@ export function createYardCommand(): CommandModule {
 		implemented: true,
 		run: async ({ args, flags, context, emitProgress }) => {
 			const subcommand = args[0] ?? "status";
-			// SAFETY: assertion required at this I/O or test boundary.
 			const env = (context as { env?: NodeJS.ProcessEnv }).env ?? process.env;
 			const hoboHome = isJsonString(flags.home)
 				? flags.home
@@ -72,7 +64,7 @@ export function createYardCommand(): CommandModule {
 						ok: false,
 						status: "invalid_host",
 						code: "HOBO_YARD_USAGE",
-						message: `hobo yard init: --host (Camp component host) must be one of ${COMPONENT_HOST_KINDS.join("|")} (aliases: isolated-wasm→wasm)`,
+						message: `hobo yard init: --host (Camp component host) must be one of ${COMPONENT_HOST_KINDS.join("|")}`,
 						remediation: [
 							"Example: hobo yard init --host local",
 							"Example: hobo yard init --host wasm",

@@ -68,11 +68,8 @@ export {
 	DEFAULT_BARE_METAL_YARD_NAME,
 	DEFAULT_COMPONENT_HOST,
 	DEFAULT_DEV_PORT,
-	DEFAULT_LOCAL_HOST,
 	defaultHoboHome,
 	initBareMetalYard,
-	LOCAL_HOST_KINDS,
-	type LocalHostKind,
 	loadBareMetalYardConfig,
 	normalizeComponentHostKind,
 	openBareMetalYard,
@@ -571,7 +568,6 @@ export {
 export {
 	probeWasmHostInstall,
 	serveProjectOnLocalYard,
-	serveProjectOnWasmHost,
 	type WasmHostProbe,
 } from "./wasm-host.js";
 export {

@@ -42,7 +42,7 @@ describe("embedded broker-runtime", () => {
 		};
 		expect(envelope.ok).toBe(true);
 		expect(envelope.data.broker.brokerId).toMatch(/^broker:local\//);
-		expect(["wasm", "isolated-wasm", "local"]).toContain(
+		expect(["wasm", "local"]).toContain(
 			envelope.data.broker.preferredComponentHost,
 		);
 		expect(envelope.data.config.componentHost).toBe(
