@@ -815,7 +815,7 @@ function indirectRoutingOf(
 		effectivePairOf(workflow, job, "uses") !== undefined
 			? "with"
 			: runsOn.text.includes(EXPRESSION_OPEN) &&
-				MATRIX_CONTEXT.test(runsOn.text)
+					MATRIX_CONTEXT.test(runsOn.text)
 				? "strategy"
 				: undefined;
 	if (key === undefined) return "";

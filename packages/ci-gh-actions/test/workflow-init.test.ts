@@ -1921,10 +1921,8 @@ ${caller}`;
 		'MaTrIx["runner"]',
 		"(MATRIX).runner",
 		"toJSON(MATRIX).runner",
-	])(
-		"fails closed when runs-on reads the matrix context as %s",
-		(expression) => {
-			const source = `jobs:
+	])("fails closed when runs-on reads the matrix context as %s", (expression) => {
+		const source = `jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
@@ -1940,19 +1938,18 @@ ${caller}`;
     steps:
       - run: pnpm test
 `;
-			expect(
-				planWorkflow("ci.yml", source).jobs.map((job) => [
-					job.job,
-					job.verdict,
-					job.reason,
-				]),
-			).toEqual([
-				["lint", "ready", undefined],
-				["route", "skipped", "routes_jobs"],
-				["called", "skipped", "expression"],
-			]);
-		},
-	);
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
 
 	it("does not treat a strategy as routing when runs-on never reads matrix", () => {
 		const source = `jobs:
