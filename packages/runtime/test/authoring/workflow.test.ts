@@ -1269,9 +1269,7 @@ describe("durable workflow: journal, restart, replay", () => {
 					})
 					.catch((error) => {
 						if (!(error instanceof Error)) throw error;
-						expect(error.message).toBe(
-							"events after terminal for late-step",
-						);
+						expect(error.message).toBe("events after terminal for late-step");
 					});
 				return "fast";
 			},
