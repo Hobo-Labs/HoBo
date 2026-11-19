@@ -1,3 +1,0 @@
-slug: pact-contract-harness
-layer: technical
-proof-identity: ok
