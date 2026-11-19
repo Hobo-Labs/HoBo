@@ -43,6 +43,20 @@ kinds remain unsupported; `describeRivetPrimitiveSupport` reports their gaps.
 The package tests exercise an isolated local Rivet engine and Alchemy providers
 with test doubles; a live cloud deployment has not been verified.
 
+`@hobo/iac-alchemy/rivet/queue` additionally provides an opt-in asynchronous
+JSON queue backed by a Rivet actor and an Alchemy `DurableObject`. Its runtime
+uses durable transactions, idempotent enqueue keys and fenced delivery leases.
+The host supplies authorization, a trusted clock, source fencing and exclusive
+pool verification. The actor retains at most 10,000 messages and rejects new
+ones at capacity. A timeout or lost response leaves the outcome unknown;
+consumers must reconcile leases and fence their own effects. This queue is not a
+mapping for HoBo's synchronous byte-and-attribute WIT queue or message bus, so
+those Bindle capabilities remain unsupported.
+The finite `model/RivetQueue.tla` checks queue retry, lease and completion
+decisions for one key, two payloads, at most two leases and three clock values.
+It assumes atomic transactions and a trusted clock; it does not prove the
+TypeScript implementation, host callbacks or provider behavior.
+
 The isolation test scans selected shared runtime, Bindle, financial and policy
 packages for literal Alchemy references, including escaped spellings. It does
 not prove the absence of computed references or transitive dependencies.

@@ -17,7 +17,7 @@ const RIVET_GAPS: Readonly<Record<string, string>> = Object.freeze({
 	bucket:
 		"The HoBo blobstore, object metadata, blob events and presigned URLs are not bound to a Rivet Bindle.",
 	queue:
-		"The HoBo byte-and-attribute WIT queue and Rivet Bindle dependencies are not bound.",
+		"The standalone Rivet JSON queue does not bind the HoBo byte-and-attribute WIT queue or Bindle dependencies.",
 	topic:
 		"The synchronous HoBo Bindle and WIT topic dependencies are not bound to Rivet.",
 	secret:
