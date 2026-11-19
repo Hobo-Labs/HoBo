@@ -33,7 +33,7 @@ ChangeScope == /\ Active /\ ~attempted
 ReplayMismatch == /\ Active /\ replay = "none"
                   /\ replay' = IF CheckReplayScope THEN "rejected" ELSE "accepted-invalid"
                   /\ UNCHANGED <<phase, claimed, bucketUnit, bucketPeriod, attempted, unusedRelease, claimUnits>>
-Settle == /\ Usable /\ claimed /\ Matches /\ phase' = "settled"
+Settle == /\ (Usable \/ (phase = "uncertain" /\ claimed)) /\ claimed /\ Matches /\ phase' = "settled"
           /\ UNCHANGED <<claimed, bucketUnit, bucketPeriod, attempted, replay, unusedRelease, claimUnits>>
 ConfirmUnused == /\ Active /\ ~claimed /\ ~unusedRelease
                  /\ unusedRelease' = TRUE

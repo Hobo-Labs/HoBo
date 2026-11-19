@@ -13,7 +13,8 @@ export const step = (action, from, to) => {
 		}
 		if (to.phase === 'accepted') return 'commit completes';
 		if (to.phase === 'uncertain') return 'commit returns an ambiguous result';
-		return 'commit completes';
+		if (to.phase === 'failed') return 'commit fails without acknowledgement';
+		return 'commit remains unresolved';
 	}
 	if (action === 'Reuse') return 'reuse after uncertain or failed commit';
 	if (action === 'CompletePending') return 'complete pending durability';

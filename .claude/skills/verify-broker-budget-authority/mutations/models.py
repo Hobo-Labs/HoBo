@@ -42,7 +42,9 @@ for label, name, constants, invariant, mutation, cfg_name in cases:
             cwd=scratch, text=True, capture_output=True, check=False, timeout=timeout,
         )
         baseline_output = baseline.stdout + baseline.stderr
-        if baseline.returncode != 0 or "Invariant" in baseline_output and "is violated" in baseline_output:
+        if baseline.returncode != 0 or (
+            "Invariant" in baseline_output and "is violated" in baseline_output
+        ):
             raise RuntimeError(f"{label}: unmutated model failed\n{baseline_output}")
         model = original
         if mutation:

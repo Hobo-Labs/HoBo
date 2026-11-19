@@ -490,6 +490,9 @@ describe("hosting budget authority generated properties", () => {
 					});
 					if (catchNested) {
 						reserve(authority, "outer", bound);
+						expect(authority.lookup("nested")).toBeUndefined();
+						expect(authority.read(NOW).reservedMicros).toBe(bound);
+						expect(journal).toHaveLength(1);
 					} else {
 						expect(() => reserve(authority, "outer", bound)).toThrow(
 							"budget commit outcome uncertain",
@@ -506,10 +509,10 @@ describe("hosting budget authority generated properties", () => {
 							},
 						});
 						reserve(authority, "outer", bound);
+						expect(authority.lookup("nested")).toBeUndefined();
+						expect(authority.read(NOW).reservedMicros).toBe(bound);
+						expect(journal).toHaveLength(1);
 					}
-					expect(authority.lookup("nested")).toBeUndefined();
-					expect(authority.read(NOW).reservedMicros).toBe(bound);
-					expect(journal).toHaveLength(1);
 					expect(
 						createBudgetAdmissionAuthority({
 							snapshot,
