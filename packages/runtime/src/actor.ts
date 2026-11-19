@@ -60,6 +60,7 @@ export function activateActor<S, M extends FoldEvent = FoldEvent>(
 	const stateHandle = host.state<S>(actorKey, {
 		initialState: def.initialState(),
 		fold: (state, event) => foldExceptLifecycle(def, state, event),
+		snapshotKey: def.fold,
 	});
 
 	stateHandle.append(lease, {
@@ -104,7 +105,16 @@ export function activateActor<S, M extends FoldEvent = FoldEvent>(
 				return;
 			}
 			stateHandle.append(lease, { type: "actor.Passivated" });
-			lease.release();
+			try {
+				if (stateHandle.passivate) stateHandle.passivate(lease);
+				else lease.release();
+			} catch (error) {
+				passivated = true;
+				try {
+					lease.release();
+				} catch {}
+				throw error;
+			}
 			passivated = true;
 		},
 	});

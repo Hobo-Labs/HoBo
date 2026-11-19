@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type {
 	ActorHost,
 	ActorLease,
@@ -10,8 +11,6 @@ import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 export const ACTOR_HOST_RUNTIME_PORT_VERSION =
 	"hobo.actor-host-runtime-port/v1";
 
-// The port implemented here is the canonical `@hobo/core` actor-host port
-// (ADR-0156); the historical exported names stay as aliases.
 export type ActorHostLease = ActorLease;
 export type ActorHostState<S = unknown> = ActorStateHandle<S>;
 export type ActorHostPort = ActorHost;
@@ -115,6 +114,7 @@ export function createInMemoryActorHost(
 			request: {
 				initialState: S;
 				fold: (state: S, event: FoldEvent) => S;
+				snapshotKey?: object;
 			},
 		) {
 			const actorKey = requireNonEmptyString(key, "key");
@@ -128,6 +128,7 @@ export function createInMemoryActorHost(
 			return new DurableActorState<S>({
 				key: actorKey,
 				fold: request.fold,
+				snapshotKey: request.snapshotKey ?? request.fold,
 				initialState: structuredClone(request.initialState),
 				stream: getStream(streams, actorKey),
 				clock,
@@ -157,13 +158,19 @@ type LeaseRecord = {
 
 type ActorStream = {
 	events: FoldEvent[];
-	snapshot: { seq: number; state: JsonValue; savedAt: string } | null;
+	snapshot: {
+		seq: number;
+		state: unknown;
+		initialState: unknown;
+		key: object;
+	} | null;
 };
 
 class DurableActorState<S> implements ActorHostState<S> {
 	readonly key: string;
 	readonly #fold: (state: S, event: FoldEvent) => S;
 	readonly #initialState: S;
+	readonly #snapshotKey: object;
 	readonly #stream: ActorStream;
 	readonly #clock: ManualClock;
 	readonly #validateLease: (lease: ActorHostLease) => LeaseRecord;
@@ -172,6 +179,7 @@ class DurableActorState<S> implements ActorHostState<S> {
 		key: string;
 		fold: (state: S, event: FoldEvent) => S;
 		initialState: S;
+		snapshotKey: object;
 		stream: ActorStream;
 		clock: ManualClock;
 		validateLease: (lease: ActorHostLease) => LeaseRecord;
@@ -179,6 +187,7 @@ class DurableActorState<S> implements ActorHostState<S> {
 		this.key = options.key;
 		this.#fold = options.fold;
 		this.#initialState = options.initialState;
+		this.#snapshotKey = options.snapshotKey;
 		this.#stream = options.stream;
 		this.#clock = options.clock;
 		this.#validateLease = options.validateLease;
@@ -205,10 +214,17 @@ class DurableActorState<S> implements ActorHostState<S> {
 	}
 
 	read() {
-		const snapshot = this.#stream.snapshot;
+		const stored = this.#stream.snapshot;
+		const snapshot =
+			stored &&
+			stored.key === this.#snapshotKey &&
+			isDeepStrictEqual(stored.initialState, this.#initialState)
+				? stored
+				: null;
 		const snapshotSeq = snapshot?.seq ?? 0;
-		// SAFETY: assertion to `structuredClone(snapshot?.state ?? this.#initialState) as S` is required at this boundary.
-		let state = structuredClone(snapshot?.state ?? this.#initialState) as S;
+		let state = snapshot
+			? (structuredClone(snapshot.state) as S)
+			: structuredClone(this.#initialState);
 		const tail = this.#stream.events.filter(
 			(event) => Number(event.seq) > snapshotSeq,
 		);
@@ -222,6 +238,20 @@ class DurableActorState<S> implements ActorHostState<S> {
 			seq: this.#stream.events.length,
 			state,
 		};
+	}
+
+	passivate(lease: ActorHostLease) {
+		this.#validateLease(lease);
+		const projection = this.read();
+		this.#validateLease(lease);
+		this.#stream.snapshot = {
+			seq: projection.seq,
+			state: structuredClone(projection.state),
+			initialState: structuredClone(this.#initialState),
+			key: this.#snapshotKey,
+		};
+		lease.release();
+		return projection;
 	}
 }
 

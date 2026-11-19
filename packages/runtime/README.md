@@ -23,8 +23,11 @@ deterministic-replay library that backs them.
 `defineActor` and `activateActor` use an injected `ActorHost` for state,
 leases, and fencing. A stale or contended lease cannot append actor state.
 Actor commands invoke handlers that append events through the host; `state()`
-reads the host's materialized view. The host supplies the actor event store;
-the actor API does not manage snapshots or a separate read store.
+reads the host's materialized view. On passivation, the SDK asks hosts that
+support snapshots to save state and release the lease; other hosts release the
+lease directly. If snapshotting fails, the SDK releases the lease, marks the
+actor passivated, and reports the error. The host supplies the actor event store and
+snapshot storage.
 
 `createWorkflowEngine` journals completed steps and resumes a run with its
 original seed and input. New journals also bind the definition name; older

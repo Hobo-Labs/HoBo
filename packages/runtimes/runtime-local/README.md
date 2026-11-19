@@ -15,6 +15,11 @@ dispatch do not produce a call event.
 Thrown values without a recognized failure signal are classified as fatal,
 including `null`, `undefined`, and values that cannot be converted to a string.
 
+The in-memory actor host snapshots state when an actor passivates and replays
+only later events on reactivation. It reuses a snapshot only with the same
+snapshot key (the fold function by default) and equivalent initial state.
+Snapshots live in the host process and do not survive its restart.
+
 The local scheduler supports interval schedules and five- or six-field cron
 expressions. Cron expressions use UTC by default; provider calls can specify an
 IANA time zone. The first occurrence is strictly after registration, and
