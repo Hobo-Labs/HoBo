@@ -4639,12 +4639,6 @@ importers:
 
   src/draft/technical-proofs/hobo-remediation-action-contract: {}
 
-  src/draft/technical-proofs/hobo-runtime-primitives:
-    devDependencies:
-      '@bytecodealliance/jco':
-        specifier: 1.24.3
-        version: 1.24.3
-
   src/draft/technical-proofs/hobo-runtime-ts-primitives: {}
 
   src/draft/technical-proofs/hobo-sdk-aggregate-wit-contract:
