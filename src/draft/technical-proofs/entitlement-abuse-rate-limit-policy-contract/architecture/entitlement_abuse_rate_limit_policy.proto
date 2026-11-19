@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Entitlement Abuse
-// Rate-Limit Policy draft package reasons about. Not compiled at runtime; this
-// is a design-time contract artifact.
 
 enum EntitlementAbusePolicyEvidenceKind {
   ENTITLEMENT_ABUSE_POLICY_EVIDENCE_KIND_UNSPECIFIED = 0;

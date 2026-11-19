@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Clock port records for deterministic virtual time (HOBO-596 / HOBO-22).
 
 message SleepTimer {
   string timer_id = 1;

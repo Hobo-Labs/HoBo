@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes the Bootstrap Launch Smoke Matrix Contract
-// draft package reasons about. This is a design-time contract artifact.
 
 enum BootstrapLaunchSmokePathId {
   BOOTSTRAP_LAUNCH_SMOKE_PATH_ID_UNSPECIFIED = 0;

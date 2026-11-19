@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for HOBO-641 Resource Definitions + Matching + Packs POC.
 
 message ResourceDefinitionsMatchingPacksRecord {
   string issue = 1;

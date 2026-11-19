@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence for HOBO-620 orchestrator reconciliation FSM.
 
 enum OrchestratorReconciliationFsmEvidenceKind {
   EVIDENCE_KIND_UNSPECIFIED = 0;

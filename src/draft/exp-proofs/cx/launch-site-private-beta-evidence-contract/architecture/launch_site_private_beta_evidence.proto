@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-465 launch
-// site private beta evidence contract. This is a design-time schema artifact,
-// not a runtime compilation target.
 
 enum LaunchSitePrivateBetaEvidenceStatus {
   LAUNCH_SITE_PRIVATE_BETA_EVIDENCE_STATUS_UNSPECIFIED = 0;

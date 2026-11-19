@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.dogfood_yard_ga_handoff_evidence;
 
-// Architecture-guard evidence: protobuf data shapes the Dogfood Yard GA
-// Handoff Evidence draft package reasons about. Not compiled at runtime; this
-// is a design-time contract artifact.
 
 enum DogfoodYardGaEvidenceStatus {
   DOGFOOD_YARD_GA_EVIDENCE_STATUS_UNSPECIFIED = 0;

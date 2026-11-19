@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-528
-// adversarial Meta-cloud Broker rejection matrix proof.
 
 enum BrokerRejectionMatrixCase {
   BROKER_REJECTION_MATRIX_CASE_UNSPECIFIED = 0;

@@ -2,9 +2,6 @@ syntax = "proto3";
 
 package hobo.draft.v1;
 
-// Architecture-guard evidence: protobuf data shapes for the HOBO-569
-// control-plane API resource lifecycle shape contract. This is a design-time
-// schema artifact, not a runtime server implementation.
 
 enum ControlPlaneApiProofMode {
   CONTROL_PLANE_API_PROOF_MODE_UNSPECIFIED = 0;
