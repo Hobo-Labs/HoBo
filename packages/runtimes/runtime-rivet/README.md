@@ -140,3 +140,7 @@ A same-thread timer cannot interrupt a synchronous or non-yielding callback, so
 untrusted work needs an independent worker or process watchdog. Revoking a
 metadata grant is irreversible; each regrant needs a fresh grant and binding,
 and revocation must be propagated and fenced across the host fleet.
+
+## Durable topic actors
+
+The retained-log actor and the separate durable topic-bus actor expose distinct capability profiles. The bus supports bounded subscriptions, consumer groups, leases, acknowledgement, dead letters, compaction, and audit pages; its receipts and state share an actor-local transaction. Neither profile implements the legacy synchronous topic ABI. The host must authenticate and fence the actor, source, credentials, and storage through operation completion. See [the retained-log guide](./DURABLE-TOPIC-ACTOR.md) and [the bus guide](./DURABLE-TOPIC-BUS.md).
