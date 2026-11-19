@@ -1,14 +1,14 @@
 export {
+	type ProjectionReplicaObservation,
+	ProjectionReplicaObservationSchema,
+	type ProjectionReplicaReport,
+	ProjectionReplicaReportSchema,
 	type QuarantineFinding,
 	QuarantineFindingSchema,
 	type QuarantineReport,
 	QuarantineReportSchema,
 	type QuarantineReprocessFinding,
 	QuarantineReprocessFindingSchema,
-	type ProjectionReplicaObservation,
-	ProjectionReplicaObservationSchema,
-	type ProjectionReplicaReport,
-	ProjectionReplicaReportSchema,
 } from "./_generated/data_pb.js";
 export {
 	type ActorHost,
@@ -50,8 +50,8 @@ export {
 	type ErrorSignal,
 	isOptimisticConflict,
 	isStaleFenceError,
-	ProjectionWriteError,
 	ProjectionFoldError,
+	ProjectionWriteError,
 	UnpersistedQuarantineError,
 } from "./errors.js";
 export {
@@ -109,13 +109,5 @@ export {
 	type QuarantineReportOptions,
 	readQuarantineReport,
 } from "./quarantine-report.js";
-export {
-	createUpcasterRegistry,
-	parseUpcasterVersion,
-	type Upcaster,
-	UpcasterChainError,
-	type UpcasterRegistry,
-	type UpcasterVersion,
-} from "./upcaster.js";
 
 export const HOBO_DATA_PACKAGE = "@hobo/data";

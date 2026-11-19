@@ -215,7 +215,7 @@ export const CANONICAL_VERBS = [
 	{
 		name: "derivative",
 		role: "extensibility",
-		summary: "Manage derived HoBo implementations",
+		summary: "Inspect a derived HoBo descriptor",
 	},
 	{
 		name: "runbook",

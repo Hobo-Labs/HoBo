@@ -1,5 +1,10 @@
 package hobo
 
+#DerivativeDescriptor: {
+	name:    string & =~"\\S"
+	version: string & =~"\\S"
+}
+
 // The package's fixture gate accepts each persisted composition record.
 #Composition: #CiRepositoryLink | #ComposedRuntimeManifest | #LocalDeploymentReceipt | #LocalDeploymentLaunch | #LocalDeploymentLifecycleEvent
 

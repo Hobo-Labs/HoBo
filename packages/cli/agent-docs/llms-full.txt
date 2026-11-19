@@ -165,7 +165,7 @@ Product: hobo
 
 ### logs
 - Role: read-only
-- Summary: Live-tail Camp runtime streams
+- Summary: Read or follow local deployment logs
 - CLI: `hobo logs`
 - MCP tool: `logs`
 - Capability: { port: hobo:mcp, resource: tool:logs, verb: call }
@@ -312,7 +312,7 @@ Product: hobo
 
 ### derivative
 - Role: extensibility
-- Summary: Manage derived HoBo implementations
+- Summary: Inspect a derived HoBo descriptor
 - CLI: `hobo derivative`
 - MCP tool: `derivative`
 - Capability: { port: hobo:mcp, resource: tool:derivative, verb: call }

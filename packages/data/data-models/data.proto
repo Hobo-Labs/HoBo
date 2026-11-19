@@ -90,12 +90,6 @@ message QuarantineReprocessFinding {
   string fold_kind = 6;
 }
 
-message UpcasterRegistration {
-  string type = 1;
-  uint32 from_version = 2;
-  uint32 to_version = 3;
-}
-
 message ActorActivatedData {
   string stream_id = 1;
   string holder_id = 2;

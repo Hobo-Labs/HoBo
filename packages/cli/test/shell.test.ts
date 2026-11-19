@@ -131,7 +131,7 @@ Canonical verbs:
   station     control plane Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb
   serve       control plane Serve the local control-plane HTTP and SSE API
   replay      observability Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay)
-  derivative  extensibility Manage derived HoBo implementations
+  derivative  extensibility Inspect a derived HoBo descriptor
   runbook     SRE           Execute or replay incident runbooks
 `;
 

@@ -52,11 +52,6 @@ export const CLOUD_EVENTS = Object.freeze({
 	// Adopt an existing estate in place: bring resources that ALREADY exist under
 	// HoBo management by recording them as a deployment, without provisioning.
 	DeploymentImported: "deployment.Imported",
-	// Derived-HoBo (fork) upgrade ceremony (ADR-0057): check the derivative.json
-	// descriptor, run pinned upcasters, rerun seam conformance.
-	DerivativeUpgradeStarted: "derivative.UpgradeStarted",
-	DerivativeUpgradeSucceeded: "derivative.UpgradeSucceeded",
-	DerivativeUpgradeFailed: "derivative.UpgradeFailed",
 	// Credential-audit facts (NFR-018): the per-resource scoped-credential
 	// lifecycle the Orchestrator brokers around each apply. Folded by
 	// `credentialAuditProjection` into a grant -> use -> revoke trail.
@@ -98,30 +93,6 @@ export function deploymentImported(data: {
 	resources: string[];
 }): EventInput {
 	return { type: CLOUD_EVENTS.DeploymentImported, data };
-}
-
-export function derivativeUpgradeStarted(data: {
-	name: string;
-	fromVersion: string;
-	toVersion: string;
-	upcasters: string[];
-}): EventInput {
-	return { type: CLOUD_EVENTS.DerivativeUpgradeStarted, data };
-}
-
-export function derivativeUpgradeSucceeded(data: {
-	name: string;
-	toVersion: string;
-	upcastersRun: string[];
-}): EventInput {
-	return { type: CLOUD_EVENTS.DerivativeUpgradeSucceeded, data };
-}
-
-export function derivativeUpgradeFailed(data: {
-	name: string;
-	reason: string;
-}): EventInput {
-	return { type: CLOUD_EVENTS.DerivativeUpgradeFailed, data };
 }
 
 // Fold the erased-subject set from a stream's events. Append-only crypto-shred:

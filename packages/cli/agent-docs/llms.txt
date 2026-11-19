@@ -24,7 +24,7 @@
 - verify (read-only): Run the unified Gatekeeper preflight — CLI `hobo verify`; MCP tool `verify`
 - can-deploy (read-only): Diagnose producer/consumer compatibility — CLI `hobo can-deploy`; MCP tool `can-deploy`
 - inspect (read-only): Render projections and time-travel views — CLI `hobo inspect`; MCP tool `inspect`
-- logs (read-only): Live-tail Camp runtime streams — CLI `hobo logs`; MCP tool `logs`
+- logs (read-only): Read or follow local deployment logs — CLI `hobo logs`; MCP tool `logs`
 - doctor (diagnostics): Report environment and portability hazards — CLI `hobo doctor`; MCP tool `doctor`
 - messaging (diagnostics): Inspect messaging capability and delivery-guarantee readiness — CLI `hobo messaging`; MCP tool `messaging`
 - codegen (authoring): Regenerate checked-in generated clients — CLI `hobo codegen`; MCP tool `codegen`
@@ -45,7 +45,7 @@
 - station (control plane): Station occupancy setup/ops (init/up/status/rails); not a lifecycle verb — CLI `hobo station`; MCP tool `station`
 - serve (control plane): Serve the local control-plane HTTP and SSE API — CLI `hobo serve`; MCP tool `serve`
 - replay (observability): Session Replay list/get/open/summarize/retention/doctor (privacy-first; distinct from event-log replay) — CLI `hobo replay`; MCP tool `replay`
-- derivative (extensibility): Manage derived HoBo implementations — CLI `hobo derivative`; MCP tool `derivative`
+- derivative (extensibility): Inspect a derived HoBo descriptor — CLI `hobo derivative`; MCP tool `derivative`
 - runbook (SRE): Execute or replay incident runbooks — CLI `hobo runbook`; MCP tool `runbook`
 
 ## Notes
