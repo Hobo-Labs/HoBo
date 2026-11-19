@@ -15,11 +15,14 @@ import {
 	detectCapability,
 	type RiftContract,
 } from "./capability.js";
+import { RiftRegistryError } from "./errors.js";
 import {
 	appendEvent,
 	journalPath,
 	projectWorkspaces,
 	readEvents,
+	readEventsForRepair,
+	repairJournalTail,
 	type WorkspaceEvent,
 } from "./journal.js";
 import {
@@ -29,6 +32,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 import { parseWorkspaceName, type WorkspaceName } from "./names.js";
+import { parseWorkspaceRecord } from "./records.js";
 
 export const RIFT_DIR = ".hobo-rift";
 
@@ -60,7 +64,9 @@ export interface Registry {
 	readonly eventCount: number;
 }
 
-export class RiftRegistryError extends Error {}
+export interface RepairResult extends Registry {
+	readonly preservedJournal?: string;
+}
 
 function registryPath(root: string): string {
 	return join(root, RIFT_DIR, "registry.json");
@@ -117,12 +123,14 @@ export function pruneDebris(root: string): readonly string[] {
 	return parked;
 }
 
-export function rebuildRegistry(root: string): Registry {
+export function rebuildRegistry(root: string): RepairResult {
 	const abs = resolve(root);
 	const dir = riftDir(abs);
+	readEventsForRepair(dir);
+	const snapshot = readSnapshotRegistry(abs);
+	const preservedJournal = repairJournalTail(dir);
 	const events = readEvents(dir);
 	const projected = projectWorkspaces(events);
-	const snapshot = readSnapshotRegistry(abs);
 	mkdirSync(dir, { recursive: true });
 	if (!existsSync(journalPath(dir)))
 		writeFileSync(journalPath(dir), "", { flag: "a" });
@@ -152,7 +160,7 @@ export function rebuildRegistry(root: string): Registry {
 			eventCount: after.length,
 		};
 		writeRegistry(restored);
-		return restored;
+		return preservedJournal ? { ...restored, preservedJournal } : restored;
 	}
 	const registry: Registry = {
 		root: abs,
@@ -160,7 +168,7 @@ export function rebuildRegistry(root: string): Registry {
 		eventCount: events.length,
 	};
 	writeRegistry(registry);
-	return registry;
+	return preservedJournal ? { ...registry, preservedJournal } : registry;
 }
 
 function readSnapshotRegistry(root: string): Registry | null {
@@ -182,48 +190,7 @@ function readSnapshotRegistry(root: string): Registry | null {
 			)
 		)
 			throw new TypeError("invalid snapshot");
-		const workspaces = snapshot.workspaces.map((record): WorkspaceRecord => {
-			if (
-				!isJsonObject(record) ||
-				!isJsonString(record.name) ||
-				!record.name ||
-				!isJsonString(record.path) ||
-				!record.path ||
-				!isJsonString(record.source) ||
-				!record.source ||
-				!isJsonString(record.createdAt) ||
-				!record.createdAt ||
-				(record.tier !== "reflink" &&
-					record.tier !== "overlayfs" &&
-					record.tier !== "hardlink" &&
-					record.tier !== "copy") ||
-				(record.upper !== undefined && !isJsonString(record.upper)) ||
-				(record.work !== undefined && !isJsonString(record.work)) ||
-				(record.tier === "overlayfs" && (!record.upper || !record.work)) ||
-				Object.keys(record).some(
-					(key) =>
-						![
-							"name",
-							"path",
-							"source",
-							"tier",
-							"createdAt",
-							"upper",
-							"work",
-						].includes(key),
-				)
-			)
-				throw new TypeError("invalid workspace");
-			return {
-				name: record.name,
-				path: record.path,
-				source: record.source,
-				tier: record.tier,
-				createdAt: record.createdAt,
-				...(isJsonString(record.upper) ? { upper: record.upper } : undefined),
-				...(isJsonString(record.work) ? { work: record.work } : undefined),
-			};
-		});
+		const workspaces = snapshot.workspaces.map(parseWorkspaceRecord);
 		return { root: snapshot.root, eventCount: snapshot.eventCount, workspaces };
 	} catch {
 		throw new RiftRegistryError(
@@ -323,6 +290,7 @@ export function createWorkspace(options: CreateOptions): CreateResult {
 	}
 	const name: WorkspaceName = parsed.value;
 	if (!existsSync(join(root, RIFT_DIR))) initRoot(root);
+	readRegistry(root);
 	const claimed = claimName(root, name);
 	if (claimed === null) {
 		return {

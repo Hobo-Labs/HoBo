@@ -7,7 +7,7 @@ import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_rift_workspace: GenFile = /*@__PURE__*/
-  fileDesc("ChRyaWZ0X3dvcmtzcGFjZS5wcm90bxIMaG9iby5yaWZ0LnYxIo0BCgpDYXBhYmlsaXR5EiMKBHRpZXIYASABKA4yFS5ob2JvLnJpZnQudjEuQ293VGllchIoCglhdmFpbGFibGUYAiADKA4yFS5ob2JvLnJpZnQudjEuQ293VGllchIOCgZyZWFzb24YAyABKAkSIAoYaXNvbGF0ZXNfaW5fcGxhY2Vfd3JpdGVzGAQgASgIIpMBCg9Xb3Jrc3BhY2VSZWNvcmQSDAoEbmFtZRgBIAEoCRIMCgRwYXRoGAIgASgJEiMKBHRpZXIYAyABKA4yFS5ob2JvLnJpZnQudjEuQ293VGllchIOCgZzb3VyY2UYBCABKAkSDQoFdXBwZXIYBSABKAkSDAoEd29yaxgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgJIisKD1Jvb3RJbml0aWFsaXplZBIKCgJhdBgBIAEoCRIMCgRyb290GAIgASgJIlAKEFdvcmtzcGFjZUNyZWF0ZWQSCgoCYXQYASABKAkSMAoJd29ya3NwYWNlGAIgASgLMh0uaG9iby5yaWZ0LnYxLldvcmtzcGFjZVJlY29yZCIsChBXb3Jrc3BhY2VSZW1vdmVkEgoKAmF0GAEgASgJEgwKBG5hbWUYAiABKAkizgEKDldvcmtzcGFjZUV2ZW50EjkKEHJvb3RfaW5pdGlhbGl6ZWQYASABKAsyHS5ob2JvLnJpZnQudjEuUm9vdEluaXRpYWxpemVkSAASOwoRd29ya3NwYWNlX2NyZWF0ZWQYAiABKAsyHi5ob2JvLnJpZnQudjEuV29ya3NwYWNlQ3JlYXRlZEgAEjsKEXdvcmtzcGFjZV9yZW1vdmVkGAMgASgLMh4uaG9iby5yaWZ0LnYxLldvcmtzcGFjZVJlbW92ZWRIAEIHCgVldmVudCJgCghSZWdpc3RyeRIMCgRyb290GAEgASgJEjEKCndvcmtzcGFjZXMYAiADKAsyHS5ob2JvLnJpZnQudjEuV29ya3NwYWNlUmVjb3JkEhMKC2V2ZW50X2NvdW50GAMgASgNKnsKB0Nvd1RpZXISGAoUQ09XX1RJRVJfVU5TUEVDSUZJRUQQABIUChBDT1dfVElFUl9SRUZMSU5LEAESFgoSQ09XX1RJRVJfT1ZFUkxBWUZTEAISFQoRQ09XX1RJRVJfSEFSRExJTksQAxIRCg1DT1dfVElFUl9DT1BZEARiBnByb3RvMw");
+  fileDesc("ChRyaWZ0X3dvcmtzcGFjZS5wcm90bxIMaG9iby5yaWZ0LnYxIo0BCgpDYXBhYmlsaXR5EiMKBHRpZXIYASABKA4yFS5ob2JvLnJpZnQudjEuQ293VGllchIoCglhdmFpbGFibGUYAiADKA4yFS5ob2JvLnJpZnQudjEuQ293VGllchIOCgZyZWFzb24YAyABKAkSIAoYaXNvbGF0ZXNfaW5fcGxhY2Vfd3JpdGVzGAQgASgIIpMBCg9Xb3Jrc3BhY2VSZWNvcmQSDAoEbmFtZRgBIAEoCRIMCgRwYXRoGAIgASgJEiMKBHRpZXIYAyABKA4yFS5ob2JvLnJpZnQudjEuQ293VGllchIOCgZzb3VyY2UYBCABKAkSDQoFdXBwZXIYBSABKAkSDAoEd29yaxgGIAEoCRISCgpjcmVhdGVkX2F0GAcgASgJIisKD1Jvb3RJbml0aWFsaXplZBIKCgJhdBgBIAEoCRIMCgRyb290GAIgASgJIjsKEVdvcmtzcGFjZUNyZWF0aW5nEgoKAmF0GAEgASgJEgwKBG5hbWUYAiABKAkSDAoEcGF0aBgDIAEoCSJQChBXb3Jrc3BhY2VDcmVhdGVkEgoKAmF0GAEgASgJEjAKCXdvcmtzcGFjZRgCIAEoCzIdLmhvYm8ucmlmdC52MS5Xb3Jrc3BhY2VSZWNvcmQiLAoQV29ya3NwYWNlUmVtb3ZlZBIKCgJhdBgBIAEoCRIMCgRuYW1lGAIgASgJIo0CCg5Xb3Jrc3BhY2VFdmVudBI5ChByb290X2luaXRpYWxpemVkGAEgASgLMh0uaG9iby5yaWZ0LnYxLlJvb3RJbml0aWFsaXplZEgAEjsKEXdvcmtzcGFjZV9jcmVhdGVkGAIgASgLMh4uaG9iby5yaWZ0LnYxLldvcmtzcGFjZUNyZWF0ZWRIABI7ChF3b3Jrc3BhY2VfcmVtb3ZlZBgDIAEoCzIeLmhvYm8ucmlmdC52MS5Xb3Jrc3BhY2VSZW1vdmVkSAASPQoSd29ya3NwYWNlX2NyZWF0aW5nGAQgASgLMh8uaG9iby5yaWZ0LnYxLldvcmtzcGFjZUNyZWF0aW5nSABCBwoFZXZlbnQiYAoIUmVnaXN0cnkSDAoEcm9vdBgBIAEoCRIxCgp3b3Jrc3BhY2VzGAIgAygLMh0uaG9iby5yaWZ0LnYxLldvcmtzcGFjZVJlY29yZBITCgtldmVudF9jb3VudBgDIAEoDSKaAQoMUmVwYWlyUmVzdWx0EgwKBHJvb3QYASABKAkSMQoKd29ya3NwYWNlcxgCIAMoCzIdLmhvYm8ucmlmdC52MS5Xb3Jrc3BhY2VSZWNvcmQSEwoLZXZlbnRfY291bnQYAyABKA0SHgoRcHJlc2VydmVkX2pvdXJuYWwYBCABKAlIAIgBAUIUChJfcHJlc2VydmVkX2pvdXJuYWwqewoHQ293VGllchIYChRDT1dfVElFUl9VTlNQRUNJRklFRBAAEhQKEENPV19USUVSX1JFRkxJTksQARIWChJDT1dfVElFUl9PVkVSTEFZRlMQAhIVChFDT1dfVElFUl9IQVJETElOSxADEhEKDUNPV19USUVSX0NPUFkQBGIGcHJvdG8z");
 
 export type Capability = Message<"hobo.rift.v1.Capability"> & {
   tier: CowTier;
@@ -50,6 +50,17 @@ export type RootInitialized = Message<"hobo.rift.v1.RootInitialized"> & {
 export const RootInitializedSchema: GenMessage<RootInitialized> = /*@__PURE__*/
   messageDesc(file_rift_workspace, 2);
 
+export type WorkspaceCreating = Message<"hobo.rift.v1.WorkspaceCreating"> & {
+  at: string;
+
+  name: string;
+
+  path: string;
+};
+
+export const WorkspaceCreatingSchema: GenMessage<WorkspaceCreating> = /*@__PURE__*/
+  messageDesc(file_rift_workspace, 3);
+
 export type WorkspaceCreated = Message<"hobo.rift.v1.WorkspaceCreated"> & {
   at: string;
 
@@ -57,7 +68,7 @@ export type WorkspaceCreated = Message<"hobo.rift.v1.WorkspaceCreated"> & {
 };
 
 export const WorkspaceCreatedSchema: GenMessage<WorkspaceCreated> = /*@__PURE__*/
-  messageDesc(file_rift_workspace, 3);
+  messageDesc(file_rift_workspace, 4);
 
 export type WorkspaceRemoved = Message<"hobo.rift.v1.WorkspaceRemoved"> & {
   at: string;
@@ -66,7 +77,7 @@ export type WorkspaceRemoved = Message<"hobo.rift.v1.WorkspaceRemoved"> & {
 };
 
 export const WorkspaceRemovedSchema: GenMessage<WorkspaceRemoved> = /*@__PURE__*/
-  messageDesc(file_rift_workspace, 4);
+  messageDesc(file_rift_workspace, 5);
 
 export type WorkspaceEvent = Message<"hobo.rift.v1.WorkspaceEvent"> & {
   event: {
@@ -78,11 +89,14 @@ export type WorkspaceEvent = Message<"hobo.rift.v1.WorkspaceEvent"> & {
   } | {
     value: WorkspaceRemoved;
     case: "workspaceRemoved";
+  } | {
+    value: WorkspaceCreating;
+    case: "workspaceCreating";
   } | { case: undefined; value?: undefined };
 };
 
 export const WorkspaceEventSchema: GenMessage<WorkspaceEvent> = /*@__PURE__*/
-  messageDesc(file_rift_workspace, 5);
+  messageDesc(file_rift_workspace, 6);
 
 export type Registry = Message<"hobo.rift.v1.Registry"> & {
   root: string;
@@ -93,7 +107,20 @@ export type Registry = Message<"hobo.rift.v1.Registry"> & {
 };
 
 export const RegistrySchema: GenMessage<Registry> = /*@__PURE__*/
-  messageDesc(file_rift_workspace, 6);
+  messageDesc(file_rift_workspace, 7);
+
+export type RepairResult = Message<"hobo.rift.v1.RepairResult"> & {
+  root: string;
+
+  workspaces: WorkspaceRecord[];
+
+  eventCount: number;
+
+  preservedJournal?: string | undefined;
+};
+
+export const RepairResultSchema: GenMessage<RepairResult> = /*@__PURE__*/
+  messageDesc(file_rift_workspace, 8);
 
 export enum CowTier {
   UNSPECIFIED = 0,

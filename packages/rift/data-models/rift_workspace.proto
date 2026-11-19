@@ -32,6 +32,12 @@ message RootInitialized {
   string root = 2;
 }
 
+message WorkspaceCreating {
+  string at = 1;
+  string name = 2;
+  string path = 3;
+}
+
 message WorkspaceCreated {
   string at = 1;
   WorkspaceRecord workspace = 2;
@@ -47,6 +53,7 @@ message WorkspaceEvent {
     RootInitialized root_initialized = 1;
     WorkspaceCreated workspace_created = 2;
     WorkspaceRemoved workspace_removed = 3;
+    WorkspaceCreating workspace_creating = 4;
   }
 }
 
@@ -54,4 +61,11 @@ message Registry {
   string root = 1;
   repeated WorkspaceRecord workspaces = 2;
   uint32 event_count = 3;
+}
+
+message RepairResult {
+  string root = 1;
+  repeated WorkspaceRecord workspaces = 2;
+  uint32 event_count = 3;
+  optional string preserved_journal = 4;
 }

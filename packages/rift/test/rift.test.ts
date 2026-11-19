@@ -432,7 +432,7 @@ describe("registry is a projection of the journal", () => {
 		);
 	});
 
-	it("skips a truncated tail line rather than losing the whole journal", () => {
+	it("requires repair for a truncated journal tail", () => {
 		const root = source();
 		createWorkspace({ root, name: "kept" });
 		const journal = join(root, RIFT_DIR, "events.jsonl");
@@ -440,9 +440,12 @@ describe("registry is a projection of the journal", () => {
 			journal,
 			`${readFileSync(journal, "utf8")}{"type":"Workspace`,
 		);
-		expect(
-			projectWorkspaces(readEvents(join(root, RIFT_DIR))).map((w) => w.name),
-		).toEqual(["kept"]);
+		expect(() => readEvents(join(root, RIFT_DIR))).toThrow(
+			"incomplete workspace journal",
+		);
+		expect(rebuildRegistry(root).workspaces.map((w) => w.name)).toEqual([
+			"kept",
+		]);
 	});
 });
 
