@@ -8,7 +8,7 @@ import {
 } from "@hobo/hobo/cd-platform";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 
-import { cdStoreBindingErrorOf, CdStoreBindingError } from "./store.js";
+import { CdStoreBindingError, cdStoreBindingErrorOf } from "./store.js";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -40,8 +40,7 @@ export async function composeVercelCdHost(deps: CdHostDeps): Promise<CdHost> {
 	if (
 		vercelEnv !== "production" &&
 		!(
-			vercelEnv === undefined &&
-			deps.env.HOBO_CD_ALLOW_UNSET_VERCEL_ENV === "1"
+			vercelEnv === undefined && deps.env.HOBO_CD_ALLOW_UNSET_VERCEL_ENV === "1"
 		)
 	)
 		throw new CdStoreBindingError(

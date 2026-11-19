@@ -54,7 +54,8 @@ describe("the CD function's HTTP entry", () => {
 			incomingRequestPath({
 				url: "/api/cd",
 				headers: {
-					"x-vercel-original-url": "https://hobo-cd.vercel.app/v1/cd/freight?x=1",
+					"x-vercel-original-url":
+						"https://hobo-cd.vercel.app/v1/cd/freight?x=1",
 				},
 			} as never),
 		);
