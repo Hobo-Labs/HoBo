@@ -82,6 +82,14 @@ export function journalFleetLayout(
 }
 
 const entry = (member: JournalFleetMember) => `${member.id}:${member.plan}`;
+const MEMBER_ID = /^[a-z][a-z0-9-]{0,39}$/u;
+
+export class JournalFleetSettingsError extends Error {
+	constructor(reason: "invalid" | "incomplete") {
+		super(`The saved journal fleet is ${reason}.`);
+		this.name = "JournalFleetSettingsError";
+	}
+}
 
 function parseEntries(text: string | undefined): readonly JournalFleetMember[] {
 	return (text ?? "")
@@ -89,9 +97,37 @@ function parseEntries(text: string | undefined): readonly JournalFleetMember[] {
 		.map((part) => part.trim())
 		.filter((part) => part !== "")
 		.map((part) => {
-			const [id = "", plan = ""] = part.split(":");
+			const [id = "", plan = "", ...rest] = part.split(":");
+			if (!MEMBER_ID.test(id) || plan === "" || rest.length > 0)
+				throw new JournalFleetSettingsError("invalid");
 			return { id, plan };
 		});
+}
+
+function checkedLayout(layout: JournalFleetLayout): JournalFleetLayout {
+	const all = [...layout.members, ...layout.witnesses];
+	if (layout.members.length === 0 || layout.witnesses.length === 0)
+		throw new JournalFleetSettingsError("incomplete");
+	if (new Set(all.map((member) => member.id)).size !== all.length)
+		throw new JournalFleetSettingsError("invalid");
+	for (const member of all)
+		if (!Object.hasOwn(CD_JOURNAL_MEMBER_PLANS, member.plan))
+			throw new JournalFleetSettingsError("invalid");
+	return layout;
+}
+
+function savedLayout(
+	settings: Readonly<Record<string, string>>,
+): JournalFleetLayout | undefined {
+	const members = settings[JOURNAL_FLEET_SETTING];
+	const witnesses = settings[JOURNAL_WITNESS_SETTING];
+	if (members === undefined && witnesses === undefined) return undefined;
+	if (members === undefined || witnesses === undefined)
+		throw new JournalFleetSettingsError("incomplete");
+	return checkedLayout({
+		members: parseEntries(members),
+		witnesses: parseEntries(witnesses),
+	});
 }
 
 export type JournalFleetStep = Readonly<{
@@ -108,27 +144,24 @@ async function holds(store: OpenedSecretStore, name: string): Promise<boolean> {
 }
 
 /** Provision what the journal's fleet is missing (see the module comment). */
-export async function prepareJournalFleet(input: {
+export function prepareJournalFleet(input: {
 	readonly store: OpenedSecretStore;
 	readonly provisioners: readonly JournalMemberProvisioner[];
 	readonly whatIf?: boolean;
 }): Promise<JournalFleetStep> {
+	const prepare = () => prepareJournalFleetUnlocked(input);
+	return input.whatIf ? prepare() : withStoreWriteLock(input.store, prepare);
+}
+
+async function prepareJournalFleetUnlocked(
+	input: Parameters<typeof prepareJournalFleet>[0],
+): Promise<JournalFleetStep> {
 	const { store } = input;
 	const settings = familySettings(store, "cd");
 	const saved = await settings.read();
-	const layout: JournalFleetLayout =
-		saved[JOURNAL_FLEET_SETTING] !== undefined
-			? {
-					members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
-					witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
-				}
-			: journalFleetLayout(input.provisioners);
+	const layout =
+		savedLayout(saved) ?? checkedLayout(journalFleetLayout(input.provisioners));
 	const all = [...layout.members, ...layout.witnesses];
-	for (const member of all)
-		if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
-			throw new Error(
-				`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
-			);
 	const missing: JournalFleetMember[] = [];
 	for (const member of all)
 		if (!(await holds(store, journalMemberUrlEntry(member.id))))
@@ -147,39 +180,37 @@ export async function prepareJournalFleet(input: {
 			outcome: "would-create",
 			detail: `would create ${missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${roster} in ${store.id}`,
 		};
-	await withStoreWriteLock(store, async () => {
-		for (const member of missing) {
-			const provisioner = input.provisioners.find(
-				(candidate) => candidate.plan === member.plan,
+	for (const member of missing) {
+		const provisioner = input.provisioners.find(
+			(candidate) => candidate.plan === member.plan,
+		);
+		if (provisioner === undefined)
+			throw new Error(
+				`no provisioner here creates ${member.plan} databases for ${member.id}`,
 			);
-			if (provisioner === undefined)
-				throw new Error(
-					`no provisioner here creates ${member.plan} databases for ${member.id}`,
-				);
-			const created = await provisioner.create({
-				member: member.id,
-				idempotencyKey: `hobo-cd-journal:${member.id}`,
-				store,
-			});
-			if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
-				throw new Error(
-					`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
-				);
-			if (created.claimUrl !== undefined)
-				await store.port.put(
-					journalMemberClaimEntry(member.id),
-					created.claimUrl,
-				);
-			await store.port.put(
-				journalMemberUrlEntry(member.id),
-				created.connectionString,
-			);
-		}
-		await settings.write({
-			...saved,
-			[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
-			[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
+		const created = await provisioner.create({
+			member: member.id,
+			idempotencyKey: `hobo-cd-journal:${member.id}`,
+			store,
 		});
+		if (!/^postgres(ql)?:\/\//u.test(created.connectionString))
+			throw new Error(
+				`the ${member.plan} database for ${member.id} came back without a PostgreSQL connection string`,
+			);
+		if (created.claimUrl !== undefined)
+			await store.port.put(
+				journalMemberClaimEntry(member.id),
+				created.claimUrl,
+			);
+		await store.port.put(
+			journalMemberUrlEntry(member.id),
+			created.connectionString,
+		);
+	}
+	await settings.write({
+		...saved,
+		[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
+		[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
 	});
 	const claims =
 		missing.length > 0
@@ -202,6 +233,7 @@ export async function journalFleetRuntime(store: OpenedSecretStore): Promise<{
 	readonly readSecret: (entry: string) => Promise<string | undefined>;
 }> {
 	const saved = await familySettings(store, "cd").read();
+	savedLayout(saved);
 	return {
 		env: Object.fromEntries(
 			[JOURNAL_FLEET_SETTING, JOURNAL_WITNESS_SETTING].flatMap((name) => {

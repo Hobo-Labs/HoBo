@@ -22,6 +22,21 @@ function memoryStore(): OpenedSecretStore {
 	};
 }
 
+function serialStore(base: OpenedSecretStore): OpenedSecretStore {
+	let pending: Promise<void> = Promise.resolve();
+	return {
+		...base,
+		withWriteLock: <T>(operation: () => Promise<T>): Promise<T> => {
+			const result = pending.then(operation);
+			pending = result.then(
+				() => undefined,
+				() => undefined,
+			);
+			return result;
+		},
+	};
+}
+
 function fakeNeon(failOn?: string) {
 	const created: string[] = [];
 	const provisioner: JournalMemberProvisioner = {
@@ -126,6 +141,97 @@ describe("prepareJournalFleet", () => {
 				.outcome,
 		).toBe("unchanged");
 		expect(again.created).toEqual([]);
+	});
+
+	it("reads the fleet after acquiring the shared write lock", async () => {
+		const store = serialStore(memoryStore());
+		const neon = fakeNeon();
+		const steps = await Promise.all([
+			prepareJournalFleet({ store, provisioners: [neon.provisioner] }),
+			prepareJournalFleet({ store, provisioners: [neon.provisioner] }),
+		]);
+		expect(steps.map((step) => step.outcome)).toEqual(["created", "unchanged"]);
+		expect(neon.created).toEqual([
+			"journal-1",
+			"journal-2",
+			"journal-3",
+			"journal-witness",
+		]);
+	});
+
+	it("resumes a failed setup after taking the shared write lock", async () => {
+		const store = serialStore(memoryStore());
+		const neon = fakeNeon();
+		let fail = true;
+		const provisioner: JournalMemberProvisioner = {
+			...neon.provisioner,
+			create: async (input) => {
+				if (input.member === "journal-2" && fail) {
+					fail = false;
+					throw new Error("provisioning interrupted");
+				}
+				return neon.provisioner.create(input);
+			},
+		};
+		const results = await Promise.allSettled([
+			prepareJournalFleet({ store, provisioners: [provisioner] }),
+			prepareJournalFleet({ store, provisioners: [provisioner] }),
+		]);
+		expect(results[0]?.status).toBe("rejected");
+		expect(results[1]?.status).toBe("fulfilled");
+		expect(neon.created).toEqual([
+			"journal-1",
+			"journal-2",
+			"journal-3",
+			"journal-witness",
+		]);
+	});
+
+	it.each([
+		{ fleet: "", witnesses: "" },
+		{ fleet: "journal-1:neon-claimable", witnesses: undefined },
+		{ fleet: undefined, witnesses: "journal-witness:neon-claimable" },
+		{
+			fleet: "journal-1:neon-claimable:extra",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "Journal-1:neon-claimable",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "journal-1:constructor",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "journal-1:neon-claimable,journal-1:neon-claimable",
+			witnesses: "journal-witness:neon-claimable",
+		},
+		{
+			fleet: "journal-1:neon-claimable",
+			witnesses: "journal-1:neon-claimable",
+		},
+	])("refuses an incomplete or invalid saved fleet", async (fixture) => {
+		const store = memoryStore();
+		const settings: Record<string, string> = {};
+		if (fixture.fleet !== undefined)
+			settings.HOBO_CD_POSTGRES_FLEET = fixture.fleet;
+		if (fixture.witnesses !== undefined)
+			settings.HOBO_CD_POSTGRES_WITNESSES = fixture.witnesses;
+		await familySettings(store, "cd").write(settings);
+		const neon = fakeNeon();
+		for (const whatIf of [true, false])
+			await expect(
+				prepareJournalFleet({
+					store,
+					provisioners: [neon.provisioner],
+					whatIf,
+				}),
+			).rejects.toThrow(/invalid|incomplete/u);
+		await expect(journalFleetRuntime(store)).rejects.toThrow(
+			/invalid|incomplete/u,
+		);
+		expect(neon.created).toEqual([]);
 	});
 
 	it("creates nothing under --what-if", async () => {

@@ -230,6 +230,24 @@ describe("SPEC ceremony model: the derived properties catch the real failures", 
 	});
 
 	it.each([
+		[
+			"HOBO_CD_JOURNAL_SETTINGS_INVALID",
+			"Restore the journal fleet and witness settings in your secret store before retrying setup.",
+		],
+		[
+			"HOBO_CD_JOURNAL_NOT_PROVISIONED",
+			"Reconcile any incomplete journal database creation before retrying setup.",
+		],
+	])("treats %s as blocked until reconciled", (code, message) => {
+		const cd = call("cd");
+		const result = verdicts([cd.wire, refused(cd.id, code, [], message)]);
+		expect(result["no dead end"]).toMatchObject({ holds: true });
+		expect(result["eventually: nothing more asked of the owner"]).toMatchObject(
+			{ holds: false },
+		);
+	});
+
+	it.each([
 		"HOBO_MCP_OWNER_FORM_UNAVAILABLE",
 		"HOBO_MCP_OWNER_APPROVAL_UNAVAILABLE",
 		"HOBO_MCP_SETUP_NOT_COMPLETED",
