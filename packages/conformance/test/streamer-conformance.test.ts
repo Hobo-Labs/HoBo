@@ -122,7 +122,6 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 						if (defects.perStreamSeq) state.perStream.set(name, next);
 						else state.seq = next;
 						state.frames.push({
-							run_id: runId,
 							runId,
 							seq: parseSeq(next),
 							stream: name,
@@ -132,7 +131,6 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 				};
 			},
 			done: Promise.resolve<StreamerRunResult>({
-				run_id: runId,
 				runId,
 				status: "completed",
 				reason: "done",
@@ -153,7 +151,6 @@ function createMemoryStreamer(defects: Defects = {}): Streamer {
 			const state = stateFor(runId);
 			state.closed = true;
 			return {
-				run_id: runId,
 				runId,
 				status: "closed",
 				reason,

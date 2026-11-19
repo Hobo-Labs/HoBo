@@ -71,7 +71,7 @@ export function createLocalStreamer(
 		teardownRun(runId: RunId, reason = "teardown") {
 			const journal = getJournal(runs, runId);
 			const result = createStreamerRunResult({
-				run_id: runId,
+				runId,
 				status: "closed",
 				reason,
 			});
@@ -157,7 +157,7 @@ export function createFailedRunResult(
 	reason: string,
 ): StreamerRunResult {
 	return createStreamerRunResult({
-		run_id: runId,
+		runId,
 		status: "failed" satisfies StreamerRunStatus,
 		reason,
 	});

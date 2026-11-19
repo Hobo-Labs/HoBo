@@ -13,19 +13,18 @@ export type Seq = number & { readonly __brand: "Seq" };
 export type StreamerRunStatus = "completed" | "closed" | "failed";
 
 export interface StreamerFrameRecord {
-	readonly run_id: string;
+	readonly runId: string;
 	readonly seq: number;
 	readonly stream: string;
 }
 
 export interface StreamerRunResultRecord {
-	readonly run_id: string;
+	readonly runId: string;
 	readonly status: StreamerRunStatus;
 	readonly reason: string;
 }
 
 export interface StreamerFrame<TChunk = unknown> {
-	readonly run_id: string;
 	readonly runId: RunId;
 	readonly seq: Seq;
 	readonly stream: StreamName;
@@ -33,7 +32,6 @@ export interface StreamerFrame<TChunk = unknown> {
 }
 
 export interface StreamerRunResult {
-	readonly run_id: string;
 	readonly runId: RunId;
 	readonly status: StreamerRunStatus;
 	readonly reason: string;
@@ -121,11 +119,13 @@ export function createStreamerFrame<TChunk>(
 	record: StreamerFrameRecord,
 	chunk: TChunk,
 ): StreamerFrame<TChunk> {
-	const runId = parseRunId(record.run_id);
+	const runId = parseRunId(record.runId);
 	const seq = parseSeq(record.seq);
+	if (record.stream === undefined) {
+		throw new StreamerParseError("stream", "non-empty string", record.stream);
+	}
 	const stream = parseStreamName(record.stream);
 	const frame: StreamerFrame<TChunk> = {
-		run_id: record.run_id,
 		runId,
 		seq,
 		stream,
@@ -137,11 +137,10 @@ export function createStreamerFrame<TChunk>(
 export function createStreamerRunResult(
 	record: StreamerRunResultRecord,
 ): StreamerRunResult {
-	const runId = parseRunId(record.run_id);
+	const runId = parseRunId(record.runId);
 	const status = parseStreamerRunStatus(record.status);
 	const reason = nonEmptyString(record.reason, "reason", StreamerParseError);
 	const result: StreamerRunResult = {
-		run_id: record.run_id,
 		runId,
 		status,
 		reason,

@@ -2,21 +2,23 @@
 // @generated from file streamer_port.proto (package hobo.core.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
-import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
+import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Value } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_struct } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_streamer_port: GenFile = /*@__PURE__*/
-  fileDesc("ChNzdHJlYW1lcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiSwoNU3RyZWFtZXJGcmFtZRIOCgZydW5faWQYASABKAkSCwoDc2VxGAIgASgDEg4KBnN0cmVhbRgDIAEoCRINCgVjaHVuaxgEIAEoDCJkChFTdHJlYW1lclJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSLwoGc3RhdHVzGAIgASgOMh8uaG9iby5jb3JlLnYxLlN0cmVhbWVyUnVuU3RhdHVzEg4KBnJlYXNvbhgDIAEoCSqbAQoRU3RyZWFtZXJSdW5TdGF0dXMSIwofU1RSRUFNRVJfUlVOX1NUQVRVU19VTlNQRUNJRklFRBAAEiEKHVNUUkVBTUVSX1JVTl9TVEFUVVNfQ09NUExFVEVEEAESHgoaU1RSRUFNRVJfUlVOX1NUQVRVU19DTE9TRUQQAhIeChpTVFJFQU1FUl9SVU5fU1RBVFVTX0ZBSUxFRBADYgZwcm90bzM");
+  fileDesc("ChNzdHJlYW1lcl9wb3J0LnByb3RvEgxob2JvLmNvcmUudjEiYwoNU3RyZWFtZXJGcmFtZRIOCgZydW5faWQYASABKAkSCwoDc2VxGAIgASgBEg4KBnN0cmVhbRgDIAEoCRIlCgVjaHVuaxgEIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZSJDChFTdHJlYW1lclJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSDgoGc3RhdHVzGAIgASgJEg4KBnJlYXNvbhgDIAEoCWIGcHJvdG8z", [file_google_protobuf_struct]);
 
 export type StreamerFrame = Message<"hobo.core.v1.StreamerFrame"> & {
   runId: string;
 
-  seq: bigint;
+  seq: number;
 
   stream: string;
 
-  chunk: Uint8Array;
+  chunk?: Value | undefined;
 };
 
 export const StreamerFrameSchema: GenMessage<StreamerFrame> = /*@__PURE__*/
@@ -25,24 +27,11 @@ export const StreamerFrameSchema: GenMessage<StreamerFrame> = /*@__PURE__*/
 export type StreamerRunResult = Message<"hobo.core.v1.StreamerRunResult"> & {
   runId: string;
 
-  status: StreamerRunStatus;
+  status: string;
 
   reason: string;
 };
 
 export const StreamerRunResultSchema: GenMessage<StreamerRunResult> = /*@__PURE__*/
   messageDesc(file_streamer_port, 1);
-
-export enum StreamerRunStatus {
-  UNSPECIFIED = 0,
-
-  COMPLETED = 1,
-
-  CLOSED = 2,
-
-  FAILED = 3,
-}
-
-export const StreamerRunStatusSchema: GenEnum<StreamerRunStatus> = /*@__PURE__*/
-  enumDesc(file_streamer_port, 0);
 
