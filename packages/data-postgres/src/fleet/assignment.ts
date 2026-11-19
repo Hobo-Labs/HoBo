@@ -5,6 +5,7 @@ import {
 	type FleetAssignment,
 	parseAssignmentRegister,
 	parseFleetAssignment,
+	parseFleetBackendId,
 } from "@hobo/backend-fleet";
 import { PostgresDataError } from "../errors.js";
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
@@ -15,39 +16,10 @@ import {
 	optionalColumn,
 	parseCount,
 	parseFlag,
-	parseFleetBackendId,
 	type SqlRow,
 	type SqlSession,
 	sqlState,
 } from "./sql.js";
-
-export {
-	ASSIGNMENT_ACCEPT_OUTCOMES,
-	type AssignmentAcceptOutcome,
-	type AssignmentContender,
-	type AssignmentOverride,
-	type AssignmentProposal,
-	type AssignmentProposalOutcome,
-	type AssignmentRegister,
-	type AssignmentReplica,
-	type AssignmentReply,
-	type AssignmentResolution,
-	assignmentKey,
-	bootstrapAssignment,
-	completeAssignment,
-	FIRST_ASSIGNMENT_EPOCH,
-	type FleetAssignmentValue,
-	fleetMajority,
-	overrideAssignment,
-	parseAssignmentRegister,
-	parseFleetAssignment,
-	proposeAssignment,
-	readAssignmentReplies,
-	readCurrentAssignment,
-	resolveAssignment,
-} from "@hobo/backend-fleet";
-
-export type PostgresFleetAssignment = FleetAssignment;
 
 function assignmentFromRow(row: SqlRow): FleetAssignment {
 	const loss = optionalColumn(row, "loss_window_ms");

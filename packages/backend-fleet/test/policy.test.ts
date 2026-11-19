@@ -3,11 +3,11 @@ import {
 	billingPeriod,
 	DEFAULT_FLEET_POLICY,
 	decideFleet,
+	type FleetAssignment,
 	type FleetBudgetRequest,
 	type FleetDecisionInput,
-	type PostgresFleetAssignment,
-	type PostgresFleetFinancialModel,
-	type PostgresFleetObservation,
+	type FleetFinancialModel,
+	type FleetObservation,
 	parseFleetAssignment,
 	parseFleetFinancialModel,
 	parseFleetPolicy,
@@ -20,8 +20,8 @@ const period = billingPeriod(NOW);
 
 function assignment(
 	active: string,
-	overrides: Partial<PostgresFleetAssignment> = {},
-): PostgresFleetAssignment {
+	overrides: Partial<FleetAssignment> = {},
+): FleetAssignment {
 	return parseFleetAssignment({
 		epoch: 4,
 		active,
@@ -72,8 +72,8 @@ function unverified(backend: string) {
 function seen(
 	backend: string,
 	operations: number,
-	overrides: Partial<PostgresFleetObservation> = {},
-): PostgresFleetObservation {
+	overrides: Partial<FleetObservation> = {},
+): FleetObservation {
 	return {
 		backend,
 		health: "reachable",
@@ -88,8 +88,8 @@ function seen(
 
 function input(
 	overrides: Partial<FleetDecisionInput> & {
-		observations: readonly PostgresFleetObservation[];
-		models: readonly PostgresFleetFinancialModel[];
+		observations: readonly FleetObservation[];
+		models: readonly FleetFinancialModel[];
 	},
 ): FleetDecisionInput {
 	return {
@@ -384,7 +384,7 @@ describe("planned switch", () => {
 					},
 				],
 			});
-		const sized = (backend: string): PostgresFleetObservation => ({
+		const sized = (backend: string): FleetObservation => ({
 			...seen(backend, 0),
 			usage: [{ unit: "storage-bytes", used: 2_000_000_000 }],
 		});

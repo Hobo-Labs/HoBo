@@ -19,13 +19,6 @@
 import type { FleetFailureClass } from "@hobo/backend-fleet";
 import { PostgresDataError } from "../errors.js";
 
-// Backend ids and failure classes are engine-neutral (`@hobo/backend-fleet`).
-export {
-	FLEET_FAILURE_CLASSES,
-	type FleetFailureClass,
-	parseFleetBackendId,
-} from "@hobo/backend-fleet";
-
 export type SqlParameter = string | number | boolean | null;
 
 /** One result row. Columns the statement did not select are absent. */

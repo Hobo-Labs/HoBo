@@ -2,9 +2,9 @@ import {
 	type AssignmentAcceptOutcome,
 	type AssignmentReplica,
 	assignmentKey,
+	type FleetAssignment,
 	fleetMajority,
-	type PostgresFleetAssignment,
-} from "../src/index.js";
+} from "@hobo/backend-fleet";
 
 export function seededRandom(seed: number): () => number {
 	let state = seed >>> 0;
@@ -58,7 +58,7 @@ export class Scheduler {
 }
 
 export class MemoryReplica implements AssignmentReplica {
-	readonly rows: PostgresFleetAssignment[] = [];
+	readonly rows: FleetAssignment[] = [];
 	up = true;
 	busy = false;
 
@@ -71,7 +71,7 @@ export class MemoryReplica implements AssignmentReplica {
 		if (!this.up) throw new Error("connection refused");
 	}
 
-	async read(limit?: number): Promise<readonly PostgresFleetAssignment[]> {
+	async read(limit?: number): Promise<readonly FleetAssignment[]> {
 		await this.pause();
 		this.requireUp();
 		const snapshot = [...this.rows];
@@ -80,7 +80,7 @@ export class MemoryReplica implements AssignmentReplica {
 		return limit === undefined ? snapshot : snapshot.slice(-limit);
 	}
 
-	apply(assignment: PostgresFleetAssignment): AssignmentAcceptOutcome {
+	apply(assignment: FleetAssignment): AssignmentAcceptOutcome {
 		if (this.busy) return "busy";
 		const top = this.rows.at(-1)?.epoch ?? 0;
 		if (top === assignment.epoch - 1) {
@@ -94,9 +94,7 @@ export class MemoryReplica implements AssignmentReplica {
 			: "conflict";
 	}
 
-	async accept(
-		assignment: PostgresFleetAssignment,
-	): Promise<AssignmentAcceptOutcome> {
+	async accept(assignment: FleetAssignment): Promise<AssignmentAcceptOutcome> {
 		await this.pause();
 		this.requireUp();
 		const outcome = this.apply(assignment);
@@ -108,11 +106,11 @@ export class MemoryReplica implements AssignmentReplica {
 
 export function decidedEntries(
 	replicas: readonly MemoryReplica[],
-): Map<number, PostgresFleetAssignment> {
+): Map<number, FleetAssignment> {
 	const required = fleetMajority(replicas.length);
 	const counts = new Map<
 		string,
-		{ assignment: PostgresFleetAssignment; count: number }
+		{ assignment: FleetAssignment; count: number }
 	>();
 	for (const replica of replicas)
 		for (const row of replica.rows) {
@@ -121,7 +119,7 @@ export function decidedEntries(
 			entry.count += 1;
 			counts.set(key, entry);
 		}
-	const decided = new Map<number, PostgresFleetAssignment>();
+	const decided = new Map<number, FleetAssignment>();
 	for (const { assignment, count } of counts.values())
 		if (count >= required) {
 			if (decided.has(assignment.epoch))

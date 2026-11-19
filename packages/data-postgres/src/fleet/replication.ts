@@ -1,9 +1,6 @@
+import { assignmentKey, type FleetAssignment } from "@hobo/backend-fleet";
 import { PostgresDataError } from "../errors.js";
-import {
-	assignmentKey,
-	type PostgresFleetAssignment,
-	readAssignmentRows,
-} from "./assignment.js";
+import { readAssignmentRows } from "./assignment.js";
 import {
 	FLEET_LOCK_CLASS,
 	type FleetLayout,
@@ -68,7 +65,7 @@ export type ReplicationRequest = {
 	readonly source: FleetBackend;
 	readonly target: FleetBackend;
 	readonly layout: FleetLayout;
-	readonly assignment: PostgresFleetAssignment;
+	readonly assignment: FleetAssignment;
 	readonly limits?: Partial<ReplicationLimits> | undefined;
 };
 
