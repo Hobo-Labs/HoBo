@@ -125,6 +125,9 @@ read class in its event stream. Changing the bound or default read class records
 the new configuration; changing the projection, Camps, or source requires a
 different replica stream. `hobo doctor` reports supported read classes and
 flags a replica that has exceeded its bound without recording a lag signal.
+Before the first completed catch-up, freshness is unknown. If incomplete pulls
+continue beyond the bound, the replica reports an exceeded bound measured from
+the first incomplete pull; `lagSinceMs` identifies that starting point.
 
 ## Paginated event views
 

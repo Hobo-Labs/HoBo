@@ -14,6 +14,11 @@ import {
 	ProjectionReplicatedEventDataSchema,
 	ProjectionReplicationCheckedDataSchema,
 } from "./_generated/data_pb.js";
+import {
+	checkpointReplicaFreshness,
+	initialReplicaFreshness,
+	replicaStaleness,
+} from "./projection-freshness.js";
 
 const CONFIGURED = "projection.ReplicaConfigured";
 const REPLICATED = "projection.EventReplicated";
@@ -41,7 +46,7 @@ async function replicaObservation(
 	let configuration: ProjectionReplicaConfiguredData | undefined;
 	let sequence = 0;
 	let sourcePosition = 0n;
-	let checkedAtMs: number | undefined;
+	let freshness = initialReplicaFreshness();
 	let pending = false;
 	let recoveryPending = false;
 	let lagged = false;
@@ -110,12 +115,11 @@ async function replicaObservation(
 			const checked = safeInteger(Number(data.checkedAtMs), "checkedAtMs");
 			if (
 				data.sourceStreamId !== configuration.sourceStreamId ||
-				data.sourcePosition !== sourcePosition ||
-				(checkedAtMs !== undefined && checked < checkedAtMs)
+				data.sourcePosition !== sourcePosition
 			)
 				throw new Error(`replica stream ${streamId} has an invalid checkpoint`);
+			freshness = checkpointReplicaFreshness(freshness, checked, data.caughtUp);
 			if (data.caughtUp) {
-				checkedAtMs = checked;
 				recoveryPending = lagged;
 			}
 			pending = false;
@@ -144,16 +148,12 @@ async function replicaObservation(
 	if (!configuration || pending || recoveryPending)
 		throw new Error(`replica stream ${streamId} is incomplete`);
 	const now = safeInteger((options.nowMs ?? Date.now)(), "nowMs");
-	if (checkedAtMs !== undefined && now < checkedAtMs)
-		throw new Error(`replica stream ${streamId} clock moved backward`);
-	const observedLagMs =
-		checkedAtMs === undefined ? undefined : now - checkedAtMs;
-	const stalenessStatus =
-		observedLagMs === undefined
-			? "unknown"
-			: observedLagMs > Number(configuration.boundMs)
-				? "exceeds-bound"
-				: "within-bound";
+	const {
+		status: stalenessStatus,
+		checkedAtMs,
+		observedLagMs,
+		lagSinceMs,
+	} = replicaStaleness(freshness, now, Number(configuration.boundMs));
 	return create(ProjectionReplicaObservationSchema, {
 		projection: configuration.projection,
 		ownerCampId: configuration.ownerCampId,
@@ -163,10 +163,11 @@ async function replicaObservation(
 		sourcePosition,
 		boundMs: configuration.boundMs,
 		stalenessStatus,
-		...(checkedAtMs === undefined
+		...(checkedAtMs === null
 			? undefined
 			: { checkedAtMs: BigInt(checkedAtMs) }),
-		...(observedLagMs === undefined
+		...(lagSinceMs === null ? undefined : { lagSinceMs: BigInt(lagSinceMs) }),
+		...(observedLagMs === null
 			? undefined
 			: { observedLagMs: BigInt(observedLagMs) }),
 		lagSignalActive: lagged,

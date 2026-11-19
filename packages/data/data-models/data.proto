@@ -198,6 +198,7 @@ message ProjectionReplicaObservation {
   bool missing_lag_signal = 12;
   repeated ProjectionReadEvidence supported_reads = 13;
   string default_read_class = 14;
+  optional uint64 lag_since_ms = 15;
 }
 
 message ProjectionReplicaReport {

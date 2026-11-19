@@ -20,6 +20,11 @@ import {
 	ProjectionReplicationCheckedDataSchema,
 } from "./_generated/data_pb.js";
 import { isOptimisticConflict } from "./errors.js";
+import {
+	checkpointReplicaFreshness,
+	initialReplicaFreshness,
+	replicaStaleness,
+} from "./projection-freshness.js";
 import type { Projection, ProjectionSnapshot } from "./projection.js";
 
 const REPLICATED = "projection.EventReplicated";
@@ -59,6 +64,7 @@ export interface CrossCampProjectionView<Row> {
 		readonly status: "unknown" | "within-bound" | "exceeds-bound";
 		readonly boundMs: number;
 		readonly checkedAtMs: number | null;
+		readonly lagSinceMs: number | null;
 		readonly observedLagMs: number | null;
 		readonly ownerCampId: string;
 		readonly replicaCampId: string;
@@ -80,7 +86,7 @@ export interface CrossCampProjectionSubscription {
 interface ReplicaState {
 	readonly replicaSeq: number;
 	readonly events: Array<{ position: bigint; event: EventEnvelope }>;
-	readonly checkedAtMs: number | null;
+	readonly freshness: ReturnType<typeof initialReplicaFreshness>;
 	readonly lagged: boolean;
 	readonly boundMs: number | null;
 	readonly readClass: "bounded-staleness" | "eventual" | null;
@@ -148,7 +154,7 @@ export function createCrossCampProjection<Row>(
 	async function loadReplica(): Promise<ReplicaState> {
 		const events: Array<{ position: bigint; event: EventEnvelope }> = [];
 		let replicaSeq = 0;
-		let checkedAtMs: number | null = null;
+		let freshness = initialReplicaFreshness();
 		let lagged = false;
 		let boundMs: number | null = null;
 		let readClass: "bounded-staleness" | "eventual" | null = null;
@@ -213,10 +219,12 @@ export function createCrossCampProjection<Row>(
 					throw new Error(
 						"replica checkpoint does not match its source events",
 					);
-				if (checkedAtMs !== null && checked < checkedAtMs)
-					throw new Error("replica checkpoint clock moved backward");
+				freshness = checkpointReplicaFreshness(
+					freshness,
+					checked,
+					data.caughtUp,
+				);
 				if (data.caughtUp) {
-					checkedAtMs = checked;
 					recoveryPending = lagged;
 				}
 				pending = false;
@@ -243,7 +251,7 @@ export function createCrossCampProjection<Row>(
 		}
 		if (pending || recoveryPending)
 			throw new Error("replica contains an incomplete batch");
-		return { replicaSeq, events, checkedAtMs, lagged, boundMs, readClass };
+		return { replicaSeq, events, freshness, lagged, boundMs, readClass };
 	}
 
 	async function configure(state: ReplicaState): Promise<boolean> {
@@ -318,17 +326,13 @@ export function createCrossCampProjection<Row>(
 				continue;
 			}
 			const now = integer(options.nowMs(), "nowMs");
-			const checked = state.checkedAtMs;
-			if (checked !== null && now < checked)
-				throw new Error("replica clock moved backward");
-			const observedLagMs = checked === null ? null : now - checked;
-			const status =
-				observedLagMs === null
-					? "unknown"
-					: observedLagMs > options.maxStalenessMs
-						? "exceeds-bound"
-						: "within-bound";
-			const lagged = status === "exceeds-bound";
+			const staleness = replicaStaleness(
+				state.freshness,
+				now,
+				options.maxStalenessMs,
+			);
+			const { observedLagMs } = staleness;
+			const lagged = staleness.status === "exceeds-bound";
 			if (observedLagMs !== null && lagged !== state.lagged) {
 				const event = lagEvent(
 					lagged,
@@ -355,10 +359,8 @@ export function createCrossCampProjection<Row>(
 				sourcePosition: String(state.events.at(-1)?.position ?? 0n),
 				evidence: { source: "replica", readClass },
 				staleness: {
-					status,
+					...staleness,
 					boundMs: options.maxStalenessMs,
-					checkedAtMs: checked,
-					observedLagMs,
 					ownerCampId: options.ownerCampId,
 					replicaCampId: options.replicaCampId,
 				},
@@ -372,7 +374,10 @@ export function createCrossCampProjection<Row>(
 			const state = await loadReplica();
 			if (!(await configure(state))) continue;
 			const checkedAtMs = integer(options.nowMs(), "nowMs");
-			if (state.checkedAtMs !== null && checkedAtMs < state.checkedAtMs)
+			if (
+				state.freshness.lastCheckpointAtMs !== null &&
+				checkedAtMs < state.freshness.lastCheckpointAtMs
+			)
 				throw new Error("replica clock moved backward");
 			const last = state.events.at(-1);
 			const events: Array<{ position: bigint; event: EventEnvelope }> = [];
@@ -446,7 +451,11 @@ export function createCrossCampProjection<Row>(
 				view: await view({
 					replicaSeq: state.replicaSeq + records.length,
 					events: [...state.events, ...events],
-					checkedAtMs: caughtUp ? checkedAtMs : state.checkedAtMs,
+					freshness: checkpointReplicaFreshness(
+						state.freshness,
+						checkedAtMs,
+						caughtUp,
+					),
 					lagged: caughtUp ? false : state.lagged,
 					boundMs: state.boundMs,
 					readClass: state.readClass,
