@@ -6,8 +6,8 @@ publication, group consumption, leases, acknowledgement, negative
 acknowledgement, dead letters, explicit compaction, and audit reads. Each
 mutation and its terminal receipt use the same actor-local SQLite transaction.
 This actor is a different branded profile from the retained-log actor; its state
-schema and semantic identity are not interchangeable. It does not implement
-the legacy synchronous topic or legacy WIT/Bindle contract.
+schema and semantic identity are not interchangeable. A component needs an
+explicit durable messaging host binding to use it.
 
 The normal actor setup and independent host responsibilities in the
 [retained-log guide](./DURABLE-TOPIC-ACTOR.md) also apply here. In addition, the
@@ -31,6 +31,8 @@ const orders = createRivetDurableTopicBusActor({
   resolveScope: (identity) => trustedHost.resolveOrdersScope(identity),
   authorize: (claim) => trustedHost.verifyHeldOrdersGrant(claim),
   authorizeInstanceScope: (claim) => trustedHost.verifyHeldBusInstanceGrant(claim),
+  declaredTopics: ["orders", "orders-dead-letter"],
+  authorizeDeclaredTopics: (claim) => trustedHost.verifyDeclaredTopics(claim),
   verifyIngress: (claim) => trustedHost.verifyOrdersIngressFence(claim),
 });
 
@@ -44,6 +46,21 @@ must attest the bus reducer, profile, full executable and dependencies,
 identity and configuration. It must differ from a digest describing the partial
 log profile. The journal rejects a mismatched pin or state schema; this package
 currently provides no automatic migration between the profiles.
+
+`declaredTopics` is optional and is limited to 32 unique names. When supplied,
+the host must authorize the complete frozen list through
+`authorizeDeclaredTopics` as well as authorize the individual request and
+instance. The actor creates the declared topics atomically with the first
+successful mutation; rejected requests and rolled-back transactions do not
+create them. A lost reply can be retried with the same operation ID. Read-only
+audit requests before that first mutation do not create topics.
+
+For a nonempty declaration, `orders.semanticDigest` is derived from the host's
+supplied semantic digest and the sorted topic names. Use this returned digest in
+the client binding and source fence. A changed declaration has a different
+identity and cannot open the existing state without an independently managed
+transfer. The host must attest the full executable and the declaration; the
+digest does not establish that attestation by itself.
 
 The frozen `orders.limits` contains the actual profile, including 64 retained
 messages, 16 subscriptions, 32 topics, 8,192-byte payloads, 2,048 attribute
@@ -75,7 +92,10 @@ reusing an identity. Any externally managed transfer must preserve those
 counters and all live leases and receipts; resetting them could let an old
 consumer settle a new delivery.
 
-The repository's bounded transition explorer and SQLite actor fixtures check
-specific state and receipt scenarios. They do not prove the Rivet engine's
+The repository's bounded transition explorers and SQLite actor fixtures check
+specific state and receipt scenarios, including initialization, authorization,
+rollback and replay. The declared-topic model assumes atomic transactions,
+collision-resistant digests and a trusted authority; it is not a proof of the
+implementation. They do not prove the Rivet engine's
 process isolation, trusted host authorization, ownership fencing or liveness;
 those remain independent deployment obligations.
