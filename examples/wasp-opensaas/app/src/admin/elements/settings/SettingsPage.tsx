@@ -15,6 +15,13 @@ import { Label } from "../../../client/components/ui/label";
 import { Textarea } from "../../../client/components/ui/textarea";
 import { Breadcrumb } from "../../layout/Breadcrumb";
 import { DefaultLayout } from "../../layout/DefaultLayout";
+import {
+  canSubmitSettings,
+  clearPhotoFileInput,
+  handlePhotoFileChange,
+  invalidatePhotoRead,
+  type PhotoReadControl,
+} from "./settingsPhotoRead";
 
 const maxPhotoBytes = 256 * 1024;
 
@@ -27,8 +34,10 @@ type Profile = {
 
 export function SettingsPage({ user }: { user: AuthUser }) {
   const { refetch: refetchAuth } = useAuth();
-  const photoReadGeneration = useRef(0);
-  const activePhotoReader = useRef<FileReader | null>(null);
+  const photoReadControl = useRef<PhotoReadControl>({
+    generation: 0,
+    activeReader: null,
+  });
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [layoutUser, setLayoutUser] = useState(user);
   const [saved, setSaved] = useState<Profile>({
@@ -43,62 +52,34 @@ export function SettingsPage({ user }: { user: AuthUser }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  function clearPhotoFileInput() {
-    if (photoInputRef.current) {
-      photoInputRef.current.value = "";
-    }
-  }
-
-  function cancelPhotoRead() {
-    photoReadGeneration.current += 1;
-    activePhotoReader.current?.abort();
-    activePhotoReader.current = null;
-    setReadingPhoto(false);
-  }
+  const photoCallbacks = {
+    setReading: setReadingPhoto,
+    setDraftPhoto: (dataUrl: string) => {
+      setDraft((current) => ({ ...current, profilePhoto: dataUrl }));
+    },
+    setError,
+    clearError: () => setError(""),
+    clearNotice: () => setNotice(""),
+  };
 
   function changePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
-    clearPhotoFileInput();
-    cancelPhotoRead();
-    if (!file) return;
-    if (
-      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
-      file.size > maxPhotoBytes
-    ) {
-      setError("Choose a PNG, JPEG, or WebP image no larger than 256 KB.");
-      return;
-    }
-    const generation = photoReadGeneration.current;
-    const reader = new FileReader();
-    activePhotoReader.current = reader;
-    setReadingPhoto(true);
-    setError("");
-    setNotice("");
-    reader.onerror = () => {
-      if (generation !== photoReadGeneration.current) return;
-      activePhotoReader.current = null;
-      setReadingPhoto(false);
-      setError("The image could not be read.");
-    };
-    reader.onload = () => {
-      if (generation !== photoReadGeneration.current) return;
-      activePhotoReader.current = null;
-      setReadingPhoto(false);
-      const result = z.string().safeParse(reader.result);
-      if (!result.success) {
-        setError("The image could not be read.");
-        return;
-      }
-      setDraft((current) => ({ ...current, profilePhoto: result.data }));
-      setError("");
-      setNotice("");
-    };
-    reader.readAsDataURL(file);
+    clearPhotoFileInput(photoInputRef.current);
+    handlePhotoFileChange(
+      photoReadControl.current,
+      photoCallbacks,
+      file,
+      maxPhotoBytes,
+      (value) => {
+        const result = z.string().safeParse(value);
+        return result.success ? result.data : null;
+      },
+    );
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (readingPhoto || saving) {
+    if (!canSubmitSettings(readingPhoto, saving)) {
       return;
     }
     setSaving(true);
@@ -226,8 +207,8 @@ export function SettingsPage({ user }: { user: AuthUser }) {
                   variant="outline"
                   disabled={saving || readingPhoto}
                   onClick={() => {
-                    cancelPhotoRead();
-                    clearPhotoFileInput();
+                    invalidatePhotoRead(photoReadControl.current, photoCallbacks);
+                    clearPhotoFileInput(photoInputRef.current);
                     setDraft((current) => ({ ...current, profilePhoto: null }));
                   }}
                 >
@@ -244,8 +225,8 @@ export function SettingsPage({ user }: { user: AuthUser }) {
               variant="outline"
               disabled={saving || readingPhoto}
               onClick={() => {
-                cancelPhotoRead();
-                clearPhotoFileInput();
+                invalidatePhotoRead(photoReadControl.current, photoCallbacks);
+                clearPhotoFileInput(photoInputRef.current);
                 setDraft(saved);
                 setError("");
                 setNotice("");
