@@ -222,9 +222,7 @@ f: /* TODO: remove block */`;
 		const sql =
 			"SELECT 'it''s -- data # data', $$-- data # data$$; -- explanation\n/* explanation */";
 		assert.deepEqual(
-			commentViolations("x.sql", sql, new Set([1, 2])).map(
-				(item) => item.line,
-			),
+			commentViolations("x.sql", sql, new Set([1, 2])).map((item) => item.line),
 			[1, 2],
 		);
 		assert.deepEqual(
