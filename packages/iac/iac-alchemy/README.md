@@ -157,10 +157,23 @@ storage and authorization evidence is required for both.
 
 The optional `@hobo/iac-alchemy/cloudflare` entry point maps supported HoBo
 declarations to Alchemy Cloudflare components, including Workers, Vite websites,
-KV namespaces, R2 buckets, queues, D1 databases and Flagship flags. The support
+KV namespaces, R2 buckets, queues, Secrets Store secrets, D1 databases and
+Flagship flags. The support
 report distinguishes infrastructure provisioning from implemented runtime
 operations. Resource dependencies, consistency and identity must be validated
 against the exact mapping and independently attested host environment.
+
+For an infrastructure-only `secret` declaration, pass `secrets` to
+`cloudflareBindleMappers` with the Bindle and resource names, the existing
+Cloudflare account and store IDs, the secret name, and an Effect `Redacted`
+string value. `cloudflareSecretResourceId` gives the Alchemy resource ID for
+the target inventory. The host must verify the store, account, secret ownership
+and plan scope, and provide the authenticated secret fingerprint authority.
+Alchemy's local state persists secret values, so use a state backend that protects
+them. This mapping does not bind HoBo's runtime `put` or `access` operations.
+`model/CloudflareSecret.tla` checks a bounded mapping and preview decision under
+host-attested store, inventory and fingerprint assumptions; it does not prove
+the implementation or Cloudflare's behavior.
 
 The opt-in `@hobo/iac-alchemy/cloudflare/kv` and `cloudflare/r2` mappers bind
 Worker JavaScript to separately authorized KV and R2 proxy resources. KV grants

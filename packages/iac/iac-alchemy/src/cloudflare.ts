@@ -8,6 +8,7 @@ import { Namespace } from "@alchemy.run/cloudflare/KV/Namespace";
 import type { Providers } from "@alchemy.run/cloudflare/Providers";
 import { Queue } from "@alchemy.run/cloudflare/Queues/Queue";
 import { Bucket } from "@alchemy.run/cloudflare/R2/Bucket";
+import { Secret } from "@alchemy.run/cloudflare/SecretsStore/Secret";
 import { Vite } from "@alchemy.run/cloudflare/Website/Vite";
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import * as Effect from "effect/Effect";
@@ -28,6 +29,11 @@ import {
 	inspectCloudflareWorker,
 	validateCloudflareHttpAnnotations,
 } from "./cloudflare-runtime.js";
+import {
+	type CloudflareSecretDefinition,
+	captureCloudflareSecrets,
+	cloudflareSecretResourceId,
+} from "./cloudflare-secret.js";
 import { AlchemyIacError } from "./plan.js";
 import {
 	type AlchemySourceClaim,
@@ -45,12 +51,18 @@ export interface CloudflareBindleMappingOptions {
 	readonly sourceFence?: AlchemySourceFence;
 
 	readonly flagshipFlags?: readonly CloudflareFlagshipBoolean[];
+
+	readonly secrets?: readonly CloudflareSecretDefinition[];
 }
 
 export {
 	type CloudflareFlagshipBoolean,
 	cloudflareFlagshipResourceIds,
 } from "./cloudflare-flagship.js";
+export {
+	type CloudflareSecretDefinition,
+	cloudflareSecretResourceId,
+} from "./cloudflare-secret.js";
 
 const viteEntrypoints = new WeakMap<CloudflareBindleEntrypoint, string>();
 const applyVite = Reflect.apply;
@@ -75,7 +87,15 @@ export function cloudflareViteApp(root: string): () => never {
 
 export type CloudflareBindleMappers<Requirements> = Readonly<
 	Record<
-		"api" | "bucket" | "data" | "flag" | "kv" | "queue" | "service" | "web",
+		| "api"
+		| "bucket"
+		| "data"
+		| "flag"
+		| "kv"
+		| "queue"
+		| "secret"
+		| "service"
+		| "web",
 		AlchemyPrimitiveMapper<CloudflareBindleEntrypoint, Requirements, Providers>
 	>
 >;
@@ -91,7 +111,7 @@ const CLOUD_FLARE_LIMITATIONS: Readonly<Record<string, string>> = Object.freeze(
 		topic:
 			"Cloudflare Queue delivery is not a multi-subscriber messaging topic.",
 		secret:
-			"Cloudflare secrets have no implemented HoBo put/access runtime binding.",
+			"SecretsStore.Secret requires an explicit existing store and redacted value; HoBo put/access runtime operations are not bound.",
 		data: "D1.Database infrastructure only: the HoBo data runtime for read, write, query and administration is not bound.",
 		schedule:
 			"Workers CronEventSource and ScheduledEvents are available, but HoBo dynamic interval registration and its fail-closed cron handling are not bound.",
@@ -164,6 +184,7 @@ export function cloudflareBindleMappers<Requirements>(
 	const projectRoot = resolve(options.projectRoot ?? workingDirectory);
 	const sourceFence = captureAlchemySourceFence(options.sourceFence);
 	const flagshipFlags = captureCloudflareFlagshipFlags(options.flagshipFlags);
+	const secrets = captureCloudflareSecrets(options.secrets);
 	type Input = AlchemyPrimitiveInput<CloudflareBindleEntrypoint, Requirements>;
 	const sourceBinding = (
 		input: Input,
@@ -283,6 +304,17 @@ export function cloudflareBindleMappers<Requirements>(
 		bindsEntrypoint: false,
 		validate: noDependencies,
 	} as const;
+	const secretFor = (input: Input): CloudflareSecretDefinition | undefined => {
+		for (let index = 0; index < secrets.length; index++) {
+			const secret = secrets[index];
+			if (
+				secret?.bindleName === input.bindleName &&
+				secret.resourceName === input.declaration.name
+			)
+				return secret;
+		}
+		return undefined;
+	};
 	const http: AlchemyPrimitiveMapper<
 		CloudflareBindleEntrypoint,
 		Requirements,
@@ -431,6 +463,44 @@ export function cloudflareBindleMappers<Requirements>(
 		},
 	};
 	return {
+		secret: {
+			...empty,
+			resourceTypes: ["Cloudflare.SecretsStore.Secret"],
+			operations: [],
+			limitations: [
+				CLOUD_FLARE_LIMITATIONS.secret ?? "Secret support is limited.",
+			],
+			validate(input) {
+				noDependencies(input);
+				if (secretFor(input) === undefined)
+					throw new AlchemyIacError(
+						"SECRET_CONFIG_REQUIRED",
+						"an explicit existing store and redacted secret value are required",
+					);
+			},
+			build(input) {
+				const secret = secretFor(input);
+				if (secret === undefined)
+					throw new AlchemyIacError(
+						"SECRET_CONFIG_REQUIRED",
+						"an explicit existing store and redacted secret value are required",
+					);
+				return Effect.gen(function* () {
+					const primary = yield* Secret(
+						cloudflareSecretResourceId(
+							input.bindleName,
+							input.declaration.name,
+						),
+						{
+							store: { accountId: secret.accountId, storeId: secret.storeId },
+							name: secret.secretName,
+							value: secret.value,
+						},
+					);
+					return { primary, resources: [primary], boundDependencies: [] };
+				});
+			},
+		},
 		flag: {
 			...empty,
 			resourceTypes: ["Cloudflare.Flagship.App", "Cloudflare.Flagship.Flag"],
