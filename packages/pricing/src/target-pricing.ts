@@ -1,4 +1,4 @@
-import { create, fromJson, toJson } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
 	type QuoteScenario,
 	QuoteScenarioSchema,
@@ -10,21 +10,30 @@ import {
 	TargetPricingInventorySchema,
 	type TargetPricingModel,
 	type TargetPricingResource,
+	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
-import { tryResolveRateCard } from "./catalog.js";
-import {
-	agreementRequiresRateCardValidation,
-	rateCardChargesIncomplete,
-	referencedAgreementUnquotable,
-} from "./charge-coverage.js";
+import { resolveRateCard } from "./catalog.js";
+import { hasExplicitFixedChargeCoverage } from "./fixed-charge-coverage.js";
 import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
+	isSupportedPricingRealm,
 	type JsonValue,
 	stableHash,
 } from "./json.js";
-import { quoteScenario } from "./quote.js";
+import { quoteScenarioV2 } from "./quote.js";
+import { utcPricingTimeOrder } from "./time-order.js";
 import { isQuoteVector } from "./types.js";
+
+const hasOwn = Object.hasOwn;
+const getOwnPropertyDescriptors = Object.getOwnPropertyDescriptors;
+const cloneData = structuredClone;
+function ownDescriptorValue(fields: PropertyDescriptorMap, key: string) {
+	const descriptor = hasOwn(fields, key) ? fields[key] : undefined;
+	return descriptor !== undefined && hasOwn(descriptor, "value")
+		? descriptor.value
+		: undefined;
+}
 
 export type TargetPricingInventoryInput = Omit<
 	TargetPricingInventory,
@@ -54,14 +63,55 @@ export type TargetPricingQuote =
 	  }
 	| { readonly ok: false; readonly code: string; readonly reason: string };
 
+export type TargetProviderPricingCoverage = {
+	readonly providerId: string;
+	readonly resources: readonly {
+		readonly resourceId: string;
+		readonly productId: string;
+		readonly providerAccountRef: string;
+		readonly binding:
+			| "declared"
+			| "missing"
+			| "invalid"
+			| "unavailable"
+			| "unverified";
+	}[];
+} & (
+	| {
+			readonly status: "quoted";
+			readonly model: {
+				readonly source: "developer-supplied";
+				readonly modelId: string;
+				readonly revision: string;
+			};
+	  }
+	| {
+			readonly status: "unavailable" | "incomplete" | "unverified";
+			readonly rejection: { readonly code: string; readonly reason: string };
+	  }
+);
+
+export interface TargetPricingAssessment {
+	readonly quote: TargetPricingQuote;
+
+	readonly providerCoverage:
+		| {
+				readonly basis: "declared-inventory";
+				readonly providers: readonly TargetProviderPricingCoverage[];
+		  }
+		| { readonly basis: "unavailable"; readonly providers: readonly [] };
+}
+
 export function createTargetPricingInventory(
 	input: TargetPricingInventoryInput,
 ): TargetPricingInventory {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	if (!isBoundedPricingInput(input))
 		throw new TypeError("invalid or unbounded target pricing inventory");
 	let stable: TargetPricingInventoryInput;
 	try {
-		stable = structuredClone(input);
+		stable = cloneData(input);
 	} catch {
 		throw new TypeError("invalid target pricing inventory");
 	}
@@ -86,12 +136,12 @@ function validInventoryInput(input: TargetPricingInventoryInput): boolean {
 		allowed: readonly string[],
 		typeName: string,
 	) => {
-		const fields = Object.getOwnPropertyDescriptors(value);
-		const unknown = fields.$unknown?.value;
+		const fields = getOwnPropertyDescriptors(value);
+		const unknown = ownDescriptorValue(fields, "$unknown");
 		return (
-			(!Object.hasOwn(fields, "$typeName") ||
-				fields.$typeName?.value === typeName) &&
-			(!Object.hasOwn(fields, "$unknown") ||
+			(!hasOwn(fields, "$typeName") ||
+				ownDescriptorValue(fields, "$typeName") === typeName) &&
+			(!hasOwn(fields, "$unknown") ||
 				(Array.isArray(unknown) && unknown.length === 0)) &&
 			Object.keys(fields).every(
 				(key) =>
@@ -147,19 +197,49 @@ function validInventoryInput(input: TargetPricingInventoryInput): boolean {
 export function targetPricingUnavailable(
 	reason: string,
 ): TargetPricingAvailability {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	return create(TargetPricingAvailabilitySchema, {
 		state: { case: "unavailable", value: { reason } },
 	});
 }
 
+export function hashTargetPricingInventory(
+	input: TargetPricingInventory,
+): string | undefined {
+	if (
+		!isBoundedPricingInput(input) ||
+		!isExactProtoMessage(TargetPricingInventorySchema, input)
+	)
+		return undefined;
+	try {
+		const inventory = clone(TargetPricingInventorySchema, input);
+		const validation = quoteTargetPricing(
+			inventory,
+			targetPricingUnavailable("not priced"),
+		);
+		if (validation.ok || validation.code !== "PRICING_MODEL_UNAVAILABLE")
+			return undefined;
+		return stableHash(
+			toJson(TargetPricingInventorySchema, inventory, {
+				alwaysEmitImplicit: true,
+			}),
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 export function targetPricingModel(
 	input: TargetPricingModelInput,
 ): TargetPricingAvailability {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	if (!isBoundedPricingInput(input))
 		throw new TypeError("invalid or unbounded target pricing model");
 	let stable: TargetPricingModelInput;
 	try {
-		stable = structuredClone(input);
+		stable = cloneData(input);
 	} catch {
 		throw new TypeError("invalid target pricing model");
 	}
@@ -182,12 +262,12 @@ function validModelInput(input: TargetPricingModelInput): boolean {
 		allowed: readonly string[],
 		typeName: string,
 	) => {
-		const fields = Object.getOwnPropertyDescriptors(value);
-		const metadata = fields.$typeName?.value;
-		const unknown = fields.$unknown?.value;
+		const fields = getOwnPropertyDescriptors(value);
+		const metadata = ownDescriptorValue(fields, "$typeName");
+		const unknown = ownDescriptorValue(fields, "$unknown");
 		return (
-			(!Object.hasOwn(fields, "$typeName") || metadata === typeName) &&
-			(!Object.hasOwn(fields, "$unknown") ||
+			(!hasOwn(fields, "$typeName") || metadata === typeName) &&
+			(!hasOwn(fields, "$unknown") ||
 				(Array.isArray(unknown) && unknown.length === 0)) &&
 			Object.keys(fields).every(
 				(key) =>
@@ -252,6 +332,9 @@ function validName(value: string): boolean {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
+function compareName(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
 function refuse(code: string, reason: string): TargetPricingQuote {
 	return { ok: false, code, reason };
 }
@@ -260,6 +343,11 @@ export function quoteTargetPricing(
 	inventory: TargetPricingInventory,
 	availability: TargetPricingAvailability,
 ): TargetPricingQuote {
+	if (!isSupportedPricingRealm())
+		return refuse(
+			"PRICING_REALM_UNSUPPORTED",
+			"pricing requires an unchanged standard Object.prototype",
+		);
 	if (!isBoundedPricingInput(inventory) || !isBoundedPricingInput(availability))
 		return refuse(
 			"PRICING_INPUT_TOO_LARGE",
@@ -335,6 +423,16 @@ export function quoteTargetPricing(
 			"PRICING_MODEL_SCOPE_MISMATCH",
 			"model plan or tenant differs from target inventory",
 		);
+	if (inventory.operation === "destroy" && scenario.action !== "destroy")
+		return refuse(
+			"PRICING_MODEL_UNSUPPORTED",
+			"destroy requires an explicit destroy pricing scenario",
+		);
+	if (scenario.action === "destroy" && inventory.operation !== "destroy")
+		return refuse(
+			"PRICING_MODEL_SCOPE_MISMATCH",
+			"destroy pricing requires a destroy operation",
+		);
 	const { catalog, state, options } = scenario;
 	if (
 		catalog === undefined ||
@@ -359,6 +457,11 @@ export function quoteTargetPricing(
 			"TARGET_PRICING_INCOMPLETE",
 			"every target resource needs exactly one candidate and binding",
 		);
+	const used: {
+		productId: string;
+		agreementId: string;
+		workload: WorkloadDelta;
+	}[] = [];
 	for (const workload of scenario.baseline) {
 		const products = catalog.products.filter(
 			(entry) => entry.id === workload.productRef,
@@ -380,18 +483,6 @@ export function quoteTargetPricing(
 				"PRICING_MODEL_SCOPE_MISMATCH",
 				"baseline workload does not match its tenant and product agreement",
 			);
-		const resourceMatch = inventory.resources.find(
-			(resource) =>
-				resource.productId === workload.productRef &&
-				resource.providerId === product.providerId &&
-				resource.providerAccountRef === agreement.providerAccountRef,
-		);
-		if (resourceMatch === undefined) {
-			return refuse(
-				"PRICING_MODEL_SCOPE_MISMATCH",
-				"baseline workload must align with target inventory product, provider, and account",
-			);
-		}
 		const dimensions = product.meters.map((meter) => meter.dimension);
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
@@ -412,6 +503,7 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"baseline usage must cover every declared meter without unmodeled dimensions",
 			);
+		used.push({ productId: product.id, agreementId: agreement.id, workload });
 	}
 	for (const binding of model.bindings) {
 		const resource = inventory.resources.find(
@@ -474,8 +566,13 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"candidate usage must cover every declared meter without unmodeled dimensions",
 			);
+		used.push({
+			productId: product.id,
+			agreementId: agreement.id,
+			workload: candidate,
+		});
 	}
-	const quote = quoteScenario(scenario);
+	const quote = quoteScenarioV2(scenario);
 	if (!isQuoteVector(quote)) return refuse(quote.code, quote.message);
 	if (
 		quote.unpriced.length > 0 ||
@@ -486,57 +583,44 @@ export function quoteTargetPricing(
 			"TARGET_PRICING_INCOMPLETE",
 			"joint target quote is incomplete",
 		);
-	const workloadsAll = [...scenario.baseline, ...scenario.candidate];
-	for (const agreement of state.agreements) {
-		if (referencedAgreementUnquotable(agreement, workloadsAll)) {
-			return refuse(
-				"TARGET_PRICING_INCOMPLETE",
-				"referenced agreement status cannot be priced",
-			);
-		}
-		if (!agreementRequiresRateCardValidation(agreement, workloadsAll)) continue;
-		const products = catalog.products.filter(
-			(entry) => entry.id === agreement.productId,
+	for (const row of used) {
+		const product = catalog.products.find(
+			(entry) => entry.id === row.productId,
 		);
-		const product = products[0];
-		if (products.length !== 1 || product === undefined) {
-			return refuse("TARGET_PRICING_INCOMPLETE", "priced product is missing");
-		}
-		const meterNames = product.meters.map((meter) => meter.dimension);
-		if (
-			meterNames.some((dimension) => !validName(dimension)) ||
-			new Set(meterNames).size !== meterNames.length
-		) {
+		const agreement = state.agreements.find(
+			(entry) => entry.id === row.agreementId,
+		);
+		if (product === undefined || agreement === undefined)
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"rate-card charges must have declared meters or quantity inputs",
+				"priced product or agreement is missing",
 			);
-		}
-		const dimensions = new Set(meterNames);
-		const resolved = tryResolveRateCard(
+		const dimensions = new Set(product.meters.map((meter) => meter.dimension));
+		const rateCard = resolveRateCard(
 			catalog,
 			agreement,
 			scenario.at,
 			scenario.horizon,
-		);
-		if (!resolved.ok) {
-			return refuse(resolved.fault.code, resolved.fault.message);
-		}
-		const rateCard = resolved.card;
-		const workloadsForAgreement = workloadsAll.filter(
-			(entry) => entry.agreementRef === agreement.id,
+			utcPricingTimeOrder,
 		);
 		if (
-			rateCardChargesIncomplete(
-				rateCard.charges,
-				dimensions,
+			rateCard.charges.length === 0 ||
+			rateCard.charges.some(
+				(charge) =>
+					charge.variant.case === undefined ||
+					(charge.variant.case === "usage" &&
+						!dimensions.has(charge.variant.value.dimension)),
+			) ||
+			!hasExplicitFixedChargeCoverage(
+				rateCard,
 				agreement,
-				workloadsForAgreement,
+				row.workload,
+				dimensions.size > 0,
 			)
 		)
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"rate-card charges must have declared meters or quantity inputs",
+				"the rate card needs applicable charges and explicit quantities",
 			);
 	}
 	return {
@@ -556,4 +640,118 @@ export function quoteTargetPricing(
 		),
 		quote,
 	};
+}
+
+export function assessTargetPricing(
+	inventory: TargetPricingInventory,
+	availability: TargetPricingAvailability,
+): TargetPricingAssessment {
+	let quote: TargetPricingQuote;
+	let stableInventory: TargetPricingInventory;
+	let stableAvailability: TargetPricingAvailability;
+	if (!isBoundedPricingInput(inventory) || !isBoundedPricingInput(availability))
+		return {
+			quote: refuse(
+				"PRICING_INPUT_TOO_LARGE",
+				"pricing input exceeds the bounded data limits",
+			),
+			providerCoverage: { basis: "unavailable", providers: [] },
+		};
+	try {
+		stableInventory = structuredClone(inventory);
+		stableAvailability = structuredClone(availability);
+		quote = quoteTargetPricing(stableInventory, stableAvailability);
+	} catch {
+		return {
+			quote: refuse(
+				"INVALID_PRICING_INPUT",
+				"target pricing could not be inspected",
+			),
+			providerCoverage: { basis: "unavailable", providers: [] },
+		};
+	}
+	if (hashTargetPricingInventory(stableInventory) === undefined)
+		return { quote, providerCoverage: { basis: "unavailable", providers: [] } };
+	try {
+		const model =
+			stableAvailability.state?.case === "model"
+				? stableAvailability.state.value
+				: undefined;
+		const bindings = Array.isArray(model?.bindings)
+			? model.bindings
+			: undefined;
+		const candidates = Array.isArray(model?.scenario?.candidate)
+			? model.scenario.candidate
+			: undefined;
+		const groups = new Map<string, TargetPricingInventory["resources"]>();
+		for (const resource of stableInventory.resources) {
+			const rows = groups.get(resource.providerId) ?? [];
+			rows.push(resource);
+			groups.set(resource.providerId, rows);
+		}
+		const providers: TargetProviderPricingCoverage[] = [...groups.entries()]
+			.sort(([a], [b]) => compareName(a, b))
+			.map(([providerId, rows]) => {
+				const resources: TargetProviderPricingCoverage["resources"] = rows
+					.map(({ resourceId, productId, providerAccountRef }) => {
+						let binding: TargetProviderPricingCoverage["resources"][number]["binding"] =
+							"unverified";
+						if (quote.ok) binding = "declared";
+						else if (quote.code === "PRICING_MODEL_UNAVAILABLE")
+							binding = "unavailable";
+						else if (bindings !== undefined && candidates !== undefined) {
+							const matches = bindings.filter(
+								(entry) => entry.resourceId === resourceId,
+							);
+							const index = matches[0]?.candidateIndex;
+							if (matches.length === 0) binding = "missing";
+							else if (
+								matches.length !== 1 ||
+								index === undefined ||
+								!Number.isSafeInteger(index) ||
+								index < 0 ||
+								candidates[index] === undefined ||
+								bindings.filter((entry) => entry.candidateIndex === index)
+									.length !== 1
+							)
+								binding = "invalid";
+							else binding = "declared";
+						}
+						return { resourceId, productId, providerAccountRef, binding };
+					})
+					.sort((a, b) => compareName(a.resourceId, b.resourceId));
+				if (quote.ok)
+					return {
+						providerId,
+						status: "quoted",
+						resources,
+						model: {
+							source: quote.source,
+							modelId: quote.modelId,
+							revision: quote.revision,
+						},
+					};
+				const status =
+					quote.code === "PRICING_MODEL_UNAVAILABLE"
+						? "unavailable"
+						: resources.some(
+									(row) =>
+										row.binding === "missing" || row.binding === "invalid",
+								)
+							? "incomplete"
+							: "unverified";
+				return {
+					providerId,
+					status,
+					resources,
+					rejection: { code: quote.code, reason: quote.reason },
+				};
+			});
+		return {
+			quote,
+			providerCoverage: { basis: "declared-inventory", providers },
+		};
+	} catch {
+		return { quote, providerCoverage: { basis: "unavailable", providers: [] } };
+	}
 }

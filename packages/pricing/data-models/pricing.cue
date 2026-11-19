@@ -357,7 +357,7 @@ package data_models
 }
 
 #QuoteScenario: {
-	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel"
+	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel" | "destroy"
 	at:                 #UtcTimestamp
 	horizon:            #UtcTimestamp
 	pricingCatalogHash: #Digest
@@ -367,6 +367,10 @@ package data_models
 	candidate: [...#WorkloadDelta]
 	sourceProviderAgreementIds: [...string & !=""]
 	options:            #QuoteOptions
+	destroyCancelsAgreement?: bool
+	if action == "destroy" {
+		destroyCancelsAgreement: bool
+	}
 	pricingCatalogHash: catalog.catalogHash
 }
 

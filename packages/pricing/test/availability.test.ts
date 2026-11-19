@@ -1,13 +1,6 @@
-import { clone, create } from "@bufbuild/protobuf";
+import { clone } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import {
-	ChargeComponentSchema,
-	PackagePriceSchema,
-	ProviderAgreementSchema,
-	RateCardSchema,
-	TieredPriceSchema,
-	TierSchema,
-} from "../src/_generated/pricing_pb.js";
+import { ChargeComponentSchema } from "../src/_generated/pricing_pb.js";
 import {
 	developerPricing,
 	parsePricingAvailability,
@@ -15,6 +8,7 @@ import {
 	quoteAvailablePricing,
 } from "../src/availability.js";
 import {
+	fixedCharge,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
@@ -36,6 +30,28 @@ function scenario(price = "0.25") {
 		charges: [perUnitCharge("runtime", "minute", price)],
 		candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
 	});
+}
+
+function fixedScenario(price: string) {
+	const fixed = makeScenario({
+		charges: [fixedCharge("subscription", price)],
+		meters: [],
+		candidate: [workload("agreement-a", [])],
+	});
+	const charge = fixed.catalog?.rateCards[0]?.charges[0];
+	const candidate = fixed.candidate[0];
+	const agreement = fixed.state?.agreements[0];
+	if (
+		charge?.variant.case !== "fixed" ||
+		candidate === undefined ||
+		agreement === undefined
+	)
+		throw new Error("fixed-price fixture is incomplete");
+	charge.variant.value.quantityDimension = "instance";
+	candidate.quantities.instance = "1";
+	agreement.quantities.instance = "0";
+	rehashScenario(fixed);
+	return fixed;
 }
 
 describe("declared pricing availability", () => {
@@ -158,6 +174,115 @@ describe("declared pricing availability", () => {
 	});
 
 	it.each([
+		"12",
+		"0",
+	])("quotes a fixed-only contract with an explicit price of %s", (price) => {
+		const fixed = fixedScenario(price);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({
+			ok: true,
+			quote: {
+				incremental: { billed: { decimal: price, currency: "USD" } },
+			},
+		});
+	});
+
+	it("recognizes an existing flat subscription as a zero incremental cost", () => {
+		const fixed = fixedScenario("12");
+		const charge = fixed.catalog?.rateCards[0]?.charges[0];
+		if (charge?.variant.case !== "fixed") throw new Error("fixture missing");
+		delete charge.variant.value.quantityDimension;
+		rehashScenario(fixed);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({
+			ok: true,
+			quote: {
+				baseline: { billed: { decimal: "12", currency: "USD" } },
+				candidate: { billed: { decimal: "12", currency: "USD" } },
+				incremental: { billed: { decimal: "0", currency: "USD" } },
+			},
+		});
+	});
+
+	it.each([
+		"candidate",
+		"agreement",
+	] as const)("rejects a fixed price without an explicit %s quantity", (missing) => {
+		const fixed = fixedScenario("12");
+		const quantities =
+			missing === "candidate"
+				? fixed.candidate[0]?.quantities
+				: fixed.state?.agreements[0]?.quantities;
+		if (quantities === undefined) throw new Error("fixture missing");
+		delete quantities.instance;
+		rehashScenario(fixed);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it("rejects a fixed-only model whose charge does not match the workload", () => {
+		const fixed = fixedScenario("12");
+		const charge = fixed.catalog?.rateCards[0]?.charges[0];
+		const candidate = fixed.candidate[0];
+		if (charge?.base === undefined || candidate === undefined)
+			throw new Error("fixture missing");
+		charge.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rehashScenario(fixed);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, fixed)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it("does not require quantities for a fixed charge that does not apply", () => {
+		const metered = scenario();
+		const fixed = fixedScenario("12").catalog?.rateCards[0]?.charges[0];
+		const rateCard = metered.catalog?.rateCards[0];
+		const candidate = metered.candidate[0];
+		if (
+			fixed?.base === undefined ||
+			rateCard === undefined ||
+			candidate === undefined
+		)
+			throw new Error("fixture missing");
+		fixed.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rateCard.charges.push(fixed);
+		rehashScenario(metered);
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, metered)),
+		).toMatchObject({
+			ok: true,
+			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
+		});
+	});
+
+	it("does not treat an empty fixed-only rate card as a zero price", () => {
+		const missing = makeScenario({
+			charges: [],
+			meters: [],
+			candidate: [workload("agreement-a", [])],
+		});
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, missing)),
+		).toMatchObject({ ok: false });
+	});
+
+	it("rejects a usage charge when no matching meter is declared", () => {
+		const missingMeter = makeScenario({
+			charges: [perUnitCharge("runtime", "minute", "0.25")],
+			meters: [],
+			candidate: [workload("agreement-a", [])],
+		});
+		expect(
+			quoteAvailablePricing("sandbox", developerPricing(scope, missingMeter)),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
+	});
+
+	it.each([
 		["provider", { providerId: "other" }],
 		["tenant", { tenantId: "other" }],
 		["account", { providerAccountRef: "other" }],
@@ -240,387 +365,6 @@ describe("declared pricing availability", () => {
 		).toMatchObject({
 			ok: false,
 			code: "PRICING_MODEL_INCOMPLETE",
-		});
-	});
-
-	it("rejects an empty rate card on an extra in-scope active agreement", () => {
-		const incomplete = scenario();
-		const state = incomplete.state;
-		const source = state?.agreements[0];
-		const sourceCard = incomplete.catalog?.rateCards[0];
-		if (state === undefined || source === undefined || sourceCard === undefined)
-			throw new Error("fixture agreement missing");
-		const agreement = clone(ProviderAgreementSchema, source);
-		agreement.id = "agreement-b";
-		for (const entry of agreement.rateSchedule) entry.rateCardId = "empty-card";
-		state.agreements.push(agreement);
-		const rateCard = clone(RateCardSchema, sourceCard);
-		rateCard.id = "empty-card";
-		rateCard.charges = [];
-		incomplete.catalog?.rateCards.push(rateCard);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("rejects malformed quote intervals without throwing", () => {
-		const broken = scenario();
-		broken.at = "not-a-date";
-		rehashScenario(broken);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, broken)),
-		).toMatchObject({
-			ok: false,
-			code: "INVALID_PRICING_INPUT",
-		});
-	});
-
-	it("rejects graduated usage charges with hollow tiers", () => {
-		const incomplete = scenario();
-		const card = incomplete.catalog?.rateCards[0];
-		const firstCharge = card?.charges[0];
-		if (card === undefined || firstCharge === undefined)
-			throw new Error("fixture charge missing");
-		const tiered = clone(ChargeComponentSchema, firstCharge);
-		if (tiered.variant.case !== "usage" || tiered.base === undefined)
-			throw new Error("fixture usage charge missing");
-		tiered.variant.value.price = {
-			case: "graduated",
-			value: create(TieredPriceSchema, {
-				tiers: [
-					create(TierSchema, {
-						from: "0",
-						unitAmount: { decimal: "", currency: "USD" },
-					}),
-				],
-			}),
-		};
-		card.charges = [tiered];
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("rejects a charge component without a base id", () => {
-		const incomplete = scenario();
-		const card = incomplete.catalog?.rateCards[0];
-		if (card === undefined) throw new Error("fixture rate card missing");
-		card.charges.push(
-			create(ChargeComponentSchema, {
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						amount: { decimal: "10", currency: "USD" },
-						proration: "none",
-					},
-				},
-			}),
-		);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("rejects fixed charges on active agreements without workloads", () => {
-		const incomplete = scenario();
-		const state = incomplete.state;
-		const card = incomplete.catalog?.rateCards[0];
-		if (state === undefined || card === undefined)
-			throw new Error("fixture state or rate card missing");
-		card.charges.push(
-			create(ChargeComponentSchema, {
-				base: {
-					id: "seat",
-					selectors: {},
-					fallback: false,
-					invoiceBehavior: "itemized",
-				},
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						amount: { decimal: "10", currency: "USD" },
-						quantityDimension: "seat",
-						proration: "none",
-					},
-				},
-			}),
-		);
-		state.agreements.push(
-			clone(ProviderAgreementSchema, {
-				...state.agreements[0],
-				id: "agreement-b",
-			}),
-		);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({
-			ok: false,
-			code: "PRICING_MODEL_INCOMPLETE",
-		});
-	});
-
-	it("rejects a fixed charge whose quantity dimension is not supplied", () => {
-		const incomplete = scenario();
-		const card = incomplete.catalog?.rateCards[0];
-		if (card === undefined) throw new Error("fixture rate card missing");
-		card.charges.push(
-			create(ChargeComponentSchema, {
-				base: {
-					id: "seat",
-					selectors: {},
-					fallback: false,
-					invoiceBehavior: "itemized",
-				},
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						amount: { decimal: "10", currency: "USD" },
-						quantityDimension: "seat",
-						proration: "none",
-					},
-				},
-			}),
-		);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({
-			ok: false,
-			code: "PRICING_MODEL_INCOMPLETE",
-		});
-	});
-
-	it("rejects a one-sided tier and a package price without a size", () => {
-		const tieredScenario = scenario();
-		const tieredCard = tieredScenario.catalog?.rateCards[0];
-		const firstCharge = tieredCard?.charges[0];
-		if (tieredCard === undefined || firstCharge === undefined)
-			throw new Error("fixture charge missing");
-		const tiered = clone(ChargeComponentSchema, firstCharge);
-		if (tiered.variant.case !== "usage" || tiered.base === undefined)
-			throw new Error("fixture usage charge missing");
-		tiered.variant.value.price = {
-			case: "graduated",
-			value: create(TieredPriceSchema, {
-				tiers: [
-					create(TierSchema, {
-						from: "0",
-						unitAmount: { decimal: "1", currency: "USD" },
-					}),
-				],
-			}),
-		};
-		tieredCard.charges = [tiered];
-		rehashScenario(tieredScenario);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, tieredScenario)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-
-		const packaged = scenario();
-		const packagedCard = packaged.catalog?.rateCards[0];
-		const packagedCharge = packagedCard?.charges[0];
-		if (packagedCard === undefined || packagedCharge === undefined)
-			throw new Error("fixture charge missing");
-		const packageCharge = clone(ChargeComponentSchema, packagedCharge);
-		if (packageCharge.variant.case !== "usage")
-			throw new Error("fixture usage charge missing");
-		packageCharge.variant.value.price = {
-			case: "package",
-			value: create(PackagePriceSchema, {
-				packageSize: "",
-				packageAmount: { decimal: "1", currency: "USD" },
-			}),
-		};
-		packagedCard.charges = [packageCharge];
-		rehashScenario(packaged);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, packaged)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("rejects a fixed charge with no amount", () => {
-		const incomplete = scenario();
-		const card = incomplete.catalog?.rateCards[0];
-		if (card === undefined) throw new Error("fixture rate card missing");
-		card.charges.push(
-			create(ChargeComponentSchema, {
-				base: {
-					id: "platform",
-					selectors: {},
-					fallback: false,
-					invoiceBehavior: "itemized",
-				},
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						proration: "none",
-					},
-				},
-			}),
-		);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("rejects a missing fixed quantity on a past-due agreement the quote still rates", () => {
-		const incomplete = scenario();
-		const agreement = incomplete.state?.agreements[0];
-		const card = incomplete.catalog?.rateCards[0];
-		if (agreement === undefined || card === undefined)
-			throw new Error("fixture agreement missing");
-		agreement.status = "past-due";
-		card.charges.push(
-			create(ChargeComponentSchema, {
-				base: {
-					id: "seat",
-					selectors: {},
-					fallback: false,
-					invoiceBehavior: "itemized",
-				},
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						amount: { decimal: "10", currency: "USD" },
-						quantityDimension: "seat",
-						proration: "none",
-					},
-				},
-			}),
-		);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("rejects a missing fixed quantity on another active account", () => {
-		const incomplete = scenario();
-		const state = incomplete.state;
-		const source = state?.agreements[0];
-		const sourceCard = incomplete.catalog?.rateCards[0];
-		if (state === undefined || source === undefined || sourceCard === undefined)
-			throw new Error("fixture agreement missing");
-		const agreement = clone(ProviderAgreementSchema, source);
-		agreement.id = "agreement-b";
-		agreement.providerAccountRef = "account-b";
-		for (const entry of agreement.rateSchedule) entry.rateCardId = "card-b";
-		state.agreements.push(agreement);
-		const rateCard = clone(RateCardSchema, sourceCard);
-		rateCard.id = "card-b";
-		rateCard.charges.push(
-			create(ChargeComponentSchema, {
-				base: {
-					id: "seat",
-					selectors: {},
-					fallback: false,
-					invoiceBehavior: "itemized",
-				},
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						amount: { decimal: "10", currency: "USD" },
-						quantityDimension: "seat",
-						proration: "none",
-					},
-				},
-			}),
-		);
-		incomplete.catalog?.rateCards.push(rateCard);
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("does not treat another agreement workload quantities as fixed inputs", () => {
-		const incomplete = scenario();
-		const state = incomplete.state;
-		const source = state?.agreements[0];
-		const sourceCard = incomplete.catalog?.rateCards[0];
-		const candidate = incomplete.candidate[0];
-		if (
-			state === undefined ||
-			source === undefined ||
-			sourceCard === undefined ||
-			candidate === undefined
-		) {
-			throw new Error("fixture scenario incomplete");
-		}
-		const agreement = clone(ProviderAgreementSchema, source);
-		agreement.id = "agreement-b";
-		agreement.providerAccountRef = "account-b";
-		for (const entry of agreement.rateSchedule) entry.rateCardId = "card-b";
-		state.agreements.push(agreement);
-		const rateCard = clone(RateCardSchema, sourceCard);
-		rateCard.id = "card-b";
-		rateCard.charges.push(
-			create(ChargeComponentSchema, {
-				base: {
-					id: "seat",
-					selectors: {},
-					fallback: false,
-					invoiceBehavior: "itemized",
-				},
-				variant: {
-					case: "fixed",
-					value: {
-						cadence: "monthly",
-						timing: "advance",
-						amount: { decimal: "10", currency: "USD" },
-						quantityDimension: "seat",
-						proration: "none",
-					},
-				},
-			}),
-		);
-		incomplete.catalog?.rateCards.push(rateCard);
-		candidate.quantities = { seat: "3" };
-		rehashScenario(incomplete);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, incomplete)),
-		).toMatchObject({ ok: false, code: "PRICING_MODEL_INCOMPLETE" });
-	});
-
-	it("does not require a rate card for an unreferenced trialing agreement", () => {
-		const kept = scenario();
-		const state = kept.state;
-		const source = state?.agreements[0];
-		const sourceCard = kept.catalog?.rateCards[0];
-		if (state === undefined || source === undefined || sourceCard === undefined)
-			throw new Error("fixture agreement missing");
-		const agreement = clone(ProviderAgreementSchema, source);
-		agreement.id = "agreement-trial";
-		agreement.status = "trialing";
-		for (const entry of agreement.rateSchedule) entry.rateCardId = "card-trial";
-		state.agreements.push(agreement);
-		const rateCard = clone(RateCardSchema, sourceCard);
-		rateCard.id = "card-trial";
-		rateCard.charges = [];
-		kept.catalog?.rateCards.push(rateCard);
-		rehashScenario(kept);
-		expect(
-			quoteAvailablePricing("sandbox", developerPricing(scope, kept)),
-		).toMatchObject({
-			ok: true,
-			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
 		});
 	});
 

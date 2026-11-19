@@ -1321,8 +1321,11 @@ exec /usr/bin/git "$@"
 `,
 				{ mode: 0o755 },
 			);
+			const sharedTemp = join(root, "command-temp");
+			mkdirSync(sharedTemp, { recursive: true });
 			const commandEnv = {
 				...isolatedEnv,
+				TMPDIR: sharedTemp,
 				PATH: `${bin}:${isolatedEnv.PATH ?? ""}`,
 				GIT_CONFIG_GLOBAL: "/dev/null",
 				GIT_CONFIG_NOSYSTEM: "1",
