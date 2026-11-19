@@ -738,7 +738,6 @@
         "src/draft/technical-proofs/local-dev-orchestration-contract/**",
         "src/draft/technical-proofs/matching-engine-skeleton-contract/**",
         "src/draft/technical-proofs/materialization-subscription-contract/**",
-        "src/draft/technical-proofs/native-log-projection-contract/**",
         "src/draft/technical-proofs/oci-artifact-storage-contract/**",
         "src/draft/technical-proofs/openfeature-provider-adapters-contract/**",
         "src/draft/technical-proofs/persona-operating-profile-contract/**",

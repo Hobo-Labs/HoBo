@@ -21,7 +21,7 @@ it("reports replica consistency and missing lag signals from the local journal",
 		const projection = defineProjection({
 			name: "tickets",
 			key: (event) => event.streamId,
-			on: {},
+			on: { "ticket.Opened": () => ({}) },
 		});
 		const runtime = createCrossCampProjection({
 			projection,
