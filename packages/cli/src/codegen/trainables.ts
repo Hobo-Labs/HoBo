@@ -30,21 +30,36 @@ export interface DirectiveFunction {
 	readonly name: string;
 	readonly file: string;
 	readonly emitted: string;
+	readonly intent?: string;
 }
 
 type DiscoverInSource = typeof discoverInSource;
 
-function directiveFunctionNames(
+function directiveFunctions(
 	discover: DiscoverInSource,
 	source: string,
-): readonly string[] {
-	const names = new Set<string>();
+): readonly Pick<DirectiveFunction, "name" | "intent">[] {
+	const functions = new Map<string, string | undefined>();
 	for (const target of discover(source)) {
-		if (target.className === undefined && target.exported) {
-			names.add(target.methodName);
+		if (
+			target.className === undefined &&
+			target.exported &&
+			!functions.has(target.methodName)
+		) {
+			functions.set(target.methodName, sourceIntent(target.implementation));
 		}
 	}
-	return [...names];
+	return [...functions].map(([name, intent]) =>
+		intent === undefined ? { name } : { name, intent },
+	);
+}
+
+function sourceIntent(implementation: string): string | undefined {
+	const comment = implementation.match(
+		/^(?:\/\/[ \t]*([^\r\n]*)|\/\*\*?\s*([\s\S]*?)\*\/)/u,
+	);
+	const text = (comment?.[1] ?? comment?.[2])?.replace(/\s*\*\s*/g, " ").trim();
+	return text || undefined;
 }
 
 export async function scanTrainableDirectives(
@@ -57,12 +72,12 @@ export async function scanTrainableDirectives(
 	for (const path of await scannedSources(projectRoot, layout)) {
 		const source = await readFile(path, "utf8");
 		discover ??= (await import("ts-autocode-training")).discoverInSource;
-		const names = directiveFunctionNames(discover, source);
-		if (names.length === 0) continue;
+		const functions = directiveFunctions(discover, source);
+		if (functions.length === 0) continue;
 		if (path.endsWith(".tsx")) preserveJsx ??= preservesJsx(projectRoot);
 		const file = projectPath(projectRoot, path);
 		const emitted = emittedPath(file, preserveJsx === true);
-		for (const name of names) found.push({ name, file, emitted });
+		for (const fn of functions) found.push({ ...fn, file, emitted });
 	}
 	return found;
 }
@@ -261,11 +276,17 @@ function toDirectiveEntry(
 	const specifier = posix
 		.relative(fromDir, directive.emitted)
 		.replace(/^(?!\.)/, "./");
+	const options = [
+		`methodRef: ${JSON.stringify(directive.name)}`,
+		...(directive.intent === undefined
+			? []
+			: [`intent: ${JSON.stringify(directive.intent)}`]),
+	].join(", ");
 
 	return {
 		stub,
 		importLine: `import { ${directive.name} } from ${JSON.stringify(specifier)};\n`,
-		code: `export const ${stub.exportName} = training.infer(${directive.name});\n`,
+		code: `export const ${stub.exportName} = training.infer(${directive.name}, { ${options} });\n`,
 	};
 }
 

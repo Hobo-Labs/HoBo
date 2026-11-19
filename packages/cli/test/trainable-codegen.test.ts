@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { serializeTrainingArtifactProgram } from "@hobo/core";
@@ -10,6 +10,7 @@ import {
 	resolveTrainable,
 	type Trainable,
 } from "@hobo/runtime";
+import { build } from "esbuild";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeFixtureProject } from "../src/codegen/fixture.js";
 import { runCodegen } from "../src/codegen/run-codegen.js";
@@ -151,6 +152,62 @@ describe("trainable codegen", () => {
 		await expect(ranked({ items: ["b", "a"] })).resolves.toEqual({
 			ranked: ["a", "b"],
 		});
+	});
+
+	it.each([
+		{
+			kind: "line comment",
+			comment: "// Rank feed items; stable sort as the initial implementation.",
+			assignment: "",
+			intent: "Rank feed items; stable sort as the initial implementation.",
+		},
+		{
+			kind: "block comment",
+			comment: '/**\n * Rank "new" items first.\n * Keep ties stable.\n */',
+			assignment: "",
+			intent: 'Rank "new" items first. Keep ties stable.',
+		},
+		{
+			kind: "structured intent",
+			comment: "",
+			assignment: 'rankFeed.trainingIntent = "Sort by relevance.";',
+			intent: "Sort by relevance.",
+		},
+	])("keeps $kind and method identity after bundling", async ({
+		comment,
+		assignment,
+		intent,
+	}) => {
+		await writeFile(
+			join(projectRoot, "src/rank.ts"),
+			[
+				"export async function rankFeed(input: { items: string[] }): Promise<{ ranked: string[] }> {",
+				'  "use training";',
+				comment,
+				"  return { ranked: [...input.items].sort() };",
+				"}",
+				assignment,
+			].join("\n"),
+		);
+		await runCodegen({ projectRoot, check: false });
+		const result = await build({
+			entryPoints: [join(projectRoot, "src/_generated/trainables.ts")],
+			bundle: true,
+			packages: "external",
+			format: "esm",
+			platform: "node",
+			minify: true,
+			write: false,
+		});
+		const bundle = result.outputFiles[0];
+		if (!bundle) throw new Error("Missing trainables bundle");
+		if (comment) expect(bundle.text).not.toContain(comment);
+		const file = join(projectRoot, "trainables-bundled.mjs");
+		await writeFile(file, bundle.text);
+		const mod = await import(pathToFileURL(file).href);
+		expect(isTrainable(mod.rankFeedTraining)).toBe(true);
+		const fact = listTrainables().find((item) => item.methodRef === "rankFeed");
+		expect(fact?.intent).toBe(intent);
 	});
 
 	it("applies a training artifact for tuned output and reverts to the stub", async () => {

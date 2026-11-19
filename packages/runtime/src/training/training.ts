@@ -307,7 +307,7 @@ function inferIntent(
 	structuredIntent: string | undefined,
 ): string {
 	const comment = source.match(
-		/["']use training["'];?\s*(?:\/\/\s*(.+)|\/\*\*?\s*([\s\S]*?)\*\/)/,
+		/["']use training["'];?\s*(?:\/\/[ \t]*([^\r\n]*)|\/\*\*?\s*([\s\S]*?)\*\/)/,
 	);
 	const text = (comment?.[1] ?? comment?.[2])?.replace(/\s*\*\s*/g, " ").trim();
 	if (text) return text;
