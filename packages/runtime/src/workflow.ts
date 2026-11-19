@@ -303,12 +303,7 @@ export function createWorkflowEngine(
 			seed,
 		);
 		const input = captureWorkflowInput(args);
-		if (
-			!isDeepStrictEqual(
-				cloneAsJson(startedFact.args),
-				cloneAsJson(input),
-			)
-		) {
+		if (!isDeepStrictEqual(cloneAsJson(startedFact.args), cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
 		}
 		const runArgs = input;
