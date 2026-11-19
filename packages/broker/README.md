@@ -441,7 +441,7 @@ settlement. Generated histories exercise the TypeScript authority; the finite
 TLA+ models and unbounded arithmetic abstraction state their assumptions and do
 not prove the storage adapters, cryptography, or provider effects. The
 `BrokerBudget` finite model admits a unit reserve only while `Spent + Held` stays
-under the aggregate cap and records over-reserve attempts through `badAdmission`,
+under the aggregate cap; unfunded reserve transitions are omitted from `Next`,
 and the `BrokerEntitlement` config keeps claim/settle on held phases while
 `RecordZeroUnits` may run under uncertain fencing; optional Z3 scope lemmas in
 the skill mirror those same bucket rules. Pricing CI pins immutable TLC 1.7.4.

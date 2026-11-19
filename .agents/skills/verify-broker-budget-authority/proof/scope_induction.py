@@ -50,6 +50,10 @@ if mutation != "omit-unit":
 if mutation != "omit-period":
     configure_guards.append(Implies(active, next_period == bucket_period))
     replay_guards.append(Implies(active, next_period == claim_period))
+if mutation != "omit-unit":
+    configure_guards.append(Implies(Not(active), next_unit == bucket_unit))
+if mutation != "omit-period":
+    configure_guards.append(Implies(Not(active), next_period == bucket_period))
 
 state = safe(active, bucket_unit, bucket_period, claim_unit, claim_period)
 checks = [
