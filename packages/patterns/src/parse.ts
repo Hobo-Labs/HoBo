@@ -347,7 +347,7 @@ export function parseRenderRequest<T>(input: T): ParsedRenderRequest {
 	}
 	const rec = input;
 	return Object.freeze({
-		patternId: str(rec.patternId ?? rec.id, "patternId"),
+		patternId: str(rec.patternId, "patternId"),
 		renderingId: optStr(rec.renderingId),
 		params: recordParams(rec.params),
 	});
@@ -370,7 +370,7 @@ export function parseApplicationRequest<T>(input: T): ParsedApplicationRequest {
 	}
 	const rec = input;
 	return Object.freeze({
-		patternId: str(rec.patternId ?? rec.id, "patternId"),
+		patternId: str(rec.patternId, "patternId"),
 		isolationRoot: str(rec.isolationRoot, "isolationRoot"),
 		targetPath: str(rec.targetPath, "targetPath"),
 		isolationRunId: str(rec.isolationRunId, "isolationRunId"),
