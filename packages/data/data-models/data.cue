@@ -223,6 +223,7 @@ import "list"
 	boundMs:          =~"^[0-9]+$"
 	stalenessStatus:  "unknown" | "within-bound" | "exceeds-bound"
 	checkedAtMs?:     =~"^[0-9]+$"
+	lagSinceMs?:      =~"^[0-9]+$"
 	observedLagMs?:   =~"^[0-9]+$"
 	lagSignalActive:  bool
 	missingLagSignal: bool
@@ -232,8 +233,11 @@ import "list"
 		checkedAtMs?:   _|_
 		observedLagMs?: _|_
 	}
+	if stalenessStatus == "within-bound" {
+		checkedAtMs: =~"^[0-9]+$"
+	}
 	if stalenessStatus != "unknown" {
-		checkedAtMs:   =~"^[0-9]+$"
+		lagSinceMs:    =~"^[0-9]+$"
 		observedLagMs: =~"^[0-9]+$"
 	}
 	if missingLagSignal {

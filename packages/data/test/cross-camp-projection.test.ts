@@ -313,6 +313,98 @@ describe("cross-camp projection replication", () => {
 		expect(completed.view.staleness.status).toBe("within-bound");
 	});
 
+	it("signals sustained lag even when the first catch-up has not completed", async () => {
+		const f = fixture(1);
+		const runtime = createCrossCampProjection(f.options);
+		await runtime.append(
+			"camp-east",
+			"tickets",
+			[
+				{ type: "ticket.Opened", data: {} },
+				{ type: "ticket.Opened", data: {} },
+				{ type: "ticket.Opened", data: {} },
+			],
+			append,
+		);
+		const initial = await runtime.replicate();
+		expect(initial.caughtUp).toBe(false);
+		expect(initial.view.staleness).toMatchObject({
+			status: "unknown",
+			checkedAtMs: null,
+			lagSinceMs: 1000,
+			observedLagMs: null,
+		});
+		f.setNow(1201);
+		const report = () =>
+			readProjectionReplicaReport({
+				store: f.replica,
+				tenant: "workspace",
+				nowMs: f.options.nowMs,
+			});
+		const missing = await report();
+		expect(missing.replicas[0]).toMatchObject({
+			stalenessStatus: "exceeds-bound",
+			lagSinceMs: 1000n,
+			observedLagMs: 201n,
+			missingLagSignal: true,
+		});
+		expect(missing.replicas[0]?.checkedAtMs).toBeUndefined();
+		const next = await runtime.replicate();
+		expect(next.caughtUp).toBe(false);
+		expect(next.view.staleness).toMatchObject({
+			status: "exceeds-bound",
+			observedLagMs: 201,
+		});
+		expect((await report()).replicas[0]).toMatchObject({
+			lagSignalActive: true,
+			missingLagSignal: false,
+		});
+		const directory = mkdtempSync(join(tmpdir(), "hobo-initial-lag-"));
+		try {
+			const path = join(directory, "report.json");
+			writeFileSync(
+				path,
+				JSON.stringify(
+					toJson(ProjectionReplicaReportSchema, missing, {
+						alwaysEmitImplicit: true,
+					}),
+				),
+			);
+			const schema = fileURLToPath(
+				new URL("../data-models/data.cue", import.meta.url),
+			);
+			const cue =
+				process.env.HOBO_CUE_BIN ||
+				fileURLToPath(
+					new URL("../../../.tools/cue/v0.14.0/cue", import.meta.url),
+				);
+			execFileSync(cue, [
+				"vet",
+				schema,
+				path,
+				"-d",
+				"#ProjectionReplicaReport",
+			]);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+		f.setNow(1100);
+		await expect(runtime.replicate()).rejects.toThrow("clock moved backward");
+		await expect(report()).rejects.toThrow("clock moved backward");
+		f.setNow(1300);
+		const completed = await runtime.replicate();
+		expect(completed.caughtUp).toBe(true);
+		expect(completed.view.staleness).toMatchObject({
+			status: "within-bound",
+			checkedAtMs: 1300,
+			lagSinceMs: 1300,
+		});
+		expect((await report()).replicas[0]).toMatchObject({
+			lagSignalActive: false,
+			missingLagSignal: false,
+		});
+	});
+
 	it("records lag and recovery once across concurrent readers and restart", async () => {
 		const f = fixture();
 		const first = createCrossCampProjection(f.options);
