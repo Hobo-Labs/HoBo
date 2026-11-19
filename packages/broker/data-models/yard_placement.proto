@@ -104,6 +104,9 @@ message BudgetLedgerSnapshot {
   double recovery_reserve_micros = 11;
   // Commitments owned by another authority; excludes this journal's holds.
   double external_committed_micros = 12;
+  // Active admissions with unknown, unbounded liability. While nonzero the
+  // monetary counters are only known lower bounds and bounded admission stops.
+  uint32 unbounded_exposure_count = 13;
 }
 
 message BudgetProviderAccount {
@@ -225,6 +228,12 @@ message BudgetReservation {
   string financial_plan_hash = 16;
   // Field 17 is allocated by the shared subscope work.
   BudgetFenceSettlementGuard fence_settlement_guard = 18;
+  // A held/uncertain reservation with this marker represents unknown liability;
+  // reserved_micros and account amounts are not estimates or upper bounds.
+  bool unbounded_exposure = 19;
+  IacUnpricedPolicyProof unpriced_policy_proof = 20;
+  IacUnpricedScopeProof unpriced_scope_proof = 21;
+  IacPricingPin iac_pricing_pin = 22;
 }
 
 message BudgetAuthorityEvent {
@@ -242,4 +251,78 @@ message HostingPolicyProof {
   string effect = 5;
   string evidence_ref = 6;
   bool obligations_satisfied = 7;
+}
+
+// Policy explicitly authorizes execution without financial budget evaluation.
+message IacUnpricedPolicyProof {
+  string request_digest = 1;
+  string inventory_hash = 2;
+  BudgetIdentity identity = 3;
+  string policy_hash = 4;
+  string effect = 5;
+  string evidence_ref = 6;
+  bool obligations_satisfied = 7;
+  string observed_at = 8;
+  string valid_until = 9;
+}
+
+// An independent financial-scope authority attests exclusive ownership until
+// the provider source is stopped and the unbounded admission is settled.
+message IacUnpricedScopeProof {
+  BudgetIdentity identity = 1;
+  repeated string provider_account_ids = 2;
+  string authority_ref = 3;
+  string evidence_ref = 4;
+  string ownership_epoch = 5;
+  string observed_at = 6;
+  bool exclusive_until_settled = 7;
+  bool no_shared_entitlements = 8;
+  string signature = 9;
+}
+
+// Inputs that made a priced IaC admission; immutable for the claimed effect.
+message IacPricingPin {
+  string plan_digest = 1;
+  string inventory_hash = 2;
+  string model_hash = 3;
+  string quote_hash = 4;
+  string evidence_hash = 5;
+  string valid_until = 6;
+}
+
+// A trusted host verifies this separately from developer-authored pricing.
+message IacTargetLiabilityEvidence {
+  string evidence_ref = 1;
+  string target_id = 2;
+  string tenant_id = 3;
+  string plan_digest = 4;
+  string inventory_hash = 5;
+  string model_hash = 6;
+  string quote_hash = 7;
+  optional double maximum_micros = 8;
+  string observed_at = 9;
+  string valid_until = 10;
+  repeated ProviderAccountExposure provider_accounts = 11;
+}
+
+message IacBudgetDisclosure {
+  string evaluation = 1;
+  string reservation = 2;
+}
+
+message IacTargetAdmissionDecision {
+  string request_id = 1;
+  string target_id = 2;
+  string status = 3;
+  string code = 4;
+  string message = 5;
+  IacBudgetDisclosure budget = 6;
+  string request_digest = 7;
+  string inventory_hash = 8;
+  string model_hash = 9;
+  string quote_hash = 10;
+  HostingQuote quote = 11;
+  BudgetReservation reservation = 12;
+  HostingPolicyProof policy_proof = 13;
+  IacUnpricedPolicyProof unpriced_policy_proof = 14;
 }

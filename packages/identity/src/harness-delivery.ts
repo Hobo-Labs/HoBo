@@ -167,6 +167,21 @@ export interface DeliveryPort {
 	gatewayWeight(rolloutId: string): number;
 }
 
+export function validateRolloutPolicy(policy: RolloutPolicy): void {
+	if (!policy.stages.length) {
+		throw new TypeError("rollout requires at least one stage");
+	}
+	for (const stage of policy.stages) {
+		for (const group of stage.groups ?? []) {
+			if (!group.targets.length) {
+				throw new TypeError(
+					`rollout group requires at least one target: ${group.name}`,
+				);
+			}
+		}
+	}
+}
+
 const EMPTY_TARGETS: readonly string[] = Object.freeze([]);
 
 const EMPTY_STAGED_PROGRESS: StagedRolloutProgress = Object.freeze({
@@ -409,18 +424,7 @@ export class OpenDeliveryEngine implements DeliveryPort {
 	}
 
 	start(policy: RolloutPolicy): RolloutState {
-		if (!policy.stages.length) {
-			throw new TypeError("rollout requires at least one stage");
-		}
-		for (const stage of policy.stages) {
-			for (const group of stage.groups ?? []) {
-				if (!group.targets.length) {
-					throw new TypeError(
-						`rollout group requires at least one target: ${group.name}`,
-					);
-				}
-			}
-		}
+		validateRolloutPolicy(policy);
 		const frozen = freezePolicy(policy);
 		const id = `rollout_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
 		const stage0 = first(frozen.stages);
@@ -746,10 +750,9 @@ export class OpenDeliveryEngine implements DeliveryPort {
 		const killSwitch = existing?.killSwitch === true;
 		this.store.define({
 			key: flag,
-			// Kill-switch forces zero percent; otherwise apply the stage percent.
-			percentage: killSwitch ? 0 : percent,
-			enabled: true,
-			state: "ENABLED",
+			percentage: percent,
+			enabled: existing?.enabled ?? true,
+			state: existing?.state ?? "ENABLED",
 			killSwitch,
 			defaultValue: existing?.defaultValue ?? false,
 			variants: existing?.variants,
@@ -762,6 +765,9 @@ export class OpenDeliveryEngine implements DeliveryPort {
 				: undefined),
 			...(existing?.targeting !== undefined
 				? { targeting: existing.targeting }
+				: undefined),
+			...(existing?.experimentAllocation !== undefined
+				? { experimentAllocation: existing.experimentAllocation }
 				: undefined),
 		});
 	}
