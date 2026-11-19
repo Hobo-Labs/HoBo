@@ -9,6 +9,13 @@ models = Path(__file__).resolve().parent.parent / "models"
 jar = Path(os.environ["TLA2TOOLS"]).resolve()
 cases = [
     (
+        "mandatory failure during catch-up",
+        "FanoutMandatoryFailure",
+        "NoStartsAfterMandatoryFailure",
+        "IF Failed THEN {}",
+        "IF Failed /\\ ~catchUp THEN {}",
+    ),
+    (
         "halted pilot start",
         "Fanout",
         "NoNewStartsWhileHalted",

@@ -11,6 +11,12 @@ vitest = root / "node_modules/vitest/vitest.mjs"
 config = root / ".agents/skills/verify-cd-fanout/models/vitest.config.mts"
 cases = [
     (
+        "mandatory failure during catch-up",
+        "free === 0 || mandatoryFailed",
+        "free === 0 || (mandatoryFailed && !options.catchUp)",
+        "stops all new starts after a mandatory failure",
+    ),
+    (
         "halt guard",
         "options.halted || free === 0",
         "free === 0",

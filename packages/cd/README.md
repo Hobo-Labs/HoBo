@@ -116,9 +116,10 @@ names the owning module, whose README has the detailed procedure.
   `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or newer).
 
 Fan-out catch-up still waits for all mandatory Camps before scheduling other
-Camps. A slot absent from a scheduler input is treated as pending when checking
-completion, as it is when selecting candidates. The normal journal fold
-initializes a slot for every Camp. See the
+Camps. A mandatory failure stops new starts in both normal and catch-up modes;
+already in-flight work may still finish. A slot absent from a scheduler input is
+treated as pending when checking completion, as it is when selecting candidates.
+The normal journal fold initializes a slot for every Camp. See the
 [fan-out verification skill](../../.agents/skills/verify-cd-fanout/SKILL.md)
 for the checked models, generated cases, and their limits.
 The skill also executes four isolated implementation mutations, four TLA+
