@@ -3,7 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { FeedResponse } from "@hobo/cd";
+import {
+	type CampId,
+	CampManagement,
+	type CampTopology,
+	type CdContext,
+	type FeedResponse,
+	type ReconcileObservationRecord,
+} from "@hobo/cd";
 import { describe, expect, it } from "vitest";
 
 import { composeCdHost } from "../src/cd-host.js";
@@ -62,8 +69,43 @@ const json = (body: FeedResponse["body"]) => {
 	return JSON.parse(new TextDecoder().decode(body));
 };
 
+type TestRuntime = Extract<
+	Awaited<ReturnType<typeof openCdRuntime>>,
+	{ ok: true }
+>["value"];
+
+function fakeReconciler(
+	reconcileOnce: (
+		campId: CampId,
+		ctx: CdContext,
+	) => Promise<ReconcileObservationRecord>,
+) {
+	return {
+		reconcilerId: "test-reconciler",
+		mode: 0,
+		run: async () => {},
+		reconcileOnce,
+	} as never;
+}
+
+function campTopology(
+	campId: string,
+	management: CampManagement,
+): CampTopology {
+	return {
+		campId: campId as CampId,
+		yardId: "edge",
+		stationId: "station",
+		provider: "vercel",
+		regions: ["us-east-1"],
+		envType: "production",
+		labels: {},
+		management,
+	};
+}
+
 describe("composeCdHost", () => {
-	it("is ready once composed when no loop runs", async () => {
+	it("is ready in composed mode only after one successful pass", async () => {
 		await withRuntime(async (runtime) => {
 			const host = await composeCdHost({
 				runtime,
@@ -72,6 +114,9 @@ describe("composeCdHost", () => {
 			});
 			const signal = AbortSignal.timeout(5_000);
 			expect((await host.handle(get("/healthz"), signal)).status).toBe(200);
+			const beforePass = await host.handle(get("/readyz"), signal);
+			expect(beforePass.status).toBe(503);
+			await host.pass();
 			const ready = await host.handle(get("/readyz"), signal);
 			expect(ready.status).toBe(200);
 			expect(json(ready.body)).toMatchObject({
@@ -98,6 +143,68 @@ describe("composeCdHost", () => {
 		});
 	});
 
+	it("is not ready in service mode while composition refusals stand", async () => {
+		await withRuntime(async (runtime) => {
+			const refusing: TestRuntime = {
+				...runtime,
+				conductor: () => {
+					throw new Error("conductor refused");
+				},
+			};
+			const host = await composeCdHost({
+				runtime: refusing,
+				holderId: "test-service-refused",
+			});
+			expect(host.refusals).toContain("conductor refused");
+			await host.service.start();
+			try {
+				expect(host.service.ready()).toBe(true);
+				const ready = await host.handle(
+					get("/readyz"),
+					AbortSignal.timeout(5_000),
+				);
+				expect(ready.status).toBe(503);
+			} finally {
+				await host.service.drain(AbortSignal.timeout(5_000));
+			}
+		});
+	});
+
+	it("manages only camps with MANAGED management", async () => {
+		await withRuntime(async (runtime) => {
+			const camps: readonly CampTopology[] = [
+				campTopology("edge/managed", CampManagement.MANAGED),
+				campTopology("edge/watched", CampManagement.OBSERVE_ONLY),
+				campTopology("edge/unknown", CampManagement.UNSPECIFIED),
+			];
+			const conducted: (readonly CampId[])[] = [];
+			const overridden: TestRuntime = {
+				...runtime,
+				cd: {
+					...runtime.cd,
+					topology: {
+						camps: async () => camps,
+						camp: async (campId: CampId) =>
+							camps.find((camp) => camp.campId === campId),
+					},
+				},
+				conductor: (campIds: readonly CampId[]) => {
+					conducted.push(campIds);
+					return fakeReconciler(
+						async () => ({ reasons: [], status: 0 }) as never,
+					);
+				},
+			};
+			const host = await composeCdHost({
+				runtime: overridden,
+				holderId: "test-managed",
+				readiness: "composed",
+			});
+			expect(host.managed).toEqual(["edge/managed"]);
+			expect(conducted).toEqual([["edge/managed"]]);
+		});
+	});
+
 	it("runs one bounded pass", async () => {
 		await withRuntime(async (runtime) => {
 			const host = await composeCdHost({
@@ -105,10 +212,78 @@ describe("composeCdHost", () => {
 				holderId: "test-pass",
 				readiness: "composed",
 			});
-			const { tick, reconciled } = await host.pass();
+			const { tick, reconciled, skipped } = await host.pass();
+			expect(skipped).toBe(false);
 			expect(host.managed).toEqual(["edge/prod"]);
 			expect(reconciled.map((r) => r.campId)).toEqual(["edge/prod"]);
 			expect(tick.steps.length).toBeGreaterThan(0);
+		});
+	});
+
+	it("skips the pass while another holder holds the fleet pass lease", async () => {
+		await withRuntime(async (runtime) => {
+			let releaseGate = () => {};
+			const gate = new Promise<void>((resolve) => {
+				releaseGate = resolve;
+			});
+			const gated: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(async () => {
+						await gate;
+						return { reasons: [], status: 0 } as never;
+					}),
+			};
+			const first = await composeCdHost({
+				runtime: gated,
+				holderId: "test-fleet-a",
+				readiness: "composed",
+				fleetPassLease: true,
+			});
+			const second = await composeCdHost({
+				runtime: gated,
+				holderId: "test-fleet-b",
+				readiness: "composed",
+				fleetPassLease: true,
+			});
+			const running = first.pass();
+			const skipped = await second.pass();
+			expect(skipped.skipped).toBe(true);
+			expect(skipped.reconciled).toEqual([]);
+			releaseGate();
+			const completed = await running;
+			expect(completed.skipped).toBe(false);
+		});
+	});
+
+	it("bounds a pass by its deadline and clears the flight on timeout", async () => {
+		await withRuntime(async (runtime) => {
+			const signals: (AbortSignal | undefined)[] = [];
+			let calls = 0;
+			const slow: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(async (_campId, ctx) => {
+						calls += 1;
+						signals.push(ctx.signal);
+						await new Promise((resolve) => setTimeout(resolve, 150));
+						return { reasons: [], status: 0 } as never;
+					}),
+			};
+			const host = await composeCdHost({
+				runtime: slow,
+				holderId: "test-deadline",
+				readiness: "composed",
+				passDeadlineMs: 30,
+			});
+			const first = host.pass();
+			await expect(first).rejects.toThrow("cd pass deadline exceeded");
+			expect(signals[0]?.aborted).toBe(true);
+			const second = host.pass();
+			expect(second).not.toBe(first);
+			await expect(second).rejects.toThrow("cd pass deadline exceeded");
+			expect(calls).toBe(2);
+			await new Promise((resolve) => setTimeout(resolve, 200));
 		});
 	});
 

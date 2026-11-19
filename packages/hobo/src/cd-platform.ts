@@ -1,4 +1,13 @@
-export { type CdHost, cdJson, composeCdHost } from "./cd-host.js";
+export {
+	type CdHost,
+	type CdPassCampReport,
+	type CdPassReport,
+	type CdReadiness,
+	cdJson,
+	composeCdHost,
+	DEFAULT_PASS_DEADLINE_MS,
+	FLEET_PASS_SUBSCRIPTION,
+} from "./cd-host.js";
 export {
 	type OwnerJournal,
 	withOwnerJournalFleet,

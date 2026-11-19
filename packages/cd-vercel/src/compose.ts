@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
 	type CdHost,
 	composeCdHost,
@@ -29,7 +31,17 @@ export function journalFleetEnvProvisioned(env: Env): boolean {
 	return fleet !== undefined && fleet.length > 0;
 }
 
+export function holderIdOf(env: Env): string {
+	return `hobo-cd-vercel:${env.VERCEL_DEPLOYMENT_ID ?? "local"}:${randomUUID()}`;
+}
+
 export async function composeVercelCdHost(deps: CdHostDeps): Promise<CdHost> {
+	const vercelEnv = deps.env.VERCEL_ENV;
+	if (vercelEnv !== undefined && vercelEnv !== "production")
+		throw new CdStoreBindingError(
+			"cd-non-production-deployment",
+			"HoBo.CD runs only on production deployments; this deployment does not open the production journal.",
+		);
 	const store = await deps.open();
 	const journal = await withOwnerJournalFleet(deps.env, deps.cwd, async () =>
 		Promise.resolve(store),
@@ -59,8 +71,10 @@ export async function composeVercelCdHost(deps: CdHostDeps): Promise<CdHost> {
 	}
 	return composeCdHost({
 		runtime: opened.value,
-		holderId: `hobo-cd-vercel:${deps.env.VERCEL_DEPLOYMENT_ID ?? "local"}`,
+		holderId: holderIdOf(deps.env),
 		readiness: "composed",
+		fleetPassLease: true,
+		passDeadlineMs: 240_000,
 	});
 }
 
