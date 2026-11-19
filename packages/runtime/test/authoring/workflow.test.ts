@@ -421,8 +421,9 @@ describe("durable workflow: journal, restart, replay", () => {
 		).rejects.toThrow("SIMULATED_HOST_CRASH");
 		expect(attempts).toBe(1);
 		const restarted = createWorkflowEngine({ store: engine.store });
-		const handle = await restarted.resume(wf, "step-failed-replay", {});
-		expect(handle.result).toBe("recovered");
+		await expect(
+			restarted.resume(wf, "step-failed-replay", {}),
+		).rejects.toThrow(/conflicting completed terminal/);
 		expect(attempts).toBe(1);
 	});
 
@@ -1050,6 +1051,25 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 		});
 		await expect(engine.resume(wf, "conflict-terminal", {})).rejects.toThrow(
+			/conflicting completed terminal/,
+		);
+	});
+
+	it("refuses run.Completed when a step failure was recorded in the same attempt", async () => {
+		const engine = createWorkflowEngine();
+		const wf = defineWorkflow({
+			name: "catch-step-fail",
+			async run(ctx) {
+				try {
+					await ctx.step("pay", () => {
+						throw new WorkflowFailure("card declined", { step: "pay" });
+					});
+				} catch {
+					return "recovered";
+				}
+			},
+		});
+		await expect(engine.start(wf, {})).rejects.toThrow(
 			/conflicting completed terminal/,
 		);
 	});

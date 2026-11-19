@@ -147,6 +147,50 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
+function listStepOutcomeIndices(
+	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
+): number[] {
+	const indices: number[] = [];
+	for (const event of journal) {
+		if (event.type === "run.StepCompleted" && isRecord(event.data)) {
+			const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+			indices.push(fact.index);
+		} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
+			const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+			indices.push(fact.index);
+		}
+	}
+	return indices;
+}
+
+function maxStepOutcomeIndex(indices: number[]): number {
+	let max = -1;
+	for (const index of indices) {
+		if (index > max) max = index;
+	}
+	return max;
+}
+
+function assertUnconsumedStepOutcomes(
+	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
+	stepIndex: number,
+	runId: string,
+): void {
+	const maxOutcomeIndex = maxStepOutcomeIndex(listStepOutcomeIndices(journal));
+	if (maxOutcomeIndex >= 0 && stepIndex <= maxOutcomeIndex) {
+		throw new Error(`unconsumed step outcome for ${runId}`);
+	}
+}
+
+function assertNoStepFailureBeforeCompletion(
+	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
+	runId: string,
+): void {
+	if (journal.some((event) => event.type === "run.StepFailed")) {
+		throw new Error(`conflicting completed terminal for ${runId}`);
+	}
+}
+
 export function createWorkflowEngine(
 	options: WorkflowEngineOptions = {},
 ): WorkflowEngine {
@@ -231,23 +275,11 @@ export function createWorkflowEngine(
 				throw new Error(`conflicting step outcomes for ${runId}`);
 			}
 		}
-		const journaledOutcomeIndices: number[] = [];
-		for (const event of journal) {
-			if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
-				journaledOutcomeIndices.push(fact.index);
-			} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
-				journaledOutcomeIndices.push(fact.index);
-			}
-		}
+		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
 		if (journaledOutcomeIndices.length > 0) {
 			const outcomeIndexSet = new Set(journaledOutcomeIndices);
-			const maxOutcomeIndex = Math.max(...journaledOutcomeIndices);
-			if (
-				!Number.isSafeInteger(maxOutcomeIndex) ||
-				maxOutcomeIndex > 1_000_000
-			) {
+			const maxOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
+			if (!Number.isSafeInteger(maxOutcomeIndex) || maxOutcomeIndex > 1_000_000) {
 				throw new Error(`invalid step journal for ${runId}`);
 			}
 			for (let index = 0; index < maxOutcomeIndex; index += 1) {
@@ -256,16 +288,14 @@ export function createWorkflowEngine(
 				}
 			}
 		}
-		const maxJournaledOutcomeIndex =
-			journaledOutcomeIndices.length > 0
-				? Math.max(...journaledOutcomeIndices)
-				: -1;
+		const maxJournaledOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
 		const failedOutcomeIndices = journal
 			.filter(
 				(event) => event.type === "run.StepFailed" && isRecord(event.data),
 			)
 			.map((event) => parseRunStepFailedFact(cloneAsJson(event.data)).index);
 		if (
+			maxJournaledOutcomeIndex >= 0 &&
 			failedOutcomeIndices.some((index) => index < maxJournaledOutcomeIndex)
 		) {
 			throw new Error(`step outcome follows failure for ${runId}`);
@@ -493,17 +523,14 @@ export function createWorkflowEngine(
 
 		try {
 			const value = await def.run(ctx, runArgs);
-			if (stepIndex <= maxJournaledOutcomeIndex) {
-				throw new Error(`unconsumed step outcome for ${runId}`);
-			}
+			assertUnconsumedStepOutcomes(journal, stepIndex, runId);
+			assertNoStepFailureBeforeCompletion(journal, runId);
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
 			if (error instanceof WorkflowFailure) {
-				if (stepIndex <= maxJournaledOutcomeIndex) {
-					throw new Error(`unconsumed step outcome for ${runId}`);
-				}
+				assertUnconsumedStepOutcomes(journal, stepIndex, runId);
 				const failureData: JsonBag = {
 					message: error.message,
 				};
