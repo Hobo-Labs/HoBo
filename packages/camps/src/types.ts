@@ -9,14 +9,6 @@ export type JsonValue =
 	| readonly JsonValue[]
 	| Readonly<{ readonly [key: string]: JsonValue }>;
 
-/** @deprecated */
-export interface ProviderSelection {
-	readonly kind: "provider-selection";
-	readonly providerId: string;
-	readonly selector: string;
-	readonly options: Readonly<Record<string, unknown>>;
-}
-
 export interface ResolverPin {
 	readonly slot: string;
 	readonly resolverId: string;
@@ -80,16 +72,6 @@ export interface CampConfig {
 	readonly resolverConfig?: Partial<PrimitiveResolverConfig>;
 	readonly resourceMappings?: readonly ResourceMappingRule[];
 	readonly runtimeRequirements?: readonly string[];
-	/** @deprecated */
-	readonly bindle?: unknown;
-	/** @deprecated */
-	readonly defaultProvider?: ProviderSelection;
-	/** @deprecated */
-	readonly tiers?: Readonly<Record<string, ProviderSelection>>;
-	/** @deprecated */
-	readonly bindings?: Readonly<Record<string, ProviderSelection>>;
-	/** @deprecated */
-	readonly runtime?: unknown;
 }
 
 export interface CampContract {

@@ -367,6 +367,10 @@ function hasParseDerivedTypes(sources) {
 		),
 	]);
 	if (declarations.length === 0) {
+		const hasRawJson = sources.some(({ contents }) =>
+			/\bJSON\.parse\s*\(|\brequest\.json\s*\(/u.test(contents),
+		);
+		if (!hasRawJson && hasValidatingNamedFactory(sources)) return true;
 		return !sources.some(({ contents }) =>
 			/\bJSON\.parse\s*\(|\brequest\.json\s*\(|:\s*unknown\b/u.test(contents),
 		);
@@ -379,6 +383,59 @@ function hasParseDerivedTypes(sources) {
 					result,
 				),
 		);
+	});
+}
+
+function hasValidatingNamedFactory(sources) {
+	return sources.some(({ file, contents }) => {
+		const source = ts.createSourceFile(
+			file,
+			contents,
+			ts.ScriptTarget.Latest,
+			true,
+		);
+		return source.statements.some((statement) => {
+			if (
+				!ts.isFunctionDeclaration(statement) ||
+				!statement.modifiers?.some(
+					(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+				) ||
+				!statement.name ||
+				!statement.type ||
+				!ts.isTypeReferenceNode(statement.type) ||
+				!ts.isIdentifier(statement.type.typeName) ||
+				statement.name.text.toLowerCase() !==
+					statement.type.typeName.text.toLowerCase() ||
+				!statement.body
+			)
+				return false;
+			const parameters = new Set(
+				statement.parameters
+					.filter((parameter) => ts.isIdentifier(parameter.name))
+					.map((parameter) => parameter.name.text),
+			);
+			function contains(node, predicate) {
+				if (predicate(node)) return true;
+				return (
+					ts.forEachChild(node, (child) => contains(child, predicate)) === true
+				);
+			}
+			let validates = false;
+			function visit(node) {
+				if (
+					ts.isIfStatement(node) &&
+					contains(
+						node.expression,
+						(part) => ts.isIdentifier(part) && parameters.has(part.text),
+					) &&
+					contains(node.thenStatement, ts.isThrowStatement)
+				)
+					validates = true;
+				if (!validates) ts.forEachChild(node, visit);
+			}
+			visit(statement.body);
+			return validates;
+		});
 	});
 }
 

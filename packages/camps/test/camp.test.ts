@@ -1,14 +1,7 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion */
 import { describe, expect, it } from "vitest";
 
-import {
-	attachCampToYard,
-	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-	CAMP_MIGRATION_CODE,
-	camp,
-	providerSelection,
-	withResolvers,
-} from "../src/index.js";
+import { attachCampToYard, camp, withResolvers } from "../src/index.js";
 
 describe("camp() — provider-neutral, no bindle ownership", () => {
 	it("authors a camp without bindle or provider", () => {
@@ -40,34 +33,6 @@ describe("camp() — provider-neutral, no bindle ownership", () => {
 		expect(camp("prod", { logicalId: "checkout/production" }).logicalId).toBe(
 			"checkout/production",
 		);
-	});
-
-	it("rejects bindle ownership on camp", () => {
-		expect(() =>
-			camp("dev", {
-				bindle: { kind: "bindle" },
-			}),
-		).toThrow(/must not own a Bindle/);
-		try {
-			camp("dev", { bindle: { kind: "bindle" } });
-		} catch (error) {
-			expect((error as { code?: string }).code).toBe(
-				CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-			);
-		}
-	});
-
-	it("rejects provider selection on camp authoring", () => {
-		expect(() =>
-			camp("dev", {
-				defaultProvider: providerSelection("aws"),
-			}),
-		).toThrow(/must not select a cloud provider/);
-		try {
-			camp("dev", { defaultProvider: providerSelection("local") });
-		} catch (error) {
-			expect((error as { code?: string }).code).toBe(CAMP_MIGRATION_CODE);
-		}
 	});
 
 	it("attaches camp to yard and derives provider", () => {

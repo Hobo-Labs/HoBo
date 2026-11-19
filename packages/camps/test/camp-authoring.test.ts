@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import {
 	attachCampToYard,
-	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-	CAMP_MIGRATION_CODE,
+	CAMP_PROVIDER_SELECTION_FORBIDDEN,
 	camp,
 	campToContract,
-	parseLegacyCampMappings,
 	withResolvers,
 } from "../src/camp.js";
 
@@ -37,6 +35,12 @@ describe("camp()", () => {
 		expect(() => camp("prod", config as never)).toThrow(TypeError);
 	});
 
+	it("rejects unknown configuration properties", () => {
+		expect(() => camp("prod", { requre: ["node"] } as never)).toThrow(
+			/camp config has unknown property: requre/u,
+		);
+	});
+
 	it("takes the last segment of a slash-qualified name as the env", () => {
 		expect(camp("acme/prod").env).toBe("prod");
 	});
@@ -46,49 +50,11 @@ describe("camp()", () => {
 	});
 });
 
-describe("a Camp may not own a Bindle", () => {
-	it("refuses a bindle in the config", () => {
-		expect(codeOf(() => camp("prod", { bindle: {} } as never))).toBe(
-			CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-		);
-	});
-
-	it("names the correct call in the remediation", () => {
-		try {
-			camp("prod", { bindle: {} } as never);
-		} catch (error) {
-			expect((error as { remediation?: string }).remediation).toMatch(
-				/deploy\(bindle/u,
-			);
-		}
-	});
-});
-
-describe("a Camp may not select a provider", () => {
-	it.each([
-		"defaultProvider",
-		"tiers",
-		"bindings",
-	])("refuses %s in the config", (key) => {
-		expect(codeOf(() => camp("prod", { [key]: {} } as never))).toBe(
-			CAMP_MIGRATION_CODE,
-		);
-	});
-
-	it("points at yard() in the remediation", () => {
-		try {
-			camp("prod", { defaultProvider: {} } as never);
-		} catch (error) {
-			expect((error as { remediation?: string }).remediation).toMatch(
-				/yard\(/u,
-			);
-		}
-	});
-
+describe("provider-neutral labels", () => {
 	it("refuses a provider-shaped label", () => {
 		expect(
 			codeOf(() => camp("prod", { labels: { provider: "aws" } } as never)),
-		).toBe(CAMP_MIGRATION_CODE);
+		).toBe(CAMP_PROVIDER_SELECTION_FORBIDDEN);
 	});
 
 	it.each([
@@ -100,7 +66,7 @@ describe("a Camp may not select a provider", () => {
 	])("refuses the label %s in any case", (key) => {
 		expect(
 			codeOf(() => camp("prod", { labels: { [key]: "aws" } } as never)),
-		).toBe(CAMP_MIGRATION_CODE);
+		).toBe(CAMP_PROVIDER_SELECTION_FORBIDDEN);
 	});
 
 	it("allows an unrelated label", () => {
@@ -217,9 +183,9 @@ describe("canonicalization", () => {
 		expect(Object.isFrozen(built.require)).toBe(true);
 	});
 
-	it("strips a legacy provider suffix from the id but keeps the env", () => {
+	it("preserves provider words in the id and env", () => {
 		const built = camp("prod-aws");
-		expect(built.id).toBe("prod");
+		expect(built.id).toBe("prod-aws");
 		expect(built.env).toBe("prod-aws");
 	});
 
@@ -231,8 +197,8 @@ describe("canonicalization", () => {
 		"cloudflare",
 		"oci",
 		"wasm-sandbox",
-	])("strips the legacy suffix -%s", (provider) => {
-		expect(camp(`prod-${provider}`).id).toBe("prod");
+	])("preserves the suffix -%s", (provider) => {
+		expect(camp(`prod-${provider}`).id).toBe(`prod-${provider}`);
 	});
 
 	it("does not strip a suffix that is the whole name", () => {
@@ -322,101 +288,6 @@ describe("attachCampToYard", () => {
 			Object.isFrozen(
 				attachCampToYard(camp("prod"), { yardId: "y1", providerId: "aws" }),
 			),
-		).toBe(true);
-	});
-});
-
-describe("parseLegacyCampMappings", () => {
-	it("accepts mappings whose provider equals the yard's", () => {
-		const result = parseLegacyCampMappings(
-			{ bindings: { db: { providerId: "aws", selector: "rds" } } as never },
-			"aws",
-		);
-		expect(result.resourceMappings).toHaveLength(1);
-	});
-
-	it("refuses a mapping naming a different provider", () => {
-		expect(
-			codeOf(() =>
-				parseLegacyCampMappings(
-					{ bindings: { db: { providerId: "gcp" } } as never },
-					"aws",
-				),
-			),
-		).toBe(CAMP_MIGRATION_CODE);
-	});
-
-	it("checks defaultProvider as well as bindings", () => {
-		expect(
-			codeOf(() =>
-				parseLegacyCampMappings(
-					{ defaultProvider: { providerId: "gcp" } as never },
-					"aws",
-				),
-			),
-		).toBe(CAMP_MIGRATION_CODE);
-	});
-
-	it("checks tiers as well", () => {
-		expect(
-			codeOf(() =>
-				parseLegacyCampMappings(
-					{ tiers: { data: { providerId: "gcp" } } as never },
-					"aws",
-				),
-			),
-		).toBe(CAMP_MIGRATION_CODE);
-	});
-
-	it("maps a binding to a resource-name selector", () => {
-		const result = parseLegacyCampMappings(
-			{ bindings: { db: { providerId: "aws", selector: "rds" } } as never },
-			"aws",
-		);
-		expect(result.resourceMappings[0]?.selector).toEqual({
-			resourceName: "db",
-		});
-	});
-
-	it("maps a tier to a resource-kind selector", () => {
-		const result = parseLegacyCampMappings(
-			{ tiers: { data: { providerId: "aws", selector: "rds" } } as never },
-			"aws",
-		);
-		expect(result.resourceMappings[0]?.selector).toEqual({
-			resourceKind: "data",
-		});
-	});
-
-	it("maps a default provider to an empty selector", () => {
-		const result = parseLegacyCampMappings(
-			{ defaultProvider: { providerId: "aws", selector: "any" } as never },
-			"aws",
-		);
-		expect(result.resourceMappings.at(-1)?.selector).toEqual({});
-	});
-
-	it("omits the default rule when it names no selector", () => {
-		const result = parseLegacyCampMappings(
-			{ defaultProvider: { providerId: "aws" } as never },
-			"aws",
-		);
-		expect(result.resourceMappings).toHaveLength(0);
-	});
-
-	it("returns a deprecation note explaining what was stripped", () => {
-		expect(parseLegacyCampMappings({}, "aws").deprecation).toMatch(
-			/stripped from canonical camp/u,
-		);
-	});
-
-	it("accepts an empty input", () => {
-		expect(parseLegacyCampMappings({}, "aws").resourceMappings).toEqual([]);
-	});
-
-	it("freezes the mappings", () => {
-		expect(
-			Object.isFrozen(parseLegacyCampMappings({}, "aws").resourceMappings),
 		).toBe(true);
 	});
 });

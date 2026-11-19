@@ -3,11 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
 	attachCampToYard,
-	CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-	CAMP_MIGRATION_CODE,
 	camp,
 	campToContract,
-	parseLegacyCampMappings,
 	withResolvers,
 } from "../src/camp.js";
 
@@ -56,8 +53,8 @@ describe("naming a camp", () => {
 		expect(camp("acme/prod").env).toBe("prod");
 	});
 
-	it("strips a legacy provider suffix from the id", () => {
-		expect(camp("checkout-aws").id).toBe("checkout");
+	it("preserves a provider word at the end of the id", () => {
+		expect(camp("checkout-aws").id).toBe("checkout-aws");
 	});
 
 	it("keeps a name that is only a provider word", () => {
@@ -140,41 +137,7 @@ describe("the tier is stated, never inferred", () => {
 	});
 });
 
-describe("refusing to own a bindle", () => {
-	it("refuses a camp carrying a bindle", () => {
-		expect(() => camp("seg", { bindle: {} as never })).toThrow(
-			/must not own a Bindle/u,
-		);
-	});
-
-	it("codes the refusal distinctly from the provider one", () => {
-		expect(codeOf(() => camp("seg", { bindle: {} as never }))).toBe(
-			CAMP_BINDLE_OWNERSHIP_FORBIDDEN,
-		);
-	});
-
-	it("names the correct shape in the remediation", () => {
-		expect(remediationOf(() => camp("seg", { bindle: {} as never }))).toContain(
-			"deploy(bindle, { yard, camp })",
-		);
-	});
-});
-
-describe("refusing to select a provider", () => {
-	for (const key of ["defaultProvider", "tiers", "bindings"]) {
-		it(`refuses a camp carrying ${key}`, () => {
-			expect(() => camp("seg", { [key]: {} } as never)).toThrow(
-				/must not select a cloud provider/u,
-			);
-		});
-	}
-
-	it("codes every provider refusal the same way", () => {
-		expect(codeOf(() => camp("seg", { tiers: {} } as never))).toBe(
-			CAMP_MIGRATION_CODE,
-		);
-	});
-
+describe("provider-neutral labels", () => {
 	it("refuses a provider-specific label", () => {
 		expect(() => camp("seg", { labels: { provider: "aws" } })).toThrow(
 			/provider-specific label forbidden/u,
@@ -413,95 +376,5 @@ describe("the public contract", () => {
 
 	it("is frozen", () => {
 		expect(Object.isFrozen(campToContract(camp("c")))).toBe(true);
-	});
-});
-
-describe("legacy provider mappings", () => {
-	it("accepts mappings whose provider matches the yard", () => {
-		const result = parseLegacyCampMappings(
-			{ bindings: { db: { providerId: "aws", selector: "rds" } } },
-			"aws",
-		);
-		expect(result.resourceMappings).toHaveLength(1);
-		expect(result.resourceMappings[0]?.resolverId).toBe("rds");
-	});
-
-	it("refuses a mapping naming a different provider", () => {
-		expect(() =>
-			parseLegacyCampMappings(
-				{ bindings: { db: { providerId: "gcp" } } },
-				"aws",
-			),
-		).toThrow(/!= yard provider/u);
-	});
-
-	it("checks the default provider too", () => {
-		expect(() =>
-			parseLegacyCampMappings(
-				{ defaultProvider: { providerId: "gcp" } },
-				"aws",
-			),
-		).toThrow(/!= yard provider/u);
-	});
-
-	it("checks tier mappings too", () => {
-		expect(() =>
-			parseLegacyCampMappings(
-				{ tiers: { data: { providerId: "gcp" } } },
-				"aws",
-			),
-		).toThrow(/!= yard provider/u);
-	});
-
-	it("maps a binding onto a resource-name selector", () => {
-		const result = parseLegacyCampMappings(
-			{ bindings: { db: { providerId: "aws" } } },
-			"aws",
-		);
-		expect(result.resourceMappings[0]?.selector).toEqual({
-			resourceName: "db",
-		});
-	});
-
-	it("maps a tier onto a resource-kind selector", () => {
-		const result = parseLegacyCampMappings(
-			{ tiers: { cache: { providerId: "aws" } } },
-			"aws",
-		);
-		expect(result.resourceMappings[0]?.selector).toEqual({
-			resourceKind: "cache",
-		});
-	});
-
-	it("maps a default provider onto an empty selector", () => {
-		const result = parseLegacyCampMappings(
-			{ defaultProvider: { providerId: "aws", selector: "ec2" } },
-			"aws",
-		);
-		expect(result.resourceMappings.at(-1)?.selector).toEqual({});
-	});
-
-	it("omits a default provider that pins no resolver", () => {
-		const result = parseLegacyCampMappings(
-			{ defaultProvider: { providerId: "aws" } },
-			"aws",
-		);
-		expect(result.resourceMappings).toEqual([]);
-	});
-
-	it("returns nothing for empty input", () => {
-		expect(parseLegacyCampMappings({}, "aws").resourceMappings).toEqual([]);
-	});
-
-	it("says the mappings were stripped", () => {
-		expect(parseLegacyCampMappings({}, "aws").deprecation).toContain(
-			"stripped from canonical camp",
-		);
-	});
-
-	it("freezes what it returns", () => {
-		expect(
-			Object.isFrozen(parseLegacyCampMappings({}, "aws").resourceMappings),
-		).toBe(true);
 	});
 });

@@ -149,6 +149,84 @@ test("architecture guard requires parsing for raw JSON service boundaries", asyn
 	});
 });
 
+test("architecture guard recognizes validating factories returning their domain type", async () => {
+	await withFixture(async (root) => {
+		const file = "src/draft/technical-proofs/demo-contract/src/demo.ts";
+		await write(
+			root,
+			file,
+			[
+				"export type Demo = { name: string };",
+				"export function demo(input: unknown): Demo {",
+				"  if (typeof input !== 'string') throw new TypeError('name');",
+				"  return { name: input };",
+				"}",
+			].join("\n"),
+		);
+		const result = await checkArchitectureGuardrails({ root, files: [file] });
+		assert.equal(
+			result.problems.some(
+				(problem) => problem.code === "missing-parse-derived-type",
+			),
+			false,
+		);
+	});
+});
+
+test("architecture guard rejects named factories that do not validate input", async () => {
+	await withFixture(async (root) => {
+		const file = "src/draft/technical-proofs/demo-contract/src/demo.ts";
+		await write(
+			root,
+			file,
+			"export function demo(input: unknown): Demo { return input as Demo; }",
+		);
+		const result = await checkArchitectureGuardrails({ root, files: [file] });
+		assert.ok(
+			result.problems.some(
+				(problem) => problem.code === "missing-parse-derived-type",
+			),
+		);
+	});
+});
+
+test("architecture guard does not mistake unrelated errors for input validation", async () => {
+	await withFixture(async (root) => {
+		const file = "src/draft/technical-proofs/demo-contract/src/demo.ts";
+		await write(
+			root,
+			file,
+			"export function demo(input: unknown): Demo { if (true) throw Error(); return input as Demo; }",
+		);
+		const result = await checkArchitectureGuardrails({ root, files: [file] });
+		assert.ok(
+			result.problems.some(
+				(problem) => problem.code === "missing-parse-derived-type",
+			),
+		);
+	});
+});
+
+test("architecture guard still requires parsers for raw JSON beside a factory", async () => {
+	await withFixture(async (root) => {
+		const file = "src/draft/technical-proofs/demo-contract/src/demo.ts";
+		await write(
+			root,
+			file,
+			[
+				"export function demo(input: unknown): Demo { if (typeof input !== 'string') throw Error(); return { name: input }; }",
+				"export function load(text: string) { return JSON.parse(text); }",
+			].join("\n"),
+		);
+		const result = await checkArchitectureGuardrails({ root, files: [file] });
+		assert.ok(
+			result.problems.some(
+				(problem) => problem.code === "missing-parse-derived-type",
+			),
+		);
+	});
+});
+
 test("architecture guard requires CUE constraints for every protobuf type", async () => {
 	await withFixture(async (root) => {
 		await write(

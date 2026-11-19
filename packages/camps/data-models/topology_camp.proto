@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package hobo.camps.v1;
 
-import "google/protobuf/struct.proto";
-
 message CampTopology {
   string id = 1;
   string env = 2;
@@ -26,33 +24,4 @@ message CampContract {
   repeated string prefer = 6;
   map<string, string> labels = 7;
   repeated string runtime_requirements = 8;
-}
-
-message ProviderSelection {
-  string kind = 1;
-  string provider_id = 2;
-  string selector = 3;
-  option deprecated = true;
-}
-
-message LegacyCampMappingSelector {
-  optional string resource_kind = 1;
-  optional string resource_name = 2;
-  optional string port_ref = 3;
-  map<string, string> labels = 4;
-}
-
-message LegacyCampMappingRule {
-  LegacyCampMappingSelector selector = 1;
-  optional string definition_id = 2;
-  optional string resolver_id = 3;
-  optional string class_name = 4;
-  repeated string require = 5;
-  repeated string prefer = 6;
-  google.protobuf.Struct properties = 7;
-}
-
-message ParsedLegacyCampMappings {
-  repeated LegacyCampMappingRule resource_mappings = 1;
-  string deprecation = 2;
 }
