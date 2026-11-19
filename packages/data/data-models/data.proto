@@ -108,3 +108,27 @@ message CrossCampProjectionLaggedData {
   uint64 bound_ms = 5;
   uint64 observed_lag_ms = 6;
 }
+
+message PaginatedChangeData {
+  string resource = 1;
+  string key = 2;
+  string op = 3;
+  double source_seq = 4;
+  string source_stream_id = 5;
+  string row_json = 6;
+}
+
+message PaginatedCursorData {
+  string resource = 1;
+  string order_by = 2;
+  string key_json = 3;
+  string row_id = 4;
+  string stream_id = 5;
+  string tenant = 6;
+}
+
+message PaginatedPageData {
+  repeated string items_json = 1;
+  string next_cursor = 2;
+  map<string, double> seq = 3;
+}

@@ -98,6 +98,7 @@
   "packages/data-mongodb/src/executor.ts": ["MongoAwaitTransactionsRequest","MongoBulkWriteRequest","MongoBulkWriteResult","MongoChangeBatch","MongoChangeEvent","MongoChangeHeadRequest","MongoChangeReadRequest","MongoChangeToken","MongoEnsureCollectionRequest","MongoEnsureCollectionResult","MongoFindRequest","MongoFindResult","MongoKeyMatch"],
   "packages/data-postgres/src/conformance.ts": ["PostgresConformanceReport","PostgresConformanceResult"],
   "packages/data-postgres/src/engine/engine.ts": ["PostgresEngineOptions"],
+  "packages/data/src/paginated-view.ts": ["PaginatedPage"],
   "packages/data-postgres/src/engine/identifiers.ts": ["PostgresCaptureObjects"],
   "packages/data-postgres/src/engine/native.ts": ["PostgresNativeTicket"],
   "packages/data-postgres/src/fleet/replication.ts": ["PostgresFleetWatermark"],

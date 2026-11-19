@@ -102,3 +102,28 @@ package hobo
 	boundMs:        =~"^[0-9]+$"
 	observedLagMs:  =~"^[0-9]+$"
 }
+
+#PaginatedChangeData: {
+	resource:       string & !=""
+	key:            string & !=""
+	op:             "insert" | "update" | "delete"
+	sourceSeq:      int & >0 & <=9007199254740991
+	sourceStreamId: string & !=""
+	rowJson?:       string
+	if op != "delete" {rowJson: string & !=""}
+}
+
+#PaginatedCursorData: {
+	resource: string & !=""
+	orderBy:  string & !=""
+	keyJson:  string & !=""
+	rowId:    string & !=""
+	streamId: string & !=""
+	tenant:   string & !=""
+}
+
+#PaginatedPageData: {
+	itemsJson: [...string]
+	nextCursor?: string
+	seq: [string]: int & >=0 & <=9007199254740991
+}

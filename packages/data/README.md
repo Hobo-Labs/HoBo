@@ -75,3 +75,21 @@ owner read with the supplied clock. This bound depends on the owner store's
 staleness inside that store. Configure `onLag` to record or publish the emitted
 `projection.ReplicaLagged` input when a read exceeds the bound. Reads are required to
 detect lag while replication is idle.
+
+## Paginated event views
+
+`createPaginatedEventView` stores row changes in a dedicated EventStore stream as
+`data.Changed` facts. Supply the resource, stream, tenant, actor, and declared
+string or number sort indexes. Rows contain `id`, `streamId`, `seq`, and the
+indexed fields. Updates require a higher source sequence; deletes preserve a
+tombstone sequence. Cursors encode the sort value and row ID, so inserts before
+an issued cursor do not move later pages.
+
+The view rebuilds its sorted indexes in memory from the event stream on open.
+A page reflects the events read so far; separate page requests are not one
+frozen database snapshot. `order(...).watch(...)` pushes changes in its current
+key range, and `loadMore()` extends that range. Watches poll for changes from
+other EventStore connections every 250 ms by default; configure
+`pollIntervalMs` to change this. Await `drain()` to observe subscriber errors,
+call `unsubscribe()` when a watch ends, and call `close()` on the view when it
+is no longer needed.

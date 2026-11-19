@@ -109,16 +109,24 @@ export function createSagaCompletedEvent(input: {
 	});
 }
 
-export function createDataChangedEvent(input: {
+type DataChangedInput = {
 	resource: string;
 	key: string;
 	op: "insert" | "update" | "delete";
 	sourceSeq: number;
-}): ReactiveFact {
-	return fact("data.Changed", {
+	sourceStreamId?: string;
+	rowJson?: string;
+};
+
+export function createDataChangedEvent(input: DataChangedInput): ReactiveFact {
+	const data: DataChangedInput = {
 		resource: input.resource,
 		key: input.key,
 		op: input.op,
 		sourceSeq: input.sourceSeq,
-	});
+	};
+	if (input.sourceStreamId !== undefined)
+		data.sourceStreamId = input.sourceStreamId;
+	if (input.rowJson !== undefined) data.rowJson = input.rowJson;
+	return fact("data.Changed", data);
 }
