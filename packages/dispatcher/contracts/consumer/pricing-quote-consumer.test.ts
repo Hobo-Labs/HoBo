@@ -6,7 +6,7 @@ import {
 	parseQuoteScenario,
 } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
-import { decideDispatchV2 } from "../../src/dispatcher-v2.js";
+import { decidePricedDispatch } from "../../src/priced-dispatch.js";
 
 function object(value: JsonValue | undefined) {
 	if (!isJsonObject(value))
@@ -44,7 +44,7 @@ describe("dispatcher pricing consumer contract", () => {
 		const response = object(object(object(responses[0]).contents).content);
 		const expectedBilled = object(object(response.incremental).billed);
 		it(String(interaction.description), () => {
-			const decision = decideDispatchV2({
+			const decision = decidePricedDispatch({
 				dispatchId: "pricing-contract",
 				category: "runner",
 				candidates: [{ providerId: "sandbox", scenario }],

@@ -5,7 +5,7 @@ import {
 	createDispatcherRegistry,
 	createReservationLedger,
 	decideAndReserveDispatch,
-	decideDispatch,
+	decideCreditDispatch,
 	decidePlacement,
 	replayDispatchDecision,
 } from "../src/dispatcher.js";
@@ -85,7 +85,7 @@ test("dispatch ranks a CI job to the cheapest registered runner with free headro
 		runner("unregistered-free", { registered: false, listUnitCost: 0 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-test",
@@ -130,7 +130,7 @@ test("milestone: replaying the same inputs yields a byte-identical dispatch.Deci
 		]),
 	};
 
-	const first = decideDispatch(request);
+	const first = decideCreditDispatch(request);
 	const replayed = replayDispatchDecision(first.replayInput);
 
 	assert.equal(replayed.selectedProvider, first.selectedProvider);
@@ -170,8 +170,8 @@ test("milestone: flipping a budget input flips the selected backend with an expl
 		),
 	});
 
-	const withinBudget = decideDispatch(request(10, 91));
-	const overBudget = decideDispatch(request(1, 92));
+	const withinBudget = decideCreditDispatch(request(10, 91));
+	const overBudget = decideCreditDispatch(request(1, 92));
 
 	assert.equal(withinBudget.selectedProvider, "cheap");
 	assert.equal(overBudget.selectedProvider, "fallback");
@@ -202,7 +202,7 @@ test("traffic-backend category dispatches over traffic.requests with budget awar
 		},
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "traffic-backend",
 		dispatchId: "route-swap-1",
@@ -232,7 +232,7 @@ test("exhausting a free tier rotates the next dispatch pick", () => {
 		runner("self-hosted", { listUnitCost: 0.01 }),
 	]);
 
-	const first = decideDispatch({
+	const first = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-before-exhaustion",
@@ -242,7 +242,7 @@ test("exhausting a free tier rotates the next dispatch pick", () => {
 			account("self-hosted", { freeHeadroom: 0, listUnitCost: 0.01 }),
 		]),
 	});
-	const afterExhaustion = decideDispatch({
+	const afterExhaustion = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-after-exhaustion",
@@ -301,7 +301,7 @@ test("absent credit facts degrade to plain min-cost ranking", () => {
 		runner("cheap", { listUnitCost: 0.02 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-no-credit-facts",
@@ -322,7 +322,7 @@ test("rate-limited free tiers do not win over runners with usable concurrency he
 		runner("warm-free", { listUnitCost: 0.05 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-rate-limited",
@@ -353,7 +353,7 @@ test("free-tier chase loses when switching cost is higher than the savings", () 
 		runner("free-with-egress", { listUnitCost: 0.03, switchingCost: 0.25 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-switching-cost",
@@ -376,7 +376,7 @@ test("budget caps and spend-to-date keep over-cap cheap candidates behind afford
 		runner("open-budget", { listUnitCost: 0.03 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-budget-cap",
@@ -518,7 +518,7 @@ test("recorded hysteresis keeps an incumbent when a challenger is only near-equa
 		observedAt: "2026-06-27T00:00:00.000Z",
 	};
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-hysteresis",
@@ -546,7 +546,7 @@ test("hysteresis does not hold an incumbent that violates the budget hard constr
 		runner("affordable-challenger", { listUnitCost: 0.03 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-budget-hysteresis",
@@ -584,7 +584,7 @@ test("expiring-soonest free credit wins among equal zero-cost candidates", () =>
 		runner("june-credit", { listUnitCost: 0.05 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-expiring-credit",
@@ -614,7 +614,7 @@ test("mis-declared free tier facts degrade gracefully to min-cost", () => {
 		runner("plain-cheap", { listUnitCost: 0.02 }),
 	]);
 
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry,
 		category: "runner",
 		dispatchId: "ci-misdeclared-free",
@@ -632,7 +632,7 @@ test("mis-declared free tier facts degrade gracefully to min-cost", () => {
 });
 
 test("no registered candidates fails closed without emitting dispatch.Decided", () => {
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry: createDispatcherRegistry([
 			runner("free-unregistered", { registered: false }),
 		]),
@@ -649,7 +649,7 @@ test("no registered candidates fails closed without emitting dispatch.Decided", 
 });
 
 test("dispatch refuses when every registered candidate exceeds its budget", () => {
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		registry: createDispatcherRegistry([
 			runner("first", { listUnitCost: 2 }),
 			runner("second", { listUnitCost: 3 }),
@@ -675,7 +675,7 @@ test("malformed monetary facts never authorize a dispatch", () => {
 		{ spendToDate: "unknown" },
 		{ reservedCost: "unknown" },
 	]) {
-		const decision = decideDispatch({
+		const decision = decideCreditDispatch({
 			registry: createDispatcherRegistry([runner("candidate")]),
 			category: "runner",
 			dispatchId: "malformed-budget",

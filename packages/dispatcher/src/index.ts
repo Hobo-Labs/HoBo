@@ -15,29 +15,30 @@ export type {
 	ReservationLedger,
 } from "./dispatcher.js";
 export {
+	CREDIT_DISPATCH_SCHEMA,
 	canonicalJson,
 	createDispatcherRegistry,
 	createReservationLedger,
 	DISPATCH_EVENTS,
-	DISPATCHER_SCHEMA_VERSION,
 	decideAndReserveDispatch,
-	decideDispatch,
+	decideCreditDispatch,
 	decidePlacement,
 	parseCreditLedgerView,
 	replayDispatchDecision,
 	stableHash,
 } from "./dispatcher.js";
 export type {
-	DispatchCandidateV2,
-	DispatchCategoryV2,
 	DispatchCostQuote,
-	DispatchDecisionV2,
-	DispatchRankingV2,
-	DispatchRejectionV2,
-	DispatchRequestV2,
-} from "./dispatcher-v2.js";
+	PricedDispatchCandidate,
+	PricedDispatchCategory,
+	PricedDispatchDecision,
+	PricedDispatchEventRanking,
+	PricedDispatchRanking,
+	PricedDispatchRejection,
+	PricedDispatchRequest,
+} from "./priced-dispatch.js";
 export {
-	DISPATCHER_V2_OBJECTIVE,
-	DISPATCHER_V2_SCHEMA_VERSION,
-	decideDispatchV2,
-} from "./dispatcher-v2.js";
+	decidePricedDispatch,
+	PRICED_DISPATCH_OBJECTIVE,
+	PRICED_DISPATCH_SCHEMA,
+} from "./priced-dispatch.js";

@@ -10,65 +10,75 @@ import {
 	type QuoteVector,
 } from "@hobo/pricing";
 
-export const DISPATCHER_V2_SCHEMA_VERSION = "hobo.dispatcher/v2";
-export const DISPATCHER_V2_OBJECTIVE = "min-incremental-billed" as const;
+export const PRICED_DISPATCH_SCHEMA = "hobo.dispatcher/priced";
+export const PRICED_DISPATCH_OBJECTIVE = "min-incremental-billed" as const;
 
-export type DispatchCategoryV2 = "runner" | "build-machine" | "traffic-backend";
+export type PricedDispatchCategory =
+	| "runner"
+	| "build-machine"
+	| "traffic-backend";
 export type DispatchCostQuote = Omit<QuoteVector, "allocatedEffective">;
 
-export interface DispatchCandidateV2 {
+export interface PricedDispatchCandidate {
 	providerId: string;
 	scenario: QuoteScenario;
 }
 
-export interface DispatchRequestV2 {
+export interface PricedDispatchRequest {
 	dispatchId: string;
-	category: DispatchCategoryV2;
-	objective?: typeof DISPATCHER_V2_OBJECTIVE;
-	candidates: readonly DispatchCandidateV2[];
+	category: PricedDispatchCategory;
+	objective?: typeof PRICED_DISPATCH_OBJECTIVE;
+	candidates: readonly PricedDispatchCandidate[];
 }
 
-export interface DispatchRejectionV2 {
+export interface PricedDispatchRejection {
 	providerId: string;
 	code: string;
 	reason: string;
 }
 
-export interface DispatchRankingV2 {
+export interface PricedDispatchRanking {
 	providerId: string;
 	rank: number;
 	incrementalBilled: Money;
 	quote: DispatchCostQuote;
 }
 
-export type DispatchDecisionV2 =
+export interface PricedDispatchEventRanking {
+	providerId: string;
+	rank: number;
+	incrementalBilled: { decimal: string; currency: string };
+	quoteHash: string;
+}
+
+export type PricedDispatchDecision =
 	| {
 			ok: true;
-			schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
-			objective: typeof DISPATCHER_V2_OBJECTIVE;
+			schema: typeof PRICED_DISPATCH_SCHEMA;
+			objective: typeof PRICED_DISPATCH_OBJECTIVE;
 			selectedProvider: string;
-			ranking: DispatchRankingV2[];
-			rejectedCandidates: DispatchRejectionV2[];
+			ranking: PricedDispatchRanking[];
+			rejectedCandidates: PricedDispatchRejection[];
 			dispatchEvent: {
-				type: "dispatch.Decided";
+				type: "dispatch.Priced";
 				data: {
 					dispatchId: string;
-					category: DispatchCategoryV2;
-					schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
-					objective: typeof DISPATCHER_V2_OBJECTIVE;
+					category: PricedDispatchCategory;
+					schema: typeof PRICED_DISPATCH_SCHEMA;
+					objective: typeof PRICED_DISPATCH_OBJECTIVE;
 					selectedProvider: string;
-					ranking: DispatchRankingV2[];
-					rejectedCandidates: DispatchRejectionV2[];
+					ranking: PricedDispatchEventRanking[];
+					rejectedCandidates: PricedDispatchRejection[];
 				};
 			};
 	  }
 	| {
 			ok: false;
-			schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
-			objective: typeof DISPATCHER_V2_OBJECTIVE;
+			schema: typeof PRICED_DISPATCH_SCHEMA;
+			objective: typeof PRICED_DISPATCH_OBJECTIVE;
 			reason: string;
 			ranking: [];
-			rejectedCandidates: DispatchRejectionV2[];
+			rejectedCandidates: PricedDispatchRejection[];
 	  };
 
 function withoutAllocatedEffective(quote: QuoteVector): DispatchCostQuote {
@@ -100,26 +110,26 @@ function earliestExpiryMs(quote: QuoteVector): number {
 }
 
 function reject(
-	candidate: DispatchCandidateV2,
+	candidate: PricedDispatchCandidate,
 	code: string,
 	reason: string,
-): DispatchRejectionV2 {
+): PricedDispatchRejection {
 	return { providerId: candidate.providerId, code, reason };
 }
 
-export function decideDispatchV2(
-	request: DispatchRequestV2,
-): DispatchDecisionV2 {
+export function decidePricedDispatch(
+	request: PricedDispatchRequest,
+): PricedDispatchDecision {
 	if (
 		request.objective !== undefined &&
-		request.objective !== DISPATCHER_V2_OBJECTIVE
+		request.objective !== PRICED_DISPATCH_OBJECTIVE
 	) {
 		throw new TypeError("objective must be min-incremental-billed");
 	}
 	if (request.dispatchId.length === 0) {
 		throw new TypeError("dispatchId must be a non-empty string");
 	}
-	const objective = DISPATCHER_V2_OBJECTIVE;
+	const objective = PRICED_DISPATCH_OBJECTIVE;
 	const candidates = [...request.candidates].sort((left, right) =>
 		left.providerId.localeCompare(right.providerId),
 	);
@@ -133,9 +143,9 @@ export function decideDispatchV2(
 		throw new TypeError("candidate providerId must be a non-empty string");
 	}
 
-	const rejectedCandidates: DispatchRejectionV2[] = [];
+	const rejectedCandidates: PricedDispatchRejection[] = [];
 	const priced: {
-		candidate: DispatchCandidateV2;
+		candidate: PricedDispatchCandidate;
 		quote: QuoteVector;
 		incrementalBilled: Money;
 	}[] = [];
@@ -208,7 +218,7 @@ export function decideDispatchV2(
 	if (winner === undefined) {
 		return {
 			ok: false,
-			schema: DISPATCHER_V2_SCHEMA_VERSION,
+			schema: PRICED_DISPATCH_SCHEMA,
 			objective,
 			reason:
 				candidates.length === 0
@@ -220,20 +230,28 @@ export function decideDispatchV2(
 	}
 	return {
 		ok: true,
-		schema: DISPATCHER_V2_SCHEMA_VERSION,
+		schema: PRICED_DISPATCH_SCHEMA,
 		objective,
 		selectedProvider: winner.providerId,
 		ranking,
 		rejectedCandidates,
 		dispatchEvent: {
-			type: "dispatch.Decided",
+			type: "dispatch.Priced",
 			data: {
 				dispatchId: request.dispatchId,
 				category: request.category,
-				schema: DISPATCHER_V2_SCHEMA_VERSION,
+				schema: PRICED_DISPATCH_SCHEMA,
 				objective,
 				selectedProvider: winner.providerId,
-				ranking,
+				ranking: ranking.map((entry) => ({
+					providerId: entry.providerId,
+					rank: entry.rank,
+					incrementalBilled: {
+						decimal: entry.incrementalBilled.decimal,
+						currency: entry.incrementalBilled.currency,
+					},
+					quoteHash: entry.quote.quoteHash,
+				})),
 				rejectedCandidates,
 			},
 		},

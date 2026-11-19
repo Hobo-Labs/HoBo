@@ -1,5 +1,8 @@
 import { evaluateBudgetPolicy } from "@hobo/core";
-import { createDispatcherRegistry, decideDispatch } from "@hobo/dispatcher";
+import {
+	createDispatcherRegistry,
+	decideCreditDispatch,
+} from "@hobo/dispatcher";
 import type {
 	Account,
 	CiRoutingRefusal as CiRoutingRefusalWire,
@@ -353,7 +356,7 @@ export function route(
 		(candidate) =>
 			compareCiRoutingCandidates(cost(candidate), cost(best), strategy) === 0,
 	);
-	const decision = decideDispatch({
+	const decision = decideCreditDispatch({
 		category: "runner",
 		dispatchId: "ci-route",
 		units: minutes,

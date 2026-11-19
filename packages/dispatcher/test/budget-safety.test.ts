@@ -4,7 +4,7 @@ import {
 	createDispatcherRegistry,
 	createReservationLedger,
 	decideAndReserveDispatch,
-	decideDispatch,
+	decideCreditDispatch,
 	decidePlacement,
 	replayDispatchDecision,
 } from "../src/dispatcher.js";
@@ -28,7 +28,7 @@ function snapshot(accounts: CreditAccount[] = [account()]) {
 	return { view: "CreditLedgerView", seq: 0, asOf: NOW, accounts };
 }
 function dispatch(ledgerView = snapshot(), overrides = {}) {
-	return decideDispatch({
+	return decideCreditDispatch({
 		registry: providers,
 		category: "traffic-backend",
 		dispatchId: "route",

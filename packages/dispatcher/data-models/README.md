@@ -11,9 +11,11 @@ state with real CUE validation. From the repository root:
 ```sh
 .tools/cue/v0.14.0/cue vet -c packages/dispatcher/data-models/dispatch.cue packages/dispatcher/data-models/fixtures/valid/credit-account.json -d '#CreditAccountRecord'
 .tools/cue/v0.14.0/cue vet -c packages/dispatcher/data-models/dispatch.cue packages/dispatcher/data-models/fixtures/valid/reservation.json -d '#ReservationRecord'
+.tools/cue/v0.14.0/cue vet -c packages/dispatcher/data-models/dispatch.cue packages/dispatcher/data-models/fixtures/priced-dispatch/valid/decision.json -d '#PricedDispatchDecidedRecord'
 ```
 
-The same commands with `fixtures/invalid` must fail: negative reserved money
-and an invented cancellation/refund state cannot cross the wire boundary.
+The corresponding invalid fixtures must fail: negative reserved money, an
+invented cancellation/refund state, and a malformed quote hash cannot cross
+the wire boundary.
 This package remains outside generated runtime codegen until it explicitly
 opts into a Buf module; schema compilation alone is not fixture validation.

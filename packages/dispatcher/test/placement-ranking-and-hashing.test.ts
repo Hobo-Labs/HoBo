@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	canonicalJson,
 	createDispatcherRegistry,
-	decideDispatch,
+	decideCreditDispatch,
 	decidePlacement,
 	stableHash,
 } from "../src/dispatcher.js";
@@ -77,7 +77,7 @@ function runnerAccount(
 }
 
 function dispatch(overrides: Record<string, JsonValue> = {}) {
-	return decideDispatch({
+	return decideCreditDispatch({
 		registry: createDispatcherRegistry([
 			{
 				id: "a",
@@ -564,7 +564,7 @@ describe("ranking order", () => {
 
 describe("switching cost", () => {
 	it("is charged only to a challenger, never to the incumbent", () => {
-		const result = decideDispatch({
+		const result = decideCreditDispatch({
 			registry: createDispatcherRegistry([
 				{
 					id: "a",
@@ -683,9 +683,9 @@ describe("canonicalJson and stableHash", () => {
 	});
 });
 
-describe("decideDispatch registry parsing", () => {
+describe("decideCreditDispatch registry parsing", () => {
 	it("accepts a bare candidate array and builds the registry", () => {
-		const decision = decideDispatch({
+		const decision = decideCreditDispatch({
 			registry: [
 				{
 					id: "r1",
@@ -706,7 +706,7 @@ describe("decideDispatch registry parsing", () => {
 	it("refuses an object that is not a registry", () => {
 		for (const bad of [null, {}, { records: [] }, { byCategory: {} }]) {
 			expect(() =>
-				decideDispatch({
+				decideCreditDispatch({
 					registry: bad,
 					category: "runner",
 					dispatchId: "d-1",
@@ -720,7 +720,7 @@ describe("decideDispatch registry parsing", () => {
 
 	it("refuses an unknown dispatch category", () => {
 		expect(() =>
-			decideDispatch({
+			decideCreditDispatch({
 				registry: createDispatcherRegistry([]),
 				category: "gpu",
 				dispatchId: "d-1",

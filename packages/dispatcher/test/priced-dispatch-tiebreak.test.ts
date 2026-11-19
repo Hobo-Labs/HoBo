@@ -1,9 +1,9 @@
 import { stateHashOf } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
-import { decideDispatchV2 } from "../src/dispatcher-v2.js";
-import { zeroCostCommitmentDispatchScenario } from "./dispatcher-v2-fixtures.js";
+import { decidePricedDispatch } from "../src/priced-dispatch.js";
+import { zeroCostCommitmentDispatchScenario } from "./priced-dispatch-fixtures.js";
 
-describe("dispatcher v2 tie-break (§10.11 / §7.4)", () => {
+describe("priced dispatcher tie-break (§10.11 / §7.4)", () => {
 	it.each([
 		["10.1", "10.09"],
 		["9007199254741002.02", "9007199254741002.01"],
@@ -32,7 +32,7 @@ describe("dispatcher v2 tie-break (§10.11 / §7.4)", () => {
 			state.stateHash = stateHashOf(state);
 			return value;
 		}
-		const decision = decideDispatchV2({
+		const decision = decidePricedDispatch({
 			dispatchId: "dispatch-waste",
 			category: "runner",
 			candidates: [
@@ -46,7 +46,7 @@ describe("dispatcher v2 tie-break (§10.11 / §7.4)", () => {
 	});
 
 	it("10.11 prefers sooner projected waste expiry among zero incremental ties", () => {
-		const decision = decideDispatchV2({
+		const decision = decidePricedDispatch({
 			dispatchId: "dispatch-tie",
 			category: "runner",
 			candidates: [
