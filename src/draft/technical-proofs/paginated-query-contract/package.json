@@ -1,8 +1,0 @@
-{
-  "name": "@hobo-draft/paginated-query-contract",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "vitest run --root ."
-  }
-}

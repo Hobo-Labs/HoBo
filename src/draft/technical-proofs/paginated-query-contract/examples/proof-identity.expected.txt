@@ -1,3 +1,0 @@
-slug: paginated-query-contract
-layer: technical
-proof-identity: ok
