@@ -976,6 +976,17 @@ function readCheckoutFile(
 	}
 }
 
+function readRoutingPolicy(): string | undefined {
+	try {
+		return readFileSync(
+			join(import.meta.dirname, "../..", RUNNER_ROUTING_PATH),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 /** The event that started the run, from the file GitHub names, or nothing. */
 function readEventPayload(env: NodeJS.ProcessEnv): JsonValue | undefined {
 	if (!env.GITHUB_EVENT_PATH) return undefined;
@@ -1082,24 +1093,52 @@ export async function main(
 	const args = parseRouteArgs(argv);
 	const settings = routeSettings(
 		readRunnerRouting(
-			"routingConfig" in io
-				? io.routingConfig
-				: readCheckoutFile(env, RUNNER_ROUTING_PATH),
+			"routingConfig" in io ? io.routingConfig : readRoutingPolicy(),
 		),
 	);
 	const { labels, limits } = settings;
-	// From committed policy alone, so it is written whatever the route turns out to be.
-	if (env.GITHUB_OUTPUT)
-		appendFileSync(env.GITHUB_OUTPUT, `box_runner=${settings.boxRunner}\n`);
 	const event = env.GITHUB_EVENT_NAME ?? "";
 	const fleetLabel = fleetLabelFor(event, labels);
 	// A dispatch's own choice wins; otherwise the committed pin.
 	const mode = args.route === "auto" ? settings.pin : args.route;
+	const mergeBatch =
+		event === "merge_group" &&
+		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
+		mode === "auto";
+	if (env.GITHUB_OUTPUT)
+		appendFileSync(
+			env.GITHUB_OUTPUT,
+			`box_runner=${mergeBatch ? "" : settings.boxRunner}\n`,
+		);
 	const localEnrolled = settings.localRunner;
 	const defaults = settings.committed
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
+	if (mergeBatch) {
+		if (!settings.committed)
+			throw new Error(
+				"merge-group batch routing requires a valid committed policy",
+			);
+		if (
+			labels.github !== "ubuntu-24.04" ||
+			!(await isPublicCaller(env, io.fetch))
+		)
+			throw new Error(
+				"merge-group batch public compute evidence is unavailable",
+			);
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason:
+					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "batch" },
+			},
+			env,
+		);
+	}
 	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
 	if (
 		event === "pull_request" &&

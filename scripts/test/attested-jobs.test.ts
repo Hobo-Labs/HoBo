@@ -108,7 +108,6 @@ describe("the description of the covered jobs", () => {
 		);
 		assert.deepEqual(left, [
 			"pr_gate_validation: Impact classification (shadow)",
-			"pr_gate_validation: Route the merge-group shard batch",
 			"pr_gate_validation: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",

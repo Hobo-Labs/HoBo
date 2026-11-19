@@ -22,7 +22,6 @@ npx prisma migrate deploy --schema schema.prisma
 ```
 
 New databases receive both migrations through the normal Wasp migration flow.
-
 ### Client configuration
 
 Set `REACT_APP_PLAUSIBLE_DOMAIN` to enable Plausible analytics. Set

@@ -43,7 +43,7 @@ Read this section before you believe a green suite.
 - resolves binding values for the whole graph through `runtime-local`'s
   `createLocalBindingResolver`;
 - exposes isolated local ports for queue, topic, secret, data, schedule,
-  key-value, bucket, and flag aliases, with their actual fidelity on the handle;
+  key-value, bucket, flag, experiment, and rollout aliases, with their actual fidelity on the handle;
 - tears everything down in reverse dependency order.
 
 What it does **not** do:
@@ -70,15 +70,14 @@ code. `deploy()` then refuses with `HARNESS_LANE_UNIMPLEMENTED`. It never
 degrades to `in-process`: a suite that believes it hit real providers and
 actually hit a loopback stub is worse than a suite that failed.
 
-**`prodReadinessClaimable` is not a pass/fail flag.** It is false whenever any
-handle the suite reached for was `mocked`. In practice that means most suites
-today cannot claim prod-readiness from this lane alone — which is the honest
-answer, not a defect of the harness. A bare green tick over mocked handles is
-the overclaim GAP-026 was filed against, and ADR-0159 calls emitting one a
-conformance failure of the harness itself.
-Its existing rule only rules out asserted `mocked` handles. A true value does
-not establish provider compatibility, durable storage, or production readiness
-for code exercised with simulated services.
+**`prodReadinessClaimable` is not a pass/fail flag.** It is always false for
+the current in-process lane. Accessing a handle does not prove that a test
+asserted anything or that a deployed provider behaves the same way.
+`assertedAgainst` is the historical field name for handles reached during the
+run; it is access telemetry, not a record of completed assertions.
+An unresolved, mocked, or camp-only dependency makes dependent handles
+`mocked`, except that camp-only resources retain their own label. Calling
+`outputs()` records access to every returned resource.
 
 **Deploy caching is memoization, not the event store.** ADR-0159 §3 wants an
 unchanged plan content-hash to make `deploy()` a no-op apply against the
@@ -118,6 +117,18 @@ Use `createFlagEmulator({ now })` to control event timestamps; every evaluation
 is recorded by default, and `sampleRate` can be overridden. The optional
 `flagInspector(alias)` exposes a copy of the test event history separately from
 the service port.
+`graph.experiment(alias)` and `graph.rollout(alias)` expose the identity
+package's `ExperimentPort` and `DeliveryPort`. If the resource declares one flag
+dependency, the default engine uses that flag port and inherits its fidelity.
+With no flag dependency it owns an isolated store; multiple flag dependencies
+require an explicit emulator factory. A served application must receive the
+port through its own dependency injection; the graph does not inject service
+ports through the Bindle runtime context.
+
+`createExperimentEmulator({ store })` and `createDeliveryEmulator({ store })`
+accept a shared `FeatureFlagPort` and an optional `now` clock. A supplied store
+is treated as `mocked` unless its fidelity is explicitly supplied as
+`storeFidelity`. Create a fresh shared store for each deployment.
 Inject the appropriate port into the service under test and use
 the same object to arrange inputs and inspect results. The included CI relay
 test in [`packages/hobo/test/service-emulators.test.ts`](../hobo/test/service-emulators.test.ts)
@@ -171,7 +182,7 @@ const harness = createTestHarness({
 });
 ```
 
-Queue, topic, secret, data, schedule, key-value, bucket and flag factories return `ServiceEmulator<T>`: a typed port, a
+Queue, topic, secret, data, schedule, key-value, bucket, flag, experiment and rollout factories return `ServiceEmulator<T>`: a typed port, a
 `simulated` or `mocked` fidelity label, and an optional `close`. Queue
 and schedule emulators may also expose a `VirtualClock`; data emulators require `close`.
 The scheduler supports interval schedules only: `graph.scheduleClock(alias)`
@@ -217,7 +228,7 @@ otherwise duplicate code without testing a service contract.
 | Schedule | `graph.schedule(alias)` and `graph.scheduleClock(alias)` use the local scheduler and virtual clock | Interval schedules only; fired timers do not automatically invoke a handler |
 | Key-value / blob metadata | `graph.kv(alias)` and `graph.bucket(alias)` implement generated types from the pinned WASI subsets | Process-local; the pinned blob interface has no body-read operation and does not claim a complete WASI or cloud storage implementation |
 | Flags | `graph.flag(alias)` or `createFlagEmulator()` supplies an isolated `FeatureFlagPort` | In-process flag engine; not a remote provider or a complete WIT implementation |
-| Experiments / rollout | `@hobo/identity` provides `createContractAssertedHarnessFixtures` and its built-in engines | Direct in-process fixtures, not automatically wired into this graph or a remote flag provider |
+| Experiments / rollout | `graph.experiment(alias)` and `graph.rollout(alias)` expose identity ports linked to a declared flag dependency | In-process engines; application ports require explicit injection and no remote provider is emulated |
 | Loss-tolerant cache | `@hobo/kv-redis-compatible` `createMemoryEphemeralState`, with its manual clock | TTL-bound `EphemeralStatePort`, not a general `kv` resource; it is not automatically wired into this graph |
 | Durable event store | `@hobo/runtime-local` / `@hobo/storage-sqlite` | Requires the real SQLite runtime; not a fake of a remote database |
 | Vercel Blob | `@hobo/provider-vercel-blob` memory SDK and package-local HTTP emulator | Implements the documented subset used by that provider, not all of Vercel |
@@ -260,8 +271,8 @@ fixture or placeholder remains `mocked` in the graph, and an HTTP resource is
 | `notify` | `placeholder` | CD's NotificationPort has a recording sink; it is not the catalog's general notify port |
 | `guardrail` | `placeholder` | Use the relevant policy implementation or a contract double |
 | `ui` | `http` | Fetch handlers only; no general UI render/drive port |
-| `experiment` | `fixture` | Identity's local experiment fixture is separate from the graph |
-| `rollout` | `fixture` | Identity's local delivery fixture is separate from the graph |
+| `experiment` | `port` | Local ExperimentPort; uses one declared flag dependency when present |
+| `rollout` | `port` | Local DeliveryPort; uses one declared flag dependency when present |
 <!-- /resource-emulation-inventory -->
 
 Keep the port or protocol as the authority: derive stateless mocks from the
@@ -281,7 +292,8 @@ verification.
 - `DeployedGraph` → `outputs()`, `resource(alias)`, `http(alias)`,
   `queue(alias)`, `queueClock(alias)`, `topic(alias)`, `secret(alias)`, `data(alias)`,
   `schedule(alias)`, `scheduleClock(alias)`, `kv(alias)`, `bucket(alias)`,
-  `bucketInspector(alias)`, `flag(alias)`, `flagInspector(alias)`, `fidelity()`.
+  `bucketInspector(alias)`, `flag(alias)`, `flagInspector(alias)`, `experiment(alias)`,
+  `rollout(alias)`, `fidelity()`.
 - `untilReady(target, { attempts = 20, initialDelayMs = 500 })` — bounded
   exponential backoff capped at 5s per wait. Retries propagation-shaped
   failures (404, 408, 425, 429, any 5xx, network throws) and **fails fast on
@@ -325,8 +337,8 @@ never silently dropped — a discarded edge is a portability lie.
 The protobuf records in `data-models/` are the wire form of these derived
 types; the CUE file carries the invariants that make them load-bearing (an
 endpoint may only appear on a handle that was actually served, and
-`prod_readiness_claimable` is derived from the assertions rather than
-asserted).
+`prod_readiness_claimable` remains false without runner-backed assertion and
+deployment evidence).
 
 ## Event architecture
 
