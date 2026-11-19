@@ -14,28 +14,15 @@ import { stubResult } from "../cloud/stub.js";
 import type { JsonObject } from "../json.js";
 import type { CommandModule } from "../shell/registry.js";
 
-// The golden the `--check` drift gate compares the freshly collected manifest IR
-// against. Committed alongside the project so CI can assert the checked-in IR is
-// still what run-to-collect emits.
 export const COLLECT_GOLDEN_FILE = "hobo.manifest.json"; // public-contract: golden manifest file name collect writes into the project
 
 export interface CollectCommandDeps {
-	// Injected collection target (tests / dev wiring): a fixed Bindle whose
-	// components run in resource-collection mode. Wins over `resolveTarget`.
 	readonly target?: CollectionTarget;
-	// Project-aware resolver (composition roots): materialize the target from
-	// the invoked project's own source (see cloud/loader.ts). Un-injected with
-	// no `target` either, `collect` falls back to the shell stub.
 	readonly resolveTarget?: (
 		projectDir: string,
 	) => Promise<CollectionTarget | null>;
 }
 
-// `hobo collect` (S1-20) — run resource collection on the project Bindle and
-// print/emit the manifest IR. Run-to-collect (@hobo/bindles) runs the Bindle's
-// components in collection mode and folds them into a manifest IR that is
-// byte-identical to the static compile. `--check` recomputes and fails on drift
-// against the committed golden manifest.
 export function createCollectCommand(
 	deps: CollectCommandDeps = {},
 ): CommandModule {
@@ -52,7 +39,6 @@ export function createCollectCommand(
 				`hobo collect: running resource collection on ${target.bindleId}`,
 			);
 			const result = collectBindleManifest(target);
-			// SAFETY: `const manifestValue = JSON.parse(` is required at this I/O or test boundary.
 			const manifestValue = JSON.parse(
 				serializeManifest(result.manifest),
 			) as JsonObject;

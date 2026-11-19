@@ -37,7 +37,6 @@ import {
 } from "./typescript-declarations.js";
 import { sourceDiagnostics } from "./typescript-diagnostics.js";
 
-/** Compiler options are behavioral configuration; TypeScript owns their schema. */
 export interface TypeScriptProjectCodegenOptions {
 	readonly entrypoints?: readonly string[];
 	readonly generatedRoot?: string;
@@ -53,7 +52,6 @@ function inside(root: string, file: string): boolean {
 	);
 }
 
-/** Whether codegen treats `file` as one of the app's own sources (and reports its diagnostics). */
 export function sourceCandidate(
 	root: string,
 	file: string,
@@ -128,12 +126,6 @@ function isDefaultLibrary(file: string, options: ts.CompilerOptions): boolean {
 	);
 }
 
-/**
- * Declarations nobody edits while codegen runs: the compiler's lib files and
- * installed packages' `.d.ts`. Each codegen pass builds two programs, and
- * every pass of a long-lived process re-parsed them (0.4-1.2 s a program for
- * `@types/node`). They come from a bounded DeclarationCache instead.
- */
 function isSharedDeclaration(
 	file: string,
 	options: ts.CompilerOptions,
@@ -232,7 +224,6 @@ function loadProgram(
 				"HOBO_CODEGEN_SOURCE_PARSE",
 				"Could not read tsconfig.json",
 			);
-		// TS18003 is expected while selecting app roots out of a project containing generated files only.
 		const errors = ts
 			.getConfigFileParsingDiagnostics(parsed)
 			.filter((diagnostic) => diagnostic.code !== 18003);
@@ -469,7 +460,6 @@ function projectSources(
 		.sort((left, right) => left.fileName.localeCompare(right.fileName));
 }
 
-/** Only authored application roots start eagerly; imported modules keep their authored timing. */
 function applicationSources(
 	program: ts.Program,
 	root: string,
@@ -495,7 +485,6 @@ function applicationSources(
 		const absolute = resolve(root, file);
 		const direct = byPath.get(absolute);
 		if (direct) return direct;
-		// Package metadata commonly points at emitted JavaScript, rather than its TypeScript input.
 		for (const source of candidates) {
 			const inputRoot = compilerOptions.rootDir ?? root;
 			const emitted = resolve(
@@ -593,8 +582,6 @@ function applicationSources(
 		}
 	}
 
-	// Condense the compiler-resolved dependency graph into strongly connected components.
-	// Dynamic and type-only imports count as dependencies, without executing either.
 	const sources = program
 		.getSourceFiles()
 		.filter(
@@ -643,8 +630,6 @@ function applicationSources(
 		};
 		visit(source);
 	}
-	// Unreferenced type-only roots are erased and cannot suppress a runtime entry.
-	// Keep intermediates reached from runtime candidates, including lazy/type imports.
 	const reachable = new Set<string>();
 	const mark = (file: string): void => {
 		if (reachable.has(file)) return;
@@ -861,7 +846,6 @@ async function bundleRuntimeModules(
 		}
 		return {
 			artifacts,
-			// Embedded data-URL modules have no filesystem input; their bytes live in the importing source.
 			inputs: Object.keys(result.metafile?.inputs ?? {})
 				.filter((file) => !/^<.*>$/u.test(file))
 				.map((file) => resolve(root, file)),
@@ -893,7 +877,6 @@ function registrationBuild(
 	);
 }
 
-/** Copy the generated executable bundle and its module declarations beside emitted app.js. */
 export async function packageTypeScriptAppArtifacts(
 	projectRoot: string,
 	outputRoot: string,
@@ -946,7 +929,6 @@ export async function packageTypeScriptAppArtifacts(
 	return copied.sort();
 }
 
-/** Detect compiler-visible authored modules, without importing/evaluating application code. */
 export async function selectTypeScriptProjectCodegenEngine(
 	projectRoot: string,
 ): Promise<CodegenEngine | undefined> {
@@ -968,11 +950,6 @@ export async function selectTypeScriptProjectCodegenEngine(
 	return createTypeScriptProjectCodegenEngine();
 }
 
-/**
- * Imprint executable module namespaces. `typeof import` retains the compiler's
- * complete type graph: imported/nested/recursive types, overloads, generics,
- * class constructors and methods are not reconstructed from lossy text shapes.
- */
 export function createTypeScriptProjectCodegenEngine(
 	options: TypeScriptProjectCodegenOptions = {},
 ): CodegenEngine {
@@ -1124,7 +1101,6 @@ export function createTypeScriptProjectCodegenEngine(
 					)
 					.map((source) => resolve(source.fileName)),
 			]);
-			// Package boundaries affect entry selection, module interpretation and bundler resolution.
 			for (const input of [...inputs, join(root, "app.ts")]) {
 				for (let directory = dirname(input); ; directory = dirname(directory)) {
 					const metadata = join(directory, "package.json");

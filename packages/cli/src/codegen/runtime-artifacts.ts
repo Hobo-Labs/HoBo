@@ -9,9 +9,7 @@ import {
 } from "./types.js";
 
 export interface RuntimeArtifactOptions {
-	/** Extra self-contained parser source defining parseGeneratedResource(name, value). */
 	readonly validationSource?: string;
-	/** Serialized FieldSchema objects keyed by resource name. */
 	readonly schemas?: JsonObject;
 }
 
@@ -26,7 +24,6 @@ function specifier(from: string, to: string): string {
 	return relative.startsWith(".") ? relative : `./${relative}`;
 }
 
-/** Execute the same application model through the existing EventStore/workflow engines. */
 export function renderRuntimeArtifacts(
 	model: SourceModel,
 	layout: CodegenLayout,

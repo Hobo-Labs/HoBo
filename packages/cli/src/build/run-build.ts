@@ -77,11 +77,9 @@ const DEFAULT_SERVICES: readonly ServiceDeclaration[] = Object.freeze([
 
 export type RunBuildOptions = BuildRequest & {
 	readonly componentize?: ComponentizeFn;
-	/** Defaults to true. Only explicit library fixtures may select the contract artifact lane. */
 	readonly requireRealComponentize?: boolean;
 	readonly containerBuild?: ContainerBuildFn;
 	// public-contract: test seam for the HOBO_COMPONENTIZE_REAL toolchain probe;
-	// defaults to @hobo/componentize createRealComponentize.
 	readonly realComponentizeFactory?: typeof createRealComponentize;
 };
 
@@ -106,12 +104,6 @@ export async function runBuild(request: RunBuildOptions): Promise<BuildResult> {
 		},
 	];
 
-	// The freshness gate regenerates the whole project, so a request that can
-	// never build is refused first, but only on inputs that are authoritative
-	// without codegen: an explicit empty `services` in hobo.bindle.json, or an
-	// imprint whose recorded inputs all still match. A project codegen has not
-	// generated (just scaffolded, or cloned without the gitignored .hobo/) is
-	// told to run codegen, whatever it asks for.
 	if (await declaresNoServices(projectRoot)) throw noServices();
 	const runtimeInvalid = new BuildError(
 		"HOBO_BUILD_RUNTIME_INVALID",
@@ -206,7 +198,6 @@ export async function writeBuildFixtureProject(
 
 	const services = options.services ?? DEFAULT_SERVICES;
 	const bindlePath = join(projectRoot, "hobo.bindle.json");
-	// SAFETY: `const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as {` is required at this I/O or test boundary.
 	const bindle = JSON.parse(await readFile(bindlePath, "utf8")) as {
 		services?: JsonValue[];
 	};
@@ -223,8 +214,6 @@ export async function writeBuildFixtureProject(
 }
 
 // public-contract: HOBO_COMPONENTIZE_REAL=1 selects the real componentize
-// lane. When the toolchain is unavailable the build fails closed — it never
-// silently falls back to the synthetic floor once the real lane was requested.
 async function selectComponentize(
 	factory: typeof createRealComponentize = createRealComponentize,
 	requireReal = true,
@@ -287,7 +276,6 @@ function noServices(): BuildError {
 	);
 }
 
-/** hobo.bindle.json exists and its own `services` key is an empty list. */
 async function declaresNoServices(projectRoot: string): Promise<boolean> {
 	let bindle: JsonValue;
 	try {
@@ -295,7 +283,6 @@ async function declaresNoServices(projectRoot: string): Promise<boolean> {
 			await readFile(join(projectRoot, "hobo.bindle.json"), "utf8"),
 		);
 	} catch {
-		// Missing or unreadable: the gate and discoverServices report it as before.
 		return false;
 	}
 	return (
@@ -529,7 +516,6 @@ async function readJson(
 	path: string,
 ): Promise<JsonObject> {
 	try {
-		// SAFETY: `return JSON.parse(` is required at this I/O or test boundary.
 		return JSON.parse(
 			await readFile(join(projectRoot, path), "utf8"),
 		) as JsonObject;
