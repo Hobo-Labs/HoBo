@@ -7,7 +7,7 @@ import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 
 export const file_data: GenFile = /*@__PURE__*/
-  fileDesc("CgpkYXRhLnByb3RvEgxob2JvLmRhdGEudjEidAoXQWdncmVnYXRlU25hcHNob3RSZWNvcmQSEQoJc3RyZWFtX2lkGAEgASgJEgsKA3NlcRgCIAEoBBITCgtmZW5jZV90b2tlbhgDIAEoCRISCgpzdGF0ZV9qc29uGAQgASgJEhAKCHNhdmVkX2F0GAUgASgJImIKGlByb2plY3Rpb25DaGVja3BvaW50UmVjb3JkEhIKCnByb2plY3Rpb24YASABKAkSCwoDc2VxGAIgASgEEhEKCXJvd3NfanNvbhgDIAEoCRIQCghzYXZlZF9hdBgEIAEoCSJfChBRdWFyYW50aW5lUmVjb3JkEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOcXVhcmFudGluZV9zZXEYAiABKAQSDAoEdHlwZRgDIAEoCRIOCgZyZWFzb24YBCABKAkimwEKHUFnZ3JlZ2F0ZVF1YXJhbnRpbmVkRXZlbnREYXRhEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOb2ZmZW5kaW5nX3R5cGUYAiABKAkSGgoSb2ZmZW5kaW5nX2V2ZW50X2lkGAMgASgJEgwKBGZvbGQYBCABKAkSEQoJZm9sZF9raW5kGAUgASgJEg4KBnJlYXNvbhgGIAEoCSKpAQoeUHJvamVjdGlvblF1YXJhbnRpbmVkRXZlbnREYXRhEhIKCnByb2plY3Rpb24YASABKAkSGAoQc291cmNlX3N0cmVhbV9pZBgCIAEoCRIVCg1vZmZlbmRpbmdfc2VxGAMgASgEEhoKEm9mZmVuZGluZ19ldmVudF9pZBgEIAEoCRIWCg5vZmZlbmRpbmdfdHlwZRgFIAEoCRIOCgZyZWFzb24YBiABKAkiTgoUVXBjYXN0ZXJSZWdpc3RyYXRpb24SDAoEdHlwZRgBIAEoCRIUCgxmcm9tX3ZlcnNpb24YAiABKA0SEgoKdG9fdmVyc2lvbhgDIAEoDSJPChJBY3RvckFjdGl2YXRlZERhdGESEQoJc3RyZWFtX2lkGAEgASgJEhEKCWhvbGRlcl9pZBgCIAEoCRITCgtmZW5jZV90b2tlbhgDIAEoCSJNChZBY3RvclN0YXRlQXBwZW5kZWREYXRhEhEKCXN0cmVhbV9pZBgBIAEoCRILCgNzZXEYAiABKAQSEwoLZmVuY2VfdG9rZW4YAyABKAkiNQoTQWN0b3JQYXNzaXZhdGVkRGF0YRIRCglzdHJlYW1faWQYASABKAkSCwoDc2VxGAIgASgEIncKFlByb2plY3Rpb25EZWNsYXJlZERhdGESEgoKcHJvamVjdGlvbhgBIAEoCRIQCghyZWFkX3NldBgCIAMoCRI3ChByZWFjdGl2aXR5X2NsYXNzGAMgASgOMh0uaG9iby5kYXRhLnYxLlJlYWN0aXZpdHlDbGFzcyJKChRQcm9qZWN0aW9uTGFnZ2VkRGF0YRISCgpwcm9qZWN0aW9uGAEgASgJEg8KB2xhZ19zZXEYAiABKAQSDQoFYm91bmQYAyABKAQiugEKGVByb2plY3Rpb25TaW5rUmVib3VuZERhdGESEgoKcHJvamVjdGlvbhgBIAEoCRIZChFtYXRjaF9kZWNpZGVkX3JlZhgCIAEoCRIUCgxmcm9tX3NpbmtfaWQYAyABKAkSEgoKdG9fc2lua19pZBgEIAEoCRITCgtjb25maWdfaGFzaBgFIAEoCRIZChF2ZXJpZmllZF9wb3NpdGlvbhgGIAEoBBIUCgxtaWdyYXRpb25faWQYByABKAkiTAodUHJvamVjdGlvblJlcGxpY2F0ZWRFdmVudERhdGESEgoKZXZlbnRfanNvbhgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQifwogUHJvamVjdGlvblJlcGxpY2F0aW9uQ2hlY2tlZERhdGESGAoQc291cmNlX3N0cmVhbV9pZBgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQSFQoNY2hlY2tlZF9hdF9tcxgDIAEoBBIRCgljYXVnaHRfdXAYBCABKAgipwEKHUNyb3NzQ2FtcFByb2plY3Rpb25MYWdnZWREYXRhEhIKCnByb2plY3Rpb24YASABKAkSFQoNb3duZXJfY2FtcF9pZBgCIAEoCRIXCg9yZXBsaWNhX2NhbXBfaWQYAyABKAkSFwoPc291cmNlX3Bvc2l0aW9uGAQgASgEEhAKCGJvdW5kX21zGAUgASgEEhcKD29ic2VydmVkX2xhZ19tcxgGIAEoBCKAAQoTUGFnaW5hdGVkQ2hhbmdlRGF0YRIQCghyZXNvdXJjZRgBIAEoCRILCgNrZXkYAiABKAkSCgoCb3AYAyABKAkSEgoKc291cmNlX3NlcRgEIAEoARIYChBzb3VyY2Vfc3RyZWFtX2lkGAUgASgJEhAKCHJvd19qc29uGAYgASgJIn4KE1BhZ2luYXRlZEN1cnNvckRhdGESEAoIcmVzb3VyY2UYASABKAkSEAoIb3JkZXJfYnkYAiABKAkSEAoIa2V5X2pzb24YAyABKAkSDgoGcm93X2lkGAQgASgJEhEKCXN0cmVhbV9pZBgFIAEoCRIOCgZ0ZW5hbnQYBiABKAkinwEKEVBhZ2luYXRlZFBhZ2VEYXRhEhIKCml0ZW1zX2pzb24YASADKAkSEwoLbmV4dF9jdXJzb3IYAiABKAkSNQoDc2VxGAMgAygLMiguaG9iby5kYXRhLnYxLlBhZ2luYXRlZFBhZ2VEYXRhLlNlcUVudHJ5GioKCFNlcUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAToCOAEiYQoaUHJvamVjdGlvblJlYnVpbGRSb3dSZWNvcmQSEwoLY29uZmlnX2hhc2gYASABKAkSCwoDa2V5GAIgASgJEhAKCHJvd19qc29uGAMgASgJEg8KB2RlbGV0ZWQYBCABKAgibgobUHJvamVjdGlvblJlYnVpbGRTZWVkUmVjb3JkEhMKC2NvbmZpZ19oYXNoGAEgASgJEg4KBnNlZWRlZBgCIAEoCBIXCg9zb3VyY2VfcG9zaXRpb24YAyABKAQSEQoJcm93c19qc29uGAQgASgJIlEKIVByb2plY3Rpb25SZWJ1aWxkQ2hlY2twb2ludFJlY29yZBITCgtjb25maWdfaGFzaBgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQqdQoPUmVhY3Rpdml0eUNsYXNzEiAKHFJFQUNUSVZJVFlfQ0xBU1NfVU5TUEVDSUZJRUQQABIdChlSRUFDVElWSVRZX0NMQVNTX1JFQUNUSVZFEAESIQodUkVBQ1RJVklUWV9DTEFTU19OT05fUkVBQ1RJVkUQAmIGcHJvdG8z");
+  fileDesc("CgpkYXRhLnByb3RvEgxob2JvLmRhdGEudjEidAoXQWdncmVnYXRlU25hcHNob3RSZWNvcmQSEQoJc3RyZWFtX2lkGAEgASgJEgsKA3NlcRgCIAEoBBITCgtmZW5jZV90b2tlbhgDIAEoCRISCgpzdGF0ZV9qc29uGAQgASgJEhAKCHNhdmVkX2F0GAUgASgJImIKGlByb2plY3Rpb25DaGVja3BvaW50UmVjb3JkEhIKCnByb2plY3Rpb24YASABKAkSCwoDc2VxGAIgASgEEhEKCXJvd3NfanNvbhgDIAEoCRIQCghzYXZlZF9hdBgEIAEoCSJfChBRdWFyYW50aW5lUmVjb3JkEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOcXVhcmFudGluZV9zZXEYAiABKAQSDAoEdHlwZRgDIAEoCRIOCgZyZWFzb24YBCABKAkimwEKHUFnZ3JlZ2F0ZVF1YXJhbnRpbmVkRXZlbnREYXRhEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOb2ZmZW5kaW5nX3R5cGUYAiABKAkSGgoSb2ZmZW5kaW5nX2V2ZW50X2lkGAMgASgJEgwKBGZvbGQYBCABKAkSEQoJZm9sZF9raW5kGAUgASgJEg4KBnJlYXNvbhgGIAEoCSKpAQoeUHJvamVjdGlvblF1YXJhbnRpbmVkRXZlbnREYXRhEhIKCnByb2plY3Rpb24YASABKAkSGAoQc291cmNlX3N0cmVhbV9pZBgCIAEoCRIVCg1vZmZlbmRpbmdfc2VxGAMgASgEEhoKEm9mZmVuZGluZ19ldmVudF9pZBgEIAEoCRIWCg5vZmZlbmRpbmdfdHlwZRgFIAEoCRIOCgZyZWFzb24YBiABKAkiXwoeRXZlbnRTdG9yZVF1YXJhbnRpbmVkRXZlbnREYXRhEhUKDW9mZmVuZGluZ19zZXEYASABKAQSFgoOb2ZmZW5kaW5nX3R5cGUYAiABKAkSDgoGcmVhc29uGAMgASgJIowCChFRdWFyYW50aW5lRmluZGluZxIYChBzb3VyY2Vfc3RyZWFtX2lkGAEgASgJEhUKDW9mZmVuZGluZ19zZXEYAiABKAQSGgoSb2ZmZW5kaW5nX2V2ZW50X2lkGAMgASgJEhYKDm9mZmVuZGluZ190eXBlGAQgASgJEgwKBGZvbGQYBSABKAkSEQoJZm9sZF9raW5kGAYgASgJEg4KBnJlYXNvbhgHIAEoCRIYChByZWNvcmRfc3RyZWFtX2lkGAggASgJEhIKCnJlY29yZF9zZXEYCSABKAQSDAoEY29kZRgKIAEoCRIQCghzZXZlcml0eRgLIAEoCRITCgtyZW1lZGlhdGlvbhgMIAEoCSJuChBRdWFyYW50aW5lUmVwb3J0EjEKCGZpbmRpbmdzGAEgAygLMh8uaG9iby5kYXRhLnYxLlF1YXJhbnRpbmVGaW5kaW5nEhAKCGNvbXBsZXRlGAIgASgIEhUKDW5leHRfcG9zaXRpb24YAyABKAkiTgoUVXBjYXN0ZXJSZWdpc3RyYXRpb24SDAoEdHlwZRgBIAEoCRIUCgxmcm9tX3ZlcnNpb24YAiABKA0SEgoKdG9fdmVyc2lvbhgDIAEoDSJPChJBY3RvckFjdGl2YXRlZERhdGESEQoJc3RyZWFtX2lkGAEgASgJEhEKCWhvbGRlcl9pZBgCIAEoCRITCgtmZW5jZV90b2tlbhgDIAEoCSJNChZBY3RvclN0YXRlQXBwZW5kZWREYXRhEhEKCXN0cmVhbV9pZBgBIAEoCRILCgNzZXEYAiABKAQSEwoLZmVuY2VfdG9rZW4YAyABKAkiNQoTQWN0b3JQYXNzaXZhdGVkRGF0YRIRCglzdHJlYW1faWQYASABKAkSCwoDc2VxGAIgASgEIncKFlByb2plY3Rpb25EZWNsYXJlZERhdGESEgoKcHJvamVjdGlvbhgBIAEoCRIQCghyZWFkX3NldBgCIAMoCRI3ChByZWFjdGl2aXR5X2NsYXNzGAMgASgOMh0uaG9iby5kYXRhLnYxLlJlYWN0aXZpdHlDbGFzcyJKChRQcm9qZWN0aW9uTGFnZ2VkRGF0YRISCgpwcm9qZWN0aW9uGAEgASgJEg8KB2xhZ19zZXEYAiABKAQSDQoFYm91bmQYAyABKAQiugEKGVByb2plY3Rpb25TaW5rUmVib3VuZERhdGESEgoKcHJvamVjdGlvbhgBIAEoCRIZChFtYXRjaF9kZWNpZGVkX3JlZhgCIAEoCRIUCgxmcm9tX3NpbmtfaWQYAyABKAkSEgoKdG9fc2lua19pZBgEIAEoCRITCgtjb25maWdfaGFzaBgFIAEoCRIZChF2ZXJpZmllZF9wb3NpdGlvbhgGIAEoBBIUCgxtaWdyYXRpb25faWQYByABKAkiTAodUHJvamVjdGlvblJlcGxpY2F0ZWRFdmVudERhdGESEgoKZXZlbnRfanNvbhgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQifwogUHJvamVjdGlvblJlcGxpY2F0aW9uQ2hlY2tlZERhdGESGAoQc291cmNlX3N0cmVhbV9pZBgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQSFQoNY2hlY2tlZF9hdF9tcxgDIAEoBBIRCgljYXVnaHRfdXAYBCABKAgipwEKHUNyb3NzQ2FtcFByb2plY3Rpb25MYWdnZWREYXRhEhIKCnByb2plY3Rpb24YASABKAkSFQoNb3duZXJfY2FtcF9pZBgCIAEoCRIXCg9yZXBsaWNhX2NhbXBfaWQYAyABKAkSFwoPc291cmNlX3Bvc2l0aW9uGAQgASgEEhAKCGJvdW5kX21zGAUgASgEEhcKD29ic2VydmVkX2xhZ19tcxgGIAEoBCKAAQoTUGFnaW5hdGVkQ2hhbmdlRGF0YRIQCghyZXNvdXJjZRgBIAEoCRILCgNrZXkYAiABKAkSCgoCb3AYAyABKAkSEgoKc291cmNlX3NlcRgEIAEoARIYChBzb3VyY2Vfc3RyZWFtX2lkGAUgASgJEhAKCHJvd19qc29uGAYgASgJIn4KE1BhZ2luYXRlZEN1cnNvckRhdGESEAoIcmVzb3VyY2UYASABKAkSEAoIb3JkZXJfYnkYAiABKAkSEAoIa2V5X2pzb24YAyABKAkSDgoGcm93X2lkGAQgASgJEhEKCXN0cmVhbV9pZBgFIAEoCRIOCgZ0ZW5hbnQYBiABKAkinwEKEVBhZ2luYXRlZFBhZ2VEYXRhEhIKCml0ZW1zX2pzb24YASADKAkSEwoLbmV4dF9jdXJzb3IYAiABKAkSNQoDc2VxGAMgAygLMiguaG9iby5kYXRhLnYxLlBhZ2luYXRlZFBhZ2VEYXRhLlNlcUVudHJ5GioKCFNlcUVudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAToCOAEiYQoaUHJvamVjdGlvblJlYnVpbGRSb3dSZWNvcmQSEwoLY29uZmlnX2hhc2gYASABKAkSCwoDa2V5GAIgASgJEhAKCHJvd19qc29uGAMgASgJEg8KB2RlbGV0ZWQYBCABKAgibgobUHJvamVjdGlvblJlYnVpbGRTZWVkUmVjb3JkEhMKC2NvbmZpZ19oYXNoGAEgASgJEg4KBnNlZWRlZBgCIAEoCBIXCg9zb3VyY2VfcG9zaXRpb24YAyABKAQSEQoJcm93c19qc29uGAQgASgJIlEKIVByb2plY3Rpb25SZWJ1aWxkQ2hlY2twb2ludFJlY29yZBITCgtjb25maWdfaGFzaBgBIAEoCRIXCg9zb3VyY2VfcG9zaXRpb24YAiABKAQqdQoPUmVhY3Rpdml0eUNsYXNzEiAKHFJFQUNUSVZJVFlfQ0xBU1NfVU5TUEVDSUZJRUQQABIdChlSRUFDVElWSVRZX0NMQVNTX1JFQUNUSVZFEAESIQodUkVBQ1RJVklUWV9DTEFTU19OT05fUkVBQ1RJVkUQAmIGcHJvdG8z");
 
 export type AggregateSnapshotRecord = Message<"hobo.data.v1.AggregateSnapshotRecord"> & {
   streamId: string;
@@ -84,6 +84,57 @@ export type ProjectionQuarantinedEventData = Message<"hobo.data.v1.ProjectionQua
 export const ProjectionQuarantinedEventDataSchema: GenMessage<ProjectionQuarantinedEventData> = /*@__PURE__*/
   messageDesc(file_data, 4);
 
+export type EventStoreQuarantinedEventData = Message<"hobo.data.v1.EventStoreQuarantinedEventData"> & {
+  offendingSeq: bigint;
+
+  offendingType: string;
+
+  reason: string;
+};
+
+export const EventStoreQuarantinedEventDataSchema: GenMessage<EventStoreQuarantinedEventData> = /*@__PURE__*/
+  messageDesc(file_data, 5);
+
+export type QuarantineFinding = Message<"hobo.data.v1.QuarantineFinding"> & {
+  sourceStreamId: string;
+
+  offendingSeq: bigint;
+
+  offendingEventId: string;
+
+  offendingType: string;
+
+  fold: string;
+
+  foldKind: string;
+
+  reason: string;
+
+  recordStreamId: string;
+
+  recordSeq: bigint;
+
+  code: string;
+
+  severity: string;
+
+  remediation: string;
+};
+
+export const QuarantineFindingSchema: GenMessage<QuarantineFinding> = /*@__PURE__*/
+  messageDesc(file_data, 6);
+
+export type QuarantineReport = Message<"hobo.data.v1.QuarantineReport"> & {
+  findings: QuarantineFinding[];
+
+  complete: boolean;
+
+  nextPosition: string;
+};
+
+export const QuarantineReportSchema: GenMessage<QuarantineReport> = /*@__PURE__*/
+  messageDesc(file_data, 7);
+
 export type UpcasterRegistration = Message<"hobo.data.v1.UpcasterRegistration"> & {
   type: string;
 
@@ -93,7 +144,7 @@ export type UpcasterRegistration = Message<"hobo.data.v1.UpcasterRegistration"> 
 };
 
 export const UpcasterRegistrationSchema: GenMessage<UpcasterRegistration> = /*@__PURE__*/
-  messageDesc(file_data, 5);
+  messageDesc(file_data, 8);
 
 export type ActorActivatedData = Message<"hobo.data.v1.ActorActivatedData"> & {
   streamId: string;
@@ -104,7 +155,7 @@ export type ActorActivatedData = Message<"hobo.data.v1.ActorActivatedData"> & {
 };
 
 export const ActorActivatedDataSchema: GenMessage<ActorActivatedData> = /*@__PURE__*/
-  messageDesc(file_data, 6);
+  messageDesc(file_data, 9);
 
 export type ActorStateAppendedData = Message<"hobo.data.v1.ActorStateAppendedData"> & {
   streamId: string;
@@ -115,7 +166,7 @@ export type ActorStateAppendedData = Message<"hobo.data.v1.ActorStateAppendedDat
 };
 
 export const ActorStateAppendedDataSchema: GenMessage<ActorStateAppendedData> = /*@__PURE__*/
-  messageDesc(file_data, 7);
+  messageDesc(file_data, 10);
 
 export type ActorPassivatedData = Message<"hobo.data.v1.ActorPassivatedData"> & {
   streamId: string;
@@ -124,7 +175,7 @@ export type ActorPassivatedData = Message<"hobo.data.v1.ActorPassivatedData"> & 
 };
 
 export const ActorPassivatedDataSchema: GenMessage<ActorPassivatedData> = /*@__PURE__*/
-  messageDesc(file_data, 8);
+  messageDesc(file_data, 11);
 
 export type ProjectionDeclaredData = Message<"hobo.data.v1.ProjectionDeclaredData"> & {
   projection: string;
@@ -135,7 +186,7 @@ export type ProjectionDeclaredData = Message<"hobo.data.v1.ProjectionDeclaredDat
 };
 
 export const ProjectionDeclaredDataSchema: GenMessage<ProjectionDeclaredData> = /*@__PURE__*/
-  messageDesc(file_data, 9);
+  messageDesc(file_data, 12);
 
 export type ProjectionLaggedData = Message<"hobo.data.v1.ProjectionLaggedData"> & {
   projection: string;
@@ -146,7 +197,7 @@ export type ProjectionLaggedData = Message<"hobo.data.v1.ProjectionLaggedData"> 
 };
 
 export const ProjectionLaggedDataSchema: GenMessage<ProjectionLaggedData> = /*@__PURE__*/
-  messageDesc(file_data, 10);
+  messageDesc(file_data, 13);
 
 export type ProjectionSinkReboundData = Message<"hobo.data.v1.ProjectionSinkReboundData"> & {
   projection: string;
@@ -165,7 +216,7 @@ export type ProjectionSinkReboundData = Message<"hobo.data.v1.ProjectionSinkRebo
 };
 
 export const ProjectionSinkReboundDataSchema: GenMessage<ProjectionSinkReboundData> = /*@__PURE__*/
-  messageDesc(file_data, 11);
+  messageDesc(file_data, 14);
 
 export type ProjectionReplicatedEventData = Message<"hobo.data.v1.ProjectionReplicatedEventData"> & {
   eventJson: string;
@@ -174,7 +225,7 @@ export type ProjectionReplicatedEventData = Message<"hobo.data.v1.ProjectionRepl
 };
 
 export const ProjectionReplicatedEventDataSchema: GenMessage<ProjectionReplicatedEventData> = /*@__PURE__*/
-  messageDesc(file_data, 12);
+  messageDesc(file_data, 15);
 
 export type ProjectionReplicationCheckedData = Message<"hobo.data.v1.ProjectionReplicationCheckedData"> & {
   sourceStreamId: string;
@@ -187,7 +238,7 @@ export type ProjectionReplicationCheckedData = Message<"hobo.data.v1.ProjectionR
 };
 
 export const ProjectionReplicationCheckedDataSchema: GenMessage<ProjectionReplicationCheckedData> = /*@__PURE__*/
-  messageDesc(file_data, 13);
+  messageDesc(file_data, 16);
 
 export type CrossCampProjectionLaggedData = Message<"hobo.data.v1.CrossCampProjectionLaggedData"> & {
   projection: string;
@@ -204,7 +255,7 @@ export type CrossCampProjectionLaggedData = Message<"hobo.data.v1.CrossCampProje
 };
 
 export const CrossCampProjectionLaggedDataSchema: GenMessage<CrossCampProjectionLaggedData> = /*@__PURE__*/
-  messageDesc(file_data, 14);
+  messageDesc(file_data, 17);
 
 export type PaginatedChangeData = Message<"hobo.data.v1.PaginatedChangeData"> & {
   resource: string;
@@ -221,7 +272,7 @@ export type PaginatedChangeData = Message<"hobo.data.v1.PaginatedChangeData"> & 
 };
 
 export const PaginatedChangeDataSchema: GenMessage<PaginatedChangeData> = /*@__PURE__*/
-  messageDesc(file_data, 15);
+  messageDesc(file_data, 18);
 
 export type PaginatedCursorData = Message<"hobo.data.v1.PaginatedCursorData"> & {
   resource: string;
@@ -238,7 +289,7 @@ export type PaginatedCursorData = Message<"hobo.data.v1.PaginatedCursorData"> & 
 };
 
 export const PaginatedCursorDataSchema: GenMessage<PaginatedCursorData> = /*@__PURE__*/
-  messageDesc(file_data, 16);
+  messageDesc(file_data, 19);
 
 export type PaginatedPageData = Message<"hobo.data.v1.PaginatedPageData"> & {
   itemsJson: string[];
@@ -249,7 +300,7 @@ export type PaginatedPageData = Message<"hobo.data.v1.PaginatedPageData"> & {
 };
 
 export const PaginatedPageDataSchema: GenMessage<PaginatedPageData> = /*@__PURE__*/
-  messageDesc(file_data, 17);
+  messageDesc(file_data, 20);
 
 export type ProjectionRebuildRowRecord = Message<"hobo.data.v1.ProjectionRebuildRowRecord"> & {
   configHash: string;
@@ -262,7 +313,7 @@ export type ProjectionRebuildRowRecord = Message<"hobo.data.v1.ProjectionRebuild
 };
 
 export const ProjectionRebuildRowRecordSchema: GenMessage<ProjectionRebuildRowRecord> = /*@__PURE__*/
-  messageDesc(file_data, 18);
+  messageDesc(file_data, 21);
 
 export type ProjectionRebuildSeedRecord = Message<"hobo.data.v1.ProjectionRebuildSeedRecord"> & {
   configHash: string;
@@ -275,7 +326,7 @@ export type ProjectionRebuildSeedRecord = Message<"hobo.data.v1.ProjectionRebuil
 };
 
 export const ProjectionRebuildSeedRecordSchema: GenMessage<ProjectionRebuildSeedRecord> = /*@__PURE__*/
-  messageDesc(file_data, 19);
+  messageDesc(file_data, 22);
 
 export type ProjectionRebuildCheckpointRecord = Message<"hobo.data.v1.ProjectionRebuildCheckpointRecord"> & {
   configHash: string;
@@ -284,7 +335,7 @@ export type ProjectionRebuildCheckpointRecord = Message<"hobo.data.v1.Projection
 };
 
 export const ProjectionRebuildCheckpointRecordSchema: GenMessage<ProjectionRebuildCheckpointRecord> = /*@__PURE__*/
-  messageDesc(file_data, 20);
+  messageDesc(file_data, 23);
 
 export enum ReactivityClass {
   UNSPECIFIED = 0,

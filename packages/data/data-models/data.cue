@@ -42,6 +42,39 @@ package hobo
 	reason:           string
 }
 
+#EventStoreQuarantinedEventData: {
+	offendingSeq:   int & >0 & <=9007199254740991
+	offendingType?: string
+	reason?:        string
+}
+
+#QuarantineFinding: {
+	sourceStreamId:   string & !=""
+	offendingSeq:     =~"^[1-9][0-9]*$"
+	offendingEventId: string & !=""
+	offendingType:    string & !=""
+	fold:             string
+	foldKind:         "aggregate" | "projection" | "eventstore"
+	reason:           string
+	recordStreamId:   string & !=""
+	recordSeq:        =~"^[1-9][0-9]*$"
+	code:             "event-log.poison-quarantined"
+	severity:         "incident"
+	remediation:      string & !=""
+}
+
+#QuarantineReport: {
+	findings: [...#QuarantineFinding]
+	complete:     bool
+	nextPosition: string
+	if complete {
+		nextPosition: ""
+	}
+	if !complete {
+		nextPosition: =~"^[1-9][0-9]*$"
+	}
+}
+
 #UpcasterRegistration: {
 	type:        =~"^[a-z][a-z0-9]*\\.[A-Z][A-Za-z0-9]*$"
 	fromVersion: int & >=1
@@ -78,25 +111,25 @@ package hobo
 }
 
 #ProjectionSinkReboundData: {
-	projection:       string & !=""
-	matchDecidedRef?: string & !=""
-	fromSinkId?:      string & !=""
-	toSinkId?:        string & !=""
-	configHash?:      =~"^sha256:[a-f0-9]{64}$"
+	projection:        string & !=""
+	matchDecidedRef?:  string & !=""
+	fromSinkId?:       string & !=""
+	toSinkId?:         string & !=""
+	configHash?:       =~"^sha256:[a-f0-9]{64}$"
 	verifiedPosition?: string & =~"^(0|[1-9][0-9]*)$"
 	migrationId?:      string & !=""
 	{
-		matchDecidedRef: string & !=""
-		fromSinkId?: _|_
-		toSinkId?: _|_
-		configHash?: _|_
+		matchDecidedRef:   string & !=""
+		fromSinkId?:       _|_
+		toSinkId?:         _|_
+		configHash?:       _|_
 		verifiedPosition?: _|_
-		migrationId?: _|_
+		migrationId?:      _|_
 	} | {
 		matchDecidedRef?: _|_
-		fromSinkId: string & !=""
-		toSinkId: string & !=""
-		configHash: =~"^sha256:[a-f0-9]{64}$"
+		fromSinkId:       string & !=""
+		toSinkId:         string & !=""
+		configHash:       =~"^sha256:[a-f0-9]{64}$"
 	}
 }
 
@@ -155,12 +188,12 @@ package hobo
 
 #ProjectionRebuildSeedRecord: {
 	configHash:      =~"^sha256:[a-f0-9]{64}$"
-	seeded?:        bool
+	seeded?:         bool
 	sourcePosition?: string & =~"^(0|[1-9][0-9]*)$"
 	rowsJson:        string & !=""
 }
 
 #ProjectionRebuildCheckpointRecord: {
-	configHash:     =~"^sha256:[a-f0-9]{64}$"
+	configHash:      =~"^sha256:[a-f0-9]{64}$"
 	sourcePosition?: string & =~"^(0|[1-9][0-9]*)$"
 }

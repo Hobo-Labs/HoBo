@@ -48,6 +48,33 @@ message ProjectionQuarantinedEventData {
   string reason = 6;
 }
 
+message EventStoreQuarantinedEventData {
+  uint64 offending_seq = 1;
+  string offending_type = 2;
+  string reason = 3;
+}
+
+message QuarantineFinding {
+  string source_stream_id = 1;
+  uint64 offending_seq = 2;
+  string offending_event_id = 3;
+  string offending_type = 4;
+  string fold = 5;
+  string fold_kind = 6;
+  string reason = 7;
+  string record_stream_id = 8;
+  uint64 record_seq = 9;
+  string code = 10;
+  string severity = 11;
+  string remediation = 12;
+}
+
+message QuarantineReport {
+  repeated QuarantineFinding findings = 1;
+  bool complete = 2;
+  string next_position = 3;
+}
+
 message UpcasterRegistration {
   string type = 1;
   uint32 from_version = 2;
