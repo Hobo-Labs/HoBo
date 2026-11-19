@@ -9,7 +9,7 @@ import "google/protobuf/struct.proto";
 
 // POST /s/<token>/action: the only request body the server accepts.
 message ConnectActionRequest {
-  // connect.chooseStore | connect.start | connect.cancel
+  // connect.submit | connect.chooseStore | connect.start | connect.cancel
   string action = 1;
   // String values only; the flow refuses params it does not expect.
   map<string, string> params = 2;
@@ -25,15 +25,15 @@ message BrowserDirectiveRecord {
 
 // GET /s/<token>/view and the POST /action response.
 message ConnectViewRecord {
-  // The ConnectStep kind: choose-secret-store | create-github-app |
-  // authorize-vercel | depositing | connected | failed
+  // configure | choose-secret-store | create-github-app | authorize-vercel |
+  // depositing | connected | failed
   string step = 1;
   bool terminal = 2;
   reserved 3;
   reserved "composed_by";
   google.protobuf.Struct spec = 4;
   // model | deterministic
-  string composition_source = 6;
+  string composition_source = 6 [json_name = "composedBy"];
   BrowserDirectiveRecord directive = 5;
 }
 

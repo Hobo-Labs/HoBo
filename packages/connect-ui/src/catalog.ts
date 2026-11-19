@@ -16,6 +16,7 @@ export const connectCatalog = defineCatalog(schema, {
 		Progress: ui.Progress,
 		Separator: ui.Separator,
 		Radio: ui.Radio,
+		Input: ui.Input,
 	},
 	actions: {
 		"connect.submit": {
@@ -24,7 +25,7 @@ export const connectCatalog = defineCatalog(schema, {
 		},
 		"connect.chooseStore": {
 			params: z.object({
-				store: z.enum(["infisical", "1password", "bitwarden"]),
+				store: z.enum(["infisical", "1password", "bitwarden", "yard"]),
 			}),
 			description:
 				"Choose the third-party secret store the provider's credentials go to",
@@ -55,4 +56,5 @@ export const CONNECT_COMPONENTS = Object.freeze([
 	"Progress",
 	"Separator",
 	"Radio",
+	"Input",
 ] as const);
