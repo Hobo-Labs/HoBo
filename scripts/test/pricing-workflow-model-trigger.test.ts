@@ -62,6 +62,7 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/iac/iac-alchemy/model/check-cloudflare-grants.mts",
 			"packages/iac/iac-alchemy/model/check-rivet-http-queue.mts",
 			"packages/iac/iac-alchemy/src/index.ts",
+			"test/iac-alchemy-integration.test.ts",
 			"packages/extension-alchemy-rivet/src/index.ts",
 			"packages/extension-alchemy-rivet/test/rivet-topic-bus-alchemy.test.ts",
 			"packages/dispatcher/model/IacRouting.tla",
@@ -114,6 +115,26 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 				"pnpm --filter @hobo/wit run wit:check",
 			),
 		),
+	);
+	const integrationIndex =
+		pricingSteps?.findIndex((step) =>
+			asText(asObject(step)?.run)?.includes(
+				"test/iac-alchemy-integration.test.ts",
+			),
+		) ?? -1;
+	const prerequisitesIndex =
+		pricingSteps?.findIndex((step) => {
+			const run = asText(asObject(step)?.run);
+			return (
+				run?.includes("turbo run build") &&
+				run.includes("--filter=@hobo/bindles") &&
+				run.includes("--filter=@hobo/runtime-local")
+			);
+		}) ?? -1;
+	assert.ok(integrationIndex >= 0, "Alchemy financial integration must run");
+	assert.ok(
+		prerequisitesIndex >= 0 && prerequisitesIndex < integrationIndex,
+		"Alchemy integration prerequisites must build before the test",
 	);
 	const modelSteps = asList(asObject(jobs?.["pricing-models"])?.steps);
 	const modelCheck = modelSteps
