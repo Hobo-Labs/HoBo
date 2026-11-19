@@ -20,7 +20,7 @@ import "list"
 	readSet?: [...string & !=""]
 	reactivityClass?: "REACTIVITY_CLASS_REACTIVE" | "REACTIVITY_CLASS_NON_REACTIVE"
 	streamSequences?: [string]: int & >=0 & <=9007199254740991
-	{
+	*{
 		readModel?:  _|_
 		rowSchema?:  _|_
 		indexHints?: _|_
@@ -128,15 +128,15 @@ import "list"
 
 #ProjectionRowSchema: {
 	witRecord: string & !=""
-	fields: [...#ProjectionRowField] & !=[]
+	fields: [#ProjectionRowField, ...#ProjectionRowField]
 	_uniqueFields: true & list.UniqueItems([for field in fields {field.name}])
 }
 
 #ProjectionDeclaredData: {
 	projection: string & !=""
-	readSet: [...string] & !=[]
+	readSet: [string, ...string]
 	reactivityClass: #ReactivityClass
-	{
+	*{
 		readModel?:  _|_
 		rowSchema?:  _|_
 		indexHints?: _|_
@@ -188,7 +188,7 @@ import "list"
 	caughtUp:       bool
 }
 
-#CrossCampProjectionLaggedData: {
+#CrossCampProjectionLagData: {
 	projection:     string & !=""
 	ownerCampId:    string & !=""
 	replicaCampId:  string & !=""

@@ -109,9 +109,10 @@ read. A partial batch does not advance that time, and a replica with no
 completed read reports `unknown`. The age is measured from the start of the
 owner read with the supplied clock. This bound depends on the owner store's
 `readAll` returning a complete, ordered prefix; it does not account for any
-staleness inside that store. Configure `onLag` to record or publish the emitted
-`projection.ReplicaLagged` input when a read exceeds the bound. Reads are required to
-detect lag while replication is idle.
+staleness inside that store. Reads record `projection.ReplicaLagged` and
+`projection.ReplicaRecovered` transitions in the replica stream. Repeated reads
+do not repeat a transition, including after restart. Read or subscribe to that
+stream to observe the transitions; reads detect lag while replication is idle.
 
 ## Paginated event views
 
