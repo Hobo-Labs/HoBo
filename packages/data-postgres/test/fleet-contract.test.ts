@@ -1,56 +1,56 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-	type AssignmentReply,
 	type FleetAssignment,
 	parseFleetAssignment,
-	resolveAssignment,
 } from "@hobo/backend-fleet";
-import { describe, expect, it } from "vitest";
-import { MemoryReplica } from "./fleet-model.js";
+import { type MessageDescriptor, Verifier } from "@pact-foundation/pact";
+import { Pool } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sqlAssignmentReplica } from "../src/fleet/assignment.js";
+import { ensureFleetControlTables } from "../src/fleet/control.js";
+import { parseFleetLayout } from "../src/fleet/layout.js";
+import type { FleetBackend } from "../src/fleet/sql.js";
+import { fleetTestExecutor } from "./fleet-postgres.js";
 
 type WireEntry = Omit<FleetAssignment, "active" | "target" | "lossWindowMs"> & {
 	readonly active?: string;
 	readonly target?: string;
 	readonly lossWindowMs?: number;
 };
-type WireReply =
-	| { readonly replica: string; readonly rows: readonly WireEntry[] }
-	| { readonly replica: string; readonly failure: "unreachable" };
 type Interaction = {
+	readonly type: string;
 	readonly description: string;
-	readonly request: {
-		readonly path: string;
-		readonly body: {
-			readonly held?: readonly WireEntry[];
-			readonly entry?: WireEntry;
-			readonly members?: readonly string[];
-			readonly replies?: readonly WireReply[];
-		};
-	};
-	readonly response: {
-		readonly body: {
-			readonly outcome?: string;
-			readonly status?: string;
-			readonly epoch?: number;
-			readonly active?: string;
-		};
-	};
+	readonly providerStates: readonly [
+		{
+			readonly name: string;
+			readonly params: { readonly held: readonly WireEntry[] };
+		},
+	];
+	readonly request: { readonly contents: { readonly content: WireEntry } };
+	readonly response: readonly [
+		{ readonly contents: { readonly content: string } },
+	];
 };
 type Pact = {
 	readonly consumer: { readonly name: string };
 	readonly provider: { readonly name: string };
+	readonly metadata: {
+		readonly transport: string;
+		readonly pactSpecification: { readonly version: string };
+	};
 	readonly interactions: readonly Interaction[];
 };
 
-const pact = JSON.parse(
-	readFileSync(
-		fileURLToPath(
-			new URL("../contracts/pacts/postgres-fleet.pact.json", import.meta.url),
-		),
-		"utf8",
-	),
-) as Pact;
+const pactPath = fileURLToPath(
+	new URL("../contracts/pacts/postgres-fleet.pact.json", import.meta.url),
+);
+const pact: Pact = JSON.parse(readFileSync(pactPath, "utf8"));
+const url = process.env.HOBO_TEST_POSTGRES_URL;
+const layout = parseFleetLayout({
+	dataPrefix: "pact_data_",
+	controlPrefix: `fleet_pact_${process.pid}_`,
+});
 
 function fromWire(entry: WireEntry): FleetAssignment {
 	return parseFleetAssignment({
@@ -61,38 +61,84 @@ function fromWire(entry: WireEntry): FleetAssignment {
 	});
 }
 
-describe("fleet boundary contract", () => {
-	it("names both sides and has interactions", () => {
-		expect(pact.consumer.name).toBe("hobo-database-fleet-reconciler");
-		expect(pact.provider.name).toBe("hobo-postgres-fleet-backend");
-		expect(pact.interactions.length).toBeGreaterThanOrEqual(8);
+describe("fleet library contract", () => {
+	it("records the actual synchronous replica boundary", () => {
+		expect(pact.metadata).toMatchObject({
+			transport: "library-call",
+			pactSpecification: { version: "4.0.0" },
+		});
+		expect(pact.interactions).toHaveLength(4);
+		expect(
+			pact.interactions.every(
+				(interaction) => interaction.type === "Synchronous/Messages",
+			),
+		).toBe(true);
+	});
+});
+
+describe.skipIf(!url)("PostgreSQL fleet replica contract", () => {
+	let pool: Pool;
+	let backend: FleetBackend;
+	beforeAll(async () => {
+		pool = new Pool({ connectionString: url, max: 8 });
+		backend = { id: "a", executor: fleetTestExecutor(pool) };
+		await ensureFleetControlTables(backend, layout);
+	});
+	afterAll(async () => {
+		if (!pool) return;
+		await pool.query(
+			`DROP TABLE IF EXISTS ${layout.usageObservationsTable}, ${layout.usageTable}, ${layout.watermarkTable}, ${layout.assignmentTable}`,
+		);
+		await pool.end();
 	});
 
-	for (const interaction of pact.interactions)
-		it(interaction.description, () => {
-			const { body } = interaction.request;
-			const expected = interaction.response.body;
-			if (interaction.request.path === "/fleet/assignments/accept") {
-				const replica = new MemoryReplica("a");
-				for (const held of body.held ?? []) replica.rows.push(fromWire(held));
-				if (body.entry === undefined) throw new Error("pact has no entry");
-				expect(replica.apply(fromWire(body.entry))).toBe(expected.outcome);
-				return;
-			}
-			expect(interaction.request.path).toBe("/fleet/assignments/resolve");
-			const replies = (body.replies ?? []).map(
-				(reply): AssignmentReply =>
-					"rows" in reply
-						? { replica: reply.replica, rows: reply.rows.map(fromWire) }
-						: reply,
-			);
-			const resolution = resolveAssignment(body.members ?? [], replies);
-			expect(resolution.status).toBe(expected.status);
-			if (resolution.status === "current") {
-				expect(resolution.assignment.epoch).toBe(expected.epoch);
-				expect(resolution.assignment.active).toBe(expected.active);
-			}
-			if (resolution.status === "undecided")
-				expect(resolution.epoch).toBe(expected.epoch);
-		});
+	async function seed(held: readonly WireEntry[]) {
+		await pool.query(`TRUNCATE ${layout.assignmentTable}`);
+		const replica = sqlAssignmentReplica(backend, layout);
+		for (const entry of held) {
+			expect(await replica.accept(fromWire(entry))).toBe("accepted");
+		}
+	}
+
+	it.each(pact.interactions)("$description", async (interaction) => {
+		await seed(interaction.providerStates[0].params.held);
+		const replica = sqlAssignmentReplica(backend, layout);
+		expect(
+			await replica.accept(fromWire(interaction.request.contents.content)),
+		).toBe(interaction.response[0].contents.content);
+	});
+
+	it("verifies recorded requests with the Pact provider verifier", async () => {
+		const verified = new Set<string>();
+		const messageProvider = async (message: MessageDescriptor) => {
+			if (message.content === undefined || Buffer.isBuffer(message.content))
+				throw new Error("invalid assignment contract request");
+			const input: WireEntry = JSON.parse(JSON.stringify(message.content));
+			verified.add(message.description);
+			return sqlAssignmentReplica(backend, layout).accept(fromWire(input));
+		};
+		const messageProviders = Object.fromEntries(
+			pact.interactions.map(({ description }) => [
+				description,
+				messageProvider,
+			]),
+		);
+		const stateHandlers = Object.fromEntries(
+			pact.interactions.map(({ providerStates }) => [
+				providerStates[0].name,
+				async () => seed(providerStates[0].params.held),
+			]),
+		);
+		await new Verifier({
+			provider: pact.provider.name,
+			pactUrls: [pactPath],
+			messageProviders,
+			stateHandlers,
+			logLevel: "error",
+			failIfNoPactsFound: true,
+		}).verifyProvider();
+		expect([...verified].sort()).toEqual(
+			pact.interactions.map(({ description }) => description).sort(),
+		);
+	}, 30_000);
 });
