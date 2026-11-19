@@ -86,8 +86,20 @@ canonical, sorted JSON, with message bytes encoded as canonical padded base64.
 Its authorization callback receives the exact request bytes and scope; the
 actor must independently verify a locally held capability covering those facts
 before and throughout its transaction. The response callback must authenticate
-the exact response bytes and current disclosure authority. A client-side check
-or a Rivet namespace token alone cannot establish these properties.
+the exact response bytes and current disclosure authority. The construction matchers can compare a genuine client with its captured actor
+identity or with complete host-held options; they do not establish host
+authorization, transport provenance or ongoing fencing. A client-side check or
+a Rivet namespace token alone cannot establish these properties.
+
+RivetKit 3's dynamic `getOrCreate(...).fetch` can retry a request after an
+actor lifecycle error, including a dropped reply. The host must independently
+attest that every replay uses the exact same operation envelope, request bytes,
+actor key and semantic digest against the same authenticated durable receipt
+journal, including across owner transitions. The journal must check an existing
+receipt before any new effect and retain it for the operation's full window.
+If those guarantees cannot be established, use a host-verified single-dispatch
+transport. A namespace token or identical request bytes alone are not proof of
+a shared journal or an old-owner fence.
 
 ```ts
 import {
@@ -122,9 +134,15 @@ topic; the host must independently resolve and authorize that destination,
 including any later expiry transfer. Audit reads disclose metadata for the whole
 instance and need whole-instance authorization. A replayed consume receipt may
 contain an expired or superseded lease: independently verify current lease and
-authority before external effects. Invalid mutation data after a valid operation
-envelope, timeouts, lost replies and contradictory responses return `unknown`
-for that exact operation. Retry only the same operation against the same verified
+authority before external effects. Bounded, safely serializable invalid mutations with valid operation envelopes
+reach the actor in a reserved invalid envelope with a type-tagged fingerprint,
+so it can durably record a rejection without applying the request. The host must
+attest that the bound actor checks existing receipts first and rejects the
+reserved marker before effects; its semantic digest must cover that rule. The
+fallback envelope has no ordinary top-level topic or group: the host authorizer
+must decode and authorize the type-tagged snapshot or deny it, never treat
+missing scope fields as a wildcard. Unsafe or oversized input, timeouts, lost
+replies and contradictory responses return `unknown` for the exact operation. Retry only the same operation against the same verified
 journal, or use independently authenticated reconciliation evidence. A missing
 receipt or audit event alone does not prove noncommit.
 
@@ -141,6 +159,49 @@ untrusted work needs an independent worker or process watchdog. Revoking a
 metadata grant is irreversible; each regrant needs a fresh grant and binding,
 and revocation must be propagated and fenced across the host fleet.
 
-## Durable topic actors
+The partial-topic live smoke test exercises real Rivet calls and receipt replay.
+It does not establish process restart, fault placement, ingress limits,
+transaction contention or rollback, or fencing of old owners; those require
+independent host and runner evidence.
 
-The retained-log actor and the separate durable topic-bus actor expose distinct capability profiles. The bus supports bounded subscriptions, consumer groups, leases, acknowledgement, dead letters, compaction, and audit pages; its receipts and state share an actor-local transaction. Neither profile implements the legacy synchronous topic ABI. The host must authenticate and fence the actor, source, credentials, and storage through operation completion. See [the retained-log guide](./DURABLE-TOPIC-ACTOR.md) and [the bus guide](./DURABLE-TOPIC-BUS.md).
+## Retained topic log
+
+The [Rivet topic-log actor guide](./DURABLE-TOPIC-ACTOR.md) describes its
+partial capabilities, setup, limits and host obligations.
+
+The separate [durable topic bus guide](./DURABLE-TOPIC-BUS.md) explains group
+leases, DLQ capacity reservations and its instance-wide host authorization.
+
+The finite `DurableTopic` model checks reservation, lease, dead-letter and
+compaction transitions for two messages, one group and capacities three and
+four. Its mutation checks require counterexamples for omitted reservations,
+blocked final transfers, stale leases and premature or out-of-order compaction; witness checks
+show full-capacity final leases and two dead-letter transfers are reachable.
+This is an abstraction, not a refinement proof of the actor. It does not model
+cyclic dead-letter chains, multiple groups, audit or sequence exhaustion,
+receipt and state-size exhaustion, batch rollback, clocks, authorization,
+storage isolation, host fencing or progress under persistent saturation.
+
+The test-only `durable-topic-conformance` harness adapts host-supplied process,
+clock, fault and ownership controls to the generic durable-messaging suite. It
+refuses a partial capability descriptor before running the full bus suite.
+Passing cases do not establish that those controls really restarted the process,
+injected a fault at the claimed point, isolated tenants or fenced older owners:
+all such evidence remains unverified until an independent runner attests it.
+The host must also fence and drain late opens and fault operations after a test
+timeout or teardown.
+
+The SQLite bus fixture runs the generic group isolation, lease receipt replay,
+detached request, fingerprint, tenant isolation and bounds cases through the
+real bus actor and client. It reports each remaining case as unknown before
+dispatch because it lacks the required process/fault controls or configurable
+profile. Its in-memory stores and test credentials do not prove deployment
+isolation, process recovery or a host fence.
+
+A separate fixture hosts the same actor and client in a child process, checks
+that the process exits on termination, and reopens the same SQLite files. It
+also drops selected replies only after a committed response. The generic test
+reports its supported cases individually and leaves unavailable fault, race and
+profile cases unknown. This exercises a local process boundary, not a Rivet
+engine crash, production ingress, distributed ownership or independently
+verified fault placement.
