@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in evals.proto, so the
-// architecture guard can confirm the rubric/report/verdict shapes are
-// bounded at parse time.
 
 package evals
 
@@ -67,7 +64,6 @@ package evals
 	reasons: [...#GateReason]
 }
 
-// A blocking verdict must explain itself.
 #BlockingPromotionGateVerdict: #PromotionGateVerdict & {
 	ok: false
 	reasons: [_, ...]

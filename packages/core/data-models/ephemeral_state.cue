@@ -1,9 +1,5 @@
 package data_models
 
-// Ephemeral state port invariants. Mirrors the parsers in
-// src/ports/ephemeral-state.ts: printable-ASCII keys of at most 512
-// characters, opaque version tokens of at most 128, TTLs of at most 30 days,
-// and ring windows that never run past the head.
 
 #EphemeralKey:     =~"^[!-~]{1,512}$"
 #EphemeralVersion: =~"^[!-~]{1,128}$"

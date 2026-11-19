@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in proto/public_status_page.proto.
-// These constrain the customer-safe shape of public status records at M0; they
-// are validation constraints only and do not implement a live status page.
 package public_status_page
 
 import (
@@ -8,10 +5,8 @@ import (
 	"strings"
 )
 
-// Customer-safe incident/maintenance lifecycle state.
 #IncidentState: "investigating" | "identified" | "monitoring" | "resolved"
 
-// A customer-readable component group on the public status page.
 #StatusPageComponent: {
 	id:        string & =~"^[a-z][a-z0-9-]*$"
 	label:     string & strings.MinRunes(1)

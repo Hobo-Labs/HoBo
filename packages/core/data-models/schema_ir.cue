@@ -1,10 +1,3 @@
-// CUE constraints for every protobuf type in schema_ir.proto. These are
-// load-bearing for ADR-0160: identifiers stay inside the unquoted-SQL grammar
-// bounded by postgres' NAMEDATALEN so an emitter never has to guess quoting,
-// type tokens carry no statement separator, the step vocabulary is closed and
-// forward-only (no down/inverse kind exists to name), destructive work is
-// confined to the contract phase, and a plan digest is a sha256 over the
-// canonical JSON of the steps plus the engine identity.
 
 package core
 
@@ -25,14 +18,12 @@ import "strings"
 
 #SchemaIndexRecord: {
 	name: #SqlIdentifier
-	// Ordered and non-empty: position is semantic for composite indexes.
 	columns: [#SqlIdentifier, ...#SqlIdentifier]
 	unique: bool
 }
 
 #SchemaTableRecord: {
 	name: #SqlIdentifier
-	// A table with no columns is not a table.
 	columns: [#SchemaColumnRecord, ...#SchemaColumnRecord]
 	indexes: [...#SchemaIndexRecord]
 }
@@ -54,8 +45,6 @@ import "strings"
 	table:   #SqlIdentifier
 	column?: #SqlIdentifier
 	index?:  #SqlIdentifier
-	// Destructive work is confined to the contract phase; expand and backfill
-	// are always safe to run ahead of the new code.
 	destructive: bool
 }
 

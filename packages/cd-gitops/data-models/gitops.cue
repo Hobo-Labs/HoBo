@@ -1,15 +1,11 @@
 package data_models
 
-// CUE constraints for gitops.proto. parsePublisherConfig in
-// src/config.ts applies the same rules, so a value violating them never exists
-// past the parser.
 
 #HttpsUrl: string & =~"^https://[^/@?#\\s]+(/[^?#\\s]*)?$"
 
 #GitHost:      "GIT_HOST_GITHUB" | "GIT_HOST_GITLAB" | "GIT_HOST_GITEA" | "GIT_HOST_BITBUCKET"
 #GitopsEngine: "GITOPS_ENGINE_ARGO_CD" | "GITOPS_ENGINE_FLUX"
 
-// Kubernetes DNS-1123 label (names and namespaces).
 #K8sName: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
 
 #GitRepositoryRecord: {

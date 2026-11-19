@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for the GCP CloudProvider wire records. One constraint per
-// protobuf message in provider_gcp.proto.
 
 #EquivalenceMapping: {
 	class:           string & !=""

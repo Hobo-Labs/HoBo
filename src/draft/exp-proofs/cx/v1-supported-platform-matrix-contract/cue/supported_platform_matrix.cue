@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in proto/supported_platform_matrix.proto.
-// These constrain the customer-facing shape of v1 support records at M0; they are
-// validation constraints only and do not implement a browser grid or device lab.
 package supported_platform_matrix
 
 import (
@@ -8,10 +5,8 @@ import (
 	"strings"
 )
 
-// Customer-facing support level.
 #SupportLevel: "supported" | "limited" | "unsupported"
 
-// Allowed evidence sources for any support claim or matrix row.
 #EvidenceSource: "e2e-tests" | "accessibility-checks" | "bootstrap-smoke" | "docs" | "support-guidance" | "known-limitation"
 
 #DesktopBrowserSupport: {

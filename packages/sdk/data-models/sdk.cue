@@ -1,5 +1,3 @@
-// CUE constraints for every protobuf type in sdk.proto, so the architecture
-// guard can confirm each SDK declaration is bounded at parse time.
 
 package sdk
 
@@ -140,7 +138,6 @@ package sdk
 	operation_count: int & >0
 }
 
-// A complete SDK wire document, used by the package's executed fixture gate.
 #Sdk: #WaiverDeclaration | #ChaosDeclaration | #RunbookDeclaration |
 	#GenerateProviderRequest | #RunnerDeclaration | #PluginDeclaration |
 	#OperatorExecutionFact | #RunbookDiagnosis | #RunbookExecutionResult |

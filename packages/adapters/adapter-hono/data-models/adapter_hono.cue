@@ -1,6 +1,5 @@
 package adapter_hono
 
-// CUE constraints for the Hono adapter boundary record.
 HonoAdapterBoundary: {
 	package_name:     "@hobo/adapter-hono"
 	framework:        "hono"

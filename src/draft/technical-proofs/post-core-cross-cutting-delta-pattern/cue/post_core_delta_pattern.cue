@@ -1,5 +1,3 @@
-// CUE constraints for every protobuf type in proto/post_core_delta_pattern.proto.
-// These constraints pin docs-pattern evidence only.
 package post_core_delta_pattern
 
 #DeltaGateDecision: "accepted" | "rejected"

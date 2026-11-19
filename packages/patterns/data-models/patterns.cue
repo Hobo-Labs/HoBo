@@ -1,4 +1,3 @@
-// CUE constraints for every protobuf type in patterns.proto.
 
 package patterns
 

@@ -1,4 +1,3 @@
-// CUE constraints for S6-02 control-plane HA contract evidence.
 
 package architecture_evidence
 

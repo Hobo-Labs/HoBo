@@ -1,10 +1,5 @@
 package data_models
 
-// CUE constraints for every protobuf type in libsql_ephemeral_state.proto.
-// They mirror the parse boundary in src/: keys are the port's printable-ASCII
-// keys, incarnations carry no ':' (the version separator), revisions start at
-// 1, and the documented per-operation cost never exceeds one request and one
-// row read and written per key.
 
 #EphemeralKey: =~"^[!-~]{1,512}$"
 #Incarnation:  =~"^[!-9;-~]{1,64}$"

@@ -1,6 +1,3 @@
-// CUE constraints for every protobuf type in offering_resolution.proto, so
-// the architecture guard can confirm the generic offering-resolution shapes
-// are bounded at parse time.
 
 package core
 

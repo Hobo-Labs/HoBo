@@ -1,13 +1,9 @@
 package storage_postgres
 
-// CUE constraints for @hobo/storage-postgres records (storage_postgres.proto).
-// Defaults mirror CD_DEFAULTS in packages/cd/src/events.ts:
-// postgresMinMajorVersion 16, postgresStatementTimeoutMs 5000, postgresPoolSize 10.
 
 #Decimal64: =~"^(0|[1-9][0-9]*)$"
 #PositiveDecimal64: =~"^[1-9][0-9]*$"
 
-// A Postgres identifier this store creates; lower-case, unquoted-safe, <= 63 bytes.
 #SchemaName: =~"^[a-z_][a-z0-9_]{0,62}$"
 
 #PostgresStoreConfigRecord: {
@@ -49,8 +45,6 @@ package storage_postgres
 	committed_at:    string & !=""
 }
 
-// CheckpointLogKind enum (storage_postgres.proto); UNSPECIFIED is never stored.
 #CheckpointLogKind: "CHECKPOINT_LOG_KIND_ADVANCE" | "CHECKPOINT_LOG_KIND_RESET"
 
-// StoragePostgresErrorCode enum (storage_postgres.proto).
 #StoragePostgresErrorCode: int & >=0 & <=10

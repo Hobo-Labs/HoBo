@@ -1,4 +1,3 @@
-// CUE constraints for HOBO-620 orchestrator reconciliation FSM evidence.
 
 package architecture_evidence
 

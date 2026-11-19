@@ -1,4 +1,3 @@
-// CUE constraints for wit-port-stub-contract architecture evidence.
 
 package architecture_evidence
 

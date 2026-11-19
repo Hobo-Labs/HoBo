@@ -1,7 +1,5 @@
 package hobo
 
-// CUE constraints for Messaging plane wire records (ADR-0138).
-// One constraint per protobuf message/enum in messaging_port.proto.
 
 #DeliveryGuarantee: "at-least-once" | "exactly-once" | "at-most-once"
 

@@ -1,4 +1,3 @@
-// CUE constraints for hobo dev local loop (HOBO-612).
 
 package dev_loop
 

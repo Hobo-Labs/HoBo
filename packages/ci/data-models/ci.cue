@@ -277,7 +277,6 @@ package ci
  budgetPolicy?: #CommonBudgetPolicyJson
 }
 
-// Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
  kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
@@ -288,7 +287,6 @@ package ci
  engine?: #CiPolicyDaggerEngine
  location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
- // Mirror packages/ci/src/fleet-overflow.ts isGithubLatestLabel — never ubuntu-latest for github.
  if kind == "github" {runsOn: != "ubuntu-latest"}
  if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
  if engine != _|_ {kind: "kubernetes"}
@@ -317,8 +315,6 @@ package ci
  budgetPolicy?: #CommonBudgetPolicyJson
 }
 
-// Struct's JSON shape; the canonical @hobo/core parser owns complete shared
-// constraint semantics and rejects unknown controls before any admission.
 #CommonBudgetPolicyJson: {
  schemaVersion: "hobo.budget-policy/v1"
  tenantId: string & !=""
@@ -338,9 +334,6 @@ package ci
  constraints?: [...{key: string & !="", workload: string & !="", unit: string & !="", maximum: int & >=0 & <=9007199254740991, target?: string}]
 }
 
-// The HOBO_CI_FLEET_ROUTES repository variable: job class to runs-on label.
-// The three classes the relay publishes are always present; a workflow indexes
-// the value directly, so it is a flat object and not a wrapped message.
 #FleetRouteLabel: string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"^(?i)ubuntu-latest$"
 #FleetRoutes: {
  pr: #FleetRouteLabel

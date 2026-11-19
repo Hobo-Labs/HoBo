@@ -1,6 +1,5 @@
 package control_api
 
-// CUE constraints for every protobuf message in control_api.proto.
 
 #ControlApiError: {
 	code:    string
@@ -21,8 +20,6 @@ package control_api
 	json_snapshot?: string
 }
 
-// Envelope only: world/event payload shapes are owned by package yardworld
-// (packages/yard-world/data-models/yard_world.cue) — referenced, not duplicated.
 #WorldStreamEvent: {
 	event:         "world-snapshot" | "world" | "heartbeat"
 	tick:          uint
@@ -30,16 +27,12 @@ package control_api
 	json_payload?: string
 }
 
-// ── CD read API under /v1/cd/ ──────────────────────────────────────────────
-// Record payloads are hobo.cd.v1 messages (packages/cd/data-models) as
-// canonical protobuf JSON — referenced, not duplicated.
 
 #CdReasonCode: "route-unknown" | "method-not-allowed" | "not-found" | "query-invalid" |
 	"last-event-id-invalid" | "store-unavailable" | "view-failed" | "not-ready" |
 	"step-failed" | "reconciler-crashed" | "drain-deadline-exceeded" | "already-started"
 
 #CdReason: {
-	// Read-API codes, or a delivery-feed code when the request fell through.
 	code:        #CdReasonCode | (string & !="")
 	message:     string
 	remediation: string & !=""
