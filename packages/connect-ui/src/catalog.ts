@@ -3,11 +3,6 @@ import { schema } from "@json-render/react/schema";
 import { shadcnComponentDefinitions as ui } from "@json-render/shadcn/catalog";
 import { z } from "zod";
 
-// The connect page's component vocabulary: shadcn/ui through json-render's
-// preset, and the three actions a connect step can dispatch. A spec — whether a
-// model composed it or `deterministicConnectSpec` built it — may use only these,
-// and the flow on the server decides what every action does.
-
 export const connectCatalog = defineCatalog(schema, {
 	components: {
 		Card: ui.Card,
@@ -48,7 +43,6 @@ export const connectCatalog = defineCatalog(schema, {
 
 export type ConnectCatalog = typeof connectCatalog;
 
-/** The component names a connect spec may use. */
 export const CONNECT_COMPONENTS = Object.freeze([
 	"Card",
 	"Stack",

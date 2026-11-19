@@ -11,28 +11,12 @@ import { connectCandidates, OPTIONAL_SUFFIX } from "./candidates.js";
 import { connectCatalog } from "./catalog.js";
 import { type ConnectStep, providerLabel } from "./steps.js";
 
-// Compose the exact component a step needs.
-//
-// With an evaluator, json-render's composer (`experimental_composeSpec`) has a
-// model choose and arrange the step's candidates — the configured, already
-// valid component instances in `candidates.ts` — so the page is generated for
-// the step, but can only ever contain HoBo's own components with HoBo's own
-// props and actions. Only candidate descriptions and the prompt reach the
-// evaluator; props, state and bindings stay here.
-//
-// Without one, or when composition stops short, `deterministicConnectSpec`
-// lays the same candidates out in reading order. Either way the result passes
-// `validateSpec` before a browser sees it, so a model's mistake degrades to the
-// deterministic page, never to a broken or half-rendered one.
-
 export interface ComposedConnectSpec {
 	readonly spec: Spec;
 	readonly composedBy: "model" | "deterministic";
-	/** Why composition fell back, when it did. */
 	readonly fallbackReason: string | undefined;
 }
 
-/** The same candidates, in reading order, under the root card. */
 export function deterministicConnectSpec(step: ConnectStep): Spec {
 	const candidates = connectCandidates(step);
 	const rootCandidate = candidates.find((candidate) => candidate.root === true);
@@ -41,8 +25,6 @@ export function deterministicConnectSpec(step: ConnectStep): Spec {
 	const children = candidates.filter(
 		(candidate) =>
 			candidate !== rootCandidate &&
-			// Of mutually exclusive candidates sharing a resource, all are kept:
-			// for a choice (one button per store) the resource only bounds a model.
 			!candidate.id.endsWith(OPTIONAL_SUFFIX),
 	);
 	const optional = candidates.filter((candidate) =>
@@ -85,7 +67,6 @@ function fingerprint(element: {
 	return JSON.stringify([element.type, element.props, element.on ?? null]);
 }
 
-/** Required (non-optional) candidates absent from a composed spec, by id. */
 export function missingRequiredCandidates(
 	step: ConnectStep,
 	spec: Spec,
@@ -97,7 +78,6 @@ export function missingRequiredCandidates(
 		.map((candidate) => candidate.id);
 }
 
-/** Valid against the catalog's components and structurally sound. */
 export function isRenderableConnectSpec(spec: Spec): boolean {
 	if (!validateSpec(spec, { checkOrphans: true }).valid) return false;
 	const known = new Set(Object.keys(connectCatalog.data.components));
@@ -111,7 +91,6 @@ export interface ComposeOptions {
 	readonly signal?: AbortSignal;
 }
 
-/** Compose a step's page: model-arranged when an evaluator is given. */
 export async function composeConnectSpec(
 	step: ConnectStep,
 	options: ComposeOptions = {},
@@ -145,9 +124,6 @@ export async function composeConnectSpec(
 			return fallback(`composition stopped: ${stopReason}`);
 		if (!isRenderableConnectSpec(composed))
 			return fallback("composed spec failed validation");
-		// Structural validation cannot see omitted content: a model that drops
-		// the step's action would leave the person stranded. Every required
-		// candidate must be in the page, or the deterministic page is used.
 		const missing = missingRequiredCandidates(step, composed);
 		if (missing.length > 0)
 			return fallback(`composed spec omitted ${missing.join(", ")}`);
@@ -159,13 +135,6 @@ export async function composeConnectSpec(
 	}
 }
 
-/**
- * The evaluator the environment configures, if any. Secretless first: on
- * Vercel (or after `vercel env pull`) the short-lived `VERCEL_OIDC_TOKEN`
- * authenticates to AI Gateway; `AI_GATEWAY_API_KEY` is the fallback. With
- * neither, pages are composed deterministically. `HOBO_CONNECT_UI_COMPOSE=off`
- * turns the model off even when a credential is present.
- */
 export function evaluatorFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	fetchImpl?: typeof fetch,
