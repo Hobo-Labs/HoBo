@@ -492,6 +492,148 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("rejects duplicate run.StepCompleted facts for the same step", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-step-complete";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-step-seed",
+					workflowName: "dup-step-complete",
+				},
+			},
+			0,
+		);
+		const completed = { name: "work", index: 0, result: { ok: true } };
+		await engine.store.append(
+			{
+				id: "done-1",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done-2",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: completed,
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-step-complete",
+			async run(ctx) {
+				await ctx.step("work", () => {
+					runs += 1;
+					return { ok: true };
+				});
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "dup-step-complete", {})).rejects.toThrow(
+			/duplicate run.StepCompleted/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("rejects conflicting run.StepCompleted and run.StepFailed for the same step", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/conflict-step";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "conflict-seed",
+					workflowName: "conflict-step",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "work", index: 0, result: { ok: true } },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "failed",
+				streamId,
+				seq: 3,
+				type: "run.StepFailed",
+				data: { name: "work", index: 0, message: "nope" },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "conflict-step",
+			async run(ctx) {
+				await ctx.step("work", () => ({ ok: true }));
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "conflict-step", {})).rejects.toThrow(
+			/conflicting step outcomes/,
+		);
+	});
+
+	it("rejects run.StepCompleted with wrong-typed index", async () => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-step-index",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-step-index",
+					workflowName: "bad-step-index",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId: "run/bad-step-index",
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "work", index: "0", result: {} },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "bad-step-index",
+			async run(ctx) {
+				await ctx.step("work", () => ({}));
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "bad-step-index", {})).rejects.toThrow(
+			/invalid run.StepCompleted/,
+		);
+	});
+
 	it("rejects run.Failed with wrong-typed step", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
