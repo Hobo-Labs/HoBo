@@ -1,3 +1,0 @@
-slug: componentize-js-determinism-spike
-layer: technical
-proof-identity: ok

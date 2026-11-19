@@ -1,3 +1,0 @@
-slug: cost-signal-contract
-layer: technical
-proof-identity: ok

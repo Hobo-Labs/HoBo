@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	isIdentityScaffold,
+	removesOnlyIdentityDeclarations,
 	sameNotebookExecution,
 	sameProofExecution,
 } from "../check-proof-cascade.js";
@@ -55,6 +57,95 @@ describe("proof cascade notebook changes", () => {
 			sameNotebookExecution(
 				notebook("# explanation\nx = 1", "ok", "python"),
 				notebook("x = 1", "ok", "python"),
+			),
+			false,
+		);
+	});
+});
+
+describe("proof cascade scaffold cleanup", () => {
+	const workspace = "src/draft/technical-proofs/sample";
+	const files = [
+		`${workspace}/examples/proof-identity.ts`,
+		`${workspace}/examples/proof-identity.expected.txt`,
+		`${workspace}/bench/identity.bench.ts`,
+		`${workspace}/notebook.ipynb`,
+	];
+	const before = JSON.stringify({
+		artifacts: {
+			examples: "examples",
+			bench: "bench",
+			notebook: "notebook.ipynb",
+			diagrams: [],
+		},
+		references: ["dependency"],
+	});
+	const after = JSON.stringify({
+		artifacts: { diagrams: [] },
+		references: ["dependency"],
+	});
+
+	it("recognizes identity-only files by both path and content", () => {
+		const content = "slug: sample\nlayer: technical\nproof-identity: ok\n";
+		assert.equal(
+			isIdentityScaffold(
+				`${workspace}/examples/proof-identity.expected.txt`,
+				content,
+			),
+			true,
+		);
+		assert.equal(
+			isIdentityScaffold(
+				`${workspace}/examples/proof-identity.expected.txt`,
+				`${content}actual behavior\n`,
+			),
+			false,
+		);
+		assert.equal(
+			isIdentityScaffold(`${workspace}/examples/real.ts`, content),
+			false,
+		);
+	});
+
+	it("ignores metadata only when all removed artifacts were identity scaffolds", () => {
+		const prior = new Set(files);
+		assert.equal(
+			removesOnlyIdentityDeclarations(
+				workspace,
+				before,
+				after,
+				prior,
+				new Set(files),
+			),
+			true,
+		);
+		assert.equal(
+			removesOnlyIdentityDeclarations(
+				workspace,
+				before,
+				after,
+				prior,
+				new Set(files.slice(1)),
+			),
+			false,
+		);
+		assert.equal(
+			removesOnlyIdentityDeclarations(
+				workspace,
+				before,
+				after,
+				new Set([...files, `${workspace}/examples/real.ts`]),
+				new Set(files),
+			),
+			false,
+		);
+		assert.equal(
+			removesOnlyIdentityDeclarations(
+				workspace,
+				before,
+				JSON.stringify({ artifacts: { diagrams: [] }, references: [] }),
+				prior,
+				new Set(files),
 			),
 			false,
 		);
