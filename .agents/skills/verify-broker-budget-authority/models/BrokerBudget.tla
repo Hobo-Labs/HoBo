@@ -20,7 +20,7 @@ Reserve == \E r \in Requests:
            /\ badAdmission' = (badAdmission \/ Spent + Held + 1 > 1)
            /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage>>
 Claim == \E r \in Requests:
-         /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r]
+         /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r] /\ ~unusedEvidence[r]
          /\ claimed' = [claimed EXCEPT ![r] = TRUE]
          /\ UNCHANGED <<phase, evidence, unusedEvidence, usage, badAdmission>>
 Uncertain == \E r \in Requests:
@@ -28,15 +28,15 @@ Uncertain == \E r \in Requests:
              /\ phase' = [phase EXCEPT ![r] = "uncertain"]
              /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage, badAdmission>>
 ObserveFinal == \E r \in Requests:
-                /\ phase[r] \in {"held", "uncertain"} /\ ~evidence[r]
+                /\ phase[r] \in {"held", "uncertain"} /\ ~evidence[r] /\ ~unusedEvidence[r]
                 /\ evidence' = [evidence EXCEPT ![r] = TRUE]
                 /\ UNCHANGED <<phase, claimed, unusedEvidence, usage, badAdmission>>
 ObserveUnused == \E r \in Requests:
-                 /\ phase[r] \in {"held", "uncertain"} /\ ~unusedEvidence[r]
+                 /\ phase[r] \in {"held", "uncertain"} /\ ~unusedEvidence[r] /\ ~evidence[r] /\ ~claimed[r]
                  /\ unusedEvidence' = [unusedEvidence EXCEPT ![r] = TRUE]
                  /\ UNCHANGED <<phase, claimed, evidence, usage, badAdmission>>
 Release == \E r \in Requests:
-           /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r] /\ unusedEvidence[r]
+           /\ phase[r] \in {"held", "uncertain"} /\ ~claimed[r] /\ unusedEvidence[r] /\ ~evidence[r]
            /\ phase' = [phase EXCEPT ![r] = "released"]
            /\ UNCHANGED <<claimed, evidence, unusedEvidence, usage, badAdmission>>
 Settle == \E r \in Requests, amount \in {0, 1, 2}:
@@ -53,7 +53,7 @@ NoUnfundedAdmission == ~badAdmission
 BudgetSafeUntilProviderOverrun == ~Overrun => Held + Spent <= 1
 ClaimRetainsHold == \A r \in Requests : claimed[r] /\ phase[r] # "settled" => phase[r] \in {"held", "uncertain"}
 SettlementNeedsEvidence == \A r \in Requests : phase[r] = "settled" => evidence[r]
-ReleaseNeedsEvidence == \A r \in Requests : phase[r] = "released" => unusedEvidence[r] /\ ~claimed[r]
+ReleaseNeedsEvidence == \A r \in Requests : phase[r] = "released" => unusedEvidence[r] /\ ~claimed[r] /\ ~evidence[r]
 TypeOK == /\ phase \in [Requests -> {"new", "held", "uncertain", "released", "settled"}]
           /\ claimed \in [Requests -> BOOLEAN] /\ evidence \in [Requests -> BOOLEAN]
           /\ unusedEvidence \in [Requests -> BOOLEAN]
