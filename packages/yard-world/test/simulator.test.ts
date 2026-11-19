@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validateLayout } from "../src/layout-model.js";
 import { createSimulation } from "../src/simulator.js";
 
 describe("simulator", () => {
@@ -29,6 +30,15 @@ describe("simulator", () => {
 		expect(Object.keys(sim.state.camps).length).toBeGreaterThanOrEqual(4);
 		expect(Object.keys(sim.state.characters).length).toBeGreaterThanOrEqual(10);
 		expect(Object.keys(sim.state.junctions)).toHaveLength(3);
+	});
+
+	it("produces a layout that passes the editor's corridor validation", () => {
+		const simulation = createSimulation(7);
+		const station = "station-local";
+		const layout = simulation.state.layouts[station];
+		const result = validateLayout(layout, simulation.state, station);
+		expect(result.reasons).toEqual([]);
+		expect(result.layout).toBeDefined();
 	});
 
 	it("routes spans through the trace-index path: cross-tick pairs emit packets", () => {

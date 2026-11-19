@@ -1,16 +1,3 @@
-/**
- * Deterministic simulator of a plausible HoBo platform so the world is alive
- * without a real OTel collector: 1 station, 2 yards, 4 camps, 10 bindles,
- * junctions between camps, plus a crew member and an internal actor.
- *
- * The simulator emits OTLP/JSON payloads (traces, logs, metrics) routed
- * through the same mappers a real collector hits — including the shared
- * TraceIndex. Cross-camp parent spans and their server children are emitted on
- * DIFFERENT ticks, so junction packets exercise the cross-request pairing path
- * end to end.
- *
- * Same seed → identical event stream (mulberry32 RNG, tick-driven, no wall clock).
- */
 import { deriveLayout } from "./layout-model.js";
 import {
 	type AgentEvent,
@@ -33,7 +20,6 @@ import { TraceIndex } from "./trace-index.js";
 
 export const SIM_TICK_MS = 500;
 
-/** mulberry32 — small seedable PRNG. */
 export function createRng(seed: number): () => number {
 	let a = seed >>> 0;
 	return () => {
@@ -50,13 +36,7 @@ interface SimBindle {
 	kind: Character["kind"];
 }
 
-const TOPOLOGY: {
-	station: string;
-	yards: { id: string; name: string }[];
-	camps: { id: string; name: string; yardId: string; rect: Camp["rect"] }[];
-	junctions: { id: string; name: string; from: string; to: string }[];
-	bindles: SimBindle[];
-} = {
+const TOPOLOGY = {
 	station: "station-local",
 	yards: [
 		{ id: "yard-platform", name: "platform" },
@@ -122,6 +102,12 @@ const TOPOLOGY: {
 		{ name: "operator-sam", campId: "camp-platform-ops", kind: "crew" },
 		{ name: "reconciler", campId: "camp-platform-ops", kind: "actor" },
 	],
+} satisfies {
+	station: string;
+	yards: { id: string; name: string }[];
+	camps: { id: string; name: string; yardId: string; rect: Camp["rect"] }[];
+	junctions: { id: string; name: string; from: string; to: string }[];
+	bindles: SimBindle[];
 };
 
 const OPS_CAMP = {
@@ -132,29 +118,33 @@ const OPS_CAMP = {
 };
 
 function corridorBetween(
-	a: Camp["rect"],
-	b: Camp["rect"],
+	from: Camp["rect"],
+	to: Camp["rect"],
 ): Junction["corridor"] {
-	// L-shaped corridor: horizontal from a's door to b's column, then vertical.
-	const ax = a.x + a.w;
-	const ay = a.y + Math.floor(a.h / 2);
-	const bx = b.x - 1;
-	const by = b.y + Math.floor(b.h / 2);
-	const tiles: Junction["corridor"] = [];
-	const [fromX, toX] = ax <= bx ? [ax, bx] : [bx, ax];
-	for (let x = fromX; x <= toX; x += 1) tiles.push({ x, y: ay });
-	const [fromY, toY] = ay <= by ? [ay, by] : [by, ay];
-	for (let y = fromY; y <= toY; y += 1) tiles.push({ x: bx, y });
+	const fromX = from.x + from.w;
+	const fromY = from.y + Math.floor(from.h / 2);
+	const toX = to.x - 1;
+	const toY = to.y + Math.floor(to.h / 2);
+	const tiles: Junction["corridor"] = [{ x: fromX, y: fromY }];
+	let x = fromX;
+	while (x !== toX) {
+		x += Math.sign(toX - x);
+		tiles.push({ x, y: fromY });
+	}
+	let y = fromY;
+	while (y !== toY) {
+		y += Math.sign(toY - y);
+		tiles.push({ x: toX, y });
+	}
 	return tiles;
 }
 
 export interface Simulation {
 	state: WorldState;
-	/** Advance one tick; returns events (including the tick) in deterministic order. */
 	step(): AgentEvent[];
 }
 
-const SPAN_SHAPES: {
+const SPAN_TEMPLATES: {
 	name: string;
 	kind: SpanKind;
 	attrs: Record<string, string>;
@@ -176,13 +166,13 @@ const SPAN_SHAPES: {
 	{ name: "reconcile loop", kind: "internal", attrs: {} },
 ];
 
-const KIND_TO_OTLP: Record<SpanKind, number> = {
+const KIND_TO_OTLP = {
 	internal: 1,
 	server: 2,
 	client: 3,
 	producer: 4,
 	consumer: 5,
-};
+} satisfies Record<SpanKind, number>;
 
 interface OpenSpan {
 	spanId: string;
@@ -190,7 +180,6 @@ interface OpenSpan {
 	startedAt: number;
 }
 
-/** A server/consumer child span due on a later tick (cross-request pairing). */
 interface PendingChild {
 	dueAt: number;
 	characterId: string;
@@ -263,8 +252,7 @@ export function createSimulation(seed = 1): Simulation {
 
 	let clock = 0;
 	let spanSeq = 0;
-	// The world layout is data: derive the default from the
-	// topology above; the server may replace it with a persisted/edited one.
+
 	state.layouts[TOPOLOGY.station] = deriveLayout(state, TOPOLOGY.station);
 	const characters = Object.values(state.characters);
 	const byCamp = new Map<string, Character[]>();
@@ -273,8 +261,7 @@ export function createSimulation(seed = 1): Simulation {
 		list.push(ch);
 		byCamp.set(ch.campId, list);
 	}
-	// The sim owns its open-span ledger: the server reduces events into cloned
-	// state, so the sim never reads its own topology object back.
+
 	const openSpans = new Map<string, OpenSpan[]>();
 	const pendingChildren: PendingChild[] = [];
 	const index = new TraceIndex();
@@ -312,6 +299,20 @@ export function createSimulation(seed = 1): Simulation {
 			startMs: number;
 		},
 	): OtlpTraceRequest {
+		const traceSpan = {
+			traceId: span.traceId,
+			spanId: span.spanId,
+			name: span.name,
+			kind: KIND_TO_OTLP[span.kind],
+			startTimeUnixNano: String(span.startMs * 1_000_000),
+			attributes: Object.entries(span.attrs).map(([key, value]) => ({
+				key,
+				value: { stringValue: value },
+			})),
+		};
+		if (span.parentSpanId !== undefined) {
+			Object.assign(traceSpan, { parentSpanId: span.parentSpanId });
+		}
 		return {
 			resourceSpans: [
 				{
@@ -319,24 +320,7 @@ export function createSimulation(seed = 1): Simulation {
 					scopeSpans: [
 						{
 							scope: { name: "simulator" },
-							spans: [
-								{
-									traceId: span.traceId,
-									spanId: span.spanId,
-									...(span.parentSpanId !== undefined
-										? { parentSpanId: span.parentSpanId }
-										: {}),
-									name: span.name,
-									kind: KIND_TO_OTLP[span.kind],
-									startTimeUnixNano: String(span.startMs * 1_000_000),
-									attributes: Object.entries(span.attrs).map(
-										([key, value]) => ({
-											key,
-											value: { stringValue: value },
-										}),
-									),
-								},
-							],
+							spans: [traceSpan],
 						},
 					],
 				},
@@ -353,6 +337,15 @@ export function createSimulation(seed = 1): Simulation {
 			traceId?: string;
 		},
 	): OtlpLogsRequest {
+		const logRecord = {
+			timeUnixNano: String(clock * 1_000_000),
+			severityNumber: record.severityNumber,
+			severityText: record.severityText,
+			body: { stringValue: record.message },
+		};
+		if (record.traceId !== undefined) {
+			Object.assign(logRecord, { traceId: record.traceId });
+		}
 		return {
 			resourceLogs: [
 				{
@@ -360,17 +353,7 @@ export function createSimulation(seed = 1): Simulation {
 					scopeLogs: [
 						{
 							scope: { name: "simulator" },
-							logRecords: [
-								{
-									timeUnixNano: String(clock * 1_000_000),
-									severityNumber: record.severityNumber,
-									severityText: record.severityText,
-									body: { stringValue: record.message },
-									...(record.traceId !== undefined
-										? { traceId: record.traceId }
-										: {}),
-								},
-							],
+							logRecords: [logRecord],
 						},
 					],
 				},
@@ -413,8 +396,6 @@ export function createSimulation(seed = 1): Simulation {
 		const metricPayloads: OtlpMetricsRequest[] = [];
 		const direct: AgentEvent[] = [];
 
-		// 1. Cross-camp children due this tick — their parents were ingested on
-		//    an earlier tick, so pairing resolves through the trace index.
 		for (let i = pendingChildren.length - 1; i >= 0; i -= 1) {
 			const child = pendingChildren[i];
 			if (child === undefined || child.dueAt > clock) continue;
@@ -441,12 +422,10 @@ export function createSimulation(seed = 1): Simulation {
 			openSpans.set(ch.id, open);
 		}
 
-		// 2. Regular per-character activity.
 		for (const ch of characters) {
 			const open = openSpans.get(ch.id) ?? [];
 			const roll = rng();
 			if (open.length > 0 && roll < 0.45) {
-				// Close the oldest open span; ~1 in 8 ends in error.
 				const closing = open.shift() ?? {
 					spanId: "",
 					traceId: "",
@@ -474,25 +453,25 @@ export function createSimulation(seed = 1): Simulation {
 					);
 				}
 			} else if (roll < 0.45 + 0.35) {
-				// Open a new span via an OTLP payload; sometimes a cross-camp call.
-				const shape = pick(SPAN_SHAPES);
+				const spanTemplate = pick(SPAN_TEMPLATES);
 				spanSeq += 1;
 				const spanId = `span-${spanSeq}`;
 				const traceId = `trace-${spanSeq}`;
 				const crossing =
-					rng() < 0.2 && (shape.kind === "client" || shape.kind === "producer")
+					rng() < 0.2 &&
+					(spanTemplate.kind === "client" || spanTemplate.kind === "producer")
 						? Object.values(state.junctions).find(
 								(j) => j.fromCampId === ch.campId || j.toCampId === ch.campId,
 							)
 						: undefined;
-				const attrs = { ...shape.attrs };
+				const attrs = { ...spanTemplate.attrs };
 				if (crossing !== undefined) attrs["hobo.junction"] = crossing.id;
 				tracePayloads.push(
 					tracePayload(ch, {
 						traceId,
 						spanId,
-						name: shape.name,
-						kind: shape.kind,
+						name: spanTemplate.name,
+						kind: spanTemplate.kind,
 						attrs,
 						startMs: clock,
 					}),
@@ -500,8 +479,6 @@ export function createSimulation(seed = 1): Simulation {
 				open.push({ spanId, traceId, startedAt: clock });
 				openSpans.set(ch.id, open);
 				if (crossing !== undefined) {
-					// Schedule the server child in the peer camp 1–2 ticks out, so the
-					// pair lands in separate "requests" and pairs via the index.
 					const peerCampId =
 						crossing.fromCampId === ch.campId
 							? crossing.toCampId
@@ -515,7 +492,7 @@ export function createSimulation(seed = 1): Simulation {
 							traceId,
 							spanId: `span-${spanSeq}`,
 							parentSpanId: spanId,
-							name: shape.name,
+							name: spanTemplate.name,
 						});
 					}
 				}
@@ -524,8 +501,6 @@ export function createSimulation(seed = 1): Simulation {
 				metricPayloads.push(metricsPayload(ch, 0.5 + rng() * 0.5));
 			}
 			if (rng() < 0.03) {
-				// Varied, deterministic severities: INFO stays quiet, WARN bubbles,
-				// ERROR bubbles + flips the character to stuck attention.
 				const sevRoll = rng();
 				const severity =
 					sevRoll < 0.4
@@ -546,7 +521,6 @@ export function createSimulation(seed = 1): Simulation {
 			}
 		}
 
-		// 3. Route payloads through the same mappers the HTTP ingest uses.
 		const events: AgentEvent[] = [];
 		for (const payload of tracePayloads) {
 			events.push(...mapTracePayload(payload, state, clock, index));
