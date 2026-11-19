@@ -23,17 +23,16 @@ export class ReplayParseError extends Error {
 
 export function parseReplayReport(raw: JsonValue): ReplayReport {
 	const source = expectObject(raw, "ReplayReport");
+	requireFields(
+		source,
+		["runId", "seqVector", "readSetHash", "stateDigest", "mode", "seed"],
+		"ReplayReport",
+	);
 	const mode = parseMode(source.mode);
-	const seqVector = parseSeqVector(source.seq_vector ?? source.seqVector);
-	const readSetHash = parseDigest(
-		source.read_set_hash ?? source.readSetHash,
-		"read_set_hash",
-	);
-	const stateDigest = parseDigest(
-		source.state_digest ?? source.stateDigest,
-		"state_digest",
-	);
-	const runId = nonEmptyString(source.run_id ?? source.runId, "run_id");
+	const seqVector = parseSeqVector(source.seqVector);
+	const readSetHash = parseDigest(source.readSetHash, "readSetHash");
+	const stateDigest = parseDigest(source.stateDigest, "stateDigest");
+	const runId = nonEmptyString(source.runId, "runId");
 	const seed = nonEmptyString(source.seed, "seed");
 
 	return Object.freeze({
@@ -48,14 +47,26 @@ export function parseReplayReport(raw: JsonValue): ReplayReport {
 
 export function parseReplayDivergence(raw: JsonValue): ReplayDivergenceRecord {
 	const source = expectObject(raw, "ReplayDivergence");
-	const runId = nonEmptyString(source.run_id ?? source.runId, "run_id");
+	requireFields(
+		source,
+		[
+			"runId",
+			"liveStateDigest",
+			"replayStateDigest",
+			"liveOrder",
+			"replayOrder",
+			"firstDivergentEventKey",
+		],
+		"ReplayDivergence",
+	);
+	const runId = nonEmptyString(source.runId, "runId");
 	const liveStateDigest = parseDigest(
-		source.live_state_digest ?? source.liveStateDigest,
-		"live_state_digest",
+		source.liveStateDigest,
+		"liveStateDigest",
 	);
 	const replayStateDigest = parseDigest(
-		source.replay_state_digest ?? source.replayStateDigest,
-		"replay_state_digest",
+		source.replayStateDigest,
+		"replayStateDigest",
 	);
 	if (liveStateDigest === replayStateDigest) {
 		throw new ReplayParseError(
@@ -67,31 +78,26 @@ export function parseReplayDivergence(raw: JsonValue): ReplayDivergenceRecord {
 		runId,
 		liveStateDigest,
 		replayStateDigest,
-		liveOrder: stringArray(source.live_order ?? source.liveOrder, "live_order"),
-		replayOrder: stringArray(
-			source.replay_order ?? source.replayOrder,
-			"replay_order",
-		),
+		liveOrder: stringArray(source.liveOrder, "liveOrder"),
+		replayOrder: stringArray(source.replayOrder, "replayOrder"),
 		firstDivergentEventKey: nonEmptyString(
-			source.first_divergent_event_key ?? source.firstDivergentEventKey,
-			"first_divergent_event_key",
+			source.firstDivergentEventKey,
+			"firstDivergentEventKey",
 		),
 	});
 }
 
 function parseSeqVector(value: JsonValue | undefined) {
 	if (!Array.isArray(value)) {
-		throw new ReplayParseError("seq_vector must be an array");
+		throw new ReplayParseError("seqVector must be an array");
 	}
 	const seen = new Set<string>();
 	const entries = value.map((entry, index) => {
-		const source = expectObject(entry, `seq_vector[${index}]`);
-		const streamId = nonEmptyString(
-			source.stream_id ?? source.streamId,
-			"stream_id",
-		);
+		const source = expectObject(entry, `seqVector[${index}]`);
+		requireFields(source, ["streamId", "seq"], `seqVector[${index}]`);
+		const streamId = nonEmptyString(source.streamId, "streamId");
 		if (seen.has(streamId)) {
-			throw new ReplayParseError(`duplicate stream_id ${streamId}`);
+			throw new ReplayParseError(`duplicate streamId ${streamId}`);
 		}
 		seen.add(streamId);
 		const seq = parseUInt(source.seq, "seq");
@@ -118,7 +124,7 @@ function parseDigest(value: JsonValue | undefined, field: string): string {
 }
 
 function parseUInt(value: JsonValue | undefined, field: string): number {
-	if (!isJsonNumber(value) || !Number.isInteger(value) || value < 0) {
+	if (!isJsonNumber(value) || !Number.isSafeInteger(value) || value < 0) {
 		throw new ReplayParseError(`${field} must be a non-negative integer`);
 	}
 	return value;
@@ -143,4 +149,16 @@ function expectObject(value: JsonValue | undefined, label: string): JsonObject {
 		throw new ReplayParseError(`${label} must be an object`);
 	}
 	return value as JsonObject;
+}
+
+function requireFields(
+	value: JsonObject,
+	allowed: readonly string[],
+	label: string,
+): void {
+	const unexpected = Object.keys(value).find((key) => !allowed.includes(key));
+	if (unexpected)
+		throw new ReplayParseError(
+			`${label} has an unexpected field: ${unexpected}`,
+		);
 }
