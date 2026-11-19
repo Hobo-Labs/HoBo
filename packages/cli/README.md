@@ -9,23 +9,11 @@ The **product** `hobo` / `hobo-mcp` binaries ship from **`@hobo/hobo`**
 end. This package is the library surface (`dispatchCommand`, `CANONICAL_VERBS`,
 command factories). Prefer `@hobo/hobo` for end-user CLI use.
 
-**Dual-bin / install story:** the composed product bin is `@hobo/hobo`. Treat
-this package as the shell/factories dependency, not as a second product CLI.
-Ship and publish policy: [ADR-0140](urn:hobo:decision:adr-0140) and
-[`urn:hobo:requirement:launch-ship-targets`](urn:hobo:requirement:launch-ship-targets).
-
-Promotes:
-
-- `src/draft/technical-proofs/hobo-cli-shell-contract/` (CLI shell, parser, registry, renderer, dispatch seam)
-- `src/draft/technical-proofs/hobo-new-scaffold-contract/` (`hobo new` offline scaffolds)
-
 `hobo new -t todo|api|agent|fullstack` is a compatibility adapter. File bodies
-come from `@hobo/patterns` `starter.cli.*` catalog trees (ADR-0153). Aliases
+come from `@hobo/patterns` `starter.cli.*` catalog trees. Aliases
 stay the public contract; do not fork starter text back into this package.
 Scaffold validation checks the generated runtime and template-specific store
 exports as well as the project files.
-- `src/draft/technical-proofs/hobo-build-cli-contract/` (`hobo build` orchestration, HOBO-613 / S1-23)
-- `src/draft/epic-proofs/cli-mcp-developer-experience/` (CLI↔MCP parity boundary)
 
 The product `hobo build` produces executable Node bundles, real WASM components,
 or complete OCI image archives. It checks codegen freshness first and atomically
@@ -114,12 +102,14 @@ node packages/cli/dist/bin/hobo.js new my-app -t api
 Product composition (recommended for end-to-end local lane):
 
 ```bash
-pnpm hobo --help          # root script: builds @hobo/hobo on first use
-# or: node packages/hobo/dist/bin/hobo.js --help
+pnpm hobo --help
 ```
 
-**Pre-release:** `@hobo/*` is **not published to npm** as a stable external
-install story yet. Prefer the monorepo workspace until publish hygiene lands.
+The root script builds `@hobo/hobo` on first use. You can also run
+`node packages/hobo/dist/bin/hobo.js --help` after building it.
+
+The stable external installation of `@hobo/*` is not published to npm. Use the
+monorepo workspace.
 The composed product provides persistent self-hosted local deployments and
 explicitly selected live provider paths; see [`packages/hobo/README.md`](../hobo/README.md).
 
@@ -132,6 +122,12 @@ explicitly selected live provider paths; see [`packages/hobo/README.md`](../hobo
 Data models live in `data-models/` (protobuf + CUE), including `build_manifest.*` for `hobo build` records and `build.*` event families.
 
 ## Executable application generation
+
+During a long-lived `hobo dev` session, source edits trigger debounced code
+generation. Generated output is excluded from the watch, and a generation failure
+is reported while the server continues running. `hobo dev --once` runs a single
+probe and exits without watching files. Regeneration updates artifacts; it does
+not reload the running handler.
 
 `hobo codegen` selects the app's source of truth. Explicit
 `.hobo/sources/zod/resources.json` metadata uses the recursive schema engine;
@@ -218,17 +214,19 @@ projections, maintains snapshots, and delivers real subscriptions. Its workflow
 adapter uses the existing runtime workflow engine and resumes committed steps
 after reopening the durable store.
 
+The host owns the EventStore and supplies authenticated actor and tenant context.
+While the runtime is configured, use `api.resources.<declared-name>` for query,
+get, put, remove, and subscribe operations.
+
 ```ts
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import {
-  api, createGeneratedRuntime, configureGeneratedRuntime,
+  createGeneratedRuntime, configureGeneratedRuntime,
 } from "./src/_generated/api-tree.js";
 
 const store = createRuntimeLocalEventStore({ dataDir: ".hobo/data" });
 const runtime = createGeneratedRuntime({ store, tenant: "local", project: "shop" });
 const unconfigure = configureGeneratedRuntime(runtime);
-// Use api.resources.<declared-name>.query/get/put/remove/subscribe.
-// The host owns its EventStore and authenticated actor/tenant context.
 unconfigure();
 runtime.close();
 store.close();
