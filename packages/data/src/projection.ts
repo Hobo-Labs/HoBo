@@ -13,7 +13,11 @@ import {
 	type ProjectionRowSchema as ProjectionRowSchemaWire,
 	type QuarantineReprocessFinding,
 } from "./_generated/data_pb.js";
-import { isOptimisticConflict, ProjectionWriteError } from "./errors.js";
+import {
+	isOptimisticConflict,
+	ProjectionFoldError,
+	ProjectionWriteError,
+} from "./errors.js";
 import {
 	createProjectionDeclaredEvent,
 	createProjectionLaggedEvent,
@@ -313,10 +317,18 @@ export function defineProjection<Row>(
 				);
 			} catch (error) {
 				if (quarantined) continue;
-				if (!collectFailures || error instanceof UpcasterChainError)
-					throw error;
+				if (error instanceof UpcasterChainError) throw error;
 				const failure =
 					error instanceof Error ? error : new Error(String(error));
+				if (!collectFailures) {
+					if (error instanceof ProjectionWriteError) throw error;
+					if (
+						definition.classifyFailure &&
+						!shouldQuarantineFailure(failure, event, definition.classifyFailure)
+					)
+						throw error;
+					throw new ProjectionFoldError(definition.name, event, failure);
+				}
 				if (
 					!shouldQuarantineFailure(failure, event, definition.classifyFailure)
 				)

@@ -46,6 +46,7 @@ export {
 	isOptimisticConflict,
 	isStaleFenceError,
 	ProjectionWriteError,
+	ProjectionFoldError,
 	UnpersistedQuarantineError,
 } from "./errors.js";
 export {

@@ -49,6 +49,9 @@ scalar `seq` is the highest of those values, not a global journal position;
 neither value proves that an arbitrary input contained every earlier event.
 The fold orders events by sequence within each stream, preserves the input's
 interleaving between streams, and rejects duplicate sequences in a stream.
+Deterministic fold failures raise `ProjectionFoldError` with the projection,
+source event location, and original cause. A failure classified as transient is
+returned unchanged for retry.
 
 An aggregate command may stage durable effects with `emitter.stageEffect`.
 The event store must support atomic commits; otherwise the command raises
