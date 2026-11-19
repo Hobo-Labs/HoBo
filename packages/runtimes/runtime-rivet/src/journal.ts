@@ -146,6 +146,11 @@ export interface ActorLocalJournal {
 		digest: string,
 		payloadJson: string,
 	): void;
+	markOutboxDelivered(
+		streamId: string,
+		effectId: string,
+		digest: string,
+	): boolean;
 	pendingOutbox(streamId: string): readonly {
 		effectId: string;
 		digest: string;
@@ -228,13 +233,52 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
      WHERE stream_id = ? AND command_id = ?`,
 	);
 	const insertOutbox = db.prepare(
-		`INSERT OR IGNORE INTO hobo_outbox(stream_id, effect_id, digest, payload_json, status)
+		`INSERT INTO hobo_outbox(stream_id, effect_id, digest, payload_json, status)
      VALUES (?, ?, ?, ?, 'pending')`,
 	);
 	const listOutbox = db.prepare(
 		`SELECT effect_id, digest, payload_json FROM hobo_outbox
-     WHERE stream_id = ? AND status = 'pending'`,
+     WHERE stream_id = ? AND status = 'pending' ORDER BY effect_id`,
 	);
+	const getOutbox = db.prepare(
+		`SELECT digest, payload_json, status FROM hobo_outbox WHERE stream_id = ? AND effect_id = ?`,
+	);
+	const acknowledgeOutbox = db.prepare(
+		`UPDATE hobo_outbox SET status = 'delivered' WHERE stream_id = ? AND effect_id = ? AND digest = ? AND status = 'pending'`,
+	);
+
+	function stageOutboxEffect(
+		streamId: string,
+		effectId: string,
+		digest: string,
+		payloadJson: string,
+	): void {
+		if (!streamId.trim() || !effectId.trim() || !digest.trim())
+			throw new RivetJournalError(
+				"PARSE",
+				"outbox stream, effect id, and digest are required",
+			);
+		try {
+			JSON.parse(payloadJson);
+		} catch {
+			throw new RivetJournalError("PARSE", "outbox payload must be valid JSON");
+		}
+		const existing = getOutbox.get(streamId, effectId) as SqliteRow | undefined;
+		if (existing) {
+			if (existing.digest !== digest || existing.payload_json !== payloadJson)
+				throw new RivetJournalError(
+					"DIGEST_MISMATCH",
+					`outbox effect ${effectId} digest mismatch`,
+				);
+			if (existing.status !== "pending" && existing.status !== "delivered")
+				throw new RivetJournalError(
+					"PARSE",
+					`invalid outbox status for ${effectId}`,
+				);
+			return;
+		}
+		insertOutbox.run(streamId, effectId, digest, payloadJson);
+	}
 
 	const mapInbox = (row: SqliteRow): InboxCommand => ({
 		commandId: String(row.command_id),
@@ -448,7 +492,7 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 						`command ${input.commandId} is not pending`,
 					);
 				for (const effect of input.effects ?? []) {
-					insertOutbox.run(
+					stageOutboxEffect(
 						input.streamId,
 						effect.effectId,
 						effect.digest,
@@ -469,7 +513,32 @@ export function createActorLocalJournal(path = ":memory:"): ActorLocalJournal {
 		},
 		stageOutbox(streamId, effectId, digest, payloadJson) {
 			this.transaction(() => {
-				insertOutbox.run(streamId, effectId, digest, payloadJson);
+				stageOutboxEffect(streamId, effectId, digest, payloadJson);
+			});
+		},
+		markOutboxDelivered(streamId, effectId, digest) {
+			return this.transaction(() => {
+				if (acknowledgeOutbox.run(streamId, effectId, digest).changes === 1)
+					return true;
+				const existing = getOutbox.get(streamId, effectId) as
+					| SqliteRow
+					| undefined;
+				if (!existing)
+					throw new RivetJournalError(
+						"INBOX_CONFLICT",
+						`outbox effect ${effectId} is missing`,
+					);
+				if (existing.digest !== digest)
+					throw new RivetJournalError(
+						"DIGEST_MISMATCH",
+						`outbox effect ${effectId} digest mismatch`,
+					);
+				if (existing.status !== "delivered")
+					throw new RivetJournalError(
+						"PARSE",
+						`invalid outbox status for ${effectId}`,
+					);
+				return false;
 			});
 		},
 		pendingOutbox(streamId) {

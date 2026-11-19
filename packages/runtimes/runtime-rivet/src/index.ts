@@ -18,6 +18,11 @@ export {
 	createActorLocalJournal,
 	type JournalFactRecord,
 } from "./journal.js";
+export {
+	dispatchRivetOutbox,
+	type RivetOutboxEffect,
+	type RivetOutboxEffectInput,
+} from "./outbox.js";
 export type { RivetkitModule } from "./load-rivetkit.js";
 export { loadRivetkit, loadRivetkitClient } from "./load-rivetkit.js";
 export {
@@ -42,10 +47,8 @@ export {
 	rivetEngineImageRef,
 } from "./upstream-pin.js";
 
-// public-contract: package id compose and Matching pin.
 export const HOBO_RUNTIME_RIVET_PACKAGE = "@hobo/runtime-rivet";
 
-/** Profiles this resolver claims. Grammar-legal kv refinements, not actor.*. */
 export const RIVET_RESOLVER_PROFILES = [
 	"kv.durable-object/v1",
 	"kv.durable-object.event-journal/v1",
