@@ -17,6 +17,17 @@ message CampTopology {
   string logical_id = 10;
 }
 
+message CampContract {
+  optional string id = 1;
+  optional string logical_id = 2;
+  optional string env = 3;
+  optional string env_type = 4;
+  repeated string require = 5;
+  repeated string prefer = 6;
+  map<string, string> labels = 7;
+  repeated string runtime_requirements = 8;
+}
+
 message ProviderSelection {
   string kind = 1;
   string provider_id = 2;

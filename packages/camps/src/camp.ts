@@ -4,6 +4,7 @@ import { must } from "@hobo/core/total-access";
 import {
 	type Camp,
 	type CampConfig,
+	type CampContract,
 	type CampShape,
 	EMPTY_RESOLVER_CONFIG,
 	type JsonValue,
@@ -269,11 +270,11 @@ export function parseLegacyCampMappings(
 	};
 }
 
-export function campToShape(campObject: Camp): CampShape {
+export function campToContract(campObject: Camp): CampContract {
 	const localId = campObject.id.includes("/")
 		? must(campObject.id.split("/").pop(), "campObject.id.split('/').pop()")
 		: campObject.id;
-	const shape: CampShape = {
+	const contract: CampContract = {
 		id: localId,
 		...(campObject.logicalId ? { logicalId: campObject.logicalId } : {}),
 		env: campObject.env,
@@ -283,7 +284,12 @@ export function campToShape(campObject: Camp): CampShape {
 		labels: campObject.labels,
 		runtimeRequirements: campObject.runtimeRequirements,
 	};
-	return deepFreeze(shape);
+	return deepFreeze(contract);
+}
+
+/** @deprecated */
+export function campToShape(campObject: Camp): CampShape {
+	return campToContract(campObject);
 }
 
 export function withResolvers(

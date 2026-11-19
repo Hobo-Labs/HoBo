@@ -17,6 +17,17 @@ package data_models
 	resolution_order: #ResolutionOrder
 }
 
+#CampContract: {
+	id?:        string & !=""
+	logicalId?: string & !=""
+	env?:       string & !=""
+	envType?:   string & !=""
+	require: [...string]
+	prefer: [...string]
+	labels: {[string]: string}
+	runtimeRequirements: [...string]
+}
+
 #JsonValue: null | bool | number | string | [...#JsonValue] | {[string]: #JsonValue}
 
 #LegacyCampMappingSelector: {
