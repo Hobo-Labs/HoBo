@@ -26,6 +26,7 @@ import {
 	FENCING_COMPAT,
 	MissingFenceError,
 	OptimisticSequenceConflictError,
+	parseDurableEffect,
 	parseEventEnvelope,
 	parseEventPosition,
 	parseFenceToken,
@@ -202,7 +203,10 @@ export class SqliteJournal {
 		const streamId = requireNonEmpty(request.streamId, "streamId");
 		const opts = request.append;
 		const inputs = parseEventInputs(request.events);
-		const effects = request.effects ?? [];
+		const rawEffects = request.effects === undefined ? [] : request.effects;
+		if (!Array.isArray(rawEffects))
+			throw new TypeError("effects must be an array");
+		const effects = rawEffects.map(parseDurableEffect);
 		if (inputs.length > EVENTSTORE_LIMITS.maxBatchEvents) {
 			throw new TypeError(
 				`events batch exceeds maxBatchEvents=${EVENTSTORE_LIMITS.maxBatchEvents}`,

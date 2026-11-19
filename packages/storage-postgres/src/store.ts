@@ -25,6 +25,7 @@ import {
 	OptimisticSequenceConflictError,
 	type PositionedEvent,
 	parseEventEnvelope,
+	parseDurableEffect,
 	parseEventPosition,
 	type ReadAllOptions,
 	type ResetCheckpointOptions,
@@ -1245,16 +1246,20 @@ SELECT EXISTS (
 		const streamId = requireNonEmpty(request.streamId, "streamId");
 		const inputs = parseEventInputs(request.events);
 		const append = parseAppendOptions(request.append);
-		const effects = request.effects ?? [];
+		const effects = request.effects === undefined ? [] : request.effects;
 		if (!Array.isArray(effects)) {
 			throw new StoragePostgresError(
 				"invalid-input",
 				"effects must be an array",
 			);
 		}
+		const parsedEffects = effects.map(parseDurableEffect);
 		const result = await measured(
 			"commit",
-			() => tx((client) => commitIn(client, streamId, inputs, append, effects)),
+			() =>
+				tx((client) =>
+					commitIn(client, streamId, inputs, append, parsedEffects),
+				),
 			(value) => {
 				if (value.appended.length > 0) {
 					metrics.emit([

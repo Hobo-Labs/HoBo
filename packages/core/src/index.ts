@@ -466,6 +466,7 @@ export type {
 	SubscriptionLease,
 	TimerEffectInput,
 } from "./ports/eventstore.js";
+export { parseDurableEffect } from "./ports/durable-effects.js";
 export {
 	CheckpointRegressionError,
 	EVENTSTORE_LIMITS,

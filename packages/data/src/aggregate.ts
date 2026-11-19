@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { EVENTSTORE_LIMITS } from "@hobo/core";
+import { EVENTSTORE_LIMITS, parseDurableEffect } from "@hobo/core";
 import type {
 	AppendOptions,
 	DurableEffectInput,
@@ -279,7 +279,7 @@ export function defineAggregate<S, C>(
 						});
 					},
 					stageEffect(effect) {
-						stagedEffects.push(effect);
+						stagedEffects.push(parseDurableEffect(effect));
 					},
 				};
 				definition.decide(outcome.state, command, emitter);
