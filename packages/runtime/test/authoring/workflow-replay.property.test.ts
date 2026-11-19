@@ -28,20 +28,69 @@ describe("durable workflow histories", () => {
 						},
 					});
 					const input = { id, revision };
-					const first = await engine.start(wf, input, { runId: "terminal" });
-					const saved = await engine.journal(first.runId);
+					const [started] = await Promise.allSettled([
+						engine.start(wf, input, { runId: "terminal" }),
+					]);
+					if (!started) throw new Error("start did not settle");
+					const saved = await engine.journal("terminal");
 					const restarted = createWorkflowEngine({
 						store: engine.store,
 						seed: "new-seed",
 					});
 					await expect(
-						restarted.resume(wf, first.runId, { id, revision: revision + 1 }),
+						restarted.resume(wf, "terminal", {
+							id,
+							revision: revision + 1,
+						}),
 					).rejects.toThrow(/input/);
-					for (let i = 0; i < 3; i++) {
-						expect(
-							await restarted.resume(wf, first.runId, { ...input }),
-						).toEqual(first);
-						expect(await restarted.journal(first.runId)).toEqual(saved);
+					if (!fail) {
+						expect(started.status).toBe("fulfilled");
+						if (started.status !== "fulfilled") {
+							throw new Error("success arm rejected");
+						}
+						expect(started.value.status).toBe("completed");
+						for (let i = 0; i < 3; i++) {
+							expect(
+								await restarted.resume(wf, "terminal", { ...input }),
+							).toEqual(started.value);
+							expect(await restarted.journal("terminal")).toEqual(saved);
+						}
+					} else if (started.status === "fulfilled") {
+						expect(started.value).toMatchObject({
+							status: "failed",
+							result: undefined,
+							error: {
+								code: "workflow.failed",
+								message: "declined",
+								step: "record",
+							},
+						});
+						expect(saved.at(-1)).toMatchObject({
+							type: "run.Failed",
+							data: { message: "declined", step: "record" },
+						});
+						for (let i = 0; i < 3; i++) {
+							const again = await restarted.resume(wf, "terminal", {
+								...input,
+							});
+							expect(again.status).toBe("failed");
+							expect(again).toEqual(started.value);
+							expect(await restarted.journal("terminal")).toEqual(saved);
+						}
+					} else {
+						const reason = started.reason;
+						const rejection = (cause: unknown) =>
+							cause instanceof Error ? cause.message : String(cause);
+						for (let i = 0; i < 3; i++) {
+							const [again] = await Promise.allSettled([
+								restarted.resume(wf, "terminal", { ...input }),
+							]);
+							expect(again?.status).toBe("rejected");
+							if (again?.status === "rejected") {
+								expect(rejection(again.reason)).toBe(rejection(reason));
+							}
+							expect(await restarted.journal("terminal")).toEqual(saved);
+						}
 					}
 					expect(runs).toBe(1);
 					expect(effects).toBe(1);

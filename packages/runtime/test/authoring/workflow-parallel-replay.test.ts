@@ -343,6 +343,20 @@ it("replays a later step failure after resuming an earlier scheduled gap", async
 	expect(resumed.status).toBe("completed");
 	expect(resumed.result).toBe("first-compensated");
 	expect(calls).toEqual([1, 0, 1]);
+	const journal = await store.readStream(stream);
+	const failedAt = journal.findIndex(
+		(event) =>
+			event.type === "run.StepFailed" &&
+			isJsonObject(event.data) &&
+			event.data.name === "step-1" &&
+			event.data.index === 1 &&
+			event.data.message === "boom",
+	);
+	const completedAt = journal.findIndex(
+		(event) => event.type === "run.Completed",
+	);
+	expect(failedAt).toBeGreaterThanOrEqual(0);
+	expect(completedAt).toBeGreaterThan(failedAt);
 });
 
 it("resumes a single trailing scheduled step at the tip", async () => {
@@ -506,15 +520,24 @@ it("rejects an outcome that disagrees with its scheduled name", async () => {
 		}),
 		2,
 	);
+	let effects = 0;
+	const saved = await store.readStream(stream);
 	const wf = defineWorkflow({
 		name: "bad-outcome-name",
 		run(ctx) {
-			return ctx.step("first", () => "live");
+			return ctx.step("first", () => {
+				effects += 1;
+				return "live";
+			});
 		},
 	});
 	await expect(
 		createWorkflowEngine({ store }).resume(wf, "bad-outcome-name", null),
 	).rejects.toThrow(/step name differs from journal/);
+	expect(effects).toBe(0);
+	const after = await store.readStream(stream);
+	expect(after).toEqual(saved);
+	expect(after).toHaveLength(saved.length);
 });
 
 it("cannot hide a sleep divergence by catching it", async () => {
