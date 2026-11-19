@@ -1763,7 +1763,7 @@ export function createPromotionService(
 			canonicalJson({
 				version: 1,
 				freightId: input.freightId,
-				targets: [...input.targets].sort(),
+				targets: [...input.targets],
 				pipeline: input.pipeline ?? "",
 				node: input.node ?? "",
 				sourceCampId: input.sourceCampId ?? "",
@@ -1786,8 +1786,6 @@ export function createPromotionService(
 		const fingerprint = loaded.trigger.meta?.promotionRequestFingerprint;
 		if (fingerprint !== undefined)
 			return fingerprint === requestFingerprint(input, intent, preview);
-		// Historical records lack the original optional strategy and proposal
-		// inputs. Refuse ambiguous replays instead of acknowledging a new request.
 		const recorded = loaded.view.request;
 		return (
 			loaded.view.intent === intent &&
@@ -1799,8 +1797,7 @@ export function createPromotionService(
 			recorded.fanoutId === (input.fanoutId ?? "") &&
 			recorded.strategy === (input.strategy ?? RolloutStrategy.UNSPECIFIED) &&
 			recorded.proposal === (input.proposal === true) &&
-			canonicalJson([...recorded.targetCampIds].sort()) ===
-				canonicalJson([...input.targets].sort()) &&
+			canonicalJson(recorded.targetCampIds) === canonicalJson(input.targets) &&
 			(!preview ||
 				(loaded.view.preview?.ttlMs === preview.ttlMs &&
 					loaded.view.preview?.sourceCampId === preview.sourceCampId))
@@ -1995,8 +1992,6 @@ export function createPromotionService(
 				"Retry with the same idempotency key.",
 				promotionId,
 			);
-		// A competing request can win after the initial lookup. The store may
-		// deduplicate its append, so compare the persisted binding before effects.
 		const persisted = await load(promotionId);
 		if (!persisted)
 			return refusal(
@@ -2094,8 +2089,6 @@ export function createPromotionService(
 						),
 					],
 				};
-			// Bind the request before any rollback effect. A competing writer may
-			// have claimed the stream after our first lookup; read its binding.
 			const claimStream = `cd-rollback-claim-${rollbackId}`;
 			const initial = await d.desired.current(input.campId);
 			try {
@@ -2114,9 +2107,7 @@ export function createPromotionService(
 					],
 					{ expectedSeq: 0, actor: ctx.principal, tenant: d.tenant },
 				);
-			} catch {
-				// A concurrent claim or a failed append is resolved by reading the stream.
-			}
+			} catch {}
 			const reservation = (await readStream(d.store, claimStream)).find(
 				(event) =>
 					event.type === SAGA_FACT.started &&
