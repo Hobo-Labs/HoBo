@@ -1,5 +1,6 @@
+import { PostgresDataError } from "../errors.js";
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
-import { type FleetBackend, inTransaction, quoteIdentifier } from "./sql.js";
+import { type FleetBackend, inTransaction } from "./sql.js";
 
 export async function ensureFleetControlTables(
 	backend: FleetBackend,
@@ -11,45 +12,46 @@ export async function ensureFleetControlTables(
 			[FLEET_LOCK_CLASS, `${layout.controlPrefix}ddl`],
 		);
 		await session.query(`CREATE TABLE IF NOT EXISTS ${layout.assignmentTable} (
-			epoch bigint PRIMARY KEY CHECK (epoch >= 1),
+			epoch bigint PRIMARY KEY,
 			active text,
 			sealed boolean NOT NULL,
 			target text,
 			reason text NOT NULL,
-			loss_window_ms bigint CHECK (loss_window_ms >= 0),
+			loss_window_ms bigint,
 			decided_at timestamptz NOT NULL,
 			decided_by text NOT NULL,
-			CHECK (sealed = (target IS NOT NULL)),
-			CHECK (NOT sealed OR target IS DISTINCT FROM active)
+			CONSTRAINT assignment_epoch_positive CHECK (epoch >= 1),
+			CONSTRAINT assignment_loss_nonnegative CHECK (loss_window_ms >= 0),
+			CONSTRAINT assignment_sealed_target CHECK (sealed = (target IS NOT NULL)),
+			CONSTRAINT assignment_distinct_target CHECK (NOT sealed OR target IS DISTINCT FROM active)
 		)`);
 		const constraints = await session.query(
-			`SELECT conname::text AS name, pg_get_constraintdef(oid)::text AS definition
+			`SELECT conname::text AS name, pg_get_constraintdef(oid)::text AS definition,
+			convalidated::text AS validated
 			FROM pg_constraint WHERE conrelid = to_regclass($1) AND contype = 'c'`,
 			[layout.assignmentTable],
 		);
-		const old = constraints.rows.filter(
-			(row) => row.definition === "CHECK ((target IS DISTINCT FROM active))",
-		);
-		if (old.length > 0) {
-			const replacement = `${layout.controlPrefix}assignment_target_guard`;
-			const existing = constraints.rows.find((row) => row.name === replacement);
-			if (
-				existing &&
-				existing.definition !==
-					"CHECK (((NOT sealed) OR (target IS DISTINCT FROM active)))"
+		const expected = new Map([
+			["assignment_epoch_positive", "CHECK ((epoch >= 1))"],
+			["assignment_loss_nonnegative", "CHECK ((loss_window_ms >= 0))"],
+			["assignment_sealed_target", "CHECK ((sealed = (target IS NOT NULL)))"],
+			[
+				"assignment_distinct_target",
+				"CHECK (((NOT sealed) OR (target IS DISTINCT FROM active)))",
+			],
+		]);
+		if (
+			constraints.rows.length !== expected.size ||
+			constraints.rows.some(
+				(row) =>
+					row.validated !== "true" ||
+					expected.get(row.name ?? "") !== row.definition,
 			)
-				throw new Error("fleet assignment constraint name is already in use");
-			if (!existing)
-				await session.query(
-					`ALTER TABLE ${layout.assignmentTable} ADD CONSTRAINT ${quoteIdentifier(replacement)} CHECK (NOT sealed OR target IS DISTINCT FROM active)`,
-				);
-			for (const row of old) {
-				if (!row.name)
-					throw new Error("fleet assignment constraint has no name");
-				await session.query(
-					`ALTER TABLE ${layout.assignmentTable} DROP CONSTRAINT ${quoteIdentifier(row.name)}`,
-				);
-			}
+		) {
+			throw new PostgresDataError(
+				"FLEET_CONFIGURATION_INVALID",
+				"fleet assignment constraints do not match the current schema",
+			);
 		}
 		await session.query(`CREATE TABLE IF NOT EXISTS ${layout.watermarkTable} (
 			singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),

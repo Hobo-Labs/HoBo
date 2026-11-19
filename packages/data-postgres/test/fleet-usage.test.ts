@@ -102,7 +102,7 @@ describe("usage observations", () => {
 	});
 });
 
-describe.skipIf(!url)("PostgreSQL fleet usage", () => {
+describe.skipIf(!url)("PostgreSQL fleet control and usage", () => {
 	let pool: Pool;
 	let backend: FleetBackend;
 
@@ -113,8 +113,52 @@ describe.skipIf(!url)("PostgreSQL fleet usage", () => {
 	});
 	beforeEach(async () => {
 		await pool.query(
-			`TRUNCATE ${layout.usageObservationsTable}, ${layout.usageTable}`,
+			`TRUNCATE ${layout.usageObservationsTable}, ${layout.usageTable}, ${layout.assignmentTable}`,
 		);
+	});
+
+	it("initializes the current assignment constraints and reuses them", async () => {
+		await ensureFleetControlTables(backend, layout);
+		await pool.query(
+			`INSERT INTO ${layout.assignmentTable} VALUES (1, NULL, false, NULL, 'paused', NULL, now(), 'test')`,
+		);
+		await expect(
+			pool.query(
+				`INSERT INTO ${layout.assignmentTable} VALUES (2, 'a', true, 'a', 'invalid', NULL, now(), 'test')`,
+			),
+		).rejects.toMatchObject({ code: "23514" });
+	});
+
+	it("refuses incompatible assignment constraints without rewriting them", async () => {
+		const incompatible = parseFleetLayout({
+			dataPrefix: "other_data_",
+			controlPrefix: `usage_bad_${process.pid}_`,
+		});
+		try {
+			await pool.query(
+				`CREATE TABLE ${incompatible.assignmentTable} (epoch bigint PRIMARY KEY CHECK (epoch >= 1))`,
+			);
+			const before = await pool.query(
+				"SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = to_regclass($1) ORDER BY definition",
+				[incompatible.assignmentTable],
+			);
+			await expect(
+				ensureFleetControlTables(backend, incompatible),
+			).rejects.toMatchObject({
+				code: "FLEET_CONFIGURATION_INVALID",
+			});
+			const after = await pool.query(
+				"SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = to_regclass($1) ORDER BY definition",
+				[incompatible.assignmentTable],
+			);
+			expect(after.rows).toEqual(before.rows);
+			const watermark = await pool.query("SELECT to_regclass($1) AS name", [
+				incompatible.watermarkTable,
+			]);
+			expect(watermark.rows[0]?.name).toBeNull();
+		} finally {
+			await pool.query(`DROP TABLE IF EXISTS ${incompatible.assignmentTable}`);
+		}
 	});
 	afterAll(async () => {
 		if (!pool) return;

@@ -594,6 +594,9 @@ Each backend keeps a small append-only log table (the name comes from
 
 `(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by)`
 
+Control-table initialization checks the named, validated assignment
+constraints. A table with different constraints is refused and left intact.
+
 An epoch is **decided** when a majority of the *configured* backends hold the
 same entry for it. The **current assignment** is the highest decided epoch.
 Three rules, each enforced on one backend alone, are all the safety there is:
