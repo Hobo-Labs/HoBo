@@ -27,6 +27,67 @@ admission and route authority. A host may explicitly authorize an unpriced
 operation only through the broker's unpriced policy and durable exposure hold.
 An invalid or incomplete model cannot use that path.
 
+For example, a host can supply its own pricing terms for a Rivet resource.
+The `host` values below are application-supplied configuration and verified
+authorities, not services created by the adapter:
+
+```ts
+import { createIacFinancialServices } from "@hobo/broker";
+import { alchemyTarget, createAlchemyIacProvider } from "@hobo/iac-alchemy";
+
+const target = alchemyTarget({
+  targetId: "rivet-prod",
+  tenantId: host.tenantId,
+  stackName: "App",
+  stage: "prod",
+  programResourceId: "app",
+  sourceDigest: host.sourceDigest,
+  inventoryEvidenceRef: host.inventoryEvidenceRef,
+  resources: [{
+    resourceId: "events",
+    resourceType: "Rivet.DurableObject",
+    providerId: host.rivetProviderId,
+    providerAccountRef: host.rivetAccountRef,
+    productId: host.rivetProductId,
+  }],
+});
+
+const financial = createIacFinancialServices({
+  ...host.financialAuthorities,
+  pricing: {
+    modelId: "rivet-contract",
+    revision: "1",
+    scenario: host.rivetQuoteScenario,
+    bindings: [{ resourceId: "events", candidateIndex: 0 }],
+  },
+  destroyPricing: host.rivetDestroyPricing,
+});
+
+const provider = createAlchemyIacProvider({
+  ...host.providerOptions,
+  stack: host.alchemyStack,
+  target,
+  financial,
+});
+const assessment = await provider.assessPricing(host.program);
+const providerCoverage = assessment.providerCoverage.providers;
+const budgetBeforeAdmission = assessment.budget;
+const outcome = await provider.applyWithAdmission(host.program);
+```
+
+The coverage report identifies each provider as quoted, unavailable, incomplete,
+or unverified, and identifies the source of a quoted model. The quote scenario
+must cover the declared inventory and its candidate indexes.
+The host must independently verify the scope and liability of its estimate.
+Destroy has its own price scenario; an apply quote is not assumed to cover it.
+To use an unpriced target, omit the pricing models and configure the broker's
+explicit unpriced policy and exposure authority. Admission otherwise refuses
+the operation. An authorized unpriced admission bypasses budget evaluation and
+holds unbounded exposure: on that ledger, bounded admissions are refused until
+the exposure is reconciled, and unpriced admission is refused while a bounded
+reservation is active. A quoted assessment reports budget as not evaluated;
+financial admission checks the budget and creates the appropriate hold.
+
 `mapBindleToAlchemy` accepts provider-owned primitive mappers and assesses the
 Bindle's requirements, operations, annotations, dependencies and entrypoints.
 It refuses missing mappings and unbound dependencies.
