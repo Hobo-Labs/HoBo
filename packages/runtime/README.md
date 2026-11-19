@@ -74,7 +74,8 @@ writes and restarts. A 16-state model checks run-ID validation.
 `resume` requires an existing `run.Started`, the original JSON-normalized input, and the recorded workflow name when available. It uses the recorded seed; old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. Concurrent resumes require host-side fencing. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. New failure records preserve
+calling the workflow or appending another event. A journal with multiple
+terminal facts is rejected before returning an outcome. New failure records preserve
 the failed step when present; older failure records without a step cannot
 reconstruct that detail.
 

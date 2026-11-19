@@ -1,1 +1,1 @@
-export default { test: { include: ['test/authoring/workflow-replay.property.test.ts','test/authoring/workflow-result-snapshot.test.ts','test/authoring/workflow-input-snapshot.test.ts','test/authoring/workflow-id-boundary.test.ts'] } };
+export default { test: { include: ['test/authoring/workflow-replay.property.test.ts','test/authoring/workflow.test.ts','test/authoring/workflow-result-snapshot.test.ts','test/authoring/workflow-input-snapshot.test.ts','test/authoring/workflow-id-boundary.test.ts'] } };

@@ -387,7 +387,12 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(result.result).toBe("journal");
 	});
 
-	it("rejects duplicate terminal facts without executing the workflow", async () => {
+	it.each([
+		["run.Completed", "run.Completed"],
+		["run.Completed", "run.Failed"],
+		["run.Failed", "run.Completed"],
+		["run.Failed", "run.Failed"],
+	] as const)("rejects duplicate terminal facts %s then %s", async (first, second) => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
 			{
@@ -404,7 +409,7 @@ describe("durable workflow: journal, restart, replay", () => {
 				id: "completed",
 				streamId: "run/dup-terminal",
 				seq: 2,
-				type: "run.Completed",
+				type: first,
 				data: { result: "first" },
 			},
 			1,
@@ -414,7 +419,7 @@ describe("durable workflow: journal, restart, replay", () => {
 				id: "completed-again",
 				streamId: "run/dup-terminal",
 				seq: 3,
-				type: "run.Completed",
+				type: second,
 				data: { result: "second" },
 			},
 			2,
