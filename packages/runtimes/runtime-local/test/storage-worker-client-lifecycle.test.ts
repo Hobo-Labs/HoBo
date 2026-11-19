@@ -1,149 +1,173 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { Worker } from "node:worker_threads";
+import { afterEach, expect, it } from "vitest";
+import { StorageWorkerClient } from "../dist/eventstore/worker-client.js";
 
-import { StorageWorkerClient } from "../src/eventstore/worker-client.js";
+const directories: string[] = [];
+const clients: StorageWorkerClient[] = [];
+const workers: Worker[] = [];
+const append = {
+	expectedSeq: 0,
+	actor: { kind: "service" as const, id: "test" },
+	tenant: "tenant",
+};
 
-const dirs: string[] = [];
-
-afterEach(() => {
-	for (const dir of dirs.splice(0))
-		rmSync(dir, { recursive: true, force: true });
-});
-
-function client(partitionId?: string) {
-	const dir = mkdtempSync(join(tmpdir(), "hobo-storage-worker-"));
-	dirs.push(dir);
-	return new StorageWorkerClient({
-		dbPath: join(dir, "events.sqlite"),
-		...(partitionId !== undefined ? { partitionId } : {}),
+function client() {
+	const directory = mkdtempSync(join(tmpdir(), "hobo-storage-worker-"));
+	directories.push(directory);
+	const store = new StorageWorkerClient({
+		dbPath: join(directory, "events.sqlite"),
 	});
+	clients.push(store);
+	return { store, directory };
 }
 
-const SPAWN_FAILURE = /Cannot find module|storage worker exited/;
+function workerFor(store: StorageWorkerClient) {
+	// oxlint-disable-next-line anti-slop/no-reflect-get
+	const worker: unknown = Reflect.get(store, "worker");
+	if (!(worker instanceof Worker)) throw new Error("worker not started");
+	workers.push(worker);
+	return worker;
+}
 
-describe("every operation reaches the worker", () => {
-	it("append does", async () => {
-		await expect(
-			client().append("stream-1", [], { expectedRevision: 0 } as never),
-		).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("commit does", async () => {
-		await expect(
-			client().commit({ streamId: "stream-1" } as never),
-		).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("read does", async () => {
-		await expect(client().read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("read from an explicit sequence does", async () => {
-		await expect(client().read("stream-1", 7)).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("readAll does", async () => {
-		await expect(client().readAll()).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("readAll with options does", async () => {
-		await expect(
-			client().readAll({ fromGlobalSeq: 3 } as never),
-		).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("snapshot does", async () => {
-		await expect(
-			client().snapshot("stream-1", { count: 1 }, 4),
-		).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("loadSnapshot does", async () => {
-		await expect(client().loadSnapshot("stream-1")).rejects.toThrow(
-			SPAWN_FAILURE,
-		);
-	});
+afterEach(async () => {
+	await Promise.allSettled(
+		workers.splice(0).map((worker) => worker.terminate()),
+	);
+	await Promise.allSettled(clients.splice(0).map((store) => store.close()));
+	for (const directory of directories.splice(0))
+		rmSync(directory, { recursive: true, force: true });
 });
 
-describe("when the worker dies", () => {
-	it("rejects every outstanding call, not only the first", async () => {
-		const store = client();
-		const calls = [
-			store.read("stream-1"),
-			store.read("stream-2"),
-			store.loadSnapshot("stream-3"),
-		];
-		const settled = await Promise.allSettled(calls);
-		expect(settled.map((r) => r.status)).toStrictEqual([
-			"rejected",
-			"rejected",
-			"rejected",
-		]);
+it("persists ordinary JSON objects containing bigint-like keys without changing them", async () => {
+	const { store, directory } = client();
+	const data = { $bigint: "42" };
+	const appended = await store.append(
+		"orders",
+		[{ type: "order.Created", data }],
+		append,
+	);
+	expect(appended.appended[0]?.data).toEqual(data);
+	expect((await store.read("orders"))[0]?.data).toEqual(data);
+	expect((await store.snapshot("orders", data, 1)).state).toEqual(data);
+	expect((await store.loadSnapshot("orders"))?.state).toEqual(data);
+	const all = await store.readAll();
+	expect(all[0]).toMatchObject({
+		position: expect.any(BigInt),
+		event: { data },
 	});
-
-	it("gives every caller the same failure", async () => {
-		const store = client();
-		const [first, second] = await Promise.allSettled([
-			store.read("stream-1"),
-			store.read("stream-2"),
-		]);
-		const message = (r: PromiseSettledResult<unknown>) =>
-			r.status === "rejected" ? String(r.reason) : "resolved";
-		expect(message(first)).toBe(message(second));
+	await store.close();
+	expect((await store.read("orders"))[0]?.data).toEqual(data);
+	await store.close();
+	await store.close();
+	const reopened = new StorageWorkerClient({
+		dbPath: join(directory, "events.sqlite"),
 	});
-
-	it("spawns a fresh worker for the next call", async () => {
-		const store = client();
-		await expect(store.read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
-		await expect(store.read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
-	});
-
-	it("leaves nothing pending behind", async () => {
-		const store = client();
-		await expect(store.read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
-		await expect(
-			Promise.race([
-				store.read("stream-2"),
-				new Promise((resolve) => setTimeout(() => resolve("hung"), 2_000)),
-			]),
-		).rejects.toThrow(SPAWN_FAILURE);
-	}, 10_000);
+	clients.push(reopened);
+	expect((await reopened.read("orders"))[0]?.data).toEqual(data);
 });
 
-describe("closing", () => {
-	it("does nothing when no worker was ever started", async () => {
-		await expect(client().close()).resolves.toBeUndefined();
+it("commits events and effects through the real storage worker", async () => {
+	const { store } = client();
+	const committed = await store.commit({
+		streamId: "orders",
+		events: [{ type: "order.Created", data: { sku: "one" } }],
+		append,
+		effects: [
+			{
+				kind: "queue",
+				queueName: "orders",
+				idempotencyKey: "q1",
+				body: { sku: "one" },
+			},
+		],
 	});
-
-	it("is idempotent", async () => {
-		const store = client();
-		await store.close();
-		await expect(store.close()).resolves.toBeUndefined();
-	});
-
-	it("survives a worker that never came up", async () => {
-		const store = client();
-		await expect(store.read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
-		await expect(store.close()).resolves.toBeUndefined();
-	});
-
-	it("still accepts a call afterwards, spawning again", async () => {
-		const store = client();
-		await store.close();
-		await expect(store.read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
-	});
+	expect(committed.appended).toHaveLength(1);
+	expect(committed.effects).toHaveLength(1);
+	await expect(
+		store.append("orders", [{ type: "order.Created" }], append),
+	).rejects.toMatchObject({ code: "OPTIMISTIC_SEQUENCE_CONFLICT" });
+	expect((await store.read("orders"))[0]?.data).toEqual({ sku: "one" });
 });
 
-describe("partitioning", () => {
-	it("accepts an explicit partition id", async () => {
-		await expect(client("tenant-a").read("stream-1")).rejects.toThrow(
-			SPAWN_FAILURE,
-		);
-	});
+it("reports startup failures to every caller and starts a replacement after recovery", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "hobo-storage-worker-"));
+	directories.push(directory);
+	const databasePath = join(directory, "events.sqlite");
+	mkdirSync(databasePath);
+	const store = new StorageWorkerClient({ dbPath: databasePath });
+	clients.push(store);
+	const results = await Promise.allSettled([
+		store.read("first"),
+		store.read("second"),
+	]);
+	expect(results.map((result) => result.status)).toEqual([
+		"rejected",
+		"rejected",
+	]);
+	rmSync(databasePath, { recursive: true });
+	await expect(store.read("orders")).resolves.toEqual([]);
+});
 
-	it("runs without one", async () => {
-		await expect(client().read("stream-1")).rejects.toThrow(SPAWN_FAILURE);
+it("rejects pending requests when a worker exits successfully", async () => {
+	const { store } = client();
+	const pending = store.read("orders");
+	const worker = workerFor(store);
+	worker.emit("exit", 0);
+	await expect(pending).rejects.toMatchObject({
+		code: "STORAGE_WORKER_TERMINATED",
 	});
+	await expect(store.read("orders")).resolves.toEqual([]);
+});
+
+it("keeps a replacement worker when the previous worker exits after its error", async () => {
+	const { store } = client();
+	const first = store.read("orders");
+	const previous = workerFor(store);
+	previous.emit("error", new Error("worker stopped"));
+	await expect(first).rejects.toThrow("worker stopped");
+	const next = store.read("orders");
+	workerFor(store);
+	previous.emit("exit", 1);
+	await expect(next).resolves.toEqual([]);
+});
+
+it("does not terminate a replacement worker while an older worker closes", async () => {
+	const { store } = client();
+	await store.read("orders");
+	const previous = workerFor(store);
+	const closing = store.close();
+	previous.emit("error", new Error("worker stopped"));
+	const next = store.read("orders");
+	workerFor(store);
+	await expect(closing).resolves.toBeUndefined();
+	await expect(next).resolves.toEqual([]);
+});
+
+it("rejects a response for a different operation and remains usable", async () => {
+	const { store } = client();
+	const pending = store.read("orders");
+	const worker = workerFor(store);
+	worker.emit("message", {
+		id: "req-1",
+		ok: true,
+		op: "snapshot",
+		result: null,
+	});
+	await expect(pending).rejects.toThrow("replied to read with snapshot");
+	await expect(store.read("orders")).resolves.toEqual([]);
+});
+
+it("does not retain a request that cannot be sent to the worker", async () => {
+	const { store } = client();
+	const uncloneable = { execute: () => undefined };
+	// @ts-expect-error
+	await expect(store.snapshot("orders", uncloneable, 0)).rejects.toThrow();
+	// oxlint-disable-next-line anti-slop/no-reflect-get
+	const pending: unknown = Reflect.get(store, "pending");
+	if (!(pending instanceof Map)) throw new Error("pending requests missing");
+	expect(pending.size).toBe(0);
+	await expect(store.read("orders")).resolves.toEqual([]);
 });

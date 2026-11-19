@@ -89,6 +89,14 @@ Promoted from `src/draft/technical-proofs/runtime-local-component-host` in S1-02
 enforcement promoted from `src/draft/technical-proofs/capability-enforcement-contract`
 in S1-04 (HOBO-593). Binding resolver adapter added in S1-15 (HOBO-605).
 
+## Storage worker
+
+`StorageWorkerClient` runs a SQLite journal in a worker thread. It preserves
+JSON values and native bigint positions across worker messages, rejects pending
+calls if the worker exits, and starts a replacement for later calls. Closing a
+client stops its current worker; a later call starts another one. The default
+`createRuntimeLocalEventStore` uses its own synchronous journal.
+
 ## Durable EventStore reopen coverage
 
 `createRuntimeLocalEventStore` delegates ID allocation to the shared
