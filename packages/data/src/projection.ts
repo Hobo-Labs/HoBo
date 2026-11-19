@@ -9,6 +9,8 @@ import {
 } from "@hobo/core";
 import {
 	ProjectionQuarantinedEventDataSchema,
+	type ProjectionRowField as ProjectionRowFieldWire,
+	type ProjectionRowSchema as ProjectionRowSchemaWire,
 	type QuarantineReprocessFinding,
 } from "./_generated/data_pb.js";
 import { isOptimisticConflict, ProjectionWriteError } from "./errors.js";
@@ -33,11 +35,24 @@ export type ApplyHandler<Row> = (
 	event: EventEnvelope,
 ) => Row;
 
+export type ProjectionRowField = Readonly<
+	Pick<ProjectionRowFieldWire, "name" | "type">
+>;
+
+export type ProjectionRowSchema = Readonly<
+	Pick<ProjectionRowSchemaWire, "witRecord"> & {
+		fields: readonly ProjectionRowField[];
+	}
+>;
+
 export interface ProjectionDefinition<Row> {
 	name: string;
 	key: (event: EventEnvelope) => string;
 	on: Record<string, ApplyHandler<Row>>;
 	reactivityClass?: "reactive" | "non-reactive";
+	readModel?: string;
+	rowSchema?: ProjectionRowSchema;
+	indexHints?: readonly string[];
 	upcasters?: UpcasterRegistry;
 	classifyFailure?: FoldFailureClassifier;
 }
@@ -46,6 +61,11 @@ export interface ProjectionSnapshot<Row> {
 	projection: string;
 	seq: number;
 	rows: Record<string, Row>;
+	readModel?: string;
+	rowSchema?: ProjectionRowSchema;
+	indexHints?: readonly string[];
+	readSet?: readonly string[];
+	reactivityClass?: "reactive" | "non-reactive";
 }
 
 export interface Projection<Row> {
@@ -131,6 +151,48 @@ function eventKey(
 	return JSON.stringify([tenant, streamId, seq, eventId ?? null]);
 }
 
+function projectionMetadata<Row>(definition: ProjectionDefinition<Row>) {
+	const schema = definition.rowSchema;
+	if (!schema) {
+		if (definition.readModel !== undefined || definition.indexHints?.length) {
+			throw new TypeError(
+				"projection read-model metadata requires a row schema",
+			);
+		}
+		return undefined;
+	}
+	const witRecord = schema.witRecord.trim();
+	if (!witRecord || schema.fields.length === 0) {
+		throw new TypeError(
+			"projection row schema requires a WIT record and fields",
+		);
+	}
+	const readModel = definition.readModel?.trim() ?? witRecord;
+	if (readModel !== witRecord) {
+		throw new TypeError(
+			"projection read model must match the row schema WIT record",
+		);
+	}
+	const fields = schema.fields
+		.map((field) => ({ name: field.name.trim(), type: field.type.trim() }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+	if (fields.some((field) => !field.name || !field.type)) {
+		throw new TypeError("projection row schema fields require names and types");
+	}
+	if (new Set(fields.map((field) => field.name)).size !== fields.length) {
+		throw new TypeError("projection row schema has duplicate field names");
+	}
+	const hints = (definition.indexHints ?? []).map((hint) => hint.trim());
+	if (hints.some((hint) => !hint)) {
+		throw new TypeError("projection index hints must be non-empty");
+	}
+	return deepFreeze({
+		readModel,
+		rowSchema: { witRecord, fields },
+		indexHints: [...new Set(hints)].sort(),
+	});
+}
+
 export function defineProjection<Row>(
 	definition: ProjectionDefinition<Row>,
 ): QuarantinableProjection<Row> {
@@ -143,6 +205,7 @@ export function defineProjection<Row>(
 	);
 	const readSet = Object.freeze([...handlers.keys()]);
 	const reactivityClass = definition.reactivityClass ?? "reactive";
+	const metadata = projectionMetadata(definition);
 
 	function foldInternal(
 		materialized: readonly EventEnvelope[],
@@ -228,8 +291,16 @@ export function defineProjection<Row>(
 			else rows[key] = nextRow;
 		}
 
+		const snapshot: ProjectionSnapshot<Row> = {
+			projection: definition.name,
+			seq,
+			rows,
+		};
+		if (metadata) {
+			Object.assign(snapshot, metadata, { readSet, reactivityClass });
+		}
 		return {
-			snapshot: { projection: definition.name, seq, rows },
+			snapshot,
 			failures,
 			reprocessCandidates,
 		};
@@ -481,6 +552,7 @@ export function defineProjection<Row>(
 				projection: definition.name,
 				readSet,
 				reactivityClass,
+				...metadata,
 			});
 		},
 

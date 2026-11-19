@@ -133,4 +133,74 @@ describe("defineProjection read-model fold", () => {
 			reactivityClass: "reactive",
 		});
 	});
+
+	it("carries immutable read-model metadata through declaration and snapshots", async () => {
+		const statusField = { name: "status", type: "string" };
+		const schema = {
+			witRecord: "shop:orders/order-view@1.0.0",
+			fields: [statusField, { name: "orderId", type: "string" }],
+		};
+		const hints = ["status", "orderId", "status"];
+		const projection = defineProjection<OrderRow>({
+			name: "orders-with-metadata",
+			readModel: schema.witRecord,
+			rowSchema: schema,
+			indexHints: hints,
+			key: (event) => parseOrderId(event.data),
+			on: {
+				"order.Placed": (_row, event) => ({
+					orderId: parseOrderId(event.data),
+					status: "placed",
+					totalCents: parseOrderPlacedData(event.data).totalCents,
+				}),
+			},
+		});
+		statusField.type = "changed";
+		hints.push("changed");
+		const expected = {
+			readModel: "shop:orders/order-view@1.0.0",
+			rowSchema: {
+				witRecord: "shop:orders/order-view@1.0.0",
+				fields: [
+					{ name: "orderId", type: "string" },
+					{ name: "status", type: "string" },
+				],
+			},
+			indexHints: ["orderId", "status"],
+		};
+		expect(projection.declared().data).toMatchObject(expected);
+		const s = store();
+		await seedFixture(s);
+		const snapshot = await projection.rebuildFromZero(s, "order:1001");
+		const expectedSnapshot = {
+			...expected,
+			readSet: ["order.Placed"],
+			reactivityClass: "reactive",
+		};
+		expect(snapshot).toMatchObject(expectedSnapshot);
+		expect(projection.snapshot(snapshot)).toMatchObject(expectedSnapshot);
+	});
+
+	it("rejects inconsistent or ambiguous read-model metadata", () => {
+		const base = {
+			name: "invalid-metadata",
+			key: (event: EventEnvelope) => event.streamId,
+			on: { "order.Placed": () => ({}) },
+		};
+		expect(() =>
+			defineProjection({ ...base, readModel: "shop:orders/view@1.0.0" }),
+		).toThrow(/row schema/i);
+		expect(() =>
+			defineProjection({
+				...base,
+				rowSchema: {
+					witRecord: "shop:orders/view@1.0.0",
+					fields: [
+						{ name: "id", type: "string" },
+						{ name: "id", type: "u32" },
+					],
+				},
+			}),
+		).toThrow(/duplicate/i);
+	});
 });

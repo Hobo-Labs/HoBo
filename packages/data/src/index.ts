@@ -85,6 +85,8 @@ export {
 	type ProjectionDefinition,
 	type ProjectionQuarantineOptions,
 	type ProjectionQuarantineRecord,
+	type ProjectionRowField,
+	type ProjectionRowSchema,
 	type ProjectionSnapshot,
 	type QuarantinableProjection,
 } from "./projection.js";

@@ -1,5 +1,7 @@
 package hobo
 
+import "list"
+
 #ReactivityClass: "reactive" | "non-reactive"
 
 #AggregateSnapshotRecord: {
@@ -15,6 +17,17 @@ package hobo
 	seq:        int & >=0
 	rowsJson:   string
 	savedAt:    string & !=""
+	readSet?: [...string & !=""]
+	reactivityClass?: #ReactivityClass
+	{
+		readModel?:  _|_
+		rowSchema?:  _|_
+		indexHints?: _|_
+	} | {
+		rowSchema: #ProjectionRowSchema
+		readModel: rowSchema.witRecord
+		indexHints?: [...string & !=""]
+	}
 }
 
 #QuarantineRecord: {
@@ -107,10 +120,30 @@ package hobo
 	seq:      int & >=0
 }
 
+#ProjectionRowField: {
+	name: string & !=""
+	type: string & !=""
+}
+
+#ProjectionRowSchema: {
+	witRecord: string & !=""
+	fields: [...#ProjectionRowField] & !=[]
+	_uniqueFields: true & list.UniqueItems([for field in fields {field.name}])
+}
+
 #ProjectionDeclaredData: {
 	projection: string & !=""
 	readSet: [...string] & !=[]
 	reactivityClass: #ReactivityClass
+	{
+		readModel?:  _|_
+		rowSchema?:  _|_
+		indexHints?: _|_
+	} | {
+		rowSchema: #ProjectionRowSchema
+		readModel: rowSchema.witRecord
+		indexHints?: [...string & !=""]
+	}
 }
 
 #ProjectionLaggedData: {

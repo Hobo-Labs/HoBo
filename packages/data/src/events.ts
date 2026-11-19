@@ -1,5 +1,5 @@
-
 import type { JsonObject } from "./json.js";
+import type { ProjectionRowSchema } from "./projection.js";
 
 export const DATA_EVENT_SCHEMA_VERSION = "hobo.data-events/v1";
 
@@ -55,11 +55,27 @@ export function createProjectionDeclaredEvent(input: {
 	projection: string;
 	readSet: readonly string[];
 	reactivityClass: "reactive" | "non-reactive";
+	readModel?: string;
+	rowSchema?: ProjectionRowSchema;
+	indexHints?: readonly string[];
 }): DataFact {
-	return fact("projection.Declared", {
+	const data = {
 		projection: input.projection,
 		readSet: [...input.readSet],
 		reactivityClass: input.reactivityClass,
+	};
+	if (!input.rowSchema) return fact("projection.Declared", data);
+	return fact("projection.Declared", {
+		...data,
+		readModel: input.readModel ?? input.rowSchema.witRecord,
+		rowSchema: {
+			witRecord: input.rowSchema.witRecord,
+			fields: input.rowSchema.fields.map((field) => ({
+				name: field.name,
+				type: field.type,
+			})),
+		},
+		indexHints: [...(input.indexHints ?? [])],
 	});
 }
 

@@ -39,6 +39,11 @@ const result = await orders.execute(
 
 `result.seq` is the client's reads-your-writes watermark.
 
+Projection definitions may provide a `rowSchema` with its WIT record name and
+fields, plus `indexHints` for consumers. The read-model name is derived from
+the schema unless explicitly supplied, in which case it must match. Declaration
+facts and snapshots retain this metadata; index hints do not create indexes.
+
 An aggregate command may stage durable effects with `emitter.stageEffect`.
 The event store must support atomic commits; otherwise the command raises
 `DurableEffectUnavailableError` before its events are appended. Successful
