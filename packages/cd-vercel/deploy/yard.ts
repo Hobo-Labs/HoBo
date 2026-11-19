@@ -80,7 +80,10 @@ const CD_YARD = yard("hobo-cd", {
 			},
 		},
 	],
-	camps: [camp("production", { envType: "production", require: REQUIREMENTS })],
+	camps: [
+		camp("production", { envType: "production", require: REQUIREMENTS }),
+		camp("preview", { envType: "preview", require: REQUIREMENTS }),
+	],
 });
 
 export default CD_YARD;
