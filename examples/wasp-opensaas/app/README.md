@@ -11,6 +11,13 @@ Built with [Wasp](https://wasp.sh), based on the [Open Saas](https://opensaas.sh
 - Run `wasp start` and leave it running.
 - [OPTIONAL]: If this is the first time starting the app, or you've just made changes to your entities/prisma schema, also run `wasp db migrate-dev`.
 
+### Client configuration
+
+Set `REACT_APP_PLAUSIBLE_DOMAIN` to enable Plausible analytics. Set
+`REACT_APP_PRIVACY_POLICY_URL` and `REACT_APP_TERMS_URL` to HTTP(S) URLs or
+root-relative paths to display those links in the consent banner. Leave these
+values empty when the corresponding service or document is unavailable.
+
 ### Verification
 
 Run `npm run test:unit` for the local browser-state, message indicator, and payment-boundary tests. Set `TEST_DATABASE_URL` to an isolated PostgreSQL database with the application schema applied to include the message operation tests.
