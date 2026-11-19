@@ -13,6 +13,7 @@
 		"test/raw-source-classification.test.ts",
 		"test/rivet-capabilities.test.ts",
 		"test/rivet-mapping.test.ts",
+		"test/rivet-namespace.test.ts",
 		"test/rivet-queue-alchemy.test.ts",
 		"test/rivet-queue-source-boundary.test.ts",
 		"test/rivet-support-report.test.ts",

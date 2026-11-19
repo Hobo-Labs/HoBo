@@ -27,6 +27,10 @@
 			"types": "./dist/rivet.d.ts",
 			"default": "./dist/rivet.js"
 		},
+		"./rivet/namespace": {
+			"types": "./dist/rivet-namespace.d.ts",
+			"default": "./dist/rivet-namespace.js"
+		},
 		"./rivet/runtime": {
 			"types": "./dist/rivet-runtime.d.ts",
 			"default": "./dist/rivet-runtime.js"

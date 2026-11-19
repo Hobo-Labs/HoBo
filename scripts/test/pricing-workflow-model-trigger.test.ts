@@ -57,9 +57,15 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 			"packages/iac/iac-alchemy/model/check-rivet-http-kv.mts",
 			"packages/iac/iac-alchemy/model/RivetHttpQueue.tla",
 			"packages/iac/iac-alchemy/model/RivetHttpQueue.cfg",
+			"packages/iac/iac-alchemy/model/RivetNamespace.tla",
+			"packages/iac/iac-alchemy/model/RivetNamespace.cfg",
+			"packages/iac/iac-alchemy/model/check-rivet-namespace.mts",
 			"packages/iac/iac-alchemy/model/CloudflareGrant.tla",
 			"packages/iac/iac-alchemy/model/CloudflareGrant.cfg",
 			"packages/iac/iac-alchemy/model/check-cloudflare-grants.mts",
+			"packages/iac/iac-alchemy/model/CloudflareSecret.tla",
+			"packages/iac/iac-alchemy/model/CloudflareSecret.cfg",
+			"packages/iac/iac-alchemy/model/check-cloudflare-secret.mts",
 			"packages/extension-alchemy-rivet/model/check-http-topic-bus.mts",
 			"packages/iac/iac-alchemy/model/check-rivet-http-queue.mts",
 			"packages/iac/iac-alchemy/src/index.ts",
@@ -158,7 +164,9 @@ it("runs pricing models and affected suites for stacked pull requests", () => {
 		"packages/iac/iac-alchemy/model/check-rivet-kv.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-http-kv.mts",
 		"packages/iac/iac-alchemy/model/check-rivet-http-queue.mts",
+		"packages/iac/iac-alchemy/model/check-rivet-namespace.mts",
 		"packages/iac/iac-alchemy/model/check-cloudflare-grants.mts",
+		"packages/iac/iac-alchemy/model/check-cloudflare-secret.mts",
 	])
 		assert.ok(
 			modelSteps?.some((step) =>
