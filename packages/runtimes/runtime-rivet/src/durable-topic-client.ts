@@ -163,6 +163,19 @@ export interface RivetDurableTopicClientOptions {
 	readonly maxInFlight?: number;
 }
 
+interface ClientConstruction {
+	readonly binding: RivetDurableTopicClientBinding;
+	readonly metadataGrant: RivetDurableTopicMetadataGrant;
+	readonly metadata: { readonly active: boolean };
+	readonly verifyTransport: RivetDurableTopicClientOptions["verifyTransport"];
+	readonly authorize: RivetDurableTopicClientOptions["authorize"];
+	readonly revalidate: RivetDurableTopicClientOptions["revalidate"];
+	readonly fetch: RivetDurableTopicClientOptions["fetch"];
+	readonly timeoutMs: number;
+	readonly maxInFlight: number;
+}
+const clientConstructions = new WeakMap<object, ClientConstruction>();
+
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: each input is validated and bounded before use or disclosure. */
 function invalid(): never {
 	throw new TypeError("rivet_topic.invalid_boundary_value");
@@ -306,6 +319,122 @@ function requestOperation(value: unknown): DurableMessagingOperation {
 		return invalid();
 	return operation(field.value);
 }
+
+function permanentlyMalformedOperation(value: unknown): boolean {
+	try {
+		if (
+			typeof value !== "object" ||
+			value === null ||
+			types.isProxy(value) ||
+			Array.isArray(value)
+		)
+			return false;
+		const field = Object.getOwnPropertyDescriptor(value, "operation");
+		if (
+			field === undefined ||
+			!Object.hasOwn(field, "value") ||
+			!field.enumerable
+		)
+			return false;
+		const envelope = record(field.value, ["id", "expiresAtMs"]);
+		if (
+			typeof envelope.id !== "string" ||
+			typeof envelope.expiresAtMs !== "number"
+		)
+			return false;
+		try {
+			parseDurableMessagingOperation({
+				id: envelope.id,
+				expiresAtMs: envelope.expiresAtMs,
+			});
+			return false;
+		} catch {
+			return true;
+		}
+	} catch {
+		return false;
+	}
+}
+type InvalidSnapshot =
+	| readonly ["null"]
+	| readonly ["boolean", boolean]
+	| readonly ["number" | "string" | "bytes", string]
+	| readonly ["array", readonly InvalidSnapshot[]]
+	| readonly ["object", readonly (readonly [string, InvalidSnapshot])[]];
+type InvalidEnvelope = {
+	readonly operation: DurableMessagingOperation;
+	readonly __hobo_invalid_request: InvalidSnapshot;
+};
+
+function wireFallback(
+	input: unknown,
+	op: DurableMessagingOperation,
+): InvalidEnvelope {
+	const budget = { nodes: 2_048, bytes: MAX_REQUEST_BYTES };
+	const ancestors = new Set<object>();
+	const capture = (value: unknown, depth: number): InvalidSnapshot => {
+		if (--budget.nodes < 0 || depth > 32) return invalid();
+		if (value === null) return ["null"];
+		if (typeof value === "boolean") return ["boolean", value];
+		if (typeof value === "number") {
+			if (!Number.isFinite(value)) return invalid();
+			return ["number", Object.is(value, -0) ? "-0" : String(value)];
+		}
+		if (typeof value === "string") {
+			if (value.length > MAX_REQUEST_BYTES) return invalid();
+			budget.bytes -= Buffer.byteLength(value, "utf8");
+			if (budget.bytes < 0) return invalid();
+			return ["string", value];
+		}
+		if (
+			typeof value !== "object" ||
+			types.isProxy(value) ||
+			ancestors.has(value)
+		)
+			return invalid();
+		if (types.isUint8Array(value)) {
+			const data = bytes(value, MAX_REQUEST_BYTES);
+			budget.bytes -= data.length;
+			if (budget.bytes < 0) return invalid();
+			return ["bytes", Buffer.from(data).toString("base64")];
+		}
+		ancestors.add(value);
+		try {
+			if (Array.isArray(value))
+				return [
+					"array",
+					array(value, 1024).map((entry) => capture(entry, depth + 1)),
+				];
+			const prototype = Object.getPrototypeOf(value);
+			if (prototype !== Object.prototype && prototype !== null)
+				return invalid();
+			const keys = Reflect.ownKeys(value);
+			if (keys.length > 256 || keys.some((key) => typeof key !== "string"))
+				return invalid();
+			// SAFETY: the preceding check establishes that every key is a string.
+			const names = (keys as string[]).sort();
+			const entries: Array<readonly [string, InvalidSnapshot]> = [];
+			for (const key of names) {
+				if (key.length > 1024) return invalid();
+				budget.bytes -= Buffer.byteLength(key, "utf8");
+				if (budget.bytes < 0) return invalid();
+				const descriptor = Object.getOwnPropertyDescriptor(value, key);
+				if (
+					descriptor === undefined ||
+					!Object.hasOwn(descriptor, "value") ||
+					!descriptor.enumerable
+				)
+					return invalid();
+				entries.push([key, capture(descriptor.value, depth + 1)]);
+			}
+			return ["object", entries];
+		} finally {
+			ancestors.delete(value);
+		}
+	};
+	return { operation: op, __hobo_invalid_request: capture(input, 0) };
+}
+
 function limits(value: unknown): DurableMessagingLimits {
 	const fields = record(value, Object.keys(DURABLE_MESSAGING_LIMITS));
 	const cap: DurableMessagingLimits = Object.freeze({
@@ -381,10 +510,10 @@ function limits(value: unknown): DurableMessagingLimits {
 			(payload +
 				6 * cap.attributeBytes +
 				6 * cap.reasonBytes +
-				16 * cap.nameBytes +
+				2 * 8 * cap.nameBytes +
 				4096) +
 		8192;
-	const events = cap.eventPageSize * (6 * cap.nameBytes + 512) + 8192;
+	const events = cap.eventPageSize * (2 * 3 * cap.nameBytes + 512) + 8192;
 	if (
 		request > MAX_REQUEST_BYTES ||
 		delivery > MAX_RESPONSE_BYTES ||
@@ -1011,6 +1140,69 @@ async function responseBytes(
 	return result;
 }
 
+export function isRivetDurableTopicClientFor(
+	client: unknown,
+	expected: { readonly actorName: string; readonly semanticDigest: string },
+): boolean {
+	try {
+		if (typeof client !== "object" || client === null || types.isProxy(client))
+			return false;
+		const captured = readPrivate(clientConstructions, client);
+		const identity = record(expected, ["actorName", "semanticDigest"]);
+		if (captured === undefined || !captured.metadata.active) return false;
+		return (
+			identity.actorName === captured.binding.actorName &&
+			identity.semanticDigest === captured.binding.semanticDigest
+		);
+	} catch {
+		return false;
+	}
+}
+
+export function isRivetDurableTopicClientBoundTo(
+	client: unknown,
+	expected: RivetDurableTopicClientOptions,
+): boolean {
+	try {
+		if (typeof client !== "object" || client === null || types.isProxy(client))
+			return false;
+		const captured = readPrivate(clientConstructions, client);
+		if (captured === undefined || !captured.metadata.active) return false;
+		const settings = record(
+			expected,
+			[
+				"binding",
+				"metadataGrant",
+				"verifyTransport",
+				"authorize",
+				"revalidate",
+				"fetch",
+			],
+			["timeoutMs", "maxInFlight"],
+		);
+		const timeoutMs =
+			settings.timeoutMs === undefined
+				? 30_000
+				: integer(settings.timeoutMs, 300_000, 1);
+		const maxInFlight =
+			settings.maxInFlight === undefined
+				? 128
+				: integer(settings.maxInFlight, 128, 1);
+		return (
+			settings.metadataGrant === captured.metadataGrant &&
+			settings.verifyTransport === captured.verifyTransport &&
+			settings.authorize === captured.authorize &&
+			settings.revalidate === captured.revalidate &&
+			settings.fetch === captured.fetch &&
+			timeoutMs === captured.timeoutMs &&
+			maxInFlight === captured.maxInFlight &&
+			canonical(binding(settings.binding)) === canonical(captured.binding)
+		);
+	} catch {
+		return false;
+	}
+}
+
 export function createRivetDurableTopicClient(
 	options: RivetDurableTopicClientOptions,
 ): RivetDurableTopicClient {
@@ -1220,10 +1412,31 @@ export function createRivetDurableTopicClient(
 		) => Readonly<Record<string, unknown>>,
 		receive: (value: unknown) => T,
 	): Promise<DurableMessagingOutcome<T>> => {
-		const op = requestOperation(input);
+		let op: DurableMessagingOperation;
 		try {
-			const captured = capture(op);
-			const result = outcome(await request(method, captured, op), op, receive);
+			op = requestOperation(input);
+		} catch (error) {
+			if (permanentlyMalformedOperation(input))
+				return { status: "rejected", code: "invalid-argument" };
+			throw error;
+		}
+		try {
+			let captured: Readonly<Record<string, unknown>>;
+			let valid = true;
+			try {
+				captured = capture(op);
+			} catch {
+				captured = wireFallback(input, op);
+				valid = false;
+			}
+			const result = outcome(
+				await request(method, captured, op),
+				op,
+				(value) => {
+					if (!valid) return invalid();
+					return receive(value);
+				},
+			);
 			if (result.status === "committed" && !supportsMutation(method))
 				return invalid();
 			return result;
@@ -1577,6 +1790,25 @@ export function createRivetDurableTopicClient(
 			}
 		},
 	};
-	return Object.freeze(client);
+	Object.freeze(client);
+	// SAFETY: the constructor checked the metadata grant against the private grant registry.
+	const metadataGrant =
+		settings.metadataGrant as RivetDurableTopicMetadataGrant;
+	writePrivate(
+		clientConstructions,
+		client,
+		Object.freeze({
+			binding: scope,
+			metadataGrant,
+			metadata,
+			verifyTransport,
+			authorize,
+			revalidate,
+			fetch,
+			timeoutMs,
+			maxInFlight,
+		}),
+	);
+	return client;
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */

@@ -4,5 +4,11 @@
 		"noEmit": true,
 		"types": ["node"]
 	},
-	"include": ["test/durable-topic-client.test.ts"]
+	"include": [
+		"test/durable-topic-client.test.ts",
+		"test/durable-topic-client-actor.test.ts",
+		"test/durable-topic-actor.test.ts",
+		"test/durable-topic-bus.test.ts",
+		"test/durable-topic-bus-model.test.ts"
+	]
 }
