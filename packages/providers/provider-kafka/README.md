@@ -23,6 +23,12 @@ See [ADR-0138](../../../docs/design/adr/01-architecture-core.md#adr-0138).
 - **Transport injected** (harness or real broker client) → `fidelity: "live"`; all produce/fetch/commit go through the transport.
 - **`live: true` without transport** → throws (never labels live falsely).
 
+Await `ack` and `nack` directly. The live adapter bounds each settlement to
+30 seconds by default; `settlementTimeoutMs` may choose a shorter positive
+deadline. A timeout or transport failure leaves the outcome unknown and blocks
+another settlement for that delivery in this adapter instance. The broker
+transport and host remain responsible for cross-process fencing and recovery.
+
 ```ts
 import {
   createKafkaMessaging,

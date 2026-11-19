@@ -6,8 +6,10 @@ import {
 	MESSAGING_WIT_INTERFACE,
 	PORTABLE_MESSAGING_CAPABILITIES,
 	parseActorPlacementMode,
+	parseConsumerGroupId,
 	parseDeliveryGuarantee,
 	parseMessagingSpec,
+	parseTopicName,
 	parseTopicSpec,
 	tenantScopedTopicName,
 } from "../src/ports/messaging.js";
@@ -86,7 +88,15 @@ describe("@hobo/core messaging port", () => {
 		});
 		expect(consumed).toHaveLength(1);
 		expect(consumed[0]?.body).toEqual({ hello: "world" });
-		bus.ack(first(consumed).messageId, first(consumed).leaseId);
+		const acknowledgement = bus.ack(
+			first(consumed).messageId,
+			first(consumed).leaseId,
+		);
+		expect(acknowledgement).toBeInstanceOf(Promise);
+		await acknowledgement;
+		await expect(
+			bus.ack(first(consumed).messageId, first(consumed).leaseId),
+		).rejects.toThrow(/no inflight message/);
 
 		// SAFETY: assertion required at this I/O or test boundary.
 		const again = await bus.consume("events" as never, "workers" as never);
@@ -129,6 +139,39 @@ describe("@hobo/core messaging port", () => {
 				.events()
 				.some((e) => e.type === "messaging.delivery.permanent_failure"),
 		).toBe(true);
+	});
+
+	it("rejects expired leases while keeping consumer groups independent", async () => {
+		let time = Date.parse("2026-01-01T00:00:00.000Z");
+		const bus = createInMemoryMessaging({
+			tenantId: "t1",
+			now: () => new Date(time).toISOString(),
+		});
+		const topic = parseTopicName("orders");
+		await bus.publish(topic, { id: 1 });
+		const firstGroup = first(
+			await bus.consume(topic, parseConsumerGroupId("a"), {
+				visibilityTimeoutMs: 10,
+			}),
+		);
+		const secondGroup = first(
+			await bus.consume(topic, parseConsumerGroupId("b"), {
+				visibilityTimeoutMs: 10,
+			}),
+		);
+		await bus.ack(secondGroup.messageId, secondGroup.leaseId);
+		time += 10;
+		await expect(
+			bus.ack(firstGroup.messageId, firstGroup.leaseId),
+		).rejects.toThrow(/lease expired/);
+		await expect(
+			bus.nack(firstGroup.messageId, firstGroup.leaseId),
+		).rejects.toThrow(/lease expired/);
+		const redelivery = first(
+			await bus.consume(topic, parseConsumerGroupId("a")),
+		);
+		expect(redelivery.leaseId).not.toBe(firstGroup.leaseId);
+		await bus.ack(redelivery.messageId, redelivery.leaseId);
 	});
 
 	it("guards unsupported delivery guarantees", () => {
