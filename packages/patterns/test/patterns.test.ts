@@ -298,21 +298,33 @@ describe("@hobo/patterns", () => {
 		expect(parsed.patternId).toBe("bindle.named");
 	});
 
-	it("resolves hobo new compatibility aliases before concept aliases", () => {
+	it("selects starter patterns by their current IDs", () => {
 		expect(
 			searchPatterns({
 				catalog,
 				vocabulary,
-				query: "api",
+				query: "starter.cli.api",
 			}).selectedId,
 		).toBe("starter.cli.api");
 		expect(
 			searchPatterns({
 				catalog,
 				vocabulary,
-				query: "agent",
+				query: "starter.cli.agent",
 			}).selectedId,
 		).toBe("starter.cli.agent");
+	});
+
+	it.each([
+		"api",
+		"agent",
+	])("returns candidates for ambiguous %s searches", (query) => {
+		const receipt = searchPatterns({ catalog, vocabulary, query });
+		expect(receipt.selectedId).toBe("");
+		expect(receipt.reasonCode).toBe("ambiguous");
+		expect(
+			receipt.candidates.map((candidate) => candidate.patternId),
+		).toContain(`starter.cli.${query}`);
 	});
 
 	it("hard filters cannot be overridden by similarity", () => {
