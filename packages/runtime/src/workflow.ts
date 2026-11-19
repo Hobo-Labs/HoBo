@@ -345,7 +345,6 @@ export function createWorkflowEngine(
 
 		let stepIndex = 0;
 		let sleepIndex = 0;
-		let stepFailureJournaledDuringRun = false;
 		let replayError: Error | undefined;
 		function assertReplayConsistent(): void {
 			if (replayError) throw replayError;
@@ -447,7 +446,6 @@ export function createWorkflowEngine(
 					return result;
 				} catch (error) {
 					if (error instanceof WorkflowFailure) {
-						stepFailureJournaledDuringRun = true;
 						await appendEvent("run.StepFailed", {
 							name,
 							index,
@@ -552,14 +550,6 @@ export function createWorkflowEngine(
 		try {
 			const value = await def.run(ctx, runArgs);
 			assertConsumedOutcomes();
-			if (stepFailureJournaledDuringRun) {
-				throw new Error(`conflicting completed terminal for ${runId}`);
-			}
-			for (const event of journal) {
-				if (event.type === "run.StepFailed") {
-					throw new Error(`conflicting completed terminal for ${runId}`);
-				}
-			}
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
