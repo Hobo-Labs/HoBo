@@ -6,11 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { EventEnvelope } from "@hobo/core";
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";
 import { expect, it } from "vitest";
-import {
-	createUpcasterRegistry,
-	defineProjection,
-	UpcasterChainError,
-} from "../src/index.js";
+import { defineProjection } from "../src/index.js";
 
 const actor = { kind: "user", id: "operator" } as const;
 const context = { actor, tenant: "workspace" };
@@ -192,47 +188,6 @@ it("refuses quarantine records that refer to a different source event", async ()
 				quarantineStreamId: "items",
 			}),
 		).rejects.toThrow("separate stream");
-	} finally {
-		store.close();
-		rmSync(directory, { recursive: true, force: true });
-	}
-});
-
-it("does not quarantine any event when a required upcaster chain is incomplete", async () => {
-	const directory = mkdtempSync(join(tmpdir(), "hobo-projection-upcast-"));
-	const store = createRuntimeLocalEventStore({ dataDir: directory });
-	try {
-		await store.append(
-			"items",
-			[
-				{ type: "item.Poison", data: {} },
-				{ type: "item.Added", data: {} },
-			],
-			{ ...context, expectedSeq: 0 },
-		);
-		const upcasters = createUpcasterRegistry()
-			.register("item.Added", 1, (data) => data)
-			.register("item.Added", 3, (data) => data);
-		const view = defineProjection({
-			name: "items",
-			key: (event) => event.streamId,
-			upcasters,
-			on: {
-				"item.Poison": () => {
-					throw new Error("invalid item");
-				},
-				"item.Added": () => ({ count: 1 }),
-			},
-		});
-		const options = {
-			quarantineStore: store,
-			quarantineStreamId: "projection-quarantines",
-			...context,
-		};
-		await expect(
-			view.rebuildWithQuarantine(store, "items", options),
-		).rejects.toBeInstanceOf(UpcasterChainError);
-		expect(await read(store, "projection-quarantines")).toEqual([]);
 	} finally {
 		store.close();
 		rmSync(directory, { recursive: true, force: true });

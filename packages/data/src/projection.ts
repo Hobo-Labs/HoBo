@@ -37,7 +37,6 @@ import {
 	quarantineReprocessFinding,
 	quarantineSequence,
 } from "./quarantine-facts.js";
-import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type ApplyHandler<Row> = (
 	row: Row | undefined,
@@ -62,7 +61,6 @@ export interface ProjectionDefinition<Row> {
 	readModel?: string;
 	rowSchema?: ProjectionRowSchema;
 	indexHints?: readonly string[];
-	upcasters?: UpcasterRegistry;
 	classifyFailure?: FoldFailureClassifier;
 }
 
@@ -321,10 +319,7 @@ export function defineProjection<Row>(
 			let key: string;
 			let nextRow: Row;
 			try {
-				const upcast = definition.upcasters
-					? definition.upcasters.upcast(event)
-					: event;
-				const input = deepFreeze(clone(upcast));
+				const input = deepFreeze(clone(event));
 				key = definition.key(input);
 				if (!isJsonString(key) || !key.trim()) {
 					throw new TypeError("projection key must be a non-empty string");
@@ -337,7 +332,6 @@ export function defineProjection<Row>(
 				);
 			} catch (error) {
 				if (quarantined) continue;
-				if (error instanceof UpcasterChainError) throw error;
 				const failure =
 					error instanceof Error ? error : new Error(String(error));
 				if (!collectFailures) {

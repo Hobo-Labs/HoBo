@@ -7,7 +7,6 @@ import {
 	quarantineReprocessFinding,
 	quarantineSequence,
 } from "./quarantine-facts.js";
-import { UpcasterChainError, type UpcasterRegistry } from "./upcaster.js";
 
 export type Evolve<S> = (state: S, event: EventEnvelope) => S;
 export type FoldFailureClassification = "deterministic" | "transient";
@@ -20,7 +19,6 @@ export interface FoldSpec<S> {
 	name?: string;
 	initialState: S;
 	evolve: Evolve<S>;
-	upcasters?: UpcasterRegistry;
 	classifyFailure?: FoldFailureClassifier;
 	inspectQuarantines?: boolean;
 }
@@ -91,11 +89,6 @@ export function foldEvents<S>(
 			if (offending !== undefined) quarantinedSeqs.add(offending);
 		}
 	}
-	for (const event of materialized) {
-		if (isQuarantineFact(event) || quarantinedSeqs.has(event.seq)) continue;
-		spec.upcasters?.assertCanUpcast?.(event.type, event.v);
-	}
-
 	let state = clone(spec.initialState);
 	let seq = 0;
 	let nextQuarantineSeq = materialized.reduce(
@@ -112,8 +105,7 @@ export function foldEvents<S>(
 			if (spec.inspectQuarantines && spec.name) {
 				let processable = false;
 				try {
-					const upcast = spec.upcasters ? spec.upcasters.upcast(event) : event;
-					clone(spec.evolve(clone(state), Object.freeze(clone(upcast))));
+					clone(spec.evolve(clone(state), Object.freeze(clone(event))));
 					processable = true;
 				} catch {}
 				if (processable)
@@ -125,10 +117,8 @@ export function foldEvents<S>(
 		}
 
 		try {
-			const upcast = spec.upcasters ? spec.upcasters.upcast(event) : event;
-			state = clone(spec.evolve(clone(state), Object.freeze(clone(upcast))));
+			state = clone(spec.evolve(clone(state), Object.freeze(clone(event))));
 		} catch (cause) {
-			if (cause instanceof UpcasterChainError) throw cause;
 			const error = cause instanceof Error ? cause : new Error(String(cause));
 			if (!shouldQuarantineFailure(error, event, spec.classifyFailure))
 				throw cause;

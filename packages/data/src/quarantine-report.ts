@@ -28,7 +28,7 @@ export interface QuarantineReportOptions {
 }
 
 const REMEDIATION =
-	"Investigate the fold or upcaster and choose an explicit keep-quarantined or reprocess policy.";
+	"Investigate the fold and choose an explicit keep-quarantined or reprocess policy.";
 
 function positiveLimit(
 	value: number | undefined,

@@ -4,13 +4,8 @@ The CQRS fold kernel for the HoBo data plane (S1-15a): `defineAggregate`
 (write-model fold — command → invariant check → append under optimistic `seq`,
 via an `ActorHost` single-writer lease + fencing) and `defineProjection`
 (read-model fold — materialized views, `rebuildFromZero()`, snapshot cache).
-Includes a forward-only upcaster registry and deterministic poison-event
-quarantine.
-
-An upcaster chain must contain every transition needed by an event. Missing
-transitions raise `UpcasterChainError` before a fold or aggregate append; they
-are configuration failures and do not quarantine the event. Registration order
-does not matter, and a chain can be completed before it is used.
+Includes deterministic poison-event quarantine. Folds consume event records in
+their current form.
 
 Reuses the `EventEnvelope` and runtime ports from [`@hobo/core`](../core);
 runs against the real `EventStore` (e.g. `@hobo/runtime-local`) rather than
