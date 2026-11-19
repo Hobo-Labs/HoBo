@@ -24,8 +24,7 @@ export function deterministicConnectSpec(step: ConnectStep): Spec {
 		throw new Error(`connect step ${step.kind} has no root candidate`);
 	const children = candidates.filter(
 		(candidate) =>
-			candidate !== rootCandidate &&
-			!candidate.id.endsWith(OPTIONAL_SUFFIX),
+			candidate !== rootCandidate && !candidate.id.endsWith(OPTIONAL_SUFFIX),
 	);
 	const optional = candidates.filter((candidate) =>
 		candidate.id.endsWith(OPTIONAL_SUFFIX),
