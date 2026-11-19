@@ -5,6 +5,7 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
+      - "packages/cloud/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -23,6 +24,7 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
+      - "packages/cloud/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -110,6 +112,7 @@ jobs:
           pnpm exec turbo run build test \
             --filter=@hobo/pricing \
             --filter=@hobo/broker \
+            --filter=@hobo/cloud \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
             --filter=@hobo/provider-manifest \

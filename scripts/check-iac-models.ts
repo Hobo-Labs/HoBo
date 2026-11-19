@@ -42,6 +42,53 @@ function check(name: string, directory: string, stateDirectory: string) {
 }
 
 try {
+	const transitionDirectory = join(root, "packages/cloud/model");
+	const transitionSource = readFileSync(
+		join(transitionDirectory, "IacTransitions.tla"),
+		"utf8",
+	);
+	const transitionConfig = readFileSync(
+		join(transitionDirectory, "IacTransitions.cfg"),
+		"utf8",
+	);
+	const transitionResult = check(
+		"IacTransitions",
+		transitionDirectory,
+		join(scratch, "IacTransitions"),
+	);
+	process.stdout.write(transitionResult.stdout);
+	process.stderr.write(transitionResult.stderr);
+	if (transitionResult.status !== 0)
+		throw new Error("IacTransitions model checking failed");
+	const transitionMutations = [
+		[
+			"StartApply(c) ==\n  /\\ snapshot[c] = version /\\ version < MaxVersion",
+			"StartApply(c) ==\n  /\\ version < MaxVersion",
+		],
+		[
+			'/\\ apply = "uncertain" /\\ fenced /\\ verified /\\ live = "none"\n  /\\ result',
+			'/\\ apply = "uncertain"\n  /\\ result',
+		],
+	] as const;
+	for (const [index, [before, after]] of transitionMutations.entries()) {
+		if (transitionSource.split(before).length !== 2)
+			throw new Error("IacTransitions mutation target changed");
+		const isolated = join(scratch, `transition-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacTransitions.tla"),
+			transitionSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacTransitions.cfg"), transitionConfig);
+		const result = check("IacTransitions", isolated, join(isolated, "states"));
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"IacTransitions mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacTransitions mutation ${index + 1}: counterexample found\n`,
+		);
+	}
 	const routeDirectory = join(root, "packages/dispatcher/model");
 	const routeSource = readFileSync(
 		join(routeDirectory, "IacRouting.tla"),
