@@ -1270,6 +1270,9 @@ importers:
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local
+      '@pact-foundation/pact':
+        specifier: 17.1.4
+        version: 17.1.4
 
   packages/cloud-providers:
     dependencies:

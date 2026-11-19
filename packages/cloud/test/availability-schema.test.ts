@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fromJson, toJson } from "@bufbuild/protobuf";
-import { parsePactDocument } from "@hobo/contract-harness";
 import { describe, expect, it } from "vitest";
+import { availabilityInteractions } from "../contracts/availability-view-fixture.js";
 import {
 	AvailabilityViewRequestSchema,
 	AvailabilityViewSchema,
@@ -18,17 +18,6 @@ import { parseJsonValue } from "../src/json.js";
 
 const cueFile = fileURLToPath(
 	new URL("../data-models/availability_view.cue", import.meta.url),
-);
-const pact = parsePactDocument(
-	parseJsonValue(
-		readFileSync(
-			new URL(
-				"../contracts/pacts/availability-view.pact.json",
-				import.meta.url,
-			),
-			"utf8",
-		),
-	),
 );
 
 function cueVet(definition: string, value: string) {
@@ -52,10 +41,8 @@ function cueVet(definition: string, value: string) {
 
 describe("availability wire and CUE contracts", () => {
 	it("validates and round-trips each real estimator request and response", () => {
-		for (const interaction of pact.interactions) {
-			const input = parseJsonValue(
-				JSON.stringify(interaction.request.body ?? null),
-			);
+		for (const interaction of availabilityInteractions()) {
+			const input = interaction.request;
 			const requestWire = fromJson(AvailabilityViewRequestSchema, input);
 			const request = parseAvailabilityViewRequest(
 				toJson(AvailabilityViewRequestSchema, requestWire),

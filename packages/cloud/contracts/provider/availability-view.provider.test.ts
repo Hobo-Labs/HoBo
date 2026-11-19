@@ -1,35 +1,38 @@
-import { readFileSync } from "node:fs";
-import { parsePactDocument, verifyPact } from "@hobo/contract-harness";
-import { describe, expect, it } from "vitest";
+import { type MessageDescriptor, Verifier } from "@pact-foundation/pact";
+import { expect, it } from "vitest";
 import {
 	computeAvailabilityView,
 	parseAvailabilityViewRequest,
 } from "../../src/index.js";
-import { parseJsonValue } from "../../src/json.js";
+import { cloneAsJson, parseJsonValue } from "../../src/json.js";
+import {
+	availabilityInteractions,
+	availabilityPactPath,
+} from "../availability-view-fixture.js";
 
-const pact = parsePactDocument(
-	parseJsonValue(
-		readFileSync(
-			new URL("../pacts/availability-view.pact.json", import.meta.url),
-			"utf8",
+it("verifies each availability view against the cloud estimator", async () => {
+	const interactions = availabilityInteractions();
+	const verified = new Set<string>();
+	const invoke = (message: MessageDescriptor) => {
+		if (message.content === undefined || Buffer.isBuffer(message.content)) {
+			throw new Error("availability pact request is missing");
+		}
+		const request = parseAvailabilityViewRequest(
+			parseJsonValue(JSON.stringify(message.content)),
+		);
+		verified.add(message.description);
+		return cloneAsJson(computeAvailabilityView(request));
+	};
+	await new Verifier({
+		provider: "CloudAvailabilityView",
+		pactUrls: [availabilityPactPath],
+		messageProviders: Object.fromEntries(
+			interactions.map(({ description }) => [description, invoke]),
 		),
-	),
-);
-
-describe("availability view provider contract", () => {
-	it("computes each declared response from the protobuf request", async () => {
-		const report = await verifyPact(pact, {
-			name: "CloudAvailabilityView",
-			handle: (request) => ({
-				status: 200,
-				body: computeAvailabilityView(
-					parseAvailabilityViewRequest(
-						parseJsonValue(JSON.stringify(request.body ?? null)),
-					),
-				),
-			}),
-		});
-		expect(report.failures).toEqual([]);
-		expect(report.ok).toBe(true);
-	});
-});
+		logLevel: "error",
+		failIfNoPactsFound: true,
+	}).verifyProvider();
+	expect([...verified].sort()).toEqual(
+		interactions.map(({ description }) => description).sort(),
+	);
+}, 30_000);
