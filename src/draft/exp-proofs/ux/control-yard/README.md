@@ -66,8 +66,7 @@ See [assets/yard-zones.svg](./assets/yard-zones.svg) for the v0 single-Station l
 ## Acceptance
 
 The pixel-village core-loop, browser, scenario, and experience-review gates
-were removed with that package. In `proof.json`, only ACC-CORE-LOOP names an
-executable gate today; the other criteria keep `gate: null` with
+were removed with that package. In `proof.json`, all listed criteria keep `gate: null` with
 `evidenceStatus: unverified` and `retiredCoverage` documents why. Captured
 Yard evidence and package tests provide partial signal but do not replace the
 retired pixel-village gates.

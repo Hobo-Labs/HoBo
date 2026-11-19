@@ -45,7 +45,8 @@
       {
         "id": "ACC-CORE-LOOP",
         "text": "The waybill desk offers exactly the real work the projection contains, and Highball is reached only from a genuinely clean board.",
-        "gate": "pnpm run test:behavior (features/control-yard-core-loop.feature)"
+        "gate": null,
+        "evidenceStatus": "unverified"
       },
       {
         "id": "ACC-LIVENESS",
