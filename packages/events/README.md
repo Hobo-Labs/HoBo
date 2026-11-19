@@ -29,9 +29,20 @@ const openOrders = defineMaterialization({
 
 const reactor = createReactor({ store, streamer });
 const sub = await reactor.subscribe(openOrders, { subscriptionId: "sub:orders" });
-const { seq } = await orders.execute(deps, "order:1", cmd, ctx);
-await sub.awaitStreamSeq("order:1", seq);
+const result = await reactor.execute(orders, {
+  actorHost: deps.actorHost,
+  streamId: "order:1",
+  command: cmd,
+  context: ctx,
+});
 ```
+
+`reactor.execute` waits for subscriptions that were active when the command
+started and whose read sets match an appended event. If an affected subscription
+fails or its wait is aborted, `CommandObservationError` carries the full
+committed command result. A pre-aborted signal prevents command execution.
+Pass an `AbortSignal` to bound the wait. Subscriptions started later must use
+replay to reconstruct earlier events.
 
 `replayStreamId` rebuilds one stream before live events are applied. The Reactor
 buffers events while replay runs and ignores events already folded from that

@@ -6,6 +6,12 @@ import type {
 	Subscription,
 } from "@hobo/core";
 import { parseRunId, StreamerBackpressureError } from "@hobo/core";
+import type {
+	Aggregate,
+	AggregateDeps,
+	CommandContext,
+	CommandResult,
+} from "@hobo/data";
 
 import {
 	createSubscriptionClosedEvent,
@@ -48,6 +54,7 @@ export interface SubscriptionHandle<S> {
 	awaitStreamSeq(
 		streamId: string,
 		seq: number,
+		options?: { signal?: AbortSignal },
 	): Promise<MaterializedSnapshot<S>>;
 	facts(): ReactiveFact[];
 	close(reason?: string): void;
@@ -63,6 +70,30 @@ export interface Reactor {
 			maxTrackedStreams?: number;
 		},
 	): Promise<SubscriptionHandle<S>>;
+	execute<S, C>(
+		aggregate: Aggregate<S, C>,
+		options: {
+			actorHost: AggregateDeps["actorHost"];
+			streamId: string;
+			command: C;
+			context: CommandContext;
+			signal?: AbortSignal;
+		},
+	): Promise<CommandResult<S>>;
+}
+
+export class CommandObservationError<S> extends Error {
+	constructor(
+		readonly result: CommandResult<S>,
+		readonly subscriptionId: string,
+		cause: Error,
+	) {
+		super(
+			`command committed at ${result.streamId}:${result.seq} but ${subscriptionId} did not advance`,
+			{ cause },
+		);
+		this.name = "CommandObservationError";
+	}
 }
 
 function clone<T>(value: T): T {
@@ -84,6 +115,15 @@ export function createReactor(deps: {
 	store: EventStore;
 	streamer: Streamer;
 }): Reactor {
+	const active = new Set<{
+		subscriptionId: string;
+		readSet: ReadonlySet<string>;
+		waitFor(
+			streamId: string,
+			seq: number,
+			options?: { signal?: AbortSignal },
+		): Promise<MaterializedSnapshot<unknown>>;
+	}>();
 	return {
 		async subscribe(materialization, options) {
 			const { subscriptionId } = options;
@@ -96,6 +136,7 @@ export function createReactor(deps: {
 				"maxTrackedStreams",
 			);
 			const readSet = new Set(materialization.readSet);
+			const activeSubscription = { subscriptionId, readSet, waitFor };
 			const runId = parseRunId(subscriptionId);
 			let state = clone(materialization.initialState);
 			const run = deps.streamer.createRun({ runId });
@@ -135,6 +176,7 @@ export function createReactor(deps: {
 				seq: number;
 				resolve: (result: MaterializedSnapshot<typeof state>) => void;
 				reject: (error: Error) => void;
+				cleanup: () => void;
 			}> = [];
 
 			function unsubscribeStore(): Error | undefined {
@@ -151,6 +193,7 @@ export function createReactor(deps: {
 			function terminate(reason: string, error?: Error): void {
 				if (closed) return;
 				closed = true;
+				active.delete(activeSubscription);
 				terminalError = error ?? new Error(`subscription closed: ${reason}`);
 				if (retryTimer !== undefined) clearTimeout(retryTimer);
 				retryTimer = undefined;
@@ -176,7 +219,10 @@ export function createReactor(deps: {
 						[terminalError, ...cleanupErrors],
 						"subscription cleanup failed",
 					);
-				for (const waiter of waiters.splice(0)) waiter.reject(terminalError);
+				for (const waiter of waiters.splice(0)) {
+					waiter.cleanup();
+					waiter.reject(terminalError);
+				}
 				facts.push(createSubscriptionClosedEvent({ subscriptionId, reason }));
 				if (!error && cleanupErrors.length > 0) throw terminalError;
 			}
@@ -196,6 +242,7 @@ export function createReactor(deps: {
 					const position = streamSeqs.get(waiter.streamId) ?? 0;
 					if (position >= waiter.seq) {
 						waiters.splice(index, 1);
+						waiter.cleanup();
 						waiter.resolve(snapshot(waiter.streamId));
 					}
 				}
@@ -316,6 +363,7 @@ export function createReactor(deps: {
 			function waitFor(
 				streamId: string,
 				seq: number,
+				options: { signal?: AbortSignal } = {},
 			): Promise<MaterializedSnapshot<typeof state>> {
 				if (!Number.isSafeInteger(seq) || seq < 0)
 					return Promise.reject(
@@ -323,11 +371,28 @@ export function createReactor(deps: {
 					);
 				if (!streamId)
 					return Promise.reject(new TypeError("streamId is required"));
+				if (options.signal?.aborted)
+					return Promise.reject(options.signal.reason);
 				if (closed) return Promise.reject(terminalError);
 				const current = snapshot(streamId);
 				if (current.seq >= seq) return Promise.resolve(current);
 				return new Promise((resolve, reject) => {
-					waiters.push({ streamId, seq, resolve, reject });
+					const signal = options.signal;
+					const onAbort = () => {
+						const index = waiters.indexOf(waiter);
+						if (index >= 0) waiters.splice(index, 1);
+						waiter.cleanup();
+						reject(signal?.reason);
+					};
+					const waiter = {
+						streamId,
+						seq,
+						resolve,
+						reject,
+						cleanup: () => signal?.removeEventListener("abort", onAbort),
+					};
+					waiters.push(waiter);
+					signal?.addEventListener("abort", onAbort, { once: true });
 				});
 			}
 
@@ -378,6 +443,7 @@ export function createReactor(deps: {
 				throw terminalError ?? error;
 			}
 
+			active.add(activeSubscription);
 			return {
 				subscriptionId,
 				current: () => snapshot(),
@@ -385,10 +451,51 @@ export function createReactor(deps: {
 					if (!streamId) throw new TypeError("streamId is required");
 					return snapshot(streamId);
 				},
-				awaitStreamSeq: (streamId, seq) => waitFor(streamId, seq),
+				awaitStreamSeq: (streamId, seq, waitOptions) =>
+					waitFor(streamId, seq, waitOptions),
 				facts: () => [...facts],
 				close: (reason = "client-closed") => terminate(reason),
 			};
+		},
+		async execute(aggregate, options) {
+			options.signal?.throwIfAborted();
+			const subscriptions = [...active];
+			const result = await aggregate.execute(
+				{ store: deps.store, actorHost: options.actorHost },
+				options.streamId,
+				options.command,
+				options.context,
+			);
+			const eventTypes = new Set(result.appended.map((event) => event.type));
+			const affected = subscriptions.filter((subscription) =>
+				[...subscription.readSet].some((type) => eventTypes.has(type)),
+			);
+			const controller = new AbortController();
+			const signal = options.signal
+				? AbortSignal.any([options.signal, controller.signal])
+				: controller.signal;
+			try {
+				await Promise.all(
+					affected.map(async (subscription) => {
+						try {
+							await subscription.waitFor(result.streamId, result.seq, {
+								signal,
+							});
+						} catch (error) {
+							throw new CommandObservationError(
+								result,
+								subscription.subscriptionId,
+								error instanceof Error
+									? error
+									: new Error("subscription wait failed"),
+							);
+						}
+					}),
+				);
+			} finally {
+				controller.abort();
+			}
+			return result;
 		},
 	};
 }

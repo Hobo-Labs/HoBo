@@ -12,6 +12,7 @@ import { createLocalStreamer } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	CommandObservationError,
 	createReactor,
 	defineMaterialization,
 	type MaterializedFrame,
@@ -68,6 +69,208 @@ afterEach(() => {
 });
 
 describe("reactor reads-your-writes", () => {
+	it("acknowledges a command only after affected subscriptions observe it", async () => {
+		const s = store();
+		const deliveries: Array<{ listener: number; deliver: () => void }> = [];
+		let listener = 0;
+		const delayed: EventStore = {
+			...s,
+			subscribe(filter, handler) {
+				const current = listener++;
+				return s.subscribe(filter, (event) => {
+					deliveries.push({
+						listener: current,
+						deliver: () => {
+							void handler(event);
+						},
+					});
+				});
+			},
+		};
+		const reactor = createReactor({
+			store: delayed,
+			streamer: createLocalStreamer(),
+		});
+		const affected = await reactor.subscribe(openOrders, {
+			subscriptionId: "sub:affected",
+		});
+		const secondAffected = await reactor.subscribe(openOrders, {
+			subscriptionId: "sub:second-affected",
+		});
+		const other = await reactor.subscribe(
+			defineMaterialization({
+				name: "other",
+				readSet: ["other.Changed"],
+				initialState: 0,
+				fold: (state) => state,
+			}),
+			{ subscriptionId: "sub:other" },
+		);
+		let acknowledged = false;
+		const pending = reactor
+			.execute(orders, {
+				actorHost: createInMemoryActorHost(),
+				streamId: "order:ack",
+				command: { id: "ack", totalCents: 25 },
+				context: CTX,
+			})
+			.then((result) => {
+				acknowledged = true;
+				return result;
+			});
+		await expect.poll(() => deliveries.length).toBe(3);
+		expect(acknowledged).toBe(false);
+		deliveries.find((delivery) => delivery.listener === 0)?.deliver();
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(acknowledged).toBe(false);
+		deliveries.find((delivery) => delivery.listener === 1)?.deliver();
+		const result = await pending;
+		expect(affected.currentStream(result.streamId)).toEqual({
+			seq: result.seq,
+			value: [{ orderId: "ack", totalCents: 25 }],
+		});
+		expect(other.currentStream(result.streamId).seq).toBe(0);
+		affected.close();
+		secondAffected.close();
+		other.close();
+	});
+
+	it("does not wait on old events when a command emits nothing", async () => {
+		const s = store();
+		await s.append(
+			"order:unchanged",
+			[{ type: "order.Placed", data: { orderId: "unchanged", totalCents: 1 } }],
+			{ ...CTX, expectedSeq: 0 },
+		);
+		const reactor = createReactor({
+			store: s,
+			streamer: createLocalStreamer(),
+		});
+		const sub = await reactor.subscribe(openOrders, {
+			subscriptionId: "sub:unchanged",
+		});
+		const unchanged = defineAggregate({
+			name: "unchanged",
+			initialState: 0,
+			evolve: (state: number) => state,
+			decide: () => {},
+		});
+		const result = await reactor.execute(unchanged, {
+			actorHost: createInMemoryActorHost(),
+			streamId: "order:unchanged",
+			command: {},
+			context: CTX,
+		});
+		expect(result.seq).toBe(1);
+		expect(result.appended).toEqual([]);
+		expect(sub.currentStream(result.streamId).seq).toBe(0);
+		sub.close();
+	});
+
+	it("reports a committed command when an affected subscription fails", async () => {
+		const s = store();
+		const reactor = createReactor({
+			store: s,
+			streamer: createLocalStreamer(),
+		});
+		await reactor.subscribe(
+			defineMaterialization({
+				name: "broken",
+				readSet: ["order.Placed"],
+				initialState: 0,
+				fold: () => {
+					throw new Error("fold failed");
+				},
+			}),
+			{ subscriptionId: "sub:broken" },
+		);
+		const result = reactor.execute(orders, {
+			actorHost: createInMemoryActorHost(),
+			streamId: "order:failed-observation",
+			command: { id: "failed-observation", totalCents: 10 },
+			context: CTX,
+		});
+		await expect(result).rejects.toBeInstanceOf(CommandObservationError);
+		await expect(result).rejects.toMatchObject({
+			name: "CommandObservationError",
+			result: { streamId: "order:failed-observation", seq: 1 },
+			subscriptionId: "sub:broken",
+			cause: expect.objectContaining({ message: "fold failed" }),
+		});
+		const events = [];
+		for await (const event of s.read("order:failed-observation"))
+			events.push(event);
+		expect(events.map((event) => event.type)).toEqual(["order.Placed"]);
+	});
+
+	it("cancels a wait after commit without losing the committed position", async () => {
+		const s = store();
+		const deliveries: Array<() => void> = [];
+		const delayed: EventStore = {
+			...s,
+			subscribe(filter, handler) {
+				return s.subscribe(filter, (event) => {
+					deliveries.push(() => {
+						void handler(event);
+					});
+				});
+			},
+		};
+		const reactor = createReactor({
+			store: delayed,
+			streamer: createLocalStreamer(),
+		});
+		const sub = await reactor.subscribe(openOrders, {
+			subscriptionId: "sub:cancel",
+		});
+		const controller = new AbortController();
+		const stopped = new Error("cancelled observation");
+		const pending = reactor.execute(orders, {
+			actorHost: createInMemoryActorHost(),
+			streamId: "order:cancel",
+			command: { id: "cancel", totalCents: 10 },
+			context: CTX,
+			signal: controller.signal,
+		});
+		const rejection = expect(pending).rejects.toMatchObject({
+			name: "CommandObservationError",
+			result: { streamId: "order:cancel", seq: 1 },
+			subscriptionId: "sub:cancel",
+			cause: stopped,
+		});
+		await expect.poll(() => deliveries.length).toBe(1);
+		controller.abort(stopped);
+		await rejection;
+		deliveries[0]?.();
+		expect((await sub.awaitStreamSeq("order:cancel", 1)).value).toEqual([
+			{ orderId: "cancel", totalCents: 10 },
+		]);
+		sub.close();
+	});
+
+	it("does not execute a command when its signal was already cancelled", async () => {
+		const s = store();
+		const reactor = createReactor({
+			store: s,
+			streamer: createLocalStreamer(),
+		});
+		const stopped = new Error("cancelled before command");
+		const controller = new AbortController();
+		controller.abort(stopped);
+		await expect(
+			reactor.execute(orders, {
+				actorHost: createInMemoryActorHost(),
+				streamId: "order:pre-cancel",
+				command: { id: "pre-cancel", totalCents: 10 },
+				context: CTX,
+				signal: controller.signal,
+			}),
+		).rejects.toBe(stopped);
+		const events = [];
+		for await (const event of s.read("order:pre-cancel")) events.push(event);
+		expect(events).toEqual([]);
+	});
+
 	it("observes a just-appended event at >= its command seq", async () => {
 		const s = store();
 		const streamer = createLocalStreamer();
