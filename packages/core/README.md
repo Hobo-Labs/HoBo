@@ -165,6 +165,11 @@ value, including `null`, is refused. The
 records generated implementation tests, the bounded state model, the
 unbounded arithmetic obligations, and their assumptions.
 
+Malformed evaluation contexts and measurement collections or records return a
+refusal. Measurement keys, units and optional targets must satisfy the same
+shape rules as policy constraints. This validates the supplied evidence's
+shape; the caller remains responsible for authenticating its source.
+
 The model's user-facing projection collapses internal checks into the following
 flow. It hides 128 same-label transitions from 256 explored steps.
 
