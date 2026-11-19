@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# Set up agent tooling in layers:
-#   1. common, harness-agnostic runtimes (Serena, headroom, RTK, SkillOpt, optional gbrain)
-#   2. selected supported-agent shims (Claude Code, Cursor, Codex, Copilot)
-#
-# Examples:
-#   bash scripts/setup-agent-tools.sh                       # common + all supported shims
-#   bash scripts/setup-agent-tools.sh --common-only         # devcontainer/default safe layer
-#   bash scripts/setup-agent-tools.sh --agent codex         # common + Codex shims only
-#   bash scripts/setup-agent-tools.sh --agents codex,cursor # common + selected shims
-#   bash scripts/setup-agent-tools.sh --no-gbrain           # skip key/egress memory tool
-#   bash scripts/setup-agent-tools.sh --no-skillopt         # skip microsoft/SkillOpt install
-#   bash scripts/setup-agent-tools.sh --help                # usage (no install)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
@@ -71,7 +59,6 @@ done
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 want_agent() { case ",$AGENT_FILTER," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
-# `skills`/`npx`-based tools choke on a tsx-injecting NODE_OPTIONS; strip it.
 NPX() { env -u NODE_OPTIONS npx "$@"; }
 
 say "Probing runtimes"
@@ -79,7 +66,6 @@ for c in node npx pnpm python3 pip3 uv cargo gh curl tar brew serena headroom rt
   if have "$c"; then echo "  ok   $c"; else echo "  MISS $c"; fi
 done
 
-# Common layer: agent/harness-agnostic binaries and shared repo launchers.
 
 say "Search tools (microsoft/tgrep + ast-grep) -> common/devcontainer layer"
 if have tgrep; then
@@ -151,7 +137,6 @@ if have gh; then
       && echo "  installed github/gh-stack" \
       || echo "  gh-stack install FAILED"
   fi
-  # Agent-safe local git defaults when run inside a checkout (fail-open outside a repo).
   if [ -e .git ] || git rev-parse --git-dir >/dev/null 2>&1; then
     if git config --local rerere.enabled true 2>/dev/null; then
       echo "  local rerere.enabled=true"
@@ -244,7 +229,6 @@ if [ "$COMMON_ONLY" = "1" ]; then
   exit 0
 fi
 
-# Agent-specific layer: only for the supported agents selected by --agent/--agents.
 say "skills CLI installs -> selected Claude Code/Cursor/Codex skill dirs"
 if have npx; then
   for spec in "DietrichGebert/ponytail" "mattpocock/skills"; do

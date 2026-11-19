@@ -1,11 +1,3 @@
-# Vercel Queues as the hosted relay's lease lifecycle driver (ADR-0179
-# amendment, phase 5): each lease step a delayed message keyed
-# `${leaseId}:${step}:${n}`. Lowered into the @hobo/pricing catalog by
-# scripts/generate-offers.mts.
-#
-# UNVERIFIED: Queues pricing was not re-verified in the amendment, so the
-# charge is declared with an external model, which the rating kernel reports
-# as unrated and never prices as zero.
 schema: hobo.provider-manifest/v1
 
 provider:

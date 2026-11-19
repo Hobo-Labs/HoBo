@@ -1,9 +1,3 @@
-# The hosted relay's Turso (libSQL) cache offer (ADR-0179 amendment, phase 5).
-# Lowered into the @hobo/pricing catalog by scripts/generate-offers.mts.
-#
-# The free plan as Turso stated it on 2026-11-11: 500 million rows read and
-# 10 million rows written a month, blocked when exhausted (recorded in the
-# generator's binding table). Paid plans are not modelled.
 schema: hobo.provider-manifest/v1
 
 provider:

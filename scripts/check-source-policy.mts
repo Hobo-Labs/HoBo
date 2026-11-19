@@ -31,6 +31,8 @@ const OTHER_LANGUAGES = new Map([
 	[".py", "python"],
 	[".css", "css"],
 	[".html", "html"],
+	[".yaml", "yaml"],
+	[".yml", "yaml"],
 ]);
 const require = createRequire(import.meta.url);
 const AST_GREP = join(
@@ -40,7 +42,7 @@ const AST_GREP = join(
 const GENERATED_OR_VENDOR =
 	/^(?:external\/|tools\/oxlint\/anti-slop\/)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
+	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|yamllint|yaml-language-server|actionlint|zizmor|renovate)\b|(?:pyright|ruff|fmt|type|pragma):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
 
 function git(args: string[]): string {

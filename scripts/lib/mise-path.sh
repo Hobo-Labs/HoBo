@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Shared mise install + PATH for HoBo bootstrap scripts. Source, do not execute.
 set -euo pipefail
 
 mise_ensure_installed() {
@@ -15,9 +14,6 @@ mise_ensure_installed() {
 		return 0
 	fi
 	local installer="${MISE_INSTALL_URL:-https://mise.run}"
-	# The installer downloads the release and its checksum itself, without
-	# retries; one reset connection on a hosted runner fails the whole job.
-	# Retry the whole install, a few times with back-off.
 	local attempt=1 attempts="${MISE_INSTALL_ATTEMPTS:-4}" delay="${MISE_INSTALL_RETRY_DELAY:-2}"
 	until curl -fsSL --retry 3 --retry-all-errors "$installer" | sh; do
 		if ((attempt >= attempts)); then
