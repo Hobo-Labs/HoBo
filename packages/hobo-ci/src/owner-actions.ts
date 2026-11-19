@@ -73,6 +73,18 @@ export function readOwnerTurn(
 			reason:
 				"A verified atomic claim store or an existing CD journal fleet is required.",
 		};
+	if (lines.includes("HOBO_CD_JOURNAL_SETTINGS_INVALID"))
+		return {
+			kind: "blocked",
+			reason:
+				"Restore the journal fleet and witness settings in your secret store before retrying setup.",
+		};
+	if (lines.includes("HOBO_CD_JOURNAL_NOT_PROVISIONED"))
+		return {
+			kind: "blocked",
+			reason:
+				"Reconcile any incomplete journal database creation before retrying setup.",
+		};
 	if (
 		lines.some((line) =>
 			[
