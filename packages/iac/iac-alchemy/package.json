@@ -14,21 +14,41 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./rivet": {
+			"types": "./dist/rivet.d.ts",
+			"default": "./dist/rivet.js"
+		},
+		"./rivet/runtime": {
+			"types": "./dist/rivet-runtime.d.ts",
+			"default": "./dist/rivet-runtime.js"
 		}
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1"
 	},
 	"peerDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "^4.1.4",
 		"@effect/platform-node": "^4.1.4",
+		"rivetkit": "3.0.0",
 		"ws": "^8.21.0"
 	},
+	"peerDependenciesMeta": {
+		"@alchemy.run/rivet": {
+			"optional": true
+		},
+		"rivetkit": {
+			"optional": true
+		}
+	},
 	"devDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
+		"rivetkit": "3.0.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
 		"@types/node": "^22.15.29"
