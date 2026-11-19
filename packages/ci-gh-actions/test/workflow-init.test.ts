@@ -611,6 +611,60 @@ jobs:
 	});
 
 	it.each([
+		"needs[format('{0}', 'publish')].*",
+		"NEEDS[format('{0}', 'publish')]['*']",
+		"(needs[format('{0}', 'publish')]).*",
+		"needs[format('{0}', 'publish')][format('{0}', 'outputs')].value",
+		"needs[inputs.job][inputs.key]",
+		"toJSON(needs[inputs.job].*)",
+	])("fails closed when a dynamic needs index reads %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("does not treat a wildcard star as a secret read unless that job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  other:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  ship:
+    needs: other
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.*.* }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ NEEDS.*[format('{0}', 'outputs')] }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"other ready",
+			"ship ready",
+			"lint ready",
+		]);
+	});
+
+	it.each([
 		"needs.publish.*",
 		"NEEDS.PUBLISH['*']",
 		"toJSON(needs.publish.*)",
@@ -2069,6 +2123,98 @@ ${caller}`;
 		).toEqual([
 			["lint", "ready", undefined],
 			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it.each([
+		["needs.*.*", "route"],
+		["NEEDS.*['*']", "Route"],
+		["(needs.*).*", "route"],
+		["needs.*[format('{0}', 'outputs')].runner", "route"],
+		["needs[*][format('{0}', 'result')]", "route"],
+		["NEEDS[ '*' ][inputs.key]", "Route"],
+		["toJSON(needs.*.*)", "route"],
+		["TOJSON( ( NEEDS.*['*'] ) )", "Route"],
+	])("fails closed when %s reads every needed job through a wildcard property (%s)", (expression, needed) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    needs: ${needed}
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it.each([
+		"needs[inputs.job].*",
+		"NEEDS[format('{0}', 'route')]['*']",
+		"(needs[inputs.job]).*",
+		"needs[inputs.job][format('{0}', 'outputs')].runner",
+		"needs[format('{0}', 'route')][format('{0}', 'result')]",
+		"toJSON(needs[inputs.job].*)",
+	])("fails closed when a dynamic needs index reads a runner property (%s)", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["called", "expression"],
+		]);
+	});
+
+	it("does not treat a wildcard star as routing when the caller needs nobody", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.*.* }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
 			["called", "skipped", "expression"],
 		]);
 	});

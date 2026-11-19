@@ -514,16 +514,17 @@ function referencesNeedsAccess(
 		return true;
 	}
 	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
+	const property = `\\s*${jobPropertyPattern(access)}`;
 	const open =
 		patternMatches(
-			`${groupedNeeds(needsWildcardPattern())}\\s*${access}`,
+			`${groupedNeeds(needsWildcardPattern())}${property}`,
 			text,
 		) ||
 		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
 		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
 	if (open && needsCanSee(needs, jobId)) return true;
 	const dynamicIndex = `${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]`;
-	if (patternMatches(`${groupedNeeds(dynamicIndex)}\\s*${access}`, text)) {
+	if (patternMatches(`${groupedNeeds(dynamicIndex)}${property}`, text)) {
 		return true;
 	}
 	return patternMatches(toJsonCallPattern(dynamicIndex), text);
