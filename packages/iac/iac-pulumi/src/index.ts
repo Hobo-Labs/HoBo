@@ -31,5 +31,7 @@ export {
 	PulumiEngineUnavailableError,
 	renderPulumiYamlProgram,
 } from "./pulumi-cli-engine.js";
+export { PULUMI_STATE_PASSPHRASE_MISSING } from "./state-passphrase.js";
 
+// public-contract: package identity used by generated manifests and tooling.
 export const HOBO_IAC_PULUMI_PACKAGE = "@hobo/iac-pulumi";
