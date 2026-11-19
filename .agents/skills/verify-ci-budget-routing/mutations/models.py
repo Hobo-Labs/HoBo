@@ -9,6 +9,13 @@ models = Path(__file__).resolve().parent.parent / "models"
 jar = Path(os.environ["TLA2TOOLS"]).resolve()
 cases = [
     (
+        "duplicate provider allocation",
+        "CiProviderAllocation",
+        "NoOverstatedAllocation",
+        "IF \\E i \\in 1..2 : available[i] > 0",
+        "IF FALSE",
+    ),
+    (
         "first provider observation",
         "CiProviderSnapshots",
         "AllReportsCounted",

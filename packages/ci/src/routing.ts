@@ -188,13 +188,23 @@ export function route(
 			return [offer, { reserved, used, providerSpent }] as const;
 		}),
 	);
-	const providerAccounts = new Map<string, { target: string; spent: number }>();
-	for (const [offer, accounting] of providerAccounting) {
+	const providerAccounts = new Map<
+		string,
+		{ target: string; spent: number; reports: number; hasAllocation: boolean }
+	>();
+	for (const offer of account.offers) {
+		const accounting = providerAccounting.get(offer);
+		if (!accounting) throw new Error("missing provider accounting");
 		const key = JSON.stringify([offer.provider, offer.providerAccountId]);
 		const previous = providerAccounts.get(key);
 		providerAccounts.set(key, {
 			target: offer.providerAccountId,
 			spent: Math.max(previous?.spent ?? 0, accounting.providerSpent),
+			reports: (previous?.reports ?? 0) + 1,
+			hasAllocation:
+				(previous?.hasAllocation ?? false) ||
+				offer.freeMinutes !== 0 ||
+				offer.sandboxAllowance !== undefined,
 		});
 	}
 	const providerExposures = new Map<string, number>();
@@ -215,11 +225,19 @@ export function route(
 		const accounting = providerAccounting.get(offer);
 		if (!accounting) throw new Error("missing provider accounting");
 		const { reserved, used } = accounting;
-		const providerSpent = providerAccounts.get(
+		const providerAccount = providerAccounts.get(
 			JSON.stringify([offer.provider, offer.providerAccountId]),
-		)?.spent;
-		if (providerSpent === undefined)
-			throw new Error("missing provider exposure");
+		);
+		if (!providerAccount) throw new Error("missing provider exposure");
+		if (providerAccount.reports > 1 && providerAccount.hasAllocation) {
+			refuse(
+				"budget.ambiguous-provider-allocation",
+				"duplicate provider account reports cannot authorize free allocation",
+				offer.id,
+			);
+			return [];
+		}
+		const providerSpent = providerAccount.spent;
 		if (reserved.length >= offer.concurrency) return [];
 		const usedFree = used
 			.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))

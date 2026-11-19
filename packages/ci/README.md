@@ -197,6 +197,11 @@ limit and evidence URL. Prices are account-supplied integer USD microdollars per
 minute, including applicable platform fees; this package ships no vendor price
 catalog or assumed marketing allowances. One microdollar is $0.000001. Each provider
 account entitlement has one account/offer owner; there is no cross-tenant pooling.
+The public router can also receive an account directly, without the configuration
+parser. If multiple offers report the same provider account and any reports free
+runner minutes or a sandbox allowance, those offers are ineligible: the router
+cannot establish which allocation snapshot is authoritative. Other providers
+remain eligible. Duplicate cash-only reports use the greatest reported exposure.
 
 `Offer.freeMinutes` is measured in **minutes on the selected runner SKU**, not
 in the provider's shared base-unit minutes. Blacksmith's x64 free balance and
