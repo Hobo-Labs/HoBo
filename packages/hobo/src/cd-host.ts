@@ -404,7 +404,7 @@ export async function composeCdHost(
 				reconciled.every((entry) => entry.ok);
 			const tick = reconcilesOk ? await service.tick() : undefined;
 			if (signal.aborted) throw abortErrorOf(signal);
-			const passCounts = reconcilesOk && tick !== undefined && tick.store;
+			const passCounts = reconcilesOk && tick?.store;
 			if (passCounts && allowRecord()) {
 				if (signal.aborted) throw abortErrorOf(signal);
 				await recordSuccessfulPass(managed);

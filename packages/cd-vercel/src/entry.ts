@@ -4,7 +4,11 @@ import type { FeedRequest, FeedResponse } from "@hobo/cd";
 import { parseReadRequest } from "@hobo/cd/service";
 import type { CdHost } from "@hobo/hobo/cd-platform";
 
-import { composeVercelCdHost, memoizedCdHost } from "./compose.js";
+import {
+	composeVercelCdHost,
+	memoizedCdHost,
+	productionDeploymentRefusal,
+} from "./compose.js";
 import {
 	CdStoreBindingError,
 	openCdStore,
@@ -151,6 +155,26 @@ export function createCdHttpEntry(
 			sendJson(response, 200, { ok: true, commit });
 			return;
 		}
+		const deploymentRefusal =
+			process.env.VERCEL === "1"
+				? productionDeploymentRefusal(process.env)
+				: undefined;
+		if (deploymentRefusal !== undefined) {
+			if (path === "/readyz") {
+				sendJson(response, 503, {
+					ready: false,
+					started: false,
+					code: deploymentRefusal.code,
+				});
+				return;
+			}
+			sendJson(response, 503, {
+				ok: false,
+				code: deploymentRefusal.code,
+				message: deploymentRefusal.message,
+			});
+			return;
+		}
 		let host: CdHost;
 		try {
 			host = await load();
@@ -212,7 +236,7 @@ export function createCdHttpEntry(
 
 export async function runCdPass(load: () => Promise<CdHost>) {
 	const host = await load();
-	return host.pass();
+	return host.pass(AbortSignal.timeout(host.passDeadlineMs));
 }
 
 export function buildCommit(
