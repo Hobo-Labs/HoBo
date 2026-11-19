@@ -1,35 +1,3 @@
-/**
- * The first-party catalog, and the two shapes providers declare it in.
- *
- * Matching cannot select a product nobody registered, so this module is the
- * gate every first-party product passes through. It holds no product facts of
- * its own — each entry is a re-export of a declaration living beside the driver
- * that honours it — which makes the *adaptation* the thing to test: providers
- * declare in two different shapes and the catalog has to render both into one.
- *
- * **A legacy declaration brings its own port/feature half; a semantics-only one
- * does not.** For the second, the legacy half is derived rather than invented —
- * `features` comes from the boolean structured capabilities the product
- * actually claims. That is what keeps the two matching paths from disagreeing
- * about the same product: `satisfies` answers the legacy port/feature question
- * using the same facts profile matching reads. A derived feature list that
- * drifted from the semantics would let a product pass one path and fail the
- * other.
- *
- * **Order is load-bearing.** The catalog is sorted by id so its digest — and
- * every signed resolution receipt that pins it — is independent of import
- * order. A catalog that reordered when someone moved an import line would
- * invalidate receipts without any product changing.
- *
- * **Cost is a claim about money.** Semantics-only entries price at the declared
- * sponsor exposure cap, because that is the only cost figure this repo is
- * entitled to state: transcribed vendor prices are ranking input, never billing
- * input.
- *
- * Nothing here decides whether a product is *usable* — trust evidence and
- * conformance are judged downstream at a supplied instant. Registration only
- * makes a product visible to that judgement.
- */
 import {
 	createCapabilityProfileRegistry,
 	DEFAULT_TRUST_POLICY,
@@ -59,16 +27,6 @@ import {
 	firstPartyEvidenceRefs,
 } from "../src/first-party-catalog.js";
 
-/**
- * Ids whose provider declared semantics only, asked of the declarations.
- *
- * The catalog does not record which shape an entry arrived in, and inferring it
- * from the rendered result would make these tests circular -- "entries with
- * specificity 10 have specificity 10". Asking the source declarations instead
- * keeps the assertions independent of the code under test, and means a provider
- * that later adds its legacy half moves to the other set automatically rather
- * than silently failing an assertion that no longer applies to it.
- */
 const SEMANTICS_ONLY_IDS = new Set(
 	[
 		UPSTASH_RESOURCE_DEFINITION,
@@ -91,21 +49,15 @@ describe("the catalog as a whole", () => {
 	});
 
 	it("registers at least one product", () => {
-		// Guards the rest of this file: every assertion below is vacuous over an
-		// empty catalog, and an import that silently stopped contributing would
-		// otherwise look like a pass.
 		expect(FIRST_PARTY_DEFINITIONS.length).toBeGreaterThan(0);
 	});
 
 	it("is sorted by id, so its digest does not depend on import order", () => {
-		// Signed resolution receipts pin this digest. Reordering when someone
-		// moves an import line would invalidate them without a product changing.
 		const ids = FIRST_PARTY_DEFINITIONS.map((definition) => definition.id);
 		expect([...ids].sort()).toEqual(ids);
 	});
 
 	it("gives every product a distinct id", () => {
-		// Two entries under one id make selection depend on iteration order.
 		const ids = FIRST_PARTY_DEFINITIONS.map((definition) => definition.id);
 		expect(new Set(ids).size).toBe(ids.length);
 	});
@@ -115,9 +67,6 @@ describe("the catalog as a whole", () => {
 	});
 
 	it("carries a semantics block on every entry", () => {
-		// Registration is what makes a product visible to the downstream trust
-		// judgement, and that judgement reads the semantics. An entry without one
-		// would be selectable but un-gateable.
 		for (const definition of FIRST_PARTY_DEFINITIONS) {
 			expect(definition.semantics).toBeDefined();
 			expect(definition.semantics?.trustEvidenceRef).toBeTruthy();
@@ -140,8 +89,6 @@ describe("matching a request against a product", () => {
 	});
 
 	it("answers none for a port it does not serve", () => {
-		// Not partial. A different port is not a partial match with everything
-		// missing -- it is a different question.
 		for (const definition of FIRST_PARTY_DEFINITIONS) {
 			expect(
 				definition.satisfies({ port: "hobo:definitely-not-a-port" }).kind,
@@ -162,8 +109,6 @@ describe("matching a request against a product", () => {
 	});
 
 	it("answers partial and names what is missing", () => {
-		// The missing list is what a caller shows an operator. A partial verdict
-		// with an empty list says "not quite" and nothing else.
 		for (const definition of semanticsOnly) {
 			const verdict = definition.satisfies({
 				port: definition.port,
@@ -187,8 +132,6 @@ describe("matching a request against a product", () => {
 	});
 
 	it("hands back a fresh missing array rather than an internal one", () => {
-		// The verdict is spread on the way out. A caller that sorted the missing
-		// list in place would otherwise reorder the catalog's own state.
 		const definition = semanticsOnly[0];
 		if (definition === undefined) return;
 		const verdict = definition.satisfies({
@@ -205,9 +148,6 @@ describe("matching a request against a product", () => {
 
 describe("the legacy half derived from semantics", () => {
 	it("derives features from the capabilities the product claims", () => {
-		// Only the ones set to `true`, so a structured capability declared false
-		// is not advertised as a feature. Deriving from key presence instead
-		// would advertise everything the product had an opinion about.
 		for (const definition of semanticsOnly) {
 			const claimed = Object.entries(
 				definition.semantics?.structuredCapabilities ?? {},
@@ -220,16 +160,12 @@ describe("the legacy half derived from semantics", () => {
 	});
 
 	it("sorts the derived features", () => {
-		// They go into the catalog digest, so key order in the semantics block
-		// must not change it.
 		for (const definition of semanticsOnly) {
 			expect([...definition.features].sort()).toEqual(definition.features);
 		}
 	});
 
 	it("ranks above a generic legacy entry but below a self-pinned one", () => {
-		// specificity 10, priority 0: more specific than an unranked legacy port
-		// entry, never outranking a product that stated its own numbers.
 		for (const definition of semanticsOnly) {
 			expect(definition.specificity).toBe(10);
 			expect(definition.priority).toBe(0);
@@ -237,8 +173,6 @@ describe("the legacy half derived from semantics", () => {
 	});
 
 	it("prices at the declared sponsor exposure cap, per deployment", () => {
-		// The only cost figure this repo may state. A transcribed vendor price
-		// here would be a billing input the repo cannot stand behind.
 		for (const definition of semanticsOnly) {
 			expect(definition.cost.unit).toBe("deployment");
 			expect(definition.cost.sku).toBe(definition.semantics?.productId);
@@ -251,14 +185,10 @@ describe("the legacy half derived from semantics", () => {
 
 describe("the profile-aware projection", () => {
 	it("projects every definition", () => {
-		// The two views are read by different callers; a product visible to one
-		// and not the other is selectable by only half the system.
 		expect(FIRST_PARTY_CANDIDATES.length).toBe(FIRST_PARTY_DEFINITIONS.length);
 	});
 
 	it("keeps the same ids", () => {
-		// The projection names the definition it came from `definitionId`, not
-		// `id` -- it is a candidate, not a definition.
 		expect(
 			FIRST_PARTY_CANDIDATES.map((candidate) => candidate.definitionId),
 		).toEqual(FIRST_PARTY_DEFINITIONS.map((definition) => definition.id));
@@ -271,8 +201,6 @@ describe("the profile-aware projection", () => {
 
 describe("the evidence refs it expects published", () => {
 	it("lists one entry per distinct ref", () => {
-		// Several products can share a ref; publishing checks should ask for it
-		// once.
 		const refs = firstPartyEvidenceRefs();
 		expect(new Set(refs).size).toBe(refs.length);
 	});
@@ -292,9 +220,6 @@ describe("the evidence refs it expects published", () => {
 
 describe("products whose declaration has not landed", () => {
 	it("names them rather than omitting them", () => {
-		// So an empty matrix cell traces to a named piece of missing work rather
-		// than to a silent omission in an import list -- "no Neon coverage yet"
-		// has to read differently from "Neon is broken".
 		expect(CATALOG_GAPS.length).toBeGreaterThan(0);
 		for (const gap of CATALOG_GAPS) {
 			expect(gap.providerId).toBeTruthy();
@@ -303,8 +228,6 @@ describe("products whose declaration has not landed", () => {
 	});
 
 	it("does not list a provider that is already in the catalog", () => {
-		// A gap for a registered provider is a stale note, and the next reader
-		// would take it as current.
 		const registered = new Set(
 			FIRST_PARTY_DEFINITIONS.map((definition) => definition.providerId),
 		);
@@ -350,9 +273,6 @@ describe("local yard definitions (consumer side of @hobo/provider-local)", () =>
 		}
 	});
 
-	// The seed denominator, asserted here because this composition may
-	// import both `@hobo/yards` and `@hobo/provider-local`; the adapter
-	// package itself may not depend on `@hobo/yards`.
 	const FULL_SEED = seedLocalhostYard([
 		{ capabilityId: "capability:runtime:node", present: true },
 		{ capabilityId: "capability:toolchain:sqlite", present: true },

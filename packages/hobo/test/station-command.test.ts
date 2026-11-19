@@ -1,29 +1,3 @@
-/**
- * `hobo station` — the ops/setup family for Station occupancy.
- *
- * The header of the module makes the load-bearing claim: this is **not a
- * lifecycle verb**. `up` and `down` here start and stop *occupancy* — the
- * Station's own presence — while `hobo up`/`hobo down` remain the only verbs
- * that act on an app graph. Two commands spelled the same doing different
- * things is a real hazard, so the tests pin the distinction where it shows:
- * `station down` retains the Station's data, and says so.
- *
- * Two resolution chains carry the rest of the risk:
- *
- * **The station id** is taken from a flag, then the environment, then the
- * profile's default, then `station:local`. Every subcommand acts on whichever
- * one wins, so a chain that consulted these in a different order would have
- * `rails activate` apply a rail to a Station the operator was not looking at.
- *
- * **The HoBo home** is taken from the explicit dependency, then the injected
- * env, then the ambient env, then the default. The explicit one must win, or a
- * caller that isolated itself would still read somebody else's Stations.
- *
- * `activate` and `up` both reach for the Station client afterwards to enrich
- * their result with pins — and both swallow a failure there. That is right: the
- * activation already happened, and losing the result because the read-back
- * failed would tell the operator their rail did not activate when it did.
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,7 +19,6 @@ function home(): string {
 	return dir;
 }
 
-/** Run a subcommand against an isolated home, capturing what it logged. */
 async function run(
 	args: readonly string[],
 	options: {
@@ -67,7 +40,6 @@ async function run(
 	return { result: result as Record<string, unknown>, lines };
 }
 
-/** A home with an initialised station, for the subcommands that need one. */
 async function initialised(name = "local") {
 	const dir = home();
 	const init = await run(["init"], { hoboHome: dir, flags: { name } });
@@ -76,8 +48,6 @@ async function initialised(name = "local") {
 
 describe("the command module", () => {
 	it("declares itself implemented", () => {
-		// The CLI shows unimplemented modules differently; a false here would
-		// hide a working command behind a stub notice.
 		expect(createStationCommand().implemented).toBe(true);
 	});
 });
@@ -89,8 +59,6 @@ describe("init", () => {
 	});
 
 	it("defaults the station name rather than refusing", async () => {
-		// `hobo station init` with no flags is the first command a new user
-		// runs; requiring a name would make the happy path an error.
 		const { result } = await run(["init"]);
 		expect(result.ok).toBe(true);
 	});
@@ -108,7 +76,6 @@ describe("init", () => {
 	});
 
 	it("records the station as the profile default", async () => {
-		// This is what makes every later subcommand act on it without a flag.
 		const dir = home();
 		await run(["init"], { hoboHome: dir, flags: { name: "edge" } });
 		const status = await run(["status"], { hoboHome: dir });
@@ -116,7 +83,6 @@ describe("init", () => {
 	});
 
 	it("ignores an empty name flag rather than making an empty id", async () => {
-		// `station:` addresses nothing.
 		const { result } = await run(["init"], { flags: { name: "" } });
 		expect(JSON.stringify(result.data)).toContain("station:local");
 	});
@@ -124,8 +90,6 @@ describe("init", () => {
 
 describe("the default subcommand", () => {
 	it("reports status when given no subcommand", async () => {
-		// Status is the read-only one; defaulting to anything that mutates would
-		// be a surprise from a bare `hobo station`.
 		const { dir } = await initialised();
 		const { result } = await run([], { hoboHome: dir });
 		expect(result).toHaveProperty("ok");
@@ -138,7 +102,6 @@ describe("the default subcommand", () => {
 	});
 
 	it("prints the usage line when it refuses", async () => {
-		// A refusal an operator cannot act on is only half a refusal.
 		const { result } = await run(["reticulate"]);
 		expect(JSON.stringify(result.data)).toContain("init|up|down|status|rails");
 	});
@@ -152,7 +115,6 @@ describe("occupancy up and down", () => {
 	});
 
 	it("says which station and rail came up", async () => {
-		// The rail hash is what an operator checks against what they approved.
 		const { dir } = await initialised();
 		const { lines } = await run(["up"], { hoboHome: dir });
 		expect(lines.join(" ")).toMatch(/station up.*rail=/u);
@@ -165,8 +127,6 @@ describe("occupancy up and down", () => {
 	});
 
 	it("says data is retained on down", async () => {
-		// This is the sentence that distinguishes station down from a lifecycle
-		// down: nothing of the operator's is destroyed.
 		const { dir } = await initialised();
 		const { lines } = await run(["down"], { hoboHome: dir });
 		expect(lines.join(" ")).toContain("data retained");
@@ -179,8 +139,6 @@ describe("occupancy up and down", () => {
 	});
 
 	it("reports status without logging anything", async () => {
-		// Status is a query; a log line on stderr would pollute a piped `--json`
-		// read.
 		const { dir } = await initialised();
 		const { lines } = await run(["status"], { hoboHome: dir });
 		expect(lines).toEqual([]);
@@ -216,8 +174,6 @@ describe("station id resolution", () => {
 	});
 
 	it("prefers the flag over the environment", async () => {
-		// The flag is the more deliberate of the two; the environment is
-		// ambient and often set by a shell profile the operator forgot about.
 		const { dir } = await initialised();
 		const { lines } = await run(["down"], {
 			hoboHome: dir,
@@ -228,14 +184,12 @@ describe("station id resolution", () => {
 	});
 
 	it("falls back to the profile's default station", async () => {
-		// Set by `init`, and the reason a second command needs no flag at all.
 		const { dir } = await initialised("edge");
 		const { lines } = await run(["down"], { hoboHome: dir });
 		expect(lines.join(" ")).toContain("station:edge");
 	});
 
 	it("falls back to station:local when nothing names one", async () => {
-		// A fresh home with no profile still has to address something.
 		const { lines } = await run(["down"], { hoboHome: home() });
 		expect(lines.join(" ")).toContain("station:local");
 	});
@@ -274,8 +228,6 @@ describe("rails", () => {
 	});
 
 	it("refuses to publish without a document path", async () => {
-		// Publishing nothing would either fail deep in the management layer or,
-		// worse, publish an empty rail.
 		const { dir } = await initialised();
 		const { result } = await run(["rails", "publish"], { hoboHome: dir });
 		expect(result.ok).toBe(false);
@@ -292,8 +244,6 @@ describe("rails", () => {
 		"approve",
 		"activate",
 	])("refuses to %s without a rail id", async (verb) => {
-		// Approving "whatever is latest" is exactly the kind of implicit
-		// selection an approval step exists to prevent.
 		const { dir } = await initialised();
 		const { result } = await run(["rails", verb], { hoboHome: dir });
 		expect(result.ok).toBe(false);
@@ -320,7 +270,6 @@ describe("rails", () => {
 	});
 
 	it("reports a failure for a rail that does not exist", async () => {
-		// It must not invent one, and it must not crash.
 		const { dir } = await initialised();
 		const { result } = await run(["rails", "approve", "sha256:nope"], {
 			hoboHome: dir,
@@ -331,7 +280,6 @@ describe("rails", () => {
 
 describe("home resolution", () => {
 	it("prefers the explicit dependency", async () => {
-		// A caller that isolated itself must not read somebody else's Stations.
 		const dir = home();
 		await run(["init"], {
 			hoboHome: dir,
