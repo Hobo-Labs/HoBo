@@ -495,10 +495,7 @@ type BudgetFenceSettlementPayloadVersion =
 function budgetFenceSettlementPayloadVersion(
 	version: string,
 ): BudgetFenceSettlementPayloadVersion {
-	if (
-		version === "" ||
-		version === legacyBudgetFenceSettlementPayloadVersion
-	)
+	if (version === "" || version === legacyBudgetFenceSettlementPayloadVersion)
 		return legacyBudgetFenceSettlementPayloadVersion;
 	if (version === currentBudgetFenceSettlementPayloadVersion)
 		return currentBudgetFenceSettlementPayloadVersion;
