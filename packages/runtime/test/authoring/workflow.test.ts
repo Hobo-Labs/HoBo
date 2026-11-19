@@ -407,7 +407,11 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/dup-started",
 				seq: 1,
 				type: "run.Started",
-				data: { args: {}, workflowName: "dup-started" },
+				data: {
+					args: {},
+					seed: "dup-started-seed",
+					workflowName: "dup-started",
+				},
 			},
 			0,
 		);
@@ -417,7 +421,11 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/dup-started",
 				seq: 2,
 				type: "run.Started",
-				data: { args: {}, workflowName: "dup-started" },
+				data: {
+					args: {},
+					seed: "dup-started-seed",
+					workflowName: "dup-started",
+				},
 			},
 			1,
 		);
@@ -443,7 +451,11 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/bad-started",
 				seq: 1,
 				type: "run.Started",
-				data: { args: {}, workflowName: 42 },
+				data: {
+					args: {},
+					seed: "bad-started-seed",
+					workflowName: 42,
+				},
 			},
 			0,
 		);
@@ -461,7 +473,11 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/bad-failed-step",
 				seq: 1,
 				type: "run.Started",
-				data: { args: {}, workflowName: "bad-failed-step" },
+				data: {
+					args: {},
+					seed: "bad-failed-step-seed",
+					workflowName: "bad-failed-step",
+				},
 			},
 			0,
 		);
@@ -496,6 +512,7 @@ describe("durable workflow: journal, restart, replay", () => {
 				type: "run.Started",
 				data: {
 					args: { from: "journal" },
+					seed: "journal-args-seed",
 					workflowName: "journal-args",
 				},
 			},
@@ -524,7 +541,11 @@ describe("durable workflow: journal, restart, replay", () => {
 				streamId: "run/dup-terminal",
 				seq: 1,
 				type: "run.Started",
-				data: { args: {}, workflowName: "dup" },
+				data: {
+					args: {},
+					seed: "dup-terminal-seed",
+					workflowName: "dup",
+				},
 			},
 			0,
 		);

@@ -40,24 +40,27 @@ export function parseRunStartedFact(
 	for (const key of Object.keys(data)) {
 		if (!allowed.has(key)) throw new TypeError("invalid run.Started");
 	}
-	let args: JsonValue | null = null;
-	if ("args" in data) {
-		const raw = data.args;
-		if (raw === null) args = null;
-		else if (!isStoredJsonValue(raw))
-			throw new TypeError("invalid run.Started");
-		else args = raw;
-	}
-	let runSeed = defaultSeed;
-	if ("seed" in data) {
-		if (!isJsonString(data.seed)) throw new TypeError("invalid run.Started");
-		runSeed = data.seed;
-	}
+	if (!("args" in data)) throw new TypeError("invalid run.Started");
+	const rawArgs = data.args;
+	let args: JsonValue | null;
+	if (rawArgs === null) args = null;
+	else if (!isStoredJsonValue(rawArgs)) throw new TypeError("invalid run.Started");
+	else args = rawArgs;
+	const hasWorkflowName = "workflowName" in data;
 	let workflowName: string | undefined;
-	if ("workflowName" in data) {
+	if (hasWorkflowName) {
 		if (!isJsonString(data.workflowName))
 			throw new TypeError("invalid run.Started");
 		workflowName = data.workflowName;
+	}
+	let runSeed: string;
+	if ("seed" in data) {
+		if (!isJsonString(data.seed)) throw new TypeError("invalid run.Started");
+		runSeed = data.seed;
+	} else if (hasWorkflowName) {
+		throw new TypeError("invalid run.Started");
+	} else {
+		runSeed = defaultSeed;
 	}
 	const parsed: ParsedRunStarted = { args, seed: runSeed };
 	if (workflowName !== undefined) parsed.workflowName = workflowName;
@@ -68,6 +71,63 @@ export type ParsedRunFailed = {
 	message: string;
 	step?: string;
 };
+
+export type ParsedRunStepFailed = {
+	name: string;
+	index: number;
+	message: string;
+};
+
+export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.StepFailed");
+	const allowed = new Set(["name", "index", "message"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.StepFailed");
+	}
+	if (!isJsonString(data.name)) throw new TypeError("invalid run.StepFailed");
+	if (!isJsonNumber(data.index) || !Number.isInteger(data.index) || data.index < 0)
+		throw new TypeError("invalid run.StepFailed");
+	if (!isJsonString(data.message)) throw new TypeError("invalid run.StepFailed");
+	return { name: data.name, index: data.index, message: data.message };
+}
+
+export function parseRunCompletedFact(data: JsonValue): JsonValue | undefined {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.Completed");
+	const allowed = new Set(["result"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.Completed");
+	}
+	if (!("result" in data) || data.result === undefined) return undefined;
+	if (!isStoredJsonValue(data.result)) throw new TypeError("invalid run.Completed");
+	return data.result;
+}
+
+export function parseRunStepCompletedResult(data: JsonValue): JsonValue | undefined {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.StepCompleted");
+	const allowed = new Set(["name", "index", "result"]);
+	for (const key of Object.keys(data)) {
+		if (!allowed.has(key)) throw new TypeError("invalid run.StepCompleted");
+	}
+	if (!isJsonString(data.name)) throw new TypeError("invalid run.StepCompleted");
+	if (
+		!isJsonNumber(data.index) ||
+		!Number.isInteger(data.index) ||
+		data.index < 0
+	)
+		throw new TypeError("invalid run.StepCompleted");
+	if (!("result" in data) || data.result === undefined) return undefined;
+	if (!isStoredJsonValue(data.result))
+		throw new TypeError("invalid run.StepCompleted");
+	return readJournaledWorkflowResult(data.result);
+}
+
+export function replayStepCompletedResult<T>(data: JsonValue): T {
+	const journaled = parseRunStepCompletedResult(data);
+	if (journaled === undefined) throw new TypeError("invalid run.StepCompleted");
+	const replayed = terminalCompletedHandleResult<T>(journaled);
+	if (replayed === undefined) throw new TypeError("invalid run.StepCompleted");
+	return replayed;
+}
 
 export function parseRunFailedFact(data: JsonValue): ParsedRunFailed {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Failed");

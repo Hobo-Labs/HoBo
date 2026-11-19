@@ -19,7 +19,6 @@ import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
 	isJsonObject,
-	isJsonString,
 	type JsonBag,
 	type JsonValue,
 } from "./json.js";
@@ -36,8 +35,11 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	parseRunCompletedFact,
 	parseRunFailedFact,
 	parseRunStartedFact,
+	parseRunStepFailedFact,
+	replayStepCompletedResult,
 	readJournaledWorkflowResult,
 	requireWorkflowRunId,
 	terminalCompletedHandleResult,
@@ -197,7 +199,8 @@ export function createWorkflowEngine(
 				throw new Error(`invalid ${terminal.type} for ${runId}`);
 			}
 			if (terminal.type === "run.Completed") {
-				const journaled = readJournaledWorkflowResult(data.result);
+				const stored = parseRunCompletedFact(cloneAsJson(data));
+				const journaled = readJournaledWorkflowResult(stored);
 				const result = terminalCompletedHandleResult<R>(journaled);
 				return { runId, status: "completed", result, error: undefined };
 			}
@@ -244,8 +247,8 @@ export function createWorkflowEngine(
 					event.data.index === index,
 			);
 
-		const findFailedStep = (name: string, index: number) =>
-			journal.find(
+		const failedStepsFor = (name: string, index: number) =>
+			journal.filter(
 				(event) =>
 					event.type === "run.StepFailed" &&
 					isRecord(event.data) &&
@@ -263,17 +266,17 @@ export function createWorkflowEngine(
 				stepIndex += 1;
 				const completed = findCompletedStep(name, index);
 				if (completed && isRecord(completed.data)) {
-					// Journaled on a prior attempt — short-circuit, do NOT re-run.
-					// SAFETY: assertion to `ed.data.result as T; }` is required at this boundary.
-					return completed.data.result as T;
+					return replayStepCompletedResult<T>(cloneAsJson(completed.data));
 				}
-				const failed = findFailedStep(name, index);
+				const failedMatches = failedStepsFor(name, index);
+				if (failedMatches.length > 1) {
+					throw new Error(`duplicate run.StepFailed for ${runId}`);
+				}
+				const failed = failedMatches[0];
 				if (failed && isRecord(failed.data)) {
-					if (!isJsonString(failed.data.message)) {
-						throw new Error(`invalid run.StepFailed for ${runId}`);
-					}
-					throw new WorkflowFailure(failed.data.message, {
-						step: name,
+					const stepFailed = parseRunStepFailedFact(cloneAsJson(failed.data));
+					throw new WorkflowFailure(stepFailed.message, {
+						step: stepFailed.name,
 					});
 				}
 				await appendEvent("run.StepScheduled", { name, index });
