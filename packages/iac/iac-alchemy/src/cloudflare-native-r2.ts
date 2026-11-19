@@ -169,6 +169,7 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 	const fence = captureAlchemySourceFence(options.sourceFence);
 	const projectRoot = options.projectRoot;
 	const flagshipFlags = options.flagshipFlags;
+	const secrets = options.secrets;
 	let baseOptions: CloudflareBindleMappingOptions = {
 		workerModules: options.workerModules,
 	};
@@ -176,6 +177,7 @@ export function cloudflareNativeR2BindleMappers<Requirements>(
 	if (fence !== undefined) baseOptions = { ...baseOptions, sourceFence: fence };
 	if (flagshipFlags !== undefined)
 		baseOptions = { ...baseOptions, flagshipFlags };
+	if (secrets !== undefined) baseOptions = { ...baseOptions, secrets };
 	const base =
 		kv === undefined
 			? cloudflareBindleMappers<Requirements>(baseOptions)
