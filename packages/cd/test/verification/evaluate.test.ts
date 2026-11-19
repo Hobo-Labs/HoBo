@@ -279,6 +279,20 @@ describe("thresholds per aggregation", () => {
 		expect(result.checks[0]?.reason?.code).toBe("verification-invalid-sample");
 	});
 
+	it("keeps a finite sum when overflowing partial sums cancel", () => {
+		expect(
+			aggregate(
+				[
+					-Number.MAX_VALUE,
+					-Number.MAX_VALUE,
+					Number.MAX_VALUE,
+					Number.MAX_VALUE,
+				],
+				Aggregation.SUM,
+			),
+		).toBe(0);
+	});
+
 	it.each([
 		[Comparator.LT, 0.25, VerificationVerdict.FAIL],
 		[Comparator.LTE, 0.25, VerificationVerdict.PASS],

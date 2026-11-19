@@ -146,6 +146,17 @@ function nearestRank(sorted: readonly number[], quantile: number): number {
 	return sorted[index] ?? Number.NaN;
 }
 
+function scaledTotal(values: readonly number[]) {
+	const scale = values.reduce(
+		(largest, value) => Math.max(largest, Math.abs(value)),
+		0,
+	);
+	return {
+		scale,
+		total: values.reduce((sum, value) => sum + value / scale, 0),
+	};
+}
+
 export function aggregate(
 	values: readonly number[],
 	aggregation: Aggregation,
@@ -154,16 +165,10 @@ export function aggregate(
 	switch (aggregation) {
 		case Aggregation.MEAN: {
 			const total = sorted.reduce((sum, value) => sum + value, 0);
-			if (Number.isFinite(total)) return total / sorted.length;
-			const scale = sorted.reduce(
-				(largest, value) => Math.max(largest, Math.abs(value)),
-				0,
-			);
-			return (
-				(sorted.reduce((sum, value) => sum + value / scale, 0) /
-					sorted.length) *
-				scale
-			);
+			if (Number.isFinite(total) || !sorted.every(Number.isFinite))
+				return total / sorted.length;
+			const scaled = scaledTotal(sorted);
+			return (scaled.total / sorted.length) * scaled.scale;
 		}
 		case Aggregation.P50:
 			return nearestRank(sorted, 0.5);
@@ -173,8 +178,13 @@ export function aggregate(
 			return nearestRank(sorted, 0.99);
 		case Aggregation.MAX:
 			return sorted[sorted.length - 1] ?? Number.NaN;
-		case Aggregation.SUM:
-			return sorted.reduce((sum, value) => sum + value, 0);
+		case Aggregation.SUM: {
+			const total = sorted.reduce((sum, value) => sum + value, 0);
+			if (Number.isFinite(total) || !sorted.every(Number.isFinite))
+				return total;
+			const scaled = scaledTotal(sorted);
+			return scaled.total * scaled.scale;
+		}
 		default:
 			return Number.NaN;
 	}
