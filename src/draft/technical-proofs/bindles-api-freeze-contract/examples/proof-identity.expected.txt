@@ -1,3 +1,0 @@
-slug: bindles-api-freeze-contract
-layer: technical
-proof-identity: ok
