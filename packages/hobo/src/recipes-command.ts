@@ -7,13 +7,6 @@ import {
 	summarizeRecipe,
 } from "./recipe-plane.js";
 
-// `hobo recipes` — the read-only view of what HoBo knows how to deploy before
-// anyone has authenticated with a provider. It reads the same registry the
-// offer compiler and the example page read; there is no second recipe list.
-//
-//   hobo recipes list            every registered recipe and its claim terms
-//   hobo recipes show <id>       one recipe's Yards, placements, and consents
-
 export function createRecipesCommand(): CommandModule {
 	return {
 		run: async ({ args }) => {

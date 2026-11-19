@@ -1,7 +1,3 @@
-/**
- * Durable set of Camp host runtimes enabled on this HOBO_HOME yard.
- * Written by `hobo add runtime-*`; read by broker placement hard-fail.
- */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -31,7 +27,6 @@ export function loadInstalledRuntimes(
 ): InstalledRuntimesState {
 	const path = installedRuntimesPath(hoboHome);
 	if (!existsSync(path)) {
-		// Bootstrap: local only until operator installs more.
 		return {
 			schemaVersion: INSTALLED_RUNTIMES_SCHEMA,
 			runtimes: ["runtime-local"],
@@ -39,7 +34,6 @@ export function loadInstalledRuntimes(
 		};
 	}
 	try {
-		// SAFETY: assertion required at this I/O or test boundary.
 		const raw = JSON.parse(
 			readFileSync(path, "utf8"),
 		) as InstalledRuntimesState;
@@ -51,7 +45,6 @@ export function loadInstalledRuntimes(
 			};
 		}
 		const runtimes = raw.runtimes.filter((id): id is RuntimeInstallId =>
-			// SAFETY: assertion required at this I/O or test boundary.
 			(RUNTIME_INSTALL_IDS as readonly string[]).includes(id),
 		);
 		if (!runtimes.includes("runtime-local")) {
@@ -89,7 +82,6 @@ export function installRuntime(
 	const runtimes = [...new Set([...current.runtimes, id, "runtime-local"])];
 	const next: InstalledRuntimesState = {
 		schemaVersion: INSTALLED_RUNTIMES_SCHEMA,
-		// SAFETY: assertion required at this I/O or test boundary.
 		runtimes: Object.freeze(runtimes as RuntimeInstallId[]),
 		updatedAt: new Date().toISOString(),
 	};
