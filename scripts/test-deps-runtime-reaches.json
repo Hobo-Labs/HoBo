@@ -16,6 +16,11 @@
 			"why": "builds a real component using the WIT package's tools and sources, then loads core's built messaging limits by a computed file URL"
 		},
 		{
+			"from": "packages/extension-alchemy-rivet/test/rivet-topic-live.mjs",
+			"needs": ["@hobo/iac-alchemy#build", "@hobo/runtime-rivet#build"],
+			"why": "runs a spawned fixture that loads the adapter and runtime through computed module paths"
+		},
+		{
 			"from": "packages/control-yard/test/evidence-launch.test.ts",
 			"stubOnly": true,
 			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"
