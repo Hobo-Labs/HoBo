@@ -56,10 +56,7 @@ describe("runTick", () => {
 		await runTick({
 			env: { VERCEL_ENV: "production" },
 			runPass: async () => {
-				throw new CdStoreBindingError(
-					"cd-journal-not-provisioned",
-					"no fleet",
-				);
+				throw new CdStoreBindingError("cd-journal-not-provisioned", "no fleet");
 			},
 			write,
 		});

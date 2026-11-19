@@ -4,7 +4,7 @@ import type { CdHost } from "@hobo/hobo/cd-platform";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { loadCdHost } from "../src/entry.js";
 import {
 	CdStoreBindingError,
 	composeVercelCdHost,
@@ -17,7 +17,6 @@ import {
 	readCdStoreCoordinates,
 	topologyFilesOf,
 } from "../src/index.js";
-import { loadCdHost } from "../src/entry.js";
 
 const servers: Server[] = [];
 afterEach(async () => {

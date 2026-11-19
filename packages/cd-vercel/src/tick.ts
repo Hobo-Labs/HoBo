@@ -26,7 +26,8 @@ export type TickDeps = Readonly<{
 
 export async function runTick(deps: TickDeps = {}): Promise<void> {
 	const env = deps.env ?? process.env;
-	const write = deps.write ?? ((line: string) => void process.stdout.write(line));
+	const write =
+		deps.write ?? ((line: string) => void process.stdout.write(line));
 	const refusal = productionDeploymentRefusal(env);
 	if (refusal !== undefined) {
 		write(
