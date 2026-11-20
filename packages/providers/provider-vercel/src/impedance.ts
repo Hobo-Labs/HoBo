@@ -31,10 +31,10 @@ export function vercelImpedanceFindings(input: {
 	const features = input.features ?? [];
 	if (features.includes("queue")) {
 		findings.push({
-			code: "queue-resolver-unavailable",
-			severity: "block",
+			code: "deployment-owned-queue",
+			severity: "info",
 			message:
-				"Vercel Queues belong to a Git deployment; this provider version has no deployment-component queue resolver",
+				"Vercel Queues are verified as components of the owning Git deployment; an independently provisioned queue is not available",
 		});
 	}
 	return findings;

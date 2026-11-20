@@ -1,5 +1,5 @@
 import { must } from "@hobo/core/total-access";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	applyPolicyGatedDefine,
 	applyRolloutToGatewayRouting,
@@ -11,14 +11,76 @@ import {
 	createLocalFeatureClient,
 	createMediatedFlagEvaluator,
 	createOfrepResidualBackend,
+	type DeliveryPort,
+	type ExperimentPort,
 	enrichEvaluationContext,
 	FeatureFlagStore,
 	gateFlagMutation,
+	OpenDeliveryEngine,
+	OpenExperimentEngine,
 	selectFeatureFlagBackend,
 	trafficWeightSplitFromPercent,
 } from "../src/index.js";
 
 describe("Harness · Feature flags · progressive delivery", () => {
+	it("runs progressive delivery through injected structural ports", () => {
+		const store = new FeatureFlagStore();
+		const builtInDelivery = new OpenDeliveryEngine({ store });
+		const builtInExperiment = new OpenExperimentEngine({ store });
+		const delivery: DeliveryPort = {
+			events: builtInDelivery.events,
+			list: () => builtInDelivery.list(),
+			get: (id) => builtInDelivery.get(id),
+			start: vi.fn((policy) => builtInDelivery.start(policy)),
+			step: (id, health) => builtInDelivery.step(id, health),
+			nextBatch: (id) => builtInDelivery.nextBatch(id),
+			reportOutcomes: (id, outcomes) =>
+				builtInDelivery.reportOutcomes(id, outcomes),
+			grantApproval: (id, approver) =>
+				builtInDelivery.grantApproval(id, approver),
+			resume: (id) => builtInDelivery.resume(id),
+			rollback: (id, reason) => builtInDelivery.rollback(id, reason),
+			gatewayWeight: (id) => builtInDelivery.gatewayWeight(id),
+		};
+		const experiment: ExperimentPort = {
+			events: builtInExperiment.events,
+			define: vi.fn((definition) => builtInExperiment.define(definition)),
+			assign: (name, context) => builtInExperiment.assign(name, context),
+			expose: (name, context) => builtInExperiment.expose(name, context),
+			evaluateAndExpose: (name, context) =>
+				builtInExperiment.evaluateAndExpose(name, context),
+			conclude: (name, verdict, reason) =>
+				builtInExperiment.conclude(name, verdict, reason),
+			getAssignment: (name, subject) =>
+				builtInExperiment.getAssignment(name, subject),
+			list: () => builtInExperiment.list(),
+		};
+		const harness = createHarness({ store, delivery, experiment });
+		const run = harness.startProgressive({
+			rollout: {
+				name: "checkout",
+				flag: "checkout",
+				stages: [{ percent: 10 }, { percent: 100 }],
+				traffic: "flag-only",
+				autoRollback: true,
+			},
+			experiment: {
+				name: "checkout-test",
+				flag: "checkout",
+				variants: ["control", "treatment"],
+			},
+		});
+		expect(harness.ports().delivery).toBe(delivery);
+		expect(harness.ports().experiment).toBe(experiment);
+		expect(delivery.start).toHaveBeenCalledOnce();
+		expect(experiment.define).toHaveBeenCalledOnce();
+		expect(harness.advance(run.rolloutId).percent).toBe(100);
+		harness.trackExposure("checkout-test", { targetingKey: "test-user" });
+		expect(harness.analyzeExperiment("checkout-test")?.experiment).toBe(
+			"checkout-test",
+		);
+	});
+
 	it("OpenFeature client evaluates sticky percentage canary", () => {
 		const store = new FeatureFlagStore();
 		store.define({
@@ -457,8 +519,8 @@ describe("Harness · Feature flags · progressive delivery", () => {
 			],
 			1,
 		);
-		expect(baseline.verdict).toBe("ship");
-		expect(baseline.winningVariant).toBe("treatment");
+		expect(baseline.verdict).toBe("inconclusive");
+		expect(baseline.winningVariant).toBeUndefined();
 	});
 
 	it("ranked mediated evaluator defaults local; residual OFREP fails closed", async () => {

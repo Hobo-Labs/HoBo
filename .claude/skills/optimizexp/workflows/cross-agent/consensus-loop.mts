@@ -4,6 +4,8 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { normalizeCliOptions } from "../../harness/lib/cli-options.mts";
+import { assertSafeOptimizexpWriteScopes } from "../../harness/lib/write-containment.mts";
 import {
 	COUNCIL_PERSONAS,
 	CouncilProtocolError,
@@ -25,6 +27,7 @@ import {
 	type CouncilState,
 	type HardBlocker,
 	type InvestmentTransition,
+	type SupersedingReview,
 	type Vote,
 } from "../../harness/lib/design-council.mts";
 
@@ -65,7 +68,7 @@ const ENTRY_KEYS = [
 	"nextAction", "priorConsensusEntryId", "priorReworkEntryId", "nextCycle", "acceptanceToRerun", "evidenceToRefresh",
 	"implementationWorkItems", "blockerId", "originatingPersona", "resolutionType", "implementationEvidenceRefs", "resolver",
 	"originAcknowledged", "resultingStatus", "reason", "maxTurns", "author",
-	"authorizationRef", "initialState", "baseSha",
+	"authorizationRef", "initialState", "baseSha", "supersededBy",
 ] as const;
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -105,13 +108,16 @@ function readJson(file: string): unknown {
 	catch (error) { throw new CouncilProtocolError("invalid-json", `${file}: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
-export function inspectGitReviewSubject(root: string, baseSha: string, headSha: string, baseRef = "origin/main") {
+type GitInspectionResult = { status: number | null; stdout: string | null; error?: Error };
+type GitInspectionRunner = (...args: string[]) => GitInspectionResult;
+
+export function inspectGitReviewSubject(root: string, baseSha: string, headSha: string, baseRef = "origin/main", runner?: GitInspectionRunner) {
 	const env = { ...process.env };
 	for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX"]) delete env[key];
-	const git = (...args: string[]) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8", env, maxBuffer: 32 * 1024 * 1024 });
+	const git: GitInspectionRunner = runner ?? ((...args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8", env, maxBuffer: 32 * 1024 * 1024 }));
 	const output = (...args: string[]) => {
 		const result = git(...args);
-		return result.status === 0 ? result.stdout.trim() : null;
+		return result.status === 0 && result.error === undefined && result.stdout !== null ? result.stdout.trim() : null;
 	};
 	const marker = path.join(root, ".git");
 	let linkedWorktree = false;
@@ -127,7 +133,7 @@ export function inspectGitReviewSubject(root: string, baseSha: string, headSha: 
 	if (currentBaseSha !== baseSha) return { available: true, problems: ["stale_base"], changedPaths: [], normalizedDiffHash: null };
 	const paths = output("diff", "--name-only", "--diff-filter=ACDMRTUXB", baseSha, headSha, "--");
 	const diff = git("diff", "--no-ext-diff", "--binary", "--full-index", baseSha, headSha, "--");
-	if (paths === null || diff.status !== 0) return { available: true, problems: ["git_unavailable"], changedPaths: [], normalizedDiffHash: null };
+	if (paths === null || diff.status !== 0 || diff.error !== undefined || diff.stdout === null) return { available: true, problems: ["git_unavailable"], changedPaths: [], normalizedDiffHash: null };
 	return {
 		available: true,
 		problems: [],
@@ -153,7 +159,7 @@ function withLock<T>(file: string, action: () => T): T {
 }
 
 function reviewDir(root: string, runId: string, reviewId: string): string {
-	if (!/^[a-zA-Z0-9._-]+$/.test(runId) || !/^[a-zA-Z0-9._-]+$/.test(reviewId)) throw new CouncilProtocolError("unsafe-id", "runId/reviewId may contain only letters, numbers, dot, underscore, and hyphen");
+	if (!/^[a-zA-Z0-9._-]+$/.test(runId) || !/^[a-zA-Z0-9._-]+$/.test(reviewId) || [".", ".."].includes(runId) || [".", ".."].includes(reviewId)) throw new CouncilProtocolError("unsafe-id", "runId/reviewId must be safe path segments using letters, numbers, dot, underscore, and hyphen");
 	return path.join(root, ".optimizexp", "runs", runId, "consensus", reviewId);
 }
 
@@ -254,6 +260,7 @@ function parseExternalEntry(value: unknown): CouncilEntry {
 	const stage = text(item.stage, "entry.stage") as CouncilEntry["stage"];
 	if (COORDINATOR_STAGES.has(stage)) throw new CouncilProtocolError("coordinator-only-stage", `${stage} can only be emitted by consensus-loop`);
 	if (!PERSONA_STAGES.has(stage) && stage !== "blocker-resolution") throw new CouncilProtocolError("stage-enum", `${stage} is not a council stage`);
+	if (item.supersededBy !== undefined) throw new CouncilProtocolError("coordinator-only-field", "supersededBy is only emitted by the coordinator");
 	const subject = object(item.subject, "entry.subject");
 	const subjectUnknown = Object.keys(subject).filter((key) => !["headSha", "proposalDigest"].includes(key));
 	if (subjectUnknown.length) throw new CouncilProtocolError("unknown-field", `entry.subject contains ${subjectUnknown.join(", ")}`);
@@ -592,11 +599,44 @@ function assertCoordinatorEnvelope(entry: CouncilEntry, replayed: CouncilState):
 	if (entry.subject.headSha !== replayed.subject.headSha || entry.subject.proposalDigest !== replayed.subject.proposalDigest) throw new CouncilProtocolError("stale-proposal", `${entry.id} is not bound to the replayed subject`);
 }
 
-function replayCouncilHistory(root: string, state: CouncilState, history: CouncilEntry[]): CouncilState {
+function assertSupersedable(state: CouncilState, history: CouncilEntry[]): void {
+	if (!["open", "discussing", "voting", "approved"].includes(state.status)) throw new CouncilProtocolError("illegal-transition", `${state.status} cannot be superseded`);
+	if (openBlockers(state).length || Object.values(activeVotes(history, state.cycle).votes).includes("nay")) throw new CouncilProtocolError("supersession-blockers", "resolve open blockers and nay votes before superseding");
+}
+
+function parseSupersedingReview(value: unknown): SupersedingReview {
+	const item = object(value, "supersededBy");
+	const keys = ["runId", "reviewId", "cycle", "headSha", "proposalDigest", "openingEntryId"];
+	if (Object.keys(item).some((key) => !keys.includes(key))) throw new CouncilProtocolError("supersession-reference", "replacement contains unknown fields");
+	if (!Number.isInteger(item.cycle) || Number(item.cycle) < 0) throw new CouncilProtocolError("supersession-reference", "replacement cycle must be a non-negative integer");
+	return { runId: text(item.runId, "supersededBy.runId"), reviewId: text(item.reviewId, "supersededBy.reviewId"), cycle: Number(item.cycle), headSha: text(item.headSha, "supersededBy.headSha"), proposalDigest: text(item.proposalDigest, "supersededBy.proposalDigest"), openingEntryId: text(item.openingEntryId, "supersededBy.openingEntryId") };
+}
+
+function verifyReplacementHistory(root: string, old: CouncilState, replacement: SupersedingReview, ancestors: Set<string>): CouncilState {
+	if (old.runId === replacement.runId && old.reviewId === replacement.reviewId) throw new CouncilProtocolError("supersession-reference", "a review cannot supersede itself");
+	const state = loadState(root, replacement.runId, replacement.reviewId);
+	const history = reviewEntries(root, replacement.runId, replacement.reviewId);
+	replayCouncilHistory(root, state, history, ancestors);
+	const opening = history.find((entry) => entry.id === replacement.openingEntryId && entry.stage === "open" && entry.cycle === replacement.cycle);
+	if (!opening) throw new CouncilProtocolError("supersession-reference", "replacement opening entry is missing");
+	const initial = object(opening.initialState, "replacement initialState") as CouncilState;
+	if (old.subject.kind !== "pull-request" || initial.subject.kind !== "pull-request" || old.subject.number !== initial.subject.number) throw new CouncilProtocolError("supersession-subject", "replacement must review the same pull request");
+	if (initial.subject.headSha !== replacement.headSha || initial.subject.proposalDigest !== replacement.proposalDigest || initial.subject.headSha === old.subject.headSha) throw new CouncilProtocolError("supersession-subject", "replacement must bind a different head and its opening proposal");
+	return state;
+}
+
+function replayCouncilHistory(root: string, state: CouncilState, history: CouncilEntry[], ancestors = new Set<string>()): CouncilState {
+	const key = `${state.runId}\0${state.reviewId}`;
+	if (ancestors.has(key)) throw new CouncilProtocolError("supersession-cycle", "review supersession must not contain a cycle");
+	const lineage = new Set(ancestors).add(key);
 	let replayed: CouncilState | null = null;
 	const processed: CouncilEntry[] = [];
+	const entryIds = new Set<string>();
 	for (const entry of history) {
 		assertCommonHistoryEntry(entry);
+		if (entryIds.has(entry.id)) throw new CouncilProtocolError("duplicate-entry-id", `review history repeats ${entry.id}`);
+		entryIds.add(entry.id);
+		if (entry.stage !== "closed" && entry.supersededBy !== undefined) throw new CouncilProtocolError("coordinator-only-field", `${entry.id} has an unexpected replacement`);
 		if (entry.stage === "open") {
 			const previousCycle = replayed;
 			if (entry.author !== "coordinator" || entry.persona !== undefined || entry.turn !== 0) throw new CouncilProtocolError("history-replay-open", `${entry.id} is not a legal coordinator opening`);
@@ -683,6 +723,7 @@ function replayCouncilHistory(root: string, state: CouncilState, history: Counci
 			}
 		} else if (entry.stage === "closed") {
 			const result = entry.result;
+			if (result !== "superseded" && entry.supersededBy !== undefined) throw new CouncilProtocolError("supersession-reference", `${entry.id} has an unexpected replacement`);
 			const maxTurnBlock = result === "blocked" && current.maxTurns !== null && entry.id.includes("max-turns-blocked") && current.turn >= current.maxTurns;
 			if (maxTurnBlock) {
 				next.status = "blocked";
@@ -690,7 +731,13 @@ function replayCouncilHistory(root: string, state: CouncilState, history: Counci
 			} else {
 				if (result === "yay" && current.status !== "approved") throw new CouncilProtocolError("illegal-transition", `${current.status} cannot close yay`);
 				if (result === "blocked" && current.status !== "blocked") throw new CouncilProtocolError("illegal-transition", `${current.status} cannot close blocked`);
-				if (!["yay", "blocked", "user", "safety"].includes(String(result))) throw new CouncilProtocolError("close-result", `${entry.id} has invalid close result`);
+				if (!["yay", "blocked", "user", "safety", "superseded"].includes(String(result))) throw new CouncilProtocolError("close-result", `${entry.id} has invalid close result`);
+				if (result === "superseded") {
+					assertSupersedable(current, processed);
+					const replacement = parseSupersedingReview(entry.supersededBy);
+					verifyReplacementHistory(root, current, replacement, lineage);
+					next.supersededBy = replacement;
+				}
 				next.status = "closed";
 				next.closedResult = result as CouncilState["closedResult"];
 				next.closedAt = entry.createdAt;
@@ -841,16 +888,43 @@ function modeBlock(args: Record<string, string>, root: string): Json {
 	});
 }
 
+function resolvedCommit(root: string, revision: string): string {
+	const env = { ...process.env };
+	for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX"]) delete env[key];
+	const result = spawnSync("git", ["-C", root, "rev-parse", "--verify", `${revision}^{commit}`], { encoding: "utf8", env });
+	const commit = result.stdout?.trim();
+	if (result.error !== undefined || result.status !== 0 || !commit || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(commit)) throw new CouncilProtocolError("supersession-git", "both reviewed commits must resolve locally");
+	return commit;
+}
+
+function currentReplacement(root: string, old: CouncilState, runId: string, reviewId: string, baseRef: string): SupersedingReview {
+	const replacement = loadState(root, runId, reviewId);
+	const history = reviewEntries(root, runId, reviewId);
+	replayCouncilHistory(root, replacement, history);
+	if (!["open", "discussing", "voting", "approved"].includes(replacement.status) && !(replacement.status === "closed" && replacement.closedResult === "yay")) throw new CouncilProtocolError("supersession-replacement", "replacement review is not active or approved");
+	if (openBlockers(replacement).length || Object.values(activeVotes(history, replacement.cycle).votes).includes("nay")) throw new CouncilProtocolError("supersession-replacement", "replacement has an unresolved blocker or nay vote");
+	const opening = history.find((entry) => entry.stage === "open" && entry.cycle === replacement.cycle);
+	if (!opening) throw new CouncilProtocolError("supersession-reference", "replacement opening entry is missing");
+	const reference: SupersedingReview = { runId, reviewId, cycle: replacement.cycle, headSha: replacement.subject.headSha, proposalDigest: replacement.subject.proposalDigest, openingEntryId: opening.id };
+	verifyReplacementHistory(root, old, reference, new Set([`${old.runId}\0${old.reviewId}`]));
+	const git = inspectGitReviewSubject(root, replacement.subject.baseSha, replacement.subject.headSha, baseRef);
+	if (!git.available || git.problems.length) throw new CouncilProtocolError("supersession-git", `replacement is not the current Git subject: ${git.problems.join(", ")}`);
+	if (canonicalJson(git.changedPaths) !== canonicalJson(replacement.subject.changedPaths) || git.normalizedDiffHash !== replacement.subject.normalizedDiffHash) throw new CouncilProtocolError("supersession-git", "replacement proposal does not match the current Git diff");
+	if (resolvedCommit(root, old.subject.headSha) === resolvedCommit(root, replacement.subject.headSha)) throw new CouncilProtocolError("supersession-subject", "replacement must identify a different commit");
+	return reference;
+}
+
 function modeClose(args: Record<string, string>, root: string): Json {
 	const runId = required(args.run, "run");
 	const reviewId = required(args.review, "review");
 	const closeResult = required(args.result, "result");
-	if (!["approved", "blocked", "user", "safety"].includes(closeResult)) throw new CouncilProtocolError("close-result", "--result must be approved, blocked, user, or safety");
-	return withLock(path.join(reviewDir(root, runId, reviewId), ".lock"), () => {
+	if (!["approved", "blocked", "user", "safety", "superseded"].includes(closeResult)) throw new CouncilProtocolError("close-result", "--result must be approved, blocked, user, safety, or superseded");
+	const close = () => {
 		let state = loadState(root, runId, reviewId);
-		replayCouncilHistory(root, state, reviewEntries(root, runId, reviewId));
+		const history = reviewEntries(root, runId, reviewId);
+		replayCouncilHistory(root, state, history);
 		if (state.status === "closed") throw new CouncilProtocolError("illegal-transition", "review is already closed");
-		let storedResult: "yay" | "blocked" | "user" | "safety";
+		let storedResult: "yay" | "blocked" | "user" | "safety" | "superseded";
 		let assertion: Json | null = null;
 		if (closeResult === "approved") {
 			assertion = modeAssertYay(args, root);
@@ -859,6 +933,10 @@ function modeClose(args: Record<string, string>, root: string): Json {
 		} else if (closeResult === "blocked") {
 			if (state.status !== "blocked") throw new CouncilProtocolError("illegal-transition", `${state.status} cannot close as blocked`);
 			storedResult = "blocked";
+		} else if (closeResult === "superseded") {
+			assertSupersedable(state, history);
+			state.supersededBy = currentReplacement(root, state, required(args.replacementRun, "replacement-run"), required(args.replacementReview, "replacement-review"), args.baseRef ?? "origin/main");
+			storedResult = "superseded";
 		} else {
 			storedResult = closeResult as "user" | "safety";
 		}
@@ -872,13 +950,19 @@ function modeClose(args: Record<string, string>, root: string): Json {
 			kind: "council", schemaVersion: 1, id: `${reviewId}-cycle-${state.cycle}-closed-${storedResult}`, runId, reviewId,
 			cycle: state.cycle, turn: state.turn, stage: "closed", subject: { headSha: state.subject.headSha, proposalDigest: state.subject.proposalDigest },
 			createdAt: now, result: storedResult, reason: args.reason ?? (storedResult === "yay" ? "approved-current-head-yay" : storedResult),
-			openHardBlockers: openBlockers(state), author: "coordinator",
+			openHardBlockers: openBlockers(state), ...(state.supersededBy ? { supersededBy: state.supersededBy } : undefined), author: "coordinator",
 		};
 		entry.stateDigest = stateDigest(state);
 		appendBus(root, entry);
 		atomicWrite(statePath(root, runId, reviewId), state);
 		return { ok: true, result: storedResult, assertion, entry, state };
-	});
+	};
+	const lock = path.join(reviewDir(root, runId, reviewId), ".lock");
+	if (closeResult !== "superseded") return withLock(lock, close);
+	const replacementLock = path.join(reviewDir(root, required(args.replacementRun, "replacement-run"), required(args.replacementReview, "replacement-review")), ".lock");
+	if (lock === replacementLock) throw new CouncilProtocolError("supersession-reference", "a review cannot supersede itself");
+	const [first, second] = [lock, replacementLock].sort();
+	return withLock(first!, () => withLock(second!, close));
 }
 
 function listStateFiles(root: string): string[] {
@@ -1014,7 +1098,7 @@ function help(): Json {
 			"--mode validate [--run ID --review ID]",
 			"--mode assert-yay --run ID --review ID --base-sha SHA --head-sha SHA --proposal FILE [--proposal-digest SHA256] [--base-ref REF]",
 			"--mode block --run ID --review ID --reason TEXT",
-			"--mode close --run ID --review ID --result approved|blocked|user|safety [--base-sha SHA --head-sha SHA --proposal FILE] [--reason TEXT]",
+			"--mode close --run ID --review ID --result approved|blocked|user|safety|superseded [--base-sha SHA --head-sha SHA --proposal FILE] [--replacement-run ID --replacement-review ID --base-ref REF] [--reason TEXT]",
 			"--mode relevance --input FILE",
 		],
 		note: "Synthetic investment is an auditable orchestration variable, not emotion or sentience. Maximum-turn protection must terminate blocked, never approved.",
@@ -1023,8 +1107,16 @@ function help(): Json {
 
 export function runConsensusCommand(argv: string[]): { exitCode: number; output: Json } {
 	try {
-		const args = parseArgs(argv);
+		const input = normalizeCliOptions(argv, {
+			values: ["--mode", "--root", "--run", "--review", "--base-sha", "--head-sha", "--base-ref", "--proposal", "--proposal-digest", "--entry", "--input", "--max-turns", "--persona", "--reason", "--result", "--replacement-run", "--replacement-review"],
+			flags: ["--help", "-h"],
+		});
+		if (input.error || input.positionals.length) throw new CouncilProtocolError("cli-argument", input.error ?? `unexpected argument ${input.positionals[0]}`);
+		const args = parseArgs(input.argv);
 		const root = repoRoot(args.root);
+		if (["init", "append", "decide", "block", "close"].includes(args.mode ?? "")) {
+			assertSafeOptimizexpWriteScopes(root, [""]);
+		}
 		let output: Json;
 		switch (args.mode) {
 			case "help": output = help(); break;

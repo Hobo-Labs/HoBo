@@ -150,3 +150,73 @@ it("counts completed usage when the observation time is unknown", () => {
 		expect(shouldCountLocalUsage(lease, observedAt)).toBe(true);
 	}
 });
+
+it("refuses duplicate account reports that can overstate free allocation", () => {
+	fc.assert(
+		fc.property(
+			fc.integer({ min: 1, max: 100 }),
+			fc.integer({ min: 1, max: 100 }),
+			(credit, price) => {
+				const offer = (id: string, freeMinutes: number) =>
+					create(OfferSchema, {
+						id,
+						provider: "blacksmith",
+						providerAccountId: "provider-account",
+						enabled: true,
+						bridgeAcknowledged: true,
+						freeMinutes,
+						priceMicrosPerMinute: price,
+						concurrency: 2,
+						observedAt: "2026-10-26T00:00:00.000Z",
+						validUntil: "2026-11-01T00:00:00.000Z",
+					});
+				const account = create(AccountSchema, {
+					id: "account",
+					maxRuntimeMinutes: 1,
+					offers: [offer("reported-free", credit), offer("no-free", 0)],
+				});
+				expect(route(account, [], NOW)).toBeUndefined();
+				account.offers.reverse();
+				expect(route(account, [], NOW)).toBeUndefined();
+				account.budgetMicros = price;
+				account.offers.push(
+					create(OfferSchema, {
+						id: "other-provider",
+						provider: "github",
+						providerAccountId: "other-account",
+						enabled: true,
+						bridgeAcknowledged: true,
+						priceMicrosPerMinute: price,
+						budgetMicros: price,
+						concurrency: 2,
+						observedAt: "2026-10-26T00:00:00.000Z",
+						validUntil: "2026-11-01T00:00:00.000Z",
+					}),
+				);
+				expect(route(account, [], NOW)?.offer.id).toBe("other-provider");
+			},
+		),
+		{ seed: 614452, numRuns: 100 },
+	);
+});
+
+it("counts repeated references as duplicate account reports", () => {
+	const shared = create(OfferSchema, {
+		id: "same",
+		provider: "blacksmith",
+		providerAccountId: "provider-account",
+		enabled: true,
+		bridgeAcknowledged: true,
+		freeMinutes: 1,
+		priceMicrosPerMinute: 1,
+		concurrency: 2,
+		observedAt: "2026-10-26T00:00:00.000Z",
+		validUntil: "2026-11-01T00:00:00.000Z",
+	});
+	const account = create(AccountSchema, {
+		id: "account",
+		maxRuntimeMinutes: 1,
+	});
+	account.offers.push(shared, shared);
+	expect(route(account, [], NOW)).toBeUndefined();
+});
