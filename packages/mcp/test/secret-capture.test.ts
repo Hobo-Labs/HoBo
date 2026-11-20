@@ -508,9 +508,7 @@ describe("refusals before anything is opened", () => {
 			code: "SECRET_STORE_NOT_CONNECTED",
 			name: "HOBO_CI_WEBHOOK_SECRET",
 		});
-		expect(JSON.stringify(answer.structuredContent)).toContain(
-			"OIDC Auth",
-		);
+		expect(JSON.stringify(answer.structuredContent)).toContain("OIDC Auth");
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureRefused",
 		]);
