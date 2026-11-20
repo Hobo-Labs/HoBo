@@ -8,6 +8,18 @@
 
 import { createHash } from "node:crypto";
 import { isJsonObject, isJsonString } from "./json.js";
+import {
+	addAvailable,
+	addUpper,
+	availableCredits,
+	chargeWithinBudget,
+	costForUnits,
+	exposureWithinBudget,
+	moneySumExceeds,
+	remainingMoney,
+	subtractAvailable,
+	subtractUpper,
+} from "./money.js";
 
 // public-contract: consumers pin the dispatcher wire schema by this id.
 export const DISPATCHER_SCHEMA_VERSION = "hobo.dispatcher/v1";
@@ -312,21 +324,21 @@ export function createReservationLedger(initialLedgerView) {
 		);
 		if (account) {
 			restoreReservedFreeHeadroom(account, reservation.consumption);
-			account.reservedCost = roundCost(
-				Math.max(
-					0,
-					(account.reservedCost ?? 0) - (reservation.reservedCost ?? 0),
-				),
+			account.reservedCost = subtractUpper(
+				account.reservedCost ?? 0,
+				reservation.reservedCost ?? 0,
 			);
 			if (account.rateHeadroom !== undefined)
-				account.rateHeadroom = roundQuantity(
-					account.rateHeadroom + (reservation.consumption?.rateUnits ?? 0),
+				account.rateHeadroom = addAvailable(
+					account.rateHeadroom,
+					reservation.consumption?.rateUnits ?? 0,
 				);
 			if (account.concurrencyHeadroom !== undefined)
 				account.concurrencyHeadroom +=
 					reservation.consumption?.concurrencySlots ?? 0;
-			account.reservedUnits = roundQuantity(
-				Math.max(0, (account.reservedUnits ?? 0) - reservation.units),
+			account.reservedUnits = subtractUpper(
+				account.reservedUnits ?? 0,
+				reservation.units,
 			);
 		}
 		const committedSeq = next.seq + 1;
@@ -495,6 +507,7 @@ export function createReservationLedger(initialLedgerView) {
 				units,
 				incumbentProviderId: undefined,
 				chargeSwitching: true,
+				unitCostOverride: unitCost,
 			});
 			if (!priced.eligible)
 				return {
@@ -507,7 +520,57 @@ export function createReservationLedger(initialLedgerView) {
 					ledgerView: clone(current),
 				};
 			const reservedCost = Math.max(priced.totalCost, estimatedCost);
-			if (account && reservedCost > budgetHeadroomFor(account))
+			if (!Number.isFinite(reservedCost))
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "reservation-overflow",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
+			const totalHeld = account
+				? addUpper(account.reservedCost ?? 0, reservedCost)
+				: 0;
+			const totalUnits = account
+				? addUpper(account.reservedUnits ?? 0, units)
+				: 0;
+			if (
+				account &&
+				(!Number.isFinite(totalHeld) || !Number.isFinite(totalUnits))
+			)
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "reservation-overflow",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
+			if (
+				account &&
+				account.budgetCap !== undefined &&
+				reservedCost > 0 &&
+				(!optionalNonNegativeNumber(account.budgetCap) ||
+					!optionalNonNegativeNumber(account.spendToDate ?? 0) ||
+					!optionalNonNegativeNumber(account.reservedCost ?? 0) ||
+					!exposureWithinBudget(
+						units,
+						priced.freeUnits,
+						unitCost,
+						switchingCost,
+						estimatedCost,
+						account.budgetCap,
+						account.spendToDate ?? 0,
+						account.reservedCost ?? 0,
+					) ||
+					moneySumExceeds(
+						[account.spendToDate ?? 0, account.reservedCost ?? 0],
+						account.budgetCap,
+					))
+			)
 				return {
 					ok: false as const,
 					status: "ineligible",
@@ -525,19 +588,15 @@ export function createReservationLedger(initialLedgerView) {
 					current.asOf,
 				);
 				if (account.rateHeadroom !== undefined) {
-					account.rateHeadroom = roundQuantity(account.rateHeadroom - units);
+					account.rateHeadroom = subtractAvailable(account.rateHeadroom, units);
 					consumption.rateUnits = units;
 				}
 				if (account.concurrencyHeadroom !== undefined) {
 					account.concurrencyHeadroom -= 1;
 					consumption.concurrencySlots = 1;
 				}
-				account.reservedCost = roundCost(
-					(account.reservedCost ?? 0) + reservedCost,
-				);
-				account.reservedUnits = roundQuantity(
-					(account.reservedUnits ?? 0) + units,
-				);
+				account.reservedCost = totalHeld;
+				account.reservedUnits = totalUnits;
 			}
 			const committedSeq = next.seq + 1;
 			const reservation: DispatchReservation = {
@@ -712,17 +771,22 @@ export function createReservationLedger(initialLedgerView) {
 				reservation.dimension,
 			);
 			if (account) {
-				account.reservedCost = roundCost(
-					Math.max(
-						0,
-						(account.reservedCost ?? 0) - (reservation.reservedCost ?? 0),
-					),
+				const totalSpent = addUpper(account.spendToDate ?? 0, actualCost);
+				if (!Number.isFinite(totalSpent))
+					return {
+						ok: false as const,
+						status: "settlement-overflow",
+						reservationId,
+						ledgerView: clone(current),
+					};
+				account.reservedCost = subtractUpper(
+					account.reservedCost ?? 0,
+					reservation.reservedCost ?? 0,
 				);
-				account.spendToDate = roundCost(
-					(account.spendToDate ?? 0) + actualCost,
-				);
-				account.reservedUnits = roundQuantity(
-					Math.max(0, (account.reservedUnits ?? 0) - reservation.units),
+				account.spendToDate = totalSpent;
+				account.reservedUnits = subtractUpper(
+					account.reservedUnits ?? 0,
+					reservation.units,
 				);
 				if (account.concurrencyHeadroom !== undefined)
 					account.concurrencyHeadroom +=
@@ -759,8 +823,11 @@ export function createReservationLedger(initialLedgerView) {
 				reservation: clone(reservation),
 				budgetExceeded:
 					account?.budgetCap !== undefined &&
-					(account.spendToDate ?? 0) + (account.reservedCost ?? 0) >
+					optionalNonNegativeNumber(account.budgetCap) &&
+					moneySumExceeds(
+						[account.spendToDate ?? 0, account.reservedCost ?? 0],
 						account.budgetCap,
+					),
 				ledgerView: clone(current),
 			};
 		},
@@ -930,6 +997,11 @@ export function decideAndReserveDispatch(request) {
 		const dimension =
 			selectedRecord?.dimension ??
 			CATEGORY_DIMENSIONS[decision.dispatchEvent.data.category];
+		const accountPrice = findLedgerAccount(
+			ledgerView,
+			decision.selectedProvider,
+			dimension,
+		)?.listUnitCost;
 		const reservation = reservationLedger.reserve({
 			providerId: decision.selectedProvider,
 			dimension,
@@ -937,7 +1009,9 @@ export function decideAndReserveDispatch(request) {
 			expectedSeq: ledgerView.seq,
 			reservationId: decision.dispatchEvent.data.ledgerInput.reservationId,
 			expiresAt: request.reservationExpiresAt,
-			unitCost: selectedRecord?.listUnitCost,
+			unitCost: optionalNonNegativeNumber(accountPrice)
+				? accountPrice
+				: selectedRecord?.listUnitCost,
 			switchingCost: selectedCost?.switchingCost ?? 0,
 			estimatedCost: request.estimatedCost,
 			dispatchRequestHash: requestHash,
@@ -1223,6 +1297,7 @@ function rankCreditCandidate({
 	units,
 	incumbentProviderId,
 	chargeSwitching = false,
+	unitCostOverride = undefined,
 }) {
 	const account = findLedgerAccount(
 		ledgerView,
@@ -1230,7 +1305,7 @@ function rankCreditCandidate({
 		candidate.dimension,
 	);
 	const credit = creditFactsFor(account, candidate, ledgerView.asOf);
-	const listUnitCost = credit.listUnitCost;
+	const listUnitCost = unitCostOverride ?? credit.listUnitCost;
 	const freeUnits = credit.valid
 		? Math.min(
 				units,
@@ -1239,15 +1314,29 @@ function rankCreditCandidate({
 				credit.concurrencyHeadroom > 0 ? LARGE_SCORE : 0,
 			)
 		: 0;
-	const paidUnits = Math.max(0, units - freeUnits);
+	const paidUnits = subtractUpper(units, freeUnits);
 	const switchingCost =
 		chargeSwitching ||
 		(incumbentProviderId && candidate.providerId !== incumbentProviderId)
 			? nonNegativeNumber(candidate.switchingCost, "candidate.switchingCost", 0)
 			: 0;
-	const baseCost = roundCost(paidUnits * listUnitCost);
-	const totalCost = roundCost(baseCost + switchingCost);
-	const budgetExceeded = totalCost > credit.budgetHeadroom;
+	const baseCost = costForUnits(units, freeUnits, listUnitCost, 0);
+	const totalCost = costForUnits(units, freeUnits, listUnitCost, switchingCost);
+	const budgetExceeded =
+		account?.budgetCap !== undefined &&
+		optionalNonNegativeNumber(account.budgetCap) &&
+		optionalNonNegativeNumber(account.spendToDate ?? 0) &&
+		optionalNonNegativeNumber(account.reservedCost ?? 0)
+			? !chargeWithinBudget(
+					units,
+					freeUnits,
+					listUnitCost,
+					switchingCost,
+					account.budgetCap,
+					account.spendToDate ?? 0,
+					account.reservedCost ?? 0,
+				)
+			: totalCost > credit.budgetHeadroom;
 	const hardBudgetInvalid =
 		account?.budgetCap !== undefined &&
 		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
@@ -1287,6 +1376,7 @@ function rankCreditCandidate({
 		paidUnits,
 		switchingCost,
 		freeButNotDepletable,
+		budgetExceeded,
 	});
 
 	return {
@@ -1295,8 +1385,8 @@ function rankCreditCandidate({
 		baseCost,
 		listUnitCost,
 		effectiveMarginalCost,
-		freeUnits: roundQuantity(freeUnits),
-		paidUnits: roundQuantity(paidUnits),
+		freeUnits,
+		paidUnits,
 		switchingCost,
 		budgetExceeded,
 		eligible,
@@ -1307,7 +1397,7 @@ function rankCreditCandidate({
 		rationale,
 		decisionVector: [
 			eligible ? 0 : 1,
-			effectiveMarginalCost,
+			totalCost,
 			expiryScore,
 			-concurrencyScore,
 			listUnitCost,
@@ -1315,7 +1405,7 @@ function rankCreditCandidate({
 		],
 		rankVector: [
 			eligible ? 0 : 1,
-			effectiveMarginalCost,
+			totalCost,
 			expiryScore,
 			-concurrencyScore,
 			listUnitCost,
@@ -1408,19 +1498,15 @@ function freeHeadroomFor(account: CreditAccount, asOf?: string) {
 		return Number.NaN;
 	if (!Array.isArray(account.credits) || account.credits.length === 0)
 		return account.freeHeadroom ?? 0;
-	let allGrants = 0;
-	let liveGrants = 0;
+	const allGrants: number[] = [];
+	const liveGrants: number[] = [];
 	for (const credit of account.credits) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) return Number.NaN;
-		allGrants += credit.freeHeadroom;
-		if (grantIsLive(credit, asOf)) liveGrants += credit.freeHeadroom;
+		allGrants.push(credit.freeHeadroom);
+		if (grantIsLive(credit, asOf)) liveGrants.push(credit.freeHeadroom);
 	}
 	// Account headroom is an aggregate cap; grants describe its composition.
-	if (account.freeHeadroom === undefined) return liveGrants;
-	return Math.min(
-		account.freeHeadroom,
-		liveGrants + Math.max(0, account.freeHeadroom - allGrants),
-	);
+	return availableCredits(account.freeHeadroom, allGrants, liveGrants);
 }
 
 function grantIsLive(credit: CreditGrant, asOf?: string): boolean {
@@ -1472,7 +1558,7 @@ function budgetHeadroomFor(account: CreditAccount) {
 	}
 	const reservedCost = account.reservedCost ?? 0;
 	if (!optionalNonNegativeNumber(reservedCost)) return Number.NaN;
-	return Math.max(0, budgetCap - spendToDate - reservedCost);
+	return remainingMoney(budgetCap, spendToDate, reservedCost);
 }
 
 function compareRankedCandidates(left, right) {
@@ -1550,23 +1636,20 @@ function rationaleFor({
 	paidUnits,
 	switchingCost,
 	freeButNotDepletable,
+	budgetExceeded,
 }) {
 	const parts = [
 		"objective=maximize-credits",
 		`ledgerSeq=${ledgerView.seq}`,
 		`credit-facts=${credit.status}`,
-		`freeUnits=${roundQuantity(freeUnits)}`,
-		`paidUnits=${roundQuantity(paidUnits)}`,
+		`freeUnits=${freeUnits}`,
+		`paidUnits=${paidUnits}`,
 		`switchingCost=${switchingCost}`,
 	];
 	if (freeButNotDepletable) {
 		parts.push("free-tier-not-depletable");
 	}
-	if (
-		credit.budgetHeadroom < LARGE_SCORE &&
-		paidUnits > 0 &&
-		paidUnits * credit.listUnitCost + switchingCost > credit.budgetHeadroom
-	) {
+	if (credit.budgetHeadroom < LARGE_SCORE && paidUnits > 0 && budgetExceeded) {
 		parts.push("budget-cap-exceeded");
 	}
 	return parts.join("; ");
@@ -1755,11 +1838,14 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			throw new TypeError(
 				"hard budget requires priced outstanding reservations",
 			);
-		const heldCost = holds.reduce(
-			(total, hold) => total + (hold.reservedCost ?? 0),
-			0,
-		);
-		if (holds.length > 0 && roundCost(heldCost) > (account.reservedCost ?? 0))
+		if (
+			holds.length > 0 &&
+			optionalNonNegativeNumber(account.reservedCost ?? 0) &&
+			moneySumExceeds(
+				holds.map((hold) => hold.reservedCost ?? 0),
+				account.reservedCost ?? 0,
+			)
+		)
 			throw new TypeError(
 				"account reservedCost omits outstanding reservation exposure",
 			);
@@ -1866,7 +1952,7 @@ function consumeReservedFreeHeadroom(
 	};
 	if (optionalNonNegativeNumber(account.freeHeadroom)) {
 		consumption.freeHeadroom = units;
-		account.freeHeadroom = roundQuantity(account.freeHeadroom - units);
+		account.freeHeadroom = subtractAvailable(account.freeHeadroom, units);
 	}
 	if (!Array.isArray(account.credits) || remaining <= 0) return consumption;
 	const ordered = [...account.credits]
@@ -1880,14 +1966,14 @@ function consumeReservedFreeHeadroom(
 	for (const credit of ordered) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) continue;
 		const consumed = Math.min(credit.freeHeadroom, remaining);
-		credit.freeHeadroom = roundQuantity(credit.freeHeadroom - consumed);
+		credit.freeHeadroom = subtractAvailable(credit.freeHeadroom, consumed);
 		if (consumed > 0) {
 			consumption.credits.push({
 				creditId: credit.creditId,
-				units: roundQuantity(consumed),
+				units: consumed,
 			});
 		}
-		remaining = roundQuantity(remaining - consumed);
+		remaining = subtractUpper(remaining, consumed);
 		if (remaining <= 0) return consumption;
 	}
 	return consumption;
@@ -1899,8 +1985,9 @@ function restoreReservedFreeHeadroom(
 ) {
 	if (!consumption || !isJsonObject(consumption)) return;
 	if (optionalNonNegativeNumber(account.freeHeadroom)) {
-		account.freeHeadroom = roundQuantity(
-			account.freeHeadroom + (consumption.freeHeadroom ?? 0),
+		account.freeHeadroom = addAvailable(
+			account.freeHeadroom,
+			consumption.freeHeadroom ?? 0,
 		);
 	}
 	if (!Array.isArray(account.credits) || !Array.isArray(consumption.credits))
@@ -1910,8 +1997,9 @@ function restoreReservedFreeHeadroom(
 			(candidate) => candidate?.creditId === restoredCredit.creditId,
 		);
 		if (credit && optionalNonNegativeNumber(credit.freeHeadroom)) {
-			credit.freeHeadroom = roundQuantity(
-				credit.freeHeadroom + restoredCredit.units,
+			credit.freeHeadroom = addAvailable(
+				credit.freeHeadroom,
+				restoredCredit.units,
 			);
 		}
 	}
@@ -2037,10 +2125,6 @@ function assertObject(value, fieldName: string) {
 
 function roundCost(value: number): number {
 	return Number(value.toFixed(12));
-}
-
-function roundQuantity(value: number): number {
-	return Number(value.toFixed(9));
 }
 
 function clone<T>(value: T): T {
