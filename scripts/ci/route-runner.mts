@@ -1139,6 +1139,15 @@ export async function main(
 			env,
 		);
 	}
+	if (
+		event === "merge_group" &&
+		workflowFile(env) === "hobo-ci.yml" &&
+		mode === "auto" &&
+		!settings.committed
+	)
+		throw new Error(
+			"merge-group Fabric routing requires a valid committed policy",
+		);
 	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
 	if (
 		event === "pull_request" &&

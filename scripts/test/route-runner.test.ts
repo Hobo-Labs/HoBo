@@ -1518,6 +1518,17 @@ describe("the script reading the slip", () => {
 		});
 	});
 
+	it("refuses merge-group Fabric auto routing without committed policy", async () => {
+		await assert.rejects(
+			() =>
+				main([], mergeGroupCi, {
+					...NO_SLIP_CALL,
+					routingConfig: "{}",
+				}),
+			/merge-group Fabric routing requires a valid committed policy/u,
+		);
+	});
+
 	it("keeps an open fleet slip only when its exact label is taking jobs", async () => {
 		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
 			const { decision } = await route(apiUrl, OPEN_SLIP);

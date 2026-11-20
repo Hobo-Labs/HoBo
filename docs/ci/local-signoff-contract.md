@@ -41,8 +41,9 @@ to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
 
 Automatically routed `merge_group` batches in `hobo-ci.yml` use the normal slip
-and queue decision with the `hobo-trunk` label. A recent timely trunk pickup
-keeps the batch on the fleet; a refusing label or no recent pickup selects the
+and queue decision with the `hobo-trunk` label. Admission is queue-observed
+trunk pickup, not a Broker PR-batch claim. A recent timely trunk pickup keeps
+the batch on the fleet; a refusing label or no recent pickup selects the
 configured GitHub-hosted fallback. For automatically routed `merge_group`
 batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
 verifying the public repository and committed routing policy. It does not
