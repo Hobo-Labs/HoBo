@@ -303,7 +303,11 @@ export function createGeneratedRuntime(options: GeneratedRuntimeOptions) {
       const parsedInput = jsonValue(input);
       const journal = await workflowStore.readStream("run/" + workflowRunId);
       const started = journal.find(event => event.type === "run.Started");
-      if (started && canonicalJson(jsonValue(objectValue(started.data).args)) !== canonicalJson(parsedInput)) throw new Error("Workflow runId is already bound to different input");
+      if (started) {
+        const startedData = objectValue(started.data);
+        const journaledInput: GeneratedJson = Object.hasOwn(startedData, "args") ? jsonValue(startedData.args) : null;
+        if (canonicalJson(journaledInput) !== canonicalJson(parsedInput)) throw new Error("Workflow runId is already bound to different input");
+      }
       const result = started
         ? await workflowEngine.resume(definition, workflowRunId, parsedInput)
         : await workflowEngine.start(definition, parsedInput, { runId: workflowRunId });
