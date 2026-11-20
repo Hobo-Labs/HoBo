@@ -3,7 +3,6 @@ import { CLOUD_EVENTS } from "../events.js";
 import { isJsonObject, isJsonString } from "../json.js";
 import { collectStream } from "../store/index.js";
 
-/** A deployment stream cannot mix tenants or facts for different deployments. */
 export class DeploymentHistoryScopeError extends Error {
 	readonly code = "DEPLOYMENT_HISTORY_SCOPE_MISMATCH";
 	constructor() {
@@ -57,7 +56,6 @@ export function assertDeploymentHistoryScope(
 	}
 }
 
-/** Read and validate ownership before using any fact for a deployment decision. */
 export async function readDeploymentHistory(
 	store: Pick<EventStore, "read">,
 	deploymentId: string,

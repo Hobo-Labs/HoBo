@@ -2,6 +2,9 @@ import { types } from "node:util";
 import { AlchemyIacError, digestData } from "./plan.js";
 import type { IacProgram } from "./port.js";
 
+const hasOwnDescriptor = Object.hasOwn;
+const isProxy = types.isProxy;
+
 type JsonData =
 	| null
 	| boolean
@@ -34,13 +37,13 @@ function record(input: unknown): Record<string, unknown> | undefined {
 	if (
 		typeof input !== "object" ||
 		input === null ||
-		types.isProxy(input) ||
+		isProxy(input) ||
 		Array.isArray(input)
 	)
 		return undefined;
 	const prototype = Object.getPrototypeOf(input);
 	if (prototype !== Object.prototype && prototype !== null) return undefined;
-	// SAFETY: the runtime checks establish an ordinary object with string-keyed data read via descriptors.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the runtime checks establish an ordinary object with string-keyed data read via descriptors.
 	return input as Record<string, unknown>;
 }
 
@@ -73,7 +76,7 @@ function snapshot(
 		if (!Number.isFinite(value)) throw new Error("invalid number");
 		return value;
 	}
-	if (typeof value !== "object" || types.isProxy(value) || ancestors.has(value))
+	if (typeof value !== "object" || isProxy(value) || ancestors.has(value))
 		throw new Error("invalid declaration value");
 	ancestors.add(value);
 	try {
@@ -83,7 +86,7 @@ function snapshot(
 			const length = Object.getOwnPropertyDescriptor(value, "length");
 			if (
 				length === undefined ||
-				!("value" in length) ||
+				!hasOwnDescriptor(length, "value") ||
 				!Number.isSafeInteger(length.value) ||
 				length.value < 0 ||
 				length.value > 1024
@@ -97,7 +100,7 @@ function snapshot(
 				const element = Object.getOwnPropertyDescriptor(value, String(index));
 				if (
 					element === undefined ||
-					!("value" in element) ||
+					!hasOwnDescriptor(element, "value") ||
 					!element.enumerable
 				)
 					throw new Error("invalid array item");
@@ -122,7 +125,7 @@ function snapshot(
 			const property = Object.getOwnPropertyDescriptor(source, key);
 			if (
 				property === undefined ||
-				!("value" in property) ||
+				!hasOwnDescriptor(property, "value") ||
 				!property.enumerable
 			)
 				throw new Error("invalid property");
@@ -134,7 +137,6 @@ function snapshot(
 	}
 }
 
-/** Capture a bounded immutable program and an unambiguous declaration digest. */
 export function captureAlchemyProgram(
 	input: IacProgram,
 ): CapturedAlchemyProgram {
@@ -152,7 +154,7 @@ export function captureAlchemyProgram(
 			const property = Object.getOwnPropertyDescriptor(source, key);
 			if (
 				property === undefined ||
-				!("value" in property) ||
+				!hasOwnDescriptor(property, "value") ||
 				!property.enumerable
 			)
 				throw new Error("computed or hidden program field");
