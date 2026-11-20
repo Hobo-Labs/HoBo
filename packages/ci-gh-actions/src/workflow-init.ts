@@ -266,9 +266,7 @@ function effectiveValueUnder(
 function stringOf(node: Node | undefined): string | undefined {
 	if (!isScalar(node)) return undefined;
 	if (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL") {
-		return node.source?.trim().length
-			? node.source
-			: String(node.value ?? "");
+		return node.source?.trim().length ? node.source : String(node.value ?? "");
 	}
 	return node.value === node.source ? node.source : undefined;
 }
@@ -1009,7 +1007,13 @@ function referencesRoutedJob(
 	jobId: string,
 	needs: NeedsRead,
 ): boolean {
-	return referencesNeedsAccess(text, jobId, needs, routingAccessPattern(), true);
+	return referencesNeedsAccess(
+		text,
+		jobId,
+		needs,
+		routingAccessPattern(),
+		true,
+	);
 }
 
 function routesJobs(
