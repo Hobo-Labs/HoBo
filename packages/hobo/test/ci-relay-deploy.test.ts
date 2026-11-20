@@ -759,7 +759,13 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 // state from `states`, one per read. Records each request as "METHOD path".
 function scriptedVercel(
 	states: readonly string[],
-	deployment: { commit?: string; project?: string; target?: string } = {},
+	deployment: {
+		commit?: string;
+		project?: string;
+		projectId?: string;
+		target?: string;
+		readRefusal?: number;
+	} = {},
 ) {
 	const sent: string[] = [];
 	let reads = 0;
@@ -783,11 +789,18 @@ function scriptedVercel(
 				readyState: "QUEUED",
 			});
 		if (init.method === "GET" && path.startsWith("/v13/deployments/dpl_wait")) {
+			if (deployment.readRefusal !== undefined)
+				return answer(deployment.readRefusal, {
+					error: { code: "forbidden", message: "no read" },
+				});
 			const readyState = states[Math.min(reads, states.length - 1)] ?? "READY";
 			reads += 1;
 			return answer(200, {
 				id: "dpl_wait",
 				name: deployment.project ?? "hobo-ci",
+				...(deployment.projectId !== undefined
+					? { projectId: deployment.projectId }
+					: undefined),
 				url: "hobo-ci-git-main.example.vercel.app",
 				readyState,
 				target: deployment.target ?? "preview",
@@ -1118,6 +1131,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	it.each([
 		["commit", { commit: "f".repeat(40) }],
 		["project", { project: "another-project" }],
+		[
+			"canonical project id, though the display name matches",
+			{ projectId: "prj_another" },
+		],
 		["environment", { target: "production" }],
 	])("does not qualify a READY preview with the wrong %s", async (_field, record) => {
 		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
@@ -1131,6 +1148,76 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			code: "HOBO_CI_DEPLOY_VERIFICATION_FAILED",
 		});
 		expect(ran.data.delivery).toMatchObject({ state: "FAILED" });
+	});
+
+	it("qualifies a READY preview bound to the intended canonical project id", async () => {
+		const ran = await deploy([...PINNED, "--project", "prj_relay", "--wait"], {
+			fetch: scriptedVercel(["READY"], { projectId: "prj_relay" }).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
+	});
+
+	it.each([
+		["unauthorized (401)", 401],
+		["refused (403)", 403],
+		["absent (404)", 404],
+	])("fails preview verification when the deployment read is %s, instead of looping on UNKNOWN", async (_what, status) => {
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"], { readRefusal: status }).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_VERIFICATION_FAILED",
+			message: expect.stringContaining(`HTTP ${status}`),
+		});
+		expect(ran.data.delivery).not.toMatchObject({ state: "PROMOTED" });
+	});
+
+	it("retries a deployment read that got no answer or a retryable status, and still qualifies", async () => {
+		const vercel = scriptedVercel(["READY"]);
+		let reads = 0;
+		const fetch: VercelFetch = async (url, init) => {
+			if (init.method === "GET" && url.includes("/v13/deployments/dpl_wait")) {
+				reads += 1;
+				if (reads === 1)
+					return {
+						ok: false,
+						status: 503,
+						async text() {
+							return JSON.stringify({
+								error: { code: "internal", message: "try later" },
+							});
+						},
+						async json() {
+							return {};
+						},
+					};
+				if (reads === 2) throw new Error("socket hang up");
+			}
+			return vercel.fetch(url, init);
+		};
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
 	});
 
 	it("refuses production before any request when preview has not qualified the commit", async () => {

@@ -126,6 +126,16 @@ export const RELAY_ADOPT_VERIFICATION = Object.freeze({
 // public-contract: the suite that verifies a preview by its deployment record.
 export const RELAY_PREVIEW_DEPLOYMENT_SUITE = "vercel.deployment.ready";
 
+export class RelayDeploymentReadRefusal extends Error {
+	readonly status: number;
+
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = "RelayDeploymentReadRefusal";
+		this.status = status;
+	}
+}
+
 /**
  * The relay's delivery records as `--adopt` verifies them: production probes
  * aimed at the production origin, preview verified by the deployment-record
@@ -250,7 +260,22 @@ export function deployedPreviewSuites(
 				throw new Error(
 					`the promotion has created no commit-bound deployment for ${input.freightId} yet`,
 				);
-			const deployment = await observe.deployment(intended.deploymentId);
+			let deployment:
+				| Readonly<{ readyState?: string; raw: JsonValue }>
+				| undefined;
+			try {
+				deployment = await observe.deployment(intended.deploymentId);
+			} catch (error) {
+				if (error instanceof RelayDeploymentReadRefusal)
+					return refuse(
+						"verification-deployment-read-refused",
+						`reading Vercel deployment ${intended.deploymentId} failed (HTTP ${error.status}): ${error.message}`,
+						error.status === 404
+							? "The deployment no longer exists under the deploy token's scope; deploy the Freight's commit again."
+							: "The deploy token cannot read this deployment; check its scope and the team the deployment belongs to.",
+					);
+				throw error;
+			}
 			const state = deployment?.readyState ?? "UNKNOWN";
 			if (state === "READY") {
 				const record =
@@ -268,24 +293,28 @@ export function deployedPreviewSuites(
 				const commit = isJsonString(meta?.githubCommitSha)
 					? meta.githubCommitSha.toLowerCase()
 					: undefined;
-				const projects = [
-					record?.name,
-					record?.projectId,
-					project?.id,
-					project?.name,
-				];
+				const canonicalProjectId = isJsonString(record?.projectId)
+					? record.projectId
+					: project !== undefined && isJsonString(project.id)
+						? project.id
+						: undefined;
+				const projectName = isJsonString(record?.name)
+					? record.name
+					: project !== undefined && isJsonString(project.name)
+						? project.name
+						: undefined;
 				const target = isJsonString(record?.target) ? record.target : undefined;
 				if (
 					commit !== intended.commit.toLowerCase() ||
-					!projects.some(
-						(value) => isJsonString(value) && value === intended.project,
-					) ||
+					(canonicalProjectId !== undefined
+						? canonicalProjectId !== intended.project
+						: projectName !== intended.project) ||
 					target !== intended.target
 				)
 					return refuse(
 						"verification-deployment-mismatch",
-						`Vercel deployment ${intended.deploymentId} is READY but does not match Freight ${input.freightId}: expected commit ${intended.commit}, project ${intended.project}, target preview`,
-						"Inspect the Vercel deployment record and deploy the Freight's commit to the intended preview project again.",
+						`Vercel deployment ${intended.deploymentId} is READY but does not match Freight ${input.freightId}: expected commit ${intended.commit}, project ${intended.project}${canonicalProjectId !== undefined ? ` (the deployment's canonical project id is ${canonicalProjectId})` : ""}, target preview`,
+						"Inspect the Vercel deployment record and deploy the Freight's commit to the intended preview project again: a project binds by its canonical id, not by a display name another team's project can share.",
 					);
 				return {
 					ok: true,

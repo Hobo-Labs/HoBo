@@ -93,6 +93,7 @@ import {
 import {
 	commitCheckingProbe,
 	deployedPreviewSuites,
+	RelayDeploymentReadRefusal,
 	recordVerifiedPreviewRecords,
 	relayOrigin,
 	relayVerifyFailure,
@@ -781,10 +782,24 @@ export async function runCiRelayDeploy(
 		commit?: string;
 	}
 	const created: CreatedDeployment = {};
+	const retryableRead = (status: number) => status === 429 || status >= 500;
 	const readDeployment = async (deploymentId: string) => {
 		try {
-			return await client.getDeployment(deploymentId);
+			const deployment = await client.getDeployment(deploymentId);
+			if (deployment !== undefined) return deployment;
+			throw new RelayDeploymentReadRefusal(
+				404,
+				`Vercel answers 404 for deployment ${deploymentId}: it does not exist under this deploy token's scope`,
+			);
 		} catch (error) {
+			if (error instanceof RelayDeploymentReadRefusal) throw error;
+			if (error instanceof VercelApiError) {
+				if (retryableRead(error.status)) return undefined;
+				throw new RelayDeploymentReadRefusal(
+					error.status,
+					withoutToken(error.message),
+				);
+			}
 			if (error instanceof VercelTransportError) return undefined;
 			throw error;
 		}
