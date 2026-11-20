@@ -2,11 +2,17 @@
 
 Game-first control plane for HoBo Stations — not a multi-page admin SPA.
 
-## Parse, don't validate
+## Proof record
 
-`controlYardAcceptance()` is the **parse, don't validate** boundary for this proof:
-acceptance criteria become frozen **derived types** (`ControlYardAcceptance`).
-Tests assert required zones and art-bible invariants without re-checking free-form JSON.
+`controlYardAcceptance()` returns a static, shallow-frozen record naming zones,
+packages, the art bible, the management path, and two flags. Its tests check
+some record fields and the zone names in the SVG. They do not parse the criteria
+in `proof.json` or establish the full behavior those criteria describe.
+
+The `ControlYardZone` derived type comes from `REQUIRED_ZONES`.
+`assertYardZones()` checks that a string list includes those names; it does not
+parse the criteria in `proof.json`. There is no parse, don't validate boundary
+for those criteria.
 
 ## Event architecture
 
@@ -28,7 +34,8 @@ pnpm --filter @hobo/control-yard run evidence:check
 ```
 
 Synced into this proof at `assets/evidence/` (PNGs + `recordings/*.mp4` +
-`evidence-manifest.json`). See `AGENTS.md`.
+`evidence-manifest.json`). The check validates both this copy and the package
+copy. See `AGENTS.md`.
 
 ## How to run locally
 
@@ -57,6 +64,12 @@ See [assets/yard-zones.svg](./assets/yard-zones.svg) for the v0 single-Station l
 | Error Bunker | doctor hazards |
 
 ## Acceptance
+
+The pixel-village core-loop, browser, scenario, and experience-review gates
+were removed with that package. In `proof.json`, all listed criteria keep `gate: null` with
+`evidenceStatus: unverified` and `retiredCoverage` documents why. Captured
+Yard evidence and package tests provide partial signal but do not replace the
+retired pixel-village gates.
 
 - Management ops shared with CLI
 - Control API HTTP+SSE from fixtures
