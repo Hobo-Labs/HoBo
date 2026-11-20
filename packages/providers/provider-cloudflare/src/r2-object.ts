@@ -1,4 +1,3 @@
-/** Backward-compatible export for the shared conditional R2 client. */
 export {
 	createR2ObjectClient,
 	type R2Condition,

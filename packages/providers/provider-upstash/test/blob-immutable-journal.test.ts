@@ -529,7 +529,6 @@ describe("Upstash private Blob immutable voter", () => {
 		if (!key) throw new Error("missing test state");
 		const prior = f.objects.get(key);
 		if (!prior) throw new Error("missing test state");
-		// SAFETY: the atomic voter in this fixture just wrote this state successfully.
 		const state = JSON.parse(prior.body) as {
 			documents: { digest: string; value: string }[];
 		};

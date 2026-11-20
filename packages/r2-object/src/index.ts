@@ -1,15 +1,3 @@
-/**
- * Direct, private R2 object operations needed for compare-and-set state.
- *
- * The origin is constructed from the independently verified Cloudflare account
- * and jurisdiction. Public URLs and caches are never used. R2 serializes
- * conditional PutObject operations at the origin; reads from that origin are
- * strongly consistent. A failed request may still have committed, so transport
- * errors never become an affirmative success or an ordinary CAS conflict.
- *
- * https://developers.cloudflare.com/r2/api/s3/conditional-operations/
- * https://developers.cloudflare.com/r2/reference/consistency/
- */
 import { guardTransport, type HttpTransport } from "@hobo/core";
 import { type AwsCredentials, signAwsRequest } from "@hobo/core/aws-sigv4";
 
@@ -61,7 +49,6 @@ function header(
 	)?.[1];
 }
 
-/** Creates an R2-only origin client. It has no unconditional write or delete. */
 export function createR2ObjectClient(options: R2ObjectOptions) {
 	if (!/^[a-f0-9]{32}$/u.test(options.accountId))
 		throw new R2ObjectError("invalid-account");
@@ -94,8 +81,6 @@ export function createR2ObjectClient(options: R2ObjectOptions) {
 	});
 
 	function urlFor(key: string): string {
-		// Callers encode application keys before this boundary. Refusing dot
-		// segments and percent escapes keeps both the guard and signer unambiguous.
 		if (
 			key.length < 1 ||
 			key.length > 950 ||
@@ -153,7 +138,6 @@ export function createR2ObjectClient(options: R2ObjectOptions) {
 				maxResponseBytes: maxObjectBytes,
 			});
 		} catch {
-			// Do not leak signed headers, provider bodies, or credential material.
 			throw new R2ObjectError(
 				method === "PUT" ? "write-outcome-unknown" : "read-unavailable",
 			);
@@ -184,10 +168,6 @@ export function createR2ObjectClient(options: R2ObjectOptions) {
 			if (result.status === 412) return { applied: false };
 			if (result.status !== 200)
 				throw new R2ObjectError("write-outcome-unknown", result.status);
-			// A 200 means the write committed. A weak or missing ETag only means
-			// the caller has no token for its next conditional write: report the
-			// write as applied without one rather than as a failure, because a
-			// retry with the same condition would then look like a lost race.
 			const etag = header(result.headers, "etag");
 			try {
 				return { applied: true, etag: strongEtag(etag) };

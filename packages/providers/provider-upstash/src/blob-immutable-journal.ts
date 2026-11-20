@@ -1,4 +1,3 @@
-/** Upstash-owned, non-TTL journal voter over its private R2 bucket. */
 import { createHash } from "node:crypto";
 import {
 	type AtomicJournalObject,
@@ -43,18 +42,15 @@ export interface UpstashBlobImmutableJournalOptions {
 	readonly credentialRef: string;
 	readonly namespace: string;
 	readonly maxEntries: number;
-	/** Maximum bytes of the combined assignments, documents and seal. */
 	readonly maxLogBytes: number;
 	readonly maxDocumentBytes: number;
 	readonly maxObjectBytes: number;
 	readonly resolveToken: () => Promise<string>;
 	readonly transport: HttpTransport;
 	readonly now: () => number;
-	/** Admit each mint and return a reusable guard that revalidates its hold. */
 	readonly authorizeMint: (
 		charge: UpstashBlobJournalMintCharge,
 	) => Promise<() => Promise<void>>;
-	/** Each actual R2 request is independently admitted. */
 	readonly authorizeObject: (
 		charge: UpstashBlobJournalCharge,
 	) => Promise<() => Promise<void>>;
@@ -127,9 +123,6 @@ export function assertUpstashBlobImmutableJournalWiring(
 	}
 }
 
-/** R2 origin ETag CAS fences documents, assignments and the seal together.
- * A lost response is reconciled by exact readback. External custody, quota,
- * anti-rollback and failure-domain evidence remain the supervisor's responsibility. */
 export function createUpstashBlobImmutableJournalReplica(
 	options: UpstashBlobImmutableJournalOptions,
 ): Readonly<{
@@ -252,8 +245,6 @@ export function createUpstashBlobImmutableJournalReplica(
 				request.body === undefined
 					? 0
 					: Buffer.byteLength(request.body, "utf8");
-			// Includes a conservative allowance for signed HTTP headers. A host
-			// must independently bound TLS/network overhead and buffered overread.
 			const revalidate = await guard(() =>
 				authorizeObject({
 					operation: request.method === "PUT" ? "write" : "read",
@@ -267,8 +258,6 @@ export function createUpstashBlobImmutableJournalReplica(
 			return response;
 		},
 	});
-	// The old split format used this same key for its assignment log. Opening
-	// that format as atomic state fails closed; no split-format object is replaced.
 	const statePath = `${namespace}/assignments`;
 	const object: AtomicJournalObject = {
 		async read() {

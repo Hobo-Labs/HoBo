@@ -38,9 +38,6 @@ const object: TransportRequest = {
 	maxResponseBytes: 1024,
 };
 
-/** The real Node HTTP client goes to a loopback server; only this unbranded
- * test transport redirects its socket there. The production brand requires the
- * separately imported Node HTTPS implementation. */
 async function fixture(
 	handle: (request: IncomingMessage, response: ServerResponse) => void,
 ) {

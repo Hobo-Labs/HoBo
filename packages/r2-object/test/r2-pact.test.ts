@@ -14,7 +14,6 @@ type Interaction = {
 	response: { status: number; headers: Record<string, string>; body: string };
 };
 
-// SAFETY: this is a checked-in pact fixture; this suite pins all interactions.
 const pact = JSON.parse(
 	readFileSync(
 		new URL("../contracts/pacts/r2-origin.pact.json", import.meta.url),

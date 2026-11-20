@@ -10,7 +10,6 @@ import {
 } from "./blob-journal-http.js";
 import { isJsonString } from "./json.js";
 
-/** The provider-controlled scope is independently verified by the host. */
 export type UpstashBlobJournalTransportScope = Readonly<{
 	r2AccountId: string;
 	bucketId: string;
@@ -24,8 +23,6 @@ const transports = new WeakMap<
 >();
 const nativeRequest: JournalHttpRequest = nodeHttpsRequest;
 const NativeAgent = NodeHttpsAgent;
-// Leave room in each 32 KiB budget allowance for the request/status line and
-// headers added by the native HTTP client.
 const MAX_HEADERS_BYTES = 16_384;
 const MAX_MINT_RESPONSE_BYTES = 16_384;
 
@@ -56,11 +53,6 @@ function headerBytes(headers: Readonly<Record<string, string>>): number {
 	return bytes;
 }
 
-/**
- * Construct a scoped, but unenrolled, transport. The public factory below is
- * the only path that binds the imported Node HTTPS implementation to the
- * enrollment proof; supplying a sender here cannot establish provenance.
- */
 export function createUnenrolledUpstashBlobJournalTransport(
 	input: UpstashBlobJournalTransportScope,
 	request: JournalHttpRequest,
@@ -140,10 +132,6 @@ export function createUnenrolledUpstashBlobJournalTransport(
 	return Object.freeze(transport);
 }
 
-/** The imported Node HTTPS client sends a single request, never follows a
- * redirect, and enforces a total deadline and streaming response limits. The
- * supervisor must separately prove provider quotas, physical egress bounds and
- * funding; they are not implied by transport provenance. */
 export function createUpstashBlobJournalTransport(
 	input: UpstashBlobJournalTransportScope,
 ): HttpTransport {
@@ -157,8 +145,6 @@ export function createUpstashBlobJournalTransport(
 	return transport;
 }
 
-/** A structural callback, another bucket or another capacity cannot establish
- * that the installed replica uses this provider-owned transport. */
 export function assertUpstashBlobJournalTransport(
 	transport: HttpTransport,
 	expected: UpstashBlobJournalTransportScope,

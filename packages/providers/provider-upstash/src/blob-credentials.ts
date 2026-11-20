@@ -38,7 +38,6 @@ export type UpstashBlobCredentialOptions = Readonly<{
 	resolveToken(): Promise<string>;
 	transport: HttpTransport;
 	now(): number;
-	/** Reserve a mint; legacy callbacks claim immediately before I/O. */
 	reserveMint(): Promise<
 		| (() => Promise<void>)
 		| Readonly<{ claim(): Promise<void>; revalidate(): Promise<void> }>

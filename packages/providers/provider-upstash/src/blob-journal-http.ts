@@ -1,8 +1,6 @@
 import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http";
 import type { HttpTransport } from "@hobo/core";
 
-/** Internal seam: a transport constructed with an arbitrary sender is never
- * enrolled. The public factory passes the imported Node HTTPS implementation. */
 export type JournalHttpRequest = (
 	url: URL,
 	options: RequestOptions,
@@ -11,8 +9,6 @@ export type JournalHttpRequest = (
 
 const MAX_RESPONSE_HEADER_BYTES = 16_384;
 
-/** One native request, with no redirect handling or retry. The deadline covers
- * connection, request and response. Body bytes are counted before buffering. */
 export function createJournalHttpTransport(
 	send: JournalHttpRequest,
 	agent?: RequestOptions["agent"],
