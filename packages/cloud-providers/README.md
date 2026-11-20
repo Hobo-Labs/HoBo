@@ -105,13 +105,13 @@ fails if this block and `providerParity()` disagree):
 ```text
 aws L1-DECLARED: 8/21 resolvers declared (conformance not asserted here)
 azure L1-DECLARED: 9/18 resolvers declared (conformance not asserted here)
-cloudflare L1-DECLARED: 6/6 resolvers declared (conformance not asserted here)
+cloudflare L1-DECLARED: 7/7 resolvers declared (conformance not asserted here)
 digitalocean L1-DECLARED: 15/15 resolvers declared (conformance not asserted here)
 gcp L1-DECLARED: 9/16 resolvers declared (conformance not asserted here)
 hetzner L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 hostinger L1-DECLARED: 5/5 resolvers declared (conformance not asserted here)
 kubernetes L1-DECLARED: 9/9 resolvers declared (conformance not asserted here)
-vercel L1-DECLARED: 4/5 resolvers declared (conformance not asserted here)
+vercel L1-DECLARED: 9/10 resolvers declared (conformance not asserted here)
 ```
 <!-- parity:end -->
 
