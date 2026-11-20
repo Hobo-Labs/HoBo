@@ -24,6 +24,8 @@ import {
 } from "./compose.js";
 
 export {
+	type CronTriggersOptions,
+	cronTriggers,
 	type D1Options,
 	d1,
 	type KvOptions,

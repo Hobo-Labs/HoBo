@@ -19,6 +19,8 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run",
+		"pretest:emulator": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test:emulator": "HOBO_AWS_EMULATOR=1 vitest run test/aws-emulator.test.ts",
 		"test:deep": "vitest run --config vitest.deep.config.ts"
 	},
 	"dependencies": {

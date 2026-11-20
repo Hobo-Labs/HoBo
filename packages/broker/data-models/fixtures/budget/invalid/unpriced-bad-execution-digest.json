@@ -1,0 +1,79 @@
+{
+  "iacDecision": {
+    "requestId": "request-1",
+    "targetId": "yard-a",
+    "status": "admitted",
+    "code": "",
+    "message": "",
+    "budget": {
+      "evaluation": "bypassed",
+      "reservation": "held"
+    },
+    "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "reservation": {
+      "reservationId": "iac:request-1",
+      "identity": {
+        "tenantId": "tenant-a",
+        "budgetId": "budget-a",
+        "periodId": "2026-01",
+        "policyRevision": "r1"
+      },
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "quoteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "held",
+      "ledgerSeq": 2,
+      "executionDigest": "not-a-digest",
+      "financialPlanHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "unboundedExposure": true,
+      "unpricedPolicyProof": {
+        "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": {
+          "tenantId": "tenant-a",
+          "budgetId": "budget-a",
+          "periodId": "2026-01",
+          "policyRevision": "r1"
+        },
+        "policyHash": "policy:1",
+        "effect": "allow",
+        "evidenceRef": "approval:1",
+        "obligationsSatisfied": true,
+        "observedAt": "2026-01-01T00:00:00Z",
+        "validUntil": "2026-02-01T00:00:00Z"
+      },
+      "unpricedScopeProof": {
+        "identity": {
+          "tenantId": "tenant-a",
+          "budgetId": "budget-a",
+          "periodId": "2026-01",
+          "policyRevision": "r1"
+        },
+        "providerAccountIds": ["account-a"],
+        "authorityRef": "scope-authority",
+        "evidenceRef": "exclusive:1",
+        "ownershipEpoch": "epoch:1",
+        "observedAt": "2026-01-01T00:00:00Z",
+        "exclusiveUntilSettled": true,
+        "noSharedEntitlements": true,
+        "signature": "signed-proof"
+      }
+    },
+    "unpricedPolicyProof": {
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "tenantId": "tenant-a",
+        "budgetId": "budget-a",
+        "periodId": "2026-01",
+        "policyRevision": "r1"
+      },
+      "policyHash": "policy:1",
+      "effect": "allow",
+      "evidenceRef": "approval:1",
+      "obligationsSatisfied": true,
+      "observedAt": "2026-01-01T00:00:00Z",
+      "validUntil": "2026-02-01T00:00:00Z"
+    }
+  }
+}

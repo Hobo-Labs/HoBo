@@ -13,6 +13,7 @@ import {
 	addUpper,
 	availableCredits,
 	costForUnits,
+	exposureWithinBudget,
 	moneySumExceeds,
 	remainingMoney,
 	subtractAvailable,
@@ -526,18 +527,56 @@ export function createReservationLedger(initialLedgerView) {
 					ledgerView: clone(current),
 				};
 			const reservedCost = Math.max(priced.totalCost, estimatedCost);
+			if (!Number.isFinite(reservedCost))
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "reservation-overflow",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
 			const totalHeld = account
 				? addUpper(account.reservedCost ?? 0, reservedCost)
 				: 0;
+			const totalUnits = account
+				? addUpper(account.reservedUnits ?? 0, units)
+				: 0;
 			if (
 				account &&
-				(reservedCost > budgetHeadroomFor(account) ||
-					(reservedCost > 0 &&
-						account.budgetCap !== undefined &&
-						moneySumExceeds(
-							[account.spendToDate ?? 0, totalHeld],
-							account.budgetCap,
-						)))
+				(!Number.isFinite(totalHeld) || !Number.isFinite(totalUnits))
+			)
+				return {
+					ok: false as const,
+					status: "ineligible",
+					reason: "reservation-overflow",
+					reservationId,
+					providerId,
+					dimension,
+					ledgerView: clone(current),
+				};
+			if (
+				account &&
+				account.budgetCap !== undefined &&
+				reservedCost > 0 &&
+				(!optionalNonNegativeNumber(account.budgetCap) ||
+					!optionalNonNegativeNumber(account.spendToDate ?? 0) ||
+					!optionalNonNegativeNumber(account.reservedCost ?? 0) ||
+					!exposureWithinBudget(
+						units,
+						priced.freeUnits,
+						unitCost,
+						switchingCost,
+						estimatedCost,
+						account.budgetCap,
+						account.spendToDate ?? 0,
+						account.reservedCost ?? 0,
+					) ||
+					moneySumExceeds(
+						[account.spendToDate ?? 0, account.reservedCost ?? 0],
+						account.budgetCap,
+					))
 			)
 				return {
 					ok: false as const,
@@ -564,7 +603,7 @@ export function createReservationLedger(initialLedgerView) {
 					consumption.concurrencySlots = 1;
 				}
 				account.reservedCost = totalHeld;
-				account.reservedUnits = addUpper(account.reservedUnits ?? 0, units);
+				account.reservedUnits = totalUnits;
 			}
 			const committedSeq = advanceLedgerSequence(next.seq);
 			const reservation: DispatchReservation = {
@@ -739,11 +778,19 @@ export function createReservationLedger(initialLedgerView) {
 				reservation.dimension,
 			);
 			if (account) {
+				const totalSpent = addUpper(account.spendToDate ?? 0, actualCost);
+				if (!Number.isFinite(totalSpent))
+					return {
+						ok: false as const,
+						status: "settlement-overflow",
+						reservationId,
+						ledgerView: clone(current),
+					};
 				account.reservedCost = subtractUpper(
 					account.reservedCost ?? 0,
 					reservation.reservedCost ?? 0,
 				);
-				account.spendToDate = addUpper(account.spendToDate ?? 0, actualCost);
+				account.spendToDate = totalSpent;
 				account.reservedUnits = subtractUpper(
 					account.reservedUnits ?? 0,
 					reservation.units,
@@ -1367,7 +1414,21 @@ function rankCreditCandidate({
 	const baseCost = costForUnits(units, freeUnits, listUnitCost, 0);
 	const totalCost = costForUnits(units, freeUnits, listUnitCost, switchingCost);
 	const budgetExceeded =
-		Math.max(totalCost, minimumReservationCost) > credit.budgetHeadroom;
+		account?.budgetCap !== undefined &&
+		optionalNonNegativeNumber(account.budgetCap) &&
+		optionalNonNegativeNumber(account.spendToDate ?? 0) &&
+		optionalNonNegativeNumber(account.reservedCost ?? 0)
+			? !exposureWithinBudget(
+					units,
+					freeUnits,
+					listUnitCost,
+					switchingCost,
+					minimumReservationCost,
+					account.budgetCap,
+					account.spendToDate ?? 0,
+					account.reservedCost ?? 0,
+				)
+			: Math.max(totalCost, minimumReservationCost) > credit.budgetHeadroom;
 	const hardBudgetInvalid =
 		account?.budgetCap !== undefined &&
 		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
@@ -1428,8 +1489,6 @@ function rankCreditCandidate({
 		rationale,
 		decisionVector: [
 			eligible ? 0 : 1,
-			// All candidates share the same requested units. Comparing total cost
-			// preserves sub-precision distinctions lost in the displayed rate.
 			totalCost,
 			expiryScore,
 			-concurrencyScore,

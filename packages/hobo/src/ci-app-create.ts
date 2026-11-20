@@ -39,8 +39,17 @@ import {
 	createGithubAppManifest,
 	githubAppManifestJson,
 	verifyConvertedGithubApp,
+	verifyStoredGithubApp,
 } from "@hobo/ci-gh-actions";
 import type { CommandResult } from "@hobo/cli";
+import {
+	type AppHandOffMode,
+	EGRESS_PROXY_PLACEHOLDER,
+	EGRESS_PROXY_SIGN_IN,
+	type OpenTunnel,
+	type RedirectReceiver,
+	RedirectReceiverError,
+} from "@hobo/hobo-ci";
 import type { SecretsPort } from "@hobo/identity";
 import { z } from "zod";
 import { openBrowser } from "./ci-github-connect.js";
@@ -94,6 +103,25 @@ export type AppCreateOptions = Readonly<{
 	 * converting here (secretless: no credential on this machine).
 	 */
 	viaWorkflow?: boolean | undefined;
+	/**
+	 * The owner's outbound-only tunnel (HOBO_REDIRECT_RECEIVER), so GitHub's
+	 * redirect reaches this run when the owner's browser cannot reach it.
+	 */
+	receiver?: RedirectReceiver | undefined;
+	/**
+	 * An agent runs this for an owner it cannot bring to this machine. With a
+	 * receiver, the receiver carries the redirect; without one, the owner's
+	 * hand-off does (HOBO_APP_HANDOFF: `paste`, the default, or `store`).
+	 */
+	handOff?: boolean | undefined;
+	/** Reaches a tunnel's public origin (tests stand in the provider's edge). */
+	tunnelProbe?: typeof fetch | undefined;
+	/** How long to wait for a tunnel to carry its first request. Default 60s. */
+	tunnelProbeTimeoutMs?: number | undefined;
+	/** The hand-off mode, parsed at the CLI boundary; `paste` when unset. */
+	handOffMode?: AppHandOffMode | undefined;
+	/** The owner's pasted code (paste hand-off): one line from stdin by default. */
+	readCode?: (() => Promise<string>) | undefined;
 	/** Tests inject the dispatch; otherwise `gh workflow run` with the inputs on stdin. */
 	dispatchWorkflow?:
 		| ((inputs: Readonly<Record<string, string>>) => Promise<void>)
@@ -182,7 +210,16 @@ async function manifestCallback(input: {
 	state: string;
 	timeoutMs: number;
 	show: (url: string) => void;
+	/** The owner's outbound-only tunnel; without one, loopback only. */
+	receiver?: RedirectReceiver | undefined;
+	/** Reaches the tunnel's public origin, to prove it carries requests here. */
+	probe?: typeof fetch | undefined;
+	probeTimeoutMs?: number | undefined;
 }): Promise<string> {
+	// Everything is served under one unguessable prefix: through a tunnel,
+	// nothing else on this listener answers, and it takes one callback.
+	const base = `/r/${randomBytes(24).toString("base64url")}/`;
+	const probeToken = randomBytes(16).toString("base64url");
 	const settle: CallbackSettlement = { resolve: () => {}, reject: () => {} };
 	const result = new Promise<string>((resolve, reject) => {
 		settle.resolve = resolve;
@@ -198,11 +235,23 @@ async function manifestCallback(input: {
 			"cache-control": "no-store",
 			"referrer-policy": "no-referrer",
 		};
-		if (request.method === "GET" && url.pathname === "/") {
+		if (request.method === "GET" && url.pathname === `${base}probe`) {
+			// Proof that the tunnel's edge reaches this listener: a token only
+			// this run knows, echoed back.
+			response
+				.writeHead(204, { "x-hobo-receiver": probeToken, ...headers })
+				.end();
+			return;
+		}
+		if (request.method === "GET" && url.pathname === base) {
 			response.writeHead(200, headers).end(startPage(input.action, manifest));
 			return;
 		}
-		if (request.method === "GET" && url.pathname === "/callback" && !used) {
+		if (
+			request.method === "GET" &&
+			url.pathname === `${base}callback` &&
+			!used
+		) {
 			const state = url.searchParams.get("state") ?? "";
 			const code = url.searchParams.get("code") ?? "";
 			const given = Buffer.from(state);
@@ -224,20 +273,72 @@ async function manifestCallback(input: {
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 	// SAFETY: a server listening on a TCP port reports an AddressInfo.
 	const { port } = server.address() as AddressInfo;
-	const origin = `http://127.0.0.1:${port}`;
-	manifest = input.manifestFor(`${origin}/callback`);
-	const timer = setTimeout(
-		() => settle.reject(new Error("timed out")),
-		input.timeoutMs,
-	);
-	input.show(`${origin}/`);
+	let tunnel: OpenTunnel | undefined;
 	try {
+		tunnel = await input.receiver?.open(port);
+		// A printed URL is not a working tunnel: prove the edge carries a
+		// request to this listener before giving the owner the link.
+		if (tunnel !== undefined)
+			await proveTunnel(
+				`${tunnel.publicOrigin}${base}probe`,
+				probeToken,
+				input.probe ?? fetch,
+				input.probeTimeoutMs ?? 60_000,
+			);
+	} catch (error) {
+		try {
+			await tunnel?.close();
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
+		throw error;
+	}
+	const origin = tunnel?.publicOrigin ?? `http://127.0.0.1:${port}`;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		manifest = input.manifestFor(`${origin}${base}callback`);
+		timer = setTimeout(
+			() => settle.reject(new Error("timed out")),
+			input.timeoutMs,
+		);
+		input.show(`${origin}${base}`);
 		return await result;
 	} finally {
-		clearTimeout(timer);
-		server.closeAllConnections();
-		server.close();
+		if (timer !== undefined) clearTimeout(timer);
+		try {
+			await tunnel?.close();
+		} finally {
+			server.closeAllConnections();
+			server.close();
+		}
 	}
+}
+
+/** Wait until the tunnel's public URL reaches this run's listener, or fail. */
+async function proveTunnel(
+	url: string,
+	token: string,
+	send: typeof fetch,
+	timeoutMs: number,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const answer = await send(url, {
+			redirect: "error",
+			signal: AbortSignal.timeout(10_000),
+		}).catch(() => undefined);
+		if (
+			answer?.status === 204 &&
+			answer.headers.get("x-hobo-receiver") === token
+		)
+			return;
+		await new Promise((resolve) => setTimeout(resolve, 2_000));
+	}
+	throw new RedirectReceiverError(
+		"HOBO_REDIRECT_RECEIVER_FAILED",
+		"The tunnel printed a public address but did not carry a request to this run (its client could not reach the provider's edge).",
+	);
 }
 
 /** A signed-in store client and the SecretsPort over it. */
@@ -257,10 +358,17 @@ type ConfigServiceResolution =
 /** Build the config service from the owner's environment, or explain what is missing. */
 function configServiceFromEnv(
 	env: AppCreateOptions["env"],
+	send: typeof fetch | undefined,
 ): ConfigServiceResolution {
 	let auth: ReturnType<typeof ownerAuthFromEnv>;
 	try {
-		auth = ownerAuthFromEnv(env);
+		// With the agent's egress proxy signing in (INFISICAL_SIGN_IN), this run
+		// sends a placeholder the proxy replaces with the owner's own token.
+		auth = ownerAuthFromEnv(
+			env.INFISICAL_SIGN_IN === EGRESS_PROXY_SIGN_IN
+				? { INFISICAL_TOKEN: EGRESS_PROXY_PLACEHOLDER }
+				: env,
+		);
 	} catch {
 		return {
 			ok: false,
@@ -278,6 +386,7 @@ function configServiceFromEnv(
 		const client = createInfisicalClient({
 			binding: infisicalBindingFromEnv(env),
 			auth,
+			...(send !== undefined ? { fetch: send } : undefined),
 		});
 		return {
 			ok: true,
@@ -290,6 +399,173 @@ function configServiceFromEnv(
 				"Set INFISICAL_PROJECT_ID, INFISICAL_ENVIRONMENT and INFISICAL_SECRET_PATH (and INFISICAL_SITE_URL off Infisical Cloud) to the relay's folder.",
 		};
 	}
+}
+
+// public-contract: the static page that, in the owner's browser, posts the manifest to GitHub and shows GitHub's one-time code; it sends nothing anywhere.
+export const APP_HANDOFF_PAGE =
+	"https://tyler-r-kendrick.github.io/HoBo/github-app/";
+// public-contract: the progress line naming the page the owner opens to create the App and copy its code back.
+export const OWNER_APP_LINE_PREFIX = "HOBO_OWNER_APP";
+// public-contract: the progress line naming GitHub's prefilled registration form, when the owner stores the App themselves.
+export const OWNER_APP_REGISTER_LINE_PREFIX = "HOBO_OWNER_APP_REGISTER";
+
+const ManifestJson = z.object({
+	name: z.string(),
+	url: z.string(),
+	hook_attributes: z.object({ url: z.string(), active: z.boolean() }),
+	setup_url: z.string().optional(),
+	callback_urls: z.array(z.string()).optional(),
+	default_events: z.array(z.string()),
+	default_permissions: z.record(z.string(), z.string()),
+});
+
+/**
+ * GitHub's registration form, prefilled with URL parameters
+ * (docs: registering-a-github-app-using-url-parameters). The owner creates
+ * the App there with their own account; nothing comes back to this run.
+ */
+export function appRegistrationUrl(manifestJson: string): string {
+	const manifest = ManifestJson.parse(JSON.parse(manifestJson));
+	const url = new URL("https://github.com/settings/apps/new");
+	const params = url.searchParams;
+	params.set("name", manifest.name);
+	params.set("url", manifest.url);
+	params.set("webhook_active", String(manifest.hook_attributes.active));
+	params.set("webhook_url", manifest.hook_attributes.url);
+	if (manifest.setup_url) params.set("setup_url", manifest.setup_url);
+	for (const callback of manifest.callback_urls ?? [])
+		params.append("callback_urls[]", callback);
+	params.set("public", "false");
+	for (const [permission, access] of Object.entries(
+		manifest.default_permissions,
+	))
+		params.set(permission, access);
+	for (const event of manifest.default_events) params.append("events[]", event);
+	return url.href;
+}
+
+/** One line from stdin: the owner's pasted `code~state`. */
+function readLineFromStdin(): Promise<string> {
+	return new Promise((resolve, reject) => {
+		let text = "";
+		const onData = (chunk: Buffer) => {
+			text += chunk.toString("utf8");
+			const end = text.indexOf("\n");
+			if (end !== -1) {
+				process.stdin.off("data", onData);
+				process.stdin.pause();
+				resolve(text.slice(0, end));
+			}
+		};
+		process.stdin.on("data", onData);
+		process.stdin.once("end", () => resolve(text));
+		process.stdin.once("error", reject);
+	});
+}
+
+class PastedCodeError extends Error {}
+
+/**
+ * The paste hand-off: the owner opens the static page (the manifest rides in
+ * the URL fragment, which no server receives), creates the App on GitHub,
+ * and GitHub redirects back to that page, which shows `code~state`. The
+ * owner gives it to the agent, which writes it to this run's stdin. Nothing
+ * connects to this machine and no service receives the code.
+ */
+async function pastedCode(input: {
+	readonly manifestJson: string;
+	readonly action: string;
+	readonly state: string;
+	readonly emit: (line: string) => void;
+	readonly readCode: () => Promise<string>;
+}): Promise<string> {
+	const fragment = new URLSearchParams({
+		manifest: input.manifestJson,
+		action: input.action,
+	}).toString();
+	input.emit(
+		`${OWNER_APP_LINE_PREFIX} ${APP_HANDOFF_PAGE}#${fragment} — open it on any device and click Create GitHub App; GitHub then shows a single-use code on that page. Give the code to the agent; this run redeems it at once.`,
+	);
+	const pasted = (await input.readCode()).trim();
+	const [code = "", given = ""] = pasted.split("~");
+	const expected = Buffer.from(input.state);
+	const received = Buffer.from(given);
+	if (
+		received.length !== expected.length ||
+		!timingSafeEqual(received, expected) ||
+		!/^[A-Za-z0-9_-]{1,200}$/u.test(code)
+	)
+		throw new PastedCodeError("not the code GitHub issued for this run");
+	return code;
+}
+
+/**
+ * The store hand-off: the owner registers the App on GitHub's prefilled form,
+ * generates its private key and client secret there, and enters them in
+ * their own store under the names given; this run waits for them, then
+ * checks the App with GitHub. Nothing reaches this machine but the owner's
+ * own store.
+ */
+async function storeFirst(input: {
+	readonly manifestJson: string;
+	readonly relay: string;
+	readonly ownerId: number;
+	readonly service: Readonly<{ client: InfisicalClient; port: SecretsPort }>;
+	readonly emit: (line: string) => void;
+	readonly sleep: (ms: number) => Promise<void>;
+	readonly timeoutMs: number;
+	readonly fetch?: typeof fetch | undefined;
+}): Promise<CommandResult> {
+	input.emit(
+		`${OWNER_APP_REGISTER_LINE_PREFIX} ${appRegistrationUrl(input.manifestJson)} — create the App there with your account, then on its page generate a private key and a client secret and set a webhook secret. In your Infisical store's relay folder, add ${APP_CREDENTIAL_KEYS.join(", ")} with those values (the App ID, the .pem contents, the webhook secret, the client ID and secret). This run waits and continues on its own.`,
+	);
+	const deadline = Date.now() + input.timeoutMs;
+	while (Date.now() < deadline) {
+		let names = new Set<string>();
+		try {
+			names = new Set(
+				(await input.service.client.listSecretNames()).map((s) => s.secretKey),
+			);
+		} catch {
+			// The store is checked again on the next round.
+		}
+		if (APP_CREDENTIAL_KEYS.every((key) => names.has(key))) {
+			const values = new Map<string, string>();
+			for (const key of APP_CREDENTIAL_KEYS) {
+				const read = await input.service.port.access(key);
+				if (read.status !== "ok" || !read.material)
+					return failed(
+						"HOBO_CI_APP_INCOMPLETE",
+						`${key} is in the store but could not be read.`,
+					);
+				values.set(key, read.material);
+			}
+			const appId = Number(values.get("HOBO_CI_GITHUB_APP_ID"));
+			try {
+				await verifyStoredGithubApp({
+					appId,
+					pem: values.get("HOBO_CI_GITHUB_APP_PRIVATE_KEY") ?? "",
+					expectedOrigin: input.relay,
+					expectedOwnerId: input.ownerId,
+					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+				});
+			} catch {
+				return failed(
+					"HOBO_CI_APP_UNVERIFIED",
+					`The App in your store (id ${appId}) does not match the reviewed configuration (owner ${input.ownerId}, relay ${input.relay}). Check its permissions, events and webhook URL against the prefilled form.`,
+				);
+			}
+			return {
+				message: `The GitHub App ${appId} you stored checks out with GitHub; its credentials stay in your store.`,
+				data: { appId, handoff: "store" },
+			};
+		}
+		await input.sleep(10_000);
+	}
+	return failed(
+		"HOBO_CI_APP_TIMEOUT",
+		"The App's credentials did not appear in your store in time. Run the command again when they are there; nothing else was changed.",
+	);
 }
 
 export async function runCiAppCreate(
@@ -313,7 +589,7 @@ export async function runCiAppCreate(
 		? undefined
 		: options.configService
 			? { ok: true, service: options.configService }
-			: configServiceFromEnv(options.env);
+			: configServiceFromEnv(options.env, options.fetch);
 	if (resolution !== undefined && !resolution.ok)
 		return failed("HOBO_CI_CONFIG_SERVICE_UNCONFIGURED", resolution.message);
 	const service = resolution?.ok === true ? resolution.service : undefined;
@@ -345,68 +621,145 @@ export async function runCiAppCreate(
 	const action = new URL("https://github.com/settings/apps/new");
 	action.searchParams.set("state", state);
 	const open = options.openBrowser ?? openBrowser;
+	const manifestFor = (redirectUrl: string) => {
+		const manifest = createGithubAppManifest({
+			name,
+			relayUrl: relay,
+			manifestCallbackUrl: `${relay}/v1/app-bootstrap/callback`,
+			installationCallbackUrl: `${relay}/v1/app-registration/install-callback`,
+		});
+		// GitHub sends the browser back to this run (or the hand-off page),
+		// never to the relay.
+		manifest.redirectUrl = redirectUrl;
+		return githubAppManifestJson(manifest);
+	};
+	// Handed off with no receiver, the owner's hand-off carries the result.
+	// Handed off with no receiver, the owner's hand-off carries the result,
+	// in the mode the CLI parsed (paste by default).
+	const handOff: AppHandOffMode | undefined =
+		options.handOff === true && options.receiver === undefined
+			? (options.handOffMode ?? "paste")
+			: undefined;
+	if (handOff === "store") {
+		if (service === undefined)
+			return usage(
+				"The store hand-off checks the App in your store: it does not combine with --via-workflow.",
+			);
+		return storeFirst({
+			manifestJson: manifestFor(`${relay}/v1/app-bootstrap/callback`),
+			relay,
+			ownerId,
+			service,
+			emit: options.emitProgress,
+			sleep:
+				options.sleep ??
+				((ms: number) => new Promise<void>((r) => setTimeout(r, ms))),
+			timeoutMs: options.callbackTimeoutMs ?? 30 * 60_000,
+			fetch: options.fetch,
+		});
+	}
+	// What becomes of GitHub's code: converted into the owner's store here,
+	// or handed to the deploy workflow (--via-workflow).
+	const finish = async (code: string): Promise<CommandResult> => {
+		if (service === undefined) {
+			try {
+				await (options.dispatchWorkflow ?? ghWorkflowRun)({
+					manifest_code: code,
+					relay,
+					owner_id: String(ownerId),
+				});
+			} catch {
+				return failed(
+					"HOBO_CI_APP_HANDOFF_FAILED",
+					`GitHub created the App's one-time code, but \`gh workflow run ${APP_CREDENTIALS_WORKFLOW}\` did not start. The code expires within an hour; check \`gh auth status\`, then delete the App GitHub may have created (https://github.com/settings/apps) and run the command again.`,
+				);
+			}
+			return {
+				message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as hobo-ci-writer; no credential touched this machine. Watch it with \`gh run watch\`.`,
+				data: { handoff: APP_CREDENTIALS_WORKFLOW },
+			};
+		}
+		return convertAndDeposit({
+			code,
+			relay,
+			ownerId,
+			service,
+			replace: options.replace,
+			interactive: options.interactive,
+			prompt: options.prompt,
+			emitProgress: options.emitProgress,
+			fetch: options.fetch,
+			sleep: options.sleep,
+			depositAttempts: options.depositAttempts,
+		});
+	};
 	let code: string;
 	try {
-		code = await manifestCallback({
-			action: action.href,
-			state,
-			timeoutMs: options.callbackTimeoutMs ?? 10 * 60_000,
-			manifestFor(redirectUrl) {
-				const manifest = createGithubAppManifest({
-					name,
-					relayUrl: relay,
-					manifestCallbackUrl: `${relay}/v1/app-bootstrap/callback`,
-					installationCallbackUrl: `${relay}/v1/app-registration/install-callback`,
+		code =
+			handOff === "paste"
+				? await pastedCode({
+						manifestJson: manifestFor(APP_HANDOFF_PAGE),
+						action: action.href,
+						state,
+						emit: options.emitProgress,
+						readCode: options.readCode ?? readLineFromStdin,
+					})
+				: await manifestCallback({
+						action: action.href,
+						state,
+						timeoutMs: options.callbackTimeoutMs ?? 10 * 60_000,
+						receiver: options.receiver,
+						probe: options.tunnelProbe,
+						probeTimeoutMs: options.tunnelProbeTimeoutMs,
+						manifestFor,
+						show(url) {
+							options.emitProgress(
+								options.receiver !== undefined
+									? `${OWNER_APP_LINE_PREFIX} ${url} — open it on any device to create the GitHub App; GitHub returns through your ${options.receiver.id} tunnel to this run.`
+									: `Open this page to create the GitHub App (it posts the manifest to GitHub):\n${url}`,
+							);
+							if (options.receiver === undefined) open(url);
+						},
+					});
+	} catch (error) {
+		if (error instanceof RedirectReceiverError && options.handOff === true) {
+			// A broken tunnel is not a dead end: the owner carries the code.
+			options.emitProgress(
+				`${error.code}: ${error.message} Falling back to the hand-off: you carry GitHub's code back.`,
+			);
+			try {
+				code = await pastedCode({
+					manifestJson: manifestFor(APP_HANDOFF_PAGE),
+					action: action.href,
+					state,
+					emit: options.emitProgress,
+					readCode: options.readCode ?? readLineFromStdin,
 				});
-				// GitHub sends the browser back to this machine, not to the relay.
-				manifest.redirectUrl = redirectUrl;
-				return githubAppManifestJson(manifest);
-			},
-			show(url) {
-				options.emitProgress(
-					`Open this page to create the GitHub App (it posts the manifest to GitHub):\n${url}`,
+			} catch {
+				return failed(
+					"HOBO_CI_APP_CODE_INVALID",
+					"That is not the code GitHub issued for this run (its state does not match). Nothing was stored; the App GitHub may have created can be deleted at https://github.com/settings/apps, then run again.",
 				);
-				open(url);
-			},
-		});
-	} catch {
+			}
+			return finish(code);
+		}
+		if (error instanceof RedirectReceiverError)
+			return failed(
+				error.code,
+				`${error.message} Without a receiver, run with --hand-off: you carry GitHub's code back (HOBO_APP_HANDOFF=paste) or store the App yourself (HOBO_APP_HANDOFF=store).`,
+			);
+		if (error instanceof PastedCodeError)
+			return failed(
+				"HOBO_CI_APP_CODE_INVALID",
+				"That is not the code GitHub issued for this run (its state does not match). Nothing was stored; the App GitHub may have created can be deleted at https://github.com/settings/apps, then run again.",
+			);
 		return failed(
 			"HOBO_CI_APP_TIMEOUT",
-			"GitHub did not return to this machine in time. No App was created by HoBo; run the command again.",
+			"GitHub did not return to this run in time. No App was created by HoBo; run the command again.",
 		);
 	}
 
-	if (service === undefined) {
-		try {
-			await (options.dispatchWorkflow ?? ghWorkflowRun)({
-				manifest_code: code,
-				relay,
-				owner_id: String(ownerId),
-			});
-		} catch {
-			return failed(
-				"HOBO_CI_APP_HANDOFF_FAILED",
-				`GitHub created the App's one-time code, but \`gh workflow run ${APP_CREDENTIALS_WORKFLOW}\` did not start. The code expires within an hour; check \`gh auth status\`, then delete the App GitHub may have created (https://github.com/settings/apps) and run the command again.`,
-			);
-		}
-		return {
-			message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as hobo-ci-writer; no credential touched this machine. Watch it with \`gh run watch\`.`,
-			data: { handoff: APP_CREDENTIALS_WORKFLOW },
-		};
-	}
-	return convertAndDeposit({
-		code,
-		relay,
-		ownerId,
-		service,
-		replace: options.replace,
-		interactive: options.interactive,
-		prompt: options.prompt,
-		emitProgress: options.emitProgress,
-		fetch: options.fetch,
-		sleep: options.sleep,
-		depositAttempts: options.depositAttempts,
-	});
+	return finish(code);
 }
 
 /**
