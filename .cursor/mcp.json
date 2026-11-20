@@ -1,6 +1,13 @@
 {
   "$comment": "Project-scoped MCP for Cursor. serena/headroom = local zero-key; gbrain = scripts/agent-mcp-gbrain.sh (fails closed with AUTH.md remediation when its binary/provider is missing; local Ollama or API-key provider). See AUTH.md and docs/agent-tooling.md. Setup: bash scripts/setup-agent-tools.sh --help",
   "mcpServers": {
+    "hobo": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_IMPLICIT_WORK_TREE GIT_NAMESPACE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE; root=$(git rev-parse --show-toplevel) || exit 1; parent=${root%/*}; [ -n \"$parent\" ] || parent=/; if [ \"$root\" != / ]; then while :; do marker=$parent/.git; if [ ! -x \"$parent\" ] || [ -L \"$marker\" ] || { [ -e \"$marker\" ] && [ ! -d \"$marker\" ]; } || { [ -d \"$marker\" ] && { [ ! -r \"$marker\" ] || [ ! -x \"$marker\" ] || [ -e \"$marker/HEAD\" ] || [ -L \"$marker/HEAD\" ] || [ -e \"$marker/commondir\" ] || [ -L \"$marker/commondir\" ]; }; }; then printf \"%s\\n\" \"HoBo MCP cannot select a nested Git checkout.\" >&2; exit 1; fi; [ \"$parent\" = / ] && break; next=${parent%/*}; [ -n \"$next\" ] || next=/; [ \"$next\" != \"$parent\" ] || exit 1; parent=$next; done; fi; cd \"$root\" || exit 1; exec node --import tsx packages/hobo/src/bin/hobo-mcp.ts"
+      ]
+    },
     "headroom": {
       "command": "bash",
       "args": [

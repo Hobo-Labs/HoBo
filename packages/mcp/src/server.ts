@@ -254,6 +254,9 @@ export interface CliEnvelope {
 	ok?: boolean;
 	status?: string;
 	code?: string;
+	/** A refusal's message and what to do next: the agent relays them. */
+	message?: string;
+	remediation?: string[];
 	raw?: string;
 	data?: JsonValue;
 }
@@ -266,6 +269,11 @@ function parseEnvelope(stdout: string): CliEnvelope {
 			if (parsed.ok === true || parsed.ok === false) envelope.ok = parsed.ok;
 			if (isJsonString(parsed.status)) envelope.status = parsed.status;
 			if (isJsonString(parsed.code)) envelope.code = parsed.code;
+			if (isJsonString(parsed.message)) envelope.message = parsed.message;
+			if (Array.isArray(parsed.remediation))
+				envelope.remediation = parsed.remediation.filter((line) =>
+					isJsonString(line),
+				);
 			if (parsed.data !== undefined) envelope.data = parsed.data;
 			return envelope;
 		}
