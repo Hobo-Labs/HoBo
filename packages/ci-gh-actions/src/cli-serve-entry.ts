@@ -14,6 +14,10 @@ export type { CiWorkerStore } from "./project-config.js";
 export { loadCiProjectFromDirectory } from "./project-config-loader.js";
 export { type CiJobAdmission, inferJobAdmission } from "./relay-routing.js";
 export {
+	type CommittedRunnerOrder,
+	parseCiRunnerOrder,
+} from "./runner-order-config.js";
+export {
 	readHandedWorkerSecrets,
 	WORKER_SECRETS_FD,
 	WORKER_STARTED_EVENT,
@@ -21,3 +25,16 @@ export {
 	waitForWorkerStart,
 	workerSecretsPayload,
 } from "./worker-secrets.js";
+export {
+	applyWorkflowPlan,
+	DEFAULT_FLEET_LABEL,
+	describeWorkflowSkip,
+	describeWorkflowWarning,
+	planWorkflow,
+	type WorkflowApplyResult,
+	type WorkflowInitOptions,
+	type WorkflowJobPlan,
+	type WorkflowPlan,
+	type WorkflowSkipReason,
+	type WorkflowWarning,
+} from "./workflow-init.js";

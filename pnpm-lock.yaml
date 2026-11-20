@@ -794,6 +794,13 @@ importers:
       sigstore:
         specifier: 5.0.1
         version: 5.0.1
+    devDependencies:
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
 
   packages/cd-gitops:
     dependencies:
@@ -1045,6 +1052,9 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -1085,9 +1095,6 @@ importers:
       testcontainers:
         specifier: 11.8.1
         version: 11.8.1
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
 
   packages/ci-guard:
     devDependencies:
@@ -2108,6 +2115,9 @@ importers:
 
   packages/hobo-cd:
     dependencies:
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
@@ -2709,6 +2719,9 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      '@hobo/r2-object':
+        specifier: workspace:*
+        version: link:../../r2-object
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -2858,6 +2871,9 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      pg:
+        specifier: 8.22.0
+        version: 8.22.0
     devDependencies:
       '@hobo/redaction-test-harness':
         specifier: workspace:*
@@ -2865,6 +2881,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      '@types/pg':
+        specifier: 8.15.5
+        version: 8.15.5
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
@@ -3007,6 +3026,9 @@ importers:
       '@bufbuild/protobuf':
         specifier: 2.12.1
         version: 2.12.1
+      '@hobo/backend-fleet':
+        specifier: workspace:*
+        version: link:../../backend-fleet
       '@hobo/bindings':
         specifier: workspace:*
         version: link:../../bindings
@@ -3022,6 +3044,12 @@ importers:
       '@hobo/provider-redaction':
         specifier: workspace:*
         version: link:../../provider-redaction
+      '@hobo/r2-object':
+        specifier: workspace:*
+        version: link:../../r2-object
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
     devDependencies:
       '@hobo/redaction-test-harness':
         specifier: workspace:*
@@ -3125,6 +3153,19 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../../core
+
+  packages/r2-object:
+    dependencies:
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.29
+        version: 22.20.0
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
 
   packages/recipes:
     dependencies:

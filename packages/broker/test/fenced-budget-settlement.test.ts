@@ -13,9 +13,13 @@ import {
 	IacPricingPinSchema,
 } from "../src/_generated/yard_placement_pb.js";
 import {
+	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
+	BudgetReservationSchema,
 	createBudgetAdmissionAuthority,
+	EntitlementClaimSchema,
 	HostingQuoteSchema,
 	ProviderAccountExposureSchema,
 } from "../src/budget-authority.js";
@@ -151,6 +155,7 @@ function fixture() {
 			ReturnType<typeof createBudgetAdmissionAuthority>["lookup"]
 		>,
 		actualMicros = 30,
+		payloadVersion: "v1" | "v2" = "v2",
 	) {
 		const guard = reservation?.fenceSettlementGuard;
 		if (!guard || !reservation) throw new Error("guard missing");
@@ -185,13 +190,21 @@ function fixture() {
 					liabilityMicros: actualMicros - Math.floor(actualMicros / 3),
 				}),
 			],
+			entitlementClaims: reservation.entitlementClaims.map((claim) => ({
+				...claim,
+			})),
 		};
 		return {
 			...result,
 			financeSignature: sign(
 				null,
 				Buffer.from(
-					canonicalBudgetFenceSettlement(reservation, actualMicros, result),
+					canonicalBudgetFenceSettlement(
+						reservation,
+						actualMicros,
+						result,
+						payloadVersion,
+					),
 				),
 				finance.privateKey,
 			).toString("base64url"),
@@ -320,6 +333,180 @@ describe("receiver-bound budget settlement", () => {
 		});
 		expect(authority.settle("reservation-1", 30, proof).status).toBe("settled");
 		expect(() => authority.settle("reservation-1", 31, proof)).toThrow();
+	});
+
+	it("verifies legacy v1 finance signatures only for pre-kind reservations", () => {
+		const f = fixture();
+		f.base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				periodId: "2026-10",
+				remainingUnits: 5,
+				reservedUnits: 0,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		];
+		f.quote.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				units: 2,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const currentProof = f.evidence(held);
+		expect(
+			canonicalBudgetFenceSettlement(held, 30, currentProof).startsWith(
+				'["hobo.budget-fence-settlement/v2"',
+			),
+		).toBe(true);
+		const legacyHeld = clone(BudgetReservationSchema, held);
+		legacyHeld.fenceSettlementPayloadVersion = "";
+		for (const claim of legacyHeld.entitlementClaims) claim.kind = "";
+		const legacyProof = f.evidence(legacyHeld, 30, "v1");
+		expect(canonicalBudgetFenceSettlement(legacyHeld, 30, legacyProof)).toBe(
+			canonicalBudgetFenceSettlement(legacyHeld, 30, legacyProof, "v1"),
+		);
+		expect(() => authority.settle("reservation-1", 30, legacyProof)).toThrow();
+		authority.settle("reservation-1", 30, currentProof);
+		const legacyBase = clone(BudgetLedgerSnapshotSchema, f.base);
+		for (const entitlement of legacyBase.entitlements) entitlement.kind = "";
+		const legacyEvents = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const entitlement of legacy.snapshot?.entitlements ?? [])
+				entitlement.kind = "";
+			for (const reservation of legacy.reservations) {
+				reservation.fenceSettlementPayloadVersion = "";
+				for (const claim of reservation.entitlementClaims) claim.kind = "";
+				for (const claim of reservation.settlementEvidence?.entitlementClaims ??
+					[])
+					claim.kind = "";
+				if (reservation.settlementEvidence)
+					reservation.settlementEvidence.financeSignature =
+						legacyProof.financeSignature;
+			}
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: legacyBase,
+			priorEvents: legacyEvents,
+			fenceTrust: f.trust,
+		});
+		expect(reopened.lookup("reservation-1")?.status).toBe("settled");
+		expect(reopened.read(now).entitlements[0]).toMatchObject({
+			kind: "allowance",
+			remainingUnits: 3,
+		});
+	});
+
+	it("backfills v2 for kind-bearing fenced reservation replay", () => {
+		const f = fixture();
+		f.base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				periodId: "2026-10",
+				remainingUnits: 5,
+				reservedUnits: 0,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		];
+		f.quote.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				units: 2,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const proof = f.evidence(held);
+		const unversioned = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const reservation of legacy.reservations)
+				reservation.fenceSettlementPayloadVersion = "";
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			priorEvents: unversioned,
+			fenceTrust: f.trust,
+		});
+		expect(
+			reopened.lookup("reservation-1")?.fenceSettlementPayloadVersion,
+		).toBe("v2");
+		expect(reopened.settle("reservation-1", 30, proof).status).toBe("settled");
+	});
+
+	it("replays a legacy v1 reservation without entitlement claims", () => {
+		const f = fixture();
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const legacyHeld = clone(BudgetReservationSchema, held);
+		legacyHeld.fenceSettlementPayloadVersion = "";
+		const legacyProof = f.evidence(legacyHeld, 30, "v1");
+		expect(() => authority.settle("reservation-1", 30, legacyProof)).toThrow();
+		authority.settle("reservation-1", 30, f.evidence(held));
+		const legacyEvents = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const reservation of legacy.reservations) {
+				reservation.fenceSettlementPayloadVersion = "";
+				if (reservation.settlementEvidence)
+					reservation.settlementEvidence.financeSignature =
+						legacyProof.financeSignature;
+			}
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			priorEvents: legacyEvents,
+			fenceTrust: f.trust,
+		});
+		expect(reopened.lookup("reservation-1")?.status).toBe("settled");
 	});
 
 	it("requires matching independently enrolled destination and both funded accounts before reservation", () => {
@@ -554,6 +741,13 @@ describe("receiver-bound budget settlement", () => {
 		if (!row) throw new Error("fixture missing");
 		row.fenceSettlementGuard = undefined;
 		expect(() => reopen(removed)).toThrow("immutable fenced reservation");
+		const reversioned = events.map((event) =>
+			clone(BudgetAuthorityEventSchema, event),
+		);
+		const versioned = reversioned[1]?.reservations[0];
+		if (!versioned) throw new Error("fixture missing");
+		versioned.fenceSettlementPayloadVersion = "";
+		expect(() => reopen(reversioned)).toThrow("immutable fenced reservation");
 		const reallocated = events.map((event) =>
 			clone(BudgetAuthorityEventSchema, event),
 		);
