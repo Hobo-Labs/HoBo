@@ -34,9 +34,7 @@ function parseVercelProjectCreate(body: string): VercelProjectCreate {
 	}
 }
 
-function parseVercelEnvCreate(
-	body: string,
-): Omit<VercelProjectEnv, "id"> {
+function parseVercelEnvCreate(body: string): Omit<VercelProjectEnv, "id"> {
 	try {
 		const parsed = vercelEnvCreateBody.parse(JSON.parse(body || "{}"));
 		return {
