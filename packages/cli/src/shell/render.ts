@@ -1,4 +1,4 @@
-import { isJsonString, type JsonValue } from "../json.js";
+import { isJsonString } from "../json.js";
 import type {
 	CliContext,
 	CliEnvelope,
@@ -32,8 +32,6 @@ export function renderSuccess(input: {
 	}
 
 	if (input.flags.quiet) {
-		// Quiet suppresses success chrome, never failure signal: errors still
-		// print (stderr) so `-q` scripts see why the command failed.
 		if (!envelope.ok) {
 			return { exitCode, stdout: "", stderr: `${envelope.message}\n` };
 		}
@@ -50,34 +48,37 @@ export function renderSuccess(input: {
 		);
 	}
 
+	const next = !envelope.ok
+		? `\n${[envelope.code, ...envelope.remediation.map((line) => `- ${line}`)].join("\n")}\n`
+		: "";
 	return okText(
 		`Command  Status
 ${input.verb.padEnd(8)} ${envelope.status}
 
 ${envelope.message}
-`,
+${next}`,
 		exitCode,
 	);
 }
 
 export function renderError(
-	// A caught binding, which is `unknown`.
-	error: unknown,
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding has no type; it is only narrowed with instanceof and summarized.
+	cause: unknown,
 	input: {
 		readonly verb: string | null;
 		readonly flags: CliFlags;
 		readonly context?: CliContext;
 	},
 ): CliRunResult {
-	if (error instanceof CliError) {
+	if (cause instanceof CliError) {
 		if (input.flags.json) {
 			const envelope: CliEnvelope = {
 				ok: false,
 				verb: input.verb ?? "",
 				status: "error",
-				code: error.code,
-				message: error.message.split("\n")[0] ?? error.message,
-				remediation: error.remediation,
+				code: cause.code,
+				message: cause.message.split("\n")[0] ?? cause.message,
+				remediation: cause.remediation,
 				context: publicContext(
 					input.context ?? {
 						cwd: input.flags.cwd,
@@ -89,20 +90,20 @@ export function renderError(
 				data: {},
 			};
 			return {
-				exitCode: error.exitCode,
+				exitCode: cause.exitCode,
 				stdout: `${JSON.stringify(envelope)}\n`,
 				stderr: "",
 			};
 		}
 
 		return {
-			exitCode: error.exitCode,
+			exitCode: cause.exitCode,
 			stdout: "",
-			stderr: `${error.message}\n`,
+			stderr: `${cause.message}\n`,
 		};
 	}
 
-	const diagnostics = verboseDiagnostics(error, input.flags.verbose);
+	const diagnostics = verboseDiagnostics(cause, input.flags.verbose);
 
 	if (input.flags.json) {
 		const envelope: CliEnvelope = {
@@ -111,7 +112,7 @@ export function renderError(
 			status: "error",
 			code: "HOBO_CLI_INTERNAL",
 			message: input.flags.verbose
-				? `Internal CLI error: ${errorMessage(error)}`
+				? `Internal CLI error: ${errorMessage(cause)}`
 				: "Internal CLI error. Re-run with --verbose for diagnostics.",
 			remediation: input.flags.verbose
 				? ["Report the stderr diagnostics."]
@@ -143,20 +144,20 @@ export function renderError(
 	};
 }
 
-// Both of these are handed a caught binding and already narrow it themselves
-// with `instanceof Error ? … : String(error)`.
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
+function errorMessage(cause: unknown): string {
+	return cause instanceof Error ? cause.message : String(cause);
 }
 
-function verboseDiagnostics(error: unknown, verbose: boolean): string {
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
+function verboseDiagnostics(cause: unknown, verbose: boolean): string {
 	if (!verbose) {
 		return "";
 	}
 	const stack =
-		error instanceof Error && isJsonString(error.stack)
-			? error.stack
-			: errorMessage(error);
+		cause instanceof Error && isJsonString(cause.stack)
+			? cause.stack
+			: errorMessage(cause);
 	return `Internal CLI error.\n${stack}\n`;
 }
 

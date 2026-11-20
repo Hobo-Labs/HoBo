@@ -239,10 +239,14 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 		).toMatchObject({ contents: [{ mimeType: "text/html;profile=mcp-app" }] });
 
 		// No writer session yet: the deploy token cannot be captured.
-		expect(
-			(await h.call("capture_secret", { name: "TURSO_AUTH_TOKEN" }))
-				.structuredContent,
-		).toMatchObject({ code: "SECRET_STORE_WRITER_REQUIRED" });
+		const writerRequired = await h.call("capture_secret", {
+			name: "TURSO_AUTH_TOKEN",
+		});
+		expect(writerRequired.structuredContent).toMatchObject({
+			code: "SECRET_STORE_WRITER_REQUIRED",
+		});
+		expect(JSON.stringify(writerRequired)).not.toContain("infisical://proj-1");
+		expect(JSON.stringify(writerRequired)).not.toContain("/hobo-ci-relay");
 
 		const writer = (
 			await h.call("capture_secret", {
@@ -334,7 +338,7 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 });
 
 describe("hobo-mcp secret capture without a store or without MCP Apps", () => {
-	it("refuses when the relay project has no binding, and points at the Infisical walkthrough", async () => {
+	it("refuses when the relay project has no binding and points to private owner setup", async () => {
 		const h = harness(emptyDir);
 		await h.rpc("initialize", { capabilities: APPS_CLIENT });
 		const refused = await h.call("capture_secret", {
@@ -345,9 +349,35 @@ describe("hobo-mcp secret capture without a store or without MCP Apps", () => {
 			code: "SECRET_STORE_NOT_CONNECTED",
 		});
 		expect(String(refused.structuredContent.nextStep)).toContain(
-			"hobo-deploy skill",
+			"HoBo's private owner setup",
+		);
+		expect(String(refused.structuredContent.nextStep)).not.toContain(
+			"Infisical",
 		);
 		await h.capture.close();
+	});
+
+	it("reports an invalid relay binding without directing manual provisioning", async () => {
+		const invalidDir = mkdtempSync(
+			path.join(tmpdir(), "hobo-capture-invalid-"),
+		);
+		try {
+			mkdirSync(path.join(invalidDir, "deploy"));
+			writeFileSync(
+				path.join(invalidDir, "deploy", "secret-store.binding.json"),
+				"invalid",
+			);
+			const status = await createInfisicalCaptureConnector({
+				projectDir: invalidDir,
+			}).status();
+			expect(status).toMatchObject({
+				connected: false,
+				reason: "The relay capture adapter's store binding is invalid.",
+			});
+			expect(JSON.stringify(status)).not.toContain("secret-store provision");
+		} finally {
+			rmSync(invalidDir, { recursive: true, force: true });
+		}
 	});
 
 	it("answers a URL-elicitation client with -32042 naming a loopback page", async () => {
