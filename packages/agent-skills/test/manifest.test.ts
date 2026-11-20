@@ -177,6 +177,36 @@ describe("checkSkillsConformance", () => {
 		}
 	});
 
+	it("never echoes credential-shaped rejected values in issue messages", async () => {
+		const secrets = [
+			"sk-abcdefghijklmnopqrst",
+			"github_pat_abcdefghijklmnopqrst",
+		];
+		const root = await scratchTree({
+			"hobo-setup": `---\nname: ${secrets[0]}\ndescription: d\n---\n`,
+			"hobo-deploy": `---\nname: hobo-deploy\ndescription: d\n${secrets[0]}: x\n---\n`,
+			draft: `---\nname: draft\ndescription: d\nlicense:\n  ${secrets[0]}: x\n---\n`,
+			repo: `---\nname: ${secrets[1]}\ndescription: d\n---\n`,
+			sdlc: `---\nname: ${secrets[1]}\ndescription: d\n---\n`,
+			outsider: `---\nname: ${secrets[0]}\n---\n`,
+		});
+		const issues = await checkSkillsConformance(root);
+		const codes = new Set(issues.map((issue) => issue.code));
+		for (const code of [
+			"name-folder-mismatch",
+			"disallowed-frontmatter-field",
+			"nested-frontmatter-field",
+			"duplicate-name",
+			"unparseable",
+		]) {
+			expect(codes.has(code)).toBe(true);
+		}
+		const messages = issues.map((issue) => issue.message).join("\n");
+		for (const secret of secrets) {
+			expect(messages).not.toContain(secret);
+		}
+	});
+
 	it("reports every strict violation a HoBo-owned skill can make", async () => {
 		const root = await scratchTree({
 			"hobo-setup": "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",

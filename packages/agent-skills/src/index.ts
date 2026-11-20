@@ -61,9 +61,7 @@ export function parseSkillFrontmatter(
 	}
 	const description = frontmatter.fields.get("description");
 	if (description?.kind !== "string" || description.value.length === 0) {
-		throw new SkillParseError(
-			`skill "${name.value}" frontmatter is missing a non-empty description`,
-		);
+		throw new SkillParseError("frontmatter is missing a non-empty description");
 	}
 	return Object.freeze({ name: name.value, description: description.value });
 }
@@ -210,7 +208,7 @@ function strictSkillIssues(
 			issues.push({
 				skill,
 				code: "disallowed-frontmatter-field",
-				message: `field "${field}" is not one of ${HOBO_OWNED_ALLOWED_FIELDS.join(", ")}`,
+				message: `frontmatter field is not in the allowed set (${HOBO_OWNED_ALLOWED_FIELDS.join(", ")})`,
 			});
 		}
 	}
@@ -219,7 +217,7 @@ function strictSkillIssues(
 		issues.push({
 			skill,
 			code: "name-folder-mismatch",
-			message: `frontmatter name "${name.value}" does not match folder "${skill}"`,
+			message: "frontmatter name does not match the skill folder name",
 		});
 	}
 	const metadata = frontmatter.children.get("metadata");
@@ -235,7 +233,8 @@ function strictSkillIssues(
 			issues.push({
 				skill,
 				code: "nested-frontmatter-field",
-				message: `field "${field}" must be a scalar; nested blocks are only allowed under metadata`,
+				message:
+					"frontmatter field must be a scalar; nested blocks are only allowed under metadata",
 			});
 			continue;
 		}
@@ -322,7 +321,7 @@ export async function checkSkillsConformance(
 				issues.push({
 					skill: dirent.name,
 					code: "duplicate-name",
-					message: `skill name "${parsed.name}" is also declared by ${prior}`,
+					message: `skill name is also declared by folder "${prior}"`,
 				});
 			} else {
 				seen.set(parsed.name, dirent.name);

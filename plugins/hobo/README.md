@@ -59,8 +59,11 @@ make the package available, and every pure-JavaScript path (Infisical and
 `skills/hobo-setup` and `skills/hobo-deploy` are the portable copies of the
 repo-local skills of the same names (`.agents/skills/` and `.claude/skills/`).
 `pnpm run agent-plugin:check` fails if their name, description, or body drift
-from the repo copies. Diagnostics identify the file and failure without
-reproducing rejected path or frontmatter values. Commands marked **repo-only** in those skills (the MCP
+from the repo copies. It enumerates every shipped file recursively, rejects any
+plugin file with no mirrored `.agents/skills` source (only `SKILL.md` may extend
+the frontmatter), and scans every shipped text file for secret-shaped values.
+Diagnostics identify the file and failure without reproducing rejected path or
+frontmatter values. Commands marked **repo-only** in those skills (the MCP
 cold-start test, `eval:hand-off-transcript`) exist only inside a HoBo
 checkout.
 

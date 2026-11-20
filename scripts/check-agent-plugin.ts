@@ -600,38 +600,50 @@ function skillIssues(
 
 	const pluginSkillDir = path.join(pluginRoot, "skills", skill);
 	const repoSkillDir = path.join(repoSkillsRoot, skill);
-	if (existsSync(pluginSkillDir) && existsSync(repoSkillDir)) {
-		for (const entry of readFrontmatterReferenceDirs(repoSkillDir)) {
-			const pluginReference = path.join(pluginSkillDir, entry);
-			for (const name of readMarkdownNames(path.join(repoSkillDir, entry))) {
-				const pluginText = readFileSync(
-					path.join(pluginReference, name),
-					"utf8",
-				);
-				const repoText = readFileSync(
-					path.join(repoSkillDir, entry, name),
-					"utf8",
-				);
-				if (pluginText !== repoText) {
-					issues.push({
-						file: path.join("skills", skill, entry, name),
-						message: `drifted from .agents/skills/${skill}/${entry}/${name}; copy the repo file`,
-					});
-				}
-			}
+	for (const relative of listFilesRecursive(pluginSkillDir)) {
+		if (relative === "SKILL.md") continue;
+		const relativeFile = path.join("skills", skill, relative);
+		const repoFile = path.join(repoSkillDir, relative);
+		if (!existsSync(repoFile)) {
+			issues.push({
+				file: relativeFile,
+				message: `is shipped in the plugin but has no mirrored .agents/skills/${skill} source; add it to the repo skill or remove it here`,
+			});
+			continue;
 		}
+		const pluginText = readFileSync(
+			path.join(pluginSkillDir, relative),
+			"utf8",
+		);
+		if (pluginText !== readFileSync(repoFile, "utf8")) {
+			issues.push({
+				file: relativeFile,
+				message: `drifted from .agents/skills/${skill}/${relative}; copy the repo file`,
+			});
+		}
+		issues.push(...scanTextForSecrets(relativeFile, pluginText));
 	}
 	return issues;
 }
 
-function readFrontmatterReferenceDirs(skillDir: string): string[] {
-	return readdirSync(skillDir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.map((entry) => entry.name);
+function listFilesRecursive(dir: string): string[] {
+	const files: string[] = [];
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		if (entry.isDirectory()) {
+			for (const nested of listFilesRecursive(path.join(dir, entry.name))) {
+				files.push(path.join(entry.name, nested));
+			}
+		} else {
+			files.push(entry.name);
+		}
+	}
+	return files;
 }
 
-function readMarkdownNames(dir: string): string[] {
-	return readdirSync(dir).filter((name) => name.endsWith(".md"));
+function listSubdirectories(dir: string): string[] {
+	return readdirSync(dir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory())
+		.map((entry) => entry.name);
 }
 
 function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
@@ -712,7 +724,7 @@ export function checkAgentPlugin(input: {
 
 	const skillsDir = path.join(pluginRoot, "skills");
 	const shipped = existsSync(skillsDir)
-		? readFrontmatterReferenceDirs(skillsDir).sort()
+		? listSubdirectories(skillsDir).sort()
 		: [];
 	const expected = [...SYNCED_SKILLS].sort();
 	if (JSON.stringify(shipped) !== JSON.stringify(expected)) {

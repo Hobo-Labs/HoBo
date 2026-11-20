@@ -474,6 +474,74 @@ describe("checkAgentPlugin (integration)", () => {
 		).toBe(true);
 	});
 
+	it("rejects plugin-only skill files that have no .agents/skills mirror", async () => {
+		const secret = "sk-abcdefghijklmnopqrst";
+		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
+		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: { hobo: { type: "stdio", command: "node" } },
+			}),
+			"README.md": "# hobo\n",
+			"skills/hobo-setup/SKILL.md": setup,
+			"skills/hobo-deploy/SKILL.md": deploy,
+			"skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
+			"skills/hobo-setup/references/extra.md": "plugin-only file\n",
+			"skills/hobo-deploy/assets/deep/logo.svg": "<svg/>\n",
+			[`skills/hobo-deploy/notes-${secret}.md`]: "plugin-only nested\n",
+			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
+			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
+			"repo:.agents/skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		const unmatched = report.issues.filter((issue) =>
+			/no mirrored \.agents\/skills\/hobo-(?:setup|deploy) source/.test(
+				issue.message,
+			),
+		);
+		expect(unmatched.map((issue) => issue.file).sort()).toEqual([
+			"skills/hobo-deploy/assets/deep/logo.svg",
+			"skills/hobo-deploy/notes-sk-abcdefghijklmnopqrst.md",
+			"skills/hobo-setup/references/extra.md",
+		]);
+		expect(unmatched.every((issue) => !issue.message.includes(secret))).toBe(
+			true,
+		);
+	});
+
+	it("scans every shipped skill file for secrets, not only SKILL.md", async () => {
+		const secret = "github_pat_abcdefghijklmnopqrst";
+		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
+		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
+		const notes = `token: ${secret}\n`;
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: { hobo: { type: "stdio", command: "node" } },
+			}),
+			"README.md": "# hobo\n",
+			"skills/hobo-setup/SKILL.md": setup,
+			"skills/hobo-deploy/SKILL.md": deploy,
+			"skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
+			"skills/hobo-deploy/references/notes.md": notes,
+			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
+			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
+			"repo:.agents/skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
+			"repo:.agents/skills/hobo-deploy/references/notes.md": notes,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		const secretIssues = report.issues.filter((issue) =>
+			issue.message.includes("secret-shaped"),
+		);
+		expect(secretIssues.map((issue) => issue.file)).toEqual([
+			"skills/hobo-deploy/references/notes.md",
+		]);
+		expect(secretIssues[0]?.message).not.toContain(secret);
+	});
+
 	it("binds the MCP entrypoint to the plugin-rooted bundle", async () => {
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
