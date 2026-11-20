@@ -1049,6 +1049,9 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -1089,9 +1092,6 @@ importers:
       testcontainers:
         specifier: 11.8.1
         version: 11.8.1
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
 
   packages/ci-guard:
     devDependencies:
