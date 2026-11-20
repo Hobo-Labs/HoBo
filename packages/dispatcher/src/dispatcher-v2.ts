@@ -53,7 +53,6 @@ export interface DispatchRankingV2 {
 	rank: number;
 	incrementalBilled: Money;
 	quote: DispatchCostQuote;
-	/** Present when a developer supplied the pricing model. */
 	pricingModel?: {
 		source: "developer-supplied";
 		modelId: string;

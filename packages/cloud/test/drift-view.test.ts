@@ -220,6 +220,16 @@ describe("an imported deployment", () => {
 });
 
 describe("a rolled-back deployment", () => {
+	it.each([
+		"rolling-back",
+		"pruning",
+	] as const)("does not report drift while %s", (status) => {
+		const report = computeDrift(
+			row({ status, plan: plan("web"), resources: { web: "destroyed" } }),
+		);
+		expect(report.status).toBe("unknown");
+		expect(report.findings).toEqual([]);
+	});
 	it("is not measured for drift", () => {
 		// Its resources are meant to be gone; comparing them to the plan reports
 		// a divergence that is the intended end state.

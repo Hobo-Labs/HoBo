@@ -19,6 +19,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 import {
 	EXPERIENCE_TYPES,
 	normalizeExperienceTokens,
@@ -647,6 +648,7 @@ export function ensureGlobalConfig(
 	root = repoRoot(),
 	opts?: { force?: boolean; productName?: string; productSummary?: string },
 ): { path: string; created: boolean } {
+	assertSafeOptimizexpWriteScopes(root, [""]);
 	const p = globalConfigPath(root);
 	if (existsSync(p) && !opts?.force) {
 		return { path: p, created: false };
@@ -673,6 +675,7 @@ export function ensureProjectConfig(
 		commands?: Record<string, string>;
 	},
 ): { path: string; created: boolean } {
+	assertSafeOptimizexpWriteScopes(root, [project.path]);
 	const p = projectConfigPath(project, root);
 	if (existsSync(p) && !opts?.force) {
 		return { path: p, created: false };
