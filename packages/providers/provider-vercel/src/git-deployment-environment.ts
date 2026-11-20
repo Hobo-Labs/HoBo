@@ -269,7 +269,8 @@ function cd(
 		)
 			return fail();
 		try {
-			if (createPublicKey(pinned).asymmetricKeyType !== "ed25519") return fail();
+			if (createPublicKey(pinned).asymmetricKeyType !== "ed25519")
+				return fail();
 		} catch {
 			return fail();
 		}

@@ -1,5 +1,5 @@
-import { canonicalJson } from "@hobo/core";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { canonicalJson } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { parseVercelGitEnvironment } from "../src/git-deployment-environment.js";
 
@@ -42,9 +42,7 @@ function fixture() {
 		"secret-ref.dynamic-resolution/v1",
 	);
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-	const key = publicKey
-		.export({ type: "spki", format: "pem" })
-		.toString();
+	const key = publicKey.export({ type: "spki", format: "pem" }).toString();
 	const trustedProjectionPublicKeys = new Map([["supervisor", key]]);
 	const context = {
 		contract: "hobo.cd-host-context/v1",
@@ -117,7 +115,13 @@ function fixture() {
 		{ name: "INFISICAL_IDENTITY_ID", value: "identity" },
 	];
 	const parseOptions = { atMs, trustedProjectionPublicKeys };
-	return { vars, context, projection, parseOptions, trustedProjectionPublicKeys };
+	return {
+		vars,
+		context,
+		projection,
+		parseOptions,
+		trustedProjectionPublicKeys,
+	};
 }
 describe("Vercel public deployment environment parsing", () => {
 	it("accepts a complete scoped CD bootstrap and returns canonical name ordering", () => {
@@ -164,7 +168,9 @@ describe("Vercel public deployment environment parsing", () => {
 				atMs: 5_000,
 			}),
 		).toThrow();
-		expect(() => parseVercelGitEnvironment(f.vars, expected, { atMs })).toThrow();
+		expect(() =>
+			parseVercelGitEnvironment(f.vars, expected, { atMs }),
+		).toThrow();
 	});
 	it("accepts a separate renewable config pointer and rejects overlapping or invalid scopes", () => {
 		const f = fixture();
