@@ -23,10 +23,11 @@ const PLUGIN_NAME_PATTERN =
 const SEMVER_PATTERN =
 	/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const FORBIDDEN_ENV_KEYS = ["PLUGIN_ROOT", "PLUGIN_DATA"];
+const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const SECRET_KEY_PATTERN =
 	/(?:token|secret|password|passwd|credential|api[-_]?key|private[-_]?key)/iu;
 export const SECRET_VALUE_PATTERN =
-	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
+	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-[A-Za-z0-9]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
 
 export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
 export const SYNCED_SKILLS = ["hobo-setup", "hobo-deploy"] as const;
@@ -692,7 +693,19 @@ export function checkAgentPlugin(input: {
 	if (mcpText !== undefined) {
 		const mcp = parseMcpConfig(mcpText);
 		issues.push(...mcp.issues);
-		if (mcp.value !== undefined) issues.push(...mcpSemanticIssues(mcp.value));
+		if (mcp.value !== undefined) {
+			issues.push(...mcpSemanticIssues(mcp.value));
+			const hoboServer = mcp.value.mcpServers.hobo;
+			if (
+				hoboServer?.command !== "node" ||
+				!hoboServer.args?.includes(MCP_ENTRYPOINT)
+			) {
+				issues.push({
+					file: "mcp.json",
+					message: `hobo MCP server must run node with entrypoint ${MCP_ENTRYPOINT}`,
+				});
+			}
+		}
 		issues.push(...scanTextForSecrets("mcp.json", mcpText));
 	}
 	issues.push(...vendoredSchemaIssues(repoRoot));
@@ -721,8 +734,14 @@ export function checkAgentPlugin(input: {
 		issues.push(...scanTextForSecrets("README.md", readmeText));
 	}
 
-	const bundle = path.join(pluginRoot, "bin/hobo-mcp.mjs");
+	const bundle = path.resolve(
+		pluginRoot,
+		MCP_ENTRYPOINT.replace("${PLUGIN_ROOT}/", ""),
+	);
 	if (existsSync(bundle)) {
+		issues.push(
+			...scanTextForSecrets("bin/hobo-mcp.mjs", readFileSync(bundle, "utf8")),
+		);
 		const size = statSync(bundle).size;
 		if (size < 1024 * 1024) {
 			issues.push({
@@ -730,6 +749,15 @@ export function checkAgentPlugin(input: {
 				message: `exists but is only ${size} bytes; a real bundle of the composed server is megabytes — rebuild with pnpm run agent-plugin:build`,
 			});
 		}
+	} else if (
+		process.env.CI ||
+		process.env.GITHUB_ACTIONS ||
+		process.env.TF_BUILD
+	) {
+		issues.push({
+			file: "bin/hobo-mcp.mjs",
+			message: "is missing in CI; build it with pnpm run agent-plugin:build",
+		});
 	} else {
 		notes.push(
 			"agent-plugin:check: bin/hobo-mcp.mjs not built yet (pnpm run agent-plugin:build); validated committed wiring only",

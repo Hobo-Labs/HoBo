@@ -198,11 +198,11 @@ function strictSkillIssues(
 			},
 		];
 	}
-	for (const line of frontmatter.unrecognizedTopLevel) {
+	for (const _line of frontmatter.unrecognizedTopLevel) {
 		issues.push({
 			skill,
 			code: "unparseable",
-			message: `unrecognized top-level YAML line ${JSON.stringify(line)}`,
+			message: "unrecognized top-level YAML line",
 		});
 	}
 	for (const field of frontmatter.fields.keys()) {

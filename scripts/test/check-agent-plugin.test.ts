@@ -319,13 +319,14 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 
 describe("scanTextForSecrets", () => {
 	it("flags secret-shaped values", () => {
-		expect(
-			scanTextForSecrets("x.json", "bearer sk-abcdefghijklmnopqrst").length,
-		).toBe(1);
-		expect(
-			scanTextForSecrets("x.json", "github_token: ghp_abcdefghijklmnopqrst")
-				.length,
-		).toBe(1);
+		for (const text of [
+			"bearer sk-abcdefghijklmnopqrst",
+			"github_token: ghp_abcdefghijklmnopqrst",
+			"github_pat_abcdefghijklmnopqrst",
+			"sk-proj-abcdefghijklmnopqrst",
+		]) {
+			expect(scanTextForSecrets("x.json", text)).toHaveLength(1);
+		}
 	});
 
 	it("accepts the word token in prose without a value", () => {
@@ -471,6 +472,100 @@ describe("checkAgentPlugin (integration)", () => {
 				/the portable set is exactly/.test(issue.message),
 			),
 		).toBe(true);
+	});
+
+	it("binds the MCP entrypoint to the plugin-rooted bundle", async () => {
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/other.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some(
+				(issue) =>
+					issue.file === "mcp.json" &&
+					issue.message.includes("entrypoint ${PLUGIN_ROOT}/bin/hobo-mcp.mjs"),
+			),
+		).toBe(true);
+	});
+
+	it("fails closed for missing and tiny bundles in CI", async () => {
+		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
+			vi.stubEnv(variable, "");
+		}
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+		});
+		await mkdir(path.join(pluginRoot, "bin"), { recursive: true });
+		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
+			vi.stubEnv(variable, "1");
+			const missing = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+			expect(
+				missing.issues.some(
+					(issue) =>
+						issue.file === "bin/hobo-mcp.mjs" &&
+						issue.message.includes("is missing in CI"),
+				),
+			).toBe(true);
+			await writeFile(path.join(pluginRoot, "bin/hobo-mcp.mjs"), "tiny");
+			const tiny = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+			expect(
+				tiny.issues.some(
+					(issue) =>
+						issue.file === "bin/hobo-mcp.mjs" &&
+						issue.message.includes("is only 4 bytes"),
+				),
+			).toBe(true);
+			await rm(path.join(pluginRoot, "bin/hobo-mcp.mjs"));
+			vi.stubEnv(variable, "");
+		}
+	});
+
+	it("scans an existing plugin-rooted bundle for secrets", async () => {
+		const secret = `github_pat_${"a".repeat(20)}`;
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": `${"x".repeat(1024 * 1024)}\n${secret}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		const bundleIssues = report.issues.filter(
+			(issue) => issue.file === "bin/hobo-mcp.mjs",
+		);
+		expect(bundleIssues).toHaveLength(1);
+		expect(bundleIssues[0]?.message).toContain("secret-shaped value");
+		expect(bundleIssues[0]?.message).not.toContain(secret);
 	});
 });
 

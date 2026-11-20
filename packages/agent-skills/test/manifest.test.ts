@@ -84,9 +84,7 @@ describe("parseSkillFrontmatter", () => {
 			parseSkillFrontmatter(
 				"---\nname: sdlc\ndescription: 'unterminated\n---\n",
 			),
-		).toThrowError(
-			new SkillParseError("invalid single-quoted YAML scalar"),
-		);
+		).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
 	});
 
 	it("rejects unterminated single-quoted metadata scalars", () => {
@@ -94,9 +92,7 @@ describe("parseSkillFrontmatter", () => {
 			parseSkillFrontmatter(
 				"---\nname: sdlc\ndescription: d\nmetadata:\n  plugin: hobo'\n---\n",
 			),
-		).toThrowError(
-			new SkillParseError("invalid single-quoted YAML scalar"),
-		);
+		).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
 	});
 });
 
@@ -153,10 +149,13 @@ describe("checkSkillsConformance", () => {
 	});
 
 	it("rejects unrecognized non-comment top-level YAML in strict skills", async () => {
+		const secrets = [
+			"github_pat_abcdefghijklmnopqrst",
+			"sk-proj-abcdefghijklmnopqrst",
+		];
 		const root = await scratchTree({
-			"hobo-setup": '---\nname: hobo-setup\ndescription: d\n"legacy": x\n---\n',
-			"hobo-deploy":
-				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  plugin: hobo\nlegacy : x\n---\n",
+			"hobo-setup": `---\nname: hobo-setup\ndescription: d\n"legacy": ${secrets[0]}\n---\n`,
+			"hobo-deploy": `---\nname: hobo-deploy\ndescription: d\nmetadata:\n  plugin: hobo\nlegacy : ${secrets[1]}\n---\n`,
 			outsider: '---\nname: outsider\ndescription: d\n"legacy": x\n---\n',
 		});
 		const issues = await checkSkillsConformance(root);
@@ -166,9 +165,16 @@ describe("checkSkillsConformance", () => {
 			"hobo-setup",
 		]);
 		expect(issues.every((issue) => issue.code === "unparseable")).toBe(true);
-		expect(issues.every((issue) => issue.message.includes("top-level"))).toBe(
-			true,
-		);
+		expect(
+			issues.every(
+				(issue) => issue.message === "unrecognized top-level YAML line",
+			),
+		).toBe(true);
+		for (const secret of secrets) {
+			expect(issues.map((issue) => issue.message).join("\n")).not.toContain(
+				secret,
+			);
+		}
 	});
 
 	it("reports every strict violation a HoBo-owned skill can make", async () => {

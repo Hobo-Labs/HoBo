@@ -44,6 +44,10 @@ surrounding checkout rather than inlining them. Run the server with
 `node bin/hobo-mcp.mjs` — the same stdio protocol as the repo-registered
 launcher in `.mcp.json`.
 
+`pnpm run agent-plugin:check` resolves the `mcp.json` entrypoint against the
+plugin root, rejects a missing or undersized bundle in CI, and scans an
+existing bundle for secret-shaped values without echoing them.
+
 The native `@bitwarden/sdk-napi` binding cannot be carried by a portable
 bundle. Inside a HoBo checkout with installed dependencies it resolves
 through the workspace; elsewhere, Bitwarden store operations report how to
