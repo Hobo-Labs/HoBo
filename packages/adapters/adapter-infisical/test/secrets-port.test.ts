@@ -96,3 +96,15 @@ describe("the infisical SecretsPort", () => {
 		});
 	});
 });
+
+it("does not advertise unverified atomic creation for cloud or self-hosted servers", () => {
+	for (const siteUrl of [server.url, "https://app.infisical.com"]) {
+		const deploy = createInfisicalSecretsPort({
+			client: createInfisicalClient({
+				binding: parseInfisicalBinding({ siteUrl, ...scope }),
+				auth: oidcAuth({ identityId: "deploy-id", jwt: async () => JWT }),
+			}),
+		});
+		expect(deploy.createOnly).toBeUndefined();
+	}
+});

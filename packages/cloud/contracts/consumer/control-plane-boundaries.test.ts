@@ -72,7 +72,10 @@ function mockIac(opts: { failApply?: string[] } = {}): IacProvider {
 		},
 		async apply(p) {
 			if (fail.has(p.resourceId))
-				throw new Error(`apply failed for ${p.resourceId}`);
+				throw Object.assign(new Error(`apply failed for ${p.resourceId}`), {
+					requiresReconciliation: false,
+					executionOutcome: "not-started",
+				});
 			return { endpoint: `${p.resourceId}.local` };
 		},
 		async destroy() {},

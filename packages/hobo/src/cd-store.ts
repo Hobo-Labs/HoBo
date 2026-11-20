@@ -40,9 +40,13 @@ export type OpenedCdStore = Readonly<{
 	close(): Promise<void>;
 }>;
 
+/** Reads one entry of the owner's secret store; the only source of a connection string. */
+export type CdSecretReader = (entry: string) => Promise<string | undefined>;
+
 export type CdStoreOpener = (
 	selection: CdStoreSelection,
 	clock: Readonly<{ now: () => number }>,
+	readSecret?: CdSecretReader,
 ) => Promise<OpenedCdStore>;
 
 function sqlite(
@@ -68,11 +72,28 @@ function warn(
 async function openFleet(
 	selection: Extract<CdStoreSelection, { backend: "postgres-fleet" }>,
 	clock: Readonly<{ now: () => number }>,
+	readSecret: CdSecretReader | undefined,
 ): Promise<OpenedCdStore> {
+	if (readSecret === undefined)
+		throw new Error(
+			"the CD journal's fleet keeps its connection strings in the secret store; open it with access to the store (hobo cd up signs in)",
+		);
+	const connect = async (
+		member: Readonly<{ id: string; urlEntry: string }>,
+	) => {
+		const url = await readSecret(member.urlEntry);
+		if (url === undefined || !/^postgres(ql)?:\/\//u.test(url))
+			throw new Error(
+				`the secret store has no PostgreSQL connection string at ${member.urlEntry} for fleet member ${member.id}`,
+			);
+		return { id: member.id, connectionString: url };
+	};
+	const members = await Promise.all(selection.members.map(connect));
+	const witnesses = await Promise.all(selection.witnesses.map(connect));
 	const [
 		{ createPostgresFleetEventStore },
 		{ continuityFleetPlan, continuityShortfalls },
-		{ cdJournalContinuity },
+		{ cdJournalContinuity, journalMemberModels },
 	] = await Promise.all([
 		import("@hobo/storage-postgres"),
 		import("@hobo/backend-fleet"),
@@ -80,15 +101,11 @@ async function openFleet(
 	]);
 	const plan = continuityFleetPlan(cdJournalContinuity());
 	const store = createPostgresFleetEventStore({
-		members: selection.members.map((m) => ({
-			id: m.id,
-			connectionString: m.url,
-		})),
-		witnesses: selection.witnesses.map((m) => ({
-			id: m.id,
-			connectionString: m.url,
-		})),
+		members,
+		witnesses,
 		plan,
+		// Each member's vendor plan, where its fleet entry names one.
+		models: journalMemberModels(selection.members),
 		poolSize: selection.poolSize,
 		statementTimeoutMs: selection.statementTimeoutMs,
 		minServerMajorVersion: selection.minMajorVersion,
@@ -101,6 +118,7 @@ async function openFleet(
 		tickEveryMs: plan.copyEveryMs,
 		// Member names and URLs do not establish independent failure domains.
 		witnesses: selection.witnesses.length,
+		backupsPlaced: store.backupsPlaced(),
 	}).map((shortfall) => shortfall.message);
 	if (shortfalls.length > 0)
 		warn("hobo_cd_journal_continuity_short", { tier: plan.tier, shortfalls });
@@ -130,7 +148,11 @@ async function openFleet(
 	};
 }
 
-export const openCdStore: CdStoreOpener = async (selection, clock) => {
+export const openCdStore: CdStoreOpener = async (
+	selection,
+	clock,
+	readSecret,
+) => {
 	switch (selection.backend) {
 		case "sqlite": {
 			const driver = createNodeSqliteDriver({ path: selection.path });
@@ -150,7 +172,7 @@ export const openCdStore: CdStoreOpener = async (selection, clock) => {
 			};
 		}
 		case "postgres-fleet":
-			return openFleet(selection, clock);
+			return openFleet(selection, clock, readSecret);
 		case "postgres": {
 			const { createPostgresEventStore } = await import(
 				"@hobo/storage-postgres"
