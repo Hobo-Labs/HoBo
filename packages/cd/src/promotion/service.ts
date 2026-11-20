@@ -2272,7 +2272,18 @@ export function createPromotionService(
 			if (saved.meta?.rollbackRequestFingerprint !== fingerprint)
 				return differentRequest();
 			const persisted = await load(rollbackId);
-			if (!persisted) return differentRequest();
+			if (!persisted)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} could not be read after journaling`,
+							"Retry with the same idempotency key.",
+							rollbackId,
+						),
+					],
+				};
 			metric(PROMOTION_METRIC.rolledBack, ctx.now(), { camp: input.campId });
 			return { ok: true, value: recordOf(persisted.view) };
 		},
@@ -2456,6 +2467,18 @@ export function createPromotionService(
 							PROMOTION_REASON.journalConflict,
 							`preview ${promotionId} could not be read after journaling`,
 							"Retry with the same idempotency key.",
+							promotionId,
+						),
+					],
+				};
+			if (!sameRequest(persisted, previewRequest, "preview", preview))
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.idempotencyReused,
+							`idempotency key ${input.idempotencyKey} already names a different preview`,
+							"Use a new idempotency key for a different preview.",
 							promotionId,
 						),
 					],
