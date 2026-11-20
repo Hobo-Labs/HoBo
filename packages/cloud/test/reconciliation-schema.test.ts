@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
 	ExecFailedRecordSchema,
 	ResourceFailedRecordSchema,
+	ResourceReconciledRecordSchema,
 } from "../src/_generated/cloud_pb.js";
 
 const cue =
@@ -139,6 +140,55 @@ describe("reconciliation failure records", () => {
 			false,
 		],
 		[
+			"#ResourceReconciledRecord",
+			{
+				deploymentId: "dep",
+				resourceId: "web",
+				failureEventId: "fail",
+				operation: "apply",
+				outcome: "no-effect",
+				restoredState: "failed",
+				evidenceRef: "proof",
+				financialEvidenceRef: "budget",
+				financialDisposition: "settled",
+				reservationId: "iac:r",
+				claimDigest: `sha256:${"a".repeat(64)}`,
+			},
+			true,
+		],
+		[
+			"#ResourceReconciledRecord",
+			{
+				deploymentId: "dep",
+				resourceId: "web",
+				failureEventId: "fail",
+				operation: "apply",
+				outcome: "no-effect",
+				restoredState: "failed",
+				evidenceRef: "proof",
+				financialEvidenceRef: "budget",
+				financialDisposition: "held",
+				reservationId: "iac:r",
+				claimDigest: `sha256:${"a".repeat(64)}`,
+			},
+			false,
+		],
+		[
+			"#ResourceReconciledRecord",
+			{
+				deploymentId: "dep",
+				resourceId: "web",
+				failureEventId: "fail",
+				operation: "destroy",
+				outcome: "applied",
+				evidenceRef: "proof",
+				financialEvidenceRef: "budget",
+				financialDisposition: "none",
+				claimDigest: `sha256:${"a".repeat(64)}`,
+			},
+			false,
+		],
+		[
 			"#TopologyNode",
 			{
 				id: "resource:web",
@@ -163,6 +213,28 @@ describe("reconciliation failure records", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+
+	it("round-trips the verified recovery claim through protobuf JSON", () => {
+		const record = create(ResourceReconciledRecordSchema, {
+			failureEventId: "fail",
+			operation: "apply",
+			outcome: "no-effect",
+			financialDisposition: "settled",
+			reservationId: "iac:r",
+			claimDigest: `sha256:${"a".repeat(64)}`,
+		});
+		expect(
+			fromJson(
+				ResourceReconciledRecordSchema,
+				toJson(ResourceReconciledRecordSchema, record),
+			),
+		).toMatchObject({
+			failureEventId: "fail",
+			outcome: "no-effect",
+			financialDisposition: "settled",
+			reservationId: "iac:r",
+		});
 	});
 
 	it.each([

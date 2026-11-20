@@ -1,11 +1,19 @@
-/**
- * Load the pinned RivetKit release from CJS or ESM using dynamic import.
- */
+import { RIVETKIT_PIN } from "./upstream-pin.js";
 
 export type RivetkitModule = typeof import("rivetkit");
 export type RivetkitClientModule = typeof import("rivetkit/client");
 
+export function assertRivetEngineSupported(
+	platform: NodeJS.Platform = process.platform,
+): void {
+	if (platform !== "win32") return;
+	throw new Error(
+		`RivetKit ${RIVETKIT_PIN.version} has no Windows engine binary; local engine execution is unsupported on win32`,
+	);
+}
+
 export async function loadRivetkit(): Promise<RivetkitModule> {
+	assertRivetEngineSupported();
 	const loaded = await import("rivetkit");
 	if (
 		!(loaded.actor instanceof Function) ||

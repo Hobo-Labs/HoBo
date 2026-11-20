@@ -53,6 +53,7 @@ describe.skipIf(url === undefined)(
 					pool,
 					snapshot,
 					now: () => now,
+					iacPricedSettlementTrust: { verify: () => false },
 				}),
 			);
 			try {
@@ -96,7 +97,7 @@ describe.skipIf(url === undefined)(
 					inventoryHash: priced.inventoryHash,
 					modelHash: priced.modelHash,
 					quoteHash: priced.quote.quoteHash,
-					maximumMicros: 1_500_000,
+					maximumMicrosExact: 1_500_000n,
 					observedAt: "2026-01-01T00:00:00Z",
 					validUntil: end,
 					providerAccounts: [
@@ -130,6 +131,17 @@ describe.skipIf(url === undefined)(
 				const [first, second] = authorities;
 				if (first === undefined || second === undefined)
 					throw new Error("authority missing");
+				const withoutTrust = createPostgresBudgetAdmissionAuthority({
+					pool: pools[0],
+					snapshot,
+					now: () => now,
+				});
+				expect(await run(withoutTrust)).toMatchObject({
+					status: "denied",
+					code: "budget.settlement-unavailable",
+					budget: { evaluation: "unavailable", reservation: "not-created" },
+				});
+				expect((await withoutTrust.read(now)).reservedMicros).toBe(0);
 				const decisions = await Promise.all([run(first), run(second)]);
 				expect(
 					decisions.filter((decision) => decision.status === "admitted"),

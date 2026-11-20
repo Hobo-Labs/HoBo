@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Resource, Stack } from "alchemy";
+import { Action } from "alchemy/Action";
 import * as Alchemist from "alchemy/Alchemist";
 import { decodeFqn, encodeFqn } from "alchemy/FQN";
 import * as Provider from "alchemy/Provider";
@@ -21,8 +22,13 @@ import {
 	safeAlchemyState,
 	uniqueAlchemyFqns,
 } from "../src/state-identity.js";
+import {
+	routeFixture,
+	testOperation,
+	testStateOwnership,
+} from "./route-fixture.js";
 
-type Widget = Resource<"Spec.Widget", {}, { id: string }>;
+type Widget = Resource<"Spec.Widget", Record<string, never>, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
 const program = {
 	programId: "p",
@@ -32,7 +38,24 @@ const program = {
 	driver: "external",
 	action: "apply" as const,
 	stackName: "App",
+	operationGeneration: "generation-1",
 };
+const receipt = (requestId: string) => ({
+	requestId,
+	targetId: "t",
+	status: "admitted",
+	code: "",
+	message: "",
+	budget: { evaluation: "allowed", reservation: "held" },
+	reservation: {
+		reservationId: `iac:${requestId}`,
+		executionDigest: `sha256:${"4".repeat(64)}`,
+	},
+	requestDigest: `sha256:${"b".repeat(64)}`,
+	inventoryHash: `sha256:${"c".repeat(64)}`,
+	modelHash: `sha256:${"d".repeat(64)}`,
+	quoteHash: `sha256:${"e".repeat(64)}`,
+});
 const persisted = (fqn: string) => ({
 	resourceType: "Spec.Widget",
 	fqn,
@@ -88,11 +111,34 @@ function fixture(
 	legacyFqn?: string,
 	stackName = "App",
 	stage = "test",
+	kind: "resource" | "action" = "resource",
 	storageKey = "a__b",
 ) {
 	let effects = 0;
+	const Task = Action("Spec.Task", (_input: Record<string, never>) =>
+		Effect.sync(() => {
+			effects++;
+			return {};
+		}),
+	);
 	const oldState =
-		legacyFqn === undefined ? undefined : JSON.stringify(persisted(legacyFqn));
+		legacyFqn === undefined
+			? undefined
+			: JSON.stringify(
+					kind === "resource"
+						? persisted(legacyFqn)
+						: {
+								kind: "action",
+								actionType: "Spec.Task",
+								fqn: legacyFqn,
+								logicalId: legacyFqn,
+								status: "ran",
+								downstream: [],
+								inputHash: "old",
+								input: {},
+								output: {},
+							},
+				);
 	const objects = bucket(
 		oldState === undefined ? {} : { [`App/test/${storageKey}.json`]: oldState },
 	);
@@ -134,12 +180,26 @@ function fixture(
 			state,
 		},
 		Effect.gen(function* () {
-			yield* Widget(resourceId, {});
+			if (kind === "resource") yield* Widget(resourceId, {});
+			else yield* Task(resourceId, {});
 			return {};
 		}),
 	);
 	const options = {
 		stack,
+		stateOwnership: testStateOwnership,
+		route: routeFixture().port,
+		resolveRoute: ({ requestId }: { requestId?: string | undefined }) => ({
+			requestId: requestId ?? "logical-attempt",
+			operation: testOperation,
+		}),
+		composite: {
+			proofRef: "host",
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			sourceRequirements: [],
+			verifyEnvironment: () => true,
+			verifyPlan: () => true,
+		},
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: directory,
 		target: alchemyTarget({
@@ -153,7 +213,8 @@ function fixture(
 			resources: [
 				{
 					resourceId,
-					resourceType: "Spec.Widget",
+					resourceType:
+						kind === "resource" ? "Spec.Widget" : "alchemy:action:Spec.Task",
 					providerId: "test",
 					providerAccountRef: "account",
 					productId: "widget",
@@ -165,7 +226,7 @@ function fixture(
 			admit: async () => {
 				throw new Error("unexpected admission");
 			},
-			revalidate: () => false,
+			revalidate: () => true,
 			uncertain: () => {},
 		},
 	};
@@ -217,7 +278,7 @@ describe("Alchemy state-key identity", () => {
 			const f = fixture(directory, "a/b", store, "a__b");
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.preview(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
@@ -270,31 +331,38 @@ describe("Alchemy state-key identity", () => {
 		);
 	});
 
-	it("retains the claimed reservation if local state becomes ambiguous during admission", async () => {
+	it.each([
+		"revalidate",
+		"verifyPlan",
+	] as const)("retains the claimed reservation if %s corrupts state immediately before apply", async (boundary) => {
 		const directory = mkdtempSync(join(tmpdir(), "hobo-fqn-"));
 		const oldHome = process.env.ALCHEMY_HOME;
 		process.env.ALCHEMY_HOME = join(directory, "home");
 		try {
 			const f = fixture(directory, "a/b", "local", "a/b");
 			const uncertain: string[] = [];
+			let revalidated = false;
+			const corrupt = () =>
+				writeFileSync(
+					join(directory, "state", "App", "test", "a__b.json"),
+					JSON.stringify(persisted("a__b")),
+				);
 			const provider = createAlchemyIacProvider({
 				...f.options,
+				composite: {
+					...f.options.composite,
+					verifyPlan: () => {
+						if (boundary === "verifyPlan" && revalidated) corrupt();
+						return true;
+					},
+				},
 				financial: {
 					...f.options.financial,
-					admit: async (requestId: string) => {
-						writeFileSync(
-							join(directory, "state", "App", "test", "a__b.json"),
-							JSON.stringify(persisted("a__b")),
-						);
-						return {
-							requestId,
-							targetId: "t",
-							status: "admitted",
-							code: "",
-							message: "",
-							budget: { evaluation: "allowed", reservation: "held" },
-							reservation: { reservationId: `iac:${requestId}` },
-						};
+					admit: async (id: string) => receipt(id),
+					revalidate: () => {
+						revalidated = true;
+						if (boundary === "revalidate") corrupt();
+						return true;
 					},
 					uncertain: (id: string) => {
 						uncertain.push(id);
@@ -304,7 +372,12 @@ describe("Alchemy state-key identity", () => {
 			await provider.preview(program);
 			await expect(
 				provider.applyWithAdmission(program, "request"),
-			).rejects.toThrow("STATE_IDENTITY_UNVERIFIED");
+			).rejects.toMatchObject({
+				code: "STATE_IDENTITY_UNVERIFIED",
+				requiresReconciliation: true,
+				executionOutcome: "not-started",
+				reservationId: "iac:request",
+			});
 			expect(uncertain).toEqual(["iac:request"]);
 			expect(f.effects()).toBe(0);
 		} finally {
@@ -313,6 +386,7 @@ describe("Alchemy state-key identity", () => {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
+
 	it.each([
 		"local",
 		"bucket",
@@ -324,7 +398,7 @@ describe("Alchemy state-key identity", () => {
 			const f = fixture(directory, "a/b", store, "a__b");
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.refresh(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
@@ -346,15 +420,7 @@ describe("Alchemy state-key identity", () => {
 				...f.options,
 				financial: {
 					...f.options.financial,
-					admit: async (requestId: string) => ({
-						requestId,
-						targetId: "t",
-						status: "admitted",
-						code: "",
-						message: "",
-						budget: { evaluation: "allowed", reservation: "held" },
-						reservation: { reservationId: `iac:${requestId}` },
-					}),
+					admit: async (requestId: string) => receipt(requestId),
 				},
 			});
 			await provider.preview(program);
@@ -363,6 +429,93 @@ describe("Alchemy state-key identity", () => {
 			await provider.preview(destroy);
 			await provider.destroyWithAdmission(destroy, "destroy");
 			expect(f.effects()).toBe(2);
+		} finally {
+			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = oldHome;
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+	it.each([
+		"local",
+		"bucket",
+	] as const)("rejects a historical action alias in real %s state", async (store) => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-fqn-"));
+		const oldHome = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(directory, "home");
+		try {
+			const f = fixture(
+				directory,
+				"a/b",
+				store,
+				"a__b",
+				"App",
+				"test",
+				"action",
+			);
+			const provider = createAlchemyIacProvider(f.options);
+			await expect(provider.preview(program)).rejects.toThrow(
+				"PLAN_UNAVAILABLE",
+			);
+			expect(f.effects()).toBe(0);
+		} finally {
+			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = oldHome;
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+	it.each([
+		"local",
+		"bucket",
+	] as const)("accepts a matching historical action in real %s state", async (store) => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-fqn-"));
+		const oldHome = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(directory, "home");
+		try {
+			const f = fixture(
+				directory,
+				"a/b",
+				store,
+				"a/b",
+				"App",
+				"test",
+				"action",
+			);
+			const provider = createAlchemyIacProvider(f.options);
+			await expect(provider.preview(program)).resolves.toBeDefined();
+			expect(f.effects()).toBe(0);
+		} finally {
+			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = oldHome;
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+	it("rechecks the independently opened drift state after host authorization", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-fqn-"));
+		const oldHome = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(directory, "home");
+		try {
+			const f = fixture(directory, "a/b", "local", "a/b");
+			let checks = 0;
+			const provider = createAlchemyIacProvider({
+				...f.options,
+				composite: {
+					...f.options.composite,
+					verifyEnvironment: () => {
+						checks++;
+						if (checks === 2)
+							writeFileSync(
+								join(directory, "state", "App", "test", "a__b.json"),
+								JSON.stringify(persisted("a__b")),
+							);
+						return true;
+					},
+				},
+			});
+			await expect(provider.refresh(program)).rejects.toThrow(
+				"DRIFT_CHECK_UNAVAILABLE",
+			);
+			expect(checks).toBe(2);
+			expect(f.effects()).toBe(0);
 		} finally {
 			if (oldHome === undefined) delete process.env.ALCHEMY_HOME;
 			else process.env.ALCHEMY_HOME = oldHome;
@@ -384,14 +537,15 @@ describe("Alchemy state-key identity", () => {
 				"__stack_output__",
 				"App",
 				"test",
+				"resource",
 				"__stack_output__",
 			);
 			const provider = createAlchemyIacProvider(f.options);
 			await expect(provider.preview(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			await expect(provider.refresh(program)).rejects.toThrow(
-				"STATE_IDENTITY_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(f.effects()).toBe(0);
 		} finally {
