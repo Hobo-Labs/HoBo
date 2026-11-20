@@ -19,6 +19,7 @@ import {
 	useConnectFormCollector,
 	useConnectRuntime,
 } from "./connect-runtime.js";
+import { DirectiveSchema } from "./directive-schema.js";
 import { formInitialState } from "./form-state.js";
 
 const ActionParamsSchema = z.record(z.string(), z.string());
@@ -46,16 +47,6 @@ interface View {
 	confirmByAction: ReadonlyMap<string, string>;
 	formFields: readonly ConfigField[];
 }
-
-const DirectiveSchema = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("none") }),
-	z.object({ kind: z.literal("navigate"), url: z.string().url() }),
-	z.object({
-		kind: z.literal("post"),
-		url: z.string().url(),
-		fields: z.record(z.string(), z.string()),
-	}),
-]);
 
 const ConfigFieldSchema = z.object({
 	name: z.string(),
