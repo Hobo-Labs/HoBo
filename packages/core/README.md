@@ -79,7 +79,7 @@ reasons. A provider package can add cited, per-product **host forms**
 then lists every form, so one provider can show a form that qualifies beside
 one that does not. Core holds no vendor facts; the PostgreSQL catalog built from these
 is in `@hobo/cloud-providers`. See
-[`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+[`docs/design/postgres-backend-catalog.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/postgres-backend-catalog.md).
 
 ## Durable lifecycle gate leases
 

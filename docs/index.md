@@ -11,7 +11,7 @@ This bundle follows Open Knowledge Format v0.1 conventions: `index.md` files pro
 | Area | Start here | Purpose |
 |---|---|---|
 | Design suite | [`design/index.md`](./design/index.md) | Canonical product/platform design, ADRs through **ADR-0148** (index: [`design/adr/index.md`](./design/adr/index.md); recent: **ADR-0144** external-spec posture, **ADR-0145** Traits, **ADR-0146** jurisdiction/residency), glossary, event families, traceability, CLI and SDK contracts. |
-| Lineage & credits | [`design/lineage.md`](./design/lineage.md) | The aggregate portrait: every influence with posture, what's borrowed, divergence, and capture link. |
+| Lineage & credits | [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) | The aggregate portrait: every influence with posture, what's borrowed, divergence, and capture link. |
 | Agent tooling | [`agent-tooling.md`](./agent-tooling.md) | Local agent-tooling setup, trust boundaries, data-egress notes, and maintenance expectations. |
 | CI performance | [`ci/performance.md`](./ci/performance.md) | Where HoBo CI Fabric wall time goes on the self-hosted box, the fixes landed, and what is left for a five-minute run. |
 | Fleet enrollment | [`design/fleet-enrollment-design.md`](./design/fleet-enrollment-design.md) | Enrolled execution fleet, strict v2 at-most-once claims, scorecard, and [`fleet-enrollment.yml`](../.github/workflows/fleet-enrollment.yml) CI lane on `hobo` runners (package-relative vitest paths under `@hobo/ci`). |

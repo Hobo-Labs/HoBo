@@ -81,7 +81,7 @@ for deployment. HoBo's wiring model and manifest IR both descend from this desig
 
 ## How it competes with HoBo
 
-Aspire is recorded in [`lineage.md`](../design/lineage.md) as a **pillar**: `WithReference` wiring,
+Aspire is recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) as a **pillar**: `WithReference` wiring,
 annotations and the manifest IR are taken from here.
 
 | Contested HoBo surface | The contest |
@@ -589,7 +589,7 @@ draft/proof material; **design-only** = design intent.
 
 ## Better-together / integration posture
 
-- **Borrow** — already recorded in [`lineage.md`](../design/lineage.md): `WithReference` wiring,
+- **Borrow** — already recorded in [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md): `WithReference` wiring,
   annotations as the extension mechanism, and the manifest IR. This capture reaffirms all three.
 - **Benchmark** — the local orchestration experience and dashboard set the bar for `hobo dev`.
 - **Integrate** — an Aspire manifest is a plausible *input* to HoBo: the AppHost describes the graph,
@@ -611,7 +611,7 @@ draft/proof material; **design-only** = design intent.
 
 - [Aspire documentation](https://learn.microsoft.com/dotnet/aspire/) — AppHost, resources, `WithReference`, `WaitFor`, integrations, manifest
 - [dotnet/aspire](https://github.com/dotnet/aspire) — source and MIT licence
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Aspire as a pillar influence
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Aspire as a pillar influence
 
 This capture predates the research contract and was restructured to it on 2026-08-20 with its
 original research preserved. Current publisher coverage and version-to-version manifest changes were

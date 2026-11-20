@@ -318,7 +318,7 @@ the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest 
 ## Better-together / integration posture
 
 - **Benchmark**, and the honest framing is *lineage* rather than rivalry:
-  [`lineage.md`](../design/lineage.md) already records Heroku as a lesson and lineage source. The
+  [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) already records Heroku as a lesson and lineage source. The
   `cf push` / `git push heroku` ergonomic is the floor HoBo's DX must clear.
 - **Borrow** — **the release as an immutable code-plus-config pair with trivial rollback**, and the
   **marketplace shape** for HoBo's Resource/App Packs. Both are proven designs.
@@ -341,7 +341,7 @@ the [live provider matrix](../design/live-provider-matrix.md) for HoBo's honest 
 
 - [devcenter.heroku.com](https://devcenter.heroku.com/) — dynos, buildpacks, releases, config vars, pipelines, review apps, add-ons
 - [heroku.com](https://www.heroku.com/) — positioning and the Fir generation (vendor material)
-- HoBo-side: [`design/lineage.md`](../design/lineage.md) records Heroku as a lesson and lineage source
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md) records Heroku as a lesson and lineage source
 
 This capture predates the research contract and was restructured to it on 2026-08-19 with its
 original research preserved. Current pricing, the Fir rollout state and add-on catalog were not
