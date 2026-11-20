@@ -197,6 +197,8 @@ account lease API's actual job attribution to inspect routing and settlement.
 ## Follow HoBo platform budgets
 
 For an owned development machine, see [local CI and the default dev container](LOCAL-DEVELOPMENT.md).
+Its [runnerless local signoff](LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+uses `gh-signoff` to publish the jobs HoBo's local workflow run covered.
 The `local` provider dispatches the existing bridge to `hobo-local-host`; original
 jobs retain `runs-on: hobo`, lease accounting and JIT authorization. Offline act
 also runs the local zero-budget scenario without GitHub credentials.
@@ -884,6 +886,63 @@ default `runs-on: hobo` label is shared: do not run multiple relays for the same
 repository and label at once, since GitHub can assign a job to either runner.
 Switch the active App/relay ownership before using another environment. Local
 offline tests can use simulated GitHub delivery; see [local deployment](deploy/README.md).
+
+### The committed runner order
+
+`.hobo/ci.json` can also hold `runnerOrder`: the ordered runner types a relay
+job is answered against, with an included-minutes limit on `github`, a monthly
+spend limit on a hosted provider, a retry policy and the size `auto` means.
+Like `runnerRouting`, it is committed configuration, so no variable carries
+it. The record and its rules are `RunnerOrder` in
+[`@hobo/ci`](../ci/RUNNER-ORDER.md); `RunnerOrderDocumentSchema` describes the
+block for the editor schema and fails the project parse on a broken order
+with the parser's own sentence. `parseCiRunnerOrder` applies that same schema,
+so null fields and zero limits or sizes cannot bypass the editor contract.
+
+```json
+{
+  "runnerOrder": {
+    "steps": [
+      { "key": "fleet" },
+      { "key": "machine" },
+      { "key": "github", "minutesLimitPercent": 80 },
+      { "key": "depot", "spendLimitUsd": 100 },
+      { "key": "github" }
+    ],
+    "autoSizeVcpus": 4
+  }
+}
+```
+
+`parseCiRunnerOrder(json)` reads the block: the committed order, or the
+default (`fleet`, `machine`, `github`) when the file has none. Invalid JSON,
+a project document that is not a JSON object, or a broken block returns
+`source: "invalid"`, `order: undefined` and a `problem`; there is no default
+order to walk by mistake. `hobo ci route` refuses that result. With a valid
+order it walks the order for one job and shows every step passed over. Nothing
+in the relay reads `runnerOrder` yet.
+
+### Moving workflow jobs to the fleet
+
+`planWorkflow(file, source)` reads one workflow file and gives every job a
+verdict: `ready` (its `runs-on` is a single GitHub-hosted Linux x64 label),
+`routed` (already a fleet label) or `skipped` with one of
+`WORKFLOW_SKIP_REASONS`. `applyWorkflowPlan(file, source, jobs)` rewrites the
+`runs-on` of the ready jobs named, by splicing the value's own bytes: comments,
+quoting, line endings and anchors elsewhere in the file are untouched, the old
+label is kept as a trailing comment, and applying twice changes nothing. A job
+whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
+refused rather than changed in two places; a merged `runs-on` is skipped.
+Multiline `run` blocks count for package-install warnings, and passing the
+whole `secrets` context marks a job deploy-like. Deploy checks read effective
+YAML merge keys too: merged environments, inherited secrets, write permissions
+and secret-bearing workflow environment values cannot make a job look ready.
+Jobs that route others directly, through a matrix, or through reusable-workflow
+inputs stay put.
+Applying also reads the result back and returns the original unless selected
+jobs are routed and every unselected job plan is unchanged. Both are pure;
+`hobo ci init` is the command over them
+([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
 
 ## Connect a repository
 

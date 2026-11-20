@@ -2,7 +2,11 @@
 
 Vercel CloudProvider for HoBo Examples OOB yards.
 
-- Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`)
+- Equivalence → default Resource Definitions (`EQUIVALENCE_CLASSES` / `createVercelProvider`):
+  compute, objectStore, database, kv, **queue** (Vercel Queues, `vercel:queue`: at-least-once
+  delivery to a consumer function of the deployment, with delays) and **schedule** (Vercel Cron Jobs, `vercel:cron-job`:
+  a cron expression in the project's `vercel.json` that calls one of the deployment's
+  own paths with the project's `CRON_SECRET`; realized with that deployment)
 - Matching `satisfies` full|partial|none + typed impedance (`vercelImpedanceFindings`)
 - **Temporary / agent stations via [Vercel Drop](https://vercel.com/docs/drop)** —
   `provisionTemporaryEnvironmentStation()` creates a **new** project from uploaded
@@ -14,7 +18,7 @@ Vercel CloudProvider for HoBo Examples OOB yards.
   owns and pays for the project until a human accepts a project transfer request.
   See below.
 - **Direct-HTTPS deployment path (the default)** — typed slot factories
-  (`project()`, `edgeFunction()`, `blob()`, `edgeConfig()`), REST resource
+  (`project()`, `gitFunction()`, `queue()`, `schedule()`, `cron()`, `sandboxHost()`, `blob()`), REST resource
   resolvers (`vercelResolvers` / `vercelResolverRegistry`), and the default Yard
   catalog (`vercelYardSpec`). No IaC engine, no CLI. See
   [Direct-HTTPS deployment path](#direct-https-deployment-path).
@@ -22,6 +26,32 @@ Vercel CloudProvider for HoBo Examples OOB yards.
 ```sh
 pnpm --filter @hobo/provider-vercel test
 ```
+
+### Local Vercel API emulation
+
+`test/emulator.test.ts` runs the project resolver against Vercel Labs'
+[`@emulators/vercel`](https://github.com/vercel-labs/emulate) 0.13.1 and
+`@emulators/core`. It seeds two teams and a project, then checks authorized
+adoption, update, read, deletion, and isolation between teams, as well as
+refusal when authorization is absent. The emulator is invoked
+in-process, after the normal production-host guard, so this lane makes no
+network calls or Vercel account changes. The existing scripted tests still
+cover lost responses, malformed payloads and other failures.
+
+```sh
+pnpm --filter @hobo/provider-vercel exec vitest run test/emulator.test.ts
+```
+
+For interactive API debugging, `npx emulate@0.13.1 --service vercel` starts
+the same Vercel Labs service; see its [endpoint documentation](https://emulate.dev/docs/vercel).
+Point a test client explicitly at its local URL. This does not redirect HoBo's
+production transport or emulate deployed execution. The emulator implements
+project creation at `/v11/projects`, while the resolver uses `/v9/projects`
+without a Git repository. For Git-linked projects the resolver uses `/v11`,
+but emulator 0.13.1 returns the full `owner/repository` in `link.repo` with an
+empty `link.org`, so independent confirmation refuses it. The test checks that
+this failed confirmation does not produce a second project on retry. It does not
+prove successful project creation or behavior against Vercel.
 
 ## `vercel.sponsored-project-transfer/v1`
 
@@ -165,7 +195,7 @@ engine holding a state file, no plan/apply round trip, and no shelling out to
 
 | Module | Exports | What it is |
 | --- | --- | --- |
-| `src/slots.ts` | `staticDeployment`, `project`, `edgeFunction`, `blob`, `edgeConfig`, `vercelSlots` | Typed factories that emit `SlotBinding` records through core's parse boundary |
+| `src/slots.ts` | `staticDeployment`, `project`, `gitFunction`, `queue`, `schedule`, `cron`, `sandboxHost`, `blob`, `edgeConfig`, `vercelSlots` | Typed factories that emit `SlotBinding` records through core's parse boundary |
 | `src/resolvers.ts` | `vercelResolvers`, `vercelResolverRegistry`, `VERCEL_RESOLVER_TRANSPORT_POLICY`, `VERCEL_UNRESOLVED_PRODUCT_IDS` | `ResourceResolver` implementations that converge a resource against the REST API |
 | `src/default-yard.ts` | `vercelYardSpec`, `vercelSlotCatalog`, `vercelYardRows`, `VERCEL_DEFAULT_BINDINGS` | The default Yard catalog as raw, canonically-sorted rows |
 
@@ -181,6 +211,11 @@ boundary rather than here.
 | `staticDeployment(options?)` | `web` | `web.hosted/v1` | `vercel.static-deploy/v1` |
 | `project(options?)` | `web` | `web.project/v1` | `vercel.project/v1` |
 | `edgeFunction(options?)` | `service` | `service.worker/v1` | `vercel.edge-function/v1` |
+| `gitFunction(options?)` | `api` | `api.http/v1` | `vercel.function/v1` |
+| `queue(options?)` | `queue` | `queue.at-least-once/v1` | `vercel.queues/v1` |
+| `schedule(options?)` | `service` | `service.scheduled/v1` | `vercel.schedules/v1` |
+| `cron(options?)` | `service` | `service.scheduled/v1` | `vercel.cron/v1` |
+| `sandboxHost(options?)` | `service` | `service.batch/v1` | `vercel.sandbox-host/v1` |
 | `blob(options?)` | `bucket` | `bucket.object/v1` | `vercel.blob/v1` |
 | `edgeConfig(options?)` | `kv` | `kv.key-value/v1` | `vercel.edge-config/v1` |
 
@@ -215,6 +250,11 @@ exists and the request did not name it) or `noop` (the request named it and
 nothing differs). `delete` treats a 404 as success. `read` powers adoption and
 state recovery. `replace` is never emitted: nothing here deletes and re-creates
 a resource behind the caller's back.
+For `vercel.function/v1`, adoption for reading is not ownership: `delete`
+refuses any deployment that lacks the HoBo operation marker (including an
+adopted `source` deployment Vercel's Git integration built), and `reconcile`
+refuses to rewrite the build settings of a project it only matched by name
+unless the request pins its `projectId` or created it in the same reconcile.
 
 **Endpoints covered.**
 
@@ -222,8 +262,24 @@ a resource behind the caller's back.
 | --- | --- |
 | `vercel.blob/v1` | `GET /v1/storage/stores`, `POST /v1/storage/stores/blob`, `GET /v1/storage/stores/{id}`, project connection `POST`/`PATCH`/`DELETE`, `DELETE /v1/storage/stores/blob/{id}` |
 | `vercel.project/v1` | `POST /v11/projects`, `GET /v9/projects/{idOrName}`, `POST /v9/projects/{idOrName}/link`, `PATCH /v9/projects/{idOrName}`, `DELETE /v9/projects/{idOrName}` |
+| `vercel.function/v1` | Staged Git deployment with `POST /v13/deployments` and scoped deployment/project readback |
+| `vercel.queues/v1`, `vercel.schedules/v1`, `vercel.cron/v1` | Verify components of the exact Git deployment; enable or disable preview schedules via the Vercel Schedules API |
+| `vercel.sandbox-host/v1` | Read the project and Sandbox list; attach only after separate workload authorization, quota and pricing evidence |
 | `vercel.edge-config/v1` | `POST /v1/global-config`, `GET /v1/global-config`, `GET /v1/global-config/{edgeConfigId}`, `PUT /v1/global-config/{edgeConfigId}`, `DELETE /v1/global-config/{edgeConfigId}` |
 
+The planner advertises `vercel.queues/v1` for at-least-once and delayed queues.
+Use the `queue` and `delayedQueue` slot factories to declare topics and their
+consumer entries. Each queue depends on its Git function deployment: the
+supervisor verifies that exact deployment's queue triggers before reporting the
+component ready. There is no standalone queue provisioning path, and the
+provider's price is unknown until the hosting budget authority supplies a
+verified quote. Queue retirement also requires independently verified drain
+and producer fencing.
+
+The `schedule` slot factory declares a private Vercel Schedule with its
+function entry and expected jitter. It is selected as `vercel.schedules/v1`
+and verified against its owning Git deployment; preview activation and
+production routing require the supervisor's separate provider readback.
 `createVercelBlobDefinition` describes the native Blob product with unknown
 conformance and unavailable custody by default; account evidence, quota,
 credentials and a current quote must be verified separately.
@@ -244,9 +300,32 @@ exact scope. A same-name project or matching Git repository is not deletion
 authority. Until the host supplies these verifiers, existing-project control
 and deletion are refused.
 
+Sandbox host selection does not create a VM. The host must supply fresh proof
+for the exact team, project, revision and representative guest/proxy workload:
+runtime identity, Sandbox creation permission, capacity for both VMs, and a
+complete cost quote. Broker admission and reservation are still required for
+each job. Detachment requires an admission fence and drained sessions.
+
+The Git function resolver can receive approved, nonsecret deployment variables
+as `environmentVariables: [{ name, value }]`. `parseVercelGitEnvironment`
+screens the supported public context and fleet values before the supervisor
+records them. The hosting authority must independently verify the signed
+Junction context or fleet, and the resolver includes the canonical values in
+the operation identity. Raw credentials are not deployment variables.
+
 Vercel renamed the Edge Config REST surface to `/v1/global-config` (the path
 parameter is still `edgeConfigId`); the product id keeps the `edge-config` name
 the catalog fixes, and the resolver calls the current documented path.
+
+**Schedules and queues are deployment configuration.** Vercel has no API that
+creates a schedule or a queue consumer on its own, and static deployments
+refuse `vercel.json` by design, so `vercel:cron-job` and `vercel:queue`
+placements are executed by a git deployment whose `vercel.json` declares them.
+`vercelPlatformDrift(config, planned)` (`src/platform-config.ts`) holds that
+file to the plan: every queue has a `queue/v2beta` consumer on its topic, every
+scheduled queue has `schedules.<name> = { schedule: <cadence>, topic: <queue> }`,
+and nothing else is scheduled. `hobo ci up` refuses to deliver the relay while
+there is drift (`HOBO_CI_UP_PLATFORM_DRIFT`).
 
 Blob discovery and project connection use the same storage API as Vercel's
 CLI. The resolver requires an explicit team, project ID, region, access mode,
@@ -513,3 +592,91 @@ other fourteen portable offerings are declared absent with a reason
 | `RESOLVER_PRODUCT_UNSUPPORTED` for `vercel.edge-function/v1` | functions ship inside a deployment | deliver them with the project deployment |
 | a canary is lowered to `inprocess.weighted` | Rolling Releases were not realizable for the plan | check the two mapped deployment ids; the rung is recorded (`rollout.Lowered`) |
 | no `hobo.cd.resolver.*` metrics | the registry was built without `metrics` and `nowMs` | pass both; a sink without a clock is refused |
+
+## Deployment test emulator
+
+`@hobo/provider-vercel/testing` exports `createVercelDeploymentEmulator` for
+in-process tests. Give it a synthetic team and token and the Vercel Labs
+emulator's `app.fetch` as `projectFetch`, then seed the same project identity in
+both fixtures. It exposes both `fetch` and HoBo's `HttpTransport`, backed by the
+same isolated state. The adapter forwards project lookup and file uploads to the
+Labs emulator and supplies the deployment behavior that emulator does not yet
+model. It supports one synthetic team selected by `teamId`; slug scope and
+duplicate team IDs are refused. It never chooses a network transport itself;
+`projectFetch` must be an in-process emulator, not the real provider.
+The `HttpTransport` uses HoBo's bounded fetch adapter and forwards its abort
+signal to `projectFetch`. An upstream operation that ignores cancellation can
+still have an uncertain outcome; delayed responses do not update the overlay.
+The emulator bounds each request body, `fetch` response, and deployment's
+aggregate file content to 32 MiB.
+
+The supported slice uploads content addressed by SHA-1, creates file-based preview
+or staged production deployments, reads and lists them, serves the saved source
+bytes from synthetic deployment origins, and moves existing production aliases.
+`seedDeployment`, `seedAlias`, `setState`, and `failNext` let tests model an
+earlier deployment, project production aliases, build completion, and a response
+lost before or after an operation. API-created deployments start in `BUILDING`
+unless `initialState` overrides it; seeded deployments default to `READY` unless
+their `state` is set. Use `setState` to complete a simulated build. A staged
+production deployment receives no
+production alias automatically. The simulated project promotion and rollback
+endpoints immediately move the project's seeded production aliases; the provider
+may process those operations asynchronously. Manual alias assignment to a staged
+deployment is refused because this double does not model how Vercel updates its
+production substate in that case. A manual assignment to an already promoted
+deployment only moves the named alias. Preview promotion is unsupported; Vercel
+can rebuild previews with production settings, which the emulator does not
+simulate. It does not require or create a Git-connected project.
+
+This is a deterministic test double, not evidence of Vercel behavior: it does
+not unpack source archives, build source, execute functions, model billing or
+real credentials, enforce provider permissions, reproduce timing or eventual
+consistency, or implement all Vercel APIs. Automatic production domain
+assignment, Git-source creation, and unrecognized routes are refused. Reserved
+source-archive paths are refused unless the opaque seam below is enabled. File
+and alias state is process-local and is not durable. A synthetic lost response does not prove that
+a real provider request is terminal. `test/deployment-emulator.test.ts`
+exercises the HoBo resolver through the shared transport and the staged
+upload, project-promotion, rollback, and alias flow. These fixtures do not prove
+that a live provider has accepted or finished a promotion.
+
+A minimal paired fixture uses `@emulators/core` and `@emulators/vercel` as test
+dependencies:
+
+```ts
+import { createServer } from "@emulators/core";
+import { getVercelStore, seedFromConfig, vercelPlugin } from "@emulators/vercel";
+import { createVercelDeploymentEmulator } from "@hobo/provider-vercel/testing";
+
+const api = "https://api.vercel.com";
+const token = "synthetic-token";
+const { app, store } = createServer(vercelPlugin, {
+  baseUrl: api,
+  tokens: { [token]: { login: "fixture", id: 1 } },
+});
+vercelPlugin.seed?.(store, api);
+seedFromConfig(store, api, {
+  teams: [{ slug: "fixture" }],
+  projects: [{ name: "sample", team: "fixture" }],
+});
+const state = getVercelStore(store);
+const team = state.teams.findOneBy("slug", "fixture");
+const project = state.projects.findOneBy("name", "sample");
+if (!team || !project) throw new Error("Fixture is unavailable.");
+const emulator = createVercelDeploymentEmulator({
+  teamId: team.uid,
+  token,
+  projectFetch: (input, init) => app.fetch(new Request(input, init)),
+});
+emulator.seedProject({ id: project.uid, name: project.name, teamId: team.uid });
+```
+
+Pass `emulator.fetch` or `emulator.transport` to the service under test.
+
+For tests of the source uploader, `opaqueSourceArchives: true` accepts exactly
+one `.vercel/source.tgz.part1` reference whose uploaded bytes, SHA-1 and size
+match. `readOpaqueArchive` returns a copy of those opaque bytes. The emulator
+does not extract or validate the archive and returns 501 for its application
+paths. A test can call `setSyntheticResponses` to supply explicitly synthetic
+responses, such as health endpoints, for a staged archive deployment; those
+responses are test fixtures, not evidence of an extracted or built application.
