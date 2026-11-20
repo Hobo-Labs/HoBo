@@ -3,6 +3,8 @@ import { schema } from "@json-render/react/schema";
 import { shadcnComponentDefinitions as ui } from "@json-render/shadcn/catalog";
 import { z } from "zod";
 
+import { SECRET_STORE_IDS } from "./steps.js";
+
 export const connectCatalog = defineCatalog(schema, {
 	components: {
 		Card: ui.Card,
@@ -25,7 +27,7 @@ export const connectCatalog = defineCatalog(schema, {
 		},
 		"connect.chooseStore": {
 			params: z.object({
-				store: z.enum(["infisical", "1password", "bitwarden", "yard"]),
+				store: z.enum(SECRET_STORE_IDS),
 			}),
 			description:
 				"Choose the third-party secret store the provider's credentials go to",

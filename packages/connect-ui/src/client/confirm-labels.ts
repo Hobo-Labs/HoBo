@@ -12,14 +12,13 @@ export function confirmLabelsForSpec(
 ): ReadonlyMap<string, string> {
 	const byLabel = new Map<string, string>();
 	for (const [action, message] of confirmByAction) {
-		const element = Object.values(spec.elements).find((candidate) => {
-			if (candidate.type !== "Button") return false;
-			const press = ButtonPressSchema.safeParse(candidate.on);
-			return press.success && press.data.press.action === action;
-		});
-		if (element === undefined) continue;
-		const label = ButtonLabelSchema.safeParse(element.props);
-		if (label.success) byLabel.set(label.data.label, message);
+		for (const element of Object.values(spec.elements)) {
+			if (element.type !== "Button") continue;
+			const press = ButtonPressSchema.safeParse(element.on);
+			if (!press.success || press.data.press.action !== action) continue;
+			const label = ButtonLabelSchema.safeParse(element.props);
+			if (label.success) byLabel.set(label.data.label, message);
+		}
 	}
 	return byLabel;
 }

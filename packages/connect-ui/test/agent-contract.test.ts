@@ -8,6 +8,7 @@ import {
 	type ConnectStep,
 	composeConnectSpec,
 	connectCandidates,
+	DEFAULT_SECRET_STORES,
 	deterministicConnectSpec,
 } from "../src/index.js";
 
@@ -26,6 +27,25 @@ describe("agent safety on the connect page", () => {
 		expect(agentPressAllowed("Open GitHub to continue?", false)).toBe(false);
 		expect(agentPressAllowed("Open GitHub to continue?", true)).toBe(true);
 		expect(agentPressAllowed(undefined, false)).toBe(true);
+	});
+
+	it("maps action confirms onto every matching button label", () => {
+		const step: ConnectStep = {
+			kind: "choose-secret-store",
+			provider: "github",
+			stores: DEFAULT_SECRET_STORES,
+		};
+		const spec = deterministicConnectSpec(step);
+		const confirmByAction = new Map([
+			["connect.chooseStore", "Choose where credentials are stored?"],
+		]);
+		const byLabel = confirmLabelsForSpec(spec, confirmByAction);
+		for (const store of step.stores) {
+			const label = store.recommended
+				? `${store.label} (recommended)`
+				: store.label;
+			expect(byLabel.get(label)).toBe("Choose where credentials are stored?");
+		}
 	});
 
 	it("maps hand-off confirms onto button labels in the composed spec", async () => {
