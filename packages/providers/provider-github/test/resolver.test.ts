@@ -362,19 +362,21 @@ describe("typed refusals", () => {
 		}
 	});
 
-	it("refuses a credential without push before writing, and a 403 on write", async () => {
-		const readOnly = githubWorld({ push: false });
+	it("publishes when GET /repos reports permissions.push false but writes succeed", async () => {
+		const world = githubWorld({ push: false });
+		const outcome = parsed(
+			await resolverFor().reconcile(request(), world.transport),
+		);
+		expect(outcome.action).toBe("create");
+		expect(world.publishedTree()).toBe(await treeOf(SITE_V1));
+	});
+
+	it("refuses github-permission-missing when a write returns 403", async () => {
+		const world = githubWorld({ push: false, writable: false });
 		const error = await refusal(
-			resolverFor().reconcile(request(), readOnly.transport),
+			resolverFor().reconcile(request(), world.transport),
 		);
 		expect(reasonOf(error)).toBe("github-permission-missing");
-		expect(readOnly.mutations()).toHaveLength(0);
-		const blocked = githubWorld({ writable: false });
-		expect(
-			reasonOf(
-				await refusal(resolverFor().reconcile(request(), blocked.transport)),
-			),
-		).toBe("github-permission-missing");
 	});
 
 	it("refuses a rejected credential and a rate limit with distinct reasons", async () => {

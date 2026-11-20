@@ -1,0 +1,63 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "products": [],
+    "rateCards": [],
+    "allowances": [],
+    "credits": [],
+    "commitments": []
+  },
+  "availability": {
+    "developerModel": {
+      "scope": {
+        "modelId": "my-contract",
+        "revision": "1",
+        "tenantId": "tenant-a",
+        "providerId": "provider-a",
+        "providerAccountRef": "account-a",
+        "productId": "product-a"
+      },
+      "scenario": {
+        "action": "dispatch",
+        "at": "2026-01-01T00:00:00Z",
+        "horizon": "2026-01-31T00:00:00Z",
+        "pricingCatalogHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "catalog": {
+          "schema": "hobo.pricing.catalog/v1",
+          "catalogHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "products": [],
+          "rateCards": [],
+          "allowances": [],
+          "credits": [],
+          "commitments": []
+        },
+        "state": {
+          "schema": "hobo.pricing/v1",
+          "view": "commercial-state",
+          "tenantId": "tenant-a",
+          "seq": 1,
+          "stateHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "asOf": "2026-01-01T00:00:00Z",
+          "agreements": [],
+          "allowances": [],
+          "credits": [],
+          "commitments": [],
+          "periodActuals": [],
+          "completeness": "complete",
+          "observations": []
+        },
+        "baseline": [],
+        "candidate": [],
+        "sourceProviderAgreementIds": [],
+        "options": {
+          "allowNewProviderAgreement": false,
+          "allowCancellation": false,
+          "amortization": "provider-actual",
+          "allocationConvention": "marginal-consume",
+          "allocationForecast": []
+        }
+      }
+    }
+  }
+}
