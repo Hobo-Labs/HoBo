@@ -1475,15 +1475,47 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	}, 60_000);
 
 	it.each([
-		{ lost: false, confirmation: "candidate", rollbackRefused: false },
-		{ lost: true, confirmation: "candidate", rollbackRefused: false },
-		{ lost: false, confirmation: "candidate", rollbackRefused: true },
-		{ lost: true, confirmation: "missing", rollbackRefused: false },
-		{ lost: true, confirmation: "error", rollbackRefused: false },
+		{
+			lost: false,
+			confirmation: "candidate",
+			rollbackRefused: false,
+			publicHealth: { commit: SHA },
+		},
+		{
+			lost: true,
+			confirmation: "candidate",
+			rollbackRefused: false,
+			publicHealth: { commit: SHA },
+		},
+		{
+			lost: false,
+			confirmation: "candidate",
+			rollbackRefused: true,
+			publicHealth: { commit: SHA },
+		},
+		{
+			lost: true,
+			confirmation: "missing",
+			rollbackRefused: false,
+			publicHealth: { commit: SHA },
+		},
+		{
+			lost: true,
+			confirmation: "error",
+			rollbackRefused: false,
+			publicHealth: { commit: SHA },
+		},
+		{
+			lost: false,
+			confirmation: "candidate",
+			rollbackRefused: false,
+			publicHealth: {},
+		},
 	])("handles failed live verification and ambiguous promotion (%s)", async ({
 		lost,
 		confirmation,
 		rollbackRefused,
+		publicHealth,
 	}) => {
 		const home = freshHome();
 		let now = Date.UTC(2026, 10, 12, 12);
@@ -1578,10 +1610,11 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				status: 200,
 				headers: {},
 				body: request.url.endsWith("/healthz")
-					? JSON.stringify({
-							commit:
-								lost && confirmation === "candidate" ? "f".repeat(40) : SHA,
-						})
+					? JSON.stringify(
+							lost && confirmation === "candidate"
+								? { commit: "f".repeat(40) }
+								: publicHealth,
+						)
 					: JSON.stringify({ ready: true }),
 			};
 		};

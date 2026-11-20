@@ -133,7 +133,12 @@ import {
 	secretStoreDeployInputs,
 } from "./ci-secret-store.js";
 import { defaultHoboHome } from "./hobo-home.js";
-import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
+import {
+	isJsonNumber,
+	isJsonObject,
+	isJsonString,
+	parseJsonObject,
+} from "./json.js";
 import {
 	createVercelClient,
 	VercelApiError,
@@ -1097,15 +1102,19 @@ export async function runCiRelayDeploy(
 								const ready = await request("/readyz");
 								if (clock() >= deadlineAt) return false;
 								const findings = live?.findings();
+								const servedCommit = parseJsonObject(health.body).commit;
 								return (
 									health.status === 200 &&
 									ready.status === 200 &&
-									(findings === undefined ||
-										(findings.servedCommit === undefined &&
-											findings.healthStatus === undefined &&
-											findings.readyStatus === undefined &&
-											findings.readyzState === undefined &&
-											findings.notReady === undefined))
+									commit !== undefined &&
+									findings !== undefined &&
+									isJsonString(servedCommit) &&
+									servedCommit.toLowerCase() === commit.toLowerCase() &&
+									findings.servedCommit === undefined &&
+									findings.healthStatus === undefined &&
+									findings.readyStatus === undefined &&
+									findings.readyzState === undefined &&
+									findings.notReady === undefined
 								);
 							} catch {
 								return false;
