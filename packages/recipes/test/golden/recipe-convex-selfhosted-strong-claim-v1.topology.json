@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.convex.selfhosted-strong-claim/v1",
 	"topologyDigest": "sha256:97f04a3349955ed5302b57f14a680d3525512c84e138008e414133d0596fac80",
-	"resolutionDigest": "sha256:f8baf1e2beb9bf3abde1314ee5f8446b77aa9b0d845287568aba960865fd487d",
+	"resolutionDigest": "sha256:be45f036034ad034c529f7e862f59a8a9ffb83e1c0e2034831779abbd7b3a10c",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.convex.selfhosted-strong-claim/v1",

@@ -26,6 +26,8 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
+
+	operationGeneration?: string;
 	/** The declaration the provider must realize, when supplied by the orchestrator. */
 	resource?: ResourcePlan;
 }
@@ -102,7 +104,6 @@ interface ExecResultFailureBase {
 	sandbox: ExecSandboxContext;
 }
 
-/** Reconciliation-required failures cannot be retried or compensated. */
 export type ExecResultFailed = ExecResultFailureBase &
 	(
 		| {
@@ -130,6 +131,7 @@ interface ReconciliationMetadata {
 interface ProviderFailure {
 	reason: string;
 	requiresReconciliation: boolean;
+	provesNotStarted: boolean;
 	reservationId?: string;
 }
 
@@ -180,6 +182,18 @@ function hashRef(value: HashRefInput): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 
+export function iacExecutionId(program: IacProgram): string {
+	const digest =
+		program.operationGeneration === undefined
+			? hashRef({ programId: program.programId, action: program.action })
+			: hashRef({
+					programId: program.programId,
+					action: program.action,
+					operationGeneration: program.operationGeneration,
+				});
+	return `exec-${program.action}-${program.operationGeneration === undefined ? digest.slice(7, 19) : digest.slice(7)}`;
+}
+
 // The sandboxed, in-process Executor. It scopes creds per-exec (only the injected
 // token), asserts no ambient cloud creds, bounds egress to the allowlist, runs
 // preview then apply against the injected IacProvider, and streams exec.* events.
@@ -192,7 +206,7 @@ export function createInProcessExecutor(
 
 	return {
 		async run(program, credential, runOptions = {}) {
-			const execId = `exec-${program.action}-${hashRef({ programId: program.programId, action: program.action }).slice(7, 19)}`;
+			const execId = iacExecutionId(program);
 			const events: ExecEvent[] = [];
 			let seq = 0;
 			const push = (type: ExecEventType, data: JsonObject): void => {
@@ -261,6 +275,7 @@ export function createInProcessExecutor(
 				}
 			}
 
+			let mutationStarted = false;
 			try {
 				// preview then apply, inside the sandbox (control-plane.md resolution
 				// pipeline step 4: "IaC adapter runs preview then apply … with scoped creds").
@@ -279,6 +294,7 @@ export function createInProcessExecutor(
 				}
 
 				if (program.action === "destroy") {
+					mutationStarted = true;
 					await iac.destroy(program);
 					push("exec.Succeeded", {
 						outputsHash: hashRef({ destroyed: program.resourceId }),
@@ -293,11 +309,16 @@ export function createInProcessExecutor(
 					};
 				}
 
+				mutationStarted = true;
 				const outputs = await iac.apply(program);
 				push("exec.Succeeded", { outputsHash: hashRef(outputs) });
 				return { status: "succeeded", execId, events, outputs, diff, sandbox };
 			} catch (error) {
 				const failure = readProviderFailure(error);
+				const uncertain =
+					failure.requiresReconciliation ||
+					failure.reservationId !== undefined ||
+					(mutationStarted && !failure.provesNotStarted);
 				const reconciliation: ReconciliationMetadata = {
 					requiresReconciliation: true,
 					reconciliationOperation: program.action,
@@ -308,9 +329,9 @@ export function createInProcessExecutor(
 					events,
 					push,
 					sandbox,
-					failure.requiresReconciliation ? "fatal" : "retryable",
+					uncertain ? "fatal" : "retryable",
 					`executor.apply_failed: ${failure.reason}`,
-					failure.requiresReconciliation ? reconciliation : undefined,
+					uncertain ? reconciliation : undefined,
 				);
 			}
 		},
@@ -328,6 +349,14 @@ function readProviderFailure(error: unknown): ProviderFailure {
 			error !== null &&
 			"requiresReconciliation" in error &&
 			error.requiresReconciliation === true;
+
+		const provesNotStarted =
+			typeof error === "object" &&
+			error !== null &&
+			Object.getOwnPropertyDescriptor(error, "requiresReconciliation")
+				?.value === false &&
+			Object.getOwnPropertyDescriptor(error, "executionOutcome")?.value ===
+				"not-started";
 		const candidateId =
 			typeof error === "object" && error !== null && "reservationId" in error
 				? error.reservationId
@@ -339,13 +368,19 @@ function readProviderFailure(error: unknown): ProviderFailure {
 			candidateId.trim() === candidateId &&
 			!/[\p{Cc}]/u.test(candidateId)
 		) {
-			return { reason, requiresReconciliation, reservationId: candidateId };
+			return {
+				reason,
+				requiresReconciliation,
+				provesNotStarted,
+				reservationId: candidateId,
+			};
 		}
-		return { reason, requiresReconciliation };
+		return { reason, requiresReconciliation, provesNotStarted };
 	} catch {
 		return {
 			reason: "uninspectable provider failure",
 			requiresReconciliation: true,
+			provesNotStarted: false,
 		};
 	}
 }
