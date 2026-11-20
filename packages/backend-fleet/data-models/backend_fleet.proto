@@ -212,3 +212,19 @@ message FleetRoute {
   repeated FleetRouteCandidate candidates = 6;
   uint64 decided_at_ms = 7;
 }
+
+// The fleet's operating plan for a declared continuity policy
+// (`continuityFleetPlan`, src/continuity.ts).
+message ContinuityFleetPlan {
+  string tier = 1;
+  int64 rpo_ms = 2;
+  int64 failover_after_ms = 3;
+  int64 min_dwell_ms = 4;
+  int32 standbys = 5;
+  // "snapshot" or "cold".
+  string copy = 6;
+  int64 copy_every_ms = 7;
+  int64 backup_every_ms = 8;
+  int32 backups_kept = 9;
+  optional int64 monthly_budget_micros = 10;
+}
