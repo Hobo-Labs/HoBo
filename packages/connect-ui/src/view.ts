@@ -9,12 +9,12 @@ import {
 //
 // A step is data the flow owns; its view is derived from it: only the fields
 // that step is missing, the one choice it asks for, and the actions that move
-// it. The browser renders a view with vercel-labs/ui (UI SDK) parts — Field,
-// Input, PasswordInput, RadioGroup, Button, Progress — so every control is
-// named and an agent can operate the same page through `createAgent` and
-// WebMCP. Nothing in a view is a secret value: a secret field arrives empty and
-// leaves through `connect.submit` straight to the flow, which writes it to the
-// owner's secret store.
+// it. The browser renders json-render elements from the composed spec: every control is
+// labeled, consequential buttons carry `data-agent-confirm`, and dispatch asks
+// the person to confirm before a provider hand-off. Agents must honor the same
+// confirm attribute the page shows. Nothing in a view is a secret value: a
+// secret field arrives empty and leaves through `connect.submit` straight to
+// the flow, which writes it to the owner's secret store.
 
 export interface ViewAction {
 	readonly action: ConnectActionName;

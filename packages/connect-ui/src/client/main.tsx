@@ -1,11 +1,5 @@
 import { isNonEmptySpec, type Spec } from "@json-render/core";
-import {
-	defineRegistry,
-	JSONUIProvider,
-	Renderer,
-	useStateStore,
-} from "@json-render/react";
-import { shadcnComponents } from "@json-render/shadcn";
+import { JSONUIProvider, Renderer } from "@json-render/react";
 import {
 	StrictMode,
 	useCallback,
@@ -16,9 +10,15 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
-import { connectCatalog } from "../catalog.js";
 import type { ConfigField } from "../steps.js";
 import { confirmLabelsForSpec } from "./confirm-labels.js";
+import { registry } from "./connect-registry.js";
+import {
+	ConnectFormParamsBridge,
+	ConnectRuntimeProvider,
+	useConnectFormCollector,
+	useConnectRuntime,
+} from "./connect-runtime.js";
 import { formInitialState } from "./form-state.js";
 
 const ActionParamsSchema = z.record(z.string(), z.string());
@@ -29,59 +29,6 @@ function actionParams(
 ): ActionParams {
 	return ActionParamsSchema.parse(params ?? {});
 }
-
-const FormValuesSchema = z.record(z.string(), z.string());
-
-function FormParamsBridge() {
-	const { get } = useStateStore();
-	useEffect(() => {
-		formParamsRef.current = () => {
-			const direct = FormValuesSchema.safeParse(get("/form"));
-			if (direct.success) return direct.data;
-			const wrapped = z
-				.object({ form: FormValuesSchema })
-				.safeParse(get("/form"));
-			return wrapped.success ? wrapped.data.form : {};
-		};
-	});
-	return null;
-}
-
-const formParamsRef = { current: (): Record<string, string> => ({}) };
-
-const confirmByLabelRef = { current: new Map<string, string>() };
-
-function ConnectButton(props: Parameters<typeof shadcnComponents.Button>[0]) {
-	const confirm = confirmByLabelRef.current.get(props.props.label);
-	return (
-		<span data-agent-confirm={confirm}>
-			<shadcnComponents.Button {...props} />
-		</span>
-	);
-}
-
-const { registry } = defineRegistry(connectCatalog, {
-	components: {
-		Card: shadcnComponents.Card,
-		Stack: shadcnComponents.Stack,
-		Heading: shadcnComponents.Heading,
-		Text: shadcnComponents.Text,
-		Button: ConnectButton,
-		Alert: shadcnComponents.Alert,
-		Badge: shadcnComponents.Badge,
-		Link: shadcnComponents.Link,
-		Progress: shadcnComponents.Progress,
-		Separator: shadcnComponents.Separator,
-		Radio: shadcnComponents.Radio,
-		Input: shadcnComponents.Input,
-	},
-	actions: {
-		"connect.submit": async () => {},
-		"connect.chooseStore": async () => {},
-		"connect.start": async () => {},
-		"connect.cancel": async () => {},
-	},
-});
 
 type Directive =
 	| { kind: "none" }
@@ -100,10 +47,10 @@ interface View {
 
 const DirectiveSchema = z.discriminatedUnion("kind", [
 	z.object({ kind: z.literal("none") }),
-	z.object({ kind: z.literal("navigate"), url: z.string() }),
+	z.object({ kind: z.literal("navigate"), url: z.string().url() }),
 	z.object({
 		kind: z.literal("post"),
-		url: z.string(),
+		url: z.string().url(),
 		fields: z.record(z.string(), z.string()),
 	}),
 ]);
@@ -234,6 +181,57 @@ function follow(directive: Directive): void {
 	}
 }
 
+function ConnectStage({
+	view,
+	initialState,
+	dispatch,
+	busy,
+	collector,
+	secretNames,
+}: {
+	readonly view: View;
+	readonly initialState: Record<string, unknown>;
+	readonly dispatch: (action: string, params: ActionParams) => Promise<void>;
+	readonly busy: boolean;
+	readonly collector: ReturnType<typeof useConnectFormCollector>["collector"];
+	readonly secretNames: ReturnType<
+		typeof useConnectFormCollector
+	>["secretNames"];
+}) {
+	const { collectFormParams } = useConnectRuntime();
+	const handlers = useMemo(
+		() => ({
+			"connect.submit": (params: unknown) =>
+				dispatch("connect.submit", {
+					...collectFormParams(true),
+					...actionParams(params),
+				}),
+			"connect.chooseStore": (params: unknown) =>
+				dispatch("connect.chooseStore", actionParams(params)),
+			"connect.start": (params: unknown) =>
+				dispatch("connect.start", actionParams(params)),
+			"connect.cancel": (params: unknown) =>
+				dispatch("connect.cancel", actionParams(params)),
+		}),
+		[collectFormParams, dispatch],
+	);
+	return (
+		<JSONUIProvider
+			registry={registry}
+			initialState={initialState}
+			handlers={handlers}
+		>
+			<ConnectFormParamsBridge
+				secretNames={secretNames}
+				collector={collector}
+			/>
+			<fieldset disabled={busy} className="connect-fieldset">
+				<Renderer spec={view.spec} registry={registry} />
+			</fieldset>
+		</JSONUIProvider>
+	);
+}
+
 function ConnectPage() {
 	const [view, setView] = useState<View | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -292,13 +290,9 @@ function ConnectPage() {
 		() => (view === null ? {} : formInitialState(view.formFields)),
 		[view],
 	);
-
-	useEffect(() => {
-		if (view === null) return;
-		confirmByLabelRef.current = new Map(
-			confirmLabelsForSpec(view.spec, view.confirmByAction),
-		);
-	}, [view]);
+	const { collector, secretNames } = useConnectFormCollector(
+		view?.formFields ?? [],
+	);
 
 	if (error !== null)
 		return (
@@ -307,30 +301,24 @@ function ConnectPage() {
 			</p>
 		);
 	if (view === null) return <p className="hobo-connect-loading">Loading…</p>;
+
+	const confirmByLabel = confirmLabelsForSpec(view.spec, view.confirmByAction);
+
 	return (
-		<JSONUIProvider
-			key={`${view.step}-${view.composedBy}-${view.formFields.map((field) => field.name).join(",")}`}
-			registry={registry}
-			initialState={initialState}
-			handlers={{
-				"connect.submit": (params) =>
-					dispatch("connect.submit", {
-						...formParamsRef.current(),
-						...actionParams(params),
-					}),
-				"connect.chooseStore": (params) =>
-					dispatch("connect.chooseStore", actionParams(params)),
-				"connect.start": (params) =>
-					dispatch("connect.start", actionParams(params)),
-				"connect.cancel": (params) =>
-					dispatch("connect.cancel", actionParams(params)),
-			}}
+		<ConnectRuntimeProvider
+			confirmByLabel={confirmByLabel}
+			collector={collector}
 		>
-			<FormParamsBridge />
-			<fieldset disabled={busy} className="connect-fieldset">
-				<Renderer spec={view.spec} registry={registry} />
-			</fieldset>
-		</JSONUIProvider>
+			<ConnectStage
+				key={`${view.step}-${view.composedBy}-${view.formFields.map((field) => field.name).join(",")}`}
+				view={view}
+				initialState={initialState}
+				dispatch={dispatch}
+				busy={busy}
+				collector={collector}
+				secretNames={secretNames}
+			/>
+		</ConnectRuntimeProvider>
 	);
 }
 

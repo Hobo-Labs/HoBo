@@ -7,6 +7,15 @@ the exact component it needs, generated with
 [json-render](https://json-render.dev) on its shadcn/ui preset, and every
 action on the page is a transition the flow on the server decides.
 
+## Agent-ready ceremony controls
+
+The loopback client labels every control in the composed spec, wraps consequential
+buttons with `data-agent-confirm`, and runs `window.confirm` on matching actions
+before a provider hand-off or secret submit. The runtime exposes
+`collectFormParams(false)` so automation never reads secret fields back out of the
+form store. `test/agent-contract.test.ts` and `test/agent-dom.test.tsx` pin these
+guarantees on the json-render page.
+
 ## Secretless by construction
 
 A provider hands its credentials over once. The flow writes them straight from
@@ -104,7 +113,8 @@ checking the client, server, scripts, and tests.
 - the model path is used when complete and rejected when it omits the action;
 - a failing evaluator falls back;
 - the server's 404, CSP, action parsing, callback and failure handling;
-- no secret value in any response.
+- no secret value in any response;
+- agent confirm metadata on hand-off controls and no secret echo in composition.
 
 The flow was also driven end to end in Chromium through real clicks, with no
 console errors.

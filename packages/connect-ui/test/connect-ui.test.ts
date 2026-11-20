@@ -405,6 +405,9 @@ describe("startConnectPage", () => {
 		expect(shell.headers.get("content-security-policy")).toContain(
 			"default-src 'self'",
 		);
+		expect(shell.headers.get("content-security-policy")).toContain(
+			"img-src 'self' data:",
+		);
 		expect(await shell.text()).toContain("connect.js");
 		const origin = new URL(page.url).origin;
 		expect((await fetch(`${origin}/s/wrong-token/view`)).status).toBe(404);
