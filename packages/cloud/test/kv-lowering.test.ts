@@ -19,7 +19,7 @@ describe("SDK key-value lowering", () => {
 		});
 		expect(lowerManifest(manifest)).toMatchObject([
 			{ name: "cache", port: "kv", require: [] },
-			{ name: "database", port: "data", require: [] },
+			{ name: "database", port: "database", require: [] },
 			{ name: "explicit", port: "kv", require: ["eventual"] },
 		]);
 	});
