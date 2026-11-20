@@ -45,15 +45,16 @@ If the session PR set is empty and the tree is clean relative to `origin/main`, 
 2. **Never commit secrets** (`.env`, keys, tokens). Prefer env var **names** only.
 3. **Never delete user work** (`git clean -fdx`, wipe unrelated branches).
 4. **`pnpm agent:check -- --staged`** before every commit; never bypass hooks.
-   Checkin gates are **local only** (agent hooks + `.githooks`). Do **not** wait
-   on, cancel, re-request, or otherwise drive GitHub Action runners for gates
-   or site promote (`gh run …`, `POST …/pages/builds`, polling
-   `pages-build-deployment`, etc.).
+   Checkin gates are local, but they do not replace GitHub's required merge
+   checks. During authorized closeout, follow required checks and the merge
+   queue through completion, fix real failures, and recheck changed heads. Do
+   independent work while checks run when possible; do not cancel or rerun
+   unrelated jobs or trigger site promotion merely for a local check-in.
 5. **Rebase on `origin/main`** (or the stack base) before open/update PR; resolve conflicts fully.
 6. **Bottom-up closeout** for stacks (`stacked-prs.md`); single PR uses the same review steps.
-7. **If Actions happen to fire and are billing-red**, that does **not** block
-   squash-merge (document + merge; `--admin` if needed). Do not treat green CI
-   as a required gate.
+7. **If checks are billing-red**, follow the documented billing exception
+   (document + merge; `--admin` if needed). Otherwise, respect required
+   GitHub status checks and the merge queue.
 8. **Real local gate failures** (`agent:check` / hooks) must be fixed before
    merge — not papered over.
 9. Update **`sdlc-state.md`** + append **`.sdlc/dispatch-log.md`** with outcomes.
@@ -154,6 +155,8 @@ For **each** PR:
    evidence, and council.
 5. Resolve **all** PR comments/threads.
 6. Status checks:
+   - Follow required checks and queued merges until GitHub reports the PR merged;
+     a queued PR is not yet merged.
    - Fix real failures; push; re-check.
    - Billing/budget empty-step failures → document on PR + state → **still merge**.
 7. For relevant work, run `consensus-loop.mts --mode assert-yay` against
@@ -169,9 +172,13 @@ For **each** PR:
    # protection + billing-red:
    gh pr merge <pr> --squash --delete-branch --admin
    ```
-9. After each merge: `git fetch origin`; for stacks `gh stack sync --prune`; rebase remaining
-   session branches onto new trunk before merging the next. Recompute affected
-   upper-layer proposal digests and rerun council approval when they changed.
+9. After each merge, fetch the new trunk and update the remaining session
+   branches before merging the next. Do not use stack sync if it would
+   force-push or prune user branches. When a published branch needs a replay,
+   verify the new tree contains the updated base and all intended branch
+   changes, preserve the old head as a merge parent, then fast-forward the
+   remote. Recompute affected upper-layer proposal digests and rerun council
+   approval when they changed.
 
 Repeat until **every** PR in the session set is MERGED (or explicitly closed with a recorded
 reason the user accepted).
@@ -181,9 +188,9 @@ reason the user accepted).
 1. `sdlc-state.md` → phase `closed` (or remaining true external blocks listed).
 2. Append `.sdlc/dispatch-log.md` with PR numbers, merge SHAs, failure classes
    (`billing-budget`, etc.).
-3. If state/log changes remain uncommitted after merges, open a **tiny follow-up PR** (or
-   include them in the last layer if not yet merged) — do not leave closed-initiative state
-   only local.
+3. Keep `.sdlc/` state and logs local and ignored. The PRs and any existing
+   issue-tracker records are the durable history; do not open a follow-up PR
+   solely to commit ignored state.
 4. Report to the user: PR URLs, merge SHAs, billing exceptions, residuals.
 
 ## Partial finish / blocked finish
