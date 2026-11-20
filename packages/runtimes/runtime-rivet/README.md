@@ -13,8 +13,9 @@ Rivet engine.
 
 RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
 `loadRivetkit()` uses dynamic import for ESM and CommonJS hosts. The live tests
-exercise the pinned upstream engine separately from the HoBo local host and
-fail if the engine or an actor action fails.
+exercise the pinned upstream engine separately from the HoBo local host, verify
+actor state across an engine restart, and fail if the engine or an actor action
+fails. Journal reopen tests cover persisted-state replay and in-flight commands.
 
 ## Fidelity
 
@@ -36,9 +37,9 @@ fail if the engine or an actor action fails.
   the captured engine log.
 - The Rivet 3.0.0 engine CLI ships platform packages for darwin (arm64, x64)
   and linux (arm64, x64 — static musl binaries that also run on glibc hosts);
-  Rivet 2's win32 package has no 3.0.0 successor. There is no Windows engine
-  binary at this pin, so Windows local-engine paths are unsupported until
-  upstream ships one.
+  Rivet 2's win32 package has no 3.0.0 successor. `loadRivetkit()` and the
+  local-engine live test reject win32 before native-module loading; Windows
+  local-engine paths remain unsupported until upstream ships a binary.
 - Raw Rivet queue **receive-loss** is not HoBo at-least-once. Inbox rows are authority.
 
 ```ts

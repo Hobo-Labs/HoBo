@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { loadRivetkit, loadRivetkitClient } from "../src/load-rivetkit.js";
+import {
+	assertRivetEngineSupported,
+	loadRivetkit,
+	loadRivetkitClient,
+} from "../src/load-rivetkit.js";
 
 const require = createRequire(import.meta.url);
 const TSX_LOADER = require.resolve("tsx");
@@ -16,6 +20,14 @@ const LIVE_FIXTURE = fileURLToPath(
 );
 
 describe("rivetkit live baremetal", () => {
+	it("rejects the unavailable Windows engine before native loading", () => {
+		expect(() => assertRivetEngineSupported("win32")).toThrow(
+			/no Windows engine binary.*unsupported on win32/,
+		);
+		expect(() => assertRivetEngineSupported("linux")).not.toThrow();
+		expect(() => assertRivetEngineSupported("darwin")).not.toThrow();
+	});
+
 	it("loads RivetKit and its client from ESM and CommonJS", {
 		timeout: 30_000,
 	}, async () => {
@@ -71,9 +83,10 @@ describe("rivetkit live baremetal", () => {
 		expect(result.stdout).toBe("cjs-ok");
 	});
 
-	it("runs a stateful actor on an isolated Rivet 3 engine", {
+	it("persists actor state across an isolated Rivet 3 engine restart", {
 		timeout: 65_000,
 	}, async () => {
+		assertRivetEngineSupported();
 		const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-live-"));
 		try {
 			const result = await new Promise<{

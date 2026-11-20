@@ -80,20 +80,31 @@ for (let attempt = 1; ; attempt++) {
 	};
 	const configFile = join(process.cwd(), "engine.json");
 	await writeFile(configFile, JSON.stringify(config));
-	const engine = spawn(getEnginePath(), ["--config", configFile], {
-		stdio: ["ignore", "pipe", "pipe"],
-	});
 	let engineLog = "";
-	for (const stream of [engine.stdout, engine.stderr]) {
-		stream.on("data", (chunk) => {
-			engineLog = (engineLog + chunk).slice(-12000);
+	const startEngine = () => {
+		const child = spawn(getEnginePath(), ["--config", configFile], {
+			stdio: ["ignore", "pipe", "pipe"],
 		});
-	}
-	let engineExited = false;
-	const engineDone = once(engine, "exit").then((result) => {
-		engineExited = true;
-		return result;
-	});
+		for (const stream of [child.stdout, child.stderr]) {
+			stream.on("data", (chunk) => {
+				engineLog = (engineLog + chunk).slice(-12000);
+			});
+		}
+		let exited = false;
+		const done = once(child, "exit").then((result) => {
+			exited = true;
+			return result;
+		});
+		return { child, done, hasExited: () => exited };
+	};
+	let engine = startEngine();
+	const stopEngine = async () => {
+		if (engine.child.exitCode === null && engine.child.signalCode === null)
+			engine.child.kill("SIGTERM");
+		const timer = setTimeout(() => engine.child.kill("SIGKILL"), 5000);
+		await engine.done;
+		clearTimeout(timer);
+	};
 	const callbacks = [];
 	const registry = setup({
 		use: { counter },
@@ -119,17 +130,27 @@ for (let attempt = 1; ; attempt++) {
 		const handle = client.counter.getOrCreate(["test"]);
 		if ((await handle.increment()) !== 1 || (await handle.increment()) !== 2)
 			throw new Error("Rivet actor state did not advance");
+		await stopEngine();
+		engine = startEngine();
+		const readinessDeadline = Date.now() + 10_000;
+		for (;;) {
+			try {
+				await fetch(publicUrl);
+				break;
+			} catch (error) {
+				if (Date.now() >= readinessDeadline) throw error;
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+		}
+		if ((await handle.increment()) !== 3)
+			throw new Error("Rivet actor state did not survive engine restart");
 	} catch (error) {
 		failure = error;
-		engineDead = engineExited;
+		engineDead = engine.hasExited();
 	} finally {
 		for (const callback of callbacks) await callback();
 		await registry.shutdown();
-		if (engine.exitCode === null && engine.signalCode === null)
-			engine.kill("SIGTERM");
-		const timer = setTimeout(() => engine.kill("SIGKILL"), 5000);
-		await engineDone;
-		clearTimeout(timer);
+		await stopEngine();
 	}
 	if (failure === undefined) {
 		process.stdout.write("rivet3-live-ok");
