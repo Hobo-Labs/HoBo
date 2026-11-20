@@ -263,6 +263,95 @@ JSON output uses HoBo's envelope;
 `--format json` and `-F json` are aliases of `--json`. Unsupported filters report
 a usage error rather than silently changing their meaning.
 
+## Move workflow jobs to the fleet
+
+```sh
+hobo ci init                       # show the plan; changes nothing
+hobo ci init --apply all
+hobo ci init --apply test,ci.yml:build --fleet-label hobo-trunk
+```
+
+`hobo ci init` reads `.github/workflows/*.yml` and says, per job, whether its
+`runs-on` can become the fleet label (`ready`), already is, or is left alone
+and why. `--apply` rewrites the jobs named (`job`, `file:job`, or `all`) and
+nothing else: only the `runs-on` value changes, every other byte of the file
+is kept, and the old label stays as a trailing `# was ...` comment so the
+change can be undone by hand. A workflow that changes or becomes unreadable
+after planning is left alone. Any refused selection, including an unreadable
+workflow, makes the apply exit non-zero; a partial apply reports both the jobs
+rewritten and those refused. Nothing is committed.
+
+A job is left alone when it calls another workflow, takes `runs-on` from an
+expression, names a runner group or several labels, asks for Windows, macOS
+or ARM, already runs on a hosted provider's or a self-hosted label, or decides
+where other jobs run (another job's `runs-on`, a matrix, or reusable-workflow
+inputs read its outputs, including through YAML merge keys: a routing job has
+to start even when the fleet cannot). A YAML value shared by an anchor is
+left alone when changing it would affect another part of the workflow. A job
+that uses an environment, any write permission, or a secret other than `GITHUB_TOKEN`
+is left alone unless `--include-secret-jobs` is passed. A ready job can carry
+warnings: it needs Docker, installs system packages, follows `ubuntu-latest`,
+or has a matrix.
+
+This writes the opt-in that works today, `runs-on: <fleet label>`. A job moved
+this way waits when the fleet is down; the fallback to another runner type is
+what a [runner order](../ci/RUNNER-ORDER.md) describes and no host walks yet.
+
+## Signals and diagnosis
+
+```sh
+hobo ci signals                # the last 50 runs
+hobo ci signals --runs 100 --json
+hobo ci diagnose               # the latest failed run
+hobo ci diagnose 123456789
+```
+
+Both read GitHub's run history with the authenticated GitHub CLI and store
+nothing. `signals` reads up to `--runs` completed runs (1-100) with their jobs,
+and the attempt before the latest when a run was re-run. It prints signals
+that cover at least 30 minutes and 1% of job time, grouped as cost,
+speed and complexity, with the worst offenders under each, and one line per
+runner: jobs, share started, median wait, median and p90 run time, share
+passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
+or a larger attempt is reported as an error instead of a partial result.
+`diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
+each log and every annotation page of the check run identified by
+`check_run_url`, and prints the first failed step, what kind of failure it
+looks like, whether a re-run is likely to help, and the log lines leading up to
+the last error. A log, annotation, or check-run identity read failure fails the
+command rather than producing a partial diagnosis. If the GitHub CLI truncates
+a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+job's JSON result. Human-readable reports remove terminal escape sequences,
+control characters, and bidirectional overrides from GitHub metadata, logs, and
+annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log
+text leaves the machine.
+
+## Route a job against the runner order
+
+```sh
+hobo ci route --machine self-hosted --github ubuntu-24.04
+hobo ci route --github ubuntu-24.04 --depot auto --facts facts.json --json
+```
+
+`hobo ci route` answers one relay job against the repository's
+[runner order](../ci/RUNNER-ORDER.md) and shows the walk: the committed
+`runnerOrder` in `.hobo/ci.json` (the default order, fleet then machines then
+GitHub-hosted, when there is none), the label the job would ask each runner
+type for, and every step passed over with its reason. It contacts nothing.
+`--facts` names a JSON file, relative to the checkout or absolute, saying what
+is true now (fleet room, machines, minutes used, money spent, tripped runner
+types); without it the fleet and machines are absent and no limit is measured.
+When nothing can take the job the command exits non-zero with
+`HOBO_CI_NO_RUNNER` and the reason. A
+committed order that breaks a rule is refused with
+`HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default. An
+existing configuration that cannot be read, including a dangling file link,
+or is not a JSON object is also refused; only an absent configuration or a
+valid object without a runner order selects the default.
+
+No relay endpoint or route job walks a runner order yet: this command is how
+an order is checked before it is committed.
+
 ## Vercel reference
 
 Reference checked **2026-10-29** against the official
@@ -301,6 +390,12 @@ link is generated from `data-models/composition.proto` with CUE constraints in
 `composition.cue`. Run scoped TypeScript, schema/codegen drift, CLI consumer
 contracts and documentation gates. These offline checks do not contact GitHub or
 prove deployed relay/runner readiness.
+`test/ci-init.test.ts` runs `hobo ci init` through the real CLI against
+temporary workflow files and compares the rewritten bytes.
+`test/ci-route.test.ts` runs `hobo ci route` through the real CLI against a
+temporary repository; `test/ci-insights.test.ts` runs `signals` and `diagnose`
+over a process seam and executes every read in
+`contracts/ci-insights-github.pact.json`.
 The product unit harness isolates module state between files, gives claim tests
 private credential homes, and uses version-probe stand-ins for Yard argument
 tests so those checks neither touch a developer's credentials nor download tools.

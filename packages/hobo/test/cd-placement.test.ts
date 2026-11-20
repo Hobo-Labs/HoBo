@@ -184,6 +184,11 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 		const vault = createTrustedVault();
 		vault.put("VERCEL_TOKEN", "tok_test");
 		vault.put("VERCEL_TEAM_ID", "team_abc");
+		vault.put("HOBO_CD_DEPLOY_INFISICAL_PROJECT_ID", "proj-1");
+		vault.put(
+			"HOBO_CD_DEPLOY_INFISICAL_IDENTITY_ID",
+			"00000000-0000-4000-8000-000000000001",
+		);
 		const deployed: string[] = [];
 		let seenOptions: Omit<VercelDeployProviderOptions, "fetch"> | undefined;
 		let placedRuntime: YardRuntime | undefined;
@@ -226,6 +231,10 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 			projectName: "hobo-cd",
 			target: "preview",
 			createMissingProject: true,
+			configuration: {
+				INFISICAL_PROJECT_ID: "proj-1",
+				INFISICAL_IDENTITY_ID: "00000000-0000-4000-8000-000000000001",
+			},
 			gitArtifact: {
 				org: "Hobo-Labs",
 				repo: "HoBo",
