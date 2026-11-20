@@ -32,6 +32,8 @@ try {
 				'--disable-pip-version-check',
 				'--no-cache-dir',
 				'--no-deps',
+				'--require-hashes',
+				'--only-binary=:all:',
 				'--target',
 				target,
 				'-r',
@@ -41,12 +43,16 @@ try {
 		);
 		if (install.error) throw install.error;
 		if (install.status !== 0) throw new Error(`Z3 installation failed (${install.status ?? 'no exit status'})`);
+		env.PYTHONPATH = target;
+		env.BUDGET_Z3_PYTHONPATH = target;
 		probe = spawnSync('python3', ['-c', 'import z3; print(z3.get_version_string())'], {
-			env: { ...env, PYTHONPATH: target },
+			env,
 			encoding: 'utf8',
 		});
-		if (probe.stdout.trim() !== '4.15.4') throw new Error(`expected Z3 4.15.4, got ${probe.stdout.trim()}`);
-		env.PYTHONPATH = target;
+		const installedVersion = probe.stdout.trim();
+		if (probe.status !== 0 || installedVersion !== '4.15.4') {
+			throw new Error(`expected Z3 4.15.4, got ${installedVersion || 'no importable Z3'}`);
+		}
 	}
 	for (const name of ['broker_induction.py', 'scope_induction.py']) {
 		const proof = path.join(proofDir, name);
