@@ -485,8 +485,12 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--repo`, `--project` | Override the Yard's `repository` and `project` (a fork, a scratch project) |
 | `--set NAME=value` | A non-secret setting the Bindle's `config()` declares, or an input a chosen binding asks for. Never a setting the Yard already sets, never a secret, and never a storage integration's variable (`DATABASE_*`, `REDIS_*`, `KV_*`, `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) or an `INFISICAL_*` name other than the five coordinates |
 | `--provision` | Before deploying, attach the Marketplace bindings the Camp chooses (the Upstash cache), idempotently, with the Vercel CLI (`HOBO_VERCEL_CLI`, or `vercel` on the PATH). A failed attachment is reported in `provisioned` and the deploy goes ahead |
-| `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | Drive the deployment to READY and verification with a 20-minute budget checked between passes; ERROR or CANCELED is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
+
+An in-flight provider operation can outlast the budget. This relay path does
+not durably fence it across lease expiry, processes or restarts; inspect the
+provider and CD journal to establish its outcome before another deploy.
 
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on

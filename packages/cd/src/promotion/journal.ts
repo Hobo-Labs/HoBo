@@ -12,6 +12,7 @@ import type {
 	PrincipalRef,
 } from "@hobo/core";
 import type { Digest, TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 
 const tagOf = Object.prototype.toString;
 
@@ -208,7 +209,7 @@ export async function appendOnce(
  * Emit one metric point. Telemetry is advisory (the journal is the record),
  * so a failing sink never turns a committed command into an error.
  */
-export function emitMetric(
+export async function emitMetric(
 	sink: TelemetrySink,
 	point: Readonly<{
 		name: string;
@@ -218,17 +219,15 @@ export function emitMetric(
 		unit?: string;
 		kind?: "counter" | "histogram" | "gauge";
 	}>,
-): void {
-	sink
-		.metrics([
-			{
-				name: point.name,
-				kind: point.kind ?? "counter",
-				value: point.value ?? 1,
-				unit: point.unit ?? "{event}",
-				atMs: point.atMs,
-				attributes: point.attributes,
-			},
-		])
-		.catch(() => undefined);
+): Promise<void> {
+	await emitMetrics(sink, [
+		{
+			name: point.name,
+			kind: point.kind ?? "counter",
+			value: point.value ?? 1,
+			unit: point.unit ?? "{event}",
+			atMs: point.atMs,
+			attributes: point.attributes,
+		},
+	]);
 }

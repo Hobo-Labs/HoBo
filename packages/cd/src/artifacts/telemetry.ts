@@ -3,6 +3,7 @@
 // a command. Attributes carry codes, backends and ecosystems — never
 // coordinates with credentials, headers or bodies.
 import type { OtelAttributes, TelemetrySink } from "../ports.js";
+import { emitMetrics } from "../telemetry/advisory.js";
 
 // public-contract: metric names WP3 emits through TelemetrySink.
 export const ARTIFACT_METRICS = Object.freeze({
@@ -14,15 +15,13 @@ export const ARTIFACT_METRICS = Object.freeze({
 	provenance: "hobo.cd.provenance.verify",
 } as const);
 
-export function emit(
+export async function emit(
 	sink: TelemetrySink | undefined,
 	name: string,
 	atMs: number,
 	attributes: OtelAttributes,
 	value = 1,
 	unit = "{event}",
-): void {
-	sink
-		?.metrics([{ name, kind: "counter", value, unit, atMs, attributes }])
-		.catch(() => undefined);
+): Promise<void> {
+	await emitMetrics(sink, [{ name, kind: "counter", value, unit, atMs, attributes }]);
 }
