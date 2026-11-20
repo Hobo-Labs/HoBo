@@ -12,8 +12,8 @@ import {
 	type IacFinancialPlan,
 	IacTargetLiabilityEvidenceSchema,
 } from "../packages/broker/src/index.js";
-import type { IacProgram as CloudIacProgram } from "../packages/cloud/dist/executor/executor.js";
 import {
+	type IacProgram as CloudIacProgram,
 	createInProcessExecutor,
 	iacProgramFor,
 } from "../packages/cloud/dist/index.js";
@@ -37,22 +37,21 @@ import type {
 	IacRouteContext,
 } from "../packages/iac/iac-alchemy/src/port.js";
 import {
-	Alchemist,
+	collection,
 	create,
-	Effect,
+	effect,
+	gen,
 	inMemoryState,
-	Layer,
-	Output,
-	Provider,
+	layer,
+	map,
+	Providers,
+	provide,
 	Resource,
-	Rivet,
-	RivetCloud,
+	RunnerPool,
 	Stack,
+	succeed,
+	sync,
 } from "../packages/iac/iac-alchemy/test/imports.js";
-import {
-	testOperation,
-	testStateOwnership,
-} from "../packages/iac/iac-alchemy/test/route-fixture.js";
 import {
 	makeScenario,
 	perUnitCharge,
@@ -84,6 +83,15 @@ afterEach(() => {
 
 type Demo = Resource<"Demo.Widget", { size: number }, { id: string }>;
 const Widget = Resource<Demo>("Demo.Widget");
+const testOperation = {
+	operationId: `sha256:${"f".repeat(64)}`,
+	authorization: "host:proof",
+};
+const testStateOwnership = {
+	backendRef: "test:state",
+	ownershipEpoch: "test:epoch",
+	verify: () => true,
+};
 const program: IacProgram = {
 	programId: "run-1",
 	deploymentId: "deployment-a",
@@ -131,14 +139,11 @@ function setup(
 	const rivetStack = Stack(
 		options.stackName ?? "Demo",
 		{
-			providers: Layer.effect(
-				Rivet.Providers,
-				Provider.collection([RivetCloud.RunnerPool]),
-			).pipe(
-				Layer.provide(
-					Provider.succeed(RivetCloud.RunnerPool, {
+			providers: effect(Providers, collection([RunnerPool])).pipe(
+				provide(
+					succeed(RunnerPool, {
 						reconcile: ({ news }) =>
-							Effect.sync(() => {
+							sync(() => {
 								applied++;
 								if (options.failApply)
 									throw new Error("provider outcome unknown");
@@ -151,7 +156,7 @@ function setup(
 								};
 							}),
 						delete: () =>
-							Effect.sync(() => {
+							sync(() => {
 								deleted++;
 							}),
 					}),
@@ -159,8 +164,8 @@ function setup(
 			),
 			state: inMemoryState(),
 		},
-		Effect.gen(function* () {
-			const pool = yield* RivetCloud.RunnerPool("runner", {
+		gen(function* () {
+			const pool = yield* RunnerPool("runner", {
 				cluster: "test-cluster",
 				main: "./dist/node.mjs",
 				rivetkitVersion: "3.0.0",
@@ -174,7 +179,7 @@ function setup(
 				};
 			if (options.output === "mapped")
 				return {
-					poolName: Output.map(pool.name, (name) => name.toUpperCase()),
+					poolName: map(pool.name, (name) => name.toUpperCase()),
 				};
 			if (options.output === "invalid") return { nodeCount: 1 };
 			return {};
@@ -183,21 +188,21 @@ function setup(
 	const widgetStack = Stack(
 		options.stackName ?? "Demo",
 		{
-			providers: Provider.succeed(Widget, {
+			providers: succeed(Widget, {
 				reconcile: ({ news }) =>
-					Effect.sync(() => {
+					sync(() => {
 						applied++;
 						if (options.failApply) throw new Error("provider outcome unknown");
 						return { id: `widget-${news.size}` };
 					}),
 				delete: () =>
-					Effect.sync(() => {
+					sync(() => {
 						deleted++;
 					}),
 			}),
 			state: inMemoryState(),
 		},
-		Effect.gen(function* () {
+		gen(function* () {
 			yield* Widget("widget", { size: options.size?.() ?? 1 });
 			return {};
 		}),
@@ -339,7 +344,7 @@ function setup(
 			requestId: context.requestId ?? "integration-request",
 			operation: testOperation,
 		}),
-		runtimeLayer: Alchemist.layer(),
+		runtimeLayer: layer(),
 		runtimeDirectory: join(work, "runtime"),
 		financial: options.badAdmission
 			? {
@@ -402,6 +407,27 @@ function routingAdmission(
 		: { ...parsed, reservation: admission.reservation };
 }
 
+class RoutedApplyFailure extends Error {
+	readonly code: string;
+	readonly requiresReconciliation: boolean;
+	readonly executionOutcome: "not-started" | "completed" | "unknown";
+	readonly reservationId: string | undefined;
+	readonly admission: IacRoutingAdmission | undefined;
+
+	constructor(
+		error: AlchemyIacError,
+		admission: IacRoutingAdmission | undefined,
+	) {
+		super(error.message);
+		this.name = "RoutedApplyFailure";
+		this.code = error.code;
+		this.requiresReconciliation = error.requiresReconciliation;
+		this.executionOutcome = error.executionOutcome;
+		this.reservationId = error.reservationId;
+		this.admission = admission;
+	}
+}
+
 function adaptProviderApply(
 	provider: SetupFixture["provider"],
 	iacProgram: IacProgram,
@@ -424,16 +450,12 @@ function adaptProviderApply(
 			};
 		} catch (error) {
 			if (error instanceof AlchemyIacError) {
-				throw {
-					requiresReconciliation: error.requiresReconciliation,
-					executionOutcome: error.executionOutcome,
-					code: error.code,
-					reservationId: error.reservationId,
-					admission:
-						error.admission === undefined
-							? undefined
-							: routingAdmission(requestId, expected, error.admission),
-				};
+				throw new RoutedApplyFailure(
+					error,
+					error.admission === undefined
+						? undefined
+						: routingAdmission(requestId, expected, error.admission),
+				);
 			}
 			throw error;
 		}
@@ -451,8 +473,7 @@ async function executeRanked(
 		operation: testOperation,
 		candidates: input.candidates.map((candidate) => ({
 			targetId: candidate.targetId,
-			run: (requestId, expected, permit) =>
-				candidate.run(requestId, expected, permit),
+			run: candidate.run,
 		})),
 	});
 }
@@ -488,6 +509,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(result.outputs).toEqual({ poolName: "default" });
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -509,6 +531,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -547,6 +570,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -570,6 +594,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -590,6 +615,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -602,6 +628,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(outputs).toEqual({ poolName: "DEFAULT" });
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -626,6 +653,7 @@ describe("Alchemy IaC provider against the real library", () => {
 				reservationId: expect.stringMatching(/^iac:/u),
 			});
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -673,6 +701,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -699,6 +728,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -716,6 +746,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -783,7 +814,9 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(priced.applied()).toBe(1);
 			expect(priced.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			unknown.routeAuthority.close();
 			unknown.authority.close();
+			priced.routeAuthority.close();
 			priced.authority.close();
 		}
 	});
@@ -805,6 +838,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -822,6 +856,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -841,6 +876,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.issued()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -857,6 +893,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.issued()).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -909,6 +946,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -984,7 +1022,9 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(second.applied()).toBe(1);
 			expect(first.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			first.routeAuthority.close();
 			first.authority.close();
+			second.routeAuthority.close();
 			second.authority.close();
 		}
 	});
@@ -1005,6 +1045,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			await fixture.provider.apply(program);
 			expect(fixture.applied()).toBe(1);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1031,6 +1072,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1047,6 +1089,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1073,6 +1116,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(1);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1088,6 +1132,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.applied()).toBe(0);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1101,6 +1146,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(fixture.applied()).toBe(0);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1114,6 +1160,7 @@ describe("Alchemy IaC provider against the real library", () => {
 				code: "DRIFT_CHECK_INCOMPLETE",
 			});
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});
@@ -1137,6 +1184,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			expect(fixture.operations()).toEqual(["deploy"]);
 			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
+			fixture.routeAuthority.close();
 			fixture.authority.close();
 		}
 	});

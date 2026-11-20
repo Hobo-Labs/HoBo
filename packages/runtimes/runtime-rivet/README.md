@@ -25,6 +25,16 @@ fail if the engine or an actor action fails.
 - The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
   operator must establish and verify an upstream migration before upgrading
   an existing deployment.
+- Rivet 3 drops Rivet 2's `@secure-exec` isolate family. Actor code never
+  executes in the HoBo host process: the local journal host runs no Rivet
+  actor code, and the live fixture spawns the engine binary as its own
+  process (guard bound to 127.0.0.1, admin-token auth), so actor actions run
+  inside the engine's workers behind that process boundary.
+- The Rivet 3.0.0 engine CLI ships platform packages for darwin (arm64, x64)
+  and linux (arm64, x64 — static musl binaries that also run on glibc hosts);
+  Rivet 2's win32 package has no 3.0.0 successor. There is no Windows engine
+  binary at this pin, so Windows local-engine paths are unsupported until
+  upstream ships one.
 - Raw Rivet queue **receive-loss** is not HoBo at-least-once. Inbox rows are authority.
 
 ```ts
