@@ -212,8 +212,6 @@ export async function startFakeInfisical(
 				secret: { secretKey: key, version: secrets.get(at)?.version ?? 1 },
 			});
 		}
-		// The CD workload identity (`@hobo/hobo-cd` workload-identity.ts):
-		// a project identity, then its OIDC trust.
 		if (
 			method === "POST" &&
 			/^\/api\/v1\/projects\/[^/]+\/identities$/u.test(url.pathname)

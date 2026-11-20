@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { z } from "zod";
+
 import { bodyOf, json, type ProviderHandler } from "./tls-world.js";
 
 type VercelProjectEnv = Readonly<{
@@ -12,12 +14,20 @@ type VercelProjectEnv = Readonly<{
 
 type VercelProjectCreate = Readonly<{ name: string }>;
 
+const vercelProjectCreateBody = z.object({
+	name: z.union([z.string(), z.number()]).optional(),
+});
+
+const vercelEnvCreateBody = z.object({
+	key: z.string().optional(),
+	value: z.string().optional(),
+	type: z.string().optional(),
+	target: z.array(z.string()).optional(),
+});
+
 function parseVercelProjectCreate(body: string): VercelProjectCreate {
 	try {
-		// SAFETY: test fake coerces arbitrary request JSON to a project name string.
-		const parsed = JSON.parse(body || "{}") as {
-			name?: string | number | null;
-		};
+		const parsed = vercelProjectCreateBody.parse(JSON.parse(body || "{}"));
 		return { name: String(parsed.name ?? "") };
 	} catch {
 		return { name: "" };
@@ -28,13 +38,7 @@ function parseVercelEnvCreate(
 	body: string,
 ): Omit<VercelProjectEnv, "id"> {
 	try {
-		// SAFETY: test fake mirrors Vercel env create payloads; absent fields stay empty.
-		const parsed = JSON.parse(body || "{}") as {
-			key?: string;
-			value?: string;
-			type?: string;
-			target?: string[];
-		};
+		const parsed = vercelEnvCreateBody.parse(JSON.parse(body || "{}"));
 		return {
 			key: parsed.key ?? "",
 			value: parsed.value ?? "",
@@ -46,13 +50,6 @@ function parseVercelEnvCreate(
 	}
 }
 
-/**
- * Vercel and Neon as their APIs answer, for the TLS world. Each records what
- * it was asked, and changes state only the way the real provider would: a
- * device grant is approved only when the owner approves it.
- */
-
-/** api.vercel.com: the device grant (RFC 8628), teams, and deployments. */
 export function fakeVercel() {
 	const calls: string[] = [];
 	const grants = new Map<
@@ -61,7 +58,6 @@ export function fakeVercel() {
 	>();
 	const tokens = new Set<string>();
 	const deployments: string[] = [];
-	/** Projects by name, with their environment variables. */
 	const projects = new Map<string, VercelProjectEnv[]>();
 	const handle: ProviderHandler = async (request, response) => {
 		const url = new URL(request.url ?? "/", "https://api.vercel.com");
@@ -108,8 +104,6 @@ export function fakeVercel() {
 				teams: [{ id: "team_owner", slug: "owner" }],
 				pagination: { next: null },
 			});
-		// Projects and their environment, as `setProjectEnv` and a git
-		// deployment's missing-project path use them.
 		if (method === "POST" && url.pathname === "/v9/projects") {
 			const { name } = parseVercelProjectCreate(body);
 			if (projects.has(name))
@@ -137,7 +131,6 @@ export function fakeVercel() {
 			return team[1] === "team_owner"
 				? json(response, 200, { id: "team_owner", slug: "owner" })
 				: json(response, 404, { error: { code: "not_found" } });
-		// Turning on a project's OIDC tokens: it exists once deployed.
 		const patched = /^\/v9\/projects\/([^/]+)$/u.exec(url.pathname);
 		if (method === "PATCH" && patched !== null)
 			return projects.has(decodeURIComponent(patched[1] ?? ""))
@@ -163,13 +156,11 @@ export function fakeVercel() {
 		handle,
 		calls,
 		deployments,
-		/** The owner declines on Vercel the grant whose link they were shown. */
 		deny(link: string) {
 			const code = new URL(link).searchParams.get("user_code");
 			for (const grant of grants.values())
 				if (grant.code === code) grant.denied = true;
 		},
-		/** The owner approves the grant whose link they were shown. */
 		approve(link: string) {
 			const code = new URL(link).searchParams.get("user_code");
 			for (const grant of grants.values())
@@ -178,7 +169,6 @@ export function fakeVercel() {
 	};
 }
 
-/** neon.new: Claimable Postgres. */
 export function fakeNeon() {
 	const calls: string[] = [];
 	const databases = new Map<string, Readonly<Record<string, string | null>>>();

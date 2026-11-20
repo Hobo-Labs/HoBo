@@ -152,17 +152,10 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly handOffTimeoutMs?: number;
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
-	/**
-	 * What creates the CD journal's fleet members (`journal-fleet.ts`). With
-	 * none, `hobo cd up` provisions no journal and the CD runtime keeps its
-	 * single-process SQLite journal.
-	 */
 	readonly journalProvisioners?: readonly JournalMemberProvisioner[];
-	/** Test seams for the CD workload identity (`workload-identity.ts`). */
 	readonly workload?: CdWorkloadDeps;
 }
 
-/** The Vercel project HoBo.CD runs in (packages/cd-vercel's Yard). */
 // public-contract: the project name hobo cd up delivers CD to and trusts tokens from.
 export const CD_VERCEL_PROJECT = "hobo-cd";
 
@@ -182,7 +175,6 @@ function refused(
 	return { kind: "refused", result };
 }
 
-/** The journal fleet's step, or the refusal that stops the run. */
 async function journalStep(
 	store: OpenedSecretStore,
 	provisioners: readonly JournalMemberProvisioner[] | undefined,
@@ -225,7 +217,6 @@ async function ready(
 		]);
 	const journal = await journalStep(store, provisioners, false);
 	if (!Array.isArray(journal)) return journal;
-	// Provisioning may take time; confirm the selected scope is still current.
 	if (provisioners !== undefined && provisioners.length > 0) {
 		const current = await resolveVercelJunction(store, vault, matches);
 		if (!current.ok)
@@ -233,7 +224,6 @@ async function ready(
 				"Run hobo cd up again; if it persists, check access to the secret store.",
 			]);
 	}
-	// The identity HoBo.CD on Vercel reads the journal with (packages/cd-vercel).
 	let identity: PreparedStep;
 	try {
 		identity = await ensureCdWorkloadIdentity({

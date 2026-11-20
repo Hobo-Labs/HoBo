@@ -9,19 +9,9 @@ import type { TrustedVault } from "@hobo/core";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { z } from "zod";
 
-// HoBo.CD on Vercel reads its journal from the owner's store with its own
-// Vercel OIDC token (packages/cd-vercel). That needs an Infisical identity
-// that trusts the hobo-cd project's tokens. `hobo cd up` makes it here, with
-// the owner's own Infisical sign-in, through Infisical's API: nobody creates
-// it by hand. The identity's id is kept in the owner's store, so a re-run
-// reuses it (and re-applies its trust). The store's coordinates and the id
-// (ids only, no secret) go to the deployment as its configuration.
-
 // public-contract: the owner store entry holding the CD workload Infisical identity id.
-/** Where the identity's id is kept in the owner's store. */
 export const CD_WORKLOAD_IDENTITY_ENTRY = "HOBO_CD_WORKLOAD_IDENTITY_ID";
 
-/** The run vault's names for the deployment's store coordinates (ids only). */
 export const CD_DEPLOY_SETTINGS = Object.freeze({
 	INFISICAL_SITE_URL: "HOBO_CD_DEPLOY_INFISICAL_SITE_URL",
 	INFISICAL_PROJECT_ID: "HOBO_CD_DEPLOY_INFISICAL_PROJECT_ID",
@@ -32,10 +22,8 @@ export const CD_DEPLOY_SETTINGS = Object.freeze({
 
 const INFISICAL_CLOUD = "https://app.infisical.com";
 
-/** The Vercel environment `hobo cd up` delivers to. */
 export type CdDeployEnvironment = "preview" | "production";
 
-/** The OIDC trust for a Vercel project's tokens, team issuer mode. */
 export function vercelProjectTrust(
 	input: Readonly<{
 		teamSlug: string;
@@ -56,7 +44,6 @@ export function vercelProjectTrust(
 
 const Team = z.object({ slug: z.string().min(1) }).loose();
 
-/** The slug of a Vercel team, from its id. */
 export async function vercelTeamSlug(
 	token: string,
 	teamId: string,
@@ -80,11 +67,6 @@ export async function vercelTeamSlug(
 	return parsed.data.slug;
 }
 
-/**
- * Turn on team-mode OIDC tokens for a project that exists (Vercel's default
- * for a new one). `absent` when the project is not made yet: its first
- * deployment makes it, with that default.
- */
 export async function enableVercelProjectOidc(
 	token: string,
 	teamId: string,
@@ -124,17 +106,10 @@ export type CdWorkloadDeps = Readonly<{
 	) => Promise<"enabled" | "absent">;
 }>;
 
-/** A step that did nothing, and why. */
-function skipped(detail: string): PreparedStep {
+function skippedIdentityStep(detail: string): PreparedStep {
 	return { id: "cd-identity", outcome: "unchanged", detail };
 }
 
-/**
- * Make (or confirm) the CD workload identity and put the deployment's store
- * coordinates in the run's vault. Skipped, with the reason, where it cannot
- * apply: a store other than Infisical (only Infisical signs a workload in
- * with OIDC), no owner Infisical sign-in in this run, or no Vercel team.
- */
 export async function ensureCdWorkloadIdentity(
 	input: Readonly<{
 		store: OpenedSecretStore;
@@ -147,18 +122,18 @@ export async function ensureCdWorkloadIdentity(
 	const { store, vault, project, environment } = input;
 	const deps = input.deps ?? {};
 	if (store.id !== "infisical")
-		return skipped(
+		return skippedIdentityStep(
 			`${store.id} cannot sign a Vercel workload in with OIDC; HoBo.CD on Vercel reads Infisical only`,
 		);
 	const ownerToken = vault.reveal("INFISICAL_TOKEN");
 	if (ownerToken === undefined)
-		return skipped(
+		return skippedIdentityStep(
 			"no Infisical sign-in in this run to create the CD workload identity with",
 		);
 	const vercelToken = vault.reveal("VERCEL_TOKEN");
 	const teamId = vault.reveal("VERCEL_TEAM_ID");
 	if (vercelToken === undefined || teamId === undefined)
-		return skipped(
+		return skippedIdentityStep(
 			"the Vercel connection names no team; team-mode OIDC needs one",
 		);
 	const { binding } = parseInfisicalSecretRef(
@@ -181,7 +156,6 @@ export async function ensureCdWorkloadIdentity(
 	let outcome: PreparedStep["outcome"];
 	if (kept.status === "ok" && kept.material) {
 		identityId = kept.material;
-		// Re-apply the trust: the team's slug or the environment may differ.
 		await admin.updateOidcAuth(identityId, trust);
 		outcome = "unchanged";
 	} else {
@@ -191,7 +165,6 @@ export async function ensureCdWorkloadIdentity(
 			role: "viewer",
 		});
 		await admin.attachOidcAuth(made.identityId, trust);
-		// Two runs at once each made one: keep whichever was saved first.
 		const saved = store.port.createOnly
 			? await store.port.createOnly(CD_WORKLOAD_IDENTITY_ENTRY, made.identityId)
 			: undefined;

@@ -783,7 +783,6 @@ describe("prepareVercelConnection", () => {
 		expect(selected).toBe("bitwarden");
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			// Bitwarden cannot sign a Vercel workload in: the identity step says so.
 			steps: [
 				{ outcome: "unchanged" },
 				{ id: "cd-identity", detail: expect.stringMatching(/Infisical only/u) },
@@ -1062,7 +1061,6 @@ describe("prepareVercelConnection", () => {
 			locator: memorySettings(LOCATOR),
 			fetch: vercel.fetch,
 			openStore: opened(store),
-			// The CD workload identity, through fakes of Vercel and Infisical.
 			workload: {
 				teamSlug: async () => "acme",
 				enableProjectOidc: async () => "absent",

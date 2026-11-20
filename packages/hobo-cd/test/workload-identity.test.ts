@@ -13,9 +13,6 @@ import {
 	ensureCdWorkloadIdentity,
 } from "../src/workload-identity.js";
 
-// hobo cd up makes the CD workload identity through Infisical's API with the
-// owner's own sign-in, and nobody creates it by hand.
-
 function fakeAdmin() {
 	const calls: string[] = [];
 	const trusts: InfisicalOidcTrust[] = [];
@@ -99,7 +96,6 @@ describe("the CD workload identity", () => {
 		expect(kept.status === "ok" && kept.material).toBe(
 			"00000000-0000-4000-8000-000000000001",
 		);
-		// The deployment's coordinates: ids only.
 		expect(vault.reveal(CD_DEPLOY_SETTINGS.INFISICAL_PROJECT_ID)).toBe(
 			"proj-1",
 		);
