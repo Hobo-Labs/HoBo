@@ -9,7 +9,7 @@ import {
 	createPulumiAutomationAdapter,
 } from "@hobo/iac-pulumi";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type AdoptedResourceEntry,
 	createComposedHoboCli,
@@ -48,6 +48,7 @@ const HELLO_BINDLE = {
 
 let openStores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
+	vi.unstubAllEnvs();
 	for (const store of openStores) store.close();
 	openStores = [];
 });
@@ -144,6 +145,28 @@ describe("createImportCommand", () => {
 				"service",
 				"sessions",
 			]);
+		});
+	});
+
+	it("discovers the shared estate despite an ambient Vercel credential", async () => {
+		vi.stubEnv("HOBO_PULUMI_LIVE", undefined);
+		vi.stubEnv("HOBO_CREDENTIALS", undefined);
+		vi.stubEnv("HOBO_OPENSESAME_CHILD", undefined);
+		vi.stubEnv("CLOUDFLARE_API_TOKEN", undefined);
+		vi.stubEnv("VERCEL_TOKEN", "ambient-test-token");
+		await withProject(async (cwd) => {
+			const adapter = seededAdapter(deploymentIdFor(cwd), {
+				"legacy-db": { endpoint: "fixture" },
+			});
+			const runtime = createDefaultYardRuntime({ iacAdapter: adapter });
+			// SAFETY: this runtime's concrete event store is closed after the test.
+			openStores.push(runtime.store as RuntimeLocalEventStore);
+			const result = await createImportCommand({ runtime }).run(runInput(cwd));
+			expect(result).toMatchObject({
+				ok: true,
+				status: "imported",
+				data: { discovered: ["legacy-db"] },
+			});
 		});
 	});
 

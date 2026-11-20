@@ -331,6 +331,34 @@ describe("hobo ci app create", () => {
 		const help = await cli.run(["ci"], { cwd: process.cwd() });
 		expect(help.stdout).toContain("hobo ci app create");
 	});
+
+	it.each([
+		["--hand-off", "--json"],
+		["--hand-off", "-q"],
+		["--receiver", "ngrok", "--json"],
+		["--receiver", "ngrok", "-q"],
+	])("refuses a hand-off whose progress would be hidden: %s", async (...flags) => {
+		let contacted = false;
+		const cli = createHoboCli({
+			commands: {
+				ci: createCiCommand({
+					env: {},
+					interactive: false,
+					fetch: async () => {
+						contacted = true;
+						return new Response(null, { status: 500 });
+					},
+				}),
+			},
+		});
+		const result = await cli.run(
+			["ci", "app", "create", "--relay", RELAY, "--owner-id", "123", ...flags],
+			{ cwd: process.cwd() },
+		);
+		expect(result.exitCode).toBe(2);
+		expect(`${result.stdout}${result.stderr}`).toContain("Omit --json and -q");
+		expect(contacted).toBe(false);
+	});
 });
 
 describe("secretless first: the App's credentials go from GitHub to the store with no person holding them", () => {

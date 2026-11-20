@@ -1,0 +1,9 @@
+{
+  "catalog": {
+    "schema": "hobo.pricing.catalog/v1",
+    "catalogHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "products": [], "rateCards": [], "allowances": [], "credits": [], "commitments": []
+  },
+  "availability": { "unavailable": { "reason": "no model for this offering" } },
+  "routingDisclosure": { "evaluation": "not-evaluated", "reservation": "not-created" }
+}

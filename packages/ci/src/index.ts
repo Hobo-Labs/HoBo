@@ -1,5 +1,6 @@
 export * from "./_generated/ci_pb.js";
 export * from "./_generated/policy_pb.js";
+export * from "./_generated/runner_route_pb.js";
 export { allocationQuote } from "./accounting.js";
 export { parseConfiguration, positiveId } from "./config.js";
 export {
@@ -38,11 +39,13 @@ export {
 	type FleetBackend,
 	type FleetMember,
 	type FleetSelection,
+	type FleetVerificationSelection,
 	isGithubLatestLabel,
 	isIsolatedFleetProvider,
 	isOverflowRunnerLabel,
 	queuedDemandLabels,
 	selectFleetBackend,
+	selectFleetVerification,
 	shouldAbortIsolatedFleetLease,
 } from "./fleet-overflow.js";
 export * from "./fleet-v2/index.js";
@@ -102,6 +105,7 @@ export {
 	providerOffer,
 	route,
 } from "./routing.js";
+export * from "./runner-order/index.js";
 export {
 	sandboxProxyOnlyUsageQuote,
 	sandboxReservationMicros,

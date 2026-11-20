@@ -38,6 +38,15 @@ export {
 	unclassifiedFailure,
 } from "./backend.js";
 export {
+	type ContinuityFleetPlan,
+	type ContinuityRequest,
+	type ContinuityShortfall,
+	continuityBudgetCheck,
+	continuityFleetPlan,
+	continuityShortfalls,
+	MIN_COPY_INTERVAL_MS,
+} from "./continuity.js";
+export {
 	ASSIGNMENT_LOG_MAX_ENTRIES,
 	DEFAULT_ASSIGNMENT_LOG_KEY,
 	decodeAssignmentLog,

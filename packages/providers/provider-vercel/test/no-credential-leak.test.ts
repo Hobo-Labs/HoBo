@@ -92,6 +92,7 @@ describe("nothing this package serializes carries credential material", () => {
 			deploymentRef: "deployment-1",
 			projectSubjectRef: PROJECT_SUBJECT,
 			resourceSubjectRef: RESOURCE_SUBJECT,
+			associatedResourceProvider: "prisma",
 			transferCodeExpiresAt: DEADLINE,
 			oneTimeActionRef: "ota-1",
 		});
@@ -103,6 +104,7 @@ describe("nothing this package serializes carries credential material", () => {
 			lease,
 			projectSubjectRef: PROJECT_SUBJECT,
 			resourceSubjectRef: RESOURCE_SUBJECT,
+			associatedResourceProvider: "prisma",
 			idempotencyKey: "attempt-1",
 		});
 
