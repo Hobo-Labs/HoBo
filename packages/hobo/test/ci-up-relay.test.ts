@@ -169,8 +169,18 @@ describe("hobo ci up through the relay's Yards", () => {
 		const repo = mkdtempSync(join(RELAY, ".hobo-source-test-"));
 		const project = join(repo, "packages", "relay");
 		try {
-			const git = (...args: string[]) =>
-				execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+			const git = (...args: string[]) => {
+				const env: NodeJS.ProcessEnv = {
+					GIT_CONFIG_NOSYSTEM: "1",
+					GIT_CONFIG_GLOBAL: "/dev/null",
+				};
+				if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+				return execFileSync("git", args, {
+					cwd: repo,
+					encoding: "utf8",
+					env,
+				}).trim();
+			};
 			git("init", "-q");
 			mkdirSync(project, { recursive: true });
 			mkdirSync(join(project, "src"));
