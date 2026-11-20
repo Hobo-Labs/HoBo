@@ -591,7 +591,9 @@ export function createBudgetAdmissionAuthority(options: {
 	let current =
 		options.priorEvents === undefined
 			? clone(BudgetLedgerSnapshotSchema, options.snapshot)
-			: normalizeLegacyBudgetSnapshot(options.snapshot);
+			: normalizeLegacyBudgetSnapshot(
+					clone(BudgetLedgerSnapshotSchema, options.snapshot),
+				);
 	let reservations = new Map<string, BudgetReservation>();
 	let committing = false;
 	let commitOutcomeUncertain = false;
@@ -2122,15 +2124,18 @@ export function createBudgetAdmissionAuthority(options: {
 						);
 				}
 			for (const bucket of snapshot.entitlements) {
-				const old = current.entitlements.find((row) =>
-					sameEntitlementScope(row, bucket),
+				const old = current.entitlements.find(
+					(row) =>
+						row.bucketId === bucket.bucketId &&
+						persistedEntitlementKind(row.kind) ===
+							persistedEntitlementKind(bucket.kind),
 				);
 				if (
 					old &&
 					(old.reservedUnits > 0 ||
 						active().some((row) =>
-							row.entitlementClaims.some(
-								(claim) => claim.bucketId === old.bucketId,
+							row.entitlementClaims.some((claim) =>
+								sameEntitlementScope(claim, old),
 							),
 						)) &&
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)
