@@ -266,7 +266,9 @@ function effectiveValueUnder(
 function stringOf(node: Node | undefined): string | undefined {
 	if (!isScalar(node)) return undefined;
 	if (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL") {
-		return String(node.value);
+		return node.source?.trim().length
+			? node.source
+			: String(node.value ?? "");
 	}
 	return node.value === node.source ? node.source : undefined;
 }
@@ -513,6 +515,7 @@ function referencesNeedsAccess(
 	jobId: string,
 	needs: NeedsRead,
 	access: string,
+	strictOpen = false,
 ): boolean {
 	const jobReference = needsJobReferencePattern(jobId);
 	if (
@@ -526,20 +529,36 @@ function referencesNeedsAccess(
 	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
 	if (
 		patternMatches(
-			String.raw`\bfromJSON\s*\(\s*${groupedNeeds(jobReference)}`,
+			String.raw`\bfromJSON\s*\(\s*${groupedNeeds(jobReference)}(?:\\s*${jobPropertyPattern(access)}|[^)]*)\\s*\\)`,
 			text,
 		)
 	) {
 		return true;
 	}
 	const property = `\\s*${jobPropertyPattern(access)}`;
+	const bareNeedsJson =
+		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
+		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
+	if (bareNeedsJson && needsCanSee(needs, jobId)) {
+		if (!strictOpen) return true;
+		if (needs.opaque) return true;
+		if (needs.ids.some((id) => sameJobId(id, jobId))) return true;
+	}
 	const open =
 		patternMatches(
 			`${groupedNeeds(needsWildcardPattern())}${property}`,
 			text,
 		) ||
-		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
-		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
+		(strictOpen
+			? patternMatches(
+					`${toJsonCallPattern(caseFoldLiteral("needs"))}${property}`,
+					text,
+				) ||
+				patternMatches(
+					`${toJsonCallPattern(needsWildcardPattern())}${property}`,
+					text,
+				)
+			: false);
 	if (open && needsCanSee(needs, jobId)) return true;
 	const dynamicIndex = `${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]`;
 	if (patternMatches(`${groupedNeeds(dynamicIndex)}${property}`, text)) {
@@ -975,15 +994,10 @@ function readWorkflow(
 			),
 		];
 	});
-	return {
-		error: undefined,
-		jobs: inspected.map((job) =>
-			job.plan.verdict === "ready" &&
-			routesJobs(job.plan.job, inspected, needsByJob)
-				? asRouter(job)
-				: job,
-		),
-	};
+	const routed = inspected.map((job) =>
+		routesJobs(job.plan.job, inspected, needsByJob) ? asRouter(job) : job,
+	);
+	return { error: undefined, jobs: routed };
 }
 
 function routingText(job: InspectedJob): string {
@@ -995,7 +1009,7 @@ function referencesRoutedJob(
 	jobId: string,
 	needs: NeedsRead,
 ): boolean {
-	return referencesNeedsAccess(text, jobId, needs, routingAccessPattern());
+	return referencesNeedsAccess(text, jobId, needs, routingAccessPattern(), true);
 }
 
 function routesJobs(
