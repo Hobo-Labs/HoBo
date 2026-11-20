@@ -90,6 +90,7 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/backend-fleet",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
+	"packages/r2-object",
 	// The data engine family (ADR-0177). `data-core` is the engine-neutral
 	// contract and imports only `@hobo/core`; each `data-<engine>` package
 	// implements that contract for one storage engine and meets the other
@@ -198,6 +199,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/backend-fleet",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
+	"packages/r2-object",
 	"packages/packs/pack-framework",
 	"packages/packs/pack-postgres-oci",
 	"packages/packs/pack-valkey-oci",
