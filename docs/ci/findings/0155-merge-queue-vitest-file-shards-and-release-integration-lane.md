@@ -53,9 +53,13 @@ the sum of its files):
   `release-hobo-integration` job, blocking `release-publish` and `release-npm`.
   A pull request pays for them only when its diff reaches the suites or the lane
   (the workflow's path filters plus a `job-scope` step); every release runs
-  them. The default suite re-measured at 170 s wall; the table says 170 s (the
-  fast merge-queue lane's measured weight, no startup padding), which slices
-  hobo into 4 vitest shards.
+  them. The job checks out with `submodules: "false"` like every job in this
+  workflow, so it fetches the pinned ts-autocode itself (`pins:fetch
+  ts-autocode`) before install, the same order `release-contract` uses —
+  without it the install fails on the missing workspace members the lane's
+  turbo graph builds. The default suite re-measured at 170 s wall; the table
+  says 170 s (the fast merge-queue lane's measured weight, no startup padding),
+  which slices hobo into 4 vitest shards.
 - **Turbo concurrency from memory-env**: the workspace-tests step-level
   `HOBO_TURBO_CONCURRENCY: "1"` pin is gone (main shards never had one); the
   cgroup-derived value `memory-env` writes during ci-runner-preflight applies.

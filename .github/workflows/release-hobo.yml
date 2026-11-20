@@ -677,6 +677,9 @@ jobs:
               packages/hobo/test/cd-runner-fleet-delivery.test.ts \
               packages/hobo/test/cd-md-examples.test.ts \
               >> "$GITHUB_OUTPUT"
+      - name: Fetch pinned ts-autocode
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - name: Link deps layer or install
