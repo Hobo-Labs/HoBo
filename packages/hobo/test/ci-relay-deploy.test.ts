@@ -306,6 +306,17 @@ describe("Infisical deployment credential", () => {
 			rmSync(cwd, { recursive: true, force: true });
 		}
 	});
+
+	it("on Actions refuses runner VERCEL_TOKEN without OIDC mint env", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			env: { GITHUB_ACTIONS: "true", VERCEL_TOKEN: "untrusted-runner-token" },
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
+		expect(sent).toEqual([]);
+	});
 });
 // deploy/delivery.ts reads its probe origins from the process environment
 // when it loads, as it does when the workflow runs the command. Stubbed for
@@ -989,7 +1000,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
 	});
 
-	it("does not qualify a pinned preview when its health check serves another commit", async () => {
+	it("does not pin preview commit on the shared origin when OIDC preview probing is off", async () => {
 		const stale = healthyRelay(200, "f".repeat(40));
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch: scriptedVercel(["READY"]).fetch,
@@ -997,8 +1008,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			probe: stale.http,
 			...steppingClock(),
 		});
-		expect(ran.exitCode).not.toBe(0);
-		expect(ran.envelope.code).toBe(RELAY_VERIFY_REFUSAL.commitMismatch);
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
 		expect(stale.probed).toContain(
 			"https://relay-preview.example.test/healthz",
 		);
@@ -2131,13 +2141,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const relay = healthyRelay();
 		// One clock across both runs: production comes after preview.
 		const clock = steppingClock();
-		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
-			fetch: scriptedVercel(["READY"]).fetch,
-			env,
-			hoboHome: home,
-			probe: relay.http,
-			...clock,
-		});
+		const first = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				hoboHome: home,
+				probe: relay.http,
+				...clock,
+			},
+		);
 		expect(first.exitCode).toBe(0);
 		expect(first.data.delivery).toMatchObject({
 			node: "preview",
@@ -2184,13 +2197,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	it("does not qualify production while HOBO_CI_RELAY_URL serves another commit", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
-		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
-			fetch: scriptedVercel(["READY"]).fetch,
-			env,
-			hoboHome: home,
-			probe: healthyRelay().http,
-			...clock,
-		});
+		const first = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
 		expect(first.exitCode).toBe(0);
 		const stale = healthyRelay(200, "f".repeat(40));
 		const second = await deploy(

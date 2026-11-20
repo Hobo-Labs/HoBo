@@ -116,6 +116,7 @@ import {
 } from "./ci-relay-provision.js";
 import {
 	commitCheckingProbe,
+	type RelayProbeFindings,
 	relayOrigin,
 	relayVerifyFailure,
 } from "./ci-relay-verify.js";
@@ -628,19 +629,29 @@ export async function runCiRelayDeploy(
 			"A staged production deployment requires --sha naming the commit preview already qualified.",
 		);
 	const clock = input.now ?? Date.now;
-	const parsedDeadline = relayAdoptDeadline(clock(), {
-		deadline: text("deadline"),
-		budget: text("budget"),
-	});
-	if (!parsedDeadline.ok) return usage(parsedDeadline.message);
-	const deadlineAt = parsedDeadline.at;
-	if (clock() >= deadlineAt)
-		return refused(
-			RELAY_DEPLOY_REFUSAL.budgetExhausted,
-			target === "production"
-				? `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`
-				: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} started.`,
-		);
+	const deadlineFlag = text("deadline");
+	const budgetFlag = text("budget");
+	const deadlineRequested =
+		stagedProduction || deadlineFlag !== undefined || budgetFlag !== undefined;
+	let deadlineAt = clock() + WAIT_LIMIT_MS;
+	if (deadlineRequested) {
+		const parsedDeadline = relayAdoptDeadline(clock(), {
+			deadline: deadlineFlag,
+			budget: budgetFlag,
+		});
+		if (!parsedDeadline.ok) return usage(parsedDeadline.message);
+		deadlineAt = parsedDeadline.at;
+		if (
+			clock() >= deadlineAt &&
+			(stagedProduction || target === "production")
+		)
+			return refused(
+				RELAY_DEPLOY_REFUSAL.budgetExhausted,
+				target === "production"
+					? `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`
+					: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} started.`,
+			);
+	}
 	const createProject = values["create-project"] === true;
 	// The Yard's root directory is saved on a project this deploy creates; an
 	// existing project keeps its own unless the command names one.
@@ -957,25 +968,38 @@ export async function runCiRelayDeploy(
 					}),
 				})
 			: baseProbe;
-	const verify =
+	const commitVerified =
+		protectedPreview ||
+		stagedProduction ||
+		(target === "production" && wait && sha !== undefined);
+	const verifyProbe =
 		verifyOrigin !== undefined && sha !== undefined
-			? {
-					origin: verifyOrigin,
-					probe: commitCheckingProbe(previewProbe, {
+			? commitVerified
+				? commitCheckingProbe(previewProbe, {
 						origin: verifyOrigin,
 						commit: sha.toLowerCase(),
-					}),
-				}
+					})
+				: {
+						transport: previewProbe,
+						findings: () => ({}),
+					}
 			: undefined;
-	if (target === "production" && clock() >= deadlineAt)
+	const verify =
+		verifyProbe !== undefined && verifyOrigin !== undefined
+			? { origin: verifyOrigin, probe: verifyProbe }
+			: undefined;
+	if (
+		deadlineRequested &&
+		target === "production" &&
+		clock() >= deadlineAt
+	)
 		return refused(
 			RELAY_DEPLOY_REFUSAL.budgetExhausted,
 			`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`,
 		);
-	const waitLimitMs = Math.min(
-		WAIT_LIMIT_MS,
-		Math.max(0, deadlineAt - clock()),
-	);
+	const waitLimitMs = deadlineRequested
+		? Math.min(WAIT_LIMIT_MS, Math.max(0, deadlineAt - clock()))
+		: WAIT_LIMIT_MS;
 	const delivered = await deliverRelay({
 		cwd: input.cwd,
 		env,
@@ -1273,9 +1297,14 @@ export async function runCiRelayDeploy(
 			},
 		};
 	}
-	const findings = verify?.probe.findings();
+	const findings: RelayProbeFindings | undefined = commitVerified
+		? verify?.probe.findings()
+		: undefined;
 	const why =
-		verify !== undefined && sha !== undefined && findings !== undefined
+		commitVerified &&
+		verify !== undefined &&
+		sha !== undefined &&
+		findings !== undefined
 			? target === "preview" && findings.servedCommit !== undefined
 				? {
 						code: "HOBO_CI_DEPLOY_COMMIT_MISMATCH",

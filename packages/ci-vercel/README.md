@@ -256,9 +256,11 @@ result keeps its JSON contract (`code`, `data.outputs`, `data.plan`) and adds
 
 Known gaps, stated rather than hidden:
 
-- **The ordinary preview probe reads a fixed origin.** With `--sha`, its
-  `/healthz` must name that commit, as production's does. For a protected
-  Vercel preview, `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` makes HoBo probe the
+- **The ordinary preview probe reads a fixed origin.** Commit pinning on preview
+  `/healthz` runs only with `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` (protected
+  preview) or for staged production; otherwise `--sha` on preview waits without
+  requiring `/healthz` to name that commit. For a protected Vercel preview,
+  `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` makes HoBo probe the
   deployment it just created using the GitHub Actions OIDC token. The project
   must trust that workload for preview access, and `HOBO_CI_RELAY_PREVIEW_URL`
   supplies the pipeline's placeholder origin. `--adopt` verifies preview by
@@ -282,6 +284,17 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 | `--target production` deployed any ref | it needs `--sha`, and preview's qualification of that commit in the same journal (`HOBO_CI_DEPLOY_NOT_QUALIFIED`) |
 | a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
+
+**Merge cutover (relay CD delivery):** before this branch lands on `main`,
+provision the Infisical deploy project (`deploy/secret-store.binding.json`
+`deployProjectId`), attach the `hobo-ci-deploy` identity with GitHub OIDC
+claims pinned to this repository, `ref == refs/heads/main`, and
+`relay-deploy.yml`, store `VERCEL_TOKEN` there, and configure the Vercel
+Trusted Source with the same claim pin. The workflow disables Vercel Git
+auto-deploy in the same commit; without those prerequisites `main`'s required
+deploy fails and the relay receives no deployment. After merge, link one
+production run that shows the workflow reading `VERCEL_TOKEN` through Infisical
+and a protected preview probe with OIDC (channel-observation rule).
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)

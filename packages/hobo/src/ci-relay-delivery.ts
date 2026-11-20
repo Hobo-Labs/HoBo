@@ -815,8 +815,10 @@ async function deliverWith(
 							report: report(promotion, set),
 							handover: await handoverFor(set, request.campId),
 						});
-						if (failure === undefined)
+						if (failure === undefined) {
+							finalizationFailure = undefined;
 							return { ok: true, value: { finalized: true } };
+						}
 						finalizationFailure = failure;
 						return {
 							ok: false,
