@@ -2,7 +2,6 @@ import { readSecretStoreBinding } from "@hobo/secret-store-claim";
 import { describe, expect, it } from "vitest";
 
 import {
-	exportMaskedToGithubEnv,
 	RelayDeployCredentialError,
 	readRelayDeployToken,
 } from "../src/ci-relay-deploy-credential.js";
@@ -136,51 +135,5 @@ describe("readRelayDeployToken", () => {
 		);
 		expect(error).toBeInstanceOf(RelayDeployCredentialError);
 		expect(error.message).not.toContain("synthetic");
-	});
-});
-
-describe("exportMaskedToGithubEnv", () => {
-	it("masks the value in the log before it reaches the env file", () => {
-		const order: string[] = [];
-		let log = "";
-		let file = "";
-		exportMaskedToGithubEnv({
-			name: "VERCEL_TOKEN",
-			value: DEPLOY_TOKEN,
-			writeLog: (line) => {
-				order.push("log");
-				log += line;
-			},
-			appendEnvFile: (text) => {
-				order.push("file");
-				file += text;
-			},
-		});
-		expect(order).toEqual(["log", "file"]);
-		expect(log).toBe(`::add-mask::${DEPLOY_TOKEN}\n`);
-		const [head, value, tail, end] = file.split("\n");
-		expect(head).toMatch(/^VERCEL_TOKEN<<HOBO_[0-9a-f]{32}$/u);
-		expect(value).toBe(DEPLOY_TOKEN);
-		expect(tail).toBe(head?.slice("VERCEL_TOKEN<<".length));
-		expect(end).toBe("");
-	});
-
-	it("exports nothing that could break out of its line", () => {
-		for (const value of ["a\nb-synthetic", "", "with space"]) {
-			let wrote = false;
-			expect(() =>
-				exportMaskedToGithubEnv({
-					name: "VERCEL_TOKEN",
-					value,
-					writeLog: () => {
-						wrote = true;
-					},
-					appendEnvFile: () => {
-						wrote = true;
-					},
-				}),
-			).toThrow(RelayDeployCredentialError);
-			expect(wrote).toBe(false);
-		}
 	});
 });

@@ -75,7 +75,10 @@ function mockIac(opts: { failApply?: string[] } = {}): IacProvider {
 		},
 		async apply(program) {
 			if (fail.has(program.resourceId))
-				throw new Error(`apply failed for ${program.resourceId}`);
+				throw Object.assign(
+					new Error(`apply failed for ${program.resourceId}`),
+					{ requiresReconciliation: false, executionOutcome: "not-started" },
+				);
 			return { endpoint: `${program.resourceId}.local` };
 		},
 		async destroy() {
@@ -333,6 +336,7 @@ describe("Orchestrator crash-resume: replay the durable log to Deployed", () => 
 			actorHost: createInMemoryActorHost(),
 			executor: createInProcessExecutor({ iac: mockIac() }),
 			broker: createInProcessCredentialBroker(),
+			verifyResume: async () => true,
 		};
 		const resumed = await runOrchestrator(deps2, plan, "shop-crash", {
 			tenant,
@@ -656,7 +660,12 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(types).toContain("deployment.RolledBack");
 		const rolledBackIdx = types.indexOf("deployment.RolledBack");
 		const firstDestroyIdx = types.indexOf("resource.Destroying");
-		expect(rolledBackIdx).toBeLessThan(firstDestroyIdx);
+		expect(types.indexOf("deployment.TransitionStarted")).toBeLessThan(
+			firstDestroyIdx,
+		);
+		expect(rolledBackIdx).toBeGreaterThan(
+			types.lastIndexOf("resource.Destroyed"),
+		);
 
 		const destroyed = events
 			.filter((e) => e.type === "resource.Destroyed")
@@ -677,5 +686,42 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(row?.status).toBe("rolled-back");
 		expect(row?.resources.web).toBe("failed");
 		expect(row?.resources.network).toBe("destroyed");
+	});
+
+	it("resumes a destroy interrupted during compensation with the same generation", async () => {
+		const plan = loadPlan();
+		const resource = plan.resources.find((item) => item.name === "network");
+		if (!resource) throw new Error("network resource missing");
+		const inner = createInProcessExecutor({ iac: mockIac() });
+		const observed: (string | undefined)[] = [];
+		let crash = true;
+		const executor: Executor = {
+			async run(program, credential, options) {
+				if (program.action === "destroy") {
+					observed.push(program.operationGeneration);
+					if (crash) {
+						crash = false;
+						throw new Error("destroy interrupted");
+					}
+				}
+				return inner.run(program, credential, options);
+			},
+		};
+		const deps = { ...makeDeps(executor), verifyResume: async () => true };
+		const context = { deploymentId: "compensation-resume", tenant, actor };
+		await reconcileResource(deps, resource, context);
+		const compensate = () =>
+			runCompensation(
+				deps,
+				plan,
+				context.deploymentId,
+				{ resourceId: "web", reason: "failure" },
+				{ tenant, actor },
+			);
+		await expect(compensate()).rejects.toThrow("destroy interrupted");
+		expect((await compensate()).destroyedOrder).toContain("network");
+		expect(observed).toHaveLength(2);
+		expect(observed[0]).toEqual(expect.any(String));
+		expect(observed[1]).toBe(observed[0]);
 	});
 });

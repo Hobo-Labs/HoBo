@@ -182,6 +182,7 @@ package hobo
 	action:       "preview" | "apply" | "destroy"
 	stackName:    string & !=""
 	resource?:    #ResourcePlan
+	operationGeneration?: string & !=""
 }
 
 #ScopedCredential: {
@@ -244,6 +245,7 @@ package hobo
 	programHash:  string & !=""
 	specHash?:    =~"^sha256:[0-9a-f]{64}$"
 	providerId?:  string & !=""
+	operationGeneration?: string & !=""
 }
 
 #ResourceProvisionedRecord: {
@@ -325,6 +327,9 @@ package hobo
 	deploymentId: string & !=""
 	resourceId:   string & !=""
 	reason:       string & !=""
+	operationGeneration?: string & !=""
+	programHash?: string & !=""
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
 }
 
 #ResourceDestroyedRecord: {
@@ -343,6 +348,28 @@ package hobo
 	deploymentId: string & !=""
 	targetSetId:  string & !=""
 	reason:       string & !=""
+}
+
+#DeploymentTransitionRecord: {
+	deploymentId:     string & !=""
+	transitionId:     string & =~"^[0-9a-f-]+$"
+	kind:             "rollback" | "prune"
+	planHash:         =~"^sha256:[0-9a-f]{64}$"
+	resourceIds:      [...string & !=""]
+	triggerResource?: string & !=""
+	reason?:          string & !=""
+}
+
+#ReopenedResource: {
+	resourceId: string & !=""
+	specHash:   =~"^sha256:[0-9a-f]{64}$"
+}
+
+#DeploymentReopenedRecord: {
+	deploymentId:    string & !=""
+	rollbackEventId: string & !=""
+	planHash:        =~"^sha256:[0-9a-f]{64}$"
+	resources: [...#ReopenedResource]
 }
 
 // ---- S3-04: CredentialAudit projection constraints (one per protobuf message) ----

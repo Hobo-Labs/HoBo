@@ -12,6 +12,7 @@ import {
 	routeName,
 	routeSecret,
 } from "./iac-route.js";
+import { hasOwnData, isRouteProxy } from "./iac-untrusted.js";
 
 function secret(): string {
 	return randomBytes(32).toString("base64url");
@@ -21,10 +22,15 @@ function identity(input: IacRouteIdentity): void {
 		throw new TypeError("invalid route identity");
 }
 function own(input: unknown, key: string): unknown {
-	if (typeof input !== "object" || input === null || Array.isArray(input))
+	if (
+		typeof input !== "object" ||
+		input === null ||
+		isRouteProxy(input) ||
+		Array.isArray(input)
+	)
 		throw new TypeError("invalid authority input");
 	const descriptor = Object.getOwnPropertyDescriptor(input, key);
-	if (!descriptor || !("value" in descriptor))
+	if (!descriptor || !hasOwnData(descriptor, "value"))
 		throw new TypeError("invalid authority input");
 	return descriptor.value;
 }
@@ -91,11 +97,11 @@ function captureOutcome(input: unknown): IacRouteOutcome {
 			: undefined;
 	if (
 		descriptor === undefined ||
-		("value" in descriptor && descriptor.value === undefined)
+		(hasOwnData(descriptor, "value") && descriptor.value === undefined)
 	)
 		return { status };
 	if (
-		!("value" in descriptor) ||
+		!hasOwnData(descriptor, "value") ||
 		typeof descriptor.value !== "string" ||
 		!routeName(descriptor.value)
 	)
@@ -103,20 +109,42 @@ function captureOutcome(input: unknown): IacRouteOutcome {
 	return { status, targetId: descriptor.value };
 }
 
-/** A shared local-disk SQLite authority. Distributed installations need an equivalent shared transactional CAS. */
 export function createSqliteIacRouteAuthority(options: {
 	path: string;
-	/** Independent host authentication of tenant, request and logical operation. */
+
 	verifyOperation: (
 		input: IacRouteAuthorizedIdentity,
 	) => boolean | Promise<boolean>;
 }): IacRouteAuthority & { close(): void } {
-	if (typeof options.verifyOperation !== "function")
+	if (
+		typeof options !== "object" ||
+		options === null ||
+		isRouteProxy(options) ||
+		Array.isArray(options)
+	)
+		throw new TypeError("invalid route authority options");
+	const verifierField = Object.getOwnPropertyDescriptor(
+		options,
+		"verifyOperation",
+	);
+	const pathField = Object.getOwnPropertyDescriptor(options, "path");
+	if (
+		verifierField === undefined ||
+		!hasOwnData(verifierField, "value") ||
+		typeof verifierField.value !== "function" ||
+		isRouteProxy(verifierField.value)
+	)
 		throw new TypeError("an independent operation verifier is required");
-	const verifyOperation = options.verifyOperation;
-	if (!options.path || options.path === ":memory:")
+	if (
+		pathField === undefined ||
+		!hasOwnData(pathField, "value") ||
+		typeof pathField.value !== "string" ||
+		!pathField.value ||
+		pathField.value === ":memory:"
+	)
 		throw new TypeError("a persistent route authority path is required");
-	const database = new DatabaseSync(options.path);
+	const verifyOperation: typeof options.verifyOperation = verifierField.value;
+	const database = new DatabaseSync(pathField.value);
 	try {
 		const main = database
 			.prepare("PRAGMA database_list")
@@ -156,7 +184,7 @@ export function createSqliteIacRouteAuthority(options: {
 		database.close();
 		throw error;
 	}
-	// Serialize upgrades; pre-upgrade live permits may already be in use.
+
 	database.exec("BEGIN IMMEDIATE");
 	try {
 		const columns = database
@@ -172,7 +200,8 @@ export function createSqliteIacRouteAuthority(options: {
 		try {
 			database.exec("ROLLBACK");
 		} catch {
-			/* Preserve the migration error. */
+			database.close();
+			throw error;
 		}
 		database.close();
 		throw error;
@@ -187,7 +216,7 @@ export function createSqliteIacRouteAuthority(options: {
 			try {
 				database.exec("ROLLBACK");
 			} catch {
-				/* Preserve the original failure. */
+				throw error;
 			}
 			throw error;
 		}
@@ -220,6 +249,13 @@ export function createSqliteIacRouteAuthority(options: {
 	return {
 		persistence: "durable-cas",
 		async claim(input) {
+			if (
+				typeof input !== "object" ||
+				input === null ||
+				isRouteProxy(input) ||
+				Array.isArray(input)
+			)
+				throw new TypeError("invalid route identity");
 			const tenant = Object.getOwnPropertyDescriptor(input, "tenantId");
 			const request = Object.getOwnPropertyDescriptor(input, "requestId");
 			const operation = Object.getOwnPropertyDescriptor(input, "operationId");
@@ -229,16 +265,16 @@ export function createSqliteIacRouteAuthority(options: {
 			);
 			if (
 				!tenant ||
-				!("value" in tenant) ||
+				!hasOwnData(tenant, "value") ||
 				typeof tenant.value !== "string" ||
 				!request ||
-				!("value" in request) ||
+				!hasOwnData(request, "value") ||
 				typeof request.value !== "string" ||
 				!operation ||
-				!("value" in operation) ||
+				!hasOwnData(operation, "value") ||
 				typeof operation.value !== "string" ||
 				!authorization ||
-				!("value" in authorization) ||
+				!hasOwnData(authorization, "value") ||
 				typeof authorization.value !== "string"
 			)
 				throw new TypeError("invalid route identity");
@@ -382,7 +418,7 @@ export function createSqliteIacRouteAuthority(options: {
 					}
 					if (typeof row.outcome !== "string" || row.outcome.length > 1024)
 						throw new Error("corrupt route outcome");
-					// SAFETY: validate the persisted route outcome before returning it.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: validate the persisted route outcome before returning it.
 					const outcome = JSON.parse(row.outcome) as IacRouteOutcome;
 					if (
 						!outcome ||
@@ -461,7 +497,7 @@ export function createSqliteIacRouteAuthority(options: {
 				}
 				if (typeof row.outcome !== "string" || row.outcome.length > 1024)
 					throw new Error("corrupt route outcome");
-				// SAFETY: persisted JSON is validated before it crosses the authority boundary.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: persisted JSON is validated before it crosses the authority boundary.
 				const outcome = JSON.parse(row.outcome) as IacRouteOutcome;
 				if (
 					!outcome ||

@@ -7,6 +7,7 @@ import * as Provider from "alchemy/Provider";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 import { alchemyTarget, createAlchemyIacProvider } from "../../src/index.js";
+import { testStateOwnership } from "../../test/route-fixture.js";
 
 const pact = JSON.parse(
 	readFileSync(
@@ -41,6 +42,14 @@ describe("external IaC pricing consumer boundary", () => {
 			);
 			const provider = createAlchemyIacProvider({
 				stack,
+				stateOwnership: testStateOwnership,
+				composite: {
+					proofRef: "test:no-source",
+					environmentDigest: `sha256:${"e".repeat(64)}`,
+					sourceRequirements: [],
+					verifyEnvironment: () => true,
+					verifyPlan: ({ sourceClaims }) => sourceClaims.length === 0,
+				},
 				runtimeLayer: Alchemist.layer(),
 				runtimeDirectory: join(directory, "runtime"),
 				target: alchemyTarget({
@@ -71,6 +80,7 @@ describe("external IaC pricing consumer boundary", () => {
 					admit: async () => {
 						throw new Error("unexpected authorization");
 					},
+					revalidate: () => false,
 					uncertain: () => {
 						throw new Error("unexpected uncertainty");
 					},

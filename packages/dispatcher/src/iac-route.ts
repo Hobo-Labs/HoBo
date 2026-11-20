@@ -1,7 +1,7 @@
-import { types as utilTypes } from "node:util";
 import {
 	applyHostCallback,
 	isBoundedRouteValue,
+	isRouteProxy,
 	ownDataField,
 	ownDataFields,
 	requiredOwnDataField,
@@ -9,14 +9,14 @@ import {
 } from "./iac-untrusted.js";
 
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-conditional-empty-object-spread, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: this module validates runtime authority receipts and deliberately omits absent optional fields. */
-/** A durable route authority must be shared by every target for the same tenant. */
+
 export interface IacRoutePermit {
 	readonly tenantId: string;
 	readonly requestId: string;
 	readonly operationId: string;
 	readonly targetId: string;
 	readonly inventoryHash: string;
-	/** Random capability; never publish it in logs or user-facing receipts. */
+
 	readonly attemptId: string;
 }
 
@@ -25,10 +25,9 @@ export interface IacRouteIdentity {
 	readonly requestId: string;
 }
 
-/** Host-authenticated identity of one target-independent logical operation. */
 export interface IacRouteOperation {
 	readonly operationId: string;
-	/** Opaque host-issued authorization; never record or expose it. */
+
 	readonly authorization: string;
 }
 export interface IacRouteAuthorizedIdentity
@@ -65,7 +64,6 @@ export interface IacRouteSnapshot extends IacRouteIdentity {
 	}[];
 }
 
-/** Host boundary: implement all mutations and checks with a shared transactional CAS. */
 export interface IacRouteAuthority {
 	readonly persistence: "durable-cas";
 	claim(input: IacRouteAuthorizedIdentity): MaybePromise<IacRouteClaim>;
@@ -93,7 +91,7 @@ export interface IacRouteAuthority {
 		readonly status: "finished";
 		readonly outcome: IacRouteOutcome;
 	}>;
-	/** Atomically consume an attempt capability exactly once before admission. */
+
 	consumeAttempt(permit: IacRoutePermit): MaybePromise<boolean>;
 	verifyAttempt(permit: IacRoutePermit): MaybePromise<boolean>;
 }
@@ -103,7 +101,7 @@ export interface IacRouteController {
 		readonly targetId: string;
 		readonly inventoryHash: string;
 	}): Promise<IacRoutePermit>;
-	/** Call only after a verified denial proving this attempt made no reservation and no effect. */
+
 	denyAttempt(permit: IacRoutePermit): Promise<void>;
 }
 
@@ -244,7 +242,6 @@ function copyClaim(
 	};
 }
 
-/** Claim the entire logical route before any target or policy callback runs. */
 export async function runIacRoute<T>(input: {
 	readonly authority: IacRouteAuthority;
 	readonly tenantId: string;
@@ -266,16 +263,16 @@ export async function runIacRoute<T>(input: {
 		typeof fields.tenantId !== "string" ||
 		typeof fields.requestId !== "string" ||
 		typeof fields.run !== "function" ||
-		utilTypes.isProxy(fields.run)
+		isRouteProxy(fields.run)
 	)
 		return { status: "uncertain", code: "ROUTE_INPUT_UNINSPECTABLE" };
 	const identity = Object.freeze({
 		tenantId: fields.tenantId,
 		requestId: fields.requestId,
 	});
-	// SAFETY: the authority and callback are host-owned capabilities; their identities are captured once before the claim.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the authority and callback are host-owned capabilities; their identities are captured once before the claim.
 	const authority = fields.authority as IacRouteAuthority;
-	// SAFETY: the callable host callback is captured before the claim and receives only the scoped controller.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the callable host callback is captured before the claim and receives only the scoped controller.
 	const run = fields.run as typeof input.run;
 	let operation: IacRouteOperation;
 	try {
@@ -395,7 +392,7 @@ export async function runIacRoute<T>(input: {
 		const rawValue = requiredOwnDataField(executed, "value");
 		if (rawValue === uninspectable || !isBoundedRouteValue(rawValue))
 			throw new Error("route value is uninspectable");
-		// SAFETY: the bounded detached value preserves the callback's result type.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the bounded detached value preserves the callback's result type.
 		const value = structuredClone(rawValue) as T;
 		const finished = await authority.finish(
 			Object.freeze({
@@ -416,25 +413,25 @@ export async function runIacRoute<T>(input: {
 			status: "uncertain",
 			...(current === undefined ? {} : { targetId: current.targetId }),
 		});
+		const uncertain = {
+			status: "uncertain" as const,
+			code: "ROUTE_OUTCOME_UNKNOWN",
+			...(current === undefined ? {} : { targetId: current.targetId }),
+		};
 		try {
 			await authority.finish(
 				Object.freeze({ ...identity, claimToken, outcome }),
 			);
 		} catch {
-			/* A lost acknowledgement leaves the route blocked. */
+			return uncertain;
 		}
-		return {
-			status: "uncertain",
-			code: "ROUTE_OUTCOME_UNKNOWN",
-			...(current === undefined ? {} : { targetId: current.targetId }),
-		};
+		return uncertain;
 	}
 }
 
-/** Bridge direct provider calls to the same authority used by ranked routes. */
 export function createDirectRoutePort<Plan>(options: {
 	readonly authority: IacRouteAuthority;
-	/** Host-owned canonical inventory hash; it must bind the exact plan and target. */
+
 	readonly hashInventory: (plan: Plan) => string | Promise<string>;
 }) {
 	const authority = options.authority;
@@ -469,17 +466,17 @@ export function createDirectRoutePort<Plan>(options: {
 				typeof fields.targetId !== "string" ||
 				!isBoundedRouteValue(fields.plan) ||
 				typeof run !== "function" ||
-				utilTypes.isProxy(run) ||
+				isRouteProxy(run) ||
 				typeof hashInventory !== "function" ||
-				utilTypes.isProxy(hashInventory)
+				isRouteProxy(hashInventory)
 			)
 				return { status: "uncertain", code: "ROUTE_INPUT_INVALID" };
 			const { tenantId, requestId, targetId } = fields;
-			// SAFETY: runIacRoute authenticates the captured operation before claiming.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: runIacRoute authenticates the captured operation before claiming.
 			const operation = fields.operation as IacRouteOperation;
 			let plan: Plan;
 			try {
-				// SAFETY: the bounded plain-data snapshot preserves the host plan type.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the bounded plain-data snapshot preserves the host plan type.
 				plan = structuredClone(fields.plan) as Plan;
 			} catch {
 				return { status: "uncertain", code: "ROUTE_INPUT_INVALID" };

@@ -19,6 +19,10 @@
 		"./v2": {
 			"types": "./dist/dispatcher-v2.d.ts",
 			"default": "./dist/dispatcher-v2.js"
+		},
+		"./recovery-sqlite": {
+			"types": "./dist/iac-route-recovery-sqlite.d.ts",
+			"default": "./dist/iac-route-recovery-sqlite.js"
 		}
 	},
 	"publishConfig": {
@@ -29,13 +33,14 @@
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts && tsc --noEmit -p tsconfig.iac-tests.json && tsc --noEmit -p tsconfig.iac-recovery-tests.json",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}

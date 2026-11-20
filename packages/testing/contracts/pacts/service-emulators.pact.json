@@ -27,6 +27,46 @@
 			}
 		},
 		{
+			"description": "a secret resource supports versioned access without publishing material in outputs",
+			"request": {
+				"method": "POST",
+				"path": "/secret/credentials",
+				"body": { "name": "API_KEY", "value": "fixture-only" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "access": "ok", "versioned": true, "materialInOutputs": false }
+			}
+		},
+		{
+			"description": "a data resource stores and reads an isolated tenant record through the engine SPI",
+			"request": { "method": "POST", "path": "/data/orders", "body": { "id": "one" } },
+			"response": {
+				"status": 200,
+				"body": { "fidelity": "simulated", "stored": true, "otherTenantAbsent": true }
+			}
+		},
+		{
+			"description": "a schedule resource fires intervals on its virtual clock",
+			"request": { "method": "POST", "path": "/schedule/nightly", "body": { "interval": 1000 } },
+			"response": { "status": 200, "body": { "fidelity": "simulated", "occurrences": [1, 2] } }
+		},
+		{
+			"description": "a key-value resource stores bytes through the generated WASI port",
+			"request": { "method": "POST", "path": "/kv/cache", "body": { "value": "hello" } },
+			"response": { "status": 200, "body": { "fidelity": "simulated", "value": "hello" } }
+		},
+		{
+			"description": "a bucket stores metadata and exposes its body to the test inspector",
+			"request": { "method": "POST", "path": "/bucket/files", "body": { "value": "hello" } },
+			"response": { "status": 200, "body": { "fidelity": "simulated", "size": 5, "value": "hello" } }
+		},
+		{
+			"description": "a flag resource evaluates a change without leaking it to another tenant",
+			"request": { "method": "POST", "path": "/flag/features", "body": { "key": "checkout" } },
+			"response": { "status": 200, "body": { "fidelity": "simulated", "enabled": true, "otherTenantDefault": true } }
+		},
+		{
 			"description": "a resource of the wrong kind cannot be used as a queue",
 			"request": { "method": "GET", "path": "/queue/events" },
 			"response": {

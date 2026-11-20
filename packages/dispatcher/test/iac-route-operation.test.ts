@@ -111,8 +111,7 @@ describe("authenticated operation lineage", () => {
 		const directory = directories.at(-1);
 		if (!directory) throw new Error("missing directory");
 		const db = new DatabaseSync(join(directory, "routes.sqlite"));
-		// A trusted recovery transaction has independently proved no effect,
-		// no remaining liability, and permanently fenced the old executor.
+
 		db.exec("BEGIN IMMEDIATE");
 		db.prepare(
 			"UPDATE iac_routes SET claim_token=?,phase='finished',active_attempt=NULL,target=NULL,outcome=? WHERE tenant=? AND request=?",
@@ -367,7 +366,7 @@ describe("authenticated operation lineage", () => {
 			"first",
 			"successor",
 		);
-		// Simulate an inconsistent restore or corruption of the operation index.
+
 		db.exec("PRAGMA foreign_keys=OFF");
 		db.prepare(
 			"DELETE FROM iac_route_operations WHERE tenant=? AND operation_id=?",
