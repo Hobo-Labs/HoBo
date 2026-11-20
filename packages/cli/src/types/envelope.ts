@@ -1,4 +1,3 @@
-import type { JsonObject } from "../json.js";
 // domain-view: parsed CLI-facing type (string unions, branded ids, literal fields); the package's data-models/*.proto is its wire contract (technical-standards.md).
 export interface CliClients {
 	readonly readApi: string;
@@ -22,22 +21,10 @@ export interface CliEnvelope {
 	readonly message: string;
 	readonly remediation: readonly string[];
 	readonly context: CliContext;
-	// See `CommandResult.data` below for why this is a record of `unknown`
-	// rather than a `JsonObject`.
 	readonly data: CommandData;
 }
 
-/**
- * A command's structured payload.
- *
- * `Readonly<Record<string, unknown>>`, not `JsonObject`: this is *carried* --
- * `buildEnvelope` puts it on the envelope and the renderer serializes it. No
- * code in this package reads a field off it. Commands legitimately put domain
- * records in here (`readonly BuildArtifact[]`, a `TargetRuntime`), none of which
- * are `JsonValue`, so demanding one made every command's return type stop
- * matching the interface it implements -- a promise about the leaves that
- * nothing checks and everything pays for.
- */
+// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type
 export type CommandData = Readonly<Record<string, unknown>>;
 
 export interface CommandResult {

@@ -114,6 +114,13 @@ export type FleetSchemaRole = "writer" | "standby";
 export type FleetReconcileOptions = {
 	/** In configured order. The first is the writer of an empty fleet. */
 	readonly backends: readonly FleetBackend[];
+	/**
+	 * Members that hold only the assignment register: never copied to, never
+	 * a writer. A writer and one standby are two members, and losing either
+	 * leaves no majority to decide a failover; a witness on a third failure
+	 * domain makes the majority, for the cost of a few rows.
+	 */
+	readonly witnesses?: readonly FleetBackend[];
 	readonly layout: FleetLayout;
 	readonly models: readonly PostgresFleetFinancialModel[];
 	readonly policy: FleetPolicy;
@@ -338,8 +345,9 @@ export async function reconcileFleet(
 	};
 
 	// 1. Settle the assignment.
+	const members = [...backends, ...(options.witnesses ?? [])];
 	await Promise.all(
-		backends.map(async (backend) => {
+		members.map(async (backend) => {
 			try {
 				await ensureFleetControlTables(backend, layout);
 			} catch {
@@ -347,7 +355,7 @@ export async function reconcileFleet(
 			}
 		}),
 	);
-	const register = sqlAssignmentRegister(backends, layout);
+	const register = sqlAssignmentRegister(members, layout);
 	let resolution = await completeAssignment(register);
 	if (resolution.status === "empty") {
 		const first = backends[0];

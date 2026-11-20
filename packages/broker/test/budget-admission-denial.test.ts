@@ -1,7 +1,12 @@
-import { create } from "@bufbuild/protobuf";
+import { createHash } from "node:crypto";
+import { runInNewContext } from "node:vm";
+import { clone, create, toJsonString } from "@bufbuild/protobuf";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
 	BudgetAdmissionDeniedError,
+	type BudgetAuthorityEvent,
+	BudgetAuthorityEventSchema,
 	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	BudgetProviderAccountSchema,
@@ -83,6 +88,7 @@ describe("definitive budget admission denial", () => {
 			base.entitlements = [
 				create(BudgetEntitlementSchema, {
 					bucketId: "credit",
+					kind: "allowance",
 					unit: "runner-ms",
 					periodId: "p1",
 					remainingUnits: 0,
@@ -93,6 +99,7 @@ describe("definitive budget admission denial", () => {
 			q.entitlementClaims = [
 				create(EntitlementClaimSchema, {
 					bucketId: "credit",
+					kind: "allowance",
 					unit: "runner-ms",
 					units: 1,
 				}),
@@ -125,6 +132,7 @@ describe("definitive budget admission denial", () => {
 		base.entitlements = [
 			create(BudgetEntitlementSchema, {
 				bucketId: "credit",
+				kind: "allowance",
 				unit: "runner-ms",
 				periodId: "p1",
 				remainingUnits: 10,
@@ -136,6 +144,7 @@ describe("definitive budget admission denial", () => {
 		q.entitlementClaims = [
 			create(EntitlementClaimSchema, {
 				bucketId: "credit",
+				kind: "allowance",
 				unit: "runner-ms",
 				units: 1,
 			}),
@@ -148,6 +157,82 @@ describe("definitive budget admission denial", () => {
 		} catch (error) {
 			expect(error).not.toBeInstanceOf(BudgetAdmissionDeniedError);
 		}
+	});
+
+	it.each([
+		"",
+		"grant",
+		"ALLOWANCE",
+	])("rejects unsupported entitlement kind %j before admission", (kind) => {
+		const q = quote();
+		q.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "credit",
+				kind,
+				unit: "runner-ms",
+				units: 1,
+			}),
+		];
+		const authority = createBudgetAdmissionAuthority({ snapshot: snapshot() });
+		expect(() => reserve(authority, q)).toThrow("unsupported entitlement kind");
+		expect(authority.lookup("work")).toBeUndefined();
+		expect(authority.read(NOW).seq).toBe(0);
+	});
+
+	it("replays a persisted kindless quote before strict kind validation", () => {
+		const base = snapshot();
+		base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "credit",
+				kind: "allowance",
+				unit: "runner-ms",
+				periodId: "p1",
+				remainingUnits: 10,
+				observedAt: "2026-10-30T00:00:00Z",
+				validUntil: "2026-10-31T00:00:00Z",
+			}),
+		];
+		const q = quote();
+		q.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "credit",
+				kind: "allowance",
+				unit: "runner-ms",
+				units: 1,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const initial = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => events.push(event),
+		});
+		reserve(initial, q);
+		const event = events[0];
+		if (!event) throw new Error("reservation event missing");
+		const legacyEvent = clone(BudgetAuthorityEventSchema, event);
+		for (const entitlement of legacyEvent.snapshot?.entitlements ?? [])
+			entitlement.kind = "";
+		const reservation = legacyEvent.reservations[0];
+		if (!reservation) throw new Error("reservation missing");
+		for (const claim of reservation.entitlementClaims) claim.kind = "";
+		for (const claim of q.entitlementClaims) claim.kind = "";
+		reservation.quoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, q))
+			.digest("hex");
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: [legacyEvent],
+		});
+		expect(reserve(authority, q)).toMatchObject({
+			reservationId: "work",
+			status: "held",
+		});
+		for (const claim of q.entitlementClaims) claim.kind = "allowance";
+		expect(reserve(authority, q)).toMatchObject({
+			reservationId: "work",
+			status: "held",
+		});
+		expect(authority.read(NOW).seq).toBe(1);
 	});
 
 	it("preserves unsupported financial scope failures instead of treating them as queueable exhaustion", () => {
@@ -168,7 +253,7 @@ describe("definitive budget admission denial", () => {
 		}
 	});
 
-	it("propagates the original durable commit failure without classifying it as a denial", () => {
+	it("retains the original durable commit failure as its cause", () => {
 		const failure = new Error("unknown durable write outcome");
 		const authority = createBudgetAdmissionAuthority({
 			snapshot: snapshot(),
@@ -176,8 +261,84 @@ describe("definitive budget admission denial", () => {
 				throw failure;
 			},
 		});
-		expect(() => reserve(authority)).toThrow(failure);
-		expect(failure).not.toBeInstanceOf(BudgetAdmissionDeniedError);
-		expect(authority.lookup("work")).toBeUndefined();
+		let observed: unknown;
+		try {
+			reserve(authority);
+		} catch (error) {
+			observed = error;
+		}
+		expect(observed).toBeInstanceOf(Error);
+		expect(observed).not.toBeInstanceOf(BudgetAdmissionDeniedError);
+		if (!(observed instanceof Error)) throw new Error("missing failure");
+		expect(observed.cause).toBe(failure);
+		expect(() => authority.lookup("work")).toThrow(
+			"budget commit outcome uncertain",
+		);
+	});
+
+	it("does not classify a commit exception as a denial", () => {
+		const seen = new Set<string>();
+		const foreign: unknown = runInNewContext(
+			'new (class BudgetAdmissionDeniedError extends Error { constructor() { super("foreign denial"); } })()',
+		);
+		fc.assert(
+			fc.property(
+				fc.boolean(),
+				fc.constantFrom("denial", "proxy", "foreign", "ordinary"),
+				(appendBeforeThrow, variant) => {
+					const base = snapshot();
+					const journal: BudgetAuthorityEvent[] = [];
+					const failure = new BudgetAdmissionDeniedError(
+						"budget.exhausted",
+						"storage reported an ambiguous failure",
+					);
+					let trapCalls = 0;
+					const thrown: unknown =
+						variant === "proxy"
+							? new Proxy(failure, {
+									getPrototypeOf() {
+										trapCalls += 1;
+										throw failure;
+									},
+								})
+							: variant === "foreign"
+								? foreign
+								: variant === "ordinary"
+									? new Error("storage failed")
+									: failure;
+					const authority = createBudgetAdmissionAuthority({
+						snapshot: base,
+						commit(event) {
+							if (appendBeforeThrow) journal.push(event);
+							throw thrown;
+						},
+					});
+					let observed: unknown;
+					try {
+						reserve(authority);
+					} catch (error) {
+						observed = error;
+					}
+					expect(observed).toBeInstanceOf(Error);
+					expect(observed).not.toBeInstanceOf(BudgetAdmissionDeniedError);
+					if (!(observed instanceof Error)) throw new Error("missing failure");
+					expect(observed.cause).toBe(thrown);
+					expect(trapCalls).toBe(0);
+					expect(() => authority.read(NOW)).toThrow(
+						"budget commit outcome uncertain",
+					);
+					const reopened = createBudgetAdmissionAuthority({
+						snapshot: base,
+						priorEvents: journal,
+					});
+					expect(reopened.lookup("work")?.status).toBe(
+						appendBeforeThrow ? "held" : undefined,
+					);
+					seen.add(`${appendBeforeThrow}:${variant}`);
+				},
+			),
+			{ seed: 614454, numRuns: 50 },
+		);
+		expect(seen.size).toBe(8);
 	});
 });

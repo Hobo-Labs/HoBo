@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-E9+GrYZ+YnWgdny0iZ6P3Ekuy5N7LLVOBm2o2e707hw='; style-src 'unsafe-inline'; form-action https://github.com; base-uri 'none'">
+<title>HoBo GitHub App hand-off</title>
+<style>
+  :root { color-scheme: light dark; --ink: #111; --paper: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #f2f2f2; --paper: #111; } }
+  body { margin: 0; padding: 32px 16px; background: var(--paper); color: var(--ink); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; }
+  .card { border: 3px solid var(--ink); padding: 20px; box-shadow: 6px 6px 0 var(--ink); }
+  button { font: inherit; padding: 10px 16px; border: 3px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; }
+  code { display: block; padding: 12px; border: 2px dashed var(--ink); word-break: break-all; margin: 12px 0; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HoBo GitHub App hand-off</h1>
+  <div class="card">
+    <section id="create" class="hidden">
+      <p>This creates HoBo CI's GitHub App with <strong>your</strong> GitHub account. The settings come from the run that sent you here; this page sends them only to GitHub.</p>
+      <form id="form" method="post"><input type="hidden" name="manifest" id="manifest"><button type="submit">Create GitHub App on GitHub</button></form>
+    </section>
+    <section id="code" class="hidden">
+      <p>GitHub created the App. Give this single-use code to your agent (or paste it into the waiting run). It works once, within the hour, and only for the run that asked.</p>
+      <code id="value"></code>
+      <button id="copy" type="button">Copy</button>
+    </section>
+    <section id="empty">
+      <p>Nothing to do here. A HoBo run gives you a link to this page when it needs a GitHub App.</p>
+    </section>
+  </div>
+</main>
+<script>
+(function () {
+  var show = function (id) {
+    ["create", "code", "empty"].forEach(function (s) { document.getElementById(s).classList.toggle("hidden", s !== id); });
+  };
+  var hash = new URLSearchParams(location.hash.slice(1));
+  var query = new URLSearchParams(location.search);
+  var action = hash.get("action") || "";
+  if (hash.get("manifest") && /^https:\/\/github\.com\/(settings\/apps\/new|organizations\/[A-Za-z0-9-]+\/settings\/apps\/new)\?state=[A-Za-z0-9_-]+$/.test(action)) {
+    document.getElementById("manifest").value = hash.get("manifest");
+    document.getElementById("form").action = action;
+    show("create");
+  } else if (/^[A-Za-z0-9_-]{1,200}$/.test(query.get("code") || "") && /^[A-Za-z0-9_-]{1,200}$/.test(query.get("state") || "")) {
+    var value = query.get("code") + "~" + query.get("state");
+    document.getElementById("value").textContent = value;
+    document.getElementById("copy").onclick = function () { navigator.clipboard.writeText(value); };
+    show("code");
+  }
+  // The code and manifest leave the address bar and history at once.
+  history.replaceState(null, "", location.pathname);
+})();
+</script>
+</body>
+</html>
