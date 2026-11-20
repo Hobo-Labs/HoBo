@@ -23,6 +23,8 @@ import { formInitialState } from "./form-state.js";
 
 const ActionParamsSchema = z.record(z.string(), z.string());
 type ActionParams = z.infer<typeof ActionParamsSchema>;
+type ConnectJsonRenderState = ReturnType<typeof formInitialState>;
+type JsonRenderHandlerParams = Parameters<typeof actionParams>[0];
 
 function actionParams(
 	params: Parameters<typeof ActionParamsSchema.parse>[0],
@@ -190,7 +192,7 @@ function ConnectStage({
 	secretNames,
 }: {
 	readonly view: View;
-	readonly initialState: Record<string, unknown>;
+	readonly initialState: ConnectJsonRenderState;
 	readonly dispatch: (action: string, params: ActionParams) => Promise<void>;
 	readonly busy: boolean;
 	readonly collector: ReturnType<typeof useConnectFormCollector>["collector"];
@@ -201,16 +203,16 @@ function ConnectStage({
 	const { collectFormParams } = useConnectRuntime();
 	const handlers = useMemo(
 		() => ({
-			"connect.submit": (params: unknown) =>
+			"connect.submit": (params: JsonRenderHandlerParams) =>
 				dispatch("connect.submit", {
 					...collectFormParams(true),
 					...actionParams(params),
 				}),
-			"connect.chooseStore": (params: unknown) =>
+			"connect.chooseStore": (params: JsonRenderHandlerParams) =>
 				dispatch("connect.chooseStore", actionParams(params)),
-			"connect.start": (params: unknown) =>
+			"connect.start": (params: JsonRenderHandlerParams) =>
 				dispatch("connect.start", actionParams(params)),
-			"connect.cancel": (params: unknown) =>
+			"connect.cancel": (params: JsonRenderHandlerParams) =>
 				dispatch("connect.cancel", actionParams(params)),
 		}),
 		[collectFormParams, dispatch],

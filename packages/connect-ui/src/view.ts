@@ -5,27 +5,11 @@ import {
 	providerLabel,
 } from "./steps.js";
 
-// The exact component a step needs, generated from the step itself.
-//
-// A step is data the flow owns; its view is derived from it: only the fields
-// that step is missing, the one choice it asks for, and the actions that move
-// it. The browser renders json-render elements from the composed spec: every control is
-// labeled, consequential buttons carry `data-agent-confirm`, and dispatch asks
-// the person to confirm before a provider hand-off. Agents must honor the same
-// confirm attribute the page shows. Nothing in a view is a secret value: a
-// secret field arrives empty and leaves through `connect.submit` straight to
-// the flow, which writes it to the owner's secret store.
-
 export interface ViewAction {
 	readonly action: ConnectActionName;
 	readonly label: string;
 	readonly variant: "primary" | "secondary";
-	/** Sends the view's field and choice values as the action's params. */
 	readonly submits: boolean;
-	/**
-	 * The sentence an agent must have a person confirm before pressing it
-	 * (`data-agent-confirm`): handing off to a provider, giving a secret.
-	 */
 	readonly confirm?: string;
 }
 
@@ -35,7 +19,6 @@ export interface StepView {
 	readonly title: string;
 	readonly description: string;
 	readonly tone: "neutral" | "success" | "error";
-	/** Paragraphs that explain the step; plain text. */
 	readonly explanation: readonly string[];
 	readonly fields: readonly ConfigField[];
 	readonly progress?: {
@@ -43,7 +26,6 @@ export interface StepView {
 		readonly max: number;
 		readonly label: string;
 	};
-	/** Store references (never values) a finished step shows. */
 	readonly references: readonly string[];
 	readonly link?: { readonly label: string; readonly href: string };
 	readonly actions: readonly ViewAction[];
@@ -56,7 +38,6 @@ const cancel: ViewAction = {
 	submits: false,
 };
 
-/** Generate the view for one step. */
 export function stepView(step: ConnectStep): StepView {
 	const provider = providerLabel(step.provider);
 	const base = {

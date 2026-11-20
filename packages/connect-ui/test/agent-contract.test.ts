@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { agentPressAllowed } from "../src/client/agent-gate.js";
 import { confirmLabelsForSpec } from "../src/client/confirm-labels.js";
@@ -9,6 +10,8 @@ import {
 	connectCandidates,
 	deterministicConnectSpec,
 } from "../src/index.js";
+
+const LabelledElementSchema = z.object({ label: z.string().optional() });
 
 const APP_STEP: ConnectStep = {
 	kind: "create-github-app",
@@ -38,11 +41,16 @@ describe("agent safety on the connect page", () => {
 		const spec = deterministicConnectSpec(APP_STEP);
 		const labels = Object.values(spec.elements)
 			.flatMap((element) => {
-				if (element.type === "Button")
-					return [String((element.props as { label?: string }).label ?? "")];
-				if (element.type === "Input" || element.type === "Radio")
-					return [String((element.props as { label?: string }).label ?? "")];
-				return [];
+				if (
+					element.type !== "Button" &&
+					element.type !== "Input" &&
+					element.type !== "Radio"
+				) {
+					return [];
+				}
+				const parsed = LabelledElementSchema.safeParse(element.props);
+				if (!parsed.success || parsed.data.label === undefined) return [];
+				return [parsed.data.label];
 			})
 			.filter((label) => label.length > 0);
 		expect(labels).toEqual(
