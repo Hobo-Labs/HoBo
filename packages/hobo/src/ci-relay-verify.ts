@@ -178,30 +178,36 @@ export function adoptedVerificationRecords(
 export function recordVerifiedPreviewRecords(
 	records: DeliveryModule,
 ): DeliveryModule {
-	return {
-		...records,
-		pipelines: records.pipelines.map((pipeline) => {
-			const copy = clone(PipelineRecordSchema, pipeline);
-			for (const node of copy.nodes) {
-				if (node.name !== "preview" || node.verification === undefined)
-					continue;
-				const spec = node.verification;
-				spec.windowMs = BigInt(RELAY_ADOPT_VERIFICATION.windowMs);
-				spec.requiredObservations =
-					RELAY_ADOPT_VERIFICATION.requiredObservations;
-				spec.progressDeadlineMs = BigInt(
-					RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs,
+	let updated = 0;
+	const pipelines = records.pipelines.map((pipeline) => {
+		const copy = clone(PipelineRecordSchema, pipeline);
+		for (const node of copy.nodes) {
+			if (node.name !== "preview") continue;
+			if (node.verification === undefined)
+				throw new Error(
+					`pipeline ${pipeline.name} preview has no verification to qualify its deployment record`,
 				);
-				spec.probes = [];
-				spec.suites = [
-					create(SuiteCheckRecordSchema, {
-						suite: RELAY_PREVIEW_DEPLOYMENT_SUITE,
-					}),
-				];
-			}
-			return copy;
-		}),
-	};
+			const spec = node.verification;
+			spec.windowMs = BigInt(RELAY_ADOPT_VERIFICATION.windowMs);
+			spec.requiredObservations = RELAY_ADOPT_VERIFICATION.requiredObservations;
+			spec.progressDeadlineMs = BigInt(
+				RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs,
+			);
+			spec.probes = [];
+			spec.suites = [
+				create(SuiteCheckRecordSchema, {
+					suite: RELAY_PREVIEW_DEPLOYMENT_SUITE,
+				}),
+			];
+			updated += 1;
+		}
+		return copy;
+	});
+	if (updated === 0)
+		throw new Error(
+			"no preview verification node was updated, so deployment-record qualification is refused",
+		);
+	return { ...records, pipelines };
 }
 
 export function deployedPreviewSuites(

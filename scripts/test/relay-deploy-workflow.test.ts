@@ -209,6 +209,15 @@ describe("the relay deploy workflow", () => {
 		assert.match(workflow, /cancel-in-progress: false/u);
 	});
 
+	it("restricts the OIDC deploy job to main, including manual bootstraps", () => {
+		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
+		assert.ok(deploy, "no deploy job");
+		assert.match(
+			deploy,
+			/^ {4}if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event\.inputs\.manifest_code == ''$/mu,
+		);
+	});
+
 	it("passes force_bootstrap to the gate as FORCE_BOOTSTRAP, and only there", () => {
 		const gate = step("Decide whether to deploy");
 		assert.match(gate, /id: gate/u);

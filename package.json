@@ -174,7 +174,10 @@
 	},
 	"pnpm": {
 		"overrides": {
+			"@vercel/node>path-to-regexp": "6.3.0",
+			"@vercel/node>undici": "5.29.0",
 			"@vercel/queue>@vercel/oidc": "3.2.0",
+			"@vercel/remix-builder>path-to-regexp": "6.3.0",
 			"ts-autocode-grounding": "workspace:*",
 			"ts-autocode-rewrite": "workspace:*",
 			"ts-autocode-training": "workspace:*"

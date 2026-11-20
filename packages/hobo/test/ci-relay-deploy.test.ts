@@ -10,9 +10,14 @@ import { at } from "@hobo/core/total-access";
 import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import { createCiCommand } from "../src/ci-command.js";
+import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
-import { RELAY_VERIFY_REFUSAL } from "../src/ci-relay-verify.js";
+import {
+	recordVerifiedPreviewRecords,
+	RELAY_VERIFY_REFUSAL,
+} from "../src/ci-relay-verify.js";
 import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
@@ -976,6 +981,46 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		});
 		const reads = vercel.sent.filter((line) => line.startsWith("GET ")).length;
 		expect(reads).toBeLessThan(10);
+	});
+});
+
+async function relayDeliveryRecords() {
+	const loaded = await loadDeliveryFile(RELAY_DELIVERY_FILE, {
+		cwd: RELAY_DIR,
+	});
+	if (!loaded.ok) throw new Error(loaded.message);
+	return loaded.value;
+}
+
+describe("deployment-record preview verification", () => {
+	it("refuses a preview node without verification", async () => {
+		const records = await relayDeliveryRecords();
+		const withoutVerification = {
+			...records,
+			pipelines: records.pipelines.map((pipeline) => ({
+				...pipeline,
+				nodes: pipeline.nodes.map((node) =>
+					node.name === "preview" ? { ...node, verification: undefined } : node,
+				),
+			})),
+		};
+		expect(() => recordVerifiedPreviewRecords(withoutVerification)).toThrow(
+			/preview has no verification/u,
+		);
+	});
+
+	it("refuses when no preview verification node exists", async () => {
+		const records = await relayDeliveryRecords();
+		const withoutPreview = {
+			...records,
+			pipelines: records.pipelines.map((pipeline) => ({
+				...pipeline,
+				nodes: pipeline.nodes.filter((node) => node.name !== "preview"),
+			})),
+		};
+		expect(() => recordVerifiedPreviewRecords(withoutPreview)).toThrow(
+			/no preview verification node was updated/u,
+		);
 	});
 });
 

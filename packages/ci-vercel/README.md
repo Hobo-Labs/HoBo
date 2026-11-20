@@ -2,6 +2,8 @@
 
 For relay recovery when the deployed relay is unavailable, see [BOOTSTRAP.md](BOOTSTRAP.md). Its local sequence qualifies preview and then deploys production from the same commit and `HOBO_HOME` journal. The deploy workflow uses the Vercel CLI pinned in the root frozen lockfile, and production verification requires `GITHUB_SHA`; neither dependency resolution nor commit attestation can silently fall back.
 
+Manual dispatches run the deploy job only from `main`, before any OIDC or deploy step. Record-based preview verification refuses a delivery module unless it updates a declared preview verification node. Root pnpm overrides replace Vercel's vulnerable `path-to-regexp@6.1.0` and `undici@5.28.4` resolutions with `6.3.0` and `5.29.0`, so frozen installs cannot retain those duplicates.
+
 ## Run Vercel CI checks locally
 
 `@hobo/ci-vercel/turbo-ci` runs the checks declared for the new Vercel CI
