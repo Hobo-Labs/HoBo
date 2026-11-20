@@ -1131,6 +1131,9 @@ importers:
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
+      '@hobo/provider-agent37':
+        specifier: workspace:*
+        version: link:../providers/provider-agent37
       '@hobo/provider-turso':
         specifier: workspace:*
         version: link:../providers/provider-turso

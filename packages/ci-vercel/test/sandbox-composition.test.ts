@@ -12,6 +12,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import {
 	createSandboxComposition,
+	parseSandboxProvider,
 	type SandboxCompositionStore,
 } from "../src/sandbox-composition.js";
 
@@ -192,5 +193,19 @@ describe("Sandbox billing team binding", () => {
 			},
 		});
 		expect(() => sandbox?.allowedDomains()).toThrow();
+	});
+});
+
+describe("parseSandboxProvider", () => {
+	it("defaults unset values to vercel", () => {
+		expect(parseSandboxProvider({})).toBe("vercel");
+		expect(parseSandboxProvider({ HOBO_CI_SANDBOX_PROVIDER: "" })).toBe(
+			"vercel",
+		);
+	});
+	it("rejects non-exact provider spellings", () => {
+		expect(() =>
+			parseSandboxProvider({ HOBO_CI_SANDBOX_PROVIDER: "Agent37" }),
+		).toThrow(/invalid sandbox provider/);
 	});
 });
