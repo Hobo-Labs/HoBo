@@ -1,10 +1,5 @@
 import { spawn } from "node:child_process";
-import {
-	mkdirSync,
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -309,7 +304,9 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				}),
 			);
 			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
-			const signIn = await server.next((m) => m.method === "elicitation/create");
+			const signIn = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
 			const jwt = api.signIn();
 			const copied = copiedSession(jwt);
 			server.send({

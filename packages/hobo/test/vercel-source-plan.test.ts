@@ -145,50 +145,55 @@ describe("Vercel source preparation", () => {
 		});
 	});
 
-	it("prepares an opaque gzip tar source archive with exact bytes and modes", { timeout: slow(60_000) }, async () => {
-		const source = fixture();
-		const plan = await prepareVercelSource({
-			...source,
-			projectId: "prj_fixture",
-			name: "fixture",
-			rootDirectory: "app",
-			target: "preview",
-			archive: true,
-		});
-		const body = JSON.parse(plan.deploymentBody);
-		expect(plan.uploadDigests).toHaveLength(1);
-		const sha = plan.uploadDigests[0];
-		if (!sha) throw new Error("Missing fixture digest.");
-		const content = plan.readUpload(sha);
-		if (!content) throw new Error("Missing fixture archive.");
-		expect(createHash("sha1").update(content).digest("hex")).toBe(sha);
-		expect(body.files).toEqual([
-			{
-				file: ".vercel/source.tgz.part1",
-				sha,
-				size: content.byteLength,
-				mode: 0o666,
-			},
-		]);
-		const entries = await archiveEntries(content);
-		expect(entries.get("app/file.bin")).toEqual({
-			bytes: Buffer.from([0, 255, 1]),
-			mode: 0o644,
-		});
-		expect(entries.get("app/script.sh")).toEqual({
-			bytes: Buffer.from("#!/bin/sh\nexit 0\n"),
-			mode: 0o755,
-		});
-		const again = await prepareVercelSource({
-			...source,
-			projectId: "prj_fixture",
-			name: "fixture",
-			rootDirectory: "app",
-			target: "preview",
-			archive: true,
-		});
-		expect(again.uploadDigests).toEqual(plan.uploadDigests);
-	}, { timeout: slow(60_000) });
+	it(
+		"prepares an opaque gzip tar source archive with exact bytes and modes",
+		{ timeout: slow(60_000) },
+		async () => {
+			const source = fixture();
+			const plan = await prepareVercelSource({
+				...source,
+				projectId: "prj_fixture",
+				name: "fixture",
+				rootDirectory: "app",
+				target: "preview",
+				archive: true,
+			});
+			const body = JSON.parse(plan.deploymentBody);
+			expect(plan.uploadDigests).toHaveLength(1);
+			const sha = plan.uploadDigests[0];
+			if (!sha) throw new Error("Missing fixture digest.");
+			const content = plan.readUpload(sha);
+			if (!content) throw new Error("Missing fixture archive.");
+			expect(createHash("sha1").update(content).digest("hex")).toBe(sha);
+			expect(body.files).toEqual([
+				{
+					file: ".vercel/source.tgz.part1",
+					sha,
+					size: content.byteLength,
+					mode: 0o666,
+				},
+			]);
+			const entries = await archiveEntries(content);
+			expect(entries.get("app/file.bin")).toEqual({
+				bytes: Buffer.from([0, 255, 1]),
+				mode: 0o644,
+			});
+			expect(entries.get("app/script.sh")).toEqual({
+				bytes: Buffer.from("#!/bin/sh\nexit 0\n"),
+				mode: 0o755,
+			});
+			const again = await prepareVercelSource({
+				...source,
+				projectId: "prj_fixture",
+				name: "fixture",
+				rootDirectory: "app",
+				target: "preview",
+				archive: true,
+			});
+			expect(again.uploadDigests).toEqual(plan.uploadDigests);
+		},
+		{ timeout: slow(60_000) },
+	);
 
 	it("preserves long Unicode paths and the compressed archive size boundary", async () => {
 		const path = `app/${"a".repeat(110)}/例.txt`;
@@ -380,7 +385,9 @@ describe("Vercel source preparation", () => {
 	it.each([
 		false,
 		true,
-	])("feeds the prepared source to the synthetic emulator (archive=%s)", { timeout: slow(60_000) }, async (archive) => {
+	])("feeds the prepared source to the synthetic emulator (archive=%s)", {
+		timeout: slow(60_000),
+	}, async (archive) => {
 		const source = fixture();
 		const plan = await prepareVercelSource({
 			...source,
