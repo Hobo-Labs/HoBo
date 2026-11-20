@@ -39,6 +39,14 @@ const CAN_TRUST_PATH =
 	process.platform !== "win32" &&
 	[0, process.geteuid?.()].includes(statSync("/").uid);
 const describeTrustedPath = CAN_TRUST_PATH ? describe : describe.skip;
+it.runIf(process.env.GITHUB_ACTIONS === "true" && !CAN_TRUST_PATH)(
+	"the env-file relaunch credential boundary suite has a trusted PATH in GitHub Actions",
+	() => {
+		expect.fail(
+			"The env-file relaunch credential boundary test requires a trusted system PATH in GitHub Actions; refusing to skip it.",
+		);
+	},
+);
 const ENV_FILE_RELAUNCH = "a relaunch started with node --env-file";
 
 function forRun(execArgv: readonly string[], nodeOptions?: string) {
