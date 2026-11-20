@@ -191,50 +191,6 @@ another target under a different reservation. They must pass the expected
 hashes into admission and check the resulting receipt before any provider
 effect; checking only after the callback returns is too late.
 
-Candidates may instead supply `pricing: pricingUnavailable(reason)` or
-`pricing: developerPricing(scope, scenario)` from `@hobo/pricing`.
-Unavailable pricing is rejected with `PRICING_MODEL_UNAVAILABLE`; supplied
-terms are checked against the candidate provider, tenant, account and product,
-and their model ID and revision accompany the ranked quote and decision fact.
-The checks cover the supplied scenario, not an independently verified IaC
-inventory. The v2 dispatcher ranks estimates; it does **not** apply a budget,
-reserve funds or authorize a provider call. Every v2 success and rejection
-reports `budget: { evaluation: "not-evaluated", reservation: "not-created" }`;
-successful `dispatch.Decided` facts carry the same disclosure. Budgeted hosting still needs the
-broker's trusted whole-request quote, bound, policy decision and durable hold.
-
-`rankIacTargets` ranks whole-target assessments for one tenant, workload,
-action and quote interval. It returns excluded targets and `coverage: "partial"`
-when any cannot be compared or priced. Its budget disclosure says no budget
-was evaluated and no reservation created; use the broker admission authority
-before executing the chosen target. The caller must establish that its common
-workload reference identifies equivalent work across candidates.
-
-Ranking accepts at most 256 candidates. Before copying their inventories and
-models it bounds the whole batch to 100,000 data nodes and 4,000,000 UTF-16
-code units of string values and property names; repeated references count each
-time. Each inventory and model also has its own pricing input limit.
-Uninspectable or excessive inputs return `ROUTING_INPUT_INVALID` with no budget
-evaluation or reservation; inspectable invalid models are reported alongside
-the remaining comparable candidates. JavaScript must enumerate object keys
-before counting them, which can allocate before these limits apply. The host
-must impose independent process memory and time limits for untrusted input.
-
-`executeRankedIacTargets` accepts that ranking and an execution callback for
-each ranked target. It passes the same request ID and that target's inventory,
-model and quote hashes to every callback, and tries
-the next target only after an explicit denial with no reservation. A replay,
-lost response, malformed receipt or uncertain reservation stops the route.
-The result lists every attempt and its budget disclosure. A contradictory
-denial stops routing. If a matching admission proves a reservation is held but
-the provider cannot return usable outputs, the result remains uncertain and
-reports that hold; it also reports a completed execution when the provider can
-establish one. Callbacks must use
-the request ID with the same durable budget authority so a retry cannot claim
-another target under a different reservation. They must pass the expected
-hashes into admission and check the resulting receipt before any provider
-effect; checking only after the callback returns is too late.
-
 `CreditAccount.reservedCost` holds pending monetary exposure in the account's
 declared currency, using the existing `budgetCap`/`listUnitCost` number units.
 `reserve({ expectedSeq, reservationId, providerId, dimension, units, unitCost?,

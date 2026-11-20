@@ -26,6 +26,7 @@
 		"ws": "^8.21.0"
 	},
 	"devDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",
 		"@effect/platform-node": "4.1.4",
