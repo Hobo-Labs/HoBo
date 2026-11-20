@@ -81,7 +81,7 @@ describe("Vercel hosting coverage document (I14)", () => {
 		const ids = VERCEL_UNRESOLVED_PRODUCTS.map((entry) => entry.productId);
 		for (const legacy of VERCEL_UNRESOLVED_PRODUCT_IDS)
 			expect(ids).toContain(legacy);
-		expect(ids).toContain(VERCEL_BLOB_PRODUCT_ID);
+		expect(ids).not.toContain(VERCEL_BLOB_PRODUCT_ID);
 		expect(ids).toContain(VERCEL_EDGE_FUNCTION_PRODUCT_ID);
 		for (const productId of ids) {
 			const refusal = vercelProductRefusal(productId);
@@ -122,7 +122,7 @@ describe("Vercel resolver telemetry", () => {
 			},
 			nowMs: () => 1_000,
 		});
-		const resolver = registry.list()[0];
+		const resolver = registry.get("vercel.edge-config/v1");
 		if (!resolver) throw new Error("registry is empty");
 		await expect(
 			resolver.reconcile(

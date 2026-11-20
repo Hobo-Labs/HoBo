@@ -2,10 +2,10 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { createHoboCli } from "@hobo/cli";
 import { parsePactDocument } from "@hobo/contract-harness";
 import type { HttpTransport } from "@hobo/core";
+import { createTrustedVault } from "@hobo/core";
 import { at } from "@hobo/core/total-access";
 import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -101,10 +101,17 @@ async function deploy(
 		readonly probe?: HttpTransport;
 	},
 ): Promise<Ran> {
+	// The deploy token is never read from the environment: a test that means
+	// "the owner holds a token" puts it in the run's vault, as the store would.
+	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
+	const deployCredentials = createTrustedVault();
+	if (storeToken !== undefined)
+		deployCredentials.put("VERCEL_TOKEN", storeToken);
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: options.env ?? {},
+				env: plainEnv,
+				deployCredentials,
 				vercelFetch: options.fetch,
 				...(options.vercelCli !== undefined
 					? { vercelCli: options.vercelCli }
@@ -453,7 +460,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 
 		expect(ran.exitCode).toBe(0);
 		expect(ran.stdout).toContain(
-			"Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.",
+			"Dry run: nothing was sent to Vercel, and no deploy token was read.",
 		);
 		expect(ran.stdout).toContain(
 			"Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)",
@@ -618,7 +625,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 describe("hobo ci deploy (pact-backed transport, no network)", () => {
 	const env = { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM };
 
-	it("needs VERCEL_TOKEN for a real run, and sends nothing without it", async () => {
+	it("needs the deploy token from the store for a real run, and sends nothing without it", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING], { fetch });
 

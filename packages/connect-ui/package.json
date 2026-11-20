@@ -25,14 +25,17 @@
 		"zod": "4.3.6"
 	},
 	"devDependencies": {
-		"@tailwindcss/cli": "4.1.17",
+		"@testing-library/dom": "10.4.2",
+		"@testing-library/react": "16.3.3",
+		"@tailwindcss/cli": "4.3.3",
 		"@types/node": "^22.15.29",
 		"@types/react": "19.2.2",
 		"@types/react-dom": "19.2.2",
 		"esbuild": "0.25.12",
+		"jsdom": "26.1.0",
 		"react": "19.2.3",
 		"react-dom": "19.2.3",
-		"tailwindcss": "4.1.17",
+		"tailwindcss": "4.3.3",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {
