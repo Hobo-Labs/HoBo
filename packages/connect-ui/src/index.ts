@@ -1,12 +1,14 @@
 export {
 	type CeremonySetting,
 	type ConfigureOptions,
+	cellSettingsStore,
 	configureThen,
-	familySettingsStore,
 	fileSettingsStore,
 	type ResolvedSettings,
 	resolveSettings,
 	type SavedSettings,
+	type SecretHolder,
+	type SettingsCell,
 	type SettingsStore,
 } from "./ceremony.js";
 export {

@@ -1,0 +1,166 @@
+{
+  "iacEvidence": {
+    "evidenceRef": "evidence:1",
+    "targetId": "yard-a",
+    "tenantId": "tenant-a",
+    "planDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "quoteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "maximumMicrosExact": "1500000",
+    "observedAt": "2026-01-01T00:00:00Z",
+    "validUntil": "2026-02-01T00:00:00Z",
+    "providerAccounts": [
+      {
+        "providerAccountId": "account-a",
+        "liabilityMicros": 1500000
+      }
+    ],
+    "entitlementClaims": [
+      {
+        "bucketId": "credit-a",
+        "kind": "credit",
+        "unit": "USD.micros",
+        "units": 1
+      },
+      {
+        "bucketId": "credit-a",
+        "kind": "credit",
+        "unit": "USD.micros",
+        "units": 1
+      },
+      {
+        "bucketId": "free-requests",
+        "kind": "allowance",
+        "unit": "request",
+        "units": 2
+      }
+    ]
+  },
+  "iacDecision": {
+    "requestId": "request-1",
+    "targetId": "yard-a",
+    "status": "admitted",
+    "code": "",
+    "message": "",
+    "budget": {
+      "evaluation": "allowed",
+      "reservation": "held"
+    },
+    "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "quoteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "quote": {
+      "quoteId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "yardId": "yard-a",
+      "providerId": "provider-a",
+      "ownerTenantId": "tenant-a",
+      "currency": "USD",
+      "totalMicros": 1000000,
+      "liabilityBoundMicros": 1500000,
+      "observedAt": "2026-01-01T00:00:00Z",
+      "validUntil": "2026-02-01T00:00:00Z",
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "financialPlanHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "providerAccounts": [
+        {
+          "providerAccountId": "account-a",
+          "liabilityMicros": 1500000
+        }
+      ],
+      "entitlementClaims": [
+        {
+          "bucketId": "credit-a",
+          "kind": "credit",
+          "unit": "USD.micros",
+          "units": 1
+        },
+        {
+          "bucketId": "credit-a",
+          "kind": "credit",
+          "unit": "USD.micros",
+          "units": 1
+        },
+        {
+          "bucketId": "free-requests",
+          "kind": "allowance",
+          "unit": "request",
+          "units": 2
+        }
+      ],
+      "components": [
+        {
+          "name": "target",
+          "costMicros": 1000000
+        }
+      ]
+    },
+    "reservation": {
+      "reservationId": "r1",
+      "identity": {
+        "tenantId": "tenant-a",
+        "budgetId": "budget-a",
+        "periodId": "2026-01",
+        "policyRevision": "r1"
+      },
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "executionDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "quoteId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reservedMicros": 1500000,
+      "status": "held",
+      "actualMicros": 0,
+      "ledgerSeq": 1,
+      "quoteDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "providerAccounts": [
+        {
+          "providerAccountId": "account-a",
+          "liabilityMicros": 1500000
+        }
+      ],
+      "entitlementClaims": [
+        {
+          "bucketId": "credit-a",
+          "kind": "credit",
+          "unit": "USD.micros",
+          "units": 1
+        },
+        {
+          "bucketId": "credit-a",
+          "kind": "credit",
+          "unit": "USD.micros",
+          "units": 1
+        },
+        {
+          "bucketId": "free-requests",
+          "kind": "allowance",
+          "unit": "request",
+          "units": 2
+        }
+      ],
+      "financialPlanHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "iacPricingPin": {
+        "planDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "inventoryHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "modelHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "quoteHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "evidenceHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "validUntil": "2026-02-01T00:00:00Z"
+      }
+    },
+    "policyProof": {
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "quoteId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "identity": {
+        "tenantId": "tenant-a",
+        "budgetId": "budget-a",
+        "periodId": "2026-01",
+        "policyRevision": "r1"
+      },
+      "policyHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "effect": "allow",
+      "evidenceRef": "policy:1",
+      "obligationsSatisfied": true
+    }
+  }
+}

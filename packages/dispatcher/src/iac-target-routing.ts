@@ -1,4 +1,3 @@
-import { types as utilTypes } from "node:util";
 import {
 	areBoundedPricingInputs,
 	compareDecimal,
@@ -16,7 +15,13 @@ import {
 	type IacRoutePermit,
 	runIacRoute,
 } from "./iac-route.js";
-import { ownDataField, ownDataFields, uninspectable } from "./iac-untrusted.js";
+import {
+	hasOwnData,
+	isRouteProxy,
+	ownDataField,
+	ownDataFields,
+	uninspectable,
+} from "./iac-untrusted.js";
 
 export interface IacPricingCandidate {
 	readonly workloadRef: string;
@@ -26,7 +31,6 @@ export interface IacPricingCandidate {
 
 export interface IacPricingRankingRequest {
 	readonly tenantId: string;
-	/** Host-owned identity for the same workload across candidates. */
 	readonly workloadRef: string;
 	readonly action: string;
 	readonly at: string;
@@ -146,15 +150,19 @@ function snapshotRankedExecutionInput(
 			typeof fields.requestId !== "string" ||
 			!name(fields.tenantId) ||
 			!name(fields.requestId) ||
-			utilTypes.isProxy(fields.candidates) ||
+			isRouteProxy(fields.candidates) ||
 			!Array.isArray(fields.candidates) ||
 			Object.getPrototypeOf(fields.candidates) !== Array.prototype
 		)
 			return undefined;
-		const length = Object.getOwnPropertyDescriptor(
+		const lengthField = Object.getOwnPropertyDescriptor(
 			fields.candidates,
 			"length",
-		)?.value;
+		);
+		const length =
+			lengthField !== undefined && hasOwnData(lengthField, "value")
+				? lengthField.value
+				: undefined;
 		if (
 			typeof length !== "number" ||
 			length > 256 ||
@@ -167,19 +175,20 @@ function snapshotRankedExecutionInput(
 				fields.candidates,
 				String(index),
 			);
-			if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+			if (!descriptor?.enumerable || !hasOwnData(descriptor, "value"))
+				return undefined;
 			const candidate = ownDataFields(descriptor.value, ["targetId", "run"]);
 			if (
 				candidate === undefined ||
 				typeof candidate.targetId !== "string" ||
 				!name(candidate.targetId) ||
 				typeof candidate.run !== "function" ||
-				utilTypes.isProxy(candidate.run)
+				isRouteProxy(candidate.run)
 			)
 				return undefined;
-			// SAFETY: callable host-owned callbacks are captured once and invoked only after the route claim.
 			candidates.push({
 				targetId: candidate.targetId,
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: callable host-owned callbacks are captured once and invoked only after the route claim.
 				run: candidate.run as RankedIacExecutionInput["candidates"][number]["run"],
 			});
 		}
@@ -189,7 +198,7 @@ function snapshotRankedExecutionInput(
 			!isBoundedPricingInput(fields.operation)
 		)
 			return undefined;
-		// SAFETY: the detached ranking is checked for its control fields below and fully validated after the route claim.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the detached ranking is checked for its control fields below and fully validated after the route claim.
 		const ranking = structuredClone(fields.ranking) as IacPricingRankingResult;
 		if (
 			ranking === null ||
@@ -201,11 +210,12 @@ function snapshotRankedExecutionInput(
 			!Array.isArray(ranking.rejected)
 		)
 			return undefined;
-		// SAFETY: the route layer validates the detached operation and trusted authority before use.
 		return {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the route layer validates the trusted authority before use.
 			authority: fields.authority as IacRouteAuthority,
 			tenantId: fields.tenantId,
 			requestId: fields.requestId,
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the route layer validates the detached operation before use.
 			operation: structuredClone(fields.operation) as IacRouteOperation,
 			ranking,
 			candidates,
@@ -216,7 +226,6 @@ function snapshotRankedExecutionInput(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/** Claim the route before examining any target, then stop on every unknown outcome. */
 export async function executeRankedIacTargets(
 	input: RankedIacExecutionInput,
 ): Promise<IacTargetExecutionResult> {
@@ -645,7 +654,7 @@ function readOutputs(value: unknown): Record<string, string> | undefined {
 		if (
 			typeof value !== "object" ||
 			value === null ||
-			utilTypes.isProxy(value) ||
+			isRouteProxy(value) ||
 			Array.isArray(value)
 		)
 			return undefined;
@@ -663,7 +672,7 @@ function readOutputs(value: unknown): Record<string, string> | undefined {
 				!name(key) ||
 				descriptor === undefined ||
 				!descriptor.enumerable ||
-				!("value" in descriptor) ||
+				!hasOwnData(descriptor, "value") ||
 				typeof descriptor.value !== "string" ||
 				descriptor.value.length > 65_536
 			)
@@ -688,7 +697,10 @@ function name(value: string): boolean {
 	);
 }
 
-/** Detach caller-owned data before reading any ranking fields. */
+function compareIdentifier(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unsafe-dictionary-type -- SAFETY: this boundary inspects untrusted values without invoking their accessors or proxy traps. */
 function rankingFields(
 	value: unknown,
@@ -697,7 +709,7 @@ function rankingFields(
 	if (
 		typeof value !== "object" ||
 		value === null ||
-		utilTypes.isProxy(value) ||
+		isRouteProxy(value) ||
 		Array.isArray(value)
 	)
 		return undefined;
@@ -705,10 +717,11 @@ function rankingFields(
 	if (prototype !== Object.prototype && prototype !== null) return undefined;
 	const ownKeys = Reflect.ownKeys(value);
 	if (ownKeys.length !== keys.length) return undefined;
-	const result: Record<string, unknown> = {};
+	const result: Record<string, unknown> = Object.create(null);
 	for (const key of keys) {
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
-		if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+		if (!descriptor?.enumerable || !hasOwnData(descriptor, "value"))
+			return undefined;
 		result[key] = descriptor.value;
 	}
 	return result;
@@ -733,7 +746,7 @@ function snapshotRankingRequest(
 			typeof fields.action !== "string" ||
 			typeof fields.at !== "string" ||
 			typeof fields.horizon !== "string" ||
-			utilTypes.isProxy(fields.candidates) ||
+			isRouteProxy(fields.candidates) ||
 			!Array.isArray(fields.candidates) ||
 			Object.getPrototypeOf(fields.candidates) !== Array.prototype
 		)
@@ -747,10 +760,14 @@ function snapshotRankingRequest(
 			Date.parse(fields.horizon) <= Date.parse(fields.at)
 		)
 			return undefined;
-		const length = Object.getOwnPropertyDescriptor(
+		const lengthField = Object.getOwnPropertyDescriptor(
 			fields.candidates,
 			"length",
-		)?.value;
+		);
+		const length =
+			lengthField !== undefined && hasOwnData(lengthField, "value")
+				? lengthField.value
+				: undefined;
 		if (
 			typeof length !== "number" ||
 			length === 0 ||
@@ -770,7 +787,8 @@ function snapshotRankingRequest(
 				fields.candidates,
 				String(index),
 			);
-			if (!descriptor?.enumerable || !("value" in descriptor)) return undefined;
+			if (!descriptor?.enumerable || !hasOwnData(descriptor, "value"))
+				return undefined;
 			const candidate = rankingFields(descriptor.value, [
 				"workloadRef",
 				"inventory",
@@ -782,7 +800,7 @@ function snapshotRankingRequest(
 				candidate.workloadRef.length > 200 ||
 				typeof candidate.inventory !== "object" ||
 				candidate.inventory === null ||
-				utilTypes.isProxy(candidate.inventory) ||
+				isRouteProxy(candidate.inventory) ||
 				Array.isArray(candidate.inventory)
 			)
 				return undefined;
@@ -792,7 +810,7 @@ function snapshotRankingRequest(
 			);
 			if (
 				!target?.enumerable ||
-				!("value" in target) ||
+				!hasOwnData(target, "value") ||
 				typeof target.value !== "string" ||
 				target.value.length > 200 ||
 				targetIds.has(target.value)
@@ -806,8 +824,6 @@ function snapshotRankingRequest(
 			});
 			allInputs.push(candidate.inventory, candidate.pricing);
 		}
-		// The budget counts repeated aliases too; no tree is cloned until the entire
-		// request fits, in addition to each model's existing per-input bounds.
 		if (!areBoundedPricingInputs(allInputs)) return undefined;
 		for (const candidate of pending) {
 			if (
@@ -818,11 +834,11 @@ function snapshotRankingRequest(
 		}
 		const candidates: IacPricingCandidate[] = [];
 		for (const candidate of pending) {
-			// SAFETY: Only the checked fields below are read before the full inventory schema is validated by pricing.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: only the checked fields below are read before the full inventory schema is validated by pricing.
 			const inventory = structuredClone(
 				candidate.inventory,
 			) as TargetPricingInventory;
-			// SAFETY: The checked discriminant gates access; pricing validates the complete detached model before rating.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the checked discriminant gates access; pricing validates the complete detached model before rating.
 			const pricing = structuredClone(
 				candidate.pricing,
 			) as TargetPricingAvailability;
@@ -874,7 +890,6 @@ function invalidRanking(tenantId: string): IacPricingRankingResult {
 	};
 }
 
-/** Rank comparable, fully priced whole targets. This stage does not authorize spending. */
 export function rankIacTargets(
 	input: IacPricingRankingRequest,
 ): IacPricingRankingResult {
@@ -883,7 +898,6 @@ export function rankIacTargets(
 	try {
 		return rankSnapshot(request);
 	} catch {
-		// Malformed but inert data can still fail a downstream semantic validator.
 		return invalidRanking(request.tenantId);
 	}
 }
@@ -979,10 +993,14 @@ function rankSnapshot(
 		const b = parseDecimal(right.incrementalBilled.decimal);
 		if (a === undefined || b === undefined)
 			throw new TypeError("invalid priced amount");
-		return compareDecimal(a, b) || left.targetId.localeCompare(right.targetId);
+		return (
+			compareDecimal(a, b) || compareIdentifier(left.targetId, right.targetId)
+		);
 	});
 	const ranked = ranking.map((entry, index) => ({ ...entry, rank: index + 1 }));
-	rejected.sort((left, right) => left.targetId.localeCompare(right.targetId));
+	rejected.sort((left, right) =>
+		compareIdentifier(left.targetId, right.targetId),
+	);
 	return {
 		tenantId: request.tenantId,
 		coverage: rejected.length === 0 ? "complete" : "partial",

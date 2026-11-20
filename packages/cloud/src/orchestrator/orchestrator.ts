@@ -99,7 +99,7 @@ export interface OrchestratorResult {
 	unprunable: string[];
 	/** Provider changes refused until the prior resource's effects are reconciled. */
 	blockedProviderMoves?: readonly BlockedProviderMove[];
-	/** In-flight effects that must be reconciled before changing this plan. */
+
 	pendingOperations?: readonly PendingResourceOperation[];
 	transitionBlock?: {
 		readonly reason:
@@ -499,7 +499,6 @@ export async function runOrchestrator(
 		if (pending !== undefined) return pending;
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
 		const states = resourceStates(events, plan, deploymentId);
-		// A possibly-applied resource must be reconciled before any retry or rollback.
 		if (hasUnresolvedReconciliation(events)) {
 			return {
 				status: "needs-human",
