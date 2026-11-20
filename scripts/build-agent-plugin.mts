@@ -61,7 +61,10 @@ async function main(): Promise<void> {
 			js: 'import { createRequire as __hoboCreateRequire } from "node:module";const require = __hoboCreateRequire(import.meta.url);',
 		},
 	});
-	if (result.errors.length > 0) process.exitCode = 1;
+	if (result.errors.length > 0) {
+		process.exitCode = 1;
+		return;
+	}
 	rmSync(fixturesTarget, { recursive: true, force: true });
 	cpSync(fixturesSource, fixturesTarget, { recursive: true });
 }

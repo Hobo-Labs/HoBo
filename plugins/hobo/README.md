@@ -3,8 +3,9 @@
 HoBo's [Agent Plugins](https://agent-plugins.org) 1.0.0 plugin: the HoBo MCP
 server (`mcp.json`, `bin/hobo-mcp.mjs`) plus the portable **hobo-setup** and
 **hobo-deploy** skills (`skills/`). Manifest and MCP wiring are gated by
-`pnpm run agent-plugin:check` against the vendored 1.0.0 schemas in
-`tools/agent-plugins/schemas/1.0.0/`.
+`pnpm run agent-plugin:check` against the committed 1.0.0 schemas in
+`tools/agent-plugins/schemas/1.0.0/` (pinned by `MANIFEST.sha256`; not the
+gitignored `plugins/hobo/fixtures/` deploy output).
 
 ## Version
 

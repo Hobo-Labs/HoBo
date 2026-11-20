@@ -1,4 +1,6 @@
+import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 type BitwardenLogin = { loginAccessToken(accessToken: string): Promise<void> };
@@ -48,23 +50,55 @@ type RealBitwardenClientConstructor = new (
 	options: BitwardenClientOptions,
 ) => RealBitwardenClient;
 
-function anchorCandidates(): string[] {
+function anchorCandidates(): { anchor: string; trustedRoot: string }[] {
 	const pluginRoot = fileURLToPath(new URL("..", import.meta.url));
 	const checkoutRoot = fileURLToPath(new URL("../../..", import.meta.url));
 	return [
-		`${pluginRoot}/agent-plugin-anchor.js`,
-		`${checkoutRoot}/packages/hobo-ci/package.json`,
-		`${checkoutRoot}/packages/hobo/package.json`,
+		{
+			anchor: path.join(pluginRoot, "agent-plugin-anchor.js"),
+			trustedRoot: pluginRoot,
+		},
+		{
+			anchor: path.join(checkoutRoot, "packages/hobo-ci/package.json"),
+			trustedRoot: checkoutRoot,
+		},
+		{
+			anchor: path.join(checkoutRoot, "packages/hobo/package.json"),
+			trustedRoot: checkoutRoot,
+		},
 	];
+}
+
+function resolvedUnderTrustedRoot(
+	resolved: string,
+	trustedRoot: string,
+): boolean {
+	let realResolved: string;
+	let realRoot: string;
+	try {
+		realResolved = realpathSync(resolved);
+		realRoot = realpathSync(trustedRoot);
+	} catch {
+		return false;
+	}
+	const prefix = `${realRoot}${path.sep}`;
+	return realResolved === realRoot || realResolved.startsWith(prefix);
 }
 
 function loadRealConstructor(): RealBitwardenClientConstructor {
 	const failures: string[] = [];
-	for (const anchor of anchorCandidates()) {
+	for (const { anchor, trustedRoot } of anchorCandidates()) {
 		try {
 			const requireFromAnchor = createRequire(anchor);
+			const resolved = requireFromAnchor.resolve("@bitwarden/sdk-napi");
+			if (!resolvedUnderTrustedRoot(resolved, trustedRoot)) {
+				failures.push(
+					`${anchor}: @bitwarden/sdk-napi resolved outside trusted root (${resolved})`,
+				);
+				continue;
+			}
 			const pkg: { BitwardenClient?: RealBitwardenClientConstructor } =
-				requireFromAnchor(requireFromAnchor.resolve("@bitwarden/sdk-napi"));
+				requireFromAnchor(resolved);
 			if (pkg.BitwardenClient === undefined) {
 				failures.push(`${anchor}: no BitwardenClient export`);
 				continue;

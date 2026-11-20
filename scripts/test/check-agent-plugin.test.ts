@@ -651,6 +651,7 @@ describe("checkAgentPlugin (integration)", () => {
 			}),
 			"README.md": "# hobo\n",
 			"bin/hobo-mcp.mjs": `${"x".repeat(1024 * 1024)}\n${secret}\n`,
+			"fixtures/deploy/vercel/package.json": "{}\n",
 		});
 		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
 		const bundleIssues = report.issues.filter(
@@ -659,6 +660,63 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues).toHaveLength(1);
 		expect(bundleIssues[0]?.message).toContain("secret-shaped value");
 		expect(bundleIssues[0]?.message).not.toContain(secret);
+	});
+
+	it("rejects a bundle without deploy fixtures", async () => {
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": "x".repeat(1024 * 1024),
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some(
+				(issue) =>
+					issue.file === "fixtures/deploy" && issue.message.includes("empty"),
+			),
+		).toBe(true);
+	});
+
+	it("pins vendored schema digests from MANIFEST.sha256", async () => {
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: { hobo: { type: "stdio", command: "node" } },
+			}),
+			"README.md": "# hobo\n",
+		});
+		const schemaDir = path.join(
+			scratchRepo,
+			"tools/agent-plugins/schemas/1.0.0",
+		);
+		await mkdir(schemaDir, { recursive: true });
+		await writeFile(
+			path.join(schemaDir, "MANIFEST.sha256"),
+			`${"a".repeat(64)}  plugin.schema.json\n`,
+		);
+		await writeFile(
+			path.join(schemaDir, "plugin.schema.json"),
+			`{"$id":"${"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"}"}\n`,
+		);
+		await writeFile(
+			path.join(schemaDir, "mcp.schema.json"),
+			`{"$id":"${"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"}"}\n`,
+		);
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) => issue.message.includes("MANIFEST.sha256")),
+		).toBe(true);
 	});
 });
 

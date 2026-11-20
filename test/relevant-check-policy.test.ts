@@ -932,24 +932,41 @@ test("unrelated docs, config, or skill edits do not select the Agent Plugins gat
 	}
 });
 
-test("bundle-input changes select the plugin bundle build and smoke test", () => {
+	test("bundle-input changes select the plugin bundle build and smoke test", () => {
 	for (const file of [
 		"plugins/hobo/src/bitwarden-sdk-napi.mts",
 		"scripts/build-agent-plugin.mts",
 	]) {
 		const { checks } = plan([file], { staged: true });
-		const joined = checks.map((check) => check.args.join(" "));
-		assert.ok(
-			joined.some(
-				(args) => args.includes("build") && args.includes("./packages/hobo"),
-			),
-			`${file}: build lane`,
+		const buildLane = checks.find(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ").includes("turbo") &&
+				check.args.join(" ").includes("./packages/hobo"),
 		);
-		assert.ok(
-			joined.some((args) => args.endsWith("test/agent-plugin-bundle.test.ts")),
-			`${file}: smoke lane`,
+		const smokeLane = checks.find((check) =>
+			check.args.join(" ").endsWith("test/agent-plugin-bundle.test.ts"),
 		);
+		assert.ok(buildLane, `${file}: build lane`);
+		assert.equal(buildLane?.serial, true, `${file}: build serial`);
+		assert.ok(smokeLane, `${file}: smoke lane`);
+		assert.equal(smokeLane?.serial, true, `${file}: smoke serial`);
 	}
+});
+
+test("plugin bundle test still runs when packages/hobo co-changes", () => {
+	const { checks } = plan(
+		[
+			"packages/hobo/src/foo.ts",
+			"plugins/hobo/src/bitwarden-sdk-napi.mts",
+		],
+		{ staged: true },
+	);
+	assert.ok(
+		checks.some((check) =>
+			check.args.join(" ").endsWith("test/agent-plugin-bundle.test.ts"),
+		),
+	);
 });
 
 test("the plugin bundle test file rides the built-in narrow workspace path", () => {

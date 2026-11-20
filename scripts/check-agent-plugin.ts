@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -646,9 +647,36 @@ function listSubdirectories(dir: string): string[] {
 		.map((entry) => entry.name);
 }
 
+const VENDORED_SCHEMA_MANIFEST = /^([0-9a-f]{64}) {2}([A-Za-z0-9._-]+)$/u;
+
+function sha256File(full: string): string {
+	return createHash("sha256").update(readFileSync(full)).digest("hex");
+}
+
 function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 	const issues: AgentPluginIssue[] = [];
 	const dir = path.join(repoRoot, "tools/agent-plugins/schemas/1.0.0");
+	const manifestPath = path.join(dir, "MANIFEST.sha256");
+	const expectedDigests = new Map<string, string>();
+	if (!existsSync(manifestPath)) {
+		issues.push({
+			file: "tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
+			message: "is missing; vendored schema digests must stay pinned",
+		});
+	} else {
+		for (const line of readFileSync(manifestPath, "utf8").split("\n")) {
+			if (line === "") continue;
+			const [, digest, name] = VENDORED_SCHEMA_MANIFEST.exec(line) ?? [];
+			if (digest === undefined || name === undefined) {
+				issues.push({
+					file: "tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
+					message: `has invalid line ${JSON.stringify(line)}`,
+				});
+				continue;
+			}
+			expectedDigests.set(name, digest);
+		}
+	}
 	for (const [file, id] of [
 		["plugin.schema.json", PLUGIN_SCHEMA_ID],
 		["mcp.schema.json", MCP_SCHEMA_ID],
@@ -661,6 +689,16 @@ function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 					"vendored schema is missing under tools/agent-plugins/schemas/1.0.0",
 			});
 			continue;
+		}
+		const expected = expectedDigests.get(file);
+		if (expected !== undefined) {
+			const actual = sha256File(full);
+			if (actual !== expected) {
+				issues.push({
+					file: `tools/agent-plugins/schemas/1.0.0/${file}`,
+					message: `digest ${actual} does not match MANIFEST.sha256 (${expected})`,
+				});
+			}
 		}
 		const schema = PluginVendoredSchema.safeParse(
 			JSON.parse(readFileSync(full, "utf8")),
@@ -770,6 +808,17 @@ export function checkAgentPlugin(input: {
 			issues.push({
 				file: "bin/hobo-mcp.mjs",
 				message: `exists but is only ${size} bytes; a real bundle of the composed server is megabytes — rebuild with pnpm run agent-plugin:build`,
+			});
+		}
+		const deployFixtures = path.join(pluginRoot, "fixtures/deploy");
+		if (
+			!existsSync(deployFixtures) ||
+			listFilesRecursive(deployFixtures).length === 0
+		) {
+			issues.push({
+				file: "fixtures/deploy",
+				message:
+					"is missing or empty while bin/hobo-mcp.mjs is present; rebuild with pnpm run agent-plugin:build",
 			});
 		}
 	} else if (

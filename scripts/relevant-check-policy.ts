@@ -604,14 +604,12 @@ export function selectRelevantChecks(
 				"the plugins/hobo manifest, MCP wiring, synced skills, agent-tooling extract, and release-train version pin must satisfy Agent Plugins 1.0.0",
 		});
 	}
-	if (
-		!narrowWorkspaces.has("packages/hobo") &&
-		files.some(
-			(file) =>
-				/^plugins\/hobo\/(bin|fixtures|src)\//u.test(file) ||
-				file === "scripts/build-agent-plugin.mts",
-		)
-	) {
+	const agentPluginBundleInputs = files.some(
+		(file) =>
+			/^plugins\/hobo\/(bin|fixtures|src)\//u.test(file) ||
+			file === "scripts/build-agent-plugin.mts",
+	);
+	if (agentPluginBundleInputs && !narrowWorkspaces.has("packages/hobo")) {
 		checks.push({
 			command: "pnpm",
 			args: [
@@ -627,6 +625,8 @@ export function selectRelevantChecks(
 				"build @hobo/hobo and its dependencies before bundling the plugin's MCP server",
 			serial: true,
 		});
+	}
+	if (agentPluginBundleInputs) {
 		checks.push({
 			command: "pnpm",
 			args: [
@@ -639,6 +639,7 @@ export function selectRelevantChecks(
 			],
 			reason:
 				"the portable MCP bundle must build and answer initialize/tools/list when its inputs change",
+			serial: true,
 		});
 	}
 
