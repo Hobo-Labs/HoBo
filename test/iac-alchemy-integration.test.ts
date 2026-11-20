@@ -32,7 +32,10 @@ import {
 	createAlchemyIacProvider,
 	type IacProgram,
 } from "../packages/iac/iac-alchemy/src/index.js";
-import type { FinancialDecision } from "../packages/iac/iac-alchemy/src/port.js";
+import type {
+	FinancialDecision,
+	IacRouteContext,
+} from "../packages/iac/iac-alchemy/src/port.js";
 import {
 	Alchemist,
 	create,
@@ -332,8 +335,8 @@ function setup(
 			verifyPlan: () => true,
 		},
 		route,
-		resolveRoute: ({ requestId }: { requestId?: string }) => ({
-			requestId: requestId ?? "integration-request",
+		resolveRoute: (context: IacRouteContext) => ({
+			requestId: context.requestId ?? "integration-request",
 			operation: testOperation,
 		}),
 		runtimeLayer: Alchemist.layer(),
@@ -353,23 +356,9 @@ function setup(
 				}
 			: financial,
 	};
-	type IntegrationProvider = ReturnType<
-		typeof createAlchemyIacProvider<
-			Record<string, never>,
-			Provider.Provider<Demo>,
-			ReturnType<typeof financial.assess>
-		>
-	>;
-	/* oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Rivet and widget stacks share one integration provider surface in this suite. */
-	const createIntegrationProvider = createAlchemyIacProvider as (
-		options: typeof providerBase & {
-			stack: typeof rivetStack | typeof widgetStack;
-		},
-	) => IntegrationProvider;
-	const provider = createIntegrationProvider({
-		...providerBase,
-		stack: options.rivet ? rivetStack : widgetStack,
-	});
+	const provider = options.rivet
+		? createAlchemyIacProvider({ ...providerBase, stack: rivetStack })
+		: createAlchemyIacProvider({ ...providerBase, stack: widgetStack });
 	return {
 		provider,
 		authority,

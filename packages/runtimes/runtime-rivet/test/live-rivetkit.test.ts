@@ -87,15 +87,19 @@ describe("rivetkit live baremetal", () => {
 				let stdout = "";
 				let stderr = "";
 				let timedOut = false;
-				// The detached group belongs only to this test and its engine.
 				const stopOwnedGroup = () => {
 					try {
 						if (process.platform !== "win32" && child.pid !== undefined)
 							process.kill(-child.pid, "SIGKILL");
 						else child.kill("SIGKILL");
-					} catch (error) {
-						// SAFETY: Node's process signalling errors expose an errno code at this OS boundary.
-						if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+					} catch (error: unknown) {
+						if (
+							error instanceof Error &&
+							"code" in error &&
+							error.code === "ESRCH"
+						)
+							return;
+						throw error;
 					}
 				};
 				const timer = setTimeout(() => {

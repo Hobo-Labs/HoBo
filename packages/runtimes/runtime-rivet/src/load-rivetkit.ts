@@ -1,7 +1,3 @@
-/**
- * Load the pinned RivetKit release from CJS or ESM using dynamic import.
- */
-
 export type RivetkitModule = typeof import("rivetkit");
 export type RivetkitClientModule = typeof import("rivetkit/client");
 
