@@ -317,6 +317,7 @@ message QuoteScenario {
   repeated WorkloadDelta candidate = 8;
   repeated string source_provider_agreement_ids = 9;
   QuoteOptions options = 10;
+  optional bool destroy_cancels_agreement = 11;
 }
 
 // Developer-supplied terms are scoped to one tenant account and offering.
