@@ -206,8 +206,17 @@ export function recordVerifiedPreviewRecords(
 
 export function deployedPreviewSuites(
 	observe: Readonly<{
-		deploymentId(): string | undefined;
-		readyState(deploymentId: string): Promise<string>;
+		intended():
+			| Readonly<{
+					deploymentId: string;
+					commit: string;
+					project: string;
+					target: "preview";
+			  }>
+			| undefined;
+		deployment(
+			deploymentId: string,
+		): Promise<Readonly<{ readyState?: string; raw: JsonValue }> | undefined>;
 	}>,
 ): VerifyPort {
 	const refuse = (code: string, message: string, remediation: string) =>
@@ -230,20 +239,62 @@ export function deployedPreviewSuites(
 					`no suite ${input.suite} is composed for the deployed relay preview`,
 					`Declare ${RELAY_PREVIEW_DEPLOYMENT_SUITE} or a probe.`,
 				);
-			const deploymentId = observe.deploymentId();
-			if (deploymentId === undefined)
+			const intended = observe.intended();
+			if (intended === undefined)
 				throw new Error(
-					`the promotion has created no deployment for ${input.freightId} yet`,
+					`the promotion has created no commit-bound deployment for ${input.freightId} yet`,
 				);
-			const state = await observe.readyState(deploymentId);
-			if (state === "READY")
+			const deployment = await observe.deployment(intended.deploymentId);
+			const state = deployment?.readyState ?? "UNKNOWN";
+			if (state === "READY") {
+				const record =
+					deployment !== undefined && isJsonObject(deployment.raw)
+						? deployment.raw
+						: undefined;
+				const meta =
+					record !== undefined && isJsonObject(record.meta)
+						? record.meta
+						: undefined;
+				const project =
+					record !== undefined && isJsonObject(record.project)
+						? record.project
+						: undefined;
+				const commit = isJsonString(meta?.githubCommitSha)
+					? meta.githubCommitSha.toLowerCase()
+					: undefined;
+				const projects = [
+					record?.name,
+					record?.projectId,
+					project?.id,
+					project?.name,
+				];
+				const target = isJsonString(record?.target) ? record.target : undefined;
+				if (
+					commit !== intended.commit.toLowerCase() ||
+					!projects.some(
+						(value) => isJsonString(value) && value === intended.project,
+					) ||
+					target !== intended.target
+				)
+					return refuse(
+						"verification-deployment-mismatch",
+						`Vercel deployment ${intended.deploymentId} is READY but does not match Freight ${input.freightId}: expected commit ${intended.commit}, project ${intended.project}, target preview`,
+						"Inspect the Vercel deployment record and deploy the Freight's commit to the intended preview project again.",
+					);
 				return {
 					ok: true,
-					value: { deploymentId, readyState: state },
+					value: {
+						deploymentId: intended.deploymentId,
+						readyState: state,
+						commit: intended.commit,
+						project: intended.project,
+						target: intended.target,
+					},
 				};
+			}
 			return refuse(
 				"verification-deployment-not-ready",
-				`Vercel reports deployment ${deploymentId} as ${state}, not READY`,
+				`Vercel reports deployment ${intended.deploymentId} as ${state}, not READY`,
 				state === "ERROR"
 					? "Read the deployment's build log on Vercel; this run leaves it as it is."
 					: "The deployment is still building or was superseded; the verification window retries, and a later state fails it.",

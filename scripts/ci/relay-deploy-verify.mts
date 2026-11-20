@@ -22,7 +22,7 @@ export type ProcessEnvLike = Record<string, string | undefined>;
 
 export type RelayVerifyArgs = Readonly<{
 	origin: string;
-	sha?: string;
+	sha: string;
 }>;
 
 export type RelayProbe = Readonly<{
@@ -122,11 +122,17 @@ export function parseRelayVerifyArgs(
 		throw new RelayVerifyArgsError(`Unknown argument: ${arg}`);
 	}
 	if (!HTTPS_ORIGIN.test(origin))
-		throw new RelayVerifyArgsError(`Invalid --origin URL: ${origin}`);
+		throw new RelayVerifyArgsError(
+			"Invalid --origin URL: expected an HTTPS origin with no credentials, path, query, or fragment",
+		);
 	const normalized = new URL(origin).origin;
-	if (sha !== "" && !COMMIT.test(sha))
+	if (sha === "")
+		throw new RelayVerifyArgsError(
+			"Missing --sha commit: pass --sha or set GITHUB_SHA",
+		);
+	if (!COMMIT.test(sha))
 		throw new RelayVerifyArgsError(`Invalid --sha commit: ${sha}`);
-	return { origin: normalized, ...(sha !== "" ? { sha } : undefined) };
+	return { origin: normalized, sha };
 }
 
 function jsonObject(text: string): JsonObject | undefined {
@@ -150,7 +156,7 @@ function mentions(bodyText: string): string[] {
 export function classifyRelayProbes(input: {
 	readonly health: RelayProbe;
 	readonly ready: RelayProbe;
-	readonly sha?: string;
+	readonly sha: string;
 }): RelayVerifyVerdict {
 	const { health, ready } = input;
 	if (!health.ok)
@@ -160,23 +166,21 @@ export function classifyRelayProbes(input: {
 			message: `/healthz answered HTTP ${health.status}${health.status === 401 || health.status === 403 ? " (Deployment Protection: the production domain is public under Standard Protection, so the origin is not this project's production domain)" : ""}`,
 		};
 	const sha = input.sha;
-	if (sha !== undefined) {
-		const body = jsonObject(health.bodyText);
-		const served = isJsonString(body?.commit)
-			? body.commit.toLowerCase()
-			: null;
-		if (served !== sha)
-			return {
-				ok: false,
-				code: "HOBO_RELAY_COMMIT_MISMATCH",
-				message: `/healthz names ${served ?? "no commit"}, not ${sha}: the production origin serves another deployment than the one this run deployed`,
-			};
-	}
+	const healthBody = jsonObject(health.bodyText);
+	const served = isJsonString(healthBody?.commit)
+		? healthBody.commit.toLowerCase()
+		: null;
+	if (served !== sha)
+		return {
+			ok: false,
+			code: "HOBO_RELAY_COMMIT_MISMATCH",
+			message: `/healthz names ${served ?? "no commit"}, not ${sha}: the production origin serves another deployment than the one this run deployed`,
+		};
 	if (ready.ok)
 		return {
 			ok: true,
 			code: "HOBO_RELAY_READY",
-			message: `/healthz and /readyz answered 200${sha !== undefined ? ` for ${sha}` : ""}`,
+			message: `/healthz and /readyz answered 200 for ${sha}`,
 		};
 	const body = jsonObject(ready.bodyText);
 	const state = isJsonString(body?.state) ? body.state : undefined;

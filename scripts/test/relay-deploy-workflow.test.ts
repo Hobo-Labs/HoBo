@@ -43,11 +43,11 @@ function step(name: string): string {
 }
 
 function stepBefore(first: string, second: string): void {
-	assert.ok(
-		workflow.indexOf(`- name: ${first}`) <
-			workflow.indexOf(`- name: ${second}`),
-		`${first} must run before ${second}`,
-	);
+	const firstIndex = workflow.indexOf(`- name: ${first}`);
+	const secondIndex = workflow.indexOf(`- name: ${second}`);
+	assert.ok(firstIndex >= 0, `no step named ${first}`);
+	assert.ok(secondIndex >= 0, `no step named ${second}`);
+	assert.ok(firstIndex < secondIndex, `${first} must run before ${second}`);
 }
 
 describe("the relay deploy gate", () => {
@@ -193,12 +193,12 @@ describe("the relay deploy workflow", () => {
 		const inputs = [
 			...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu),
 		].map((match) => match[1]);
-		assert.deepEqual(inputs.slice(0, 3), [
+		assert.deepEqual(inputs, [
 			"manifest_code",
 			"relay",
 			"owner_id",
+			"force_bootstrap",
 		]);
-		assert.ok(inputs.includes("force_bootstrap"));
 		const bootstrap =
 			/^ {6}force_bootstrap:\n {8}description:[^\n]*\n {8}required: false\n {8}default: false\n {8}type: boolean/mu;
 		assert.match(workflow, bootstrap);
@@ -385,7 +385,8 @@ describe("the relay deploy workflow", () => {
 			/productionOrigin: RELAY_PLACEMENT\.productionOrigin/u,
 		);
 		assert.match(workflow, /productionOrigin in deploy\/yard\.ts/u);
-		const originLiteral = (origin[1] ?? "").replaceAll(".", "\\.");
+		assert.ok(origin[1], "deploy/yard.ts declares an empty productionOrigin");
+		const originLiteral = origin[1].replaceAll(".", "\\.");
 		assert.match(
 			workflow,
 			new RegExp(`HOBO_CI_RELAY_URL: ${originLiteral}`, "u"),
@@ -418,16 +419,23 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("installs the pinned Vercel CLI for --provision, and nothing else installs one", () => {
-		const cli = step(
-			"Install the pinned Vercel CLI for Marketplace provisioning",
+	it("uses the Vercel CLI pinned by the repository's frozen lockfile", () => {
+		assert.doesNotMatch(workflow, /pnpm --dir|\badd vercel@/u);
+		assert.match(workflow, /pnpm install --frozen-lockfile/u);
+		assert.match(
+			workflow,
+			/HOBO_VERCEL_CLI: \$\{\{ github\.workspace \}\}\/packages\/ci-vercel\/node_modules\/\.bin\/vercel/u,
 		);
-		assert.match(cli, /vercel@65\.2\.0/u);
-		assert.match(cli, /HOBO_VERCEL_CLI=\$RUNNER_TEMP\/vercel-cli/u);
-		const installs = [...workflow.matchAll(/pnpm --dir[^\n]*/gu)].map(
-			(m) => m[0],
+		const manifest = readFileSync(
+			join(root, "packages", "ci-vercel", "package.json"),
+			"utf8",
 		);
-		assert.equal(installs.length, 1, installs.join("\n"));
+		assert.match(manifest, /"vercel": "65\.2\.0"/u);
+		assert.match(lockfile, /vercel:\n\s+specifier: 65\.2\.0/u);
+		assert.match(
+			lockfile,
+			/vercel@65\.2\.0[^\n]*:\n\s+resolution: \{integrity:/u,
+		);
 	});
 
 	it("fails the job on a relay that does not serve the deployed commit, without masking anything", () => {

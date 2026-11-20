@@ -1,6 +1,6 @@
 # HoBo CI Vercel support
 
-For relay recovery when the deployed relay is unavailable, see [BOOTSTRAP.md](BOOTSTRAP.md).
+For relay recovery when the deployed relay is unavailable, see [BOOTSTRAP.md](BOOTSTRAP.md). Its local sequence qualifies preview and then deploys production from the same commit and `HOBO_HOME` journal. The deploy workflow uses the Vercel CLI pinned in the root frozen lockfile, and production verification requires `GITHUB_SHA`; neither dependency resolution nor commit attestation can silently fall back.
 
 ## Run Vercel CI checks locally
 

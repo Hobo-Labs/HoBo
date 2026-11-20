@@ -752,7 +752,10 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 
 // A Vercel that holds no settings, answers one deployment, and reports its
 // state from `states`, one per read. Records each request as "METHOD path".
-function scriptedVercel(states: readonly string[]) {
+function scriptedVercel(
+	states: readonly string[],
+	deployment: { commit?: string; project?: string; target?: string } = {},
+) {
 	const sent: string[] = [];
 	let reads = 0;
 	const answer = (status: number, body: JsonObject) => ({
@@ -779,8 +782,11 @@ function scriptedVercel(states: readonly string[]) {
 			reads += 1;
 			return answer(200, {
 				id: "dpl_wait",
+				name: deployment.project ?? "hobo-ci",
 				url: "hobo-ci-git-main.example.vercel.app",
 				readyState,
+				target: deployment.target ?? "preview",
+				meta: { githubCommitSha: deployment.commit ?? SHA },
 			});
 		}
 		// The project's settings: none held, and each one asked for is created.
@@ -1048,6 +1054,38 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			state: "PROMOTED",
 		});
 		expect(probed).toEqual([]);
+	});
+
+	it("requires a commit before using deployment-record preview verification", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, "--wait"], {
+			fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+		});
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining("needs --sha <commit>"),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it.each([
+		["commit", { commit: "f".repeat(40) }],
+		["project", { project: "another-project" }],
+		["environment", { target: "production" }],
+	])("does not qualify a READY preview with the wrong %s", async (_field, record) => {
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"], record).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_VERIFICATION_FAILED",
+		});
+		expect(ran.data.delivery).toMatchObject({ state: "FAILED" });
 	});
 
 	it("refuses production before any request when preview has not qualified the commit", async () => {

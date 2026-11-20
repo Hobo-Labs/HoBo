@@ -24,18 +24,6 @@
 // (`<HOBO_HOME>/cd`, or the store HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL
 // names), the one `hobo deploy` reads.
 //
-// CONTRACT CHANGE (from the direct-deploy verb; packages/ci-vercel/README.md
-// "Contract changes of hobo ci deploy"): `--wait` now verifies and qualifies,
-// so it needs the target's probe origin (HOBO_CI_RELAY_PREVIEW_URL or
-// HOBO_CI_RELAY_URL) and is refused without it
-// (HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET); `--target production` needs `--sha`
-// and preview's qualification of that commit in the same journal
-// (HOBO_CI_DEPLOY_NOT_QUALIFIED); the wait limit is 20 minutes, not 15; new
-// failure codes: HOBO_CI_DEPLOY_INCOMPLETE, HOBO_CI_DEPLOY_VERIFICATION_FAILED,
-// HOBO_CI_DEPLOY_NOT_QUALIFIED, HOBO_CI_DEPLOY_SOURCE_UNPINNED,
-// HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE, HOBO_CI_DEPLOY_DELIVERY_INVALID,
-// HOBO_CI_DEPLOY_FREIGHT_REFUSED, HOBO_CI_DEPLOY_PROMOTION_REFUSED.
-//
 // `--provision` first attaches the chosen Marketplace bindings (the cache)
 // with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
 //
@@ -727,6 +715,10 @@ export async function runCiRelayDeploy(
 				`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
 			);
 	}
+	if (target === "preview" && wait && originGiven === "" && sha === undefined)
+		return usage(
+			"hobo ci deploy --target preview --wait needs --sha <commit> when no HOBO_CI_RELAY_PREVIEW_URL is set: the deployment record must be verified against the Freight's commit.",
+		);
 	const recordVerifiedPreview =
 		target === "preview" && wait && !HTTPS_ORIGIN.test(originGiven);
 
@@ -786,8 +778,17 @@ export async function runCiRelayDeploy(
 	// this command always returned.
 	interface CreatedDeployment {
 		deploymentId?: string;
+		commit?: string;
 	}
 	const created: CreatedDeployment = {};
+	const readDeployment = async (deploymentId: string) => {
+		try {
+			return await client.getDeployment(deploymentId);
+		} catch (error) {
+			if (error instanceof VercelTransportError) return undefined;
+			throw error;
+		}
+	};
 	const realization: RelayRealization = {
 		async deploy(pin) {
 			try {
@@ -844,8 +845,10 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
-				if (isJsonString(outputs.deploymentId) && outputs.deploymentId)
+				if (isJsonString(outputs.deploymentId) && outputs.deploymentId) {
 					created.deploymentId = outputs.deploymentId;
+					if (pin.sha !== undefined) created.commit = pin.sha;
+				}
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -867,14 +870,7 @@ export async function runCiRelayDeploy(
 			}
 		},
 		async readyState(deploymentId) {
-			try {
-				const deployment = await client.getDeployment(deploymentId);
-				return deployment?.readyState ?? "UNKNOWN";
-			} catch (error) {
-				// No answer is not a state: keep observing until the wait ends.
-				if (error instanceof VercelTransportError) return "UNKNOWN";
-				throw error;
-			}
+			return (await readDeployment(deploymentId))?.readyState ?? "UNKNOWN";
 		},
 	};
 
@@ -944,8 +940,16 @@ export async function runCiRelayDeploy(
 		...(records !== undefined
 			? {
 					suites: deployedPreviewSuites({
-						deploymentId: () => created.deploymentId,
-						readyState: (id) => realization.readyState(id),
+						intended: () =>
+							created.deploymentId !== undefined && created.commit !== undefined
+								? {
+										deploymentId: created.deploymentId,
+										commit: created.commit,
+										project,
+										target: "preview",
+									}
+								: undefined,
+						deployment: readDeployment,
 					}),
 				}
 			: undefined),

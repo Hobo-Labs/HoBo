@@ -9,8 +9,9 @@ name: HoBo relay deploy
 # Git-triggered deployment exists to adopt or wait for: the adopt step is
 # gone, and nothing here re-links the project.
 #
-# Preview is verified by the deployment record this command creates (no
-# preview URL answers without Deployment Protection); production is verified
+# Preview is verified by the READY deployment record this command creates,
+# bound to the Freight's commit, project and preview environment (no preview
+# URL answers without Deployment Protection); production is verified
 # at the Yard's production domain (the productionOrigin in deploy/yard.ts
 # under packages/ci-vercel, mirrored below), whose /healthz must name the
 # deployed commit and whose /readyz must answer 200. Production
@@ -114,6 +115,7 @@ jobs:
       # and the post-deploy check probes. Standard Deployment Protection
       # leaves it public; the protected per-deployment URLs are never probed.
       HOBO_CI_RELAY_URL: https://hobo-ci.vercel.app
+      HOBO_VERCEL_CLI: ${{ github.workspace }}/packages/ci-vercel/node_modules/.bin/vercel
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -164,15 +166,10 @@ jobs:
             scripts/ci/relay-deploy-secret-store-verify-report.mts \
             "$verify_json" "$verify_err" "$status"
       # `--provision` attaches the Marketplace cache binding through the
-      # Vercel CLI (idempotent); the CLI is pinned, as CONFIG-SERVICE.md
-      # records, and the deploy token reaches it inside the hobo command's
-      # own environment, never this workflow's.
-      - name: Install the pinned Vercel CLI for Marketplace provisioning
-        if: steps.gate.outputs.run == 'true'
-        run: |
-          set -euo pipefail
-          pnpm --dir "$RUNNER_TEMP/vercel-cli" add vercel@65.2.0 >/dev/null
-          echo "HOBO_VERCEL_CLI=$RUNNER_TEMP/vercel-cli/node_modules/.bin/vercel" >> "$GITHUB_ENV"
+      # Vercel CLI from the root frozen install. The root lockfile pins its
+      # graph by integrity, and the deploy steps perform no package resolution.
+      # The deploy token reaches the CLI inside the hobo command's own
+      # environment, never this workflow's.
       # Direct HoBo CD deploy, preview first: `hobo ci deploy` reads the Vercel
       # token from the secret store with this job's GitHub OIDC token
       # (ci-relay-deploy.ts; no Vercel token is ever set in this workflow),

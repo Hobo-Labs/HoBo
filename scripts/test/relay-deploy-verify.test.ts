@@ -59,10 +59,11 @@ describe("parseRelayVerifyArgs", () => {
 		});
 	});
 
-	it("omits sha when neither flag nor env names one", () => {
-		expect(
-			parseRelayVerifyArgs(["--origin", "https://relay.example"], {}),
-		).toEqual({ origin: "https://relay.example" });
+	it("rejects a missing or blank sha instead of skipping commit attestation", () => {
+		for (const env of [{}, { GITHUB_SHA: "" }, { GITHUB_SHA: "   " }])
+			expect(() =>
+				parseRelayVerifyArgs(["--origin", "https://relay.example"], env),
+			).toThrow(/Missing --sha commit/);
 	});
 
 	it("rejects a missing value, an unknown flag, a bad origin and a bad commit", () => {
@@ -80,6 +81,20 @@ describe("parseRelayVerifyArgs", () => {
 		).toThrow(/Invalid --origin URL/);
 		expect(() => parseRelayVerifyArgs(["--sha", "abc"], {})).toThrow(
 			/Invalid --sha commit/,
+		);
+	});
+
+	it("does not echo credentials or query tokens from an invalid origin", () => {
+		expect(() =>
+			parseRelayVerifyArgs(
+				[
+					"--origin",
+					"https://user:synthetic-secret@relay.example/?token=secret",
+				],
+				{},
+			),
+		).toThrow(
+			/^Invalid --origin URL: expected an HTTPS origin with no credentials, path, query, or fragment$/,
 		);
 	});
 });
@@ -107,17 +122,19 @@ describe("classifyRelayProbes", () => {
 			classifyRelayProbes({
 				health: probe(503, ""),
 				ready: probe(200, '{"ready":true}'),
+				sha: SHA,
 			}),
 		).toMatchObject({ ok: false, code: "HOBO_RELAY_HEALTH_UNREACHABLE" });
 		expect(
 			classifyRelayProbes({
 				health: probe(401, ""),
 				ready: probe(200, '{"ready":true}'),
+				sha: SHA,
 			}).message,
 		).toMatch(/Deployment Protection/);
 	});
 
-	it("fails when healthz names another commit, or none, and the ask names one", () => {
+	it("fails when healthz names another commit or none", () => {
 		const other = classifyRelayProbes({
 			health: probe(
 				200,
@@ -141,12 +158,6 @@ describe("classifyRelayProbes", () => {
 				sha: SHA,
 			}).code,
 		).toBe("HOBO_RELAY_COMMIT_MISMATCH");
-		expect(
-			classifyRelayProbes({
-				health: probe(200, '{"ok":true,"commit":null}'),
-				ready: probe(200, '{"ready":true}'),
-			}).ok,
-		).toBe(true);
 	});
 
 	it("gives each startup state its own verdict, distinct from start-failed", () => {
@@ -157,6 +168,7 @@ describe("classifyRelayProbes", () => {
 					503,
 					JSON.stringify({ ready: false, started: false, state }),
 				),
+				sha: SHA,
 			});
 		expect(state("config-service-unavailable")).toMatchObject({
 			ok: false,
@@ -195,6 +207,7 @@ describe("classifyRelayProbes", () => {
 					workers: "starting",
 				}),
 			),
+			sha: SHA,
 		});
 		expect(parts).toMatchObject({ ok: false, code: "HOBO_RELAY_NOT_READY" });
 		expect(parts.message).toMatch(/cache binding/u);
@@ -207,6 +220,7 @@ describe("classifyRelayProbes", () => {
 				503,
 				JSON.stringify({ ready: false, reason: "neon quota exceeded" }),
 			),
+			sha: SHA,
 		});
 		expect(legacy).toMatchObject({ ok: false, code: "HOBO_RELAY_NOT_READY" });
 		expect(legacy.message).toMatch(/Neon/u);
@@ -215,6 +229,7 @@ describe("classifyRelayProbes", () => {
 		const emptyReason = classifyRelayProbes({
 			health: healthOk,
 			ready: probe(503, JSON.stringify({ ready: false })),
+			sha: SHA,
 		});
 		expect(emptyReason.code).toBe("HOBO_RELAY_NOT_READY");
 		expect(emptyReason.message).toMatch(/ready is false/u);
@@ -225,6 +240,7 @@ describe("classifyRelayProbes", () => {
 			classifyRelayProbes({
 				health: healthOk,
 				ready: probe(503, ""),
+				sha: SHA,
 			}),
 		).toMatchObject({ ok: false, code: "HOBO_RELAY_READYZ_UNREACHABLE" });
 	});
@@ -327,7 +343,12 @@ describe("main exit codes", () => {
 		});
 
 		const code = await main(
-			["--origin", "https://relay.example"],
+			[
+				"--origin",
+				"https://relay.example",
+				"--sha",
+				"0123456789abcdef0123456789abcdef01234567",
+			],
 			{},
 			fetcher,
 			noSleep,
