@@ -21,6 +21,13 @@ over conflicting repository workflow guidance.
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
+- When work needs an MCP server, check the active host's tools. If the server
+  is absent, inspect its registration and try supported discovery or reload;
+  where safe, also initialize and list tools through a separate client. Use
+  that client for permitted non-sensitive work when practical. Report server
+  availability, host attachment, and authenticated sessions as separate
+  observations, and do not assert a cause without evidence. Follow the
+  relevant setup skill before any private owner flow.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 
@@ -31,6 +38,7 @@ This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|
 | **sdlc** (repo-local) | skill | Coordinates implementation and review across harnesses under the repository rules above. | `sdlc`, `/sdlc --finish` |
+| **hobo-setup** (repo-local) | skill | Guides HoBo MCP connection and private owner store setup independently of deployment. | automatic for HoBo MCP or owner-store setup |
 | **gh-stack** (repo-local) | skill + CLI ext | Non-interactive rules for official `github/gh-stack` (`gh extension install github/gh-stack`). | `gh stack init\|add\|submit\|sync\|merge` |
 | **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: TDD, systematic debugging, and code-review workflows. Planning and design artifact workflows are prohibited by the repository rules above. No keys. | `requesting-code-review`, `systematic-debugging` |
 | **impeccable** (`pbakaus/impeccable`) | skill (design) | A **design language** for AI harnesses: 23 commands from `shape`/`critique`/`audit`/`polish` to dials like `bolder`/`quieter`/`colorize`. **Always-on for UI/TUI/dashboard work** — do not wait for the user to invoke it (see **Visual quality** below). No keys, but not offline: a daily update check to `impeccable.style` from `scripts/context.mjs` run as a command — the hook does **not** fetch (disabled here by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`). `/impeccable init` writes `PRODUCT.md`; visual tokens and components are defined in source. Do not create design documents. | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |

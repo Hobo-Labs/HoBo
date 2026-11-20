@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@vercel/queue>@vercel/oidc': 3.2.0
   ts-autocode-grounding: workspace:*
   ts-autocode-rewrite: workspace:*
   ts-autocode-training: workspace:*
@@ -694,6 +695,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
@@ -815,6 +819,55 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/cd-vercel:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/hobo':
+        specifier: workspace:*
+        version: link:../hobo
+      '@hobo/hobo-ci':
+        specifier: workspace:*
+        version: link:../hobo-ci
+      '@vercel/oidc':
+        specifier: 4.0.0
+        version: 4.0.0
+      '@vercel/queue':
+        specifier: 0.10.0
+        version: 0.10.0(@opentelemetry/api@1.9.1)
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
+    devDependencies:
+      '@hobo/camps':
+        specifier: workspace:*
+        version: link:../camps
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/hobo-cd':
+        specifier: workspace:*
+        version: link:../hobo-cd
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
+      '@hobo/provider-vercel':
+        specifier: workspace:*
+        version: link:../providers/provider-vercel
+      '@hobo/yards':
+        specifier: workspace:*
+        version: link:../yards
+
   packages/ci:
     dependencies:
       '@bufbuild/protobuf':
@@ -842,6 +895,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -1105,6 +1161,9 @@ importers:
       '@hobo/provider-vercel':
         specifier: workspace:*
         version: link:../providers/provider-vercel
+      '@hobo/testing':
+        specifier: workspace:*
+        version: link:../testing
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
@@ -1991,6 +2050,9 @@ importers:
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
+      tar-stream:
+        specifier: 3.1.7
+        version: 3.1.7
       tsx:
         specifier: 4.22.4
         version: 4.22.4
@@ -2022,6 +2084,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      '@types/tar-stream':
+        specifier: 3.1.5
+        version: 3.1.5
       fast-check:
         specifier: ^4.3.0
         version: 4.9.0
@@ -10861,6 +10926,9 @@ packages:
 
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
+
+  '@types/tar-stream@3.1.5':
+    resolution: {integrity: sha512-zCUA6CSDw0t2cpQiZixpyzfubpeuVZmBr5wztvuCG4bhy7reX/9wGXdZxEzz2CjMFLQ32UPR/01jzUUSRJeCeQ==}
 
   '@types/three@0.185.4':
     resolution: {integrity: sha512-gAsBIC07NIFrxjbf7tH2t71c38uulFfk/RFoC7FNBSjMRAQ8J1x/RBvusX0N5PJouaYFJawXQqfCQ0RKUx/1nA==}
@@ -23027,6 +23095,10 @@ snapshots:
       '@types/node': 18.19.130
 
   '@types/stats.js@0.17.4': {}
+
+  '@types/tar-stream@3.1.5':
+    dependencies:
+      '@types/node': 22.20.0
 
   '@types/three@0.185.4':
     dependencies:

@@ -40,7 +40,7 @@ export const cdJournal = postgres.database({ version: ">=16" });
 /** Intended cadence; not yet attached to the schedule resource. */
 export const CD_TICK_SCHEDULE = Object.freeze({
 	name: CD_RESOURCES.tick,
-	cron: "* * * * *",
+	cron: "*/5 * * * *",
 } as const);
 
 export default bindle("hobo-cd", (b) => {

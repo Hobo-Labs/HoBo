@@ -7,22 +7,81 @@ import {
 	isJsonNumber,
 	isJsonObject,
 	isJsonString,
+	type JsonObject,
 	type JsonValue,
 } from "./json.js";
 
 function isStoredJsonValue(value: JsonValue): boolean {
 	if (value === null) return true;
 	if (isJsonString(value) || isJsonBoolean(value)) return true;
-	if (isJsonNumber(value)) return Number.isFinite(value);
-	if (isJsonArray(value))
-		return value.every((entry) => isStoredJsonValue(entry));
+	if (isJsonNumber(value))
+		return Number.isFinite(value) && !Object.is(value, -0);
+	if (isJsonArray(value)) {
+		if (Object.getOwnPropertySymbols(value).length !== 0) return false;
+		const names = Object.getOwnPropertyNames(value);
+		if (names.length !== value.length + 1) return false;
+		for (const name of names) {
+			if (name === "length") continue;
+			const descriptor = Object.getOwnPropertyDescriptor(value, name);
+			if (!descriptor || !("value" in descriptor) || !descriptor.enumerable)
+				return false;
+			const index = Number(name);
+			if (
+				!Number.isSafeInteger(index) ||
+				index < 0 ||
+				index >= value.length ||
+				String(index) !== name
+			)
+				return false;
+		}
+		for (let index = 0; index < value.length; index += 1) {
+			if (!Object.hasOwn(value, String(index))) return false;
+			const entry = value[index];
+			if (entry === undefined || !isStoredJsonValue(entry)) return false;
+		}
+		return true;
+	}
 	if (isJsonObject(value)) {
-		return Object.keys(value).every((key) => {
+		if (Object.getOwnPropertySymbols(value).length !== 0) return false;
+		for (const key of Object.getOwnPropertyNames(value)) {
+			const descriptor = Object.getOwnPropertyDescriptor(value, key);
+			if (!descriptor || !("value" in descriptor) || !descriptor.enumerable)
+				return false;
 			const entry = value[key];
-			return entry !== undefined && isStoredJsonValue(entry);
-		});
+			if (entry === undefined || !isStoredJsonValue(entry)) return false;
+		}
+		return true;
 	}
 	return false;
+}
+
+function assertOnlyFactKeys(
+	data: JsonObject,
+	allowed: ReadonlySet<string>,
+	message: string,
+): void {
+	if (Object.getOwnPropertySymbols(data).length !== 0)
+		throw new TypeError(message);
+	for (const key of Object.getOwnPropertyNames(data)) {
+		const descriptor = Object.getOwnPropertyDescriptor(data, key);
+		if (
+			!descriptor ||
+			!("value" in descriptor) ||
+			!descriptor.enumerable ||
+			!allowed.has(key)
+		)
+			throw new TypeError(message);
+	}
+}
+
+function isBoundedJournalIndex(value: JsonValue | undefined): value is number {
+	return (
+		isJsonNumber(value) &&
+		Number.isSafeInteger(value) &&
+		value >= 0 &&
+		value <= 1_000_000 &&
+		!Object.is(value, -0)
+	);
 }
 
 export type ParsedRunStarted = {
@@ -36,19 +95,20 @@ export function parseRunStartedFact(
 	defaultSeed: string,
 ): ParsedRunStarted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Started");
-	const allowed = new Set(["args", "seed", "workflowName"]);
-	for (const key of Object.keys(data)) {
-		if (!allowed.has(key)) throw new TypeError("invalid run.Started");
-	}
-	const hasWorkflowName = "workflowName" in data;
+	assertOnlyFactKeys(
+		data,
+		new Set(["args", "seed", "workflowName"]),
+		"invalid run.Started",
+	);
+	const hasWorkflowName = Object.hasOwn(data, "workflowName");
 	let args: JsonValue | null;
-	if (!("args" in data)) {
+	if (!Object.hasOwn(data, "args")) {
 		if (hasWorkflowName) throw new TypeError("invalid run.Started");
 		args = null;
 	} else {
 		const rawArgs = data.args;
 		if (rawArgs === null) args = null;
-		else if (!isStoredJsonValue(rawArgs))
+		else if (rawArgs === undefined || !isStoredJsonValue(rawArgs))
 			throw new TypeError("invalid run.Started");
 		else args = rawArgs;
 	}
@@ -59,7 +119,7 @@ export function parseRunStartedFact(
 		workflowName = data.workflowName;
 	}
 	let runSeed: string;
-	if ("seed" in data) {
+	if (Object.hasOwn(data, "seed")) {
 		if (!isJsonString(data.seed)) throw new TypeError("invalid run.Started");
 		runSeed = data.seed;
 	} else if (hasWorkflowName) {
@@ -92,33 +152,66 @@ export function parseRunStepScheduledFact(
 	data: JsonValue,
 ): ParsedRunStepScheduled {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepScheduled");
-	const allowed = new Set(["name", "index"]);
-	for (const key of Object.keys(data)) {
-		if (!allowed.has(key)) throw new TypeError("invalid run.StepScheduled");
-	}
+	assertOnlyFactKeys(
+		data,
+		new Set(["name", "index"]),
+		"invalid run.StepScheduled",
+	);
 	if (!isJsonString(data.name))
 		throw new TypeError("invalid run.StepScheduled");
-	if (
-		!isJsonNumber(data.index) ||
-		!Number.isSafeInteger(data.index) ||
-		data.index < 0
-	)
+	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepScheduled");
 	return { name: data.name, index: data.index };
 }
 
+export type ParsedRunSleepScheduled = {
+	delayMs: number;
+	index: number;
+	label?: string;
+};
+
+export function parseRunSleepScheduledFact(
+	data: JsonValue,
+): ParsedRunSleepScheduled {
+	if (!isJsonObject(data)) throw new TypeError("invalid run.SleepScheduled");
+	assertOnlyFactKeys(
+		data,
+		new Set(["delayMs", "index", "label"]),
+		"invalid run.SleepScheduled",
+	);
+	if (
+		!Object.hasOwn(data, "delayMs") ||
+		!isJsonNumber(data.delayMs) ||
+		Object.is(data.delayMs, -0)
+	)
+		throw new TypeError("invalid run.SleepScheduled");
+	const delayMs = data.delayMs;
+	if (!Number.isSafeInteger(delayMs) || delayMs < 0 || Object.is(delayMs, -0)) {
+		throw new TypeError("invalid run.SleepScheduled");
+	}
+	if (!Object.hasOwn(data, "index") || !isBoundedJournalIndex(data.index))
+		throw new TypeError("invalid run.SleepScheduled");
+	const parsed: ParsedRunSleepScheduled = {
+		delayMs,
+		index: data.index,
+	};
+	if (Object.hasOwn(data, "label")) {
+		if (data.label === undefined || !isJsonString(data.label))
+			throw new TypeError("invalid run.SleepScheduled");
+		parsed.label = data.label;
+	}
+	return parsed;
+}
+
 export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepFailed");
-	const allowed = new Set(["name", "index", "message"]);
-	for (const key of Object.keys(data)) {
-		if (!allowed.has(key)) throw new TypeError("invalid run.StepFailed");
-	}
+	assertOnlyFactKeys(
+		data,
+		new Set(["name", "index", "message"]),
+		"invalid run.StepFailed",
+	);
 	if (!isJsonString(data.name)) throw new TypeError("invalid run.StepFailed");
-	if (
-		!isJsonNumber(data.index) ||
-		!Number.isInteger(data.index) ||
-		data.index < 0
-	)
+	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepFailed");
 	if (!isJsonString(data.message))
 		throw new TypeError("invalid run.StepFailed");
@@ -127,11 +220,9 @@ export function parseRunStepFailedFact(data: JsonValue): ParsedRunStepFailed {
 
 export function parseRunCompletedFact(data: JsonValue): JsonValue | undefined {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Completed");
-	const allowed = new Set(["result"]);
-	for (const key of Object.keys(data)) {
-		if (!allowed.has(key)) throw new TypeError("invalid run.Completed");
-	}
-	if (!("result" in data) || data.result === undefined) return undefined;
+	assertOnlyFactKeys(data, new Set(["result"]), "invalid run.Completed");
+	if (!Object.hasOwn(data, "result") || data.result === undefined)
+		return undefined;
 	if (!isStoredJsonValue(data.result))
 		throw new TypeError("invalid run.Completed");
 	return data.result;
@@ -147,23 +238,20 @@ export function parseRunStepCompletedFact(
 	data: JsonValue,
 ): ParsedRunStepCompleted {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.StepCompleted");
-	const allowed = new Set(["name", "index", "result"]);
-	for (const key of Object.keys(data)) {
-		if (!allowed.has(key)) throw new TypeError("invalid run.StepCompleted");
-	}
+	assertOnlyFactKeys(
+		data,
+		new Set(["name", "index", "result"]),
+		"invalid run.StepCompleted",
+	);
 	if (!isJsonString(data.name))
 		throw new TypeError("invalid run.StepCompleted");
-	if (
-		!isJsonNumber(data.index) ||
-		!Number.isInteger(data.index) ||
-		data.index < 0
-	)
+	if (!isBoundedJournalIndex(data.index))
 		throw new TypeError("invalid run.StepCompleted");
 	const parsed: ParsedRunStepCompleted = {
 		name: data.name,
 		index: data.index,
 	};
-	if ("result" in data && data.result !== undefined) {
+	if (Object.hasOwn(data, "result") && data.result !== undefined) {
 		if (!isStoredJsonValue(data.result))
 			throw new TypeError("invalid run.StepCompleted");
 		const journaled = readJournaledWorkflowResult(data.result);
@@ -190,13 +278,10 @@ export function replayStepCompletedResult<T>(data: JsonValue): T {
 
 export function parseRunFailedFact(data: JsonValue): ParsedRunFailed {
 	if (!isJsonObject(data)) throw new TypeError("invalid run.Failed");
-	const allowed = new Set(["message", "step"]);
-	for (const key of Object.keys(data)) {
-		if (!allowed.has(key)) throw new TypeError("invalid run.Failed");
-	}
+	assertOnlyFactKeys(data, new Set(["message", "step"]), "invalid run.Failed");
 	if (!isJsonString(data.message)) throw new TypeError("invalid run.Failed");
 	const parsed: ParsedRunFailed = { message: data.message };
-	if ("step" in data) {
+	if (Object.hasOwn(data, "step")) {
 		if (!isJsonString(data.step)) throw new TypeError("invalid run.Failed");
 		parsed.step = data.step;
 	}
@@ -268,13 +353,19 @@ function faithfullyReproduces<T>(
 	original: T,
 	captured: JsonValue,
 ): captured is T & JsonValue {
-	return isDeepStrictEqual(original, captured);
+	return isDeepStrictEqual(
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: `isReproducibleJsonValue` already validated JSON shape.
+		cloneAsJson(original as JsonValue),
+		captured,
+	);
 }
 
 function captureWorkflowValue<T>(value: T): T {
-	if (!isReproducibleJsonValue(value, new Set())) throw new TypeError();
+	if (!isReproducibleJsonValue(value, new Set()))
+		throw new TypeError("workflow value must be JSON-normalized");
 	const captured = cloneAsJson(value);
-	if (!faithfullyReproduces(value, captured)) throw new TypeError();
+	if (!faithfullyReproduces(value, captured))
+		throw new TypeError("workflow value must be JSON-normalized");
 	return captured;
 }
 

@@ -48,7 +48,7 @@ export type ProfileInput = z.input<typeof profileSchema>;
 
 type ProfileContext = {
   user: { id: string; isAdmin: boolean } | null | undefined;
-  users: PrismaClient["user"];
+  users: Pick<PrismaClient["user"], "update">;
 };
 
 export class ProfileError extends Error {

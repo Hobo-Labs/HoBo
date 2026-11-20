@@ -18,6 +18,7 @@ export const ISOLATED_TEST_FILES = [
 	"test/doctor-command.test.ts",
 	"test/drift-command.test.ts",
 	"test/evals/ceremony-explorer.eval.test.ts",
+	"test/evals/mcp-store-choice.eval.test.ts",
 	"test/import-command.test.ts",
 	"test/pinned-git-source.test.ts",
 	"test/serve-control-command.test.ts",
