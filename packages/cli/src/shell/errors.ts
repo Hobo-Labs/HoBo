@@ -51,8 +51,6 @@ export class NoBindleError extends CliError {
 }
 
 export class BindleImportError extends CliError {
-	// `cause` is a caught binding; the next line already handles that with
-	// `cause instanceof Error ? … : String(cause)`.
 	constructor(sourcePath: string, cause: unknown) {
 		const detail = cause instanceof Error ? cause.message : String(cause);
 		super(

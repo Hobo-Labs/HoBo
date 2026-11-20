@@ -7,7 +7,7 @@ tags: [hobo, state-machines, verification]
 
 # HoBo state machines and verification
 
-This is a **partial** verification record, not a claim that the framework is fully modeled or proved. Each skill below identifies the covered code, review baseline, executable checks, formal properties, assumptions, and known gaps. The [candidate inventory](./state-machine-candidates.md) is a historical lexical audit queue, not an exhaustive list of state machines or a list of verified behavior.
+This is a **partial** verification record, not a claim that the framework is fully modeled or proved. Each skill below identifies the covered code, review baseline, executable checks, formal properties, assumptions, and known gaps.
 
 | Subsystem | Maintained verification | Main checked properties |
 | --- | --- | --- |
@@ -22,11 +22,11 @@ This is a **partial** verification record, not a claim that the framework is ful
 | CI fleet effect delivery | [verify-ci-fleet-delivery](../.agents/skills/verify-ci-fleet-delivery/SKILL.md) | Fresh bounded delivery fences reject stale workers and ambiguous dispatch is not reissued. |
 | CI fleet start binding | [verify-ci-start-binding](../.agents/skills/verify-ci-start-binding/SKILL.md) | Transactional claims and retries preserve unique job/slot bindings, subject to trusted assignment evidence. |
 | CI shared-budget window | [verify-ci-budget-window](../.agents/skills/verify-ci-budget-window/SKILL.md) | Work duration is rechecked after durable reservations and claims; post-commit refusals keep their holds. |
-| CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage and conservatively aggregates provider-account observations. |
-| CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
+| CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage, conservatively aggregates provider-account observations, and refuses duplicate reports containing free allocation. |
+| CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-failure gates stop new starts; mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
 | CD promotion and rollback | [verify-promotion-verification](../.agents/skills/verify-promotion-verification/SKILL.md) | Qualification requires passing verification; request identities bind retries and rollback claims. |
 
-The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps. Workflow sleep verification includes a SQLite close-and-reopen test as well as bounded crash and deadline models.
+The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. Each skill states its model bounds and projection limits. Workflow sleep verification includes a SQLite close-and-reopen test as well as bounded crash and deadline models.
 
 ## Run and maintain
 
@@ -38,6 +38,8 @@ pnpm run verify:state-machines -- verify-budget-policy-routing verify-broker-bud
 ```
 
 The runner checks the pinned TLC jar and reuses or installs the pinned Z3 solver in a temporary directory. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing pinned installations for offline runs. Java 11+, Python, Node, and the dependencies listed by each skill are required. The aggregate command reports all selected results and fails if any fails.
+
+The required PR and merge-queue gate runs the aggregate verifier in four deterministic shards, including its executable checks, bounded models, and proof obligations. A failed, skipped, or cancelled shard blocks the gate; a signed local attestation does not substitute for this job. Each shard builds the packages used by the registered skills before verification; update its build filters when a new skill needs a package outside that dependency cone. Each verification step has a 20-minute limit. Run `pnpm run verify:state-machines -- --list --shard=0/4` to inspect a shard, or omit `--list` to execute it.
 
 When covered behavior changes, review the code and its intended policy, update the implementation tests and model, replay counterexamples against code, exercise deliberately broken variants, regenerate affected charts, run the skill, and update its baseline. Keep `.agents/skills/` and `.claude/skills/` byte-for-byte mirrored. Pstack's `/maintain-formal-verification-skill` and `/statechart` describe that workflow.
 

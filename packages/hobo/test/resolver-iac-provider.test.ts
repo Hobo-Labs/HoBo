@@ -812,7 +812,7 @@ describe("selectIacProvider: exact artifacts for live providers", () => {
 					CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID,
 				}),
 			).id,
-		).toBe(`resolver-backed:${RESOLVER_CONTRACT}`);
+		).toBe(`resolver-backed:${RESOLVER_CONTRACT}+secret-refs`);
 	});
 
 	it("selects the resolver-backed provider for Vercel under the opt-in", () => {
@@ -820,7 +820,7 @@ describe("selectIacProvider: exact artifacts for live providers", () => {
 			selectIacProvider(
 				deps({ HOBO_DEPLOY_RESOLVERS: "1", VERCEL_TOKEN: FAKE_TOKEN }),
 			).id,
-		).toBe(`resolver-backed:${RESOLVER_CONTRACT}`);
+		).toBe(`resolver-backed:${RESOLVER_CONTRACT}+secret-refs`);
 	});
 
 	it("leaves an explicit Pulumi adapter override untouched by the opt-in", () => {

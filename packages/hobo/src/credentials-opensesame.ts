@@ -38,11 +38,11 @@ import { AMBIENT_CREDENTIAL_KEYS } from "@hobo/cloud";
 
 import type { DefaultYardRuntimeOptions } from "./compose.js";
 import { parseJsonValue } from "./json.js";
+import { OPENSESAME_CREDENTIALS } from "./mcp-handshake.js";
 import type { PulumiAutomationAdapter } from "./pulumi-iac-provider.js";
 import { nodeOptionsForRun } from "./relaunch-node-options.js";
 
-// public-contract: the HOBO_CREDENTIALS value that takes credentials from OpenSesame.
-export const OPENSESAME_CREDENTIALS = "opensesame";
+export { OPENSESAME_CREDENTIALS };
 
 // public-contract: the bindings file, read from the directory hobo works in, its --cwd or else the working directory (references only).
 export const CREDENTIAL_BINDINGS_FILE = "hobo.credentials.json";

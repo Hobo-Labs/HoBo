@@ -1,8 +1,15 @@
 import { useEffect } from "react";
+import * as z from "zod";
 import { useLocalStorage } from "./useLocalStorage";
 
+const colorModeSchema = z.enum(["light", "dark"]);
+
 export function useColorMode() {
-  const [colorMode, setColorMode] = useLocalStorage("color-theme", "light");
+  const [colorMode, setColorMode] = useLocalStorage(
+    "color-theme",
+    "light",
+    colorModeSchema,
+  );
 
   useEffect(() => {
     const className = "dark";
@@ -15,5 +22,5 @@ export function useColorMode() {
     }
   }, [colorMode]);
 
-  return [colorMode, setColorMode];
+  return [colorMode, setColorMode] as const;
 }
