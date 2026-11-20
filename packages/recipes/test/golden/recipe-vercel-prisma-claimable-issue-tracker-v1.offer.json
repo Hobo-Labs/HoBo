@@ -1,12 +1,12 @@
 {
 	"schemaVersion": "hobo.deployment-offer/v1",
-	"offerId": "offer/8217b7f0861dc3c53e6c96e4501c007fc5d77e99c3b6f2e422cf9a15c3658423",
+	"offerId": "offer/b376a4449b2587156e18786ae4d38c004e6fa94e818986043981aaab5a28225b",
 	"recipeId": "recipe.vercel-prisma.claimable-issue-tracker/v1",
 	"deploymentRef": "junction/recipe-vercel-prisma-claimable-issue-tracker-v1",
 	"topologyDigest": "sha256:6b9aeb293fd5f345dcd42bcb27eeafcb9435a32f2e12e0f005fc78df24ef91a8",
-	"resolutionDigest": "sha256:c2267cedbb6b763fdf179d2e696620ddb54b4521698c69563200d56e3263dc86",
+	"resolutionDigest": "sha256:1f9f70813ea206baca3def6274376eb5c48ca8f799cab3edddeb801ca6db0a5d",
 	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
-	"profileRegistryDigest": "sha256:1a4e6a5eb4a8d7ba725d9611c25555484e6d82ce3c0fcd97c5e062d62c207b9a",
+	"profileRegistryDigest": "sha256:5c876e208189e2d5d7a0762708c5f59fe1ba2b7c0bb79665a79aa5eebbb029d4",
 	"placements": [
 		{
 			"placementId": "db",
@@ -119,7 +119,7 @@
 	"signature": {
 		"algorithm": "test.detached-digest/v1",
 		"keyId": "test-key-1",
-		"payloadDigest": "sha256:3ffcc4bb288d63cad35b2af89cc1ab1fba25c659334f2984ee4267b3f02e1ad0",
-		"signature": "sig:3ffcc4bb288d63ca"
+		"payloadDigest": "sha256:a1aead8f88a3fc0f18bd8383256ac289717c2cf777f794627d01bec05808694d",
+		"signature": "sig:a1aead8f88a3fc0f"
 	}
 }
