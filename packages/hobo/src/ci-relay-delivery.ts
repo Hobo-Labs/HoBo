@@ -944,14 +944,18 @@ async function deliverWith(
 							pipelineRecord.name === pipeline && pipelineNode.name === node
 								? {
 										...pipelineNode,
-										hooks: [
-											...pipelineNode.hooks,
-											create(HookRecordSchema, {
-												kind: HookKind.SUITE,
-												point: HookPoint.AFTER_QUALIFIED,
-												ref: RELAY_FINALIZATION_SUITE,
-											}),
-										],
+										hooks: pipelineNode.hooks.some(
+											(hook) => hook.ref === RELAY_FINALIZATION_SUITE,
+										)
+											? pipelineNode.hooks
+											: [
+													...pipelineNode.hooks,
+													create(HookRecordSchema, {
+														kind: HookKind.SUITE,
+														point: HookPoint.AFTER_QUALIFIED,
+														ref: RELAY_FINALIZATION_SUITE,
+													}),
+												],
 									}
 								: pipelineNode,
 						),

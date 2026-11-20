@@ -1017,7 +1017,7 @@ export async function runCiRelayDeploy(
 		wait,
 		limitMs: waitLimitMs,
 		intervalMs: WAIT_INTERVAL_MS,
-		...(verify !== undefined
+		...(verify !== undefined && commitVerified
 			? { http: verify.probe.transport }
 			: input.probe !== undefined
 				? { http: input.probe }
