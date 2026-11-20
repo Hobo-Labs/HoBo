@@ -77,6 +77,7 @@ function fakeAutomation(
 			return {};
 		},
 	};
+	// SAFETY: the engine calls exactly the members declared below.
 	return {
 		calls,
 		envVarsSeen,
@@ -101,6 +102,7 @@ function engine(
 	env: Record<string, string | undefined> = {},
 ) {
 	return createPulumiAutomationApiEngine({
+		ephemeralState: true,
 		workDir: tempDir("hobo-pulumi-auto-work-"),
 		automation: fake.module,
 		env,
@@ -108,6 +110,7 @@ function engine(
 }
 
 /** A program with one Cloudflare KV resource. */
+// SAFETY: the engine reads exactly the fields named below.
 const program = (name = "cache") =>
 	({
 		deploymentId: "dep-1",
@@ -120,7 +123,10 @@ const program = (name = "cache") =>
 /** Lay down a program directory and its checkpoint, the way an apply would. */
 function seedCheckpoint(
 	workDir: string,
-	options: { outputs?: Record<string, unknown> | null; raw?: string } = {},
+	options: {
+		outputs?: Readonly<Record<string, string>> | null;
+		raw?: string;
+	} = {},
 ) {
 	mkdirSync(join(workDir, "programs", "dep-1__cache"), { recursive: true });
 	// The checkpoint lives at <state>/.pulumi/stacks/<project>/<stack>.json —
@@ -147,6 +153,37 @@ function seedCheckpoint(
 			}),
 	);
 }
+
+describe("persistent state passphrases", () => {
+	it("refuses to create persistent state without a recoverable passphrase", async () => {
+		const fake = fakeAutomation();
+		const workDir = tempDir();
+		const created = createPulumiAutomationApiEngine({
+			workDir,
+			automation: fake.module,
+			env: {},
+		});
+		await expect(created.preview(program())).rejects.toThrow(/passphrase/iu);
+		expect(fake.calls).toEqual([]);
+	});
+
+	it("passes the same supplied key to engines restarted on one work directory", async () => {
+		const fake = fakeAutomation();
+		const workDir = tempDir();
+		for (let run = 0; run < 2; run++) {
+			const created = createPulumiAutomationApiEngine({
+				workDir,
+				automation: fake.module,
+				env: {},
+				statePassphrase: "recoverable-test-passphrase",
+			});
+			await created.preview(program());
+		}
+		expect(fake.envVarsSeen.map((env) => env.PULUMI_CONFIG_PASSPHRASE)).toEqual(
+			["recoverable-test-passphrase", "recoverable-test-passphrase"],
+		);
+	});
+});
 
 describe("the preview verdict matches the CLI engine", () => {
 	it("reports no change for an empty summary", async () => {
@@ -222,6 +259,7 @@ describe("the preview verdict matches the CLI engine", () => {
 
 	it("previews every resource in the program", async () => {
 		const fake = fakeAutomation();
+		// SAFETY: the engine reads exactly the fields named below.
 		await engine(fake).preview({
 			deploymentId: "dep-1",
 			resources: [
@@ -277,12 +315,20 @@ describe("what the workspace environment is pinned to", () => {
 		expect(fake.envVarsSeen[0]?.PULUMI_SKIP_UPDATE_CHECK).toBe("true");
 	});
 
-	it("defaults the config passphrase to empty rather than leaving it unset", async () => {
+	it("encrypts the state with a random in-memory passphrase rather than an empty one", async () => {
 		const fake = fakeAutomation();
-		await engine(fake).preview(program());
-		// An unset passphrase makes the local backend prompt interactively,
-		// which hangs a non-interactive deploy forever.
-		expect(fake.envVarsSeen[0]?.PULUMI_CONFIG_PASSPHRASE).toBe("");
+		const preview = engine(fake);
+		await preview.preview(program());
+		await preview.preview(program());
+		// Unset would make the local backend prompt (and hang); empty would
+		// leave every state secret readable on disk. Random, and stable for the
+		// engine's life, so its own state stays readable to it.
+		const seen = fake.envVarsSeen.map((env) => env.PULUMI_CONFIG_PASSPHRASE);
+		expect(seen[0]).toMatch(/^[A-Za-z0-9_-]{40,}$/u);
+		expect(seen[1]).toBe(seen[0]);
+		const other = fakeAutomation();
+		await engine(other).preview(program());
+		expect(other.envVarsSeen[0]?.PULUMI_CONFIG_PASSPHRASE).not.toBe(seen[0]);
 	});
 
 	it("keeps an explicit config passphrase", async () => {

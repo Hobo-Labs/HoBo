@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file yard_placement.proto.
  */
 export const file_yard_placement: GenFile = /*@__PURE__*/
-  fileDesc("ChR5YXJkX3BsYWNlbWVudC5wcm90bxITaG9iby5icm9rZXIueWFyZC52MSLRAQoJWWFyZFNoYXBlEhMKC3Byb3ZpZGVyX2lkGAEgASgJEhIKCnJ1bnRpbWVfaWQYAiABKAkSDwoHcmVnaW9ucxgDIAMoCRIPCgdyZXF1aXJlGAQgAygJEg4KBnByZWZlchgFIAMoCRI6CgZsYWJlbHMYBiADKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRTaGFwZS5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIvoBChRZYXJkUGxhY2VtZW50UmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhYKDnNlbGVjdGlvbl9tb2RlGAIgASgJEhkKEXJlcXVlc3RlZF95YXJkX2lkGAMgASgJEjcKD3JlcXVlc3RlZF9zaGFwZRgEIAEoCzIeLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZFNoYXBlEhwKFGJpbmRsZV9tYW5pZmVzdF9oYXNoGAUgASgJEiAKGGJpbmRsZV9yZXF1aXJlbWVudHNfaGFzaBgGIAEoCRIiChphbGxvd19nZW5lcmF0aW9uX3JlcXVlc3RlZBgHIAEoCCKvAQoYWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEg8KB3lhcmRfaWQYAiABKAkSFwoPb3duZXJfdGVuYW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhIKCnJ1bnRpbWVfaWQYBSABKAkSDgoGc3RhdHVzGAYgASgJEhgKEHJlZ2lzdHJhdGlvbl9zZXEYByABKAQiowEKFVlhcmRJbnZlbnRvcnlTbmFwc2hvdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIRCglicm9rZXJfaWQYAiABKAkSCwoDc2VxGAMgASgEEhQKDGNvbnRlbnRfaGFzaBgEIAEoCRI8CgV5YXJkcxgFIAMoCzItLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uIsEBChdZYXJkUnVudGltZVJlZ2lzdHJhdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpydW50aW1lX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEg8KB3ZlcnNpb24YBCABKAkSHgoWZ2VuZXJhdG9yX2Nvbm5lY3Rvcl9pZBgFIAEoCRIOCgZzdGF0dXMYBiABKAkSEAoIcHJpb3JpdHkYByABKAUSEgoKaXNfZGVmYXVsdBgIIAEoCCLyAQoXQmluZGxlRGVwbG95bWVudFJlcXVlc3QSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRITCgtiaW5kbGVfbmFtZRgDIAEoCRIVCg1tYW5pZmVzdF9oYXNoGAQgASgJEjcKBHlhcmQYBSABKAsyKS5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRQbGFjZW1lbnRSZXF1ZXN0EhEKCW9iamVjdGl2ZRgGIAEoCRIaChJzcGVuZF9lc3RpbWF0ZV91c2QYByABKAESFwoPb3duZXJfdGVuYW50X2lkGAggASgJIpoDChRZYXJkUGxhY2VtZW50UmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRIYChBzZWxlY3RlZF95YXJkX2lkGAQgASgJEhwKFHNlbGVjdGVkX3Byb3ZpZGVyX2lkGAUgASgJEhgKEHNlbGVjdGVkX2NhbXBfaWQYBiABKAkSFgoOaW52ZW50b3J5X2hhc2gYByABKAkSFAoMY29udGVudF9oYXNoGAggASgJEkIKEmJ1ZGdldF9yZXNlcnZhdGlvbhgJIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SOAoNaG9zdGluZ19xdW90ZRgKIAEoCzIhLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlEkUKFGhvc3RpbmdfcG9saWN5X3Byb29mGAsgASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YiYgoOQnVkZ2V0SWRlbnRpdHkSEQoJdGVuYW50X2lkGAEgASgJEhEKCWJ1ZGdldF9pZBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcG9saWN5X3JldmlzaW9uGAQgASgJIq0DChRCdWRnZXRMZWRnZXJTbmFwc2hvdBI1CghpZGVudGl0eRgBIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSCwoDc2VxGAIgASgNEhQKDGxpbWl0X21pY3JvcxgDIAEoARIUCgxzcGVudF9taWNyb3MYBCABKAESFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJEkUKEXByb3ZpZGVyX2FjY291bnRzGAggAygLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRQcm92aWRlckFjY291bnQSPAoMZW50aXRsZW1lbnRzGAkgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRFbnRpdGxlbWVudBIZChF1bnJlc29sdmVkX21pY3JvcxgKIAEoARIfChdyZWNvdmVyeV9yZXNlcnZlX21pY3JvcxgLIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAwgASgBIpwBChVCdWRnZXRQcm92aWRlckFjY291bnQSGwoTcHJvdmlkZXJfYWNjb3VudF9pZBgBIAEoCRIUCgxsaW1pdF9taWNyb3MYAiABKAESFAoMc3BlbnRfbWljcm9zGAMgASgBEhcKD3Jlc2VydmVkX21pY3JvcxgEIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAUgASgBIqIBChFCdWRnZXRFbnRpdGxlbWVudBIRCglidWNrZXRfaWQYASABKAkSDAoEdW5pdBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcmVtYWluaW5nX3VuaXRzGAQgASgBEhYKDnJlc2VydmVkX3VuaXRzGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJIlAKF1Byb3ZpZGVyQWNjb3VudEV4cG9zdXJlEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSGAoQbGlhYmlsaXR5X21pY3JvcxgCIAEoASJCChBFbnRpdGxlbWVudENsYWltEhEKCWJ1Y2tldF9pZBgBIAEoCRIMCgR1bml0GAIgASgJEg0KBXVuaXRzGAMgASgBIqgCChhCdWRnZXRTZXR0bGVtZW50RXZpZGVuY2USGgoSdXNhZ2VfZXZpZGVuY2VfcmVmGAEgASgJEiMKG3NvdXJjZV9zdG9wcGVkX2V2aWRlbmNlX3JlZhgCIAEoCRJHChFwcm92aWRlcl9hY2NvdW50cxgDIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGAQgAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEiQKHGZlbmNlX29wZXJhdGlvbl9yZWNlaXB0X2pzb24YBSABKAkSGQoRZmluYW5jZV9zaWduYXR1cmUYBiABKAki2QEKFUJ1ZGdldEZlbmNlZFBsYWNlbWVudBIPCgd5YXJkX2lkGAEgASgJEg8KB2NhbXBfaWQYAiABKAkSEwoLcHJvdmlkZXJfaWQYAyABKAkSGwoTcHJvdmlkZXJfYWNjb3VudF9pZBgEIAEoCRITCgtyZXNvdXJjZV9pZBgFIAEoCRIVCg1kZXBsb3ltZW50X2lkGAYgASgJEhYKDmluY2FybmF0aW9uX2lkGAcgASgJEhUKDW1hbmlmZXN0X2hhc2gYCCABKAkSEQoJcGxhbl9oYXNoGAkgASgJIskEChpCdWRnZXRGZW5jZVNldHRsZW1lbnRHdWFyZBIQCghjb250cmFjdBgBIAEoCRIPCgdkYXRhc2V0GAIgASgJEhQKDHNjb3BlX3RlbmFudBgDIAEoCRIUCgxvcGVyYXRpb25faWQYBCABKAkSGgoSZmVuY2VfdG9rZW5fZGlnZXN0GAUgASgJEhcKD3JlY2VpdmVyX2tleV9pZBgGIAEoCRIbChNyZWNlaXZlcl9wdWJsaWNfa2V5GAcgASgJEhYKDmZpbmFuY2Vfa2V5X2lkGAggASgJEhoKEmZpbmFuY2VfcHVibGljX2tleRgJIAEoCRIXCg9sb2dpY2FsX2NhbXBfaWQYCiABKAkSOgoGc291cmNlGAsgASgLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRGZW5jZWRQbGFjZW1lbnQSPwoLZGVzdGluYXRpb24YDCABKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlZFBsYWNlbWVudBIQCghkZWNpc2lvbhgNIAEoCRIYChBleGVjdXRpb25fZGlnZXN0GA4gASgJEhQKDHJvdXRlX2RpZ2VzdBgPIAEoCRIhChlleHBlY3RlZF9yb3V0ZV9nZW5lcmF0aW9uGBAgASgJEhYKDmN1cnJlbnRfc2V0X2lkGBEgASgJEhYKDmRlc2lyZWRfc2V0X2lkGBIgASgJEhQKDG1pZ3JhdGlvbl9pZBgTIAEoCRIVCg1kZWNpc2lvbl9oZWFkGBQgASgJIjoKFUhvc3RpbmdRdW90ZUNvbXBvbmVudBIMCgRuYW1lGAEgASgJEhMKC2Nvc3RfbWljcm9zGAIgASgBIvIDCgxIb3N0aW5nUXVvdGUSEAoIcXVvdGVfaWQYASABKAkSDwoHeWFyZF9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIXCg9vd25lcl90ZW5hbnRfaWQYBCABKAkSEAoIY3VycmVuY3kYBSABKAkSFAoMdG90YWxfbWljcm9zGAYgASgBEhMKC29ic2VydmVkX2F0GAcgASgJEhMKC3ZhbGlkX3VudGlsGAggASgJEj4KCmNvbXBvbmVudHMYCSADKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkhvc3RpbmdRdW90ZUNvbXBvbmVudBIWCg5yZXF1ZXN0X2RpZ2VzdBgKIAEoCRIjChZsaWFiaWxpdHlfYm91bmRfbWljcm9zGAsgASgBSACIAQESRwoRcHJvdmlkZXJfYWNjb3VudHMYDCADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEkEKEmVudGl0bGVtZW50X2NsYWltcxgNIAMoCzIlLmhvYm8uYnJva2VyLnlhcmQudjEuRW50aXRsZW1lbnRDbGFpbRIbChNmaW5hbmNpYWxfcGxhbl9oYXNoGA4gASgJQhkKF19saWFiaWxpdHlfYm91bmRfbWljcm9zIpcFChFCdWRnZXRSZXNlcnZhdGlvbhIWCg5yZXNlcnZhdGlvbl9pZBgBIAEoCRI1CghpZGVudGl0eRgCIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSFgoOcmVxdWVzdF9kaWdlc3QYAyABKAkSEAoIcXVvdGVfaWQYBCABKAkSFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEg4KBnN0YXR1cxgGIAEoCRIVCg1hY3R1YWxfbWljcm9zGAcgASgBEhIKCmxlZGdlcl9zZXEYCCABKA0SFAoMcXVvdGVfZGlnZXN0GAkgASgJEhoKEnVzYWdlX2V2aWRlbmNlX3JlZhgKIAEoCRIjChtzb3VyY2Vfc3RvcHBlZF9ldmlkZW5jZV9yZWYYCyABKAkSRwoRcHJvdmlkZXJfYWNjb3VudHMYDCADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEkEKEmVudGl0bGVtZW50X2NsYWltcxgNIAMoCzIlLmhvYm8uYnJva2VyLnlhcmQudjEuRW50aXRsZW1lbnRDbGFpbRJKChNzZXR0bGVtZW50X2V2aWRlbmNlGA4gASgLMi0uaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRTZXR0bGVtZW50RXZpZGVuY2USGAoQZXhlY3V0aW9uX2RpZ2VzdBgPIAEoCRIbChNmaW5hbmNpYWxfcGxhbl9oYXNoGBAgASgJEk8KFmZlbmNlX3NldHRsZW1lbnRfZ3VhcmQYEiABKAsyLy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlU2V0dGxlbWVudEd1YXJkIsQBChRCdWRnZXRBdXRob3JpdHlFdmVudBIMCgR0eXBlGAEgASgJEjsKCHNuYXBzaG90GAIgASgLMikuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRMZWRnZXJTbmFwc2hvdBI8CgxyZXNlcnZhdGlvbnMYAyADKAsyJi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldFJlc2VydmF0aW9uEiMKG3JlY29uY2lsaWF0aW9uX2V2aWRlbmNlX3JlZhgEIAEoCSLPAQoSSG9zdGluZ1BvbGljeVByb29mEhYKDnJlcXVlc3RfZGlnZXN0GAEgASgJEhAKCHF1b3RlX2lkGAIgASgJEjUKCGlkZW50aXR5GAMgASgLMiMuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRJZGVudGl0eRITCgtwb2xpY3lfaGFzaBgEIAEoCRIOCgZlZmZlY3QYBSABKAkSFAoMZXZpZGVuY2VfcmVmGAYgASgJEh0KFW9ibGlnYXRpb25zX3NhdGlzZmllZBgHIAEoCCLQAgoaSWFjVGFyZ2V0TGlhYmlsaXR5RXZpZGVuY2USFAoMZXZpZGVuY2VfcmVmGAEgASgJEhEKCXRhcmdldF9pZBgCIAEoCRIRCgl0ZW5hbnRfaWQYAyABKAkSEwoLcGxhbl9kaWdlc3QYBCABKAkSFgoOaW52ZW50b3J5X2hhc2gYBSABKAkSEgoKbW9kZWxfaGFzaBgGIAEoCRISCgpxdW90ZV9oYXNoGAcgASgJEhsKDm1heGltdW1fbWljcm9zGAggASgBSACIAQESEwoLb2JzZXJ2ZWRfYXQYCSABKAkSEwoLdmFsaWRfdW50aWwYCiABKAkSRwoRcHJvdmlkZXJfYWNjb3VudHMYCyADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlQhEKD19tYXhpbXVtX21pY3JvcyI+ChNJYWNCdWRnZXREaXNjbG9zdXJlEhIKCmV2YWx1YXRpb24YASABKAkSEwoLcmVzZXJ2YXRpb24YAiABKAkisgMKGklhY1RhcmdldEFkbWlzc2lvbkRlY2lzaW9uEhIKCnJlcXVlc3RfaWQYASABKAkSEQoJdGFyZ2V0X2lkGAIgASgJEg4KBnN0YXR1cxgDIAEoCRIMCgRjb2RlGAQgASgJEg8KB21lc3NhZ2UYBSABKAkSOAoGYnVkZ2V0GAYgASgLMiguaG9iby5icm9rZXIueWFyZC52MS5JYWNCdWRnZXREaXNjbG9zdXJlEhYKDnJlcXVlc3RfZGlnZXN0GAcgASgJEhYKDmludmVudG9yeV9oYXNoGAggASgJEhIKCm1vZGVsX2hhc2gYCSABKAkSEgoKcXVvdGVfaGFzaBgKIAEoCRIwCgVxdW90ZRgLIAEoCzIhLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlEjsKC3Jlc2VydmF0aW9uGAwgASgLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRSZXNlcnZhdGlvbhI9Cgxwb2xpY3lfcHJvb2YYDSABKAsyJy5ob2JvLmJyb2tlci55YXJkLnYxLkhvc3RpbmdQb2xpY3lQcm9vZmIGcHJvdG8z");
+  fileDesc("ChR5YXJkX3BsYWNlbWVudC5wcm90bxITaG9iby5icm9rZXIueWFyZC52MSLRAQoJWWFyZFNoYXBlEhMKC3Byb3ZpZGVyX2lkGAEgASgJEhIKCnJ1bnRpbWVfaWQYAiABKAkSDwoHcmVnaW9ucxgDIAMoCRIPCgdyZXF1aXJlGAQgAygJEg4KBnByZWZlchgFIAMoCRI6CgZsYWJlbHMYBiADKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRTaGFwZS5MYWJlbHNFbnRyeRotCgtMYWJlbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIvoBChRZYXJkUGxhY2VtZW50UmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhYKDnNlbGVjdGlvbl9tb2RlGAIgASgJEhkKEXJlcXVlc3RlZF95YXJkX2lkGAMgASgJEjcKD3JlcXVlc3RlZF9zaGFwZRgEIAEoCzIeLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZFNoYXBlEhwKFGJpbmRsZV9tYW5pZmVzdF9oYXNoGAUgASgJEiAKGGJpbmRsZV9yZXF1aXJlbWVudHNfaGFzaBgGIAEoCRIiChphbGxvd19nZW5lcmF0aW9uX3JlcXVlc3RlZBgHIAEoCCKvAQoYWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uEhYKDnNjaGVtYV92ZXJzaW9uGAEgASgJEg8KB3lhcmRfaWQYAiABKAkSFwoPb3duZXJfdGVuYW50X2lkGAMgASgJEhMKC3Byb3ZpZGVyX2lkGAQgASgJEhIKCnJ1bnRpbWVfaWQYBSABKAkSDgoGc3RhdHVzGAYgASgJEhgKEHJlZ2lzdHJhdGlvbl9zZXEYByABKAQiowEKFVlhcmRJbnZlbnRvcnlTbmFwc2hvdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRIRCglicm9rZXJfaWQYAiABKAkSCwoDc2VxGAMgASgEEhQKDGNvbnRlbnRfaGFzaBgEIAEoCRI8CgV5YXJkcxgFIAMoCzItLmhvYm8uYnJva2VyLnlhcmQudjEuWWFyZEluc3RhbmNlUmVnaXN0cmF0aW9uIsEBChdZYXJkUnVudGltZVJlZ2lzdHJhdGlvbhIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpydW50aW1lX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEg8KB3ZlcnNpb24YBCABKAkSHgoWZ2VuZXJhdG9yX2Nvbm5lY3Rvcl9pZBgFIAEoCRIOCgZzdGF0dXMYBiABKAkSEAoIcHJpb3JpdHkYByABKAUSEgoKaXNfZGVmYXVsdBgIIAEoCCLyAQoXQmluZGxlRGVwbG95bWVudFJlcXVlc3QSFgoOc2NoZW1hX3ZlcnNpb24YASABKAkSEgoKcmVxdWVzdF9pZBgCIAEoCRITCgtiaW5kbGVfbmFtZRgDIAEoCRIVCg1tYW5pZmVzdF9oYXNoGAQgASgJEjcKBHlhcmQYBSABKAsyKS5ob2JvLmJyb2tlci55YXJkLnYxLllhcmRQbGFjZW1lbnRSZXF1ZXN0EhEKCW9iamVjdGl2ZRgGIAEoCRIaChJzcGVuZF9lc3RpbWF0ZV91c2QYByABKAESFwoPb3duZXJfdGVuYW50X2lkGAggASgJIpoDChRZYXJkUGxhY2VtZW50UmVjZWlwdBIWCg5zY2hlbWFfdmVyc2lvbhgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhEKCWJyb2tlcl9pZBgDIAEoCRIYChBzZWxlY3RlZF95YXJkX2lkGAQgASgJEhwKFHNlbGVjdGVkX3Byb3ZpZGVyX2lkGAUgASgJEhgKEHNlbGVjdGVkX2NhbXBfaWQYBiABKAkSFgoOaW52ZW50b3J5X2hhc2gYByABKAkSFAoMY29udGVudF9oYXNoGAggASgJEkIKEmJ1ZGdldF9yZXNlcnZhdGlvbhgJIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SOAoNaG9zdGluZ19xdW90ZRgKIAEoCzIhLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlEkUKFGhvc3RpbmdfcG9saWN5X3Byb29mGAsgASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YiYgoOQnVkZ2V0SWRlbnRpdHkSEQoJdGVuYW50X2lkGAEgASgJEhEKCWJ1ZGdldF9pZBgCIAEoCRIRCglwZXJpb2RfaWQYAyABKAkSFwoPcG9saWN5X3JldmlzaW9uGAQgASgJIs8DChRCdWRnZXRMZWRnZXJTbmFwc2hvdBI1CghpZGVudGl0eRgBIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSCwoDc2VxGAIgASgNEhQKDGxpbWl0X21pY3JvcxgDIAEoARIUCgxzcGVudF9taWNyb3MYBCABKAESFwoPcmVzZXJ2ZWRfbWljcm9zGAUgASgBEhMKC29ic2VydmVkX2F0GAYgASgJEhMKC3ZhbGlkX3VudGlsGAcgASgJEkUKEXByb3ZpZGVyX2FjY291bnRzGAggAygLMiouaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRQcm92aWRlckFjY291bnQSPAoMZW50aXRsZW1lbnRzGAkgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRFbnRpdGxlbWVudBIZChF1bnJlc29sdmVkX21pY3JvcxgKIAEoARIfChdyZWNvdmVyeV9yZXNlcnZlX21pY3JvcxgLIAEoARIhChlleHRlcm5hbF9jb21taXR0ZWRfbWljcm9zGAwgASgBEiAKGHVuYm91bmRlZF9leHBvc3VyZV9jb3VudBgNIAEoDSKcAQoVQnVkZ2V0UHJvdmlkZXJBY2NvdW50EhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSFAoMbGltaXRfbWljcm9zGAIgASgBEhQKDHNwZW50X21pY3JvcxgDIAEoARIXCg9yZXNlcnZlZF9taWNyb3MYBCABKAESIQoZZXh0ZXJuYWxfY29tbWl0dGVkX21pY3JvcxgFIAEoASKwAQoRQnVkZ2V0RW50aXRsZW1lbnQSEQoJYnVja2V0X2lkGAEgASgJEgwKBHVuaXQYAiABKAkSEQoJcGVyaW9kX2lkGAMgASgJEhcKD3JlbWFpbmluZ191bml0cxgEIAEoARIWCg5yZXNlcnZlZF91bml0cxgFIAEoARITCgtvYnNlcnZlZF9hdBgGIAEoCRITCgt2YWxpZF91bnRpbBgHIAEoCRIMCgRraW5kGAggASgJIlAKF1Byb3ZpZGVyQWNjb3VudEV4cG9zdXJlEhsKE3Byb3ZpZGVyX2FjY291bnRfaWQYASABKAkSGAoQbGlhYmlsaXR5X21pY3JvcxgCIAEoASJQChBFbnRpdGxlbWVudENsYWltEhEKCWJ1Y2tldF9pZBgBIAEoCRIMCgR1bml0GAIgASgJEg0KBXVuaXRzGAMgASgBEgwKBGtpbmQYBCABKAkiqAIKGEJ1ZGdldFNldHRsZW1lbnRFdmlkZW5jZRIaChJ1c2FnZV9ldmlkZW5jZV9yZWYYASABKAkSIwobc291cmNlX3N0b3BwZWRfZXZpZGVuY2VfcmVmGAIgASgJEkcKEXByb3ZpZGVyX2FjY291bnRzGAMgAygLMiwuaG9iby5icm9rZXIueWFyZC52MS5Qcm92aWRlckFjY291bnRFeHBvc3VyZRJBChJlbnRpdGxlbWVudF9jbGFpbXMYBCADKAsyJS5ob2JvLmJyb2tlci55YXJkLnYxLkVudGl0bGVtZW50Q2xhaW0SJAocZmVuY2Vfb3BlcmF0aW9uX3JlY2VpcHRfanNvbhgFIAEoCRIZChFmaW5hbmNlX3NpZ25hdHVyZRgGIAEoCSLZAQoVQnVkZ2V0RmVuY2VkUGxhY2VtZW50Eg8KB3lhcmRfaWQYASABKAkSDwoHY2FtcF9pZBgCIAEoCRITCgtwcm92aWRlcl9pZBgDIAEoCRIbChNwcm92aWRlcl9hY2NvdW50X2lkGAQgASgJEhMKC3Jlc291cmNlX2lkGAUgASgJEhUKDWRlcGxveW1lbnRfaWQYBiABKAkSFgoOaW5jYXJuYXRpb25faWQYByABKAkSFQoNbWFuaWZlc3RfaGFzaBgIIAEoCRIRCglwbGFuX2hhc2gYCSABKAkiyQQKGkJ1ZGdldEZlbmNlU2V0dGxlbWVudEd1YXJkEhAKCGNvbnRyYWN0GAEgASgJEg8KB2RhdGFzZXQYAiABKAkSFAoMc2NvcGVfdGVuYW50GAMgASgJEhQKDG9wZXJhdGlvbl9pZBgEIAEoCRIaChJmZW5jZV90b2tlbl9kaWdlc3QYBSABKAkSFwoPcmVjZWl2ZXJfa2V5X2lkGAYgASgJEhsKE3JlY2VpdmVyX3B1YmxpY19rZXkYByABKAkSFgoOZmluYW5jZV9rZXlfaWQYCCABKAkSGgoSZmluYW5jZV9wdWJsaWNfa2V5GAkgASgJEhcKD2xvZ2ljYWxfY2FtcF9pZBgKIAEoCRI6CgZzb3VyY2UYCyABKAsyKi5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldEZlbmNlZFBsYWNlbWVudBI/CgtkZXN0aW5hdGlvbhgMIAEoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0RmVuY2VkUGxhY2VtZW50EhAKCGRlY2lzaW9uGA0gASgJEhgKEGV4ZWN1dGlvbl9kaWdlc3QYDiABKAkSFAoMcm91dGVfZGlnZXN0GA8gASgJEiEKGWV4cGVjdGVkX3JvdXRlX2dlbmVyYXRpb24YECABKAkSFgoOY3VycmVudF9zZXRfaWQYESABKAkSFgoOZGVzaXJlZF9zZXRfaWQYEiABKAkSFAoMbWlncmF0aW9uX2lkGBMgASgJEhUKDWRlY2lzaW9uX2hlYWQYFCABKAkiOgoVSG9zdGluZ1F1b3RlQ29tcG9uZW50EgwKBG5hbWUYASABKAkSEwoLY29zdF9taWNyb3MYAiABKAEi8gMKDEhvc3RpbmdRdW90ZRIQCghxdW90ZV9pZBgBIAEoCRIPCgd5YXJkX2lkGAIgASgJEhMKC3Byb3ZpZGVyX2lkGAMgASgJEhcKD293bmVyX3RlbmFudF9pZBgEIAEoCRIQCghjdXJyZW5jeRgFIAEoCRIUCgx0b3RhbF9taWNyb3MYBiABKAESEwoLb2JzZXJ2ZWRfYXQYByABKAkSEwoLdmFsaWRfdW50aWwYCCABKAkSPgoKY29tcG9uZW50cxgJIAMoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuSG9zdGluZ1F1b3RlQ29tcG9uZW50EhYKDnJlcXVlc3RfZGlnZXN0GAogASgJEiMKFmxpYWJpbGl0eV9ib3VuZF9taWNyb3MYCyABKAFIAIgBARJHChFwcm92aWRlcl9hY2NvdW50cxgMIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEhsKE2ZpbmFuY2lhbF9wbGFuX2hhc2gYDiABKAlCGQoXX2xpYWJpbGl0eV9ib3VuZF9taWNyb3MisAcKEUJ1ZGdldFJlc2VydmF0aW9uEhYKDnJlc2VydmF0aW9uX2lkGAEgASgJEjUKCGlkZW50aXR5GAIgASgLMiMuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRJZGVudGl0eRIWCg5yZXF1ZXN0X2RpZ2VzdBgDIAEoCRIQCghxdW90ZV9pZBgEIAEoCRIXCg9yZXNlcnZlZF9taWNyb3MYBSABKAESDgoGc3RhdHVzGAYgASgJEhUKDWFjdHVhbF9taWNyb3MYByABKAESEgoKbGVkZ2VyX3NlcRgIIAEoDRIUCgxxdW90ZV9kaWdlc3QYCSABKAkSGgoSdXNhZ2VfZXZpZGVuY2VfcmVmGAogASgJEiMKG3NvdXJjZV9zdG9wcGVkX2V2aWRlbmNlX3JlZhgLIAEoCRJHChFwcm92aWRlcl9hY2NvdW50cxgMIAMoCzIsLmhvYm8uYnJva2VyLnlhcmQudjEuUHJvdmlkZXJBY2NvdW50RXhwb3N1cmUSQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltEkoKE3NldHRsZW1lbnRfZXZpZGVuY2UYDiABKAsyLS5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldFNldHRsZW1lbnRFdmlkZW5jZRIYChBleGVjdXRpb25fZGlnZXN0GA8gASgJEhsKE2ZpbmFuY2lhbF9wbGFuX2hhc2gYECABKAkSTwoWZmVuY2Vfc2V0dGxlbWVudF9ndWFyZBgSIAEoCzIvLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0RmVuY2VTZXR0bGVtZW50R3VhcmQSGgoSdW5ib3VuZGVkX2V4cG9zdXJlGBMgASgIEkoKFXVucHJpY2VkX3BvbGljeV9wcm9vZhgUIAEoCzIrLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjVW5wcmljZWRQb2xpY3lQcm9vZhJIChR1bnByaWNlZF9zY29wZV9wcm9vZhgVIAEoCzIqLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjVW5wcmljZWRTY29wZVByb29mEjsKD2lhY19wcmljaW5nX3BpbhgWIAEoCzIiLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjUHJpY2luZ1BpbhIoCiBmZW5jZV9zZXR0bGVtZW50X3BheWxvYWRfdmVyc2lvbhgXIAEoCSLEAQoUQnVkZ2V0QXV0aG9yaXR5RXZlbnQSDAoEdHlwZRgBIAEoCRI7CghzbmFwc2hvdBgCIAEoCzIpLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0TGVkZ2VyU25hcHNob3QSPAoMcmVzZXJ2YXRpb25zGAMgAygLMiYuaG9iby5icm9rZXIueWFyZC52MS5CdWRnZXRSZXNlcnZhdGlvbhIjChtyZWNvbmNpbGlhdGlvbl9ldmlkZW5jZV9yZWYYBCABKAkizwEKEkhvc3RpbmdQb2xpY3lQcm9vZhIWCg5yZXF1ZXN0X2RpZ2VzdBgBIAEoCRIQCghxdW90ZV9pZBgCIAEoCRI1CghpZGVudGl0eRgDIAEoCzIjLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0SWRlbnRpdHkSEwoLcG9saWN5X2hhc2gYBCABKAkSDgoGZWZmZWN0GAUgASgJEhQKDGV2aWRlbmNlX3JlZhgGIAEoCRIdChVvYmxpZ2F0aW9uc19zYXRpc2ZpZWQYByABKAgigwIKFklhY1VucHJpY2VkUG9saWN5UHJvb2YSFgoOcmVxdWVzdF9kaWdlc3QYASABKAkSFgoOaW52ZW50b3J5X2hhc2gYAiABKAkSNQoIaWRlbnRpdHkYAyABKAsyIy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldElkZW50aXR5EhMKC3BvbGljeV9oYXNoGAQgASgJEg4KBmVmZmVjdBgFIAEoCRIUCgxldmlkZW5jZV9yZWYYBiABKAkSHQoVb2JsaWdhdGlvbnNfc2F0aXNmaWVkGAcgASgIEhMKC29ic2VydmVkX2F0GAggASgJEhMKC3ZhbGlkX3VudGlsGAkgASgJIpsCChVJYWNVbnByaWNlZFNjb3BlUHJvb2YSNQoIaWRlbnRpdHkYASABKAsyIy5ob2JvLmJyb2tlci55YXJkLnYxLkJ1ZGdldElkZW50aXR5EhwKFHByb3ZpZGVyX2FjY291bnRfaWRzGAIgAygJEhUKDWF1dGhvcml0eV9yZWYYAyABKAkSFAoMZXZpZGVuY2VfcmVmGAQgASgJEhcKD293bmVyc2hpcF9lcG9jaBgFIAEoCRITCgtvYnNlcnZlZF9hdBgGIAEoCRIfChdleGNsdXNpdmVfdW50aWxfc2V0dGxlZBgHIAEoCBIeChZub19zaGFyZWRfZW50aXRsZW1lbnRzGAggASgIEhEKCXNpZ25hdHVyZRgJIAEoCSKQAQoNSWFjUHJpY2luZ1BpbhITCgtwbGFuX2RpZ2VzdBgBIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgCIAEoCRISCgptb2RlbF9oYXNoGAMgASgJEhIKCnF1b3RlX2hhc2gYBCABKAkSFQoNZXZpZGVuY2VfaGFzaBgFIAEoCRITCgt2YWxpZF91bnRpbBgGIAEoCSLPAwoaSWFjVGFyZ2V0TGlhYmlsaXR5RXZpZGVuY2USFAoMZXZpZGVuY2VfcmVmGAEgASgJEhEKCXRhcmdldF9pZBgCIAEoCRIRCgl0ZW5hbnRfaWQYAyABKAkSEwoLcGxhbl9kaWdlc3QYBCABKAkSFgoOaW52ZW50b3J5X2hhc2gYBSABKAkSEgoKbW9kZWxfaGFzaBgGIAEoCRISCgpxdW90ZV9oYXNoGAcgASgJEhsKDm1heGltdW1fbWljcm9zGAggASgBSACIAQESEwoLb2JzZXJ2ZWRfYXQYCSABKAkSEwoLdmFsaWRfdW50aWwYCiABKAkSRwoRcHJvdmlkZXJfYWNjb3VudHMYCyADKAsyLC5ob2JvLmJyb2tlci55YXJkLnYxLlByb3ZpZGVyQWNjb3VudEV4cG9zdXJlEiEKFG1heGltdW1fbWljcm9zX2V4YWN0GAwgASgDSAGIAQESQQoSZW50aXRsZW1lbnRfY2xhaW1zGA0gAygLMiUuaG9iby5icm9rZXIueWFyZC52MS5FbnRpdGxlbWVudENsYWltQhEKD19tYXhpbXVtX21pY3Jvc0IXChVfbWF4aW11bV9taWNyb3NfZXhhY3QiPgoTSWFjQnVkZ2V0RGlzY2xvc3VyZRISCgpldmFsdWF0aW9uGAEgASgJEhMKC3Jlc2VydmF0aW9uGAIgASgJIv4DChpJYWNUYXJnZXRBZG1pc3Npb25EZWNpc2lvbhISCgpyZXF1ZXN0X2lkGAEgASgJEhEKCXRhcmdldF9pZBgCIAEoCRIOCgZzdGF0dXMYAyABKAkSDAoEY29kZRgEIAEoCRIPCgdtZXNzYWdlGAUgASgJEjgKBmJ1ZGdldBgGIAEoCzIoLmhvYm8uYnJva2VyLnlhcmQudjEuSWFjQnVkZ2V0RGlzY2xvc3VyZRIWCg5yZXF1ZXN0X2RpZ2VzdBgHIAEoCRIWCg5pbnZlbnRvcnlfaGFzaBgIIAEoCRISCgptb2RlbF9oYXNoGAkgASgJEhIKCnF1b3RlX2hhc2gYCiABKAkSMAoFcXVvdGUYCyABKAsyIS5ob2JvLmJyb2tlci55YXJkLnYxLkhvc3RpbmdRdW90ZRI7CgtyZXNlcnZhdGlvbhgMIAEoCzImLmhvYm8uYnJva2VyLnlhcmQudjEuQnVkZ2V0UmVzZXJ2YXRpb24SPQoMcG9saWN5X3Byb29mGA0gASgLMicuaG9iby5icm9rZXIueWFyZC52MS5Ib3N0aW5nUG9saWN5UHJvb2YSSgoVdW5wcmljZWRfcG9saWN5X3Byb29mGA4gASgLMisuaG9iby5icm9rZXIueWFyZC52MS5JYWNVbnByaWNlZFBvbGljeVByb29mYgZwcm90bzM");
 
 /**
  * @generated from message hobo.broker.yard.v1.YardShape
@@ -463,6 +463,14 @@ export type BudgetLedgerSnapshot = Message<"hobo.broker.yard.v1.BudgetLedgerSnap
    * @generated from field: double external_committed_micros = 12;
    */
   externalCommittedMicros: number;
+
+  /**
+   * Active admissions with unknown, unbounded liability. While nonzero the
+   * monetary counters are only known lower bounds and bounded admission stops.
+   *
+   * @generated from field: uint32 unbounded_exposure_count = 13;
+   */
+  unboundedExposureCount: number;
 };
 
 /**
@@ -547,6 +555,13 @@ export type BudgetEntitlement = Message<"hobo.broker.yard.v1.BudgetEntitlement">
    * @generated from field: string valid_until = 7;
    */
   validUntil: string;
+
+  /**
+   * allowance | credit | commitment
+   *
+   * @generated from field: string kind = 8;
+   */
+  kind: string;
 };
 
 /**
@@ -596,6 +611,13 @@ export type EntitlementClaim = Message<"hobo.broker.yard.v1.EntitlementClaim"> &
    * @generated from field: double units = 3;
    */
   units: number;
+
+  /**
+   * allowance | credit | commitment
+   *
+   * @generated from field: string kind = 4;
+   */
+  kind: string;
 };
 
 /**
@@ -1024,6 +1046,34 @@ export type BudgetReservation = Message<"hobo.broker.yard.v1.BudgetReservation">
    * @generated from field: hobo.broker.yard.v1.BudgetFenceSettlementGuard fence_settlement_guard = 18;
    */
   fenceSettlementGuard?: BudgetFenceSettlementGuard | undefined;
+
+  /**
+   * A held/uncertain reservation with this marker represents unknown liability;
+   * reserved_micros and account amounts are not estimates or upper bounds.
+   *
+   * @generated from field: bool unbounded_exposure = 19;
+   */
+  unboundedExposure: boolean;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.IacUnpricedPolicyProof unpriced_policy_proof = 20;
+   */
+  unpricedPolicyProof?: IacUnpricedPolicyProof | undefined;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.IacUnpricedScopeProof unpriced_scope_proof = 21;
+   */
+  unpricedScopeProof?: IacUnpricedScopeProof | undefined;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.IacPricingPin iac_pricing_pin = 22;
+   */
+  iacPricingPin?: IacPricingPin | undefined;
+
+  /**
+   * @generated from field: string fence_settlement_payload_version = 23;
+   */
+  fenceSettlementPayloadVersion: string;
 };
 
 /**
@@ -1113,6 +1163,169 @@ export const HostingPolicyProofSchema: GenMessage<HostingPolicyProof> = /*@__PUR
   messageDesc(file_yard_placement, 20);
 
 /**
+ * Policy explicitly authorizes execution without financial budget evaluation.
+ *
+ * @generated from message hobo.broker.yard.v1.IacUnpricedPolicyProof
+ */
+export type IacUnpricedPolicyProof = Message<"hobo.broker.yard.v1.IacUnpricedPolicyProof"> & {
+  /**
+   * @generated from field: string request_digest = 1;
+   */
+  requestDigest: string;
+
+  /**
+   * @generated from field: string inventory_hash = 2;
+   */
+  inventoryHash: string;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.BudgetIdentity identity = 3;
+   */
+  identity?: BudgetIdentity | undefined;
+
+  /**
+   * @generated from field: string policy_hash = 4;
+   */
+  policyHash: string;
+
+  /**
+   * @generated from field: string effect = 5;
+   */
+  effect: string;
+
+  /**
+   * @generated from field: string evidence_ref = 6;
+   */
+  evidenceRef: string;
+
+  /**
+   * @generated from field: bool obligations_satisfied = 7;
+   */
+  obligationsSatisfied: boolean;
+
+  /**
+   * @generated from field: string observed_at = 8;
+   */
+  observedAt: string;
+
+  /**
+   * @generated from field: string valid_until = 9;
+   */
+  validUntil: string;
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.IacUnpricedPolicyProof.
+ * Use `create(IacUnpricedPolicyProofSchema)` to create a new message.
+ */
+export const IacUnpricedPolicyProofSchema: GenMessage<IacUnpricedPolicyProof> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 21);
+
+/**
+ * An independent financial-scope authority attests exclusive ownership until
+ * the provider source is stopped and the unbounded admission is settled.
+ *
+ * @generated from message hobo.broker.yard.v1.IacUnpricedScopeProof
+ */
+export type IacUnpricedScopeProof = Message<"hobo.broker.yard.v1.IacUnpricedScopeProof"> & {
+  /**
+   * @generated from field: hobo.broker.yard.v1.BudgetIdentity identity = 1;
+   */
+  identity?: BudgetIdentity | undefined;
+
+  /**
+   * @generated from field: repeated string provider_account_ids = 2;
+   */
+  providerAccountIds: string[];
+
+  /**
+   * @generated from field: string authority_ref = 3;
+   */
+  authorityRef: string;
+
+  /**
+   * @generated from field: string evidence_ref = 4;
+   */
+  evidenceRef: string;
+
+  /**
+   * @generated from field: string ownership_epoch = 5;
+   */
+  ownershipEpoch: string;
+
+  /**
+   * @generated from field: string observed_at = 6;
+   */
+  observedAt: string;
+
+  /**
+   * @generated from field: bool exclusive_until_settled = 7;
+   */
+  exclusiveUntilSettled: boolean;
+
+  /**
+   * @generated from field: bool no_shared_entitlements = 8;
+   */
+  noSharedEntitlements: boolean;
+
+  /**
+   * @generated from field: string signature = 9;
+   */
+  signature: string;
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.IacUnpricedScopeProof.
+ * Use `create(IacUnpricedScopeProofSchema)` to create a new message.
+ */
+export const IacUnpricedScopeProofSchema: GenMessage<IacUnpricedScopeProof> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 22);
+
+/**
+ * Inputs that made a priced IaC admission; immutable for the claimed effect.
+ *
+ * @generated from message hobo.broker.yard.v1.IacPricingPin
+ */
+export type IacPricingPin = Message<"hobo.broker.yard.v1.IacPricingPin"> & {
+  /**
+   * @generated from field: string plan_digest = 1;
+   */
+  planDigest: string;
+
+  /**
+   * @generated from field: string inventory_hash = 2;
+   */
+  inventoryHash: string;
+
+  /**
+   * @generated from field: string model_hash = 3;
+   */
+  modelHash: string;
+
+  /**
+   * @generated from field: string quote_hash = 4;
+   */
+  quoteHash: string;
+
+  /**
+   * @generated from field: string evidence_hash = 5;
+   */
+  evidenceHash: string;
+
+  /**
+   * @generated from field: string valid_until = 6;
+   */
+  validUntil: string;
+};
+
+/**
+ * Describes the message hobo.broker.yard.v1.IacPricingPin.
+ * Use `create(IacPricingPinSchema)` to create a new message.
+ */
+export const IacPricingPinSchema: GenMessage<IacPricingPin> = /*@__PURE__*/
+  messageDesc(file_yard_placement, 23);
+
+/**
  * A trusted host verifies this separately from developer-authored pricing.
  *
  * @generated from message hobo.broker.yard.v1.IacTargetLiabilityEvidence
@@ -1154,6 +1367,8 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
   quoteHash: string;
 
   /**
+   * Legacy bound; maximum_micros_exact wins when both are present.
+   *
    * @generated from field: optional double maximum_micros = 8;
    */
   maximumMicros?: number | undefined;
@@ -1172,6 +1387,18 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
    * @generated from field: repeated hobo.broker.yard.v1.ProviderAccountExposure provider_accounts = 11;
    */
   providerAccounts: ProviderAccountExposure[];
+
+  /**
+   * Exact bound; prefer this field alone for new payloads.
+   *
+   * @generated from field: optional int64 maximum_micros_exact = 12;
+   */
+  maximumMicrosExact?: bigint | undefined;
+
+  /**
+   * @generated from field: repeated hobo.broker.yard.v1.EntitlementClaim entitlement_claims = 13;
+   */
+  entitlementClaims: EntitlementClaim[];
 };
 
 /**
@@ -1179,7 +1406,7 @@ export type IacTargetLiabilityEvidence = Message<"hobo.broker.yard.v1.IacTargetL
  * Use `create(IacTargetLiabilityEvidenceSchema)` to create a new message.
  */
 export const IacTargetLiabilityEvidenceSchema: GenMessage<IacTargetLiabilityEvidence> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 21);
+  messageDesc(file_yard_placement, 24);
 
 /**
  * @generated from message hobo.broker.yard.v1.IacBudgetDisclosure
@@ -1201,7 +1428,7 @@ export type IacBudgetDisclosure = Message<"hobo.broker.yard.v1.IacBudgetDisclosu
  * Use `create(IacBudgetDisclosureSchema)` to create a new message.
  */
 export const IacBudgetDisclosureSchema: GenMessage<IacBudgetDisclosure> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 22);
+  messageDesc(file_yard_placement, 25);
 
 /**
  * @generated from message hobo.broker.yard.v1.IacTargetAdmissionDecision
@@ -1271,6 +1498,11 @@ export type IacTargetAdmissionDecision = Message<"hobo.broker.yard.v1.IacTargetA
    * @generated from field: hobo.broker.yard.v1.HostingPolicyProof policy_proof = 13;
    */
   policyProof?: HostingPolicyProof | undefined;
+
+  /**
+   * @generated from field: hobo.broker.yard.v1.IacUnpricedPolicyProof unpriced_policy_proof = 14;
+   */
+  unpricedPolicyProof?: IacUnpricedPolicyProof | undefined;
 };
 
 /**
@@ -1278,5 +1510,5 @@ export type IacTargetAdmissionDecision = Message<"hobo.broker.yard.v1.IacTargetA
  * Use `create(IacTargetAdmissionDecisionSchema)` to create a new message.
  */
 export const IacTargetAdmissionDecisionSchema: GenMessage<IacTargetAdmissionDecision> = /*@__PURE__*/
-  messageDesc(file_yard_placement, 23);
+  messageDesc(file_yard_placement, 26);
 

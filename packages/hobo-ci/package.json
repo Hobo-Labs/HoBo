@@ -29,8 +29,10 @@
 		"@hobo/ci-gh-actions": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/connect-ui": "workspace:*",
+		"@hobo/core": "workspace:*",
 		"@hobo/identity": "workspace:*",
 		"@hobo/kv-redis-compatible": "workspace:*",
+		"undici": "7.29.0",
 		"zod": "4.3.6"
 	},
 	"optionalDependencies": {
@@ -38,6 +40,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {

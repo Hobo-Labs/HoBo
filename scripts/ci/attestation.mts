@@ -39,6 +39,7 @@ export const COVERED_JOBS = [
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
+	"scripts-tests",
 	"pr-offpath",
 	"artifact-trust",
 	"ci-guard",
@@ -47,20 +48,17 @@ export const COVERED_JOBS = [
 ] as const;
 export type CoveredJob = (typeof COVERED_JOBS)[number];
 
-/**
- * The jobs the PR impact gate adds up. Each needs the one before it, so they
- * are attested together or not at all.
- */
 export const GATE_JOBS: readonly CoveredJob[] = [
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
+	"scripts-tests",
 ];
 
 /** The gate's jobs that run on each event; `pr_affected` is pull-request only. */
 export const GATE_JOBS_BY_EVENT = {
 	pull_request: GATE_JOBS,
-	merge_group: ["pr_gate_validation", "workspace_tests"],
+	merge_group: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
 } satisfies Record<AttestationEvent, readonly CoveredJob[]>;
 
 /**
@@ -72,12 +70,41 @@ export const NEEDS_CONTAINER_ENGINE: readonly CoveredJob[] = [
 	"workspace_tests",
 ];
 
-/**
- * Jobs that examine commits, not a tree: the secret scan reads every commit
- * between the base and the head. Two histories can end in the same tree, so
- * these are accepted only for the exact head and base commits that were run.
- */
-export const COMMIT_BOUND_JOBS: readonly CoveredJob[] = ["secret-scan"];
+export const SHADOW_WORKFLOW_BLOB = "f237117ed56f1b3e97dab9db02b655848546f1b5";
+export const SHADOW_PLAN_BLOB = "45c38569a92e5812b3a457f51adf46ef5254fb21";
+export const SHADOW_WORKFLOW_PATH = ".github/workflows/hobo-ci.yml";
+export const SHADOW_PLAN_PATH = "scripts/ci/attested-jobs.json";
+export const SHADOW_REQUIRED_PATHS = [
+	"scripts/ci/impact-classifier.mts",
+	"scripts/ci/affected-lanes.mts",
+	"scripts/lib/read-stdin.mts",
+	".gitattributes",
+	"package.json",
+	"pnpm-lock.yaml",
+	"pnpm-workspace.yaml",
+] as const;
+export const SHADOW_RESOLUTION_PATHS = [
+	".npmrc",
+	".pnpmfile.cjs",
+	"pnpmfile.cjs",
+	".pnp.cjs",
+	".pnp.loader.mjs",
+	".yarnrc.yml",
+	"package-lock.json",
+	"yarn.lock",
+	"patches",
+	"node_modules",
+	"scripts/node_modules",
+	"scripts/ci/node_modules",
+	"scripts/.gitattributes",
+	"scripts/ci/.gitattributes",
+	"scripts/lib/.gitattributes",
+] as const;
+
+export const COMMIT_BOUND_JOBS: readonly CoveredJob[] = [
+	"secret-scan",
+	"scripts-tests",
+];
 
 /** No trust entry may reach further into the future than this. */
 export const MAX_TRUST_DAYS = 90;
@@ -180,6 +207,10 @@ export type AttestedJobResult = Readonly<{
 	events: readonly string[];
 	/** Commands that ran for this job, across every event it covers. */
 	commands: number;
+	/** Executed commands for each event, when recorded by a new local run. */
+	eventChecks?: Readonly<Partial<Record<AttestationEvent, number>>>;
+	/** Present when every selected step ran individually, without shell-command reuse. */
+	executionMode?: "each-step-v1";
 	durationMs: number;
 	/** Digest of the job's combined output, kept on the machine that ran it. */
 	logDigest: string;
@@ -194,6 +225,7 @@ export type AttestationStatement = Readonly<{
 	/** The tested commit and its base. Jobs that examine commits are bound to these. */
 	head: string;
 	base: string;
+	testedCommit?: string;
 	jobs: readonly string[];
 	events: readonly string[];
 	startedAt: string;
@@ -391,7 +423,32 @@ function parseResult(value: JsonValue): AttestedJobResult {
 	const status = required(asText(object.status), "a result needs a status");
 	if (status !== "passed")
 		throw new AttestationFormatError("a result must have passed");
-	return {
+	let eventChecks: Partial<Record<AttestationEvent, number>> | undefined;
+	if (object.eventChecks !== undefined) {
+		const checks = required(
+			asObject(object.eventChecks),
+			"eventChecks must be an object",
+		);
+		eventChecks = {};
+		for (const [name, value] of Object.entries(checks)) {
+			const event = ATTESTATION_EVENTS.find((known) => known === name);
+			const count = asNumber(value);
+			if (
+				!event ||
+				count === undefined ||
+				!Number.isSafeInteger(count) ||
+				count < 1
+			)
+				throw new AttestationFormatError(
+					"eventChecks needs a positive count for a known event",
+				);
+			eventChecks[event] = count;
+		}
+	}
+	const executionMode = object.executionMode;
+	if (executionMode !== undefined && executionMode !== "each-step-v1")
+		throw new AttestationFormatError("unknown result executionMode");
+	const result = {
 		id: required(asText(object.id), "a result needs an id"),
 		status,
 		events: textList(object.events, "a result's events"),
@@ -401,7 +458,10 @@ function parseResult(value: JsonValue): AttestedJobResult {
 			"a result needs durationMs",
 		),
 		logDigest: required(asText(object.logDigest), "a result needs logDigest"),
-	};
+	} satisfies AttestedJobResult;
+	if (eventChecks !== undefined) Object.assign(result, { eventChecks });
+	if (executionMode !== undefined) Object.assign(result, { executionMode });
+	return result;
 }
 
 /** A git object id, and nothing a log line could be broken with. */
@@ -422,7 +482,7 @@ function keyId(value: JsonValue | undefined, what: string): string {
 
 function parseStatement(value: JsonValue | undefined): AttestationStatement {
 	const object = required(asObject(value), "statement must be an object");
-	return {
+	const statement = {
 		predicateType: required(
 			asText(object.predicateType),
 			"statement.predicateType is missing",
@@ -447,7 +507,12 @@ function parseStatement(value: JsonValue | undefined): AttestationStatement {
 			asList(object.results),
 			"statement.results must be a list",
 		).map(parseResult),
-	};
+	} satisfies AttestationStatement;
+	if (object.testedCommit !== undefined)
+		Object.assign(statement, {
+			testedCommit: objectId(object.testedCommit, "statement.testedCommit"),
+		});
+	return statement;
 }
 
 type ParsedEnvelope = Readonly<{
@@ -511,6 +576,21 @@ export type AttestationVerdict =
 	| Readonly<{ attested: true; jobs: readonly CoveredJob[]; attestor: string }>
 	| Readonly<{ attested: false; reason: string }>;
 
+export function omitImpactGroup(
+	verdict: AttestationVerdict,
+): AttestationVerdict {
+	if (!verdict.attested || !verdict.jobs.includes("pr_gate_validation"))
+		return verdict;
+	const jobs = verdict.jobs.filter((job) => !GATE_JOBS.includes(job));
+	return jobs.length > 0
+		? { ...verdict, jobs }
+		: {
+				attested: false,
+				reason:
+					"the PR impact group's shadow policy or dependencies could not be verified",
+			};
+}
+
 const refused = (reason: string): AttestationVerdict => ({
 	attested: false,
 	reason,
@@ -525,10 +605,6 @@ const refused = (reason: string): AttestationVerdict => ({
  * caller reads it there and nowhere else: the list in the tree under test is
  * the pull request's own, and a pull request may not vouch for itself.
  *
- * The jobs reported are those that ran for `event` on a machine able to run
- * them. A job that examines commits (the secret scan) is reported only when
- * `head` and `base`, the event's own commits, are the commits that were run:
- * another history can end in the same tree.
  */
 export function verifyAttestation(input: {
 	envelopeText: string;
@@ -602,6 +678,17 @@ export function verifyAttestation(input: {
 			statement.jobs.includes(job) &&
 			results.get(job)?.events.includes(event) === true,
 	);
+	const scripts = results.get("scripts-tests");
+	if (
+		!scripts ||
+		scripts.executionMode !== "each-step-v1" ||
+		(event === "merge_group" && statement.testedCommit !== input.head) ||
+		(scripts.eventChecks?.[event] ?? 0) < 4 ||
+		scripts.commands <
+			(scripts.eventChecks?.pull_request ?? 0) +
+				(scripts.eventChecks?.merge_group ?? 0)
+	)
+		jobs = jobs.filter((job) => job !== "scripts-tests");
 	if (!statement.environment.dockerEngine)
 		jobs = jobs.filter((job) => !NEEDS_CONTAINER_ENGINE.includes(job));
 	const sameCommits =

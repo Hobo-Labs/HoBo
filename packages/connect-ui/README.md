@@ -42,11 +42,16 @@ shadows. Parts are restyled from their `data-slot` attributes.
 
 `configureThen` turns missing settings into a `configure` step, then hands the
 answers to `proceed`, which builds the provider's own flow (or returns field
-errors to show on the same page). `resolveSettings` reads each setting from the
-environment, then from earlier answers, then from its fallback, and lists what
-is still missing. `familySettingsStore(family)` keeps answers in
-`$HOBO_HOME/ceremonies/<family>.json`; fields of kind `secret` are used for the
-run and never saved.
+errors to show on the same page). `resolveSettings` reads each non-secret setting
+from the environment, then from earlier answers, then from its fallback, and
+lists what is still missing. A field of kind `secret` is read from the run's
+trusted vault only (`SecretHolder`; `createTrustedVault` in `@hobo/core`):
+never from the environment and never from saved answers, and it is never
+saved. `cellSettingsStore(cell)` keeps answers as one JSON document in a
+durable cell, typically an entry in the owner's secret store, so a destroyed
+machine is set up again by signing in rather than by answering again;
+`fileSettingsStore(path)` keeps them in a file (a committed, non-secret
+locator, for example).
 
 ## Secretless by construction
 
