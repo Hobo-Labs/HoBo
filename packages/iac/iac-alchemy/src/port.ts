@@ -1,4 +1,3 @@
-/** Structural IaC port; its consumer owns the executor implementation. */
 export interface IacProgram {
 	programId: string;
 	deploymentId: string;
@@ -7,9 +6,9 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
-	/** The host declaration to authenticate against the configured stack, when supplied. */
+
 	resource?: object | undefined;
-	/** Host-issued generation persisted before apply or destroy and stable across retries. */
+
 	operationGeneration?: string | undefined;
 }
 
@@ -53,6 +52,7 @@ export interface FinancialDecision {
 	reservation?:
 		| {
 				reservationId: string;
+				executionDigest?: string | undefined;
 				unboundedExposure?: boolean;
 				unpricedScopeProof?: UnverifiedUnpricedScopeProof | undefined;
 		  }
@@ -93,7 +93,6 @@ export interface UnpricedScopeProof {
 	readonly signature: string;
 }
 
-/** Wire values are checked before they can become a held admission. */
 export type UnverifiedUnpricedPolicyProof = Omit<
 	UnpricedPolicyProof,
 	"identity" | "effect" | "obligationsSatisfied"
@@ -112,7 +111,6 @@ export type UnverifiedUnpricedScopeProof = Omit<
 	readonly noSharedEntitlements: boolean;
 };
 
-/** An admitted apply explicitly distinguishes a bounded hold from a policy-authorized unbounded exposure. */
 export type HeldFinancialDecision = Omit<
 	FinancialDecision,
 	"budget" | "reservation" | "unpricedPolicyProof"
@@ -120,13 +118,18 @@ export type HeldFinancialDecision = Omit<
 	(
 		| {
 				budget: { evaluation: "allowed"; reservation: "held" };
-				reservation: { reservationId: string; unboundedExposure?: false };
+				reservation: {
+					reservationId: string;
+					executionDigest: string;
+					unboundedExposure?: false;
+				};
 				unpricedPolicyProof?: never;
 		  }
 		| {
 				budget: { evaluation: "bypassed"; reservation: "held" };
 				reservation: {
 					reservationId: string;
+					executionDigest: string;
 					unboundedExposure: true;
 					unpricedScopeProof: UnpricedScopeProof;
 				};
@@ -148,21 +151,19 @@ export type FinancialExpectation =
 			readonly inventoryHash: string;
 	  };
 
-/** An opaque capability for one active target attempt, issued by a shared route authority. */
 export interface IacRouteOperation {
 	readonly operationId: string;
 	readonly authorization: string;
 }
 
-/** Target-independent operation facts authenticated by a trusted host resolver. */
 export interface IacRouteContext {
 	readonly tenantId: string;
 	readonly deploymentId: string;
 	readonly programId: string;
 	readonly resourceId: string;
-	/** Opaque HoBo identity; the physical Alchemy state name is separate. */
+
 	readonly logicalStackName: string;
-	/** Binds the exact desired declaration, including explicit absence. */
+
 	readonly declarationDigest: string;
 	readonly operation: "deploy" | "destroy";
 	readonly operationGeneration: string;
@@ -194,7 +195,7 @@ export interface IacRouteOutcome {
 
 export interface IacDirectRouteAttempt {
 	readonly permit: IacRoutePermit;
-	/** Persist a verified no-effect denial before completing the route. */
+
 	deny(): Promise<void>;
 }
 
@@ -206,10 +207,9 @@ export type IacDirectRouteResult<T> =
 			readonly targetId?: string;
 	  };
 
-/** Host-supplied route service shared by all targets for a tenant. */
 export interface IacRoutePort {
 	readonly persistence: "durable-cas";
-	/** Atomically consume this attempt once across all adapter instances. */
+
 	consumeAttempt(permit: IacRoutePermit): boolean | Promise<boolean>;
 	verifyAttempt(permit: IacRoutePermit): boolean | Promise<boolean>;
 	runDirect<T>(
@@ -226,7 +226,6 @@ export interface IacRoutePort {
 	): Promise<IacDirectRouteResult<T>>;
 }
 
-/** The host supplies this port. The adapter never imports a policy implementation. */
 export interface FinancialPort<Assessment extends object> {
 	assess(plan: FinancialPlan): Assessment;
 	admit(
@@ -234,7 +233,7 @@ export interface FinancialPort<Assessment extends object> {
 		plan: FinancialPlan,
 		expected?: FinancialExpectation,
 	): Promise<FinancialDecision>;
-	/** Recheck the exact claimed exposure against durable authority and trusted current policy. */
+
 	revalidate(
 		admission: FinancialDecision,
 		plan: FinancialPlan,

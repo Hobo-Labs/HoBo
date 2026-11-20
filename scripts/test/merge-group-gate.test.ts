@@ -124,6 +124,20 @@ describe("merge-group required gate", () => {
 		assert.doesNotMatch(workspace, /--shard="\$SHARD\/8"/u);
 	});
 
+	it("leaves turbo concurrency to memory-env and lets only shard 0 save the cache", () => {
+		const testsStep = workspace.slice(
+			workspace.indexOf("name: Workspace tests"),
+		);
+		assert.doesNotMatch(testsStep, /HOBO_TURBO_CONCURRENCY:/u);
+		for (const name of ["workspace_tests", "main_workspace_tests"])
+			assert.match(job(name), /ci-runner-preflight/u, name);
+		for (const block of [workspace, job("main_workspace_tests")])
+			assert.match(
+				block,
+				/if: always\(\) && matrix\.shard == 0 && steps\.turbo-prune\.outputs\.save != 'false'/u,
+			);
+	});
+
 	it("never treats a failed, cancelled, skipped, or unknown prerequisite as success", () => {
 		const script = shellForStep(
 			gate,
@@ -761,15 +775,18 @@ describe("release required gate", () => {
 			"Require successful validation and workspace tests",
 		);
 		assert.equal(helper(script), helper(prGate));
-		assert.match(gate, /needs: \[route, release-contract, release-realize\]/u);
+		assert.match(
+			gate,
+			/needs: \[route, release-contract, release-realize, release-hobo-integration\]/u,
+		);
 	});
 
 	it("accepts a skipped contract only for a route job that succeeded and attested it", () => {
 		const results = ["success", "failure", "cancelled", "skipped", ""];
 		const routes = ["success", "failure", "skipped", ""];
 		const flags = ["true", "false", "TRUE", ""];
-		// The realize proof has no attestation: anything but success fails.
 		const realizes = ["success", "failure", "skipped"];
+		const integrations = ["success", "failure", "skipped"];
 		const lists = [
 			'["release-contract"]',
 			'["ci-guard","release-contract"]',
@@ -784,38 +801,41 @@ describe("release required gate", () => {
 				for (const route of routes)
 					for (const flag of flags)
 						for (const list of lists)
-							for (const realize of realizes) {
-								const run = spawnSync("bash", ["-c", script], {
-									env: {
-										...process.env,
-										CONTRACT_RESULT: contract,
-										REALIZE_RESULT: realize,
-										ROUTE_RESULT: route,
-										ATTESTED: flag,
-										ATTESTED_JOBS: list,
-									},
-								});
-								const attested =
-									route === "success" &&
-									flag === "true" &&
-									list.includes('"release-contract"');
-								const expected =
-									route === "success" &&
-									realize === "success" &&
-									(contract === "success" ||
-										(contract === "skipped" && attested));
-								const label = JSON.stringify({
-									contract,
-									route,
-									flag,
-									list,
-									realize,
-								});
-								assert.equal(run.status === 0, expected, label);
-								// A failed or cancelled contract never passes, attested or not.
-								if (contract === "failure" || contract === "cancelled")
-									assert.notEqual(run.status, 0, label);
-							}
+							for (const realize of realizes)
+								for (const integration of integrations) {
+									const run = spawnSync("bash", ["-c", script], {
+										env: {
+											...process.env,
+											CONTRACT_RESULT: contract,
+											REALIZE_RESULT: realize,
+											INTEGRATION_RESULT: integration,
+											ROUTE_RESULT: route,
+											ATTESTED: flag,
+											ATTESTED_JOBS: list,
+										},
+									});
+									const attested =
+										route === "success" &&
+										flag === "true" &&
+										list.includes('"release-contract"');
+									const expected =
+										route === "success" &&
+										realize === "success" &&
+										integration === "success" &&
+										(contract === "success" ||
+											(contract === "skipped" && attested));
+									const label = JSON.stringify({
+										contract,
+										route,
+										flag,
+										list,
+										realize,
+										integration,
+									});
+									assert.equal(run.status === 0, expected, label);
+									if (contract === "failure" || contract === "cancelled")
+										assert.notEqual(run.status, 0, label);
+								}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}
