@@ -10,14 +10,23 @@ tags: [hobo, agent-tooling.md]
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
 design documents. Agent edit hooks, the shared pre-commit hook, and CI run the
-common `source:guard` for the languages and source templates listed in
-`AGENTS.md`. Commit checks read staged content, CI checks the PR diff, and the
-worktree check also finds ignored agent planning artifacts. For renamed files,
-it compares against the original path so existing comments remain allowed while
-newly added comments are checked. During a staged merge it compares against
-every parent, so content inherited unchanged from either side is not treated as
-a new merge edit. A multiline comment assembled from changes on both sides is
-still checked.
+common `source:guard` ([`scripts/check-source-policy.mts`](../scripts/check-source-policy.mts)) on new
+comments and added or changed planning or design documents in the languages it
+recognizes: JavaScript, TypeScript, shell, Python, CSS, and HTML; YAML, Rust,
+Go, C, C++, Java, Kotlin, Ruby, Lua, and Swift through ast-grep; and the
+contract languages — Prisma, CUE, Protobuf, WIT, SQL, and TOML — lexed by
+[`scripts/source-comment-lexer.mts`](../scripts/source-comment-lexer.mts), whose
+dialect-aware lexer keeps triple-quoted strings and raw-string hash delimiters
+out of the comment set. The languages and source templates listed in
+[`AGENTS.md`](../AGENTS.md) — Astro included — complete the coverage list.
+Commit checks read staged content, CI checks the PR diff, and the worktree
+check also finds ignored agent planning artifacts; it does not inspect other
+languages or unchanged content. For renamed files, it compares against the
+original path so existing comments remain allowed while newly added comments
+are checked. During a staged merge it compares against every parent, so content
+inherited unchanged from either side is not treated as a new merge edit. A
+multiline comment assembled from changes on both sides is still checked. The
+PR check still examines the full diff against its base.
 
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
 
