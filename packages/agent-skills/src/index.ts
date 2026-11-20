@@ -25,7 +25,14 @@ export interface SkillsManifest {
 
 export type SkillConformanceIssue = {
 	readonly skill: string;
-	readonly code: "unparseable" | "duplicate-name" | "missing-skill-md";
+	readonly code:
+		| "unparseable"
+		| "duplicate-name"
+		| "missing-skill-md"
+		| "disallowed-frontmatter-field"
+		| "nested-frontmatter-field"
+		| "name-folder-mismatch"
+		| "non-string-metadata";
 	readonly message: string;
 };
 
@@ -47,28 +54,148 @@ export class SkillParseError extends TypeError {
 export function parseSkillFrontmatter(
 	markdown: string,
 ): Omit<SkillManifestEntry, "entry"> {
-	const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(markdown);
-	if (!match || match[1] === undefined) {
-		throw new SkillParseError("SKILL.md has no frontmatter block");
-	}
-	const fields = new Map<string, string>();
-	for (const line of match[1].split(/\r?\n/u)) {
-		const field = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
-		if (field && field[1] !== undefined && field[2] !== undefined) {
-			fields.set(field[1], field[2].trim());
-		}
-	}
-	const name = fields.get("name");
+	const frontmatter = parseFrontmatterFields(markdown);
+	const name = frontmatter.fields.get("name");
 	if (name === undefined || name.length === 0) {
 		throw new SkillParseError("frontmatter is missing a non-empty name");
 	}
-	const description = fields.get("description");
+	const description = frontmatter.fields.get("description");
 	if (description === undefined || description.length === 0) {
 		throw new SkillParseError(
 			`skill "${name}" frontmatter is missing a non-empty description`,
 		);
 	}
 	return Object.freeze({ name, description });
+}
+
+export const HOBO_OWNED_ALLOWED_FIELDS: readonly string[] = [
+	"name",
+	"description",
+	"license",
+	"compatibility",
+	"metadata",
+	"allowed-tools",
+];
+
+export const HOBO_OWNED_SKILLS: readonly string[] = [
+	"design-md",
+	"draft",
+	"hobo-deploy",
+	"hobo-setup",
+	"optimizexp",
+	"repo",
+	"sdlc",
+] as const;
+
+type FrontmatterFields = {
+	readonly fields: ReadonlyMap<string, string>;
+	readonly children: ReadonlyMap<string, ReadonlyMap<string, string>>;
+	readonly deeplyNested: ReadonlySet<string>;
+};
+
+function parseFrontmatterFields(markdown: string): FrontmatterFields {
+	const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(markdown);
+	if (!match || match[1] === undefined) {
+		throw new SkillParseError("SKILL.md has no frontmatter block");
+	}
+	const fields = new Map<string, string>();
+	const children = new Map<string, Map<string, string>>();
+	const deeplyNested = new Set<string>();
+	let currentNestedField: string | undefined;
+	for (const line of match[1].split(/\r?\n/u)) {
+		const top = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
+		if (top && top[1] !== undefined && top[2] !== undefined) {
+			fields.set(top[1], top[2].trim());
+			currentNestedField =
+				top[2].trim() === "" && top[1] !== "name" && top[1] !== "description"
+					? top[1]
+					: undefined;
+			if (currentNestedField !== undefined)
+				children.set(currentNestedField, new Map());
+			continue;
+		}
+		if (currentNestedField === undefined) continue;
+		const child = /^ {2,}([^:\s]+):\s*(.*)$/u.exec(line);
+		if (child && child[1] !== undefined && child[2] !== undefined) {
+			if (/^ {4,}\S/u.test(line) || child[2].trim().startsWith("{")) {
+				deeplyNested.add(currentNestedField);
+				continue;
+			}
+			children.get(currentNestedField)?.set(child[1], child[2].trim());
+		}
+	}
+	return { fields, children, deeplyNested };
+}
+
+function strictSkillIssues(
+	skill: string,
+	markdown: string,
+): SkillConformanceIssue[] {
+	const issues: SkillConformanceIssue[] = [];
+	let frontmatter: FrontmatterFields;
+	try {
+		frontmatter = parseFrontmatterFields(markdown);
+	} catch (error) {
+		return [
+			{
+				skill,
+				code: "unparseable",
+				message: error instanceof Error ? error.message : String(error),
+			},
+		];
+	}
+	for (const field of frontmatter.fields.keys()) {
+		if (!HOBO_OWNED_ALLOWED_FIELDS.includes(field)) {
+			issues.push({
+				skill,
+				code: "disallowed-frontmatter-field",
+				message: `field "${field}" is not one of ${HOBO_OWNED_ALLOWED_FIELDS.join(", ")}`,
+			});
+		}
+	}
+	const name = frontmatter.fields.get("name");
+	if (name !== undefined && name !== skill) {
+		issues.push({
+			skill,
+			code: "name-folder-mismatch",
+			message: `frontmatter name "${name}" does not match folder "${skill}"`,
+		});
+	}
+	const metadata = frontmatter.children.get("metadata");
+	if (frontmatter.fields.has("metadata") && metadata === undefined) {
+		issues.push({
+			skill,
+			code: "non-string-metadata",
+			message: "metadata must be a map of string values, not a scalar",
+		});
+	}
+	for (const [field, children] of frontmatter.children) {
+		if (field !== "metadata") {
+			issues.push({
+				skill,
+				code: "nested-frontmatter-field",
+				message: `field "${field}" must be a scalar; nested blocks are only allowed under metadata`,
+			});
+			continue;
+		}
+		if (frontmatter.deeplyNested.has(field)) {
+			issues.push({
+				skill,
+				code: "non-string-metadata",
+				message: "metadata values must be strings, not nested structures",
+			});
+		}
+		for (const value of children.values()) {
+			if (value === "") {
+				issues.push({
+					skill,
+					code: "non-string-metadata",
+					message: "metadata values must be non-empty strings",
+				});
+			}
+		}
+	}
+	return issues;
 }
 
 /**
@@ -93,6 +220,10 @@ export async function loadSkillsManifest(
 	});
 }
 
+export type SkillsConformanceOptions = {
+	readonly strictSkillNames?: readonly string[];
+};
+
 /**
  * The bundle conformance gate: every skill directory has a SKILL.md that
  * parses, and no two skills share a name. Returns every issue found rather
@@ -100,14 +231,18 @@ export async function loadSkillsManifest(
  */
 export async function checkSkillsConformance(
 	root: string,
+	options: SkillsConformanceOptions = {},
 ): Promise<readonly SkillConformanceIssue[]> {
+	const strictSkills = new Set(options.strictSkillNames ?? HOBO_OWNED_SKILLS);
 	const issues: SkillConformanceIssue[] = [];
 	const seen = new Map<string, string>();
 	for (const dirent of await readdir(root, { withFileTypes: true })) {
 		if (!dirent.isDirectory()) continue;
 		const skillMd = join(root, dirent.name, "SKILL.md");
+		let markdown: string;
 		try {
 			await stat(skillMd);
+			markdown = await readFile(skillMd, "utf8");
 		} catch {
 			issues.push({
 				skill: dirent.name,
@@ -116,8 +251,11 @@ export async function checkSkillsConformance(
 			});
 			continue;
 		}
+		if (strictSkills.has(dirent.name)) {
+			issues.push(...strictSkillIssues(dirent.name, markdown));
+		}
 		try {
-			const parsed = parseSkillFrontmatter(await readFile(skillMd, "utf8"));
+			const parsed = parseSkillFrontmatter(markdown);
 			const prior = seen.get(parsed.name);
 			if (prior !== undefined) {
 				issues.push({

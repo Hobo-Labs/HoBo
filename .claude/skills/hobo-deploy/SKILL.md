@@ -74,7 +74,8 @@ the host renders, a credential to the session's credential form. If an ask
 does not complete (interrupted, the session restarted, the form closed),
 issue it again as the first thing you do, before any other reply. Ending a
 turn with a choice or credential still unasked is a failure when that form is
-available; `pnpm run eval:hand-off-transcript <transcript>` checks it. If the
+available; `pnpm run eval:hand-off-transcript <transcript>` (repo-only: it
+runs from the HoBo checkout) checks it. If the
 form is unavailable or fails the privacy check below, report that capability
 gap; do not repeat an impossible ask or collect its fields in conversation.
 Say "This host cannot provide a secure HoBo owner hand-off."

@@ -1,6 +1,6 @@
 ---
 name: design-md
-description: Google DESIGN.md visual identity for coding agents. HoBo truth is site/DESIGN.md (HoBo Rubberhose: Steamboat Willie/Cuphead ink-on-paper, thick ink outlines, hard sticker shadows, black and white with rare spark/go accents). Lint with designmd; pre-commit runs pnpm run design:lint for all web UI packages.
+description: "Google DESIGN.md visual identity for coding agents. HoBo truth is site/DESIGN.md (HoBo Rubberhose: Steamboat Willie/Cuphead ink-on-paper, thick ink outlines, hard sticker shadows, black and white with rare spark/go accents). Lint with designmd; pre-commit runs pnpm run design:lint for all web UI packages."
 ---
 
 # design-md (HoBo)

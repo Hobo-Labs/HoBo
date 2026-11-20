@@ -581,6 +581,61 @@ export function selectRelevantChecks(
 		});
 	}
 
+	const agentPluginChanged = files.some(
+		(file) =>
+			file.startsWith("plugins/hobo/") ||
+			file === "scripts/check-agent-plugin.ts" ||
+			file === "scripts/build-agent-plugin.mts" ||
+			file === "scripts/test/check-agent-plugin.test.ts" ||
+			file === "packages/hobo/test/agent-plugin-bundle.test.ts" ||
+			file.startsWith("tools/agent-plugins/schemas/"),
+	);
+	if (agentPluginChanged) {
+		checks.push({
+			command: "pnpm",
+			args: ["run", "agent-plugin:check"],
+			reason:
+				"the plugins/hobo manifest, MCP wiring, and synced skills must satisfy Agent Plugins 1.0.0",
+		});
+	}
+	if (
+		!narrowWorkspaces.has("packages/hobo") &&
+		files.some(
+			(file) =>
+				/^plugins\/hobo\/(bin|fixtures|src)\//u.test(file) ||
+				file === "scripts/build-agent-plugin.mts",
+		)
+	) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				"--filter=./packages/hobo",
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"build @hobo/hobo and its dependencies before bundling the plugin's MCP server",
+			serial: true,
+		});
+		checks.push({
+			command: "pnpm",
+			args: [
+				"--filter",
+				"@hobo/hobo",
+				"exec",
+				"vitest",
+				"run",
+				"test/agent-plugin-bundle.test.ts",
+			],
+			reason:
+				"the portable MCP bundle must build and answer initialize/tools/list when its inputs change",
+		});
+	}
+
 	if (
 		files.some(
 			(file) =>

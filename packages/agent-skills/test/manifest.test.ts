@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	AGENT_SKILLS_MANIFEST_SCHEMA,
 	checkSkillsConformance,
+	HOBO_OWNED_SKILLS,
 	loadSkillsManifest,
 	parseSkillFrontmatter,
 	SkillParseError,
@@ -82,7 +83,7 @@ describe("loadSkillsManifest", () => {
 });
 
 describe("checkSkillsConformance", () => {
-	it("passes the repo's real tree with zero issues", async () => {
+	it("passes the repo's real tree with zero issues, strict set included", async () => {
 		expect(await checkSkillsConformance(REPO_SKILLS_ROOT)).toEqual([]);
 	});
 
@@ -93,12 +94,49 @@ describe("checkSkillsConformance", () => {
 			broken: "no frontmatter here",
 			empty: null,
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: [],
+		});
 		const codes = issues.map((issue) => issue.code).sort();
 		expect(codes).toEqual([
 			"duplicate-name",
 			"missing-skill-md",
 			"unparseable",
 		]);
+	});
+
+	it("enforces the HoBo-owned frontmatter rules on strict skills only", async () => {
+		const root = await scratchTree({
+			"hobo-setup":
+				"---\nname: hobo-setup\ndescription: d\nlicense: MIT\nmetadata:\n  plugin: hobo\n---\n",
+			outsider:
+				"---\nname: outsider\ndescription: d\nupstream-field: kept\n---\n",
+		});
+		expect(await checkSkillsConformance(root)).toEqual([]);
+	});
+
+	it("reports every strict violation a HoBo-owned skill can make", async () => {
+		const root = await scratchTree({
+			"hobo-setup": "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",
+			"hobo-deploy":
+				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  nested:\n    deep: value\n---\n",
+			draft: "---\nname: not-draft\ndescription: d\n---\n",
+			repo: "---\nname: repo\ndescription: d\nmetadata: scalar\n---\n",
+		});
+		const issues = await checkSkillsConformance(root);
+		const bySkill = new Map(issues.map((issue) => [issue.skill, issue.code]));
+		expect(bySkill.get("hobo-setup")).toBe("disallowed-frontmatter-field");
+		expect(bySkill.get("hobo-deploy")).toBe("non-string-metadata");
+		expect(bySkill.get("draft")).toBe("name-folder-mismatch");
+		expect(bySkill.get("repo")).toBe("non-string-metadata");
+	});
+
+	it("keeps third-party skills outside the default strict set", () => {
+		for (const thirdParty of ["impeccable", "unity-cli", "caveman"]) {
+			expect(HOBO_OWNED_SKILLS.includes(thirdParty)).toBe(false);
+		}
+		expect(HOBO_OWNED_SKILLS).toContain("hobo-setup");
+		expect(HOBO_OWNED_SKILLS).toContain("hobo-deploy");
+		expect(HOBO_OWNED_SKILLS).toContain("design-md");
 	});
 });

@@ -889,6 +889,54 @@ test("any skill-tree edit selects the byte-identical mirror gate", () => {
 	);
 });
 
+test("agent-plugin changes select the Agent Plugins 1.0.0 gate", () => {
+	for (const file of [
+		"plugins/hobo/plugin.json",
+		"plugins/hobo/skills/hobo-setup/SKILL.md",
+		"scripts/check-agent-plugin.ts",
+		"tools/agent-plugins/schemas/1.0.0/mcp.schema.json",
+	]) {
+		assert.ok(
+			plan([file]).checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run agent-plugin:check",
+			),
+			file,
+		);
+	}
+});
+
+test("bundle-input changes select the plugin bundle build and smoke test", () => {
+	for (const file of [
+		"plugins/hobo/src/bitwarden-sdk-napi.mts",
+		"scripts/build-agent-plugin.mts",
+	]) {
+		const { checks } = plan([file], { staged: true });
+		const joined = checks.map((check) => check.args.join(" "));
+		assert.ok(
+			joined.some(
+				(args) => args.includes("build") && args.includes("./packages/hobo"),
+			),
+			`${file}: build lane`,
+		);
+		assert.ok(
+			joined.some((args) => args.endsWith("test/agent-plugin-bundle.test.ts")),
+			`${file}: smoke lane`,
+		);
+	}
+});
+
+test("the plugin bundle test file rides the built-in narrow workspace path", () => {
+	const { checks } = plan(["packages/hobo/test/agent-plugin-bundle.test.ts"], {
+		staged: true,
+	});
+	const bundleLanes = checks.filter((check) =>
+		check.args.join(" ").includes("agent-plugin-bundle"),
+	);
+	assert.equal(bundleLanes.length, 1);
+});
+
 const isAntiSlopDriftTest = (check: {
 	command: string;
 	args: readonly string[];
