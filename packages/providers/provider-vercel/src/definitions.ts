@@ -115,6 +115,16 @@ function implementation(
 	};
 }
 
+function nativeImplementation(
+	profileId: string,
+	conformance: ProfileImplementation["conformance"],
+): ProfileImplementation {
+	return {
+		...implementation(profileId, conformance),
+		conformanceRef: `hobo.conformance/${profileId}#vercel.native${CONFORMANCE_SUFFIX}`,
+	};
+}
+
 export type VercelDefinitionOverrides = {
 	readonly evidenceExpiresAtMs?: number;
 	readonly evidenceSignatureValid?: boolean;
@@ -292,8 +302,10 @@ export function createVercelClaimDeploymentDefinition(
 				associatedResourceTransfer: true,
 				customDomain: true,
 			},
-			producesBindingProfiles: ["binding.http/v1", "binding.postgresql/v1"],
-			requiresConnectivityProfiles: ["vercel.postgres.environment-ref/v1"],
+			// The associated database remains in its own provider Yard; a Vercel
+			// project is not a Postgres product or a Postgres binding producer.
+			producesBindingProfiles: ["binding.http/v1"],
+			claimAtomicity: "best-effort-saga",
 			claimActionCount: 2,
 			continuity: {
 				endpoint: "preserved",
@@ -374,7 +386,244 @@ export function createVercelStaticDeployDefinition(
 		},
 	};
 }
+
+export function createVercelGitFunctionDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelStaticDeployDefinition(overrides);
+	return {
+		...base,
+		id: "vercel.function/v1",
+		semantics: {
+			...base.semantics,
+			productId: "vercel.function/v1",
+			displayName: "Vercel staged Git function deployment",
+			implementsProfiles: [
+				nativeImplementation("api.http/v1", overrides.conformance ?? "unknown"),
+				nativeImplementation(
+					"service.queue-consumer/v1",
+					overrides.conformance ?? "unknown",
+				),
+			],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				httpsOnly: true,
+				immutableArtifact: true,
+				serverlessFunctions: true,
+			},
+			compilerRef: "compile.vercel.function/v1",
+			executorRef: "execute.vercel.function/v1",
+			trustEvidenceRef: "hobo.evidence/provider-vercel/git-function",
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/rest-api/deployments/create-a-new-deployment",
+				"https://vercel.com/docs/cli/deploy",
+			],
+			evidenceSignatureValid: overrides.evidenceSignatureValid ?? false,
+			secretCustodyAvailable: overrides.secretCustodyAvailable ?? false,
+		},
+	};
+}
+
+/** Operator-owned project. Account ownership, Git linkage, permission, custody
+ * and project-level costs require independently verified evidence. */
+export function createVercelProjectDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelStaticDeployDefinition(overrides);
+	return {
+		...base,
+		id: "vercel.project/v1",
+		port: "project",
+		semantics: {
+			...base.semantics,
+			productId: "vercel.project/v1",
+			displayName: "Vercel project",
+			implementsProfiles: [
+				nativeImplementation(
+					"web.project/v1",
+					overrides.conformance ?? "unknown",
+				),
+			],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				providerOwned: true,
+			},
+			producesBindingProfiles: [],
+			compilerRef: "compile.vercel.project/v1",
+			executorRef: "execute.vercel.project/v1",
+			trustEvidenceRef: "hobo.evidence/provider-vercel/project",
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/rest-api/projects/create-a-project",
+				"https://vercel.com/docs/rest-api/projects/find-a-project-by-id-or-name",
+			],
+			evidenceSignatureValid: overrides.evidenceSignatureValid ?? false,
+			secretCustodyAvailable: overrides.secretCustodyAvailable ?? false,
+			continuity: {
+				endpoint: "not-applicable",
+				data: "not-applicable",
+				credentials: "not-applicable",
+			},
+		},
+	};
+}
+
+/** Native Blob store. Actual account access, capacity, custody and pricing
+ * require independently verified evidence before selection or mutation. */
+export function createVercelBlobDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelStaticDeployDefinition(overrides);
+	return {
+		...base,
+		id: "vercel.blob/v1",
+		port: "objectStore",
+		semantics: {
+			...base.semantics,
+			productId: "vercel.blob/v1",
+			displayName: "Vercel Blob object store",
+			implementsProfiles: [
+				nativeImplementation(
+					"bucket.object/v1",
+					overrides.conformance ?? "unknown",
+				),
+			],
+			structuredCapabilities: {
+				bootstrap: "operator-credential",
+				httpsOnly: true,
+				providerOwned: true,
+			},
+			producesBindingProfiles: [],
+			compilerRef: "compile.vercel.blob/v1",
+			executorRef: "execute.vercel.blob/v1",
+			trustEvidenceRef: "hobo.evidence/provider-vercel/blob",
+			evidenceSignatureValid: overrides.evidenceSignatureValid ?? false,
+			secretCustodyAvailable: overrides.secretCustodyAvailable ?? false,
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/vercel-blob",
+				"https://vercel.com/docs/vercel-blob/usage-and-pricing",
+			],
+			continuity: {
+				endpoint: "not-applicable",
+				data: "preserved",
+				credentials: "not-applicable",
+			},
+		},
+	};
+}
+
+export function createVercelDeploymentComponentDefinition(
+	productId: "vercel.queues/v1" | "vercel.schedules/v1" | "vercel.cron/v1",
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelGitFunctionDefinition(overrides);
+	const queue = productId === "vercel.queues/v1";
+	const cron = productId === "vercel.cron/v1";
+	const profiles = queue
+		? ["queue.at-least-once/v1", "queue.delay/v1"]
+		: ["service.scheduled/v1"];
+	return {
+		...base,
+		id: productId,
+		port: queue ? "queue" : "schedule",
+		semantics: {
+			...base.semantics,
+			productId,
+			displayName: queue
+				? "Vercel deployment queue"
+				: cron
+					? "Vercel production deployment cron"
+					: "Vercel deployment schedule",
+			implementsProfiles: profiles.map((profile) =>
+				nativeImplementation(profile, overrides.conformance ?? "unknown"),
+			),
+			structuredCapabilities: queue
+				? {
+						deploymentOwned: true,
+						atLeastOnce: true,
+						maxRetentionSeconds: 604800,
+						maxDelaySeconds: 604800,
+						beta: true,
+					}
+				: {
+						deploymentOwned: true,
+						...(cron
+							? { productionOnly: true }
+							: { previewRequiresActivation: true }),
+					},
+			producesBindingProfiles: [],
+			compilerRef: `compile.${productId}`,
+			executorRef: `execute.${productId}`,
+			trustEvidenceRef: `hobo.evidence/provider-vercel/${productId}`,
+			sourceEvidenceRefs: queue
+				? [
+						"https://vercel.com/docs/queues",
+						"https://vercel.com/docs/queues/api",
+					]
+				: cron
+					? [
+							"https://vercel.com/docs/schedules/cron-jobs/manage-cron-jobs",
+							"https://vercel.com/docs/cron-jobs/usage-and-pricing",
+						]
+					: [
+							"https://vercel.com/docs/schedules/configuration",
+							"https://vercel.com/docs/schedules/limits",
+						],
+			continuity: {
+				endpoint: "not-applicable",
+				data: queue ? "discarded" : "not-applicable",
+				credentials: "not-applicable",
+			},
+		},
+	};
+}
+
+export function createVercelSandboxHostDefinition(
+	overrides: VercelDefinitionOverrides = {},
+): ProviderResourceDefinitionData {
+	const base = createVercelGitFunctionDefinition(overrides);
+	return {
+		...base,
+		id: "vercel.sandbox-host/v1",
+		port: "compute",
+		semantics: {
+			...base.semantics,
+			productId: "vercel.sandbox-host/v1",
+			displayName: "Vercel isolated Sandbox execution host",
+			implementsProfiles: [
+				nativeImplementation(
+					"service.batch/v1",
+					overrides.conformance ?? "unknown",
+				),
+			],
+			structuredCapabilities: {
+				attachOnly: true,
+				isolated: true,
+				ephemeral: true,
+			},
+			producesBindingProfiles: [],
+			compilerRef: "compile.vercel.sandbox-host/v1",
+			executorRef: "execute.vercel.sandbox-host/v1",
+			trustEvidenceRef: "hobo.evidence/provider-vercel/sandbox-host",
+			sourceEvidenceRefs: [
+				"https://vercel.com/docs/vercel-sandbox",
+				"https://vercel.com/docs/vercel-sandbox/usage-and-pricing",
+			],
+			continuity: {
+				endpoint: "not-applicable",
+				data: "not-applicable",
+				credentials: "not-applicable",
+			},
+		},
+	};
+}
 export const VERCEL_DEFINITIONS: readonly ProviderResourceDefinitionData[] = [
 	...VERCEL_SPONSORED_DEFINITIONS,
 	createVercelStaticDeployDefinition(),
+	createVercelGitFunctionDefinition(),
+	createVercelProjectDefinition(),
+	createVercelBlobDefinition(),
+	createVercelDeploymentComponentDefinition("vercel.queues/v1"),
+	createVercelDeploymentComponentDefinition("vercel.schedules/v1"),
+	createVercelDeploymentComponentDefinition("vercel.cron/v1"),
+	createVercelSandboxHostDefinition(),
 ];
