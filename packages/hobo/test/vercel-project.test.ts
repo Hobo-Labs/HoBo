@@ -1564,6 +1564,29 @@ describe("production promotion", () => {
 		);
 	});
 
+	it("promotes with the verb and path Vercel documents: POST /v10/projects/{id}/promote/{deploymentId}", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+			],
+			"POST /v10/projects/prj_relay/promote/dpl_123": [reply(202, {})],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(
+			client.promoteDeployment("hobo-ci", "dpl_123"),
+		).resolves.toBeUndefined();
+		expect(transport.routes()).toEqual([
+			"GET /v9/projects/hobo-ci",
+			"POST /v10/projects/prj_relay/promote/dpl_123",
+		]);
+	});
+
 	it.each([
 		[
 			"a production id that is not a deployment id",

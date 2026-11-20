@@ -1064,28 +1064,42 @@ export async function runCiRelayDeploy(
 					)(Math.min(5_000, remaining));
 			}
 			if (!liveReady) {
-				let rollback: "restored" | "failed" | undefined;
+				let rollback: "restored" | "failed" | "superseded" | undefined;
+				let supersedingProduction: string | undefined;
 				if (
 					previousProduction !== undefined &&
 					previousProduction !== safe.deploymentId
 				) {
 					try {
-						await client.promoteDeployment(project, previousProduction);
-						rollback = "restored";
+						const currentProduction =
+							await client.getProductionDeploymentId(project);
+						if (currentProduction === safe.deploymentId) {
+							await client.promoteDeployment(project, previousProduction);
+							rollback = "restored";
+						} else {
+							rollback = "superseded";
+							supersedingProduction = currentProduction;
+						}
 					} catch {
 						rollback = "failed";
 					}
 				}
+				const supersededTarget =
+					supersedingProduction === undefined
+						? ""
+						: ` to ${supersedingProduction}`;
+				const rollbackNote =
+					rollback === "restored"
+						? ` The previous production deployment ${previousProduction} was restored.`
+						: rollback === "failed"
+							? " The automatic rollback failed; promote the previous deployment by hand."
+							: rollback === "superseded"
+								? ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`
+								: "";
 				return {
 					ok: false,
 					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.${
-						rollback === "restored"
-							? ` The previous production deployment ${previousProduction} was restored.`
-							: rollback === "failed"
-								? " The automatic rollback failed; promote the previous deployment by hand."
-								: ""
-					}`,
+					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.${rollbackNote}`,
 					data: {
 						...deliveryData,
 						...(rollback !== undefined ? { rollback } : undefined),

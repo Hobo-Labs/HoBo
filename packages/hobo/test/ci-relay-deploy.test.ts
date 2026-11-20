@@ -1419,6 +1419,147 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(events).toContain("live:/healthz");
 	});
 
+	it("leaves a concurrent promotion untouched when the live check fails", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+		const vercel = scriptedVercel(["READY"]);
+		const events: string[] = [];
+		const previousProduction = "dpl_previous_prod";
+		const concurrentProduction = "dpl_concurrent_prod";
+		let promotedNewDeployment = false;
+		let concurrentPromotion = false;
+		const fetch: VercelFetch = async (url, init) => {
+			if (url.includes("/v9/projects/hobo-ci")) {
+				const production = concurrentPromotion
+					? { id: concurrentProduction }
+					: promotedNewDeployment
+						? { id: "dpl_wait" }
+						: { id: previousProduction };
+				return {
+					ok: true,
+					status: 200,
+					text: async () =>
+						JSON.stringify({ id: "prj_relay", targets: { production } }),
+					json: async () => ({ id: "prj_relay", targets: { production } }),
+				};
+			}
+			if (url.includes("/promote/")) {
+				if (promotedNewDeployment)
+					expect(url).toContain(`/promote/${previousProduction}`);
+				else expect(url).toContain("/promote/dpl_wait");
+				promotedNewDeployment = true;
+				events.push("promote");
+				return {
+					ok: true,
+					status: 202,
+					text: async () => "{}",
+					json: async () => ({}),
+				};
+			}
+			return vercel.fetch(url, init);
+		};
+		const publicOrigin = "https://public.example.test";
+		const probe: HttpTransport = async (request) => {
+			if (
+				request.url.startsWith("https://hobo-ci-git-main.example.vercel.app/")
+			)
+				return {
+					status: 200,
+					headers: {},
+					body: request.url.endsWith("/healthz")
+						? JSON.stringify({ commit: SHA })
+						: JSON.stringify({ ready: true }),
+				};
+			const url = new URL(request.url);
+			if (url.origin === publicOrigin) {
+				concurrentPromotion = true;
+				events.push(`live:${url.pathname}`);
+				expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
+					undefined,
+				);
+			}
+			return {
+				status: 200,
+				headers: {},
+				body: request.url.endsWith("/healthz")
+					? JSON.stringify({ commit: "stale00000000000000000000000000000000" })
+					: JSON.stringify({ ready: true }),
+			};
+		};
+		const credentialFetch: typeof globalThis.fetch = async (input) => {
+			const url = String(input);
+			if (url.includes("token.actions.example.test"))
+				return Response.json({
+					value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+				});
+			if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+				return Response.json({
+					accessToken: "synthetic-infisical-token",
+					expiresIn: 3600,
+					accessTokenMaxTTL: 3600,
+					tokenType: "Bearer",
+				});
+			if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+				return Response.json({
+					secret: {
+						secretKey: "VERCEL_TOKEN",
+						secretValue: TOKEN,
+						version: 1,
+						type: "shared",
+						environment: "prod",
+						secretPath: "/",
+					},
+				});
+			return Response.json({}, { status: 404 });
+		};
+		const result = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch,
+				credentialFetch,
+				hoboHome: home,
+				probe,
+				...clock,
+				env: {
+					...env,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
+					HOBO_CI_RELAY_PUBLIC_URL: publicOrigin,
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.example.test/token",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				},
+			},
+		);
+		expect(result.exitCode).toBe(1);
+		expect(result.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+			message: expect.stringContaining(concurrentProduction),
+			data: { rollback: "superseded" },
+		});
+		expect(events.filter((event) => event === "promote")).toEqual([
+			"promote",
+		]);
+	});
+
 	it("waits through a stale public commit before succeeding", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
