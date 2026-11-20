@@ -147,6 +147,8 @@ workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
 `quieter`, `colorize`. **Standing duty on visual work** (TUI, dashboard,
 Evidence and `site/`): run `critique` then `audit`
 (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
+`design:lint` invokes `scripts/check-visual-tokens.mts`; the root
+`test/visual-tokens.test.ts` suite pins that wiring.
 See `AGENTS.md` “Visual quality”. **No API keys**, but it is **not**
 offline — see egress below.
 - **Network egress (three paths, one of them automatic):**

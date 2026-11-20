@@ -77,10 +77,13 @@ test("the relevant check selects source-based visual validation for UI changes",
 });
 
 test("design:lint runs the visual token gate instead of the retired design-md checker", () => {
-	// SAFETY: package.json is a committed repo file; scripts values are strings.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the repo root package.json is a committed manifest with string-valued scripts.
 	const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
 		scripts: Record<string, string>;
 	};
-	assert.match(packageJson.scripts["design:lint"], /check-visual-tokens\.mts/u);
+	const designLintScript =
+		packageJson.scripts["design:lint"] ??
+		assert.fail("package.json scripts must include design:lint");
+	assert.match(designLintScript, /check-visual-tokens\.mts/u);
 	assert.equal(existsSync("scripts/check-design-md.mts"), false);
 });
