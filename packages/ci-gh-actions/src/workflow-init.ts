@@ -285,10 +285,12 @@ function reachableText(workflow: Workflow, from: Node): readonly string[] {
 	const pending: Node[] = [from];
 	const texts: string[] = [];
 	for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
-		if (seen.has(node)) continue;
-		seen.add(node);
-		texts.push(sliceOf(workflow.source, node));
-		visit(node, {
+		const subject = follow(workflow.doc, node);
+		if (!isNode(subject)) continue;
+		if (seen.has(subject)) continue;
+		seen.add(subject);
+		texts.push(sliceOf(workflow.source, subject));
+		visit(subject, {
 			Alias: (_key, alias) => {
 				const target = alias.resolve(workflow.doc);
 				if (target !== undefined) pending.push(target);
@@ -822,8 +824,10 @@ const ROUTING_FIELD_KEYS = ["env", "if", "container", "services"] as const;
 function stepRoutingText(workflow: Workflow, job: YAMLMap): string {
 	const parts: string[] = [];
 	for (const step of stepsOf(workflow, job)) {
-		const runsOn = valueUnder(workflow, step, "runs-on");
-		if (runsOn !== undefined) parts.push(...reachableText(workflow, runsOn));
+		const runsOn = effectiveValueUnder(workflow, step, "runs-on");
+		if (runsOn !== undefined && isNode(runsOn)) {
+			parts.push(...reachableText(workflow, runsOn));
+		}
 	}
 	return parts.join("\n");
 }
@@ -831,8 +835,8 @@ function stepRoutingText(workflow: Workflow, job: YAMLMap): string {
 function routingFieldsOf(workflow: Workflow, job: YAMLMap): string {
 	const parts: string[] = [];
 	for (const key of ROUTING_FIELD_KEYS) {
-		const node = effectiveWrittenUnder(workflow, job, key);
-		if (node === undefined) continue;
+		const node = effectiveValueUnder(workflow, job, key);
+		if (node === undefined || !isNode(node)) continue;
 		parts.push(...reachableText(workflow, node));
 	}
 	parts.push(stepRoutingText(workflow, job));
