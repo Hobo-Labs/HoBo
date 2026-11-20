@@ -123,26 +123,17 @@ function isYard<T>(value: T): value is T & Yard {
 	);
 }
 
-// The Yard the project at `projectDir` declares, or undefined when it has no
-// Yard source. A source that does not import, or exports no Yard, is refused:
-// a deploy that silently fell back to another placement would be worse.
-/**
- * The Yards the relay's junction joins to its own (the config service's,
- * the non-Vercel caches'): the module's `relayJunction` export minus the
- * relay's Yard. Empty when the module declares no junction.
- */
 export async function loadRelayJoinedYards(
 	projectDir: string,
 	relay: Yard,
-	/** The module's junction export (CD's is `cdJunction`). */
-	junctionExport = "relayJunction",
+	junctionModuleExportName = "relayJunction",
 ): Promise<readonly Yard[]> {
 	for (const candidate of RELAY_YARD_SOURCE_CANDIDATES) {
 		const absolute = path.join(projectDir, candidate);
 		if (!existsSync(absolute)) continue;
 		const module: object = await import(pathToFileURL(absolute).href);
 		const declared = Object.entries(module).find(
-			([name]) => name === junctionExport,
+			([name]) => name === junctionModuleExportName,
 		)?.[1];
 		if (
 			!isJsonObject(declared) ||

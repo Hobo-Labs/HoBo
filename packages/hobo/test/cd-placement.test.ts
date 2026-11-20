@@ -1,7 +1,13 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- command and store fixtures use narrowed casts in tests. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createHoboCli, createUpCommand, type YardRuntime } from "@hobo/cli";
+import {
+	createHoboCli,
+	createUpCommand,
+	type CommandModule,
+	type YardRuntime,
+} from "@hobo/cli";
 import {
 	createInProcessExecutor,
 	type IacProgram,
@@ -38,10 +44,23 @@ afterEach(() => {
 	stores = [];
 });
 
+function trackRuntimeLocalStore(runtime: YardRuntime): void {
+	stores.push(runtime.store as RuntimeLocalEventStore);
+}
+
+function cdUpRunInput(): Parameters<CommandModule["run"]>[0] {
+	return {
+		verb: "up",
+		args: [],
+		flags: {},
+		context: { cwd: CD_PROJECT, projectDir: CD_PROJECT },
+		emitProgress: () => {},
+	};
+}
+
 async function planCd() {
 	const runtime = createDefaultYardRuntime({ env: {} });
-	// SAFETY: the default runtime's store is the runtime-local one.
-	stores.push(runtime.store as RuntimeLocalEventStore);
+	trackRuntimeLocalStore(runtime);
 	const cli = createComposedHoboCli({ yardRuntime: runtime });
 	const out = await cli.run(["cd", "plan", "--json"], {
 		cwd: CD_PROJECT,
@@ -161,8 +180,7 @@ describe("hobo cd up hands each resource to whoever makes it", () => {
 describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 	it("deploys packages/cd-vercel at the current commit to CD's preview", async () => {
 		const runtime = createDefaultYardRuntime({ env: {} });
-		// SAFETY: the default runtime's store is the runtime-local one.
-		stores.push(runtime.store as RuntimeLocalEventStore);
+		trackRuntimeLocalStore(runtime);
 		const vault = createTrustedVault();
 		vault.put("VERCEL_TOKEN", "tok_test");
 		vault.put("VERCEL_TEAM_ID", "team_abc");
@@ -172,8 +190,8 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 		const up = createCdVercelUpCommand({
 			credentials: vault,
 			runtime,
-			head: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
-			deployProvider: (options) => {
+			resolveGitHead: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
+			vercelDeployProvider: (options) => {
 				seenOptions = options;
 				return {
 					id: "fake",
@@ -200,14 +218,7 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 				};
 			},
 		});
-		// SAFETY: the up command reads only the project, the flags and emitProgress.
-		const result = await up.run({
-			verb: "up",
-			args: [],
-			flags: {},
-			context: { cwd: CD_PROJECT, projectDir: CD_PROJECT },
-			emitProgress: () => {},
-		} as never);
+		const result = await up.run(cdUpRunInput());
 		expect(result.ok).toBe(true);
 		expect(seenOptions).toMatchObject({
 			token: "tok_test",
@@ -223,7 +234,6 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 				rootDirectory: "packages/cd-vercel",
 			},
 		});
-		// Placed on CD's own Yards, and the prepared resources deploy nothing.
 		expect(placedRuntime?.registry.providers()).toEqual(
 			expect.arrayContaining([
 				"yard:hobo-cd",
@@ -253,27 +263,19 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 		const up = createCdVercelUpCommand({
 			credentials: createTrustedVault(),
 			runtime: createDefaultYardRuntime({ env: {} }),
-			head: async () => undefined,
+			resolveGitHead: async () => undefined,
 			upWith: () => {
 				throw new Error("must not converge");
 			},
 		});
-		// SAFETY: as above.
-		const result = await up.run({
-			verb: "up",
-			args: [],
-			flags: {},
-			context: { cwd: CD_PROJECT, projectDir: CD_PROJECT },
-			emitProgress: () => {},
-		} as never);
+		const result = await up.run(cdUpRunInput());
 		expect(result.code).toBe("HOBO_CD_UP_NO_BRANCH");
 	});
 });
 
 it("does not send the prepared journal or store to the provider on cd down", async () => {
 	const base = createDefaultYardRuntime({ env: {} });
-	// SAFETY: the default runtime's store is the runtime-local one.
-	stores.push(base.store as RuntimeLocalEventStore);
+	trackRuntimeLocalStore(base);
 	const destroyed: string[] = [];
 	const iac: IacProvider = {
 		id: "test",
@@ -310,8 +312,7 @@ it("does not send the prepared journal or store to the provider on cd down", asy
 
 it("refuses CD up and down before an unguarded hosting supervisor is called", async () => {
 	const base = createDefaultYardRuntime({ env: {} });
-	// SAFETY: the default runtime's store is the runtime-local one.
-	stores.push(base.store as RuntimeLocalEventStore);
+	trackRuntimeLocalStore(base);
 	const called: string[] = [];
 	const cli = createComposedHoboCli({
 		yardRuntime: {
