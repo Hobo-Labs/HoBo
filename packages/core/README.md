@@ -22,6 +22,12 @@ Deliberately not here: no port has a production backend in this package — the
 helpers; implementations live in runtime/provider packages. No I/O, no network,
 no persistence.
 
+`createTrustedVault` keeps its own copies in buffers, refuses reads after expiry,
+and clears them when the event loop handles the expiry, on explicit removal,
+or at normal process exit. It does not serialize their values.
+Its string inputs and revealed values may have other copies that JavaScript
+cannot reliably erase; it does not guarantee complete memory zeroization.
+
 ### HONEST SCOPE — deployment phases and schema diff
 
 `ports/phase.ts` (ADR-0158) ships **vocabulary, parse boundaries, and the
@@ -164,6 +170,14 @@ value, including `null`, is refused. The
 [verification skill](../../.agents/skills/verify-shared-budget-policy/SKILL.md)
 records generated implementation tests, the bounded state model, the
 unbounded arithmetic obligations, and their assumptions.
+
+Malformed evaluation contexts and measurement collections or records return a
+refusal. Measurement keys, units and optional targets must satisfy the same
+shape rules as policy constraints. This validates the supplied evidence's
+shape; the caller remains responsible for authenticating its source.
+Scope identifiers and metric targets reject unpaired Unicode surrogates so
+protobuf encoding cannot silently change them. Target length is measured in
+Unicode code points, matching the authored CUE contract.
 
 The model's user-facing projection collapses internal checks into the following
 flow. It hides 128 same-label transitions from 256 explored steps.

@@ -14,6 +14,12 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./wasi-keyvalue-store": {
+			"types": "./src/generated/local-services/interfaces/wasi-keyvalue-store.d.ts"
+		},
+		"./wasi-blobstore": {
+			"types": "./src/generated/local-services/interfaces/wasi-blobstore-blobstore.d.ts"
 		}
 	},
 	"publishConfig": {

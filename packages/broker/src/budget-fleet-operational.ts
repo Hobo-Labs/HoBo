@@ -5,6 +5,8 @@ import type { AsyncActorLeaseHost } from "@hobo/core";
 import type {
 	BudgetIdentity,
 	BudgetLedgerSnapshot,
+	IacPricedSettlementTrust,
+	IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import type { BudgetFenceTrust } from "./budget-fence-settlement.js";
 import { createFleetBudgetAdmissionAuthority } from "./budget-fleet.js";
@@ -21,6 +23,8 @@ export function createOperationalFleetBudgetAdmissionAuthority(input: {
 	readonly recoveryIdentity: BudgetIdentity;
 	readonly now?: () => string;
 	readonly fenceTrust?: BudgetFenceTrust;
+	readonly unpricedScopeTrust?: IacUnpricedScopeTrust;
+	readonly iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	readonly actorHost: AsyncActorLeaseHost;
 	readonly authorizeRecovery: (
 		scope: Readonly<{
@@ -130,6 +134,12 @@ export function createOperationalFleetBudgetAdmissionAuthority(input: {
 		journal,
 		snapshot: input.snapshot,
 		...(input.fenceTrust ? { fenceTrust: input.fenceTrust } : undefined),
+		...(input.unpricedScopeTrust
+			? { unpricedScopeTrust: input.unpricedScopeTrust }
+			: undefined),
+		...(input.iacPricedSettlementTrust
+			? { iacPricedSettlementTrust: input.iacPricedSettlementTrust }
+			: undefined),
 		...(input.now ? { now: input.now } : undefined),
 		recover,
 	});
