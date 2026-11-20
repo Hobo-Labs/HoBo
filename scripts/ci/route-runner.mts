@@ -710,7 +710,6 @@ export async function confirmMergeGroupFabricFleet(input: {
 		slip: input.fleetDecision.slip,
 	});
 	for (let poll = 0; ; poll += 1) {
-		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
 		const nowMs = input.now();
 		const waitedSeconds = seconds(startedAtMs, nowMs);
 		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
@@ -738,11 +737,9 @@ export async function confirmMergeGroupFabricFleet(input: {
 				reason: `${input.fleetDecision.reason}; merge-group trunk confirmation observed ${describeLoad("the fleet", fleet)}`,
 				refusedBy: "none",
 			};
-		return hosted(
-			refusingJobs(fleet, admissionLimits)
-				? "found the trunk fleet refusing jobs"
-				: "found no recent healthy trunk pickup",
-		);
+		if (refusingJobs(fleet, admissionLimits))
+			return hosted("found the trunk fleet refusing jobs");
+		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
 	}
 }
 
@@ -1167,11 +1164,11 @@ export async function main(
 		event === "merge_group" &&
 		workflowFile(env) === "release-hobo.yml" &&
 		mode === "auto";
-	const mergeGroupFabric =
+	const mergeGroupHoboCi =
 		event === "merge_group" &&
 		workflowFile(env) === "hobo-ci.yml" &&
-		mode === "auto" &&
-		!args.includeOwnRun;
+		mode === "auto";
+	const mergeGroupFabric = mergeGroupHoboCi && !args.includeOwnRun;
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,
@@ -1380,25 +1377,27 @@ export async function main(
 			refusedBy: "queue",
 		};
 	}
-	if (mergeGroupFabric && decision.tier === "fleet") {
-		if (decision.runner === labels.fleet)
-			decision = {
-				tier: "github",
-				runner: labels.github,
-				reason: `merge-group trunk confirmation refused the general fleet label ${labels.fleet}`,
-				refusedBy: "queue",
-			};
-		else
-			decision = await confirmMergeGroupFabricFleet({
-				fleetDecision: decision,
-				observe,
-				now,
-				sleep,
-				fleetLabel: decision.runner,
-				githubLabel: labels.github,
-				limits,
-			});
-	}
+	if (
+		mergeGroupHoboCi &&
+		decision.tier === "fleet" &&
+		decision.runner === labels.fleet
+	)
+		decision = {
+			tier: "github",
+			runner: labels.github,
+			reason: `merge-group Fabric refused the general fleet label ${labels.fleet}`,
+			refusedBy: "queue",
+		};
+	if (mergeGroupFabric && decision.tier === "fleet")
+		decision = await confirmMergeGroupFabricFleet({
+			fleetDecision: decision,
+			observe,
+			now,
+			sleep,
+			fleetLabel: decision.runner,
+			githubLabel: labels.github,
+			limits: observationLimits,
+		});
 	if (slip.ok)
 		return report(
 			{

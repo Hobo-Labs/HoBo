@@ -18,6 +18,7 @@ import {
 	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
+	confirmMergeGroupFabricFleet,
 	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
@@ -1553,7 +1554,10 @@ describe("the script reading the slip", () => {
 				[decision.tier, decision.runner, decision.refusedBy],
 				["github", "ubuntu-24.04", "queue"],
 			);
-			assert.match(decision.reason, /merge-group trunk confirmation/u);
+			assert.match(
+				decision.reason,
+				/merge-group Fabric refused the general fleet label hobo/u,
+			);
 		});
 	});
 
@@ -1576,6 +1580,58 @@ describe("the script reading the slip", () => {
 				}),
 			/merge-group Fabric routing requires a valid committed policy/u,
 		);
+	});
+
+	it("times out merge-group trunk confirmation to GitHub-hosted", async () => {
+		let polls = 0;
+		const startedAt = 1_700_000_000_000;
+		const decision = await confirmMergeGroupFabricFleet({
+			fleetDecision: {
+				tier: "fleet",
+				runner: "hobo-trunk",
+				reason: "initial fleet choice",
+			},
+			observe: async () => {
+				polls += 1;
+				return { jobs: [], undecidedAhead: 0, probeUnderway: false };
+			},
+			now: () =>
+				startedAt + polls * (MERGE_GROUP_FLEET_CONFIRM_SECONDS + 5) * 1_000,
+			sleep: async () => {},
+			fleetLabel: "hobo-trunk",
+			githubLabel: "ubuntu-24.04",
+			limits: { maxWaitSeconds: 120, maxQueued: 4 },
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["github", "ubuntu-24.04"],
+		);
+		assert.match(decision.reason, /timed out|without a healthy trunk pickup/u);
+	});
+
+	it("refuses general hobo on merge-group when include-own-run is true", async () => {
+		const generalFleetSlip = JSON.parse(OPEN_SLIP);
+		generalFleetSlip.classes.trunk = {
+			runner: "hobo",
+			tier: "fleet",
+			reason: "fleet-open",
+		};
+		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
+			const { decision } = await route(
+				apiUrl,
+				JSON.stringify(generalFleetSlip),
+				mergeGroupCi,
+				["--include-own-run", "true"],
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(
+				decision.reason,
+				/merge-group Fabric refused the general fleet label hobo/u,
+			);
+		});
 	});
 
 	it("keeps an open fleet slip only when its exact label is taking jobs", async () => {
