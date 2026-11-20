@@ -69,6 +69,7 @@ function configure(env: Record<string, string>, configText?: string) {
 			npm_config_store_dir: store,
 			INPUT_TOKEN: "",
 			INPUT_TEAM: "",
+			INPUT_SHARED_RUN: "false",
 			REMOTE_MODE: "remote:rw",
 			...env,
 		},
@@ -96,6 +97,15 @@ describe("turbo-cache action on the box", () => {
 			"TURBO_CACHE=local:rw",
 		]);
 		assert.ok(existsSync(shared));
+	});
+
+	it("marks hosted run-scoped caches for incremental saves", () => {
+		const { exported } = configure({
+			SAME_REPO: "true",
+			HOBO_CI_PNPM_STORE_MOUNTED: "0",
+			INPUT_SHARED_RUN: "true",
+		});
+		assert.deepEqual(exported, ["HOBO_TURBO_CACHE_RUN_SHARED=1"]);
 	});
 
 	it("keeps a pull request from another repository off the shared cache", () => {

@@ -539,6 +539,7 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store
@@ -629,6 +630,7 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: CI trace
         if: always()
         uses: $/.github/actions/ci-trace
@@ -679,6 +681,7 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
           preferred-job: pr_gate_validation
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store
@@ -736,13 +739,11 @@ jobs:
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        # Matrix children share one cache key (github.job is the job id, not the
-        # shard), so racing saves of the same key fight over the reservation;
-        # only shard 0 saves, like scripts-tests.
-        if: always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'
+        if: always() && (github.event_name == 'merge_group' || matrix.shard == 0) && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: CI trace
         if: always()
         uses: $/.github/actions/ci-trace
@@ -786,6 +787,7 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
           preferred-job: pr_gate_validation
+          shared-run: ${{ github.event_name == 'merge_group' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store

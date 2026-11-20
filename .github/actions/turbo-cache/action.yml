@@ -9,9 +9,8 @@ description: >-
   pnpm store, HOBO_CI_PNPM_STORE_MOUNTED=1), so main replays what a pull request
   already ran on the same tree. A pull request from another repository (a fork)
   never uses it. Elsewhere a free actions/cache fallback: `restore`
-  (default) at job start; `save` as an `if: always()` step at job end, because
-  the combined actions/cache only saves when the job succeeds and the Main full
-  gate rarely did, so main never seeded a cache. Run
+  (default) at job start; `save` as an `if: always()` step at job end. Opt-in
+  merge-group jobs also restore and save independent caches within one run. Run
   scripts/ci/turbo-cache-prune.mts before `save` and skip it on `save=false`.
 inputs:
   mode:
@@ -34,6 +33,10 @@ inputs:
     description: Restore this run's completed prerequisite job cache before older fallbacks
     required: false
     default: ""
+  shared-run:
+    description: Share independent job caches within this run and attempt
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -43,6 +46,7 @@ runs:
       env:
         INPUT_TOKEN: ${{ inputs.turbo-token }}
         INPUT_TEAM: ${{ inputs.turbo-team }}
+        INPUT_SHARED_RUN: ${{ inputs.shared-run }}
         REMOTE_MODE: ${{ inputs.remote-mode }}
         # Same repository by name, not `head.repo.fork`: a deleted fork's head
         # repo is null, and null.fork reads as "not a fork".
@@ -95,18 +99,30 @@ runs:
         else
           echo "Turbo remote cache not configured"
         fi
+        if [ "${INPUT_SHARED_RUN}" = "true" ]; then
+          echo "HOBO_TURBO_CACHE_RUN_SHARED=1" >> "$GITHUB_ENV"
+        fi
     # Entries are content-addressed, so any job's cache is valid for any other:
     # prefer this job's own last save, then the newest save of any job. PR
     # saves are scoped to the PR ref; only push-to-main saves reach every PR.
+    - name: Restore same-run prerequisite Turbo cache
+      id: shared-prerequisite
+      if: inputs.mode == 'restore' && inputs.shared-run == 'true' && inputs.preferred-job != '' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: .turbo/cache
+        key: turbo-${{ runner.os }}-run-${{ github.run_id }}-${{ github.run_attempt }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-${{ inputs.preferred-job }}-
+        restore-keys: |
+          turbo-${{ runner.os }}-run-${{ github.run_id }}-${{ github.run_attempt }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-
     - name: Restore prerequisite Turbo cache
       id: prerequisite
-      if: inputs.mode == 'restore' && inputs.preferred-job != '' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+      if: inputs.mode == 'restore' && inputs.shared-run != 'true' && inputs.preferred-job != '' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: .turbo/cache
         key: turbo-${{ runner.os }}-${{ inputs.preferred-job }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-${{ github.sha }}-${{ github.run_attempt }}
     - name: Restore Turbo local cache fallback
-      if: inputs.mode == 'restore' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1' && steps.prerequisite.outputs.cache-hit != 'true'
+      if: inputs.mode == 'restore' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1' && steps.shared-prerequisite.outputs.cache-hit != 'true' && steps.prerequisite.outputs.cache-hit != 'true'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: .turbo/cache
@@ -119,8 +135,14 @@ runs:
     # so the save step needs always() or it skips exactly when the job failed.
     # The caller runs scripts/ci/turbo-cache-prune.mts first and skips this
     # whole action when it reports nothing new to save.
+    - name: Save same-run Turbo cache
+      if: always() && inputs.mode == 'save' && inputs.shared-run == 'true' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      with:
+        path: .turbo/cache
+        key: turbo-${{ runner.os }}-run-${{ github.run_id }}-${{ github.run_attempt }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-${{ github.job }}-${{ strategy.job-index }}
     - name: Save Turbo local cache fallback
-      if: always() && inputs.mode == 'save' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
+      if: always() && inputs.mode == 'save' && inputs.shared-run != 'true' && env.TURBO_TOKEN == '' && env.HOBO_TURBO_CACHE_SHARED != '1'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: .turbo/cache

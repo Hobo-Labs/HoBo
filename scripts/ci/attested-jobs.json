@@ -344,7 +344,7 @@
 				},
 				{
 					"name": "Save Turbo cache",
-					"if": "always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'",
+					"if": "always() && (github.event_name == 'merge_group' || matrix.shard == 0) && steps.turbo-prune.outputs.save != 'false'",
 					"uses": "$/.github/actions/turbo-cache",
 					"local": "skip",
 					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
