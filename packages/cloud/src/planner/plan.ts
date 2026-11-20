@@ -10,7 +10,7 @@ import {
 	parseBudgetPolicy,
 } from "@hobo/core";
 import { type LowerOptions, lowerManifest } from "../intent.js";
-import type { JsonObject } from "../json.js";
+import type { JsonBag, JsonObject } from "../json.js";
 import {
 	DEPLOYMENT_PLAN_SCHEMA,
 	type DeploymentPlan,
@@ -79,6 +79,30 @@ export interface PlanBindingAuthority {
 	 */
 	readonly requirements: Readonly<Record<string, CapabilityRequirement>>;
 	readonly consumableBindingProfiles?: readonly string[];
+}
+
+/**
+ * A node's realization parameters: what its Yard binding row set, plus, for a
+ * schedule, its declared cadence (`cron`) and the one resource it runs
+ * (`target`). A provider runs the cadence its own way (a Cron Trigger on a
+ * Worker, a Vercel schedule on a queue topic); the declaration wins over a
+ * row that sets the same key.
+ */
+function realizationParametersOf(
+	intent: ResourceIntent,
+	fromRow: JsonObject | undefined,
+): JsonObject | undefined {
+	if (intent.cadence === undefined) return fromRow;
+	const target = intent.deps.length === 1 ? intent.deps[0] : undefined;
+	const result: JsonBag = {
+		...fromRow,
+		cron: intent.cadence,
+	};
+	// A Yard may configure provider details, but cannot choose the resource a
+	// schedule runs. An invalid dependency list must not fall back to its row.
+	if (target === undefined) delete result.target;
+	else result.target = target;
+	return result;
 }
 
 /** What a Yard-bound match contributes to both the decision and the plan node. */
@@ -413,8 +437,14 @@ export function plan(
 			...(bound?.productId !== undefined
 				? { productId: bound.productId }
 				: undefined),
-			...(bound?.realizationParameters !== undefined
-				? { realizationParameters: bound.realizationParameters }
+			...(realizationParametersOf(intent, bound?.realizationParameters) !==
+			undefined
+				? {
+						realizationParameters: realizationParametersOf(
+							intent,
+							bound?.realizationParameters,
+						),
+					}
 				: undefined),
 			...(bound?.nonPortableRows !== undefined
 				? { nonPortableRows: bound.nonPortableRows }
