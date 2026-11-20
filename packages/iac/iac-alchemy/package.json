@@ -32,7 +32,7 @@
 		"@effect/platform-node": "4.1.4",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
-		"@types/node": "^22.15.29"
+		"@types/node": "^24.13.2"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",

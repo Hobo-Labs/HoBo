@@ -2,6 +2,20 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Providers } from "@alchemy.run/rivet";
+import { RunnerPool } from "@alchemy.run/rivet/Cloud";
+import { create } from "@bufbuild/protobuf";
+import {
+	type IacProgram as CloudIacProgram,
+	createInProcessExecutor,
+	iacProgramFor,
+} from "@hobo/cloud";
+import { inMemoryState, Resource, Stack } from "alchemy";
+import { layer } from "alchemy/Alchemist";
+import { map } from "alchemy/Output";
+import { collection, succeed } from "alchemy/Provider";
+import { gen, sync } from "effect/Effect";
+import { effect, provide } from "effect/Layer";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	BudgetLedgerSnapshotSchema,
@@ -12,11 +26,6 @@ import {
 	type IacFinancialPlan,
 	IacTargetLiabilityEvidenceSchema,
 } from "../packages/broker/src/index.js";
-import {
-	type IacProgram as CloudIacProgram,
-	createInProcessExecutor,
-	iacProgramFor,
-} from "../packages/cloud/dist/index.js";
 import type { IacRoutePermit } from "../packages/dispatcher/src/iac-route.js";
 import { createDirectRoutePort } from "../packages/dispatcher/src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../packages/dispatcher/src/iac-route-sqlite.js";
@@ -37,28 +46,12 @@ import type {
 	IacRouteContext,
 } from "../packages/iac/iac-alchemy/src/port.js";
 import {
-	collection,
-	create,
-	effect,
-	gen,
-	inMemoryState,
-	layer,
-	map,
-	Providers,
-	provide,
-	Resource,
-	RunnerPool,
-	Stack,
-	succeed,
-	sync,
-} from "../packages/iac/iac-alchemy/test/imports.js";
-import {
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
 	usage,
 	workload,
-} from "../packages/pricing/test/fixtures.js";
+} from "./iac-alchemy-pricing-fixture.js";
 
 const NOW = "2026-01-02T00:00:00Z";
 const END = "2026-01-31T23:59:59Z";
@@ -387,17 +380,15 @@ function routingAdmission(
 	expected: IacRoutingExpectation,
 	admission: FinancialDecision,
 ): IacRoutingAdmission {
-	const budget = admission.budget ?? {
-		evaluation: "unavailable",
-		reservation: "unknown",
-	};
+	if (admission.budget === undefined)
+		throw new Error(`admission budget missing for ${requestId}`);
 	const parsed = {
 		requestId,
 		targetId: expected.targetId,
 		status: admission.status,
 		code: admission.status === "admitted" ? "" : admission.code,
 		message: admission.message ?? "",
-		budget,
+		budget: admission.budget,
 		inventoryHash: expected.inventoryHash,
 		modelHash: expected.modelHash,
 		quoteHash: expected.quoteHash,
@@ -494,6 +485,11 @@ describe("Alchemy IaC provider against the real library", () => {
 				),
 				"utf8",
 			),
+		);
+		expect(rivet.dependencies.rivetkit).toEqual(expect.any(String));
+		expect(runtime.dependencies.rivetkit).toEqual(expect.any(String));
+		expect(runtime.dependencies["@rivetkit/rivetkit-wasm"]).toEqual(
+			expect.any(String),
 		);
 		expect(rivet.dependencies.rivetkit).toBe(runtime.dependencies.rivetkit);
 		expect(runtime.dependencies["@rivetkit/rivetkit-wasm"]).toBe(
@@ -1021,6 +1017,7 @@ describe("Alchemy IaC provider against the real library", () => {
 			});
 			expect(second.applied()).toBe(1);
 			expect(first.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			expect(second.authority.read(NOW).reservedMicros).toBe(1_500_000);
 		} finally {
 			first.routeAuthority.close();
 			first.authority.close();
@@ -1044,6 +1041,17 @@ describe("Alchemy IaC provider against the real library", () => {
 			quantity.decimal = "999999";
 			await fixture.provider.apply(program);
 			expect(fixture.applied()).toBe(1);
+			expect(fixture.authority.read(NOW).reservedMicros).toBe(1_500_000);
+			const reassessed = await fixture.provider.assessPricing(program);
+			if (
+				reassessed.pricing.state.case !== "model" ||
+				reassessed.pricing.state.value.scenario === undefined
+			)
+				throw new Error("pricing missing after re-assessment");
+			const stored =
+				reassessed.pricing.state.value.scenario.candidate[0]?.usage[0]
+					?.quantity;
+			expect(stored?.decimal).toBe("4");
 		} finally {
 			fixture.routeAuthority.close();
 			fixture.authority.close();

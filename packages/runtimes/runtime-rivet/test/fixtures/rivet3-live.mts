@@ -19,106 +19,125 @@ const reservePort = () =>
 			resolve([server.address().port, server]),
 		);
 	});
-const ports = await Promise.all(Array.from({ length: 4 }, reservePort));
-const [enginePort, peerPort, metricsPort, httpPort] = ports.map(
-	([port]) => port,
-);
-for (const [, server] of ports)
-	await new Promise((resolve) => server.close(resolve));
 
+const MAX_ATTEMPTS = 3;
 const token = "local-test-token";
-const logDirectory = join(process.cwd(), "log");
-const objects = join(process.cwd(), "objects");
-await mkdir(logDirectory);
-await mkdir(objects);
-const publicUrl = `http://127.0.0.1:${enginePort}`;
-const config = {
-	auth: { admin_token: token },
-	guard: { host: "127.0.0.1", port: enginePort },
-	api_peer: { host: "127.0.0.1", port: peerPort },
-	metrics: { host: "127.0.0.1", port: metricsPort },
-	topology: {
-		datacenter_label: 1,
-		datacenters: {
-			default: {
-				datacenter_label: 1,
-				is_leader: true,
-				public_url: publicUrl,
-				peer_url: `http://127.0.0.1:${peerPort}`,
-			},
-		},
-	},
-	storage: {
-		log_directory: logDirectory,
-		auto_provision_partitions: 1,
-		balancing: { enabled: false },
-		log_shard: {
-			max_disk_bytes: 268435456,
-			segment_bytes: 16777216,
-			preallocate_segments: 1,
-		},
-		cold_store: { disk_cache_bytes: 0 },
-		write_to_cold_after_ms: 500,
-		stop_timeout_ms: 1500,
-		stop_teardown_ms: 1000,
-	},
-	object_storage: { primary: { file_system: { path: objects } } },
-	telemetry: { enabled: false },
-	runtime: {
-		worker_shutdown_duration: 1,
-		guard_shutdown_duration: 1,
-		force_shutdown_duration: 5,
-	},
-};
-const configFile = join(process.cwd(), "engine.json");
-await writeFile(configFile, JSON.stringify(config));
-const engine = spawn(getEnginePath(), ["--config", configFile], {
-	stdio: ["ignore", "pipe", "pipe"],
-});
-let engineLog = "";
-for (const stream of [engine.stdout, engine.stderr]) {
-	stream.on("data", (chunk) => {
-		engineLog = (engineLog + chunk).slice(-12000);
-	});
-}
-const engineDone = once(engine, "exit");
-const callbacks = [];
 const counter = actor({
 	state: { n: 0 },
 	actions: { increment: (context) => ++context.state.n },
 });
-const registry = setup({
-	use: { counter },
-	noWelcome: true,
-	endpoint: publicUrl,
-	token,
-	startEngine: false,
-	httpHost: "127.0.0.1",
-	httpPort,
-	shutdown: { gracePeriodMs: 2000, disableSignalHandlers: true },
-});
-try {
-	const { client } = await setupTest(
-		{
-			onTestFinished(callback) {
-				callbacks.push(callback);
+
+for (let attempt = 1; ; attempt++) {
+	const ports = await Promise.all(Array.from({ length: 4 }, reservePort));
+	const [enginePort, peerPort, metricsPort, httpPort] = ports.map(
+		([port]) => port,
+	);
+	for (const [, server] of ports)
+		await new Promise((resolve) => server.close(resolve));
+
+	const logDirectory = join(process.cwd(), `engine-log-${attempt}`);
+	const objects = join(process.cwd(), `engine-objects-${attempt}`);
+	await mkdir(logDirectory);
+	await mkdir(objects);
+	const publicUrl = `http://127.0.0.1:${enginePort}`;
+	const config = {
+		auth: { admin_token: token },
+		guard: { host: "127.0.0.1", port: enginePort },
+		api_peer: { host: "127.0.0.1", port: peerPort },
+		metrics: { host: "127.0.0.1", port: metricsPort },
+		topology: {
+			datacenter_label: 1,
+			datacenters: {
+				default: {
+					datacenter_label: 1,
+					is_leader: true,
+					public_url: publicUrl,
+					peer_url: `http://127.0.0.1:${peerPort}`,
+				},
 			},
 		},
-		registry,
-	);
-	const handle = client.counter.getOrCreate(["test"]);
-	if ((await handle.increment()) !== 1 || (await handle.increment()) !== 2)
-		throw new Error("Rivet actor state did not advance");
-	process.stdout.write("rivet3-live-ok");
-} catch (error) {
-	process.stderr.write(`Rivet engine log:\n${engineLog}\n`);
-	throw error;
-} finally {
-	for (const callback of callbacks) await callback();
-	await registry.shutdown();
-	if (engine.exitCode === null && engine.signalCode === null)
-		engine.kill("SIGTERM");
-	const timer = setTimeout(() => engine.kill("SIGKILL"), 5000);
-	await engineDone;
-	clearTimeout(timer);
+		storage: {
+			log_directory: logDirectory,
+			auto_provision_partitions: 1,
+			balancing: { enabled: false },
+			log_shard: {
+				max_disk_bytes: 268435456,
+				segment_bytes: 16777216,
+				preallocate_segments: 1,
+			},
+			cold_store: { disk_cache_bytes: 0 },
+			write_to_cold_after_ms: 500,
+			stop_timeout_ms: 1500,
+			stop_teardown_ms: 1000,
+		},
+		object_storage: { primary: { file_system: { path: objects } } },
+		telemetry: { enabled: false },
+		runtime: {
+			worker_shutdown_duration: 1,
+			guard_shutdown_duration: 1,
+			force_shutdown_duration: 5,
+		},
+	};
+	const configFile = join(process.cwd(), "engine.json");
+	await writeFile(configFile, JSON.stringify(config));
+	const engine = spawn(getEnginePath(), ["--config", configFile], {
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	let engineLog = "";
+	for (const stream of [engine.stdout, engine.stderr]) {
+		stream.on("data", (chunk) => {
+			engineLog = (engineLog + chunk).slice(-12000);
+		});
+	}
+	let engineExited = false;
+	const engineDone = once(engine, "exit").then((result) => {
+		engineExited = true;
+		return result;
+	});
+	const callbacks = [];
+	const registry = setup({
+		use: { counter },
+		noWelcome: true,
+		endpoint: publicUrl,
+		token,
+		startEngine: false,
+		httpHost: "127.0.0.1",
+		httpPort,
+		shutdown: { gracePeriodMs: 2000, disableSignalHandlers: true },
+	});
+	let failure: unknown;
+	let engineDead = false;
+	try {
+		const { client } = await setupTest(
+			{
+				onTestFinished(callback) {
+					callbacks.push(callback);
+				},
+			},
+			registry,
+		);
+		const handle = client.counter.getOrCreate(["test"]);
+		if ((await handle.increment()) !== 1 || (await handle.increment()) !== 2)
+			throw new Error("Rivet actor state did not advance");
+	} catch (error) {
+		failure = error;
+		engineDead = engineExited;
+	} finally {
+		for (const callback of callbacks) await callback();
+		await registry.shutdown();
+		if (engine.exitCode === null && engine.signalCode === null)
+			engine.kill("SIGTERM");
+		const timer = setTimeout(() => engine.kill("SIGKILL"), 5000);
+		await engineDone;
+		clearTimeout(timer);
+	}
+	if (failure === undefined) {
+		process.stdout.write("rivet3-live-ok");
+		break;
+	}
+	const retryable = engineDead || String(failure).includes("EADDRINUSE");
+	if (!retryable || attempt === MAX_ATTEMPTS) {
+		process.stderr.write(`Rivet engine log:\n${engineLog}\n`);
+		throw failure;
+	}
 }

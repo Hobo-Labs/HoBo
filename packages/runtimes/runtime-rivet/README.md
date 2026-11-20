@@ -30,6 +30,10 @@ fail if the engine or an actor action fails.
   actor code, and the live fixture spawns the engine binary as its own
   process (guard bound to 127.0.0.1, admin-token auth), so actor actions run
   inside the engine's workers behind that process boundary.
+- The live fixture reserves its engine, peer, metrics and HTTP ports, then
+  re-reserves a fresh set (up to three attempts) when a reserved port is
+  stolen between reservation and bind; any other failure fails the test with
+  the captured engine log.
 - The Rivet 3.0.0 engine CLI ships platform packages for darwin (arm64, x64)
   and linux (arm64, x64 — static musl binaries that also run on glibc hosts);
   Rivet 2's win32 package has no 3.0.0 successor. There is no Windows engine

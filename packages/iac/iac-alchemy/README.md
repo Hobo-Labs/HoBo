@@ -49,6 +49,9 @@ The financial integration test builds broker, dispatcher and pricing as test
 prerequisites; they are not dependencies of the adapter package.
 The repository-level `test/iac-alchemy-integration.test.ts` exercise adds
 ranked dispatcher execution, durable route SQLite, Rivet Alchemy resources, and
-the RivetKit 3 runtime package in one host-shaped fixture.
+the RivetKit 3 runtime package in one host-shaped fixture. It imports the
+Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
+declarations (the same peer-aligned instances the adapter resolves) and builds
+its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
 The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
 host assumptions; it does not prove the implementation or external provider.
