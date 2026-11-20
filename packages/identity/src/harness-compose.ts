@@ -6,8 +6,9 @@
  * Event-sourced; auto-rollback is a durable obligation shape (policy.Decided-compatible).
  */
 import type {
-	FeatureFlagStore,
+	FeatureFlagPort,
 	FlagEvalContext,
+	FlagValue,
 } from "./feature-flag-store.js";
 import {
 	applyRolloutToGatewayRouting,
@@ -24,13 +25,17 @@ import {
 } from "./harness-adapters.js";
 import {
 	type DeliveryHealthSignal,
+	type DeliveryPort,
 	OpenDeliveryEngine,
 	type RolloutPolicy,
 	type RolloutState,
+	validateRolloutPolicy,
 } from "./harness-delivery.js";
 import {
 	type ExperimentDefinition,
+	type ExperimentPort,
 	OpenExperimentEngine,
+	validateExperimentDefinition,
 } from "./harness-experiment.js";
 
 // public-contract: harness facade schema.
@@ -40,11 +45,30 @@ export interface ExposureTrack {
 	readonly variant: string;
 }
 
-export type HarnessPorts = Readonly<{
-	flags: FeatureFlagStore;
-	delivery: OpenDeliveryEngine;
-	experiment: OpenExperimentEngine;
+export type HarnessPorts<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> = Readonly<{
+	flags: FeatureFlagPort;
+	delivery: D | OpenDeliveryEngine;
+	experiment: E | OpenExperimentEngine;
 }>;
+
+export interface HarnessOptions<
+	D extends DeliveryPort = DeliveryPort,
+	E extends ExperimentPort = ExperimentPort,
+> {
+	readonly store: FeatureFlagPort;
+	readonly now?: () => string;
+	readonly emitOtel?: (span: {
+		readonly name: string;
+		readonly attributes: Readonly<Record<string, string | number | boolean>>;
+	}) => void;
+	readonly delivery?: D;
+	readonly experiment?: E;
+	readonly deliveryAdapter?: DeliveryAdapter;
+	readonly analysis?: ExperimentAnalysisPort;
+}
 
 export type ProgressiveRun = Readonly<{
 	rolloutId: string;
@@ -62,45 +86,43 @@ export type ProgressiveRun = Readonly<{
 /**
  * Coherent progressive-delivery facade over the three ports.
  */
-export class Harness {
+export class Harness<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+> {
 	readonly schemaVersion = HARNESS_SCHEMA;
-	readonly flags: FeatureFlagStore;
-	readonly delivery: OpenDeliveryEngine;
-	readonly experiment: OpenExperimentEngine;
+	readonly flags: FeatureFlagPort;
+	readonly delivery: D | OpenDeliveryEngine;
+	readonly experiment: E | OpenExperimentEngine;
 	readonly deliveryAdapter: DeliveryAdapter;
 	readonly analysis: ExperimentAnalysisPort;
 	readonly routingEvents: DomainRoutingEvent[] = [];
 	private readonly now: () => string;
 
-	constructor(options: {
-		readonly store: FeatureFlagStore;
-		readonly now?: () => string;
-		readonly emitOtel?: (span: {
-			readonly name: string;
-			readonly attributes: Readonly<Record<string, string | number | boolean>>;
-		}) => void;
-		readonly deliveryAdapter?: DeliveryAdapter;
-		readonly analysis?: ExperimentAnalysisPort;
-	}) {
+	constructor(options: HarnessOptions<D, E>) {
 		this.flags = options.store;
 		this.now = options.now ?? (() => new Date().toISOString());
-		this.delivery = new OpenDeliveryEngine({
-			store: options.store,
-			...(options.now !== undefined ? { now: options.now } : undefined),
-		});
-		this.experiment = new OpenExperimentEngine({
-			store: options.store,
-			...(options.now !== undefined ? { now: options.now } : undefined),
-			...(options.emitOtel !== undefined
-				? { emitOtel: options.emitOtel }
-				: undefined),
-		});
+		this.delivery =
+			options.delivery ??
+			new OpenDeliveryEngine({
+				store: options.store,
+				...(options.now !== undefined ? { now: options.now } : undefined),
+			});
+		this.experiment =
+			options.experiment ??
+			new OpenExperimentEngine({
+				store: options.store,
+				...(options.now !== undefined ? { now: options.now } : undefined),
+				...(options.emitOtel !== undefined
+					? { emitOtel: options.emitOtel }
+					: undefined),
+			});
 		this.deliveryAdapter =
 			options.deliveryAdapter ?? createBuiltinDeliveryAdapter();
 		this.analysis = options.analysis ?? createBuiltinExperimentAnalysis();
 	}
 
-	ports(): HarnessPorts {
+	ports(): HarnessPorts<D, E> {
 		return Object.freeze({
 			flags: this.flags,
 			delivery: this.delivery,
@@ -116,20 +138,47 @@ export class Harness {
 		readonly rollout: RolloutPolicy;
 		readonly experiment?: ExperimentDefinition;
 	}): ProgressiveRun {
-		// Ensure flag defined dark then stage-0
-		if (!this.flags.get(input.rollout.flag)) {
-			this.flags.define({
-				key: input.rollout.flag,
-				percentage: 0,
-				enabled: true,
-				state: "ENABLED",
-				defaultValue: false,
-			});
-		}
+		if (input.experiment && input.experiment.flag !== input.rollout.flag)
+			throw Object.assign(
+				new Error("rollout and experiment must use the same flag"),
+				{ code: "experiment-rollout-flag-mismatch" },
+			);
+		validateRolloutPolicy(input.rollout);
 		if (input.experiment) {
-			this.experiment.define(input.experiment);
+			validateExperimentDefinition(input.experiment);
+			this.experiment.validateDefinition?.(input.experiment);
 		}
-		const state = this.delivery.start(input.rollout);
+		let state: RolloutState;
+		try {
+			if (!this.flags.get(input.rollout.flag)) {
+				this.flags.define({
+					key: input.rollout.flag,
+					percentage: 0,
+					enabled: true,
+					state: "ENABLED",
+					defaultValue: false,
+				});
+			}
+			if (input.experiment) {
+				this.experiment.define(input.experiment);
+			}
+			state = this.delivery.start(input.rollout);
+		} catch (error) {
+			const allocationFailure =
+				error instanceof Error &&
+				"code" in error &&
+				error.code === "experiment-allocation-reconcile-required";
+			throw Object.assign(
+				new Error(
+					"progressive start may have partially changed state; reconcile before retrying",
+				),
+				{
+					code: allocationFailure
+						? "experiment-allocation-reconcile-required"
+						: "progressive-start-reconcile-required",
+				},
+			);
+		}
 		void this.deliveryAdapter.startRemote(input.rollout);
 		return this.toRun(state, input.experiment?.name);
 	}
@@ -148,8 +197,16 @@ export class Harness {
 	trackExposure(
 		experimentName: string,
 		context: FlagEvalContext,
+		defaultValue?: FlagValue,
 	): ExposureTrack {
-		const a = this.experiment.evaluateAndExpose(experimentName, context);
+		const a =
+			defaultValue === undefined
+				? this.experiment.evaluateAndExpose(experimentName, context)
+				: this.experiment.evaluateAndExpose(
+						experimentName,
+						context,
+						defaultValue,
+					);
 		return { variant: a.variant };
 	}
 
@@ -210,15 +267,9 @@ export class Harness {
 	}
 }
 
-export function createHarness(options: {
-	readonly store: FeatureFlagStore;
-	readonly now?: () => string;
-	readonly emitOtel?: (span: {
-		readonly name: string;
-		readonly attributes: Readonly<Record<string, string | number | boolean>>;
-	}) => void;
-	readonly deliveryAdapter?: DeliveryAdapter;
-	readonly analysis?: ExperimentAnalysisPort;
-}): Harness {
+export function createHarness<
+	D extends DeliveryPort = OpenDeliveryEngine,
+	E extends ExperimentPort = OpenExperimentEngine,
+>(options: HarnessOptions<D, E>): Harness<D, E> {
 	return new Harness(options);
 }
