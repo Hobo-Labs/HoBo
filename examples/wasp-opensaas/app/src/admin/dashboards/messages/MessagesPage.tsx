@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AuthUser } from "wasp/auth";
 import {
   getContactMessages,
+  getUnreadContactMessageCount,
   markContactMessageRead,
   useQuery,
 } from "wasp/client/operations";
@@ -13,13 +14,19 @@ export function MessagesPage({ user }: { user: AuthUser }) {
   const [page, setPage] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState(false);
-  const { data, isLoading, error } = useQuery(getContactMessages, { page });
+  const contactMessagesQuery = useQuery(getContactMessages, { page });
+  const unreadCountQuery = useQuery(getUnreadContactMessageCount);
+  const { data, isLoading, error } = contactMessagesQuery;
 
   async function markRead(id: string) {
     setSavingId(id);
     setSaveError(false);
     try {
       await markContactMessageRead({ id });
+      await Promise.all([
+        contactMessagesQuery.refetch(),
+        unreadCountQuery.refetch(),
+      ]);
     } catch {
       setSaveError(true);
     } finally {

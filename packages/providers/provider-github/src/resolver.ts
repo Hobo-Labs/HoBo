@@ -868,17 +868,11 @@ export function createGithubPagesResolvers(
 		s: Session,
 		site: SiteContent,
 	): Promise<ResolveOutcome> {
-		const repo = await observeRepo(s, t);
+		await observeRepo(s, t);
 		const pages = requirePages(t, await observePages(s));
 		let branch = await observeBranch(s, t);
 		let action: ResolverAction | undefined;
 		if (branch.publishedTree !== site.treeSha) {
-			if (repo.push === false)
-				refuse(
-					"github-permission-missing",
-					`the credential cannot push to ${t.physicalId}`,
-					"grant the token behind credentialRef contents: write on the repository",
-				);
 			action = branch.headSha === null ? "create" : "update";
 			branch = await push(s, t, site, branch);
 		}

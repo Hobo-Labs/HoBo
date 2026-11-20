@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -34,11 +35,14 @@ describeDatabase("contact messages", () => {
   });
 
   afterAll(async () => {
-    await prisma.contactFormMessage.deleteMany({
-      where: { user: { email: fixtureEmail } },
-    });
-    await prisma.user.deleteMany({ where: { email: fixtureEmail } });
-    await prisma.$disconnect();
+    try {
+      await prisma.contactFormMessage.deleteMany({
+        where: { user: { email: fixtureEmail } },
+      });
+      await prisma.user.deleteMany({ where: { email: fixtureEmail } });
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   it("restricts all operations to administrators", async () => {
