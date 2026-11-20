@@ -196,6 +196,7 @@ export type VercelResolverOptions = {
 	 * never accepts a raw token.
 	 */
 	readonly resolveCredential: (credentialRef: string) => Promise<string>;
+	readonly trustedProjectionPublicKeys?: ReadonlyMap<string, string>;
 	readonly verifyGitDeploymentEnvironment?: (input: {
 		readonly teamId: string;
 		readonly projectId: string;

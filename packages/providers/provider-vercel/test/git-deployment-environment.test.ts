@@ -1,4 +1,5 @@
-import { generateKeyPairSync } from "node:crypto";
+import { canonicalJson } from "@hobo/core";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { parseVercelGitEnvironment } from "../src/git-deployment-environment.js";
 
@@ -7,6 +8,7 @@ const expected = {
 	projectId: "prj_123",
 	revision: "0123456789abcdef0123456789abcdef01234567",
 };
+const atMs = 50;
 function fixture() {
 	const consumer = {
 		yard: "cd",
@@ -39,9 +41,11 @@ function fixture() {
 		"infisical",
 		"secret-ref.dynamic-resolution/v1",
 	);
-	const key = generateKeyPairSync("ed25519")
-		.publicKey.export({ type: "spki", format: "pem" })
+	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+	const key = publicKey
+		.export({ type: "spki", format: "pem" })
 		.toString();
+	const trustedProjectionPublicKeys = new Map([["supervisor", key]]);
 	const context = {
 		contract: "hobo.cd-host-context/v1",
 		deploymentId: "deploy",
@@ -69,32 +73,38 @@ function fixture() {
 	const evidence = {
 		digest: `sha256:${"b".repeat(64)}`,
 		observedAtMs: 10,
-		expiresAtMs: 1000,
+		expiresAtMs: 1_000,
 	};
+	const payload = {
+		contract: "hobo.junction-projection/v1",
+		...config,
+		binding: {
+			kind: "infisical",
+			endpoint: "https://app.infisical.com",
+			projectId: "project",
+			environment: "prod",
+			folder: "/cd",
+			identityId: "identity",
+			issuer: "https://oidc.vercel.com/team",
+			subject: "owner:team:project:cd:environment:production",
+			audience: "https://vercel.com/team",
+			claims: { owner_id: expected.teamId, project_id: expected.projectId },
+			tls: "verify-full",
+		},
+		producerEvidence: evidence,
+		consumerEvidence: evidence,
+		issuedAtMs: 11,
+		expiresAtMs: 100,
+	};
+	const signature = sign(
+		null,
+		Buffer.from(canonicalJson(payload), "utf8"),
+		privateKey,
+	).toString("base64url");
 	const projection = {
 		keyId: "supervisor",
-		signature: "A".repeat(86),
-		payload: {
-			contract: "hobo.junction-projection/v1",
-			...config,
-			binding: {
-				kind: "infisical",
-				endpoint: "https://app.infisical.com",
-				projectId: "project",
-				environment: "prod",
-				folder: "/cd",
-				identityId: "identity",
-				issuer: "https://oidc.vercel.com/team",
-				subject: "owner:team:project:cd:environment:production",
-				audience: "https://vercel.com/team",
-				claims: { owner_id: expected.teamId, project_id: expected.projectId },
-				tls: "verify-full",
-			},
-			producerEvidence: evidence,
-			consumerEvidence: evidence,
-			issuedAtMs: 11,
-			expiresAtMs: 100,
-		},
+		signature,
+		payload,
 	};
 	const vars = [
 		{ name: "HOBO_CD_HOST_CONTEXT", value: JSON.stringify(context) },
@@ -106,17 +116,55 @@ function fixture() {
 		{ name: "INFISICAL_SECRET_PATH", value: "/cd" },
 		{ name: "INFISICAL_IDENTITY_ID", value: "identity" },
 	];
-	return { vars, context, projection };
+	const parseOptions = { atMs, trustedProjectionPublicKeys };
+	return { vars, context, projection, parseOptions, trustedProjectionPublicKeys };
 }
 describe("Vercel public deployment environment parsing", () => {
 	it("accepts a complete scoped CD bootstrap and returns canonical name ordering", () => {
 		const f = fixture();
-		const parsed = parseVercelGitEnvironment(f.vars, expected);
+		const parsed = parseVercelGitEnvironment(f.vars, expected, f.parseOptions);
 		expect(parsed.map((v) => v.name)).toEqual(parsed.map((v) => v.name).sort());
 		expect(parsed).toHaveLength(8);
 		expect(() =>
-			parseVercelGitEnvironment(f.vars, { ...expected, projectId: "wrong" }),
+			parseVercelGitEnvironment(
+				f.vars,
+				{ ...expected, projectId: "wrong" },
+				f.parseOptions,
+			),
 		).toThrow();
+	});
+	it("rejects forged projections, stale lifetimes, and missing trust pins", () => {
+		const f = fixture();
+		const other = generateKeyPairSync("ed25519")
+			.publicKey.export({ type: "spki", format: "pem" })
+			.toString();
+		expect(() =>
+			parseVercelGitEnvironment(f.vars, expected, {
+				atMs,
+				trustedProjectionPublicKeys: new Map([["supervisor", other]]),
+			}),
+		).toThrow();
+		const forged = f.vars.map((row) =>
+			row.name === "HOBO_CD_CONFIG_PROJECTION"
+				? {
+						...row,
+						value: JSON.stringify({
+							...f.projection,
+							signature: "A".repeat(86),
+						}),
+					}
+				: row,
+		);
+		expect(() =>
+			parseVercelGitEnvironment(forged, expected, f.parseOptions),
+		).toThrow();
+		expect(() =>
+			parseVercelGitEnvironment(f.vars, expected, {
+				...f.parseOptions,
+				atMs: 5_000,
+			}),
+		).toThrow();
+		expect(() => parseVercelGitEnvironment(f.vars, expected, { atMs })).toThrow();
 	});
 	it("accepts a separate renewable config pointer and rejects overlapping or invalid scopes", () => {
 		const f = fixture();
@@ -135,9 +183,13 @@ describe("Vercel public deployment environment parsing", () => {
 						}
 					: row,
 			);
-		expect(parseVercelGitEnvironment(vars("config"), expected)).toHaveLength(8);
+		expect(
+			parseVercelGitEnvironment(vars("config"), expected, f.parseOptions),
+		).toHaveLength(8);
 		for (const scope of ["journal", "artifacts", "Bearer secret"])
-			expect(() => parseVercelGitEnvironment(vars(scope), expected)).toThrow();
+			expect(() =>
+				parseVercelGitEnvironment(vars(scope), expected, f.parseOptions),
+			).toThrow();
 	});
 	it("rejects hidden credential fields and values, foreign scopes, and inconsistent coordinates", () => {
 		const f = fixture();
@@ -182,9 +234,9 @@ describe("Vercel public deployment environment parsing", () => {
 			[...f.vars, { name: "CRON_SECRET", value: "private" }],
 			[...f.vars, f.vars[0]],
 		])
-			expect(() => parseVercelGitEnvironment(bad, expected)).toThrow(
-				/unapproved or invalid/u,
-			);
+			expect(() =>
+				parseVercelGitEnvironment(bad, expected, f.parseOptions),
+			).toThrow(/unapproved or invalid/u);
 	});
 	it("accepts bounded, unique ordered CI fleet names only", () => {
 		expect(

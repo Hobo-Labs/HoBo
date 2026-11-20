@@ -70,7 +70,7 @@ function parse(raw: ResolveRequest): ResolveRequest {
 		);
 	return request;
 }
-function desired(request: ResolveRequest) {
+function desired(request: ResolveRequest, options: VercelResolverOptions) {
 	const record = request.desired;
 	const project = identifier(field(record, "project"));
 	const projectId = record.projectId;
@@ -126,6 +126,9 @@ function desired(request: ResolveRequest) {
 		environmentVariables = parseVercelGitEnvironment(
 			record.environmentVariables,
 			{ teamId: field(record, "teamId"), projectId, revision },
+			options.trustedProjectionPublicKeys
+				? { trustedProjectionPublicKeys: options.trustedProjectionPublicKeys }
+				: undefined,
 		);
 		if (request.desired.source === true && environmentVariables.length)
 			return refuse(
@@ -147,9 +150,12 @@ function desired(request: ResolveRequest) {
 		...(environment === "preview" ? { environment } : undefined),
 	};
 }
-function marker(request: ResolveRequest): string {
+function marker(
+	request: ResolveRequest,
+	options: VercelResolverOptions,
+): string {
 	return `sha256:${createHash("sha256")
-		.update(JSON.stringify(desired(request)))
+		.update(JSON.stringify(desired(request, options)))
 		.digest("hex")}`;
 }
 function outcome(
@@ -170,7 +176,7 @@ export function createVercelGitFunctionResolver(
 ): ResourceResolver {
 	const team = options.teamId ? identifier(options.teamId) : "";
 	const verifyEnvironment = async (request: ResolveRequest): Promise<void> => {
-		const d = desired(request);
+		const d = desired(request, options);
 		if (!d.environmentVariables?.length) return;
 		if (!d.projectId || !options.verifyGitDeploymentEnvironment)
 			return refuse(
@@ -262,8 +268,8 @@ export function createVercelGitFunctionResolver(
 			const mutationId = JSON.stringify([
 				"vercel-git",
 				team,
-				desired(request).project,
-				desired(request).operationId,
+				desired(request, options).project,
+				desired(request, options).operationId,
 				method,
 				path,
 			]);
@@ -298,7 +304,7 @@ export function createVercelGitFunctionResolver(
 		request: ResolveRequest,
 		send: Caller,
 	): Promise<JsonObject | undefined> => {
-		const d = desired(request);
+		const d = desired(request, options);
 		const response = await send(
 			"GET",
 			`/v9/projects/${encodeURIComponent(d.project)}${query()}`,
@@ -318,7 +324,7 @@ export function createVercelGitFunctionResolver(
 		return record;
 	};
 	const projectReady = (request: ResolveRequest, record: JsonObject) => {
-		const d = desired(request);
+		const d = desired(request, options);
 		return (
 			record.rootDirectory === d.rootDirectory &&
 			record.buildCommand === d.buildCommand &&
@@ -332,7 +338,7 @@ export function createVercelGitFunctionResolver(
 		verifyArtifact = true,
 		requireOwnership = false,
 	): Promise<JsonObject | undefined> => {
-		const d = desired(request),
+		const d = desired(request, options),
 			send = await caller(request, transport),
 			p = await project(request, send);
 		if (!p) return undefined;
@@ -356,7 +362,7 @@ export function createVercelGitFunctionResolver(
 						return invalid("Vercel returned an invalid deployment list entry");
 					if (
 						isJsonObject(item.meta) &&
-						item.meta.hoboOperation === marker(request)
+						item.meta.hoboOperation === marker(request, options)
 					)
 						found.push(isJsonString(item.uid) ? item.uid : field(item, "id"));
 				}
@@ -401,7 +407,7 @@ export function createVercelGitFunctionResolver(
 			(isJsonObject(record.team) && record.team.id !== team) ||
 			!isJsonObject(meta) ||
 			(request.desired.source !== true &&
-				meta.hoboOperation !== marker(request)) ||
+				meta.hoboOperation !== marker(request, options)) ||
 			meta.githubCommitSha !== d.revision ||
 			meta.githubOrg !== d.organization ||
 			meta.githubRepo !== d.repository ||
@@ -412,7 +418,7 @@ export function createVercelGitFunctionResolver(
 			return invalid(
 				"Vercel deployment identity, scope, revision or operation differs from the approved artifact",
 			);
-		if (requireOwnership && meta.hoboOperation !== marker(request))
+		if (requireOwnership && meta.hoboOperation !== marker(request, options))
 			return refuse(
 				"Vercel deletion requires the HoBo operation marker; an adopted deployment HoBo did not create is never destroyed",
 			);
@@ -474,7 +480,7 @@ export function createVercelGitFunctionResolver(
 			return refuse(
 				"Vercel deployment retirement requires verified queue drain and producer fences",
 			);
-		const d = desired(request);
+		const d = desired(request, options);
 		let proof:
 			| Awaited<
 					ReturnType<NonNullable<VercelResolverOptions["verifyGitRetirement"]>>
@@ -502,7 +508,7 @@ export function createVercelGitFunctionResolver(
 		request: ResolveRequest,
 		transport: HttpTransport,
 	): Promise<boolean> => {
-		const d = desired(request),
+		const d = desired(request, options),
 			deploymentId = request.ref.physicalId;
 		if (!deploymentId || !d.projectId || !options.verifyGitInventoryAccess)
 			return refuse(
@@ -666,7 +672,7 @@ export function createVercelGitFunctionResolver(
 				return refuse(
 					"Vercel Git deployment requires independent build artifact evidence",
 				);
-			const d = desired(request),
+			const d = desired(request, options),
 				send = await caller(request, transport);
 			let p = await project(request, send);
 			let createdHere = false;
@@ -738,7 +744,7 @@ export function createVercelGitFunctionResolver(
 							),
 						}
 					: undefined),
-				meta: { hoboOperation: marker(request) },
+				meta: { hoboOperation: marker(request, options) },
 			});
 			check(response, [200, 201]);
 			const id = identifier(field(body(response), "id"));

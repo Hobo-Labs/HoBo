@@ -95,6 +95,7 @@ export {
 export { vercelPreviewBranch } from "./git-branch.js";
 export {
 	parseVercelGitEnvironment,
+	type VercelGitEnvironmentParseOptions,
 	type VercelGitEnvironmentScope,
 	type VercelGitEnvironmentVariable,
 } from "./git-deployment-environment.js";

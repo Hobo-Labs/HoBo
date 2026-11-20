@@ -1,5 +1,5 @@
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this module parses untrusted public deployment environment and signed context JSON before recording it. */
-import { createPublicKey } from "node:crypto";
+import { createPublicKey, verify } from "node:crypto";
 import { parseSecretRef } from "@hobo/bindings";
 import { canonicalJson, ResolverError } from "@hobo/core";
 import {
@@ -19,6 +19,11 @@ export type VercelGitEnvironmentScope = Readonly<{
 	projectId: string;
 	revision: string;
 }>;
+export type VercelGitEnvironmentParseOptions = Readonly<{
+	atMs?: number;
+	trustedProjectionPublicKeys?: ReadonlyMap<string, string>;
+}>;
+const MAX_PROJECTION_LIFETIME_MS = 86_400_000;
 
 const CD_NAMES = [
 	"BLOB_STORE_ID",
@@ -126,7 +131,24 @@ function junctionScope(
 		return fail();
 	return s;
 }
-function evidence(input: JsonValue | undefined) {
+function verifyProjectionSignature(
+	publicKeyPem: string,
+	payload: JsonValue,
+	signature: string,
+): boolean {
+	if (!/^[A-Za-z0-9_-]{86}$/u.test(signature)) return false;
+	try {
+		return verify(
+			null,
+			Buffer.from(canonicalJson(payload), "utf8"),
+			createPublicKey(publicKeyPem),
+			Buffer.from(signature, "base64url"),
+		);
+	} catch {
+		return false;
+	}
+}
+function evidence(input: JsonValue | undefined, atMs: number) {
 	const e = record(input, ["digest", "observedAtMs", "expiresAtMs"]);
 	if (
 		typeof e.digest !== "string" ||
@@ -136,14 +158,19 @@ function evidence(input: JsonValue | undefined) {
 		typeof e.expiresAtMs !== "number" ||
 		!Number.isSafeInteger(e.expiresAtMs) ||
 		e.observedAtMs < 0 ||
-		e.expiresAtMs <= e.observedAtMs
+		e.expiresAtMs <= e.observedAtMs ||
+		e.expiresAtMs <= atMs ||
+		e.observedAtMs > atMs
 	)
 		return fail();
 }
 function cd(
 	values: ReadonlyMap<string, string>,
 	expected: VercelGitEnvironmentScope,
+	atMs: number,
+	trustedProjectionPublicKeys: ReadonlyMap<string, string> | undefined,
 ) {
+	if (!trustedProjectionPublicKeys?.size) return fail();
 	if (CD_NAMES.some((name) => !values.has(name))) return fail();
 	const context = record(json(values.get("HOBO_CD_HOST_CONTEXT") ?? ""), [
 		"contract",
@@ -230,17 +257,19 @@ function cd(
 	for (const item of context.trustedKeys) {
 		const key = record(item, ["id", "publicKey"]);
 		const keyId = id(key.id);
+		const pinned = trustedProjectionPublicKeys.get(keyId);
 		if (
 			keys.has(keyId) ||
 			typeof key.publicKey !== "string" ||
+			!pinned ||
+			key.publicKey !== pinned ||
 			!/^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]+-----END PUBLIC KEY-----\n?$/u.test(
-				key.publicKey,
+				pinned,
 			)
 		)
 			return fail();
 		try {
-			if (createPublicKey(key.publicKey).asymmetricKeyType !== "ed25519")
-				return fail();
+			if (createPublicKey(pinned).asymmetricKeyType !== "ed25519") return fail();
 		} catch {
 			return fail();
 		}
@@ -251,10 +280,19 @@ function cd(
 		"payload",
 		"signature",
 	]);
+	const envelopeKeyId = id(envelope.keyId);
+	const signingKey = trustedProjectionPublicKeys.get(envelopeKeyId);
+	const projectionPayload = envelope.payload;
 	if (
-		!keys.has(id(envelope.keyId)) ||
+		!keys.has(envelopeKeyId) ||
+		!signingKey ||
 		typeof envelope.signature !== "string" ||
-		!/^[A-Za-z0-9_-]{86}$/u.test(envelope.signature)
+		projectionPayload === undefined ||
+		!verifyProjectionSignature(
+			signingKey,
+			projectionPayload,
+			envelope.signature,
+		)
 	)
 		return fail();
 	const payload = record(envelope.payload, [
@@ -297,11 +335,14 @@ function cd(
 		!Number.isSafeInteger(payload.issuedAtMs) ||
 		typeof payload.expiresAtMs !== "number" ||
 		!Number.isSafeInteger(payload.expiresAtMs) ||
-		payload.expiresAtMs <= payload.issuedAtMs
+		payload.expiresAtMs <= payload.issuedAtMs ||
+		payload.issuedAtMs > atMs ||
+		payload.expiresAtMs <= atMs ||
+		payload.expiresAtMs - payload.issuedAtMs > MAX_PROJECTION_LIFETIME_MS
 	)
 		return fail();
-	evidence(payload.producerEvidence);
-	evidence(payload.consumerEvidence);
+	evidence(payload.producerEvidence, atMs);
+	evidence(payload.consumerEvidence, atMs);
 	const binding = record(payload.binding, [
 		"kind",
 		"endpoint",
@@ -350,7 +391,9 @@ function cd(
 export function parseVercelGitEnvironment(
 	raw: JsonValue | undefined,
 	expected: VercelGitEnvironmentScope,
+	options?: VercelGitEnvironmentParseOptions,
 ): readonly VercelGitEnvironmentVariable[] {
+	const atMs = options?.atMs ?? Date.now();
 	if (
 		!IDENTIFIER.test(expected.teamId) ||
 		!/^prj_[A-Za-z0-9_-]{1,128}$/u.test(expected.projectId) ||
@@ -379,7 +422,8 @@ export function parseVercelGitEnvironment(
 		values.set(row.name, row.value);
 		entries.push({ name: row.name, value: row.value });
 	}
-	if (CD_NAMES.some((name) => values.has(name))) cd(values, expected);
+	if (CD_NAMES.some((name) => values.has(name)))
+		cd(values, expected, atMs, options?.trustedProjectionPublicKeys);
 	const members = values.get("HOBO_CI_CACHE_MEMBERS"),
 		quorum = values.get("HOBO_CI_CACHE_QUORUM");
 	if (quorum && !members) return fail();
