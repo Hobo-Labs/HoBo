@@ -38,6 +38,9 @@ export const CLOUD_EVENTS = Object.freeze({
 	ExecSucceeded: "exec.Succeeded",
 	DeploymentDeployed: "deployment.Deployed",
 	DeploymentRolledBack: "deployment.RolledBack",
+	DeploymentTransitionStarted: "deployment.TransitionStarted",
+	DeploymentTransitionCompleted: "deployment.TransitionCompleted",
+	DeploymentReopened: "deployment.Reopened",
 	// Ownership rebind: an anonymous `npx hobo up` deployment is bound to an
 	// account, preserving all provisioned state (resources, outputs, URL).
 	DeploymentClaimed: "deployment.Claimed",
@@ -355,4 +358,35 @@ export function deploymentRolledBack(
 	data: DeploymentRolledBackData,
 ): EventInput {
 	return { type: CLOUD_EVENTS.DeploymentRolledBack, data };
+}
+
+export interface DeploymentTransitionData {
+	deploymentId: string;
+	transitionId: string;
+	kind: "rollback" | "prune";
+	planHash: string;
+	resourceIds: string[];
+	triggerResource?: string;
+	reason?: string;
+}
+
+export function deploymentTransitionStarted(
+	data: DeploymentTransitionData,
+): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentTransitionStarted, data };
+}
+
+export function deploymentTransitionCompleted(
+	data: DeploymentTransitionData,
+): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentTransitionCompleted, data };
+}
+
+export function deploymentReopened(data: {
+	deploymentId: string;
+	rollbackEventId: string;
+	planHash: string;
+	resources: { resourceId: string; specHash: string }[];
+}): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentReopened, data };
 }

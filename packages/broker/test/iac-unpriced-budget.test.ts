@@ -24,17 +24,19 @@ import {
 	createBudgetAdmissionAuthority,
 	createSqliteBudgetAdmissionAuthority,
 	HostingQuoteSchema,
+	type IacPricedSettlementTrust,
+	ProviderAccountExposureSchema,
 } from "../src/index.js";
 import { isJsonString } from "../src/json.js";
 
 const now = "2026-01-02T00:00:00Z";
 const end = "2026-01-31T00:00:00Z";
-const identity = {
+const identity = create(BudgetIdentitySchema, {
 	tenantId: "tenant-a",
 	budgetId: "hosting",
 	periodId: "2026-01",
 	policyRevision: "r1",
-};
+});
 const directories: string[] = [];
 afterEach(() => {
 	for (const dir of directories.splice(0))
@@ -87,6 +89,8 @@ function fixture() {
 			],
 		}),
 	};
+	const budgetIdentity = options.snapshot.identity;
+	if (!budgetIdentity) throw new Error("missing budget identity");
 	const unpriced = {
 		reservationId: "iac:unpriced",
 		requestDigest: `sha256:${"a".repeat(64)}`,
@@ -113,7 +117,7 @@ function fixture() {
 			noSharedEntitlements: true,
 			signature: "scope-signature",
 		}),
-		identity: options.snapshot.identity,
+		identity: budgetIdentity,
 		providerAccountIds: ["account-a"],
 		expectedSeq: 0,
 		now,
@@ -131,13 +135,149 @@ function fixture() {
 		requestDigest: "priced-request",
 		components: [{ name: "compute", costMicros: 1_000_000 }],
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 1_000_000 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 1_000_000,
+			}),
 		],
 	});
 	return { options, unpriced, quote };
 }
 
 describe("durable unbounded liability admission", () => {
+	it.each([
+		"verify",
+		"isCurrent",
+	] as const)("refuses a rejected asynchronous %s check without a hold or unhandled rejection", async (field) => {
+		const { options, unpriced } = fixture();
+		const budgetIdentity = unpriced.identity;
+		if (!budgetIdentity) throw new Error("missing budget identity");
+		const ledger = createSqliteBudgetAdmissionAuthority({
+			...options,
+			unpricedScopeTrust: {
+				...options.unpricedScopeTrust,
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: a rejected Promise deliberately exercises the synchronous verifier boundary.
+				[field]: (() =>
+					Promise.reject(new Error("authority unavailable"))) as never,
+			},
+		});
+		try {
+			expect(() =>
+				ledger.reserveUnbounded({ ...unpriced, identity: budgetIdentity }),
+			).toThrow();
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(ledger.read(now).unboundedExposureCount).toBe(0);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("retains a claimed unpriced hold when asynchronous settlement verification rejects", async () => {
+		const { options, unpriced } = fixture();
+		if (!unpriced.identity) throw new Error("missing budget identity");
+		const ledger = createSqliteBudgetAdmissionAuthority({
+			...options,
+			unpricedScopeTrust: {
+				...options.unpricedScopeTrust,
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: a rejected Promise deliberately exercises the synchronous verifier boundary.
+				settlement: (() =>
+					Promise.reject(new Error("authority unavailable"))) as never,
+			},
+		});
+		try {
+			ledger.reserveUnbounded({ ...unpriced, identity: unpriced.identity });
+			ledger.claimExecution({
+				reservationId: unpriced.reservationId,
+				requestDigest: unpriced.requestDigest,
+				executionDigest: "exec:1",
+				expectedSeq: 1,
+			});
+			expect(() =>
+				ledger.settle(unpriced.reservationId, 0, {
+					usageEvidenceRef: "usage:1",
+					sourceStoppedEvidenceRef: "stop:1",
+					financeSignature: "verified-evidence",
+					providerAccounts: [
+						create(ProviderAccountExposureSchema, {
+							providerAccountId: "account-a",
+							liabilityMicros: 0,
+						}),
+					],
+				}),
+			).toThrow();
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(ledger.lookup(unpriced.reservationId)).toMatchObject({
+				status: "held",
+				unboundedExposure: true,
+				executionDigest: "exec:1",
+			});
+			expect(ledger.read(now).unboundedExposureCount).toBe(1);
+		} finally {
+			ledger.close();
+		}
+	});
+
+	it("retains a claimed priced hold when asynchronous settlement verification rejects", async () => {
+		const { options, quote } = fixture();
+		const fields = {
+			planDigest: `sha256:${"a".repeat(64)}`,
+			inventoryHash: `sha256:${"b".repeat(64)}`,
+			modelHash: `sha256:${"c".repeat(64)}`,
+			quoteHash: `sha256:${"d".repeat(64)}`,
+			evidenceHash: `sha256:${"e".repeat(64)}`,
+		};
+		quote.financialPlanHash = stableHash(fields);
+		const ledger = createSqliteBudgetAdmissionAuthority({
+			...options,
+			iacPricedSettlementTrust: {
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: a rejected Promise deliberately exercises the synchronous verifier boundary.
+				verify: (() =>
+					Promise.reject(new Error("authority unavailable"))) as never,
+			},
+		});
+		try {
+			ledger.reserve({
+				reservationId: "priced",
+				requestDigest: quote.requestDigest,
+				quote,
+				iacPricingPin: create(IacPricingPinSchema, {
+					...fields,
+					validUntil: quote.validUntil,
+				}),
+				identity: create(BudgetIdentitySchema, identity),
+				expectedSeq: 0,
+				now,
+			});
+			ledger.claimExecution({
+				reservationId: "priced",
+				requestDigest: quote.requestDigest,
+				executionDigest: "exec:1",
+				expectedSeq: 1,
+			});
+			expect(() =>
+				ledger.settle("priced", 0, {
+					usageEvidenceRef: "usage:1",
+					sourceStoppedEvidenceRef: "stop:1",
+					financeSignature: "verified-evidence",
+					providerAccounts: [
+						create(ProviderAccountExposureSchema, {
+							providerAccountId: "account-a",
+							liabilityMicros: 0,
+						}),
+					],
+				}),
+			).toThrow();
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect(ledger.lookup("priced")).toMatchObject({
+				status: "held",
+				executionDigest: "exec:1",
+			});
+			expect(ledger.read(now).reservedMicros).toBe(1_000_000);
+		} finally {
+			ledger.close();
+		}
+	});
+
 	it("exhausts bounded admission, claim, revocation, settlement and replay sequences", () => {
 		const { options, unpriced, quote } = fixture();
 		const actions = [
@@ -164,13 +304,14 @@ describe("durable unbounded liability admission", () => {
 			usageEvidenceRef: "usage:1",
 			sourceStoppedEvidenceRef: "stop:1",
 			providerAccounts: [
-				{ providerAccountId: "account-a", liabilityMicros: 0 },
+				create(ProviderAccountExposureSchema, {
+					providerAccountId: "account-a",
+					liabilityMicros: 0,
+				}),
 			],
 			financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:0:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":0}]`,
 		};
-		// The host independently owns every account and entitlement covered by this
-		// attestation, and fences other authorities until settlement. This finite
-		// ledger model does not purport to implement that external guarantee.
+
 		for (let sequence = 0; sequence < actions.length ** 4; sequence++) {
 			let active = true;
 			const trust = { ...options.unpricedScopeTrust, isCurrent: () => active };
@@ -321,7 +462,10 @@ describe("durable unbounded liability admission", () => {
 			sourceStoppedEvidenceRef: "stop:1",
 			financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
 			providerAccounts: [
-				{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+				create(ProviderAccountExposureSchema, {
+					providerAccountId: "account-a",
+					liabilityMicros: 1_200_000,
+				}),
 			],
 		});
 		expect(ledger.read(now)).toMatchObject({
@@ -451,7 +595,10 @@ describe("durable unbounded liability admission", () => {
 			usageEvidenceRef: "usage:1",
 			sourceStoppedEvidenceRef: "stop:1",
 			providerAccounts: [
-				{ providerAccountId: "account-a", liabilityMicros: 0 },
+				create(ProviderAccountExposureSchema, {
+					providerAccountId: "account-a",
+					liabilityMicros: 0,
+				}),
 			],
 			financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:0:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":0}]`,
 		};
@@ -462,13 +609,19 @@ describe("durable unbounded liability admission", () => {
 			{
 				...evidence,
 				providerAccounts: [
-					{ providerAccountId: "account-b", liabilityMicros: 0 },
+					create(ProviderAccountExposureSchema, {
+						providerAccountId: "account-b",
+						liabilityMicros: 0,
+					}),
 				],
 			},
 			{
 				...evidence,
 				providerAccounts: [
-					{ providerAccountId: "account-a", liabilityMicros: 1 },
+					create(ProviderAccountExposureSchema, {
+						providerAccountId: "account-a",
+						liabilityMicros: 1,
+					}),
 				],
 			},
 		])
@@ -518,8 +671,7 @@ describe("durable unbounded liability admission", () => {
 				identity: otherSnapshot.identity,
 			}),
 		};
-		// The shared host registry has already authenticated both budget owners.
-		// It must reject *both* proofs; neither local database can see the other.
+
 		const attempts = await Promise.allSettled([
 			Promise.resolve().then(() => one.reserveUnbounded(unpriced)),
 			Promise.resolve().then(() => other.reserveUnbounded(second)),
@@ -545,8 +697,7 @@ describe("durable unbounded liability admission", () => {
 			...options,
 			unpricedScopeTrust: {
 				...options.unpricedScopeTrust,
-				// The host independently maps this alias to account-a and refuses
-				// a proof that did not use the globally canonical identifier.
+
 				verify: (proof) =>
 					proof.providerAccountIds.every((id) => id !== "provider-alias"),
 			},
@@ -595,7 +746,7 @@ describe("durable unbounded liability admission", () => {
 			...options,
 			unpricedScopeTrust: {
 				...options.unpricedScopeTrust,
-				// SAFETY: deliberately malformed asynchronous verifier exercises the transaction boundary.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately malformed asynchronous verifier exercises the transaction boundary.
 				verify: (() => Promise.resolve(true)) as never,
 			},
 		});
@@ -675,13 +826,18 @@ it("rejects a journal settlement that omits authenticated unbounded spend", () =
 		sourceStoppedEvidenceRef: "stop:1",
 		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 1_200_000,
+			}),
 		],
 	});
 	const settlement = events.at(-1);
 	if (!settlement?.snapshot) throw new Error("missing settlement");
+	const account = settlement.snapshot.providerAccounts[0];
+	if (!account) throw new Error("missing provider account");
 	settlement.snapshot.spentMicros = 0;
-	settlement.snapshot.providerAccounts[0].spentMicros = 0;
+	account.spentMicros = 0;
 	expect(() =>
 		createBudgetAdmissionAuthority({
 			snapshot: options.snapshot,
@@ -721,16 +877,22 @@ it("rejects replay that changes a priced IaC hold while retaining its pin", () =
 		expectedSeq: 0,
 		now,
 	});
-	const forged = clone(BudgetAuthorityEventSchema, events[0]);
-	if (!forged.snapshot) throw new Error("missing snapshot");
+	const firstEvent = events[0];
+	if (!firstEvent) throw new Error("missing event");
+	const forged = clone(BudgetAuthorityEventSchema, firstEvent);
+	const account = forged.snapshot?.providerAccounts[0];
+	const reservation = forged.reservations[0];
+	const exposure = reservation?.providerAccounts[0];
+	if (!forged.snapshot || !account || !reservation || !exposure)
+		throw new Error("missing reservation data");
 	forged.type = "budget.ExecutionClaimed";
 	forged.snapshot.seq++;
 	forged.snapshot.reservedMicros = 0;
-	forged.snapshot.providerAccounts[0].reservedMicros = 0;
-	forged.reservations[0].ledgerSeq++;
-	forged.reservations[0].executionDigest = "exec:1";
-	forged.reservations[0].reservedMicros = 0;
-	forged.reservations[0].providerAccounts[0].liabilityMicros = 0;
+	account.reservedMicros = 0;
+	reservation.ledgerSeq++;
+	reservation.executionDigest = "exec:1";
+	reservation.reservedMicros = 0;
+	exposure.liabilityMicros = 0;
 	events.push(forged);
 	expect(() =>
 		createBudgetAdmissionAuthority({
@@ -853,7 +1015,7 @@ it("rejects a priced IaC settlement journal that omits recorded charges", () => 
 	});
 	const events: ReturnType<typeof create<typeof BudgetAuthorityEventSchema>>[] =
 		[];
-	const trust = {
+	const trust: IacPricedSettlementTrust = {
 		verify: ({ reservation, actualMicros, evidence }) =>
 			reservation.reservationId === "priced" &&
 			reservation.executionDigest === "exec:1" &&
@@ -885,7 +1047,10 @@ it("rejects a priced IaC settlement journal that omits recorded charges", () => 
 		usageEvidenceRef: "usage:1",
 		sourceStoppedEvidenceRef: "stop:1",
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 500_000 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 500_000,
+			}),
 		],
 	});
 	expect(() =>
@@ -897,8 +1062,10 @@ it("rejects a priced IaC settlement journal that omits recorded charges", () => 
 	).not.toThrow();
 	const settlement = events.at(-1);
 	if (!settlement?.snapshot) throw new Error("missing settlement");
+	const account = settlement.snapshot.providerAccounts[0];
+	if (!account) throw new Error("missing provider account");
 	settlement.snapshot.spentMicros = 0;
-	settlement.snapshot.providerAccounts[0].spentMicros = 0;
+	account.spentMicros = 0;
 	expect(() =>
 		createBudgetAdmissionAuthority({
 			snapshot: options.snapshot,
@@ -923,7 +1090,10 @@ it("fails closed when a persisted SQLite settlement omits authenticated spend", 
 		sourceStoppedEvidenceRef: "stop:1",
 		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 1_200_000,
+			}),
 		],
 	});
 	ledger.close();
@@ -969,7 +1139,10 @@ it("replays an authenticated settlement against the same pre-settlement reservat
 		sourceStoppedEvidenceRef: "stop:1",
 		financeSignature: `${unpriced.reservationId}:exec:1:${unpriced.inventoryHash}:1200000:usage:1:stop:1:[{"providerAccountId":"account-a","liabilityMicros":1200000}]`,
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 1_200_000 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 1_200_000,
+			}),
 		],
 	};
 	ledger.settle(unpriced.reservationId, 1_200_000, evidence);
@@ -1024,7 +1197,10 @@ it("retains claimed priced IaC exposure until final usage and permanent source s
 			usageEvidenceRef: "fabricated",
 			sourceStoppedEvidenceRef: "fabricated",
 			providerAccounts: [
-				{ providerAccountId: "account-a", liabilityMicros: 0 },
+				create(ProviderAccountExposureSchema, {
+					providerAccountId: "account-a",
+					liabilityMicros: 0,
+				}),
 			],
 		}),
 	).toThrow();
@@ -1047,7 +1223,7 @@ it("replays exact authenticated priced settlement and rejects forged settlement 
 		...fields,
 		validUntil: quote.validUntil,
 	});
-	const trust = {
+	const trust: IacPricedSettlementTrust = {
 		verify: ({ reservation, actualMicros, evidence }) =>
 			reservation.status === "held" &&
 			reservation.identity?.tenantId === "tenant-a" &&
@@ -1087,7 +1263,10 @@ it("replays exact authenticated priced settlement and rejects forged settlement 
 		sourceStoppedEvidenceRef: "stop:1",
 		financeSignature: "signed-exact-claim",
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 500_000 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 500_000,
+			}),
 		],
 	};
 	expect(() =>
@@ -1124,7 +1303,7 @@ it("books the same settlement evidence that the priced verifier authenticated", 
 		evidenceHash: `sha256:${"e".repeat(64)}`,
 	};
 	quote.financialPlanHash = stableHash(fields);
-	const trust = {
+	const trust: IacPricedSettlementTrust = {
 		verify: ({ reservation, actualMicros, evidence }) =>
 			reservation.reservationId === "priced" &&
 			actualMicros === 100 &&
@@ -1161,7 +1340,10 @@ it("books the same settlement evidence that the priced verifier authenticated", 
 		},
 		financeSignature: "signed",
 		providerAccounts: [
-			{ providerAccountId: "account-a", liabilityMicros: 100 },
+			create(ProviderAccountExposureSchema, {
+				providerAccountId: "account-a",
+				liabilityMicros: 100,
+			}),
 		],
 	};
 	ledger.settle("priced", 100, evidence);

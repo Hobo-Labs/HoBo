@@ -51,7 +51,20 @@ export interface SecretsPort {
 	access(name: string): Promise<SecretsAccessResult>;
 	accessVersion(name: string, versionId: string): Promise<SecretsAccessResult>;
 	listVersions(name: string): Promise<readonly string[]>;
+	/**
+	 * Write `name` only if it does not exist, atomically on the store's side:
+	 * of two concurrent calls for one name, exactly one is `created`. Only a
+	 * store that guarantees this offers it; a caller that needs a claim (an
+	 * idempotency record for a create that has no server-side idempotency)
+	 * refuses a store without it rather than emulating it with read-then-put.
+	 */
+	createOnly?(name: string, value: string): Promise<SecretsCreateOnlyResult>;
 }
+
+/** The outcome of `SecretsPort.createOnly`. */
+export type SecretsCreateOnlyResult =
+	| { readonly created: true; readonly versionId: string }
+	| { readonly created: false };
 
 /** In-memory fixture store for tests / hobo dev (contract-asserted). */
 export function createMemorySecretsPort(options?: {
@@ -117,6 +130,13 @@ export function createMemorySecretsPort(options?: {
 		},
 		async listVersions(name) {
 			return Object.freeze([...(store.get(name)?.versions ?? [])]);
+		},
+		// One process, one map: the check and the write cannot interleave.
+		async createOnly(name, value) {
+			if ((store.get(name)?.values.length ?? 0) > 0) return { created: false };
+			const versionId = `v1-${createHash("sha256").update(value).digest("hex").slice(0, 8)}`;
+			store.set(name, { versions: [versionId], values: [value] });
+			return { created: true, versionId };
 		},
 		names: () => Object.freeze([...store.keys()]),
 	};

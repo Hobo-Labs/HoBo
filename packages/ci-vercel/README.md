@@ -669,6 +669,12 @@ per member), the messages, the step ladder and the handoff. The handoff's bodies
 executed by `contracts/queue-handoff.consumer.test.ts` against both sides.
 Nothing here has run against Vercel, Upstash, Infisical or GitHub.
 
+`test/scheduled-relay-emulator.test.ts` registers an explicit 15-minute local
+interval with the schedule emulator. It sends each synthetic tick through the
+relay's authenticated repair endpoint and queue worker, then checks duplicate
+delivery, cache-loss recovery and settlement. It does not emulate Vercel cron
+timing or prove provider delivery guarantees.
+
 ### The cache fleet
 
 ADR-0179 phase 4c ([Options routed by budget](../../docs/design/hosted-relay-stateless.md#options-routed-by-budget)).

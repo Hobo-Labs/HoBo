@@ -28,7 +28,7 @@ export interface TopologyNode {
 	region?: string;
 	/** Resource nodes: lifecycle folded from resource.* facts. */
 	lifecycle?: ResourceLifecycle;
-	/** The exact unresolved event, used to reject stale recovery facts. */
+
 	reconciliationEventId?: string;
 	otherReconciliationEventIds?: string[];
 }
@@ -293,7 +293,7 @@ export const topologyViewProjection: Projection<TopologyViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceReconciled]: (row, event) => {
-				// SAFETY: resource.Reconciled is the verified recovery fact from this package.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: resource.Reconciled is the verified recovery fact from this package.
 				const data = event.data as {
 					deploymentId: string;
 					resourceId: string;

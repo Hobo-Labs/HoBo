@@ -49,6 +49,7 @@ function fixture(
 		verify?: (input: AlchemyStateOwnershipCheck) => boolean | Promise<boolean>;
 		onAdmission?: () => void;
 		onApply?: () => void;
+		onRoute?: (declarationDigest: string) => void;
 	} = {},
 ) {
 	const directory = mkdtempSync(join(tmpdir(), "hobo-state-owner-"));
@@ -95,7 +96,7 @@ function fixture(
 		stack,
 		runtimeLayer: Alchemist.layer(),
 		runtimeDirectory: join(directory, "runtime"),
-		// SAFETY: this branch deliberately exercises a malformed JavaScript caller.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this branch deliberately exercises a malformed JavaScript caller.
 		stateOwnership: options.missingOwnership
 			? (undefined as never)
 			: {
@@ -131,10 +132,13 @@ function fixture(
 				effects.length === 0 && sourceClaims.length === 0,
 		},
 		route: routeFixture().port,
-		resolveRoute: ({ requestId }) => ({
-			requestId: requestId ?? "attempt",
-			operation: testOperation,
-		}),
+		resolveRoute: ({ requestId, declarationDigest }) => {
+			options.onRoute?.(declarationDigest);
+			return {
+				requestId: requestId ?? "attempt",
+				operation: testOperation,
+			};
+		},
 		target: alchemyTarget({
 			targetId: "target",
 			tenantId: options.tenantId ?? "tenant",
@@ -164,7 +168,10 @@ function fixture(
 					code: "",
 					message: "",
 					budget: { evaluation: "allowed", reservation: "held" },
-					reservation: { reservationId: `iac:${requestId}` },
+					reservation: {
+						reservationId: `iac:${requestId}`,
+						executionDigest: `sha256:${"4".repeat(64)}`,
+					},
 					requestDigest: `sha256:${"b".repeat(64)}`,
 					inventoryHash: `sha256:${"c".repeat(64)}`,
 					modelHash: `sha256:${"d".repeat(64)}`,
@@ -330,6 +337,91 @@ describe("host-authenticated Alchemy state ownership", () => {
 		expect(f.planned()).toBe(1);
 	});
 
+	/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening, anti-slop/no-object-parameters, anti-slop/no-reflect-apply -- SAFETY: the regression substitutes untrusted WeakMap intrinsics and delegates unrelated objects to their native methods. */
+	it.each([
+		"get",
+		"set",
+	] as const)("retains the original declaration digest across suspended host callbacks (%s)", async (method) => {
+		const requested = {
+			...program,
+			resource: {
+				name: "app",
+				port: "compute",
+				provider: "sandbox",
+				deps: [],
+				region: "east",
+			},
+		};
+		const expectedDigest = captureAlchemyProgram(requested).declarationDigest;
+		const expectedPlan = (await fixture().provider.assessPricing(requested))
+			.plan;
+		let begin = () => {};
+		let release = () => {};
+		const started = new Promise<void>((resolve) => {
+			begin = resolve;
+		});
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let first = true;
+		const routeDigests: string[] = [];
+		const f = fixture({
+			verify: async () => {
+				if (first) {
+					first = false;
+					begin();
+					await gate;
+				}
+				return true;
+			},
+			onRoute: (digest) => routeDigests.push(digest),
+		});
+		const pending = f.provider.assessPricing(requested);
+		await started;
+		const nativeGet = WeakMap.prototype.get;
+		const nativeSet = WeakMap.prototype.set;
+		const forgedDigest = `sha256:${"f".repeat(64)}`;
+		const forge = (value: unknown): unknown => {
+			if (
+				typeof value === "object" &&
+				value !== null &&
+				"declarationDigest" in value &&
+				value.declarationDigest === expectedDigest
+			)
+				return { ...value, declarationDigest: forgedDigest };
+			return value;
+		};
+		let observedPlan: typeof expectedPlan | undefined;
+		try {
+			if (method === "get") {
+				Reflect.set(WeakMap.prototype, "get", function (key: object) {
+					return forge(Reflect.apply(nativeGet, this, [key]));
+				});
+			} else {
+				Reflect.set(
+					WeakMap.prototype,
+					"set",
+					function (key: object, value: unknown) {
+						return Reflect.apply(nativeSet, this, [key, forge(value)]);
+					},
+				);
+			}
+			release();
+			observedPlan = (await pending).plan;
+			await f.provider.applyWithAdmission(requested, "attempt");
+		} finally {
+			Reflect.set(WeakMap.prototype, "get", nativeGet);
+			Reflect.set(WeakMap.prototype, "set", nativeSet);
+			release();
+		}
+		expect(observedPlan?.planDigest).toBe(expectedPlan.planDigest);
+		expect(routeDigests.length).toBeGreaterThan(0);
+		expect(routeDigests.every((digest) => digest === expectedDigest)).toBe(
+			true,
+		);
+	});
+
+	/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening, anti-slop/no-object-parameters, anti-slop/no-reflect-apply */
 	it("allows an independently approved declaration update for the same durable owner", async () => {
 		const resource = {
 			name: "app",

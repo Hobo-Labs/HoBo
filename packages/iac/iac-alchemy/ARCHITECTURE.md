@@ -22,3 +22,10 @@ view projections supply the read store and show reconciliation-required outcomes
 Alchemy owns its own provider-state snapshot; the adapter reads that state for
 planning and drift checks. Budget reservations remain in the host authority,
 not in the Alchemy state snapshot.
+
+## Cross-package integration proof
+
+`test/iac-alchemy-integration.test.ts` exercises the adapter with the host
+dispatcher route authority, ranked execution, Rivet Alchemy resources, and the
+RivetKit 3 runtime package. The suite is the regression gate when routing,
+admission, or provider pins change on `main`.

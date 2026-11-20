@@ -99,6 +99,47 @@ describe("first-class Connection aggregate", () => {
 		}
 	});
 
+	it("keeps revocation terminal when older late events are replayed", () => {
+		const svc = service();
+		svc.create({
+			provider: "asana",
+			alias: "work",
+			subject: USER,
+			createdBy: USER,
+			scopes: ["tasks:read"],
+			stationId: STATION,
+		});
+		const authorization = svc.authorize({ idOrAlias: "work", actor: USER })
+			.events[1];
+		const health = svc.markNeedsReauth({ idOrAlias: "work", reason: "expired" })
+			.events[0];
+		const rotation = svc.rotate({ idOrAlias: "work", actor: USER }).events[0];
+		const creation = svc.events[0];
+		svc.revoke({ idOrAlias: "work", actor: USER, reason: "compromised" });
+		if (!authorization || !health || !rotation || !creation)
+			throw new Error("fixture event missing");
+		const lastSeq = svc.events.at(-1)?.seq ?? 0;
+		const late = [health, authorization, rotation, creation].map(
+			(event, index) => ({
+				...event,
+				seq: lastSeq + index + 1,
+			}),
+		);
+		const rebuilt = ConnectionService.fromEvents([...svc.events, ...late], {
+			tenant: TENANT,
+			vault: vault(),
+		});
+		expect(rebuilt.get("work")?.status).toBe("revoked");
+		expect(
+			rebuilt.resolveForToken({
+				idOrAlias: "work",
+				provider: "asana",
+				subject: USER,
+				scopes: ["tasks:read"],
+			}),
+		).toMatchObject({ status: "denied", code: "connection-revoked" });
+	});
+
 	it("needs-reauth is actionable", () => {
 		const svc = service();
 		svc.create({
