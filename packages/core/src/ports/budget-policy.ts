@@ -61,7 +61,8 @@ export class BudgetPolicyError extends Error {
 	readonly code = "budget.policy.invalid";
 }
 
-const IDENTIFIER = /^[^\p{Cc}]{1,200}$/u;
+const IDENTIFIER = /^[^\p{Cc}\p{Cs}]{1,200}$/u;
+const TARGET = /^[^\p{Cc}\p{Cs}]{0,200}$/u;
 const WORKLOAD = /^[a-z][a-z0-9_.-]{0,79}$/u;
 const KEY = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/u;
 const UNIT = /^[A-Za-z][A-Za-z0-9_.:/-]{0,79}$/u;
@@ -103,7 +104,7 @@ function quantity(value: JsonValue | undefined, field: string): number {
 function field(value: JsonValue | undefined, name: string): string {
 	if (!isJsonString(value) || !IDENTIFIER.test(value))
 		invalid(
-			`${name} must be a bounded nonempty identifier without control characters`,
+			`${name} must be a bounded nonempty Unicode identifier without control characters`,
 		);
 	return value;
 }
@@ -234,9 +235,7 @@ export function parseBudgetPolicy(value: JsonValue): BudgetPolicy {
 		quantity(constraint.maximum, "constraint maximum");
 		if (
 			constraint.target !== undefined &&
-			(!isJsonString(constraint.target) ||
-				constraint.target.length > 200 ||
-				/\p{Cc}/u.test(constraint.target))
+			(!isJsonString(constraint.target) || !TARGET.test(constraint.target))
 		)
 			invalid("invalid constraint target");
 		const identity = JSON.stringify([workload, key, constraint.target ?? ""]);
@@ -300,6 +299,8 @@ export function canonicalBudgetPolicyJson(policy: BudgetPolicy): string {
 }
 
 export function budgetScopeIdentityKey(identity: BudgetScopeIdentity): string {
+	if (!isJsonObject(identity))
+		invalid("complete budget scope identity required");
 	const values = [
 		identity.tenantId,
 		identity.budgetId,
@@ -343,6 +344,11 @@ export function evaluateBudgetPolicy(
 	} catch {
 		return refuse("budget.policy.invalid", "budget policy is invalid");
 	}
+	if (!isJsonObject(context))
+		return refuse(
+			"budget.policy.context",
+			"budget evaluation context is invalid",
+		);
 	if (!parsed.workloads.includes(context.workload))
 		return refuse(
 			"budget.policy.workload",
@@ -398,8 +404,21 @@ export function evaluateBudgetPolicy(
 			"budget.policy.exhausted",
 			"projected commitments exceed the budget",
 		);
+	if (!Array.isArray(context.measurements))
+		return refuse("budget.policy.measurement", "invalid trusted measurements");
 	const measurements = new Map<string, { unit: string; value: number }>();
 	for (const measurement of context.measurements) {
+		if (
+			!isJsonObject(measurement) ||
+			!isJsonString(measurement.key) ||
+			!IDENTIFIER.test(measurement.key) ||
+			!KEY.test(measurement.key) ||
+			!isJsonString(measurement.unit) ||
+			!UNIT.test(measurement.unit) ||
+			(measurement.target !== undefined &&
+				(!isJsonString(measurement.target) || !TARGET.test(measurement.target)))
+		)
+			return refuse("budget.policy.measurement", "invalid trusted measurement");
 		const key = JSON.stringify([measurement.key, measurement.target ?? ""]);
 		if (measurements.has(key) || !integer(measurement.value))
 			return refuse(

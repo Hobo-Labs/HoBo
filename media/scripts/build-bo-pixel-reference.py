@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PARALLAX = ROOT / "site" / "public" / "parallax"
 OUT_DIR = ROOT / "media" / "public" / "reference"
 FONT_PATH = (
-    ROOT / "packages" / "pixel-village" / "assets" / "fonts" / "kenney" / "KenneyPixel.ttf"
+    ROOT / "media" / "assets" / "fonts" / "kenney" / "KenneyPixel.ttf"
 )
 
 # Pixel grid: sprites are 48px tall, flat black/white/transparent, plus a 1px rim.
@@ -51,7 +51,7 @@ WHITE_COV_THR = 0.35  # fraction of the cell that must be light to quantize whit
 BLACK = (0, 0, 0, 255)
 WHITE = (255, 255, 255, 255)
 
-# HoBo Pixel palette (packages/pixel-village/DESIGN.md) for the sheet chrome only;
+# HoBo Pixel palette for the sheet chrome only;
 # the sprites themselves stay flat black and white, per the character lock.
 PAPER = (244, 241, 232)
 OUTLINE = (63, 38, 49)

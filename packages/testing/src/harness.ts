@@ -1,22 +1,24 @@
-/**
- * `createTestHarness` — the out-of-box app harness (ADR-0159, GAP-026).
- *
- * Deploy the collected topology, assert against it, tear it down. The surface
- * is plain async/await and typed results: no Effect-TS, no Polly, no XState on
- * the public surface (ADR-0136).
- *
- * Two decisions here carry the unit's honesty:
- *
- * 1. Lane selection is fail-closed. `in-process` is the default; choosing
- *    `ephemeral-camp` runs its gates at construction so an author learns about
- *    a missing Yard or credential before writing assertions, and the lane
- *    never silently becomes `in-process`.
- * 2. `fidelity()` counts what the suite actually reached for. Obtaining a
- *    handle through `resource(alias)`, `http(alias)`, or `untilReady(alias)`
- *    marks it asserted-against; if any of those handles is `mocked`, this run
- *    cannot claim prod-readiness and the report says so.
- */
-
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
+import type { EngineBinding } from "@hobo/data-core";
+import type {
+	DeliveryPort,
+	ExperimentPort,
+	FeatureFlagPort,
+	SecretsPort,
+} from "@hobo/identity";
+import {
+	assertNotInScheduleHandler,
+	type BlobStorePort,
+	type BucketEmulator,
+	type BucketInspector,
+	type FlagEmulator,
+	type FlagInspector,
+	type KeyValuePort,
+	type QueueEmulator,
+	type ScheduleDriver,
+	type ScheduleEmulator,
+} from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
 import {
@@ -49,6 +51,7 @@ import {
 
 const STAGE_PATTERN = /^[a-z][a-z0-9-]*$/u;
 
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these functions parse the public lane, stage and resource-handle inputs. */
 function parseLane(value: unknown): Lane {
 	if (value === undefined) return DEFAULT_LANE;
 	if (typeof value !== "string" || !LANES.includes(value)) {
@@ -81,6 +84,7 @@ function isResourceHandle(value: unknown): value is ResourceHandle {
 		typeof (value as ResourceHandle).fidelity === "string"
 	);
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
 
 function buildFidelityReport(
 	handles: ReadonlyMap<string, ResourceHandle>,
@@ -99,9 +103,7 @@ function buildFidelityReport(
 	return Object.freeze({
 		byFidelity: Object.freeze(byFidelity),
 		assertedAgainst: Object.freeze(assertedAgainst),
-		prodReadinessClaimable: assertedAgainst.every(
-			(entry) => entry.fidelity !== "mocked",
-		),
+		prodReadinessClaimable: false,
 	});
 }
 
@@ -130,14 +132,74 @@ function buildGraph(
 ): DeployedGraph {
 	const handles = deployment.handles;
 	const aliases = [...handles.keys()].sort();
+	function queueEmulator(alias: string): QueueEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.queues.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no queue emulator`,
+				"use the alias of a queue resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
+	function scheduleEmulator(alias: string): ScheduleEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.schedules.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no schedule emulator`,
+				"use the alias of a schedule resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
+	function bucketEmulator(alias: string): BucketEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.buckets.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no bucket emulator`,
+				"use the alias of a bucket resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
+	function flagEmulator(alias: string): FlagEmulator {
+		const handle = handles.get(alias);
+		if (handle === undefined) unknownAlias(alias, aliases);
+		asserted.add(alias);
+		const emulator = deployment.flags.get(alias);
+		if (emulator === undefined) {
+			throw new TestHarnessError(
+				"HARNESS_EMULATOR_UNAVAILABLE",
+				`"${alias}" (kind ${handle.kind}) has no flag emulator`,
+				"use the alias of a flag resource in the in-process graph",
+			);
+		}
+		return emulator;
+	}
 	return Object.freeze({
 		stage,
 		lane,
+		// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: this preserves the existing caller-typed open binding map.
 		outputs<T = Record<string, unknown>>(): T {
+			// oxlint-disable-next-line anti-slop/no-unsafe-dictionary-type -- SAFETY: each value comes from the parsed deployment bindings.
 			const record: Record<string, unknown> = {};
 			for (const alias of aliases) {
+				asserted.add(alias);
 				record[alias] = deployment.bindings[alias];
 			}
+			// SAFETY: the caller selects the existing generic outputs view.
 			return Object.freeze(record) as T;
 		},
 		resource(alias: string): ResourceHandle {
@@ -159,6 +221,117 @@ function buildGraph(
 			}
 			return Object.freeze({ baseUrl: handle.endpoint });
 		},
+		queue(alias: string): Queue {
+			return queueEmulator(alias).port;
+		},
+		queueClock(alias: string): VirtualClock | undefined {
+			return queueEmulator(alias).clock;
+		},
+		topic(alias: string): Messaging {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.topics.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no topic emulator`,
+					"use the alias of a topic resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		secret(alias: string): SecretsPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.secrets.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no secret emulator`,
+					"use the alias of a secret resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		data(alias: string): EngineBinding {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.data.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no data emulator`,
+					"use the alias of a data resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		schedule(alias: string): SchedulerPort {
+			return scheduleEmulator(alias).port;
+		},
+		scheduleClock(alias: string): VirtualClock | undefined {
+			return scheduleEmulator(alias).clock;
+		},
+		scheduleDriver(alias: string): ScheduleDriver | undefined {
+			return scheduleEmulator(alias).driver;
+		},
+		kv(alias: string): KeyValuePort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.kv.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no key-value emulator`,
+					"use the alias of a kv resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		bucket(alias: string): BlobStorePort {
+			return bucketEmulator(alias).port;
+		},
+		flag(alias: string): FeatureFlagPort {
+			return flagEmulator(alias).port;
+		},
+		rollout(alias: string): DeliveryPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.rollouts.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no rollout emulator`,
+					"use the alias of a rollout resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		experiment(alias: string): ExperimentPort {
+			const handle = handles.get(alias);
+			if (handle === undefined) unknownAlias(alias, aliases);
+			asserted.add(alias);
+			const emulator = deployment.experiments.get(alias);
+			if (emulator === undefined) {
+				throw new TestHarnessError(
+					"HARNESS_EMULATOR_UNAVAILABLE",
+					`"${alias}" (kind ${handle.kind}) has no experiment emulator`,
+					"use the alias of an experiment resource in the in-process graph",
+				);
+			}
+			return emulator.port;
+		},
+		flagInspector(alias: string): FlagInspector | undefined {
+			return flagEmulator(alias).inspector;
+		},
+		bucketInspector(alias: string): BucketInspector | undefined {
+			return bucketEmulator(alias).inspector;
+		},
 		fidelity(): FidelityReport {
 			return buildFidelityReport(handles, asserted);
 		},
@@ -172,6 +345,7 @@ export interface CreateTestHarnessInternals {
 	readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
+/* oxlint-disable anti-slop/no-unknown-parameters -- SAFETY: Bindle identities are accepted at the public boundary and parsed by deployInProcess before use. */
 export function createTestHarness(
 	options: TestHarnessOptions = {},
 	internals: CreateTestHarnessInternals = {},
@@ -192,6 +366,12 @@ export function createTestHarness(
 
 	const probe = internals.probe ?? createFetchReadinessProbe();
 	const states = new Map<unknown, Promise<HarnessState>>();
+	const destroying = new Map<unknown, Set<Promise<void>>>();
+	const deployments = new Map<unknown, Set<InProcessDeployment>>();
+	const deploying = new AsyncLocalStorage<{
+		bindle: unknown;
+		active: boolean;
+	}>();
 	let latest: HarnessState | undefined;
 
 	async function ensure(bindle: unknown): Promise<HarnessState> {
@@ -199,7 +379,18 @@ export function createTestHarness(
 		if (existing !== undefined) return existing;
 		const pending = (async (): Promise<HarnessState> => {
 			if (campTarget !== undefined) await deployEphemeralCamp(campTarget);
-			const deployment = await deployInProcess(bindle, stage);
+			const frame = { bindle, active: true };
+			let deployment: InProcessDeployment;
+			try {
+				deployment = await deploying.run(frame, () =>
+					deployInProcess(bindle, stage, options.emulators),
+				);
+			} finally {
+				frame.active = false;
+			}
+			const activeDeployments = deployments.get(bindle) ?? new Set();
+			activeDeployments.add(deployment);
+			deployments.set(bindle, activeDeployments);
 			const asserted = new Set<string>();
 			const state: HarnessState = {
 				graph: buildGraph(stage, lane, deployment, asserted),
@@ -207,14 +398,15 @@ export function createTestHarness(
 				handles: deployment.handles,
 				asserted,
 			};
-			latest = state;
 			return state;
 		})();
 		states.set(bindle, pending);
 		try {
-			return await pending;
+			const state = await pending;
+			if (states.get(bindle) === pending) latest = state;
+			return state;
 		} catch (cause) {
-			states.delete(bindle);
+			if (states.get(bindle) === pending) states.delete(bindle);
 			throw cause;
 		}
 	}
@@ -225,12 +417,38 @@ export function createTestHarness(
 		},
 		destroy(bindle: unknown): () => Promise<void> {
 			return async () => {
+				const frame = deploying.getStore();
+				if (frame?.active && frame.bindle === bindle)
+					throw new Error(
+						"A graph cannot be destroyed from its own deployment.",
+					);
+				for (const deployment of deployments.get(bindle) ?? [])
+					assertNotInScheduleHandler(deployment.schedules.values());
 				const pending = states.get(bindle);
-				if (pending === undefined) return;
-				states.delete(bindle);
-				const state = await pending;
-				if (latest === state) latest = undefined;
-				await destroyInProcess(state.deployment);
+				if (pending !== undefined) {
+					states.delete(bindle);
+					const cleanups = destroying.get(bindle) ?? new Set<Promise<void>>();
+					destroying.set(bindle, cleanups);
+					const cleanup = (async () => {
+						const state = await pending;
+						if (latest === state) latest = undefined;
+						try {
+							await destroyInProcess(state.deployment);
+						} finally {
+							const activeDeployments = deployments.get(bindle);
+							activeDeployments?.delete(state.deployment);
+							if (activeDeployments?.size === 0) deployments.delete(bindle);
+						}
+					})();
+					cleanups.add(cleanup);
+					try {
+						await cleanup;
+					} finally {
+						cleanups.delete(cleanup);
+						if (cleanups.size === 0) destroying.delete(bindle);
+					}
+				}
+				await Promise.all(destroying.get(bindle) ?? []);
 			};
 		},
 		async untilReady(
@@ -264,11 +482,13 @@ export function createTestHarness(
 		return latest.graph.http(target).baseUrl;
 	}
 }
+/* oxlint-enable anti-slop/no-unknown-parameters */
 
 /**
  * The two-line runner swap's payoff: wire deploy/destroy into whichever
  * runner's lifecycle hooks the suite is using.
  */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: runner hook return values are deliberately ignored; Bindle validation occurs on deploy. */
 export function bindHarnessLifecycle(
 	runner: {
 		readonly beforeAll: (fn: () => Promise<void>) => unknown;
@@ -286,3 +506,4 @@ export function bindHarnessLifecycle(
 		await destroy();
 	});
 }
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns */
