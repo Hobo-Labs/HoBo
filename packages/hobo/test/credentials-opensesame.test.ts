@@ -68,6 +68,14 @@ const RUN_TIMEOUT_MS = 60_000;
 const CAN_TRUST_PATH =
 	process.platform !== "win32" &&
 	[0, process.geteuid?.()].includes(statSync("/").uid);
+it.runIf(process.env.GITHUB_ACTIONS === "true" && !CAN_TRUST_PATH)(
+	"OpenSesame credential boundary suites have a trusted PATH in GitHub Actions",
+	({ expect }) => {
+		expect.fail(
+			"OpenSesame credential boundary tests require a trusted system PATH in GitHub Actions; refusing to skip them.",
+		);
+	},
+);
 
 const BINDINGS = {
 	bindings: [
