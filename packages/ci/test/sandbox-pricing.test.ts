@@ -199,6 +199,18 @@ describe("Sandbox composite costs", () => {
 		expect(after?.sandboxReservedAllowance?.cpuVcpuMs).toBe(3_600_000);
 		expect(after?.sandboxReservedAllowance?.creations).toBe(0);
 	});
+	it("does not use an allowance from duplicate provider-account reports", () => {
+		const a = account();
+		const offer = a.offers[0];
+		if (!offer) throw new Error("missing offer");
+		offer.sandboxAllowance = create(SandboxAllowanceSchema, {
+			cpuVcpuMs: 7_200_000,
+		});
+		a.offers.push(create(OfferSchema, { ...offer, id: "second" }));
+		expect(route(a, [], at)).toBeUndefined();
+		a.offers.reverse();
+		expect(route(a, [], at)).toBeUndefined();
+	});
 	it("never consumes free units beyond the reservation or an absent snapshot", () => {
 		const quote = sandboxUsageQuote(
 			pricing(),

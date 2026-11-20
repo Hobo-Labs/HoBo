@@ -1006,7 +1006,6 @@ export class SqliteJournal {
 		}
 	}
 
-	/** Complete only the exact delivery attempt returned by `leaseMessages`. */
 	completeMessage(
 		messageId: string,
 		leaseId: string,
@@ -1124,7 +1123,6 @@ export class SqliteJournal {
 		}
 	}
 
-	/** Acknowledge only the exact delivery attempt returned by `claimOutbox`. */
 	ackOutbox(
 		outboxId: string,
 		leaseId: string,

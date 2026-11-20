@@ -34,7 +34,8 @@
     "./fanout": { "types": "./dist/fanout/index.d.ts", "default": "./dist/fanout/index.js" },
     "./failover": { "types": "./dist/failover/index.d.ts", "default": "./dist/failover/index.js" },
     "./posture": { "types": "./dist/posture/index.d.ts", "default": "./dist/posture/index.js" },
-    "./compose": { "types": "./dist/compose/index.d.ts", "default": "./dist/compose/index.js" }
+    "./compose": { "types": "./dist/compose/index.d.ts", "default": "./dist/compose/index.js" },
+    "./testing": { "types": "./dist/testing/index.d.ts", "default": "./dist/testing/index.js" }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

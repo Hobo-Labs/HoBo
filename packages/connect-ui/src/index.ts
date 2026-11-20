@@ -1,14 +1,16 @@
-export { connectCandidates } from "./candidates.js";
-export { CONNECT_COMPONENTS, connectCatalog } from "./catalog.js";
 export {
-	type ComposedConnectSpec,
-	type ComposeOptions,
-	composeConnectSpec,
-	deterministicConnectSpec,
-	evaluatorFromEnv,
-	isRenderableConnectSpec,
-	missingRequiredCandidates,
-} from "./compose.js";
+	type CeremonySetting,
+	type ConfigureOptions,
+	cellSettingsStore,
+	configureThen,
+	fileSettingsStore,
+	type ResolvedSettings,
+	resolveSettings,
+	type SavedSettings,
+	type SecretHolder,
+	type SettingsCell,
+	type SettingsStore,
+} from "./ceremony.js";
 export {
 	type BrowserDirective,
 	type ConnectFlow,
@@ -19,6 +21,7 @@ export {
 } from "./server.js";
 export {
 	CONNECT_ACTIONS,
+	type ConfigField,
 	type ConnectActionName,
 	type ConnectProvider,
 	type ConnectStep,
@@ -28,3 +31,9 @@ export {
 	providerLabel,
 	type SecretStoreOption,
 } from "./steps.js";
+export {
+	missingRequiredFields,
+	type StepView,
+	stepView,
+	type ViewAction,
+} from "./view.js";
