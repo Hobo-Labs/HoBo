@@ -310,11 +310,15 @@ and on `workflow_dispatch`:
    protected deployments using GitHub OIDC. HoBo checks staged production's
    `/healthz` and `/readyz` before assigning production traffic, then verifies
    the public origin serves the same healthy commit. The deadline is rechecked
-   after reading the current production target. A lost promotion response is
-   ambiguous, so HoBo re-reads that target before verification and recovery.
-   Rollback restores the previous deployment only while the candidate remains
-   current; a confirmed concurrent target is left alone, while an unknown
-   target is reported as `unknown` for manual recovery.
+   immediately before creation and after reading the current production target.
+   A lost promotion response is ambiguous, so HoBo re-reads that target before
+   verification and recovery. Finalization resumes from the journal's durable
+   handover and recognizes a candidate already assigned to production instead of
+   promoting it again. Rollback requests the previous deployment only while the
+   candidate remains current and reports `restored` only after both Vercel's
+   production target and public health checks confirm it. A confirmed concurrent
+   target is left alone; an unknown target or unobserved rollback is reported as
+   `unknown` for manual recovery.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:

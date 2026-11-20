@@ -283,9 +283,14 @@ because preview qualified it, sets the production Camp's non-secret
 configuration, waits for READY and verifies `/healthz` and `/readyz` (each must
 answer 200). In the workflow production is staged without assigning domains;
 HoBo promotes it only after it passes verification and then checks the public
-origin before the deploy deadline. Staged promotion requires a distinct previous
-production deployment; failed live verification restores it, marks the CD
-promotion failed, and runs its compensation. When `--provision` is requested, the
+origin before the deploy deadline. Creation also refuses a deadline crossed
+while CD is being prepared. Staged promotion requires a distinct previous
+production deployment, recorded in the durable handover so an interrupted run can
+verify an already-promoted candidate without promoting it again. Failed live
+verification requests its restoration, marks the CD promotion failed, and runs
+its compensation; `restored` requires an observed previous production target and
+healthy public origin, while an accepted but unobserved rollback is `unknown`.
+When `--provision` is requested, the
 cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
 and, when `hobo-ci-cache` is missing, connects the team's resource of that name

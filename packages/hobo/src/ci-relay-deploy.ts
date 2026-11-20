@@ -94,6 +94,7 @@ import {
 	type VercelGitDeploymentPlan,
 	VercelGitDeploymentPlanSchema,
 } from "./_generated/vercel_git_deployment_pb.js";
+import type { CdStoreOpener } from "./cd-store.js";
 import { relayAdoptDeadline } from "./ci-relay-adopt.js";
 import {
 	deliverRelay,
@@ -213,6 +214,7 @@ export interface CiRelayDeployInput {
 	readonly home?: string;
 	// The transport the verification probes use; injected in tests.
 	readonly probe?: HttpTransport;
+	readonly openStore?: CdStoreOpener;
 	readonly emitProgress: (message: string) => void;
 }
 
@@ -868,6 +870,16 @@ export async function runCiRelayDeploy(
 					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 				});
 				const deploymentId = `hobo-ci-deploy-${randomUUID()}`;
+				const rollbackDeploymentId = stagedProduction
+					? await client.getProductionDeploymentId(project)
+					: undefined;
+				if (clock() >= deadlineAt)
+					return {
+						ok: false,
+						status: "rejected",
+						code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
+						message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} was created.`,
+					};
 				// The provider realizes the whole Bindle as one deployment: the
 				// first resource's apply deploys, and the rest answer with the
 				// same outputs.
@@ -885,6 +897,9 @@ export async function runCiRelayDeploy(
 							...outputs,
 							yard: placement.yard,
 							camp: placement.camp,
+							...(rollbackDeploymentId !== undefined
+								? { rollbackDeploymentId }
+								: undefined),
 							...(attached.length > 0
 								? { provisioned: describeAttachments(attached) }
 								: undefined),
@@ -980,6 +995,9 @@ export async function runCiRelayDeploy(
 				: undefined),
 		...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 		...(input.now !== undefined ? { now: input.now } : undefined),
+		...(input.openStore !== undefined
+			? { openStore: input.openStore }
+			: undefined),
 		...(stagedProduction
 			? {
 					finalizePromotion: async ({ handover }) => {
@@ -998,15 +1016,9 @@ export async function runCiRelayDeploy(
 								message:
 									"The staged production deployment was not qualified; production traffic was not changed.",
 							};
-						if (clock() >= deadlineAt)
-							return {
-								ok: false as const,
-								code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
-								message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
-							};
-						let previousProduction: string | undefined;
+						let currentProduction: string | undefined;
 						try {
-							previousProduction =
+							currentProduction =
 								await client.getProductionDeploymentId(project);
 						} catch (error) {
 							return realizationFailure(
@@ -1014,54 +1026,68 @@ export async function runCiRelayDeploy(
 								withoutToken,
 							);
 						}
-						if (
-							previousProduction === undefined ||
-							previousProduction === safe.deploymentId
-						)
+						const alreadyPromoted = currentProduction === safe.deploymentId;
+						if (currentProduction === undefined)
 							return {
 								ok: false as const,
 								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
 								message:
 									"Staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
 							};
-						if (clock() >= deadlineAt)
-							return {
-								ok: false as const,
-								code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
-								message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
-							};
-						let promotionError: Error | undefined;
-						try {
-							await client.promoteDeployment(project, safe.deploymentId);
-						} catch (error) {
-							promotionError =
-								error instanceof Error ? error : new Error("promotion failed");
-						}
-						if (promotionError !== undefined)
+						const recordedRollback = safe.rollbackDeploymentId;
+						const previousProduction = alreadyPromoted
+							? recordedRollback !== safe.deploymentId
+								? recordedRollback
+								: undefined
+							: currentProduction;
+						if (!alreadyPromoted) {
+							if (clock() >= deadlineAt)
+								return {
+									ok: false as const,
+									code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
+									message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
+								};
+							let promotionError: Error | undefined;
 							try {
-								const currentProduction =
-									await client.getProductionDeploymentId(project);
-								if (
-									currentProduction !== undefined &&
-									currentProduction !== safe.deploymentId
-								)
-									return realizationFailure(promotionError, withoutToken);
-							} catch {
-								void 0;
+								await client.promoteDeployment(project, safe.deploymentId);
+							} catch (error) {
+								promotionError =
+									error instanceof Error
+										? error
+										: new Error("promotion failed");
 							}
-						let liveReady = false;
-						for (
-							let attempt = 0;
-							attempt < 24 && clock() < deadlineAt;
-							attempt++
-						) {
-							const live = commitCheckingProbe(baseProbe, {
-								origin: liveOrigin,
-								commit: sha.toLowerCase(),
-							});
+							if (promotionError !== undefined)
+								try {
+									const afterPromotion =
+										await client.getProductionDeploymentId(project);
+									if (
+										afterPromotion !== undefined &&
+										afterPromotion !== safe.deploymentId
+									)
+										return realizationFailure(promotionError, withoutToken);
+								} catch {
+									void 0;
+								}
+						}
+						const pauseBeforeRetry = async (attempt: number) => {
+							const remaining = deadlineAt - clock();
+							if (attempt < 23 && remaining > 0)
+								await (
+									input.sleep ??
+									((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+								)(Math.min(5_000, remaining));
+						};
+						const publicReady = async (commit?: string) => {
+							const live =
+								commit === undefined
+									? undefined
+									: commitCheckingProbe(baseProbe, {
+											origin: liveOrigin,
+											commit: commit.toLowerCase(),
+										});
 							try {
 								const request = (path: string) =>
-									live.transport({
+									(live?.transport ?? baseProbe)({
 										method: "GET",
 										url: `${liveOrigin}${path}`,
 										headers: {},
@@ -1070,64 +1096,82 @@ export async function runCiRelayDeploy(
 									});
 								const health = await request("/healthz");
 								const ready = await request("/readyz");
-								if (clock() >= deadlineAt) break;
-								const findings = live.findings();
-								if (
+								if (clock() >= deadlineAt) return false;
+								const findings = live?.findings();
+								return (
 									health.status === 200 &&
 									ready.status === 200 &&
-									findings.servedCommit === undefined &&
-									findings.healthStatus === undefined &&
-									findings.readyStatus === undefined &&
-									findings.readyzState === undefined &&
-									findings.notReady === undefined
-								) {
-									liveReady = true;
-									break;
-								}
+									(findings === undefined ||
+										(findings.servedCommit === undefined &&
+											findings.healthStatus === undefined &&
+											findings.readyStatus === undefined &&
+											findings.readyzState === undefined &&
+											findings.notReady === undefined))
+								);
 							} catch {
-								void 0;
+								return false;
 							}
-							const remaining = deadlineAt - clock();
-							if (attempt < 23 && remaining > 0)
-								await (
-									input.sleep ??
-									((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
-								)(Math.min(5_000, remaining));
+						};
+						let liveReady = false;
+						for (
+							let attempt = 0;
+							attempt < 24 && clock() < deadlineAt;
+							attempt++
+						) {
+							liveReady = await publicReady(sha);
+							if (liveReady) break;
+							await pauseBeforeRetry(attempt);
 						}
 						if (liveReady) return undefined;
-						let rollback:
-							| "restored"
-							| "failed"
-							| "superseded"
-							| "unknown"
-							| undefined;
+						let rollback: "restored" | "failed" | "superseded" | "unknown" =
+							"unknown";
+						let rollbackRequested = false;
 						let supersedingProduction: string | undefined;
-						try {
-							const currentProduction =
-								await client.getProductionDeploymentId(project);
-							if (currentProduction === safe.deploymentId) {
-								await client.promoteDeployment(project, previousProduction);
-								rollback = "restored";
-							} else if (currentProduction !== undefined) {
-								rollback = "superseded";
-								supersedingProduction = currentProduction;
-							} else {
-								rollback = "unknown";
+						if (previousProduction !== undefined)
+							try {
+								currentProduction =
+									await client.getProductionDeploymentId(project);
+								if (currentProduction === safe.deploymentId) {
+									await client.promoteDeployment(project, previousProduction);
+									rollbackRequested = true;
+									for (
+										let attempt = 0;
+										attempt < 24 && clock() < deadlineAt;
+										attempt++
+									) {
+										const restoredTarget =
+											await client.getProductionDeploymentId(project);
+										if (
+											restoredTarget === previousProduction &&
+											(await publicReady())
+										) {
+											rollback = "restored";
+											break;
+										}
+										await pauseBeforeRetry(attempt);
+									}
+								} else if (currentProduction !== undefined) {
+									rollback = "superseded";
+									supersedingProduction = currentProduction;
+								}
+							} catch {
+								rollback = rollbackRequested ? "unknown" : "failed";
 							}
-						} catch {
-							rollback = "failed";
-						}
 						const supersededTarget =
 							supersedingProduction === undefined
 								? ""
 								: ` to ${supersedingProduction}`;
 						const rollbackNote =
 							rollback === "restored"
-								? ` The previous production deployment ${previousProduction} was restored.`
+								? ` The previous production deployment ${previousProduction} was restored and observed healthy.`
 								: rollback === "failed"
 									? " The automatic rollback failed; promote the previous deployment by hand."
 									: rollback === "unknown"
-										? ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`
+										? rollbackRequested
+											? ` Vercel accepted rollback to ${previousProduction}, but the public origin did not confirm it; inspect production before retrying.`
+											: previousProduction === undefined
+												? " No previous production deployment was recorded; inspect production and restore a known healthy deployment by hand."
+												: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`
 										: ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`;
 						return {
 							ok: false as const,
