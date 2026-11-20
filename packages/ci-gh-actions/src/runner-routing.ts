@@ -76,6 +76,11 @@ export const RunnerRoutingSchema = z
 				reuseMergeQueue: z.boolean(),
 			})
 			.strict(),
+		mergeGroup: z
+			.object({
+				reusePrFabric: z.boolean(),
+			})
+			.strict(),
 		verdict: z
 			.object({
 				minFreeRunners: whole(1, 9999),

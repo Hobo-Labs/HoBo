@@ -99,7 +99,7 @@ export function asText(value: JsonValue | undefined): string | undefined {
 		? (value as string)
 		: undefined;
 }
-function asNumber(value: JsonValue | undefined): number | undefined {
+export function asNumber(value: JsonValue | undefined): number | undefined {
 	// SAFETY: the tag check proves a number primitive.
 	return tagOf.call(value) === "[object Number]"
 		? (value as number)
@@ -192,6 +192,9 @@ export type RunnerRouting = Readonly<{
 		/** `false` makes a push to main run its full gate even when the merge queue passed its tree. */
 		reuseMergeQueue: boolean;
 	}>;
+	mergeGroup: Readonly<{
+		reusePrFabric: boolean;
+	}>;
 	verdict: Readonly<{
 		minFreeRunners: number;
 		enterMs: number;
@@ -244,6 +247,15 @@ function parseMainGate(
 		exactly(value, ["reuseMergeQueue"])?.reuseMergeQueue,
 	);
 	return reuseMergeQueue !== undefined ? { reuseMergeQueue } : undefined;
+}
+
+function parseMergeGroup(
+	value: JsonValue | undefined,
+): RunnerRouting["mergeGroup"] | undefined {
+	const reusePrFabric = asBoolean(
+		exactly(value, ["reusePrFabric"])?.reusePrFabric,
+	);
+	return reusePrFabric !== undefined ? { reusePrFabric } : undefined;
 }
 
 function parseVerdict(
@@ -351,6 +363,7 @@ export function parseRunnerRouting(
 		"boxRunner",
 		"mainWorkspaceParallelCap",
 		"mainGate",
+		"mergeGroup",
 		"verdict",
 		"box",
 		"externalPools",
@@ -363,6 +376,7 @@ export function parseRunnerRouting(
 	const boxRunner = asBoolean(top?.boxRunner);
 	const mainWorkspaceParallelCap = whole(top?.mainWorkspaceParallelCap, 1, 8);
 	const mainGate = parseMainGate(top?.mainGate);
+	const mergeGroup = parseMergeGroup(top?.mergeGroup);
 	const verdict = parseVerdict(top?.verdict);
 	const box = parseBox(top?.box);
 	const externalPools = listOf(top?.externalPools, 32, parsePool);
@@ -374,6 +388,7 @@ export function parseRunnerRouting(
 		boxRunner !== undefined &&
 		mainWorkspaceParallelCap !== undefined &&
 		mainGate &&
+		mergeGroup &&
 		verdict &&
 		box &&
 		externalPools &&
@@ -386,6 +401,7 @@ export function parseRunnerRouting(
 				boxRunner,
 				mainWorkspaceParallelCap,
 				mainGate,
+				mergeGroup,
 				verdict,
 				box,
 				externalPools,
