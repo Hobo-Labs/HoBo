@@ -40,14 +40,23 @@ comma-separated list, the environment's first):
   `hobo-ci-relay/hobo-ci-relay/production`);
 - a **delivery module** that also exports `yards` (Yards) and/or `camps`
   (Camp records: `campId` `<yard>/<camp>`, `yardId`, `provider`, `envType`,
-  optional `regions`, `labels`, `stationId`, `management`), such as the runner
+  optional `logicalId`, `regions`, `labels`, `stationId`, `management`). The
+  physical `campId` must belong to `yardId`; `logicalId`, when supplied,
+  preserves the CD identity used by pipelines and the journal across a move
+  to another Yard. Without it, CD uses `campId`. CD keeps the physical ID
+  alongside the logical alias and refuses duplicate physical Camps, including
+  declarations loaded from different topology sources. Examples include the runner
   fleet's
   [`packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts`](../ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts)
-  (one Camp per runner host, `hobo-ci-runners/<host>`), or the **release
+  (one Camp per runner host, `hobo-ci-runners/<host>`) and the **release
   topology**
   [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
-  (Camps `hobo-release/<npm|oci|pages>-<candidate|stable>`, see
+  (provider Yards `hobo-release-npm`, `hobo-release-oci`, `hobo-release-pages`;
+  each Camp's physical id is `<yard>/<family>-<channel>` while `logicalId`
+  keeps `hobo-release/<family>-<channel>` for pipelines and journal, see
   [release channels](../../docs/design/release-channels.md#hobo-releases-through-hobo-cd)).
+  [`test/release-provider-yards.test.ts`](../../test/release-provider-yards.test.ts)
+  asserts each provider stays in its own Yard while logical Camp IDs stay stable.
 - a module or JSON file that exports `rails`: Station Rail declarations
   (`id`, `name`, `version`, `stationId` (empty: this Station),
   `approvedProviders`, `delivery`, `metadata`), each built with
