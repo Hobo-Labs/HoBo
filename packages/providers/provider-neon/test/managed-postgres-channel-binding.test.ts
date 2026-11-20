@@ -122,6 +122,7 @@ describe("managed Neon channel binding", () => {
 			server.once("error", reject);
 			server.listen(0, "127.0.0.1", resolve);
 		});
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- Node net listen fixture.
 		const address = server.address() as AddressInfo;
 		const source = pathToFileURL(
 			join(
