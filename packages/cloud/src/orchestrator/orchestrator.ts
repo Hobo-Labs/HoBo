@@ -1,12 +1,24 @@
 import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
 import type { ActorHost } from "@hobo/data";
 import { emit } from "@hobo/events";
-
-import { CLOUD_EVENTS, deploymentDeployed } from "../events.js";
+import {
+	CLOUD_EVENTS,
+	type DeploymentTransitionData,
+	deploymentDeployed,
+	deploymentReopened,
+	deploymentTransitionCompleted,
+	deploymentTransitionStarted,
+} from "../events.js";
 import type { CredentialBroker, Executor } from "../executor/executor.js";
 import type { DeploymentPlan, ResourcePlan } from "../plan-types.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
 import { type CompensationResult, runCompensation } from "./compensation.js";
+import {
+	deploymentPlanHash,
+	foldDeploymentTransition,
+	newTransitionId,
+	transitionResourceNames,
+} from "./deployment-transition.js";
 import {
 	type BlockedProviderMove,
 	blockedProviderMove,
@@ -14,13 +26,20 @@ import {
 	currentEpochStart,
 	type DeploymentChangeSet,
 	type DeploymentMode,
+	desiredSpecHash,
 	orphansToPrune,
 	planDeploymentChanges,
 	recordedResources,
 } from "./desired-state.js";
+import { readDeploymentHistory } from "./history-scope.js";
+import {
+	type PendingResourceOperation,
+	pendingOrchestrationBarriers,
+} from "./pending-operations.js";
 import {
 	destroyResource,
 	foldResourceActor,
+	hasUnresolvedReconciliation,
 	isConverged,
 	type ReconcileContext,
 	type ResourceActorDeps,
@@ -42,6 +61,7 @@ export interface OrchestratorDeps {
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
+	verifyResume?: ResourceActorDeps["verifyResume"];
 }
 
 export interface OrchestratorContext {
@@ -79,6 +99,15 @@ export interface OrchestratorResult {
 	unprunable: string[];
 	/** Provider changes refused until the prior resource's effects are reconciled. */
 	blockedProviderMoves?: readonly BlockedProviderMove[];
+
+	pendingOperations?: readonly PendingResourceOperation[];
+	transitionBlock?: {
+		readonly reason:
+			| "transition-plan-mismatch"
+			| "rollback-unverified"
+			| "prune-not-converged"
+			| "prune-target-changed";
+	};
 }
 
 function streamId(deploymentId: string): string {
@@ -135,6 +164,8 @@ export async function runOrchestrator(
 	deploymentId: string,
 	ctx: OrchestratorContext,
 ): Promise<OrchestratorResult> {
+	plan = structuredClone(plan);
+	transitionResourceNames(plan);
 	const stream = streamId(deploymentId);
 	const actorDeps: ResourceActorDeps = {
 		store: deps.store,
@@ -142,6 +173,8 @@ export async function runOrchestrator(
 		executor: deps.executor,
 		broker: deps.broker,
 	};
+	if (deps.verifyResume !== undefined)
+		actorDeps.verifyResume = deps.verifyResume;
 	const reconcileCtx: ReconcileContext = {
 		deploymentId,
 		tenant: ctx.tenant,
@@ -157,11 +190,278 @@ export async function runOrchestrator(
 	let progressed = true;
 	let triggeringFailure: { resourceId: string; reason: string } | null = null;
 	const mode = ctx.mode ?? "incremental";
-	const initialEvents = await collectStream(deps.store, stream);
+	const readHistory = () =>
+		readDeploymentHistory(deps.store, deploymentId, ctx.tenant);
+	let initialEvents = await readHistory();
 	// This run's epoch: facts after the last Deployed/RolledBack. Earlier
 	// failures belong to an `up` that already ended.
 	const epochStart = currentEpochStart(initialEvents);
 	const changes = planDeploymentChanges(plan, initialEvents, mode);
+	const planHash = deploymentPlanHash(plan);
+	const blockedTransition = (
+		history: EventEnvelope[],
+		reason: NonNullable<OrchestratorResult["transitionBlock"]>["reason"],
+	): OrchestratorResult => {
+		const states = resourceStates(history, plan, deploymentId);
+		return {
+			status: "needs-human",
+			deploymentId,
+			provisioned: provisionedList(states),
+			destroyed: destroyedList(states),
+			events: history,
+			changes,
+			pruned: [],
+			unprunable: [],
+			transitionBlock: { reason },
+		};
+	};
+	let transitionState = foldDeploymentTransition(initialEvents);
+	if (
+		transitionState.status === "active" &&
+		transitionState.transition.kind === "rollback"
+	) {
+		if (transitionState.transition.planHash !== planHash)
+			return blockedTransition(initialEvents, "transition-plan-mismatch");
+		const compensation = await runCompensation(
+			actorDeps,
+			plan,
+			deploymentId,
+			{
+				resourceId: transitionState.transition.triggerResource ?? "",
+				reason: transitionState.transition.reason ?? "",
+			},
+			{ tenant: ctx.tenant, actor: ctx.actor },
+		);
+		const states = resourceStates(compensation.events, plan, deploymentId);
+		return {
+			status: compensation.status,
+			deploymentId,
+			provisioned: provisionedList(states),
+			destroyed: destroyedList(states),
+			events: compensation.events,
+			compensation,
+			changes,
+			pruned: [],
+			unprunable: [],
+		};
+	}
+	if (transitionState.status === "closed") {
+		const legacyRollback = transitionState.legacy;
+		if (
+			hasUnresolvedReconciliation(initialEvents) ||
+			[...recordedResources(initialEvents).values()].some(
+				(resource) =>
+					resource.state === "Provisioned" ||
+					resource.state === "Provisioning" ||
+					resource.state === "Destroying" ||
+					(resource.state === "Failed" &&
+						(legacyRollback ||
+							resource.hasProvisionedBaseline === true ||
+							resource.specHash !== undefined)),
+			)
+		)
+			return blockedTransition(initialEvents, "rollback-unverified");
+		const fenceToken = currentFenceToken(deps.store, stream);
+		await emit(
+			deps.store,
+			stream,
+			[
+				deploymentReopened({
+					deploymentId,
+					rollbackEventId: transitionState.rollbackEventId,
+					planHash,
+					resources: plan.resources.map((resource) => ({
+						resourceId: resource.name,
+						specHash: desiredSpecHash(resource),
+					})),
+				}),
+			],
+			{
+				expectedSeq: initialEvents.at(-1)?.seq ?? 0,
+				actor: ctx.actor,
+				tenant: ctx.tenant,
+				...(fenceToken !== undefined ? { fenceToken } : undefined),
+				...(ctx.correlationId !== undefined
+					? { correlationId: ctx.correlationId }
+					: undefined),
+			},
+		);
+		initialEvents = await readHistory();
+		transitionState = foldDeploymentTransition(initialEvents);
+		if (
+			transitionState.status !== "open" ||
+			transitionState.reopenedPlanHash !== planHash ||
+			transitionState.reopenedResources?.size !== plan.resources.length ||
+			plan.resources.some(
+				(resource) =>
+					transitionState.status !== "open" ||
+					transitionState.reopenedResources?.get(resource.name) !==
+						desiredSpecHash(resource),
+			)
+		)
+			throw new Error("deployment reopening could not be confirmed");
+	}
+	if (
+		(transitionState.status === "active" &&
+			(transitionState.transition.kind !== "prune" ||
+				mode !== "complete" ||
+				transitionState.transition.planHash !== planHash)) ||
+		(transitionState.status === "open" &&
+			transitionState.reopenedPlanHash !== undefined &&
+			transitionState.reopenedPlanHash !== planHash)
+	)
+		return blockedTransition(initialEvents, "transition-plan-mismatch");
+	if (transitionState.status === "active") {
+		const snapshots = resourceSnapshots(initialEvents, plan, deploymentId);
+		if (
+			!plan.resources.every((resource) => {
+				const snapshot = snapshots.get(resource.name);
+				return snapshot !== undefined && isConverged(snapshot, resource);
+			})
+		)
+			return blockedTransition(initialEvents, "prune-not-converged");
+		progressed = false;
+	}
+	const pendingResult = async (
+		history: EventEnvelope[],
+		pruned: string[] = [],
+		unprunable: string[] = [],
+	): Promise<OrchestratorResult | undefined> => {
+		const pendingOperations = await pendingOrchestrationBarriers(
+			history,
+			plan,
+			{
+				deploymentId,
+				tenant: ctx.tenant,
+				verifyResume: deps.verifyResume,
+			},
+		);
+		if (pendingOperations.length === 0) return undefined;
+		const states = resourceStates(history, plan, deploymentId);
+		return {
+			status: "needs-human",
+			deploymentId,
+			provisioned: provisionedList(states),
+			destroyed: destroyedList(states),
+			events: history,
+			changes,
+			pruned,
+			unprunable,
+			pendingOperations,
+		};
+	};
+	const startPrune = async (
+		history: EventEnvelope[],
+		targets: readonly string[],
+	) => {
+		const transition: DeploymentTransitionData = {
+			deploymentId,
+			transitionId: newTransitionId(history),
+			kind: "prune",
+			planHash,
+			resourceIds: [...targets].sort(),
+		};
+		const fenceToken = currentFenceToken(deps.store, stream);
+		await emit(deps.store, stream, [deploymentTransitionStarted(transition)], {
+			expectedSeq: history.at(-1)?.seq ?? 0,
+			actor: ctx.actor,
+			tenant: ctx.tenant,
+			...(fenceToken !== undefined ? { fenceToken } : undefined),
+			...(ctx.correlationId !== undefined
+				? { correlationId: ctx.correlationId }
+				: undefined),
+		});
+		const after = await readHistory();
+		const confirmed = foldDeploymentTransition(after);
+		if (
+			confirmed.status !== "active" ||
+			JSON.stringify(confirmed.transition) !== JSON.stringify(transition)
+		)
+			throw new Error("prune transition start could not be confirmed");
+		return { events: after, state: confirmed };
+	};
+	let initialPending = await pendingResult(initialEvents);
+	const recoveredPruned: string[] = [];
+	if (initialPending !== undefined) {
+		const [only] = initialPending.pendingOperations ?? [];
+		const previous =
+			only === undefined
+				? undefined
+				: recordedResources(initialEvents).get(only.resourceId);
+		const known = [...recordedResources(initialEvents).values()];
+		const liveDependentsAbsent =
+			only !== undefined &&
+			known.every(
+				(item) =>
+					item.resourceId === only.resourceId ||
+					item.state === "Destroyed" ||
+					(item.plan !== undefined &&
+						!item.plan.deps.includes(only.resourceId)),
+			);
+		if (
+			mode === "complete" &&
+			!hasUnresolvedReconciliation(initialEvents) &&
+			initialPending.pendingOperations?.length === 1 &&
+			only?.operation === "destroy" &&
+			only.reason === "removed-from-plan" &&
+			previous?.plan !== undefined &&
+			deps.verifyResume !== undefined &&
+			liveDependentsAbsent &&
+			!plan.resources.some((resource) =>
+				resource.deps.includes(only.resourceId),
+			)
+		) {
+			if (transitionState.status === "open") {
+				const snapshots = resourceSnapshots(initialEvents, plan, deploymentId);
+				const orphans = orphansToPrune(plan, initialEvents);
+				if (
+					!plan.resources.every((resource) => {
+						const snapshot = snapshots.get(resource.name);
+						return snapshot !== undefined && isConverged(snapshot, resource);
+					}) ||
+					orphans.unknown.length > 0 ||
+					orphans.ordered.length > 256 ||
+					!orphans.ordered.some((resource) => resource.name === only.resourceId)
+				)
+					return initialPending;
+				const started = await startPrune(
+					initialEvents,
+					orphans.ordered.map((resource) => resource.name),
+				);
+				initialEvents = started.events;
+				transitionState = started.state;
+				progressed = false;
+			} else if (
+				transitionState.status !== "active" ||
+				transitionState.transition.kind !== "prune" ||
+				!transitionState.transition.resourceIds.includes(only.resourceId)
+			)
+				return initialPending;
+			const resumed = await destroyResource(
+				actorDeps,
+				{ ...previous.plan, deploymentId },
+				reconcileCtx,
+			);
+			initialEvents = await readHistory();
+			if (resumed.kind === "failed") {
+				const state = resourceStates(initialEvents, plan, deploymentId);
+				return {
+					status: "needs-human",
+					deploymentId,
+					provisioned: provisionedList(state),
+					destroyed: destroyedList(state),
+					events: initialEvents,
+					changes,
+					pruned: [],
+					unprunable: [only.resourceId],
+					pendingOperations: initialPending.pendingOperations,
+				};
+			}
+			if (resumed.kind === "destroyed") recoveredPruned.push(only.resourceId);
+			initialPending = await pendingResult(initialEvents, recoveredPruned);
+		}
+		if (initialPending !== undefined) return initialPending;
+	}
 	// Provisioning is recorded before dispatch, so even a failed or interrupted
 	// call may have created state. A new provider cannot take over that resource
 	// without a fenced handover. Unknown ownership must fail closed too.
@@ -194,8 +494,23 @@ export async function runOrchestrator(
 
 	while (progressed) {
 		progressed = false;
-		const events = await collectStream(deps.store, stream);
+		const events = await readHistory();
+		const pending = await pendingResult(events);
+		if (pending !== undefined) return pending;
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
+		const states = resourceStates(events, plan, deploymentId);
+		if (hasUnresolvedReconciliation(events)) {
+			return {
+				status: "needs-human",
+				deploymentId,
+				provisioned: provisionedList(states),
+				destroyed: destroyedList(states),
+				events,
+				changes,
+				pruned: [],
+				unprunable: [],
+			};
+		}
 
 		// A no-go failure in this epoch short-circuits to compensation.
 		const failed = events.find(
@@ -244,7 +559,9 @@ export async function runOrchestrator(
 		if (triggeringFailure || lateBlocked) break;
 	}
 
-	let events = await collectStream(deps.store, stream);
+	let events = await readHistory();
+	const pending = await pendingResult(events);
+	if (pending !== undefined) return pending;
 	let states = resourceStates(events, plan, deploymentId);
 	if (lateBlocked)
 		return {
@@ -291,12 +608,7 @@ export async function runOrchestrator(
 			};
 		}
 		const compensation = await runCompensation(
-			{
-				store: deps.store,
-				actorHost: deps.actorHost,
-				executor: deps.executor,
-				broker: deps.broker,
-			},
+			actorDeps,
 			plan,
 			deploymentId,
 			triggeringFailure,
@@ -308,7 +620,7 @@ export async function runOrchestrator(
 					: undefined),
 			},
 		);
-		events = await collectStream(deps.store, stream);
+		events = await readHistory();
 		states = resourceStates(events, plan, deploymentId);
 		return {
 			status:
@@ -326,8 +638,13 @@ export async function runOrchestrator(
 
 	// Complete mode: once every declared resource converged, destroy what the
 	// log provisioned but the plan no longer declares, dependents first.
-	const pruned: string[] = [];
+	const pruned: string[] = [...recoveredPruned];
 	let unprunable: string[] = [];
+	let pruneTransition: DeploymentTransitionData | undefined =
+		transitionState.status === "active" &&
+		transitionState.transition.kind === "prune"
+			? transitionState.transition
+			: undefined;
 	const declaredConverged = () => {
 		const snapshots = resourceSnapshots(events, plan, deploymentId);
 		return plan.resources.every((resource) => {
@@ -338,6 +655,28 @@ export async function runOrchestrator(
 	if (mode === "complete" && declaredConverged()) {
 		const orphans = orphansToPrune(plan, events);
 		unprunable = [...orphans.unknown];
+		if (
+			pruneTransition !== undefined &&
+			[
+				...orphans.ordered.map((resource) => resource.name),
+				...orphans.unknown,
+			].some((name) => !pruneTransition?.resourceIds.includes(name))
+		)
+			return blockedTransition(events, "prune-target-changed");
+		if (
+			pruneTransition === undefined &&
+			orphans.ordered.length > 0 &&
+			orphans.unknown.length === 0
+		) {
+			if (orphans.ordered.length > 256)
+				return blockedTransition(events, "prune-target-changed");
+			const started = await startPrune(
+				events,
+				orphans.ordered.map((resource) => resource.name),
+			);
+			events = started.events;
+			pruneTransition = started.state.transition;
+		}
 		// A live declared resource may still reference an undeclared one. An
 		// orphan without a recorded plan may depend on any other orphan, so
 		// preserve all known orphans until its dependencies can be recovered.
@@ -348,6 +687,26 @@ export async function runOrchestrator(
 		if (orphans.unknown.length > 0)
 			for (const orphan of orphans.ordered) blocked.add(orphan.name);
 		for (const orphan of orphans.ordered) {
+			events = await readHistory();
+			const blockedByPending = await pendingResult(
+				events,
+				pruned,
+				[...new Set([...unprunable, ...remaining])].sort(),
+			);
+			if (blockedByPending !== undefined) return blockedByPending;
+			if (!declaredConverged()) {
+				states = resourceStates(events, plan, deploymentId);
+				return {
+					status: "waiting",
+					deploymentId,
+					provisioned: provisionedList(states),
+					destroyed: destroyedList(states),
+					events,
+					changes,
+					pruned,
+					unprunable,
+				};
+			}
 			const hasLiveDependent = orphans.ordered.some(
 				(other) =>
 					remaining.has(other.name) && other.deps.includes(orphan.name),
@@ -364,6 +723,20 @@ export async function runOrchestrator(
 			);
 			if (outcome.kind === "failed") {
 				unprunable.push(orphan.name);
+				if (outcome.snapshot.state === "ReconciliationRequired") {
+					events = await readHistory();
+					states = resourceStates(events, plan, deploymentId);
+					return {
+						status: "needs-human",
+						deploymentId,
+						provisioned: provisionedList(states),
+						destroyed: destroyedList(states),
+						events,
+						changes,
+						pruned,
+						unprunable: [...unprunable].sort(),
+					};
+				}
 				for (const dependency of orphan.deps) blocked.add(dependency);
 				continue;
 			}
@@ -371,11 +744,40 @@ export async function runOrchestrator(
 			remaining.delete(orphan.name);
 		}
 		if (pruned.length > 0) {
-			events = await collectStream(deps.store, stream);
+			events = await readHistory();
 			states = resourceStates(events, plan, deploymentId);
+		}
+		if (
+			pruneTransition !== undefined &&
+			unprunable.length === 0 &&
+			orphansToPrune(plan, events).ordered.length === 0 &&
+			orphansToPrune(plan, events).unknown.length === 0
+		) {
+			const fenceToken = currentFenceToken(deps.store, stream);
+			await emit(
+				deps.store,
+				stream,
+				[deploymentTransitionCompleted(pruneTransition)],
+				{
+					expectedSeq: events.at(-1)?.seq ?? 0,
+					actor: ctx.actor,
+					tenant: ctx.tenant,
+					...(fenceToken !== undefined ? { fenceToken } : undefined),
+					...(ctx.correlationId !== undefined
+						? { correlationId: ctx.correlationId }
+						: undefined),
+				},
+			);
+			events = await readHistory();
+			if (foldDeploymentTransition(events).status !== "open")
+				throw new Error("prune transition completion could not be confirmed");
 		}
 	}
 
+	events = await readHistory();
+	states = resourceStates(events, plan, deploymentId);
+	const finalPending = await pendingResult(events, pruned, unprunable);
+	if (finalPending !== undefined) return finalPending;
 	// All actors Provisioned → drive deployment.Deployed (choreography terminal).
 	const allProvisioned = declaredConverged() && unprunable.length === 0;
 	// Deployed is recorded once per change: an idempotent re-run that changed
@@ -407,7 +809,7 @@ export async function runOrchestrator(
 					: undefined),
 			},
 		);
-		events = await collectStream(deps.store, stream);
+		events = await readHistory();
 	}
 
 	return {
