@@ -543,8 +543,12 @@ describe("Alchemy IaC provider against the real library", () => {
 			queue: createMapper(["enqueue", "dequeue"], false),
 			web: createMapper([], true, ["hobo:session-replay"]),
 		};
+		const assessed: (typeof application.requirements)[] = [];
 		const options = {
-			assessRequirements: () => ({ status: "supported" as const }),
+			assessRequirements: (requirements: typeof application.requirements) => {
+				assessed.push(requirements);
+				return { status: "supported" as const };
+			},
 		};
 		const coverage = describeAlchemyPrimitiveSupport(CATALOG_ROWS, mappings);
 		expect(coverage).toHaveLength(CATALOG_ROWS.length);
@@ -565,6 +569,7 @@ describe("Alchemy IaC provider against the real library", () => {
 		expect(isEffect(mapBindleToAlchemy(application, mappings, options))).toBe(
 			true,
 		);
+		expect(assessed).toEqual([application.requirements]);
 		const missingDependency = bindle("missing-dependency", (builder) => {
 			const queue = builder.queue();
 			return {
