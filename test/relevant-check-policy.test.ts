@@ -83,7 +83,8 @@ function isScriptsLane(check: Check) {
 
 test("external workspace coverage omits only the commands CI runs in their own jobs", () => {
 	// pr_gate_validation passes --external-workspace-tests: workspace_tests
-	// runs the workspace suites and scripts-tests runs the scripts lane.
+	// runs the workspace suites and scripts-tests runs the scripts lane. The
+	// plan job (pr_gate_plan) runs no checks at all.
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
 	const external = plan(files, { workspaceTestsCoveredExternally: true });

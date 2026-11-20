@@ -56,6 +56,7 @@ describe("pins wiring", () => {
 	it("PR validation jobs check the pins after checkout and before installing", () => {
 		const workflow = read(".github/workflows/hobo-ci.yml");
 		for (const name of [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
@@ -68,6 +69,12 @@ describe("pins wiring", () => {
 				checkout >= 0 && status > checkout,
 				`${name}: status follows checkout`,
 			);
+			if (name === "pr_gate_plan") {
+				// The plan job installs nothing: its planning scripts use node
+				// builtins only, so the pins check needs no dependency store.
+				assert.equal(install, -1, `${name}: plans without installing`);
+				continue;
+			}
 			assert.ok(install > status, `${name}: status precedes pnpm install`);
 			if (name === "workspace_tests") {
 				assert.match(

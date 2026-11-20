@@ -354,7 +354,7 @@ describe("CI deps image build contract", () => {
 describe("CI deps workflow contract", () => {
 	const workflow = read(".github/workflows/hobo-ci.yml");
 	const start = workflow.indexOf("  ci-deps-image:");
-	const end = workflow.indexOf("  pr_gate_validation:", start);
+	const end = workflow.indexOf("  pr_gate_plan:", start);
 	const job = workflow.slice(start, end);
 
 	// A cluster runner has no worker image. build-deps.sh then asks
