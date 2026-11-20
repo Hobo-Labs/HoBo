@@ -1,8 +1,6 @@
 syntax = "proto3";
 
 // Wire records for the provider-connection page's loopback boundary
-// (browser client <-> connect page server). The spec itself is json-render's
-// flat Spec, carried as a google.protobuf.Struct; every other field is HoBo's.
 package hobo.connectui.v1;
 
 import "google/protobuf/struct.proto";
@@ -29,7 +27,6 @@ message ConnectViewRecord {
   reserved 3;
   reserved "composed_by";
   google.protobuf.Struct spec = 4;
-  // model | deterministic
   string composition_source = 6 [json_name = "composedBy"];
   BrowserDirectiveRecord directive = 5;
   google.protobuf.Struct view = 7;
@@ -39,7 +36,6 @@ message ConnectViewRecord {
 message ConnectedReferences {
   // github | vercel
   string provider = 1;
-  // infisical | 1password | bitwarden | yard
   string store = 2;
   repeated string references = 3;
 }
