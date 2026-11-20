@@ -1,18 +1,33 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { loadRivetkit, loadRivetkitClient } from "../src/load-rivetkit.js";
+import {
+	assertRivetEngineSupported,
+	loadRivetkit,
+	loadRivetkitClient,
+} from "../src/load-rivetkit.js";
 
+const require = createRequire(import.meta.url);
+const TSX_LOADER = require.resolve("tsx");
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const LIVE_FIXTURE = fileURLToPath(
-	new URL("./fixtures/rivet3-live.mjs", import.meta.url),
+	new URL("./fixtures/rivet3-live.mts", import.meta.url),
 );
 
 describe("rivetkit live baremetal", () => {
+	it("rejects the unavailable Windows engine before native loading", () => {
+		expect(() => assertRivetEngineSupported("win32")).toThrow(
+			/no Windows engine binary.*unsupported on win32/,
+		);
+		expect(() => assertRivetEngineSupported("linux")).not.toThrow();
+		expect(() => assertRivetEngineSupported("darwin")).not.toThrow();
+	});
+
 	it("loads RivetKit and its client from ESM and CommonJS", {
 		timeout: 30_000,
 	}, async () => {
@@ -68,9 +83,10 @@ describe("rivetkit live baremetal", () => {
 		expect(result.stdout).toBe("cjs-ok");
 	});
 
-	it("runs a stateful actor on an isolated Rivet 3 engine", {
+	it("persists actor state across an isolated Rivet 3 engine restart", {
 		timeout: 65_000,
 	}, async () => {
+		assertRivetEngineSupported();
 		const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-live-"));
 		try {
 			const result = await new Promise<{
@@ -79,23 +95,31 @@ describe("rivetkit live baremetal", () => {
 				stderr: string;
 				timedOut: boolean;
 			}>((resolve, reject) => {
-				const child = spawn(process.execPath, [LIVE_FIXTURE], {
-					cwd: directory,
-					detached: process.platform !== "win32",
-					env: { PATH: process.env.PATH, NODE_ENV: "test" },
-				});
+				const child = spawn(
+					process.execPath,
+					["--import", TSX_LOADER, LIVE_FIXTURE],
+					{
+						cwd: directory,
+						detached: process.platform !== "win32",
+						env: { PATH: process.env.PATH, NODE_ENV: "test" },
+					},
+				);
 				let stdout = "";
 				let stderr = "";
 				let timedOut = false;
-				// The detached group belongs only to this test and its engine.
 				const stopOwnedGroup = () => {
 					try {
 						if (process.platform !== "win32" && child.pid !== undefined)
 							process.kill(-child.pid, "SIGKILL");
 						else child.kill("SIGKILL");
-					} catch (error) {
-						// SAFETY: Node's process signalling errors expose an errno code at this OS boundary.
-						if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+					} catch (error: unknown) {
+						if (
+							error instanceof Error &&
+							"code" in error &&
+							error.code === "ESRCH"
+						)
+							return;
+						throw error;
 					}
 				};
 				const timer = setTimeout(() => {

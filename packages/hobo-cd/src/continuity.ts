@@ -8,11 +8,11 @@ import {
 // (`bindle.ts`) with `.with(...)`. Each is the cheapest tier that keeps what
 // the data is for:
 //
-// - **`cd-journal`: `standard`, with two standbys.** This is a desired
-//   policy for the rollout ledger, not evidence that the requested recovery
-//   point, independent failure domains, safe failover or backups exist. The
-//   experimental fleet still needs a commit-boundary fence and scheduled
-//   backups before it can provide those guarantees.
+// - **`cd-journal`: `standard`, with two standbys.** The rollout ledger: a
+//   copy to each standby within the five-minute recovery point, writes fenced
+//   at the commit boundary so a move loses none, and a daily backup (seven
+//   kept) on the fleet's witness. What the fleet cannot verify (independent
+//   vendors, a placed witness) it reports as a shortfall when it opens.
 // - **`cd-config`: `rebuildable`.** It holds references into the owner's
 //   secret store, not values; the store keeps its own replicas, and `hobo cd
 //   up` rebuilds the references idempotently. Copying it would buy nothing.

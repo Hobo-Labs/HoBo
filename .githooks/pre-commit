@@ -1,16 +1,10 @@
 #!/usr/bin/env sh
-# The commit gate. Its root-script gates need Node and installed dependencies,
-# not a package manager (turbo's package-test lanes still run pnpm): every
-# script runs through scripts/run-script.mts, which hands the script its
-# arguments as arguments, so a base branch name is never shell text.
 set -eu
 
 case $(printf '%s' "${HOBO_SKIP_HOOKS:-}" | tr '[:upper:]' '[:lower:]') in
 1 | true | yes | on) exit 0 ;;
 esac
 
-# tsx is what the first gate loads; an absent, empty or half-installed
-# node_modules would otherwise end in a module-resolution stack trace.
 if [ ! -e node_modules/tsx/package.json ]; then
 	echo "pre-commit: dependencies are not installed (no node_modules/tsx); run pnpm install, or set HOBO_SKIP_HOOKS=1 to commit without this hook." >&2
 	exit 1
@@ -33,8 +27,7 @@ if ! git rev-parse --verify --quiet --end-of-options "$BASE^{commit}" >/dev/null
 fi
 
 run generated:guard
-# Plans are never committed (AGENTS.md, "Plans are not committed").
 run plans:guard -- --staged
-# Staged secrets are refused before they reach history (Betterleaks, mise.toml).
 run secrets:staged
+run source:guard -- --staged
 run check:relevant:staged -- --base="$BASE"

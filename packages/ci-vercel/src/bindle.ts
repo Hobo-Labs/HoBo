@@ -16,12 +16,20 @@
  * to `vercel.json`, to the entry files and to the settings the deployed code
  * reads, so the declaration cannot drift from the thing it describes.
  *
- * Facts the Bindle model cannot carry yet are exported beside it, keyed by
- * the Bindle's resource names: a schedule's cadence (`b.schedule()` takes
- * none), the capability requirement of the cache (`b.kv()` takes none) and
- * what the relay asks of its config service (`b.secret()` takes none).
+ * The schedule's cadence is its `cadence` trait, which the planner carries
+ * to the placement. Facts the Bindle model cannot carry yet are exported
+ * beside it, keyed by the Bindle's resource names: the capability requirement
+ * of the cache (`b.kv()` takes none) and what the relay asks of its config
+ * service (`b.secret()` takes none).
  */
-import { bindle, config, continuity, env, secret } from "@hobo/bindles";
+import {
+	bindle,
+	cadence,
+	config,
+	continuity,
+	env,
+	secret,
+} from "@hobo/bindles";
 import { redisCompatible } from "@hobo/kv-redis-compatible";
 
 /** The Bindle resource names; each is also the name the platform sees. */
@@ -236,7 +244,11 @@ export default bindle("hobo-ci-relay", (b) => {
 		.queue()
 		.allow("enqueue", "dequeue")
 		.with(RELAY_CONTINUITY.steps);
-	const schedule = b.schedule().dependsOn(queue);
+	// Every 15 minutes the schedule puts a repair tick on the repair queue.
+	const schedule = b
+		.schedule()
+		.dependsOn(queue)
+		.with(cadence(RELAY_REPAIR_SCHEDULE.cron));
 	const http = b.api().dependsOn(cache, configService, queue, intake, steps);
 	return {
 		[RELAY_RESOURCES.http]: http,

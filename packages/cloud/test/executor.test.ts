@@ -23,7 +23,10 @@ function mockIac(opts: { failApply?: string[] } = {}): IacProvider {
 		},
 		async apply(program) {
 			if (fail.has(program.resourceId))
-				throw new Error(`apply failed for ${program.resourceId}`);
+				throw Object.assign(
+					new Error(`apply failed for ${program.resourceId}`),
+					{ requiresReconciliation: false, executionOutcome: "not-started" },
+				);
 			return {
 				endpoint: `${program.resourceId}.local`,
 				stack: program.stackName,
@@ -64,6 +67,61 @@ function cred(resourceId = "api") {
 }
 
 describe("Executor: sandboxed preview+apply against an injected IacProvider", () => {
+	it.each([
+		"apply",
+		"destroy",
+	] as const)("requires reconciliation for an unclassified %s error after dispatch", async (action) => {
+		const iac = mockIac();
+		iac[action] = async () => {
+			throw new Error("response lost after provider effect");
+		};
+		const result = await createInProcessExecutor({ iac }).run(
+			program({ action }),
+			cred(),
+		);
+		expect(result).toMatchObject({
+			status: "failed",
+			classification: "fatal",
+			requiresReconciliation: true,
+			reconciliationOperation: action,
+		});
+	});
+
+	it("does not infer a provider effect from a preview failure", async () => {
+		const iac = mockIac();
+		iac.preview = async () => {
+			throw new Error("preview unavailable");
+		};
+		const result = await createInProcessExecutor({ iac }).run(
+			program(),
+			cred(),
+		);
+		expect(result).toMatchObject({
+			status: "failed",
+			classification: "retryable",
+		});
+		expect(result).not.toHaveProperty("requiresReconciliation", true);
+	});
+
+	it("keeps an identified reservation uncertain even if an error claims no execution", async () => {
+		const iac = mockIac();
+		iac.apply = async () => {
+			throw Object.assign(new Error("admission disputed"), {
+				requiresReconciliation: false,
+				executionOutcome: "not-started",
+				reservationId: "iac:held",
+			});
+		};
+		const result = await createInProcessExecutor({ iac }).run(
+			program(),
+			cred(),
+		);
+		expect(result).toMatchObject({
+			status: "failed",
+			requiresReconciliation: true,
+			reservationId: "iac:held",
+		});
+	});
 	it("requires reconciliation when a provider error cannot be inspected", async () => {
 		const iac = mockIac();
 		iac.apply = async () => {

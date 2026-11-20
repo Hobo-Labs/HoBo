@@ -23,6 +23,25 @@ read-only provider cannot satisfy a write request. The SDK/CLI planner tests
 cover collection and selection; provider authorization and realization still
 require the provider's own conformance and contract evidence.
 
+Before apply or destroy, the resource actor records a fresh operation generation
+and the exact program and desired-spec hashes in the deployment stream. It
+passes that generation through the generic IaC program to the executor and
+only reuses it on crash recovery when the trusted host verifies that the exact
+generation cannot overlap or duplicate a prior effect. A changed or legacy
+in-flight operation, or one without that guarantee, enters reconciliation. A
+trusted route issuer must bind the generation to its tenant,
+deployment, resource and action, and fence prior uncertain effects before
+authorizing a successor.
+Destroy records its own generation, distinct from the preceding apply, so a
+replayed apply authorization cannot identify the destroy operation.
+Deployment transitions use the same stream CAS as resource starts. An active
+transition prevents new applies and permits destroys only for its recorded
+resource IDs. Unresolved work blocks convergence, and rollback cannot overtake
+a pending apply.
+The resume verifier is a trusted host boundary: a point-in-time status check
+alone is insufficient unless credentials or the provider enforce that fence
+through the resumed operation.
+
 An IaC provider can mark an error `requiresReconciliation` when a financial
 claim or provider operation may have taken effect. The executor records the
 operation and any reservation ID. The resource actor persists
@@ -33,6 +52,25 @@ outcome is reconciled.
 That guard also follows resources removed from a later deployment plan.
 Nonterminal resource and deployment events cannot clear an unresolved outcome
 from the actor, deployment view, or topology view during replay.
+An unclassified error after the executor invokes apply or destroy is also
+uncertain. A retryable pre-effect denial must carry both
+`requiresReconciliation: false` and `executionOutcome: "not-started"`;
+the host must only inject providers that can substantiate that assertion.
+
+`resolveResourceReconciliation` records an operator's verified outcome against
+the exact uncertain event. The host authorizes the operator and supplies separate trusted verifiers for
+provider outcome and financial disposition. One verified recovery fact records
+the terminal apply, destroy, or no-effect outcome; unrelated delayed resource
+facts cannot clear an uncertainty. A no-effect resolution requires the
+reservation to be settled or released, or independently verified as absent.
+It restores the last verified resource state and its outputs and spec; if no
+prior state is recorded, the host must independently verify an absence claim.
+Recovery itself never releases or settles funds. The event includes the
+verification references, reservation, and a digest of the complete claim;
+matching retries are idempotent and conflicting evidence is rejected.
+`resource.Reconciled` is a host-owned fact: the event store must restrict its
+writers to trusted control-plane code. An unauthenticated generic event writer
+must not be allowed to append recovery facts directly.
 
 ## Budget-aware hosting placement
 
