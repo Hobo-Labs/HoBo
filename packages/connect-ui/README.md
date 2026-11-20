@@ -7,6 +7,19 @@ the exact component it needs, generated with
 [json-render](https://json-render.dev) on its shadcn/ui preset, and every
 action on the page is a transition the flow on the server decides.
 
+## Agent-ready ceremony controls
+
+The loopback client labels every control in the composed spec, carries each
+button's connect action (`on.press.action`) onto it, and wraps the buttons
+whose action has a confirm with `data-agent-confirm` — keyed by action, never
+by label, so duplicate labels and multiple `connect.chooseStore` buttons each
+get their own confirm. An untrusted (scripted) press on a confirmed button is
+refused; a person's click passes, and `window.confirm` runs on the same action
+map before the dispatch leaves the page. The runtime exposes
+`collectFormParams(false)` so automation never reads secret fields back out of the
+form store. `test/agent-contract.test.ts`, `test/agent-dom.test.tsx`, and
+`test/agent-press.test.tsx` pin these guarantees on the json-render page.
+
 ## Secretless by construction
 
 A provider hands its credentials over once. The flow writes them straight from
@@ -22,7 +35,7 @@ a CI variable or this page.
 | Piece | Entry point |
 |---|---|
 | The flow's steps (data) | `ConnectStep`, `DEFAULT_SECRET_STORES` (`src/steps.ts`) |
-| The component vocabulary | `connectCatalog`: shadcn Card, Stack, Heading, Text, Button, Alert, Badge, Link, Progress, Separator, Radio; actions `connect.chooseStore`, `connect.start`, `connect.cancel` |
+| The component vocabulary | `connectCatalog`: shadcn Card, Stack, Heading, Text, Button, Alert, Badge, Link, Progress, Separator, Radio, Input; actions `connect.submit`, `connect.chooseStore`, `connect.start`, `connect.cancel` |
 | What a step may show | `connectCandidates(step)`: configured, already valid component instances |
 | Compose | `composeConnectSpec(step, { evaluate })` |
 | Serve | `startConnectPage({ flow })` |
@@ -39,8 +52,10 @@ a broken or stranded one.
 
 **Evaluator, secretless first.** `evaluatorFromEnv` uses `VERCEL_OIDC_TOKEN`
 (short-lived, on Vercel or after `vercel env pull`), then `AI_GATEWAY_API_KEY`.
-`HOBO_CONNECT_UI_COMPOSE=off` disables the model. `HOBO_CONNECT_UI_MODEL`
-picks it (default `typesafe-ai/jev`). The composer API is experimental, so
+Composition is opt-in: `HOBO_CONNECT_UI_COMPOSE=on` (case-sensitive) enables
+the model together with a credential; `off` disables it even when a credential
+is set, and unset means a credential alone does nothing. `HOBO_CONNECT_UI_MODEL`
+picks the model (default `typesafe-ai/jev`). The composer API is experimental, so
 `@json-render/*` is pinned to an exact version.
 
 ## The loopback server
@@ -49,7 +64,7 @@ picks it (default `typesafe-ai/jev`). The composer API is experimental, so
 per-session path (`/s/<token>/`); anything else is a 404.
 
 - `GET view` returns the step's composed spec.
-- `POST action` accepts only `{ action: one of the three, params: string map }` and asks the flow.
+- `POST action` accepts only `{ action: one of the four, params: string map }` and asks the flow.
 - `GET callback` is where a provider sends the browser back (GitHub's manifest code, Vercel's authorization). The flow handles it.
 
 Transitions run one at a time, so a double click cannot call a provider twice.
@@ -97,12 +112,21 @@ checking the client, server, scripts, and tests.
 ## Tests
 
 `test/connect-ui.test.ts` checks:
-- every candidate's props parse against the catalog;
+- every candidate's props parse against the catalog (choice fields as
+  label+value Radio option pairs);
 - every step renders a valid spec;
 - the model path is used when complete and rejected when it omits the action;
 - a failing evaluator falls back;
 - the server's 404, CSP, action parsing, callback and failure handling;
-- no secret value in any response.
+- a view response is re-checked against the current step after composition, so
+  a step that changed during a model compose is never answered stale;
+- no secret value in any response;
+- agent confirm metadata on hand-off controls and no secret echo in composition.
+
+`test/agent-press.test.tsx` drives the rendered registry in jsdom: an untrusted
+press on a person-confirmed hand-off is refused, an unconfirmed action
+dispatches, duplicate labels gate by their connect action, and a choice field
+shows its option label while binding the option value.
 
 The flow was also driven end to end in Chromium through real clicks, with no
 console errors.
