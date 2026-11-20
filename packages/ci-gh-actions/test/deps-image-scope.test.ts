@@ -263,15 +263,15 @@ describe("CI deps image push scope", () => {
 			"Resolve the merge group base and gate scope",
 			"Plan workspace test shards",
 		])
-			expect(
-				prPlan.steps.find((step) => step.name === name).run,
-			).toContain("node --experimental-strip-types");
+			expect(prPlan.steps.find((step) => step.name === name).run).toContain(
+				"node --experimental-strip-types",
+			);
 		expect(
 			prPlan.steps.find((step) => step.name === "Resolve Turbo SCM base").run,
 		).toContain("git merge-base");
 		expect(
 			prValidation.steps.find((step) => step.name === "Relevant checks only")
-			.env.BASE,
+				.env.BASE,
 		).toBe("${{ needs.pr_gate_plan.outputs.pr_base }}");
 		const s0 = prValidation.steps.find((step) => step.name === "S0 gate set");
 		expect(s0.env.SCOPE).toBe("${{ needs.pr_gate_plan.outputs.merge_scope }}");
@@ -279,12 +279,11 @@ describe("CI deps image push scope", () => {
 		expect(workspaceTests.strategy.matrix.shard).toBe(
 			"${{ fromJSON(needs.pr_gate_plan.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
 		);
-		expect(
-			workspaceTests.if).toContain("needs.pr_gate_plan.result == 'success'");
-		expect(workspaceTests.if).not.toContain("pr_gate_validation");
-		expect(prAffected.if).toContain(
+		expect(workspaceTests.if).toContain(
 			"needs.pr_gate_plan.result == 'success'",
 		);
+		expect(workspaceTests.if).not.toContain("pr_gate_validation");
+		expect(prAffected.if).toContain("needs.pr_gate_plan.result == 'success'");
 	});
 });
 
