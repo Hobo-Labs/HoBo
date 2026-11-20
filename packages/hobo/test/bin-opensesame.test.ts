@@ -274,6 +274,31 @@ describe.concurrent("the composed hobo binary under HOBO_CREDENTIALS=opensesame"
 	);
 });
 
+describe("the composed hobo binary's owner keys", () => {
+	it(
+		"renders help without opening the owner store for a retained Pulumi workspace",
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const run = await runBin(dirs, {
+				bin: HOBO_SOURCE_BIN,
+				args: ["ci", "--help"],
+				env: {
+					HOBO_PULUMI_LIVE: "1",
+					HOBO_PULUMI_WORKDIR: join(dirs.root, "retained"),
+					HOBO_SECRET_STORE: "unavailable-fixture",
+				},
+				record: join(dirs.root, "unused-record.json"),
+				cwd: dirs.elsewhere,
+			});
+			expect(run.status).toBe(0);
+			expect(run.stderr).not.toContain("HOBO_OWNER_STORE_UNAVAILABLE");
+			expect(run.stdout).toMatch(/ci/iu);
+		},
+		RUN_TIMEOUT_MS,
+	);
+});
+
 describe.concurrent("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 	it(
 		"relaunches under OpenSesame, given the store passphrase, and serves MCP through it",
