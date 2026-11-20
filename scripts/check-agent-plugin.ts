@@ -291,6 +291,168 @@ export function bodyAfterFrontmatter(markdown: string): string {
 	return match ? markdown.slice(match[0].length) : markdown;
 }
 
+export const AGENT_TOOLING_HEADING =
+	"### hobo — HoBo's own MCP server (this repo)";
+export const AGENT_TOOLING_DOCS_FILE = "docs/agent-tooling.md";
+export const AGENT_TOOLING_REFERENCE_FILE = path.join(
+	"skills",
+	"hobo-setup",
+	"references",
+	"agent-tooling.md",
+);
+const HOBO_SETUP_REPO_DIR = ".agents/skills/hobo-setup";
+const HOBO_SETUP_PLUGIN_DIR = "skills/hobo-setup";
+const REPO_ONLY_MARKERS: readonly string[] = [
+	" (repo-only: it lives in the HoBo repository)",
+	" (repo-only)",
+];
+
+export function extractMarkdownSection(
+	markdown: string,
+	heading: string,
+): string | undefined {
+	const lines = markdown.split(/\r?\n/u);
+	const start = lines.indexOf(heading);
+	if (start === -1) return undefined;
+	const end = lines.findIndex(
+		(line, index) => index > start && /^#{1,3} \S/u.test(line),
+	);
+	return lines.slice(start + 1, end === -1 ? undefined : end).join("\n");
+}
+
+function docsLinkTargetToPluginRelative(target: string): string {
+	const [pathPart, ...anchorParts] = target.split("#");
+	if (pathPart === undefined || pathPart === "") return target;
+	if (/^[a-z][a-z0-9+.-]*:/iu.test(pathPart)) return target;
+	const resolved = path.posix.normalize(path.posix.join("docs", pathPart));
+	if (
+		resolved !== HOBO_SETUP_REPO_DIR &&
+		!resolved.startsWith(`${HOBO_SETUP_REPO_DIR}/`)
+	) {
+		return target;
+	}
+	const withinSetup = path.posix.relative(HOBO_SETUP_REPO_DIR, resolved);
+	const fromReference = path.posix.relative(
+		path.posix.join(HOBO_SETUP_PLUGIN_DIR, "references"),
+		path.posix.join(HOBO_SETUP_PLUGIN_DIR, withinSetup),
+	);
+	const anchor = anchorParts.length > 0 ? `#${anchorParts.join("#")}` : "";
+	return `${fromReference}${anchor}`;
+}
+
+function rewriteDocsLinksForPlugin(section: string): string {
+	return section.replace(
+		/\]\(([^)\s]+)(\s+"[^"]*")?\)/gu,
+		(_match, target: string, title?: string) =>
+			`](${docsLinkTargetToPluginRelative(target)}${title ?? ""})`,
+	);
+}
+
+function dropSourceParagraph(text: string): string {
+	const match = /^Source:[^\n]*(?:\n[^\n]+)*(?:\n|$)/u.exec(text);
+	return match && match[0] !== undefined ? text.slice(match[0].length) : text;
+}
+
+function stripRepoOnlyMarkers(text: string): string {
+	let stripped = text;
+	for (const marker of [...REPO_ONLY_MARKERS].sort(
+		(a, b) => b.length - a.length,
+	)) {
+		stripped = stripped.replaceAll(marker, "");
+	}
+	return stripped;
+}
+
+function collapseForComparison(text: string): string {
+	return text.trim().split(/\s+/u).join(" ");
+}
+
+function divergenceContext(expected: string, actual: string): string {
+	let index = 0;
+	while (
+		index < expected.length &&
+		index < actual.length &&
+		expected[index] === actual[index]
+	) {
+		index++;
+	}
+	const window = (text: string): string => {
+		const start = Math.max(0, index - 30);
+		return text.slice(start, start + 50) || "(end of text)";
+	};
+	return `docs reads "...${window(expected)}...", reference reads "...${window(actual)}..."`;
+}
+
+export function agentToolingReferenceDriftIssues(input: {
+	docsMarkdown: string;
+	referenceMarkdown: string;
+	referenceFile?: string | undefined;
+}): AgentPluginIssue[] {
+	const file = input.referenceFile ?? AGENT_TOOLING_REFERENCE_FILE;
+	const section = extractMarkdownSection(
+		input.docsMarkdown,
+		AGENT_TOOLING_HEADING,
+	);
+	if (section === undefined) {
+		return [
+			{
+				file: AGENT_TOOLING_DOCS_FILE,
+				message: `section "${AGENT_TOOLING_HEADING}" is missing, so ${file} cannot be verified against it`,
+			},
+		];
+	}
+	const referenceLines = input.referenceMarkdown.split(/\r?\n/u);
+	if (referenceLines[0] !== AGENT_TOOLING_HEADING) {
+		return [
+			{
+				file,
+				message: `must start with the heading "${AGENT_TOOLING_HEADING}" to stay identifiable as an extract of ${AGENT_TOOLING_DOCS_FILE}`,
+			},
+		];
+	}
+	const referenceBody = collapseForComparison(
+		stripRepoOnlyMarkers(
+			dropSourceParagraph(referenceLines.slice(1).join("\n").trimStart()),
+		),
+	);
+	const docsBody = collapseForComparison(rewriteDocsLinksForPlugin(section));
+	if (referenceBody === docsBody) return [];
+	return [
+		{
+			file,
+			message: `drifted from ${AGENT_TOOLING_DOCS_FILE} section "${AGENT_TOOLING_HEADING}"; re-extract the section, rewrite .agents/skills/hobo-setup links plugin-relative, and keep the repo-only markers (${divergenceContext(docsBody, referenceBody)})`,
+		},
+	];
+}
+
+function agentToolingDocsDriftIssues(
+	repoRoot: string,
+	pluginRoot: string,
+): AgentPluginIssue[] {
+	const referenceFile = path.join(pluginRoot, AGENT_TOOLING_REFERENCE_FILE);
+	if (!existsSync(referenceFile)) {
+		return [
+			{
+				file: AGENT_TOOLING_REFERENCE_FILE,
+				message: `is missing; hobo-setup must ship the ${AGENT_TOOLING_DOCS_FILE} extract`,
+			},
+		];
+	}
+	const docsFile = path.join(repoRoot, AGENT_TOOLING_DOCS_FILE);
+	if (!existsSync(docsFile)) {
+		return [
+			{
+				file: AGENT_TOOLING_REFERENCE_FILE,
+				message: `${AGENT_TOOLING_DOCS_FILE} is missing from the repo root`,
+			},
+		];
+	}
+	return agentToolingReferenceDriftIssues({
+		docsMarkdown: readFileSync(docsFile, "utf8"),
+		referenceMarkdown: readFileSync(referenceFile, "utf8"),
+	});
+}
+
 function skillIssues(
 	pluginRoot: string,
 	repoSkillsRoot: string,
@@ -468,6 +630,7 @@ export function checkAgentPlugin(input: {
 			...skillIssues(pluginRoot, path.join(repoRoot, ".agents/skills"), skill),
 		);
 	}
+	issues.push(...agentToolingDocsDriftIssues(repoRoot, pluginRoot));
 
 	const readmeText = readPluginFile(pluginRoot, "README.md", issues);
 	if (readmeText !== undefined) {

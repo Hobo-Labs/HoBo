@@ -41,6 +41,13 @@ from the repo copies. Commands marked **repo-only** in those skills (the MCP
 cold-start test, `eval:hand-off-transcript`) exist only inside a HoBo
 checkout.
 
+`skills/hobo-setup/references/agent-tooling.md` is an extract of the `hobo`
+MCP-server section in `docs/agent-tooling.md`. The same gate fails when that
+section changes without re-extracting the reference: docs links into
+`.agents/skills/hobo-setup/` must be rewritten plugin-relative (for example
+`../SKILL.md`), and the intentional **repo-only** markers plus the leading
+`Source:` note are preserved.
+
 ## Hooks
 
 HoBo ships no product hooks. Future client hooks land under

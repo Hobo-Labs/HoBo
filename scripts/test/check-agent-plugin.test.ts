@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	AGENT_TOOLING_HEADING,
+	agentToolingReferenceDriftIssues,
 	bodyAfterFrontmatter,
 	checkAgentPlugin,
 	checkMarkdownLinks,
@@ -305,5 +307,158 @@ describe("checkAgentPlugin (integration)", () => {
 				/the portable set is exactly/.test(issue.message),
 			),
 		).toBe(true);
+	});
+});
+
+describe("agent-tooling extract drift gate", () => {
+	it("keeps the shipped reference in sync with the docs section", async () => {
+		const issues = agentToolingReferenceDriftIssues({
+			docsMarkdown: await readFile(
+				path.join(repoRoot, "docs/agent-tooling.md"),
+				"utf8",
+			),
+			referenceMarkdown: await readFile(
+				path.join(
+					realPluginRoot,
+					"skills/hobo-setup/references/agent-tooling.md",
+				),
+				"utf8",
+			),
+		});
+		expect(issues).toEqual([]);
+	});
+
+	it("flags a docs edit that is not re-extracted into the reference", async () => {
+		const docsMarkdown = (
+			await readFile(path.join(repoRoot, "docs/agent-tooling.md"), "utf8")
+		).replace(
+			"Registration alone does not establish",
+			"Registration by itself no longer establishes",
+		);
+		const referenceMarkdown = await readFile(
+			path.join(
+				realPluginRoot,
+				"skills/hobo-setup/references/agent-tooling.md",
+			),
+			"utf8",
+		);
+		const issues = agentToolingReferenceDriftIssues({
+			docsMarkdown,
+			referenceMarkdown,
+		});
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.message).toMatch(/drifted from docs\/agent-tooling\.md/u);
+	});
+
+	it("requires docs links into .agents/skills/hobo-setup to be rewritten plugin-relative", async () => {
+		const docsMarkdown = await readFile(
+			path.join(repoRoot, "docs/agent-tooling.md"),
+			"utf8",
+		);
+		const referenceMarkdown = (
+			await readFile(
+				path.join(
+					realPluginRoot,
+					"skills/hobo-setup/references/agent-tooling.md",
+				),
+				"utf8",
+			)
+		).replace("(../SKILL.md)", "(../.agents/skills/hobo-setup/SKILL.md)");
+		const issues = agentToolingReferenceDriftIssues({
+			docsMarkdown,
+			referenceMarkdown,
+		});
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.message).toMatch(/drifted from docs\/agent-tooling\.md/u);
+	});
+
+	it("rejects an unknown annotation where a repo-only marker belongs", async () => {
+		const docsMarkdown = await readFile(
+			path.join(repoRoot, "docs/agent-tooling.md"),
+			"utf8",
+		);
+		const referenceMarkdown = (
+			await readFile(
+				path.join(
+					realPluginRoot,
+					"skills/hobo-setup/references/agent-tooling.md",
+				),
+				"utf8",
+			)
+		).replace("(repo-only: it lives in the HoBo repository)", "(repo only)");
+		const issues = agentToolingReferenceDriftIssues({
+			docsMarkdown,
+			referenceMarkdown,
+		});
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.message).toMatch(/drifted from docs\/agent-tooling\.md/u);
+	});
+
+	it("reports a missing docs section and a replaced reference heading", () => {
+		expect(
+			agentToolingReferenceDriftIssues({
+				docsMarkdown: "# Agent tooling\n\n### other — tool\n\nbody\n",
+				referenceMarkdown: `${AGENT_TOOLING_HEADING}\n\nbody\n`,
+			})[0]?.message,
+		).toMatch(/section "### hobo/u);
+		expect(
+			agentToolingReferenceDriftIssues({
+				docsMarkdown: `# Agent tooling\n\n${AGENT_TOOLING_HEADING}\n\nbody\n`,
+				referenceMarkdown: "### hobo MCP server\n\nbody\n",
+			})[0]?.message,
+		).toMatch(/must start with the heading/u);
+	});
+
+	it("fails through checkAgentPlugin when the extract drifts from docs", async () => {
+		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
+		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
+		const docs = `# Agent tooling\n\n${AGENT_TOOLING_HEADING}\n\nDocs body with the [HoBo setup skill](../.agents/skills/hobo-setup/SKILL.md).\n\n### next — tool\n\nafter\n`;
+		const reference = `${AGENT_TOOLING_HEADING}\n\nSource: extracted from docs/agent-tooling.md.\n\nDocs body with the [HoBo setup skill](../SKILL.md) (repo-only).\n`;
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: { hobo: { type: "stdio", command: "node" } },
+			}),
+			"README.md": "# hobo\n",
+			"skills/hobo-setup/SKILL.md": setup,
+			"skills/hobo-deploy/SKILL.md": deploy,
+			"skills/hobo-setup/references/agent-tooling.md": reference.replace(
+				"Docs body with",
+				"Changed body with",
+			),
+			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
+			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
+			"repo:docs/agent-tooling.md": docs,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/drifted from docs\/agent-tooling\.md/u.test(issue.message),
+			),
+		).toBe(true);
+		const inSync = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: { hobo: { type: "stdio", command: "node" } },
+			}),
+			"README.md": "# hobo\n",
+			"skills/hobo-setup/SKILL.md": setup,
+			"skills/hobo-deploy/SKILL.md": deploy,
+			"skills/hobo-setup/references/agent-tooling.md": reference,
+			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
+			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
+			"repo:docs/agent-tooling.md": docs,
+		});
+		const cleanReport = checkAgentPlugin({
+			pluginRoot: inSync.pluginRoot,
+			repoRoot: inSync.repoRoot,
+		});
+		expect(
+			cleanReport.issues.filter((issue) =>
+				issue.message.includes("agent-tooling"),
+			),
+		).toEqual([]);
 	});
 });
