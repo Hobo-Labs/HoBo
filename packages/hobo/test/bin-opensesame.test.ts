@@ -51,6 +51,14 @@ const CAN_TRUST_PATH =
 const describeTrustedPath = CAN_TRUST_PATH
 	? describe.concurrent
 	: describe.skip;
+it.runIf(process.env.GITHUB_ACTIONS === "true" && !CAN_TRUST_PATH)(
+	"OpenSesame credential boundary suites have a trusted PATH in GitHub Actions",
+	({ expect }) => {
+		expect.fail(
+			"OpenSesame credential boundary tests require a trusted system PATH in GitHub Actions; refusing to skip them.",
+		);
+	},
+);
 const COMPOSED_HOBO_OPENSESAME =
 	"the composed hobo binary under HOBO_CREDENTIALS=opensesame";
 
