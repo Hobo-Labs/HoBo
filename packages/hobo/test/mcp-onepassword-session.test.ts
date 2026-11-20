@@ -95,7 +95,7 @@ describe("MCP 1Password owner hand-off", () => {
 			expect(spawned).not.toHaveBeenCalled();
 			if (formAvailable) {
 				expect(prompts).toHaveLength(1);
-					expect(visible).toContain("existing 1Password token");
+				expect(visible).toContain("existing 1Password token");
 				expect(visible).toContain("HOBO_OK");
 				expect(selectedVault.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(TOKEN);
 			} else {
