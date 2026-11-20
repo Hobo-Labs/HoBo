@@ -42,6 +42,8 @@ function fixture() {
 	const objectCharges: Parameters<
 		UpstashBlobImmutableJournalOptions["authorizeObject"]
 	>[0][] = [];
+	let mintChecks = 0,
+		objectChecks = 0;
 	const offlineBuckets = new Set<string>();
 	let denyMint = false,
 		denyObject = false,
@@ -125,6 +127,7 @@ function fixture() {
 				mintCharges.push(charge);
 				if (denyMint) throw new Error("mint denied");
 				return async () => {
+					mintChecks++;
 					if (denyMint) throw new Error("mint revoked");
 				};
 			},
@@ -132,6 +135,7 @@ function fixture() {
 				objectCharges.push(charge);
 				if (denyObject) throw new Error("object denied");
 				return async () => {
+					objectChecks++;
 					if (denyObject) throw new Error("object revoked");
 				};
 			},
@@ -155,6 +159,8 @@ function fixture() {
 		calls,
 		mintCharges,
 		objectCharges,
+		mintChecks: () => mintChecks,
+		objectChecks: () => objectChecks,
 		open,
 		journal,
 		setDenyMint(value: boolean) {
@@ -497,6 +503,18 @@ describe("Upstash private Blob immutable voter", () => {
 		await expect(first.initializeFresh(async () => {})).rejects.toThrow();
 		expect(f.calls).toHaveLength(1);
 		expect(new URL(f.calls[0]?.url ?? "").hostname).toBe("blob.upstash.io");
+	});
+	it("checks each admitted hold exactly once before I/O and once after it", async () => {
+		const f = fixture(),
+			first = f.open()[0];
+		if (!first) throw new Error("missing voter");
+		await first.initializeFresh(async () => {});
+		const mints = f.calls.filter(
+			(call) => new URL(call.url).hostname === "blob.upstash.io",
+		).length;
+		expect(mints).toBe(1);
+		expect(f.mintChecks()).toBe(2 * mints);
+		expect(f.objectChecks()).toBe(2 * (f.calls.length - mints));
 	});
 	it("retains an ambiguous committed put when its operation authority is revoked", async () => {
 		const f = fixture(),

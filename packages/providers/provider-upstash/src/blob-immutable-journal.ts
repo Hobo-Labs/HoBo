@@ -210,15 +210,38 @@ export function createUpstashBlobImmutableJournalReplica(
 	)
 		throw new UpstashBlobImmutableJournalError("invalid-configuration");
 	async function guard(action: () => Promise<() => Promise<void>>) {
-		let revalidate: () => Promise<void>;
+		let hold: () => Promise<void>;
 		try {
-			revalidate = await action();
-			if (!(revalidate instanceof Function)) throw new Error("missing hold");
-			await revalidate();
+			hold = await action();
+			if (!(hold instanceof Function)) throw new Error("missing hold");
 		} catch {
 			throw new UpstashBlobImmutableJournalError("authorization-unavailable");
 		}
-		return revalidate;
+		async function check() {
+			try {
+				await hold();
+			} catch {
+				throw new UpstashBlobImmutableJournalError("authorization-unavailable");
+			}
+		}
+		let claimed = false;
+		return Object.freeze({
+			async claim() {
+				if (claimed)
+					throw new UpstashBlobImmutableJournalError(
+						"authorization-unavailable",
+					);
+				claimed = true;
+				await check();
+			},
+			async revalidate() {
+				if (!claimed)
+					throw new UpstashBlobImmutableJournalError(
+						"authorization-unavailable",
+					);
+				await check();
+			},
+		});
 	}
 	const credentials = createUpstashBlobCredentials({
 		upstashAccountId,
@@ -227,12 +250,10 @@ export function createUpstashBlobImmutableJournalReplica(
 		resolveToken,
 		transport,
 		now,
-		reserveMint: async () => {
-			const revalidate = await guard(() =>
+		reserveMint: async () =>
+			guard(() =>
 				authorizeMint({ maxRequestBytes: 32_768, maxResponseBytes: 49_152 }),
-			);
-			return { claim: revalidate, revalidate };
-		},
+			),
 	});
 	const objects = createR2ObjectClient({
 		accountId: r2AccountId,
@@ -245,7 +266,7 @@ export function createUpstashBlobImmutableJournalReplica(
 				request.body === undefined
 					? 0
 					: Buffer.byteLength(request.body, "utf8");
-			const revalidate = await guard(() =>
+			const admission = await guard(() =>
 				authorizeObject({
 					operation: request.method === "PUT" ? "write" : "read",
 					maxRequestBytes: bytes + 32_768,
@@ -253,8 +274,9 @@ export function createUpstashBlobImmutableJournalReplica(
 					maxAdditionalLogicalBytes: bytes,
 				}),
 			);
+			await admission.claim();
 			const response = await transport(request);
-			await revalidate();
+			await admission.revalidate();
 			return response;
 		},
 	});

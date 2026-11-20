@@ -24,7 +24,11 @@ The hosting supervisor supplies the guard using its durable Broker and retains
 ambiguous request reservations until they can be settled. A legacy mint guard
 claims once before I/O; callers that need a post-response check provide separate
 claim and revalidation callbacks. The journal uses that two-phase form so it
-does not accept a response after its funding hold is revoked.
+does not accept a response after its funding hold is revoked. Its claim and
+revalidation callbacks are distinct single-use phases over one admitted hold:
+claim runs exactly once before the I/O, revalidation exactly once after it, so
+every authority hold the supervisor supplies must be a repeatable idempotent
+revocation check, never a claim-once consumer.
 
 `estimateUpstashBlobLiability` computes a conservative bound from the caller's
 observed rates and bounded operations, bytes and retention. It does not establish
@@ -60,7 +64,8 @@ certificate verification, no redirects, a total deadline and bounded streaming
 responses. `assertUpstashBlobImmutableJournalWiring` checks the exact transport
 and callback identities supplied by the supervisor. The supervisor must verify
 the custody and funding authority independently. Each credential mint and R2
-operation needs its own admitted hold.
+operation needs its own admitted hold, checked once before its I/O and once
+after it.
 Provider observations, actual quota and price limits, physical egress funding,
 durable genesis and rollback protection, and external-effect fencing remain
 separate supervisor responsibilities.
