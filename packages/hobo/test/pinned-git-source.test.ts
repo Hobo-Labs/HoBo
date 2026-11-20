@@ -15,7 +15,12 @@ import { readPinnedGitSource } from "../src/pinned-git-source.js";
 const directories: string[] = [];
 
 function git(cwd: string, ...args: string[]): string {
-	return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+	const env: NodeJS.ProcessEnv = {
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: "/dev/null",
+	};
+	if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+	return execFileSync("git", args, { cwd, encoding: "utf8", env }).trim();
 }
 
 function repository(): string {
