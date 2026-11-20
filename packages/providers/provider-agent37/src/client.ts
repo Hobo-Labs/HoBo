@@ -129,34 +129,45 @@ const instance = z.object({
 
 export type Agent37Instance = z.infer<typeof instance>;
 
-const createInstanceInput = z.object({
-	template: z.string().min(1).optional(),
-	resources: resources.optional(),
-	type: z.enum(["default", "vm", "performance"]).optional(),
-	region: z.enum(["us", "eu", "ap-south"]).optional(),
-	name: z.string().optional(),
-	metadata: z.record(z.string(), z.string()).optional(),
-	env: z.record(z.string(), z.string()).optional(),
-	budget: z
-		.object({
-			monthly_cap_micros: z.number().int().nonnegative(),
-			credit_micros: z.number().int().nonnegative(),
-		})
-		.optional(),
-	auto_sleep: z.boolean().optional(),
-	idle_timeout_seconds: z.number().int().min(300).max(86_400).optional(),
-	public_ports: z
-		.array(
-			z.object({
-				port: z.number().int().min(1).max(65_535),
-				prefix: z.string().optional(),
-				label: z.string().optional(),
-			}),
-		)
-		.optional(),
-	network: network.optional(),
-	mount_path: z.string().optional(),
-});
+const createInstanceInput = z
+	.object({
+		template: z.string().min(1).optional(),
+		resources: resources.strict().optional(),
+		type: z.enum(["default", "vm", "performance"]).optional(),
+		region: z.enum(["us", "eu", "ap-south"]).optional(),
+		name: z.string().optional(),
+		metadata: z.record(z.string(), z.string()).optional(),
+		env: z.record(z.string(), z.string()).optional(),
+		budget: z
+			.object({
+				monthly_cap_micros: z.number().int().nonnegative(),
+				credit_micros: z.number().int().nonnegative(),
+			})
+			.strict()
+			.optional(),
+		auto_sleep: z.boolean().optional(),
+		idle_timeout_seconds: z.number().int().min(300).max(86_400).optional(),
+		public_ports: z
+			.array(
+				z
+					.object({
+						port: z.number().int().min(1).max(65_535),
+						prefix: z.string().optional(),
+						label: z.string().optional(),
+					})
+					.strict(),
+			)
+			.optional(),
+		network: z
+			.union([
+				z.literal("allow-all"),
+				z.literal("deny-all"),
+				z.object({ allow: z.array(z.string()).max(100) }).strict(),
+			])
+			.optional(),
+		mount_path: z.string().optional(),
+	})
+	.strict();
 export type Agent37CreateInstanceInput = z.infer<typeof createInstanceInput>;
 
 const instanceList = z
@@ -444,7 +455,14 @@ export function createAgent37Client(
 				headers: apiHeaders,
 				expected: [201],
 				responseSchema: registeredWebhook,
-				body: { url },
+				body: {
+					url: z
+						.url()
+						.refine((value) => new URL(value).protocol === "https:", {
+							message: "Agent37 webhooks require HTTPS",
+						})
+						.parse(url),
+				},
 				timeoutMs,
 			});
 		},

@@ -19,7 +19,7 @@
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
 		"test": "vitest run",
-		"test:live": "vitest run test/live-agent37.test.ts"
+		"test:live": "vitest run --config vitest.live.config.ts"
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
