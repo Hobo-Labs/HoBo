@@ -214,14 +214,20 @@ export function manifestSemanticIssues(
 			message: `$schema must be exactly ${PLUGIN_SCHEMA_ID}`,
 		});
 	}
-	if (
-		versionFromReleaseTrain !== undefined &&
-		compareSemverPrecedence(manifest.version, versionFromReleaseTrain) < 0
-	) {
-		issues.push({
-			file: "plugin.json",
-			message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; at or ahead of the train passes (ahead is the legitimate post-squash-merge state); update it (scripts/ci/compute-release-version.mts)`,
-		});
+	if (versionFromReleaseTrain !== undefined) {
+		if (!/^0\.0\.0-alpha\.(?:0|[1-9]\d*)$/u.test(manifest.version)) {
+			issues.push({
+				file: "plugin.json",
+				message: `version ${manifest.version} must stay on the fixed alpha train 0.0.0-alpha.<height>`,
+			});
+		} else if (
+			compareSemverPrecedence(manifest.version, versionFromReleaseTrain) < 0
+		) {
+			issues.push({
+				file: "plugin.json",
+				message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; a higher alpha height passes because it is the legitimate post-squash-merge state; update it (scripts/ci/compute-release-version.mts)`,
+			});
+		}
 	}
 	return issues;
 }
@@ -276,6 +282,16 @@ export function checkPluginScopedPath(
 		issues.push({
 			file: where,
 			message: `plugin-scoped path "${value}" must not traverse outside the plugin root`,
+		});
+	}
+	if (
+		path.isAbsolute(value) ||
+		path.win32.isAbsolute(value) ||
+		/^~(?:[\\/]|$)/u.test(value)
+	) {
+		issues.push({
+			file: where,
+			message: `plugin-scoped path "${value}" must be relative or rooted at PLUGIN_ROOT or PLUGIN_DATA, not absolute or home-relative`,
 		});
 	}
 	return issues;
@@ -761,14 +777,29 @@ export function releaseTrainSemverForPluginCheck(
 	return fixedTrainAlphaSemver(height + bump, config);
 }
 
+export function releaseTrainVersionForPluginGate(
+	repoRoot: string,
+	nbgv: NbgvRunner = defaultNbgvRunner(repoRoot),
+): string | undefined {
+	try {
+		return releaseTrainSemverForPluginCheck(repoRoot, nbgv);
+	} catch (error) {
+		const allowLocalSkip =
+			process.env.HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN === "1" &&
+			!process.env.CI &&
+			!process.env.GITHUB_ACTIONS &&
+			!process.env.TF_BUILD;
+		if (!allowLocalSkip) throw error;
+		return undefined;
+	}
+}
+
 function main(): void {
 	const repoRoot = path.resolve(import.meta.dirname, "..");
-	let versionFromReleaseTrain: string | undefined;
-	try {
-		versionFromReleaseTrain = releaseTrainSemverForPluginCheck(repoRoot);
-	} catch {
+	const versionFromReleaseTrain = releaseTrainVersionForPluginGate(repoRoot);
+	if (versionFromReleaseTrain === undefined) {
 		console.log(
-			"agent-plugin:check: nbgv unavailable; skipped the release-train version comparison for plugin.json",
+			"agent-plugin:check: skipped the release-train comparison only because HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1 was set outside CI",
 		);
 	}
 	const report = checkAgentPlugin({

@@ -68,6 +68,16 @@ describe("parseSkillFrontmatter", () => {
 			/description/u,
 		);
 	});
+
+	it("rejects malformed double-quoted scalars", () => {
+		for (const description of ['"bad\\q"', '"unterminated']) {
+			expect(() =>
+				parseSkillFrontmatter(
+					`---\nname: sdlc\ndescription: ${description}\n---\n`,
+				),
+			).toThrow(SkillParseError);
+		}
+	});
 });
 
 describe("loadSkillsManifest", () => {
@@ -154,6 +164,20 @@ describe("checkSkillsConformance", () => {
 			true,
 		);
 		expect(issues.some((issue) => issue.skill === "draft")).toBe(false);
+	});
+
+	it("rejects block and flow collections in metadata", async () => {
+		const root = await scratchTree({
+			"hobo-setup":
+				"---\nname: hobo-setup\ndescription: d\nmetadata:\n  - value\n---\n",
+			"hobo-deploy":
+				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  key: [value]\n---\n",
+		});
+		const issues = await checkSkillsConformance(root);
+		expect(issues).toHaveLength(2);
+		expect(issues.every((issue) => issue.code === "non-string-metadata")).toBe(
+			true,
+		);
 	});
 
 	it("keeps third-party skills outside the default strict set", () => {

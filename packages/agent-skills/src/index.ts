@@ -101,11 +101,14 @@ type FrontmatterFields = {
 
 function parseYamlScalar(value: string): YamlScalar {
 	const scalar = value.trim();
-	if (scalar.length >= 2 && scalar.startsWith('"') && scalar.endsWith('"')) {
+	if (scalar.startsWith('"') || scalar.endsWith('"')) {
+		if (scalar.length < 2 || !scalar.startsWith('"') || !scalar.endsWith('"')) {
+			throw new SkillParseError("invalid double-quoted YAML scalar");
+		}
 		try {
 			return { kind: "string", value: String(JSON.parse(scalar)) };
 		} catch {
-			return { kind: "string", value: scalar.slice(1, -1) };
+			throw new SkillParseError("invalid double-quoted YAML scalar");
 		}
 	}
 	if (scalar.length >= 2 && scalar.startsWith("'") && scalar.endsWith("'")) {
@@ -150,13 +153,15 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 		if (currentNestedField === undefined) continue;
 		const child = /^ {2,}([^:\s]+):\s*(.*)$/u.exec(line);
 		if (child && child[1] !== undefined && child[2] !== undefined) {
-			if (/^ {4,}\S/u.test(line) || child[2].trim().startsWith("{")) {
+			if (/^ {4,}\S/u.test(line) || /^(?:\[|\{)/u.test(child[2].trim())) {
 				deeplyNested.add(currentNestedField);
 				continue;
 			}
 			children
 				.get(currentNestedField)
 				?.set(child[1], parseYamlScalar(child[2]));
+		} else if (line.trim() !== "" && !line.trimStart().startsWith("#")) {
+			deeplyNested.add(currentNestedField);
 		}
 	}
 	return { fields, children, deeplyNested };

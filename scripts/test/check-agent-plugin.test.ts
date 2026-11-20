@@ -20,6 +20,7 @@ import {
 	parseMcpConfig,
 	parsePluginManifest,
 	releaseTrainSemverForPluginCheck,
+	releaseTrainVersionForPluginGate,
 	scanTextForSecrets,
 	versionPinCommitIsh,
 } from "../check-agent-plugin.ts";
@@ -183,19 +184,21 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		expect(issues[0]?.message).toMatch(/is stale/u);
 	});
 
-	it("accepts a pin ahead of the train, as it is after a squash-merge to main", () => {
+	it("accepts only higher heights on the fixed alpha train", () => {
 		expect(
 			manifestSemanticIssues(
 				{ ...validManifest, version: "0.0.0-alpha.500" },
 				"0.0.0-alpha.400",
 			),
 		).toEqual([]);
-		expect(
-			manifestSemanticIssues(
-				{ ...validManifest, version: "0.1.0" },
-				"0.0.0-alpha.400",
-			),
-		).toEqual([]);
+		for (const version of ["0.1.0", "0.0.1-alpha.500", "0.0.0-beta.500"]) {
+			expect(
+				manifestSemanticIssues(
+					{ ...validManifest, version },
+					"0.0.0-alpha.400",
+				),
+			).toHaveLength(1);
+		}
 	});
 
 	it("rejects a name with consecutive dots or dashes", () => {
@@ -322,20 +325,25 @@ describe("scanTextForSecrets", () => {
 });
 
 describe("checkPluginScopedPath", () => {
-	it("allows absolute and plugin-rooted paths, blocks traversal", () => {
+	it("allows plugin-rooted and relative paths, blocks escapes", () => {
 		expect(checkPluginScopedPath("", "${PLUGIN_ROOT}/bin/x.mjs")).toEqual([]);
-		expect(checkPluginScopedPath("", "/usr/bin/env")).toEqual([]);
-		expect(checkPluginScopedPath("", "${PLUGIN_ROOT}/../x.mjs")).toHaveLength(
-			1,
-		);
-		expect(checkPluginScopedPath("", "./skills/../..")).toHaveLength(1);
-		expect(checkPluginScopedPath("", "../outside.mjs")).toHaveLength(1);
-		expect(checkPluginScopedPath("", "foo/../../outside")).toHaveLength(1);
-		expect(checkPluginScopedPath("", "..\\outside.mjs")).toHaveLength(1);
-		expect(checkPluginScopedPath("", "foo\\..\\outside")).toHaveLength(1);
-		expect(
-			checkPluginScopedPath("", "${PLUGIN_ROOT}\\..\\outside.mjs"),
-		).toHaveLength(1);
+		expect(checkPluginScopedPath("", "${PLUGIN_DATA}/cache")).toEqual([]);
+		expect(checkPluginScopedPath("", "bin/x.mjs")).toEqual([]);
+		for (const value of [
+			"/usr/bin/env",
+			"C:\\outside",
+			"~/outside",
+			"~\\outside",
+			"${PLUGIN_ROOT}/../x.mjs",
+			"./skills/../..",
+			"../outside.mjs",
+			"foo/../../outside",
+			"..\\outside.mjs",
+			"foo\\..\\outside",
+			"${PLUGIN_ROOT}\\..\\outside.mjs",
+		]) {
+			expect(checkPluginScopedPath("", value)).toHaveLength(1);
+		}
 	});
 });
 
@@ -651,5 +659,33 @@ describe("release-train version pin commit selection", () => {
 		expect(releaseTrainSemverForPluginCheck(repoRoot, untouched.nbgv)).toBe(
 			"0.0.0-alpha.8",
 		);
+	});
+
+	it("fails closed unless an explicit local-only override is set", () => {
+		const failingNbgv = () => {
+			throw new Error("nbgv unavailable");
+		};
+		for (const variable of [
+			"CI",
+			"GITHUB_ACTIONS",
+			"TF_BUILD",
+			"HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN",
+		]) {
+			vi.stubEnv(variable, "");
+		}
+		expect(() =>
+			releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
+		).toThrow("nbgv unavailable");
+		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", "1");
+		expect(
+			releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
+		).toBeUndefined();
+		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
+			vi.stubEnv(variable, "true");
+			expect(() =>
+				releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
+			).toThrow("nbgv unavailable");
+			vi.stubEnv(variable, "");
+		}
 	});
 });
