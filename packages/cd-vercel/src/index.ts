@@ -18,6 +18,8 @@ export {
 	CdStoreBindingError,
 	type CdStoreCoordinates,
 	cdStoreBindingErrorOf,
+	cdStoreCoordinates,
+	cdStoreCoordinatesFromEnv,
 	isPermanentComposeError,
 	openCdStore,
 	parseCdStoreCoordinates,
