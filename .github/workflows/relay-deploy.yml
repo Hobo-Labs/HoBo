@@ -1,15 +1,22 @@
 name: HoBo relay deploy
 
-# The hosted CI relay deploys to its Vercel project `hobo-ci` through
-# Vercel's Git integration: a push to `main` builds and promotes it, exactly as
-# it has been deployed so far (ADR-0179 amendment "Secretless first";
-# docs/design/hosted-relay-stateless.md). This workflow deploys nothing and
-# holds no Vercel token: it checks, by identity name, that the relay's secret
-# store accepts this repository's GitHub OIDC token, then
-# `hobo ci deploy --adopt` finds the deployment Vercel reported for the pushed
-# commit through GitHub's Deployments API and promotes it through @hobo/cd,
-# preview then production, with fail-closed verification at the relay's
-# production domain (/healthz names the commit served, /readyz answers 200).
+# The hosted CI relay is deployed by HoBo CD itself: this workflow runs
+# `hobo ci deploy` twice — preview, then production — with the Vercel deploy
+# token read from the relay's secret store through this job's GitHub OIDC
+# token (id-token: write; ADR-0179 amendment "Secretless first";
+# docs/design/hosted-relay-stateless.md). The Vercel project `hobo-ci` is
+# deliberately NOT Git-linked (its link was removed once already), so no
+# Git-triggered deployment exists to adopt or wait for: the adopt step is
+# gone, and nothing here re-links the project.
+#
+# Preview is verified by the deployment record this command creates (no
+# preview URL answers without Deployment Protection); production is verified
+# at the Yard's production domain (the productionOrigin in deploy/yard.ts
+# under packages/ci-vercel, mirrored below), whose /healthz must name the
+# deployed commit and whose /readyz must answer 200. Production
+# takes only Freight preview qualified in the same journal, so the two steps
+# run in this one job, in order, and fail closed. A final step probes the
+# production origin again and fails the job on anything but a serving relay.
 #
 # No secret and no repository variable configures this workflow. The store's
 # coordinates (ids and an origin, no credential) are committed to
@@ -37,6 +44,13 @@ on:
         description: The numeric GitHub id of the App's owner
         required: false
         default: ""
+      # Emergency bootstrap: deploy even when the diff does not touch the
+      # relay (the gate treats the run as relay-touched).
+      force_bootstrap:
+        description: Emergency bootstrap (deploy whatever the diff touches)
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -88,13 +102,18 @@ jobs:
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
-    # gate hands the adopt step a deadline 3 minutes short of it, so the
+    # gate hands both deploy steps a deadline 3 minutes short of it, so each
     # command ends with a typed reason before the job is killed.
     timeout-minutes: 20
     permissions:
       contents: read
-      deployments: read
       id-token: write
+    env:
+      # The Yard's committed production origin (the productionOrigin in
+      # deploy/yard.ts under packages/ci-vercel): where production verifies
+      # and the post-deploy check probes. Standard Deployment Protection
+      # leaves it public; the protected per-deployment URLs are never probed.
+      HOBO_CI_RELAY_URL: https://hobo-ci.vercel.app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -104,6 +123,7 @@ jobs:
         id: gate
         env:
           BEFORE: ${{ github.event.before }}
+          FORCE_BOOTSTRAP: ${{ github.event.inputs.force_bootstrap }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "${BEFORE:-}" ] \
@@ -119,13 +139,13 @@ jobs:
         uses: $/.github/actions/pnpm-store
       - if: steps.gate.outputs.run == 'true'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build the verify tool
+      - name: Build the deploy tool and the relay's declarations
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 10
         run: |
           set -euo pipefail
           pnpm exec turbo run build \
-            --filter=@hobo/hobo... \
+            --filter=@hobo/hobo... --filter=@hobo/ci-vercel^... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
       # Pass/fail by identity name: hobo-ci-writer signs in with this job's
       # GitHub OIDC token (sign-in only, then revoke; Infisical role shape is
@@ -143,47 +163,81 @@ jobs:
           node --experimental-strip-types --no-warnings \
             scripts/ci/relay-deploy-secret-store-verify-report.mts \
             "$verify_json" "$verify_err" "$status"
-      # Vercel's Git integration built and promoted this commit. hobo adopts
-      # that deployment (packages/ci-vercel/README.md "Token-free relay
-      # mode"): it finds it through GitHub's Deployments API with this job's
-      # own token (deployments: read), records it as relay Freight, and
-      # promotes it through @hobo/cd preview -> production, failing closed:
-      # preview by its deployment record (READY, this commit), production at
-      # the Yard's production domain (productionOrigin in deploy/yard.ts),
-      # whose /healthz must name this commit and whose /readyz must answer
-      # 200. The protected per-deployment URL is never probed, so Deployment
-      # Protection needs no bypass. Observe-only: no Vercel token, no deployment
-      # created or changed; a failed production verification is recorded in
-      # the CD journal, never rolled back on Vercel.
-      # Bounded by the gate's deadline (the job's timeout less 3 minutes,
-      # counted from the gate), which hobo splits across the lookup, preview
-      # and production. A build still not READY when preview's share ends
-      # fails as HOBO_CI_ADOPT_NOT_READY_IN_BUDGET, any other stage that runs
-      # out as HOBO_CI_ADOPT_BUDGET_EXHAUSTED; nothing changes on Vercel and
-      # the next push or a re-run adopts it. The step timeout is a backstop
-      # that cannot end before the deadline.
-      - name: Adopt Vercel's Git deployment of this commit
+      # `--provision` attaches the Marketplace cache binding through the
+      # Vercel CLI (idempotent); the CLI is pinned, as CONFIG-SERVICE.md
+      # records, and the deploy token reaches it inside the hobo command's
+      # own environment, never this workflow's.
+      - name: Install the pinned Vercel CLI for Marketplace provisioning
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          pnpm --dir "$RUNNER_TEMP/vercel-cli" add vercel@65.2.0 >/dev/null
+          echo "HOBO_VERCEL_CLI=$RUNNER_TEMP/vercel-cli/node_modules/.bin/vercel" >> "$GITHUB_ENV"
+      # Direct HoBo CD deploy, preview first: `hobo ci deploy` reads the Vercel
+      # token from the secret store with this job's GitHub OIDC token
+      # (ci-relay-deploy.ts; no Vercel token is ever set in this workflow),
+      # records the commit
+      # as relay Freight, creates the deployment and drives the promotion:
+      # READY, then verification (preview by the deployment record it created
+      # — no HOBO_CI_RELAY_PREVIEW_URL is set, and no preview URL answers
+      # without Deployment Protection), then qualification. The command's exit
+      # status is the step's. Production (next step) is refused without this
+      # step's qualification (HOBO_CI_DEPLOY_NOT_QUALIFIED): fail closed.
+      # Bounded by the gate's deadline, which hobo caps at its 20-minute wait;
+      # whatever preview leaves of the deadline, production gets.
+      - name: Deploy the relay (preview)
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 17
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          ADOPT_DEADLINE: ${{ steps.gate.outputs.deadline }}
+          DEPLOY_DEADLINE: ${{ steps.gate.outputs.deadline }}
         run: |
           set -uo pipefail
           status=0
-          node packages/hobo/dist/bin/hobo.js ci deploy --adopt \
+          node packages/hobo/dist/bin/hobo.js ci deploy \
             --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
-            --deadline "$ADOPT_DEADLINE" \
-            --json > "$RUNNER_TEMP/relay-adopt.json" || status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-adopt.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            --target preview --provision --wait --deadline "$DEPLOY_DEADLINE" \
+            --json > "$RUNNER_TEMP/relay-preview.json" || status=$?
+          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-preview.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
+      # Production takes exactly the commit preview verified (--sha pins it)
+      # and is verified at the Yard's production domain (HOBO_CI_RELAY_URL
+      # above): /healthz must name this commit, /readyz must answer 200, and
+      # the promotion fails closed on anything else. A failed production
+      # verification is recorded in the CD journal, never rolled back on
+      # Vercel; the next push or a re-run deploys the same Freight again.
+      - name: Deploy the relay (production)
+        if: steps.gate.outputs.run == 'true'
+        timeout-minutes: 17
+        env:
+          DEPLOY_DEADLINE: ${{ steps.gate.outputs.deadline }}
+        run: |
+          set -uo pipefail
+          status=0
+          node packages/hobo/dist/bin/hobo.js ci deploy \
+            --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
+            --target production --provision --wait --deadline "$DEPLOY_DEADLINE" \
+            --json > "$RUNNER_TEMP/relay-production.json" || status=$?
+          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-production.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+          exit "$status"
+      # The deploy is done only when the production origin serves the relay
+      # this run built: /healthz must answer 200 naming GITHUB_SHA, /readyz
+      # must answer 200. The step fails the job — never `|| true` — with a
+      # distinct verdict for what the relay said (config service unreachable
+      # or unfilled, a start failure, a body mentioning the cache or a quota
+      # or Neon, another commit served).
+      - name: Verify the relay at its production origin
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/relay-deploy-verify.mts \
+            --origin "$HOBO_CI_RELAY_URL" --sha "$GITHUB_SHA"
       # The hosted relay's fleet verdict (ADR-0180) at its public origin. Route
       # jobs no longer ask it: they read the box relay's routing slip (ADR-0181),
-      # which retires this route with the verdict store. Vercel has
-      # already promoted the deploy, so this reports rather than gates: a red
-      # check is the signal to roll back in the order of "Roll back" under
-      # "Fleet verdict operations" in packages/ci-vercel/README.md. A relay
-      # that does not answer never stops a run; route jobs never ask it.
+      # which retires this route with the verdict store. This workflow has just
+      # promoted the deploy, so this reports on what it shipped: a red check is
+      # the signal to roll back in the order of "Roll back" under
+      # "Fleet verdict operations" in packages/ci-vercel/README.md.
       - name: Probe the fleet verdict at the public origin
         if: steps.gate.outputs.run == 'true'
         run: |

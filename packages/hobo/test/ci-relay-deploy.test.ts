@@ -931,6 +931,46 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			},
 		});
 	});
+
+	it("refuses a --deadline that is not an ISO-8601 time with a zone", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[...RELAY, "--wait", "--deadline", "in 5 minutes"],
+			{
+				fetch,
+				env,
+			},
+		);
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining("--deadline takes an ISO-8601 time"),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("stops waiting at --deadline, before its 20-minute limit", async () => {
+		const vercel = scriptedVercel(["BUILDING"]);
+		const ran = await deploy(
+			[...RELAY, "--wait", "--deadline", "2026-11-12T12:00:30Z"],
+			{
+				fetch: vercel.fetch,
+				env,
+				...steppingClock(),
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_NOT_READY",
+			data: {
+				outputs: {
+					readyState: expect.stringMatching(/^BUILDING after \d+ minutes$/u),
+				},
+			},
+		});
+		const reads = vercel.sent.filter((line) => line.startsWith("GET ")).length;
+		expect(reads).toBeLessThan(10);
+	});
 });
 
 describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no network)", () => {
@@ -951,18 +991,63 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses --wait before anything is sent when the target's probe origin is not set", async () => {
+	it("refuses --wait before anything is sent when the target's probe origin is not set to an https origin", async () => {
 		const { fetch, sent } = unreachable();
-		const ran = await deploy([...RELAY, "--wait"], {
-			fetch,
-			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
-		});
-		expect(ran.exitCode).toBe(1);
-		expect(ran.envelope).toMatchObject({
+		const production = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch,
+				env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+				...steppingClock(),
+			},
+		);
+		expect(production.exitCode).toBe(1);
+		expect(production.envelope).toMatchObject({
 			code: "HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
-			message: expect.stringContaining("HOBO_CI_RELAY_PREVIEW_URL"),
+			message: expect.stringContaining("HOBO_CI_RELAY_URL"),
+		});
+		const preview = await deploy([...RELAY, "--wait"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				HOBO_CI_RELAY_PREVIEW_URL: "http://relay-preview.example.test",
+			},
+		});
+		expect(preview.exitCode).toBe(1);
+		expect(preview.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
 		});
 		expect(sent).toEqual([]);
+	});
+
+	it("verifies preview by the deployment record when no preview origin is set, probing nothing", async () => {
+		const probed: string[] = [];
+		const http: HttpTransport = async (request) => {
+			probed.push(request.url);
+			return { status: 200, headers: {}, body: '{"ok":true}' };
+		};
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			probe: http,
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
+		expect(probed).toEqual([]);
 	});
 
 	it("refuses production before any request when preview has not qualified the commit", async () => {

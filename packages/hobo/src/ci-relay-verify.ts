@@ -123,6 +123,8 @@ export const RELAY_ADOPT_VERIFICATION = Object.freeze({
 	previewProgressDeadlineMs: 25 * 60_000,
 });
 
+export const RELAY_PREVIEW_DEPLOYMENT_SUITE = "vercel.deployment.ready";
+
 /**
  * The relay's delivery records as `--adopt` verifies them: production probes
  * aimed at the production origin, preview verified by the deployment-record
@@ -169,6 +171,83 @@ export function adoptedVerificationRecords(
 			}
 			return copy;
 		}),
+	};
+}
+
+export function recordVerifiedPreviewRecords(
+	records: DeliveryModule,
+): DeliveryModule {
+	return {
+		...records,
+		pipelines: records.pipelines.map((pipeline) => {
+			const copy = clone(PipelineRecordSchema, pipeline);
+			for (const node of copy.nodes) {
+				if (node.name !== "preview" || node.verification === undefined)
+					continue;
+				const spec = node.verification;
+				spec.windowMs = BigInt(RELAY_ADOPT_VERIFICATION.windowMs);
+				spec.requiredObservations =
+					RELAY_ADOPT_VERIFICATION.requiredObservations;
+				spec.progressDeadlineMs = BigInt(
+					RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs,
+				);
+				spec.probes = [];
+				spec.suites = [
+					create(SuiteCheckRecordSchema, {
+						suite: RELAY_PREVIEW_DEPLOYMENT_SUITE,
+					}),
+				];
+			}
+			return copy;
+		}),
+	};
+}
+
+export function deployedPreviewSuites(
+	observe: Readonly<{
+		deploymentId(): string | undefined;
+		readyState(deploymentId: string): Promise<string>;
+	}>,
+): VerifyPort {
+	const refuse = (code: string, message: string, remediation: string) =>
+		({
+			ok: false,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code,
+					message,
+					remediation,
+					subject: RELAY_PREVIEW_DEPLOYMENT_SUITE,
+				}),
+			],
+		}) satisfies Outcome<never>;
+	return {
+		async run(input: Readonly<{ suite: string; freightId: FreightId }>) {
+			if (input.suite !== RELAY_PREVIEW_DEPLOYMENT_SUITE)
+				return refuse(
+					"verification-suite-unknown",
+					`no suite ${input.suite} is composed for the deployed relay preview`,
+					`Declare ${RELAY_PREVIEW_DEPLOYMENT_SUITE} or a probe.`,
+				);
+			const deploymentId = observe.deploymentId();
+			if (deploymentId === undefined)
+				throw new Error(
+					`the promotion has created no deployment for ${input.freightId} yet`,
+				);
+			const state = await observe.readyState(deploymentId);
+			if (state === "READY")
+				return {
+					ok: true,
+					value: { deploymentId, readyState: state },
+				};
+			return refuse(
+				"verification-deployment-not-ready",
+				`Vercel reports deployment ${deploymentId} as ${state}, not READY`,
+				state === "ERROR"
+					? "Read the deployment's build log on Vercel; this run leaves it as it is."
+					: "The deployment is still building or was superseded; the verification window retries, and a later state fails it.",
+			);
+		},
 	};
 }
 

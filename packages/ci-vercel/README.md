@@ -1,5 +1,7 @@
 # HoBo CI Vercel support
 
+For relay recovery when the deployed relay is unavailable, see [BOOTSTRAP.md](BOOTSTRAP.md).
+
 ## Run Vercel CI checks locally
 
 `@hobo/ci-vercel/turbo-ci` runs the checks declared for the new Vercel CI
