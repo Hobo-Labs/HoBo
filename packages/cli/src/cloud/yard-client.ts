@@ -450,7 +450,14 @@ export async function planHostingAuthoritatively(
 			reason: "authoritative hosting budget is not configured",
 			remediations: [],
 		};
-	const binding = await runtime.hostingPlanBinding?.({
+	if (!(runtime.hostingPlanBinding instanceof Function))
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
+			remediations: [],
+		};
+	const binding = await runtime.hostingPlanBinding({
 		deploymentId,
 		bindle,
 		session,

@@ -365,6 +365,33 @@ describe("production CLI budget execution", () => {
 		});
 		expect(resolutions).toBe(0);
 	});
+	it("rejects a malformed hosting plan binding before invoking it", async () => {
+		const fx = fixture();
+		const authority = fx.runtime.hostingBudgetAuthority;
+		if (!authority) throw new Error("missing hosting authority");
+		let resolutions = 0;
+		const runtime: YardRuntime = {
+			...fx.runtime,
+			hostingBudgetRequired: false,
+			hostingBudgetAuthority: {
+				...authority,
+				resolve: async (request) => {
+					resolutions++;
+					return authority.resolve(request);
+				},
+			},
+		};
+		Object.assign(runtime, { hostingPlanBinding: true });
+		const result = await createYardClient(runtime).planAuthoritatively(
+			manifest,
+			{ deploymentId: "one", session },
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			reason: "trusted Yard binding is not configured",
+		});
+		expect(resolutions).toBe(0);
+	});
 	it("does not preview an unsupported hosting deployment mode as an executable change", async () => {
 		const fx = fixture();
 		const cwd = mkdtempSync(join(tmpdir(), "cli-hosting-mode-"));
