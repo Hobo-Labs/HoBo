@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { create } from "@bufbuild/protobuf";
+import { create, toJsonString } from "@bufbuild/protobuf";
 import {
 	type AssignmentAcceptOutcome,
 	assignmentKey,
@@ -10,8 +10,11 @@ import {
 	type ImmutableJournalReplica,
 } from "@hobo/backend-fleet";
 import { canonicalFenceOperationReceipt } from "@hobo/data-core";
+import { stableHash } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
+import { IacPricingPinSchema } from "../src/_generated/yard_placement_pb.js";
 import {
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	HostingQuoteSchema,
 	ProviderAccountExposureSchema,
@@ -171,8 +174,65 @@ function request(
 		}),
 	};
 }
+function kindlessEntitlement(snapshot: ReturnType<typeof fixture>["snapshot"]) {
+	snapshot.entitlements = [
+		create(BudgetEntitlementSchema, {
+			bucketId: "shared",
+			kind: "",
+			unit: "request",
+			periodId: "p1",
+			remainingUnits: 10,
+			observedAt: NOW,
+			validUntil: UNTIL,
+		}),
+	];
+}
 
 describe("majority journal financial authority", () => {
+	it("rejects a kindless fresh seed before journal initialization", async () => {
+		const f = fixture();
+		kindlessEntitlement(f.snapshot);
+		const authority = f.authority();
+		await expect(authority.initializeFresh(async () => {})).rejects.toThrow(
+			"entitlement scope",
+		);
+		expect(
+			f.replicas.every(
+				(replica) => replica.rows.length === 0 && replica.documents.size === 0,
+			),
+		).toBe(true);
+	});
+
+	it("normalizes a legacy persisted base without validating the reopen seed", async () => {
+		const f = fixture();
+		kindlessEntitlement(f.snapshot);
+		const journal = f.open();
+		await journal.bootstrap(async () => {});
+		await journal.append(
+			"broker:base",
+			`hobo.broker.base/v1:${toJsonString(BudgetLedgerSnapshotSchema, f.snapshot)}`,
+			0,
+		);
+		const reopened = f.authority(journal);
+		expect((await reopened.read(NOW)).entitlements[0]?.kind).toBe("allowance");
+	});
+
+	it("resumes interrupted initialization from a legacy kindless base", async () => {
+		const f = fixture();
+		kindlessEntitlement(f.snapshot);
+		const journal = f.open();
+		await journal.bootstrap(async () => {});
+		await journal.append(
+			"broker:base",
+			`hobo.broker.base/v1:${toJsonString(BudgetLedgerSnapshotSchema, f.snapshot)}`,
+			0,
+		);
+		const reopened = f.authority(journal);
+		await reopened.initializeFresh(async () => {});
+		expect((await reopened.read(NOW)).entitlements[0]?.kind).toBe("allowance");
+		expect((await journal.read()).length).toBe(1);
+	});
+
 	it("recovers interrupted initialization only after every voter is verified", async () => {
 		const f = fixture(),
 			initial = f.open(),
@@ -689,4 +749,83 @@ it("keeps a receiver-bound hold through funded quorum recovery and restart", asy
 		authorizeRecovery: async () => async () => {},
 	});
 	await expect(noTrust.read(NOW)).rejects.toThrow("independently enrolled");
+});
+
+it("refuses a new priced IaC hold without settlement trust in the fleet authority", async () => {
+	const f = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	const priced = request(f.snapshot, "priced");
+	priced.quote.financialPlanHash = stableHash(fields);
+	const authority = createFleetBudgetAdmissionAuthority({
+		journal: f.open(),
+		snapshot: f.snapshot,
+		now: () => NOW,
+	});
+	await authority.initializeFresh(async () => {});
+	await expect(
+		authority.reserve({
+			...priced,
+			iacPricingPin: create(IacPricingPinSchema, {
+				...fields,
+				validUntil: UNTIL,
+			}),
+		}),
+	).rejects.toMatchObject({ code: "budget.settlement-unavailable" });
+	expect((await authority.read(NOW)).reservedMicros).toBe(0);
+});
+
+it("requires and replays independent priced IaC settlement verification in the fleet authority", async () => {
+	const f = fixture();
+	const fields = {
+		planDigest: `sha256:${"a".repeat(64)}`,
+		inventoryHash: `sha256:${"b".repeat(64)}`,
+		modelHash: `sha256:${"c".repeat(64)}`,
+		quoteHash: `sha256:${"d".repeat(64)}`,
+		evidenceHash: `sha256:${"e".repeat(64)}`,
+	};
+	const priced = request(f.snapshot, "priced");
+	priced.quote.financialPlanHash = stableHash(fields);
+	const pin = create(IacPricingPinSchema, { ...fields, validUntil: UNTIL });
+	const trust = {
+		verify: ({ reservation, actualMicros, evidence }) =>
+			reservation.status === "held" &&
+			reservation.reservationId === "priced" &&
+			reservation.executionDigest === "exec:1" &&
+			reservation.identity?.tenantId === "tenant" &&
+			actualMicros === 50 &&
+			evidence.financeSignature === "signed" &&
+			evidence.sourceStoppedEvidenceRef === "retired",
+	};
+	const authority = createFleetBudgetAdmissionAuthority({
+		journal: f.open(),
+		snapshot: f.snapshot,
+		now: () => NOW,
+		iacPricedSettlementTrust: trust,
+	});
+	await authority.initializeFresh(async () => {});
+	await authority.reserve({ ...priced, iacPricingPin: pin });
+	await authority.claimExecution({
+		reservationId: "priced",
+		requestDigest: priced.requestDigest,
+		executionDigest: "exec:1",
+		expectedSeq: 1,
+	});
+	const proof = {
+		usageEvidenceRef: "usage",
+		sourceStoppedEvidenceRef: "retired",
+		financeSignature: "signed",
+	};
+	await expect(
+		authority.settle("priced", 50, { ...proof, financeSignature: "forged" }),
+	).rejects.toThrow();
+	expect((await authority.lookup("priced"))?.status).toBe("held");
+	await authority.settle("priced", 50, proof);
+	expect((await authority.read(NOW)).spentMicros).toBe(50);
+	expect((await authority.settle("priced", 50, proof)).status).toBe("settled");
 });

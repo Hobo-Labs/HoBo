@@ -1,7 +1,7 @@
 """Inductively verify conservative provider observation aggregation."""
 import os
 import sys
-from z3 import And, If, Not, Real, Solver, get_version_string, sat, unsat
+from z3 import And, Bool, BoolVal, If, Implies, Int, Not, Or, Real, Solver, get_version_string, sat, unsat
 
 if get_version_string() != "4.15.4":
     raise SystemExit(f"expected Z3 4.15.4, got {get_version_string()}")
@@ -12,6 +12,12 @@ seen, maximum, new_report, cost, cap = [
 updated = If(new_report > maximum, new_report, maximum)
 if os.environ.get("CI_PROVIDER_PROOF_MUTATION") == "first-only":
     updated = maximum
+previous_has_allocation = Bool("previous_has_allocation")
+allocation_flag = Or(previous_has_allocation, new_report > 0)
+report_count = Int("report_count")
+allows_allocation = Or(report_count <= 1, Not(allocation_flag))
+if os.environ.get("CI_PROVIDER_PROOF_MUTATION") == "allow-duplicate-allocation":
+    allows_allocation = BoolVal(True)
 
 
 def prove(name, assumptions, conclusion):
@@ -41,6 +47,14 @@ checks = [
     prove("admission covers every observation", [*valid, cost >= 0, cap >= 0,
           updated + cost <= cap],
           And(seen + cost <= cap, new_report + cost <= cap)),
+    prove("allocation flag covers earlier and new reports",
+          [seen >= 0, new_report >= 0, Implies(seen > 0, previous_has_allocation)],
+          And(Implies(seen > 0, allocation_flag),
+              Implies(new_report > 0, allocation_flag))),
+    prove("duplicate reports cannot authorize free allocation",
+          [seen >= 0, new_report >= 0, Implies(seen > 0, previous_has_allocation),
+           report_count >= 2, allows_allocation],
+          And(seen == 0, new_report == 0)),
 ]
-print("SCOPE: exact-real aggregation with nonnegative truthful observations; not TypeScript refinement or external billing")
+print("SCOPE: exact-real aggregation and allocation flags with nonnegative truthful observations; not TypeScript refinement or external billing")
 sys.exit(0 if all(checks) else 1)

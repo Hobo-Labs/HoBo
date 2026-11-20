@@ -125,3 +125,39 @@ it("keeps mandatory gating during catch-up and treats missing slots as pending",
 		{ seed: 614452, numRuns: 500 },
 	);
 });
+
+it("stops all new starts after a mandatory failure in either mode", () => {
+	fc.assert(
+		fc.property(fc.boolean(), fc.boolean(), (catchUp, failFirst) => {
+			const plan: FanoutPlan = {
+				strategy: "PROGRESSIVE_PER_GROUP",
+				maxConcurrency: 3,
+				maxFailures: 3,
+				minSuccessMs: 0,
+				progressDeadlineMs: 100,
+				rollbackOnHalt: false,
+				groups: [
+					{ name: "pilot", campIds: ["pilot"], mandatory: true },
+					{ name: "canary", campIds: ["canary"], mandatory: true },
+					{ name: "production", campIds: ["production"], mandatory: false },
+				],
+				campIds: ["pilot", "canary", "production"],
+			};
+			const slots = new Map<string, { campId: string; state: SlotState }>([
+				[
+					"pilot",
+					{ campId: "pilot", state: failFirst ? "failed" : "deferred" },
+				],
+				[
+					"canary",
+					{ campId: "canary", state: failFirst ? "deferred" : "failed" },
+				],
+				["production", { campId: "production", state: "deferred" }],
+			]);
+			const result = schedule(plan, slots, { halted: false, catchUp });
+			expect(result.mandatoryFailed).toBe(true);
+			expect(result.candidates).toEqual([]);
+		}),
+		{ seed: 614453, numRuns: 100 },
+	);
+});

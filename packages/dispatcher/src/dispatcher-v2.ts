@@ -1,11 +1,14 @@
 import {
+	type BudgetRoutingDisclosure,
 	compareDecimal,
 	isQuoteVector,
 	type Money,
+	type PricingAvailability,
 	parseDecimal,
 	QuoteEngine,
 	type QuoteScenario,
 	type QuoteVector,
+	quoteAvailablePricing,
 } from "@hobo/pricing";
 
 // public-contract: consumers pin the dispatcher v2 wire schema by this id.
@@ -15,11 +18,22 @@ export const DISPATCHER_V2_OBJECTIVE = "min-incremental-billed" as const;
 
 export type DispatchCategoryV2 = "runner" | "build-machine" | "traffic-backend";
 export type DispatchCostQuote = Omit<QuoteVector, "allocatedEffective">;
+export type DispatchBudgetDisclosure = Readonly<
+	Omit<BudgetRoutingDisclosure, "$typeName" | "evaluation" | "reservation"> & {
+		evaluation: "not-evaluated";
+		reservation: "not-created";
+	}
+>;
 
-export interface DispatchCandidateV2 {
-	providerId: string;
-	scenario: QuoteScenario;
-}
+const BUDGET_DISCLOSURE: DispatchBudgetDisclosure = Object.freeze({
+	evaluation: "not-evaluated",
+	reservation: "not-created",
+});
+
+export type DispatchCandidateV2 = { providerId: string } & (
+	| { scenario: QuoteScenario; pricing?: never }
+	| { pricing: PricingAvailability; scenario?: never }
+);
 
 export interface DispatchRequestV2 {
 	dispatchId: string;
@@ -39,6 +53,11 @@ export interface DispatchRankingV2 {
 	rank: number;
 	incrementalBilled: Money;
 	quote: DispatchCostQuote;
+	pricingModel?: {
+		source: "developer-supplied";
+		modelId: string;
+		revision: string;
+	};
 }
 
 export type DispatchDecisionV2 =
@@ -46,6 +65,7 @@ export type DispatchDecisionV2 =
 			ok: true;
 			schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
 			objective: typeof DISPATCHER_V2_OBJECTIVE;
+			budget: DispatchBudgetDisclosure;
 			selectedProvider: string;
 			ranking: DispatchRankingV2[];
 			rejectedCandidates: DispatchRejectionV2[];
@@ -56,6 +76,7 @@ export type DispatchDecisionV2 =
 					category: DispatchCategoryV2;
 					schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
 					objective: typeof DISPATCHER_V2_OBJECTIVE;
+					budget: DispatchBudgetDisclosure;
 					selectedProvider: string;
 					ranking: DispatchRankingV2[];
 					rejectedCandidates: DispatchRejectionV2[];
@@ -66,6 +87,7 @@ export type DispatchDecisionV2 =
 			ok: false;
 			schema: typeof DISPATCHER_V2_SCHEMA_VERSION;
 			objective: typeof DISPATCHER_V2_OBJECTIVE;
+			budget: DispatchBudgetDisclosure;
 			reason: string;
 			ranking: [];
 			rejectedCandidates: DispatchRejectionV2[];
@@ -138,9 +160,63 @@ export function decideDispatchV2(
 		candidate: DispatchCandidateV2;
 		quote: QuoteVector;
 		incrementalBilled: Money;
+		pricingModel?: DispatchRankingV2["pricingModel"];
 	}[] = [];
 	for (const candidate of candidates) {
-		const result = QuoteEngine.quote(candidate.scenario);
+		if (candidate.pricing !== undefined && candidate.scenario !== undefined) {
+			rejectedCandidates.push(
+				reject(
+					candidate,
+					"PRICING_MODEL_INVALID",
+					"declare one pricing source",
+				),
+			);
+			continue;
+		}
+		let result: ReturnType<typeof QuoteEngine.quote>;
+		let pricingModel: DispatchRankingV2["pricingModel"];
+		if (candidate.pricing !== undefined) {
+			const available = quoteAvailablePricing(
+				candidate.providerId,
+				candidate.pricing,
+			);
+			if (available.ok === false) {
+				rejectedCandidates.push(
+					reject(candidate, available.code, available.reason),
+				);
+				continue;
+			}
+			result = available.quote;
+			pricingModel = {
+				source: available.source,
+				modelId: available.modelId,
+				revision: available.revision,
+			};
+		} else if (candidate.scenario !== undefined) {
+			if (
+				candidate.scenario.state?.completeness !== "complete" ||
+				candidate.scenario.options?.allowPartialFinancialState
+			) {
+				rejectedCandidates.push(
+					reject(
+						candidate,
+						"INCOMPLETE_FINANCIAL_STATE",
+						"a complete financial state is required for routing",
+					),
+				);
+				continue;
+			}
+			result = QuoteEngine.quote(candidate.scenario);
+		} else {
+			rejectedCandidates.push(
+				reject(
+					candidate,
+					"PRICING_MODEL_UNAVAILABLE",
+					"pricing availability was not declared",
+				),
+			);
+			continue;
+		}
 		if (!isQuoteVector(result)) {
 			rejectedCandidates.push(reject(candidate, result.code, result.message));
 			continue;
@@ -163,7 +239,13 @@ export function decideDispatchV2(
 			);
 			continue;
 		}
-		priced.push({ candidate, quote: result, incrementalBilled: billed });
+		const entry: (typeof priced)[number] = {
+			candidate,
+			quote: result,
+			incrementalBilled: billed,
+		};
+		if (pricingModel !== undefined) entry.pricingModel = pricingModel;
+		priced.push(entry);
 	}
 
 	const currency = priced[0]?.incrementalBilled.currency;
@@ -194,12 +276,17 @@ export function decideDispatchV2(
 		if (leftExpiry !== rightExpiry) return leftExpiry - rightExpiry;
 		return left.candidate.providerId.localeCompare(right.candidate.providerId);
 	});
-	const ranking = comparable.map((entry, index) => ({
-		providerId: entry.candidate.providerId,
-		rank: index + 1,
-		incrementalBilled: entry.incrementalBilled,
-		quote: withoutAllocatedEffective(entry.quote),
-	}));
+	const ranking = comparable.map((entry, index) => {
+		const ranked: DispatchRankingV2 = {
+			providerId: entry.candidate.providerId,
+			rank: index + 1,
+			incrementalBilled: entry.incrementalBilled,
+			quote: withoutAllocatedEffective(entry.quote),
+		};
+		if (entry.pricingModel !== undefined)
+			ranked.pricingModel = entry.pricingModel;
+		return ranked;
+	});
 	rejectedCandidates.sort((left, right) =>
 		left.providerId.localeCompare(right.providerId),
 	);
@@ -209,6 +296,7 @@ export function decideDispatchV2(
 			ok: false,
 			schema: DISPATCHER_V2_SCHEMA_VERSION,
 			objective,
+			budget: BUDGET_DISCLOSURE,
 			reason:
 				candidates.length === 0
 					? "no dispatch candidates"
@@ -221,6 +309,7 @@ export function decideDispatchV2(
 		ok: true,
 		schema: DISPATCHER_V2_SCHEMA_VERSION,
 		objective,
+		budget: BUDGET_DISCLOSURE,
 		selectedProvider: winner.providerId,
 		ranking,
 		rejectedCandidates,
@@ -231,6 +320,7 @@ export function decideDispatchV2(
 				category: request.category,
 				schema: DISPATCHER_V2_SCHEMA_VERSION,
 				objective,
+				budget: BUDGET_DISCLOSURE,
 				selectedProvider: winner.providerId,
 				ranking,
 				rejectedCandidates,
