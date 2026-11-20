@@ -36,7 +36,7 @@ const PROBE = fileURLToPath(
 	new URL("./fixtures/relaunch-probe.mts", import.meta.url),
 );
 const CAN_TRUST_PATH =
-	process.platform === "win32" ||
+	process.platform !== "win32" &&
 	[0, process.geteuid?.()].includes(statSync("/").uid);
 const describeTrustedPath = CAN_TRUST_PATH ? describe : describe.skip;
 const ENV_FILE_RELAUNCH = "a relaunch started with node --env-file";

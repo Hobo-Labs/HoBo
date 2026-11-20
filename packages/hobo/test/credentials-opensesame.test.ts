@@ -66,7 +66,7 @@ const SURROGATE = new RegExp(SURROGATE_PATTERN, "u");
 // processes, which the default 10 s does not always cover beside a full suite.
 const RUN_TIMEOUT_MS = 60_000;
 const CAN_TRUST_PATH =
-	process.platform === "win32" ||
+	process.platform !== "win32" &&
 	[0, process.geteuid?.()].includes(statSync("/").uid);
 
 const BINDINGS = {
