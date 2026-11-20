@@ -1008,23 +1008,47 @@ export async function runCiRelayDeploy(
 						try {
 							previousProduction =
 								await client.getProductionDeploymentId(project);
-							if (
-								previousProduction === undefined ||
-								previousProduction === safe.deploymentId
-							)
-								return {
-									ok: false as const,
-									code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-									message:
-										"Staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
-								};
-							await client.promoteDeployment(project, safe.deploymentId);
 						} catch (error) {
 							return realizationFailure(
 								error instanceof Error ? error : new Error("promotion failed"),
 								withoutToken,
 							);
 						}
+						if (
+							previousProduction === undefined ||
+							previousProduction === safe.deploymentId
+						)
+							return {
+								ok: false as const,
+								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+								message:
+									"Staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
+							};
+						if (clock() >= deadlineAt)
+							return {
+								ok: false as const,
+								code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
+								message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
+							};
+						let promotionError: Error | undefined;
+						try {
+							await client.promoteDeployment(project, safe.deploymentId);
+						} catch (error) {
+							promotionError =
+								error instanceof Error ? error : new Error("promotion failed");
+						}
+						if (promotionError !== undefined)
+							try {
+								const currentProduction =
+									await client.getProductionDeploymentId(project);
+								if (
+									currentProduction !== undefined &&
+									currentProduction !== safe.deploymentId
+								)
+									return realizationFailure(promotionError, withoutToken);
+							} catch {
+								void 0;
+							}
 						let liveReady = false;
 						for (
 							let attempt = 0;
@@ -1071,7 +1095,12 @@ export async function runCiRelayDeploy(
 								)(Math.min(5_000, remaining));
 						}
 						if (liveReady) return undefined;
-						let rollback: "restored" | "failed" | "superseded" | undefined;
+						let rollback:
+							| "restored"
+							| "failed"
+							| "superseded"
+							| "unknown"
+							| undefined;
 						let supersedingProduction: string | undefined;
 						try {
 							const currentProduction =
@@ -1079,9 +1108,11 @@ export async function runCiRelayDeploy(
 							if (currentProduction === safe.deploymentId) {
 								await client.promoteDeployment(project, previousProduction);
 								rollback = "restored";
-							} else {
+							} else if (currentProduction !== undefined) {
 								rollback = "superseded";
 								supersedingProduction = currentProduction;
+							} else {
+								rollback = "unknown";
 							}
 						} catch {
 							rollback = "failed";
@@ -1095,7 +1126,9 @@ export async function runCiRelayDeploy(
 								? ` The previous production deployment ${previousProduction} was restored.`
 								: rollback === "failed"
 									? " The automatic rollback failed; promote the previous deployment by hand."
-									: ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`;
+									: rollback === "unknown"
+										? ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`
+										: ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`;
 						return {
 							ok: false as const,
 							code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",

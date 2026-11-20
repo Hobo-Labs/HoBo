@@ -1280,7 +1280,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		}
 	});
 
-	it("refuses healthy live responses that arrive after the deploy deadline", async () => {
+	it.each([
+		false,
+		true,
+	])("rolls back after the deadline (lost response: %s)", async (lost) => {
 		const home = freshHome();
 		let now = Date.UTC(2026, 10, 12, 12);
 		const clock = {
@@ -1330,6 +1333,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				else expect(url).toContain("/promote/dpl_wait");
 				promotedNewDeployment = true;
 				events.push("promote");
+				if (lost && url.includes("/promote/dpl_wait"))
+					throw new Error("promotion response lost");
 				return {
 					ok: true,
 					status: 202,
@@ -1433,7 +1438,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(events).toContain("live:/healthz");
 	});
 
-	it("leaves a concurrent promotion untouched when the live check fails", async () => {
+	it.each([
+		undefined,
+		"dpl_concurrent_prod",
+	])("handles rollback state (%s)", async (concurrentProduction) => {
 		const home = freshHome();
 		const clock = steppingClock();
 		const preview = await deploy(
@@ -1450,13 +1458,14 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const vercel = scriptedVercel(["READY"]);
 		const events: string[] = [];
 		const previousProduction = "dpl_previous_prod";
-		const concurrentProduction = "dpl_concurrent_prod";
 		let promotedNewDeployment = false;
 		let concurrentPromotion = false;
 		const fetch: VercelFetch = async (url, init) => {
 			if (url.includes("/v9/projects/hobo-ci")) {
 				const production = concurrentPromotion
-					? { id: concurrentProduction }
+					? concurrentProduction === undefined
+						? undefined
+						: { id: concurrentProduction }
 					: promotedNewDeployment
 						? { id: "dpl_wait" }
 						: { id: previousProduction };
@@ -1566,15 +1575,30 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(result.exitCode).toBe(1);
 		expect(result.envelope).toMatchObject({
 			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-			message: expect.stringContaining(concurrentProduction),
-			data: { rollback: "superseded", delivery: { state: "FAILED" } },
+			message: expect.stringContaining(
+				concurrentProduction ?? "could not be established",
+			),
+			data: {
+				rollback: concurrentProduction === undefined ? "unknown" : "superseded",
+				delivery: { state: "FAILED" },
+			},
 		});
 		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
 	});
 
-	it("refuses staged production without a previous production deployment", async () => {
+	it.each([
+		{ previousProduction: undefined, expires: false },
+		{ previousProduction: "dpl_previous_prod", expires: true },
+	])("refuses staged production safely (%s)", async (scenario) => {
 		const home = freshHome();
-		const clock = steppingClock();
+		let now = Date.UTC(2026, 10, 12, 12);
+		const deadlineAt = now + 10 * 60_000;
+		const clock = {
+			now: () => now,
+			sleep: async (ms: number) => {
+				now += ms;
+			},
+		};
 		const preview = await deploy(
 			[...PINNED, "--project", "hobo-ci", "--wait"],
 			{
@@ -1590,11 +1614,21 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		let promotions = 0;
 		const fetch: VercelFetch = async (url, init) => {
 			if (url.includes("/v9/projects/hobo-ci")) {
+				if (scenario.expires) now = deadlineAt;
+				const project: JsonObject =
+					scenario.previousProduction === undefined
+						? { id: "prj_relay" }
+						: {
+								id: "prj_relay",
+								targets: {
+									production: { id: scenario.previousProduction },
+								},
+							};
 				return {
 					ok: true,
 					status: 200,
-					text: async () => '{"id":"prj_relay"}',
-					json: async () => ({ id: "prj_relay" }),
+					text: async () => JSON.stringify(project),
+					json: async () => project,
 				};
 			}
 			if (url.includes("/promote/")) {
@@ -1673,6 +1707,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				"production",
 				...INPUTS,
 				"--wait",
+				"--deadline",
+				new Date(deadlineAt).toISOString(),
 			],
 			{
 				fetch,
@@ -1692,8 +1728,14 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		);
 		expect(result.exitCode, JSON.stringify(result.envelope)).toBe(1);
 		expect(result.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-			message: expect.stringContaining("distinct previous production"),
+			code: scenario.expires
+				? RELAY_DEPLOY_REFUSAL.budgetExhausted
+				: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+			message: expect.stringContaining(
+				scenario.expires
+					? "before production traffic was promoted"
+					: "distinct previous production",
+			),
 			data: { delivery: { state: "FAILED" } },
 		});
 		expect(promotions).toBe(0);

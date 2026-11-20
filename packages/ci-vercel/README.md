@@ -309,7 +309,12 @@ and on `workflow_dispatch`:
    production configuration. A Vercel Trusted Source lets the job reach the
    protected deployments using GitHub OIDC. HoBo checks staged production's
    `/healthz` and `/readyz` before assigning production traffic, then verifies
-   the public origin serves the same healthy commit.
+   the public origin serves the same healthy commit. The deadline is rechecked
+   after reading the current production target. A lost promotion response is
+   ambiguous, so HoBo re-reads that target before verification and recovery.
+   Rollback restores the previous deployment only while the candidate remains
+   current; a confirmed concurrent target is left alone, while an unknown
+   target is reported as `unknown` for manual recovery.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:
