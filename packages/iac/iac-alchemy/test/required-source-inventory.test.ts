@@ -12,6 +12,7 @@ import {
 	createAlchemyIacProvider,
 	type FinancialPlan,
 } from "../src/index.js";
+import { registerAlchemySource } from "../src/source-fence.js";
 import { testStateOwnership } from "./route-fixture.js";
 
 type Component = Resource<"Demo.Executable", { main: string }, { id: string }>;
@@ -102,6 +103,110 @@ function fixture(directory: string) {
 }
 
 describe("complete host source classification", () => {
+	/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: this regression substitutes collection methods and delegates unrelated calls to captured intrinsics. */
+	it("rejects a different registered resource when the required source is missing", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-source-mismatch-"));
+		const previousHome = process.env.ALCHEMY_HOME;
+		process.env.ALCHEMY_HOME = join(directory, "home");
+		const nativeFind = Array.prototype.find;
+		const nativeSome = Array.prototype.some;
+		let effects = 0;
+		const first = {
+			resourceId: "component",
+			resourceType: "Demo.Executable",
+			bindleName: "app",
+			applicationName: "component",
+			sourceKind: "module",
+			sourcePath: "/src/component.ts",
+		};
+		const second = {
+			...first,
+			resourceId: "other",
+			applicationName: "other",
+			sourcePath: "/src/other.ts",
+		};
+		const stack = Stack(
+			"App",
+			{
+				providers: Provider.succeed(Component, {
+					reconcile: () =>
+						Effect.sync(() => {
+							effects++;
+							return { id: "component" };
+						}),
+					delete: () => Effect.void,
+				}),
+				state: inMemoryState(),
+			},
+			Effect.gen(function* () {
+				yield* Component("component", { main: first.sourcePath });
+				const other = yield* Component("other", { main: second.sourcePath });
+				registerAlchemySource(other, {
+					claim: {
+						...second,
+						sourceDigest: `sha256:${"a".repeat(64)}`,
+						environmentDigest: `sha256:${"b".repeat(64)}`,
+						proofRef: "host:source-inventory",
+					},
+					verify: () => true,
+				});
+				return {};
+			}),
+		);
+		let failure: unknown;
+		try {
+			const f = fixture(directory);
+			const provider = createAlchemyIacProvider({
+				...f.options,
+				stack,
+				target: alchemyTarget({
+					targetId: "yard",
+					tenantId: "tenant",
+					stackName: "App",
+					stage: "test",
+					programResourceId: "app",
+					sourceDigest: `sha256:${"a".repeat(64)}`,
+					inventoryEvidenceRef: "inventory:1",
+					resources: [first, second].map(({ resourceId, resourceType }) => ({
+						resourceId,
+						resourceType,
+						providerId: "test",
+						providerAccountRef: "account",
+						productId: "test",
+					})),
+				}),
+				composite: {
+					...f.composite,
+					sourceRequirements: [first],
+					verifyEnvironment: ({ sourceRequirements }) => {
+						Reflect.set(Array.prototype, "find", function (predicate: unknown) {
+							if (this === sourceRequirements) return undefined;
+							return Reflect.apply(nativeFind, this, [predicate]);
+						});
+						Reflect.set(Array.prototype, "some", function (predicate: unknown) {
+							if (this === sourceRequirements) return false;
+							return Reflect.apply(nativeSome, this, [predicate]);
+						});
+						return true;
+					},
+				},
+			});
+			try {
+				await provider.preview(f.program);
+			} catch (error) {
+				failure = error;
+			}
+		} finally {
+			Reflect.set(Array.prototype, "find", nativeFind);
+			Reflect.set(Array.prototype, "some", nativeSome);
+			if (previousHome === undefined) delete process.env.ALCHEMY_HOME;
+			else process.env.ALCHEMY_HOME = previousHome;
+			rmSync(directory, { recursive: true, force: true });
+		}
+		expect(failure).toMatchObject({ code: "SOURCE_FENCE_INCOMPLETE" });
+		expect(effects).toBe(0);
+	});
+	/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply */
 	it.each([
 		"composite",
 		"sourceRequirements",

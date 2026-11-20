@@ -144,9 +144,13 @@ export interface RecordedResource {
 		| "Destroyed";
 	/** Hash of the spec it was last provisioned from; absent on legacy facts. */
 	readonly specHash?: string;
+
+	readonly specHashRecorded?: boolean;
+
+	readonly hasProvisionedBaseline?: boolean;
 	/** The last plan that declared it, from `deployment.Planned`. */
 	readonly plan?: ResourcePlan;
-	/** Provider that may own it, when established by a provisioning fact or plan. */
+
 	readonly providerId?: string;
 }
 
@@ -154,6 +158,7 @@ export interface BlockedProviderMove {
 	readonly resource: string;
 	readonly from?: string;
 	readonly to: string;
+	readonly reason?: "specification-unverified";
 }
 
 /** Refuse a provider move unless no previous effects exist or ownership agrees. */
@@ -164,15 +169,45 @@ export function blockedProviderMove(
 	if (previous === undefined || previous.state === "Destroyed")
 		return undefined;
 	const provider = previous.providerId;
+	if (
+		(previous.state === "Provisioned" ||
+			previous.hasProvisionedBaseline === true) &&
+		previous.specHashRecorded !== true
+	)
+		return {
+			resource: resource.name,
+			...(provider !== undefined ? { from: provider } : undefined),
+			to: resource.provider,
+			reason: "specification-unverified",
+		};
 	if (provider === resource.provider) return undefined;
-	// A legacy hash covers the provider as well as the rest of the declaration.
-	if (provider === undefined && previous.specHash === desiredSpecHash(resource))
+
+	if (
+		provider === undefined &&
+		previous.specHashRecorded === true &&
+		previous.specHash === desiredSpecHash(resource)
+	)
 		return undefined;
 	return {
 		resource: resource.name,
 		...(provider !== undefined ? { from: provider } : undefined),
 		to: resource.provider,
 	};
+}
+
+export function hasDestroyProvenance(
+	previous: RecordedResource | undefined,
+	resource: ResourcePlan,
+): boolean {
+	return (
+		previous !== undefined &&
+		previous.state !== "Destroyed" &&
+		previous.specHashRecorded === true &&
+		previous.specHash !== undefined &&
+		previous.specHash === desiredSpecHash(resource) &&
+		(previous.providerId === undefined ||
+			previous.providerId === resource.provider)
+	);
 }
 
 function resourceIdOf(event: EventEnvelope): string | undefined {
@@ -233,14 +268,18 @@ export function recordedResources(
 		const candidate = plans.get(resourceId);
 		const plan =
 			candidate &&
-			(eventHash === undefined || desiredSpecHash(candidate) === eventHash)
+			eventHash !== undefined &&
+			desiredSpecHash(candidate) === eventHash
 				? candidate
 				: undefined;
-		const specHash = eventHash ?? (plan ? desiredSpecHash(plan) : undefined);
-		const providerId = previous ? previous.providerId : candidate?.provider;
+		const specHash = eventHash;
+		const providerId = previous?.providerId ?? plan?.provider;
 		const recorded: Omit<RecordedResource, "resourceId"> = {
 			state: "Provisioned",
 			...(specHash !== undefined ? { specHash } : undefined),
+			...(eventHash !== undefined && /^sha256:[a-f0-9]{64}$/u.test(eventHash)
+				? { specHashRecorded: true }
+				: undefined),
 			...(plan !== undefined ? { plan } : undefined),
 			...(providerId !== undefined ? { providerId } : undefined),
 		};
@@ -248,6 +287,30 @@ export function recordedResources(
 		stable.set(resourceId, recorded);
 	}
 	for (const event of events) {
+		if (event.type === CLOUD_EVENTS.DeploymentImported) {
+			if (
+				!isJsonObject(event.data) ||
+				!Array.isArray(event.data.resources) ||
+				event.data.resources.length > 256 ||
+				!event.data.resources.every(
+					(resource) =>
+						isJsonString(resource) &&
+						resource.length > 0 &&
+						resource.length <= 200,
+				)
+			)
+				throw new TypeError("imported resource inventory is malformed");
+			for (const resource of event.data.resources) {
+				if (!isJsonString(resource))
+					throw new TypeError("imported resource inventory is malformed");
+				const imported: Omit<RecordedResource, "resourceId"> = {
+					state: "Provisioned",
+				};
+				states.set(resource, imported);
+				stable.set(resource, imported);
+			}
+			continue;
+		}
 		if (event.type === CLOUD_EVENTS.DeploymentPlanned) {
 			for (const resource of plannedResources(event))
 				plans.set(resource.name, resource);
@@ -261,7 +324,13 @@ export function recordedResources(
 				if ((unresolved.get(resourceId)?.size ?? 0) > 0) break;
 				const targetHash = specHashOf(event);
 				const candidate = plans.get(resourceId);
-				const targetProvider = providerIdOf(event) ?? candidate?.provider;
+				const targetProvider =
+					providerIdOf(event) ??
+					(candidate &&
+					targetHash !== undefined &&
+					desiredSpecHash(candidate) === targetHash
+						? candidate.provider
+						: undefined);
 				const providerId =
 					previous && previous.state !== "Destroyed"
 						? previous.providerId === targetProvider
@@ -286,6 +355,9 @@ export function recordedResources(
 					state: "Provisioning",
 					...(previous?.specHash !== undefined
 						? { specHash: previous.specHash }
+						: undefined),
+					...(previous?.specHashRecorded === true
+						? { specHashRecorded: true }
 						: undefined),
 					...(plan !== undefined ? { plan } : undefined),
 					...(providerId !== undefined ? { providerId } : undefined),
@@ -361,6 +433,10 @@ export function recordedResources(
 		out.set(resourceId, {
 			resourceId,
 			...recorded,
+			...((recorded.state === "Failed" || recorded.state === "Provisioning") &&
+			stable.get(resourceId)?.state === "Provisioned"
+				? { hasProvisionedBaseline: true }
+				: undefined),
 		});
 	}
 	return out;
@@ -404,6 +480,16 @@ export function classifyResource(
 	const base = { resourceId: resource.name, desiredSpecHash: desired };
 	if (recorded === undefined)
 		return { ...base, action: "create", reason: "not yet provisioned" };
+	if (
+		(recorded.state === "Provisioned" ||
+			recorded.hasProvisionedBaseline === true) &&
+		recorded.specHashRecorded !== true
+	)
+		return {
+			...base,
+			action: "retain",
+			reason: "applied specification is unverified; reconciliation is required",
+		};
 	const recordedHash =
 		recorded.specHash !== undefined
 			? { recordedSpecHash: recorded.specHash }
