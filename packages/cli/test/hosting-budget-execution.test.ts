@@ -48,6 +48,34 @@ const session: YardSession = {
 	token: "fixture",
 	issuedAt: new Date(1000).toISOString(),
 };
+const unreachedAuthorityFields: Pick<
+	PlanBindingAuthority,
+	"profiles" | "policy"
+> = {
+	profiles: {
+		digest: "sha256:no-capability-profiles",
+		get: () => undefined,
+		require: () => {
+			throw new Error("no fixture path registers capability profiles");
+		},
+		has: () => false,
+		list: () => [],
+		closureOf: () => [],
+		satisfies: () => false,
+		guaranteeKeys: () => [],
+	},
+	policy: {
+		minimumProviderClass: "verified-emerging",
+		creatorAuthorityAfterClaim: "must-be-rotatable",
+		maximumClaimActions: 2,
+		maximumEvidenceAgeMs: 30 * 24 * 60 * 60 * 1000,
+		requireExportProfile: false,
+		allowSponsor: true,
+		allowPack: true,
+		allowBridge: true,
+		sponsorBudgetMinorUnits: 0,
+	},
+};
 function fixture() {
 	const dataDir = mkdtempSync(join(tmpdir(), "cli-hosting-budget-"));
 	const store = createRuntimeLocalEventStore({
@@ -170,10 +198,7 @@ function fixture() {
 		hostingPlanBinding: async () => ({
 			yard: { yardId: "yard", providerId: "host", bindings: [] },
 			definitions: [],
-			// SAFETY: this fixture declares no profile-specific requirements.
-			profiles: {} as PlanBindingAuthority["profiles"],
-			// SAFETY: this fixture declares no profile-specific requirements.
-			policy: {} as PlanBindingAuthority["policy"],
+			...unreachedAuthorityFields,
 			nowMs: 1000,
 			requirements: {},
 		}),
@@ -438,10 +463,7 @@ describe("production CLI budget execution", () => {
 		const binding: PlanBindingAuthority = {
 			yard: { yardId: "yard", providerId: "host", bindings: [] },
 			definitions: [],
-			// SAFETY: no resource has a profile requirement in this fixture.
-			profiles: {} as PlanBindingAuthority["profiles"],
-			// SAFETY: no resource has a profile requirement in this fixture.
-			policy: {} as PlanBindingAuthority["policy"],
+			...unreachedAuthorityFields,
 			nowMs: 1000,
 			requirements: {},
 		};
@@ -564,10 +586,7 @@ describe("production CLI budget execution", () => {
 				bindings: [{ profile: "api.http/v1", productId: "foreign.product/v1" }],
 			},
 			definitions: [],
-			// SAFETY: ownership validation rejects the foreign product before profile selection or policy evaluation.
-			profiles: {} as PlanBindingAuthority["profiles"],
-			// SAFETY: this fixture cannot reach policy evaluation after the ownership rejection.
-			policy: {} as PlanBindingAuthority["policy"],
+			...unreachedAuthorityFields,
 			nowMs: 1000,
 			requirements: {},
 		};

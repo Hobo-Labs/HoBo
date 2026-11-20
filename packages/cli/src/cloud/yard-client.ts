@@ -86,19 +86,15 @@ export interface YardRuntime {
 	readonly executor: OrchestratorDeps["executor"];
 	readonly broker: OrchestratorDeps["broker"];
 	readonly registry: PlannerRegistry;
-	/** Authoritative financial evidence and admission; never supplied by a CLI flag. */
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
 	readonly hostingBudgetRequired?: boolean;
-	/** Trusted host resolves Yard binding and policy evidence for a deployment. */
 	readonly hostingPlanBinding?: (request: {
 		readonly deploymentId: string;
 		readonly bindle: ManifestV1;
 		readonly session: YardSession;
 	}) => Promise<PlanBindingAuthority>;
-	/** @hobo/cd desired-state delivery (D13). Composed by WP18; absent = legacy direct path. */
 	readonly delivery?: YardDelivery;
-	/** The production hosting supervisor owns provider effects and observed teardown. */
 	readonly hostingExecution?: {
 		up(request: {
 			admission: DeployResultPlanned;
@@ -112,7 +108,6 @@ export interface YardRuntime {
 	};
 }
 
-/** The read-only authority needed to evaluate a hosting plan. */
 export interface YardPreflightRuntime {
 	readonly registry: PlannerRegistry;
 	readonly hostingBudgetAuthority?: Pick<
@@ -128,9 +123,7 @@ export interface DeployConfig {
 	readonly objective?: string;
 	readonly region?: string;
 	readonly budgetId?: string;
-	/** Bicep deployment mode: `complete` prunes resources no longer declared. */
 	readonly mode?: DeploymentMode;
-	/** Providers known to be down before planning (a health probe's answer). */
 	readonly unavailableProviders?: readonly string[];
 }
 
@@ -430,8 +423,7 @@ function planConfig(
 	};
 }
 
-/** Plan against the same financial and binding authorities used for admission,
- * without exposing the gateway, event store, broker, or provider effects. */
+// public-contract: plans with the same financial and binding authorities used for admission, without exposing the gateway, event store, broker, or provider effects.
 export async function planHostingAuthoritatively(
 	runtime: YardPreflightRuntime,
 	bindle: ManifestV1,
@@ -458,8 +450,6 @@ export async function planHostingAuthoritatively(
 			reason: "authoritative hosting budget is not configured",
 			remediations: [],
 		};
-	// The host binding authenticates the session and identifies the selected
-	// Yard. Resolve it before reading budget evidence for the supplied tenant.
 	const binding = await runtime.hostingPlanBinding?.({
 		deploymentId,
 		bindle,

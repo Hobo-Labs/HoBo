@@ -14,20 +14,11 @@ import {
 import type { CommandModule } from "../shell/registry.js";
 
 export interface PlanCommandDeps {
-	// Injected Yard runtime (tests / dev wiring). Its provider registry drives the
-	// pure Planner; store/executor/broker are unused by the read-only plan path.
 	readonly runtime?: YardRuntime;
-	/** Production planning uses the read-only hosting authority, not the
-	 * mutation-capable Yard runtime. */
 	readonly preflightRuntime?: YardPreflightRuntime;
 	readonly session?: YardSession;
 }
 
-// `hobo plan` — dry-run the up decision (read-only). It parses the project's
-// Bindle manifest, runs the pure @hobo/cloud Planner against the injected
-// provider registry, and renders the content-addressed DeploymentPlan diff. An
-// unsatisfiable manifest surfaces the machine-readable remediation and exits
-// non-zero. With no runtime injected (adapter-free default), it stays a stub.
 export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime || deps.preflightRuntime),
@@ -54,7 +45,6 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 				return stubResult("plan");
 			}
 
-			// A Yard holds nothing external: refuse before planning.
 			const boundary = await externalBoundaryRefusal(projectDir, "plan");
 			if (boundary !== undefined) return boundary;
 
@@ -94,8 +84,6 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 					remediation: ["Omit --mode for this hosting deployment."],
 					data: { command: "plan", deploymentId },
 				};
-			// Fold installed providers into ordinary runtime planning only after
-			// refusing selectors the hosting authority cannot verify.
 			if (!preflightRuntime) await runtime?.registry.refresh?.();
 			const session = deps.session ?? (await loadSession(projectDir));
 			if (preflightRuntime && !session)
@@ -146,17 +134,16 @@ export function createPlanCommand(deps: PlanCommandDeps = {}): CommandModule {
 				};
 			}
 
-			// A read-only preflight has no deployment journal, so it cannot report a
-			// change set. The regular runtime can compare against its recorded state.
+			const journaledRuntime = preflightRuntime ? undefined : runtime;
 			let changes: Awaited<ReturnType<typeof upWhatIf>> | undefined;
-			if (!preflightRuntime && runtime) {
+			if (journaledRuntime) {
 				try {
 					changes = await upWhatIf(
-						runtime.store,
+						journaledRuntime.store,
 						deploymentId,
 						rendered.plan,
 						mode,
-						hosted ? undefined : runtime.delivery,
+						hosted ? undefined : journaledRuntime.delivery,
 					);
 				} catch (error) {
 					return {
