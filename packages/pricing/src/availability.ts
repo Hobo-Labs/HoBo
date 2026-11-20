@@ -9,14 +9,21 @@ import {
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
 import {
+	hasExplicitFixedChargeCoverage,
+	hasExplicitUnreferencedFixedCoverage,
+} from "./fixed-charge-coverage.js";
+import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
+	isSupportedPricingRealm,
 	type JsonValue,
 } from "./json.js";
-import { quoteScenario } from "./quote.js";
+import { quoteScenarioV2 } from "./quote.js";
+import { utcPricingTimeOrder } from "./time-order.js";
 import { isQuoteVector } from "./types.js";
 
-/** The scope is a claim by the model author, not a provider guarantee. */
+const cloneData = structuredClone;
+
 export type DeveloperPricingScope = Omit<PricingModelScope, "$typeName">;
 
 export type AvailabilityQuote =
@@ -29,14 +36,14 @@ export type AvailabilityQuote =
 	  }
 	| { readonly ok: false; readonly code: string; readonly reason: string };
 
-/** A target without known terms is not a free target. */
 export function pricingUnavailable(reason: string): PricingAvailability {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	return create(PricingAvailabilitySchema, {
 		state: { case: "unavailable", value: { reason } },
 	});
 }
 
-/** Decode JSON before inspecting its discriminated availability state. */
 export function parsePricingAvailability(
 	value: JsonValue,
 ): PricingAvailability | undefined {
@@ -48,32 +55,38 @@ export function parsePricingAvailability(
 	}
 }
 
-/** Attach declarative, tenant/account/product-scoped terms to a target. */
 export function developerPricing(
 	scope: DeveloperPricingScope,
 	scenario: QuoteScenario,
 ): PricingAvailability {
-	if (!isBoundedPricingInput({ scope, scenario }))
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
+	if (!isBoundedPricingInput(scope) || !isBoundedPricingInput(scenario))
 		throw new TypeError("invalid or unbounded developer pricing model");
-	let stable: { scope: DeveloperPricingScope; scenario: QuoteScenario };
+	let stableScope: DeveloperPricingScope;
+	let stableScenario: QuoteScenario;
 	try {
-		stable = structuredClone({ scope, scenario });
+		stableScope = cloneData(scope);
+		stableScenario = cloneData(scenario);
 	} catch {
 		throw new TypeError("invalid developer pricing model");
 	}
 	if (
-		!validDeveloperScope(stable.scope) ||
-		!isExactProtoMessage(QuoteScenarioSchema, stable.scenario)
+		!validDeveloperScope(stableScope) ||
+		!isExactProtoMessage(QuoteScenarioSchema, stableScenario)
 	)
 		throw new TypeError(
 			"developer pricing model contains unsupported or malformed data",
 		);
 	return create(PricingAvailabilitySchema, {
-		state: { case: "developerModel", value: stable },
+		state: {
+			case: "developerModel",
+			value: { scope: stableScope, scenario: stableScenario },
+		},
 	});
 }
 
-/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: developer scope crosses a runtime boundary before protobuf normalization. */
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: the scope is detached bounded data inspected before protobuf normalization. */
 function validDeveloperScope(scope: DeveloperPricingScope): boolean {
 	if (scope === null || typeof scope !== "object" || Array.isArray(scope))
 		return false;
@@ -116,38 +129,52 @@ function validName(value: string): boolean {
 	);
 }
 
-/**
- * Rates one declared offering. This checks consistency of the supplied model;
- * only an independently inventoried target can establish completeness of the
- * actual deployment and only the hosting authority can authorize spending.
- */
 export function quoteAvailablePricing(
 	providerId: string,
 	availability: PricingAvailability,
 ): AvailabilityQuote {
+	if (!isSupportedPricingRealm())
+		return failed(
+			"PRICING_REALM_UNSUPPORTED",
+			"pricing requires an unchanged standard Object.prototype",
+		);
 	if (!isBoundedPricingInput(availability))
 		return failed(
 			"PRICING_INPUT_TOO_LARGE",
 			"pricing input exceeds the bounded data limits",
 		);
-	if (!isExactProtoMessage(PricingAvailabilitySchema, availability))
+	let stable: PricingAvailability;
+	try {
+		stable = cloneData(availability);
+	} catch {
 		return failed(
 			"PRICING_MODEL_INVALID",
 			"pricing availability contains unsupported or malformed data",
 		);
-	if (availability.state.case === "unavailable") {
-		const reason = availability.state.value.reason;
+	}
+	if (!isBoundedPricingInput(stable))
+		return failed(
+			"PRICING_INPUT_TOO_LARGE",
+			"pricing input exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(PricingAvailabilitySchema, stable))
+		return failed(
+			"PRICING_MODEL_INVALID",
+			"pricing availability contains unsupported or malformed data",
+		);
+	if (stable.state.case === "unavailable") {
+		const reason = stable.state.value.reason;
 		return validName(reason)
 			? failed("PRICING_MODEL_UNAVAILABLE", reason)
 			: failed("PRICING_MODEL_INVALID", "unavailable pricing needs a reason");
 	}
-	if (availability.state.case !== "developerModel") {
+	if (stable.state.case !== "developerModel") {
 		return failed(
 			"PRICING_MODEL_UNAVAILABLE",
 			"pricing availability was not declared",
 		);
 	}
-	const { scope, scenario } = availability.state.value;
+	const { scope, scenario } = stable.state.value;
 	if (
 		scope === undefined ||
 		scenario === undefined ||
@@ -206,14 +233,13 @@ export function quoteAvailablePricing(
 	}
 	const dimensions = product.meters.map((meter) => meter.dimension);
 	if (
-		dimensions.length === 0 ||
 		dimensions.some((dimension) => !validName(dimension)) ||
 		new Set(dimensions).size !== dimensions.length ||
 		scenario.candidate.length === 0
 	) {
 		return failed(
 			"PRICING_MODEL_INCOMPLETE",
-			"the target needs a workload and unambiguous declared meters",
+			"the target needs a workload and unambiguous meter declarations",
 		);
 	}
 	for (const workload of [...scenario.baseline, ...scenario.candidate]) {
@@ -236,6 +262,12 @@ export function quoteAvailablePricing(
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== workload.usage.length) {
+			return failed(
+				"PRICING_MODEL_INCOMPLETE",
+				"workload usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !measured.has(dimension)) ||
 			[...measured].some((dimension) => !dimensions.includes(dimension))
@@ -246,10 +278,28 @@ export function quoteAvailablePricing(
 			);
 		}
 	}
-	const quote = quoteScenario(scenario);
-	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
-	// The rating kernel iterates product meters. A rate-card charge whose
-	// dimension is absent from that list would otherwise be silently skipped.
+	const quote = quoteScenarioV2(scenario);
+	if (!isQuoteVector(quote))
+		return failed(
+			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
+				quote.code === "PRICING_FIXED_SELECTOR_UNAVAILABLE"
+				? "PRICING_MODEL_INCOMPLETE"
+				: quote.code,
+			quote.message,
+		);
+	if (
+		!hasExplicitUnreferencedFixedCoverage(
+			catalog,
+			state.agreements,
+			[...scenario.baseline, ...scenario.candidate],
+			scenario.at,
+			scenario.horizon,
+		)
+	)
+		return failed(
+			"PRICING_MODEL_INCOMPLETE",
+			"an active agreement is missing a fixed-charge quantity",
+		);
 	for (const workload of [...scenario.baseline, ...scenario.candidate]) {
 		const agreement = state.agreements.find(
 			(entry) => entry.id === workload.agreementRef,
@@ -264,17 +314,26 @@ export function quoteAvailablePricing(
 			agreement,
 			scenario.at,
 			scenario.horizon,
+			utcPricingTimeOrder,
 		);
 		if (
+			rateCard.charges.length === 0 ||
 			rateCard.charges.some(
 				(charge) =>
-					charge.variant.case === "usage" &&
-					!dimensions.includes(charge.variant.value.dimension),
+					charge.variant.case === undefined ||
+					(charge.variant.case === "usage" &&
+						!dimensions.includes(charge.variant.value.dimension)),
+			) ||
+			!hasExplicitFixedChargeCoverage(
+				rateCard,
+				agreement,
+				workload,
+				dimensions.length > 0,
 			)
 		) {
 			return failed(
 				"PRICING_MODEL_INCOMPLETE",
-				"a rate-card charge has no declared product meter",
+				"the rate card needs applicable charges and explicit quantities",
 			);
 		}
 	}

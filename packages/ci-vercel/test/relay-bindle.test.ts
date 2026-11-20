@@ -4,6 +4,7 @@ import {
 	CONTINUITY_KINDS,
 	continuityPolicies,
 	continuityViolations,
+	readCadence,
 } from "@hobo/bindles";
 import { describe, expect, it } from "vitest";
 import relay, {
@@ -206,6 +207,10 @@ describe("the declaration and the platform configuration agree", () => {
 			topic: "hobo-ci",
 		});
 		expect(RELAY_REPAIR_SCHEDULE.name).toBe(RELAY_RESOURCES.schedule);
+		// The cadence is declared on the schedule itself, where the planner reads it.
+		expect(
+			readCadence(relay.resources[RELAY_RESOURCES.schedule]?.annotations ?? []),
+		).toBe(RELAY_REPAIR_SCHEDULE.cron);
 		expect(RELAY_REPAIR_SCHEDULE.topic).toBe(RELAY_RESOURCES.queue);
 
 		// On this branch `vercel.json` declares no schedule: the hosted relay is

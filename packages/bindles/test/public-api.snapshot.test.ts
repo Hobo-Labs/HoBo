@@ -135,6 +135,12 @@ export function createBindlesPublicApiSnapshot(
 		"isContinuityAnnotation",
 		"parseContinuityPolicy",
 		"readContinuity",
+		// Cadence trait: when a schedule runs (ADR-0145)
+		"cadence",
+		"CADENCE_OPTION",
+		"CadenceError",
+		"cadenceViolations",
+		"readCadence",
 		// App Kit taxonomy (prefer over "membrane types" at Bindle layer)
 		"APP_KIT_KINDS",
 		"HTTP_APP_KIT_KINDS",
@@ -598,6 +604,33 @@ export function createBindlesPublicApiSnapshot(
 				kind: "continuity-helper",
 				signature:
 					"continuityViolations(definition: BindleDefinition): readonly ContinuityViolation[]",
+			},
+			{
+				name: "cadence",
+				kind: "cadence-annotation",
+				signature: "cadence(cron: string): ProviderAnnotation",
+			},
+			{
+				name: "CADENCE_OPTION",
+				kind: "cadence-constant",
+				signature: 'const CADENCE_OPTION: "cadence"',
+			},
+			{
+				name: "CadenceError",
+				kind: "cadence-error",
+				signature: "class CadenceError extends TypeError",
+			},
+			{
+				name: "readCadence",
+				kind: "cadence-helper",
+				signature:
+					"readCadence(annotations: readonly ProviderAnnotation[]): string | undefined",
+			},
+			{
+				name: "cadenceViolations",
+				kind: "cadence-helper",
+				signature:
+					"cadenceViolations(definition: BindleDefinition): readonly CadenceViolation[]",
 			},
 			{
 				name: "APP_KIT_KINDS",

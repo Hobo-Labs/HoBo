@@ -117,7 +117,7 @@ const LAYOUT = {
 			anchorY: 230,
 		},
 	},
-	costMeter: { x: 1020, y: 150, width: 160, height: 18 },
+	costMeter: { x: 1020, y: 170, width: 160, height: 18 },
 	trafficEmitter: { x: 140, y: 330, width: 1000 },
 };
 
@@ -349,7 +349,7 @@ function sheetForZone(zone, s) {
 			confirmOp: "connectionCreate",
 			fields: [
 				{ name: "provider", label: "Provider", type: "string", value: "asana" },
-				{ name: "alias", label: "Alias", type: "string", value: "work" },
+				{ name: "alias", label: "Alias (optional)", type: "string", value: "" },
 				{
 					name: "stationId",
 					label: "Station",
@@ -527,7 +527,7 @@ function closeSheet() {
 async function api(path, init) {
 	const res = await fetch(`${API}${path}`, {
 		...init,
-		headers: { "content-type": "application/json", ...(init?.headers || {}) },
+		headers: { "content-type": "application/json", ...init?.headers },
 	});
 	const body = await res.json();
 	if (!body.ok && res.status >= 400) {
@@ -658,7 +658,7 @@ async function confirmSheet() {
 				method: "POST",
 				body: JSON.stringify({
 					provider: values.provider,
-					alias: values.alias,
+					alias: values.alias || undefined,
 					stationId: values.stationId || "station:local",
 				}),
 			});
@@ -1135,6 +1135,25 @@ function selectZoneById(zone) {
 	document.body.dataset.lastClickZone = zone;
 }
 
+function boDirection() {
+	const projectedFacing = visual?.facing ?? null;
+	const renderedFacing =
+		state.animId === "bo.walk.east"
+			? "east"
+			: state.animId === "bo.walk.west"
+				? "west"
+				: null;
+	return {
+		facing: renderedFacing ?? projectedFacing ?? "east",
+		facingSource: renderedFacing
+			? "rendered-walk"
+			: projectedFacing
+				? "projected"
+				: "default",
+		projectedFacing,
+	};
+}
+
 // playwright-testing seam (stable, serializable — no engine objects)
 window.__TEST__ = {
 	ready: false,
@@ -1151,7 +1170,7 @@ window.__TEST__ = {
 			x: Math.round(state.bo.x),
 			y: Math.round(state.bo.y),
 			animationId: state.animId,
-			facing: visual?.facing ?? "east",
+			...boDirection(),
 		},
 		occupyMode: snap?.occupyMode ?? null,
 		connCount: snap?.connections?.length ?? 0,
