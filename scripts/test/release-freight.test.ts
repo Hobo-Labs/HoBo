@@ -112,7 +112,7 @@ describe("release topology names", () => {
 		);
 		await probe({
 			method: "GET",
-			url: "https://api.github.com/repos/Hobo-Labs/HoBo/contents/index.html?ref=gh-pages",
+			url: "https://api.github.com/repos/Hobo-Labs/HoBo/git/ref/heads/gh-pages",
 			headers: {},
 			timeoutMs: 5_000,
 			maxResponseBytes: 1_048_576,
@@ -137,7 +137,9 @@ describe("release topology names", () => {
 		expect(pages).toBeDefined();
 		for (const node of pages?.nodes ?? []) {
 			expect(node.verification.probes[0]?.urlRef).toContain("api.github.com");
-			expect(node.verification.probes[0]?.urlRef).toContain("ref=gh-pages");
+			expect(node.verification.probes[0]?.urlRef).toContain(
+				"/git/ref/heads/gh-pages",
+			);
 		}
 	});
 });

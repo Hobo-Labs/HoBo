@@ -103,7 +103,7 @@ const PROBE = {
 	npm: { url: "https://registry.npmjs.org/-/ping", status: 200 },
 	oci: { url: "https://ghcr.io/v2/", status: 401 },
 	pages: {
-		url: `https://api.github.com/repos/${owner}/${repo}/contents/index.html?ref=gh-pages`,
+		url: `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/gh-pages`,
 		status: 200,
 	},
 } as const satisfies Record<Family, Readonly<{ url: string; status: number }>>;

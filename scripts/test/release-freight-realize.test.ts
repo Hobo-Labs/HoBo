@@ -112,12 +112,6 @@ function withProbes(
 			return { status: 200, headers: {}, body: "{}" };
 		if (request.url.startsWith("https://raw.githubusercontent.com/"))
 			return { status: 200, headers: {}, body: "<h1>HoBo</h1>" };
-		if (
-			/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/contents\/index\.html\?ref=gh-pages$/u.test(
-				request.url,
-			)
-		)
-			return { status: 200, headers: {}, body: "{}" };
 		return inner(request);
 	};
 }

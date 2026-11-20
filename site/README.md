@@ -355,8 +355,9 @@ blobs in the HoBo artifact store) and promoted `hobo-release/pages-candidate` ->
 on the observed head, moved by compare-and-swap with `GITHUB_TOKEN` (by hand too).
 The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
 `~/.hobo`), and the `hobo` package must be built. Rollout verification probes
-`api.github.com/repos/<owner>/<repo>/contents/index.html?ref=gh-pages` on the
-same egress path as the GitHub realizer (not `raw.githubusercontent.com`).
+`api.github.com/repos/<owner>/<repo>/git/ref/heads/gh-pages` on the same egress
+path as the GitHub realizer (small JSON under the CD probe byte cap; not
+`raw.githubusercontent.com`).
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
