@@ -55,10 +55,11 @@ export function agent37RetryAfterMs(
 	const value = header(response, "retry-after");
 	if (value === undefined) return undefined;
 	const seconds = Number(value);
-	if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+	if (Number.isFinite(seconds) && seconds >= 0)
+		return Math.min(seconds * 1000, AGENT37_MAX_TIMEOUT_MS);
 	const date = Date.parse(value);
 	if (!Number.isFinite(date)) return undefined;
-	return Math.max(0, date - now);
+	return Math.min(Math.max(0, date - now), AGENT37_MAX_TIMEOUT_MS);
 }
 
 function retryable(response: TransportResponse): boolean {
@@ -92,7 +93,12 @@ export function createAgent37Transport(
 		let response: TransportResponse | undefined;
 		for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
 			response = await bounded(request);
-			if (!retryable(response) || attempt + 1 === maxAttempts) return response;
+			if (
+				request.method !== "GET" ||
+				!retryable(response) ||
+				attempt + 1 === maxAttempts
+			)
+				return response;
 			const backoff = retryBaseDelayMs * 2 ** attempt;
 			const jitter = backoff * random();
 			const retryAfter = agent37RetryAfterMs(response, now());

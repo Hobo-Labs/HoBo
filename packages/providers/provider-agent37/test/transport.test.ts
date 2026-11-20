@@ -159,4 +159,47 @@ describe("Agent37 transport", () => {
 		await expect(transport(request)).rejects.toThrow("connection reset");
 		expect(calls).toBe(1);
 	});
+
+	it.each([
+		[503, "no_capacity"],
+		[409, "try_again"],
+		[500, "internal_error"],
+	])("does not replay a non-idempotent POST after %i %s", async (status, code) => {
+		let calls = 0;
+		const transport = createAgent37Transport({
+			fetchImpl: async () => {
+				calls += 1;
+				return jsonResponse(status, code);
+			},
+			sleep: async () => {
+				throw new Error("unexpected retry");
+			},
+		});
+		const response = await transport({
+			...request,
+			method: "POST",
+			url: "https://sandbox.agent37.app/v1/instances/i_test/exec",
+			body: JSON.stringify({ command: "printf ready" }),
+		});
+		expect(response.status).toBe(status);
+		expect(calls).toBe(1);
+	});
+
+	it("caps Retry-After at the transport timeout bound", async () => {
+		const delays: number[] = [];
+		let calls = 0;
+		const transport = createAgent37Transport({
+			fetchImpl: async () => {
+				calls += 1;
+				return calls === 1
+					? jsonResponse(503, "no_capacity", "1000000")
+					: jsonResponse(200);
+			},
+			sleep: async (milliseconds) => {
+				delays.push(milliseconds);
+			},
+		});
+		await transport(request);
+		expect(delays).toEqual([905_000]);
+	});
 });
