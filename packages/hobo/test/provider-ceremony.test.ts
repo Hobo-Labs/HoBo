@@ -195,15 +195,12 @@ describe("hobo up's provider ceremony", () => {
 			openBrowser: (url) => {
 				browsing = (async () => {
 					const view = await fetch(`${url}view`).then((res) => res.json());
-					expect(view.step).toBe("configure");
-					const specText = JSON.stringify(view.spec);
-					expect(specText).toMatch(/approve.*on hold/i);
-					expect(specText).toMatch(/approves.*on hold/i);
-					expect(specText).toMatch(/provider:db/);
-					const fieldLabel = specText.match(
-						/"label"\s*:\s*"([^"]*provider[^"]*)"/i,
-					)?.[1];
-					if (fieldLabel) asked.push(fieldLabel);
+					expect(view.view.actions[0].confirm).toMatch(/approve.*on hold/i);
+					expect(view.view.explanation.join(" ")).toMatch(/approves.*on hold/i);
+					const field = view.view.fields[0];
+					asked.push(
+						`${field.label}: ${field.options.map((o: { value: string }) => o.value).join(",")}`,
+					);
 					await fetch(`${url}action`, {
 						method: "POST",
 						headers: { "content-type": "application/json" },
@@ -217,7 +214,7 @@ describe("hobo up's provider ceremony", () => {
 			},
 		}).run(input());
 		await browsing;
-		expect(asked.length).toBeGreaterThan(0);
+		expect(asked).toEqual(["Provider for db: neon,supabase"]);
 		// Registered held, then approved by the second add.
 		expect(calls).toEqual(["supabase", "supabase"]);
 		expect(up.runs()).toBe(2);

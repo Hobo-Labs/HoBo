@@ -28,6 +28,7 @@ type Profile = {
 export function SettingsPage({ user }: { user: AuthUser }) {
   const { refetch: refetchAuth } = useAuth();
   const photoReadGeneration = useRef(0);
+  const photoReaderRef = useRef<FileReader | null>(null);
   const [layoutUser, setLayoutUser] = useState(user);
   const [saved, setSaved] = useState<Profile>({
     fullName: user.fullName,
@@ -44,25 +45,37 @@ export function SettingsPage({ user }: { user: AuthUser }) {
   function changePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
-    if (!file) return;
+    const generation = photoReadGeneration.current + 1;
+    photoReadGeneration.current = generation;
+    photoReaderRef.current?.abort();
+    if (!file) {
+      setReadingPhoto(false);
+      return;
+    }
     if (
       !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
       file.size > maxPhotoBytes
     ) {
+      setReadingPhoto(false);
       setError("Choose a PNG, JPEG, or WebP image no larger than 256 KB.");
       return;
     }
-    const generation = photoReadGeneration.current + 1;
-    photoReadGeneration.current = generation;
     const reader = new FileReader();
+    photoReaderRef.current = reader;
     setReadingPhoto(true);
     reader.onerror = () => {
-      if (generation !== photoReadGeneration.current) return;
+      if (generation !== photoReadGeneration.current) {
+        setReadingPhoto(false);
+        return;
+      }
       setReadingPhoto(false);
       setError("The image could not be read.");
     };
     reader.onload = () => {
-      if (generation !== photoReadGeneration.current) return;
+      if (generation !== photoReadGeneration.current) {
+        setReadingPhoto(false);
+        return;
+      }
       setReadingPhoto(false);
       const result = z.string().safeParse(reader.result);
       if (!result.success) {
@@ -78,6 +91,7 @@ export function SettingsPage({ user }: { user: AuthUser }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (readingPhoto) return;
     setSaving(true);
     setError("");
     setNotice("");
@@ -91,8 +105,12 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       setSaved(profile);
       setDraft(profile);
       setLayoutUser((current) => ({ ...current, ...profile }));
-      await refetchAuth();
       setNotice("Settings saved.");
+      try {
+        await refetchAuth();
+      } catch {
+        setNotice("Settings saved (session refresh is still catching up).");
+      }
     } catch {
       setError("Settings could not be saved. Check the fields and try again.");
     } finally {

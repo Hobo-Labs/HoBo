@@ -6,6 +6,7 @@ import {
 	type Spec,
 	validateSpec,
 } from "@json-render/core";
+import { z } from "zod";
 
 import { connectCandidates, OPTIONAL_SUFFIX } from "./candidates.js";
 import { connectCatalog } from "./catalog.js";
@@ -58,12 +59,29 @@ function promptFor(step: ConnectStep): string {
 	return `Build the single card a person needs to finish this step of connecting ${provider} (${step.kind}). Lead with the title and the explanation, put the primary action before secondary ones, include every required element, and nothing decorative.`;
 }
 
+const BindStateMarker = z.object({ $bindState: z.string() });
+
 function fingerprint(element: {
 	readonly type: string;
 	readonly props: unknown;
 	readonly on?: unknown;
+	readonly visible?: unknown;
 }): string {
-	return JSON.stringify([element.type, element.props, element.on ?? null]);
+	const propsParsed = z.record(z.string(), z.unknown()).safeParse(element.props);
+	const props = propsParsed.success
+		? {
+				...propsParsed.data,
+				value: BindStateMarker.safeParse(propsParsed.data.value).success
+					? { bound: true }
+					: propsParsed.data.value,
+			}
+		: element.props;
+	return JSON.stringify([
+		element.type,
+		props,
+		element.on ?? null,
+		element.visible ?? null,
+	]);
 }
 
 export function missingRequiredCandidates(
@@ -77,12 +95,24 @@ export function missingRequiredCandidates(
 		.map((candidate) => candidate.id);
 }
 
+const PressBindingSchema = z.object({
+	press: z.object({ action: z.string() }),
+});
+
 export function isRenderableConnectSpec(spec: Spec): boolean {
 	if (!validateSpec(spec, { checkOrphans: true }).valid) return false;
-	const known = new Set(Object.keys(connectCatalog.data.components));
-	return Object.values(spec.elements).every((element) =>
-		known.has(element.type),
-	);
+	const knownComponents = new Set(Object.keys(connectCatalog.data.components));
+	const knownActions = new Set(Object.keys(connectCatalog.data.actions));
+	for (const element of Object.values(spec.elements)) {
+		if (!knownComponents.has(element.type)) return false;
+		const press = PressBindingSchema.safeParse(element.on);
+		if (
+			press.success &&
+			!knownActions.has(press.data.press.action)
+		)
+			return false;
+	}
+	return true;
 }
 
 export interface ComposeOptions {

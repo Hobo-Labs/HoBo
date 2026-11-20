@@ -214,19 +214,24 @@ export async function startConnectPage(
 		| undefined;
 
 	const view = async () => {
-		const stepSnapshot = step;
-		const directiveSnapshot = directive;
+		let stepSnapshot = step;
+		let directiveSnapshot = directive;
 		const stepJson = JSON.stringify(stepSnapshot);
-		const composed =
+		let composed =
 			composedCache?.stepJson === stepJson
 				? composedCache.composed
 				: await composeConnectSpec(stepSnapshot, {
 						evaluate: options.evaluate,
 					});
-		if (
-			composedCache?.stepJson !== stepJson &&
-			JSON.stringify(step) === stepJson
-		)
+		if (JSON.stringify(step) !== stepJson) {
+			stepSnapshot = step;
+			directiveSnapshot = directive;
+			const liveJson = JSON.stringify(stepSnapshot);
+			composed = await composeConnectSpec(stepSnapshot, {
+				evaluate: options.evaluate,
+			});
+			composedCache = { stepJson: liveJson, composed };
+		} else if (composedCache?.stepJson !== stepJson)
 			composedCache = { stepJson, composed };
 		return JSON.stringify({
 			step: stepSnapshot.kind,

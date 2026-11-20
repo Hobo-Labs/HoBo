@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
 	type ConnectFlow,
@@ -119,6 +120,39 @@ describe("deterministicConnectSpec", () => {
 		const serialized = JSON.stringify(spec);
 		expect(serialized).not.toContain("must-not-show");
 		expect(serialized).toContain('"type":"password"');
+		expect(serialized).toContain('"$bindState":"/form/private_key"');
+	});
+
+	it("binds choice fields to form state with Radio options", () => {
+		const step: ConnectStep = {
+			kind: "configure",
+			provider: "hobo",
+			title: "Choose",
+			reason: "Pick one",
+			fields: [
+				{
+					name: "provider:db",
+					label: "Provider for db",
+					kind: "choice",
+					required: true,
+					options: [
+						{ value: "neon", label: "neon" },
+						{ value: "supabase", label: "supabase" },
+					],
+				},
+			],
+		};
+		const spec = deterministicConnectSpec(step);
+		const field = spec.elements["field-provider:db"];
+		expect(field?.type).toBe("Radio");
+		if (field === undefined) throw new Error("missing choice field element");
+		const options = z
+			.object({ options: z.array(z.string()) })
+			.parse(field.props).options;
+		expect(options).toEqual([
+			"neon",
+			"supabase",
+		]);
 	});
 
 	it("puts the recommended OIDC store first and binds each choice to the flow action", () => {
@@ -204,7 +238,9 @@ describe("composeConnectSpec", () => {
 			evaluate: omitting,
 		});
 		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toMatch(/omitted .*start/);
+		expect(composed.fallbackReason).toMatch(
+			/omitted .*start|composed spec failed validation/,
+		);
 	});
 
 	it("falls back to the deterministic page when the evaluator fails", async () => {

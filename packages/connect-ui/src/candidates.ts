@@ -1,6 +1,76 @@
 import type { Experimental_CompositionCandidate as Candidate } from "@json-render/core";
 
-import { type ConnectStep, providerLabel, storeLabel } from "./steps.js";
+import {
+	type ConfigField,
+	type ConnectStep,
+	providerLabel,
+	storeLabel,
+} from "./steps.js";
+
+function fieldChecks(field: ConfigField) {
+	const checks: {
+		type: string;
+		message: string;
+		args?: Readonly<Record<string, string>>;
+	}[] = [];
+	if (field.required)
+		checks.push({
+			type: "required",
+			message: `${field.label} is required`,
+		});
+	if (field.error)
+		checks.push({
+			type: "custom",
+			message: field.error,
+		});
+	if (field.kind === "url")
+		checks.push({
+			type: "pattern",
+			message: "Enter a valid URL (https://…)",
+			args: { pattern: String.raw`^https?://` },
+		});
+	return checks.length > 0 ? checks : null;
+}
+
+function fieldCandidate(field: ConfigField): Candidate {
+	if (field.kind === "choice") {
+		const options = (field.options ?? []).map((option) => option.value);
+		return {
+			id: `field-${field.name}`,
+			description: `Setting for ${field.label}`,
+			element: {
+				type: "Radio",
+				props: {
+					label: field.label,
+					name: field.name,
+					options,
+					value: { $bindState: `/form/${field.name}` },
+					checks: fieldChecks(field),
+					validateOn: "change" as const,
+				},
+			},
+		};
+	}
+	return {
+		id: `field-${field.name}`,
+		description: `Setting for ${field.label}`,
+		element: {
+			type: "Input",
+			props: {
+				label: field.label,
+				name: field.name,
+				type:
+					field.kind === "secret"
+						? ("password" as const)
+						: ("text" as const),
+				placeholder: field.description ?? null,
+				value: { $bindState: `/form/${field.name}` },
+				checks: fieldChecks(field),
+				validateOn: "change" as const,
+			},
+		},
+	};
+}
 
 // public-contract: the marker compose.ts reads to tell required candidates from optional ones.
 export const OPTIONAL_SUFFIX = "-optional";
@@ -59,29 +129,7 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 				root(step.title, step.reason),
 				heading(step.title),
 				text("reason", step.reason, "Why these settings are needed"),
-				...step.fields.map(
-					(field): Candidate => ({
-						id: `field-${field.name}`,
-						description: `Setting for ${field.label}`,
-						element: {
-							type: "Input",
-							props: {
-								label: field.label,
-								name: field.name,
-								type:
-									field.kind === "secret"
-										? ("password" as const)
-										: field.kind === "url"
-											? ("text" as const)
-											: ("text" as const),
-								placeholder: field.description ?? null,
-								value: field.kind === "secret" ? null : (field.value ?? null),
-								checks: null,
-								validateOn: null,
-							},
-						},
-					}),
-				),
+				...step.fields.map(fieldCandidate),
 				{
 					id: "submit",
 					description: "Save settings and continue",

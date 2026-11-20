@@ -1,11 +1,25 @@
 import { isNonEmptySpec, type Spec } from "@json-render/core";
-import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
+import {
+	defineRegistry,
+	JSONUIProvider,
+	Renderer,
+	useStateStore,
+} from "@json-render/react";
 import { shadcnComponents } from "@json-render/shadcn";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import {
+	StrictMode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
 
+import type { ConfigField } from "../steps.js";
 import { connectCatalog } from "../catalog.js";
+import { formInitialState } from "./form-state.js";
 
 const ActionParamsSchema = z.record(z.string(), z.string());
 type ActionParams = z.infer<typeof ActionParamsSchema>;
@@ -16,26 +30,48 @@ function actionParams(
 	return ActionParamsSchema.parse(params ?? {});
 }
 
-let dispatchToFlow: (action: string, params: ActionParams) => Promise<void> =
-	async () => undefined;
+const FormValuesSchema = z.record(z.string(), z.string());
+
+function FormParamsBridge() {
+	const { get } = useStateStore();
+	useEffect(() => {
+		formParamsRef.current = () => {
+			const direct = FormValuesSchema.safeParse(get("/form"));
+			if (direct.success) return direct.data;
+			const wrapped = z.object({ form: FormValuesSchema }).safeParse(get("/form"));
+			return wrapped.success ? wrapped.data.form : {};
+		};
+	});
+	return null;
+}
+
+const formParamsRef = { current: (): Record<string, string> => ({}) };
+
+const ButtonPressSchema = z.object({
+	press: z.object({ action: z.string() }),
+});
+const ButtonLabelSchema = z.object({ label: z.string() });
+
+const confirmByLabelRef = { current: new Map<string, string>() };
+
+function ConnectButton(
+	props: Parameters<typeof shadcnComponents.Button>[0],
+) {
+	const confirm = confirmByLabelRef.current.get(props.props.label);
+	return (
+		<span data-agent-confirm={confirm}>
+			<shadcnComponents.Button {...props} />
+		</span>
+	);
+}
 
 const { registry } = defineRegistry(connectCatalog, {
-	actions: {
-		"connect.submit": async (params) =>
-			dispatchToFlow("connect.submit", actionParams(params)),
-		"connect.chooseStore": async (params) =>
-			dispatchToFlow("connect.chooseStore", actionParams(params)),
-		"connect.start": async (params) =>
-			dispatchToFlow("connect.start", actionParams(params)),
-		"connect.cancel": async (params) =>
-			dispatchToFlow("connect.cancel", actionParams(params)),
-	},
 	components: {
 		Card: shadcnComponents.Card,
 		Stack: shadcnComponents.Stack,
 		Heading: shadcnComponents.Heading,
 		Text: shadcnComponents.Text,
-		Button: shadcnComponents.Button,
+		Button: ConnectButton,
 		Alert: shadcnComponents.Alert,
 		Badge: shadcnComponents.Badge,
 		Link: shadcnComponents.Link,
@@ -58,6 +94,7 @@ interface View {
 	spec: Spec;
 	directive: Directive;
 	confirmByAction: ReadonlyMap<string, string>;
+	formFields: readonly ConfigField[];
 }
 
 const DirectiveSchema = z.discriminatedUnion("kind", [
@@ -69,6 +106,25 @@ const DirectiveSchema = z.discriminatedUnion("kind", [
 		fields: z.record(z.string(), z.string()),
 	}),
 ]);
+
+const ConfigFieldSchema = z.object({
+	name: z.string(),
+	label: z.string(),
+	description: z.string().optional(),
+	kind: z.enum(["text", "url", "secret", "choice"]),
+	required: z.boolean(),
+	value: z.string().optional(),
+	options: z
+		.array(
+			z.object({
+				value: z.string(),
+				label: z.string(),
+				description: z.string().optional(),
+			}),
+		)
+		.optional(),
+	error: z.string().optional(),
+});
 
 const ConnectViewSchema = z.object({
 	step: z.string(),
@@ -92,6 +148,7 @@ const ConnectViewSchema = z.object({
 					confirm: z.string().optional(),
 				}),
 			),
+			fields: z.array(ConfigFieldSchema).optional(),
 		})
 		.optional(),
 });
@@ -114,6 +171,7 @@ function viewFromParsedConnect(parsed: ParsedConnectView): View {
 		spec: parsed.spec,
 		directive: parsed.directive,
 		confirmByAction,
+		formFields: parsed.view?.fields ?? [],
 	};
 }
 
@@ -145,6 +203,7 @@ function ConnectPage() {
 	const [view, setView] = useState<View | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const busyRef = useRef(false);
 
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
@@ -168,9 +227,10 @@ function ConnectPage() {
 
 	const dispatch = useCallback(
 		async (action: string, params: ActionParams) => {
-			if (busy) return;
+			if (busyRef.current) return;
 			const confirm = view?.confirmByAction.get(action);
 			if (confirm !== undefined && !window.confirm(confirm)) return;
+			busyRef.current = true;
 			setBusy(true);
 			try {
 				const response = await fetch(`${base}action`, {
@@ -187,12 +247,35 @@ function ConnectPage() {
 			} catch (reason) {
 				setError(String(reason));
 			} finally {
+				busyRef.current = false;
 				setBusy(false);
 			}
 		},
-		[busy, view],
+		[view],
 	);
-	dispatchToFlow = dispatch;
+	const initialState = useMemo(
+		() =>
+			view === null
+				? {}
+				: formInitialState(view.spec, view.formFields),
+		[view],
+	);
+
+	useEffect(() => {
+		if (view === null) return;
+		const byLabel = new Map<string, string>();
+		for (const [action, message] of view.confirmByAction) {
+			const element = Object.values(view.spec.elements).find((candidate) => {
+				if (candidate.type !== "Button") return false;
+				const press = ButtonPressSchema.safeParse(candidate.on);
+				return press.success && press.data.press.action === action;
+			});
+			if (element === undefined) continue;
+			const label = ButtonLabelSchema.safeParse(element.props);
+			if (label.success) byLabel.set(label.data.label, message);
+		}
+		confirmByLabelRef.current = byLabel;
+	}, [view]);
 
 	if (error !== null)
 		return (
@@ -203,10 +286,15 @@ function ConnectPage() {
 	if (view === null) return <p className="hobo-connect-loading">Loading…</p>;
 	return (
 		<JSONUIProvider
+			key={`${view.step}-${view.composedBy}`}
 			registry={registry}
+			initialState={initialState}
 			handlers={{
 				"connect.submit": (params) =>
-					dispatch("connect.submit", actionParams(params)),
+					dispatch("connect.submit", {
+						...formParamsRef.current(),
+						...actionParams(params),
+					}),
 				"connect.chooseStore": (params) =>
 					dispatch("connect.chooseStore", actionParams(params)),
 				"connect.start": (params) =>
@@ -215,7 +303,10 @@ function ConnectPage() {
 					dispatch("connect.cancel", actionParams(params)),
 			}}
 		>
-			<Renderer spec={view.spec} registry={registry} />
+			<FormParamsBridge />
+			<fieldset disabled={busy} className="connect-fieldset">
+				<Renderer spec={view.spec} registry={registry} />
+			</fieldset>
 		</JSONUIProvider>
 	);
 }
