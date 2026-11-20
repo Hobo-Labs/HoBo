@@ -21,6 +21,16 @@ export function parseRivetRuntimeMode<T>(value: T): RivetRuntimeMode {
 	);
 }
 
+export function parseRivetActorFidelity<T>(value: T): "local-sqlite" {
+	if (value === undefined || value === "local-sqlite") return "local-sqlite";
+	throw new RivetJournalError(
+		"PARSE",
+		value === "rivetkit"
+			? "RivetKit fidelity is not implemented by the local journal"
+			: `rivet fidelity must be local-sqlite, got ${JSON.stringify(cloneAsJson(value))}`,
+	);
+}
+
 export function parseRivetRuntimeConfig<T>(input: T): RivetRuntimeConfig {
 	const json = cloneAsJson(input);
 	if (!isJsonObject(json)) {
