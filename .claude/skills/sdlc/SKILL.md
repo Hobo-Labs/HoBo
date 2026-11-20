@@ -151,8 +151,9 @@ For **each** open PR in bottom-up order:
    paths and acceptance tags, refresh evidence, and run or resume the exact-six
    OptimizeXP council. A nay emits rework; repeat implementation → independent
    review → evidence → council until unanimous current-head yay or honest
-   blocked termination. A non-design exemption must be machine-readable and
-   justified; never skip silently.
+   blocked termination. A `no-visual-design-change` exemption must be
+   machine-readable and justified; technical contracts and documentation still
+   require independent review and appropriate validation. Never skip silently.
 5. **Comments & review feedback** — list every unresolved PR comment and review thread
    (`gh api` / `gh pr view` / review comments). Address **all** of them: fix code, or reply with
    a reasoned non-action and resolve the thread. Leave no actionable thread open.

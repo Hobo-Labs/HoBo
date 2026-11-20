@@ -149,8 +149,9 @@ For **each** PR:
 2. Adversarial pass (security/tenancy, contracts, cascade, over-engineering, shared-file leaks).
 3. Independent review (spawn `reviewer` or re-run acceptance + gates yourself).
 4. Determine design relevance from paths/acceptance tags, explicit requests,
-   or prior council state. A purely internal exemption must be machine-readable
-   and justified. For relevant work, refresh current-head evidence and run or
+   or prior council state. A nonvisual exemption must be machine-readable and
+   justified; technical contracts and documentation still need independent
+   review and appropriate validation. For relevant work, refresh evidence and run or
    resume the exact-six council; nay routes to rework and then repeats review,
    evidence, and council.
 5. Resolve **all** PR comments/threads.
