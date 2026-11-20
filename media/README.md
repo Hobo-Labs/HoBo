@@ -102,10 +102,8 @@ authority is [`site/DESIGN.md`](../site/DESIGN.md) under
 
 **There is deliberately no `media/DESIGN.md`.** `scripts/check-design-md.mts`
 treats any directory containing one as a design project with its own identity,
-and the repo already carries three — a fourth copy of the same contract is a
-fourth thing to drift, and `packages/control-yard/DESIGN.md` has already drifted
-from `site/DESIGN.md`. Pointing at the single contract serves the gate's actual
-purpose (*"agents share one visual contract"*) better than duplicating it.
+and duplicating the site contract would create another source of drift. Pointing
+at the single contract serves the gate's purpose better than duplicating it.
 
 The consequence, stated plainly: `pnpm run design:lint` does **not** lint this
 package. If this surface ever grows its own visual language, that is the moment
