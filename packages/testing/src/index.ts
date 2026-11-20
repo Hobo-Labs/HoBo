@@ -36,7 +36,9 @@ export {
 	type KeyValuePort,
 	type ProgressiveEmulatorOptions,
 	type QueueEmulator,
+	type ScheduleDriver,
 	type ScheduleEmulator,
+	ScheduleHandlerError,
 	type ServiceEmulator,
 	type ServiceEmulatorFactories,
 } from "./emulators.js";

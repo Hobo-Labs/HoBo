@@ -263,10 +263,13 @@ describe("durable budget history fences", () => {
 
 	it("does not consume an observation when configuration persistence fails", () => {
 		let refuse = false;
+		const base = snapshot();
+		const journal: BudgetAuthorityEvent[] = [];
 		const authority = createBudgetAdmissionAuthority({
-			snapshot: snapshot(),
-			commit() {
+			snapshot: base,
+			commit(event) {
 				if (refuse) throw new Error("durable write refused");
+				journal.push(event);
 			},
 		});
 		const removed = authority.read(NOW);
@@ -279,11 +282,17 @@ describe("durable budget history fences", () => {
 		bucket.remainingUnits = 20;
 		refuse = true;
 		expect(() => authority.configure(refreshed, 1, NOW)).toThrow(
-			"write refused",
+			"budget commit outcome uncertain",
 		);
-		refuse = false;
-		authority.configure(snapshot(), 1, NOW);
-		expect(authority.read(NOW).entitlements[0]?.remainingUnits).toBe(10);
+		expect(() => authority.read(NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		reopened.configure(snapshot(), 1, NOW);
+		expect(reopened.read(NOW).entitlements[0]?.remainingUnits).toBe(10);
 	});
 
 	it("rejects journal entries that revive a period or removed bucket", () => {
@@ -534,22 +543,27 @@ describe("durable budget history fences", () => {
 	});
 
 	it("does not retire a period when its durable commit fails", () => {
-		let refuse = true;
+		const base = snapshot();
 		const authority = createBudgetAdmissionAuthority({
-			snapshot: snapshot(),
+			snapshot: base,
 			commit() {
-				if (refuse) throw new Error("durable write refused");
+				throw new Error("durable write refused");
 			},
 		});
 		const p2 = snapshot();
 		if (!p2.identity) throw new Error("fixture identity missing");
 		p2.identity.periodId = "p2";
-		expect(() => authority.configure(p2, 0, NOW)).toThrow("write refused");
-		refuse = false;
-		authority.configure(snapshot(), 0, NOW);
-		expect(authority.read(NOW).identity?.periodId).toBe("p1");
-		authority.configure(p2, 1, NOW);
-		expect(() => authority.configure(snapshot(), 2, NOW)).toThrow(
+		expect(() => authority.configure(p2, 0, NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
+		expect(() => authority.read(NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
+		const reopened = createBudgetAdmissionAuthority({ snapshot: base });
+		reopened.configure(snapshot(), 0, NOW);
+		expect(reopened.read(NOW).identity?.periodId).toBe("p1");
+		reopened.configure(p2, 1, NOW);
+		expect(() => reopened.configure(snapshot(), 2, NOW)).toThrow(
 			"retired period",
 		);
 	});

@@ -38,6 +38,7 @@
 		"@hobo/data-postgres": "workspace:*",
 		"@types/node": "^22.15.29",
 		"@types/pg": "8.15.5",
+		"fast-check": "^4.3.0",
 		"vitest": "^4.1.9",
 		"@hobo/storage-sqlite": "workspace:*"
 	},

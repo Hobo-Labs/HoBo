@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { clone, create, toJsonString } from "@bufbuild/protobuf";
 import { canonicalFenceOperationReceipt } from "@hobo/data-core";
 import { stableHash } from "@hobo/pricing";
+import fc from "fast-check";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import {
@@ -182,11 +183,11 @@ function fixture() {
 			providerAccounts: [
 				create(ProviderAccountExposureSchema, {
 					providerAccountId: "source-account",
-					liabilityMicros: 10,
+					liabilityMicros: Math.floor(actualMicros / 3),
 				}),
 				create(ProviderAccountExposureSchema, {
 					providerAccountId: "dest-account",
-					liabilityMicros: 20,
+					liabilityMicros: actualMicros - Math.floor(actualMicros / 3),
 				}),
 			],
 			entitlementClaims: reservation.entitlementClaims.map((claim) => ({
@@ -894,3 +895,172 @@ it.runIf(!!process.env.HOBO_TEST_POSTGRES_URL)(
 		}
 	},
 );
+
+describe("receiver-bound budget settlement generated histories", () => {
+	it("retains the hold across forged or mismatched proofs and replay", () => {
+		const attacks = fc.constantFrom(
+			"receiver",
+			"finance",
+			"amount",
+			"usage-reference",
+			"account-usage",
+			"receipt-scope",
+		);
+		fc.assert(
+			fc.property(
+				fc.integer({ min: 0, max: 60 }),
+				fc.boolean(),
+				fc.array(attacks, { minLength: 1, maxLength: 8 }),
+				(actual, markUncertain, attempts) => {
+					const f = fixture();
+					const attacker = generateKeyPairSync("ed25519");
+					const events: Parameters<
+						typeof createBudgetAdmissionAuthority
+					>[0]["priorEvents"] extends readonly (infer E)[] | undefined
+						? E[]
+						: never = [];
+					const authority = createBudgetAdmissionAuthority({
+						snapshot: f.base,
+						fenceTrust: f.trust,
+						commit(event) {
+							events.push(event);
+						},
+					});
+					authority.reserve(f.input);
+					if (markUncertain) authority.uncertain("reservation-1");
+					const claim = {
+						reservationId: "reservation-1",
+						requestDigest: REQUEST,
+						executionDigest: EXECUTION,
+					};
+					const held = authority.lookup("reservation-1");
+					const proof = f.evidence(held, actual);
+					expect(() =>
+						authority.settle("reservation-1", actual, proof),
+					).toThrow();
+					expect(() =>
+						authority.claimExecution({ ...claim, executionDigest: PLAN }),
+					).toThrow("admitted execution");
+					authority.claimExecution(claim);
+					const reservation = authority.lookup("reservation-1");
+					if (!reservation) throw new Error("reservation missing");
+					for (const attack of attempts) {
+						const before = authority.read(now);
+						const eventCount = events.length;
+						let altered = proof;
+						let charged = actual;
+						switch (attack) {
+							case "receiver": {
+								const receipt = JSON.parse(proof.fenceOperationReceiptJson);
+								const { signature: _signature, ...body } = receipt;
+								const forged = {
+									...body,
+									signature: sign(
+										null,
+										Buffer.from(canonicalFenceOperationReceipt(body)),
+										attacker.privateKey,
+									).toString("base64url"),
+								};
+								const unsigned = {
+									...proof,
+									fenceOperationReceiptJson: JSON.stringify(forged),
+								};
+								altered = {
+									...unsigned,
+									financeSignature: sign(
+										null,
+										Buffer.from(
+											canonicalBudgetFenceSettlement(
+												reservation,
+												actual,
+												unsigned,
+											),
+										),
+										f.finance.privateKey,
+									).toString("base64url"),
+								};
+								break;
+							}
+							case "finance":
+								altered = {
+									...proof,
+									financeSignature: sign(
+										null,
+										Buffer.from(
+											canonicalBudgetFenceSettlement(
+												reservation,
+												actual,
+												proof,
+											),
+										),
+										attacker.privateKey,
+									).toString("base64url"),
+								};
+								break;
+							case "amount":
+								charged++;
+								break;
+							case "usage-reference":
+								altered = { ...proof, usageEvidenceRef: "substituted" };
+								break;
+							case "account-usage":
+								altered = {
+									...proof,
+									providerAccounts: proof.providerAccounts.map((row, index) =>
+										index === 0
+											? { ...row, liabilityMicros: row.liabilityMicros + 1 }
+											: row,
+									),
+								};
+								break;
+							case "receipt-scope": {
+								const receipt = JSON.parse(proof.fenceOperationReceiptJson);
+								altered = {
+									...proof,
+									fenceOperationReceiptJson: JSON.stringify({
+										...receipt,
+										operationId: "other-operation",
+									}),
+								};
+								break;
+							}
+						}
+						expect(() =>
+							authority.settle("reservation-1", charged, altered),
+						).toThrow();
+						expect(authority.read(now)).toEqual(before);
+						expect(events).toHaveLength(eventCount);
+						expect(before.reservedMicros).toBe(60);
+						expect(() =>
+							authority.release("reservation-1", true, "unused"),
+						).toThrow();
+						expect(
+							createBudgetAdmissionAuthority({
+								snapshot: f.base,
+								fenceTrust: f.trust,
+								priorEvents: events,
+							}).read(now),
+						).toEqual(before);
+					}
+					authority.settle("reservation-1", actual, proof);
+					const after = authority.read(now);
+					expect(after).toMatchObject({
+						reservedMicros: 0,
+						spentMicros: actual,
+					});
+					const eventCount = events.length;
+					authority.settle("reservation-1", actual, proof);
+					expect(events).toHaveLength(eventCount);
+					expect(
+						createBudgetAdmissionAuthority({
+							snapshot: f.base,
+							fenceTrust: f.trust,
+							priorEvents: events,
+						}).read(now),
+					).toEqual(after);
+				},
+			),
+			{ seed: 614450, numRuns: 120 },
+		);
+	});
+});
