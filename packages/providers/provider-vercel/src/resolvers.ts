@@ -366,8 +366,7 @@ type Dispatch = HttpTransport;
  * calls the network directly, and no unguarded transport is ever handed a
  * credential.
  */
-/** Journal identity of one creation POST: the same key a retry inspects to
- * recognise a resource this resolver itself created. */
+/** Journal identity of one creation POST. */
 type CreationKey = {
 	readonly mutationId: string;
 	readonly requestDigest: string;
@@ -1018,31 +1017,6 @@ function projectCreateRequest(
 	};
 }
 
-/** Whether the journal holds this operation's own acknowledged creation POST:
- * a project found by name after a failed readback is then the one this
- * resolver created. An uncertain create (lost response or a definite refusal
- * such as a same-name 409) proves nothing, so that project stays adoption. */
-async function createdByThisOperation(
-	options: VercelResolverOptions,
-	request: ResolveRequest,
-	create: ProjectCreateRequest,
-): Promise<boolean> {
-	const journal = options.mutationJournal;
-	if (
-		journal?.persistence !== "durable-cas" ||
-		journal.inspect === undefined ||
-		request.desired.operationId === undefined
-	)
-		return false;
-	const key = creationKey(
-		options,
-		request,
-		`${VERCEL_API_BASE}${create.path}`,
-		JSON.stringify(create.body),
-	);
-	return (await journal.inspect(key)).status === "acknowledged";
-}
-
 async function requireProjectControl(
 	options: VercelResolverOptions,
 	request: ResolveRequest,
@@ -1164,13 +1138,11 @@ function createProjectResolver(
 			}
 
 			checkProjectRepository(desired, observed, true);
-			// Only a pinned ID or this operation's own journaled creation makes the
-			// project ours; anything found by name or by a caller-supplied
-			// observation is adoption of a project this run did not create.
+			// A journal claim does not bind a project ID: a request can fail
+			// before reaching Vercel, or a same-name project can be replaced.
+			// Only the recorded physical ID makes this an observation.
 			const owned =
-				(parsed.ref.physicalId !== undefined &&
-					parsed.ref.physicalId.length > 0) ||
-				(await createdByThisOperation(options, parsed, create));
+				parsed.ref.physicalId !== undefined && parsed.ref.physicalId.length > 0;
 			await requireProjectControl(
 				options,
 				parsed,

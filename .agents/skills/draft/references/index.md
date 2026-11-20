@@ -4,7 +4,6 @@ This directory is an OKF-style reference bundle for the draft skill. `SKILL.md` 
 
 ## Proof Layer References
 
-- [Planning](plans/process.md) - classify requests and choose the lowest proof layer.
 - [Technical proofs](technical-proofs/process.md) - isolate atomic technical concepts.
 - [Experience proofs](exp-proofs/process.md) - mock UX, DX, CX, API, SDK, and other experience surfaces.
 - [Epic proofs](epic-proofs/process.md) - roll up lower-layer proofs into isolated epic slices.

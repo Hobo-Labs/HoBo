@@ -32,15 +32,17 @@ describe("SDK queue planning", () => {
 		});
 	});
 	it("does not treat a key-value or object-storage provider as a queue", () => {
-		const vercel = createVercelProvider();
+		const provider = createVercelProvider();
 		const storageOnly = {
-			...vercel,
-			capabilities: vercel.capabilities.filter(
+			...provider,
+			capabilities: provider.capabilities.filter(
 				(capability) =>
 					capability.port === "kv" || capability.port === "objectStore",
 			),
 		};
-		expect(storageOnly.capabilities.length).toBeGreaterThan(0);
+		expect(
+			storageOnly.capabilities.map((capability) => capability.port),
+		).toEqual(["objectStore", "kv"]);
 		const result = plan(
 			manifest,
 			{ deploymentId: "queue-test" },
