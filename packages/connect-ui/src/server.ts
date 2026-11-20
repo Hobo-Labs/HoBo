@@ -13,30 +13,16 @@ import type { Experimental_CompositionEvaluator as Evaluator } from "@json-rende
 
 import { z } from "zod";
 
-import { composeConnectSpec } from "./compose.js";
+import { composeConnectSpec, deterministicConnectSpec } from "./compose.js";
 import {
 	CONNECT_ACTIONS,
 	type ConnectActionName,
 	type ConnectStep,
+	isConnectAction,
 	isTerminalStep,
 } from "./steps.js";
+import { stepView } from "./view.js";
 
-// The connect page a lifecycle opens (`hobo ci up`, `hobo cd up`): a loopback
-// server that renders the current step's composed spec and turns the page's
-// actions into flow transitions. The flow is the authority: the page can only
-// ask for one of three actions, and only the flow moves the step.
-//
-// - Bound to 127.0.0.1 on an ephemeral port, under an unguessable per-session
-//   path (`/s/<token>/`). A request outside it is a 404.
-// - A provider redirect (GitHub's App manifest POST, Vercel's authorize URL)
-//   is a *directive* the flow returns; the browser follows it and the provider
-//   sends the browser back to `/s/<token>/callback`, which the flow handles.
-// - No secret value is ever in a response: steps carry store references only.
-// - CSP: scripts and connections are 'self' only. Inline *styles* are allowed
-//   because Radix positions some shadcn parts with style attributes; the page
-//   renders no untrusted content.
-
-/** What a flow asks the browser to do next, beside the new step. */
 // domain-view: narrowed union of BrowserDirectiveRecord in data-models/connect_ui.proto.
 export type BrowserDirective =
 	| { readonly kind: "none" }
@@ -118,7 +104,7 @@ function send(
 		"x-content-type-options": "nosniff",
 		"referrer-policy": "no-referrer",
 		"content-security-policy":
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action https://github.com; frame-ancestors 'none'",
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; form-action https://github.com; frame-ancestors 'none'",
 	});
 	res.end(body);
 }
@@ -187,10 +173,17 @@ export async function startConnectPage(
 	const done = new Promise<ConnectStep>((resolve) => {
 		settle = resolve;
 	});
-	// One transition at a time: a double click cannot run two provider calls.
-	let queue: Promise<void> = Promise.resolve();
+	if (isTerminalStep(step)) settle(step);
+	let pendingHandoff:
+		| {
+				readonly previousStep: ConnectStep;
+				readonly step: ConnectStep;
+				readonly directive: BrowserDirective;
+		  }
+		| undefined;
+	let transitionQueue: Promise<void> = Promise.resolve();
 	const transition = (run: () => Promise<FlowTransition>) => {
-		const next = queue.then(async () => {
+		const next = transitionQueue.then(async () => {
 			if (isTerminalStep(step)) return;
 			try {
 				const result = await run();
@@ -209,20 +202,55 @@ export async function startConnectPage(
 			}
 			if (isTerminalStep(step)) settle(step);
 		});
-		queue = next.catch(() => undefined);
+		transitionQueue = next.catch(() => undefined);
 		return next;
 	};
 
+	let composedCache:
+		| {
+				readonly stepJson: string;
+				readonly composed: Awaited<ReturnType<typeof composeConnectSpec>>;
+		  }
+		| undefined;
+
 	const view = async () => {
-		const composed = await composeConnectSpec(step, {
-			evaluate: options.evaluate,
-		});
+		let stepSnapshot = step;
+		let directiveSnapshot = directive;
+		let stepJson = JSON.stringify(stepSnapshot);
+		let composed: Awaited<ReturnType<typeof composeConnectSpec>> | undefined =
+			composedCache?.stepJson === stepJson ? composedCache.composed : undefined;
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			if (composed === undefined)
+				composed = await composeConnectSpec(stepSnapshot, {
+					evaluate: options.evaluate,
+				});
+			if (JSON.stringify(step) === stepJson) break;
+			stepSnapshot = step;
+			directiveSnapshot = directive;
+			stepJson = JSON.stringify(stepSnapshot);
+			composed =
+				composedCache?.stepJson === stepJson
+					? composedCache.composed
+					: undefined;
+		}
+		if (composed === undefined || JSON.stringify(step) !== stepJson) {
+			stepSnapshot = step;
+			directiveSnapshot = directive;
+			stepJson = JSON.stringify(stepSnapshot);
+			composed = {
+				spec: deterministicConnectSpec(stepSnapshot),
+				composedBy: "deterministic",
+				fallbackReason: "step changed during composition",
+			};
+		}
+		composedCache = { stepJson, composed };
 		return JSON.stringify({
-			step: step.kind,
-			terminal: isTerminalStep(step),
+			step: stepSnapshot.kind,
+			terminal: isTerminalStep(stepSnapshot),
 			composedBy: composed.composedBy,
 			spec: composed.spec,
-			directive,
+			directive: directiveSnapshot,
+			view: stepView(stepSnapshot),
 		});
 	};
 
@@ -256,6 +284,7 @@ export async function startConnectPage(
 				return;
 			}
 			if (req.method === "POST" && route === "action") {
+				const observedStep = step;
 				const parsed = parseActionBody(await readBody(req));
 				if (parsed === undefined)
 					return send(
@@ -264,15 +293,57 @@ export async function startConnectPage(
 						"application/json",
 						'{"error":"invalid action"}',
 					);
-				await transition(() =>
-					options.flow.onAction(parsed.action, parsed.params, step),
-				);
+				if (!isConnectAction(parsed.action))
+					return send(
+						res,
+						400,
+						"application/json",
+						'{"error":"invalid action"}',
+					);
+				await transition(async () => {
+					if (
+						parsed.action === "connect.start" &&
+						pendingHandoff?.step === step &&
+						(observedStep === pendingHandoff.previousStep ||
+							observedStep === step)
+					)
+						return { step, directive: pendingHandoff.directive };
+					if (
+						step !== observedStep ||
+						!stepView(step).actions.some(
+							(action) => action.action === parsed.action,
+						)
+					)
+						return { step };
+					const previous = step;
+					const result = await options.flow.onAction(
+						parsed.action,
+						parsed.params,
+						step,
+					);
+					pendingHandoff =
+						parsed.action === "connect.start" &&
+						result.step.kind === previous.kind &&
+						result.step.provider === previous.provider &&
+						result.directive !== undefined &&
+						result.directive.kind !== "none"
+							? {
+									previousStep: previous,
+									step: result.step,
+									directive: result.directive,
+								}
+							: undefined;
+					return result;
+				});
 				return send(res, 200, "application/json", await view());
 			}
 			if (req.method === "GET" && route === "callback") {
 				const onCallback = options.flow.onCallback;
 				if (onCallback !== undefined)
-					await transition(() => onCallback(url.searchParams, step));
+					await transition(() => {
+						pendingHandoff = undefined;
+						return onCallback(url.searchParams, step);
+					});
 				// Back to the page, which renders the step the callback produced.
 				res.writeHead(303, { location: base, "cache-control": "no-store" });
 				return res.end();

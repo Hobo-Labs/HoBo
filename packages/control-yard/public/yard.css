@@ -1,8 +1,10 @@
-
-
-
-
-@import url("https://fonts.googleapis.com/css2?family=Chewy&display=swap");
+@font-face {
+	font-family: "Chewy";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("./assets/fonts/chewy/Chewy-Regular.ttf") format("truetype");
+}
 
 :root {
 	color-scheme: light;
@@ -32,7 +34,6 @@
 * {
 	box-sizing: border-box;
 }
-
 
 body::after {
 	content: "";
@@ -111,7 +112,6 @@ header h1 {
 	margin-bottom: 14px;
 }
 
-
 button {
 	font-family: var(--font-display);
 	font-size: 1rem;
@@ -145,7 +145,6 @@ button:focus-visible {
 	outline: 2.5px solid var(--spark);
 	outline-offset: 2px;
 }
-
 
 #sheet-close {
 	font-family: var(--font-display);

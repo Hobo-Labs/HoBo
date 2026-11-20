@@ -41,6 +41,83 @@ const readPublic: typeof fetch = async (url) => {
 };
 
 describe("PR batch routing", () => {
+	it("keeps the merge-group release and CI batches off an unreserved fleet", async () => {
+		for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+			const merge = {
+				...env,
+				GITHUB_EVENT_NAME: "merge_group",
+				GITHUB_WORKFLOW_REF: `Hobo-Labs/HoBo/.github/workflows/${workflow}@refs/heads/main`,
+			};
+			for (const args of [[], ["--include-own-run", "true"]]) {
+				const decision = await main(args, merge, {
+					routingConfig: routing("auto"),
+					fetch: readPublic,
+				});
+				assert.deepEqual(
+					[decision.tier, decision.runner],
+					["github", "ubuntu-24.04"],
+				);
+				assert.match(
+					decision.reason,
+					/merge-group batch.*no verified fleet capacity/u,
+				);
+			}
+		}
+	});
+
+	it("refuses the merge-group fallback when public compute cannot be verified", async () => {
+		const merge = { ...env, GITHUB_EVENT_NAME: "merge_group" };
+		await assert.rejects(
+			main([], merge, {
+				routingConfig: routing("auto"),
+				fetch: async () =>
+					Response.json({
+						...publicRepo,
+						private: true,
+						visibility: "private",
+					}),
+			}),
+			/merge-group.*public compute evidence is unavailable/u,
+		);
+	});
+
+	it("preserves an explicit merge-group fleet pin", async () => {
+		const merge = { ...env, GITHUB_EVENT_NAME: "merge_group" };
+		const decision = await main([], merge, {
+			routingConfig: routing("fleet"),
+			fetch: async () => {
+				throw new Error("unexpected read");
+			},
+		});
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
+	});
+
+	it("does not send an optional box into an unreserved merge-group batch", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "merge-batch-route-"));
+		try {
+			const output = join(dir, "output");
+			writeFileSync(output, "");
+			await main(
+				[],
+				{ ...env, GITHUB_EVENT_NAME: "merge_group", GITHUB_OUTPUT: output },
+				{
+					routingConfig: JSON.stringify({
+						...config,
+						runnerRouting: {
+							...config.runnerRouting,
+							pin: "auto",
+							boxRunner: true,
+						},
+					}),
+					fetch: readPublic,
+				},
+			);
+			assert.match(readFileSync(output, "utf8"), /^box_runner=$/mu);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("routes the whole batch to the verified public standard runner without a capacity claim", async () => {
 		const decision = await main([], env, {
 			routingConfig: routing("auto"),
@@ -198,7 +275,7 @@ describe("PR batch routing", () => {
 		}
 	});
 
-	it("stops the action rather than silently selecting Ubuntu if PR routing fails", () => {
+	it("stops the action rather than silently selecting Ubuntu if batch routing fails", () => {
 		const action = readFileSync(
 			join(root, ".github/actions/route-runner/action.yml"),
 			"utf8",
@@ -219,21 +296,22 @@ describe("PR batch routing", () => {
 		try {
 			const output = join(dir, "output");
 			writeFileSync(output, "");
-			for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
-				const result = spawnSync("bash", ["-c", script], {
-					cwd: dir,
-					encoding: "utf8",
-					env: {
-						PATH: process.env.PATH ?? "",
-						GITHUB_OUTPUT: output,
-						GITHUB_EVENT_NAME: "pull_request",
-						GITHUB_WORKFLOW_REF: `Hobo-Labs/HoBo/.github/workflows/${workflow}@refs/pull/1/merge`,
-					},
-				});
-				assert.notEqual(result.status, 0);
-				assert.doesNotMatch(readFileSync(output, "utf8"), /runner=/u);
-				assert.match(result.stdout, /no batch was queued/u);
-			}
+			for (const event of ["pull_request", "merge_group"])
+				for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+					const result = spawnSync("bash", ["-c", script], {
+						cwd: dir,
+						encoding: "utf8",
+						env: {
+							PATH: process.env.PATH ?? "",
+							GITHUB_OUTPUT: output,
+							GITHUB_EVENT_NAME: event,
+							GITHUB_WORKFLOW_REF: `Hobo-Labs/HoBo/.github/workflows/${workflow}@refs/pull/1/merge`,
+						},
+					});
+					assert.notEqual(result.status, 0);
+					assert.doesNotMatch(readFileSync(output, "utf8"), /runner=/u);
+					assert.match(result.stdout, /no batch was queued/u);
+				}
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

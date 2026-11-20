@@ -240,7 +240,7 @@ describe("upsert", () => {
 		expect(iac.calls.filter((call) => call.startsWith("destroy:"))).toEqual([]);
 	});
 
-	it("detects later changes to legacy resources when their applied plan is recorded", async () => {
+	it("refuses legacy no-op and update decisions without recorded applied provenance", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
 		const fixture = loadPlan();
@@ -269,10 +269,24 @@ describe("upsert", () => {
 			],
 			{ expectedSeq: events.at(-1)?.seq ?? 0, actor, tenant },
 		);
-		await runOrchestrator(deps(store, iac), plan, "legacy-plan", {
-			tenant,
-			actor,
+		const unchanged = await runOrchestrator(
+			deps(store, iac),
+			plan,
+			"legacy-plan",
+			{
+				tenant,
+				actor,
+			},
+		);
+		expect(unchanged.status).toBe("needs-human");
+		expect(unchanged.changes.changes[0]).toMatchObject({
+			action: "retain",
+			reason: expect.stringMatching(/unverified/i),
 		});
+		expect(unchanged.blockedProviderMoves).toMatchObject([
+			{ resource: "network", reason: "specification-unverified" },
+		]);
+		expect(unchanged.blockedProviderMoves?.[0]).not.toHaveProperty("from");
 		expect(iac.calls).toEqual([]);
 
 		const changed = {
@@ -281,15 +295,31 @@ describe("upsert", () => {
 		};
 		await recordPlan(store, "legacy-plan", changed);
 		const whatIf = planDeploymentChanges(changed, await drain(store, stream));
-		expect(whatIf.changes[0]?.action).toBe("update");
+		expect(whatIf.changes[0]).toMatchObject({
+			action: "retain",
+			reason: expect.stringMatching(/unverified/i),
+		});
 		const result = await runOrchestrator(
 			deps(store, iac),
 			changed,
 			"legacy-plan",
 			{ tenant, actor },
 		);
-		expect(iac.calls).toEqual(["apply:network"]);
-		expect(result.status).toBe("deployed");
+		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("needs-human");
+		const resource = changed.resources[0];
+		if (!resource) throw new Error("fixture has no resource");
+		expect(
+			await reconcileResource(deps(store, iac), resource, {
+				deploymentId: "legacy-plan",
+				tenant,
+				actor,
+			}),
+		).toMatchObject({
+			kind: "blocked",
+			move: { reason: "specification-unverified" },
+		});
+		expect(iac.calls).toEqual([]);
 	});
 
 	it("sends the changed resource declaration to the provider", async () => {
@@ -446,7 +476,11 @@ describe("create/destroy cycle", () => {
 		const failing: IacProvider = {
 			...recordingIac(),
 			async apply(program: IacProgram) {
-				if (program.resourceId === "web") throw new Error("web down");
+				if (program.resourceId === "web")
+					throw Object.assign(new Error("web down"), {
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+					});
 				return {};
 			},
 		};
@@ -542,14 +576,14 @@ describe("deployment modes", () => {
 			"uncertain-update",
 			{ tenant, actor },
 		);
-		expect(update.status).toBe("waiting");
+		expect(update.status).toBe("needs-human");
 		const retried = await runOrchestrator(
 			deps(store, failing),
 			changed,
 			"uncertain-update",
 			{ tenant, actor },
 		);
-		expect(retried.status).toBe("waiting");
+		expect(retried.status).toBe("needs-human");
 		iac.calls.length = 0;
 		const result = await runOrchestrator(
 			deps(store, iac),
@@ -557,8 +591,7 @@ describe("deployment modes", () => {
 			"uncertain-update",
 			{ tenant, actor, mode: "complete" },
 		);
-		expect(result.status).toBe("waiting");
-		expect(result.unprunable).toEqual(["network"]);
+		expect(result.status).toBe("needs-human");
 		expect(iac.calls).toEqual([]);
 	});
 
@@ -682,7 +715,10 @@ describe("deployment modes", () => {
 			async destroy(program) {
 				iac.calls.push(`destroy:${program.resourceId}`);
 				if (program.resourceId === "web")
-					throw new Error("provider unavailable");
+					throw Object.assign(new Error("provider unavailable"), {
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+					});
 			},
 		};
 		const failed = await runOrchestrator(
@@ -696,7 +732,12 @@ describe("deployment modes", () => {
 			},
 		);
 		expect(iac.calls).toEqual(["destroy:web"]);
-		expect(failed.status).toBe("waiting");
+		expect(failed.status).toBe("needs-human");
+		expect(failed.pendingOperations).toContainEqual({
+			resourceId: "web",
+			operation: "destroy",
+			reason: "removed-from-plan",
+		});
 		expect(failed.unprunable).toEqual(["api", "web"]);
 		expect(
 			failed.events.filter((e) => e.type === "deployment.Deployed"),
@@ -704,7 +745,7 @@ describe("deployment modes", () => {
 
 		iac.calls.length = 0;
 		const retried = await runOrchestrator(
-			deps(store, iac),
+			{ ...deps(store, iac), verifyResume: async () => true },
 			smaller,
 			"prune-failure",
 			{
@@ -716,6 +757,50 @@ describe("deployment modes", () => {
 		expect(iac.calls).toEqual(["destroy:web", "destroy:api"]);
 		expect(retried.status).toBe("deployed");
 		expect(retried.unprunable).toEqual([]);
+	});
+
+	it("stops pruning and replay when an undeclared resource's deletion is uncertain", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		await recordPlan(store, "uncertain-prune", plan);
+		await runOrchestrator(deps(store, iac), plan, "uncertain-prune", {
+			tenant,
+			actor,
+		});
+		const smaller = {
+			...plan,
+			resources: plan.resources.filter(
+				(r) => r.name !== "web" && r.name !== "api",
+			),
+		};
+		iac.calls.length = 0;
+		const uncertain: IacProvider = {
+			...iac,
+			async destroy(program) {
+				iac.calls.push(`destroy:${program.resourceId}`);
+				throw Object.assign(new Error("outcome unknown"), {
+					requiresReconciliation: true,
+					reservationId: "iac:prune",
+				});
+			},
+		};
+		const first = await runOrchestrator(
+			deps(store, uncertain),
+			smaller,
+			"uncertain-prune",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(first.status).toBe("needs-human");
+		expect(iac.calls).toEqual(["destroy:web"]);
+		const replay = await runOrchestrator(
+			deps(store, uncertain),
+			smaller,
+			"uncertain-prune",
+			{ tenant, actor, mode: "complete" },
+		);
+		expect(replay.status).toBe("needs-human");
+		expect(iac.calls).toEqual(["destroy:web"]);
 	});
 
 	it("does not prune known resources when an orphan has no recorded dependencies", async () => {
