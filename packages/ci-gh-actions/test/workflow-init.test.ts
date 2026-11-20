@@ -2569,6 +2569,32 @@ ${caller}
 		});
 	});
 
+	it("recognizes a router when job outputs forward a needs runner pick", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  wrapper:
+    needs: route
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: \${{ needs.route.outputs.runner }}
+    steps:
+      - run: echo ok
+  called:
+    needs: wrapper
+    runs-on: \${{ needs.wrapper.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
 	it("recognizes a router when env is reached through an alias", () => {
 		const source = `jobs:
   route:

@@ -879,6 +879,7 @@ const ROUTING_FIELD_KEYS = [
 	"container",
 	"services",
 	"with",
+	"outputs",
 ] as const;
 
 const STEP_ROUTING_KEYS = ["env", "if", "runs-on"] as const;
