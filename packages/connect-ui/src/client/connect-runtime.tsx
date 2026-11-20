@@ -15,7 +15,7 @@ import type { ConfigField } from "../steps.js";
 const FormValuesSchema = z.record(z.string(), z.string());
 
 export interface ConnectRuntimeValue {
-	readonly confirmByLabel: ReadonlyMap<string, string>;
+	readonly confirmByAction: ReadonlyMap<string, string>;
 	readonly collectFormParams: (
 		includeSecrets: boolean,
 	) => Record<string, string>;
@@ -66,11 +66,11 @@ export function ConnectFormParamsBridge({
 }
 
 export function ConnectRuntimeProvider({
-	confirmByLabel,
+	confirmByAction,
 	collector,
 	children,
 }: {
-	readonly confirmByLabel: ReadonlyMap<string, string>;
+	readonly confirmByAction: ReadonlyMap<string, string>;
 	readonly collector: MutableRefObject<
 		(includeSecrets: boolean) => Record<string, string>
 	>;
@@ -78,10 +78,10 @@ export function ConnectRuntimeProvider({
 }) {
 	const value = useMemo(
 		(): ConnectRuntimeValue => ({
-			confirmByLabel,
+			confirmByAction,
 			collectFormParams: (includeSecrets) => collector.current(includeSecrets),
 		}),
-		[confirmByLabel, collector],
+		[confirmByAction, collector],
 	);
 	return (
 		<ConnectRuntimeContext.Provider value={value}>

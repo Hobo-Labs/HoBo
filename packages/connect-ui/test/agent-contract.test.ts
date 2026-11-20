@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { agentPressAllowed } from "../src/client/agent-gate.js";
-import { confirmLabelsForSpec } from "../src/client/confirm-labels.js";
+import {
+	confirmForPressAction,
+	specWithPressActions,
+} from "../src/client/confirm-labels.js";
 import { formParamsForAgent } from "../src/client/connect-runtime.js";
 import {
 	type ConnectStep,
@@ -13,6 +16,9 @@ import {
 } from "../src/index.js";
 
 const LabelledElementSchema = z.object({ label: z.string().optional() });
+const PressActionPropSchema = z.object({
+	pressAction: z.string().optional(),
+});
 
 const APP_STEP: ConnectStep = {
 	kind: "create-github-app",
@@ -29,32 +35,46 @@ describe("agent safety on the connect page", () => {
 		expect(agentPressAllowed(undefined, false)).toBe(true);
 	});
 
-	it("maps action confirms onto every matching button label", () => {
+	it("keys the confirm gate by press action, not by button label", () => {
 		const step: ConnectStep = {
 			kind: "choose-secret-store",
 			provider: "github",
 			stores: DEFAULT_SECRET_STORES,
 		};
-		const spec = deterministicConnectSpec(step);
 		const confirmByAction = new Map([
 			["connect.chooseStore", "Choose where credentials are stored?"],
 		]);
-		const byLabel = confirmLabelsForSpec(spec, confirmByAction);
-		for (const store of step.stores) {
-			const label = store.recommended
-				? `${store.label} (recommended)`
-				: store.label;
-			expect(byLabel.get(label)).toBe("Choose where credentials are stored?");
-		}
+		const spec = specWithPressActions(deterministicConnectSpec(step));
+		const buttons = Object.values(spec.elements)
+			.filter((element) => element.type === "Button")
+			.map((element) => PressActionPropSchema.parse(element.props).pressAction);
+		expect(buttons).toEqual([
+			"connect.chooseStore",
+			"connect.chooseStore",
+			"connect.cancel",
+		]);
+		for (const action of buttons)
+			expect(confirmForPressAction(action, confirmByAction)).toBe(
+				action === "connect.chooseStore"
+					? "Choose where credentials are stored?"
+					: undefined,
+			);
 	});
 
-	it("maps hand-off confirms onto button labels in the composed spec", async () => {
+	it("carries the hand-off action on the composed spec's buttons", async () => {
 		const composed = await composeConnectSpec(APP_STEP);
-		const confirmByAction = new Map([
-			["connect.start", "Open GitHub to register the App?"],
-		]);
-		const byLabel = confirmLabelsForSpec(composed.spec, confirmByAction);
-		expect(byLabel.get("Continue on GitHub")).toMatch(/GitHub/u);
+		const spec = specWithPressActions(composed.spec);
+		const start = Object.values(spec.elements)
+			.filter((element) => element.type === "Button")
+			.map((element) => PressActionPropSchema.parse(element.props).pressAction)
+			.find((action) => action === "connect.start");
+		expect(start).toBe("connect.start");
+		expect(
+			confirmForPressAction(
+				start,
+				new Map([["connect.start", "Open GitHub to register the App?"]]),
+			),
+		).toMatch(/GitHub/u);
 	});
 
 	it("renders every required candidate label on the deterministic page", () => {

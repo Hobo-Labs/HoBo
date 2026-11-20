@@ -34,7 +34,6 @@ function fieldChecks(field: ConfigField) {
 
 function fieldCandidate(field: ConfigField): Candidate {
 	if (field.kind === "choice") {
-		const options = (field.options ?? []).map((option) => option.value);
 		return {
 			id: `field-${field.name}`,
 			description: `Setting for ${field.label}`,
@@ -43,7 +42,10 @@ function fieldCandidate(field: ConfigField): Candidate {
 				props: {
 					label: field.label,
 					name: field.name,
-					options,
+					options: (field.options ?? []).map((option) => ({
+						label: option.label,
+						value: option.value,
+					})),
 					value: { $bindState: `/form/${field.name}` },
 					checks: fieldChecks(field),
 					validateOn: "change" as const,

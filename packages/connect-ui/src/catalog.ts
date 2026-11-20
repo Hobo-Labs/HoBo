@@ -5,6 +5,29 @@ import { z } from "zod";
 
 import { SECRET_STORE_IDS } from "./steps.js";
 
+export const RadioOptionSchema = z.object({
+	label: z.string(),
+	value: z.string(),
+});
+
+const BindableValueSchema = z.union([
+	z.string().nullable(),
+	z.object({ $bindState: z.string() }),
+]);
+
+const RadioDefinition = {
+	...ui.Radio,
+	props: ui.Radio.props.extend({
+		options: z.array(RadioOptionSchema),
+		value: BindableValueSchema,
+	}),
+};
+
+const InputDefinition = {
+	...ui.Input,
+	props: ui.Input.props.extend({ value: BindableValueSchema }),
+};
+
 export const connectCatalog = defineCatalog(schema, {
 	components: {
 		Card: ui.Card,
@@ -17,8 +40,8 @@ export const connectCatalog = defineCatalog(schema, {
 		Link: ui.Link,
 		Progress: ui.Progress,
 		Separator: ui.Separator,
-		Radio: ui.Radio,
-		Input: ui.Input,
+		Radio: RadioDefinition,
+		Input: InputDefinition,
 	},
 	actions: {
 		"connect.submit": {

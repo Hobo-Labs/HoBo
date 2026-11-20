@@ -1,5 +1,9 @@
 export { connectCandidates } from "./candidates.js";
-export { CONNECT_COMPONENTS, connectCatalog } from "./catalog.js";
+export {
+	CONNECT_COMPONENTS,
+	connectCatalog,
+	RadioOptionSchema,
+} from "./catalog.js";
 export {
 	type CeremonySetting,
 	type ConfigureOptions,

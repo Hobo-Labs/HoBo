@@ -11,7 +11,7 @@ import {
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
 import type { ConfigField } from "../steps.js";
-import { confirmLabelsForSpec } from "./confirm-labels.js";
+import { specWithPressActions } from "./confirm-labels.js";
 import { registry } from "./connect-registry.js";
 import {
 	ConnectFormParamsBridge,
@@ -152,7 +152,7 @@ function viewFromParsedConnect(parsed: ParsedConnectView): View {
 		step: parsed.step,
 		terminal: parsed.terminal,
 		composedBy: parsed.composedBy,
-		spec: parsed.spec,
+		spec: specWithPressActions(parsed.spec),
 		directive: parsed.directive,
 		confirmByAction,
 		formFields: (parsed.view?.fields ?? []).map(toConfigField),
@@ -304,11 +304,9 @@ function ConnectPage() {
 		);
 	if (view === null) return <p className="hobo-connect-loading">Loading…</p>;
 
-	const confirmByLabel = confirmLabelsForSpec(view.spec, view.confirmByAction);
-
 	return (
 		<ConnectRuntimeProvider
-			confirmByLabel={confirmByLabel}
+			confirmByAction={view.confirmByAction}
 			collector={collector}
 		>
 			<ConnectStage

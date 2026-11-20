@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { agentPressAllowed } from "../src/client/agent-gate.js";
-import { confirmLabelsForSpec } from "../src/client/confirm-labels.js";
+import { specWithPressActions } from "../src/client/confirm-labels.js";
 import { registry } from "../src/client/connect-registry.js";
 import {
 	ConnectFormParamsBridge,
@@ -21,18 +21,17 @@ const APP_STEP: ConnectStep = {
 };
 
 function Harness({ step }: { readonly step: ConnectStep }) {
-	const spec = deterministicConnectSpec(step);
+	const spec = specWithPressActions(deterministicConnectSpec(step));
 	const confirmByAction = new Map([
 		["connect.start", "Open GitHub to register the App?"],
 	]);
-	const confirmByLabel = confirmLabelsForSpec(spec, confirmByAction);
 	const collector = useRef<(includeSecrets: boolean) => Record<string, string>>(
 		() => ({}),
 	);
 	const secretNames = new Set<string>();
 	return (
 		<ConnectRuntimeProvider
-			confirmByLabel={confirmByLabel}
+			confirmByAction={confirmByAction}
 			collector={collector}
 		>
 			<JSONUIProvider registry={registry} initialState={{}} handlers={{}}>
@@ -56,6 +55,16 @@ describe("connect page agent DOM contract", () => {
 		const button = screen.getByRole("button", { name: "Continue on GitHub" });
 		const host = button.closest("[data-agent-confirm]");
 		expect(host?.getAttribute("data-agent-confirm")).toMatch(/GitHub/u);
+	});
+
+	it("leaves controls without a confirm action ungated", () => {
+		render(<Harness step={APP_STEP} />);
+		const button = screen.getByRole("button", { name: "Cancel" });
+		expect(
+			button
+				.closest("[data-agent-confirm]")
+				?.getAttribute("data-agent-confirm") ?? "",
+		).toBe("");
 	});
 
 	it("blocks agent press simulation until the person approves the confirm text", () => {

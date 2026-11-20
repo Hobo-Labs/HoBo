@@ -1,24 +1,35 @@
 import type { Spec } from "@json-render/core";
 import { z } from "zod";
 
-const ButtonPressSchema = z.object({
+type ElementOn = NonNullable<Spec["elements"][string]["on"]>;
+
+const PressBindingSchema = z.object({
 	press: z.object({ action: z.string() }),
 });
-const ButtonLabelSchema = z.object({ label: z.string() });
 
-export function confirmLabelsForSpec(
-	spec: Spec,
+export function pressActionOf(on: ElementOn | undefined): string | undefined {
+	const parsed = PressBindingSchema.safeParse(on);
+	return parsed.success ? parsed.data.press.action : undefined;
+}
+
+export function confirmForPressAction(
+	action: string | undefined,
 	confirmByAction: ReadonlyMap<string, string>,
-): ReadonlyMap<string, string> {
-	const byLabel = new Map<string, string>();
-	for (const [action, message] of confirmByAction) {
-		for (const element of Object.values(spec.elements)) {
-			if (element.type !== "Button") continue;
-			const press = ButtonPressSchema.safeParse(element.on);
-			if (!press.success || press.data.press.action !== action) continue;
-			const label = ButtonLabelSchema.safeParse(element.props);
-			if (label.success) byLabel.set(label.data.label, message);
-		}
+): string | undefined {
+	return action === undefined ? undefined : confirmByAction.get(action);
+}
+
+export function specWithPressActions(spec: Spec): Spec {
+	const elements: Spec["elements"] = {};
+	for (const [id, element] of Object.entries(spec.elements)) {
+		const action = pressActionOf(element.on);
+		elements[id] =
+			element.type === "Button" && action !== undefined
+				? {
+						...element,
+						props: { ...element.props, pressAction: action },
+					}
+				: element;
 	}
-	return byLabel;
+	return { ...spec, elements };
 }
