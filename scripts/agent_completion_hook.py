@@ -16,6 +16,8 @@ Before ending, review the active human request and its current scope. A status q
 
 For an action request, compare the actual result and evidence with the requested outcome. If essential work remains and a concrete, safe, authorized action can advance it, take that action now. A merged change, passing subtask, failed approach, or description of the remaining work does not by itself complete the request. Consider available alternatives and independent work before reporting a blocker; do not repeat futile attempts, weaken protections, or ask again for permission already granted.
 
+When MCP access matters, distinguish the active host's tools, a separate client's connection, and any authenticated owner session. Try supported discovery or a safe independent client where appropriate, and report observed failures without guessing their cause.
+
 Honor an explicit stop, pause, cancellation, change of scope, or request only for an answer. Do not resume superseded work, invent unnecessary work, or proceed past a real approval, safety, or access boundary. If the active request is complete, or no useful authorized action is available, finish with an accurate response."""
 
 MAX_READY_RETRIES = 3
