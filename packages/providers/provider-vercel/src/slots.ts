@@ -29,7 +29,14 @@
  */
 
 import { type SlotBinding, slotBinding } from "@hobo/core";
+import {
+	VERCEL_CRON_PRODUCT_ID,
+	VERCEL_QUEUE_PRODUCT_ID,
+	VERCEL_SCHEDULE_PRODUCT_ID,
+} from "./deployment-component-resolver.js";
 import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
+import { VERCEL_GIT_FUNCTION_PRODUCT_ID } from "./git-function-resolver.js";
+import { VERCEL_SANDBOX_HOST_PRODUCT_ID } from "./sandbox-host-resolver.js";
 
 // public-contract: product ids the Vercel catalog registers for these offerings.
 export const VERCEL_PROJECT_PRODUCT_ID = "vercel.project/v1";
@@ -41,10 +48,40 @@ export const VERCEL_BLOB_PRODUCT_ID = "vercel.blob/v1";
 export const VERCEL_EDGE_CONFIG_PRODUCT_ID = "vercel.edge-config/v1";
 
 // public-contract: capability profiles these offerings claim to satisfy.
-export const VERCEL_PROJECT_PROFILE = "provider.project/v1";
+export const VERCEL_PROJECT_PROFILE = "web.project/v1";
 // public-contract: hosted-web capability profile advertised by the static deployment slot.
 export const VERCEL_STATIC_DEPLOY_PROFILE = "web.hosted/v1";
 export type VercelStaticDeploySlotOptions = { readonly projectId?: string };
+export type VercelGitFunctionSlotOptions = {
+	readonly entry?: string;
+	readonly routes?: readonly Readonly<{
+		src: string;
+		dest: string;
+		transforms?: readonly Readonly<{
+			type: string;
+			op: string;
+			args: string;
+		}>[];
+	}>[];
+};
+export type VercelSandboxHostSlotOptions = { readonly minimumSlots?: number };
+export type VercelQueueSlotOptions = {
+	readonly topics?: readonly string[];
+	readonly consumers?: readonly Readonly<{ topic: string; entry: string }>[];
+};
+export type VercelScheduleSlotOptions = {
+	readonly name?: string;
+	readonly cron?: string;
+	readonly function?: string;
+	readonly entry?: string;
+	readonly maximumJitterSeconds?: number;
+};
+export type VercelCronSlotOptions = {
+	readonly path?: string;
+	readonly cron?: string;
+	readonly entry?: string;
+	readonly maximumJitterSeconds?: number;
+};
 export function staticDeployment(
 	options: VercelStaticDeploySlotOptions = {},
 ): SlotBinding {
@@ -67,6 +104,7 @@ export type VercelProjectSlotOptions = {
 	readonly framework?: string;
 	readonly rootDirectory?: string;
 	readonly buildCommand?: string;
+	readonly installCommand?: string;
 	readonly outputDirectory?: string;
 };
 
@@ -77,9 +115,13 @@ export type VercelEdgeFunctionSlotOptions = {
 	readonly regions?: readonly string[];
 };
 
-/** Blob store settings. `access` mirrors the documented store access level. */
+/** Blob store settings; the hosting supervisor supplies its operation ID. */
 export type VercelBlobSlotOptions = {
 	readonly access?: "public" | "private";
+	readonly store?: string;
+	readonly region?: string;
+	readonly projectId?: string;
+	readonly environments?: readonly ("production" | "preview" | "development")[];
 };
 
 /** Edge Config (now the Global Config REST family) settings. */
@@ -98,6 +140,11 @@ export type VercelEdgeConfigSlotOptions = {
 type AnySlotOptions =
 	| VercelProjectSlotOptions
 	| VercelStaticDeploySlotOptions
+	| VercelGitFunctionSlotOptions
+	| VercelSandboxHostSlotOptions
+	| VercelQueueSlotOptions
+	| VercelScheduleSlotOptions
+	| VercelCronSlotOptions
 	| VercelEdgeFunctionSlotOptions
 	| VercelBlobSlotOptions
 	| VercelEdgeConfigSlotOptions;
@@ -128,6 +175,66 @@ export function edgeFunction(
 		slot: "service",
 		profile: VERCEL_EDGE_FUNCTION_PROFILE,
 		productId: VERCEL_EDGE_FUNCTION_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
+
+export function gitFunction(
+	options: VercelGitFunctionSlotOptions = {},
+): SlotBinding {
+	return slotBinding({
+		slot: "api",
+		profile: "api.http/v1",
+		productId: VERCEL_GIT_FUNCTION_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
+
+export function sandboxHost(
+	options: VercelSandboxHostSlotOptions = {},
+): SlotBinding {
+	return slotBinding({
+		slot: "service",
+		profile: "service.batch/v1",
+		productId: VERCEL_SANDBOX_HOST_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
+
+export function queue(options: VercelQueueSlotOptions = {}): SlotBinding {
+	return slotBinding({
+		slot: "queue",
+		profile: "queue.at-least-once/v1",
+		productId: VERCEL_QUEUE_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
+
+export function delayedQueue(
+	options: VercelQueueSlotOptions = {},
+): SlotBinding {
+	return slotBinding({
+		slot: "queue",
+		profile: "queue.delay/v1",
+		productId: VERCEL_QUEUE_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
+
+export function schedule(options: VercelScheduleSlotOptions = {}): SlotBinding {
+	return slotBinding({
+		slot: "service",
+		profile: "service.scheduled/v1",
+		productId: VERCEL_SCHEDULE_PRODUCT_ID,
+		properties: definedProperties(options),
+	});
+}
+
+export function cron(options: VercelCronSlotOptions = {}): SlotBinding {
+	return slotBinding({
+		slot: "service",
+		profile: "service.scheduled/v1",
+		productId: VERCEL_CRON_PRODUCT_ID,
 		properties: definedProperties(options),
 	});
 }
@@ -163,5 +270,11 @@ export const vercelSlots = Object.freeze({
 	blob,
 	edgeConfig,
 	edgeFunction,
+	gitFunction,
+	sandboxHost,
+	queue,
+	delayedQueue,
+	schedule,
+	cron,
 	project,
 });
