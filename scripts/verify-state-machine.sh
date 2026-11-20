@@ -5,7 +5,8 @@ skill_dir="$(cd "${1:?pass a verification skill directory}" && pwd)"
 repo_dir="$(git -C "$skill_dir" rev-parse --show-toplevel)"
 scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/hobo-state-check.XXXXXX")"
 trap 'rm -rf -- "$scratch_dir"' EXIT
-export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djava.io.tmpdir=${scratch_dir}"
+java_tmpdir="${scratch_dir//\'/\'\"\'\"\'}"
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djava.io.tmpdir='$java_tmpdir'"
 
 jar="${TLA2TOOLS:-$scratch_dir/tla2tools.jar}"
 if [[ -z "${TLA2TOOLS:-}" ]]; then
