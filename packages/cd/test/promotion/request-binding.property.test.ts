@@ -212,10 +212,9 @@ describe("promotion request binding", () => {
 		};
 		const [first, second] = await Promise.all([
 			h.service.createPreview(request, h.ctx()),
-			h.restart().createPreview(
-				{ ...request, sourceCampId: camp("dev-2") },
-				h.ctx(),
-			),
+			h
+				.restart()
+				.createPreview({ ...request, sourceCampId: camp("dev-2") }, h.ctx()),
 		]);
 		expect([first.ok, second.ok].filter(Boolean)).toHaveLength(1);
 		expect(h.store.events(CD_EVENTS.EnvPromoteRequested)).toHaveLength(1);
