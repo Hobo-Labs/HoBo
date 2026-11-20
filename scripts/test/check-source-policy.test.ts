@@ -184,6 +184,45 @@ describe("source policy", () => {
 		);
 	});
 
+	it("checks CUE, protobuf, and WIT comments without mistaking strings for comments", () => {
+		const cue = [
+			"package sample",
+			'url: "https://example.test/path"',
+			'raw: #"// string data"#',
+			'block: #"""',
+			"// multiline string data",
+			'"""#',
+			"// explanation",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("sample.cue", cue, new Set([2, 3, 5, 7])).map(
+				(issue) => issue.line,
+			),
+			[7],
+		);
+		const proto = [
+			'syntax = "proto3";',
+			'option java_package = "example//data";',
+			"/* explanation */",
+			"// buf:lint:ignore FIELD_NOT_REQUIRED",
+			"// TODO resolve this",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("sample.proto", proto, new Set([2, 3, 4, 5])).map(
+				(issue) => issue.line,
+			),
+			[3, 5],
+		);
+		assert.equal(
+			commentViolations(
+				"sample.wit",
+				"/// explanation\nworld app {}",
+				new Set([1]),
+			).length,
+			1,
+		);
+	});
+
 	it("recognizes additions in zero-context patches", () => {
 		const patch =
 			"@@ -1,2 +1,3 @@\n-old\n+one\n+two\n@@ -8,0 +10,1 @@\n+three\n";
@@ -229,6 +268,27 @@ describe("source policy", () => {
 		const result = guard(repo, "--staged");
 		assert.equal(result.status, 1, result.stderr);
 		assert.match(result.stderr, /docs\/design\/new\.md/u);
+	});
+
+	it("checks staged schema comments while preserving vendored WASI definitions", () => {
+		const repo = fixture();
+		write(
+			repo,
+			"schema/model.cue",
+			"package model\n// explanation\nvalue: string\n",
+		);
+		write(repo, "schema/model.proto", 'syntax = "proto3";\n// explanation\n');
+		write(
+			repo,
+			"packages/hobo/wit/wasi-http/proxy.wit",
+			"/// upstream\nworld proxy {}\n",
+		);
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		assert.match(result.stderr, /schema\/model\.cue:2/u);
+		assert.match(result.stderr, /schema\/model\.proto:2/u);
+		assert.doesNotMatch(result.stderr, /wasi-http\/proxy\.wit/u);
 	});
 
 	it("allows unchanged comments in renamed files but rejects new ones", () => {
