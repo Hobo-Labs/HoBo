@@ -158,7 +158,7 @@ nothing is an authoring mistake, not an empty default.
 ## The localhost seed
 
 `seedLocalhostYard(observations)` maps the Bindle catalog primitives
-(`web, api, service, data, kv, bucket, queue, topic, secretRef, webhook`) onto
+(`web, api, service, data, kv, bucket, queue, topic, secretRef, webhook, schedule`) onto
 the local implementations that stand in for them, and returns a **real** `Yard`
 — built by the same `yard()` every authored Yard goes through.
 

@@ -36,49 +36,33 @@ export interface CliFlags {
 	readonly request: string | null;
 	readonly init: boolean;
 	readonly once: boolean;
-	/** `hobo dev --serve`: force the long-lived server without a TTY. */
 	readonly serve: boolean;
 	readonly port: string | null;
 	readonly home: string | null;
 	readonly host: string | null;
-	/** Target broker URI for `up` / `claim` (alias of --broker-uri). */
 	readonly broker: string | null;
-	/** Alias of --broker. */
 	readonly brokerUri: string | null;
-	/** Anonymous / temporary remote deploy (aliases of each other). */
 	readonly anonymous: boolean;
 	readonly temporary: boolean;
-	/** Claim token for remote `hobo claim --broker --token`. */
 	readonly token: string | null;
-	/** `hobo serve control --demo`: drive the world read model from the simulator. */
 	readonly demo: boolean;
-	/** Deterministic simulator seed for `--demo` (ADR-0147 demo mode). */
 	readonly demoSeed: string | null;
-	/** Target region for deployment planning and residency-aware preflight. */
 	readonly region: string | null;
 	readonly budgetId?: string | null;
-	/**
-	 * `--what-if` (aliases `--dry-run`, `--preview`) on `up`/`down`: compute
-	 * and print the change set, change nothing (az/Bicep `what-if`, wrangler
-	 * `--dry-run`, `pulumi preview`).
-	 */
 	readonly whatIf?: boolean;
-	/** `--mode incremental|complete` on `up`/`plan` (Bicep deployment modes). */
 	readonly mode?: string | null;
-	/**
-	 * Options the resolved subcommand declares (`hobo deploy freight record
-	 * --file`), by name without `--`: a value, or `true` for a switch. Empty for
-	 * verbs without a subcommand table (subcommands.ts).
-	 */
 	readonly subcommandOptions?: SubcommandOptions;
 }
+
+type MutableParserFlags = {
+	-readonly [Key in keyof Omit<CliFlags, "subcommandOptions">]-?: CliFlags[Key];
+};
 
 export interface CliRequest {
 	readonly verb: string | null;
 	readonly args: readonly string[];
 	readonly cwd: string;
 	readonly help: boolean;
-	/** Parsed flags; parseArgv always sets subcommandOptions (empty when none). */
 	readonly flags: CliFlags & { readonly subcommandOptions: SubcommandOptions };
 }
 
@@ -86,77 +70,52 @@ export interface ParseArgvOptions {
 	readonly cwd?: string;
 }
 
-/**
- * Verbs that own a strict subcommand parser of their own (`hobo ci`, and the
- * `hobo cd` lifecycle family): the shell keeps output, working directory and
- * help, and passes every other token through untouched.
- */
 const RAW_ARG_VERBS: ReadonlySet<string> = new Set(["ci", "cd"]);
 
 export function parseArgv(
 	argv: readonly string[],
 	options: ParseArgvOptions = {},
 ): CliRequest {
-	const flags = {
+	const flags: MutableParserFlags = {
 		json: false,
-		// SAFETY: `camp: null as string | null,` is required at this I/O or test boundary.
-		camp: null as string | null,
+		camp: null,
 		cwd: path.resolve(options.cwd ?? process.cwd()),
 		verbose: false,
 		quiet: false,
 		help: false,
-		// SAFETY: `to: null as string | null,` is required at this I/O or test boundary.
-		to: null as string | null,
+		to: null,
 		rollback: false,
 		seed: false,
-		// SAFETY: `restore: null as string | null,` is required at this I/O or test boundary.
-		restore: null as string | null,
-		// SAFETY: `strategy: null as string | null,` is required at this I/O or test boundary.
-		strategy: null as string | null,
-		// SAFETY: `target: null as string | null,` is required at this I/O or test boundary.
-		target: null as string | null,
+		restore: null,
+		strategy: null,
+		target: null,
 		check: false,
 		last: false,
 		offline: false,
-		// SAFETY: `template: null as string | null,` is required at this I/O or test boundary.
-		template: null as string | null,
+		template: null,
 		force: false,
 		hold: false,
-		// SAFETY: `runtime: null as string | null,` is required at this I/O or test boundary.
-		runtime: null as string | null,
-		// SAFETY: `config: null as string | null,` is required at this I/O or test boundary.
-		config: null as string | null,
-		// SAFETY: `policies: null as string | null,` is required at this I/O or test boundary.
-		policies: null as string | null,
-		// SAFETY: `request: null as string | null,` is required at this I/O or test boundary.
-		request: null as string | null,
+		runtime: null,
+		config: null,
+		policies: null,
+		request: null,
 		init: false,
 		once: false,
 		serve: false,
-		// SAFETY: `port: null as string | null,` is required at this I/O or test boundary.
-		port: null as string | null,
-		// SAFETY: `home: null as string | null,` is required at this I/O or test boundary.
-		home: null as string | null,
-		// SAFETY: `host: null as string | null,` is required at this I/O or test boundary.
-		host: null as string | null,
-		// SAFETY: `broker: null as string | null,` is required at this I/O or test boundary.
-		broker: null as string | null,
-		// SAFETY: `brokerUri: null as string | null,` is required at this I/O or test boundary.
-		brokerUri: null as string | null,
+		port: null,
+		home: null,
+		host: null,
+		broker: null,
+		brokerUri: null,
 		anonymous: false,
 		temporary: false,
-		// SAFETY: `token: null as string | null,` is required at this I/O or test boundary.
-		token: null as string | null,
+		token: null,
 		demo: false,
-		// SAFETY: `demoSeed: null as string | null,` is required at this I/O or test boundary.
-		demoSeed: null as string | null,
-		// SAFETY: `region: null as string | null,` is required at this I/O or test boundary.
-		region: null as string | null,
-		// SAFETY: mutable parser field is populated only by takeValue's string boundary.
-		budgetId: null as string | null,
+		demoSeed: null,
+		region: null,
+		budgetId: null,
 		whatIf: false,
-		// SAFETY: mutable parser field is populated only by takeValue's string boundary.
-		mode: null as string | null,
+		mode: null,
 	};
 	const args: string[] = [];
 	const subcommandOptions = new Map<string, SubcommandOptionValue>();
@@ -197,8 +156,7 @@ export function parseArgv(
 				if (!token.startsWith("--format=")) index += 1;
 				continue;
 			}
-			// CI owns its strict subcommand parser. Keep its options intact while
-			// the shell continues to own output, working directory, and help.
+
 			if (
 				RAW_ARG_VERBS.has(verb ?? "") &&
 				!["--json", "--cwd", "--verbose", "-q", "--help", "-h"].includes(token)
@@ -265,7 +223,6 @@ export function parseArgv(
 	};
 }
 
-// The shell flags a strict subcommand verb keeps (verbs.ts GLOBAL_FLAGS).
 const STRICT_GLOBAL_FLAGS: ReadonlySet<string> = new Set([
 	"--json",
 	"--cwd",
@@ -275,10 +232,6 @@ const STRICT_GLOBAL_FLAGS: ReadonlySet<string> = new Set([
 	"-h",
 ]);
 
-/**
- * Take one table-declared option at `index` into `into`: the index of its
- * last token, or undefined when the token names no option the table declares.
- */
 function takeSubcommandOption(
 	argv: readonly string[],
 	index: number,
@@ -312,7 +265,6 @@ function takeSubcommandOption(
 	return index;
 }
 
-/** Refuse a declared option the resolved subcommand does not take. */
 function refuseUndeclared(
 	verbTable: VerbSubcommandTable,
 	verb: string | null,
@@ -320,7 +272,7 @@ function refuseUndeclared(
 	options: ReadonlyMap<string, SubcommandOptionValue>,
 ): void {
 	const subcommand = resolveSubcommand(verbTable, args);
-	// An unknown subcommand is the command's to report, with its usage.
+
 	if (subcommand === undefined) return;
 	const accepted = acceptedOptions(verbTable, subcommand);
 	for (const name of options.keys())
@@ -330,47 +282,7 @@ function refuseUndeclared(
 function parseOption(
 	argv: readonly string[],
 	index: number,
-	flags: {
-		json: boolean;
-		camp: string | null;
-		cwd: string;
-		verbose: boolean;
-		quiet: boolean;
-		help: boolean;
-		to: string | null;
-		rollback: boolean;
-		seed: boolean;
-		restore: string | null;
-		strategy: string | null;
-		target: string | null;
-		check: boolean;
-		last: boolean;
-		offline: boolean;
-		template: string | null;
-		force: boolean;
-		hold: boolean;
-		runtime: string | null;
-		config: string | null;
-		policies: string | null;
-		request: string | null;
-		init: boolean;
-		once: boolean;
-		serve: boolean;
-		port: string | null;
-		home: string | null;
-		host: string | null;
-		broker: string | null;
-		brokerUri: string | null;
-		anonymous: boolean;
-		temporary: boolean;
-		token: string | null;
-		demo: boolean;
-		demoSeed: string | null;
-		region: string | null;
-		budgetId: string | null;
-		whatIf: boolean;
-		mode: string | null;
-	},
+	flags: MutableParserFlags,
 	verb: string | null,
 ): number {
 	const token = argv[index];
@@ -438,10 +350,13 @@ function parseOption(
 		case "--config":
 		case "--policies":
 		case "--request":
-			// Broker-scoped value flags (cli-spec.md `broker` row).
 			if (verb === "broker") {
-				// SAFETY: `const key = token.slice(2) as "config" | "policies" | "request";` is required at this I/O or test boundary.
-				const key = token.slice(2) as "config" | "policies" | "request";
+				const key =
+					token === "--config"
+						? "config"
+						: token === "--policies"
+							? "policies"
+							: "request";
 				flags[key] = takeValue(argv, index, token);
 				return index + 1;
 			}
@@ -465,15 +380,12 @@ function parseOption(
 			}
 			throw unknownOption(token, verb);
 		case "--serve":
-			// `hobo dev --serve`: long-lived dev server for non-TTY callers.
 			if (verb === "dev") {
 				flags.serve = true;
 				return index;
 			}
 			throw unknownOption(token, verb);
 		case "--demo":
-			// `hobo serve control --demo` (ADR-0147): seeded world simulator,
-			// always rendered with the SIMULATED badge.
 			if (verb === "serve") {
 				flags.demo = true;
 				return index;
@@ -522,8 +434,6 @@ function parseOption(
 			}
 			throw unknownOption(token, verb);
 		case "--home":
-			// Yard/dev install root; also `up`/`claim`/`login` for HOBO_HOME
-			// profile and `serve` for the control-plane store it projects from.
 			if (
 				verb === "yard" ||
 				verb === "dev" ||
@@ -544,7 +454,6 @@ function parseOption(
 			throw unknownOption(token, verb);
 		case "--broker":
 			if (verb === "up" || verb === "claim" || verb === "login") {
-				// Canonical flag; --broker-uri is an accepted alias.
 				flags.broker = takeValue(argv, index, token);
 				return index + 1;
 			}
@@ -562,7 +471,6 @@ function parseOption(
 			}
 			throw unknownOption(token, verb);
 		case "--temporary":
-			// Alias of --anonymous (Cloudflare wrangler deploy --temporary style).
 			if (verb === "up") {
 				flags.temporary = true;
 				return index;
@@ -625,8 +533,7 @@ function nearestVerb(input: string): string | null {
 			best = { candidate, distance };
 		}
 	}
-	// Short verbs are cheap to fat-finger into another valid word: only suggest
-	// on distance ≤1 for inputs up to 4 chars, ≤2 for longer ones.
+
 	return best && best.distance <= (input.length <= 4 ? 1 : 2)
 		? best.candidate
 		: null;
