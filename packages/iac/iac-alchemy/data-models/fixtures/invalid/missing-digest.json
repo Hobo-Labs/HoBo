@@ -1,0 +1,10 @@
+{
+  "targetId": "yard-a",
+  "tenantId": "tenant-a",
+  "stackName": "Demo",
+  "stage": "test",
+  "programResourceId": "application",
+  "sourceDigest": "",
+  "inventoryEvidenceRef": "inventory:1",
+  "resources": [{ "resourceId": "widget", "resourceType": "Demo.Widget", "providerId": "sandbox", "providerAccountRef": "account-a", "productId": "sandbox" }]
+}

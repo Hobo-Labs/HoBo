@@ -22,7 +22,9 @@ import {
 	type OptimizexpScope,
 } from "./lib/paths.mts";
 import { listPersonaMetas, parsePersonaModels } from "./lib/persona-resolve.mts";
-import { resolveProjects } from "./lib/projects.mts";
+import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import {
 	EXPERIENCE_TYPES,
 	formatExperiencesFrontmatter,
@@ -66,7 +68,8 @@ function parseArgs(argv: string[]) {
 		else if (a === "--project" || a === "--projects") {
 			const v = argv[++i] ?? "";
 			out.projects = out.projects ? `${out.projects},${v}` : v;
-		} else if (a === "--force") out.force = "1";
+		} else if (a === "--all-projects") out.projects = out.projects ? `${out.projects},all` : "all";
+		else if (a === "--force") out.force = "1";
 		else if (a === "--dry-run") out.dryRun = "1";
 		else if (!a.startsWith("-") && !out.seed) out.seed = a;
 	}
@@ -549,8 +552,40 @@ function validate(args: Record<string, string>) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--seed", "--seed-file", "--id", "--experiences", "--priority", "--project", "--projects"],
+		flags: ["--help", "-h", "--all-projects", "--force", "--dry-run"],
+	});
+	if (input.error) {
+		console.error(input.error);
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
+	if (
+		input.positionals.length > 1 ||
+		(input.positionals.length > 0 && (
+			!["scaffold", "rewrite-prompt"].includes(args.mode ?? "") ||
+			input.argv.includes("--seed") || input.argv.includes("--seed-file")
+		))
+	) {
+		console.error("Expected at most one positional persona seed");
+		process.exit(2);
+	}
 	if (args.mode === "help") return help();
+	const root = repoRoot();
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
+	if (problem) {
+		console.error(problem);
+		process.exit(2);
+	}
+	if (args.mode === "scaffold" && args.dryRun !== "1") {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
+	}
 	if (args.mode === "scaffold") return scaffold(args);
 	if (args.mode === "validate") return validate(args);
 	if (args.mode === "rewrite-prompt") {
