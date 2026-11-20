@@ -12,7 +12,7 @@
 #   bash scripts/setup-agent-tools.sh --no-skillopt         # skip microsoft/SkillOpt install
 #   bash scripts/setup-agent-tools.sh --help                # usage (no install)
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 usage() {
   cat <<'EOF'
@@ -153,10 +153,12 @@ if have gh; then
   fi
   # Agent-safe local git defaults when run inside a checkout (fail-open outside a repo).
   if [ -e .git ] || git rev-parse --git-dir >/dev/null 2>&1; then
-    git config --local rerere.enabled true 2>/dev/null \
-      && echo "  local rerere.enabled=true" || true
-    git config --local remote.pushDefault origin 2>/dev/null \
-      && echo "  local remote.pushDefault=origin" || true
+    if git config --local rerere.enabled true 2>/dev/null; then
+      echo "  local rerere.enabled=true"
+    fi
+    if git config --local remote.pushDefault origin 2>/dev/null; then
+      echo "  local remote.pushDefault=origin"
+    fi
   fi
   echo "  Docs: https://gh.io/stacks  | agent skill: .agents/skills/gh-stack + sdlc stacked-prs"
 else
@@ -245,7 +247,7 @@ fi
 # Agent-specific layer: only for the supported agents selected by --agent/--agents.
 say "skills CLI installs -> selected Claude Code/Cursor/Codex skill dirs"
 if have npx; then
-  for spec in "shadcn/improve" "DietrichGebert/ponytail" "mattpocock/skills"; do
+  for spec in "DietrichGebert/ponytail" "mattpocock/skills"; do
     for ag in claude-code cursor codex; do
       want_agent "$ag" || continue
       NPX --yes skills add "$spec" --project --copy -a "$ag" -s '*' -y \
@@ -264,7 +266,11 @@ if have npx; then
   if [ "${#CAVEMAN_ARGS[@]}" -gt 0 ]; then
     NPX -y "github:JuliusBrussee/caveman" "${CAVEMAN_ARGS[@]}" --with-init --no-hooks \
       && echo "  installed" || echo "  FAILED"
-    rm -rf .windsurf .clinerules .opencode; rm -f .github/copilot-instructions.md; rmdir .github 2>/dev/null || true
+    rm -rf .windsurf .clinerules .opencode
+    if ! git ls-files --error-unmatch .github/copilot-instructions.md >/dev/null 2>&1; then
+      rm -f .github/copilot-instructions.md
+      rmdir .github 2>/dev/null || true
+    fi
   else echo "  SKIP: no selected caveman-capable agent"; fi
 else echo "  SKIP: npx missing"; fi
 

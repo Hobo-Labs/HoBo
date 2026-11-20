@@ -42,8 +42,8 @@
 		"assets:coverage": "uv run ../../.agents/skills/gamedev-assets/scripts/asset_manifest_check.py --manifest ./assets/assets_index.json --root ./assets --json ./tmp/coverage.json",
 		"assets:extract-frames": "node --import tsx ./scripts/extract-anim-frames.mts",
 		"play": "node --import tsx ./scripts/play-demo.mts",
-		"evidence": "node --import tsx ./scripts/play-demo.mts && node --import tsx ./scripts/evidence-check.mts",
-		"evidence:check": "node --import tsx ./scripts/evidence-check.mts",
+		"evidence": "node --import tsx ./scripts/play-demo.mts && pnpm run evidence:check",
+		"evidence:check": "node --import tsx ./scripts/evidence-check.mts && node --import tsx ./scripts/evidence-check.mts ../../src/draft/exp-proofs/ux/control-yard/assets/evidence",
 		"serve": "node --import tsx ./scripts/serve-demo.mts",
 		"play:anim": "echo open public/anim-test.html via pnpm run serve"
 	}

@@ -25,11 +25,15 @@ From the repository root:
 bash scripts/verify-state-machine.sh .agents/skills/verify-outbox-lease
 ```
 
-The command runs focused real-code checks, fast-check generated histories, and TLC 1.7.4. Set `TLA2TOOLS` to the checksum-pinned jar or let the runner download it. Java 11+, Node, and the installed workspace dependencies are required.
+The command runs focused real-code checks, fast-check generated histories, TLC 1.7.4, and a weakened-model counterexample. Set `TLA2TOOLS` to the checksum-pinned jar or let the runner download it. Java 11+, Node, and the installed workspace dependencies are required.
 
 ## Scope and evidence
 
-TLC explores one message, two caller IDs, two caller fences, and up to three delivery attempts. A tracked receipt can come from any of those attempts; IDs and fences may repeat, but the stored attempt strictly increases. Expiry permits reclaim and does not itself invalidate the current receipt. The model explores 289 distinct states. In a scratch copy, removing the attempt-equality guard violates `NoStaleAcknowledgment`; separate source mutations removing the queue or outbox generation predicate fail the real-code checks.
+TLC explores one message, two caller IDs, two caller fences, and up to three delivery attempts. A tracked receipt can come from any of those attempts; IDs and fences may repeat, but the stored attempt strictly increases. Expiry permits reclaim and does not itself invalidate the current receipt. The model explores 289 distinct states. Read every TLC result with `/statechart`; the maintained view merges lease identities and hides 264 same-label steps. The [delivery chart](../../../packages/storage-sqlite/README.md#queue-and-outbox-delivery-fencing) shows the checked flow. Removing the attempt-equality guard in a scratch model violates `NoStaleAcknowledgment`. Separate scratch source mutations removing the queue or outbox generation predicate fail the real-code checks; the restored skill then passes:
+
+```sh
+python3 .agents/skills/verify-outbox-lease/mutations/full.py
+```
 
 The generated real-code test uses seed 614446 and 150 histories with two to seven attempts, repeating and changing IDs and fences. It checks every older receipt against both the queue and outbox after each reclaim, then checks the current receipt succeeds. Separate cases reopen a file-backed SQLite journal, verify missing attempts fail closed, exercise acknowledgment after expiry before reclaim, and refuse unsafe counter increments.
 

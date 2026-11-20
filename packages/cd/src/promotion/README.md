@@ -97,9 +97,10 @@ and idempotency key (`promo_`, `rollback_`, `preview_`), so a repeated command
 returns the recorded promotion (I12). New promotion requests persist a
 fingerprint in the `env.PromoteRequested` envelope metadata, binding the
 Freight, targets, intent, deployment mode, pipeline, node, source Camp,
-strategy, proposal flag, fan-out, and preview TTL. A different request is
-refused, including when another writer wins the initial append. The store must
-preserve event metadata and enforce atomic stream appends. Upgrade all
+strategy, proposal flag, fan-out, and preview TTL. Target order is retained
+because it is the saga's execution order. A different request is refused,
+including when another writer wins the initial append. The store must preserve
+event metadata and enforce atomic stream appends. Upgrade all
 promotion workers before relying on this binding: older workers do not check
 it. Historical records without the fingerprint are checked against their
 available fields; a retry with an ambiguous inferred strategy or proposal may
@@ -107,6 +108,10 @@ be refused and needs a new key after the prior result is inspected. Preview
 retries also compare their recorded inputs and return the persisted expiry.
 This binding does not fence concurrent executions of the same request.
 CUE constraints: [`data-models/promotion.cue`](../../data-models/promotion.cue).
+
+The maintained verification skill executes five isolated implementation
+mutations, four TLA+ mutations, and one induction mutation. Every weakened
+guard must produce its expected counterexample before the baseline advances.
 
 New rollbacks claim a separate `cd-rollback-claim-<rollback-id>` stream before
 effects. Its metadata binds the Camp, reason, requested Set, and current Set;

@@ -244,19 +244,266 @@ describe("workspace test shards on this repository", () => {
 		].sort();
 		assert.ok(tested.length > 0);
 		const workspaces = readRepo().workspaces;
-		const full = [0, 1, 2, 3]
-			.map((index) =>
-				shardTestPlan(
-					{ mode: "all", reason: "global input" },
-					workspaces,
-					index,
-					4,
-					undefined,
-					() => tasks,
-				),
-			)
-			.flatMap((part) => (part.mode === "scoped" ? part.full : []));
-		assert.deepEqual([...full].sort(), tested);
+		const parts = [0, 1, 2, 3].map((index) =>
+			shardTestPlan(
+				{ mode: "all", reason: "global input" },
+				workspaces,
+				index,
+				4,
+				undefined,
+				() => tasks,
+			),
+		);
+		const carried = parts.flatMap((part) =>
+			part.mode === "scoped"
+				? [...part.full, ...(part.vitestShards?.keys() ?? [])]
+				: [],
+		);
+		assert.deepEqual([...new Set(carried)].sort(), tested);
+		const whole = parts.flatMap((part) =>
+			part.mode === "scoped" ? part.full : [],
+		);
+		assert.equal(new Set(whole).size, whole.length);
+		const sliceDirs = new Set(
+			parts.flatMap((part) =>
+				part.mode === "scoped" ? [...(part.vitestShards?.keys() ?? [])] : [],
+			),
+		);
+		assert.ok(sliceDirs.size > 0, "expected packages/hobo to be sliced");
+		const seen = new Map<string, number>();
+		for (const part of parts) {
+			if (part.mode !== "scoped") continue;
+			for (const [dir, spec] of part.vitestShards ?? new Map()) {
+				assert.ok(!part.full.includes(dir), `${dir} both whole and sliced`);
+				assert.ok(spec.count > 1, `${dir} sliced into ${spec.count}`);
+				for (const index of spec.indexes) {
+					assert.ok(
+						index >= 0 && index < spec.count,
+						`${dir} index ${index} of ${spec.count}`,
+					);
+					const key = `${dir}:${index}`;
+					assert.ok(!seen.has(key), `${key} carried twice`);
+					seen.set(key, spec.count);
+				}
+			}
+		}
+		for (const [key, count] of seen)
+			assert.equal(
+				[...seen.keys()].filter((other) =>
+					other.startsWith(`${key.split(":")[0]}:`),
+				).length,
+				count,
+				`${key}: all ${count} file shards carried`,
+			);
+	});
+});
+
+describe("vitest file shards of a heavy whole suite", () => {
+	const heavy: Repo = {
+		...extend(repo, {
+			"packages/hobo/package.json": manifest("@t/hobo", "vitest run"),
+			"packages/hobo/test/h1.test.ts":
+				'import { strict } from "node:assert";\n',
+			"packages/hobo/test/h2.test.ts":
+				'import { strict } from "node:assert";\n',
+			"packages/hobo/test/h3.test.ts":
+				'import { strict } from "node:assert";\n',
+			"packages/hobo/test/h4.test.ts":
+				'import { strict } from "node:assert";\n',
+		}),
+		workspaces: [
+			...repo.workspaces,
+			{ dir: "packages/hobo", name: "@t/hobo", dependencies: [] },
+		],
+	};
+	const durations = {
+		defaultSeconds: 1,
+		seconds: new Map<string, number>([["packages/hobo", 180]]),
+	};
+	const plan: TestPlan = {
+		mode: "scoped",
+		full: ["packages/hobo"],
+		subsets: new Map(),
+		skipped: [],
+	};
+
+	it("splits the heavy suite into vitest shards carried by different shards", () => {
+		const parts = [0, 1, 2, 3].map((index) =>
+			shardTestPlan(
+				plan,
+				heavy.workspaces,
+				index,
+				4,
+				durations,
+				undefined,
+				heavy,
+			),
+		);
+		const indexes = parts.flatMap(
+			(part) =>
+				(part.mode === "scoped"
+					? part.vitestShards?.get("packages/hobo")
+					: undefined
+				)?.indexes ?? [],
+		);
+		assert.deepEqual(indexes.sort(), [0, 1, 2, 3]);
+		for (const part of parts) {
+			if (part.mode !== "scoped") continue;
+			const spec = part.vitestShards?.get("packages/hobo");
+			assert.ok(spec, "every shard carries a file shard of the heavy suite");
+			assert.equal(spec.count, 4);
+			assert.ok(!part.full.includes("packages/hobo"));
+		}
+	});
+
+	it("keeps the heavy suite whole when its script is not plain vitest", () => {
+		const custom = extend(heavy, {
+			"packages/hobo/package.json": manifest(
+				"@t/hobo",
+				"pnpm run build && vitest run",
+			),
+		});
+		const part = shardTestPlan(
+			plan,
+			custom.workspaces,
+			0,
+			2,
+			durations,
+			undefined,
+			custom,
+		);
+		assert.equal(part.mode, "scoped");
+		if (part.mode !== "scoped") return;
+		assert.deepEqual(part.full, ["packages/hobo"]);
+		assert.equal(part.vitestShards, undefined);
+	});
+
+	it("keeps the heavy suite whole under its target weight", () => {
+		const light = {
+			defaultSeconds: 1,
+			seconds: new Map(durations.seconds).set("packages/hobo", 45),
+		};
+		const part = shardTestPlan(
+			plan,
+			heavy.workspaces,
+			0,
+			2,
+			light,
+			undefined,
+			heavy,
+		);
+		assert.equal(part.mode, "scoped");
+		if (part.mode !== "scoped") return;
+		assert.deepEqual(part.full, ["packages/hobo"]);
+	});
+
+	it("does not slice a dependent subset of the heavy package", () => {
+		const subset: TestPlan = {
+			mode: "scoped",
+			full: [],
+			subsets: new Map([["packages/hobo", ["test/h1.test.ts"]]]),
+			skipped: [],
+		};
+		const part = shardTestPlan(
+			subset,
+			heavy.workspaces,
+			0,
+			2,
+			durations,
+			undefined,
+			heavy,
+		);
+		assert.equal(part.mode, "scoped");
+		if (part.mode !== "scoped") return;
+		assert.deepEqual(part.subsets.get("packages/hobo"), ["test/h1.test.ts"]);
+		assert.equal(part.vitestShards, undefined);
+	});
+
+	it("plans enough shards for the file shards of one heavy suite", () => {
+		assert.equal(planShardCount(plan, 8, { durations, repo: heavy }), 4);
+		const light = {
+			mode: "scoped",
+			full: ["packages/hobo"],
+			subsets: new Map(),
+			skipped: [],
+		} satisfies TestPlan;
+		const lightDurations = {
+			defaultSeconds: 1,
+			seconds: new Map<string, number>([["packages/hobo", 45]]),
+		};
+		assert.equal(
+			planShardCount(light, 8, { durations: lightDurations, repo: heavy }),
+			1,
+		);
+	});
+
+	it("runs one --only test task per vitest file shard", () => {
+		const graph: TestGraph = (dirs) => [
+			{ taskId: "@t/hobo#build", task: "build", directory: "packages/hobo" },
+			{
+				taskId: "@t/adapter#build",
+				task: "build",
+				directory: "packages/adapter",
+			},
+			...(dirs.includes("packages/hobo")
+				? [
+						{
+							taskId: "@t/hobo#test",
+							task: "test",
+							directory: "packages/hobo",
+						},
+					]
+				: []),
+		];
+		const commands = planCommands(
+			{
+				mode: "scoped",
+				full: [],
+				vitestShards: new Map([
+					["packages/hobo", { count: 4, indexes: [2, 0] }],
+				]),
+				subsets: new Map(),
+				skipped: [],
+			},
+			[],
+			"1",
+			graph,
+		);
+		assert.deepEqual(commands, [
+			[
+				"exec",
+				"turbo",
+				"run",
+				"@t/hobo#build",
+				"@t/adapter#build",
+				"--continue",
+				"--concurrency=1",
+			],
+			[
+				"exec",
+				"turbo",
+				"run",
+				"test",
+				"--filter=./packages/hobo",
+				"--only",
+				"--concurrency=1",
+				"--",
+				"--passWithNoTests",
+				"--shard=1/4",
+			],
+			[
+				"exec",
+				"turbo",
+				"run",
+				"test",
+				"--filter=./packages/hobo",
+				"--only",
+				"--concurrency=1",
+				"--",
+				"--passWithNoTests",
+				"--shard=3/4",
+			],
+		]);
 	});
 });
 
@@ -1117,11 +1364,10 @@ describe("the repository's own plans", { concurrency: true }, () => {
 	const withTiered = (...others: string[]) => [...tiered, ...others].sort();
 
 	// Suites that merge the root config without a deep tier to leave out:
-	// `packages/cli` (its script builds first), `packages/secret-store-claim`,
-	// and the auth authoring proof (which raises its timeouts for tsc fixtures).
 	const merging = [
 		"packages/cli",
 		"packages/hobo",
+		"packages/iac/iac-alchemy",
 		"packages/secret-store-claim",
 		"src/draft/technical-proofs/hobo-auth-authoring-surface",
 	];
