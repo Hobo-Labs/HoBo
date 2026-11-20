@@ -2,6 +2,50 @@ import { randomUUID } from "node:crypto";
 
 import { bodyOf, json, type ProviderHandler } from "./tls-world.js";
 
+type VercelProjectEnv = Readonly<{
+	id: string;
+	key: string;
+	value: string;
+	type: string;
+	target: readonly string[];
+}>;
+
+type VercelProjectCreate = Readonly<{ name: string }>;
+
+function parseVercelProjectCreate(body: string): VercelProjectCreate {
+	try {
+		// SAFETY: test fake coerces arbitrary request JSON to a project name string.
+		const parsed = JSON.parse(body || "{}") as {
+			name?: string | number | null;
+		};
+		return { name: String(parsed.name ?? "") };
+	} catch {
+		return { name: "" };
+	}
+}
+
+function parseVercelEnvCreate(
+	body: string,
+): Omit<VercelProjectEnv, "id"> {
+	try {
+		// SAFETY: test fake mirrors Vercel env create payloads; absent fields stay empty.
+		const parsed = JSON.parse(body || "{}") as {
+			key?: string;
+			value?: string;
+			type?: string;
+			target?: string[];
+		};
+		return {
+			key: parsed.key ?? "",
+			value: parsed.value ?? "",
+			type: parsed.type ?? "",
+			target: parsed.target ?? [],
+		};
+	} catch {
+		return { key: "", value: "", type: "", target: [] };
+	}
+}
+
 /**
  * Vercel and Neon as their APIs answer, for the TLS world. Each records what
  * it was asked, and changes state only the way the real provider would: a
@@ -18,7 +62,7 @@ export function fakeVercel() {
 	const tokens = new Set<string>();
 	const deployments: string[] = [];
 	/** Projects by name, with their environment variables. */
-	const projects = new Map<string, Array<Record<string, unknown>>>();
+	const projects = new Map<string, VercelProjectEnv[]>();
 	const handle: ProviderHandler = async (request, response) => {
 		const url = new URL(request.url ?? "/", "https://api.vercel.com");
 		const method = request.method ?? "GET";
@@ -67,8 +111,7 @@ export function fakeVercel() {
 		// Projects and their environment, as `setProjectEnv` and a git
 		// deployment's missing-project path use them.
 		if (method === "POST" && url.pathname === "/v9/projects") {
-			const made = JSON.parse(body || "{}");
-			const name = typeof made.name === "string" ? made.name : "";
+			const { name } = parseVercelProjectCreate(body);
 			if (projects.has(name))
 				return json(response, 409, { error: { code: "conflict" } });
 			projects.set(name, []);
@@ -84,7 +127,7 @@ export function fakeVercel() {
 				});
 			if (method === "GET") return json(response, 200, { envs });
 			if (method === "POST") {
-				const made = JSON.parse(body || "{}");
+				const made = parseVercelEnvCreate(body);
 				envs.push({ id: `env_${envs.length}`, ...made });
 				return json(response, 200, { created: made, failed: [] });
 			}

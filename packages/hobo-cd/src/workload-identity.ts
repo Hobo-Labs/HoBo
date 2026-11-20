@@ -17,6 +17,7 @@ import { z } from "zod";
 // reuses it (and re-applies its trust). The store's coordinates and the id
 // (ids only, no secret) go to the deployment as its configuration.
 
+// public-contract: the owner store entry holding the CD workload Infisical identity id.
 /** Where the identity's id is kept in the owner's store. */
 export const CD_WORKLOAD_IDENTITY_ENTRY = "HOBO_CD_WORKLOAD_IDENTITY_ID";
 
