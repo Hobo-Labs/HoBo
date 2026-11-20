@@ -595,6 +595,48 @@ describe("createCutoverTrafficShifter", () => {
 		expect(port.weights()).toEqual(["blue:95,green:5", "blue:100"]);
 	});
 
+	it("destination health gate is invoked only for a plan applied and acknowledged in the same shift", async () => {
+		const gated: { planId: string; acknowledgedId: string }[] = [];
+		const { port, shifter, cdctx } = await setup({
+			healthGate: ({ plan, applyResult }) => {
+				gated.push({ planId: plan.planId, acknowledgedId: applyResult.planId });
+				return true;
+			},
+		});
+		const result = await shifter.shift(
+			{ campId: camp("prod-a"), plan: stage(25), signal },
+			cdctx,
+		);
+		expect(result.realized).toBe("full");
+		expect(gated).toHaveLength(1);
+		const [gate] = gated;
+		expect(gate?.planId).toBe(`${stage(25).planId}:p25`);
+		expect(gate?.acknowledgedId).toBe(gate?.planId);
+		expect(port.applied.map((plan) => plan.planId)).toContain(gate?.planId);
+		expect(gate?.planId).not.toBe("live");
+	});
+
+	it("restoration health gate is invoked only for the restoration plan applied in the same shift", async () => {
+		const gated: { planId: string; acknowledgedId: string }[] = [];
+		const { port, shifter, cdctx } = await setup({
+			healthGate: () => false,
+			restorationHealthGate: ({ plan, applyResult }) => {
+				gated.push({ planId: plan.planId, acknowledgedId: applyResult.planId });
+				return true;
+			},
+		});
+		const result = await shifter.shift(
+			{ campId: camp("prod-a"), plan: stage(5), signal },
+			cdctx,
+		);
+		expect(result.notes[0]).toBe("traffic-cutover-rolled-back");
+		expect(gated).toHaveLength(1);
+		const [gate] = gated;
+		expect(gate?.planId).toBe(`${stage(5).planId}:p0`);
+		expect(gate?.acknowledgedId).toBe(gate?.planId);
+		expect(port.applied.map((plan) => plan.planId)).toContain(gate?.planId);
+	});
+
 	it("a degraded provider realization is never reported as converged", async () => {
 		const { port, shifter, cdctx } = await setup();
 		port.degradeAbove = 50;
