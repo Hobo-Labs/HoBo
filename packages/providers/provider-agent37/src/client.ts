@@ -304,12 +304,13 @@ export type Agent37Client = {
 };
 
 type RequestOptions<T> = {
-	readonly method: "GET" | "POST" | "DELETE";
+	readonly method: "GET" | "HEAD" | "POST" | "DELETE";
 	readonly url: string;
 	readonly headers: Readonly<Record<string, string>>;
 	readonly expected: readonly number[];
 	readonly body?: unknown;
 	readonly timeoutMs: number;
+	readonly idempotent?: boolean;
 } & (
 	| {
 			readonly responseSchema: z.ZodType<T>;
@@ -321,7 +322,12 @@ type RequestOptions<T> = {
 	  }
 );
 
-function responseError(response: TransportResponse, now: number): Agent37Error {
+function responseError(
+	response: TransportResponse,
+	now: number,
+	method: RequestOptions<unknown>["method"],
+	idempotent: boolean,
+): Agent37Error {
 	let providerCode: string | undefined;
 	try {
 		const parsed = errorEnvelope.safeParse(JSON.parse(response.body));
@@ -331,9 +337,10 @@ function responseError(response: TransportResponse, now: number): Agent37Error {
 	const errorOptions: Agent37ErrorOptionsDraft = {
 		status: response.status,
 		retryable:
-			(response.status >= 500 && response.status <= 599) ||
-			providerCode === "no_capacity" ||
-			providerCode === "try_again",
+			(method === "GET" || method === "HEAD" || idempotent) &&
+			((response.status >= 500 && response.status <= 599) ||
+				providerCode === "no_capacity" ||
+				providerCode === "try_again"),
 	};
 	if (providerCode !== undefined) errorOptions.providerCode = providerCode;
 	if (retryAfterMs !== undefined) errorOptions.retryAfterMs = retryAfterMs;
@@ -374,7 +381,12 @@ export function createAgent37Client(
 			);
 		}
 		if (!input.expected.includes(response.status))
-			throw responseError(response, now());
+			throw responseError(
+				response,
+				now(),
+				input.method,
+				input.idempotent ?? false,
+			);
 		let json: unknown;
 		try {
 			json =
@@ -452,14 +464,16 @@ export function createAgent37Client(
 			});
 		},
 		exec(id, input) {
+			const body = execInput.parse(input);
 			return request({
 				method: "POST",
 				url: `${AGENT37_EXEC_ORIGIN}/v1/instances/${encodeURIComponent(id)}/exec`,
 				headers: execHeaders,
 				expected: [200],
 				responseSchema: execResult,
-				body: execInput.parse(input),
+				body,
 				timeoutMs: AGENT37_MAX_TIMEOUT_MS,
+				idempotent: body.name !== undefined,
 			});
 		},
 		registerWebhook(url) {

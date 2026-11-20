@@ -74,6 +74,19 @@ describe("Agent37 transport", () => {
 		expect(delays).toEqual([150]);
 	});
 
+	it("retries HEAD responses without replaying a request body", async () => {
+		let calls = 0;
+		const transport = createAgent37Transport({
+			fetchImpl: async () => {
+				calls += 1;
+				return calls === 1 ? jsonResponse(500) : jsonResponse(200);
+			},
+			sleep: async () => {},
+		});
+		expect((await transport({ ...request, method: "HEAD" })).status).toBe(200);
+		expect(calls).toBe(2);
+	});
+
 	it.each([
 		[429, "rate_limited"],
 		[402, "insufficient_balance"],
