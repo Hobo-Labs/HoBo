@@ -17,7 +17,7 @@
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
-		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts && tsc --noEmit -p tsconfig.iac-tests.json",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer",
 		"test:contract:provider": "vitest run contracts/provider"
@@ -38,6 +38,7 @@
 		"@hobo/data-postgres": "workspace:*",
 		"@types/node": "^22.15.29",
 		"@types/pg": "8.15.5",
+		"fast-check": "^4.3.0",
 		"vitest": "^4.1.9",
 		"@hobo/storage-sqlite": "workspace:*"
 	},
