@@ -173,11 +173,6 @@
       "connectivityId": "config-service.url/v1"
     },
     {
-      "profile": "provider.project/v1",
-      "productId": "vercel.project/v1",
-      "selected": true
-    },
-    {
       "profile": "queue.at-least-once/v1",
       "productId": "vercel.queues/v1",
       "selected": true
@@ -210,6 +205,11 @@
     {
       "profile": "service.scheduled/v1",
       "productId": "vercel.schedules/v1",
+      "selected": true
+    },
+    {
+      "profile": "web.project/v1",
+      "productId": "vercel.project/v1",
       "selected": true
     }
   ]

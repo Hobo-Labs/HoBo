@@ -175,7 +175,7 @@ Yard is the binding authority). It is the one place the provider is named.
 
 | Profile | Offering | Attached by | In Camp |
 |---|---|---|---|
-| `provider.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
+| `web.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
 | `api.http/v1` | `vercel.function/v1` (`api/relay.ts`, 300 s) | the git deployment | both |
 | `service.queue-consumer/v1` | `vercel.function/v1` (`api/queue.ts`, topic `hobo-ci`) | the git deployment | both |
 | `queue.at-least-once/v1`, `queue.delay/v1` | `vercel.queues/v1` (topic `hobo-ci`) | `vercel.json` | both |
@@ -465,6 +465,18 @@ Vercel CLI, fake probe answers, a temporary CD journal, fake GitHub and
 Infisical endpoints). No live deployment of the relay was made from this
 repository by this change.**
 
+### Continuity
+
+Every stateful relay resource declares its policy with the `continuity` trait
+(`RELAY_CONTINUITY` in `src/bindle.ts`). CI keeps no database and GitHub is the
+source of truth, so all of them are `rebuildable`: nothing is copied, which is
+the cheapest tier. The cache is rebuilt by name and its fleet moves cold; the
+repair queue is refilled by the 15-minute schedule; a lost webhook delivery is
+redelivered by the webhook repair and a lost lease step is found by the
+queued-job repair, both scanning GitHub from a checkpointed cursor, so an
+interrupted scan resumes where it stopped; the config service's store keeps its
+own replicas and `hobo ci up` rebuilds what the relay reads.
+
 ## Config service
 
 ADR-0179 (phase 3) moves the relay's configuration and secrets to a config
@@ -656,6 +668,12 @@ per member), the messages, the step ladder and the handoff. The handoff's bodies
 ([`contracts/queue-handoff.pact.json`](contracts/queue-handoff.pact.json)),
 executed by `contracts/queue-handoff.consumer.test.ts` against both sides.
 Nothing here has run against Vercel, Upstash, Infisical or GitHub.
+
+`test/scheduled-relay-emulator.test.ts` registers an explicit 15-minute local
+interval with the schedule emulator. It sends each synthetic tick through the
+relay's authenticated repair endpoint and queue worker, then checks duplicate
+delivery, cache-loss recovery and settlement. It does not emulate Vercel cron
+timing or prove provider delivery guarantees.
 
 ### The cache fleet
 

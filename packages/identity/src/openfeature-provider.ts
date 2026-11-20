@@ -1,5 +1,5 @@
 /**
- * OpenFeature-shaped provider over FeatureFlagStore (ADR-0044).
+ * OpenFeature-shaped provider over FeatureFlagPort (ADR-0044).
  * Application code uses this API only — never vendor SDKs.
  * We implement the OpenFeature client surface natively (no hard npm dependency).
  */
@@ -12,7 +12,7 @@ import {
 import {
 	type DetailEvaluation,
 	FEATURE_FLAG_PORT,
-	type FeatureFlagStore,
+	type FeatureFlagPort,
 	type FlagEvalContext,
 	type FlagValue,
 } from "./feature-flag-store.js";
@@ -45,7 +45,7 @@ export class HoboOpenFeatureProvider {
 	});
 
 	constructor(
-		readonly store: FeatureFlagStore,
+		readonly store: FeatureFlagPort,
 		private readonly staticScope: HoBoScopeAttributes = {},
 	) {}
 
@@ -144,7 +144,7 @@ export class HoboOpenFeatureProvider {
 export class HoboFeatureClient {
 	readonly provider: HoboOpenFeatureProvider;
 
-	constructor(store: FeatureFlagStore, scope: HoBoScopeAttributes = {}) {
+	constructor(store: FeatureFlagPort, scope: HoBoScopeAttributes = {}) {
 		this.provider = new HoboOpenFeatureProvider(store, scope);
 	}
 
@@ -202,7 +202,7 @@ export class HoboFeatureClient {
 
 /** Offline local client for hobo dev (contract-asserted context). */
 export function createLocalFeatureClient(
-	store: FeatureFlagStore,
+	store: FeatureFlagPort,
 	dev?: { tenant?: string; userId?: string; env?: string },
 ): HoboFeatureClient {
 	const ctx = createDevEvaluationContext(dev);
