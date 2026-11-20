@@ -4,6 +4,8 @@ This package currently contains only the PR1 test harness for Agent37's Sandbox 
 
 `test/fake/index.ts` exports an in-process HTTP server and a Testcontainers starter. The fake covers instance CRUD and lifecycle operations, synchronous and background exec with five-minute name idempotency, webhooks with Standard Webhooks signatures, and documented capacity, balance, memory-limit, and injected rate-limit failures. It uses runtime-generated test credentials and never calls the real Agent37 service.
 
+Workspace registration includes this package in the root `pnpm-lock.yaml` (devDependencies such as `testcontainers` and `vitest` for the fake harness).
+
 Run the fake self-tests and build the empty production entrypoint with:
 
 ```sh
