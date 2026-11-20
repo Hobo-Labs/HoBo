@@ -123,6 +123,7 @@ export const RELAY_ADOPT_VERIFICATION = Object.freeze({
 	previewProgressDeadlineMs: 25 * 60_000,
 });
 
+// public-contract: the suite that verifies a preview by its deployment record.
 export const RELAY_PREVIEW_DEPLOYMENT_SUITE = "vercel.deployment.ready";
 
 /**
