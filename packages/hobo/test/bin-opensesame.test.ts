@@ -7,6 +7,7 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -44,6 +45,14 @@ const TSX_LOADER = createRequire(import.meta.url).resolve("tsx");
 // Each relaunch composes the whole CLI twice (the parent, then the command):
 // tens of seconds on a loaded machine.
 const RUN_TIMEOUT_MS = 180_000;
+const CAN_TRUST_PATH =
+	process.platform === "win32" ||
+	[0, process.geteuid?.()].includes(statSync("/").uid);
+const describeTrustedPath = CAN_TRUST_PATH
+	? describe.concurrent
+	: describe.skip;
+const COMPOSED_HOBO_OPENSESAME =
+	"the composed hobo binary under HOBO_CREDENTIALS=opensesame";
 
 const BINDINGS = {
 	bindings: [
@@ -97,6 +106,11 @@ function dirsFor({ onTestFinished }: TestContext): Dirs {
 
 function standIn({ root, binDir }: Dirs, scenario: string): string {
 	const record = join(root, "opensesame-record.json");
+	writeFileSync(
+		join(binDir, "node"),
+		`#!/bin/sh\nexec '${process.execPath}' "$@"\n`,
+	);
+	chmodSync(join(binDir, "node"), 0o755);
 	writeFileSync(
 		join(binDir, "opensesame"),
 		`#!/bin/sh\nFAKE_OPENSESAME_SCENARIO='${scenario}' FAKE_OPENSESAME_RECORD='${record}' exec '${process.execPath}' --no-warnings '${FAKE_OPENSESAME}' "$@"\n`,
@@ -204,7 +218,7 @@ function runBin(
 	});
 }
 
-describe.concurrent("the composed hobo binary under HOBO_CREDENTIALS=opensesame", () => {
+describeTrustedPath(COMPOSED_HOBO_OPENSESAME, () => {
 	it(
 		"relaunches itself under OpenSesame with its TypeScript loader and not its --env-file, reads the bindings from --cwd, and exits as the command did",
 		async (context) => {
@@ -274,7 +288,32 @@ describe.concurrent("the composed hobo binary under HOBO_CREDENTIALS=opensesame"
 	);
 });
 
-describe.concurrent("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
+describe("the composed hobo binary's owner keys", () => {
+	it(
+		"renders help without opening the owner store for a retained Pulumi workspace",
+		async (context) => {
+			const { expect } = context;
+			const dirs = dirsFor(context);
+			const run = await runBin(dirs, {
+				bin: HOBO_SOURCE_BIN,
+				args: ["ci", "--help"],
+				env: {
+					HOBO_PULUMI_LIVE: "1",
+					HOBO_PULUMI_WORKDIR: join(dirs.root, "retained"),
+					HOBO_SECRET_STORE: "unavailable-fixture",
+				},
+				record: join(dirs.root, "unused-record.json"),
+				cwd: dirs.elsewhere,
+			});
+			expect(run.status).toBe(0);
+			expect(run.stderr).not.toContain("HOBO_OWNER_STORE_UNAVAILABLE");
+			expect(run.stdout).toMatch(/ci/iu);
+		},
+		RUN_TIMEOUT_MS,
+	);
+});
+
+describeTrustedPath("hobo-mcp under HOBO_CREDENTIALS=opensesame", () => {
 	it(
 		"relaunches under OpenSesame, given the store passphrase, and serves MCP through it",
 		async (context) => {

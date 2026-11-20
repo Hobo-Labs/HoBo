@@ -1,4 +1,5 @@
 import type { CookieConsentConfig } from "vanilla-cookieconsent";
+import { legalLinks } from "./legalLinks";
 
 declare global {
   interface Window {
@@ -7,18 +8,14 @@ declare global {
 }
 
 export const getConfig = () => {
-  // See https://cookieconsent.orestbida.com/reference/configuration-reference.html for configuration options.
   const config: CookieConsentConfig = {
-    // Default configuration for the modal.
     root: "body",
     autoShow: true,
     disablePageInteraction: false,
-    hideFromBots: import.meta.env.PROD ? true : false, // Set this to false for dev/headless tests otherwise the modal will not be visible.
+    hideFromBots: import.meta.env.PROD,
     mode: "opt-in",
-    // Bump the revision field when you add new services
     revision: 0,
 
-    // Default configuration for the cookie.
     cookie: {
       name: "cc_cookie",
       domain: location.hostname,
@@ -38,22 +35,21 @@ export const getConfig = () => {
 
     categories: {
       necessary: {
-        enabled: true, // this category is enabled by default
-        readOnly: true, // this category cannot be disabled
+        enabled: true,
+        readOnly: true,
       },
       analytics: {
         autoClear: {
           cookies: [
             {
-              name: /^_ga/, // regex: match all cookies starting with '_ga'
+              name: /^_ga/,
             },
             {
-              name: "_gid", // string: exact cookie name
+              name: "_gid",
             },
           ],
         },
 
-        // https://cookieconsent.orestbida.com/reference/configuration-reference.html#category-services
         services: {
           ga: {
             label: "Google Analytics",
@@ -65,9 +61,6 @@ export const getConfig = () => {
                   throw new Error("Google Analytics ID is missing");
                 }
                 window.dataLayer = window.dataLayer || [];
-                // Google's gtag.js initialization snippet relies on pushing the
-                // arguments object (not a real array) into dataLayer, so the
-                // gtag.js loader can replay queued events correctly.
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 function gtag(..._args: unknown[]) {
                   // eslint-disable-next-line prefer-rest-params
@@ -76,7 +69,6 @@ export const getConfig = () => {
                 gtag("js", new Date());
                 gtag("config", GA_ANALYTICS_ID);
 
-                // Adding the script tag dynamically to the DOM.
                 const script = document.createElement("script");
                 script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ANALYTICS_ID}`;
                 script.async = true;
@@ -98,17 +90,15 @@ export const getConfig = () => {
           consentModal: {
             title: "We use cookies",
             description:
-              "We use cookies primarily for analytics to enhance your experience. By accepting, you agree to our use of these cookies. You can manage your preferences or learn more about our cookie policy.",
+              "We use cookies primarily for analytics to enhance your experience. By accepting, you agree to our use of these cookies. You can manage your preferences at any time.",
             acceptAllBtn: "Accept all",
             acceptNecessaryBtn: "Reject all",
-            // showPreferencesBtn: 'Manage Individual preferences', // (OPTIONAL) Activates the preferences modal
-            // TODO: Add your own privacy policy and terms and conditions links below.
-            footer: `
-            <a href="<your-url-here>" target="_blank">Privacy Policy</a>
-            <a href="<your-url-here>" target="_blank">Terms and Conditions</a>
-                    `,
+            footer: legalLinks(
+              import.meta.env.REACT_APP_PRIVACY_POLICY_URL,
+              import.meta.env.REACT_APP_TERMS_URL,
+              location.origin,
+            ),
           },
-          // The showPreferencesBtn activates this modal to manage individual preferences https://cookieconsent.orestbida.com/reference/configuration-reference.html#translation-preferencesmodal
           preferencesModal: {
             sections: [],
           },

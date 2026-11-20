@@ -9,10 +9,7 @@ import {
 	subtractDecimal,
 } from "@hobo/pricing";
 
-// Interpret the public number contract by the decimal value it serializes as.
-// JavaScript's shortest form can use an exponent; pricing's parser deliberately
-// accepts only plain decimal strings, so expand the exponent here.
-function decimal(value: number): Decimal {
+function decimalFromNumberString(value: number): Decimal {
 	if (!Number.isFinite(value) || value < 0) {
 		throw new RangeError("money input must be a finite non-negative number");
 	}
@@ -25,7 +22,9 @@ function decimal(value: number): Decimal {
 	return { coefficient, scale: Math.max(scale, 0) };
 }
 
-function adjacent(value: number, direction: "up" | "down"): number {
+const decimal = decimalFromNumberString;
+
+function adjacentFloat64Bits(value: number, direction: "up" | "down"): number {
 	if (value === 0) return direction === "up" ? Number.MIN_VALUE : 0;
 	const buffer = new ArrayBuffer(8);
 	const view = new DataView(buffer);
@@ -35,17 +34,22 @@ function adjacent(value: number, direction: "up" | "down"): number {
 	return view.getFloat64(0);
 }
 
-// Conversions to the legacy number wire format are conservative: never round
-// a liability down, or an available amount up. Infinity is ineligible.
-function asNumber(value: Decimal, direction: "up" | "down"): number {
+function asNumberConservative(
+	value: Decimal,
+	direction: "up" | "down",
+): number {
 	const candidate = Number(formatDecimal(value));
-	if (!Number.isFinite(candidate)) return candidate;
+	if (!Number.isFinite(candidate))
+		return direction === "down" ? Number.MAX_VALUE : candidate;
 	const comparison = compareDecimal(decimal(candidate), value);
-	if (direction === "up" && comparison < 0) return adjacent(candidate, "up");
+	if (direction === "up" && comparison < 0)
+		return adjacentFloat64Bits(candidate, "up");
 	if (direction === "down" && comparison > 0)
-		return adjacent(candidate, "down");
+		return adjacentFloat64Bits(candidate, "down");
 	return candidate;
 }
+
+const asNumber = asNumberConservative;
 
 export function costForUnits(
 	units: number,
@@ -127,4 +131,67 @@ export function moneySumExceeds(
 		DECIMAL_ZERO,
 	);
 	return compareDecimal(sum, decimal(limit)) > 0;
+}
+
+export function chargeWithinBudget(
+	units: number,
+	freeUnits: number,
+	unitCost: number,
+	switchingCost: number,
+	budgetCap: number,
+	spendToDate: number,
+	reservedCost: number,
+): boolean {
+	const paid = maxDecimal(
+		subtractDecimal(decimal(units), decimal(freeUnits)),
+		DECIMAL_ZERO,
+	);
+	const charge = addDecimal(
+		multiplyDecimal(paid, decimal(unitCost)),
+		decimal(switchingCost),
+	);
+	const remaining = maxDecimal(
+		subtractDecimal(
+			subtractDecimal(decimal(budgetCap), decimal(spendToDate)),
+			decimal(reservedCost),
+		),
+		DECIMAL_ZERO,
+	);
+	return compareDecimal(charge, remaining) <= 0;
+}
+
+export function exposureWithinBudget(
+	units: number,
+	freeUnits: number,
+	unitCost: number,
+	switchingCost: number,
+	estimatedCost: number | undefined,
+	budgetCap: number,
+	spendToDate: number,
+	reservedCost: number,
+): boolean {
+	const paid = maxDecimal(
+		subtractDecimal(decimal(units), decimal(freeUnits)),
+		DECIMAL_ZERO,
+	);
+	const fromQuote = addDecimal(
+		multiplyDecimal(paid, decimal(unitCost)),
+		decimal(switchingCost),
+	);
+	let exposure = fromQuote;
+	if (
+		estimatedCost !== undefined &&
+		Number.isFinite(estimatedCost) &&
+		estimatedCost >= 0
+	) {
+		exposure = maxDecimal(exposure, decimal(estimatedCost));
+	}
+	const remaining = maxDecimal(
+		subtractDecimal(
+			subtractDecimal(decimal(budgetCap), decimal(spendToDate)),
+			decimal(reservedCost),
+		),
+		DECIMAL_ZERO,
+	);
+	return compareDecimal(exposure, remaining) <= 0;
 }
