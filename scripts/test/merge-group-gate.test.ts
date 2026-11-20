@@ -83,12 +83,15 @@ describe("merge-group required gate", () => {
 			planner,
 			/merge_tests: \$\{\{ steps\.merge-group-base\.outputs\.tests \}\}/u,
 		);
-		// The plan job runs no dependencies and no Turbo tasks: the planning
-		// scripts use node builtins only, so the plan cannot stall behind an
-		// install while every other job waits on it.
-		assert.doesNotMatch(planner, /pnpm-install\.mts/u);
-		assert.doesNotMatch(planner, /deps-layer\.mts/u);
-		assert.doesNotMatch(planner, /turbo-cache/u);
+		const planUsesNodeBuiltinsOnly =
+			"pr_gate_plan uses node builtins only, without dependency installation or Turbo tasks";
+		assert.doesNotMatch(
+			planner,
+			/pnpm-install\.mts/u,
+			planUsesNodeBuiltinsOnly,
+		);
+		assert.doesNotMatch(planner, /deps-layer\.mts/u, planUsesNodeBuiltinsOnly);
+		assert.doesNotMatch(planner, /turbo-cache/u, planUsesNodeBuiltinsOnly);
 		assert.match(
 			validation,
 			/needs: \[route, ci-runner-image, pr_gate_plan\]/u,
@@ -194,7 +197,6 @@ describe("merge-group required gate", () => {
 									VALIDATION_RESULT: validationResult,
 									WORKSPACE_RESULT: workspaceResult,
 									AFFECTED_RESULT: affectedResult,
-									// The scripts job's own cases: scripts-tests-job.test.ts.
 									SCRIPTS_RESULT: "success",
 								},
 							});
@@ -322,15 +324,17 @@ describe("merge-group required gate", () => {
 				results.some((result) => result === "failure" || result === "cancelled")
 			)
 				assert.equal(accepted, false, JSON.stringify(entry));
-			// Without a route job that succeeded and said `true`, nothing changes:
-			// a skipped plan, validation or workspace job is refused as before.
 			if (
 				(entry.route !== "success" || entry.flag !== "true") &&
 				(entry.plan !== "success" ||
 					entry.validation !== "success" ||
 					entry.workspace !== "success")
 			)
-				assert.equal(accepted, false, JSON.stringify(entry));
+				assert.equal(
+					accepted,
+					false,
+					`skipped jobs require a successful attesting route: ${JSON.stringify(entry)}`,
+				);
 			if (
 				accepted &&
 				results.includes("skipped") &&

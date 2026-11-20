@@ -583,14 +583,16 @@ export type AttestationVerdict =
 	| Readonly<{ attested: true; jobs: readonly CoveredJob[]; attestor: string }>
 	| Readonly<{ attested: false; reason: string }>;
 
-/** Either half of the PR impact gate's plan/validation split names the group. */
-const ofGatePlan = (jobs: readonly string[]): boolean =>
+const includesPrImpactGatePlanOrValidation = (
+	jobs: readonly string[],
+): boolean =>
 	jobs.includes("pr_gate_plan") || jobs.includes("pr_gate_validation");
 
 export function omitImpactGroup(
 	verdict: AttestationVerdict,
 ): AttestationVerdict {
-	if (!verdict.attested || !ofGatePlan(verdict.jobs)) return verdict;
+	if (!verdict.attested || !includesPrImpactGatePlanOrValidation(verdict.jobs))
+		return verdict;
 	const jobs = verdict.jobs.filter((job) => !GATE_JOBS.includes(job));
 	return jobs.length > 0
 		? { ...verdict, jobs }

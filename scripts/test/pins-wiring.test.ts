@@ -70,9 +70,11 @@ describe("pins wiring", () => {
 				`${name}: status follows checkout`,
 			);
 			if (name === "pr_gate_plan") {
-				// The plan job installs nothing: its planning scripts use node
-				// builtins only, so the pins check needs no dependency store.
-				assert.equal(install, -1, `${name}: plans without installing`);
+				assert.equal(
+					install,
+					-1,
+					`${name}: node-builtin planning needs no dependency store or install`,
+				);
 				continue;
 			}
 			assert.ok(install > status, `${name}: status precedes pnpm install`);

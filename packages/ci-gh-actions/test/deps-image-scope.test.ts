@@ -248,10 +248,7 @@ describe("CI deps image push scope", () => {
 		expect(depsJob.needs).toEqual(["route"]);
 	});
 
-	it("splits the shard plan out of the validation job so shards overlap the S0 gate", () => {
-		// The plan resolves the base, the scope and the shards; the validation
-		// runs the S0 gate set and the PR-only gates from the plan's outputs,
-		// and the shards start from the plan without waiting for validation.
+	it("resolves base, scope, and shards before validation so shards overlap the S0 gate", () => {
 		expect(prPlan.outputs).toEqual({
 			merge_base: "${{ steps.merge-group-base.outputs.base }}",
 			merge_tests: "${{ steps.merge-group-base.outputs.tests }}",
