@@ -86,8 +86,10 @@ keeps the fixed service and step check names, groups reconciler checks under
 fixed `ok` or `unavailable` details. The in-process `health()` method retains
 the original names and details. Hosts can use `sanitizedCdHealth` when
 exposing readiness through another surface. Network readiness fails closed on
-nonboolean check values and on a reported failure of a gating check; non-gating
-step failures remain visible without blocking readiness.
+nonboolean check values, missing `started`, `store`, or `step:sources` evidence,
+and a reported failure of a gating check.
+Reconciler, issuer, and conductor checks gate when supplied; non-gating step
+failures remain visible without blocking readiness.
 
 ## Drain
 

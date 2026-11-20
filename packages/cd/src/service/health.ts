@@ -17,6 +17,7 @@ const GATING_CHECK_NAMES = new Set([
 	"conductor",
 	"reconcilers",
 ]);
+const REQUIRED_CHECK_NAMES = ["started", "store", "step:sources"] as const;
 
 // public-contract: readiness report with private check names and details removed.
 export function sanitizedCdHealth(report: HealthReport): HealthReport {
@@ -53,10 +54,12 @@ export function sanitizedCdHealth(report: HealthReport): HealthReport {
 			ok: other,
 			detail: other ? "ok" : "unavailable",
 		});
+	const present = new Set(checks.map((check) => check.name));
 	return {
 		ok:
 			report.ok === true &&
 			valid &&
+			REQUIRED_CHECK_NAMES.every((name) => present.has(name)) &&
 			checks.every((check) => !GATING_CHECK_NAMES.has(check.name) || check.ok),
 		checks,
 	};

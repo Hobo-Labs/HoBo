@@ -321,7 +321,9 @@ describe("CD read API — routes", () => {
 				health: () => ({
 					ok: true,
 					checks: [
+						{ name: "started", ok: true, detail: marker },
 						{ name: "store", ok: true, detail: marker },
+						{ name: "step:sources", ok: true, detail: marker },
 						{ name: "issuer", ok: true, detail: marker },
 						{ name: "reconcilers", ok: true, detail: marker },
 						{ name: "dependencies", ok: true, detail: marker },
@@ -336,7 +338,9 @@ describe("CD read API — routes", () => {
 		const body = await json(res);
 		expect(JSON.stringify(body)).not.toContain(marker);
 		expect(body.value.checks).toEqual([
+			{ name: "started", ok: true, detail: "ok" },
 			{ name: "store", ok: true, detail: "ok" },
+			{ name: "step:sources", ok: true, detail: "ok" },
 			{ name: "issuer", ok: true, detail: "ok" },
 			{ name: "reconcilers", ok: true, detail: "ok" },
 			{ name: "dependencies", ok: true, detail: "ok" },
@@ -387,6 +391,39 @@ describe("CD read API — routes", () => {
 		});
 	});
 
+	it.each(["all", "started", "store", "step:sources"])(
+		"refuses a healthy report with missing %s gating evidence",
+		async (missing) => {
+			const { cd, store } = setupApi();
+			const required = [
+				{ name: "started", ok: true, detail: "fixture" },
+				{ name: "store", ok: true, detail: "fixture" },
+				{ name: "step:sources", ok: true, detail: "fixture" },
+			];
+			const api = createCdControlApi({
+				store,
+				cd,
+				tenant: "t1",
+				now: () => 1,
+				service: {
+					health: () => ({
+						ok: true,
+						checks:
+							missing === "all"
+								? []
+								: required.filter((check) => check.name !== missing),
+					}),
+				},
+			});
+			const res = await api.handle(get("/v1/cd/ready"), signal());
+			expect(res.status).toBe(503);
+			expect((await json(res)).reasons?.[0]).toMatchObject({
+				code: "not-ready",
+				subject: "service",
+			});
+		},
+	);
+
 	it.each([
 		{ name: "started", ok: false, subject: "started" },
 		{ name: "store", ok: false, subject: "store" },
@@ -436,13 +473,21 @@ describe("CD read API — routes", () => {
 			service: {
 				health: () => ({
 					ok: true,
-					checks: [{ name: "step:inventory", ok: false, detail: "private" }],
+					checks: [
+						{ name: "started", ok: true, detail: "fixture" },
+						{ name: "store", ok: true, detail: "fixture" },
+						{ name: "step:sources", ok: true, detail: "fixture" },
+						{ name: "step:inventory", ok: false, detail: "private" },
+					],
 				}),
 			},
 		});
 		const res = await api.handle(get("/v1/cd/ready"), signal());
 		expect(res.status).toBe(200);
 		expect((await json(res)).value.checks).toEqual([
+			{ name: "started", ok: true, detail: "ok" },
+			{ name: "store", ok: true, detail: "ok" },
+			{ name: "step:sources", ok: true, detail: "ok" },
 			{ name: "step:inventory", ok: false, detail: "unavailable" },
 		]);
 	});
