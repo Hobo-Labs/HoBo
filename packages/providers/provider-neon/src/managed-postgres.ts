@@ -1,4 +1,3 @@
-/** Account-owned Neon PostgreSQL, scoped to an approved organization. */
 import { createHash, randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { parseSecretRef } from "@hobo/bindings";
@@ -38,7 +37,6 @@ export const NEON_MANAGED_POSTGRES_PRODUCT_ID = "neon.managed-postgres/v1";
 // public-contract: host assertion that logical identity records and claims use the new namespace.
 export const NEON_MANAGED_LOGICAL_NAMESPACE = "neon-managed-logical/v1";
 
-/** Registration is not evidence of a funded account or a healthy database. */
 export function createNeonManagedPostgresCandidate(
 	input: {
 		readonly evidenceSignatureValid?: boolean;
@@ -67,10 +65,6 @@ export function createNeonManagedPostgresCandidate(
 			pooling: false,
 			bootstrap: "authenticated-account",
 		},
-		// The API-created owner cannot be issued to a runtime voter. A separate
-		// restricted-role enrollment must be installed before publishing a binding.
-		producesBindingProfiles: [],
-		migrationProfiles: ["migration.postgres.pg-dump/v1"],
 		providerClass: "verified-emerging",
 		evidenceExpiresAtMs: input.evidenceExpiresAtMs ?? 0,
 		evidenceSignatureValid: input.evidenceSignatureValid ?? false,
@@ -86,14 +80,9 @@ export function createNeonManagedPostgresCandidate(
 		supportsRotation: false,
 		supportsRevocation: false,
 		sponsorExposureMinorUnits: 0,
-		// Management-only today: selection must wait for the restricted runtime
-		// role and its independently verified Junction binding.
-		hasRegisteredDriver: false,
-		secretCustodyAvailable: input.secretCustodyAvailable ?? false,
 	};
 }
 
-/** Every limit must be positive: Neon interprets zero as unlimited. */
 export interface NeonManagedQuota {
 	readonly activeTimeSeconds: number;
 	readonly computeTimeSeconds: number;
@@ -108,11 +97,6 @@ export interface NeonManagedProjectIdentity {
 	readonly endpointId: string;
 }
 
-/** The record is immutable and may only be written after the exact create
- * response has been received. It binds a logical resource to native IDs.
- * The host must declare this namespace only after confirming there are no
- * earlier experimental records or migrating their records and journal claims
- * under an exclusive fence. Unresolved outcomes must remain blocked. */
 export interface NeonManagedProjectRepository {
 	readonly persistence: "durable-cas";
 	readonly identityNamespace: typeof NEON_MANAGED_LOGICAL_NAMESPACE;
@@ -138,9 +122,6 @@ export interface NeonManagedAuthorization {
 export interface NeonManagedPostgresOptions {
 	readonly scope: ClaimableResolverScope;
 	readonly deriveOperationKey: ClaimableOperationKeyDeriver;
-	/** Both inspect and claim must use mutationId as their unique key, reject a
-	 * different requestDigest for an existing key, and share durable CAS state.
-	 * Keying by the pair would permit a second create when the retry key changes. */
 	readonly journal: ResourceMutationJournal & {
 		inspect(input: {
 			readonly mutationId: string;
@@ -155,21 +136,16 @@ export interface NeonManagedPostgresOptions {
 		read(
 			key: string,
 		): Promise<{ readonly ref: string; readonly value: string } | undefined>;
-		/** Create-only; a conflicting value must never be overwritten. */
 		create(key: string, value: string): Promise<void>;
 	};
-	/** Supplied by the authenticated host after checking its actual Broker hold,
-	 * current provider permission and account-specific quota/price evidence. */
 	readonly authorize: (input: {
 		readonly scope: ClaimableResolverScope;
 		readonly request: ResolveRequest;
 		readonly operation: "read" | "create";
 		readonly desiredDigest: string;
 	}) => Promise<NeonManagedAuthorization>;
-	/** The supervisor checks its current actor, placement and funded operation. */
 	readonly revalidateBeforeWrite: () => Promise<void>;
 	readonly clock: () => number;
-	/** Tests may replace the network probe; production uses real TLS and LISTEN. */
 	readonly probeSession?: (input: NeonManagedSession) => Promise<void>;
 }
 
@@ -256,7 +232,6 @@ function validIdentity(value: NeonManagedProjectIdentity): boolean {
 	);
 }
 
-/** SDK declaration only; account access, quotes and capacity are separate. */
 export function neonManagedPostgres(input: {
 	readonly organizationId: string;
 	readonly region: string;
@@ -279,7 +254,6 @@ export function neonManagedPostgres(input: {
 	});
 }
 
-/** Direct sessions support LISTEN; Neon transaction pooling does not. */
 export async function probeNeonManagedSession(
 	input: NeonManagedSession,
 ): Promise<void> {
@@ -291,10 +265,6 @@ export async function probeNeonManagedSession(
 		port: input.port,
 		database: input.database,
 		user: input.username,
-		// node-postgres otherwise treats channel binding as opportunistic. Never
-		// release the credential unless this exact TLS session offered SCRAM-PLUS.
-		password: () => {
-			if (!offeredPlus || rejectedAuthentication)
 				throw new Error("required channel binding unavailable");
 			return input.password;
 		},
@@ -304,10 +274,6 @@ export async function probeNeonManagedSession(
 		query_timeout: 5_000,
 	};
 	const client = new pg.Client(config);
-	// The driver's connection event comes before its authentication handler.
-	// The exact pinned pg version selects PLUS first when enabled.
-	const rejectAuthentication = () => {
-		rejectedAuthentication = true;
 		client.connection.stream.destroy(
 			new Error("required channel binding unavailable"),
 		);
@@ -339,10 +305,6 @@ export async function probeNeonManagedSession(
 		rejectAuthentication,
 	);
 	try {
-		// SAFETY: the pinned pg 8.22.0 client exposes the configured boolean;
-		// the following check refuses a changed or unsupported driver.
-		const channelBindingClient = client as ChannelBindingClient;
-		if (channelBindingClient.enableChannelBinding !== true)
 			throw new Error("channel binding is not supported by the driver");
 		await client.connect();
 		if (!completedPlus || rejectedAuthentication)
@@ -394,8 +356,6 @@ export async function probeNeonManagedSession(
 	}
 }
 
-/** Metadata only: never creates, opens a database session, or reads a secret
- * from the provider. Account plan and inventory do not prove usable quota. */
 export async function observeNeonManagedPreflight(input: {
 	readonly providerAccountId: string;
 	readonly credentialRef: string;
@@ -542,9 +502,6 @@ async function listProjects(
 	return refuse("Neon project inventory is incomplete");
 }
 
-/** `POST /projects` is not idempotent. Once a create is claimed, a retry
- * never sends again. Only a received 201 may populate the immutable project
- * repository; an ambiguous create without that record remains held. */
 export function createNeonManagedPostgresResolver(
 	options: NeonManagedPostgresOptions,
 ): ResourceResolver {
@@ -620,15 +577,6 @@ export function createNeonManagedPostgresResolver(
 			settings: { quota: wireQuota(limits) },
 		};
 		const desiredDigest = `sha256:${hash(JSON.stringify(desired))}`;
-		// A retry key may change, but it must not create a second project for the
-		// same logical resource in one deployment incarnation. The request digest
-		// still binds the claimed operation to the exact desired configuration.
-		const resourceRef = await claimableResourceRef(scope, request);
-		const key = `neon-managed:logical:${hash(resourceRef)}`;
-		return { name, desired, desiredDigest, key, mutationId: `${key}:create` };
-	}
-	async function authorize(
-		request: ResolveRequest,
 		operation: "read" | "create",
 		desiredDigest: string,
 	) {

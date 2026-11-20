@@ -122,7 +122,6 @@ describe("managed Neon channel binding", () => {
 			server.once("error", reject);
 			server.listen(0, "127.0.0.1", resolve);
 		});
-		// SAFETY: listen succeeded on a TCP host and the server is still open.
 		const address = server.address() as AddressInfo;
 		const source = pathToFileURL(
 			join(
@@ -167,7 +166,6 @@ catch { process.exitCode=0; }`;
 		"trust",
 	] as const)("refuses %s without sending a password or a query", async (authentication) => {
 		const sent = await runServer(authentication);
-		// A clean close after a trust response sends only PostgreSQL Terminate.
 		expect(
 			sent.length === 0 || sent.equals(Buffer.from([88, 0, 0, 0, 4])),
 		).toBe(true);
