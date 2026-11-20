@@ -510,7 +510,9 @@ had, and fewer than 4 are waiting. The hour is deliberate: the probe is one
 small job, and a run sent to the fleet because a runner took the probe at once
 waited 17 minutes for runners. The route job reads the three longest finished
 runs of the last hour to find such waits after their run has ended. The **Fleet probe** workflow, started by each CI
-run, keeps a pickup on record for every label that has a runner behind it. A
+run, keeps a pickup on record for every self-hosted label that has a runner behind it. Its GitHub-hosted local-box
+enrollment check skips Fabric merge-group requests so probe bookkeeping does not consume hosted slots needed by the
+queue; the self-hosted pickup probes still run. A
 label that is down holds one probe job that goes on waiting, which reads as a
 label past its limit; it has its own concurrency group, so it does not hold
 up the probe of another label. After a quiet spell a run waits up to 60 seconds for that probe before giving

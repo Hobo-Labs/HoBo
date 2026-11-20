@@ -601,6 +601,10 @@ describe("Actions runner policy", () => {
 
 	it("lets the probe gate the local box on committed policy, read with the route job's reader", () => {
 		assert.equal(lintFile("fleet-probe.yml", committedProbe), 0);
+		assert.match(
+			committedProbe,
+			/  local-box-enrolled:\n    name: local box enrolled\n    if: github\.event_name == 'workflow_dispatch' \|\| github\.event\.workflow_run\.event != 'merge_group'\n    runs-on: ubuntu-24\.04/u,
+		);
 		// The gate job pinned line for line: anything else it runs is refused.
 		assert.notEqual(
 			lintFile(

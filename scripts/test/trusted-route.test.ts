@@ -106,14 +106,19 @@ describe("base-controlled attestation verification", () => {
 				const step = steps.find((value) => value?.id === "routing-base");
 				const shell = asText(step?.run);
 				assert.ok(shell);
-				for (const [event, pr, merge, expected] of [
+				const events = [
 					["pull_request", "a".repeat(40), "", "a".repeat(40)],
-					["merge_group", "", "b".repeat(40), "b".repeat(40)],
 					["push", "", "", "c".repeat(40)],
 					["pull_request", "", "", ""],
-					["merge_group", "", "", ""],
 					["pull_request", "bad", "", ""],
-				] as const) {
+					...(workflow === "release-hobo.yml"
+						? []
+						: [
+								["merge_group", "", "b".repeat(40), "b".repeat(40)],
+								["merge_group", "", "", ""],
+							]),
+				] as const;
+				for (const [event, pr, merge, expected] of events) {
 					const output = join(dir, "output");
 					writeFileSync(output, "");
 					const child: SpawnSyncReturns<string> = spawnSync(

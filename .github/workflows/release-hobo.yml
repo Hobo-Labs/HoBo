@@ -79,76 +79,6 @@ on:
     tags:
       - "sdk-v*"
       - "cli-v*"
-  merge_group:
-    branches: [main]
-    types: [checks_requested]
-    paths:
-      - "deploy/release-images/**"
-      - "release/**"
-      - "release/mise.toml"
-      - "release/mise.lock"
-      - "scripts/lib/nbgv-toolchain.mts"
-      - "scripts/test/nbgv-toolchain.test.ts"
-      - "mise.toml"
-      - "mise.lock"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "tsconfig.base.json"
-      - "turbo.json"
-      - "site/**"
-      - "scripts/ci/*release*"
-      - "scripts/ci/npm-publish-scope.mts"
-      - "scripts/ci/stage-sdk-artifacts.mts"
-      - "scripts/ci/build-release-site-prebuild.mts"
-      - "scripts/ci/publish-npm-sdk.mts"
-      - "scripts/test/publish-npm-sdk.test.ts"
-      - "scripts/ci/resolve-release-version.mts"
-      - "scripts/ci/compute-release-version.mts"
-      - "scripts/ci/check-release-relevant-push.mts"
-      - "scripts/test/release-relevant-push.test.ts"
-      - "scripts/ci/push-release-git-tag.mts"
-      - "scripts/ci/create-github-release.mts"
-      - "scripts/lib/ssh-sig.mts"
-      - "scripts/test/release-git-tag.test.ts"
-      - "scripts/lib/nbgv-release-version.mts"
-      - "scripts/lib/release-hobo-path-filters.mts"
-      - "scripts/lib/release-pages-stale.mts"
-      - "scripts/test/release-pages-stale.test.ts"
-      - "scripts/test/nbgv-release-version.test.ts"
-      - "scripts/ci/push-release-ghcr-images.mts"
-      - "scripts/lib/release-ghcr-digest.mts"
-      - "scripts/test/push-release-ghcr-images.test.ts"
-      - "scripts/test/release-ghcr-digest.test.ts"
-      - "scripts/ci/ensure-ci-worker-image.mts"
-      - "scripts/ci/extract-sdk-artifacts.mts"
-      - "scripts/lib/release-sparse-cone.mts"
-      - "scripts/lib/ci-runner-contract.mts"
-      - "scripts/ci-runner-preflight.mts"
-      - ".github/actions/ci-runner-preflight/**"
-      - "scripts/lib/release-version.mts"
-      - "scripts/lib/release-oci-contract.mts"
-      - "scripts/test/release-oci-affected.test.ts"
-      - "scripts/test/release-oci-attest-contract.test.ts"
-      - "scripts/test/release-oci-image-contract.test.ts"
-      - "scripts/test/release-sparse-cone.test.ts"
-      - "scripts/test/release-version.test.ts"
-      - "scripts/test/stage-release-oci-app.test.ts"
-      - "scripts/test/build-release-site-prebuild.test.ts"
-      - "scripts/test/release-freight.test.ts"
-      - "scripts/test/release-freight-cli.test.ts"
-      - "scripts/test/release-freight-realize.test.ts"
-      - "scripts/deploy-site.mts"
-      - "scripts/test/deploy-site.test.ts"
-      - ".github/actions/release-oci-attest/**"
-      - ".github/actions/hobo-checkout/**"
-      - ".github/workflows/release-hobo.yml"
-      - "packages/hobo/test/support/release-integration-test-files.ts"
-      - "packages/hobo/vitest.release-integration.config.ts"
-      - "packages/hobo/test/vercel-project.test.ts"
-      - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
-      - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
-      - "packages/hobo/test/cd-md-examples.test.ts"
   workflow_dispatch:
     inputs:
       push_images:
@@ -244,11 +174,9 @@ jobs:
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           case "$GITHUB_EVENT_NAME" in
             pull_request) base="$PR_BASE_SHA" ;;
-            merge_group) base="$MERGE_BASE_SHA" ;;
             *) base="$GITHUB_SHA" ;;
           esac
           if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
@@ -445,7 +373,7 @@ jobs:
       # fetch-depth 2 is the whole history the diff needs.
       - name: Detect affected images
         id: affected
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         env:
           HOBO_CHECK_BASE: HEAD^1
         run: |
@@ -552,7 +480,7 @@ jobs:
   release-realize:
     name: Release Freight realize proof (offline)
     needs: route
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    if: github.event_name == 'pull_request'
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -631,15 +559,14 @@ jobs:
     needs: [route, release-main-train-gate]
     # On the main train it runs when a release is actually planned (the train
     # gate's `run`); a tag or a dispatch that pushes images releases without
-    # that gate, and a pull request or merge group run is scoped by the diff.
+    # that gate, and a pull request run is scoped by the diff.
     if: >-
       !cancelled() && needs.route.result == 'success' && (
       needs.release-main-train-gate.outputs.run == 'true' ||
       startsWith(github.ref, 'refs/tags/sdk-v') ||
       startsWith(github.ref, 'refs/tags/cli-v') ||
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'merge_group')
+      github.event_name == 'pull_request')
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -1507,7 +1434,7 @@ jobs:
 
   release-pr-gate:
     name: HoBo release PR gate (required)
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    if: always() && github.event_name == 'pull_request'
     needs: [route, release-contract, release-realize, release-hobo-integration]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
@@ -1545,7 +1472,7 @@ jobs:
             exit 1
           fi
           # The slow integration lane has no local attestation either: when a
-          # pull request or merge group reaches its suites, they must pass here.
+          # pull request reaches its suites, they must pass here.
           if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
             echo "::error::HoBo slow integration suites must pass (result=${INTEGRATION_RESULT:-})"
             exit 1

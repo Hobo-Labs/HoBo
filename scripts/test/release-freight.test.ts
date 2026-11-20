@@ -283,6 +283,26 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(block).not.toMatch(/workflow_run\.conclusion == 'success'/u);
 	});
 
+	it("keeps release validation on pull requests and post-merge trains, off merge groups", () => {
+		const triggers = workflow.slice(0, workflow.indexOf("\npermissions:"));
+		expect(triggers).not.toMatch(/^  merge_group:/mu);
+		for (const trigger of [
+			"workflow_run",
+			"pull_request",
+			"push",
+			"workflow_dispatch",
+		])
+			expect(triggers).toMatch(new RegExp(`^  ${trigger}:`, "mu"));
+		expect(workflow).not.toContain("github.event.merge_group");
+		expect(workflow).not.toContain("github.event_name == 'merge_group'");
+		expect(job("release-realize")).toContain(
+			"if: github.event_name == 'pull_request'",
+		);
+		expect(job("release-pr-gate")).toContain(
+			"if: always() && github.event_name == 'pull_request'",
+		);
+	});
+
 	// The realize proof builds @hobo/hobo; with the affected images in the same
 	// job a Turbo cache miss could run release-contract past its limit.
 	it("runs the realize proof in its own pull-request job, gated by the PR gate", () => {
@@ -308,7 +328,7 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		const filters = workflow.match(
 			/- "scripts\/test\/release-freight-cli\.test\.ts"/gu,
 		);
-		expect(filters?.length).toBe(2);
+		expect(filters?.length).toBe(1);
 	});
 
 	for (const [name, deploy] of Object.entries(consumers))

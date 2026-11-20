@@ -76,6 +76,7 @@ const allowedEnabled = new Set([
  */
 const PROBE_GATE_JOB = `  local-box-enrolled:
     name: local box enrolled
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event != 'merge_group'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
