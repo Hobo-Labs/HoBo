@@ -356,6 +356,17 @@ describe("checkPluginScopedPath", () => {
 			expect(checkPluginScopedPath("", value)).toHaveLength(1);
 		}
 	});
+
+	it("does not echo rejected paths that contain secret-shaped values", () => {
+		const secret = "sk-abcdefghijklmnopqrst";
+		for (const value of [`/tmp/${secret}`, `\${PLUGIN_ROOT}/../${secret}`]) {
+			const messages = checkPluginScopedPath("mcp.json", value)
+				.map((issue) => issue.message)
+				.join("\n");
+			expect(messages).not.toContain(secret);
+			expect(messages).not.toContain(value);
+		}
+	});
 });
 
 describe("markdown link containment", () => {
@@ -404,6 +415,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("fails when a shipped skill drifts from its repo source", async () => {
+		const secret = "sk-abcdefghijklmnopqrst";
 		const repoSetup = await readFile(
 			path.join(repoRoot, ".agents/skills/hobo-setup/SKILL.md"),
 			"utf8",
@@ -421,8 +433,7 @@ describe("checkAgentPlugin (integration)", () => {
 				},
 			}),
 			"README.md": "# hobo\n",
-			"skills/hobo-setup/SKILL.md":
-				"---\nname: hobo-setup\ndescription: drifted\n---\n\nchanged body\n",
+			"skills/hobo-setup/SKILL.md": `---\nname: hobo-setup\ndescription: drifted ${secret}\n---\n\nchanged body\n`,
 			"skills/hobo-deploy/SKILL.md":
 				"---\nname: hobo-deploy\ndescription: d\n---\n\nbody\n",
 			"repo:.agents/skills/hobo-setup/SKILL.md": repoSetup,
@@ -433,6 +444,8 @@ describe("checkAgentPlugin (integration)", () => {
 		const messages = report.issues.map((issue) => issue.message).join("\n");
 		expect(messages).toMatch(/description drifted/u);
 		expect(messages).toMatch(/body drifted/u);
+		expect(messages).toMatch(/contains a secret-shaped value/u);
+		expect(messages).not.toContain(secret);
 	});
 
 	it("fails when a repo-only skill ships in the plugin", async () => {

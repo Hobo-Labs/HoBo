@@ -291,7 +291,7 @@ export function checkPluginScopedPath(
 	if (rooted.split(/[\\/]/u).includes("..")) {
 		issues.push({
 			file: where,
-			message: `plugin-scoped path "${value}" must not traverse outside the plugin root`,
+			message: "plugin-scoped path must not traverse outside the plugin root",
 		});
 	}
 	if (
@@ -301,7 +301,8 @@ export function checkPluginScopedPath(
 	) {
 		issues.push({
 			file: where,
-			message: `plugin-scoped path "${value}" must be relative or rooted at PLUGIN_ROOT or PLUGIN_DATA, not absolute or home-relative`,
+			message:
+				"plugin-scoped path must be relative or rooted at PLUGIN_ROOT or PLUGIN_DATA, not absolute or home-relative",
 		});
 	}
 	return issues;
@@ -564,7 +565,7 @@ function skillIssues(
 	if (name !== skill) {
 		issues.push({
 			file: relativeFile,
-			message: `frontmatter name "${name}" must equal the folder name "${skill}"`,
+			message: `frontmatter name must equal the folder name "${skill}"`,
 		});
 	}
 	const repoFile = path.join(repoSkillsRoot, skill, "SKILL.md");
@@ -581,7 +582,7 @@ function skillIssues(
 		if (fields.get(field) !== repoFields?.get(field)) {
 			issues.push({
 				file: relativeFile,
-				message: `${field} drifted from .agents/skills/${skill}/SKILL.md (${JSON.stringify(fields.get(field))} vs ${JSON.stringify(repoFields?.get(field))})`,
+				message: `${field} drifted from .agents/skills/${skill}/SKILL.md; copy the repo frontmatter value`,
 			});
 		}
 	}
