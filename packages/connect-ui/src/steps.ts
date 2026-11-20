@@ -10,18 +10,49 @@
 // reference to it (`infisical://…`, `op://…`).
 
 /** A third-party secret store the flow can deposit into. */
+export const SECRET_STORE_IDS = Object.freeze([
+	"infisical",
+	"1password",
+	"bitwarden",
+	"yard",
+] as const);
+
 export interface SecretStoreOption {
-	readonly id: "infisical" | "1password" | "bitwarden";
+	readonly id: (typeof SECRET_STORE_IDS)[number];
 	readonly label: string;
 	/** How a workload reads it back without a stored secret. */
 	readonly signIn: "oidc" | "service-account";
 	readonly recommended: boolean;
 }
 
-export type ConnectProvider = "github" | "vercel";
+export type ConnectProvider = string;
+
+/** One setting a `configure` step asks for. */
+export interface ConfigField {
+	readonly name: string;
+	readonly label: string;
+	readonly description?: string;
+	readonly kind: "text" | "url" | "secret" | "choice";
+	readonly required: boolean;
+	readonly value?: string;
+	readonly options?: readonly {
+		readonly value: string;
+		readonly label: string;
+		readonly description?: string;
+	}[];
+	readonly error?: string;
+}
 
 // domain-view: parse-don't-validate parsed/derived step the flow returns; its wire form is ConnectViewRecord.step in data-models/connect_ui.proto.
 export type ConnectStep =
+	| {
+			readonly kind: "configure";
+			readonly provider: ConnectProvider;
+			readonly title: string;
+			readonly reason: string;
+			readonly fields: readonly ConfigField[];
+			readonly submitConfirm?: string;
+	  }
 	| {
 			readonly kind: "choose-secret-store";
 			readonly provider: ConnectProvider;
@@ -74,6 +105,7 @@ export function isTerminalStep(step: ConnectStep): boolean {
 
 /** The actions a connect page may dispatch. The flow decides each one. */
 export const CONNECT_ACTIONS = Object.freeze([
+	"connect.submit",
 	"connect.chooseStore",
 	"connect.start",
 	"connect.cancel",
@@ -88,6 +120,18 @@ export function isConnectAction(name: string): name is ConnectActionName {
 }
 
 /** The stores HoBo offers by default: Infisical with OIDC first (no secret to hold). */
+const SECRET_STORE_LABELS: ReadonlyMap<SecretStoreOption["id"], string> =
+	new Map([
+		["infisical", "Infisical Cloud"],
+		["1password", "1Password"],
+		["bitwarden", "Bitwarden"],
+		["yard", "Yard"],
+	]);
+
+export function storeLabel(id: SecretStoreOption["id"]): string {
+	return SECRET_STORE_LABELS.get(id) ?? id;
+}
+
 export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 	Object.freeze([
 		Object.freeze({
@@ -104,13 +148,20 @@ export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 		}),
 	] as const satisfies readonly SecretStoreOption[]);
 
-const PROVIDER_LABEL: Readonly<Record<ConnectProvider, string>> = Object.freeze(
-	{
-		github: "GitHub",
-		vercel: "Vercel",
-	},
-);
+const PROVIDER_LABEL: ReadonlyMap<string, string> = new Map([
+	["github", "GitHub"],
+	["vercel", "Vercel"],
+	["neon", "Neon"],
+	["supabase", "Supabase"],
+	["cloudflare", "Cloudflare"],
+	["infisical", "Infisical"],
+]);
 
 export function providerLabel(provider: ConnectProvider): string {
-	return PROVIDER_LABEL[provider];
+	return (
+		PROVIDER_LABEL.get(provider) ??
+		provider
+			.replace(/^@hobo\/provider-/u, "")
+			.replace(/^./u, (c) => c.toUpperCase())
+	);
 }

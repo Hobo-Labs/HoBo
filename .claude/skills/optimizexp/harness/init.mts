@@ -1,6 +1,9 @@
 #!/usr/bin/env node
+import process from "node:process";
 import { repoRoot, relFromRepo } from "./lib/paths.mts";
-import { listProjects, resolveProjects } from "./lib/projects.mts";
+import { listProjects, projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { ensureGlobalConfig, ensureProjectConfig, loadConfigFile, resolveConfig, globalConfigPath, projectConfigPath } from "./lib/config.mts";
 import { ensureGlobalGitignore, ensureProjectGitignore } from "./lib/gitignore.mts";
 
@@ -13,17 +16,50 @@ function parseArgs(argv: string[]): Record<string, string> {
 		else if (key === "--all-projects") args.projects = "all";
 		else if (key === "--force") args.force = "1";
 		else if (key === "--help" || key === "-h") args.help = "1";
+		else if (key === "list-projects" || key === "--list-projects") args.mode = "list-projects";
+		else if (key === "validate-config" || key === "--validate-config") args.mode = "validate-config";
+		else if (key === "ensure-config" || key === "--ensure-config") args.mode = "ensure-config";
 	}
 	return args;
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--project", "--projects"],
+		flags: ["--help", "-h", "--force", "--all-projects", "--list-projects", "--validate-config", "--ensure-config"],
+	});
+	if (input.error) {
+		console.error(input.error);
+		process.exit(2);
+	}
+	const modeOptions = ["--mode", "--list-projects", "--validate-config", "--ensure-config"];
+	if (
+		input.positionals.length > 1 ||
+		input.positionals.some((value) => !["list-projects", "validate-config", "ensure-config"].includes(value)) ||
+		(input.positionals.length > 0 && modeOptions.some((option) => input.argv.includes(option)))
+	) {
+		console.error("Expected at most one positional init mode");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	if (args.help === "1") {
 		console.log("Modes: list-projects, validate-config, ensure-config. Implement and verify requested improvements directly.");
 		return;
 	}
 	const root = repoRoot();
+	const selection = resolveProjects(args.projects, root);
+	const problem = projectSelectionProblem(selection);
+	if (problem) {
+		console.error(problem);
+		process.exit(2);
+	}
+	if (args.mode === "ensure-config") {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
+	}
 	if (args.mode === "list-projects") {
 		const projects = listProjects(root);
 		console.log(

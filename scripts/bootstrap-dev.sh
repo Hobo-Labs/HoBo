@@ -81,8 +81,8 @@ fi
 echo "mise: installing project tools from ${ROOT}/mise.toml"
 mise_install_project_tools "$ROOT"
 
-if command -v mise >/dev/null 2>&1; then
-	eval "$(mise activate bash)" 2>/dev/null || true
+if [[ -n "${MISE_INSTALL_PATH:-}" ]] || command -v mise >/dev/null 2>&1; then
+	eval "$(hobo_mise activate bash)" 2>/dev/null || true
 fi
 
 echo "bootstrap-dev: done (node=$(command -v node || echo missing), pnpm=$(command -v pnpm || echo missing), cue=$(command -v cue || echo missing))"

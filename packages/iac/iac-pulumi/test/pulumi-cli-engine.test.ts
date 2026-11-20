@@ -55,10 +55,122 @@ describe("pulumi CLI engine (3-2)", () => {
 
 	it("covers every realize() resource class with a real type token", () => {
 		expect(Object.keys(PULUMI_YAML_TYPE_TOKENS).sort()).toEqual([
+			"cloudflare:cron-trigger",
 			"cloudflare:kv-namespace",
+			"cloudflare:queue",
 			"cloudflare:r2-bucket",
 			"cloudflare:workers-script",
 		]);
+	});
+
+	it("renders a Queue and a cron trigger on the Worker it runs", () => {
+		const queue = renderPulumiYamlProgram(
+			{ name: "jobs", type: "cloudflare:queue", outputs: ["queueName"] },
+			{ accountId: "acct-123" },
+		);
+		expect(queue).toContain("type: cloudflare:Queue");
+		expect(queue).toContain('"queueName":"jobs"');
+		expect(queue).toContain("queueName: ${jobs.queueName}");
+		const trigger = renderPulumiYamlProgram(
+			{
+				name: "repair",
+				type: "cloudflare:cron-trigger",
+				inputs: {
+					options: { cron: "*/15 * * * *" },
+					bindings: [
+						{
+							resource: "api",
+							ref: "${resources.api.outputs.binding}",
+							resourceType: "cloudflare:workers-script",
+						},
+					],
+				},
+				outputs: ["cron"],
+			},
+			{ accountId: "acct-123" },
+		);
+		expect(trigger).toContain("type: cloudflare:WorkersCronTrigger");
+		expect(trigger).toContain('"scriptName":"api"');
+		expect(trigger).toContain('"schedules":[{"cron":"*/15 * * * *"}]');
+	});
+
+	it("refuses a cron trigger without a cadence or a single Worker", () => {
+		const unsupported = expect.objectContaining({
+			code: PULUMI_UNSUPPORTED_RESOURCE,
+		});
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: { bindings: [{ resource: "api" }] },
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: { options: { cron: "0 * * * *" }, bindings: [] },
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+		// The relay's repair schedule depends on a queue: not a Worker to run.
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: {
+						options: { cron: "0 * * * *" },
+						bindings: [
+							{ resource: "hobo-ci", resourceType: "cloudflare:queue" },
+						],
+					},
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+		// An untyped dependency is not assumed to be one either.
+		expect(() =>
+			renderPulumiYamlProgram(
+				{
+					name: "repair",
+					type: "cloudflare:cron-trigger",
+					inputs: {
+						options: { cron: "0 * * * *" },
+						bindings: [{ resource: "api" }],
+					},
+				},
+				{ accountId: "a" },
+			),
+		).toThrowError(unsupported);
+	});
+
+	it("does not ignore malformed dependencies or accept an empty Worker name", () => {
+		for (const bindings of [
+			[
+				{ resource: "api", resourceType: "cloudflare:workers-script" },
+				"not-a-binding",
+			],
+			[{ resource: "", resourceType: "cloudflare:workers-script" }],
+		]) {
+			expect(() =>
+				renderPulumiYamlProgram(
+					{
+						name: "repair",
+						type: "cloudflare:cron-trigger",
+						inputs: { options: { cron: "*/15 * * * *" }, bindings },
+					},
+					{ accountId: "acct-123" },
+				),
+			).toThrowError(
+				expect.objectContaining({ code: PULUMI_UNSUPPORTED_RESOURCE }),
+			);
+		}
 	});
 
 	it("fails closed on resource classes with no real translation", () => {
@@ -74,6 +186,7 @@ describe("pulumi CLI engine (3-2)", () => {
 
 	it("fails closed with a typed error when the pulumi binary is missing", async () => {
 		const engine = createPulumiCliAutomationEngine({
+			ephemeralState: true,
 			workDir,
 			pulumiBin: "definitely-not-pulumi-xyz",
 			env: {},
@@ -92,6 +205,7 @@ describe("pulumi CLI engine (3-2)", () => {
 
 	it("plugs into the adapter seam with the pinned version", () => {
 		const engine = createPulumiCliAutomationEngine({
+			ephemeralState: true,
 			workDir,
 			pulumiBin: "definitely-not-pulumi-xyz",
 			env: {},
@@ -106,6 +220,7 @@ describe("pulumi CLI engine (3-2)", () => {
 		expect(() => {
 			void new PulumiEngineUnavailableError(PULUMI_CLI_MISSING, "probe");
 			createPulumiCliAutomationEngine({
+				ephemeralState: true,
 				workDir,
 				pulumiBin: "definitely-not-pulumi-xyz",
 				env: {},
