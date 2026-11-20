@@ -70,7 +70,9 @@ const FAILED_STEP: ConnectStep = {
 };
 const ViewStepSchema = z.object({ step: z.string() });
 type ViewStep = z.infer<typeof ViewStepSchema>;
-type Evaluate = NonNullable<Parameters<typeof composeConnectSpec>[1]>["evaluate"];
+type Evaluate = NonNullable<
+	Parameters<typeof composeConnectSpec>[1]
+>["evaluate"];
 const viewStepFromResponse = (response: Response): Promise<ViewStep> =>
 	response.json().then((body) => ViewStepSchema.parse(body));
 const CONFIGURE_STEP: ConnectStep = {
