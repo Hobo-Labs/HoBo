@@ -76,6 +76,12 @@ const { registry } = defineRegistry(connectCatalog, {
 		Radio: shadcnComponents.Radio,
 		Input: shadcnComponents.Input,
 	},
+	actions: {
+		"connect.submit": async () => {},
+		"connect.chooseStore": async () => {},
+		"connect.start": async () => {},
+		"connect.cancel": async () => {},
+	},
 });
 
 type Directive =
@@ -150,6 +156,37 @@ const ConnectViewSchema = z.object({
 });
 
 type ParsedConnectView = z.infer<typeof ConnectViewSchema>;
+type ParsedConfigField = z.infer<typeof ConfigFieldSchema>;
+
+type MutableConfigField = {
+	-readonly [K in keyof ConfigField]: ConfigField[K];
+};
+
+function toConfigField(field: ParsedConfigField): ConfigField {
+	const parsed: MutableConfigField = {
+		name: field.name,
+		label: field.label,
+		kind: field.kind,
+		required: field.required,
+	};
+	if (field.description !== undefined) parsed.description = field.description;
+	if (field.value !== undefined) parsed.value = field.value;
+	if (field.error !== undefined) parsed.error = field.error;
+	if (field.options !== undefined) {
+		parsed.options = field.options.map((option) => {
+			type ChoiceOption = NonNullable<ConfigField["options"]>[number];
+			const row = { value: option.value, label: option.label } satisfies Pick<
+				ChoiceOption,
+				"value" | "label"
+			>;
+			if (option.description !== undefined) {
+				return { ...row, description: option.description } satisfies ChoiceOption;
+			}
+			return row satisfies ChoiceOption;
+		});
+	}
+	return parsed;
+}
 
 function viewFromParsedConnect(parsed: ParsedConnectView): View {
 	if (!isNonEmptySpec(parsed.spec)) {
@@ -167,7 +204,7 @@ function viewFromParsedConnect(parsed: ParsedConnectView): View {
 		spec: parsed.spec,
 		directive: parsed.directive,
 		confirmByAction,
-		formFields: parsed.view?.fields ?? [],
+		formFields: (parsed.view?.fields ?? []).map(toConfigField),
 	};
 }
 
@@ -259,9 +296,8 @@ function ConnectPage() {
 
 	useEffect(() => {
 		if (view === null) return;
-		confirmByLabelRef.current = confirmLabelsForSpec(
-			view.spec,
-			view.confirmByAction,
+		confirmByLabelRef.current = new Map(
+			confirmLabelsForSpec(view.spec, view.confirmByAction),
 		);
 	}, [view]);
 
