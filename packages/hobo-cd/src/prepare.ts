@@ -146,9 +146,9 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
 	/**
-	 * What creates the CD journal's fleet members (`journal-fleet.ts`). With
-	 * none, `hobo cd up` provisions no journal and the CD runtime keeps its
-	 * single-process SQLite journal.
+	 * public-contract: what creates the CD journal's fleet members
+	 * (`journal-fleet.ts`). With none, `hobo cd up` provisions no journal and
+	 * the CD runtime keeps its single-process SQLite journal.
 	 */
 	readonly journalProvisioners?: readonly JournalMemberProvisioner[];
 }
@@ -169,7 +169,6 @@ function refused(
 	return { kind: "refused", result };
 }
 
-/** The journal fleet's step, or the refusal that stops the run. */
 async function journalStep(
 	store: OpenedSecretStore,
 	provisioners: readonly JournalMemberProvisioner[] | undefined,
@@ -211,7 +210,6 @@ async function ready(
 		]);
 	const journal = await journalStep(store, provisioners, false);
 	if (!Array.isArray(journal)) return journal;
-	// Provisioning may take time; confirm the selected scope is still current.
 	if (provisioners !== undefined && provisioners.length > 0) {
 		const current = await resolveVercelJunction(store, vault, matches);
 		if (!current.ok)

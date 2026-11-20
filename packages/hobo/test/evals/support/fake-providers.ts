@@ -2,13 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { bodyOf, json, type ProviderHandler } from "./tls-world.js";
 
-/**
- * Vercel and Neon as their APIs answer, for the TLS world. Each records what
- * it was asked, and changes state only the way the real provider would: a
- * device grant is approved only when the owner approves it.
- */
-
-/** api.vercel.com: the device grant (RFC 8628), teams, and deployments. */
 export function fakeVercel() {
 	const calls: string[] = [];
 	const grants = new Map<
@@ -81,13 +74,11 @@ export function fakeVercel() {
 		handle,
 		calls,
 		deployments,
-		/** The owner declines on Vercel the grant whose link they were shown. */
 		deny(link: string) {
 			const code = new URL(link).searchParams.get("user_code");
 			for (const grant of grants.values())
 				if (grant.code === code) grant.denied = true;
 		},
-		/** The owner approves the grant whose link they were shown. */
 		approve(link: string) {
 			const code = new URL(link).searchParams.get("user_code");
 			for (const grant of grants.values())
@@ -96,7 +87,6 @@ export function fakeVercel() {
 	};
 }
 
-/** neon.new: Claimable Postgres. */
 export function fakeNeon() {
 	const calls: string[] = [];
 	const databases = new Map<string, Readonly<Record<string, string | null>>>();

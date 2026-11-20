@@ -23,18 +23,12 @@ export const EQUIVALENCE_CLASSES = Object.freeze({
 		providerService: "Vercel Edge Config",
 		features: ["key-value", "edge"],
 	},
-	// Vercel Queues: at-least-once delivery to a function of the deployment
-	// (a queue consumer route), with delayed sends.
 	queue: {
 		port: "queue",
 		resourceClass: "vercel:queue",
 		providerService: "Vercel Queues",
 		features: ["queue", "at-least-once", "delay", "managed"],
 	},
-	// Vercel Cron Jobs: a cron expression in the project's `vercel.json` that
-	// calls one of the deployment's own paths (`crons[].path`) on the schedule,
-	// with the project's CRON_SECRET as bearer. Realized with the deployment
-	// that carries the path; nothing is provisioned beside it.
 	schedule: {
 		port: "schedule",
 		resourceClass: "vercel:cron-job",

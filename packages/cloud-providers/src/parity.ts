@@ -197,18 +197,12 @@ export interface ParitySource {
 	readonly resolved: readonly string[];
 }
 
-/**
- * Where each row's two halves come from.
- *
- * Vercel's catalog is read with its opt-in `project()` row enabled. The bare
- * `vercel.Yard()` omits that row (a Project is configuration a caller asks
- * for, not a default web target), yet `vercel.project/v1` is an allocatable
- * Vercel offering with a shipped resolver. Measuring against the bare default
- * would either refuse (resolved id not in catalog) or, if the refusal were
- * relaxed, hide a working resolver. The full allocatable catalog is the honest
- * denominator; no other namespace has an opt-in row today.
- */
-// public-contract: where each parity row's catalog and resolved halves are read from.
+/* public-contract: where each parity row's catalog and resolved halves are read
+ * from. Vercel's catalog is read with its opt-in `project()` row enabled: the
+ * bare `vercel.Yard()` omits that row, yet `vercel.project/v1` is an
+ * allocatable offering with a shipped resolver, so the full allocatable
+ * catalog is the honest denominator; no other namespace has an opt-in row
+ * today. */
 export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 	Object.freeze({
 		aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },
