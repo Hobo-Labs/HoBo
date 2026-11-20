@@ -6,33 +6,18 @@ import {
 	type Spec,
 	validateSpec,
 } from "@json-render/core";
+import { z } from "zod";
 
-import { connectCandidates, OPTIONAL_SUFFIX } from "./candidates.js";
+import { connectCandidates, optionalCandidateIdSuffix } from "./candidates.js";
 import { connectCatalog } from "./catalog.js";
 import { type ConnectStep, providerLabel } from "./steps.js";
-
-// Compose the exact component a step needs.
-//
-// With an evaluator, json-render's composer (`experimental_composeSpec`) has a
-// model choose and arrange the step's candidates — the configured, already
-// valid component instances in `candidates.ts` — so the page is generated for
-// the step, but can only ever contain HoBo's own components with HoBo's own
-// props and actions. Only candidate descriptions and the prompt reach the
-// evaluator; props, state and bindings stay here.
-//
-// Without one, or when composition stops short, `deterministicConnectSpec`
-// lays the same candidates out in reading order. Either way the result passes
-// `validateSpec` before a browser sees it, so a model's mistake degrades to the
-// deterministic page, never to a broken or half-rendered one.
 
 export interface ComposedConnectSpec {
 	readonly spec: Spec;
 	readonly composedBy: "model" | "deterministic";
-	/** Why composition fell back, when it did. */
 	readonly fallbackReason: string | undefined;
 }
 
-/** The same candidates, in reading order, under the root card. */
 export function deterministicConnectSpec(step: ConnectStep): Spec {
 	const candidates = connectCandidates(step);
 	const rootCandidate = candidates.find((candidate) => candidate.root === true);
@@ -41,12 +26,10 @@ export function deterministicConnectSpec(step: ConnectStep): Spec {
 	const children = candidates.filter(
 		(candidate) =>
 			candidate !== rootCandidate &&
-			// Of mutually exclusive candidates sharing a resource, all are kept:
-			// for a choice (one button per store) the resource only bounds a model.
-			!candidate.id.endsWith(OPTIONAL_SUFFIX),
+			!candidate.id.endsWith(optionalCandidateIdSuffix),
 	);
 	const optional = candidates.filter((candidate) =>
-		candidate.id.endsWith(OPTIONAL_SUFFIX),
+		candidate.id.endsWith(optionalCandidateIdSuffix),
 	);
 	const elements: Spec["elements"] = {
 		[rootCandidate.id]: {
@@ -77,33 +60,62 @@ function promptFor(step: ConnectStep): string {
 	return `Build the single card a person needs to finish this step of connecting ${provider} (${step.kind}). Lead with the title and the explanation, put the primary action before secondary ones, include every required element, and nothing decorative.`;
 }
 
+const BindStateMarker = z.object({ $bindState: z.string() });
+
 function fingerprint(element: {
 	readonly type: string;
 	readonly props: unknown;
 	readonly on?: unknown;
+	readonly visible?: unknown;
 }): string {
-	return JSON.stringify([element.type, element.props, element.on ?? null]);
+	const propsParsed = z
+		.record(z.string(), z.unknown())
+		.safeParse(element.props);
+	const props = propsParsed.success
+		? {
+				...propsParsed.data,
+				value: (() => {
+					const bind = BindStateMarker.safeParse(propsParsed.data.value);
+					return bind.success
+						? { bound: bind.data.$bindState }
+						: propsParsed.data.value;
+				})(),
+			}
+		: element.props;
+	return JSON.stringify([
+		element.type,
+		props,
+		element.on ?? null,
+		element.visible ?? null,
+	]);
 }
 
-/** Required (non-optional) candidates absent from a composed spec, by id. */
 export function missingRequiredCandidates(
 	step: ConnectStep,
 	spec: Spec,
 ): string[] {
 	const present = new Set(Object.values(spec.elements).map(fingerprint));
 	return connectCandidates(step)
-		.filter((candidate) => !candidate.id.endsWith(OPTIONAL_SUFFIX))
+		.filter((candidate) => !candidate.id.endsWith(optionalCandidateIdSuffix))
 		.filter((candidate) => !present.has(fingerprint(candidate.element)))
 		.map((candidate) => candidate.id);
 }
 
-/** Valid against the catalog's components and structurally sound. */
+const PressBindingSchema = z.object({
+	press: z.object({ action: z.string() }),
+});
+
 export function isRenderableConnectSpec(spec: Spec): boolean {
 	if (!validateSpec(spec, { checkOrphans: true }).valid) return false;
-	const known = new Set(Object.keys(connectCatalog.data.components));
-	return Object.values(spec.elements).every((element) =>
-		known.has(element.type),
-	);
+	const knownComponents = new Set(Object.keys(connectCatalog.data.components));
+	const knownActions = new Set(Object.keys(connectCatalog.data.actions));
+	for (const element of Object.values(spec.elements)) {
+		if (!knownComponents.has(element.type)) return false;
+		const press = PressBindingSchema.safeParse(element.on);
+		if (press.success && !knownActions.has(press.data.press.action))
+			return false;
+	}
+	return true;
 }
 
 export interface ComposeOptions {
@@ -111,7 +123,6 @@ export interface ComposeOptions {
 	readonly signal?: AbortSignal;
 }
 
-/** Compose a step's page: model-arranged when an evaluator is given. */
 export async function composeConnectSpec(
 	step: ConnectStep,
 	options: ComposeOptions = {},
@@ -145,9 +156,6 @@ export async function composeConnectSpec(
 			return fallback(`composition stopped: ${stopReason}`);
 		if (!isRenderableConnectSpec(composed))
 			return fallback("composed spec failed validation");
-		// Structural validation cannot see omitted content: a model that drops
-		// the step's action would leave the person stranded. Every required
-		// candidate must be in the page, or the deterministic page is used.
 		const missing = missingRequiredCandidates(step, composed);
 		if (missing.length > 0)
 			return fallback(`composed spec omitted ${missing.join(", ")}`);
@@ -159,19 +167,12 @@ export async function composeConnectSpec(
 	}
 }
 
-/**
- * The evaluator the environment configures, if any. Secretless first: on
- * Vercel (or after `vercel env pull`) the short-lived `VERCEL_OIDC_TOKEN`
- * authenticates to AI Gateway; `AI_GATEWAY_API_KEY` is the fallback. With
- * neither, pages are composed deterministically. `HOBO_CONNECT_UI_COMPOSE=off`
- * turns the model off even when a credential is present.
- */
 export function evaluatorFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	fetchImpl?: typeof fetch,
 ): Evaluator | undefined {
-	if (env.HOBO_CONNECT_UI_COMPOSE === "off") return undefined;
 	const apiKey = env.VERCEL_OIDC_TOKEN || env.AI_GATEWAY_API_KEY;
+	if (env.HOBO_CONNECT_UI_COMPOSE !== "on") return undefined;
 	if (!apiKey) return undefined;
 	return experimental_createEvaluator({
 		apiKey,

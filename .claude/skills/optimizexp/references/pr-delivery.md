@@ -57,31 +57,28 @@ After `gh pr view` shows a PR for the branch:
 ```bash
 node --import tsx .agents/skills/optimizexp/harness/post-pr-evidence.mts \
   --feature <feature-id> \
-  --pr <number|url> \
-  # or auto-detect PR for current branch
+  --pr <number>
+# Omit --pr to auto-detect the current branch's PR.
 ```
+
+Posting accepts consistent evidence while playback review is pending. The
+manifest and metadata must identify the same primary and match its current
+digest; an accepted review must also match that artifact. The index reports
+the review status. File paths and transcript text are formatted as literal
+evidence, including when they contain Markdown delimiters; malformed kind names
+are rejected before posting. If a feature ID exists in multiple scopes, pass
+`--project <id>` (or `--project root`) to select one; posting refuses an
+ambiguous or missing selection. A failed scenario comment makes the command
+fail after it reports every attempted comment.
 
 ### Payload strategy
 
-1. Prefer attaching/linking **committed** evidence paths (always works for reviewers who check out the branch).
-2. Additionally post a PR comment with:
-   - scenario table
-   - inline images if small enough
-   - video links or details attachments
-3. If API rejects size:
-   - compress / downscale (`ffmpeg`, `pngquant` if present)
-   - convert video → short GIF
-   - split into multiple comments (one scenario per comment)
-   - fall back to comment with repo-relative paths only
-
-### Size heuristics
-
-| Kind | Try upload | Else |
-|---|---|---|
-| Image ≤ ~1 MiB | PR comment image / gist | path link |
-| GIF ≤ ~2 MiB | PR comment | path link |
-| Video ≤ ~5 MiB | PR attachment if supported | compress or path link |
-| Larger | never raw upload | path + optional external artifact store only if user configured |
+The command posts a scenario index and one comment per scenario. It references
+small images and GIFs and includes excerpts from small transcripts; videos and
+larger files use their repository paths. The command does not upload or
+compress files, so commit and push the evidence before posting. Image references
+are limited to 1,000,000 bytes and GIF references to 2,000,000 bytes. Transcript
+excerpts are clipped to 12,000 characters.
 
 Never commit secrets in evidence. Never paste binary base64 walls into PR bodies when a path link suffices.
 

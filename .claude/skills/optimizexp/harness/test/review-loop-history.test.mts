@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -22,10 +23,10 @@ function seedRepo(): string {
   return dir;
 }
 
-function seedRun(root: string, runId: string, projects: string[] = []): void {
+function seedRun(root: string, runId: string, projects: string[] = [], features: string[] = []): void {
   const dir = path.join(root, ".optimizexp/runs", runId);
   mkdirSync(path.join(dir, "iterations"), { recursive: true });
-  writeFileSync(path.join(dir, "scope.json"), JSON.stringify({ runId, experiences: ["dx"], personas: [], features: [], projects, surfaces: [], reportOnly: false, passes: null, cyclesCompleted: 0, passesCompleted: 0, status: "running", regime: "harm_reduce", regimesEntered: ["harm_reduce"], stopPolicy: "infinite-until-pareto-equilibrium", noDelight: false, noSurvey: false, delightPasses: null, delightCyclesCompleted: 0, surveyCompleted: false }));
+  writeFileSync(path.join(dir, "scope.json"), JSON.stringify({ runId, experiences: ["dx"], personas: [], features, projects, surfaces: [], reportOnly: false, passes: null, cyclesCompleted: 0, passesCompleted: 0, status: "running", regime: "harm_reduce", regimesEntered: ["harm_reduce"], stopPolicy: "infinite-until-pareto-equilibrium", noDelight: false, noSurvey: false, delightPasses: null, delightCyclesCompleted: 0, surveyCompleted: false }));
 }
 
 describe("historical review validation", () => {
@@ -160,6 +161,64 @@ it("foreign bus entries cannot satisfy a run", () => {
 			assert.match(result.stdout, /bus_complete_triples_lt_1/);
 			assert.match(result.stdout, /verified_experiment_missing/);
 			assert.doesNotMatch(result.stdout, /runId_mismatch/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+it("rejects a bus primary different from the reviewed artifact and requires acceptance", () => {
+		const dir = seedRepo();
+		try {
+			const run = "t-evidence-primary";
+			seedRun(dir, run, [], ["demo"]);
+			const rel = ".optimizexp/features/demo/evidence/scenario";
+			const evidence = path.join(dir, rel);
+			mkdirSync(evidence, { recursive: true });
+			const primary = "reviewed evidence\n";
+			const hash = createHash("sha256").update(primary).digest("hex");
+			writeFileSync(path.join(evidence, "primary.txt"), primary);
+			writeFileSync(path.join(evidence, "alternate.txt"), "different evidence\n");
+			writeFileSync(path.join(evidence, "meta.json"), JSON.stringify({ driver: "cli", degraded: false, claims: [], repro: { via: "capture-evidence" }, primary: { file: "primary.txt", kind: "transcript", sha256: hash } }));
+			writeFileSync(path.join(evidence, "manifest.json"), JSON.stringify({ primaryPath: "primary.txt", kind: "transcript" }));
+			const review = { status: "accepted", reviewer: "qa", relevance: "relevant", completeness: "complete", coverageMode: "full-journey", coveredClaims: [], artifactSha256: hash, notes: "Reviewed the complete captured command output." };
+			writeFileSync(path.join(evidence, "review.json"), JSON.stringify(review));
+			const outcome = path.join(dir, `.optimizexp/bus/entries/${run}-outcome.json`);
+			const writeOutcome = (file: string) => writeFileSync(outcome, JSON.stringify({ evidence: { path: rel, primary: file } }));
+			writeOutcome("alternate.txt");
+			const mismatch = runRl(dir, ["--mode", "assert-complete", "--run", run]);
+			assert.ok((mismatch.json.missing as string[]).includes(`evidence_primary_mismatch:${rel}`));
+			writeOutcome("../../outside.txt");
+			const escape = runRl(dir, ["--mode", "assert-complete", "--run", run]);
+			assert.ok((escape.json.missing as string[]).includes(`evidence_primary_mismatch:${rel}`));
+			writeOutcome("primary.txt");
+			const matching = runRl(dir, ["--mode", "assert-complete", "--run", run]);
+			assert.ok(!(matching.json.missing as string[]).some((entry) => entry.startsWith("evidence_primary_mismatch:")));
+			writeFileSync(path.join(evidence, "review.json"), JSON.stringify({ ...review, status: "pending" }));
+			const pending = runRl(dir, ["--mode", "assert-complete", "--run", run]);
+			assert.ok((pending.json.missing as string[]).includes(`evidence_review:${rel}:evidence_review_not_accepted`));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+it("uses the reviewed manifest when a bus outcome omits its video primary", () => {
+		const dir = seedRepo();
+		try {
+			const run = "t-evidence-video";
+			seedRun(dir, run, [], ["demo"]);
+			const rel = ".optimizexp/features/demo/evidence/scenario";
+			const evidence = path.join(dir, rel);
+			mkdirSync(evidence, { recursive: true });
+			const primary = "video fixture bytes";
+			const hash = createHash("sha256").update(primary).digest("hex");
+			writeFileSync(path.join(evidence, "primary.mp4"), primary);
+			writeFileSync(path.join(evidence, "meta.json"), JSON.stringify({ driver: "web", degraded: false, claims: [], repro: { via: "capture-evidence" }, primary: { file: "primary.mp4", kind: "video", sha256: hash } }));
+			writeFileSync(path.join(evidence, "manifest.json"), JSON.stringify({ primaryPath: "primary.mp4", kind: "video" }));
+			writeFileSync(path.join(evidence, "review.json"), JSON.stringify({ status: "accepted", reviewer: "qa", relevance: "relevant", completeness: "complete", coverageMode: "full-journey", coveredClaims: [], artifactSha256: hash, notes: "Reviewed the complete recorded video." }));
+			writeFileSync(path.join(dir, `.optimizexp/bus/entries/${run}-outcome.json`), JSON.stringify({ evidence: { path: rel } }));
+			const result = runRl(dir, ["--mode", "assert-complete", "--run", run]);
+			const missing = result.json.missing as string[];
+			assert.ok(!missing.some((entry) => entry.startsWith("evidence_missing:") || entry.startsWith("evidence_review:") || entry === "evidence_not_from_harness"));
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
