@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 
 import {
 	captureAll,
@@ -56,6 +57,48 @@ export function onePasswordCli(platform: Platform): StoreCli {
 	};
 }
 
+const serviceAccountPayload = z.object({
+	email: z.string().email(),
+	muk: z.object({}),
+	secretKey: z.string().min(1),
+	srpX: z.string().min(1),
+	signInAddress: z.string().min(1),
+	userAuth: z.object({}),
+});
+
+const serviceAccountToken = z
+	.string()
+	.max(65_536)
+	.regex(/^ops_[A-Za-z0-9_-]+$/u)
+	.superRefine((token, context) => {
+		try {
+			const encoded = token.slice(4);
+			const decoded = Buffer.from(encoded, "base64url");
+			if (decoded.toString("base64url") !== encoded) {
+				context.addIssue({ code: "custom" });
+				return;
+			}
+			const payload = serviceAccountPayload.safeParse(
+				JSON.parse(decoded.toString("utf8")),
+			);
+			if (!payload.success) context.addIssue({ code: "custom" });
+		} catch {
+			context.addIssue({ code: "custom" });
+		}
+	})
+	.brand<"OnePasswordServiceAccountToken">();
+
+export type OnePasswordServiceAccountToken = z.infer<
+	typeof serviceAccountToken
+>;
+
+export function parseOnePasswordServiceAccountToken(
+	token: string,
+): OnePasswordServiceAccountToken | undefined {
+	const parsed = serviceAccountToken.safeParse(token);
+	return parsed.success ? parsed.data : undefined;
+}
+
 export interface OnePasswordAccessOptions {
 	readonly family: "ci" | "cd";
 	readonly vaultId: string;
@@ -69,18 +112,43 @@ export interface OnePasswordAccessOptions {
 	readonly exists?: (file: string) => boolean;
 	/** How to reach an owner who is not at this machine (a remote dev box). */
 	readonly owner?: OwnerChannel;
+	readonly validateServiceAccount?: (
+		token: OnePasswordServiceAccountToken,
+		vaultId: string,
+	) => Promise<boolean>;
 }
 
 export const ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE = "OP_SERVICE_ACCOUNT_TOKEN";
 
 export type OnePasswordAccess =
-	| { readonly kind: "ready"; readonly token: string }
+	| {
+			readonly kind: "ready";
+			readonly token: OnePasswordServiceAccountToken;
+	  }
 	| {
 			readonly kind: "refused";
 			readonly code: string;
 			readonly message: string;
 			readonly remediation: readonly string[];
 	  };
+
+async function hasOnlyVault(
+	token: OnePasswordServiceAccountToken,
+	vaultId: string,
+): Promise<boolean> {
+	try {
+		const sdk = await import("@1password/sdk");
+		const client = await sdk.createClient({
+			auth: token,
+			integrationName: "HoBo",
+			integrationVersion: "1",
+		});
+		const vaults = await client.vaults.list({ decryptDetails: false });
+		return vaults.length === 1 && vaults[0]?.id === vaultId;
+	} catch {
+		return false;
+	}
+}
 
 export async function provisionOnePasswordAccess(
 	options: OnePasswordAccessOptions,
@@ -96,6 +164,26 @@ export async function provisionOnePasswordAccess(
 		message,
 		remediation,
 	});
+	const readyServiceAccount = async (
+		value: string,
+	): Promise<OnePasswordAccess> => {
+		const token = parseOnePasswordServiceAccountToken(value);
+		const valid =
+			token !== undefined &&
+			(await (options.validateServiceAccount ?? hasOnlyVault)(
+				token,
+				options.vaultId,
+			).catch(() => false));
+		if (token === undefined || !valid)
+			return refused(
+				"SERVICE_ACCOUNT",
+				"The 1Password service account is invalid, expired, or not scoped only to the configured vault.",
+				[
+					"Use a valid, unexpired service account scoped only to the configured vault.",
+				],
+			);
+		return { kind: "ready", token };
+	};
 	const cli = onePasswordCli(options.platform ?? currentPlatform());
 	const exists = options.exists ?? existsSync;
 	const remote = !options.interactive;
@@ -129,7 +217,7 @@ export async function provisionOnePasswordAccess(
 					"Use the private owner form to connect an existing service account.",
 				],
 			);
-		return { kind: "ready", token };
+		return readyServiceAccount(token);
 	}
 	const run = options.run;
 	if (run === undefined)
@@ -176,8 +264,7 @@ export async function provisionOnePasswordAccess(
 			"24h",
 			"--raw",
 		]);
-		const token = account.stdout.trim();
-		if (account.code !== 0 || token === "")
+		if (account.code !== 0)
 			return refused(
 				"SERVICE_ACCOUNT",
 				"1Password did not create HoBo's service account.",
@@ -185,6 +272,6 @@ export async function provisionOnePasswordAccess(
 					"Your 1Password account needs permission to create service accounts (a team or business account).",
 				],
 			);
-		return { kind: "ready", token };
+		return readyServiceAccount(account.stdout.trim());
 	}
 }

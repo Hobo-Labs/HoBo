@@ -8,7 +8,9 @@ import {
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
 	prepareGithubConnection,
+	provisionOnePasswordAccess,
 } from "../../src/index.js";
+import { ONE_PASSWORD_TEST_TOKEN } from "../support/onepassword-service-account.js";
 import { heldOwnerChannel, readOwnerTurn } from "../support/remote-owner.js";
 
 // SPEC: a ceremony run through the HoBo MCP server. The server calls the CLI
@@ -46,7 +48,7 @@ const lines = (outcome: Awaited<ReturnType<typeof prepareGithubConnection>>) =>
 
 describe("SPEC hand-off through MCP: no progress lines, no silent refusals", () => {
 	it("opens an existing 1Password account through the owner channel", async () => {
-		const token = "synthetic-service-account";
+		const token = ONE_PASSWORD_TEST_TOKEN;
 		const kept = createTrustedVault();
 		const owner = { ...heldOwnerChannel(), vault: kept };
 		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", token);
@@ -71,6 +73,11 @@ describe("SPEC hand-off through MCP: no progress lines, no silent refusals", () 
 			ownerChannel: owner,
 			runCommand,
 			openStore,
+			onePasswordAccess: (options) =>
+				provisionOnePasswordAccess({
+					...options,
+					validateServiceAccount: async () => true,
+				}),
 			locator: {
 				read: async () => ({
 					HOBO_SECRET_STORE: "1password",

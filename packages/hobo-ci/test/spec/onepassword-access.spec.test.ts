@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { provisionOnePasswordAccess } from "../../src/onepassword-access.js";
 import type { CommandResult, RunCommand } from "../../src/store-cli.js";
+import { ONE_PASSWORD_TEST_TOKEN } from "../support/onepassword-service-account.js";
+
+const TOKEN = ONE_PASSWORD_TEST_TOKEN;
 
 // SPEC: connecting 1Password with as little manual provisioning as 1Password
 // allows. HoBo installs the 1Password CLI (`op`) when it is missing, reuses
@@ -35,8 +38,7 @@ function fakeMachine(options: { opOnPath?: boolean; signedIn?: boolean }) {
 			signedIn = true; // the owner's 1Password app approved it
 			return ok();
 		}
-		if (line.startsWith("service-account create"))
-			return ok("ops_service-token\n");
+		if (line.startsWith("service-account create")) return ok(`${TOKEN}\n`);
 		return { code: 2, stdout: "", stderr: `unexpected ${line}` };
 	};
 	const which = async (bin: string) =>
@@ -55,6 +57,7 @@ const base = (machine: ReturnType<typeof fakeMachine>, interactive = true) => ({
 	emit: (line: string) => lines.push(line),
 	interactive,
 	exists: () => false,
+	validateServiceAccount: async () => true,
 });
 
 describe("SPEC R7: choosing 1Password installs its CLI when missing", () => {
@@ -113,7 +116,7 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 		expect(machine.ran).toContainEqual(
 			`op service-account create hobo-cd --vault ${VAULT}:read_items,write_items --expires-in 24h --raw`,
 		);
-		expect(result).toMatchObject({ kind: "ready", token: "ops_service-token" });
+		expect(result).toMatchObject({ kind: "ready", token: TOKEN });
 	});
 
 	it("never tells the owner to create anything, set env vars or use a terminal", async () => {

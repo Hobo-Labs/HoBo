@@ -47,11 +47,21 @@ import {
 const DEVICE = parseBitwardenDeviceId("8d0f3c2e-1b4a-4c5d-9e6f-7a8b9c0d1e2f");
 
 function privateOwner(approvals: { url: string; message: string }[]) {
+	const held = new Map([
+		["BW_CLIENTID", API_KEY.clientId],
+		["BW_CLIENTSECRET", API_KEY.clientSecret],
+	]);
+	const captured: string[] = [];
 	return {
+		captured,
 		openUrl: async () => undefined,
-		holds: () => true,
-		captureSecret: async ({ name }: { name: string }) =>
-			name === "BW_CLIENTID" ? API_KEY.clientId : API_KEY.clientSecret,
+		holds: (name: string) => held.has(name),
+		captureSecret: async ({ name }: { name: string }) => {
+			const value = held.get(name);
+			held.delete(name);
+			if (value !== undefined) captured.push(name);
+			return value;
+		},
 		canConfirm: () => true,
 		confirm: async (request: { url: string; message: string }) => {
 			approvals.push(request);
@@ -1140,18 +1150,52 @@ function handedOff(see: (line: string) => void): PrepareInput {
 }
 
 describe("EVAL remote box, no keys anywhere: the ceremony collects the API key", () => {
-	it("collects the API key and approval through the private owner channel", async () => {
+	it("keeps the captured API key in the run and sends it only to Bitwarden sign-in", async () => {
 		const server = fakeBitwarden();
 		const shown: string[] = [];
 		const approvals: { url: string; message: string }[] = [];
+		const captures: string[] = [];
+		const credentialRequests: string[] = [];
 		const opened = new Map<string, string>();
+		const saved = new Map<string, string>();
+		const vault = createTrustedVault();
+		const env = { HOBO_SECRET_STORE: "bitwarden" };
+		const owner = privateOwner(approvals);
+		const fetch: typeof globalThis.fetch = async (input, init) => {
+			const headers = new Headers(init?.headers);
+			const wire = [
+				String(input),
+				String(init?.body),
+				...[...headers.entries()].flat(),
+			].join("\n");
+			if (wire.includes(API_KEY.clientSecret)) {
+				const url = new URL(String(input));
+				credentialRequests.push(
+					`${init?.method ?? "GET"} ${url.origin}${url.pathname}`,
+				);
+			}
+			return server.fetch(input, init);
+		};
 		await prepareGithubConnection(
 			handedOff((line) => shown.push(line)),
 			{
-				ownerChannel: privateOwner(approvals),
-				env: { HOBO_SECRET_STORE: "bitwarden" },
-				vault: createTrustedVault(),
-				locator: { read: async () => ({}), write: async () => undefined },
+				ownerChannel: {
+					...owner,
+					captureSecret: async (request) => {
+						captures.push(request.name);
+						return owner.captureSecret(request);
+					},
+				},
+				env,
+				vault,
+				locator: {
+					read: async () => Object.fromEntries(saved),
+					write: async (values) => {
+						saved.clear();
+						for (const [name, value] of Object.entries(values))
+							saved.set(name, value);
+					},
+				},
 				openStore: async (
 					id,
 					_coordinates,
@@ -1170,7 +1214,7 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 						},
 					};
 				},
-				fetch: server.fetch,
+				fetch,
 				sleep: async () => undefined,
 				handOffTimeoutMs: 60_000,
 				startPage: () => {
@@ -1180,6 +1224,16 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 		);
 		expect(opened.get("token")).toMatch(/^0\.66666666-/u);
 		expect(approvals).toHaveLength(1);
+		expect(captures).toEqual(["BW_CLIENTID", "BW_CLIENTSECRET"]);
+		expect(credentialRequests).toEqual([
+			"POST https://identity.bitwarden.com/connect/token",
+		]);
+		expect(server.strayHosts).toEqual([]);
+		expect(env).toEqual({ HOBO_SECRET_STORE: "bitwarden" });
+		expect(vault.names()).toEqual([]);
+		expect(JSON.stringify(Object.fromEntries(saved))).not.toContain(
+			API_KEY.clientSecret,
+		);
 		const all = shown.join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(OWNER_EMAIL);

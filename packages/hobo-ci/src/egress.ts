@@ -101,18 +101,53 @@ function egressDispatcher(
 
 /** A `fetch` that goes through the required proxy, honouring its bypass list. */
 export function egressFetch(egress: Egress): typeof fetch {
-	const dispatcher = egressDispatcher(egress);
+	return fetchWithDispatcher(egressDispatcher(egress));
+}
+
+export function isolatedOwnerEgressFetch(
+	egress: Egress,
+	allowedOrigin: string,
+): typeof fetch {
+	const target = egressDispatcher(egress) ?? new Agent();
+	return fetchWithDispatcher(new OriginDispatcher(target, allowedOrigin));
+}
+
+function fetchWithDispatcher(dispatcher: Dispatcher | undefined): typeof fetch {
 	if (dispatcher === undefined) return fetch;
-	// Node's fetch is undici's and takes its dispatcher as a request option.
 	return (input, init) => {
-		const routed: RequestInit & {
-			readonly dispatcher: Agent | EnvHttpProxyAgent;
-		} = {
+		const routed: RequestInit & { readonly dispatcher: Dispatcher } = {
 			...init,
 			dispatcher,
 		};
 		return fetch(input, routed);
 	};
+}
+
+class OriginDispatcher extends Dispatcher {
+	readonly #inner: Dispatcher;
+	readonly #allowedOrigin: string;
+	constructor(inner: Dispatcher, allowedOrigin: string) {
+		super();
+		this.#inner = inner;
+		this.#allowedOrigin = allowedOrigin;
+	}
+	override dispatch(
+		options: Dispatcher.DispatchOptions,
+		handler: Dispatcher.DispatchHandler,
+	): boolean {
+		if (
+			options.origin === undefined ||
+			new URL(options.origin).origin !== this.#allowedOrigin
+		)
+			throw new Error("Private owner redirect was refused.");
+		return this.#inner.dispatch(options, handler);
+	}
+	override async close(): Promise<void> {
+		await this.#inner.close();
+	}
+	override async destroy(): Promise<void> {
+		await this.#inner.destroy();
+	}
 }
 
 /**

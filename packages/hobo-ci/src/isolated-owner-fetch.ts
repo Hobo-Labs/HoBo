@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { egressFrom } from "./egress.js";
 import {
@@ -109,15 +110,24 @@ async function requestBody(request: Request): Promise<string | null> {
 	return Buffer.concat(chunks).toString("base64");
 }
 
+export interface IsolatedOwnerFetchOptions {
+	readonly allowedOrigins: readonly string[];
+	readonly allowInsecureLoopback?: boolean;
+	readonly allowProxy?: boolean;
+	readonly allowExtraCa?: boolean;
+}
+
 export function isolatedOwnerFetch(
 	env: Readonly<Record<string, string | undefined>>,
+	options: IsolatedOwnerFetchOptions,
 ): typeof fetch {
-	return createIsolatedOwnerFetch(env, launchOwnerChild);
+	return createIsolatedOwnerFetch(env, launchOwnerChild, options);
 }
 
 export function createIsolatedOwnerFetch(
 	env: Readonly<Record<string, string | undefined>>,
 	launchChild: PrivateOwnerChildLauncher,
+	options: IsolatedOwnerFetchOptions,
 ): typeof fetch {
 	const egress = egressFrom(env);
 	const childPath = fileURLToPath(
@@ -134,7 +144,18 @@ export function createIsolatedOwnerFetch(
 		}
 		if (request.signal.aborted)
 			throw new DOMException("The request was cancelled.", "AbortError");
+		const run = {
+			id: randomUUID(),
+			secret: randomBytes(32).toString("base64url"),
+		};
 		const packet = ownerRequest.safeParse({
+			run,
+			policy: {
+				allowedOrigins: options.allowedOrigins,
+				allowInsecureLoopback: options.allowInsecureLoopback === true,
+				allowProxy: options.allowProxy === true,
+				allowExtraCa: options.allowExtraCa === true,
+			},
 			url: request.url,
 			method: request.method,
 			headers: [...request.headers.entries()],
@@ -158,10 +179,13 @@ export function createIsolatedOwnerFetch(
 		if (Buffer.byteLength(encoded) > OWNER_MESSAGE_LIMIT)
 			throw new PrivateOwnerRequestError();
 		return new Promise<Response>((resolve, reject) => {
-			const childEnv =
-				process.platform === "win32" && process.env.SystemRoot
+			const childEnv = {
+				HOBO_OWNER_RUN_ID: run.id,
+				HOBO_OWNER_RUN_SECRET: run.secret,
+				...(process.platform === "win32" && process.env.SystemRoot
 					? { SystemRoot: process.env.SystemRoot }
-					: {};
+					: undefined),
+			};
 			const launch = () =>
 				launchChild({
 					executable: process.execPath,
@@ -223,7 +247,11 @@ export function createIsolatedOwnerFetch(
 					const parsed = ownerResponse.parse(
 						JSON.parse(Buffer.concat(chunks).toString("utf8")),
 					);
-					if (!parsed.ok) {
+					if (
+						!parsed.ok ||
+						parsed.runId !== run.id ||
+						new URL(parsed.url).origin !== new URL(request.url).origin
+					) {
 						finish();
 						return;
 					}

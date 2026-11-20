@@ -8,11 +8,21 @@ import {
 } from "../../src/isolated-owner-errors.js";
 import {
 	createIsolatedOwnerFetch,
+	type IsolatedOwnerFetchOptions,
 	type PrivateOwnerChildLauncher,
 } from "../../src/isolated-owner-fetch.js";
 import { ownerRequest } from "../../src/isolated-owner-wire.js";
 
 const launch = vi.fn<PrivateOwnerChildLauncher>();
+const fixtureCreate = (
+	env: Readonly<Record<string, string | undefined>>,
+	launcher: PrivateOwnerChildLauncher,
+	options?: Partial<IsolatedOwnerFetchOptions>,
+) =>
+	createIsolatedOwnerFetch(env, launcher, {
+		allowedOrigins: ["https://fixture.invalid"],
+		...options,
+	});
 
 beforeEach(() => {
 	launch.mockReset();
@@ -23,11 +33,12 @@ it("sanitizes synchronous launch failures and keeps request data out of argument
 	launch.mockImplementation(() => {
 		throw new Error(marker);
 	});
-	const send = createIsolatedOwnerFetch(
+	const send = fixtureCreate(
 		{
 			HTTPS_PROXY: `http://fixture:${marker}@127.0.0.1:8888`,
 		},
 		launch,
+		{ allowProxy: true },
 	);
 	const failure = await send(`https://fixture.invalid/${marker}`, {
 		method: "POST",
@@ -57,7 +68,7 @@ it.each([
 		});
 		return childProcess;
 	});
-	const failure = await createIsolatedOwnerFetch({}, launch)(
+	const failure = await fixtureCreate({}, launch)(
 		"https://fixture.invalid",
 		{
 			method: "POST",
@@ -89,7 +100,7 @@ it.each([
 		childProcess.emit("error", new Error(marker));
 	});
 	launch.mockReturnValue(childProcess);
-	const failure = await createIsolatedOwnerFetch({}, launch)(
+	const failure = await fixtureCreate({}, launch)(
 		"https://fixture.invalid",
 		{
 			method: "POST",
@@ -118,7 +129,7 @@ it("handles child and pipe errors after cancellation during launch", async () =>
 		});
 		return childProcess;
 	});
-	const failure = await createIsolatedOwnerFetch({}, launch)(
+	const failure = await fixtureCreate({}, launch)(
 		"https://fixture.invalid",
 		{
 			method: "POST",
@@ -148,6 +159,7 @@ it("sends the supported request properties over the private pipe", async () => {
 		stdout.end(
 			JSON.stringify({
 				ok: true,
+				runId: received?.run.id,
 				url: "https://fixture.invalid/path",
 				redirected: false,
 				type: "basic",
@@ -159,7 +171,7 @@ it("sends the supported request properties over the private pipe", async () => {
 		);
 	});
 	launch.mockReturnValue(childProcess);
-	await createIsolatedOwnerFetch({}, launch)("https://fixture.invalid/path", {
+	await fixtureCreate({}, launch)("https://fixture.invalid/path", {
 		cache: "no-store",
 		credentials: "include",
 		integrity: "sha256-fixture",
@@ -179,4 +191,41 @@ it("sends the supported request properties over the private pipe", async () => {
 		referrer: "https://fixture.invalid/private",
 		referrerPolicy: "no-referrer",
 	});
+	expect(received?.run.id).toBe(
+		launch.mock.calls[0]?.[0].env.HOBO_OWNER_RUN_ID,
+	);
+	expect(received?.run.secret).toBe(
+		launch.mock.calls[0]?.[0].env.HOBO_OWNER_RUN_SECRET,
+	);
+});
+
+it("rejects a response that is not bound to the dispatched run", async () => {
+	const stdin = new PassThrough();
+	const stdout = new PassThrough();
+	const child = Object.assign(new EventEmitter(), {
+		stdin,
+		stdout,
+		kill: vi.fn(),
+	});
+	stdin.resume();
+	stdin.on("end", () => {
+		stdout.once("end", () => child.emit("close", 0));
+		stdout.end(
+			JSON.stringify({
+				ok: true,
+				runId: crypto.randomUUID(),
+				url: "https://fixture.invalid/",
+				redirected: false,
+				type: "basic",
+				status: 200,
+				statusText: "OK",
+				headers: [],
+				body: "",
+			}),
+		);
+	});
+	launch.mockReturnValue(child);
+	await expect(
+		fixtureCreate({}, launch)("https://fixture.invalid/"),
+	).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
 });

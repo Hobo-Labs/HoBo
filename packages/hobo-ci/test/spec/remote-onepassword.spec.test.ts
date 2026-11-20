@@ -4,9 +4,10 @@ import {
 	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
 	provisionOnePasswordAccess,
 } from "../../src/index.js";
+import { ONE_PASSWORD_TEST_TOKEN } from "../support/onepassword-service-account.js";
 import { driveRemoteOwner, heldOwnerChannel } from "../support/remote-owner.js";
 
-const TOKEN = "fixture-service-account-credential";
+const TOKEN = ONE_PASSWORD_TEST_TOKEN;
 const VAULT = "fixture-private-vault";
 
 function provisioner(
@@ -23,6 +24,7 @@ function provisioner(
 			toolsDir: "/unused",
 			emit: () => undefined,
 			interactive: false,
+			validateServiceAccount: async () => true,
 			...(owner !== undefined ? { owner } : undefined),
 		});
 	return { start, run };

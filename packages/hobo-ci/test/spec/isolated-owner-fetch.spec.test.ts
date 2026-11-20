@@ -13,13 +13,28 @@ import {
 	PrivateOwnerDispatchError,
 	PrivateOwnerRequestError,
 } from "../../src/isolated-owner-errors.js";
-import { isolatedOwnerFetch } from "../../src/isolated-owner-fetch.js";
+import {
+	isolatedOwnerFetch as ownerTransport,
+	type IsolatedOwnerFetchOptions,
+} from "../../src/isolated-owner-fetch.js";
 import { OWNER_BODY_LIMIT } from "../../src/isolated-owner-wire.js";
 
 const marker = "fixture-private-transport-value";
 const socketAddress = z.object({
 	port: z.number().int().positive().max(65535),
 });
+const isolatedOwnerFetch = (
+	env: Readonly<Record<string, string | undefined>>,
+	options?: Partial<IsolatedOwnerFetchOptions>,
+): typeof fetch =>
+	async (input, init) =>
+		ownerTransport(env, {
+			allowInsecureLoopback: true,
+			...options,
+			allowedOrigins: options?.allowedOrigins ?? [
+				new URL(String(input)).origin,
+			],
+		})(input, init);
 
 describe("isolated owner fetch", () => {
 	it("treats a lost response after dispatch as uncertain without leaking details", async () => {
@@ -89,11 +104,48 @@ describe("isolated owner fetch", () => {
 			const failure = await isolatedOwnerFetch({
 				SSL_CERT_FILE: `/fixture/${marker}`,
 			})(`http://127.0.0.1:${address.port}/`).catch((error) => error);
-			expect(failure).toBeInstanceOf(PrivateOwnerDispatchError);
+			expect(failure).toBeInstanceOf(PrivateOwnerRequestError);
 			expect(String(failure)).not.toContain(marker);
 		} finally {
 			server.closeAllConnections();
 			await new Promise<void>((resolve) => server.close(() => resolve()));
+		}
+	}, 30_000);
+
+	it("refuses a redirect outside the approved origin before connecting", async () => {
+		let destinationRequests = 0;
+		const destination = createServer((_request, response) => {
+			destinationRequests += 1;
+			response.end("unexpected");
+		});
+		const source = createServer((_request, response) => {
+			response.writeHead(307, {
+				location: `http://127.0.0.1:${socketAddress.parse(destination.address()).port}/`,
+			});
+			response.end();
+		});
+		await Promise.all(
+			[source, destination].map(
+				(server) =>
+					new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)),
+			),
+		);
+		try {
+			await expect(
+				isolatedOwnerFetch({})(
+					`http://127.0.0.1:${socketAddress.parse(source.address()).port}/`,
+					{ headers: { "x-fixture-credential": marker } },
+				),
+			).rejects.toBeInstanceOf(PrivateOwnerDispatchError);
+			expect(destinationRequests).toBe(0);
+		} finally {
+			for (const server of [source, destination]) server.closeAllConnections();
+			await Promise.all(
+				[source, destination].map(
+					(server) =>
+						new Promise<void>((resolve) => server.close(() => resolve())),
+				),
+			);
 		}
 	}, 30_000);
 
@@ -238,7 +290,10 @@ describe("isolated owner fetch", () => {
 				{ HTTPS_PROXY: proxyUrl, SSL_CERT_FILE: cert },
 				{ HTTPS_PROXY: proxyUrl, NO_PROXY: "127.0.0.1", SSL_CERT_FILE: cert },
 			]) {
-				const response = await isolatedOwnerFetch(env)(url, {
+				const response = await isolatedOwnerFetch(env, {
+					allowProxy: true,
+					allowExtraCa: true,
+				})(url, {
 					signal: AbortSignal.timeout(15_000),
 				});
 				expect(await response.text()).toBe("fixture-ok");

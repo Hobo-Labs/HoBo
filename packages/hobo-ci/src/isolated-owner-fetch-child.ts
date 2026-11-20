@@ -1,8 +1,10 @@
-import { egressFetch } from "./egress.js";
+import { isolatedOwnerEgressFetch } from "./egress.js";
 import {
+	authenticatedOwnerRun,
 	OWNER_BODY_LIMIT,
 	OWNER_MESSAGE_LIMIT,
 	ownerRequest,
+	ownerRun,
 } from "./isolated-owner-wire.js";
 import { parseProxyUrl } from "./parsed-values.js";
 
@@ -17,6 +19,10 @@ async function respond(value: string): Promise<void> {
 }
 
 async function run(): Promise<void> {
+	const authorizedRun = ownerRun.parse({
+		id: process.env.HOBO_OWNER_RUN_ID,
+		secret: process.env.HOBO_OWNER_RUN_SECRET,
+	});
 	const pieces: Buffer[] = [];
 	let length = 0;
 	for await (const piece of process.stdin) {
@@ -28,14 +34,19 @@ async function run(): Promise<void> {
 	const parsed = ownerRequest.parse(
 		JSON.parse(Buffer.concat(pieces).toString("utf8")),
 	);
+	if (!authenticatedOwnerRun(parsed, authorizedRun))
+		throw new Error("Private owner run authentication failed.");
 	const route = {
-		proxy: parsed.egress.proxy
+		proxy: parsed.egress?.proxy
 			? parseProxyUrl("HTTPS_PROXY", parsed.egress.proxy)
 			: undefined,
-		noProxy: parsed.egress.noProxy,
-		caFile: parsed.egress.caFile,
+		noProxy: parsed.egress?.noProxy,
+		caFile: parsed.egress?.caFile,
 	};
-	const response = await egressFetch(route)(parsed.url, {
+	const response = await isolatedOwnerEgressFetch(
+		route,
+		new URL(parsed.url).origin,
+	)(parsed.url, {
 		method: parsed.method,
 		headers: parsed.headers,
 		redirect: parsed.redirect,
@@ -69,6 +80,7 @@ async function run(): Promise<void> {
 	await respond(
 		JSON.stringify({
 			ok: true,
+			runId: parsed.run.id,
 			url: response.url,
 			redirected: response.redirected,
 			type: response.type,
