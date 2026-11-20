@@ -6,7 +6,10 @@ VARIABLES phase, reported, first, exposure
 vars == <<phase, reported, first, exposure>>
 Init == /\ phase = "unrouted" /\ reported \in [1..2 -> Reports]
         /\ first \in 1..2 /\ exposure = 0
-MaxReport == IF reported[1] >= reported[2] THEN reported[1] ELSE reported[2]
+MaxReport ==
+    IF reported[1] > reported[2] THEN reported[1]
+    ELSE IF reported[2] > reported[1] THEN reported[2]
+    ELSE reported[first]
 Route == /\ phase = "unrouted" /\ exposure' = MaxReport
          /\ phase' = IF MaxReport + Cost <= Cap THEN "admitted" ELSE "refused"
          /\ UNCHANGED <<reported, first>>

@@ -19,6 +19,11 @@ import {
 	type JsonValue,
 } from "../ci/attestation.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import {
+	gitLsFiles,
+	readShard,
+	selectShard,
+} from "../lib/unit-test-selection.ts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 // The scope step's git commands must act on the temporary repositories below,
@@ -174,10 +179,12 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
 		assert.match(scripts.if, /github\.event_name == 'merge_group'/u);
-		// Not a job a signed local run stands in for: it always runs.
-		assert.doesNotMatch(scripts.if, /attested/u);
+		assert.match(scripts.if, /attested-jobs.*scripts-tests/u);
 		const lane = step(scripts, LANE);
-		assert.equal(lane.run.trim(), "pnpm run test:scripts");
+		assert.equal(
+			lane.run.trim(),
+			'pnpm run test:scripts --shard="$SHARD/$SHARD_TOTAL"',
+		);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
 		// The pinned toolchain (Node 24 from mise.toml) is in place first:
 		// under Node 22 pnpm prints an engine warning into turbo's JSON.
@@ -186,6 +193,38 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.ok(preflight >= 0, "the job runs ci-runner-preflight");
 		assert.ok(preflight < names.indexOf(LANE));
 		assert.ok(names.indexOf(SCOPE) < names.indexOf(LANE));
+	});
+
+	it("runs all scripts test files once across the required matrix", () => {
+		const source = asObject(jobs?.["scripts-tests"]);
+		const strategy = asObject(source?.strategy);
+		assert.equal(strategy?.["fail-fast"], false);
+		const matrix = asObject(strategy?.matrix);
+		const shards = asList(matrix?.shard);
+		assert.ok(shards);
+		assert.deepEqual(shards, [0, 1, 2, 3]);
+		const steps = asList(source?.steps) ?? [];
+		const lane = steps.map(asObject).find((entry) => entry?.name === LANE);
+		const env = asObject(lane?.env);
+		assert.equal(env?.SHARD, "${{ strategy.job-index }}");
+		assert.equal(env?.SHARD_TOTAL, "${{ strategy.job-total }}");
+		const files = gitLsFiles(["scripts/test/*.test.ts"]).sort();
+		assert.ok(files.length > 0);
+		const partitions = shards.map((_, index) => {
+			const shard = readShard([`--shard=${index}/${shards.length}`]);
+			assert.ok(shard);
+			return selectShard(files, shard);
+		});
+		assert.ok(partitions.every((partition) => partition.length > 0));
+		assert.deepEqual(partitions.flat().sort(), files);
+		const trace = steps
+			.map(asObject)
+			.find((entry) => entry?.name === "CI trace");
+		assert.equal(asObject(trace?.with)?.disambiguator, "${{ matrix.shard }}");
+		const save = steps
+			.map(asObject)
+			.find((entry) => entry?.name === "Save Turbo cache");
+		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
 	});
 
 	it("builds what every package a scripts test imports depends on, before the lane", () => {
@@ -266,9 +305,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(gate.if, /always\(\)/u);
 	});
 
-	it("fails the gate unless the scripts job succeeded, attested or not", () => {
+	it("accepts scripts success or a complete verified local run", () => {
 		const script = step(gate, GATE_STEP).run;
 		const passing = {
+			FORMAL_RESULT: "success",
 			VALIDATION_RESULT: "success",
 			WORKSPACE_RESULT: "success",
 			ROUTE_RESULT: "success",
@@ -276,6 +316,7 @@ describe("the scripts lane is a pull-request gate", () => {
 			ATTESTED_JOBS: "",
 		};
 		const attestedAll = {
+			FORMAL_RESULT: "success",
 			VALIDATION_RESULT: "skipped",
 			WORKSPACE_RESULT: "skipped",
 			ROUTE_RESULT: "success",
@@ -313,14 +354,45 @@ describe("the scripts lane is a pull-request gate", () => {
 							SCRIPTS_RESULT: result,
 						},
 					});
+					const expected =
+						result === "success" ||
+						(result === "skipped" && others === attestedAll);
 					assert.equal(
 						run.status === 0,
-						result === "success",
+						expected,
 						`${event} ${JSON.stringify(others)} scripts=${result}: ${run.stderr}`,
 					);
-					if (result !== "success")
+					if (!expected)
 						assert.match(run.stderr, /Scripts tests did not succeed/u);
 				}
 			}
+	});
+
+	it("rejects a skipped scripts job without its own verified evidence", () => {
+		const script = step(gate, GATE_STEP).run;
+		for (const [route, attested, jobs] of [
+			["failure", "true", '["scripts-tests"]'],
+			["success", "false", '["scripts-tests"]'],
+			["success", "true", '["workspace_tests"]'],
+			["success", "true", '["scripts-tests-extra"]'],
+		] as const) {
+			const run = spawnSync("bash", ["-c", script], {
+				encoding: "utf8",
+				env: {
+					...process.env,
+					EVENT_NAME: "pull_request",
+					VALIDATION_RESULT: "success",
+					WORKSPACE_RESULT: "success",
+					AFFECTED_RESULT: "success",
+					SCRIPTS_RESULT: "skipped",
+					FORMAL_RESULT: "success",
+					ROUTE_RESULT: route,
+					ATTESTED: attested,
+					ATTESTED_JOBS: jobs,
+				},
+			});
+			assert.notEqual(run.status, 0);
+			assert.match(run.stderr, /Scripts tests did not succeed/u);
+		}
 	});
 });
