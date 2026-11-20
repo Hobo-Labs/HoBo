@@ -15,7 +15,7 @@ Zero LLM tokens on every search, render and apply. Receipts record
 |---|---|
 | Reference application | Full `examples/*` app / CI fixture |
 | Pattern | Versioned semantic concept with renderings |
-| Starter | Multi-file project rendering (`starter.cli.*`) |
+| Starter | Pattern backed by project template inputs (`starter.cli.*`) |
 | Rendering | Snippet, file, project, markdown, VS Code, or effects |
 | Catalog | Parsed patterns + content digest; rendering reads share one manifest-path lookup per loaded catalog |
 | Index | Generated retrieval projection |
@@ -44,7 +44,7 @@ the only source for `hobo new -t todo|api|agent|fullstack`. CLI starter ignore f
 SQLite sidecars and interrupted staging trees so recovery state stays local.
 
 Atomic snippets live in [`atoms/`](./atoms/README.md) and load with the rest of
-the catalog. Chat emit uses the same trees.
+the catalog.
 
 ## What the loaders refuse
 

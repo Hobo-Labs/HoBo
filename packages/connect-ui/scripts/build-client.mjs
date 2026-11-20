@@ -1,6 +1,3 @@
-// Bundle the connect page's browser client (React + json-render + the shadcn
-// preset) and compile its Tailwind stylesheet into dist/client/. The server
-// serves exactly these two files; nothing is loaded from a CDN.
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
