@@ -13,8 +13,9 @@ Rivet engine.
 
 RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
 `loadRivetkit()` uses dynamic import for ESM and CommonJS hosts. The live tests
-exercise the pinned upstream engine separately from the HoBo local host and
-fail if the engine or an actor action fails.
+exercise the pinned upstream engine separately from the HoBo local host, verify
+actor state across an engine restart, and fail if the engine or an actor action
+fails. Journal reopen tests cover persisted-state replay and in-flight commands.
 
 ## Fidelity
 
@@ -25,6 +26,20 @@ fail if the engine or an actor action fails.
 - The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
   operator must establish and verify an upstream migration before upgrading
   an existing deployment.
+- Rivet 3 drops Rivet 2's `@secure-exec` isolate family. Actor code never
+  executes in the HoBo host process: the local journal host runs no Rivet
+  actor code, and the live fixture spawns the engine binary as its own
+  process (guard bound to 127.0.0.1, admin-token auth), so actor actions run
+  inside the engine's workers behind that process boundary.
+- The live fixture reserves its engine, peer, metrics and HTTP ports, then
+  re-reserves a fresh set (up to three attempts) when a reserved port is
+  stolen between reservation and bind; any other failure fails the test with
+  the captured engine log.
+- The Rivet 3.0.0 engine CLI ships platform packages for darwin (arm64, x64)
+  and linux (arm64, x64 — static musl binaries that also run on glibc hosts);
+  Rivet 2's win32 package has no 3.0.0 successor. `loadRivetkit()` and the
+  local-engine live test reject win32 before native-module loading; Windows
+  local-engine paths remain unsupported until upstream ships a binary.
 - Raw Rivet queue **receive-loss** is not HoBo at-least-once. Inbox rows are authority.
 
 ```ts

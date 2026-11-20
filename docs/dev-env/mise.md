@@ -104,7 +104,12 @@ bash scripts/bootstrap-dev.sh
 pnpm run install:check
 ```
 
-Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin`.
+Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin` by default. Set `MISE_INSTALL_PATH` to an absolute executable path to install or find mise elsewhere. Bootstrap prefers that exact executable, even if its filename differs from `mise`, and adds its parent directory to `PATH`.
+
+The bootstrap and retry tests use local installer fixtures and a temporary home.
+The [development bootstrap verification skill](../../.agents/skills/verify-dev-bootstrap/SKILL.md)
+models executable selection and bounded installer retries. A failed installer
+can leave a file at its destination; inspect or remove it before retrying.
 
 ## Hermetic CI runner (`mise oci`)
 

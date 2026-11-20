@@ -143,7 +143,8 @@ export type ContinuityShortfall = Readonly<{
 		| "continuity-copy-too-slow"
 		| "continuity-no-quorum"
 		| "continuity-no-vendor-diversity"
-		| "continuity-vendor-diversity-unknown";
+		| "continuity-vendor-diversity-unknown"
+		| "continuity-backups-unplaced";
 	message: string;
 }>;
 
@@ -159,6 +160,8 @@ export function continuityShortfalls(
 		vendors?: number;
 		/** Register-only members (`reconcileFleet({ witnesses })`). */
 		witnesses?: number;
+		/** A member the plan's scheduled backups are kept on. */
+		backupsPlaced?: boolean;
 	}>,
 ): readonly ContinuityShortfall[] {
 	const shortfalls: ContinuityShortfall[] = [];
@@ -197,6 +200,11 @@ export function continuityShortfalls(
 			code: "continuity-no-vendor-diversity",
 			message:
 				"every member is on one vendor, so that vendor's outage stops the data. Configure a backend on another vendor.",
+		});
+	if (plan.backups.everyMs > 0 && running.backupsPlaced === false)
+		shortfalls.push({
+			code: "continuity-backups-unplaced",
+			message: `${plan.tier} keeps a backup every ${plan.backups.everyMs} ms, and the fleet has nowhere to keep them. Add a witness (or a backup database) on another failure domain.`,
 		});
 	return Object.freeze(shortfalls);
 }

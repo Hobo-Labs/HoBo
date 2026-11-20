@@ -30,7 +30,9 @@ export {
 	type PostgresFleetEventStore,
 	type PostgresFleetEventStoreOptions,
 	type PostgresFleetMember,
+	type PostgresFleetTickReport,
 } from "./fleet.js";
+export type { FleetBackup, FleetBackupOutcome } from "./fleet-backups.js";
 export {
 	notifyChannel,
 	parseSchemaName,
