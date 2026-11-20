@@ -202,7 +202,10 @@ export async function validateScaffoldProject(projectDir: string) {
 	if (!appTest.includes("createTestRuntime")) {
 		violations.push("app.test.ts must exercise the generated test runtime");
 	}
-	if (!generated.includes("generated hobo new bindings seed")) {
+	if (
+		!generated.includes("export function createHobo") ||
+		!generated.includes("export function createTestRuntime")
+	) {
 		violations.push("generated seed must be checked in");
 	}
 	if (!declarations.includes('declare module "@hobo/sdk"')) {

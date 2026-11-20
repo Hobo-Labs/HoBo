@@ -4,7 +4,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { repoRoot } from "./lib/paths.mts";
 import { listPersonaMetas, parsePersonaModels } from "./lib/persona-resolve.mts";
-import { resolveProjects } from "./lib/projects.mts";
+import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
 import { parseExperienceTypesFromYaml } from "./lib/experience-types.mts";
 
 const REQUIRED_SECTIONS_V1 = [
@@ -130,23 +131,37 @@ function validate(args: Record<string, string>) {
 }
 
 function main() {
-	const argv = process.argv.slice(2);
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--id", "--project", "--projects"],
+		flags: ["--help", "-h", "--all-projects"],
+	});
+	if (input.error || input.positionals.length > 0) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const argv = input.argv;
 	const modeIndex = argv.indexOf("--mode");
 	const mode = modeIndex >= 0 ? argv[modeIndex + 1] : undefined;
 	if (argv.includes("--help") || argv.includes("-h")) {
 		console.log("Read-only mode: --mode validate [--id ID] [--projects PROJECTS].");
 		return;
 	}
+	const idIndex = argv.indexOf("--id");
+	const projectsIndex = Math.max(argv.indexOf("--projects"), argv.indexOf("--project"));
+	const projects = projectsIndex >= 0 ? argv[projectsIndex + 1] ?? "" : undefined;
+	const problem = projectSelectionProblem(resolveProjects(projects, repoRoot()));
+	if (problem) {
+		console.error(problem);
+		process.exit(2);
+	}
 	if (mode !== "validate") {
 		console.error("Synthetic persona scaffolding is prohibited. Inspect real behavior and implement improvements directly.");
 		process.exitCode = 1;
 		return;
 	}
-	const idIndex = argv.indexOf("--id");
-	const projectsIndex = Math.max(argv.indexOf("--projects"), argv.indexOf("--project"));
 	validate({
 		...(idIndex >= 0 ? { id: argv[idIndex + 1] ?? "" } : {}),
-		...(projectsIndex >= 0 ? { projects: argv[projectsIndex + 1] ?? "" } : {}),
+		...(projects !== undefined ? { projects } : {}),
 	});
 }
 

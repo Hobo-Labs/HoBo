@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { assertSafeOptimizexpWriteScopes } from "./write-containment.mts";
 import {
 	featuresRoot,
 	globalOptimizexpRoot,
@@ -49,8 +50,11 @@ import {
 } from "./feature-quality.mts";
 import {
 	readSurfaceMap,
+	surfaceMapPath,
 	validateSurfaceMap,
+	validateCurrentSurface,
 	buildSurfaceMap,
+	assessPackageCli,
 	writeSurfaceMap,
 } from "./surface-map.mts";
 
@@ -474,36 +478,42 @@ function auditStructure(
 function auditProjectMaps(
 	project: ProjectRef,
 	root: string,
+	confirmedSurfaces?: string[],
 ): DoctorFinding[] {
 	const out: DoctorFinding[] = [];
 	const map = readSurfaceMap(project, root);
 	if (!map) {
+		const exists = existsSync(surfaceMapPath(project, root));
 		out.push(
 			find(
-				"surface-map-missing",
-				"warn",
+				exists ? "surface-map-invalid" : "surface-map-missing",
+				"error",
 				project.id,
-				"No surface-map.json — run explore-app or doctor --repair maps",
-				{ repairable: true, repairAction: "build-surface-map" },
+				exists ? "Surface map is invalid or unreadable; inspect it before re-exploring" : "Surface discovery is unverified: no surface-map.json — run explore-app or doctor repair",
+				exists ? {} : { repairable: true, repairAction: "build-surface-map" },
 			),
 		);
 	} else {
-		const problems = validateSurfaceMap(map);
+		const problems = [...validateSurfaceMap(map), ...validateCurrentSurface(map, root, { confirmedSurfaces })];
+		if (map.coverageScope === "primary-bin") {
+			out.push(find("surface-scope", "warn", project.id, `Coverage is limited to primary binary ${map.binaries[0]?.name ?? "unknown"}; secondary binaries and other surfaces are not assessed.`));
+		}
+		const currentAssessment = assessPackageCli(path.join(root, project.path || "."), root);
+		if (JSON.stringify(map.cliAssessment) !== JSON.stringify(currentAssessment)) {
+			problems.push("package-bin assessment is stale; re-explore the current manifest");
+		}
 		for (const p of problems) {
 			out.push(
-				find("surface-map-invalid", "error", project.id, p, {
-					repairable: true,
-					repairAction: "build-surface-map",
-				}),
+				find("surface-map-invalid", "error", project.id, p),
 			);
 		}
-		if (map.binaries.length === 0) {
+		if (currentAssessment.status === "not-applicable" && JSON.stringify(map.cliAssessment) === JSON.stringify(currentAssessment)) {
 			out.push(
 				find(
 					"no-binaries",
 					"info",
 					project.id,
-					"No package.json bin (library/site/example) — no CLI default-entry required",
+					`Package-bin CLI coverage is not applicable: ${currentAssessment.evidence}. Other CLI and non-CLI surfaces are not assessed by this package-bin check.`,
 				),
 			);
 		}
@@ -514,7 +524,6 @@ function auditProjectMaps(
 					"error",
 					project.id,
 					"Interactive default entry but no interactiveSurfaces",
-					{ repairable: true, repairAction: "build-surface-map" },
 				),
 			);
 		}
@@ -527,6 +536,7 @@ export function runDoctorCheck(input: {
 	selection?: ProjectSelection;
 	/** Include feature quality deep scan */
 	deepFeatures?: boolean;
+	confirmedSurfaces?: string[];
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
 	const selection =
@@ -604,7 +614,7 @@ export function runDoctorCheck(input: {
 		? listProjects(root).filter((p) => p.id !== "root")
 		: selection.projects.filter((p) => p.id !== "root");
 	for (const p of projects) {
-		findings.push(...auditProjectMaps(p, root));
+		findings.push(...auditProjectMaps(p, root, input.confirmedSurfaces));
 	}
 
 	const errors = findings.filter((f) => f.severity === "error").length;
@@ -628,12 +638,16 @@ export function runDoctorRepair(input: {
 	selection?: ProjectSelection;
 	/** Only apply these repairAction ids when set */
 	only?: string[];
+	confirmedSurfaces?: string[];
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
+	const writeSelection = input.selection ?? resolveProjects("all", root);
+	assertSafeOptimizexpWriteScopes(root, ["", ...writeSelection.projects.map((project) => project.path)]);
 	const check = runDoctorCheck({
 		root,
 		selection: input.selection,
 		deepFeatures: true,
+		confirmedSurfaces: input.confirmedSurfaces,
 	});
 	const repairsApplied: string[] = [];
 	const only = input.only?.length ? new Set(input.only) : null;
@@ -739,11 +753,8 @@ export function runDoctorRepair(input: {
 		? listProjects(root).filter((p) => p.id !== "root")
 		: selection.projects.filter((p) => p.id !== "root");
 	for (const p of projects) {
-		const needMap = check.findings.some(
-			(f) => f.scope === p.id && f.repairAction === "build-surface-map",
-		);
-		if (needMap || !readSurfaceMap(p, root)) {
-			apply(`surface-map:${p.id}`, () => {
+		if (!existsSync(surfaceMapPath(p, root))) {
+			apply(`build-surface-map:${p.id}`, () => {
 				const map = buildSurfaceMap({ project: p, root, skipProbes: true });
 				writeSurfaceMap(map, p, root);
 			});
@@ -756,6 +767,7 @@ export function runDoctorRepair(input: {
 		root,
 		selection: input.selection,
 		deepFeatures: true,
+		confirmedSurfaces: input.confirmedSurfaces,
 	});
 	return {
 		...after,
@@ -772,16 +784,18 @@ export function runDoctorSnapshot(input: {
 	root?: string;
 	selection?: ProjectSelection;
 	outDir?: string;
+	confirmedSurfaces?: string[];
 }): DoctorReport {
 	const root = input.root ?? repoRoot();
 	const selection = input.selection ?? resolveProjects("all", root);
+	assertSafeOptimizexpWriteScopes(root, ["", ...selection.projects.map((project) => project.path)]);
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const outDir =
 		input.outDir ??
 		path.join(globalOptimizexpRoot(root), "snapshots", `doctor-${stamp}`);
 	ensureDir(outDir);
 
-	const check = runDoctorCheck({ root, selection, deepFeatures: true });
+	const check = runDoctorCheck({ root, selection, deepFeatures: true, confirmedSurfaces: input.confirmedSurfaces });
 	writeFileSync(
 		path.join(outDir, "doctor-report.json"),
 		`${JSON.stringify(check, null, 2)}\n`,

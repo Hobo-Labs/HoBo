@@ -1,5 +1,6 @@
 import type { ManifestV1 } from "@hobo/bindles";
 
+import { isJsonString } from "./json.js";
 import type { ResourceIntent } from "./plan-types.js";
 
 // Planner step 0 (control-plane.md): lower each `hobo.manifest/v1` resource node
@@ -33,26 +34,32 @@ interface LoweredDataPort {
 	require: string[];
 }
 
+// The capability port a generic `data` resource asks for, by its paradigm
+// (the Bindle loader writes `data(<paradigm>)` for every backing resource:
+// `kv` is key-value, `queue` is a queue, and so on). Without this a KV cache,
+// a queue and a secret all asked for the bare `data` port, which no provider
+// advertises, so nothing a Bindle declared could ever be matched.
+const DATA_PARADIGM_PORTS = new Map<string, LoweredDataPort>([
+	["project", { capabilityPort: "project", require: [] }],
+	// SDK key-value declarations do not imply a consistency guarantee.
+	["key-value", { capabilityPort: "kv", require: [] }],
+	["object", { capabilityPort: "objectStore", require: ["durable"] }],
+	["relational", { capabilityPort: "database", require: [] }],
+	["queue", { capabilityPort: "queue", require: [] }],
+	["topic", { capabilityPort: "topic", require: [] }],
+	["secret", { capabilityPort: "secretRef", require: [] }],
+	["schedule", { capabilityPort: "schedule", require: [] }],
+]);
+
 function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
-	// A provider-owned project groups resources; it does not serve HTTP itself.
-	if ((port === "hobo:data" || port === "data") && paradigm === "project")
-		return { capabilityPort: "project", require: [] };
-	// The Bindle SDK's collection adapter records backing resources as data.v1
-	// and preserves the requested kind in `paradigm`. A bucket must therefore
-	// reach the object-storage planner port even though its wire port is the
-	// generic `hobo:data` collector port.
-	if ((port === "hobo:data" || port === "data") && paradigm === "object")
-		return { capabilityPort: "objectStore", require: ["durable"] };
-	if ((port === "hobo:data" || port === "data") && paradigm === "secret")
-		return { capabilityPort: "secretRef", require: [] };
-	// An SDK key-value declaration does not assert eventual consistency.
-	// Let its explicit capability requirements select the required guarantees.
-	if ((port === "hobo:data" || port === "data") && paradigm === "key-value")
-		return { capabilityPort: "kv", require: [] };
-	if ((port === "hobo:data" || port === "data") && paradigm === "queue")
-		return { capabilityPort: "queue", require: [] };
-	if ((port === "hobo:data" || port === "data") && paradigm === "topic")
-		return { capabilityPort: "topic", require: [] };
+	if ((port === "hobo:data" || port === "data") && paradigm !== undefined) {
+		const byParadigm = DATA_PARADIGM_PORTS.get(paradigm);
+		if (byParadigm !== undefined)
+			return {
+				capabilityPort: byParadigm.capabilityPort,
+				require: [...byParadigm.require],
+			};
+	}
 	for (const rule of DATA_PORT_RULES) {
 		if (rule.match(port)) {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };
@@ -63,6 +70,11 @@ function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
 	// remediation — exactly the agent-self-correction path.
 	const bare = port.includes(":") ? (port.split(":").pop() ?? port) : port;
 	return { capabilityPort: bare, require: [] };
+}
+
+/** A five-field cron expression, as the cadence trait writes it. */
+function isCadence<T>(value: T): value is T & string {
+	return isJsonString(value) && /^\S+(\s+\S+){4}$/u.test(value);
 }
 
 export function lowerManifest(
@@ -118,6 +130,9 @@ export function lowerManifest(
 			objective,
 		};
 		if (options.region !== undefined) intent.region = options.region;
+		const cadence = resource.annotations?.cadence;
+		if (capabilityPort === "schedule" && isCadence(cadence))
+			intent.cadence = cadence;
 		intents.push(intent);
 	}
 

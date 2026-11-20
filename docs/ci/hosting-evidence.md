@@ -1,7 +1,8 @@
 ---
 type: Evidence
 title: "Hosting evidence observation"
-description: "Read-only workflow checks for hosting evidence."
+description: "Read-only observations of secret-store access by the main-branch Actions identity."
+tags: [hobo, ci, hosting, evidence]
 ---
 
 # Hosting evidence observation

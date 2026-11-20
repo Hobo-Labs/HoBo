@@ -13,7 +13,12 @@ export function lexComments(
 ): LexedComment[] {
 	const comments: LexedComment[] = [];
 	const line = dialect === "sql" ? "--" : dialect === "toml" ? "#" : "//";
-	const blocks = dialect === "proto" || dialect === "wit" || dialect === "sql";
+	const blocks =
+		dialect === "cue" ||
+		dialect === "proto" ||
+		dialect === "wit" ||
+		dialect === "prisma" ||
+		dialect === "sql";
 
 	function quoted(
 		start: number,
@@ -33,11 +38,7 @@ export function lexComments(
 			dialect === "wit" ||
 			dialect === "prisma" ||
 			(dialect === "toml" && quote === '"') ||
-			(dialect === "sql" &&
-				quote === "'" &&
-				/(?:^|[^a-zA-Z0-9_])[eE]$/.test(
-					text.slice(Math.max(0, start - 2), start),
-				));
+			(dialect === "sql" && (quote === "'" || quote === '"' || quote === "`"));
 		while (index < text.length) {
 			if (
 				dialect === "sql" &&
@@ -47,7 +48,11 @@ export function lexComments(
 				index += 2;
 				continue;
 			}
-			if (text.startsWith(closer, index)) return index + closer.length;
+			if (text.startsWith(closer, index)) {
+				let end = index + closer.length;
+				if (dialect === "toml" && triple) while (text[end] === quote) end++;
+				return end;
+			}
 			if (text[index] === "\\") {
 				const prefix = "\\" + "#".repeat(hashes);
 				if (cue && text.startsWith(prefix + "(", index)) {
@@ -68,7 +73,11 @@ export function lexComments(
 		let index = start;
 		let parentheses = interpolation ? 1 : 0;
 		while (index < text.length) {
-			if (text.startsWith(line, index)) {
+			if (
+				text.startsWith(line, index) &&
+				(dialect !== "sql" ||
+					/[\s\p{Cc}]/u.test(text[index + line.length] ?? ""))
+			) {
 				const end = text.indexOf("\n", index);
 				const stop = end < 0 ? text.length : end;
 				comments.push({
@@ -84,7 +93,10 @@ export function lexComments(
 				index += 2;
 				let nesting = 1;
 				while (index < text.length && nesting > 0) {
-					if (dialect !== "proto" && text.startsWith("/*", index)) {
+					if (
+						(dialect === "wit" || dialect === "sql") &&
+						text.startsWith("/*", index)
+					) {
 						nesting++;
 						index += 2;
 					} else if (text.startsWith("*/", index)) {
@@ -119,7 +131,11 @@ export function lexComments(
 				}
 			}
 			const character = text[index];
-			if (character === '"' || character === "'") {
+			if (
+				character === '"' ||
+				character === "'" ||
+				(dialect === "sql" && character === "`")
+			) {
 				index = quoted(index, character, 0, dialect === "cue");
 				continue;
 			}
