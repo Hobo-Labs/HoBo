@@ -12,11 +12,7 @@ import {
 	type PlannerRegistry,
 } from "@hobo/cloud";
 import type { TrustedVault } from "@hobo/core";
-import {
-	CD_PLACEMENT_YARDS,
-	cdConfigYard,
-	cdJournalYard,
-} from "@hobo/hobo-cd";
+import { CD_PLACEMENT_YARDS, cdConfigYard, cdJournalYard } from "@hobo/hobo-cd";
 import type { Yard } from "@hobo/yards";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
@@ -212,7 +208,9 @@ export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
 	credentials: TrustedVault;
 	runtime: R;
 	upWith: (runtime: R) => CommandModule;
-	resolveGitHead?: (dir: string) => Promise<{ ref: string; sha: string } | undefined>;
+	resolveGitHead?: (
+		dir: string,
+	) => Promise<{ ref: string; sha: string } | undefined>;
 	vercelDeployProvider?: (
 		options: Omit<VercelDeployProviderOptions, "fetch">,
 	) => IacProvider;
@@ -285,7 +283,9 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 					],
 				);
 			const teamId = team();
-			const provider = (deps.vercelDeployProvider ?? createVercelDeployProvider)({
+			const provider = (
+				deps.vercelDeployProvider ?? createVercelDeployProvider
+			)({
 				token: token(),
 				...(teamId !== undefined ? { teamId } : undefined),
 				projectName: placement.project,

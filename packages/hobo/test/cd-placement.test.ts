@@ -3,9 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+	type CommandModule,
 	createHoboCli,
 	createUpCommand,
-	type CommandModule,
 	type YardRuntime,
 } from "@hobo/cli";
 import {
