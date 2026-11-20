@@ -28,6 +28,7 @@ const REPO = join(PACKAGE, "..", "..");
 const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
 const RELAY_YARD = join(REPO, "packages/ci-vercel/deploy/yard.ts");
 const RELAY_DELIVERY = join(REPO, "packages/ci-vercel/deploy/delivery.ts");
+const RELEASE_DELIVERY = join(REPO, "release/hobo-release.delivery.ts");
 const RUNNER_FLEET = join(
 	REPO,
 	"packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts",
@@ -331,7 +332,7 @@ describe.skipIf(!existsSync(BIN))(
 				"camp",
 				"list",
 				"--yard",
-				"release/hobo-release.delivery.ts",
+				RELEASE_DELIVERY,
 			]);
 			expect(listed.ok, listed.message).toBe(true);
 			const text = JSON.stringify(listed.data);
