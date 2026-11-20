@@ -32,6 +32,7 @@ message ConnectViewRecord {
   // model | deterministic
   string composition_source = 6 [json_name = "composedBy"];
   BrowserDirectiveRecord directive = 5;
+  google.protobuf.Struct view = 7;
 }
 
 // A terminal step's store references (never values).

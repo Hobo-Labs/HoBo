@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import type { ConfigField } from "../steps.js";
 import { connectCatalog } from "../catalog.js";
+import { confirmLabelsForSpec } from "./confirm-labels.js";
 import { formInitialState } from "./form-state.js";
 
 const ActionParamsSchema = z.record(z.string(), z.string());
@@ -46,11 +47,6 @@ function FormParamsBridge() {
 }
 
 const formParamsRef = { current: (): Record<string, string> => ({}) };
-
-const ButtonPressSchema = z.object({
-	press: z.object({ action: z.string() }),
-});
-const ButtonLabelSchema = z.object({ label: z.string() });
 
 const confirmByLabelRef = { current: new Map<string, string>() };
 
@@ -263,18 +259,10 @@ function ConnectPage() {
 
 	useEffect(() => {
 		if (view === null) return;
-		const byLabel = new Map<string, string>();
-		for (const [action, message] of view.confirmByAction) {
-			const element = Object.values(view.spec.elements).find((candidate) => {
-				if (candidate.type !== "Button") return false;
-				const press = ButtonPressSchema.safeParse(candidate.on);
-				return press.success && press.data.press.action === action;
-			});
-			if (element === undefined) continue;
-			const label = ButtonLabelSchema.safeParse(element.props);
-			if (label.success) byLabel.set(label.data.label, message);
-		}
-		confirmByLabelRef.current = byLabel;
+		confirmByLabelRef.current = confirmLabelsForSpec(
+			view.spec,
+			view.confirmByAction,
+		);
 	}, [view]);
 
 	if (error !== null)
@@ -286,7 +274,7 @@ function ConnectPage() {
 	if (view === null) return <p className="hobo-connect-loading">Loading…</p>;
 	return (
 		<JSONUIProvider
-			key={`${view.step}-${view.composedBy}`}
+			key={`${view.step}-${view.composedBy}-${view.formFields.map((field) => field.name).join(",")}`}
 			registry={registry}
 			initialState={initialState}
 			handlers={{

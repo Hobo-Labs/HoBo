@@ -91,7 +91,7 @@ export function SettingsPage({ user }: { user: AuthUser }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (readingPhoto) return;
+    if (readingPhoto || saving) return;
     setSaving(true);
     setError("");
     setNotice("");

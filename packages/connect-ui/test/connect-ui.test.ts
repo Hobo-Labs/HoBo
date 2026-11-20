@@ -14,6 +14,7 @@ import {
 	isRenderableConnectSpec,
 	startConnectPage,
 } from "../src/index.js";
+import { confirmLabelsForSpec } from "../src/client/confirm-labels.js";
 import { stepView } from "../src/view.js";
 
 // The connect page: every step renders a valid spec from HoBo's own catalog,
@@ -163,6 +164,29 @@ describe("deterministicConnectSpec", () => {
 		expect(buttons[0]?.props).toMatchObject({ variant: "primary" });
 		expect(JSON.stringify(buttons[0]?.on)).toContain('"store":"infisical"');
 		expect(JSON.stringify(buttons)).toContain('"store":"1password"');
+	});
+});
+
+describe("confirmLabelsForSpec", () => {
+	it("maps person-confirm messages onto rendered button labels", () => {
+		const step: ConnectStep = {
+			kind: "create-github-app",
+			provider: "github",
+			appName: "HoBo CI",
+			owner: "octo-org",
+			store: "infisical",
+		};
+		const spec = deterministicConnectSpec(step);
+		const confirmByAction = new Map(
+			stepView(step)
+				.actions.filter(
+					(action): action is typeof action & { confirm: string } =>
+						action.confirm !== undefined,
+				)
+				.map((action) => [action.action, action.confirm]),
+		);
+		const labels = confirmLabelsForSpec(spec, confirmByAction);
+		expect(labels.get("Continue on GitHub")).toMatch(/GitHub/);
 	});
 });
 
