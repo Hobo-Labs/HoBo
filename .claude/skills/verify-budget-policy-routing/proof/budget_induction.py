@@ -58,11 +58,9 @@ checks = [
     ),
 ]
 
-# A real provider's final bill can exceed a hold; the implementation records
-# that truthfully. It is deliberately outside the inductive cap guarantee.
-overrun = Solver()
-overrun.add(state, released > 0, released <= held, actual > released, spent + actual + held - released > cap)
-if overrun.check() != sat:
+overrun_outside_inductive_cap = Solver()
+overrun_outside_inductive_cap.add(state, released > 0, released <= held, actual > released, spent + actual + held - released > cap)
+if overrun_outside_inductive_cap.check() != sat:
     raise RuntimeError("expected an unbounded-cost overrun counterexample")
 print("SCOPE: actual cost above a hold can exceed the cap; it is not covered")
 sys.exit(0 if all(checks) else 1)
