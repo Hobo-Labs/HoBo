@@ -31,7 +31,7 @@ pnpm run verify:state-machines
 pnpm run verify:state-machines -- verify-budget-policy-routing verify-broker-budget-authority
 ```
 
-The runner checks the pinned TLC jar and reuses or installs the pinned Z3 solver in a temporary directory. It points Java's `java.io.tmpdir` at that same scratch directory via `JAVA_TOOL_OPTIONS` (unquoted path token; JVM does not apply shell quoting). Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing pinned installations for offline runs. Java 11+, Python, Node, and the dependencies listed by each skill are required. The aggregate command reports all selected results and fails if any fails.
+The runner checks the pinned TLC jar and reuses or installs the pinned Z3 solver in a temporary directory. Set `TLA2TOOLS` and `BUDGET_Z3_PYTHONPATH` to existing pinned installations for offline runs. Java 11+, Python, Node, and the dependencies listed by each skill are required. The aggregate command reports all selected results and fails if any fails.
 
 The required PR and merge-queue gate runs the aggregate verifier in four deterministic shards, including its executable checks, bounded models, and proof obligations. A failed, skipped, or cancelled shard blocks the gate; a signed local attestation does not substitute for this job. Each shard builds the packages used by the registered skills before verification; update its build filters when a new skill needs a package outside that dependency cone. Each verification step has a 20-minute limit. Run `pnpm run verify:state-machines -- --list --shard=0/4` to inspect a shard, or omit `--list` to execute it.
 
