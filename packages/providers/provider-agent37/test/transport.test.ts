@@ -215,4 +215,22 @@ describe("Agent37 transport", () => {
 		await transport(request);
 		expect(delays).toEqual([905_000]);
 	});
+
+	it("caps the cumulative delay across the total retry window", async () => {
+		const delays: number[] = [];
+		let calls = 0;
+		const transport = createAgent37Transport({
+			fetchImpl: async () => {
+				calls += 1;
+				return jsonResponse(503, "no_capacity", "600");
+			},
+			maxAttempts: 4,
+			sleep: async (milliseconds) => {
+				delays.push(milliseconds);
+			},
+		});
+		expect((await transport(request)).status).toBe(503);
+		expect(calls).toBe(3);
+		expect(delays).toEqual([600_000, 305_000]);
+	});
 });

@@ -180,12 +180,14 @@ const instanceList = z
 	])
 	.transform((value) => ("data" in value ? value.data : value.instances));
 
-const execInput = z.object({
-	command: z.string().min(1).max(1_048_576),
-	user: z.literal("root").optional(),
-	background: z.boolean().optional(),
-	name: z.string().min(1).max(128).optional(),
-});
+const execInput = z
+	.object({
+		command: z.string().min(1).max(1_048_576),
+		user: z.literal("root").optional(),
+		background: z.boolean().optional(),
+		name: z.string().min(1).max(128).optional(),
+	})
+	.strict();
 export type Agent37ExecInput = z.infer<typeof execInput>;
 
 const execResult = z.union([
@@ -265,16 +267,18 @@ const usage = z.object({
 	instances: z.array(usageTotals.extend({ id: z.string() })),
 });
 export type Agent37Usage = z.infer<typeof usage>;
-const usageQuery = z.object({
-	from: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/u)
-		.optional(),
-	to: z
-		.string()
-		.regex(/^\d{4}-\d{2}-\d{2}$/u)
-		.optional(),
-});
+const usageQuery = z
+	.object({
+		from: z
+			.string()
+			.regex(/^\d{4}-\d{2}-\d{2}$/u)
+			.optional(),
+		to: z
+			.string()
+			.regex(/^\d{4}-\d{2}-\d{2}$/u)
+			.optional(),
+	})
+	.strict();
 export type Agent37UsageQuery = z.infer<typeof usageQuery>;
 
 const errorEnvelope = z.union([
@@ -486,9 +490,22 @@ export function createAgent37Client(
 				body: {
 					url: z
 						.url()
-						.refine((value) => new URL(value).protocol === "https:", {
-							message: "Agent37 webhooks require HTTPS",
-						})
+						.refine(
+							(value) => {
+								const parsed = new URL(value);
+								return (
+									parsed.protocol === "https:" ||
+									(parsed.protocol === "http:" &&
+										["localhost", "127.0.0.1", "[::1]"].includes(
+											parsed.hostname,
+										))
+								);
+							},
+							{
+								message:
+									"Agent37 webhooks require HTTPS or loopback HTTP",
+							},
+						)
 						.parse(url),
 				},
 				timeoutMs,

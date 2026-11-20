@@ -1030,7 +1030,10 @@ export async function createAgent37FakeServer(
 		const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(
 			parsedUrl.hostname,
 		);
-		if (parsedUrl.protocol !== "https:" && !loopback)
+		if (
+			parsedUrl.protocol !== "https:" &&
+			(parsedUrl.protocol !== "http:" || !loopback)
+		)
 			return errorResult(
 				400,
 				"invalid_request",
