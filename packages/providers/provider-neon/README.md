@@ -1,8 +1,62 @@
 # @hobo/provider-neon
 
-Neon **Claimable Postgres** (Neon Launchpad) as a HoBo product definition plus
-its effectful driver. One product, one capability: a real PostgreSQL database
-you can provision with no account, and later transfer to a Neon account.
+Neon PostgreSQL as HoBo products: an anonymous claimable database and an
+account-owned project. Both expose the `data.postgres/v1` capability.
+
+## Account-owned projects
+
+`neon.managed-postgres/v1` declares a Neon organization, AWS region and finite
+per-project compute, transfer, write and storage quotas. The resolver requires a
+scoped provider credential, an independently verified Broker hold and quote,
+permission and quota evidence, an inspectable durable mutation journal, an
+immutable native-identity repository, and create-only secret custody. It does
+not infer spending authority or capacity from the declaration.
+
+The resolver uses the Neon Management API on `console.neon.tech`. A project
+create is sent at most once: an unresolved response with no recorded native
+identity remains blocked. The creation claim and identity record are keyed by
+the logical resource and deployment incarnation, so changing a retry key cannot
+allocate a second project. A host must declare the `neon-managed-logical/v1`
+identity namespace only after verifying that the scope has no earlier
+experimental operations, or migrating their identity records and journal
+claims under an exclusive fence. Unresolved outcomes remain blocked; migration
+is not automated. The durable journal must use the mutation ID as its unique
+key and reject a changed request digest, rather than treating the two fields as
+a composite key. A recorded result is read back against the exact
+organization, region, quotas, direct endpoint and database. The direct session
+uses hostname-verified TLS and checks PostgreSQL identity, write permission and
+`LISTEN`/`NOTIFY`. Malformed credential encodings are rejected before the
+session or secret-store write. It requires SCRAM channel binding — the probe
+attests the session's negotiated SASL mechanism, not the server's offered
+mechanism list — and refuses a server that negotiates anything other than
+SCRAM-SHA-256-PLUS, or that offers only ordinary SCRAM, MD5, or trust
+authentication. The owner connection
+URI preserves `channel_binding=require` in management-only custody,
+while the resolver returns only its reference. The owner is not a workload
+credential: until a separate restricted login is provisioned and independently
+verified, the outcome remains pending and does not expose a PostgreSQL Junction
+binding. A future management consumer must enforce the same channel-binding
+requirement; passing the URI alone to node-postgres does not enforce it. Neon
+must store its role password to support recovery of the provider-generated
+password. A separately provisioned restricted workload credential must use the
+approved secret store rather than an environment variable.
+
+`observeNeonManagedPreflight` makes only provider metadata GETs and does not
+open a database session. Its account plan and project count do not prove create
+permission, a quote, remaining capacity or database availability. The product's
+selection candidate starts with conformance, custody and signed evidence
+unverified. A production host must enroll its actual repository, secret store,
+provider credential and budget authority, provision and verify the restricted
+runtime role, connect a separate Neon Yard through a verified Junction, and
+observe the workload before claiming readiness. Two
+Neon projects share a provider failure domain even if their project quotas are
+separate.
+
+The managed API and quota behavior are documented at
+<https://neon.com/docs/reference/api/projects/create-project> and
+<https://neon.com/docs/introduction/plans>. On the Free plan, exhausting
+compute or transfer suspends the database until reset or upgrade; this product
+alone does not provide high availability.
 
 ## Product
 

@@ -1,0 +1,168 @@
+{
+  "consumer": {
+    "name": "HoboCiInsights"
+  },
+  "provider": {
+    "name": "GitHubActionsRestViaGhCli"
+  },
+  "metadata": {
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "interactions": [
+    {
+      "description": "read the repository's visibility and default branch",
+      "request": {
+        "method": "GET",
+        "path": "repos/acme/app"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "private": true,
+          "default_branch": "main"
+        }
+      }
+    },
+    {
+      "description": "list recent completed workflow runs for signals",
+      "request": {
+        "method": "GET",
+        "path": "repos/acme/app/actions/runs?per_page=50"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "workflow_runs": [
+            {
+              "id": 7,
+              "run_attempt": 1,
+              "name": "ci",
+              "path": ".github/workflows/ci.yml",
+              "event": "pull_request",
+              "head_branch": "feature",
+              "head_sha": "0123456789abcdef0123456789abcdef01234567",
+              "status": "completed",
+              "conclusion": "failure",
+              "created_at": "2026-11-10T10:00:00Z",
+              "updated_at": "2026-11-10T10:06:00Z",
+              "display_title": "feat: add a thing",
+              "html_url": "https://github.com/acme/app/actions/runs/7",
+              "actor": {
+                "login": "dev"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list the most recent failed workflow run",
+      "request": {
+        "method": "GET",
+        "path": "repos/acme/app/actions/runs?status=failure&per_page=1"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "workflow_runs": [
+            {
+              "id": 7,
+              "run_attempt": 1,
+              "name": "ci",
+              "path": ".github/workflows/ci.yml",
+              "event": "pull_request",
+              "head_branch": "feature",
+              "head_sha": "0123456789abcdef0123456789abcdef01234567",
+              "status": "completed",
+              "conclusion": "failure",
+              "created_at": "2026-11-10T10:00:00Z",
+              "updated_at": "2026-11-10T10:06:00Z",
+              "display_title": "feat: add a thing",
+              "html_url": "https://github.com/acme/app/actions/runs/7",
+              "actor": {
+                "login": "dev"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "list the jobs of one attempt of that run",
+      "request": {
+        "method": "GET",
+        "path": "repos/acme/app/actions/runs/7/attempts/1/jobs?per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "jobs": [
+            {
+              "id": 71,
+              "name": "check",
+              "labels": [
+                "ubuntu-24.04"
+              ],
+              "runner_name": "GitHub Actions 3",
+              "runner_group_name": "GitHub Actions",
+              "conclusion": "failure",
+              "created_at": "2026-11-10T10:00:00Z",
+              "started_at": "2026-11-10T10:00:05Z",
+              "completed_at": "2026-11-10T10:05:05Z",
+              "check_run_url": "https://api.github.com/repos/acme/app/check-runs/710",
+              "steps": [
+                {
+                  "name": "Set up job",
+                  "number": 1,
+                  "conclusion": "success",
+                  "started_at": "2026-11-10T10:00:05Z",
+                  "completed_at": "2026-11-10T10:00:07Z"
+                },
+                {
+                  "name": "Run pnpm check",
+                  "number": 2,
+                  "conclusion": "failure",
+                  "started_at": "2026-11-10T10:00:07Z",
+                  "completed_at": "2026-11-10T10:05:05Z"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "download the failed job's log as text",
+      "request": {
+        "method": "GET",
+        "path": "repos/acme/app/actions/jobs/71/logs"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/plain"
+        },
+        "body": "2026-11-10T10:05:01.0000000Z src/index.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n2026-11-10T10:05:02.0000000Z ##[error]Process completed with exit code 2."
+      }
+    },
+    {
+      "description": "read the annotations of the failed job's check run",
+      "request": {
+        "method": "GET",
+        "path": "repos/acme/app/check-runs/710/annotations?per_page=100"
+      },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "path": ".github",
+            "annotation_level": "failure",
+            "message": "Process completed with exit code 2."
+          }
+        ]
+      }
+    }
+  ]
+}

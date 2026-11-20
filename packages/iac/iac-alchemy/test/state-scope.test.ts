@@ -54,7 +54,7 @@ describe("compiled Alchemy state scope", () => {
 	it("rejects every resource and output operation in a foreign stack or stage", async () => {
 		const { state, outputs } = await fixture();
 		for (const foreign of foreignScopes) {
-			// SAFETY: the invalid test value must be rejected before storage sees it.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the invalid test value must be rejected before storage sees it.
 			const attempts = [
 				state.list(foreign),
 				state.get({ ...foreign, fqn: "item" }),
@@ -280,7 +280,7 @@ describe("compiled Alchemy state scope", () => {
 		);
 		const backend: StateService = {
 			...raw,
-			// SAFETY: this deliberately malformed storage row tests the input boundary.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately malformed storage row tests the input boundary.
 			getReplacedResources: () => Effect.succeed([row as never]),
 		};
 		const state = guardAlchemyState(backend, scope);
@@ -433,7 +433,10 @@ describe("compiled Alchemy state scope", () => {
 					code: "",
 					message: "",
 					budget: { evaluation: "allowed", reservation: "held" },
-					reservation: { reservationId: `iac:${requestId}` },
+					reservation: {
+						reservationId: `iac:${requestId}`,
+						executionDigest: `sha256:${"4".repeat(64)}`,
+					},
 					requestDigest: `sha256:${"b".repeat(64)}`,
 					inventoryHash: `sha256:${"c".repeat(64)}`,
 					modelHash: `sha256:${"d".repeat(64)}`,

@@ -516,34 +516,34 @@ describe("built-in experiment analysis", () => {
 		}));
 	}
 
-	test("a clear treatment majority ships", () => {
+	test("a treatment majority alone is inconclusive", () => {
 		const result = analysis.analyze(
 			def(["control", "treatment"]),
 			assignments(["treatment", "treatment", "control"]),
 			3,
 		);
-		expect(result.verdict).toBe("ship");
-		expect(result.winningVariant).toBe("treatment");
+		expect(result.verdict).toBe("inconclusive");
+		expect(result.winningVariant).toBeUndefined();
 	});
 
-	test("a clear control majority does not ship", () => {
+	test("a control majority alone is inconclusive", () => {
 		const result = analysis.analyze(
 			def(["control", "treatment"]),
 			assignments(["control", "control", "treatment"]),
 			3,
 		);
-		expect(result.verdict).toBe("do-not-ship");
+		expect(result.verdict).toBe("inconclusive");
 	});
 
-	test("the on/off variant naming maps to the same verdicts", () => {
+	test("on/off naming does not turn counts into outcome evidence", () => {
 		expect(
 			analysis.analyze(def(["off", "on"]), assignments(["on", "on", "off"]), 3)
 				.verdict,
-		).toBe("ship");
+		).toBe("inconclusive");
 		expect(
 			analysis.analyze(def(["off", "on"]), assignments(["off", "off", "on"]), 3)
 				.verdict,
-		).toBe("do-not-ship");
+		).toBe("inconclusive");
 	});
 
 	test("an exact tie is inconclusive and names no winner", () => {
@@ -573,7 +573,7 @@ describe("built-in experiment analysis", () => {
 			3,
 		);
 		expect(result.verdict).toBe("inconclusive");
-		expect(result.winningVariant).toBe("alpha");
+		expect(result.winningVariant).toBeUndefined();
 	});
 
 	test("declared variants with no assignments are still counted at zero", () => {
