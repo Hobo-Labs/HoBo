@@ -9,16 +9,14 @@
 // credential's own project, and the deploy identity, which trusts GitHub
 // Actions on `main` through OIDC Auth (no secret zero: `githubActionsJwtSource`
 // asks GitHub for the job's token, which needs `permissions: id-token: write`).
-// It reads `VERCEL_TOKEN` and hands it to the deploy step as a masked
-// environment variable: `::add-mask::` is written to the job log first, then
-// the value goes into the `$GITHUB_ENV` file, which GitHub reads for the
-// following steps and never prints. Nothing here logs, returns or throws the
-// value.
+// `hobo ci deploy` calls it in-process and keeps the token in its trusted
+// vault for the deploy it makes: the token never becomes an environment
+// variable and never goes through a file (no `$GITHUB_ENV`, which is a file
+// on the runner's disk every later step can read). Nothing here logs or
+// throws the value.
 //
 // HONEST SCOPE: exercised against fakes of GitHub's token endpoint and of
 // Infisical only. No request has been made from this repository to either.
-
-import { randomBytes } from "node:crypto";
 
 import {
 	createInfisicalClient,
@@ -92,27 +90,4 @@ export async function readRelayDeployToken(input: {
 				: "Could not read the deploy token.",
 		);
 	}
-}
-
-// Mask `value` in the job log, then hand it to the following steps as `name`
-// through the `$GITHUB_ENV` file. The mask is written before the value is
-// anywhere a log could show it.
-export function exportMaskedToGithubEnv(input: {
-	readonly name: string;
-	readonly value: string;
-	readonly writeLog: (line: string) => void;
-	readonly appendEnvFile: (text: string) => void;
-}): void {
-	if (!/^[A-Z][A-Z0-9_]*$/u.test(input.name))
-		throw new RelayDeployCredentialError("Not an environment variable name.");
-	if (!TOKEN.test(input.value))
-		throw new RelayDeployCredentialError(
-			"Only a single-line token is exported.",
-		);
-	input.writeLog(`::add-mask::${input.value}\n`);
-	// The multi-line form with a random delimiter: no value can end it early.
-	const delimiter = `HOBO_${randomBytes(16).toString("hex")}`;
-	input.appendEnvFile(
-		`${input.name}<<${delimiter}\n${input.value}\n${delimiter}\n`,
-	);
 }

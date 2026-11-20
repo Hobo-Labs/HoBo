@@ -208,7 +208,7 @@ export class ConnectionService {
 			);
 		}
 		if (input.alias) {
-			if (this.aliasIndex.has(input.alias)) {
+			if (this.aliasIndex.has(input.alias) || this.byId.has(input.alias)) {
 				throw Object.assign(
 					new Error(`connection alias already exists: ${input.alias}`),
 					{ code: "connection-alias-conflict" },
@@ -216,7 +216,7 @@ export class ConnectionService {
 			}
 		}
 		const id = `conn_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-		if (this.byId.has(id)) {
+		if (this.byId.has(id) || this.aliasIndex.has(id)) {
 			throw Object.assign(new Error("generated connection id already exists"), {
 				code: "connection-id-conflict",
 			});
@@ -609,12 +609,23 @@ export class ConnectionService {
 		const time = event.time;
 
 		if (event.type === CONNECTION_EVENTS.Created) {
-			// A duplicate creation fact must not replace an existing aggregate,
-			// especially one whose credentials have already been revoked.
 			if (existing) return;
+			if (this.aliasIndex.has(id)) {
+				throw Object.assign(
+					new Error("connection id conflicts with an alias"),
+					{
+						code: "connection-id-conflict",
+					},
+				);
+			}
 			const alias = isJsonString(event.data.alias)
 				? event.data.alias
 				: undefined;
+			if (alias && (this.aliasIndex.has(alias) || this.byId.has(alias))) {
+				throw Object.assign(new Error("connection alias already exists"), {
+					code: "connection-alias-conflict",
+				});
+			}
 			const stationId = event.data.stationId;
 			if (!isJsonString(stationId) || stationId.length === 0) {
 				throw Object.assign(new Error("connection.Created missing stationId"), {
@@ -654,8 +665,6 @@ export class ConnectionService {
 		}
 
 		if (!existing) return;
-		// Revocation is terminal even when replay encounters a late health,
-		// authorization, or rotation fact written by an older implementation.
 		if (
 			existing.status === "revoked" &&
 			(event.type === CONNECTION_EVENTS.Authorized ||
