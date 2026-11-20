@@ -7,7 +7,8 @@ name: Fleet probe
 # label no runner has been seen on is not sent work.
 #
 # Started by each CI run, so the record is fresh whenever it is needed and
-# nothing runs while the repository is quiet.
+# nothing runs while the repository is quiet. The hosted local-box enrollment
+# check skips merge-group runs; only the self-hosted pickup probes run there.
 #
 # Each label has its own concurrency group and nothing is cancelled once it
 # is waiting for a runner. A label that is down therefore holds one job that
@@ -47,6 +48,7 @@ jobs:
   # dependency-free reader. GitHub-hosted, so it never waits on a label it probes.
   local-box-enrolled:
     name: local box enrolled
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event != 'merge_group'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions:
