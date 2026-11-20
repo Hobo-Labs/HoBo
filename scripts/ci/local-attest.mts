@@ -1,46 +1,39 @@
 #!/usr/bin/env node
-/**
- * Runs a pull request's CI jobs on this machine, signs what it ran, and
- * publishes the signed record so the workflows verify it instead of
- * re-running the work.
- *
- *   pnpm ci:attest init-key [--days=30] [--note=TEXT]
- *   pnpm ci:attest run [--base=origin/main] [--events=pull_request,merge_group]
- *                      [--skip-job=ID]... [--no-fetch] [--fresh]
- *   pnpm ci:attest publish [--remote=origin] [--file=PATH]
- *   pnpm ci:attest verify [--base=origin/main] [--event=pull_request] [--file=PATH]
- *
- * `run` executes what `attested-jobs.json` describes: the same commands, in
- * the same order, under the same conditions as the workflow jobs, once for
- * each event the attestation is to cover. A job is listed in the attestation
- * only if its commands ran here and passed. If any job fails, nothing is
- * signed.
- *
- * The private key stays in one file (mode 0600). It is never printed, logged,
- * or passed to a command this script runs.
- */
-import { execFileSync, type SpawnOptions, spawn } from "node:child_process";
 import {
-	createHash,
+	execFileSync,
+	type SpawnOptions,
+	spawn,
+	spawnSync,
+} from "node:child_process";
+import {
 	createPrivateKey,
 	createPublicKey,
 	generateKeyPairSync,
 	type KeyObject,
 } from "node:crypto";
 import {
-	chmodSync,
 	createWriteStream,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { devNull, homedir, tmpdir } from "node:os";
+import {
+	delimiter,
+	dirname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+	sep,
+} from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import {
 	ATTESTATION_BRANCH,
 	ATTESTATION_EVENTS,
@@ -52,16 +45,24 @@ import {
 	type AttestationTools,
 	type AttestationVerdict,
 	type AttestedJobResult,
+	asObject,
+	asText,
 	attestationPath,
 	type CoveredJob,
-	canonicalJson,
 	GATE_JOBS,
 	isObjectId,
 	keyIdOf,
 	MAX_TRUST_DAYS,
 	NEEDS_CONTAINER_ENGINE,
+	omitImpactGroup,
 	parseEnvelope,
 	publicKeyText,
+	SHADOW_PLAN_BLOB,
+	SHADOW_PLAN_PATH,
+	SHADOW_REQUIRED_PATHS,
+	SHADOW_RESOLUTION_PATHS,
+	SHADOW_WORKFLOW_BLOB,
+	SHADOW_WORKFLOW_PATH,
 	sha256Digest,
 	signStatement,
 	type TrustedAttestor,
@@ -73,10 +74,24 @@ import {
 	ExpressionError,
 	type ExprValue,
 	evaluateExpression,
+	expressionsOf,
 	loadPlan,
 	type PlannedJob,
+	parsePlan,
 	substituteExpressions,
 } from "./attested-jobs.mts";
+import {
+	type PrHeadProof,
+	PrHeadVerificationError,
+	verifyPrHead,
+} from "./github-pr-target.mts";
+import {
+	currentMergeGroup,
+	mergeGroupIdentity,
+	type MergeGroupIdentity,
+} from "./github-merge-group.mts";
+import { githubAppStatusIsReadOnly } from "./github-status-permission.mts";
+import { trustedGithubTarget } from "./github-target.mts";
 
 export const DEFAULT_KEY_PATH = join(
 	homedir(),
@@ -101,6 +116,15 @@ export function keyPathFrom(env: NodeJS.ProcessEnv): string {
  * 0700 and the file 0600; an existing key that others can read is refused.
  */
 export function ensureAttestorKey(path: string) {
+	const directory = dirname(path);
+	mkdirSync(directory, { recursive: true, mode: 0o700 });
+	if (
+		!statSync(directory).isDirectory() ||
+		(statSync(directory).mode & 0o077) !== 0
+	)
+		throw new AttestError(
+			`${directory} is not a private directory; choose one with mode 0700`,
+		);
 	if (existsSync(path)) {
 		if ((statSync(path).mode & 0o077) !== 0)
 			throw new AttestError(
@@ -111,9 +135,6 @@ export function ensureAttestorKey(path: string) {
 			created: false,
 		};
 	}
-	const directory = dirname(path);
-	mkdirSync(directory, { recursive: true, mode: 0o700 });
-	chmodSync(directory, 0o700);
 	const { privateKey } = generateKeyPairSync("ed25519");
 	writeFileSync(
 		path,
@@ -145,6 +166,7 @@ export type StepValues = Record<string, string>;
 type GitOptions = Readonly<{
 	env?: NodeJS.ProcessEnv;
 	input?: string;
+	timeoutMs?: number;
 }>;
 
 /**
@@ -171,7 +193,15 @@ export function gitEnvironment(
 ): NodeJS.ProcessEnv {
 	const environment = { ...process.env };
 	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
-	return { ...environment, ...extra };
+	return unmodifiedGitEnvironment({ ...environment, ...extra });
+}
+
+function unmodifiedGitEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const safe = { ...env };
+	delete safe.GIT_REPLACE_REF_BASE;
+	safe.GIT_NO_REPLACE_OBJECTS = "1";
+	safe.GIT_GRAFT_FILE = devNull;
+	return safe;
 }
 
 /** One git command about the repository at `cwd`; its trimmed output, or an error carrying git's own words. */
@@ -187,16 +217,68 @@ export function git(
 		input: options.input,
 		stdio: ["pipe", "pipe", "pipe"],
 		maxBuffer: 64 * 1024 * 1024,
+		timeout: options.timeoutMs,
 	}).trim();
 }
 
-function gitSucceeds(cwd: string, args: readonly string[]): boolean {
+function gitSucceeds(
+	cwd: string,
+	args: readonly string[],
+	options: GitOptions = {},
+): boolean {
 	try {
-		git(cwd, args);
+		git(cwd, args, options);
 		return true;
 	} catch {
 		return false;
 	}
+}
+
+function assertUnmodifiedGitGraph(root: string): void {
+	if (
+		git(root, ["for-each-ref", "--format=%(refname)", "refs/replace/"], {
+			timeoutMs: 10_000,
+		})
+	)
+		throw new AttestError(
+			"Git replacement refs are present; remove them or use a clean clone before attesting",
+		);
+	const common = git(root, [
+		"rev-parse",
+		"--path-format=absolute",
+		"--git-common-dir",
+	]);
+	const grafts = join(common, "info", "grafts");
+	try {
+		const stat = statSync(grafts);
+		if (!stat.isFile() || stat.size > 0)
+			throw new AttestError(
+				"Git graft metadata is present; remove it or use a clean clone before attesting",
+			);
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+			throw new AttestError(
+				"could not inspect Git graft metadata; attestation refused",
+			);
+	}
+}
+
+function gitConfigValue(cwd: string, name: string): string | undefined {
+	const result = spawnSync("git", ["config", "--null", "--get", name], {
+		cwd,
+		encoding: "utf8",
+		env: gitEnvironment(),
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	if (result.status === 1) return undefined;
+	if (
+		result.status !== 0 ||
+		!result.stdout.endsWith("\0") ||
+		result.stdout.slice(0, -1).includes("\0")
+	)
+		throw new Error("could not read Git config");
+	return result.stdout.slice(0, -1);
 }
 
 function gitFailure(cause: Error): string {
@@ -299,7 +381,8 @@ export function publishAttestation(input: {
 	beforePush?: (attempt: number) => void;
 }) {
 	const { cwd, envelopeText } = input;
-	const { tree: attestedTree } = parseEnvelope(envelopeText).statement;
+	const statement = parseEnvelope(envelopeText).statement;
+	const { tree: attestedTree } = statement;
 	// The tree becomes a path on the branch; it must be an object id and nothing else.
 	if (!isObjectId(attestedTree))
 		throw new AttestError("the attestation's tree is not a git object id");
@@ -312,6 +395,15 @@ export function publishAttestation(input: {
 		throw new AttestError(
 			`not publishing: no workflow would accept this record (${verdict.reason})`,
 		);
+	if (statement.jobs.includes("pr_gate_validation")) {
+		const problem = shadowPolicyProblem({
+			root: cwd,
+			base: statement.base,
+			head: statement.head,
+			tree: statement.tree,
+		});
+		if (problem) throw new AttestError(`not publishing: ${problem}`);
+	}
 	// By URL, not by name: a push to a named remote also moves that remote's
 	// tracking ref in this repository.
 	let remote = input.remote;
@@ -426,8 +518,8 @@ export type RunTarget = Readonly<{
 	baseTree: string;
 	/** `main` for a base of `origin/main`: what `github.base_ref` is on a pull request. */
 	baseBranch: string;
-	/** A commit with the base as first parent, HEAD as second, and HEAD's tree. */
 	mergeCommit: string;
+	mergeGroup?: true;
 }>;
 
 /**
@@ -445,6 +537,7 @@ export function resolveRunTarget(input: {
 	baseRef: string;
 }): RunTarget {
 	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	assertUnmodifiedGitGraph(root);
 	const dirty = git(root, ["status", "--porcelain"]);
 	if (dirty)
 		throw new AttestError(
@@ -496,6 +589,34 @@ export function resolveRunTarget(input: {
 		baseTree: git(root, ["rev-parse", `${base}^{tree}`]),
 		baseBranch: input.baseRef.replace(/^[^/]+\//u, ""),
 		mergeCommit,
+	};
+}
+
+export function resolveMergeGroupTarget(input: {
+	cwd: string;
+	baseRef: string;
+}): RunTarget {
+	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	assertUnmodifiedGitGraph(root);
+	if (git(root, ["status", "--porcelain"]))
+		throw new AttestError(
+			"the working tree is not clean; merge-group signoff refused",
+		);
+	const base = git(root, ["rev-parse", `${input.baseRef}^{commit}`]);
+	const head = git(root, ["rev-parse", "HEAD^{commit}"]);
+	if (head === base || git(root, ["show", "-s", "--format=%P", head]) !== base)
+		throw new AttestError(
+			"the merge-group commit must have the current base as its only parent",
+		);
+	return {
+		root,
+		head,
+		base,
+		tree: git(root, ["rev-parse", `${head}^{tree}`]),
+		baseTree: git(root, ["rev-parse", `${base}^{tree}`]),
+		baseBranch: input.baseRef.replace(/^[^/]+\//u, ""),
+		mergeCommit: head,
+		mergeGroup: true,
 	};
 }
 
@@ -689,7 +810,9 @@ function toolDirectories(env: NodeJS.ProcessEnv, realHome: string) {
 		["XDG_STATE_HOME", env.XDG_STATE_HOME || join(realHome, ".local", "state")],
 	]);
 	const whenPresent = (name: string, path: string) => {
-		if (!env[name] && existsSync(path)) directories.set(name, path);
+		const configured = env[name];
+		if (configured) directories.set(name, configured);
+		else if (existsSync(path)) directories.set(name, path);
 	};
 	whenPresent("RUSTUP_HOME", join(realHome, ".rustup"));
 	whenPresent("CARGO_HOME", join(realHome, ".cargo"));
@@ -697,7 +820,38 @@ function toolDirectories(env: NodeJS.ProcessEnv, realHome: string) {
 	whenPresent("BUN_INSTALL", join(realHome, ".bun"));
 	whenPresent("MISE_CONFIG_DIR", join(realHome, ".config", "mise"));
 	whenPresent("npm_config_cache", join(realHome, ".npm"));
+	if (env.npm_config_store_dir)
+		directories.set("npm_config_store_dir", env.npm_config_store_dir);
 	return Object.fromEntries(directories);
+}
+
+function sharedToolDirectories(env: NodeJS.ProcessEnv): string[] {
+	const directories = Object.values(
+		toolDirectories(env, env.HOME || homedir()),
+	);
+	for (const name of [
+		"PNPM_HOME",
+		"COREPACK_HOME",
+		"PLAYWRIGHT_BROWSERS_PATH",
+		"GOCACHE",
+		"GOMODCACHE",
+		"TURBO_CACHE_DIR",
+		"MISE_DATA_DIR",
+		"MISE_CACHE_DIR",
+		"MISE_STATE_DIR",
+		"DOCKER_CERT_PATH",
+	]) {
+		const value = env[name];
+		if (
+			value &&
+			!(name === "PLAYWRIGHT_BROWSERS_PATH" && value === "0") &&
+			!(name === "GOCACHE" && value === "off")
+		)
+			directories.push(value);
+	}
+	const goPaths = env.GOPATH?.split(delimiter).filter(Boolean);
+	if (goPaths) directories.push(...goPaths);
+	return directories;
 }
 
 /**
@@ -740,17 +894,37 @@ export function stepEnvironment(machine: NodeJS.ProcessEnv, home: string) {
  * Refuses a signing key kept where the code under test is pointed: in the
  * checkout, or in a tool directory a step is given.
  */
+function physicalPath(path: string): string {
+	const absolute = resolve(path);
+	let existing = absolute;
+	while (!existsSync(existing)) {
+		const parent = dirname(existing);
+		if (parent === existing) break;
+		existing = parent;
+	}
+	return resolve(realpathSync(existing), relative(existing, absolute));
+}
+
+function pathIsInside(directory: string, path: string): boolean {
+	const from = relative(physicalPath(directory), physicalPath(path));
+	return (
+		from === "" ||
+		(!isAbsolute(from) && from !== ".." && !from.startsWith(`..${sep}`))
+	);
+}
+
 export function assertKeyApart(
 	keyPath: string,
 	root: string,
 	machine: NodeJS.ProcessEnv,
 ): void {
-	const inside = (directory: string) =>
-		!relative(resolve(directory), resolve(keyPath)).startsWith("..");
-	const shared = Object.values(
-		toolDirectories(machine, machine.HOME || homedir()),
+	const shared = sharedToolDirectories(machine).map((path) =>
+		resolve(root, path),
 	);
-	const holder = [root, ...shared].find(inside);
+	if (machine.TMPDIR) shared.push(resolve(root, machine.TMPDIR));
+	const holder = [root, ...shared].find((directory) =>
+		pathIsInside(directory, keyPath),
+	);
 	if (holder)
 		throw new AttestError(
 			`the signing key is inside ${holder}, which the commands under test are given; keep it elsewhere (HOBO_CI_ATTESTOR_KEY)`,
@@ -853,6 +1027,7 @@ type JobRun = {
 	commands: number;
 	durationMs: number;
 	events: AttestationEvent[];
+	eventChecks: Partial<Record<AttestationEvent, number>>;
 	uncovered?: string;
 };
 
@@ -872,6 +1047,65 @@ class JobFailed extends Error {
 	constructor(failure: StepFailure) {
 		super(`${failure.job}: "${failure.step}" failed`);
 		this.failure = failure;
+	}
+}
+
+function shadowSkipIn(plan: readonly PlannedJob[]): boolean {
+	return plan.some(
+		(job) =>
+			job.id === "pr_gate_validation" &&
+			job.steps.some(
+				(step) =>
+					step.local === "skip" &&
+					(step.name === "Impact classification (shadow)" ||
+						step.run?.includes("scripts/ci/impact-classifier.mts")),
+			),
+	);
+}
+
+function shadowSkipAt(root: string, commit: string): boolean {
+	try {
+		return shadowSkipIn(
+			parsePlan(git(root, ["show", `${commit}:${SHADOW_PLAN_PATH}`])),
+		);
+	} catch {
+		return false;
+	}
+}
+
+function assertRunTarget(target: RunTarget): void {
+	const ids = [
+		target.head,
+		target.base,
+		target.tree,
+		target.baseTree,
+		target.mergeCommit,
+	];
+	try {
+		if (
+			!ids.every(isObjectId) ||
+			git(target.root, ["rev-parse", "HEAD"]) !== target.head ||
+			git(target.root, ["rev-parse", `${target.head}^{tree}`]) !==
+				target.tree ||
+			git(target.root, ["rev-parse", `${target.base}^{tree}`]) !==
+				target.baseTree ||
+			git(target.root, ["rev-parse", `${target.mergeCommit}^{tree}`]) !==
+				target.tree ||
+			git(target.root, ["show", "-s", "--format=%P", target.mergeCommit]) !==
+				(target.mergeGroup ? target.base : `${target.base} ${target.head}`) ||
+			(target.mergeGroup === true && target.mergeCommit !== target.head) ||
+			!gitSucceeds(target.root, [
+				"merge-base",
+				"--is-ancestor",
+				target.base,
+				target.head,
+			])
+		)
+			throw new Error("target differs");
+	} catch {
+		throw new AttestError(
+			"the run target is inconsistent with the checked-out commits and merge tree",
+		);
 	}
 }
 
@@ -895,10 +1129,15 @@ export async function runAttestedJobs(input: {
 }): Promise<RunOutcome> {
 	const { target, plan, events } = input;
 	const { root } = target;
+	assertUnmodifiedGitGraph(root);
+	assertRunTarget(target);
 	const startedAt = new Date();
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-attest-run-"));
 	const outputDirectory = join(root, OUTPUT_DIRECTORY, target.tree);
 	mkdirSync(outputDirectory, { recursive: true });
+	const file = join(root, OUTPUT_DIRECTORY, `${target.tree}.json`);
+	// A failed retry must not leave an older success available for signoff.
+	rmSync(file, { force: true });
 	// What a step starts from: an allowlist of this machine's variables and a
 	// home directory of its own, with nothing of the signer's in it.
 	const home = join(scratch, "home");
@@ -918,7 +1157,12 @@ export async function runAttestedJobs(input: {
 	const runs = new Map<CoveredJob, JobRun>();
 	const logs = new Map<CoveredJob, string>();
 	for (const job of plan) {
-		runs.set(job.id, { commands: 0, durationMs: 0, events: [] });
+		runs.set(job.id, {
+			commands: 0,
+			durationMs: 0,
+			events: [],
+			eventChecks: {},
+		});
 		const log = join(outputDirectory, `${job.id}.log`);
 		writeFileSync(log, "");
 		logs.set(job.id, log);
@@ -930,6 +1174,26 @@ export async function runAttestedJobs(input: {
 		for (const id of NEEDS_CONTAINER_ENGINE)
 			notAttested[id] ??=
 				"its tests start containers, and no Docker engine answers here";
+	if (
+		!GATE_JOBS.some((id) => notAttested[id] !== undefined) &&
+		plan.some((job) => job.id === "pr_gate_validation") &&
+		(shadowSkipIn(plan) ||
+			shadowSkipAt(root, target.base) ||
+			shadowSkipAt(root, target.head))
+	) {
+		try {
+			await assertSignoffPolicy({
+				root,
+				base: target.base,
+				head: target.head,
+				plan,
+				jobs: GATE_JOBS,
+			});
+		} catch (cause) {
+			if (!(cause instanceof AttestError)) throw cause;
+			notAttested.pr_gate_validation = cause.message;
+		}
+	}
 	// The PR impact gate takes its jobs together or not at all.
 	const gateGap = GATE_JOBS.find((id) => notAttested[id] !== undefined);
 	if (gateGap)
@@ -946,9 +1210,8 @@ export async function runAttestedJobs(input: {
 	process.once("SIGINT", onSignal);
 	process.once("SIGTERM", onSignal);
 	try {
+		let invocation = 0;
 		for (const event of events) {
-			/** Steps that already passed for this event, by what they run; their outputs. */
-			const passed = new Map<string, Record<string, string>>();
 			const jobResults = new Map<string, "success" | "skipped">();
 			const jobOutputs = new Map<string, Record<string, string>>();
 			for (const job of plan) {
@@ -983,6 +1246,10 @@ export async function runAttestedJobs(input: {
 							jobContext(new Map(), {}, undefined),
 						)
 					: null;
+				if (job.matrix && !Array.isArray(shardValues))
+					throw new AttestError(
+						`the matrix for ${job.id} is not an array; nothing was signed`,
+					);
 				const shards = Array.isArray(shardValues)
 					? shardValues.map((value: ExprValue, index: number) => ({
 							index,
@@ -991,8 +1258,25 @@ export async function runAttestedJobs(input: {
 						}))
 					: [undefined];
 				const began = Date.now();
+				let coveredChecks = 0;
+				let emptyShard = shards.length === 0;
 				let lastSteps = new Map<string, Record<string, string>>();
+				const markUncovered = (
+					stepId: string | undefined,
+					outputs: Record<string, string>,
+				) => {
+					const uncovered = job.uncoveredWhen;
+					if (
+						!uncovered ||
+						stepId !== uncovered.step ||
+						(outputs[uncovered.output] ?? "") === ""
+					)
+						return false;
+					run.uncovered = `${uncovered.reason} (${uncovered.output}: ${outputs[uncovered.output]})`;
+					return true;
+				};
 				for (const shard of shards) {
+					const checksBeforeShard = coveredChecks;
 					const steps = new Map<string, Record<string, string>>();
 					lastSteps = steps;
 					/** What earlier steps of this job wrote to GITHUB_ENV. */
@@ -1019,26 +1303,26 @@ export async function runAttestedJobs(input: {
 						};
 						const lookup = jobContext(steps, declared, shard);
 						if (!conditionHolds(step.if, lookup)) continue;
+						if (
+							(declared.GIT_NO_REPLACE_OBJECTS !== undefined &&
+								declared.GIT_NO_REPLACE_OBJECTS !== "1") ||
+							(declared.GIT_GRAFT_FILE !== undefined &&
+								declared.GIT_GRAFT_FILE !== devNull) ||
+							(declared.GIT_REPLACE_REF_BASE !== undefined &&
+								declared.GIT_REPLACE_REF_BASE !== "")
+						)
+							throw new AttestError(
+								`the workflow changes Git object or graph semantics in ${job.id}; local attestation refused`,
+							);
 						const script = substituteExpressions(step.run, lookup);
-						const key = createHash("sha256")
-							.update(canonicalJson([step.shell ?? "", script, declared]))
-							.digest("hex");
+						const key = invocation++;
 						const heading = `\n=== ${job.id} [${event}${shard ? ` shard ${shard.index + 1}/${shard.total}` : ""}] ${label} ===\n`;
-						const earlier = passed.get(key);
 						const sink = createWriteStream(log, { flags: "a" });
 						const write = (text: string) => {
 							sink.write(text);
 							process.stdout.write(text);
 						};
 						write(heading);
-						if (earlier) {
-							write(
-								"(the same command with the same inputs already passed in this run)\n",
-							);
-							if (step.id) steps.set(step.id, earlier);
-							await new Promise((done) => sink.end(done));
-							continue;
-						}
 						const outputFile = join(scratch, `output-${key}`);
 						const envFile = join(scratch, `env-${key}`);
 						const scriptFile = join(scratch, `step-${key}.sh`);
@@ -1070,6 +1354,7 @@ export async function runAttestedJobs(input: {
 							(chunk) => sink.write(chunk),
 						);
 						run.commands += 1;
+						coveredChecks += 1;
 						if (code !== 0 && !step.continueOnError) {
 							write(`\n${label}: exit ${code}\n`);
 							await new Promise((done) => sink.end(done));
@@ -1080,24 +1365,15 @@ export async function runAttestedJobs(input: {
 								`\n${label}: exit ${code} (the workflow lets this step fail)\n`,
 							);
 						await new Promise((done) => sink.end(done));
+						assertUnmodifiedGitGraph(root);
 						const outputs = parseCommandFile(readFileSync(outputFile, "utf8"));
-						Object.assign(
-							exported,
-							parseCommandFile(readFileSync(envFile, "utf8")),
-						);
+						const environment = parseCommandFile(readFileSync(envFile, "utf8"));
+						Object.assign(exported, environment);
 						if (step.id) steps.set(step.id, outputs);
-						if (code === 0) passed.set(key, outputs);
-						const uncovered = job.uncoveredWhen;
-						if (
-							uncovered &&
-							step.id === uncovered.step &&
-							(outputs[uncovered.output] ?? "") !== ""
-						) {
-							run.uncovered = `${uncovered.reason} (${uncovered.output}: ${outputs[uncovered.output]})`;
-							break;
-						}
+						if (markUncovered(step.id, outputs)) break;
 					}
 					if (run.uncovered) break;
+					if (coveredChecks === checksBeforeShard) emptyShard = true;
 				}
 				run.durationMs += Date.now() - began;
 				if (run.uncovered) {
@@ -1105,7 +1381,12 @@ export async function runAttestedJobs(input: {
 					jobResults.set(job.id, "skipped");
 					continue;
 				}
+				if (coveredChecks === 0 || emptyShard) {
+					jobResults.set(job.id, "skipped");
+					continue;
+				}
 				run.events.push(event);
+				run.eventChecks[event] = coveredChecks;
 				jobResults.set(job.id, "success");
 				const lookup = jobContext(lastSteps, {}, undefined);
 				jobOutputs.set(
@@ -1130,6 +1411,7 @@ export async function runAttestedJobs(input: {
 
 	// A command that rewrote a tracked file passed on something other than the
 	// committed tree, and the tree is what the attestation names.
+	assertUnmodifiedGitGraph(root);
 	const rewritten = git(root, [
 		"status",
 		"--porcelain",
@@ -1149,7 +1431,8 @@ export async function runAttestedJobs(input: {
 		const log = logs.get(job.id);
 		if (!run || !log || run.uncovered || leftOut.has(job.id)) continue;
 		if (run.events.length === 0) {
-			notAttested[job.id] = "it does not run on the events asked for";
+			notAttested[job.id] =
+				"it does not run on the events asked for, or a shard ran no executable command";
 			continue;
 		}
 		results.push({
@@ -1157,6 +1440,8 @@ export async function runAttestedJobs(input: {
 			status: "passed",
 			events: run.events,
 			commands: run.commands,
+			eventChecks: run.eventChecks,
+			executionMode: "each-step-v1",
 			durationMs: run.durationMs,
 			logDigest: sha256Digest(readFileSync(log)),
 		});
@@ -1173,6 +1458,7 @@ export async function runAttestedJobs(input: {
 		baseTree: target.baseTree,
 		head: target.head,
 		base: target.base,
+		testedCommit: target.mergeCommit,
 		jobs: results.map((result) => result.id),
 		events: [...events],
 		startedAt: startedAt.toISOString(),
@@ -1186,7 +1472,6 @@ export async function runAttestedJobs(input: {
 		results,
 	};
 	const envelope = signStatement(statement, input.privateKey);
-	const file = join(root, OUTPUT_DIRECTORY, `${target.tree}.json`);
 	writeFileSync(file, `${JSON.stringify(envelope, null, "\t")}\n`);
 	return { envelope, file, notAttested, leftBehind };
 }
@@ -1213,16 +1498,1014 @@ export function verifyLocally(input: {
 			reason: `${input.baseRef} has no ${ATTESTORS_PATH}`,
 		};
 	}
-	return verifyAttestation({
+	const head = git(root, ["rev-parse", "HEAD"]);
+	const base = git(root, ["rev-parse", `${input.baseRef}^{commit}`]);
+	const tree = git(root, ["rev-parse", "HEAD^{tree}"]);
+	const verdict = verifyAttestation({
 		envelopeText: input.envelopeText,
 		attestorsText,
+		tree,
+		baseTree: git(root, ["rev-parse", `${input.baseRef}^{tree}`]),
+		event: input.event,
+		nowMs: input.nowMs,
+		head,
+		base,
+	});
+	return verdict.attested &&
+		verdict.jobs.includes("pr_gate_validation") &&
+		shadowPolicyProblem({ root, base, head, tree })
+		? omitImpactGroup(verdict)
+		: verdict;
+}
+
+// These are the repository files read or invoked by the omitted composite
+// actions. Adding another skipped action, or changing an action's dependencies,
+// requires reviewing and updating this list on the trusted base first.
+const HOSTED_TOOLCHAIN_DEPENDENCIES = [
+	".github/actions/ci-runner-preflight",
+	"scripts/lib/mise-path.sh",
+	"mise.toml",
+	"mise.lock",
+	"packages/ci-gh-actions/deploy/ci-runner",
+] as const;
+const SKIPPED_ACTION_DEPENDENCIES = {
+	"ci-runner-preflight": [
+		...HOSTED_TOOLCHAIN_DEPENDENCIES,
+		"scripts/ci-runner-preflight.mts",
+		"scripts/lib/ci-runner-contract.mts",
+		"scripts/ci/memory-env.mts",
+		"scripts/ci/data-live-servers.mts",
+		"packages/ci-gh-actions/src/isolated-worker/job-memory-config.ts",
+		".mise/locks/turbo",
+	],
+	"hobo-checkout": [
+		...HOSTED_TOOLCHAIN_DEPENDENCIES,
+		".github/actions/hobo-checkout",
+		".gitmodules",
+	],
+	"hobo-repo-checkout": [
+		...HOSTED_TOOLCHAIN_DEPENDENCIES,
+		".github/actions/hobo-repo-checkout",
+		".github/actions/hobo-checkout",
+		".gitmodules",
+	],
+	"pnpm-store": [".github/actions/pnpm-store", "pnpm-lock.yaml"],
+	"turbo-cache": [
+		".github/actions/turbo-cache",
+		".hobo/ci.json",
+		"pnpm-lock.yaml",
+		"mise.lock",
+	],
+	"ci-trace": [".github/actions/ci-trace", "scripts/ci/ci-trace.mts"],
+} satisfies Readonly<Record<string, readonly string[]>>;
+
+function shadowPolicyProblem(input: {
+	root: string;
+	base: string;
+	head: string;
+	tree?: string | undefined;
+}): string | undefined {
+	try {
+		if (
+			(input.tree !== undefined &&
+				git(input.root, ["rev-parse", `${input.head}^{tree}`]) !==
+					input.tree) ||
+			[input.base, input.head].some(
+				(commit) =>
+					git(input.root, ["rev-parse", `${commit}:${SHADOW_PLAN_PATH}`]) !==
+						SHADOW_PLAN_BLOB ||
+					git(input.root, [
+						"rev-parse",
+						`${commit}:${SHADOW_WORKFLOW_PATH}`,
+					]) !== SHADOW_WORKFLOW_BLOB,
+			)
+		)
+			return "the trusted shadow classifier workflow or policy changed";
+		const entriesAt = (commit: string) => {
+			const listing = git(input.root, [
+				"ls-tree",
+				"--full-tree",
+				commit,
+				"--",
+				...SHADOW_REQUIRED_PATHS,
+				...SHADOW_RESOLUTION_PATHS,
+			]);
+			const entries = new Map<string, string>();
+			for (const line of listing.split("\n").filter(Boolean)) {
+				const match = /^(\d{6}) (blob|tree|commit) ([0-9a-f]+)\t(.+)$/u.exec(
+					line,
+				);
+				if (!match || !match[4] || entries.has(match[4]))
+					throw new Error("invalid tree entry");
+				entries.set(match[4], `${match[1]} ${match[2]} ${match[3]}`);
+			}
+			return entries;
+		};
+		const base = entriesAt(input.base);
+		const head = entriesAt(input.head);
+		if (
+			SHADOW_REQUIRED_PATHS.some((path) => {
+				const entry = base.get(path);
+				return (
+					!entry ||
+					!/^100(?:644|755) blob /u.test(entry) ||
+					entry !== head.get(path)
+				);
+			}) ||
+			SHADOW_RESOLUTION_PATHS.some((path) => base.has(path) || head.has(path))
+		)
+			return "a skipped shadow classifier dependency or its resolution changed or is missing at the base, or a path is unreviewed";
+		return undefined;
+	} catch {
+		return "the trusted shadow classifier policy or its dependencies could not be checked";
+	}
+}
+
+function hasUnknownSignoffInputs(job: PlannedJob): boolean {
+	// Omitted steps do not receive these values locally. Job-level
+	// expressions and every executed step are still checked below.
+	const steps = job.steps.filter((step) => step.local === "run");
+	return expressionsOf({ ...job, steps }).some((expression) =>
+		/(?:\b(?:vars|secrets)\.|\bgithub\.event\.pull_request\.number\b)/iu.test(
+			expression,
+		),
+	);
+}
+
+/** A PR cannot authorize new local skips or change what an omitted action does. */
+async function assertSignoffPolicy(input: {
+	root: string;
+	base: string;
+	head: string;
+	plan: readonly PlannedJob[];
+	jobs: readonly string[];
+}): Promise<void> {
+	let trustedPlan: PlannedJob[];
+	let workflowDocument: typeof import("../lib/workflow-job-steps.mts").workflowDocument;
+	try {
+		trustedPlan = parsePlan(
+			git(input.root, ["show", `${input.base}:scripts/ci/attested-jobs.json`]),
+		);
+		({ workflowDocument } = await import("../lib/workflow-job-steps.mts"));
+	} catch {
+		throw new AttestError(
+			"the base has no usable local job policy; signoff refused",
+		);
+	}
+	for (const id of input.jobs) {
+		const described = input.plan.find((job) => job.id === id);
+		const trusted = trustedPlan.find((job) => job.id === id);
+		if (!described || !trusted || !isDeepStrictEqual(described, trusted))
+			throw new AttestError(
+				`local job policy for ${id} differs from the base; signoff refused`,
+			);
+		if (hasUnknownSignoffInputs(described))
+			throw new AttestError(
+				`local job ${id} uses GitHub values unavailable locally; signoff refused`,
+			);
+		try {
+			const scope = (text: string) => {
+				const document = workflowDocument(text);
+				const job = asObject(asObject(document.jobs)?.[id]);
+				if (!job) throw new Error("workflow job missing");
+				const { jobs: _jobs, ...workflow } = document;
+				return { workflow, job };
+			};
+			const base = scope(
+				git(input.root, ["show", `${input.base}:${described.workflow}`]),
+			);
+			const head = scope(
+				git(input.root, ["show", `${input.head}:${described.workflow}`]),
+			);
+			if (!isDeepStrictEqual(base, head)) throw new Error("workflow changed");
+		} catch {
+			throw new AttestError(
+				`the workflow job or workflow settings for ${id} changed from the base; signoff refused`,
+			);
+		}
+		if (id === "pr_gate_validation") {
+			const skipped = described.steps.filter(
+				(step) =>
+					step.name === "Impact classification (shadow)" &&
+					step.local === "skip",
+			);
+			if (skipped.length !== 2)
+				throw new AttestError(
+					"the trusted shadow classifier policy does not name both reports; signoff refused",
+				);
+			const problem = shadowPolicyProblem(input);
+			if (problem) throw new AttestError(`${problem}; signoff refused`);
+		}
+		for (const step of described.steps) {
+			if (step.local !== "skip" || !step.uses) continue;
+			const local = /^(?:\$\/|\.\/)(\.github\/actions\/[^/]+)$/u.exec(
+				step.uses,
+			);
+			if ((step.uses.startsWith("$/") || step.uses.startsWith("./")) && !local)
+				throw new AttestError(
+					`unrecognized local action in ${id}; signoff refused`,
+				);
+			if (!local) continue;
+			const action = local[1] ?? "";
+			const name = action.slice(".github/actions/".length);
+			const dependencies = Object.entries(SKIPPED_ACTION_DEPENDENCIES).find(
+				([actionName]) => actionName === name,
+			)?.[1];
+			if (!dependencies)
+				throw new AttestError(
+					`unknown skipped local action in ${id}; signoff refused`,
+				);
+			if (
+				!gitSucceeds(input.root, [
+					"cat-file",
+					"-e",
+					`${input.base}:${action}`,
+				]) ||
+				!gitSucceeds(input.root, [
+					"diff",
+					"--quiet",
+					input.base,
+					input.head,
+					"--",
+					...dependencies,
+				])
+			)
+				throw new AttestError(
+					`a skipped local action or its dependencies in ${id} changed from the base; signoff refused`,
+				);
+		}
+	}
+}
+
+type PublishedSignoffHead =
+	| { kind: "branch"; branch: string; tip: string }
+	| { kind: "pr"; proof: PrHeadProof };
+
+/** Pin every status write to the same repository whose live base was tested. */
+function signoffEnvironment(input: {
+	root: string;
+	remote: string;
+	branch: string;
+	base: string;
+	env: NodeJS.ProcessEnv;
+	published?: PublishedSignoffHead;
+}): NodeJS.ProcessEnv {
+	const environment = unmodifiedGitEnvironment(input.env);
+	for (const name of GIT_LOCATION_VARIABLES) delete environment[name];
+	if (environment.PATH !== undefined)
+		environment.PATH = environment.PATH.split(delimiter)
+			.map((part) => resolve(input.root, part))
+			.join(delimiter);
+	for (const name of [
+		"GH_CONFIG_DIR",
+		"XDG_CONFIG_HOME",
+		"HOME",
+		"GIT_CONFIG_GLOBAL",
+		"GIT_CONFIG_SYSTEM",
+	]) {
+		const value = environment[name];
+		if (value && !isAbsolute(value))
+			environment[name] = resolve(input.root, value);
+	}
+	try {
+		const target = trustedGithubTarget({
+			cwd: input.root,
+			remoteUrl: git(input.root, ["remote", "get-url", input.remote]),
+			env: environment,
+			timeoutMs: 10_000,
+		});
+		const githubBranch = (branch: string) =>
+			execFileSync(
+				"gh",
+				[
+					"api",
+					`repos/{owner}/{repo}/branches/${encodeURIComponent(branch)}`,
+					"--jq",
+					".commit.sha",
+				],
+				{
+					cwd: input.root,
+					env: target.environment,
+					encoding: "utf8",
+					stdio: ["ignore", "pipe", "pipe"],
+					timeout: 10_000,
+					maxBuffer: 1024 * 1024,
+				},
+			).trim();
+		const liveBase = githubBranch(input.branch);
+		if (liveBase !== input.base) throw new Error("GitHub base changed");
+		if (input.published?.kind === "branch") {
+			try {
+				if (githubBranch(input.published.branch) !== input.published.tip)
+					throw new Error("GitHub head branch changed");
+			} catch {
+				throw new AttestError(
+					"the selected published branch changed or could not be verified; signoff refused",
+				);
+			}
+		}
+		if (input.published?.kind === "pr") {
+			const previous = input.published.proof;
+			try {
+				const current = verifyPrHead({
+					cwd: input.root,
+					env: target.environment,
+					baseBranch: input.branch,
+					baseSha: input.base,
+					headSha: previous.headSha,
+					prNumber: previous.prNumber,
+				});
+				if (!isDeepStrictEqual(current, previous))
+					throw new Error("pull request proof changed");
+			} catch {
+				throw new AttestError(
+					"the pull request or its live head changed or could not be verified; signoff refused",
+				);
+			}
+		}
+		return target.environment;
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		throw new AttestError(
+			"could not verify that the GitHub target and live base match the tested remote; signoff refused",
+		);
+	}
+}
+
+function assertCurrentMergeGroup(input: {
+	root: string;
+	remote: string;
+	baseBranch: string;
+	base: string;
+	head: string;
+	branch: string;
+	prNumber?: number | undefined;
+	githubEnv: NodeJS.ProcessEnv;
+}): MergeGroupIdentity {
+	const identity = mergeGroupIdentity(input);
+	if (
+		!identity ||
+		(input.prNumber !== undefined && identity.pr !== input.prNumber)
+	)
+		throw new AttestError(
+			"the merge-group ref does not match the tested base and pull request",
+		);
+	try {
+		const ref = `refs/heads/${identity.branch}`;
+		const advertised = git(
+			input.root,
+			["ls-remote", "--exit-code", "--heads", input.remote, ref],
+			{
+				env: {
+					GIT_TERMINAL_PROMPT: "0",
+					GIT_ASKPASS: "",
+					SSH_ASKPASS_REQUIRE: "never",
+					GCM_INTERACTIVE: "Never",
+				},
+				timeoutMs: 10_000,
+			},
+		);
+		if (
+			advertised !== `${identity.head}\t${ref}` ||
+			!currentMergeGroup({ cwd: input.root, env: input.githubEnv, identity })
+		)
+			throw new Error("queue entry or ref changed");
+	} catch {
+		throw new AttestError(
+			"the merge-group entry or its published ref changed or could not be verified",
+		);
+	}
+	return identity;
+}
+
+function signoffScratch(root: string, machine: NodeJS.ProcessEnv): string {
+	const candidates = [
+		tmpdir(),
+		process.platform === "win32"
+			? join(process.env.SystemRoot ?? "C:\\Windows", "Temp")
+			: "/tmp",
+	];
+	const excluded = [
+		root,
+		...sharedToolDirectories(machine).map((path) => resolve(root, path)),
+	];
+	for (const candidate of new Set(candidates)) {
+		try {
+			const parent = realpathSync(candidate);
+			if (excluded.some((directory) => pathIsInside(directory, parent)))
+				continue;
+			return mkdtempSync(join(parent, "hobo-signoff-git-"));
+		} catch {}
+	}
+	throw new AttestError(
+		"cannot create a temporary Git view outside the checkout and shared tool directories; set TMPDIR to a writable private location",
+	);
+}
+
+type SignoffWitness = {
+	cwd: string;
+	published: PublishedSignoffHead;
+	verify: () => void;
+	dispose: (publicationAttempted: boolean) => void;
+};
+
+function targetSignoffWitness(input: {
+	root: string;
+	remote: string;
+	head: string;
+	base: string;
+	baseRef: string;
+	baseBranch: string;
+	env: NodeJS.ProcessEnv;
+	githubEnv: NodeJS.ProcessEnv;
+	prNumber?: number | undefined;
+	expectedPublished?: PublishedSignoffHead | undefined;
+}): SignoffWitness {
+	const { root, remote, head, base, baseRef } = input;
+	const noninteractive = {
+		GIT_TERMINAL_PROMPT: "0",
+		GIT_ASKPASS: "",
+		SSH_ASKPASS_REQUIRE: "never",
+		GCM_INTERACTIVE: "Never",
+	};
+	const localOnly = {
+		env: { ...noninteractive, GIT_NO_LAZY_FETCH: "1" },
+		timeoutMs: 10_000,
+	};
+	let selected: { ref: string; tip: string } | undefined;
+	let noLazyFetchUnsupported = false;
+	let branchEnumerationFailed = false;
+	const expected = input.expectedPublished;
+	if (
+		expected !== undefined &&
+		(Object.prototype.toString.call(expected) !== "[object Object]" ||
+			(expected.kind !== "branch" && expected.kind !== "pr"))
+	)
+		throw new AttestError("invalid fleet preflight proof; signoff refused");
+	let requestedPr = input.prNumber;
+	if (expected?.kind === "pr") {
+		const proof = expected.proof;
+		if (
+			Object.prototype.toString.call(proof) !== "[object Object]" ||
+			!Number.isSafeInteger(proof.prNumber) ||
+			proof.prNumber < 1 ||
+			(requestedPr !== undefined && requestedPr !== proof.prNumber)
+		)
+			throw new AttestError("invalid fleet preflight proof; signoff refused");
+		requestedPr = proof.prNumber;
+	} else if (expected?.kind === "branch") {
+		if (
+			requestedPr !== undefined ||
+			!asText(expected.branch) ||
+			!asText(expected.tip) ||
+			!isObjectId(expected.tip)
+		)
+			throw new AttestError("invalid fleet preflight proof; signoff refused");
+		const ref = `refs/heads/${expected.branch}`;
+		if (!gitSucceeds(root, ["check-ref-format", ref]))
+			throw new AttestError("invalid fleet preflight proof; signoff refused");
+		if (expected.tip !== head) {
+			if (!gitSucceeds(root, ["--no-lazy-fetch", "--version"], localOnly))
+				throw new AttestError(
+					"cannot verify an ancestor without Git 2.45 or newer; upgrade Git or publish HEAD as the exact branch tip",
+				);
+			if (
+				!gitSucceeds(
+					root,
+					[
+						"--no-lazy-fetch",
+						"merge-base",
+						"--is-ancestor",
+						head,
+						expected.tip,
+					],
+					localOnly,
+				)
+			)
+				throw new AttestError(
+					"the fleet preflight branch no longer proves the tested head; signoff refused",
+				);
+		}
+		selected = { ref, tip: expected.tip };
+	}
+	if (expected === undefined && requestedPr === undefined) {
+		try {
+			const advertised = git(root, ["ls-remote", "--heads", remote], {
+				env: noninteractive,
+				timeoutMs: 10_000,
+			});
+			const branches = advertised.split(/\r?\n/u).flatMap((line) => {
+				const [tip, ref, extra] = line.split("\t");
+				return tip &&
+					isObjectId(tip) &&
+					ref?.startsWith("refs/heads/") &&
+					extra === undefined
+					? [{ ref, tip }]
+					: [];
+			});
+			selected = branches.find(
+				({ ref, tip }) =>
+					tip === head && gitSucceeds(root, ["check-ref-format", ref]),
+			);
+			if (!selected && branches.length > 0) {
+				noLazyFetchUnsupported = !gitSucceeds(
+					root,
+					["--no-lazy-fetch", "--version"],
+					localOnly,
+				);
+			}
+			if (!selected && branches.length > 0 && !noLazyFetchUnsupported) {
+				const tips = [...new Set(branches.map(({ tip }) => tip))];
+				const checked = git(
+					root,
+					[
+						"--no-lazy-fetch",
+						"cat-file",
+						"--batch-check=%(objectname) %(objecttype)",
+					],
+					{ ...localOnly, input: `${tips.join("\n")}\n` },
+				);
+				const commits = new Set(
+					checked
+						.split("\n")
+						.filter((line) => line.endsWith(" commit"))
+						.map((line) => line.slice(0, -" commit".length)),
+				);
+				const deadline = Date.now() + 10_000;
+				for (const candidate of branches) {
+					if (Date.now() > deadline)
+						throw new Error("local ancestry check timed out");
+					if (
+						!commits.has(candidate.tip) ||
+						!gitSucceeds(root, ["check-ref-format", candidate.ref])
+					)
+						continue;
+					if (
+						gitSucceeds(
+							root,
+							[
+								"--no-lazy-fetch",
+								"merge-base",
+								"--is-ancestor",
+								head,
+								candidate.tip,
+							],
+							localOnly,
+						)
+					) {
+						selected = candidate;
+						break;
+					}
+				}
+			}
+		} catch {
+			selected = undefined;
+			branchEnumerationFailed = true;
+		}
+	}
+	let prProof: PrHeadProof | undefined;
+	if (!selected || requestedPr !== undefined) {
+		selected = undefined;
+		try {
+			prProof = verifyPrHead({
+				cwd: root,
+				env: input.githubEnv,
+				baseBranch: input.baseBranch,
+				baseSha: base,
+				headSha: head,
+				prNumber: requestedPr,
+			});
+		} catch (cause) {
+			const detail =
+				cause instanceof PrHeadVerificationError
+					? cause.message
+					: "could not verify a pull request";
+			if (noLazyFetchUnsupported)
+				throw new AttestError(
+					"cannot verify an ancestor without Git 2.45 or newer; upgrade Git, publish HEAD as an exact target-branch tip, or specify an open PR with --pr=<number>",
+				);
+			if (branchEnumerationFailed)
+				throw new AttestError(
+					`could not list the target branches and could not verify a pull request: ${detail}; retry or specify --pr=<number>`,
+				);
+			throw new AttestError(
+				`the tested head is not verifiably on a branch of ${remote} or an open pull request: ${detail}; push to ${remote}, fetch its advanced branch, or specify --pr=<number>`,
+			);
+		}
+	}
+	const selectedBranch = selected?.ref;
+	const tip = selected?.tip ?? head;
+	let published: PublishedSignoffHead;
+	if (prProof) published = { kind: "pr", proof: prProof };
+	else if (selectedBranch)
+		published = {
+			kind: "branch",
+			branch: selectedBranch.slice("refs/heads/".length),
+			tip,
+		};
+	else throw new AttestError("could not verify a published head");
+
+	const scratch = signoffScratch(root, input.env);
+	try {
+		const format = git(root, ["rev-parse", "--show-object-format"]);
+		if (format !== "sha1" && format !== "sha256")
+			throw new Error("unsupported Git object format");
+		const objects = git(root, [
+			"rev-parse",
+			"--path-format=absolute",
+			"--git-path",
+			"objects",
+		]);
+		if (
+			!isAbsolute(objects) ||
+			/[\r\n]/u.test(objects) ||
+			objects.startsWith('"')
+		)
+			throw new Error("unsupported Git object directory");
+		const scratchGit = { env: input.githubEnv };
+		git(
+			scratch,
+			["init", "--bare", "--quiet", `--object-format=${format}`],
+			scratchGit,
+		);
+		git(
+			scratch,
+			["config", "--local", "advice.graftFileDeprecated", "false"],
+			scratchGit,
+		);
+		writeFileSync(
+			join(scratch, "objects", "info", "alternates"),
+			`${objects}\n`,
+		);
+		for (const name of ["user.name", "signoff.url"]) {
+			const value = gitConfigValue(root, name);
+			if (value !== undefined)
+				git(scratch, ["config", "--local", name, value], scratchGit);
+		}
+		git(
+			scratch,
+			["update-ref", "refs/remotes/hobo-signoff/verified", tip],
+			scratchGit,
+		);
+		return {
+			cwd: scratch,
+			published,
+			verify: () => {
+				try {
+					if (selectedBranch) {
+						const answer = git(
+							root,
+							["ls-remote", "--exit-code", "--heads", remote, selectedBranch],
+							{ env: noninteractive, timeoutMs: 10_000 },
+						);
+						if (answer !== `${tip}\t${selectedBranch}`)
+							throw new Error("branch changed");
+					}
+					const currentBase = git(
+						root,
+						["ls-remote", "--exit-code", "--heads", remote, baseRef],
+						{ env: noninteractive, timeoutMs: 10_000 },
+					);
+					if (currentBase !== `${base}\t${baseRef}`)
+						throw new Error("base changed");
+					if (
+						git(root, ["rev-parse", "HEAD^{commit}"]) !== head ||
+						git(root, ["status", "--porcelain"])
+					)
+						throw new Error("checkout changed");
+				} catch {
+					throw new AttestError(
+						"the pushed head, base or checkout changed before signoff; run the checks again",
+					);
+				}
+			},
+			dispose: (publicationAttempted) => {
+				try {
+					rmSync(scratch, { recursive: true, force: true });
+				} catch {
+					throw new AttestError(
+						`could not remove temporary Git view ${scratch}; ${publicationAttempted ? "some statuses may already have been posted" : "signoff was not started"}`,
+					);
+				}
+			},
+		};
+	} catch {
+		try {
+			rmSync(scratch, { recursive: true, force: true });
+		} catch {
+			throw new AttestError(
+				`could not remove temporary Git view ${scratch}; signoff was not started`,
+			);
+		}
+		throw new AttestError("could not prepare an isolated Git view for signoff");
+	}
+}
+
+function finishSignoffWitness(
+	witness: { dispose: (publicationAttempted: boolean) => void },
+	failure: AttestError | undefined,
+	publicationAttempted: boolean,
+): void {
+	try {
+		witness.dispose(publicationAttempted);
+	} catch (cause) {
+		const cleanup =
+			cause instanceof AttestError
+				? cause.message
+				: "could not remove the temporary Git view; inspect it before retrying";
+		throw new AttestError(failure ? `${failure.message}; ${cleanup}` : cleanup);
+	}
+	if (failure) throw failure;
+}
+
+function assertSignoffCheckout(root: string, head: string): void {
+	try {
+		assertUnmodifiedGitGraph(root);
+		if (
+			git(root, ["rev-parse", "HEAD^{commit}"]) !== head ||
+			git(root, ["status", "--porcelain"])
+		)
+			throw new Error("checkout changed");
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		throw new AttestError(
+			"the checkout changed before signoff; run the checks again",
+		);
+	}
+}
+
+/** Publish only the jobs this machine's signed record covers for one event. */
+export async function signoffLocalRun(input: {
+	cwd: string;
+	baseRef: string;
+	expectedBase?: string | undefined;
+	prNumber?: number | undefined;
+	mergeGroupBranch?: string | undefined;
+	expectedPublished?: PublishedSignoffHead | undefined;
+	event: AttestationEvent;
+	envelopeText: string;
+	privateKey: KeyObject;
+	nowMs: number;
+	env?: NodeJS.ProcessEnv;
+}): Promise<readonly string[]> {
+	const root = git(input.cwd, ["rev-parse", "--show-toplevel"]);
+	assertUnmodifiedGitGraph(root);
+	if (git(root, ["status", "--porcelain"]))
+		throw new AttestError("the working tree is not clean; signoff refused");
+
+	// A commit status is attached to HEAD, so require the actual remote base
+	// still to be the one tested. ls-remote reads it without moving local refs.
+	const remoteBranch = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/u.exec(
+		input.baseRef,
+	);
+	if (!remoteBranch)
+		throw new AttestError(
+			"--base must name a remote branch, such as origin/main",
+		);
+	const [, remote = "", branch = ""] = remoteBranch;
+	const ref = `refs/heads/${branch}`;
+	if (
+		!gitSucceeds(root, ["remote", "get-url", remote]) ||
+		!gitSucceeds(root, ["check-ref-format", ref])
+	)
+		throw new AttestError(
+			`--base=${input.baseRef} is not a valid remote branch`,
+		);
+	let remoteTip: string;
+	try {
+		const answer = git(
+			root,
+			["ls-remote", "--exit-code", "--heads", remote, ref],
+			{
+				env: {
+					GIT_TERMINAL_PROMPT: "0",
+					GIT_ASKPASS: "",
+					SSH_ASKPASS_REQUIRE: "never",
+					GCM_INTERACTIVE: "Never",
+				},
+				timeoutMs: 10_000,
+			},
+		);
+		const [sha, advertisedRef, extra] = answer.split(/\s+/u);
+		if (!sha || advertisedRef !== ref || extra !== undefined)
+			throw new Error("invalid remote branch advertisement");
+		remoteTip = sha;
+	} catch {
+		throw new AttestError(
+			`could not read ${input.baseRef} from its remote; signoff refused`,
+		);
+	}
+	const base = git(root, ["rev-parse", `${input.baseRef}^{commit}`]);
+	const head = git(root, ["rev-parse", "HEAD^{commit}"]);
+	if (input.expectedBase !== undefined && input.expectedBase !== base)
+		throw new AttestError("the fleet-observed base changed; signoff refused");
+	let envelope: AttestationEnvelope;
+	try {
+		envelope = parseEnvelope(input.envelopeText);
+	} catch {
+		throw new AttestError("the local record is malformed; signoff refused");
+	}
+	if (remoteTip !== base || envelope.statement.base !== base)
+		throw new AttestError(
+			`the base ${input.baseRef} changed since this run; update it and run the checks again`,
+		);
+	if (envelope.statement.head !== head)
+		throw new AttestError(
+			"the record is for a different HEAD; run the checks again",
+		);
+	if (
+		input.mergeGroupBranch !== undefined &&
+		(input.event !== "merge_group" || envelope.statement.testedCommit !== head)
+	)
+		throw new AttestError(
+			"the record does not prove execution on the exact merge-group commit; run the checks again",
+		);
+
+	// This is a local, GitHub-credential-backed signoff, not a workflow's
+	// base-branch trust decision. Verify with the key belonging to this machine.
+	const localKey = trustEntryFor(input.privateKey, {
+		nowMs: input.nowMs,
+		days: 1,
+		note: "local signoff",
+	});
+	const verdict = verifyAttestation({
+		envelopeText: input.envelopeText,
+		attestorsText: JSON.stringify([localKey]),
 		tree: git(root, ["rev-parse", "HEAD^{tree}"]),
 		baseTree: git(root, ["rev-parse", `${input.baseRef}^{tree}`]),
 		event: input.event,
 		nowMs: input.nowMs,
-		head: git(root, ["rev-parse", "HEAD"]),
-		base: git(root, ["rev-parse", `${input.baseRef}^{commit}`]),
+		head,
+		base,
 	});
+	if (!verdict.attested)
+		throw new AttestError(`signoff refused: ${verdict.reason}`);
+	for (const id of verdict.jobs) {
+		const result = envelope.statement.results.find((entry) => entry.id === id);
+		if (!result?.eventChecks?.[input.event])
+			throw new AttestError(
+				`the record has no per-event command evidence for ${id}; run the checks again`,
+			);
+		if (result.executionMode !== "each-step-v1")
+			throw new AttestError(
+				`the record does not prove each step ran individually for ${id}; run the checks again`,
+			);
+	}
+	// Partial runs may omit the PR gate that normally runs the drift test.
+	// Independently compare every job we are about to sign with its workflow.
+	try {
+		const { workflowJob } = await import("../lib/workflow-job-steps.mts");
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
+		await assertSignoffPolicy({ root, base, head, plan, jobs: verdict.jobs });
+		for (const id of verdict.jobs) {
+			const job = plan.find((entry) => entry.id === id);
+			if (!job) throw new AttestError(`no local job description for ${id}`);
+			const { id: _id, workflow, uncoveredWhen: _when, ...described } = job;
+			const actual = workflowJob(
+				readFileSync(join(root, workflow), "utf8"),
+				id,
+			);
+			if (
+				!isDeepStrictEqual(
+					{
+						...described,
+						steps: job.steps.map(
+							({ local: _local, reason: _reason, ...step }) => step,
+						),
+					},
+					actual,
+				)
+			)
+				throw new AttestError(
+					`workflow job ${id} differs from its local description`,
+				);
+		}
+	} catch (cause) {
+		if (cause instanceof AttestError) throw cause;
+		throw new AttestError(
+			"could not verify local job descriptions against the workflows",
+		);
+	}
+	const contexts = verdict.jobs.map(
+		(job) => `hobo-ci/local/${input.event}/${job}`,
+	);
+	const githubEnv = signoffEnvironment({
+		root,
+		remote,
+		branch,
+		base,
+		env: input.env ?? process.env,
+	});
+	const mergeGroup =
+		input.mergeGroupBranch === undefined
+			? undefined
+			: assertCurrentMergeGroup({
+					root,
+					remote,
+					baseBranch: branch,
+					base,
+					head,
+					branch: input.mergeGroupBranch,
+					prNumber: input.prNumber,
+					githubEnv,
+				});
+	const published = mergeGroup
+		? { kind: "branch" as const, branch: mergeGroup.branch, tip: head }
+		: input.expectedPublished;
+	if (
+		mergeGroup &&
+		input.expectedPublished &&
+		!isDeepStrictEqual(published, input.expectedPublished)
+	)
+		throw new AttestError(
+			"the merge-group proof changed since fleet preflight; run the checks again",
+		);
+	const witness = targetSignoffWitness({
+		root,
+		remote,
+		head,
+		base,
+		baseRef: ref,
+		baseBranch: branch,
+		env: input.env ?? process.env,
+		githubEnv,
+		prNumber: mergeGroup ? undefined : input.prNumber,
+		expectedPublished: published,
+	});
+	let failure: AttestError | undefined;
+	let publicationAttempted = false;
+	try {
+		if (
+			input.expectedPublished &&
+			!isDeepStrictEqual(witness.published, input.expectedPublished)
+		)
+			throw new AttestError(
+				"the published head proof changed since fleet preflight; run the checks again",
+			);
+		witness.verify();
+		const environment = signoffEnvironment({
+			root,
+			remote,
+			branch,
+			base,
+			env: input.env ?? process.env,
+			published: witness.published,
+		});
+		assertSignoffCheckout(root, head);
+		if (mergeGroup)
+			assertCurrentMergeGroup({
+				root,
+				remote,
+				baseBranch: branch,
+				base,
+				head,
+				branch: mergeGroup.branch,
+				prNumber: mergeGroup.pr,
+				githubEnv: environment,
+			});
+		publicationAttempted = true;
+		execFileSync("gh", ["signoff", "create", "--commit", head, ...contexts], {
+			cwd: witness.cwd,
+			env: environment,
+			stdio: "inherit",
+		});
+		if (mergeGroup) {
+			try {
+				witness.verify();
+				signoffEnvironment({
+					root,
+					remote,
+					branch,
+					base,
+					env: input.env ?? process.env,
+					published: witness.published,
+				});
+				assertCurrentMergeGroup({
+					root,
+					remote,
+					baseBranch: branch,
+					base,
+					head,
+					branch: mergeGroup.branch,
+					prNumber: mergeGroup.pr,
+					githubEnv: environment,
+				});
+			} catch {
+				throw new AttestError(
+					"the merge group changed during publication; some statuses may already have been posted",
+				);
+			}
+		}
+	} catch (cause) {
+		failure =
+			cause instanceof AttestError
+				? cause
+				: new AttestError(
+						"gh-signoff failed; check gh authentication, extension installation, and that HEAD is pushed. Some statuses may already have been posted",
+					);
+	}
+	finishSignoffWitness(witness, failure, publicationAttempted);
+	return contexts;
 }
 
 function option(args: readonly string[], name: string): string | undefined {
@@ -1237,18 +2520,64 @@ function options(args: readonly string[], name: string): string[] {
 		.map((arg) => arg.slice(prefix.length));
 }
 
+function pullRequestOption(args: readonly string[]): number | undefined {
+	const values = args.filter(
+		(arg) => arg === "--pr" || arg.startsWith("--pr="),
+	);
+	if (values.length === 0) return undefined;
+	const match =
+		values.length === 1 ? /^--pr=([1-9][0-9]*)$/u.exec(values[0] ?? "") : null;
+	const number = Number(match?.[1]);
+	if (!match || !Number.isSafeInteger(number))
+		throw new AttestError(
+			"--pr must be specified once as a positive pull request number, for example --pr=123",
+		);
+	return number;
+}
+
+function mergeGroupOption(args: readonly string[]): string | undefined {
+	const values = args.filter(
+		(arg) =>
+			arg === "--merge-group-ref" || arg.startsWith("--merge-group-ref="),
+	);
+	if (values.length === 0) return undefined;
+	if (
+		values.length !== 1 ||
+		!values[0]?.startsWith("--merge-group-ref=") ||
+		values[0] === "--merge-group-ref="
+	)
+		throw new AttestError(
+			"--merge-group-ref must name one current merge-queue branch",
+		);
+	return values[0].slice("--merge-group-ref=".length);
+}
+
 const USAGE = `usage: pnpm ci:attest <command>
 
   init-key [--days=${DEFAULT_TRUST_DAYS}] [--note=TEXT]
       Create this machine's signing key if it has none, and print the public
       entry to add to ${ATTESTORS_PATH} on main.
-  run [--base=origin/main] [--events=pull_request,merge_group] [--skip-job=ID]... [--no-fetch] [--fresh]
+  run [--base=origin/main] [--events=pull_request,merge_group] [--merge-group-ref=BRANCH] [--skip-job=ID]... [--no-fetch] [--fresh]
       Run the covered CI jobs on HEAD and sign the result. --fresh runs every
       Turbo task again instead of replaying a cached result.
   publish [--remote=origin] [--file=PATH]
       Push the signed attestation to the ${ATTESTATION_BRANCH} branch.
   verify [--base=origin/main] [--event=pull_request] [--file=PATH]
       Check an attestation the way the workflows do.
+  signoff [--base=origin/main] [--event=pull_request] [--merge-group-ref=BRANCH] [--file=PATH] [--pr=NUMBER]
+      Post gh-signoff statuses for this machine's covered local jobs on HEAD.
+  fleet [--local-signoff] [--github-unavailable] [--policy-current]
+        [--runner-unavailable=fleet|local]... [--provider-unavailable=ID]...
+        [--base=origin/main] [--pr=NUMBER] [--merge-group-ref=BRANCH] [--fresh]
+      Select from fleet availability; opt in to local signoff as a fallback.
+      --policy-current asserts, after comparison, that live offers, desired policy and
+      daemon routing match the base.
+      --github-unavailable asserts an independently observed hosted outage.
+      --runner-unavailable asserts an independently observed outage of one enabled tier.
+      --provider-unavailable asserts an independently observed outage of one exact enabled
+      provider, integration or external-pool ID from the base. Repeat for each outage.
+      A healthy pickup or pin still wins. Invalid syntax and duplicate assertions are
+      rejected before routing, including when a pin is configured.
 
 The key is read from HOBO_CI_ATTESTOR_KEY, or ${DEFAULT_KEY_PATH}.`;
 
@@ -1266,17 +2595,23 @@ function attestationFile(root: string, args: readonly string[]): string {
 export async function main(
 	args: readonly string[],
 	env: NodeJS.ProcessEnv = process.env,
+	expectedPublished?: PublishedSignoffHead,
 ): Promise<number> {
 	// `pnpm ci:attest -- run` hands the separator through.
 	const [command, ...rest] = args[0] === "--" ? args.slice(1) : args;
 	const cwd = process.cwd();
 	if (command === "init-key") {
-		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
+		const path = keyPathFrom(env);
+		const root = gitSucceeds(cwd, ["rev-parse", "--show-toplevel"])
+			? git(cwd, ["rev-parse", "--show-toplevel"])
+			: cwd;
+		assertKeyApart(path, root, env);
 		const days = Number(option(rest, "days") ?? DEFAULT_TRUST_DAYS);
 		if (!Number.isFinite(days) || days <= 0 || days > MAX_TRUST_DAYS)
 			throw new AttestError(
 				`--days must be a positive number of at most ${MAX_TRUST_DAYS}`,
 			);
+		const { privateKey } = ensureAttestorKey(path);
 		console.log(
 			JSON.stringify(
 				trustEntryFor(privateKey, {
@@ -1292,6 +2627,8 @@ export async function main(
 	}
 	if (command === "run") {
 		const baseRef = option(rest, "base") ?? "origin/main";
+		const mergeGroupBranch = mergeGroupOption(rest);
+		const mergeGroupPr = mergeGroupBranch ? pullRequestOption(rest) : undefined;
 		const remoteBranch = /^([^/]+)\/(.+)$/u.exec(baseRef);
 		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
 		if (
@@ -1313,21 +2650,64 @@ export async function main(
 					`ci:attest: could not fetch ${baseRef}; using it as it is here`,
 				);
 		}
-		const events = (option(rest, "events") ?? ATTESTATION_EVENTS.join(","))
+		const events = (
+			option(rest, "events") ??
+			(mergeGroupBranch ? "merge_group" : ATTESTATION_EVENTS.join(","))
+		)
 			.split(",")
 			.map((name) => {
 				const event = ATTESTATION_EVENTS.find((known) => known === name.trim());
 				if (!event) throw new AttestError(`unknown event: ${name}`);
 				return event;
 			});
-		const plan = loadPlan();
+		if (
+			mergeGroupBranch &&
+			(events.length !== 1 || events[0] !== "merge_group")
+		)
+			throw new AttestError(
+				"a merge-group checkout can only verify the merge_group event",
+			);
+		const target = mergeGroupBranch
+			? resolveMergeGroupTarget({ cwd: root, baseRef })
+			: resolveRunTarget({ cwd: root, baseRef });
+		const expectedBase = option(rest, "expected-base");
+		if (expectedBase !== undefined && expectedBase !== target.base)
+			throw new AttestError(
+				"the fleet-observed base changed; local signoff refused",
+			);
+		let mergeGroupRemote: string | undefined;
+		if (mergeGroupBranch) {
+			if (!remoteBranch?.[1] || !remoteBranch[2])
+				throw new AttestError(
+					"--base must name a remote branch, such as origin/main",
+				);
+			mergeGroupRemote = remoteBranch[1];
+			const githubEnv = signoffEnvironment({
+				root,
+				remote: mergeGroupRemote,
+				branch: remoteBranch[2],
+				base: target.base,
+				env,
+			});
+			assertCurrentMergeGroup({
+				root,
+				remote: mergeGroupRemote,
+				baseBranch: remoteBranch[2],
+				base: target.base,
+				head: target.head,
+				branch: mergeGroupBranch,
+				prNumber: mergeGroupPr,
+				githubEnv,
+			});
+		}
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
 		const skipJobs = options(rest, "skip-job");
 		for (const id of skipJobs)
 			if (!plan.some((job) => job.id === id))
 				throw new AttestError(`--skip-job=${id} is not a covered job`);
-		const { privateKey } = ensureAttestorKey(keyPathFrom(env));
-		assertKeyApart(keyPathFrom(env), root, env);
-		const target = resolveRunTarget({ cwd: root, baseRef });
+		const path = keyPathFrom(env);
+		assertKeyApart(path, root, env);
+		const { privateKey } = ensureAttestorKey(path);
 		const began = Date.now();
 		try {
 			const outcome = await runAttestedJobs({
@@ -1339,6 +2719,30 @@ export async function main(
 				fresh: rest.includes("--fresh"),
 				env,
 			});
+			if (mergeGroupBranch && mergeGroupRemote && remoteBranch?.[2]) {
+				try {
+					const githubEnv = signoffEnvironment({
+						root,
+						remote: mergeGroupRemote,
+						branch: remoteBranch[2],
+						base: target.base,
+						env,
+					});
+					assertCurrentMergeGroup({
+						root,
+						remote: mergeGroupRemote,
+						baseBranch: remoteBranch[2],
+						base: target.base,
+						head: target.head,
+						branch: mergeGroupBranch,
+						prNumber: mergeGroupPr,
+						githubEnv,
+					});
+				} catch (cause) {
+					rmSync(outcome.file, { force: true });
+					throw cause;
+				}
+			}
 			const { statement } = outcome.envelope;
 			console.log(
 				`\nci:attest: signed ${outcome.file}\n  tree ${statement.tree}\n  jobs ${statement.jobs.join(", ")}\n  events ${statement.events.join(", ")}\n  took ${Math.round((Date.now() - began) / 1000)} s`,
@@ -1350,7 +2754,9 @@ export async function main(
 					`  the commands left untracked files; remove them before the next run:\n${outcome.leftBehind.map((line) => `    ${line}`).join("\n")}`,
 				);
 			console.log(
-				"Publish it before you push the branch: pnpm ci:attest publish",
+				mergeGroupBranch
+					? "For local GitHub statuses: run pnpm ci:attest signoff with the same --merge-group-ref"
+					: "For workflow reuse: pnpm ci:attest publish before pushing. For local GitHub statuses: push, then pnpm ci:attest signoff",
 			);
 			return 0;
 		} catch (cause) {
@@ -1397,6 +2803,287 @@ export async function main(
 				: `not attested: ${verdict.reason}`,
 		);
 		return verdict.attested ? 0 : 1;
+	}
+	if (command === "signoff") {
+		const prNumber = pullRequestOption(rest);
+		const mergeGroupBranch = mergeGroupOption(rest);
+		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
+		const file = attestationFile(root, rest);
+		if (!existsSync(file))
+			throw new AttestError(
+				`no local record at ${file}; run: pnpm ci:attest run`,
+			);
+		const name =
+			option(rest, "event") ??
+			(mergeGroupBranch ? "merge_group" : "pull_request");
+		const event = ATTESTATION_EVENTS.find((known) => known === name);
+		if (!event) throw new AttestError(`unknown event: ${name}`);
+		const path = keyPathFrom(env);
+		if (!existsSync(path))
+			throw new AttestError(
+				"this machine's attestor key is missing; run the checks again",
+			);
+		assertKeyApart(path, root, env);
+		const { privateKey } = ensureAttestorKey(path);
+		const contexts = await signoffLocalRun({
+			cwd: root,
+			baseRef: option(rest, "base") ?? "origin/main",
+			expectedBase: option(rest, "expected-base"),
+			prNumber,
+			mergeGroupBranch,
+			expectedPublished,
+			event,
+			envelopeText: readFileSync(file, "utf8"),
+			privateKey,
+			nowMs: Date.now(),
+			env,
+		});
+		console.log(
+			`ci:attest: posted ${contexts.length} local signoff status(es)`,
+		);
+		return 0;
+	}
+	if (command === "fleet") {
+		const prNumber = pullRequestOption(rest);
+		const mergeGroupBranch = mergeGroupOption(rest);
+		for (const arg of rest)
+			if (
+				!arg.startsWith("--base=") &&
+				!arg.startsWith("--pr=") &&
+				!arg.startsWith("--merge-group-ref=") &&
+				!arg.startsWith("--provider-unavailable=") &&
+				!arg.startsWith("--runner-unavailable=") &&
+				arg !== "--local-signoff" &&
+				arg !== "--github-unavailable" &&
+				arg !== "--policy-current" &&
+				arg !== "--fresh"
+			)
+				throw new AttestError(`unknown fleet option: ${arg}`);
+		const providerUnavailable = options(rest, "provider-unavailable");
+		if (new Set(providerUnavailable).size !== providerUnavailable.length)
+			throw new AttestError("--provider-unavailable IDs must not be repeated");
+		if (providerUnavailable.length > 4096)
+			throw new AttestError("--provider-unavailable supports at most 4096 IDs");
+		if (
+			providerUnavailable.some(
+				(id) =>
+					id.length > 240 ||
+					!/^[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)+$/u.test(id),
+			)
+		)
+			throw new AttestError(
+				"--provider-unavailable requires an enabled inventory ID",
+			);
+		const runnerUnavailable = options(rest, "runner-unavailable");
+		if (new Set(runnerUnavailable).size !== runnerUnavailable.length)
+			throw new AttestError("--runner-unavailable tiers must not be repeated");
+		if (runnerUnavailable.some((tier) => tier !== "fleet" && tier !== "local"))
+			throw new AttestError("--runner-unavailable requires fleet or local");
+		const root = git(cwd, ["rev-parse", "--show-toplevel"]);
+		const { executeFleetVerification, observeFleetVerification } = await import(
+			"./fleet-signoff.mts"
+		);
+		const observation = {
+			cwd: root,
+			env,
+			localSignoffEnabled: rest.includes("--local-signoff"),
+			githubUnavailable: rest.includes("--github-unavailable"),
+			baseRef: option(rest, "base") ?? "origin/main",
+			policyCurrent: rest.includes("--policy-current"),
+			providerUnavailable,
+			runnerUnavailable,
+		};
+		const choice: Awaited<ReturnType<typeof observeFleetVerification>> & {
+			baseSha?: string;
+		} = await observeFleetVerification(observation);
+		if (choice.kind === "invalid-provider-assertion")
+			throw new AttestError(
+				`--provider-unavailable=${choice.provider} does not name one enabled inventory member in the trusted base`,
+			);
+		if (choice.kind === "invalid-runner-assertion")
+			throw new AttestError(
+				`--runner-unavailable=${choice.runner} does not name an enabled runner tier in the trusted base`,
+			);
+		if (choice.kind === "runner") {
+			console.log(
+				`ci:attest fleet: ${choice.tier} runner ${choice.runner}; the workflow routes its jobs normally`,
+			);
+			return 0;
+		}
+		if (choice.kind === "wait") {
+			console.log(
+				`ci:attest fleet: waiting (${choice.reason}); no local signoff was started`,
+			);
+			return 1;
+		}
+		const expectedBase = choice.baseSha;
+		if (!expectedBase || !isObjectId(expectedBase))
+			throw new AttestError(
+				"the fleet observation has no trusted base; local signoff refused",
+			);
+		if (!gitSucceeds(root, ["config", "--get", "user.name"]))
+			throw new AttestError("set git user.name before starting local signoff");
+		const ghEnvironment = { ...env };
+		for (const name of GIT_LOCATION_VARIABLES) delete ghEnvironment[name];
+		try {
+			const help = execFileSync("gh", ["signoff", "--help"], {
+				cwd: root,
+				env: ghEnvironment,
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "pipe"],
+				timeout: 5000,
+			});
+			if (!help.includes("--commit")) throw new Error("missing --commit");
+		} catch {
+			throw new AttestError(
+				"install or upgrade basecamp/gh-signoff before starting local checks",
+			);
+		}
+		console.log(
+			"ci:attest fleet: no runner tier is available in the current observations; preparing the local signoff fallback",
+		);
+		const base = option(rest, "base") ?? "origin/main";
+		// Check signoff policy before running potentially expensive local jobs.
+		// Ordinary `run` and workflow-reuse attestations keep their existing rules.
+		const target = mergeGroupBranch
+			? resolveMergeGroupTarget({ cwd: root, baseRef: base })
+			: resolveRunTarget({ cwd: root, baseRef: base });
+		if (target.base !== expectedBase)
+			throw new AttestError(
+				"the fleet-observed base changed; local signoff refused",
+			);
+		const plan = loadPlan(join(root, "scripts/ci/attested-jobs.json"));
+		const omitted: string[] = [];
+		for (const job of plan) {
+			try {
+				await assertSignoffPolicy({
+					root,
+					base: target.base,
+					head: target.head,
+					plan,
+					jobs: [job.id],
+				});
+			} catch (cause) {
+				if (!(cause instanceof AttestError)) throw cause;
+				omitted.push(job.id);
+				console.log(`ci:attest fleet: ${job.id} not signed: ${cause.message}`);
+			}
+		}
+		if (omitted.length === plan.length)
+			throw new AttestError(
+				"no local job has a trusted signoff policy at the base",
+			);
+		const parsedBase = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/u.exec(base);
+		if (!parsedBase?.[1] || !parsedBase[2])
+			throw new AttestError(
+				"--base must name a remote branch, such as origin/main",
+			);
+		const remote = parsedBase[1];
+		const branch = parsedBase[2];
+		const baseRef = `refs/heads/${branch}`;
+		const githubEnv = signoffEnvironment({
+			root,
+			remote,
+			branch,
+			base: target.base,
+			env,
+		});
+		if (githubAppStatusIsReadOnly({ cwd: root, env: githubEnv }))
+			throw new AttestError(
+				"the current GitHub App installation has read-only commit statuses; use an identity with commit-status write access before starting local signoff",
+			);
+		const mergeGroup = mergeGroupBranch
+			? assertCurrentMergeGroup({
+					root,
+					remote,
+					baseBranch: branch,
+					base: target.base,
+					head: target.head,
+					branch: mergeGroupBranch,
+					prNumber,
+					githubEnv,
+				})
+			: undefined;
+		const witness = targetSignoffWitness({
+			root,
+			remote,
+			head: target.head,
+			base: target.base,
+			baseRef,
+			baseBranch: branch,
+			env,
+			githubEnv,
+			prNumber: mergeGroup ? undefined : prNumber,
+			expectedPublished: mergeGroup
+				? { kind: "branch", branch: mergeGroup.branch, tip: target.head }
+				: undefined,
+		});
+		let preflightFailure: AttestError | undefined;
+		try {
+			witness.verify();
+			signoffEnvironment({
+				root,
+				remote,
+				branch,
+				base: target.base,
+				env,
+				published: witness.published,
+			});
+			assertSignoffCheckout(root, target.head);
+		} catch (cause) {
+			preflightFailure =
+				cause instanceof AttestError
+					? cause
+					: new AttestError(
+							"could not verify the target before local checks; signoff refused",
+						);
+		}
+		finishSignoffWitness(witness, preflightFailure, false);
+		const selectedPr =
+			mergeGroup?.pr ??
+			prNumber ??
+			(witness.published.kind === "pr"
+				? witness.published.proof.prNumber
+				: undefined);
+		console.log("ci:attest fleet: running the local signoff fallback");
+		return executeFleetVerification({
+			choice,
+			runLocal: () =>
+				main(
+					[
+						"run",
+						`--base=${base}`,
+						`--expected-base=${expectedBase}`,
+						`--events=${mergeGroup ? "merge_group" : "pull_request"}`,
+						...(mergeGroup
+							? [
+									`--merge-group-ref=${mergeGroup.branch}`,
+									`--pr=${mergeGroup.pr}`,
+								]
+							: []),
+						...omitted.map((id) => `--skip-job=${id}`),
+						...(rest.includes("--fresh") ? ["--fresh"] : []),
+					],
+					env,
+				),
+			signoffLocal: () =>
+				main(
+					[
+						"signoff",
+						`--base=${base}`,
+						`--expected-base=${expectedBase}`,
+						...(mergeGroup
+							? [
+									"--event=merge_group",
+									`--merge-group-ref=${mergeGroup.branch}`,
+								]
+							: []),
+						...(selectedPr === undefined ? [] : [`--pr=${selectedPr}`]),
+					],
+					env,
+					witness.published,
+				),
+		});
 	}
 	console.error(USAGE);
 	return command === undefined || command === "--help" ? 0 : 2;

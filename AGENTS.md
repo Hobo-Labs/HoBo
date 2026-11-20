@@ -9,11 +9,27 @@ over conflicting repository workflow guidance.
   directives consumed by compilers or tools.
 - Complete unfinished work when it is found. Do not hide it by deleting its
   marker or by moving it into a backlog.
+- Before ending an action request, compare the current user goal with the
+  actual result and evidence. Continue any known, safe, authorized action that
+  advances essential unfinished work; a partial merge, a failed approach,
+  passing subtask, or report of next steps is not completion. Consider available
+  alternatives and independent work before reporting a blocker. Respect the
+  latest explicit stop, pause, cancellation, scope change, and real permission
+  or safety boundary; do not invent work or repeat futile attempts.
 - Do not create or retain planning documents, roadmaps, or design documents.
   Implement their outstanding work, then remove them. Keep user and operator
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
+- When work needs an MCP server, check the active host's tools. If the server
+  is absent, inspect its registration and try supported discovery or reload;
+  where safe, also initialize and list tools through a separate client. Use
+  that client for permitted non-sensitive work when practical. Report server
+  availability, host attachment, and authenticated sessions as separate
+  observations, and do not assert a cause without evidence. Follow the
+  relevant setup skill before any private owner flow.
+- HoBo manages deployment of its CI relay. Its Vercel project is intentionally
+  not Git-linked; do not reconnect it or treat the missing link as a defect.
 
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
 and Copilot. Standalone documentation comments follow the same rule. Run
@@ -29,6 +45,7 @@ This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|
 | **sdlc** (repo-local) | skill | Coordinates implementation and review across harnesses under the repository rules above. | `sdlc`, `/sdlc --finish` |
+| **hobo-setup** (repo-local) | skill | Guides HoBo MCP connection and private owner store setup independently of deployment. | automatic for HoBo MCP or owner-store setup |
 | **gh-stack** (repo-local) | skill + CLI ext | Non-interactive rules for official `github/gh-stack` (`gh extension install github/gh-stack`). | `gh stack init\|add\|submit\|sync\|merge` |
 | **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: TDD, systematic debugging, and code-review workflows. Planning and design artifact workflows are prohibited by the repository rules above. No keys. | `requesting-code-review`, `systematic-debugging` |
 | **impeccable** (`pbakaus/impeccable`) | skill (visual work) | Reviews and improves implemented visual surfaces using the source styles and components. The checked-in harness copies follow the repository policy and do not generate planning or design documents. | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
@@ -251,9 +268,11 @@ Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/tec
 
 Use the owning surface's implemented tokens and shared components. For visual
 changes, run `pnpm run design:lint`, the affected package's rendered-surface
-tests, and the applicable visual review. The gate checks contrast in the site
-and connection UI palettes directly from their CSS. Status-page and secret
-capture tests cover their rendered tokens and accessibility behavior.
+tests, and impeccable `critique` / `audit` (and `polish` when they find P0/P1)
+on the changed surface — the same always-on expectation as the `impeccable` row
+in the agent tooling table. The gate checks contrast in the site and connection
+UI palettes directly from their CSS. Status-page and secret-capture tests cover
+their rendered tokens and accessibility behavior.
 
 Do not create design documents or use plugin commands that generate them.
 
@@ -714,13 +733,14 @@ other — `site/src/lib/examples`, `packages/componentize`, and the
 shared run. A red bare-root run is not by itself evidence of a regression;
 reproduce under the owning package before believing it.
 
-The root config excludes three things it cannot execute, each of which runs
-elsewhere: `external/` (vendored third-party source — `external/ts-autocode` is a
-git submodule with its own CI), `dist/` (build output, where every compiled
-`*.test.js` is a staler duplicate of a source test that already runs), and
-Playwright specs (`@playwright/test`, driven from `packages/pixel-village`'s own
-`playwright.config.ts`). Before that exclude existed a bare root run reported
-~40 failures on a clean tree, which is enough noise to hide a real one.
+The root config excludes `external/` (vendored third-party source —
+`external/ts-autocode` is a git submodule with its own CI), `dist/` (build
+output whose compiled tests duplicate source tests), and files under `**/e2e/**`
+or matching `**/*.spec.ts`. The latter patterns keep other runners' suites out
+of root Vitest; they do not show that those suites have run. For example,
+Bombadil browser specs run through their evaluation harness when present. Before
+these exclusions a bare root run reported ~40 failures on a clean tree, enough
+noise to hide a real one.
 
 Tests that require a binary or hardware **fail rather than skip** when it is
 absent — `packages/runtimes/runtime-celld/test/live-*.test.ts` says so in the
