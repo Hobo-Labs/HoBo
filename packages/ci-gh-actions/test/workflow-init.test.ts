@@ -2466,6 +2466,26 @@ ${caller}
 		});
 	});
 
+	it("recognizes a router when a step env carries the runner pick", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          RUNNER: \${{ needs.route.outputs.runner }}
+        run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
 	it("recognizes a router when env is reached through an alias", () => {
 		const source = `jobs:
   route:

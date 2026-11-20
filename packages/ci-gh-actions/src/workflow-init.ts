@@ -836,14 +836,23 @@ function locateRunsOn(
 	);
 }
 
-const ROUTING_FIELD_KEYS = ["env", "if", "container", "services"] as const;
+const ROUTING_FIELD_KEYS = [
+	"env",
+	"if",
+	"container",
+	"services",
+	"with",
+] as const;
+
+const STEP_ROUTING_KEYS = ["env", "if", "runs-on"] as const;
 
 function stepRoutingText(workflow: Workflow, job: YAMLMap): string {
 	const parts: string[] = [];
 	for (const step of stepsOf(workflow, job)) {
-		const runsOn = effectiveValueUnder(workflow, step, "runs-on");
-		if (runsOn !== undefined && isNode(runsOn)) {
-			parts.push(...reachableText(workflow, runsOn));
+		for (const key of STEP_ROUTING_KEYS) {
+			const node = effectiveValueUnder(workflow, step, key);
+			if (node === undefined || !isNode(node)) continue;
+			parts.push(...reachableText(workflow, node));
 		}
 	}
 	return parts.join("\n");
@@ -873,8 +882,9 @@ function indirectRoutingOf(
 				? "strategy"
 				: undefined;
 	if (key === undefined) return "";
-	const node = effectiveWrittenUnder(workflow, job, key);
-	return node === undefined ? "" : reachableText(workflow, node).join("\n");
+	const node = effectiveValueUnder(workflow, job, key);
+	if (node === undefined || !isNode(node)) return "";
+	return reachableText(workflow, node).join("\n");
 }
 
 function inspectJob(
