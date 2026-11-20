@@ -1,4 +1,3 @@
-/** Persistent evidence that independently scheduled work and the queue are running. */
 export interface WorkerHealth {
 	mark(component: "queue" | "schedule" | "repair", ok: boolean): Promise<void>;
 	ready(): Promise<boolean>;
@@ -48,11 +47,9 @@ export function reportWorkerFailure(
 	try {
 		console.error(JSON.stringify(event));
 	} catch {
-		// Telemetry must never change repair, cleanup, or queue behavior.
 	}
 }
 
-/** Preserve the original failure while recording only a fixed operation name. */
 export async function withRepairStage<T>(
 	stage: "repair-database" | "repair-claims",
 	operation: () => Promise<T>,
@@ -65,7 +62,6 @@ export async function withRepairStage<T>(
 	}
 }
 
-/** Wakeups and scheduled repair share idempotent, durable application state. */
 export function createHostedWorker(options: {
 	tick(): Promise<void>;
 	repair(): Promise<{
@@ -100,9 +96,6 @@ export function createHostedWorker(options: {
 				if (result.truncated) throw new Error("delivery history incomplete");
 				if (result.more) await options.continueRepair();
 				if (result.failed) throw new Error("delivery repair failed");
-				// Successful partial progress is neither a completed scan nor a
-				// failure. Preserve the last completed scan's health until the
-				// continuation finishes or that evidence expires.
 				if (!result.skipped && !result.more)
 					await options.health.mark("repair", true);
 			} catch (error) {
@@ -120,7 +113,6 @@ export function createHostedWorker(options: {
 	return { run, ready: () => options.health.ready() };
 }
 
-/** Do not run concurrently: each scanner holds one connection and uses another. */
 export async function runRepairs(
 	repairs: readonly (() => Promise<{
 		more: boolean;

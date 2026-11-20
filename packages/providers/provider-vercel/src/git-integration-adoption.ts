@@ -31,12 +31,6 @@ import {
 	isJsonString,
 } from "./json.js";
 
-/**
- * A Git-integration deployment's state, in Vercel's ready-state vocabulary
- * plus SUPERSEDED (GitHub marked it inactive: a newer deployment of the same
- * environment replaced it) and COMMIT_MISMATCH (it is not the deployment of
- * the commit asked about).
- */
 export type VercelGitDeploymentState =
 	| "QUEUED"
 	| "BUILDING"
@@ -45,7 +39,6 @@ export type VercelGitDeploymentState =
 	| "SUPERSEDED"
 	| "COMMIT_MISMATCH";
 
-/** The states a deployment never leaves: a realizer reports them blocked. */
 export const VERCEL_GIT_BLOCKED_STATES: ReadonlySet<string> = new Set([
 	"ERROR",
 	"CANCELED",
@@ -53,26 +46,18 @@ export const VERCEL_GIT_BLOCKED_STATES: ReadonlySet<string> = new Set([
 	"COMMIT_MISMATCH",
 ]);
 
-/** One record GitHub holds for a Vercel Git-integration deployment. */
 export type VercelGitDeploymentRecord = Readonly<{
-	/** GitHub's deployment record id. */
 	id: string;
-	/** The commit the record was created for. */
 	commit: string;
-	/** `Production – hobo-ci`, as Vercel names it. */
 	environment: string;
 }>;
 
-/** What the latest status of a record says. */
 export type VercelGitDeploymentStatus = Readonly<{
 	readyState: VercelGitDeploymentState;
-	/** The deployment's own URL (`environment_url`), when reported. */
 	url?: string;
-	/** Vercel's inspector URL for the deployment (`target_url`), when reported. */
 	inspectorUrl?: string;
 }>;
 
-/** A deployment adopted for a commit: what a relay Freight records. */
 export type VercelAdoptedDeployment = Readonly<{
 	deploymentId: string;
 	commit: string;
@@ -81,7 +66,6 @@ export type VercelAdoptedDeployment = Readonly<{
 	inspectorUrl?: string;
 }>;
 
-/** What an observe-only realizer reports for an adopted deployment. */
 export type VercelAdoptionVerdict =
 	| Readonly<{ kind: "converged"; readyState: "READY" }>
 	| Readonly<{ kind: "converging"; readyState: VercelGitDeploymentState }>
@@ -98,14 +82,11 @@ function text(value: JsonValue | undefined): string | undefined {
 	return isJsonString(value) && value !== "" ? value : undefined;
 }
 
-/** Whether a GitHub environment name is Vercel's for this project and target. */
 export function isVercelGitEnvironment(
 	environment: string,
 	project: string,
 	target: "production" | "preview",
 ): boolean {
-	// `Production – hobo-ci`: the target, then exactly the project's name
-	// (`hobo-ci-relay` is not `hobo-ci`).
 	const words = environment
 		.toLowerCase()
 		.split(/[\s–—-]+/u)
@@ -117,11 +98,6 @@ export function isVercelGitEnvironment(
 	);
 }
 
-/**
- * The records in a `GET /repos/{owner}/{repo}/deployments?sha=` answer that
- * are Vercel's deployment of `commit` for the project and target, newest
- * first. Anything that is not such a record is left out, never guessed at.
- */
 export function vercelGitDeploymentRecords(
 	listing: JsonValue,
 	want: Readonly<{
@@ -147,11 +123,6 @@ export function vercelGitDeploymentRecords(
 	return records;
 }
 
-/**
- * The state the latest status of a record reports (`GET .../statuses` answers
- * newest first; no status yet is QUEUED), and the URLs of the newest status
- * that reports them (Vercel names the deployment URL before it is READY).
- */
 export function vercelGitDeploymentStatus(
 	statuses: JsonValue,
 ): VercelGitDeploymentStatus {
@@ -194,11 +165,6 @@ export function vercelGitDeploymentStatus(
 	};
 }
 
-/**
- * The observe-only realizer's verdict: converged only when the deployment is
- * READY and is the deployment of the commit the Freight pins; blocked when it
- * never will be; converging otherwise.
- */
 export function vercelAdoptionVerdict(
 	observed: Readonly<{ commit: string; readyState: VercelGitDeploymentState }>,
 	pinned: Readonly<{ commit: string }>,

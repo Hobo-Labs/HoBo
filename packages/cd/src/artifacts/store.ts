@@ -73,7 +73,6 @@ function checkDigest(value: string): Digest {
 	return digest;
 }
 
-/** Wrap a backend with hashing, verify-on-read, journal and telemetry. */
 export function createStoreOver(
 	backend: BlobBackend,
 	d: ArtifactStoreDeps,
@@ -134,7 +133,6 @@ export function createStoreOver(
 					)
 						throw error;
 				}
-				// Content addressing makes the caller's bytes the truth: repair in place.
 				if (!intact)
 					await backend.write(digest, bytes, blobMeta, { replace: true });
 			}

@@ -22,7 +22,6 @@ export const CD_CONTINUITY = Object.freeze({
 	config: continuity({ tier: "rebuildable" }),
 });
 
-/** The journal's parsed policy, for the fleet that runs it. */
 export function cdJournalContinuity(): ContinuityPolicy {
 	const policy = readContinuity([CD_CONTINUITY.journal]);
 	if (policy === null) throw new Error("the CD journal declares no continuity");
