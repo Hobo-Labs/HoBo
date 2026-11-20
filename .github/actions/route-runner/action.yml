@@ -18,6 +18,9 @@ description: >-
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and the remaining jobs follow the normal fleet routing decision.
+  On a merge_group it then looks for the pull request's own green run of this
+  exact tree, base and workflow file (pr-fabric-reuse.mts): the covered
+  merge-group gate jobs are skipped the same way.
   Each decision is one `hobo-ci-route` notice; a fallback (the script did not
   run, or no slip could be used) is a `hobo-ci-route-fallback` warning, so a
   monitor can count both. What this run chooses reaches the script as
@@ -69,6 +72,17 @@ outputs:
       that script out), else `false`. Committed
       runnerRouting.mainGate.reuseMergeQueue `false` turns reuse off.
     value: ${{ steps.reuse.outputs.reuse || 'false' }}
+  pr-fabric-green:
+    description: >-
+      `true` on a merge_group run whose pull request's last green
+      pull_request run of this workflow tested this exact tree, base and
+      workflow file (pr-fabric-reuse.mts, when the workflow checked that
+      script out), else `false`. The covered merge-group gate jobs are then
+      skipped while the cheap lanes still run.
+    value: ${{ steps.pr-fabric-reuse.outputs.pr-fabric-green || 'false' }}
+  pr-fabric-run:
+    description: The id of the reused pull_request run, else empty.
+    value: ${{ steps.pr-fabric-reuse.outputs.pr-fabric-run || '' }}
 runs:
   using: composite
   steps:
@@ -217,6 +231,65 @@ runs:
         # The script writes the output itself; if it dies first, say no here.
         outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
         if ! "${node_bin}" --no-warnings scripts/ci/merge-queue-reuse.mts \
+          || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
+          no_reuse "the reuse check failed"
+        fi
+    # Never fails and never blocks: anything short of a verified green
+    # pull-request run of this exact tree, base and workflow file is
+    # pr-fabric-green=false, and the merge group runs its full gate.
+    - id: pr-fabric-reuse
+      # A second ask later in a run only re-reads the fleet; the reuse answer is the first one.
+      if: inputs.include-own-run != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        HEAD_BRANCH: ${{ github.ref_name }}
+        HEAD_SHA: ${{ github.sha }}
+        BASE_BRANCH: ${{ github.event.merge_group.base_ref || 'main' }}
+      run: |
+        set -uo pipefail
+        no_reuse() {
+          echo "pr-fabric reuse: no: $1"
+          echo "pr-fabric-green=false" >> "$GITHUB_OUTPUT"
+        }
+        if [ "${GITHUB_EVENT_NAME}" != "merge_group" ]; then
+          no_reuse "not a merge-group run"
+          exit 0
+        fi
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          no_reuse "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        # The decision is trust-critical, so the script that makes it comes from
+        # the base the same way the attestation verifier does; the tree it reads
+        # is still the merge-group head this job checked out.
+        script="scripts/ci/pr-fabric-reuse.mts"
+        if [ -n "${GITHUB_ACTION_PATH:-}" ]; then
+          action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)" || {
+            no_reuse "the route action directory cannot be resolved"
+            exit 0
+          }
+          if [ -f "${action_root}/scripts/ci/pr-fabric-reuse.mts" ]; then
+            script="${action_root}/scripts/ci/pr-fabric-reuse.mts"
+          fi
+        fi
+        if [ ! -f "${script}" ]; then
+          no_reuse "this workflow does not reuse pull-request runs"
+          exit 0
+        fi
+        # The script writes the outputs itself; if it dies first, say no here.
+        outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
+        if ! "${node_bin}" --no-warnings "${script}" \
           || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
           no_reuse "the reuse check failed"
         fi
