@@ -9,15 +9,9 @@ describe("Vercel schedule port", () => {
 		expect(schedule?.satisfies({ port: "schedule", features: [] })).toEqual({
 			kind: "full",
 		});
-		expect(() =>
-			provider.realize({
-				name: "hobo-ci-repair",
-				port: "schedule",
-				providerId: provider.id,
-				region: "global",
-				deps: [],
-			} as never),
-		).toThrow(/deployment-component resolver/u);
+		expect(() => provider.realize({ name: "tick", port: "schedule" })).toThrow(
+			/deployment-component resolver/u,
+		);
 		expect(provider.client("schedule", {}).providerService).toBe(
 			"Vercel Schedules",
 		);
