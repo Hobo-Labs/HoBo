@@ -9,6 +9,7 @@ cases = [
     ("omit-halt-guard", "FAIL halt prevents a new start"),
     ("omit-pilot-gate", "FAIL production starts only after mandatory success"),
     ("omit-catchup-gate", "FAIL catch-up production starts only after mandatory success"),
+    ("omit-mandatory-failure-guard", "FAIL mandatory failure prevents a new start"),
 ]
 
 for mutation, expected in cases:

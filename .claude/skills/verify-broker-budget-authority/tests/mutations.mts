@@ -14,6 +14,9 @@ for (const key of ['BROKER_PROOF_MUTATION', 'BROKER_SCOPE_PROOF_MUTATION']) {
 }
 try {
 	const target = path.join(scratch, 'python');
+	if (env.BUDGET_Z3_PYTHONPATH) {
+		env.PYTHONPATH = env.BUDGET_Z3_PYTHONPATH + (env.PYTHONPATH ? path.delimiter + env.PYTHONPATH : '');
+	}
 	let probe = spawnSync('python3', ['-c', 'import z3; print(z3.get_version_string())'], {
 		env,
 		encoding: 'utf8',
@@ -38,9 +41,6 @@ try {
 		if (install.error) throw install.error;
 		if (install.status !== 0) throw new Error(`Z3 installation failed (${install.status ?? 'no exit status'})`);
 		env.PYTHONPATH = target;
-	}
-	if (env.BUDGET_Z3_PYTHONPATH) {
-		env.PYTHONPATH = env.BUDGET_Z3_PYTHONPATH + (env.PYTHONPATH ? path.delimiter + env.PYTHONPATH : '');
 	}
 	for (const name of ['models.py', 'implementation.py', 'proofs.py']) {
 		const script = path.join(skillRoot, 'mutations', name);

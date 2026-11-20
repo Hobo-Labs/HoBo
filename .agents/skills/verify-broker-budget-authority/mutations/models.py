@@ -14,20 +14,20 @@ cases = [
     ("reuse after thrown commit", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = FALSE\n          SeparateCommitFailure = TRUE", "NoUseAfterThrownCommit", None, "BrokerCommitResult.cfg"),
     ("commit failure reported as denial", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = TRUE\n          SeparateCommitFailure = FALSE", "NoCommitFailureAsDenial", None, "BrokerCommitResult.cfg"),
     ("reentrant admission", "BrokerCommit", "GuardReentry = FALSE", "NoOverlappingAdmissions", None, "BrokerCommit.cfg"),
-    ("active entitlement scope", "BrokerEntitlement", "PreserveScope = FALSE\n          CheckReplayScope = TRUE", "ActiveClaimKeepsScope", None, "BrokerEntitlement.cfg"),
-    ("replayed entitlement scope", "BrokerEntitlement", "PreserveScope = TRUE\n          CheckReplayScope = FALSE", "ReplayRejectsMismatch", None, "BrokerEntitlement.cfg"),
+    ("active entitlement scope", "BrokerEntitlement", "PreserveScope = FALSE\n          CheckReplayScope = TRUE\n          FenceUncertain = FALSE\n          AllowTerminalScopeRetarget = FALSE", "ActiveClaimKeepsScope", None, "BrokerEntitlement.cfg"),
+    ("replayed entitlement scope", "BrokerEntitlement", "PreserveScope = TRUE\n          CheckReplayScope = FALSE\n          FenceUncertain = FALSE\n          AllowTerminalScopeRetarget = FALSE", "ReplayRejectsMismatch", None, "BrokerEntitlement.cfg"),
     ("unused evidence", "BrokerBudget", "Requests = {1, 2}", "ReleaseNeedsEvidence", (
-        'phase[r] \\in {"held", "uncertain"} /\\ ~claimed[r] /\\ unusedEvidence[r]',
-        'phase[r] \\in {"held", "uncertain"} /\\ ~claimed[r]'), "BrokerBudget.cfg"),
+        '/\\ ~claimed[r] /\\ unusedEvidence[r] /\\ ~evidence[r]',
+        '/\\ ~claimed[r]'), "BrokerBudget.cfg"),
     ("final evidence", "BrokerBudget", "Requests = {1, 2}", "SettlementNeedsEvidence", (
-        'phase[r] \\in {"held", "uncertain"} /\\ evidence[r]',
-        'phase[r] \\in {"held", "uncertain"}'), "BrokerBudget.cfg"),
+        '/\\ phase[r] \\in {"held", "uncertain"} /\\ claimed[r] /\\ evidence[r]',
+        '/\\ phase[r] \\in {"held", "uncertain"} /\\ claimed[r]'), "BrokerBudget.cfg"),
     ("signed settlement", "BrokerFence", None, "SettledRequiresClaimAndProofs", (
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed /\\ Valid(candidate)',
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed'), "BrokerFence.cfg"),
-    ("claimed release", "BrokerFence", None, "ClaimedFundsRemainHeld", (
-        '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed\n           /\\ phase\' = "released"',
-        '/\\ phase \\in {"held", "uncertain"}\n           /\\ phase\' = "released"'), "BrokerFence.cfg"),
+    ("claimed release", "BrokerFence", None, "NoClaimedRelease", (
+        '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed /\\ unusedWitness',
+        '/\\ phase \\in {"held", "uncertain"}'), "BrokerFence.cfg"),
 ]
 
 for label, name, constants, invariant, mutation, cfg_name in cases:

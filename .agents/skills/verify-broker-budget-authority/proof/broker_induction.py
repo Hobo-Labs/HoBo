@@ -33,11 +33,14 @@ def prove(name, assumptions, conclusion):
     solver = Solver()
     solver.add(*assumptions, Not(conclusion))
     result = solver.check()
-    if result != unsat:
-        print(f"FAIL {name}: {result}")
-        if result == sat:
-            print(solver.model())
+    if result == unsat:
+        pass
+    elif result == sat:
+        print(f"FAIL {name}: sat")
+        print(solver.model())
         return False
+    else:
+        raise RuntimeError(f"{name}: solver returned unknown")
     print(f"PASS {name}: all exact real values satisfying the assumptions")
     return True
 

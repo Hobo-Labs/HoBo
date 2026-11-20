@@ -26,10 +26,12 @@ export const step = (action) =>
 	({
 		Reserve: 'reserve entitlement claim',
 		Claim: 'claim execution',
+		RecordZeroUnits: 'record zero-unit claim scope',
 		Uncertain: 'execution outcome uncertain',
 		ChangeScope: 'change or refuse entitlement scope',
 		ReplayMismatch: 'replay entitlement evidence',
 		Settle: 'settle final usage',
+		ConfirmUnused: 'confirm unused reservation',
 		Release: 'release unused reservation [before execution is claimed]',
 		ChangeTerminalScope: 'change scope after finalization',
 		Done: 'wait',

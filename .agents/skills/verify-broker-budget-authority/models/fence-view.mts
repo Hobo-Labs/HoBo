@@ -7,13 +7,14 @@ export const state = (v) => {
 		return v.claimed ? 'Uncertain claimed hold retained' : 'Uncertain unclaimed hold';
 	}
 	if (v.claimed) return 'Claimed hold retained';
-	return 'Unclaimed hold';
+	return v.unusedWitness ? 'Unused work confirmed' : 'Unclaimed hold';
 };
 export const step = (action) =>
 	({
 		Reserve: 'admit reservation',
 		Claim: 'claim admitted execution',
 		Settle: 'accept both signed proofs',
+		ConfirmUnused: 'confirm unused work',
 		Release: 'release unused hold',
 		Uncertain: 'retain uncertain hold',
 		Offer: 'inspect evidence',

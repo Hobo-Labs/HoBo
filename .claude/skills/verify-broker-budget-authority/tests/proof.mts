@@ -14,6 +14,9 @@ for (const key of ['BROKER_PROOF_MUTATION', 'BROKER_SCOPE_PROOF_MUTATION']) {
 }
 try {
 	const target = path.join(scratch, 'python');
+	if (env.BUDGET_Z3_PYTHONPATH) {
+		env.PYTHONPATH = env.BUDGET_Z3_PYTHONPATH + (env.PYTHONPATH ? path.delimiter + env.PYTHONPATH : '');
+	}
 	let probe = spawnSync('python3', ['-c', 'import z3; print(z3.get_version_string())'], {
 		env,
 		encoding: 'utf8',
@@ -44,9 +47,6 @@ try {
 		});
 		if (probe.stdout.trim() !== '4.15.4') throw new Error(`expected Z3 4.15.4, got ${probe.stdout.trim()}`);
 		env.PYTHONPATH = target;
-	}
-	if (env.BUDGET_Z3_PYTHONPATH) {
-		env.PYTHONPATH = env.BUDGET_Z3_PYTHONPATH + (env.PYTHONPATH ? path.delimiter + env.PYTHONPATH : '');
 	}
 	for (const name of ['broker_induction.py', 'scope_induction.py']) {
 		const proof = path.join(proofDir, name);

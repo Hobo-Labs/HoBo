@@ -17,7 +17,7 @@ Reenter == /\ stage = "writing" /\ ~attempted /\ attempted' = TRUE
            /\ UNCHANGED stage
 Abort == /\ stage = "writing" /\ rejected /\ stage' = "aborted"
          /\ UNCHANGED <<attempted, rejected, acknowledged, writes>>
-Complete == /\ stage = "writing" /\ stage' = "done"
+Complete == /\ stage = "writing" /\ ~rejected /\ stage' = "done"
             /\ acknowledged' = acknowledged \cup {"outer"}
             /\ writes' = writes + 1 /\ UNCHANGED <<attempted, rejected>>
 Done == /\ stage \in {"aborted", "done"} /\ UNCHANGED vars

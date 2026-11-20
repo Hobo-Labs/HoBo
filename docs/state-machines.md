@@ -7,7 +7,7 @@ tags: [hobo, state-machines, verification]
 
 # HoBo state machines and verification
 
-This is a **partial** verification record, not a claim that the framework is fully modeled or proved. Each skill below identifies the covered code, review baseline, executable checks, formal properties, assumptions, and known gaps. The [candidate inventory](./state-machine-candidates.md) is a historical lexical audit queue, not an exhaustive list of state machines or a list of verified behavior.
+This is a **partial** verification record, not a claim that the framework is fully modeled or proved. Each skill below identifies the covered code, review baseline, executable checks, formal properties, assumptions, and known gaps.
 
 | Subsystem | Maintained verification | Main checked properties |
 | --- | --- | --- |
@@ -16,11 +16,11 @@ This is a **partial** verification record, not a claim that the framework is ful
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
 | Provider connections | [verify-connection-lifecycle](../.agents/skills/verify-connection-lifecycle/SKILL.md) | Revocation is terminal across commands and replay. |
 | Durable workflows | [verify-workflow-replay](../.agents/skills/verify-workflow-replay/SKILL.md) | Fresh runs claim identities; resume uses recorded context and terminal results. |
-| CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage and conservatively aggregates provider-account observations. |
-| CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
+| CI budget routing | [verify-ci-budget-routing](../.agents/skills/verify-ci-budget-routing/SKILL.md) | Routing counts unobserved usage, conservatively aggregates provider-account observations, and refuses duplicate reports containing free allocation. |
+| CD fan-out | [verify-cd-fanout](../.agents/skills/verify-cd-fanout/SKILL.md) | Halt and mandatory-failure gates stop new starts; mandatory-pilot gates apply during normal and catch-up scheduling; missing slots remain pending. |
 | CD promotion and rollback | [verify-promotion-verification](../.agents/skills/verify-promotion-verification/SKILL.md) | Qualification requires passing verification; request identities bind retries and rollback claims. |
 
-The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. The skill states each model's bounds and the number of hidden steps.
+The package READMEs include selected user-flow projections produced from the checked models. A projection hides internal transitions and is not a production trace. Each skill states its model bounds and projection limits.
 
 ## Run and maintain
 
@@ -39,7 +39,6 @@ When covered behavior changes, review the code and its intended policy, update t
 
 ## Open work and proof boundaries
 
-- The historical candidate queue covers only selected source languages and paths and has not been fully classified. CI, CD, cloud providers, stores, examples, integrations, and additional stateful subsystems need further source review and their own checks.
 - Concurrent workflow resumes are not fenced. A crash between an external effect and its completion fact can repeat that effect. Legacy workflow records can lack identifying context.
 - Promotion and rollback binding assumes atomic journal claims and preserved metadata. Concurrent retries of the same operation and Rail effects that do not change the current Set still require fencing and reconciliation. Older records can be refused when their original request cannot be reconstructed.
 - The delivery checks assume the storage transaction and its persisted attempt counter are durable. Callers must pass the attempt returned by each claim. They do not establish exactly-once external delivery.

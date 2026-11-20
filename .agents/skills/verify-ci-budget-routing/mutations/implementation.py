@@ -12,6 +12,12 @@ config = root / ".agents/skills/verify-ci-budget-routing/models/vitest.config.mt
 source_name = "src/routing.ts"
 cases = [
     (
+        "duplicate provider allocation",
+        "providerAccount.reports > 1 && providerAccount.hasAllocation",
+        "false",
+        "refuses duplicate account reports",
+    ),
+    (
         "first provider observation",
         "Math.max(previous?.spent ?? 0, accounting.providerSpent)",
         "previous?.spent ?? accounting.providerSpent",
