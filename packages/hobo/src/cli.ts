@@ -305,7 +305,7 @@ export function createComposedHoboCli(
 	};
 	const ci = createCiCommand({
 		runtime,
-		ownerFor: (cwd) => familyOwner("cd", cwd),
+		ownerFor: (cwd) => familyOwner("ci", cwd),
 	});
 	const deploy = createDeployCommand({ hosting: options.hosting?.supervisor });
 

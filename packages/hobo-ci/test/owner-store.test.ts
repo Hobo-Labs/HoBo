@@ -1,0 +1,75 @@
+import { createTrustedVault } from "@hobo/core";
+import { createMemorySecretsPort } from "@hobo/identity";
+import { describe, expect, it } from "vitest";
+
+import {
+	type OpenedSecretStore,
+	ownerStore,
+	ownerStoreSessionEnvironment,
+} from "../src/index.js";
+
+describe("owner store continuity", () => {
+	it("re-checks the owner selection after reading its settings", async () => {
+		let current = true;
+		await expect(
+			ownerStoreSessionEnvironment(
+				{
+					locator: {
+						hasSessionChoice: () => true,
+						assertCurrent: () => {
+							if (!current) throw new Error("owner selection changed");
+						},
+						read: async () => {
+							current = false;
+							return {};
+						},
+						write: async () => undefined,
+					},
+				},
+				{ BWS_ACCESS_TOKEN: "ambient-credential" },
+			),
+		).rejects.toThrow("owner selection changed");
+	});
+
+	it("marks a committed write uncertain when the post-write selection check fails", async () => {
+		let current = true;
+		let uncertain = false;
+		const port = createMemorySecretsPort({ id: "memory" });
+		const store: OpenedSecretStore = {
+			id: "infisical",
+			port: {
+				...port,
+				put: async (name, value) => {
+					await port.put(name, value);
+					current = false;
+				},
+			},
+			reference: (name) => `infisical://project/prod/hobo-cd/${name}`,
+		};
+		const opened = await ownerStore("cd", createTrustedVault(), {
+			locator: {
+				hasSessionChoice: () => true,
+				assertCurrent: () => {
+					if (!current) throw new Error("owner selection changed");
+				},
+				read: async () => ({
+					HOBO_SECRET_STORE: "infisical",
+					INFISICAL_PROJECT_ID: "project",
+					INFISICAL_SIGN_IN: "egress-proxy",
+				}),
+				write: async () => undefined,
+				runStoreWrite: async <T>(operation: () => Promise<T>): Promise<T> =>
+					operation(),
+				markUncertainWrite: () => {
+					uncertain = true;
+				},
+			},
+			openStore: async () => ({ ok: true, store }),
+		});
+		await expect(opened.opened?.port.put("NAME", "value")).rejects.toThrow(
+			"owner selection changed",
+		);
+		expect(uncertain).toBe(true);
+		expect((await port.access("NAME")).material).toBe("value");
+	});
+});

@@ -378,7 +378,9 @@ would send, and sends none. A real run reads `VERCEL_TOKEN` from the environment
 and deploys to **preview** unless `--target production` is given. Production
 chooses the config-service binding, which asks for the store's origin and two
 ids; `hobo ci deploy` reads them, and the team, from the committed
-`deploy/secret-store.binding.json`:
+`deploy/secret-store.binding.json`. Managed delivery uses the CI-scoped owner channel,
+and every Vercel, GitHub journal and public-health request rejects redirects and combines
+the delivery deadline with the caller's cancellation signal:
 
 ```sh
 hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \

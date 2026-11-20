@@ -454,16 +454,21 @@ export function createSecretCaptureApp(
 		state: TicketState,
 		cancelHandoff = true,
 	): void {
-		if (
+		const cancel =
 			cancelHandoff &&
 			ticket.state === "awaiting-owner" &&
 			(state === "closed" || state === "expired")
-		)
-			ticket.handoff?.cancel();
+				? ticket.handoff?.cancel
+				: undefined;
 		ticket.state = state;
 		ticket.keys?.destroy();
 		ticket.keys = undefined;
 		ticket.tokenDigest = undefined;
+		try {
+			cancel?.();
+		} catch {
+			return;
+		}
 	}
 
 	function sweep(): void {
@@ -1089,7 +1094,6 @@ export function createSecretCaptureApp(
 				emit("secret.CaptureClosed", ticketFields(ticket));
 				captures += 1;
 			}
-		options.onEnd?.();
 		let writerSession: "ended" | "none" | "unavailable";
 		try {
 			writerSession = await options.connector.endWriterSession();
@@ -1099,6 +1103,11 @@ export function createSecretCaptureApp(
 		const running = page;
 		page = undefined;
 		if (running !== undefined) await (await running).close();
+		try {
+			options.onEnd?.();
+		} catch {
+			return { captures, writerSession };
+		}
 		return { captures, writerSession };
 	}
 

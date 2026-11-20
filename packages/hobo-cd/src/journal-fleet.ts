@@ -115,40 +115,60 @@ export async function prepareJournalFleet(input: {
 }): Promise<JournalFleetStep> {
 	const { store } = input;
 	const settings = familySettings(store, "cd");
-	const saved = await settings.read();
-	const layout: JournalFleetLayout =
-		saved[JOURNAL_FLEET_SETTING] !== undefined
-			? {
-					members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
-					witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
-				}
-			: journalFleetLayout(input.provisioners);
-	const all = [...layout.members, ...layout.witnesses];
-	for (const member of all)
-		if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
-			throw new Error(
-				`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
-			);
-	const missing: JournalFleetMember[] = [];
-	for (const member of all)
-		if (!(await holds(store, journalMemberUrlEntry(member.id))))
-			missing.push(member);
-	const roster = `${layout.members.map(entry).join(", ")}; witness ${layout.witnesses.map(entry).join(", ")}`;
-	const unchangedSettings = saved[JOURNAL_FLEET_SETTING] !== undefined;
-	if (missing.length === 0 && unchangedSettings)
+	const inspect = async () => {
+		const saved = await settings.read();
+		const layout: JournalFleetLayout =
+			saved[JOURNAL_FLEET_SETTING] !== undefined
+				? {
+						members: parseEntries(saved[JOURNAL_FLEET_SETTING]),
+						witnesses: parseEntries(saved[JOURNAL_WITNESS_SETTING]),
+					}
+				: journalFleetLayout(input.provisioners);
+		const all = [...layout.members, ...layout.witnesses];
+		for (const member of all)
+			if (CD_JOURNAL_MEMBER_PLANS[member.plan] === undefined)
+				throw new Error(
+					`fleet member ${member.id} names plan ${member.plan}, which no provisioner here serves`,
+				);
+		const missing: JournalFleetMember[] = [];
+		for (const member of all)
+			if (!(await holds(store, journalMemberUrlEntry(member.id))))
+				missing.push(member);
+		return {
+			saved,
+			layout,
+			missing,
+			roster: `${layout.members.map(entry).join(", ")}; witness ${layout.witnesses.map(entry).join(", ")}`,
+		};
+	};
+	const step = (
+		state: Awaited<ReturnType<typeof inspect>>,
+	): JournalFleetStep => {
+		const claims =
+			state.missing.length > 0
+				? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} under ${state.missing.map((member) => journalMemberClaimEntry(member.id)).join(", ")}.`
+				: "";
 		return {
 			id: "cd-journal",
-			outcome: "unchanged",
-			detail: `fleet ${roster}; connection strings in ${store.id}`,
+			outcome: state.missing.length > 0 ? "created" : "unchanged",
+			detail: `fleet ${state.roster}; connection strings in ${store.id}.${claims}`,
 		};
+	};
+	const initial = await inspect();
+	if (
+		initial.missing.length === 0 &&
+		initial.saved[JOURNAL_FLEET_SETTING] !== undefined
+	)
+		return step(initial);
 	if (input.whatIf)
 		return {
 			id: "cd-journal",
 			outcome: "would-create",
-			detail: `would create ${missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${roster} in ${store.id}`,
+			detail: `would create ${initial.missing.map((member) => member.id).join(", ") || "nothing"} and keep the fleet ${initial.roster} in ${store.id}`,
 		};
-	await withStoreWriteLock(store, async () => {
-		for (const member of missing) {
+	return withStoreWriteLock(store, async () => {
+		const current = await inspect();
+		for (const member of current.missing) {
 			const provisioner = input.provisioners.find(
 				(candidate) => candidate.plan === member.plan,
 			);
@@ -176,20 +196,12 @@ export async function prepareJournalFleet(input: {
 			);
 		}
 		await settings.write({
-			...saved,
-			[JOURNAL_FLEET_SETTING]: layout.members.map(entry).join(","),
-			[JOURNAL_WITNESS_SETTING]: layout.witnesses.map(entry).join(","),
+			...current.saved,
+			[JOURNAL_FLEET_SETTING]: current.layout.members.map(entry).join(","),
+			[JOURNAL_WITNESS_SETTING]: current.layout.witnesses.map(entry).join(","),
 		});
+		return step(current);
 	});
-	const claims =
-		missing.length > 0
-			? ` Claim each new database to keep it (an unclaimed one expires): the links are in ${store.id} under ${missing.map((member) => journalMemberClaimEntry(member.id)).join(", ")}.`
-			: "";
-	return {
-		id: "cd-journal",
-		outcome: missing.length > 0 ? "created" : "unchanged",
-		detail: `fleet ${roster}; connection strings in ${store.id}.${claims}`,
-	};
 }
 
 /**

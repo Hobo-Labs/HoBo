@@ -391,7 +391,7 @@ means promoting an earlier deployment.
 
 **Probes.** `/healthz` answers 200 always, before the relay is composed, with
 `{ok: true, commit}`: the commit Vercel built the deployment from
-(`HOBO_CI_SOURCE_SHA` for a managed source deployment, or `VERCEL_GIT_COMMIT_SHA` for a Git deployment), or null when neither contains a full commit.
+(`VERCEL_GIT_COMMIT_SHA` for a Git deployment, falling back to `HOBO_CI_SOURCE_SHA` for a managed source deployment), or null when neither contains a full commit. Vercel's Git SHA takes precedence whenever both are present.
 `/readyz` answers 200 or 503 with `{ready, configService, configStale, cache,
 executionHost, workers}`: the config service loads, the cache answers a read
 (one command), an execution host (the Sandbox controller) is configured, and
