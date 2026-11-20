@@ -368,7 +368,11 @@ function setup(
 				}
 			: {
 					...financial,
-					admit: async (requestId, plan, expected) => {
+					admit: async (
+						requestId: string,
+						plan: IacFinancialPlan,
+						expected?: IacRoutingExpectation,
+					) => {
 						if (options.beforeAdmission !== undefined)
 							await options.beforeAdmission();
 						const receipt = await financial.admit(requestId, plan, expected);
