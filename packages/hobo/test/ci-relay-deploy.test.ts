@@ -1475,9 +1475,14 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	}, 60_000);
 
 	it.each([
-		false,
-		true,
-	])("recovers failed live verification (lost response: %s)", async (lost) => {
+		{ lost: false, confirmation: "candidate" },
+		{ lost: true, confirmation: "candidate" },
+		{ lost: true, confirmation: "missing" },
+		{ lost: true, confirmation: "error" },
+	])("handles failed live verification and ambiguous promotion (%s)", async ({
+		lost,
+		confirmation,
+	}) => {
 		const home = freshHome();
 		let now = Date.UTC(2026, 10, 12, 12);
 		const clock = {
@@ -1502,11 +1507,17 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const events: string[] = [];
 		const previousProduction = "dpl_previous_prod";
 		let promotedNewDeployment = false;
+		let promotionAttempted = false;
 		const fetch: VercelFetch = async (url, init) => {
 			if (url.includes("/v9/projects/hobo-ci")) {
-				const production = promotedNewDeployment
-					? { id: "dpl_wait" }
-					: { id: previousProduction };
+				if (promotionAttempted && confirmation === "error")
+					throw new Error("production read failed");
+				const production =
+					promotionAttempted && confirmation === "missing"
+						? undefined
+						: promotedNewDeployment
+							? { id: "dpl_wait" }
+							: { id: previousProduction };
 				return {
 					ok: true,
 					status: 200,
@@ -1522,13 +1533,11 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				};
 			}
 			if (url.includes("/promote/")) {
-				if (promotedNewDeployment)
-					expect(url).toContain(`/promote/${previousProduction}`);
-				else expect(url).toContain("/promote/dpl_wait");
-				promotedNewDeployment = !url.includes(`/promote/${previousProduction}`);
+				expect(url).toContain("/promote/dpl_wait");
+				promotionAttempted = true;
+				promotedNewDeployment = true;
 				events.push("promote");
-				if (lost && url.includes("/promote/dpl_wait"))
-					throw new Error("promotion response lost");
+				if (lost) throw new Error("promotion response lost");
 				return {
 					ok: true,
 					status: 202,
@@ -1563,7 +1572,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				headers: {},
 				body: request.url.endsWith("/healthz")
 					? JSON.stringify({
-							commit: lost ? "f".repeat(40) : SHA,
+							commit:
+								lost && confirmation === "candidate" ? "f".repeat(40) : SHA,
 						})
 					: JSON.stringify({ ready: true }),
 			};
@@ -1623,21 +1633,26 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			},
 		);
 		expect(result.exitCode).toBe(1);
-		expect(result.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-			message: expect.stringContaining(
-				lost ? "restored and observed healthy" : "did not confirm it",
-			),
-			data: {
-				rollback: lost ? "restored" : "unknown",
-				delivery: { state: "FAILED" },
-			},
-		});
-		expect(events.filter((event) => event === "promote")).toEqual([
-			"promote",
-			"promote",
-		]);
-		expect(events).toContain("live:/healthz");
+		if (confirmation === "candidate") {
+			expect(result.envelope).toMatchObject({
+				code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+				message: expect.stringContaining(
+					"promote the previous deployment dpl_previous_prod by hand",
+				),
+				data: {
+					rollback: "manual",
+					delivery: { state: "FAILED" },
+				},
+			});
+			expect(events).toContain("live:/healthz");
+		} else {
+			expect(result.envelope).toMatchObject({
+				code: "HOBO_CI_DEPLOY_NO_ANSWER",
+				data: { delivery: { state: "FAILED" } },
+			});
+			expect(events).not.toContain("live:/healthz");
+		}
+		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
 	});
 
 	it.each([

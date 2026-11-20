@@ -1056,18 +1056,17 @@ export async function runCiRelayDeploy(
 										? error
 										: new Error("promotion failed");
 							}
-							if (promotionError !== undefined)
+							if (promotionError !== undefined) {
+								let afterPromotion: string | undefined;
 								try {
-									const afterPromotion =
+									afterPromotion =
 										await client.getProductionDeploymentId(project);
-									if (
-										afterPromotion !== undefined &&
-										afterPromotion !== safe.deploymentId
-									)
-										return realizationFailure(promotionError, withoutToken);
 								} catch {
-									void 0;
+									return realizationFailure(promotionError, withoutToken);
 								}
+								if (afterPromotion !== safe.deploymentId)
+									return realizationFailure(promotionError, withoutToken);
+							}
 						}
 						const pauseBeforeRetry = async (attempt: number) => {
 							const remaining = deadlineAt - clock();
@@ -1123,56 +1122,33 @@ export async function runCiRelayDeploy(
 							await pauseBeforeRetry(attempt);
 						}
 						if (liveReady) return undefined;
-						let rollback: "restored" | "failed" | "superseded" | "unknown" =
-							"unknown";
-						let rollbackRequested = false;
+						let rollback: "manual" | "superseded" | "unknown" = "unknown";
 						let supersedingProduction: string | undefined;
 						if (previousProduction !== undefined)
 							try {
 								currentProduction =
 									await client.getProductionDeploymentId(project);
 								if (currentProduction === safe.deploymentId) {
-									await client.promoteDeployment(project, previousProduction);
-									rollbackRequested = true;
-									for (
-										let attempt = 0;
-										attempt < 24 && clock() < deadlineAt;
-										attempt++
-									) {
-										const restoredTarget =
-											await client.getProductionDeploymentId(project);
-										if (
-											restoredTarget === previousProduction &&
-											(await publicReady())
-										) {
-											rollback = "restored";
-											break;
-										}
-										await pauseBeforeRetry(attempt);
-									}
+									rollback = "manual";
 								} else if (currentProduction !== undefined) {
 									rollback = "superseded";
 									supersedingProduction = currentProduction;
 								}
 							} catch {
-								rollback = rollbackRequested ? "unknown" : "failed";
+								rollback = "unknown";
 							}
 						const supersededTarget =
 							supersedingProduction === undefined
 								? ""
 								: ` to ${supersedingProduction}`;
 						const rollbackNote =
-							rollback === "restored"
-								? ` The previous production deployment ${previousProduction} was restored and observed healthy.`
-								: rollback === "failed"
-									? " The automatic rollback failed; promote the previous deployment by hand."
-									: rollback === "unknown"
-										? rollbackRequested
-											? ` Vercel accepted rollback to ${previousProduction}, but the public origin did not confirm it; inspect production before retrying.`
-											: previousProduction === undefined
-												? " No previous production deployment was recorded; inspect production and restore a known healthy deployment by hand."
-												: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`
-										: ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`;
+							rollback === "manual"
+								? ` Vercel promotion is not conditional; promote the previous deployment ${previousProduction} by hand.`
+								: rollback === "unknown"
+									? previousProduction === undefined
+										? " No previous production deployment was recorded; inspect production and restore a known healthy deployment by hand."
+										: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`
+									: ` Production traffic was concurrently moved${supersededTarget}; no rollback was sent.`;
 						return {
 							ok: false as const,
 							code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",

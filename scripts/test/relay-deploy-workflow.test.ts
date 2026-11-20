@@ -209,12 +209,20 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("routes the deploy like hobo-ci.yml, so a busy fleet does not hold it", () => {
+	it("keeps deployment credentials on an ephemeral clean runner", () => {
+		const deploy = workflow
+			.split("\n  deploy:\n")[1]
+			?.split("\n  app-credentials:\n")[0];
+		const deposit = workflow.split("\n  app-credentials:\n")[1];
+		assert.ok(deploy && deposit);
 		assert.match(workflow, /^ {2}route:\n/mu);
 		assert.match(workflow, /uses: \$\/\.github\/actions\/route-runner/u);
-		assert.match(workflow, / {4}needs: route\n/u);
+		assert.match(deploy, /^ {4}runs-on: ubuntu-24\.04$/mu);
+		assert.match(deploy, /clean: true/u);
+		assert.doesNotMatch(deploy, /needs: route|needs\.route|clean: false/u);
+		assert.match(deposit, / {4}needs: route\n/u);
 		assert.match(
-			workflow,
+			deposit,
 			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| /u,
 		);
 	});

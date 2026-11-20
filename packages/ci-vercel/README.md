@@ -237,14 +237,13 @@ verification (a node whose origin is unset probes a reserved `.invalid` host).
 PASS is the only qualification. A failed verification fails the promotion
 and the job. The workflow stages production without assigning domains and
 leaves traffic unchanged if staged verification fails. If the public origin
-still fails after the verified deployment is promoted, the job fails, and the
-deploy re-reads production before restoring: it promotes the previous
-production deployment back only while production still serves the failed
-deployment. The failure's `data.rollback` records whether that restore
-`restored`, `failed`, or was skipped as `superseded` because a concurrent
-promotion had already moved production. When the restore failed or was
-superseded, or no previous deployment was recorded, roll back by hand
-(`vercel rollback`, or promote the previous deployment in the dashboard).
+still fails after the verified deployment is promoted, the job fails and
+re-reads production. Vercel promotion has no conditional current-target input,
+so HoBo does not issue a check-then-act rollback that could overwrite a
+concurrent promotion. The failure's `data.rollback` is `manual` while the failed
+candidate remains current, `superseded` when another deployment has taken
+production, or `unknown` when the target cannot be established. Promote the
+previous deployment by hand (`vercel rollback`, or use the dashboard).
 `hobo ci deploy --target production` needs `--sha` and is refused, before
 anything is sent, when preview has not qualified that commit
 (`HOBO_CI_DEPLOY_NOT_QUALIFIED`). `--wait` drives the promotion to its end;
@@ -287,10 +286,11 @@ runs on every push to `main` that changes this package or a workspace package
 it is built from (its pnpm-lock closure, `scripts/ci/relay-deploy-gate.mts`),
 and on `workflow_dispatch`:
 
-0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
-   while it takes jobs, an enrolled box, else GitHub-hosted).
-   The deploy and App-deposit jobs check out the pinned submodule so a fresh
-   runner can install the workspace dependencies.
+0. Deployment always uses an ephemeral GitHub-hosted runner and a clean
+   checkout, so a reused fleet or enrolled runner cannot capture the deploy
+   credential or contribute workspace files. A separate `route` job picks the
+   App-deposit runner, as `hobo-ci.yml` does. Both jobs check out the pinned
+   submodule so a fresh runner can install the workspace dependencies.
 1. The gate ends the job with a notice, and success, until a secret store is
    bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
    which `hobo ci secret-store provision` writes when the HoBo deployment
@@ -311,14 +311,14 @@ and on `workflow_dispatch`:
    `/healthz` and `/readyz` before assigning production traffic, then verifies
    the public origin serves the same healthy commit. The deadline is rechecked
    immediately before creation and after reading the current production target.
-   A lost promotion response is ambiguous, so HoBo re-reads that target before
-   verification and recovery. Finalization resumes from the journal's durable
-   handover and recognizes a candidate already assigned to production instead of
-   promoting it again. Rollback requests the previous deployment only while the
-   candidate remains current and reports `restored` only after both Vercel's
-   production target and public health checks confirm it. A confirmed concurrent
-   target is left alone; an unknown target or unobserved rollback is reported as
-   `unknown` for manual recovery.
+   A lost promotion response is ambiguous, so HoBo re-reads that target and
+   continues only when it names the staged candidate; a missing target or failed
+   read returns the promotion failure instead of accepting same-commit health as
+   proof. Finalization resumes from the journal's durable handover and recognizes
+   a candidate already assigned to production instead of promoting it again.
+   Failed live verification reports `manual`, `superseded`, or `unknown`; HoBo
+   sends no automatic rollback because Vercel cannot condition promotion on the
+   current target.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:

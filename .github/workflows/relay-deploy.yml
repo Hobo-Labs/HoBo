@@ -78,10 +78,8 @@ jobs:
 
   deploy:
     name: Deploy the hosted CI relay (production)
-    needs: route
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
-    # The route job picks the label; scripts/lint-actions.ts allows this expression.
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts.
     timeout-minutes: 20
     permissions:
@@ -90,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          clean: false
+          clean: true
           fetch-depth: 2
           submodules: recursive
           persist-credentials: false
@@ -142,9 +140,8 @@ jobs:
       # the Vercel project must trust this workflow for preview access.
       # Bounded by the gate's deadline (the job's timeout less the 3 minute
       # margin, counted from the gate), which hobo enforces before production
-      # is created, promoted, and verified live, so a failed promotion's
-      # rollback runs before the job is killed. The step timeout is a
-      # backstop only.
+      # is created, promoted, and verified live, so recovery is reported before
+      # the job is killed. The step timeout is a backstop only.
       - name: Deliver the relay through HoBo CD
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 17

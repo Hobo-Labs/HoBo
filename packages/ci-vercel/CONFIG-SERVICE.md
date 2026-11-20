@@ -257,10 +257,10 @@ to deploy, holds no secret and reads no repository variable about the relay:
 its gate is the committed binding (no binding, or an unreadable one: a notice,
 and the job succeeds), and the deploy command signs in to the store with the
 job's GitHub Actions OIDC token as `hobo-ci-deploy` and reads `VERCEL_TOKEN`
-from the separate deploy project without logging it. A `route` job picks the
-runner first, as `hobo-ci.yml` does (the fleet while it takes jobs, an
-enrolled box, else GitHub-hosted), so a busy fleet no longer holds the deploy
-and every later one in its concurrency group.
+from the separate deploy project without logging it. Deployment always uses an
+ephemeral GitHub-hosted runner and a clean checkout, so a reused fleet or
+enrolled runner cannot capture the credential or contribute workspace files.
+The separate App-deposit job retains fleet routing.
 
 The owner creates a Vercel API token scoped to the deployment account and puts
 it in the deploy project's production environment as `VERCEL_TOKEN`. The
@@ -286,10 +286,12 @@ HoBo promotes it only after it passes verification and then checks the public
 origin before the deploy deadline. Creation also refuses a deadline crossed
 while CD is being prepared. Staged promotion requires a distinct previous
 production deployment, recorded in the durable handover so an interrupted run can
-verify an already-promoted candidate without promoting it again. Failed live
-verification requests its restoration, marks the CD promotion failed, and runs
-its compensation; `restored` requires an observed previous production target and
-healthy public origin, while an accepted but unobserved rollback is `unknown`.
+verify an already-promoted candidate without promoting it again. A lost
+promotion response continues only when a fresh production read names the staged
+candidate; a missing target or failed read returns the original failure. Failed
+live verification marks the CD promotion failed and runs its compensation, but
+leaves Vercel rollback to an operator because the promote API has no conditional
+current-target input. The result reports `manual`, `superseded`, or `unknown`.
 When `--provision` is requested, the
 cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
