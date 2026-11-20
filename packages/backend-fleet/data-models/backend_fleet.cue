@@ -1,11 +1,12 @@
 package data_models
 
-import "list"
+import ( "list"
 
-// Invariants for every record in backend_fleet.proto. Each mirrors a check the
-// TypeScript parsers in src/ make (parseFleetAssignment, parseFleetFinancialModel,
-// parseFleetOffer, parseFleetRoutingMarks), so a record they refuse is
-// refused here too. Field names are the protobuf JSON names.
+	// Invariants for every record in backend_fleet.proto. Each mirrors a check the
+	// TypeScript parsers in src/ make (parseFleetAssignment, parseFleetFinancialModel,
+	// parseFleetOffer, parseFleetRoutingMarks), so a record they refuse is
+	// refused here too. Field names are the protobuf JSON names.
+)
 
 #FleetBackendId: string & =~"^[a-z0-9][a-z0-9_-]{0,62}$"
 
@@ -26,6 +27,7 @@ import "list"
 			target: !=active
 		}
 	}
+
 	// An unsealed entry has no target: there is no move in flight.
 	if !sealed {
 		target?: _|_
@@ -153,5 +155,25 @@ import "list"
 	decidedAtMs: int & >=0
 	if action == "switch" || action == "failover" {
 		target: #FleetBackendId
+	}
+}
+
+// The fleet's operating plan for a declared continuity policy.
+#ContinuityFleetPlan: {
+	tier:                   string & !=""
+	rpo_ms:                 int & >=0
+	failover_after_ms:      int & >=1000
+	min_dwell_ms:           int & >=0
+	standbys:               int & >=0
+	copy:                   "snapshot" | "cold"
+	copy_every_ms:          int & >=0
+	backup_every_ms:        int & >=0
+	backups_kept:           int & >=0
+	monthly_budget_micros?: int & >=0
+	if copy == "cold" {
+		copy_every_ms: 0
+	}
+	if copy == "snapshot" {
+		copy_every_ms: >=15000
 	}
 }
