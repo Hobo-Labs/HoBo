@@ -24,6 +24,10 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
+The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
+
+The mirrored `verify-broker-budget-authority` skill's BrokerBudget model keeps unused-release evidence and final settlement evidence mutually exclusive, so a reservation cannot be claimed after unused evidence is recorded, cannot carry both evidence kinds, and cannot be released once final evidence exists.
+
 Generated command tests use the caller's environment. For pnpm scripts, select the checkout's pinned pnpm version and a writable package store.
 
 Project exploration and generation, capture, doctor, initialization, surveys, evidence posting, and review workflows check their implicit `.optimizexp` write scopes for links and other unsafe entries. Evidence posting validates all scenario files before posting any comment, including in dry runs, and formats paths and transcripts as literal evidence. It refers to videos and larger files by their committed paths; it does not upload or compress them. When a feature ID exists in multiple projects, select one with `--project` before posting. These checks assume paths stay stable during the operation; explicitly selected output destinations and commands the operator asks the harness to run remain the operator's responsibility.
@@ -61,30 +65,57 @@ preserves explicit stops and scope changes, real approval and safety boundaries,
 and honest reports of actual blockers.
 
 [`scripts/agent_completion_hook.py`](../scripts/agent_completion_hook.py)
-adds one bounded review before a completed response in Claude Code, Codex,
-Cursor, and Copilot. It asks the model to check the current human request,
-evidence, and remaining work; it does not inspect the conversation, run a model,
-or use the network. The prompt is a reminder, not a new user request. The review
-still depends on the agent's judgment: it cannot establish that the task is done
-or guarantee a correct decision. It adds one continuation to reviewed responses,
-including simple answers. Cursor events marked aborted or error are not resumed;
-other interruptions follow their harness's behavior.
+reviews completed responses in Claude Code, Codex, Cursor, and Copilot. During
+that review, an agent that identifies a safe, authorized next action records it
+as ready before acting. A stop with that record still present requests another
+continuation. The agent clears the record once no such action remains, the user
+explicitly stops or changes scope, or a genuine external blocker prevents
+further useful work. Status questions do not cancel an active task.
 
-Claude Code and Codex use their `Stop` event; Copilot uses `agentStop`.
-Cursor uses its native `stop` event and skips the imported Claude handler to
-avoid duplicate reviews. The handler accepts the documented continuation flag
-or loop counter and lets the ensuing continuation finish. For Cursor it keeps a
-counter named by a hash of the conversation ID under the OS temporary directory;
-it stores no prompts or responses. Missing or unsafe state and unrecognized hook
-inputs are allowed through rather than causing an infinite loop. Codex requires
-project-hook trust and review through `/hooks`; if a harness skips a hook, the
-shared rule remains in force.
+A human status message resets the retry allowance without erasing ready work.
+The prompt hook recognizes common, explicit English requests to stop the whole
+task, clears the record, and allows the response without forcing a continuation.
+It handles these phrases conservatively: ambiguous wording and scope changes
+still require the agent to follow the human's instructions and clear an obsolete
+record. An interruption or Cursor abort clears pending state; a Cursor error
+preserves ready work for a later turn.
 
-The script uses the Python standard library. The configured Unix hooks require
-`python3` on `PATH`; Copilot on Windows uses `python`. Other harnesses can pass
-their stop event as JSON on standard input and use the returned `decision` and
-`reason`, or adapt the Cursor `followup_message` format. A compatible harness
-must supply a reliable continuation marker to prevent a review loop.
+A ready record can cause three additional reviews followed by one final
+continuation asking the agent to report unresolved work. After repeated stops
+without progress, the guard pauses automatic continuation and retains the
+record; a new human message resets the allowance. This circuit breaker does not
+mean the task is complete. Host-specific limits may apply, and some hosts may
+not display the final hook warning.
+
+Cursor uses native `beforeSubmitPrompt` and `stop` events and a
+per-conversation counter; its imported Claude handler is skipped to avoid
+duplicate reviews. Claude Code and Codex use `UserPromptSubmit` and `Stop`;
+Codex also handles `Interrupt`. Copilot uses `userPromptSubmitted` and
+`agentStop`. Codex requires project-hook trust and review through `/hooks`.
+
+The record is an empty, session-scoped file named by a hash under the OS
+temporary directory; it contains no task text. The hook reads the current
+prompt to recognize explicit stops but does not store it or inspect transcripts.
+Its update command carries the hook's state directory so a different shell
+temporary directory cannot silently write elsewhere. Hook events for the same
+session must share that state directory. Updates fail visibly if it is
+unavailable. If state storage is unavailable, the initial review is still
+requested when the harness identifies a first stop; later stops are allowed and
+a warning is emitted where the harness supports it. Events without a usable
+session identity fall back to one review.
+
+The guard enforces a recorded ready action, but it is not an independent proof
+of completion: an agent can fail to record an action or clear the record
+incorrectly. The review asks the agent to act on evidence and never to clear the
+record merely to end a turn. The hook does not call a model or use the network.
+It adds a continuation to reviewed responses, including simple answers.
+
+The script uses the Python standard library and requires Python 3.8 or later.
+The configured Unix hooks use `python3`; Copilot on Windows uses `python`.
+Other harnesses can pass compatible prompt and stop events as JSON on standard
+input and use the returned `decision` and `reason`, or adapt Cursor's
+`followup_message` format. A compatible harness needs a reliable continuation
+marker and session identifier.
 
 ## Product implementation guardrails
 
@@ -252,7 +283,43 @@ A **semantic-code MCP server**: it gives coding agents IDE-like symbol search, r
 A **Rust Token Killer command proxy** that compresses noisy shell-command output before it reaches coding agents. It is local, uses no API keys, and supports direct use (`rtk git status`, `rtk pnpm test:file <file>`, `rtk gain`) plus hook initialization for Claude Code/Copilot (`rtk init -g`), Codex (`rtk init -g --codex`), and Cursor (`rtk init -g --agent cursor`). The setup script installs it in the common/devcontainer layer when possible (existing `rtk`, Homebrew, Cargo, then upstream install script) and initializes hooks only in the selected agent-specific layer.
 
 ### hobo — HoBo's own MCP server (this repo)
-`.mcp.json`, `.codex/config.toml`, and `.cursor/mcp.json` run it from source (no keys). The project launcher resolves the Git worktree root, including when the session starts in a subdirectory. A global configuration needs an absolute checkout path and working directory. In a fresh checkout, install dependencies with `pnpm install --frozen-lockfile` and build the workspace dependencies with `pnpm exec turbo run build --filter=@hobo/hobo...` before starting the agent session. The source launcher still imports built workspace packages. Besides the CLI verbs it serves the owner-facing experiences the **hobo-deploy** skill relies on: the secret-capture MCP App and **`choose_secret_store`** for a handed-off `hobo ci|cd up`. The owner chooses a store and supplies its settings through a supported private owner form. Store settings are scoped to the owner session and are not returned to the agent. Follow the skill's privacy verification before using any owner form, and use the same project `cwd` for the lifecycle, picker, and subsequent retries. When the host cannot render the secure owner form, HoBo reports that capability gap; it does not collect store settings in chat. For Codex, trust the project and start a session after the project MCP configuration is loaded. A configured server alone does not establish that the host supports a private owner form. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits the hand-off without printing owner settings.
+`.mcp.json`, `.codex/config.toml`, and `.cursor/mcp.json` register the server from source without keys. The host must start the launcher within its intended trusted HoBo checkout: the launcher cannot identify which sibling checkout the host trusted. The Codex and Cursor launchers resolve that Git worktree root and refuse an ambiguous nested Git checkout. For a HoBo checkout nested inside another repository, configure the host to run `node --import tsx packages/hobo/src/bin/hobo-mcp.ts` with its working directory set to the HoBo checkout's absolute root. Install the workspace dependencies and run `pnpm exec turbo run build --filter=@hobo/hobo...` before starting an agent session in a fresh checkout; the source launcher imports built workspace packages. Codex loads the project configuration in a trusted project when the session starts. Registration alone does not establish that the host supports a private owner form. The server exposes the CLI verbs and secret capture used by the **hobo-deploy** skill. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
+
+Use the [HoBo setup skill](../.agents/skills/hobo-setup/SKILL.md) to connect the
+server and establish an owner-store session independently of a deployment.
+The initial MCP handshake describes this separation; it does not itself
+authenticate a store. For a linked worktree, Codex may check trust against the
+primary checkout; its effective-configuration diagnostics identify a disabled
+project layer and the checkout whose trust it requires.
+
+If the active host has no HoBo tools, try its supported discovery or reload,
+then diagnose the server independently. From the checkout root, the following
+isolated test initializes HoBo and lists tools using the Cursor-registered
+launcher and synthetic temporary state:
+
+```sh
+pnpm --filter @hobo/hobo exec vitest run test/mcp-cold-start.test.ts -t 'serves MCP through the registered launcher from a nested directory'
+```
+
+This checks that launcher with synthetic state; it does not verify the active
+host's registration or actual environment, or an owner session. A separate MCP
+client may also perform authorized non-sensitive work when the host cannot
+attach the server. Report which client worked and which connection or private
+session step remains unverified; do not infer the cause of a missing host tool
+without evidence.
+
+Store selection through **`choose_secret_store`** is temporarily unavailable
+until HoBo supports a verified, scoped owner session. Do not collect store
+identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
+privacy verification before using any owner form. When a verified private
+hand-off is available, use the same target project `cwd` throughout the
+ceremony; otherwise report the missing capability without collecting settings.
+The relay's existing capture adapter reads a separately configured Infisical
+binding; a generic owner-store session is not yet wired to that adapter.
+Its `connected` status indicates that the binding was read; it does not verify
+owner authentication. `writable` reflects an active writer session. The
+adapter accepts a writer identifier in tool arguments and returns store
+references, so it is not the private owner setup described by the setup skill.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
@@ -443,6 +510,7 @@ Use `pnpm run check:changed:build -- --base=<ref>` only when you intentionally n
 - `pnpm run test:unit:quiet` when the full unit lane is needed without heartbeat/pass spam or runner log artifacts.
 - `pnpm --prefix src/draft/<kind>/<package> test` when editing one draft proof package.
 - `pnpm run test:all` only for full-repo verification or before merging large cross-cutting changes.
+- `examples/wasp-opensaas/app` is outside the pnpm workspace. `agent:check` selects `npm --prefix examples/wasp-opensaas/app run ci:test:unit` when `src/`, `test/`, `scripts/`, `package.json`, or `vitest.config.ts` under that app changes (not README-only).
 
 The non-staged relevant-check runner forwards its selected `--base` into
 `docs:freshness` so PR impact checks evaluate the same merge-base file set even

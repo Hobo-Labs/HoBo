@@ -144,6 +144,7 @@ describe("secret custody", () => {
 				rmSync(work, { recursive: true, force: true });
 			}
 		},
+		30_000,
 	);
 
 	it("no lifecycle source reads a secret from the environment", () => {

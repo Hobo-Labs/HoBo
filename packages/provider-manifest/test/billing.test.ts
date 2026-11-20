@@ -1,7 +1,7 @@
 import { toJson } from "@bufbuild/protobuf";
 import { catalogHashOf, PricingCatalogSchema } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
-import { toPricingCatalog } from "../src/index.js";
+import { describePricingSupport, toPricingCatalog } from "../src/index.js";
 import { example, mustParse } from "./support/example.js";
 import { billed } from "./support/quote.js";
 
@@ -23,6 +23,29 @@ auth:
       oidcFederation: { audience: hobo }
 `);
 		expect(toPricingCatalog(manifest)).toBeUndefined();
+		expect(describePricingSupport(manifest)).toMatchObject({
+			status: "unavailable",
+			reason: "NO_PRICING_MODEL",
+			rated: [],
+			unrated: [],
+		});
+	});
+
+	it("reports supported and unsupported plans explicitly", () => {
+		const manifest = example();
+		expect(describePricingSupport(manifest)).toMatchObject({
+			status: "partial",
+			unrated: [{ productId: "llm-large", planId: "spot" }],
+		});
+		const product = manifest.billing?.products.find(
+			(row) => row.id === "llm-large",
+		);
+		if (product === undefined) throw new Error("fixture product missing");
+		product.plans = product.plans.filter((plan) => plan.id !== "spot");
+		expect(describePricingSupport(manifest)).toMatchObject({
+			status: "supported",
+			unrated: [],
+		});
 	});
 
 	it("namespaces products by provider and derives meters from billables", () => {

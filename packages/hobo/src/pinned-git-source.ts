@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { withoutSecretEnv } from "@hobo/hobo-ci";
+import { devNull } from "node:os";
 
 export interface PinnedGitFile {
 	readonly path: string;
@@ -19,15 +19,20 @@ const DEFAULT_MAX_FILES = 25_000;
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
 export function pinnedGitEnvironment(): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...withoutSecretEnv(process.env) };
-	for (const name of Object.keys(env)) {
-		if (name.startsWith("GIT_") && name !== "GIT_CEILING_DIRECTORIES")
-			delete env[name];
-	}
-	env.GIT_NO_REPLACE_OBJECTS = "1";
-	env.GIT_NO_LAZY_FETCH = "1";
-	env.GIT_ALLOW_PROTOCOL = "";
-	env.GIT_TERMINAL_PROMPT = "0";
+	const env: NodeJS.ProcessEnv = {
+		LC_ALL: "C",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: devNull,
+		GIT_NO_REPLACE_OBJECTS: "1",
+		GIT_NO_LAZY_FETCH: "1",
+		GIT_ALLOW_PROTOCOL: "",
+		GIT_TERMINAL_PROMPT: "0",
+	};
+	if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+	if (process.platform === "win32" && process.env.SystemRoot !== undefined)
+		env.SystemRoot = process.env.SystemRoot;
+	if (process.env.GIT_CEILING_DIRECTORIES !== undefined)
+		env.GIT_CEILING_DIRECTORIES = process.env.GIT_CEILING_DIRECTORIES;
 	return env;
 }
 

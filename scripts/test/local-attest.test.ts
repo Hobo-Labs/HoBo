@@ -56,6 +56,15 @@ import {
 // tests run from pre-commit too, and every git command they start (their own
 // or a script's) must act on its own repository, never the one being committed.
 for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
+for (const name of Object.keys(process.env)) {
+	if (
+		name === "GIT_CONFIG" ||
+		name === "GIT_CONFIG_COUNT" ||
+		name === "GIT_CONFIG_PARAMETERS" ||
+		/^GIT_CONFIG_(KEY|VALUE)_[0-9]+$/u.test(name)
+	)
+		delete process.env[name];
+}
 
 const script = fileURLToPath(
 	new URL("../ci/local-attest.mts", import.meta.url),
@@ -313,6 +322,7 @@ describe("the attestor key", () => {
 
 	it("prints only the public entry from init-key, and never the private key", () => {
 		const path = join(directory("keys"), "ed25519.pem");
+		const sharedTemp = directory("init-key-temp");
 		const run = spawnSync(
 			process.execPath,
 			[
@@ -323,7 +333,10 @@ describe("the attestor key", () => {
 				"--days=7",
 				"--note=from a test",
 			],
-			{ encoding: "utf8", env: { ...process.env, HOBO_CI_ATTESTOR_KEY: path } },
+			{
+				encoding: "utf8",
+				env: { ...process.env, TMPDIR: sharedTemp, HOBO_CI_ATTESTOR_KEY: path },
+			},
 		);
 		assert.equal(run.status, 0, run.stderr);
 		assert.equal(run.stderr, "");
@@ -840,6 +853,7 @@ describe("a local run", () => {
 				mode: 0o755,
 			});
 		const key = join(directory("standalone-key"), "key.pem");
+		const sharedTemp = directory("standalone-temp");
 		const run = spawnSync(
 			process.execPath,
 			[
@@ -857,6 +871,7 @@ describe("a local run", () => {
 				env: {
 					...process.env,
 					PATH: `${bin}:${process.env.PATH ?? ""}`,
+					TMPDIR: sharedTemp,
 					HOBO_CI_ATTESTOR_KEY: key,
 				},
 			},
@@ -2134,8 +2149,10 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 		const apiCalls = join(directory("signoff-api-calls"), "calls");
 		const signoffCwd = join(directory("signoff-cwd"), "cwd");
 		const signoffConfig = join(directory("signoff-config"), "config");
+		const sharedTemp = directory("signoff-temp");
 		const environment = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
 			...process.env,
+			TMPDIR: sharedTemp,
 			PATH: `${bin}:${process.env.PATH ?? ""}`,
 			GH_HOST: "github.com",
 			GH_REPO: "acme/app",
@@ -2892,6 +2909,46 @@ exec /usr/bin/git "$@"
 		assert.notEqual(result.status, 0);
 		assert.match(result.stderr, unprovedHeadMessage());
 		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("isolates fixture Git configuration inherited from a commit hook", () => {
+		const inheritedConfig = join(directory("inherited-config"), "config");
+		const inheritedContent = "[user]\n\tname = Inherited User\n";
+		writeFileSync(inheritedConfig, inheritedContent);
+		for (const injected of [
+			{
+				GIT_CONFIG_COUNT: "1",
+				GIT_CONFIG_KEY_0: "user.name",
+				GIT_CONFIG_VALUE_0: "Inherited User",
+			},
+			{ GIT_CONFIG_PARAMETERS: "'user.name'='Inherited User'" },
+			{ GIT_CONFIG: inheritedConfig },
+		]) {
+			const childEnv: NodeJS.ProcessEnv = { ...process.env, ...injected };
+			delete childEnv.NODE_TEST_CONTEXT;
+			delete childEnv.NODE_TEST_WORKER_ID;
+			const child = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"--test",
+					"--test-name-pattern=preserves Git config whitespace for the extension to validate",
+					fileURLToPath(import.meta.url),
+				],
+				{
+					encoding: "utf8",
+					env: childEnv,
+					timeout: 30_000,
+				},
+			);
+			assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
+			assert.match(
+				child.stdout,
+				/preserves Git config whitespace for the extension to validate/u,
+			);
+			assert.equal(readFileSync(inheritedConfig, "utf8"), inheritedContent);
+		}
 	});
 
 	it("preserves Git config whitespace for the extension to validate", async () => {

@@ -1,6 +1,10 @@
 # Codex CLI — MCP servers for this project.
 #
-# Codex loads this file for trusted projects.
+# Codex loads this file for trusted projects. For a global fallback, either
+# paste these tables into ~/.codex/config.toml or run:
+#        codex mcp add headroom -- bash scripts/agent-mcp-headroom.sh
+#        codex mcp add gbrain   -- bash scripts/agent-mcp-gbrain.sh
+#        codex mcp add serena   -- bash scripts/agent-mcp-serena.sh
 #
 # serena:   semantic code retrieval/editing through language servers, no keys
 #           (scripts/agent-mcp-serena.sh fails closed if binary missing).
@@ -12,7 +16,7 @@
 
 [mcp_servers.hobo]
 command = "bash"
-args = ["-c", 'root=$(git rev-parse --show-toplevel) || exit 1; cd "$root" || exit 1; exec node --import tsx packages/hobo/src/bin/hobo-mcp.ts']
+args = ["-c", 'unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_IMPLICIT_WORK_TREE GIT_NAMESPACE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE; root=$(git rev-parse --show-toplevel) || exit 1; parent=${root%/*}; [ -n "$parent" ] || parent=/; if [ "$root" != / ]; then while :; do marker=$parent/.git; if [ ! -x "$parent" ] || [ -L "$marker" ] || { [ -e "$marker" ] && [ ! -d "$marker" ]; } || { [ -d "$marker" ] && { [ ! -r "$marker" ] || [ ! -x "$marker" ] || [ -e "$marker/HEAD" ] || [ -L "$marker/HEAD" ] || [ -e "$marker/commondir" ] || [ -L "$marker/commondir" ]; }; }; then printf "%s\n" "HoBo MCP cannot select a nested Git checkout." >&2; exit 1; fi; [ "$parent" = / ] && break; next=${parent%/*}; [ -n "$next" ] || next=/; [ "$next" != "$parent" ] || exit 1; parent=$next; done; fi; cd "$root" || exit 1; exec node --import tsx packages/hobo/src/bin/hobo-mcp.ts']
 startup_timeout_sec = 30
 tool_timeout_sec = 1800
 

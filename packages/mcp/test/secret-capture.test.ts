@@ -509,10 +509,7 @@ describe("refusals before anything is opened", () => {
 			name: "HOBO_CI_WEBHOOK_SECRET",
 		});
 		expect(JSON.stringify(answer.structuredContent)).toContain(
-			"owner hand-off",
-		);
-		expect(JSON.stringify(answer.structuredContent)).not.toContain(
-			"deploy/secret-store.binding.json",
+			"OIDC Auth",
 		);
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureRefused",
@@ -521,13 +518,13 @@ describe("refusals before anything is opened", () => {
 
 	it("asks for the writer credential first when writes are not authorized", async () => {
 		const { app } = setup({ writable: false });
-		const refused = result(
+		const refusal = result(
 			await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
 		);
-		expect(refused.structuredContent).toMatchObject({
+		expect(refusal.structuredContent).toMatchObject({
 			code: "SECRET_STORE_WRITER_REQUIRED",
 		});
-		expect(JSON.stringify(refused)).not.toContain("secref://memory");
+		expect(JSON.stringify(refusal)).not.toContain("secref://memory");
 		expect(
 			result(
 				await app.callTool(

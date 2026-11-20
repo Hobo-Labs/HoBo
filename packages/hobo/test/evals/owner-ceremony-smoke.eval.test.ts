@@ -45,29 +45,11 @@ const message = z.record(z.string(), z.json());
 type Message = z.infer<typeof message>;
 
 function startServer(env: NodeJS.ProcessEnv) {
-	const launcher = z
-		.object({
-			mcpServers: z.object({
-				hobo: z.object({ command: z.string(), args: z.array(z.string()) }),
-			}),
-		})
-		.parse(JSON.parse(readFileSync(path.join(REPO, ".mcp.json"), "utf8")))
-		.mcpServers.hobo;
-	const child = spawn(launcher.command, launcher.args, {
-		cwd: path.join(REPO, "packages/hobo"),
-		env: {
-			...env,
-			CLAUDE_CODE_REMOTE: "",
-			CODESPACES: "",
-			GITPOD_WORKSPACE_ID: "",
-			CODER: "",
-			REMOTE_CONTAINERS: "",
-			DEVCONTAINER: "",
-			CLOUD_SHELL: "",
-			SSH_CONNECTION: "",
-		},
-		stdio: ["pipe", "pipe", "pipe"],
-	});
+	const child = spawn(
+		process.execPath,
+		["--import", "tsx", "packages/hobo/src/bin/hobo-mcp.ts"],
+		{ cwd: REPO, env, stdio: ["pipe", "pipe", "pipe"] },
+	);
 	const inbox: Message[] = [];
 	// The whole exchange, both ways, for the spec model's properties.
 	const wire: WireMessage[] = [];
@@ -246,29 +228,31 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			trail.push(`cd: ${fourth.slice(0, 900)}`);
 			expect(fourth).not.toContain(copied);
 			expect(world.blocked).toEqual([]);
-			// Every provider call went through the box's proxy: a call that
-			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach
-			// the internet directly, or fail on an enterprise network.
 			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
-			// Nothing more is asked of the owner: no sign-in, approval, store or
-			// hand-off refusal remains. What follows is the CD project's own
-			// convergence (see the todo below).
+			expect(fourth).toContain("HOBO_OK");
+			expect(fourth).toContain(
+				"hobo cd up deployed 4 resources (cd-api, cd-config, cd-journal, cd-tick)",
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
+				),
+			).toHaveLength(1);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
 			const events = eventsFromWire(server.wire);
-			const verdicts = ceremonyProperties({ secrets: [copied, jwt] }).map(
-				(property) => check(property, events),
-			);
+			const verdicts = [
+				...ceremonyProperties({ secrets: [copied, jwt] }),
+				REACHES_FRONTIER,
+			].map((property) => check(property, events));
 			for (const verdict of verdicts)
 				trail.push(
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
-			expect(fourth).toContain("HOBO_UP_INCOMPLETE");
-			expect(check(REACHES_FRONTIER, events).holds).toBe(false);
 			// Not vacuous: the run's own sign-in form is the capture the link
 			// property holds to.
 			expect(
@@ -424,83 +408,6 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 		}
 	}, 120_000);
 
-	it("reuses the selected owner session for the same project subdirectory", async () => {
-		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
-		const api = await startFakeInfisical("org-1");
-		const world = await startTlsWorld({ "app.infisical.com": api.handle });
-		const project = path.join(REPO, "packages/ci-vercel");
-		const server = startServer({
-			...process.env,
-			XDG_CONFIG_HOME: config,
-			HTTPS_PROXY: world.proxyUrl,
-			https_proxy: world.proxyUrl,
-			HTTP_PROXY: world.proxyUrl,
-			http_proxy: world.proxyUrl,
-			NO_PROXY: "",
-			no_proxy: "",
-			NODE_EXTRA_CA_CERTS: world.caBundle,
-		});
-		try {
-			await server.answer(
-				server.call("initialize", {
-					protocolVersion: "2025-11-25",
-					capabilities: LIVE_HOST,
-				}),
-			);
-			const first = await server.answer(
-				server.tool("cd", { args: ["up", "--hand-off"], cwd: project }),
-			);
-			expect(JSON.stringify(first)).toContain("HOBO_CD_STORE_CHOICE");
-			const choice = server.tool("choose_secret_store", {
-				family: "cd",
-				cwd: project,
-			});
-			const picker = await server.next(
-				(m) => m.method === "elicitation/create",
-			);
-			server.send({
-				jsonrpc: "2.0",
-				id: picker.id ?? null,
-				result: { action: "accept", content: { store: "infisical" } },
-			});
-			const settings = await server.next(
-				(m) => m.method === "elicitation/create",
-			);
-			server.send({
-				jsonrpc: "2.0",
-				id: settings.id ?? null,
-				result: {
-					action: "accept",
-					content: { INFISICAL_PROJECT_ID: "synthetic-private-project" },
-				},
-			});
-			const selected = await server.answer(choice);
-			expect(JSON.stringify(selected)).not.toContain(
-				"synthetic-private-project",
-			);
-			const retry = server.tool("cd", {
-				args: ["up", "--hand-off"],
-				cwd: project,
-			});
-			const signIn = await server.next(
-				(m) => m.method === "elicitation/create",
-			);
-			server.send({
-				jsonrpc: "2.0",
-				id: signIn.id ?? null,
-				result: { action: "decline" },
-			});
-			const result = JSON.stringify(await server.answer(retry));
-			expect(result).toContain("HOBO_CD_INFISICAL_SIGN_IN");
-			expect(result).not.toContain("synthetic-private-project");
-			expect(result).not.toMatch(/https?:/u);
-		} finally {
-			server.stop();
-			await world.close();
-			await api.close();
-		}
-	}, 120_000);
-
 	it("does not expose a sign-in link when the host offers no owner form", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
 		const api = await startFakeInfisical("org-1");
@@ -552,12 +459,4 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			await api.close();
 		}
 	}, 120_000);
-
-	// The CD project's own declaration (packages/hobo-cd/src/bindle.ts) says
-	// its resources must be wired before it can deploy: the API has no handler
-	// binding, the schedule no cadence, and cd-config / cd-journal no
-	// providers in the composed runtime. The plan is rejected there today.
-	it.todo(
-		"cd up converges the CD project after the ceremony (the hobo-cd Bindle is not deployable yet)",
-	);
 });

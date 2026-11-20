@@ -103,6 +103,14 @@ export {
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
 export {
+	PrivateOwnerDispatchError,
+	PrivateOwnerRequestError,
+} from "./isolated-owner-errors.js";
+export {
+	type IsolatedOwnerFetchOptions,
+	isolatedOwnerFetch,
+} from "./isolated-owner-fetch.js";
+export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
 	ONE_PASSWORD_SIGN_IN_CAPTURES,

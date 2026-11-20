@@ -532,7 +532,9 @@ export async function ownerStore(
 				!(
 					((workloadSignIn || proxySignIn || oauthSignIn) &&
 						field.name === "INFISICAL_TOKEN") ||
-					(connectHost !== undefined && field.name === "OP_ACCOUNT") ||
+					((connectHost !== undefined ||
+						Boolean(vault.reveal("OP_SERVICE_ACCOUNT_TOKEN"))) &&
+						field.name === "OP_ACCOUNT") ||
 					// Bitwarden: the API key is asked for only while the run holds
 					// no sign-in (a token, the organization key, or the key itself).
 					(id === "bitwarden" &&

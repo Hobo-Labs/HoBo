@@ -228,12 +228,7 @@ export function composeHoboMcp(options: {
 			);
 		},
 	});
-	session = createMcpStdioSession(
-		capture,
-		createStoreChoiceApp({
-			locatorFor: (cwd, family) => storeSettingsFor(family, cwd),
-		}),
-	);
+	session = createMcpStdioSession(capture, createStoreChoiceApp());
 	const ready = capture;
 	return {
 		owner,

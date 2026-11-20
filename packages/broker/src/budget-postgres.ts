@@ -7,7 +7,11 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
+	captureIacPricedSettlementTrust,
+	captureIacUnpricedScopeTrust,
 	createBudgetAdmissionAuthority,
+	type IacPricedSettlementTrust,
+	type IacUnpricedScopeTrust,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -32,6 +36,8 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 	pool: Pool;
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
+	unpricedScopeTrust?: IacUnpricedScopeTrust;
+	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	now?: () => string;
 	/** Bound pool starvation, including a CI transaction holding the same pool. */
 	connectionTimeoutMs?: number;
@@ -43,6 +49,12 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 } {
 	const owner = options.snapshot.identity;
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
+	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
+		options.unpricedScopeTrust,
+	);
+	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
+		options.iacPricedSettlementTrust,
+	);
 	if (!owner?.tenantId || !owner.budgetId)
 		throw new Error("complete shared budget ownership required");
 	const partition = createHash("sha256")
@@ -154,6 +166,10 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 				snapshot: base,
 				priorEvents,
 				...(fenceTrust ? { fenceTrust } : undefined),
+				...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
+				...(iacPricedSettlementTrust
+					? { iacPricedSettlementTrust }
+					: undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");
@@ -193,12 +209,27 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 		claimExecution(input) {
 			return transaction((authority) => {
 				authority.read(now());
-				return authority.claimExecution(input);
+				return authority.claimExecution({ ...input, now: now() });
 			});
 		},
 		reserve(input) {
 			return transaction((authority) =>
 				authority.reserve({ ...input, now: now() }),
+			);
+		},
+		reserveUnbounded(input) {
+			return transaction((authority) =>
+				authority.reserveUnbounded({ ...input, now: now() }),
+			);
+		},
+		revalidateUnbounded(input) {
+			return transaction((authority) =>
+				authority.revalidateUnbounded({ ...input, now: now() }),
+			);
+		},
+		revalidatePriced(input) {
+			return transaction((authority) =>
+				authority.revalidatePriced({ ...input, now: now() }),
 			);
 		},
 		settle(id, actualMicros, evidence) {

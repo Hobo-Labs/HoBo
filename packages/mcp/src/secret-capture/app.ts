@@ -669,14 +669,14 @@ export function createSecretCaptureApp(
 		if (status.connected === false)
 			return new SecretCaptureError(
 				"SECRET_STORE_NOT_CONNECTED",
-				`No secret store is connected, so ${spec.name} has nowhere to go.`,
-				"Use the secure HoBo owner hand-off to open the selected store.",
+				`No secret store is connected (${status.reason}), so ${spec.name} has nowhere to go.`,
+				status.nextStep,
 			);
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(
 				"SECRET_STORE_WRITER_REQUIRED",
-				"The selected secret store is connected, but this session may not write to it yet.",
-				"Use the secure HoBo owner hand-off to authorize the session.",
+				"A secret store is configured, but this session may not write to it yet.",
+				`Call ${CAPTURE_SECRET_TOOL} with name ${status.writerSpec} and writerClientId (the writer identity's Client ID) first; the owner enters its one-use client secret in the same kind of form.`,
 			);
 		return undefined;
 	}
