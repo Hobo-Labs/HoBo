@@ -225,19 +225,17 @@ describe("missingRequiredCandidates", () => {
 			submitConfirm: "Save settings?",
 		};
 		const spec = deterministicConnectSpec(step);
-		const fieldKey = Object.keys(spec.elements).find(
-			(key) => spec.elements[key]?.type === "Input",
+		const fieldEntry = Object.entries(spec.elements).find(
+			([, element]) => element.type === "Input",
 		);
-		expect(fieldKey).toBeDefined();
-		const field = spec.elements[fieldKey as string];
+		expect(fieldEntry).toBeDefined();
+		const [fieldKey, field] = fieldEntry ?? ["", spec.elements.root];
+		const props = z.record(z.string(), z.unknown()).parse(field.props);
 		const elements = {
 			...spec.elements,
-			[fieldKey as string]: {
+			[fieldKey]: {
 				...field,
-				props: {
-					...(field.props as Record<string, unknown>),
-					value: { $bindState: "/form/wrong-path" },
-				},
+				props: { ...props, value: { $bindState: "/form/wrong-path" } },
 			},
 		};
 		expect(missingRequiredCandidates(step, { ...spec, elements })).toContain(
