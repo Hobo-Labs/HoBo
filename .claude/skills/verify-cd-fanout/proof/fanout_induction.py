@@ -9,6 +9,7 @@ if get_version_string() != "4.15.4":
     raise SystemExit(f"expected Z3 4.15.4, got {get_version_string()}")
 
 mandatory, succeeded, production = Ints("mandatory succeeded production")
+mandatory_failures, starts = Ints("mandatory_failures starts")
 halted = Bool("halted")
 started = Bool("started")
 catchup = Bool("catchup")
@@ -46,6 +47,9 @@ if os.environ.get("FANOUT_PROOF_MUTATION") != "omit-catchup-gate":
 halt_guard = []
 if os.environ.get("FANOUT_PROOF_MUTATION") != "omit-halt-guard":
     halt_guard.append(Implies(started, Not(halted)))
+failure_guard = []
+if os.environ.get("FANOUT_PROOF_MUTATION") != "omit-mandatory-failure-guard":
+    failure_guard.append(Implies(started, mandatory_failures == 0))
 checks = [
     prove("new fanout", [mandatory >= 0], invariant(0, 0)),
     prove("mandatory camp succeeds", [state, succeeded < mandatory],
@@ -56,8 +60,11 @@ checks = [
           invariant(succeeded, production + 1)),
     prove("halt prevents a new start", [state, *halt_guard],
           Implies(halted, If(started, production + 1, production) == production)),
+    prove("mandatory failure prevents a new start",
+          [state, mandatory_failures >= 0, starts >= 0, *failure_guard],
+          Implies(mandatory_failures > 0, If(started, starts + 1, starts) == starts)),
     prove("halt, resume or idle retain progress", [state],
           invariant(succeeded, production)),
 ]
-print("SCOPE: assumes monotone pilot success within one run, a gate in both modes, and atomic scheduling")
+print("SCOPE: assumes monotone pilot success within one run, accurate failure counts, gates in both modes, and atomic scheduling")
 sys.exit(0 if all(checks) else 1)
