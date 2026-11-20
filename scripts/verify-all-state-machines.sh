@@ -93,11 +93,11 @@ for skill in "${skills[@]}"; do
 done
 if [[ "$needs_z3" == true ]]; then
 	if [[ -n "${BUDGET_Z3_PYTHONPATH:-}" ]]; then
-		if ! PYTHONPATH="$BUDGET_Z3_PYTHONPATH" python3 -c 'import z3; assert z3.get_version_string() == "4.15.4"'; then
+		if ! PYTHONPATH="$BUDGET_Z3_PYTHONPATH" python3 -c $'import sys, z3\nversion = z3.get_version_string()\nif version != "4.15.4":\n\tprint(f"Z3 4.15.4 is required; found {version}.", file=sys.stderr)\n\tsys.exit(1)'; then
 			echo 'BUDGET_Z3_PYTHONPATH must contain z3-solver 4.15.4.0.' >&2
 			exit 2
 		fi
-	elif ! python3 -c 'import z3; assert z3.get_version_string() == "4.15.4"' 2>/dev/null; then
+	elif ! python3 -c $'import sys, z3\nversion = z3.get_version_string()\nif version != "4.15.4":\n\tprint(f"Z3 4.15.4 is required; found {version}.", file=sys.stderr)\n\tsys.exit(1)' 2>/dev/null; then
 		if ! python3 -m pip install --disable-pip-version-check --no-cache-dir --no-deps \
 			--target "$scratch_dir/python" 'z3-solver==4.15.4.0'; then
 			echo 'Unable to install pinned Z3; set BUDGET_Z3_PYTHONPATH.' >&2
