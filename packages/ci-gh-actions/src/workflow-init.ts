@@ -426,12 +426,12 @@ function needsJobReferencePattern(jobId: string): string {
 	const dot = DOT_JOB_ID.test(jobId)
 		? String.raw`\.\s*${caseFoldLiteral(jobId)}(?![\w-])|`
 		: "";
-	return String.raw`\b${caseFoldLiteral("needs")}\s*(?:${dot}${index})`;
+	return String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*(?:${dot}${index})`;
 }
 
 function needsWildcardPattern(): string {
 	const index = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
-	return String.raw`\b${caseFoldLiteral("needs")}\s*(?:\.\s*\*|${index})`;
+	return String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*(?:\.\s*\*|${index})`;
 }
 
 function staticNeedsIndex(): string {
@@ -442,7 +442,7 @@ function staticNeedsIndex(): string {
 	return String.raw`(?:\*|${yamlDoubledSingle}|${expressionSingle}|${expressionDouble}|${yamlEscapedDouble})`;
 }
 
-const DYNAMIC_NEEDS_INDEX = String.raw`\b${caseFoldLiteral("needs")}\s*\[(?!\s*${staticNeedsIndex()}\s*\])`;
+const DYNAMIC_NEEDS_INDEX = String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*\[(?!\s*${staticNeedsIndex()}\s*\])`;
 
 function classifyNeedsItem(
 	workflow: Workflow,

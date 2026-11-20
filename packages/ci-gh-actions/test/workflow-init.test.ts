@@ -507,6 +507,78 @@ jobs:
 		]);
 	});
 
+	it.each([
+		"(needs).publish.outputs.value",
+		"( needs )['publish']['outputs'].value",
+		"((needs)).publish.outputs.value",
+		"!(needs).publish.outputs.value",
+		"toJSON((needs).publish)",
+		"TOJSON( ( ( NEEDS ) . PUBLISH ) )",
+		"(needs)[format('{0}', 'publish')].outputs.value",
+		"(( needs ))[inputs.job]['outputs'].value",
+		"toJSON((needs)[inputs.job])",
+	])("fails closed when a grouped needs context reads %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts a grouped wildcard needs read only when that job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ toJSON((needs).*) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ (needs).*.outputs.value }}
+      - run: echo \${{ (NEEDS)[ '*' ].OUTPUTS.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"lint ready",
+		]);
+	});
+
+	it("does not treat a grouped needs read of another job as this job's secrets", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ (needs).other.outputs.value }}
+      - run: echo \${{ (needs).publish.result }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+	});
+
 	it("counts a needs id that differs only by case as a secret dependency", () => {
 		const source = `on: push
 jobs:
@@ -1887,6 +1959,12 @@ ${caller}`;
 		"fromJSON(toJSON(needs.route)).outputs.runner",
 		"(needs.route).outputs.runner",
 		"(needs['route']).result == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04'",
+		"(needs).route.outputs.runner",
+		"( needs )['route'].outputs.runner",
+		"((needs)).route.result == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04'",
+		"!(needs).route.outputs.runner",
+		"toJSON((needs).route)",
+		"TOJSON( ( ( NEEDS ) . ROUTE ) )",
 	])("fails closed when routing reads %s", (expression) => {
 		const source = `jobs:
   lint:
@@ -2197,6 +2275,11 @@ ${caller}`;
 		["NEEDS[ '*' ][inputs.key]", "Route"],
 		["toJSON(needs.*.*)", "route"],
 		["TOJSON( ( NEEDS.*['*'] ) )", "Route"],
+		["(needs).*.outputs.runner", "route"],
+		["(( needs )).*.outputs.runner", "Route"],
+		["(needs)[*].result", "route"],
+		["(NEEDS)[ '*' ].OUTPUTS.runner", "Route"],
+		["toJSON((needs).*)", "route"],
 	])("fails closed when %s reads every needed job through a wildcard property (%s)", (expression, needed) => {
 		const source = `jobs:
   lint:
@@ -2233,6 +2316,9 @@ ${caller}`;
 		"needs[inputs.job][format('{0}', 'outputs')].runner",
 		"needs[format('{0}', 'route')][format('{0}', 'result')]",
 		"toJSON(needs[inputs.job].*)",
+		"(needs)[inputs.job].outputs.runner",
+		"(( needs ))[format('{0}', 'route')].outputs.runner",
+		"toJSON((needs)[inputs.job])",
 	])("fails closed when a dynamic needs index reads a runner property (%s)", (expression) => {
 		const source = `jobs:
   lint:
@@ -2277,6 +2363,34 @@ ${caller}`;
 		).toEqual([
 			["route", "ready", undefined],
 			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("does not treat a grouped read of another job as this job routing", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ (needs).other.outputs.runner }}
+    steps:
+      - run: pnpm test
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["called", "skipped", "expression"],
+			["lint", "ready", undefined],
 		]);
 	});
 
