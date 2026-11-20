@@ -55,6 +55,8 @@ comma-separated list, the environment's first):
   each Camp's physical id is `<yard>/<family>-<channel>` while `logicalId`
   keeps `hobo-release/<family>-<channel>` for pipelines and journal, see
   [release channels](../../docs/design/release-channels.md#hobo-releases-through-hobo-cd)).
+  [`test/release-provider-yards.test.ts`](../../test/release-provider-yards.test.ts)
+  asserts each provider stays in its own Yard while logical Camp IDs stay stable.
 - a module or JSON file that exports `rails`: Station Rail declarations
   (`id`, `name`, `version`, `stationId` (empty: this Station),
   `approvedProviders`, `delivery`, `metadata`), each built with
