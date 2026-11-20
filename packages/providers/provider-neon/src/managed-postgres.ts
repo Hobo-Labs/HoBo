@@ -31,6 +31,12 @@ import {
 	parseJsonObject,
 } from "./json.js";
 
+declare module "pg" {
+	interface ClientBase {
+		saslSession?: { mechanism?: string } | null;
+	}
+}
+
 // public-contract: stable product identity shared by SDK declarations and provider bindings.
 export const NEON_MANAGED_POSTGRES_PRODUCT_ID = "neon.managed-postgres/v1";
 
@@ -266,7 +272,7 @@ export async function probeNeonManagedSession(
 	input: NeonManagedSession,
 ): Promise<void> {
 	let offeredPlus = false;
-	let completedPlus = false;
+	let negotiatedPlus = false;
 	let rejectedAuthentication = false;
 	const config = {
 		host: input.host,
@@ -284,8 +290,6 @@ export async function probeNeonManagedSession(
 		connectionTimeoutMillis: 5_000,
 		query_timeout: 5_000,
 	};
-	if (config.enableChannelBinding !== true)
-		throw new Error("channel binding is not supported by the driver");
 	const client = new pg.Client(config);
 
 	const rejectAuthentication = () => {
@@ -310,7 +314,9 @@ export async function probeNeonManagedSession(
 		},
 	);
 	client.connection.prependListener("authenticationSASLFinal", () => {
-		completedPlus = offeredPlus && !rejectedAuthentication;
+		negotiatedPlus =
+			client.saslSession?.mechanism === "SCRAM-SHA-256-PLUS" &&
+			!rejectedAuthentication;
 	});
 	client.connection.prependListener(
 		"authenticationCleartextPassword",
@@ -322,7 +328,7 @@ export async function probeNeonManagedSession(
 	);
 	try {
 		await client.connect();
-		if (!completedPlus || rejectedAuthentication)
+		if (!negotiatedPlus || rejectedAuthentication)
 			throw new Error("channel binding was not authenticated");
 		const result = await client.query(
 			"SELECT current_database() AS database, current_user AS username, NOT pg_is_in_recovery() AS primary, current_setting('transaction_read_only') = 'off' AS read_write, has_database_privilege(current_user, current_database(), 'CREATE') AS can_create, current_setting('server_version_num')::int AS version",
