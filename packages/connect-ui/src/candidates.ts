@@ -70,7 +70,7 @@ function fieldCandidate(field: ConfigField): Candidate {
 	};
 }
 
-export const OPTIONAL_SUFFIX = "-optional";
+export const OPTIONAL_SUFFIX = "-optional"; // public-contract: compose.ts treats candidate ids ending in this suffix as optional
 
 function heading(text: string): Candidate {
 	return {
