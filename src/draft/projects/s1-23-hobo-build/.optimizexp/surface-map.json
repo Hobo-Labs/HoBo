@@ -1,18 +1,22 @@
 {
   "schemaVersion": 1,
   "projectId": "s1-23-hobo-build",
-  "scannedAt": "2026-07-31T20:12:04.053Z",
+  "scannedAt": "2026-11-17T18:35:43.878Z",
   "productName": "@hobo-draft/s1-23-hobo-build",
   "packageDir": "src/draft/projects/s1-23-hobo-build",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "src/draft/projects/s1-23-hobo-build/package.json: no package bin is declared"
+  },
   "binaries": [],
+  "binAssessments": [],
   "defaultEntry": null,
   "nonInteractiveHelp": null,
   "commands": [],
   "interactiveSurfaces": [],
   "requiredJourneys": [
-    "help-discoverability",
-    "happy-critical-path",
-    "failure-actionable"
+    "happy-critical-path"
   ],
   "probes": []
 }

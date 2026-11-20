@@ -4,7 +4,6 @@ Progressive-disclosure bundle for the sdlc coordinator skill. Route by phase:
 
 - [finish.md](finish.md) — **`--finish`**: land the current session (commit, rebase on latest trunk, conflicts, open/update PRs, push, bottom-up closeout, squash-merge all session PRs).
 - [brainstorm.md](brainstorm.md) — idea generation + adversarial/rubber-duck hardening, exit criteria.
-- [planning.md](planning.md) — plan mode over the draft-proof cascade; slice multi-phase work into stack layers.
 - [linear-planning.md](linear-planning.md) — one-shot issue contracts, initiative/milestone structure, paced creation.
 - [dispatch.md](dispatch.md) — permission gate, harness-detected backend matrix (cloud coding agents preferred for isolated issues), claim protocol, dual-transport handback, Done rule, resume/reconcile, incremental checkins.
 - [stacked-prs.md](stacked-prs.md) — parent-owned `gh stack` topology, subagent checkins, bottom-up rubber-duck/adversarial review, comment/check repair, per-PR squash-merge.
