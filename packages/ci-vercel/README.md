@@ -970,7 +970,9 @@ The isolated Sandbox runner integration is configured via
 `HOBO_CI_SANDBOX_ENABLED=1`, `HOBO_CI_SANDBOX_TEAM_ID`,
 `HOBO_CI_SANDBOX_PROJECT_ID`, `HOBO_CI_SANDBOX_ISSUER` (the pinned Vercel
 team issuer), and `HOBO_CI_SANDBOX_DOMAINS_JSON`
-(an explicit hostname allowlist). GitHub runner setup, checkout, Node setup,
+(an explicit hostname allowlist). `HOBO_CI_SANDBOX_PROVIDER=agent37`
+launches the ephemeral guests through the Agent37 sandbox driver instead of
+the Vercel Sandbox (the default). GitHub runner setup, checkout, Node setup,
 and artifact transfer can require `github.com`, `api.github.com`,
 `codeload.github.com`, `raw.githubusercontent.com`, `nodejs.org`,
 `release-assets.githubusercontent.com`, `*.actions.githubusercontent.com`,
