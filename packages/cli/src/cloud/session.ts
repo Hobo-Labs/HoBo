@@ -43,6 +43,7 @@ export async function persistSession(
 export async function loadSession(dir: string): Promise<YardSession | null> {
 	try {
 		const raw = await readFile(sessionPath(dir), "utf8");
+		// SAFETY: `const parsed = JSON.parse(raw) as YardSession;` is required at this I/O or test boundary.
 		const parsed = JSON.parse(raw) as YardSession;
 		if (
 			parsed &&

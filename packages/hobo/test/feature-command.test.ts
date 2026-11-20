@@ -4,6 +4,7 @@ import {
 	createLocalFeatureClient,
 	FeatureFlagStore,
 } from "@hobo/identity";
+import { createFlagEmulator, createTestHarness } from "@hobo/testing";
 import { describe, expect, it } from "vitest";
 import { createFeatureCommand } from "../src/feature-command.js";
 import { isJsonBoolean, isJsonObject, type JsonObject } from "../src/json.js";
@@ -18,6 +19,64 @@ function runInput(args: string[], flags: JsonObject = {}) {
 }
 
 describe("hobo feature (OpenFeature observe)", () => {
+	it("runs the real feature command against the graph's swappable flag port", async () => {
+		let writes = 0;
+		const harness = createTestHarness({
+			emulators: {
+				flag: () => {
+					const real = createFlagEmulator().port;
+					return {
+						fidelity: "mocked",
+						port: {
+							get rulesetSeq() {
+								return real.rulesetSeq;
+							},
+							list: () => real.list(),
+							get: (key) => real.get(key),
+							define: (input) => {
+								writes += 1;
+								return real.define(input);
+							},
+							loadDefinitions: (inputs) => real.loadDefinitions(inputs),
+							evaluateBoolean: (key, context, fallback) =>
+								real.evaluateBoolean(key, context, fallback),
+							evaluate: (key, context, fallback) =>
+								real.evaluate(key, context, fallback),
+							activateKillSwitch: (key, actor) =>
+								real.activateKillSwitch(key, actor),
+							clearKillSwitch: (key) => real.clearKillSwitch(key),
+							archive: (key) => real.archive(key),
+						},
+					};
+				},
+			},
+		});
+		const bindle = {
+			name: "features-test",
+			resources: { flags: { kind: "flag" } },
+		};
+		const graph = await harness.deploy(bindle)();
+		try {
+			const store = graph.flag("flags");
+			const cmd = createFeatureCommand({ store, env: {} });
+			// SAFETY: the command test helper provides the runtime command context.
+			const set = await cmd.run(
+				runInput(["set", "checkout"], { percent: 100 }) as never,
+			);
+			expect(set.ok).toBe(true);
+			expect(writes).toBe(1);
+			expect(store.get("checkout")?.percentage).toBe(100);
+			// SAFETY: the command test helper provides the runtime command context.
+			const result = await cmd.run(
+				runInput(["eval", "checkout"], { subject: "alice" }) as never,
+			);
+			expect(result.ok).toBe(true);
+			expect(result.data?.value).toBe(true);
+		} finally {
+			await harness.destroy(bindle)();
+		}
+	});
+
 	it("list / set / eval / kill against an injected store", async () => {
 		const store = new FeatureFlagStore();
 		const cmd = createFeatureCommand({ store, env: {} });

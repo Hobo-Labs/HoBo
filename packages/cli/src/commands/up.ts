@@ -47,7 +47,14 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 				return stubResult("up");
 			}
 			if (flags.whatIf) {
-				const planned = await createPlanCommand({ runtime }).run(input);
+				const session =
+					flags.anonymous || flags.temporary
+						? createFixtureSession()
+						: deps.session;
+				const planned = await createPlanCommand({
+					runtime,
+					...(session ? { session } : undefined),
+				}).run(input);
 				return {
 					...planned,
 					...(planned.message !== undefined

@@ -8,6 +8,7 @@ import {
 	type CollectionTarget,
 	collectBindleManifest,
 	type ManifestV1,
+	readCadence,
 } from "@hobo/bindles";
 import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import { BindleImportError } from "../shell/errors.js";
@@ -55,6 +56,7 @@ export async function loadBindleDefinition(
 		};
 		let module: BindleModule;
 		try {
+			// SAFETY: ESM namespace from a local bindle source file.
 			module = (await import(pathToFileURL(absolute).href)) as BindleModule;
 		} catch (error) {
 			if (isUncompiledTypeScript(candidate, error)) {
@@ -90,6 +92,7 @@ function isBindleDefinition<T>(value: T): value is T & BindleDefinition {
 	if (value === null || !isJsonObject(value)) {
 		return false;
 	}
+	// SAFETY: `const candidate = value as {` is required at this I/O or test boundary.
 	const candidate = value as {
 		name?: JsonValue;
 		resources?: JsonValue;
@@ -164,10 +167,17 @@ export function targetFromBindleDefinition(
 					continue;
 				}
 				const paradigm = paradigmFor(record.kind);
-				const options =
-					record.kind === "secret" && record.declaredAllow?.length
-						? { paradigm, allow: [...record.declaredAllow] }
-						: { paradigm };
+				// A schedule's cadence travels to the planner on the manifest.
+				const cron = readCadence(record.annotations);
+				const options = {
+					paradigm,
+					...(record.kind === "secret" && record.declaredAllow?.length
+						? { allow: [...record.declaredAllow] }
+						: undefined),
+					...(cron !== undefined
+						? { annotations: { cadence: cron } }
+						: undefined),
+				};
 				backing.set(name, collect.data(name, options));
 			}
 

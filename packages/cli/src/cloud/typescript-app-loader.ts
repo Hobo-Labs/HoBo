@@ -77,6 +77,7 @@ function runHandler(port: RunPort): AppFetchHandler {
 			text &&
 			request.headers.get("content-type")?.includes("application/json")
 		) {
+			// SAFETY: JSON.parse is the request JSON boundary; malformed input propagates to the host.
 			body = JSON.parse(text) as JsonValue;
 		}
 		const result = await port.run({
@@ -106,6 +107,7 @@ function runHandler(port: RunPort): AppFetchHandler {
 				headers,
 			});
 		}
+		// SAFETY: JSON response branches above leave only the platform BodyInit variants.
 		return new Response(value as BodyInit, { status: result.status, headers });
 	};
 }
@@ -135,6 +137,7 @@ export function httpDefinitionFromModule(
 }
 
 async function importApp(file: string): Promise<AppHttpModule> {
+	// SAFETY: module callables are checked by httpDefinitionFromModule before invocation.
 	return (await import(pathToFileURL(file).href)) as AppHttpModule;
 }
 
