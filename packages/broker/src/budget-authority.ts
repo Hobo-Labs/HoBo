@@ -545,6 +545,8 @@ export function createBudgetAdmissionAuthority(options: {
 } {
 	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
+	let committing = false;
+	let commitOutcomeUncertain = false;
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	const scopeTrust = captureIacUnpricedScopeTrust(options.unpricedScopeTrust);
 	const pricedSettlementTrust = captureIacPricedSettlementTrust(
@@ -1161,7 +1163,11 @@ export function createBudgetAdmissionAuthority(options: {
 				row.entitlementClaims.some(
 					(entry) =>
 						!snapshot.entitlements.some(
-							(bucket) => bucket.bucketId === entry.bucketId,
+							(bucket) =>
+								bucket.bucketId === entry.bucketId &&
+								bucket.unit === entry.unit &&
+								(row.identity === undefined ||
+									bucket.periodId === row.identity.periodId),
 						),
 				)
 			)
@@ -1191,12 +1197,18 @@ export function createBudgetAdmissionAuthority(options: {
 			throw new Error("budget journal financial dimension mismatch");
 	}
 	assertProjection();
+	function assertCommitCertain(): void {
+		if (commitOutcomeUncertain)
+			throw new Error("budget commit outcome uncertain; reopen the authority");
+	}
 	function save(
 		type: string,
 		next: BudgetLedgerSnapshot,
 		rows: Map<string, BudgetReservation>,
 		reconciliationEvidenceRef = "",
 	): void {
+		assertCommitCertain();
+		if (committing) throw new Error("budget authority mutation during commit");
 		const expectedSeq = current.seq;
 		if (!next.identity) throw new Error("budget identity missing");
 		assertFinancialHistory(next, type);
@@ -1216,14 +1228,26 @@ export function createBudgetAdmissionAuthority(options: {
 			reservations: [...rows.values()],
 			reconciliationEvidenceRef,
 		});
-		const committed: unknown = options.commit?.(
-			clone(BudgetAuthorityEventSchema, event),
-			expectedSeq,
-		);
-		if (committed instanceof Promise)
+		const payload = clone(BudgetAuthorityEventSchema, event);
+		let committed: unknown;
+		committing = true;
+		try {
+			committed = options.commit?.(payload, expectedSeq);
+		} catch (error) {
+			commitOutcomeUncertain = true;
+			throw new Error("budget commit outcome uncertain; reopen the authority", {
+				cause: error,
+			});
+		} finally {
+			committing = false;
+		}
+		if (committed !== null && Object(committed) === committed) {
+			commitOutcomeUncertain = true;
+			void synchronousVerdict(committed);
 			throw new Error(
 				"budget commit must append synchronously before acknowledgement",
 			);
+		}
 		rememberFinancialHistory(next);
 		current = clone(BudgetLedgerSnapshotSchema, next);
 		policyBindings.set(policyKey, policyFingerprint(current));
@@ -1353,14 +1377,17 @@ export function createBudgetAdmissionAuthority(options: {
 	return {
 		persistence: options.commit ? "durable-cas" : "memory",
 		read(now) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, now);
 			return clone(BudgetLedgerSnapshotSchema, current);
 		},
 		lookup(id) {
+			assertCommitCertain();
 			const row = reservations.get(id);
 			return row ? clone(BudgetReservationSchema, row) : undefined;
 		},
 		claimExecution(input) {
+			assertCommitCertain();
 			if (input.expectedSeq !== undefined && input.expectedSeq !== current.seq)
 				throw new Error("budget sequence conflict");
 			const previous = reservations.get(input.reservationId);
@@ -1431,6 +1458,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return clone(BudgetReservationSchema, updated);
 		},
 		reserve(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			validateHostingQuote(input.quote, input.now);
 			if (
@@ -1594,6 +1622,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return clone(BudgetReservationSchema, reservation);
 		},
 		reserveUnbounded(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			if (
 				!current.identity ||
@@ -1707,6 +1736,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return clone(BudgetReservationSchema, reservation);
 		},
 		revalidateUnbounded(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			const row = reservations.get(input.reservationId);
 			if (
@@ -1757,6 +1787,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return true;
 		},
 		revalidatePriced(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			const row = reservations.get(input.reservationId);
 			if (
@@ -1794,6 +1825,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return true;
 		},
 		settle(id, actualMicros, evidence) {
+			assertCommitCertain();
 			if (!evidence)
 				throw new Error(
 					"authoritative usage and confirmed source retirement evidence required",
@@ -1852,9 +1884,11 @@ export function createBudgetAdmissionAuthority(options: {
 			return change(id, "settled", actualMicros, proof);
 		},
 		uncertain(id) {
+			assertCommitCertain();
 			return change(id, "uncertain");
 		},
 		release(id, confirmedUnused, evidenceRef) {
+			assertCommitCertain();
 			if (confirmedUnused !== true || !evidenceRef)
 				throw new Error("confirmed unused funds and evidence required");
 			return change(id, "released", undefined, {
@@ -1863,6 +1897,7 @@ export function createBudgetAdmissionAuthority(options: {
 			});
 		},
 		configure(snapshot, expectedSeq, now, evidence) {
+			assertCommitCertain();
 			validateBudgetSnapshot(snapshot, now);
 			if (
 				current.seq !== expectedSeq ||
@@ -1955,7 +1990,12 @@ export function createBudgetAdmissionAuthority(options: {
 				);
 				if (
 					old &&
-					old.reservedUnits > 0 &&
+					(old.reservedUnits > 0 ||
+						active().some((row) =>
+							row.entitlementClaims.some(
+								(claim) => claim.bucketId === old.bucketId,
+							),
+						)) &&
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)
 				)
 					throw new Error("active entitlement cannot change unit or period");
