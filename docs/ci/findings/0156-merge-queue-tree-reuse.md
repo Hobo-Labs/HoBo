@@ -119,11 +119,14 @@ and each is a GitHub answer, not an event or branch value taken on faith:
 
 1. **Same-repo PRs only.** The green run's repository and head repository are
    both this repository; fork runs are refused.
-2. **A green run of this workflow.** The workflow API lookup is
-   `/actions/workflows/hobo-ci.yml/runs`, and each returned run must have
-   `event=pull_request`, `status=completed`, `conclusion=success`, and `path`
-   exactly `.github/workflows/hobo-ci.yml` — the API-verified analogue of the
-   attestation path's signed record.
+2. **A green run of this workflow bound to this merge entry.** The workflow
+   API lookup is `/actions/workflows/hobo-ci.yml/runs`, and each returned run
+   must have `event=pull_request`, `status=completed`, `conclusion=success`,
+   and `path` exactly `.github/workflows/hobo-ci.yml`. Its `pull_requests`
+   association must include the `<n>` named by the merge-queue branch, with
+   that pull request's recorded `base.ref` equal to `main` and `base.sha`
+   equal to `<base40>`. A successful run on the same branch without that
+   association is not evidence for this entry.
 3. **The base tip matches.** The `<base40>` parsed from
    `gh-readonly-queue/main/pr-<n>-<base40>` must equal the event's
    `merge_group.base_sha` (GitHub-generated context, passed by the action) and
@@ -137,13 +140,17 @@ and each is a GitHub answer, not an event or branch value taken on faith:
    lane selection).
 6. **Fail closed on doubt.** Any refused read, malformed field, unknown shape,
    or missing evidence is `reuse=false`, logged with the reason, and the merge
-   group runs its gate jobs.
+   group runs its gate jobs. Candidate runs are scanned until one satisfies
+   every check; an earlier green run with the wrong tree or ancestry does not
+   hide a later fully verified run.
 
 Whether reuse is on is committed policy, never a variable (ADR-0181):
-`runnerRouting.mergeGroup.reusePrFabric` in `.hobo/ci.json` (default on; set
-`false` to make every merge group re-run its gate jobs). It is read beside the
-script in the trusted checkout, mirroring
-`runnerRouting.mainGate.reuseMergeQueue`.
+`runnerRouting.mergeGroup.reusePrFabric` in `.hobo/ci.json` (the committed
+`true` enables it; `false` makes every merge group re-run its gate jobs). It
+is read beside the script in the trusted checkout, mirroring
+`runnerRouting.mainGate.reuseMergeQueue`. An unreadable file, invalid JSON, or
+schema-invalid or incomplete routing policy disables reuse; none falls back
+to an implicit enabled default.
 
 ### What is skipped, and what still runs
 
@@ -180,9 +187,11 @@ this change.
 ## Verified
 
 - `scripts/test/pr-fabric-reuse.test.ts` — the entry pattern, every refusal
-  (policy off, non-merge-group, unparseable branch, base/event mismatch,
-  other tree, base not contained, unfetched evidence), the evidence fetch's
-  URL shape, and its fail-closed behavior on every refused or failing read.
+  (policy off, unreadable or invalid policy, non-merge-group, unparseable
+  branch, base/event mismatch, wrong PR association, wrong base ref or SHA,
+  other tree, base not contained, unfetched evidence), scanning past rejected
+  green runs, the evidence fetch's URL shape, and its fail-closed behavior on
+  every refused or failing read.
 - `scripts/test/attested-jobs.test.ts` — the covered jobs' new conditions
   match the workflow, and the shadow-plan and workflow blob pins were
   re-reviewed for the change (a local run evaluates

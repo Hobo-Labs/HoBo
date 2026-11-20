@@ -13,7 +13,7 @@ import {
 
 // public-contract: set to `false` in .hobo/ci.json to make merge groups re-run their gate jobs.
 export const PR_FABRIC_REUSE_SETTING = "runnerRouting.mergeGroup.reusePrFabric";
-export const DEFAULT_REUSE_PR_FABRIC = true;
+export const DEFAULT_REUSE_PR_FABRIC = false;
 
 export function reusePrFabricSetting(text: string | undefined): boolean {
 	return (
@@ -23,19 +23,19 @@ export function reusePrFabricSetting(text: string | undefined): boolean {
 
 export const PR_FABRIC_RUN_LOOKUPS = 10;
 export const MERGE_QUEUE_ENTRY_PATTERN =
-	/^gh-readonly-queue\/main\/pr-(\d+)-([0-9a-f]{40})$/u;
+	/^gh-readonly-queue\/(main)\/pr-(\d+)-([0-9a-f]{40})$/u;
 
 const SHA = /^[0-9a-f]{40}$/u;
 const NO_EVIDENCE_REASON = "no green PR Fabric run verified for this tree";
 
 export function parseMergeQueueEntry(
 	headBranch: string | undefined | null,
-): Readonly<{ pr: number; base: string }> | undefined {
+): Readonly<{ pr: number; baseRef: string; base: string }> | undefined {
 	const match = MERGE_QUEUE_ENTRY_PATTERN.exec(headBranch ?? "");
 	if (!match) return undefined;
-	const pr = Number(match[1]);
+	const pr = Number(match[2]);
 	return Number.isSafeInteger(pr) && pr > 0
-		? { pr, base: match[2] ?? "" }
+		? { pr, baseRef: match[1] ?? "", base: match[3] ?? "" }
 		: undefined;
 }
 
@@ -143,6 +143,7 @@ export async function fetchPrFabricEvidence(
 		workflowBasename: string;
 		token: string;
 		pr: number;
+		baseRef: string;
 		base: string;
 		mergeHeadSha: string;
 	}>,
@@ -196,17 +197,31 @@ export async function fetchPrFabricEvidence(
 			asText(run.conclusion) !== "success"
 		)
 			continue;
+		const pullRequests = run.pull_requests;
+		if (
+			!Array.isArray(pullRequests) ||
+			!pullRequests.some((value) => {
+				const candidate = asObject(value);
+				const candidateBase = asObject(candidate?.base);
+				return (
+					asNumber(candidate?.number) === options.pr &&
+					asText(candidateBase?.ref) === options.baseRef &&
+					parsedSha(candidateBase?.sha) === options.base
+				);
+			})
+		)
+			continue;
 		const prHeadSha = parsedSha(run.head_sha);
 		if (!prHeadSha) continue;
 		const prHeadTree = commitTree(await read(`/git/commits/${prHeadSha}`));
-		if (!prHeadTree) continue;
+		if (!prHeadTree || prHeadTree !== mergeTree) continue;
 		const compare = asObject(
 			await read(`/compare/${options.base}...${prHeadSha}`),
 		);
 		const mergeBase = parsedSha(asObject(compare?.merge_base_commit)?.sha);
-		const baseAncestor = mergeBase === options.base;
+		if (mergeBase !== options.base) continue;
 		const runId = asNumber(run.id);
-		const evidence = { mergeTree, prHeadTree, baseAncestor };
+		const evidence = { mergeTree, prHeadTree, baseAncestor: true };
 		return runId === undefined ? evidence : { ...evidence, runId };
 	}
 	return undefined;
@@ -246,6 +261,7 @@ async function main(): Promise<void> {
 			workflowBasename,
 			token: process.env.GITHUB_TOKEN?.trim() ?? "",
 			pr: entry.pr,
+			baseRef: entry.baseRef,
 			base: entry.base,
 			mergeHeadSha: headSha,
 		});

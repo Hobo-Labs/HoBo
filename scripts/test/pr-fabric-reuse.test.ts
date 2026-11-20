@@ -41,8 +41,12 @@ function input(overrides: Partial<PrFabricReuseInput> = {}) {
 }
 
 describe("the merge-queue entry branch name", () => {
-	it("names the pull number and the base tip", () => {
-		assert.deepEqual(parseMergeQueueEntry(BRANCH), { pr: 2016, base: BASE });
+	it("names the pull number, target base ref and base tip", () => {
+		assert.deepEqual(parseMergeQueueEntry(BRANCH), {
+			pr: 2016,
+			baseRef: "main",
+			base: BASE,
+		});
 	});
 
 	it("is nothing else: main, forks of the pattern, other refs, truncations", () => {
@@ -93,18 +97,20 @@ describe("pr-fabric reuse on a merge group", () => {
 		);
 	});
 
-	it("reads the setting from .hobo/ci.json beside the script, never the environment", () => {
+	it("reads only valid committed policy and fails closed on unreadable or invalid config", () => {
 		const committed = readFileSync(
 			new URL("../../.hobo/ci.json", import.meta.url),
 			"utf8",
 		);
-		assert.equal(DEFAULT_REUSE_PR_FABRIC, true);
+		assert.equal(DEFAULT_REUSE_PR_FABRIC, false);
 		assert.equal(reusePrFabricSetting(committed), true);
 		const project = JSON.parse(committed);
 		project.runnerRouting.mergeGroup.reusePrFabric = false;
 		assert.equal(reusePrFabricSetting(JSON.stringify(project)), false);
-		assert.equal(reusePrFabricSetting(undefined), true);
-		assert.equal(reusePrFabricSetting("{}"), true);
+		for (const invalid of [undefined, "", "{", "{}"])
+			assert.equal(reusePrFabricSetting(invalid), false, String(invalid));
+		project.runnerRouting.mergeGroup.reusePrFabric = "true";
+		assert.equal(reusePrFabricSetting(JSON.stringify(project)), false);
 	});
 
 	it("applies only to a merge group", () => {
@@ -196,6 +202,7 @@ const greenRun = {
 	head_sha: PR_HEAD,
 	repository: { full_name: "Hobo-Labs/HoBo" },
 	head_repository: { full_name: "Hobo-Labs/HoBo" },
+	pull_requests: [{ number: 2016, base: { ref: "main", sha: BASE } }],
 };
 
 const routes = {
@@ -224,6 +231,7 @@ describe("the evidence fetch", () => {
 			workflowBasename: "hobo-ci.yml",
 			token: "t",
 			pr: 2016,
+			baseRef: "main",
 			base: BASE,
 			mergeHeadSha: HEAD,
 		});
@@ -236,7 +244,7 @@ describe("the evidence fetch", () => {
 		assert.equal(seen.length, 5);
 	});
 
-	it("skips runs that are not green same-repo runs of this workflow", async () => {
+	it("skips runs that are not green same-repo runs of this workflow bound to the merge entry", async () => {
 		const runsRoute = `/actions/workflows/hobo-ci.yml/runs?event=pull_request&status=success&branch=cursor%2Fmerge-queue-tree-reuse&per_page=${PR_FABRIC_RUN_LOOKUPS}`;
 		for (const overrides of [
 			{ conclusion: "failure" },
@@ -248,6 +256,17 @@ describe("the evidence fetch", () => {
 			{ head_repository: { full_name: "someone/fork" } },
 			{ head_repository: null },
 			{ head_sha: "not-a-sha" },
+			{ pull_requests: null },
+			{ pull_requests: [] },
+			{
+				pull_requests: [{ number: 2919, base: { ref: "main", sha: BASE } }],
+			},
+			{
+				pull_requests: [{ number: 2016, base: { ref: "release", sha: BASE } }],
+			},
+			{
+				pull_requests: [{ number: 2016, base: { ref: "main", sha: HEAD } }],
+			},
 		]) {
 			const fetched = await fetchPrFabricEvidence({
 				fetch: api({
@@ -258,6 +277,7 @@ describe("the evidence fetch", () => {
 				workflowBasename: "hobo-ci.yml",
 				token: "t",
 				pr: 2016,
+				baseRef: "main",
 				base: BASE,
 				mergeHeadSha: HEAD,
 			});
@@ -265,23 +285,33 @@ describe("the evidence fetch", () => {
 		}
 	});
 
-	it("takes the newest green run's trees and ancestry as the evidence", async () => {
-		const withForkFirst = {
+	it("scans past green runs that fail the tree or ancestry checks", async () => {
+		const staleHead = "3333333333333333333333333333333333333333";
+		const divergedHead = "4444444444444444444444444444444444444444";
+		const withStaleRuns = {
 			...routes,
 			[`/actions/workflows/hobo-ci.yml/runs?event=pull_request&status=success&branch=cursor%2Fmerge-queue-tree-reuse&per_page=${PR_FABRIC_RUN_LOOKUPS}`]:
 				{
 					workflow_runs: [
 						{ ...greenRun, head_repository: { full_name: "someone/fork" } },
+						{ ...greenRun, id: 1, head_sha: staleHead },
+						{ ...greenRun, id: 2, head_sha: divergedHead },
 						greenRun,
 					],
 				},
+			[`/git/commits/${staleHead}`]: { tree: { sha: OTHER_TREE } },
+			[`/git/commits/${divergedHead}`]: { tree: { sha: TREE } },
+			[`/compare/${BASE}...${divergedHead}`]: {
+				merge_base_commit: { sha: staleHead },
+			},
 		};
 		const fetched = await fetchPrFabricEvidence({
-			fetch: api(withForkFirst),
+			fetch: api(withStaleRuns),
 			repository: "Hobo-Labs/HoBo",
 			workflowBasename: "hobo-ci.yml",
 			token: "t",
 			pr: 2016,
+			baseRef: "main",
 			base: BASE,
 			mergeHeadSha: HEAD,
 		});
@@ -313,6 +343,7 @@ describe("the evidence fetch", () => {
 				workflowBasename: "hobo-ci.yml",
 				token: "t",
 				pr: 2016,
+				baseRef: "main",
 				base: BASE,
 				mergeHeadSha: HEAD,
 			});
@@ -328,6 +359,7 @@ describe("the evidence fetch", () => {
 				workflowBasename: "hobo-ci.yml",
 				token: "t",
 				pr: 2016,
+				baseRef: "main",
 				base: BASE,
 				mergeHeadSha: HEAD,
 			}),
@@ -340,6 +372,7 @@ describe("the evidence fetch", () => {
 				workflowBasename: "hobo-ci.yml",
 				token: "",
 				pr: 2016,
+				baseRef: "main",
 				base: BASE,
 				mergeHeadSha: HEAD,
 			}),
