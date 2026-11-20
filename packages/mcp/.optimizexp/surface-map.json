@@ -1,18 +1,22 @@
 {
   "schemaVersion": 1,
   "projectId": "mcp",
-  "scannedAt": "2026-07-31T20:12:04.727Z",
+  "scannedAt": "2026-11-17T18:35:43.807Z",
   "productName": "@hobo/mcp",
   "packageDir": "packages/mcp",
+  "cliAssessment": {
+    "status": "not-applicable",
+    "scope": "package.json bin",
+    "evidence": "packages/mcp/package.json: no package bin is declared"
+  },
   "binaries": [],
+  "binAssessments": [],
   "defaultEntry": null,
   "nonInteractiveHelp": null,
   "commands": [],
   "interactiveSurfaces": [],
   "requiredJourneys": [
-    "help-discoverability",
-    "happy-critical-path",
-    "failure-actionable"
+    "happy-critical-path"
   ],
   "probes": []
 }
