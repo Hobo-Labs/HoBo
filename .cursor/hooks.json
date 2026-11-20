@@ -18,6 +18,19 @@
         "command": "node --experimental-strip-types \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
         "timeout": 60
       }
+    ],
+    "stop": [
+      {
+        "command": "python3 scripts/agent_completion_hook.py cursor",
+        "timeout": 10,
+        "loop_limit": null
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "python3 scripts/agent_completion_hook.py prompt cursor",
+        "timeout": 10
+      }
     ]
   }
 }

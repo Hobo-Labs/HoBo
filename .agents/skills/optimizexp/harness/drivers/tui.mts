@@ -35,7 +35,7 @@ export async function captureTui(
 		cols: process.stdout.columns ?? null,
 		rows: process.stdout.rows ?? null,
 	};
-	const asciinema = which("asciinema");
+	const asciinema = which("asciinema", { ...process.env, ...input.env });
 	if (asciinema) {
 		const castPath = path.join(outDir, "session.cast");
 		const started = Date.now();
@@ -107,5 +107,5 @@ export async function captureTui(
 		notes.push("asciinema not installed; transcript + screen size only");
 	}
 	const text = await captureCli(outDir, input);
-	return { ...text, degraded: true, notes };
+	return { ...text, degraded: true, notes: [...notes, ...text.notes] };
 }
