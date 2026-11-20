@@ -43,8 +43,9 @@ that proof.
 Automatically routed `merge_group` batches in `hobo-ci.yml` use the normal slip
 and queue decision with the `hobo-trunk` label. Admission is queue-observed
 trunk pickup, not a Broker PR-batch claim. A recent timely trunk pickup keeps
-the batch on the fleet; a refusing label or no recent pickup selects the
-configured GitHub-hosted fallback. For automatically routed `merge_group`
+the batch on the fleet only after a trunk pickup confirmation bounded to 90
+seconds; a refusing label, no recent pickup, or failed or timed-out confirmation
+selects the configured GitHub-hosted fallback. For automatically routed `merge_group`
 batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
 verifying the public repository and committed routing policy. It does not
 dispatch the optional box job: a one-time fleet observation cannot reserve

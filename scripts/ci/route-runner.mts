@@ -92,6 +92,7 @@ export const MAX_PROBE_LOOKUPS = 3;
  */
 export const PROBE_WAIT_SECONDS = 60;
 export const PROBE_POLL_SECONDS = 10;
+export const MERGE_GROUP_FLEET_CONFIRM_SECONDS = 90;
 
 export type RouteTier = "fleet" | "local" | "github";
 
@@ -684,6 +685,67 @@ export async function chooseRunner(input: {
 	}
 }
 
+export async function confirmMergeGroupFabricFleet(input: {
+	fleetDecision: RouteDecision;
+	observe: (nowMs: number) => Promise<QueueView>;
+	now: () => number;
+	sleep: (seconds: number) => Promise<void>;
+	fleetLabel: string;
+	githubLabel: string;
+	limits: RouteLimits;
+}): Promise<RouteDecision> {
+	const admissionLimits = {
+		...input.limits,
+		maxWaitSeconds: Math.min(
+			input.limits.maxWaitSeconds,
+			MERGE_GROUP_FLEET_CONFIRM_SECONDS,
+		),
+	};
+	const startedAtMs = input.now();
+	const hosted = (outcome: string): RouteDecision => ({
+		tier: "github",
+		runner: input.githubLabel,
+		reason: `merge-group trunk confirmation ${outcome}`,
+		refusedBy: "queue",
+		slip: input.fleetDecision.slip,
+	});
+	for (let poll = 0; ; poll += 1) {
+		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
+		const nowMs = input.now();
+		const waitedSeconds = seconds(startedAtMs, nowMs);
+		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
+			return hosted(
+				`timed out after ${waitedSeconds} s without a healthy trunk pickup`,
+			);
+		let view: QueueView;
+		try {
+			view = await input.observe(nowMs);
+		} catch (error) {
+			return hosted(
+				`could not read the queue (${error instanceof Error ? error.message : "unknown error"})`,
+			);
+		}
+		const observedAtMs = input.now();
+		const observedWaitSeconds = seconds(startedAtMs, observedAtMs);
+		if (observedWaitSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
+			return hosted(
+				`timed out after ${observedWaitSeconds} s without a healthy trunk pickup`,
+			);
+		const fleet = labelLoad(view.jobs, input.fleetLabel, observedAtMs);
+		if (takingJobs(fleet, admissionLimits))
+			return {
+				...input.fleetDecision,
+				reason: `${input.fleetDecision.reason}; merge-group trunk confirmation observed ${describeLoad("the fleet", fleet)}`,
+				refusedBy: "none",
+			};
+		return hosted(
+			refusingJobs(fleet, admissionLimits)
+				? "found the trunk fleet refusing jobs"
+				: "found no recent healthy trunk pickup",
+		);
+	}
+}
+
 function githubReader(apiUrl: string, token: string): QueueReader {
 	return async (path) => {
 		const response = await fetch(`${apiUrl}${path}`, {
@@ -1105,6 +1167,11 @@ export async function main(
 		event === "merge_group" &&
 		workflowFile(env) === "release-hobo.yml" &&
 		mode === "auto";
+	const mergeGroupFabric =
+		event === "merge_group" &&
+		workflowFile(env) === "hobo-ci.yml" &&
+		mode === "auto" &&
+		!args.includeOwnRun;
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,
@@ -1275,24 +1342,26 @@ export async function main(
 		confirmFleet === "busy"
 			? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
 			: limits;
+	const read = githubReader(apiUrl, token);
+	const observe = (nowMs: number) =>
+		observeQueue({
+			read,
+			repository,
+			ownRunId: Number(env.GITHUB_RUN_ID),
+			labels: localEnrolled
+				? [observedFleetLabel, labels.local]
+				: [observedFleetLabel],
+			limits: observationLimits,
+			nowMs,
+			includeOwnRun: args.includeOwnRun,
+		});
+	const sleep = (wait: number) => delay(wait * 1000);
 	let decision: RouteDecision;
 	try {
-		const read = githubReader(apiUrl, token);
 		decision = await chooseRunner({
-			observe: (nowMs) =>
-				observeQueue({
-					read,
-					repository,
-					ownRunId: Number(env.GITHUB_RUN_ID),
-					labels: localEnrolled
-						? [observedFleetLabel, labels.local]
-						: [observedFleetLabel],
-					limits: observationLimits,
-					nowMs,
-					includeOwnRun: args.includeOwnRun,
-				}),
+			observe,
 			now,
-			sleep: (wait) => delay(wait * 1000),
+			sleep,
 			mode,
 			fleetLabel: observedFleetLabel,
 			localLabel: labels.local,
@@ -1310,6 +1379,25 @@ export async function main(
 			reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
 			refusedBy: "queue",
 		};
+	}
+	if (mergeGroupFabric && decision.tier === "fleet") {
+		if (decision.runner === labels.fleet)
+			decision = {
+				tier: "github",
+				runner: labels.github,
+				reason: `merge-group trunk confirmation refused the general fleet label ${labels.fleet}`,
+				refusedBy: "queue",
+			};
+		else
+			decision = await confirmMergeGroupFabricFleet({
+				fleetDecision: decision,
+				observe,
+				now,
+				sleep,
+				fleetLabel: decision.runner,
+				githubLabel: labels.github,
+				limits,
+			});
 	}
 	if (slip.ok)
 		return report(
