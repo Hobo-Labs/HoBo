@@ -148,6 +148,67 @@ export function parseMcpConfig(text: string): ParsedFile<McpConfig> {
 	return parseJsonWith("mcp.json", McpConfigSchema, text);
 }
 
+type SemverPrecedence = {
+	readonly release: readonly [number, number, number];
+	readonly prerelease: readonly string[];
+};
+
+function parseSemverPrecedence(version: string): SemverPrecedence {
+	const withoutBuild = version.split("+", 1)[0] ?? version;
+	const firstDash = withoutBuild.indexOf("-");
+	const core =
+		firstDash === -1 ? withoutBuild : withoutBuild.slice(0, firstDash);
+	const prerelease =
+		firstDash === -1 ? [] : withoutBuild.slice(firstDash + 1).split(".");
+	const [major = Number.NaN, minor = Number.NaN, patch = Number.NaN] = core
+		.split(".")
+		.map(Number);
+	if (
+		!Number.isInteger(major) ||
+		!Number.isInteger(minor) ||
+		!Number.isInteger(patch) ||
+		major < 0 ||
+		minor < 0 ||
+		patch < 0
+	) {
+		throw new Error(`not a semver version string: ${version}`);
+	}
+	return { release: [major, minor, patch], prerelease };
+}
+
+export function compareSemverPrecedence(a: string, b: string): number {
+	const left = parseSemverPrecedence(a);
+	const right = parseSemverPrecedence(b);
+	for (let index = 0; index < 3; index++) {
+		const leftPart = left.release[index] ?? 0;
+		const rightPart = right.release[index] ?? 0;
+		if (leftPart !== rightPart) return leftPart < rightPart ? -1 : 1;
+	}
+	if (left.prerelease.length === 0 || right.prerelease.length === 0) {
+		if (left.prerelease.length === right.prerelease.length) return 0;
+		return left.prerelease.length === 0 ? 1 : -1;
+	}
+	const shared = Math.min(left.prerelease.length, right.prerelease.length);
+	for (let index = 0; index < shared; index++) {
+		const leftField = left.prerelease[index] ?? "";
+		const rightField = right.prerelease[index] ?? "";
+		if (leftField === rightField) continue;
+		const leftNumeric = /^\d+$/u.test(leftField);
+		const rightNumeric = /^\d+$/u.test(rightField);
+		if (leftNumeric && rightNumeric) {
+			const leftValue = Number(leftField);
+			const rightValue = Number(rightField);
+			if (leftValue !== rightValue) return leftValue < rightValue ? -1 : 1;
+			continue;
+		}
+		if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+		return leftField < rightField ? -1 : 1;
+	}
+	if (left.prerelease.length !== right.prerelease.length)
+		return left.prerelease.length < right.prerelease.length ? -1 : 1;
+	return 0;
+}
+
 export function manifestSemanticIssues(
 	manifest: PluginManifest,
 	versionFromReleaseTrain?: string | undefined,
@@ -161,11 +222,11 @@ export function manifestSemanticIssues(
 	}
 	if (
 		versionFromReleaseTrain !== undefined &&
-		manifest.version !== versionFromReleaseTrain
+		compareSemverPrecedence(manifest.version, versionFromReleaseTrain) < 0
 	) {
 		issues.push({
 			file: "plugin.json",
-			message: `version ${manifest.version} is stale: the release train at HEAD is ${versionFromReleaseTrain}; update it (scripts/ci/compute-release-version.mts)`,
+			message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; at or ahead of the train passes (ahead is the legitimate post-squash-merge state); update it (scripts/ci/compute-release-version.mts)`,
 		});
 	}
 	return issues;

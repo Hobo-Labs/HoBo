@@ -15,7 +15,11 @@ measures the height at the commit being reviewed — the PR branch tip
 checkout) — never at the synthetic merge ref, whose base-branch commits would
 inflate the height past the value the branch pinned. Locally, a staged
 `plugin.json` raises the expected height by one to account for the commit that
-has not been made yet.
+has not been made yet. The gate fails only when the pin is strictly older than
+the train for the checked commit: after a squash-merge, the single merge commit
+on `main` sits at a lower height than the branch tip the pin was synced to, so
+a pin ahead of the train at `main` tip is the legitimate post-merge state and
+must survive without a version-churn commit.
 
 ## Build the MCP bundle
 

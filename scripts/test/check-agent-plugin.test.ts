@@ -13,6 +13,7 @@ import {
 	checkAgentPlugin,
 	checkMarkdownLinks,
 	checkPluginScopedPath,
+	compareSemverPrecedence,
 	manifestSemanticIssues,
 	mcpSemanticIssues,
 	parseFrontmatterBlock,
@@ -173,6 +174,30 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		expect(issues[0]?.message).toMatch(/is stale/u);
 	});
 
+	it("flags a numeric-prerelease pin that is strictly older, not lexically older", () => {
+		const issues = manifestSemanticIssues(
+			{ ...validManifest, version: "0.0.0-alpha.9" },
+			"0.0.0-alpha.400",
+		);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.message).toMatch(/is stale/u);
+	});
+
+	it("accepts a pin ahead of the train, as it is after a squash-merge to main", () => {
+		expect(
+			manifestSemanticIssues(
+				{ ...validManifest, version: "0.0.0-alpha.500" },
+				"0.0.0-alpha.400",
+			),
+		).toEqual([]);
+		expect(
+			manifestSemanticIssues(
+				{ ...validManifest, version: "0.1.0" },
+				"0.0.0-alpha.400",
+			),
+		).toEqual([]);
+	});
+
 	it("rejects a name with consecutive dots or dashes", () => {
 		expect(
 			parsePluginManifest(JSON.stringify({ ...validManifest, name: "ho..bo" }))
@@ -186,6 +211,31 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 			parsePluginManifest(JSON.stringify({ ...validManifest, name: "hobo" }))
 				.issues,
 		).toEqual([]);
+	});
+});
+
+describe("compareSemverPrecedence", () => {
+	it("orders train-style prerelease heights numerically and ignores build metadata", () => {
+		expect(compareSemverPrecedence("0.0.0-alpha.9", "0.0.0-alpha.400")).toBe(
+			-1,
+		);
+		expect(
+			compareSemverPrecedence("0.0.0-alpha.400", "0.0.0-alpha.400+build.1"),
+		).toBe(0);
+		expect(compareSemverPrecedence("0.0.0-alpha.401", "0.0.0-alpha.400")).toBe(
+			1,
+		);
+	});
+
+	it("follows semver precedence: release beats prerelease, numeric loses to alphanumeric, shorter prerelease is smaller", () => {
+		expect(compareSemverPrecedence("0.0.0", "0.0.0-alpha.400")).toBe(1);
+		expect(compareSemverPrecedence("0.0.0-alpha.2", "0.0.0-alpha.beta")).toBe(
+			-1,
+		);
+		expect(compareSemverPrecedence("0.0.0-alpha", "0.0.0-alpha.1")).toBe(-1);
+		expect(compareSemverPrecedence("0.0.1-alpha.400", "0.0.0-alpha.400")).toBe(
+			1,
+		);
 	});
 });
 
