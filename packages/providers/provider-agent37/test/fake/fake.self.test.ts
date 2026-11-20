@@ -350,6 +350,71 @@ describe("Agent37 Sandbox API fake", () => {
 		expect(stringField(fork.body, "name")).toBe("forked");
 	});
 
+	it("rejects malformed JSON on fork and lifecycle routes", async () => {
+		const instanceId = stringField((await createInstance(fake)).body, "id");
+		for (const verb of ["fork", "stop"]) {
+			const response = await fetch(
+				`${fake.baseUrl}/v1/instances/${instanceId}/${verb}`,
+				{
+					method: "POST",
+					headers: {
+						authorization: `Bearer ${fake.apiKey}`,
+						"content-type": "application/json",
+					},
+					body: "{",
+				},
+			);
+			expect(response.status).toBe(400);
+			expect(await response.json()).toEqual({
+				error: {
+					code: "invalid_request",
+					message: "request body must be JSON",
+				},
+			});
+		}
+	});
+
+	it("rejects invalid resize disk values and defaults only an omitted disk", async () => {
+		const instanceId = stringField((await createInstance(fake)).body, "id");
+		for (const disk of [null, 0, -1, 1.5, 1025, "20"]) {
+			const response = await api(
+				fake,
+				"POST",
+				`/v1/instances/${instanceId}/resize`,
+				{ resources: { cpu: 2, memory: 4, disk } },
+			);
+			expect(response.status).toBe(400);
+			expect(response.body).toMatchObject({
+				error: { code: "invalid_request" },
+			});
+		}
+		const resize = await api(
+			fake,
+			"POST",
+			`/v1/instances/${instanceId}/resize`,
+			{ resources: { cpu: 4, memory: 8 } },
+		);
+		expect(resize.body).toMatchObject({
+			resources: { cpu: 4, memory: 8, disk: 20 },
+		});
+	});
+
+	it("returns a generic internal error without handler details", async () => {
+		await fake.close();
+		fake = await createAgent37FakeServer({
+			apiKey: generatedKey(),
+			execHandler: () => {
+				throw new Error("private handler failure");
+			},
+		});
+		const instanceId = stringField((await createInstance(fake)).body, "id");
+		const response = await exec(fake, instanceId, { command: "printf ready" });
+		expect(response.status).toBe(500);
+		expect(response.body).toEqual({
+			error: { code: "internal_error", message: "internal server error" },
+		});
+	});
+
 	it("provides webhook CRUD and Standard Webhooks HMAC-SHA256 signatures", async () => {
 		const received: ReceivedWebhook[] = [];
 		const receiver = createServer((request, response) => {

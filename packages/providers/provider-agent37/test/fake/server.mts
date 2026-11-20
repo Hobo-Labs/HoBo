@@ -867,7 +867,14 @@ export async function createAgent37FakeServer(
 				message: `the ${cpu} vCPU / ${memoryGb} GB size runs only on vm and performance instances`,
 			};
 		const diskGb =
-			wholeNumberOf(resources, "disk") ?? instance.resources.diskGb;
+			resources.disk === undefined
+				? instance.resources.diskGb
+				: wholeNumberOf(resources, "disk");
+		if (diskGb === null || diskGb < 1 || diskGb > 1024)
+			return {
+				ok: false,
+				message: "resources.disk must be a whole number of GB between 1 and 1024",
+			};
 		return { ok: true, cpu, memoryGb, diskGb };
 	}
 
@@ -1184,10 +1191,26 @@ export async function createAgent37FakeServer(
 					);
 				return handleResize(instance, parsedBody);
 			}
-			if (verb === "fork") return handleFork(instance, parseBody() ?? {});
+			if (verb === "fork") {
+				const parsedBody = parseBody();
+				if (parsedBody === null)
+					return errorResult(
+						400,
+						"invalid_request",
+						"request body must be JSON",
+					);
+				return handleFork(instance, parsedBody);
+			}
 			const lifecycleVerb = lifecycleVerbOf(verb);
 			if (lifecycleVerb === null) return notFound();
-			return handleLifecycle(instance, lifecycleVerb, parseBody() ?? {});
+			const parsedBody = parseBody();
+			if (parsedBody === null)
+				return errorResult(
+					400,
+					"invalid_request",
+					"request body must be JSON",
+				);
+			return handleLifecycle(instance, lifecycleVerb, parsedBody);
 		}
 		return notFound();
 	}
@@ -1220,12 +1243,8 @@ export async function createAgent37FakeServer(
 							bearer: singleHeader(request.headers, "authorization"),
 							agent37Key: singleHeader(request.headers, "x-agent37-key"),
 						});
-		} catch (error) {
-			result = errorResult(
-				500,
-				"internal_error",
-				error instanceof Error ? error.message : "unhandled failure",
-			);
+		} catch {
+			result = errorResult(500, "internal_error", "internal server error");
 		}
 		if (result.body === null) {
 			if (result.headers === null) {

@@ -19,9 +19,9 @@ package data_models
 }
 
 #Agent37FakeResources: {
-	cpu:       uint32 & >=1
-	memory_gb: uint32 & >=1
-	disk_gb:   uint32 & >=1
+	cpu:    uint32 & >=1
+	memory: uint32 & >=1
+	disk:   uint32 & >=1 & <=1024
 }
 
 #Agent37FakeExecResult: {
@@ -38,11 +38,15 @@ package data_models
 
 #Agent37FakeWebhook: {
 	id:         string & !=""
-	url:        string & =~"^https://"
+	url:        string & =~"^https://|^http://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]+)?([/?#]|$)"
 	created_at: string & !=""
 }
 
 #Agent37FakeApiError: {
+	error: #Agent37FakeError
+}
+
+#Agent37FakeError: {
 	code:    string & !=""
 	message: string
 }

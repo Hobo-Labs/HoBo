@@ -22,8 +22,8 @@ message Agent37FakeInstance {
 
 message Agent37FakeResources {
   uint32 cpu = 1;
-  uint32 memory_gb = 2;
-  uint32 disk_gb = 3;
+  uint32 memory = 2;
+  uint32 disk = 3;
 }
 
 message Agent37FakeExecResult {
@@ -45,6 +45,10 @@ message Agent37FakeWebhook {
 }
 
 message Agent37FakeApiError {
+  Agent37FakeError error = 1;
+}
+
+message Agent37FakeError {
   string code = 1;
   string message = 2;
 }
