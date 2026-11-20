@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { findFeature, listFeatures, relFromRepo, repoRoot } from "./lib/paths.mts";
 import { resolvePersonaIds, listPersonaMetas } from "./lib/persona-resolve.mts";
-import { resolveProjects } from "./lib/projects.mts";
+import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { isPathIdentifier } from "./lib/slug.mts";
 import { checkGherkinQuality } from "./lib/feature-quality.mts";
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -14,6 +17,7 @@ function parseArgs(argv: string[]): Record<string, string> {
 		else if (key === "--mode") args.mode = argv[++i] ?? "";
 		else if (key === "--id") args.id = argv[++i] ?? "";
 		else if (key === "--project" || key === "--projects") args.projects = argv[++i] ?? "";
+		else if (key === "--all-projects") args.projects = "all";
 		else if (key === "--experiences") args.experiences = argv[++i] ?? "";
 		else if (key === "--personas") args.personas = argv[++i] ?? "";
 		else if (key === "--generated-ids") args.generatedIds = argv[++i] ?? "";
@@ -184,13 +188,31 @@ function resolveOnly(args: Record<string, string>) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
-	if (args.mode === "validate") return validate(args);
-	if (args.mode === "resolve-personas") return resolveOnly(args);
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--id", "--experiences", "--personas", "--generated-ids", "--max-personas", "--project", "--projects"],
+		flags: ["--help", "-h", "--all-projects"],
+		allowEmptyValues: ["--personas", "--generated-ids"],
+	});
+	if (input.error || input.positionals.length > 0) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	if (args.mode === "help") {
 		console.log("Read-only modes: --mode validate, --mode resolve-personas. Implement requested behavior and executable tests directly.");
 		return;
 	}
+	if (args.id && !isPathIdentifier(args.id)) {
+		console.error(`Invalid feature id: ${args.id}`);
+		process.exit(2);
+	}
+	const problem = projectSelectionProblem(resolveProjects(args.projects, repoRoot()));
+	if (problem) {
+		console.error(problem);
+		process.exit(2);
+	}
+	if (args.mode === "validate") return validate(args);
+	if (args.mode === "resolve-personas") return resolveOnly(args);
 	console.error("Feature scaffolding and planning documents are prohibited. Implement the requested behavior and executable tests directly.");
 	process.exitCode = 1;
 }
