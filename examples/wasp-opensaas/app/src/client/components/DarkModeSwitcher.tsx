@@ -18,11 +18,7 @@ export function DarkModeSwitcher() {
           type="checkbox"
           aria-label="Toggle dark mode"
           checked={!isInLightMode}
-          onChange={() => {
-            if ((Object.prototype.toString.call(setColorMode) === "[object Function]" || Object.prototype.toString.call(setColorMode) === "[object AsyncFunction]")) {
-              setColorMode(isInLightMode ? "dark" : "light");
-            }
-          }}
+          onChange={() => setColorMode(isInLightMode ? "dark" : "light")}
           className="absolute top-0 z-50 m-0 h-full w-full cursor-pointer opacity-0"
         />
         <span

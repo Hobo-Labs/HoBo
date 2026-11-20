@@ -19,6 +19,12 @@ try {
   const result=spawnSync('python3',[proof],{env,stdio:'inherit'});
   if (result.error) throw result.error;
   if (result.status !== 0) process.exitCode=result.status ?? 1;
+  for (const mutation of ['omit-cost', 'omit-native']) {
+    const mutant=spawnSync('python3',[proof],{env:{...env,SHARED_POLICY_PROOF_MUTATION:mutation},encoding:'utf8'});
+    if (mutant.error) throw mutant.error;
+    if (mutant.status === 0 || !`${mutant.stdout}\n${mutant.stderr}`.includes('FAIL ')) throw new Error(`expected Z3 counterexample for ${mutation}`);
+    console.log(`Expected Z3 counterexample: ${mutation}`);
+  }
 } finally {
   rmSync(scratch,{recursive:true,force:true});
 }
