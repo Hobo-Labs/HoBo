@@ -126,7 +126,9 @@ and each is a GitHub answer, not an event or branch value taken on faith:
    association must include the `<n>` named by the merge-queue branch, with
    that pull request's recorded `base.ref` equal to `main` and `base.sha`
    equal to `<base40>`. A successful run on the same branch without that
-   association is not evidence for this entry.
+   association is not evidence for this entry. Reuse also requires the run's
+   positive safe-integer `id`, carried into the decision as `runId`; a missing
+   or invalid ID refuses reuse.
 3. **The base tip matches.** The `<base40>` parsed from
    `gh-readonly-queue/main/pr-<n>-<base40>` must equal the event's
    `merge_group.base_sha` (GitHub-generated context, passed by the action) and

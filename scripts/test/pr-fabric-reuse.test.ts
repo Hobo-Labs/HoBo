@@ -54,7 +54,7 @@ describe("the merge-queue entry branch name", () => {
 			"main",
 			"gh-readonly-queue/main/pr-2016",
 			`gh-readonly-queue/main/pr-2016-${BASE.slice(0, 39)}`,
-			"feature/gh-readonly-queue/main/pr-2016-${BASE}",
+			`feature/gh-readonly-queue/main/pr-2016-${BASE}`,
 			`gh-readonly-queue/release/pr-2016-${BASE}`,
 			`gh-readonly-queue/main/pr-zero-${BASE}`,
 			undefined,
@@ -66,7 +66,7 @@ describe("the merge-queue entry branch name", () => {
 	it("accepts an event that spells the base tip in uppercase", () => {
 		const decision = decidePrFabricReuse({
 			...input({ eventBase: BASE.toUpperCase() }),
-			...evidence(),
+			...evidence({ runId: 44766571780 }),
 		});
 		assert.equal(decision.reuse, true);
 	});
@@ -82,6 +82,25 @@ describe("pr-fabric reuse on a merge group", () => {
 		assert.equal(decision.pr, 2016);
 		assert.equal(decision.runId, 44766571780);
 		assert.match(decision.reason, /green PR Fabric run/u);
+	});
+
+	it("refuses reuse without a valid PR Fabric run ID", () => {
+		for (const runId of [
+			undefined,
+			0,
+			-1,
+			1.5,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.MAX_SAFE_INTEGER + 1,
+		]) {
+			const decision = decidePrFabricReuse({
+				...input({}),
+				...evidence({ runId }),
+			});
+			assert.equal(decision.reuse, false, String(runId));
+			assert.equal(decision.runId, undefined, String(runId));
+		}
 	});
 
 	it("is off when committed runnerRouting.mergeGroup.reusePrFabric is false", () => {

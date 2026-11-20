@@ -96,14 +96,15 @@ export function decidePrFabricReuse(
 			pr: base.pr,
 			reason: "the merge-group base tip is not contained in the PR head",
 		};
-	const decision: PrFabricDecision = {
+	const runId = input.runId;
+	if (runId === undefined || !Number.isSafeInteger(runId) || runId <= 0)
+		return { reuse: false, pr: base.pr, reason: NO_EVIDENCE_REASON };
+	return {
 		reuse: true,
 		pr: base.pr,
+		runId,
 		reason: "a green PR Fabric run tested this tree at this base",
 	};
-	return input.runId === undefined
-		? decision
-		: { ...decision, runId: input.runId };
 }
 
 export type FetchJson = (
