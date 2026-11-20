@@ -175,6 +175,7 @@
 	},
 	"pnpm": {
 		"overrides": {
+			"@vercel/queue>@vercel/oidc": "3.2.0",
 			"ts-autocode-grounding": "workspace:*",
 			"ts-autocode-rewrite": "workspace:*",
 			"ts-autocode-training": "workspace:*"

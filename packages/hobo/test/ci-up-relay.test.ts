@@ -21,6 +21,7 @@ import type { runCiRelayDeploy } from "../src/ci-relay-deploy.js";
 import {
 	createCiRelayPlanCommand,
 	createCiRelayUpCommand,
+	gitHead,
 	relayCommitPlatformDrift,
 	relayCommitSnapshot,
 	relayPlatformDrift,
@@ -311,6 +312,38 @@ export default bindle("relay", (b) => {
 			},
 		});
 		expect((await up.run(input())).code).toBe("HOBO_CI_UP_PLATFORM_DRIFT");
+	});
+
+	it("reads GITHUB_HEAD_REF when the checkout is detached", async () => {
+		const repo = mkdtempSync(join(tmpdir(), "hobo-git-head-"));
+		const work = join(repo, "cd-vercel");
+		const deployRef = "feature/git-deploy";
+		const prev = process.env.GITHUB_HEAD_REF;
+		try {
+			mkdirSync(work, { recursive: true });
+			execFileSync("git", ["init", "-b", "main"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "cd-test@hobo.local"], {
+				cwd: repo,
+			});
+			execFileSync("git", ["config", "user.name", "HoBo CD test"], {
+				cwd: repo,
+			});
+			writeFileSync(join(repo, "marker"), "x");
+			execFileSync("git", ["add", "marker"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "marker"], { cwd: repo });
+			const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+				cwd: repo,
+				encoding: "utf8",
+			}).trim();
+			execFileSync("git", ["checkout", "--detach"], { cwd: repo });
+			process.env.GITHUB_HEAD_REF = deployRef;
+			const head = await gitHead(work);
+			expect(head).toEqual({ ref: deployRef, sha });
+		} finally {
+			if (prev === undefined) delete process.env.GITHUB_HEAD_REF;
+			else process.env.GITHUB_HEAD_REF = prev;
+			rmSync(repo, { recursive: true, force: true });
+		}
 	});
 
 	it("plan falls back for a project with no relay Yard", async () => {

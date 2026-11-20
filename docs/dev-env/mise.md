@@ -111,9 +111,6 @@ The [development bootstrap verification skill](../../.agents/skills/verify-dev-b
 models executable selection and bounded installer retries. A failed installer
 can leave a file at its destination; inspect or remove it before retrying.
 
-The SDK packaging integration test uses a temporary npm cache, so it does not
-need write access to the invoking user's npm cache.
-
 ## Hermetic CI runner (`mise oci`)
 
 Self-hosted **`runs-on: hobo`** jobs use a container built from this repo’s **`mise.toml` / `mise.lock`**, not workflow tool installers:

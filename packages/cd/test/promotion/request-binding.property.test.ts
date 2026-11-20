@@ -200,6 +200,26 @@ describe("promotion request binding", () => {
 		}
 	});
 
+	it("refuses one of two different preview requests racing for a key", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		h.desired.seed("dev-1", "f1", resolvedFor("dev-1", "alpha", "f1"));
+		const request = {
+			freightId: fid("f1"),
+			sourceCampId: camp("dev-1"),
+			ttlMs: HOUR,
+			idempotencyKey: "preview-race",
+		};
+		const [first, second] = await Promise.all([
+			h.service.createPreview(request, h.ctx()),
+			h
+				.restart()
+				.createPreview({ ...request, sourceCampId: camp("dev-2") }, h.ctx()),
+		]);
+		expect([first.ok, second.ok].filter(Boolean)).toHaveLength(1);
+		expect(h.store.events(CD_EVENTS.EnvPromoteRequested)).toHaveLength(1);
+	});
+
 	it("claims a rollback key before effects and refuses different concurrent work", async () => {
 		const h = harness();
 		h.freight.add("f0");
