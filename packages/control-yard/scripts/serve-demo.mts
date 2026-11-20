@@ -1,3 +1,8 @@
+/**
+ * Long-lived local Yard demo: control-api + static game host.
+ * Usage: pnpm --filter @hobo/control-yard run serve
+ */
+
 import {
 	existsSync,
 	mkdtempSync,
@@ -89,12 +94,12 @@ const pub = stationRailsPublish(ctx, {
 	name: "prod",
 	version: "1.0.0",
 });
-const hash = String(pub.data?.contentHash ?? "");
-if (!pub.ok || !/^sha256:[a-f0-9]{64}$/u.test(hash)) {
-	throw new Error("Rail publication did not return a valid content hash");
-}
+if (!pub.ok || !pub.data)
+	throw new Error(`could not publish rail: ${pub.message}`);
+const hash = String(pub.data.contentHash);
 stationRailsApprove(ctx, { stationId: "station:local", hashOrId: hash });
 stationRailsActivate(ctx, { stationId: "station:local", hashOrId: hash });
+// ensure one authorized connection for a lively yard
 try {
 	connectionCreate(ctx, {
 		provider: "asana",
@@ -102,7 +107,9 @@ try {
 		stationId: "station:local",
 	});
 	connectionAuthorize(ctx, { idOrAlias: "work" });
-} catch {}
+} catch {
+	/* already present */
+}
 
 const api = await createControlApiServer({
 	hoboHome,
@@ -124,6 +131,7 @@ await new Promise<void>((resolve, reject) => {
 	staticSrv.on("error", reject);
 });
 
+// Prefer localhost for browser links
 const browserHost = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
 const apiUrl = HOST === "0.0.0.0" ? `http://127.0.0.1:${api.port}` : api.url;
 const gameUrl = `http://${browserHost}:${GAME_PORT}/?api=${encodeURIComponent(apiUrl)}`;

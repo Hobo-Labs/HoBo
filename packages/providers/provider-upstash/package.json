@@ -19,11 +19,14 @@
 	},
 	"dependencies": {
 		"@bufbuild/protobuf": "2.12.1",
+		"@hobo/backend-fleet": "workspace:*",
 		"@hobo/bindings": "workspace:*",
 		"@hobo/capability-profiles": "workspace:*",
 		"@hobo/core": "workspace:*",
 		"@hobo/kv-redis-compatible": "workspace:*",
-		"@hobo/provider-redaction": "workspace:*"
+		"@hobo/provider-redaction": "workspace:*",
+		"@hobo/r2-object": "workspace:*",
+		"zod": "^4.1.13"
 	},
 	"devDependencies": {
 		"@hobo/redaction-test-harness": "workspace:*",

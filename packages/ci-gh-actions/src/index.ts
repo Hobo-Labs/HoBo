@@ -421,7 +421,7 @@ export {
 	LOCAL_RUNNER_MESH_REPORT,
 	type LocalRunnerSessionObserver,
 } from "./local-runner.js";
-export { startRelayFromEnvironment } from "./main.js";
+export { type RelaySecrets, startRelayFromEnvironment } from "./main.js";
 export {
 	effectiveParallelLaunchSlots,
 	logMainShardAdmissionHold,
@@ -686,6 +686,11 @@ export {
 	writeWorkerRunnerPresence,
 } from "./runner-host-worker-jobs.js";
 export {
+	type CommittedRunnerOrder,
+	parseCiRunnerOrder,
+	RunnerOrderDocumentSchema,
+} from "./runner-order-config.js";
+export {
 	GENERIC_RUNNER_LABELS,
 	parseRunnerRouting,
 	RUNNER_ROUTING_PINS,
@@ -713,6 +718,30 @@ export {
 	createWebhookIngressHandler,
 } from "./webhook-ingress.js";
 export { createWebhookRepair } from "./webhook-repair.js";
+export {
+	readHandedWorkerSecrets,
+	WORKER_SECRETS_FD,
+	WORKER_STARTED_EVENT,
+	type WorkerSecrets,
+	waitForWorkerStart,
+	workerSecretsPayload,
+} from "./worker-secrets.js";
+export {
+	applyWorkflowPlan,
+	DEFAULT_FLEET_LABEL,
+	describeWorkflowSkip,
+	describeWorkflowWarning,
+	FLEET_RUNNER_LABELS,
+	planWorkflow,
+	WORKFLOW_SKIP_REASONS,
+	WORKFLOW_WARNINGS,
+	type WorkflowApplyResult,
+	type WorkflowInitOptions,
+	type WorkflowJobPlan,
+	type WorkflowPlan,
+	type WorkflowSkipReason,
+	type WorkflowWarning,
+} from "./workflow-init.js";
 export {
 	createGithubWorkflowVerifier,
 	type GithubWorkflowClaims,
