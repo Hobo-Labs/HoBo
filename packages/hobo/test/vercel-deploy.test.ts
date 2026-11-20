@@ -266,9 +266,16 @@ describe("selectIacProvider env-gated selection (fallback intact)", () => {
 		else process.env.VERCEL_TOKEN = savedToken;
 	});
 
-	it("selects the REAL Vercel provider when VERCEL_TOKEN is set (via process.env)", () => {
+	it("ignores a real VERCEL_TOKEN in the process environment: secrets come from the store", () => {
 		savedToken = process.env.VERCEL_TOKEN;
 		process.env.VERCEL_TOKEN = "tok_from_env";
+		const provider = selectIacProvider({ ...pulumiDeps, vercelFetch: fetch });
+		expect(provider.id).toMatch(/^pulumi-backed:/);
+	});
+
+	it("keeps an OpenSesame surrogate in the process environment: only its proxy redeems it", () => {
+		savedToken = process.env.VERCEL_TOKEN;
+		process.env.VERCEL_TOKEN = `osr_${"0".repeat(32)}`;
 		const provider = selectIacProvider({ ...pulumiDeps, vercelFetch: fetch });
 		expect(provider.id).toMatch(/^resolver-backed:/);
 	});

@@ -3,13 +3,24 @@ import { describe, expect, it } from "vitest";
 
 import {
 	blob,
+	cron,
+	delayedQueue,
 	edgeConfig,
 	edgeFunction,
+	gitFunction,
 	project,
+	queue,
+	sandboxHost,
+	schedule,
 	VERCEL_BLOB_PRODUCT_ID,
+	VERCEL_CRON_PRODUCT_ID,
 	VERCEL_EDGE_CONFIG_PRODUCT_ID,
 	VERCEL_EDGE_FUNCTION_PRODUCT_ID,
+	VERCEL_GIT_FUNCTION_PRODUCT_ID,
 	VERCEL_PROJECT_PRODUCT_ID,
+	VERCEL_QUEUE_PRODUCT_ID,
+	VERCEL_SANDBOX_HOST_PRODUCT_ID,
+	VERCEL_SCHEDULE_PRODUCT_ID,
 	vercelSlots,
 } from "../src/index.js";
 
@@ -22,7 +33,7 @@ function untypedBag<T>(json: string): T {
 
 describe("vercel slot factories", () => {
 	it.each([
-		[project(), "web", "provider.project/v1", VERCEL_PROJECT_PRODUCT_ID],
+		[project(), "web", "web.project/v1", VERCEL_PROJECT_PRODUCT_ID],
 		[
 			edgeFunction(),
 			"service",
@@ -30,7 +41,18 @@ describe("vercel slot factories", () => {
 			VERCEL_EDGE_FUNCTION_PRODUCT_ID,
 		],
 		[blob(), "bucket", "bucket.object/v1", VERCEL_BLOB_PRODUCT_ID],
+		[
+			sandboxHost(),
+			"service",
+			"service.batch/v1",
+			VERCEL_SANDBOX_HOST_PRODUCT_ID,
+		],
 		[edgeConfig(), "kv", "kv.key-value/v1", VERCEL_EDGE_CONFIG_PRODUCT_ID],
+		[queue(), "queue", "queue.at-least-once/v1", VERCEL_QUEUE_PRODUCT_ID],
+		[gitFunction(), "api", "api.http/v1", VERCEL_GIT_FUNCTION_PRODUCT_ID],
+		[delayedQueue(), "queue", "queue.delay/v1", VERCEL_QUEUE_PRODUCT_ID],
+		[schedule(), "service", "service.scheduled/v1", VERCEL_SCHEDULE_PRODUCT_ID],
+		[cron(), "service", "service.scheduled/v1", VERCEL_CRON_PRODUCT_ID],
 	])("binds slot %#, declaring what can be allocated", (binding, slot, profile, productId) => {
 		expect(binding.slot).toBe(slot);
 		expect(binding.profile).toBe(profile);
@@ -43,6 +65,12 @@ describe("vercel slot factories", () => {
 		expect(edgeFunction().properties).toEqual({});
 		expect(blob().properties).toEqual({});
 		expect(edgeConfig().properties).toEqual({});
+		expect(sandboxHost().properties).toEqual({});
+		expect(queue().properties).toEqual({});
+		expect(delayedQueue().properties).toEqual({});
+		expect(schedule().properties).toEqual({});
+		expect(gitFunction().properties).toEqual({});
+		expect(cron().properties).toEqual({});
 	});
 
 	it("carries declared options into the parsed properties", () => {
@@ -55,9 +83,41 @@ describe("vercel slot factories", () => {
 		expect(blob({ access: "private" }).properties).toEqual({
 			access: "private",
 		});
+		expect(
+			blob({
+				store: "relay-cache",
+				region: "iad1",
+				access: "private",
+				projectId: "prj_ci",
+				environments: ["production"],
+			}).properties,
+		).toEqual({
+			store: "relay-cache",
+			region: "iad1",
+			access: "private",
+			projectId: "prj_ci",
+			environments: ["production"],
+		});
 		expect(edgeConfig({ itemCountLimit: 32 }).properties).toEqual({
 			itemCountLimit: 32,
 		});
+		expect(sandboxHost({ minimumSlots: 2 }).properties).toEqual({
+			minimumSlots: 2,
+		});
+		const options = {
+			topics: ["jobs"],
+			consumers: [{ topic: "jobs", entry: "api/jobs.ts" }],
+		};
+		expect(queue(options).properties).toEqual(options);
+		expect(delayedQueue(options).properties).toEqual(options);
+		const scheduled = {
+			name: "repair",
+			cron: "*/15 * * * *",
+			function: "api/repair",
+			entry: "api/repair.ts",
+			maximumJitterSeconds: 900,
+		};
+		expect(schedule(scheduled).properties).toEqual(scheduled);
 	});
 
 	it("treats an explicit undefined as absent rather than as a value", () => {
@@ -118,5 +178,8 @@ describe("vercel slot factories", () => {
 		expect(vercelSlots.edgeFunction).toBe(edgeFunction);
 		expect(vercelSlots.blob).toBe(blob);
 		expect(vercelSlots.edgeConfig).toBe(edgeConfig);
+		expect(vercelSlots.queue).toBe(queue);
+		expect(vercelSlots.delayedQueue).toBe(delayedQueue);
+		expect(vercelSlots.schedule).toBe(schedule);
 	});
 });
