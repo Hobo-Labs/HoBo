@@ -10,7 +10,6 @@ import {
 	JobSchema,
 	OfferSchema,
 	PipelineSchema,
-	PipelineStepResultSchema,
 } from "../src/_generated/ci_pb.js";
 import {
 	BackendUnavailableError,
@@ -19,6 +18,7 @@ import {
 } from "../src/execution.js";
 import { PipelineScheduler } from "../src/scheduler.js";
 import { LeaseStore } from "../src/store.js";
+import { createScriptedPipelineBackend } from "../src/testing.js";
 
 const NOW = "2026-10-26T12:00:00Z";
 const stores: LeaseStore[] = [];
@@ -77,29 +77,17 @@ function backend(
 	calls: string[],
 	mode = "ok",
 ): PipelineBackend {
-	return {
+	return createScriptedPipelineBackend({
 		kind,
-		capabilities: ["commands", "artifacts", "cancellation"],
-		async open() {
+		open() {
 			calls.push(kind);
 			if (mode === "refused") throw new BackendUnavailableError();
-			return {
-				async run(step) {
-					return create(PipelineStepResultSchema, {
-						id: step.id,
-						exitCode: 0,
-						stdout: "same pipeline",
-					});
-				},
-				async artifact() {
-					throw new Error("no artifacts requested");
-				},
-				async close() {
-					if (mode === "uncertain") throw new Error("unknown resource state");
-				},
-			};
 		},
-	};
+		run: () => ({ stdout: "same pipeline" }),
+		close() {
+			if (mode === "uncertain") throw new Error("unknown resource state");
+		},
+	}).port;
 }
 function setup(a: Account = account(), kinds?: Map<string, PipelineBackend>) {
 	const store = new LeaseStore(":memory:");

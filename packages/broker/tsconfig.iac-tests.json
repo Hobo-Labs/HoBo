@@ -1,0 +1,14 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"types": ["node"]
+	},
+	"include": [
+		"test/iac-target-admission.test.ts",
+		"test/iac-unpriced-budget.test.ts",
+		"test/iac-unpriced-financial.test.ts",
+		"test/iac-descriptor-boundary.test.ts",
+		"test/iac-sync-trust.test.ts"
+	]
+}
