@@ -4,12 +4,17 @@ import {
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
 import { createTrustedVault } from "@hobo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS } from "../src/onepassword-access.js";
 import { ownerStore } from "../src/owner-store.js";
 import { openSecretStore, sdkPort } from "../src/secret-stores.js";
+import { ONE_PASSWORD_TEST_TOKEN } from "./support/onepassword-service-account.js";
 
 const VAULT = "a".repeat(26);
 const NAME = "HOBO_CI_GITHUB_APP_PRIVATE_KEY";
+const TOKEN = ONE_PASSWORD_TEST_TOKEN;
+const NOW = Date.parse("2026-01-03T00:00:00.000Z");
+const EXPIRES_AT = new Date(NOW + 60_000).toISOString();
 
 function sdkFixture(changeOnSecondRead = false, duplicatePassword = false) {
 	let current: sdk.Item = {
@@ -87,28 +92,31 @@ describe("1Password SDK bridge", () => {
 	] as const)("opens the %s owner store using a privately held service account", async (family) => {
 		const fx = sdkFixture();
 		const vault = createTrustedVault();
-		vault.put("OP_SERVICE_ACCOUNT_TOKEN", "fixture-service-account");
+		const validate = vi.fn(async () => true);
+		vault.put("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
 		const owner = await ownerStore(family, vault, {
 			locator: {
 				read: async () => ({
 					HOBO_SECRET_STORE: "1password",
 					OP_VAULT_ID: VAULT,
+					OP_SERVICE_ACCOUNT_EXPIRES_AT: EXPIRES_AT,
 				}),
 				write: async () => undefined,
 			},
+			validateOnePasswordServiceAccount: validate,
+			now: () => NOW,
 			onePasswordClient: async (_coordinates, holder) => {
-				expect(holder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(
-					"fixture-service-account",
-				);
+				expect(holder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(TOKEN);
 				return fx.client;
 			},
 		});
 		expect(owner.missing).toEqual([]);
+		expect(validate).toHaveBeenCalledWith(TOKEN, VAULT);
 		expect(await owner.opened?.port.access(NAME)).toMatchObject({
 			status: "ok",
 			material: "original-value",
 		});
-		expect(JSON.stringify(owner)).not.toContain("fixture-service-account");
+		expect(JSON.stringify(owner)).not.toContain(TOKEN);
 		vault.clear();
 	});
 
@@ -133,6 +141,83 @@ describe("1Password SDK bridge", () => {
 		expect(owner.missing.map((field) => field.name)).toContain("OP_ACCOUNT");
 		expect(attempted).toBe(false);
 		vault.clear();
+	});
+
+	it.each([
+		{
+			name: "an expired reuse lease",
+			token: TOKEN,
+			expiresAt: "2000-01-01T00:00:00.000Z",
+			valid: true,
+			validated: false,
+		},
+		{
+			name: "a missing reuse lease",
+			token: TOKEN,
+			expiresAt: undefined,
+			valid: true,
+			validated: false,
+		},
+		{
+			name: "a reuse lease beyond the maximum lifetime",
+			token: TOKEN,
+			expiresAt: new Date(
+				NOW + ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS + 1,
+			).toISOString(),
+			valid: true,
+			validated: false,
+		},
+		{
+			name: "an invalid token",
+			token: "not-a-service-account",
+			expiresAt: EXPIRES_AT,
+			valid: true,
+			validated: false,
+		},
+		{
+			name: "failed vault-scope re-attestation",
+			token: TOKEN,
+			expiresAt: EXPIRES_AT,
+			valid: false,
+			validated: true,
+		},
+		{
+			name: "throwing vault-scope re-attestation",
+			token: TOKEN,
+			expiresAt: EXPIRES_AT,
+			valid: "throw",
+			validated: true,
+		},
+	])("refuses $name before opening the SDK client", async (entry) => {
+		const signIn = createTrustedVault();
+		signIn.put("OP_SERVICE_ACCOUNT_TOKEN", entry.token);
+		const validate = vi.fn(async () => {
+			if (entry.valid === "throw")
+				throw new Error("private validation failure");
+			return entry.valid;
+		});
+		const client = vi.fn(async () => sdkFixture().client);
+		const opened = await openSecretStore(
+			"1password",
+			{
+				OP_VAULT_ID: VAULT,
+				...(entry.expiresAt !== undefined
+					? { OP_SERVICE_ACCOUNT_EXPIRES_AT: entry.expiresAt }
+					: undefined),
+			},
+			signIn,
+			{
+				validateOnePasswordServiceAccount: validate,
+				now: () => NOW,
+				onePasswordClient: client,
+			},
+		);
+		expect(opened.ok).toBe(false);
+		expect(JSON.stringify(opened)).not.toContain(entry.token);
+		expect(client).not.toHaveBeenCalled();
+		if (entry.validated) expect(validate).toHaveBeenCalledWith(TOKEN, VAULT);
+		else expect(validate).not.toHaveBeenCalled();
+		signIn.clear();
 	});
 
 	it("updates an existing secret while preserving the full SDK item", async () => {
@@ -193,7 +278,13 @@ describe("1Password SDK bridge", () => {
 	it("returns a reference to the actual 1Password password field", async () => {
 		const fx = sdkFixture();
 		for (const entry of [
-			{ coordinates: { OP_VAULT_ID: VAULT }, token: "fixture" },
+			{
+				coordinates: {
+					OP_VAULT_ID: VAULT,
+					OP_SERVICE_ACCOUNT_EXPIRES_AT: EXPIRES_AT,
+				},
+				token: TOKEN,
+			},
 			{
 				coordinates: { OP_VAULT_ID: VAULT, OP_ACCOUNT: "owner@example.test" },
 				token: undefined,
@@ -206,6 +297,8 @@ describe("1Password SDK bridge", () => {
 				entry.coordinates,
 				signIn,
 				{
+					validateOnePasswordServiceAccount: async () => true,
+					now: () => NOW,
 					onePasswordClient: async (coordinates, credentialHolder) => {
 						expect(coordinates).toEqual(entry.coordinates);
 						expect(credentialHolder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(

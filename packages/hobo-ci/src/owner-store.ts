@@ -25,7 +25,10 @@ import {
 import { storeLabel, storeSettings } from "./ceremony-settings.js";
 import type { provisionInfisicalAccess } from "./infisical-access.js";
 import { OAUTH_SIGN_IN } from "./infisical-oauth.js";
-import type { provisionOnePasswordAccess } from "./onepassword-access.js";
+import {
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	type provisionOnePasswordAccess,
+} from "./onepassword-access.js";
 import type { OwnerChannel, OwnerSettingsStore } from "./owner-channel.js";
 import { type HttpsOrigin, parseHttpsOrigin } from "./parsed-values.js";
 import {
@@ -489,7 +492,14 @@ export async function ownerStore(
 	const coordinates =
 		id === "bitwarden"
 			? { ...internal(saved), ...resolved.values }
-			: resolved.values;
+			: id === "1password" &&
+					saved[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT] !== undefined
+				? {
+						...resolved.values,
+						[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT]:
+							saved[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT],
+					}
+				: resolved.values;
 	const bitwardenSignedIn =
 		vault.has("BWS_ACCESS_TOKEN") ||
 		vault.has("BITWARDEN_ORG_KEY") ||

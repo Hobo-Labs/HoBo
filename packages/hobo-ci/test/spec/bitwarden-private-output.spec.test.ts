@@ -153,7 +153,7 @@ describe("Bitwarden owner hand-off privacy", () => {
 		expect(fixture.lines).toEqual([]);
 	});
 
-	it("does not propagate private owner channel errors", async () => {
+	it("refuses private owner channel failures without exposing their details", async () => {
 		const captured = setup(true);
 		captured.vault.drop("BW_CLIENTID");
 		captured.vault.drop("BW_CLIENTSECRET");
@@ -168,7 +168,7 @@ describe("Bitwarden owner hand-off privacy", () => {
 				},
 			},
 		});
-		expect(captureResult?.code).toBe("HOBO_CD_BITWARDEN_NEEDS_API_KEY");
+		expect(captureResult?.code).toBe("HOBO_CD_OWNER_CHANNEL_FAILED");
 		expect(JSON.stringify(captureResult)).not.toContain(
 			"fixture-private-capture-error",
 		);
@@ -186,9 +186,32 @@ describe("Bitwarden owner hand-off privacy", () => {
 				},
 			},
 		});
-		expect(approvalResult?.code).toBe("HOBO_CD_BITWARDEN_APPROVAL_REQUIRED");
+		expect(approvalResult?.code).toBe("HOBO_CD_OWNER_CHANNEL_FAILED");
 		expect(JSON.stringify(approvalResult)).not.toContain(
 			"fixture-private-approval-error",
+		);
+	});
+
+	it("refuses an owner organization-choice failure explicitly", async () => {
+		const fixture = setup();
+		const provider = fakeBitwarden({ organizations: 2 });
+		const result = await ensureBitwardenSignIn({
+			...fixture.options,
+			fetch: provider.fetch,
+			handOff: true,
+			silent: false,
+			owner: {
+				...basicOwner,
+				canConfirm: () => true,
+				confirm: async () => true,
+				choose: async () => {
+					throw new Error("fixture-private-choice-error");
+				},
+			},
+		});
+		expect(result?.code).toBe("HOBO_CD_OWNER_CHANNEL_FAILED");
+		expect(JSON.stringify(result)).not.toContain(
+			"fixture-private-choice-error",
 		);
 	});
 

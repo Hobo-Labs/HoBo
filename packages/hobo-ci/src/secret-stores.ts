@@ -37,6 +37,13 @@ import {
 	OAUTH_SIGN_IN,
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
+import {
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
+	parseOnePasswordServiceAccountToken,
+	type ValidateOnePasswordServiceAccount,
+	validateOnePasswordServiceAccount,
+} from "./onepassword-access.js";
 import { createOnePasswordConnectClient } from "./onepassword-connect.js";
 import {
 	type HttpsOrigin,
@@ -106,6 +113,8 @@ export interface SecretStoreDeps {
 		coordinates: Env,
 		signIn: SecretHolder,
 	) => Promise<OnePasswordSdkClient>;
+	readonly validateOnePasswordServiceAccount?: ValidateOnePasswordServiceAccount;
+	readonly now?: () => number;
 	/** Tests inject a client; otherwise `@bitwarden/sdk-napi` is loaded on demand. */
 	readonly bitwardenClient?: (
 		coordinates: Env,
@@ -467,6 +476,29 @@ export async function openSecretStore(
 					],
 				};
 			try {
+				if (!connectHost && !coordinates.OP_ACCOUNT) {
+					const token = parseOnePasswordServiceAccountToken(
+						signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN") ?? "",
+					);
+					const expiresAtText =
+						coordinates[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT];
+					const expiresAt =
+						expiresAtText === undefined
+							? Number.NaN
+							: Date.parse(expiresAtText);
+					const now = (deps.now ?? Date.now)();
+					const valid =
+						token !== undefined &&
+						Number.isFinite(expiresAt) &&
+						expiresAt > now &&
+						expiresAt <= now + ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS &&
+						(await (
+							deps.validateOnePasswordServiceAccount ??
+							validateOnePasswordServiceAccount
+						)(token, vaultId).catch(() => false));
+					if (!valid)
+						throw new Error("1Password service account reuse refused");
+				}
 				// The owner's Connect server, when named: a bearer token only,
 				// which the egress proxy injects when the run holds none.
 				const client = connectHost

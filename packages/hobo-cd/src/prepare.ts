@@ -19,6 +19,7 @@ import {
 	ignoredSecretEnvNotice,
 	KEPT_STORE_SIGN_INS,
 	lazyEgressFetch,
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
 	type OpenedSecretStore,
 	type OwnerStoreDeps,
 	openInBrowser,
@@ -35,6 +36,7 @@ import {
 	storeFailureReason,
 	storeIdOf,
 	storeSignInGuidance,
+	validateOnePasswordServiceAccount,
 	withoutSecretEnv,
 	withoutStoreSignIn,
 	withStoreWriteLock,
@@ -456,6 +458,10 @@ async function prepareVercelWithVault(
 					toolsDir: hoboToolsDir(),
 					emit: (line) => input.run.emitProgress(line),
 					interactive: input.handOff !== true,
+					validateServiceAccount:
+						deps.validateOnePasswordServiceAccount ??
+						validateOnePasswordServiceAccount,
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					...(deps.ownerChannel !== undefined
 						? { owner: deps.ownerChannel }
 						: undefined),
@@ -463,6 +469,10 @@ async function prepareVercelWithVault(
 				if (access.kind === "refused")
 					return refused(access.code, access.message, access.remediation);
 				vault.put("OP_SERVICE_ACCOUNT_TOKEN", access.token);
+				await locator.write({
+					...(await locator.read()),
+					[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT]: access.expiresAt,
+				});
 				owner = await openOwner();
 			}
 		}

@@ -31,6 +31,8 @@ export interface BitwardenSignInRefusal {
 	readonly remediation: readonly string[];
 }
 
+class BitwardenOwnerChannelError extends Error {}
+
 export interface EnsureBitwardenSignInOptions {
 	readonly family: "ci" | "cd";
 	/** The run's vault: the API key in, the access token out. */
@@ -108,7 +110,9 @@ export async function ensureBitwardenSignIn(
 								title: "Bitwarden API key: client_secret",
 								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
 							},
-						]).catch(() => undefined);
+						]).catch(() => {
+							throw new BitwardenOwnerChannelError();
+						});
 			if (given === undefined) return undefined;
 			const parsed = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
 			vault.put("BW_CLIENTID", parsed.clientId);
@@ -232,9 +236,6 @@ export async function ensureBitwardenSignIn(
 				? { runMutation: options.locator.runStoreWrite }
 				: undefined),
 			markUncertainMutation: markUncertain,
-			...(privateApproval && apiKey.kind === "egress-proxy"
-				? { requestApiKey: captureApiKey }
-				: undefined),
 			...(privateApproval && confirm !== undefined
 				? {
 						approve: async (request) => {
@@ -298,6 +299,13 @@ export async function ensureBitwardenSignIn(
 		return undefined;
 	} catch (error) {
 		if (uncertain) return uncertainRefusal();
+		if (error instanceof BitwardenOwnerChannelError)
+			return {
+				code: `HOBO_${fam}_OWNER_CHANNEL_FAILED`,
+				message:
+					"The private owner channel failed before capturing the API key.",
+				remediation: ["Retry with a working private owner channel."],
+			};
 		if (!(error instanceof SettingParseError)) throw error;
 		return {
 			code: `HOBO_${fam}_SETTING_INVALID`,

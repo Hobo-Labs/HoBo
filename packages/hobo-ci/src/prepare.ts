@@ -27,7 +27,11 @@ import { lazyEgressFetch } from "./egress.js";
 import { createGithubConnectFlow, githubAppConnected } from "./github.js";
 import { awaitHandOffStore, storeAnswers } from "./hand-off-store.js";
 import { provisionInfisicalAccess } from "./infisical-access.js";
-import { provisionOnePasswordAccess } from "./onepassword-access.js";
+import {
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	provisionOnePasswordAccess,
+	validateOnePasswordServiceAccount,
+} from "./onepassword-access.js";
 import {
 	captureAll,
 	KEPT_STORE_SIGN_INS,
@@ -486,6 +490,10 @@ async function prepareGithubWithVault(
 					toolsDir: hoboToolsDir(),
 					emit: (line) => input.run.emitProgress(line),
 					interactive: input.handOff !== true,
+					validateServiceAccount:
+						deps.validateOnePasswordServiceAccount ??
+						validateOnePasswordServiceAccount,
+					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					...(deps.ownerChannel !== undefined
 						? { owner: deps.ownerChannel }
 						: undefined),
@@ -493,6 +501,10 @@ async function prepareGithubWithVault(
 				if (access.kind === "refused")
 					return refused(access.code, access.message, access.remediation);
 				vault.put("OP_SERVICE_ACCOUNT_TOKEN", access.token);
+				await locator.write({
+					...(await locator.read()),
+					[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT]: access.expiresAt,
+				});
 				owner = await openOwner();
 			}
 		}

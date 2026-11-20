@@ -23,6 +23,7 @@ function provision(
 				toolsDir: "/unused",
 				emit: () => undefined,
 				interactive: false,
+				now: () => Date.parse("2026-11-20T00:00:00.000Z"),
 				validateServiceAccount,
 				...(owner !== undefined ? { owner } : undefined),
 			}),
@@ -35,7 +36,9 @@ describe("private remote 1Password access", () => {
 		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
 		const request = provision(owner);
 		const result = await request.start();
-		expect(result).toEqual({ kind: "ready", token: TOKEN });
+		expect(result).toMatchObject({ kind: "ready", token: TOKEN });
+		if (result.kind !== "ready") throw new Error("service account not ready");
+		expect(result.expiresAt).toBe("2026-11-21T00:00:00.000Z");
 		expect(owner.holds("OP_SERVICE_ACCOUNT_TOKEN")).toBe(false);
 		expect(request.run).not.toHaveBeenCalled();
 	});
@@ -100,26 +103,26 @@ describe("private remote 1Password access", () => {
 		expect(request.run).not.toHaveBeenCalled();
 	});
 
-	it.each([false, true])(
-		"fails closed when vault-scope validation returns false or throws (%s)",
-		async (throws) => {
-			const owner = heldOwnerChannel();
-			owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
-			const validate = vi.fn(async () => {
-				if (throws) throw new Error(TOKEN);
-				return false;
-			});
-			const request = provision(owner, validate);
-			const result = await request.start();
-			expect(result).toMatchObject({
-				kind: "refused",
-				code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
-			});
-			expect(JSON.stringify(result)).not.toContain(TOKEN);
-			expect(validate).toHaveBeenCalledWith(TOKEN, VAULT);
-			expect(request.run).not.toHaveBeenCalled();
-		},
-	);
+	it.each([
+		false,
+		true,
+	])("fails closed when vault-scope validation returns false or throws (%s)", async (throws) => {
+		const owner = heldOwnerChannel();
+		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
+		const validate = vi.fn(async () => {
+			if (throws) throw new Error(TOKEN);
+			return false;
+		});
+		const request = provision(owner, validate);
+		const result = await request.start();
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
+		});
+		expect(JSON.stringify(result)).not.toContain(TOKEN);
+		expect(validate).toHaveBeenCalledWith(TOKEN, VAULT);
+		expect(request.run).not.toHaveBeenCalled();
+	});
 
 	it("refuses local provisioning when no CLI runner is available", async () => {
 		const result = await provisionOnePasswordAccess({
@@ -129,6 +132,7 @@ describe("private remote 1Password access", () => {
 			toolsDir: "/unused",
 			emit: () => undefined,
 			interactive: true,
+			validateServiceAccount: async () => true,
 		});
 		expect(result).toMatchObject({
 			kind: "refused",

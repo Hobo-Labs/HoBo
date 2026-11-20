@@ -350,7 +350,7 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		expect(all).not.toMatch(LOOPBACK);
 	});
 
-	it("with a private approval channel, asks for the API key only through the owner's secure form", async () => {
+	it("with a private approval channel, keeps cloud API-key capture in the egress session", async () => {
 		const shown: string[] = [];
 		const asked: string[] = [];
 		const reserved: string[][] = [];
@@ -381,15 +381,15 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		);
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CD_BITWARDEN_NEEDS_API_KEY" },
+			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
 		});
-		expect(reserved).toContainEqual(["BW_CLIENTID", "BW_CLIENTSECRET"]);
+		expect(reserved).toEqual([]);
 		expect(
 			asked.every((url) => url.startsWith("https://identity.bitwarden.com/")),
 		).toBe(true);
 		expect(
 			shown.some((l) => l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)),
-		).toBe(false);
+		).toBe(true);
 		const all = text(shown, outcome);
 		expect(all).not.toMatch(/terminal/u);
 		expect(all).not.toMatch(/environment's settings/u);

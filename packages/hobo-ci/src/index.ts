@@ -103,14 +103,23 @@ export {
 	readOnlySecretsPort,
 } from "./infisical-oauth.js";
 export {
+	PrivateOwnerDispatchError,
+	PrivateOwnerRequestError,
+} from "./isolated-owner-errors.js";
+export { isolatedOwnerFetch } from "./isolated-owner-fetch.js";
+export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
 	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
+	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
 	onePasswordCli,
 	type Platform,
 	provisionOnePasswordAccess,
+	type ValidateOnePasswordServiceAccount,
+	validateOnePasswordServiceAccount,
 } from "./onepassword-access.js";
 export {
 	type OwnerAction,
@@ -176,11 +185,6 @@ export {
 	VERCEL_DEPLOY_ENTRIES,
 	workloadOidcOf,
 } from "./prepare.js";
-export {
-	PrivateOwnerDispatchError,
-	PrivateOwnerRequestError,
-} from "./isolated-owner-errors.js";
-export { isolatedOwnerFetch } from "./isolated-owner-fetch.js";
 export { ciProjectDir } from "./project.js";
 export {
 	type OpenTunnel,

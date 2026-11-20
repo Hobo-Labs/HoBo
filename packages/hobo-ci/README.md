@@ -66,8 +66,15 @@ The intended relay connection reads credentials with its own workload identity
 For a remote owner hand-off, an existing 1Password service account can be
 connected through the private owner form. Its credential stays in the scoped
 owner session and is used by the in-process SDK; the remote path does not run
-the 1Password CLI with owner information in its arguments. Local owner-terminal
-setup continues to use the owner's CLI session.
+the 1Password CLI with owner information in its arguments. Provisioning and
+every reuse authenticate the token and verify that its only accessible vault is
+the configured vault. HoBo also bounds reuse to 24 hours after provisioning;
+missing, expired, or later-dated reuse leases are refused before the SDK client
+opens. Local owner-terminal setup continues to use the owner's CLI session.
+Remote Bitwarden cloud sign-in keeps the personal API key in the session's
+egress proxy: the run neither captures nor transmits its client secret. Private
+owner-channel failures return an explicit refusal without exposing channel
+errors.
 
 When updating an existing 1Password item, HoBo preserves its other metadata and
 refuses the update if the item changed since it was read. Displayed 1Password

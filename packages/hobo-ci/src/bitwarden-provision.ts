@@ -238,7 +238,6 @@ export interface BitwardenProvisionOptions {
 	readonly chooseOrganization?: (
 		choices: readonly { readonly value: string; readonly label: string }[],
 	) => Promise<string | undefined>;
-	readonly requestApiKey?: () => Promise<BitwardenApiKey | undefined>;
 	readonly authErrorReadTimeoutMs?: number;
 	readonly runMutation?: <T>(action: () => Promise<T>) => Promise<T>;
 	readonly markUncertainMutation?: () => void;
@@ -391,6 +390,12 @@ export async function provisionBitwardenAccessToken(
 	options: BitwardenProvisionOptions,
 ): Promise<BitwardenProvisionResult> {
 	const fam = options.family.toUpperCase();
+	const ownerChannelFailed = () =>
+		new ProvisionRefusal(
+			`HOBO_${fam}_OWNER_CHANNEL_FAILED`,
+			"The private owner channel failed before completing this step.",
+			["Retry with a working private owner channel."],
+		);
 	if (options.privateOwner && options.approve === undefined)
 		return {
 			kind: "refused",
@@ -478,7 +483,7 @@ export async function provisionBitwardenAccessToken(
 		const now = options.now ?? Date.now;
 		const timeoutMs = options.timeoutMs ?? 15 * 60_000;
 		const identityHost = new URL(server.identity).host;
-		let key = options.apiKey;
+		const key = options.apiKey;
 		let signIn = await bitwardenSignIn(
 			server,
 			key,
@@ -505,34 +510,6 @@ export async function provisionBitwardenAccessToken(
 				);
 		};
 		await checkSignIn();
-		if (
-			!signIn.ok &&
-			key.kind === "egress-proxy" &&
-			options.requestApiKey !== undefined
-		) {
-			void signIn.body?.cancel().catch(() => {});
-			const supplied = await options.requestApiKey();
-			if (supplied === undefined)
-				throw new ProvisionRefusal(
-					`HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
-					"Bitwarden needs the secure owner form.",
-					["Run again when the owner is ready."],
-				);
-			key = supplied;
-			signIn = await bitwardenSignIn(
-				server,
-				key,
-				options.deviceId,
-				options.fetch,
-			);
-			await checkSignIn();
-		}
-		if (!signIn.ok && key.kind === "egress-proxy" && options.privateOwner)
-			throw new ProvisionRefusal(
-				`HOBO_${fam}_BITWARDEN_NEEDS_API_KEY`,
-				"Bitwarden needs the secure owner form.",
-				["Run again when the owner is ready."],
-			);
 		if (!signIn.ok && key.kind === "egress-proxy") {
 			options.emit(
 				`${OWNER_CREDENTIAL_LINE_PREFIX} host=${identityHost} guide=${bitwardenApiKeyPage(server)} — in Bitwarden: Account settings → Security → Keys → View API key. Give it to the agent's session in its credential form for ${identityHost} as a username and password: username = client_id, password = client_secret; never in chat. This run waits ${Math.round(timeoutMs / 60_000)} minutes and continues on its own.`,
@@ -594,7 +571,9 @@ export async function provisionBitwardenAccessToken(
 								usable.map((org) => ({ value: org.id, label: org.name })),
 							),
 						)
-						.catch(() => undefined)
+						.catch(() => {
+							throw ownerChannelFailed();
+						})
 				: undefined;
 		const organization =
 			options.organizationId !== undefined
@@ -673,7 +652,9 @@ export async function provisionBitwardenAccessToken(
 						message: `Approve HoBo's Bitwarden login request with fingerprint ${phrase}, then select Done.`,
 					}),
 				)
-				.catch(() => undefined);
+				.catch(() => {
+					throw ownerChannelFailed();
+				});
 			if (accepted !== true)
 				throw new ProvisionRefusal(
 					`HOBO_${fam}_BITWARDEN_APPROVAL_REQUIRED`,

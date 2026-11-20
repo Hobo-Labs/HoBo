@@ -99,6 +99,11 @@ export function parseOnePasswordServiceAccountToken(
 	return parsed.success ? parsed.data : undefined;
 }
 
+export type ValidateOnePasswordServiceAccount = (
+	token: OnePasswordServiceAccountToken,
+	vaultId: string,
+) => Promise<boolean>;
+
 export interface OnePasswordAccessOptions {
 	readonly family: "ci" | "cd";
 	readonly vaultId: string;
@@ -110,20 +115,22 @@ export interface OnePasswordAccessOptions {
 	readonly interactive: boolean;
 	readonly platform?: Platform;
 	readonly exists?: (file: string) => boolean;
+	readonly now?: () => number;
 	/** How to reach an owner who is not at this machine (a remote dev box). */
 	readonly owner?: OwnerChannel;
-	readonly validateServiceAccount?: (
-		token: OnePasswordServiceAccountToken,
-		vaultId: string,
-	) => Promise<boolean>;
+	readonly validateServiceAccount: ValidateOnePasswordServiceAccount;
 }
 
 export const ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE = "OP_SERVICE_ACCOUNT_TOKEN";
+export const ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT =
+	"OP_SERVICE_ACCOUNT_EXPIRES_AT";
+export const ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS = 24 * 60 * 60_000;
 
 export type OnePasswordAccess =
 	| {
 			readonly kind: "ready";
 			readonly token: OnePasswordServiceAccountToken;
+			readonly expiresAt: string;
 	  }
 	| {
 			readonly kind: "refused";
@@ -132,23 +139,21 @@ export type OnePasswordAccess =
 			readonly remediation: readonly string[];
 	  };
 
-async function hasOnlyVault(
-	token: OnePasswordServiceAccountToken,
-	vaultId: string,
-): Promise<boolean> {
-	try {
-		const sdk = await import("@1password/sdk");
-		const client = await sdk.createClient({
-			auth: token,
-			integrationName: "HoBo",
-			integrationVersion: "1",
-		});
-		const vaults = await client.vaults.list({ decryptDetails: false });
-		return vaults.length === 1 && vaults[0]?.id === vaultId;
-	} catch {
-		return false;
-	}
-}
+export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccount =
+	async (token, vaultId) => {
+		try {
+			const sdk = await import("@1password/sdk");
+			const client = await sdk.createClient({
+				auth: token,
+				integrationName: "HoBo",
+				integrationVersion: "1",
+			});
+			const vaults = await client.vaults.list({ decryptDetails: false });
+			return vaults.length === 1 && vaults[0]?.id === vaultId;
+		} catch {
+			return false;
+		}
+	};
 
 export async function provisionOnePasswordAccess(
 	options: OnePasswordAccessOptions,
@@ -170,10 +175,9 @@ export async function provisionOnePasswordAccess(
 		const token = parseOnePasswordServiceAccountToken(value);
 		const valid =
 			token !== undefined &&
-			(await (options.validateServiceAccount ?? hasOnlyVault)(
-				token,
-				options.vaultId,
-			).catch(() => false));
+			(await options
+				.validateServiceAccount(token, options.vaultId)
+				.catch(() => false));
 		if (token === undefined || !valid)
 			return refused(
 				"SERVICE_ACCOUNT",
@@ -182,7 +186,13 @@ export async function provisionOnePasswordAccess(
 					"Use a valid, unexpired service account scoped only to the configured vault.",
 				],
 			);
-		return { kind: "ready", token };
+		return {
+			kind: "ready",
+			token,
+			expiresAt: new Date(
+				(options.now ?? Date.now)() + ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
+			).toISOString(),
+		};
 	};
 	const cli = onePasswordCli(options.platform ?? currentPlatform());
 	const exists = options.exists ?? existsSync;

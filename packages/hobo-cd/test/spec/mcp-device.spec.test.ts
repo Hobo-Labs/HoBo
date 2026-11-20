@@ -8,6 +8,7 @@ import {
 } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
+import { ONE_PASSWORD_TEST_TOKEN } from "../../../hobo-ci/test/support/onepassword-service-account.js";
 
 import {
 	prepareVercelConnection,
@@ -153,7 +154,7 @@ const LINK = "https://vercel.com/device?user_code=WXYZ-1234";
 
 describe("SPEC cd up through MCP: Vercel's device grant off the request path", () => {
 	it("opens an existing 1Password account through the owner channel", async () => {
-		const token = "synthetic-service-account";
+		const token = ONE_PASSWORD_TEST_TOKEN;
 		const kept = createTrustedVault();
 		let pending = true;
 		const owner: OwnerChannel = {
@@ -185,6 +186,7 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 			env: {},
 			ownerChannel: owner,
 			openStore,
+			validateOnePasswordServiceAccount: async () => true,
 			fetch: async () => Response.json({}, { status: 400 }),
 			locator: {
 				read: async () => ({
