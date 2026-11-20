@@ -9,11 +9,8 @@ import {
   marketingNavigationItems,
 } from "./components/NavBar/constants";
 import { CookieConsentBanner } from "./components/cookie-consent/Banner";
+import { PlausibleAnalytics } from "./components/PlausibleAnalytics";
 
-/**
- * use this component to wrap all child components
- * this is useful for templates, themes, and context
- */
 export function App() {
   const location = useLocation();
   const isMarketingPage = useMemo(() => {
@@ -66,6 +63,7 @@ export function App() {
       </div>
       <Toaster position="bottom-right" />
       <CookieConsentBanner />
+      <PlausibleAnalytics />
     </>
   );
 }

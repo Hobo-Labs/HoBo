@@ -8,7 +8,9 @@
  * node --import tsx .agents/skills/optimizexp/harness/doctor.mts snapshot --project hobo
  */
 import process from "node:process";
-import { resolveProjects } from "./lib/projects.mts";
+import { projectSelectionProblem, resolveProjects } from "./lib/projects.mts";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import { repoRoot } from "./lib/paths.mts";
 import {
 	runDoctorCheck,
@@ -40,6 +42,7 @@ function parseArgs(argv: string[]) {
 		else if (a === "--out") out.out = argv[++i] ?? "";
 		else if (a === "--only") out.only = argv[++i] ?? "";
 		else if (a === "--shallow") out.shallow = "1";
+		else if (a.startsWith("--confirm-surface-current=")) out.confirmedSurfaces = [out.confirmedSurfaces, a.slice("--confirm-surface-current=".length)].filter(Boolean).join(",");
 	}
 	if (projectTokens.length) out.projects = projectTokens.join(",");
 	return out;
@@ -64,6 +67,7 @@ Options:
   --out <dir>            Snapshot output directory (snapshot mode)
   --only action,action   Limit repair actions (e.g. ensure-config,build-catalog)
   --shallow              Skip deep per-feature Gherkin/rubberduck scan
+  --confirm-surface-current=<project>:<map-sha256>  Assert saved observation still matches current imports, config, and environment (repeatable)
 
 What doctor audits:
   · Repo structure (.optimizexp dirs, config.json, managed .gitignore, bus/runs)
@@ -118,7 +122,24 @@ function printHuman(report: {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--project", "--projects", "--out", "--only"],
+		flags: ["--help", "-h", "--all-projects", "--json", "--shallow"],
+		inlineValues: ["--confirm-surface-current"],
+	});
+	if (input.error) {
+		console.error(input.error);
+		process.exit(2);
+	}
+	if (
+		input.positionals.length > 1 ||
+		input.positionals.some((value) => !["check", "repair", "fix", "snapshot", "snap"].includes(value)) ||
+		(input.positionals.length > 0 && input.argv.includes("--mode"))
+	) {
+		console.error("Expected at most one positional doctor mode");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	if (args.help === "1") {
 		help();
 		return;
@@ -126,6 +147,18 @@ function main() {
 	const root = repoRoot();
 	const selection = resolveProjects(args.projects || "all", root);
 	const mode = args.mode || "check";
+	const problem = projectSelectionProblem(selection);
+	if (problem || !["check", "repair", "snapshot"].includes(mode)) {
+		console.error(problem ?? `Unknown mode: ${mode}`);
+		process.exit(2);
+	}
+	if (mode === "repair" || mode === "snapshot") {
+		const writeProblem = optimizexpWriteProblem(root, ["", ...selection.projects.map((project) => project.path)]);
+		if (writeProblem) {
+			console.error(writeProblem);
+			process.exit(2);
+		}
+	}
 
 	let report;
 	if (mode === "repair") {
@@ -133,18 +166,21 @@ function main() {
 			root,
 			selection,
 			only: args.only ? args.only.split(/[,\s]+/).filter(Boolean) : undefined,
+			confirmedSurfaces: (args.confirmedSurfaces || "").split(",").filter(Boolean),
 		});
 	} else if (mode === "snapshot") {
 		report = runDoctorSnapshot({
 			root,
 			selection,
 			outDir: args.out || undefined,
+			confirmedSurfaces: (args.confirmedSurfaces || "").split(",").filter(Boolean),
 		});
 	} else {
 		report = runDoctorCheck({
 			root,
 			selection,
 			deepFeatures: args.shallow !== "1",
+			confirmedSurfaces: (args.confirmedSurfaces || "").split(",").filter(Boolean),
 		});
 	}
 

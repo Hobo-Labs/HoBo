@@ -60,7 +60,7 @@ the attempt counters, so no schema migration is required. Delivery remains
 at-least-once and external side effects still need idempotency.
 
 The `verify-outbox-lease` skill checks the same rule for queue and outbox
-receipts using generated histories and a bounded TLA+ model. This statechart
+receipts using generated histories and a bounded TLA+ model, with reproducible scratch mutations of both receipt guards. This statechart
 summarizes the checked model, not a live delivery trace:
 
 ```mermaid
