@@ -5,8 +5,8 @@ import path from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
