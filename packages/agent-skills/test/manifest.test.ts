@@ -78,6 +78,26 @@ describe("parseSkillFrontmatter", () => {
 			).toThrow(SkillParseError);
 		}
 	});
+
+	it("rejects unterminated single-quoted top-level scalars", () => {
+		expect(() =>
+			parseSkillFrontmatter(
+				"---\nname: sdlc\ndescription: 'unterminated\n---\n",
+			),
+		).toThrowError(
+			new SkillParseError("invalid single-quoted YAML scalar"),
+		);
+	});
+
+	it("rejects unterminated single-quoted metadata scalars", () => {
+		expect(() =>
+			parseSkillFrontmatter(
+				"---\nname: sdlc\ndescription: d\nmetadata:\n  plugin: hobo'\n---\n",
+			),
+		).toThrowError(
+			new SkillParseError("invalid single-quoted YAML scalar"),
+		);
+	});
 });
 
 describe("loadSkillsManifest", () => {

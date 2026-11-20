@@ -112,7 +112,10 @@ function parseYamlScalar(value: string): YamlScalar {
 			throw new SkillParseError("invalid double-quoted YAML scalar");
 		}
 	}
-	if (scalar.length >= 2 && scalar.startsWith("'") && scalar.endsWith("'")) {
+	if (scalar.startsWith("'") || scalar.endsWith("'")) {
+		if (scalar.length < 2 || !scalar.startsWith("'") || !scalar.endsWith("'")) {
+			throw new SkillParseError("invalid single-quoted YAML scalar");
+		}
 		return {
 			kind: "string",
 			value: scalar.slice(1, -1).replaceAll("''", "'"),
