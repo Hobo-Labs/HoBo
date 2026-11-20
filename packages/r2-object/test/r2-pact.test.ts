@@ -14,6 +14,7 @@ type Interaction = {
 	response: { status: number; headers: Record<string, string>; body: string };
 };
 
+// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- checked-in pact JSON fixture.
 const pact = JSON.parse(
 	readFileSync(
 		new URL("../contracts/pacts/r2-origin.pact.json", import.meta.url),
