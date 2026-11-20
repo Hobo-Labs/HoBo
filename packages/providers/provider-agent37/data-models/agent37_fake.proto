@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package hobo.provider_agent37.v1;
+
+message Agent37FakeInstance {
+  string id = 1;
+  optional string name = 2;
+  string template = 3;
+  string type = 4;
+  string region = 5;
+  Agent37FakeResources resources = 6;
+  string status = 7;
+  map<string, string> metadata = 8;
+  bool auto_sleep = 9;
+  uint32 idle_timeout_seconds = 10;
+  repeated uint32 public_ports = 11;
+  string network = 12;
+  optional string mount_path = 13;
+  string created_at = 14;
+  string updated_at = 15;
+}
+
+message Agent37FakeResources {
+  uint32 cpu = 1;
+  uint32 memory_gb = 2;
+  uint32 disk_gb = 3;
+}
+
+message Agent37FakeExecResult {
+  string id = 1;
+  string instance_id = 2;
+  bool background = 3;
+  string status = 4;
+  optional int32 exit_code = 5;
+  string stdout = 6;
+  string stderr = 7;
+  string created_at = 8;
+  optional string finished_at = 9;
+}
+
+message Agent37FakeWebhook {
+  string id = 1;
+  string url = 2;
+  string created_at = 3;
+}
+
+message Agent37FakeApiError {
+  string code = 1;
+  string message = 2;
+}

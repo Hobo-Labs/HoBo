@@ -1,0 +1,30 @@
+{
+	"name": "@hobo/provider-agent37",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"@types/node": "^22.15.3",
+		"testcontainers": "11.8.1",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
+	},
+	"description": "HoBo Agent37 CI runner provider: in-process Sandbox API fake and Testcontainers wrapper; client and manifest land in a later change."
+}
