@@ -9,7 +9,7 @@ import { createVercelReleaseProvider } from "../src/vercel-release-provider.js";
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 
 describe("Vercel release provider", () => {
-	it("promotes the staged project deployment and verifies public health without changing protection", async () => {
+	it("keeps an accepted promotion reserved without changing protection", async () => {
 		let current = "dpl_old";
 		let checkpoint: ReleaseCheckpoint | undefined;
 		let time = 0;
@@ -46,7 +46,7 @@ describe("Vercel release provider", () => {
 				});
 			if (url.pathname === "/v10/projects/prj_test/promote/dpl_new") {
 				current = "dpl_new";
-				return Response.json({});
+				return Response.json({}, { status: 202 });
 			}
 			return new Response(null, { status: 404 });
 		};
@@ -83,7 +83,8 @@ describe("Vercel release provider", () => {
 				},
 				intervalMs: 10,
 			}),
-		).toEqual({ ok: true, previousDeploymentId: "dpl_old" });
+		).toEqual({ ok: false, code: "promotion-uncertain", rolledBack: false });
+		expect(checkpoint?.state).toBe("reserved");
 		expect(
 			calls
 				.filter((call) => call.url.hostname === "hobo-ci.vercel.app")

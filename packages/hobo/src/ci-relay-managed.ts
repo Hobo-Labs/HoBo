@@ -43,7 +43,12 @@ import {
 	createReleaseJournal,
 	findPendingLocalRelease,
 } from "./release-journal.js";
-import { createVercelClient, type VercelFetch } from "./vercel-client.js";
+import {
+	createReservedReleaseProvider,
+	type ReleaseReservation,
+	type ReleaseReservationAuthority,
+} from "./release-reservation.js";
+import { createVercelClient } from "./vercel-client.js";
 import {
 	createVercelReleaseProvider,
 	resolveVercelProject,
@@ -112,6 +117,7 @@ export interface CiRelayManagedInput {
 	readonly now?: () => number;
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly home?: string;
+	readonly releaseAuthority?: ReleaseReservationAuthority;
 
 	readonly source?: typeof readRelaySource;
 	readonly snapshot?: typeof relayCommitSnapshot;
@@ -171,6 +177,9 @@ export async function runCiRelayManaged(
 		);
 	}
 	const vault = createTrustedVault();
+	let reservation: ReleaseReservation | undefined;
+	let retainReservation = true;
+	let productionMutationStarted = false;
 	try {
 		const yard = await loadRelayYard(snapshot.dir);
 		const declaration = await compileProjectManifest(snapshot.dir);
@@ -260,7 +269,6 @@ export async function runCiRelayManaged(
 				signal: AbortSignal.timeout(remaining),
 			});
 		};
-		const vercelFetch: VercelFetch = (url, init) => boundedFetch(url, init);
 		let projectId: string;
 		try {
 			projectId = await resolveVercelProject({
@@ -274,6 +282,30 @@ export async function runCiRelayManaged(
 				"HOBO_CI_MANAGED_PROJECT_UNAVAILABLE",
 				"The selected Vercel project could not be verified for this team.",
 			);
+		}
+		if (requestedTarget === "production") {
+			if (!input.releaseAuthority)
+				return refused(
+					"HOBO_CI_MANAGED_RELEASE_AUTHORITY_REQUIRED",
+					"Production delivery needs a shared, single-writer release reservation journal.",
+				);
+			try {
+				const acquired = await input.releaseAuthority.acquire(
+					{ provider: "vercel", project: projectId },
+					sha,
+				);
+				if (!acquired.acquired)
+					return refused(
+						"HOBO_CI_MANAGED_RELEASE_BUSY",
+						"An unfinished release still reserves this production target.",
+					);
+				reservation = acquired.reservation;
+			} catch {
+				return refused(
+					"HOBO_CI_MANAGED_RELEASE_AUTHORITY_UNAVAILABLE",
+					"The shared release reservation could not be confirmed.",
+				);
+			}
 		}
 		const home = input.home ?? defaultHoboHome(input.env);
 		let recovery: Awaited<ReturnType<typeof findPendingGithubRelease>>;
@@ -295,12 +327,8 @@ export async function runCiRelayManaged(
 					"The durable release checkpoint could not be read safely.",
 				);
 			}
+			if (!recovery) retainReservation = false;
 		}
-		const client = createVercelClient({
-			token,
-			teamId,
-			fetch: vercelFetch,
-		});
 		const provider = createVercelReleaseProvider({
 			token,
 			teamId,
@@ -310,6 +338,31 @@ export async function runCiRelayManaged(
 			deadline: limit.at,
 			...(input.now ? { now: input.now } : undefined),
 		});
+		const releaseProvider = reservation
+			? createReservedReleaseProvider(provider, reservation)
+			: provider;
+		const productionEffect = async <T>(
+			effect: (track: (fetcher: typeof fetch) => typeof fetch) => Promise<T>,
+		): Promise<T> => {
+			if (!reservation) throw new Error("Release reservation is unavailable.");
+			productionMutationStarted = true;
+			let pending = false;
+			const track =
+				(fetcher: typeof fetch): typeof fetch =>
+				async (url, init) => {
+					const response = await fetcher(url, init);
+					if (init?.method && init.method !== "GET" && response.status === 202)
+						pending = true;
+					return response;
+				};
+			const result = await reservation.run(async () => {
+				const value = await effect(track);
+				return pending ? { state: "pending" } : { state: "settled", value };
+			});
+			if (result.state !== "settled")
+				throw new Error("Production effect is pending.");
+			return result.value;
+		};
 		const ids: Partial<Record<RelayTargetName, string>> = {};
 		let release: ReleaseOutcome | undefined;
 		if (recovery) {
@@ -335,7 +388,7 @@ export async function runCiRelayManaged(
 							})
 						: createReleaseJournal(home, projectId, recovery.deploymentId);
 				const recovered = await promoteVerifiedRelease({
-					provider,
+					provider: releaseProvider,
 					journal,
 					deploymentId: recovery.deploymentId,
 					commit: recovery.commit,
@@ -391,36 +444,48 @@ export async function runCiRelayManaged(
 								message:
 									"A production binding has no non-secret setting in the store binding.",
 							};
-						await client.setProjectEnv({
-							project: projectId,
-							target,
-							variables: Object.fromEntries(
-								[...production.settings, ...inputs].filter(
-									([name]) =>
-										production.settings.has(name) ||
-										production.inputs.includes(name),
+						await productionEffect((track) =>
+							createVercelClient({
+								token,
+								teamId,
+								fetch: track(boundedFetch),
+							}).setProjectEnv({
+								project: projectId,
+								target,
+								variables: Object.fromEntries(
+									[...production.settings, ...inputs].filter(
+										([name]) =>
+											production.settings.has(name) ||
+											production.inputs.includes(name),
+									),
 								),
-							),
-						});
+							}),
+						);
 					}
-					const deployment = await deployVercelSource({
-						token,
-						teamId,
-						project: projectId,
-						name: project,
-						repository,
-						ref,
-						rootDirectory,
-						source,
-						target,
-						buildSettings: {
-							installCommand: "pnpm install --frozen-lockfile --ignore-scripts",
-							buildCommand:
-								"cd ../.. && pnpm exec turbo run build --filter=@hobo/ci-vercel... --concurrency=1",
-						},
-						deadline: limit.at - 60_000,
-						fetch: http,
-					});
+					const deploy = (fetcher: typeof fetch) =>
+						deployVercelSource({
+							token,
+							teamId,
+							project: projectId,
+							name: project,
+							repository,
+							ref,
+							rootDirectory,
+							source,
+							target,
+							buildSettings: {
+								installCommand:
+									"pnpm install --frozen-lockfile --ignore-scripts",
+								buildCommand:
+									"cd ../.. && pnpm exec turbo run build --filter=@hobo/ci-vercel... --concurrency=1",
+							},
+							deadline: limit.at - 60_000,
+							fetch: fetcher,
+						});
+					const deployment =
+						target === "production"
+							? await productionEffect((track) => deploy(track(http)))
+							: await deploy(http);
 					ids[target] = deployment.id;
 					return {
 						ok: true,
@@ -467,7 +532,7 @@ export async function runCiRelayManaged(
 								})
 							: createReleaseJournal(home, projectId, ids.production);
 					release ??= await promoteVerifiedRelease({
-						provider,
+						provider: releaseProvider,
 						journal,
 						deploymentId: ids.production,
 						commit: sha,
@@ -544,13 +609,21 @@ export async function runCiRelayManaged(
 			realization: makeRealization("production"),
 			limitMs: remaining(),
 		});
-		if (!productionResult.ok)
+		if (!productionResult.ok) {
+			if (release && !release.ok && release.rolledBack && reservation) {
+				await reservation.finish("rolled-back");
+				reservation = undefined;
+			}
 			return refused(productionResult.code, productionResult.message);
+		}
 		if (!release?.ok)
 			return refused(
 				"HOBO_CI_MANAGED_RELEASE_UNCONFIRMED",
 				"CD did not confirm the production release and public health checks.",
 			);
+		if (!reservation) throw new Error("Release reservation is unavailable.");
+		await reservation.finish("verified");
+		reservation = undefined;
 		return {
 			code: "HOBO_CI_MANAGED_DEPLOYED",
 			message: `HoBo CD delivered ${repository}@${sha} to ${productionOrigin}; production health verified.`,
@@ -568,6 +641,8 @@ export async function runCiRelayManaged(
 			"Managed delivery could not complete; inspect the CD journal and deployment status.",
 		);
 	} finally {
+		if (reservation && !retainReservation && !productionMutationStarted)
+			await reservation.finish("cancelled").catch(() => {});
 		vault.clear();
 		await snapshot.close().catch(() => {});
 	}
