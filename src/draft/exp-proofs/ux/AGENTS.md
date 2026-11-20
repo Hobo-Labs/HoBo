@@ -4,8 +4,7 @@ End-user experience. Artifacts: `assets/` with REAL visuals — SVG/PNG wirefram
 
 ## Interactive / game UX evidence (mandatory when applicable)
 
-For proofs that claim a **playable UI, canvas game, or interactive control surface**
-(e.g. `control-yard`):
+For proofs that claim a **playable UI, canvas game, or interactive control surface**:
 
 1. **Screenshots alone are not enough** when motion or multi-step interaction is claimed.
 2. Capture **Playwright screenshots and MP4 recordings** as feature evidence.
@@ -15,16 +14,6 @@ For proofs that claim a **playable UI, canvas game, or interactive control surfa
    sha256. Zero-byte or missing files fail review.
 5. Agents must **open/read** the PNGs (and MP4 keyframes via ffmpeg if needed)
    before claiming visual acceptance. Self-report without files is rejected.
-
-Capture command for the Yard game package:
-
-```bash
-pnpm --filter @hobo/control-yard run evidence
-pnpm --filter @hobo/control-yard run evidence:check
-```
-
-See [`control-yard/AGENTS.md`](./control-yard/AGENTS.md) and
-[`packages/control-yard/AGENTS.md`](../../../../packages/control-yard/AGENTS.md).
 
 Everything else (proof.json, executed examples/, notebook, cascade rule, run commands) follows the
 parent [`src/draft/exp-proofs/AGENTS.md`](../AGENTS.md). Run a package with

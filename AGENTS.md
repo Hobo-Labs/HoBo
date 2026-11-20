@@ -257,7 +257,7 @@ Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/tec
 
 Visual work is a first-class gate, same as typecheck and PACT. **Do not wait for the user to say “run design lint” or “use /impeccable.”** If you touch a visual surface, apply the design system while editing and run the linters before you claim the work is done.
 
-A change is visual when it touches any of: `site/`, `packages/control-yard`, `packages/status-page` rendered HTML, a package `DESIGN.md`, CSS/HTML chrome, or rendered copy/color/layout/motion.
+A change is visual when it touches any of: `site/`, `packages/status-page` rendered HTML, a package `DESIGN.md`, CSS/HTML chrome, or rendered copy/color/layout/motion.
 
 ### Authority
 
@@ -265,7 +265,6 @@ A change is visual when it touches any of: `site/`, `packages/control-yard`, `pa
 |---|---|---|
 | Public site | [`site/DESIGN.md`](site/DESIGN.md) | `site/src/styles/` |
 | Status page | [`packages/status-page/DESIGN.md`](packages/status-page/DESIGN.md) | that package only |
-| Control-yard | [`packages/control-yard/DESIGN.md`](packages/control-yard/DESIGN.md) | that package only |
 
 `site/DESIGN.md` is the product identity (ADR-0149). Do not run `/impeccable document` at the repo root. Do not invent another identity.
 
