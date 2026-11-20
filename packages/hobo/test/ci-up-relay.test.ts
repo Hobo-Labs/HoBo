@@ -21,6 +21,7 @@ import type { runCiRelayDeploy } from "../src/ci-relay-deploy.js";
 import {
 	createCiRelayPlanCommand,
 	createCiRelayUpCommand,
+	gitHead,
 	relayCommitPlatformDrift,
 	relayCommitSnapshot,
 	relayPlatformDrift,
@@ -311,6 +312,23 @@ export default bindle("relay", (b) => {
 			},
 		});
 		expect((await up.run(input())).code).toBe("HOBO_CI_UP_PLATFORM_DRIFT");
+	});
+
+	it("reads GITHUB_HEAD_REF when the checkout is detached", async () => {
+		const prev = process.env.GITHUB_HEAD_REF;
+		process.env.GITHUB_HEAD_REF =
+			"claude/hobo-idempotent-deployment-exv7ke-17-cd-delivery";
+		try {
+			const head = await gitHead(path.join(packages, "cd-vercel"));
+			expect(head).toEqual(
+				expect.objectContaining({
+					ref: "claude/hobo-idempotent-deployment-exv7ke-17-cd-delivery",
+				}),
+			);
+		} finally {
+			if (prev === undefined) delete process.env.GITHUB_HEAD_REF;
+			else process.env.GITHUB_HEAD_REF = prev;
+		}
 	});
 
 	it("plan falls back for a project with no relay Yard", async () => {
