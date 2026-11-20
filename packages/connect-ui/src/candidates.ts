@@ -70,7 +70,7 @@ function fieldCandidate(field: ConfigField): Candidate {
 	};
 }
 
-export const OPTIONAL_SUFFIX = "-optional"; // public-contract: compose.ts treats candidate ids ending in this suffix as optional
+export const optionalCandidateIdSuffix = "-optional";
 
 function heading(text: string): Candidate {
 	return {
@@ -108,7 +108,7 @@ function root(title: string, description: string): Candidate {
 
 function cancel(): Candidate {
 	return {
-		id: `cancel${OPTIONAL_SUFFIX}`,
+		id: `cancel${optionalCandidateIdSuffix}`,
 		description: "Lets the person stop before anything is created",
 		element: {
 			type: "Button",
@@ -183,7 +183,7 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 					? []
 					: [
 							{
-								id: `oidc-note${OPTIONAL_SUFFIX}`,
+								id: `oidc-note${optionalCandidateIdSuffix}`,
 								description:
 									"Notes that the recommended store needs no stored secret",
 								element: {

@@ -12,6 +12,7 @@ import {
 	deterministicConnectSpec,
 	evaluatorFromEnv,
 	isRenderableConnectSpec,
+	missingRequiredCandidates,
 	startConnectPage,
 } from "../src/index.js";
 import { stepView } from "../src/view.js";
@@ -210,6 +211,38 @@ describe("stepView", () => {
 				submitConfirm: "Submits secrets to continue.",
 			}).actions.find((action) => action.action === "connect.submit")?.confirm,
 		).toBeTruthy();
+	});
+});
+
+describe("missingRequiredCandidates", () => {
+	it("treats distinct form bind paths as distinct required elements", () => {
+		const step: ConnectStep = {
+			kind: "configure",
+			provider: "github",
+			title: "GitHub app",
+			reason: "Finish settings",
+			fields: [{ name: "slug", label: "Slug", kind: "text", required: true }],
+			submitConfirm: "Save settings?",
+		};
+		const spec = deterministicConnectSpec(step);
+		const fieldKey = Object.keys(spec.elements).find(
+			(key) => spec.elements[key]?.type === "Input",
+		);
+		expect(fieldKey).toBeDefined();
+		const field = spec.elements[fieldKey as string];
+		const elements = {
+			...spec.elements,
+			[fieldKey as string]: {
+				...field,
+				props: {
+					...(field.props as Record<string, unknown>),
+					value: { $bindState: "/form/wrong-path" },
+				},
+			},
+		};
+		expect(missingRequiredCandidates(step, { ...spec, elements })).toContain(
+			"field-slug",
+		);
 	});
 });
 

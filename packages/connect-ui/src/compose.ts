@@ -8,7 +8,7 @@ import {
 } from "@json-render/core";
 import { z } from "zod";
 
-import { connectCandidates, OPTIONAL_SUFFIX } from "./candidates.js";
+import { connectCandidates, optionalCandidateIdSuffix } from "./candidates.js";
 import { connectCatalog } from "./catalog.js";
 import { type ConnectStep, providerLabel } from "./steps.js";
 
@@ -25,10 +25,11 @@ export function deterministicConnectSpec(step: ConnectStep): Spec {
 		throw new Error(`connect step ${step.kind} has no root candidate`);
 	const children = candidates.filter(
 		(candidate) =>
-			candidate !== rootCandidate && !candidate.id.endsWith(OPTIONAL_SUFFIX),
+			candidate !== rootCandidate &&
+			!candidate.id.endsWith(optionalCandidateIdSuffix),
 	);
 	const optional = candidates.filter((candidate) =>
-		candidate.id.endsWith(OPTIONAL_SUFFIX),
+		candidate.id.endsWith(optionalCandidateIdSuffix),
 	);
 	const elements: Spec["elements"] = {
 		[rootCandidate.id]: {
@@ -73,9 +74,12 @@ function fingerprint(element: {
 	const props = propsParsed.success
 		? {
 				...propsParsed.data,
-				value: BindStateMarker.safeParse(propsParsed.data.value).success
-					? { bound: true }
-					: propsParsed.data.value,
+				value: (() => {
+					const bind = BindStateMarker.safeParse(propsParsed.data.value);
+					return bind.success
+						? { bound: bind.data.$bindState }
+						: propsParsed.data.value;
+				})(),
 			}
 		: element.props;
 	return JSON.stringify([
@@ -92,7 +96,7 @@ export function missingRequiredCandidates(
 ): string[] {
 	const present = new Set(Object.values(spec.elements).map(fingerprint));
 	return connectCandidates(step)
-		.filter((candidate) => !candidate.id.endsWith(OPTIONAL_SUFFIX))
+		.filter((candidate) => !candidate.id.endsWith(optionalCandidateIdSuffix))
 		.filter((candidate) => !present.has(fingerprint(candidate.element)))
 		.map((candidate) => candidate.id);
 }
