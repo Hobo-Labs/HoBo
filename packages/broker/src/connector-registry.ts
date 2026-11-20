@@ -31,6 +31,33 @@ const REQUIRED_SETTINGS = {
 	custom: [],
 };
 
+const AGENT37_ORIGIN_HOSTS = {
+	apiOrigin: "api.agent37.com",
+	execOrigin: "sandbox.agent37.app",
+} as const;
+
+function parseAgent37Origins(settings: JsonObject): void {
+	for (const [setting, host] of Object.entries(AGENT37_ORIGIN_HOSTS)) {
+		const value = settings[setting];
+		if (value === undefined) continue;
+		try {
+			const origin = isJsonString(value) ? new URL(value) : undefined;
+			if (
+				origin?.protocol === "https:" &&
+				origin.username === "" &&
+				origin.password === "" &&
+				origin.host === host &&
+				origin.href === `https://${host}/`
+			)
+				continue;
+		} catch {}
+		throw new BrokerParseError(
+			"invalid-connector-origin",
+			`invalid-connector-origin: agent37 ${setting} must be the HTTPS origin for ${host} without credentials, a path, query, or fragment`,
+		);
+	}
+}
+
 export function parseConnectorConfig(
 	input: JsonValue | undefined,
 ): ConnectorConfig {
@@ -92,6 +119,7 @@ export function parseConnectorConfig(
 			`connector-settings-missing: ${kind} requires settings ${missing.join(", ")}`,
 		);
 	}
+	if (kind === "agent37") parseAgent37Origins(settingsRaw);
 	const credentialRef = raw.credentialRef ?? raw.credential_ref;
 	return {
 		id,

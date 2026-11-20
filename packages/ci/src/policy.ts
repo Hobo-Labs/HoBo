@@ -45,8 +45,7 @@ const providers = new Set([
 
 const kubernetesName = /^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
 const vercelLocations = new Set(["vercel", "local", "remote"]);
-const agent37Template =
-	/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?:@[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$/;
+const agent37Template = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$/;
 const agent37NetworkEntry = /^(?:\*\.)?[A-Za-z0-9][A-Za-z0-9_.:-]{0,251}$/;
 const agent37Sizes = new Set(["2:4", "4:8", "4:16", "4:32", "8:64"]);
 

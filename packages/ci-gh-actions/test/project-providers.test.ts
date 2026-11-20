@@ -7,6 +7,7 @@ import {
 } from "../src/project-config.js";
 import {
 	CI_PROJECT_PROVIDERS_SCHEMA_REF,
+	CiAgent37ProviderSchema,
 	CiProjectProviderSchema,
 	ciProjectProvidersJsonSchema,
 } from "../src/project-providers.js";
@@ -245,10 +246,26 @@ describe("closed provider shapes", () => {
 				maxBoxes: 4,
 				type: "vm",
 				region: "us",
-				template: "agent37-ubuntu",
+				template: "agent37-ubuntu@1",
 				budget: { limitMicros: 2000000, maxCreatesPerHour: 60 },
 			},
 		});
+	});
+
+	it.each([
+		"agent37-ubuntu",
+		"agent37-ubuntu@latest",
+		"agent37-ubuntu@",
+		"agent37-ubuntu@1.2",
+	])("requires an immutable numeric Agent37 template revision: %s", (template) => {
+		const parsed = CiAgent37ProviderSchema.parse(
+			agent37Provider("valid", "desired-policy-agent37"),
+		);
+		const input = { ...parsed, pool: { ...parsed.pool, template } };
+		expect(CiProjectProviderSchema.safeParse(input).success).toBe(false);
+		expect(() => parseCiProjectConfig(project([input]))).toThrow(
+			"invalid CI project configuration",
+		);
 	});
 
 	it.each([

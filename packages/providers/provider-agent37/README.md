@@ -1,6 +1,6 @@
 # Agent37 CI runner provider
 
-`createAgent37Client` covers instance create/get/list/delete, sandbox exec, webhook registration/list/delete, and workspace usage. Every response crosses a Zod parser. Create-instance inputs reject unknown security controls, and webhook registration accepts HTTPS URLs only. Provider failures become `Agent37Error` values whose messages and serialized details pass through `@hobo/provider-redaction`.
+`createAgent37Client` covers instance create/get/list/delete, sandbox exec, webhook registration/list/delete, and workspace usage. Every response crosses a Zod parser. Instance and webhook deletion require `{ "deleted": true }` on 200 and an empty body on 204. Create-instance inputs reject unknown security controls, and webhook registration accepts HTTPS URLs only. Provider failures become `Agent37Error` values whose messages and serialized details pass through `@hobo/provider-redaction`, including explicit `sk_live_` API-key and `whsec_` webhook-secret redaction.
 
 The transport composes `@hobo/core`'s bounded fetch and guard. It permits HTTPS requests only to `api.agent37.com` and `sandbox.agent37.app` under `/v1/`, refuses redirects, and retries only GET requests receiving `no_capacity`, `try_again`, or 5xx responses with bounded attempts, jittered backoff, and `Retry-After` support capped by `AGENT37_MAX_TIMEOUT_MS`.
 
