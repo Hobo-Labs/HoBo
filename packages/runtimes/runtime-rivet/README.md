@@ -26,11 +26,12 @@ fails. Journal reopen tests cover persisted-state replay and in-flight commands.
 - The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
   operator must establish and verify an upstream migration before upgrading
   an existing deployment.
-- Rivet 3 drops Rivet 2's `@secure-exec` isolate family. Actor code never
-  executes in the HoBo host process: the local journal host runs no Rivet
-  actor code, and the live fixture spawns the engine binary as its own
-  process (guard bound to 127.0.0.1, admin-token auth), so actor actions run
-  inside the engine's workers behind that process boundary.
+- Rivet 3 drops Rivet 2's `@secure-exec` isolate family. The local journal
+  host runs no Rivet actor code. The live fixture registers its actor action in
+  the fixture process and spawns only the engine binary separately (guard bound
+  to 127.0.0.1, admin-token auth); that process boundary is not a security
+  sandbox. Untrusted actor code requires a real sandbox before executing with
+  credentials.
 - The live fixture reserves its engine, peer, metrics and HTTP ports, then
   re-reserves a fresh set (up to three attempts) when a reserved port is
   stolen between reservation and bind; any other failure fails the test with

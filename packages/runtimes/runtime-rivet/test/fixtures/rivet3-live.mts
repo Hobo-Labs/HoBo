@@ -90,12 +90,8 @@ for (let attempt = 1; ; attempt++) {
 				engineLog = (engineLog + chunk).slice(-12000);
 			});
 		}
-		let exited = false;
-		const done = once(child, "exit").then((result) => {
-			exited = true;
-			return result;
-		});
-		return { child, done, hasExited: () => exited };
+		const done = once(child, "exit");
+		return { child, done };
 	};
 	let engine = startEngine();
 	const stopEngine = async () => {
@@ -117,7 +113,6 @@ for (let attempt = 1; ; attempt++) {
 		shutdown: { gracePeriodMs: 2000, disableSignalHandlers: true },
 	});
 	let failure: unknown;
-	let engineDead = false;
 	try {
 		const { client } = await setupTest(
 			{
@@ -146,7 +141,6 @@ for (let attempt = 1; ; attempt++) {
 			throw new Error("Rivet actor state did not survive engine restart");
 	} catch (error) {
 		failure = error;
-		engineDead = engine.hasExited();
 	} finally {
 		for (const callback of callbacks) await callback();
 		await registry.shutdown();
@@ -156,7 +150,7 @@ for (let attempt = 1; ; attempt++) {
 		process.stdout.write("rivet3-live-ok");
 		break;
 	}
-	const retryable = engineDead || String(failure).includes("EADDRINUSE");
+	const retryable = String(failure).includes("EADDRINUSE");
 	if (!retryable || attempt === MAX_ATTEMPTS) {
 		process.stderr.write(`Rivet engine log:\n${engineLog}\n`);
 		throw failure;
