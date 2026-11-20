@@ -87,6 +87,7 @@ export async function startCdServer(
 		runtime,
 		holderId: `hobo-serve-cd:${config.stationId}:${randomUUID()}`,
 		principalId: `hobo-serve-cd:${config.stationId}`,
+		fleetPassLease: true,
 	});
 	const { service, refusals } = host;
 	const abort = new AbortController();

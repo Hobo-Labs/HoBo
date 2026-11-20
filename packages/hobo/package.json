@@ -108,6 +108,7 @@
 		"@hobo/trust": "workspace:*",
 		"@hobo/yards": "workspace:*",
 		"esbuild": "^0.25.0",
+		"tar-stream": "3.1.7",
 		"tsx": "4.22.4",
 		"zod": "^4.1.13"
 	},
@@ -120,6 +121,7 @@
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
+		"@types/tar-stream": "3.1.5",
 		"fast-check": "^4.3.0",
 		"pg": "8.22.0",
 		"undici": "7.29.0"

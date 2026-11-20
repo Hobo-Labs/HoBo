@@ -306,7 +306,9 @@ describe("composeCdHost", () => {
 				`${runtime.config.tenant}:cd-host-pass`,
 			))
 				recorded.push(event.data);
-			expect(recorded).toEqual([{ atMs: Date.UTC(2026, 10, 17), camps: 1 }]);
+			expect(recorded).toEqual([
+				{ atMs: Date.UTC(2026, 10, 17), campIds: ["edge/prod"] },
+			]);
 		});
 	});
 
@@ -352,6 +354,47 @@ describe("composeCdHost", () => {
 			}
 			const completed = await running;
 			expect(completed.skipped).toBe(false);
+		});
+	});
+
+	it("does not record a successful pass after the caller hits the deadline", async () => {
+		await withRuntime(async (runtime) => {
+			let releaseGate = () => {};
+			const gate = new Promise<void>((resolve) => {
+				releaseGate = resolve;
+			});
+			let entered = 0;
+			const slow: TestRuntime = {
+				...runtime,
+				conductor: () =>
+					fakeReconciler(async () => {
+						entered += 1;
+						await gate;
+						return { reasons: [], status: 0 } as never;
+					}),
+			};
+			const host = await composeCdHost({
+				runtime: slow,
+				holderId: "test-deadline-no-record",
+				readiness: "composed",
+				passDeadlineMs: 30,
+			});
+			const ghost = host.pass();
+			await new Promise((resolve) => setTimeout(resolve, 40));
+			await expect(ghost).rejects.toThrow("cd pass deadline exceeded");
+			releaseGate();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const recorded: unknown[] = [];
+			for await (const event of runtime.store.read(
+				`${runtime.config.tenant}:cd-host-pass`,
+			))
+				recorded.push(event.data);
+			expect(recorded).toEqual([]);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
 		});
 	});
 
@@ -472,7 +515,7 @@ describe("composeCdHost", () => {
 				[
 					{
 						type: HOST_PASS_SUCCEEDED,
-						data: { atMs: Date.UTC(2026, 10, 17), camps: 0 },
+						data: { atMs: Date.UTC(2026, 10, 17), campIds: [] },
 					},
 				],
 				{
@@ -486,6 +529,82 @@ describe("composeCdHost", () => {
 				AbortSignal.timeout(5_000),
 			);
 			expect(ready.status).toBe(503);
+		});
+	});
+
+	it("ignores a legacy pass record that stores only a camp count", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-legacy-record",
+				readiness: "composed",
+			});
+			await runtime.store.append(
+				`${runtime.config.tenant}:cd-host-pass`,
+				[
+					{
+						type: HOST_PASS_SUCCEEDED,
+						data: { atMs: Date.UTC(2026, 10, 17), camps: 1 },
+					},
+				],
+				{
+					expectedSeq: 0,
+					actor: { kind: "service", id: "test-legacy-record" },
+					tenant: runtime.config.tenant,
+				},
+			);
+			const ready = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(ready.status).toBe(503);
+		});
+	});
+
+	it("refuses composed readiness after camp replacement until a matching pass", async () => {
+		await withRuntime(async (runtime) => {
+			const host = await composeCdHost({
+				runtime,
+				holderId: "test-camp-swap-a",
+				readiness: "composed",
+			});
+			await host.pass();
+			const readyBefore = await host.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(readyBefore.status).toBe(200);
+			const camps: readonly CampTopology[] = [
+				campTopology("edge/preview", CampManagement.MANAGED),
+			];
+			const swapped: TestRuntime = {
+				...runtime,
+				cd: {
+					...runtime.cd,
+					topology: {
+						camps: async () => camps,
+						camp: async (campId: CampId) =>
+							camps.find((camp) => camp.campId === campId),
+					},
+				},
+			};
+			const afterSwap = await composeCdHost({
+				runtime: swapped,
+				holderId: "test-camp-swap-b",
+				readiness: "composed",
+			});
+			expect(afterSwap.managed).toEqual(["edge/preview"]);
+			const readyAfterSwap = await afterSwap.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(readyAfterSwap.status).toBe(503);
+			await afterSwap.pass();
+			const readyAfterPass = await afterSwap.handle(
+				get("/readyz"),
+				AbortSignal.timeout(5_000),
+			);
+			expect(readyAfterPass.status).toBe(200);
 		});
 	});
 
