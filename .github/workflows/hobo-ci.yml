@@ -659,7 +659,9 @@ jobs:
           MERGE_BASE: ${{ needs.pr_gate_validation.outputs.merge_base }}
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
-          HOBO_TURBO_CONCURRENCY: "1"
+          # No HOBO_TURBO_CONCURRENCY here: ci-runner-preflight's memory-env
+          # writes the cgroup-derived value into the job environment, and a
+          # step-level pin would override it back to one task at a time.
         run: |
           set -euo pipefail
           case "$EVENT_NAME" in
@@ -691,7 +693,10 @@ jobs:
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.turbo-prune.outputs.save != 'false'
+        # Matrix children share one cache key (github.job is the job id, not the
+        # shard), so racing saves of the same key fight over the reservation;
+        # only shard 0 saves, like scripts-tests.
+        if: always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
@@ -1639,7 +1644,11 @@ jobs:
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.turbo-prune.outputs.save != 'false'
+        # Matrix children share one cache key (github.job is the job id, not the
+        # shard), so racing saves of the same key fight over the reservation;
+        # only shard 0 saves, like scripts-tests. Turbo concurrency comes from
+        # memory-env in ci-runner-preflight, sized to this job's cgroup limit.
+        if: always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
