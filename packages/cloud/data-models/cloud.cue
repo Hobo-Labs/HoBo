@@ -182,6 +182,7 @@ package hobo
 	action:       "preview" | "apply" | "destroy"
 	stackName:    string & !=""
 	resource?:    #ResourcePlan
+	operationGeneration?: string & !=""
 }
 
 #ScopedCredential: {
@@ -244,6 +245,7 @@ package hobo
 	programHash:  string & !=""
 	specHash?:    =~"^sha256:[0-9a-f]{64}$"
 	providerId?:  string & !=""
+	operationGeneration?: string & !=""
 }
 
 #ResourceProvisionedRecord: {
@@ -276,10 +278,58 @@ package hobo
 	}
 }
 
+#ResourceReconciledRecord: {
+	deploymentId: string & !=""
+	resourceId: string & !=""
+	failureEventId: string & !=""
+	operation: "apply" | "destroy"
+	outcome: "applied" | "destroyed" | "no-effect"
+	evidenceRef: string & !=""
+	financialEvidenceRef: string & !=""
+	financialDisposition: "none" | "held" | "settled" | "released"
+	reservationId?: string & !=""
+	claimDigest: =~"^sha256:[0-9a-f]{64}$"
+	outputs?: {[string]: string}
+	execId?: string & !=""
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
+	finalStateHash?: string & !=""
+	restoredState?: "provisioned" | "destroyed" | "failed"
+	if outcome == "applied" {
+		operation: "apply"
+		financialDisposition: "none" | "held"
+		outputs: {[string]: string}
+		execId: string & !=""
+		specHash: =~"^sha256:[0-9a-f]{64}$"
+		finalStateHash?: _|_
+		restoredState?: _|_
+	}
+	if outcome == "destroyed" {
+		operation: "destroy"
+		finalStateHash: string & !=""
+		outputs?: _|_
+		execId?: _|_
+		specHash?: _|_
+		restoredState?: _|_
+	}
+	if outcome == "no-effect" {
+		financialDisposition: "none" | "settled" | "released"
+		restoredState: "provisioned" | "destroyed" | "failed"
+		outputs?: _|_
+		execId?: _|_
+		specHash?: _|_
+		finalStateHash?: _|_
+	}
+	if financialDisposition != "none" {reservationId: string & !=""}
+	if financialDisposition == "none" {reservationId?: _|_}
+}
+
 #ResourceDestroyingRecord: {
 	deploymentId: string & !=""
 	resourceId:   string & !=""
 	reason:       string & !=""
+	operationGeneration?: string & !=""
+	programHash?: string & !=""
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
 }
 
 #ResourceDestroyedRecord: {
@@ -298,6 +348,28 @@ package hobo
 	deploymentId: string & !=""
 	targetSetId:  string & !=""
 	reason:       string & !=""
+}
+
+#DeploymentTransitionRecord: {
+	deploymentId:     string & !=""
+	transitionId:     string & =~"^[0-9a-f-]+$"
+	kind:             "rollback" | "prune"
+	planHash:         =~"^sha256:[0-9a-f]{64}$"
+	resourceIds:      [...string & !=""]
+	triggerResource?: string & !=""
+	reason?:          string & !=""
+}
+
+#ReopenedResource: {
+	resourceId: string & !=""
+	specHash:   =~"^sha256:[0-9a-f]{64}$"
+}
+
+#DeploymentReopenedRecord: {
+	deploymentId:    string & !=""
+	rollbackEventId: string & !=""
+	planHash:        =~"^sha256:[0-9a-f]{64}$"
+	resources: [...#ReopenedResource]
 }
 
 // ---- S3-04: CredentialAudit projection constraints (one per protobuf message) ----
@@ -402,6 +474,8 @@ package hobo
 	providerId?: string
 	region?:     string
 	lifecycle?: "provisioning" | "provisioned" | "failed" | "reconciliation-required" | "destroying" | "destroyed"
+	reconciliationEventId?: string & !=""
+	otherReconciliationEventIds?: [...string & !=""]
 }
 
 #TopologyEdge: {

@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@vercel/queue>@vercel/oidc': 3.2.0
   ts-autocode-grounding: workspace:*
   ts-autocode-rewrite: workspace:*
   ts-autocode-training: workspace:*
@@ -694,6 +695,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -790,6 +794,13 @@ importers:
       sigstore:
         specifier: 5.0.1
         version: 5.0.1
+    devDependencies:
+      '@hobo/runtime-local':
+        specifier: workspace:*
+        version: link:../runtimes/runtime-local
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
 
   packages/cd-gitops:
     dependencies:
@@ -814,6 +825,55 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/cd-vercel:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.12.1
+        version: 2.12.1
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
+      '@hobo/cd':
+        specifier: workspace:*
+        version: link:../cd
+      '@hobo/hobo':
+        specifier: workspace:*
+        version: link:../hobo
+      '@hobo/hobo-ci':
+        specifier: workspace:*
+        version: link:../hobo-ci
+      '@vercel/oidc':
+        specifier: 4.0.0
+        version: 4.0.0
+      '@vercel/queue':
+        specifier: 0.10.0
+        version: 0.10.0(@opentelemetry/api@1.9.1)
+      zod:
+        specifier: ^4.1.13
+        version: 4.4.3
+    devDependencies:
+      '@hobo/camps':
+        specifier: workspace:*
+        version: link:../camps
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
+      '@hobo/hobo-cd':
+        specifier: workspace:*
+        version: link:../hobo-cd
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
+      '@hobo/provider-vercel':
+        specifier: workspace:*
+        version: link:../providers/provider-vercel
+      '@hobo/yards':
+        specifier: workspace:*
+        version: link:../yards
 
   packages/ci:
     dependencies:
@@ -842,6 +902,9 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       pg:
         specifier: 8.22.0
         version: 8.22.0
@@ -989,6 +1052,9 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -1029,9 +1095,6 @@ importers:
       testcontainers:
         specifier: 11.8.1
         version: 11.8.1
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
 
   packages/ci-guard:
     devDependencies:
@@ -1105,6 +1168,9 @@ importers:
       '@hobo/provider-vercel':
         specifier: workspace:*
         version: link:../providers/provider-vercel
+      '@hobo/testing':
+        specifier: workspace:*
+        version: link:../testing
       '@hobo/yards':
         specifier: workspace:*
         version: link:../yards
@@ -1716,6 +1782,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -1850,6 +1919,9 @@ importers:
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
+      '@hobo/junctions':
+        specifier: workspace:*
+        version: link:../junctions
       '@hobo/management':
         specifier: workspace:*
         version: link:../management
@@ -1985,6 +2057,9 @@ importers:
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
+      tar-stream:
+        specifier: 3.1.7
+        version: 3.1.7
       tsx:
         specifier: 4.22.4
         version: 4.22.4
@@ -1992,6 +2067,9 @@ importers:
         specifier: ^4.1.13
         version: 4.4.3
     devDependencies:
+      '@antithesishq/bombadil':
+        specifier: 0.7.10
+        version: 0.7.10
       '@hobo/ci-agent':
         specifier: workspace:*
         version: link:../ci-agent
@@ -2013,12 +2091,24 @@ importers:
       '@types/pg':
         specifier: 8.15.5
         version: 8.15.5
+      '@types/tar-stream':
+        specifier: 3.1.5
+        version: 3.1.5
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       pg:
         specifier: 8.22.0
         version: 8.22.0
+      undici:
+        specifier: 7.29.0
+        version: 7.29.0
 
   packages/hobo-cd:
     dependencies:
+      '@hobo/adapter-infisical':
+        specifier: workspace:*
+        version: link:../adapters/adapter-infisical
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles
@@ -2028,6 +2118,9 @@ importers:
       '@hobo/connect-ui':
         specifier: workspace:*
         version: link:../connect-ui
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/data-postgres':
         specifier: workspace:*
         version: link:../data-postgres
@@ -2083,12 +2176,18 @@ importers:
       '@hobo/connect-ui':
         specifier: workspace:*
         version: link:../connect-ui
+      '@hobo/core':
+        specifier: workspace:*
+        version: link:../core
       '@hobo/identity':
         specifier: workspace:*
         version: link:../identity
       '@hobo/kv-redis-compatible':
         specifier: workspace:*
         version: link:../kv-redis-compatible
+      undici:
+        specifier: 7.29.0
+        version: 7.29.0
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -2096,6 +2195,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
@@ -2110,9 +2212,6 @@ importers:
         specifier: 2.12.1
         version: 2.12.1
     devDependencies:
-      '@alchemy.run/rivet':
-        specifier: 2.0.0-beta.87
-        version: 2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)
       '@effect/platform-node':
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
@@ -2127,7 +2226,7 @@ importers:
         version: 4.1.4
       vitest:
         specifier: ^4.1.9
-        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
+        version: 4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
       ws:
         specifier: 8.21.0
         version: 8.21.0
@@ -2158,6 +2257,10 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
 
   packages/junctions:
     dependencies:
@@ -2952,6 +3055,12 @@ importers:
         specifier: workspace:*
         version: link:../../provider-redaction
     devDependencies:
+      '@emulators/core':
+        specifier: 0.13.1
+        version: 0.13.1
+      '@emulators/vercel':
+        specifier: 0.13.1
+        version: 0.13.1
       '@hobo/redaction-test-harness':
         specifier: workspace:*
         version: link:../../redaction-test-harness
@@ -3160,6 +3269,9 @@ importers:
       '@types/node':
         specifier: ^22.15.3
         version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       tsx:
         specifier: ^4.20.3
         version: 4.22.4
@@ -3252,11 +3364,11 @@ importers:
         specifier: workspace:*
         version: link:../../core
       '@rivetkit/rivetkit-wasm':
-        specifier: 3.0.0
-        version: 3.0.0
+        specifier: 2.3.10
+        version: 2.3.10
       rivetkit:
-        specifier: 3.0.0
-        version: 3.0.0(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0)
+        specifier: 2.3.10
+        version: 2.3.10(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(pg@8.22.0)(sql.js@1.14.1)(ws@8.21.0)
     devDependencies:
       '@types/node':
         specifier: '>=24.0.0'
@@ -3488,6 +3600,9 @@ importers:
       '@types/node':
         specifier: ^22.15.29
         version: 22.20.0
+      fast-check:
+        specifier: ^4.3.0
+        version: 4.9.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -3503,9 +3618,21 @@ importers:
       '@hobo/core':
         specifier: workspace:*
         version: link:../core
+      '@hobo/data-core':
+        specifier: workspace:*
+        version: link:../data-core
+      '@hobo/data-sqlite':
+        specifier: workspace:*
+        version: link:../data-sqlite
+      '@hobo/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@hobo/runtime-local':
         specifier: workspace:*
         version: link:../runtimes/runtime-local
+      '@hobo/wit':
+        specifier: workspace:*
+        version: link:../wit
     devDependencies:
       '@types/node':
         specifier: ^22.15.29
@@ -5292,34 +5419,6 @@ packages:
   '@alchemy.run/node-utils@2.0.0-beta.87':
     resolution: {integrity: sha512-GhQSAY89Sz0P046tuHnLqoCUj79PMu1WUAOnIRLCwO4E4yPZ76IkEDrdl3hjCb7YHuqYA1Da6ZfV59TIQgGkSg==}
 
-  '@alchemy.run/rivet@2.0.0-beta.87':
-    resolution: {integrity: sha512-S1Wknl/zr8FWrmy2wn4Y2SlCdw1T4wr2MhaAA/eSlSjkKmHd6M5AGsQ0B5r/zZKScxyDqskEMWh9ov/BZdPTvg==}
-    peerDependencies:
-      '@alchemy.run/aws': 2.0.0-beta.87
-      '@alchemy.run/docker': 2.0.0-beta.87
-      '@alchemy.run/fly': 2.0.0-beta.87
-      '@alchemy.run/gcp': 2.0.0-beta.87
-      '@alchemy.run/hetzner': 2.0.0-beta.87
-      '@alchemy.run/kubernetes': 2.0.0-beta.87
-      '@alchemy.run/railway': 2.0.0-beta.87
-      alchemy: 2.0.0-beta.87
-      effect: ^4.1.4
-    peerDependenciesMeta:
-      '@alchemy.run/aws':
-        optional: true
-      '@alchemy.run/docker':
-        optional: true
-      '@alchemy.run/fly':
-        optional: true
-      '@alchemy.run/gcp':
-        optional: true
-      '@alchemy.run/hetzner':
-        optional: true
-      '@alchemy.run/kubernetes':
-        optional: true
-      '@alchemy.run/railway':
-        optional: true
-
   '@alchemy.run/sigil@0.1.0-alpha.4':
     resolution: {integrity: sha512-d6Uo16C2P6Wk7TNoYt4qzjjNGyjsrJLjq8bBotl86Nmcp/U6+R34/n4CZomqFERF2wMinut2DBqWNeUQPTBtFQ==}
     engines: {node: '>=22'}
@@ -5353,6 +5452,10 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  '@antithesishq/bombadil@0.7.10':
+    resolution: {integrity: sha512-71aLKQBB3GNDBQZXU6MCKbt99dl9I+/pjg0EfGD9eCKXDIqpKPXD2rFH6yCJude37RGtnKq6hZFfZhuTp+Tykg==}
+    hasBin: true
 
   '@arizeai/openinference-semantic-conventions@2.5.0':
     resolution: {integrity: sha512-4ZeSwiFX3YxB0WSE6x568wM4PVHiYmz3yiOxic6WGKVrE/KIGggMFP/eqUNQhikBKP68IDV0qiILlZAIYnheAQ==}
@@ -6388,16 +6491,6 @@ packages:
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
 
-  '@distilled.cloud/core@1.0.0-rc.20':
-    resolution: {integrity: sha512-uoZ8W5QhxcSyyM6/XZzRJCKc55FC4fZfXWX2ypx8AOIC4PTOtdyDZ3fswGpVp/SRiC4ua0HYGhAgFA8Ub7Ot5Q==}
-    peerDependencies:
-      effect: ^4.1.2
-
-  '@distilled.cloud/rivet@1.0.0-rc.20':
-    resolution: {integrity: sha512-H26kL3BIqiQaky1WTHy4ro68uTMXSHUhhoBWjQYux7KFzuBZaMJmlauLHfQscw7TWfLXlI51yCUH3aFphJBQXw==}
-    peerDependencies:
-      effect: ^4.1.2
-
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
@@ -6482,6 +6575,12 @@ packages:
 
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
+
+  '@emulators/core@0.13.1':
+    resolution: {integrity: sha512-otPAqo7b1Me+Ak84Yw+oyvpSnPKu+X7XDgbscFrkwXmZ3lb5HjlN4wbMeQ01a6f5p562DtlKhpIUU+Q2mvfDRQ==}
+
+  '@emulators/vercel@0.13.1':
+    resolution: {integrity: sha512-5hIUiBnlJSVThWDJf+d56TWXA9DSjRgcJAeQmIjqM/xU81ATKMDUG17ZXBssg87mYXf/2eGTm4KaMoglLgUqeA==}
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
@@ -9096,21 +9195,11 @@ packages:
     resolution: {integrity: sha512-3qndQUQXLdwafMEqfhz24hUtDPcsf1Bu3q52Kb8MqeH8JUh3h6R4HYW3ZJXiQsLcyYyFM68PuIwlLRlg1xDEpg==}
     engines: {node: ^14.18.0 || >=16.0.0}
 
-  '@rivetkit/engine-api-full@3.0.0':
-    resolution: {integrity: sha512-ON8VcrtQaxT3UOWIGX65tbkbs8pPLlQZoCaWWib/8taZhdhLTbqiq59IKF3mOfekDBhjJFAI3z2sBN/5dA3rHg==}
-
   '@rivetkit/engine-cli-darwin-arm64@2.3.10':
     resolution: {integrity: sha512-hu9rfesS9RnmIoGo0z+6YEroeZavaohYmwsc5K5//SPDfUl83mZirU4sWNjo5N2CQz+Y1fEyXcZTcnulF72rvA==}
     engines: {node: '>= 20.0.0'}
     cpu: [arm64]
     os: [darwin]
-
-  '@rivetkit/engine-cli-darwin-arm64@3.0.0':
-    resolution: {integrity: sha512-B1AMiwh78LkdLPm6CM5i3tQRA2mMbVwANNyoz2rUNKV1NBjUOIHtERIQQEv2sGv/qKjwx2PrvIN6kGUq5DxF/Q==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [arm64]
-    os: [darwin]
-    hasBin: true
 
   '@rivetkit/engine-cli-darwin-x64@2.3.10':
     resolution: {integrity: sha512-l5pgExB9lBt5UeNj9NOZHQv/oQCEMLuirCDAKidOU0bMD9LI2TV0S/JHWG7IWyBf34SEv+/Zo+LC4JoB8iu82Q==}
@@ -9118,38 +9207,17 @@ packages:
     cpu: [x64]
     os: [darwin]
 
-  '@rivetkit/engine-cli-darwin-x64@3.0.0':
-    resolution: {integrity: sha512-MxlBIGqzsuC8e30+rrWbkBbITQrCenQ2FWG95431QT6dnoDWo3B8+iTmsGKAVsx+NmgwEIVK5wzFDOaVB1gwXA==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [x64]
-    os: [darwin]
-    hasBin: true
-
   '@rivetkit/engine-cli-linux-arm64-musl@2.3.10':
     resolution: {integrity: sha512-opLAOm1Up5BrYk+T3p5yHQ9e5ZtWSjVfA0LyNllYKHNyYJ+L6cxosVBf1uakyENS8ytYu92R6fhQZOUQyjgevA==}
     engines: {node: '>= 20.0.0'}
     cpu: [arm64]
     os: [linux]
 
-  '@rivetkit/engine-cli-linux-arm64-musl@3.0.0':
-    resolution: {integrity: sha512-6X6ire4F449cEiLlv2AaI5LGGfWqichhp3QJjsRtsAn14vu9Xd18VIw9EsRdOkdlXfFF4yIEA1HaBVH1EgKaZg==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [arm64]
-    os: [linux]
-    hasBin: true
-
   '@rivetkit/engine-cli-linux-x64-musl@2.3.10':
     resolution: {integrity: sha512-q0WDESrssRNzVSqmnNgaLt2D8wjYhVPiiJi96kDIaatWAXvPHd7SPN4gNHdvRVUD0hImOEQDw1u3NGRyi7TBkg==}
     engines: {node: '>= 20.0.0'}
     cpu: [x64]
     os: [linux]
-
-  '@rivetkit/engine-cli-linux-x64-musl@3.0.0':
-    resolution: {integrity: sha512-t8xOWWjH8tTX/iE+DmZ9VFQsrrsaQrAebE5LGxuHCQEK+dbZMfVtlyqReFlubYkgfLrw5Qykr7JFTbUWW5kgIg==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [x64]
-    os: [linux]
-    hasBin: true
 
   '@rivetkit/engine-cli-win32-x64@2.3.10':
     resolution: {integrity: sha512-VnNn3R6YpMzrDauCVZRmt1L2/oUax+KQmOFSiXQwo7JPt2MdZaa5Z5ISWVD51c1/xCPiMiLDsL6V9mjpJculzw==}
@@ -9161,15 +9229,8 @@ packages:
     resolution: {integrity: sha512-7NoyfdT8Qk5bBOqnFgsDF2baL0BISNvWNB0mWsjA/AHRqrwg+RCQbTvkWy1iPCUr8/EdndMsNIwjxA1s8vGYwQ==}
     engines: {node: '>= 20.0.0'}
 
-  '@rivetkit/engine-cli@3.0.0':
-    resolution: {integrity: sha512-e/K23nZmMDSChrt2aUXOqkUmiD4vC3DptQTdLkyLmdXDlNUix9Xj2D8ZrKI6JdeImOcsIZsxbD4bFglZ9g2y0g==}
-    engines: {node: '>= 20.0.0'}
-
   '@rivetkit/engine-envoy-protocol@2.3.10':
     resolution: {integrity: sha512-AqYekBbHrxuUOrup2oo+iSBP80ZbI1Jp8euk0rRaaxkwlnWQO3p2ymMOLHW+jaQ6zK6g4f41aSq0l1ji8SoWZA==}
-
-  '@rivetkit/engine-envoy-protocol@3.0.0':
-    resolution: {integrity: sha512-SO6X2fzBJofdNT2rg+XNLhkTH79kijkN0vNryT4Vwgn4LPnH6xYMgXoFNT9qBoqs4hKvT07DaZpwttRpesItNQ==}
 
   '@rivetkit/on-change@6.0.1':
     resolution: {integrity: sha512-QBN/KRBXLJdCgN4gBTL3XAc/zKm58atSnieXWMOyFSPmo6F1/yIVV/LTRdvAktfCttrGx7W6c32i/lwqCHWnsQ==}
@@ -9181,33 +9242,14 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
-  '@rivetkit/rivetkit-napi-darwin-arm64@3.0.0':
-    resolution: {integrity: sha512-rshmqnVSsXMCbcG0l61lMUNjIFOPE236yPgx5XkY1e5Jqt3vTSoF8GpkiDikHsPk+XfR+GCOKnbopbM+6MR8Rg==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [arm64]
-    os: [darwin]
-
   '@rivetkit/rivetkit-napi-darwin-x64@2.3.10':
     resolution: {integrity: sha512-U+nzDsGgrslECZ7NxoUm1vvWlO+XxXNoFuBu2eefHkm9J06vXCrSPkiY/kAFa7rhcD9UA1MsNheUxC68BmKeXg==}
     engines: {node: '>= 20.0.0'}
     cpu: [x64]
     os: [darwin]
 
-  '@rivetkit/rivetkit-napi-darwin-x64@3.0.0':
-    resolution: {integrity: sha512-tQb01GbX/KCoo8Hi1cP6fElKZ5fKqhndKU3xyEO+tx1r1ajOdADaH7wYh23sg4gcBUzHu6WiNML8tQGwzOudGA==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [x64]
-    os: [darwin]
-
   '@rivetkit/rivetkit-napi-linux-arm64-gnu@2.3.10':
     resolution: {integrity: sha512-2uiQOJ5CsRvB6lqhYwezRWBZxuKVs6n0aPsRCdEggLPTEUcsx43ODcVVbkbg0aDM3qE+1itWjzOu086xhqGTQg==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  '@rivetkit/rivetkit-napi-linux-arm64-gnu@3.0.0':
-    resolution: {integrity: sha512-ByrrNQgMyeFj4hvae1lLhW5xfhrGHveiqkgrhR12KleB+rn0v3pPf8xjT0rjblrw1DaQHUXHZYk9lDhGp0dwqQ==}
     engines: {node: '>= 20.0.0'}
     cpu: [arm64]
     os: [linux]
@@ -9220,13 +9262,6 @@ packages:
     os: [linux]
     libc: [musl]
 
-  '@rivetkit/rivetkit-napi-linux-arm64-musl@3.0.0':
-    resolution: {integrity: sha512-yb04CwvlmLJRgZqadt5fh8k89WgRaX/xgVLffO6MWEJhDxPtPG+/mkk8oiqBLUkDOc18OGNqBEJXZYH2cXjmeQ==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [musl]
-
   '@rivetkit/rivetkit-napi-linux-x64-gnu@2.3.10':
     resolution: {integrity: sha512-l2wphS5wSl8xpje743/NYd9gl02FVh4qtqDQPk/LNA/WBT5WkdkkWhhTLiKiTMMA1L309XMQLH3iZbNq1yXFFg==}
     engines: {node: '>= 20.0.0'}
@@ -9234,22 +9269,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@rivetkit/rivetkit-napi-linux-x64-gnu@3.0.0':
-    resolution: {integrity: sha512-aWo+6bpcSU/T6KV27nL+Yji4ck/6fwEgG7pb7wzgyvaZv91JsfLdDwu0tKN1UwauR36J45TwxfYFlCwcbRpQ/Q==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
   '@rivetkit/rivetkit-napi-linux-x64-musl@2.3.10':
     resolution: {integrity: sha512-kdhVxFm8z7HWG7LWqt1TBi1ye7VDNhgqq3acsh2NlpCHPJ19aElu2yiHR2F4jh1zFZU5SpAKHJGKNbfIqGO4/Q==}
-    engines: {node: '>= 20.0.0'}
-    cpu: [x64]
-    os: [linux]
-    libc: [musl]
-
-  '@rivetkit/rivetkit-napi-linux-x64-musl@3.0.0':
-    resolution: {integrity: sha512-QU58MHkWj7KF3qIm+nDcNXY1ZmyOrIDH5TZ07DyYJh1yEhEp0mcf1ZTghU9BRD3qji1TqrH9Chy8CCn/f3+QFA==}
     engines: {node: '>= 20.0.0'}
     cpu: [x64]
     os: [linux]
@@ -9265,36 +9286,18 @@ packages:
     resolution: {integrity: sha512-nkaimgCcSPVZn+dGhlHMrrxVJrUwujhPlSznxehUWCaG6lR1gIysvlZucdiBTYF1iEKzzmvGqao1z25l1NVWAg==}
     engines: {node: '>= 20.0.0'}
 
-  '@rivetkit/rivetkit-napi@3.0.0':
-    resolution: {integrity: sha512-SzFPbriHQthPYIKFHS3DCgFF4NRRefoz8fFdOz8ITMfyiet6ixVw59Fn31EIkDBX3JynSNQWHShfKFTrTP3Znw==}
-    engines: {node: '>= 20.0.0'}
-
   '@rivetkit/rivetkit-wasm@2.3.10':
     resolution: {integrity: sha512-90czUWCMQa8mAMkHg/jSUGud0jemNJeU6XHeBw5izzE3kdELo8bWBlF06rprMJV6VOwwdPfluID0FrBmZpuNgQ==}
-
-  '@rivetkit/rivetkit-wasm@3.0.0':
-    resolution: {integrity: sha512-3KCnbwe0Y7mYsjKAm3lqY8UZU86UHsFLlv3Pu/gCryAIWnX8tR19i4Qh18rzVG0o2IzkqU2CULLaul0kQvnvTg==}
 
   '@rivetkit/traces@2.3.10':
     resolution: {integrity: sha512-CNYz8hJOR0o77wiUQbbWh24Qj6lQk/eH0lJXfHHUisYBsjyZKnN0TlSVfhAIf7UnSMh9ASMuTwPx8s2Yz53xVA==}
     engines: {node: '>=18.0.0'}
 
-  '@rivetkit/traces@3.0.0':
-    resolution: {integrity: sha512-P5hu4vtBknWGLr69QnoCdPZshg49ZC7bmkVeec1Vb185TwqB7KkFvBkZQhgAdViiTA8rC6hAkKyTvIzPsn1i7w==}
-    engines: {node: '>=18.0.0'}
-
   '@rivetkit/virtual-websocket@2.3.10':
     resolution: {integrity: sha512-CQhhys540fASByQzbu7YqRlKlIziL9FwI/mzAS0NGg+AZMiHc6YhB/cJw/LJ1VYrEQjbm83XFkUr6i6pRnZVNw==}
 
-  '@rivetkit/virtual-websocket@3.0.0':
-    resolution: {integrity: sha512-+6bce5gIpZ8yIoSDKyHSqP7WvsR1s0r4Ssnp+W4BPY8HRMrIyPwmg2TrlPIGFDzln+9+hLK12eSi8/t6bF2lQA==}
-
   '@rivetkit/workflow-engine@2.3.10':
     resolution: {integrity: sha512-+1VcVsWbmCd608tgqrVndMF8jWGCNflXSXmP8NYJnq7uEBcBcQy1bkCdcD1rckAkRkfefXqfW0ReNgLv202elg==}
-    engines: {node: '>=18.0.0'}
-
-  '@rivetkit/workflow-engine@3.0.0':
-    resolution: {integrity: sha512-4nKaEhRY1nGEAB/jDedtQ3Tym2rGSxHOg6P6S7suQCaTc1/A/P3VcFPLs9lIf9xu7Y0V3OxZgVlRmYrtmoJkFA==}
     engines: {node: '>=18.0.0'}
 
   '@rolldown/binding-android-arm-eabi@1.2.16':
@@ -10151,6 +10154,9 @@ packages:
 
   '@types/stats.js@0.17.4':
     resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
+
+  '@types/tar-stream@3.1.5':
+    resolution: {integrity: sha512-zCUA6CSDw0t2cpQiZixpyzfubpeuVZmBr5wztvuCG4bhy7reX/9wGXdZxEzz2CjMFLQ32UPR/01jzUUSRJeCeQ==}
 
   '@types/three@0.185.4':
     resolution: {integrity: sha512-gAsBIC07NIFrxjbf7tH2t71c38uulFfk/RFoC7FNBSjMRAQ8J1x/RBvusX0N5PJouaYFJawXQqfCQ0RKUx/1nA==}
@@ -11557,98 +11563,6 @@ packages:
 
   drizzle-orm@0.44.7:
     resolution: {integrity: sha512-quIpnYznjU9lHshEOAYLoZ9s3jweleHlZIAWR/jX9gAWNg/JhQ1wj0KGRf7/Zm+obRrYd9GjPVJg790QY9N5AQ==}
-    peerDependencies:
-      '@aws-sdk/client-rds-data': '>=3'
-      '@cloudflare/workers-types': '>=4'
-      '@electric-sql/pglite': '>=0.2.0'
-      '@libsql/client': '>=0.10.0'
-      '@libsql/client-wasm': '>=0.10.0'
-      '@neondatabase/serverless': '>=0.10.0'
-      '@op-engineering/op-sqlite': '>=2'
-      '@opentelemetry/api': ^1.4.1
-      '@planetscale/database': '>=1.13'
-      '@prisma/client': '*'
-      '@tidbcloud/serverless': '*'
-      '@types/better-sqlite3': '*'
-      '@types/pg': '*'
-      '@types/sql.js': '*'
-      '@upstash/redis': '>=1.34.7'
-      '@vercel/postgres': '>=0.8.0'
-      '@xata.io/client': '*'
-      better-sqlite3: '>=7'
-      bun-types: '*'
-      expo-sqlite: '>=14.0.0'
-      gel: '>=2'
-      knex: '*'
-      kysely: '*'
-      mysql2: '>=2'
-      pg: '>=8'
-      postgres: '>=3'
-      prisma: '*'
-      sql.js: '>=1'
-      sqlite3: '>=5'
-    peerDependenciesMeta:
-      '@aws-sdk/client-rds-data':
-        optional: true
-      '@cloudflare/workers-types':
-        optional: true
-      '@electric-sql/pglite':
-        optional: true
-      '@libsql/client':
-        optional: true
-      '@libsql/client-wasm':
-        optional: true
-      '@neondatabase/serverless':
-        optional: true
-      '@op-engineering/op-sqlite':
-        optional: true
-      '@opentelemetry/api':
-        optional: true
-      '@planetscale/database':
-        optional: true
-      '@prisma/client':
-        optional: true
-      '@tidbcloud/serverless':
-        optional: true
-      '@types/better-sqlite3':
-        optional: true
-      '@types/pg':
-        optional: true
-      '@types/sql.js':
-        optional: true
-      '@upstash/redis':
-        optional: true
-      '@vercel/postgres':
-        optional: true
-      '@xata.io/client':
-        optional: true
-      better-sqlite3:
-        optional: true
-      bun-types:
-        optional: true
-      expo-sqlite:
-        optional: true
-      gel:
-        optional: true
-      knex:
-        optional: true
-      kysely:
-        optional: true
-      mysql2:
-        optional: true
-      pg:
-        optional: true
-      postgres:
-        optional: true
-      prisma:
-        optional: true
-      sql.js:
-        optional: true
-      sqlite3:
-        optional: true
-
-  drizzle-orm@0.45.2:
-    resolution: {integrity: sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==}
     peerDependencies:
       '@aws-sdk/client-rds-data': '>=3'
       '@cloudflare/workers-types': '>=4'
@@ -13824,15 +13738,6 @@ packages:
   node-fetch-native@1.6.7:
     resolution: {integrity: sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q==}
 
-  node-fetch@2.7.0:
-    resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
-    engines: {node: 4.x || >=6.0.0}
-    peerDependencies:
-      encoding: ^0.1.0
-    peerDependenciesMeta:
-      encoding:
-        optional: true
-
   node-fetch@3.3.2:
     resolution: {integrity: sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
@@ -14954,21 +14859,6 @@ packages:
       ws:
         optional: true
 
-  rivetkit@3.0.0:
-    resolution: {integrity: sha512-xUa0+hD3rjvuIzzZU3Y9j6PbD1tG88+pseiwHclDejdCGMm33mLR10fuHUN82Ly45pcBigE5Nn6M1RXkHjdJJg==}
-    engines: {node: '>=22.0.0'}
-    peerDependencies:
-      drizzle-kit: ^0.31.2
-      eventsource: ^4.0.0
-      ws: ^8.0.0
-    peerDependenciesMeta:
-      drizzle-kit:
-        optional: true
-      eventsource:
-        optional: true
-      ws:
-        optional: true
-
   rolldown-plugin-dts@0.13.14:
     resolution: {integrity: sha512-wjNhHZz9dlN6PTIXyizB6u/mAg1wEFMW9yw7imEVe3CxHSRnNHVyycIX0yDEOVJfDNISLPbkCIPEpFpizy5+PQ==}
     engines: {node: '>=20.18.0'}
@@ -15596,9 +15486,6 @@ packages:
     resolution: {integrity: sha512-FVDYdxtnj0G6Qm/DhNPSb8Ju59ULcup3tuJxkFb5K8Bv2pUXILbf0xZWU8PX8Ov19OXljbUyveOFwRMwkXzO+A==}
     engines: {node: '>=16'}
 
-  tr46@0.0.3:
-    resolution: {integrity: sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==}
-
   tr46@5.1.1:
     resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
     engines: {node: '>=18'}
@@ -15988,10 +15875,6 @@ packages:
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
-  url-join@5.2.0:
-    resolution: {integrity: sha512-/tMVQdp/2eE90fGb6npbd2nLHH8jamzLLeZhLEKTz4Rc38wO5AeEuIhoWroWWfQJS50ZzL4Xod9JER/pJWTTEQ==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
   url@0.11.4:
     resolution: {integrity: sha512-oCwdVC7mTuWiPyjLUz/COz5TLk6wgp0RCsN+wHZ2Ekneac9w8uuV0njcbbie2ME+Vs+d6duwmYuR3HgQXs1fOg==}
     engines: {node: '>= 0.4'}
@@ -16338,9 +16221,6 @@ packages:
     resolution: {integrity: sha512-/Gnggvj9oSrEvJbDyyPtAnxBt5fGQM2iWOKQNu7ie1OxDgK40iZpyV3TKaRiEzVj1oA1UxKnEy9XPXh6PW3eVw==}
     engines: {node: '>= 8'}
 
-  webidl-conversions@3.0.1:
-    resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
-
   webidl-conversions@7.0.0:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
@@ -16357,9 +16237,6 @@ packages:
   whatwg-url@14.2.0:
     resolution: {integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==}
     engines: {node: '>=18'}
-
-  whatwg-url@5.0.0:
-    resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
 
   which-boxed-primitive@1.1.1:
     resolution: {integrity: sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==}
@@ -16772,51 +16649,6 @@ snapshots:
       chokidar: 5.0.0
       rolldown: 1.2.16
 
-  '@alchemy.run/rivet@2.0.0-beta.87(alchemy@2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0))(drizzle-kit@0.31.11)(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))(ws@8.21.0)':
-    dependencies:
-      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
-      '@distilled.cloud/rivet': 1.0.0-rc.20(effect@4.1.4)
-      '@effect/platform-node': 4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1))
-      alchemy: 2.0.0-beta.87(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.1(@opentelemetry/api@1.9.1)))(@types/react@19.2.18)(effect@4.1.4)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))(ws@8.21.0)
-      effect: 4.1.4
-      rivetkit: 3.0.0(drizzle-kit@0.31.11)(ws@8.21.0)
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bufferutil
-      - bun-types
-      - drizzle-kit
-      - encoding
-      - eventsource
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - redis
-      - sql.js
-      - sqlite3
-      - utf-8-validate
-      - ws
-
   '@alchemy.run/sigil@0.1.0-alpha.4(@types/react@19.2.18)':
     optionalDependencies:
       '@types/react': 19.2.18
@@ -16835,6 +16667,8 @@ snapshots:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
       zod: 3.25.76
+
+  '@antithesishq/bombadil@0.7.10': {}
 
   '@arizeai/openinference-semantic-conventions@2.5.0': {}
 
@@ -18319,15 +18153,6 @@ snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
 
-  '@distilled.cloud/core@1.0.0-rc.20(effect@4.1.4)':
-    dependencies:
-      effect: 4.1.4
-
-  '@distilled.cloud/rivet@1.0.0-rc.20(effect@4.1.4)':
-    dependencies:
-      '@distilled.cloud/core': 1.0.0-rc.20(effect@4.1.4)
-      effect: 4.1.4
-
   '@drizzle-team/brocli@0.10.2':
     optional: true
 
@@ -18504,6 +18329,14 @@ snapshots:
     dependencies:
       tslib: 2.8.1
     optional: true
+
+  '@emulators/core@0.13.1':
+    dependencies:
+      jose: 6.2.4
+
+  '@emulators/vercel@0.13.1':
+    dependencies:
+      '@emulators/core': 0.13.1
 
   '@esbuild-kit/core-utils@3.3.2':
     dependencies:
@@ -20788,39 +20621,16 @@ snapshots:
 
   '@rivetkit/bare-ts@0.6.2': {}
 
-  '@rivetkit/engine-api-full@3.0.0(encoding@0.1.13)':
-    dependencies:
-      form-data: 4.0.6
-      js-base64: 3.9.5
-      node-fetch: 2.7.0(encoding@0.1.13)
-      qs: 6.15.3
-      readable-stream: 4.8.0
-      url-join: 5.2.0
-    transitivePeerDependencies:
-      - encoding
-
   '@rivetkit/engine-cli-darwin-arm64@2.3.10':
-    optional: true
-
-  '@rivetkit/engine-cli-darwin-arm64@3.0.0':
     optional: true
 
   '@rivetkit/engine-cli-darwin-x64@2.3.10':
     optional: true
 
-  '@rivetkit/engine-cli-darwin-x64@3.0.0':
-    optional: true
-
   '@rivetkit/engine-cli-linux-arm64-musl@2.3.10':
     optional: true
 
-  '@rivetkit/engine-cli-linux-arm64-musl@3.0.0':
-    optional: true
-
   '@rivetkit/engine-cli-linux-x64-musl@2.3.10':
-    optional: true
-
-  '@rivetkit/engine-cli-linux-x64-musl@3.0.0':
     optional: true
 
   '@rivetkit/engine-cli-win32-x64@2.3.10':
@@ -20834,18 +20644,7 @@ snapshots:
       '@rivetkit/engine-cli-linux-x64-musl': 2.3.10
       '@rivetkit/engine-cli-win32-x64': 2.3.10
 
-  '@rivetkit/engine-cli@3.0.0':
-    optionalDependencies:
-      '@rivetkit/engine-cli-darwin-arm64': 3.0.0
-      '@rivetkit/engine-cli-darwin-x64': 3.0.0
-      '@rivetkit/engine-cli-linux-arm64-musl': 3.0.0
-      '@rivetkit/engine-cli-linux-x64-musl': 3.0.0
-
   '@rivetkit/engine-envoy-protocol@2.3.10':
-    dependencies:
-      '@rivetkit/bare-ts': 0.6.2
-
-  '@rivetkit/engine-envoy-protocol@3.0.0':
     dependencies:
       '@rivetkit/bare-ts': 0.6.2
 
@@ -20854,37 +20653,19 @@ snapshots:
   '@rivetkit/rivetkit-napi-darwin-arm64@2.3.10':
     optional: true
 
-  '@rivetkit/rivetkit-napi-darwin-arm64@3.0.0':
-    optional: true
-
   '@rivetkit/rivetkit-napi-darwin-x64@2.3.10':
-    optional: true
-
-  '@rivetkit/rivetkit-napi-darwin-x64@3.0.0':
     optional: true
 
   '@rivetkit/rivetkit-napi-linux-arm64-gnu@2.3.10':
     optional: true
 
-  '@rivetkit/rivetkit-napi-linux-arm64-gnu@3.0.0':
-    optional: true
-
   '@rivetkit/rivetkit-napi-linux-arm64-musl@2.3.10':
-    optional: true
-
-  '@rivetkit/rivetkit-napi-linux-arm64-musl@3.0.0':
     optional: true
 
   '@rivetkit/rivetkit-napi-linux-x64-gnu@2.3.10':
     optional: true
 
-  '@rivetkit/rivetkit-napi-linux-x64-gnu@3.0.0':
-    optional: true
-
   '@rivetkit/rivetkit-napi-linux-x64-musl@2.3.10':
-    optional: true
-
-  '@rivetkit/rivetkit-napi-linux-x64-musl@3.0.0':
     optional: true
 
   '@rivetkit/rivetkit-napi-win32-x64-msvc@2.3.10':
@@ -20903,20 +20684,7 @@ snapshots:
       '@rivetkit/rivetkit-napi-linux-x64-musl': 2.3.10
       '@rivetkit/rivetkit-napi-win32-x64-msvc': 2.3.10
 
-  '@rivetkit/rivetkit-napi@3.0.0':
-    dependencies:
-      '@rivetkit/engine-envoy-protocol': 3.0.0
-    optionalDependencies:
-      '@rivetkit/rivetkit-napi-darwin-arm64': 3.0.0
-      '@rivetkit/rivetkit-napi-darwin-x64': 3.0.0
-      '@rivetkit/rivetkit-napi-linux-arm64-gnu': 3.0.0
-      '@rivetkit/rivetkit-napi-linux-arm64-musl': 3.0.0
-      '@rivetkit/rivetkit-napi-linux-x64-gnu': 3.0.0
-      '@rivetkit/rivetkit-napi-linux-x64-musl': 3.0.0
-
   '@rivetkit/rivetkit-wasm@2.3.10': {}
-
-  '@rivetkit/rivetkit-wasm@3.0.0': {}
 
   '@rivetkit/traces@2.3.10':
     dependencies:
@@ -20925,26 +20693,9 @@ snapshots:
       fdb-tuple: 1.0.0
       vbare: 0.0.4
 
-  '@rivetkit/traces@3.0.0':
-    dependencies:
-      '@rivetkit/bare-ts': 0.6.2
-      cbor-x: 1.6.5
-      fdb-tuple: 1.0.0
-      vbare: 0.0.4
-
   '@rivetkit/virtual-websocket@2.3.10': {}
 
-  '@rivetkit/virtual-websocket@3.0.0': {}
-
   '@rivetkit/workflow-engine@2.3.10':
-    dependencies:
-      '@rivetkit/bare-ts': 0.6.2
-      cbor-x: 1.6.5
-      fdb-tuple: 1.0.0
-      pino: 9.14.0
-      vbare: 0.0.4
-
-  '@rivetkit/workflow-engine@3.0.0':
     dependencies:
       '@rivetkit/bare-ts': 0.6.2
       cbor-x: 1.6.5
@@ -21750,6 +21501,10 @@ snapshots:
       '@types/node': 18.19.130
 
   '@types/stats.js@0.17.4': {}
+
+  '@types/tar-stream@3.1.5':
+    dependencies:
+      '@types/node': 22.20.0
 
   '@types/three@0.185.4':
     dependencies:
@@ -23425,16 +23180,6 @@ snapshots:
     optional: true
 
   drizzle-orm@0.44.7(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1):
-    optionalDependencies:
-      '@cloudflare/workers-types': 5.20260730.1
-      '@libsql/client': 0.18.0
-      '@opentelemetry/api': 1.9.1
-      '@types/pg': 8.15.5
-      better-sqlite3: 12.11.1
-      pg: 8.22.0
-      sql.js: 1.14.1
-
-  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20260730.1
       '@libsql/client': 0.18.0
@@ -26058,12 +25803,6 @@ snapshots:
 
   node-fetch-native@1.6.7: {}
 
-  node-fetch@2.7.0(encoding@0.1.13):
-    dependencies:
-      whatwg-url: 5.0.0
-    optionalDependencies:
-      encoding: 0.1.13
-
   node-fetch@3.3.2:
     dependencies:
       data-uri-to-buffer: 4.0.1
@@ -27375,120 +27114,6 @@ snapshots:
       - sql.js
       - sqlite3
 
-  rivetkit@3.0.0(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(drizzle-kit@0.31.11)(encoding@0.1.13)(pg@8.22.0)(sql.js@1.14.1)(ws@8.23.0):
-    dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
-      '@opentelemetry/api': 1.9.1
-      '@rivetkit/bare-ts': 0.6.2
-      '@rivetkit/engine-api-full': 3.0.0(encoding@0.1.13)
-      '@rivetkit/engine-cli': 3.0.0
-      '@rivetkit/engine-envoy-protocol': 3.0.0
-      '@rivetkit/on-change': 6.0.1
-      '@rivetkit/rivetkit-napi': 3.0.0
-      '@rivetkit/rivetkit-wasm': 3.0.0
-      '@rivetkit/traces': 3.0.0
-      '@rivetkit/virtual-websocket': 3.0.0
-      '@rivetkit/workflow-engine': 3.0.0
-      cbor-x: 1.6.5
-      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
-      hono: 4.12.27
-      invariant: 2.2.4
-      p-retry: 6.2.1
-      pino: 9.14.0
-      uuid: 12.0.1
-      vbare: 0.0.4
-      zod: 4.4.3
-    optionalDependencies:
-      drizzle-kit: 0.31.11
-      ws: 8.23.0
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - encoding
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - sql.js
-      - sqlite3
-
-  rivetkit@3.0.0(drizzle-kit@0.31.11)(ws@8.21.0):
-    dependencies:
-      '@hono/zod-openapi': 1.6.0(hono@4.12.27)(zod@4.4.3)
-      '@opentelemetry/api': 1.9.1
-      '@rivetkit/bare-ts': 0.6.2
-      '@rivetkit/engine-api-full': 3.0.0(encoding@0.1.13)
-      '@rivetkit/engine-cli': 3.0.0
-      '@rivetkit/engine-envoy-protocol': 3.0.0
-      '@rivetkit/on-change': 6.0.1
-      '@rivetkit/rivetkit-napi': 3.0.0
-      '@rivetkit/rivetkit-wasm': 3.0.0
-      '@rivetkit/traces': 3.0.0
-      '@rivetkit/virtual-websocket': 3.0.0
-      '@rivetkit/workflow-engine': 3.0.0
-      cbor-x: 1.6.5
-      drizzle-orm: 0.45.2(@cloudflare/workers-types@5.20260730.1)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(better-sqlite3@12.11.1)(pg@8.22.0)(sql.js@1.14.1)
-      hono: 4.12.27
-      invariant: 2.2.4
-      p-retry: 6.2.1
-      pino: 9.14.0
-      uuid: 12.0.1
-      vbare: 0.0.4
-      zod: 4.4.3
-    optionalDependencies:
-      drizzle-kit: 0.31.11
-      ws: 8.21.0
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/sql.js'
-      - '@upstash/redis'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - encoding
-      - expo-sqlite
-      - gel
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - sql.js
-      - sqlite3
-
   rolldown-plugin-dts@0.13.14(@typescript/native-preview@7.0.0-dev.20260630.1)(rolldown@1.1.3)(typescript@6.0.3):
     dependencies:
       '@babel/generator': 7.29.8
@@ -28349,8 +27974,6 @@ snapshots:
     dependencies:
       tldts: 6.1.86
 
-  tr46@0.0.3: {}
-
   tr46@5.1.1:
     dependencies:
       punycode: 2.3.1
@@ -28700,8 +28323,6 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  url-join@5.2.0: {}
-
   url@0.11.4:
     dependencies:
       punycode: 1.4.1
@@ -28992,7 +28613,7 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1)):
+  vitest@4.1.9(@opentelemetry/api@1.9.1)(@types/node@22.20.0)(@vitest/coverage-v8@4.1.9)(jsdom@26.1.0)(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1)):
     dependencies:
       '@vitest/expect': 4.1.9
       '@vitest/mocker': 4.1.9(vite@8.1.2(@types/node@22.20.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.1))
@@ -29018,6 +28639,7 @@ snapshots:
       '@opentelemetry/api': 1.9.1
       '@types/node': 22.20.0
       '@vitest/coverage-v8': 4.1.9(vitest@4.1.9)
+      jsdom: 26.1.0
     transitivePeerDependencies:
       - msw
 
@@ -29265,8 +28887,6 @@ snapshots:
 
   web-streams-polyfill@4.3.0: {}
 
-  webidl-conversions@3.0.1: {}
-
   webidl-conversions@7.0.0: {}
 
   whatwg-encoding@3.1.1:
@@ -29279,11 +28899,6 @@ snapshots:
     dependencies:
       tr46: 5.1.1
       webidl-conversions: 7.0.0
-
-  whatwg-url@5.0.0:
-    dependencies:
-      tr46: 0.0.3
-      webidl-conversions: 3.0.1
 
   which-boxed-primitive@1.1.1:
     dependencies:

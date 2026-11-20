@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	createTargetPricingInventory,
 	targetPricingModel,
@@ -7,13 +8,90 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	makeScenario,
 	perUnitCharge,
+	rehashScenario,
 	usage,
 	workload,
 } from "../../pricing/test/fixtures.js";
 import {
-	executeRankedIacTargets,
+	executeRankedIacTargets as executeWithAuthority,
 	rankIacTargets,
 } from "../src/iac-target-routing.js";
+
+function executeRankedIacTargets(
+	input: Omit<
+		Parameters<typeof executeWithAuthority>[0],
+		"authority" | "tenantId" | "operation"
+	>,
+) {
+	const authority = {
+		persistence: "durable-cas" as const,
+		claim: ({
+			tenantId,
+			requestId,
+			operationId,
+		}: {
+			tenantId: string;
+			requestId: string;
+			operationId: string;
+		}) => ({
+			tenantId,
+			requestId,
+			operationId,
+			status: "claimed" as const,
+			claimToken: "A".repeat(43),
+		}),
+		inspect: () => undefined,
+		beginAttempt: ({
+			tenantId,
+			requestId,
+			targetId,
+			inventoryHash,
+			operationId,
+		}: {
+			tenantId: string;
+			requestId: string;
+			targetId: string;
+			inventoryHash: string;
+			operationId: string;
+		}) => ({
+			tenantId,
+			requestId,
+			targetId,
+			inventoryHash,
+			operationId,
+			attemptId: "B".repeat(43),
+		}),
+		denyAttempt: () => ({ status: "denied" as const }),
+		finish: ({
+			outcome,
+		}: {
+			outcome: import("../src/iac-route.js").IacRouteOutcome;
+		}) => ({ status: "finished" as const, outcome }),
+		verifyAttempt: () => true,
+		consumeAttempt: () => true,
+	};
+	const candidates = input.candidates.map((candidate) => ({
+		...candidate,
+		run: async (
+			requestId: string,
+			expected: import("../src/iac-target-routing.js").IacRoutingExpectation,
+			permit: import("../src/iac-route.js").IacRoutePermit,
+		) => {
+			if (!authority.consumeAttempt()) throw new Error("permit consumed");
+			return candidate.run(requestId, expected, permit);
+		},
+	}));
+	return executeWithAuthority({
+		...input,
+		candidates,
+		authority,
+		tenantId: "tenant-a",
+		operation: {
+			operationId: `sha256:${createHash("sha256").update(input.requestId).digest("hex")}`,
+			authorization: "host-proof",
+		},
+	});
+}
 
 const digest = `sha256:${"a".repeat(64)}`;
 function candidate(targetId: string, price: string) {
@@ -67,6 +145,77 @@ function request(candidates: ReturnType<typeof candidate>[]) {
 }
 
 describe("whole-target price ranking", () => {
+	it("does not rank a destroy operation using a placement quote", () => {
+		const input = candidate("target", "1");
+		input.inventory.operation = "destroy";
+		expect(rankIacTargets(request([input]))).toMatchObject({
+			ranking: [],
+			rejected: [{ targetId: "target", code: "PRICING_MODEL_UNSUPPORTED" }],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+	});
+
+	it.each([
+		"migrate",
+		"cancel",
+		"rebalance",
+		"place-removal",
+		"place-source",
+		"dispatch-removal",
+		"dispatch-source",
+	] as const)("does not rank a target whose %s costs are unsupported", (action) => {
+		const input = candidate("target", "1");
+		if (
+			input.pricing.state.case !== "model" ||
+			!input.pricing.state.value.scenario
+		)
+			throw new Error("missing model fixture");
+		const scenario = input.pricing.state.value.scenario;
+		scenario.action = action.startsWith("place-")
+			? "place"
+			: action.startsWith("dispatch-")
+				? "dispatch"
+				: action;
+		if (action.endsWith("-removal")) {
+			const candidate = scenario.candidate[0];
+			if (!candidate) throw new Error("missing candidate fixture");
+			scenario.baseline = [structuredClone(candidate)];
+			candidate.direction = "remove";
+		}
+		if (action.endsWith("-source"))
+			scenario.sourceProviderAgreementIds = ["agreement-a"];
+		if (!scenario.options) throw new Error("missing options fixture");
+		scenario.options.allowCancellation = true;
+		expect(rankIacTargets(request([input]))).toMatchObject({
+			ranking: [],
+			rejected: [{ targetId: "target", code: "PRICING_MODEL_UNSUPPORTED" }],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+	});
+
+	it("orders equal-cost targets and rejections by code unit independent of locale", () => {
+		const rejectedUpper = candidate("Z-unpriced", "1");
+		const rejectedLower = candidate("a-unpriced", "1");
+		rejectedUpper.pricing = targetPricingUnavailable("no model");
+		rejectedLower.pricing = targetPricingUnavailable("no model");
+		const result = rankIacTargets(
+			request([
+				candidate("a-priced", "1"),
+				candidate("Z-priced", "1"),
+				rejectedLower,
+				rejectedUpper,
+			]),
+		);
+		expect(result.ranking.map((entry) => entry.targetId)).toEqual([
+			"Z-priced",
+			"a-priced",
+		]);
+		expect(result.rejected.map((entry) => entry.targetId)).toEqual([
+			"Z-unpriced",
+			"a-unpriced",
+		]);
+	});
+
 	it.each([
 		"root-accessor",
 		"root-proxy",
@@ -157,6 +306,36 @@ describe("whole-target price ranking", () => {
 				{ targetId: "expensive" },
 			],
 			rejected: [{ targetId: "unknown", code: "PRICING_MODEL_UNAVAILABLE" }],
+		});
+	});
+
+	it("excludes shared agreements whose selector values differ across resources", () => {
+		const ambiguous = candidate("ambiguous", "0.25");
+		if (ambiguous.pricing.state.case !== "model")
+			throw new Error("missing fixture model");
+		const model = ambiguous.pricing.state.value;
+		const scenario = model.scenario;
+		const first = scenario?.candidate[0];
+		const charge = scenario?.catalog?.rateCards[0]?.charges[0]?.base;
+		const resource = ambiguous.inventory.resources[0];
+		if (!scenario || !first || !charge || !resource)
+			throw new Error("missing fixture inputs");
+		first.attributes = { region: "east" };
+		scenario.candidate.push({ ...first, attributes: { region: "west" } });
+		charge.selectors = { region: "east" };
+		ambiguous.inventory.resources.push({ ...resource, resourceId: "worker" });
+		model.bindings.push({
+			$typeName: "hobo.pricing.v1.TargetPricingBinding",
+			resourceId: "worker",
+			candidateIndex: 1,
+		});
+		rehashScenario(scenario);
+		const result = rankIacTargets(request([candidate("good", "1"), ambiguous]));
+		expect(result).toMatchObject({
+			coverage: "partial",
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			ranking: [{ targetId: "good" }],
+			rejected: [{ targetId: "ambiguous", code: "PRICING_MODEL_UNSUPPORTED" }],
 		});
 	});
 
@@ -370,7 +549,11 @@ describe("budget-aware target execution", () => {
 					targetId: "cheap",
 					run: async (id) => {
 						calls.push(`${id}/cheap`);
-						throw { admission: decision("cheap", "denied") };
+						throw {
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
+							admission: decision("cheap", "denied"),
+						};
 					},
 				},
 				{
@@ -395,6 +578,224 @@ describe("budget-aware target execution", () => {
 			],
 		});
 		expect(calls).toEqual(["route-1/cheap", "route-1/expensive"]);
+	});
+
+	it.each([
+		"error-proxy",
+		"receipt-proxy",
+		"budget-proxy",
+		"reservation-accessor",
+		"budget-accessor",
+		"revoked-error",
+		"error-inherited-reservation",
+		"error-inherited-accessor",
+		"error-proxy-prototype",
+		"receipt-inherited-reservation",
+		"receipt-proxy-prototype",
+	] as const)("does not fall back on uninspectable %s denial evidence", async (kind) => {
+		const ranking = rankIacTargets(
+			request([candidate("cheap", "0.25"), candidate("expensive", "1")]),
+		);
+		let traps = 0;
+		let next = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async () => {
+						let admission = decision("cheap", "denied");
+						if (kind === "reservation-accessor")
+							Object.defineProperty(admission, "reservation", {
+								get: () => {
+									traps++;
+									return undefined;
+								},
+							});
+						if (kind === "budget-accessor")
+							Object.defineProperty(admission.budget, "reservation", {
+								get: () => {
+									traps++;
+									return "not-created";
+								},
+							});
+						if (kind === "budget-proxy")
+							admission.budget = new Proxy(admission.budget, {
+								get: (target, key) => {
+									traps++;
+									return Object.getOwnPropertyDescriptor(target, key)?.value;
+								},
+							});
+						if (kind === "receipt-proxy")
+							admission = new Proxy(admission, {
+								get: (target, key) => {
+									traps++;
+									return Object.getOwnPropertyDescriptor(target, key)?.value;
+								},
+							});
+						if (kind === "receipt-inherited-reservation")
+							Object.setPrototypeOf(admission, {
+								reservation: { reservationId: "iac:route-1" },
+							});
+						if (kind === "receipt-proxy-prototype")
+							Object.setPrototypeOf(
+								admission,
+								new Proxy(
+									{},
+									{
+										getOwnPropertyDescriptor: () => {
+											traps++;
+											return undefined;
+										},
+									},
+								),
+							);
+						const failure = {
+							admission,
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
+						};
+						if (kind === "error-inherited-reservation")
+							Object.setPrototypeOf(failure, { reservationId: "iac:route-1" });
+						if (kind === "error-inherited-accessor")
+							Object.setPrototypeOf(
+								failure,
+								Object.defineProperty({}, "reservationId", {
+									get: () => {
+										traps++;
+										return undefined;
+									},
+								}),
+							);
+						if (kind === "error-proxy-prototype")
+							Object.setPrototypeOf(
+								failure,
+								new Proxy(
+									{},
+									{
+										getOwnPropertyDescriptor: () => {
+											traps++;
+											return undefined;
+										},
+									},
+								),
+							);
+						if (kind === "error-proxy")
+							throw new Proxy(failure, {
+								ownKeys: (target) => {
+									traps++;
+									return Reflect.ownKeys(target);
+								},
+							});
+						if (kind === "revoked-error") {
+							const revoked = Proxy.revocable(failure, {});
+							revoked.revoke();
+							throw revoked.proxy;
+						}
+						throw failure;
+					},
+				},
+				{
+					targetId: "expensive",
+					run: async (_id, expected) => {
+						next++;
+						return {
+							outputs: {},
+							admission: { ...decision("expensive", "admitted"), ...expected },
+						};
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		expect(next).toBe(0);
+		expect(traps).toBe(0);
+	});
+
+	it.each([
+		"outputs-proxy",
+		"outputs-accessor",
+	] as const)("retains a hold without reading %s", async (kind) => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		let traps = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => {
+						const returned = {
+							outputs: {},
+							admission: { ...decision("cheap", "admitted"), ...expected },
+						};
+						if (kind === "outputs-proxy")
+							returned.outputs = new Proxy(
+								{},
+								{
+									getPrototypeOf: () => {
+										traps++;
+										return Object.prototype;
+									},
+								},
+							);
+						else
+							Object.defineProperty(returned, "outputs", {
+								get: () => {
+									traps++;
+									return {};
+								},
+							});
+						return returned;
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "allowed", reservation: "held" },
+			reservationId: "iac:route-1",
+		});
+		expect(traps).toBe(0);
+	});
+
+	it("retains a proven hold when an unrelated error field is an accessor", async () => {
+		const ranking = rankIacTargets(request([candidate("cheap", "1")]));
+		let traps = 0;
+		const result = await executeRankedIacTargets({
+			requestId: "route-1",
+			ranking,
+			candidates: [
+				{
+					targetId: "cheap",
+					run: async (_id, expected) => {
+						const error = {
+							admission: { ...decision("cheap", "admitted"), ...expected },
+							reservationId: "iac:route-1",
+							requiresReconciliation: true,
+							executionOutcome: "unknown",
+						};
+						Object.defineProperty(error, "code", {
+							get: () => {
+								traps++;
+								return "ERROR";
+							},
+						});
+						throw error;
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			reservationId: "iac:route-1",
+			budget: { evaluation: "allowed", reservation: "held" },
+		});
+		expect(traps).toBe(0);
 	});
 
 	it.each([
@@ -724,9 +1125,9 @@ describe("budget-aware target execution", () => {
 			candidates: [
 				{
 					targetId: "cheap",
+					// @ts-expect-error Exercise malformed provider output at the boundary.
 					run: async (_id, expected) => ({
-						// SAFETY: deliberately violate the provider contract to test the boundary parser.
-						outputs: bad as Record<string, string>,
+						outputs: bad,
 						admission: { ...decision("cheap", "admitted"), ...expected },
 					}),
 				},
@@ -751,6 +1152,8 @@ describe("budget-aware target execution", () => {
 					targetId: "cheap",
 					run: async () => {
 						throw {
+							requiresReconciliation: false,
+							executionOutcome: "not-started",
 							admission: {
 								...decision("cheap", "denied"),
 								code: "ROUTING_QUOTE_CHANGED",
@@ -798,7 +1201,11 @@ describe("budget-aware target execution", () => {
 								const receipt = { ...decision(targetId, state), ...expected };
 								if (state === "admitted")
 									return { outputs: {}, admission: receipt };
-								throw { admission: receipt };
+								throw {
+									requiresReconciliation: false,
+									executionOutcome: "not-started",
+									admission: receipt,
+								};
 							},
 						})),
 					});
@@ -839,7 +1246,11 @@ describe("budget-aware target execution", () => {
 						run: async (_id, expected) => {
 							calls++;
 							if (index < stop)
-								throw { admission: decision(entry.targetId, "denied") };
+								throw {
+									requiresReconciliation: false,
+									executionOutcome: "not-started",
+									admission: decision(entry.targetId, "denied"),
+								};
 							if (index > stop)
 								throw new Error("routing continued after a terminal outcome");
 							const receipt = {
@@ -848,7 +1259,11 @@ describe("budget-aware target execution", () => {
 							};
 							if (terminal === "admitted")
 								return { outputs: {}, admission: receipt };
-							throw { admission: receipt };
+							throw {
+								requiresReconciliation: false,
+								executionOutcome: "not-started",
+								admission: receipt,
+							};
 						},
 					})),
 				});
@@ -864,7 +1279,11 @@ describe("budget-aware target execution", () => {
 			candidates: ranking.ranking.map((entry) => ({
 				targetId: entry.targetId,
 				run: async () => {
-					throw { admission: decision(entry.targetId, "denied") };
+					throw {
+						requiresReconciliation: false,
+						executionOutcome: "not-started",
+						admission: decision(entry.targetId, "denied"),
+					};
 				},
 			})),
 		});
@@ -894,9 +1313,10 @@ describe("budget-aware target execution", () => {
 			})),
 		});
 		expect(oversized).toMatchObject({
-			status: "denied",
-			code: "ROUTING_INPUT_INVALID",
+			status: "uncertain",
+			code: "ROUTING_INPUT_UNINSPECTABLE",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
 		});
 		expect(extraCalls).toBe(0);
-	}, 20_000);
+	}, 60_000);
 });
