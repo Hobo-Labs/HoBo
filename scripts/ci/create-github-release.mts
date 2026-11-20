@@ -357,23 +357,20 @@ export function githubApiProbeTransport(
 ): ReleaseHttpTransport {
 	const token = env.GITHUB_TOKEN?.trim();
 	if (!token) return inner;
-	return withLatin1MarkerWhenPresent(
-		inner,
-		async (request) => {
-			if (!request.url.startsWith("https://api.github.com/"))
-				return inner(request);
-			return inner({
-				...request,
-				headers: {
-					...request.headers,
-					authorization: `Bearer ${token}`,
-					accept: request.headers.accept ?? "application/vnd.github+json",
-					"x-github-api-version":
-						request.headers["x-github-api-version"] ?? "2022-11-28",
-				},
-			});
-		},
-	);
+	return withLatin1MarkerWhenPresent(inner, async (request) => {
+		if (!request.url.startsWith("https://api.github.com/"))
+			return inner(request);
+		return inner({
+			...request,
+			headers: {
+				...request.headers,
+				authorization: `Bearer ${token}`,
+				accept: request.headers.accept ?? "application/vnd.github+json",
+				"x-github-api-version":
+					request.headers["x-github-api-version"] ?? "2022-11-28",
+			},
+		});
+	});
 }
 
 /**
@@ -624,9 +621,10 @@ export const RELEASE_DRIVE_PAGES = Object.freeze({
 	intervalMs: RELEASE_DRIVE.intervalMs,
 });
 
-export function releaseDriveFor(
-	family: ReleaseFamily,
-): { readonly passes: number; readonly intervalMs: number } {
+export function releaseDriveFor(family: ReleaseFamily): {
+	readonly passes: number;
+	readonly intervalMs: number;
+} {
 	return family === "pages" ? RELEASE_DRIVE_PAGES : RELEASE_DRIVE;
 }
 

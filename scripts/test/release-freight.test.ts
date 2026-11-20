@@ -1,20 +1,20 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { TransportRequest } from "@hobo/core";
 import { describe, expect, it, vi } from "vitest";
 import { pipelines } from "../../release/hobo-release.delivery.ts";
-import type { TransportRequest } from "@hobo/core";
 import {
 	announceVerdict,
 	classifyRelease,
 	githubApiProbeTransport,
 	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
+	RELEASE_DRIVE_PAGES,
+	RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
 	releaseCampId,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
-	RELEASE_DRIVE_PAGES,
-	RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
 	releaseSource,
 	siteTree,
 } from "../ci/create-github-release.mts";
@@ -93,8 +93,7 @@ describe("release topology names", () => {
 	it("gives Pages promotion drive longer than the verification progress window", () => {
 		const drive = releaseDriveFor("pages");
 		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
-		const budgetMs =
-			drive.passes * drive.intervalMs - drive.intervalMs;
+		const budgetMs = drive.passes * drive.intervalMs - drive.intervalMs;
 		expect(budgetMs).toBeGreaterThanOrEqual(
 			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
 				RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
