@@ -8,6 +8,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { isPathIdentifier } from "./lib/slug.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import {
 	validatePositive,
 	type PositiveScores,
@@ -267,12 +270,33 @@ function modeAggregate(root: string, runId: string) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--run", "--path", "--personas"],
+		flags: ["--help", "-h", "--global"],
+		allowEmptyValues: ["--personas"],
+	});
+	if (input.error || input.positionals.length > 1 || (input.positionals.length && input.argv.includes("--mode"))) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	const root = repoRoot();
 	const mode = String(args.mode || "help");
 	if (mode === "help") {
 		help();
 		return;
+	}
+	if (mode === "aggregate") {
+		const runId = String(args.run || "");
+		if (!isPathIdentifier(runId)) {
+			console.error("--run must be a valid run id");
+			process.exit(2);
+		}
+		const problem = optimizexpWriteProblem(root, [""]);
+		if (problem) {
+			console.error(problem);
+			process.exit(2);
+		}
 	}
 	if (mode === "validate") {
 		modeValidate(String(args.path || ""));

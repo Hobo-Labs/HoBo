@@ -1,16 +1,78 @@
 import type { Experimental_CompositionCandidate as Candidate } from "@json-render/core";
 
-import { type ConnectStep, providerLabel } from "./steps.js";
+import {
+	type ConfigField,
+	type ConnectStep,
+	providerLabel,
+	storeLabel,
+} from "./steps.js";
 
-// The configured component instances one step offers (json-render
-// "candidates"). A model may choose and arrange them; it cannot invent props
-// or actions. Every candidate is complete on its own, and its description says
-// what it is for without naming the owner, the repository or any value: the
-// descriptions are what a composer sends to its evaluator.
+function fieldChecks(field: ConfigField) {
+	const checks: {
+		type: string;
+		message: string;
+		args?: Readonly<Record<string, string>>;
+	}[] = [];
+	if (field.required)
+		checks.push({
+			type: "required",
+			message: `${field.label} is required`,
+		});
+	if (field.error)
+		checks.push({
+			type: "custom",
+			message: field.error,
+		});
+	if (field.kind === "url")
+		checks.push({
+			type: "pattern",
+			message: "Enter a valid URL (https://…)",
+			args: { pattern: String.raw`^https?://` },
+		});
+	return checks.length > 0 ? checks : null;
+}
 
-/** Candidates whose id ends in this are left out of the deterministic spec. */
-// public-contract: the marker compose.ts reads to tell required candidates from optional ones.
-export const OPTIONAL_SUFFIX = "-optional";
+function fieldCandidate(field: ConfigField): Candidate {
+	if (field.kind === "choice") {
+		return {
+			id: `field-${field.name}`,
+			description: `Setting for ${field.label}`,
+			element: {
+				type: "Radio",
+				props: {
+					label: field.label,
+					name: field.name,
+					options: (field.options ?? []).map((option) => ({
+						label: option.label,
+						value: option.value,
+					})),
+					value: { $bindState: `/form/${field.name}` },
+					checks: fieldChecks(field),
+					validateOn: "change" as const,
+				},
+			},
+		};
+	}
+	return {
+		id: `field-${field.name}`,
+		description: `Setting for ${field.label}`,
+		element: {
+			type: "Input",
+			props: {
+				label: field.label,
+				name: field.name,
+				type:
+					field.kind === "secret" ? ("password" as const) : ("text" as const),
+				placeholder: field.description ?? null,
+				value: { $bindState: `/form/${field.name}` },
+				checks: fieldChecks(field),
+				validateOn: "change" as const,
+			},
+		},
+	};
+}
+
+export const optionalCandidateIdSuffix = "-optional"; // public-contract: compose.ts treats candidate ids ending in this suffix as optional
 
 function heading(text: string): Candidate {
 	return {
@@ -48,7 +110,7 @@ function root(title: string, description: string): Candidate {
 
 function cancel(): Candidate {
 	return {
-		id: `cancel${OPTIONAL_SUFFIX}`,
+		id: `cancel${optionalCandidateIdSuffix}`,
 		description: "Lets the person stop before anything is created",
 		element: {
 			type: "Button",
@@ -58,10 +120,30 @@ function cancel(): Candidate {
 	};
 }
 
-/** The candidates for one step, in the order a person reads them. */
 export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 	const provider = providerLabel(step.provider);
 	switch (step.kind) {
+		case "configure":
+			return [
+				root(step.title, step.reason),
+				heading(step.title),
+				text("reason", step.reason, "Why these settings are needed"),
+				...step.fields.map(fieldCandidate),
+				{
+					id: "submit",
+					description: "Save settings and continue",
+					element: {
+						type: "Button",
+						props: {
+							label: "Save and continue",
+							variant: "primary",
+							disabled: null,
+						},
+						on: { press: { action: "connect.submit", params: {} } },
+					},
+				},
+				cancel(),
+			];
 		case "choose-secret-store": {
 			const recommended = step.stores.find((store) => store.recommended);
 			return [
@@ -103,7 +185,7 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 					? []
 					: [
 							{
-								id: `oidc-note${OPTIONAL_SUFFIX}`,
+								id: `oidc-note${optionalCandidateIdSuffix}`,
 								description:
 									"Notes that the recommended store needs no stored secret",
 								element: {
@@ -195,7 +277,7 @@ export function connectCandidates(step: ConnectStep): readonly Candidate[] {
 						type: "Alert",
 						props: {
 							title: `${provider} is connected`,
-							message: `Credentials are in ${step.store}. ${step.nextHint}`,
+							message: `Credentials are in ${storeLabel(step.store)}. ${step.nextHint}`,
 							type: "success",
 						},
 					},
