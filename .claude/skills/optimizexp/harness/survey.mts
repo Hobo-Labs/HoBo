@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
 import {
 	validatePositive,
 	type PositiveScores,
@@ -170,7 +171,16 @@ function modeValidate(filePath: string) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--run", "--path", "--personas"],
+		flags: ["--help", "-h", "--global"],
+		allowEmptyValues: ["--personas"],
+	});
+	if (input.error || input.positionals.length > 1 || (input.positionals.length && input.argv.includes("--mode"))) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	const mode = String(args.mode || "help");
 	if (mode === "help") {
 		help();

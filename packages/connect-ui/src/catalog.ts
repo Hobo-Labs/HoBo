@@ -3,10 +3,30 @@ import { schema } from "@json-render/react/schema";
 import { shadcnComponentDefinitions as ui } from "@json-render/shadcn/catalog";
 import { z } from "zod";
 
-// The connect page's component vocabulary: shadcn/ui through json-render's
-// preset, and the three actions a connect step can dispatch. A spec — whether a
-// model composed it or `deterministicConnectSpec` built it — may use only these,
-// and the flow on the server decides what every action does.
+import { SECRET_STORE_IDS } from "./steps.js";
+
+export const RadioOptionSchema = z.object({
+	label: z.string(),
+	value: z.string(),
+});
+
+const BindableValueSchema = z.union([
+	z.string().nullable(),
+	z.object({ $bindState: z.string() }),
+]);
+
+const RadioDefinition = {
+	...ui.Radio,
+	props: ui.Radio.props.extend({
+		options: z.array(RadioOptionSchema),
+		value: BindableValueSchema,
+	}),
+};
+
+const InputDefinition = {
+	...ui.Input,
+	props: ui.Input.props.extend({ value: BindableValueSchema }),
+};
 
 export const connectCatalog = defineCatalog(schema, {
 	components: {
@@ -20,12 +40,17 @@ export const connectCatalog = defineCatalog(schema, {
 		Link: ui.Link,
 		Progress: ui.Progress,
 		Separator: ui.Separator,
-		Radio: ui.Radio,
+		Radio: RadioDefinition,
+		Input: InputDefinition,
 	},
 	actions: {
+		"connect.submit": {
+			params: z.record(z.string(), z.string()),
+			description: "Submit configured settings and continue the flow",
+		},
 		"connect.chooseStore": {
 			params: z.object({
-				store: z.enum(["infisical", "1password", "bitwarden"]),
+				store: z.enum(SECRET_STORE_IDS),
 			}),
 			description:
 				"Choose the third-party secret store the provider's credentials go to",
@@ -44,7 +69,6 @@ export const connectCatalog = defineCatalog(schema, {
 
 export type ConnectCatalog = typeof connectCatalog;
 
-/** The component names a connect spec may use. */
 export const CONNECT_COMPONENTS = Object.freeze([
 	"Card",
 	"Stack",
@@ -57,4 +81,5 @@ export const CONNECT_COMPONENTS = Object.freeze([
 	"Progress",
 	"Separator",
 	"Radio",
+	"Input",
 ] as const);

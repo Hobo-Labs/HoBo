@@ -17,7 +17,9 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+	createVercelBlobDefinition,
 	createVercelClaimDeploymentDefinition,
+	createVercelProjectDefinition,
 	createVercelSponsoredWebDefinition,
 	semanticsToSelectionCandidate,
 	VERCEL_BOOTSTRAP_STRATEGY_REF,
@@ -30,6 +32,67 @@ import {
 	VERCEL_SPONSORED_DEFINITIONS,
 	VERCEL_SPONSORED_WEB_DEFINITION_ID,
 } from "../src/index.js";
+
+describe("the native Vercel Blob definition", () => {
+	it("requires provider evidence and custody before treating Blob as usable", () => {
+		const blob = createVercelBlobDefinition();
+		expect(blob).toMatchObject({
+			id: "vercel.blob/v1",
+			providerId: "vercel",
+			port: "objectStore",
+			semantics: {
+				productId: "vercel.blob/v1",
+				evidenceSignatureValid: false,
+				secretCustodyAvailable: false,
+				sponsorExposureMinorUnits: 0,
+			},
+		});
+		expect(blob.semantics.implementsProfiles).toEqual([
+			expect.objectContaining({
+				profileId: "bucket.object/v1",
+				conformance: "unknown",
+			}),
+		]);
+		const verified = createVercelBlobDefinition({
+			conformance: "pass",
+			evidenceSignatureValid: true,
+			secretCustodyAvailable: true,
+		});
+		expect(verified.semantics.evidenceSignatureValid).toBe(true);
+		expect(verified.semantics.secretCustodyAvailable).toBe(true);
+		expect(verified.semantics.implementsProfiles[0]?.conformance).toBe("pass");
+	});
+});
+
+describe("the native Vercel project definition", () => {
+	it("requires independently verified ownership, permission and custody", () => {
+		const project = createVercelProjectDefinition();
+		expect(project).toMatchObject({
+			id: "vercel.project/v1",
+			providerId: "vercel",
+			port: "project",
+			semantics: {
+				productId: "vercel.project/v1",
+				evidenceSignatureValid: false,
+				secretCustodyAvailable: false,
+			},
+		});
+		expect(project.semantics.implementsProfiles).toEqual([
+			expect.objectContaining({
+				profileId: "web.project/v1",
+				conformance: "unknown",
+			}),
+		]);
+		const verified = createVercelProjectDefinition({
+			conformance: "pass",
+			evidenceSignatureValid: true,
+			secretCustodyAvailable: true,
+		});
+		expect(verified.semantics.evidenceSignatureValid).toBe(true);
+		expect(verified.semantics.secretCustodyAvailable).toBe(true);
+		expect(verified.semantics.implementsProfiles[0]?.conformance).toBe("pass");
+	});
+});
 
 describe("the sponsored Vercel product definitions", () => {
 	it("declares the three product ids on one transfer strategy", () => {
@@ -86,9 +149,10 @@ describe("the sponsored Vercel product definitions", () => {
 		// so it is rotated rather than revoked — and that costs an extra action.
 		expect(claim.semantics.claimActionCount).toBe(2);
 		expect(claim.semantics.continuity.credentials).toBe("rotated");
-		expect(claim.semantics.producesBindingProfiles).toContain(
-			"binding.postgresql/v1",
-		);
+		expect(claim.semantics.producesBindingProfiles).toEqual([
+			"binding.http/v1",
+		]);
+		expect(claim.semantics.claimAtomicity).toBe("best-effort-saga");
 	});
 
 	it("carries a source URL and the date it was checked", () => {
