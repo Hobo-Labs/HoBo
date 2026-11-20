@@ -11,13 +11,33 @@ choose or create a store for the owner, or start CI or CD solely to obtain a
 generic connection.
 
 Check that the active host exposes HoBo MCP tools. If it does not, inspect the
-project registration and launcher prerequisites, then use the host's supported
-discovery or reload mechanism. A server that answers a separate test client,
-or a configuration file on disk, does not prove that this agent session can
-call its tools. For linked worktrees, Codex may evaluate project trust against
-the primary checkout; inspect the host's disabled-configuration reason instead
-of assuming that trusting the worktree path is sufficient. The repository's
-supported registrations and startup steps are in
+project registration and launcher prerequisites, then try the host's supported
+discovery or reload mechanism. For linked worktrees, Codex may evaluate project
+trust against the primary checkout; inspect the host's disabled-configuration
+reason instead of assuming that trusting the worktree path is sufficient.
+
+If native tools are absent or startup needs diagnosis, initialize HoBo and list
+its tools through a separate MCP client. The repository's isolated cold-start
+test does this with the Cursor-registered launcher and temporary synthetic
+state:
+
+```sh
+pnpm --filter @hobo/hobo exec vitest run test/mcp-cold-start.test.ts -t 'serves MCP through the registered launcher from a nested directory'
+```
+
+The test does not exercise the Codex registration, the active host's actual
+environment, or an owner session. Check the intended host's launcher
+separately if it differs. When a separate client is usable, use it for
+permitted non-sensitive operations when practical; do not wait for native tool
+registration to do work it can safely perform. A separate client or a
+configuration file does not establish that this agent host has attached the
+server. Never route owner settings or credentials through agent-visible calls
+or client output.
+
+Report independent server startup, active-host attachment, and authenticated
+owner session as separate observations. Give a cause only when the evidence
+supports it; for example, a missing host tool alone does not establish a trust
+failure. The repository's supported registrations and startup steps are in
 [agent tooling](../../../docs/agent-tooling.md#hobo--hobos-own-mcp-server-this-repo).
 
 When HoBo is connected, use its owner setup flow to establish or reuse the

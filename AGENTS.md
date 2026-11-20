@@ -21,6 +21,13 @@ over conflicting repository workflow guidance.
   documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
+- When work needs an MCP server, check the active host's tools. If the server
+  is absent, inspect its registration and try supported discovery or reload;
+  where safe, also initialize and list tools through a separate client. Use
+  that client for permitted non-sensitive work when practical. Report server
+  availability, host attachment, and authenticated sessions as separate
+  observations, and do not assert a cause without evidence. Follow the
+  relevant setup skill before any private owner flow.
 - HoBo manages deployment of its CI relay. Its Vercel project is intentionally
   not Git-linked; do not reconnect it or treat the missing link as a defect.
 

@@ -290,6 +290,22 @@ authenticate a store. For a linked worktree, Codex may check trust against the
 primary checkout; its effective-configuration diagnostics identify a disabled
 project layer and the checkout whose trust it requires.
 
+If the active host has no HoBo tools, try its supported discovery or reload,
+then diagnose the server independently. From the checkout root, the following
+isolated test initializes HoBo and lists tools using the Cursor-registered
+launcher and synthetic temporary state:
+
+```sh
+pnpm --filter @hobo/hobo exec vitest run test/mcp-cold-start.test.ts -t 'serves MCP through the registered launcher from a nested directory'
+```
+
+This checks that launcher with synthetic state; it does not verify the active
+host's registration or actual environment, or an owner session. A separate MCP
+client may also perform authorized non-sensitive work when the host cannot
+attach the server. Report which client worked and which connection or private
+session step remains unverified; do not infer the cause of a missing host tool
+without evidence.
+
 Store selection through **`choose_secret_store`** is temporarily unavailable
 until HoBo supports a verified, scoped owner session. Do not collect store
 identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
