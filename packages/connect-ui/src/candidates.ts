@@ -60,9 +60,7 @@ function fieldCandidate(field: ConfigField): Candidate {
 				label: field.label,
 				name: field.name,
 				type:
-					field.kind === "secret"
-						? ("password" as const)
-						: ("text" as const),
+					field.kind === "secret" ? ("password" as const) : ("text" as const),
 				placeholder: field.description ?? null,
 				value: { $bindState: `/form/${field.name}` },
 				checks: fieldChecks(field),
@@ -72,7 +70,6 @@ function fieldCandidate(field: ConfigField): Candidate {
 	};
 }
 
-// public-contract: the marker compose.ts reads to tell required candidates from optional ones.
 export const OPTIONAL_SUFFIX = "-optional";
 
 function heading(text: string): Candidate {

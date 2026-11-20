@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-
+import { confirmLabelsForSpec } from "../src/client/confirm-labels.js";
 import {
 	type ConnectFlow,
 	type ConnectPage,
@@ -14,7 +14,6 @@ import {
 	isRenderableConnectSpec,
 	startConnectPage,
 } from "../src/index.js";
-import { confirmLabelsForSpec } from "../src/client/confirm-labels.js";
 import { stepView } from "../src/view.js";
 
 // The connect page: every step renders a valid spec from HoBo's own catalog,
@@ -150,10 +149,7 @@ describe("deterministicConnectSpec", () => {
 		const options = z
 			.object({ options: z.array(z.string()) })
 			.parse(field.props).options;
-		expect(options).toEqual([
-			"neon",
-			"supabase",
-		]);
+		expect(options).toEqual(["neon", "supabase"]);
 	});
 
 	it("puts the recommended OIDC store first and binds each choice to the flow action", () => {

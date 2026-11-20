@@ -67,7 +67,9 @@ function fingerprint(element: {
 	readonly on?: unknown;
 	readonly visible?: unknown;
 }): string {
-	const propsParsed = z.record(z.string(), z.unknown()).safeParse(element.props);
+	const propsParsed = z
+		.record(z.string(), z.unknown())
+		.safeParse(element.props);
 	const props = propsParsed.success
 		? {
 				...propsParsed.data,
@@ -106,10 +108,7 @@ export function isRenderableConnectSpec(spec: Spec): boolean {
 	for (const element of Object.values(spec.elements)) {
 		if (!knownComponents.has(element.type)) return false;
 		const press = PressBindingSchema.safeParse(element.on);
-		if (
-			press.success &&
-			!knownActions.has(press.data.press.action)
-		)
+		if (press.success && !knownActions.has(press.data.press.action))
 			return false;
 	}
 	return true;

@@ -16,9 +16,8 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
-
-import type { ConfigField } from "../steps.js";
 import { connectCatalog } from "../catalog.js";
+import type { ConfigField } from "../steps.js";
 import { confirmLabelsForSpec } from "./confirm-labels.js";
 import { formInitialState } from "./form-state.js";
 
@@ -39,7 +38,9 @@ function FormParamsBridge() {
 		formParamsRef.current = () => {
 			const direct = FormValuesSchema.safeParse(get("/form"));
 			if (direct.success) return direct.data;
-			const wrapped = z.object({ form: FormValuesSchema }).safeParse(get("/form"));
+			const wrapped = z
+				.object({ form: FormValuesSchema })
+				.safeParse(get("/form"));
 			return wrapped.success ? wrapped.data.form : {};
 		};
 	});
@@ -50,9 +51,7 @@ const formParamsRef = { current: (): Record<string, string> => ({}) };
 
 const confirmByLabelRef = { current: new Map<string, string>() };
 
-function ConnectButton(
-	props: Parameters<typeof shadcnComponents.Button>[0],
-) {
+function ConnectButton(props: Parameters<typeof shadcnComponents.Button>[0]) {
 	const confirm = confirmByLabelRef.current.get(props.props.label);
 	return (
 		<span data-agent-confirm={confirm}>
@@ -180,7 +179,10 @@ function toConfigField(field: ParsedConfigField): ConfigField {
 				"value" | "label"
 			>;
 			if (option.description !== undefined) {
-				return { ...row, description: option.description } satisfies ChoiceOption;
+				return {
+					...row,
+					description: option.description,
+				} satisfies ChoiceOption;
 			}
 			return row satisfies ChoiceOption;
 		});
@@ -287,10 +289,7 @@ function ConnectPage() {
 		[view],
 	);
 	const initialState = useMemo(
-		() =>
-			view === null
-				? {}
-				: formInitialState(view.spec, view.formFields),
+		() => (view === null ? {} : formInitialState(view.formFields)),
 		[view],
 	);
 
