@@ -1,5 +1,6 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { type AuthUser } from "wasp/auth";
+import { useAuth } from "wasp/client/auth";
 import { saveAdminProfile } from "wasp/client/operations";
 import * as z from "zod";
 import { Button } from "../../../client/components/ui/button";
@@ -14,6 +15,14 @@ import { Label } from "../../../client/components/ui/label";
 import { Textarea } from "../../../client/components/ui/textarea";
 import { Breadcrumb } from "../../layout/Breadcrumb";
 import { DefaultLayout } from "../../layout/DefaultLayout";
+import {
+  canSubmitSettings,
+  clearPhotoFileInput,
+  handlePhotoFileChange,
+  invalidatePhotoRead,
+  type PhotoDataUrlParser,
+  type PhotoReadControl,
+} from "./settingsPhotoRead";
 
 const maxPhotoBytes = 256 * 1024;
 
@@ -25,6 +34,13 @@ type Profile = {
 };
 
 export function SettingsPage({ user }: { user: AuthUser }) {
+  const { refetch: refetchAuth } = useAuth();
+  const photoReadControl = useRef<PhotoReadControl>({
+    generation: 0,
+    activeReader: null,
+  });
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [layoutUser, setLayoutUser] = useState(user);
   const [saved, setSaved] = useState<Profile>({
     fullName: user.fullName,
     phoneNumber: user.phoneNumber,
@@ -37,39 +53,36 @@ export function SettingsPage({ user }: { user: AuthUser }) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  const photoCallbacks = {
+    setReading: setReadingPhoto,
+    setDraftPhoto: (dataUrl: string) => {
+      setDraft((current) => ({ ...current, profilePhoto: dataUrl }));
+    },
+    setError,
+    clearError: () => setError(""),
+    clearNotice: () => setNotice(""),
+  };
+
   function changePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = "";
-    if (!file) return;
-    if (
-      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
-      file.size > maxPhotoBytes
-    ) {
-      setError("Choose a PNG, JPEG, or WebP image no larger than 256 KB.");
-      return;
-    }
-    const reader = new FileReader();
-    setReadingPhoto(true);
-    reader.onerror = () => {
-      setReadingPhoto(false);
-      setError("The image could not be read.");
-    };
-    reader.onload = () => {
-      setReadingPhoto(false);
-      const result = z.string().safeParse(reader.result);
-      if (!result.success) {
-        setError("The image could not be read.");
-        return;
-      }
-      setDraft((current) => ({ ...current, profilePhoto: result.data }));
-      setError("");
-      setNotice("");
-    };
-    reader.readAsDataURL(file);
+    clearPhotoFileInput(photoInputRef.current);
+    handlePhotoFileChange(
+      photoReadControl.current,
+      photoCallbacks,
+      file,
+      maxPhotoBytes,
+      ((result) => {
+        const parsed = z.string().safeParse(result);
+        return parsed.success ? parsed.data : null;
+      }) satisfies PhotoDataUrlParser,
+    );
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSubmitSettings(readingPhoto, saving)) {
+      return;
+    }
     setSaving(true);
     setError("");
     setNotice("");
@@ -82,7 +95,13 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       });
       setSaved(profile);
       setDraft(profile);
+      setLayoutUser((current) => ({ ...current, ...profile }));
       setNotice("Settings saved.");
+      try {
+        await refetchAuth();
+      } catch {
+        setNotice("Settings saved (session refresh is still catching up).");
+      }
     } catch {
       setError("Settings could not be saved. Check the fields and try again.");
     } finally {
@@ -91,7 +110,7 @@ export function SettingsPage({ user }: { user: AuthUser }) {
   }
 
   return (
-    <DefaultLayout user={user}>
+    <DefaultLayout user={layoutUser}>
       <div className="mx-auto max-w-4xl">
         <Breadcrumb pageName="Settings" />
         <form
@@ -111,7 +130,10 @@ export function SettingsPage({ user }: { user: AuthUser }) {
                     maxLength={100}
                     value={draft.fullName ?? ""}
                     onChange={(event) =>
-                      setDraft({ ...draft, fullName: event.target.value })
+                      setDraft((current) => ({
+                        ...current,
+                        fullName: event.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -123,7 +145,10 @@ export function SettingsPage({ user }: { user: AuthUser }) {
                     maxLength={40}
                     value={draft.phoneNumber ?? ""}
                     onChange={(event) =>
-                      setDraft({ ...draft, phoneNumber: event.target.value })
+                      setDraft((current) => ({
+                        ...current,
+                        phoneNumber: event.target.value,
+                      }))
                     }
                   />
                 </div>
@@ -146,7 +171,10 @@ export function SettingsPage({ user }: { user: AuthUser }) {
                   maxLength={1000}
                   value={draft.bio ?? ""}
                   onChange={(event) =>
-                    setDraft({ ...draft, bio: event.target.value })
+                    setDraft((current) => ({
+                      ...current,
+                      bio: event.target.value,
+                    }))
                   }
                 />
               </div>
@@ -167,6 +195,7 @@ export function SettingsPage({ user }: { user: AuthUser }) {
               <div className="space-y-2">
                 <Label htmlFor="profile-photo">Choose a photo</Label>
                 <Input
+                  ref={photoInputRef}
                   id="profile-photo"
                   type="file"
                   disabled={saving || readingPhoto}
@@ -182,7 +211,11 @@ export function SettingsPage({ user }: { user: AuthUser }) {
                   type="button"
                   variant="outline"
                   disabled={saving || readingPhoto}
-                  onClick={() => setDraft({ ...draft, profilePhoto: null })}
+                  onClick={() => {
+                    invalidatePhotoRead(photoReadControl.current, photoCallbacks);
+                    clearPhotoFileInput(photoInputRef.current);
+                    setDraft((current) => ({ ...current, profilePhoto: null }));
+                  }}
                 >
                   Remove photo
                 </Button>
@@ -197,6 +230,8 @@ export function SettingsPage({ user }: { user: AuthUser }) {
               variant="outline"
               disabled={saving || readingPhoto}
               onClick={() => {
+                invalidatePhotoRead(photoReadControl.current, photoCallbacks);
+                clearPhotoFileInput(photoInputRef.current);
                 setDraft(saved);
                 setError("");
                 setNotice("");

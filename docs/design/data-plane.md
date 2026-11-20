@@ -639,3 +639,43 @@ The same rule governs the other primitives. `kv.redis-compatible/v1` covers key/
 **Bindings are separate from provisioning.** A data product emits a portable `CapabilityBinding` — protocol endpoints as non-secret refs plus credential and certificate `secretRef`s — and a runtime-specific connectivity implementation projects it into the workload. Cloudflare Hyperdrive and the Neon serverless driver are two connectivity implementations of `binding.postgresql/v1`; neither is a database. A binding rotates without changing the logical resource identity, which is what makes post-claim credential rotation possible without rebinding every consumer.
 
 **Export and import are first-class.** Migration profiles (`migration.postgres.pg-dump/v1`, `migration.postgres.logical-copy/v1`, `migration.convex.snapshot/v1`) are declared by the product, executed behind injected process ports with argv arrays rather than shell strings, and verified — row and document counts, sampled hashes, files, indexes, health — before any cutover. A migration never destroys its source until the destination is verified, the connector is cut over, and the rollback window has closed.
+
+## Continuity policies: HA/DR, replication and migration
+
+A stateful resource declares how much of its data a failure may lose and how
+HoBo keeps it moving, through the SDK, with the `continuity` trait
+(`packages/bindles/src/continuity.ts`, ADR-0145 traits):
+`b.data().with(continuity({ tier: "standard" }))`. Tiers are cost-balanced
+starting points: `rebuildable` (state the workload rebuilds; nothing copied),
+`standard` (5-minute recovery point, one standby, daily backups) and
+`critical` (30 seconds, two standbys, hourly backups). Every field can be
+overridden, and a policy that cannot keep its promise is refused.
+
+`continuityFleetPlan` (`packages/backend-fleet/src/continuity.ts`) is the one
+mapping from the declared policy to the numbers the fleets run on: the
+`FleetPolicy` that `decideFleet` decides failover and cost-driven switches
+with, the standbys placement asks for, and the copy cadence (half the recovery
+point, never more often than 15 seconds). `continuityShortfalls` reports a
+running fleet that cannot keep the promise: too few standbys, a tick slower
+than the cadence, no quorum to fail over without the operator (fixed by a
+register-only witness), or every member on one vendor.
+
+Interrupted work resumes by construction. A copy is one transaction on the
+standby, so an interrupted copy leaves it unchanged and the next tick copies it
+whole. A move is a sealed register entry that the next tick completes or
+undoes. Opening a fleet runs a tick first.
+
+A move loses no committed write: the PostgreSQL fleet fences each write
+transaction on its member's own copy of the register (`SHARE` on the register
+table, which the seal's `INSERT` waits for), so a write either committed before
+the seal and is in the final copy, or is refused. Scheduled backups
+(`backupEveryMs`, `backupsKept`) are verified snapshot copies into a schema per
+backup on a witness, scheduled by their catalog rather than a process, and
+restorable into a standby or a replaced writer. `continuityShortfalls` also
+reports a plan whose backups have nowhere to go.
+
+HoBo's own projects declare theirs. The CD journal is `standard` with two
+standbys and runs on a PostgreSQL fleet (`createPostgresFleetEventStore`,
+`HOBO_CD_POSTGRES_FLEET`). The CI relay keeps no database, so all of its state
+is `rebuildable` from GitHub. See `packages/hobo-cd/README.md` and
+`packages/ci-vercel/README.md`.
