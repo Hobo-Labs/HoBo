@@ -112,12 +112,18 @@ function withProbes(
 			return { status: 200, headers: {}, body: "{}" };
 		if (request.url.startsWith("https://raw.githubusercontent.com/"))
 			return { status: 200, headers: {}, body: "<h1>HoBo</h1>" };
+		if (
+			/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/contents\/index\.html\?ref=gh-pages$/u.test(
+				request.url,
+			)
+		)
+			return { status: 200, headers: {}, body: "{}" };
 		return inner(request);
 	};
 }
 
-function seams(http: HttpTransport): ReleaseCdSeams {
-	return { http, now: clock(), drive: { passes: 40, intervalMs: 0 } };
+function seams(http: HttpTransport, passes = 40): ReleaseCdSeams {
+	return { http, now: clock(), drive: { passes, intervalMs: 0 } };
 }
 
 const env = {
@@ -529,7 +535,7 @@ describe.skipIf(!built)(
 				dist,
 				home,
 				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-				seams: seams(withProbes(github, [])),
+				seams: seams(withProbes(github, []), 700),
 			});
 			const head = world.commits.get(world.head("gh-pages"));
 			expect(head?.message).toBe(`deploy: ${COMMIT}`);

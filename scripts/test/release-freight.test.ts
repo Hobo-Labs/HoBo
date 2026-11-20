@@ -2,12 +2,15 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { pipelines } from "../../release/hobo-release.delivery.ts";
 import {
 	announceVerdict,
 	classifyRelease,
 	releaseCampId,
 	releaseDeclaration,
+	releaseDriveFor,
 	releaseFreightManifest,
+	RELEASE_DRIVE_PAGES,
 	releaseSource,
 	siteTree,
 } from "../ci/create-github-release.mts";
@@ -81,6 +84,25 @@ describe("release topology names", () => {
 		expect(releaseDeclaration("pages").resources.release.port).toBe(
 			"hobo:github.pages-site/v1",
 		);
+	});
+
+	it("gives Pages promotion drive longer than the verification progress window", () => {
+		const drive = releaseDriveFor("pages");
+		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
+		const budgetMs =
+			drive.passes * drive.intervalMs - drive.intervalMs;
+		expect(budgetMs).toBeGreaterThanOrEqual(300_000);
+	});
+
+	it("probes the Pages gh-pages index through the GitHub contents API", () => {
+		const pages = pipelines.find(
+			(pipeline) => pipeline.name === "hobo-release-pages",
+		);
+		expect(pages).toBeDefined();
+		for (const node of pages?.nodes ?? []) {
+			expect(node.verification.probes[0]?.urlRef).toContain("api.github.com");
+			expect(node.verification.probes[0]?.urlRef).toContain("ref=gh-pages");
+		}
 	});
 });
 

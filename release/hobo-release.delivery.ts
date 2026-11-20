@@ -103,14 +103,14 @@ const PROBE = {
 	npm: { url: "https://registry.npmjs.org/-/ping", status: 200 },
 	oci: { url: "https://ghcr.io/v2/", status: 401 },
 	pages: {
-		url: `https://raw.githubusercontent.com/${owner}/${repo}/gh-pages/index.html`,
+		url: `https://api.github.com/repos/${owner}/${repo}/contents/index.html?ref=gh-pages`,
 		status: 200,
 	},
 } as const satisfies Record<Family, Readonly<{ url: string; status: number }>>;
 
 function verification(family: Family) {
 	return {
-		windowMs: "10000",
+		windowMs: family === "pages" ? "300000" : "10000",
 		requiredObservations: 2,
 		progressDeadlineMs: "300000",
 		failOnNoData: true,
@@ -119,7 +119,7 @@ function verification(family: Family) {
 				name: `${family}-target`,
 				urlRef: PROBE[family].url,
 				expectStatus: PROBE[family].status,
-				intervalMs: "5000",
+				intervalMs: family === "pages" ? "10000" : "5000",
 				minSuccessRatio: 1,
 			},
 		],

@@ -44,6 +44,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // ── Release Freight ─────────────────────────────────────────────────────────
 
 const repoRoot = join(import.meta.dirname, "..", "..");
+const CORE_DIST = join(repoRoot, "packages/core/dist/index.js");
+
+type ReleaseHttpTransport = (
+	request: Readonly<{
+		method: string;
+		url: string;
+		headers: Readonly<Record<string, string>>;
+		body?: string;
+		timeoutMs: number;
+		maxResponseBytes: number;
+	}>,
+) => Promise<{
+	status: number;
+	headers: Readonly<Record<string, string>>;
+	body: string;
+}>;
 
 /** The built `hobo` package whose `hobo deploy` composition records and promotes. */
 export const HOBO_CLI_DIST = join(
@@ -314,6 +330,27 @@ export type ReleaseCdSeams = Readonly<{
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
 
+function githubApiProbeTransport(
+	env: Readonly<Record<string, string | undefined>>,
+	inner: ReleaseHttpTransport,
+): ReleaseHttpTransport {
+	const token = env.GITHUB_TOKEN?.trim();
+	if (!token) return inner;
+	return async (request) => {
+		if (!request.url.startsWith("https://api.github.com/")) return inner(request);
+		return inner({
+			...request,
+			headers: {
+				...request.headers,
+				authorization: `Bearer ${token}`,
+				accept: request.headers.accept ?? "application/vnd.github+json",
+				"x-github-api-version":
+					request.headers["x-github-api-version"] ?? "2022-11-28",
+			},
+		});
+	};
+}
+
 /**
  * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
  * store under `home`) with `release/hobo-release.delivery.ts` as its topology,
@@ -345,13 +382,24 @@ export async function openReleaseCd(options: {
 		HOBO_HOME: options.home,
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
+	const seamHttp = options.seams?.http as ReleaseHttpTransport | undefined;
+	let http = seamHttp;
+	if (!http) {
+		const { createBoundedFetchTransport } = await import(
+			pathToFileURL(CORE_DIST).href
+		);
+		http = githubApiProbeTransport(
+			options.env,
+			createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
+		);
+	}
 	const opened = await runtimeModule.openCdRuntime({
 		simulate: false,
 		cwd: repoRoot,
 		env,
 		home: options.home,
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
-		...(options.seams?.http ? { http: options.seams.http } : undefined),
+		...(http ? { http } : undefined),
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
 	});
 	if (!opened.ok)
@@ -539,6 +587,13 @@ export async function recordReleaseFreight(
 
 /** How long and how often a promotion is driven before it reads as blocked. */
 export const RELEASE_DRIVE = Object.freeze({ passes: 150, intervalMs: 2_000 });
+export const RELEASE_DRIVE_PAGES = Object.freeze({ passes: 200, intervalMs: 2_000 });
+
+export function releaseDriveFor(
+	family: ReleaseFamily,
+): { readonly passes: number; readonly intervalMs: number } {
+	return family === "pages" ? RELEASE_DRIVE_PAGES : RELEASE_DRIVE;
+}
 
 /**
  * Promote recorded release Freight into one channel's Camp through `hobo
@@ -577,7 +632,7 @@ export async function promoteReleaseFreight(
 			message: requested.message ?? "",
 		};
 	} else {
-		const drive = input.drive ?? RELEASE_DRIVE;
+		const drive = input.drive ?? releaseDriveFor(input.family);
 		for (let pass = 0; pass < drive.passes && !verdict; pass++) {
 			verdict = classifyRelease(promotionId, await cd.drive(promotionId, camp));
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
@@ -647,7 +702,7 @@ export async function qualifyReleaseCandidate(input: {
 			family: input.family,
 			channel: "candidate",
 			freightId,
-			...(input.seams?.drive ? { drive: input.seams.drive } : undefined),
+			drive: input.seams?.drive ?? releaseDriveFor(input.family),
 		});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
@@ -683,7 +738,7 @@ export async function promoteReleaseStable(
 				family,
 				channel: "stable",
 				freightId,
-				...(seams.drive ? { drive: seams.drive } : undefined),
+				drive: seams.drive ?? releaseDriveFor(family),
 			});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
