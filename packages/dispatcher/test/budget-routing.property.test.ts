@@ -145,6 +145,31 @@ describe("budget-aware dispatch properties", () => {
 		);
 	});
 
+	it("admits a charge that fits when exact decimals match but number rounding differed", () => {
+		const price = 1.1;
+		const units = 0.1111111111111111;
+		const spent = 0.12345678901234566;
+		const cap = 0.24567901123456787;
+		const input = oneProvider(price, cap, spent);
+		const result = decideDispatch({
+			...input,
+			category: "runner",
+			dispatchId: "decimal-boundary",
+			units,
+		});
+		expect(result.ok).toBe(true);
+		const ledger = createReservationLedger(input.ledgerView);
+		expect(
+			ledger.reserve({
+				providerId: "p",
+				dimension: DIMENSION,
+				reservationId: "decimal-boundary",
+				units,
+				expectedSeq: 0,
+			}).ok,
+		).toBe(true);
+	});
+
 	it("does not authorize a positive paid charge against a zero budget", () => {
 		fc.assert(
 			fc.property(fc.integer({ min: 1, max: 4 }), (multiple) => {

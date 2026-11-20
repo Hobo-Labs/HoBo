@@ -104,7 +104,7 @@ export function schedule(
 		mandatoryFailed,
 		mandatoryGate,
 	};
-	if (options.halted || free === 0 || (mandatoryFailed && !options.catchUp))
+	if (options.halted || free === 0 || mandatoryFailed)
 		return { ...base, candidates: [] };
 
 	if (options.catchUp) {
