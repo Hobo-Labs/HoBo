@@ -588,14 +588,18 @@ export function selectRelevantChecks(
 			file === "scripts/build-agent-plugin.mts" ||
 			file === "scripts/test/check-agent-plugin.test.ts" ||
 			file === "packages/hobo/test/agent-plugin-bundle.test.ts" ||
-			file.startsWith("tools/agent-plugins/schemas/"),
+			file.startsWith("tools/agent-plugins/schemas/") ||
+			file === "docs/agent-tooling.md" ||
+			file === "version.json" ||
+			file.startsWith(".agents/skills/hobo-setup/") ||
+			file.startsWith(".agents/skills/hobo-deploy/"),
 	);
 	if (agentPluginChanged) {
 		checks.push({
 			command: "pnpm",
 			args: ["run", "agent-plugin:check"],
 			reason:
-				"the plugins/hobo manifest, MCP wiring, and synced skills must satisfy Agent Plugins 1.0.0",
+				"the plugins/hobo manifest, MCP wiring, synced skills, agent-tooling extract, and release-train version pin must satisfy Agent Plugins 1.0.0",
 		});
 	}
 	if (

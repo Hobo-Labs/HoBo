@@ -895,9 +895,32 @@ test("agent-plugin changes select the Agent Plugins 1.0.0 gate", () => {
 		"plugins/hobo/skills/hobo-setup/SKILL.md",
 		"scripts/check-agent-plugin.ts",
 		"tools/agent-plugins/schemas/1.0.0/mcp.schema.json",
+		"docs/agent-tooling.md",
+		"version.json",
+		".agents/skills/hobo-setup/SKILL.md",
+		".agents/skills/hobo-setup/references/agent-tooling.md",
+		".agents/skills/hobo-deploy/SKILL.md",
 	]) {
 		assert.ok(
 			plan([file]).checks.some(
+				(check) =>
+					check.command === "pnpm" &&
+					check.args.join(" ") === "run agent-plugin:check",
+			),
+			file,
+		);
+	}
+});
+
+test("unrelated docs, config, or skill edits do not select the Agent Plugins gate", () => {
+	for (const file of [
+		"docs/design/index.md",
+		"packages/core/version.json",
+		".agents/skills/install-anti-slop/SKILL.md",
+		".agents/skills/hobo-setupx/SKILL.md",
+	]) {
+		assert.ok(
+			!plan([file]).checks.some(
 				(check) =>
 					check.command === "pnpm" &&
 					check.args.join(" ") === "run agent-plugin:check",

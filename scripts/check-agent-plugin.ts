@@ -10,6 +10,7 @@ import {
 	defaultNbgvRunner,
 	fixedTrainAlphaSemver,
 	loadVersionJsonHeightConfig,
+	type NbgvRunner,
 } from "./lib/nbgv-release-version.mts";
 
 export const PLUGIN_SCHEMA_ID =
@@ -677,10 +678,11 @@ function pluginManifestStaged(repoRoot: string): boolean {
 	return result.status === 0 && (result.stdout ?? "").trim().length > 0;
 }
 
-function versionPinCommitIsh(repoRoot: string): string {
+export function versionPinCommitIsh(repoRoot: string): string {
 	const headSha = process.env.GITHUB_HEAD_SHA?.trim();
 	if (headSha !== undefined && headSha.length > 0) return headSha;
-	if (process.env.GITHUB_EVENT_NAME?.trim() === "pull_request") {
+	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+	if (eventName === "pull_request" || eventName === "merge_group") {
 		const prHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
 			cwd: repoRoot,
 			encoding: "utf8",
@@ -691,12 +693,13 @@ function versionPinCommitIsh(repoRoot: string): string {
 	return "HEAD";
 }
 
-export function releaseTrainSemverForPluginCheck(repoRoot: string): string {
+export function releaseTrainSemverForPluginCheck(
+	repoRoot: string,
+	nbgv: NbgvRunner = defaultNbgvRunner(repoRoot),
+): string {
 	const config = loadVersionJsonHeightConfig(repoRoot);
 	const commitIsh = versionPinCommitIsh(repoRoot);
-	const height = Number(
-		defaultNbgvRunner(repoRoot)("VersionHeight", commitIsh),
-	);
+	const height = Number(nbgv("VersionHeight", commitIsh));
 	if (!Number.isInteger(height) || height < 0) {
 		throw new Error(`invalid VersionHeight at ${commitIsh}: ${height}`);
 	}

@@ -6,6 +6,17 @@ server (`mcp.json`, `bin/hobo-mcp.mjs`) plus the portable **hobo-setup** and
 `pnpm run agent-plugin:check` against the vendored 1.0.0 schemas in
 `tools/agent-plugins/schemas/1.0.0/`.
 
+## Version
+
+`plugin.json`'s `version` follows the repository's fixed alpha release train
+(`version.json` + Nerdbank.GitVersioning): `0.0.0-alpha.<height>`. The gate
+measures the height at the commit being reviewed — the PR branch tip
+(`GITHUB_HEAD_SHA`, else `HEAD^2` of the `pull_request` / `merge_group`
+checkout) — never at the synthetic merge ref, whose base-branch commits would
+inflate the height past the value the branch pinned. Locally, a staged
+`plugin.json` raises the expected height by one to account for the commit that
+has not been made yet.
+
 ## Build the MCP bundle
 
 `bin/hobo-mcp.mjs` is a build output (gitignored) because the single-file

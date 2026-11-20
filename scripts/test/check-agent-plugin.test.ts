@@ -1,9 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	AGENT_TOOLING_HEADING,
@@ -17,7 +18,9 @@ import {
 	parseFrontmatterBlock,
 	parseMcpConfig,
 	parsePluginManifest,
+	releaseTrainSemverForPluginCheck,
 	scanTextForSecrets,
+	versionPinCommitIsh,
 } from "../check-agent-plugin.ts";
 
 const repoRoot = path.resolve(
@@ -28,11 +31,69 @@ const realPluginRoot = path.join(repoRoot, "plugins/hobo");
 
 const scratches: string[] = [];
 afterEach(async () => {
+	vi.unstubAllEnvs();
 	while (scratches.length > 0) {
 		const dir = scratches.pop();
 		if (dir) await rm(dir, { recursive: true, force: true });
 	}
 });
+
+function git(root: string, ...args: string[]): string {
+	const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+	if (result.status !== 0) {
+		throw new Error(
+			`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`,
+		);
+	}
+	return (result.stdout ?? "").trim();
+}
+
+async function scratchMergeRepo(): Promise<{
+	repoRoot: string;
+	prHead: string;
+}> {
+	const root = await mkdtemp(path.join(tmpdir(), "hobo-agent-plugin-git-"));
+	scratches.push(root);
+	git(root, "init", "-q");
+	git(root, "config", "user.email", "test@example.com");
+	git(root, "config", "user.name", "Test");
+	git(root, "config", "commit.gpgsign", "false");
+	await writeFile(
+		path.join(root, "version.json"),
+		JSON.stringify({
+			version: "0.0.0-alpha.{height}",
+			versionHeightOffset: 3,
+		}),
+	);
+	git(root, "add", "version.json");
+	git(root, "commit", "-q", "-m", "base");
+	const baseBranch = git(root, "symbolic-ref", "--short", "HEAD");
+	git(root, "checkout", "-q", "-b", "pr");
+	await writeFile(path.join(root, "pr.txt"), "pr head\n");
+	git(root, "add", "pr.txt");
+	git(root, "commit", "-q", "-m", "pr head");
+	const prHead = git(root, "rev-parse", "HEAD");
+	git(root, "checkout", "-q", baseBranch);
+	git(root, "merge", "--no-ff", "-q", "-m", "merge pr", "pr");
+	expect(git(root, "rev-parse", "--verify", "HEAD^2")).toBe(prHead);
+	return { repoRoot: root, prHead };
+}
+
+function stubCiEnvironment(event: string, headSha = "") {
+	vi.stubEnv("GITHUB_EVENT_NAME", event);
+	vi.stubEnv("GITHUB_HEAD_SHA", headSha);
+}
+
+function recordingNbgv(height: string) {
+	const calls: Array<{ variable: string; commitIsh: string }> = [];
+	return {
+		calls,
+		nbgv: (variable: string, commitIsh?: string) => {
+			calls.push({ variable, commitIsh: commitIsh ?? "HEAD" });
+			return height;
+		},
+	};
+}
 
 async function scratchPlugin(
 	files: Record<string, string>,
@@ -460,5 +521,78 @@ describe("agent-tooling extract drift gate", () => {
 				issue.message.includes("agent-tooling"),
 			),
 		).toEqual([]);
+	});
+});
+
+describe("release-train version pin commit selection", () => {
+	it("prefers GITHUB_HEAD_SHA over the checked-out merge ref", async () => {
+		const { repoRoot } = await scratchMergeRepo();
+		const headSha = "b".repeat(40);
+		stubCiEnvironment("merge_group", headSha);
+		expect(versionPinCommitIsh(repoRoot)).toBe(headSha);
+		stubCiEnvironment("pull_request", headSha);
+		expect(versionPinCommitIsh(repoRoot)).toBe(headSha);
+	});
+
+	it("resolves the PR branch tip (HEAD^2) for pull_request and merge_group checkouts", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		stubCiEnvironment("pull_request");
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+		stubCiEnvironment("merge_group");
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+	});
+
+	it("falls back to HEAD outside PR events or on a non-merge checkout", async () => {
+		const { repoRoot } = await scratchMergeRepo();
+		stubCiEnvironment("push");
+		expect(versionPinCommitIsh(repoRoot)).toBe("HEAD");
+		stubCiEnvironment("workflow_dispatch");
+		expect(versionPinCommitIsh(repoRoot)).toBe("HEAD");
+		const root = await mkdtemp(path.join(tmpdir(), "hobo-agent-plugin-git-"));
+		scratches.push(root);
+		git(root, "init", "-q");
+		git(root, "config", "user.email", "test@example.com");
+		git(root, "config", "user.name", "Test");
+		git(root, "config", "commit.gpgsign", "false");
+		await writeFile(path.join(root, "seed.txt"), "seed\n");
+		git(root, "add", "seed.txt");
+		git(root, "commit", "-q", "-m", "only commit");
+		stubCiEnvironment("merge_group");
+		expect(versionPinCommitIsh(root)).toBe("HEAD");
+	});
+
+	it("measures the height at the PR branch tip, not the inflated merge ref", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		stubCiEnvironment("merge_group");
+		const recorder = recordingNbgv("5");
+		expect(releaseTrainSemverForPluginCheck(repoRoot, recorder.nbgv)).toBe(
+			"0.0.0-alpha.8",
+		);
+		expect(recorder.calls).toEqual([
+			{ variable: "VersionHeight", commitIsh: prHead },
+		]);
+	});
+
+	it("bumps the expected height only for a locally staged plugin.json at HEAD", async () => {
+		const { repoRoot } = await scratchMergeRepo();
+		await mkdir(path.join(repoRoot, "plugins/hobo"), { recursive: true });
+		await writeFile(
+			path.join(repoRoot, "plugins/hobo/plugin.json"),
+			JSON.stringify(validManifest),
+		);
+		git(repoRoot, "add", "plugins/hobo/plugin.json");
+		stubCiEnvironment("push");
+		const localStaged = recordingNbgv("5");
+		expect(releaseTrainSemverForPluginCheck(repoRoot, localStaged.nbgv)).toBe(
+			"0.0.0-alpha.9",
+		);
+		expect(localStaged.calls).toEqual([
+			{ variable: "VersionHeight", commitIsh: "HEAD" },
+		]);
+		git(repoRoot, "restore", "--staged", "plugins/hobo/plugin.json");
+		const untouched = recordingNbgv("5");
+		expect(releaseTrainSemverForPluginCheck(repoRoot, untouched.nbgv)).toBe(
+			"0.0.0-alpha.8",
+		);
 	});
 });
