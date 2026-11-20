@@ -1103,7 +1103,7 @@ export async function main(
 	const mode = args.route === "auto" ? settings.pin : args.route;
 	const mergeBatch =
 		event === "merge_group" &&
-		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
+		workflowFile(env) === "release-hobo.yml" &&
 		mode === "auto";
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(

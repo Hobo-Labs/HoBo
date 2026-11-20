@@ -146,7 +146,7 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
-	it("routes from the base action's code and policy and refuses missing base files", () => {
+	it("routes from the base action's code and handles missing base files by route kind", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-trusted-batch-"));
 		try {
 			const action = workflowDocument(
@@ -222,8 +222,8 @@ describe("base-controlled attestation verification", () => {
 			assert.equal(existsSync(marker), false);
 			rmSync(trustedPolicy);
 			const missingPolicy = run();
-			assert.notEqual(missingPolicy.child.status, 0);
-			assert.doesNotMatch(missingPolicy.output, /^runner=/mu);
+			assert.equal(missingPolicy.child.status, 0, missingPolicy.child.stderr);
+			assert.match(missingPolicy.output, /^runner=ubuntu-24.04$/mu);
 			rmSync(join(trusted, "scripts/ci/route-runner.mts"));
 			const missingScript = run();
 			assert.notEqual(missingScript.child.status, 0);

@@ -1489,6 +1489,34 @@ describe("the script reading the slip", () => {
 		labels: [label],
 		created_at: new Date(SLIP_NOW - seconds * 1000).toISOString(),
 	});
+	const mergeGroupCi = {
+		GITHUB_EVENT_NAME: "merge_group",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
+	};
+
+	it("routes merge-group CI to hobo-trunk on recent trunk pickup", async () => {
+		await withGithub(
+			observed([pickup("hobo"), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+			},
+		);
+	});
+
+	it("routes merge-group CI to GitHub-hosted when hobo-trunk has no recent pickup", async () => {
+		await withGithub(observed([]), async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+		});
+	});
 
 	it("keeps an open fleet slip only when its exact label is taking jobs", async () => {
 		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
