@@ -57,6 +57,9 @@ import {
 	FreightManifestRecordSchema,
 	FreightOrigin,
 	type FreightRecord,
+	HookKind,
+	HookPoint,
+	HookRecordSchema,
 	type PromotionId,
 	type PromotionRecord,
 	PromotionRecordSchema,
@@ -223,6 +226,12 @@ export type RelayDeliveryInput = Readonly<{
 	 * deployment; the promotion stays in flight in the journal.
 	 */
 	wait?: boolean;
+	finalizePromotion?: (
+		delivery: Readonly<{
+			report: RelayDeliveryReport;
+			handover: Readonly<Record<string, string>>;
+		}>,
+	) => Promise<RelayRealizationFailure | undefined>;
 	emitProgress?: (message: string) => void;
 }>;
 
@@ -257,6 +266,7 @@ export type RelayDeliveryOutcome =
 const DEFAULT_LIMIT_MS = 20 * 60_000;
 const DEFAULT_INTERVAL_MS = 10_000;
 const DEFAULT_FEED_WAIT_MS = 5_000;
+const RELAY_FINALIZATION_SUITE = "relay:finalize-promotion";
 
 const DISCARDING_TELEMETRY: TelemetrySink = Object.freeze({
 	spans: async () => {},
@@ -773,7 +783,47 @@ async function deliverWith(
 		...joined.map((yard) => relayYardRegistryProvider(yard, true)),
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
-	const suites = input.suites;
+	const finalizePromotion = input.finalizePromotion;
+	let finalizationFailure: RelayRealizationFailure | undefined;
+	const suites: VerifyPort | undefined =
+		finalizePromotion === undefined
+			? input.suites
+			: {
+					async run(request, ctx) {
+						if (request.suite !== RELAY_FINALIZATION_SUITE) {
+							if (input.suites !== undefined)
+								return input.suites.run(request, ctx);
+							return {
+								ok: false,
+								reasons: [
+									reason(
+										RELAY_DELIVERY_REFUSAL.unavailable,
+										`Verify suite ${request.suite} is not configured`,
+										"Compose the suite runner or remove the suite hook.",
+									),
+								],
+							};
+						}
+						const set = await cd.desired.current(request.campId);
+						const failure = await finalizePromotion({
+							report: report(promotion, set),
+							handover: set ? (realizer?.deployed(set.setId) ?? {}) : {},
+						});
+						if (failure === undefined)
+							return { ok: true, value: { finalized: true } };
+						finalizationFailure = failure;
+						return {
+							ok: false,
+							reasons: [
+								reason(
+									failure.code,
+									failure.message,
+									"Inspect the finalization failure before retrying delivery.",
+								),
+							],
+						};
+					},
+				};
 	const cd = composeContinuousDelivery({
 		base: { store, tenant: config.tenant, now },
 		factories: defaultCdFactories,
@@ -875,7 +925,31 @@ async function deliverWith(
 			};
 		records = loaded.value;
 	}
-	const refusedRecords = await applyRecords(cd, records, ctx);
+	const deliveryRecords: DeliveryModule =
+		finalizePromotion === undefined
+			? records
+			: {
+					...records,
+					pipelines: records.pipelines.map((pipelineRecord) => ({
+						...pipelineRecord,
+						nodes: pipelineRecord.nodes.map((pipelineNode) =>
+							pipelineRecord.name === pipeline && pipelineNode.name === node
+								? {
+										...pipelineNode,
+										hooks: [
+											...pipelineNode.hooks,
+											create(HookRecordSchema, {
+												kind: HookKind.SUITE,
+												point: HookPoint.AFTER_QUALIFIED,
+												ref: RELAY_FINALIZATION_SUITE,
+											}),
+										],
+									}
+								: pipelineNode,
+						),
+					})),
+				};
+	const refusedRecords = await applyRecords(cd, deliveryRecords, ctx);
 	if (refusedRecords.length > 0)
 		return {
 			ok: false,
@@ -1034,6 +1108,15 @@ async function deliverWith(
 		if (promotion && TERMINAL.has(promotion.state)) {
 			if (promotion.state === PromotionState.PROMOTED)
 				return { ok: true, report: report(promotion, set), handover };
+			if (finalizationFailure !== undefined)
+				return {
+					ok: false,
+					code: finalizationFailure.code,
+					message: finalizationFailure.message,
+					realization: finalizationFailure,
+					report: report(promotion, set),
+					handover,
+				};
 			const verificationFailed = promotion.reasons.some((entry) =>
 				entry.code.includes("verification"),
 			);

@@ -256,7 +256,7 @@ a manual run (Actions → HoBo relay deploy → Run workflow). It never asks any
 to deploy, holds no secret and reads no repository variable about the relay:
 its gate is the committed binding (no binding, or an unreadable one: a notice,
 and the job succeeds), and the deploy command signs in to the store with the
-job's GitHub Actions OIDC token as `hobo-ci-writer` and reads `VERCEL_TOKEN`
+job's GitHub Actions OIDC token as `hobo-ci-deploy` and reads `VERCEL_TOKEN`
 from the separate deploy project without logging it. A `route` job picks the
 runner first, as `hobo-ci.yml` does (the fleet while it takes jobs, an
 enrolled box, else GitHub-hosted), so a busy fleet no longer holds the deploy
@@ -283,7 +283,9 @@ because preview qualified it, sets the production Camp's non-secret
 configuration, waits for READY and verifies `/healthz` and `/readyz` (each must
 answer 200). In the workflow production is staged without assigning domains;
 HoBo promotes it only after it passes verification and then checks the public
-origin. When `--provision` is requested, the
+origin before the deploy deadline. Staged promotion requires a distinct previous
+production deployment; failed live verification restores it, marks the CD
+promotion failed, and runs its compensation. When `--provision` is requested, the
 cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,
 and, when `hobo-ci-cache` is missing, connects the team's resource of that name

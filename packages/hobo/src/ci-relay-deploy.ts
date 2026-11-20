@@ -980,6 +980,131 @@ export async function runCiRelayDeploy(
 				: undefined),
 		...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 		...(input.now !== undefined ? { now: input.now } : undefined),
+		...(stagedProduction
+			? {
+					finalizePromotion: async ({ handover }) => {
+						const safe = Object.fromEntries(
+							Object.entries({
+								...handover,
+								yard: placement.yard,
+								camp: placement.camp,
+							}).map(([key, value]) => [key, withoutToken(value)]),
+						);
+						const liveOrigin = relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL);
+						if (!safe.deploymentId || !liveOrigin || !sha)
+							return {
+								ok: false as const,
+								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+								message:
+									"The staged production deployment was not qualified; production traffic was not changed.",
+							};
+						if (clock() >= deadlineAt)
+							return {
+								ok: false as const,
+								code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
+								message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
+							};
+						let previousProduction: string | undefined;
+						try {
+							previousProduction =
+								await client.getProductionDeploymentId(project);
+							if (
+								previousProduction === undefined ||
+								previousProduction === safe.deploymentId
+							)
+								return {
+									ok: false as const,
+									code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+									message:
+										"Staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
+								};
+							await client.promoteDeployment(project, safe.deploymentId);
+						} catch (error) {
+							return realizationFailure(
+								error instanceof Error ? error : new Error("promotion failed"),
+								withoutToken,
+							);
+						}
+						let liveReady = false;
+						for (
+							let attempt = 0;
+							attempt < 24 && clock() < deadlineAt;
+							attempt++
+						) {
+							const live = commitCheckingProbe(baseProbe, {
+								origin: liveOrigin,
+								commit: sha.toLowerCase(),
+							});
+							try {
+								const request = (path: string) =>
+									live.transport({
+										method: "GET",
+										url: `${liveOrigin}${path}`,
+										headers: {},
+										timeoutMs: 10_000,
+										maxResponseBytes: 65_536,
+									});
+								const health = await request("/healthz");
+								const ready = await request("/readyz");
+								if (clock() >= deadlineAt) break;
+								const findings = live.findings();
+								if (
+									health.status === 200 &&
+									ready.status === 200 &&
+									findings.servedCommit === undefined &&
+									findings.healthStatus === undefined &&
+									findings.readyStatus === undefined &&
+									findings.readyzState === undefined &&
+									findings.notReady === undefined
+								) {
+									liveReady = true;
+									break;
+								}
+							} catch {
+								void 0;
+							}
+							const remaining = deadlineAt - clock();
+							if (attempt < 23 && remaining > 0)
+								await (
+									input.sleep ??
+									((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+								)(Math.min(5_000, remaining));
+						}
+						if (liveReady) return undefined;
+						let rollback: "restored" | "failed" | "superseded" | undefined;
+						let supersedingProduction: string | undefined;
+						try {
+							const currentProduction =
+								await client.getProductionDeploymentId(project);
+							if (currentProduction === safe.deploymentId) {
+								await client.promoteDeployment(project, previousProduction);
+								rollback = "restored";
+							} else {
+								rollback = "superseded";
+								supersedingProduction = currentProduction;
+							}
+						} catch {
+							rollback = "failed";
+						}
+						const supersededTarget =
+							supersedingProduction === undefined
+								? ""
+								: ` to ${supersedingProduction}`;
+						const rollbackNote =
+							rollback === "restored"
+								? ` The previous production deployment ${previousProduction} was restored.`
+								: rollback === "failed"
+									? " The automatic rollback failed; promote the previous deployment by hand."
+									: ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`;
+						return {
+							ok: false as const,
+							code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+							message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit before the deploy deadline.${rollbackNote}`,
+							data: { rollback },
+						};
+					},
+				}
+			: undefined),
 		emitProgress: input.emitProgress,
 	});
 	const delivery = delivered.ok
@@ -995,118 +1120,6 @@ export async function runCiRelayDeploy(
 			}).map(([key, value]) => [key, withoutToken(value)]),
 		);
 		const promoted = delivered.report.state === "PROMOTED";
-		if (stagedProduction) {
-			const liveOrigin = relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL);
-			if (!promoted || !safe.deploymentId || !liveOrigin || !sha)
-				return refused(
-					"HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-					"The staged production deployment was not qualified; production traffic was not changed.",
-				);
-			if (clock() >= deadlineAt)
-				return refused(
-					RELAY_DEPLOY_REFUSAL.budgetExhausted,
-					`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
-				);
-			let previousProduction: string | undefined;
-			try {
-				previousProduction = await client.getProductionDeploymentId(project);
-				await client.promoteDeployment(project, safe.deploymentId);
-			} catch (error) {
-				const failed = realizationFailure(
-					error instanceof Error ? error : new Error("promotion failed"),
-					withoutToken,
-				);
-				return {
-					ok: false,
-					code: failed.code,
-					message: failed.message,
-					data: { ...deliveryData },
-				};
-			}
-			let liveReady = false;
-			for (let attempt = 0; attempt < 24 && clock() < deadlineAt; attempt++) {
-				const live = commitCheckingProbe(baseProbe, {
-					origin: liveOrigin,
-					commit: sha.toLowerCase(),
-				});
-				try {
-					const request = (path: string) =>
-						live.transport({
-							method: "GET",
-							url: `${liveOrigin}${path}`,
-							headers: {},
-							timeoutMs: 10_000,
-							maxResponseBytes: 65_536,
-						});
-					const health = await request("/healthz");
-					const ready = await request("/readyz");
-					const findings = live.findings();
-					if (
-						health.status === 200 &&
-						ready.status === 200 &&
-						findings.servedCommit === undefined &&
-						findings.healthStatus === undefined &&
-						findings.readyStatus === undefined &&
-						findings.readyzState === undefined &&
-						findings.notReady === undefined
-					) {
-						liveReady = true;
-						break;
-					}
-				} catch {
-					void 0;
-				}
-				const remaining = deadlineAt - clock();
-				if (attempt < 23 && remaining > 0)
-					await (
-						input.sleep ??
-						((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
-					)(Math.min(5_000, remaining));
-			}
-			if (!liveReady) {
-				let rollback: "restored" | "failed" | "superseded" | undefined;
-				let supersedingProduction: string | undefined;
-				if (
-					previousProduction !== undefined &&
-					previousProduction !== safe.deploymentId
-				) {
-					try {
-						const currentProduction =
-							await client.getProductionDeploymentId(project);
-						if (currentProduction === safe.deploymentId) {
-							await client.promoteDeployment(project, previousProduction);
-							rollback = "restored";
-						} else {
-							rollback = "superseded";
-							supersedingProduction = currentProduction;
-						}
-					} catch {
-						rollback = "failed";
-					}
-				}
-				const supersededTarget =
-					supersedingProduction === undefined
-						? ""
-						: ` to ${supersedingProduction}`;
-				const rollbackNote =
-					rollback === "restored"
-						? ` The previous production deployment ${previousProduction} was restored.`
-						: rollback === "failed"
-							? " The automatic rollback failed; promote the previous deployment by hand."
-							: rollback === "superseded"
-								? ` Production traffic was concurrently moved${supersededTarget}; the automatic rollback left it untouched.`
-								: "";
-				return {
-					ok: false,
-					code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-					message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit.${rollbackNote}`,
-					data: {
-						...deliveryData,
-						...(rollback !== undefined ? { rollback } : undefined),
-					},
-				};
-			}
-		}
 		return {
 			code: "HOBO_CI_DEPLOYED",
 			message: [
