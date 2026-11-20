@@ -79,6 +79,7 @@
         "@hobo/bindles#build",
         "@hobo/ci#build",
         "@hobo/claims#build",
+        "@hobo/cloud#build",
         "@hobo/connectivity#build",
         "@hobo/core#build",
         "@hobo/dispatcher#build",
