@@ -20,6 +20,10 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
+		"./cd-platform": {
+			"types": "./dist/cd-platform.d.ts",
+			"default": "./dist/cd-platform.js"
+		},
 		"./hosting-mutation-journal": {
 			"types": "./dist/hosting-mutation-journal.d.ts",
 			"default": "./dist/hosting-mutation-journal.js"
