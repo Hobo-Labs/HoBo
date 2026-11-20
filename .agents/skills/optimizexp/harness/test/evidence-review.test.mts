@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,22 +10,22 @@ function seed(dir: string, review: Record<string, unknown>) {
 	mkdirSync(dir, { recursive: true });
 	// A TUI recording must be a real multi-event asciicast — a single buffered
 	// frame is what the synthetic-cast guard rejects.
-	writeFileSync(
-		path.join(dir, "primary.cast"),
-		[
+	const cast = [
 			JSON.stringify({ version: 2, width: 80, height: 24 }),
 			JSON.stringify([0.12, "o", "first frame"]),
 			JSON.stringify([0.44, "o", "second frame"]),
 			"",
-		].join("\n"),
-	);
+		].join("\n");
+	writeFileSync(path.join(dir, "primary.cast"), cast);
+	const hash = createHash("sha256").update(cast).digest("hex");
 	writeFileSync(path.join(dir, "meta.json"), JSON.stringify({
 		driver: "tui",
 		degraded: false,
 		claims: [{ id: "claim-1", text: "When I start the product" }],
-		primary: { file: "primary.cast", kind: "recording", sha256: "abc", bytes: 4 },
+		primary: { file: "primary.cast", kind: "recording", sha256: hash, bytes: Buffer.byteLength(cast) },
 	}));
-	writeFileSync(path.join(dir, "review.json"), JSON.stringify(review));
+	writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({ primaryPath: "primary.cast", kind: "recording" }));
+	writeFileSync(path.join(dir, "review.json"), JSON.stringify({ ...review, artifactSha256: review.artifactSha256 === "abc" ? hash : review.artifactSha256 }));
 }
 
 describe("evidence review gate", () => {
@@ -63,14 +64,14 @@ describe("synthetic recording guard", () => {
 		const root = mkdtempSync(path.join(tmpdir(), "oxp-synthetic-"));
 		try {
 			mkdirSync(root, { recursive: true });
-			writeFileSync(
-				path.join(root, "primary.cast"),
-				[
+			const cast = [
 					JSON.stringify({ version: 2, width: 80, height: 24 }),
 					JSON.stringify([0.9, "o", "everything at once"]),
 					"",
-				].join("\n"),
-			);
+				].join("\n");
+			writeFileSync(path.join(root, "primary.cast"), cast);
+			const hash = createHash("sha256").update(cast).digest("hex");
+			writeFileSync(path.join(root, "manifest.json"), JSON.stringify({ primaryPath: "primary.cast", kind: "recording" }));
 			writeFileSync(
 				path.join(root, "meta.json"),
 				JSON.stringify({
@@ -80,8 +81,8 @@ describe("synthetic recording guard", () => {
 					primary: {
 						file: "primary.cast",
 						kind: "recording",
-						sha256: "abc",
-						bytes: 4,
+						sha256: hash,
+						bytes: Buffer.byteLength(cast),
 					},
 				}),
 			);
@@ -94,7 +95,7 @@ describe("synthetic recording guard", () => {
 					completeness: "complete",
 					coverageMode: "full-journey",
 					coveredClaims: [],
-					artifactSha256: "abc",
+					artifactSha256: hash,
 					notes: "playback shows the whole journey end to end",
 				}),
 			);

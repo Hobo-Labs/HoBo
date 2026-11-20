@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createInfisicalClient,
 	type InfisicalAuth,
@@ -150,7 +150,7 @@ describe("OIDC login and reads", () => {
 		});
 		const error = await caught(client().listSecrets());
 		expect(error.code).toBe("forbidden");
-		expect(error.reqId).toBe("req-403");
+		expect(error.reqId).toBeUndefined();
 		expect(sleeps).toEqual([]);
 	});
 
@@ -439,5 +439,132 @@ describe("redaction", () => {
 			expect(rendered).not.toContain("value-that-must-not-leak");
 		}
 		expect(token).not.toBe("");
+	});
+});
+
+describe("secret write uncertainty", () => {
+	it.each([
+		400, 401, 403,
+	])("does not expose a provider field echoing the written value on HTTP %i", async (status) => {
+		const secret = "privateownervalue";
+		const send = vi.fn<typeof fetch>(async () =>
+			Response.json({ reqId: secret }, { status }),
+		);
+		const c = createInfisicalClient({
+			binding: parseInfisicalBinding({ siteUrl: server.url, ...scope }),
+			auth: { method: "access-token", accessToken: "fixture-token" },
+			fetch: send,
+		});
+		const error = await caught(c.putSecret("KEY", secret));
+		expect(
+			`${error.message} ${error.stack} ${JSON.stringify(error)}`,
+		).not.toContain(secret);
+		expect(error.reqId).toBeUndefined();
+		expect(send).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([
+		{ method: "PATCH", failure: "response" },
+		{ method: "PATCH", failure: "transport" },
+		{ method: "POST", failure: "response" },
+		{ method: "POST", failure: "transport" },
+	] as const)("does not replay an applied $method after a $failure failure", async ({
+		method,
+		failure,
+	}) => {
+		const secret = "fixture-private-value";
+		let stored = "initial";
+		const send = vi.fn<typeof fetch>(async (_url, init) => {
+			expect(init?.method).toBe(method);
+			stored = secret;
+			if (send.mock.calls.length === 1) {
+				stored = "newer-independent-value";
+				if (failure === "transport") throw new Error(secret);
+				return new Response("{}", { status: 503 });
+			}
+			return Response.json({ secret: { version: 1 } });
+		});
+		const c = createInfisicalClient({
+			binding: parseInfisicalBinding({ siteUrl: server.url, ...scope }),
+			auth: { method: "access-token", accessToken: "fixture-token" },
+			fetch: send,
+			sleep: async () => {},
+		});
+		const error = await caught(
+			method === "PATCH"
+				? c.putSecret("KEY", secret)
+				: c.createSecret("KEY", secret),
+		);
+		expect(error).toMatchObject({ code: "write-uncertain", retryable: false });
+		expect(send).toHaveBeenCalledTimes(1);
+		expect(stored).toBe("newer-independent-value");
+		expect(
+			`${error.message} ${error.stack} ${JSON.stringify(error)}`,
+		).not.toContain(secret);
+	});
+
+	it("does not reauthenticate and replay a write after a 401", async () => {
+		fake.fail(
+			(request) =>
+				request.method === "PATCH" &&
+				request.path.startsWith("/api/v4/secrets"),
+			{ status: 401, body: {} },
+		);
+		const error = await caught(client().putSecret("KEY", "fixture"));
+		expect(error.code).toBe("unauthorized");
+		expect(
+			fake.requests.filter((request) => request.method === "PATCH"),
+		).toHaveLength(1);
+		expect(logins()).toBe(1);
+	});
+
+	it("does not replay the create fallback after an uncertain POST", async () => {
+		const send = vi.fn<typeof fetch>(async (_url, init) =>
+			init?.method === "PATCH"
+				? new Response("{}", { status: 404 })
+				: new Response("{}", { status: 503 }),
+		);
+		const c = createInfisicalClient({
+			binding: parseInfisicalBinding({ siteUrl: server.url, ...scope }),
+			auth: { method: "access-token", accessToken: "fixture-token" },
+			fetch: send,
+		});
+		expect((await caught(c.putSecret("KEY", "fixture"))).code).toBe(
+			"write-uncertain",
+		);
+		expect(send.mock.calls.map(([, init]) => init?.method)).toEqual([
+			"PATCH",
+			"POST",
+		]);
+	});
+
+	it.each([
+		408, 429,
+	])("does not replay a write after HTTP %i", async (status) => {
+		const send = vi.fn<typeof fetch>(
+			async () => new Response("{}", { status }),
+		);
+		const c = createInfisicalClient({
+			binding: parseInfisicalBinding({ siteUrl: server.url, ...scope }),
+			auth: { method: "access-token", accessToken: "fixture-token" },
+			fetch: send,
+		});
+		expect((await caught(c.putSecret("KEY", "fixture"))).code).toBe(
+			"write-uncertain",
+		);
+		expect(send).toHaveBeenCalledTimes(1);
+	});
+
+	it("reports an invalid successful write receipt as uncertain", async () => {
+		const send = vi.fn<typeof fetch>(async () => Response.json({}));
+		const c = createInfisicalClient({
+			binding: parseInfisicalBinding({ siteUrl: server.url, ...scope }),
+			auth: { method: "access-token", accessToken: "fixture-token" },
+			fetch: send,
+		});
+		expect((await caught(c.putSecret("KEY", "fixture"))).code).toBe(
+			"write-uncertain",
+		);
+		expect(send).toHaveBeenCalledTimes(1);
 	});
 });
