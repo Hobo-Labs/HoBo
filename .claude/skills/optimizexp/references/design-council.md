@@ -253,7 +253,8 @@ Policy-aware SDLC review runs set
 records `designerConsensus.required`, `reviewId`, `baseSha`, `headSha`, and the
 current `proposalPath`. A `required: false` decision must instead provide
 changed paths, acceptance tags, and a deterministic
-`internal-no-public-behavior` exemption. Run `assert-complete` replays persona
+`no-visual-design-change` exemption (the legacy `internal-no-public-behavior`
+code remains valid). Run `assert-complete` replays persona
 votes, recomputes the manifest, and fails on a missing decision, rejected
 exemption, nay, stale base/head/proposal, short vote history, blocker, or
 state/bus mismatch. Legacy non-SDLC runs remain unchanged.
@@ -267,12 +268,18 @@ current-head validation does not fail on reviewed recordings or screenshots.
 
 ## SDLC gate
 
-A change is design-relevant when paths or acceptance tags touch user-facing web,
-TUI, CLI, docs, SDK/API, configuration, onboarding, examples, brand, motion,
-interaction, `DESIGN.md`, design tokens, components, public errors, or OptimizeXP
-evidence; when user/coordinator explicitly requests review; or when a prior
-council cycle exists. A purely internal refactor may use a machine-readable,
-justified exemption. Skipping silently is invalid.
+A change requires the design council when it changes a visual or interactive
+surface identified by the classifier, has a UX, design, brand, accessibility,
+journey, or interaction acceptance tag, is explicitly requested for council
+review, or has a prior council cycle. Technical contracts, nonvisual documentation,
+package metadata, and CLI/API implementation alone do not trigger the council.
+Use a machine-readable `no-visual-design-change` exemption with a justification
+for those changes, and include the actual acceptance tags in the decision.
+They still require independent review and validation of their
+behavior, contracts, usability, and documentation. Visual surfaces still require
+visual validation. The classifier includes the known TypeScript files that
+embed rendered HTML; when adding another such file, update that list and its
+tests. Skipping the classification silently is invalid.
 
 For each design-relevant PR layer, SDLC closeout runs rubber-duck, adversarial,
 independent review, evidence refresh, council, rework when needed, comment/check
