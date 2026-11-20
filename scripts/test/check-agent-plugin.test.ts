@@ -329,6 +329,13 @@ describe("checkPluginScopedPath", () => {
 			1,
 		);
 		expect(checkPluginScopedPath("", "./skills/../..")).toHaveLength(1);
+		expect(checkPluginScopedPath("", "../outside.mjs")).toHaveLength(1);
+		expect(checkPluginScopedPath("", "foo/../../outside")).toHaveLength(1);
+		expect(checkPluginScopedPath("", "..\\outside.mjs")).toHaveLength(1);
+		expect(checkPluginScopedPath("", "foo\\..\\outside")).toHaveLength(1);
+		expect(
+			checkPluginScopedPath("", "${PLUGIN_ROOT}\\..\\outside.mjs"),
+		).toHaveLength(1);
 	});
 });
 

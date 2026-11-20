@@ -50,6 +50,13 @@ describe("parseSkillFrontmatter", () => {
 		expect(parsed).toEqual({ name: "sdlc", description: "run the loop" });
 	});
 
+	it("decodes quoted name and description scalars", () => {
+		const parsed = parseSkillFrontmatter(
+			"---\nname: 'sdlc'\ndescription: \"run the loop\"\n---\n# body\n",
+		);
+		expect(parsed).toEqual({ name: "sdlc", description: "run the loop" });
+	});
+
 	it("throws typed errors on missing block, name, or description", () => {
 		expect(() => parseSkillFrontmatter("# no frontmatter")).toThrow(
 			SkillParseError,
@@ -129,6 +136,23 @@ describe("checkSkillsConformance", () => {
 		expect(bySkill.get("hobo-deploy")).toBe("non-string-metadata");
 		expect(bySkill.get("draft")).toBe("name-folder-mismatch");
 		expect(bySkill.get("repo")).toBe("non-string-metadata");
+	});
+
+	it("validates decoded metadata scalar types and quoted strings", async () => {
+		const root = await scratchTree({
+			"hobo-setup":
+				"---\nname: hobo-setup\ndescription: d\nmetadata:\n  version: 1\n  enabled: true\n---\n",
+			"hobo-deploy":
+				'---\nname: hobo-deploy\ndescription: d\nmetadata:\n  empty: ""\n---\n',
+			draft: '---\nname: draft\ndescription: d\nmetadata:\n  version: "1"\n  enabled: \'true\'\n---\n',
+		});
+		const issues = await checkSkillsConformance(root);
+		const invalid = issues.filter((issue) => issue.skill !== "draft");
+		expect(invalid).toHaveLength(3);
+		expect(invalid.every((issue) => issue.code === "non-string-metadata")).toBe(
+			true,
+		);
+		expect(issues.some((issue) => issue.skill === "draft")).toBe(false);
 	});
 
 	it("keeps third-party skills outside the default strict set", () => {

@@ -587,6 +587,7 @@ export function selectRelevantChecks(
 			file === "scripts/check-agent-plugin.ts" ||
 			file === "scripts/build-agent-plugin.mts" ||
 			file === "scripts/test/check-agent-plugin.test.ts" ||
+			file.startsWith("packages/agent-skills/") ||
 			file === "packages/hobo/test/agent-plugin-bundle.test.ts" ||
 			file.startsWith("tools/agent-plugins/schemas/") ||
 			file === "docs/agent-tooling.md" ||

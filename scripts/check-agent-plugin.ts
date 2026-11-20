@@ -272,8 +272,7 @@ export function checkPluginScopedPath(
 			message: "path looks like it embeds a secret value",
 		});
 	}
-	if (!rooted.startsWith("<root>") && !rooted.startsWith("./")) return issues;
-	if (rooted.includes("/..") || rooted.includes("../")) {
+	if (rooted.split(/[\\/]/u).includes("..")) {
 		issues.push({
 			file: where,
 			message: `plugin-scoped path "${value}" must not traverse outside the plugin root`,

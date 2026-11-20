@@ -56,16 +56,16 @@ export function parseSkillFrontmatter(
 ): Omit<SkillManifestEntry, "entry"> {
 	const frontmatter = parseFrontmatterFields(markdown);
 	const name = frontmatter.fields.get("name");
-	if (name === undefined || name.length === 0) {
+	if (name?.kind !== "string" || name.value.length === 0) {
 		throw new SkillParseError("frontmatter is missing a non-empty name");
 	}
 	const description = frontmatter.fields.get("description");
-	if (description === undefined || description.length === 0) {
+	if (description?.kind !== "string" || description.value.length === 0) {
 		throw new SkillParseError(
-			`skill "${name}" frontmatter is missing a non-empty description`,
+			`skill "${name.value}" frontmatter is missing a non-empty description`,
 		);
 	}
-	return Object.freeze({ name, description });
+	return Object.freeze({ name: name.value, description: description.value });
 }
 
 export const HOBO_OWNED_ALLOWED_FIELDS: readonly string[] = [
@@ -87,25 +87,66 @@ export const HOBO_OWNED_SKILLS: readonly string[] = [
 	"sdlc",
 ] as const;
 
+type YamlScalar =
+	| { readonly kind: "string"; readonly value: string }
+	| { readonly kind: "number"; readonly value: number }
+	| { readonly kind: "boolean"; readonly value: boolean }
+	| { readonly kind: "null"; readonly value: null };
+
 type FrontmatterFields = {
-	readonly fields: ReadonlyMap<string, string>;
-	readonly children: ReadonlyMap<string, ReadonlyMap<string, string>>;
+	readonly fields: ReadonlyMap<string, YamlScalar>;
+	readonly children: ReadonlyMap<string, ReadonlyMap<string, YamlScalar>>;
 	readonly deeplyNested: ReadonlySet<string>;
 };
+
+function parseYamlScalar(value: string): YamlScalar {
+	const scalar = value.trim();
+	if (
+		scalar.length >= 2 &&
+		scalar.startsWith('"') &&
+		scalar.endsWith('"')
+	) {
+		try {
+			return { kind: "string", value: String(JSON.parse(scalar)) };
+		} catch {
+			return { kind: "string", value: scalar.slice(1, -1) };
+		}
+	}
+	if (
+		scalar.length >= 2 &&
+		scalar.startsWith("'") &&
+		scalar.endsWith("'")
+	) {
+		return {
+			kind: "string",
+			value: scalar.slice(1, -1).replaceAll("''", "'"),
+		};
+	}
+	if (/^(?:true|false)$/iu.test(scalar)) {
+		return { kind: "boolean", value: scalar.toLowerCase() === "true" };
+	}
+	if (scalar === "" || scalar === "~" || /^null$/iu.test(scalar)) {
+		return { kind: "null", value: null };
+	}
+	if (/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/iu.test(scalar)) {
+		return { kind: "number", value: Number(scalar) };
+	}
+	return { kind: "string", value: scalar };
+}
 
 function parseFrontmatterFields(markdown: string): FrontmatterFields {
 	const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(markdown);
 	if (!match || match[1] === undefined) {
 		throw new SkillParseError("SKILL.md has no frontmatter block");
 	}
-	const fields = new Map<string, string>();
-	const children = new Map<string, Map<string, string>>();
+	const fields = new Map<string, YamlScalar>();
+	const children = new Map<string, Map<string, YamlScalar>>();
 	const deeplyNested = new Set<string>();
 	let currentNestedField: string | undefined;
 	for (const line of match[1].split(/\r?\n/u)) {
 		const top = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
 		if (top && top[1] !== undefined && top[2] !== undefined) {
-			fields.set(top[1], top[2].trim());
+			fields.set(top[1], parseYamlScalar(top[2]));
 			currentNestedField =
 				top[2].trim() === "" && top[1] !== "name" && top[1] !== "description"
 					? top[1]
@@ -121,7 +162,9 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 				deeplyNested.add(currentNestedField);
 				continue;
 			}
-			children.get(currentNestedField)?.set(child[1], child[2].trim());
+			children
+				.get(currentNestedField)
+				?.set(child[1], parseYamlScalar(child[2]));
 		}
 	}
 	return { fields, children, deeplyNested };
@@ -154,11 +197,14 @@ function strictSkillIssues(
 		}
 	}
 	const name = frontmatter.fields.get("name");
-	if (name !== undefined && name !== skill) {
+	if (
+		name !== undefined &&
+		(name.kind !== "string" || name.value !== skill)
+	) {
 		issues.push({
 			skill,
 			code: "name-folder-mismatch",
-			message: `frontmatter name "${name}" does not match folder "${skill}"`,
+			message: `frontmatter name "${name.value}" does not match folder "${skill}"`,
 		});
 	}
 	const metadata = frontmatter.children.get("metadata");
@@ -186,7 +232,7 @@ function strictSkillIssues(
 			});
 		}
 		for (const value of children.values()) {
-			if (value === "") {
+			if (value.kind !== "string" || value.value.length === 0) {
 				issues.push({
 					skill,
 					code: "non-string-metadata",

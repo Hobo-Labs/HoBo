@@ -6,7 +6,7 @@
 	"scripts": {
 		"actions:lint": "node --import tsx scripts/lint-actions.ts",
 		"agent-plugin:build": "pnpm exec turbo run build --filter=@hobo/hobo... && node --import tsx scripts/build-agent-plugin.mts",
-		"agent-plugin:check": "node --import tsx scripts/check-agent-plugin.ts",
+		"agent-plugin:check": "pnpm exec turbo run build --filter=@hobo/agent-skills && node --import tsx scripts/check-agent-plugin.ts",
 		"agent:check": "node --experimental-strip-types scripts/dx-preflight.mts agent:check",
 		"architecture:guard": "node scripts/check-architecture-guardrails.mjs",
 		"architecture:guard:all": "node scripts/check-architecture-guardrails.mjs --all",
