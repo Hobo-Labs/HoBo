@@ -352,7 +352,8 @@ function referencesSecretInput(
 	if (names.length === 0) return false;
 	const named = names.map(propertyAccessPattern).join("|");
 	const starIndex = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
-	const pattern = String.raw`\b${caseFoldLiteral("inputs")}\b\s*(?:${named}|\.\s*\*|${starIndex}|(?![\s]*[.\[]))`;
+	const dynamicIndex = String.raw`\[\s*(?!${staticNeedsIndex()}\s*\])[\s\S]*?\]`;
+	const pattern = String.raw`\b${caseFoldLiteral("inputs")}\b\s*(?:${named}|\.\s*\*|${starIndex}|${dynamicIndex}|(?![\s]*[.\[]))`;
 	return texts.some((text) => patternMatches(pattern, text));
 }
 
@@ -564,7 +565,7 @@ function referencesNeedsAccess(
 	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
 	if (
 		patternMatches(
-			String.raw`\bfromJSON\s*\(\s*${groupedNeeds(jobReference)}(?:\s*${jobPropertyPattern(access)}|[^)]*)\s*\)`,
+			String.raw`\b${caseFoldLiteral("fromJSON")}\s*\(\s*${groupedNeeds(jobReference)}(?:\s*${jobPropertyPattern(access)}|[^)]*)\s*\)`,
 			text,
 		)
 	) {

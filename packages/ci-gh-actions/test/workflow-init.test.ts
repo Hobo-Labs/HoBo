@@ -907,6 +907,46 @@ jobs:
 		expect(standings(planOf(source))).toEqual(["ship skipped uses_secrets"]);
 	});
 
+	it.each([
+		["a computed bracket index", "inputs[format('{0}_token', 'deploy')]"],
+		["an indirect bracket index", "inputs[inputs.token_name]"],
+		[
+			"a context-driven bracket index",
+			"inputs[github.event.inputs.token_name]",
+		],
+		["a case-insensitive indirect bracket index", "INPUTS[inputs.TOKEN_NAME]"],
+	])("fails closed when a job reads a secret input through %s", (_what, reference) => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      size:
+        type: string
+      token_name:
+        type: string
+      deploy_token:
+        type: secret
+jobs:
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./deploy.sh
+        env:
+          TOKEN: \${{ ${reference} }}
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ inputs.size }} \${{ inputs['size'] }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"ship skipped uses_secrets",
+			"test ready",
+		]);
+		expect(standings(planOf(source, { includeSecretJobs: true }))).toEqual([
+			"ship ready",
+			"test ready",
+		]);
+	});
+
 	it("leaves a job ready that reads only inputs no one declared secret", () => {
 		const source = `on:
   workflow_call:
@@ -2048,6 +2088,10 @@ ${caller}`;
 		"!(needs).route.outputs.runner",
 		"toJSON((needs).route)",
 		"TOJSON( ( ( NEEDS ) . ROUTE ) )",
+		"fromJSON(needs.route).runner",
+		"FromJson(needs.route).runner",
+		"FROMJSON(needs['route']).runner",
+		"FROMJSON( ( NEEDS.ROUTE ) ).runner",
 	])("fails closed when routing reads %s", (expression) => {
 		const source = `jobs:
   lint:
