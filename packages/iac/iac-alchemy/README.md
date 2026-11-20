@@ -9,6 +9,7 @@ library. Install the package's pinned Alchemy peer and its declared Effect peers
 in the host application.
 The Rivet integration is tested against `@alchemy.run/rivet` beta.87 and its
 RivetKit 3 runtime dependency.
+Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 Run `pnpm --filter @hobo/iac-alchemy lint` to check the adapter's formatting and
