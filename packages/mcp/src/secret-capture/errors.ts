@@ -25,6 +25,14 @@ export type SecretCaptureCode =
 	| "SECRET_CAPTURE_ATTEMPTS_EXHAUSTED"
 	| "SECRET_CAPTURE_INVALID_INPUT"
 	| "SECRET_CAPTURE_WRITER_CLIENT_ID_REQUIRED"
+	/** A remote box whose host shows neither an MCP App nor an elicitation form. */
+	| "SECRET_CAPTURE_NO_OWNER_FORM"
+	/** A value whose link the owner has not been given yet: no form until they have. */
+	| "SECRET_CAPTURE_LINK_FIRST"
+	/** The host withdrew the form (it cancelled the call) before the owner answered. */
+	| "SECRET_CAPTURE_NOT_ANSWERED"
+	/** The owner declined or closed the host's form. */
+	| "SECRET_CAPTURE_DECLINED"
 	/** The app-only submit tool was called by a host that did not negotiate MCP Apps. */
 	| "MCP_APPS_NOT_NEGOTIATED";
 

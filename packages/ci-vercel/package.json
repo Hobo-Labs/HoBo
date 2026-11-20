@@ -41,6 +41,7 @@
     "@hobo/pricing": "workspace:*",
     "@hobo/provider-manifest": "workspace:*",
     "@hobo/provider-vercel": "workspace:*",
+    "@hobo/testing": "workspace:*",
     "@hobo/yards": "workspace:*",
     "esbuild": "0.28.1",
     "jose": "6.2.4"

@@ -3,6 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	BudgetEntitlementSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
 	HostingQuoteSchema,
@@ -41,6 +42,19 @@ function setup() {
 			pool: another,
 		}),
 	};
+}
+function addEntitlement(snapshot: BudgetLedgerSnapshot, kind: string) {
+	snapshot.entitlements = [
+		create(BudgetEntitlementSchema, {
+			bucketId: "credit",
+			kind,
+			unit: "micros",
+			periodId: "p1",
+			remainingUnits: 10,
+			observedAt: NOW,
+			validUntil: "2026-10-31T00:00:00Z",
+		}),
+	];
 }
 async function reserve(
 	authority: ReturnType<typeof createPostgresBudgetAdmissionAuthority>,
@@ -140,6 +154,31 @@ describe.skipIf(!URL)(
 				first.claimExecution({ ...input, expectedSeq: fresh.seq + 1 }),
 			).rejects.toThrow("budget sequence conflict");
 			expect((await second.lookup("ci:a"))?.executionDigest).toBe("execution");
+		});
+		it("rejects a kindless fresh seed before inserting a partition", async () => {
+			const { first, snapshot } = setup();
+			addEntitlement(snapshot, "");
+			await expect(first.initialize()).rejects.toThrow("entitlement scope");
+		});
+		it("normalizes a legacy persisted base without validating the reopen seed", async () => {
+			const { first, second, pool, snapshot } = setup();
+			addEntitlement(snapshot, "credit");
+			await first.initialize();
+			const id = createHash("sha256")
+				.update(
+					JSON.stringify([
+						snapshot.identity?.tenantId,
+						snapshot.identity?.budgetId,
+					]),
+				)
+				.digest("hex");
+			const updated = await pool.query(
+				"UPDATE hobo_budget_partitions SET base_body=(base_body::jsonb #- '{entitlements,0,kind}')::text WHERE id=$1",
+				[id],
+			);
+			expect(updated.rowCount).toBe(1);
+			addEntitlement(snapshot, "credit");
+			expect((await second.read(NOW)).entitlements[0]?.kind).toBe("allowance");
 		});
 		it("reopens the same durable journal without re-seeding a larger balance", async () => {
 			const { first, snapshot } = setup();
