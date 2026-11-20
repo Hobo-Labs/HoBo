@@ -143,24 +143,38 @@ export function quoteAvailablePricing(
 			"PRICING_INPUT_TOO_LARGE",
 			"pricing input exceeds the bounded data limits",
 		);
-	if (!isExactProtoMessage(PricingAvailabilitySchema, availability))
+	let stable: PricingAvailability;
+	try {
+		stable = cloneData(availability);
+	} catch {
 		return failed(
 			"PRICING_MODEL_INVALID",
 			"pricing availability contains unsupported or malformed data",
 		);
-	if (availability.state.case === "unavailable") {
-		const reason = availability.state.value.reason;
+	}
+	if (!isBoundedPricingInput(stable))
+		return failed(
+			"PRICING_INPUT_TOO_LARGE",
+			"pricing input exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(PricingAvailabilitySchema, stable))
+		return failed(
+			"PRICING_MODEL_INVALID",
+			"pricing availability contains unsupported or malformed data",
+		);
+	if (stable.state.case === "unavailable") {
+		const reason = stable.state.value.reason;
 		return validName(reason)
 			? failed("PRICING_MODEL_UNAVAILABLE", reason)
 			: failed("PRICING_MODEL_INVALID", "unavailable pricing needs a reason");
 	}
-	if (availability.state.case !== "developerModel") {
+	if (stable.state.case !== "developerModel") {
 		return failed(
 			"PRICING_MODEL_UNAVAILABLE",
 			"pricing availability was not declared",
 		);
 	}
-	const { scope, scenario } = availability.state.value;
+	const { scope, scenario } = stable.state.value;
 	if (
 		scope === undefined ||
 		scenario === undefined ||
@@ -248,6 +262,12 @@ export function quoteAvailablePricing(
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== workload.usage.length) {
+			return failed(
+				"PRICING_MODEL_INCOMPLETE",
+				"workload usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !measured.has(dimension)) ||
 			[...measured].some((dimension) => !dimensions.includes(dimension))
@@ -259,7 +279,14 @@ export function quoteAvailablePricing(
 		}
 	}
 	const quote = quoteScenarioV2(scenario);
-	if (!isQuoteVector(quote)) return failed(quote.code, quote.message);
+	if (!isQuoteVector(quote))
+		return failed(
+			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
+				quote.code === "PRICING_FIXED_SELECTOR_UNAVAILABLE"
+				? "PRICING_MODEL_INCOMPLETE"
+				: quote.code,
+			quote.message,
+		);
 	if (
 		!hasExplicitUnreferencedFixedCoverage(
 			catalog,

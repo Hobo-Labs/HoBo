@@ -5,6 +5,9 @@ description: Use HoBo's owner hand-off and secret-store session when deploying a
 
 # Deploying with HoBo
 
+Use the [HoBo setup skill](../hobo-setup/SKILL.md) for the initial MCP connection
+and owner-store session before starting a deployment-specific ceremony.
+
 Use the HoBo CLI and its owner hand-off for provider connections. The owner
 chooses an existing secret store; the run opens it through HoBo's common store
 interface. Do not select a provider because a token happens to be available,
@@ -53,6 +56,12 @@ reports completion.
 ## Running `hobo ci up` / `hobo cd up` for the owner
 
 You are usually in a box the owner cannot reach (a remote managed session).
+If the project HoBo MCP server is missing, check the project MCP registration
+and its startup prerequisites before reporting it unavailable. In a fresh
+checkout, install the workspace dependencies and run
+`pnpm exec turbo run build --filter=@hobo/hobo...`; then use the host's
+supported MCP discovery or reload mechanism. A successful build or a listed
+server does not establish that a private owner form is available or safe.
 Never give the owner a `127.0.0.1`/`localhost` link, a port to forward, or a
 tunnel to set up: they cannot complete those. A handed-off run serves
 nothing in the box and nothing calls back into it. A privacy-verified hand-off

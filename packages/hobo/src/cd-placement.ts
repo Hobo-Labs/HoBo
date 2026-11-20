@@ -145,10 +145,6 @@ export function retainPreparedOnDown(next: Executor): Executor {
 	};
 }
 
-/**
- * The directory of CD's Vercel deployable (`packages/cd-vercel`) for a CD
- * project: itself when it declares a Yard, else the bundled one beside it.
- */
 export function cdVercelDirFor(projectDir: string): string | undefined {
 	for (const candidate of [
 		projectDir,
@@ -159,7 +155,6 @@ export function cdVercelDirFor(projectDir: string): string | undefined {
 	return undefined;
 }
 
-/** CD's Vercel Yard and the Yards its junction (`cdJunction`) joins to it. */
 export async function loadCdYards(
 	dir: string,
 ): Promise<readonly Yard[] | undefined> {
@@ -168,7 +163,6 @@ export async function loadCdYards(
 	return [yard, ...(await loadRelayJoinedYards(dir, yard, "cdJunction"))];
 }
 
-/** A registry of exactly these Yards' offerings. */
 export function yardsRegistry(yards: readonly Yard[]): PlannerRegistry {
 	return createRegistryFromProviders(
 		yards.map((yard) => relayYardRegistryProvider(yard)),
@@ -179,12 +173,6 @@ function projectOf(input: Parameters<CommandModule["run"]>[0]): string {
 	return input.context.projectDir ?? input.flags.cwd ?? input.context.cwd;
 }
 
-/**
- * `hobo cd plan`: place CD on its own Yards (CD on Vercel, joined to the
- * journal and config Yards), whatever this machine has registered, as `hobo
- * ci plan` places the relay. A CD project with no Vercel deployable beside it
- * plans with this machine's providers plus the journal and config Yards.
- */
 export function createCdPlanCommand<R extends YardRuntime>(
 	runtime: R,
 	planWith: (runtime: R) => CommandModule,
@@ -222,27 +210,38 @@ function refusedUp(
 }
 
 export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
-	/** The run's trusted vault: the Vercel token prepare put there. */
 	credentials: TrustedVault;
 	runtime: R;
-	/** Converge with a runtime (the broker-aware `up`). */
 	upWith: (runtime: R) => CommandModule;
-	/** Test seam: the checkout's branch and commit. */
-	head?: (dir: string) => Promise<{ ref: string; sha: string } | undefined>;
-	/** Test seam: the Vercel deploy provider. */
-	deployProvider?: (
+	resolveGitHead?: (
+		dir: string,
+	) => Promise<{ ref: string; sha: string } | undefined>;
+	vercelDeployProvider?: (
 		options: Omit<VercelDeployProviderOptions, "fetch">,
 	) => IacProvider;
 }>;
 
-/**
- * `hobo cd up` once prepare has connected Vercel: place CD on its own Yards
- * and converge, with an executor that delivers CD's Vercel deployable
- * (`packages/cd-vercel`) as a git deployment of the current commit to CD's
- * preview, as `hobo ci up` delivers the relay. One Vercel deployment realizes
- * the API and the tick; the journal and config are recorded as prepare made
- * them. Production stays an explicit promotion.
- */
+function convergeCdUpWithoutBundledVercelYard<R extends YardRuntime>(
+	deps: CdVercelUpDeps<R>,
+	input: Parameters<CommandModule["run"]>[0],
+): Promise<CommandResult> {
+	const teamId = deps.credentials.reveal("VERCEL_TEAM_ID");
+	return deps
+		.upWith({
+			...cdPlacementRuntime(deps.runtime),
+			executor: createInProcessExecutor({
+				iac: routePreparedPlacements(
+					(deps.vercelDeployProvider ?? createVercelDeployProvider)({
+						token: deps.credentials.reveal("VERCEL_TOKEN") ?? "",
+						...(teamId !== undefined ? { teamId } : undefined),
+						projectName: "hobo-cd",
+					}),
+				),
+			}),
+		})
+		.run(input);
+}
+
 export function createCdVercelUpCommand<R extends YardRuntime>(
 	deps: CdVercelUpDeps<R>,
 ): CommandModule {
@@ -253,25 +252,9 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 		async run(input) {
 			const dir = cdVercelDirFor(projectOf(input));
 			const yards = dir === undefined ? undefined : await loadCdYards(dir);
-			if (dir === undefined || yards === undefined) {
-				// No Vercel deployable beside this CD project: converge as before.
-				const teamId = team();
-				return deps
-					.upWith({
-						...cdPlacementRuntime(deps.runtime),
-						executor: createInProcessExecutor({
-							iac: routePreparedPlacements(
-								(deps.deployProvider ?? createVercelDeployProvider)({
-									token: token(),
-									...(teamId !== undefined ? { teamId } : undefined),
-									projectName: "hobo-cd",
-								}),
-							),
-						}),
-					})
-					.run(input);
-			}
-			const head = await (deps.head ?? gitHead)(dir);
+			if (dir === undefined || yards === undefined)
+				return convergeCdUpWithoutBundledVercelYard(deps, input);
+			const head = await (deps.resolveGitHead ?? gitHead)(dir);
 			if (head === undefined)
 				return refusedUp(
 					"HOBO_CD_UP_NO_BRANCH",
@@ -311,7 +294,9 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 					return value === undefined ? [] : [[setting, value]];
 				}),
 			);
-			const provider = (deps.deployProvider ?? createVercelDeployProvider)({
+			const provider = (
+				deps.vercelDeployProvider ?? createVercelDeployProvider
+			)({
 				token: token(),
 				...(teamId !== undefined ? { teamId } : undefined),
 				projectName: placement.project,

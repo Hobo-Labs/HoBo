@@ -8,6 +8,7 @@ import {
 	type FeedResponse,
 } from "@hobo/cd";
 import { defaultRetention } from "@hobo/cd/compose";
+import { asCamp } from "@hobo/cd/rollout";
 import {
 	type CdServiceHost,
 	createCdControlApi,
@@ -110,15 +111,32 @@ function passSucceededAtMs(data: unknown): number | undefined {
 	return undefined;
 }
 
-function passSucceededCamps(data: unknown): number | undefined {
+function passSucceededCampIds(data: unknown): readonly CampId[] | undefined {
 	if (data === null || typeof data !== "object") return undefined;
 	for (const [key, value] of Object.entries(data)) {
-		if (key !== "camps") continue;
-		return typeof value === "number" && Number.isFinite(value)
-			? value
-			: undefined;
+		if (key !== "campIds") continue;
+		if (!Array.isArray(value)) return undefined;
+		const ids: CampId[] = [];
+		for (const entry of value) {
+			if (typeof entry !== "string" || entry.length === 0) return undefined;
+			ids.push(asCamp(entry));
+		}
+		return ids;
 	}
 	return undefined;
+}
+
+function campIdsMatchManaged(
+	recorded: readonly CampId[],
+	expected: readonly CampId[],
+): boolean {
+	if (recorded.length !== expected.length) return false;
+	const left = [...recorded].sort();
+	const right = [...expected].sort();
+	for (let index = 0; index < left.length; index += 1) {
+		if (left[index] !== right[index]) return false;
+	}
+	return true;
 }
 
 function refusalCodeOf(error: unknown): string {
@@ -210,17 +228,23 @@ export async function composeCdHost(
 		return revision;
 	}
 
-	async function recordSuccessfulPass(campsReconciled: number): Promise<void> {
+	async function recordSuccessfulPass(
+		campIds: readonly CampId[],
+		allowRecord: () => boolean,
+	): Promise<void> {
+		if (!allowRecord()) return;
 		const atMs = runtime.ctx.now();
 		const event = {
 			type: HOST_PASS_SUCCEEDED,
-			data: { atMs, camps: campsReconciled },
+			data: { atMs, campIds: [...campIds] },
 			meta: { idempotencyKey: `host-pass:${input.holderId}:${atMs}` },
 		};
 		let lastError: unknown;
 		for (let attempt = 0; attempt < 2; attempt += 1) {
+			if (!allowRecord()) return;
 			try {
 				const expectedSeq = await hostPassRevision();
+				if (!allowRecord()) return;
 				await runtime.store.append(hostPassStream, [event], {
 					expectedSeq,
 					actor: servicePrincipal,
@@ -252,9 +276,9 @@ export async function composeCdHost(
 					: stored;
 				if (candidate === undefined) continue;
 				if (candidate - now > HOST_PASS_FUTURE_SKEW_MS) continue;
-				const camps = passSucceededCamps(event.data);
-				if (camps === undefined || camps < 0) continue;
-				if (managed.length > 0 && camps < managed.length) continue;
+				const campIds = passSucceededCampIds(event.data);
+				if (campIds === undefined) continue;
+				if (!campIdsMatchManaged(campIds, managed)) continue;
 				atMs = candidate;
 			}
 			return atMs;
@@ -325,7 +349,10 @@ export async function composeCdHost(
 			.catch(() => undefined);
 	}
 
-	async function runPass(signal: AbortSignal): Promise<CdPassReport> {
+	async function runPass(
+		signal: AbortSignal,
+		allowRecord: () => boolean,
+	): Promise<CdPassReport> {
 		if (signal.aborted) throw abortErrorOf(signal);
 		const fleet = await claimFleetPass();
 		if (!fleet.held)
@@ -375,20 +402,26 @@ export async function composeCdHost(
 					}
 				}
 			if (signal.aborted) throw abortErrorOf(signal);
-			const tick = await service.tick();
-			if (signal.aborted) throw abortErrorOf(signal);
-			const passCounts =
+			const reconcilesOk =
 				refusals.length === 0 &&
-				(camps.length === 0 || managed.length > 0) &&
+				managed.length > 0 &&
 				reconciled.length === managed.length &&
-				reconciled.every((entry) => entry.ok) &&
-				tick.store;
-			if (passCounts) {
+				reconciled.every((entry) => entry.ok);
+			const tick = reconcilesOk ? await service.tick() : undefined;
+			if (signal.aborted) throw abortErrorOf(signal);
+			const passCounts = reconcilesOk && tick?.store;
+			if (passCounts && allowRecord()) {
 				if (signal.aborted) throw abortErrorOf(signal);
-				await recordSuccessfulPass(reconciled.length);
+				await recordSuccessfulPass(managed, allowRecord);
 			}
 			return Object.freeze({
-				tick,
+				tick:
+					tick ??
+					Object.freeze({
+						atMs: runtime.ctx.now(),
+						store: storeHealthy(),
+						steps: Object.freeze([]),
+					}),
 				reconciled: Object.freeze(reconciled),
 				skipped: false,
 			});
@@ -425,13 +458,23 @@ export async function composeCdHost(
 								once: true,
 							});
 					});
-		const running = runPass(signal);
+		let recordPassOutcome = true;
+		const suppressRecord = () => {
+			recordPassOutcome = false;
+		};
+		deadline.addEventListener("abort", suppressRecord, { once: true });
+		if (external !== undefined)
+			external.addEventListener("abort", suppressRecord, { once: true });
+		const running = runPass(signal, () => recordPassOutcome);
 		void running.catch(() => undefined);
 		const racers: Promise<CdPassReport>[] = [running, deadlineRejection];
 		if (abortRejection !== undefined) racers.push(abortRejection);
 		const bounded = (async (): Promise<CdPassReport> => {
 			try {
 				return await Promise.race(racers);
+			} catch (error) {
+				if (deadline.aborted) recordPassOutcome = false;
+				throw error;
 			} finally {
 				if (onExternalAbort !== undefined)
 					external?.removeEventListener("abort", onExternalAbort);

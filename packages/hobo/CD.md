@@ -207,6 +207,29 @@ and untracked files. It rejects unsafe paths, symlinks, submodules, missing Git
 objects, and snapshots above its file-count or byte limits; it does not fetch
 missing objects. Reading a snapshot does not deploy it.
 
+The reader gives Git a minimal environment: the executable search path, the
+Windows system root when needed, and an explicit Git discovery ceiling when
+configured. Owner-session values are not inherited. Global and system Git
+configuration are disabled, so a `safe.directory` exception defined only there
+does not apply; read the repository as its owner or make it accessible without
+that exception. The synthetic environment-isolation and missing-object tests
+currently skip Windows; that platform's behavior remains unverified.
+
+Vercel source preparation reads that pinned snapshot and produces a deployment
+manifest plus content-addressed upload bytes. The manifest uses file uploads
+without a Git-connected Vercel project; production plans require a new build,
+disable automatic domain assignment, and include an operation identifier.
+Optional archives are gzip-compressed tar files with the
+`.vercel/source.tgz.part1` marker. If an archive exceeds the 32 MiB request
+limit, the plan falls back to individual files, each still subject to that
+limit. Preparation does not call Vercel or authorize an upload, build,
+promotion, or rollback. Archive extraction and [emulator checks](../providers/provider-vercel/README.md#deployment-test-emulator)
+use synthetic fixtures and do not establish live provider behavior. The
+emulator caps aggregate file content at 32 MiB, so it can refuse an
+individual-file fallback plan even when each upload is within the request limit.
+Production dispatch still needs a durable, owner-authorized boundary and a
+request-bound terminal outcome.
+
 ```ts
 // hobo.delivery.ts
 export const camps = [
@@ -258,9 +281,9 @@ platform function with no loop uses the same host: `handle` answers one
 request, and `pass` reconciles each MANAGED Camp once and runs one tick.
 Built with `readiness: "composed"` (the Vercel host), its `/readyz`
 answers 200 only when the journal's durable pass record — a
-`host.PassSucceeded` event appended to the `cd-host-pass` stream after a
-fully successful pass — is fresh within the readiness window and a live
-journal probe succeeds. A function never starts the service's loop, so
+`host.PassSucceeded` event on the `cd-host-pass` stream whose `campIds`
+match the current managed camps — is fresh within the readiness window
+and a live journal probe succeeds. A function never starts the service's loop, so
 readiness is read from the journal every request, never from a
 process-local latch; any function instance sees the same record. With
 `fleetPassLease`, one holder at a time claims the shared fleet pass

@@ -219,16 +219,9 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			trail.push(`cd: ${fourth.slice(0, 900)}`);
 			expect(fourth).not.toContain(copied);
 			expect(world.blocked).toEqual([]);
-			// Every provider call went through the box's proxy: a call that
-			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach
-			// the internet directly, or fail on an enterprise network.
 			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
-			// Nothing more is asked of the owner: no sign-in, approval, store or
-			// hand-off refusal remains, and the CD project converges: the
-			// journal and config as prepare made them, the API and the tick as
-			// one git deployment of packages/cd-vercel to CD's preview.
 			expect(fourth).toContain("HOBO_OK");
 			expect(fourth).toContain(
 				"hobo cd up deployed 4 resources (cd-api, cd-config, cd-journal, cd-tick)",
@@ -253,8 +246,6 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
-			// Runtime verification: every property derived from the ceremony's
-			// spec holds on this real run, and it reached the frontier.
 			const events = eventsFromWire(server.wire);
 			const verdicts = [
 				...ceremonyProperties({ secrets: [copied, jwt] }),

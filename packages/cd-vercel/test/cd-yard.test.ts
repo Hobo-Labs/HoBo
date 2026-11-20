@@ -108,7 +108,7 @@ describe("HoBo.CD on Vercel: Yard, platform and Bindle agree", () => {
 		expect(profiles).not.toContain(capability.data.postgres);
 	});
 
-	it("declares production and preview camps for git delivery", () => {
+	it("declares production and preview camps on the CD Yard", () => {
 		expect(cdYard.camps.map((camp) => camp.id)).toEqual([
 			"hobo-cd/production",
 			"hobo-cd/preview",

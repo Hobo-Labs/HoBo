@@ -502,6 +502,12 @@ export function quoteTargetPricing(
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== workload.usage.length) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"baseline usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !validName(dimension)) ||
 			new Set(dimensions).size !== dimensions.length ||
@@ -559,6 +565,12 @@ export function quoteTargetPricing(
 		const measured = new Set(
 			candidate.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== candidate.usage.length) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"candidate usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !validName(dimension)) ||
 			new Set(dimensions).size !== dimensions.length ||
@@ -576,7 +588,14 @@ export function quoteTargetPricing(
 		});
 	}
 	const quote = quoteScenarioV2(scenario);
-	if (!isQuoteVector(quote)) return refuse(quote.code, quote.message);
+	if (!isQuoteVector(quote))
+		return refuse(
+			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
+				quote.code === "PRICING_FIXED_SELECTOR_UNAVAILABLE"
+				? "TARGET_PRICING_INCOMPLETE"
+				: quote.code,
+			quote.message,
+		);
 	if (
 		!hasExplicitUnreferencedFixedCoverage(
 			catalog,
