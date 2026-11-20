@@ -3,6 +3,31 @@ import { schema } from "@json-render/react/schema";
 import { shadcnComponentDefinitions as ui } from "@json-render/shadcn/catalog";
 import { z } from "zod";
 
+import { SECRET_STORE_IDS } from "./steps.js";
+
+export const RadioOptionSchema = z.object({
+	label: z.string(),
+	value: z.string(),
+});
+
+const BindableValueSchema = z.union([
+	z.string().nullable(),
+	z.object({ $bindState: z.string() }),
+]);
+
+const RadioDefinition = {
+	...ui.Radio,
+	props: ui.Radio.props.extend({
+		options: z.array(RadioOptionSchema),
+		value: BindableValueSchema,
+	}),
+};
+
+const InputDefinition = {
+	...ui.Input,
+	props: ui.Input.props.extend({ value: BindableValueSchema }),
+};
+
 export const connectCatalog = defineCatalog(schema, {
 	components: {
 		Card: ui.Card,
@@ -15,8 +40,8 @@ export const connectCatalog = defineCatalog(schema, {
 		Link: ui.Link,
 		Progress: ui.Progress,
 		Separator: ui.Separator,
-		Radio: ui.Radio,
-		Input: ui.Input,
+		Radio: RadioDefinition,
+		Input: InputDefinition,
 	},
 	actions: {
 		"connect.submit": {
@@ -25,7 +50,7 @@ export const connectCatalog = defineCatalog(schema, {
 		},
 		"connect.chooseStore": {
 			params: z.object({
-				store: z.enum(["infisical", "1password", "bitwarden", "yard"]),
+				store: z.enum(SECRET_STORE_IDS),
 			}),
 			description:
 				"Choose the third-party secret store the provider's credentials go to",

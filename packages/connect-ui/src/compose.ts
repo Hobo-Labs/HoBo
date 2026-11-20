@@ -6,8 +6,9 @@ import {
 	type Spec,
 	validateSpec,
 } from "@json-render/core";
+import { z } from "zod";
 
-import { connectCandidates, OPTIONAL_SUFFIX } from "./candidates.js";
+import { connectCandidates, optionalCandidateIdSuffix } from "./candidates.js";
 import { connectCatalog } from "./catalog.js";
 import { type ConnectStep, providerLabel } from "./steps.js";
 
@@ -24,10 +25,11 @@ export function deterministicConnectSpec(step: ConnectStep): Spec {
 		throw new Error(`connect step ${step.kind} has no root candidate`);
 	const children = candidates.filter(
 		(candidate) =>
-			candidate !== rootCandidate && !candidate.id.endsWith(OPTIONAL_SUFFIX),
+			candidate !== rootCandidate &&
+			!candidate.id.endsWith(optionalCandidateIdSuffix),
 	);
 	const optional = candidates.filter((candidate) =>
-		candidate.id.endsWith(OPTIONAL_SUFFIX),
+		candidate.id.endsWith(optionalCandidateIdSuffix),
 	);
 	const elements: Spec["elements"] = {
 		[rootCandidate.id]: {
@@ -58,12 +60,34 @@ function promptFor(step: ConnectStep): string {
 	return `Build the single card a person needs to finish this step of connecting ${provider} (${step.kind}). Lead with the title and the explanation, put the primary action before secondary ones, include every required element, and nothing decorative.`;
 }
 
+const BindStateMarker = z.object({ $bindState: z.string() });
+
 function fingerprint(element: {
 	readonly type: string;
 	readonly props: unknown;
 	readonly on?: unknown;
+	readonly visible?: unknown;
 }): string {
-	return JSON.stringify([element.type, element.props, element.on ?? null]);
+	const propsParsed = z
+		.record(z.string(), z.unknown())
+		.safeParse(element.props);
+	const props = propsParsed.success
+		? {
+				...propsParsed.data,
+				value: (() => {
+					const bind = BindStateMarker.safeParse(propsParsed.data.value);
+					return bind.success
+						? { bound: bind.data.$bindState }
+						: propsParsed.data.value;
+				})(),
+			}
+		: element.props;
+	return JSON.stringify([
+		element.type,
+		props,
+		element.on ?? null,
+		element.visible ?? null,
+	]);
 }
 
 export function missingRequiredCandidates(
@@ -72,17 +96,26 @@ export function missingRequiredCandidates(
 ): string[] {
 	const present = new Set(Object.values(spec.elements).map(fingerprint));
 	return connectCandidates(step)
-		.filter((candidate) => !candidate.id.endsWith(OPTIONAL_SUFFIX))
+		.filter((candidate) => !candidate.id.endsWith(optionalCandidateIdSuffix))
 		.filter((candidate) => !present.has(fingerprint(candidate.element)))
 		.map((candidate) => candidate.id);
 }
 
+const PressBindingSchema = z.object({
+	press: z.object({ action: z.string() }),
+});
+
 export function isRenderableConnectSpec(spec: Spec): boolean {
 	if (!validateSpec(spec, { checkOrphans: true }).valid) return false;
-	const known = new Set(Object.keys(connectCatalog.data.components));
-	return Object.values(spec.elements).every((element) =>
-		known.has(element.type),
-	);
+	const knownComponents = new Set(Object.keys(connectCatalog.data.components));
+	const knownActions = new Set(Object.keys(connectCatalog.data.actions));
+	for (const element of Object.values(spec.elements)) {
+		if (!knownComponents.has(element.type)) return false;
+		const press = PressBindingSchema.safeParse(element.on);
+		if (press.success && !knownActions.has(press.data.press.action))
+			return false;
+	}
+	return true;
 }
 
 export interface ComposeOptions {

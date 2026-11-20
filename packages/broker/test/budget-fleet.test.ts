@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { create } from "@bufbuild/protobuf";
+import { create, toJsonString } from "@bufbuild/protobuf";
 import {
 	type AssignmentAcceptOutcome,
 	assignmentKey,
@@ -14,6 +14,7 @@ import { stableHash } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
 import { IacPricingPinSchema } from "../src/_generated/yard_placement_pb.js";
 import {
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	HostingQuoteSchema,
 	ProviderAccountExposureSchema,
@@ -173,8 +174,65 @@ function request(
 		}),
 	};
 }
+function kindlessEntitlement(snapshot: ReturnType<typeof fixture>["snapshot"]) {
+	snapshot.entitlements = [
+		create(BudgetEntitlementSchema, {
+			bucketId: "shared",
+			kind: "",
+			unit: "request",
+			periodId: "p1",
+			remainingUnits: 10,
+			observedAt: NOW,
+			validUntil: UNTIL,
+		}),
+	];
+}
 
 describe("majority journal financial authority", () => {
+	it("rejects a kindless fresh seed before journal initialization", async () => {
+		const f = fixture();
+		kindlessEntitlement(f.snapshot);
+		const authority = f.authority();
+		await expect(authority.initializeFresh(async () => {})).rejects.toThrow(
+			"entitlement scope",
+		);
+		expect(
+			f.replicas.every(
+				(replica) => replica.rows.length === 0 && replica.documents.size === 0,
+			),
+		).toBe(true);
+	});
+
+	it("normalizes a legacy persisted base without validating the reopen seed", async () => {
+		const f = fixture();
+		kindlessEntitlement(f.snapshot);
+		const journal = f.open();
+		await journal.bootstrap(async () => {});
+		await journal.append(
+			"broker:base",
+			`hobo.broker.base/v1:${toJsonString(BudgetLedgerSnapshotSchema, f.snapshot)}`,
+			0,
+		);
+		const reopened = f.authority(journal);
+		expect((await reopened.read(NOW)).entitlements[0]?.kind).toBe("allowance");
+	});
+
+	it("resumes interrupted initialization from a legacy kindless base", async () => {
+		const f = fixture();
+		kindlessEntitlement(f.snapshot);
+		const journal = f.open();
+		await journal.bootstrap(async () => {});
+		await journal.append(
+			"broker:base",
+			`hobo.broker.base/v1:${toJsonString(BudgetLedgerSnapshotSchema, f.snapshot)}`,
+			0,
+		);
+		const reopened = f.authority(journal);
+		await reopened.initializeFresh(async () => {});
+		expect((await reopened.read(NOW)).entitlements[0]?.kind).toBe("allowance");
+		expect((await journal.read()).length).toBe(1);
+	});
+
 	it("recovers interrupted initialization only after every voter is verified", async () => {
 		const f = fixture(),
 			initial = f.open(),

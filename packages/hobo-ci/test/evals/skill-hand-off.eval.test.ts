@@ -46,6 +46,19 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 	});
 
+	it("checks server registration and startup before reporting an unavailable hand-off", () => {
+		expect(HAND_OFF).toMatch(
+			/check the project MCP registration\s+and its startup prerequisites/u,
+		);
+		expect(HAND_OFF).toContain(
+			"pnpm exec turbo run build --filter=@hobo/hobo...",
+		);
+		expect(HAND_OFF).toMatch(/supported MCP discovery or reload mechanism/u);
+		expect(HAND_OFF).toMatch(
+			/does not establish that a private owner form is available or safe/u,
+		);
+	});
+
 	it("requires a private owner session before invoking the store chooser", () => {
 		expect(SKILL).toMatch(/Before opening any owner form/iu);
 		expect(SKILL).toMatch(

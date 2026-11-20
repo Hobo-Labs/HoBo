@@ -580,3 +580,26 @@ describe("configuration boundary", () => {
 		).toThrow(/nonnegative/);
 	});
 });
+
+it("counts the highest observed spend for a shared provider account", () => {
+	const a = account();
+	const low = offer("low", 0, 1);
+	const high = offer("high", 0, 1);
+	low.providerAccountId = "native";
+	high.providerAccountId = "native";
+	low.spentMicros = 0;
+	high.spentMicros = 100;
+	a.offers = [low, high];
+	a.budgetPolicy = common({
+		constraints: [
+			{
+				key: "provider.cost",
+				workload: "ci",
+				unit: "USD.micros",
+				maximum: 100,
+				target: "native",
+			},
+		],
+	});
+	expect(route(a, [], now)).toBeUndefined();
+});

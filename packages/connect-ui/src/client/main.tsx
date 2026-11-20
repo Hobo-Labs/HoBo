@@ -1,50 +1,37 @@
 import { isNonEmptySpec, type Spec } from "@json-render/core";
-import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
-import { shadcnComponents } from "@json-render/shadcn";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { JSONUIProvider, Renderer } from "@json-render/react";
+import {
+	StrictMode,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { z } from "zod";
-
-import { connectCatalog } from "../catalog.js";
+import type { ConfigField } from "../steps.js";
+import { specWithPressActions } from "./confirm-labels.js";
+import { registry } from "./connect-registry.js";
+import {
+	ConnectFormParamsBridge,
+	ConnectRuntimeProvider,
+	useConnectFormCollector,
+	useConnectRuntime,
+} from "./connect-runtime.js";
+import { DirectiveSchema } from "./directive-schema.js";
+import { formInitialState } from "./form-state.js";
 
 const ActionParamsSchema = z.record(z.string(), z.string());
 type ActionParams = z.infer<typeof ActionParamsSchema>;
+type ConnectJsonRenderState = ReturnType<typeof formInitialState>;
+type JsonRenderHandlerParams = Parameters<typeof actionParams>[0];
 
 function actionParams(
 	params: Parameters<typeof ActionParamsSchema.parse>[0],
 ): ActionParams {
 	return ActionParamsSchema.parse(params ?? {});
 }
-
-let dispatchToFlow: (action: string, params: ActionParams) => Promise<void> =
-	async () => undefined;
-
-const { registry } = defineRegistry(connectCatalog, {
-	actions: {
-		"connect.submit": async (params) =>
-			dispatchToFlow("connect.submit", actionParams(params)),
-		"connect.chooseStore": async (params) =>
-			dispatchToFlow("connect.chooseStore", actionParams(params)),
-		"connect.start": async (params) =>
-			dispatchToFlow("connect.start", actionParams(params)),
-		"connect.cancel": async (params) =>
-			dispatchToFlow("connect.cancel", actionParams(params)),
-	},
-	components: {
-		Card: shadcnComponents.Card,
-		Stack: shadcnComponents.Stack,
-		Heading: shadcnComponents.Heading,
-		Text: shadcnComponents.Text,
-		Button: shadcnComponents.Button,
-		Alert: shadcnComponents.Alert,
-		Badge: shadcnComponents.Badge,
-		Link: shadcnComponents.Link,
-		Progress: shadcnComponents.Progress,
-		Separator: shadcnComponents.Separator,
-		Radio: shadcnComponents.Radio,
-		Input: shadcnComponents.Input,
-	},
-});
 
 type Directive =
 	| { kind: "none" }
@@ -58,17 +45,27 @@ interface View {
 	spec: Spec;
 	directive: Directive;
 	confirmByAction: ReadonlyMap<string, string>;
+	formFields: readonly ConfigField[];
 }
 
-const DirectiveSchema = z.discriminatedUnion("kind", [
-	z.object({ kind: z.literal("none") }),
-	z.object({ kind: z.literal("navigate"), url: z.string() }),
-	z.object({
-		kind: z.literal("post"),
-		url: z.string(),
-		fields: z.record(z.string(), z.string()),
-	}),
-]);
+const ConfigFieldSchema = z.object({
+	name: z.string(),
+	label: z.string(),
+	description: z.string().optional(),
+	kind: z.enum(["text", "url", "secret", "choice"]),
+	required: z.boolean(),
+	value: z.string().optional(),
+	options: z
+		.array(
+			z.object({
+				value: z.string(),
+				label: z.string(),
+				description: z.string().optional(),
+			}),
+		)
+		.optional(),
+	error: z.string().optional(),
+});
 
 const ConnectViewSchema = z.object({
 	step: z.string(),
@@ -92,11 +89,46 @@ const ConnectViewSchema = z.object({
 					confirm: z.string().optional(),
 				}),
 			),
+			fields: z.array(ConfigFieldSchema).optional(),
 		})
 		.optional(),
 });
 
 type ParsedConnectView = z.infer<typeof ConnectViewSchema>;
+type ParsedConfigField = z.infer<typeof ConfigFieldSchema>;
+
+type MutableConfigField = {
+	-readonly [K in keyof ConfigField]: ConfigField[K];
+};
+
+function toConfigField(field: ParsedConfigField): ConfigField {
+	const parsed: MutableConfigField = {
+		name: field.name,
+		label: field.label,
+		kind: field.kind,
+		required: field.required,
+	};
+	if (field.description !== undefined) parsed.description = field.description;
+	if (field.value !== undefined) parsed.value = field.value;
+	if (field.error !== undefined) parsed.error = field.error;
+	if (field.options !== undefined) {
+		parsed.options = field.options.map((option) => {
+			type ChoiceOption = NonNullable<ConfigField["options"]>[number];
+			const row = { value: option.value, label: option.label } satisfies Pick<
+				ChoiceOption,
+				"value" | "label"
+			>;
+			if (option.description !== undefined) {
+				return {
+					...row,
+					description: option.description,
+				} satisfies ChoiceOption;
+			}
+			return row satisfies ChoiceOption;
+		});
+	}
+	return parsed;
+}
 
 function viewFromParsedConnect(parsed: ParsedConnectView): View {
 	if (!isNonEmptySpec(parsed.spec)) {
@@ -111,9 +143,10 @@ function viewFromParsedConnect(parsed: ParsedConnectView): View {
 		step: parsed.step,
 		terminal: parsed.terminal,
 		composedBy: parsed.composedBy,
-		spec: parsed.spec,
+		spec: specWithPressActions(parsed.spec),
 		directive: parsed.directive,
 		confirmByAction,
+		formFields: (parsed.view?.fields ?? []).map(toConfigField),
 	};
 }
 
@@ -141,10 +174,62 @@ function follow(directive: Directive): void {
 	}
 }
 
+function ConnectStage({
+	view,
+	initialState,
+	dispatch,
+	busy,
+	collector,
+	secretNames,
+}: {
+	readonly view: View;
+	readonly initialState: ConnectJsonRenderState;
+	readonly dispatch: (action: string, params: ActionParams) => Promise<void>;
+	readonly busy: boolean;
+	readonly collector: ReturnType<typeof useConnectFormCollector>["collector"];
+	readonly secretNames: ReturnType<
+		typeof useConnectFormCollector
+	>["secretNames"];
+}) {
+	const { collectFormParams } = useConnectRuntime();
+	const handlers = useMemo(
+		() => ({
+			"connect.submit": (params: JsonRenderHandlerParams) =>
+				dispatch("connect.submit", {
+					...collectFormParams(true),
+					...actionParams(params),
+				}),
+			"connect.chooseStore": (params: JsonRenderHandlerParams) =>
+				dispatch("connect.chooseStore", actionParams(params)),
+			"connect.start": (params: JsonRenderHandlerParams) =>
+				dispatch("connect.start", actionParams(params)),
+			"connect.cancel": (params: JsonRenderHandlerParams) =>
+				dispatch("connect.cancel", actionParams(params)),
+		}),
+		[collectFormParams, dispatch],
+	);
+	return (
+		<JSONUIProvider
+			registry={registry}
+			initialState={initialState}
+			handlers={handlers}
+		>
+			<ConnectFormParamsBridge
+				secretNames={secretNames}
+				collector={collector}
+			/>
+			<fieldset disabled={busy} className="connect-fieldset">
+				<Renderer spec={view.spec} registry={registry} />
+			</fieldset>
+		</JSONUIProvider>
+	);
+}
+
 function ConnectPage() {
 	const [view, setView] = useState<View | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
+	const busyRef = useRef(false);
 
 	const load = useCallback(async () => {
 		const response = await fetch(`${base}view`, { cache: "no-store" });
@@ -168,9 +253,10 @@ function ConnectPage() {
 
 	const dispatch = useCallback(
 		async (action: string, params: ActionParams) => {
-			if (busy) return;
+			if (busyRef.current) return;
 			const confirm = view?.confirmByAction.get(action);
 			if (confirm !== undefined && !window.confirm(confirm)) return;
+			busyRef.current = true;
 			setBusy(true);
 			try {
 				const response = await fetch(`${base}action`, {
@@ -187,12 +273,19 @@ function ConnectPage() {
 			} catch (reason) {
 				setError(String(reason));
 			} finally {
+				busyRef.current = false;
 				setBusy(false);
 			}
 		},
-		[busy, view],
+		[view],
 	);
-	dispatchToFlow = dispatch;
+	const initialState = useMemo(
+		() => (view === null ? { form: {} } : formInitialState(view.formFields)),
+		[view],
+	);
+	const { collector, secretNames } = useConnectFormCollector(
+		view?.formFields ?? [],
+	);
 
 	if (error !== null)
 		return (
@@ -201,22 +294,22 @@ function ConnectPage() {
 			</p>
 		);
 	if (view === null) return <p className="hobo-connect-loading">Loading…</p>;
+
 	return (
-		<JSONUIProvider
-			registry={registry}
-			handlers={{
-				"connect.submit": (params) =>
-					dispatch("connect.submit", actionParams(params)),
-				"connect.chooseStore": (params) =>
-					dispatch("connect.chooseStore", actionParams(params)),
-				"connect.start": (params) =>
-					dispatch("connect.start", actionParams(params)),
-				"connect.cancel": (params) =>
-					dispatch("connect.cancel", actionParams(params)),
-			}}
+		<ConnectRuntimeProvider
+			confirmByAction={view.confirmByAction}
+			collector={collector}
 		>
-			<Renderer spec={view.spec} registry={registry} />
-		</JSONUIProvider>
+			<ConnectStage
+				key={`${view.step}-${view.composedBy}-${view.formFields.map((field) => field.name).join(",")}`}
+				view={view}
+				initialState={initialState}
+				dispatch={dispatch}
+				busy={busy}
+				collector={collector}
+				secretNames={secretNames}
+			/>
+		</ConnectRuntimeProvider>
 	);
 }
 

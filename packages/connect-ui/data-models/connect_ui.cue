@@ -28,6 +28,22 @@ package connect_ui
 		...
 	}
 	directive: #BrowserDirectiveRecord
+	view?: {
+		actions: [...{
+			action: #ConnectActionName
+			confirm?: string & !=""
+		}]
+		fields?: [...{
+			name:    string & !=""
+			label:   string & !=""
+			kind:    "text" | "url" | "secret" | "choice"
+			required: bool
+			value?:  string
+			options?: [...{value: string, label: string}]
+			error?:  string
+		}]
+		explanation?: [...string]
+	}
 }
 
 #ConnectedReferences: {

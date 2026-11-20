@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
 
-import type { YardRuntime } from "@hobo/cli";
+import type { CommandModule, CommandResult, YardRuntime } from "@hobo/cli";
 import {
 	createInProcessExecutor,
 	createRegistryFromProviders,
@@ -9,10 +11,27 @@ import {
 	type IacProvider,
 	type PlannerRegistry,
 } from "@hobo/cloud";
-import { CD_PLACEMENT_YARDS, cdConfigYard, cdJournalYard } from "@hobo/hobo-cd";
+import type { TrustedVault } from "@hobo/core";
+import {
+	CD_DEPLOY_SETTINGS,
+	CD_PLACEMENT_YARDS,
+	cdConfigYard,
+	cdJournalYard,
+} from "@hobo/hobo-cd";
 import type { Yard } from "@hobo/yards";
 
 import { relayYardRegistryProvider } from "./ci-relay-delivery.js";
+import {
+	loadRelayJoinedYards,
+	loadRelayYard,
+	RelayPlacementRefusal,
+	resolveRelayPlacement,
+} from "./ci-relay-yard.js";
+import { gitHead } from "./ci-up-relay.js";
+import {
+	createVercelDeployProvider,
+	type VercelDeployProviderOptions,
+} from "./vercel-deploy-provider.js";
 
 // `hobo cd plan|up` place the CD project with this machine's providers plus
 // the Yards `hobo cd up` makes for it (`@hobo/hobo-cd` `placement.ts`): the
@@ -123,5 +142,191 @@ export function retainPreparedOnDown(next: Executor): Executor {
 			program.action === "destroy" && PREPARED_RESOURCES.has(program.provider)
 				? retained.run(program, credential, options)
 				: next.run(program, credential, options),
+	};
+}
+
+export function cdVercelDirFor(projectDir: string): string | undefined {
+	for (const candidate of [
+		projectDir,
+		path.join(projectDir, "..", "cd-vercel"),
+	])
+		if (existsSync(path.join(candidate, "deploy", "yard.ts")))
+			return path.resolve(candidate);
+	return undefined;
+}
+
+export async function loadCdYards(
+	dir: string,
+): Promise<readonly Yard[] | undefined> {
+	const yard = await loadRelayYard(dir);
+	if (yard === undefined) return undefined;
+	return [yard, ...(await loadRelayJoinedYards(dir, yard, "cdJunction"))];
+}
+
+export function yardsRegistry(yards: readonly Yard[]): PlannerRegistry {
+	return createRegistryFromProviders(
+		yards.map((yard) => relayYardRegistryProvider(yard)),
+	);
+}
+
+function projectOf(input: Parameters<CommandModule["run"]>[0]): string {
+	return input.context.projectDir ?? input.flags.cwd ?? input.context.cwd;
+}
+
+export function createCdPlanCommand<R extends YardRuntime>(
+	runtime: R,
+	planWith: (runtime: R) => CommandModule,
+): CommandModule {
+	return {
+		implemented: true,
+		async run(input) {
+			const dir = cdVercelDirFor(projectOf(input));
+			const yards = dir === undefined ? undefined : await loadCdYards(dir);
+			if (yards === undefined)
+				return planWith(cdPlacementRuntime(runtime)).run(input);
+			input.emitProgress(
+				`placing on CD's Yards: ${yards.map((yard) => yard.name).join(", ")}`,
+			);
+			return planWith({ ...runtime, registry: yardsRegistry(yards) }).run(
+				input,
+			);
+		},
+	};
+}
+
+function refusedUp(
+	code: string,
+	message: string,
+	remediation: readonly string[],
+): CommandResult {
+	return {
+		ok: false,
+		status: "rejected",
+		code,
+		message,
+		remediation,
+		data: { command: "cd" },
+	};
+}
+
+export type CdVercelUpDeps<R extends YardRuntime> = Readonly<{
+	credentials: TrustedVault;
+	runtime: R;
+	upWith: (runtime: R) => CommandModule;
+	resolveGitHead?: (
+		dir: string,
+	) => Promise<{ ref: string; sha: string } | undefined>;
+	vercelDeployProvider?: (
+		options: Omit<VercelDeployProviderOptions, "fetch">,
+	) => IacProvider;
+}>;
+
+function convergeCdUpWithoutBundledVercelYard<R extends YardRuntime>(
+	deps: CdVercelUpDeps<R>,
+	input: Parameters<CommandModule["run"]>[0],
+): Promise<CommandResult> {
+	const teamId = deps.credentials.reveal("VERCEL_TEAM_ID");
+	return deps
+		.upWith({
+			...cdPlacementRuntime(deps.runtime),
+			executor: createInProcessExecutor({
+				iac: routePreparedPlacements(
+					(deps.vercelDeployProvider ?? createVercelDeployProvider)({
+						token: deps.credentials.reveal("VERCEL_TOKEN") ?? "",
+						...(teamId !== undefined ? { teamId } : undefined),
+						projectName: "hobo-cd",
+					}),
+				),
+			}),
+		})
+		.run(input);
+}
+
+export function createCdVercelUpCommand<R extends YardRuntime>(
+	deps: CdVercelUpDeps<R>,
+): CommandModule {
+	const token = () => deps.credentials.reveal("VERCEL_TOKEN") ?? "";
+	const team = () => deps.credentials.reveal("VERCEL_TEAM_ID");
+	return {
+		implemented: true,
+		async run(input) {
+			const dir = cdVercelDirFor(projectOf(input));
+			const yards = dir === undefined ? undefined : await loadCdYards(dir);
+			if (dir === undefined || yards === undefined)
+				return convergeCdUpWithoutBundledVercelYard(deps, input);
+			const head = await (deps.resolveGitHead ?? gitHead)(dir);
+			if (head === undefined)
+				return refusedUp(
+					"HOBO_CD_UP_NO_BRANCH",
+					"hobo cd up deploys CD from the current branch, and this checkout is not on one.",
+					["Check out the branch to deploy, pushed to GitHub, and run again."],
+				);
+			const [cdYard, ...joined] = yards;
+			if (cdYard === undefined)
+				return refusedUp("HOBO_CD_UP_NO_YARD", "CD declares no Yard.", []);
+			let placement: ReturnType<typeof resolveRelayPlacement>;
+			try {
+				placement = resolveRelayPlacement(cdYard, "preview", joined);
+			} catch (error) {
+				if (error instanceof RelayPlacementRefusal)
+					return refusedUp(error.code, error.message, []);
+				throw error;
+			}
+			const [org, repo] = (placement.repository ?? "").split("/");
+			if (
+				placement.project === undefined ||
+				org === undefined ||
+				repo === undefined ||
+				org === "" ||
+				repo === ""
+			)
+				return refusedUp(
+					"HOBO_CD_UP_NO_PROJECT",
+					`CD's Yard ${placement.yard} names no Vercel project and repository to deploy.`,
+					[
+						"Declare project and repository in the Yard's properties (packages/cd-vercel/deploy/yard.ts).",
+					],
+				);
+			const teamId = team();
+			const configuration = Object.fromEntries(
+				Object.entries(CD_DEPLOY_SETTINGS).flatMap(([setting, held]) => {
+					const value = deps.credentials.reveal(held);
+					return value === undefined ? [] : [[setting, value]];
+				}),
+			);
+			const provider = (
+				deps.vercelDeployProvider ?? createVercelDeployProvider
+			)({
+				token: token(),
+				...(teamId !== undefined ? { teamId } : undefined),
+				projectName: placement.project,
+				target: "preview",
+				createMissingProject: true,
+				...(Object.keys(configuration).length > 0
+					? { configuration }
+					: undefined),
+				gitArtifact: {
+					org,
+					repo,
+					ref: head.ref,
+					sha: head.sha,
+					...(placement.rootDirectory !== undefined
+						? { rootDirectory: placement.rootDirectory }
+						: undefined),
+				},
+			});
+			input.emitProgress(
+				`delivering ${head.ref}@${head.sha.slice(0, 12)} to CD's preview on Vercel (project ${placement.project})`,
+			);
+			return deps
+				.upWith({
+					...deps.runtime,
+					registry: yardsRegistry(yards),
+					executor: createInProcessExecutor({
+						iac: routePreparedPlacements(provider),
+					}),
+				})
+				.run(input);
+		},
 	};
 }

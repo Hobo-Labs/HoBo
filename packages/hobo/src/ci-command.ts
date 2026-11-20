@@ -34,6 +34,8 @@ import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
+import { runCiInit } from "./ci-init.js";
+import { runCiInsights } from "./ci-insights.js";
 import {
 	localMeshReport,
 	meshNodesData,
@@ -46,6 +48,7 @@ import {
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
+import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
 	CI_SECRET_STORE_OPTIONS,
@@ -58,6 +61,7 @@ import type { VercelFetch } from "./vercel-client.js";
 const execute = promisify(execFile);
 type CiLink = ReturnType<typeof create<typeof CiRepositoryLinkSchema>>;
 type CiOptions = Record<string, string | boolean | string[] | undefined>;
+type CiGit = (args: readonly string[], cwd: string) => Promise<string>;
 
 import { ciRepositoryFromRemote, validRepository } from "./ci-repository.js";
 
@@ -308,6 +312,23 @@ function parseCiArgs(args: readonly string[]) {
 			"deploy-project-id": { type: "string" },
 			"relay-identity-id": { type: "string" },
 			"deploy-identity-id": { type: "string" },
+			fleet: { type: "string" },
+			machine: { type: "string" },
+			github: { type: "string" },
+			blacksmith: { type: "string" },
+			depot: { type: "string" },
+			namespace: { type: "string" },
+			warpbuild: { type: "string" },
+			ubicloud: { type: "string" },
+			boat: { type: "string" },
+			public: { type: "boolean" },
+			fork: { type: "boolean" },
+			event: { type: "string" },
+			facts: { type: "string" },
+			plan: { type: "boolean" },
+			apply: { type: "string", multiple: true },
+			"fleet-label": { type: "string" },
+			"include-secret-jobs": { type: "boolean" },
 			"site-url": { type: "string" },
 			"via-workflow": { type: "boolean" },
 			"hand-off": { type: "boolean" },
@@ -350,6 +371,40 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 	return options;
 }
 
+async function localRepository(
+	deps: { env?: NodeJS.ProcessEnv; git?: CiGit },
+	cwd: string,
+	values: CiOptions,
+): Promise<{ root: string; repository: string | undefined }> {
+	const git: CiGit =
+		deps.git ??
+		(async (gitArgs, directory) => {
+			const result = await execute("git", [...gitArgs], {
+				cwd: directory,
+				timeout: 10000,
+				maxBuffer: 65536,
+				env: deps.env ?? process.env,
+			});
+			return result.stdout.trim();
+		});
+	let root = cwd;
+	try {
+		root = await git(["rev-parse", "--show-toplevel"], cwd);
+	} catch {}
+	if (values.repo !== undefined && validRepository(String(values.repo)))
+		return { root, repository: String(values.repo) };
+	try {
+		return {
+			root,
+			repository: ciRepositoryFromRemote(
+				await git(["remote", "get-url", "origin"], root),
+			),
+		};
+	} catch {
+		return { root, repository: undefined };
+	}
+}
+
 export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
@@ -389,6 +444,8 @@ export function createCiCommand(
 				);
 			}
 			const { values } = parsed;
+			if (values.repo !== undefined && !validRepository(String(values.repo)))
+				return usage("--repo <owner/name> must be a GitHub owner/name.");
 			const githubConnect =
 				parsed.positionals[0] === "connect" &&
 				parsed.positionals[1] === "github";
@@ -416,9 +473,46 @@ export function createCiCommand(
 					"deploy",
 					"app",
 					"secret-store",
+					"route",
+					"init",
+					"signals",
+					"diagnose",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
+			if (command === "init") {
+				const local = await localRepository(deps, flags.cwd, values);
+				return runCiInit({
+					cwd: local.root,
+					args: positionals.slice(1),
+					options: values,
+				});
+			}
+			if (command === "signals" || command === "diagnose") {
+				const local = await localRepository(deps, flags.cwd, values);
+				if (local.repository === undefined)
+					return usage(
+						"Run from a GitHub repository or pass --repo owner/name.",
+					);
+				return runCiInsights({
+					command,
+					repository: local.repository,
+					cwd: local.root,
+					args: positionals.slice(1),
+					options: values,
+					env: deps.env ?? process.env,
+				});
+			}
+			if (command === "route") {
+				if (positionals.length !== 1)
+					return usage("hobo ci route takes no positional arguments.");
+				const local = await localRepository(deps, flags.cwd, values);
+				return runCiRoute({
+					cwd: local.root,
+					repository: local.repository,
+					options: values,
+				});
+			}
 			if (command === "deploy") {
 				if (positionals.length !== 1)
 					return usage("hobo ci deploy takes no positional arguments.");

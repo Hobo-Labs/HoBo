@@ -10,8 +10,15 @@
 // reference to it (`infisical://…`, `op://…`).
 
 /** A third-party secret store the flow can deposit into. */
+export const SECRET_STORE_IDS = Object.freeze([
+	"infisical",
+	"1password",
+	"bitwarden",
+	"yard",
+] as const);
+
 export interface SecretStoreOption {
-	readonly id: "infisical" | "1password" | "bitwarden" | "yard";
+	readonly id: (typeof SECRET_STORE_IDS)[number];
 	readonly label: string;
 	/** How a workload reads it back without a stored secret. */
 	readonly signIn: "oidc" | "service-account";

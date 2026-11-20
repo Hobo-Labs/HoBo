@@ -13,7 +13,7 @@ import type { Experimental_CompositionEvaluator as Evaluator } from "@json-rende
 
 import { z } from "zod";
 
-import { composeConnectSpec } from "./compose.js";
+import { composeConnectSpec, deterministicConnectSpec } from "./compose.js";
 import {
 	CONNECT_ACTIONS,
 	type ConnectActionName,
@@ -104,7 +104,7 @@ function send(
 		"x-content-type-options": "nosniff",
 		"referrer-policy": "no-referrer",
 		"content-security-policy":
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action https://github.com; frame-ancestors 'none'",
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; form-action https://github.com; frame-ancestors 'none'",
 	});
 	res.end(body);
 }
@@ -214,22 +214,43 @@ export async function startConnectPage(
 		| undefined;
 
 	const view = async () => {
-		const stepJson = JSON.stringify(step);
-		const composed =
-			composedCache?.stepJson === stepJson
-				? composedCache.composed
-				: await composeConnectSpec(step, {
-						evaluate: options.evaluate,
-					});
-		if (composedCache?.stepJson !== stepJson)
-			composedCache = { stepJson, composed };
+		let stepSnapshot = step;
+		let directiveSnapshot = directive;
+		let stepJson = JSON.stringify(stepSnapshot);
+		let composed: Awaited<ReturnType<typeof composeConnectSpec>> | undefined =
+			composedCache?.stepJson === stepJson ? composedCache.composed : undefined;
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			if (composed === undefined)
+				composed = await composeConnectSpec(stepSnapshot, {
+					evaluate: options.evaluate,
+				});
+			if (JSON.stringify(step) === stepJson) break;
+			stepSnapshot = step;
+			directiveSnapshot = directive;
+			stepJson = JSON.stringify(stepSnapshot);
+			composed =
+				composedCache?.stepJson === stepJson
+					? composedCache.composed
+					: undefined;
+		}
+		if (composed === undefined || JSON.stringify(step) !== stepJson) {
+			stepSnapshot = step;
+			directiveSnapshot = directive;
+			stepJson = JSON.stringify(stepSnapshot);
+			composed = {
+				spec: deterministicConnectSpec(stepSnapshot),
+				composedBy: "deterministic",
+				fallbackReason: "step changed during composition",
+			};
+		}
+		composedCache = { stepJson, composed };
 		return JSON.stringify({
-			step: step.kind,
-			terminal: isTerminalStep(step),
+			step: stepSnapshot.kind,
+			terminal: isTerminalStep(stepSnapshot),
 			composedBy: composed.composedBy,
 			spec: composed.spec,
-			directive,
-			view: stepView(step),
+			directive: directiveSnapshot,
+			view: stepView(stepSnapshot),
 		});
 	};
 

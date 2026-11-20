@@ -9,15 +9,10 @@ tags: [hobo, agent-tooling.md]
 
 Every harness follows the repository rules in [`AGENTS.md`](../AGENTS.md):
 write self-documenting code, finish deferred work, and do not create planning or
-design documents. The shared pre-commit hook and CI run `source:guard` on new comments in the
-languages listed in [`AGENTS.md`](../AGENTS.md) and on added or changed planning
-or design documents, including `.impeccable/design.json` and
-`.impeccable/surfaces/`. Compiler and tool directives stay allowed, including
-`//go:` directives, `cue:generate`, buf lint and breaking ignores, and Atlas
-schema directives. SQL comments use `--` and `/* ... */`; `#` remains an
-operator character so PostgreSQL JSON operators are not parsed as MySQL-style
-comments. It reads the staged content for commits and the PR diff for CI; it
-does not inspect unchanged content.
+design documents. The shared pre-commit hook and CI run `source:guard` on new
+JavaScript, TypeScript, shell, Python, CSS, and HTML comments and added or
+changed planning or design documents. It reads the staged content for commits
+and the PR diff for CI; it does not inspect other languages or unchanged content.
 For renamed files, it compares against the original path so existing comments
 remain allowed while newly added comments are checked. During a staged merge it
 compares against every parent, so content inherited unchanged from either side
@@ -30,6 +25,8 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
 The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
+
+The mirrored `verify-broker-budget-authority` skill's BrokerBudget model keeps unused-release evidence and final settlement evidence mutually exclusive, so a reservation cannot be claimed after unused evidence is recorded, cannot carry both evidence kinds, and cannot be released once final evidence exists.
 
 Generated command tests use the caller's environment. For pnpm scripts, select the checkout's pinned pnpm version and a writable package store.
 
@@ -152,6 +149,8 @@ workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
 `quieter`, `colorize`. **Standing duty on visual work** (TUI, dashboard,
 Evidence and `site/`): run `critique` then `audit`
 (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
+`design:lint` invokes `scripts/check-visual-tokens.mts`; the root
+`test/visual-tokens.test.ts` suite pins that wiring.
 See `AGENTS.md` “Visual quality”. **No API keys**, but it is **not**
 offline — see egress below.
 - **Network egress (three paths, one of them automatic):**
@@ -282,13 +281,43 @@ A **semantic-code MCP server**: it gives coding agents IDE-like symbol search, r
 A **Rust Token Killer command proxy** that compresses noisy shell-command output before it reaches coding agents. It is local, uses no API keys, and supports direct use (`rtk git status`, `rtk pnpm test:file <file>`, `rtk gain`) plus hook initialization for Claude Code/Copilot (`rtk init -g`), Codex (`rtk init -g --codex`), and Cursor (`rtk init -g --agent cursor`). The setup script installs it in the common/devcontainer layer when possible (existing `rtk`, Homebrew, Cargo, then upstream install script) and initializes hooks only in the selected agent-specific layer.
 
 ### hobo — HoBo's own MCP server (this repo)
-`.mcp.json` runs it from source (`node --import tsx packages/hobo/src/bin/hobo-mcp.ts`; no keys). Besides the CLI verbs it offers the owner-facing experiences used by the **hobo-deploy** skill, including secret capture and **`choose_secret_store`** for a handed-off `hobo ci|cd up`. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
+`.mcp.json`, `.codex/config.toml`, and `.cursor/mcp.json` register the server from source without keys. The host must start the launcher within its intended trusted HoBo checkout: the launcher cannot identify which sibling checkout the host trusted. The Codex and Cursor launchers resolve that Git worktree root and refuse an ambiguous nested Git checkout. For a HoBo checkout nested inside another repository, configure the host to run `node --import tsx packages/hobo/src/bin/hobo-mcp.ts` with its working directory set to the HoBo checkout's absolute root. Install the workspace dependencies and run `pnpm exec turbo run build --filter=@hobo/hobo...` before starting an agent session in a fresh checkout; the source launcher imports built workspace packages. Codex loads the project configuration in a trusted project when the session starts. Registration alone does not establish that the host supports a private owner form. The server exposes the CLI verbs and secret capture used by the **hobo-deploy** skill. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
 
-Follow the **hobo-deploy** skill's privacy verification before using any owner
-form. Use the same target project `cwd` for its lifecycle and store-choice
-calls so they address the same temporary owner session. Keep that `cwd` on
-subsequent retries. If a verified private hand-off is unavailable, report that
-gap without collecting owner settings.
+Use the [HoBo setup skill](../.agents/skills/hobo-setup/SKILL.md) to connect the
+server and establish an owner-store session independently of a deployment.
+The initial MCP handshake describes this separation; it does not itself
+authenticate a store. For a linked worktree, Codex may check trust against the
+primary checkout; its effective-configuration diagnostics identify a disabled
+project layer and the checkout whose trust it requires.
+
+If the active host has no HoBo tools, try its supported discovery or reload,
+then diagnose the server independently. From the checkout root, the following
+isolated test initializes HoBo and lists tools using the Cursor-registered
+launcher and synthetic temporary state:
+
+```sh
+pnpm --filter @hobo/hobo exec vitest run test/mcp-cold-start.test.ts -t 'serves MCP through the registered launcher from a nested directory'
+```
+
+This checks that launcher with synthetic state; it does not verify the active
+host's registration or actual environment, or an owner session. A separate MCP
+client may also perform authorized non-sensitive work when the host cannot
+attach the server. Report which client worked and which connection or private
+session step remains unverified; do not infer the cause of a missing host tool
+without evidence.
+
+Store selection through **`choose_secret_store`** is temporarily unavailable
+until HoBo supports a verified, scoped owner session. Do not collect store
+identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
+privacy verification before using any owner form. When a verified private
+hand-off is available, use the same target project `cwd` throughout the
+ceremony; otherwise report the missing capability without collecting settings.
+The relay's existing capture adapter reads a separately configured Infisical
+binding; a generic owner-store session is not yet wired to that adapter.
+Its `connected` status indicates that the binding was read; it does not verify
+owner authentication. `writable` reflects an active writer session. The
+adapter accepts a writer identifier in tool arguments and returns store
+references, so it is not the private owner setup described by the setup skill.
 
 ### headroom — `chopratejas/headroom` (Apache-2.0)
 A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
