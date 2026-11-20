@@ -106,10 +106,82 @@ fx.client.getBooleanDetails("example-feature", false);
 Application code **never** imports flagd, Unleash, GrowthBook, LaunchDarkly, or
 Argo. External backends rank behind `hobo:feature-flag` / `hobo:delivery` /
 `hobo:experiment` ports (local-builtin → camp-managed → ofrep-internal → external).
+`FeatureFlagPort` describes the local store boundary used by the OpenFeature
+client, progressive engines, and HoBo's feature command. `FeatureFlagStore`
+implements it; tests can inject another implementation or use an isolated
+`flag` resource from `@hobo/testing`. This TypeScript port does not claim to
+implement the complete WIT provider contract.
+`DeliveryPort` and `ExperimentPort` describe the rollout and experiment
+boundaries. `createHarness` accepts implementations as `delivery` and
+`experiment`; when omitted, it creates the built-in engines. Injected engines
+that coordinate with feature evaluation should use the same `FeatureFlagPort`
+passed as `store` so their flag changes are visible to the harness.
 Gateway-weighted rollouts emit `domain.RoutingChanged` via
 `applyRolloutToGatewayRouting`. Experiment `analyzeExperiment` /
-`concludeExperiment` use the built-in baseline analysis/export (commercial
-engines plug in as residual adapters).
+`concludeExperiment` use the built-in baseline analysis/export. The baseline
+counts assignments and exposures but returns `inconclusive`: allocation counts
+are not outcome evidence. Supply an `analysis` adapter to make an evidence-based
+release decision.
+
+`assign` and `getAssignment` report the subject's sticky allocation, while
+`expose` and `evaluateAndExpose` evaluate the current flag and record that
+evaluation's variant. When it differs from the assignment, the latter returns
+the evaluated variant with `assignedVariant` and `reason`; exposure
+events always include both variants and the evaluation reason. A targeting rule,
+kill switch, disabled flag, or rollout gate can cause that difference. Custom analysis ports
+receive exposure records as an optional fourth argument; subject identifiers in
+those records are hashed. Assignment counts alone do not measure outcomes.
+The existing flag `rulesetSeq` is local to a store instance and must not be used
+to identify a ruleset across reloads or replicas.
+When the application uses a non-default flag fallback, pass the same fallback
+to `expose`, `evaluateAndExpose`, or `trackExposure`.
+For post-hoc tracking, pass the exact evaluation that was served to
+`exposeEvaluated`; it checks the flag and a canonical context binding, so a
+later flag change does not rewrite the recorded experience. For a single
+evaluate-and-record operation, `evaluateAndExposeDetails` returns the evaluation
+whose value the application should serve. Context bindings prevent accidental
+mix-ups; applications must still trust the source of supplied evaluations.
+
+The built-in flag store uses a separately salted deterministic allocation for
+a new experiment after the rollout gate. Explicit targeting rules take precedence.
+An existing fractional split on the experiment's flag retains its exact subject
+assignments at 100%; its rollout gate uses a separate hash. Attaching to an
+existing fractional flag with a percentage below 100 is refused before any
+mutation because fractional flags previously ignored that percentage. Set it to
+100 before attaching, then change the experiment's ramp explicitly. Unrelated
+fractional flags retain their existing behavior.
+An attached allocation, its sticky key, and its fractional key and weights are
+immutable; use a new experiment and flag to change them. Assignment is deterministic across restarts only while its
+definition and subject key remain unchanged. This allocation algorithm changes
+new experiment assignments from the previous process-local implementation.
+Assignments are recorded per tenant and targeting key. When a different sticky
+attribute drives allocation, multiple targeting keys can receive the same
+variant and create separate assignment records. `getAssignment` accepts an
+optional tenant and returns no assignment when an omitted tenant would be
+ambiguous.
+An injected flag port must advertise `experimentAllocationVersion: 1` and expose
+the atomic `applyExperimentAllocation` operation. The engine checks the declared
+capability and returned configuration, but cannot prove an adapter's evaluation
+behavior from those claims. Run `runExperimentFlagPortConformance` with an isolated
+fixture before using a replacement; this bounded check does not prove every
+provider behavior. The allocation helpers are exported for implementing the
+contract. If an apply throws or returns an unexpected result,
+the engine reports `experiment-allocation-reconcile-required`: inspect the flag's
+state before retrying because an external adapter may have partially changed it.
+`startProgressive` validates the matching flag, experiment, and rollout policy
+before creating state. An injected experiment port can also implement the
+read-only `validateDefinition` operation for its own preflight checks. If a
+later start operation fails after mutation may have begun, the harness reports
+`progressive-start-reconcile-required` or
+`experiment-allocation-reconcile-required`; inspect the flag, experiment, and
+rollout before retrying.
+
+A kill switch keeps its effective percentage at zero. Its `suspendedPercentage`
+records the intended ramp in the definition and change event, including explicit
+changes made while the switch is active. Clearing restores that value; a legacy
+killed definition without a saved value stays at zero until changed explicitly.
+When replacing a killed definition, set `suspendedPercentage` to the intended
+resume value.
 
 ## Continuous identity migration (hands-off)
 
@@ -171,7 +243,7 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
   `FeatureFlagStore`, `runSpectrumIdentityCutover` (Plan 50 composition),
   `dualVerifyClaims`, `mintDualAudienceGrant`, `advanceMigrationRamp`,
   `agentActionsForMigrationEvents`, `identity.Migration*` events.
-- Harness: `HoboOpenFeatureProvider`, `HoboFeatureClient`, `createHarness`,
+- Harness: `FeatureFlagPort`, `DeliveryPort`, `ExperimentPort`, `HoboOpenFeatureProvider`, `HoboFeatureClient`, `createHarness`,
   `OpenDeliveryEngine`, `OpenExperimentEngine`, `gateFlagMutation`,
   `createContractAssertedHarnessFixtures`, `enrichEvaluationContext`,
   `selectFeatureFlagBackend`, `flag.*` / `rollout.*` / `experiment.*` events.
@@ -180,8 +252,13 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
 
 Provider connection revocation is terminal. Authorizing or marking a revoked connection for reauthorization is rejected; create a new connection instead. Replay also ignores late authorization, health, rotation, and duplicate creation facts that would revive the revoked connection.
 
-The `verify-connection-lifecycle` skill checks that rule with generated
-command and replay histories and a bounded TLA+ model. This chart summarizes
+Connection IDs and aliases share the lookup namespace. Creation and replay
+reject a new connection when its alias conflicts with an existing ID or alias,
+or its ID conflicts with an existing alias. Existing event logs with those
+collisions require reconciliation before they can be replayed.
+
+The `verify-connection-lifecycle` skill checks those rules with generated
+command and replay histories, bounded TLA+ models, and scratch mutations. This chart summarizes
 the model; it is not a live provider trace:
 
 ```mermaid

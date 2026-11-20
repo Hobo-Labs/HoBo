@@ -6,7 +6,8 @@ description: >
   HoBo's provider-connection pages (hobo ci up, hobo cd up). Thick ink
   outlines, hard sticker shadows, black-and-white day/night inversion, one
   spark accent for focus and errors — never flat SaaS chrome, never soft
-  elevation. shadcn/ui components take the identity through CSS variables.
+  elevation. vercel-labs/ui (UI SDK) components take the identity through
+  their --ui-* tokens and data-slot styles.
 colors:
   primary: "#101010"
   on-primary: "#ffffff"

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	CD_COMPOSE_ENV,
+	cdFleetMemberUrlVariable,
 	isSimulated,
 	parseCdComposeConfig,
 } from "../../src/compose/config.js";
@@ -24,6 +25,69 @@ describe("parseCdComposeConfig (store selection, R6)", () => {
 		expect(out.value.tickIntervalMs).toBe(CD_DEFAULTS.serviceTickMs);
 		expect(out.value.tenant).toBe("local");
 		expect(isSimulated(out.value)).toBe(false);
+	});
+
+	it("selects a Postgres fleet whose connection strings stay in the secret store", () => {
+		const out = parseCdComposeConfig({
+			env: {
+				[CD_COMPOSE_ENV.postgresFleet]: "neon-eu:neon-claimable, supabase",
+				[CD_COMPOSE_ENV.postgresWitnesses]: "prisma",
+				[CD_COMPOSE_ENV.replicas]: "2",
+			},
+			home,
+			simulate: false,
+		});
+		expect(out.ok && out.value.store).toEqual({
+			backend: "postgres-fleet",
+			members: [
+				{
+					id: "neon-eu",
+					urlEntry: "HOBO_CD_POSTGRES_URL_NEON_EU",
+					plan: "neon-claimable",
+				},
+				{ id: "supabase", urlEntry: "HOBO_CD_POSTGRES_URL_SUPABASE" },
+			],
+			witnesses: [{ id: "prisma", urlEntry: "HOBO_CD_POSTGRES_URL_PRISMA" }],
+			poolSize: CD_DEFAULTS.postgresPoolSize,
+			statementTimeoutMs: CD_DEFAULTS.postgresStatementTimeoutMs,
+			minMajorVersion: CD_DEFAULTS.postgresMinMajorVersion,
+		});
+		expect(cdFleetMemberUrlVariable("neon-eu")).toBe(
+			"HOBO_CD_POSTGRES_URL_NEON_EU",
+		);
+	});
+
+	it("refuses a connection string in the environment, and a member named twice", () => {
+		const inEnv = parseCdComposeConfig({
+			env: {
+				[CD_COMPOSE_ENV.postgresFleet]: "neon",
+				HOBO_CD_POSTGRES_URL_NEON: "postgres://cd:pw@neon/cd",
+			},
+			home,
+			simulate: false,
+		});
+		expect(inEnv.ok).toBe(false);
+		const withPassword = parseCdComposeConfig({
+			env: { [CD_COMPOSE_ENV.postgresUrl]: "postgres://cd:pw@db/cd" },
+			home,
+			simulate: false,
+		});
+		expect(withPassword.ok).toBe(false);
+		const twice = parseCdComposeConfig({
+			env: {
+				[CD_COMPOSE_ENV.postgresFleet]: "neon",
+				[CD_COMPOSE_ENV.postgresWitnesses]: "neon",
+			},
+			home,
+			simulate: false,
+		});
+		expect(twice.ok).toBe(false);
+		const badPlan = parseCdComposeConfig({
+			env: { [CD_COMPOSE_ENV.postgresFleet]: "neon:Neon Free:x" },
+			home,
+			simulate: false,
+		});
+		expect(badPlan.ok).toBe(false);
 	});
 
 	it("selects Postgres when configured, with frozen pool and timeout defaults", () => {

@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,6 +35,11 @@ const FAKE_OPENSESAME = fileURLToPath(
 const PROBE = fileURLToPath(
 	new URL("./fixtures/relaunch-probe.mts", import.meta.url),
 );
+const CAN_TRUST_PATH =
+	process.platform === "win32" ||
+	[0, process.geteuid?.()].includes(statSync("/").uid);
+const describeTrustedPath = CAN_TRUST_PATH ? describe : describe.skip;
+const ENV_FILE_RELAUNCH = "a relaunch started with node --env-file";
 
 function forRun(execArgv: readonly string[], nodeOptions?: string) {
 	return nodeOptionsForRun({
@@ -148,10 +161,23 @@ describe("nodeOptionsForRun", () => {
 	});
 });
 
-describe("a relaunch started with node --env-file", () => {
+describeTrustedPath(ENV_FILE_RELAUNCH, () => {
+	let root = "";
 	let work = "";
+	let binDir = "";
 	beforeEach(() => {
-		work = mkdtempSync(join(tmpdir(), "hobo-relaunch-env-file-"));
+		root = mkdtempSync(join(tmpdir(), "hobo-relaunch-env-file-"));
+		work = join(root, "work");
+		binDir = join(root, "bin");
+		for (const directory of [work, binDir]) {
+			mkdirSync(directory, { mode: 0o755 });
+			chmodSync(directory, 0o755);
+		}
+		writeFileSync(
+			join(binDir, "node"),
+			`#!/bin/sh\nexec '${process.execPath}' "$@"\n`,
+		);
+		chmodSync(join(binDir, "node"), 0o755);
 		writeFileSync(
 			join(work, CREDENTIAL_BINDINGS_FILE),
 			JSON.stringify({
@@ -170,7 +196,7 @@ describe("a relaunch started with node --env-file", () => {
 		);
 	});
 	afterEach(() => {
-		rmSync(work, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
 	});
 
 	it("gives the command none of the file's variables", async () => {
@@ -202,7 +228,7 @@ describe("a relaunch started with node --env-file", () => {
 				{
 					cwd: work,
 					env: {
-						PATH: process.env.PATH ?? "",
+						PATH: `${binDir}:${process.env.PATH ?? ""}`,
 						HOME: work,
 						TMPDIR: work,
 						NODE_NO_WARNINGS: "1",
