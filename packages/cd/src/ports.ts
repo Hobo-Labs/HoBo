@@ -931,9 +931,10 @@ export interface CdTelemetry {
 export type FanoutId = string & { readonly __brand: "cd.FanoutId" };
 export type FailoverId = string & { readonly __brand: "cd.FailoverId" };
 
-/** Declared topology of one Camp (from @hobo/camps / @hobo/yards; composed by WP18). */
+/** public-contract: declared topology of one Camp composed by WP18. */
 export type CampTopology = Readonly<{
 	campId: CampId;
+	physicalCampId?: CampId;
 	yardId: string;
 	stationId: string;
 	provider: string;

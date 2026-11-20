@@ -7,7 +7,7 @@ import {
 	RateScheduleEntrySchema,
 } from "../src/_generated/pricing_pb.js";
 import { resolveRateCard } from "../src/catalog.js";
-import { compareCodeUnits } from "../src/order.js";
+import { codeUnitPricingOrder } from "../src/ordering.js";
 import { quoteScenario } from "../src/quote.js";
 import {
 	compareUtcExact,
@@ -15,6 +15,7 @@ import {
 	LEGACY_TIME,
 	parseUtc,
 } from "../src/state.js";
+import type { PricingTimeOrder } from "../src/time-order.js";
 import { isQuoteVector } from "../src/types.js";
 import {
 	creditState,
@@ -24,6 +25,9 @@ import {
 	usage,
 	workload,
 } from "./fixtures.js";
+
+const textPricingTimeOrder: PricingTimeOrder = (left, right) =>
+	codeUnitPricingOrder(left ?? "9999", right ?? "9999");
 
 it("orders equal-priority credits by the actual expiry instant and preserves v2 replay", () => {
 	const scenario = makeScenario({
@@ -176,7 +180,7 @@ it("chooses the newest effective rate-card start by instant", () => {
 			agreement,
 			scenario.at,
 			scenario.horizon,
-			compareCodeUnits,
+			textPricingTimeOrder,
 			LEGACY_TIME,
 		).id,
 	).toBe(original.id);

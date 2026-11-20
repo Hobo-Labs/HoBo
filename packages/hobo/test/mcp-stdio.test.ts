@@ -47,9 +47,11 @@ describe("hobo-mcp stdio surface (3-3)", () => {
 		const result = response?.result as {
 			serverInfo: { name: string };
 			capabilities: { tools: object };
+			instructions?: string;
 		};
 		expect(result.serverInfo.name).toBe("hobo-mcp");
 		expect(result.capabilities.tools).toBeDefined();
+		expect(result.instructions).toBeUndefined();
 	});
 
 	it("tools/list has exact parity with CANONICAL_VERBS", async () => {
