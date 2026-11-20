@@ -209,7 +209,7 @@ export async function appendOnce(
  * Emit one metric point. Telemetry is advisory (the journal is the record),
  * so a failing sink never turns a committed command into an error.
  */
-export function emitMetric(
+export async function emitMetric(
 	sink: TelemetrySink,
 	point: Readonly<{
 		name: string;
@@ -219,8 +219,8 @@ export function emitMetric(
 		unit?: string;
 		kind?: "counter" | "histogram" | "gauge";
 	}>,
-): void {
-	emitMetrics(sink, [
+): Promise<void> {
+	await emitMetrics(sink, [
 		{
 			name: point.name,
 			kind: point.kind ?? "counter",

@@ -145,7 +145,7 @@ export async function appendOnce(
  * Emit one counter point. Telemetry is advisory (the journal is the record),
  * so a failing sink never turns a committed command into an error.
  */
-export function emitCounter(
+export async function emitCounter(
 	sink: TelemetrySink | undefined,
 	point: Readonly<{
 		name: string;
@@ -154,8 +154,8 @@ export function emitCounter(
 		value?: number;
 		unit?: string;
 	}>,
-): void {
-	emitMetrics(sink, [
+): Promise<void> {
+	await emitMetrics(sink, [
 		{
 			name: point.name,
 			kind: "counter",

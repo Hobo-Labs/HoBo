@@ -472,7 +472,7 @@ describe("CD read API — routes", () => {
 			now: () => 1,
 			service: {
 				health: () => ({
-					ok: true,
+					ok: false,
 					checks: [
 						{ name: "started", ok: true, detail: "fixture" },
 						{ name: "store", ok: true, detail: "fixture" },

@@ -250,12 +250,12 @@ export function leaseRunner(
 }
 
 // ── Telemetry ──────────────────────────────────────────────────────────────
-export function emit(
+export async function emit(
 	sink: TelemetrySink | undefined,
 	points: readonly OtelMetricPoint[],
-): void {
+): Promise<void> {
 	if (sink === undefined || points.length === 0) return;
-	emitMetrics(sink, points);
+	await emitMetrics(sink, points);
 }
 
 export function counter(

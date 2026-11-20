@@ -210,10 +210,10 @@ export type MetricPoint = Readonly<{
 }>;
 
 /** Telemetry is advisory (the journal is the record): a failing sink never fails a committed command. */
-export function emit(
+export async function emit(
 	sink: TelemetrySink | undefined,
 	points: readonly MetricPoint[],
-): void {
+): Promise<void> {
 	if (sink === undefined || points.length === 0) return;
-	emitMetrics(sink, points);
+	await emitMetrics(sink, points);
 }

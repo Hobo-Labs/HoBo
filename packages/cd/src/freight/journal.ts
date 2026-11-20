@@ -83,7 +83,7 @@ export function iso(ms: number): string {
  * so a failing sink never turns a committed command into an error the caller
  * would retry.
  */
-export function emitCounter(
+export async function emitCounter(
 	sink: TelemetrySink | undefined,
 	point: Readonly<{
 		name: string;
@@ -92,8 +92,8 @@ export function emitCounter(
 		attributes: Readonly<Record<string, string>>;
 		value?: number;
 	}>,
-): void {
-	emitMetrics(sink, [
+): Promise<void> {
+	await emitMetrics(sink, [
 		{
 			name: point.name,
 			kind: "counter",

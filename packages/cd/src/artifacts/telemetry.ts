@@ -15,13 +15,13 @@ export const ARTIFACT_METRICS = Object.freeze({
 	provenance: "hobo.cd.provenance.verify",
 } as const);
 
-export function emit(
+export async function emit(
 	sink: TelemetrySink | undefined,
 	name: string,
 	atMs: number,
 	attributes: OtelAttributes,
 	value = 1,
 	unit = "{event}",
-): void {
-	emitMetrics(sink, [{ name, kind: "counter", value, unit, atMs, attributes }]);
+): Promise<void> {
+	await emitMetrics(sink, [{ name, kind: "counter", value, unit, atMs, attributes }]);
 }

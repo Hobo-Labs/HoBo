@@ -43,8 +43,8 @@ describe("advisory CD metrics", () => {
 			() => emitPosture(sink, [point]),
 			() => emitPromotion(sink, point),
 			() => emitWindows(sink, point),
-		])
-			expect(send).not.toThrow();
-		await Promise.resolve();
+		]) {
+			await expect(send()).resolves.toBeUndefined();
+		}
 	});
 });

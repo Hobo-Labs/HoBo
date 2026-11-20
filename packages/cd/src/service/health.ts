@@ -24,7 +24,7 @@ export function sanitizedCdHealth(report: HealthReport): HealthReport {
 	const checks: { name: string; ok: boolean; detail: string }[] = [];
 	let reconcilers: boolean | undefined;
 	let other: boolean | undefined;
-	let valid = true;
+	let valid = report.ok === true || report.ok === false;
 	for (const check of report.checks) {
 		if (check.ok !== true && check.ok !== false) valid = false;
 		const ok = check.ok === true;
@@ -57,7 +57,6 @@ export function sanitizedCdHealth(report: HealthReport): HealthReport {
 	const present = new Set(checks.map((check) => check.name));
 	return {
 		ok:
-			report.ok === true &&
 			valid &&
 			REQUIRED_CHECK_NAMES.every((name) => present.has(name)) &&
 			checks.every((check) => !GATING_CHECK_NAMES.has(check.name) || check.ok),
