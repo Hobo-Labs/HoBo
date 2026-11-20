@@ -1,4 +1,3 @@
-
 import { createHash, randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { parseSecretRef } from "@hobo/bindings";
@@ -38,7 +37,6 @@ export const NEON_MANAGED_POSTGRES_PRODUCT_ID = "neon.managed-postgres/v1";
 // public-contract: host assertion that logical identity records and claims use the new namespace.
 export const NEON_MANAGED_LOGICAL_NAMESPACE = "neon-managed-logical/v1";
 
-
 export function createNeonManagedPostgresCandidate(
 	input: {
 		readonly evidenceSignatureValid?: boolean;
@@ -67,8 +65,7 @@ export function createNeonManagedPostgresCandidate(
 			pooling: false,
 			bootstrap: "authenticated-account",
 		},
-		
-		
+
 		producesBindingProfiles: [],
 		migrationProfiles: ["migration.postgres.pg-dump/v1"],
 		providerClass: "verified-emerging",
@@ -86,13 +83,11 @@ export function createNeonManagedPostgresCandidate(
 		supportsRotation: false,
 		supportsRevocation: false,
 		sponsorExposureMinorUnits: 0,
-		
-		
+
 		hasRegisteredDriver: false,
 		secretCustodyAvailable: input.secretCustodyAvailable ?? false,
 	};
 }
-
 
 export interface NeonManagedQuota {
 	readonly activeTimeSeconds: number;
@@ -107,7 +102,6 @@ export interface NeonManagedProjectIdentity {
 	readonly branchId: string;
 	readonly endpointId: string;
 }
-
 
 export interface NeonManagedProjectRepository {
 	readonly persistence: "durable-cas";
@@ -134,7 +128,7 @@ export interface NeonManagedAuthorization {
 export interface NeonManagedPostgresOptions {
 	readonly scope: ClaimableResolverScope;
 	readonly deriveOperationKey: ClaimableOperationKeyDeriver;
-	
+
 	readonly journal: ResourceMutationJournal & {
 		inspect(input: {
 			readonly mutationId: string;
@@ -149,20 +143,20 @@ export interface NeonManagedPostgresOptions {
 		read(
 			key: string,
 		): Promise<{ readonly ref: string; readonly value: string } | undefined>;
-		
+
 		create(key: string, value: string): Promise<void>;
 	};
-	
+
 	readonly authorize: (input: {
 		readonly scope: ClaimableResolverScope;
 		readonly request: ResolveRequest;
 		readonly operation: "read" | "create";
 		readonly desiredDigest: string;
 	}) => Promise<NeonManagedAuthorization>;
-	
+
 	readonly revalidateBeforeWrite: () => Promise<void>;
 	readonly clock: () => number;
-	
+
 	readonly probeSession?: (input: NeonManagedSession) => Promise<void>;
 }
 
@@ -246,7 +240,6 @@ function validIdentity(value: NeonManagedProjectIdentity): boolean {
 	);
 }
 
-
 export function neonManagedPostgres(input: {
 	readonly organizationId: string;
 	readonly region: string;
@@ -269,7 +262,6 @@ export function neonManagedPostgres(input: {
 	});
 }
 
-
 export async function probeNeonManagedSession(
 	input: NeonManagedSession,
 ): Promise<void> {
@@ -281,8 +273,7 @@ export async function probeNeonManagedSession(
 		port: input.port,
 		database: input.database,
 		user: input.username,
-		
-		
+
 		password: () => {
 			if (!offeredPlus || rejectedAuthentication)
 				throw new Error("required channel binding unavailable");
@@ -296,8 +287,7 @@ export async function probeNeonManagedSession(
 	if (config.enableChannelBinding !== true)
 		throw new Error("channel binding is not supported by the driver");
 	const client = new pg.Client(config);
-	
-	
+
 	const rejectAuthentication = () => {
 		rejectedAuthentication = true;
 		client.connection.stream.destroy(
@@ -380,7 +370,6 @@ export async function probeNeonManagedSession(
 		await client.end().catch(() => {});
 	}
 }
-
 
 export async function observeNeonManagedPreflight(input: {
 	readonly providerAccountId: string;
@@ -528,7 +517,6 @@ async function listProjects(
 	return refuse("Neon project inventory is incomplete");
 }
 
-
 export function createNeonManagedPostgresResolver(
 	options: NeonManagedPostgresOptions,
 ): ResourceResolver {
@@ -604,9 +592,7 @@ export function createNeonManagedPostgresResolver(
 			settings: { quota: wireQuota(limits) },
 		};
 		const desiredDigest = `sha256:${hash(JSON.stringify(desired))}`;
-		
-		
-		
+
 		const resourceRef = await claimableResourceRef(scope, request);
 		const key = `neon-managed:logical:${hash(resourceRef)}`;
 		return { name, desired, desiredDigest, key, mutationId: `${key}:create` };
