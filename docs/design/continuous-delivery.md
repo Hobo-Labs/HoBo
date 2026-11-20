@@ -34,7 +34,7 @@ Now every lane delivers through `@hobo/cd`:
 |---|---|
 | `hobo up` / `down` | `LOCAL_BUILD` Freight promoted into the deployment Camp; an in-process conductor converges it. `down` is a teardown Delta. `UpResult`/`DownResult` are unchanged. |
 | `hobo deploy *` | The CD command surface (`packages/hobo/CD.md`). |
-| Broker `deliver` | A neutral `DeliveryPolicy` (`reconciler_mode`, optional `publisher`); the deprecated `argo` engine maps to a `@hobo/cd-gitops` publisher ([upgrade notes](./delivery-policy-upgrade.md)). |
+| Broker `deliver` | A neutral `DeliveryPolicy` (`reconciler_mode`, optional `publisher`); the deprecated `argo` engine maps to a `@hobo/cd-gitops` publisher ([upgrade notes](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/delivery-policy-upgrade.md)). |
 | Pipelines, MCP, agents | The same modules; MCP tools are derived from the CLI verbs. |
 
 ## Concepts

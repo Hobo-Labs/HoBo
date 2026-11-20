@@ -2005,7 +2005,7 @@ whose named tests carry the closure.
 | CD-C03 | Evidence failed open (`healthSamples ?? [{}, {}]`) | Deterministic verification; no data is FAIL (I5) (WP9, WP10) | ✔ |
 | CD-C04 | Rollback never re-applied the prior Set | Rollback is zero exposure, then a Delta to the predecessor Set through the same gate (I7) (WP6, WP7) | ✔ |
 | CD-C05 | "Gateway-weighted" changed no traffic; three ramp vocabularies | Capability lowering onto traffic rungs; one ramp engine and `CD_RAMP_DEFAULTS` (WP10, WP14) | ✔ |
-| CD-C06 | Kubernetes fields in a neutral broker type | Neutral `DeliveryPolicy`; `destination_namespace` never read; `argo` mapped to a `cd-gitops` publisher (WP16; [upgrade notes](docs/design/delivery-policy-upgrade.md)) | ✔ |
+| CD-C06 | Kubernetes fields in a neutral broker type | Neutral `DeliveryPolicy`; `destination_namespace` never read; `argo` mapped to a `cd-gitops` publisher (WP16; [upgrade notes](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/delivery-policy-upgrade.md)) | ✔ |
 | CD-C07 | No Freight/artifact contract between any build and CD | Freight, the Freight manifest and ingest (WP1, WP3) | ✔ |
 | CD-C08 | Imperative `deliver(set)`; no reconciler for drift | Fenced per-Camp pull reconcilers, drift by observation (I2, I4) (WP7) | ✔ |
 | CD-C09 | Promotion semantics undecided | Promote carries Freight and re-runs Matching per Camp (D2); decided in [gitops-runbook-promotion.md](docs/patterns/gitops-runbook-promotion.md) (WP6, WP21) | ✔ |
