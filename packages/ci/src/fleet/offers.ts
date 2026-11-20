@@ -26,10 +26,10 @@ type OfferIdentity = Readonly<{
 	runsOn: string;
 }>;
 
-/** Isolated hosts are the box worker and a kubernetes isolated-container pod. */
 function isIsolatedHost(offer: OfferIdentity): boolean {
 	return (
 		offer.provider === "hobo-box-worker" ||
+		offer.provider === "agent37" ||
 		offer.backend === "isolated-container"
 	);
 }
@@ -42,6 +42,10 @@ function isIsolatedHost(offer: OfferIdentity): boolean {
 export function runnerModelForOffer(
 	offer: OfferIdentity,
 ): RunnerFinancialModel | undefined {
+	if (offer.provider === "agent37")
+		return RUNNER_FINANCIAL_MODELS.find(
+			(model) => model.provider === "agent37",
+		);
 	if (isIsolatedHost(offer))
 		return RUNNER_FINANCIAL_MODELS.find((model) => model.id === "hobo-box");
 	// A Dagger engine or a Sandbox under the same provider hosts no runner a

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { toJsonString } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { DesiredCiPolicySchema } from "../src/_generated/policy_pb.js";
+import { parseConfiguration } from "../src/config.js";
 import { parseCiPolicy } from "../src/policy.js";
 
 function fixture(kind: "valid" | "invalid", name: string): string {
@@ -35,6 +36,50 @@ describe("kind-specific CI policy provider shapes", () => {
 		expect(vercel?.location).toBe("remote");
 		expect(parseCiPolicy(toJsonString(DesiredCiPolicySchema, policy))).toEqual(
 			policy,
+		);
+	});
+
+	it("parses and round-trips an Agent37 pool", () => {
+		const policy = parseCiPolicy(fixture("valid", "desired-policy-agent37"));
+		expect(policy.providers[0]?.capacity).toMatchObject({
+			case: "pool",
+			value: {
+				minBoxes: 0,
+				maxBoxes: 4,
+				type: "vm",
+				region: "us",
+				size: { cpu: 2, memory: 4, disk: 20 },
+				network: {
+					allow: expect.arrayContaining(["*.actions.githubusercontent.com"]),
+				},
+			},
+		});
+		expect(Object.isFrozen(policy.providers[0]?.capacity.value)).toBe(true);
+		expect(parseCiPolicy(toJsonString(DesiredCiPolicySchema, policy))).toEqual(
+			policy,
+		);
+	});
+
+	it.each([
+		"desired-policy-agent37-non-us-default",
+		"desired-policy-agent37-oversize",
+		"desired-policy-agent37-network-limit",
+	])("rejects invalid Agent37 fixture %s through the policy parser", (name) => {
+		expect(() => parseCiPolicy(fixture("invalid", name))).toThrow(
+			"invalid CI provider declaration",
+		);
+	});
+
+	it("accepts an Agent37 offer only with the GitHub Actions backend", () => {
+		const configuration = JSON.parse(fixture("valid", "configuration"));
+		const agent37 = JSON.parse(fixture("valid", "agent37-offer"));
+		configuration.accounts[0].offers = [agent37];
+		expect(
+			parseConfiguration(JSON.stringify(configuration)).accounts[0]?.offers[0],
+		).toMatchObject({ provider: "agent37", backend: "gh-actions" });
+		agent37.backend = "sandbox";
+		expect(() => parseConfiguration(JSON.stringify(configuration))).toThrow(
+			"native provider requires its matching execution backend",
 		);
 	});
 

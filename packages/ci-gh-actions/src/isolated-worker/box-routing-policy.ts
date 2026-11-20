@@ -77,7 +77,13 @@ export const DEFAULT_RUNNER_ROUTING: RunnerRouting = {
 		trunkHeadroomFleetDeferMs: DEFAULT_TRUNK_HEADROOM_FLEET_DEFER_MS,
 		jobAdmission: "pull",
 	},
-	externalPools: [],
+	externalPools: [
+		{
+			labels: ["hobo-agent37"],
+			runnerNamePrefix: "hobo-a37-",
+			maxRunners: 4,
+		},
+	],
 	retiredVariables: [
 		"HOBO_CI_FLEET_ROUTES",
 		"HOBO_CI_FLEET_STATE",

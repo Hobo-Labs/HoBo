@@ -27,6 +27,7 @@ const REQUIRED_SETTINGS = {
 	azure: ["subscriptionId", "tenantId"],
 	vercel: ["teamId"],
 	cloudflare: ["accountId"],
+	agent37: ["workspaceId"],
 	custom: [],
 };
 

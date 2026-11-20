@@ -69,6 +69,145 @@ export const CiVercelProviderSchema = z
 	.strict()
 	.meta({ id: "VercelProvider" });
 
+const agent37Disk = z.number().int().min(1).max(1024);
+const agent37Size = (cpu: 2 | 4 | 8, memory: 4 | 8 | 16 | 32 | 64) =>
+	z
+		.object({
+			cpu: z.literal(cpu),
+			memory: z.literal(memory),
+			disk: agent37Disk,
+		})
+		.strict();
+export const CiAgent37SizeSchema = z
+	.union([
+		agent37Size(2, 4),
+		agent37Size(4, 8),
+		agent37Size(4, 16),
+		agent37Size(4, 32),
+		agent37Size(8, 64),
+	])
+	.meta({ id: "Agent37Size" });
+const agent37FreeTierLimits = [
+	{ memory: 4, maxBoxes: 8 },
+	{ memory: 8, maxBoxes: 4 },
+	{ memory: 16, maxBoxes: 2 },
+	{ memory: 32, maxBoxes: 1 },
+	{ memory: 64, maxBoxes: 0 },
+].map(({ memory, maxBoxes }) => ({
+	anyOf: [
+		{
+			properties: { allowAboveFreeTier: { const: true } },
+			required: ["allowAboveFreeTier"],
+		},
+		{
+			properties: {
+				size: {
+					properties: { memory: { const: memory } },
+					required: ["memory"],
+				},
+				maxBoxes: { maximum: maxBoxes },
+			},
+			required: ["size", "maxBoxes"],
+		},
+	],
+}));
+export const CiAgent37PoolSchema = z
+	.object({
+		minBoxes: z.number().int().min(0).max(1000),
+		maxBoxes: z.number().int().min(1).max(1000),
+		type: z.enum(["default", "vm", "performance"]),
+		size: CiAgent37SizeSchema,
+		region: z.enum(["us", "eu", "ap-south"]),
+		template: z
+			.string()
+			.max(255)
+			.regex(
+				/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?:@[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$/,
+			),
+		idleTtlSeconds: z.number().int().min(60).max(3600),
+		jobTimeoutSeconds: z.number().int().min(1).max(19800),
+		labels: z.array(base.runsOn).min(1).max(16).meta({ uniqueItems: true }),
+		network: z
+			.object({
+				allow: z
+					.array(
+						z
+							.string()
+							.min(1)
+							.max(253)
+							.regex(/^(?:\*\.)?[A-Za-z0-9][A-Za-z0-9_.:-]*$/),
+					)
+					.max(100),
+			})
+			.strict(),
+		budget: z
+			.object({
+				limitMicros: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+				period: z.literal("month"),
+				maxCreatesPerHour: z.number().int().min(1).max(10000),
+			})
+			.strict(),
+		allowAboveFreeTier: z.boolean().optional(),
+	})
+	.strict()
+	.superRefine((pool, context) => {
+		if (pool.minBoxes > pool.maxBoxes)
+			context.addIssue({
+				code: "custom",
+				path: ["minBoxes"],
+				message: "minBoxes exceeds maxBoxes",
+			});
+		if (pool.region !== "us" && pool.type === "default")
+			context.addIssue({
+				code: "custom",
+				path: ["type"],
+				message: "default boxes are available only in us",
+			});
+		if (pool.type === "default" && pool.size.cpu === 8)
+			context.addIssue({
+				code: "custom",
+				path: ["size"],
+				message: "8 vCPU boxes require vm or performance",
+			});
+		if (
+			pool.maxBoxes * pool.size.memory > 32 &&
+			pool.allowAboveFreeTier !== true
+		)
+			context.addIssue({
+				code: "custom",
+				path: ["maxBoxes"],
+				message: "pool exceeds the 32 GB free-tier ceiling",
+			});
+	})
+	.meta({
+		id: "Agent37Pool",
+		allOf: [
+			{
+				not: {
+					properties: {
+						region: { enum: ["eu", "ap-south"] },
+						type: { const: "default" },
+					},
+					required: ["region", "type"],
+				},
+			},
+			{
+				not: {
+					properties: {
+						type: { const: "default" },
+						size: { properties: { cpu: { const: 8 } }, required: ["cpu"] },
+					},
+					required: ["type", "size"],
+				},
+			},
+			...agent37FreeTierLimits,
+		],
+	});
+export const CiAgent37ProviderSchema = z
+	.object({ ...base, kind: z.literal("agent37"), pool: CiAgent37PoolSchema })
+	.strict()
+	.meta({ id: "Agent37Provider" });
+
 /** Closed, kind-discriminated provider shapes for `.hobo/ci.json`. */
 export const CiProjectProviderSchema = z
 	.discriminatedUnion("kind", [
@@ -80,6 +219,7 @@ export const CiProjectProviderSchema = z
 		CiKubernetesProviderSchema,
 		plain("hobo-box-worker", "HoboBoxWorkerProvider"),
 		CiVercelProviderSchema,
+		CiAgent37ProviderSchema,
 	])
 	.meta({ id: "Provider" });
 
@@ -90,6 +230,8 @@ export type CiKubernetesScaleSet = z.infer<typeof CiKubernetesScaleSetSchema>;
 export type CiDaggerEngine = z.infer<typeof CiDaggerEngineSchema>;
 export type CiVercelProvider = z.infer<typeof CiVercelProviderSchema>;
 export type CiVercelLocation = CiVercelProvider["location"];
+export type CiAgent37Provider = z.infer<typeof CiAgent37ProviderSchema>;
+export type CiAgent37Pool = z.infer<typeof CiAgent37PoolSchema>;
 
 /** The shipped provider schema, referenced by `ci-project.schema.json`. */
 export function ciProjectProvidersJsonSchema() {
