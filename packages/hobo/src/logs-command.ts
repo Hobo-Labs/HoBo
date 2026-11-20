@@ -4,8 +4,6 @@ import { bootLocalCamp, deploymentIdFor } from "@hobo/cli";
 import { createDefaultDevRuntime } from "./compose.js";
 
 export interface LogsCommandDeps {
-	// Factory for the runtime-local Camp whose Streamer this command tails.
-	// Defaults to the offline hello-bindle DevRuntime.
 	readonly runtimeFactory?: () => DevRuntime;
 }
 
