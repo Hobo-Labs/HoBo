@@ -1773,6 +1773,7 @@ export function createPromotionService(
 				intent,
 				deploymentMode: input.deploymentMode ?? "",
 				previewTtlMs: preview ? preview.ttlMs.toString() : "",
+				previewSourceCampId: preview ? preview.sourceCampId : "",
 			}),
 		)}`;
 	}
