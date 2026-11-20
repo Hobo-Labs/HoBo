@@ -27,9 +27,14 @@ describe("@hobo/provider-vercel", () => {
 		expect(VERCEL_DROP_URL).toBe("https://vercel.com/drop");
 	});
 
-	it("records queue impedance (prefer degrade / other provider)", () => {
+	it("records that a native queue belongs to its deployment", () => {
 		const findings = vercelImpedanceFindings({ features: ["queue"] });
-		expect(findings.some((f) => f.code === "no-native-queue")).toBe(true);
+		expect(findings).toEqual([
+			expect.objectContaining({
+				code: "deployment-owned-queue",
+				severity: "info",
+			}),
+		]);
 	});
 
 	it("parses Drop / vercel deploy output", () => {

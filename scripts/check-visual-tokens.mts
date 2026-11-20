@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import postcss, { type Rule } from "postcss";
 
@@ -72,7 +72,12 @@ function checkPairs(
 ): string[] {
 	const anchor = pairs[0]?.[1];
 	if (!anchor) throw new Error(`${source.path}: no contrast pairs configured`);
-	const values = palette(source, selector, anchor, media);
+	let values: Map<string, string>;
+	try {
+		values = palette(source, selector, anchor, media);
+	} catch (error) {
+		return [error instanceof Error ? error.message : String(error)];
+	}
 	return pairs.flatMap(([foreground, background]) => {
 		const foregroundValue = values.get(foreground);
 		const backgroundValue = values.get(background);
@@ -116,20 +121,16 @@ export function checkVisualTokens(site: Source, connect: Source): string[] {
 			`:root[data-design="${design}"][data-theme="dark"]`,
 		]),
 	];
-	try {
-		return [
-			...selectors.flatMap((selector) => checkPairs(site, selector, sitePairs)),
-			...checkPairs(connect, ":root", connectPairs),
-			...checkPairs(
-				connect,
-				":root",
-				connectPairs,
-				"(prefers-color-scheme: dark)",
-			),
-		];
-	} catch (error) {
-		return [error instanceof Error ? error.message : String(error)];
-	}
+	return [
+		...selectors.flatMap((selector) => checkPairs(site, selector, sitePairs)),
+		...checkPairs(connect, ":root", connectPairs),
+		...checkPairs(
+			connect,
+			":root",
+			connectPairs,
+			"(prefers-color-scheme: dark)",
+		),
+	];
 }
 
 function main(): number {
@@ -148,5 +149,8 @@ function main(): number {
 	return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+if (
+	process.argv[1] &&
+	import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+)
 	process.exitCode = main();
