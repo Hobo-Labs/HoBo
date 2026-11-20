@@ -1,7 +1,6 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: this exported validator parses a branch name from untrusted deployment configuration. */
 import { ResolverError } from "@hobo/core";
 
-/** A real Git branch name, not a detached commit used as a scheduler track. */
 export function vercelPreviewBranch(value: unknown): string {
 	if (
 		typeof value !== "string" ||

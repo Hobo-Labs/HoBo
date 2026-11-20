@@ -25,7 +25,6 @@ import {
 } from "./json.js";
 import type { VercelResolverOptions } from "./resolvers.js";
 
-/** A Git-built function deployment, staged without assigning production domains. */
 // public-contract: versioned Vercel Git function deployment product.
 export const VERCEL_GIT_FUNCTION_PRODUCT_ID = "vercel.function/v1";
 const API = "https://api.vercel.com";
@@ -145,8 +144,6 @@ function desired(request: ResolveRequest) {
 		operationId,
 		...(previewBranch ? { previewBranch } : undefined),
 		...(environmentVariables.length ? { environmentVariables } : undefined),
-		// Keep the existing production operation marker stable. Vercel represents
-		// preview by omitting target when creating and as null when observing.
 		...(environment === "preview" ? { environment } : undefined),
 	};
 }
@@ -168,8 +165,6 @@ function outcome(
 	};
 }
 
-/** The host supplies an independent build attestation; a Git SHA is not a hash
- * of Vercel's built output and an operation marker is not content evidence. */
 export function createVercelGitFunctionResolver(
 	options: VercelResolverOptions,
 ): ResourceResolver {
@@ -190,9 +185,7 @@ export function createVercelGitFunctionResolver(
 				environment: d.environment === "preview" ? "preview" : "production",
 				variables: d.environmentVariables,
 			});
-		} catch {
-			/* do not expose verifier errors */
-		}
+		} catch {}
 		if (!verified)
 			return refuse(
 				"Vercel deployment environment did not match the approved host context",
@@ -419,8 +412,6 @@ export function createVercelGitFunctionResolver(
 			return invalid(
 				"Vercel deployment identity, scope, revision or operation differs from the approved artifact",
 			);
-		// Adopting a source for reading is not ownership: destroying it needs
-		// the HoBo operation marker, never only a matching Git revision.
 		if (requireOwnership && meta.hoboOperation !== marker(request))
 			return refuse(
 				"Vercel deletion requires the HoBo operation marker; an adopted deployment HoBo did not create is never destroyed",
@@ -497,9 +488,7 @@ export function createVercelGitFunctionResolver(
 				revision: d.revision,
 				repository: `${d.organization}/${d.repository}`,
 			});
-		} catch {
-			/* Do not expose custody or provider details. */
-		}
+		} catch {}
 		if (
 			!proof?.queuesDrained ||
 			!proof.fencedUntilRetired ||
@@ -509,7 +498,6 @@ export function createVercelGitFunctionResolver(
 				"Vercel deployment retirement requires verified queue drain and producer fences",
 			);
 	};
-	/** Absence is a scoped, authorized inventory observation, never a 404. */
 	const observeAbsence = async (
 		request: ResolveRequest,
 		transport: HttpTransport,
@@ -540,9 +528,7 @@ export function createVercelGitFunctionResolver(
 					deploymentId,
 					credentialRef: request.credentialRef,
 				});
-			} catch {
-				/* Do not expose custody or provider details. */
-			}
+			} catch {}
 			if (
 				!proof ||
 				proof.teamId !== team ||
@@ -704,8 +690,6 @@ export function createVercelGitFunctionResolver(
 				createdHere = true;
 			}
 			if (!projectReady(request, p)) {
-				// A name match is not ownership: only a pinned project or one this
-				// reconcile created may have its build settings rewritten.
 				if (!d.projectId && !createdHere)
 					return refuse(
 						"Vercel project matched by name differs from the approved build settings and HoBo did not create it; pin its projectId to approve rewriting it",

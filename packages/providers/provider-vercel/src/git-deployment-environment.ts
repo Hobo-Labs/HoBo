@@ -1,5 +1,4 @@
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this module parses untrusted public deployment environment and signed context JSON before recording it. */
-/** Approved public deployment configuration. Credential values never enter this path. */
 import { createPublicKey } from "node:crypto";
 import { parseSecretRef } from "@hobo/bindings";
 import { canonicalJson, ResolverError } from "@hobo/core";
@@ -348,9 +347,6 @@ function cd(
 		return fail();
 }
 
-/** Parse before persisting a plan and again before issuing provider requests.
- * Signature authority, freshness and the fleet's approved membership are
- * checked by the host using the existing Junction verification machinery. */
 export function parseVercelGitEnvironment(
 	raw: JsonValue | undefined,
 	expected: VercelGitEnvironmentScope,

@@ -1,15 +1,3 @@
-/**
- * Vercel: the default Yard, plus the slot factories for authoring your own.
- *
- * `Yard()` returns Vercel's four default offerings. Its project, Git
- * function, queues, schedules, production cron and Sandbox host are opt-in
- * native offerings requiring a separately verified deployment scope.
- *
- * `VERCEL_RESOLVED_PRODUCT_IDS` identifies declared provider resolvers;
- * `vercel.edge-function/v1` is still unresolved. A declaration is not a
- * capacity, permission, cost or production-readiness claim: live operation
- * requires scoped credentials, independent evidence and the hosting supervisor.
- */
 import {
 	type VercelYardSpecOptions,
 	vercelYardSpec,
@@ -60,10 +48,6 @@ export interface VercelYardOptions
 	extends ComposedYardOptions,
 		VercelYardSpecOptions {}
 
-/**
- * The default Vercel Yard, canonicalized. Native project and deployment
- * component rows are added only when their corresponding options are given.
- */
 export function Yard(options: VercelYardOptions = {}): ParsedYard {
 	return composeYard(
 		DEFAULT_VERCEL_YARD_NAME,

@@ -1,5 +1,4 @@
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this preflight checks untrusted source and provider response fields before constructing evidence. */
-/** Read-only Vercel Git deployment source and schedule capability preflight. */
 import { parseSecretRef } from "@hobo/bindings";
 import {
 	canonicalJson,
@@ -36,9 +35,7 @@ export type VercelDeploymentPreflightInput = Readonly<{
 	credentialRef: string;
 	gitSourceAuthRef?: string;
 	components: readonly VercelDeploymentComponent[];
-	/** Additional approved function entries, including the public HTTP entry. */
 	requiredEntries?: readonly string[];
-	/** Routes approved on the HTTP binding, checked against the pinned source. */
 	requiredRoutes?: readonly {
 		readonly src: string;
 		readonly dest: string;
@@ -63,7 +60,6 @@ export type VercelDeploymentPreflightEvidence = Readonly<{
 	entriesChecked: number;
 	routesChecked: number;
 	billingPlan?: VercelBillingPlan;
-	/** These are separate provider/runtime/financial checks, not source facts. */
 	deploymentPermission: "not-observed";
 	gitLinkPermission: "not-observed";
 	scheduleCapacity: "not-observed";
@@ -162,9 +158,6 @@ function checkedComponents(components: readonly VercelDeploymentComponent[]) {
 	}
 }
 
-/** Only GETs are performed. This plans project creation, update and Git linking,
- * validates the exact remote commit and source files, and checks plan timing.
- * It does not claim budget, permissions, runtime readiness or schedule capacity. */
 export async function preflightVercelGitDeployment(
 	input: VercelDeploymentPreflightInput,
 	options: VercelResolverOptions,
@@ -461,7 +454,7 @@ export async function preflightVercelGitDeployment(
 			!["hobby", "pro", "enterprise"].includes(String(team.billing.plan))
 		)
 			return fail("Vercel team billing plan could not be verified");
-		// SAFETY: the plan was checked against the complete allowed enum.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the billing plan was checked against the complete allowed enum.
 		billingPlan = team.billing.plan as VercelBillingPlan;
 	}
 	const configuration = parseJsonValue(configResponse.body);

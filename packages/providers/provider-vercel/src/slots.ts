@@ -179,7 +179,6 @@ export function edgeFunction(
 	});
 }
 
-/** An HTTP function compiled from a pinned Git deployment. */
 export function gitFunction(
 	options: VercelGitFunctionSlotOptions = {},
 ): SlotBinding {
@@ -191,7 +190,6 @@ export function gitFunction(
 	});
 }
 
-/** Attach to an isolated Vercel Sandbox host for bounded batch jobs. */
 export function sandboxHost(
 	options: VercelSandboxHostSlotOptions = {},
 ): SlotBinding {
@@ -203,7 +201,6 @@ export function sandboxHost(
 	});
 }
 
-/** Native queue components are verified against their owning deployment. */
 export function queue(options: VercelQueueSlotOptions = {}): SlotBinding {
 	return slotBinding({
 		slot: "queue",
@@ -213,7 +210,6 @@ export function queue(options: VercelQueueSlotOptions = {}): SlotBinding {
 	});
 }
 
-/** The same native queue also supports delayed delivery. */
 export function delayedQueue(
 	options: VercelQueueSlotOptions = {},
 ): SlotBinding {
@@ -225,7 +221,6 @@ export function delayedQueue(
 	});
 }
 
-/** A private schedule attached to an owning Git deployment. */
 export function schedule(options: VercelScheduleSlotOptions = {}): SlotBinding {
 	return slotBinding({
 		slot: "service",
@@ -235,7 +230,6 @@ export function schedule(options: VercelScheduleSlotOptions = {}): SlotBinding {
 	});
 }
 
-/** An authenticated production cron attached to the owning Git deployment. */
 export function cron(options: VercelCronSlotOptions = {}): SlotBinding {
 	return slotBinding({
 		slot: "service",

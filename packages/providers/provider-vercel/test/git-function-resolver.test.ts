@@ -64,7 +64,6 @@ function fixture(
 ) {
 	const calls: TransportRequest[] = [];
 	let projectExists = options.projectExists ?? true;
-	// A Git-built deployment exists before HoBo acts and carries no HoBo marker.
 	let created = options.gitBuilt ?? false;
 	let metadata: Record<string, string> = {};
 	const transport: HttpTransport = async (call) => {

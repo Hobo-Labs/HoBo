@@ -160,7 +160,7 @@ describe("Vercel Sandbox execution host", () => {
 		{ ...proof, quote: { ...proof.quote, includesNetwork: false } },
 		{ ...proof, createAuthorized: false },
 	])("rejects insufficient, stale or incorrectly scoped proof %#", async (bad) => {
-		// SAFETY: this deliberately malformed fixture exercises the runtime proof validator.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately malformed fixture exercises the runtime proof validator.
 		const f = fixture({ evidence: bad as VercelSandboxHostProof });
 		await expect(
 			createVercelSandboxHostResolver(f.options).reconcile(

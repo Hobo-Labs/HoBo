@@ -215,9 +215,6 @@ function desired(request: ResolveRequest, product: ComponentProduct) {
 	};
 }
 
-/** A deployment owns these resources. This resolver verifies the exact
- * deployment's configuration; it never creates or deletes a second deployment.
- * A static schedule is staged here and must be observed active after promotion. */
 export function createVercelDeploymentComponentResolver(
 	options: VercelResolverOptions,
 	product: ComponentProduct,
@@ -520,17 +517,12 @@ export function createVercelDeploymentComponentResolver(
 		let verified = false;
 		try {
 			verified = (await options.verifyPreviewScheduleTrack?.(scope)) === true;
-		} catch {
-			/* Refuse without exposing provider details. */
-		}
+		} catch {}
 		if (!verified)
 			return refuse(
 				"Vercel preview schedule track is not verified for the approved deployment",
 			);
 	};
-	// Schedules without a branch run against production. Verify every current
-	// production domain's native alias, as the promotion routing adapter does,
-	// rather than mistaking a READY but still staged build for the serving one.
 	const verifyProductionTrack = async (
 		scope: {
 			readonly teamId: string;
@@ -706,7 +698,7 @@ export function createVercelDeploymentComponentResolver(
 				!["hobby", "pro", "enterprise"].includes(String(team.billing.plan))
 			)
 				return invalid("Vercel team billing plan could not be verified");
-			// SAFETY: the enum values were explicitly checked above.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the billing plan was checked against the complete allowed enum.
 			plan = team.billing.plan as VercelBillingPlan;
 		}
 		const configuration = parseJsonValue(configurationResponse.body);
@@ -967,8 +959,6 @@ export function createVercelDeploymentComponentResolver(
 				return refuse(
 					"Vercel component retirement requires its observed physical identity",
 				);
-			// A preview schedule is branch-scoped and can outlive its deployment.
-			// Disable only after verifying it still targets this exact deployment.
 			const { config } = parsed;
 			const found = await locate(parsed, transport);
 			if (!found.deployment) return;
@@ -991,9 +981,7 @@ export function createVercelDeploymentComponentResolver(
 						topic: config.component.topic,
 						entry: config.component.entry,
 					});
-				} catch {
-					/* Preserve provider credential confidentiality. */
-				}
+				} catch {}
 				if (
 					!proof?.drained ||
 					!proof.fencedUntilRetired ||

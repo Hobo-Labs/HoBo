@@ -1,6 +1,4 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: this resolver validates the untrusted Sandbox workload, provider responses and proof at its boundary. */
-/** Attach CI to Vercel Sandbox, without creating a VM during deployment. */
-
 import { parseSecretRef } from "@hobo/bindings";
 import {
 	guardTransport,
@@ -23,7 +21,6 @@ import type { VercelResolverOptions } from "./resolvers.js";
 // public-contract: versioned attach-only Vercel Sandbox host product identifier.
 export const VERCEL_SANDBOX_HOST_PRODUCT_ID = "vercel.sandbox-host/v1";
 
-/** The representative Broker lease, covering the guest and its proxy VM. */
 export type VercelSandboxWorkload = Readonly<{
 	guestDurationMs: number;
 	proxyDurationMs: number;
@@ -47,16 +44,11 @@ export type VercelSandboxHostScope = Readonly<{
 	workload: VercelSandboxWorkload;
 }>;
 
-/** Issued by a trusted host adapter, not by the untrusted app declaration.
- * The verifier must check the Vercel runtime identity, scoped permission,
- * current capacity, provider pricing and the actual Broker lease/offer. */
 export type VercelSandboxHostProof = Readonly<{
 	scope: VercelSandboxHostScope;
 	workloadIdentityVerified: true;
 	createAuthorized: true;
 	availableSlots: number;
-	/** Separate proof, bound to this same scope, that the hosting credential
-	 * and Git installation may perform the planned repository link. */
 	gitLinkAuthorization?: Readonly<{
 		authorized: true;
 		observedAtMs: number;
@@ -216,8 +208,6 @@ function evidenceRef(value: unknown): value is string {
 	);
 }
 
-/** Read-only evidence. A successful Sandbox listing proves read access only;
- * actual VM-creation authority and capacity require a separate host proof. */
 export async function preflightVercelSandboxHost(
 	input: VercelSandboxHostScope & { readonly credentialRef: string },
 	options: VercelResolverOptions,
@@ -407,7 +397,6 @@ export async function preflightVercelSandboxHost(
 	};
 }
 
-/** This resource adopts a scoped host; individual VM lifecycle belongs to the CI controller. */
 export function createVercelSandboxHostResolver(
 	options: VercelResolverOptions,
 ): ResourceResolver {

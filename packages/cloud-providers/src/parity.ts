@@ -197,15 +197,6 @@ export interface ParitySource {
 	readonly resolved: readonly string[];
 }
 
-/**
- * Where each row's two halves come from.
- *
- * Vercel's full catalog includes its opt-in project and deployment-owned
- * components. The bare Yard omits them because they need an explicitly scoped
- * deployment, but each is an expressible native offering with a resolver.
- * Measuring against the bare default would either refuse or hide those
- * resolvers. No other namespace has an opt-in row today.
- */
 // public-contract: where each parity row's catalog and resolved halves are read from.
 export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 	Object.freeze({

@@ -1,9 +1,4 @@
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: this module verifies untrusted deployment configuration JSON at the provider boundary. */
-/** Vercel queue and schedule configuration is part of a Git deployment.
- *
- * These helpers check the immutable candidate's configuration. They do not
- * claim that a scheduler has been activated, or that a workload has run.
- */
 import { ResolverError } from "@hobo/core";
 import { isJsonArray, isJsonObject, type JsonValue } from "./json.js";
 
@@ -39,7 +34,6 @@ function refuse(message: string): never {
 	throw new ResolverError("RESOLVER_PRODUCT_UNSUPPORTED", message);
 }
 
-/** Parse the numeric five-field cron grammar that Vercel accepts. */
 function cronField(input: string, minimum: number, maximum: number): number[] {
 	const values = new Set<number>();
 	for (const part of input.split(",")) {
@@ -69,8 +63,6 @@ function cronField(input: string, minimum: number, maximum: number): number[] {
 	return [...values].sort((a, b) => a - b);
 }
 
-/** Conservative shortest interval over a day, in minutes. Date restrictions
- * can only increase this interval, so the result never understates frequency. */
 export function vercelCronMinimumInterval(expression: string): number {
 	const fields = expression.trim().split(/\s+/u);
 	if (fields.length !== 5)
@@ -95,7 +87,6 @@ export function vercelCronMinimumInterval(expression: string): number {
 	return interval;
 }
 
-/** Verify that the exact entry subscribes privately to the expected topic. */
 function queueConsumer(config: JsonValue, topic: string, entry: string): void {
 	if (!isJsonObject(config) || !isJsonObject(config.functions))
 		refuse("Vercel configuration has no queue consumer functions");
@@ -113,7 +104,6 @@ function queueConsumer(config: JsonValue, topic: string, entry: string): void {
 		);
 }
 
-/** Validate a deployment's authored component against its actual plan. */
 export function verifyVercelDeploymentComponent(input: {
 	readonly configuration: JsonValue;
 	readonly component: VercelDeploymentComponent;

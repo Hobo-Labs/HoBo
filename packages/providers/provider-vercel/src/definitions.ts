@@ -387,8 +387,6 @@ export function createVercelStaticDeployDefinition(
 	};
 }
 
-/** Git-built serverless API. Selection requires independently approved
- * conformance and trust evidence supplied by the hosting operator. */
 export function createVercelGitFunctionDefinition(
 	overrides: VercelDefinitionOverrides = {},
 ): ProviderResourceDefinitionData {
@@ -513,8 +511,6 @@ export function createVercelBlobDefinition(
 	};
 }
 
-/** Deployment-owned components. They are not independent Vercel projects:
- * their resolver verifies the exact immutable Git deployment and its build. */
 export function createVercelDeploymentComponentDefinition(
 	productId: "vercel.queues/v1" | "vercel.schedules/v1" | "vercel.cron/v1",
 	overrides: VercelDefinitionOverrides = {},
@@ -581,7 +577,6 @@ export function createVercelDeploymentComponentDefinition(
 	};
 }
 
-/** Sandbox capacity is an attach-only execution host, not a pre-created VM. */
 export function createVercelSandboxHostDefinition(
 	overrides: VercelDefinitionOverrides = {},
 ): ProviderResourceDefinitionData {

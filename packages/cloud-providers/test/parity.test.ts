@@ -1,18 +1,3 @@
-/**
- * Parity taxonomy: every per-provider claim is recounted from code.
- *
- * The reason this file exists is that the resolver counts had drifted in three
- * places at once — this package's header said `aws (7/19)`, `src/aws.ts` said
- * AWS "ships no deployment resolvers", and the README said Hostinger resolved
- * 2 of 5 — while the constants in the provider packages said 8, some, and 5.
- * Each prose number was right once. None of them was checked.
- *
- * So the assertions here restate no count except Vercel's 9/10, which pins why
- * its catalog is widened. The catalog side is read through the exported
- * `PARITY_SOURCES` (no hand twin of its Yard calls); the resolved side is
- * imported straight from each provider package's `*_RESOLVED_PRODUCT_IDS`, so
- * a source wired to the wrong constant fails.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
