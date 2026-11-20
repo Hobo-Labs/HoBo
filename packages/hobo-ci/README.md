@@ -70,7 +70,9 @@ the 1Password CLI with owner information in its arguments. Provisioning and
 every reuse authenticate the token and verify that its only accessible vault is
 the configured vault. HoBo also bounds reuse to 24 hours after provisioning;
 missing, expired, or later-dated reuse leases are refused before the SDK client
-opens. Local owner-terminal setup continues to use the owner's CLI session.
+opens. A configured desktop account does not bypass these checks when a
+service-account token is held; the Connect path uses its own bearer token.
+Local owner-terminal setup continues to use the owner's CLI session.
 Remote Bitwarden cloud sign-in keeps the personal API key in the session's
 egress proxy: the run neither captures nor transmits its client secret. Private
 owner-channel failures return an explicit refusal without exposing channel

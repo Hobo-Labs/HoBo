@@ -476,10 +476,10 @@ export async function openSecretStore(
 					],
 				};
 			try {
-				if (!connectHost && !coordinates.OP_ACCOUNT) {
-					const token = parseOnePasswordServiceAccountToken(
-						signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN") ?? "",
-					);
+				const serviceAccountToken = signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN");
+				if (!connectHost && serviceAccountToken !== undefined) {
+					const token =
+						parseOnePasswordServiceAccountToken(serviceAccountToken);
 					const expiresAtText =
 						coordinates[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT];
 					const expiresAt =

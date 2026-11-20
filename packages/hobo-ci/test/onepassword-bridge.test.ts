@@ -188,7 +188,7 @@ describe("1Password SDK bridge", () => {
 			valid: "throw",
 			validated: true,
 		},
-	])("refuses $name before opening the SDK client", async (entry) => {
+	])("refuses $name before opening the SDK client when a desktop account is also configured", async (entry) => {
 		const signIn = createTrustedVault();
 		signIn.put("OP_SERVICE_ACCOUNT_TOKEN", entry.token);
 		const validate = vi.fn(async () => {
@@ -201,6 +201,7 @@ describe("1Password SDK bridge", () => {
 			"1password",
 			{
 				OP_VAULT_ID: VAULT,
+				OP_ACCOUNT: "owner@example.test",
 				...(entry.expiresAt !== undefined
 					? { OP_SERVICE_ACCOUNT_EXPIRES_AT: entry.expiresAt }
 					: undefined),
