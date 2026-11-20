@@ -101,22 +101,14 @@ type FrontmatterFields = {
 
 function parseYamlScalar(value: string): YamlScalar {
 	const scalar = value.trim();
-	if (
-		scalar.length >= 2 &&
-		scalar.startsWith('"') &&
-		scalar.endsWith('"')
-	) {
+	if (scalar.length >= 2 && scalar.startsWith('"') && scalar.endsWith('"')) {
 		try {
 			return { kind: "string", value: String(JSON.parse(scalar)) };
 		} catch {
 			return { kind: "string", value: scalar.slice(1, -1) };
 		}
 	}
-	if (
-		scalar.length >= 2 &&
-		scalar.startsWith("'") &&
-		scalar.endsWith("'")
-	) {
+	if (scalar.length >= 2 && scalar.startsWith("'") && scalar.endsWith("'")) {
 		return {
 			kind: "string",
 			value: scalar.slice(1, -1).replaceAll("''", "'"),
@@ -197,10 +189,7 @@ function strictSkillIssues(
 		}
 	}
 	const name = frontmatter.fields.get("name");
-	if (
-		name !== undefined &&
-		(name.kind !== "string" || name.value !== skill)
-	) {
+	if (name !== undefined && (name.kind !== "string" || name.value !== skill)) {
 		issues.push({
 			skill,
 			code: "name-folder-mismatch",

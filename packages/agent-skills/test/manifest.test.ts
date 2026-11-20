@@ -144,7 +144,8 @@ describe("checkSkillsConformance", () => {
 				"---\nname: hobo-setup\ndescription: d\nmetadata:\n  version: 1\n  enabled: true\n---\n",
 			"hobo-deploy":
 				'---\nname: hobo-deploy\ndescription: d\nmetadata:\n  empty: ""\n---\n',
-			draft: '---\nname: draft\ndescription: d\nmetadata:\n  version: "1"\n  enabled: \'true\'\n---\n',
+			draft:
+				"---\nname: draft\ndescription: d\nmetadata:\n  version: \"1\"\n  enabled: 'true'\n---\n",
 		});
 		const issues = await checkSkillsConformance(root);
 		const invalid = issues.filter((issue) => issue.skill !== "draft");
