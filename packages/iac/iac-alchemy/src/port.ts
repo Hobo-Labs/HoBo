@@ -52,7 +52,6 @@ export interface FinancialDecision {
 	reservation?:
 		| {
 				reservationId: string;
-				executionDigest?: string | undefined;
 				unboundedExposure?: boolean;
 				unpricedScopeProof?: UnverifiedUnpricedScopeProof | undefined;
 		  }
@@ -118,18 +117,13 @@ export type HeldFinancialDecision = Omit<
 	(
 		| {
 				budget: { evaluation: "allowed"; reservation: "held" };
-				reservation: {
-					reservationId: string;
-					executionDigest: string;
-					unboundedExposure?: false;
-				};
+				reservation: { reservationId: string; unboundedExposure?: false };
 				unpricedPolicyProof?: never;
 		  }
 		| {
 				budget: { evaluation: "bypassed"; reservation: "held" };
 				reservation: {
 					reservationId: string;
-					executionDigest: string;
 					unboundedExposure: true;
 					unpricedScopeProof: UnpricedScopeProof;
 				};

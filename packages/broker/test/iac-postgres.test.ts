@@ -97,7 +97,7 @@ describe.skipIf(url === undefined)(
 					inventoryHash: priced.inventoryHash,
 					modelHash: priced.modelHash,
 					quoteHash: priced.quote.quoteHash,
-					maximumMicrosExact: 1_500_000n,
+					maximumMicros: 1_500_000,
 					observedAt: "2026-01-01T00:00:00Z",
 					validUntil: end,
 					providerAccounts: [

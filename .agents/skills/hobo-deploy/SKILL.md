@@ -51,7 +51,8 @@ Do not replace the ceremony with instructions to create identities, tokens, or
 stores by hand. If the ceremony needs the owner and this host cannot provide the
 required secure hand-off, report that specific capability gap rather than
 asking for identifiers or values. Do not claim setup completed until HoBo
-reports completion.
+reports completion. If the owner explicitly denies a provider approval, wait
+for a new owner request before retrying that approval.
 
 ## Running `hobo ci up` / `hobo cd up` for the owner
 

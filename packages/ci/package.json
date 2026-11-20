@@ -46,10 +46,6 @@
       "types": "./dist/mesh/index.d.ts",
       "default": "./dist/mesh/index.js"
     },
-    "./insights": {
-      "types": "./dist/insights/index.d.ts",
-      "default": "./dist/insights/index.js"
-    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule, CommandRunInput } from "@hobo/cli";
 import { createTrustedVault } from "@hobo/core";
+import { createMemorySecretsPort } from "@hobo/identity";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -163,6 +164,48 @@ describe("hobo ci up through the relay's Yards", () => {
 		});
 		await up.run(input());
 		expect(delivered?.values.team).toBe("team_saved");
+	});
+
+	it("uses the CD owner connection even if CI supplied an older token", async () => {
+		const credentials = createTrustedVault();
+		credentials.put("VERCEL_TOKEN", "stale-ci-token");
+		credentials.put("VERCEL_TEAM_ID", "team_old");
+		const port = createMemorySecretsPort({ id: "memory" });
+		await port.put("HOBO_CD_VERCEL_TOKEN", "selected-cd-token");
+		await port.put("HOBO_CD_VERCEL_TEAM_ID", "team_cd");
+		let delivered: Parameters<typeof runCiRelayDeploy>[0] | undefined;
+		const up = createCiRelayUpCommand(credentials, never, {
+			ownerSettings: { read: async () => ({}), write: async () => {} },
+			openOwnerStore: async () => ({
+				chosen: true,
+				opened: { id: "bitwarden", port, reference: () => "private" },
+			}),
+			head: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
+			snapshot: async () => ({ dir: RELAY, close: async () => {} }),
+			platformDrift: async () => [],
+			deploy: async (request) => {
+				delivered = request;
+				return { ok: true, code: "HOBO_OK", message: "ok" };
+			},
+		});
+		expect((await up.run(input())).ok).toBe(true);
+		expect(delivered?.credentials?.reveal("VERCEL_TOKEN")).toBe(
+			"selected-cd-token",
+		);
+		expect(delivered?.values.team).toBe("team_cd");
+	});
+
+	it("does not fall back to a CI token when the selected CD store is unavailable", async () => {
+		const credentials = createTrustedVault();
+		credentials.put("VERCEL_TOKEN", "stale-ci-token");
+		const up = createCiRelayUpCommand(credentials, never, {
+			ownerSettings: { read: async () => ({}), write: async () => {} },
+			openOwnerStore: async () => ({ chosen: false, opened: undefined }),
+		});
+		expect((await up.run(input())).code).toBe(
+			"HOBO_CI_UP_VERCEL_NOT_CONNECTED",
+		);
+		expect(credentials.has("VERCEL_TOKEN")).toBe(false);
 	});
 
 	it("checks the deployed commit even if the working tree was edited to hide drift", async () => {

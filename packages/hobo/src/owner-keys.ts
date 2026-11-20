@@ -6,9 +6,11 @@ import { createTrustedVault, type TrustedVault } from "@hobo/core";
 import {
 	hasSecretStoreLocator,
 	type OpenedSecretStore,
+	type OwnerStoreDeps,
 	ownerStore,
-	withoutSecretEnv,
+	ownerStoreSessionEnvironment,
 } from "@hobo/hobo-ci";
+import { ownerStoreEnvironment } from "./owner-store-env.js";
 
 // Keys the composed `hobo` keeps for the owner across runs, held in the owner's
 // secret store (found through the owner's locator in their HoBo settings) and read into
@@ -58,6 +60,7 @@ export interface LoadOwnerKeysInput {
 	readonly vault?: TrustedVault;
 	/** Test seam: the opened store, or undefined when none can be opened. */
 	readonly open?: () => Promise<OpenedSecretStore | undefined>;
+	readonly ownerStoreDeps?: Pick<OwnerStoreDeps, "openStore" | "locator">;
 }
 
 async function openOwnerStore(
@@ -67,9 +70,15 @@ async function openOwnerStore(
 	// The store sign-in lives in its own vault and ends with this call.
 	const signIn = createTrustedVault();
 	try {
+		const storeEnv = await ownerStoreSessionEnvironment(
+			{ ...input.ownerStoreDeps, cwd: input.cwd },
+			input.env,
+		);
 		const owner = await ownerStore("cd", signIn, {
-			env: withoutSecretEnv(input.env),
+			env: ownerStoreEnvironment(storeEnv),
+			workloadOidc: input.env,
 			cwd: input.cwd,
+			...input.ownerStoreDeps,
 		});
 		return owner.opened;
 	} finally {
@@ -153,14 +162,14 @@ export async function loadOwnerKeys(
 			return {
 				kind: "refused",
 				code: "HOBO_PULUMI_STATE_KEY_MISSING",
-				message: `The retained Pulumi workspace has state, and ${store.id} holds no ${PULUMI_STATE_KEY}. Put the passphrase that workspace was made with in ${store.reference(PULUMI_STATE_KEY)}, then run again.`,
+				message: `The retained Pulumi workspace has state, and the selected store holds no ${PULUMI_STATE_KEY}. Reconnect using the original key through the HoBo owner hand-off.`,
 			};
 		}
 		vault.clear();
 		return {
 			kind: "refused",
 			code: "HOBO_OWNER_KEY_MISSING",
-			message: `Provision ${store.reference(name)} once in the owner's secret store before retrying. If this key already protects state or pending claims, use the original key.`,
+			message: `The selected store needs ${name}. Use the HoBo owner hand-off; if this key already protects state or pending claims, use the original key.`,
 		};
 	}
 	return { kind: "loaded", keys: loaded };

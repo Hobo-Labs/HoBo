@@ -39,6 +39,7 @@ import {
 	type OwnerStoreDeps,
 	ownerLocator,
 	ownerStore,
+	ownerStoreSessionEnvironment,
 	storeChoiceGuidance,
 	storeIdOf,
 	storeSignInGuidance,
@@ -218,7 +219,7 @@ export const VERCEL_DEPLOY_ENTRIES = Object.freeze({
 	team: "HOBO_CD_VERCEL_TEAM_ID",
 });
 
-async function loadDeployCredentials(
+export async function loadDeployCredentials(
 	store: OpenedSecretStore,
 	vault: TrustedVault,
 ): Promise<void> {
@@ -244,16 +245,33 @@ export async function prepareGithubConnection(
 	// connection. The store sign-in stays in `vault` and ends with prepare.
 	const handoff = createTrustedVault();
 	try {
-		return await prepareGithubWithVault(input, {
+		const outcome = await prepareGithubWithVault(input, {
 			...deps,
 			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
 			vault,
 			handoff,
 		});
+		try {
+			ownerLocator(deps).assertCurrent?.();
+		} catch {
+			handoff.clear();
+			return refused(
+				"HOBO_CI_OWNER_CHOICE_CHANGED",
+				"The owner changed the selected store while this operation was running.",
+				["Run hobo ci up again for the selected store."],
+			);
+		}
+		return outcome;
 	} finally {
 		// What signs this run in to the store stays for the next run, in the
 		// owner channel's memory only.
-		for (const name of KEPT_STORE_SIGN_INS) {
+		let current = true;
+		try {
+			ownerLocator(deps).assertCurrent?.();
+		} catch {
+			current = false;
+		}
+		for (const name of current ? KEPT_STORE_SIGN_INS : []) {
 			const value = vault.reveal(name);
 			if (value !== undefined) deps.ownerChannel?.vault?.put(name, value);
 		}
@@ -295,18 +313,21 @@ async function prepareGithubWithVault(
 	// The environment's own store sign-in (a Bitwarden Secrets Manager access
 	// token) moves into this run's vault and leaves the environment. It says
 	// Bitwarden is configured here; it is used only if the owner chose it.
-	const storeSignIn = adoptStoreSignIn(
-		deps.env === undefined ? process.env : { ...deps.env },
-		deps.vault,
-	);
+	const storeEnv = await ownerStoreSessionEnvironment(deps, env);
+	const storeSignIn =
+		storeEnv === env &&
+		adoptStoreSignIn(
+			deps.env === undefined ? process.env : { ...deps.env },
+			deps.vault,
+		);
 	const notice = ignoredSecretEnvNotice(
 		storeSignIn ? withoutStoreSignIn(env) : env,
 	);
 	if (notice !== undefined) input.run.emitProgress(notice);
-	const plainEnv = withoutSecretEnv(env);
-	if (env.HOBO_SECRET_STORE) {
+	const plainEnv = withoutSecretEnv(storeEnv);
+	if (storeEnv.HOBO_SECRET_STORE) {
 		try {
-			storeIdOf(env.HOBO_SECRET_STORE);
+			storeIdOf(storeEnv.HOBO_SECRET_STORE);
 		} catch (error) {
 			if (!(error instanceof InvalidSecretStoreError)) throw error;
 			return refused("HOBO_CI_SECRET_STORE_INVALID", error.message, [
@@ -314,7 +335,7 @@ async function prepareGithubWithVault(
 			]);
 		}
 		// The validated choice is a non-secret setting despite its name.
-		plainEnv.HOBO_SECRET_STORE = env.HOBO_SECRET_STORE;
+		plainEnv.HOBO_SECRET_STORE = storeEnv.HOBO_SECRET_STORE;
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
@@ -593,7 +614,7 @@ async function prepareGithubWithVault(
 				{
 					id: "github-app",
 					outcome: "unchanged",
-					detail: `already in ${owner.opened.id} (${owner.opened.reference("HOBO_CI_GITHUB_APP_ID")})`,
+					detail: `already in ${owner.opened.id}`,
 				},
 			],
 		};
@@ -730,7 +751,7 @@ async function prepareGithubWithVault(
 				{
 					id: "github-app",
 					outcome: created.kind,
-					detail: `credentials in ${owner.opened.id} (${owner.opened.reference("HOBO_CI_GITHUB_APP_ID")})`,
+					detail: `credentials in ${owner.opened.id}`,
 				},
 			],
 		};
@@ -891,7 +912,7 @@ async function prepareGithubWithVault(
 			{
 				id: "github-app",
 				outcome: github?.outcome() ?? "unchanged",
-				detail: `credentials in ${step.store}: ${step.references.join(", ")}`,
+				detail: `credentials in ${step.store}`,
 			},
 		],
 	};

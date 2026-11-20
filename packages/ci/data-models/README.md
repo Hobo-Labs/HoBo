@@ -44,11 +44,3 @@ valid/invalid fleet fixtures cover positive attempts, fixed-capacity limits, Lin
 x64 profiles, and rejection of raw binding credentials. Store conformance protects
 the transactional boundary with SQLite and opt-in Testcontainers PostgreSQL lanes;
 these gates do not claim live-provider production readiness.
-
-`runner_route.proto` owns the runner order (`RunnerOrder`, its steps and retry
-policy), one relay job's question (`RunnerRouteRequest`) and the answer
-(`RunnerRouteDecision` with every step passed over). `runner_route.cue`
-constrains them: a minutes limit only on `github`, a spend limit only on a
-hosted provider, and a decision whose fields agree with its outcome. Step
-uniqueness is a cross-element rule `parseRunnerOrder` enforces. Fixtures are
-under `fixtures/runner_route/`.

@@ -39,6 +39,62 @@ function fakeNeon(failOn?: string) {
 }
 
 describe("prepareJournalFleet", () => {
+	it("keeps the store selection fixed while creating and recording the fleet", async () => {
+		const base = memoryStore();
+		let locked = false;
+		const store: OpenedSecretStore = {
+			...base,
+			withWriteLock: async (operation) => {
+				locked = true;
+				try {
+					return await operation();
+				} finally {
+					locked = false;
+				}
+			},
+			port: {
+				...base.port,
+				put: async (name, value) => {
+					expect(locked).toBe(true);
+					return base.port.put(name, value);
+				},
+			},
+		};
+		const neon = fakeNeon();
+		const provisioner: JournalMemberProvisioner = {
+			...neon.provisioner,
+			create: async (input) => {
+				expect(locked).toBe(true);
+				return neon.provisioner.create(input);
+			},
+		};
+		await prepareJournalFleet({ store, provisioners: [provisioner] });
+		expect(locked).toBe(false);
+	});
+	it("re-reads fleet state after acquiring the write lock", async () => {
+		const base = memoryStore();
+		const store: OpenedSecretStore = {
+			...base,
+			withWriteLock: async (operation) => {
+				await base.port.put(
+					journalMemberUrlEntry("journal-1"),
+					"postgresql://existing.example/db",
+				);
+				await familySettings(base, "cd").write({ OTHER: "keep" });
+				return operation();
+			},
+		};
+		const neon = fakeNeon();
+		await prepareJournalFleet({ store, provisioners: [neon.provisioner] });
+		expect(neon.created).not.toContain("journal-1");
+		expect(
+			(await base.port.access(journalMemberUrlEntry("journal-1"))).material,
+		).toBe("postgresql://existing.example/db");
+		expect(await familySettings(base, "cd").read()).toMatchObject({
+			OTHER: "keep",
+		});
+	});
+
 	it("creates the members the journal's policy asks for and a witness, into the store", async () => {
 		const store = memoryStore();
 		const neon = fakeNeon();
@@ -63,6 +119,7 @@ describe("prepareJournalFleet", () => {
 		// The step says where things are, never what they are.
 		expect(step.detail).not.toContain("postgresql://");
 		expect(step.detail).not.toContain("neon.new/claim");
+		expect(step.detail).not.toContain("infisical://proj/");
 		expect(await familySettings(store, "cd").read()).toMatchObject({
 			HOBO_CD_POSTGRES_FLEET:
 				"journal-1:neon-claimable,journal-2:neon-claimable,journal-3:neon-claimable",

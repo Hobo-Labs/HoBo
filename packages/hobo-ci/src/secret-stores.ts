@@ -77,6 +77,14 @@ export interface OpenedSecretStore {
 	readonly id: SecretStoreId;
 	readonly port: SecretsPort;
 	readonly reference: (name: string) => string;
+	readonly withWriteLock?: <T>(operation: () => Promise<T>) => Promise<T>;
+}
+
+export function withStoreWriteLock<T>(
+	store: OpenedSecretStore,
+	operation: () => Promise<T>,
+): Promise<T> {
+	return store.withWriteLock ? store.withWriteLock(operation) : operation();
 }
 
 export type SecretStoreOpening =

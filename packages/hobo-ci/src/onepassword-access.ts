@@ -125,6 +125,18 @@ export async function provisionOnePasswordAccess(
 	const cli = onePasswordCli(options.platform ?? currentPlatform());
 	const exists = options.exists ?? existsSync;
 	const remote = !options.interactive;
+	if (
+		remote &&
+		options.owner !== undefined &&
+		options.owner.privateSubprocessAllowed !== true
+	)
+		return refused(
+			"PRIVATE_PROCESS_UNAVAILABLE",
+			"This session cannot provision a 1Password connection without exposing owner settings to subprocess arguments.",
+			[
+				"Use an already-connected 1Password session or a private owner setup environment.",
+			],
+		);
 	if (remote && options.owner === undefined)
 		return refused(
 			"SIGN_IN",

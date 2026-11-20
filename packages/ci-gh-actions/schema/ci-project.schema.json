@@ -63,9 +63,6 @@
     "runnerRouting": {
       "$ref": "#/$defs/RunnerRouting"
     },
-    "runnerOrder": {
-      "$ref": "#/$defs/RunnerOrder"
-    },
     "turboCache": {
       "$ref": "#/$defs/TurboCache"
     }
@@ -1471,134 +1468,11 @@
       "type": "string",
       "pattern": "^HOBO_CI_[A-Z0-9_]{1,60}$"
     },
-    "RunnerOrder": {
-      "type": "object",
-      "properties": {
-        "steps": {
-          "$ref": "#/$defs/__schema113"
-        },
-        "skipUnhealthy": {
-          "$ref": "#/$defs/__schema115"
-        },
-        "retry": {
-          "$ref": "#/$defs/__schema116"
-        },
-        "autoSizeVcpus": {
-          "$ref": "#/$defs/__schema117"
-        }
-      },
-      "required": [
-        "steps"
-      ],
-      "additionalProperties": false
-    },
-    "__schema113": {
-      "minItems": 1,
-      "maxItems": 16,
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/__schema114"
-      }
-    },
-    "__schema114": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string",
-          "enum": [
-            "fleet",
-            "machine",
-            "github",
-            "blacksmith",
-            "depot",
-            "namespace",
-            "warpbuild",
-            "ubicloud",
-            "boat",
-            "runs-on"
-          ]
-        },
-        "minutesLimitPercent": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100
-        },
-        "spendLimitUsd": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 100000
-        }
-      },
-      "required": [
-        "key"
-      ],
-      "additionalProperties": false
-    },
-    "__schema115": {
-      "type": "boolean"
-    },
-    "__schema116": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "runner": {
-          "type": "string",
-          "enum": [
-            "any",
-            "same",
-            "other"
-          ]
-        },
-        "max": {
-          "anyOf": [
-            {
-              "type": "number",
-              "const": 1
-            },
-            {
-              "type": "number",
-              "const": 2
-            }
-          ]
-        }
-      },
-      "required": [
-        "runner",
-        "max"
-      ],
-      "additionalProperties": false
-    },
-    "__schema117": {
-      "anyOf": [
-        {
-          "type": "number",
-          "const": 2
-        },
-        {
-          "type": "number",
-          "const": 4
-        },
-        {
-          "type": "number",
-          "const": 8
-        },
-        {
-          "type": "number",
-          "const": 16
-        },
-        {
-          "type": "number",
-          "const": 32
-        }
-      ]
-    },
     "TurboCache": {
       "type": "object",
       "properties": {
         "api": {
-          "$ref": "#/$defs/__schema118"
+          "$ref": "#/$defs/__schema113"
         }
       },
       "required": [
@@ -1606,7 +1480,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema118": {
+    "__schema113": {
       "anyOf": [
         {
           "type": "string",

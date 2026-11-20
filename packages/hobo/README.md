@@ -53,12 +53,7 @@ supplies tenant-scoped planning evidence, independent revalidation, a trusted
 clock, and final provider-account/entitlement settlement evidence. Paid charges
 and shared credits are reserved together before deployment facts are published.
 Each charge stays with its source or destination billing account; credit scope
-and cost class remain part of the pinned plan. Hosting free-tier snapshots,
-claims and settlement evidence use the explicit `allowance` entitlement kind;
-older hosting snapshots and settlement evidence without a kind retain that same
-meaning, including snapshots supplied by custom durable authorities.
-Legacy v1 fenced settlement evidence stays kindless for signature verification;
-the bridge does not inject a kind into that signed payload.
+and cost class remain part of the pinned plan.
 
 Execution adopts the gateway's existing reservation through an atomic claim.
 Another transition cannot spend the same authorization. A lost provider response

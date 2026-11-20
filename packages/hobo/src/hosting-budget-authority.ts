@@ -22,8 +22,6 @@ import {
 	type SharedHostingBudgetAuthority,
 } from "@hobo/cloud";
 
-const hostingFreeTierKind = "allowance";
-
 /** Trusted adapter wiring: these callbacks read server-owned evidence, never
  * return the caller's proposal unchanged without independently verifying it. */
 export function createHostingBudgetAuthorityBridge(options: {
@@ -194,13 +192,11 @@ export function createHostingBudgetAuthorityBridge(options: {
 		for (const entitlement of input.entitlements) {
 			const normalized = scaleFor(entitlement, input),
 				bucket = snapshot.entitlements.find(
-					(row) =>
-						(row.kind === hostingFreeTierKind || row.kind === "") &&
-						row.bucketId === entitlement.id &&
-						row.unit === normalized.unit,
+					(row) => row.bucketId === entitlement.id,
 				);
 			if (
 				!bucket ||
+				bucket.unit !== normalized.unit ||
 				bucket.periodId !== budget.periodId ||
 				baseUnits(entitlement.remainingQuantity, normalized.scale) !==
 					bucket.remainingUnits - bucket.reservedUnits ||
@@ -372,10 +368,7 @@ export function createHostingBudgetAuthorityBridge(options: {
 					);
 				check(commitment.evidence, current, at);
 				const providers = new Map<string, number>(),
-					claims = new Map<
-						string,
-						{ kind: string; bucketId: string; unit: string; units: number }
-					>();
+					claims = new Map<string, number>();
 				for (const allocation of commitment.allocations) {
 					if (!allocation.providerCharges?.length)
 						throw new Error(
@@ -396,23 +389,13 @@ export function createHostingBudgetAuthorityBridge(options: {
 						if (!entitlement || entitlement.unit !== claim.unit)
 							throw new Error("missing held entitlement or mismatched unit");
 						const scale = scaleFor(entitlement, commitment.evidence);
-						const scope = {
-							kind: hostingFreeTierKind,
-							bucketId: entitlement.id,
-							unit: scale.unit,
-						};
-						const key = JSON.stringify([
-							scope.kind,
-							scope.bucketId,
-							scope.unit,
-						]);
-						claims.set(key, {
-							...scope,
-							units: sum(
-								claims.get(key)?.units ?? 0,
+						claims.set(
+							entitlement.id,
+							sum(
+								claims.get(entitlement.id) ?? 0,
 								baseUnits(claim.quantity, scale.scale),
 							),
-						});
+						);
 					}
 				}
 				const quote = create(HostingQuoteSchema, {
@@ -442,9 +425,17 @@ export function createHostingBudgetAuthorityBridge(options: {
 								liabilityMicros,
 							}),
 					),
-					entitlementClaims: [...claims.values()].map((claim) =>
-						create(EntitlementClaimSchema, claim),
-					),
+					entitlementClaims: [...claims].map(([bucketId, units]) => {
+						const entitlement = commitment.evidence.entitlements.find(
+							(row) => row.id === bucketId,
+						);
+						if (!entitlement) throw new Error("missing financial scope");
+						return create(EntitlementClaimSchema, {
+							bucketId,
+							unit: scaleFor(entitlement, commitment.evidence).unit,
+							units,
+						});
+					}),
 				});
 				await authority.reserve({
 					reservationId: request.reservationId,
@@ -539,27 +530,7 @@ export function createHostingBudgetAuthorityBridge(options: {
 				await authority.settle(
 					row.reservationId,
 					integer(actual.actualMicros),
-					{
-						...actual,
-						entitlementClaims: (actual.entitlementClaims ?? []).map((claim) => {
-							const legacyFence =
-								!!row.fenceSettlementGuard &&
-								row.fenceSettlementPayloadVersion === "";
-							if (legacyFence) {
-								if (claim.kind !== "" && claim.kind !== hostingFreeTierKind)
-									throw new Error("unsupported hosting entitlement kind");
-								return create(EntitlementClaimSchema, { ...claim, kind: "" });
-							}
-							const normalized =
-								claim.kind === "" ? hostingFreeTierKind : claim.kind;
-							if (normalized !== hostingFreeTierKind)
-								throw new Error("unsupported hosting entitlement kind");
-							return create(EntitlementClaimSchema, {
-								...claim,
-								kind: hostingFreeTierKind,
-							});
-						}),
-					},
+					actual,
 				);
 				if (actual.actualMicros !== request.settledMicros)
 					return {

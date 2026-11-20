@@ -50,7 +50,7 @@ import {
 
 // public-contract: the capture name of the writer identity's one-use client secret.
 export const WRITER_SECRET_NAME = "INFISICAL_WRITER_CLIENT_SECRET";
-// public-contract: the writer identity's name, as the hobo-deploy skill has the owner create it.
+// public-contract: the secret-capture writer identity name.
 export const WRITER_IDENTITY_NAME = "hobo-secret-writer";
 /** The longest a writer session lasts, whatever the token's own lifetime. */
 export const WRITER_SESSION_MAX_MS = 15 * 60_000;
@@ -62,18 +62,6 @@ const DEPLOY_SECRET_PATH = "/";
 const NEXT_STEP_CONNECT =
 	"Start HoBo's private owner setup for the owner's existing store. This relay capture adapter also needs a supported connection before capture can continue.";
 
-/**
- * What a relay deployment still captures from a person (ADR-0179 amendment
- * "Secretless first"): nothing on the default path. The GitHub App's
- * credentials go from GitHub's manifest conversion straight into the store
- * (`hobo ci app deposit`); the session key, the Sandbox proxy key and
- * CRON_SECRET are derived from the App key; the deploy needs no token
- * (Vercel's Git integration); the default cache member is Vercel Blob over
- * OIDC. What remains are credentials of optional third-party cache members
- * that offer no workload identity, for an owner who chooses one. Shapes
- * follow the relay's loader (`relay-runtime-config-schema.ts`), which stays
- * the authority and re-checks every value it reads.
- */
 export const RELAY_SECRET_CAPTURE_SPECS: readonly ParsedSecretCaptureSpec[] =
 	Object.freeze([
 		secretCaptureSpec({

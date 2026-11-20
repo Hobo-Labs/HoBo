@@ -1,29 +1,5 @@
 #!/usr/bin/env node
-/**
- * Whether the relay deploy workflow deploys this run (ADR-0179 phase 6).
- *
- * Two questions, both answered before anything is installed:
- *
- * 1. Is a secret store bound to the relay? The store is chosen and
- *    provisioned when the HoBo deployment first runs
- *    (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
- *    chosen at deploy, provisioned by claim"), which commits its coordinates
- *    to `packages/ci-vercel/deploy/secret-store.binding.json`. Until then the
- *    job ends with a notice and succeeds. No repository variable or secret is
- *    read: the gate is the committed binding.
- * 2. For a push: does the pushed range touch the relay? The relay's inputs are
- *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
- *    closure (`importerClosure`, the release OCI impact tooling's), plus this
- *    workflow and this gate. A manual run always deploys.
- *
- * Prints `run=true|false`, `reason=<text>` and `deadline=<ISO time>` to
- * `--github-output`, or to stdout without it. The deadline is when
- * `hobo ci deploy --adopt` must be done (`--deadline`): the deploy job's
- * timeout less a margin, counted from this step, which runs right after
- * checkout, so whatever the install and build take comes out of the adopt
- * budget and the command ends with a typed reason before the job is killed. A range it cannot read (a new branch, a force push, a
- * missing commit) deploys: a redundant deploy is cheap, a skipped one is not.
- */
+
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,7 +14,22 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 /** Inputs outside the workspace graph that change what a deploy does. */
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
+	".github/actions/ci-runner-preflight",
+	".github/actions/pnpm-store",
 	"scripts/ci/relay-deploy-gate.mts",
+	"package.json",
+	"pnpm-lock.yaml",
+	"pnpm-workspace.yaml",
+	"turbo.json",
+	"tsconfig.base.json",
+	"tsconfig.json",
+	"biome.json",
+] as const;
+
+export const RELAY_OPTIONAL_ROOT_INPUTS = [
+	".npmrc",
+	".pnpmfile.cjs",
+	".pnpmfile.mjs",
 ] as const;
 
 /** The relay's committed secret store binding: coordinates only. */
@@ -48,13 +39,8 @@ export const RELAY_SECRET_STORE_BINDING =
 /** The deploy job's `timeout-minutes` in relay-deploy.yml (CI caps every job at 20). */
 export const RELAY_DEPLOY_JOB_TIMEOUT_MINUTES = 20;
 
-/**
- * Held back from the job's timeout: the runner's setup and checkout before
- * this step, and the adopt step's summary after the command ends.
- */
 export const RELAY_DEPLOY_JOB_MARGIN_MINUTES = 3;
 
-/** When `hobo ci deploy --adopt` must end, counted from the gate's own run. */
 export function adoptDeadline(nowMs: number): string {
 	return new Date(
 		nowMs +
@@ -66,11 +52,20 @@ export function adoptDeadline(nowMs: number): string {
 /** What the gate knows of the binding; it never reads a value out. */
 export type StoreBindingState = "absent" | "unreadable" | "bound";
 
-export type GateDecision = Readonly<{ run: boolean; reason: string }>;
+export type GateDecision = Readonly<{
+	run: boolean;
+	reason: string;
+	error?: boolean;
+}>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
-	return [...importerClosure(parseLockfile(lockfileText), [RELAY_PACKAGE_DIR])]
+	return [
+		...importerClosure(parseLockfile(lockfileText), [
+			RELAY_PACKAGE_DIR,
+			"packages/hobo",
+		]),
+	]
 		.filter((dir) => dir !== "." && dir !== "")
 		.sort();
 }
@@ -80,10 +75,12 @@ export function touchesRelay(
 	changed: readonly string[],
 	inputDirs: readonly string[],
 ): boolean {
-	const extra = new Set<string>(RELAY_EXTRA_INPUTS);
 	return changed.some(
 		(file) =>
-			extra.has(file) ||
+			RELAY_EXTRA_INPUTS.some(
+				(input) => file === input || file.startsWith(`${input}/`),
+			) ||
+			RELAY_OPTIONAL_ROOT_INPUTS.some((input) => file === input) ||
 			inputDirs.some((dir) => file === dir || file.startsWith(`${dir}/`)),
 	);
 }
@@ -117,12 +114,14 @@ export function decide(input: {
 	if (input.store === "absent")
 		return {
 			run: false,
-			reason: `no secret store is bound to the relay yet: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
+			error: true,
+			reason: `the relay runtime configuration ${RELAY_SECRET_STORE_BINDING} is missing; use the HoBo owner hand-off to restore the connection`,
 		};
 	if (input.store === "unreadable")
 		return {
 			run: false,
-			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
+			error: true,
+			reason: `${RELAY_SECRET_STORE_BINDING} is not a valid relay runtime configuration; use the HoBo owner hand-off to repair it`,
 		};
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
@@ -185,8 +184,9 @@ function main(argv: readonly string[]): void {
 	process.stdout.write(
 		decision.run
 			? `Deploying the relay: ${decision.reason}.\n`
-			: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
+			: `::${decision.error ? "error" : "notice"} title=Relay deploy skipped::${decision.reason}.\n`,
 	);
+	if (decision.error) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -1,4 +1,15 @@
+import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
+
+export interface OwnerSettingsStore extends SettingsStore {
+	readonly hasSessionChoice?: () => boolean;
+	readonly onOwnerChoice?: () => void;
+	readonly assertCurrent?: () => void;
+	readonly selectionSignal?: AbortSignal;
+	readonly hasPendingWrites?: () => boolean;
+	readonly markUncertainWrite?: () => void;
+	readonly runStoreWrite?: <T>(write: () => Promise<T>) => Promise<T>;
+}
 
 /**
  * How a ceremony reaches the owner when they are not at the machine (a
@@ -8,6 +19,7 @@ import type { TrustedVault } from "@hobo/core";
  * HoBo MCP App's secret capture, for one).
  */
 export interface OwnerChannel {
+	readonly privateSubprocessAllowed?: boolean;
 	/** Show the owner a link for the named capture, and why. */
 	openUrl(url: string, message: string, captureName: string): Promise<void>;
 	/** Ask for a secret; `undefined` when the owner declined or did not answer. */
@@ -18,6 +30,9 @@ export interface OwnerChannel {
 	}): Promise<string | undefined>;
 	/** Whether a value the owner handed over is waiting, without taking it. */
 	holds(name: string): boolean;
+	reserveCaptures?(names: readonly string[]): void;
+	requestCaptures?(names: readonly string[]): Promise<void>;
+	forScope?(family: "ci" | "cd", cwd: string): OwnerChannel;
 	/**
 	 * Show the owner a link now, while the run waits on what they do there (a
 	 * device code to approve). Through the HoBo MCP server: the host's own
@@ -36,6 +51,14 @@ export interface OwnerChannel {
 		readonly url: string;
 		readonly message: string;
 	}): Promise<boolean | undefined>;
+	canConfirm?(): boolean;
+	choose?(request: {
+		readonly message: string;
+		readonly choices: readonly {
+			readonly value: string;
+			readonly label: string;
+		}[];
+	}): Promise<string | undefined>;
 	/**
 	 * Work that waits on the owner, run off the request path (a device grant
 	 * the owner approves): the call that starts it returns at once, and a
@@ -47,6 +70,12 @@ export interface OwnerChannel {
 	 * file): the store sign-in HoBo created, so the owner signs in once.
 	 */
 	readonly vault?: TrustedVault;
+	readonly storeSettings?: OwnerSettingsStore;
+	readonly vaultFor?: (family: "ci" | "cd", cwd: string) => TrustedVault;
+	readonly storeSettingsFor?: (
+		family: "ci" | "cd",
+		cwd: string,
+	) => OwnerSettingsStore;
 }
 
 /** The store sign-ins a run may keep in the owner channel's vault. */
@@ -54,6 +83,9 @@ export const KEPT_STORE_SIGN_INS = [
 	"INFISICAL_TOKEN",
 	"OP_SERVICE_ACCOUNT_TOKEN",
 	"BWS_ACCESS_TOKEN",
+	"BW_CLIENTID",
+	"BW_CLIENTSECRET",
+	"BITWARDEN_ORG_KEY",
 ] as const;
 
 /** A job's state, as a later call reads it. */
@@ -169,6 +201,8 @@ export async function captureAll(
 		readonly instructions: string;
 	}[],
 ): Promise<readonly string[] | undefined> {
+	owner.reserveCaptures?.(requests.map((request) => request.name));
+	await owner.requestCaptures?.(requests.map((request) => request.name));
 	if (!requests.every((request) => owner.holds(request.name))) return undefined;
 	const values: string[] = [];
 	for (const request of requests) {

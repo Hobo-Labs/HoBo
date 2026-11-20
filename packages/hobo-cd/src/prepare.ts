@@ -1,9 +1,4 @@
-import type {
-	CommandResult,
-	PreparedStep,
-	PrepareInput,
-	PrepareOutcome,
-} from "@hobo/cli";
+import type { CommandResult, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	type CeremonySetting,
 	type ConnectFlow,
@@ -29,6 +24,7 @@ import {
 	openInBrowser,
 	ownerLocator,
 	ownerStore,
+	ownerStoreSessionEnvironment,
 	provisionInfisicalAccess,
 	provisionOnePasswordAccess,
 	runPage,
@@ -41,6 +37,7 @@ import {
 	storeSignInGuidance,
 	withoutSecretEnv,
 	withoutStoreSignIn,
+	withStoreWriteLock,
 	workloadOidcOf,
 } from "@hobo/hobo-ci";
 
@@ -69,10 +66,6 @@ import {
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "./vercel-device.js";
-import {
-	type CdWorkloadDeps,
-	ensureCdWorkloadIdentity,
-} from "./workload-identity.js";
 
 // `hobo cd up`'s prepare step: an interactive ceremony that sets up whatever
 // the Vercel connection is missing — HoBo CD's Vercel Integration (slug and
@@ -152,12 +145,13 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly handOffTimeoutMs?: number;
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
+	/**
+	 * public-contract: what creates the CD journal's fleet members
+	 * (`journal-fleet.ts`). With none, `hobo cd up` provisions no journal and
+	 * the CD runtime keeps its single-process SQLite journal.
+	 */
 	readonly journalProvisioners?: readonly JournalMemberProvisioner[];
-	readonly workload?: CdWorkloadDeps;
 }
-
-// public-contract: the project name hobo cd up delivers CD to and trusts tokens from.
-export const CD_VERCEL_PROJECT = "hobo-cd";
 
 function refused(
 	code: string,
@@ -206,10 +200,9 @@ async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
 	vault: TrustedVault,
-	deps: PrepareVercelDeps,
+	provisioners: readonly JournalMemberProvisioner[] | undefined,
 	matches: (connection: StoredVercelConnection) => boolean,
 ): Promise<PrepareOutcome> {
-	const provisioners = deps.journalProvisioners;
 	const resolved = await resolveVercelJunction(store, vault, matches);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
@@ -224,24 +217,6 @@ async function ready(
 				"Run hobo cd up again; if it persists, check access to the secret store.",
 			]);
 	}
-	let identity: PreparedStep;
-	try {
-		identity = await ensureCdWorkloadIdentity({
-			store,
-			vault,
-			project: CD_VERCEL_PROJECT,
-			environment: "preview",
-			...(deps.workload !== undefined ? { deps: deps.workload } : undefined),
-		});
-	} catch (error) {
-		return refused(
-			"HOBO_CD_WORKLOAD_IDENTITY_FAILED",
-			`The identity HoBo.CD on Vercel reads its journal with could not be made: ${error instanceof Error ? error.message : String(error)}`,
-			[
-				"Run hobo cd up again; if it persists, check that your Infisical sign-in may manage identities in the project.",
-			],
-		);
-	}
 	return {
 		kind: "ready",
 		steps: [
@@ -251,7 +226,6 @@ async function ready(
 				detail: `junction ${resolved.junction.name} (${resolved.junction.yards.map((y) => y.name).join(" <-> ")}); credential in ${store.id}`,
 			},
 			...journal,
-			identity,
 		],
 		credentials: vault,
 	};
@@ -270,12 +244,27 @@ export async function prepareVercelConnection(
 			fetch: deps.fetch ?? lazyEgressFetch(deps.env ?? process.env),
 			vault,
 		});
+		try {
+			ownerLocator(deps).assertCurrent?.();
+		} catch {
+			return refused(
+				"HOBO_CD_OWNER_CHOICE_CHANGED",
+				"The owner changed the selected store while this operation was running.",
+				["Run hobo cd up again for the selected store."],
+			);
+		}
 		handedOff = outcome.kind === "ready" && outcome.credentials === vault;
 		return outcome;
 	} finally {
 		// What signs this run in to the store stays for the next run, in the
 		// owner channel's memory only.
-		for (const name of KEPT_STORE_SIGN_INS) {
+		let current = true;
+		try {
+			ownerLocator(deps).assertCurrent?.();
+		} catch {
+			current = false;
+		}
+		for (const name of current ? KEPT_STORE_SIGN_INS : []) {
 			const value = vault.reveal(name);
 			if (value !== undefined) deps.ownerChannel?.vault?.put(name, value);
 		}
@@ -292,18 +281,21 @@ async function prepareVercelWithVault(
 	// The environment's own store sign-in (a Bitwarden Secrets Manager access
 	// token) moves into this run's vault and leaves the environment. It says
 	// Bitwarden is configured here; it is used only if the owner chose it.
-	const storeSignIn = adoptStoreSignIn(
-		deps.env === undefined ? process.env : { ...deps.env },
-		deps.vault,
-	);
+	const storeEnv = await ownerStoreSessionEnvironment(deps, env);
+	const storeSignIn =
+		storeEnv === env &&
+		adoptStoreSignIn(
+			deps.env === undefined ? process.env : { ...deps.env },
+			deps.vault,
+		);
 	const notice = ignoredSecretEnvNotice(
 		storeSignIn ? withoutStoreSignIn(env) : env,
 	);
 	if (notice !== undefined) input.run.emitProgress(notice);
-	const plainEnv = withoutSecretEnv(env);
-	if (env.HOBO_SECRET_STORE) {
+	const plainEnv = withoutSecretEnv(storeEnv);
+	if (storeEnv.HOBO_SECRET_STORE) {
 		try {
-			storeIdOf(env.HOBO_SECRET_STORE);
+			storeIdOf(storeEnv.HOBO_SECRET_STORE);
 		} catch (error) {
 			if (!(error instanceof InvalidSecretStoreError)) throw error;
 			return refused("HOBO_CD_SECRET_STORE_INVALID", error.message, [
@@ -311,7 +303,7 @@ async function prepareVercelWithVault(
 			]);
 		}
 		// The validated choice is a non-secret setting despite its name.
-		plainEnv.HOBO_SECRET_STORE = env.HOBO_SECRET_STORE;
+		plainEnv.HOBO_SECRET_STORE = storeEnv.HOBO_SECRET_STORE;
 	}
 	const vault = deps.vault;
 	const workloadOidc = deps.workloadOidc ?? workloadOidcOf(env);
@@ -592,8 +584,12 @@ async function prepareVercelWithVault(
 			};
 		}
 		const expected = connection;
-		return ready(owner.opened, "unchanged", vault, deps, (current) =>
-			sameVercelConnection(expected, current),
+		return ready(
+			owner.opened,
+			"unchanged",
+			vault,
+			deps.journalProvisioners,
+			(current) => sameVercelConnection(expected, current),
 		);
 	}
 	if (input.whatIf)
@@ -690,8 +686,12 @@ async function prepareVercelWithVault(
 					}
 					if (current !== undefined) {
 						const expected = current;
-						return ready(store, "created", vault, deps, (next) =>
-							sameVercelConnection(expected, next),
+						return ready(
+							store,
+							"created",
+							vault,
+							deps.journalProvisioners,
+							(next) => sameVercelConnection(expected, next),
 						);
 					}
 				}
@@ -728,9 +728,12 @@ async function prepareVercelWithVault(
 				{ link: grant.link, code: grant.code },
 				async (signal) => {
 					try {
+						const selectionSignal = ownerLocator(deps).selectionSignal;
 						const { token } = await awaitVercelDeviceToken(grant, {
 							fetch: http,
-							signal,
+							signal: selectionSignal
+								? AbortSignal.any([signal, selectionSignal])
+								: signal,
 							clock: {
 								now: deps.now ?? SYSTEM_CLOCK.now,
 								sleep:
@@ -751,8 +754,10 @@ async function prepareVercelWithVault(
 						} satisfies Readonly<
 							Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
 						>;
-						for (const name of VERCEL_CONNECTION_KEYS)
-							await store.port.put(name, values[name]);
+						await withStoreWriteLock(store, async () => {
+							for (const name of VERCEL_CONNECTION_KEYS)
+								await store.port.put(name, values[name]);
+						});
 						return { state: "done" };
 					} catch (error) {
 						if (error instanceof VercelDeviceError)
@@ -798,8 +803,12 @@ async function prepareVercelWithVault(
 							["Check store access and retry."],
 						);
 					const expected = current;
-					return ready(store, "unchanged", vault, deps, (next) =>
-						sameVercelConnection(expected, next),
+					return ready(
+						store,
+						"unchanged",
+						vault,
+						deps.journalProvisioners,
+						(next) => sameVercelConnection(expected, next),
 					);
 				}
 				throw new Error("owner job rejected without a pending grant");
@@ -836,14 +845,16 @@ async function prepareVercelWithVault(
 			} satisfies Readonly<
 				Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
 			>;
-			for (const key of VERCEL_CONNECTION_KEYS)
-				await store.port.put(key, values[key]);
+			await withStoreWriteLock(store, async () => {
+				for (const key of VERCEL_CONNECTION_KEYS)
+					await store.port.put(key, values[key]);
+			});
 			const expected: StoredVercelConnection = {
 				token,
 				teamId,
 				installationId: VERCEL_DEVICE_INSTALLATION,
 			};
-			return ready(store, "created", vault, deps, (c) =>
+			return ready(store, "created", vault, deps.journalProvisioners, (c) =>
 				sameVercelConnection(expected, c),
 			);
 		} catch (error) {
@@ -1051,7 +1062,7 @@ async function prepareVercelWithVault(
 		connectedStore,
 		vercel?.outcome() ?? "unchanged",
 		vault,
-		deps,
+		deps.journalProvisioners,
 		matches,
 	);
 }

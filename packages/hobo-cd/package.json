@@ -21,7 +21,6 @@
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
-		"@hobo/adapter-infisical": "workspace:*",
 		"@hobo/bindles": "workspace:*",
 		"@hobo/cli": "workspace:*",
 		"@hobo/connect-ui": "workspace:*",

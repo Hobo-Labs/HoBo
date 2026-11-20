@@ -31,7 +31,7 @@ describe("doctor agent-tooling (AX)", () => {
 				cwd: root,
 				encoding: "utf8",
 				timeout: 60_000,
-				env: { ...process.env },
+				env: gitEnvironment(),
 			},
 		);
 		const out = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;

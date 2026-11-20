@@ -65,20 +65,9 @@ import {
 	type ResolverTelemetryOptions,
 } from "./delivery-coverage.js";
 import {
-	createVercelDeploymentComponentResolver,
-	VERCEL_CRON_PRODUCT_ID,
-	VERCEL_QUEUE_PRODUCT_ID,
-	VERCEL_SCHEDULE_PRODUCT_ID,
-} from "./deployment-component-resolver.js";
-import {
 	createVercelStaticDeploymentResolver,
 	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 } from "./deployment-resolver.js";
-import type { VercelGitEnvironmentVariable } from "./git-deployment-environment.js";
-import {
-	createVercelGitFunctionResolver,
-	VERCEL_GIT_FUNCTION_PRODUCT_ID,
-} from "./git-function-resolver.js";
 import {
 	isJsonArray,
 	isJsonBoolean,
@@ -93,12 +82,6 @@ import {
 import { type ApiCallOptions, VERCEL_API_BASE } from "./management-api.js";
 import { PROVIDER_TARGET } from "./options.js";
 import { redactProviderText } from "./provider-errors.js";
-import {
-	createVercelSandboxHostResolver,
-	VERCEL_SANDBOX_HOST_PRODUCT_ID,
-	type VercelSandboxHostProof,
-	type VercelSandboxHostScope,
-} from "./sandbox-host-resolver.js";
 import {
 	VERCEL_BLOB_PRODUCT_ID,
 	VERCEL_EDGE_CONFIG_PRODUCT_ID,
@@ -141,53 +124,6 @@ const DEFAULT_CALL: Required<ApiCallOptions> = {
 	maxResponseBytes: DEFAULT_TRANSPORT_POLICY.maxResponseBytes,
 };
 
-export type VercelPreviewSchedulePreparationScope = Readonly<{
-	teamId: string;
-	project: string;
-	projectId?: string;
-	organization: string;
-	repository: string;
-	revision: string;
-	previewBranch: string;
-	scheduleName: string;
-}>;
-export type VercelPreviewSchedulePreparationProof = Readonly<{
-	scope: VercelPreviewSchedulePreparationScope;
-	enableAuthorized: true;
-	fencedUntilRetired: true;
-	observedAtMs: number;
-	expiresAtMs: number;
-	evidenceRef: string;
-	candidateDeploymentId?: string;
-}>;
-export type VercelSchedulePlan = Readonly<{
-	project: string;
-	projectId?: string;
-	organization: string;
-	repository: string;
-	environment: "production" | "preview";
-	previewBranch?: string;
-	scheduleName: string;
-	cron: string;
-}>;
-export type VercelScheduleCapacityScope = Readonly<{
-	teamId: string;
-	revision: string;
-	schedules: readonly VercelSchedulePlan[];
-}>;
-export type VercelScheduleCapacityProof = Readonly<{
-	scope: VercelScheduleCapacityScope;
-	plan: "hobby" | "pro" | "enterprise";
-	completeTeamInventory: true;
-	teamScheduleCount: number;
-	teamScheduleLimit: number;
-	additionalSchedules: number;
-	runCapacityVerified: true;
-	observedAtMs: number;
-	expiresAtMs: number;
-	evidenceRef: string;
-}>;
-
 /** What a host hands the resolvers so they can reach the provider at all. */
 export type VercelResolverOptions = {
 	/**
@@ -196,31 +132,6 @@ export type VercelResolverOptions = {
 	 * never accepts a raw token.
 	 */
 	readonly resolveCredential: (credentialRef: string) => Promise<string>;
-	readonly trustedProjectionPublicKeys?: ReadonlyMap<string, string>;
-	readonly verifyGitDeploymentEnvironment?: (input: {
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly revision: string;
-		readonly environment: "production" | "preview";
-		readonly variables: readonly VercelGitEnvironmentVariable[];
-	}) => Promise<boolean>;
-	readonly verifySandboxHost?: (
-		scope: VercelSandboxHostScope,
-	) => Promise<VercelSandboxHostProof>;
-	readonly sandboxNowMs?: () => number;
-	readonly verifyPreviewSchedulePreparation?: (
-		scope: VercelPreviewSchedulePreparationScope,
-	) => Promise<VercelPreviewSchedulePreparationProof>;
-	readonly previewScheduleNowMs?: () => number;
-	readonly verifyScheduleCapacity?: (
-		scope: VercelScheduleCapacityScope,
-	) => Promise<VercelScheduleCapacityProof>;
-	readonly scheduleCapacityNowMs?: () => number;
-	readonly retireSandboxHost?: (scope: VercelSandboxHostScope) => Promise<{
-		readonly drained: boolean;
-		readonly fencedUntilDetached: boolean;
-		readonly evidenceRef: string;
-	}>;
 	/** Team the resources live in, when the token is team-scoped. */
 	readonly teamId?: string;
 	readonly call?: ApiCallOptions;
@@ -240,22 +151,6 @@ export type VercelResolverOptions = {
 	readonly artifactTransport?: HttpTransport;
 	readonly maxArtifactBytes?: number;
 	readonly maxArtifactFiles?: number;
-	readonly observeGitArtifact?: (input: {
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly deploymentId: string;
-		readonly revision: string;
-		readonly repository: string;
-		readonly endpoint: string;
-	}) => Promise<string>;
-	readonly resolveGitCredential?: (
-		credentialRef: string,
-		scope: {
-			readonly organization: string;
-			readonly repository: string;
-			readonly revision: string;
-		},
-	) => Promise<string>;
 	/** Independently authorize adopting and linking an existing unlinked
 	 * project to this exact repository under the approved operation. */
 	readonly verifyUnlinkedProject?: (input: {
@@ -292,50 +187,6 @@ export type VercelResolverOptions = {
 		readonly fencedUntilRetired: boolean;
 		readonly evidenceRef: string;
 	}>;
-	readonly verifyGitRetirement?: (input: {
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly deploymentId: string;
-		readonly revision: string;
-		readonly repository: string;
-	}) => Promise<{
-		readonly queuesDrained: boolean;
-		readonly fencedUntilRetired: boolean;
-		readonly evidenceRef: string;
-	}>;
-	readonly verifyGitInventoryAccess?: (input: {
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly deploymentId: string;
-		readonly credentialRef: string;
-	}) => Promise<{
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly deploymentId: string;
-		readonly credentialRef: string;
-		readonly readDeployment: boolean;
-		readonly enumerateAllDeployments: boolean;
-		readonly observedAtMs: number;
-		readonly expiresAtMs: number;
-		readonly evidenceRef: string;
-	}>;
-	readonly gitInventoryNowMs?: () => number;
-	readonly verifyCronAuthentication?: (input: {
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly deploymentId: string;
-		readonly revision: string;
-		readonly entry: string;
-		readonly path: string;
-	}) => Promise<boolean>;
-	readonly verifyPreviewScheduleTrack?: (input: {
-		readonly teamId: string;
-		readonly projectId: string;
-		readonly deploymentId: string;
-		readonly revision: string;
-		readonly branch: string;
-		readonly name: string;
-	}) => Promise<boolean>;
 };
 
 type Dispatch = HttpTransport;
@@ -2606,13 +2457,8 @@ export const VERCEL_UNRESOLVED_PRODUCT_IDS = Object.freeze([
  */
 export const VERCEL_RESOLVED_PRODUCT_IDS = Object.freeze([
 	VERCEL_BLOB_PRODUCT_ID,
-	VERCEL_CRON_PRODUCT_ID,
 	"vercel.edge-config/v1",
-	VERCEL_GIT_FUNCTION_PRODUCT_ID,
 	"vercel.project/v1",
-	VERCEL_QUEUE_PRODUCT_ID,
-	VERCEL_SANDBOX_HOST_PRODUCT_ID,
-	VERCEL_SCHEDULE_PRODUCT_ID,
 	VERCEL_STATIC_DEPLOY_PRODUCT_ID,
 ] as const);
 
@@ -2628,16 +2474,8 @@ export function vercelResolvers(
 ): readonly ResourceResolver[] {
 	return Object.freeze([
 		createBlobResolver(options),
-		createVercelDeploymentComponentResolver(options, VERCEL_CRON_PRODUCT_ID),
 		createEdgeConfigResolver(options),
-		createVercelGitFunctionResolver(options),
 		createProjectResolver(options),
-		createVercelDeploymentComponentResolver(options, VERCEL_QUEUE_PRODUCT_ID),
-		createVercelSandboxHostResolver(options),
-		createVercelDeploymentComponentResolver(
-			options,
-			VERCEL_SCHEDULE_PRODUCT_ID,
-		),
 		createVercelStaticDeploymentResolver(options),
 	]);
 }

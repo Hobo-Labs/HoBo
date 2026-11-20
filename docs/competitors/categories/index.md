@@ -16,8 +16,8 @@
 | [Self-Hosted PaaS & Server Deployment](self-hosted-paas.md) | 9 |
 | [Agentic Infrastructure & Operations](agentic-infrastructure.md) | 10 |
 | [Backend & Data Application Platforms](backend-data-platforms.md) | 5 |
-| [Delivery, Release & GitOps](delivery-release-gitops.md) | 15 |
-| [FinOps, Governance & Placement](finops-governance-placement.md) | 15 |
+| [Delivery, Release & GitOps](delivery-release-gitops.md) | 14 |
+| [FinOps, Governance & Placement](finops-governance-placement.md) | 14 |
 | [Identity, Networking & Application Delivery](identity-networking-delivery.md) | 6 |
 
 <!-- END GENERATED: category-index -->

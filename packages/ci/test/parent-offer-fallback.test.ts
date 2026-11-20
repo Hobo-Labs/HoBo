@@ -66,7 +66,6 @@ function fixture(remainingUnits: number) {
 		entitlements: [
 			{
 				bucketId: "native-minutes",
-				kind: "credit",
 				unit: "micro-minutes",
 				periodId: "p1",
 				remainingUnits,
@@ -194,7 +193,6 @@ function quoteLease(lease: Lease) {
 			? [
 					{
 						bucketId: "native-minutes",
-						kind: "credit",
 						unit: "micro-minutes",
 						units: lease.reservedFreeMinutes * 1000000,
 					},

@@ -359,15 +359,9 @@ Usage:
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
-  hobo ci init                     Show which workflow jobs can move to the fleet; --apply rewrites their runs-on
-                                   (see init options)
-  hobo ci signals                  Where recent runs lost time or money: waits, flaky and short jobs, extra runs
-  hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
-  hobo ci route                    Answer one relay job against the runner order and show the walk
-                                   (see route options)
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
-  hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
+  hobo ci deploy                  Deliver the hosted relay to Vercel (see deploy options)
   hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
   hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
   hobo ci secret-store connect    Record an Infisical the owner connected by hand (OIDC Auth)
@@ -433,20 +427,23 @@ Serve options (hobo ci serve):
   --home <path>               HOBO_HOME for serve state (credentials, db)
 
 Deploy options (hobo ci deploy; run in the relay's project directory, or pass --cwd):
-  --repo <owner/repository>   The GitHub repository Vercel builds
+  --repo <owner/repository>   The repository containing the source
   --ref <branch|tag|sha>      The git ref to deploy
   --sha <commit>              Pin the full commit sha the ref names
   --project <name>            The Vercel project
-  --target preview|production Deployment target (default: preview)
+  --target preview|production Deployment target (default: preview; managed defaults to production)
   --team <team_id>            Vercel team id (default: VERCEL_TEAM_ID)
   --set <NAME=value>          Non-secret setting to apply first (repeatable); secrets are refused
   --root-directory <dir>      Project root directory to save on the project
   --create-project            Create the project when Vercel has none by that name
   --dry-run                   Print what would be sent; reads no token, sends nothing
-                              A real run reads VERCEL_TOKEN from the environment, and
-                              the team and the config service's coordinates from
-                              deploy/secret-store.binding.json when it exists.
-  --adopt                     Token-free: adopt the deployment Vercel's Git integration
+                              A real run reads the deploy credential from its trusted
+                              vault or the isolated secret-store project, not the environment.
+  --managed                   Deliver --sha through HoBo CD: upload the pinned workspace,
+                              verify preview, stage production, check its public health,
+                              and attempt rollback on failure. No Git connection is needed.
+                              Use --target preview for a preview-only delivery.
+  --adopt                     Optional: adopt a deployment Vercel's Git integration
                               made of --sha (takes --sha, --repo, --ref only). Reads
                               GitHub's Deployments API with GITHUB_TOKEN, never a Vercel
                               token; verifies preview by its deployment record (READY,
@@ -472,27 +469,6 @@ Connect options (hobo ci secret-store connect; identifiers, none is a secret):
   --site-url <origin>         Infisical origin (default https://app.infisical.com)
   --yes                       Replace an existing binding
 
-Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
-  --plan                        Show each job: ready, already on the fleet, or skipped and why (default)
-  --apply <jobs>                Rewrite runs-on for these jobs: job, file:job or all (repeatable,
-                                comma-separated); the old label is kept as a trailing comment
-  --fleet-label <label>         The label to write (default: hobo)
-  --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
-
-Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
-  --fleet, --machine, --github <label>   The label the job would ask that runner type for
-  --blacksmith, --depot, --namespace, --warpbuild, --ubicloud, --boat, --runs-on <label>
-                                A hosted provider's label; "auto" asks for the order's size
-                                (no runner-type flag at all: any type, at that size)
-  --public                      The repository is public (machines never take it)
-  --fork                        The run's head is a fork
-  --event <name>                The GitHub event (default: push)
-  --facts <file.json>           What is true now: fleet {enabled,taking,isolated}, machines,
-                                minutes {usedMinutes,includedMinutes,burnPerHour}, spendUsd,
-                                unhealthy, publicOptIn, first, retry. Without it the fleet
-                                and machines are absent and no limit is measured.
-  Exits non-zero with HOBO_CI_NO_RUNNER and the reason when nothing can take the job.
-
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch
   --all-branches                Search list/grep across branches
@@ -506,7 +482,6 @@ Run options:
   --task <name>                 Select an exact job name for logs (repeatable)
   --grep <text>                 Filter log lines by text
   --runs <count>                Search this many recent runs with grep (1-50)
-                                For signals: read this many recent runs (1-100, default 50)
 
 --follow, --level and --next are unsupported. GitHub Actions logs are
 unstructured; use --grep for text filtering.

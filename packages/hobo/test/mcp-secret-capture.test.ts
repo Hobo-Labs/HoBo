@@ -262,7 +262,6 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 			ticketId: writer.ticketId,
 			name: WRITER_SECRET_NAME,
 			stored: false,
-			ref: `hobo-writer-session://${WRITER_CLIENT}`,
 			status: "authorized",
 		});
 
@@ -308,7 +307,7 @@ describe("hobo-mcp secret capture into Infisical (MCP App channel)", () => {
 		const transcript = h.transcript.join("\n");
 		for (const secret of [valkey, turso, WRITER_SECRET, ACCESS_TOKEN])
 			expect(transcript).not.toContain(secret);
-		expect(transcript).toContain(
+		expect(transcript).not.toContain(
 			"infisical://proj-1/prod/hobo-ci-relay/VALKEY_URL",
 		);
 		await h.capture.close();

@@ -7,10 +7,11 @@ import {
 	type FlowTransition,
 	type SecretStoreOption,
 } from "@hobo/connect-ui";
-import type {
-	OpenedSecretStore,
-	SecretStoreId,
-	SecretStoreOpening,
+import {
+	type OpenedSecretStore,
+	type SecretStoreId,
+	type SecretStoreOpening,
+	withStoreWriteLock,
 } from "@hobo/hobo-ci";
 import { z } from "zod";
 
@@ -311,15 +312,16 @@ export function createVercelConnectFlow(
 			} satisfies Readonly<
 				Record<(typeof VERCEL_CONNECTION_KEYS)[number], string>
 			>;
-			for (const key of VERCEL_CONNECTION_KEYS) {
-				try {
-					await store.port.put(key, values[key]);
-				} catch {
-					return failed(
-						`The ${store.id} write failed; the rest was discarded.`,
-						[`Fix access to ${store.id} and run hobo cd up again.`],
-					);
-				}
+			const selectedStore = store;
+			try {
+				await withStoreWriteLock(selectedStore, async () => {
+					for (const key of VERCEL_CONNECTION_KEYS)
+						await selectedStore.port.put(key, values[key]);
+				});
+			} catch {
+				return failed(`The ${store.id} write failed; the rest was discarded.`, [
+					`Fix access to ${store.id} and run hobo cd up again.`,
+				]);
 			}
 			expected = {
 				token: token.access_token,

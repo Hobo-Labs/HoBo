@@ -36,13 +36,6 @@
 // HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE, HOBO_CI_DEPLOY_DELIVERY_INVALID,
 // HOBO_CI_DEPLOY_FREIGHT_REFUSED, HOBO_CI_DEPLOY_PROMOTION_REFUSED.
 //
-// The target is chosen HERE, where the deploy is run, not in the Bindle; and
-// it is PREVIEW unless `--target production` says otherwise. Production needs
-// `--sha`: it takes exactly the commit preview verified. The deploy workflow
-// on `main` (`.github/workflows/relay-deploy.yml`) holds no Vercel token and
-// runs `--adopt` instead (`ci-relay-adopt.ts`): the deployment Vercel's Git
-// integration made, observed, recorded and promoted preview then production.
-//
 // `--provision` first attaches the chosen Marketplace bindings (the cache)
 // with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
 //
@@ -99,7 +92,6 @@ import {
 	type RelayRealizationFailure,
 	relayCampId,
 } from "./ci-relay-delivery.js";
-import { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -127,6 +119,7 @@ import {
 } from "./ci-secret-store.js";
 import { defaultHoboHome } from "./hobo-home.js";
 import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
+import { loadOwnerDeployCredentials } from "./owner-deploy-credentials.js";
 import {
 	createVercelClient,
 	VercelApiError,
@@ -172,6 +165,7 @@ export const CI_DEPLOY_ONLY_OPTIONS = [
 	"create-project",
 	"provision",
 	"adopt",
+	"managed",
 ] as const;
 
 export interface CiRelayDeployInput {
@@ -188,6 +182,10 @@ export interface CiRelayDeployInput {
 	// The run's trusted vault, when the caller already holds the deploy token
 	// (`VERCEL_TOKEN`), read from the owner's store.
 	readonly credentials?: TrustedVault;
+	readonly ownerSession?: TrustedVault;
+	readonly ownerSettings?: Parameters<
+		typeof loadOwnerDeployCredentials
+	>[0]["ownerSettings"];
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
@@ -713,36 +711,16 @@ export async function runCiRelayDeploy(
 			`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
 		);
 
-	// The deploy token comes from the secret store and lives in this run's
-	// vault: handed in by the caller, or read here with a CI runner's own OIDC
-	// token through the committed binding. Never from the environment, never
-	// through a file such as $GITHUB_ENV.
 	const vault = input.credentials ?? createTrustedVault();
-	if (
-		!vault.has("VERCEL_TOKEN") &&
-		storeBinding !== undefined &&
-		env.ACTIONS_ID_TOKEN_REQUEST_URL
-	) {
-		try {
-			vault.put(
-				"VERCEL_TOKEN",
-				await readRelayDeployToken({
-					binding: storeBinding,
-					env: {
-						ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
-						ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-					},
-				}),
-			);
-		} catch (error) {
-			return refused(
-				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
-				error instanceof Error
-					? error.message
-					: "Could not read the deploy token.",
-			);
-		}
-	}
+	await loadOwnerDeployCredentials({
+		cwd: input.cwd,
+		env,
+		credentials: vault,
+		...(input.ownerSession ? { ownerSession: input.ownerSession } : undefined),
+		...(input.ownerSettings
+			? { ownerSettings: input.ownerSettings }
+			: undefined),
+	});
 	const token = vault.reveal("VERCEL_TOKEN");
 	if (token === undefined || token === "")
 		return {
@@ -750,7 +728,7 @@ export async function runCiRelayDeploy(
 			status: "authentication-required",
 			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
 			message:
-				"The deploy token is read from the secret store, never the environment: run in GitHub Actions with id-token: write and the committed secret store binding, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.",
+				"The deploy needs the Vercel connection in the owner's selected store session. Use the HoBo owner hand-off to connect it, or pass --dry-run to see the plan.",
 		};
 	// Whatever a result says, it does not say the token: a Vercel answer is
 	// redacted where it is read, and this is the last line before the terminal.

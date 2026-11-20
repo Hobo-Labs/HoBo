@@ -78,29 +78,6 @@ CD up and down also refuse a runtime whose delivery or hosting supervisor owns
 the executor, until that supervisor can guarantee the same retention. This
 refusal occurs before the up ceremony provisions anything.
 
-### The CD workload identity
-
-HoBo.CD on Vercel (`packages/cd-vercel`) reads its journal from the owner's
-store with its own Vercel OIDC token. `hobo cd up` makes what that needs, with
-the owner's own sign-ins and the providers' APIs. Nobody creates it by hand
-(`src/workload-identity.ts`):
-
-1. It turns on team-mode OIDC tokens for the Vercel project `hobo-cd`, when
-   the project exists. A new project gets them by default.
-2. It creates an Infisical identity `hobo-cd` with Viewer access to the
-   owner's project. Its OIDC Auth trusts that project's preview tokens:
-   issuer `https://oidc.vercel.com/<team>`, subject
-   `owner:<team>:project:hobo-cd:environment:preview`, and claim `owner_id`.
-   The identity's id is kept in the store (`HOBO_CD_WORKLOAD_IDENTITY_ID`).
-   A re-run reuses the identity and re-applies its trust. When two runs race,
-   the identity saved first is kept and the other is deleted.
-3. It gives the deployment the store's coordinates as its configuration:
-   project, environment, folder and identity. These are ids only.
-
-The step is skipped, with the reason, in three cases: on 1Password or
-Bitwarden (only Infisical signs a workload in with OIDC), when the run holds
-no Infisical sign-in, and when the Vercel connection names no team.
-
 Configuration is a **ceremony**, not a list of environment variables, and it
 survives the machine: the store is found through a locator of ids in
 the owner's HoBo settings (`~/.config/hobo/projects/<project>/secret-store.json`,
@@ -133,7 +110,9 @@ Creating a missing Neon member requires a durable, owner-scoped store with an
 atomic create-if-absent operation; Neon cannot deduplicate a create across
 processes or after a crash. The Infisical and Bitwarden vault adapters do not
 advertise that operation, so they refuse creation of missing members. Existing
-complete fleets can still be opened.
+complete fleets can still be opened. Provisioning re-reads the roster, existing
+connection entries and other settings after acquiring the store write lock, so a
+waiting run cannot recreate a member or overwrite settings changed by its predecessor.
 Each connection string goes straight into the
 owner's secret store at `HOBO_CD_POSTGRES_URL_<ID>`, its claim link beside it at
 `HOBO_CD_POSTGRES_CLAIM_<ID>` (claim each to keep it: an unclaimed database
@@ -182,8 +161,6 @@ whatever this machine has registered:
 
 `hobo cd up` then delivers `packages/cd-vercel` as one git deployment of the
 current commit to CD's preview on Vercel, and records the journal and config as
-made by prepare. Production stays an explicit promotion. The deployment signs
-in with the CD workload identity `hobo cd up` makes (see
-[The CD workload identity](#the-cd-workload-identity)). Until the CD workload
+made by prepare. Production stays an explicit promotion. Until the CD workload
 identity exists and its store binding is committed, the deployment answers
 `/readyz` with `cd-store-binding-missing`.

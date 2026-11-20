@@ -783,41 +783,4 @@ describe("hobo ci setup", () => {
 		expect(result.exitCode).toBe(2);
 		expect(requests).toEqual([]);
 	});
-	it("passes repeated --runs-on labels to provider setup", async () => {
-		const { cli, home, requests } = await fixture();
-		const result = await cli.run(
-			[
-				"ci",
-				"connect",
-				"blacksmith",
-				"--org",
-				"hobo-labs",
-				"--runs-on",
-				"blacksmith-2vcpu-ubuntu-2404",
-				"--runs-on",
-				"blacksmith-4vcpu-ubuntu-2404",
-				"--dry-run",
-				"--json",
-			],
-			{ cwd: home },
-		);
-		expect(result.exitCode).toBe(0);
-		expect(JSON.parse(result.stdout).data.integration.runsOn).toEqual([
-			"blacksmith-2vcpu-ubuntu-2404",
-			"blacksmith-4vcpu-ubuntu-2404",
-		]);
-		expect(requests).toEqual([]);
-	});
-	it("rejects an invalid explicit --repo instead of using origin", async () => {
-		const { cli, home, requests } = await fixture();
-		const result = await cli.run(
-			["ci", "signals", "--repo", "not-a-repository", "--json"],
-			{ cwd: home },
-		);
-		expect(result.exitCode).toBe(2);
-		expect(JSON.parse(result.stdout).message).toContain(
-			"--repo <owner/name> must be a GitHub owner/name",
-		);
-		expect(requests).toEqual([]);
-	});
 });

@@ -317,7 +317,6 @@ describe("hosting budget authority generated properties", () => {
 					snapshot.entitlements = [
 						create(BudgetEntitlementSchema, {
 							bucketId: "credit",
-							kind: "allowance",
 							unit: "units",
 							periodId: "p1",
 							remainingUnits: allocation,
@@ -339,7 +338,6 @@ describe("hosting budget authority generated properties", () => {
 						candidate.entitlementClaims = [
 							create(EntitlementClaimSchema, {
 								bucketId: "credit",
-								kind: "allowance",
 								unit: "units",
 								units,
 							}),
@@ -532,7 +530,6 @@ describe("hosting budget authority generated properties", () => {
 		snapshot.entitlements = [
 			create(BudgetEntitlementSchema, {
 				bucketId: "credit",
-				kind: "allowance",
 				unit: "units",
 				periodId: "p1",
 				remainingUnits: 10,
@@ -548,7 +545,6 @@ describe("hosting budget authority generated properties", () => {
 		candidate.entitlementClaims = [
 			create(EntitlementClaimSchema, {
 				bucketId: "credit",
-				kind: "allowance",
 				unit: "units",
 				units: 2,
 			}),
@@ -584,7 +580,6 @@ describe("hosting budget authority generated properties", () => {
 					snapshot.entitlements = [
 						create(BudgetEntitlementSchema, {
 							bucketId: "credit",
-							kind: "allowance",
 							unit: "units",
 							periodId: "p1",
 							remainingUnits: 10,
@@ -603,7 +598,6 @@ describe("hosting budget authority generated properties", () => {
 					candidate.entitlementClaims = [
 						create(EntitlementClaimSchema, {
 							bucketId: "credit",
-							kind: "allowance",
 							unit: "units",
 							units: 0,
 						}),
