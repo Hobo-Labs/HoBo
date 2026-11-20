@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { types as utilTypes } from "node:util";
 import {
 	createTargetPricingInventory,
 	hashTargetPricingInventory,
@@ -8,7 +9,10 @@ import {
 } from "@hobo/pricing";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
-import { executeUnpricedIacTarget } from "../src/iac-unpriced-routing.js";
+import {
+	executeUnpricedIacTarget,
+	type UnpricedIacExecutionInput,
+} from "../src/iac-unpriced-routing.js";
 
 const dirs: string[] = [];
 const operation = {
@@ -105,6 +109,154 @@ function heldAdmission(
 }
 
 describe("explicit unpriced routing", () => {
+	it("rejects proxied outputs even if the proxy predicate is replaced after dispatch", async () => {
+		const { authority, inventory, pricing, identity } = fixture();
+		let traps = 0;
+		const original = Object.getOwnPropertyDescriptor(utilTypes, "isProxy");
+		const outputs = new Proxy(
+			{},
+			{
+				getPrototypeOf() {
+					traps++;
+					throw new Error("proxy trap");
+				},
+				ownKeys() {
+					traps++;
+					throw new Error("proxy trap");
+				},
+			},
+		);
+		let result: Awaited<ReturnType<typeof executeUnpricedIacTarget>>;
+		try {
+			result = await executeUnpricedIacTarget({
+				authority,
+				operation,
+				tenantId: "tenant",
+				requestId: "request",
+				inventory,
+				pricing,
+				run: async (requestId, expected, permit) => {
+					if (!(await authority.consumeAttempt(permit)))
+						throw new Error("attempt missing");
+					const admission = heldAdmission(
+						requestId,
+						expected.inventoryHash,
+						identity,
+					);
+					Object.defineProperty(utilTypes, "isProxy", {
+						configurable: true,
+						value: () => false,
+					});
+					return { outputs, admission };
+				},
+			});
+		} finally {
+			if (original) Object.defineProperty(utilTypes, "isProxy", original);
+		}
+		expect(result).toMatchObject({
+			status: "uncertain",
+			executionOutcome: "completed",
+			reservationId: "iac:request",
+			budget: { evaluation: "bypassed", reservation: "held" },
+		});
+		expect(traps).toBe(0);
+		authority.close();
+	});
+
+	it("retains a held reservation when an output descriptor inherits a forged value", async () => {
+		const { authority, inventory, pricing, identity } = fixture();
+		let traps = 0;
+		const original = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+		const outputs = Object.defineProperty({}, "url", {
+			enumerable: true,
+			get() {
+				traps++;
+				return "getter value";
+			},
+		});
+		let result: Awaited<ReturnType<typeof executeUnpricedIacTarget>>;
+		try {
+			result = await executeUnpricedIacTarget({
+				authority,
+				operation,
+				tenantId: "tenant",
+				requestId: "request",
+				inventory,
+				pricing,
+				run: async (requestId, expected, permit) => {
+					if (!(await authority.consumeAttempt(permit)))
+						throw new Error("attempt missing");
+					const admission = heldAdmission(
+						requestId,
+						expected.inventoryHash,
+						identity,
+					);
+					Object.defineProperty(Object.prototype, "value", {
+						configurable: true,
+						get() {
+							traps++;
+							return "forged output";
+						},
+					});
+					return { outputs, admission };
+				},
+			});
+		} finally {
+			Reflect.deleteProperty(Object.prototype, "value");
+			if (original) Object.defineProperty(Object.prototype, "value", original);
+		}
+		expect(result).toMatchObject({
+			status: "uncertain",
+			executionOutcome: "completed",
+			reservationId: "iac:request",
+			budget: { evaluation: "bypassed", reservation: "held" },
+		});
+		expect(result).not.toHaveProperty("outputs");
+		expect(traps).toBe(0);
+		authority.close();
+	});
+
+	it.each([
+		["string", () => "x".repeat(4097)],
+		["array", () => Array.from({ length: 1025 }, () => true)],
+		[
+			"nodes",
+			() =>
+				Array.from({ length: 25 }, () =>
+					Array.from({ length: 1000 }, () => true),
+				),
+		],
+	] as const)("does not accept an oversized admission %s while preserving bounded snapshots", async (_kind, makeValue) => {
+		const { authority, inventory, pricing, identity } = fixture();
+		const result = await executeUnpricedIacTarget({
+			authority,
+			operation,
+			tenantId: "tenant",
+			requestId: "request",
+			inventory,
+			pricing,
+			run: async (requestId, expected, permit) => {
+				if (!(await authority.consumeAttempt(permit)))
+					throw new Error("attempt missing");
+				const admission = heldAdmission(
+					requestId,
+					expected.inventoryHash,
+					identity,
+				);
+				Object.defineProperty(admission, "extra", {
+					value: makeValue(),
+					enumerable: true,
+				});
+				return { outputs: {}, admission };
+			},
+		});
+		expect(result).toMatchObject({
+			status: "uncertain",
+			budget: { evaluation: "unavailable", reservation: "unknown" },
+		});
+		authority.close();
+	});
+
 	it("preserves the host callback's original method receiver", async () => {
 		const { authority, inventory, pricing } = fixture();
 		let traps = 0;
@@ -321,12 +473,16 @@ describe("explicit unpriced routing", () => {
 	it("selects one reviewed target without a numeric price or budget cap", async () => {
 		const { authority, inventory, pricing, identity } = fixture();
 		let calls = 0;
-		const run = async (requestId, expected, permit) => {
+		const run: UnpricedIacExecutionInput["run"] = async (
+			requestId,
+			expected,
+			permit,
+		) => {
 			calls++;
 			expect(expected).toMatchObject({ kind: "unpriced", targetId: "yard" });
 			expect(await authority.consumeAttempt(permit)).toBe(true);
 			expect(await authority.verifyAttempt(permit)).toBe(true);
-			// A caller cannot change the financial scope after the route is claimed.
+
 			const resource = inventory.resources[0];
 			if (!resource) throw new Error("missing fixture resource");
 			resource.providerAccountRef = "mutated-account";
@@ -444,7 +600,11 @@ describe("explicit unpriced routing", () => {
 			release = resolve;
 		});
 		let calls = 0;
-		const run = async (_requestId, _expected, permit) => {
+		const run: UnpricedIacExecutionInput["run"] = async (
+			_requestId,
+			_expected,
+			permit,
+		) => {
 			expect(await authority.consumeAttempt(permit)).toBe(true);
 			calls++;
 			start();
@@ -505,7 +665,7 @@ describe("explicit unpriced routing", () => {
 	it("records a definitive no-effect denial and never retries the finished route", async () => {
 		const { authority, inventory, pricing } = fixture();
 		let calls = 0;
-		const run = async (requestId) => {
+		const run: UnpricedIacExecutionInput["run"] = async (requestId) => {
 			calls++;
 			throw Object.assign(new Error("denied"), {
 				requiresReconciliation: false,

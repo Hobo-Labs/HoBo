@@ -14,9 +14,13 @@ import {
 } from "./iac-route.js";
 import {
 	applyHostCallback,
+	isBoundedRouteValue,
 	ownDataField,
 	ownDataFields,
 } from "./iac-untrusted.js";
+
+const hasOwnOutputField = Object.hasOwn;
+const isUnpricedRouteProxy = utilTypes.isProxy;
 
 export interface UnpricedIacExpectation {
 	readonly kind: "unpriced";
@@ -122,8 +126,11 @@ function name(value: string, limit = 200): boolean {
 function snapshotAdmission(value: unknown): Admission | undefined {
 	try {
 		if (
-			!areBoundedPricingInputs([value]) ||
-			!isBoundedPricingInput(value) ||
+			!isBoundedRouteValue(value, {
+				maxNodes: 25_000,
+				maxStringLength: 4096,
+				maxArrayLength: 1024,
+			}) ||
 			typeof value !== "object" ||
 			value === null ||
 			Array.isArray(value)
@@ -203,7 +210,7 @@ function snapshotAdmission(value: unknown): Admission | undefined {
 			)
 				return undefined;
 		}
-		// SAFETY: every field used from the detached bounded snapshot is validated before use.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: every field used from the detached bounded snapshot is validated before use.
 		const row = structuredClone(value) as Admission;
 		if (
 			typeof row.requestId !== "string" ||
@@ -235,7 +242,7 @@ function snapshotOutputs(value: unknown): Record<string, string> | undefined {
 		if (
 			typeof value !== "object" ||
 			value === null ||
-			utilTypes.isProxy(value) ||
+			isUnpricedRouteProxy(value) ||
 			Array.isArray(value)
 		)
 			return undefined;
@@ -256,7 +263,7 @@ function snapshotOutputs(value: unknown): Record<string, string> | undefined {
 				!name(key) ||
 				descriptor === undefined ||
 				!descriptor.enumerable ||
-				!("value" in descriptor) ||
+				!hasOwnOutputField(descriptor, "value") ||
 				typeof descriptor.value !== "string" ||
 				descriptor.value.length > 65_536
 			)
@@ -374,7 +381,7 @@ export interface UnpricedIacExecutionInput {
 	readonly authority: IacRouteAuthority;
 	readonly tenantId: string;
 	readonly requestId: string;
-	/** Host-authenticated identity of the logical operation across request IDs. */
+
 	readonly operation: {
 		readonly operationId: string;
 		readonly authorization: string;
@@ -409,7 +416,7 @@ function snapshotUnpricedExecutionInput(
 			typeof fields.requestId !== "string" ||
 			!name(fields.requestId) ||
 			typeof fields.run !== "function" ||
-			utilTypes.isProxy(fields.run) ||
+			isUnpricedRouteProxy(fields.run) ||
 			!areBoundedPricingInputs([
 				fields.operation,
 				fields.inventory,
@@ -420,7 +427,7 @@ function snapshotUnpricedExecutionInput(
 			!isBoundedPricingInput(fields.pricing)
 		)
 			return undefined;
-		// SAFETY: the route and pricing layers validate the detached values; the authority and callback are trusted host capabilities.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the route and pricing layers validate the detached values; the authority and callback are trusted host capabilities.
 		return {
 			authority: fields.authority as IacRouteAuthority,
 			tenantId: fields.tenantId,
@@ -438,7 +445,6 @@ function snapshotUnpricedExecutionInput(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/** An explicit policy-directed single-target route: no cost rank or implicit fallback. */
 export async function executeUnpricedIacTarget(
 	raw: UnpricedIacExecutionInput,
 ): Promise<UnpricedIacRoutingResult> {

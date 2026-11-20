@@ -1,6 +1,8 @@
+/* oxlint-disable unicorn/no-thenable -- SAFETY: this test deliberately constructs a hostile thenable. */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { types } from "node:util";
 import { inMemoryState, Resource, Stack } from "alchemy";
 import * as Alchemist from "alchemy/Alchemist";
 import * as Provider from "alchemy/Provider";
@@ -115,6 +117,530 @@ function mappers(observed: string[]) {
 }
 
 describe("explicit Alchemy primitive mapping", () => {
+	it("refuses and observes an accidental rejected requirements Promise", async () => {
+		const observed: string[] = [];
+		expect(() =>
+			mapBindleToAlchemy(declaration, mappers(observed), {
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this exercises the runtime boundary, beyond the synchronous SDK type.
+				assessRequirements: () =>
+					Promise.reject(new Error("host rejected")) as never,
+			}),
+		).toThrow("REQUIREMENTS_ASSESSMENT_FAILED");
+		expect(observed).toEqual([]);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
+
+	it("rejects a proxied requirements result without invoking its traps", () => {
+		let traps = 0;
+		const decision = new Proxy(
+			{ status: "supported" },
+			{
+				getOwnPropertyDescriptor() {
+					traps++;
+					throw new Error("requirements trap");
+				},
+			},
+		);
+		expect(() =>
+			mapBindleToAlchemy(declaration, mappers([]), {
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the proxy deliberately violates the synchronous SDK contract.
+				assessRequirements: () => decision as never,
+			}),
+		).toThrow("REQUIREMENTS_ASSESSMENT_FAILED");
+		expect(traps).toBe(0);
+	});
+
+	it("rejects sparse declarations even if descriptor-map indices are inherited", () => {
+		const sparse: unknown[] = [];
+		sparse.length = 1;
+		const previous = Object.getOwnPropertyDescriptor(Object.prototype, "0");
+		Object.defineProperty(Object.prototype, "0", {
+			configurable: true,
+			writable: true,
+			value: { value: "forged", enumerable: true },
+		});
+		let error: unknown;
+		let assessments = 0;
+		try {
+			mapBindleToAlchemy(
+				{ ...declaration, requirements: { values: sparse } },
+				mappers([]),
+				{
+					assessRequirements: () => {
+						assessments++;
+						return { status: "supported" };
+					},
+				},
+			);
+		} catch (caught) {
+			error = caught;
+		} finally {
+			if (previous === undefined) Reflect.deleteProperty(Object.prototype, "0");
+			else Object.defineProperty(Object.prototype, "0", previous);
+		}
+		expect(error).toMatchObject({ code: "BINDLE_INVALID" });
+		expect(assessments).toBe(0);
+	});
+
+	it("keeps its original proxy predicate when the public property is replaced", () => {
+		let traps = 0;
+		const source = new Proxy(declaration, {
+			get() {
+				traps++;
+				throw new Error("get");
+			},
+		});
+		const previous = Object.getOwnPropertyDescriptor(types, "isProxy");
+		Object.defineProperty(types, "isProxy", {
+			configurable: true,
+			writable: true,
+			value: () => false,
+		});
+		let error: unknown;
+		try {
+			mapBindleToAlchemy(source, mappers([]), supportedRequirements);
+		} catch (caught) {
+			error = caught;
+		} finally {
+			if (previous !== undefined)
+				Object.defineProperty(types, "isProxy", previous);
+		}
+		expect(error).toMatchObject({ code: "BINDLE_INVALID" });
+		expect(traps).toBe(0);
+	});
+
+	it("rejects accessor declarations without consulting an inherited descriptor value", () => {
+		let traps = 0;
+		const source = Object.defineProperty({ ...declaration }, "requirements", {
+			enumerable: true,
+			get() {
+				traps++;
+				throw new Error("declaration accessor");
+			},
+		});
+		const previous = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+		Object.defineProperty(Object.prototype, "value", {
+			configurable: true,
+			get() {
+				traps++;
+				throw new Error("inherited descriptor value");
+			},
+		});
+		let error: unknown;
+		try {
+			mapBindleToAlchemy(source, mappers([]), supportedRequirements);
+		} catch (caught) {
+			error = caught;
+		} finally {
+			if (previous === undefined)
+				Reflect.deleteProperty(Object.prototype, "value");
+			else Object.defineProperty(Object.prototype, "value", previous);
+		}
+		expect(error).toMatchObject({ code: "BINDLE_INVALID" });
+		expect(traps).toBe(0);
+	});
+
+	it("accepts HoBo's non-enumerable own entrypoint", () => {
+		const source = { ...declaration };
+		Object.defineProperty(source, "entrypoint", { enumerable: false });
+		expect(() =>
+			mapBindleToAlchemy(source, mappers([]), supportedRequirements),
+		).not.toThrow();
+	});
+
+	it("cannot hide an application entrypoint with a mutable call property", () => {
+		let traps = 0;
+		const lookup = function (this: typeof declaration, name: string) {
+			expect(this).toBe(source);
+			return name === "web" ? entrypoint : undefined;
+		};
+		Object.defineProperty(lookup, "call", {
+			get() {
+				traps++;
+				return () => undefined;
+			},
+		});
+		const source = { ...declaration, entrypoint: lookup };
+		const available = mappers([]);
+		expect(() =>
+			mapBindleToAlchemy(
+				source,
+				{ ...available, web: { ...available.web, bindsEntrypoint: false } },
+				supportedRequirements,
+			),
+		).toThrow("ENTRYPOINT_UNSUPPORTED");
+		expect(traps).toBe(0);
+	});
+
+	it("rejects proxy and accessor-backed entrypoint callbacks without executing them", () => {
+		let traps = 0;
+		const proxied = new Proxy(declaration.entrypoint, {
+			apply() {
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		const accessor = Object.defineProperty({ ...declaration }, "entrypoint", {
+			get() {
+				traps++;
+				throw new Error("trap");
+			},
+			enumerable: true,
+		});
+		for (const source of [{ ...declaration, entrypoint: proxied }, accessor])
+			expect(() =>
+				mapBindleToAlchemy(source, mappers([]), supportedRequirements),
+			).toThrow("BINDLE_INVALID");
+		expect(traps).toBe(0);
+	});
+
+	it("rejects proxied and accessor-backed declaration data before reflection", () => {
+		let traps = 0;
+		let assessments = 0;
+		const hostile = new Proxy(
+			{},
+			{
+				getPrototypeOf() {
+					traps++;
+					throw new Error("trap");
+				},
+				ownKeys() {
+					traps++;
+					throw new Error("trap");
+				},
+			},
+		);
+		const revoked = Proxy.revocable({}, {});
+		revoked.revoke();
+		const accessor = Object.defineProperty({ ...declaration }, "resources", {
+			get() {
+				traps++;
+				throw new Error("trap");
+			},
+		});
+		for (const source of [
+			hostile,
+			revoked.proxy,
+			accessor,
+			{ ...declaration, name: hostile },
+			{ ...declaration, name: revoked.proxy },
+			{ ...declaration, name: null },
+			{ ...declaration, resources: null },
+			{ ...declaration, edges: null },
+			{ ...declaration, resources: { broken: null } },
+			{ ...declaration, edges: [null] },
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, annotations: [null] },
+				},
+			},
+			{ ...declaration, requirements: { nested: hostile } },
+			{ ...declaration, requirements: { nested: revoked.proxy } },
+		]) {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: adversarial values intentionally exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(source as never, mappers([]), {
+					assessRequirements: () => {
+						assessments++;
+						return { status: "supported" };
+					},
+				}),
+			).toThrow("BINDLE_INVALID");
+		}
+		expect(traps).toBe(0);
+		expect(assessments).toBe(0);
+	});
+
+	it("refuses and observes asynchronous primitive validation before building", async () => {
+		const observed: string[] = [];
+		const original = mappers(observed);
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...original,
+					bucket: {
+						...original.bucket,
+						validate: () => Promise.reject(new Error("host rejected")),
+					},
+				},
+				supportedRequirements,
+			),
+		).toThrow("BINDLE_VALIDATION_UNAVAILABLE");
+		expect(observed).toEqual([]);
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
+
+	it("refuses a returned value without inspecting arbitrary thenables", () => {
+		const observed: string[] = [];
+		const original = mappers(observed);
+		let traps = 0;
+		const value = {
+			// biome-ignore lint/suspicious/noThenProperty: deliberately hostile validator result.
+			get then() {
+				traps++;
+				throw new Error("then trap");
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...original,
+					bucket: { ...original.bucket, validate: () => value },
+				},
+				supportedRequirements,
+			),
+		).toThrow("BINDLE_VALIDATION_UNAVAILABLE");
+		expect(observed).toEqual([]);
+		expect(traps).toBe(0);
+	});
+
+	it("snapshots requirements, annotations, dependency declarations and mapper callbacks before effects execute", async () => {
+		const source = {
+			name: "snapshot",
+			resources: {
+				data: {
+					kind: "bucket",
+					name: "data",
+					stableId: "bucket:data",
+					declaredAllow: ["read"],
+					dependsOn: [],
+					annotations: [],
+				},
+				web: {
+					kind: "web",
+					name: "web",
+					stableId: "web:web",
+					declaredAllow: [],
+					dependsOn: ["bucket"],
+					annotations: [
+						{
+							provider: "test",
+							option: "feature",
+							config: { setting: { value: "before" } },
+						},
+					],
+				},
+			},
+			edges: [{ from: "web", to: "data" }],
+			requirements: { labels: { team: "before" } },
+			entrypoint: (name: string) => (name === "web" ? entrypoint : undefined),
+		};
+		let seen: object | undefined;
+		const registry = {
+			bucket: {
+				resourceTypes: ["Spec.Store"],
+				operations: ["read"],
+				annotations: [],
+				bindsEntrypoint: false,
+				validate: ({ bindleName, requirements }) => {
+					expect(bindleName).toBe("snapshot");
+					expect(requirements.labels.team).toBe("before");
+					source.name = "changed-during-validation";
+					source.requirements.labels.team = "changed-during-validation";
+				},
+				build: () =>
+					Effect.gen(function* () {
+						const primary = yield* Store("data", {});
+						return { primary, resources: [primary], boundDependencies: [] };
+					}),
+			},
+			web: {
+				resourceTypes: ["Spec.Web"],
+				operations: [],
+				annotations: ["test:feature"],
+				bindsEntrypoint: true,
+				validate: ({
+					bindleName,
+					requirements,
+					declaration,
+					dependencyDeclarations,
+				}) => {
+					expect(bindleName).toBe("snapshot");
+					expect(requirements.labels.team).toBe("before");
+					expect(Object.isFrozen(requirements.labels)).toBe(true);
+					expect(Object.getPrototypeOf(requirements.labels)).toBe(
+						Object.prototype,
+					);
+					expect(Object.isFrozen(declaration.annotations[0]?.config)).toBe(
+						true,
+					);
+					expect(
+						Object.isFrozen(dependencyDeclarations.data?.declaredAllow),
+					).toBe(true);
+				},
+				build: (input) =>
+					Effect.sync(() => {
+						seen = {
+							name: input.bindleName,
+							requirements: input.requirements,
+							declaration: input.declaration,
+							dependency: input.dependencyDeclarations.data,
+						};
+						throw new Error("observed snapshot");
+					}),
+			},
+		};
+		const program = mapBindleToAlchemy(source, registry, supportedRequirements);
+		source.name = "changed";
+		source.requirements.labels.team = "changed";
+		source.resources.web.annotations[0].config.setting.value = "changed";
+		source.resources.data.declaredAllow.push("write");
+		source.edges[0].to = "missing";
+		registry.web.annotations.push("test:other");
+		registry.web.build = () =>
+			Effect.sync(() => {
+				throw new Error("replaced callback");
+			});
+		await expect(
+			Effect.runPromise(
+				program.pipe(
+					Effect.provideService(StackContext, {
+						name: "Snapshot",
+						stage: "test",
+						resources: {},
+						bindings: {},
+						actions: {},
+					}),
+				),
+			),
+		).rejects.toThrow("observed snapshot");
+		expect(seen).toMatchObject({
+			name: "snapshot",
+			requirements: { labels: { team: "before" } },
+			declaration: {
+				annotations: [{ config: { setting: { value: "before" } } }],
+			},
+			dependency: { declaredAllow: ["read"] },
+		});
+	});
+
+	it("rejects cyclic, accessor-bearing and oversized requirement data before callbacks run", () => {
+		let assessed = false;
+		interface CyclicFixture {
+			self?: object;
+		}
+		const cyclic: CyclicFixture = {};
+		cyclic.self = cyclic;
+		const inputs = [
+			cyclic,
+			{
+				get label() {
+					throw new Error("accessor ran");
+				},
+			},
+			{ label: "x".repeat(65_537) },
+		];
+		for (const requirements of inputs) {
+			expect(() =>
+				mapBindleToAlchemy({ ...declaration, requirements }, mappers([]), {
+					assessRequirements: () => {
+						assessed = true;
+						return { status: "supported" };
+					},
+				}),
+			).toThrow("BINDLE_INVALID");
+		}
+		expect(assessed).toBe(false);
+	});
+
+	it("classifies malformed structural identities and edges without leaking TypeError", () => {
+		const invalidBindles = [
+			{ ...declaration, name: null },
+			{ ...declaration, resources: null },
+			{ ...declaration, resources: { broken: null } },
+			{
+				...declaration,
+				resources: { broken: { ...declaration.resources.store, kind: null } },
+			},
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, declaredAllow: [null] },
+				},
+			},
+			{
+				...declaration,
+				resources: {
+					store: { ...declaration.resources.store, annotations: [null] },
+				},
+			},
+			{
+				...declaration,
+				resources: {
+					store: {
+						...declaration.resources.store,
+						annotations: [{ provider: null, option: "feature", config: {} }],
+					},
+				},
+			},
+			{ ...declaration, connectors: [] },
+			{ ...declaration, entrypoint: null },
+		];
+		for (const input of invalidBindles) {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed inputs exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(input as never, mappers([]), supportedRequirements),
+			).toThrow("BINDLE_INVALID");
+		}
+		for (const edge of [
+			null,
+			{ from: null, to: "store" },
+			{ from: "web", to: null },
+		]) {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed edges exercise the runtime boundary.
+			expect(() =>
+				mapBindleToAlchemy(
+					{ ...declaration, edges: [edge] } as never,
+					mappers([]),
+					supportedRequirements,
+				),
+			).toThrow("BINDLE_INVALID");
+		}
+		for (const catalog of [
+			null,
+			[null],
+			[{ factory: null, allowVerbs: [] }],
+			[{ factory: "bucket", allowVerbs: null }],
+			[{ factory: "bucket", allowVerbs: ["read", "read"] }],
+		]) {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed catalogs exercise the runtime boundary.
+			expect(() =>
+				describeAlchemyPrimitiveSupport(catalog as never, mappers([])),
+			).toThrow("BINDLE_INVALID");
+		}
+	});
+	it("validates dependency declarations before any Alchemy resource is built", () => {
+		const observed: string[] = [];
+		const registry = mappers(observed);
+		expect(() =>
+			mapBindleToAlchemy(
+				declaration,
+				{
+					...registry,
+					web: {
+						...registry.web,
+						validate: ({ dependencyDeclarations }) => {
+							expect(Object.keys(dependencyDeclarations).sort()).toEqual([
+								"queue",
+								"store",
+							]);
+							expect(dependencyDeclarations.store?.declaredAllow).toEqual([
+								"read",
+								"write",
+							]);
+							throw new Error("unhandled annotation");
+						},
+					},
+				},
+				supportedRequirements,
+			),
+		).toThrow("unhandled annotation");
+		expect(observed).toEqual([]);
+	});
+
 	it("rejects connector declarations until their authorization and runtime bindings can be mapped", () => {
 		const observed: string[] = [];
 		const input = {
@@ -163,7 +689,7 @@ describe("explicit Alchemy primitive mapping", () => {
 		]) {
 			expect(() =>
 				mapBindleToAlchemy(declaration, mappers(observed), {
-					// SAFETY: these malformed decisions exercise the runtime boundary.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these malformed decisions exercise the runtime boundary.
 					assessRequirements: () => decision as never,
 				}),
 			).toThrow("REQUIREMENTS_ASSESSMENT_FAILED");
@@ -287,6 +813,57 @@ describe("explicit Alchemy primitive mapping", () => {
 		]);
 	});
 
+	it("identifies the rejected operation or annotation and the provider limitation", () => {
+		const registry = mappers([]);
+		const input = {
+			...declaration,
+			resources: {
+				...declaration.resources,
+				store: { ...declaration.resources.store, declaredAllow: ["delete"] },
+			},
+		};
+		const limited = {
+			...registry,
+			bucket: {
+				...registry.bucket,
+				limitations: ["blob events are unavailable"],
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(input, limited, supportedRequirements),
+		).toThrow("operation delete: blob events are unavailable");
+		const withAnnotation = {
+			...input,
+			resources: {
+				...input.resources,
+				store: {
+					...declaration.resources.store,
+					annotations: [{ provider: "custom", option: "feature", config: {} }],
+				},
+			},
+		};
+		expect(() =>
+			mapBindleToAlchemy(withAnnotation, limited, supportedRequirements),
+		).toThrow("annotation custom:feature: blob events are unavailable");
+	});
+
+	it("reports partial coverage even when all operations are present but runtime behavior is limited", () => {
+		const registry = mappers([]);
+		const support = describeAlchemyPrimitiveSupport(
+			[{ factory: "web", allowVerbs: [] }],
+			{
+				...registry,
+				web: {
+					...registry.web,
+					limitations: ["session replay is unavailable"],
+				},
+			},
+		);
+		expect(support).toMatchObject([
+			{ status: "partial", limitations: ["session replay is unavailable"] },
+		]);
+	});
+
 	it("does not treat inherited object properties as provider mappings", () => {
 		const catalog = [{ factory: "toString", allowVerbs: [] }];
 		expect(describeAlchemyPrimitiveSupport(catalog, {})).toMatchObject([
@@ -343,7 +920,7 @@ describe("explicit Alchemy primitive mapping", () => {
 				build: () => Effect.succeed(mapped),
 			},
 		};
-		// SAFETY: intentionally malformed mapper results exercise the runtime contract.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: intentionally malformed mapper results exercise the runtime contract.
 		const program = mapBindleToAlchemy(
 			one,
 			registry as never,

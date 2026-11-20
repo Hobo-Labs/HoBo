@@ -1,8 +1,21 @@
 import { createHash } from "node:crypto";
+import { types as utilTypes } from "node:util";
 import type { StackPlan } from "alchemy/Alchemist";
 import * as Output from "alchemy/Output";
 import type { Target } from "./_generated/alchemy_iac_pb.js";
+import { compareCodeUnits } from "./code-unit-order.js";
 import type { FinancialDecision } from "./port.js";
+import {
+	type AlchemyPriorStateSecrets,
+	type AlchemySecretFingerprint,
+	type CapturedAlchemySecrets,
+	captureAlchemyPlanSecrets,
+	captureAlchemySecrets,
+	fingerprintAlchemyRedacted,
+	isAlchemyRedacted,
+	secretResourceDomain,
+	verifyAlchemySecrets,
+} from "./secret-fingerprint.js";
 import {
 	type AlchemySourceBinding,
 	type AlchemySourceClaim,
@@ -11,6 +24,84 @@ import {
 	captureAlchemySourceRequirements,
 } from "./source-fence.js";
 import { safeAlchemyFqn, safeAlchemyState } from "./state-identity.js";
+import { acceptSynchronousTrue } from "./synchronous-result.js";
+
+const hasOwnDescriptor = Object.hasOwn;
+const isPlanProxy = utilTypes.isProxy;
+const NativePlanMap = Map;
+const planMapGet = NativePlanMap.prototype.get;
+const planMapSet = NativePlanMap.prototype.set;
+const createNull = Object.create;
+const defineProperty = Object.defineProperty;
+const freezeCaptured = Object.freeze;
+const nativeString = String;
+
+function appendOwnData<Value>(values: Value[], value: Value): void {
+	const property: PropertyDescriptor = createNull(null);
+	property.value = value;
+	property.enumerable = true;
+	property.configurable = true;
+	property.writable = true;
+	defineProperty(values, nativeString(values.length), freezeCaptured(property));
+}
+
+function sourceRequirementFor(
+	requirements: readonly AlchemySourceRequirement[] | undefined,
+	resourceId: string,
+): AlchemySourceRequirement | undefined {
+	if (requirements === undefined) return undefined;
+	for (let index = 0; index < requirements.length; index++) {
+		const entry = requirements[index];
+		if (entry?.resourceId === resourceId) return entry;
+	}
+	return undefined;
+}
+
+function sourceInventoryMatches(
+	requirements: readonly AlchemySourceRequirement[] | undefined,
+	claims: readonly AlchemySourceClaim[],
+): boolean {
+	if (requirements === undefined) return claims.length === 0;
+	if (requirements.length !== claims.length) return false;
+	for (let index = 0; index < requirements.length; index++) {
+		const required = requirements[index];
+		if (required === undefined) return false;
+		let matched = false;
+		for (let position = 0; position < claims.length; position++) {
+			const claim = claims[position];
+			if (
+				claim !== undefined &&
+				claim.resourceId === required.resourceId &&
+				claim.resourceType === required.resourceType &&
+				claim.bindleName === required.bindleName &&
+				claim.applicationName === required.applicationName &&
+				claim.sourceKind === required.sourceKind &&
+				claim.sourcePath === required.sourcePath
+			) {
+				matched = true;
+				break;
+			}
+		}
+		if (!matched) return false;
+	}
+	return true;
+}
+
+function snapshotSourceClaims(
+	claims: readonly AlchemySourceClaim[],
+): readonly AlchemySourceClaim[] {
+	const result: AlchemySourceClaim[] = [];
+	for (let index = 0; index < claims.length; index++) {
+		const claim = claims[index];
+		if (claim === undefined)
+			throw new AlchemyIacError(
+				"SOURCE_FENCE_INCOMPLETE",
+				"source claim is unavailable",
+			);
+		appendOwnData(result, freezeCaptured({ ...claim }));
+	}
+	return freezeCaptured(result);
+}
 
 type JsonValue =
 	| null
@@ -20,14 +111,15 @@ type JsonValue =
 	| JsonValue[]
 	| { [key: string]: JsonValue };
 
-/** A host-owned verifier must authenticate the sandbox, credentials, and complete effect scope. */
 export interface AlchemyCompositeGuard {
 	readonly proofRef: string;
 	readonly environmentDigest: string;
 	readonly verifyEnvironment: (input: AlchemyCompositeEnvironment) => boolean;
 	readonly verifyPlan: (input: AlchemyCompositeObservation) => boolean;
-	/** Complete host-authenticated executable-source inventory; empty must be explicit. */
+
 	readonly sourceRequirements: readonly AlchemySourceRequirement[];
+
+	readonly secretFingerprint?: AlchemySecretFingerprint;
 }
 
 export interface AlchemyCompositeEnvironment {
@@ -64,7 +156,7 @@ export interface AlchemyCompositeObservation
 	readonly effects: readonly AlchemyCompositeEffect[];
 	readonly sourceClaims: readonly AlchemySourceClaim[];
 	readonly historicalSources: readonly AlchemyHistoricalSource[];
-	/** Exact plan state for every prior resource; this may include a provider-adopted state. */
+
 	readonly historicalResources: readonly AlchemyHistoricalResource[];
 }
 
@@ -74,11 +166,10 @@ export interface AlchemyHistoricalSource {
 	readonly priorStateDigest: string;
 }
 
-/** Prior plan state for independent authorization of physical-resource effects. */
 export interface AlchemyHistoricalResource {
 	readonly resourceId: string;
 	readonly resourceType: string;
-	/** The persisted type, which can differ only for a provider-declared alias. */
+
 	readonly priorResourceType: string;
 	readonly action:
 		| "create"
@@ -89,9 +180,20 @@ export interface AlchemyHistoricalResource {
 		| "delete"
 		| "orphaned";
 	readonly priorStateDigest: string;
-	/** Former state keys Alchemy will migrate into this plan node. */
+
 	readonly renamedFrom: readonly string[];
 }
+
+const getOwnDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnDescriptors = Object.getOwnPropertyDescriptors;
+const getOwnSymbols = Object.getOwnPropertySymbols;
+const getPrototype = Object.getPrototypeOf;
+const objectKeys = Object.keys;
+const objectEntries = Object.entries;
+const isArray = Array.isArray;
+const reflectGet = Reflect.get;
+const reflectApply = Reflect.apply;
+const functionToString = Function.prototype.toString;
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
 const MAX_EFFECTS = 1024;
@@ -100,19 +202,22 @@ const MAX_EFFECTS = 1024;
 function captureRenamedFrom(value: unknown): readonly string[] | undefined {
 	if (value === undefined) return Object.freeze([]);
 	if (
-		!Array.isArray(value) ||
+		isPlanProxy(value) ||
+		!isArray(value) ||
 		value.length > 256 ||
-		Object.getOwnPropertySymbols(value).length !== 0
+		getOwnSymbols(value).length !== 0
 	)
 		return undefined;
-	const properties = Object.getOwnPropertyDescriptors(value);
-	if (Object.keys(properties).length !== value.length + 1) return undefined;
+	const properties = getOwnDescriptors(value);
+	if (objectKeys(properties).length !== value.length + 1) return undefined;
 	const result: string[] = [];
 	for (let index = 0; index < value.length; index++) {
-		const item = properties[String(index)];
+		const item = hasOwnDescriptor(properties, String(index))
+			? properties[String(index)]
+			: undefined;
 		if (
 			item === undefined ||
-			!("value" in item) ||
+			!hasOwnDescriptor(item, "value") ||
 			!item.enumerable ||
 			typeof item.value !== "string" ||
 			!safeAlchemyFqn(item.value)
@@ -127,9 +232,9 @@ function captureRenamedFrom(value: unknown): readonly string[] | undefined {
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
 function fingerprintFunction(value: (...args: never[]) => void): string {
-	const source = Function.prototype.toString.call(value);
+	const source = reflectApply(functionToString, value, []);
 	if (source.length > 65_536 || source.includes("[native code]"))
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"effect code is not inspectable",
 		);
@@ -150,6 +255,14 @@ export class AlchemyIacError extends Error {
 		this.name = "AlchemyIacError";
 		this.requiresReconciliation =
 			reservationId !== undefined ||
+			code === "ADMISSION_UNSUPPORTED_EVIDENCE" ||
+			code === "APPLY_CLEANUP_UNCERTAIN" ||
+			code === "EXECUTION_DEADLINE_BEFORE_ROUTE" ||
+			code === "ROUTE_DEADLINE_UNKNOWN" ||
+			code === "ADMISSION_DEADLINE_UNKNOWN" ||
+			code === "EXECUTION_DEADLINE_AFTER_ADMISSION" ||
+			code === "PROVIDER_DEADLINE_UNKNOWN" ||
+			code === "ROUTE_COMPLETION_DEADLINE_UNKNOWN" ||
 			code === "ADMISSION_OUTCOME_UNKNOWN" ||
 			code === "ADMISSION_RECEIPT_INVALID" ||
 			code === "EXECUTION_IN_PROGRESS" ||
@@ -164,12 +277,21 @@ export class AlchemyIacError extends Error {
 			admission?.budget?.reservation === "held" ||
 			admission?.budget?.reservation === "uncertain";
 		this.executionOutcome =
+			code === "PREVIEW_DEADLINE_EXCEEDED" ||
+			code === "REFRESH_DEADLINE_EXCEEDED" ||
+			code === "ADMISSION_UNSUPPORTED_EVIDENCE" ||
+			code === "EXECUTION_DEADLINE_BEFORE_ROUTE" ||
+			code === "ROUTE_DEADLINE_UNKNOWN" ||
+			code === "ADMISSION_DEADLINE_UNKNOWN" ||
+			code === "EXECUTION_DEADLINE_AFTER_ADMISSION" ||
 			code === "STATE_IDENTITY_UNVERIFIED" ||
 			code === "STATE_SCOPE_UNVERIFIED" ||
 			code === "PLAN_CHANGED_AFTER_ADMISSION" ||
 			code === "PLAN_UNINSPECTABLE_AFTER_ADMISSION"
 				? "not-started"
-				: code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
+				: code === "ROUTE_COMPLETION_DEADLINE_UNKNOWN" ||
+						code === "APPLY_CLEANUP_UNCERTAIN" ||
+						code === "APPLY_OUTPUT_UNREPRESENTABLE" ||
 						code === "STATE_SCOPE_UNCERTAIN" ||
 						code === "SOURCE_FENCE_UNCERTAIN" ||
 						code === "COMPOSITE_AUTHORIZATION_UNCERTAIN"
@@ -180,9 +302,60 @@ export class AlchemyIacError extends Error {
 	}
 }
 
-// Tagged encoding avoids collisions between absent values and user data.
-// Exotic objects, accessors, cycles and oversized inputs cannot be pinned.
+let inspectionErrors: WeakMap<object, string> | undefined;
+
+function inspectionFailure(code: string, message: string): AlchemyIacError {
+	const error = new AlchemyIacError(code, message);
+	inspectionErrors?.set(error, code);
+	return error;
+}
+
+function detached<T>(work: () => T): T {
+	const previous = inspectionErrors;
+	inspectionErrors = undefined;
+	try {
+		return work();
+	} finally {
+		inspectionErrors = previous;
+	}
+}
+
+function inspectResult<T>(
+	work: () => T,
+):
+	| { readonly ok: true; readonly value: T }
+	| { readonly ok: false; readonly code: string } {
+	const previous = inspectionErrors;
+	const owned = new WeakMap<object, string>();
+	inspectionErrors = owned;
+	try {
+		return { ok: true, value: work() };
+	} catch (error) {
+		return {
+			ok: false,
+			code:
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: only an object identity can be looked up in the private WeakMap. */
+				(typeof error === "object" && error !== null && !isPlanProxy(error)
+					? owned.get(error)
+					: undefined) ?? "PLAN_UNINSPECTABLE",
+		};
+	} finally {
+		inspectionErrors = previous;
+	}
+}
+
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns, anti-slop/no-reflect-get -- SAFETY: this is the Alchemy plan input boundary; it inspects untrusted values and Alchemy's symbol-based output proxy before producing bounded canonical data. */
+function isPlanOutput(value: unknown): boolean {
+	try {
+		return Output.isOutput(value);
+	} catch {
+		throw inspectionFailure(
+			"PLAN_UNINSPECTABLE",
+			"a plan output cannot be inspected",
+		);
+	}
+}
+
 function encode(
 	value: unknown,
 	ancestors: Set<object>,
@@ -193,9 +366,11 @@ function encode(
 		{ resourceId: string; resourceType: string }
 	>,
 	effects?: AlchemyCompositeEffect[],
+	secrets?: CapturedAlchemySecrets,
+	path: readonly string[] = [],
 ): JsonValue {
 	if (--budget.remaining < 0 || depth > 32)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"plan exceeds the fingerprint limits",
 		);
@@ -204,7 +379,7 @@ function encode(
 	if (typeof value === "boolean") return ["boolean", value];
 	if (typeof value === "string") {
 		if (value.length > 4096)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan string exceeds the fingerprint limit",
 			);
@@ -212,7 +387,7 @@ function encode(
 	}
 	if (typeof value === "number") {
 		if (!Number.isFinite(value))
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan contains a non-finite number",
 			);
@@ -229,23 +404,36 @@ function encode(
 	if (
 		references !== undefined &&
 		(typeof value === "object" || typeof value === "function") &&
-		Output.isOutput(value)
+		isPlanOutput(value)
 	) {
 		if (ancestors.has(value))
-			throw new AlchemyIacError("PLAN_UNINSPECTABLE", "plan contains a cycle");
+			throw inspectionFailure("PLAN_UNINSPECTABLE", "plan contains a cycle");
 		ancestors.add(value);
 		try {
-			const expression: unknown = Reflect.get(value, Output.ExprSymbol);
+			let expression: unknown;
+			try {
+				expression = reflectGet(value, Output.ExprSymbol);
+			} catch {
+				throw inspectionFailure(
+					"PLAN_UNINSPECTABLE",
+					"a plan output cannot be inspected",
+				);
+			}
 			if (typeof expression !== "object" || expression === null)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"PLAN_UNINSPECTABLE",
 					"invalid output expression",
 				);
-			const prototype = Object.getPrototypeOf(expression);
+			if (isPlanProxy(expression))
+				throw inspectionFailure(
+					"PLAN_UNINSPECTABLE",
+					"a plan output expression is not inspectable",
+				);
+			const prototype = getPrototype(expression);
 			const data = (key: string): unknown => {
-				const descriptor = Object.getOwnPropertyDescriptor(expression, key);
-				if (descriptor === undefined || !("value" in descriptor))
-					throw new AlchemyIacError(
+				const descriptor = getOwnDescriptor(expression, key);
+				if (descriptor === undefined || !hasOwnDescriptor(descriptor, "value"))
+					throw inspectionFailure(
 						"PLAN_UNINSPECTABLE",
 						"invalid output expression",
 					);
@@ -261,16 +449,25 @@ function encode(
 					typeof identifier !== "string" ||
 					identifier.length === 0 ||
 					identifier.length > 200 ||
-					!Output.isOutput(source)
+					!isPlanOutput(source)
 				)
-					throw new AlchemyIacError(
+					throw inspectionFailure(
 						"PLAN_UNINSPECTABLE",
 						"invalid output property",
 					);
 				return [
 					"alchemy-property",
 					identifier,
-					encode(source, ancestors, budget, depth + 1, references, effects),
+					encode(
+						source,
+						ancestors,
+						budget,
+						depth + 1,
+						references,
+						effects,
+						secrets,
+						[...path, "e:PropExpr.expr"],
+					),
 				];
 			}
 			if (
@@ -286,6 +483,8 @@ function encode(
 						depth + 1,
 						references,
 						effects,
+						secrets,
+						[...path, "e:LiteralExpr.value"],
 					),
 				];
 			if (prototype === Output.AllExpr.prototype && data("kind") === "AllExpr")
@@ -298,6 +497,8 @@ function encode(
 						depth + 1,
 						references,
 						effects,
+						secrets,
+						[...path, "e:AllExpr.outs"],
 					),
 				];
 			if (
@@ -306,10 +507,7 @@ function encode(
 			) {
 				const bindingName = data("bindingName");
 				if (typeof bindingName !== "string" || bindingName.length > 200)
-					throw new AlchemyIacError(
-						"PLAN_UNINSPECTABLE",
-						"invalid output name",
-					);
+					throw inspectionFailure("PLAN_UNINSPECTABLE", "invalid output name");
 				return [
 					"alchemy-named",
 					bindingName,
@@ -320,6 +518,8 @@ function encode(
 						depth + 1,
 						references,
 						effects,
+						secrets,
+						[...path, "e:NamedExpr.expr"],
 					),
 				];
 			}
@@ -335,17 +535,17 @@ function encode(
 							: undefined;
 			if (executableKind !== undefined) {
 				if (effects === undefined || effects.length >= MAX_EFFECTS)
-					throw new AlchemyIacError(
+					throw inspectionFailure(
 						"PLAN_UNSUPPORTED_EFFECTS",
 						"executable outputs require host authorization",
 					);
 				const callback = data("f");
 				if (typeof callback !== "function")
-					throw new AlchemyIacError(
+					throw inspectionFailure(
 						"PLAN_UNINSPECTABLE",
 						"invalid output callback",
 					);
-				// SAFETY: the runtime guard established that this value is callable; fingerprinting never invokes it.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the runtime guard established that this value is callable; fingerprinting never invokes it.
 				const fingerprint = fingerprintFunction(
 					callback as (...args: never[]) => void,
 				);
@@ -361,6 +561,8 @@ function encode(
 						depth + 1,
 						references,
 						effects,
+						secrets,
+						[...path, `e:${executableKind}.expr`],
 					),
 				];
 			}
@@ -380,7 +582,7 @@ function encode(
 						reference.resourceType,
 					];
 			}
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"output expression is not a scoped resource property",
 			);
@@ -389,36 +591,62 @@ function encode(
 		}
 	}
 	if (typeof value !== "object")
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"plan contains an unsupported value",
 		);
+	if (isPlanProxy(value))
+		throw inspectionFailure(
+			"PLAN_UNINSPECTABLE",
+			"plan contains an unsupported proxy",
+		);
+	if (isAlchemyRedacted(value)) {
+		if (secrets === undefined)
+			throw inspectionFailure(
+				"PLAN_SECRET_UNVERIFIED",
+				"redacted plan values require an independently authenticated secret fingerprint key",
+			);
+		try {
+			return [
+				"alchemy-redacted",
+				fingerprintAlchemyRedacted(value, secrets, path),
+			];
+		} catch {
+			throw inspectionFailure(
+				"PLAN_UNINSPECTABLE",
+				"a redacted plan value cannot be safely identified",
+			);
+		}
+	}
 	if (ancestors.has(value))
-		throw new AlchemyIacError("PLAN_UNINSPECTABLE", "plan contains a cycle");
+		throw inspectionFailure("PLAN_UNINSPECTABLE", "plan contains a cycle");
 	ancestors.add(value);
 	try {
-		const descriptors = Object.getOwnPropertyDescriptors(value);
-		if (Object.getOwnPropertySymbols(value).length > 0)
-			throw new AlchemyIacError(
+		const descriptors = getOwnDescriptors(value);
+		if (getOwnSymbols(value).length > 0)
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan contains symbol properties",
 			);
-		if (Array.isArray(value)) {
+		if (isArray(value)) {
 			if (
 				value.length > 1024 ||
-				Object.keys(descriptors).some(
+				objectKeys(descriptors).some(
 					(key) => key !== "length" && !/^(0|[1-9][0-9]*)$/u.test(key),
 				)
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"PLAN_UNINSPECTABLE",
 					"plan array is not bounded data",
 				);
 			const items: JsonValue[] = [];
 			for (let index = 0; index < value.length; index++) {
-				const descriptor = descriptors[String(index)];
-				if (descriptor === undefined || !("value" in descriptor))
-					throw new AlchemyIacError(
+				const key = String(index);
+				const descriptor = hasOwnDescriptor(descriptors, key)
+					? descriptors[key]
+					: undefined;
+				if (descriptor === undefined || !hasOwnDescriptor(descriptor, "value"))
+					throw inspectionFailure(
 						"PLAN_UNINSPECTABLE",
 						"plan array contains a hole or accessor",
 					);
@@ -430,27 +658,31 @@ function encode(
 						depth + 1,
 						references,
 						effects,
+						secrets,
+						[...path, `i:${index}`],
 					),
 				);
 			}
 			return ["array", items];
 		}
-		const prototype = Object.getPrototypeOf(value);
+		const prototype = getPrototype(value);
 		if (prototype !== Object.prototype && prototype !== null)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan contains non-data objects or unresolved references",
 			);
 		const pairs: JsonValue[] = [];
-		for (const key of Object.keys(descriptors).sort()) {
-			const descriptor = descriptors[key];
+		for (const key of objectKeys(descriptors).sort()) {
+			const descriptor = hasOwnDescriptor(descriptors, key)
+				? descriptors[key]
+				: undefined;
 			if (
 				descriptor === undefined ||
-				!("value" in descriptor) ||
+				!hasOwnDescriptor(descriptor, "value") ||
 				!descriptor.enumerable ||
 				key.length > 200
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"PLAN_UNINSPECTABLE",
 					"plan contains hidden or computed properties",
 				);
@@ -463,6 +695,8 @@ function encode(
 					depth + 1,
 					references,
 					effects,
+					secrets,
+					[...path, `p:${key}`],
 				),
 			]);
 		}
@@ -473,12 +707,33 @@ function encode(
 }
 
 export function digestData(value: unknown): string {
-	return digest(value);
+	return detached(() => digest(value));
 }
 
-/** Hash independently authenticated, inspectable prior resource state. */
-export function hashAlchemyPriorState(value: unknown): string {
-	return digestData(value);
+function hashAlchemyPriorStateInternal(
+	value: unknown,
+	input?: AlchemyPriorStateSecrets,
+): string {
+	let secrets: CapturedAlchemySecrets | undefined;
+	if (input !== undefined) {
+		try {
+			secrets = captureAlchemySecrets(input);
+			if (!verifyAlchemySecrets(secrets)) throw new Error("unverified");
+		} catch {
+			throw inspectionFailure(
+				"PLAN_SECRET_UNVERIFIED",
+				"the host secret fingerprint key could not be authenticated",
+			);
+		}
+	}
+	return digest(value, undefined, undefined, secrets);
+}
+
+export function hashAlchemyPriorState(
+	value: unknown,
+	input?: AlchemyPriorStateSecrets,
+): string {
+	return detached(() => hashAlchemyPriorStateInternal(value, input));
 }
 
 function digest(
@@ -488,11 +743,20 @@ function digest(
 		{ resourceId: string; resourceType: string }
 	>,
 	effects?: AlchemyCompositeEffect[],
+	secrets?: CapturedAlchemySecrets,
 ): string {
 	return `sha256:${createHash("sha256")
 		.update(
 			JSON.stringify(
-				encode(value, new Set(), { remaining: 20_000 }, 0, references, effects),
+				encode(
+					value,
+					new Set(),
+					{ remaining: 20_000 },
+					0,
+					references,
+					effects,
+					secrets,
+				),
 			),
 		)
 		.digest("hex")}`;
@@ -504,6 +768,38 @@ interface InspectedAlchemyPlan {
 	changes: number;
 	hasSourceClaims: boolean;
 	revalidateSources(): boolean;
+}
+
+function secretsFor(
+	guard: AlchemyCompositeGuard | undefined,
+	target: Target,
+	verify: boolean,
+): CapturedAlchemySecrets | undefined {
+	try {
+		if (guard === undefined) return undefined;
+		if (isPlanProxy(guard)) throw new Error("invalid secret authority");
+		const field = getOwnDescriptor(guard, "secretFingerprint");
+		if (field === undefined) return undefined;
+		if (!hasOwnDescriptor(field, "value"))
+			throw new Error("invalid secret authority");
+		if (field.value === undefined) return undefined;
+		const context = captureAlchemyPlanSecrets(
+			{
+				tenantId: target.tenantId,
+				targetId: target.targetId,
+				stackName: target.stackName,
+				stage: target.stage,
+			},
+			field.value,
+		);
+		if (verify && !verifyAlchemySecrets(context)) throw new Error("unverified");
+		return context;
+	} catch {
+		throw inspectionFailure(
+			"PLAN_SECRET_UNVERIFIED",
+			"the host secret fingerprint key could not be authenticated",
+		);
+	}
 }
 
 function inspectUnverified(
@@ -518,24 +814,68 @@ function inspectUnverified(
 	historicalResources: AlchemyHistoricalResource[];
 } {
 	const allowEffects = guard !== undefined;
-	if (plan.stack.name !== target.stackName || plan.stack.stage !== target.stage)
+	const requirements =
+		guard === undefined
+			? undefined
+			: captureAlchemySourceRequirements(guard.sourceRequirements);
+	if (guard !== undefined && requirements === undefined)
 		throw new AlchemyIacError(
+			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
+			"source requirements could not be captured",
+		);
+	if (plan.stack.name !== target.stackName || plan.stack.stage !== target.stage)
+		throw inspectionFailure(
 			"TARGET_SCOPE_MISMATCH",
 			"plan stack or stage differs from the configured target",
 		);
+	const secrets = secretsFor(guard, target, verifySourceCallbacks);
+	const secretDomains = new NativePlanMap<string, CapturedAlchemySecrets>();
+	const secretDomainContexts: CapturedAlchemySecrets[] = [];
+	const digestPrior = (
+		/* oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: prior state is provider data and the bounded encoder validates it before hashing. */
+		value: unknown,
+		resourceId: string,
+		resourceType: string,
+		domain: "prior-state" | "deletion-properties" = "prior-state",
+	) => {
+		let context: CapturedAlchemySecrets | undefined;
+		if (secrets !== undefined) {
+			const key = `${domain.length}:${domain}${resourceId.length}:${resourceId}${resourceType.length}:${resourceType}`;
+			context = reflectApply(planMapGet, secretDomains, [key]);
+			if (context === undefined) {
+				context = secretResourceDomain(
+					secrets,
+					domain,
+					resourceId,
+					resourceType,
+				);
+				if (
+					context === undefined ||
+					(verifySourceCallbacks && !verifyAlchemySecrets(context))
+				)
+					throw inspectionFailure(
+						"PLAN_SECRET_UNVERIFIED",
+						"the host secret fingerprint scope could not be authenticated",
+					);
+				reflectApply(planMapSet, secretDomains, [key, context]);
+				appendOwnData(secretDomainContexts, context);
+			}
+		}
+		return digest(value, undefined, undefined, context);
+	};
 	if (plan.native.selectedFqns !== undefined)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNSUPPORTED_EFFECTS",
 			"partial plans cannot be financially covered",
 		);
 	const actionKeys = [
-		...Object.keys(plan.native.actions),
-		...Object.entries(plan.native.actionDeletions)
+		...objectKeys(plan.native.actions),
+		...objectEntries(plan.native.actionDeletions)
 			.filter(([, node]) => node !== undefined)
 			.map(([key]) => key),
 	];
 	if (!allowEffects && (plan.actions.length > 0 || actionKeys.length > 0))
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNSUPPORTED_EFFECTS",
 			"stack actions require host authorization",
 		);
@@ -544,7 +884,7 @@ function inspectUnverified(
 		new Set(actionKeys).size !== actionKeys.length ||
 		actionKeys.some((key) => !plan.actions.some((row) => row.fqn === key))
 	)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"native plan and action descriptions differ",
 		);
@@ -553,14 +893,16 @@ function inspectUnverified(
 		plan.resources.length + plan.actions.length > 256 ||
 		plan.resources.length + plan.actions.length !== target.resources.length
 	)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"TARGET_INVENTORY_INCOMPLETE",
 			"every planned resource must have one financial scope",
 		);
-	const rows = [...plan.resources].sort((a, b) => a.fqn.localeCompare(b.fqn));
+	const rows = [...plan.resources].sort((a, b) =>
+		compareCodeUnits(a.fqn, b.fqn),
+	);
 	const nativeKeys = [
-		...Object.keys(plan.native.resources),
-		...Object.entries(plan.native.deletions)
+		...objectKeys(plan.native.resources),
+		...objectEntries(plan.native.deletions)
 			.filter(([, node]) => node !== undefined)
 			.map(([key]) => key),
 	];
@@ -569,27 +911,27 @@ function inspectUnverified(
 		new Set(nativeKeys).size !== nativeKeys.length ||
 		nativeKeys.some((key) => !rows.some((row) => row.fqn === key))
 	)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"native plan contains resources absent from its description",
 		);
 	const actionRows = [...plan.actions].sort((a, b) =>
-		a.fqn.localeCompare(b.fqn),
+		compareCodeUnits(a.fqn, b.fqn),
 	);
 	const allNames = [
 		...rows.map((row) => row.fqn),
 		...actionRows.map((row) => row.fqn),
 	];
 	if (new Set(allNames).size !== allNames.length)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"TARGET_INVENTORY_INCOMPLETE",
 			"plan contains duplicate resource identifiers",
 		);
 	const scopes = [...target.resources].sort((a, b) =>
-		a.resourceId.localeCompare(b.resourceId),
+		compareCodeUnits(a.resourceId, b.resourceId),
 	);
 	if (new Set(scopes.map((scope) => scope.resourceId)).size !== scopes.length)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"TARGET_INVENTORY_INCOMPLETE",
 			"target contains duplicate resource scopes",
 		);
@@ -616,7 +958,7 @@ function inspectUnverified(
 			scope === undefined ||
 			scope.resourceType !== `alchemy:action:${row.actionType}`
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"TARGET_INVENTORY_INCOMPLETE",
 				"every action needs an exact financial scope",
 			);
@@ -627,7 +969,7 @@ function inspectUnverified(
 			node.def.LogicalId !== row.logicalId ||
 			node.action !== row.action
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan action description differs from its native action",
 			);
@@ -635,7 +977,7 @@ function inspectUnverified(
 			!safeAlchemyFqn(row.fqn) ||
 			(node.state !== undefined && !safeAlchemyState(node.state, row.fqn))
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"STATE_IDENTITY_UNVERIFIED",
 				"the action and its persisted state have inconsistent identities",
 			);
@@ -670,7 +1012,7 @@ function inspectUnverified(
 			scope.resourceId !== row.fqn ||
 			scope.resourceType !== row.resourceType
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"TARGET_INVENTORY_INCOMPLETE",
 				"plan and target resource scopes do not match",
 			);
@@ -682,25 +1024,23 @@ function inspectUnverified(
 			node.resource.Type !== row.resourceType ||
 			node.action !== row.action
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"plan description does not match the native plan",
 			);
-		const stateDescriptor = Object.getOwnPropertyDescriptor(node, "state");
-		const renameDescriptor = Object.getOwnPropertyDescriptor(
-			node,
-			"renamedFrom",
-		);
+		const stateDescriptor = getOwnDescriptor(node, "state");
+		const renameDescriptor = getOwnDescriptor(node, "renamedFrom");
 		if (
 			stateDescriptor === undefined ||
-			!("value" in stateDescriptor) ||
-			(renameDescriptor !== undefined && !("value" in renameDescriptor))
+			!hasOwnDescriptor(stateDescriptor, "value") ||
+			(renameDescriptor !== undefined &&
+				!hasOwnDescriptor(renameDescriptor, "value"))
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"resource state and rename fields must be own data properties",
 			);
-		// SAFETY: the checked own data value is validated and canonically hashed before use.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the checked own data value is validated and canonically hashed before use.
 		const previous = stateDescriptor.value as
 			| import("alchemy/State").ResourceState
 			| undefined;
@@ -712,7 +1052,7 @@ function inspectUnverified(
 			formerFqns === undefined ||
 			renamedFrom === undefined
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"STATE_IDENTITY_UNVERIFIED",
 				"the resource and its persisted or former state have unsafe identities",
 			);
@@ -727,7 +1067,7 @@ function inspectUnverified(
 				"orphaned",
 			].includes(row.action)
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"the resource action is unsupported",
 			);
@@ -735,20 +1075,28 @@ function inspectUnverified(
 			previous === undefined &&
 			(node.action !== "create" || renamedFrom.length !== 0)
 		)
-			throw new AlchemyIacError(
+			throw inspectionFailure(
 				"PLAN_UNINSPECTABLE",
 				"a historical resource action requires prior state",
 			);
 		let expectedStateDigest: string | undefined;
 		if (previous !== undefined) {
-			const properties = Object.getOwnPropertyDescriptors(previous);
-			const type = properties.resourceType;
-			const logicalId = properties.logicalId;
-			const instanceId = properties.instanceId;
-			const status = properties.status;
+			const properties = getOwnDescriptors(previous);
+			const type = hasOwnDescriptor(properties, "resourceType")
+				? properties.resourceType
+				: undefined;
+			const logicalId = hasOwnDescriptor(properties, "logicalId")
+				? properties.logicalId
+				: undefined;
+			const instanceId = hasOwnDescriptor(properties, "instanceId")
+				? properties.instanceId
+				: undefined;
+			const status = hasOwnDescriptor(properties, "status")
+				? properties.status
+				: undefined;
 			if (
 				type === undefined ||
-				!("value" in type) ||
+				!hasOwnDescriptor(type, "value") ||
 				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: provider state is a persisted external boundary. */
 				typeof type.value !== "string" ||
 				type.value.length === 0 ||
@@ -758,10 +1106,10 @@ function inspectUnverified(
 				(type.value !== row.resourceType &&
 					!node.provider.aliases?.includes(type.value)) ||
 				logicalId === undefined ||
-				!("value" in logicalId) ||
+				!hasOwnDescriptor(logicalId, "value") ||
 				logicalId.value !== node.resource.LogicalId ||
 				instanceId === undefined ||
-				!("value" in instanceId) ||
+				!hasOwnDescriptor(instanceId, "value") ||
 				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: provider state is a persisted external boundary. */
 				typeof instanceId.value !== "string" ||
 				instanceId.value.length === 0 ||
@@ -769,7 +1117,9 @@ function inspectUnverified(
 				instanceId.value.trim() !== instanceId.value ||
 				/[\p{Cc}]/u.test(instanceId.value) ||
 				status === undefined ||
-				!("value" in status) ||
+				!hasOwnDescriptor(status, "value") ||
+				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: persisted status is validated before use. */
+				typeof status.value !== "string" ||
 				![
 					"creating",
 					"created",
@@ -780,7 +1130,7 @@ function inspectUnverified(
 					"replaced",
 				].includes(status.value)
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"STATE_IDENTITY_UNVERIFIED",
 					"the prior resource state has an invalid type, identity, or status",
 				);
@@ -818,11 +1168,11 @@ function inspectUnverified(
 				],
 			} satisfies Readonly<Record<string, readonly string[]>>;
 			if (!allowedStatuses[row.action]?.includes(status.value))
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"STATE_IDENTITY_UNVERIFIED",
 					"the prior state does not match the planned resource action",
 				);
-			expectedStateDigest = hashAlchemyPriorState(previous);
+			expectedStateDigest = digestPrior(previous, row.fqn, row.resourceType);
 			historicalResources.push({
 				resourceId: row.fqn,
 				resourceType: row.resourceType,
@@ -838,12 +1188,12 @@ function inspectUnverified(
 		const expectedLogicalId = node.resource.LogicalId;
 		priorStateChecks.push(() => {
 			try {
-				const current = Object.getOwnPropertyDescriptor(node, "state");
-				const rename = Object.getOwnPropertyDescriptor(node, "renamedFrom");
+				const current = getOwnDescriptor(node, "state");
+				const rename = getOwnDescriptor(node, "renamedFrom");
 				if (
 					current === undefined ||
-					!("value" in current) ||
-					(rename !== undefined && !("value" in rename)) ||
+					!hasOwnDescriptor(current, "value") ||
+					(rename !== undefined && !hasOwnDescriptor(rename, "value")) ||
 					node.action !== expectedAction ||
 					row.action !== expectedAction ||
 					row.fqn !== expectedResourceId ||
@@ -869,18 +1219,20 @@ function inspectUnverified(
 				return expectedStateDigest === undefined
 					? current.value === undefined
 					: current.value !== undefined &&
-							hashAlchemyPriorState(current.value) === expectedStateDigest;
+							digestPrior(
+								current.value,
+								expectedResourceId,
+								expectedResourceType,
+							) === expectedStateDigest;
 			} catch {
 				return false;
 			}
 		});
 		const source = alchemySourceFor(node.resource);
-		const required = guard?.sourceRequirements?.find(
-			(entry) => entry.resourceId === row.fqn,
-		);
+		const required = sourceRequirementFor(requirements, row.fqn);
 		if (source !== undefined) {
 			if (guard === undefined)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"SOURCE_FENCE_REQUIRED",
 					"source-backed resources require trusted host authorization",
 				);
@@ -892,25 +1244,25 @@ function inspectUnverified(
 				claim.environmentDigest !== guard.environmentDigest ||
 				claim.proofRef !== guard.proofRef
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"SOURCE_FENCE_MISMATCH",
 					"the source fence does not match the financial target and resource",
 				);
 			if (verifySourceCallbacks) {
 				let verified = false;
 				try {
-					verified = source.verify(claim) === true;
+					verified = acceptSynchronousTrue(source.verify(claim));
 				} catch {
-					/* host refusal */
+					verified = false;
 				}
 				if (!verified)
-					throw new AlchemyIacError(
+					throw inspectionFailure(
 						"SOURCE_FENCE_UNVERIFIED",
 						"the host source fence is unavailable or revoked",
 					);
 			}
-			sourceClaims.push(claim);
-			sourceBindings.push(source);
+			appendOwnData(sourceClaims, claim);
+			appendOwnData(sourceBindings, source);
 		}
 		if (source === undefined && required !== undefined) {
 			if (
@@ -918,12 +1270,13 @@ function inspectUnverified(
 				node.action !== "delete" ||
 				required.resourceType !== row.resourceType
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"SOURCE_FENCE_INCOMPLETE",
 					"an executable resource is missing its registered source claim",
 				);
-			sourceClaims.push(
-				Object.freeze({
+			appendOwnData(
+				sourceClaims,
+				freezeCaptured({
 					...required,
 					sourceDigest: target.sourceDigest,
 					environmentDigest: guard.environmentDigest,
@@ -952,22 +1305,32 @@ function inspectUnverified(
 				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: persisted provider state is an external boundary and may be malformed. */
 				typeof state.props !== "object" ||
 				state.props === null ||
-				Array.isArray(state.props) ||
+				isArray(state.props) ||
 				/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: persisted provider state is an external boundary and may be malformed. */
 				typeof state.attr !== "object" ||
 				state.attr === null ||
-				Array.isArray(state.attr) ||
+				isArray(state.attr) ||
 				state.propsIncomplete === true
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"SOURCE_FENCE_INCOMPLETE",
 					"source deletion requires complete stable prior resource state",
 				);
 			if (
-				hashAlchemyPriorState(state.props) !==
-				hashAlchemyPriorState(node.resource.Props)
+				digestPrior(
+					state.props,
+					row.fqn,
+					row.resourceType,
+					"deletion-properties",
+				) !==
+				digestPrior(
+					node.resource.Props,
+					row.fqn,
+					row.resourceType,
+					"deletion-properties",
+				)
 			)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"SOURCE_FENCE_MISMATCH",
 					"the deletion resource does not match the authenticated prior properties",
 				);
@@ -983,7 +1346,7 @@ function inspectUnverified(
 		});
 		if (node.resource.Type.startsWith("Command.")) {
 			if (!allowEffects)
-				throw new AlchemyIacError(
+				throw inspectionFailure(
 					"PLAN_UNSUPPORTED_EFFECTS",
 					"command resources require host authorization",
 				);
@@ -1030,29 +1393,12 @@ function inspectUnverified(
 		};
 	});
 	if (!priorStateChecks.every((check) => check()))
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"prior resource state changed during inspection",
 		);
-	const requirements = guard?.sourceRequirements;
-	if (
-		(sourceClaims.length > 0 && requirements === undefined) ||
-		(requirements !== undefined &&
-			(requirements.length !== sourceClaims.length ||
-				requirements.some(
-					(required) =>
-						!sourceClaims.some(
-							(claim) =>
-								claim.resourceId === required.resourceId &&
-								claim.resourceType === required.resourceType &&
-								claim.bindleName === required.bindleName &&
-								claim.applicationName === required.applicationName &&
-								claim.sourceKind === required.sourceKind &&
-								claim.sourcePath === required.sourcePath,
-						),
-				)))
-	)
-		throw new AlchemyIacError(
+	if (!sourceInventoryMatches(requirements, sourceClaims))
+		throw inspectionFailure(
 			"SOURCE_FENCE_INCOMPLETE",
 			"source claims do not match the complete host inventory",
 		);
@@ -1060,7 +1406,7 @@ function inspectUnverified(
 		({ resourceId, resourceType, state }) => ({
 			resourceId,
 			resourceType,
-			priorStateDigest: hashAlchemyPriorState(state),
+			priorStateDigest: digestPrior(state, resourceId, resourceType),
 		}),
 	);
 	const material = {
@@ -1084,6 +1430,7 @@ function inspectUnverified(
 		material,
 		references,
 		allowEffects ? effects : undefined,
+		secrets,
 	);
 	const changes =
 		rows.filter((row) => row.action !== "noop").length +
@@ -1096,14 +1443,25 @@ function inspectUnverified(
 		historicalSources,
 		historicalResources,
 		hasSourceClaims: sourceClaims.length > 0,
-		revalidateSources: () =>
-			sourceBindings.every((binding) => {
+		revalidateSources: () => {
+			if (secrets !== undefined && !verifyAlchemySecrets(secrets)) return false;
+			for (let index = 0; index < secretDomainContexts.length; index++) {
+				const context = secretDomainContexts[index];
+				if (context === undefined || !verifyAlchemySecrets(context))
+					return false;
+			}
+			for (let index = 0; index < sourceBindings.length; index++) {
+				const binding = sourceBindings[index];
+				if (binding === undefined) return false;
 				try {
-					return binding.verify(binding.claim) === true;
+					if (!acceptSynchronousTrue(binding.verify(binding.claim)))
+						return false;
 				} catch {
 					return false;
 				}
-			}),
+			}
+			return true;
+		},
 	};
 }
 
@@ -1116,7 +1474,7 @@ function validateGuard(guard: AlchemyCompositeGuard): void {
 		/[\p{Cc}]/u.test(guard.proofRef) ||
 		captureAlchemySourceRequirements(guard.sourceRequirements) === undefined
 	)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 			"a bounded host proof and immutable environment digest are required",
 		);
@@ -1136,16 +1494,17 @@ function compositeScope(target: Target): AlchemyCompositeEnvironment["scope"] {
 	);
 }
 
-export function verifyCompositeEnvironment(
+function verifyCompositeEnvironmentInternal(
 	guard: AlchemyCompositeGuard,
 	target: Target,
 	phase: AlchemyCompositeEnvironment["phase"],
 	operation: AlchemyCompositeEnvironment["operation"],
 ): void {
 	validateGuard(guard);
+	secretsFor(guard, target, true);
 	let accepted = false;
 	try {
-		accepted =
+		accepted = acceptSynchronousTrue(
 			guard.verifyEnvironment(
 				Object.freeze({
 					phase,
@@ -1162,18 +1521,29 @@ export function verifyCompositeEnvironment(
 					sourceRequirements: guard.sourceRequirements,
 					scope: compositeScope(target),
 				}),
-			) === true;
+			),
+		);
 	} catch {
-		/* verifier failure is a refusal */
+		accepted = false;
 	}
 	if (!accepted)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 			"the host did not verify the sandbox and scoped credentials",
 		);
 }
 
-/** Bind a structural plan fingerprint to the captured host authority. */
+export function verifyCompositeEnvironment(
+	guard: AlchemyCompositeGuard,
+	target: Target,
+	phase: AlchemyCompositeEnvironment["phase"],
+	operation: AlchemyCompositeEnvironment["operation"],
+): void {
+	detached(() =>
+		verifyCompositeEnvironmentInternal(guard, target, phase, operation),
+	);
+}
+
 function authorizedPlanDigest(
 	structuralDigest: string,
 	guard: AlchemyCompositeGuard,
@@ -1185,12 +1555,7 @@ function authorizedPlanDigest(
 	});
 }
 
-/**
- * Final synchronous reinspection after the last asynchronous state scan.
- * This intentionally invokes no host or source verifier: those authorities
- * must keep their previously verified fences effective through provider start.
- */
-export function reinspectAlchemyPlan(
+function reinspectAlchemyPlanInternal(
 	plan: StackPlan,
 	target: Target,
 	guard: AlchemyCompositeGuard,
@@ -1202,13 +1567,13 @@ export function reinspectAlchemyPlan(
 	);
 }
 
-export function inspectAlchemyPlan(
+function inspectAlchemyPlanInternal(
 	plan: StackPlan,
 	target: Target,
 	guard?: AlchemyCompositeGuard,
 ): InspectedAlchemyPlan {
 	if (guard === undefined)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 			"host authorization and a complete source inventory are required",
 		);
@@ -1231,9 +1596,7 @@ export function inspectAlchemyPlan(
 		effects: Object.freeze(
 			inspection.effects.map((effect) => Object.freeze({ ...effect })),
 		),
-		sourceClaims: Object.freeze(
-			inspection.sourceClaims.map((claim) => Object.freeze({ ...claim })),
-		),
+		sourceClaims: snapshotSourceClaims(inspection.sourceClaims),
 		historicalSources: Object.freeze(
 			inspection.historicalSources.map((source) =>
 				Object.freeze({ ...source }),
@@ -1250,18 +1613,18 @@ export function inspectAlchemyPlan(
 	});
 	let accepted = false;
 	try {
-		accepted = guard.verifyPlan(observation) === true;
+		accepted = acceptSynchronousTrue(guard.verifyPlan(observation));
 	} catch {
-		/* verifier failure is a refusal */
+		accepted = false;
 	}
 	if (!accepted)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"COMPOSITE_PLAN_UNVERIFIED",
 			"the host did not authorize the complete effect graph",
 		);
 	const checked = inspectUnverified(plan, target, guard);
 	if (inspection.digest !== checked.digest)
-		throw new AlchemyIacError(
+		throw inspectionFailure(
 			"PLAN_UNINSPECTABLE",
 			"the native plan changed during verification",
 		);
@@ -1273,11 +1636,43 @@ export function inspectAlchemyPlan(
 			try {
 				return (
 					inspection.revalidateSources() &&
-					guard.verifyPlan(observation) === true
+					acceptSynchronousTrue(guard.verifyPlan(observation))
 				);
 			} catch {
 				return false;
 			}
 		},
 	};
+}
+
+export function inspectAlchemyPlan(
+	plan: StackPlan,
+	target: Target,
+	guard?: AlchemyCompositeGuard,
+): InspectedAlchemyPlan {
+	return detached(() => inspectAlchemyPlanInternal(plan, target, guard));
+}
+
+export function reinspectAlchemyPlan(
+	plan: StackPlan,
+	target: Target,
+	guard: AlchemyCompositeGuard,
+): string {
+	return detached(() => reinspectAlchemyPlanInternal(plan, target, guard));
+}
+
+export function captureAlchemyInspection(
+	plan: StackPlan,
+	target: Target,
+	guard: AlchemyCompositeGuard,
+) {
+	return inspectResult(() => inspectAlchemyPlanInternal(plan, target, guard));
+}
+
+export function captureAlchemyReinspection(
+	plan: StackPlan,
+	target: Target,
+	guard: AlchemyCompositeGuard,
+) {
+	return inspectResult(() => reinspectAlchemyPlanInternal(plan, target, guard));
 }

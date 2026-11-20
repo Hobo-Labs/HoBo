@@ -7,10 +7,13 @@
 //   processes (R6).
 // - A Postgres fleet when HOBO_CD_POSTGRES_FLEET names its members: a writer
 //   and standbys on other vendors, run by the journal's declared continuity
-//   policy. Each member's URL is its own variable, HOBO_CD_POSTGRES_URL_<ID>
-//   (the platform or the vendor's marketplace integration injects it), so no
-//   list of connection strings exists anywhere. HOBO_CD_POSTGRES_WITNESSES
-//   names register-only members the same way.
+//   policy. A member's connection string carries a credential, so it is never
+//   an environment variable: it is the secret store entry
+//   HOBO_CD_POSTGRES_URL_<ID>, read by the host when it opens the journal.
+//   HOBO_CD_POSTGRES_WITNESSES names register-only members the same way.
+// - HOBO_CD_POSTGRES_URL may name a single server only without a password in
+//   it (peer, certificate or IAM authentication); one with a password is
+//   refused: keep it in the secret store and name it as a one-member fleet.
 // - The in-memory store is a fixture: reachable only with `--simulate`.
 //
 // The parsed descriptors name what to open; @hobo/cd opens nothing itself
@@ -39,8 +42,12 @@ export type CdStoreSelection =
 	  }>
 	| Readonly<{ backend: "memory"; simulated: true }>;
 
-// domain-view: one fleet member as the host names it; its URL came from its own variable.
-export type CdFleetMember = Readonly<{ id: string; url: string }>;
+// domain-view: one fleet member: its id, the secret store entry holding its connection string, and the vendor plan it runs on (the fleet's cost model for it), when named.
+export type CdFleetMember = Readonly<{
+	id: string;
+	urlEntry: string;
+	plan?: string;
+}>;
 
 // domain-view: parsed artifact-store selection (the ArtifactStoreConfig minus live ports).
 export type CdArtifactSelection =
@@ -102,6 +109,7 @@ function positiveInt(
 }
 
 const MEMBER_ID = /^[a-z][a-z0-9-]{0,39}$/u;
+const MEMBER_PLAN = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 
 /** The URL variable of one fleet member: `neon-eu` reads HOBO_CD_POSTGRES_URL_NEON_EU. */
 export function cdFleetMemberUrlVariable(id: string): string {
@@ -117,24 +125,41 @@ function fleetMembers(
 		.map((id) => id.trim())
 		.filter((id) => id !== "");
 	const members: CdFleetMember[] = [];
-	for (const id of ids) {
+	// `id` or `id:plan` (`neon-eu:neon-claimable`): the plan names the member's cost model.
+	for (const entry of ids) {
+		const [id = "", plan, ...rest] = entry.split(":");
+		if (rest.length > 0 || (plan !== undefined && !MEMBER_PLAN.test(plan)))
+			return composeRefusal(
+				"compose-store-invalid",
+				`${variable} member ${JSON.stringify(entry)} must be id or id:plan, like neon-eu:neon-claimable`,
+				variable,
+			);
 		if (!MEMBER_ID.test(id))
 			return composeRefusal(
 				"compose-store-invalid",
 				`${variable} member ${JSON.stringify(id)} must be a lower-case id like neon-eu`,
 				variable,
 			);
-		const urlVariable = cdFleetMemberUrlVariable(id);
-		const url = nonEmpty(env[urlVariable]);
-		if (url === undefined || !/^postgres(ql)?:\/\//.test(url))
+		const urlEntry = cdFleetMemberUrlVariable(id);
+		if (nonEmpty(env[urlEntry]) !== undefined)
 			return composeRefusal(
 				"compose-store-invalid",
-				`${urlVariable} must be the postgres:// URL of fleet member ${id}`,
-				urlVariable,
+				`${urlEntry} is a connection string with a credential; keep it in the secret store, not the environment`,
+				urlEntry,
 			);
-		members.push({ id, url });
+		members.push(
+			plan === undefined ? { id, urlEntry } : { id, urlEntry, plan },
+		);
 	}
 	return { ok: true, value: members };
+}
+
+/** A connection string with a password in it. */
+function carriesPassword(url: string): boolean {
+	return (
+		/^[a-z][a-z0-9+.-]*:\/\/[^/@\s]*:[^@/\s]+@/iu.test(url) ||
+		/[?&]password=/iu.test(url)
+	);
 }
 
 function joinPath(home: string, ...parts: readonly string[]): string {
@@ -204,6 +229,12 @@ export function parseCdComposeConfig(
 			minMajorVersion: CD_DEFAULTS.postgresMinMajorVersion,
 		};
 	} else if (postgresUrl !== undefined) {
+		if (carriesPassword(postgresUrl))
+			return composeRefusal(
+				"compose-store-invalid",
+				`${CD_COMPOSE_ENV.postgresUrl} carries a password; keep the connection string in the secret store (entry ${cdFleetMemberUrlVariable("primary")}) and set ${CD_COMPOSE_ENV.postgresFleet}=primary`,
+				CD_COMPOSE_ENV.postgresUrl,
+			);
 		if (!/^postgres(ql)?:\/\//.test(postgresUrl)) {
 			return composeRefusal(
 				"compose-store-invalid",

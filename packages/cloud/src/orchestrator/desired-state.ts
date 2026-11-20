@@ -144,13 +144,13 @@ export interface RecordedResource {
 		| "Destroyed";
 	/** Hash of the spec it was last provisioned from; absent on legacy facts. */
 	readonly specHash?: string;
-	/** True only when a provisioned fact recorded this hash itself. */
+
 	readonly specHashRecorded?: boolean;
-	/** An in-flight or failed resource has an earlier provisioned baseline. */
+
 	readonly hasProvisionedBaseline?: boolean;
 	/** The last plan that declared it, from `deployment.Planned`. */
 	readonly plan?: ResourcePlan;
-	/** Provider established by a provisioning fact or a hash-bound plan. */
+
 	readonly providerId?: string;
 }
 
@@ -181,7 +181,7 @@ export function blockedProviderMove(
 			reason: "specification-unverified",
 		};
 	if (provider === resource.provider) return undefined;
-	// A recorded hash covers the provider as well as the rest of the declaration.
+
 	if (
 		provider === undefined &&
 		previous.specHashRecorded === true &&
@@ -195,7 +195,6 @@ export function blockedProviderMove(
 	};
 }
 
-/** Destroy only from the exact specification that can own the recorded resource. */
 export function hasDestroyProvenance(
 	previous: RecordedResource | undefined,
 	resource: ResourcePlan,

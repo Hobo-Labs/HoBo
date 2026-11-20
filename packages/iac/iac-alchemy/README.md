@@ -2,14 +2,17 @@
 
 This optional IaC adapter uses the external `alchemy` 2.0 beta.87 library. The
 host supplies an Alchemy stack, runtime layer, runtime directory, target scope
-and an injected financial port to `createAlchemyIacProvider`. It implements the
-`IacProvider` preview, apply, destroy and refresh port; no core package imports
-this adapter or the Alchemy library.
+and injected state, financial and execution authorities to
+`createAlchemyIacProvider`. It implements the `IacProvider` preview, apply,
+destroy and refresh port; no core package imports this adapter or the Alchemy
+library. Install the package's pinned Alchemy peer and its declared Effect peers
+in the host application.
 Each configured stack supplies its own provider layers; `runtimeLayer` supplies
 the Alchemist services. A conditional choice between stacks with different
 provider requirements can use a union of those requirement types.
 Rivet integrations use the optional `@alchemy.run/rivet` beta.87 and
-`rivetkit` 3.0.0 peers; install both when using Rivet components.
+`rivetkit` 3.0.0 peers; install both when using Rivet components. The Rivet
+integration is tested against those pinned versions.
 Cloudflare components use the optional `@alchemy.run/cloudflare` beta.87 peer.
 The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
@@ -21,6 +24,8 @@ fixture's empty source classification applies only to that stub. A production
 RunnerPool that builds source must list its complete source requirements and
 use an independently attested source claim; it cannot use the empty
 classification.
+Run `pnpm --filter @hobo/iac-alchemy lint` to check the adapter's formatting and
+imports before committing changes.
 
 `mapBindleToAlchemy` accepts a HoBo bindle structurally and a provider-owned
 mapping for each declared primitive. The caller must also assess bindle-wide
@@ -71,19 +76,12 @@ credentials in its sandbox. Planning runs the supplied stack program, so the
 adapter cannot make untrusted program code safe by inspecting the resulting
 plan.
 
-Program identity and any desired `resource` declaration are snapshotted before
-planning or admission. `captureAlchemyProgram` returns a frozen bounded copy
-and a digest that distinguishes an absent declaration from a present one.
-An own `resource` or `operationGeneration` field set to `undefined` is treated
-as absent; null, accessors and malformed values are rejected.
-Declarations are limited to 16,384 values, 32 nesting levels, 1,024 array
-elements, 256 properties per object, 4,096 characters per string and 1 MiB of
-total text; proxies, getters, sparse or decorated arrays and unknown program
-fields are rejected. The host must enforce the serialized-size limit before
-materializing a program as an in-process object. This layer refuses
-programs with a desired declaration until a trusted host authority can bind that
-declaration to the configured stack. A durable operation generation, when
-present, is part of preview and execution identity.
+`alchemyTarget` declares the complete resource inventory and its provider,
+account and product scope. `createAlchemyIacProvider` accepts that target, an
+Alchemy stack, and host-supplied state, financial and execution authorities.
+Planning verifies the declared inventory against the Alchemy plan. The host
+must independently verify source ownership, the physical provider scope and
+liability; names and developer-supplied estimates are not proofs of those facts.
 
 Alchemy beta.87 encodes `/` as `__` in local and bucket state keys, so the
 adapter accepts only portable alphanumeric, dot, hyphen and underscore FQN
@@ -171,6 +169,28 @@ current financial state and explicit workload measurements; each binding is
 `{ resourceId, candidateIndex }`. All resources are rated jointly. The model
 is an estimate supplied by the developer, not proof of a maximum charge.
 
+The adapter follows parse, don't validate: plan inspection produces the derived
+domain type `InspectedAlchemyPlan` only after checking resource scope and
+fingerprintable inputs. Uninspectable plans fail before admission or execution.
+The host's resource actor issues preview, apply, destroy and refresh commands;
+its executor records outcome events in the event store. Materialized projections
+and the read store expose those outcomes. Alchemy owns its provider-state
+snapshots, while budget reservations stay in the host authority.
+
+`assessPricing` describes the plan and financial assessment. An unavailable
+model is not a zero price. Assessment and ranking do not evaluate a budget or
+create a reservation. Applying or destroying requires the host's financial
+admission and route authority. A host may explicitly authorize an unpriced
+operation only through the broker's unpriced policy and durable exposure hold.
+An invalid or incomplete model cannot use that path. Financial receipt parsing
+accepts the broker's explicit entitlement kinds and settlement payload version,
+and compares claims by kind, bucket and unit so separate units in one bucket do
+not collide. Legacy kindless claims normalize to `allowance` for duplicate
+detection and receipt comparison. Priced and explicitly bypassed apply receipts
+must carry a SHA-256 `executionDigest` on the held reservation, which the
+adapter preserves through revalidation; a reservation-only receipt cannot
+authorize execution.
+
 `assessPricing` returns the plan-bound inventory, pricing state and quote for
 `@hobo/dispatcher`'s `rankIacTargets`. Ranking reports that it has not checked
 a budget. `executeRankedIacTargets` can invoke each adapter's
@@ -219,8 +239,8 @@ const stateOwnership = {
     host.verifyAndFenceAlchemyStateOwnership(context),
 };
 const provider = createAlchemyIacProvider({
-  stack, target, runtimeLayer, runtimeDirectory, financial, route, resolveRoute,
-  stateOwnership, composite,
+  stack, target, stateOwnership, composite, route, resolveRoute,
+  runtimeLayer, runtimeDirectory, financial,
 });
 const assessment = await provider.assessPricing(program);
 const ranking = rankIacTargets({
@@ -241,6 +261,7 @@ const result = await executeRankedIacTargets({
   requestId: resolved.requestId, ranking,
   candidates: [{ targetId: target.targetId, run: (id, expected, permit) => provider.applyWithAdmission(program, id, expected, permit) }],
 });
+});
 ```
 
 Omit `pricing` from the financial services to obtain an explicit unavailable
@@ -253,10 +274,10 @@ and budget disclosure. The returned receipt types distinguish priced and
 unpriced admission modes. A resource-property output is supported when it refers
 to a resource in the reviewed plan. If a completed apply produces outputs that
 cannot fit HoBo's output contract, `APPLY_OUTPUT_UNREPRESENTABLE` reports the
-held reservation and requires reconciliation. The
-standard `apply` method returns only IaC outputs. Admission errors expose their
-decision; an unknown apply outcome exposes the reservation identifier.
-`destroyWithAdmission` returns the corresponding receipt for a destroy.
+held reservation and requires reconciliation. The standard `apply` method
+returns only IaC outputs. Admission errors expose their decision; an unknown
+apply outcome exposes the reservation identifier. `destroyWithAdmission`
+returns the corresponding receipt for a destroy.
 
 Budget reservations remain held after successful apply until the host
 reconciles final usage and source retirement with the authority. Lost
@@ -381,3 +402,19 @@ and plans exceeding 256 nodes remain refused. Action state is not included in
 Alchemy's resource drift scan, so refresh of an action-bearing target reports
 incomplete drift rather than claiming it is in sync. The caller owns final
 usage reconciliation and can use the budget authority's settlement APIs.
+These restrictions can exclude valid Alchemy programs; there is no automatic
+fallback to an unbudgeted apply.
+
+The isolation test scans selected shared runtime, Bindle, financial and policy
+packages for literal Alchemy references, including escaped spellings. It does
+not prove the absence of computed references or transitive dependencies.
+The financial integration test builds broker, dispatcher and pricing as test
+prerequisites; they are not dependencies of the adapter package.
+The repository-level `test/iac-alchemy-integration.test.ts` exercise adds
+ranked dispatcher execution, durable route SQLite, Rivet Alchemy resources, and
+the RivetKit 3 runtime package in one host-shaped fixture. It imports the
+Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
+declarations (the same peer-aligned instances the adapter resolves) and builds
+its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
+The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
+host assumptions; it does not prove the implementation or external provider.

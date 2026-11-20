@@ -28,10 +28,12 @@ describe("createTestHarness options", () => {
 		["", "an empty lane"],
 	])("refuses lane %o (%s)", (lane) => {
 		try {
-			createTestHarness({ lane: lane as never });
+			// @ts-expect-error Exercise invalid lane input from JavaScript.
+			createTestHarness({ lane });
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			expect((error as TestHarnessError).code).toBe("HARNESS_LANE_INVALID");
+			if (!(error instanceof TestHarnessError)) throw error;
+			expect(error.code).toBe("HARNESS_LANE_INVALID");
 		}
 	});
 
@@ -44,7 +46,8 @@ describe("createTestHarness options", () => {
 			createTestHarness({ stage });
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			expect((error as TestHarnessError).code).toBe("HARNESS_STAGE_INVALID");
+			if (!(error instanceof TestHarnessError)) throw error;
+			expect(error.code).toBe("HARNESS_STAGE_INVALID");
 		}
 	});
 
@@ -106,9 +109,8 @@ describe("deployed graph", () => {
 			try {
 				graph.http("db");
 			} catch (error) {
-				expect((error as TestHarnessError).code).toBe(
-					"HARNESS_ENDPOINT_UNAVAILABLE",
-				);
+				if (!(error instanceof TestHarnessError)) throw error;
+				expect(error.code).toBe("HARNESS_ENDPOINT_UNAVAILABLE");
 			}
 		} finally {
 			await harness.destroy(bindle)();
@@ -123,7 +125,8 @@ describe("deployed graph", () => {
 			graph.resource("nope");
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			const refusal = error as TestHarnessError;
+			if (!(error instanceof TestHarnessError)) throw error;
+			const refusal = error;
 			expect(refusal.code).toBe("HARNESS_ALIAS_UNKNOWN");
 			expect(refusal.remediation).toContain("api");
 		} finally {
@@ -149,8 +152,8 @@ describe("fidelity attestation", () => {
 		try {
 			expect(graph.fidelity().byFidelity).toEqual({
 				real: 0,
-				simulated: 1,
-				mocked: 2,
+				simulated: 3,
+				mocked: 0,
 				"camp-only": 0,
 			});
 		} finally {
@@ -165,25 +168,61 @@ describe("fidelity attestation", () => {
 		try {
 			const report = graph.fidelity();
 			expect(report.assertedAgainst).toEqual([]);
-			expect(report.prodReadinessClaimable).toBe(true);
+			expect(report.prodReadinessClaimable).toBe(false);
 		} finally {
 			await harness.destroy(bindle)();
 		}
 	});
 
-	it("refuses a prod-readiness claim once a mocked handle is asserted against", async () => {
+	it("refuses a prod-readiness claim for an unavailable camp-only resource", async () => {
 		const harness = createTestHarness();
-		const bindle = fakeBindle();
+		const bindle = fakeBindle({
+			resources: { container: { kind: "container" } },
+			handlers: {},
+		});
+		const graph = await harness.deploy(bindle)();
+		try {
+			expect(graph.resource("container").fidelity).toBe("camp-only");
+			expect(graph.fidelity().prodReadinessClaimable).toBe(false);
+		} finally {
+			await harness.destroy(bindle)();
+		}
+	});
+
+	it("accounts for every resource exposed by outputs", async () => {
+		const harness = createTestHarness();
+		const bindle = fakeBindle({
+			resources: { flags: { kind: "flag" }, auth: { kind: "auth" } },
+			handlers: {},
+		});
+		const graph = await harness.deploy(bindle)();
+		try {
+			graph.outputs();
+			expect(graph.fidelity().assertedAgainst).toEqual([
+				{ alias: "auth", fidelity: "mocked" },
+				{ alias: "flags", fidelity: "simulated" },
+			]);
+			expect(graph.fidelity().prodReadinessClaimable).toBe(false);
+		} finally {
+			await harness.destroy(bindle)();
+		}
+	});
+
+	it("does not infer a prod-readiness claim from accessing handles", async () => {
+		const harness = createTestHarness();
+		const bindle = fakeBindle({
+			resources: { api: { kind: "api" }, auth: { kind: "auth" } },
+		});
 		const graph = await harness.deploy(bindle)();
 		try {
 			graph.resource("api");
-			expect(graph.fidelity().prodReadinessClaimable).toBe(true);
-			graph.resource("db");
+			expect(graph.fidelity().prodReadinessClaimable).toBe(false);
+			graph.resource("auth");
 			const report = graph.fidelity();
 			expect(report.prodReadinessClaimable).toBe(false);
 			expect(report.assertedAgainst).toEqual([
 				{ alias: "api", fidelity: "simulated" },
-				{ alias: "db", fidelity: "mocked" },
+				{ alias: "auth", fidelity: "mocked" },
 			]);
 		} finally {
 			await harness.destroy(bindle)();
