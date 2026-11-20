@@ -384,6 +384,7 @@ describe("feed backend failures", () => {
 		}
 		expect(failure?.message).toBe("The CD delivery feed stream failed.");
 		expect(String(failure)).not.toContain("synthetic-private-journal.invalid");
+		expect(wire).not.toContain("synthetic-private-journal.invalid");
 		expect(wire).not.toContain("event: end");
 	});
 

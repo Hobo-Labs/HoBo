@@ -663,6 +663,10 @@ describe("createRolloutOrchestrator", () => {
 		const snapshot = await r.orchestrator.run(plan, r.ctx);
 		expect(snapshot.status).toBe("running");
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
+		const shifted = r.store
+			.events(ROLLOUT_LEDGER.stream(plan.rolloutId))
+			.find((event) => event.type === ROLLOUT_LEDGER.shifted);
+		expect(shifted?.data).toMatchObject({ realized: "unknown" });
 		r.traffic.shift = originalShift;
 		r.traffic.status = originalStatus;
 		await r.orchestrator.tick(r.ctx);

@@ -248,9 +248,14 @@ describe("createTelemetrySink", () => {
 		expect(
 			JSON.stringify({ error: String(failure), stats: partial.stats() }),
 		).not.toContain(marker);
-		expect(() => parseOtlpEndpoint(`not a url ${marker}`)).toThrow(
-			"OTLP endpoint is not a valid URL.",
-		);
+		let invalidEndpoint: Error | undefined;
+		try {
+			parseOtlpEndpoint(`not a url ${marker}`);
+		} catch (error) {
+			if (error instanceof Error) invalidEndpoint = error;
+		}
+		expect(invalidEndpoint?.message).toBe("OTLP endpoint is not a valid URL.");
+		expect(String(invalidEndpoint)).not.toContain(marker);
 	});
 
 	it("rejects an invalid endpoint at construction", () => {
