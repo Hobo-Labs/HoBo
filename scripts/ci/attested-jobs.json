@@ -18,8 +18,7 @@
 				"merge_base": "${{ steps.merge-group-base.outputs.base }}",
 				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
 				"pr_base": "${{ steps.scm-base.outputs.base }}",
-				"shards": "${{ steps.shard-plan.outputs.shards }}",
-				"shard_runner": "${{ steps.shard-route.outputs.runner }}"
+				"shards": "${{ steps.shard-plan.outputs.shards }}"
 			},
 			"steps": [
 				{
@@ -149,18 +148,6 @@
 						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
 					},
 					"local": "run"
-				},
-				{
-					"name": "Route the merge-group shard batch",
-					"id": "shard-route",
-					"if": "github.event_name == 'merge_group'",
-					"env": {
-						"HOBO_PLANNED_SHARDS": "${{ steps.shard-plan.outputs.shards }}",
-						"GITHUB_TOKEN": "${{ github.token }}"
-					},
-					"run": "node --experimental-strip-types --no-warnings scripts/ci/merge-shard-route.mts",
-					"local": "skip",
-					"reason": "the local run executes the planned tests itself; choosing a GitHub runner is only needed before hosted jobs are queued"
 				},
 				{
 					"name": "Impact classification (shadow)",
@@ -297,33 +284,32 @@
 				{
 					"name": "Workspace tests",
 					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
-					"env": {
-						"EVENT_NAME": "${{ github.event_name }}",
-						"PR_BASE": "${{ needs.pr_gate_validation.outputs.pr_base }}",
-						"MERGE_TESTS": "${{ needs.pr_gate_validation.outputs.merge_tests }}",
-						"MERGE_BASE": "${{ needs.pr_gate_validation.outputs.merge_base }}",
-						"SHARD": "${{ strategy.job-index }}",
-						"SHARD_TOTAL": "${{ strategy.job-total }}",
-						"HOBO_TURBO_CONCURRENCY": "1"
-					},
-					"local": "run"
+				"env": {
+					"EVENT_NAME": "${{ github.event_name }}",
+					"PR_BASE": "${{ needs.pr_gate_validation.outputs.pr_base }}",
+					"MERGE_TESTS": "${{ needs.pr_gate_validation.outputs.merge_tests }}",
+					"MERGE_BASE": "${{ needs.pr_gate_validation.outputs.merge_base }}",
+					"SHARD": "${{ strategy.job-index }}",
+					"SHARD_TOTAL": "${{ strategy.job-total }}"
 				},
-				{
-					"name": "Prune Turbo cache",
-					"id": "turbo-prune",
-					"if": "always() && env.TURBO_TOKEN == ''",
-					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
-					"continueOnError": true,
-					"local": "skip",
-					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
-				},
-				{
-					"name": "Save Turbo cache",
-					"if": "always() && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "$/.github/actions/turbo-cache",
-					"local": "skip",
-					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
-				},
+				"local": "run"
+			},
+			{
+				"name": "Prune Turbo cache",
+				"id": "turbo-prune",
+				"if": "always() && env.TURBO_TOKEN == ''",
+				"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+				"continueOnError": true,
+				"local": "skip",
+				"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+			},
+			{
+				"name": "Save Turbo cache",
+				"if": "always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'",
+				"uses": "$/.github/actions/turbo-cache",
+				"local": "skip",
+				"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+			},
 				{
 					"name": "CI trace",
 					"if": "always()",

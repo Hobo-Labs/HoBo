@@ -75,12 +75,26 @@ function defaultWorkspacePackageExists(workspace: string) {
 	return existsSync(`${workspace}/package.json`);
 }
 
-function defaultWorkspacePackageName(workspace: string): string | undefined {
+function defaultWorkspaceTestInfo(
+	workspace: string,
+): { name: string; narrow: boolean } | undefined {
 	try {
-		const manifest: { name?: string } = JSON.parse(
-			readFileSync(`${workspace}/package.json`, "utf8"),
-		);
-		return manifest.name;
+		const manifest: {
+			name?: string;
+			scripts?: { test?: string; pretest?: string; posttest?: string };
+		} = JSON.parse(readFileSync(`${workspace}/package.json`, "utf8"));
+		if (!manifest.name) return undefined;
+		const { test, pretest, posttest } = manifest.scripts ?? {};
+		return {
+			name: manifest.name,
+			narrow:
+				test === "vitest run" &&
+				posttest === undefined &&
+				(pretest === undefined ||
+					/^node --experimental-strip-types (?:\.\.\/)+scripts\/ensure-built\.mts$/u.test(
+						pretest,
+					)),
+		};
 	} catch {
 		return undefined;
 	}
@@ -453,9 +467,9 @@ export function selectRelevantChecks(
 			files.some((file) => file.startsWith(`${workspace}/vitest.config.`)) ||
 			(testFiles.length > 0 && vitestPaths.length === 0);
 		if (requiresFullWorkspaceTest) return [];
-		const packageName = defaultWorkspacePackageName(workspace);
-		if (!packageName) return [];
-		return [{ workspace, packageName, vitestPaths }];
+		const testInfo = defaultWorkspaceTestInfo(workspace);
+		if (!testInfo?.narrow) return [];
+		return [{ workspace, packageName: testInfo.name, vitestPaths }];
 	});
 	const narrowWorkspaces = new Set(
 		narrowWorkspaceTests.map(({ workspace }) => workspace),
@@ -481,6 +495,29 @@ export function selectRelevantChecks(
 				reason: `workspace tests for ${turboWorkspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
 			});
 		}
+	}
+
+	if (
+		narrowWorkspaceTests.length > 0 &&
+		!options.workspaceTestsCoveredExternally
+	) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				...narrowWorkspaceTests.map(
+					({ workspace }) => `--filter=./${workspace}`,
+				),
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"build each narrow-test workspace and its dependencies before running its selected tests",
+			serial: true,
+		});
 	}
 
 	for (const {
@@ -719,6 +756,25 @@ export function selectRelevantChecks(
 			args: ["run", "eval:agent:mock"],
 			reason: "agent workflow/eval changed; live evals are manual only",
 		});
+
+	const openSaasVitestInputs = (file: string) => {
+		const normalized = file.replaceAll("\\", "/");
+		return (
+			normalized.startsWith("examples/wasp-opensaas/app/src/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/test/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/scripts/") ||
+			normalized === "examples/wasp-opensaas/app/package.json" ||
+			normalized === "examples/wasp-opensaas/app/vitest.config.ts"
+		);
+	};
+	if (files.some(openSaasVitestInputs)) {
+		checks.push({
+			command: "npm",
+			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
+			reason:
+				"Open SaaS example app source/tests changed; npm ci:test:unit lane (not a pnpm workspace)",
+		});
+	}
 
 	if (touched(["scripts", "test", "tests"]) || rootConfigChanged) {
 		checks.push({

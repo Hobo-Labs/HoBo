@@ -78,6 +78,22 @@ jobs:
       # committed runnerRouting.mainGate.reuseMergeQueue is `false`, and whenever it cannot be shown.
       merge-queue-green: ${{ steps.route.outputs.merge-queue-green }}
     steps:
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -95,15 +111,19 @@ jobs:
             packages/ci/src/fleet-overflow.ts
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.sha }}
+          ref: ${{ steps.routing-base.outputs.sha }}
           path: .ci-trusted
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/route-runner
+            .hobo/ci.json
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
+            packages/ci/src/fleet-overflow.ts
       - id: route
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
@@ -364,7 +384,6 @@ jobs:
       merge_tests: ${{ steps.merge-group-base.outputs.tests }}
       pr_base: ${{ steps.scm-base.outputs.base }}
       shards: ${{ steps.shard-plan.outputs.shards }}
-      shard_runner: ${{ steps.shard-route.outputs.runner }}
     env:
       GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
     steps:
@@ -529,15 +548,6 @@ jobs:
           fi
           echo "workspace test shards: ${shards}"
           echo "shards=${shards}" >> "$GITHUB_OUTPUT"
-      # A recent fleet pickup proves one job can start, not that the planned
-      # concurrent batch fits within the merge queue's deadline.
-      - name: Route the merge-group shard batch
-        id: shard-route
-        if: github.event_name == 'merge_group'
-        env:
-          HOBO_PLANNED_SHARDS: ${{ steps.shard-plan.outputs.shards }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node --experimental-strip-types --no-warnings scripts/ci/merge-shard-route.mts
       - name: Impact classification (shadow)
         if: github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'
         continue-on-error: true
@@ -596,7 +606,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
-    runs-on: ${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -649,7 +659,9 @@ jobs:
           MERGE_BASE: ${{ needs.pr_gate_validation.outputs.merge_base }}
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
-          HOBO_TURBO_CONCURRENCY: "1"
+          # No HOBO_TURBO_CONCURRENCY here: ci-runner-preflight's memory-env
+          # writes the cgroup-derived value into the job environment, and a
+          # step-level pin would override it back to one task at a time.
         run: |
           set -euo pipefail
           case "$EVENT_NAME" in
@@ -681,7 +693,10 @@ jobs:
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.turbo-prune.outputs.save != 'false'
+        # Matrix children share one cache key (github.job is the job id, not the
+        # shard), so racing saves of the same key fight over the reservation;
+        # only shard 0 saves, like scripts-tests.
+        if: always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
@@ -1568,7 +1583,11 @@ jobs:
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.turbo-prune.outputs.save != 'false'
+        # Matrix children share one cache key (github.job is the job id, not the
+        # shard), so racing saves of the same key fight over the reservation;
+        # only shard 0 saves, like scripts-tests. Turbo concurrency comes from
+        # memory-env in ci-runner-preflight, sized to this job's cgroup limit.
+        if: always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save

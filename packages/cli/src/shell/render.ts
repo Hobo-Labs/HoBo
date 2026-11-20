@@ -48,8 +48,6 @@ export function renderSuccess(input: {
 		);
 	}
 
-	// A result that did not succeed names its code and every way forward: the
-	// person reading it has nothing else to go on.
 	const next = !envelope.ok
 		? `\n${[envelope.code, ...envelope.remediation.map((line) => `- ${line}`)].join("\n")}\n`
 		: "";

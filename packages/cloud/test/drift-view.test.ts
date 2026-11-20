@@ -59,6 +59,17 @@ const kinds = (findings: readonly DriftFinding[]) =>
 	findings.map((f) => `${f.kind}:${f.resource}`).sort();
 
 describe("a deployment with no plan", () => {
+	it("does not report a reconciliation-required resource as destroyed", () => {
+		const report = computeDrift(
+			row({
+				status: "planned",
+				plan: plan("web"),
+				resources: { web: "reconciliation-required" },
+			}),
+		);
+		expect(report.status).toBe("unknown");
+		expect(report.findings).toEqual([]);
+	});
 	it("is unknown rather than in-sync", () => {
 		// Never say "no drift" about something we have not planned. That reads as
 		// a clean bill of health for a deployment nobody has described.
@@ -209,6 +220,16 @@ describe("an imported deployment", () => {
 });
 
 describe("a rolled-back deployment", () => {
+	it.each([
+		"rolling-back",
+		"pruning",
+	] as const)("does not report drift while %s", (status) => {
+		const report = computeDrift(
+			row({ status, plan: plan("web"), resources: { web: "destroyed" } }),
+		);
+		expect(report.status).toBe("unknown");
+		expect(report.findings).toEqual([]);
+	});
 	it("is not measured for drift", () => {
 		// Its resources are meant to be gone; comparing them to the plan reports
 		// a divergence that is the intended end state.
