@@ -159,6 +159,17 @@ const SERVICE: readonly CapabilityProfileDescriptor[] = [
 		features: [bool("cronExpressions", "Accepts cron-syntax schedules.")],
 	}),
 	profile({
+		// The `schedule` slot's profile (core's capability.schedule.cron). Its
+		// primitive is `service`: a schedule invokes compute (a Worker, or the
+		// consumer of the queue it sends to); the primitive set stays closed.
+		id: "schedule.cron/v1",
+		primitive: "service",
+		displayName: "Cron schedule",
+		description:
+			"A five-field cron cadence that runs its target at least once per tick: a Cron Trigger on a Worker, or a scheduled message on a queue.",
+		features: [bool("cronExpressions", "Accepts cron-syntax schedules.")],
+	}),
+	profile({
 		id: "service.queue-consumer/v1",
 		primitive: "service",
 		displayName: "Queue consumer",

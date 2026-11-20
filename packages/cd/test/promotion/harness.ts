@@ -112,7 +112,6 @@ export function harness(options: HarnessOptions = {}) {
 		service,
 		/** A second service over the same journal (a restarted process). */
 		restart: () => build(),
-		/** Exercise the same dependencies with a supplied durable journal. */
 		withStore: (journal: DurableEventStore) => build(journal),
 		ctx,
 	};
