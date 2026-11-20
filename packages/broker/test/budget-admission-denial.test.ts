@@ -253,7 +253,7 @@ describe("definitive budget admission denial", () => {
 		}
 	});
 
-	it("retains the original durable commit failure as its cause", () => {
+	it("rejects reuse after a durable commit failure while retaining its cause", () => {
 		const failure = new Error("unknown durable write outcome");
 		const authority = createBudgetAdmissionAuthority({
 			snapshot: snapshot(),
@@ -272,6 +272,9 @@ describe("definitive budget admission denial", () => {
 		if (!(observed instanceof Error)) throw new Error("missing failure");
 		expect(observed.cause).toBe(failure);
 		expect(() => authority.lookup("work")).toThrow(
+			"budget commit outcome uncertain",
+		);
+		expect(() => authority.read(NOW)).toThrow(
 			"budget commit outcome uncertain",
 		);
 	});
