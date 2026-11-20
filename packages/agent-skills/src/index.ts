@@ -97,6 +97,7 @@ type FrontmatterFields = {
 	readonly fields: ReadonlyMap<string, YamlScalar>;
 	readonly children: ReadonlyMap<string, ReadonlyMap<string, YamlScalar>>;
 	readonly deeplyNested: ReadonlySet<string>;
+	readonly unrecognizedTopLevel: readonly string[];
 };
 
 function parseYamlScalar(value: string): YamlScalar {
@@ -137,6 +138,7 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 	const fields = new Map<string, YamlScalar>();
 	const children = new Map<string, Map<string, YamlScalar>>();
 	const deeplyNested = new Set<string>();
+	const unrecognizedTopLevel: string[] = [];
 	let currentNestedField: string | undefined;
 	for (const line of match[1].split(/\r?\n/u)) {
 		const top = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
@@ -150,7 +152,16 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 				children.set(currentNestedField, new Map());
 			continue;
 		}
-		if (currentNestedField === undefined) continue;
+		if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
+		if (/^\S/u.test(line)) {
+			currentNestedField = undefined;
+			unrecognizedTopLevel.push(line);
+			continue;
+		}
+		if (currentNestedField === undefined) {
+			unrecognizedTopLevel.push(line);
+			continue;
+		}
 		const child = /^ {2,}([^:\s]+):\s*(.*)$/u.exec(line);
 		if (child && child[1] !== undefined && child[2] !== undefined) {
 			if (/^ {4,}\S/u.test(line) || /^(?:\[|\{)/u.test(child[2].trim())) {
@@ -160,11 +171,11 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 			children
 				.get(currentNestedField)
 				?.set(child[1], parseYamlScalar(child[2]));
-		} else if (line.trim() !== "" && !line.trimStart().startsWith("#")) {
+		} else {
 			deeplyNested.add(currentNestedField);
 		}
 	}
-	return { fields, children, deeplyNested };
+	return { fields, children, deeplyNested, unrecognizedTopLevel };
 }
 
 function strictSkillIssues(
@@ -183,6 +194,13 @@ function strictSkillIssues(
 				message: error instanceof Error ? error.message : String(error),
 			},
 		];
+	}
+	for (const line of frontmatter.unrecognizedTopLevel) {
+		issues.push({
+			skill,
+			code: "unparseable",
+			message: `unrecognized top-level YAML line ${JSON.stringify(line)}`,
+		});
 	}
 	for (const field of frontmatter.fields.keys()) {
 		if (!HOBO_OWNED_ALLOWED_FIELDS.includes(field)) {

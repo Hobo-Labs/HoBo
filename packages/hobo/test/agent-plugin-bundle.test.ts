@@ -24,7 +24,6 @@ afterEach(() => {
 });
 
 function ensureBundle(): void {
-	if (existsSync(bundle)) return;
 	const build = spawnSync(
 		process.execPath,
 		["--import", "tsx", "scripts/build-agent-plugin.mts"],

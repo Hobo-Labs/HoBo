@@ -132,6 +132,25 @@ describe("checkSkillsConformance", () => {
 		expect(await checkSkillsConformance(root)).toEqual([]);
 	});
 
+	it("rejects unrecognized non-comment top-level YAML in strict skills", async () => {
+		const root = await scratchTree({
+			"hobo-setup": '---\nname: hobo-setup\ndescription: d\n"legacy": x\n---\n',
+			"hobo-deploy":
+				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  plugin: hobo\nlegacy : x\n---\n",
+			outsider: '---\nname: outsider\ndescription: d\n"legacy": x\n---\n',
+		});
+		const issues = await checkSkillsConformance(root);
+		expect(issues).toHaveLength(2);
+		expect(issues.map((issue) => issue.skill).sort()).toEqual([
+			"hobo-deploy",
+			"hobo-setup",
+		]);
+		expect(issues.every((issue) => issue.code === "unparseable")).toBe(true);
+		expect(issues.every((issue) => issue.message.includes("top-level"))).toBe(
+			true,
+		);
+	});
+
 	it("reports every strict violation a HoBo-owned skill can make", async () => {
 		const root = await scratchTree({
 			"hobo-setup": "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",

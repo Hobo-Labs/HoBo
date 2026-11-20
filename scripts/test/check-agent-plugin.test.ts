@@ -21,6 +21,7 @@ import {
 	parsePluginManifest,
 	releaseTrainSemverForPluginCheck,
 	releaseTrainVersionForPluginGate,
+	requiresExactReleaseTrainVersion,
 	scanTextForSecrets,
 	versionPinCommitIsh,
 } from "../check-agent-plugin.ts";
@@ -184,7 +185,7 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		expect(issues[0]?.message).toMatch(/is stale/u);
 	});
 
-	it("accepts only higher heights on the fixed alpha train", () => {
+	it("accepts higher heights outside PR validation only on the fixed alpha train", () => {
 		expect(
 			manifestSemanticIssues(
 				{ ...validManifest, version: "0.0.0-alpha.500" },
@@ -199,6 +200,16 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 				),
 			).toHaveLength(1);
 		}
+	});
+
+	it("rejects a newer height when PR validation requires an exact pin", () => {
+		const issues = manifestSemanticIssues(
+			{ ...validManifest, version: "0.0.0-alpha.500" },
+			"0.0.0-alpha.400",
+			{ exactReleaseTrain: true },
+		);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.message).toMatch(/is newer than the release train/u);
 	});
 
 	it("rejects a name with consecutive dots or dashes", () => {
@@ -376,6 +387,20 @@ describe("checkAgentPlugin (integration)", () => {
 			versionFromReleaseTrain: undefined,
 		});
 		expect(report.issues).toEqual([]);
+	});
+
+	it("rejects a newer manifest pin during PR validation", () => {
+		stubCiEnvironment("pull_request");
+		const report = checkAgentPlugin({
+			pluginRoot: realPluginRoot,
+			repoRoot,
+			versionFromReleaseTrain: "0.0.0-alpha.1",
+		});
+		expect(
+			report.issues.some((issue) =>
+				/is newer than the release train/u.test(issue.message),
+			),
+		).toBe(true);
 	});
 
 	it("fails when a shipped skill drifts from its repo source", async () => {
@@ -605,6 +630,15 @@ describe("release-train version pin commit selection", () => {
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
 		stubCiEnvironment("merge_group");
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+	});
+
+	it("requires exact pins for PR events and commits resolved from HEAD^2", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		stubCiEnvironment("pull_request");
+		expect(requiresExactReleaseTrainVersion(repoRoot, "HEAD")).toBe(true);
+		stubCiEnvironment("push");
+		expect(requiresExactReleaseTrainVersion(repoRoot, prHead)).toBe(true);
+		expect(requiresExactReleaseTrainVersion(repoRoot, "HEAD")).toBe(false);
 	});
 
 	it("falls back to HEAD outside PR events or on a non-merge checkout", async () => {

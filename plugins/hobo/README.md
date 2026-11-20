@@ -16,10 +16,13 @@ checkout) — never at the synthetic merge ref, whose base-branch commits would
 inflate the height past the value the branch pinned. Locally, a staged
 `plugin.json` raises the expected height by one to account for the commit that
 has not been made yet. The gate rejects versions outside the fixed alpha train
-and pins strictly older than the checked commit. A higher alpha height survives
-because a squash merge on `main` can sit at a lower height than the branch tip
-the pin was synced to. Version computation failures fail the gate; only an
-explicit `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check.
+and pins strictly older than the checked commit. Pull-request and merge-group
+validation, including any checkout whose selected commit resolves to `HEAD^2`,
+also rejects a pin newer than the train: these contexts require an exact height.
+Outside PR validation, a higher alpha height survives because a squash merge on
+`main` can sit at a lower height than the branch tip the pin was synced to.
+Version computation failures fail the gate; only an explicit
+`HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check.
 
 ## Build the MCP bundle
 

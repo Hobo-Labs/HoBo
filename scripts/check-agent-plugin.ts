@@ -206,6 +206,7 @@ export function compareSemverPrecedence(a: string, b: string): number {
 export function manifestSemanticIssues(
 	manifest: PluginManifest,
 	versionFromReleaseTrain?: string | undefined,
+	options: { readonly exactReleaseTrain?: boolean } = {},
 ): AgentPluginIssue[] {
 	const issues: AgentPluginIssue[] = [];
 	if (manifest.$schema !== PLUGIN_SCHEMA_ID) {
@@ -220,13 +221,22 @@ export function manifestSemanticIssues(
 				file: "plugin.json",
 				message: `version ${manifest.version} must stay on the fixed alpha train 0.0.0-alpha.<height>`,
 			});
-		} else if (
-			compareSemverPrecedence(manifest.version, versionFromReleaseTrain) < 0
-		) {
-			issues.push({
-				file: "plugin.json",
-				message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; a higher alpha height passes because it is the legitimate post-squash-merge state; update it (scripts/ci/compute-release-version.mts)`,
-			});
+		} else {
+			const comparison = compareSemverPrecedence(
+				manifest.version,
+				versionFromReleaseTrain,
+			);
+			if (comparison < 0) {
+				issues.push({
+					file: "plugin.json",
+					message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; update it (scripts/ci/compute-release-version.mts)`,
+				});
+			} else if (comparison > 0 && options.exactReleaseTrain === true) {
+				issues.push({
+					file: "plugin.json",
+					message: `version ${manifest.version} is newer than the release train ${versionFromReleaseTrain}; PR and merge-group validation require an exact pin; update it (scripts/ci/compute-release-version.mts)`,
+				});
+			}
 		}
 	}
 	return issues;
@@ -671,6 +681,7 @@ export function checkAgentPlugin(input: {
 				...manifestSemanticIssues(
 					manifest.value,
 					input.versionFromReleaseTrain,
+					{ exactReleaseTrain: requiresExactReleaseTrainVersion(repoRoot) },
 				),
 			);
 		}
@@ -761,6 +772,20 @@ export function versionPinCommitIsh(repoRoot: string): string {
 		if (prHead.status === 0 && sha.length > 0) return sha;
 	}
 	return "HEAD";
+}
+
+export function requiresExactReleaseTrainVersion(
+	repoRoot: string,
+	commitIsh = versionPinCommitIsh(repoRoot),
+): boolean {
+	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+	if (eventName === "pull_request" || eventName === "merge_group") return true;
+	if (commitIsh === "HEAD") return false;
+	const mergeHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	return mergeHead.status === 0 && mergeHead.stdout?.trim() === commitIsh;
 }
 
 export function releaseTrainSemverForPluginCheck(

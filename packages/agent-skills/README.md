@@ -22,7 +22,8 @@ a listing serves (boundary fixtured in
   `hobo-deploy`, and `design-md`) are additionally held to the repository's
   own frontmatter rules: only Agent Skills fields this repo controls, name
   equal to the folder, and `metadata` as a map of decoded, non-empty string
-  values. Third-party skills (`skills-lock.json`, vendored installs) stay
+  values. Unrecognized non-comment top-level YAML lines fail closed instead of
+  being ignored. Third-party skills (`skills-lock.json`, vendored installs) stay
   outside that set.
   The repo's `skills:mirror-check` remains the parity gate between
   `.agents/skills` and `.claude/skills`; this check layers the per-skill
