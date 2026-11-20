@@ -105,6 +105,7 @@ export function planMainBetterleaksScan(input: {
 	}
 	const baseline = input.baselineSha?.trim();
 	if (
+		input.eventName === "push" &&
 		baseline &&
 		baseline !== input.sha &&
 		input.commitExists(baseline) &&
