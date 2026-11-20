@@ -25,6 +25,7 @@ const CODE_EXTENSIONS = new Set([
 	".mjs",
 	".cjs",
 ]);
+const SCHEMA_EXTENSIONS = new Set([".cue", ".proto", ".wit"]);
 const OTHER_LANGUAGES = new Map([
 	[".sh", "bash"],
 	[".bash", "bash"],
@@ -40,9 +41,9 @@ const AST_GREP = join(
 	process.platform === "win32" ? "ast-grep.exe" : "ast-grep",
 );
 const GENERATED_OR_VENDOR =
-	/^(?:external\/|tools\/oxlint\/anti-slop\/)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
+	/^(?:external\/|tools\/oxlint\/anti-slop\/|packages\/(?:hobo|runtimes\/runtime-wasm)\/wit\/wasi-http\/)|(?:^|\/)(?:_generated|_generated-assets|dist|node_modules|vendor)\/|(?:^|\/)wit\/deps\//u;
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|yamllint|yaml-language-server|actionlint|zizmor|renovate)\b|(?:pyright|ruff|fmt|type|pragma):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
+	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment|generated)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|yamllint|yaml-language-server|actionlint|zizmor|renovate)\b|(?:pyright|ruff|fmt|type|pragma|buf|cue|go):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
 
 function git(args: string[]): string {
@@ -311,8 +312,71 @@ function trainingRanges(file: string, text: string): Array<[number, number]> {
 	return ranges;
 }
 
+function schemaCommentLocations(file: string, text: string): CommentLocation[] {
+	const comments: CommentLocation[] = [];
+	const cue = extname(file).toLowerCase() === ".cue";
+	let index = 0;
+	let line = 1;
+	while (index < text.length) {
+		const char = text[index];
+		if (char === "\n") {
+			line++;
+			index++;
+			continue;
+		}
+		let quoteStart = index;
+		if (cue && char === "#") {
+			while (text[quoteStart] === "#") quoteStart++;
+		}
+		const quote = text[quoteStart];
+		if (quote === '"' || quote === "'") {
+			const hashes = quoteStart - index;
+			const quoteWidth =
+				cue && text.startsWith(quote.repeat(3), quoteStart) ? 3 : 1;
+			const terminator = quote.repeat(quoteWidth) + "#".repeat(hashes);
+			index = quoteStart + quoteWidth;
+			while (index < text.length && !text.startsWith(terminator, index)) {
+				if (
+					text[index] === "\\" &&
+					text.startsWith("#".repeat(hashes), index + 1)
+				) {
+					index += hashes + 1;
+					if (text[index] === "\n") line++;
+					index++;
+				} else {
+					if (text[index] === "\n") line++;
+					index++;
+				}
+			}
+			index += terminator.length;
+			continue;
+		}
+		if (char === "/" && (text[index + 1] === "/" || text[index + 1] === "*")) {
+			const start = index;
+			const first = line;
+			const block = text[index + 1] === "*";
+			index += 2;
+			if (block) {
+				while (index < text.length && !text.startsWith("*/", index)) {
+					if (text[index] === "\n") line++;
+					index++;
+				}
+				if (index < text.length) index += 2;
+			} else {
+				while (index < text.length && text[index] !== "\n") index++;
+			}
+			comments.push({ first, last: line, text: text.slice(start, index) });
+			continue;
+		}
+		index++;
+	}
+	return comments;
+}
+
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(file).toLowerCase();
+	if (SCHEMA_EXTENSIONS.has(extension))
+		return schemaCommentLocations(file, text);
 	const extensionLanguage = OTHER_LANGUAGES.get(extension);
 	const language =
 		extensionLanguage ??
@@ -449,6 +513,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		if (
 			!file.startsWith(".githooks/") &&
 			!CODE_EXTENSIONS.has(extension) &&
+			!SCHEMA_EXTENSIONS.has(extension) &&
 			!OTHER_LANGUAGES.has(extension)
 		)
 			continue;
