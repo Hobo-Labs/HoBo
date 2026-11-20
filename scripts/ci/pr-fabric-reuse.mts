@@ -180,10 +180,11 @@ export async function fetchPrFabricEvidence(
 	const runs = runsAnswer?.workflow_runs;
 	if (!Array.isArray(runs)) return undefined;
 	const wanted = options.repository.toLowerCase();
+	const workflowPath = `.github/workflows/${options.workflowBasename}`;
 	for (const value of runs) {
 		const run = asObject(value);
 		if (!run || asText(run.event) !== "pull_request") continue;
-		if (!asText(run.path)?.endsWith(`/${options.workflowBasename}`)) continue;
+		if (asText(run.path) !== workflowPath) continue;
 		if (asText(asObject(run.repository)?.full_name)?.toLowerCase() !== wanted)
 			continue;
 		const headRepository = asText(

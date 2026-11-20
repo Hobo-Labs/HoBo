@@ -981,13 +981,17 @@ jobs:
             return 1
           }
           pr_fabric() {
+            case "${1:-}" in
+              pr_gate_validation|workspace_tests|scripts-tests) ;;
+              *) return 1 ;;
+            esac
             [ "${EVENT_NAME:-}" = "merge_group" ] || return 1
             [ "${ROUTE_RESULT:-}" = "success" ] || return 1
             [ "${PR_FABRIC_GREEN:-}" = "true" ] || return 1
           }
           passed() {
             [ "$1" = "success" ] && return 0
-            [ "$1" = "skipped" ] && { attested "$2" || pr_fabric; }
+            [ "$1" = "skipped" ] && { attested "$2" || pr_fabric "$2"; }
           }
           if ! passed "$VALIDATION_RESULT" pr_gate_validation; then
             echo "PR impact validation did not succeed: $VALIDATION_RESULT" >&2

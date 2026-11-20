@@ -243,6 +243,7 @@ describe("the evidence fetch", () => {
 			{ status: "in_progress", conclusion: null },
 			{ event: "merge_group" },
 			{ path: ".github/workflows/pricing-ci.yml" },
+			{ path: ".github/workflows/elsewhere/hobo-ci.yml" },
 			{ repository: { full_name: "someone/fork" } },
 			{ head_repository: { full_name: "someone/fork" } },
 			{ head_repository: null },

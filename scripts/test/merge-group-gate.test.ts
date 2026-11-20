@@ -334,8 +334,9 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			gate,
-			/\[ "\$1" = "skipped" \] && \{ attested "\$2" \|\| pr_fabric; \}/u,
+			/\[ "\$1" = "skipped" \] && \{ attested "\$2" \|\| pr_fabric "\$2"; \}/u,
 		);
+		assert.match(gate, /pr_gate_validation\|workspace_tests\|scripts-tests/u);
 	});
 
 	it("accepts skipped gate jobs only for a successful merge-group route with green PR Fabric", () => {
@@ -428,6 +429,28 @@ describe("merge-group required gate", () => {
 				acceptedFabricSkips += 1;
 		}
 		assert.ok(acceptedFabricSkips > 0);
+	});
+
+	it("does not let PR Fabric satisfy a skipped job outside the gate allowlist", () => {
+		const script = `${shellForStep(
+			gate,
+			"Require successful validation and workspace tests",
+		)}\npassed skipped ci-guard`;
+		const run = spawnSync("bash", ["-c", script], {
+			env: {
+				...process.env,
+				EVENT_NAME: "merge_group",
+				VALIDATION_RESULT: "success",
+				WORKSPACE_RESULT: "success",
+				SCRIPTS_RESULT: "success",
+				AFFECTED_RESULT: "skipped",
+				ROUTE_RESULT: "success",
+				PR_FABRIC_GREEN: "true",
+				ATTESTED: "false",
+				ATTESTED_JOBS: "[]",
+			},
+		});
+		assert.notEqual(run.status, 0);
 	});
 
 	it("rejects a missing scope or an unreachable affected base", () => {

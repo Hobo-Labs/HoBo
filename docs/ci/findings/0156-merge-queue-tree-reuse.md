@@ -119,10 +119,11 @@ and each is a GitHub answer, not an event or branch value taken on faith:
 
 1. **Same-repo PRs only.** The green run's repository and head repository are
    both this repository; fork runs are refused.
-2. **A green run of this workflow.** `event=pull_request`,
-   `status=completed`, `conclusion=success`, `path` ends with
-   `hobo-ci.yml` — the API-verified analogue of the attestation path's signed
-   record.
+2. **A green run of this workflow.** The workflow API lookup is
+   `/actions/workflows/hobo-ci.yml/runs`, and each returned run must have
+   `event=pull_request`, `status=completed`, `conclusion=success`, and `path`
+   exactly `.github/workflows/hobo-ci.yml` — the API-verified analogue of the
+   attestation path's signed record.
 3. **The base tip matches.** The `<base40>` parsed from
    `gh-readonly-queue/main/pr-<n>-<base40>` must equal the event's
    `merge_group.base_sha` (GitHub-generated context, passed by the action) and
