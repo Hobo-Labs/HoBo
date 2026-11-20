@@ -325,7 +325,9 @@ export default bindle("relay", (b) => {
 			execFileSync("git", ["config", "user.email", "cd-test@hobo.local"], {
 				cwd: repo,
 			});
-			execFileSync("git", ["config", "user.name", "HoBo CD test"], { cwd: repo });
+			execFileSync("git", ["config", "user.name", "HoBo CD test"], {
+				cwd: repo,
+			});
 			writeFileSync(join(repo, "marker"), "x");
 			execFileSync("git", ["add", "marker"], { cwd: repo });
 			execFileSync("git", ["commit", "-m", "marker"], { cwd: repo });
