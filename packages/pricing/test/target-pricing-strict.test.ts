@@ -2,6 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { TargetPricingBindingSchema } from "../src/_generated/pricing_pb.js";
 import {
+	assessTargetPricing,
 	createTargetPricingInventory,
 	quoteTargetPricing,
 	targetPricingModel,
@@ -71,9 +72,10 @@ describe("strict developer target pricing data", () => {
 			{ ...inventory, resources: [null] },
 			{ ...inventory, $typeName: "foreign.Inventory" },
 		]) {
-			// SAFETY: this test exercises an untrusted JavaScript caller at the typed boundary.
-			const value = malformed as typeof inventory;
-			expect(quoteTargetPricing(value, unavailable)).toMatchObject({
+			expect(
+				// @ts-expect-error Exercise an untrusted JavaScript caller at the typed boundary.
+				quoteTargetPricing(malformed, unavailable),
+			).toMatchObject({
 				ok: false,
 				code: "TARGET_INVENTORY_INCOMPLETE",
 			});
@@ -150,13 +152,19 @@ describe("strict developer target pricing data", () => {
 		)
 			throw new Error("model missing");
 		availability.state.value.scenario = scenario;
+		const code =
+			kind === "array-property" || kind === "sparse-array"
+				? "PRICING_INPUT_TOO_LARGE"
+				: "PRICING_MODEL_INVALID";
 		expect(quoteTargetPricing(inventory, availability)).toMatchObject({
 			ok: false,
-			code:
-				kind === "array-property" || kind === "sparse-array"
-					? "PRICING_INPUT_TOO_LARGE"
-					: "PRICING_MODEL_INVALID",
+			code,
 		});
+		const assessment = assessTargetPricing(inventory, availability);
+		expect(assessment.quote).toMatchObject({ ok: false, code });
+		expect(assessment.providerCoverage.providers).not.toContainEqual(
+			expect.objectContaining({ status: "quoted" }),
+		);
 	});
 
 	it("fails closed if an explicitly undefined optional field would disappear", () => {

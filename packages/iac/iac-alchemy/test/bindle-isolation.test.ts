@@ -50,7 +50,7 @@ function mapper(tag: string) {
 	};
 }
 function execute<A, E, R>(effect: Effect.Effect<A, E, R>, target = stack()) {
-	// SAFETY: these tests supply the Alchemy stack service needed by their real resource constructors.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: these tests supply the Alchemy stack service needed by their real resource constructors.
 	return Effect.runPromise(
 		effect.pipe(Effect.provideService(StackContext, target)) as Effect.Effect<
 			A,

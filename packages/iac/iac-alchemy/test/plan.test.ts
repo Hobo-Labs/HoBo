@@ -6,6 +6,7 @@ import {
 	digestData,
 	hashAlchemyPriorState,
 	inspectAlchemyPlan,
+	verifyCompositeEnvironment,
 } from "../src/plan.js";
 import { registerAlchemySource } from "../src/source-fence.js";
 
@@ -65,7 +66,7 @@ function fixture() {
 		verifyEnvironment: () => true,
 		verifyPlan: () => true,
 	};
-	// SAFETY: this fixture deliberately constructs incomplete native plans to test the inspection boundary.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture deliberately constructs incomplete native plans to test the inspection boundary.
 	const inspect = () => inspectAlchemyPlan(plan as never, target, guard);
 	return { native, node, plan, target, inspect };
 }
@@ -115,12 +116,108 @@ function compositeFixture() {
 		verifyEnvironment: () => true,
 		verifyPlan: () => true,
 	};
-	// SAFETY: constructed plan isolates action-graph invariants at the boundary.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: constructed plan isolates action-graph invariants at the boundary.
 	const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
 	return { ...f, action, guard, inspect };
 }
 
 describe("native Alchemy plan inspection", () => {
+	it("refuses and observes rejected composite and source verifiers", async () => {
+		const f = compositeFixture();
+		const reject = () => Promise.reject(new Error("host rejected"));
+		expect(() =>
+			verifyCompositeEnvironment(
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately supplies an asynchronous host verifier.
+				{ ...f.guard, verifyEnvironment: reject as never },
+				f.target,
+				"plan",
+				"deploy",
+			),
+		).toThrow("COMPOSITE_ENVIRONMENT_UNVERIFIED");
+		expect(() =>
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this intentionally supplies incomplete native data and an asynchronous verifier.
+			inspectAlchemyPlan(f.plan as never, f.target, {
+				...f.guard,
+				verifyPlan: reject as never,
+			}),
+		).toThrow("COMPOSITE_PLAN_UNVERIFIED");
+		registerAlchemySource(f.node.resource, {
+			claim: {
+				resourceId: "store",
+				resourceType: "Spec.Store",
+				bindleName: "app",
+				applicationName: "store",
+				sourceKind: "test",
+				sourcePath: "/source/store",
+				sourceDigest: f.target.sourceDigest,
+				environmentDigest: f.guard.environmentDigest,
+				proofRef: f.guard.proofRef,
+			},
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this intentionally supplies an asynchronous source verifier.
+			verify: reject as never,
+		});
+		expect(() =>
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture deliberately builds an incomplete native plan.
+			inspectAlchemyPlan(f.plan as never, f.target, f.guard),
+		).toThrow("SOURCE_FENCE_UNVERIFIED");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	});
+
+	it("fingerprints actual runner code without consulting mutable intrinsic call properties", () => {
+		const f = compositeFixture();
+		const first = f.inspect().digest;
+		const intrinsic = Function.prototype.toString;
+		const original = Object.getOwnPropertyDescriptor(intrinsic, "call");
+		let traps = 0;
+		Object.defineProperty(intrinsic, "call", {
+			configurable: true,
+			get() {
+				traps++;
+				return () => "forged source";
+			},
+		});
+		try {
+			expect(f.inspect().digest).toBe(first);
+			f.action.def.Run = () => "changed build";
+			expect(f.inspect().digest).not.toBe(first);
+			expect(traps).toBe(0);
+		} finally {
+			if (original === undefined) Reflect.deleteProperty(intrinsic, "call");
+			else Object.defineProperty(intrinsic, "call", original);
+		}
+	});
+
+	it("detects an action change when the verifier replaces function reflection", () => {
+		const f = compositeFixture();
+		const original = Function.prototype.toString;
+		const stale = original.call(f.action.def.Run);
+		const replacement = () => "different";
+		let substitutions = 0;
+		Object.assign(f.guard, {
+			verifyPlan: () => {
+				Object.assign(f.action.def, { Run: replacement });
+				Function.prototype.toString = function () {
+					if (this === replacement) {
+						substitutions++;
+						return stale;
+					}
+					return original.call(this);
+				};
+				return true;
+			},
+		});
+		let rejected = false;
+		try {
+			f.inspect();
+		} catch {
+			rejected = true;
+		} finally {
+			Function.prototype.toString = original;
+		}
+		expect(rejected).toBe(true);
+		expect(substitutions).toBe(0);
+	});
+
 	it("rejects a native action whose captured state was substituted", () => {
 		const f = compositeFixture();
 		const state = { fqn: "build", downstream: [] };
@@ -165,7 +262,7 @@ describe("native Alchemy plan inspection", () => {
 				return true;
 			},
 		};
-		// SAFETY: this deliberately minimal plan exercises the source attestation boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately minimal plan exercises the source attestation boundary.
 		const inspect = (authority?: AlchemyCompositeGuard) =>
 			inspectAlchemyPlan(f.plan as never, f.target, authority);
 		expect(() => inspect()).toThrow("COMPOSITE_ENVIRONMENT_UNVERIFIED");
@@ -174,13 +271,16 @@ describe("native Alchemy plan inspection", () => {
 		expect(() => inspect(unclassified)).toThrow(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 		);
+		expect(() => inspect({ ...guard, sourceRequirements: [] })).toThrow(
+			"SOURCE_FENCE_INCOMPLETE",
+		);
 		const before = inspect(guard).digest;
 		const other = fixture();
 		registerAlchemySource(other.node.resource, {
 			claim: { ...claim, sourcePath: "/source/other" },
 			verify: () => true,
 		});
-		// SAFETY: this deliberately minimal plan exercises source-fingerprint coverage.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately minimal plan exercises source-fingerprint coverage.
 		const changed = inspectAlchemyPlan(other.plan as never, other.target, {
 			...guard,
 			sourceRequirements: [
@@ -206,6 +306,194 @@ describe("native Alchemy plan inspection", () => {
 		expect(() => inspect(guard)).toThrow("SOURCE_FENCE_UNVERIFIED");
 	});
 
+	/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply -- SAFETY: these regressions replace collection methods and delegate unrelated calls to captured intrinsics. */
+	it("retains source claims and rechecks after a verifier replaces Array.every", () => {
+		const f = fixture();
+		const claim = {
+			resourceId: "store",
+			resourceType: "Spec.Store",
+			bindleName: "app",
+			applicationName: "store",
+			sourceKind: "test",
+			sourcePath: "/source/store",
+			sourceDigest: f.target.sourceDigest,
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			proofRef: "host:proof",
+		};
+		let allowed = true;
+		const nativeEvery = Array.prototype.every;
+		registerAlchemySource(f.node.resource, {
+			claim,
+			verify: () => {
+				Reflect.set(Array.prototype, "every", function (predicate: unknown) {
+					if (this.length === 1 && this[0]?.claim?.resourceId === "store")
+						return true;
+					return Reflect.apply(nativeEvery, this, [predicate]);
+				});
+				return allowed;
+			},
+		});
+		let claims: readonly unknown[] = [];
+		const guard: AlchemyCompositeGuard = {
+			proofRef: claim.proofRef,
+			environmentDigest: claim.environmentDigest,
+			sourceRequirements: [
+				{
+					resourceId: claim.resourceId,
+					resourceType: claim.resourceType,
+					bindleName: claim.bindleName,
+					applicationName: claim.applicationName,
+					sourceKind: claim.sourceKind,
+					sourcePath: claim.sourcePath,
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: (observation) => {
+				claims = observation.sourceClaims;
+				return true;
+			},
+		};
+		let revalidated = true;
+		try {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the incomplete fixture isolates source-claim revalidation.
+			const inspection = inspectAlchemyPlan(f.plan as never, f.target, guard);
+			allowed = false;
+			revalidated = inspection.revalidateSources();
+		} finally {
+			Reflect.set(Array.prototype, "every", nativeEvery);
+		}
+		expect(claims).toEqual([claim]);
+		expect(revalidated).toBe(false);
+	});
+
+	it("preserves source observations when a verifier replaces Array.map", () => {
+		const f = fixture();
+		const claim = {
+			resourceId: "store",
+			resourceType: "Spec.Store",
+			bindleName: "app",
+			applicationName: "store",
+			sourceKind: "test",
+			sourcePath: "/source/store",
+			sourceDigest: f.target.sourceDigest,
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			proofRef: "host:proof",
+		};
+		const nativeMap = Array.prototype.map;
+		registerAlchemySource(f.node.resource, {
+			claim,
+			verify: () => {
+				Reflect.set(Array.prototype, "map", function (callback: unknown) {
+					if (this.length === 1 && this[0]?.sourceDigest === claim.sourceDigest)
+						return [];
+					return Reflect.apply(nativeMap, this, [callback]);
+				});
+				return true;
+			},
+		});
+		let seen: readonly unknown[] = [];
+		const guard: AlchemyCompositeGuard = {
+			proofRef: claim.proofRef,
+			environmentDigest: claim.environmentDigest,
+			sourceRequirements: [
+				{
+					resourceId: claim.resourceId,
+					resourceType: claim.resourceType,
+					bindleName: claim.bindleName,
+					applicationName: claim.applicationName,
+					sourceKind: claim.sourceKind,
+					sourcePath: claim.sourcePath,
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: (observation) => {
+				seen = observation.sourceClaims;
+				return true;
+			},
+		};
+		try {
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture isolates the source-observation boundary.
+			inspectAlchemyPlan(f.plan as never, f.target, guard);
+		} finally {
+			Reflect.set(Array.prototype, "map", nativeMap);
+		}
+		expect(seen).toEqual([claim]);
+	});
+
+	/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-reflect-apply */
+	it("preserves source claims when a verifier installs an inherited index setter", () => {
+		const f = fixture();
+		const claim = {
+			resourceId: "store",
+			resourceType: "Spec.Store",
+			bindleName: "app",
+			applicationName: "store",
+			sourceKind: "test",
+			sourcePath: "/source/store",
+			sourceDigest: f.target.sourceDigest,
+			environmentDigest: `sha256:${"b".repeat(64)}`,
+			proofRef: "host:proof",
+		};
+		const previous = Object.getOwnPropertyDescriptor(Array.prototype, "0");
+		let installed = false;
+		let seen: readonly unknown[] = [];
+		let failure: unknown;
+		const restore = () => {
+			if (previous) Object.defineProperty(Array.prototype, "0", previous);
+			else Reflect.deleteProperty(Array.prototype, "0");
+		};
+		registerAlchemySource(f.node.resource, {
+			claim,
+			verify: () => {
+				if (!installed) {
+					installed = true;
+					Object.defineProperty(Array.prototype, "0", {
+						configurable: true,
+						set() {},
+					});
+				}
+				return true;
+			},
+		});
+		const guard: AlchemyCompositeGuard = {
+			proofRef: claim.proofRef,
+			environmentDigest: claim.environmentDigest,
+			sourceRequirements: [
+				{
+					resourceId: claim.resourceId,
+					resourceType: claim.resourceType,
+					bindleName: claim.bindleName,
+					applicationName: claim.applicationName,
+					sourceKind: claim.sourceKind,
+					sourcePath: claim.sourcePath,
+				},
+			],
+			verifyEnvironment: () => true,
+			verifyPlan: (observation) => {
+				restore();
+				seen = observation.sourceClaims;
+				return true;
+			},
+		};
+		try {
+			try {
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fixture isolates the source-claim collection boundary.
+				inspectAlchemyPlan(f.plan as never, f.target, guard);
+			} catch (error) {
+				failure = error;
+			}
+		} finally {
+			restore();
+		}
+		expect(seen).toEqual([claim]);
+		expect(Object.getOwnPropertyDescriptor(seen, "0")).toMatchObject({
+			value: claim,
+			enumerable: true,
+		});
+
+		expect(failure).toMatchObject({ code: "PLAN_UNINSPECTABLE" });
+	});
+
 	it("lets the host reject a plan missing an expected executable source", () => {
 		const f = fixture();
 		const guard: AlchemyCompositeGuard = {
@@ -224,7 +512,7 @@ describe("native Alchemy plan inspection", () => {
 			verifyEnvironment: () => true,
 			verifyPlan: ({ sourceClaims }) => sourceClaims.length === 1,
 		};
-		// SAFETY: this deliberately minimal plan exercises the missing-source boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately minimal plan exercises the missing-source boundary.
 		expect(() => inspectAlchemyPlan(f.plan as never, f.target, guard)).toThrow(
 			"SOURCE_FENCE_INCOMPLETE",
 		);
@@ -282,7 +570,7 @@ describe("native Alchemy plan inspection", () => {
 				return true;
 			},
 		};
-		// SAFETY: deliberately constructed plans isolate observation semantics.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately constructed plans isolate observation semantics.
 		expect(() =>
 			inspectAlchemyPlan(f.plan as never, f.target, guard),
 		).not.toThrow();
@@ -319,7 +607,7 @@ describe("native Alchemy plan inspection", () => {
 				historicalResources.length === 1 &&
 				historicalResources[0]?.priorStateDigest === trustedDigest,
 		};
-		// SAFETY: deliberately constructed plans isolate host authorization.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately constructed plans isolate host authorization.
 		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
 		expect(inspect).not.toThrow();
 		state.attr.physicalId = "bucket-b";
@@ -339,7 +627,7 @@ describe("native Alchemy plan inspection", () => {
 				return true;
 			},
 		};
-		// SAFETY: deliberately constructed plans isolate prior-state observations.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately constructed plans isolate prior-state observations.
 		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
 		expect(inspect).not.toThrow();
 		const state = {
@@ -426,7 +714,7 @@ describe("native Alchemy plan inspection", () => {
 					return true;
 				},
 			};
-			// SAFETY: deliberately malformed plans must fail before host authorization.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately malformed plans must fail before host authorization.
 			expect(() =>
 				inspectAlchemyPlan(f.plan as never, f.target, guard),
 			).toThrow();
@@ -498,7 +786,7 @@ describe("native Alchemy plan inspection", () => {
 					verifyEnvironment: () => true,
 					verifyPlan: () => true,
 				};
-				// SAFETY: the finite matrix deliberately constructs native plan variants.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the finite matrix deliberately constructs native plan variants.
 				const inspect = () =>
 					inspectAlchemyPlan(f.plan as never, f.target, guard);
 				if (allowed[action]?.includes(status)) expect(inspect).not.toThrow();
@@ -529,13 +817,13 @@ describe("native Alchemy plan inspection", () => {
 			verifyPlan: ({ historicalResources }) =>
 				historicalResources[0]?.priorResourceType === "Spec.LegacyStore",
 		};
-		// SAFETY: a deliberately constructed native plan tests provider alias authorization.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: a deliberately constructed native plan tests provider alias authorization.
 		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
 		expect(inspect).toThrow("STATE_IDENTITY_UNVERIFIED");
 		Object.assign(f.node.provider, { aliases: ["Spec.LegacyStore"] });
 		expect(inspect).not.toThrow();
 		const refusing = { ...guard, verifyPlan: () => false };
-		// SAFETY: the same alias is rejected when the host independently refuses it.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the same alias is rejected when the host independently refuses it.
 		expect(() =>
 			inspectAlchemyPlan(f.plan as never, f.target, refusing),
 		).toThrow("COMPOSITE_PLAN_UNVERIFIED");
@@ -603,7 +891,7 @@ describe("native Alchemy plan inspection", () => {
 				return true;
 			},
 		};
-		// SAFETY: this plan isolates source-verifier mutation during inspection.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this plan isolates source-verifier mutation during inspection.
 		expect(() => inspectAlchemyPlan(f.plan as never, f.target, guard)).toThrow(
 			"PLAN_UNINSPECTABLE",
 		);
@@ -661,7 +949,7 @@ describe("native Alchemy plan inspection", () => {
 				return historicalSources.length === 1 && observed === approvedState;
 			},
 		};
-		// SAFETY: this deliberately minimal plan exercises the reconstructed deletion boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this deliberately minimal plan exercises the reconstructed deletion boundary.
 		const inspect = () => inspectAlchemyPlan(f.plan as never, f.target, guard);
 		const first = inspect().digest;
 		const firstState = observed;
@@ -728,7 +1016,7 @@ describe("native Alchemy plan inspection", () => {
 
 	it("does not accept executable action plans without a host guard", () => {
 		const { plan, target } = compositeFixture();
-		// SAFETY: constructed plan exercises the untrusted-action boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: constructed plan exercises the untrusted-action boundary.
 		expect(() => inspectAlchemyPlan(plan as never, target)).toThrow(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 		);
@@ -779,7 +1067,7 @@ describe("native Alchemy plan inspection", () => {
 			throw new Error("fixture resource missing");
 		Object.assign(summary, { resourceType: "Command.Build" });
 		Object.assign(scope, { resourceType: "Command.Build" });
-		// SAFETY: this constructed plan exercises the missing host guard boundary.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this constructed plan exercises the missing host guard boundary.
 		expect(() => inspectAlchemyPlan(f.plan as never, f.target)).toThrow(
 			"COMPOSITE_ENVIRONMENT_UNVERIFIED",
 		);
