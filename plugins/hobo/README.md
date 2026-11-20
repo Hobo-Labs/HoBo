@@ -20,7 +20,9 @@ and pins strictly older than the checked commit. Pull-request and merge-group
 validation, including any checkout whose selected commit resolves to `HEAD^2`,
 also rejects a pin newer than the train: these contexts require an exact height.
 Outside PR validation, a higher alpha height survives because a squash merge on
-`main` can sit at a lower height than the branch tip the pin was synced to.
+`main` can sit at a lower height than the branch tip the pin was synced to;
+those runs add a report note carrying `GITHUB_EVENT_NAME` and the commit ish
+they measured, so a non-exact comparison is visible instead of silent.
 Version computation failures fail the gate; only an explicit
 `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check.
 

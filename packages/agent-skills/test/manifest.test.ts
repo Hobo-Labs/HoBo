@@ -79,6 +79,16 @@ describe("parseSkillFrontmatter", () => {
 		}
 	});
 
+	it("reads prose that merely ends with a quote character as a plain string", () => {
+		for (const description of ['run the "loop"', "owners'"]) {
+			expect(
+				parseSkillFrontmatter(
+					`---\nname: sdlc\ndescription: ${description}\n---\n`,
+				),
+			).toEqual({ name: "sdlc", description });
+		}
+	});
+
 	it("rejects unterminated single-quoted top-level scalars", () => {
 		expect(() =>
 			parseSkillFrontmatter(
@@ -90,7 +100,7 @@ describe("parseSkillFrontmatter", () => {
 	it("rejects unterminated single-quoted metadata scalars", () => {
 		expect(() =>
 			parseSkillFrontmatter(
-				"---\nname: sdlc\ndescription: d\nmetadata:\n  plugin: hobo'\n---\n",
+				"---\nname: sdlc\ndescription: d\nmetadata:\n  plugin: 'hobo\n---\n",
 			),
 		).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
 	});

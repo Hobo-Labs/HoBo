@@ -686,6 +686,17 @@ export function checkAgentPlugin(input: {
 	const issues: AgentPluginIssue[] = [];
 	const notes: string[] = [];
 
+	const commitIsh = versionPinCommitIsh(repoRoot);
+	const exactReleaseTrain = requiresExactReleaseTrainVersion(
+		repoRoot,
+		commitIsh,
+	);
+	if (input.versionFromReleaseTrain !== undefined && !exactReleaseTrain) {
+		notes.push(
+			`agent-plugin:check: release-train comparison ran with exactReleaseTrain=false (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME?.trim() || "unset"}, commitIsh=${commitIsh}); a manifest newer than the train is allowed here`,
+		);
+	}
+
 	const manifestText = readPluginFile(pluginRoot, "plugin.json", issues);
 	if (manifestText !== undefined) {
 		const manifest = parsePluginManifest(manifestText);
@@ -695,7 +706,7 @@ export function checkAgentPlugin(input: {
 				...manifestSemanticIssues(
 					manifest.value,
 					input.versionFromReleaseTrain,
-					{ exactReleaseTrain: requiresExactReleaseTrainVersion(repoRoot) },
+					{ exactReleaseTrain },
 				),
 			);
 		}

@@ -100,8 +100,8 @@ type FrontmatterFields = {
 
 function parseYamlScalar(value: string): YamlScalar {
 	const scalar = value.trim();
-	if (scalar.startsWith('"') || scalar.endsWith('"')) {
-		if (scalar.length < 2 || !scalar.startsWith('"') || !scalar.endsWith('"')) {
+	if (scalar.startsWith('"')) {
+		if (scalar.length < 2 || !scalar.endsWith('"')) {
 			throw new SkillParseError("invalid double-quoted YAML scalar");
 		}
 		try {
@@ -110,8 +110,8 @@ function parseYamlScalar(value: string): YamlScalar {
 			throw new SkillParseError("invalid double-quoted YAML scalar");
 		}
 	}
-	if (scalar.startsWith("'") || scalar.endsWith("'")) {
-		if (scalar.length < 2 || !scalar.startsWith("'") || !scalar.endsWith("'")) {
+	if (scalar.startsWith("'")) {
+		if (scalar.length < 2 || !scalar.endsWith("'")) {
 			throw new SkillParseError("invalid single-quoted YAML scalar");
 		}
 		return {

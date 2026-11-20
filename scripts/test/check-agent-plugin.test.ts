@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -411,6 +412,30 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(
 			report.issues.some((issue) =>
 				/is newer than the release train/u.test(issue.message),
+			),
+		).toBe(true);
+		expect(
+			report.notes.some((note) => note.includes("exactReleaseTrain=false")),
+		).toBe(false);
+	});
+
+	it("notes the event name and commit ish when the comparison runs without the exact pin", () => {
+		stubCiEnvironment("push");
+		const train = parsePluginManifest(
+			readFileSync(path.join(realPluginRoot, "plugin.json"), "utf8"),
+		).value?.version;
+		const report = checkAgentPlugin({
+			pluginRoot: realPluginRoot,
+			repoRoot,
+			versionFromReleaseTrain: train,
+		});
+		expect(report.issues).toEqual([]);
+		expect(
+			report.notes.some(
+				(note) =>
+					note.includes("exactReleaseTrain=false") &&
+					note.includes("GITHUB_EVENT_NAME=push") &&
+					note.includes("commitIsh=HEAD"),
 			),
 		).toBe(true);
 	});
@@ -890,8 +915,12 @@ describe("release-train version pin commit selection", () => {
 		expect(
 			releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
 		).toBeUndefined();
-		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
-			vi.stubEnv(variable, "true");
+		for (const [variable, value] of [
+			["CI", "1"],
+			["GITHUB_ACTIONS", "true"],
+			["TF_BUILD", "true"],
+		] as const) {
+			vi.stubEnv(variable, value);
 			expect(() =>
 				releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
 			).toThrow("nbgv unavailable");

@@ -97,9 +97,9 @@ channel as described above; a displayed form alone does not establish privacy.
    directory as `cwd` to both the lifecycle tool and `choose_secret_store`;
    use the same `cwd` on every retry so the owner session stays scoped to that
    project. Run it again the same way after each owner step. If that
-   channel is absent or unverified.
-   Stop at an owner step and report the missing secure hand-off. Do not run the
-   lifecycle through a fallback channel or read its captured stdout/stderr.
+   channel is absent or unverified, stop at an owner step and report the
+   missing secure hand-off. Do not run the lifecycle through a fallback
+   channel or read its captured stdout/stderr.
 2. On `HOBO_*_STORE_CHOICE` (the owner has not chosen a store): use the
    HoBo MCP server's **`choose_secret_store`** (`mcp__hobo__choose_secret_store`,
    `family` ci or cd) only when the connected implementation keeps the choice
