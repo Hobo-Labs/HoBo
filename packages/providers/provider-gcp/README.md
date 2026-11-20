@@ -227,7 +227,7 @@ is cited to the vendor's documentation with the date it was read. It adds no
 product and does not change the published Capability Manifest; it is read by
 `assessSelfHostedDataStore` in `@hobo/core`. Cited documentation only — nothing
 has been deployed onto these products from this repository. See
-[`docs/design/postgres-backend-catalog.md`](../../../docs/design/postgres-backend-catalog.md).
+[`docs/design/postgres-backend-catalog.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/postgres-backend-catalog.md).
 
 ### Virtual machine and block storage (catalog only)
 

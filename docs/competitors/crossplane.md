@@ -335,7 +335,7 @@ was design; the ◐/🔜 marks in the mapping table below record that honestly, 
 ## Better-together / integration posture
 
 - **Borrow** — reconciliation and the developer/platform separation, taken wholesale and credited in
-  [`lineage.md`](../design/lineage.md).
+  [`lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md).
 - **Integrate / adapter** — Crossplane is a first-party `IacProvider` alongside Pulumi, Terraform and
   OpenTofu, none primary ([ADR-0006](../design/adr/01-architecture-core.md#adr-0006)); when a Camp's
   substrate is Kubernetes, HoBo realizes resources *through* Crossplane.
@@ -363,7 +363,7 @@ was design; the ◐/🔜 marks in the mapping table below record that honestly, 
 - [crossplane.io](https://www.crossplane.io/) and [docs.crossplane.io](https://docs.crossplane.io/) — providers, managed resources, XRDs, Compositions, composition functions, v2 changes
 - [crossplane/crossplane](https://github.com/crossplane/crossplane) — source, Apache-2.0, CNCF graduation status
 - [Upbound](https://www.upbound.io/) — Upjet provider generation, Marketplace, Spaces/UXP (vendor material, recorded as claims)
-- HoBo-side: [`design/lineage.md`](../design/lineage.md), ADR-0006, ADR-0144, and the plan references cited inline
+- HoBo-side: [`design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md), ADR-0006, ADR-0144, and the plan references cited inline
 
 This capture predates the research contract and was restructured to it on 2026-08-19 with its
 original research preserved. Release-by-release v2 detail and current Upbound commercial packaging

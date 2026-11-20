@@ -150,7 +150,7 @@ Canonical terminology lives in [`docs/design/glossary.md`](./docs/design/glossar
 - CLI surface: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md)
 - SDK contracts: [`docs/design/sdk-contracts.md`](./docs/design/sdk-contracts.md)
 - Package namespaces: [`docs/design/package-namespaces.md`](./docs/design/package-namespaces.md)
-- Influence lineage & credits: [`docs/design/lineage.md`](./docs/design/lineage.md)
+- Influence lineage & credits: [`docs/design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md)
 
 ## How to work in this repo
 
@@ -272,7 +272,7 @@ Important rules for agents and humans:
 - **Componentize honesty:** `@hobo/componentize` has two lanes — the offline default builds **synthetic wasm contract bytes** (`buildWasmContractBytes`), and `HOBO_COMPONENTIZE_REAL=1` drives the **real jco/`componentize-js` pipeline** (toolchain-gated, fail-closed, real component-model binaries validated for wasm magic + component layer).
 - **Migration & upgrade engine:** live executors ship in `@hobo/trails` (upgrade preflight evidence, expand→backfill→contract over a real SQLite store, pooled→siloed zero-loss tenant move, CDC data-dual ports) with the `migration.*` event family pinned in `@hobo/events`' append-only golden-replay corpus + upcaster-totality gate. See [`docs/design/upgrade-migration-engine.md`](./docs/design/upgrade-migration-engine.md).
 - **Budget-driven routing:** `@hobo/dispatcher` (ADR-0071 deterministic credit/budget selection) + `@hobo/broker` budget signals + the `@hobo/stations` closed routing control loop and progressive cutover saga; rehearse the zero-downtime swap with `pnpm run staging:cutover` (loopback lane green with archived evidence; Vercel/Cloudflare lanes credential-gated fail-closed — [`docs/design/live-provider-matrix.md`](./docs/design/live-provider-matrix.md)).
-- **Design suite:** active and canonical under [`docs/design/`](./docs/design/index.md); influence credits in [`docs/design/lineage.md`](./docs/design/lineage.md).
+- **Design suite:** active and canonical under [`docs/design/`](./docs/design/index.md); influence credits in [`docs/design/lineage.md`](https://github.com/Hobo-Labs/HoBo/blob/3e96e0a51e5f0d286cd9639898913ae0d304c8ba/docs/design/lineage.md).
 - **Ship targets:** OSS public vs local-first npm vs hosted beta/GA are distinguished in [`docs/design/launch-ship-targets.md`](./docs/design/launch-ship-targets.md) and [ADR-0140](./docs/design/adr/07-portability-extensibility.md#adr-0140). Known limitations: [`docs/design/known-limitations-register.md`](./docs/design/known-limitations-register.md).
 - **Executable proof material:** `src/draft/<kind>/<slug>` packages and repo validation scripts.
 - **Primary command surface:** product `hobo` binary from [`packages/hobo/`](./packages/hobo/) (`@hobo/hobo`); shell/factories in [`packages/cli/`](./packages/cli/) (`@hobo/cli`). Spec: [`docs/design/cli-spec.md`](./docs/design/cli-spec.md). The same verb surface is served over MCP stdio by the `hobo-mcp` binary (`@hobo/hobo`), with verb/tool parity enforced by contract test.
