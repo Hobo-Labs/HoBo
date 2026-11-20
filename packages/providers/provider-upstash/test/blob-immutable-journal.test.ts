@@ -529,6 +529,7 @@ describe("Upstash private Blob immutable voter", () => {
 		if (!key) throw new Error("missing test state");
 		const prior = f.objects.get(key);
 		if (!prior) throw new Error("missing test state");
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- fixture state written by this test.
 		const state = JSON.parse(prior.body) as {
 			documents: { digest: string; value: string }[];
 		};
