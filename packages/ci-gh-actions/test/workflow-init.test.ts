@@ -2430,6 +2430,60 @@ ${caller}`;
 		expect(plan.jobs[0]?.verdict).toBe("ready");
 	});
 
+	it.each([
+		[
+			"job env",
+			`    runs-on: ubuntu-24.04
+    env:
+      RUNNER: \${{ needs.route.outputs.runner }}
+    steps:
+      - run: pnpm test`,
+		],
+		[
+			"job if",
+			`    if: \${{ needs.route.outputs.runner == 'hobo' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm test`,
+		],
+	])("recognizes a router when %s carries the runner pick", (_where, caller) => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+${caller}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a router from fromJSON of the job outputs object", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ fromJSON(needs['route'].outputs).runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
 	it("does not treat a job id that is an invalid regex as a router unless another job reads it", () => {
 		const untouched = `jobs:
   "(?":

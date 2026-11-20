@@ -146,6 +146,7 @@ type InspectedJob = Readonly<{
 	plan: WorkflowJobPlan;
 	rewrite: Rewrite;
 	indirectRouting: string;
+	routingFields: string;
 }>;
 
 type WorkflowReading = Readonly<{
@@ -423,10 +424,11 @@ function routingAccessPattern(): string {
 
 function needsJobReferencePattern(jobId: string): string {
 	const index = String.raw`\[\s*(?:${quoteAlternatives(jobId)})\s*\]`;
+	const nestedIndex = String.raw`(?:${index})+`;
 	const dot = DOT_JOB_ID.test(jobId)
 		? String.raw`\.\s*${caseFoldLiteral(jobId)}(?![\w-])|`
 		: "";
-	return String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*(?:${dot}${index})`;
+	return String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*(?:${dot}(?:${index}|${nestedIndex})|${nestedIndex})`;
 }
 
 function needsWildcardPattern(): string {
@@ -500,7 +502,8 @@ function groupedNeeds(reference: string): string {
 function jobPropertyPattern(access: string): string {
 	const starFilter = String.raw`(?:\.\s*\*|\[\s*(?:${quoteAlternatives("*")}|\*)\s*\])`;
 	const nonLiteralIndex = String.raw`\[(?!\s*${staticNeedsIndex()}\s*\])[\s\S]*?\]`;
-	return `(?:${access}|${starFilter}|${nonLiteralIndex})`;
+	const nestedNonLiteralIndex = String.raw`(?:${nonLiteralIndex})+`;
+	return `(?:${access}|${starFilter}|${nonLiteralIndex}|${nestedNonLiteralIndex})`;
 }
 
 function referencesNeedsAccess(
@@ -519,6 +522,14 @@ function referencesNeedsAccess(
 		return true;
 	}
 	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
+	if (
+		patternMatches(
+			String.raw`\bfromJSON\s*\(\s*${groupedNeeds(jobReference)}`,
+			text,
+		)
+	) {
+		return true;
+	}
 	const property = `\\s*${jobPropertyPattern(access)}`;
 	const open =
 		patternMatches(
@@ -806,6 +817,28 @@ function locateRunsOn(
 	);
 }
 
+const ROUTING_FIELD_KEYS = ["env", "if", "container", "services"] as const;
+
+function stepRoutingText(workflow: Workflow, job: YAMLMap): string {
+	const parts: string[] = [];
+	for (const step of stepsOf(workflow, job)) {
+		const runsOn = valueUnder(workflow, step, "runs-on");
+		if (runsOn !== undefined) parts.push(...reachableText(workflow, runsOn));
+	}
+	return parts.join("\n");
+}
+
+function routingFieldsOf(workflow: Workflow, job: YAMLMap): string {
+	const parts: string[] = [];
+	for (const key of ROUTING_FIELD_KEYS) {
+		const node = effectiveWrittenUnder(workflow, job, key);
+		if (node === undefined) continue;
+		parts.push(...reachableText(workflow, node));
+	}
+	parts.push(stepRoutingText(workflow, job));
+	return parts.join("\n");
+}
+
 function indirectRoutingOf(
 	workflow: Workflow,
 	job: YAMLMap,
@@ -844,12 +877,14 @@ function inspectJob(
 			},
 			rewrite: refuse(`skipped: ${describeWorkflowSkip(reason)}`),
 			indirectRouting: "",
+			routingFields: "",
 		};
 	}
 	const runsOn = readRunsOn(workflow, job);
 	const standing = standingOf(workflow, job, runsOn, usesSecrets);
 	const label = runsOn.label ?? "";
 	const indirectRouting = indirectRoutingOf(workflow, job, runsOn);
+	const routingFields = routingFieldsOf(workflow, job);
 	const plan: WorkflowJobPlan = {
 		file: workflow.file,
 		job: id,
@@ -861,19 +896,26 @@ function inspectJob(
 			standing.verdict === "ready" ? warningsOf(workflow, job, label) : [],
 	};
 	if (standing.verdict === "routed") {
-		return { plan, rewrite: refuse(ALREADY_ROUTED), indirectRouting };
+		return {
+			plan,
+			rewrite: refuse(ALREADY_ROUTED),
+			indirectRouting,
+			routingFields,
+		};
 	}
 	if (standing.reason !== undefined) {
 		return {
 			plan,
 			rewrite: refuse(`skipped: ${describeWorkflowSkip(standing.reason)}`),
 			indirectRouting,
+			routingFields,
 		};
 	}
 	return {
 		plan,
 		rewrite: locateRunsOn(workflow, entry, job, label),
 		indirectRouting,
+		routingFields,
 	};
 }
 
@@ -941,7 +983,7 @@ function readWorkflow(
 }
 
 function routingText(job: InspectedJob): string {
-	return `${job.plan.runsOn}\n${job.indirectRouting}`;
+	return `${job.plan.runsOn}\n${job.indirectRouting}\n${job.routingFields}`;
 }
 
 function referencesRoutedJob(
