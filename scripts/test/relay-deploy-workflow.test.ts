@@ -90,7 +90,7 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
-	it("ends with a notice and no deploy until a secret store is bound, and names how one is", () => {
+	it("fails a required deploy when the secret store binding is absent or unreadable", () => {
 		const decision = decide({
 			event: "push",
 			store: "absent",
@@ -98,6 +98,7 @@ describe("the relay deploy gate", () => {
 			inputDirs,
 		});
 		assert.equal(decision.run, false);
+		assert.equal(decision.failure, true);
 		assert.ok(decision.reason.includes(RELAY_SECRET_STORE_BINDING));
 		assert.match(decision.reason, /hobo ci secret-store provision/u);
 		const broken = decide({
@@ -106,6 +107,16 @@ describe("the relay deploy gate", () => {
 			inputDirs,
 		});
 		assert.equal(broken.run, false);
+		assert.equal(broken.failure, true);
+		assert.equal(
+			decide({
+				event: "push",
+				store: "absent",
+				changed: ["README.md"],
+				inputDirs,
+			}).failure,
+			undefined,
+		);
 	});
 
 	it("reads the binding's shape only, and only an HTTPS endpoint counts", () => {
@@ -195,36 +206,20 @@ describe("the relay deploy workflow", () => {
 	});
 
 	it("reads no repository variable or secret for the relay's configuration", () => {
-		// Runner routing reads its own variables; nothing about the relay does.
-		for (const line of workflow.split("\n"))
-			if (line.includes("vars."))
-				assert.match(
-					line,
-					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER)\b/u,
-					line,
-				);
-		assert.doesNotMatch(
-			workflow,
-			/INFISICAL_|VERCEL_TEAM_ID|\$\{\{\s*vars\.HOBO_CI_RELAY_URL/u,
-		);
+		assert.doesNotMatch(workflow, /INFISICAL_|VERCEL_TEAM_ID|\$\{\{\s*vars\./u);
 	});
 
-	it("keeps deployment credentials on an ephemeral clean runner", () => {
+	it("keeps deployment and App credentials on ephemeral clean runners", () => {
 		const deploy = workflow
 			.split("\n  deploy:\n")[1]
 			?.split("\n  app-credentials:\n")[0];
 		const deposit = workflow.split("\n  app-credentials:\n")[1];
 		assert.ok(deploy && deposit);
-		assert.match(workflow, /^ {2}route:\n/mu);
-		assert.match(workflow, /uses: \$\/\.github\/actions\/route-runner/u);
-		assert.match(deploy, /^ {4}runs-on: ubuntu-24\.04$/mu);
-		assert.match(deploy, /clean: true/u);
-		assert.doesNotMatch(deploy, /needs: route|needs\.route|clean: false/u);
-		assert.match(deposit, / {4}needs: route\n/u);
-		assert.match(
-			deposit,
-			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| /u,
-		);
+		for (const job of [deploy, deposit]) {
+			assert.match(job, /^ {4}runs-on: ubuntu-24\.04$/mu);
+			assert.match(job, /clean: true/u);
+			assert.doesNotMatch(job, /needs: route|needs\.route|clean: false/u);
+		}
 	});
 
 	it("does not embed the Vercel credential in the workflow", () => {

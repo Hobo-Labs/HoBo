@@ -286,16 +286,15 @@ runs on every push to `main` that changes this package or a workspace package
 it is built from (its pnpm-lock closure, `scripts/ci/relay-deploy-gate.mts`),
 and on `workflow_dispatch`:
 
-0. Deployment always uses an ephemeral GitHub-hosted runner and a clean
-   checkout, so a reused fleet or enrolled runner cannot capture the deploy
-   credential or contribute workspace files. A separate `route` job picks the
-   App-deposit runner, as `hobo-ci.yml` does. Both jobs check out the pinned
+0. Deployment and App-deposit always use ephemeral GitHub-hosted runners and
+   clean checkouts, so a reused fleet or enrolled runner cannot capture their
+   credentials or contribute workspace files. Both jobs check out the pinned
    submodule so a fresh runner can install the workspace dependencies.
-1. The gate ends the job with a notice, and success, until a secret store is
-   bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
-   which `hobo ci secret-store provision` writes when the HoBo deployment
-   chooses the store and the owner claims it, or `hobo ci secret-store connect`
-   writes from the ids of a secrets manager the owner connected with OIDC
+1. The gate fails a required deployment when the secret store binding is absent
+   or unreadable: `deploy/secret-store.binding.json`, coordinates only, which
+   `hobo ci secret-store provision` writes when the HoBo deployment chooses the
+   store and the owner claims it, or `hobo ci secret-store connect` writes from
+   the ids of a secrets manager the owner connected with OIDC
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
    No repository variable or secret is read.
@@ -316,8 +315,10 @@ and on `workflow_dispatch`:
    read returns the promotion failure instead of accepting same-commit health as
    proof. Finalization resumes from the journal's durable handover and recognizes
    a candidate already assigned to production instead of promoting it again.
-   Failed live verification reports `manual`, `superseded`, or `unknown`; HoBo
-   sends no automatic rollback because Vercel cannot condition promotion on the
+   Failed live verification restores the previous deployment when production
+   still names the rejected candidate, reports `completed`, and leaves a
+   concurrently superseded target untouched. `failed` or `unknown` requires the
+   named manual recovery because Vercel cannot condition promotion on the
    current target.
 
 A manual run given a GitHub App manifest code (`hobo ci app create

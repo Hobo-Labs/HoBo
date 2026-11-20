@@ -9,8 +9,8 @@ name: HoBo relay deploy
 # No secret and no repository variable configures this workflow. The store's
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
-# reads in production. Until a store is bound the job ends with a notice and
-# succeeds.
+# reads in production. A required deploy fails until that binding exists and is
+# readable.
 
 on:
   push:
@@ -43,39 +43,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  route:
-    name: Route runners
-    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
-    # it is choosing against. The fleet while it takes jobs, an enrolled local
-    # box when it does not, GitHub-hosted when neither does
-    # (scripts/ci/route-runner.mts). Without it the deploy waited for a
-    # hobo-trunk slot and held every later deploy in its concurrency group.
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      actions: read
-      contents: read
-    outputs:
-      runner: ${{ steps.route.outputs.runner }}
-      tier: ${{ steps.route.outputs.tier }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            .github/actions/route-runner
-            scripts/ci/route-runner.mts
-            scripts/ci/runner-routing.mts
-            .hobo/ci.json
-            packages/ci/src/fleet-overflow.ts
-      - id: route
-        uses: $/.github/actions/route-runner
-        with:
-          token: ${{ github.token }}
-
   deploy:
     name: Deploy the hosted CI relay (production)
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
@@ -214,10 +181,8 @@ jobs:
   # it signs in as hobo-ci-writer with its GitHub OIDC token (write-capable role).
   app-credentials:
     name: Deposit the GitHub App's credentials
-    needs: route
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.manifest_code != ''
-    # The route job picks the label; scripts/lint-actions.ts allows this expression.
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -229,7 +194,7 @@ jobs:
         run: echo "::add-mask::$HOBO_APP_MANIFEST_CODE"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          clean: false
+          clean: true
           fetch-depth: 1
           submodules: recursive
           persist-credentials: false

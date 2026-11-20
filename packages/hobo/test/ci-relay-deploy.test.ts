@@ -1475,13 +1475,15 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	}, 60_000);
 
 	it.each([
-		{ lost: false, confirmation: "candidate" },
-		{ lost: true, confirmation: "candidate" },
-		{ lost: true, confirmation: "missing" },
-		{ lost: true, confirmation: "error" },
+		{ lost: false, confirmation: "candidate", rollbackRefused: false },
+		{ lost: true, confirmation: "candidate", rollbackRefused: false },
+		{ lost: false, confirmation: "candidate", rollbackRefused: true },
+		{ lost: true, confirmation: "missing", rollbackRefused: false },
+		{ lost: true, confirmation: "error", rollbackRefused: false },
 	])("handles failed live verification and ambiguous promotion (%s)", async ({
 		lost,
 		confirmation,
+		rollbackRefused,
 	}) => {
 		const home = freshHome();
 		let now = Date.UTC(2026, 10, 12, 12);
@@ -1533,11 +1535,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				};
 			}
 			if (url.includes("/promote/")) {
-				expect(url).toContain("/promote/dpl_wait");
+				const rollingBack = promotionAttempted;
+				expect(url).toContain(
+					rollingBack ? `/promote/${previousProduction}` : "/promote/dpl_wait",
+				);
 				promotionAttempted = true;
-				promotedNewDeployment = true;
-				events.push("promote");
-				if (lost) throw new Error("promotion response lost");
+				events.push(rollingBack ? "rollback" : "promote");
+				if (rollingBack && rollbackRefused)
+					throw new Error("rollback response refused");
+				promotedNewDeployment = !rollingBack;
+				if (lost && !rollingBack) throw new Error("promotion response lost");
 				return {
 					ok: true,
 					status: 202,
@@ -1637,20 +1644,26 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			expect(result.envelope).toMatchObject({
 				code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
 				message: expect.stringContaining(
-					"promote the previous deployment dpl_previous_prod by hand",
+					rollbackRefused
+						? "Automatic rollback to dpl_previous_prod did not restore production"
+						: "Production traffic was restored to the previous deployment dpl_previous_prod",
 				),
 				data: {
-					rollback: "manual",
+					rollback: rollbackRefused ? "failed" : "completed",
 					delivery: { state: "FAILED" },
 				},
 			});
 			expect(events).toContain("live:/healthz");
+			expect(events.filter((event) => event === "rollback")).toEqual([
+				"rollback",
+			]);
 		} else {
 			expect(result.envelope).toMatchObject({
 				code: "HOBO_CI_DEPLOY_NO_ANSWER",
 				data: { delivery: { state: "FAILED" } },
 			});
 			expect(events).not.toContain("live:/healthz");
+			expect(events).not.toContain("rollback");
 		}
 		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
 	});
@@ -1793,7 +1806,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(result.envelope).toMatchObject({
 			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
 			message: expect.stringContaining(
-				concurrentProduction ?? "could not be established",
+				concurrentProduction ?? "Production has no current deployment",
 			),
 			data: {
 				rollback: concurrentProduction === undefined ? "unknown" : "superseded",

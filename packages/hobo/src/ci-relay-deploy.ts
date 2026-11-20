@@ -1122,38 +1122,66 @@ export async function runCiRelayDeploy(
 							await pauseBeforeRetry(attempt);
 						}
 						if (liveReady) return undefined;
-						let rollback: "manual" | "superseded" | "unknown" = "unknown";
-						let supersedingProduction: string | undefined;
-						if (previousProduction !== undefined)
+						const rollbackFailedPromotion = async (): Promise<{
+							status: "completed" | "failed" | "superseded" | "unknown";
+							note: string;
+						}> => {
+							if (previousProduction === undefined)
+								return {
+									status: "unknown",
+									note: " No previous production deployment was recorded; inspect production and restore a known healthy deployment by hand.",
+								};
+							let current: string | undefined;
 							try {
-								currentProduction =
-									await client.getProductionDeploymentId(project);
-								if (currentProduction === safe.deploymentId) {
-									rollback = "manual";
-								} else if (currentProduction !== undefined) {
-									rollback = "superseded";
-									supersedingProduction = currentProduction;
-								}
+								current = await client.getProductionDeploymentId(project);
 							} catch {
-								rollback = "unknown";
+								return {
+									status: "unknown",
+									note: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`,
+								};
 							}
-						const supersededTarget =
-							supersedingProduction === undefined
-								? ""
-								: ` to ${supersedingProduction}`;
-						const rollbackNote =
-							rollback === "manual"
-								? ` Vercel promotion is not conditional; promote the previous deployment ${previousProduction} by hand.`
-								: rollback === "unknown"
-									? previousProduction === undefined
-										? " No previous production deployment was recorded; inspect production and restore a known healthy deployment by hand."
-										: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`
-									: ` Production traffic was concurrently moved${supersededTarget}; no rollback was sent.`;
+							if (current !== safe.deploymentId)
+								return current === undefined
+									? {
+											status: "unknown",
+											note: ` Production has no current deployment; promote the previous deployment ${previousProduction} by hand.`,
+										}
+									: {
+											status: "superseded",
+											note: ` Production traffic was concurrently moved to ${current}; no rollback was sent.`,
+										};
+							try {
+								await client.promoteDeployment(project, previousProduction);
+							} catch {}
+							try {
+								current = await client.getProductionDeploymentId(project);
+							} catch {
+								return {
+									status: "unknown",
+									note: ` Automatic rollback to ${previousProduction} was attempted, but its outcome could not be established; inspect production before retrying.`,
+								};
+							}
+							if (current === previousProduction)
+								return {
+									status: "completed",
+									note: ` Production traffic was restored to the previous deployment ${previousProduction}.`,
+								};
+							if (current !== undefined && current !== safe.deploymentId)
+								return {
+									status: "superseded",
+									note: ` Production traffic was concurrently moved to ${current} during rollback.`,
+								};
+							return {
+								status: current === safe.deploymentId ? "failed" : "unknown",
+								note: ` Automatic rollback to ${previousProduction} did not restore production; promote it by hand.`,
+							};
+						};
+						const recovery = await rollbackFailedPromotion();
 						return {
 							ok: false as const,
 							code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-							message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit before the deploy deadline.${rollbackNote}`,
-							data: { rollback },
+							message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit before the deploy deadline.${recovery.note}`,
+							data: { rollback: recovery.status },
 						};
 					},
 				}

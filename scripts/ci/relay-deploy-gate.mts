@@ -1,29 +1,4 @@
 #!/usr/bin/env node
-/**
- * Whether the relay deploy workflow deploys this run (ADR-0179 phase 6).
- *
- * Two questions, both answered before anything is installed:
- *
- * 1. Is a secret store bound to the relay? The store is chosen and
- *    provisioned when the HoBo deployment first runs
- *    (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
- *    chosen at deploy, provisioned by claim"), which commits its coordinates
- *    to `packages/ci-vercel/deploy/secret-store.binding.json`. Until then the
- *    job ends with a notice and succeeds. No repository variable or secret is
- *    read: the gate is the committed binding.
- * 2. For a push: does the pushed range touch the relay? The relay's inputs are
- *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
- *    closure (`importerClosure`, the release OCI impact tooling's), plus this
- *    workflow and this gate. A manual run always deploys.
- *
- * Prints `run=true|false`, `reason=<text>` and `deadline=<ISO time>` to
- * `--github-output`, or to stdout without it. The deadline is when
- * `hobo ci deploy --adopt` must be done (`--deadline`): the deploy job's
- * timeout less a margin, counted from this step, which runs right after
- * checkout, so whatever the install and build take comes out of the adopt
- * budget and the command ends with a typed reason before the job is killed. A range it cannot read (a new branch, a force push, a
- * missing commit) deploys: a redundant deploy is cheap, a skipped one is not.
- */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -66,7 +41,11 @@ export function adoptDeadline(nowMs: number): string {
 /** What the gate knows of the binding; it never reads a value out. */
 export type StoreBindingState = "absent" | "unreadable" | "bound";
 
-export type GateDecision = Readonly<{ run: boolean; reason: string }>;
+export type GateDecision = Readonly<{
+	run: boolean;
+	reason: string;
+	failure?: boolean;
+}>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
@@ -119,31 +98,40 @@ export function decide(input: {
 	readonly changed?: readonly string[];
 	readonly inputDirs: readonly string[];
 }): GateDecision {
+	if (input.event !== "workflow_dispatch" && input.event !== "push")
+		return { run: false, reason: `the ${input.event} event does not deploy` };
+	if (
+		input.event === "push" &&
+		input.changed !== undefined &&
+		!touchesRelay(input.changed, input.inputDirs)
+	)
+		return {
+			run: false,
+			reason: "the push changes nothing the relay is built from",
+		};
 	if (input.store === "absent")
 		return {
 			run: false,
+			failure: true,
 			reason: `no secret store is bound to the relay yet: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
 		};
 	if (input.store === "unreadable")
 		return {
 			run: false,
+			failure: true,
 			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
 		};
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
-	if (input.event !== "push")
-		return { run: false, reason: `the ${input.event} event does not deploy` };
 	if (input.changed === undefined)
 		return {
 			run: true,
 			reason: "the pushed range could not be read, so the relay deploys",
 		};
-	return touchesRelay(input.changed, input.inputDirs)
-		? { run: true, reason: "the push changes the relay or a package it uses" }
-		: {
-				run: false,
-				reason: "the push changes nothing the relay is built from",
-			};
+	return {
+		run: true,
+		reason: "the push changes the relay or a package it uses",
+	};
 }
 
 function changedPaths(from: string, to: string): string[] | undefined {
@@ -187,11 +175,17 @@ function main(argv: readonly string[]): void {
 	const text = `run=${decision.run}\nreason=${decision.reason}\ndeadline=${adoptDeadline(Date.now())}\n`;
 	if (output) appendFileSync(output, text, "utf8");
 	else process.stdout.write(text);
-	process.stdout.write(
-		decision.run
-			? `Deploying the relay: ${decision.reason}.\n`
-			: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
-	);
+	if (decision.failure === true) {
+		process.stdout.write(
+			`::error title=Relay deploy failed::${decision.reason}.\n`,
+		);
+		process.exitCode = 1;
+	} else
+		process.stdout.write(
+			decision.run
+				? `Deploying the relay: ${decision.reason}.\n`
+				: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
+		);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
