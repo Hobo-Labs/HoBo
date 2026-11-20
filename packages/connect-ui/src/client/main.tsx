@@ -289,8 +289,7 @@ function ConnectPage() {
 		[view],
 	);
 	const initialState = useMemo(
-		() =>
-			view === null ? { form: {} } : formInitialState(view.formFields),
+		() => (view === null ? { form: {} } : formInitialState(view.formFields)),
 		[view],
 	);
 	const { collector, secretNames } = useConnectFormCollector(
