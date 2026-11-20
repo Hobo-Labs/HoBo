@@ -297,6 +297,131 @@ describe("merge-group required gate", () => {
 		assert.ok(acceptedSkips > 0);
 	});
 
+	it("accepts skipped merge-group jobs only for a route job that succeeded and reported a pr-fabric reuse", () => {
+		const script = shellForStep(
+			gate,
+			"Require successful validation and workspace tests",
+		);
+		type Case = Readonly<{
+			event: string;
+			route: string;
+			flag: string;
+			validation: string;
+			workspace: string;
+			scripts: string;
+		}>;
+		const cases: readonly Case[] = [
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "true",
+				validation: "skipped",
+				workspace: "skipped",
+				scripts: "skipped",
+			},
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "true",
+				validation: "success",
+				workspace: "success",
+				scripts: "success",
+			},
+			{
+				event: "merge_group",
+				route: "failure",
+				flag: "true",
+				validation: "skipped",
+				workspace: "skipped",
+				scripts: "skipped",
+			},
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "false",
+				validation: "skipped",
+				workspace: "success",
+				scripts: "success",
+			},
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "1",
+				validation: "skipped",
+				workspace: "skipped",
+				scripts: "skipped",
+			},
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "",
+				validation: "skipped",
+				workspace: "skipped",
+				scripts: "skipped",
+			},
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "true",
+				validation: "failure",
+				workspace: "skipped",
+				scripts: "skipped",
+			},
+			{
+				event: "merge_group",
+				route: "success",
+				flag: "true",
+				validation: "skipped",
+				workspace: "cancelled",
+				scripts: "skipped",
+			},
+			{
+				event: "pull_request",
+				route: "success",
+				flag: "true",
+				validation: "skipped",
+				workspace: "skipped",
+				scripts: "skipped",
+			},
+			{
+				event: "pull_request",
+				route: "success",
+				flag: "true",
+				validation: "success",
+				workspace: "success",
+				scripts: "success",
+			},
+		];
+		for (const entry of cases) {
+			const run = spawnSync("bash", ["-c", script], {
+				env: {
+					...process.env,
+					EVENT_NAME: entry.event,
+					VALIDATION_RESULT: entry.validation,
+					WORKSPACE_RESULT: entry.workspace,
+					SCRIPTS_RESULT: entry.scripts,
+					AFFECTED_RESULT:
+						entry.event === "merge_group" ? "skipped" : "success",
+					ROUTE_RESULT: entry.route,
+					ATTESTED: "false",
+					ATTESTED_JOBS: "[]",
+					PR_FABRIC_GREEN: entry.flag,
+				},
+			});
+			const expected =
+				![entry.validation, entry.workspace, entry.scripts].some(
+					(result) => result === "failure" || result === "cancelled",
+				) &&
+				((entry.validation === "success" &&
+					entry.workspace === "success" &&
+					entry.scripts === "success") ||
+					(entry.event === "merge_group" &&
+						entry.route === "success" &&
+						entry.flag === "true"));
+			assert.equal(run.status === 0, expected, JSON.stringify(entry));
+		}
+	});
+
 	it("skips each of the gate's jobs for an attestation that names it, and nothing else", () => {
 		for (const [block, id] of [
 			[validation, "pr_gate_validation"],
@@ -305,12 +430,19 @@ describe("merge-group required gate", () => {
 		] as const) {
 			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
 			assert.ok(
-				condition.endsWith(
-					`&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"')) }}`,
+				condition.includes(
+					`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`,
 				),
 				id,
 			);
+			assert.equal(condition.split("attested-jobs").length - 1, 1, id);
 		}
+		for (const block of [validation, workspace])
+			assert.ok(
+				block
+					.match(/^ {4}if: (.*)$/mu)?.[1]
+					?.endsWith("&& needs.route.outputs.pr-fabric-green != 'true' }}"),
+			);
 		// The gate still always runs, and reads the route job's own result.
 		assert.match(gate, /ROUTE_RESULT: \$\{\{ needs\.route\.result \}\}/u);
 		assert.match(

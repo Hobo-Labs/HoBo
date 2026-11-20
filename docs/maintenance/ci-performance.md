@@ -138,6 +138,19 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
   `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
+- **Merge groups reuse the pull request's green Fabric run on a tree match.** 90% of successful
+  `merge_group` runs test a tree the pull request's own last green run already tested at the same base
+  and workflow file ([finding 156](../ci/findings/0156-merge-group-pr-fabric-tree-match-rate.md)). The
+  route job (`scripts/ci/pr-fabric-reuse.mts`, run from the trusted base checkout like the attestation
+  verifier) verifies the pull request's newest green `pull_request` run tested this exact merge-commit
+  tree, the base the queue branch encodes and the pinned workflow blob, in the same repository, with a
+  head that has not moved; its `pr-fabric-green` output then skips **PR impact validation**, the
+  **workspace test shards** and the **Scripts tests** shards the way an attestation does, and the
+  GitHub-hosted `PR impact gate` accepts those skipped jobs only when the route job succeeded and
+  reported the reuse. The cheap subset still runs on every reused merge group: `secret-scan` covers the
+  merge group's `base..head` range and `ci-guard` asserts the CI fabric contract. Anything short of a
+  verified match — a moved base, a fork, a stale or missing green run, a different workflow blob, an API
+  failure — leaves `pr-fabric-green=false` and the merge group runs its full gate as before.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
