@@ -12,7 +12,10 @@ import {
 	createAgent37FakeServer,
 	generateAgent37TestApiKey,
 } from "../../providers/provider-agent37/test/fake/server.mts";
-import { createAgent37SandboxDriver } from "../src/agent37-sandbox.js";
+import {
+	createAgent37SandboxDriver,
+	resolveAgent37Network,
+} from "../src/agent37-sandbox.js";
 import {
 	createSandboxController,
 	type IsolatedSandboxDriver,
@@ -881,9 +884,13 @@ describe("Agent37 sandbox driver lifecycle", () => {
 		expect(instance.metadata).toMatchObject({ hobo: "ci", leaseId: id });
 		expect(fake.state.execInvocations.map((entry) => entry.name)).toEqual([
 			`prep-${id}`,
+			`jit-${id}`,
 			`start-${id}`,
 		]);
-		expect(fake.state.execInvocations[1]?.background).toBe(true);
+		expect(fake.state.execInvocations[2]?.background).toBe(true);
+		const jitPayload = "b25lLXRpbWU=";
+		expect(fake.state.execInvocations[1]?.command).toContain(jitPayload);
+		expect(fake.state.execInvocations[2]?.command).not.toContain(jitPayload);
 		expect(f.read()).toMatchObject({
 			state: "running",
 			sandboxSessionId: instance.id,
@@ -900,6 +907,15 @@ describe("Agent37 sandbox driver lifecycle", () => {
 		});
 		expect(f.pending.map((job) => job.id)).toEqual([11]);
 		expect(fake.state.instances).toHaveLength(0);
+	});
+
+	it("refuses agent37 guests without an explicit network allowlist", () => {
+		expect(() =>
+			resolveAgent37Network({
+				template: "agent37-ubuntu",
+				type: "vm",
+			}),
+		).toThrow(/network allowlist required/);
 	});
 
 	it("discovers an Agent37 instance after a lost create response and stops it", async () => {

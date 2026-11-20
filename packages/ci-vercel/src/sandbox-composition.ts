@@ -75,7 +75,8 @@ export interface SandboxDrivers {
 	proxyDriver?: SandboxProxyDriver;
 }
 
-export const VERCEL_SANDBOX_DRIVERS: Readonly<Required<SandboxDrivers>> =	Object.freeze({
+export const VERCEL_SANDBOX_DRIVERS: Readonly<Required<SandboxDrivers>> =
+	Object.freeze({
 		driver: {
 			create: createIsolatedSandbox,
 			discover: discoverIsolatedSandbox,
@@ -94,6 +95,15 @@ export const VERCEL_SANDBOX_DRIVERS: Readonly<Required<SandboxDrivers>> =	Object
 			stop: stopProxySandbox,
 		},
 	});
+
+export function parseSandboxProvider(
+	env: NodeJS.ProcessEnv,
+): SandboxProviderKind {
+	const raw = env.HOBO_CI_SANDBOX_PROVIDER;
+	if (raw === undefined || raw === "") return "vercel";
+	if (raw === "vercel" || raw === "agent37") return raw;
+	throw new Error("invalid sandbox provider");
+}
 
 export function createAgent37SandboxDrivers(
 	options: Agent37SandboxDriverOptions,
@@ -114,16 +124,25 @@ export function createSandboxComposition(options: {
 	now?: (() => string) | undefined;
 }) {
 	const { env, store, github } = options;
-	const provider =
-		options.sandboxProvider ??
-		(env.HOBO_CI_SANDBOX_PROVIDER === "agent37" ? "agent37" : "vercel");
-	if (provider !== "vercel" && provider !== "agent37")
-		throw new Error("invalid sandbox provider");
+	const provider = options.sandboxProvider ?? parseSandboxProvider(env);
 	let drivers: SandboxDrivers;
 	if (options.drivers) drivers = options.drivers;
 	else if (provider === "agent37") {
 		if (!options.agent37) throw new Error("agent37 sandbox driver unavailable");
-		drivers = createAgent37SandboxDrivers(options.agent37);
+		const domains =
+			env.HOBO_CI_SANDBOX_ENABLED === "1"
+				? z
+						.array(z.string())
+						.parse(JSON.parse(required(env, "HOBO_CI_SANDBOX_DOMAINS_JSON")))
+				: undefined;
+		const pool =
+			domains === undefined
+				? options.agent37.pool
+				: {
+						...options.agent37.pool,
+						network: { allow: [...domains] },
+					};
+		drivers = createAgent37SandboxDrivers({ ...options.agent37, pool });
 	} else drivers = VERCEL_SANDBOX_DRIVERS;
 	if (!env.HOBO_CI_SANDBOX_ENABLED) return undefined;
 	if (env.HOBO_CI_SANDBOX_ENABLED !== "1")
