@@ -23,3 +23,6 @@ This client sends object read and conditional-write commands, but it is not an
 actor or an event store. It emits no domain events and owns no materialized view,
 projection, snapshot or read store. The caller owns any journal and its
 reconciliation of unknown write outcomes; the remote R2 service stores objects.
+
+The root `pnpm-lock.yaml` entry for this workspace package must stay aligned with
+main so HoBo CI Fabric can run `pnpm install --frozen-lockfile`.
