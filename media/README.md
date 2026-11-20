@@ -62,8 +62,9 @@ every pose beyond the turnaround is deterministic pixel surgery on those
 bases — the eye region repainted with the pupil placed per expression, legs
 erased and re-posed, posture squashed or stretched at source resolution, the
 free arm drawn as the same one-stroke-one-dot rubber hose the sheets use. The
-bindle arm never changes: it holds the pole in every cell. Rebuilt end-to-end
-by:
+bindle arm never changes: it holds the pole in every cell. The sheet labels use
+the CC0 Kenney Pixel font in `media/assets/fonts/kenney/`. Rebuild end-to-end
+with:
 
 ```sh
 uv run media/scripts/build-bo-pixel-reference.py

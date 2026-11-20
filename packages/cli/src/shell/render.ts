@@ -48,17 +48,21 @@ export function renderSuccess(input: {
 		);
 	}
 
+	const next = !envelope.ok
+		? `\n${[envelope.code, ...envelope.remediation.map((line) => `- ${line}`)].join("\n")}\n`
+		: "";
 	return okText(
 		`Command  Status
 ${input.verb.padEnd(8)} ${envelope.status}
 
 ${envelope.message}
-`,
+${next}`,
 		exitCode,
 	);
 }
 
 export function renderError(
+	// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding has no type; it is only narrowed with instanceof and summarized.
 	cause: unknown,
 	input: {
 		readonly verb: string | null;
@@ -140,10 +144,12 @@ export function renderError(
 	};
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
 function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: a caught binding, narrowed with instanceof before use.
 function verboseDiagnostics(cause: unknown, verbose: boolean): string {
 	if (!verbose) {
 		return "";
