@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { HOBO_OWNED_ALLOWED_FIELDS } from "@hobo/agent-skills";
 import { z } from "zod";
 
 import {
@@ -27,14 +28,7 @@ const SECRET_KEY_PATTERN =
 export const SECRET_VALUE_PATTERN =
 	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
 
-export const PLUGIN_ALLOWED_SKILL_FIELDS: readonly string[] = [
-	"name",
-	"description",
-	"license",
-	"compatibility",
-	"metadata",
-	"allowed-tools",
-];
+export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
 export const SYNCED_SKILLS = ["hobo-setup", "hobo-deploy"] as const;
 
 export type AgentPluginIssue = {

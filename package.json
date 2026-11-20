@@ -151,6 +151,7 @@
 		"@changesets/cli": "^2.31.0",
 		"@cucumber/cucumber": "^13.0.0",
 		"@google/design.md": "^0.4.0",
+		"@hobo/agent-skills": "workspace:*",
 		"@oxlint/plugins": "1.79.0",
 		"@stryker-mutator/core": "^10.0.0",
 		"@stryker-mutator/vitest-runner": "^10.0.0",
