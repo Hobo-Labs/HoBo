@@ -321,6 +321,41 @@ function grantsDeployPermissions(workflow: Workflow, holder: YAMLMap): boolean {
 	);
 }
 
+function secretInputNames(workflow: Workflow): readonly string[] {
+	const triggers = effectiveValueUnder(workflow, workflow.root, "on");
+	const call = isMap(triggers)
+		? effectiveValueUnder(workflow, triggers, "workflow_call")
+		: undefined;
+	const declared = isMap(call)
+		? effectiveValueUnder(workflow, call, "inputs")
+		: undefined;
+	if (!isMap(declared)) return [];
+	return declared.items.flatMap((pair) => {
+		const name = isScalar(pair.key) ? String(pair.key.value ?? "") : "";
+		const spec = follow(
+			workflow.doc,
+			isNode(pair.value) ? pair.value : undefined,
+		);
+		return name.length > 0 &&
+			isMap(spec) &&
+			stringOf(effectiveValueUnder(workflow, spec, "type")) === "secret"
+			? [name]
+			: [];
+	});
+}
+
+function referencesSecretInput(
+	workflow: Workflow,
+	texts: readonly string[],
+): boolean {
+	const names = secretInputNames(workflow);
+	if (names.length === 0) return false;
+	const named = names.map(propertyAccessPattern).join("|");
+	const starIndex = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
+	const pattern = String.raw`\b${caseFoldLiteral("inputs")}\b\s*(?:${named}|\.\s*\*|${starIndex}|(?![\s]*[.\[]))`;
+	return texts.some((text) => patternMatches(pattern, text));
+}
+
 function isDeployLike(workflow: Workflow, job: YAMLMap): boolean {
 	if (effectivePairOf(workflow, job, "environment") !== undefined) return true;
 	if (stringOf(effectiveValueUnder(workflow, job, "secrets")) === "inherit")
@@ -331,10 +366,12 @@ function isDeployLike(workflow: Workflow, job: YAMLMap): boolean {
 			: workflow.root;
 	if (grantsDeployPermissions(workflow, permissionsHolder)) return true;
 	const workflowEnv = effectiveWrittenUnder(workflow, workflow.root, "env");
-	return [
+	const texts = [
 		...reachableText(workflow, job),
 		...(workflowEnv === undefined ? [] : reachableText(workflow, workflowEnv)),
-	].some(namesSecret);
+	];
+	if (referencesSecretInput(workflow, texts)) return true;
+	return texts.some(namesSecret);
 }
 
 function needsJobId(node: Node | undefined): string | undefined {

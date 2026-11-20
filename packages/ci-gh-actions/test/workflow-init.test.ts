@@ -855,6 +855,89 @@ jobs:
 	});
 
 	it.each([
+		["a dotted secret input", "inputs.deploy_token"],
+		["a bracketed secret input", "inputs['deploy_token']"],
+		["a case-insensitive secret input", "INPUTS.DEPLOY_TOKEN"],
+		["a star over the inputs context", "inputs.*"],
+		["the whole inputs context", "toJSON(inputs)"],
+	])("skips a job that reads %s", (_what, reference) => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      size:
+        type: string
+      deploy_token:
+        type: secret
+jobs:
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./deploy.sh
+        env:
+          TOKEN: \${{ ${reference} }}
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ inputs.size }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"ship skipped uses_secrets",
+			"test ready",
+		]);
+		expect(standings(planOf(source, { includeSecretJobs: true }))).toEqual([
+			"ship ready",
+			"test ready",
+		]);
+	});
+
+	it("skips a job that reads a hyphenated secret input by bracket", () => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      deploy-token:
+        type: secret
+jobs:
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./deploy.sh
+        env:
+          TOKEN: \${{ inputs['deploy-token'] }}
+`;
+		expect(standings(planOf(source))).toEqual(["ship skipped uses_secrets"]);
+	});
+
+	it("leaves a job ready that reads only inputs no one declared secret", () => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      size:
+        type: string
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ inputs.size }} \${{ inputs['size'] }} \${{ INPUTS.SIZE }}
+`;
+		expect(standings(planOf(source))).toEqual(["test ready"]);
+	});
+
+	it("counts a secret input in the workflow's env for every job", () => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      deploy_token:
+        type: secret
+env:
+  TOKEN: \${{ inputs.deploy_token }}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+`;
+		expect(standings(planOf(source))).toEqual(["test skipped uses_secrets"]);
+	});
+
+	it.each([
 		["an environment", "    <<: &deploy\n      environment: production\n"],
 		["inherited secrets", "    <<: &deploy\n      secrets: inherit\n"],
 		[
