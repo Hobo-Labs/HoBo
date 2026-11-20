@@ -97,6 +97,7 @@ function fixture(): string {
 				"generated:guard": "node record.mjs generated:guard",
 				"plans:guard": "node record.mjs plans:guard",
 				"secrets:staged": "node record.mjs secrets:staged",
+				"source:guard": "node record.mjs source:guard",
 				"fetch:pr-base": "node fetch.mjs",
 				"check:relevant:staged": "node record.mjs check:relevant:staged",
 			},
@@ -145,6 +146,7 @@ describe(".githooks/pre-commit", () => {
 			{ name: "generated:guard", args: [] },
 			{ name: "plans:guard", args: ["--staged"] },
 			{ name: "secrets:staged", args: [] },
+			{ name: "source:guard", args: ["--staged"] },
 			{ name: "check:relevant:staged", args: ["--base=main"] },
 		]);
 	});
@@ -205,6 +207,7 @@ describe(".githooks/pre-commit", () => {
 				"generated:guard",
 				"plans:guard",
 				"secrets:staged",
+				"source:guard",
 				"check:relevant:staged",
 			],
 		);

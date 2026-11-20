@@ -2,8 +2,14 @@ import { defineConfig, mergeConfig } from "vitest/config";
 import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 import rootConfig from "../../vitest.config.js";
 import { ISOLATED_TEST_FILES } from "./test/support/isolated-test-files.js";
+import { RELEASE_INTEGRATION_TEST_FILES } from "./test/support/release-integration-test-files.js";
 
 // PostgreSQL/TLS process acceptance has its own explicit integration lane.
+const releaseIntegration = new Set<string>(RELEASE_INTEGRATION_TEST_FILES);
+const defaultIsolatedInclude = ISOLATED_TEST_FILES.filter(
+	(file) => !releaseIntegration.has(file),
+);
+
 export default mergeConfig(
 	rootConfig,
 	defineConfig({
@@ -41,7 +47,7 @@ export default mergeConfig(
 					test: {
 						name: "isolated",
 						isolate: true,
-						include: ISOLATED_TEST_FILES,
+						include: defaultIsolatedInclude,
 						// The compile-time tests run under tsc in this project only
 						// (in both, they would be type-checked twice), with the
 						// tsconfig that includes them (src's tsconfig leaves test/
@@ -62,7 +68,12 @@ export default mergeConfig(
 						name: "shared",
 						isolate: false,
 						include: ["test/**/*.test.ts"],
-						exclude: ISOLATED_TEST_FILES,
+						exclude: [
+							...new Set([
+								...ISOLATED_TEST_FILES,
+								...RELEASE_INTEGRATION_TEST_FILES,
+							]),
+						],
 					},
 				},
 			],

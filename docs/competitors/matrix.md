@@ -99,6 +99,7 @@ tags: [hobo, competitors, matrix]
 | **Railway** | [`railway.md`](railway.md) | — | `cloud-application-platforms` | `cloud-application-platforms` | overlapping | authoring, environments, delivery | benchmark | mixed | active | 2026-08-19 | v1 |
 | **Rancher Fleet** | [`rancher-fleet.md`](rancher-fleet.md) | fleet, suse fleet | `hybrid-multicloud-enterprise` | `hybrid-multicloud-enterprise` · `delivery-release-gitops` · `runtime-substrates` | adjacent | delivery, provider-matching, reconciliation, environments | borrow, benchmark, integrate | mixed | active | 2026-08-20 | v1 |
 | **Red Hat Developer Hub** | [`red-hat-developer-hub.md`](red-hat-developer-hub.md) | rhdh, developer hub | `developer-portals-idps` | `developer-portals-idps` · `hybrid-multicloud-enterprise` | complementary | app-graph, governance, extensibility | integrate, benchmark, borrow | mixed | active | 2026-08-20 | v1 |
+| **RelayRunner** | [`relayrunner.md`](relayrunner.md) | relay-runner | `delivery-release-gitops` | `delivery-release-gitops` · `finops-governance-placement` | direct | delivery, finops, provider-matching, observability, agent-surface | displace, borrow, benchmark | mixed | active | 2026-11-16 | pre-v1 |
 | **Release** | [`release.md`](release.md) | release.com, releasehub | `cloud-application-platforms` | `cloud-application-platforms` · `delivery-release-gitops` | adjacent | environments, delivery, app-graph | benchmark, borrow | mixed | active | 2026-08-19 | v1 |
 | **Render** | [`render.md`](render.md) | — | `cloud-application-platforms` | `cloud-application-platforms` | overlapping | authoring, environments, delivery | benchmark | mixed | active | 2026-08-19 | v1 |
 | **Rivet** | [`rivet.md`](rivet.md) | rivetkit | `runtime-substrates` | `runtime-substrates` | adjacent | runtime-portability, replay-migration | adopt, provider-target | mixed | active | 2026-08-20 | v1 |
@@ -214,7 +215,8 @@ Captures are considered stale 180 days after their researched date. Staleness ne
 | [Kargo](kargo.md) | 2026-11-11 | pre-v1 — rewrite to contract |
 | [Karmada](karmada.md) | 2026-11-11 | pre-v1 — rewrite to contract |
 | [Open Cluster Management](open-cluster-management.md) | 2026-11-11 | pre-v1 — rewrite to contract |
+| [RelayRunner](relayrunner.md) | 2026-11-16 | pre-v1 — rewrite to contract |
 
-_89 canonical captures across 13 categories; 75 at contract v1._
+_90 canonical captures across 13 categories; 75 at contract v1._
 
 <!-- END GENERATED: competitor-matrix -->

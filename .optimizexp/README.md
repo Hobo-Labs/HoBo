@@ -143,6 +143,11 @@ A feature folder may carry a `KNOWN-DEFECTS.md` (see `features/cli-product/KNOWN
 
 Current-head design-council validation hashes full binary Git diffs and supports
 reviewed source evidence payloads up to 16 MiB.
+An older pull-request review can close as superseded when a replay-verified
+replacement reviews the same pull request at a different head, covers the
+current local diff, and both reviews have no open blockers or active nay votes.
+Supersession is not approval; the coordinator still verifies the remote
+pull-request head and completes the replacement review.
 
 ## Evidence policy
 
