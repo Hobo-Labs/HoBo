@@ -7,7 +7,12 @@ import {
 	BudgetAuthorityEventSchema,
 	type BudgetLedgerSnapshot,
 	BudgetLedgerSnapshotSchema,
+	captureIacPricedSettlementTrust,
+	captureIacUnpricedScopeTrust,
 	createBudgetAdmissionAuthority,
+	type IacPricedSettlementTrust,
+	type IacUnpricedScopeTrust,
+	validateBudgetSnapshot,
 } from "./budget-authority.js";
 import {
 	type BudgetFenceTrust,
@@ -32,6 +37,8 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 	pool: Pool;
 	snapshot: BudgetLedgerSnapshot;
 	fenceTrust?: BudgetFenceTrust;
+	unpricedScopeTrust?: IacUnpricedScopeTrust;
+	iacPricedSettlementTrust?: IacPricedSettlementTrust;
 	now?: () => string;
 	/** Bound pool starvation, including a CI transaction holding the same pool. */
 	connectionTimeoutMs?: number;
@@ -43,6 +50,12 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 } {
 	const owner = options.snapshot.identity;
 	const fenceTrust = captureBudgetFenceTrust(options.fenceTrust);
+	const unpricedScopeTrust = captureIacUnpricedScopeTrust(
+		options.unpricedScopeTrust,
+	);
+	const iacPricedSettlementTrust = captureIacPricedSettlementTrust(
+		options.iacPricedSettlementTrust,
+	);
 	if (!owner?.tenantId || !owner.budgetId)
 		throw new Error("complete shared budget ownership required");
 	const partition = createHash("sha256")
@@ -98,10 +111,20 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 			await client.query(
 				"CREATE TABLE IF NOT EXISTS hobo_budget_events (partition_id text NOT NULL REFERENCES hobo_budget_partitions(id), seq bigint NOT NULL, body text NOT NULL, PRIMARY KEY (partition_id, seq))",
 			);
-			await client.query(
-				"INSERT INTO hobo_budget_partitions(id,base_body) VALUES($1,$2) ON CONFLICT(id) DO NOTHING",
-				[partition, toJsonString(BudgetLedgerSnapshotSchema, options.snapshot)],
+			const seed = await client.query(
+				"SELECT 1 FROM hobo_budget_partitions WHERE id=$1",
+				[partition],
 			);
+			if (seed.rowCount === 0) {
+				validateBudgetSnapshot(options.snapshot, options.snapshot.observedAt);
+				await client.query(
+					"INSERT INTO hobo_budget_partitions(id,base_body) VALUES($1,$2) ON CONFLICT(id) DO NOTHING",
+					[
+						partition,
+						toJsonString(BudgetLedgerSnapshotSchema, options.snapshot),
+					],
+				);
+			}
 			await client.query("COMMIT");
 		} catch (error) {
 			await client.query("ROLLBACK").catch(() => undefined);
@@ -154,6 +177,10 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 				snapshot: base,
 				priorEvents,
 				...(fenceTrust ? { fenceTrust } : undefined),
+				...(unpricedScopeTrust ? { unpricedScopeTrust } : undefined),
+				...(iacPricedSettlementTrust
+					? { iacPricedSettlementTrust }
+					: undefined),
 				commit(event, expectedSeq) {
 					if (seq !== expectedSeq || event.snapshot?.seq !== expectedSeq + 1)
 						throw new Error("budget sequence conflict");
@@ -193,12 +220,27 @@ export function createPostgresBudgetAdmissionAuthority(options: {
 		claimExecution(input) {
 			return transaction((authority) => {
 				authority.read(now());
-				return authority.claimExecution(input);
+				return authority.claimExecution({ ...input, now: now() });
 			});
 		},
 		reserve(input) {
 			return transaction((authority) =>
 				authority.reserve({ ...input, now: now() }),
+			);
+		},
+		reserveUnbounded(input) {
+			return transaction((authority) =>
+				authority.reserveUnbounded({ ...input, now: now() }),
+			);
+		},
+		revalidateUnbounded(input) {
+			return transaction((authority) =>
+				authority.revalidateUnbounded({ ...input, now: now() }),
+			);
+		},
+		revalidatePriced(input) {
+			return transaction((authority) =>
+				authority.revalidatePriced({ ...input, now: now() }),
 			);
 		},
 		settle(id, actualMicros, evidence) {

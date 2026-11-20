@@ -51,6 +51,7 @@
 		"gate:s1": "pnpm --prefix src/draft/technical-proofs/s1-stage-gate run gate:s1",
 		"generated:guard": "node --import tsx scripts/no-hand-edited-generated-files.mts",
 		"hobo": "node --import tsx scripts/hobo-cli.ts",
+		"eval:hand-off-transcript": "node --import tsx scripts/evals/audit-hand-off-transcript.mts",
 		"install:check": "pnpm install --frozen-lockfile --config.confirmModulesPurge=false",
 		"konsistent": "konsistent",
 		"licenses:check": "node --import tsx scripts/check-licenses.ts",
@@ -87,7 +88,7 @@
 		"test": "pnpm run test:unit",
 		"test:affected": "turbo run test --affected --continue=never --concurrency=100%",
 		"test:all": "pnpm exec turbo run test --concurrency=100%",
-		"test:attestation": "node --import tsx --test scripts/test/attestation.test.ts scripts/test/verify-attestation.test.ts scripts/test/attested-jobs.test.ts scripts/test/merge-group-gate.test.ts scripts/test/lint-actions-runner.test.ts scripts/test/local-attest.test.ts",
+		"test:attestation": "node --import tsx --test scripts/test/attestation.test.ts scripts/test/verify-attestation.test.ts scripts/test/trusted-route.test.ts scripts/test/attested-jobs.test.ts scripts/test/merge-group-gate.test.ts scripts/test/lint-actions-runner.test.ts scripts/test/local-attest.test.ts scripts/test/fleet-signoff.test.ts scripts/test/github-pr-target.test.ts scripts/test/github-status-permission.test.ts scripts/test/github-merge-group.test.ts scripts/test/local-merge-group.test.ts",
 		"test:behavior": "node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js --config cucumber.yaml",
 		"test:changed": "node --import tsx scripts/run-changed-tests.mts",
 		"pretest:chaos": "turbo run build --filter \"./packages/**\" --concurrency=100%",
@@ -174,6 +175,7 @@
 	},
 	"pnpm": {
 		"overrides": {
+			"@vercel/queue>@vercel/oidc": "3.2.0",
 			"ts-autocode-grounding": "workspace:*",
 			"ts-autocode-rewrite": "workspace:*",
 			"ts-autocode-training": "workspace:*"
