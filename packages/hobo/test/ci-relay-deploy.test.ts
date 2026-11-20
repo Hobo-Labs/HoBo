@@ -15,8 +15,8 @@ import { createCiCommand } from "../src/ci-command.js";
 import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import {
-	recordVerifiedPreviewRecords,
 	RELAY_VERIFY_REFUSAL,
+	recordVerifiedPreviewRecords,
 } from "../src/ci-relay-verify.js";
 import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
