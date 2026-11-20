@@ -61,6 +61,26 @@ type ReleaseHttpTransport = (
 	body: string;
 }>;
 
+const HTTP_TRANSPORT_BODY_ENCODING = Symbol.for(
+	"hobo.http-transport.body-encoding",
+);
+
+function withLatin1MarkerWhenPresent(
+	inner: ReleaseHttpTransport,
+	wrapped: ReleaseHttpTransport,
+): ReleaseHttpTransport {
+	if (
+		Object.getOwnPropertyDescriptor(inner, HTTP_TRANSPORT_BODY_ENCODING)
+			?.value === "latin1"
+	) {
+		Object.defineProperty(wrapped, HTTP_TRANSPORT_BODY_ENCODING, {
+			value: "latin1",
+			enumerable: false,
+		});
+	}
+	return wrapped;
+}
+
 /** The built `hobo` package whose `hobo deploy` composition records and promotes. */
 export const HOBO_CLI_DIST = join(
 	repoRoot,
@@ -330,25 +350,30 @@ export type ReleaseCdSeams = Readonly<{
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
 
-function githubApiProbeTransport(
+/** Adds GITHUB_TOKEN to every api.github.com call (release verification probes). */
+export function githubApiProbeTransport(
 	env: Readonly<Record<string, string | undefined>>,
 	inner: ReleaseHttpTransport,
 ): ReleaseHttpTransport {
 	const token = env.GITHUB_TOKEN?.trim();
 	if (!token) return inner;
-	return async (request) => {
-		if (!request.url.startsWith("https://api.github.com/")) return inner(request);
-		return inner({
-			...request,
-			headers: {
-				...request.headers,
-				authorization: `Bearer ${token}`,
-				accept: request.headers.accept ?? "application/vnd.github+json",
-				"x-github-api-version":
-					request.headers["x-github-api-version"] ?? "2022-11-28",
-			},
-		});
-	};
+	return withLatin1MarkerWhenPresent(
+		inner,
+		async (request) => {
+			if (!request.url.startsWith("https://api.github.com/"))
+				return inner(request);
+			return inner({
+				...request,
+				headers: {
+					...request.headers,
+					authorization: `Bearer ${token}`,
+					accept: request.headers.accept ?? "application/vnd.github+json",
+					"x-github-api-version":
+						request.headers["x-github-api-version"] ?? "2022-11-28",
+				},
+			});
+		},
+	);
 }
 
 /**
@@ -383,23 +408,21 @@ export async function openReleaseCd(options: {
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
 	const seamHttp = options.seams?.http as ReleaseHttpTransport | undefined;
-	let http = seamHttp;
-	if (!http) {
+	let baseHttp = seamHttp;
+	if (!baseHttp) {
 		const { createBoundedFetchTransport } = await import(
 			pathToFileURL(CORE_DIST).href
 		);
-		http = githubApiProbeTransport(
-			options.env,
-			createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
-		);
+		baseHttp = createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
 	}
+	const http = githubApiProbeTransport(options.env, baseHttp);
 	const opened = await runtimeModule.openCdRuntime({
 		simulate: false,
 		cwd: repoRoot,
 		env,
 		home: options.home,
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
-		...(http ? { http } : undefined),
+		http,
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
 	});
 	if (!opened.ok)
@@ -587,7 +610,19 @@ export async function recordReleaseFreight(
 
 /** How long and how often a promotion is driven before it reads as blocked. */
 export const RELEASE_DRIVE = Object.freeze({ passes: 150, intervalMs: 2_000 });
-export const RELEASE_DRIVE_PAGES = Object.freeze({ passes: 200, intervalMs: 2_000 });
+
+export const PAGES_RELEASE_VERIFICATION_PROGRESS_MS = 300_000;
+export const RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS = 120_000;
+
+export const RELEASE_DRIVE_PAGES = Object.freeze({
+	passes:
+		Math.ceil(
+			(PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+				RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS) /
+				RELEASE_DRIVE.intervalMs,
+		) + 1,
+	intervalMs: RELEASE_DRIVE.intervalMs,
+});
 
 export function releaseDriveFor(
 	family: ReleaseFamily,

@@ -3,14 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { pipelines } from "../../release/hobo-release.delivery.ts";
+import type { TransportRequest } from "@hobo/core";
 import {
 	announceVerdict,
 	classifyRelease,
+	githubApiProbeTransport,
+	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
 	releaseCampId,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
 	RELEASE_DRIVE_PAGES,
+	RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
 	releaseSource,
 	siteTree,
 } from "../ci/create-github-release.mts";
@@ -91,7 +95,40 @@ describe("release topology names", () => {
 		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
 		const budgetMs =
 			drive.passes * drive.intervalMs - drive.intervalMs;
-		expect(budgetMs).toBeGreaterThanOrEqual(300_000);
+		expect(budgetMs).toBeGreaterThanOrEqual(
+			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+				RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
+		);
+	});
+
+	it("sends GITHUB_TOKEN on api.github.com release verification probes", async () => {
+		const seen: TransportRequest[] = [];
+		const inner = async (request: TransportRequest) => {
+			seen.push(request);
+			return { status: 200, headers: {}, body: "{}" };
+		};
+		const probe = githubApiProbeTransport(
+			{ GITHUB_TOKEN: "release-probe-token" },
+			inner,
+		);
+		await probe({
+			method: "GET",
+			url: "https://api.github.com/repos/Hobo-Labs/HoBo/contents/index.html?ref=gh-pages",
+			headers: {},
+			timeoutMs: 5_000,
+			maxResponseBytes: 1_048_576,
+		});
+		await probe({
+			method: "GET",
+			url: "https://registry.npmjs.org/-/ping",
+			headers: {},
+			timeoutMs: 5_000,
+			maxResponseBytes: 1_048_576,
+		});
+		expect(seen).toHaveLength(2);
+		expect(seen[0]?.headers.authorization).toBe("Bearer release-probe-token");
+		expect(seen[0]?.headers.accept).toBe("application/vnd.github+json");
+		expect(seen[1]?.headers.authorization).toBeUndefined();
 	});
 
 	it("probes the Pages gh-pages index through the GitHub contents API", () => {
