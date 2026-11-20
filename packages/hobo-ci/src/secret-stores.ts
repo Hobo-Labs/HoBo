@@ -497,7 +497,14 @@ export async function openSecretStore(
 							validateOnePasswordServiceAccount
 						)(token, vaultId).catch(() => false));
 					if (!valid)
-						throw new Error("1Password service account reuse refused");
+						return {
+							ok: false,
+							message:
+								"The retained 1Password service account was refused before the SDK client opened.",
+							remediation: [
+								"Run again: the private owner form connects a fresh, vault-scoped service account and writes a new reuse lease.",
+							],
+						};
 				}
 				// The owner's Connect server, when named: a bearer token only,
 				// which the egress proxy injects when the run holds none.

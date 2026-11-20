@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { provisionOnePasswordAccess } from "../../src/onepassword-access.js";
+import {
+	onePasswordVaultScope,
+	parseOnePasswordServiceAccountToken,
+	provisionOnePasswordAccess,
+} from "../../src/onepassword-access.js";
+import type { OwnerChannel } from "../../src/owner-channel.js";
 import type { CommandResult, RunCommand } from "../../src/store-cli.js";
 import { ONE_PASSWORD_TEST_TOKEN } from "../support/onepassword-service-account.js";
 
@@ -117,6 +122,72 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 			`op service-account create hobo-cd --vault ${VAULT}:read_items,write_items --expires-in 24h --raw`,
 		);
 		expect(result).toMatchObject({ kind: "ready", token: TOKEN });
+	});
+
+	it("refuses a created service account the vault-scope validation rejects", async () => {
+		const machine = fakeMachine({ opOnPath: true, signedIn: true });
+		const result = await provisionOnePasswordAccess({
+			...base(machine),
+			validateServiceAccount: async () => false,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
+		});
+	});
+
+	it("refuses an owner-captured token the vault-scope validation rejects", async () => {
+		const owner: OwnerChannel = {
+			openUrl: async () => undefined,
+			captureSecret: async () => TOKEN,
+			holds: () => true,
+		};
+		const machine = fakeMachine({});
+		const result = await provisionOnePasswordAccess({
+			...base(machine, false),
+			owner,
+			validateServiceAccount: async () => false,
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
+		});
+		expect(machine.ran).toEqual([]);
+		expect(JSON.stringify(result)).not.toContain(TOKEN);
+	});
+
+	it("accepts exactly the configured vault and nothing wider", () => {
+		expect(onePasswordVaultScope([{ id: VAULT }], VAULT)).toBe(true);
+		expect(onePasswordVaultScope([{ id: "z".repeat(26) }], VAULT)).toBe(false);
+		expect(
+			onePasswordVaultScope([{ id: VAULT }, { id: "z".repeat(26) }], VAULT),
+		).toBe(false);
+		expect(onePasswordVaultScope([], VAULT)).toBe(false);
+	});
+
+	it("parses only a well-formed service account token", () => {
+		expect(parseOnePasswordServiceAccountToken(TOKEN)).toBeDefined();
+		for (const bad of [
+			"",
+			"not-a-service-account",
+			`ops_${Buffer.from("not json").toString("base64url")}`,
+			`ops_${Buffer.from(
+				JSON.stringify({ email: "service-account@example.invalid" }),
+			).toString("base64url")}`,
+			`ops_${Buffer.from(
+				JSON.stringify({
+					email: "service-account@example.invalid",
+					muk: "not-an-object",
+					secretKey: "A3-FIXTURE-SECRET-KEY",
+					srpX: "fixture-srp",
+					signInAddress: "example.1password.com",
+					userAuth: {},
+				}),
+			).toString("base64url")}`,
+			`ops_${Buffer.from("fixture").toString("base64")}`,
+			`ops_${"A".repeat(65_537)}`,
+		])
+			expect(parseOnePasswordServiceAccountToken(bad)).toBeUndefined();
 	});
 
 	it("never tells the owner to create anything, set env vars or use a terminal", async () => {

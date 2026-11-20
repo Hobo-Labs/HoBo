@@ -1,10 +1,13 @@
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import type { SavedSettings } from "@hobo/connect-ui";
 import { createTrustedVault } from "@hobo/core";
 import {
 	createOwnerJobs,
+	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
 	type OwnerChannel,
 	type OwnerSettingsStore,
 	type OwnerStoreDeps,
+	openSecretStore,
 } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
@@ -167,26 +170,99 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 			},
 			jobs: createOwnerJobs(),
 		};
-		const store = {
-			id: "1password" as const,
-			port: createMemorySecretsPort({ id: "memory" }),
-			reference: () => "fixture-reference",
+		const saved: SavedSettings = {
+			HOBO_SECRET_STORE: "1password",
+			OP_VAULT_ID: "a".repeat(26),
 		};
 		let opens = 0;
+		let clientOpens = 0;
+		const validate = async () => true;
 		const openStore: NonNullable<OwnerStoreDeps["openStore"]> = async (
-			_id,
-			_coordinates,
+			id,
+			coordinates,
 			signIn,
 		) => {
 			opens += 1;
-			expect(signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
-			return { ok: true, store };
+			return openSecretStore(id, coordinates, signIn, {
+				validateOnePasswordServiceAccount: validate,
+				onePasswordClient: async (_coordinates, holder) => {
+					clientOpens += 1;
+					expect(holder.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
+					return {
+						items: {
+							list: async () => [],
+							get: async () => {
+								throw new Error("fixture vault holds no items");
+							},
+							create: async (item) => item,
+							put: async (item) => item,
+						},
+					};
+				},
+			});
 		};
 		const outcome = await prepareVercelConnection(throughMcp(), {
 			env: {},
 			ownerChannel: owner,
 			openStore,
-			validateOnePasswordServiceAccount: async () => true,
+			validateOnePasswordServiceAccount: validate,
+			fetch: async () => Response.json({}, { status: 400 }),
+			locator: {
+				read: async () => ({ ...saved }),
+				write: async (values) => {
+					Object.assign(saved, values);
+				},
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_VERCEL_DEVICE_FAILED" },
+		});
+		expect(opens).toBeGreaterThan(0);
+		expect(clientOpens).toBeGreaterThan(0);
+		expect(saved[ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT] ?? "").not.toBe("");
+		expect(kept.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
+		expect(JSON.stringify(outcome)).not.toContain(token);
+		kept.clear();
+	});
+
+	it("refuses a retained 1Password token with no reuse lease before the SDK client opens", async () => {
+		const token = ONE_PASSWORD_TEST_TOKEN;
+		const kept = createTrustedVault();
+		let pending = true;
+		const owner: OwnerChannel = {
+			vault: kept,
+			openUrl: async () => undefined,
+			holds: (name) => name === "OP_SERVICE_ACCOUNT_TOKEN" && pending,
+			captureSecret: async () => {
+				pending = false;
+				return token;
+			},
+			jobs: createOwnerJobs(),
+		};
+		const validate = async () => true;
+		let clientOpens = 0;
+		const outcome = await prepareVercelConnection(throughMcp(), {
+			env: {},
+			ownerChannel: owner,
+			openStore: async (id, coordinates, signIn) =>
+				openSecretStore(id, coordinates, signIn, {
+					validateOnePasswordServiceAccount: validate,
+					onePasswordClient: async () => {
+						clientOpens += 1;
+						return {
+							items: {
+								list: async () => [],
+								get: async () => {
+									throw new Error("fixture vault holds no items");
+								},
+								create: async (item) => item,
+								put: async (item) => item,
+							},
+						};
+					},
+				}),
+			validateOnePasswordServiceAccount: validate,
 			fetch: async () => Response.json({}, { status: 400 }),
 			locator: {
 				read: async () => ({
@@ -196,12 +272,11 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 				write: async () => undefined,
 			},
 		});
+		expect(clientOpens).toBe(0);
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CD_VERCEL_DEVICE_FAILED" },
+			result: { code: "HOBO_CD_STORE_UNAVAILABLE" },
 		});
-		expect(opens).toBeGreaterThan(0);
-		expect(kept.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
 		expect(JSON.stringify(outcome)).not.toContain(token);
 		kept.clear();
 	});

@@ -139,6 +139,13 @@ export type OnePasswordAccess =
 			readonly remediation: readonly string[];
 	  };
 
+export function onePasswordVaultScope(
+	vaults: readonly { readonly id: string }[],
+	vaultId: string,
+): boolean {
+	return vaults.length === 1 && vaults[0]?.id === vaultId;
+}
+
 export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccount =
 	async (token, vaultId) => {
 		try {
@@ -149,7 +156,7 @@ export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccoun
 				integrationVersion: "1",
 			});
 			const vaults = await client.vaults.list({ decryptDetails: false });
-			return vaults.length === 1 && vaults[0]?.id === vaultId;
+			return onePasswordVaultScope(vaults, vaultId);
 		} catch {
 			return false;
 		}

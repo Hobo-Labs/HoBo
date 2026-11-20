@@ -4,6 +4,7 @@ import {
 	onePasswordBinding,
 } from "@hobo/adapter-1password";
 import { createTrustedVault } from "@hobo/core";
+import { Agent, getGlobalDispatcher, setGlobalDispatcher } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import { ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS } from "../src/onepassword-access.js";
 import { ownerStore } from "../src/owner-store.js";
@@ -142,6 +143,33 @@ describe("1Password SDK bridge", () => {
 		expect(attempted).toBe(false);
 		vault.clear();
 	});
+
+	it("refuses a valid retained token when no re-attestation validator is wired", async () => {
+		const prior = getGlobalDispatcher();
+		setGlobalDispatcher(
+			new Agent({
+				connect: (_options, callback) =>
+					callback(new Error("offline fixture"), null),
+			}),
+		);
+		try {
+			const signIn = createTrustedVault();
+			signIn.put("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
+			const client = vi.fn(async () => sdkFixture().client);
+			const opened = await openSecretStore(
+				"1password",
+				{ OP_VAULT_ID: VAULT, OP_SERVICE_ACCOUNT_EXPIRES_AT: EXPIRES_AT },
+				signIn,
+				{ now: () => NOW, onePasswordClient: client },
+			);
+			expect(opened.ok).toBe(false);
+			expect(JSON.stringify(opened)).not.toContain(TOKEN);
+			expect(client).not.toHaveBeenCalled();
+			signIn.clear();
+		} finally {
+			setGlobalDispatcher(prior);
+		}
+	}, 30_000);
 
 	it.each([
 		{
