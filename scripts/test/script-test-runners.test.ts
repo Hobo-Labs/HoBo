@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
-import { globSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	globSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { gitEnvironment } from "../ci/local-attest.mts";
+import { nodeTestArguments } from "../lib/node-test-arguments.ts";
 import { isNodeTestFile } from "../lib/unit-test-selection.ts";
 import { selectRelevantChecks } from "../relevant-check-policy.ts";
 
@@ -12,6 +24,122 @@ const runnerFor = (file: string) =>
 	isNodeTestFile(join(root, file)) ? "node --test" : "vitest";
 
 describe("script test runners", () => {
+	it("runs and reports a node-only scripts shard without requiring Vitest", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-node-only-shard-"));
+		try {
+			const env = gitEnvironment({
+				NODE_TEST_CONTEXT: undefined,
+				HOBO_TEST_MAX_WORKERS: "1",
+			});
+			const git = (...args: string[]) => {
+				const result = spawnSync("git", args, {
+					cwd: dir,
+					env,
+					encoding: "utf8",
+				});
+				assert.equal(result.status, 0, result.stderr);
+			};
+			git("init", "-q");
+			mkdirSync(join(dir, "scripts/test"), { recursive: true });
+			symlinkSync(
+				join(root, "node_modules"),
+				join(dir, "node_modules"),
+				"junction",
+			);
+			const file = join(dir, "scripts/test/only.test.ts");
+			writeFileSync(
+				file,
+				'import { test } from "node:test";\ntest("node-only", () => {});\n',
+			);
+			git("add", "scripts/test/only.test.ts");
+			const run = () =>
+				spawnSync(
+					process.execPath,
+					[
+						"--import",
+						"tsx",
+						join(root, "scripts/run-tests.ts"),
+						"--category=scripts",
+						"--shard=0/1",
+						"--final",
+					],
+					{
+						cwd: dir,
+						env,
+						encoding: "utf8",
+						timeout: 30_000,
+					},
+				);
+			const success = run();
+			assert.equal(success.status, 0, `${success.stdout}\n${success.stderr}`);
+			assert.match(success.stdout, /node-only/u);
+			writeFileSync(
+				file,
+				'import { test } from "node:test";\ntest("node-only failure", () => { throw new Error("expected failure"); });\n',
+			);
+			const failure = run();
+			assert.notEqual(failure.status, 0);
+			assert.match(`${failure.stdout}\n${failure.stderr}`, /expected failure/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("runs every node:test file within the configured worker budget", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-node-test-workers-"));
+		try {
+			const events = join(dir, "events.jsonl");
+			const files = Array.from({ length: 6 }, (_, index) => {
+				const file = join(dir, `${index}.test.mjs`);
+				writeFileSync(
+					file,
+					`
+import { appendFileSync } from "node:fs";
+import { test } from "node:test";
+test("fixture ${index}", async () => {
+  appendFileSync(${JSON.stringify(events)}, JSON.stringify({ index: ${index}, event: "start" }) + "\\n");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  appendFileSync(${JSON.stringify(events)}, JSON.stringify({ index: ${index}, event: "end" }) + "\\n");
+});\n`,
+				);
+				return file;
+			});
+			const run = spawnSync(process.execPath, nodeTestArguments(files, 2), {
+				cwd: root,
+				encoding: "utf8",
+				env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+				timeout: 30_000,
+			});
+			assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+			const records = readFileSync(events, "utf8")
+				.trim()
+				.split("\n")
+				.map((line): { index: number; event: string } => JSON.parse(line));
+			const active = new Set<number>();
+			const completed = new Set<number>();
+			for (const record of records) {
+				if (record.event === "start") {
+					assert.ok(!active.has(record.index));
+					active.add(record.index);
+					assert.ok(active.size <= 2, "node:test exceeded the worker budget");
+				} else {
+					assert.equal(record.event, "end");
+					assert.ok(active.delete(record.index));
+					completed.add(record.index);
+				}
+			}
+			assert.equal(active.size, 0);
+			assert.deepEqual([...completed].sort(), [0, 1, 2, 3, 4, 5]);
+			const runner = readFileSync(join(root, "scripts/run-tests.ts"), "utf8");
+			assert.match(
+				runner,
+				/nodeTestArguments\(shardedRootNodeTestFiles, maxWorkers\)/u,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("gives every scripts test exactly one runner, and test:scripts runs both", () => {
 		assert.ok(scriptTests.length > 0);
 		for (const file of scriptTests) {
