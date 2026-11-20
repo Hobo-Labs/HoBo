@@ -157,18 +157,21 @@ describe("merge-group required gate", () => {
 		assert.doesNotMatch(workspace, /--shard="\$SHARD\/8"/u);
 	});
 
-	it("leaves turbo concurrency to memory-env and lets only shard 0 save the cache", () => {
+	it("leaves turbo concurrency to memory-env and gives merge-group shards independent saves", () => {
 		const testsStep = workspace.slice(
 			workspace.indexOf("name: Workspace tests"),
 		);
 		assert.doesNotMatch(testsStep, /HOBO_TURBO_CONCURRENCY:/u);
 		for (const name of ["workspace_tests", "main_workspace_tests"])
 			assert.match(job(name), /ci-runner-preflight/u, name);
-		for (const block of [workspace, job("main_workspace_tests")])
-			assert.match(
-				block,
-				/if: always\(\) && matrix\.shard == 0 && steps\.turbo-prune\.outputs\.save != 'false'/u,
-			);
+		assert.match(
+			workspace,
+			/if: always\(\) && \(github\.event_name == 'merge_group' \|\| matrix\.shard == 0\) && steps\.turbo-prune\.outputs\.save != 'false'/u,
+		);
+		assert.match(
+			job("main_workspace_tests"),
+			/if: always\(\) && matrix\.shard == 0 && steps\.turbo-prune\.outputs\.save != 'false'/u,
+		);
 	});
 
 	it("never treats a failed, cancelled, skipped, or unknown prerequisite as success", () => {
@@ -492,16 +495,27 @@ describe("merge-group required gate", () => {
 		);
 	});
 
-	it("prefers the same-run validation cache before older cache entries", () => {
-		assert.match(workspace, /preferred-job: pr_gate_validation/u);
+	it("prefers same-run validation and shard caches before older entries", () => {
+		for (const block of [validation, workspace])
+			assert.equal(
+				block.match(
+					/shared-run: \$\{\{ github\.event_name == 'merge_group' \}\}/gu,
+				)?.length,
+				2,
+			);
 		assert.match(affected, /preferred-job: pr_gate_validation/u);
 		assert.match(
 			cacheAction,
-			/inputs\.preferred-job.*github\.sha.*github\.run_attempt/u,
+			/github\.run_id.*github\.run_attempt.*inputs\.preferred-job/u,
+		);
+		assert.match(cacheAction, /github\.job.*strategy\.job-index/u);
+		assert.match(
+			cacheAction,
+			/steps\.shared-prerequisite\.outputs\.cache-hit != 'true'.*steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
 		);
 		assert.match(
 			cacheAction,
-			/steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
+			/inputs\.preferred-job.*github\.sha.*github\.run_attempt/u,
 		);
 	});
 });
