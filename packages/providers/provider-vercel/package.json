@@ -15,6 +15,10 @@
 		"./temporary-capability": {
 			"types": "./dist/temporary-capability.d.ts",
 			"default": "./dist/temporary-capability.js"
+		},
+		"./testing": {
+			"types": "./dist/testing.d.ts",
+			"default": "./dist/testing.js"
 		}
 	},
 	"scripts": {
@@ -34,6 +38,8 @@
 		"@hobo/provider-redaction": "workspace:*"
 	},
 	"devDependencies": {
+		"@emulators/core": "0.13.1",
+		"@emulators/vercel": "0.13.1",
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@types/node": "^22.15.29",
 		"vitest": "^4.1.9"

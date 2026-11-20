@@ -205,6 +205,13 @@ limit and evidence URL. Prices are account-supplied integer USD microdollars per
 minute, including applicable platform fees; this package ships no vendor price
 catalog or assumed marketing allowances. One microdollar is $0.000001. Each provider
 account entitlement has one account/offer owner; there is no cross-tenant pooling.
+The public router can also receive an account directly, without the configuration
+parser. If multiple offers report the same provider account and any reports free
+runner minutes or a sandbox allowance, those offers are ineligible: the router
+cannot establish which allocation snapshot is authoritative. Other providers
+remain eligible. This rule applies even when the duplicate reports agree; publish
+a single current offer to restore that provider account's availability. Duplicate
+cash-only reports use the greatest reported exposure.
 
 `Offer.freeMinutes` is measured in **minutes on the selected runner SKU**, not
 in the provider's shared base-unit minutes. Blacksmith's x64 free balance and
@@ -265,6 +272,18 @@ jobs, a run's jobs ask an enrolled local box (`hobo-local-host`) before they
 ask GitHub-hosted runners. `selectFleetBackend` orders the fleet, ARC, the
 local box, then GitHub-hosted; see "Runner routing" in
 [RUNNER-QUEUE.md](RUNNER-QUEUE.md).
+
+`selectFleetVerification` keeps that runner order and can select an opt-in
+local signoff only after all enabled runner tiers are known unavailable. It
+waits on unknown capacity when no runner is available, and always waits on
+malformed or contradictory observations. This is a separate
+verification path, not a `runs-on` label or an Actions job completion.
+In the HoBo checkout, after verifying the live policy as described in the
+[runbook](RUNNER-QUEUE.md#sign-off-without-an-actions-runner),
+`pnpm ci:attest fleet --local-signoff --policy-current` can apply that choice
+to a local run and publish its covered statuses with `gh-signoff`.
+The coordinator confirms an unpinned fleet slip against recent pickup evidence
+for its exact label; a failed queue read leaves availability unknown.
 
 An account can offer its own development machine with `provider: "local"`,
 `backend: "gh-actions"`, `runsOn: "hobo-local-host"`, and `concurrency: 1`.
@@ -329,6 +348,22 @@ a different source directory/revision while reusing an old ID does not request
 a new run. Relative workspace paths are portable; host absolute paths and
 provider-specific toolchain/environment defaults are not part of this contract.
 
+`@hobo/ci/testing` provides `createScriptedPipelineBackend` for tests of the
+same `PipelineBackend` interface. Supply a backend kind and optional handlers
+for opening a session, running steps, producing artifact bytes, closing, and
+observing final usage. The returned `port` can be passed to `executePipeline`
+or `PipelineScheduler`; `calls` is a copied history of operation names and
+identifiers, and `clear()` resets that history. Each factory call has its own
+history. Its `mocked` fidelity is compatible with HoBo's test-harness
+convention. A session aborts pending work and waits for it to settle before close
+completes, so asynchronous handlers must respond to their abort signal.
+Unscripted steps succeed with empty output; an unscripted artifact is missing.
+
+The scripted backend executes no commands and contacts no provider. Its
+results, artifact bytes, allocation behavior and usage observations are test
+inputs; they do not establish provider compatibility, real cancellation,
+durability or billing finality.
+
 ## Apply routing and budgets
 
 The Node coordinator `PipelineScheduler` from `@hobo/ci/scheduler` uses
@@ -370,6 +405,62 @@ and `pnpm --filter @hobo/ci-gh-actions test:act --act /tmp/hobo-ci-tools/act`
 for actual local workflow execution. See its `act/README.md` for evidence and
 boundary details. The ordinary test lane includes the cross-backend command
 corpus, budget policy regressions and the SDK protocol contracts.
+
+## Runner order
+
+A runner order is the preference a person writes down: an ordered list of
+runner types (the HoBo fleet, connected machines, GitHub-hosted, and the
+hosted providers Blacksmith, Depot, Namespace, WarpBuild, Ubicloud, Boat and
+RunsOn), with an included-minutes limit on `github` and a monthly spend limit
+on a provider. A relay job names the label it would ask each type for, and
+`decideRunnerRoute(order, request, facts)` walks the order and returns a
+`RunnerRouteDecision`: the label to run on, the label to queue on when every
+runner that fits is busy, or one sentence saying why nothing can take the
+job. Every step passed over is recorded with its reason. GitHub-hosted routing
+accepts only the known standard GitHub labels; an arbitrary label beginning
+with `ubuntu-`, `windows-`, or `macos-` is not treated as GitHub-hosted.
+Allocation routing above ranks published offers by cost; a runner order is
+walked as written.
+
+```ts
+import { decideRunnerRoute, parseRunnerOrder } from "@hobo/ci";
+
+const order = parseRunnerOrder(
+  '{"steps":[{"key":"machine"},{"key":"github","minutesLimitPercent":80},{"key":"depot"}]}',
+);
+const decision = decideRunnerRoute(order, request, facts);
+```
+
+The model, the skip reasons, machine sharing, provider health and automatic
+retries are in [RUNNER-ORDER.md](RUNNER-ORDER.md). The command family is
+`runner.route.Requested` → `runner.route.Decided`; the decision record is the
+event payload, so a projection of "where did this job run, and why" replays
+from the journal without re-walking anything.
+
+## CI insights
+
+`@hobo/ci/insights` holds the reports that turn a repository's runs into
+answers. They are pure functions over plain run, job and step values
+(`InsightRun`, `InsightJob`, `InsightStep`); whoever reads GitHub or a relay
+journal parses into those types first.
+
+| Report | Answers |
+| --- | --- |
+| `ciSignals(runs)` | Where time or money went that did not have to: `no-concurrency`, `same-commit`, `short-jobs` (cost); `queue-waits`, `slowest-job`, `flaky-jobs`, `runner-failures` (speed); `docs-changes`, `wide-fanout` (complexity). A signal is `shown` once it covers 30 minutes and 1% of all job minutes |
+| `runnerTimes`, `jobTimes`, `workflowTimes` | Per runner: jobs, share started, median wait, median and p90 run time, success rate. Per job: the same by runner, the fastest runner, and the speed-up against a baseline |
+| `diagnoseFailure({ job, logTail, annotations })` | The first failed step, a log excerpt ending at the last error, a kind (`infra`, `config`, `lint`, `build`, `test`, `flaky`, `unclear`) and whether a re-run is likely to pass. Terminal controls and bidirectional overrides are stripped from quoted evidence. The pattern tables are exported; nothing is sent to a model |
+| `checkPullRequestTitle(title)` | Whether a title is a Conventional Commits title, with the reason when it is not |
+
+A re-run is only ever called likely to pass for a runner or network failure.
+A failed test with a timing hint is `flaky` with the outlook left `unknown`.
+`hobo ci signals` and `hobo ci diagnose` print these reports from GitHub's
+own run history ([CLI](../hobo/CI.md#signals-and-diagnosis)).
+
+Insight timestamps are epoch milliseconds. Wait and run durations are absent
+when their required timestamps are missing and are clamped at zero when clocks
+are out of order. A completed billed job is charged in whole minutes with a
+one-minute minimum. Runner labels are trimmed and sorted without regard to case
+before reports group them.
 
 ## Persistent platform policy
 
@@ -600,3 +691,27 @@ node --import tsx scripts/ci/verify-relay-dispatch.mts
 Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@hobo/ci-dagger`](../ci-dagger/README.md). Manual runner acceptance: [`.github/workflows/hobo-ci-acceptance.yml`](../../.github/workflows/hobo-ci-acceptance.yml) (optional `dagger_acceptance` input).
 
 `#Offer` guards every `backend` comparison behind `backend != _|_`: CUE 0.14 rejects references to an absent optional field, so unguarded `if backend == …` clauses broke `cue vet` for offers without a backend.
+
+CI routing counts the largest reported exposure among offers for the same
+provider account when applying both offer budgets and shared-policy limits.
+The configuration parser rejects duplicate provider-account offers; this
+check also protects direct calls to the public router with unvalidated data.
+An unknown observation time cannot prove that completed local usage was
+included, so that usage remains counted. See the
+[CI budget verification skill](../../.agents/skills/verify-ci-budget-routing/SKILL.md)
+for the model, generated tests, and assumptions.
+The skill also runs weakened models, a weakened proof, and broken scratch
+implementations, then restores and reruns the generated routing properties.
+Bounded TLC models disable deadlock checking on intentional terminal stutter.
+Provider snapshot aggregation ties broken on equal reports via the recorded order index.
+
+The following projection of the provider-observation model is not a runtime
+trace. TLC explored 36 states and 36 steps; the chart hides 18 steps that
+remain within a displayed state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ReadObservations
+  ReadObservations --> Admitted: highest exposure fits
+  ReadObservations --> Refused: highest exposure exceeds budget
+```

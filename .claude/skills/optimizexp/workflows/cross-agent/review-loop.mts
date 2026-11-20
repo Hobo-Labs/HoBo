@@ -12,6 +12,8 @@ import {
 import { evaluateScorecardEvidence } from "../../harness/lib/evidence-checks.mts";
 import { validateEvidenceReview } from "../../harness/lib/evidence-review.mts";
 import { listProjects } from "../../harness/lib/projects.mts";
+import { normalizeCliOptions } from "../../harness/lib/cli-options.mts";
+import { isPathIdentifier } from "../../harness/lib/slug.mts";
 import { evaluateDesignRelevance } from "../../harness/lib/design-council.mts";
 import { inspectGitReviewSubject, runConsensusCommand } from "./consensus-loop.mts";
 
@@ -994,24 +996,21 @@ function modeAssertComplete(
 				const abs = path.isAbsolute(evPath)
 					? evPath
 					: path.join(root, evPath);
-				const primary = body.evidence?.primary
-					? path.join(abs, body.evidence.primary)
-					: path.join(abs, "primary.txt");
-				if (!existsSync(primary) && !existsSync(path.join(abs, "primary.cast"))) {
-					missing.push(`evidence_missing:${path.relative(root, abs)}`);
-					continue;
-				}
+				const evidenceProblems = validateEvidenceReview(abs, root);
 				missing.push(
-					...validateEvidenceReview(abs).map(
+					...evidenceProblems.map(
 						(p) => `evidence_review:${path.relative(root, abs)}:${p}`,
 					),
 				);
 				const metaP = path.join(abs, "meta.json");
-				if (existsSync(metaP)) {
+				if (evidenceProblems.length === 0 && existsSync(metaP)) {
 					const meta = JSON.parse(readFileSync(metaP, "utf8")) as {
 						repro?: { via?: string };
+						primary?: { file?: string };
 					};
-					if (meta.repro?.via === "capture-evidence") stamped += 1;
+					if (body.evidence?.primary && body.evidence.primary !== meta.primary?.file) {
+						missing.push(`evidence_primary_mismatch:${path.relative(root, abs)}`);
+					} else if (meta.repro?.via === "capture-evidence") stamped += 1;
 				}
 			} catch {
 			}
@@ -1074,7 +1073,16 @@ function modeAggregateBus(root: string, runId: string) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--root", "--run", "--run-id", "--experiences", "--personas", "--persona", "--feature", "--features", "--projects", "--scores", "--prev-scores", "--passes", "--iteration", "--implementable-findings", "--implementable-findings-remaining", "--implementable-harm", "--implementable-uplift", "--harm-regressed", "--cognitive-breach", "--regime", "--limit", "--delight-passes", "--stop-reason"],
+		flags: ["--help", "-h", "--report-only", "--no-reduce", "--mismatches-only", "--no-delight", "--harm-only", "--no-survey", "--force"],
+		allowEmptyValues: ["--experiences", "--personas", "--features", "--projects"],
+	});
+	if (input.error || input.positionals.length > 1 || (input.positionals.length && input.argv.includes("--mode"))) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	const root = repoRoot(
 		typeof args.root === "string" ? args.root : undefined,
 	);
@@ -1082,6 +1090,10 @@ function main() {
 	if (mode === "help") {
 		help();
 		return;
+	}
+	if (args.run && !isPathIdentifier(String(args.run))) {
+		console.error("--run must be a valid run id");
+		process.exit(2);
 	}
 	if (mode === "validate-bus") {
 		modeValidateBus(root);
