@@ -429,6 +429,23 @@ describe("Agent37 Sandbox API fake", () => {
 		});
 	});
 
+	it("accepts only HTTPS or loopback HTTP webhook URLs", async () => {
+		for (const url of [
+			"http://hooks.example.com/agent37",
+			"ftp://localhost/agent37",
+		]) {
+			const response = await api(fake, "POST", "/v1/webhooks", { url });
+			expect(response.status).toBe(400);
+			expect(response.body).toMatchObject({
+				error: { code: "invalid_request" },
+			});
+		}
+		const loopback = await api(fake, "POST", "/v1/webhooks", {
+			url: "http://[::1]:4180/agent37",
+		});
+		expect(loopback.status).toBe(201);
+	});
+
 	it("provides webhook CRUD and Standard Webhooks HMAC-SHA256 signatures", async () => {
 		const received: ReceivedWebhook[] = [];
 		const receiver = createServer((request, response) => {

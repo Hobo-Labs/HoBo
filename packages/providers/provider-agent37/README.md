@@ -1,8 +1,8 @@
 # Agent37 CI runner provider
 
-`createAgent37Client` covers instance create/get/list/delete, sandbox exec, webhook registration/list/delete, and workspace usage. Every response crosses a Zod parser. Create-instance inputs reject unknown security controls, and webhook registration accepts HTTPS URLs only. Provider failures become `Agent37Error` values whose messages and serialized details pass through `@hobo/provider-redaction`.
+`createAgent37Client` covers instance create/get/list/delete, sandbox exec, webhook registration/list/delete, and workspace usage. Every response crosses a Zod parser. Client input objects reject unknown keys, including create-instance security controls, and webhook registration accepts HTTPS URLs or loopback HTTP URLs only. Provider failures become `Agent37Error` values whose messages and serialized details pass through `@hobo/provider-redaction`.
 
-The transport composes `@hobo/core`'s bounded fetch and guard. It permits HTTPS requests only to `api.agent37.com` and `sandbox.agent37.app` under `/v1/`, refuses redirects, and retries only GET requests receiving `no_capacity`, `try_again`, or 5xx responses with bounded attempts, jittered backoff, and `Retry-After` support capped by `AGENT37_MAX_TIMEOUT_MS`.
+The transport composes `@hobo/core`'s bounded fetch and guard. It permits HTTPS requests only to `api.agent37.com` and `sandbox.agent37.app` under `/v1/`, refuses redirects, and retries only GET requests receiving `no_capacity`, `try_again`, or 5xx responses with bounded attempts and jittered backoff. Each `Retry-After` delay and the cumulative delay across the retry window are capped by `AGENT37_MAX_TIMEOUT_MS`.
 
 `publishCapabilityManifest` publishes the `ci/runner` capability, the full-workspace static API key requirements, and estimated per-minute costs transcribed from Agent37's public instance-sizing documentation on 2026-11-20. Agent37 is registered as a refused CD delivery target because CI policy selects it as a runner provider.
 

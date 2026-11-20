@@ -91,18 +91,25 @@ export function createAgent37Transport(
 
 	return async (request) => {
 		let response: TransportResponse | undefined;
+		let retryWindowMs = AGENT37_MAX_TIMEOUT_MS;
 		for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
 			response = await bounded(request);
 			if (
 				request.method !== "GET" ||
 				!retryable(response) ||
-				attempt + 1 === maxAttempts
+				attempt + 1 === maxAttempts ||
+				retryWindowMs === 0
 			)
 				return response;
 			const backoff = retryBaseDelayMs * 2 ** attempt;
 			const jitter = backoff * random();
 			const retryAfter = agent37RetryAfterMs(response, now());
-			await sleep(Math.max(backoff + jitter, retryAfter ?? 0));
+			const delay = Math.min(
+				Math.max(backoff + jitter, retryAfter ?? 0),
+				retryWindowMs,
+			);
+			retryWindowMs -= delay;
+			await sleep(delay);
 		}
 		if (response === undefined)
 			throw new Error("Agent37 request was not attempted");
