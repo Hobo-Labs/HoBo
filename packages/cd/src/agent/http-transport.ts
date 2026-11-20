@@ -544,6 +544,7 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 			return value.ok ? leaseOf(value.value, lease) : value;
 		},
 		async release(lease) {
+			if (lease.reconcilerId !== d.reconcilerId) return;
 			if (fedLeases.get(lease.campId) === lease.fence)
 				fedLeases.delete(lease.campId);
 			await call("POST", FEED_ROUTES.leaseRelease, { lease: leaseJson(lease) });

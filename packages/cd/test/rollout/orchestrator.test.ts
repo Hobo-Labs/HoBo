@@ -626,6 +626,7 @@ describe("createRolloutOrchestrator", () => {
 		expect(snapshot.status).toBe("running");
 		await r.orchestrator.tick(r.ctx);
 		expect(r.traffic.percents("prod-a")).toEqual([5]);
+		expect((await r.orchestrator.get(plan.rolloutId))?.status).toBe("running");
 		expect(
 			JSON.stringify(r.store.events(ROLLOUT_LEDGER.stream(plan.rolloutId))),
 		).not.toContain(marker);
@@ -645,9 +646,16 @@ describe("createRolloutOrchestrator", () => {
 			if (mode === "throw") throw new Error(marker);
 			return JSON.parse(JSON.stringify([marker]));
 		};
-		await expect(planned(r, RolloutStrategy.CANARY)).rejects.toThrow(
-			"Traffic offerings are unavailable.",
-		);
+		let caught: unknown;
+		try {
+			await planned(r, RolloutStrategy.CANARY);
+		} catch (error) {
+			caught = error;
+		}
+		expect(caught).toMatchObject({
+			message: "Traffic offerings are unavailable.",
+		});
+		expect(String(caught)).not.toContain(marker);
 	});
 
 	it("treats a shift acknowledgement for a different plan as unknown", async () => {

@@ -335,7 +335,10 @@ describe("createCampReconciler", () => {
 		).not.toContain(marker);
 	});
 
-	it("does not accept a realizer-only code from a transport refusal", async () => {
+	it.each([
+		"runner-host-verify-failed",
+		"realize-outcome-unknown",
+	] as const)("does not accept realizer-only code %s from a transport refusal", async (code) => {
 		const h = harness();
 		const marker = "synthetic-private-transport.invalid";
 		const transport = {
@@ -344,7 +347,7 @@ describe("createCampReconciler", () => {
 				ok: false as const,
 				reasons: [
 					create(ReasonRecordSchema, {
-						code: "runner-host-verify-failed",
+						code,
 						message: marker,
 						remediation: marker,
 						subject: marker,

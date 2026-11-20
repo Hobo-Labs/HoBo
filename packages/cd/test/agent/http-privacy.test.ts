@@ -163,6 +163,19 @@ describe("agent HTTP refusal privacy", () => {
 		expect(result.reasons[0]?.code).toBe("response-invalid");
 	});
 
+	it("does not release a lease bound to another reconciler", async () => {
+		let requests = 0;
+		const client = transport(async () => {
+			requests++;
+			return response('{"ok":true,"value":{}}', 200);
+		});
+		await client.release({
+			...lease,
+			reconcilerId: asReconciler("synthetic-other-agent"),
+		});
+		expect(requests).toBe(0);
+	});
+
 	it("rejects an already expired lease", async () => {
 		const client = transport(async () =>
 			response(leaseResponse({ expiresAtMs: now }), 200),

@@ -86,6 +86,18 @@ const SAFE_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
 	),
 ]);
 
+const SAFE_TRANSPORT_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
+	...Object.entries(AGENT_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+	...Object.entries(FEED_FAILURES).map(
+		([code, spec]) => [code, spec.remediation] as const,
+	),
+	...(["invalid-observation", "transport-detail-redacted"] as const).map(
+		(code) => [code, RECONCILE_FAILURES[code]] as const,
+	),
+]);
+
 const SAFE_REALIZER_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
 	...RESOLVER_ERROR_CODES.map(
 		(code) =>
@@ -161,10 +173,10 @@ export function sanitizeReasons(
 ): ReasonRecord[] {
 	return entries.map((entry) => {
 		const remediation =
-			SAFE_REMEDIATIONS.get(entry.code) ??
-			(source === "realizer"
-				? SAFE_REALIZER_REMEDIATIONS.get(entry.code)
-				: undefined);
+			source === "realizer"
+				? (SAFE_REMEDIATIONS.get(entry.code) ??
+					SAFE_REALIZER_REMEDIATIONS.get(entry.code))
+				: SAFE_TRANSPORT_REMEDIATIONS.get(entry.code);
 		const fallback =
 			source === "realizer"
 				? "realizer-detail-redacted"
