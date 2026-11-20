@@ -1,8 +1,8 @@
 ---
-type: Operational reference
+type: Reference
 title: "Vercel credential evidence"
-description: "Read-only checks for Vercel credentials and the enrolled project."
-tags: [ci, vercel, evidence]
+description: "Read-only verification of configured Vercel credential access to the enrolled project."
+tags: [hobo, ci, vercel, evidence]
 ---
 
 # Vercel credential evidence

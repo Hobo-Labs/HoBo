@@ -62,6 +62,9 @@ message ResourceIntent {
   string objective = 8;
   // Optional placement-constraint vocabulary (E19).
   PlacementCriteria placement = 9;
+  // When a schedule runs: a five-field cron expression from the Bindle's
+  // `cadence` trait. Explicit presence, like `region`.
+  optional string cadence = 10;
 }
 
 // ---- E19: placement-constraint vocabulary (HoBo-native shapes; semantics

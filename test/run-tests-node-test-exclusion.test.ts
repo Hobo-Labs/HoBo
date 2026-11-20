@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { expect } from "vitest";
+import { nodeTestArguments } from "../scripts/lib/node-test-arguments.ts";
 
 // scripts/run-tests.ts runs every --category lane under Vitest, which cannot
 // load node:test-style files. The script excludes files that import node:test;
@@ -81,5 +82,11 @@ test("run-tests.ts preserves the canonical Vitest execution settings", () => {
 	expect(source).toContain("HOBO_TEST_MAX_WORKERS: String(maxWorkers)");
 	expect(source).toContain("maxWorkers:");
 	expect(source).toContain("rootNodeTestFiles");
-	expect(source).toContain('"--import", "tsx", "--test"');
+	assert.deepEqual(nodeTestArguments(["example.test.ts"], 2), [
+		"--import",
+		"tsx",
+		"--test",
+		"--test-concurrency=2",
+		"example.test.ts",
+	]);
 });

@@ -72,6 +72,10 @@ const PRIMITIVE_ALIASES = new Map<string, BindlePrimitive>([
 	// A lease lifecycle driver (`lifecycle.lease-driver/v1`, ADR-0179) delivers
 	// a lease's delayed steps: a queue, whether Vercel Queues or a Workflow run.
 	["lifecycle", "queue"],
+	// A cron schedule (`schedule.cron/v1`, core's `schedule` slot) invokes
+	// compute: a Cron Trigger on a Worker, or the consumer of the queue it
+	// sends to.
+	["schedule", "service"],
 ]);
 
 /**

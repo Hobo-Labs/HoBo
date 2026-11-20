@@ -52,7 +52,7 @@ export function checkRubberduckDoc(experienceMd: string): RubberduckResult {
 		problems.push("rubber-duck answers too short (<280 non-space chars)");
 	}
 	// Must mention a command-like token
-	if (!/`[^`]+`/.test(experienceMd) && !/\bhobo\b|\b[a-z]-code\b/i.test(experienceMd)) {
+	if (!/`[^`]+`/.test(experienceMd) && !/\b[a-z]-code\b/i.test(experienceMd)) {
 		problems.push("EXPERIENCE.md must quote an entry command in backticks or name the binary");
 	}
 	if (!/accept|revise|reject/i.test(experienceMd)) {
