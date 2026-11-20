@@ -1,6 +1,5 @@
-// HoBo's own release train as delivery-as-code (docs/design/release-channels.md).
-//
-// One Yard per provider, with a candidate and a stable Camp per artifact
+/** public-contract: HoBo release train delivery-as-code. */
+// One Yard, `hobo-release`, with a candidate and a stable Camp per artifact
 // family. Every CD command reads it as topology:
 //   hobo deploy camp list --yard release/hobo-release.delivery.ts
 //   hobo deploy pipeline apply --file release/hobo-release.delivery.ts

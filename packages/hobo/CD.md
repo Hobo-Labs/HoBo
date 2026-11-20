@@ -51,7 +51,9 @@ comma-separated list, the environment's first):
   (one Camp per runner host, `hobo-ci-runners/<host>`) and the **release
   topology**
   [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts)
-  (Camps `hobo-release/<npm|oci|pages>-<candidate|stable>`, see
+  (provider Yards `hobo-release-npm`, `hobo-release-oci`, `hobo-release-pages`;
+  each Camp's physical id is `<yard>/<family>-<channel>` while `logicalId`
+  keeps `hobo-release/<family>-<channel>` for pipelines and journal, see
   [release channels](../../docs/design/release-channels.md#hobo-releases-through-hobo-cd)).
 - a module or JSON file that exports `rails`: Station Rail declarations
   (`id`, `name`, `version`, `stationId` (empty: this Station),

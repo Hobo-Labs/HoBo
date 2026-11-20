@@ -1,18 +1,5 @@
 /* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: topology files are untrusted module exports; each record is parsed once with its generated cd_topology schema before it is used. */
-/**
- * Declared Camp topology for @hobo/cd (ADR-0182 D19/D20/D22).
- *
- * `TopologyReader` is composed from `@hobo/yards` Yards and their
- * `@hobo/camps` Camps: the Yard's provider and declared regions, the Camp's
- * env type and labels. Residency is evaluated only against these declared
- * regions; observed claims never enter here (I19). A physical Camp id is
- * Yard-scoped (`<yard>/<camp>`). An explicit logical id can preserve CD's
- * identity when the Camp moves to another Yard.
- *
- * Several readers (Yards, an imported ClusterProfile inventory) merge into
- * one; a Camp id declared twice is a configuration error, never a silent
- * override.
- */
+/** public-contract: declared Camp topology composed from @hobo/yards and cd_topology records. */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -304,9 +291,14 @@ function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 		);
 	const labels = { ...parsed.labels };
 	const physicalCampId = campIdOf(parsed.yardId, local);
+	const logicalCampId = parsed.logicalId
+		? campIdOf(
+				parsed.logicalId.slice(0, parsed.logicalId.indexOf("/")),
+				parsed.logicalId.slice(parsed.logicalId.indexOf("/") + 1),
+			)
+		: undefined;
 	return Object.freeze({
-		// SAFETY: an explicit, validated stable identity or the Yard-scoped id.
-		campId: (parsed.logicalId || physicalCampId) as CampId,
+		campId: logicalCampId ?? physicalCampId,
 		...(parsed.logicalId && parsed.logicalId !== physicalCampId
 			? { physicalCampId }
 			: undefined),
