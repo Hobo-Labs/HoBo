@@ -16,14 +16,17 @@ Uncertain == /\ phase = "held" /\ phase' = "uncertain"
              /\ UNCHANGED <<claimed, candidate, stored, attempts>>
 Offer == \E p \in Proofs:
          /\ phase \in {"held", "uncertain"} /\ attempts < 3
-         /\ candidate' = p /\ attempts' = attempts + 1
+         /\ candidate' = IF Valid(p) THEN p ELSE Empty
+         /\ attempts' = attempts + 1
          /\ UNCHANGED <<phase, claimed, stored>>
 Settle == /\ phase \in {"held", "uncertain"} /\ claimed /\ Valid(candidate)
-          /\ phase' = "settled" /\ stored' = candidate
-          /\ UNCHANGED <<claimed, candidate, attempts>>
+           /\ phase' = "settled" /\ stored' = candidate
+           /\ UNCHANGED <<claimed, candidate, attempts>>
 Release == /\ phase \in {"held", "uncertain"} /\ ~claimed
-           /\ phase' = "released" /\ UNCHANGED <<claimed, candidate, stored, attempts>>
-Done == UNCHANGED vars
+            /\ phase' = "released" /\ UNCHANGED <<claimed, candidate, stored, attempts>>
+Fenced == phase = "uncertain" /\ claimed /\ attempts = 3 /\ ~Valid(candidate)
+Done == \/ /\ phase \in {"settled", "released"} /\ UNCHANGED vars
+        \/ /\ Fenced /\ UNCHANGED vars
 Next == Reserve \/ Claim \/ Uncertain \/ Offer \/ Settle \/ Release \/ Done
 Spec == Init /\ [][Next]_vars
 TypeOK == /\ phase \in {"new", "held", "uncertain", "settled", "released"}
