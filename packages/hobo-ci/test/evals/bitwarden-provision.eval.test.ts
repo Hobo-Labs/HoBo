@@ -19,7 +19,6 @@ import {
 	provisionBitwardenAccessToken,
 } from "../../src/bitwarden-provision.js";
 import { ensureBitwardenSignIn } from "../../src/bitwarden-sign-in.js";
-import { OWNER_CREDENTIAL_LINE_PREFIX } from "../../src/hand-off-store.js";
 import {
 	openSecretStore,
 	prepareGithubConnection,
@@ -46,6 +45,20 @@ import {
 // copies no token; no secret reaches the output.
 
 const DEVICE = parseBitwardenDeviceId("8d0f3c2e-1b4a-4c5d-9e6f-7a8b9c0d1e2f");
+
+function privateOwner(approvals: { url: string; message: string }[]) {
+	return {
+		openUrl: async () => undefined,
+		holds: () => true,
+		captureSecret: async ({ name }: { name: string }) =>
+			name === "BW_CLIENTID" ? API_KEY.clientId : API_KEY.clientSecret,
+		canConfirm: () => true,
+		confirm: async (request: { url: string; message: string }) => {
+			approvals.push(request);
+			return true;
+		},
+	};
+}
 
 async function provision(
 	options: FakeBitwardenOptions = {},
@@ -836,6 +849,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 	it("asks for one approval, then opens the store with the token it created", async () => {
 		const server = fakeBitwarden();
 		const shown: string[] = [];
+		const approvals: { url: string; message: string }[] = [];
 		const saved = new Map<string, string>();
 		const opened = new Map<string, string>();
 		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
@@ -853,6 +867,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 			run: run as CommandRunInput,
 		} as PrepareInput;
 		await prepareGithubConnection(input, {
+			ownerChannel: privateOwner(approvals),
 			env: {
 				HOBO_SECRET_STORE: "bitwarden",
 				BW_CLIENTID: API_KEY.clientId,
@@ -901,11 +916,7 @@ describe("EVAL hobo ci up --hand-off with Bitwarden chosen and only the API key 
 			BWS_ORGANIZATION_ID: ORG_ID,
 			BWS_PROJECT_ID: "44444444-4444-4444-8444-444444444444",
 		});
-		expect(
-			shown.filter((l) =>
-				l.startsWith(`${OWNER_BITWARDEN_APPROVE_LINE_PREFIX} `),
-			),
-		).toHaveLength(1);
+		expect(approvals).toHaveLength(1);
 		const all = shown.join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain("MintedClientSecret0123");
@@ -1049,6 +1060,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 	it("hobo ci up --hand-off with BITWARDEN_SERVER_URL ends with the vault store open", async () => {
 		const server = fakeBitwarden({ vaultwarden: true });
 		const shown: string[] = [];
+		const approvals: { url: string; message: string }[] = [];
 		const saved = new Map<string, string>();
 		const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
 			emitProgress: (line) => shown.push(line),
@@ -1065,6 +1077,7 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 			run: run as CommandRunInput,
 		} as PrepareInput;
 		await prepareGithubConnection(input, {
+			ownerChannel: privateOwner(approvals),
 			env: {
 				HOBO_SECRET_STORE: "bitwarden",
 				BITWARDEN_SERVER_URL: VAULTWARDEN_ORIGIN,
@@ -1099,7 +1112,8 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 		).toBeGreaterThan(1);
 		expect(server.strayHosts).toEqual([]);
 		const all = shown.join("\n");
-		expect(all).toContain("server=vault.example.com");
+		expect(approvals[0]?.url).toBe(VAULTWARDEN_ORIGIN);
+		expect(all).not.toContain("vault.example.com");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(server.orgKey.toString("base64"));
 		expect(JSON.stringify(Object.fromEntries(saved))).not.toContain(
@@ -1107,28 +1121,6 @@ describe("EVAL Vaultwarden: the same one approval, against the owner's own serve
 		);
 	});
 });
-
-/** The agent's remote session: its credential form and egress proxy. */
-function remoteSession(fetchImpl: typeof fetch) {
-	let saved: { username: string; password: string } | undefined;
-	const proxied: typeof fetch = async (input, init) => {
-		const url = new URL(String(input));
-		const headers = new Headers(init?.headers);
-		// The proxy injects the saved credential for its host, as HTTP Basic.
-		if (saved !== undefined && url.host === "identity.bitwarden.com")
-			headers.set(
-				"Authorization",
-				`Basic ${Buffer.from(`${saved.username}:${saved.password}`).toString("base64")}`,
-			);
-		return fetchImpl(input, { ...init, headers });
-	};
-	return {
-		fetch: proxied,
-		save(username: string, password: string) {
-			saved = { username, password };
-		},
-	};
-}
 
 function handedOff(see: (line: string) => void): PrepareInput {
 	const run: Pick<CommandRunInput, "emitProgress" | "flags"> = {
@@ -1148,23 +1140,15 @@ function handedOff(see: (line: string) => void): PrepareInput {
 }
 
 describe("EVAL remote box, no keys anywhere: the ceremony collects the API key", () => {
-	it("asks once through the session's credential form, never holds the secret, and opens the store", async () => {
+	it("collects the API key and approval through the private owner channel", async () => {
 		const server = fakeBitwarden();
-		const session = remoteSession(server.fetch);
 		const shown: string[] = [];
+		const approvals: { url: string; message: string }[] = [];
 		const opened = new Map<string, string>();
 		await prepareGithubConnection(
-			handedOff((line) => {
-				shown.push(line);
-				// The owner, outside the box, does what the line says.
-				if (
-					line.startsWith(
-						`${OWNER_CREDENTIAL_LINE_PREFIX} host=identity.bitwarden.com`,
-					)
-				)
-					session.save(API_KEY.clientId, API_KEY.clientSecret);
-			}),
+			handedOff((line) => shown.push(line)),
 			{
+				ownerChannel: privateOwner(approvals),
 				env: { HOBO_SECRET_STORE: "bitwarden" },
 				vault: createTrustedVault(),
 				locator: { read: async () => ({}), write: async () => undefined },
@@ -1186,7 +1170,7 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 						},
 					};
 				},
-				fetch: session.fetch,
+				fetch: server.fetch,
 				sleep: async () => undefined,
 				handOffTimeoutMs: 60_000,
 				startPage: () => {
@@ -1195,15 +1179,7 @@ describe("EVAL remote box, no keys anywhere: the ceremony collects the API key",
 			},
 		);
 		expect(opened.get("token")).toMatch(/^0\.66666666-/u);
-		// One credential request, then one approval; no environment variable.
-		expect(
-			shown.filter((l) => l.startsWith(OWNER_CREDENTIAL_LINE_PREFIX)),
-		).toHaveLength(1);
-		expect(
-			shown.filter((l) => l.startsWith(OWNER_BITWARDEN_APPROVE_LINE_PREFIX)),
-		).toHaveLength(1);
-		// The run never sent (so never held) the client secret.
-		expect(server.signInBodies.join("&")).not.toContain(API_KEY.clientSecret);
+		expect(approvals).toHaveLength(1);
 		const all = shown.join("\n");
 		expect(all).not.toContain(API_KEY.clientSecret);
 		expect(all).not.toContain(OWNER_EMAIL);

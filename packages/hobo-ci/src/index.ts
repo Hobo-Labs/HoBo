@@ -105,7 +105,7 @@ export {
 export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
-	ONE_PASSWORD_SIGN_IN_CAPTURES,
+	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
 	onePasswordCli,
@@ -176,6 +176,11 @@ export {
 	VERCEL_DEPLOY_ENTRIES,
 	workloadOidcOf,
 } from "./prepare.js";
+export {
+	PrivateOwnerDispatchError,
+	PrivateOwnerRequestError,
+} from "./isolated-owner-errors.js";
+export { isolatedOwnerFetch } from "./isolated-owner-fetch.js";
 export { ciProjectDir } from "./project.js";
 export {
 	type OpenTunnel,
@@ -224,6 +229,11 @@ export {
 	type SecretStoreOpening,
 	withStoreWriteLock,
 } from "./secret-stores.js";
+export type {
+	SetupEffectResult,
+	SetupReservation,
+	SetupReservationAuthority,
+} from "./setup-reservation.js";
 export {
 	type CommandEnv,
 	type CommandResult,

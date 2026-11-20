@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { CommandRunInput, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	OWNER_CREDENTIAL_LINE_PREFIX,
+	type OwnerChannel,
 	type SecretStoreOpening,
 } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
@@ -317,7 +319,7 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		expect(all).not.toContain("0.machine.secret:key");
 	});
 
-	it("without a token or API key asks for the API key through the session's credential form, never env or a terminal", async () => {
+	it("without a private owner approval channel, refuses closed before any Bitwarden request", async () => {
 		const shown: string[] = [];
 		const asked: string[] = [];
 		const outcome = await prepareVercelConnection(
@@ -325,8 +327,48 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 			{
 				env: { HOBO_SECRET_STORE: "bitwarden" },
 				locator: { read: async () => ({}), write: async () => undefined },
-				// Bitwarden as the box reaches it: the owner has not saved the
-				// key in the session's credential form, so nothing is injected.
+				fetch: async (input) => {
+					asked.push(String(input));
+					return Response.json({ error: "invalid_client" }, { status: 400 });
+				},
+				sleep: async () => undefined,
+				handOffTimeoutMs: 1,
+				startPage: noPage,
+			},
+		);
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_HANDOFF_SILENT" },
+		});
+		expect(asked).toEqual([]);
+		expect(
+			shown.some((l) => l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)),
+		).toBe(false);
+		const all = text(shown, outcome);
+		expect(all).not.toMatch(/client_secret/u);
+		expect(all).not.toMatch(/terminal/u);
+		expect(all).not.toMatch(LOOPBACK);
+	});
+
+	it("with a private approval channel, asks for the API key only through the owner's secure form", async () => {
+		const shown: string[] = [];
+		const asked: string[] = [];
+		const reserved: string[][] = [];
+		const owner: OwnerChannel = {
+			openUrl: async () => undefined,
+			captureSecret: async () => undefined,
+			holds: () => false,
+			reserveCaptures: (names) => reserved.push([...names]),
+			requestCaptures: async (names) => reserved.push([...names]),
+			canConfirm: () => true,
+			confirm: async () => true,
+		};
+		const outcome = await prepareVercelConnection(
+			handOff((l) => shown.push(l)),
+			{
+				env: { HOBO_SECRET_STORE: "bitwarden" },
+				ownerChannel: owner,
+				locator: { read: async () => ({}), write: async () => undefined },
 				fetch: async (input, init) => {
 					asked.push(String(input));
 					expect(String(init?.body)).not.toMatch(/client_secret/u);
@@ -339,40 +381,49 @@ describe("EVAL store choice: Bitwarden Secrets Manager through its API, from any
 		);
 		expect(outcome).toMatchObject({
 			kind: "refused",
-			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
+			result: { code: "HOBO_CD_BITWARDEN_NEEDS_API_KEY" },
 		});
-		const credential = shown.find((l) =>
-			l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `),
-		);
-		expect(credential).toContain("host=identity.bitwarden.com");
-		expect(credential).toMatch(/security-keys/u);
-		expect(credential).toMatch(
-			/username = client_id, password = client_secret/u,
-		);
+		expect(reserved).toContainEqual(["BW_CLIENTID", "BW_CLIENTSECRET"]);
 		expect(
 			asked.every((url) => url.startsWith("https://identity.bitwarden.com/")),
 		).toBe(true);
+		expect(
+			shown.some((l) => l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)),
+		).toBe(false);
 		const all = text(shown, outcome);
 		expect(all).not.toMatch(/terminal/u);
 		expect(all).not.toMatch(/environment's settings/u);
+		expect(all).not.toMatch(LOOPBACK);
 	});
 });
 
 describe("EVAL store choice: Bitwarden with only the owner's API key", () => {
 	it("says exactly what to fix when Bitwarden rejects the API key, and never prints it", async () => {
 		const shown: string[] = [];
-		const secret = "Zq8pX1vL0rT5mN3bW7yK2cD9fG4hJ6";
+		const asked: string[] = [];
+		const clientId = `user.${randomUUID()}`;
+		const clientSecret = `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
+		const owner: OwnerChannel = {
+			openUrl: async () => undefined,
+			captureSecret: async () => undefined,
+			holds: () => false,
+			canConfirm: () => true,
+			confirm: async () => true,
+		};
 		const outcome = await prepareVercelConnection(
 			handOff((l) => shown.push(l)),
 			{
 				env: {
 					HOBO_SECRET_STORE: "bitwarden",
-					BW_CLIENTID: "user.0c7e4c1a-7a0e-4a65-9c2e-2f1b8f0d1e2a",
-					BW_CLIENTSECRET: secret,
+					BW_CLIENTID: clientId,
+					BW_CLIENTSECRET: clientSecret,
 				},
+				ownerChannel: owner,
 				locator: { read: async () => ({}), write: async () => undefined },
-				fetch: async () =>
-					Response.json({ error: "invalid_client" }, { status: 400 }),
+				fetch: async (input) => {
+					asked.push(String(input));
+					return Response.json({ error: "invalid_client" }, { status: 400 });
+				},
 				sleep: async () => undefined,
 				startPage: noPage,
 			},
@@ -381,9 +432,17 @@ describe("EVAL store choice: Bitwarden with only the owner's API key", () => {
 			kind: "refused",
 			result: { code: "HOBO_CD_BITWARDEN_API_KEY_REJECTED" },
 		});
+		expect(
+			asked.every((url) => url.startsWith("https://identity.bitwarden.com/")),
+		).toBe(true);
+		expect(
+			shown.some((l) => l.startsWith(`${OWNER_CREDENTIAL_LINE_PREFIX} `)),
+		).toBe(false);
 		const all = text(shown, outcome);
-		expect(all).toMatch(/View API key/u);
-		expect(all).not.toContain(secret);
+		expect(all).toMatch(/refused the personal API key/u);
+		expect(all).toMatch(/private owner form/u);
+		expect(all).not.toContain(clientId);
+		expect(all).not.toContain(clientSecret);
 	});
 });
 

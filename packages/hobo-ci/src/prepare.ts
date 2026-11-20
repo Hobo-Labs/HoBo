@@ -453,13 +453,10 @@ async function prepareGithubWithVault(
 				owner = await openOwner();
 			}
 		}
-		// The owner chose 1Password: HoBo installs its CLI, uses the owner's
-		// session (or one sign-in their 1Password app approves) and creates its
-		// own vault-scoped service account. Nothing is provisioned by hand.
 		if (
 			owner.id === "1password" &&
-			// Only with the machine its caller hands it (the composed CLI).
-			deps.runCommand !== undefined &&
+			(deps.runCommand !== undefined ||
+				(input.handOff === true && deps.ownerChannel !== undefined)) &&
 			owner.chosen &&
 			!input.whatIf &&
 			owner.opened === undefined &&
@@ -482,19 +479,15 @@ async function prepareGithubWithVault(
 				)({
 					family: "ci",
 					vaultId,
-					run: deps.runCommand,
+					...(deps.runCommand !== undefined
+						? { run: deps.runCommand }
+						: undefined),
 					which: deps.which ?? (async () => undefined),
 					toolsDir: hoboToolsDir(),
 					emit: (line) => input.run.emitProgress(line),
 					interactive: input.handOff !== true,
 					...(deps.ownerChannel !== undefined
 						? { owner: deps.ownerChannel }
-						: undefined),
-					...((plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS)
-						? {
-								signInAddress:
-									plainEnv.OP_SIGN_IN_ADDRESS ?? saved.OP_SIGN_IN_ADDRESS,
-							}
 						: undefined),
 				});
 				if (access.kind === "refused")

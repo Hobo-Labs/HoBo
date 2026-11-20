@@ -1,8 +1,10 @@
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
+import { createTrustedVault } from "@hobo/core";
 import {
 	createOwnerJobs,
 	type OwnerChannel,
 	type OwnerSettingsStore,
+	type OwnerStoreDeps,
 } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
@@ -150,6 +152,58 @@ function harness(
 const LINK = "https://vercel.com/device?user_code=WXYZ-1234";
 
 describe("SPEC cd up through MCP: Vercel's device grant off the request path", () => {
+	it("opens an existing 1Password account through the owner channel", async () => {
+		const token = "synthetic-service-account";
+		const kept = createTrustedVault();
+		let pending = true;
+		const owner: OwnerChannel = {
+			vault: kept,
+			openUrl: async () => undefined,
+			holds: (name) => name === "OP_SERVICE_ACCOUNT_TOKEN" && pending,
+			captureSecret: async () => {
+				pending = false;
+				return token;
+			},
+			jobs: createOwnerJobs(),
+		};
+		const store = {
+			id: "1password" as const,
+			port: createMemorySecretsPort({ id: "memory" }),
+			reference: () => "fixture-reference",
+		};
+		let opens = 0;
+		const openStore: NonNullable<OwnerStoreDeps["openStore"]> = async (
+			_id,
+			_coordinates,
+			signIn,
+		) => {
+			opens += 1;
+			expect(signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
+			return { ok: true, store };
+		};
+		const outcome = await prepareVercelConnection(throughMcp(), {
+			env: {},
+			ownerChannel: owner,
+			openStore,
+			fetch: async () => Response.json({}, { status: 400 }),
+			locator: {
+				read: async () => ({
+					HOBO_SECRET_STORE: "1password",
+					OP_VAULT_ID: "a".repeat(26),
+				}),
+				write: async () => undefined,
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CD_VERCEL_DEVICE_FAILED" },
+		});
+		expect(opens).toBeGreaterThan(0);
+		expect(kept.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
+		expect(JSON.stringify(outcome)).not.toContain(token);
+		kept.clear();
+	});
+
 	it("does not write a device grant after the owner changes the store", async () => {
 		const controller = new AbortController();
 		const selection: OwnerSettingsStore = {

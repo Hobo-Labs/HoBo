@@ -1,11 +1,12 @@
 import type { CommandRunInput, PrepareInput } from "@hobo/cli";
 import { createTrustedVault } from "@hobo/core";
 import { createMemorySecretsPort } from "@hobo/identity";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	type InfisicalAccessOptions,
 	type OpenedSecretStore,
+	type OwnerStoreDeps,
 	prepareGithubConnection,
 } from "../../src/index.js";
 import { heldOwnerChannel, readOwnerTurn } from "../support/remote-owner.js";
@@ -44,6 +45,51 @@ const lines = (outcome: Awaited<ReturnType<typeof prepareGithubConnection>>) =>
 		: [];
 
 describe("SPEC hand-off through MCP: no progress lines, no silent refusals", () => {
+	it("opens an existing 1Password account through the owner channel", async () => {
+		const token = "synthetic-service-account";
+		const kept = createTrustedVault();
+		const owner = { ...heldOwnerChannel(), vault: kept };
+		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", token);
+		const runCommand = vi.fn(async () => ({ code: 1, stdout: "", stderr: "" }));
+		const store: OpenedSecretStore = {
+			id: "1password",
+			port: createMemorySecretsPort({ id: "memory" }),
+			reference: () => "fixture-reference",
+		};
+		let opens = 0;
+		const openStore: NonNullable<OwnerStoreDeps["openStore"]> = async (
+			_id,
+			_coordinates,
+			signIn,
+		) => {
+			opens += 1;
+			expect(signIn.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
+			return { ok: true, store };
+		};
+		const outcome = await prepareGithubConnection(throughMcp(), {
+			env: {},
+			ownerChannel: owner,
+			runCommand,
+			openStore,
+			locator: {
+				read: async () => ({
+					HOBO_SECRET_STORE: "1password",
+					OP_VAULT_ID: "a".repeat(26),
+				}),
+				write: async () => undefined,
+			},
+		});
+		expect(outcome).toMatchObject({
+			kind: "refused",
+			result: { code: "HOBO_CI_SETTINGS_NEEDED" },
+		});
+		expect(opens).toBeGreaterThan(0);
+		expect(runCommand).not.toHaveBeenCalled();
+		expect(kept.reveal("OP_SERVICE_ACCOUNT_TOKEN")).toBe(token);
+		expect(JSON.stringify(outcome)).not.toContain(token);
+		kept.clear();
+	});
+
 	it("a store that will not open says why, never 'omit --json'", async () => {
 		const outcome = await prepareGithubConnection(throughMcp(), {
 			env: { CLAUDE_CODE_REMOTE: "true" },
