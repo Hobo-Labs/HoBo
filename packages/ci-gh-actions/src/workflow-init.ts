@@ -527,7 +527,7 @@ function referencesNeedsAccess(
 	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
 	if (
 		patternMatches(
-			String.raw`\bfromJSON\s*\(\s*${groupedNeeds(jobReference)}(?:\\s*${jobPropertyPattern(access)}|[^)]*)\\s*\\)`,
+			String.raw`\bfromJSON\s*\(\s*${groupedNeeds(jobReference)}(?:\s*${jobPropertyPattern(access)}|[^)]*)\s*\)`,
 			text,
 		)
 	) {
