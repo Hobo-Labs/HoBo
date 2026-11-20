@@ -47,7 +47,10 @@ const receipt = (requestId: string) => ({
 	code: "",
 	message: "",
 	budget: { evaluation: "allowed", reservation: "held" },
-	reservation: { reservationId: `iac:${requestId}` },
+	reservation: {
+		reservationId: `iac:${requestId}`,
+		executionDigest: `sha256:${"4".repeat(64)}`,
+	},
 	requestDigest: `sha256:${"b".repeat(64)}`,
 	inventoryHash: `sha256:${"c".repeat(64)}`,
 	modelHash: `sha256:${"d".repeat(64)}`,

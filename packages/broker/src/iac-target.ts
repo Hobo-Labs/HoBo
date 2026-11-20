@@ -2,10 +2,6 @@ import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
-	addDecimal,
-	type Consumption,
-	compareDecimal,
-	DECIMAL_ZERO,
 	type Decimal,
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -18,13 +14,13 @@ import {
 	quoteScenarioV2,
 	quoteTargetPricing,
 	stableHash,
-	subtractDecimal,
 	type TargetPricingAvailability,
 	TargetPricingAvailabilitySchema,
 	type TargetPricingInventory,
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
+	type EntitlementClaim,
 	IacPricingPinSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
@@ -46,6 +42,7 @@ import {
 	validateHostingQuote,
 } from "./budget-authority.js";
 import type { AsyncBudgetAdmissionAuthority } from "./budget-postgres.js";
+import { incrementalEntitlementClaims } from "./iac-incremental-claims.js";
 import { validIacPolicyGate } from "./iac-policy-gate.js";
 import type { GateDecision } from "./planes.js";
 
@@ -192,58 +189,85 @@ function readDecimal(value: string): Decimal | undefined {
 	return parseDecimal(value);
 }
 
-function incrementalClaims(
-	full: readonly Consumption[],
-	base: readonly Consumption[],
-	currency: string,
-) {
-	type Row = { bucketId: string; unit: string; scale: number; amount: Decimal };
-	function collect(rows: readonly Consumption[]): Map<string, Row> | undefined {
-		const result = new Map<string, Row>();
-		for (const row of rows) {
-			const quantity = row.quantity;
-			if (
-				!safeName(row.sourceId) ||
-				quantity === undefined ||
-				!safeName(quantity.unit) ||
-				!new Set(["allowance", "credit", "commitment"]).has(row.kind)
-			)
-				return undefined;
-			const decimal = readDecimal(quantity.decimal);
-			if (decimal === undefined || decimal.coefficient < 0n) return undefined;
-			const money = row.kind === "credit" || row.kind === "commitment";
-			if (money && quantity.unit !== currency) return undefined;
-			const unit = money ? `${currency}.micros` : quantity.unit;
-			const key = `${row.sourceId}\u0000${unit}`;
-			const prior = result.get(key);
-			result.set(key, {
-				bucketId: row.sourceId,
-				unit,
-				scale: money ? 6 : 0,
-				amount: addDecimal(prior?.amount ?? DECIMAL_ZERO, decimal),
-			});
-		}
-		return result;
+function exactInt64Micros(value: bigint): number | undefined {
+	return value >= 0n && value <= MAX_SAFE ? Number(value) : undefined;
+}
+
+function exactEvidenceMaximumMicros(
+	evidence: IacTargetLiabilityEvidence,
+): number | undefined {
+	const legacyMicros = evidence.maximumMicros;
+	const exactMicros =
+		evidence.maximumMicrosExact !== undefined
+			? exactInt64Micros(evidence.maximumMicrosExact)
+			: undefined;
+	if (evidence.maximumMicrosExact !== undefined && exactMicros === undefined)
+		return undefined;
+	if (exactMicros !== undefined) {
+		if (
+			legacyMicros !== undefined &&
+			Number.isSafeInteger(legacyMicros) &&
+			legacyMicros >= 0 &&
+			legacyMicros !== exactMicros
+		)
+			return undefined;
+		return exactMicros;
 	}
-	const current = collect(full);
-	const before = collect(base);
-	if (current === undefined || before === undefined) return undefined;
-	const claims: { bucketId: string; unit: string; units: number }[] = [];
-	for (const [key, row] of current) {
-		const difference = subtractDecimal(
-			row.amount,
-			before.get(key)?.amount ?? DECIMAL_ZERO,
-		);
-		if (compareDecimal(difference, DECIMAL_ZERO) <= 0) continue;
-		const units = ceilUnits(difference, row.scale);
-		if (units === undefined) return undefined;
-		claims.push({ bucketId: row.bucketId, unit: row.unit, units });
+	return legacyMicros !== undefined &&
+		Number.isSafeInteger(legacyMicros) &&
+		legacyMicros >= 0
+		? legacyMicros
+		: undefined;
+}
+
+function exactProviderAccountMicros(
+	liabilityMicros: number,
+): number | undefined {
+	return Number.isSafeInteger(liabilityMicros) && liabilityMicros >= 0
+		? liabilityMicros
+		: undefined;
+}
+
+function accountRows(
+	rows: IacTargetLiabilityEvidence["providerAccounts"],
+): string[] {
+	return rows
+		.map((row) => JSON.stringify([row.providerAccountId, row.liabilityMicros]))
+		.sort();
+}
+
+function persistedClaimKind(kind: string): string {
+	return kind === "" ? "allowance" : kind;
+}
+
+function entitlementRows(
+	rows: readonly Pick<
+		EntitlementClaim,
+		"kind" | "bucketId" | "unit" | "units"
+	>[],
+): string[] {
+	return rows
+		.map((row) =>
+			JSON.stringify([
+				persistedClaimKind(row.kind),
+				row.bucketId,
+				row.unit,
+				row.units,
+			]),
+		)
+		.sort();
+}
+
+function totalProviderAccountMicros(
+	accounts: IacTargetLiabilityEvidence["providerAccounts"],
+): bigint | undefined {
+	let totalMicros = 0n;
+	for (const account of accounts) {
+		const micros = exactProviderAccountMicros(account.liabilityMicros);
+		if (micros === undefined) return undefined;
+		totalMicros += BigInt(micros);
 	}
-	return claims.sort(
-		(left, right) =>
-			compareIdentifier(left.bucketId, right.bucketId) ||
-			compareIdentifier(left.unit, right.unit),
-	);
+	return totalMicros;
 }
 
 function denial(
@@ -413,6 +437,8 @@ export async function admitIacTarget(
 			"PRICING_NOT_COMPARABLE",
 			"a current nonnegative USD quote is required",
 		);
+	const maximumMicros =
+		evidence === undefined ? undefined : exactEvidenceMaximumMicros(evidence);
 	if (
 		evidence === undefined ||
 		!safeName(evidence.evidenceRef) ||
@@ -422,9 +448,8 @@ export async function admitIacTarget(
 		evidence.inventoryHash !== priced.inventoryHash ||
 		evidence.modelHash !== priced.modelHash ||
 		evidence.quoteHash !== priced.quote.quoteHash ||
-		evidence.maximumMicros === undefined ||
-		!Number.isSafeInteger(evidence.maximumMicros) ||
-		evidence.maximumMicros < totalMicros ||
+		maximumMicros === undefined ||
+		maximumMicros < totalMicros ||
 		!Number.isFinite(Date.parse(evidence.observedAt)) ||
 		Date.parse(evidence.observedAt) > nowMs ||
 		!Number.isFinite(Date.parse(evidence.validUntil)) ||
@@ -447,15 +472,9 @@ export async function admitIacTarget(
 	if (
 		accounts.length !== expectedAccounts.length ||
 		accounts.some(
-			(account, index) =>
-				account.providerAccountId !== expectedAccounts[index] ||
-				!Number.isSafeInteger(account.liabilityMicros) ||
-				account.liabilityMicros < 0,
+			(account, index) => account.providerAccountId !== expectedAccounts[index],
 		) ||
-		accounts.reduce(
-			(sum, account) => sum + BigInt(account.liabilityMicros),
-			0n,
-		) !== BigInt(evidence.maximumMicros)
+		totalProviderAccountMicros(accounts) !== BigInt(maximumMicros)
 	)
 		return denial(
 			requestId,
@@ -496,7 +515,7 @@ export async function admitIacTarget(
 			baselineQuote.code,
 			baselineQuote.message,
 		);
-	const claims = incrementalClaims(
+	const claims = incrementalEntitlementClaims(
 		priced.quote.consumption,
 		baselineQuote.consumption,
 		"USD",
@@ -507,6 +526,17 @@ export async function admitIacTarget(
 			targetId,
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
+		);
+	if (
+		evidence.entitlementClaims.length > 0 &&
+		JSON.stringify(entitlementRows(evidence.entitlementClaims)) !==
+			JSON.stringify(entitlementRows(claims))
+	)
+		return denial(
+			requestId,
+			targetId,
+			"LIABILITY_EVIDENCE_INVALID",
+			"liability evidence must itemize the exact incremental entitlement claims",
 		);
 	const evidenceHash = stableHash(
 		toJson(IacTargetLiabilityEvidenceSchema, evidence, {
@@ -548,7 +578,7 @@ export async function admitIacTarget(
 		ownerTenantId: inventory.tenantId,
 		currency: "USD",
 		totalMicros,
-		liabilityBoundMicros: evidence.maximumMicros,
+		liabilityBoundMicros: maximumMicros,
 		observedAt: evidence.observedAt,
 		validUntil,
 		components: [{ name: "joint-target-quote", costMicros: totalMicros }],
@@ -648,27 +678,42 @@ export async function admitIacTarget(
 	const quoteDigest = createHash("sha256")
 		.update(toJsonString(HostingQuoteSchema, quote))
 		.digest("hex");
-	const accountRows = (rows: BudgetReservation["providerAccounts"]) =>
-		rows
-			.map((row) =>
-				JSON.stringify([row.providerAccountId, row.liabilityMicros]),
-			)
-			.sort();
-	const entitlementRows = (rows: BudgetReservation["entitlementClaims"]) =>
-		rows
-			.map((row) => JSON.stringify([row.bucketId, row.unit, row.units]))
-			.sort();
+	let legacyQuoteDigest: string | undefined;
+	if (
+		quote.entitlementClaims.every(
+			(claim) => persistedClaimKind(claim.kind) === "allowance",
+		)
+	) {
+		const legacyQuote = clone(HostingQuoteSchema, quote);
+		for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
+		legacyQuoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, legacyQuote))
+			.digest("hex");
+	}
+	let legacyEmptyQuoteDigest: string | undefined;
+	if (evidence.entitlementClaims.length === 0) {
+		const legacyQuote = clone(HostingQuoteSchema, quote);
+		legacyQuote.entitlementClaims = [];
+		legacyEmptyQuoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, legacyQuote))
+			.digest("hex");
+	}
 	const captureReceipt = (
 		raw: BudgetReservation,
 	): BudgetReservation | undefined => {
 		try {
 			if (!isExactProtoMessage(BudgetReservationSchema, raw)) return undefined;
 			const row = clone(BudgetReservationSchema, raw);
+			const legacyEmptyClaims =
+				row.entitlementClaims.length === 0 &&
+				row.quoteDigest === legacyEmptyQuoteDigest;
 			if (
 				row.reservationId !== reservationId ||
 				row.requestDigest !== requestDigest ||
 				row.quoteId !== quote.quoteId ||
-				row.quoteDigest !== quoteDigest ||
+				(row.quoteDigest !== quoteDigest &&
+					row.quoteDigest !== legacyQuoteDigest &&
+					!legacyEmptyClaims) ||
 				row.financialPlanHash !== financialPlanHash ||
 				row.identity === undefined ||
 				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||
@@ -682,8 +727,9 @@ export async function admitIacTarget(
 					toJsonString(IacPricingPinSchema, pricingPin) ||
 				JSON.stringify(accountRows(row.providerAccounts)) !==
 					JSON.stringify(accountRows(quote.providerAccounts)) ||
-				JSON.stringify(entitlementRows(row.entitlementClaims)) !==
-					JSON.stringify(entitlementRows(quote.entitlementClaims))
+				(!legacyEmptyClaims &&
+					JSON.stringify(entitlementRows(row.entitlementClaims)) !==
+						JSON.stringify(entitlementRows(quote.entitlementClaims)))
 			)
 				return undefined;
 			return row;

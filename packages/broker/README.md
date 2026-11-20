@@ -38,11 +38,25 @@ permission to retry the provider call. The host remains responsible for
 verifying inventory completeness and eventual usage and source-stop evidence.
 Price ranking alone does not create a reservation; admission is the budget gate.
 Reservation and execution acknowledgements must match the exact quote, scope,
-liability bound and pricing pin. Mismatched receipts are reported as uncertain;
+liability bound and pricing pin. Admitted priced reservations carry a SHA-256
+execution digest; a held reservation without that claim is not executable.
+Mismatched receipts are reported as uncertain;
 after a claim, the authority must revalidate that the exact hold remains active.
 These checks rely on the host's durable authority and do not prove its behavior.
 Liability evidence must cover each distinct provider-account ID exactly once;
-the input order of those account records does not affect the scope check.
+the input order of those account records does not affect the scope check. New
+evidence carries the exact integer `maximumMicrosExact` as a ProtoJSON decimal
+string bounded by the runtime's nonnegative safe-integer range; admission also
+decodes legacy fixed64 `maximumMicros` evidence in that range. Normalized claim
+scope includes kind, bucket and unit, while the latest observation across each
+kind and bucket lineage fences stale unit migrations, including A→B→A restores.
+Persisted pre-kind snapshots reopen with an empty kind normalized to `allowance`,
+while fresh writes require an explicit kind. An exact idempotent retry may replay
+a persisted kindless quote before strict validation. Legacy evidence and receipt
+rows that both omit entitlement claims retain their original quote digest; current
+claims are still recomputed from the pinned pricing model.
+Fenced reservations pin their settlement payload version through journal replay;
+v1 signs kindless claims and v2 signs explicit kinds.
 The admission request accepts only its declared own data fields; unknown fields,
 accessors, proxies and inventory fields outside the exact schema are denied
 before financial authority calls. Enumerating JavaScript object keys can itself
@@ -189,8 +203,12 @@ The in-memory factory is explicitly marked `persistence: 'memory'` and cannot
 authorize funded Yard hosting.
 
 `createFleetBudgetAdmissionAuthority` replays decisions from a fixed,
-majority-chosen journal. Its inspection calls do not repair an undecided tail.
-For active workloads, `createOperationalFleetBudgetAdmissionAuthority` can
+majority-chosen journal. Reopen and interrupted initialization normalize legacy
+kindless entitlement records from the persisted base instead of strictly
+validating the reopen seed; entirely fresh initialization still requires
+explicit entitlement kinds. Its inspection calls
+do not repair an undecided tail. For active workloads,
+`createOperationalFleetBudgetAdmissionAuthority` can
 recover an already offered entry under a separately funded, revalidated actor
 lease before retrying the operation. The host must provide independently
 verified member identities, anti-rollback protection and per-voter funding;
@@ -203,8 +221,15 @@ results. The test does not establish a distributed actor lease.
 
 One transaction reserves global money, provider-account ceilings and each named
 free-allocation bucket. Quantities use integer normalized base units; unknown
-accounts, units, periods and expired allowance evidence refuse admission. Every
-entitlement must have one authoritative owner, including across budget scopes;
+accounts, units, periods and expired allowance evidence refuse admission. Entitlement
+identity includes its kind, bucket and unit throughout configuration and replay.
+Persisted snapshots written before entitlement kinds reopen with an empty kind
+interpreted as `allowance`; new configurations require an explicit supported kind.
+Provider-account rows must match independent of input order. Evidence that
+itemizes entitlement claims must match the admitted quote and current reservation;
+legacy evidence can omit those rows and replay a reservation whose claims are
+also absent. Every entitlement must have one authoritative owner, including
+across budget scopes;
 independent ledgers may not duplicate a provider account's free allocation.
 `unresolvedMicros`, `externalCommittedMicros` and `recoveryReserveMicros` remain
 protected in every reserve calculation. `reservedMicros` is exclusively the
@@ -253,9 +278,13 @@ and separately enrolled receiver and financial authority keys. A later claim
 cannot change that scope.
 The hold remains reserved until the receiver signs the exact committed route and
 the financial authority independently signs the final usage and source-stop
-evidence. Both proofs and the guard are checked again when replaying the journal.
-Keep historical public enrollments available while their records remain in the
-journal. An unsigned or uncertain result leaves the hold in place.
+evidence. Current reservations use the `hobo.budget-fence-settlement/v2` canonical
+payload, which includes entitlement kinds. Reservations persisted before kinds
+were introduced retain v1 signature verification; current reservations cannot
+select that legacy payload. Both proofs and the guard are checked again when
+replaying the journal. Keep historical public enrollments available while their
+records remain in the journal. An unsigned or uncertain result leaves the hold in
+place.
 
 The host must authenticate those enrollments and use a receiver that atomically
 holds the source operation and commits the route before signing. The finance
