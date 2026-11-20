@@ -32,8 +32,8 @@ export {
 } from "./placement.js";
 export {
 	CD_SETTINGS,
-	DEFAULT_VERCEL_REDIRECT_URI,
 	CD_VERCEL_PROJECT,
+	DEFAULT_VERCEL_REDIRECT_URI,
 	type PrepareVercelDeps,
 	prepareVercelConnection,
 } from "./prepare.js";
