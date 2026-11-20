@@ -43,6 +43,14 @@ blob IDs for every change in every commit, fetches missing blobs through Git's p
 and fails if any are unavailable. This includes deleted and intermediate files rather than
 only the two endpoint trees. Prefetch and scan share the existing 90-second range budget.
 
+On 2026-11-20, schedule [run 44729652197](https://github.com/Hobo-Labs/HoBo/actions/runs/44729652197)
+at `5c4962905` failed the same prefetch: the baseline file #2045 added let schedule and
+workflow_dispatch runs plan a `baseline..HEAD` range scan, and the baseline sat far enough
+behind HEAD that the blobless prefetch could not fetch every blob in its 90-second budget.
+`planMainBetterleaksScan` now takes the baseline range only for `push` runs; schedule and
+workflow_dispatch always plan the full-history `git fetch --refetch --no-filter` path this
+finding specifies.
+
 ## Verification
 
 `scripts/test/gitleaks-main-scan.test.ts` pins the range vs full plans, `--no-filter` backfill,
