@@ -2,7 +2,43 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 type BitwardenLogin = { loginAccessToken(accessToken: string): Promise<void> };
-type RealBitwardenClient = { auth(): BitwardenLogin };
+type BitwardenSecretIdentifier = {
+	readonly id: string;
+	readonly key: string;
+};
+type BitwardenSecret = {
+	readonly id: string;
+	readonly key: string;
+	readonly value: string;
+	readonly note: string;
+	readonly projectId?: string | null;
+	readonly revisionDate: Date | string;
+};
+type BitwardenSecretsClient = {
+	list(
+		organizationId: string,
+	): Promise<{ readonly data: readonly BitwardenSecretIdentifier[] }>;
+	get(id: string): Promise<BitwardenSecret>;
+	create(
+		organizationId: string,
+		key: string,
+		value: string,
+		note: string,
+		projectIds: string[],
+	): Promise<BitwardenSecret>;
+	update(
+		organizationId: string,
+		id: string,
+		key: string,
+		value: string,
+		note: string,
+		projectIds: string[],
+	): Promise<BitwardenSecret>;
+};
+type RealBitwardenClient = {
+	auth(): BitwardenLogin;
+	secrets(): BitwardenSecretsClient;
+};
 type BitwardenClientOptions = {
 	readonly apiUrl?: string;
 	readonly identityUrl?: string;
@@ -53,11 +89,19 @@ export class BitwardenClient {
 		this.#options = options;
 	}
 
-	auth(): BitwardenLogin {
+	#realClient(): RealBitwardenClient {
 		if (this.#real === undefined) {
 			const RealClient = loadRealConstructor();
 			this.#real = new RealClient(this.#options);
 		}
-		return this.#real.auth();
+		return this.#real;
+	}
+
+	auth(): BitwardenLogin {
+		return this.#realClient().auth();
+	}
+
+	secrets(): BitwardenSecretsClient {
+		return this.#realClient().secrets();
 	}
 }

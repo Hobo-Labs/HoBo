@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { BitwardenClient as ShimmedBitwardenClient } from "../../../plugins/hobo/src/bitwarden-sdk-napi.mts";
+
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
 
@@ -104,5 +106,29 @@ describe("agent plugin bundle", { timeout: 300_000 }, () => {
 			await closed.catch(() => undefined);
 			rmSync(stateDir, { recursive: true, force: true });
 		}
+	});
+
+	it("proxies the Bitwarden secrets() surface after the lazy native load", () => {
+		const server = {
+			apiUrl: "https://api.bitwarden.com",
+			identityUrl: "https://identity.bitwarden.com",
+			userAgent: "hobo-agent-plugin-bundle-test",
+		};
+		const afterAuth = new ShimmedBitwardenClient(server);
+		expect(afterAuth.auth()).toEqual(
+			expect.objectContaining({ loginAccessToken: expect.any(Function) }),
+		);
+		expect(afterAuth.secrets()).toEqual(
+			expect.objectContaining({
+				list: expect.any(Function),
+				get: expect.any(Function),
+				create: expect.any(Function),
+				update: expect.any(Function),
+			}),
+		);
+		const beforeAuth = new ShimmedBitwardenClient(server);
+		expect(beforeAuth.secrets()).toEqual(
+			expect.objectContaining({ list: expect.any(Function) }),
+		);
 	});
 });
