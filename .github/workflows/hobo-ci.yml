@@ -921,7 +921,7 @@ jobs:
     needs: [route, ci-runner-image]
     if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
-    timeout-minutes: 35
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

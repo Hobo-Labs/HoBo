@@ -28,9 +28,9 @@ cases = [
     ("claimed release", authority, 'status === "released" && existing.executionDigest', 'status === "released" && false', properties, claimed),
     ("commit before state", authority, "\t\tcommitting = true;", "\t\tcurrent = clone(BudgetLedgerSnapshotSchema, next);\n\t\treservations = new Map(rows);\n\t\tcommitting = true;", properties, commit),
     ("reentrant commit", authority, 'if (committing) throw new Error("budget authority mutation during commit");', 'if (false) throw new Error("budget authority mutation during commit");', properties, reentry),
-    ("zero-unit configuration", authority, "active().some((row) =>\n\t\t\t\t\t\trow.entitlementClaims.some(\n\t\t\t\t\t\t\t(claim) => claim.bucketId === old.bucketId,\n\t\t\t\t\t\t),\n\t\t\t\t\t)", "old.reservedUnits > 0", properties, scope),
-    ("replayed unit", authority, "bucket.unit === entry.unit &&", "true &&", properties, scope),
-    ("replayed period", authority, "bucket.periodId === row.identity?.periodId,", "true,", properties, scope),
+    ("zero-unit configuration", authority, "active().some((row) =>\n\t\t\t\t\t\t\trow.entitlementClaims.some((claim) =>\n\t\t\t\t\t\t\t\tsameEntitlementScope(claim, old),\n\t\t\t\t\t\t\t),\n\t\t\t\t\t\t)", "false", properties, scope),
+    ("replayed unit", authority, "row.bucketId,\n\t\trow.unit,\n\t]);", "row.bucketId,\n\t]);", properties, scope),
+    ("replayed period", authority, "(row.identity === undefined ||\n\t\t\t\t\t\t\t\t\tbucket.periodId === row.identity.periodId),", "true,", properties, scope),
     ("receiver signature", settlement, "!verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(canonicalFenceOperationReceipt(body)),", "false && !verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(canonicalFenceOperationReceipt(body)),", fenced, signed),
     ("finance signature", settlement, "!verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(payload),", "false && !verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(payload),", fenced, signed),
 ]
