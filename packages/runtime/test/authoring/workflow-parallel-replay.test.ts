@@ -13,7 +13,7 @@ function deferred() {
 	return { promise, resolve };
 }
 
-it("resumes an earlier in-flight step after a later parallel step completed", async () => {
+it("resumes a scheduled hole below a later completed parallel step", async () => {
 	const base = createInMemoryEventStore();
 	const laterRecorded = deferred();
 	const releaseEarlier = deferred();
@@ -89,11 +89,10 @@ it("resumes an earlier in-flight step after a later parallel step completed", as
 	expect(await recoveredStore.readStream("run/parallel-replay")).toEqual(saved);
 	expect(unexpectedEffects).toBe(0);
 
-	const resumed = await createWorkflowEngine({ store: recoveredStore }).resume(
-		wf,
-		"parallel-replay",
-		null,
-	);
+	const resumed = await createWorkflowEngine({
+		store: recoveredStore,
+	}).resume(wf, "parallel-replay", null);
+	expect(resumed.status).toBe("completed");
 	expect(resumed.result).toEqual(["earlier", "later"]);
 	expect(earlierCalls).toBe(2);
 	expect(laterCalls).toBe(1);
@@ -156,6 +155,46 @@ it("replays generated scheduled gaps without repeating recorded effects", async 
 		),
 		{ seed: 614451, numRuns: 100 },
 	);
+});
+
+it("rejects an outcome above an unscheduled hole", async () => {
+	const store = createInMemoryEventStore();
+	const stream = "run/unscheduled-hole";
+	await store.append(
+		nextEnvelope(stream, 1, "run.Started", {
+			args: null,
+			seed: "seed",
+			workflowName: "unscheduled-hole",
+		}),
+		0,
+	);
+	await store.append(
+		nextEnvelope(stream, 2, "run.StepCompleted", {
+			name: "later",
+			index: 1,
+			result: "done",
+		}),
+		1,
+	);
+	let effects = 0;
+	const wf = defineWorkflow({
+		name: "unscheduled-hole",
+		async run(ctx) {
+			await ctx.step("earlier", () => {
+				effects += 1;
+				return "earlier";
+			});
+			return ctx.step("later", () => {
+				effects += 1;
+				return "later";
+			});
+		},
+	});
+	await expect(
+		createWorkflowEngine({ store }).resume(wf, "unscheduled-hole", null),
+	).rejects.toThrow(/gapped step journal/);
+	expect(effects).toBe(0);
+	expect(await store.readStream(stream)).toHaveLength(2);
 });
 
 it("rejects inconsistent scheduled step names before running", async () => {

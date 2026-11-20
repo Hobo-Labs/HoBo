@@ -4,6 +4,7 @@ import { isJsonNumber, isJsonObject } from "../../src/json.js";
 
 import { replayRun } from "../../src/replay/replayer.js";
 import { createWorkflowEngine, defineWorkflow } from "../../src/workflow.js";
+import { readJournaledWorkflowResult } from "../../src/workflow-value.js";
 
 interface OrderState {
 	reserved: boolean;
@@ -1010,6 +1011,1235 @@ describe("durable workflow: journal, restart, replay", () => {
 		);
 	});
 
+	it("rejects a schedule above maxOutcome with a gapped prefix", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/scheduled-far-gap";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "scheduled-far-gap",
+					workflowName: "scheduled-far-gap",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "early", index: 0, result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "late", index: 5 },
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "scheduled-far-gap",
+			async run(ctx) {
+				runs += 1;
+				await ctx.step("early", () => "ok");
+				await ctx.step("late", () => "nope");
+				return "nope";
+			},
+		});
+		await expect(engine.resume(wf, "scheduled-far-gap", {})).rejects.toThrow(
+			/gapped step journal/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it("resumes a scheduled-only hole below a later step outcome", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/scheduled-hole";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "scheduled-hole",
+					workflowName: "scheduled-hole",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "hole", index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "later",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "later", index: 1, result: "done" },
+			},
+			2,
+		);
+		let runs = 0;
+		let holeEffects = 0;
+		let laterEffects = 0;
+		const wf = defineWorkflow({
+			name: "scheduled-hole",
+			async run(ctx) {
+				runs += 1;
+				await ctx.step("hole", () => {
+					holeEffects += 1;
+					return "first";
+				});
+				return ctx.step("later", () => {
+					laterEffects += 1;
+					return "done";
+				});
+			},
+		});
+		const handle = await engine.resume(wf, "scheduled-hole", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("done");
+		expect(runs).toBe(1);
+		expect(holeEffects).toBe(1);
+		expect(laterEffects).toBe(0);
+		const journal = await engine.journal("scheduled-hole");
+		expect(
+			journal.some(
+				(event) =>
+					event.type === "run.StepCompleted" &&
+					isJsonObject(event.data) &&
+					event.data.index === 0,
+			),
+		).toBe(true);
+	});
+
+	it("resumes a schedule above the open journal tip", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/orphan-schedule";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "orphan-schedule",
+					workflowName: "orphan-schedule",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-0",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "first", index: 0, result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "open",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "second", index: 1 },
+			},
+			2,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-2",
+				streamId,
+				seq: 4,
+				type: "run.StepScheduled",
+				data: { name: "third", index: 2 },
+			},
+			3,
+		);
+		await engine.store.append(
+			{
+				id: "done-2",
+				streamId,
+				seq: 5,
+				type: "run.StepCompleted",
+				data: { name: "third", index: 2, result: "later" },
+			},
+			4,
+		);
+		let runs = 0;
+		let firstEffects = 0;
+		let secondEffects = 0;
+		let thirdEffects = 0;
+		const wf = defineWorkflow({
+			name: "orphan-schedule",
+			async run(ctx) {
+				runs += 1;
+				await ctx.step("first", () => {
+					firstEffects += 1;
+					return "ok";
+				});
+				await ctx.step("second", () => {
+					secondEffects += 1;
+					return "open";
+				});
+				return ctx.step("third", () => {
+					thirdEffects += 1;
+					return "later";
+				});
+			},
+		});
+		const handle = await engine.resume(wf, "orphan-schedule", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("later");
+		expect(runs).toBe(1);
+		expect(firstEffects).toBe(0);
+		expect(secondEffects).toBe(1);
+		expect(thirdEffects).toBe(0);
+	});
+
+	it("resumes a single open scheduled tip without scheduling it again", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/open-tip";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "open-tip",
+					workflowName: "open-tip",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "work", index: 0 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "open-tip",
+			run: (ctx) =>
+				ctx.step("work", () => {
+					runs += 1;
+					return "done";
+				}),
+		});
+		const first = await engine.resume(wf, "open-tip", {});
+		expect(first.result).toBe("done");
+		expect(runs).toBe(1);
+		const schedules = (await engine.journal("open-tip")).filter(
+			(event) => event.type === "run.StepScheduled",
+		);
+		expect(schedules).toHaveLength(1);
+		expect((await engine.resume(wf, "open-tip", {})).result).toBe("done");
+		expect(runs).toBe(1);
+		expect(
+			(await engine.journal("open-tip")).filter(
+				(event) => event.type === "run.StepScheduled",
+			),
+		).toHaveLength(1);
+	});
+
+	it("accepts identical duplicate schedules at the same index", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-schedule";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-schedule",
+					workflowName: "dup-schedule",
+				},
+			},
+			0,
+		);
+		const scheduled = { name: "work", index: 0 };
+		await engine.store.append(
+			{
+				id: "scheduled-1",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: scheduled,
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-2",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: scheduled,
+			},
+			2,
+		);
+		let runs = 0;
+		let workEffects = 0;
+		const wf = defineWorkflow({
+			name: "dup-schedule",
+			run(ctx) {
+				runs += 1;
+				return ctx.step("work", () => {
+					workEffects += 1;
+					return "done";
+				});
+			},
+		});
+		const handle = await engine.resume(wf, "dup-schedule", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("done");
+		expect(runs).toBe(1);
+		expect(workEffects).toBe(1);
+		const journal = await engine.journal("dup-schedule");
+		expect(
+			journal.filter((event) => event.type === "run.StepScheduled"),
+		).toHaveLength(2);
+		expect(
+			journal.filter((event) => event.type === "run.StepCompleted"),
+		).toHaveLength(1);
+	});
+
+	it("rejects a scheduled step index above 1000000", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/scheduled-bound";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "scheduled-bound",
+					workflowName: "scheduled-bound",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled",
+				streamId,
+				seq: 2,
+				type: "run.StepScheduled",
+				data: { name: "too-high", index: 1_000_001 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "scheduled-bound",
+			run(ctx) {
+				runs += 1;
+				return ctx.step("too-high", () => "nope");
+			},
+		});
+		await expect(engine.resume(wf, "scheduled-bound", {})).rejects.toThrow(
+			/invalid run\.StepScheduled|invalid step journal/,
+		);
+		expect(runs).toBe(0);
+	});
+
+	it.each([
+		["negative zero", -0],
+		["sparse array", Array(2)],
+		["nested negative zero", { n: -0 }],
+		["nested sparse array", { items: Array(2) }],
+	])("rejects %s in journaled run.Started", async (_label, args) => {
+		const engine = createWorkflowEngine();
+		await engine.store.append(
+			{
+				id: "start",
+				streamId: "run/bad-started-value",
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args,
+					seed: "bad-started-value",
+					workflowName: "bad-started-value",
+				},
+			},
+			0,
+		);
+		const wf = defineWorkflow({
+			name: "bad-started-value",
+			run: () => "live",
+		});
+		await expect(engine.resume(wf, "bad-started-value", null)).rejects.toThrow(
+			/invalid run\.Started/,
+		);
+	});
+
+	it.each([
+		["negative zero", -0],
+		["sparse array", Array(2)],
+		["nested negative zero", { n: -0 }],
+		["nested sparse array", { items: Array(2) }],
+	])("rejects %s in a journaled step result", async (_label, result) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/bad-step-result";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-step-result",
+					workflowName: "bad-step-result",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "read", index: 0, result },
+			},
+			1,
+		);
+		let runs = 0;
+		let readEffects = 0;
+		const wf = defineWorkflow({
+			name: "bad-step-result",
+			run: (ctx) => {
+				runs += 1;
+				return ctx.step("read", () => {
+					readEffects += 1;
+					return "live";
+				});
+			},
+		});
+		const journalBefore = await engine.journal("bad-step-result");
+		let rejection: TypeError | undefined;
+		try {
+			await engine.resume(wf, "bad-step-result", {});
+		} catch (reason: unknown) {
+			if (reason instanceof TypeError) rejection = reason;
+		}
+		expect(rejection).toBeInstanceOf(TypeError);
+		expect(rejection?.message).toMatch(
+			/invalid run\.StepCompleted|JSON-normalized/,
+		);
+		expect(runs).toBe(0);
+		expect(readEffects).toBe(0);
+		expect(await engine.journal("bad-step-result")).toEqual(journalBefore);
+	});
+
+	it.each([
+		[
+			"non-enumerable fact key",
+			() => {
+				const data = { name: "read", index: 0, result: "ok" };
+				Object.defineProperty(data, "extra", {
+					value: true,
+					enumerable: false,
+				});
+				return data;
+			},
+		],
+		[
+			"non-enumerable result key",
+			() => {
+				const result = { a: 1 };
+				Object.defineProperty(result, "hidden", {
+					value: 2,
+					enumerable: false,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"symbol result key",
+			() => {
+				const result = { a: 1 };
+				Object.defineProperty(result, Symbol("hidden"), {
+					value: 2,
+					enumerable: false,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"symbol array result key",
+			() => {
+				const result = [1];
+				Object.defineProperty(result, Symbol("hidden"), {
+					value: 2,
+					enumerable: true,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"extra array result key",
+			() => {
+				const result = [1];
+				Object.defineProperty(result, "extra", {
+					value: 2,
+					enumerable: true,
+				});
+				return { name: "read", index: 0, result };
+			},
+		],
+		[
+			"__proto__-only fact",
+			() => {
+				const data: Record<
+					string,
+					{ name: string; index: number; result: string }
+				> = {};
+				Object.defineProperty(data, "__proto__", {
+					value: { name: "read", index: 0, result: "ok" },
+					enumerable: true,
+				});
+				return data;
+			},
+		],
+	])("rejects %s preserved by the journal snapshot", async (_label, buildData) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/bad-snapshot-shape";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-snapshot-shape",
+					workflowName: "bad-snapshot-shape",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: buildData(),
+			},
+			1,
+		);
+		let runs = 0;
+		let readEffects = 0;
+		const wf = defineWorkflow({
+			name: "bad-snapshot-shape",
+			run: (ctx) => {
+				runs += 1;
+				return ctx.step("read", () => {
+					readEffects += 1;
+					return "live";
+				});
+			},
+		});
+		const journalBefore = await engine.journal("bad-snapshot-shape");
+		await expect(
+			engine.resume(wf, "bad-snapshot-shape", {}),
+		).rejects.toMatchObject({
+			name: "TypeError",
+			message: "invalid run.StepCompleted",
+		});
+		expect(runs).toBe(0);
+		expect(readEffects).toBe(0);
+		expect(await engine.journal("bad-snapshot-shape")).toEqual(journalBefore);
+	});
+
+	it("replays a journaled result with an own __proto__ key", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/proto-result";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "proto-result",
+					workflowName: "proto-result",
+				},
+			},
+			0,
+		);
+		const result = { ok: 2 };
+		Object.defineProperty(result, "__proto__", {
+			value: { polluted: 1 },
+			enumerable: true,
+			writable: true,
+			configurable: true,
+		});
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "read", index: 0, result },
+			},
+			1,
+		);
+		let readEffects = 0;
+		const wf = defineWorkflow({
+			name: "proto-result",
+			run: (ctx) =>
+				ctx.step("read", () => {
+					readEffects += 1;
+					return { ok: 2 };
+				}),
+		});
+		const handle = await engine.resume(wf, "proto-result", {});
+		expect(handle.status).toBe("completed");
+		expect(readEffects).toBe(0);
+		if (!isJsonObject(handle.result)) {
+			throw new Error("expected object result");
+		}
+		expect(Object.hasOwn(handle.result, "__proto__")).toBe(true);
+		expect(
+			Object.getOwnPropertyDescriptor(handle.result, "__proto__")?.value,
+		).toEqual({ polluted: 1 });
+		expect(Object.hasOwn(Object.prototype, "polluted")).toBe(false);
+	});
+
+	it("rejects sparse arrays and negative zero when reading a journaled value", () => {
+		for (const value of [Array(2), -0, { n: -0 }, { items: Array(2) }]) {
+			let caught: unknown;
+			try {
+				readJournaledWorkflowResult(value);
+			} catch (error) {
+				caught = error;
+			}
+			expect(caught).toBeInstanceOf(TypeError);
+			if (!(caught instanceof TypeError)) {
+				throw new Error("expected TypeError");
+			}
+			expect(caught.message.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("rethrows a replay failure from now and random", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/replay-clock";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "replay-clock",
+					workflowName: "replay-clock",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		let caught: unknown;
+		let nowError: unknown;
+		let randomError: unknown;
+		let probe: number | undefined;
+		const wf = defineWorkflow({
+			name: "replay-clock",
+			async run(ctx) {
+				probe = ctx.random("probe");
+				try {
+					await ctx.sleep(20);
+				} catch (error) {
+					caught = error;
+				}
+				try {
+					ctx.now();
+				} catch (error) {
+					nowError = error;
+				}
+				try {
+					ctx.random("after");
+				} catch (error) {
+					randomError = error;
+				}
+				if (caught instanceof Error) throw caught;
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "replay-clock", {})).rejects.toThrow(
+			/sleep schedule diverged/,
+		);
+		expect(probe).toEqual(expect.any(Number));
+		expect(caught).toBeInstanceOf(Error);
+		expect(nowError).toBe(caught);
+		expect(randomError).toBe(caught);
+		expect(await engine.journal("replay-clock")).toHaveLength(2);
+	});
+
+	it.each([
+		null,
+		"nope",
+		{ delayMs: "10", index: 0 },
+		{ delayMs: 10 },
+		{ delayMs: 10, index: 0, extra: true },
+		{ delayMs: 10, index: 1_000_001 },
+		{ delayMs: Number.NaN, index: 0 },
+		{ delayMs: Number.POSITIVE_INFINITY, index: 0 },
+		{ delayMs: -1, index: 0 },
+		{ delayMs: 10, index: -1 },
+		{ delayMs: 10, index: 0.5 },
+		{ delayMs: 10, index: Number.NaN },
+		{ delayMs: -0, index: 0 },
+		{ delayMs: -0.5, index: 0 },
+		{ delayMs: 1e20, index: 0 },
+		{ delayMs: Number.MAX_SAFE_INTEGER + 1, index: 0 },
+	])("rejects invalid run.SleepScheduled %j", async (data) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/bad-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "bad-sleep",
+					workflowName: "bad-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data,
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "bad-sleep",
+			async run(ctx) {
+				runs += 1;
+				await ctx.sleep(10);
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "bad-sleep", {})).rejects.toThrow(
+			/invalid run\.SleepScheduled/,
+		);
+		expect(runs).toBe(0);
+		expect(await engine.journal("bad-sleep")).toHaveLength(2);
+	});
+
+	it("normalizes negative zero sleep duration on write", async () => {
+		const engine = createWorkflowEngine();
+		const wf = defineWorkflow({
+			name: "negative-zero-sleep",
+			async run(ctx) {
+				await ctx.sleep(-0);
+				return "done";
+			},
+		});
+		const handle = await engine.start(wf, {}, { runId: "negative-zero-sleep" });
+		expect(handle.result).toBe("done");
+		const journal = await engine.journal("negative-zero-sleep");
+		const sleepEvent = journal.find(
+			(event) => event.type === "run.SleepScheduled",
+		);
+		if (!sleepEvent || !isJsonObject(sleepEvent.data)) {
+			throw new Error("expected run.SleepScheduled");
+		}
+		expect(sleepEvent.data.delayMs).toBe(0);
+		expect(Object.is(sleepEvent.data.delayMs, -0)).toBe(false);
+		const resumed = await engine.resume(wf, "negative-zero-sleep", {});
+		expect(resumed.result).toBe("done");
+	});
+
+	it.each([
+		["NaN", Number.NaN],
+		["positive Infinity", Number.POSITIVE_INFINITY],
+		["negative Infinity", Number.NEGATIVE_INFINITY],
+		["negative", -1],
+		["non-integer", 10.5],
+		["non-safe-integer", Number.MAX_SAFE_INTEGER + 1],
+	])("rejects invalid ctx.sleep delayMs on write: %s", async (_label, delayMs) => {
+		const engine = createWorkflowEngine();
+		const wf = defineWorkflow({
+			name: "invalid-write-sleep",
+			async run(ctx) {
+				await ctx.sleep(delayMs);
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "invalid-write-sleep" }),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
+		const journal = await engine.journal("invalid-write-sleep");
+		expect(journal.map((event) => event.type)).toEqual(["run.Started"]);
+	});
+
+	it("cannot hide an invalid ctx.sleep delayMs by catching it", async () => {
+		const engine = createWorkflowEngine();
+		let effects = 0;
+		const wf = defineWorkflow({
+			name: "hidden-invalid-sleep",
+			async run(ctx) {
+				try {
+					await ctx.sleep(Number.NaN);
+				} catch {}
+				try {
+					await ctx.step("after", () => {
+						effects += 1;
+						return "after";
+					});
+				} catch {}
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "hidden-invalid-sleep" }),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
+		expect(effects).toBe(0);
+		expect(
+			(await engine.journal("hidden-invalid-sleep")).map((event) => event.type),
+		).toEqual(["run.Started"]);
+	});
+
+	it("rejects an unconsumed run.SleepScheduled at index 1000000 without appending run.Completed", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/max-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "max-sleep",
+					workflowName: "max-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 1_000_000 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "max-sleep",
+			async run() {
+				runs += 1;
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "max-sleep", {})).rejects.toThrow(
+			/unconsumed scheduled sleep \(orphan SleepScheduled\)/,
+		);
+		expect(runs).toBe(1);
+		const journal = await engine.journal("max-sleep");
+		expect(journal).toHaveLength(2);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
+	});
+
+	it.each([
+		{ delayMs: 20, index: 0 },
+		{ delayMs: 10, index: 0, label: "other" },
+	])("rejects conflicting duplicate run.SleepScheduled %j", async (duplicate) => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/dup-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "dup-sleep",
+					workflowName: "dup-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-1",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-2",
+				streamId,
+				seq: 3,
+				type: "run.SleepScheduled",
+				data: duplicate,
+			},
+			2,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "dup-sleep",
+			async run(ctx) {
+				runs += 1;
+				await ctx.sleep(10);
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "dup-sleep", {})).rejects.toThrow(
+			/invalid run\.SleepScheduled/,
+		);
+		expect(runs).toBe(0);
+		expect(await engine.journal("dup-sleep")).toHaveLength(3);
+	});
+
+	it("rejects an orphan SleepScheduled without appending run.Completed", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/orphan-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "orphan-sleep",
+					workflowName: "orphan-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		let runs = 0;
+		const wf = defineWorkflow({
+			name: "orphan-sleep",
+			async run() {
+				runs += 1;
+				return "done";
+			},
+		});
+		await expect(engine.resume(wf, "orphan-sleep", {})).rejects.toThrow(
+			/unconsumed scheduled sleep \(orphan SleepScheduled\)/,
+		);
+		expect(runs).toBe(1);
+		const journal = await engine.journal("orphan-sleep");
+		expect(journal).toHaveLength(2);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
+	});
+
+	it("rejects a sleep appended past an unconsumed journaled sleep", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/sleep-gap";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "sleep-gap",
+					workflowName: "sleep-gap",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-0",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "sleep-2",
+				streamId,
+				seq: 3,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 2 },
+			},
+			2,
+		);
+		const wf = defineWorkflow({
+			name: "sleep-gap",
+			async run(ctx) {
+				await ctx.sleep(10);
+				await ctx.sleep(10);
+				return "unexpected";
+			},
+		});
+		await expect(engine.resume(wf, "sleep-gap", {})).rejects.toThrow(
+			/sleep schedule diverged on replay/,
+		);
+		const journal = await engine.journal("sleep-gap");
+		expect(journal).toHaveLength(3);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
+	});
+
+	it("rejects a journaled fractional delayMs on resume", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/legacy-fractional-sleep";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "legacy-fractional-sleep",
+					workflowName: "legacy-fractional-sleep",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 1.5, index: 0 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "legacy-fractional-sleep",
+			async run(ctx) {
+				await ctx.sleep(1);
+				return "done";
+			},
+		});
+		await expect(
+			engine.resume(wf, "legacy-fractional-sleep", {}),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
+	});
+
+	it("rejects a replay whose sleep does not match a legacy fractional delayMs", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/legacy-fractional-diverged";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "legacy-fractional-diverged",
+					workflowName: "legacy-fractional-diverged",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 1.5, index: 0 },
+			},
+			1,
+		);
+		const wf = defineWorkflow({
+			name: "legacy-fractional-diverged",
+			async run(ctx) {
+				await ctx.sleep(1);
+				return "unexpected";
+			},
+		});
+		await expect(
+			engine.resume(wf, "legacy-fractional-diverged", {}),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
+		const journal = await engine.journal("legacy-fractional-diverged");
+		expect(journal).toHaveLength(2);
+	});
+
+	it("resumes a journaled sleep before the first step without a step-index gap", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/sleep-then-step";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "sleep-then-step",
+					workflowName: "sleep-then-step",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "sleep",
+				streamId,
+				seq: 2,
+				type: "run.SleepScheduled",
+				data: { delayMs: 10, index: 0 },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "done",
+				streamId,
+				seq: 3,
+				type: "run.StepCompleted",
+				data: { name: "work", index: 0, result: "ok" },
+			},
+			2,
+		);
+		let runs = 0;
+		let workEffects = 0;
+		const wf = defineWorkflow({
+			name: "sleep-then-step",
+			async run(ctx) {
+				runs += 1;
+				await ctx.sleep(10);
+				return ctx.step("work", () => {
+					workEffects += 1;
+					return "ok";
+				});
+			},
+		});
+		const handle = await engine.resume(wf, "sleep-then-step", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("ok");
+		expect(runs).toBe(1);
+		expect(workEffects).toBe(0);
+	});
+
+	it("consumes a journaled sleep across a host restart", async () => {
+		const engine = createWorkflowEngine();
+		let crashed = false;
+		const wf = defineWorkflow({
+			name: "sleep-restart",
+			async run(ctx) {
+				await ctx.sleep(10, { label: "cooldown" });
+				if (!crashed) {
+					crashed = true;
+					throw new Error("SIMULATED_HOST_CRASH");
+				}
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "sleep-restart" }),
+		).rejects.toThrow("SIMULATED_HOST_CRASH");
+		const resumed = createWorkflowEngine({ store: engine.store });
+		const handle = await resumed.resume(wf, "sleep-restart", {});
+		expect(handle.status).toBe("completed");
+		expect(handle.result).toBe("done");
+		const journal = await resumed.journal("sleep-restart");
+		expect(
+			journal.filter((event) => event.type === "run.SleepScheduled"),
+		).toHaveLength(1);
+	});
+
+	it("rejects a non-string ctx.sleep label on write", async () => {
+		const engine = createWorkflowEngine();
+		const wf = defineWorkflow({
+			name: "invalid-sleep-label",
+			async run(ctx) {
+				// oxlint-disable-next-line anti-slop/no-chained-type-assertions, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: deliberately injects a non-string label to assert the live-path write rejection.
+				await ctx.sleep(10, { label: 5 as unknown as string });
+				return "done";
+			},
+		});
+		await expect(
+			engine.start(wf, {}, { runId: "invalid-sleep-label" }),
+		).rejects.toThrow(/invalid run\.SleepScheduled/);
+		expect(
+			(await engine.journal("invalid-sleep-label")).map((event) => event.type),
+		).toEqual(["run.Started"]);
+	});
+
 	it("rejects events recorded after a terminal fact", async () => {
 		const engine = createWorkflowEngine();
 		await engine.store.append(
@@ -1187,6 +2417,62 @@ describe("durable workflow: journal, restart, replay", () => {
 			/unconsumed step outcome/,
 		);
 		expect(await engine.journal("unconsumed-failure")).toHaveLength(2);
+	});
+
+	it("rejects an orphan StepScheduled above consumed outcomes without appending run.Completed", async () => {
+		const engine = createWorkflowEngine();
+		const streamId = "run/orphan-scheduled";
+		await engine.store.append(
+			{
+				id: "start",
+				streamId,
+				seq: 1,
+				type: "run.Started",
+				data: {
+					args: {},
+					seed: "orphan-scheduled",
+					workflowName: "orphan-scheduled",
+				},
+			},
+			0,
+		);
+		await engine.store.append(
+			{
+				id: "done-0",
+				streamId,
+				seq: 2,
+				type: "run.StepCompleted",
+				data: { name: "only", index: 0, result: "ok" },
+			},
+			1,
+		);
+		await engine.store.append(
+			{
+				id: "scheduled-5",
+				streamId,
+				seq: 3,
+				type: "run.StepScheduled",
+				data: { name: "orphan", index: 5 },
+			},
+			2,
+		);
+		let effects = 0;
+		const wf = defineWorkflow({
+			name: "orphan-scheduled",
+			run(ctx) {
+				return ctx.step("only", () => {
+					effects += 1;
+					return "ok";
+				});
+			},
+		});
+		await expect(engine.resume(wf, "orphan-scheduled", {})).rejects.toThrow(
+			/gapped step journal|unconsumed scheduled step \(orphan StepScheduled\)/,
+		);
+		expect(effects).toBe(0);
+		const journal = await engine.journal("orphan-scheduled");
+		expect(journal).toHaveLength(3);
+		expect(journal.some((event) => event.type === "run.Completed")).toBe(false);
 	});
 
 	it.each([

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	expandShardUnits,
 	maxShardLoadSeconds,
 	partitionUnitsByWeight,
 	planDependentTests,
@@ -9,6 +10,7 @@ import {
 	MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
 	readRepo,
 	shardLoadSpreadSeconds,
+	shardUnitSeconds,
 	type TestPlan,
 	testWorkspaceUnits,
 } from "../ci/dependent-tests.mts";
@@ -49,14 +51,30 @@ describe("workspace test duration balancing", () => {
 			skipped: [],
 		};
 		const durations = loadWorkspaceDurations();
-		const count = planShardCountBalanced(plan, [], 8, 120, durations);
-		const units = [
-			"packages/hobo",
-			"packages/core",
-			"packages/ci",
-			"packages/ci-gh-actions",
-		];
-		const peak = maxShardLoadSeconds(units, durations, count);
+		const repo = readRepo();
+		const count = planShardCountBalanced(
+			plan,
+			[],
+			8,
+			120,
+			durations,
+			undefined,
+			repo,
+		);
+		const units = expandShardUnits(
+			plan,
+			[
+				"packages/hobo",
+				"packages/core",
+				"packages/ci",
+				"packages/ci-gh-actions",
+			],
+			durations,
+			repo,
+		);
+		const peak = maxShardLoadSeconds(units, durations, count, (unit) =>
+			shardUnitSeconds(plan, unit, repo, durations),
+		);
 		assert.ok(
 			peak <= 120,
 			`peak load ${peak}s exceeds 120s cap with ${count} shards`,

@@ -53,7 +53,12 @@ supplies tenant-scoped planning evidence, independent revalidation, a trusted
 clock, and final provider-account/entitlement settlement evidence. Paid charges
 and shared credits are reserved together before deployment facts are published.
 Each charge stays with its source or destination billing account; credit scope
-and cost class remain part of the pinned plan.
+and cost class remain part of the pinned plan. Hosting free-tier snapshots,
+claims and settlement evidence use the explicit `allowance` entitlement kind;
+older hosting snapshots and settlement evidence without a kind retain that same
+meaning, including snapshots supplied by custom durable authorities.
+Legacy v1 fenced settlement evidence stays kindless for signature verification;
+the bridge does not inject a kind into that signed payload.
 
 Execution adopts the gateway's existing reservation through an atomic claim.
 Another transition cannot spend the same authorization. A lost provider response
@@ -221,6 +226,11 @@ opening a form, verify that its owner settings remain private; otherwise report
 the missing capability instead of collecting identifiers or values in chat.
 The transcript audit flags known private fields in nested owner-tool inputs and
 results, including API keys and numeric identifiers, without printing their values.
+
+Vercel source preparation builds a file manifest from a pinned commit without
+contacting the provider or deploying. The [CD guide](./CD.md#delivery-as-code)
+describes archive fallback, the synthetic emulator's aggregate limit, and the
+authorization still required before production dispatch.
 
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
