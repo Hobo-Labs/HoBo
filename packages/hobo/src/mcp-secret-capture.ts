@@ -41,10 +41,7 @@ import {
 	type SecretStoreStatus,
 	secretCaptureSpec,
 } from "@hobo/mcp";
-import {
-	type ParsedSecretStoreBinding,
-	SECRET_STORE_BINDING_FILE,
-} from "@hobo/secret-store-claim";
+import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 
 import {
 	loadSecretStoreBinding,
@@ -63,7 +60,7 @@ export const WRITER_SESSION_MAX_MS = 15 * 60_000;
 const DEPLOY_SECRET_PATH = "/";
 
 const NEXT_STEP_CONNECT =
-	"Connect Infisical first: the hobo-deploy skill walks the owner through OIDC Auth for hobo-ci-relay (Vercel) and hobo-ci-deploy (GitHub Actions) and the hobo-secret-writer identity, then `hobo ci secret-store connect` writes the binding. Then capture again.";
+	"Start HoBo's private owner setup for the owner's existing store. This relay capture adapter also needs a supported connection before capture can continue.";
 
 /**
  * What a relay deployment still captures from a person (ADR-0179 amendment
@@ -160,14 +157,26 @@ export function createInfisicalCaptureConnector(options: {
 		try {
 			const found = loadSecretStoreBinding(options.projectDir);
 			return found === undefined
-				? { reason: `${SECRET_STORE_BINDING_FILE} is not committed yet` }
+				? {
+						reason:
+							"The relay capture adapter has no configured store binding.",
+					}
 				: { binding: found };
 		} catch (error) {
+			if (
+				error instanceof SecretStoreBindingRefusal &&
+				error.code === "HOBO_CI_SECRET_STORE_RUNTIME_UNBUILT"
+			)
+				return { reason: "The relay capture adapter cannot use this store." };
+			if (
+				error instanceof SecretStoreBindingRefusal &&
+				error.code === "HOBO_CI_SECRET_STORE_BINDING_INVALID"
+			)
+				return {
+					reason: "The relay capture adapter's store binding is invalid.",
+				};
 			return {
-				reason:
-					error instanceof SecretStoreBindingRefusal
-						? error.message
-						: `${SECRET_STORE_BINDING_FILE} could not be read`,
+				reason: "The relay capture adapter's store binding is unavailable.",
 			};
 		}
 	}
