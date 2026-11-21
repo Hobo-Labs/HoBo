@@ -1,9 +1,9 @@
 {
 	"jobs": [
 		{
-			"id": "pr_gate_validation",
+			"id": "pr_gate_plan",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_plan\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -17,9 +17,102 @@
 			"outputs": {
 				"merge_base": "${{ steps.merge-group-base.outputs.base }}",
 				"merge_tests": "${{ steps.merge-group-base.outputs.tests }}",
+				"merge_scope": "${{ steps.merge-group-base.outputs.scope }}",
 				"pr_base": "${{ steps.scm-base.outputs.base }}",
 				"shards": "${{ steps.shard-plan.outputs.shards }}"
 			},
+			"steps": [
+				{
+					"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+					"local": "skip",
+					"reason": "the run happens in the developer's own checkout of the tested tree"
+				},
+				{
+					"uses": "$/.github/actions/ci-runner-preflight",
+					"local": "skip",
+					"reason": "the local runner sets the job memory limits itself and uses the toolchain mise already provides"
+				},
+				{
+					"name": "Check the sibling pins (gitlink against checkout, offline)",
+					"run": "node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline",
+					"local": "run"
+				},
+				{
+					"name": "Resolve Turbo SCM base",
+					"id": "scm-base",
+					"if": "github.event_name == 'pull_request'",
+					"run": "set -euo pipefail\nif [[ ! \"$PR_BASE_SHA\" =~ ^[0-9a-f]{40}$ ]]; then\n  echo \"PR base SHA is missing or invalid\" >&2; exit 1\nfi\n# On GitHub's PR merge commit (second parent: the PR head), the base\n# it was merged into is its first parent. The event's base SHA can be\n# older, and then main's later changes count as the PR's and widen\n# the affected set.\nsecond=\"$(git rev-parse -q --verify 'HEAD^2' || true)\"\nif [[ -n \"$second\" && \"$second\" == \"${PR_HEAD_SHA:-}\" ]]; then\n  BASE=\"$(git rev-parse 'HEAD^1')\"\nelse\n  git cat-file -e \"${PR_BASE_SHA}^{commit}\" || git fetch --no-tags origin \"$PR_BASE_SHA\"\n  BASE=\"$(git merge-base \"$PR_BASE_SHA\" HEAD)\"\nfi\necho \"base=${BASE}\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+						"PR_HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Impact classification (shadow)",
+					"if": "github.event_name == 'pull_request' && vars.HOBO_IMPACT_GATE != 'off'",
+					"run": "set -euo pipefail\ngit diff --name-only \"${TURBO_SCM_BASE}\"...HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"${TURBO_SCM_BASE}\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
+					"env": {
+						"TURBO_SCM_BASE": "${{ steps.scm-base.outputs.base }}",
+						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
+					},
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "report-only shadow classification does not select or gate the checks a local run executes"
+				},
+				{
+					"name": "Resolve the merge group base and gate scope",
+					"id": "merge-group-base",
+					"if": "github.event_name == 'merge_group'",
+					"run": "set -euo pipefail\n# An unreachable merge-group base runs repo-wide; otherwise\n# scripts/ci/affected-lanes.mts --main-gate decides. Root scripts and\n# //# tasks stay scoped; globalDependencies and other shared inputs widen.\nbase=\"$GITHUB_EVENT_MERGE_GROUP_BASE_SHA\"\nif [ -n \"$base\" ] && ! git cat-file -e \"${base}^{commit}\" 2>/dev/null; then base=\"\"; fi\n# A workflow edit cannot change a package's test result.\nscope=\"repo-wide\"\ntests=\"all\"\nif [ -n \"$base\" ]; then\n  changed=\"$(git diff --name-only \"$base\" HEAD)\"\n  scope=\"$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base=\"$base\" <<<\"$changed\")\"\n  lanes=\"$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$base\" <<<\"$changed\")\"\n  if [ \"$lanes\" != \"--filter=*\" ]; then tests=\"affected\"; fi\nfi\necho \"merge group gate: ${scope}, workspace tests: ${tests} (base ${base:-none})\"\n{\n  echo \"base=${base}\"\n  echo \"scope=${scope}\"\n  echo \"tests=${tests}\"\n} >> \"$GITHUB_OUTPUT\"\n",
+					"local": "run"
+				},
+				{
+					"name": "Plan workspace test shards",
+					"id": "shard-plan",
+					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  *) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\nesac\nshards='[0, 1, 2, 3, 4, 5, 6, 7]'\nif [ \"$TESTS\" = \"affected\" ] && [ -n \"$BASE\" ] && git cat-file -e \"${BASE}^{commit}\" 2>/dev/null; then\n  planned=\"$(git diff --name-only \"$BASE\" HEAD |\n    node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --base=\"$BASE\" --plan-shards=8)\" || planned=\"\"\n  if [[ \"$planned\" =~ ^\\[[0-7](,\\ [0-7])*\\]$ ]]; then shards=\"$planned\"; fi\nfi\necho \"workspace test shards: ${shards}\"\necho \"shards=${shards}\" >> \"$GITHUB_OUTPUT\"\n",
+					"env": {
+						"EVENT_NAME": "${{ github.event_name }}",
+						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
+						"MERGE_TESTS": "${{ steps.merge-group-base.outputs.tests }}",
+						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
+					},
+					"local": "run"
+				},
+				{
+					"name": "Impact classification (shadow)",
+					"if": "github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'",
+					"run": "set -euo pipefail\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"$BASE\" --meaningful-out=\"$RUNNER_TEMP/impact-meaningful.txt\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
+					"env": {
+						"BASE": "${{ steps.merge-group-base.outputs.base }}",
+						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
+					},
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "report-only shadow classification does not select or gate the checks a local run executes"
+				},
+				{
+					"name": "CI trace",
+					"if": "always()",
+					"uses": "$/.github/actions/ci-trace",
+					"local": "skip",
+					"reason": "exports CI timing spans; it checks nothing"
+				}
+			]
+		},
+		{
+			"id": "pr_gate_validation",
+			"workflow": ".github/workflows/hobo-ci.yml",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+			"workflowEnv": {
+				"HOBO_TURBO_CONCURRENCY": "1",
+				"HOBO_TEST_MAX_WORKERS": "1",
+				"TURBO_RUN_SUMMARY": "true",
+				"GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+				"GIT_HTTP_LOW_SPEED_TIME": "30"
+			},
+			"env": {},
+			"outputs": {},
 			"steps": [
 				{
 					"uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
@@ -83,29 +176,6 @@
 					"local": "run"
 				},
 				{
-					"name": "Resolve Turbo SCM base",
-					"id": "scm-base",
-					"if": "github.event_name == 'pull_request'",
-					"run": "set -euo pipefail\nif [[ ! \"$PR_BASE_SHA\" =~ ^[0-9a-f]{40}$ ]]; then\n  echo \"PR base SHA is missing or invalid\" >&2; exit 1\nfi\n# On GitHub's PR merge commit (second parent: the PR head), the base\n# it was merged into is its first parent. The event's base SHA can be\n# older, and then main's later changes count as the PR's and widen\n# the affected set.\nsecond=\"$(git rev-parse -q --verify 'HEAD^2' || true)\"\nif [[ -n \"$second\" && \"$second\" == \"${PR_HEAD_SHA:-}\" ]]; then\n  BASE=\"$(git rev-parse 'HEAD^1')\"\nelse\n  git cat-file -e \"${PR_BASE_SHA}^{commit}\" || git fetch --no-tags origin \"$PR_BASE_SHA\"\n  BASE=\"$(git merge-base \"$PR_BASE_SHA\" HEAD)\"\nfi\necho \"base=${BASE}\" >> \"$GITHUB_OUTPUT\"\n",
-					"env": {
-						"PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-						"PR_HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
-					},
-					"local": "run"
-				},
-				{
-					"name": "Impact classification (shadow)",
-					"if": "github.event_name == 'pull_request' && vars.HOBO_IMPACT_GATE != 'off'",
-					"run": "set -euo pipefail\ngit diff --name-only \"${TURBO_SCM_BASE}\"...HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"${TURBO_SCM_BASE}\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
-					"env": {
-						"TURBO_SCM_BASE": "${{ steps.scm-base.outputs.base }}",
-						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
-					},
-					"continueOnError": true,
-					"local": "skip",
-					"reason": "report-only shadow classification does not select or gate the checks a local run executes"
-				},
-				{
 					"name": "DCO sign-off check",
 					"if": "github.event_name == 'pull_request'",
 					"run": "set -euo pipefail\n# Merge commits carry no sign-off of their own: the checked-out PR merge\n# ref and an update-branch merge are made by GitHub. Only the commits a\n# contributor wrote are checked. The list is read into a variable first so\n# a failing rev-list fails the step instead of reading as zero commits.\ncommits=\"$(git rev-list --no-merges \"${DCO_BASE}..HEAD\")\"\nmissing=0\nwhile read -r sha; do\n  [ -z \"$sha\" ] && continue\n  author=\"$(git show -s --format='%an <%ae>' \"$sha\")\"\n  # On a variable rather than a pipe: an early `grep -q` exit would fail the\n  # pipeline under pipefail and read as a missing sign-off.\n  message=\"$(git show -s --format='%B' \"$sha\")\"\n  if ! grep -qiF \"Signed-off-by: $author\" <<<\"$message\"; then\n    echo \"::warning::missing or mismatched DCO sign-off on $(git show -s --format='%h %s' \"$sha\") (expected 'Signed-off-by: $author')\"\n    missing=$((missing + 1))\n  fi\ndone <<<\"$commits\"\nif [ \"$missing\" -gt 0 ]; then\n  echo \"$missing commit(s) without a matching DCO sign-off. Fix with: git rebase --signoff ${DCO_BASE}\"\n  exit 1\nfi\necho \"All commits carry a matching DCO sign-off.\"\n",
@@ -126,40 +196,9 @@
 					"if": "github.event_name == 'pull_request'",
 					"run": "pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests",
 					"env": {
-						"BASE": "${{ steps.scm-base.outputs.base }}"
+						"BASE": "${{ needs.pr_gate_plan.outputs.pr_base }}"
 					},
 					"local": "run"
-				},
-				{
-					"name": "Resolve the merge group base and gate scope",
-					"id": "merge-group-base",
-					"if": "github.event_name == 'merge_group'",
-					"run": "set -euo pipefail\n# An unreachable merge-group base runs repo-wide; otherwise\n# scripts/ci/affected-lanes.mts --main-gate decides. Root scripts and\n# //# tasks stay scoped; globalDependencies and other shared inputs widen.\nbase=\"$GITHUB_EVENT_MERGE_GROUP_BASE_SHA\"\nif [ -n \"$base\" ] && ! git cat-file -e \"${base}^{commit}\" 2>/dev/null; then base=\"\"; fi\n# A workflow edit cannot change a package's test result.\nscope=\"repo-wide\"\ntests=\"all\"\nif [ -n \"$base\" ]; then\n  changed=\"$(git diff --name-only \"$base\" HEAD)\"\n  scope=\"$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --main-gate --base=\"$base\" <<<\"$changed\")\"\n  lanes=\"$(node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$base\" <<<\"$changed\")\"\n  if [ \"$lanes\" != \"--filter=*\" ]; then tests=\"affected\"; fi\nfi\necho \"merge group gate: ${scope}, workspace tests: ${tests} (base ${base:-none})\"\n{\n  echo \"base=${base}\"\n  echo \"scope=${scope}\"\n  echo \"tests=${tests}\"\n} >> \"$GITHUB_OUTPUT\"\n",
-					"local": "run"
-				},
-				{
-					"name": "Plan workspace test shards",
-					"id": "shard-plan",
-					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  *) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\nesac\nshards='[0, 1, 2, 3, 4, 5, 6, 7]'\nif [ \"$TESTS\" = \"affected\" ] && [ -n \"$BASE\" ] && git cat-file -e \"${BASE}^{commit}\" 2>/dev/null; then\n  planned=\"$(git diff --name-only \"$BASE\" HEAD |\n    node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --base=\"$BASE\" --plan-shards=8)\" || planned=\"\"\n  if [[ \"$planned\" =~ ^\\[[0-7](,\\ [0-7])*\\]$ ]]; then shards=\"$planned\"; fi\nfi\necho \"workspace test shards: ${shards}\"\necho \"shards=${shards}\" >> \"$GITHUB_OUTPUT\"\n",
-					"env": {
-						"EVENT_NAME": "${{ github.event_name }}",
-						"PR_BASE": "${{ steps.scm-base.outputs.base }}",
-						"MERGE_TESTS": "${{ steps.merge-group-base.outputs.tests }}",
-						"MERGE_BASE": "${{ steps.merge-group-base.outputs.base }}"
-					},
-					"local": "run"
-				},
-				{
-					"name": "Impact classification (shadow)",
-					"if": "github.event_name == 'merge_group' && steps.merge-group-base.outputs.base != '' && vars.HOBO_IMPACT_GATE != 'off'",
-					"run": "set -euo pipefail\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base=\"$BASE\" --meaningful-out=\"$RUNNER_TEMP/impact-meaningful.txt\" \\\n  > \"$RUNNER_TEMP/impact-plan.json\"\n",
-					"env": {
-						"BASE": "${{ steps.merge-group-base.outputs.base }}",
-						"HOBO_IMPACT_GATE": "${{ vars.HOBO_IMPACT_GATE || 'shadow' }}"
-					},
-					"continueOnError": true,
-					"local": "skip",
-					"reason": "report-only shadow classification does not select or gate the checks a local run executes"
 				},
 				{
 					"name": "S0 gate set",
@@ -167,8 +206,8 @@
 					"run": "set -euo pipefail\nnode --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run check:all\nfi\n",
 					"env": {
 						"HOBO_RELEVANT_CHECK_CONCURRENCY": "1",
-						"SCOPE": "${{ steps.merge-group-base.outputs.scope }}",
-						"BASE": "${{ steps.merge-group-base.outputs.base }}"
+						"SCOPE": "${{ needs.pr_gate_plan.outputs.merge_scope }}",
+						"BASE": "${{ needs.pr_gate_plan.outputs.merge_base }}"
 					},
 					"local": "run"
 				},
@@ -200,7 +239,7 @@
 		{
 			"id": "workspace_tests",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -210,7 +249,7 @@
 			},
 			"env": {},
 			"outputs": {},
-			"matrix": "${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
+			"matrix": "${{ fromJSON(needs.pr_gate_plan.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
 			"steps": [
 				{
 					"name": "Resolve repo-local actions",
@@ -284,32 +323,32 @@
 				{
 					"name": "Workspace tests",
 					"run": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) TESTS=affected; BASE=\"$PR_BASE\" ;;\n  merge_group) TESTS=\"$MERGE_TESTS\"; BASE=\"$MERGE_BASE\" ;;\n  *) echo \"Unexpected event: $EVENT_NAME\" >&2; exit 1 ;;\nesac\ncase \"$TESTS\" in\n  affected)\n    # Changed packages run whole; their dependents run only the tests\n    # whose import closure reaches a change. A missing base is an error.\n    if [ -z \"$BASE\" ] || ! git cat-file -e \"${BASE}^{commit}\"; then\n      echo \"Merge-group base is missing or unreachable\" >&2\n      exit 1\n    fi\n    git diff --name-only \"$BASE\" HEAD |\n      node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n        --base=\"$BASE\" --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  all)\n    printf '' | node --experimental-strip-types --no-warnings scripts/ci/dependent-tests.mts \\\n      --shard=\"$SHARD/$SHARD_TOTAL\" --run --anon-profile=turbo-profile.json\n    ;;\n  *) echo \"Invalid or missing merge-group test scope: $TESTS\" >&2; exit 1 ;;\nesac\n",
-				"env": {
-					"EVENT_NAME": "${{ github.event_name }}",
-					"PR_BASE": "${{ needs.pr_gate_validation.outputs.pr_base }}",
-					"MERGE_TESTS": "${{ needs.pr_gate_validation.outputs.merge_tests }}",
-					"MERGE_BASE": "${{ needs.pr_gate_validation.outputs.merge_base }}",
-					"SHARD": "${{ strategy.job-index }}",
-					"SHARD_TOTAL": "${{ strategy.job-total }}"
+					"env": {
+						"EVENT_NAME": "${{ github.event_name }}",
+						"PR_BASE": "${{ needs.pr_gate_plan.outputs.pr_base }}",
+						"MERGE_TESTS": "${{ needs.pr_gate_plan.outputs.merge_tests }}",
+						"MERGE_BASE": "${{ needs.pr_gate_plan.outputs.merge_base }}",
+						"SHARD": "${{ strategy.job-index }}",
+						"SHARD_TOTAL": "${{ strategy.job-total }}"
+					},
+					"local": "run"
 				},
-				"local": "run"
-			},
-			{
-				"name": "Prune Turbo cache",
-				"id": "turbo-prune",
-				"if": "always() && env.TURBO_TOKEN == ''",
-				"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
-				"continueOnError": true,
-				"local": "skip",
-				"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
-			},
-			{
-				"name": "Save Turbo cache",
-				"if": "always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'",
-				"uses": "$/.github/actions/turbo-cache",
-				"local": "skip",
-				"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
-			},
+				{
+					"name": "Prune Turbo cache",
+					"id": "turbo-prune",
+					"if": "always() && env.TURBO_TOKEN == ''",
+					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
+					"continueOnError": true,
+					"local": "skip",
+					"reason": "prunes the CI runner's shared Turbo cache; a developer's cache is not CI's to prune"
+				},
+				{
+					"name": "Save Turbo cache",
+					"if": "always() && matrix.shard == 0 && steps.turbo-prune.outputs.save != 'false'",
+					"uses": "$/.github/actions/turbo-cache",
+					"local": "skip",
+					"reason": "restores or saves a CI cache; a local run uses the developer's own Turbo cache"
+				},
 				{
 					"name": "CI trace",
 					"if": "always()",
@@ -322,7 +361,7 @@
 		{
 			"id": "pr_affected",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -411,7 +450,7 @@
 					"name": "Affected package lanes",
 					"run": "set -euo pipefail\nif [ -z \"$TURBO_SCM_BASE\" ] || ! git cat-file -e \"${TURBO_SCM_BASE}^{commit}\"; then\n  echo \"PR base is missing or unreachable\" >&2; exit 1\nfi\ngit diff --name-only \"${TURBO_SCM_BASE}\"...HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"${TURBO_SCM_BASE}\" \\\n    > \"$RUNNER_TEMP/hobo-affected-lanes\"\nmapfile -t FILTERS < \"$RUNNER_TEMP/hobo-affected-lanes\"\nif [ \"${#FILTERS[@]}\" -eq 0 ]; then\n  echo \"Only inert paths changed; skipping turbo impact lanes\"\n  exit 0\nfi\npnpm exec turbo run build typecheck lint test:unit test:schema test:contract:consumer \\\n  \"${FILTERS[@]}\" \\\n  --continue=never --concurrency=${HOBO_TURBO_CONCURRENCY:-100%} \\\n  --anon-profile=turbo-profile.json\n",
 					"env": {
-						"TURBO_SCM_BASE": "${{ needs.pr_gate_validation.outputs.pr_base }}"
+						"TURBO_SCM_BASE": "${{ needs.pr_gate_plan.outputs.pr_base }}"
 					},
 					"local": "run"
 				},
@@ -443,7 +482,7 @@
 		{
 			"id": "scripts-tests",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
