@@ -367,6 +367,16 @@ function allowedEnvironment(
 
 const NO_ENVIRONMENT: ReadonlySet<string> = new Set();
 
+export function namesRelayWork(message: RelayJobMessage): boolean {
+	return (
+		message.inputs.length > 0 ||
+		(message.steps.length > 0 &&
+			message.steps.every((step) =>
+				SUPPORTED_CHECK_STEPS.has(step.uses.toLowerCase()),
+			))
+	);
+}
+
 /** Only generated routing jobs or jobs made entirely of HoBo checks can be answered. */
 export function isRelayJob(message: RelayJobMessage, job: JobMessage): boolean {
 	if (

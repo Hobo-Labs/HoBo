@@ -812,7 +812,7 @@ async function runDecisions(
 	for (const event of events) {
 		if (
 			event.type !== "runner.route.Decided" ||
-			event.request?.runId !== run.id ||
+			event.request?.runId !== BigInt(run.id) ||
 			event.request.runAttempt !== run.attempt
 		)
 			continue;
@@ -976,7 +976,9 @@ export async function routeRetryFor(
 	request: RunnerRouteRequest,
 ): Promise<RouteRetry | undefined> {
 	if (request.runAttempt <= 1) return undefined;
-	const row = (await ledger.forRun(request.repository, request.runId)).find(
+	const row = (
+		await ledger.forRun(request.repository, Number(request.runId))
+	).find(
 		(kept) =>
 			kept.attempt === request.runAttempt - 1 &&
 			kept.relayJob === request.job &&

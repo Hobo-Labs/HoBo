@@ -59,7 +59,7 @@ import type {
 	RunnerServiceClient,
 	RunnerSession,
 } from "../runner-protocol/port.js";
-import { isRelayJob } from "../runner-protocol/wire.js";
+import { namesRelayWork } from "../runner-protocol/wire.js";
 import { verifyWebhookSignature } from "../webhook-signature.js";
 import {
 	GithubCiFile,
@@ -622,7 +622,7 @@ class Answerer {
 			const answer: ParsedRelayRecord<RelayJobAnswer> | RelayJobAnswer =
 				context.kind === "refuse"
 					? failedAnswer(message, context.reason)
-					: isRelayJob(message)
+					: namesRelayWork(message)
 						? await answerRelayJob(message, {
 								order: context.order,
 								facts: this.options.facts(context.accountId),
