@@ -15,14 +15,6 @@
  *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
  *    closure (`importerClosure`, the release OCI impact tooling's), plus this
  *    workflow and this gate. A manual run always deploys.
- *
- * Prints `run=true|false`, `reason=<text>` and `deadline=<ISO time>` to
- * `--github-output`, or to stdout without it. The deadline is when
- * `hobo ci deploy --adopt` must be done (`--deadline`): the deploy job's
- * timeout less a margin, counted from this step, which runs right after
- * checkout, so whatever the install and build take comes out of the adopt
- * budget and the command ends with a typed reason before the job is killed. A range it cannot read (a new branch, a force push, a
- * missing commit) deploys: a redundant deploy is cheap, a skipped one is not.
  */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -39,6 +31,7 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
+	"scripts/ci/relay-deploy-verify.mts",
 ] as const;
 
 /** The relay's committed secret store binding: coordinates only. */
@@ -48,14 +41,9 @@ export const RELAY_SECRET_STORE_BINDING =
 /** The deploy job's `timeout-minutes` in relay-deploy.yml (CI caps every job at 20). */
 export const RELAY_DEPLOY_JOB_TIMEOUT_MINUTES = 20;
 
-/**
- * Held back from the job's timeout: the runner's setup and checkout before
- * this step, and the adopt step's summary after the command ends.
- */
 export const RELAY_DEPLOY_JOB_MARGIN_MINUTES = 3;
 
-/** When `hobo ci deploy --adopt` must end, counted from the gate's own run. */
-export function adoptDeadline(nowMs: number): string {
+export function deployDeadline(nowMs: number): string {
 	return new Date(
 		nowMs +
 			(RELAY_DEPLOY_JOB_TIMEOUT_MINUTES - RELAY_DEPLOY_JOB_MARGIN_MINUTES) *
@@ -113,6 +101,7 @@ export function decide(input: {
 	/** Changed paths of a push, or undefined when the range could not be read. */
 	readonly changed?: readonly string[];
 	readonly inputDirs: readonly string[];
+	readonly forceBootstrap?: boolean;
 }): GateDecision {
 	if (input.store === "absent")
 		return {
@@ -124,8 +113,15 @@ export function decide(input: {
 			run: false,
 			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
 		};
-	if (input.event === "workflow_dispatch")
+	if (input.event === "workflow_dispatch") {
+		if (input.forceBootstrap === true)
+			return {
+				run: true,
+				reason:
+					"emergency bootstrap (force_bootstrap): the run deploys whether or not the diff touches the relay",
+			};
 		return { run: true, reason: "a manual run deploys" };
+	}
 	if (input.event !== "push")
 		return { run: false, reason: `the ${input.event} event does not deploy` };
 	if (input.changed === undefined)
@@ -178,8 +174,11 @@ function main(argv: readonly string[]): void {
 			event === "push"
 				? relayInputDirs(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"))
 				: [],
+		forceBootstrap:
+			event === "workflow_dispatch" &&
+			/^(1|true)$/iu.test(process.env.FORCE_BOOTSTRAP ?? ""),
 	});
-	const text = `run=${decision.run}\nreason=${decision.reason}\ndeadline=${adoptDeadline(Date.now())}\n`;
+	const text = `run=${decision.run}\nreason=${decision.reason}\ndeadline=${deployDeadline(Date.now())}\n`;
 	if (output) appendFileSync(output, text, "utf8");
 	else process.stdout.write(text);
 	process.stdout.write(
