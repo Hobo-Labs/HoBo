@@ -44,6 +44,7 @@ import {
 	qualifyReleaseCandidate,
 	type ReleaseCdSeams,
 	type ReleasePromoteWall,
+	RELEASE_PROMOTION_TIMEOUT,
 	releaseSource,
 	siteTree,
 } from "./ci/create-github-release.mts";
@@ -288,7 +289,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 			await publish(sha);
 		}
 	} catch (error) {
-		console.error(error instanceof Error ? error.message : String(error));
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(message);
+		if (message.includes(RELEASE_PROMOTION_TIMEOUT)) {
+			console.error(`::error::${RELEASE_PROMOTION_TIMEOUT} ${message}`);
+			process.exit(1);
+		}
 		process.exit(1);
 	}
 }

@@ -859,12 +859,10 @@ export async function promoteReleaseFreight(
 		for (let pass = 0; pass < drive.passes && !verdict; pass++) {
 			if (releasePagesWallExceeded(input.promoteWall)) {
 				const elapsed = releasePagesElapsedMs(input.promoteWall) ?? 0;
-				verdict = {
-					outcome: "blocked",
-					codes: ["release-promotion-timeout"],
-					message: `promotion ${promotionId} into ${camp} exceeded wall budget ${input.promoteWall?.budgetMs ?? 0}ms after ${pass} drive passes (${elapsed}ms elapsed)`,
+				verdict = releasePromotionTimeoutVerdict(
 					promotionId,
-				};
+					`promotion ${promotionId} into ${camp} exceeded wall budget ${input.promoteWall?.budgetMs ?? 0}ms after ${pass} drive passes (${elapsed}ms elapsed)`,
+				);
 				break;
 			}
 			let at: ReleaseDriveState;
