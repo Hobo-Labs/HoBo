@@ -190,10 +190,9 @@ offline — see egress below.
   `.codex/hooks.json`, `.cursor/hooks.json` and `.github/hooks/`, which run the
   design detector after **every** `Edit`/`Write`/`apply_patch`. Each is guarded
   (`[ ! -f <script> ] || node <script>`) so it no-ops when the skill is absent.
-  **Claude Code deliberately gets no hook** — this repo manages
-  `.claude/settings.json` itself and the installer does not write a `hooks` key
-  there. To remove the others, delete those files; `npx impeccable install`
-  rewrites them.
+  Claude Code does not install the impeccable visual hook; its repository
+  settings include the shared source-policy hook. The Codex, Cursor, and
+  Copilot hook manifests also run the same source-policy guard after edits.
 - **Install:** `npx impeccable install` from the repo root; it auto-detects
   harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
   and `.github`. `npx impeccable check` reports drift, `npx impeccable update`
