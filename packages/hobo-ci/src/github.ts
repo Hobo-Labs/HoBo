@@ -13,6 +13,7 @@ import {
 	type FlowTransition,
 	type SecretStoreOption,
 } from "@hobo/connect-ui";
+import type { TrustedVault } from "@hobo/core";
 import { z } from "zod";
 
 import {
@@ -134,6 +135,27 @@ export async function githubAppConnected(
 	return (
 		(await checkedGithubAppCredentials(store, resolveExpected)) !== undefined
 	);
+}
+
+/**
+ * Read a complete App connection from the store into `vault` (memory only),
+ * for a host that runs the App, such as `hobo ci serve`. False when the store
+ * holds no connection; throws when it holds part of one.
+ */
+export async function loadGithubAppCredentials(
+	store: OpenedSecretStore,
+	vault: TrustedVault,
+	resolveExpected?: () => Promise<GithubAppExpectation | undefined>,
+): Promise<boolean> {
+	const values = await checkedGithubAppCredentials(store, resolveExpected);
+	if (!values) return false;
+	for (const key of GITHUB_APP_CREDENTIAL_KEYS) {
+		const material = values.get(key);
+		if (!material)
+			throw new Error("The stored GitHub connection is incomplete.");
+		vault.put(key, material);
+	}
+	return true;
 }
 
 function connected(

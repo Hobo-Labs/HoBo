@@ -134,7 +134,7 @@ function entryOf(key: string, gathered: Gathered): ActivityEntry | undefined {
 		key,
 		jobId: source.jobId,
 		repository: request.repository,
-		runId: request.runId,
+		runId: Number(request.runId),
 		runAttempt: request.runAttempt,
 		job: request.job,
 		event: request.event,

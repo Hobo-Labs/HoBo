@@ -53,8 +53,8 @@ hosted provider, and a decision whose fields agree with its outcome. Step
 uniqueness is a cross-element rule `parseRunnerOrder` enforces. Fixtures are
 under `fixtures/runner_route/`.
 
-`relay_job.proto` owns what a relay job carries between its parts
-(ADR-0183): the message an answerer receives (`RelayJobMessage`), what it
+`relay_job.proto` owns what a relay job carries between its parts:
+the message an answerer receives (`RelayJobMessage`), what it
 completes the job with (`RelayJobAnswer`), the route journal entry
 (`RunnerRouteEvent`), a machine's advert (`MachineAdvert`), a stored provider
 health record (`ProviderHealthRecord`) and one run attempt's facts (`RunFact`,
