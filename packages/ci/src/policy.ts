@@ -47,7 +47,7 @@ const kubernetesName = /^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/;
 const vercelLocations = new Set(["vercel", "local", "remote"]);
 const agent37Template = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$/u;
 const agent37Hostname =
-	/^(?:\*\.)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/u;
+	/^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 const agent37Sizes = new Set(["2:4", "4:8", "4:16", "4:32", "8:64"]);
 
 function agent37PoolAllowed(provider: CiPolicyProvider): boolean {
@@ -86,11 +86,10 @@ function agent37PoolAllowed(provider: CiPolicyProvider): boolean {
 		pool.labels.every(
 			(label) => labelPattern.test(label) && label.toLowerCase() !== "hobo",
 		) &&
+		network.allow.length >= 1 &&
 		network.allow.length <= 100 &&
-		network.allow.every(
-			(entry) =>
-				entry.length >= 1 && entry.length <= 253 && agent37Hostname.test(entry),
-		) &&
+		new Set(network.allow).size === network.allow.length &&
+		network.allow.every((entry) => agent37Hostname.test(entry)) &&
 		Number.isSafeInteger(budget.limitMicros) &&
 		budget.limitMicros >= 0 &&
 		budget.period === "month" &&

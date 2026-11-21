@@ -70,7 +70,7 @@ export const CiVercelProviderSchema = z
 	.meta({ id: "VercelProvider" });
 
 const agent37Hostname =
-	/^(?:\*\.)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/u;
+	/^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
 const agent37Disk = z.number().int().min(1).max(1024);
 const agent37Size = (cpu: 2 | 4 | 8, memory: 4 | 8 | 16 | 32 | 64) =>
 	z
@@ -135,8 +135,11 @@ export const CiAgent37PoolSchema = z
 		network: z
 			.object({
 				allow: z
-					.array(z.string().min(1).max(253).regex(agent37Hostname))
-					.max(100),
+					.array(z.string().max(255).regex(agent37Hostname))
+					.min(1)
+					.max(100)
+					.refine((entries) => new Set(entries).size === entries.length)
+					.meta({ uniqueItems: true }),
 			})
 			.strict(),
 		budget: z

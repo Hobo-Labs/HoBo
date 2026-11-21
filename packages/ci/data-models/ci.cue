@@ -303,8 +303,9 @@ import "list"
 #CiPolicyAgent37Size: {
  disk: int & >=1 & <=1024
 } & ({cpu: 2, memory: 4} | {cpu: 4, memory: 8} | {cpu: 4, memory: 16} | {cpu: 4, memory: 32} | {cpu: 8, memory: 64})
-#CiPolicyAgent37NetworkName: string & =~"^.{1,253}$" & =~"^(\\*\\.)?[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
-#CiPolicyAgent37Network: {allow: [...#CiPolicyAgent37NetworkName] & list.MaxItems(100)}
+#CiPolicyAgent37NetworkHostname: string & =~"^.{1,253}$" & =~"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+#CiPolicyAgent37NetworkName: #CiPolicyAgent37NetworkHostname | (string & =~"^\\*\\..{1,253}$" & =~"^\\*\\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$")
+#CiPolicyAgent37Network: {allow: [...#CiPolicyAgent37NetworkName] & list.MinItems(1) & list.MaxItems(100) & list.UniqueItems()}
 #CiPolicyAgent37Budget: {limitMicros: int & >=0 & <=9007199254740991, period: "month", maxCreatesPerHour: int & >=1 & <=10000}
 #CiPolicyAgent37Pool: {
  minBoxes: int & >=0 & <=1000

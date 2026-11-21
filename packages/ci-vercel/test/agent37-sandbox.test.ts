@@ -206,7 +206,8 @@ describe("Agent37 sandbox lifecycle", () => {
 		await driver.create(configuration);
 		const sessionId = fake.state.instances[0]?.id ?? "";
 		await driver.prepare(name, sessionId);
-		const started = await driver.start(name, sessionId, "b25lLXRpbWU=");
+		const jit = "b25lLXRpbWU=";
+		const started = await driver.start(name, sessionId, jit);
 		expect(started.cmdId).toMatch(/^ex_/);
 		expect(fake.state.execInvocations.map((entry) => entry.name)).toEqual([
 			`prep-${leaseId}`,
@@ -215,10 +216,18 @@ describe("Agent37 sandbox lifecycle", () => {
 		]);
 		const staged = fake.state.execInvocations[1];
 		const startedInvocation = fake.state.execInvocations[2];
-		expect(staged?.command).toContain("b25lLXRpbWU=");
+		expect(staged?.command).toContain(jit);
 		expect(staged?.env).not.toHaveProperty("AGENT37_API_KEY");
 		expect(startedInvocation).toMatchObject({ background: true, user: "root" });
-		expect(startedInvocation?.command).not.toContain("b25lLXRpbWU=");
+		const startRequest = JSON.stringify(startedInvocation);
+		for (const secret of [
+			"AGENT37_API_KEY",
+			fake.apiKey,
+			jit,
+			Buffer.from(jit, "base64").toString("utf8"),
+		]) {
+			expect(startRequest).not.toContain(secret);
+		}
 		expect(startedInvocation?.command).toContain("env -i");
 	});
 

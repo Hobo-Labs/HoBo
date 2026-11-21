@@ -608,7 +608,8 @@ Agent37 pools accept `default`, `vm` and `performance` types. Documented sizes a
 positive numeric revision such as `agent37-ubuntu@1`; mutable names and tags are
 rejected. Idle TTL is 60–3600 seconds. Pools above 32 GB of concurrent memory
 require `allowAboveFreeTier: true`. Labels are unique. Network allowlists contain
-at most 100 non-empty valid hostnames or leading `*.` wildcards, with everything
+1–100 unique lowercase DNS hostnames or leading-label wildcards; IP addresses
+and bare public-suffix wildcards such as `*.com` are rejected, with everything
 else denied. Monthly USD-microdollar caps and bounded create-per-hour limits are
 required. The committed `agent37-runners` example is disabled and stores no API
 key or webhook secret. The default `runnerRouting.externalPools` list remains
