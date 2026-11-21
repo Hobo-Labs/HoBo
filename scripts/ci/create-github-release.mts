@@ -892,18 +892,19 @@ export async function promoteReleaseFreight(
 			if (
 				input.family === "pages" &&
 				(pass === 0 || (progressEvery > 0 && pass % progressEvery === 0))
-			)
-				logReleasePagesProgress({
+			) {
+				const progress: Parameters<typeof logReleasePagesProgress>[0] = {
 					phase: progressPhase,
 					pass: pass + 1,
 					passes: drive.passes,
 					promotionId,
 					camp,
 					state: at?.state ?? "unknown",
-					...(input.promoteWall !== undefined
-						? { wall: input.promoteWall }
-						: {}),
-				});
+				};
+				if (input.promoteWall !== undefined)
+					progress.wall = input.promoteWall;
+				logReleasePagesProgress(progress);
+			}
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
 		}
 		verdict ??= {
@@ -981,15 +982,15 @@ export async function qualifyReleaseCandidate(input: {
 			console.error(
 				`release-pages: recorded ${freightId}; promoting hobo-release/pages-candidate`,
 			);
-		const verdict = await promoteReleaseFreight(cd, {
+		const promoteCandidate: Parameters<typeof promoteReleaseFreight>[1] = {
 			family: input.family,
 			channel: "candidate",
 			freightId,
 			drive: input.seams?.drive ?? releaseDriveFor(input.family),
-			...(input.family === "pages" && input.promoteWall !== undefined
-				? { promoteWall: input.promoteWall }
-				: {}),
-		});
+		};
+		if (input.family === "pages" && input.promoteWall !== undefined)
+			promoteCandidate.promoteWall = input.promoteWall;
+		const verdict = await promoteReleaseFreight(cd, promoteCandidate);
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
 				`release Freight ${input.family} blocked: ${verdict.codes.join(", ")}`,
@@ -1025,15 +1026,15 @@ export async function promoteReleaseStable(
 				console.error(
 					`release-pages: promoting hobo-release/pages-stable for ${freightId}`,
 				);
-			const verdict = await promoteReleaseFreight(cd, {
+			const promoteStable: Parameters<typeof promoteReleaseFreight>[1] = {
 				family,
 				channel: "stable",
 				freightId,
 				drive: seams.drive ?? releaseDriveFor(family),
-				...(family === "pages" && promoteWall !== undefined
-					? { promoteWall }
-					: {}),
-			});
+			};
+			if (family === "pages" && promoteWall !== undefined)
+				promoteStable.promoteWall = promoteWall;
+			const verdict = await promoteReleaseFreight(cd, promoteStable);
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
 	} finally {
