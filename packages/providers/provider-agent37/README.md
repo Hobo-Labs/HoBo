@@ -15,6 +15,6 @@ pnpm --filter @hobo/provider-agent37 build
 
 ## Contract boundaries
 
-Request handlers follow parse, don't validate: `parseCreateRequest` and `parseExecRequest` convert untrusted JSON into parsed domain types before capacity guards or command execution can use them. Protobuf and CUE fixtures describe the fake's instance, exec, webhook, and error payloads; the PACT fixture records its API and exec authentication boundaries. Webhook callbacks require HTTPS except for loopback HTTP receivers in local tests. Malformed JSON receives a 400 `invalid_request` response, and unexpected failures return a stable `internal_error` envelope without internal error details.
+Request handlers follow parse, don't validate: `parseCreateRequest` and `parseExecRequest` convert untrusted JSON into parsed domain types before capacity guards or command execution can use them. Protobuf and CUE fixtures describe the fake's instance, exec, webhook, and error payloads; the PACT fixture records its API and exec authentication boundaries.
 
 PR1 is an ephemeral HTTP test double, not a durable application. It accepts command requests and emits synthetic webhook events, but has no actor, event store, materialized view or projection, snapshot, or read store. Its in-memory state is discarded when the server closes.
