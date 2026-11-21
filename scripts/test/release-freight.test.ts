@@ -344,6 +344,16 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(oci).not.toMatch(/"push"|runDockerPushWithRetry/u);
 	});
 
+	it("routes OCI image build and Pages publish through the route job", () => {
+		for (const name of ["release-oci-build-tag", "release-pages"] as const) {
+			const block = job(name);
+			expect(block).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
+			expect(block).toMatch(
+				/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
+			);
+		}
+	});
+
 	it("publishes Pages only through the realizer: no gh-pages push action", () => {
 		const block = job("release-pages");
 		expect(block).toContain("deploy-site.mts --release-freight site/dist");
