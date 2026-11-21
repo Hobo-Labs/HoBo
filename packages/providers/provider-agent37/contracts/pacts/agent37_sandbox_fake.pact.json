@@ -128,7 +128,7 @@
 				"method": "GET",
 				"path": "/v1/instances",
 				"headers": {
-					"Authorization": "Bearer sk_live_wrong"
+					"Authorization": "Bearer HOBO_SYNTHETIC_WRONG_AGENT37_PACT_4D87"
 				}
 			},
 			"response": {
