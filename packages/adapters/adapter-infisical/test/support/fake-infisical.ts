@@ -382,8 +382,9 @@ export function createFakeInfisical(): FakeInfisical {
 			}
 			const token = /^Bearer (.+)$/u.exec(authorization)?.[1];
 			const access = token === undefined ? undefined : tokens.get(token);
-			const memberships =
-				/^\/api\/v1\/projects\/([^/]+)\/identities$/u.exec(url.pathname);
+			const memberships = /^\/api\/v1\/projects\/([^/]+)\/identities$/u.exec(
+				url.pathname,
+			);
 			if (request.method === "GET" && memberships) {
 				if (access === undefined) return error(401, "Token expired or invalid");
 				const projectId = decodeURIComponent(memberships[1] ?? "");
