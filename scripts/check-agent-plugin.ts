@@ -935,7 +935,11 @@ function bundleAttestationIssues(
 		];
 	}
 	const attestation = z
-		.object({ sha256: z.string() })
+		.object({
+			sha256: z.string(),
+			runId: z.string().optional(),
+			runAttempt: z.string().optional(),
+		})
 		.safeParse(JSON.parse(readFileSync(attestationPath, "utf8")));
 	if (!attestation.success) {
 		return [
@@ -943,6 +947,40 @@ function bundleAttestationIssues(
 				file: BUNDLE_ATTESTATION,
 				message:
 					"is not a valid bundle attestation; run pnpm run agent-plugin:build in this CI job",
+			},
+		];
+	}
+	const runId = process.env.GITHUB_RUN_ID?.trim();
+	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
+	if (runId === undefined || runId.length === 0) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation is only trusted in a GitHub Actions job with GITHUB_RUN_ID; rebuild in CI before agent-plugin:check",
+			},
+		];
+	}
+	if (attestation.data.runId !== runId) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation runId does not match this workflow run; rebuild with pnpm run agent-plugin:build in this job",
+			},
+		];
+	}
+	if (
+		runAttempt !== undefined &&
+		runAttempt.length > 0 &&
+		attestation.data.runAttempt !== undefined &&
+		attestation.data.runAttempt !== runAttempt
+	) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation runAttempt does not match this workflow attempt; rebuild with pnpm run agent-plugin:build in this job",
 			},
 		];
 	}

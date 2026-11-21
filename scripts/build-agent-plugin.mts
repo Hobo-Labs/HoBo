@@ -33,6 +33,12 @@ type EsbuildBuildOptions = {
 	banner: { readonly js: string };
 };
 
+type BundleAttestationRecord = {
+	sha256: string;
+	runId?: string;
+	runAttempt?: string;
+};
+
 type EsbuildModule = {
 	build: (
 		options: EsbuildBuildOptions,
@@ -77,9 +83,18 @@ async function main(): Promise<void> {
 	const sha256 = createHash("sha256")
 		.update(readFileSync(outfile))
 		.digest("hex");
+	const runId = process.env.GITHUB_RUN_ID?.trim();
+	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
+	const payload: BundleAttestationRecord = {
+		sha256,
+	};
+	if (runId !== undefined && runId.length > 0) payload.runId = runId;
+	if (runAttempt !== undefined && runAttempt.length > 0) {
+		payload.runAttempt = runAttempt;
+	}
 	writeFileSync(
 		path.join(pluginRoot, ".bundle-attestation.json"),
-		`${JSON.stringify({ sha256 })}\n`,
+		`${JSON.stringify(payload)}\n`,
 	);
 }
 

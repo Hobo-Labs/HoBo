@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -752,6 +753,40 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues).toHaveLength(1);
 		expect(bundleIssues[0]?.message).toContain("secret-shaped value");
 		expect(bundleIssues[0]?.message).not.toContain(secret);
+	});
+
+	it("rejects a bundle attestation minted for a different workflow run in CI", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		const bundleBody = "x".repeat(1024 * 1024);
+		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": `${JSON.stringify({
+				sha256,
+				runId: "run-other",
+			})}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/runId does not match this workflow run/u.test(issue.message),
+			),
+		).toBe(true);
+		vi.unstubAllEnvs();
 	});
 
 	it("rejects a bundle without deploy fixtures", async () => {
