@@ -101,7 +101,7 @@ describe("the dependency-free routing reader", () => {
 				assert.equal(mine !== undefined, kind === "valid", name);
 			}
 		const base = JSON.parse(fixture("valid", "runner-routing.json"));
-		const withoutMergeGroup: Record<string, unknown> = { ...base };
+		const withoutMergeGroup = { ...base };
 		delete withoutMergeGroup.mergeGroup;
 		assert.deepEqual(parseRunnerRouting(withoutMergeGroup)?.mergeGroup, {
 			reusePrFabric: false,
