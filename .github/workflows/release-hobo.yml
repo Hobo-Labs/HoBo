@@ -224,10 +224,9 @@ env:
 jobs:
   route:
     name: Route runners
-    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
-    # it is choosing against. The fleet while it takes jobs, an enrolled local
-    # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
-    runs-on: ubuntu-24.04
+    # pull_request stays on GitHub-hosted (fork-safe). merge_group uses
+    # hobo-trunk so the route job does not queue behind hosted demand.
+    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: read
@@ -289,6 +288,7 @@ jobs:
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
+          route: ${{ github.event_name == 'merge_group' && 'fleet' || 'auto' }}
 
   release-main-train-gate:
     name: Main train release gate (nbgv)

@@ -234,6 +234,29 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
+	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+		it(`${workflow} runs the route job on hobo-trunk for merge_group only`, () => {
+			const doc = workflowDocument(
+				readFileSync(`.github/workflows/${workflow}`, "utf8"),
+			);
+			const route = asObject(asObject(doc.jobs)?.route);
+			assert.equal(
+				route?.["runs-on"],
+				"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}",
+			);
+			const routeStep = asList(route?.steps)
+				?.map(asObject)
+				.find((step) => step?.id === "route");
+			const withBlock = asObject(routeStep?.with);
+			assert.equal(
+				asText(withBlock?.route),
+				workflow === "hobo-ci.yml"
+					? "${{ github.event_name == 'merge_group' && 'fleet' || (inputs.route || 'auto') }}"
+					: "${{ github.event_name == 'merge_group' && 'fleet' || 'auto' }}",
+			);
+		});
+	}
+
 	it("keeps merge-group shards on the original route", () => {
 		const workflow = workflowDocument(
 			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
