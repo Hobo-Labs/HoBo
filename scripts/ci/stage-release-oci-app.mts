@@ -182,7 +182,7 @@ function assertReleaseTurboRefName(
 function turboBaseReachable(root: string, base: string): boolean {
 	if (!refExists(root, base)) return false;
 	return (
-		spawnSync("git", ["merge-base", "--", base, "HEAD"], {
+		spawnSync("git", ["merge-base", "--is-ancestor", base, "HEAD"], {
 			cwd: root,
 			stdio: "ignore",
 		}).status === 0

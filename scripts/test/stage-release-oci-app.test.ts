@@ -55,7 +55,7 @@ const WorkspaceManifest = z.object({
 const GIT_FIXTURE_TIMEOUT_MS = 30_000;
 
 describe("release OCI app staging", () => {
-	it("resolves the Turbo base on a sparse PR checkout", {
+	it("resolves only ancestor Turbo bases on a sparse PR checkout", {
 		timeout: GIT_FIXTURE_TIMEOUT_MS,
 	}, () => {
 		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-base-"));
@@ -83,6 +83,26 @@ describe("release OCI app staging", () => {
 			expect(resolveReleaseTurboBase(repo, "HEAD")).toBe("HEAD");
 			expect(() => resolveReleaseTurboBase(repo, "refs/heads/missing")).toThrow(
 				/HOBO_RELEASE_TURBO_BASE=refs\/heads\/missing does not resolve/,
+			);
+			git("branch", "release-head");
+			git("switch", "--quiet", "-c", "advanced", "HEAD^1");
+			git(
+				"-c",
+				"user.name=Release Test",
+				"-c",
+				"user.email=release@example.com",
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"--allow-empty",
+				"-m",
+				"advanced",
+			);
+			git("switch", "--quiet", "release-head");
+			expect(() =>
+				resolveReleaseTurboBase(repo, "refs/heads/advanced"),
+			).toThrow(
+				/HOBO_RELEASE_TURBO_BASE=refs\/heads\/advanced does not resolve/,
 			);
 		} finally {
 			rmSync(repo, { recursive: true, force: true });
