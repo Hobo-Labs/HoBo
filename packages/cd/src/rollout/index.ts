@@ -26,6 +26,7 @@ export {
 	canaryReservationId,
 } from "./capacity.js";
 export {
+	asCamp,
 	foldRollout,
 	ROLLOUT_LEDGER,
 	type RolloutLedgerState,

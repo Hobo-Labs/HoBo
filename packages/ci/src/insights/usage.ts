@@ -25,7 +25,6 @@ import { compareText } from "./order.js";
 import {
 	type InsightJob,
 	type InsightRun,
-	jobBilledMinutes,
 	jobRunMs,
 	MS_PER_MINUTE,
 	runnerKey,
@@ -177,6 +176,7 @@ export function isLargerRunnerJob(job: RunnerOf): boolean {
 function onGithubRunner(job: RunnerOf): boolean {
 	return (
 		job.runnerGroup === GITHUB_HOSTED_RUNNER_GROUP ||
+		job.labels.some((label) => MACOS_LARGER_LABEL.test(lower(label))) ||
 		(job.labels.length > 0 && job.labels.every(isGithubHostedLabel))
 	);
 }
@@ -211,7 +211,7 @@ function count(
 	priced: boolean,
 	shortJobMs: number,
 ): void {
-	const minutes = jobBilledMinutes(job);
+	const minutes = Math.max(1, Math.ceil(runMs / MS_PER_MINUTE));
 	const hosted = hostedJob(job);
 	const billed = billedJob(job);
 	for (const slice of slices) {

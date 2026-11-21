@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { chown, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -35,6 +36,34 @@ describe("CI deps image mounted-job contract", () => {
 		assert.ok(image, "HOBO_CI_DEPS_IMAGE is required for the Docker lane");
 		assert.ok(key, "HOBO_CI_DEPS_LAYER is required for the Docker lane");
 		const hostCurrentJob = process.env.HOBO_CI_HOST_JOB_DIRECTORY;
+		const hostUid = process.getuid?.() ?? -1;
+		const hostGid = process.getgid?.() ?? -1;
+		const canOwnAsRunner = hostUid === 0 || hostUid === 1000;
+		const ownWithDocker = (
+			path: string,
+			owner: string,
+			recursive = false,
+		): void => {
+			execFileSync(
+				"docker",
+				[
+					"run",
+					"--rm",
+					"--network",
+					"none",
+					"--user",
+					"0:0",
+					"-v",
+					`${path}:/hobo-mount`,
+					image,
+					"chown",
+					...(recursive ? ["-R"] : []),
+					owner,
+					"/hobo-mount",
+				],
+				{ stdio: "ignore" },
+			);
+		};
 		// Nested docker needs the host bind path: in job containers _hobo_work may
 		// not be the same directory as HOBO_CI_HOST_JOB_DIRECTORY on the host.
 		const temporary = mkdtempSync(
@@ -49,7 +78,22 @@ describe("CI deps image mounted-job contract", () => {
 				{ cwd: root, stdio: "ignore" },
 			);
 			const job = join(temporary, `hobo-${randomUUID()}`);
-			await createNodeWorkerStorageFileSystem().prepareJobDirectory(job);
+			await createNodeWorkerStorageFileSystem({
+				chown: async (path, uid, gid) => {
+					if (canOwnAsRunner) await chown(path, uid, gid);
+					else ownWithDocker(String(path), `${uid}:${gid}`);
+				},
+				mkdir,
+			}).prepareJobDirectory(job);
+			for (const directory of [
+				job,
+				join(job, "HoBo"),
+				join(job, "HoBo", "HoBo"),
+			]) {
+				const metadata = statSync(directory);
+				assert.equal(metadata.uid, 1000);
+				assert.equal(metadata.gid, 1000);
+			}
 			const hostJob = job;
 			const archive = execFileSync("tar", ["-C", stage, "-cf", "-", "."], {
 				maxBuffer: 64 * 1024 * 1024,
@@ -118,6 +162,8 @@ describe("CI deps image mounted-job contract", () => {
 				`${result.error?.message ?? ""}\n${result.stdout}\n${result.stderr}`,
 			);
 		} finally {
+			if (!canOwnAsRunner)
+				ownWithDocker(temporary, `${hostUid}:${hostGid}`, true);
 			rmSync(temporary, { recursive: true, force: true });
 		}
 	});
