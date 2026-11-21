@@ -1,3 +1,7 @@
+
+
+
+
 @font-face {
 	font-family: "Chewy";
 	font-style: normal;
@@ -34,6 +38,7 @@
 * {
 	box-sizing: border-box;
 }
+
 
 body::after {
 	content: "";
@@ -112,6 +117,7 @@ header h1 {
 	margin-bottom: 14px;
 }
 
+
 button {
 	font-family: var(--font-display);
 	font-size: 1rem;
@@ -145,6 +151,7 @@ button:focus-visible {
 	outline: 2.5px solid var(--spark);
 	outline-offset: 2px;
 }
+
 
 #sheet-close {
 	font-family: var(--font-display);
