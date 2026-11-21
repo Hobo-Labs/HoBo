@@ -22,12 +22,6 @@ export interface StubCommandOptions {
 	readonly engine?: CodegenEngine;
 }
 
-/**
- * `hobo stub` materializes the trainable stubs codegen emits (one per bindle
- * step, one per bare `"use training"` marker, one per operation of an ambient
- * `@trainable declare class`) and reports their descriptors; `--check`
- * validates the generated tree without writing.
- */
 export function createStubCommand(
 	options: StubCommandOptions = {},
 ): CommandModule {

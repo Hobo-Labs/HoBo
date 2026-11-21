@@ -43,6 +43,7 @@ async function getTotalPageViews() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  // SAFETY: this aggregate query requests pageviews, whose Plausible result contains results.pageviews.value.
   const json = (await response.json()) as PageViewsResult;
 
   return json.results.pageviews.value;
@@ -87,6 +88,7 @@ async function getPageviewsForDate(date: string) {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  // SAFETY: this aggregate query requests pageviews, whose Plausible result contains results.pageviews.value.
   const data = (await response.json()) as PageViewsResult;
   return data.results.pageviews.value;
 }
@@ -100,6 +102,7 @@ export async function getSources() {
   if (!response.ok) {
     throw new Error(`HTTP error! Status: ${response.status}`);
   }
+  // SAFETY: this breakdown query requests visit:source and visitors, matching PageViewSourcesResult.
   const data = (await response.json()) as PageViewSourcesResult;
   return data.results;
 }

@@ -26,36 +26,15 @@ import {
 	TrainableStubSchema,
 } from "./types.js";
 
-// Trainable codegen (ADR-0125 / generated-stack.md). Generated here:
-// contract-backed `training.define()` stubs for every bindle step (a semantic
-// function until promotion); inferred `training.infer()` registrations for
-// bare `"use training"` markers found in authored source (syntax 3 — the
-// marker carries no bindings; codegen generates them); and, for an ambient
-// `@trainable declare class` (Plan 2 Syntax 0), the `defineGrounding(...)`
-// registrations ts-autocode-grounding's emitter writes (ADR-0128), one module
-// per class beside the trainables module, re-exported from it (the classes
-// come from ambient-trainables.ts). Output paths
-// and module specifiers all come from the layout config; record shapes are
-// the generated hobo.cli.v1 proto types.
 
-/** An exported function carrying the bare `"use training"` prologue. */
 export interface DirectiveFunction {
 	readonly name: string;
-	/** Project-relative source file (posix separators). */
 	readonly file: string;
-	/** The project-relative file TypeScript emits it to, which the trainables module imports. */
 	readonly emitted: string;
 }
 
 type DiscoverInSource = typeof discoverInSource;
 
-/**
- * The directive is a prologue (first statement of the function body).
- * Discovery delegates to ts-autocode-training's AST walk (ADR-0128):
- * exported free functions whose first statement is the `"use training"`
- * string literal — robust against brace-bearing parameter/return type
- * annotations, comments, and directive-like strings elsewhere.
- */
 function directiveFunctionNames(
 	discover: DiscoverInSource,
 	source: string,
@@ -69,12 +48,6 @@ function directiveFunctionNames(
 	return [...names];
 }
 
-/**
- * Scan the layout's source dir for `"use training"`-marked exported
- * functions (deterministic file order; generated roots excluded), each with
- * the file TypeScript emits it to. The project's `tsconfig.json` decides that
- * for a `.tsx` file only, so it is read only once a `.tsx` file holds one.
- */
 export async function scanTrainableDirectives(
 	projectRoot: string,
 	layout: CodegenLayout,
@@ -84,9 +57,6 @@ export async function scanTrainableDirectives(
 	let discover: DiscoverInSource | undefined;
 	for (const path of await scannedSources(projectRoot, layout)) {
 		const source = await readFile(path, "utf8");
-		// The training stack (~1,300 modules, ~1.4 s) loads on the first file a
-		// scan reads, not when @hobo/cli is imported: every `hobo` process imports
-		// the CLI, and only codegen, build and stub reach this scan.
 		discover ??= (await import("ts-autocode-training")).discoverInSource;
 		const names = directiveFunctionNames(discover, source);
 		if (names.length === 0) continue;
@@ -100,7 +70,6 @@ export async function scanTrainableDirectives(
 
 export interface TrainablesBuild {
 	readonly artifact: CodegenArtifact;
-	/** One registration module per ambient @trainable class, beside `artifact`. */
 	readonly declaredArtifacts: readonly CodegenArtifact[];
 	readonly stubs: readonly TrainableStub[];
 }
@@ -182,14 +151,6 @@ export function buildTrainables(
 	};
 }
 
-/**
- * What the trainables module binds besides its exports' own names, each with
- * what binds it: the runtime's `training` import, the `trainableStubs`
- * manifest, the bindings' type imports, and one import per bare
- * `"use training"` function under its own name. A directive whose name another
- * of these already binds would be a duplicate binding (TS2300), so it is
- * refused here, named with the file it is in.
- */
 function moduleBindings(
 	runtimeModule: string,
 	usedTypes: readonly string[],
@@ -217,14 +178,6 @@ function moduleBindings(
 	return bound;
 }
 
-/**
- * Every export of the trainables module must compile: an identifier that is
- * not a reserved word (`$.$` camelCases to ""), not a name the module already
- * binds (its `training` and type imports, a directive's import, the
- * `trainableStubs` manifest: `Trainable.Stubs` camelCases to that), and not one
- * another entry exports (`Incident.classify` and the step `incident.classify`
- * both camelCase to `incidentClassify`).
- */
 function refuseUnusableExports(
 	stubs: readonly TrainableStub[],
 	bound: ReadonlyMap<string, string>,
@@ -337,15 +290,6 @@ interface DeclaredModule {
 	readonly entries: readonly DeclaredEntry[];
 }
 
-/**
- * The registration module for one ambient class, written by
- * ts-autocode-grounding's emitter: one `export const <method> =
- * defineGrounding({...})` per operation, `defineGrounding` imported from the
- * layout's runtime module (`@hobo/runtime`'s is `training.define`). Every
- * identity in it is derived from the scanned class and method names. The
- * trainables module re-exports each operation as `<class><Method>`, the
- * camelCase of its methodRef, as a bindle step's stub is named.
- */
 function toDeclaredModule(
 	ambient: AmbientTrainableClass,
 	layout: CodegenLayout,
@@ -362,8 +306,6 @@ function toDeclaredModule(
 				fromDir,
 				posix.dirname(path),
 			),
-			// @hobo/runtime's generateDeclaredRegistrations writes this module
-			// with this header too (the declared codegen test holds them equal).
 			header: [
 				"// Generated by hobo codegen — do not edit.",
 				`// Registrations for the ambient @trainable class ${declared.className} in ${file}`,
@@ -386,20 +328,12 @@ function toDeclaredModule(
 	return { artifact, entries };
 }
 
-/**
- * A module specifier written for a module in `fromDir`, as a module in `toDir`
- * must write it: a relative one is rebased (the layout's runtime module is
- * relative to trainables.ts, a declared module sits one directory below it;
- * `.` and `..` alone are relative too),
- * a bare one is a package name and stays as it is.
- */
 function rebased(specifier: string, fromDir: string, toDir: string): string {
 	if (!/^\.\.?(?:\/|$)/u.test(specifier)) return specifier;
 	const target = posix.relative(toDir, posix.join(fromDir, specifier));
 	return target.startsWith(".") ? target : `./${target}`;
 }
 
-/** The deterministic example object literal for a resource's fields. */
 function exampleLiteral(resource: SourceModelResource): string {
 	if (resource.example !== undefined) return JSON.stringify(resource.example);
 	const fields = resource.fields

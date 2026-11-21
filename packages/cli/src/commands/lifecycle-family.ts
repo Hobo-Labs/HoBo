@@ -6,30 +6,6 @@ import type { TrustedVault } from "@hobo/core";
 import type { CommandModule, CommandRunInput } from "../shell/registry.js";
 import type { CommandData, CommandResult } from "../types/envelope.js";
 
-// Normalized lifecycles (docs/design/cli-spec.md "Lifecycle Semantics").
-//
-// `up` and `down` stay the only lifecycle verbs. A *family* — `hobo ci`,
-// `hobo cd` — is a HoBo project of its own (a Bindle with a CLI), and its
-// lifecycle is the same `up`/`down`/`plan` the bare verbs run, pointed at that
-// project instead of the one in the working directory:
-//
-//   hobo ci up            ≡ hobo up   --cwd <the CI project>
-//   hobo cd down          ≡ hobo down --cwd <the CD project>
-//   hobo cd plan          ≡ hobo plan --cwd <the CD project>
-//   hobo ci up --what-if  ≡ hobo plan --cwd <the CI project> (no change)
-//   hobo cd status        ≡ the what-if, read-only
-//
-// So there is one engine — Desired State Reconciliation in @hobo/cloud — and
-// every family inherits its guarantees: re-running `up` is idempotent, a
-// changed declaration is an upsert, `down` then `up` re-creates, and
-// `--mode complete` prunes what is no longer declared. Flag names follow the
-// tools people already know: `--what-if` (az / Bicep), `--dry-run`
-// (wrangler), `--preview` (pulumi), `--mode incremental|complete` (Bicep).
-//
-// A family may run a `prepare` step before `up` — connecting a provider
-// (GitHub App, Vercel) whose credential must exist before anything can be
-// converged. A prepare step must itself be idempotent: it detects the
-// connection already in the secret store and does nothing.
 
 export const LIFECYCLE_ACTIONS = Object.freeze([
 	"up",
@@ -46,7 +22,6 @@ export function isLifecycleAction(word: string): word is LifecycleAction {
 	return LIFECYCLE_ACTION_SET.has(word);
 }
 
-/** Flags every family lifecycle accepts, parsed from the family's own args. */
 export interface LifecycleFlags {
 	readonly whatIf: boolean;
 	readonly mode: string | null;
@@ -56,7 +31,6 @@ export interface LifecycleFlags {
 	readonly handOff: boolean;
 }
 
-/** What a family resolves its project to, or why it cannot. */
 export type ProjectResolution =
 	| { readonly ok: true; readonly projectDir: string; readonly source: string }
 	| {
@@ -79,34 +53,22 @@ export interface PrepareInput {
 	readonly run: CommandRunInput;
 }
 
-/**
- * A prepare step's result: `ready` lets `up` converge; `refused` stops it with
- * the step's envelope (a refused connection never half-deploys).
- */
 export type PrepareOutcome =
 	| {
 			readonly kind: "ready";
 			readonly steps: readonly PreparedStep[];
-			/**
-			 * Credentials a provider junction resolved from the owner's secret
-			 * store for this run only, handed to `upWith`: a trusted vault, in
-			 * memory, never an environment variable, a file or a result.
-			 */
 			readonly credentials?: TrustedVault;
 	  }
 	| { readonly kind: "refused"; readonly result: CommandResult };
 
 export interface PreparedStep {
 	readonly id: string;
-	/** `unchanged` when the connection already existed (idempotent re-run). */
 	readonly outcome: "created" | "unchanged" | "would-create";
 	readonly detail: string;
 }
 
 export interface LifecycleFamilySpec {
-	/** The verb the family lives under: `ci`, `cd`. */
 	readonly family: string;
-	/** Locate the family's HoBo project. */
 	readonly resolveProject: (
 		input: CommandRunInput,
 		flags: LifecycleFlags,
@@ -114,20 +76,9 @@ export interface LifecycleFamilySpec {
 	readonly up: CommandModule;
 	readonly down: CommandModule;
 	readonly plan: CommandModule;
-	/** Provider connections that must exist before `up` converges. */
 	readonly prepare?: (input: PrepareInput) => Promise<PrepareOutcome>;
-	/**
-	 * Build the `up` that converges with a junction's credentials (the
-	 * prepare step's `credentials`). Absent, or with no credentials, `up` is
-	 * used as is.
-	 */
 	readonly upWith?: (credentials: TrustedVault) => CommandModule;
-	/**
-	 * The family's observed status (`hobo ci status` inspects the relay
-	 * connection). Receives the raw args. Default: the read-only what-if.
-	 */
 	readonly status?: CommandModule;
-	/** Every non-lifecycle subcommand (`hobo ci list`, `hobo cd freight ...`). */
 	readonly fallback?: CommandModule;
 }
 
@@ -142,10 +93,6 @@ const LIFECYCLE_FLAG_NAMES = new Set([
 	"-y",
 ]);
 
-/**
- * Split a family's raw args into its lifecycle flags. Anything else is
- * refused: a family lifecycle takes exactly the flags the bare verbs take.
- */
 export function parseLifecycleArgs(
 	args: readonly string[],
 ):
@@ -194,11 +141,6 @@ export function parseLifecycleArgs(
 	return { ok: true, flags: { whatIf, mode, project, yes, handOff } };
 }
 
-/**
- * Resolve a family project the same way for every family: `--project`, then
- * `HOBO_<FAMILY>_PROJECT`, then the bundled default (when the family ships
- * one), then the working directory when it holds a Bindle.
- */
 export function resolveFamilyProject(options: {
 	readonly family: string;
 	readonly flags: LifecycleFlags;
@@ -297,7 +239,6 @@ function withFamily(
 	};
 }
 
-/** Build the family command: lifecycle words route to the shared engine. */
 export function createLifecycleFamilyCommand(
 	spec: LifecycleFamilySpec,
 ): CommandModule {
@@ -364,8 +305,6 @@ export function createLifecycleFamilyCommand(
 						);
 				}
 
-				// `status` and every `--what-if` are the read-only plan: the change set,
-				// computed, printed, never applied.
 				const module =
 					action === "status" || (action === "up" && flags.whatIf)
 						? spec.plan
@@ -383,7 +322,6 @@ export function createLifecycleFamilyCommand(
 					...(prepared.length > 0 ? { prepared } : undefined),
 				});
 			} finally {
-				// The run's credentials end with the run.
 				credentials?.clear();
 			}
 		},

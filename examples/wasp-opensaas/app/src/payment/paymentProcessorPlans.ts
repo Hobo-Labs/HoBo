@@ -18,6 +18,7 @@ export function getPaymentPlanIdByPaymentProcessorPlanId(
     paymentProcessorPlanIds,
   )) {
     if (processorPlanId === paymentProcessorPlanId) {
+      // SAFETY: planId is a key of paymentProcessorPlanIds, whose keys are PaymentPlanId values.
       return planId as PaymentPlanId;
     }
   }

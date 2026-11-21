@@ -1,12 +1,5 @@
 import type { JsonObject } from "../json.js";
 
-// The project codegen engine behind `hobo codegen`/`hobo stub` and the
-// `hobo build` freshness gate. Record types (artifacts, drift entries,
-// reports, trainable stubs) are the GENERATED protobuf types from
-// data-models/project_codegen.proto — re-exported here, never redeclared.
-// This module declares only the behavioral/config surface: the engine
-// interface, its layout (every output path and generated-import specifier is
-// configuration with overridable defaults), and the error type.
 
 export type {
 	CodegenArtifact,
@@ -26,21 +19,14 @@ import type {
 	TrainableStub,
 } from "../_generated/project_codegen_pb.js";
 
-/** Project-relative locations of the codegen source inputs. */
 export interface CodegenSourceLayout {
 	readonly wit: string;
 	readonly zod: string;
 	readonly allow: string;
 	readonly bindle: string;
-	/**
-	 * Directory scanned for bare `"use training"` markers (ADR-0125 syntax 3);
-	 * marked functions get inferred bindings generated into the trainables
-	 * module. Generated roots inside it are excluded.
-	 */
 	readonly scanDir: string;
 }
 
-/** Project-relative output path of every generated file. */
 export interface CodegenGeneratedFiles {
 	readonly manifest: string;
 	readonly apiTree: string;
@@ -52,35 +38,19 @@ export interface CodegenGeneratedFiles {
 	readonly trainables: string;
 }
 
-/** Module specifiers emitted into generated code. */
 export interface CodegenGeneratedImports {
-	/**
-	 * The runtime package generated trainable stubs import `training` from, and
-	 * declared modules `defineGrounding`. A package name, or a specifier
-	 * relative to the trainables module, which is rebased for each
-	 * `declared/<Class>.ts` one directory below it.
-	 */
 	readonly runtimeModule: string;
-	/** How generated modules reference the generated bindings module. */
 	readonly bindingsSpecifier: string;
 }
 
-/** Where an engine reads sources from and what it writes where. */
 export interface CodegenLayout {
 	readonly sources: CodegenSourceLayout;
-	/** Roots the engine owns; tree write/compare operate on these. */
 	readonly generatedRoots: readonly string[];
-	/** Exact generated files owned alongside directory roots; siblings remain untouched. */
 	readonly ownedFiles?: readonly string[];
 	readonly files: CodegenGeneratedFiles;
 	readonly imports: CodegenGeneratedImports;
 }
 
-/**
- * A codegen engine: generates the full artifact set for a project. The
- * layout rides along so tree operations (write, drift-compare) and code
- * emission know the engine's paths without any shared global.
- */
 export interface CodegenEngine {
 	readonly layout: CodegenLayout;
 	generate(projectRoot: string): Promise<readonly CodegenArtifact[]>;
@@ -98,7 +68,6 @@ export class CodegenError extends Error {
 	}
 }
 
-/** The conventional HoBo project layout; override any part per engine. */
 export function defaultCodegenLayout(): CodegenLayout {
 	return {
 		sources: {

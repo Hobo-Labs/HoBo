@@ -168,6 +168,7 @@ for (const withWrapper of [true, false]) {
 			});
 			app.listen(0, "127.0.0.1");
 			await once(app, "listening");
+			// SAFETY: once listening, this TCP server has an AddressInfo; the assertion below rejects null.
 			const address = app.address() as AddressInfo | null;
 			assert(address);
 			browser = await chromium.launch({ headless: true });
@@ -184,6 +185,7 @@ for (const withWrapper of [true, false]) {
 			assert.equal(recovered.browserCheckpointRevision, 10);
 			assert.equal(recovered.publicationCheckpointRevision, 25);
 			assert.notEqual(recovered.activeOwner, "old");
+			// SAFETY: the test server's status endpoint returns activeSessions with numeric checkpoint revisions.
 			const status = (await fetch(
 				`http://localhost:${info.port}/status?token=${info.token}`,
 			).then((response) => response.json())) as {

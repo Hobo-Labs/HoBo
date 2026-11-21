@@ -114,5 +114,6 @@ export function experienceTypeForWorkspace(
 	const match = workspace.match(
 		/^src\/draft\/exp-proofs\/(dx|ux|cx|ax|api)\//u,
 	);
+	// SAFETY: the regular expression restricts this capture to EXPERIENCE_TYPES.
 	return match ? (match[1] as ExperienceType) : undefined;
 }

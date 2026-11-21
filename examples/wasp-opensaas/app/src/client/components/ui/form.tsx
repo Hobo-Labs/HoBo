@@ -22,6 +22,7 @@ type FormFieldContextValue<
   name: TName;
 };
 
+// SAFETY: consumers render below FormFieldContext.Provider, which supplies name.
 const FormFieldContext = React.createContext<FormFieldContextValue>(
   {} as FormFieldContextValue,
 );
@@ -66,6 +67,7 @@ type FormItemContextValue = {
   id: string;
 };
 
+// SAFETY: consumers render below FormItemContext.Provider, which supplies id.
 const FormItemContext = React.createContext<FormItemContextValue>(
   {} as FormItemContextValue,
 );

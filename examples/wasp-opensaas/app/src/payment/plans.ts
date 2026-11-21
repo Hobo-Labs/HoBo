@@ -45,7 +45,9 @@ export function prettyPaymentPlanName(planId: PaymentPlanId): string {
 }
 
 export function parsePaymentPlanId(planId: string): PaymentPlanId {
+  // SAFETY: PaymentPlanId is a string enum, so its values form a string array.
   if ((Object.values(PaymentPlanId) as string[]).includes(planId)) {
+    // SAFETY: the includes guard proves planId is a PaymentPlanId value.
     return planId as PaymentPlanId;
   } else {
     throw new Error(`Invalid PaymentPlanId: ${planId}`);

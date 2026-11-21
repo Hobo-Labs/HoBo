@@ -30,7 +30,7 @@ Install the bundled Oxlint plugin into the current repository and integrate it w
    - `oxlint` is a development dependency. The copied source imports `@oxlint/plugins`, so install it as a development dependency for a local-only plugin.
    - Do not replace the package manager or rewrite unrelated dependency ranges.
 
-4. Register the generic plugin, configure ignores, and enable the generic rules listed below. For `oxlint.config.ts` or `.oxlintrc.json`, merge these fields with the existing configuration:
+4. Register the generic plugin, configure ignores, and enable all generic rules. For `oxlint.config.ts` or `.oxlintrc.json`, merge these fields with the existing configuration:
 
    ```ts
    ignorePatterns: [
@@ -73,11 +73,10 @@ Install the bundled Oxlint plugin into the current repository and integrate it w
      "anti-slop/no-unknown-returns": "error",
      "anti-slop/no-unknown-type-aliases": "error",
      "anti-slop/no-unsafe-dictionary-type": "error",
-     "anti-slop/no-widen-then-assert": "error"
+     "anti-slop/no-widen-then-assert": "error",
+     "anti-slop/require-safety-comment-for-type-assertion": "error"
    }
    ```
-
-   Do not enable `anti-slop/require-safety-comment-for-type-assertion`; remove it from an existing configuration if present. The repository requires self-documenting code and prohibits explanatory comments. Prefer precise types, parsing, and `satisfies` when assertions can be avoided.
 
    If the repository declares `effect` in a package manifest, or the user explicitly requests Effect rules, also register the opt-in Effect plugin:
 
@@ -95,7 +94,7 @@ Install the bundled Oxlint plugin into the current repository and integrate it w
 
    Merge these entries with the generic plugin configuration rather than replacing it. Do not enable the Effect plugin merely because Effect appears transitively in a lockfile; require a direct package-manifest dependency or an explicit user request. The rule covers relative project imports. Report package-alias imports as a current limitation rather than pretending they are enforced.
 
-5. Run the repository's lint command and typecheck. For Vite+, run the repository's full `vp check` command after adding both lint and format ignores. Fix relevant findings in owned project source. Do not suppress the remaining rules, weaken their severity, add unsafe casts, or mechanically launder types to make lint pass.
+5. Run the repository's lint command and typecheck. For Vite+, run the repository's full `vp check` command after adding both lint and format ignores. If findings appear in owned project source, report them and fix them only when the user asked for migration/cleanup. Do not suppress rules, weaken rule severity, add unsafe casts, or mechanically launder types to make lint pass.
 
 6. Review the final diff and clearly report:
    - copied path,
