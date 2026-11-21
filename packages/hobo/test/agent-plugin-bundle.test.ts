@@ -13,6 +13,15 @@ import { BitwardenClient as ShimmedBitwardenClient } from "../../../plugins/hobo
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
 
+function agentPluginCiActive(): boolean {
+	return [process.env.CI, process.env.GITHUB_ACTIONS, process.env.TF_BUILD].some(
+		(value) => {
+			const normalized = (value ?? "").trim().toLowerCase();
+			return normalized !== "" && normalized !== "0" && normalized !== "false";
+		},
+	);
+}
+
 const Message = z.object({
 	id: z.union([z.string(), z.number()]).optional(),
 	result: z.record(z.string(), z.json()).optional(),
@@ -24,7 +33,11 @@ afterEach(() => {
 });
 
 function ensureBundle(): void {
-	if (existsSync(bundle) && statSync(bundle).size >= 1024 * 1024) {
+	if (
+		!agentPluginCiActive() &&
+		existsSync(bundle) &&
+		statSync(bundle).size >= 1024 * 1024
+	) {
 		return;
 	}
 	const build = spawnSync(

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import {
 	checkHoboRepoSkillsConformance,
 	HOBO_OWNED_ALLOWED_FIELDS,
+	HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS,
 } from "@hobo/agent-skills";
 import { z } from "zod";
 
@@ -63,7 +64,7 @@ export const SECRET_VALUE_PATTERN =
 	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-ant-[A-Za-z0-9_-]{16,}|sk-or-[A-Za-z0-9_-]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|sk_live_[A-Za-z0-9]{16,}|rk_live_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9]{16,}|glpat-[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|npm_[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|ASIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
 
 export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
-export const SYNCED_SKILLS = ["hobo-setup", "hobo-deploy"] as const;
+export const SYNCED_SKILLS = HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS;
 
 export function agentPluginCiActive(
 	env: NodeJS.ProcessEnv = process.env,
@@ -1495,13 +1496,7 @@ async function main(): Promise<void> {
 		repoRoot,
 		versionFromReleaseTrain,
 	});
-	const conformance = await checkHoboRepoSkillsConformance(
-		repoRoot,
-		undefined,
-		{
-			neverLockSkillNames: SYNCED_SKILLS,
-		},
-	);
+	const conformance = await checkHoboRepoSkillsConformance(repoRoot);
 	const conformanceIssues: AgentPluginIssue[] = conformance.map((issue) => ({
 		file: `.agents/skills/${issue.skill}`,
 		message: `${issue.code}: ${issue.message}`,

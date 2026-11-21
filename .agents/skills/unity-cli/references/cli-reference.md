@@ -1,6 +1,6 @@
 # Unity CLI Reference (Manage + Automation)
 
-Authoritative for a given install: `unity --help` and `unity <command> --help`.  
+Authoritative for a given install: `unity --help` and `unity <command> --help`.
 Official docs: https://docs.unity.com/en-us/unity-cli/unity-cli-reference
 
 CLI status: **experimental**.
@@ -62,9 +62,9 @@ unity doctor --format json
 | Pipe / redirect | `tsv` |
 | Explicit | `--format json` etc. |
 
-- **stdout**: results  
-- **stderr**: errors / diagnostics (JSON errors may be `{"error":"..."}` on stderr)  
-- **Do not parse** animated progress bars  
+- **stdout**: results
+- **stderr**: errors / diagnostics (JSON errors may be `{"error":"..."}` on stderr)
+- **Do not parse** animated progress bars
 
 ### Exit codes
 

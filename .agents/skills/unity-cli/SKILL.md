@@ -236,79 +236,79 @@ Workflows and anti-footguns: `references/agent-workflows.md`.
 
 ## Anti-Patterns to Avoid
 
-❌ **Parsing animated progress or human tables in scripts**  
-Why bad: format is for eyes; pipes default to TSV and progress is unstable.  
+❌ **Parsing animated progress or human tables in scripts**
+Why bad: format is for eyes; pipes default to TSV and progress is unstable.
 Better: `--format json` and check exit codes.
 
-❌ **Using Hub `-- --headless` syntax on the new CLI**  
-Why bad: flags moved (`install -v` → positional version; `-e` for modules; errors on stderr).  
+❌ **Using Hub `-- --headless` syntax on the new CLI**
+Why bad: flags moved (`install -v` → positional version; `-e` for modules; errors on stderr).
 Better: migrate with `references/cli-reference.md` Hub migration section.
 
-❌ **Assuming Pipeline is live because the package is in manifest.json**  
-Why bad: server starts after import; domain reload / Safe Mode can block it.  
+❌ **Assuming Pipeline is live because the package is in manifest.json**
+Why bad: server starts after import; domain reload / Safe Mode can block it.
 Better: `unity pipeline list` / `unity status` and wait for reachable.
 
-❌ **eval for every mutation**  
-Why bad: unreproducible, hard to review, easy to skip safety gates.  
+❌ **eval for every mutation**
+Why bad: unreproducible, hard to review, easy to skip safety gates.
 Better: registered commands + `confirm`/`dry_run`; reserve eval for discovery.
 
-❌ **Pointing runtime Pipeline at production Players**  
-Why bad: remote control surface is for dev/QA only, off by default for a reason.  
+❌ **Pointing runtime Pipeline at production Players**
+Why bad: remote control surface is for dev/QA only, off by default for a reason.
 Better: development builds only, localhost, token-gated.
 
-❌ **Interactive prompts in CI**  
-Why bad: hangs the job.  
+❌ **Interactive prompts in CI**
+Why bad: hangs the job.
 Better: `--non-interactive --yes --accept-eula` and explicit versions.
 
-❌ **Ignoring ProjectVersion.txt**  
-Why bad: wrong Editor → silent API/package mismatches.  
+❌ **Ignoring ProjectVersion.txt**
+Why bad: wrong Editor → silent API/package mismatches.
 Better: `unity open` / default resolution, or pin `--editor-version`.
 
-❌ **Treating docs-only command lists as complete**  
-Why bad: experimental surface moves; projects add `[CliCommand]`s.  
+❌ **Treating docs-only command lists as complete**
+Why bad: experimental surface moves; projects add `[CliCommand]`s.
 Better: live `unity command` discovery every session.
 
-❌ **Killing a "hung" CLI call after a few seconds**  
-Why bad: Hub-service-backed commands legitimately take 25s+ on cold start; killing mid-flight can leave partial state.  
+❌ **Killing a "hung" CLI call after a few seconds**
+Why bad: Hub-service-backed commands legitimately take 25s+ on cold start; killing mid-flight can leave partial state.
 Better: allow ~60s before diagnosing; then `unity doctor` / `--verbose`.
 
-❌ **Trusting asset filenames over GUID wiring**  
-Why bad: prefab/clip/inspector references are the source of truth; filenames lie (a `Death.wav` may be wired as the respawn sound).  
+❌ **Trusting asset filenames over GUID wiring**
+Why bad: prefab/clip/inspector references are the source of truth; filenames lie (a `Death.wav` may be wired as the respawn sound).
 Better: trace `guid:` references in the YAML, or query the live Editor (`get_component_properties`, eval).
 
-❌ **Checking the console for shader compile errors**  
-Why bad: `get_console_logs` is silent on shader compilation, and `Shader.Find()` returns a non-null handle for a broken shader — so both say "fine" while the screen renders magenta.  
+❌ **Checking the console for shader compile errors**
+Why bad: `get_console_logs` is silent on shader compilation, and `Shader.Find()` returns a non-null handle for a broken shader — so both say "fine" while the screen renders magenta.
 Better: `UnityEditor.ShaderUtil.GetShaderMessages(shader)` plus `shader.isSupported`; for look changes, a fresh `capture_game_view` you actually read is the test (see Workflow H).
 
-❌ **Treating "Play Mode ran with 0 console errors" as full verification**  
-Why bad: scale, binding, and visual bugs pass a clean-console smoke test.  
+❌ **Treating "Play Mode ran with 0 console errors" as full verification**
+Why bad: scale, binding, and visual bugs pass a clean-console smoke test.
 Better: tiered evidence — structural checks on asset text, console logs, Play Mode, and a screenshot artifact at a stable repo path (see `references/agent-workflows.md`).
 
-❌ **Treating "named mesh placed + wide Game screenshot" as layout done**  
-Why bad: thin floor tiles look like platforms, full stair meshes on near-zero height deltas stab fences, crates/wagons interpenetrate, posts miss deck undersides — all pass a distant hero PNG.  
+❌ **Treating "named mesh placed + wide Game screenshot" as layout done**
+Why bad: thin floor tiles look like platforms, full stair meshes on near-zero height deltas stab fences, crates/wagons interpenetrate, posts miss deck undersides — all pass a distant hero PNG.
 Better: place → measure `bounds` → assert contacts/non-overlap → capture **Game hero + close Scene** of the junction; promote regressions into Verify / disk tests (Workflow G).
 
-❌ **Driving agent layout without `-automated`**  
-Why bad: modal dialogs block Pipeline and hang the session.  
+❌ **Driving agent layout without `-automated`**
+Why bad: modal dialogs block Pipeline and hang the session.
 Better: open the project with `-automated` (e.g. project helper or `unity open … --args "-automated"`).
 
-❌ **Disabling gameplay components to freeze state for a test**  
-Why bad: Play Mode toggles look reversible, but the agent's own save path (builder re-run, `SaveOpenScenes`, an edit-mode toggle) bakes the disabled state into the saved scene — the user opens Play Mode to a locked camera and an immobile player.  
+❌ **Disabling gameplay components to freeze state for a test**
+Why bad: Play Mode toggles look reversible, but the agent's own save path (builder re-run, `SaveOpenScenes`, an edit-mode toggle) bakes the disabled state into the saved scene — the user opens Play Mode to a locked camera and an immobile player.
 Better: read state without mutating it, or accept a moving target across frames; if a toggle is unavoidable, disable **and** restore inside a single eval call — never split disable and restore across two calls.
 
-❌ **Piping a restore/cleanup step's output to `/dev/null`**  
-Why bad: a cleanup you have not verified is not a cleanup — the restore can silently fail to apply.  
+❌ **Piping a restore/cleanup step's output to `/dev/null`**
+Why bad: a cleanup you have not verified is not a cleanup — the restore can silently fail to apply.
 Better: read the actual output of every restore call before declaring the scene clean.
 
 ## Variation Guidance
 
 **IMPORTANT**: Choose the path from context — do not always open the Editor, always eval, or always batchmode.
 
-- **Greenfield machine** → install CLI → auth → install Editor+modules → open project → pipeline install  
-- **Day-to-day gameplay fix with Editor open** → `status` → discover commands → mutate → Play Mode → console/logs  
-- **Agent-built scenes / kitbash vignettes** → Workflow G: rebuild recipe + composition audit + dual screenshots  
-- **CI regression** → non-interactive `unity test` / `unity build` with JSON/XML artifacts  
-- **Unknown engine question** → small `eval` probes, then promote stable ops to `[CliCommand]`  
+- **Greenfield machine** → install CLI → auth → install Editor+modules → open project → pipeline install
+- **Day-to-day gameplay fix with Editor open** → `status` → discover commands → mutate → Play Mode → console/logs
+- **Agent-built scenes / kitbash vignettes** → Workflow G: rebuild recipe + composition audit + dual screenshots
+- **CI regression** → non-interactive `unity test` / `unity build` with JSON/XML artifacts
+- **Unknown engine question** → small `eval` probes, then promote stable ops to `[CliCommand]`
 - **Multi-project host** → always pass `--project-path`
 
 Vary command choice with package version, whether Play Mode is active, and whether the user wants durable project changes vs throwaway inspection.

@@ -2,7 +2,7 @@
 
 `com.unity.pipeline` turns a running Unity Editor (or development Player) into a localhost automation target for the `unity` CLI, CI, and agents.
 
-Package docs index: Unity package `com.unity.pipeline` → Documentation~  
+Package docs index: Unity package `com.unity.pipeline` → Documentation~
 Product page: https://docs.unity.com/en-us/unity-production-pipeline/local-tools-cli/unity-pipeline-package
 
 Experimental — command sets evolve. **Always discover** with `unity command` on the connected instance.

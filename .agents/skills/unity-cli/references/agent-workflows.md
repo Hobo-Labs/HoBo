@@ -256,17 +256,17 @@ Refactoring this way immediately surfaced a *further* latent bug (a floor overha
 
 ### Anti-patterns (composition)
 
-- Guessing crate height (`y + 0.5`) or wagon size from the name  
-- Continuous fence then a stair mesh through it  
-- Nested cliff cubes for “grounding” without a continuous silhouette  
-- Declaring layout done after a wide Game capture only  
-- Re-typing a zone's edge coordinate for its mass, its paving and its railing  
+- Guessing crate height (`y + 0.5`) or wagon size from the name
+- Continuous fence then a stair mesh through it
+- Nested cliff cubes for “grounding” without a continuous silhouette
+- Declaring layout done after a wide Game capture only
+- Re-typing a zone's edge coordinate for its mass, its paving and its railing
 - A stair whose run is on the wrong **axis**: it can reach the correct height and still arrive
   alongside the platform facing open air (measure the top step's rect against the target's rect,
-  not just its Y)  
-- Coplanar tops between a slab and the volume under it — z-fighting; sink one by ~5 cm  
+  not just its Y)
+- Coplanar tops between a slab and the volume under it — z-fighting; sink one by ~5 cm
 - Modelling a wellhead / ring / archway as a **solid** primitive: there is no bore, so anything
-  "inside" it is invisible and intersecting. Ring it out of parts instead  
+  "inside" it is invisible and intersecting. Ring it out of parts instead
 
 ## Workflow H — Shader / render look-dev (custom shaders, post FX, lighting)
 

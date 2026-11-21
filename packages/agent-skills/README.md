@@ -27,10 +27,15 @@ a listing serves (boundary fixtured in
   rules: only Agent Skills fields this repo controls, name equal to the folder,
   and `metadata` as a map of decoded, non-empty string values. Unrecognized
   non-comment top-level YAML lines fail closed instead of being ignored.
-  `skillsLockExemptionIssues` rejects a lock entry for any other in-tree skill,
-  regardless of its declared source, so lock metadata cannot re-label repo-owned,
-  forked, or copied content as vendored. Callers identify repo-authored skills
-  that must never be locked through `neverLockSkillNames`.
+  `skillsLockExemptionIssues` rejects a lock entry for any unapproved in-tree
+  skill, regardless of its declared source, so lock metadata cannot re-label
+  repo-owned, forked, or copied content as vendored. GitHub shorthand, HTTP(S),
+  `github:`, and SSH/SCP source spellings normalize to exactly one owner and
+  repository; missing, malformed, ambiguous, and non-HoBo sources still fail
+  closed. Any normalized `Hobo-Labs/HoBo` source reports the repo-skill
+  exemption violation. The portable `hobo-setup` and `hobo-deploy` set is always
+  excluded from locking, and callers can add repo-authored names through
+  `neverLockSkillNames`.
   The repo's `skills:mirror-check` remains the parity gate between
   `.agents/skills` and `.claude/skills`; this check layers the per-skill
   contract on top.

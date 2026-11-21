@@ -201,16 +201,82 @@ export async function discoverHoboOwnedSkillNames(
 	return Object.freeze(names);
 }
 
+export const HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS = Object.freeze([
+	"hobo-setup",
+	"hobo-deploy",
+] as const);
+
 export type SkillsLockExemptionOptions = {
 	readonly neverLockSkillNames?: readonly string[];
 };
+
+function parseGitHubPath(
+	path: string,
+): { owner: string; repo: string } | null {
+	const segments = path.split("/");
+	if (segments.length === 3 && segments[2] === "") segments.pop();
+	if (segments.length !== 2) return null;
+	const owner = segments[0] ?? "";
+	const repo = (segments[1] ?? "").replace(/\.git$/iu, "");
+	for (const segment of [owner, repo]) {
+		if (
+			!/^[A-Za-z0-9_.-]+$/u.test(segment) ||
+			segment === "." ||
+			segment === ".."
+		) {
+			return null;
+		}
+	}
+	return { owner, repo };
+}
+
+function parseGitHubOwnerRepo(
+	source: string,
+): { owner: string; repo: string } | null {
+	const trimmed = source.trim();
+	if (trimmed.length === 0) return null;
+	if (/^github:/iu.test(trimmed)) {
+		return parseGitHubPath(
+			trimmed.replace(/^github:/iu, "").replace(/[?#].*$/u, ""),
+		);
+	}
+	if (/^git@github\.com:/iu.test(trimmed)) {
+		return parseGitHubPath(
+			trimmed.replace(/^git@github\.com:/iu, "").replace(/[?#].*$/u, ""),
+		);
+	}
+	let url: URL;
+	try {
+		url = new URL(trimmed);
+	} catch {
+		return parseGitHubPath(trimmed.replace(/[?#].*$/u, ""));
+	}
+	if (
+		url.hostname.toLowerCase() !== "github.com" ||
+		url.port !== "" ||
+		url.password !== ""
+	) {
+		return null;
+	}
+	if (["http:", "https:", "git+http:", "git+https:"].includes(url.protocol)) {
+		if (url.username !== "") return null;
+	} else if (["ssh:", "git+ssh:"].includes(url.protocol)) {
+		if (url.username !== "git") return null;
+	} else {
+		return null;
+	}
+	return parseGitHubPath(url.pathname.slice(1));
+}
 
 export async function skillsLockExemptionIssues(
 	skillsRoot: string,
 	repoRoot: string,
 	options: SkillsLockExemptionOptions = {},
 ): Promise<readonly SkillConformanceIssue[]> {
-	const neverLock = new Set(options.neverLockSkillNames ?? []);
+	const neverLock = new Set([
+		...HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS,
+		...(options.neverLockSkillNames ?? []),
+	]);
 	let text: string;
 	try {
 		text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
@@ -235,9 +301,8 @@ export async function skillsLockExemptionIssues(
 	if (typeof skills !== "object" || skills === null) {
 		return Object.freeze([]);
 	}
-	/* oxlint-enable anti-slop/no-runtime-typeof */
 	const issues: SkillConformanceIssue[] = [];
-	for (const name of Object.keys(skills)) {
+	for (const [name, entry] of Object.entries(skills)) {
 		if (neverLock.has(name)) {
 			issues.push({
 				skill: name,
@@ -254,11 +319,33 @@ export async function skillsLockExemptionIssues(
 		} catch {
 			skillMdExists = false;
 		}
-		if (
-			!skillMdExists ||
-			HOBO_REVIEWED_VENDORED_SKILL_NAMES.has(name)
-		)
+		if (!skillMdExists || HOBO_REVIEWED_VENDORED_SKILL_NAMES.has(name)) {
 			continue;
+		}
+		const lockedSkill: unknown = entry;
+		let source: string | undefined;
+		if (
+			typeof lockedSkill === "object" &&
+			lockedSkill !== null &&
+			"source" in lockedSkill
+		) {
+			const lockedSource: unknown = lockedSkill.source;
+			if (typeof lockedSource === "string") source = lockedSource;
+		}
+		const ownerRepo =
+			source === undefined ? null : parseGitHubOwnerRepo(source);
+		if (
+			ownerRepo?.owner.toLowerCase() === "hobo-labs" &&
+			ownerRepo.repo.toLowerCase() === "hobo"
+		) {
+			issues.push({
+				skill: name,
+				code: "lock-exempts-repo-skill",
+				message:
+					"skills-lock.json must not list an in-tree skill as vendored from Hobo-Labs/HoBo",
+			});
+			continue;
+		}
 		issues.push({
 			skill: name,
 			code: "lock-shadows-in-tree-skill",
@@ -266,6 +353,7 @@ export async function skillsLockExemptionIssues(
 				"skills-lock.json cannot reclassify an in-tree skill as vendored unless its name is in the reviewed vendored-skill allowlist",
 		});
 	}
+	/* oxlint-enable anti-slop/no-runtime-typeof */
 	return Object.freeze(issues);
 }
 
