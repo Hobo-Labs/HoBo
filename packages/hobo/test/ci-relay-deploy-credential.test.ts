@@ -14,6 +14,7 @@ import {
 const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl";
 const DEPLOY_TOKEN = "synthetic-vercel-deploy-token-0123";
 const IDENTITY = "3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c";
+const WRITER_IDENTITY = "63f5b1e2-8a4d-4c7f-9e0b-2d3a4c5b6a7f";
 const PROJECT = "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7";
 
 const env = {
@@ -46,7 +47,8 @@ const attachBinding = readSecretStoreBinding(
 		environment: "prod",
 		secretPath: "/hobo-ci-relay",
 		relayIdentityId: "relay-identity",
-		deployIdentityId: IDENTITY,
+		deployIdentityId: WRITER_IDENTITY,
+		deployCredentialIdentityId: IDENTITY,
 		claimBundleId: "secret-store.ci-vercel.attach-1",
 		claimState: "claimed",
 	}),
@@ -61,7 +63,11 @@ interface Seen {
 	readonly body: string;
 }
 
-function fakes(secretValue = DEPLOY_TOKEN, loginStatus = 200, secretStatus = 200) {
+function fakes(
+	secretValue = DEPLOY_TOKEN,
+	loginStatus = 200,
+	secretStatus = 200,
+) {
 	const seen: Seen[] = [];
 	const fetch: Fetch = async (input, init) => {
 		const url = String(input);
@@ -111,9 +117,7 @@ describe("readRelayDeployToken", () => {
 		const read = await readRelayDeployToken({ binding, env, fetch });
 
 		expect(read.token).toBe(DEPLOY_TOKEN);
-		expect(read.secretRef).toBe(
-			`infisical://${PROJECT}/prod/VERCEL_TOKEN`,
-		);
+		expect(read.secretRef).toBe(`infisical://${PROJECT}/prod/VERCEL_TOKEN`);
 		expect(
 			seen.map((request) => `${request.method} ${request.url.split("?")[0]}`),
 		).toEqual([
@@ -148,11 +152,33 @@ describe("readRelayDeployToken", () => {
 			jwt: JWT,
 		});
 		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
-			"relay-identity",
+			WRITER_IDENTITY,
 		);
 		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
 		expect(secretRead.searchParams.get("projectId")).toBe("relay-project");
 		expect(secretRead.searchParams.get("secretPath")).toBe("/hobo-ci-deploy");
+	});
+
+	it("refuses a writer-only binding before requesting GitHub OIDC or reading a secret", async () => {
+		const writerOnlyBinding = readSecretStoreBinding(
+			JSON.stringify({
+				kind: "infisical-cloud-attach",
+				endpoint: "https://app.infisical.com",
+				projectId: "relay-project",
+				environment: "prod",
+				secretPath: "/hobo-ci-relay",
+				relayIdentityId: "relay-identity",
+				deployIdentityId: WRITER_IDENTITY,
+				claimBundleId: "secret-store.ci-vercel.attach-1",
+				claimState: "claimed",
+			}),
+		);
+		const { fetch, seen } = fakes();
+
+		await expect(
+			readRelayDeployToken({ binding: writerOnlyBinding, env, fetch }),
+		).rejects.toThrow("no dedicated deploy credential identity");
+		expect(seen).toEqual([]);
 	});
 
 	it("fails closed without trying another project or path when the attach deploy credential is missing", async () => {

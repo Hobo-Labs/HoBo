@@ -745,7 +745,7 @@ export async function runCiRelayDeploy(
 			vault.put("VERCEL_TOKEN", credential.token);
 			deployTokenRef = credential.secretRef;
 			input.emitProgress(
-				`deploy token read from ${credential.secretRef} as the binding's deploy identity`,
+				`deploy token read from ${credential.secretRef} as the binding's deploy credential identity`,
 			);
 		} catch (error) {
 			return refused(

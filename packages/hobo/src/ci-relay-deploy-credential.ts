@@ -21,8 +21,8 @@
 import {
 	createInfisicalClient,
 	githubActionsJwtSource,
-	infisicalSecretRef,
 	InfisicalError,
+	infisicalSecretRef,
 	oidcAuth,
 	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
@@ -57,6 +57,16 @@ export async function readRelayDeployToken(input: {
 }): Promise<Readonly<{ token: string; secretRef: string }>> {
 	const { env, binding: store } = input;
 	try {
+		const identityId =
+			store.deployCredentialIdentityId !== ""
+				? store.deployCredentialIdentityId
+				: store.deployProjectId !== ""
+					? store.deployIdentityId
+					: "";
+		if (identityId === "")
+			throw new RelayDeployCredentialError(
+				"The attach binding has no dedicated deploy credential identity. Record deployCredentialIdentityId for a read-only deploy identity; the writer identity is never used for deploy token reads.",
+			);
 		const binding = parseInfisicalBinding({
 			siteUrl: store.endpoint,
 			projectId: secretStoreDeployCredentialProjectId(store),
@@ -67,7 +77,7 @@ export async function readRelayDeployToken(input: {
 		const client = createInfisicalClient({
 			binding,
 			auth: oidcAuth({
-				identityId: store.deployIdentityId,
+				identityId,
 				jwt: githubActionsJwtSource({
 					env,
 					...(audience !== undefined ? { audience } : undefined),

@@ -1,9 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
 	RELAY_DEPLOY_CREDENTIAL_SECRET_PATH,
+	readSecretStoreBinding,
 	secretStoreDeployCredentialProjectId,
 	secretStoreDeployCredentialSecretPath,
 } from "../src/index.js";
+
+describe("deploy credential identity", () => {
+	it("rejects the writer identity as the deploy credential reader", () => {
+		expect(() =>
+			readSecretStoreBinding(
+				JSON.stringify({
+					kind: "infisical-cloud-attach",
+					endpoint: "https://app.infisical.com",
+					projectId: "relay-project",
+					environment: "prod",
+					secretPath: "/hobo-ci-relay",
+					relayIdentityId: "relay-identity",
+					deployIdentityId: "writer-identity",
+					deployCredentialIdentityId: "writer-identity",
+					claimBundleId: "secret-store.ci-vercel.attach-1",
+					claimState: "claimed",
+				}),
+			),
+		).toThrow("does not meet its constraints");
+	});
+});
 
 describe("secretStoreDeployCredentialProjectId", () => {
 	it("prefers deployProjectId when the binding has one", () => {

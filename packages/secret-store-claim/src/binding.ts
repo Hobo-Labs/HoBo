@@ -76,6 +76,10 @@ export function parseSecretStoreBinding(
 		ID.test(record.relayIdentityId) &&
 		ID.test(record.deployIdentityId) &&
 		record.relayIdentityId !== record.deployIdentityId &&
+		(record.deployCredentialIdentityId === "" ||
+			(ID.test(record.deployCredentialIdentityId) &&
+				record.deployCredentialIdentityId !== record.relayIdentityId &&
+				record.deployCredentialIdentityId !== record.deployIdentityId)) &&
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
 		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
@@ -84,7 +88,7 @@ export function parseSecretStoreBinding(
 	if (!ok || claimState === undefined)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, two distinct identities in two distinct projects, an HTTPS endpoint without userinfo)",
+			"the secret store binding does not meet its constraints (coordinates only, distinct identities, an HTTPS endpoint without userinfo)",
 		);
 	return Object.freeze({
 		kind,
@@ -95,6 +99,7 @@ export function parseSecretStoreBinding(
 		secretPath: record.secretPath,
 		relayIdentityId: record.relayIdentityId,
 		deployIdentityId: record.deployIdentityId,
+		deployCredentialIdentityId: record.deployCredentialIdentityId,
 		vercelTeamId: record.vercelTeamId,
 		claimBundleId: record.claimBundleId,
 		claimState,

@@ -548,7 +548,8 @@ dashboard's OIDC trust one step at a time, then records the ids:
 ```sh
 GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
   --repo <owner/name> --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
-  --deploy-identity-id <hobo-ci-writer> --team team_… \
+  --deploy-identity-id <hobo-ci-writer> \
+  --deploy-credential-identity-id <hobo-ci-deploy-reader> --team team_… \
   [--deploy-project-id <id>] [--site-url https://<self-hosted Infisical>] [--yes]
 hobo ci secret-store verify --cwd packages/ci-vercel --json
 ```
@@ -566,24 +567,31 @@ audience `https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
 project is optional and empty by default) and refuses to replace one for
-other ids without `--yes`. Both resolve `hobo-ci-writer`'s GitHub OIDC trust
-from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the repository's
+other ids without `--yes`. An attach binding without a deploy project requires
+`--deploy-credential-identity-id` for the read-only
+`hobo-ci-deploy-reader`, distinct from the writer in `--deploy-identity-id`.
+`connect` resolves the shared GitHub OIDC trust for `hobo-ci-writer` and
+`hobo-ci-deploy-reader` from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the
+repository's
 `sub_claim_prefix` (or the immutable `repo:<owner>@<ownerId>/<repo>@<repoId>`
 form from its ids when the template says `use_immutable_subject`), then
 `:ref:refs/heads/main`, with `repository_id` and `repository_owner_id`
 pinned; when GitHub does not say, they fail closed with
 `HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED` and the `gh api` command to
 check. The binding records the subject (`deployOidcSubject`). Re-running
-`connect` (ids optional once the binding exists) repairs the trust: with the
-owner's own `INFISICAL_TOKEN` for that run it replaces the identity's OIDC
-trust in place (no new identity); otherwise it prints the subject and claims
+`connect` (ids optional once the complete binding exists; adding the deploy
+reader to an older binding needs `--yes`) repairs the trust:
+with the owner's own `INFISICAL_TOKEN` for that run it replaces both
+identities' OIDC trust in place (no new identity); otherwise it prints the subject and claims
 to set in the dashboard. A denied `verify` whose token `sub` differs from the
 recorded subject (or is immutable when none was recorded) says so and names
 that repair. `verify` reports `pass`, `fail` or `not-run` by identity
-name: `hobo-ci-writer` inside a GitHub Actions job (GitHub OIDC sign-in, then
-a revoke; role shape not asserted), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
-present (secret names only). The deploy workflow runs it as *Verify the
-secret store connection*.
+name: `hobo-ci-deploy-reader` inside a GitHub Actions job (GitHub OIDC
+sign-in, then a revoke; role shape not asserted), `hobo-ci-relay` where
+`VERCEL_OIDC_TOKEN` is present (secret names only). The deploy workflow runs
+it as *Verify the secret store connection*; the `app-credentials` job proves
+`hobo-ci-writer` by depositing through it, and the deploy job never signs in
+as the writer.
 
 The GitHub App's credentials never touch a person or this CLI:
 `hobo ci app create --via-workflow` takes GitHub's one-time manifest code

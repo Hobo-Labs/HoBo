@@ -6,6 +6,7 @@
 	"secretPath": "/hobo-ci-relay",
 	"relayIdentityId": "relay-identity",
 	"deployIdentityId": "deploy-identity",
+	"deployCredentialIdentityId": "deploy-credential-identity",
 	"claimBundleId": "secret-store:hobo-ci-relay:connect-1",
 	"claimState": "claimed"
 }

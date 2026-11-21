@@ -55,6 +55,7 @@ package secret_store_claim
 	secretPath:  string & =~"^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$"
 	relayIdentityId:  #Id
 	deployIdentityId: #Id & !=relayIdentityId
+	deployCredentialIdentityId?: #Id & !=relayIdentityId & !=deployIdentityId
 	vercelTeamId?:    string & =~"^team_[A-Za-z0-9]{1,64}$"
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
