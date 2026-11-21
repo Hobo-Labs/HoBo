@@ -37,7 +37,9 @@ bearer/JWT/credential redaction before the job summary sees it, and the result
 report script exits nonzero unless the command's
 envelope is a validated success envelope (`ok: true`) with a valid exit
 status — an absent, malformed, or error envelope is a failure even when the
-recorded status is 0 (the workflow test runs the delivery step's script
+recorded status is 0. A success envelope may omit `code` (`hobo ci app
+deposit` succeeds with a message only); the report names that case `HOBO_OK`
+(the workflow test runs the delivery step's script
 against a fake `hobo.js` that answers with a credential-shaped message and
 asserts the summary shows `[redacted]`), and the CLI masks the store-read
 `VERCEL_TOKEN` with `::add-mask::` only when `GITHUB_ACTIONS=true`, never merely
@@ -45,16 +47,15 @@ because OIDC mint variables are present
 (`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an
 absent or unreadable `packages/ci-vercel/deploy/secret-store.binding.json`
 as a required-check failure; the committed binding carries coordinates only.
-The fallback stays active until a linked production run proves the new
-channel: Vercel Git auto-deploy remains enabled in `vercel.json` and the
-binding has no `deployProjectId`, so the gate skips the store-read CD
-delivery on a relay push (a notice on the run names the fallback) and a
-manual run fails naming the cutover, while `hobo ci deploy` run directly in
-that state still refuses with `HOBO_CI_DEPLOY_AUTH_REQUIRED` and Vercel
-keeps deploying the relay.
+A binding that names no deploy project is the fallback period's committed
+shape, and it fails every event that would deploy: the relay's Vercel project
+is intentionally not Git-linked (`AGENTS.md`), so until the cutover records
+the deploy project nothing deploys the relay at all — no green required
+check may say otherwise. `hobo ci deploy` run directly in that state refuses
+with `HOBO_CI_DEPLOY_AUTH_REQUIRED`.
 The store-read-credential → CD-deploy channel is built, not proven: the
 first production run after the cutover commit — the relay-relevant push
-that records `deployProjectId` and disables the Git fallback — must show
+that records `deployProjectId` — must show
 the *Verify the secret store connection* check passing and the *Deliver the
 relay through HoBo CD* step summary carrying both targets, and be linked
 (`packages/ci-vercel/README.md`, "Merge cutover"). The delivery step runs both
@@ -72,9 +73,10 @@ a required-check failure, never a reason to deploy. A manual run always needs a
 decision, so it deploys or fails. An absent or unreadable secret-store binding
 is a required-check failure for any event that would deploy; a bound file is
 read for shape only, never for a value. A binding that names no deploy project
-(`deployProjectId`) is the fallback period's committed shape: a relay push
-skips the CD delivery with a notice naming the Git fallback, and a manual run
-fails naming the cutover. The gate writes `run`, `reason`, and
+(`deployProjectId`) is the fallback period's committed shape: every event that
+would deploy — a relay push, or a manual run — fails the check naming the
+cutover, because the relay's Vercel project is intentionally not Git-linked
+and nothing else deploys it. The gate writes `run`, `reason`, and
 the ISO `deadline` to GitHub's output, prints the skip or deploy notice, and on
 failure prints `::error title=Relay deploy failed::` with exit 1. The deadline
 is the job timeout less its setup and summary margin, and bounds the whole

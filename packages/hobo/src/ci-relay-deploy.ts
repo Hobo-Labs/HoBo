@@ -950,8 +950,22 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
-				if (protectedPreview || stagedProduction)
-					deploymentUrl = await attestedDeploymentUrl(client, outputs, project);
+				if (protectedPreview || stagedProduction) {
+					const attested = await attestedDeploymentUrl(
+						client,
+						outputs,
+						project,
+					);
+					if (attested === undefined)
+						return {
+							ok: false,
+							status: "rejected",
+							code: "HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED",
+							message:
+								"Vercel's record of the created deployment does not attest the URL the create answer gave, so the deployment cannot be probed behind protection; it was not verified, and production traffic was not changed.",
+						};
+					deploymentUrl = attested;
+				}
 				return {
 					ok: true,
 					outputs: Object.fromEntries(

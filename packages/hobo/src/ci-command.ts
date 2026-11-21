@@ -638,7 +638,9 @@ export function createCiCommand(
 								: String(values["owner-id"]),
 						env: deps.env ?? process.env,
 						emitProgress,
-						fetch: deps.credentialFetch ?? deps.fetch,
+						...(deps.credentialFetch !== undefined
+							? { fetch: deps.credentialFetch }
+							: undefined),
 						sleep: deps.sleep,
 					});
 				const allowed = new Set([

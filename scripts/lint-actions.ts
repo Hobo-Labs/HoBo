@@ -305,18 +305,25 @@ function stepLines(block: readonly string[], at: number): readonly string[] {
 }
 
 function attestedRelayCheckout(block: readonly string[]): boolean {
-	const at = block.findIndex(
-		(line) => line.trim() === `- uses: actions/checkout@${RELAY_CHECKOUT_SHA}`,
-	);
-	if (at < 0) return false;
-	const values = stepLines(block, at).map((line) => line.trim());
-	return (
-		values.filter((value) => value === "clean: true").length === 1 &&
-		!values.includes("clean: false") &&
-		values.includes("submodules: recursive") &&
-		values.includes("persist-credentials: false") &&
-		!values.some((value) => value.startsWith("path:"))
-	);
+	const checkouts = block.reduce<number[]>((found, line, index) => {
+		if (/^ {6}- uses: actions\/checkout@/u.test(line)) found.push(index);
+		return found;
+	}, []);
+	if (checkouts.length === 0) return false;
+	return checkouts.every((at) => {
+		if (block[at] !== `      - uses: actions/checkout@${RELAY_CHECKOUT_SHA}`)
+			return false;
+		const values = stepLines(block, at)
+			.filter((line) => /^ {8}/u.test(line))
+			.map((line) => line.trim());
+		return (
+			values.filter((value) => value === "clean: true").length === 1 &&
+			!values.includes("clean: false") &&
+			values.includes("submodules: recursive") &&
+			values.includes("persist-credentials: false") &&
+			!values.some((value) => value.startsWith("path:"))
+		);
+	});
 }
 
 function attestedRelayPermissions(
@@ -389,6 +396,30 @@ function attestedHostedRelayJob(
 		) &&
 		block.some((line) => line.trim() === RELAY_DIGEST_ENV)
 	);
+}
+
+function lintHostedRelayTriggers(
+	errors: string[],
+	file: string,
+	text: string,
+): void {
+	if (file !== "relay-deploy.yml") return;
+	const onBlock = /^on:\n((?: {2}[^\n]*\n)+)/mu.exec(text)?.[1] ?? "";
+	for (const trigger of onBlock.matchAll(/^ {2}([a-z_]+):/gmu)) {
+		const name = trigger[1] ?? "";
+		if (name !== "push" && name !== "workflow_dispatch")
+			errors.push(
+				`${file}: the relay's OIDC jobs trust an oidc_sub pinned to main; the ${name} trigger is not a protected ref`,
+			);
+	}
+	const push = / {2}push:\n((?: {4}[^\n]*\n)+)/u.exec(onBlock)?.[1];
+	if (
+		/^ {2}push:$/mu.test(onBlock) &&
+		(push === undefined || !/branches: \[main\]/u.test(push))
+	)
+		errors.push(
+			`${file}: a push that mints the relay's OIDC token must filter branches to [main]`,
+		);
 }
 
 function attestedHostedRelayFile(
@@ -1017,6 +1048,7 @@ function lintWorkflowYaml(
 	const hostedRelayFileAttested =
 		file !== "relay-deploy.yml" ||
 		attestedHostedRelayFile(file, jobStarts, lines);
+	if (file === "relay-deploy.yml") lintHostedRelayTriggers(errors, file, text);
 	if (
 		activeCiFiles.has(file) &&
 		!hostedRelayFileAttested &&

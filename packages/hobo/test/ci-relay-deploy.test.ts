@@ -157,19 +157,24 @@ async function deploy(
 		readonly now?: () => number;
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
+		readonly untrustedEnvToken?: boolean;
 		readonly heldToken?: string;
 	},
 ): Promise<Ran> {
 	// The deploy token is never read from the environment: a test that means
 	// "the owner holds a token" puts it in the run's vault, as the store would.
-	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
+	const { VERCEL_TOKEN: storeToken, ...stripped } = options.env ?? {};
+	const plainEnv =
+		options.untrustedEnvToken === true && storeToken !== undefined
+			? { ...stripped, VERCEL_TOKEN: storeToken }
+			: stripped;
 	const ciRunner =
 		plainEnv.GITHUB_ACTIONS === "true" ||
 		plainEnv.ACTIONS_ID_TOKEN_REQUEST_URL !== undefined;
 	const deployCredentials = createTrustedVault();
 	if (options.heldToken !== undefined)
 		deployCredentials.put("VERCEL_TOKEN", options.heldToken);
-	else if (storeToken !== undefined && !ciRunner)
+	else if (storeToken !== undefined && !ciRunner && !options.untrustedEnvToken)
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
 	const mintUrl = plainEnv.ACTIONS_ID_TOKEN_REQUEST_URL;
 	const credentialFetch =
@@ -436,11 +441,14 @@ describe("Infisical deployment credential", () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING], {
 			fetch,
+			untrustedEnvToken: true,
 			env: { GITHUB_ACTIONS: "true", VERCEL_TOKEN: "untrusted-runner-token" },
 		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
 		expect(sent).toEqual([]);
+		const exposed = `${ran.stdout}${ran.stderr}${JSON.stringify(ran.envelope)}`;
+		expect(exposed).not.toContain("untrusted-runner-token");
 	});
 
 	it("uses the vault's held token as its post-mint state and never asks the store while the mint env is present", async () => {
@@ -495,6 +503,7 @@ describe("Infisical deployment credential", () => {
 		const credentialUrls: string[] = [];
 		const ran = await deploy([...RELAY, ...SETTING], {
 			fetch,
+			untrustedEnvToken: true,
 			credentialFetch: async (input) => {
 				const url = String(input);
 				credentialUrls.push(url);
@@ -1370,12 +1379,12 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		[
 			"another URL",
 			{ id: "dpl_wait", url: "hobo-ci-evil.vercel.app" },
-			"HOBO_CI_DEPLOY_RELAY_NOT_READY",
+			"HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED",
 		],
 		[
 			"another id",
 			{ id: "dpl_other", url: "hobo-ci-git-main.example.vercel.app" },
-			"realize-failed",
+			"HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED",
 		],
 	])("mints no OIDC token when the deployment record names %s", async (_case, record, code) => {
 		const probed: string[] = [];
@@ -1660,6 +1669,30 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example.test/token",
 		ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
 	};
+
+	it("refuses staged production before creation when HOBO_CI_RELAY_PUBLIC_URL is not an https origin", async () => {
+		const vercel = unreachable();
+		const ran = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--target", "production", "--wait"],
+			{
+				fetch: vercel.fetch,
+				heldToken: TOKEN,
+				env: {
+					...env,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
+					HOBO_CI_RELAY_PUBLIC_URL: "http://public.example.test",
+				},
+				...steppingClock(),
+			},
+		);
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining("public HTTPS origin"),
+		});
+		expect(vercel.sent).toEqual([]);
+	});
 
 	it.each([
 		200, 503,

@@ -4,6 +4,7 @@ import {
 	containsControlChar,
 	createProviderRedactor,
 	decodePercentFully,
+	GLUED_BEARER_PATTERN,
 	REDACTION_WINDOW,
 	RedactionPatternError,
 	redactionPattern,
@@ -367,6 +368,23 @@ describe("a provider profile", () => {
 		});
 		expect(redact("pw npg_abcd Bearer x")).toBe("pw [redacted] [redacted]");
 		expect(redactProviderText("pw npg_abcd")).toBe("pw npg_abcd");
+	});
+
+	it("redacts a bearer scheme glued into a longer word, as the shared boundary cannot", () => {
+		const redact = createProviderRedactor({
+			patterns: [GLUED_BEARER_PATTERN],
+		});
+		expect(
+			redact("token%3DBearer xoxb-1234567890-SECRXGAUq0Zc021tT8czva9t"),
+		).toBe("token%3D[redacted]");
+		expect(redact("api-key://@SECR78b3PweSBearer SECRECKK1feJ")).toBe(
+			"[redacted]",
+		);
+		expect(redact("valuePweSBearer SECRECKK1feJ")).toBe("valuePweS[redacted]");
+		expect(redact("noise SECRIH0NBoekbearer\tSECR5gm0pofa tail")).toBe(
+			"noise SECRIH0NBoek[redacted] tail",
+		);
+		expect(redact("MontBearers unite")).toBe("MontBearers unite");
 	});
 
 	it("keeps spans whole, even one a shape would read through", () => {

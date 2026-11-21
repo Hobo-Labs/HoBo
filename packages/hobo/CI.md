@@ -492,7 +492,8 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 Preview `--wait` requires `--sha` and verifies the commit on the deployment
 just created with a GitHub OIDC token scoped to that deployment's origin, which
 Vercel's own record of that deployment must attest (the read-back URL must
-match the create answer, or no token is minted). If protected OIDC probing is
+match the create answer, or no token is minted; a read-back that cannot attest
+it refuses with `HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED`). If protected OIDC probing is
 unavailable or disabled, or `--sha` is omitted, the command refuses before
 creation with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; a shared preview
 origin cannot substitute for that attestation.

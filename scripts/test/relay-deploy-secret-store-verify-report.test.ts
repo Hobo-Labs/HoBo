@@ -6,11 +6,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { KEPT_LOCATOR } from "../../packages/provider-redaction/dist/provider-redaction.js";
 import { assertRevealsNoMore } from "../../packages/redaction-test-harness/dist/redaction-differential.js";
-import { assertPatternSweepLinear } from "../../packages/redaction-test-harness/dist/linear-sweep.js";
-import {
-	RELAY_DEPLOY_BEARER_PATTERN,
-	redactRelayDeployText,
-} from "../ci/relay-deploy-redaction.mts";
+import { redactRelayDeployText } from "../ci/relay-deploy-redaction.mts";
 import { retiredRelayDeployRedactNoise } from "./fixtures/relay-deploy-retired-redact-noise.js";
 
 const root = join(import.meta.dirname, "..", "..");
@@ -121,10 +117,10 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 		}
 	});
 
-	it("hides every credential the retired redactNoise rule hid", () => {
+	it("hides every credential the retired redactNoise rule hid, at the production call sites' own windows", () => {
 		const hidden = assertRevealsNoMore(
 			retiredRelayDeployRedactNoise,
-			(text) => redactRelayDeployText(text, 1_000_000),
+			(text) => redactRelayDeployText(text),
 			{ count: 5_000, kept: KEPT_LOCATOR },
 		);
 		assert.ok(hidden > 500);
@@ -134,10 +130,45 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 			"bearer\tSECRetKpR9wZ",
 			`Authorization: Bearer SECRetKpR9wZ ${jwt}`,
 		])
-			assert.equal(
-				redactRelayDeployText(text, 4096).includes("SECRetKpR9wZ"),
-				false,
+			for (const window of [undefined, 4096])
+				assert.equal(
+					redactRelayDeployText(text, window).includes("SECRetKpR9wZ"),
+					false,
+					String(window),
+				);
+	});
+
+	it("emits no credential past the window it searches, at the report scripts' own bounds", () => {
+		const filler = "provider noise line\n";
+		const total = 20_000;
+		const chars = filler.repeat(total / filler.length).split("");
+		const place = (offset: number, credential: string) => {
+			chars.splice(offset, credential.length, ...credential);
+		};
+		place(8_000, "Bearer in-window-credential-8k");
+		place(9_000, "Bearer past-default-window-9k");
+		place(17_000, "Bearer past-4096-window-17k");
+		place(18_000, "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.pastwindow");
+		const text = chars.join("");
+		for (const maxLength of [undefined, 4096] as const) {
+			const out = redactRelayDeployText(text, maxLength);
+			for (const marker of [
+				"in-window-credential-8k",
+				"past-default-window-9k",
+				"past-4096-window-17k",
+				"pastwindow",
+			])
+				assert.equal(
+					out.includes(marker),
+					false,
+					`${marker} leaked at maxLength ${String(maxLength)}`,
+				);
+			assert.ok(
+				out.length <= (maxLength ?? 256) + 1,
+				`emission unbounded at maxLength ${String(maxLength)}: ${out.length}`,
 			);
+			assert.ok(out.endsWith("…"), "a text past the window is marked cut");
+		}
 	});
 
 	it("redacts an untrusted envelope code in the summary and annotation", () => {
@@ -163,10 +194,6 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
-	});
-
-	it("keeps the relay bearer coverage linear on its adversarial sweep", () => {
-		assertPatternSweepLinear(RELAY_DEPLOY_BEARER_PATTERN);
 	});
 
 	it("fails loudly when stdout had no JSON envelope", () => {

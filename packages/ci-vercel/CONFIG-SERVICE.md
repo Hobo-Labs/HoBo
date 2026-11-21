@@ -275,7 +275,9 @@ replace the stored credential before its expiry. Rotation is: write the new
 token into the deploy project (every later deploy run reads the current value;
 nothing in the workflow or repo changes), then revoke the old token in Vercel.
 If a token is exposed, revoke it in Vercel first — that cuts access whatever
-copies exist — then store a fresh one as above.
+copies exist — then store a fresh one as above. Until the binding names a
+deploy project, the gate fails relay pushes and manual runs closed (nothing
+deploys the relay: the Vercel project is intentionally not Git-linked).
 
 ### What the workflow does, and the claim steps the skill drives
 

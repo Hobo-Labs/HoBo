@@ -711,6 +711,7 @@ ${relayCheckout}      - id: pack
 		return `name: fixture
 on:
   push:
+    branches: [main]
 jobs:
 ${build}  ${job}:
     needs: deploy-build

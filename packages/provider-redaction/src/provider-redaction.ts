@@ -224,6 +224,18 @@ export const SIGNED_JWT_PATTERN = JSON_JWT_PATTERN;
 export const PRIVATE_KEY_DETECTOR: RegExp = /-----BEGIN[^-]*PRIVATE KEY-----/u;
 
 /**
+ * public-contract: a bearer credential whose scheme name a previous token ran
+ * into (`token%3DBearer xoxb…`, `…Boekbearer\tSECR…`): the shared `\bBearer`
+ * shape starts only at a word boundary, so the scheme glued to a word left
+ * its value visible to a short token the fallback's minimum misses. No
+ * boundary of its own: it starts at the literal scheme name and takes the
+ * run of characters a bearer value holds, whole.
+ */
+export const GLUED_BEARER_PATTERN = redactionPattern(
+	/bearer\s+[A-Za-z0-9._~+/=\u017F\u212A-]+/gi,
+);
+
+/**
  * The profile of a provider whose only rule of its own was that any run of
  * twenty or more token characters is a credential (Azure, Cloudflare,
  * DigitalOcean, GCP, Hetzner, Hostinger): that rule as a fallback, searched

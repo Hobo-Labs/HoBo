@@ -129,20 +129,13 @@ export function decide(input: {
 			failure: true,
 			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
 		};
-	if (input.store === "coordinates") {
-		if (input.event === "workflow_dispatch")
-			return {
-				run: false,
-				failure: true,
-				reason:
-					"the committed binding names no deploy project, so this manual run cannot deliver through HoBo CD: complete the cutover (packages/ci-vercel/README.md, Merge cutover) that records the deploy project",
-			};
+	if (input.store === "coordinates")
 		return {
 			run: false,
+			failure: true,
 			reason:
-				"the committed binding names no deploy project, so Vercel's Git integration still deploys the relay and the store-read CD delivery waits for the cutover (packages/ci-vercel/README.md, Merge cutover)",
+				"the committed binding names no deploy project and the relay's Vercel project is intentionally not Git-linked, so nothing deploys the relay: complete the cutover (packages/ci-vercel/README.md, Merge cutover) that records the deploy project",
 		};
-	}
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
 	if (input.changed === undefined)
