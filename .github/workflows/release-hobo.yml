@@ -854,9 +854,7 @@ jobs:
           submodules: "false"
       - name: Fetch previous release for affected builds
         if: env.HOBO_RELEASE_TURBO_BASE != ''
-        run: |
-          set -euo pipefail
-          git fetch --unshallow --filter=blob:none origin main "refs/tags/${HOBO_RELEASE_TURBO_BASE}:refs/tags/${HOBO_RELEASE_TURBO_BASE}"
+        run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
       - uses: $/.github/actions/ci-runner-preflight
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
@@ -982,9 +980,7 @@ jobs:
           submodules: "false"
       - name: Fetch previous release for affected builds
         if: env.HOBO_RELEASE_TURBO_BASE != ''
-        run: |
-          set -euo pipefail
-          git fetch --unshallow --filter=blob:none origin main "refs/tags/${HOBO_RELEASE_TURBO_BASE}:refs/tags/${HOBO_RELEASE_TURBO_BASE}"
+        run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store

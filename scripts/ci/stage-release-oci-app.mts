@@ -133,13 +133,8 @@ function releaseTagOrDispatchCheckout(): boolean {
 	return process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
 }
 
-export function resolveReleaseTurboBase(
-	root: string,
-	configuredBase = process.env.HOBO_RELEASE_TURBO_BASE,
-): string | undefined {
-	const base = configuredBase?.trim();
-	if (!base) return undefined;
-	const refExists = (ref: string): boolean =>
+function refExists(root: string, ref: string): boolean {
+	return (
 		spawnSync(
 			"git",
 			[
@@ -150,14 +145,72 @@ export function resolveReleaseTurboBase(
 				`${ref}^{commit}`,
 			],
 			{ cwd: root, stdio: "ignore" },
-		).status === 0;
-	if (refExists(base)) return base;
+		).status === 0
+	);
+}
+
+function turboBaseReachable(root: string, base: string): boolean {
+	if (!refExists(root, base)) return false;
+	return (
+		spawnSync(
+			"git",
+			["merge-base", "--", base, "HEAD"],
+			{ cwd: root, stdio: "ignore" },
+		).status === 0
+	);
+}
+
+/** History and tags the release OCI turbo filter needs; no-op when base is empty. */
+export function fetchReleaseTurboBase(root: string, configuredBase: string): void {
+	const base = configuredBase.trim();
+	if (!base) return;
+	const remote = spawnSync("git", ["remote", "get-url", "origin"], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	if (remote.status !== 0 || !remote.stdout.trim()) return;
+	const fetch = (args: readonly string[]) => {
+		spawnSync(
+			"git",
+			["-c", "http.version=HTTP/1.1", "fetch", ...args],
+			{ cwd: root, stdio: "ignore" },
+		);
+	};
 	if (base === "origin/main") {
 		tryShallowFetchOriginMain(root);
-		if (refExists("origin/main")) return "origin/main";
-		if (refExists("HEAD^1")) return "HEAD^1";
+		return;
+	}
+	if (base.startsWith("origin/")) {
+		const branch = base.slice("origin/".length);
+		fetch([
+			"--depth=256",
+			"--filter=blob:none",
+			"origin",
+			`${branch}:refs/remotes/origin/${branch}`,
+		]);
+		return;
+	}
+	const tag = base.replace(/^refs\/tags\//u, "");
+	fetch(["--depth=256", "--filter=blob:none", "origin", "main:refs/remotes/origin/main"]);
+	fetch(["--tags", "--depth=256", "--filter=blob:none", "origin", `refs/tags/${tag}:refs/tags/${tag}`]);
+}
+
+export function resolveReleaseTurboBase(
+	root: string,
+	configuredBase = process.env.HOBO_RELEASE_TURBO_BASE,
+): string | undefined {
+	const base = configuredBase?.trim();
+	if (!base) return undefined;
+	if (turboBaseReachable(root, base)) return base;
+	fetchReleaseTurboBase(root, base);
+	if (turboBaseReachable(root, base)) return base;
+	if (base === "origin/main") {
+		if (refExists(root, "HEAD^1") && turboBaseReachable(root, "HEAD^1"))
+			return "HEAD^1";
 		if (releaseTagOrDispatchCheckout()) return undefined;
 	}
+	if (releaseTagOrDispatchCheckout() || /^v0\.0\.0-alpha\.\d+$/u.test(base))
+		return undefined;
 	throw new Error(
 		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
 	);

@@ -125,6 +125,26 @@ describe("release OCI app staging", () => {
 		}
 	});
 
+	it("falls back to a full turbo build when the release tag base is not reachable", () => {
+		const repo = mkdtempSync(join(tmpdir(), "hobo-release-turbo-missing-tag-"));
+		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
+		try {
+			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
+			expect(resolveReleaseTurboBase(repo, "v0.0.0-alpha.2")).toBeUndefined();
+			expect(releaseOciTurboBuildArgs(repo, ["@hobo/hobo..."])).toEqual([
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				"--filter=@hobo/hobo...",
+			]);
+		} finally {
+			if (previousBase === undefined) delete process.env.HOBO_RELEASE_TURBO_BASE;
+			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+
 	it("combines SCM-affected and requested image filters", {
 		timeout: GIT_FIXTURE_TIMEOUT_MS,
 	}, () => {

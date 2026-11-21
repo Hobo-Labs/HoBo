@@ -80,6 +80,9 @@ describe("release-hobo publish and attest, one image per job", () => {
 			"needs.release-main-train-gate.outputs.turbo_base",
 		);
 		expect(publish).toContain("Fetch previous release for affected builds");
+		expect(build).toContain(
+			"node --no-warnings scripts/ci/fetch-release-turbo-base.mts",
+		);
 		expect(workflow).toContain("turbo_base: ${{ steps.scope.outputs.from }}");
 		expect(publish).toContain(fromTrain);
 		expect(publish).toMatch(/max-parallel: 6/u);
