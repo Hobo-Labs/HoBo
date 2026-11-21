@@ -44,14 +44,17 @@ and H10 read `unknown`, which is not a breach on its own; an `unknown` after an 
 with that note.
 
 **Route notices.** Each route decision prints one `hobo-ci-route` notice, version 2:
-`{"v":2,"workflow","tier","runner","slip","why","refusedBy"}`. `slip` is `used` (the routing slip was consulted;
+`{"v":2,"workflow","tier","runner","slip","why","refusedBy"}`, optionally with
+`mergeGroupHostedProbe` (`idle`, `summary`) on merge-group Fabric decisions; unknown fields are ignored. `slip` is `used` (the routing slip was consulted;
 `why` is the relay's reason, such as `fleet-open` or `no-capacity`; `refusedBy: queue` shows a fleet slip
 overruled because GitHub did not confirm timely pickup), `fallback` (no slip could be used and the
 queue rule decided; `why` says which: `no routing slip`, `slip expired`, `slip malformed`, `slip names another
 repository`, `slip names a label not in runnerRouting.labels`, or the Git API failure) or `unasked` (`why`:
-`pinned` or `batch`). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
+`pinned`, `batch`, or `merge-group` on HoBo CI Fabric `merge_group` route jobs that skip the slip). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
 `hobo-ci-route-fallback` warning that starts `routing slip not used`; the monitor reads the notice for it, and
-counts under H1 only the warnings that say the route did not run at all. Version-1 notices (the hosted relay's
+counts under H1 only the warnings that say the route did not run at all. The same titled warning records an
+unreadable PR-batch hosted queue probe and a same-repository batch diverted to the fleet without a verified
+capacity claim. Version-1 notices (the hosted relay's
 `relay`/`verdict` fields) are no longer read.
 
 ## Signals

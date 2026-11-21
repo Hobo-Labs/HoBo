@@ -204,7 +204,7 @@ describe("CI deps image build contract", () => {
 		includes(build, '[ "$local_key" = "$key" ]');
 	});
 
-	it("imports the registry cache only with the containerd image store", () => {
+	it("imports the registry cache and exports it on publisher builds only with containerd", () => {
 		includes(build, "deps_uses_containerd_image_store()");
 		includes(build, "docker info --format '{{json .DriverStatus}}'");
 		includes(build, "*io.containerd.snapshotter*");
@@ -214,11 +214,18 @@ describe("CI deps image build contract", () => {
 		const cacheImport = build.indexOf(
 			'cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")',
 		);
+		const cacheExport = build.indexOf(
+			'cache_args+=(--cache-to "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache,mode=min")',
+		);
 		assert.ok(detection > -1);
 		assert.ok(cacheImport > detection);
+		assert.ok(cacheExport > cacheImport);
+		includes(
+			build,
+			'if [[ "${HOBO_CI_DEPS_EXPORT_BUILDCACHE:-0}" == "1" ]]; then',
+		);
 		includes(build, '"${cache_args[@]}"');
 		includes(build, "deps registry cache import skipped: classic image store");
-		assert.ok(!build.includes("--cache-to"));
 	});
 
 	it("stages the link verification script in the deps context for mount verify", () => {
@@ -847,9 +854,15 @@ describe("CI deps publisher contract", () => {
 		assert.ok(!publish.includes('echo "${{ secrets.GITHUB_TOKEN }}'));
 	});
 
-	it("exports mode=min cache after the push only with the containerd image store", () => {
+	it("exports mode=min during a fresh build and keeps the local-hit export fallback", () => {
+		const freshBuild = publish.indexOf(
+			'HOBO_CI_DEPS_BUILDCACHE_EXPORTED_FILE="$cache_export_marker"',
+		);
 		const push = publish.indexOf(
 			"timeout --signal=TERM --kill-after=15s 240s docker push",
+		);
+		const exported = publish.indexOf(
+			'if [ -s "$cache_export_marker" ] && deps_uses_containerd_image_store; then',
 		);
 		const detection = publish.indexOf(
 			"if ! deps_uses_containerd_image_store; then",
@@ -857,9 +870,16 @@ describe("CI deps publisher contract", () => {
 		const exportCache = publish.indexOf(
 			'--cache-to "type=registry,ref=${cache_image},mode=min"',
 		);
-		assert.ok(push > -1);
-		assert.ok(detection > push);
+		assert.ok(freshBuild > -1);
+		assert.ok(push > freshBuild);
+		assert.ok(exported > push);
+		assert.ok(detection > exported);
 		assert.ok(exportCache > detection);
+		assert.ok(
+			build.indexOf("printf 'exported\\n' > \"$cache_exported_file\"") >
+				build.indexOf('-t "$candidate" "$context"'),
+		);
+		includes(publish, "deps buildcache exported during the image build");
 		includes(publish, "docker info --format '{{json .DriverStatus}}'");
 		includes(publish, "*io.containerd.snapshotter*");
 		includes(

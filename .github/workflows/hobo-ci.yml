@@ -44,19 +44,20 @@ env:
 # green main). They used to cancel the running one, and with the merge queue landing a
 # commit every few minutes and a main run taking longer than that, no main run finished
 # for hours; the release train and the deps publish run only after a green main run.
-# A newer pull_request push still cancels its PR's older run. The event name keeps
-# schedule and workflow_dispatch on main out of the pushes' group; merge_group runs are
-# never cancelled.
+# A newer pull_request push still cancels its PR's older run. A superseded merge_group
+# build for the same queue ref cancels the older in-progress run so evicted groups stop
+# holding trunk (finding 113 keeps push/main queued, not cancelled).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: >-
+    ${{ github.event_name == 'merge_group' && format('{0}-merge-group-{1}', github.workflow, github.event.merge_group.head_ref) ||
+    format('{0}-{1}-{2}', github.workflow, github.event_name, github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
   route:
     name: Route runners
-    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
-    # it is choosing against. The fleet while it takes jobs, an enrolled local
-    # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
+    # pull_request stays on GitHub-hosted (fork-safe). merge_group Fabric routing
+    # reads GitHub-hosted queue depth inside route-runner (mergeGroupFabric).
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -128,7 +129,7 @@ jobs:
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          route: ${{ inputs.route || 'auto' }}
+          route: ${{ (inputs.route || 'auto') }}
 
   ci-runner-image:
     name: CI runner image (mise oci)
@@ -969,13 +970,69 @@ jobs:
         with:
           disambiguator: ${{ matrix.shard }}
 
+  state-machine-verification:
+    name: State-machine verification
+    needs: [route, ci-runner-image]
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          persist-credentials: false
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Turbo cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build verification dependencies
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo --filter=@hobo/dispatcher
+          --filter=@hobo/ci --filter=@hobo/cd --filter=@hobo/identity
+          --filter=@hobo/storage-sqlite --filter=@hobo/runtime --concurrency=1
+          --output-logs=new-only
+      - name: Check state machines
+        timeout-minutes: 20
+        env:
+          FORMAL_SHARD: ${{ matrix.shard }}
+        run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
+
   pr-gate:
     name: PR impact gate
     # This is the required check. It runs even if a prerequisite was skipped,
     # failed, or cancelled, and accepts only the event's complete validation:
     # each job succeeded, or the route job succeeded, reported a verified signed
     # local run covering that job, and the job was skipped for it.
-    needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests]
+    needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
@@ -992,6 +1049,7 @@ jobs:
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
           AFFECTED_RESULT: ${{ needs.pr_affected.result }}
           SCRIPTS_RESULT: ${{ needs.scripts-tests.result }}
+          FORMAL_RESULT: ${{ needs.state-machine-verification.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1035,6 +1093,10 @@ jobs:
           esac
           if ! passed "${SCRIPTS_RESULT:-}" scripts-tests; then
             echo "Scripts tests did not succeed: ${SCRIPTS_RESULT:-}" >&2
+            exit 1
+          fi
+          if [ "${FORMAL_RESULT:-}" != "success" ]; then
+            echo "State-machine verification did not succeed: ${FORMAL_RESULT:-}" >&2
             exit 1
           fi
 

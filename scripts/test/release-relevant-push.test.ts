@@ -157,6 +157,21 @@ describe("as the release workflow runs it", () => {
 		join(root, ".github/workflows/release-hobo.yml"),
 		"utf8",
 	);
+	function job(id: string): string {
+		const start = workflow.indexOf(`\n  ${id}:\n`);
+		expect(start, id).toBeGreaterThan(-1);
+		const rest = workflow.slice(start + 1);
+		const end = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+		return end < 0 ? rest : rest.slice(0, end + 1);
+	}
+	function jobIf(id: string): string {
+		const body = job(id);
+		const start = body.indexOf("if: >-");
+		expect(start, `${id}: job-level if`).toBeGreaterThan(-1);
+		const runsOn = body.indexOf("runs-on:", start);
+		expect(runsOn, `${id}: runs-on after the job-level if`).toBeGreaterThan(-1);
+		return body.slice(start, runsOn);
+	}
 
 	it("asks since the last release, from the green commit", () => {
 		expect(workflow).toMatch(
@@ -165,13 +180,79 @@ describe("as the release workflow runs it", () => {
 		expect(workflow).not.toMatch(/--from "\$\{head_sha\}\^"/);
 	});
 
-	it("queues main-train runs in one group, never cancelling a running release", () => {
-		expect(workflow).toContain(
-			"group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}",
+	it("queues main-train runs in one group and cancels stale pull_request or merge_group release runs", () => {
+		expect(workflow).toMatch(
+			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}', github\.workflow, github\.event\.merge_group\.head_ref\)/u,
 		);
+		expect(workflow).toMatch(/hobo-release-train-\{0\}-\{1\}/u);
 		expect(workflow).toContain(
-			"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+			"cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
 		);
+	});
+
+	it("keeps publishing jobs out of a merge_group run the queue can cancel", () => {
+		for (const id of [
+			"release-hobo-cli",
+			"release-oci-build-tag",
+			"release-images",
+			"release-publish",
+			"release-attest",
+			"release-npm",
+			"release-tag",
+		]) {
+			expect(
+				jobIf(id).match(
+					/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\//u,
+				),
+				`${id}: a superseded merge_group run is cancelled mid-run, so only the main train, a release tag, or a dispatch may publish`,
+			).not.toBeNull();
+			expect(
+				jobIf(id),
+				`${id}: the job-level if must not enable a merge_group run the queue can cancel mid-publish`,
+			).not.toMatch(/github\.event_name == 'merge_group'/u);
+		}
+		const realize = jobIf("release-realize");
+		expect(
+			realize,
+			"the offline realize proof runs for exactly the pre-merge events",
+		).toMatch(/github\.event_name == 'pull_request'/u);
+		expect(realize).toMatch(/github\.event_name == 'merge_group'/u);
+		expect(
+			realize,
+			"an offline proof must not grow the publish train gate a cancelled merge_group run could ride",
+		).not.toMatch(
+			/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\//u,
+		);
+		expect(
+			realize,
+			"the workflow_run publish path releases what this proof never witnessed",
+		).not.toMatch(/github\.event_name == 'workflow_run'/u);
+		expect(
+			jobIf("release-github"),
+			"an independent tag release still requires this run's publish",
+		).toContain("needs.release-publish.result == 'success'");
+	});
+
+	it("gates the publish train on a route that failed, but never the Pages publish", () => {
+		for (const id of [
+			"release-main-train-gate",
+			"release-contract",
+			"release-hobo-integration",
+			"release-realize",
+		]) {
+			expect(
+				jobIf(id),
+				`${id}: a failed route falls back to the pinned hosted runner, and the GHCR/npm publish train behind these gates must still run`,
+			).toContain(
+				"(needs.route.result == 'success' || needs.route.result == 'failure')",
+			);
+		}
+		const pages = jobIf("release-pages");
+		expect(pages).toContain("needs.route.result == 'success'");
+		expect(
+			pages,
+			"Pages writes a public surface, so a run whose route never decided must not publish it",
+		).not.toContain("needs.route.result == 'failure'");
 	});
 
 	it("writes run= for the gate under plain node", () => {
@@ -197,6 +278,6 @@ describe("as the release workflow runs it", () => {
 		);
 		expect(run.stderr).toBe("");
 		expect(run.status).toBe(0);
-		expect(readFileSync(out, "utf8")).toBe("run=false\n");
+		expect(readFileSync(out, "utf8")).toBe("run=false\nfrom=HEAD\n");
 	});
 });

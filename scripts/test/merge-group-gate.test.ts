@@ -61,6 +61,54 @@ describe("merge-group required gate", () => {
 	const affected = job("pr_affected");
 	const gate = job("pr-gate");
 
+	it("requires successful state-machine verification for pull requests and merge groups", () => {
+		const verification = job("state-machine-verification");
+		assert.match(verification, /pnpm run verify:state-machines/u);
+		assert.match(verification, /github\.event_name == 'pull_request'/u);
+		assert.match(verification, /github\.event_name == 'merge_group'/u);
+		assert.match(verification, /shard: \[0, 1, 2, 3\]/u);
+		assert.match(verification, /--shard=\$\{FORMAL_SHARD\}\/4/u);
+		assert.match(gate, /needs: \[[^\]]*state-machine-verification/u);
+		const script = shellForStep(
+			gate,
+			"Require successful validation and workspace tests",
+		);
+		for (const [event, affectedResult] of [
+			["pull_request", "success"],
+			["merge_group", "skipped"],
+		] as const) {
+			for (const result of [
+				"success",
+				"failure",
+				"cancelled",
+				"skipped",
+				"timed_out",
+				"",
+			]) {
+				const run = spawnSync("bash", ["-c", script], {
+					env: {
+						...process.env,
+						EVENT_NAME: event,
+						PLAN_RESULT: "success",
+						VALIDATION_RESULT: "success",
+						WORKSPACE_RESULT: "success",
+						AFFECTED_RESULT: affectedResult,
+						SCRIPTS_RESULT: "success",
+						FORMAL_RESULT: result,
+						ROUTE_RESULT: "success",
+						ATTESTED: "true",
+						ATTESTED_JOBS: '["state-machine-verification"]',
+					},
+				});
+				assert.equal(
+					run.status === 0,
+					result === "success",
+					`${event}/${result}`,
+				);
+			}
+		}
+	});
+
 	it("requires the plan, validation, all workspace shards, and the PR package lanes", () => {
 		assert.match(planner, /needs: \[route\]/u);
 		assert.match(
@@ -125,7 +173,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			gate,
-			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests\]/u,
+			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
@@ -201,6 +249,7 @@ describe("merge-group required gate", () => {
 									WORKSPACE_RESULT: workspaceResult,
 									AFFECTED_RESULT: affectedResult,
 									SCRIPTS_RESULT: "success",
+									FORMAL_RESULT: "success",
 								},
 							});
 							const expected =
@@ -278,6 +327,7 @@ describe("merge-group required gate", () => {
 			'    export AFFECTED_RESULT="$5" ROUTE_RESULT="$6" ATTESTED="$7" ATTESTED_JOBS="$8"',
 			// The scripts job's own cases: scripts-tests-job.test.ts.
 			"    export SCRIPTS_RESULT=success",
+			"    export FORMAL_RESULT=success",
 			script,
 			"  ) >/dev/null 2>&1",
 			"  echo $?",

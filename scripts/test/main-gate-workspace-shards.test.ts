@@ -214,7 +214,10 @@ describe("main full gate workspace sharding", () => {
 			workflow,
 			/^  workflow_dispatch:\n    inputs:\n      route:\n/mu,
 		);
-		assert.match(job("route"), /route: \$\{\{ inputs\.route \|\| 'auto' \}\}/u);
+		assert.match(
+			job("route"),
+			/route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/u,
+		);
 		assert.doesNotMatch(workflow, /vars\.HOBO_CI_/u);
 	});
 });

@@ -9,6 +9,7 @@ tags: [hobo, ci, performance, maintenance]
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Online overflow only.** A saturated `hobo` pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one online Agent37 runner. Absent, offline-only, or unreadable overflow runners keep the prior route (or the PR batch's `hobo` divert), with the reason recorded in the fallback warning and route notice. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
 - **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
   pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
   no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box

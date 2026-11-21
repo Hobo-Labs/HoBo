@@ -5,9 +5,9 @@ description: >-
   is. When the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen and a warning says why. Auto-routed pull-request
   batches require verified public standard-runner pricing or a verified fleet
-  batch claim. Automatic merge-group batches use a verified public standard
-  runner unless explicitly pinned. If routing fails, these batches stop before
-  queuing jobs. Pinned to the fleet, it stays there.
+  batch claim. Automatic release merge-group batches use a verified public
+  standard runner unless explicitly pinned. If routing fails, these batches stop
+  before queuing jobs. Pinned to the fleet, it stays there.
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
@@ -15,6 +15,14 @@ description: >-
   against current GitHub queue pickup and wait evidence for its exact label;
   if it is not taking jobs, the queue selects an enrolled local runner or
   GitHub-hosted. With no usable slip the queue rule decides, as before slips.
+  When the answer would be the general hobo label and the hobo pool itself is
+  saturated — every online hobo-label runner busy, or the pool host's CPU used
+  percent above 90 in the optional repository variable the script reads
+  itself through GitHub's API — the run overflows to the Agent37 on-demand
+  label hobo-agent37 only when the same runner page shows an online runner for
+  that label. Otherwise the prior decision stays and a titled fallback warning
+  records why; an unreadable reading is not saturation, a fork never receives
+  the pool's or the overflow's label, and a pinned tier stays pinned.
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and the remaining jobs follow the normal fleet routing decision.

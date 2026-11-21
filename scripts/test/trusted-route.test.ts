@@ -146,7 +146,7 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
-	it("routes from the base action's code and policy and refuses missing base files", () => {
+	it("routes from the base action's code and handles missing base files by route kind", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-trusted-batch-"));
 		try {
 			const action = workflowDocument(
@@ -233,6 +233,25 @@ describe("base-controlled attestation verification", () => {
 			rmSync(workspace, { recursive: true, force: true });
 		}
 	});
+
+	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+		it(`${workflow} keeps the route job on ubuntu-24.04 for merge_group`, () => {
+			const doc = workflowDocument(
+				readFileSync(`.github/workflows/${workflow}`, "utf8"),
+			);
+			const route = asObject(asObject(doc.jobs)?.route);
+			assert.equal(route?.["runs-on"], "ubuntu-24.04");
+			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
+			const routeStep = asList(route?.steps)
+				?.map(asObject)
+				.find((step) => step?.id === "route");
+			const withBlock = asObject(routeStep?.with);
+			assert.equal(
+				asText(withBlock?.route),
+				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
+			);
+		});
+	}
 
 	it("keeps merge-group shards on the original route", () => {
 		const workflow = workflowDocument(
