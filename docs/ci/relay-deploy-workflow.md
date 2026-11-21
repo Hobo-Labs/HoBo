@@ -14,12 +14,22 @@ before *Deliver the relay through HoBo CD* by step line order, not by
 whole-file substring search. The credential-bearing deploy and App-deposit jobs
 must use `ubuntu-24.04` and `clean: true`. `scripts/lint-actions.ts` exempts
 this workflow from fleet routing and scopes its per-job hosted-runner exception
-to those two jobs. The delivery and App-deposit summary lines pass the CLI's
+to those jobs and the unprivileged `deploy-build` job. Building and deploying
+are separated so the GitHub OIDC identity reaches no build code:
+`deploy-build` holds `contents: read` only and packs the built hobo CLI with
+its sha256 (`scripts/ci/release-freight-cli.mts pack`); each job that holds
+`id-token: write` (`deploy`, `app-credentials`) restores it only when the
+digest matches the build job's output and the archive's manifest names the
+commit it checked out (`release-freight-cli.mts restore`, fail closed
+otherwise), before any step that runs the CLI. The delivery and App-deposit summary lines pass the CLI's
 envelope message through a bearer/JWT/credential redaction before the job
-summary sees it (the workflow test runs the delivery step's script against a
-fake `hobo.js` that answers with a credential-shaped message and asserts the
-summary shows `[redacted]`), and the CLI masks the store-read `VERCEL_TOKEN`
-with `::add-mask::` on Actions runs
+summary sees it, and the report script exits nonzero unless the command's
+envelope is a validated success envelope (`ok: true`) with a valid exit
+status — an absent, malformed, or error envelope is a failure even when the
+recorded status is 0 (the workflow test runs the delivery step's script
+against a fake `hobo.js` that answers with a credential-shaped message and
+asserts the summary shows `[redacted]`), and the CLI masks the store-read
+`VERCEL_TOKEN` with `::add-mask::` on Actions runs
 (`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an absent or
 unreadable `packages/ci-vercel/deploy/secret-store.binding.json` as a
 required-check failure; the committed binding carries coordinates only. The

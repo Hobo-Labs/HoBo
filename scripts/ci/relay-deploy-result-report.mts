@@ -13,6 +13,7 @@ if (jsonPath === undefined || label === undefined || exitArg === undefined)
 	);
 
 const envelopeSchema = z.object({
+	ok: z.boolean(),
 	code: z.string().optional(),
 	message: z.string().optional(),
 });
@@ -31,7 +32,11 @@ const validExitCode =
 	exitCode <= 255;
 const code =
 	envelope?.code ??
-	(envelope === undefined ? "HOBO_CI_DEPLOY_NO_ENVELOPE" : "HOBO_OK");
+	(envelope === undefined
+		? "HOBO_CI_DEPLOY_NO_ENVELOPE"
+		: envelope.ok
+			? "HOBO_OK"
+			: "HOBO_FAILED_WITHOUT_CODE");
 const message =
 	envelope?.message ??
 	(envelope === undefined ? "command did not emit a valid JSON envelope" : "");
@@ -43,4 +48,8 @@ const stderr =
 		: "";
 if (stderr !== "") console.log(redact(stderr, 4096));
 process.exitCode =
-	validExitCode && (envelope !== undefined || exitCode !== 0) ? exitCode : 1;
+	validExitCode && envelope?.ok === true
+		? exitCode
+		: validExitCode && exitCode > 0
+			? exitCode
+			: 1;

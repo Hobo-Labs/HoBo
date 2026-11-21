@@ -784,7 +784,7 @@ async function deliverWith(
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
 	const finalizePromotion = input.finalizePromotion;
-	let finalizedFreightId: FreightId | undefined;
+	let finalizedSetId: string | undefined;
 	let finalizationFailure: RelayRealizationFailure | undefined;
 	const handoverFor = async (set: SetRecord | undefined, camp: CampId) => {
 		if (!set) return {};
@@ -830,16 +830,27 @@ async function deliverWith(
 					],
 				};
 			const set = await cd.desired.current(request.campId);
+			if (set?.freightId !== request.freightId)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.promotionRefused,
+							`Camp ${request.campId}'s desired Set ${set?.setId ?? "(none)"} carries Freight ${set?.freightId ?? "(none)"}, not ${request.freightId}: the finalizer never runs for another promotion's candidate`,
+							"Re-run hobo ci deploy for the Freight being delivered; its own promotion drives the finalizer.",
+						),
+					],
+				};
 			const failure = await finalizePromotion({
 				report: report(promotion, set),
 				handover: await handoverFor(set, request.campId),
 			});
 			if (failure === undefined) {
-				finalizedFreightId = request.freightId;
+				finalizedSetId = set.setId;
 				finalizationFailure = undefined;
 				return { ok: true, value: { finalized: true } };
 			}
-			finalizedFreightId = undefined;
+			finalizedSetId = undefined;
 			finalizationFailure = failure;
 			return {
 				ok: false,
@@ -1108,8 +1119,16 @@ async function deliverWith(
 		if (terminal.state === PromotionState.PROMOTED) {
 			if (
 				finalizePromotion !== undefined &&
-				finalizedFreightId !== freight.freightId
+				(set === undefined || finalizedSetId !== set.setId)
 			) {
+				if (set !== undefined && set.freightId !== freight.freightId)
+					return {
+						ok: false,
+						code: RELAY_DELIVERY_REFUSAL.promotionRefused,
+						message: `The promotion of ${freight.alias} to ${campId} ended ${PromotionState[terminal.state]}, but the Camp's desired Set ${set.setId} carries Freight ${set.freightId}, not ${freight.freightId}: the finalizer never runs for another promotion's candidate.`,
+						report: report(terminal, set),
+						handover,
+					};
 				const failure = await finalizePromotion({
 					report: report(terminal, set),
 					handover,
@@ -1123,6 +1142,7 @@ async function deliverWith(
 						report: report(terminal, set),
 						handover,
 					};
+				finalizedSetId = set?.setId;
 			}
 			return { ok: true, report: report(terminal, set), handover };
 		}

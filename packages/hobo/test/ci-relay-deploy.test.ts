@@ -964,6 +964,10 @@ function fakeVercelCli(listed: { project: string; team: string }) {
 
 describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 	const env = { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM, ...ORIGINS };
+	const oidcEnv = {
+		ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example.test/token",
+		ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+	};
 
 	it("verifies the newly created protected preview with GitHub OIDC", async () => {
 		const probed: string[] = [];
@@ -1089,6 +1093,94 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
 	});
 
+	it("mints no OIDC token when the deployment record names another URL than the create answer", async () => {
+		const probed: string[] = [];
+		const minted: string[] = [];
+		const relay = healthyRelay();
+		const fetch: VercelFetch = async (url, init) => {
+			const path = url.replace("https://api.vercel.com", "");
+			const answer = (body: JsonObject) => ({
+				ok: true,
+				status: 200,
+				async text() {
+					return JSON.stringify(body);
+				},
+				async json() {
+					return body;
+				},
+			});
+			if (init.method === "POST" && path.startsWith("/v13/deployments"))
+				return answer({
+					id: "dpl_wait",
+					url: "hobo-ci-git-main.example.vercel.app",
+					readyState: "QUEUED",
+				});
+			if (init.method === "GET" && path.startsWith("/v13/deployments/"))
+				return answer({
+					id: "dpl_wait",
+					url: "hobo-ci-evil.vercel.app",
+					readyState: "READY",
+				});
+			if (path.startsWith("/v10/projects/hobo-ci/env"))
+				return answer(init.method === "GET" ? { envs: [] } : { created: {} });
+			return {
+				ok: false,
+				status: 404,
+				async text() {
+					return JSON.stringify({ error: { code: "not_found", message: "no" } });
+				},
+				async json() {
+					return {};
+				},
+			};
+		};
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
+			fetch,
+			credentialFetch: async (input) => {
+				const url = String(input);
+				if (url.includes("token.actions.example.test")) {
+					minted.push(url);
+					return Response.json({
+						value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+					});
+				}
+				return Response.json({}, { status: 404 });
+			},
+			env: { ...env, ...oidcEnv },
+			probe: async (request) => {
+				probed.push(request.url);
+				return relay.http(request);
+			},
+			...steppingClock(),
+		});
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(1);
+		expect(minted).toEqual([]);
+		expect(probed).toEqual([]);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_RELAY_NOT_READY",
+		});
+	});
+
+	it("refuses preview --wait without --sha: it cannot attest which deployment it qualifies", async () => {
+		const stale = healthyRelay(200, "f".repeat(40));
+		const vercel = unreachable();
+		const ran = await deploy([...RELAY, "--wait"], {
+			fetch: vercel.fetch,
+			env: { ...env, ...oidcEnv },
+			probe: stale.http,
+			...steppingClock(),
+		});
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+			message: expect.stringContaining("--sha"),
+		});
+		expect(vercel.sent).toEqual([]);
+		expect(stale.probed).toEqual([]);
+	});
+
 	it("refuses the attestation downgrade when OIDC probing is refused while GitHub OIDC is available", async () => {
 		const stale = healthyRelay(200, "f".repeat(40));
 		const vercel = unreachable();
@@ -1137,13 +1229,16 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		const vercel = scriptedVercel(["BUILDING", "READY"]);
 		const cli = fakeVercelCli({ project: "[]", team: "[]" });
 		const relay = healthyRelay();
-		const ran = await deploy([...RELAY, "--provision", "--wait"], {
-			fetch: vercel.fetch,
-			env,
-			vercelCli: cli.run,
-			probe: relay.http,
-			...steppingClock(),
-		});
+		const ran = await deploy(
+			[...RELAY, "--provision", "--sha", SHA, "--wait"],
+			{
+				fetch: vercel.fetch,
+				env: { ...env, ...oidcEnv },
+				vercelCli: cli.run,
+				probe: relay.http,
+				...steppingClock(),
+			},
+		);
 
 		expect(ran.exitCode).toBe(0);
 		expect(cli.commands).toEqual([
@@ -1168,7 +1263,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		});
 		// Verified by the relay's probes, then qualified: the promotion ended.
 		expect(relay.probed).toContain(
-			"https://relay-preview.example.test/healthz",
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
 		);
 		expect(ran.data.delivery).toMatchObject({
 			pipeline: "hobo-ci-relay",
@@ -1221,9 +1316,9 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 	});
 
 	it("fails when the deployment ends in ERROR", async () => {
-		const ran = await deploy([...RELAY, "--wait"], {
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch: scriptedVercel(["BUILDING", "ERROR"]).fetch,
-			env,
+			env: { ...env, ...oidcEnv },
 			...steppingClock(),
 		});
 		expect(ran.exitCode).toBe(1);
@@ -1235,9 +1330,9 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 	});
 
 	it("stops waiting after its limit, and says the state it last saw", async () => {
-		const ran = await deploy([...RELAY, "--wait"], {
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch: scriptedVercel(["BUILDING"]).fetch,
-			env,
+			env: { ...env, ...oidcEnv },
 			...steppingClock(),
 		});
 		expect(ran.exitCode).toBe(1);
@@ -2228,9 +2323,15 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 
 	it("refuses --wait before anything is sent when the target's probe origin is not set", async () => {
 		const { fetch, sent } = unreachable();
-		const ran = await deploy([...RELAY, "--wait"], {
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch,
-			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
 		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({

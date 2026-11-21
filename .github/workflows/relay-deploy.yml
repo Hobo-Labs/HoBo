@@ -6,6 +6,15 @@ name: HoBo relay deploy
 # its own protected URL using GitHub OIDC; only its qualified commit can be
 # promoted to production, where health and readiness must both pass.
 #
+# Building and deploying are separate jobs: `deploy-build` holds no OIDC
+# identity (contents: read only) and builds the hobo CLI the privileged jobs
+# run, handing it over as an artifact whose sha256 each consumer verifies
+# before it runs anything (scripts/ci/release-freight-cli.mts restore, fail
+# closed on digest or revision mismatch). The `deploy` and `app-credentials`
+# jobs alone hold id-token: write, and build nothing: checkout, a frozen
+# dependency install for the CLI's runtime, and the digest-pinned artifact are
+# all they run before the OIDC-minting steps.
+#
 # No secret and no repository variable configures this workflow. The store's
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
@@ -43,9 +52,67 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  deploy-build:
+    name: Build the deploy CLI (unprivileged)
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      digest: ${{ steps.pack.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: true
+          fetch-depth: 2
+          submodules: recursive
+          persist-credentials: false
+      - name: Decide whether to deploy
+        id: gate
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "${BEFORE:-}" ] \
+            && ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BEFORE" || true
+          fi
+          node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-gate.mts \
+            --event "$GITHUB_EVENT_NAME" --from "${BEFORE:-}" --to "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+      - if: steps.gate.outputs.run == 'true'
+        uses: $/.github/actions/ci-runner-preflight
+      - if: steps.gate.outputs.run == 'true'
+        uses: $/.github/actions/pnpm-store
+      - if: steps.gate.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Build the hobo CLI the deploy job runs
+        if: steps.gate.outputs.run == 'true'
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          pnpm exec turbo run build \
+            --filter=@hobo/hobo... \
+            --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Pack the built hobo CLI (digest + revision)
+        id: pack
+        if: steps.gate.outputs.run == 'true'
+        run: node --no-warnings scripts/ci/release-freight-cli.mts pack "${RUNNER_TEMP}/relay-deploy-cli.tgz" --github-output "$GITHUB_OUTPUT"
+      - name: Upload the built hobo CLI
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: relay-deploy-cli
+          path: ${{ runner.temp }}/relay-deploy-cli.tgz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
   deploy:
     name: Deploy the hosted CI relay (production)
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
+    needs: deploy-build
     runs-on: ubuntu-24.04
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts.
     timeout-minutes: 20
@@ -78,14 +145,18 @@ jobs:
         uses: $/.github/actions/pnpm-store
       - if: steps.gate.outputs.run == 'true'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build the verify tool
+      - name: Download the built hobo CLI
         if: steps.gate.outputs.run == 'true'
-        timeout-minutes: 10
-        run: |
-          set -euo pipefail
-          pnpm exec turbo run build \
-            --filter=@hobo/hobo... \
-            --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: relay-deploy-cli
+          path: ${{ runner.temp }}/relay-deploy-cli
+      # Refused unless it is the build job's archive (digest) of this commit.
+      - name: Restore the built hobo CLI (deploy runs only this artifact)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}
+        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/relay-deploy-cli/relay-deploy-cli.tgz" --digest "$HOBO_RELAY_CLI_DIGEST"
       # Pass/fail by identity name: hobo-ci-deploy reads its scoped deployment
       # credential from the deploy project with this job's GitHub OIDC token,
       # then revokes its store session. hobo-ci-relay is not-run here; Vercel
@@ -186,6 +257,7 @@ jobs:
   app-credentials:
     name: Deposit the GitHub App's credentials
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.manifest_code != ''
+    needs: deploy-build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -205,13 +277,16 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build the deposit tool
-        timeout-minutes: 10
-        run: |
-          set -euo pipefail
-          pnpm exec turbo run build \
-            --filter=@hobo/hobo... \
-            --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Download the built hobo CLI
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: relay-deploy-cli
+          path: ${{ runner.temp }}/relay-deploy-cli
+      # Refused unless it is the build job's archive (digest) of this commit.
+      - name: Restore the built hobo CLI (the deposit runs only this artifact)
+        env:
+          HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}
+        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/relay-deploy-cli/relay-deploy-cli.tgz" --digest "$HOBO_RELAY_CLI_DIGEST"
       - name: Convert the manifest code and store the credentials (GitHub OIDC)
         env:
           HOBO_APP_MANIFEST_CODE: ${{ github.event.inputs.manifest_code }}

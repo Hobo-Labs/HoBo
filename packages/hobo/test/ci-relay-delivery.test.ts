@@ -492,6 +492,44 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		);
 	}, 180_000);
 
+	it("never finalizes another promotion's candidate when a newer promotion replaced the Camp's Set", async () => {
+		const h = await harness();
+		const other = { repository: "Hobo-Labs/HoBo", ref: "main", sha: "3".repeat(40) };
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const finalized: string[] = [];
+		const promoted = await deliver(h, "production", {
+			finalizePromotion: async ({ handover }) => {
+				finalized.push(String(handover.deploymentId));
+				return undefined;
+			},
+		});
+		expect(promoted.ok, promoted.ok ? "" : promoted.message).toBe(true);
+		expect(finalized).toHaveLength(1);
+		expect((await deliver(h, "preview", { source: other })).ok).toBe(true);
+		const promotedOther = await deliver(h, "production", {
+			source: other,
+			finalizePromotion: async ({ handover }) => {
+				finalized.push(String(handover.deploymentId));
+				return undefined;
+			},
+		});
+		expect(promotedOther.ok, promotedOther.ok ? "" : promotedOther.message).toBe(
+			true,
+		);
+		expect(finalized).toHaveLength(2);
+		const retried = await deliver(h, "production", {
+			finalizePromotion: async () => {
+				finalized.push("must-not-run");
+				return undefined;
+			},
+		});
+		expect(retried.ok).toBe(false);
+		if (retried.ok) return;
+		expect(retried.code).toBe(RELAY_DELIVERY_REFUSAL.promotionRefused);
+		expect(retried.message).toContain("another promotion's candidate");
+		expect(finalized).toHaveLength(2);
+	}, 240_000);
+
 	it("records two commits as two Freight, and production refuses the one preview has not qualified", async () => {
 		const h = await harness();
 		expect((await deliver(h, "preview")).ok).toBe(true);

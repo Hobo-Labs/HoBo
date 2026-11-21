@@ -488,11 +488,13 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
 
-Preview `--wait --sha` verifies the commit on the deployment just created with
-a GitHub OIDC token scoped to that deployment's origin. If protected OIDC
-probing is unavailable or disabled, the command refuses before creation with
-`HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; a shared preview origin cannot
-substitute for that attestation.
+Preview `--wait` requires `--sha` and verifies the commit on the deployment
+just created with a GitHub OIDC token scoped to that deployment's origin, which
+Vercel's own record of that deployment must attest (the read-back URL must
+match the create answer, or no token is minted). If protected OIDC probing is
+unavailable or disabled, or `--sha` is omitted, the command refuses before
+creation with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; a shared preview
+origin cannot substitute for that attestation.
 
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on

@@ -756,9 +756,11 @@ function lintWorkflowYaml(
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
-		const hostedRelayCredential =
+		const hostedRelayJob =
 			file === "relay-deploy.yml" &&
-			(jobLine === "  deploy:" || jobLine === "  app-credentials:") &&
+			(jobLine === "  deploy:" ||
+				jobLine === "  deploy-build:" ||
+				jobLine === "  app-credentials:") &&
 			runsOn === HOSTED_RUNS_ON;
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
@@ -774,7 +776,7 @@ function lintWorkflowYaml(
 			!depsRoute &&
 			!npmOidcHosted &&
 			!alwaysHosted &&
-			!hostedRelayCredential
+			!hostedRelayJob
 		) {
 			errors.push(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,

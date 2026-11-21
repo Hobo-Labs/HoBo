@@ -261,14 +261,19 @@ Known gaps, stated rather than hidden:
   `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` (protected preview) or for staged
   production; on a runner where the GitHub OIDC mint is available
   (`ACTIONS_ID_TOKEN_REQUEST_URL`/`ACTIONS_ID_TOKEN_REQUEST_TOKEN`), the
-  protected probe is the default. If protected probing is unavailable or
-  disabled, preview `--wait --sha` refuses before creation with
-  `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; the shared origin cannot
-  substitute for deployment-specific commit attestation. For a protected
-  Vercel preview, HoBo probes the deployment it just created using the GitHub
-  Actions OIDC token, minted with an audience pinned to that deployment's
-  origin (`HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE` overrides the pin where the
-  Vercel trust requires another audience), so the probe token is not replayable
+  protected probe is the default. Preview `--wait` requires `--sha`: it
+  verifies and qualifies exactly the deployment of that commit, and without
+  `--sha` it refuses before creation with
+  `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED` (as it also does when protected
+  probing is unavailable or disabled); the shared origin cannot substitute for
+  deployment-specific commit attestation. For a protected Vercel preview, HoBo
+  probes the deployment it just created using the GitHub Actions OIDC token,
+  minted with an audience pinned to that deployment's origin — a URL accepted
+  only when Vercel's own record of the deployment this run created (read back
+  by deployment id, team-scoped) names the same URL the create answer did, so a
+  host whose name merely starts with the project's never receives the token
+  (`HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE` overrides the pin where the Vercel
+  trust requires another audience), so the probe token is not replayable
   to a relying party that expects GitHub's default audience. The probe
   transport does not follow redirects or forward that token to a redirect
   target. The project must trust that workload for preview access,
@@ -289,7 +294,7 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 
 | Before | Now |
 |---|---|
-| `--wait` waited for READY | `--wait` waits for READY, then verifies and qualifies; it needs the target's probe origin (`HOBO_CI_RELAY_PREVIEW_URL` or `HOBO_CI_RELAY_URL`) and is refused without it (`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`) |
+| `--wait` waited for READY | `--wait` waits for READY, then verifies and qualifies; it needs the target's probe origin (`HOBO_CI_RELAY_PREVIEW_URL` or `HOBO_CI_RELAY_URL`), and for preview also `--sha` — it verifies exactly that commit's deployment (`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`, `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`) |
 | `--target production` deployed any ref | it needs `--sha`, and preview's qualification of that commit in the same journal (`HOBO_CI_DEPLOY_NOT_QUALIFIED`) |
 | a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |

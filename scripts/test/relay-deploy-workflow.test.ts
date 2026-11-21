@@ -206,6 +206,50 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /write-all|secrets\.|\$\{\{\s*secrets/u);
 	});
 
+	it("builds the CLI it deploys unprivileged, and the deploy job runs only its digest-pinned artifact", () => {
+		const build = workflow
+			.split("\n  deploy-build:\n")[1]
+			?.split("\n  deploy:\n")[0];
+		assert.ok(build, "no deploy-build job");
+		assert.match(build, /^ {4}permissions:\n {6}contents: read$/mu);
+		assert.doesNotMatch(build, /id-token/u);
+		assert.match(build, /turbo run build/u);
+		assert.match(build, /release-freight-cli\.mts pack/u);
+		assert.match(
+			build,
+			/actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/u,
+		);
+		const deploy = workflow
+			.split("\n  deploy:\n")[1]
+			?.split("\n  app-credentials:\n")[0];
+		assert.ok(deploy, "no deploy job");
+		assert.match(deploy, /id-token: write/u);
+		assert.match(deploy, /^ {4}needs: deploy-build$/mu);
+		assert.doesNotMatch(deploy, /turbo run build/u);
+		assert.match(
+			deploy,
+			/actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/u,
+		);
+		assert.match(deploy, /--digest "\$HOBO_RELAY_CLI_DIGEST"/u);
+		const restoreAt = deploy.indexOf("release-freight-cli.mts restore");
+		assert.ok(restoreAt > 0, "no digest-pinned restore");
+		assert.ok(
+			restoreAt < deploy.indexOf("ci secret-store verify"),
+			"the restore must precede every command that runs the CLI",
+		);
+		assert.ok(restoreAt < deploy.indexOf("ci deploy"));
+		const deposit = workflow.split("\n  app-credentials:\n")[1];
+		assert.ok(deposit, "no app-credentials job");
+		assert.match(deposit, /^ {4}needs: deploy-build$/mu);
+		assert.doesNotMatch(deposit, /turbo run build/u);
+		assert.match(deposit, /release-freight-cli\.mts restore/u);
+		assert.match(deposit, /--digest "\$HOBO_RELAY_CLI_DIGEST"/u);
+		assert.ok(
+			deposit.indexOf("release-freight-cli.mts restore") <
+				deposit.indexOf("ci app deposit"),
+		);
+	});
+
 	it("reads no repository variable or secret for the relay's configuration", () => {
 		assert.doesNotMatch(workflow, /INFISICAL_|VERCEL_TEAM_ID|\$\{\{\s*vars\./u);
 	});
@@ -273,6 +317,73 @@ describe("the relay deploy workflow", () => {
 		}
 	});
 
+	it("classifies success only from a validated success envelope", () => {
+		const work = mkdtempSync(join(tmpdir(), "relay-result-report-"));
+		try {
+			const json = join(work, "result.json");
+			const report = join(root, "scripts/ci/relay-deploy-result-report.mts");
+			const cases: readonly {
+				body: string;
+				exitArg: string;
+				want: number;
+			}[] = [
+				{
+					body: JSON.stringify({ ok: true, code: "HOBO_OK" }),
+					exitArg: "0",
+					want: 0,
+				},
+				{
+					body: JSON.stringify({
+						ok: false,
+						code: "HOBO_TEST_REFUSED",
+						message: "deployment unavailable",
+					}),
+					exitArg: "0",
+					want: 1,
+				},
+				{ body: JSON.stringify({ ok: true }), exitArg: "0", want: 0 },
+				{ body: "{}", exitArg: "0", want: 1 },
+				{ body: "", exitArg: "0", want: 1 },
+				{ body: "not json", exitArg: "0", want: 1 },
+				{
+					body: JSON.stringify({ code: "HOBO_TEST_REFUSED" }),
+					exitArg: "0",
+					want: 1,
+				},
+				{
+					body: JSON.stringify({ ok: true, code: "HOBO_OK" }),
+					exitArg: "27",
+					want: 27,
+				},
+				{
+					body: JSON.stringify({ ok: true, code: "HOBO_OK" }),
+					exitArg: "",
+					want: 1,
+				},
+				{
+					body: JSON.stringify({ ok: true, code: "HOBO_OK" }),
+					exitArg: "0junk",
+					want: 1,
+				},
+			];
+			for (const scenario of cases) {
+				writeFileSync(json, scenario.body);
+				const ran = spawnSync(
+					process.execPath,
+					["--import", "tsx", report, json, "preview", "", scenario.exitArg],
+					{ encoding: "utf8" },
+				);
+				assert.equal(
+					ran.status,
+					scenario.want,
+					`${scenario.body} with status ${JSON.stringify(scenario.exitArg)}: ${ran.stdout}${ran.stderr}`,
+				);
+			}
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
+	});
+
 	it("reports a delivery refusal and stops before any later target", () => {
 		const work = mkdtempSync(join(tmpdir(), "relay-adopt-report-"));
 		try {
@@ -292,7 +403,7 @@ fs.appendFileSync(process.env.CALLS, target + "\\n");
 const failed = target === process.env.FAIL_TARGET;
 const malformed = failed && process.env.MALFORMED === "true";
 if (failed) process.stderr.write("provider diagnostic VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123\\n");
-process.stdout.write(malformed ? "{not json VERCEL_TOKEN=supersecretvalue1" : JSON.stringify({code: failed ? "HOBO_TEST_REFUSED" : "HOBO_OK", message: failed ? "deployment unavailable VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123" : "delivered"}));
+			process.stdout.write(malformed ? "{not json VERCEL_TOKEN=supersecretvalue1" : JSON.stringify({ok: !failed, code: failed ? "HOBO_TEST_REFUSED" : "HOBO_OK", message: failed ? "deployment unavailable VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123" : "delivered"}));
 process.exitCode = failed ? 27 : 0;`,
 			);
 			const lines = step("Deliver the relay through HoBo CD").split("\n");

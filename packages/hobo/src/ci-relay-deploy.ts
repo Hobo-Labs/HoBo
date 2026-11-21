@@ -143,6 +143,7 @@ import {
 import {
 	createVercelClient,
 	VercelApiError,
+	type VercelClient,
 	VercelEnvRefusal,
 	type VercelFetch,
 	VercelTransportError,
@@ -788,9 +789,12 @@ export async function runCiRelayDeploy(
 		target === "preview" &&
 		wait &&
 		(previewProbeOidcSetting ?? oidcMintAvailable);
-	if (protectedPreview && sha === undefined)
-		return usage("OIDC preview verification needs --sha <commit>.");
-	if (target === "preview" && wait && sha !== undefined && !protectedPreview)
+	if (target === "preview" && wait && sha === undefined)
+		return refused(
+			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+			"Preview --wait verifies and qualifies exactly the deployment of the commit --sha pins; without --sha the shared origin cannot attest which deployment it serves. Pass --sha, or deploy without --wait (nothing is verified or qualified then).",
+		);
+	if (target === "preview" && wait && !protectedPreview)
 		return refused(
 			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
 			"Preview --wait with --sha requires GitHub OIDC verification of the deployment just created; the shared origin cannot attest its commit.",
@@ -926,7 +930,11 @@ export async function runCiRelayDeploy(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
 				if (protectedPreview || stagedProduction)
-					deploymentUrl = normalizeDeploymentUrl(outputs.url, project);
+					deploymentUrl = await attestedDeploymentUrl(
+						client,
+						outputs,
+						project,
+					);
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -1261,14 +1269,6 @@ export async function runCiRelayDeploy(
 				promoted
 					? `  Freight ${delivered.report.alias} promoted through ${delivered.report.pipeline}/${delivered.report.node} to ${delivered.report.campId}: verified and qualified`
 					: `  Freight ${delivered.report.alias} is ${delivered.report.state ?? "in flight"} at ${delivered.report.campId}, not yet verified; run with --wait to verify and qualify it`,
-				...(target === "preview" &&
-				wait &&
-				!protectedPreview &&
-				oidcMintAvailable
-					? [
-							`  Preview verification did not pin the deployment's commit: HOBO_CI_RELAY_PREVIEW_PROBE_OIDC is not "true" while GitHub OIDC is available, so qualification attests the shared origin only.`,
-						]
-					: []),
 				...Object.entries(safe).map(([key, value]) => `  ${key}: ${value}`),
 			].join("\n"),
 			data: {
@@ -1358,6 +1358,27 @@ export async function runCiRelayDeploy(
 			...(why !== undefined ? { verification: { ...why } } : undefined),
 		},
 	};
+}
+
+async function attestedDeploymentUrl(
+	client: Pick<VercelClient, "getDeployment">,
+	outputs: Readonly<Record<string, string>>,
+	project: string,
+): Promise<string | undefined> {
+	const deploymentId = outputs.deploymentId;
+	if (!isJsonString(deploymentId) || deploymentId === "") return undefined;
+	let record: Awaited<ReturnType<VercelClient["getDeployment"]>>;
+	try {
+		record = await client.getDeployment(deploymentId);
+	} catch {
+		return undefined;
+	}
+	const created = normalizeDeploymentUrl(outputs.url, project);
+	return record !== undefined &&
+		created !== undefined &&
+		normalizeDeploymentUrl(record.url, project) === created
+		? created
+		: undefined;
 }
 
 // A failed realization, with the code and message this command has always
