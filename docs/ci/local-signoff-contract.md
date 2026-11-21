@@ -35,7 +35,10 @@ After pins and slips, availability means *observed* availability, not a
 reservation or a guarantee that a runner will still be free. The generic
 selector uses HoBo, ARC, local, then GitHub-hosted order. The checkout
 coordinator also considers enabled provider and external-pool inventory from the
-trusted base. Providers sharing a label remain separate observations. Capacity
+trusted base. Providers sharing a label remain separate observations. Agent37
+provider and external-pool declarations are opaque to this generic selection:
+a healthy Actions queue pickup cannot establish pool availability without the
+route action's trusted `observeAgent37Pool` observer. Capacity
 with no useful queue evidence remains unknown unless the operator independently
 observes its outage and names that enabled member with `--provider-unavailable=ID`.
 Unsupported inventory stays unknown. An Actions workflow continues

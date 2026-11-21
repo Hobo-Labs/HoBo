@@ -1198,12 +1198,33 @@ export async function main(
 				},
 				env,
 			);
-		for (const pool of settings.externalPools) {
+		const eventPayload =
+			"eventPayload" in io ? io.eventPayload : readEventPayload(env);
+		const pullRequest = asObject(asObject(eventPayload)?.pull_request);
+		const baseRepository = asText(
+			asObject(asObject(pullRequest?.base)?.repo)?.full_name,
+		);
+		const callerRepository = env.GITHUB_REPOSITORY ?? "";
+		const agent37Trusted =
+			callerRepository.length > 0 &&
+			baseRepository?.toLowerCase() === callerRepository.toLowerCase() &&
+			routeClass(event, eventPayload) === "pr";
+		for (const pool of agent37Trusted ? settings.externalPools : []) {
 			if (!io.observeAgent37Pool) break;
 			let observation: Agent37PoolObservation;
 			try {
 				observation = await io.observeAgent37Pool(pool);
 			} catch {
+				console.log(
+					`::warning title=hobo-ci-agent37-refusal::${escapeCommand(
+						JSON.stringify({
+							v: 1,
+							pool: pool.labels[0] ?? "unknown",
+							reason: "observer-failed",
+							fallback: "public",
+						}),
+					)}`,
+				);
 				continue;
 			}
 			const capacity = agent37Capacity(pool, observation);

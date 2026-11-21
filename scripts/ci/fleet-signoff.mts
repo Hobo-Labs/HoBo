@@ -478,7 +478,7 @@ export function readFleetOverflowPolicy(
 				add(
 					`${environmentName}:${id}`,
 					runsOn,
-					directKinds.has(kind) || !!scaleSet || kind === "agent37",
+					directKinds.has(kind) || !!scaleSet,
 					kind === "local" || kind === "github"
 						? kind
 						: kind === "agent37"
@@ -490,7 +490,7 @@ export function readFleetOverflowPolicy(
 	for (const [index, pool] of routing.externalPools.entries()) {
 		if (pool.maxRunners === 0) continue;
 		for (const runsOn of pool.labels)
-			add(`external-pool:${index}:${runsOn}`, runsOn, true);
+			add(`external-pool:${index}:${runsOn}`, runsOn, false);
 	}
 	if (root.integrations !== undefined) {
 		if (!Array.isArray(root.integrations) || root.integrations.length > 16)

@@ -30,6 +30,12 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 const committedText = readFileSync(join(root, ".hobo/ci.json"), "utf8");
 const committedRouting = readRunnerRouting(committedText);
 const committedPool = committedRouting?.externalPools[0];
+const sameRepositoryPullRequest = {
+	pull_request: {
+		head: { repo: { full_name: "Hobo-Labs/HoBo" } },
+		base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+	},
+};
 const idle: Agent37PoolObservation = { activeRunners: 0 };
 const pool = (overrides: Partial<FleetMember> = {}): FleetMember => ({
 	id: "ci:agent37-runners",
@@ -290,6 +296,7 @@ describe("the PR batch spill to agent37", () => {
 		const observed: Parameters<Agent37PoolObserver>[0][] = [];
 		const decision = await main([], env, {
 			routingConfig: committedText,
+			eventPayload: sameRepositoryPullRequest,
 			fetch: refusesEverything,
 			verifyPrBatchCapacity: async () => false,
 			observeAgent37Pool: observerOf({ activeRunners: 1 }, observed),
@@ -322,6 +329,7 @@ describe("the PR batch spill to agent37", () => {
 				{ ...env, GITHUB_OUTPUT: output },
 				{
 					routingConfig: committedText,
+					eventPayload: sameRepositoryPullRequest,
 					fetch: refusesEverything,
 					observeAgent37Pool: observerOf(idle),
 				},
@@ -339,6 +347,7 @@ describe("the PR batch spill to agent37", () => {
 	it("keeps a verified fleet claim on the fleet without consulting the pool", async () => {
 		const decision = await main([], env, {
 			routingConfig: committedText,
+			eventPayload: sameRepositoryPullRequest,
 			fetch: refusesEverything,
 			verifyPrBatchCapacity: async () => true,
 			observeAgent37Pool: async () => {
@@ -351,6 +360,7 @@ describe("the PR batch spill to agent37", () => {
 	it("falls back to verified public compute when no observer is installed", async () => {
 		const decision = await main([], env, {
 			routingConfig: committedText,
+			eventPayload: sameRepositoryPullRequest,
 			fetch: readPublic,
 			verifyPrBatchCapacity: async () => false,
 		});
@@ -372,6 +382,7 @@ describe("the PR batch spill to agent37", () => {
 		for (const observer of observers) {
 			const decision = await main([], env, {
 				routingConfig: committedText,
+				eventPayload: sameRepositoryPullRequest,
 				fetch: readPublic,
 				verifyPrBatchCapacity: async () => false,
 				observeAgent37Pool: observer,
@@ -387,6 +398,7 @@ describe("the PR batch spill to agent37", () => {
 		let clock = 1_000;
 		const decision = await main([], env, {
 			routingConfig: committedText,
+			eventPayload: sameRepositoryPullRequest,
 			fetch: refusesEverything,
 			now: () => clock,
 			verifyPrBatchCapacity: async (scope) => {
@@ -407,6 +419,7 @@ describe("the PR batch spill to agent37", () => {
 			{ ...env, GITHUB_EVENT_NAME: "merge_group" },
 			{
 				routingConfig: committedText,
+				eventPayload: sameRepositoryPullRequest,
 				fetch: readPublic,
 				observeAgent37Pool: async () => {
 					throw new Error("the pool must not be observed");
@@ -422,6 +435,7 @@ describe("the PR batch spill to agent37", () => {
 	it("keeps an explicit pin and never observes the pool for it", async () => {
 		const decision = await main(["--route", "fleet"], env, {
 			routingConfig: committedText,
+			eventPayload: sameRepositoryPullRequest,
 			fetch: refusesEverything,
 			observeAgent37Pool: async () => {
 				throw new Error("the pool must not be observed");
@@ -447,6 +461,7 @@ describe("the PR batch spill to agent37", () => {
 				},
 				{
 					routingConfig: committedText,
+					eventPayload: sameRepositoryPullRequest,
 					fetch: async () => new Response(null, { status: 404 }),
 					observeAgent37Pool: async () => {
 						observed += 1;
@@ -475,6 +490,7 @@ describe("the PR batch spill to agent37", () => {
 			},
 			{
 				routingConfig: committedText,
+				eventPayload: sameRepositoryPullRequest,
 				fetch: async () => new Response(null, { status: 404 }),
 				observeAgent37Pool: async () => {
 					observed += 1;
@@ -517,6 +533,7 @@ describe("the PR batch spill to agent37", () => {
 		];
 		const decision = await main([], env, {
 			routingConfig: JSON.stringify(project),
+			eventPayload: sameRepositoryPullRequest,
 			fetch: refusesEverything,
 			verifyPrBatchCapacity: async () => false,
 			observeAgent37Pool: observerOf({ activeRunners: 1 }),
@@ -527,6 +544,66 @@ describe("the PR batch spill to agent37", () => {
 		);
 		assert.match(decision.reason, /reports 1 free runner\(s\)/u);
 	});
+
+	it("uses verified public compute for fork, missing, or malformed PR evidence", async () => {
+		const fork = structuredClone(sameRepositoryPullRequest);
+		fork.pull_request.head.repo.full_name = "someone/HoBo";
+		for (const eventPayload of [undefined, {}, { pull_request: {} }, fork]) {
+			let observed = 0;
+			const decision = await main([], env, {
+				routingConfig: committedText,
+				eventPayload,
+				fetch: readPublic,
+				verifyPrBatchCapacity: async () => false,
+				observeAgent37Pool: async () => {
+					observed += 1;
+					return idle;
+				},
+			});
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["github", "ubuntu-24.04"],
+			);
+			assert.equal(observed, 0);
+		}
+	});
+
+	it("records an observer refusal without its error before public fallback", async () => {
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			lines.push(parts.map(String).join(" "));
+		};
+		try {
+			const decision = await main([], env, {
+				routingConfig: committedText,
+				eventPayload: sameRepositoryPullRequest,
+				fetch: readPublic,
+				verifyPrBatchCapacity: async () => false,
+				observeAgent37Pool: async () => {
+					throw new Error("credential=must-not-be-printed");
+				},
+			});
+			assert.equal(decision.tier, "github");
+			const refusal = lines.findIndex((line) =>
+				line.startsWith("::warning title=hobo-ci-agent37-refusal::"),
+			);
+			const fallback = lines.findIndex((line) =>
+				line.startsWith("::notice title=hobo-ci-route::"),
+			);
+			assert.equal(
+				lines[refusal],
+				'::warning title=hobo-ci-agent37-refusal::{"v":1,"pool":"hobo-agent37","reason":"observer-failed","fallback":"public"}',
+			);
+			assert.ok(refusal >= 0 && refusal < fallback);
+			assert.equal(
+				lines.some((line) => line.includes("must-not-be-printed")),
+				false,
+			);
+		} finally {
+			console.log = log;
+		}
+	});
 });
 
 describe("the signoff inventory over the agent37 provider", () => {
@@ -535,13 +612,13 @@ describe("the signoff inventory over the agent37 provider", () => {
 			{
 				id: "ci:agent37-runners",
 				runsOn: "hobo-agent37",
-				observable: true,
+				observable: false,
 				backend: "agent37",
 			},
 			{
 				id: "external-pool:0:hobo-agent37",
 				runsOn: "hobo-agent37",
-				observable: true,
+				observable: false,
 			},
 		]);
 	});
@@ -566,7 +643,7 @@ describe("the signoff inventory over the agent37 provider", () => {
 			{
 				id: "external-pool:0:hobo-agent37",
 				runsOn: "hobo-agent37",
-				observable: true,
+				observable: false,
 			},
 		]);
 		provider.enabled = true;
@@ -574,13 +651,13 @@ describe("the signoff inventory over the agent37 provider", () => {
 			{
 				id: "ci:agent37-runners",
 				runsOn: "hobo-agent37",
-				observable: true,
+				observable: false,
 				backend: "agent37",
 			},
 			{
 				id: "external-pool:0:hobo-agent37",
 				runsOn: "hobo-agent37",
-				observable: true,
+				observable: false,
 			},
 		]);
 	});
@@ -604,7 +681,7 @@ describe("the signoff plan over an agent37 member", () => {
 	const member: FleetOverflowMember = {
 		id: "ci:agent37-runners",
 		runsOn: "hobo-agent37",
-		observable: true,
+		observable: false,
 		backend: "agent37",
 	};
 	const seenJob = (
@@ -640,7 +717,7 @@ describe("the signoff plan over an agent37 member", () => {
 			nowMs: now,
 		});
 
-	it("verifies on a healthy agent37 member as overflow before hosted compute", async () => {
+	it("does not treat a healthy agent37 queue label as trusted pool evidence", async () => {
 		const choice = await plan([
 			{ labels: ["hobo"], started: false },
 			{ labels: ["hobo-agent37"], started: true },
@@ -648,8 +725,8 @@ describe("the signoff plan over an agent37 member", () => {
 		]);
 		assert.deepEqual(choice, {
 			kind: "runner",
-			tier: "overflow",
-			runner: "hobo-agent37",
+			tier: "github",
+			runner: "ubuntu-24.04",
 		});
 	});
 
@@ -693,6 +770,7 @@ describe("the route notice records the spill", () => {
 		try {
 			const decision: RouteDecision = await main([], env, {
 				routingConfig: committedText,
+				eventPayload: sameRepositoryPullRequest,
 				fetch: async () => {
 					throw new Error("unexpected read");
 				},
