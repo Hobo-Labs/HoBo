@@ -186,6 +186,7 @@ export function checkWorkspace(
 			problems.push(`missing notebook: ${manifest.artifacts.notebook}`);
 		} else {
 			try {
+				// SAFETY: this JSON boundary reads only optional notebook metadata and cell fields, with defaults below.
 				const nb = JSON.parse(readFileSync(notebookPath, "utf8")) as {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
@@ -313,6 +314,7 @@ export function checkWorkspace(
 
 function main() {
 	const argv = process.argv.slice(2);
+	// SAFETY: _grandfathered.json is the checked-in registry whose packages array contains workspace strings.
 	const grandfathered = new Set(
 		(
 			JSON.parse(

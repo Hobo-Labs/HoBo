@@ -67,14 +67,17 @@ function NewTaskForm({
     tasks: [
       {
         name: "Respond to emails",
+        // SAFETY: high is a member of the TaskPriority union.
         priority: "high" as TaskPriority,
       },
       {
         name: "Learn WASP",
+        // SAFETY: low is a member of the TaskPriority union.
         priority: "low" as TaskPriority,
       },
       {
         name: "Read a book",
+        // SAFETY: medium is a member of the TaskPriority union.
         priority: "medium" as TaskPriority,
       },
     ],

@@ -113,6 +113,7 @@ function UserCurrentSubscriptionPlan({
     subscriptionPlanMessage = formatSubscriptionStatusMessage(
       parsePaymentPlanId(subscriptionPlan),
       datePaid,
+      // SAFETY: payment webhooks persist subscriptionStatus from SubscriptionStatus values.
       subscriptionStatus as SubscriptionStatus,
     );
   }

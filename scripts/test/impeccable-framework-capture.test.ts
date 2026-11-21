@@ -280,6 +280,7 @@ for (const scenario of [
 			});
 			app.listen(0, "127.0.0.1");
 			await once(app, "listening");
+			// SAFETY: once listening, this TCP server has an AddressInfo; the assertion below rejects null.
 			const address = app.address() as AddressInfo | null;
 			assert(address);
 			browser = await chromium.launch({ headless: true });

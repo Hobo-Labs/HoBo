@@ -37,7 +37,9 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
       if (!sidebar.current || !trigger.current) return;
       if (
         !sidebarOpen ||
+        // SAFETY: document click targets are DOM Nodes accepted by contains().
         sidebar.current.contains(target as Node) ||
+        // SAFETY: document click targets are DOM Nodes accepted by contains().
         trigger.current.contains(target as Node)
       )
         return;

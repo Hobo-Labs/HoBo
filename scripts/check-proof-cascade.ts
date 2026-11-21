@@ -38,6 +38,7 @@ function loadAggregators(root: string): Aggregator[] {
 			const manifestPath = path.join(root, workspace, "proof.json");
 			if (existsSync(manifestPath)) {
 				try {
+					// SAFETY: this best-effort scan reads optional reference lists and ignores malformed manifests.
 					const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
 						references?: {
 							technicalProofs?: string[];
@@ -91,6 +92,7 @@ function cascadeWaived(workspace: string): boolean {
 	const manifestPath = path.join(repoRoot, workspace, "proof.json");
 	if (!existsSync(manifestPath)) return false;
 	try {
+		// SAFETY: waiver reads are optional, and malformed manifests fall back to no waiver.
 		const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
 			waivers?: Array<{ requirement?: string }>;
 		};
@@ -116,6 +118,7 @@ function main() {
 		return;
 	}
 
+	// SAFETY: _grandfathered.json is the checked-in registry whose packages array contains workspace strings.
 	const grandfathered = new Set(
 		(
 			JSON.parse(

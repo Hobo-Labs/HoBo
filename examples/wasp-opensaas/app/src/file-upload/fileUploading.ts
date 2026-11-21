@@ -53,5 +53,6 @@ export function validateFile(file: File): FileWithValidType {
 }
 
 function isFileWithAllowedFileType(file: File): file is FileWithValidType {
+  // SAFETY: includes accepts union member strings, and this guard checks membership before narrowing file.
   return ALLOWED_FILE_TYPES.includes(file.type as AllowedFileTypes);
 }

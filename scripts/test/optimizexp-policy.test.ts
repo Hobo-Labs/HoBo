@@ -125,6 +125,7 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert.equal(result.status, 1, result.stderr);
+			// SAFETY: validate-bus writes this report shape when malformed records fail validation.
 			const report = JSON.parse(result.stdout) as {
 				ok: boolean;
 				problems: string[];
@@ -246,6 +247,7 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert(result.stdout, result.stderr);
+			// SAFETY: doctor repair --json writes a repairsApplied string array.
 			const report = JSON.parse(result.stdout) as { repairsApplied: string[] };
 			assert.deepEqual(report.repairsApplied, []);
 			assert.equal(existsSync(join(feature, "EXPERIENCE.md")), false);
@@ -267,6 +269,7 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert(snapshotResult.stdout, snapshotResult.stderr);
+			// SAFETY: doctor snapshot writes a manifest whose files entries carry relative paths.
 			const manifest = JSON.parse(
 				readFileSync(join(snapshot, "manifest.json"), "utf8"),
 			) as { files: Array<{ rel: string }> };
