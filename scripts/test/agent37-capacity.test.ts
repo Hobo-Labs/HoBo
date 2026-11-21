@@ -13,7 +13,6 @@ import {
 	selectFleetVerification,
 } from "../../packages/ci/src/fleet-overflow.ts";
 import {
-	type FleetOverflowMember,
 	planFleetVerification,
 	readFleetOverflowPolicy,
 } from "../ci/fleet-signoff.mts";
@@ -675,15 +674,11 @@ describe("the signoff inventory over the agent37 provider", () => {
 	});
 });
 
-describe("the signoff plan over an agent37 member", () => {
+describe("the signoff plan over agent37 inventory", () => {
 	const now = Date.parse("2026-11-16T18:00:00Z");
 	const settings = { ...routeSettings(undefined), localRunner: true };
-	const member: FleetOverflowMember = {
-		id: "ci:agent37-runners",
-		runsOn: "hobo-agent37",
-		observable: false,
-		backend: "agent37",
-	};
+	const members = readFleetOverflowPolicy(committedText);
+	assert.ok(members);
 	const seenJob = (
 		job: { labels: string[]; started: boolean },
 		index: number,
@@ -706,7 +701,7 @@ describe("the signoff plan over an agent37 member", () => {
 			settings,
 			localSignoffEnabled: true,
 			githubUnavailable: options.githubUnavailable ?? false,
-			overflow: [member],
+			overflow: members,
 			providerUnavailable: options.providerUnavailable ?? [],
 			readSlip: async () => ({ ok: false, why: "no routing slip" }),
 			readQueue: async () => ({
@@ -717,7 +712,7 @@ describe("the signoff plan over an agent37 member", () => {
 			nowMs: now,
 		});
 
-	it("does not treat a healthy agent37 queue label as trusted pool evidence", async () => {
+	it("does not let queue evidence select an agent37 provider or external pool", async () => {
 		const choice = await plan([
 			{ labels: ["hobo"], started: false },
 			{ labels: ["hobo-agent37"], started: true },
@@ -730,7 +725,7 @@ describe("the signoff plan over an agent37 member", () => {
 		});
 	});
 
-	it("waits while the pool's capacity is unknown, and signsoff locally only when it is asserted down", async () => {
+	it("waits while pool capacity is unknown, and signs off locally only when every pool declaration is asserted down", async () => {
 		const unknown = await plan([{ labels: ["hobo"], started: false }]);
 		assert.deepEqual(unknown, { kind: "wait", reason: "availability-unknown" });
 		const signoff = await plan(
@@ -739,7 +734,7 @@ describe("the signoff plan over an agent37 member", () => {
 				{ labels: ["hobo-local-host"], started: false },
 			],
 			{
-				providerUnavailable: ["ci:agent37-runners"],
+				providerUnavailable: members.map((member) => member.id),
 				githubUnavailable: true,
 			},
 		);

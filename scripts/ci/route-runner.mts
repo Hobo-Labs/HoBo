@@ -1204,10 +1204,14 @@ export async function main(
 		const baseRepository = asText(
 			asObject(asObject(pullRequest?.base)?.repo)?.full_name,
 		);
+		const headRepository = asText(
+			asObject(asObject(pullRequest?.head)?.repo)?.full_name,
+		);
 		const callerRepository = env.GITHUB_REPOSITORY ?? "";
 		const agent37Trusted =
 			callerRepository.length > 0 &&
 			baseRepository?.toLowerCase() === callerRepository.toLowerCase() &&
+			headRepository?.toLowerCase() === callerRepository.toLowerCase() &&
 			routeClass(event, eventPayload) === "pr";
 		for (const pool of agent37Trusted ? settings.externalPools : []) {
 			if (!io.observeAgent37Pool) break;
