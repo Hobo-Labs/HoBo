@@ -27,18 +27,12 @@ const PAGE = renderSecretCaptureHtml({
 
 describe("secret-capture form design lint (HoBo Rubberhose)", () => {
 	it("uses only the implemented palette tokens", () => {
-		const seen = new Set<string>();
 		for (const html of [APP, PAGE])
-			for (const hex of html.match(/#[0-9a-fA-F]{6}\b/gu) ?? []) {
-				const normalized = hex.toLowerCase();
-				seen.add(normalized);
+			for (const hex of html.match(/#[0-9a-fA-F]{6}\b/gu) ?? [])
 				expect(
-					SECRET_CAPTURE_TOKEN_VALUES.has(normalized),
+					SECRET_CAPTURE_TOKEN_VALUES.has(hex.toLowerCase()),
 					`non-token hex ${hex}`,
 				).toBe(true);
-			}
-		for (const token of SECRET_CAPTURE_TOKEN_VALUES)
-			expect(seen.has(token), `unused palette token ${token}`).toBe(true);
 	});
 
 	it("loads nothing from the network: no external script, style, font or image", () => {

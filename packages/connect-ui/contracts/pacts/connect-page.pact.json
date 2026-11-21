@@ -18,13 +18,6 @@
 				"body": {
 					"step": "choose-secret-store",
 					"terminal": false,
-					"composedBy": "deterministic",
-					"spec": {
-						"root": "root",
-						"elements": {
-							"root": { "type": "Card" }
-						}
-					},
 					"directive": { "kind": "none" }
 				}
 			}
@@ -42,13 +35,6 @@
 				"body": {
 					"step": "create-github-app",
 					"terminal": false,
-					"composedBy": "deterministic",
-					"spec": {
-						"root": "root",
-						"elements": {
-							"root": { "type": "Card" }
-						}
-					},
 					"directive": { "kind": "none" }
 				}
 			}

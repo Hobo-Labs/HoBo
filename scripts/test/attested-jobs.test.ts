@@ -107,8 +107,8 @@ describe("the description of the covered jobs", () => {
 				.map((step) => `${job.id}: ${step.name}`),
 		);
 		assert.deepEqual(left, [
-			"pr_gate_validation: Impact classification (shadow)",
-			"pr_gate_validation: Impact classification (shadow)",
+			"pr_gate_plan: Impact classification (shadow)",
+			"pr_gate_plan: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",
@@ -132,9 +132,9 @@ describe("the description of the covered jobs", () => {
 	});
 
 	it("omits both report-only classifiers while leaving the gate checks executable", () => {
-		const gate = plan.find((job) => job.id === "pr_gate_validation");
-		assert.ok(gate);
-		const reports = gate.steps.filter(
+		const planner = plan.find((job) => job.id === "pr_gate_plan");
+		assert.ok(planner);
+		const reports = planner.steps.filter(
 			(step) => step.name === "Impact classification (shadow)",
 		);
 		assert.equal(reports.length, 2);
@@ -144,6 +144,8 @@ describe("the description of the covered jobs", () => {
 			assert.equal(step.id, undefined);
 			assert.match(step.reason ?? "", /report-only/u);
 		}
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
 		for (const name of [
 			"Code format gate",
 			"Relevant checks only",
@@ -273,7 +275,7 @@ describe("expressions in the description", () => {
 			env: values,
 			shard: { index: 2, total: 4, value: 5 },
 			jobResults: new Map(plan.map((job) => [job.id, "success" as const])),
-			jobOutputs: new Map([["pr_gate_validation", values]]),
+			jobOutputs: new Map([["pr_gate_plan", values]]),
 		});
 
 	it("can all be given a value on a developer's machine, for both events", () => {
@@ -290,6 +292,7 @@ describe("expressions in the description", () => {
 		const runsOn = (id: string, event: (typeof ATTESTATION_EVENTS)[number]) =>
 			conditionHolds(plan.find((job) => job.id === id)?.if, context(event));
 		for (const id of [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"release-contract",
@@ -349,7 +352,7 @@ describe("expressions in the description", () => {
 		);
 		assert.equal(
 			substituteExpressions(
-				"${{ needs.pr_gate_validation.outputs.pr_base }}",
+				"${{ needs.pr_gate_plan.outputs.pr_base }}",
 				context("pull_request", { pr_base: "abc" }),
 			),
 			"abc",
