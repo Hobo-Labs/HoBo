@@ -270,7 +270,15 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node --experimental-strip-types --no-warnings .ci-trusted/scripts/ci/route-runner.mts --merge-group-route-surface
+        run: |
+          set -euo pipefail
+          script=.ci-trusted/scripts/ci/route-runner.mts
+          if grep -q -- '--merge-group-route-surface' "$script"; then
+            node --experimental-strip-types --no-warnings "$script" --merge-group-route-surface
+          else
+            echo "surface=hosted" >> "$GITHUB_OUTPUT"
+            echo "merge-group route surface: hosted (routing base predates probe)"
+          fi
   route:
     name: Route runners
     needs:
@@ -278,7 +286,7 @@ jobs:
     if: always() && !cancelled() && (needs.mq-route-surface.result == 'success' || needs.mq-route-surface.result == 'skipped')
     # pull_request stays on GitHub-hosted (fork-safe). merge_group prefers
     # hobo-trunk when the hosted surface probe sees trunk capacity.
-    runs-on: ${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface != 'hosted' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: read

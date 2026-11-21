@@ -298,7 +298,7 @@ const DEPS_IMAGE_RUNS_ON =
 
 /** Merge-queue route job: trunk when the hosted surface probe sees capacity. */
 const MERGE_GROUP_ROUTE_JOB_RUNS_ON =
-	"${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface != 'hosted' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
+	"${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
 const DEPS_IMAGE_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";

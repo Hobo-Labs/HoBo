@@ -242,7 +242,7 @@ describe("base-controlled attestation verification", () => {
 			const route = asObject(asObject(doc.jobs)?.route);
 			assert.equal(
 				route?.["runs-on"],
-				"${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface != 'hosted' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
+				"${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
 			);
 			const surface = asObject(asObject(doc.jobs)?.["mq-route-surface"]);
 			assert.equal(surface?.["runs-on"], "ubuntu-24.04");
