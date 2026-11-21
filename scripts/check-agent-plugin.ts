@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import {
 	checkSkillsConformance,
-	HOBO_OWNED_ALLOWED_FIELDS,
 	discoverHoboOwnedSkillNames,
+	HOBO_OWNED_ALLOWED_FIELDS,
 } from "@hobo/agent-skills";
 import { z } from "zod";
 
@@ -743,12 +743,37 @@ function skillIssues(
 	return issues;
 }
 
-function listFilesRecursive(dir: string): string[] {
+function listFilesRecursive(
+	dir: string,
+	options?: {
+		readonly issues?: AgentPluginIssue[];
+		readonly filePrefix?: string;
+	},
+): string[] {
+	const issues = options?.issues;
+	const filePrefix = options?.filePrefix ?? "";
 	const files: string[] = [];
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
-		if (entry.isSymbolicLink()) continue;
+		const relativeName = filePrefix
+			? path.join(filePrefix, entry.name)
+			: entry.name;
+		if (entry.isSymbolicLink()) {
+			issues?.push({
+				file: relativeName,
+				message:
+					"symbolic links are not allowed in the shipped plugin tree; replace with a regular file or directory",
+			});
+			continue;
+		}
 		if (entry.isDirectory()) {
-			for (const nested of listFilesRecursive(path.join(dir, entry.name))) {
+			const nestedOptions =
+				issues === undefined
+					? { filePrefix: relativeName }
+					: { issues, filePrefix: relativeName };
+			for (const nested of listFilesRecursive(
+				path.join(dir, entry.name),
+				nestedOptions,
+			)) {
 				files.push(path.join(entry.name, nested));
 			}
 		} else {
@@ -965,6 +990,7 @@ export function checkAgentPlugin(input: {
 		MCP_ENTRYPOINT.replace("${PLUGIN_ROOT}/", ""),
 	);
 	if (existsSync(bundle)) {
+		listFilesRecursive(pluginRoot, { issues });
 		issues.push(
 			...scanTextForSecrets("bin/hobo-mcp.mjs", readFileSync(bundle, "utf8")),
 		);
@@ -992,7 +1018,10 @@ export function checkAgentPlugin(input: {
 					"is missing or empty while bin/hobo-mcp.mjs is present; rebuild with pnpm run agent-plugin:build",
 			});
 		} else {
-			for (const relative of listFilesRecursive(deployFixtures)) {
+			for (const relative of listFilesRecursive(deployFixtures, {
+				issues: issues,
+				filePrefix: "fixtures/deploy",
+			})) {
 				const relativeFile = path.join("fixtures/deploy", relative);
 				issues.push(
 					...scanTextForSecrets(
@@ -1004,7 +1033,10 @@ export function checkAgentPlugin(input: {
 		}
 		const pluginSrc = path.join(pluginRoot, "src");
 		if (existsSync(pluginSrc)) {
-			for (const relative of listFilesRecursive(pluginSrc)) {
+			for (const relative of listFilesRecursive(pluginSrc, {
+				issues: issues,
+				filePrefix: "src",
+			})) {
 				const relativeFile = path.join("src", relative);
 				issues.push(
 					...scanTextForSecrets(

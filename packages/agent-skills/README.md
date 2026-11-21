@@ -19,8 +19,8 @@ a listing serves (boundary fixtured in
 - `checkSkillsConformance(root, options?)` — the bundle gate: every skill
   directory parses, no duplicate names, entry paths exist. Skills in the
   optional `strictSkillNames` set (`discoverHoboOwnedSkillNames` derives it
-  from skills not listed in `skills-lock.json` whose frontmatter uses only the
-  repo-owned field allowlist) are
+  from every skill directory with a `SKILL.md` that is not listed in
+  `skills-lock.json`) are
   additionally held to the repository's
   own frontmatter rules: only Agent Skills fields this repo controls, name
   equal to the folder, and `metadata` as a map of decoded, non-empty string

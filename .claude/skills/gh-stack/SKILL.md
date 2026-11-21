@@ -1,10 +1,6 @@
 ---
 name: gh-stack
-description: >
-  Manage stacked branches and pull requests with GitHub's official gh-stack CLI extension
-  (github/gh-stack). Use for stacked diffs, dependent PRs, branch chains, cascading rebases,
-  stack submit/sync/merge. Prefer non-interactive flags only. For full HoBo SDLC parent protocol
-  (subagents, bottom-up review, squash-merge closeout) also load the sdlc skill.
+description: "Manage stacked branches and pull requests with GitHub's official gh-stack CLI extension (github/gh-stack). Use for stacked diffs, dependent PRs, branch chains, cascading rebases, stack submit/sync/merge. Prefer non-interactive flags only. For full HoBo SDLC parent protocol (subagents, bottom-up review, squash-merge closeout) also load the sdlc skill."
 metadata:
   author: github + hobo
   version: "0.1.0"

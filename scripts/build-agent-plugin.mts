@@ -10,6 +10,8 @@ import {
 import { createRequire } from "node:module";
 import path from "node:path";
 
+import { agentPluginCiActive } from "./check-agent-plugin.ts";
+
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const pluginRoot = path.join(repoRoot, "plugins", "hobo");
 const entry = path.join(repoRoot, "packages/hobo/src/bin/hobo-mcp.ts");
@@ -103,6 +105,16 @@ async function main(): Promise<void> {
 		.digest("hex");
 	const inActions = process.env.GITHUB_ACTIONS === "true";
 	if (!inActions) {
+		if (agentPluginCiActive()) {
+			console.error(
+				"agent-plugin:build: refuse to ship a bundle without attestation when CI is active; run on a GitHub Actions runner (GITHUB_ACTIONS=true)",
+			);
+			rmSync(attestationPath, { force: true });
+			rmSync(outfile, { force: true });
+			rmSync(fixturesTarget, { recursive: true, force: true });
+			process.exitCode = 1;
+			return;
+		}
 		rmSync(attestationPath, { force: true });
 		return;
 	}

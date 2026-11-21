@@ -1,12 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-const VENDOR_METADATA_KEYS: ReadonlySet<string> = new Set([
-	"short-description",
-	"tested-against",
-	"version",
-]);
-
 // The mirrored .agents/skills tree as a distributable module. Skills are static markdown content; this module parses them into the
 // typed manifest a Registry listing serves. Parse, don't validate: the
 // frontmatter lowers onto parsed derived types or throws — no boolean checks
@@ -119,22 +113,6 @@ async function loadVendoredSkillNames(repoRoot: string): Promise<ReadonlySet<str
 	return vendoredNamesFromLockJson(text);
 }
 
-function isRepoOwnedSkill(
-	skillName: string,
-	frontmatter: FrontmatterFields,
-	vendored: ReadonlySet<string>,
-): boolean {
-	if (vendored.has(skillName)) return false;
-	if (!skillUsesHoboOwnedFrontmatter(frontmatter)) return false;
-	const metadata = frontmatter.children.get("metadata");
-	if (metadata !== undefined) {
-		for (const key of metadata.keys()) {
-			if (VENDOR_METADATA_KEYS.has(key)) return false;
-		}
-	}
-	return true;
-}
-
 export async function discoverHoboOwnedSkillNames(
 	skillsRoot: string,
 	repoRoot: string,
@@ -143,13 +121,11 @@ export async function discoverHoboOwnedSkillNames(
 	const names: string[] = [];
 	for (const dirent of await readdir(skillsRoot, { withFileTypes: true })) {
 		if (!dirent.isDirectory()) continue;
+		if (vendored.has(dirent.name)) continue;
 		const skillMd = join(skillsRoot, dirent.name, "SKILL.md");
 		try {
-			const markdown = await readFile(skillMd, "utf8");
-			const frontmatter = parseFrontmatterFields(markdown);
-			if (isRepoOwnedSkill(dirent.name, frontmatter, vendored)) {
-				names.push(dirent.name);
-			}
+			await stat(skillMd);
+			names.push(dirent.name);
 		} catch {
 			continue;
 		}

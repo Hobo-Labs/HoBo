@@ -154,17 +154,47 @@ describe("checkSkillsConformance", () => {
 	});
 
 	it("enforces the HoBo-owned frontmatter rules on strict skills only", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		await writeFile(
+			path.join(scratchRepo, "skills-lock.json"),
+			`${JSON.stringify({ version: 1, skills: { outsider: { source: "vendor/x" } } }, null, 2)}\n`,
+		);
 		const root = await scratchTree({
 			"hobo-setup":
 				"---\nname: hobo-setup\ndescription: d\nlicense: MIT\nmetadata:\n  plugin: hobo\n---\n",
 			outsider:
 				"---\nname: outsider\ndescription: d\nupstream-field: kept\n---\n",
 		});
+		const strict = await discoverHoboOwnedSkillNames(root, scratchRepo);
+		expect(strict).toEqual(["hobo-setup"]);
 		expect(
 			await checkSkillsConformance(root, {
-				strictSkillNames: await discoverHoboOwnedSkillNames(root, REPO_ROOT),
+				strictSkillNames: strict,
 			}),
 		).toEqual([]);
+	});
+
+	it("discovers non-vendored skills for strict checks even when frontmatter leaks fields", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		await writeFile(
+			path.join(scratchRepo, "skills-lock.json"),
+			`${JSON.stringify({ version: 1, skills: {} }, null, 2)}\n`,
+		);
+		const root = await scratchTree({
+			leaky:
+				"---\nname: leaky\ndescription: d\nlegacy-field: kept\n---\n",
+		});
+		expect(await discoverHoboOwnedSkillNames(root, scratchRepo)).toEqual([
+			"leaky",
+		]);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: ["leaky"],
+		});
+		expect(issues.some((issue) => issue.code === "disallowed-frontmatter-field")).toBe(
+			true,
+		);
 	});
 
 	it("rejects duplicate top-level frontmatter keys", () => {
@@ -329,11 +359,12 @@ description: d
 			REPO_SKILLS_ROOT,
 			REPO_ROOT,
 		);
-		for (const thirdParty of ["impeccable", "unity-cli", "caveman"]) {
-			expect(owned.includes(thirdParty)).toBe(false);
+		for (const vendored of ["caveman", "impeccable", "spriterrific-api"]) {
+			expect(owned.includes(vendored)).toBe(false);
 		}
 		expect(owned).toContain("hobo-setup");
 		expect(owned).toContain("hobo-deploy");
 		expect(owned).toContain("design-md");
+		expect(owned).toContain("unity-cli");
 	});
 });

@@ -1,7 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -895,6 +902,37 @@ describe("checkAgentPlugin (integration)", () => {
 			await rm(path.join(pluginRoot, "bin/hobo-mcp.mjs"));
 			vi.stubEnv(variable, undefined);
 		}
+	});
+
+	it("rejects symbolic links in the shipped plugin tree", async () => {
+		stubCiOff();
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": `${"x".repeat(1024 * 1024)}\n`,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+		});
+		await writeFile(path.join(pluginRoot, "target.txt"), "secret-free\n");
+		await symlink(
+			path.join(pluginRoot, "target.txt"),
+			path.join(pluginRoot, "leak-link.txt"),
+		);
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/symbolic links are not allowed/u.test(issue.message),
+			),
+		).toBe(true);
 	});
 
 	it("scans an existing plugin-rooted bundle for secrets", async () => {
