@@ -2961,6 +2961,102 @@ describe("hobo pool saturation overflow", () => {
 		assert.equal(runnerPageReads, 1);
 	});
 
+	it("keeps a saturated same-repository PR batch on GitHub-hosted without an online target fleet runner", async () => {
+		const scenarios: readonly {
+			runnersPage: JsonValue;
+			cpuPercent: string | undefined;
+		}[] = [
+			{
+				runnersPage: { message: "Resource not accessible by integration" },
+				cpuPercent: "93",
+			},
+			{ runnersPage: { runners: [] }, cpuPercent: undefined },
+			{
+				runnersPage: {
+					runners: [
+						{
+							name: "hobo-offline",
+							status: "offline",
+							busy: false,
+							labels: [{ name: "hobo" }],
+						},
+						{
+							name: "agent37-online",
+							status: "online",
+							busy: false,
+							labels: [{ name: AGENT37_OVERFLOW_RUNNER_LABEL }],
+						},
+					],
+				},
+				cpuPercent: "93",
+			},
+		];
+		for (const scenario of scenarios) {
+			const batchFetch: typeof fetch = async (url) => {
+				const repo = publicRepo(url);
+				if (repo) return repo;
+				const path = String(url);
+				if (path.includes("/actions/runners"))
+					return Response.json(scenario.runnersPage);
+				if (path.includes("/actions/variables/"))
+					return Response.json(
+						scenario.cpuPercent === undefined
+							? { message: "Not Found" }
+							: { value: scenario.cpuPercent },
+					);
+				if (path.includes("/jobs"))
+					return Response.json({ jobs: hostedSaturated() });
+				return Response.json({
+					workflow_runs: [
+						{
+							id: 40,
+							path: PROBE_WORKFLOW_PATH,
+							status: "completed",
+							created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+							updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+						},
+					],
+				});
+			};
+			const { decision, lines } = await printedBy(() =>
+				main(
+					[],
+					{ ...prBatchEnv, GITHUB_API_URL: "https://api.github.com" },
+					{
+						routingConfig: COMMITTED,
+						eventPayload: undefined,
+						fetch: batchFetch,
+						now: () => SLIP_NOW,
+					},
+				),
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(
+				decision.reason,
+				/no online hobo runner was verified on the fetched runner page/u,
+			);
+			assert.ok(
+				warningsIn(lines).some(
+					(line) =>
+						line.includes(
+							"no online hobo runner was verified on the fetched runner page",
+						) &&
+						line.includes("the same-repository PR batch stays on ubuntu-24.04"),
+				),
+				lines.join("\n"),
+			);
+			assert.ok(
+				noticesIn(lines).some((line) =>
+					line.includes('"runner":"ubuntu-24.04"'),
+				),
+				lines.join("\n"),
+			);
+		}
+	});
+
 	it("leaves trunk runs on the trunk label: the pool rule is the general fleet label's", async () => {
 		const { decision, lines } = await overflowRoute(
 			poolPages(busyPool(5), "95"),
