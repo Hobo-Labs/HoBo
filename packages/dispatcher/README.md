@@ -213,9 +213,9 @@ When a v1 decision compares distinct strings, its replay input records the
 ordering version. Unversioned historical inputs use the former local collation
 for compatibility and need the original locale to reproduce a tied result. A
 legacy reservation that replays to a different provider is quarantined by the
-history check and needs reconciliation. The v2 pricing engine can still contain
-locale-sensitive ordering inside its quote calculation; this change only fixes
-the dispatcher ordering around the returned quotes.
+history check and needs reconciliation. New pricing quotes also use stable
+ordering; explicitly replayed `pricing-rating/v1` quotes retain their original
+locale-sensitive behavior.
 
 An older helper could reserve a different category when a provider had multiple
 registrations, leaving the intended account without its hold or settlement. The

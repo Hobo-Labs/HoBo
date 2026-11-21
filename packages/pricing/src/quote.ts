@@ -50,6 +50,9 @@ import {
 } from "./time-order.js";
 import type { PricingRejectionCode, QuoteResult } from "./types.js";
 
+export type RatingAlgorithmVersion = "pricing-rating/v1" | "pricing-rating/v2";
+export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
+const RATING_ALGORITHM_VERSION = "pricing-rating/v2";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function unsupportedRealm(): PricingRejected {
@@ -218,12 +221,28 @@ function validateQuoteOptions(scenario: QuoteScenario): void {
 	}
 }
 
-export function quoteScenario(scenario: QuoteScenario): QuoteResult {
+export function quoteScenario(
+	scenario: QuoteScenario,
+	options: RatingOptions = {},
+): QuoteResult {
+	const version =
+		options.ratingAlgorithmVersion === undefined
+			? RATING_ALGORITHM_VERSION
+			: options.ratingAlgorithmVersion;
+	if (version !== "pricing-rating/v1" && version !== "pricing-rating/v2")
+		return rejection(
+			"INVALID_PRICING_INPUT",
+			"unknown rating algorithm version",
+		);
 	return quoteWithOrdering(
 		scenario,
-		legacyPricingOrder,
-		legacyPricingTimeOrder,
-		"pricing-rating/v1",
+		version === "pricing-rating/v1"
+			? legacyPricingOrder
+			: codeUnitPricingOrder,
+		version === "pricing-rating/v1"
+			? legacyPricingTimeOrder
+			: utcPricingTimeOrder,
+		version,
 	);
 }
 
@@ -360,7 +379,7 @@ function quoteWithOrdering(
 		});
 		const initial = create(QuoteVectorSchema, {
 			schema: "hobo.pricing.quote/v1",
-			ratingAlgorithmVersion,
+		ratingAlgorithmVersion,
 			pricingCatalogHash: scenario.pricingCatalogHash,
 			capabilityCatalogHash: EMPTY_CAPABILITY_HASH,
 			stateHash: state.stateHash,
@@ -417,7 +436,10 @@ function quoteWithOrdering(
 
 export const QuoteEngine = Object.freeze({ quote: quoteScenario });
 
-export function quoteScenarioJson(value: JsonValue | undefined): QuoteResult {
+export function quoteScenarioJson(
+	value: JsonValue | undefined,
+	options: RatingOptions = {},
+): QuoteResult {
 	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	const scenario = value === undefined ? undefined : parseQuoteScenario(value);
 	if (scenario === undefined) {
@@ -426,5 +448,5 @@ export function quoteScenarioJson(value: JsonValue | undefined): QuoteResult {
 			"request is not a valid QuoteScenario",
 		);
 	}
-	return quoteScenario(scenario);
+	return quoteScenario(scenario, options);
 }

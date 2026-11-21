@@ -208,6 +208,17 @@ Every baseline and candidate workload must name its agreement's product;
 a mismatch returns `INVALID_PRICING_INPUT` rather than rating a different
 product's usage against that agreement.
 
+New quotes use `pricing-rating/v2`, which orders ties by string code units
+instead of the process locale. This changes the algorithm version and quote
+hash, and can change which equal-priority credit is consumed. To rerate an old
+record, pass its stored version, for example
+`quoteScenario(scenario, { ratingAlgorithmVersion: "pricing-rating/v1" })`.
+Version 1 used locale-sensitive ordering, so reproducing an old tied quote also
+requires its original locale, and it compares priority timestamps as text,
+which can order fractional UTC representations differently from their actual
+instants. Preserve the original quote as evidence rather than treating a new
+v2 quote as the old one.
+
 - Exact decimal strings and scaled-integer arithmetic; no floating-point money.
 - Explicit unit identities/conversions; GB and GiB are never treated as aliases.
 - Complete, current evidence is required through the quote horizon.
@@ -268,11 +279,31 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-`corpus/golden-replay-baseline.json` pins a complete quote output. The replay
-test parses its scenario through protobuf JSON, rerates it, and compares the
+`corpus/golden-replay-baseline.json` pins a complete v1 quote output. The replay
+test parses its scenario through protobuf JSON, rerates it with the recorded version, and compares the
 stable JSON result, including the deterministic quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
 claimed.
+
+## Credit-order verification
+
+The [pricing credit-order skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
+checks the equal-priority credit flow against real code, a bounded TLA+ model,
+and an abstract balance proof. The model explores 16 states and hides four
+same-state transitions; a separate counterexample shows that legacy v1 quotes
+can differ by locale.
+
+```mermaid
+stateDiagram-v2
+  s0: Same credit state
+  s1: One host rated
+  s2: Legacy quotes may differ
+  s3: New quotes agree
+  [*] --> s0
+  s0 --> s1: rate on Swedish host or rate on English host
+  s1 --> s2: rate on English host or rate on Swedish host
+  s1 --> s3: rate on English host or rate on Swedish host
+```
 
 ## Architecture boundaries
 

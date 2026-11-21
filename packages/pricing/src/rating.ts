@@ -924,13 +924,13 @@ export function rateSnapshot(
 					);
 			}
 		}
-		for (const charge of selectChargeComponents(
-			rateCard,
-			workload,
-			undefined,
-			"fixed",
-			order,
-		)) {
+	for (const charge of selectChargeComponents(
+		rateCard,
+		workload,
+		undefined,
+		"fixed",
+		order,
+	)) {
 			if (charge.variant.case !== "fixed" || charge.base === undefined)
 				continue;
 			if (charge.variant.value.proration !== "none")
@@ -973,9 +973,9 @@ export function rateSnapshot(
 				commitmentIds: [],
 			});
 		}
-		for (const meter of [...product.meters].sort((left, right) =>
-			order(left.dimension, right.dimension),
-		)) {
+	for (const meter of [...product.meters].sort((left, right) =>
+		order(left.dimension, right.dimension),
+	)) {
 			const entries = agreementWorkloads.flatMap((delta) =>
 				delta.usage
 					.filter((measurement) => measurement.dimension === meter.dimension)
@@ -985,9 +985,9 @@ export function rateSnapshot(
 				rateCard,
 				workload,
 				meter.dimension,
-				"usage",
-				order,
-			);
+			"usage",
+			order,
+		);
 			if (entries.length === 0 && charges.length > 0) continue;
 			if (charges.length === 0 && entries.length > 0) {
 				throw new PricingFault(
@@ -995,7 +995,7 @@ export function rateSnapshot(
 					`no charge for ${meter.dimension}`,
 				);
 			}
-			const measured = aggregateMeasurements(meter, entries, timeOrder);
+		const measured = aggregateMeasurements(meter, entries, timeOrder);
 			for (const charge of charges) {
 				if (charge.variant.case !== "usage" || charge.base === undefined)
 					continue;
