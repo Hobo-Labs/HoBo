@@ -669,11 +669,12 @@ export const RELEASE_PROMOTION_TIMEOUT = "release-promotion-timeout" as const;
 
 export class ReleasePromotionWallError extends Error {
 	override readonly name = "ReleasePromotionWallError";
-	constructor(
-		readonly phase: string,
-		readonly detail: string,
-	) {
+	readonly phase: string;
+	readonly detail: string;
+	constructor(phase: string, detail: string) {
 		super(`${RELEASE_PROMOTION_TIMEOUT}:${phase} ${detail}`);
+		this.phase = phase;
+		this.detail = detail;
 	}
 }
 
