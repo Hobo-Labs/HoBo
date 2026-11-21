@@ -70,6 +70,7 @@ import {
 	vercelDeviceToken,
 } from "./vercel-device.js";
 import {
+	CD_DEPLOY_ENVIRONMENT,
 	type CdWorkloadDeps,
 	ensureCdWorkloadIdentity,
 } from "./workload-identity.js";
@@ -230,7 +231,7 @@ async function ready(
 			store,
 			vault,
 			project: CD_VERCEL_PROJECT,
-			environment: "preview",
+			environment: CD_DEPLOY_ENVIRONMENT,
 			...(deps.workload !== undefined ? { deps: deps.workload } : undefined),
 		});
 	} catch (error) {

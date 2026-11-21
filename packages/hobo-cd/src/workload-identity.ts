@@ -24,6 +24,14 @@ const INFISICAL_CLOUD = "https://app.infisical.com";
 
 export type CdDeployEnvironment = "preview" | "production";
 
+/**
+ * The environment `hobo cd up` delivers to and the workload identity trusts.
+ * HoBo.CD opens the journal only on a production deployment
+ * (packages/cd-vercel `productionDeploymentRefusal`), so it is production.
+ */
+// public-contract: the Vercel environment in the CD workload identity's OIDC subject; cd-vercel opens the journal only there.
+export const CD_DEPLOY_ENVIRONMENT: CdDeployEnvironment = "production";
+
 export function vercelProjectTrust(
 	input: Readonly<{
 		teamSlug: string;
