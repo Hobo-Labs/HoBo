@@ -847,6 +847,71 @@ describe("checkAgentPlugin (integration)", () => {
 		).toBe(true);
 	});
 
+	it("rejects a bundle without attestation in a GitHub Actions job", async () => {
+		stubCiOff();
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		const bundleBody = "w".repeat(1024 * 1024);
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/exists in CI without a bundle attestation/u.test(issue.message),
+			),
+		).toBe(true);
+	});
+
+	it("rejects unparseable bundle attestation JSON in a GitHub Actions job", async () => {
+		stubCiOff();
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		const bundleBody = "v".repeat(1024 * 1024);
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": "{ not json\n",
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some(
+				(issue) =>
+					issue.file === ".bundle-attestation.json" &&
+					/is not valid JSON/u.test(issue.message),
+			),
+		).toBe(true);
+	});
+
 	it("accepts a matching bundle attestation in a GitHub Actions job", async () => {
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");

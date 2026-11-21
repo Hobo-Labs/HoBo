@@ -62,8 +62,8 @@ related MCP sources via `scripts/relevant-check-policy.ts`, not only on the full
 when `GITHUB_ACTIONS=true`; other CI signals still require the bundle but fail
 closed on attestation. The check refuses a bundle whose attestation does not
 match this workflow run, checkout, attempt, and sha256. In
-CI, `agent-plugin:check` builds the bundle when it is still absent so repo-wide
-gates do not fail before that build step.
+`agent-plugin:check` runs `pnpm run agent-plugin:build` when `bin/hobo-mcp.mjs`
+is still absent, so local `check:all` and CI share the same self-contained gate.
 
 The build deletes any prior `.bundle-attestation.json` before bundling so a
 failed rebuild cannot leave a stale attestation beside the bundle. The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves

@@ -206,6 +206,19 @@ test("fixture ${index}", async () => {
 		);
 	});
 
+	it("selects agent-plugin:check when the portable plugin surface changes", () => {
+		const { checks } = selectRelevantChecks({
+			files: ["plugins/hobo/skills/hobo-deploy/SKILL.md"],
+			base: "origin/main",
+		});
+		assert.ok(
+			checks.some(
+				(check) =>
+					check.args[0] === "run" && check.args[1] === "agent-plugin:check",
+			),
+		);
+	});
+
 	it("runs each scripts test the relevant-check policy selects under that runner too", () => {
 		const policy = readFileSync(
 			join(root, "scripts/relevant-check-policy.ts"),

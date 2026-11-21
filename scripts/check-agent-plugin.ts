@@ -1241,7 +1241,6 @@ export function releaseTrainVersionForPluginGate(
 }
 
 function ensureCiPluginBundle(repoRoot: string): void {
-	if (!agentPluginCiActive()) return;
 	const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
 	if (existsSync(bundle)) return;
 	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
