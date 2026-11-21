@@ -290,8 +290,6 @@ export function deployedPreviewSuites(
 					record !== undefined && isJsonObject(record.project)
 						? record.project
 						: undefined;
-				// Vercel's Git integration records the commit it built; a build HoBo
-				// staged (`--build prebuilt`) carries the commit HoBo checked out.
 				const commit = isJsonString(meta?.githubCommitSha)
 					? meta.githubCommitSha.toLowerCase()
 					: isJsonString(meta?.hoboSha)

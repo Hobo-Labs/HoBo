@@ -175,11 +175,7 @@ export type RelayRealizationFailure = Readonly<{
 
 /** The Vercel side of the realizer, supplied by `ci-relay-deploy.ts`. */
 export interface RelayRealization {
-	/**
-	 * Realize the pinned commit for this Camp: create (or, `--build
-	 * prebuilt`, stage or promote) its deployment; the provider's outputs.
-	 * `freightId` names the Freight the Set resolves to.
-	 */
+	/** Create the git deployment of the pinned commit; the provider's outputs. */
 	deploy(
 		source: RelaySourcePin,
 		context: Readonly<{ freightId: string }>,

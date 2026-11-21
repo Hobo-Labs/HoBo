@@ -190,12 +190,7 @@ export interface CiRelayDeployInput {
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
 	// executable `HOBO_VERCEL_CLI` names, or `vercel` on the PATH.
 	readonly runVercelCli?: VercelCliRunner;
-	// The Vercel CLI `--build prebuilt` builds and uploads with, in the
-	// repository checkout; injected in tests. Otherwise the executable
-	// `HOBO_VERCEL_CLI` names, or `vercel` on the PATH.
 	readonly runVercelBuild?: VercelBuildRunner;
-	// The checkout's HEAD commit; injected in tests. Otherwise `git rev-parse
-	// HEAD` in the repository the relay's directory belongs to.
 	readonly checkoutHead?: (repoRoot: string) => Promise<string>;
 	// `--wait`'s clock; injected in tests.
 	readonly sleep?: (ms: number) => Promise<void>;
@@ -452,18 +447,12 @@ function vercelCliFrom(
 		});
 }
 
-// What a `--build prebuilt` run did on Vercel: the project's canonical id,
-// the build it promoted, and what production served before (the rollback
-// target).
 interface PrebuiltState {
 	projectId?: string;
 	promoted?: string;
 	promotedFrom?: string;
 }
 
-// What a `--build prebuilt` run sends instead of the git deployment: the
-// production settings (staging) and the lookups and promotion of the staged
-// build (production). The CLI's build and upload are not requests.
 function prebuiltRequests(
 	git: ReturnType<typeof planVercelGitDeployment>["requests"],
 	project: string,
@@ -492,8 +481,6 @@ function prebuiltRequests(
 	if (target === "preview")
 		return [
 			projectRead,
-			// The production settings the build pulls, exactly as the git path
-			// sets them; the git deployment itself is never requested.
 			...git.filter((request) => !request.path.startsWith("/v13/deployments")),
 			staged,
 		];
@@ -513,9 +500,6 @@ function prebuiltRequests(
 	];
 }
 
-// The repository checkout `cwd` belongs to: the nearest directory up from it
-// that holds `.git`, where `vercel build` runs (the project's root directory
-// setting picks the relay inside it).
 function repositoryRoot(cwd: string): string | undefined {
 	let dir = path.resolve(cwd);
 	for (;;) {
@@ -526,7 +510,6 @@ function repositoryRoot(cwd: string): string | undefined {
 	}
 }
 
-// `git rev-parse HEAD` in `repoRoot`, or "" when git cannot say.
 function checkoutHeadOf(repoRoot: string): Promise<string> {
 	return new Promise((resolve) => {
 		execFile(
@@ -573,19 +556,16 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
-	// `git` (the default): Vercel builds the commit through its Git
-	// integration. `prebuilt`: HoBo builds the checkout once and uploads it
-	// as a staged production build (preview), then promotes that same build
-	// (production), so no Vercel-to-Git connection is needed or used.
 	const build = text("build") ?? "git";
 	if (build !== "git" && build !== "prebuilt")
 		return usage(
 			"--build is git (the default: Vercel builds from its Git integration) or prebuilt (HoBo builds once, stages, then promotes the same build).",
 		);
 	const prebuilt = build === "prebuilt";
-	// What the build is for: a prebuilt delivery stages a production build
-	// even on the staging (preview) node, so it takes production's placement,
-	// settings and attachments; the Camp CD promotes to is still `target`'s.
+	if (prebuilt && text("sha") === undefined)
+		return usage(
+			"hobo ci deploy --build prebuilt needs --sha <commit>: HoBo builds only the checkout of the commit the Freight pins.",
+		);
 	const buildTarget: "preview" | "production" = prebuilt
 		? "production"
 		: target;
@@ -830,10 +810,6 @@ export async function runCiRelayDeploy(
 		return usage(
 			"hobo ci deploy --target production needs --sha <commit>: production takes exactly the commit preview verified, and a ref alone names no commit.",
 		);
-	if (prebuilt && sha === undefined)
-		return usage(
-			"hobo ci deploy --build prebuilt needs --sha <commit>: HoBo builds only the checkout of the commit the Freight pins.",
-		);
 	const wait = values.wait === true;
 	const origin = RELAY_VERIFY_ORIGIN[target];
 	const originGiven = env[origin]?.trim() ?? "";
@@ -849,7 +825,9 @@ export async function runCiRelayDeploy(
 			"hobo ci deploy --target preview --wait needs --sha <commit> when no HOBO_CI_RELAY_PREVIEW_URL is set: the deployment record must be verified against the Freight's commit.",
 		);
 	const recordVerifiedPreview =
-		target === "preview" && wait && !HTTPS_ORIGIN.test(originGiven);
+		target === "preview" &&
+		wait &&
+		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
 
 	// The deploy token comes from the secret store and lives in this run's
 	// vault: handed in by the caller, or read here with a CI runner's own OIDC
@@ -932,8 +910,6 @@ export async function runCiRelayDeploy(
 			throw error;
 		}
 	};
-	// `--build prebuilt`: the build HoBo staged or promoted, and what
-	// production served before a promotion (the rollback target).
 	const prebuiltState: PrebuiltState = {};
 	const realizePrebuilt = async (
 		pin: Parameters<RelayRealization["deploy"]>[0],
@@ -986,8 +962,6 @@ export async function runCiRelayDeploy(
 			};
 		const read = await client.readProject(project);
 		prebuiltState.projectId = read.id;
-		// The build reads the production environment's settings (`vercel
-		// pull`), so they are set first, as the git path sets them.
 		if (configuration.size > 0) {
 			const set = await client.setProjectEnv({
 				project: read.id,
@@ -1140,8 +1114,6 @@ export async function runCiRelayDeploy(
 			}
 		},
 		async readyState(deploymentId) {
-			// A promotion Vercel accepted finishes on its own time: production
-			// is not READY until its domains serve this deployment.
 			if (prebuilt && target === "production") {
 				let serving = false;
 				try {
@@ -1152,6 +1124,11 @@ export async function runCiRelayDeploy(
 					);
 				} catch (error) {
 					if (!(error instanceof VercelApiError)) throw error;
+					if (!retryableRead(error.status))
+						throw new RelayDeploymentReadRefusal(
+							error.status,
+							withoutToken(error.message),
+						);
 				}
 				if (!serving) return "PROMOTING";
 			}
@@ -1253,8 +1230,25 @@ export async function runCiRelayDeploy(
 		? delivered.report
 		: (delivered.report ?? undefined);
 	const deliveryData = delivery !== undefined ? { delivery } : undefined;
-	// A promoted build that failed production verification does not stay:
-	// production goes back to the deployment it served before, no rebuild.
+	if (
+		prebuilt &&
+		target === "production" &&
+		!delivered.ok &&
+		prebuiltState.promoted !== undefined &&
+		prebuiltState.promotedFrom === undefined
+	)
+		return {
+			ok: false,
+			code: delivered.realization?.code ?? delivered.code,
+			message: withoutToken(
+				`${delivered.realization?.message ?? delivered.message} Production serves ${prebuiltState.promoted}, and this run recorded no earlier deployment to roll back to (it was already live, or production served none): roll back by hand with vercel rollback.`,
+			),
+			data: {
+				command: "ci deploy",
+				failedDeployment: prebuiltState.promoted,
+				...deliveryData,
+			},
+		};
 	if (
 		prebuilt &&
 		target === "production" &&

@@ -18,13 +18,6 @@ import {
 import type { VercelFetch } from "../src/vercel-client.js";
 import type { VercelBuildRunner } from "../src/vercel-prebuilt.js";
 
-// `hobo ci deploy --build prebuilt` against the REAL relay declaration, through
-// the CLI shell and @hobo/cd (Freight, the relay pipeline, the gate and the
-// conductor) on a temporary journal. HoBo builds the checkout once and stages
-// it; production promotes that same build, and a production verification that
-// fails rolls production back. Vercel is never asked to build from Git.
-// NO network and NO CLI: Vercel and the Vercel CLI are scripted fakes.
-
 const RELAY_DIR = fileURLToPath(new URL("../../ci-vercel/", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const TOKEN = "synthetic-token-prebuilt-0123";
@@ -89,9 +82,6 @@ type Deployment = {
 	meta: Record<string, string>;
 };
 
-// Vercel as a prebuilt delivery sees it: the project, its deployment list,
-// each deployment, its environment settings, promote and rollback. A
-// request to build from Git (POST /v13/deployments) is an error.
 function prebuiltVercel(initial: { production?: string } = {}) {
 	const deployments: Deployment[] = [];
 	const sent: string[] = [];
@@ -167,8 +157,6 @@ function prebuiltVercel(initial: { production?: string } = {}) {
 	return { fetch, state };
 }
 
-// The Vercel CLI: pull and build succeed; deploy stages a production build
-// carrying the meta it was given, as Vercel lists it afterwards.
 function fakeVercelBuild(vercel: ReturnType<typeof prebuiltVercel>) {
 	const runs: { args: readonly string[]; cwd: string }[] = [];
 	const run: VercelBuildRunner = async (args, options) => {
@@ -201,7 +189,6 @@ function fakeVercelBuild(vercel: ReturnType<typeof prebuiltVercel>) {
 	return { run, runs };
 }
 
-// The relay at its production origin: /healthz names the commit it serves.
 function relayAt(commit: string, ready = true) {
 	const probed: string[] = [];
 	const http: HttpTransport = async (request) => {
@@ -313,11 +300,9 @@ describe("hobo ci deploy --build prebuilt: stage on the preview node", () => {
 			expect.arrayContaining(["--prebuilt", "--prod", "--skip-domain"]),
 		);
 		expect(upload).toContain(`hoboSha=${SHA}`);
-		// Staging promotes nothing, and Vercel built nothing from Git.
 		expect(vercel.state.production).toBe("dpl_live");
 		expect(vercel.state.sent.some((s) => s.includes("/promote/"))).toBe(false);
 		expect(vercel.state.sent).not.toContain("POST /v13/deployments");
-		// Production's settings, set before the build pulls them.
 		expect(vercel.state.sent).toContain(`GET /v10/projects/${PROJECT_ID}/env`);
 		expect(ran.data.outputs).toMatchObject({
 			deploymentId: "dpl_staged",
@@ -442,7 +427,6 @@ describe("hobo ci deploy --build prebuilt: promote the staged build to productio
 				build: fakeVercelBuild(vercel).run,
 				env: PRODUCTION_ENV,
 				hoboHome: home,
-				// The promoted build never answers ready at the production origin.
 				probe: relayAt(SHA, false).http,
 				...clock,
 			},
@@ -518,5 +502,125 @@ describe("hobo ci deploy --build prebuilt --dry-run", () => {
 		expect(requests.some((r) => r.includes("/promote/"))).toBe(true);
 		expect(requests.some((r) => r.includes("/rollback/"))).toBe(true);
 		expect(vercel.state.sent).toEqual([]);
+	});
+});
+
+describe("hobo ci deploy --build prebuilt: review guards", () => {
+	it("verifies staging by the deployment record even when a preview origin is set, probing nothing", async () => {
+		const vercel = prebuiltVercel();
+		const probed: string[] = [];
+		const ran = await deploy([...PINNED, ...INPUTS, "--wait"], {
+			fetch: vercel.fetch,
+			build: fakeVercelBuild(vercel).run,
+			env: {
+				...ENV,
+				HOBO_CI_RELAY_PREVIEW_URL: "https://hobo-ci-git-main.example.test",
+			},
+			hoboHome: freshHome(),
+			probe: async (request) => {
+				probed.push(request.url);
+				return { status: 200, headers: {}, body: '{"ok":true}' };
+			},
+			...steppingClock(),
+		});
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
+		expect(probed).toEqual([]);
+	});
+
+	it("refuses a prebuilt dry run without --sha, before planning", async () => {
+		const vercel = prebuiltVercel();
+		const ran = await deploy(
+			[
+				"--repo",
+				"example/hobo",
+				"--ref",
+				"main",
+				"--build",
+				"prebuilt",
+				"--dry-run",
+			],
+			{
+				fetch: vercel.fetch,
+				build: fakeVercelBuild(vercel).run,
+				env: ENV,
+				hoboHome: freshHome(),
+			},
+		);
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({ code: "HOBO_CLI_USAGE" });
+	});
+
+	it("fails production verification promptly when Vercel refuses the project read, instead of waiting as PROMOTING", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		let reads = 0;
+		const refusing: VercelFetch = async (url, init) => {
+			if (
+				init.method === "GET" &&
+				new URL(url).pathname.startsWith("/v9/projects/")
+			) {
+				reads += 1;
+				if (reads > 1)
+					return {
+						ok: false,
+						status: 403,
+						async text() {
+							return JSON.stringify({
+								error: { code: "forbidden", message: "no" },
+							});
+						},
+						async json() {
+							return { error: { code: "forbidden", message: "no" } };
+						},
+					};
+			}
+			return vercel.fetch(url, init);
+		};
+		const ran = await deploy(
+			[...PINNED, ...INPUTS, "--target", "production", "--wait"],
+			{
+				fetch: refusing,
+				build: fakeVercelBuild(vercel).run,
+				env: PRODUCTION_ENV,
+				hoboHome: home,
+				probe: relayAt(SHA).http,
+				...clock,
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(JSON.stringify(ran.envelope)).toContain("HTTP 403");
+		expect(JSON.stringify(ran.envelope)).not.toContain("PROMOTING");
+	});
+
+	it("names the manual rollback when the build that failed was already live", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const vercel = prebuiltVercel();
+		expect((await stage(home, vercel, clock)).ran.exitCode).toBe(0);
+		vercel.state.production = "dpl_staged";
+		const ran = await deploy(
+			[...PINNED, ...INPUTS, "--target", "production", "--wait"],
+			{
+				fetch: vercel.fetch,
+				build: fakeVercelBuild(vercel).run,
+				env: PRODUCTION_ENV,
+				hoboHome: home,
+				probe: relayAt(SHA, false).http,
+				...clock,
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			message: expect.stringContaining(
+				"roll back by hand with vercel rollback",
+			),
+		});
+		expect(vercel.state.sent.some((s) => s.includes("/rollback/"))).toBe(false);
 	});
 });

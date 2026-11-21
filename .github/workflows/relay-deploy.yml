@@ -196,16 +196,6 @@ jobs:
             --json > "$RUNNER_TEMP/relay-preview.json" || status=$?
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-preview.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
-      # `--build prebuilt`: HoBo.CD is the only builder; Vercel's Git
-      # integration is never connected or used. The preview node builds this
-      # checkout once and uploads it, prebuilt, as a production build that
-      # serves no domain yet; production promotes that exact build, with no
-      # rebuild. The Vercel CLI runs inside hobo, never as a step here.
-      # Production is verified at the Yard's production domain
-      # (HOBO_CI_RELAY_URL above): /healthz must name this commit, /readyz
-      # must answer 200, and the promotion fails closed on anything else. A
-      # failed production verification rolls production back to the
-      # deployment it served before (HOBO_CI_DEPLOY_ROLLED_BACK).
       - name: Deploy the relay (production)
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 17

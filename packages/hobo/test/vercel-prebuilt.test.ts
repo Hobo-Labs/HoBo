@@ -13,11 +13,6 @@ import {
 	vercelBuildEnvironment,
 } from "../src/vercel-prebuilt.js";
 
-// Build once, promote the same build: the build runs in the Freight's
-// checkout, the upload is a staged production deployment found by its meta,
-// and production is pointed at that exact deployment with no rebuild.
-// NO network and NO CLI: the client and the runner are fakes.
-
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const FREIGHT = "frt_relay_0123";
 const PROJECT_ID = "prj_relay";
@@ -225,6 +220,7 @@ describe("promoting the staged build", () => {
 			ok: true,
 			deployment: staged(),
 			projectId: PROJECT_ID,
+			alreadyLive: false,
 			previousDeploymentId: "dpl_live",
 		});
 		expect(calls).toContain(`promote ${PROJECT_ID} dpl_staged`);
@@ -340,6 +336,48 @@ describe("the CLI's environment", () => {
 			CI: "1",
 			VERCEL_TOKEN: "fresh",
 			VERCEL_PROJECT_ID: "hobo-ci",
+		});
+	});
+});
+
+describe("the staging checkout's Vercel output", () => {
+	it("is removed before and after staging, whatever the outcome", async () => {
+		for (const exitCodes of [{}, { build: 1 }]) {
+			const removed: string[] = [];
+			const { client } = fakeClient({ deployments: [staged()] });
+			await stageVercelBuild({
+				run: recordingRunner(exitCodes).run,
+				client,
+				project: "hobo-ci",
+				cwd: "/repo",
+				head: SHA,
+				freightId: FREIGHT,
+				sha: SHA,
+				emit: () => {},
+				removeOutput: (directory) => removed.push(directory),
+			});
+			expect(removed).toEqual(["/repo/.vercel", "/repo/.vercel"]);
+		}
+	});
+
+	it("marks a build production already serves as already live, with no rollback target", async () => {
+		const { client } = fakeClient({
+			deployments: [staged()],
+			production: "dpl_staged",
+		});
+		expect(
+			await promoteStagedBuild({
+				client,
+				project: "hobo-ci",
+				freightId: FREIGHT,
+				sha: SHA,
+				emit: () => {},
+			}),
+		).toEqual({
+			ok: true,
+			deployment: staged(),
+			projectId: PROJECT_ID,
+			alreadyLive: true,
 		});
 	});
 });

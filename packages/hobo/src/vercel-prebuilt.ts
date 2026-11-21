@@ -1,27 +1,6 @@
-// Build once, promote the same build: HoBo.CD's Vercel delivery with no Git
-// integration.
-//
-// Vercel's Git integration builds every push itself, so production is a
-// second build of the commit preview verified, and a project with no Git
-// connection is never deployed at all. Here the build is HoBo's:
-//
-// 1. stage: in the checkout of the Freight's commit, `vercel pull`, `vercel
-//    build --prod` and `vercel deploy --prebuilt --prod --skip-domain`
-//    upload a production build that serves no domain yet. Its `meta` names
-//    the Freight (`hoboFreight`) and the commit (`hoboSha`).
-// 2. promote: the production node finds that exact build by its meta and
-//    points the production domains at it (POST
-//    /v10/projects/{project}/promote/{deployment}): no rebuild, so what
-//    production serves is the bytes the staging node verified.
-// 3. roll back: when production verification fails, the domains go back to
-//    the deployment they served before the promotion (POST
-//    /v1/projects/{project}/rollback/{deployment}).
-//
-// The Vercel CLI runs without a shell. Its environment is the caller's minus
-// every variable whose name looks like a credential, plus the deploy token
-// and the project's coordinates; its output is read, never printed whole.
-
 import { execFile } from "node:child_process";
+import { rmSync } from "node:fs";
+import path from "node:path";
 
 import { isJsonNumber } from "./json.js";
 
@@ -49,7 +28,6 @@ export type VercelBuildResult = Readonly<{
 	stderr: string;
 }>;
 
-/** One Vercel CLI invocation in `cwd`; injected in tests. */
 export type VercelBuildRunner = (
 	args: readonly string[],
 	options: Readonly<{ cwd: string; timeoutMs: number }>,
@@ -61,17 +39,44 @@ export type VercelPrebuiltFailure = Readonly<{
 	message: string;
 }>;
 
-// A name that may carry a credential: kept out of the CLI's environment, so
-// a build script can read only what the project itself is given.
-const CREDENTIAL_NAME =
-	/(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY|AUTH)/i;
-
-/** The variables the Vercel CLI runs with, by name. */
 export interface VercelBuildEnvironment {
 	readonly [name: string]: string;
 }
 
-/** The CLI's environment: the caller's, credentials removed, `extra` added. */
+export type StagedBuild = Readonly<{
+	ok: true;
+	deployment: VercelProjectDeployment;
+}>;
+
+export type PromotedBuild = Readonly<{
+	ok: true;
+	deployment: VercelProjectDeployment;
+	projectId: string;
+	alreadyLive: boolean;
+	previousDeploymentId?: string;
+}>;
+
+type StageInput = Readonly<{
+	run: VercelBuildRunner;
+	client: VercelClient;
+	project: string;
+	cwd: string;
+	head: string;
+	freightId: string;
+	sha: string;
+	emit: (message: string) => void;
+	removeOutput?: (directory: string) => void;
+}>;
+
+const CREDENTIAL_NAME =
+	/(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY|AUTH)/i;
+const BUILD_TIMEOUT_MS = 20 * 60_000;
+const DEPLOY_TIMEOUT_MS = 10 * 60_000;
+const PULL_TIMEOUT_MS = 3 * 60_000;
+const SHA = /^[0-9a-f]{40}$/;
+const META_VALUE = /^[A-Za-z0-9._:-]{1,200}$/;
+const VERCEL_OUTPUT_DIRECTORY = ".vercel";
+
 export function vercelBuildEnvironment(
 	env: Readonly<Record<string, string | undefined>>,
 	extra: VercelBuildEnvironment,
@@ -91,7 +96,6 @@ export function vercelBuildEnvironment(
 	]);
 }
 
-/** The Vercel CLI the build runs: `executable`, no shell, bounded output. */
 export function vercelBuildRunnerFrom(
 	executable: string,
 	env: VercelBuildEnvironment,
@@ -117,40 +121,17 @@ export function vercelBuildRunnerFrom(
 		});
 }
 
-// The last lines of a CLI answer: enough to say why, never a whole log.
-function tail(text: string, lines = 12): string {
+function lastLines(text: string, lines = 12): string {
 	return text.trim().split("\n").slice(-lines).join("\n");
 }
 
-const BUILD_TIMEOUT_MS = 20 * 60_000;
-const DEPLOY_TIMEOUT_MS = 10 * 60_000;
-const PULL_TIMEOUT_MS = 3 * 60_000;
-const SHA = /^[0-9a-f]{40}$/;
-// A Freight id as `vercel deploy --meta` carries it: no `=`, no space.
-const META_VALUE = /^[A-Za-z0-9._:-]{1,200}$/;
+function removeDirectory(directory: string): void {
+	rmSync(directory, { recursive: true, force: true });
+}
 
-/**
- * Stage the Freight's build: build the checkout `cwd` (which must be at
- * `sha`) for production and upload it as a production deployment that serves
- * no domain. Returns the staged deployment, found by its meta.
- */
 export async function stageVercelBuild(
-	input: Readonly<{
-		run: VercelBuildRunner;
-		client: VercelClient;
-		project: string;
-		/** The repository checkout the build runs in. */
-		cwd: string;
-		/** The checkout's HEAD, as `git rev-parse HEAD` reads it. */
-		head: string;
-		freightId: string;
-		sha: string;
-		emit: (message: string) => void;
-	}>,
-): Promise<
-	| Readonly<{ ok: true; deployment: VercelProjectDeployment }>
-	| VercelPrebuiltFailure
-> {
+	input: StageInput,
+): Promise<StagedBuild | VercelPrebuiltFailure> {
 	const sha = input.sha.toLowerCase();
 	if (!SHA.test(sha) || input.head.trim().toLowerCase() !== sha)
 		return {
@@ -164,6 +145,20 @@ export async function stageVercelBuild(
 			code: VERCEL_PREBUILT_REFUSAL.stageFailed,
 			message: `Freight id ${input.freightId} cannot be carried as Vercel deployment meta.`,
 		};
+	const output = path.join(input.cwd, VERCEL_OUTPUT_DIRECTORY);
+	const removeOutput = input.removeOutput ?? removeDirectory;
+	removeOutput(output);
+	try {
+		return await buildAndUpload(input, sha);
+	} finally {
+		removeOutput(output);
+	}
+}
+
+async function buildAndUpload(
+	input: StageInput,
+	sha: string,
+): Promise<StagedBuild | VercelPrebuiltFailure> {
 	const steps: readonly (readonly [string, readonly string[], number])[] = [
 		[
 			"pull the project's production settings",
@@ -197,7 +192,7 @@ export async function stageVercelBuild(
 					args[0] === "deploy"
 						? VERCEL_PREBUILT_REFUSAL.stageFailed
 						: VERCEL_PREBUILT_REFUSAL.buildFailed,
-				message: `vercel ${args[0]} failed (exit ${result.code}) trying to ${what}:\n${tail(result.stderr || result.stdout)}`,
+				message: `vercel ${args[0]} failed (exit ${result.code}) trying to ${what}:\n${lastLines(result.stderr || result.stdout)}`,
 			};
 	}
 	const staged = await findStagedBuild(
@@ -214,10 +209,6 @@ export async function stageVercelBuild(
 	return { ok: true, deployment: staged };
 }
 
-/**
- * The newest production build of `project` whose meta names `freightId`: the
- * build `stageVercelBuild` uploaded for that Freight.
- */
 export async function findStagedBuild(
 	client: VercelClient,
 	project: string,
@@ -240,11 +231,6 @@ export async function findStagedBuild(
 	return newest;
 }
 
-/**
- * Point production at the build staged for `freightId`, with no rebuild.
- * Answers the deployment production served before, the rollback target;
- * undefined when production served nothing or already served this build.
- */
 export async function promoteStagedBuild(
 	input: Readonly<{
 		client: VercelClient;
@@ -253,16 +239,7 @@ export async function promoteStagedBuild(
 		sha: string;
 		emit: (message: string) => void;
 	}>,
-): Promise<
-	| Readonly<{
-			ok: true;
-			deployment: VercelProjectDeployment;
-			/** The project's canonical id: promote and rollback take it. */
-			projectId: string;
-			previousDeploymentId?: string;
-	  }>
-	| VercelPrebuiltFailure
-> {
+): Promise<PromotedBuild | VercelPrebuiltFailure> {
 	const staged = await findStagedBuild(
 		input.client,
 		input.project,
@@ -291,7 +268,12 @@ export async function promoteStagedBuild(
 	const previous = read.productionDeploymentId;
 	if (previous === staged.id) {
 		input.emit(`production already serves ${staged.id}; nothing to promote`);
-		return { ok: true, deployment: staged, projectId: read.id };
+		return {
+			ok: true,
+			deployment: staged,
+			projectId: read.id,
+			alreadyLive: true,
+		};
 	}
 	input.emit(
 		`promoting ${staged.id} (${staged.url}) to production${previous !== undefined ? `, replacing ${previous}` : ""}`,
@@ -309,16 +291,13 @@ export async function promoteStagedBuild(
 		ok: true,
 		deployment: staged,
 		projectId: read.id,
+		alreadyLive: false,
 		...(previous !== undefined
 			? { previousDeploymentId: previous }
 			: undefined),
 	};
 }
 
-/**
- * Whether production now serves `deploymentId`: a promotion Vercel accepted
- * (202) finishes asynchronously, so readiness waits for the pointer to move.
- */
 export async function servesProduction(
 	client: VercelClient,
 	project: string,

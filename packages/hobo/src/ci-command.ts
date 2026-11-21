@@ -423,9 +423,7 @@ export function createCiCommand(
 		deployCredentials?: TrustedVault;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
-		/** The Vercel CLI `hobo ci deploy --build prebuilt` builds and uploads with; spawned when absent. */
 		vercelBuild?: VercelBuildRunner;
-		/** The checkout's HEAD for `--build prebuilt`; `git rev-parse HEAD` when absent. */
 		checkoutHead?: (repoRoot: string) => Promise<string>;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
 		hoboHome?: string;

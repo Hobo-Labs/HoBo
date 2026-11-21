@@ -8,10 +8,6 @@ import {
 	type VercelFetchResponse,
 } from "../src/vercel-client.js";
 
-// Promote and rollback move production between deployments that already
-// exist, with no rebuild: the build-once half of HoBo.CD's Vercel delivery.
-// NO network: every request goes to a scripted transport.
-
 type SentInit = Parameters<VercelFetch>[1];
 
 interface Sent {
@@ -203,7 +199,6 @@ describe("what production serves, and what a Freight staged", () => {
 		expect(url.pathname).toBe("/v6/deployments");
 		expect(url.searchParams.get("projectId")).toBe(PROJECT);
 		expect(url.searchParams.get("target")).toBe("production");
-		// One page, capped at Vercel's maximum.
 		expect(url.searchParams.get("limit")).toBe("100");
 		expect(url.searchParams.get("teamId")).toBe(TEAM);
 	});

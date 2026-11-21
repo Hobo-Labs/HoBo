@@ -189,20 +189,12 @@ export interface VercelDeploymentResult {
 	readonly raw: JsonValue;
 }
 
-// One deployment of a project as the deployment list reports it: enough to
-// find the one a HoBo Freight staged (its `meta`) and to promote it.
 export interface VercelProjectDeployment {
 	readonly id: string;
-	// The deployment URL, with the https:// scheme.
 	readonly url: string;
-	// Vercel `readyState` (or `state`, as the list names it).
 	readonly readyState?: string;
-	// Vercel `target`: "production" for a production build (staged or live),
-	// absent for a preview.
 	readonly target?: string;
-	// The string entries of Vercel `meta` (what `vercel deploy --meta` set).
 	readonly meta: Readonly<Record<string, string>>;
-	// Vercel `created`, in epoch milliseconds.
 	readonly createdAt?: number;
 }
 
@@ -332,28 +324,15 @@ export interface VercelClient {
 	// its reason, rather than failing. Any other refusal, another 409 included,
 	// is a VercelApiError.
 	createProject(name: string): Promise<VercelProjectResult>;
-	// The project's canonical id (`prj_…`, whether `project` was its id or its
-	// name) and the deployment its production domains serve now (Vercel
-	// project `targets.production.id`), undefined when it serves none. A
-	// project Vercel does not know is a VercelApiError (404).
 	readProject(
 		project: string,
 	): Promise<Readonly<{ id: string; productionDeploymentId?: string }>>;
-	// The project's most recent deployments, newest first, one page of at most
-	// `limit` (default 20, at most 100). `target: "production"` keeps the
-	// production builds, staged or live.
 	listProjectDeployments(input: {
 		readonly project: string;
 		readonly target?: "production" | "preview";
 		readonly limit?: number;
 	}): Promise<readonly VercelProjectDeployment[]>;
-	// Point the project's production domains at `deploymentId` without a
-	// rebuild (POST /v10/projects/{project}/promote/{deploymentId}). The
-	// deployment must be a READY production build of the project, such as
-	// one `vercel deploy --prebuilt --prod --skip-domain` staged.
 	promoteDeployment(project: string, deploymentId: string): Promise<void>;
-	// Point production back at an earlier production deployment without a
-	// rebuild (POST /v1/projects/{project}/rollback/{deploymentId}).
 	rollbackProduction(
 		project: string,
 		deploymentId: string,
@@ -1165,8 +1144,6 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			fetchImpl(url, { method, headers: { Authorization: `Bearer ${token}` } }),
 		);
 
-	// A project id or name as a path segment: Vercel ids (`prj_…`) and names
-	// (letters, digits, `.`, `_`, `-`) only, so nothing else reaches the path.
 	function projectSegment(project: string) {
 		if (!project || !/^[A-Za-z0-9._-]+$/.test(project))
 			throw new Error("vercel-client: invalid project id or name");
@@ -1177,8 +1154,6 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			throw new Error("invalid deployment receipt identity");
 		return encodeURIComponent(deploymentId);
 	}
-	// A POST with no body, as promote and rollback take; a transport that
-	// throws is a VercelTransportError naming `what`.
 	const postEmpty = (what: string, url: string): Promise<VercelFetchResponse> =>
 		untilAnswered(`${what} got no answer`, secrets, () =>
 			fetchImpl(url, {
@@ -1186,7 +1161,6 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 				headers: { Authorization: `Bearer ${token}` },
 			}),
 		);
-	// `query` plus more parameters, team-scoped like every other request.
 	function withParams(params: Readonly<Record<string, string>>): string {
 		const search = new URLSearchParams(params);
 		if (teamId !== undefined) search.set("teamId", teamId);
