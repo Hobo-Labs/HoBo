@@ -95,10 +95,16 @@ the sum of its files):
   diffs `merge_group.base_sha` and shards the four files on `ubuntu-24.04`.
 - Hosted PR run 44867963592 never started `release-hobo`: GitHub's `paths`
   filter for that synchronize looked at the merge-from-main commit (attestation
-  blobs only). `pull_request.paths` / `merge_group.paths` now also list
-  `scripts/test/release-integration*` and `scripts/ci/job-scope.mts`, and a
-  forward commit that edits the workflow file (already on main's filter)
-  re-measures the four shards and `HoBo release PR gate`.
+  blobs only). GitHub evaluates the **default-branch** copy of `paths`, so
+  globs added only in this PR cannot self-trigger until merge. The workflow
+  file and `scripts/lib/release-hobo-path-filters.mts` are already on main's
+  list, yet a later synchronize that edited both still skipped (run
+  44870024997 is the tag-filtered `push` miss; no `pull_request` run). The
+  lane files now sit at the **top** of both `pull_request.paths` and
+  `merge_group.paths` (workflow, `scripts/test/release-integration*`, the
+  job-scope script, and `scripts/test/release-freight.test.ts`, which is the
+  file that starts sibling PR 2930). A forward commit that edits that freight
+  test re-measures the four shards and `HoBo release PR gate`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the

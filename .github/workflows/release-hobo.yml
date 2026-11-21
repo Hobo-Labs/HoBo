@@ -9,6 +9,11 @@ on:
     branches: [main]
     paths:
       - "version.json"
+      - ".github/workflows/release-hobo.yml"
+      - "scripts/test/release-integration*"
+      - "scripts/test/release-integration-job.test.ts"
+      - "scripts/ci/job-scope.mts"
+      - "scripts/test/release-freight.test.ts"
       - "deploy/release-images/**"
       - "release/**"
       - "release/mise.toml"
@@ -61,22 +66,18 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
-      - "scripts/test/release-freight.test.ts"
       - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
-      - ".github/workflows/release-hobo.yml"
       - "packages/hobo/test/support/release-integration-test-files.ts"
       - "packages/hobo/vitest.release-integration.config.ts"
       - "packages/hobo/test/vercel-project.test.ts"
       - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
       - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
       - "packages/hobo/test/cd-md-examples.test.ts"
-      - "scripts/test/release-integration*"
-      - "scripts/ci/job-scope.mts"
   push:
     tags:
       - "sdk-v*"
@@ -85,6 +86,11 @@ on:
     branches: [main]
     types: [checks_requested]
     paths:
+      - ".github/workflows/release-hobo.yml"
+      - "scripts/test/release-integration*"
+      - "scripts/test/release-integration-job.test.ts"
+      - "scripts/ci/job-scope.mts"
+      - "scripts/test/release-freight.test.ts"
       - "deploy/release-images/**"
       - "release/**"
       - "release/mise.toml"
@@ -137,22 +143,18 @@ on:
       - "scripts/test/release-version.test.ts"
       - "scripts/test/stage-release-oci-app.test.ts"
       - "scripts/test/build-release-site-prebuild.test.ts"
-      - "scripts/test/release-freight.test.ts"
       - "scripts/test/release-freight-cli.test.ts"
       - "scripts/test/release-freight-realize.test.ts"
       - "scripts/deploy-site.mts"
       - "scripts/test/deploy-site.test.ts"
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
-      - ".github/workflows/release-hobo.yml"
       - "packages/hobo/test/support/release-integration-test-files.ts"
       - "packages/hobo/vitest.release-integration.config.ts"
       - "packages/hobo/test/vercel-project.test.ts"
       - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
       - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
       - "packages/hobo/test/cd-md-examples.test.ts"
-      - "scripts/test/release-integration*"
-      - "scripts/ci/job-scope.mts"
   workflow_dispatch:
     inputs:
       push_images:

@@ -144,6 +144,14 @@ describe("the slow integration lane is a merge-group gate", () => {
 			mergeGroup,
 			pullRequest.filter((path) => path !== "version.json"),
 		);
+		assert.deepEqual(pullRequest.slice(0, 6), [
+			"version.json",
+			".github/workflows/release-hobo.yml",
+			"scripts/test/release-integration*",
+			"scripts/test/release-integration-job.test.ts",
+			"scripts/ci/job-scope.mts",
+			"scripts/test/release-freight.test.ts",
+		]);
 		const required = [
 			".github/workflows/release-hobo.yml",
 			"packages/hobo/vitest.release-integration.config.ts",
@@ -153,6 +161,7 @@ describe("the slow integration lane is a merge-group gate", () => {
 			"packages/hobo/test/cd-runner-fleet-delivery.test.ts",
 			"packages/hobo/test/cd-md-examples.test.ts",
 			"scripts/test/release-integration-job.test.ts",
+			"scripts/test/release-freight.test.ts",
 			"scripts/ci/job-scope.mts",
 		];
 		for (const path of required) {

@@ -230,6 +230,19 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 			expect(job(name)).toContain("pattern: hobo-release-freight-oci-*");
 	});
 
+	it("lists the slow-integration glob, this freight test, and the workflow first in pull_request paths", () => {
+		const start = workflow.indexOf("\n  pull_request:\n");
+		const mergeGroup = workflow.indexOf("\n  merge_group:\n");
+		expect(start).toBeGreaterThan(-1);
+		expect(mergeGroup).toBeGreaterThan(start);
+		const pull = workflow.slice(start, mergeGroup);
+		const paths = pull.indexOf("\n    paths:\n");
+		expect(paths).toBeGreaterThan(-1);
+		expect(pull.slice(paths)).toMatch(
+			/\n    paths:\n      - "version.json"\n      - "\.github\/workflows\/release-hobo\.yml"\n      - "scripts\/test\/release-integration\*"\n      - "scripts\/test\/release-integration-job\.test\.ts"\n      - "scripts\/ci\/job-scope\.mts"\n      - "scripts\/test\/release-freight\.test\.ts"\n/,
+		);
+	});
+
 	it("records npm tarballs before npm publish", () => {
 		const block = job("release-npm");
 		expect(block).toMatch(

@@ -174,7 +174,8 @@ function scope(cwd: string, mergeGroupBase: string): string {
 describe("the scripts lane is a pull-request gate", () => {
 	it("runs pnpm run test:scripts on the routed runner for pull requests and merge groups", () => {
 		assert.equal(scripts.name, "Scripts tests");
-		assert.ok(scripts.needs.includes("route"));
+		assert.deepEqual(scripts.needs, ["route"]);
+		assert.ok(!scripts.needs.includes("ci-runner-image"));
 		assert.equal(scripts.runsOn, ROUTED);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);

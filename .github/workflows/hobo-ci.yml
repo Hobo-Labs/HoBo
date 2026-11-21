@@ -240,6 +240,10 @@ jobs:
   ci-deps-image:
     name: CI deps layer (pnpm)
     needs: [route]
+    # One hosted runner among PR sidecars so they cannot starve scripts-tests.
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     # Pull requests only. On main this was a fourth trunk pickup for a check that
     # takes seconds, so Main workspace plan now runs it as steps (finding 154).
     if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
@@ -843,9 +847,10 @@ jobs:
     # Every test under scripts/test (pnpm run test:scripts), which no job ran until
     # finding 0144: a broken script test reached main on a green PR. The PR impact
     # gate requires it. A change that reaches none of scripts/, test/ or .github/
-    # passes at once. Waits for the image job as PR impact validation does, so a
-    # pull request that changes the image's inputs tests on the image it built.
-    needs: [route, ci-runner-image]
+    # passes at once. Does not wait for ci-runner-image: hosted shards do not
+    # boot that image, and waiting serialized them behind a 20s no-op plus the
+    # hosted queue. Image-input PRs still rebuild it; validation still waits.
+    needs: [route]
     if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"scripts-tests"')) }}
     # Each test file is assigned to exactly one shard. Splitting the lane keeps
     # its watchdog useful even on a busy, smaller self-hosted runner.
@@ -1072,6 +1077,9 @@ jobs:
     # Off the critical path: these used to run inside the PR impact gate.
     name: PR off-path checks (ts-autocode surface, production packages)
     needs: route
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -1798,6 +1806,9 @@ jobs:
   artifact-trust:
     name: artifact signing and install verification
     needs: route
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"artifact-trust"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
@@ -1834,6 +1845,9 @@ jobs:
   dev-cold-loop-gate:
     name: hobo dev cold loop (offline <=60s)
     needs: route
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     if: github.event_name == 'pull_request'
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # The 60 s budget is the cold loop's own; an ARC pod first pulls the worker image,
@@ -1942,6 +1956,9 @@ jobs:
     # The name is also a key in the worker's memory classes (`heavy`).
     name: Live data engines (PostgreSQL 16, MongoDB 8)
     needs: route
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -2053,6 +2070,9 @@ jobs:
   ci-guard:
     name: CI fabric contract guard
     needs: route
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     # On other events, these steps run inside Main full gate or PR impact gate.
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"ci-guard"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
@@ -2074,6 +2094,9 @@ jobs:
   secret-scan:
     name: Secret scan
     needs: route
+    concurrency:
+      group: ${{ github.workflow }}-pr-sidecar-${{ github.ref }}
+      cancel-in-progress: false
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside Main full gate in parallel with its checks.
     if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"secret-scan"')) }}
