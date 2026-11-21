@@ -1262,8 +1262,7 @@ describe("hobo ci secret-store verify", () => {
 						fake.fetch,
 					),
 				);
-				const provenAbsence =
-					probe.endsWith("Membership") && status === 404;
+				const provenAbsence = probe.endsWith("Membership") && status === 404;
 				expect(result.ok, `${probe}: ${status}: ${result.message}`).toBe(
 					provenAbsence,
 				);
