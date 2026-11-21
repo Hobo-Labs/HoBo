@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 export const ROOT_VITEST_SHARDS = 4;
 export const DRAFT_VITEST_SHARDS = 9;
@@ -48,11 +49,66 @@ export function gitLsFiles(patterns: string[]): string[] {
 		.filter(Boolean);
 }
 
-export function isNodeTestFile(file: string): boolean {
-	const source = readFileSync(file, "utf8");
-	return /from\s+["']node:test["']|require\(\s*["']node:test["']\s*\)|import\s+["']node:test["']/.test(
+export function isNodeTestSource(source: string, file = "test.ts"): boolean {
+	if (
+		!/\b(?:from\s+|require\s*\(\s*|import\s*(?:\(\s*)?)["'`]node:test["'`]/u.test(
+			source,
+		)
+	)
+		return false;
+	const kind = /\.[jt]sx$/u.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+	const parsed = ts.createSourceFile(
+		file,
 		source,
+		ts.ScriptTarget.Latest,
+		true,
+		kind,
 	);
+	const namesNodeTest = (node: ts.Node | undefined) =>
+		Boolean(node && ts.isStringLiteralLike(node) && node.text === "node:test");
+	const visit = (node: ts.Node): boolean => {
+		if (ts.isImportDeclaration(node) && namesNodeTest(node.moduleSpecifier)) {
+			const clause = node.importClause;
+			if (!clause) return true;
+			if (clause.isTypeOnly) return false;
+			const named = clause.namedBindings;
+			return Boolean(
+				clause.name ||
+					!named ||
+					!ts.isNamedImports(named) ||
+					named.elements.length === 0 ||
+					named.elements.some((element) => !element.isTypeOnly),
+			);
+		}
+		if (ts.isExportDeclaration(node) && namesNodeTest(node.moduleSpecifier)) {
+			if (node.isTypeOnly) return false;
+			const named = node.exportClause;
+			return (
+				!named ||
+				!ts.isNamedExports(named) ||
+				named.elements.length === 0 ||
+				named.elements.some((element) => !element.isTypeOnly)
+			);
+		}
+		if (ts.isExternalModuleReference(node) && namesNodeTest(node.expression))
+			return (
+				!ts.isImportEqualsDeclaration(node.parent) || !node.parent.isTypeOnly
+			);
+		if (
+			ts.isCallExpression(node) &&
+			(node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+				(ts.isIdentifier(node.expression) &&
+					node.expression.text === "require")) &&
+			namesNodeTest(node.arguments[0])
+		)
+			return true;
+		return ts.forEachChild(node, visit) === true;
+	};
+	return visit(parsed);
+}
+
+export function isNodeTestFile(file: string): boolean {
+	return isNodeTestSource(readFileSync(file, "utf8"), file);
 }
 
 function selectVitestFiles(patterns: string[]): string[] {
