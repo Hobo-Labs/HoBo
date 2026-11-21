@@ -228,6 +228,14 @@ original commitment without another debit; changed payloads fail. Terminal or
 expired IDs cannot authorize new work. The dispatch-and-reserve helper persists
 its replay input in the reservation, so a retry retains the original winner.
 
+Ledger sequence values must be nonnegative safe integers. A mutation that would
+exceed `Number.MAX_SAFE_INTEGER` throws before changing the ledger; expiry
+checks space for its time advance and every release before changing either.
+Existing idempotent replays and no-op expiry remain available. Exhaustion also
+stops settlement, so operators must migrate and reconcile the ledger to a wider
+sequence format before continuing; resetting the counter would invalidate its
+fencing guarantee.
+
 `freeHeadroom`, when present, is the aggregate cap; `credits` are its grant
 breakdown, not additional copies of the allowance. Without an aggregate the
 grant balances are summed. Expiring grants require pinned `ledger.asOf` and
@@ -245,6 +253,25 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. It includes the hard-budget and overflow regression suites and checks weakened models for counterexamples. The skill also documents a separate scratch-mutation command for the overflow and estimate guards. The abstract proof does not establish that the TypeScript implementation refines it or model numeric overflow.
+
+The sequence model explores 88 states with a maximum revision of three and up
+to two pending reservations. Its projection hides 46 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Ledger operation requested
+  s1: Applying expiry
+  s2: Sequence exhausted
+  s3: Replay returned
+  s4: Mutation committed
+  s5: Expiry completed
+  [*] --> s0
+  s0 --> s1: check expiry batch
+  s0 --> s2: check expiry batch or mutate if space remains
+  s0 --> s3: return prior result
+  s0 --> s4: mutate if space remains
+  s1 --> s5: finish expiry
+```
 
 ### Recovering a blocked IaC route
 
