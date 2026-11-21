@@ -11,11 +11,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 		try {
 			fetchReleaseTurboBase(root, base);
 		} catch (error) {
-			const raw = error instanceof Error ? error.message : String(error);
-			const detail = raw
-				.replace(/%/gu, "%25")
-				.replace(/\r/gu, "%0D")
-				.replace(/\n/gu, "%0A");
+			const detail = error instanceof Error ? error.message : String(error);
 			console.log(
 				`::warning title=release-turbo-base::${detail}; release OCI build may fall back to full turbo graph`,
 			);
