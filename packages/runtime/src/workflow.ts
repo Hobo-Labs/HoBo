@@ -28,6 +28,7 @@ import {
 	type JsonValue,
 } from "./json.js";
 import type { ActorHost, RuntimeClock } from "./ports.js";
+import { readReplayCommandTree } from "./replay/command-tree.js";
 import { createDeterministicContext } from "./replay/context.js";
 import { nextEnvelope, recordEffect } from "./replay/recorder.js";
 import type { WorkflowDefinition as ReplayWorkflowDefinition } from "./replay/replayer.js";
@@ -364,6 +365,10 @@ export function createWorkflowEngine(
 		) {
 			throw new Error(`workflow name differs from run.Started for ${runId}`);
 		}
+		const version = started.data.commandTreeVersion;
+		if (version !== undefined && version !== 1 && version !== 2) {
+			throw new Error("unsupported workflow command tree version");
+		}
 		const scheduledSteps = new Map<number, string>();
 		for (const event of journal) {
 			if (event.type !== "run.StepScheduled") continue;
@@ -479,6 +484,9 @@ export function createWorkflowEngine(
 		}
 		const terminal = terminals[0];
 		if (terminal) {
+			if (version === 1 || version === 2) {
+				readReplayCommandTree(journal, version === 2);
+			}
 			const terminalIndex = journal.indexOf(terminal);
 			if (terminalIndex >= 0) {
 				for (const event of journal.slice(terminalIndex + 1)) {
@@ -1056,6 +1064,11 @@ export function createWorkflowEngine(
 			},
 			async emit(type, data) {
 				return command(async () => {
+					if (type.startsWith("run.")) {
+						throw new TypeError(
+							"workflow event type uses the reserved run. namespace",
+						);
+					}
 					assertReplayConsistent();
 					return appendEvent(type, data ?? null);
 				});
