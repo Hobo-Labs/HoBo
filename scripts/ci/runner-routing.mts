@@ -99,7 +99,7 @@ export function asText(value: JsonValue | undefined): string | undefined {
 		? (value as string)
 		: undefined;
 }
-export function asNumber(value: JsonValue | undefined): number | undefined {
+function asNumber(value: JsonValue | undefined): number | undefined {
 	// SAFETY: the tag check proves a number primitive.
 	return tagOf.call(value) === "[object Number]"
 		? (value as number)
@@ -118,21 +118,6 @@ function exactly(
 	if (!object) return undefined;
 	const own = Object.keys(object);
 	return own.length === keys.length && keys.every((key) => own.includes(key))
-		? object
-		: undefined;
-}
-
-function withOptional(
-	value: JsonValue | undefined,
-	keys: readonly string[],
-	optional: readonly string[],
-): JsonObject | undefined {
-	const object = asObject(value);
-	if (!object) return undefined;
-	const own = Object.keys(object);
-	const allowed = new Set([...keys, ...optional]);
-	return own.every((key) => allowed.has(key)) &&
-		keys.every((key) => own.includes(key))
 		? object
 		: undefined;
 }
@@ -207,9 +192,6 @@ export type RunnerRouting = Readonly<{
 		/** `false` makes a push to main run its full gate even when the merge queue passed its tree. */
 		reuseMergeQueue: boolean;
 	}>;
-	mergeGroup: Readonly<{
-		reusePrFabric: boolean;
-	}>;
 	verdict: Readonly<{
 		minFreeRunners: number;
 		enterMs: number;
@@ -263,19 +245,6 @@ function parseMainGate(
 	);
 	return reuseMergeQueue !== undefined ? { reuseMergeQueue } : undefined;
 }
-
-function parseMergeGroup(
-	value: JsonValue | undefined,
-): RunnerRouting["mergeGroup"] | undefined {
-	const reusePrFabric = asBoolean(
-		exactly(value, ["reusePrFabric"])?.reusePrFabric,
-	);
-	return reusePrFabric !== undefined ? { reusePrFabric } : undefined;
-}
-
-const DEFAULT_MERGE_GROUP: RunnerRouting["mergeGroup"] = {
-	reusePrFabric: false,
-};
 
 function parseVerdict(
 	value: JsonValue | undefined,
@@ -374,23 +343,19 @@ function retiredName(entry: JsonValue): string | undefined {
 export function parseRunnerRouting(
 	value: JsonValue | undefined,
 ): RunnerRouting | undefined {
-	const top = withOptional(
-		value,
-		[
-			"pin",
-			"queue",
-			"labels",
-			"localRunner",
-			"boxRunner",
-			"mainWorkspaceParallelCap",
-			"mainGate",
-			"verdict",
-			"box",
-			"externalPools",
-			"retiredVariables",
-		],
-		["mergeGroup"],
-	);
+	const top = exactly(value, [
+		"pin",
+		"queue",
+		"labels",
+		"localRunner",
+		"boxRunner",
+		"mainWorkspaceParallelCap",
+		"mainGate",
+		"verdict",
+		"box",
+		"externalPools",
+		"retiredVariables",
+	]);
 	const pin = oneOf(top?.pin, ["auto", "fleet", "local", "github"] as const);
 	const queue = parseQueue(top?.queue);
 	const labels = parseLabels(top?.labels);
@@ -398,10 +363,6 @@ export function parseRunnerRouting(
 	const boxRunner = asBoolean(top?.boxRunner);
 	const mainWorkspaceParallelCap = whole(top?.mainWorkspaceParallelCap, 1, 8);
 	const mainGate = parseMainGate(top?.mainGate);
-	const mergeGroup =
-		top?.mergeGroup === undefined
-			? DEFAULT_MERGE_GROUP
-			: parseMergeGroup(top.mergeGroup);
 	const verdict = parseVerdict(top?.verdict);
 	const box = parseBox(top?.box);
 	const externalPools = listOf(top?.externalPools, 32, parsePool);
@@ -413,7 +374,6 @@ export function parseRunnerRouting(
 		boxRunner !== undefined &&
 		mainWorkspaceParallelCap !== undefined &&
 		mainGate &&
-		mergeGroup &&
 		verdict &&
 		box &&
 		externalPools &&
@@ -426,7 +386,6 @@ export function parseRunnerRouting(
 				boxRunner,
 				mainWorkspaceParallelCap,
 				mainGate,
-				mergeGroup,
 				verdict,
 				box,
 				externalPools,

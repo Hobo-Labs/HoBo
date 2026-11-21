@@ -17,9 +17,6 @@
   "mainGate": {
     "reuseMergeQueue": "false"
   },
-  "mergeGroup": {
-    "reusePrFabric": true
-  },
   "verdict": {
     "minFreeRunners": 1,
     "enterMs": 60000,

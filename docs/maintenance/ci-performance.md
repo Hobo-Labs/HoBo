@@ -138,21 +138,6 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
   `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
-- **Merge groups reuse a green PR Fabric run of the same tree at the same base (off until enabled).**
-  Committed `.hobo/ci.json` keeps `runnerRouting.mergeGroup.reusePrFabric` at `false` until a merge
-  group logs `pr-fabric reuse: yes` in production ([finding 156](../ci/findings/0156-merge-queue-tree-reuse.md)).
-  When enabled, 15 of the last 50
-  merge-group runs (30%) tested a tree a green same-repo pull_request run of this workflow had already
-  tested at the entry's base tip ([finding 156](../ci/findings/0156-merge-queue-tree-reuse.md)). The
-  route job (`scripts/ci/pr-fabric-reuse.mts`, run from the trusted base checkout) verifies the shape from
-  GitHub answers — the branch's `pr-<n>-<base40>` base equals `merge_group.base_sha` and the merge head's
-  first parent, the commit-API trees of the merge head and the PR head match, and the compare API shows the
-  base contained in the PR head — and its `pr-fabric-green` output then skips exactly the merge-group gate
-  jobs an attestation may also cover (**PR impact validation**, **Workspace test shards**, **Scripts
-  tests**); the `PR impact gate` accepts those skipped only on that verified output. The secret scan, the
-  required merge-only checks and the gate itself are never skipped. Set committed
-  `runnerRouting.mergeGroup.reusePrFabric` to `false` in `.hobo/ci.json` to make every merge group re-run
-  its gate jobs.
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes

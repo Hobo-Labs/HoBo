@@ -405,18 +405,11 @@ describe("merge-group required gate", () => {
 		] as const) {
 			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
 			assert.ok(
-				condition.includes(
-					`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`,
+				condition.endsWith(
+					`&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"')) }}`,
 				),
 				id,
 			);
-			if (id !== "pr_affected" && id !== "pr_gate_plan")
-				assert.ok(
-					condition.endsWith(
-						`&& !(github.event_name == 'merge_group' && needs.route.outputs.pr-fabric-green == 'true') }}`,
-					),
-					id,
-				);
 		}
 		// The gate still always runs, and reads the route job's own result.
 		assert.match(gate, /ROUTE_RESULT: \$\{\{ needs\.route\.result \}\}/u);
@@ -428,131 +421,6 @@ describe("merge-group required gate", () => {
 			gate,
 			/ATTESTED_JOBS: \$\{\{ needs\.route\.outputs\.attested-jobs \}\}/u,
 		);
-		assert.match(
-			gate,
-			/PR_FABRIC_GREEN: \$\{\{ needs\.route\.outputs\.pr-fabric-green \}\}/u,
-		);
-		assert.match(
-			gate,
-			/\[ "\$1" = "skipped" \] && \{ attested "\$2" \|\| pr_fabric "\$2"; \}/u,
-		);
-		assert.match(gate, /pr_gate_validation\|workspace_tests\|scripts-tests/u);
-	});
-
-	it("accepts skipped gate jobs only for a successful merge-group route with green PR Fabric", () => {
-		const script = shellForStep(
-			gate,
-			"Require successful validation and workspace tests",
-		);
-		const results = ["success", "skipped", "failure", "cancelled", ""];
-		const routes = ["success", "failure", "cancelled", "skipped", ""];
-		const flags = ["true", "false", ""];
-		type GateCase = Readonly<{
-			event: string;
-			validation: string;
-			workspace: string;
-			scripts: string;
-			affected: string;
-			route: string;
-			prFabricGreen: string;
-		}>;
-		const cases: GateCase[] = [];
-		for (const event of ["pull_request", "merge_group"])
-			for (const validation of results)
-				for (const workspace of results)
-					for (const scripts of results)
-						for (const route of routes)
-							for (const prFabricGreen of flags)
-								cases.push({
-									event,
-									validation,
-									workspace,
-									scripts,
-									affected: event === "merge_group" ? "skipped" : "success",
-									route,
-									prFabricGreen,
-								});
-		const quote = (text: string) => `'${text}'`;
-		const driver = [
-			"gate() {",
-			'  ( export EVENT_NAME="$1" PLAN_RESULT="success" VALIDATION_RESULT="$2" WORKSPACE_RESULT="$3"',
-			'    export SCRIPTS_RESULT="$4" AFFECTED_RESULT="$5" ROUTE_RESULT="$6"',
-			'    export PR_FABRIC_GREEN="$7" ATTESTED=false ATTESTED_JOBS="[]" FORMAL_RESULT=success',
-			script,
-			"  ) >/dev/null 2>&1",
-			"  echo $?",
-			"}",
-			...cases.map(
-				(entry) =>
-					`gate ${[
-						entry.event,
-						entry.validation,
-						entry.workspace,
-						entry.scripts,
-						entry.affected,
-						entry.route,
-						entry.prFabricGreen,
-					]
-						.map(quote)
-						.join(" ")}`,
-			),
-		].join("\n");
-		const directory = mkdtempSync(join(tmpdir(), "hobo-pr-fabric-gate-"));
-		writeFileSync(join(directory, "table.sh"), driver);
-		const run = spawnSync("bash", [join(directory, "table.sh")], {
-			encoding: "utf8",
-			maxBuffer: 64 * 1024 * 1024,
-		});
-		rmSync(directory, { recursive: true, force: true });
-		assert.equal(run.status, 0, run.stderr);
-		const exits = run.stdout.trim().split("\n");
-		assert.equal(exits.length, cases.length);
-		let acceptedFabricSkips = 0;
-		for (const [index, entry] of cases.entries()) {
-			const reusable =
-				entry.event === "merge_group" &&
-				entry.route === "success" &&
-				entry.prFabricGreen === "true";
-			const passed = (result: string) =>
-				result === "success" || (result === "skipped" && reusable);
-			const expected =
-				passed(entry.validation) &&
-				passed(entry.workspace) &&
-				passed(entry.scripts);
-			const accepted = exits[index] === "0";
-			assert.equal(accepted, expected, JSON.stringify(entry));
-			if (
-				accepted &&
-				reusable &&
-				[entry.validation, entry.workspace, entry.scripts].includes("skipped")
-			)
-				acceptedFabricSkips += 1;
-		}
-		assert.ok(acceptedFabricSkips > 0);
-	});
-
-	it("does not let PR Fabric satisfy a skipped job outside the gate allowlist", () => {
-		const script = `${shellForStep(
-			gate,
-			"Require successful validation and workspace tests",
-		)}\npassed skipped ci-guard`;
-		const run = spawnSync("bash", ["-c", script], {
-			env: {
-				...process.env,
-				EVENT_NAME: "merge_group",
-				VALIDATION_RESULT: "success",
-				WORKSPACE_RESULT: "success",
-				SCRIPTS_RESULT: "success",
-				AFFECTED_RESULT: "skipped",
-				ROUTE_RESULT: "success",
-				PR_FABRIC_GREEN: "true",
-				ATTESTED: "false",
-				ATTESTED_JOBS: "[]",
-				FORMAL_RESULT: "success",
-				PLAN_RESULT: "success",
-			},
-		});
-		assert.notEqual(run.status, 0);
 	});
 
 	it("rejects a missing scope or an unreachable affected base", () => {

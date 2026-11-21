@@ -14,12 +14,7 @@
   "localRunner": false,
   "boxRunner": false,
   "mainWorkspaceParallelCap": 4,
-  "mainGate": {
-    "reuseMergeQueue": true
-  },
-  "mergeGroup": {
-    "reusePrFabric": false
-  },
+  "mainGate": { "reuseMergeQueue": true },
   "verdict": {
     "minFreeRunners": 1,
     "enterMs": 60000,
