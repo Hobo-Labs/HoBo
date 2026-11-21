@@ -28,6 +28,9 @@ inherited unchanged from either side is not treated as a new merge edit. A
 multiline comment assembled from changes on both sides is still checked. The
 PR check still examines the full diff against its base.
 
+The anti-slop installer leaves its comment-required assertion rule disabled so
+the lint configuration follows the same source policy.
+
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
 
 Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
