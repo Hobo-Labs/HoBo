@@ -96,18 +96,14 @@ the sum of its files):
 - Hosted PR run 44867963592 never started `release-hobo`: GitHub's `paths`
   filter for that synchronize looked at the merge-from-main commit (attestation
   blobs only). GitHub evaluates the **default-branch** copy of `paths`, so
-  globs added only in this PR cannot self-trigger until merge. The workflow
-  file, `scripts/lib/release-hobo-path-filters.mts`, and
-  `scripts/test/release-freight.test.ts` are already on main's list, yet
-  later synchronizes that edited them still skipped (run 44870024997 is the
-  tag-filtered `push` miss; no `pull_request` run). The lane files now sit at
-  the **top** of both `pull_request.paths` and `merge_group.paths`, including
-  `packages/hobo/vitest.release-integration.config.ts` and
-  `packages/hobo/test/support/release-integration-test-files.ts` — the suite
-  config other PRs successfully trigger on, and which this PR now edits so
-  the default-branch list matches. A branch push still mints a 0-job `push`
-  miss (tags-only). That run used to share a concurrency group with
-  `pull_request`; the group now includes `github.event_name`.
+  globs added only in a PR cannot self-trigger until merge. Files already on
+  main's list (the workflow, the suite config, `release-freight.test.ts`)
+  still skipped every synchronize of #2931; each push also minted a 0-job
+  tag-filter miss named `.github/workflows/release-hobo.yml`. The required
+  check now lives in `.github/workflows/release-hobo-pr.yml`, which has **no
+  `paths` filter**, so a new workflow file in the PR always starts. `job-scope`
+  still skips the suites when the diff cannot reach them. Tags and the main
+  train keep the lane in `release-hobo.yml`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the

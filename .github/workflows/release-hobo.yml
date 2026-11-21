@@ -652,8 +652,6 @@ jobs:
     needs: [route]
     if: >-
       !cancelled() && needs.route.result == 'success' && (
-      github.event_name == 'pull_request' ||
-      github.event_name == 'merge_group' ||
       startsWith(github.ref, 'refs/tags/sdk-v') ||
       startsWith(github.ref, 'refs/tags/cli-v') ||
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
@@ -1553,9 +1551,9 @@ jobs:
           node --no-warnings scripts/ci/create-github-release.mts --tag "${{ github.ref_name }}" "${prerelease[@]}"
 
   release-pr-gate:
-    name: HoBo release PR gate (required)
+    name: HoBo release contract PR gate
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [route, release-contract, release-realize, release-hobo-integration]
+    needs: [route, release-contract, release-realize]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1565,7 +1563,6 @@ jobs:
         env:
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
           REALIZE_RESULT: ${{ needs.release-realize.result }}
-          INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1589,12 +1586,6 @@ jobs:
           # The realize proof has no local attestation: it must pass here.
           if [ "${REALIZE_RESULT:-}" != "success" ]; then
             echo "::error::Release Freight realize proof must pass (result=${REALIZE_RESULT:-})"
-            exit 1
-          fi
-          # The slow integration lane has no local attestation either: when a
-          # pull request or merge group reaches its suites, they must pass here.
-          if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
-            echo "::error::HoBo slow integration suites must pass (result=${INTEGRATION_RESULT:-})"
             exit 1
           fi
           case "${CONTRACT_RESULT:-}" in

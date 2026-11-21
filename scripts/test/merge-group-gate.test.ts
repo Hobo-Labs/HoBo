@@ -825,10 +825,7 @@ describe("release required gate", () => {
 			"Require successful validation and workspace tests",
 		);
 		assert.equal(helper(script), helper(prGate));
-		assert.match(
-			gate,
-			/needs: \[route, release-contract, release-realize, release-hobo-integration\]/u,
-		);
+		assert.match(gate, /needs: \[route, release-contract, release-realize\]/u);
 	});
 
 	it("accepts a skipped contract only for a route job that succeeded and attested it", () => {
@@ -836,7 +833,6 @@ describe("release required gate", () => {
 		const routes = ["success", "failure", "skipped", ""];
 		const flags = ["true", "false", "TRUE", ""];
 		const realizes = ["success", "failure", "skipped"];
-		const integrations = ["success", "failure", "skipped"];
 		const lists = [
 			'["release-contract"]',
 			'["ci-guard","release-contract"]',
@@ -851,41 +847,37 @@ describe("release required gate", () => {
 				for (const route of routes)
 					for (const flag of flags)
 						for (const list of lists)
-							for (const realize of realizes)
-								for (const integration of integrations) {
-									const run = spawnSync("bash", ["-c", script], {
-										env: {
-											...process.env,
-											CONTRACT_RESULT: contract,
-											REALIZE_RESULT: realize,
-											INTEGRATION_RESULT: integration,
-											ROUTE_RESULT: route,
-											ATTESTED: flag,
-											ATTESTED_JOBS: list,
-										},
-									});
-									const attested =
-										route === "success" &&
-										flag === "true" &&
-										list.includes('"release-contract"');
-									const expected =
-										route === "success" &&
-										realize === "success" &&
-										integration === "success" &&
-										(contract === "success" ||
-											(contract === "skipped" && attested));
-									const label = JSON.stringify({
-										contract,
-										route,
-										flag,
-										list,
-										realize,
-										integration,
-									});
-									assert.equal(run.status === 0, expected, label);
-									if (contract === "failure" || contract === "cancelled")
-										assert.notEqual(run.status, 0, label);
-								}
+							for (const realize of realizes) {
+								const run = spawnSync("bash", ["-c", script], {
+									env: {
+										...process.env,
+										CONTRACT_RESULT: contract,
+										REALIZE_RESULT: realize,
+										ROUTE_RESULT: route,
+										ATTESTED: flag,
+										ATTESTED_JOBS: list,
+									},
+								});
+								const attested =
+									route === "success" &&
+									flag === "true" &&
+									list.includes('"release-contract"');
+								const expected =
+									route === "success" &&
+									realize === "success" &&
+									(contract === "success" ||
+										(contract === "skipped" && attested));
+								const label = JSON.stringify({
+									contract,
+									route,
+									flag,
+									list,
+									realize,
+								});
+								assert.equal(run.status === 0, expected, label);
+								if (contract === "failure" || contract === "cancelled")
+									assert.notEqual(run.status, 0, label);
+							}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

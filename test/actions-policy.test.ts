@@ -509,9 +509,11 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
 			if (
-				file === "release-hobo.yml" &&
-				((lines[start] ?? "").startsWith("  release-npm:") ||
-					(lines[start] ?? "").startsWith("  release-hobo-cli:") ||
+				(file === "release-hobo.yml" &&
+					((lines[start] ?? "").startsWith("  release-npm:") ||
+						(lines[start] ?? "").startsWith("  release-hobo-cli:") ||
+						(lines[start] ?? "").startsWith("  release-hobo-integration:"))) ||
+				(file === "release-hobo-pr.yml" &&
 					(lines[start] ?? "").startsWith("  release-hobo-integration:"))
 			) {
 				assert.equal(

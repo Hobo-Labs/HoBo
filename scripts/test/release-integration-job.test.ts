@@ -20,7 +20,11 @@ import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
 
-const workflow = readFileSync(".github/workflows/release-hobo.yml", "utf8");
+const trainWorkflow = readFileSync(
+	".github/workflows/release-hobo.yml",
+	"utf8",
+);
+const workflow = readFileSync(".github/workflows/release-hobo-pr.yml", "utf8");
 const jobs = asObject(workflowDocument(workflow).jobs);
 
 type Step = Readonly<{ name: string; uses: string; run: string; if: string }>;
@@ -138,8 +142,13 @@ describe("the slow integration lane is a merge-group gate", () => {
 	});
 
 	it("path filters include the workflow, the four suites, this test, and job-scope", () => {
-		const pullRequest = parseReleaseHoboPullRequestPathFilters(workflow);
-		const mergeGroup = parseReleaseHoboMergeGroupPathFilters(workflow);
+		assert.doesNotMatch(
+			workflow,
+			/\n  pull_request:\n    branches: \[main\]\n    paths:/u,
+		);
+		assert.doesNotMatch(workflow, /\n  merge_group:[\s\S]*\n    paths:/u);
+		const pullRequest = parseReleaseHoboPullRequestPathFilters(trainWorkflow);
+		const mergeGroup = parseReleaseHoboMergeGroupPathFilters(trainWorkflow);
 		assert.deepEqual(
 			mergeGroup,
 			pullRequest.filter((path) => path !== "version.json"),

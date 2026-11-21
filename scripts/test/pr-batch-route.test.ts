@@ -347,7 +347,11 @@ describe("PR batch routing", () => {
 	});
 
 	it("checks out the exact workflow bytes for both batch scopes", () => {
-		for (const name of ["hobo-ci.yml", "release-hobo.yml"]) {
+		for (const name of [
+			"hobo-ci.yml",
+			"release-hobo.yml",
+			"release-hobo-pr.yml",
+		]) {
 			const source = readFileSync(
 				join(root, ".github/workflows", name),
 				"utf8",
