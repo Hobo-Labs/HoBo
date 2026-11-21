@@ -25,7 +25,7 @@
 // HONEST SCOPE: exercised against fakes of GitHub's REST API and token
 // endpoint, Vercel's OIDC token and Infisical only.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -42,6 +42,8 @@ import {
 	githubSubjectMismatch,
 	type ParsedSecretStoreBinding,
 	parseSecretStoreBinding,
+	RELAY_SECRET_PATH,
+	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
 	SecretStoreBindingSchema,
 	SecretStoreError,
@@ -49,27 +51,25 @@ import {
 	secretStoreDeployCredentialSecretPath,
 	updateDeployIdentityTrust,
 } from "@hobo/secret-store-claim";
-
 import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	RELAY_DEPLOY_TOKEN_ENTRY,
+	RELAY_GITHUB_OIDC_AUDIENCE,
+} from "./ci-relay-deploy-credential.js";
+import {
+	type CiSecretStoreInput,
 	loadSecretStoreBinding,
 	SecretStoreBindingRefusal,
 	writeSecretStoreBinding,
-	type CiSecretStoreInput,
 } from "./ci-secret-store.js";
 import {
 	relayRepository,
 	resolveDeploySubject,
 } from "./ci-secret-store-github.js";
-import {
-	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-	RELAY_DEPLOY_TOKEN_ENTRY,
-} from "./ci-relay-deploy-credential.js";
 import { isJsonString } from "./json.js";
 
-// public-contract: the relay's folder in its Infisical project (the layout `provision` creates).
+// public-contract: the relay's folder environment (the layout `provision` creates).
 export const RELAY_STORE_ENVIRONMENT = "prod";
-// public-contract: the relay's folder path.
-export const RELAY_STORE_SECRET_PATH = "/hobo-ci-relay";
 
 function data(
 	subcommand: string,
@@ -138,7 +138,12 @@ export async function runCiSecretStoreConnect(
 			existing = loadSecretStoreBinding(input.cwd);
 		} catch (error) {
 			if (!(error instanceof SecretStoreBindingRefusal)) throw error;
-			if (input.values.yes !== true)
+			try {
+				existing = readSecretStoreBindingForRepair(readFileSync(file, "utf8"));
+			} catch {
+				existing = undefined;
+			}
+			if (existing === undefined && input.values.yes !== true)
 				return refusedConnect(
 					error.code,
 					`${error.message} Pass --yes to replace it.`,
@@ -151,10 +156,11 @@ export async function runCiSecretStoreConnect(
 	const deployIdentityId = given("deploy-identity-id") ?? "";
 	const deployCredentialIdentityId =
 		given("deploy-credential-identity-id") ?? "";
-	const missing = CONNECT_ID_OPTIONS.filter(
-		(key) => given(key) === undefined,
-	);
-	if (deployCredentialIdentityId !== "" && deployCredentialIdentityId === deployIdentityId)
+	const missing = CONNECT_ID_OPTIONS.filter((key) => given(key) === undefined);
+	if (
+		deployCredentialIdentityId !== "" &&
+		deployCredentialIdentityId === deployIdentityId
+	)
 		return refusedConnect(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
 			"hobo-ci-deploy-reader must be a different identity from hobo-ci-writer; a shared identity can read the deploy token with the writer's privileges.",
@@ -194,7 +200,7 @@ export async function runCiSecretStoreConnect(
 					text(input, "environment") ??
 					existing?.environment ??
 					RELAY_STORE_ENVIRONMENT,
-				secretPath: RELAY_STORE_SECRET_PATH,
+				secretPath: RELAY_SECRET_PATH,
 				relayIdentityId: given("relay-identity-id") ?? "",
 				deployIdentityId,
 				deployCredentialIdentityId,
@@ -415,6 +421,45 @@ async function readerRead(
 	}
 }
 
+async function writerSignIn(
+	identityId: string,
+	client: () => ReturnType<typeof createInfisicalClient>,
+	workloadJwt: () => string | undefined,
+	trustedSubject: string,
+): Promise<VerifyCheck> {
+	const identity = "hobo-ci-writer";
+	const method = "GitHub Actions OIDC";
+	let session: ReturnType<typeof createInfisicalClient> | undefined;
+	try {
+		session = client();
+		await session.signIn();
+		return {
+			identity,
+			identityId,
+			method,
+			result: "pass",
+			detail: "signed in",
+		};
+	} catch (error) {
+		return {
+			identity,
+			identityId,
+			method,
+			result: "fail",
+			detail:
+				(error instanceof InfisicalError
+					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
+					: "the sign-in could not run") +
+				oidcHintSuffix(workloadJwt()) +
+				(error instanceof Error
+					? subjectRepairSuffix(error, workloadJwt(), trustedSubject)
+					: ""),
+		};
+	} finally {
+		await session?.revoke().catch(() => undefined);
+	}
+}
+
 async function attempt(
 	identity: string,
 	identityId: string,
@@ -493,10 +538,20 @@ export async function runCiSecretStoreVerify(
 		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 	});
+	const writerJwt = githubActionsJwtSource({
+		env,
+		audience: RELAY_GITHUB_OIDC_AUDIENCE,
+		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+	});
 	let githubWorkloadJwt: string | undefined;
 	const memoGithubJwt = async () => {
 		if (githubWorkloadJwt === undefined) githubWorkloadJwt = await githubJwt();
 		return githubWorkloadJwt;
+	};
+	let writerWorkloadJwt: string | undefined;
+	const memoWriterJwt = async () => {
+		if (writerWorkloadJwt === undefined) writerWorkloadJwt = await writerJwt();
+		return writerWorkloadJwt;
 	};
 	checks.push(
 		!inActions
@@ -527,6 +582,38 @@ export async function runCiSecretStoreVerify(
 								: undefined),
 						}),
 					() => githubWorkloadJwt,
+					store.deployOidcSubject,
+				),
+	);
+	checks.push(
+		!inActions
+			? {
+					identity: "hobo-ci-writer",
+					identityId: store.deployIdentityId,
+					method: "GitHub Actions OIDC",
+					result: "not-run",
+					detail:
+						"needs a GitHub Actions job with id-token: write on main; the relay deploy workflow's 'Verify the secret store connection' step runs it",
+				}
+			: await writerSignIn(
+					store.deployIdentityId,
+					() =>
+						createInfisicalClient({
+							binding: parseInfisicalBinding({
+								siteUrl: store.endpoint,
+								projectId: store.projectId,
+								environment: store.environment,
+								secretPath: store.secretPath,
+							}),
+							auth: oidcAuth({
+								identityId: store.deployIdentityId,
+								jwt: memoWriterJwt,
+							}),
+							...(input.fetch !== undefined
+								? { fetch: input.fetch }
+								: undefined),
+						}),
+					() => writerWorkloadJwt,
 					store.deployOidcSubject,
 				),
 	);

@@ -501,7 +501,8 @@ exercised against fakes only. The committed binding has no
 `deployCredentialIdentityId` yet: the owner must provision
 `hobo-ci-deploy-reader`, grant it read-only access to `/hobo-ci-deploy`,
 deposit `VERCEL_TOKEN` there, and re-run `connect` to record its id and
-subject. Until then the deploy token read fails closed. This channel is
+subject. Until then the deploy token read fails closed; the ordered
+operator sequence is [the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach). This channel is
 **built, not proven**: link a successful `relay-deploy` run whose preview step
 records the token read as the binding's deploy credential identity and whose
 production `/healthz` and `/readyz` checks pass. See
@@ -593,16 +594,20 @@ check. The binding records the subject (`deployOidcSubject`). Re-running
 reader to an older binding needs `--yes`) repairs the trust:
 with the owner's own `INFISICAL_TOKEN` for that run it replaces both
 identities' OIDC trust in place (no new identity); otherwise it prints the subject and claims
-to set in the dashboard. A denied `verify` whose token `sub` differs from the
+to set in the dashboard. A binding recorded before `deployCredentialIdentityId`
+existed parses only for that repair: a re-run without ids names
+`--deploy-credential-identity-id` as what is missing instead of refusing the
+file. A denied `verify` whose token `sub` differs from the
 recorded subject (or is immutable when none was recorded) says so and names
 that repair. `verify` reports `pass`, `fail` or `not-run` by identity
 name and id: `hobo-ci-deploy-reader` inside a GitHub Actions job (GitHub OIDC
 sign-in at the reader audience, a folder listing that proves `VERCEL_TOKEN` is
-readable, then a revoke; role shape not asserted), `hobo-ci-relay` where
+readable, then a revoke; role shape not asserted), `hobo-ci-writer` in the
+same job (sign-in at the writer audience, no read, then a revoke), and
+`hobo-ci-relay` where
 `VERCEL_OIDC_TOKEN` is present (secret names only). The deploy workflow runs
-it as *Verify the secret store connection*; the `app-credentials` job proves
-`hobo-ci-writer` by depositing through it, and the deploy job never signs in
-as the writer.
+it as *Verify the secret store connection*; the deploy-token read itself never
+signs in as the writer.
 
 The GitHub App's credentials never touch a person or this CLI:
 `hobo ci app create --via-workflow` takes GitHub's one-time manifest code

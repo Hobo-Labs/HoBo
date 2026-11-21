@@ -2,9 +2,9 @@ import { readSecretStoreBinding } from "@hobo/secret-store-claim";
 import { describe, expect, it } from "vitest";
 
 import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
 	RelayDeployCredentialError,
 	readRelayDeployToken,
-	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
 } from "../src/ci-relay-deploy-credential.js";
 
 // The deploy workflow's credential step against fakes of GitHub's OIDC token
@@ -17,8 +17,7 @@ const DEPLOY_TOKEN = "synthetic-vercel-deploy-token-0123";
 const READER_IDENTITY = "3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c";
 const WRITER_IDENTITY = "63f5b1e2-8a4d-4c7f-9e0b-2d3a4c5b6a7f";
 const PROJECT = "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7";
-const SUBJECT =
-	"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
+const SUBJECT = "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
 
 const env = {
 	ACTIONS_ID_TOKEN_REQUEST_URL:
@@ -133,13 +132,21 @@ describe("readRelayDeployToken", () => {
 			"POST https://app.infisical.com/api/v1/auth/oidc-auth/login",
 			"GET https://app.infisical.com/api/v4/secrets/VERCEL_TOKEN",
 		]);
-		expect(new URL(seen[0]?.url ?? "https://invalid.test").searchParams.get("audience")).toBe(
-			RELAY_DEPLOY_READER_OIDC_AUDIENCE,
-		);
+		expect(
+			new URL(seen[0]?.url ?? "https://invalid.test").searchParams.get(
+				"audience",
+			),
+		).toBe(RELAY_DEPLOY_READER_OIDC_AUDIENCE);
 		expect(JSON.parse(seen[1]?.body ?? "{}")).toEqual({
 			identityId: READER_IDENTITY,
 			jwt: JWT,
 		});
+		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
+			WRITER_IDENTITY,
+		);
+		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
+			"relay-identity",
+		);
 		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
 		expect(secretRead.searchParams.get("projectId")).toBe(PROJECT);
 		expect(secretRead.searchParams.get("environment")).toBe("prod");
@@ -164,6 +171,9 @@ describe("readRelayDeployToken", () => {
 		});
 		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
 			WRITER_IDENTITY,
+		);
+		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
+			"relay-identity",
 		);
 		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
 		expect(secretRead.searchParams.get("projectId")).toBe("relay-project");

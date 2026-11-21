@@ -68,7 +68,7 @@ export async function readRelayDeployToken(input: {
 > {
 	const { env, binding: store } = input;
 	const identityId = store.deployCredentialIdentityId;
-	if (identityId === "" || identityId === store.deployIdentityId)
+	if (!identityId || identityId === store.deployIdentityId)
 		throw new RelayDeployCredentialError(
 			"The binding has no deploy credential identity distinct from the writer. Record deployCredentialIdentityId for a read-only deploy identity; the writer identity is never used for deploy token reads.",
 		);

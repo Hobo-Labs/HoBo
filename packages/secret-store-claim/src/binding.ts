@@ -20,6 +20,8 @@ import { parseSecretStoreKind, type SecretStoreKind } from "./offers.js";
 
 // public-contract: where `hobo ci secret-store provision` writes the binding, relative to the relay project.
 export const SECRET_STORE_BINDING_FILE = "deploy/secret-store.binding.json";
+// public-contract: the relay's folder path in its project (the layout `provision` creates).
+export const RELAY_SECRET_PATH = "/hobo-ci-relay";
 
 export type ParsedSecretStoreBinding = Readonly<
 	Omit<SecretStoreBinding, "kind" | "claimState" | "$typeName" | "$unknown"> & {
@@ -56,13 +58,23 @@ export function secretStoreDeployCredentialSecretPath(
 
 export function parseSecretStoreBinding(
 	record: SecretStoreBinding,
-	options: { readonly allowLoopback?: boolean } = {},
+	options: {
+		readonly allowLoopback?: boolean;
+		readonly forRepair?: boolean;
+	} = {},
 ): ParsedSecretStoreBinding {
 	const kind = parseSecretStoreKind(record.kind);
 	const claimState =
 		record.claimState === "pending" || record.claimState === "claimed"
 			? record.claimState
 			: undefined;
+	const legacy = options.forRepair === true;
+	const deployCredentialIdentityId = record.deployCredentialIdentityId ?? "";
+	const deployCredentialIdentityOk =
+		(ID.test(deployCredentialIdentityId) &&
+			deployCredentialIdentityId !== record.relayIdentityId &&
+			deployCredentialIdentityId !== record.deployIdentityId) ||
+		(legacy && deployCredentialIdentityId === "");
 	const ok =
 		claimState !== undefined &&
 		(ENDPOINT.test(record.endpoint) ||
@@ -76,15 +88,13 @@ export function parseSecretStoreBinding(
 		ID.test(record.relayIdentityId) &&
 		ID.test(record.deployIdentityId) &&
 		record.relayIdentityId !== record.deployIdentityId &&
-		ID.test(record.deployCredentialIdentityId) &&
-		record.deployCredentialIdentityId !== record.relayIdentityId &&
-		record.deployCredentialIdentityId !== record.deployIdentityId &&
+		deployCredentialIdentityOk &&
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
 		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
 		(record.deployOidcSubject === "" ||
 			DEPLOY_SUBJECT.test(record.deployOidcSubject)) &&
-		(claimState !== "claimed" || record.deployOidcSubject !== "");
+		(claimState !== "claimed" || record.deployOidcSubject !== "" || legacy);
 	if (!ok || claimState === undefined)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
@@ -99,7 +109,7 @@ export function parseSecretStoreBinding(
 		secretPath: record.secretPath,
 		relayIdentityId: record.relayIdentityId,
 		deployIdentityId: record.deployIdentityId,
-		deployCredentialIdentityId: record.deployCredentialIdentityId,
+		deployCredentialIdentityId,
 		vercelTeamId: record.vercelTeamId,
 		claimBundleId: record.claimBundleId,
 		claimState,
@@ -122,6 +132,22 @@ export function readSecretStoreBinding(
 		);
 	}
 	return parseSecretStoreBinding(record, options);
+}
+
+export function readSecretStoreBindingForRepair(
+	text: string,
+	options: { readonly allowLoopback?: boolean } = {},
+): ParsedSecretStoreBinding {
+	let record: SecretStoreBinding;
+	try {
+		record = fromJsonString(SecretStoreBindingSchema, text);
+	} catch {
+		return secretStoreError(
+			"SECRET_STORE_INVALID",
+			"the secret store binding is not a SecretStoreBinding record",
+		);
+	}
+	return parseSecretStoreBinding(record, { ...options, forRepair: true });
 }
 
 /** The file's text: stable field order, a trailing newline. */
