@@ -52,8 +52,9 @@ the sum of its files):
   `test/support/release-integration-test-files.ts`). The unfiltered
   `release-hobo-pr.yml` runs four GitHub-hosted shards on pull requests and merge
   groups, with an 8-minute job ceiling and the `HoBo release integration PR gate`.
-  Merge groups diff `github.event.merge_group.base_sha`; an unreachable diff skips
-  install and tests successfully, and a missing base runs the lane. Shard indexes
+  Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the
+  lane, fetch or object-verification failure fails scope, and only a successfully
+  computed out-of-scope diff skips install and tests successfully. Shard indexes
   use bash `$((SHARD_INDEX + 1))`, not a GitHub expression. The train's
   `release-hobo-integration` job still blocks `release-publish` and `release-npm`,
   but `HoBo release PR gate (required)` no longer needs it. Hosted PR shims in the
@@ -79,8 +80,8 @@ the sum of its files):
   once in the release lane.
 - The release lane run on this tree: 4 files, 147 tests, 0 failures.
 - Workflow pins: `release-integration-job.test.ts` (four hosted shards,
-  unfiltered triggers, merge-group scope, successful unreachable skips, gate
-  names and bash shard math), `merge-group-gate.test.ts` (protected realize gate
+  unfiltered triggers, fail-closed merge-group scope, out-of-scope skips, gate
+  results and bash shard math), `merge-group-gate.test.ts` (protected realize gate
   without an integration dependency), and `attested-jobs.test.ts` (plan synced;
   blob pins updated).
 

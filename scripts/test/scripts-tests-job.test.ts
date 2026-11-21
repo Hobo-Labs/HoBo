@@ -122,7 +122,11 @@ function repository(changed: readonly string[]) {
 }
 
 /** Runs the scope step in `cwd` and returns what it wrote to GITHUB_OUTPUT. */
-function scope(cwd: string, mergeGroupBase: string): string {
+function scope(
+	cwd: string,
+	mergeGroupBase: string,
+	eventName = mergeGroupBase ? "merge_group" : "pull_request",
+): string {
 	const output = join(cwd, ".github-output");
 	writeFileSync(output, "");
 	const run = spawnSync("bash", ["-c", step(scripts, SCOPE).run], {
@@ -130,6 +134,7 @@ function scope(cwd: string, mergeGroupBase: string): string {
 		encoding: "utf8",
 		env: {
 			...process.env,
+			GITHUB_EVENT_NAME: eventName,
 			GITHUB_OUTPUT: output,
 			MERGE_GROUP_BASE_SHA: mergeGroupBase,
 		},
@@ -142,6 +147,8 @@ describe("the scripts lane is a pull-request gate", () => {
 	it("runs pnpm run test:scripts on the routed runner for pull requests and merge groups", () => {
 		assert.equal(scripts.name, "Scripts tests");
 		assert.ok(scripts.needs.includes("route"));
+		assert.ok(scripts.needs.includes("ci-runner-image"));
+		assert.ok(buildJob.needs.includes("ci-runner-image"));
 		assert.equal(scripts.runsOn, ROUTED);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
@@ -233,11 +240,23 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
 		assert.ok(scripts.needs.includes("scripts-tests-build"));
 		assert.equal(
-			[buildJob, scripts]
-				.flatMap((entry) => entry.steps)
-				.filter((entry) => /turbo run build\b/u.test(entry.run)).length,
+			buildJob.steps.filter((entry) => /turbo run build\b/u.test(entry.run))
+				.length,
 			1,
 		);
+		const local = step(scripts, "Build current sources for local attestation");
+		assert.equal(
+			local.if,
+			"steps.scope.outputs.run == 'true' && env.CI != 'true'",
+		);
+		assert.match(local.run, /turbo run build\b/u);
+		assert.match(local.run, /scripts\/ci\/scripts-test-imports\.mts/u);
+		assert.match(
+			local.run,
+			/scripts\/ci\/affected-lanes\.mts --base="\$BASE"/u,
+		);
+		assert.ok(local.run.includes('"${IMPORTED[@]}"'));
+		assert.ok(local.run.includes('"${AFFECTED[@]}"'));
 		assert.ok(!scripts.steps.some((entry) => entry.name === BUILD));
 	});
 
@@ -253,6 +272,18 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.equal(
 			step(buildJob, "Save Turbo cache").uses,
 			"$/.github/actions/turbo-cache",
+		);
+	});
+
+	it("keeps the build cache token for same-repository merge groups and withholds it from forks", () => {
+		const cache = step(buildJob, "Turbo cache").with;
+		assert.equal(
+			cache["turbo-token"],
+			"${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
+		);
+		assert.equal(
+			cache["remote-mode"],
+			"${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}",
 		);
 	});
 
@@ -319,6 +350,17 @@ describe("the scripts lane is a pull-request gate", () => {
 			}
 		});
 
+	it("re-verifies a fetched merge-group base in both scripts scopes", () => {
+		for (const entry of [buildJob, scripts]) {
+			const run = step(entry, SCOPE).run;
+			assert.match(run, /if ! git cat-file -e /u);
+			assert.match(
+				run,
+				/git fetch --no-tags --depth=1 origin "\$MERGE_GROUP_BASE_SHA"\n\s+git cat-file -e /u,
+			);
+		}
+	});
+
 	it("compares a pull request's merge commit with its first parent", () => {
 		const { root, base } = repository(["docs/a.md"]);
 		try {
@@ -343,10 +385,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		}
 	});
 
-	it("runs the lane when there is nothing to compare with", () => {
+	it("runs the lane when the merge-group base is missing", () => {
 		const { root } = repository(["docs/a.md"]);
 		try {
-			assert.equal(scope(root, ""), "run=true");
+			assert.equal(scope(root, "", "merge_group"), "run=true");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

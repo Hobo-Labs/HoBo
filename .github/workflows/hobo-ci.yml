@@ -848,7 +848,7 @@ jobs:
 
   scripts-tests-build:
     name: Scripts tests build
-    needs: [route]
+    needs: [route, ci-runner-image]
     if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
@@ -867,9 +867,16 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          if [ -n "${MERGE_GROUP_BASE_SHA:-}" ]; then
-            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
-              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            if [ -z "${MERGE_GROUP_BASE_SHA:-}" ]; then
+              echo "Merge-group base is missing; running the scripts lane"
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+              git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}"
+            fi
             BASE="$MERGE_GROUP_BASE_SHA"
           elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             BASE="$(git rev-parse HEAD^1)"
@@ -905,9 +912,9 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           preferred-job: scripts-tests
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}
       - name: Build the packages the scripts tests import
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6
@@ -960,7 +967,7 @@ jobs:
     # finding 0144: a broken script test reached main on a green PR. The PR impact
     # gate requires it. A change that reaches none of scripts/, test/ or .github/
     # passes at once.
-    needs: [route, scripts-tests-build]
+    needs: [route, ci-runner-image, scripts-tests-build]
     if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"scripts-tests"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}
     # Each test file is assigned to exactly one shard. Splitting the lane keeps
     # its watchdog useful even on a busy, smaller self-hosted runner.
@@ -988,9 +995,16 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          if [ -n "${MERGE_GROUP_BASE_SHA:-}" ]; then
-            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
-              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            if [ -z "${MERGE_GROUP_BASE_SHA:-}" ]; then
+              echo "Merge-group base is missing; running the scripts lane"
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+              git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}"
+            fi
             BASE="$MERGE_GROUP_BASE_SHA"
           elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             BASE="$(git rev-parse HEAD^1)"
@@ -1030,6 +1044,27 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Build current sources for local attestation
+        if: steps.scope.outputs.run == 'true' && env.CI != 'true'
+        timeout-minutes: 6
+        run: |
+          set -euo pipefail
+          BASE="$(git rev-parse --verify HEAD^1 2>/dev/null || true)"
+          if [ -z "$BASE" ]; then
+            echo "Scripts-test build base is empty" >&2
+            exit 1
+          fi
+          node --import tsx scripts/ci/scripts-test-imports.mts \
+            > "$RUNNER_TEMP/scripts-tests-import-filters"
+          mapfile -t IMPORTED < "$RUNNER_TEMP/scripts-tests-import-filters"
+          git diff --name-only "$BASE" HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="$BASE" \
+              > "$RUNNER_TEMP/scripts-tests-affected-lanes"
+          mapfile -t AFFECTED < "$RUNNER_TEMP/scripts-tests-affected-lanes"
+          pnpm exec turbo run build \
+            "${IMPORTED[@]}" \
+            "${AFFECTED[@]}" \
+            --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: Download scripts-test build outputs
         if: steps.scope.outputs.run == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
@@ -1112,8 +1147,10 @@ jobs:
               echo "run=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
-              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+              git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}"
+            fi
             BASE="$MERGE_GROUP_BASE_SHA"
           elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             BASE="$(git rev-parse HEAD^1)"

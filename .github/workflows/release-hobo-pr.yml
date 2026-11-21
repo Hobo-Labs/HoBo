@@ -75,8 +75,10 @@ jobs:
               echo "run=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
-              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            if ! git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null; then
+              git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+              git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}"
+            fi
             BASE="$MERGE_GROUP_BASE_SHA"
           elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
             BASE="$(git rev-parse HEAD^1)"
@@ -111,9 +113,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6

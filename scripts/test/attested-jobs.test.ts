@@ -121,10 +121,26 @@ describe("the description of the covered jobs", () => {
 		]);
 	});
 
-	it("runs every scripts test shard locally", () => {
+	it("builds current sources before running every scripts test shard locally", () => {
 		const scripts = plan.find((job) => job.id === "scripts-tests");
 		assert.ok(scripts);
 		assert.equal(scripts.matrix, "${{ fromJSON('[0,1,2,3]') }}");
+		const build = scripts.steps.find(
+			(step) => step.name === "Build current sources for local attestation",
+		);
+		assert.equal(build?.local, "run");
+		assert.equal(
+			build?.if,
+			"steps.scope.outputs.run == 'true' && env.CI != 'true'",
+		);
+		assert.match(build?.run ?? "", /scripts\/ci\/scripts-test-imports\.mts/u);
+		assert.match(build?.run ?? "", /turbo run build\b/u);
+		assert.equal(
+			scripts.steps.find(
+				(step) => step.name === "Download scripts-test build outputs",
+			)?.local,
+			"skip",
+		);
 		assert.equal(
 			scripts.steps.find((step) => step.name === "Scripts tests")?.local,
 			"run",

@@ -156,7 +156,7 @@ function scopeRepository() {
 	return { root, base };
 }
 
-function runScope(root: string, base: string) {
+function runScope(root: string, base: string, path = process.env.PATH) {
 	const output = join(root, "github-output");
 	writeFileSync(output, "");
 	const run = spawnSync(
@@ -176,6 +176,7 @@ function runScope(root: string, base: string) {
 				GITHUB_EVENT_NAME: "merge_group",
 				GITHUB_OUTPUT: output,
 				MERGE_GROUP_BASE_SHA: base,
+				PATH: path,
 			},
 		},
 	);
@@ -205,13 +206,31 @@ describe("release integration pull-request and merge-queue lane", () => {
 		}
 	});
 
-	it("starts the train lane on this pull request and feature-branch push, never on merge_group", () => {
+	it("starts the train lane on pull requests and tags, never on merge groups or ordinary branch pushes", () => {
 		const entry = job(train, "release-hobo-integration");
 		assert.match(entry.if, /github\.event_name == 'pull_request'/u);
 		assert.match(entry.if, /github\.event_name != 'merge_group'/u);
-		assert.match(entry.if, /refs\/heads\/cursor\/mq-critical-path-bf60/u);
+		assert.doesNotMatch(entry.if, /github\.event_name == 'push'/u);
 		const push = asObject(trigger(train, "push"));
-		assert.deepEqual(asList(push?.branches), ["cursor/mq-critical-path-bf60"]);
+		assert.equal(push?.branches, undefined);
+		assert.deepEqual(asList(push?.tags), ["sdk-v*", "cli-v*"]);
+		assert.doesNotMatch(
+			job(train, "release-integration-measure-gate").if,
+			/github\.event_name == 'push'/u,
+		);
+	});
+
+	it("keeps Turbo credentials for same-repository merge groups and withholds them from fork pull requests", () => {
+		assert.ok(
+			pr.text.includes(
+				"turbo-token: ${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
+			),
+		);
+		assert.ok(
+			pr.text.includes(
+				"remote-mode: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}",
+			),
+		);
 	});
 
 	it("keeps the Fabric shim pull-request-only and outside the required Fabric gate", () => {
@@ -244,7 +263,7 @@ describe("release integration pull-request and merge-queue lane", () => {
 		}
 	});
 
-	it("scopes merge groups from base_sha and skips install and tests successfully for an unreachable diff", () => {
+	it("scopes merge groups from base_sha and skips only a successfully computed out-of-scope diff", () => {
 		const scope = namedStep(
 			job(pr, "release-integration"),
 			"Decide whether the diff reaches the slow integration suites",
@@ -253,6 +272,14 @@ describe("release integration pull-request and merge-queue lane", () => {
 			scope.env.MERGE_GROUP_BASE_SHA,
 			"${{ github.event.merge_group.base_sha }}",
 		);
+		for (const [, workflow, id] of integrationJobs.slice(1))
+			assert.equal(
+				namedStep(
+					job(workflow, id),
+					"Decide whether the diff reaches the slow integration suites",
+				).run,
+				scope.run,
+			);
 		const { root, base } = scopeRepository();
 		try {
 			const run = runScope(root, base);
@@ -270,6 +297,30 @@ describe("release integration pull-request and merge-queue lane", () => {
 				namedStep(job(pr, "release-integration"), name).if,
 				"steps.scope.outputs.run == 'true'",
 			);
+	});
+
+	it("fails scope when a merge-group base cannot be fetched or verified", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-release-bad-base-"));
+		const bin = join(root, "bin");
+		mkdirSync(bin);
+		try {
+			for (const fetchStatus of [1, 0]) {
+				writeFileSync(
+					join(bin, "git"),
+					`#!/bin/sh\ncase "$1" in\n  cat-file) exit 1;;\n  fetch) exit ${fetchStatus};;\n  diff) exit 0;;\n  *) exit 1;;\nesac\n`,
+					{ mode: 0o755 },
+				);
+				const run = runScope(
+					root,
+					"a".repeat(40),
+					`${bin}:${process.env.PATH ?? ""}`,
+				);
+				assert.notEqual(run.status, 0, `fetch status ${fetchStatus}`);
+				assert.equal(run.output, "");
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("runs the lane when the merge-group base is missing", () => {
@@ -304,6 +355,29 @@ describe("release integration pull-request and merge-queue lane", () => {
 			newGate.if + measureGate.if,
 			/release PR gate \(required\)/u,
 		);
+	});
+
+	it("fails both integration-only gates on cancelled, skipped, failed, or missing results", () => {
+		for (const [workflow, id] of [
+			[pr, "release-integration-gate"],
+			[train, "release-integration-measure-gate"],
+		] as const) {
+			const gate = namedStep(
+				job(workflow, id),
+				"Require successful release integration shards",
+			);
+			for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
+				const run = spawnSync("bash", ["-c", gate.run], {
+					encoding: "utf8",
+					env: { ...process.env, INTEGRATION_RESULT: result },
+				});
+				assert.equal(
+					run.status === 0,
+					result === "success",
+					`${id}: ${result}`,
+				);
+			}
+		}
 	});
 
 	it("pins every third-party action in the new workflow", () => {

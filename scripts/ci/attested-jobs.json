@@ -507,7 +507,7 @@
 				{
 					"name": "Decide whether the change reaches scripts, tests or workflows",
 					"id": "scope",
-					"run": "set -euo pipefail\nif [ -n \"${MERGE_GROUP_BASE_SHA:-}\" ]; then\n  git cat-file -e \"${MERGE_GROUP_BASE_SHA}^{commit}\" 2>/dev/null \\\n    || git fetch --no-tags --depth=1 origin \"$MERGE_GROUP_BASE_SHA\"\n  BASE=\"$MERGE_GROUP_BASE_SHA\"\nelif git rev-parse --verify --quiet HEAD^2 >/dev/null; then\n  BASE=\"$(git rev-parse HEAD^1)\"\nelse\n  echo \"No base to compare with; running the scripts lane\"\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\n# On a variable, not a pipe: an early `grep -q` exit fails a pipeline under pipefail.\nchanged=\"$(git diff --name-only \"$BASE\" HEAD)\"\nif grep -qE '^(scripts|test|\\.github)/' <<<\"${changed}\"; then\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"Nothing under scripts/, test/ or .github/ changed; skipping the scripts lane\"\n  echo \"run=false\" >> \"$GITHUB_OUTPUT\"\nfi\n",
+					"run": "set -euo pipefail\nif [ \"$GITHUB_EVENT_NAME\" = \"merge_group\" ]; then\n  if [ -z \"${MERGE_GROUP_BASE_SHA:-}\" ]; then\n    echo \"Merge-group base is missing; running the scripts lane\"\n    echo \"run=true\" >> \"$GITHUB_OUTPUT\"\n    exit 0\n  fi\n  if ! git cat-file -e \"${MERGE_GROUP_BASE_SHA}^{commit}\" 2>/dev/null; then\n    git fetch --no-tags --depth=1 origin \"$MERGE_GROUP_BASE_SHA\"\n    git cat-file -e \"${MERGE_GROUP_BASE_SHA}^{commit}\"\n  fi\n  BASE=\"$MERGE_GROUP_BASE_SHA\"\nelif git rev-parse --verify --quiet HEAD^2 >/dev/null; then\n  BASE=\"$(git rev-parse HEAD^1)\"\nelse\n  echo \"No base to compare with; running the scripts lane\"\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\n# On a variable, not a pipe: an early `grep -q` exit fails a pipeline under pipefail.\nchanged=\"$(git diff --name-only \"$BASE\" HEAD)\"\nif grep -qE '^(scripts|test|\\.github)/' <<<\"${changed}\"; then\n  echo \"run=true\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"Nothing under scripts/, test/ or .github/ changed; skipping the scripts lane\"\n  echo \"run=false\" >> \"$GITHUB_OUTPUT\"\nfi\n",
 					"env": {
 						"MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
 					},
@@ -552,6 +552,12 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
+					"name": "Build current sources for local attestation",
+					"if": "steps.scope.outputs.run == 'true' && env.CI != 'true'",
+					"run": "set -euo pipefail\nBASE=\"$(git rev-parse --verify HEAD^1 2>/dev/null || true)\"\nif [ -z \"$BASE\" ]; then\n  echo \"Scripts-test build base is empty\" >&2\n  exit 1\nfi\nnode --import tsx scripts/ci/scripts-test-imports.mts \\\n  > \"$RUNNER_TEMP/scripts-tests-import-filters\"\nmapfile -t IMPORTED < \"$RUNNER_TEMP/scripts-tests-import-filters\"\ngit diff --name-only \"$BASE\" HEAD \\\n  | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base=\"$BASE\" \\\n    > \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\nmapfile -t AFFECTED < \"$RUNNER_TEMP/scripts-tests-affected-lanes\"\npnpm exec turbo run build \\\n  \"${IMPORTED[@]}\" \\\n  \"${AFFECTED[@]}\" \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
+					"local": "run"
+				},
+				{
 					"name": "Download scripts-test build outputs",
 					"if": "steps.scope.outputs.run == 'true'",
 					"uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
@@ -560,7 +566,7 @@
 						"path": "."
 					},
 					"local": "skip",
-					"reason": "a local run tests build outputs already present in the developer checkout"
+					"reason": "CI supplies the artifact; the preceding local step builds current sources"
 				},
 				{
 					"name": "Scripts tests",
