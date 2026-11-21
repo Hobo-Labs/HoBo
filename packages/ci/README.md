@@ -720,6 +720,19 @@ The GitHub assignment lookup and hook endpoint are not yet wired into the
 production controller, so these store guarantees alone do not make strict CI
 runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
 
+An unclaimed runner slot that becomes uncertain retains its reservation.
+After a trusted controller confirms teardown, it can retry the
+`uncertain` → `released` transition with `{ teardownConfirmed: true }`; an
+identical retry does not release capacity twice. A claimed uncertain slot is
+released through execution settlement instead. The store records the release,
+but trusts the controller's assertion and does not itself verify provider
+teardown evidence.
+
+Before enabling admission after an upgrade, quarantine and reconcile slots
+already marked uncertain by an older version. That version may have released
+their reservations; this change cannot reconstruct whether those runners still
+exist or restore the missing accounting automatically.
+
 Fleet capacity values use the unsigned 32-bit wire range. PostgreSQL startup
 widens legacy signed capacity columns under its schema lock; the database user
 must have permission to alter those tables. Capacity revisions never wrap: at
@@ -758,4 +771,18 @@ stateDiagram-v2
   [*] --> ReadCapacity
   ReadCapacity --> ReservationRecorded: reserve one slot
   ReservationRecorded --> StaleRefused: refuse stale capacity view
+```
+
+The [uncertain-capacity verification skill](../../.agents/skills/verify-ci-uncertain-capacity/SKILL.md)
+models recovery and checks the stores. The projection hides five same-label
+steps from 14 modeled steps.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Reserved
+  Reserved --> Uncertain: runner status becomes uncertain
+  Uncertain --> Ready: teardown confirmed
+  Uncertain --> SettlementPending: teardown confirmed
+  SettlementPending --> Ready: execution status recorded
+  Ready --> Released: release reserved capacity
 ```

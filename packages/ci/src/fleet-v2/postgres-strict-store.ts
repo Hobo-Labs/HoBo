@@ -55,6 +55,7 @@ import {
 	type ExecutionClaimState,
 	type RunnerSlotState,
 	rejectFleet,
+	releaseRunnerSlotAfterTeardown,
 	transitionCapacityGroup,
 	transitionCiDemand,
 	transitionEffect,
@@ -66,6 +67,7 @@ import type {
 	EffectClaimInput,
 	EffectFenceInput,
 	ReserveCapacityInput,
+	RunnerSlotTransitionOptions,
 	StrictFleetStore,
 } from "./strict-store.js";
 
@@ -980,27 +982,44 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 		expected: RunnerSlotState,
 		next: RunnerSlotState,
 		externalRunnerId?: string,
+		options?: RunnerSlotTransitionOptions,
 	): Promise<RunnerSlot> {
 		return this.tx(async (client) => {
 			const slot = await this.slotInside(client, id, true);
 			if (!slot)
 				rejectFleet(FleetRejectionCode.NOT_FOUND, "runner slot not found");
+			const resolvingUncertainty =
+				expected === "uncertain" && next === "released";
+			if (resolvingUncertainty && options?.teardownConfirmed !== true)
+				rejectFleet(
+					FleetRejectionCode.TEARDOWN_UNCONFIRMED,
+					"runner teardown has not been confirmed",
+				);
+			if (resolvingUncertainty && slot.state === "released") return slot;
 			if (slot.state !== expected)
 				rejectFleet(
 					FleetRejectionCode.INVALID_TRANSITION,
 					`runner slot expected ${expected}, found ${slot.state}`,
 				);
-			transitionRunnerSlot(expected, next);
-			// Pre-claim release (see the SQLite store): give reserved units
-			// back when a never-claimed slot leaves an open state.
+			if (resolvingUncertainty) releaseRunnerSlotAfterTeardown(expected, true);
+			else transitionRunnerSlot(expected, next);
+			// Uncertainty retains capacity. A confirmed unclaimed release gives
+			// it back; claimed slots release only via completeExecution.
 			if (
-				(next === "released" || next === "uncertain") &&
-				["reserved", "provisioning", "registered"].includes(expected)
+				next === "released" &&
+				["reserved", "provisioning", "registered", "uncertain"].includes(
+					expected,
+				)
 			) {
 				const claim = await client.query(
 					"SELECT key FROM hobo_ci_fleet_v2_execution_claims WHERE partition_id=$1 AND runner_slot_id=$2",
 					[this.partition, slot.id],
 				);
+				if ((claim.rowCount ?? 0) > 0 && resolvingUncertainty)
+					rejectFleet(
+						FleetRejectionCode.EXECUTION_CONFLICT,
+						"a claimed slot must be released through execution settlement",
+					);
 				if ((claim.rowCount ?? 0) === 0) {
 					const changed = await client.query(
 						`UPDATE hobo_ci_fleet_v2_capacity_groups SET reserved_units=reserved_units-$3,seq=seq+1
@@ -1021,6 +1040,16 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 						group.reservedUnits -= slot.capacityCostUnits;
 						group.seq = nextCapacitySequence(group.seq);
 						await this.saveCapacity(client, group);
+						await this.event(
+							client,
+							FleetEventType.CAPACITY_RELEASED,
+							await this.now(client),
+							slot.accountId,
+							"capacity-group",
+							group.id,
+							undefined,
+							slot.incarnationId,
+						);
 					}
 				}
 			}
@@ -1571,7 +1600,7 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				);
 			}
 			let capacityReleased = false;
-			if (input.teardownConfirmed) {
+			if (input.teardownConfirmed === true) {
 				const inserted = await client.query(
 					`INSERT INTO hobo_ci_fleet_v2_capacity_releases(partition_id,claim_id,capacity_group_id,units,released_at)
 					 VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
@@ -1607,7 +1636,10 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 					group.reservedUnits -= slot.capacityCostUnits;
 					group.seq = nextCapacitySequence(group.seq);
 					await this.saveCapacity(client, group);
-					transitionRunnerSlot(slot.state as RunnerSlotState, "released");
+					releaseRunnerSlotAfterTeardown(
+						slot.state as RunnerSlotState,
+						input.teardownConfirmed,
+					);
 					slot.state = "released";
 					await this.saveSlot(client, slot);
 					capacityReleased = true;

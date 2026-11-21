@@ -146,6 +146,20 @@ export function transitionRunnerSlot(
 	return transition(from, to, slotTransitions[from], "runner slot");
 }
 
+/** Resolve an uncertain slot only after its caller has confirmed teardown. */
+export function releaseRunnerSlotAfterTeardown(
+	from: RunnerSlotState,
+	teardownConfirmed: boolean,
+): RunnerSlotState {
+	if (teardownConfirmed !== true)
+		rejectFleet(
+			FleetRejectionCode.TEARDOWN_UNCONFIRMED,
+			"runner teardown has not been confirmed",
+		);
+	if (from === "uncertain") return "released";
+	return transitionRunnerSlot(from, "released");
+}
+
 export function transitionExecutionClaim(
 	from: ExecutionClaimState,
 	to: ExecutionClaimState,

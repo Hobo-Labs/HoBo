@@ -9,7 +9,7 @@ description: Verify fleet capacity revisions, stale admissions, and counter exha
 
 **Why:** A stale reservation can invalidate capacity or policy decisions. A wrapped or unparseable revision can make old decisions appear current or strand the group.
 
-**Result at sync commit `5b1189203aaf503ae5d4c6271daae7b9342689af`:** PASS for the bounded models, generated SQLite cases, SQLite and PostgreSQL conformance, and the stated arithmetic abstractions.
+**Result at sync commit `0dd7b7d93c5f3c700fb4bf44d1b01dd07c7ef02c`:** PASS for the bounded models, generated SQLite cases, SQLite and PostgreSQL conformance, and the stated arithmetic abstractions.
 
 ## Covered code
 
@@ -31,7 +31,7 @@ The generated SQLite check uses seed 614441 and 80 examples with 2–12 units an
 
 `FleetCapacity` models two jobs reading revision zero with two units available. `CapacityExhaustion` models the final admissible increment and refusal at a small representative limit. TLC's finite exploration checks these abstractions, not all implementation states. The Z3 induction proves that any number of abstract contenders using the same initial revision can obtain at most one successful reservation, assuming atomic comparison and increment and no revision reset. It also proves that an increment guarded below the unsigned maximum stays within range. These are proofs of abstractions, not TypeScript-to-model refinement or database correctness.
 
-Removing the SQLite revision predicate made the generated check admit two contenders. Removing it in `FleetCapacity` violates `NoStaleAdmission`; removing the limit guard in `CapacityExhaustion` violates `NoOverflow`. Set `CAPACITY_PROOF_MUTATION=omit-revision-guard` or `omit-limit-guard` to obtain Z3 counterexamples. Revisions at their maximum reject further updates, including releases; a future revision-format migration and operator reconciliation are needed. Never reset a revision to recover, because stale inputs could become valid again. Other PostgreSQL fleet fields have separate range and exhaustion requirements.
+Removing the SQLite revision predicate made the generated check admit two contenders. Removing it in `FleetCapacity` violates `NoStaleAdmission`; removing the limit guard in `CapacityExhaustion` violates `NoOverflow`. Set `CAPACITY_PROOF_MUTATION=omit-revision-guard` or `omit-limit-guard` to obtain Z3 counterexamples. Revisions at their maximum reject further updates, including releases; a future revision-format migration and operator reconciliation are needed. Never reset a revision to recover, because stale inputs could become valid again. Uncertain-slot retention and confirmed release are checked by `verify-ci-uncertain-capacity`. Other PostgreSQL fleet fields have separate range and exhaustion requirements.
 
 ## Keep in sync
 
