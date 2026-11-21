@@ -614,7 +614,10 @@ describe("hobo ci secret-store verify", () => {
 					((identityId === "deploy-identity" && !writerCanReadDeploy) ||
 						(identityId === "relay-identity" && !relayCanReadDeploy))
 				)
-					return Response.json({ reqId: "req-deploy-project" }, { status: 403 });
+					return Response.json(
+						{ reqId: "req-deploy-project" },
+						{ status: 403 },
+					);
 				reads.push({
 					identityId,
 					secretPath: url.searchParams.get("secretPath") ?? "",
@@ -767,14 +770,7 @@ describe("hobo ci secret-store verify", () => {
 
 	it("fails a reader with any role other than exactly Viewer", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
-		const fake = infisical(
-			200,
-			["VERCEL_TOKEN"],
-			JWT,
-			true,
-			403,
-			"member",
-		);
+		const fake = infisical(200, ["VERCEL_TOKEN"], JWT, true, 403, "member");
 		const result = await runCiSecretStore(
 			input("verify", {}, actions, fake.fetch),
 		);
@@ -831,10 +827,7 @@ describe("hobo ci secret-store verify", () => {
 			accessOf("deploy-identity"),
 		]);
 		const serialized = JSON.stringify(result);
-		for (const token of [
-			...fake.revocations,
-			"synthetic-deploy-token-0123",
-		])
+		for (const token of [...fake.revocations, "synthetic-deploy-token-0123"])
 			expect(serialized).not.toContain(token);
 	});
 
