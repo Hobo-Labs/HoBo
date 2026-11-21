@@ -15,6 +15,7 @@ export const PATTERN_NAMES = [
 	"jwt",
 	"json jwt",
 	"bearer",
+	"glued bearer",
 	"authorization header",
 	"basic or token",
 	"postgres url",

@@ -604,6 +604,7 @@ describe("hobo ci secret-store verify", () => {
 
 	it.each([
 		{ loginStatus: 401, deployReadStatus: 403 },
+		{ loginStatus: 403, deployReadStatus: 403 },
 		{ loginStatus: 200, deployReadStatus: 401 },
 	])("does not attest deploy-project denial without an authenticated authorization refusal", async ({
 		loginStatus,

@@ -878,7 +878,8 @@ async function deliverWith(
 				},
 				planning: {
 					registry,
-					declarationDigest: (declaration) => canonicalManifestHash(declaration),
+					declarationDigest: (declaration) =>
+						canonicalManifestHash(declaration),
 					async declaration(freight) {
 						const bytes = await cd.artifacts.get(
 							// SAFETY: a Freight's declaration hash is a sha256 digest.
@@ -1002,7 +1003,15 @@ async function deliverWith(
 										...pipelineRecord,
 										nodes: pipelineRecord.nodes.map((pipelineNode) =>
 											pipelineNode.name === node
-												? { ...pipelineNode, hooks: [...storedNode.hooks] }
+												? {
+														...pipelineNode,
+														hooks: [
+															...pipelineNode.hooks,
+															...storedNode.hooks.filter(
+																(hook) => hook.ref === RELAY_FINALIZATION_SUITE,
+															),
+														],
+													}
 												: pipelineNode,
 										),
 									}

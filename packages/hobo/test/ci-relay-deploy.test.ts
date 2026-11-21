@@ -91,13 +91,24 @@ const fixture = (name: string) =>
 		),
 	);
 
-const productionPlan = (name: string) =>
-	parseJsonObject(
-		JSON.stringify(fixture(name)).replace(
-			'\\"target\\":\\"production\\"',
-			'\\"target\\":\\"production\\",\\"autoAssignCustomDomains\\":false',
-		),
-	);
+const productionPlan = (name: string) => {
+	const plan = fixture(name);
+	const requests = Array.isArray(plan.requests)
+		? plan.requests.map((request) => {
+				if (!isJsonObject(request) || !isJsonString(request.body))
+					return request;
+				const record: JsonObject = request;
+				return {
+					...record,
+					body: request.body.replace(
+						'"target":"production"',
+						'"target":"production","autoAssignCustomDomains":false',
+					),
+				};
+			})
+		: plan.requests;
+	return parseJsonObject(JSON.stringify({ ...plan, requests }));
+};
 
 const pact = parsePactDocument(
 	JSON.parse(

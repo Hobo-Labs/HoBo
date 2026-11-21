@@ -21,9 +21,13 @@ this workflow from fleet routing and scopes its per-job hosted-runner exception
 to those jobs and the unprivileged `deploy-build` job. That exception is earned, not name-based: every hosted
 job must pin the reviewed checkout, set `clean: true`, keep no credentials or
 route-runner step, hold only its declared permissions, and restore the CLI from
-the build job's digest before running repository code. This workflow carries no
-route-runner step; `scripts/test/route-runner.test.ts` pins the five workflows
-that still route. Building and deploying
+the build job's digest before running repository code. That order is enforced
+on parsed steps, comments aside — checkout, then the pinned artifact download,
+then the digest restore carrying exactly the build job's `digest` output as its
+one env entry, then any step that runs the CLI. This workflow carries no
+route-runner step; `scripts/test/route-runner.test.ts` names the exact workflows
+that still route, so one joining or leaving them (relay-deploy.yml is
+deliberately unrouted) is a reviewed change, not a silent drift past a floor. Building and deploying
 are separated so the GitHub OIDC identity reaches no build code:
 `deploy-build` holds `contents: read` only and packs the built hobo CLI with
 its sha256 (`scripts/ci/release-freight-cli.mts pack`); each job that holds

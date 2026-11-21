@@ -304,6 +304,40 @@ function stepLines(block: readonly string[], at: number): readonly string[] {
 	return block.slice(at, end);
 }
 
+/** A job's steps as line arrays, comment lines aside. */
+function jobSteps(block: readonly string[]): readonly (readonly string[])[] {
+	return block
+		.reduce<number[]>((starts, line, index) => {
+			if (/^ {6}- /u.test(line)) starts.push(index);
+			return starts;
+		}, [])
+		.map((start) =>
+			stepLines(block, start).filter((line) => !/^\s*#/u.test(line)),
+		);
+}
+
+/** A step's `env:` entries, trimmed. */
+function envEntries(step: readonly string[]): readonly string[] {
+	const at = step.findIndex((line) => line.trim() === "env:");
+	if (at < 0) return [];
+	const entries: string[] = [];
+	for (const line of step.slice(at + 1)) {
+		if (!/^ {10}\S/u.test(line)) break;
+		entries.push(line.trim());
+	}
+	return entries;
+}
+
+/** A line that runs the built CLI, not one that only names it. */
+function cliLine(line: string): boolean {
+	return (
+		line.includes("packages/hobo/dist/bin/hobo.js") &&
+		!/^\s*(?:name|uses|id|if|timeout-minutes|working-directory|shell|env|with):/u.test(
+			line,
+		)
+	);
+}
+
 function attestedRelayCheckout(block: readonly string[]): boolean {
 	const checkouts = block.reduce<number[]>((found, line, index) => {
 		if (/^ {6}- uses: actions\/checkout@/u.test(line)) found.push(index);
@@ -378,23 +412,41 @@ function attestedHostedRelayJob(
 					line.trim() === `uses: actions/upload-artifact@${RELAY_UPLOAD_SHA}`,
 			)
 		);
-	const restoreAt = block.findIndex(
-		(line) =>
-			line.includes("release-freight-cli.mts restore") &&
-			line.includes('--digest "$HOBO_RELAY_CLI_DIGEST"'),
+	const steps = jobSteps(block);
+	const checkoutAt = steps.reduce(
+		(found, step, index) =>
+			step.some(
+				(line) =>
+					line.trim().replace(/^- /u, "") ===
+					`uses: actions/checkout@${RELAY_CHECKOUT_SHA}`,
+			)
+				? index
+				: found,
+		-1,
 	);
-	const cliAt = block.findIndex((line) =>
-		line.includes("packages/hobo/dist/bin/hobo.js"),
-	);
-	return (
-		restoreAt >= 0 &&
-		cliAt >= 0 &&
-		restoreAt < cliAt &&
-		block.some(
+	const downloadAt = steps.findIndex((step) =>
+		step.some(
 			(line) =>
 				line.trim() === `uses: actions/download-artifact@${RELAY_DOWNLOAD_SHA}`,
-		) &&
-		block.some((line) => line.trim() === RELAY_DIGEST_ENV)
+		),
+	);
+	const restoreAt = steps.findIndex((step) =>
+		step.some(
+			(line) =>
+				line.trim().startsWith("run:") &&
+				line.includes("release-freight-cli.mts restore") &&
+				line.includes('--digest "$HOBO_RELAY_CLI_DIGEST"'),
+		),
+	);
+	const restoreEnv = restoreAt >= 0 ? envEntries(steps[restoreAt] ?? []) : [];
+	const cliAt = steps.findIndex((step) => step.some(cliLine));
+	return (
+		checkoutAt >= 0 &&
+		downloadAt > checkoutAt &&
+		restoreAt > downloadAt &&
+		cliAt > restoreAt &&
+		restoreEnv.length === 1 &&
+		restoreEnv[0] === RELAY_DIGEST_ENV
 	);
 }
 

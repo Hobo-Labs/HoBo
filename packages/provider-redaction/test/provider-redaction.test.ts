@@ -4,7 +4,6 @@ import {
 	containsControlChar,
 	createProviderRedactor,
 	decodePercentFully,
-	GLUED_BEARER_PATTERN,
 	REDACTION_WINDOW,
 	RedactionPatternError,
 	redactionPattern,
@@ -163,10 +162,17 @@ describe("redactProviderText", () => {
 		["ſ", "ſBearer SECRB2BEARER"],
 	])("finds a credential after %s, which `i` with `u` folds to an ASCII letter", (letter, text) => {
 		// The letter is part of the key's run now, so a prefixed key takes it
-		// with it; a JWT keeps it as the run's lead.
+		// with it; a JWT keeps it as the run's lead. The bearer row may also
+		// take the trailing word: the glued-bearer shape has no boundary, so a
+		// `bearer` inside the first match's value is searched again and chains
+		// onto the run after it — over-redaction, never a revealed credential.
 		const out = redactProviderText(`x ${text} y`, 10_000);
 		expect(out).not.toMatch(/SECR|ghp_|sk_live|Bearer/u);
-		expect([`x ${letter}[redacted] y`, "x [redacted] y"]).toContain(out);
+		expect([
+			`x ${letter}[redacted] y`,
+			`x ${letter}[redacted]`,
+			"x [redacted] y",
+		]).toContain(out);
 	});
 
 	it("reads a credential on through ſ and K, as the `iu` copies did", () => {
@@ -371,20 +377,22 @@ describe("a provider profile", () => {
 	});
 
 	it("redacts a bearer scheme glued into a longer word, as the shared boundary cannot", () => {
-		const redact = createProviderRedactor({
-			patterns: [GLUED_BEARER_PATTERN],
-		});
-		expect(
-			redact("token%3DBearer xoxb-1234567890-SECRXGAUq0Zc021tT8czva9t"),
-		).toBe("token%3D[redacted]");
-		expect(redact("api-key://@SECR78b3PweSBearer SECRECKK1feJ")).toBe(
-			"[redacted]",
-		);
-		expect(redact("valuePweSBearer SECRECKK1feJ")).toBe("valuePweS[redacted]");
-		expect(redact("noise SECRIH0NBoekbearer\tSECR5gm0pofa tail")).toBe(
-			"noise SECRIH0NBoek[redacted] tail",
-		);
-		expect(redact("MontBearers unite")).toBe("MontBearers unite");
+		const redact = createProviderRedactor({});
+		for (const redactor of [redact, redactProviderText]) {
+			expect(
+				redactor("token%3DBearer xoxb-1234567890-SECRXGAUq0Zc021tT8czva9t"),
+			).toBe("token%3D[redacted]");
+			expect(redactor("api-key://@SECR78b3PweSBearer SECRECKK1feJ")).toBe(
+				"[redacted]",
+			);
+			expect(redactor("valuePweSBearer SECRECKK1feJ")).toBe(
+				"valuePweS[redacted]",
+			);
+			expect(redactor("noise SECRIH0NBoekbearer\tSECR5gm0pofa tail")).toBe(
+				"noise SECRIH0NBoek[redacted] tail",
+			);
+			expect(redactor("MontBearers unite")).toBe("MontBearers unite");
+		}
 	});
 
 	it("keeps spans whole, even one a shape would read through", () => {

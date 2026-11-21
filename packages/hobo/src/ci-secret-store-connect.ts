@@ -408,26 +408,41 @@ async function denyDeployTokenRead(
 	const method = "Vercel OIDC deploy-project denial";
 	const session = client();
 	try {
-		await session.signIn();
-		await session.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
+		try {
+			await session.signIn();
+		} catch (error) {
+			return {
+				identity,
+				method,
+				result: "fail",
+				detail: `the relay runtime identity could not sign in, so its deploy-credential denial is unproven: ${
+					error instanceof InfisicalError
+						? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
+						: "the sign-in could not run"
+				}`,
+			};
+		}
+		try {
+			await session.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
+		} catch (error) {
+			const denied =
+				error instanceof InfisicalError &&
+				["forbidden", "value-hidden"].includes(error.code);
+			return {
+				identity,
+				method,
+				result: denied ? "pass" : "fail",
+				detail:
+					error instanceof InfisicalError
+						? `deploy credential read ${denied ? "denied" : "could not be evaluated"}: infisical ${error.code}`
+						: "the deploy credential denial check could not run",
+			};
+		}
 		return {
 			identity,
 			method,
 			result: "fail",
 			detail: "the relay runtime identity read the deploy credential project",
-		};
-	} catch (error) {
-		const denied =
-			error instanceof InfisicalError &&
-			["forbidden", "value-hidden"].includes(error.code);
-		return {
-			identity,
-			method,
-			result: denied ? "pass" : "fail",
-			detail:
-				error instanceof InfisicalError
-					? `deploy credential read ${denied ? "denied" : "could not be evaluated"}: infisical ${error.code}`
-					: "the deploy credential denial check could not run",
 		};
 	} finally {
 		await session.revoke().catch(() => undefined);

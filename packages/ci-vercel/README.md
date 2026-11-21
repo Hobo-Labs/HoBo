@@ -318,8 +318,10 @@ nothing is verified or qualified.
 
 **Merge cutover (relay CD delivery):** this change lands with no
 `deployProjectId` in `deploy/secret-store.binding.json` (the fallback
-period). The relay's Vercel project is intentionally not Git-linked, so
-while no deploy project is bound **nothing deploys the relay**: the gate
+period). The relay's Vercel project is intentionally not Git-linked, and
+`vercel.json` keeps `"git": { "deploymentEnabled": false }` committed so a
+re-link cannot start deploying behind the gate either, so while no deploy
+project is bound **nothing deploys the relay**: the gate
 fails every event that would deploy — a relay push fails the required
 check, and a manual run fails the same way — naming this cutover, and
 `hobo ci deploy` run directly in that state refuses with

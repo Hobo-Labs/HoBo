@@ -682,11 +682,17 @@ describe("Actions runner policy", () => {
 		restoreFirst = true,
 		digestEnv = "HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}",
 		downloadSha = "9000827ccba6bdab643e8b6fd33ac0654aef8333",
+		restoreAsComment = false,
+		downloadAfterRestore = false,
+		digestEnvOnCli = false,
 	}: {
 		job?: string;
 		restoreFirst?: boolean;
 		digestEnv?: string | null;
 		downloadSha?: string;
+		restoreAsComment?: boolean;
+		downloadAfterRestore?: boolean;
+		digestEnvOnCli?: boolean;
 	} = {}): string => {
 		const build = `  deploy-build:
     runs-on: ubuntu-24.04
@@ -700,14 +706,23 @@ ${relayCheckout}      - id: pack
       - name: Upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
 `;
-		const restore = `      - name: Restore
-        env:
+		const envBlock = `        env:
           ${digestEnv ?? "UNRELATED: x"}
-        run: node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"
+`;
+		const restore = `      - name: Restore
+${digestEnvOnCli ? "" : envBlock}${restoreAsComment ? `        # node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"\n` : ""}        run: ${restoreAsComment ? "echo ok" : 'node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"'}
 `;
 		const cli = `      - name: Run the CLI
-        run: node packages/hobo/dist/bin/hobo.js ci deploy
+${digestEnvOnCli ? envBlock : ""}        run: node packages/hobo/dist/bin/hobo.js ci deploy
 `;
+		const download = `      - name: Download
+        uses: actions/download-artifact@${downloadSha}
+`;
+		const tail = downloadAfterRestore
+			? restore + download + cli
+			: restoreFirst
+				? restore + cli
+				: cli + restore;
 		return `name: fixture
 on:
   push:
@@ -720,9 +735,7 @@ ${build}  ${job}:
       contents: read
       id-token: write
     steps:
-${relayCheckout}      - name: Download
-        uses: actions/download-artifact@${downloadSha}
-${restoreFirst ? restore + cli : cli + restore}`;
+${relayCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 	};
 
 	const lintRelayFixture = (text: string) => {
@@ -781,6 +794,26 @@ ${restoreFirst ? restore + cli : cli + restore}`;
 				downloadSha: "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
 			}),
 		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, relayRunnerError);
+	});
+
+	it("rejects a hosted relay job whose digest restore appears only in a comment", () => {
+		const result = lintRelayFixture(relayFixture({ restoreAsComment: true }));
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, relayRunnerError);
+	});
+
+	it("rejects a hosted relay job that downloads the artifact after restoring it", () => {
+		const result = lintRelayFixture(
+			relayFixture({ downloadAfterRestore: true }),
+		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, relayRunnerError);
+	});
+
+	it("rejects a hosted relay job whose digest env is on the CLI step, not the restore", () => {
+		const result = lintRelayFixture(relayFixture({ digestEnvOnCli: true }));
 		assert.notEqual(result.status, 0);
 		assert.match(result.stderr, relayRunnerError);
 	});

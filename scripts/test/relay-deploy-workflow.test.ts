@@ -135,10 +135,14 @@ describe("the relay deploy gate", () => {
 			),
 			"coordinates",
 		);
-		assert.doesNotMatch(
-			readFileSync(join(root, "packages/ci-vercel/vercel.json"), "utf8"),
-			/"git"\s*:/u,
-			"the relay's Vercel project is intentionally not Git-linked (AGENTS.md), which is why the fallback period must fail rather than skip",
+		const vercelJson = readFileSync(
+			join(root, "packages/ci-vercel/vercel.json"),
+			"utf8",
+		);
+		assert.match(
+			vercelJson,
+			/"git"\s*:\s*\{\s*"deploymentEnabled"\s*:\s*false\s*\}/u,
+			"the relay's Vercel project is intentionally not Git-linked (AGENTS.md) and the committed config disables git deploys, so a re-link cannot silently deploy behind the gate that fails the fallback period closed",
 		);
 		assert.doesNotMatch(
 			readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8"),

@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
+import { create, fromJson, type JsonObject, toJson } from "@bufbuild/protobuf";
 import type { ManifestV1 } from "@hobo/bindles";
 import {
 	CD_EVENTS,
@@ -138,6 +138,30 @@ async function finalizationHooks(home: string): Promise<number> {
 				.find((node) => node.name === "production")
 				?.hooks.filter((hook) => hook.ref === "relay:finalize-promotion")
 				.length ?? 0
+		);
+	} finally {
+		await opened.close();
+	}
+}
+
+async function productionHookRefs(home: string): Promise<string[]> {
+	const opened = await openCdStore(
+		{ backend: "sqlite", path: join(home, "cd", "journal.sqlite") },
+		{ now: () => Date.now() },
+	);
+	try {
+		const applied: { data: unknown }[] = [];
+		for await (const event of opened.store.read(
+			CD_STREAMS.pipeline(HOBO_CI_COMPONENTS.relay.pipeline),
+		))
+			if (event.type === CD_EVENTS.PipelineApplied) applied.push(event);
+		const last = applied.at(-1);
+		if (!last) throw new Error("missing pipeline record");
+		const pipeline = fromJson(PipelineRecordSchema, last.data as JsonObject);
+		return (
+			pipeline.nodes
+				.find((node) => node.name === "production")
+				?.hooks.map((hook) => hook.ref) ?? []
 		);
 	} finally {
 		await opened.close();
@@ -666,6 +690,48 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(await finalizationHooks(h.home)).toBe(1);
 		expect(h.deployed).toHaveLength(2);
 		expect(h.finalized).toEqual(["dpl_2", "dpl_2"]);
+	}, 240_000);
+
+	it("keeps a hook the retry's delivery file declares anew while reusing the stored finalizer", async () => {
+		const h = await harness();
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const finalizer = async () => undefined;
+		const first = await deliver(h, "production", {
+			finalizePromotion: finalizer,
+		});
+		expect(first.ok, first.ok ? "" : first.message).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(1);
+		const withDeclaredHook: DeliveryModule = {
+			...records,
+			pipelines: records.pipelines.map((pipelineRecord) => ({
+				...pipelineRecord,
+				nodes: pipelineRecord.nodes.map((pipelineNode) =>
+					pipelineNode.name === "production"
+						? {
+								...pipelineNode,
+								hooks: [
+									...pipelineNode.hooks,
+									create(HookRecordSchema, {
+										kind: HookKind.NOTIFY,
+										point: HookPoint.AFTER_QUALIFIED,
+										ref: "relay:notify-owners",
+									}),
+								],
+							}
+						: pipelineNode,
+				),
+			})),
+		};
+		const retry = await deliver(h, "production", {
+			records: withDeclaredHook,
+			finalizePromotion: finalizer,
+		});
+		expect(retry.ok, retry.ok ? "" : retry.message).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(1);
+		expect(await productionHookRefs(h.home)).toEqual([
+			"relay:notify-owners",
+			"relay:finalize-promotion",
+		]);
 	}, 240_000);
 
 	it("never finalizes another promotion's candidate when a newer promotion replaced the Camp's Set", async () => {

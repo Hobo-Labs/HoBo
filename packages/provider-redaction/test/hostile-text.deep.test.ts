@@ -147,6 +147,10 @@ describe("every pattern on a hostile text", () => {
 			words: ["eyJ", "-eyJ", "eyJAAAAAAAA.", "eyJAAAAAAAA.AAAAAAAA."],
 		},
 		bearer: { alphabet: ALNUM, words: ["Bearer", "Bearer "] },
+		"glued bearer": {
+			alphabet: ALNUM,
+			words: ["bearer", "bearer ", "xBearer", "bearer\t"],
+		},
 		"authorization header": {
 			alphabet: ALNUM,
 			words: [
