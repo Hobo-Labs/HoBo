@@ -469,9 +469,11 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		}
 		const oci = job("release-oci-build-tag");
 		expect(oci).toMatch(
-			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
+			/contains\(fromJSON\('\["push","workflow_dispatch","merge_group","workflow_run"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo'/u,
 		);
 		const pages = job("release-pages");
+		expect(pages).toMatch(/needs\.route\.outputs\.tier == 'github'/u);
+		expect(pages).toMatch(/needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'/u);
 		expect(pages).toMatch(
 			/contains\(fromJSON\('\["push","workflow_dispatch","merge_group","workflow_run"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo'/u,
 		);

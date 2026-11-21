@@ -169,11 +169,17 @@ export function fetchReleaseTurboBase(root: string, configuredBase: string): voi
 	});
 	if (remote.status !== 0 || !remote.stdout.trim()) return;
 	const fetch = (args: readonly string[]) => {
-		spawnSync(
+		const result = spawnSync(
 			"git",
 			["-c", "http.version=HTTP/1.1", "fetch", ...args],
-			{ cwd: root, stdio: "ignore" },
+			{ cwd: root, encoding: "utf8" },
 		);
+		if (result.status !== 0) {
+			const detail = (result.stderr || result.stdout || "").trim();
+			throw new Error(
+				`git fetch ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`,
+			);
+		}
 	};
 	if (base === "origin/main") {
 		tryShallowFetchOriginMain(root);

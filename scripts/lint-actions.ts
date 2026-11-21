@@ -189,6 +189,9 @@ const TRUNK_RUNS_ON =
  */
 const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
+const RELEASE_PAGES_RUNS_ON =
+	"${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
+
 /**
  * What the main gate's shards and finish job ask for: the plan job's second
  * ask (`shard_runner`), then the run's route, then GitHub-hosted, so a failed
@@ -779,6 +782,7 @@ function lintWorkflowYaml(
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			runsOn !== RELEASE_PAGES_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
