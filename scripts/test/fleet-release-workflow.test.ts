@@ -104,7 +104,7 @@ describe("the release workflow's fleet service images", () => {
 
 	it("attests build provenance and a bill of materials for the digest it published", () => {
 		const attest = block.slice(
-			block.indexOf("uses: ./.github/actions/release-oci-attest"),
+			block.indexOf("uses: $/.github/actions/release-oci-attest"),
 		);
 		assert.match(
 			attest,

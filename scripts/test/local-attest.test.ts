@@ -1871,6 +1871,13 @@ describe("the secret scan and histories that end in the same tree", () => {
 	});
 });
 
+const ROOT_KEEPS_CLEANUP = {
+	skip:
+		process.getuid?.() === 0
+			? "root ignores the mode that breaks cleanup"
+			: false,
+};
+
 describe("local gh-signoff", () => {
 	async function fixture(
 		hasEngine = true,
@@ -3131,43 +3138,51 @@ exec /usr/bin/git "$@"
 		);
 	});
 
-	it("reports possible publication when the isolated Git view cannot be removed", async () => {
-		const run = await fixture(false);
-		const result = run.command([], {
-			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
-			HOBO_SIGNOFF_BREAK_CLEANUP: "1",
-		});
-		const scratch = readFileSync(run.signoffCwd, "utf8").trim();
-		try {
-			assert.notEqual(result.status, 0);
-			assert.match(result.stderr, /could not remove temporary Git view/u);
-			assert.match(
-				result.stderr,
-				/some statuses may already have been posted/u,
-			);
-		} finally {
-			chmodSync(join(scratch, "objects", "info"), 0o700);
-			rmSync(scratch, { recursive: true, force: true });
-		}
-	});
+	it(
+		"reports possible publication when the isolated Git view cannot be removed",
+		ROOT_KEEPS_CLEANUP,
+		async () => {
+			const run = await fixture(false);
+			const result = run.command([], {
+				HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+				HOBO_SIGNOFF_BREAK_CLEANUP: "1",
+			});
+			const scratch = readFileSync(run.signoffCwd, "utf8").trim();
+			try {
+				assert.notEqual(result.status, 0);
+				assert.match(result.stderr, /could not remove temporary Git view/u);
+				assert.match(
+					result.stderr,
+					/some statuses may already have been posted/u,
+				);
+			} finally {
+				chmodSync(join(scratch, "objects", "info"), 0o700);
+				rmSync(scratch, { recursive: true, force: true });
+			}
+		},
+	);
 
-	it("preserves the publication failure when cleanup also fails", async () => {
-		const run = await fixture(false);
-		const result = run.command([], {
-			HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
-			HOBO_SIGNOFF_BREAK_CLEANUP: "1",
-			HOBO_SIGNOFF_TEST_EXIT: "1",
-		});
-		const scratch = readFileSync(run.signoffCwd, "utf8").trim();
-		try {
-			assert.notEqual(result.status, 0);
-			assert.match(result.stderr, /gh-signoff failed/u);
-			assert.match(result.stderr, /could not remove temporary Git view/u);
-		} finally {
-			chmodSync(join(scratch, "objects", "info"), 0o700);
-			rmSync(scratch, { recursive: true, force: true });
-		}
-	});
+	it(
+		"preserves the publication failure when cleanup also fails",
+		ROOT_KEEPS_CLEANUP,
+		async () => {
+			const run = await fixture(false);
+			const result = run.command([], {
+				HOBO_SIGNOFF_REQUIRE_REMOTE_REF: "1",
+				HOBO_SIGNOFF_BREAK_CLEANUP: "1",
+				HOBO_SIGNOFF_TEST_EXIT: "1",
+			});
+			const scratch = readFileSync(run.signoffCwd, "utf8").trim();
+			try {
+				assert.notEqual(result.status, 0);
+				assert.match(result.stderr, /gh-signoff failed/u);
+				assert.match(result.stderr, /could not remove temporary Git view/u);
+			} finally {
+				chmodSync(join(scratch, "objects", "info"), 0o700);
+				rmSync(scratch, { recursive: true, force: true });
+			}
+		},
+	);
 
 	it("reports only jobs a machine without Docker could actually cover", async () => {
 		const run = await fixture(false);

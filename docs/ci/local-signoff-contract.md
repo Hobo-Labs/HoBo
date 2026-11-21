@@ -242,7 +242,9 @@ branch-protection rule is changed.
   signatures, target and base identity, trusted job policy, omitted jobs,
   per-event execution, repeated commands, failed retries, and `gh` publication
   errors. The real upstream extension has also been exercised against a mocked
-  GitHub API; neither fixture establishes a live status on GitHub.
+  GitHub API; neither fixture establishes a live status on GitHub. Its two
+  cleanup-failure cases make the temporary Git view unremovable through its
+  mode, which root ignores, so they are skipped when the suite runs as root.
 
 **Built, not yet proven in production:** a real local `ci-guard` run passed,
 but GitHub returned HTTP 403 when the upstream extension attempted to create a

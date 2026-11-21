@@ -2478,23 +2478,47 @@ describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
 			relay: { nodeId: "oracle-box-1", commit: "c7ec8d449" },
 		});
 	};
-	/** The script against a fake Git Data API; the queue cannot be read. */
+	const takingQueue = (path: string): JsonValue =>
+		path.includes("/jobs")
+			? {
+					jobs: [labels.fleet, labels.trunk].map((label) => ({
+						run_id: 40,
+						status: "completed",
+						labels: [label],
+						runner_name: "runner-1",
+						created_at: new Date(SLIP_NOW - 65_000).toISOString(),
+						started_at: new Date(SLIP_NOW - 60_000).toISOString(),
+					})),
+				}
+			: {
+					workflow_runs: [
+						{
+							id: 40,
+							path: PROBE_WORKFLOW_PATH,
+							status: "completed",
+							created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+							updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+						},
+					],
+				};
 	const route = (message: string | undefined, event = "pull_request") =>
-		printedBy(() =>
-			main(
-				[],
-				{
-					GITHUB_EVENT_NAME: event,
-					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-					GITHUB_RUN_ID: "51",
-					GITHUB_API_URL: "http://127.0.0.1:9",
-				},
-				{
-					routingConfig: COMMITTED,
-					eventPayload: undefined,
-					fetch: slipApi(message),
-					now: () => SLIP_NOW,
-				},
+		withGithub(takingQueue, (apiUrl) =>
+			printedBy(() =>
+				main(
+					[],
+					{
+						GITHUB_EVENT_NAME: event,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: "51",
+						GITHUB_API_URL: apiUrl,
+					},
+					{
+						routingConfig: COMMITTED,
+						eventPayload: undefined,
+						fetch: slipApi(message),
+						now: () => SLIP_NOW,
+					},
+				),
 			),
 		);
 
@@ -2525,7 +2549,7 @@ describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
 				["fleet", runner, "none"],
 				event,
 			);
-			assert.match(decision.reason, /, fleet-busy$/);
+			assert.match(decision.reason, /, fleet-busy(?:;|$)/);
 			assert.deepEqual(noticesIn(lines), [
 				notice({
 					tier: "fleet",
