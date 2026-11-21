@@ -5,10 +5,7 @@
  */
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
-const argv = process.argv.slice(2);
-const deployMode = argv[0] === "--deploy";
-const [jsonPath, stderrPath = "", exitArg = "0", titleArg = "Relay deploy"] =
-	deployMode ? argv.slice(1) : argv;
+const [jsonPath, stderrPath = "", exitArg = "0"] = process.argv.slice(2);
 const exitCode = Number.parseInt(exitArg, 10);
 
 type JsonValue =
@@ -64,62 +61,11 @@ function parseEnvelopeRoot(raw: string): JsonObject | undefined {
 	}
 }
 
-const HOBO_CODE = /^(HOBO_[A-Z0-9_]+):\s*(.*)$/su;
-
-function headlineFromStderr(stderrRaw: string): string | undefined {
-	const lines = redactNoise(stderrRaw)
-		.split("\n")
-		.map((row) => row.trim())
-		.filter((row) => row !== "");
-	for (const line of lines) {
-		const match = HOBO_CODE.exec(line);
-		if (match !== null) return `${match[1]}: ${match[2]}`;
-	}
-	return lines[0];
-}
-
-function deployStdout(): string {
-	return existsSync(jsonPath) ? readFileSync(jsonPath, "utf8") : "";
-}
-
-function deployStderr(): string {
-	return stderrPath !== "" && existsSync(stderrPath)
+const stdoutRaw = existsSync(jsonPath) ? readFileSync(jsonPath, "utf8") : "";
+const stderrRaw =
+	stderrPath !== "" && existsSync(stderrPath)
 		? readFileSync(stderrPath, "utf8")
 		: "";
-}
-
-if (deployMode) {
-	const stdoutRaw = deployStdout();
-	const stderrRaw = deployStderr();
-	const envelope = parseEnvelopeRoot(stdoutRaw);
-	const title = titleArg.trim() === "" ? "Relay deploy" : titleArg.trim();
-	let headline: string;
-	if (envelope !== undefined) {
-		const code = asText(envelope.code) ?? "HOBO_OK";
-		const message = redactNoise(asText(envelope.message) ?? "");
-		headline = `${code}: ${message.split("\n")[0]}`;
-	} else {
-		headline =
-			headlineFromStderr(stderrRaw) ??
-			"HOBO_CI_DEPLOY_NO_ENVELOPE: deploy did not emit JSON on stdout";
-	}
-	const summaryBlock = `### ${title}\n\n${headline}\n`;
-	if (process.env.GITHUB_STEP_SUMMARY) {
-		appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summaryBlock}\n`);
-	}
-	console.log(headline);
-	if (exitCode !== 0 || !Number.isFinite(exitCode)) {
-		const escaped = headline
-			.replaceAll("%", "%25")
-			.replaceAll("\r", "%0D")
-			.replaceAll("\n", "%0A");
-		console.log(`::error title=${title}::${escaped}`);
-	}
-	process.exit(0);
-}
-
-const stdoutRaw = deployStdout();
-const stderrRaw = deployStderr();
 const envelope = parseEnvelopeRoot(stdoutRaw);
 
 const lines = ["### Secret store connection", ""];

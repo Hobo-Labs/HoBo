@@ -301,18 +301,16 @@ and on `workflow_dispatch`:
    the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
    only — role shape not asserted), then revokes the token, and reports it pass or
    fail by name (`hobo ci secret-store verify`).
-3. *Deploy the relay (preview)* then *Deploy the relay (production)*:
-   `hobo ci deploy --provision --wait` runs HoBo CD directly (no Git link,
-   no `--adopt`). The deploy token is read from Infisical with the job's GitHub
-   OIDC as `hobo-ci-writer` (`deployIdentityId` in
-   `deploy/secret-store.binding.json`; when `deployProjectId` is empty on an
-   attach binding, the token is in the relay `projectId` at `/`). Each step
-   writes JSON to `$RUNNER_TEMP` and stderr through `tee`; failures are
-   summarized by `scripts/ci/relay-deploy-secret-store-verify-report.mts --deploy`
-   from the JSON
-   envelope or stderr before the step preserves `hobo`'s exit status.
-4. *Verify the relay at its production origin*: `/healthz` names `GITHUB_SHA`,
-   `/readyz` answers 200 at `HOBO_CI_RELAY_URL`.
+3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration
+   deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
+   write), and `hobo ci deploy --adopt --sha "$GITHUB_SHA"` adopts it
+   ([token-free relay mode](#token-free-relay-mode-hobo-ci-deploy---adopt)):
+   it reads the deployment from GitHub's Deployments API with the job's own
+   `GITHUB_TOKEN` (`deployments: read`), records it as relay Freight and
+   promotes it through HoBo CD preview then production, failing closed:
+   preview by its deployment record, production at the Yard's production
+   domain (`/healthz` names the commit, `/readyz` answers 200). The command's
+   exit status is the step's.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:

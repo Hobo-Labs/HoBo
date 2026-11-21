@@ -30,7 +30,6 @@ export {
 	parseSecretStoreBinding,
 	readSecretStoreBinding,
 	SECRET_STORE_BINDING_FILE,
-	secretStoreDeployCredentialProjectId,
 } from "./binding.js";
 export {
 	type ClaimScope,

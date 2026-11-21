@@ -283,16 +283,7 @@ describe("the relay deploy workflow", () => {
 			assert.match(deployStep, /exit "\$status"/u);
 			assert.doesNotMatch(deployStep, /--adopt/u);
 		}
-		const previewDeploy = step("Deploy the relay (preview)")
-			.split("\n")
-			.map((line) => line.replace(/^ {10}/u, "").replace(/\\\n?/u, " "))
-			.join(" ");
-		assert.match(
-			previewDeploy,
-			/relay-deploy-secret-store-verify-report\.mts.*--deploy/u,
-		);
-		assert.match(previewDeploy, /preview_err/);
-		assert.match(previewDeploy, /--target preview/u);
+		assert.match(step("Deploy the relay (preview)"), /--target preview/u);
 		assert.match(step("Deploy the relay (production)"), /--target production/u);
 		stepBefore("Deploy the relay (preview)", "Deploy the relay (production)");
 	});
@@ -312,15 +303,6 @@ describe("the relay deploy workflow", () => {
 		try {
 			const bin = join(work, "packages/hobo/dist/bin");
 			mkdirSync(bin, { recursive: true });
-			const reportDir = join(work, "scripts/ci");
-			mkdirSync(reportDir, { recursive: true });
-			writeFileSync(
-				join(reportDir, "relay-deploy-secret-store-verify-report.mts"),
-				readFileSync(
-					join(root, "scripts/ci/relay-deploy-secret-store-verify-report.mts"),
-					"utf8",
-				),
-			);
 			writeFileSync(
 				join(bin, "hobo.js"),
 				'process.stdout.write(JSON.stringify({code:"HOBO_TEST_REFUSED",message:"deployment unavailable"})); process.exitCode = 27;',
@@ -333,7 +315,7 @@ describe("the relay deploy workflow", () => {
 				.slice(start + 1)
 				.map((line) => line.replace(/^ {10}/u, ""))
 				.join("\n");
-			const result = spawnSync("bash", ["-u", "-o", "pipefail", "-c", script], {
+			const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], {
 				cwd: work,
 				encoding: "utf8",
 				env: {
