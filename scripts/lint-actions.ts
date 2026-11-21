@@ -340,11 +340,6 @@ function isAlwaysHostedJob(
 	block: readonly string[],
 	runsOn: string | undefined,
 ): boolean {
-	if (/^  mq-route-surface:$/.test(jobLine))
-		return (
-			runsOn === HOSTED_RUNS_ON &&
-			block.some((line) => line.includes("--merge-group-route-surface"))
-		);
 	if (/^  route:$/.test(jobLine)) {
 		return (
 			runsOn === HOSTED_RUNS_ON &&

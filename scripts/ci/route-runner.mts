@@ -1419,7 +1419,11 @@ export async function main(
 		try {
 			const firstView = await observeHosted(now());
 			const hostedLoad = labelLoad(firstView.jobs, githubLabel, now());
-			if (mergeGroupHostedHasIdleCapacity(hostedLoad)) {
+			const hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
+			console.log(
+				`merge-group hosted probe: ${describeLoad("GitHub-hosted", hostedLoad)}; idle=${hostedIdle}`,
+			);
+			if (hostedIdle) {
 				decision = {
 					tier: "github",
 					runner: githubLabel,
