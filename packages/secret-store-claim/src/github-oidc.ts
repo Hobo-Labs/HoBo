@@ -130,6 +130,7 @@ export function parseGithubOidcSubject(input: {
 	}) as GithubOidcSubject;
 }
 
+// public-contract: suffix appended to the org-wide GitHub Actions audience for the deploy-token reader OIDC trust.
 export const DEPLOY_READER_AUDIENCE_SUFFIX = "/hobo-ci-deploy-reader";
 
 /** The deploy identity's trust: GitHub Actions on one branch of the repository. */
