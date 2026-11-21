@@ -708,6 +708,38 @@ stateDiagram-v2
   ReadObservations --> Refused: highest exposure exceeds budget
 ```
 
+## Strict fleet start-binding retries
+
+The transactional fleet stores return a prior start receipt only for the same
+claim, slot, credential, runner name, and execution profile while the claim is
+still authorized or running. Terminal and uncertain claims cannot authorize a
+new start. Eligibility is checked on the original authorization; a matching
+lost-response retry is a receipt for that committed authorization.
+
+The GitHub assignment lookup and hook endpoint are not yet wired into the
+production controller, so these store guarantees alone do not make strict CI
+runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
+
+The [start-binding verification skill](../../.agents/skills/verify-ci-start-binding/SKILL.md)
+checks the store boundary and records its assumptions. This projection of its
+bounded model hides 824 same-label steps from 1,844 explored steps; a rejection
+can be followed by a different valid request, and finishing can occur after a
+rejected retry if an earlier request already authorized that job.
+
+```mermaid
+stateDiagram-v2
+  Waiting: Awaiting a request or execution finished
+  Rejected: Start rejected
+  Authorized: Start authorized
+  [*] --> Waiting
+  Waiting --> Rejected: request does not match or cannot start
+  Waiting --> Authorized: request commits or repeats the same authorization
+  Rejected --> Authorized: request commits or repeats the same authorization
+  Authorized --> Rejected: request does not match or cannot start
+  Authorized --> Waiting: execution finishes
+  Rejected --> Waiting: execution finishes
+```
+
 ## Relay job seams
 
 The records, frozen names and ports a relay job is answered through, and
