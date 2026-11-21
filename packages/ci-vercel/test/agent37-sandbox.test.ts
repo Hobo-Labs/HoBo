@@ -178,6 +178,15 @@ describe("Agent37 sandbox lifecycle", () => {
 		await expect(driver.discover(name)).rejects.toThrow(/not found/);
 	});
 
+	it("fails discovery when an existing instance template changed", async () => {
+		const { driver, fake } = await fixture();
+		await driver.create(configuration);
+		const instance = fake.state.instances[0];
+		if (!instance) throw new Error("instance missing");
+		instance.template = "agent37-unexpected";
+		await expect(driver.discover(name)).rejects.toThrow(/does not match/);
+	});
+
 	it("prepares the pinned runner archive as root with an idempotency name", async () => {
 		const { driver, fake } = await fixture();
 		await driver.create(configuration);

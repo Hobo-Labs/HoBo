@@ -75,7 +75,7 @@ The wrapper starts `node:24-alpine` with the same fake server. Unavailable Docke
 
 ## Contracts and validation
 
-`data-models/agent37_fake.proto` and `data-models/agent37_fake.cue` describe fake instance, exec, webhook, usage, and error records, with valid and invalid JSON fixtures. `contracts/pacts/agent37_sandbox_fake.pact.json` records hand-authored consumer expectations for create, exec, usage, and authentication failures. Runtime parser tests cross-check the JSON fixtures. No provider has verified the PACT document.
+`data-models/agent37_fake.proto` and `data-models/agent37_fake.cue` describe fake instance, exec, webhook, usage, and error records, with valid and invalid JSON fixtures. `contracts/pacts/agent37_sandbox_fake.pact.json` records hand-authored consumer expectations for create, exec, usage, and authentication failures. Runtime parser tests cross-check the JSON fixtures. PACT tests pin the five interaction descriptions, request methods, paths and authentication placeholders, and response statuses and bodies. Manifest tests pin unique document paths and canonical published-content digests. No provider has verified the PACT document.
 
 The client and fake are ephemeral HTTP adapters, not durable applications. They define no command or event family, actor, event store, materialized view or projection, snapshot, or read store. The fake discards its in-memory state when the server closes.
 

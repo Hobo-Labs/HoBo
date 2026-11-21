@@ -274,6 +274,15 @@ export function createAgent37SandboxDriver(
 				instance.metadata?.leaseId !== leaseId
 			)
 				throw new Error("agent37 instance not found");
+			const config: IsolatedSandboxConfiguration = {
+				name,
+				timeoutMs: (pool.idleTimeoutSeconds ?? 300) * 1000,
+				vcpus: pool.cpu ?? 2,
+				plan: "hobby",
+				forwardUrl: "https://ci.example.com/sandbox/egress",
+				allowedDomains: [],
+			};
+			verifyReusableInstance(instance, config, pool, leaseId);
 			return { sessionId: instance.id };
 		},
 		async prepare(name, sessionId) {

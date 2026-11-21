@@ -973,6 +973,8 @@ team issuer), and `HOBO_CI_SANDBOX_DOMAINS_JSON`
 (an explicit hostname allowlist). `HOBO_CI_SANDBOX_PROVIDER=agent37` selects
 the Agent37 guest driver instead of Vercel Sandbox (the default). Agent37
 receives an injected client and fails closed when driver options are absent.
+Discovery adopts only a running instance whose lease identity, pinned template,
+type, region, resources, and network still match the requested pool.
 The driver copies the domains into `network.allow` only after validating 1–100
 unique lowercase DNS hostnames or leading-label wildcards; URLs, addresses,
 empty lists, `allow-all`, and `deny-all` are refused. Wildcard bases require at
