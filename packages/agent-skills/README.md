@@ -18,9 +18,10 @@ a listing serves (boundary fixtured in
   sorted by name.
 - `checkSkillsConformance(root, options?)` — the bundle gate: every skill
   directory parses, no duplicate names, entry paths exist. Skills in the
-  optional `strictSkillNames` set (callers pass `HOBO_OWNED_SKILLS` for the
-  repo-local skills plus `hobo-setup`,
-  `hobo-deploy`, and `design-md`) are additionally held to the repository's
+  optional `strictSkillNames` set (`discoverHoboOwnedSkillNames` derives it
+  from skills not listed in `skills-lock.json` whose frontmatter uses only the
+  repo-owned field allowlist) are
+  additionally held to the repository's
   own frontmatter rules: only Agent Skills fields this repo controls, name
   equal to the folder, and `metadata` as a map of decoded, non-empty string
   values. Unrecognized non-comment top-level YAML lines fail closed instead of

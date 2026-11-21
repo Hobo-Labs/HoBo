@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -597,6 +597,11 @@ describe("checkAgentPlugin (integration)", () => {
 			versionFromReleaseTrain: undefined,
 		});
 		expect(report.issues).toEqual([]);
+		expect(
+			report.notes.some((note) =>
+				note.includes("skipped release-train comparison outside CI"),
+			),
+		).toBe(true);
 	});
 
 	it("rejects a newer manifest pin during PR validation", () => {
@@ -637,6 +642,28 @@ describe("checkAgentPlugin (integration)", () => {
 					note.includes("commitIsh=HEAD"),
 			),
 		).toBe(true);
+	});
+
+	it("uses a Bitwarden alias that throws instead of stubbing secrets", async () => {
+		const shimPath = path.join(
+			repoRoot,
+			"plugins/hobo/src/bitwarden-sdk-napi.mts",
+		);
+		const source = readFileSync(shimPath, "utf8");
+		expect(source).toMatch(/throw new Error/u);
+		expect(source).toMatch(/portable bundle cannot carry/u);
+		expect(source).not.toMatch(/secrets\(\)[^{]*\{[^}]*data:\s*\[\]/u);
+		const { BitwardenClient } = await import(pathToFileURL(shimPath).href);
+		const client = new BitwardenClient({});
+		try {
+			expect(client.secrets()).toEqual(
+				expect.objectContaining({ list: expect.any(Function) }),
+			);
+		} catch (error) {
+			expect(error).toBeInstanceOf(Error);
+			const message = error instanceof Error ? error.message : String(error);
+			expect(message).toMatch(/@bitwarden\/sdk-napi/u);
+		}
 	});
 
 	it("fails when a shipped skill drifts from its repo source", async () => {

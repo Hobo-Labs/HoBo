@@ -1,6 +1,12 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+const VENDOR_METADATA_KEYS: ReadonlySet<string> = new Set([
+	"short-description",
+	"tested-against",
+	"version",
+]);
+
 // The mirrored .agents/skills tree as a distributable module. Skills are static markdown content; this module parses them into the
 // typed manifest a Registry listing serves. Parse, don't validate: the
 // frontmatter lowers onto parsed derived types or throws — no boolean checks
@@ -75,15 +81,79 @@ export const HOBO_OWNED_ALLOWED_FIELDS: readonly string[] = Object.freeze([
 	"allowed-tools",
 ]);
 
-export const HOBO_OWNED_SKILLS: readonly string[] = Object.freeze([
-	"design-md",
-	"draft",
-	"hobo-deploy",
-	"hobo-setup",
-	"optimizexp",
-	"repo",
-	"sdlc",
-]);
+export function skillUsesHoboOwnedFrontmatter(
+	frontmatter: FrontmatterFields,
+): boolean {
+	for (const key of frontmatter.fields.keys()) {
+		if (!HOBO_OWNED_ALLOWED_FIELDS.includes(key)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function vendoredNamesFromLockJson(text: string): ReadonlySet<string> {
+	/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: skills-lock.json is untrusted JSON; only skill name keys are read after a shallow object check. */
+	const parsed: unknown = JSON.parse(text);
+	if (typeof parsed !== "object" || parsed === null) {
+		return new Set();
+	}
+	const skills =
+		"skills" in parsed ? parsed.skills : undefined;
+	if (typeof skills !== "object" || skills === null) {
+		return new Set();
+	}
+	return new Set(Object.keys(skills));
+	/* oxlint-enable anti-slop/no-runtime-typeof */
+}
+
+async function loadVendoredSkillNames(repoRoot: string): Promise<ReadonlySet<string>> {
+	try {
+		const text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
+		return vendoredNamesFromLockJson(text);
+	} catch {
+		return new Set();
+	}
+}
+
+function isRepoOwnedSkill(
+	skillName: string,
+	frontmatter: FrontmatterFields,
+	vendored: ReadonlySet<string>,
+): boolean {
+	if (vendored.has(skillName)) return false;
+	if (!skillUsesHoboOwnedFrontmatter(frontmatter)) return false;
+	const metadata = frontmatter.children.get("metadata");
+	if (metadata !== undefined) {
+		for (const key of metadata.keys()) {
+			if (VENDOR_METADATA_KEYS.has(key)) return false;
+		}
+	}
+	return true;
+}
+
+export async function discoverHoboOwnedSkillNames(
+	skillsRoot: string,
+	repoRoot: string,
+): Promise<readonly string[]> {
+	const vendored = await loadVendoredSkillNames(repoRoot);
+	const names: string[] = [];
+	for (const dirent of await readdir(skillsRoot, { withFileTypes: true })) {
+		if (!dirent.isDirectory()) continue;
+		const skillMd = join(skillsRoot, dirent.name, "SKILL.md");
+		try {
+			const markdown = await readFile(skillMd, "utf8");
+			const frontmatter = parseFrontmatterFields(markdown);
+			if (isRepoOwnedSkill(dirent.name, frontmatter, vendored)) {
+				names.push(dirent.name);
+			}
+		} catch {
+			continue;
+		}
+	}
+	names.sort();
+	return Object.freeze(names);
+}
 
 type YamlScalar =
 	| { readonly kind: "string"; readonly value: string }

@@ -8,17 +8,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	AGENT_SKILLS_MANIFEST_SCHEMA,
 	checkSkillsConformance,
-	HOBO_OWNED_SKILLS,
+	discoverHoboOwnedSkillNames,
 	loadSkillsManifest,
 	parseSkillFrontmatter,
 	SkillParseError,
 } from "../src/index.js";
 
 // The real mirrored tree this package distributes.
-const REPO_SKILLS_ROOT = path.resolve(
+const REPO_ROOT = path.resolve(
 	path.dirname(fileURLToPath(import.meta.url)),
-	"../../../.agents/skills",
+	"../../..",
 );
+const REPO_SKILLS_ROOT = path.join(REPO_ROOT, ".agents/skills");
 
 const scratches: string[] = [];
 afterEach(async () => {
@@ -129,7 +130,7 @@ describe("checkSkillsConformance", () => {
 	it("passes the repo's real tree with zero issues, strict set included", async () => {
 		expect(
 			await checkSkillsConformance(REPO_SKILLS_ROOT, {
-				strictSkillNames: HOBO_OWNED_SKILLS,
+				strictSkillNames: await discoverHoboOwnedSkillNames(REPO_SKILLS_ROOT, REPO_ROOT),
 			}),
 		).toEqual([]);
 	});
@@ -161,7 +162,7 @@ describe("checkSkillsConformance", () => {
 		});
 		expect(
 			await checkSkillsConformance(root, {
-				strictSkillNames: HOBO_OWNED_SKILLS,
+				strictSkillNames: await discoverHoboOwnedSkillNames(root, REPO_ROOT),
 			}),
 		).toEqual([]);
 	});
@@ -188,7 +189,7 @@ description: d
 			outsider: '---\nname: outsider\ndescription: d\n"legacy": x\n---\n',
 		});
 		const issues = await checkSkillsConformance(root, {
-			strictSkillNames: HOBO_OWNED_SKILLS,
+			strictSkillNames: ["hobo-setup", "hobo-deploy"],
 		});
 		expect(issues).toHaveLength(2);
 		expect(issues.map((issue) => issue.skill).sort()).toEqual([
@@ -222,7 +223,13 @@ description: d
 			outsider: `---\nname: ${secrets[0]}\n---\n`,
 		});
 		const issues = await checkSkillsConformance(root, {
-			strictSkillNames: HOBO_OWNED_SKILLS,
+			strictSkillNames: [
+				"hobo-setup",
+				"hobo-deploy",
+				"draft",
+				"repo",
+				"sdlc",
+			],
 		});
 		const codes = new Set(issues.map((issue) => issue.code));
 		for (const code of [
@@ -245,7 +252,7 @@ description: d
 			helper: "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",
 		});
 		const issues = await checkSkillsConformance(root, {
-			strictSkillNames: HOBO_OWNED_SKILLS,
+			strictSkillNames: ["helper"],
 		});
 		expect(
 			issues.some(
@@ -265,7 +272,7 @@ description: d
 			repo: "---\nname: repo\ndescription: d\nmetadata: scalar\n---\n",
 		});
 		const issues = await checkSkillsConformance(root, {
-			strictSkillNames: HOBO_OWNED_SKILLS,
+			strictSkillNames: ["hobo-setup", "hobo-deploy", "draft", "repo"],
 		});
 		const bySkill = new Map(issues.map((issue) => [issue.skill, issue.code]));
 		expect(bySkill.get("hobo-setup")).toBe("disallowed-frontmatter-field");
@@ -284,7 +291,7 @@ description: d
 				"---\nname: draft\ndescription: d\nmetadata:\n  version: \"1\"\n  enabled: 'true'\n---\n",
 		});
 		const issues = await checkSkillsConformance(root, {
-			strictSkillNames: HOBO_OWNED_SKILLS,
+			strictSkillNames: ["hobo-setup", "hobo-deploy", "draft"],
 		});
 		const invalid = issues.filter((issue) => issue.skill !== "draft");
 		expect(invalid).toHaveLength(3);
@@ -302,7 +309,7 @@ description: d
 				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  key: [value]\n---\n",
 		});
 		const issues = await checkSkillsConformance(root, {
-			strictSkillNames: HOBO_OWNED_SKILLS,
+			strictSkillNames: ["hobo-setup", "hobo-deploy"],
 		});
 		expect(issues).toHaveLength(2);
 		expect(issues.every((issue) => issue.code === "non-string-metadata")).toBe(
@@ -317,12 +324,16 @@ description: d
 		expect(await checkSkillsConformance(root)).toEqual([]);
 	});
 
-	it("keeps third-party skills outside the default strict set", () => {
+	it("derives HoBo-owned strict skills from the repo tree", async () => {
+		const owned = await discoverHoboOwnedSkillNames(
+			REPO_SKILLS_ROOT,
+			REPO_ROOT,
+		);
 		for (const thirdParty of ["impeccable", "unity-cli", "caveman"]) {
-			expect(HOBO_OWNED_SKILLS.includes(thirdParty)).toBe(false);
+			expect(owned.includes(thirdParty)).toBe(false);
 		}
-		expect(HOBO_OWNED_SKILLS).toContain("hobo-setup");
-		expect(HOBO_OWNED_SKILLS).toContain("hobo-deploy");
-		expect(HOBO_OWNED_SKILLS).toContain("design-md");
+		expect(owned).toContain("hobo-setup");
+		expect(owned).toContain("hobo-deploy");
+		expect(owned).toContain("design-md");
 	});
 });
