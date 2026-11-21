@@ -117,6 +117,13 @@ export type PostgresEventStoreOptions = Readonly<{
 	monotonicMs?: () => number;
 	/** Immutable schema-wide stream prefixes requiring a live actor lease. */
 	protectedActorStreamPrefixes?: readonly string[];
+	/**
+	 * Runs first in every transaction, on its connection: a fleet member checks
+	 * here that it is still the writer, so a write commits only while the
+	 * member's register says so (see `createPostgresFleetEventStore`). Throwing
+	 * aborts the transaction, and it is not retried.
+	 */
+	writeFence?: (client: PgClientLike) => Promise<void>;
 }>;
 
 export type StoreHealth = Readonly<{
@@ -425,6 +432,7 @@ export function createPostgresEventStore(
 			let broken = false;
 			try {
 				await client.query("BEGIN");
+				await options.writeFence?.(client);
 				const result = await fn(client);
 				await client.query("COMMIT");
 				return result;

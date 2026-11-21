@@ -1,23 +1,3 @@
-/**
- * The `github` step's minutes limit, measured (ADR-0183).
- *
- * `GithubMinutesReader` reads an owner's GitHub Actions usage this billing
- * month from GitHub's billing usage API and sets it against what the owner's
- * plan includes. The plan includes a dollar amount of compute, not a count of
- * minutes, so both sides are expressed in minutes of the standard Linux
- * runner: the dollars used and the dollars included, each divided by that
- * runner's price. The share the limit reads is then the share of included
- * compute used.
- *
- * Reading billing needs a permission the App may not have been given. A
- * refusal, a plan this table does not know, a network failure or a reply in
- * another shape all answer "unmeasured" (undefined) and never throw: a
- * missing measurement never blocks a routing step.
- *
- * The burn over the last two hours comes from the relay's own job facts,
- * because the billing API reports by day: `githubBilledMinutes` sums the
- * minutes GitHub-hosted jobs ran inside the window.
- */
 import type { JobFact, MinutesReader, MinutesUsage } from "@hobo/ci";
 import { isGithubHostedLabel } from "@hobo/ci";
 import { z } from "zod";
