@@ -91,7 +91,7 @@ The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/
 The repo-local **draft** skill lives in both `.agents/skills/draft` and `.claude/skills/draft`. Use it when creating, moving, or reviewing draft proof material. It replaces the old one-level draft convention with the four-layer taxonomy:
 
 - `src/draft/technical-proofs/<slug>` for isolated atomic technical concepts.
-- `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface) per [`src/draft/exp-proofs/_classification.md`](src/draft/exp-proofs/_classification.md).
+- `src/draft/exp-proofs/<type>/<slug>` for experience proofs, grouped by experience type (`dx` developer · `ux` user · `cx` customer · `ax` agent · `api` API/SDK surface). List them with `pnpm run draft:experiences`.
 - `src/draft/epic-proofs/<slug>` for isolated epic rollups that reuse technical and experience proofs.
 - `src/draft/projects/<slug>` for project MVP rollups that integrate epic proofs.
 
