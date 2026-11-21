@@ -66,6 +66,7 @@ import { redactProviderText } from "@hobo/provider-vercel";
 
 import {
 	isJsonArray,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -186,6 +187,23 @@ export interface VercelDeploymentResult {
 	readonly readyState?: string;
 	// The full parsed response body, for callers that need more than url/id.
 	readonly raw: JsonValue;
+}
+
+// One deployment of a project as the deployment list reports it: enough to
+// find the one a HoBo Freight staged (its `meta`) and to promote it.
+export interface VercelProjectDeployment {
+	readonly id: string;
+	// The deployment URL, with the https:// scheme.
+	readonly url: string;
+	// Vercel `readyState` (or `state`, as the list names it).
+	readonly readyState?: string;
+	// Vercel `target`: "production" for a production build (staged or live),
+	// absent for a preview.
+	readonly target?: string;
+	// The string entries of Vercel `meta` (what `vercel deploy --meta` set).
+	readonly meta: Readonly<Record<string, string>>;
+	// Vercel `created`, in epoch milliseconds.
+	readonly createdAt?: number;
 }
 
 // The minimal fetch surface this client depends on — a subset of the WHATWG
@@ -314,6 +332,30 @@ export interface VercelClient {
 	// its reason, rather than failing. Any other refusal, another 409 included,
 	// is a VercelApiError.
 	createProject(name: string): Promise<VercelProjectResult>;
+	// The id of the deployment the project's production domains serve now
+	// (Vercel project `targets.production.id`), or undefined when it has
+	// none. A project Vercel does not know is a VercelApiError (404).
+	productionDeploymentId(project: string): Promise<string | undefined>;
+	// The project's most recent deployments, newest first, one page of at most
+	// `limit` (default 20, at most 100). `target: "production"` keeps the
+	// production builds, staged or live.
+	listProjectDeployments(input: {
+		readonly project: string;
+		readonly target?: "production" | "preview";
+		readonly limit?: number;
+	}): Promise<readonly VercelProjectDeployment[]>;
+	// Point the project's production domains at `deploymentId` without a
+	// rebuild (POST /v10/projects/{project}/promote/{deploymentId}). The
+	// deployment must be a READY production build of the project, such as
+	// one `vercel deploy --prebuilt --prod --skip-domain` staged.
+	promoteDeployment(project: string, deploymentId: string): Promise<void>;
+	// Point production back at an earlier production deployment without a
+	// rebuild (POST /v1/projects/{project}/rollback/{deploymentId}).
+	rollbackProduction(
+		project: string,
+		deploymentId: string,
+		description?: string,
+	): Promise<void>;
 }
 
 const DEFAULT_BASE_URL = "https://api.vercel.com";
@@ -1120,6 +1162,35 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			fetchImpl(url, { method, headers: { Authorization: `Bearer ${token}` } }),
 		);
 
+	// A project id or name as a path segment: Vercel ids (`prj_…`) and names
+	// (letters, digits, `.`, `_`, `-`) only, so nothing else reaches the path.
+	function projectSegment(project: string) {
+		if (!project || !/^[A-Za-z0-9._-]+$/.test(project))
+			throw new Error("vercel-client: invalid project id or name");
+		return encodeURIComponent(project);
+	}
+	function deploymentSegment(deploymentId: string) {
+		if (!deploymentId || !/^[A-Za-z0-9_-]+$/.test(deploymentId))
+			throw new Error("invalid deployment receipt identity");
+		return encodeURIComponent(deploymentId);
+	}
+	// A POST with no body, as promote and rollback take; a transport that
+	// throws is a VercelTransportError naming `what`.
+	const postEmpty = (what: string, url: string): Promise<VercelFetchResponse> =>
+		untilAnswered(`${what} got no answer`, secrets, () =>
+			fetchImpl(url, {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}` },
+			}),
+		);
+	// `query` plus more parameters, team-scoped like every other request.
+	function withParams(params: Readonly<Record<string, string>>): string {
+		const search = new URLSearchParams(params);
+		if (teamId !== undefined) search.set("teamId", teamId);
+		const text = search.toString();
+		return text === "" ? "" : `?${text}`;
+	}
+
 	// A deployment's own URL, team-scoped like every other request.
 	function deploymentPath(deploymentId: string) {
 		if (!deploymentId || !/^[A-Za-z0-9_-]+$/.test(deploymentId))
@@ -1150,6 +1221,90 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	return {
 		getDeployment: readDeployment,
+		async productionDeploymentId(project: string) {
+			const what = "read project";
+			const response = await send(
+				what,
+				"GET",
+				`${baseUrl}/v9/projects/${projectSegment(project)}${query}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+			const payload = await payloadFrom(what, response);
+			const targets = payload.targets;
+			const production = isJsonObject(targets) ? targets.production : undefined;
+			const id = isJsonObject(production) ? production.id : undefined;
+			return isJsonString(id) && id !== "" ? id : undefined;
+		},
+		async listProjectDeployments(input) {
+			const what = "list deployments";
+			const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 20)));
+			const params: Record<string, string> = {
+				projectId: input.project,
+				limit: String(limit),
+				...(input.target !== undefined ? { target: input.target } : undefined),
+			};
+			projectSegment(input.project);
+			const response = await send(
+				what,
+				"GET",
+				`${baseUrl}/v6/deployments${withParams(params)}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+			const payload = await payloadFrom(what, response);
+			const list = isJsonArray(payload.deployments) ? payload.deployments : [];
+			const found: VercelProjectDeployment[] = [];
+			for (const entry of list) {
+				if (!isJsonObject(entry)) continue;
+				const id = isJsonString(entry.uid) ? entry.uid : entry.id;
+				if (!isJsonString(id) || id === "") continue;
+				const meta: Record<string, string> = {};
+				if (isJsonObject(entry.meta))
+					for (const [key, value] of Object.entries(entry.meta))
+						if (isJsonString(value)) meta[key] = value;
+				const state = isJsonString(entry.readyState)
+					? entry.readyState
+					: isJsonString(entry.state)
+						? entry.state
+						: undefined;
+				found.push({
+					id,
+					url: normalizeUrl(entry.url),
+					meta,
+					...(state !== undefined ? { readyState: state } : undefined),
+					...(isJsonString(entry.target)
+						? { target: entry.target }
+						: undefined),
+					...(isJsonNumber(entry.created)
+						? { createdAt: entry.created }
+						: undefined),
+				});
+			}
+			return found;
+		},
+		async promoteDeployment(project: string, deploymentId: string) {
+			const what = "promote deployment";
+			const response = await postEmpty(
+				what,
+				`${baseUrl}/v10/projects/${projectSegment(project)}/promote/${deploymentSegment(deploymentId)}${query}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+		},
+		async rollbackProduction(
+			project: string,
+			deploymentId: string,
+			description?: string,
+		) {
+			const what = "roll back production";
+			const response = await postEmpty(
+				what,
+				`${baseUrl}/v1/projects/${projectSegment(project)}/rollback/${deploymentSegment(deploymentId)}${withParams(
+					description !== undefined && description !== ""
+						? { description: description.slice(0, 200) }
+						: {},
+				)}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+		},
 		async deleteDeployment(deploymentId: string) {
 			const response = await send(
 				"delete deployment",
