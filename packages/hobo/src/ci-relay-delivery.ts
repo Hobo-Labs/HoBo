@@ -1091,11 +1091,11 @@ async function deliverWith(
 	let promotion: PromotionRecord | undefined = requested.value;
 	let last: ReconcileObservationRecord | undefined;
 	let lastState: PromotionState | undefined;
-	const terminalOutcome = (
+	const terminalOutcome = async (
 		terminal: PromotionRecord,
 		set: SetRecord | undefined,
 		handover: Readonly<Record<string, string>>,
-	): RelayDeliveryOutcome => {
+	): Promise<RelayDeliveryOutcome> => {
 		if (finalizationFailure !== undefined)
 			return {
 				ok: false,
@@ -1109,14 +1109,21 @@ async function deliverWith(
 			if (
 				finalizePromotion !== undefined &&
 				finalizedFreightId !== freight.freightId
-			)
-				return {
-					ok: false,
-					code: RELAY_DELIVERY_REFUSAL.incomplete,
-					message: `The promotion of ${freight.alias} reached PROMOTED without a successful finalizer run for this delivery.`,
+			) {
+				const failure = await finalizePromotion({
 					report: report(terminal, set),
 					handover,
-				};
+				});
+				if (failure !== undefined)
+					return {
+						ok: false,
+						code: failure.code,
+						message: failure.message,
+						realization: failure,
+						report: report(terminal, set),
+						handover,
+					};
+			}
 			return { ok: true, report: report(terminal, set), handover };
 		}
 		const verificationFailed = terminal.reasons.some((entry) =>

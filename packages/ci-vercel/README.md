@@ -326,9 +326,9 @@ and on `workflow_dispatch`:
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
    No repository variable or secret is read.
 2. *Verify the secret store connection*: with `permissions: id-token: write`
-   the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
-   only — role shape not asserted), then revokes the token, and reports it pass or
-   fail by name (`hobo ci secret-store verify`).
+   the job reads its scoped Vercel credential as `hobo-ci-deploy` (GitHub OIDC),
+   then revokes the store session and reports the identities by name
+   (`hobo ci secret-store verify`). `hobo-ci-relay` is not-run in this job.
 3. *Deliver the relay through HoBo CD*: `hobo ci deploy` reads the Vercel
    credential from the separate deploy project using the job's OIDC identity,
    creates and verifies the pinned preview, then stages the same commit with
@@ -340,8 +340,10 @@ and on `workflow_dispatch`:
    A lost promotion response is ambiguous, so HoBo re-reads that target and
    continues only when it names the staged candidate; a missing target or failed
    read returns the promotion failure instead of accepting same-commit health as
-   proof. Finalization resumes from the journal's durable handover and recognizes
-   a candidate already assigned to production instead of promoting it again.
+   proof. Finalization is idempotent: a retry of an already-terminal promotion
+   reconciles it from the journal's durable handover, recognizes a candidate
+   already assigned to production instead of promoting it again, and rechecks
+   the public origin before reporting success.
    Failed live verification restores the previous deployment when production
    still names the rejected candidate, reports `completed`, and leaves a
    concurrently superseded target untouched. `failed` or `unknown` requires the

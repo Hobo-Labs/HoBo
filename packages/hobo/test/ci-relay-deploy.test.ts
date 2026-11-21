@@ -125,8 +125,7 @@ async function deploy(
 			? undefined
 			: async () =>
 					Response.json({
-						value:
-							"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+						value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
 					}));
 	const cli = createHoboCli({
 		commands: {
@@ -1546,7 +1545,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			};
 		};
 		let failAcknowledgement = true;
-		const failedSteps: string[] = [];
+		const interruptedPromotions: string[] = [];
 		const openStore: CdStoreOpener = async (
 			selection,
 			storeClock,
@@ -1555,19 +1554,24 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			const opened = await openCdStore(selection, storeClock, readSecret);
 			const append = opened.store.append.bind(opened.store);
 			opened.store.append = async (streamId, events, options) => {
-				if (failAcknowledgement)
-					for (const event of events)
-						if (
-							event.type === "saga.StepEmitted" &&
-							isJsonObject(event.data) &&
-							String(event.data.step).endsWith("|after-qualified")
-						) {
-							failedSteps.push(String(event.data.step));
-							throw new Error("interrupted after promotion");
-						}
+				if (
+					failAcknowledgement &&
+					events.some((event) => event.type === "env.Promoted")
+				) {
+					await append(streamId, events, options);
+					interruptedPromotions.push(streamId);
+					throw new Error("interrupted after promotion");
+				}
 				return append(streamId, events, options);
 			};
-			return opened;
+			return {
+				...opened,
+				async close() {
+					await opened.close();
+					if (failAcknowledgement && interruptedPromotions.length > 0)
+						throw new Error("process interrupted");
+				},
+			};
 		};
 		const run = () => {
 			const credentials = createTrustedVault();
@@ -1586,16 +1590,12 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				probe,
 				openStore,
 				now: clock.now,
-				sleep: async (ms) => {
-					if (failAcknowledgement && failedSteps.length > 0)
-						throw new Error("process interrupted");
-					await clock.sleep(ms);
-				},
+				sleep: clock.sleep,
 				emitProgress: () => {},
 			});
 		};
 		await expect(run()).rejects.toThrow("process interrupted");
-		expect(failedSteps.length).toBeGreaterThan(0);
+		expect(interruptedPromotions.length).toBeGreaterThan(0);
 		expect(promotions).toBe(1);
 		expect(vercel.deploymentBodies).toHaveLength(1);
 		failAcknowledgement = false;

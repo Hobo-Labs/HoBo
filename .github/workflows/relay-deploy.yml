@@ -86,10 +86,10 @@ jobs:
           pnpm exec turbo run build \
             --filter=@hobo/hobo... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # Pass/fail by identity name: hobo-ci-deploy reads VERCEL_TOKEN from the
-      # deploy project with this job's GitHub OIDC token, then revokes its store
-      # session. hobo-ci-relay is not-run here; Vercel OIDC is proved by
-      # production's /readyz below.
+      # Pass/fail by identity name: hobo-ci-deploy reads its scoped deployment
+      # credential from the deploy project with this job's GitHub OIDC token,
+      # then revokes its store session. hobo-ci-relay is not-run here; Vercel
+      # OIDC is proved by production's /readyz below.
       - name: Verify the secret store connection
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -128,9 +128,11 @@ jobs:
             node packages/hobo/dist/bin/hobo.js ci deploy \
               --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
               --target "$target" --wait --deadline "$DEPLOY_DEADLINE" \
-              --json > "$RUNNER_TEMP/relay-${target}.json" || status=$?
+              --json > "$RUNNER_TEMP/relay-${target}.json" \
+              2> "$RUNNER_TEMP/relay-${target}.stderr" || status=$?
             node --import tsx scripts/ci/relay-deploy-result-report.mts \
-              "$RUNNER_TEMP/relay-${target}.json" "$target" | tee -a "$GITHUB_STEP_SUMMARY"
+              "$RUNNER_TEMP/relay-${target}.json" "$target" \
+              "$RUNNER_TEMP/relay-${target}.stderr" "$status" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ "$status" -ne 0 ]; then exit "$status"; fi
           done
       # The hosted relay's fleet verdict (ADR-0180) at its public origin. Route
@@ -221,7 +223,9 @@ jobs:
           node packages/hobo/dist/bin/hobo.js ci app deposit \
             --cwd packages/ci-vercel \
             --relay "$RELAY_ORIGIN" --owner-id "$APP_OWNER_ID" \
-            --json > "$RUNNER_TEMP/app-deposit.json" || status=$?
+            --json > "$RUNNER_TEMP/app-deposit.json" \
+            2> "$RUNNER_TEMP/app-deposit.stderr" || status=$?
           node --import tsx scripts/ci/relay-deploy-result-report.mts \
-            "$RUNNER_TEMP/app-deposit.json" "app-deposit" | tee -a "$GITHUB_STEP_SUMMARY"
+            "$RUNNER_TEMP/app-deposit.json" "app-deposit" \
+            "$RUNNER_TEMP/app-deposit.stderr" "$status" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"

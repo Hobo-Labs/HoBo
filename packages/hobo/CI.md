@@ -566,7 +566,10 @@ The workflow calls
 `scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines
 and emit `::error::`; `scripts/ci/relay-deploy-result-report.mts` reports deploy
 and App-deposit envelopes. Both use the shared provider redactor for JWTs,
-credentials and long token runs. On Infisical OIDC failure, verify appends
+credentials and long token runs. Deploy and App-deposit stderr is captured and
+printed only through that redactor. A missing or malformed result envelope fails
+the step, while a failed command retains its original exit status. On Infisical
+OIDC failure, verify appends
 `oidc_sub` and `oidc_aud` from the same memoized workload JWT used for sign-in
 (GitHub OIDC audience `https://github.com/Hobo-Labs`) so the dashboard trust can
 be matched.

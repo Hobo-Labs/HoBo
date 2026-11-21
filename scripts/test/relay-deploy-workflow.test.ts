@@ -267,7 +267,9 @@ describe("the relay deploy workflow", () => {
 const target = process.argv[process.argv.indexOf("--target") + 1];
 fs.appendFileSync(process.env.CALLS, target + "\\n");
 const failed = target === process.env.FAIL_TARGET;
-process.stdout.write(JSON.stringify({code: failed ? "HOBO_TEST_REFUSED" : "HOBO_OK", message: failed ? "deployment unavailable VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123" : "delivered"}));
+const malformed = failed && process.env.MALFORMED === "true";
+if (failed) process.stderr.write("provider diagnostic VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123\\n");
+process.stdout.write(malformed ? "{not json VERCEL_TOKEN=supersecretvalue1" : JSON.stringify({code: failed ? "HOBO_TEST_REFUSED" : "HOBO_OK", message: failed ? "deployment unavailable VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123" : "delivered"}));
 process.exitCode = failed ? 27 : 0;`,
 			);
 			const lines = step("Deliver the relay through HoBo CD").split("\n");
@@ -278,41 +280,56 @@ process.exitCode = failed ? 27 : 0;`,
 				.map((line) => line.replace(/^ {10}/u, ""))
 				.join("\n");
 			for (const failedTarget of ["preview", "production"]) {
-				const summary = join(work, `summary-${failedTarget}.md`);
-				const calls = join(work, `calls-${failedTarget}.txt`);
-				const result = spawnSync(
-					"bash",
-					["-e", "-o", "pipefail", "-c", script],
-					{
-						cwd: work,
-						encoding: "utf8",
-						env: {
-							...process.env,
-							RUNNER_TEMP: work,
-							GITHUB_STEP_SUMMARY: summary,
-							GITHUB_SHA: "test",
-							GITHUB_REF_NAME: "main",
-							DEPLOY_DEADLINE: "2099-01-01T00:00:00.000Z",
-							FAIL_TARGET: failedTarget,
-							CALLS: calls,
+				for (const malformed of [false, true]) {
+					const scenario = `${failedTarget}-${malformed}`;
+					const summary = join(work, `summary-${scenario}.md`);
+					const calls = join(work, `calls-${scenario}.txt`);
+					const result = spawnSync(
+						"bash",
+						["-e", "-o", "pipefail", "-c", script],
+						{
+							cwd: work,
+							encoding: "utf8",
+							env: {
+								...process.env,
+								RUNNER_TEMP: work,
+								GITHUB_STEP_SUMMARY: summary,
+								GITHUB_SHA: "test",
+								GITHUB_REF_NAME: "main",
+								DEPLOY_DEADLINE: "2099-01-01T00:00:00.000Z",
+								FAIL_TARGET: failedTarget,
+								MALFORMED: String(malformed),
+								CALLS: calls,
+							},
 						},
-					},
-				);
-				assert.equal(result.status, 27, result.stderr);
-				assert.match(result.stdout, /HOBO_TEST_REFUSED/u);
-				assert.match(result.stdout, /\[redacted\]/u);
-				assert.doesNotMatch(
-					result.stdout,
-					/supersecretvalue1|abc\.def-ghi_123/u,
-				);
-				const summaryText = readFileSync(summary, "utf8");
-				assert.match(summaryText, /HOBO_TEST_REFUSED/u);
-				assert.match(summaryText, /\[redacted\]/u);
-				assert.doesNotMatch(summaryText, /supersecretvalue1|abc\.def-ghi_123/u);
-				assert.equal(
-					readFileSync(calls, "utf8"),
-					failedTarget === "preview" ? "preview\n" : "preview\nproduction\n",
-				);
+					);
+					assert.equal(result.status, 27, result.stderr);
+					assert.match(
+						result.stdout,
+						malformed ? /HOBO_CI_DEPLOY_NO_ENVELOPE/u : /HOBO_TEST_REFUSED/u,
+					);
+					assert.match(result.stdout, /provider diagnostic/u);
+					assert.match(result.stdout, /\[redacted\]/u);
+					assert.doesNotMatch(
+						result.stdout,
+						/supersecretvalue1|abc\.def-ghi_123/u,
+					);
+					assert.doesNotMatch(
+						result.stderr,
+						/supersecretvalue1|abc\.def-ghi_123/u,
+					);
+					const summaryText = readFileSync(summary, "utf8");
+					assert.match(summaryText, /provider diagnostic/u);
+					assert.match(summaryText, /\[redacted\]/u);
+					assert.doesNotMatch(
+						summaryText,
+						/supersecretvalue1|abc\.def-ghi_123/u,
+					);
+					assert.equal(
+						readFileSync(calls, "utf8"),
+						failedTarget === "preview" ? "preview\n" : "preview\nproduction\n",
+					);
+				}
 			}
 		} finally {
 			rmSync(work, { recursive: true, force: true });
