@@ -307,3 +307,93 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 });
+
+describe("pr-fabric reuse routing", () => {
+	const hoboCi = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
+	const routeAction = workflowDocument(
+		readFileSync(".github/actions/route-runner/action.yml", "utf8"),
+	);
+
+	const routeJob = () =>
+		asObject(asObject(workflowDocument(hoboCi).jobs)?.route);
+
+	const routeSteps = () =>
+		asList(routeJob()?.steps)?.map(asObject) ?? [];
+
+	const compositeSteps = () =>
+		asList(asObject(routeAction.runs)?.steps)?.map(asObject) ?? [];
+
+	it("limits the hobo-ci route job to reading Actions and repository contents", () => {
+		assert.deepEqual(asObject(routeJob()?.permissions), {
+			actions: "read",
+			contents: "read",
+		});
+		const keys = Object.keys(asObject(routeJob()?.permissions) ?? {});
+		assert.deepEqual(keys.sort(), ["actions", "contents"]);
+	});
+
+	it("loads pr-fabric-reuse only from the trusted base sparse checkout", () => {
+		const steps = routeSteps();
+		const trusted = steps.find(
+			(step) => asObject(step?.with)?.path === ".ci-trusted",
+		);
+		const candidate = steps.find(
+			(step) =>
+				asText(step?.uses)?.startsWith("actions/checkout@") &&
+				!asObject(step?.with)?.path,
+		);
+		assert.ok(trusted && candidate);
+		const trustedSparse =
+			asText(asObject(trusted.with)?.["sparse-checkout"]) ?? "";
+		const candidateSparse =
+			asText(asObject(candidate.with)?.["sparse-checkout"]) ?? "";
+		assert.ok(
+			trustedSparse.split(/\s+/u).includes("scripts/ci/pr-fabric-reuse.mts"),
+		);
+		assert.equal(
+			candidateSparse.includes("scripts/ci/pr-fabric-reuse.mts"),
+			false,
+		);
+	});
+
+	it("maps the composite pr-fabric reuse bit to the route job output", () => {
+		assert.match(
+			hoboCi,
+			/^\s+pr-fabric-green: \$\{\{ steps\.route\.outputs\.pr-fabric-green \}\}/mu,
+		);
+		const outputs = asObject(routeAction.outputs);
+		assert.equal(
+			asText(outputs?.["pr-fabric-green"]?.value),
+			"${{ steps.pr-fabric.outputs.reuse || 'false' }}",
+		);
+	});
+
+	it("runs pr-fabric reuse after attestation and only on merge groups", () => {
+		const ids = compositeSteps().map((step) => asText(step?.id));
+		const attestAt = ids.indexOf("attest");
+		const prFabricAt = ids.indexOf("pr-fabric");
+		assert.ok(attestAt >= 0 && prFabricAt > attestAt);
+		const shell = asText(
+			compositeSteps().find((step) => step?.id === "pr-fabric")?.run,
+		);
+		assert.ok(shell);
+		assert.match(shell, /GITHUB_EVENT_NAME.*merge_group/s);
+		assert.match(
+			shell,
+			/script="\$\{action_root\}\/scripts\/ci\/pr-fabric-reuse\.mts"/u,
+		);
+		assert.match(shell, /"\$\{node_bin\}" --no-warnings "\$\{script\}"/u);
+		assert.doesNotMatch(
+			shell,
+			/"[^"]*" --no-warnings scripts\/ci\/pr-fabric-reuse\.mts/u,
+		);
+		assert.match(
+			shell,
+			/action_root="\$\(cd "\$\{GITHUB_ACTION_PATH\}\/\.\.\/\.\.\/\.\." && pwd -P\)"/u,
+		);
+		const env = asObject(
+			compositeSteps().find((step) => step?.id === "pr-fabric")?.env,
+		);
+		assert.equal(asText(env?.GITHUB_TOKEN), "${{ inputs.token }}");
+	});
+});
