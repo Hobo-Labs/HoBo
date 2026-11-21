@@ -115,6 +115,33 @@ function moneyDecimal(money: Money | undefined, path: string): Decimal {
 	return requiredDecimal(money.decimal, path);
 }
 
+function validateRateCardAmounts(rateCard: RateCard): void {
+	const check = (amount: Money | undefined, path: string) => {
+		requireCurrency(amount, rateCard.currency, path);
+		if (compareDecimal(moneyDecimal(amount, path), DECIMAL_ZERO) < 0)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				`${path} cannot be negative`,
+			);
+	};
+	for (const charge of rateCard.charges) {
+		if (charge.variant.case === "fixed") {
+			check(charge.variant.value.amount, "fixed amount");
+		} else if (charge.variant.case === "usage") {
+			const price = charge.variant.value.price;
+			if (price.case === "perUnit") check(price.value, "per-unit price");
+			else if (price.case === "package")
+				check(price.value.packageAmount, "package amount");
+			else if (price.case === "graduated" || price.case === "volume") {
+				for (const tier of price.value.tiers) {
+					check(tier.flatAmount, "tier flat amount");
+					check(tier.unitAmount, "tier unit amount");
+				}
+			}
+		}
+	}
+}
+
 function requireCurrency(
 	money: Money | undefined,
 	currency: string,
@@ -733,15 +760,24 @@ function applyCredits(
 					`credit ${grant.id} basis is unsupported`,
 				);
 			}
-			const availableBasis = moneyDecimal(
-				creditState.remainingBasis,
-				"remaining basis",
-			);
-			if (strictBasis && compareDecimal(basis, availableBasis) > 0)
-				throw new PricingFault(
-					"INVALID_PRICING_INPUT",
-					`credit ${grant.id} does not have enough remaining basis`,
+			if (strictBasis) {
+				requireCurrency(
+					creditState.remainingBasis,
+					rateCard.currency,
+					"remaining basis",
 				);
+				if (
+					compareDecimal(
+						basis,
+						moneyDecimal(creditState.remainingBasis, "remaining basis"),
+					) > 0
+				) {
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						`credit ${grant.id} has insufficient remaining basis`,
+					);
+				}
+			}
 			line.billed = subtractDecimal(line.billed, consumed);
 			line.dueNow = maxDecimal(
 				subtractDecimal(line.dueNow, consumed),
@@ -840,6 +876,7 @@ export function rateSnapshot(
 	timeOrder: PricingTimeOrder = legacyPricingTimeOrder,
 	time: TemporalPolicy = LEGACY_TIME,
 	strictTimes = false,
+	strictSourceValues = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -875,6 +912,7 @@ export function rateSnapshot(
 			timeOrder,
 			time,
 		);
+		if (strictSourceValues) validateRateCardAmounts(rateCard);
 		if (
 			timeOrder === utcPricingTimeOrder &&
 			rateCard.charges.some(
@@ -1064,6 +1102,17 @@ export function rateSnapshot(
 		const agreementLines = lines.filter(
 			(line) => line.agreementRef === agreementRef,
 		);
+		if (
+			strictSourceValues &&
+			agreementLines.some(
+				(line) => compareDecimal(line.billed, DECIMAL_ZERO) < 0,
+			)
+		) {
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"gross charge cannot be negative",
+			);
+		}
 		applyCommitments(
 			state,
 			agreement,
@@ -1071,7 +1120,7 @@ export function rateSnapshot(
 			agreementLines,
 			consumption,
 			scenario,
-			timeOrder === utcPricingTimeOrder,
+			strictSourceValues || timeOrder === utcPricingTimeOrder,
 		);
 		applyCredits(
 			state,
@@ -1079,7 +1128,7 @@ export function rateSnapshot(
 			rateCard,
 			agreementLines,
 			consumption,
-			timeOrder === utcPricingTimeOrder,
+			strictSourceValues || timeOrder === utcPricingTimeOrder,
 		);
 	}
 	const finalized = lines.map((line) => finalizeLine(line, currency));

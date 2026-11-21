@@ -58,9 +58,10 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v1"
 	| "pricing-rating/v2"
 	| "pricing-rating/v3"
-	| "pricing-rating/v4";
+	| "pricing-rating/v4"
+	| "pricing-rating/v5";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v4";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v5";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function unsupportedRealm(): PricingRejected {
@@ -241,7 +242,8 @@ export function quoteScenario(
 		version !== "pricing-rating/v1" &&
 		version !== "pricing-rating/v2" &&
 		version !== "pricing-rating/v3" &&
-		version !== "pricing-rating/v4"
+		version !== "pricing-rating/v4" &&
+		version !== "pricing-rating/v5"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -278,7 +280,8 @@ function quoteWithOrdering(
 ): QuoteResult {
 	const strictTimes =
 		ratingAlgorithmVersion === "pricing-rating/v3" ||
-		ratingAlgorithmVersion === "pricing-rating/v4";
+		ratingAlgorithmVersion === "pricing-rating/v4" ||
+		ratingAlgorithmVersion === "pricing-rating/v5";
 	const time: TemporalPolicy = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	if (!isBoundedPricingInput(scenario))
@@ -291,7 +294,9 @@ function quoteWithOrdering(
 		validateScenarioState(
 			scenario,
 			time,
-			ratingAlgorithmVersion === "pricing-rating/v4",
+			ratingAlgorithmVersion === "pricing-rating/v4" ||
+				ratingAlgorithmVersion === "pricing-rating/v5",
+			ratingAlgorithmVersion === "pricing-rating/v5",
 			timeOrder === utcPricingTimeOrder,
 		);
 		if (timeOrder === utcPricingTimeOrder) {
@@ -369,6 +374,7 @@ function quoteWithOrdering(
 			timeOrder,
 			time,
 			strictTimes,
+			ratingAlgorithmVersion === "pricing-rating/v5",
 		);
 		const candidate = rateSnapshot(
 			scenario,
@@ -377,6 +383,7 @@ function quoteWithOrdering(
 			timeOrder,
 			time,
 			strictTimes,
+			ratingAlgorithmVersion === "pricing-rating/v5",
 		);
 		if (
 			candidate.currency.length === 0 ||
@@ -407,7 +414,7 @@ function quoteWithOrdering(
 		});
 		const initial = create(QuoteVectorSchema, {
 			schema: "hobo.pricing.quote/v1",
-		ratingAlgorithmVersion,
+			ratingAlgorithmVersion,
 			pricingCatalogHash: scenario.pricingCatalogHash,
 			capabilityCatalogHash: EMPTY_CAPABILITY_HASH,
 			stateHash: state.stateHash,
