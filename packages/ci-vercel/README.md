@@ -977,10 +977,7 @@ transits the Agent37 exec HTTPS body only in a dedicated `jit-<leaseId>` exec
 that writes `~/.hobo-ci-jit`; the background `start-<leaseId>` exec uses a
 constant script with no embedded payload. The JIT is single-use under GitHub's
 runner registration TTL. A relay pull-mode claim (guest fetches JIT from the
-relay instead of exec push) remains future work. The Agent37 driver does not
-install a separate proxy VM: egress is enforced with the instance `network.allow`
-list copied from `HOBO_CI_SANDBOX_DOMAINS_JSON`, not the Vercel-side proxy gate.
-GitHub runner setup, checkout, Node setup,
+relay instead of exec push) remains future work. GitHub runner setup, checkout, Node setup,
 and artifact transfer can require `github.com`, `api.github.com`,
 `codeload.github.com`, `raw.githubusercontent.com`, `nodejs.org`,
 `release-assets.githubusercontent.com`, `*.actions.githubusercontent.com`,
