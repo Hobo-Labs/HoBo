@@ -10,6 +10,8 @@ Yard and `vercel.json` from the selected commit, then delivers that same tree.
 It refuses if that tree cannot be inspected, contains symlinks or submodules,
 exceeds 5,000 files or 32 MiB, or cannot load its installed dependencies. These
 limits apply to the relay project's committed files, not the working tree.
+HoBo manages this deployment; the Vercel project is intentionally not linked
+to Git for automatic deployment.
 
 ## Connect once
 
@@ -275,13 +277,16 @@ and why. `--apply` rewrites the jobs named (`job`, `file:job`, or `all`) and
 nothing else: only the `runs-on` value changes, every other byte of the file
 is kept, and the old label stays as a trailing `# was ...` comment so the
 change can be undone by hand. A workflow that changes or becomes unreadable
-after planning is left alone. Nothing is committed.
+after planning is left alone. Any refused selection, including an unreadable
+workflow, makes the apply exit non-zero; a partial apply reports both the jobs
+rewritten and those refused. Nothing is committed.
 
 A job is left alone when it calls another workflow, takes `runs-on` from an
 expression, names a runner group or several labels, asks for Windows, macOS
 or ARM, already runs on a hosted provider's or a self-hosted label, or decides
-where other jobs run (another job's `runs-on` reads its outputs: a routing job
-has to start even when the fleet cannot). A YAML value shared by an anchor is
+where other jobs run (another job's `runs-on`, a matrix, or reusable-workflow
+inputs read its outputs, including through YAML merge keys: a routing job has
+to start even when the fleet cannot). A YAML value shared by an anchor is
 left alone when changing it would affect another part of the workflow. A job
 that uses an environment, any write permission, or a secret other than `GITHUB_TOKEN`
 is left alone unless `--include-secret-jobs` is passed. A ready job can carry
@@ -310,11 +315,16 @@ runner: jobs, share started, median wait, median and p90 run time, share
 passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
 or a larger attempt is reported as an error instead of a partial result.
 `diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
-each log and its annotations, and prints the first failed step, what kind of
-failure it looks like, whether a re-run is likely to help, and the log lines
-leading up to the last error. The rules are fixed pattern tables in
-`@hobo/ci/insights`; no log text leaves the machine. A job whose log cannot be
-read is still diagnosed from its steps.
+each log and every annotation page of the check run identified by
+`check_run_url`, and prints the first failed step, what kind of failure it
+looks like, whether a re-run is likely to help, and the log lines leading up to
+the last error. A log, annotation, or check-run identity read failure fails the
+command rather than producing a partial diagnosis. If the GitHub CLI truncates
+a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+job's JSON result. Human-readable reports remove terminal escape sequences,
+control characters, and bidirectional overrides from GitHub metadata, logs, and
+annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log
+text leaves the machine.
 
 ## Route a job against the runner order
 
@@ -328,10 +338,11 @@ hobo ci route --github ubuntu-24.04 --depot auto --facts facts.json --json
 `runnerOrder` in `.hobo/ci.json` (the default order, fleet then machines then
 GitHub-hosted, when there is none), the label the job would ask each runner
 type for, and every step passed over with its reason. It contacts nothing.
-`--facts` names a JSON file saying what is true now (fleet room, machines,
-minutes used, money spent, tripped runner types); without it the fleet and
-machines are absent and no limit is measured. When nothing can take the job
-the command exits non-zero with `HOBO_CI_NO_RUNNER` and the reason. A
+`--facts` names a JSON file, relative to the checkout or absolute, saying what
+is true now (fleet room, machines, minutes used, money spent, tripped runner
+types); without it the fleet and machines are absent and no limit is measured.
+When nothing can take the job the command exits non-zero with
+`HOBO_CI_NO_RUNNER` and the reason. A
 committed order that breaks a rule is refused with
 `HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default. An
 existing configuration that cannot be read, including a dangling file link,

@@ -102,12 +102,13 @@ function startServer(env: NodeJS.ProcessEnv) {
 }
 
 describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
-	it("cd up in one call: every owner step a form carrying its link, nothing relayed", async () => {
+	it("cd up with an existing journal: every owner step is a private form", async () => {
 		const config = mkdtempSync(path.join(tmpdir(), "hobo-smoke-config-"));
 		// The providers at their real hostnames, behind an inspecting proxy
 		// that trusts only its own CA: real-internet egress, or egress that
 		// bypasses the proxy, fails instead of passing silently.
 		const api = await startFakeInfisical("org-1");
+		api.seedJournalFleet();
 		const vercel = fakeVercel();
 		const neon = fakeNeon();
 		const world = await startTlsWorld({
@@ -218,20 +219,33 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			trail.push(`cd: ${fourth.slice(0, 900)}`);
 			expect(fourth).not.toContain(copied);
 			expect(world.blocked).toEqual([]);
-			// Every provider call went through the box's proxy: a call that
-			// bypassed it (Node's global fetch ignores HTTPS_PROXY) would reach
-			// the internet directly, or fail on an enterprise network.
-			expect(world.requests).toContainEqual(
+			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
-			// Nothing more is asked of the owner: no sign-in, approval, store or
-			// hand-off refusal remains. What follows is the CD project's own
-			// convergence (see the todo below).
+			expect(fourth).toContain("HOBO_OK");
+			expect(fourth).toContain(
+				"hobo cd up deployed 4 resources (cd-api, cd-config, cd-journal, cd-tick)",
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
+				),
+			).toHaveLength(1);
+			expect(world.requests).toContainEqual(
+				expect.stringMatching(
+					/^app\.infisical\.com POST \/api\/v1\/projects\/proj-1\/identities$/u,
+				),
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v10\/projects\/hobo-cd\/env\b/u.test(
+						request,
+					),
+				),
+			).toHaveLength(5);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
-			// Runtime verification: every property derived from the ceremony's
-			// spec holds on this real run, and it reached the frontier.
 			const events = eventsFromWire(server.wire);
 			const verdicts = [
 				...ceremonyProperties({ secrets: [copied, jwt] }),
@@ -322,12 +336,4 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			await api.close();
 		}
 	}, 120_000);
-
-	// The CD project's own declaration (packages/hobo-cd/src/bindle.ts) says
-	// its resources must be wired before it can deploy: the API has no handler
-	// binding, the schedule no cadence, and cd-config / cd-journal no
-	// providers in the composed runtime. The plan is rejected there today.
-	it.todo(
-		"cd up converges the CD project after the ceremony (the hobo-cd Bindle is not deployable yet)",
-	);
 });

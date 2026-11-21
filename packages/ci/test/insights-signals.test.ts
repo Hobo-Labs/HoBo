@@ -862,6 +862,17 @@ describe("docs-changes", () => {
 		}
 	});
 
+	it("does not mistake a Docker workflow for a documentation workflow", () => {
+		const signal = signalOf(
+			[pullRequest({ workflow: "Docker", changedPaths: ["README.md"] })],
+			"docs-changes",
+		);
+		expect(signal.occurrences).toBe(1);
+		expect(signal.rows).toEqual([
+			{ key: "Docker", minutes: 8, occurrences: 1 },
+		]);
+	});
+
 	it("leaves out runs that are not for a pull request", () => {
 		expect(
 			signalOf(

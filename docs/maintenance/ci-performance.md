@@ -37,6 +37,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
+- **Scripts test shards.** When scripts, root tests, or workflows change, the PR and merge-group gate requires all four deterministic scripts-test shards. Vitest and `node:test` file workers both respect `HOBO_TEST_MAX_WORKERS`. Shards can queue on a single runner; they add setup and build work, so measure total wall time as well as each shard's runtime. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md) for the worker-budget limits.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
@@ -566,7 +567,11 @@ selection and fallback execution. These TypeScript changes add no Protobuf or
 CUE contract. Live observation of the fleet-to-signoff decision and GitHub
 acceptance of these statuses remains separate evidence.
 
-Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `pr-offpath`,
+`pr_gate_plan` uses node builtins only and resolves the base, scope, and shard matrix
+without installing dependencies. `pr_gate_validation` runs S0 and PR-only checks while
+`workspace_tests` and `pr_affected` start from that plan without waiting for validation.
+
+Covered: `pr_gate_plan`, `pr_gate_validation`, `workspace_tests`, `pr_affected`, `scripts-tests`, `pr-offpath`,
 `artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
 `release-contract` in `release-hobo.yml` when no release image is affected. Not
 covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route

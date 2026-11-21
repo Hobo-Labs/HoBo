@@ -60,11 +60,17 @@ export const RunnerOrderDocumentSchema = z
 
 const Envelope = z.looseObject({ runnerOrder: z.json().optional() });
 
-export type CommittedRunnerOrder = Readonly<{
-	order: ParsedRunnerOrder;
-	source: "committed" | "default";
-	problem: string;
-}>;
+export type CommittedRunnerOrder =
+	| Readonly<{
+			order: ParsedRunnerOrder;
+			source: "committed" | "default";
+			problem: "";
+	  }>
+	| Readonly<{
+			order: undefined;
+			source: "invalid";
+			problem: string;
+	  }>;
 
 export function parseCiRunnerOrder(json: string): CommittedRunnerOrder {
 	const missing: CommittedRunnerOrder = {
@@ -76,17 +82,30 @@ export function parseCiRunnerOrder(json: string): CommittedRunnerOrder {
 	try {
 		value = z.json().parse(JSON.parse(json));
 	} catch {
-		return { ...missing, problem: "the project file is not JSON" };
+		return {
+			order: undefined,
+			source: "invalid",
+			problem: "the project file is not JSON",
+		};
 	}
 	const envelope = Envelope.safeParse(value);
 	if (!envelope.success)
-		return { ...missing, problem: "the project file is not a JSON object" };
+		return {
+			order: undefined,
+			source: "invalid",
+			problem: "the project file is not a JSON object",
+		};
 	if (envelope.data.runnerOrder === undefined) return missing;
 	const committed = JSON.stringify(envelope.data.runnerOrder);
-	const problem = orderProblem(committed);
-	if (problem.length > 0) return { ...missing, problem };
+	const parsed = RunnerOrderDocumentSchema.safeParse(envelope.data.runnerOrder);
+	if (!parsed.success) {
+		const problem =
+			orderProblem(committed) ||
+			parsed.error.issues.map((issue) => issue.message).join("; ");
+		return { order: undefined, source: "invalid", problem };
+	}
 	return {
-		order: parseRunnerOrder(committed),
+		order: parseRunnerOrder(JSON.stringify(parsed.data)),
 		source: "committed",
 		problem: "",
 	};

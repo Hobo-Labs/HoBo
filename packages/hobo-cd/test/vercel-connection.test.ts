@@ -606,6 +606,39 @@ describe("prepareVercelConnection", () => {
 		expect(vault.names()).toEqual([]);
 	});
 
+	it("reports that an atomic claim store is required without asking for a retry", async () => {
+		const { store } = await memoryStore();
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
+		await store.port.put("HOBO_CD_VERCEL_TEAM_ID", "team_test");
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		const result = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			locator: memorySettings(LOCATOR),
+			vault: signedInVault(),
+			openStore: opened(store),
+			journalProvisioners: [
+				{
+					plan: "neon-claimable",
+					async create() {
+						const error = new Error("private store details");
+						error.name = "ClaimStoreUnavailableError";
+						throw error;
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			result: {
+				code: "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+				remediation: [
+					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
+				],
+			},
+		});
+		expect(JSON.stringify(result)).not.toContain("private store details");
+	});
+
 	it("refuses a successful installation read without material", async () => {
 		const { store } = await memoryStore();
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
@@ -750,7 +783,10 @@ describe("prepareVercelConnection", () => {
 		expect(selected).toBe("bitwarden");
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			steps: [{ outcome: "unchanged" }],
+			steps: [
+				{ outcome: "unchanged" },
+				{ id: "cd-identity", detail: expect.stringMatching(/Infisical only/u) },
+			],
 		});
 		if (outcome.kind === "ready") {
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
@@ -971,7 +1007,10 @@ describe("prepareVercelConnection", () => {
 		);
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			steps: [{ id: "vercel", outcome: "unchanged" }],
+			steps: [
+				{ id: "vercel", outcome: "unchanged" },
+				{ id: "cd-identity", detail: expect.stringMatching(/no team/u) },
+			],
 		});
 		if (outcome.kind === "ready")
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
@@ -1022,6 +1061,21 @@ describe("prepareVercelConnection", () => {
 			locator: memorySettings(LOCATOR),
 			fetch: vercel.fetch,
 			openStore: opened(store),
+			workload: {
+				teamSlug: async () => "acme",
+				enableProjectOidc: async () => "absent",
+				admin: () => ({
+					createProject: async () => ({ projectId: "unused" }),
+					createFolder: async () => ({ folderId: "unused" }),
+					createProjectIdentity: async () => ({
+						identityId: "00000000-0000-4000-8000-000000000001",
+					}),
+					attachOidcAuth: async () => {},
+					updateOidcAuth: async () => {},
+					deleteIdentity: async () => {},
+					probeToken: async () => "valid",
+				}),
+			},
 			openBrowser: (url) => {
 				browsing = (async () => {
 					const post = (action: string, params: Record<string, string> = {}) =>
@@ -1060,7 +1114,10 @@ describe("prepareVercelConnection", () => {
 		]);
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			steps: [{ id: "vercel", outcome: "created" }],
+			steps: [
+				{ id: "vercel", outcome: "created" },
+				{ id: "cd-identity", outcome: "created" },
+			],
 		});
 		if (outcome.kind === "ready")
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);

@@ -1,5 +1,5 @@
 import { lstat, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	decideRunnerRoute,
@@ -137,10 +137,17 @@ function usage(message: string): CommandResult {
 }
 
 function text(options: CiRouteOptions, name: string): string | undefined {
-	const value = options[name];
-	return value === undefined || value === true || value === false
-		? undefined
-		: String(value);
+	return z.string().optional().parse(options[name]);
+}
+
+function routeLabels(
+	options: CiRouteOptions,
+	key: (typeof RUNNER_STEP_KEYS)[number],
+): readonly string[] {
+	const value = options[key];
+	return relayInputLabels(
+		Array.isArray(value) ? value.join(",") : (text(options, key) ?? ""),
+	);
 }
 
 function stepText(step: ParsedRunnerOrder["steps"][number]): string {
@@ -193,12 +200,19 @@ export async function runCiRoute(input: {
 	for (const name of ["public", "fork"] as const)
 		if (options[name] !== undefined && options[name] !== true)
 			return usage(`--${name} does not take a value.`);
-	for (const key of RUNNER_STEP_KEYS)
-		if (
-			options[key] !== undefined &&
-			relayInputLabels(text(options, key) ?? "").length === 0
-		)
+	for (const name of ["event", "facts"])
+		if (!z.string().optional().safeParse(options[name]).success)
+			return usage(`--${name} takes a text value.`);
+	for (const key of RUNNER_STEP_KEYS) {
+		const schema =
+			key === "runs-on"
+				? z.union([z.string(), z.array(z.string())])
+				: z.string();
+		if (!schema.optional().safeParse(options[key]).success)
+			return usage(`--${key} takes a text value.`);
+		if (options[key] !== undefined && routeLabels(options, key).length === 0)
 			return usage(`--${key} needs at least one runner label.`);
+	}
 
 	let project: string | undefined;
 	try {
@@ -215,7 +229,7 @@ export async function runCiRoute(input: {
 		};
 	}
 	const committed = parseCiRunnerOrder(project ?? "{}");
-	if (committed.problem.length > 0)
+	if (committed.source === "invalid")
 		return {
 			ok: false,
 			status: "invalid",
@@ -227,7 +241,7 @@ export async function runCiRoute(input: {
 		};
 
 	const inputs = RUNNER_STEP_KEYS.flatMap((key) => {
-		const labels = relayInputLabels(text(options, key) ?? "");
+		const labels = routeLabels(options, key);
 		return labels.length > 0 ? [{ key, labels: [...labels] }] : [];
 	});
 	const event = text(options, "event") ?? "push";
@@ -239,7 +253,7 @@ export async function runCiRoute(input: {
 	if (factsPath !== undefined) {
 		let raw: string | undefined;
 		try {
-			raw = await readText(join(input.cwd, factsPath));
+			raw = await readText(resolve(input.cwd, factsPath));
 		} catch {
 			return usage(`--facts: cannot read ${factsPath}.`);
 		}
@@ -266,7 +280,7 @@ export async function runCiRoute(input: {
 		private: options.public !== true,
 		fork: options.fork === true,
 		event,
-		runId: 1,
+		runId: 1n,
 		runAttempt: 1,
 		job: "relay",
 		inputs,
@@ -278,12 +292,12 @@ export async function runCiRoute(input: {
 		`Relay: ${relayText(request)}`,
 		describeDecision(decision),
 	];
-	if (decision.outcome !== "none" && decision.skipped.length > 0)
+	if (decision.skipped.length > 0)
 		lines.push(
 			"Passed over:",
 			...decision.skipped.map((skipped) => `  ${describeSkip(skipped)}`),
 		);
-	if (decision.notInOrder.length > 0 && decision.outcome !== "none")
+	if (decision.notInOrder.length > 0)
 		lines.push(
 			`Not in the runner order, so never tried: ${decision.notInOrder.join(", ")}.`,
 		);

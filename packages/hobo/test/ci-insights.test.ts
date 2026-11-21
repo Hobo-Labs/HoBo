@@ -33,6 +33,7 @@ function job(at: number, value: Job) {
 		created_at: iso(at),
 		started_at: iso(started),
 		completed_at: iso(started + value.runMs),
+		check_run_url: `https://api.github.com/repos/acme/app/check-runs/${value.id + 1000}`,
 		steps: steps.map((step, index) => ({
 			name: step.name,
 			number: index + 1,
@@ -82,6 +83,10 @@ function github(responses: ReadonlyMap<string, string | CiProcessError>) {
 		const path = args[1] ?? "";
 		asked.push(path);
 		const answer = responses.get(path);
+		if (answer === undefined && path.endsWith("/logs"))
+			return { stdout: "", stderr: "" };
+		if (answer === undefined && path.endsWith("/annotations?per_page=100"))
+			return { stdout: "[]", stderr: "" };
 		if (answer === undefined) throw new CiProcessError("failed", "gh", 404);
 		if (answer instanceof CiProcessError) throw answer;
 		return { stdout: answer, stderr: "" };
@@ -318,7 +323,7 @@ describe("hobo ci diagnose", () => {
 				],
 				["repos/acme/app/actions/jobs/71/logs", log],
 				[
-					"repos/acme/app/check-runs/71/annotations",
+					"repos/acme/app/check-runs/1071/annotations?per_page=100",
 					JSON.stringify([{ message: "Process completed with exit code 2." }]),
 				],
 			]),
@@ -344,6 +349,123 @@ describe("hobo ci diagnose", () => {
 				},
 			],
 		});
+	});
+
+	it("sanitizes GitHub metadata and log text in terminal output", async () => {
+		const maliciousRun = {
+			...failedRun,
+			name: "ci\u001b]0;owned\u0007",
+			display_title: "change\u202e\r\u0008",
+		};
+		const maliciousJob = job(start, {
+			id: 71,
+			name: "check\u001b[2J\u202e",
+			labels: ["hobo"],
+			runner: "runner\r\u0008",
+			conclusion: "failure",
+			waitMs: 0,
+			runMs: minute,
+			steps: [
+				{ name: "Set up job", conclusion: "success" },
+				{ name: "Run\u001b[31m tests\u001b[0m\u202e", conclusion: "failure" },
+			],
+		});
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(maliciousRun)],
+				[jobsPath(7), JSON.stringify({ jobs: [maliciousJob] })],
+				[
+					"repos/acme/app/actions/jobs/71/logs",
+					"\u001b]0;owned\u0007error TS2322\u0007\u202e",
+				],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(result.message).toContain("ci #7");
+		expect(result.message).toContain("error TS2322");
+		expect(result.message).not.toContain("\u001b");
+		expect(result.message).not.toMatch(/[\u202a-\u202e\u2066-\u2069]/u);
+		expect(result.message?.replaceAll("\n", "")).not.toMatch(/\p{Cc}/u);
+	});
+
+	it("reads annotations after the first page", async () => {
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[
+					jobsPath(7),
+					JSON.stringify({
+						jobs: [
+							job(start, {
+								id: 71,
+								name: "check",
+								labels: ["hobo"],
+								conclusion: "failure",
+								waitMs: 0,
+								runMs: minute,
+							}),
+						],
+					}),
+				],
+				[
+					"repos/acme/app/check-runs/1071/annotations?per_page=100",
+					JSON.stringify(
+						Array.from({ length: 100 }, () => ({ message: null })),
+					),
+				],
+				[
+					"repos/acme/app/check-runs/1071/annotations?per_page=100&page=2",
+					JSON.stringify([
+						{ message: "src/index.ts(3,7): error TS2322: type mismatch" },
+					]),
+				],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(fake.asked).toContain(
+			"repos/acme/app/check-runs/1071/annotations?per_page=100&page=2",
+		);
+		expect(result.data?.jobs?.[0]?.diagnosis).toMatchObject({
+			kind: "build",
+			evidence: ["src/index.ts(3,7): error TS2322: type mismatch"],
+		});
+	});
+
+	it("surfaces a truncated job log in the diagnosis", async () => {
+		const fake = github(
+			new Map([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[
+					jobsPath(7),
+					JSON.stringify({
+						jobs: [
+							job(start, {
+								id: 71,
+								name: "test",
+								labels: ["hobo"],
+								conclusion: "failure",
+								waitMs: 0,
+								runMs: minute,
+							}),
+						],
+					}),
+				],
+			]),
+		);
+		const execFile: CiRunExec = async (file, args, options) => {
+			const result = await fake.execFile(file, args, options);
+			return (args[1] ?? "").endsWith("/logs")
+				? { ...result, truncated: true }
+				: result;
+		};
+		const result = await insights("diagnose", { ...fake, execFile }, ["7"]);
+		expect(result.message).toContain(
+			"Log output was truncated; diagnosis may be incomplete.",
+		);
+		expect(result.data?.jobs?.[0]?.logTruncated).toBe(true);
 	});
 
 	it("calls a job that never reached a step a runner problem worth re-running", async () => {
@@ -483,6 +605,54 @@ describe("hobo ci diagnose", () => {
 		expect(result.message).toContain("1000");
 	});
 
+	it.each([
+		"logs",
+		"annotations",
+	] as const)("fails diagnosis when the %s read fails", async (resource) => {
+		const path =
+			resource === "logs"
+				? "repos/acme/app/actions/jobs/71/logs"
+				: "repos/acme/app/check-runs/1071/annotations?per_page=100";
+		const fake = github(
+			new Map<string, string | CiProcessError>([
+				["repos/acme/app", repository],
+				["repos/acme/app/actions/runs/7", JSON.stringify(failedRun)],
+				[
+					jobsPath(7),
+					JSON.stringify({
+						jobs: [
+							job(start, {
+								id: 71,
+								name: "test",
+								labels: ["hobo"],
+								conclusion: "failure",
+								waitMs: 0,
+								runMs: minute,
+							}),
+						],
+					}),
+				],
+				[path, new CiProcessError("failed", "gh", 500)],
+			]),
+		);
+		const result = await insights("diagnose", fake, ["7"]);
+		expect(result).toMatchObject({ ok: false, code: "HOBO_CI_GITHUB_FAILED" });
+	});
+
+	it("validates the repository before constructing gh api paths", async () => {
+		const fake = github(new Map());
+		const result = await runCiInsights({
+			command: "signals",
+			repository: "acme/app?unexpected=path",
+			cwd: "/work",
+			args: [],
+			options: {},
+			execFile: fake.execFile,
+		});
+		expect(result).toMatchObject({ ok: false, code: "HOBO_CLI_USAGE" });
+		expect(fake.asked).toEqual([]);
+	});
+
 	it("says so when there is nothing to diagnose", async () => {
 		const none = await insights(
 			"diagnose",
@@ -534,10 +704,10 @@ describe("hobo ci diagnose", () => {
 });
 
 describe("GitHub read contract", () => {
-	it("diagnoses a run from exactly the reads the contract names", async () => {
-		const fake = github(
+	const fakeFor = (interactions: typeof pact.interactions) =>
+		github(
 			new Map(
-				pact.interactions.map((interaction) => [
+				interactions.map((interaction) => [
 					interaction.request.path,
 					interaction.response.headers
 						? String(interaction.response.body)
@@ -545,10 +715,37 @@ describe("GitHub read contract", () => {
 				]),
 			),
 		);
-		const result = await insights("diagnose", fake);
+	const expectReads = (
+		fake: ReturnType<typeof github>,
+		interactions: typeof pact.interactions,
+	) =>
 		expect(fake.asked).toEqual(
-			pact.interactions.map((interaction) => interaction.request.path),
+			interactions.map((interaction) => interaction.request.path),
 		);
+
+	it("reads recent runs for signals from exactly the contract", async () => {
+		const paths = new Set([
+			"repos/acme/app",
+			"repos/acme/app/actions/runs?per_page=50",
+			"repos/acme/app/actions/runs/7/attempts/1/jobs?per_page=100",
+		]);
+		const interactions = pact.interactions.filter((interaction) =>
+			paths.has(interaction.request.path),
+		);
+		const fake = fakeFor(interactions);
+		const result = await insights("signals", fake);
+		expectReads(fake, interactions);
+		expect(result.data).toMatchObject({ repository: "acme/app", runs: 1 });
+	});
+
+	it("diagnoses a run from exactly the reads the contract names", async () => {
+		const interactions = pact.interactions.filter(
+			(interaction) =>
+				interaction.request.path !== "repos/acme/app/actions/runs?per_page=50",
+		);
+		const fake = fakeFor(interactions);
+		const result = await insights("diagnose", fake);
+		expectReads(fake, interactions);
 		expect(result.data).toMatchObject({
 			run: { id: 7, attempt: 1 },
 			jobs: [

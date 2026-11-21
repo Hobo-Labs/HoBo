@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { isGithubHostedLabel } from "@hobo/ci";
 import {
 	type CiSignal,
@@ -14,6 +15,7 @@ import {
 } from "@hobo/ci/insights";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import { validRepository } from "./ci-repository.js";
 import { CiProcessError, type CiRunExec, runCiProcess } from "./ci-runs.js";
 
 export type CiInsightOptions = Readonly<
@@ -30,6 +32,8 @@ const LOG_TAIL_BYTES = 256 * 1024;
 const PRINTED_EXCERPT_LINES = 12;
 const JOBS_PER_PAGE = 100;
 const MAX_JOBS_PER_ATTEMPT = 1_000;
+const ANNOTATIONS_PER_PAGE = 100;
+const MAX_ANNOTATION_PAGES = 10;
 
 class InsightUsage extends Error {}
 class InsightJobsLimit extends Error {}
@@ -50,6 +54,7 @@ const JobSchema = z.looseObject({
 	labels: z.array(z.string()).nullish(),
 	runner_name: z.string().nullish(),
 	runner_group_name: z.string().nullish(),
+	check_run_url: z.string().nullish(),
 	conclusion: z.string().nullish(),
 	created_at: z.string().min(1),
 	started_at: time,
@@ -132,6 +137,21 @@ function insightStep(step: z.infer<typeof StepSchema>): InsightStep {
 		: { ...base, startedAtMs: started, completedAtMs: completed };
 }
 
+function checkRunId(job: GithubJob): number | undefined {
+	if (job.check_run_url === undefined || job.check_run_url === null) {
+		return undefined;
+	}
+	try {
+		const match = /\/check-runs\/([1-9]\d*)$/u.exec(
+			new URL(job.check_run_url).pathname,
+		);
+		const id = Number(match?.[1]);
+		return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 	const labels = job.labels ?? [];
 	const steps = (job.steps ?? []).map(insightStep);
@@ -139,6 +159,7 @@ function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 
 	const started = job.runner_name ? at(job.started_at) : undefined;
 	const completed = at(job.completed_at);
+	const checkRun = checkRunId(job);
 	const base = {
 		id: job.id,
 		name: job.name,
@@ -152,9 +173,11 @@ function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 			labels.every((label) => isGithubHostedLabel(label)),
 		relay: isRelayJob(job.name),
 	};
+	const identified =
+		checkRun === undefined ? base : { ...base, checkRunId: checkRun };
 	const named = job.runner_name
-		? { ...base, runnerName: job.runner_name }
-		: base;
+		? { ...identified, runnerName: job.runner_name }
+		: identified;
 	if (started === undefined)
 		return completed === undefined
 			? named
@@ -206,6 +229,12 @@ function insightRun(
 		run.status !== "completed"
 		? base
 		: { ...base, completedAtMs: completed };
+}
+
+function terminalText(text: string): string {
+	return stripVTControlCharacters(text)
+		.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "")
+		.replace(/\p{Cc}/gu, " ");
 }
 
 function duration(ms: number | undefined): string {
@@ -333,20 +362,22 @@ export async function runCiInsights(input: {
 	env?: NodeJS.ProcessEnv;
 	now?: () => number;
 }): Promise<CommandResult> {
+	if (!validRepository(input.repository))
+		return failure(new InsightUsage("--repo must be a GitHub owner/name."));
 	const exec = input.execFile ?? runCiProcess;
 	const env = { ...(input.env ?? process.env) };
 	delete env.HOBO_CI_ACCOUNT_TOKEN;
 	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;
 	const repo = `repos/${input.repository}`;
+	const apiResult = (path: string, maxBuffer = 16 * 1024 * 1024) =>
+		exec("gh", ["api", path], {
+			cwd: input.cwd,
+			timeout: 30_000,
+			maxBuffer,
+			env,
+		});
 	const api = async (path: string, maxBuffer = 16 * 1024 * 1024) =>
-		(
-			await exec("gh", ["api", path], {
-				cwd: input.cwd,
-				timeout: 30_000,
-				maxBuffer,
-				env,
-			})
-		).stdout;
+		(await apiResult(path, maxBuffer)).stdout;
 	const jobsOf = async (
 		run: GithubRun,
 		attempt: number,
@@ -449,7 +480,7 @@ export async function runCiInsights(input: {
 			if (runners.length > 0)
 				lines.push("runners", ...runners.slice(0, 10).map(runnerLine));
 			return {
-				message: lines.join("\n"),
+				message: lines.map(terminalText).join("\n"),
 				data: {
 					repository: input.repository,
 					runs: listed.length,
@@ -488,25 +519,38 @@ export async function runCiInsights(input: {
 			job: string;
 			id: number;
 			runner: string;
+			logTruncated: boolean;
 			diagnosis: FailureDiagnosis;
 			summary: string;
 		}[] = [];
 		for (const job of failed.slice(0, MAX_DIAGNOSED_JOBS)) {
-			const logTail = await api(`${repo}/actions/jobs/${job.id}/logs`)
-				.then((log) => log.slice(-LOG_TAIL_BYTES))
-				.catch(() => "");
-			const annotations = await api(`${repo}/check-runs/${job.id}/annotations`)
-				.then((body) =>
-					AnnotationsSchema.parse(JSON.parse(body)).flatMap(
-						(annotation) => annotation.message ?? [],
+			if (job.checkRunId === undefined)
+				throw new Error(`GitHub returned no check-run ID for job ${job.id}`);
+			const log = await apiResult(`${repo}/actions/jobs/${job.id}/logs`);
+			const logTail = log.stdout.slice(-LOG_TAIL_BYTES);
+			const annotations: string[] = [];
+			for (let page = 1; page <= MAX_ANNOTATION_PAGES; page++) {
+				const suffix = page === 1 ? "" : `&page=${page}`;
+				const batch = AnnotationsSchema.parse(
+					JSON.parse(
+						await api(
+							`${repo}/check-runs/${job.checkRunId}/annotations?per_page=${ANNOTATIONS_PER_PAGE}${suffix}`,
+						),
 					),
-				)
-				.catch(() => []);
+				);
+				annotations.push(
+					...batch.flatMap((annotation) => annotation.message ?? []),
+				);
+				if (batch.length < ANNOTATIONS_PER_PAGE) break;
+				if (page === MAX_ANNOTATION_PAGES)
+					throw new Error("GitHub returned too many check-run annotations");
+			}
 			const diagnosis = diagnoseFailure({ job, logTail, annotations });
 			diagnosed.push({
 				job: job.name,
 				id: job.id,
 				runner: job.runnerName ?? job.labels.join(", "),
+				logTruncated: log.truncated === true,
 				diagnosis,
 				summary: summarizeDiagnosis(diagnosis),
 			});
@@ -521,6 +565,9 @@ export async function runCiInsights(input: {
 							"",
 							`${entry.job}  (${entry.runner || "no runner"})`,
 							`  ${entry.summary}`,
+							...(entry.logTruncated
+								? ["  Log output was truncated; diagnosis may be incomplete."]
+								: []),
 							...entry.diagnosis.excerpt
 								.slice(-PRINTED_EXCERPT_LINES)
 								.map((line) => `    ${line}`),
@@ -533,7 +580,7 @@ export async function runCiInsights(input: {
 							: []),
 					];
 		return {
-			message: lines.join("\n"),
+			message: lines.map(terminalText).join("\n"),
 			data: {
 				repository: input.repository,
 				run: { id: run.id, attempt, url: run.html_url ?? "" },

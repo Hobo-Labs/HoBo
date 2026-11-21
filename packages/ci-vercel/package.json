@@ -41,9 +41,11 @@
     "@hobo/pricing": "workspace:*",
     "@hobo/provider-manifest": "workspace:*",
     "@hobo/provider-vercel": "workspace:*",
+    "@hobo/testing": "workspace:*",
     "@hobo/yards": "workspace:*",
     "esbuild": "0.28.1",
-    "jose": "6.2.4"
+    "jose": "6.2.4",
+    "vercel": "65.2.0"
   },
   "scripts": {
     "build": "node --import tsx scripts/generate-assets.mts && node --import tsx scripts/generate-proxy-bundle.mts && node --import tsx scripts/generate-offers.mts && tsc -p tsconfig.json",

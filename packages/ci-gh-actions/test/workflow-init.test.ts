@@ -263,7 +263,28 @@ describe("planWorkflow deploy-like jobs", () => {
 			"a computed secret",
 			"    env:\n      TOKEN: ${{ secrets[format('{0}_TOKEN', 'DEPLOY')] }}\n",
 		],
+		[
+			"the whole secrets context",
+			"    env:\n      CONTEXT: ${{ toJSON(secrets) }}\n",
+		],
+		["a bare secrets context", "    if: ${{ secrets }}\n    steps: []\n"],
 		["inherited secrets", "    secrets: inherit\n"],
+		[
+			"a filter after GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets.GITHUB_TOKEN.* }}\n",
+		],
+		[
+			"a bracket filter after GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets['GITHUB_TOKEN'][*] }}\n",
+		],
+		[
+			"a property after GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets['GITHUB_TOKEN']['password'] }}\n",
+		],
+		[
+			"a hyphen continuing GITHUB_TOKEN",
+			"    env:\n      TOKEN: ${{ secrets.GITHUB_TOKEN-extra }}\n",
+		],
 	])("skips a job with %s", (_what, body) => {
 		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
 		expect(ready(body, { includeSecretJobs: true })).toEqual(["job ready"]);
@@ -292,6 +313,10 @@ describe("planWorkflow deploy-like jobs", () => {
 		[
 			"GITHUB_TOKEN in brackets",
 			"    env:\n      GH_TOKEN: ${{ secrets['GITHUB_TOKEN'] }}\n",
+		],
+		[
+			"GITHUB_TOKEN in double quotes",
+			'    env:\n      GH_TOKEN: ${{ secrets["GITHUB_TOKEN"] }}\n',
 		],
 		["read permissions", "    permissions:\n      contents: read\n"],
 		["no id-token", "    permissions:\n      id-token: none\n"],
@@ -335,6 +360,486 @@ jobs:
 		]);
 	});
 
+	it("skips a job that only consumes outputs from a secret-bearing upstream", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: token
+        run: echo "value=1" >> "$GITHUB_OUTPUT"
+        env:
+          TOKEN: \${{ secrets.PUBLISH_TOKEN }}
+  ship:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.publish.outputs.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+		expect(applyWorkflowPlan(FILE, source, ["all"]).changed).toHaveLength(0);
+	});
+
+	it("counts needs outputs when the job id has a regex metacharacter and the quote is YAML-escaped", () => {
+		const source = `on: push
+jobs:
+  "publish.v2":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ needs[\\"publish.v2\\"].outputs.value }}"
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish.v2 skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("follows a needs alias to a secret-bearing job", () => {
+		const source = `on: push
+jobs:
+  publish:
+    name: &publish_name publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    needs:
+      - *publish_name
+  also:
+    runs-on: ubuntu-24.04
+    needs: *publish_name
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"also skipped uses_secrets",
+		]);
+	});
+
+	it.each([
+		"needs.publish['outputs'].value",
+		"needs['publish']['outputs']['value']",
+		"needs[ 'publish' ][ 'outputs' ]",
+		String.raw`needs[\"publish\"][\"outputs\"].value`,
+	])("counts secret outputs read with index syntax %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts an expression-escaped job id in a needs output read", () => {
+		const source = `on: push
+jobs:
+  "a'b":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs['a''b'].outputs.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"a'b skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts toJSON of a secret job object as an output read", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ toJSON(needs.publish) }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it.each([
+		"NEEDS.PUBLISH.OUTPUTS.value",
+		"Needs['Publish']['Outputs'].value",
+		"tojson(needs.publish)",
+		"toJSON((needs.publish))",
+		"TOJSON( ( NEEDS.PUBLISH ) )",
+	])("counts a case-insensitive secret output read %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it.each([
+		"(needs).publish.outputs.value",
+		"( needs )['publish']['outputs'].value",
+		"((needs)).publish.outputs.value",
+		"!(needs).publish.outputs.value",
+		"toJSON((needs).publish)",
+		"TOJSON( ( ( NEEDS ) . PUBLISH ) )",
+		"(needs)[format('{0}', 'publish')].outputs.value",
+		"(( needs ))[inputs.job]['outputs'].value",
+		"toJSON((needs)[inputs.job])",
+	])("fails closed when a grouped needs context reads %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts a grouped wildcard needs read only when that job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ toJSON((needs).*) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ (needs).*.outputs.value }}
+      - run: echo \${{ (NEEDS)[ '*' ].OUTPUTS.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"lint ready",
+		]);
+	});
+
+	it("does not treat a grouped needs read of another job as this job's secrets", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ (needs).other.outputs.value }}
+      - run: echo \${{ (needs).publish.result }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+	});
+
+	it("counts a needs id that differs only by case as a secret dependency", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: Publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts a case-insensitive wildcard needs read when that job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: Publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ TOJSON(NEEDS) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ NEEDS.*.OUTPUTS.value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"lint ready",
+		]);
+	});
+
+	it("fails closed when a dynamic needs index differs by case", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ NEEDS[format('{0}', 'publish')]['OUTPUTS'].value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("counts a wildcard needs output read when the secret job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: publish
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ toJSON(needs.*.outputs) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ toJSON(needs.*.outputs) }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"lint ready",
+		]);
+	});
+
+	it("fails closed when a needs output index is not a literal", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs[format('{0}', 'publish')]['outputs'].value }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it.each([
+		"needs[format('{0}', 'publish')].*",
+		"NEEDS[format('{0}', 'publish')]['*']",
+		"(needs[format('{0}', 'publish')]).*",
+		"needs[format('{0}', 'publish')][format('{0}', 'outputs')].value",
+		"needs[inputs.job][inputs.key]",
+		"toJSON(needs[inputs.job].*)",
+	])("fails closed when a dynamic needs index reads %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("does not treat a wildcard star as a secret read unless that job is needed", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  other:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  ship:
+    needs: other
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.*.* }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ NEEDS.*[format('{0}', 'outputs')] }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"other ready",
+			"ship ready",
+			"lint ready",
+		]);
+	});
+
+	it.each([
+		"needs.publish.*",
+		"NEEDS.PUBLISH['*']",
+		"toJSON(needs.publish.*)",
+		"(needs.publish).*",
+		"needs.publish[format('{0}', 'outputs')].value",
+		"needs['publish'][inputs.key]",
+	])("counts a fail-closed secret property read %s", (reference) => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ ${reference} }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+		]);
+	});
+
+	it("does not treat a star or result on another property as this job's secret outputs", () => {
+		const starOnOther = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.other.* }}
+`;
+		const resultIndex = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.publish['result'] }}
+`;
+		expect(standings(planOf(starOnOther))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+		expect(standings(planOf(resultIndex))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+	});
+
+	it("fails closed when needs cannot be read and a secret job exists", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    needs: \${{ inputs.job }}
+    runs-on: ubuntu-24.04
+  plain:
+    needs: \${{ inputs.job }}
+    runs-on: ubuntu-24.04
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship skipped uses_secrets",
+			"plain skipped uses_secrets",
+		]);
+		const onlyPlain = `on: push
+jobs:
+  plain:
+    needs: \${{ inputs.job }}
+    runs-on: ubuntu-24.04
+`;
+		expect(standings(planOf(onlyPlain))).toEqual(["plain ready"]);
+	});
+
+	it("does not treat a result check as a secret output read", () => {
+		const source = `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "\${{ secrets.PUBLISH_TOKEN }}"
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ needs.publish.result }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"publish skipped uses_secrets",
+			"ship ready",
+		]);
+	});
+
 	it("counts a secret in the workflow's env for every job", () => {
 		const source = `on: push
 env:
@@ -347,6 +852,179 @@ jobs:
 		expect(standings(planOf(source, { includeSecretJobs: true }))).toEqual([
 			"test ready",
 		]);
+	});
+
+	it.each([
+		["a dotted secret input", "inputs.deploy_token"],
+		["a bracketed secret input", "inputs['deploy_token']"],
+		["a case-insensitive secret input", "INPUTS.DEPLOY_TOKEN"],
+		["a star over the inputs context", "inputs.*"],
+		["the whole inputs context", "toJSON(inputs)"],
+	])("skips a job that reads %s", (_what, reference) => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      size:
+        type: string
+      deploy_token:
+        type: secret
+jobs:
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./deploy.sh
+        env:
+          TOKEN: \${{ ${reference} }}
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ inputs.size }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"ship skipped uses_secrets",
+			"test ready",
+		]);
+		expect(standings(planOf(source, { includeSecretJobs: true }))).toEqual([
+			"ship ready",
+			"test ready",
+		]);
+	});
+
+	it("skips a job that reads a hyphenated secret input by bracket", () => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      deploy-token:
+        type: secret
+jobs:
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./deploy.sh
+        env:
+          TOKEN: \${{ inputs['deploy-token'] }}
+`;
+		expect(standings(planOf(source))).toEqual(["ship skipped uses_secrets"]);
+	});
+
+	it.each([
+		["a computed bracket index", "inputs[format('{0}_token', 'deploy')]"],
+		["an indirect bracket index", "inputs[inputs.token_name]"],
+		[
+			"a context-driven bracket index",
+			"inputs[github.event.inputs.token_name]",
+		],
+		["a case-insensitive indirect bracket index", "INPUTS[inputs.TOKEN_NAME]"],
+	])("fails closed when a job reads a secret input through %s", (_what, reference) => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      size:
+        type: string
+      token_name:
+        type: string
+      deploy_token:
+        type: secret
+jobs:
+  ship:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: ./deploy.sh
+        env:
+          TOKEN: \${{ ${reference} }}
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ inputs.size }} \${{ inputs['size'] }}
+`;
+		expect(standings(planOf(source))).toEqual([
+			"ship skipped uses_secrets",
+			"test ready",
+		]);
+		expect(standings(planOf(source, { includeSecretJobs: true }))).toEqual([
+			"ship ready",
+			"test ready",
+		]);
+	});
+
+	it("leaves a job ready that reads only inputs no one declared secret", () => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      size:
+        type: string
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo \${{ inputs.size }} \${{ inputs['size'] }} \${{ INPUTS.SIZE }}
+`;
+		expect(standings(planOf(source))).toEqual(["test ready"]);
+	});
+
+	it("counts a secret input in the workflow's env for every job", () => {
+		const source = `on:
+  workflow_call:
+    inputs:
+      deploy_token:
+        type: secret
+env:
+  TOKEN: \${{ inputs.deploy_token }}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+`;
+		expect(standings(planOf(source))).toEqual(["test skipped uses_secrets"]);
+	});
+
+	it.each([
+		["an environment", "    <<: &deploy\n      environment: production\n"],
+		["inherited secrets", "    <<: &deploy\n      secrets: inherit\n"],
+		[
+			"write permissions",
+			"    <<: &deploy\n      permissions:\n        contents: write\n",
+		],
+		[
+			"nested write permissions",
+			"    permissions:\n      <<: &write\n        contents: write\n",
+		],
+		[
+			"a secret in merged env",
+			"    <<: &deploy\n      env:\n        TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n",
+		],
+	])("skips a job with %s behind a YAML merge key", (_what, body) => {
+		expect(ready(body)).toEqual(["job skipped uses_secrets"]);
+		expect(ready(body, { includeSecretJobs: true })).toEqual(["job ready"]);
+	});
+
+	it.each([
+		"permissions",
+		"env",
+	])("counts workflow %s behind a YAML merge key", (key) => {
+		const value =
+			key === "permissions"
+				? "contents: write"
+				: "TOKEN: ${{ secrets.DEPLOY_TOKEN }}";
+		const source = `on: push
+defaults: &defaults
+  ${key}:
+    ${value}
+<<: *defaults
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+`;
+		expect(standings(planOf(source))).toEqual(["test skipped uses_secrets"]);
+	});
+
+	it("lets a direct permissions mapping override a merged one", () => {
+		const source = oneJob(`    runs-on: ubuntu-24.04
+    <<: &deploy
+      permissions: write-all
+    permissions:
+      contents: read
+`);
+		expect(standings(planOf(source))).toEqual(["job ready"]);
 	});
 });
 
@@ -383,6 +1061,7 @@ describe("planWorkflow warnings", () => {
 		["apk install", "apk install jq"],
 		["sudo", "sudo systemctl start docker"],
 		["a later line", "|\n          set -e\n          sudo apt-get update"],
+		["a folded script", ">\n          set -e\n          dnf install -y jq"],
 	])("warns about %s in a step", (_what, script) => {
 		expect(
 			warningsOf("ubuntu-24.04", `    steps:\n      - run: ${script}\n`),
@@ -527,6 +1206,25 @@ describe("planWorkflow on YAML anchors", () => {
 			"sixth routed",
 		]);
 	});
+
+	it("skips runs-on inherited through a YAML merge key", () => {
+		const source = `on: push
+job-defaults: &job-defaults
+  runs-on: ubuntu-24.04
+  steps:
+    - run: pnpm test
+jobs:
+  merged:
+    <<: *job-defaults
+`;
+		expect(standings(planOf(source))).toEqual(["merged skipped no_runs_on"]);
+		expect(applyWorkflowPlan(FILE, source, ["all"])).toEqual({
+			source,
+			changed: [],
+			refused: [],
+		});
+		expect(applyWorkflowPlan(FILE, source, ["merged"]).source).toBe(source);
+	});
 });
 
 describe("applyWorkflowPlan on a shared jobs mapping", () => {
@@ -656,6 +1354,9 @@ describe("applyWorkflowPlan", () => {
 		expect(changedLines(COMMENTED, result.source)).toEqual([
 			"    runs-on: hobo # was ubuntu-24.04",
 		]);
+		const unselected = (source: string) =>
+			planOf(source).jobs.filter((job) => job.job !== "test");
+		expect(unselected(result.source)).toEqual(unselected(COMMENTED));
 	});
 
 	it("reports changed jobs in file order whatever order they were named in", () => {
@@ -1046,6 +1747,7 @@ describe("a job that routes other jobs", () => {
 			verdict: "skipped",
 			reason: "routes_jobs",
 		});
+		expect(plan.jobs[2]).toMatchObject({ job: "lint", verdict: "ready" });
 	});
 
 	it("is refused by name and passed over by all", () => {
@@ -1064,11 +1766,963 @@ describe("a job that routes other jobs", () => {
 		expect(all.source).toContain("  route:\n    runs-on: ubuntu-24.04\n");
 	});
 
+	it("recognizes routing through a matrix built from needs outputs", () => {
+		const matrix = source.replace(
+			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"    strategy:\n      matrix: ${{ fromJSON(needs.route.outputs.matrix) }}\n    runs-on: ${{ matrix.runner }}",
+		);
+		expect(planWorkflow("ci.yml", matrix).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes routing passed to a reusable workflow", () => {
+		const reusable = source.replace(
+			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
+			"    uses: ./.github/workflows/reusable.yml\n    with:\n      runner: ${{ needs.route.outputs.runner }}",
+		);
+		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes reusable workflow inputs behind a YAML merge", () => {
+		const reusable = source.replace(
+			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
+			"    uses: ./.github/workflows/reusable.yml\n    <<: &call\n      with:\n        runner: ${{ needs.route.outputs.runner }}",
+		);
+		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it.each([
+		[
+			"runs-on",
+			`  called:
+    runs-on: \${{ needs['route.v2'].outputs.runner || 'ubuntu-24.04' }}
+    steps:
+      - run: pnpm test
+`,
+		],
+		[
+			"a reusable workflow input",
+			`  called:
+    uses: ./.github/workflows/reusable.yml
+    with:
+      runner: "\${{ needs[\\"route.v2\\"].outputs.runner }}"
+`,
+		],
+		[
+			"a strategy matrix",
+			`  called:
+    strategy:
+      matrix: '\${{ fromJSON(needs[''route.v2''].outputs.matrix) }}'
+    runs-on: \${{ matrix.runner }}
+    steps:
+      - run: pnpm test
+`,
+		],
+	])("recognizes router id route.v2, which breaks a backreference, from %s", (_where, caller) => {
+		const source = `jobs:
+  "route.v2":
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: \${{ steps.pick.outputs.runner }}
+    steps:
+      - id: pick
+        run: echo "runner=hobo" >> "$GITHUB_OUTPUT"
+${caller}`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route.v2",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a quoted job id referenced with YAML-escaped double quotes", () => {
+		const source = `jobs:
+  "a'b":
+    runs-on: ubuntu-24.04
+    steps:
+      - id: pick
+        run: echo "runner=hobo" >> "$GITHUB_OUTPUT"
+  called:
+    uses: ./.github/workflows/reusable.yml
+    with:
+      runner: "\${{ needs[\\"a'b\\"].outputs.runner }}"
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "a'b",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes an expression-escaped job id as a router", () => {
+		const source = `jobs:
+  "a'b":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs['a''b'].outputs.runner }}
+    steps:
+      - run: pnpm test
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => job.verdict),
+		).toEqual(["skipped", "skipped", "ready"]);
+		expect(planWorkflow("ci.yml", source).jobs[0]?.reason).toBe("routes_jobs");
+	});
+
+	it("does not treat a dotted property path as a dotted job id", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  "route.v2":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.route.v2.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.verdict]),
+		).toEqual([
+			["route", "ready"],
+			["route.v2", "ready"],
+			["called", "skipped"],
+		]);
+	});
+
+	it("recognizes a router from a case-insensitive needs output", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.Route.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("recognizes a router from mixed-case needs keywords", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ NEEDS['ROUTE'].RESULT == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04' }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("does not treat a case-folded dotted property path as a dotted job id", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  "route.v2":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.Route.v2.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.verdict]),
+		).toEqual([
+			["route", "ready"],
+			["route.v2", "ready"],
+			["called", "skipped"],
+		]);
+	});
+
+	it("treats a case-mismatched wildcard needs list as routing only that job", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  test:
+    needs: Route
+    runs-on: \${{ NEEDS.*.OUTPUTS.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["test", "skipped", "expression"],
+		]);
+	});
+
+	it("recognizes a router whose result selects the runner", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.route.result == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04' }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("treats a wildcard needs output as routing only the jobs that are needed", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  test:
+    needs: route
+    runs-on: \${{ needs.*.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["test", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when a dynamic needs index selects the runner", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  test:
+    runs-on: \${{ needs[inputs.job].outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["test", "expression"],
+		]);
+	});
+
+	it.each([
+		"toJSON(needs.route)",
+		"toJSON((needs.route))",
+		"TOJSON( ( NEEDS.ROUTE ) )",
+		"fromJSON(toJSON(needs.route)).outputs.runner",
+		"(needs.route).outputs.runner",
+		"(needs['route']).result == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04'",
+		"(needs).route.outputs.runner",
+		"( needs )['route'].outputs.runner",
+		"((needs)).route.result == 'success' && 'ubuntu-24.04' || 'ubuntu-22.04'",
+		"!(needs).route.outputs.runner",
+		"toJSON((needs).route)",
+		"TOJSON( ( ( NEEDS ) . ROUTE ) )",
+		"fromJSON(needs.route).runner",
+		"FromJson(needs.route).runner",
+		"FROMJSON(needs['route']).runner",
+		"FROMJSON( ( NEEDS.ROUTE ) ).runner",
+	])("fails closed when routing reads %s", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it.each([
+		"MATRIX.runner",
+		"Matrix['runner']",
+		'MaTrIx["runner"]',
+		"(MATRIX).runner",
+		"toJSON(MATRIX).runner",
+	])("fails closed when runs-on reads the matrix context as %s", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    strategy:
+      matrix: \${{ fromJSON(needs.route.outputs.matrix) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("does not treat a strategy as routing when runs-on never reads matrix", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ inputs.runner }}
+    strategy:
+      matrix: \${{ fromJSON(needs.route.outputs.matrix) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when a matrix is built from toJSON of the router", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ matrix.runner }}
+    strategy:
+      matrix: \${{ fromJSON(toJSON(needs.route)) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when a reusable workflow input is toJSON of the router", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    uses: ./.github/workflows/reusable.yml
+    with:
+      runner: \${{ toJSON(needs['route']) }}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "reusable_workflow"],
+			["lint", "ready", undefined],
+		]);
+	});
+
+	it.each([
+		["toJSON(needs)", "route"],
+		["toJSON(needs.*)", "route"],
+		["TOJSON( ( NEEDS.* ) )", "Route"],
+		["(needs.*).outputs.runner", "route"],
+		["needs[*].result", "route"],
+		["NEEDS[ '*' ].OUTPUTS.runner", "Route"],
+	])("fails closed for %s only when needs names that job (%s)", (expression, needed) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    needs: ${needed}
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("does not treat toJSON(needs) as routing when the caller needs nobody", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ toJSON(needs) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("fails closed when toJSON(needs) follows an opaque needs list", () => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    needs: \${{ inputs.job }}
+    runs-on: \${{ toJSON(needs) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["called", "expression"],
+		]);
+	});
+
+	it.each([
+		"needs['route' || inputs.job].outputs.runner",
+		"needs[inputs.job || 'route'].outputs.runner",
+		"toJSON(needs[inputs.job])",
+		"TOJSON( ( NEEDS[format('{0}', inputs.job)] ) )",
+		"(needs[inputs.job]).outputs.runner",
+		"(needs[inputs.job]).result",
+	])("fails closed when the needs index is not a static job id (%s)", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["called", "expression"],
+		]);
+	});
+
+	it.each([
+		"needs.route.*",
+		"needs['route'].*",
+		"NEEDS.ROUTE['*']",
+		"(needs.route).*",
+		"toJSON(needs.route.*)",
+		"toJSON((needs.route).*)",
+		"needs.route[format('{0}', 'outputs')].runner",
+		"needs['route'][format('{0}', 'result')]",
+		"needs.route[inputs.key || 'outputs']",
+		"(needs['route'])[format('{0}', 'outputs')]",
+	])("fails closed when %s reads a job property that can carry the runner", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it.each([
+		["needs.*.*", "route"],
+		["NEEDS.*['*']", "Route"],
+		["(needs.*).*", "route"],
+		["needs.*[format('{0}', 'outputs')].runner", "route"],
+		["needs[*][format('{0}', 'result')]", "route"],
+		["NEEDS[ '*' ][inputs.key]", "Route"],
+		["toJSON(needs.*.*)", "route"],
+		["TOJSON( ( NEEDS.*['*'] ) )", "Route"],
+		["(needs).*.outputs.runner", "route"],
+		["(( needs )).*.outputs.runner", "Route"],
+		["(needs)[*].result", "route"],
+		["(NEEDS)[ '*' ].OUTPUTS.runner", "Route"],
+		["toJSON((needs).*)", "route"],
+	])("fails closed when %s reads every needed job through a wildcard property (%s)", (expression, needed) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    needs: ${needed}
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["lint", "ready", undefined],
+			["route", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it.each([
+		"needs[inputs.job].*",
+		"NEEDS[format('{0}', 'route')]['*']",
+		"(needs[inputs.job]).*",
+		"needs[inputs.job][format('{0}', 'outputs')].runner",
+		"needs[format('{0}', 'route')][format('{0}', 'result')]",
+		"toJSON(needs[inputs.job].*)",
+		"(needs)[inputs.job].outputs.runner",
+		"(( needs ))[format('{0}', 'route')].outputs.runner",
+		"toJSON((needs)[inputs.job])",
+	])("fails closed when a dynamic needs index reads a runner property (%s)", (expression) => {
+		const source = `jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ ${expression} }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [job.job, job.reason]),
+		).toEqual([
+			["lint", "routes_jobs"],
+			["route", "routes_jobs"],
+			["called", "expression"],
+		]);
+	});
+
+	it("does not treat a wildcard star as routing when the caller needs nobody", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs.*.* }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["called", "skipped", "expression"],
+		]);
+	});
+
+	it("does not treat a grouped read of another job as this job routing", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ (needs).other.outputs.runner }}
+    steps:
+      - run: pnpm test
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["called", "skipped", "expression"],
+			["lint", "ready", undefined],
+		]);
+	});
+
+	it("does not treat toJSON of a different job as this job routing", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  other:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ toJSON(needs.other) }}
+    steps:
+      - run: pnpm test
+`;
+		expect(
+			planWorkflow("ci.yml", source).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["route", "ready", undefined],
+			["other", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+		]);
+	});
+
 	it("does not mistake a job that only reads its own name for a router", () => {
 		const plan = planWorkflow(
 			"ci.yml",
 			"jobs:\n  a:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo needs.a.outputs.x\n",
 		);
 		expect(plan.jobs[0]?.verdict).toBe("ready");
+	});
+
+	it.each([
+		[
+			"job env",
+			`    runs-on: ubuntu-24.04
+    env:
+      RUNNER: \${{ needs.route.outputs.runner }}
+    steps:
+      - run: pnpm test`,
+		],
+		[
+			"job if",
+			`    if: \${{ needs.route.outputs.runner == 'hobo' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm test`,
+		],
+	])("recognizes a router when %s carries the runner pick", (_where, caller) => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+${caller}
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pnpm lint
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a router when a step env carries the runner pick", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          RUNNER: \${{ needs.route.outputs.runner }}
+        run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a router when job outputs forward a needs runner pick", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  wrapper:
+    needs: route
+    runs-on: ubuntu-24.04
+    outputs:
+      runner: \${{ needs.route.outputs.runner }}
+    steps:
+      - run: echo ok
+  called:
+    needs: wrapper
+    runs-on: \${{ needs.wrapper.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a router when env is reached through an alias", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: ubuntu-24.04
+    env: &runner_env
+      RUNNER: \${{ needs.route.outputs.runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("recognizes a router from fromJSON of the job outputs object", () => {
+		const source = `jobs:
+  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ fromJSON(needs['route'].outputs).runner }}
+    steps:
+      - run: pnpm test
+`;
+		expect(planWorkflow("ci.yml", source).jobs[0]).toMatchObject({
+			job: "route",
+			verdict: "skipped",
+			reason: "routes_jobs",
+		});
+	});
+
+	it("does not treat a job id that is an invalid regex as a router unless another job reads it", () => {
+		const untouched = `jobs:
+  "(?":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  plain:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		expect(
+			planWorkflow("ci.yml", untouched).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["(?", "ready", undefined],
+			["plain", "ready", undefined],
+		]);
+
+		const referenced = `jobs:
+  "(?":
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+  called:
+    runs-on: \${{ needs['(?'].outputs.runner }}
+    steps:
+      - run: pnpm test
+  plain:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo ok
+`;
+		expect(
+			planWorkflow("ci.yml", referenced).jobs.map((job) => [
+				job.job,
+				job.verdict,
+				job.reason,
+			]),
+		).toEqual([
+			["(?", "skipped", "routes_jobs"],
+			["called", "skipped", "expression"],
+			["plain", "ready", undefined],
+		]);
 	});
 });

@@ -1,0 +1,45 @@
+{
+	"name": "@hobo/iac-alchemy",
+	"version": "0.0.1",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"files": [
+		"dist"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1"
+	},
+	"peerDependencies": {
+		"alchemy": "2.0.0-beta.87",
+		"effect": "^4.1.4",
+		"@effect/platform-node": "^4.1.4",
+		"ws": "^8.21.0"
+	},
+	"devDependencies": {
+		"@alchemy.run/rivet": "2.0.0-beta.87",
+		"alchemy": "2.0.0-beta.87",
+		"effect": "4.1.4",
+		"@effect/platform-node": "4.1.4",
+		"ws": "8.21.0",
+		"vitest": "^4.1.9",
+		"@types/node": "^24.13.2"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"typecheck": "tsc --noEmit -p tsconfig.json",
+		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
+		"test": "vitest run",
+		"test:contract:consumer": "vitest run contracts/consumer"
+	}
+}

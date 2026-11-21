@@ -1,17 +1,25 @@
+/* oxlint-disable anti-slop/require-safety-comment-for-type-assertion -- command and store fixtures use narrowed casts in tests. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createHoboCli, createUpCommand } from "@hobo/cli";
+import {
+	type CommandModule,
+	createHoboCli,
+	createUpCommand,
+	type YardRuntime,
+} from "@hobo/cli";
 import {
 	createInProcessExecutor,
 	type IacProgram,
 	type IacProvider,
 } from "@hobo/cloud";
+import { createTrustedVault } from "@hobo/core";
 import { CD_PLACEMENT_YARDS } from "@hobo/hobo-cd";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+	createCdVercelUpCommand,
 	routePreparedPlacements,
 	withYardOfferings,
 } from "../src/cd-placement.js";
@@ -19,6 +27,7 @@ import {
 	createComposedHoboCli,
 	createDefaultYardRuntime,
 } from "../src/index.js";
+import type { VercelDeployProviderOptions } from "../src/vercel-deploy-provider.js";
 
 // `hobo cd plan` places the CD project's journal and its config where `hobo cd
 // up` makes them: the journal on the fleet `prepare` provisions (Neon
@@ -35,10 +44,23 @@ afterEach(() => {
 	stores = [];
 });
 
+function trackRuntimeLocalStore(runtime: YardRuntime): void {
+	stores.push(runtime.store as RuntimeLocalEventStore);
+}
+
+function cdUpRunInput(): Parameters<CommandModule["run"]>[0] {
+	return {
+		verb: "up",
+		args: [],
+		flags: {},
+		context: { cwd: CD_PROJECT, projectDir: CD_PROJECT },
+		emitProgress: () => {},
+	};
+}
+
 async function planCd() {
 	const runtime = createDefaultYardRuntime({ env: {} });
-	// SAFETY: the default runtime's store is the runtime-local one.
-	stores.push(runtime.store as RuntimeLocalEventStore);
+	trackRuntimeLocalStore(runtime);
 	const cli = createComposedHoboCli({ yardRuntime: runtime });
 	const out = await cli.run(["cd", "plan", "--json"], {
 		cwd: CD_PROJECT,
@@ -59,6 +81,19 @@ describe("hobo cd plan places CD on its own Yards", () => {
 		);
 		expect(providers.get("cd-journal")).toBe("yard:hobo-cd-journal");
 		expect(providers.get("cd-config")).toBe("yard:hobo-cd-config");
+	});
+
+	it("places the API and the tick on CD's Vercel Yard, whatever this machine has registered", async () => {
+		const plan = await planCd();
+		expect(plan.ok, JSON.stringify(plan.data?.remediations)).toBe(true);
+		const providers = new Map<string, string>(
+			plan.data.resources.map((r: { name: string; provider: string }) => [
+				r.name,
+				r.provider,
+			]),
+		);
+		expect(providers.get("cd-api")).toBe("yard:hobo-cd");
+		expect(providers.get("cd-tick")).toBe("yard:hobo-cd");
 	});
 });
 
@@ -142,10 +177,114 @@ describe("hobo cd up hands each resource to whoever makes it", () => {
 	});
 });
 
+describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
+	it("deploys packages/cd-vercel at the current commit to CD's preview", async () => {
+		const runtime = createDefaultYardRuntime({ env: {} });
+		trackRuntimeLocalStore(runtime);
+		const vault = createTrustedVault();
+		vault.put("VERCEL_TOKEN", "tok_test");
+		vault.put("VERCEL_TEAM_ID", "team_abc");
+		vault.put("HOBO_CD_DEPLOY_INFISICAL_PROJECT_ID", "proj-1");
+		vault.put(
+			"HOBO_CD_DEPLOY_INFISICAL_IDENTITY_ID",
+			"00000000-0000-4000-8000-000000000001",
+		);
+		const deployed: string[] = [];
+		let seenOptions: Omit<VercelDeployProviderOptions, "fetch"> | undefined;
+		let placedRuntime: YardRuntime | undefined;
+		const up = createCdVercelUpCommand({
+			credentials: vault,
+			runtime,
+			resolveGitHead: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
+			vercelDeployProvider: (options) => {
+				seenOptions = options;
+				return {
+					id: "fake",
+					preview: async () => ({ summary: "", changes: 1 }),
+					apply: async (program) => {
+						deployed.push(program.resourceId);
+						return { url: "hobo-cd-x.vercel.app" };
+					},
+					destroy: async () => {},
+					refresh: async () => ({ drift: false, observed: {} }),
+				};
+			},
+			upWith: (placed) => {
+				placedRuntime = placed;
+				return {
+					implemented: true,
+					run: async () => ({
+						ok: true,
+						status: "ok",
+						code: "HOBO_OK",
+						message: "",
+						data: {},
+					}),
+				};
+			},
+		});
+		const result = await up.run(cdUpRunInput());
+		expect(result.ok).toBe(true);
+		expect(seenOptions).toMatchObject({
+			token: "tok_test",
+			teamId: "team_abc",
+			projectName: "hobo-cd",
+			target: "preview",
+			createMissingProject: true,
+			configuration: {
+				INFISICAL_PROJECT_ID: "proj-1",
+				INFISICAL_IDENTITY_ID: "00000000-0000-4000-8000-000000000001",
+			},
+			gitArtifact: {
+				org: "Hobo-Labs",
+				repo: "HoBo",
+				ref: "feature/x",
+				sha: "a".repeat(40),
+				rootDirectory: "packages/cd-vercel",
+			},
+		});
+		expect(placedRuntime?.registry.providers()).toEqual(
+			expect.arrayContaining([
+				"yard:hobo-cd",
+				"yard:hobo-cd-journal",
+				"yard:hobo-cd-config",
+			]),
+		);
+		const iacRun = (resourceId: string, provider: string) =>
+			placedRuntime?.executor?.run(
+				{
+					programId: `p-${resourceId}`,
+					deploymentId: "hobo-cd",
+					resourceId,
+					provider,
+					driver: "test",
+					action: "apply",
+					stackName: "hobo-cd",
+				},
+				{ id: "c", scope: "s", ttlSeconds: 60, ambient: false },
+			);
+		await iacRun("cd-journal", "yard:hobo-cd-journal");
+		await iacRun("cd-api", "yard:hobo-cd");
+		expect(deployed).toEqual(["cd-api"]);
+	});
+
+	it("refuses when the checkout is on no branch", async () => {
+		const up = createCdVercelUpCommand({
+			credentials: createTrustedVault(),
+			runtime: createDefaultYardRuntime({ env: {} }),
+			resolveGitHead: async () => undefined,
+			upWith: () => {
+				throw new Error("must not converge");
+			},
+		});
+		const result = await up.run(cdUpRunInput());
+		expect(result.code).toBe("HOBO_CD_UP_NO_BRANCH");
+	});
+});
+
 it("does not send the prepared journal or store to the provider on cd down", async () => {
 	const base = createDefaultYardRuntime({ env: {} });
-	// SAFETY: the default runtime's store is the runtime-local one.
-	stores.push(base.store as RuntimeLocalEventStore);
+	trackRuntimeLocalStore(base);
 	const destroyed: string[] = [];
 	const iac: IacProvider = {
 		id: "test",
@@ -182,8 +321,7 @@ it("does not send the prepared journal or store to the provider on cd down", asy
 
 it("refuses CD up and down before an unguarded hosting supervisor is called", async () => {
 	const base = createDefaultYardRuntime({ env: {} });
-	// SAFETY: the default runtime's store is the runtime-local one.
-	stores.push(base.store as RuntimeLocalEventStore);
+	trackRuntimeLocalStore(base);
 	const called: string[] = [];
 	const cli = createComposedHoboCli({
 		yardRuntime: {
