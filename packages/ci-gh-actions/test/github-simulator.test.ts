@@ -526,6 +526,15 @@ describe("GithubSimulator", () => {
 			},
 		);
 		expect(manual.status).toBe(302);
+		const logUrl = `${sim.baseUrl}/repos/${REPO}/actions/jobs/${job.id}/logs`;
+		const manualRequest = new Request(logUrl, { redirect: "manual" });
+		expect((await sim.fetch(manualRequest)).status).toBe(302);
+		expect(
+			(await sim.fetch(manualRequest, { redirect: "follow" })).status,
+		).toBe(200);
+		await expect(
+			sim.fetch(new Request(logUrl, { redirect: "error" })),
+		).rejects.toThrow(TypeError);
 
 		const repository = await (await api(sim, `/repos/${REPO}`)).json();
 		expect(repository).toMatchObject({
@@ -723,7 +732,7 @@ describe("GithubSimulator", () => {
 		await api(sim, `/repos/${REPO}/actions/jobs/${job.id}`, {
 			headers: { authorization: "Bearer test" },
 		});
-		await api(sim, "/no-such-route");
+		await api(sim, "/unmatched-route");
 		expect(sim.requests()).toEqual([
 			expect.objectContaining({
 				method: "GET",
@@ -731,7 +740,7 @@ describe("GithubSimulator", () => {
 				status: 200,
 				authorized: true,
 			}),
-			expect.objectContaining({ path: "/no-such-route", status: 404 }),
+			expect.objectContaining({ path: "/unmatched-route", status: 404 }),
 		]);
 		expect(
 			sim

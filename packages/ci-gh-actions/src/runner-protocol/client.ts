@@ -52,6 +52,7 @@ import {
 	JOB_IDS,
 	JOB_MESSAGE,
 	JOB_REQUEST_REF,
+	type JobMessage,
 	type JobRequestRef,
 	RUNNER_JOB_REQUEST,
 	relayJobMessageOf,
@@ -443,10 +444,10 @@ class GithubRunnerSession implements RunnerSession {
 		};
 		this.taken.set(ids.jobid, taken);
 		let message: RelayJobMessage;
+		let job: JobMessage;
 		try {
-			message = relayJobMessageOf(
-				readProtocolJson(text, JOB_MESSAGE, "the job message"),
-			);
+			job = readProtocolJson(text, JOB_MESSAGE, "the job message");
+			message = relayJobMessageOf(job);
 		} catch (error) {
 			if (!(error instanceof Error)) throw error;
 			const reason = `The HoBo relay could not read this job's message (${error instanceof ProtocolJsonRejection ? error.message : error.name}), so it completed the job as failed without running anything. Run it again; if it fails the same way, give it another runs-on label and report it.`;
@@ -467,7 +468,7 @@ class GithubRunnerSession implements RunnerSession {
 			});
 			return undefined;
 		}
-		if (isRelayJob(message)) return message;
+		if (isRelayJob(message, job)) return message;
 		const reason =
 			"This job asked for the HoBo relay's runner label but is not a relay job. A relay runs no job code, so the job was completed as failed; give it another runs-on label.";
 		await this.finish(
@@ -654,7 +655,7 @@ export class GithubRunnerServiceClient implements RunnerServiceClient {
 					);
 				if (attempt > 1)
 					throw new RunnerProtocolError(
-						`the ${init.name} call failed: ${error instanceof Error ? error.message : String(error)}`,
+						`the ${init.name} call failed after a transport error`,
 						0,
 					);
 				this.emit({ kind: "retried", call: init.name, status: 0 });

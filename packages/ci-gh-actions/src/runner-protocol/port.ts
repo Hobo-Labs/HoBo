@@ -1,23 +1,3 @@
-/**
- * The runner protocol as a relay sees it: open a session with a one-job
- * runner's credentials, take the next relay job, complete it with an answer,
- * close. In relay mode (ADR-0183) a HoBo node answers a job labelled
- * `hobo-relay` this way and starts no process for it, so the job uses no
- * runner minute and no job code runs.
- *
- * This file is the port and an in-memory fake. The client that speaks the
- * protocol to GitHub's runner service is written from the open-source runner
- * (`actions/runner`, MIT) and ships behind a flag that is off; until a live
- * run is linked, that channel is built, not proven.
- *
- * Where `ParsedJitConfig` comes from in `actions/runner`: the runner decodes
- * `--jitconfig` (base64 JSON naming the `.runner`, `.credentials` and
- * `.credentials_rsaparams` files) and writes those files before it starts
- * (`src/Runner.Listener/Runner.cs`). `.runner` holds `RunnerSettings` and
- * `.credentials` holds `CredentialData`, both in
- * `src/Runner.Common/ConfigurationStore.cs`. The parser that fills this type
- * belongs to the client and checks each field against those files.
- */
 import { clone } from "@bufbuild/protobuf";
 import {
 	type RelayJobAnswer,
@@ -25,59 +5,56 @@ import {
 	RelayJobMessageSchema,
 } from "@hobo/ci";
 
-/** `.runner`: the one-job runner GitHub registered, and where to reach the service. */
 export type JitRunnerSettings = Readonly<{
 	agentId: number;
 	agentName: string;
 	poolId: number;
-	/** The runner service's URL. */
+
 	serverUrl: string;
-	/** The repository or organization the runner was registered on. */
+
 	gitHubUrl: string;
 	workFolder: string;
-	/** The broker flow, and its URL when used. */
+
 	useV2Flow: boolean;
 	serverUrlV2: string;
 }>;
 
-/** `.credentials`: how the runner signs in. */
 export type JitCredentials = Readonly<{
-	/** `OAuth` for a registered runner. */
 	scheme: string;
 	clientId: string;
 	authorizationUrl: string;
 }>;
 
 declare const parsedJitConfig: unique symbol;
-/**
- * A one-job runner's configuration, decoded and checked. `rsaParameters` is
- * the `.credentials_rsaparams` text as the runner wrote it: the private key
- * the session signs its token request with. It is a secret; nothing logs it.
- */
-export type ParsedJitConfig = Readonly<{
+
+type JitConfig = Readonly<{
 	runner: JitRunnerSettings;
 	credentials: JitCredentials;
 	rsaParameters: string;
-}> & { readonly [parsedJitConfig]: true };
+}>;
+
+export type ParsedJitConfig = JitConfig & { readonly [parsedJitConfig]: true };
+
+function isTestJitConfig(config: JitConfig): config is ParsedJitConfig {
+	return (
+		config.runner.serverUrl === "https://runner.invalid/" &&
+		config.credentials.authorizationUrl === "https://runner.invalid/token" &&
+		config.rsaParameters === "{}"
+	);
+}
 
 export interface RunnerServiceClient {
-	/** Sign in as the one-job runner and open a session that can take jobs. */
 	open(jit: ParsedJitConfig): Promise<RunnerSession>;
 }
 
 export interface RunnerSession {
-	/**
-	 * The next job offered to this runner, waiting up to `waitMs`, or undefined
-	 * when none came. A job is given to one session only.
-	 */
 	nextJob(waitMs: number): Promise<RelayJobMessage | undefined>;
-	/** Complete a job this session took. Completing any other job throws. */
+
 	complete(answer: RelayJobAnswer): Promise<void>;
-	/** End the session. A closed session takes no more jobs. */
+
 	close(): Promise<void>;
 }
 
-/** A configuration for tests that never reaches a real service. */
 export function testJitConfig(agentName = "hobo-relay-test"): ParsedJitConfig {
 	const config = {
 		runner: {
@@ -97,16 +74,13 @@ export function testJitConfig(agentName = "hobo-relay-test"): ParsedJitConfig {
 		},
 		rsaParameters: "{}",
 	};
-	// SAFETY: a test configuration names an unreachable service; nothing signs in with it.
-	return Object.freeze(config) as ParsedJitConfig;
+	if (!isTestJitConfig(config))
+		throw new Error("invalid test runner configuration");
+	return Object.freeze(config);
 }
 
 type Completion = Readonly<{ session: string; answer: RelayJobAnswer }>;
 
-/**
- * A runner service in memory. `queue` offers a job; any open session may take
- * it, and only one does. `completions` keeps every answer in order.
- */
 export class InMemoryRunnerService implements RunnerServiceClient {
 	private readonly pending: RelayJobMessage[] = [];
 	private readonly taken = new Map<string, string>();
@@ -142,11 +116,10 @@ export class InMemoryRunnerService implements RunnerServiceClient {
 	}
 }
 
-/** What a runner service conformance run needs: a client, and a way to offer it a job. */
 export type RunnerServiceUnderTest = Readonly<{
 	client: RunnerServiceClient;
 	queue(message: RelayJobMessage): Promise<void> | void;
-	/** A configuration the client accepts. */
+
 	jit: ParsedJitConfig;
 }>;
 
@@ -163,12 +136,6 @@ async function rejects(action: () => Promise<void>): Promise<boolean> {
 	}
 }
 
-/**
- * A runner service client keeps the protocol's rules: an empty queue gives
- * nothing, a job goes to one session only, only the session that took a job
- * completes it, and a closed session takes nothing. `message` and `answer`
- * make a job and its answer for the given job id.
- */
 export async function runnerServiceClientConformance(
 	make: () => RunnerServiceUnderTest | Promise<RunnerServiceUnderTest>,
 	fixtures: Readonly<{
