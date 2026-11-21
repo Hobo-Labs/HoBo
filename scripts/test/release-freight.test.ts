@@ -7,11 +7,16 @@ import {
 	announceVerdict,
 	classifyRelease,
 	githubApiProbeTransport,
-	PAGES_RELEASE_BUILD_MARGIN_MS,
+	PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
+	PAGES_RELEASE_PROMOTION_BUDGET_MS,
 	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
 	PAGES_RELEASE_VERIFICATION_WINDOW_MS,
 	RELEASE_DRIVE_PAGES,
+	pagesReleaseWallBudgetMs,
+	promoteReleaseFreight,
+	RELEASE_PROMOTION_TIMEOUT,
 	releaseCampId,
+	type ReleaseCd,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
@@ -93,15 +98,53 @@ describe("release topology names", () => {
 		);
 	});
 
-	it("gives Pages promotion drive longer than the verification progress window", () => {
+	it("sizes Pages promotion drive to the verification progress budget, not job overrun", () => {
 		const drive = releaseDriveFor("pages");
 		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
 		const budgetMs = drive.passes * drive.intervalMs - drive.intervalMs;
 		expect(budgetMs).toBeGreaterThanOrEqual(
-			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-				PAGES_RELEASE_VERIFICATION_WINDOW_MS +
-				PAGES_RELEASE_BUILD_MARGIN_MS,
+			PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
 		);
+		expect(budgetMs).toBeLessThan(PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT);
+		expect(PAGES_RELEASE_PROMOTION_BUDGET_MS).toBe(
+			PAGES_RELEASE_VERIFICATION_PROGRESS_MS + drive.intervalMs,
+		);
+		expect(pagesReleaseWallBudgetMs({})).toBe(
+			PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
+		);
+		expect(() =>
+			pagesReleaseWallBudgetMs({
+				HOBO_RELEASE_PAGES_WALL_BUDGET_MS: String(99 * 60_000),
+			}),
+		).toThrow(/must not exceed/);
+	});
+
+	it("fails fast when a Pages drive pass exceeds the wall budget", async () => {
+		const wall = { startedMs: Date.now(), budgetMs: 60 };
+		const cd = {
+			home: "/tmp/release-wall",
+			run: async () => ({
+				ok: true,
+				data: { promotion: { promotionId: "promo-wall-1" } },
+			}),
+			store: async () => {
+				throw new Error("unused");
+			},
+			declaration: async () => {
+				throw new Error("unused");
+			},
+			drive: () => new Promise<never>(() => {}),
+			close: async () => {},
+		} satisfies ReleaseCd;
+		const verdict = await promoteReleaseFreight(cd, {
+			family: "pages",
+			channel: "candidate",
+			freightId: "freight-wall-1",
+			drive: { passes: 5, intervalMs: 1 },
+			promoteWall: wall,
+		});
+		expect(verdict.outcome).toBe("blocked");
+		expect(verdict.codes).toContain(RELEASE_PROMOTION_TIMEOUT);
 	});
 
 	it("authenticates GitHub probes and accepts only a built Pages head", async () => {
