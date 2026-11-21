@@ -396,6 +396,10 @@ The **gh-stack** skill is mirrored in `.agents/skills/gh-stack` and `.claude/ski
 
 The **optimizexp** skill reviews actual UX, DX, and AX behavior, implements improvements, and verifies them with relevant evidence. It uses source code as the visual authority and does not create planning artifacts.
 
+The **skill-creator-plus** initializer requires a complete description and
+instructions. It creates only the requested `SKILL.md`, without placeholder
+scripts or unfinished reference files.
+
 Repo-local skills keep Codex-valid `SKILL.md` frontmatter. `pnpm run docs:okf` validates the docs and the `repo` and `draft` reference bundles in both mirrors.
 
 ## Progressive setup
