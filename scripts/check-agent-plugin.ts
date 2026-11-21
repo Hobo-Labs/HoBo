@@ -6,8 +6,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import {
-	checkSkillsConformance,
-	discoverHoboOwnedSkillNames,
+	checkHoboRepoSkillsConformance,
 	HOBO_OWNED_ALLOWED_FIELDS,
 } from "@hobo/agent-skills";
 import { z } from "zod";
@@ -1434,14 +1433,13 @@ async function main(): Promise<void> {
 		repoRoot,
 		versionFromReleaseTrain,
 	});
-	const skillsRoot = path.join(repoRoot, ".agents/skills");
-	const strictSkillNames = await discoverHoboOwnedSkillNames(
-		skillsRoot,
+	const conformance = await checkHoboRepoSkillsConformance(
 		repoRoot,
+		undefined,
+		{
+			neverLockSkillNames: SYNCED_SKILLS,
+		},
 	);
-	const conformance = await checkSkillsConformance(skillsRoot, {
-		strictSkillNames,
-	});
 	const conformanceIssues: AgentPluginIssue[] = conformance.map((issue) => ({
 		file: `.agents/skills/${issue.skill}`,
 		message: `${issue.code}: ${issue.message}`,

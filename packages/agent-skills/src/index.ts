@@ -32,7 +32,8 @@ export type SkillConformanceIssue = {
 		| "disallowed-frontmatter-field"
 		| "nested-frontmatter-field"
 		| "name-folder-mismatch"
-		| "non-string-metadata";
+		| "non-string-metadata"
+		| "lock-exempts-repo-skill";
 	readonly message: string;
 };
 
@@ -88,12 +89,18 @@ export function skillUsesHoboOwnedFrontmatter(
 
 function vendoredNamesFromLockJson(text: string): ReadonlySet<string> {
 	/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: skills-lock.json is untrusted JSON; only skill name keys are read after a shallow object check. */
-	const parsed: unknown = JSON.parse(text);
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch (error) {
+		throw new SkillParseError(
+			`skills-lock.json is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+		);
+	}
 	if (typeof parsed !== "object" || parsed === null) {
 		return new Set();
 	}
-	const skills =
-		"skills" in parsed ? parsed.skills : undefined;
+	const skills = "skills" in parsed ? parsed.skills : undefined;
 	if (typeof skills !== "object" || skills === null) {
 		return new Set();
 	}
@@ -101,7 +108,9 @@ function vendoredNamesFromLockJson(text: string): ReadonlySet<string> {
 	/* oxlint-enable anti-slop/no-runtime-typeof */
 }
 
-async function loadVendoredSkillNames(repoRoot: string): Promise<ReadonlySet<string>> {
+async function loadVendoredSkillNames(
+	repoRoot: string,
+): Promise<ReadonlySet<string>> {
 	let text: string;
 	try {
 		text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
@@ -126,12 +135,106 @@ export async function discoverHoboOwnedSkillNames(
 		try {
 			await stat(skillMd);
 			names.push(dirent.name);
-		} catch {
-			continue;
-		}
+		} catch {}
 	}
 	names.sort();
 	return Object.freeze(names);
+}
+
+const SKILLS_LOCK_REPO_SOURCE =
+	/^(?:Hobo-Labs\/HoBo|hobo-labs\/hobo)(?:\/|$|[\s/])/iu;
+
+export type SkillsLockExemptionOptions = {
+	readonly neverLockSkillNames?: readonly string[];
+};
+
+export async function skillsLockExemptionIssues(
+	skillsRoot: string,
+	repoRoot: string,
+	options: SkillsLockExemptionOptions = {},
+): Promise<readonly SkillConformanceIssue[]> {
+	const neverLock = new Set(options.neverLockSkillNames ?? []);
+	let text: string;
+	try {
+		text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
+	} catch (error) {
+		throw new SkillParseError(
+			`skills-lock.json is required for HoBo-owned skill discovery (${error instanceof Error ? error.message : String(error)})`,
+		);
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch (error) {
+		throw new SkillParseError(
+			`skills-lock.json is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+		);
+	}
+	/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: skills-lock.json is untrusted JSON; shallow object checks only. */
+	if (typeof parsed !== "object" || parsed === null || !("skills" in parsed)) {
+		return Object.freeze([]);
+	}
+	const skills = parsed.skills;
+	if (typeof skills !== "object" || skills === null) {
+		return Object.freeze([]);
+	}
+	/* oxlint-enable anti-slop/no-runtime-typeof */
+	const issues: SkillConformanceIssue[] = [];
+	for (const [name, entry] of Object.entries(skills)) {
+		if (neverLock.has(name)) {
+			issues.push({
+				skill: name,
+				code: "lock-exempts-repo-skill",
+				message:
+					"skills-lock.json must not list a repo-authored skill that ships in the portable plugin",
+			});
+			continue;
+		}
+		let skillMdExists = false;
+		try {
+			await stat(join(skillsRoot, name, "SKILL.md"));
+			skillMdExists = true;
+		} catch {
+			skillMdExists = false;
+		}
+		if (!skillMdExists) continue;
+		let source = "";
+		/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters anti-slop/require-safety-comment-for-type-assertion -- SAFETY: skills-lock.json entry objects are untrusted JSON; only an optional source string field is read after shallow shape checks. */
+		if (typeof entry === "object" && entry !== null && "source" in entry) {
+			const raw = (entry as { source: unknown }).source;
+			if (typeof raw === "string") source = raw.trim();
+		}
+		/* oxlint-enable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters anti-slop/require-safety-comment-for-type-assertion */
+		if (source.length > 0 && SKILLS_LOCK_REPO_SOURCE.test(source)) {
+			issues.push({
+				skill: name,
+				code: "lock-exempts-repo-skill",
+				message:
+					"skills-lock.json must not use this repository as the vendored source for a skill directory present in .agents/skills",
+			});
+		}
+	}
+	return Object.freeze(issues);
+}
+
+export async function checkHoboRepoSkillsConformance(
+	repoRoot: string,
+	skillsRoot = join(repoRoot, ".agents/skills"),
+	options: SkillsLockExemptionOptions = {},
+): Promise<readonly SkillConformanceIssue[]> {
+	const strictSkillNames = await discoverHoboOwnedSkillNames(
+		skillsRoot,
+		repoRoot,
+	);
+	const lockIssues = await skillsLockExemptionIssues(
+		skillsRoot,
+		repoRoot,
+		options,
+	);
+	const skillIssues = await checkSkillsConformance(skillsRoot, {
+		strictSkillNames,
+	});
+	return Object.freeze([...lockIssues, ...skillIssues]);
 }
 
 type YamlScalar =

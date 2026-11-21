@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
 	AGENT_SKILLS_MANIFEST_SCHEMA,
+	checkHoboRepoSkillsConformance,
 	checkSkillsConformance,
 	discoverHoboOwnedSkillNames,
 	loadSkillsManifest,
@@ -133,6 +134,37 @@ describe("checkSkillsConformance", () => {
 				strictSkillNames: await discoverHoboOwnedSkillNames(REPO_SKILLS_ROOT, REPO_ROOT),
 			}),
 		).toEqual([]);
+	});
+
+	it("rejects skills-lock entries for synced portable plugin skills", async () => {
+		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
+		scratches.push(scratchRepo);
+		await writeFile(
+			path.join(scratchRepo, "skills-lock.json"),
+			`${JSON.stringify(
+				{
+					version: 1,
+					skills: {
+						"hobo-deploy": {
+							source: "Hobo-Labs/HoBo",
+							sourceType: "github",
+						},
+					},
+				},
+				null,
+				2,
+			)}\n`,
+		);
+		const root = await scratchTree({
+			"hobo-deploy":
+				"---\nname: hobo-deploy\ndescription: d\n---\n",
+		});
+		const issues = await checkHoboRepoSkillsConformance(scratchRepo, root, {
+			neverLockSkillNames: ["hobo-deploy"],
+		});
+		expect(issues.some((issue) => issue.code === "lock-exempts-repo-skill")).toBe(
+			true,
+		);
 	});
 
 	it("reports missing SKILL.md, duplicates, and unparseable frontmatter", async () => {
