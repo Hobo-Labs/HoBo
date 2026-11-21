@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import {
 	cloneAsJson,
 	isJsonObject,
@@ -24,6 +25,7 @@ export interface WorkflowReplayContext {
 	random(label?: string): number;
 	step<T>(name: string, fn: () => Promise<T> | T): Promise<T>;
 	sleep(delayMs: number): Promise<void>;
+	emit?(type: string, data?: JsonValue): Promise<number>;
 	resumeHook<T>(payload: T): T;
 }
 
@@ -53,12 +55,17 @@ export async function replayRun<S, A>(
 	const version = isJsonObject(started.data)
 		? started.data.commandTreeVersion
 		: undefined;
-	if (version !== undefined && version !== 1 && version !== 2) {
+	if (
+		version !== undefined &&
+		version !== 1 &&
+		version !== 2 &&
+		version !== 3
+	) {
 		throw new Error("unsupported workflow command tree version");
 	}
 	const tree =
-		version === 1 || version === 2
-			? readReplayCommandTree(events, version === 2)
+		version === 1 || version === 2 || version === 3
+			? readReplayCommandTree(events, version >= 2, version === 3)
 			: undefined;
 	let treeCursor = 0;
 
@@ -131,7 +138,7 @@ export async function replayRun<S, A>(
 				if (command.kind !== "sleep" || command.delayMs !== delayMs) {
 					throw new Error("sleep schedule diverged");
 				}
-				if (version === 2 && !command.completed) {
+				if ((version === 2 || version === 3) && !command.completed) {
 					throw new Error("workflow sleep lacks completion evidence");
 				}
 				treeCursor += 1;
@@ -152,6 +159,22 @@ export async function replayRun<S, A>(
 			timerResults.set(`sleep:${sleepCounter}`, { delayMs });
 			sleepCounter += 1;
 		},
+		async emit(type, data) {
+			if (version !== 3) return 0;
+			const command = tree?.[treeCursor];
+			if (
+				command?.kind !== "emit" ||
+				command.type !== type ||
+				!isDeepStrictEqual(command.data, cloneAsJson(data ?? null)) ||
+				command.seq === undefined
+			) {
+				throw new Error(
+					`workflow command history diverged at index ${treeCursor}`,
+				);
+			}
+			treeCursor += 1;
+			return command.seq;
+		},
 		resumeHook<T>(_payload: T) {
 			const resumed = events.find((event) => event.type === "run.HookResumed");
 			if (!resumed) {
@@ -169,7 +192,11 @@ export async function replayRun<S, A>(
 		const remaining = tree[treeCursor];
 		if (remaining) {
 			const type =
-				remaining.kind === "step" ? "run.StepCompleted" : "run.SleepScheduled";
+				remaining.kind === "step"
+					? "run.StepCompleted"
+					: remaining.kind === "sleep"
+						? "run.SleepScheduled"
+						: "application event";
 			throw new Error(`unconsumed ${type} at index ${treeCursor}`);
 		}
 	} else {
