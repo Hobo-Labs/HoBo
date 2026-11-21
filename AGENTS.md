@@ -452,7 +452,8 @@ The repository does not keep plans, roadmaps, or design documents. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
 changed planning and design documents and new comments in the languages listed
-above; the common rule applies to every language.
+above, including ignored `.sdlc` planning documents; the common rule applies to
+every language.
 Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules

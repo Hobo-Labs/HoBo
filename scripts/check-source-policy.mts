@@ -146,11 +146,19 @@ function renameSources(args: string[]): Map<string, string> {
 }
 
 function untrackedFiles(mode: Mode): string[] {
-	return mode.kind === "worktree"
-		? git(["ls-files", "--others", "--exclude-standard", "-z"])
-				.split("\0")
-				.filter(Boolean)
-		: [];
+	if (mode.kind !== "worktree") return [];
+	const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
+	const ignoredAgentArtifacts = git([
+		"ls-files",
+		"--others",
+		"--ignored",
+		"--exclude-standard",
+		"-z",
+		"--",
+		".sdlc",
+		".impeccable",
+	]);
+	return `${untracked}${ignoredAgentArtifacts}`.split("\0").filter(Boolean);
 }
 
 function contents(mode: Mode, file: string): string {
@@ -389,7 +397,12 @@ export function documentViolation(
 	file: string,
 	text: string,
 ): string | undefined {
-	if (/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/)/iu.test(file))
+	if (
+		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.mdx?$)/iu.test(
+			file,
+		) ||
+		/(?:^|\/)\.sdlc\/.*\.mdx?$/iu.test(file)
+	)
 		return "planning and design documents are not allowed";
 	if (!/\.mdx?$/iu.test(file)) return undefined;
 	if (/(?:^|\/)(?:design|designs|plans|roadmaps)\//iu.test(file))
