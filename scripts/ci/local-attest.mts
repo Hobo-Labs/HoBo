@@ -1006,6 +1006,7 @@ export function localContext(state: {
 		if (path === "needs.route.result") return "success";
 		if (path === "needs.route.outputs.attested") return "false";
 		if (path === "needs.route.outputs.attested-jobs") return "[]";
+		if (path === "needs.route.outputs.pr-fabric-green") return "false";
 		if (path === "strategy.job-index" && shard) return shard.index;
 		if (path === "strategy.job-total" && shard) return shard.total;
 		if (path === "matrix.shard" && shard) return shard.value;
