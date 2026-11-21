@@ -46,8 +46,11 @@ pnpm run agent-plugin:build
 In CI, `agent-plugin:build` must run in the same GitHub Actions job immediately
 before `agent-plugin:check`. The build writes a gitignored
 `.bundle-attestation.json` (GitHub Actions only) carrying the bundle sha256,
-`GITHUB_RUN_ID`, `GITHUB_SHA`, and attempt when present. The check refuses a
-bundle whose attestation was not minted for this workflow run and checkout. In
+`GITHUB_RUN_ID`, `GITHUB_SHA`, and `runAttempt` when GitHub sets
+`GITHUB_RUN_ATTEMPT`. It is a **job-local consistency record** (same run,
+checkout, and bytes) — not a signature or off-box provenance; any step in the
+same Actions job could mint a matching file. The check refuses a bundle whose
+attestation does not match this workflow run, checkout, attempt, and sha256. In
 CI, `agent-plugin:check` builds the bundle when it is still absent so repo-wide
 gates do not fail before that build step.
 

@@ -892,7 +892,11 @@ test("any skill-tree edit selects the byte-identical mirror gate", () => {
 test("agent-plugin changes select the Agent Plugins 1.0.0 gate", () => {
 	for (const file of [
 		"plugins/hobo/plugin.json",
+		"plugins/hobo/mcp.json",
 		"plugins/hobo/skills/hobo-setup/SKILL.md",
+		"plugins/hobo/skills/hobo-setup/references/agent-tooling.md",
+		"tools/agent-plugins/schemas/1.0.0/plugin.schema.json",
+		"tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
 		"scripts/check-agent-plugin.ts",
 		"scripts/lib/nbgv-release-version.mts",
 		"packages/agent-skills/src/index.ts",

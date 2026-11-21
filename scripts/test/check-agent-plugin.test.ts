@@ -90,6 +90,15 @@ function stubCiEnvironment(event: string, headSha = "") {
 	vi.stubEnv("GITHUB_HEAD_SHA", headSha);
 }
 
+function stubCiOff() {
+	for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"] as const) {
+		vi.stubEnv(variable, undefined);
+	}
+	vi.stubEnv("GITHUB_RUN_ID", undefined);
+	vi.stubEnv("GITHUB_SHA", undefined);
+	vi.stubEnv("GITHUB_RUN_ATTEMPT", undefined);
+}
+
 function recordingNbgv(height: string) {
 	const calls: Array<{ variable: string; commitIsh: string }> = [];
 	return {
@@ -484,6 +493,7 @@ describe("frontmatter helpers", () => {
 
 describe("checkAgentPlugin (integration)", () => {
 	it("validates the repository's real plugin with no issues", () => {
+		stubCiOff();
 		const report = checkAgentPlugin({
 			pluginRoot: realPluginRoot,
 			repoRoot,
@@ -686,9 +696,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("fails closed for missing and tiny bundles in CI", async () => {
-		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
-			vi.stubEnv(variable, "");
-		}
+		stubCiOff();
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
 			"mcp.json": JSON.stringify({
@@ -724,14 +732,12 @@ describe("checkAgentPlugin (integration)", () => {
 				),
 			).toBe(true);
 			await rm(path.join(pluginRoot, "bin/hobo-mcp.mjs"));
-			vi.stubEnv(variable, "");
+			vi.stubEnv(variable, undefined);
 		}
 	});
 
 	it("scans an existing plugin-rooted bundle for secrets", async () => {
-		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
-			vi.stubEnv(variable, "");
-		}
+		stubCiOff();
 		const secret = `github_pat_${"a".repeat(20)}`;
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
@@ -756,7 +762,6 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues).toHaveLength(1);
 		expect(bundleIssues[0]?.message).toContain("secret-shaped value");
 		expect(bundleIssues[0]?.message).not.toContain(secret);
-		vi.unstubAllEnvs();
 	});
 
 	it("rejects a bundle attestation minted for a different workflow run in CI", async () => {
@@ -792,7 +797,111 @@ describe("checkAgentPlugin (integration)", () => {
 				/runId does not match this workflow run/u.test(issue.message),
 			),
 		).toBe(true);
-		vi.unstubAllEnvs();
+	});
+
+	it("rejects a bundle attestation whose commitSha does not match GITHUB_SHA", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		const bundleBody = "x".repeat(1024 * 1024);
+		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": `${JSON.stringify({
+				sha256,
+				runId: "run-current",
+				commitSha: "commit-other",
+			})}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/commitSha does not match this workflow checkout/u.test(issue.message),
+			),
+		).toBe(true);
+	});
+
+	it("rejects a bundle attestation whose sha256 does not match the bundle bytes", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		const bundleBody = "x".repeat(1024 * 1024);
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": `${JSON.stringify({
+				sha256: "0".repeat(64),
+				runId: "run-current",
+				commitSha: "commit-current",
+			})}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/sha256 does not match bin\/hobo-mcp.mjs/u.test(issue.message),
+			),
+		).toBe(true);
+	});
+
+	it("rejects a bundle attestation missing runAttempt when GITHUB_RUN_ATTEMPT is set", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		vi.stubEnv("GITHUB_RUN_ATTEMPT", "2");
+		const bundleBody = "x".repeat(1024 * 1024);
+		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": `${JSON.stringify({
+				sha256,
+				runId: "run-current",
+				commitSha: "commit-current",
+			})}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/runAttempt does not match this workflow attempt/u.test(issue.message),
+			),
+		).toBe(true);
 	});
 
 	it("rejects a present bundle without attestation in CI", async () => {
@@ -1166,14 +1275,8 @@ describe("release-train version pin commit selection", () => {
 		const failingNbgv = () => {
 			throw new Error("nbgv unavailable");
 		};
-		for (const variable of [
-			"CI",
-			"GITHUB_ACTIONS",
-			"TF_BUILD",
-			"HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN",
-		]) {
-			vi.stubEnv(variable, "");
-		}
+		stubCiOff();
+		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", undefined);
 		expect(() =>
 			releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
 		).toThrow("nbgv unavailable");
@@ -1190,7 +1293,7 @@ describe("release-train version pin commit selection", () => {
 			expect(() =>
 				releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
 			).toThrow("nbgv unavailable");
-			vi.stubEnv(variable, "");
+			vi.stubEnv(variable, undefined);
 		}
 	});
 });

@@ -34,6 +34,15 @@ export const SECRET_VALUE_PATTERN =
 export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
 export const SYNCED_SKILLS = ["hobo-setup", "hobo-deploy"] as const;
 
+export function agentPluginCiActive(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return [env.CI, env.GITHUB_ACTIONS, env.TF_BUILD].some((value) => {
+		const set = (value ?? "").toLowerCase();
+		return set !== "" && set !== "false" && set !== "0";
+	});
+}
+
 export type AgentPluginIssue = {
 	readonly file: string;
 	readonly message: string;
@@ -815,7 +824,7 @@ export function checkAgentPlugin(input: {
 		repoRoot,
 		commitIsh,
 	);
-	if (input.versionFromReleaseTrain === undefined && ciGateActive()) {
+	if (input.versionFromReleaseTrain === undefined && agentPluginCiActive()) {
 		issues.push({
 			file: "plugin.json",
 			message:
@@ -906,11 +915,7 @@ export function checkAgentPlugin(input: {
 					"is missing or empty while bin/hobo-mcp.mjs is present; rebuild with pnpm run agent-plugin:build",
 			});
 		}
-	} else if (
-		process.env.CI ||
-		process.env.GITHUB_ACTIONS ||
-		process.env.TF_BUILD
-	) {
+	} else if (agentPluginCiActive()) {
 		issues.push({
 			file: "bin/hobo-mcp.mjs",
 			message: "is missing in CI; build it with pnpm run agent-plugin:build",
@@ -927,11 +932,7 @@ function bundleAttestationIssues(
 	pluginRoot: string,
 	bundlePath: string,
 ): AgentPluginIssue[] {
-	const inCi =
-		process.env.CI !== undefined ||
-		process.env.GITHUB_ACTIONS !== undefined ||
-		process.env.TF_BUILD !== undefined;
-	if (!inCi) return [];
+	if (!agentPluginCiActive()) return [];
 	const attestationPath = path.join(pluginRoot, BUNDLE_ATTESTATION);
 	if (!existsSync(attestationPath)) {
 		return [
@@ -942,14 +943,26 @@ function bundleAttestationIssues(
 			},
 		];
 	}
+	let attestationJson: unknown;
+	try {
+		attestationJson = JSON.parse(readFileSync(attestationPath, "utf8"));
+	} catch {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"is not valid JSON; run pnpm run agent-plugin:build in this CI job",
+			},
+		];
+	}
 	const attestation = z
-		.object({
+		.strictObject({
 			sha256: z.string().min(1),
 			runId: z.string().min(1),
 			commitSha: z.string().min(1),
 			runAttempt: z.string().optional(),
 		})
-		.safeParse(JSON.parse(readFileSync(attestationPath, "utf8")));
+		.safeParse(attestationJson);
 	if (!attestation.success) {
 		return [
 			{
@@ -1007,19 +1020,19 @@ function bundleAttestationIssues(
 			},
 		];
 	}
-	if (
-		runAttempt !== undefined &&
-		runAttempt.length > 0 &&
-		attestation.data.runAttempt !== undefined &&
-		attestation.data.runAttempt !== runAttempt
-	) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation runAttempt does not match this workflow attempt; rebuild with pnpm run agent-plugin:build in this job",
-			},
-		];
+	if (runAttempt !== undefined && runAttempt.length > 0) {
+		if (
+			attestation.data.runAttempt === undefined ||
+			attestation.data.runAttempt !== runAttempt
+		) {
+			return [
+				{
+					file: BUNDLE_ATTESTATION,
+					message:
+						"bundle attestation runAttempt does not match this workflow attempt; rebuild with pnpm run agent-plugin:build in this job",
+				},
+			];
+		}
 	}
 	const sha256 = createHash("sha256")
 		.update(readFileSync(bundlePath))
@@ -1130,24 +1143,14 @@ export function releaseTrainVersionForPluginGate(
 	} catch (error) {
 		const allowLocalSkip =
 			process.env.HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN === "1" &&
-			!process.env.CI &&
-			!process.env.GITHUB_ACTIONS &&
-			!process.env.TF_BUILD;
+			!agentPluginCiActive();
 		if (!allowLocalSkip) throw error;
 		return undefined;
 	}
 }
 
-function ciGateActive(): boolean {
-	return (
-		process.env.CI !== undefined ||
-		process.env.GITHUB_ACTIONS !== undefined ||
-		process.env.TF_BUILD !== undefined
-	);
-}
-
 function ensureCiPluginBundle(repoRoot: string): void {
-	if (!ciGateActive()) return;
+	if (!agentPluginCiActive()) return;
 	const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
 	if (existsSync(bundle)) return;
 	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
@@ -1163,7 +1166,7 @@ function main(): void {
 	ensureCiPluginBundle(repoRoot);
 	const versionFromReleaseTrain = releaseTrainVersionForPluginGate(repoRoot);
 	if (versionFromReleaseTrain === undefined) {
-		if (ciGateActive()) {
+		if (agentPluginCiActive()) {
 			console.error(
 				"agent-plugin:check: release-train version is required in CI; unset HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN",
 			);

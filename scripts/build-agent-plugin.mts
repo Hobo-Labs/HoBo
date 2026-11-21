@@ -96,11 +96,14 @@ async function main(): Promise<void> {
 		process.exitCode = 1;
 		return;
 	}
-	const payload: BundleAttestationRecord = {
-		sha256,
-		runId,
-		commitSha,
-	};
+	if (runAttempt !== undefined && runAttempt.length === 0) {
+		console.error(
+			"agent-plugin:build: GITHUB_RUN_ATTEMPT must be non-empty when set",
+		);
+		process.exitCode = 1;
+		return;
+	}
+	const payload: BundleAttestationRecord = { sha256, runId, commitSha };
 	if (runAttempt !== undefined && runAttempt.length > 0) {
 		payload.runAttempt = runAttempt;
 	}
