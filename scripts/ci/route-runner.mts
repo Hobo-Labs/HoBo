@@ -688,6 +688,69 @@ export async function chooseRunner(input: {
 	}
 }
 
+const MERGE_GROUP_ROUTE_SURFACE_SECONDS = 45;
+
+/**
+ * Hosted probe decides where the merge-group **route job** runs: `trunk` when
+ * the fleet is taking work, else `hosted` so routing can fall back if trunk is
+ * offline (job `timeout-minutes` does not include queue wait).
+ */
+export async function mergeGroupRouteSurface(
+	env: NodeJS.ProcessEnv,
+	io: Readonly<{
+		routingConfig?: string | undefined;
+		now?: () => number;
+	}> = {},
+): Promise<"trunk" | "hosted"> {
+	const event = env.GITHUB_EVENT_NAME ?? "";
+	if (event !== "merge_group") return "hosted";
+	const workflow = workflowFile(env);
+	if (workflow !== "hobo-ci.yml" && workflow !== "release-hobo.yml")
+		return "hosted";
+	const settings = routeSettings(
+		readRunnerRouting(io.routingConfig ?? readRoutingPolicy()),
+	);
+	const { labels, limits } = settings;
+	const surfaceLimits = {
+		...limits,
+		maxWaitSeconds: Math.min(
+			limits.maxWaitSeconds,
+			MERGE_GROUP_ROUTE_SURFACE_SECONDS,
+		),
+		maxQueued: Number.MAX_SAFE_INTEGER,
+	};
+	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
+	const token = env.GITHUB_TOKEN ?? "";
+	const repository = env.GITHUB_REPOSITORY ?? "";
+	if (!token || !repository) return "hosted";
+	const read = githubReader(apiUrl, token);
+	const now = io.now ?? Date.now;
+	try {
+		const view = await observeQueue({
+			read,
+			repository,
+			ownRunId: Number(env.GITHUB_RUN_ID),
+			labels: [labels.trunk],
+			limits: surfaceLimits,
+			nowMs: now(),
+		});
+		const fleet = labelLoad(view.jobs, labels.trunk, now());
+		if (takingJobs(fleet, surfaceLimits)) return "trunk";
+	} catch {
+		return "hosted";
+	}
+	return "hosted";
+}
+
+export async function runMergeGroupRouteSurface(
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+	const surface = await mergeGroupRouteSurface(env);
+	if (env.GITHUB_OUTPUT)
+		appendFileSync(env.GITHUB_OUTPUT, `surface=${surface}\n`);
+	console.log(`merge-group route surface: ${surface}`);
+}
+
 export async function confirmMergeGroupFabricFleet(input: {
 	fleetDecision: RouteDecision;
 	observe: (nowMs: number) => Promise<QueueView>;
@@ -1167,10 +1230,11 @@ export async function main(
 		event === "merge_group" &&
 		workflowFile(env) === "release-hobo.yml" &&
 		mode === "auto";
-	const mergeGroupHoboCi =
+	const mergeGroupTrusted =
 		event === "merge_group" &&
-		workflowFile(env) === "hobo-ci.yml" &&
-		mode === "auto";
+		(workflowFile(env) === "hobo-ci.yml" ||
+			workflowFile(env) === "release-hobo.yml");
+	const mergeGroupHoboCi = mergeGroupTrusted && mode === "auto";
 	const mergeGroupFabric = mergeGroupHoboCi && !args.includeOwnRun;
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
@@ -1208,7 +1272,7 @@ export async function main(
 	}
 	if (
 		event === "merge_group" &&
-		workflowFile(env) === "hobo-ci.yml" &&
+		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
 		mode === "auto" &&
 		!settings.committed
 	)
@@ -1284,9 +1348,11 @@ export async function main(
 	// Local evidence covers only its named jobs. Remaining jobs follow the
 	// same fleet decision as any other run, including its pins and slip.
 	if (mode !== "auto") {
+		const pinnedFleetLabel =
+			mergeGroupTrusted && mode === "fleet" ? labels.trunk : fleetLabel;
 		const pinned = routeRunner({
 			mode,
-			fleetLabel,
+			fleetLabel: pinnedFleetLabel,
 			localLabel: labels.local,
 			githubLabel: labels.github,
 			localEnrolled,
@@ -1299,7 +1365,10 @@ export async function main(
 			{
 				...pinned,
 				reason: `${pinned.reason}${defaults}`,
-				slip: { kind: "unasked", why: "pinned" },
+				slip: {
+					kind: "unasked",
+					why: mergeGroupTrusted && mode === "fleet" ? "merge-group" : "pinned",
+				},
 			},
 			env,
 		);
@@ -1541,5 +1610,8 @@ function report(
 }
 
 const entry = process.argv[1];
-if (entry && import.meta.url === pathToFileURL(entry).href)
-	await main(process.argv.slice(2));
+if (entry && import.meta.url === pathToFileURL(entry).href) {
+	if (process.argv.includes("--merge-group-route-surface"))
+		await runMergeGroupRouteSurface();
+	else await main(process.argv.slice(2));
+}

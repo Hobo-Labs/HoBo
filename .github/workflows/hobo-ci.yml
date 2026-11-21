@@ -52,11 +52,64 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  mq-route-surface:
+    name: Merge-queue route surface
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      surface: ${{ steps.surface.outputs.surface }}
+    steps:
+      - id: routing-base
+        shell: bash
+        env:
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          base="$MERGE_BASE_SHA"
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
+            .hobo/ci.json
+            packages/ci/src/fleet-overflow.ts
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.routing-base.outputs.sha }}
+          path: .ci-trusted
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .hobo/ci.json
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
+            packages/ci/src/fleet-overflow.ts
+      - id: surface
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --experimental-strip-types --no-warnings .ci-trusted/scripts/ci/route-runner.mts --merge-group-route-surface
   route:
     name: Route runners
-    # pull_request stays on GitHub-hosted (fork-safe). merge_group uses hobo-trunk
-    # so the route job does not queue behind hosted PR demand (route-runner.mts).
-    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
+    needs:
+      - mq-route-surface
+    if: always() && !cancelled() && (needs.mq-route-surface.result == 'success' || needs.mq-route-surface.result == 'skipped')
+    # pull_request stays on GitHub-hosted (fork-safe). merge_group prefers
+    # hobo-trunk when the hosted surface probe sees trunk capacity; otherwise
+    # ubuntu-24.04 so routing can fall back if trunk is offline.
+    runs-on: ${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface != 'hosted' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: read

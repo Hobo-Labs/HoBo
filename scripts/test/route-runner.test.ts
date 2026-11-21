@@ -33,6 +33,7 @@ import {
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
 	MERGE_GROUP_FLEET_CONFIRM_SECONDS,
+	mergeGroupRouteSurface,
 	main,
 	NO_ROUTING_SLIP,
 	observeQueue,
@@ -1496,6 +1497,46 @@ describe("the script reading the slip", () => {
 		GITHUB_WORKFLOW_REF:
 			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
 	};
+	const mergeGroupRelease = {
+		GITHUB_EVENT_NAME: "merge_group",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/gh-readonly-queue/main",
+	};
+
+	it("picks hosted merge-group route surface when the trunk fleet is not taking", async () => {
+		await withGithub(
+			observed([waiting("hobo-trunk", 120)]),
+			async (apiUrl) => {
+			const surface = await mergeGroupRouteSurface(
+				{
+					...mergeGroupCi,
+					GITHUB_API_URL: apiUrl,
+					GITHUB_TOKEN: "token",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				},
+				{ now: () => 0 },
+			);
+			assert.equal(surface, "hosted");
+			},
+		);
+	});
+
+	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
+		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, mergeGroupRelease, [
+				"--route",
+				"fleet",
+			]);
+			assert.deepEqual([decision.tier, decision.runner], [
+				"fleet",
+				"hobo-trunk",
+			]);
+			assert.deepEqual(decision.slip, {
+				kind: "unasked",
+				why: "merge-group",
+			});
+		});
+	});
 
 	it("routes merge-group CI to hobo-trunk on recent trunk pickup", async () => {
 		await withGithub(
