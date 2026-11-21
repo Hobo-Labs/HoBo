@@ -38,7 +38,7 @@ Before this change, the OCI build and publish matrices each ran one image at a t
 ## Safety boundaries
 
 - The `release` and `production` environments, signed-tag path, npm provenance, OCI digest checks, provenance attestation and SBOM attestation are unchanged.
-- The `merge_group` trigger and release PR gate are unchanged.
+- The `merge_group` trigger and release PR gate are unchanged. `release-realize` stays on `pull_request` and `merge_group` as an offline proof; publish jobs stay behind the main-train gate, tags, or dispatch, with workflow tests pinning job-level `if` conditions.
 - A failed matrix leg still fails its workflow stage; `fail-fast: false` only lets independent legs finish.
 - No Vercel Git link or relay deployment path changed.
 
