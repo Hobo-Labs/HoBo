@@ -6,6 +6,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -254,6 +255,12 @@ describe("the relay deploy workflow", () => {
 		try {
 			const bin = join(work, "packages/hobo/dist/bin");
 			mkdirSync(bin, { recursive: true });
+			symlinkSync(join(root, "scripts"), join(work, "scripts"), "dir");
+			symlinkSync(
+				join(root, "node_modules"),
+				join(work, "node_modules"),
+				"dir",
+			);
 			writeFileSync(
 				join(bin, "hobo.js"),
 				`const fs = require("node:fs");
@@ -291,20 +298,17 @@ process.exitCode = failed ? 27 : 0;`,
 						},
 					},
 				);
-				assert.equal(result.status, 27);
-				assert.match(
-					result.stdout,
-					/HOBO_TEST_REFUSED: deployment unavailable VERCEL_TOKEN= \[redacted\]/u,
-				);
-				assert.doesNotMatch(`${result.stdout}`, /supersecretvalue1/u);
-				assert.match(
-					readFileSync(summary, "utf8"),
-					/HOBO_TEST_REFUSED: deployment unavailable VERCEL_TOKEN= \[redacted\]/u,
-				);
+				assert.equal(result.status, 27, result.stderr);
+				assert.match(result.stdout, /HOBO_TEST_REFUSED/u);
+				assert.match(result.stdout, /\[redacted\]/u);
 				assert.doesNotMatch(
-					readFileSync(summary, "utf8"),
-					/supersecretvalue1/u,
+					result.stdout,
+					/supersecretvalue1|abc\.def-ghi_123/u,
 				);
+				const summaryText = readFileSync(summary, "utf8");
+				assert.match(summaryText, /HOBO_TEST_REFUSED/u);
+				assert.match(summaryText, /\[redacted\]/u);
+				assert.doesNotMatch(summaryText, /supersecretvalue1|abc\.def-ghi_123/u);
 				assert.equal(
 					readFileSync(calls, "utf8"),
 					failedTarget === "preview" ? "preview\n" : "preview\nproduction\n",

@@ -86,10 +86,10 @@ jobs:
           pnpm exec turbo run build \
             --filter=@hobo/hobo... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # Pass/fail by identity name: hobo-ci-writer signs in with this job's
-      # GitHub OIDC token (sign-in only, then revoke; Infisical role shape is
-      # not asserted — on Free attach, Member may read). hobo-ci-relay is
-      # not-run here; Vercel OIDC is proved by production's /readyz below.
+      # Pass/fail by identity name: hobo-ci-deploy reads VERCEL_TOKEN from the
+      # deploy project with this job's GitHub OIDC token, then revokes its store
+      # session. hobo-ci-relay is not-run here; Vercel OIDC is proved by
+      # production's /readyz below.
       - name: Verify the secret store connection
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -99,12 +99,13 @@ jobs:
           node packages/hobo/dist/bin/hobo.js ci secret-store verify \
             --cwd packages/ci-vercel --json >"$verify_json" 2>"$verify_err" || status=$?
           status=${status:-0}
-          node --experimental-strip-types --no-warnings \
+          node --import tsx \
             scripts/ci/relay-deploy-secret-store-verify-report.mts \
             "$verify_json" "$verify_err" "$status"
-      # Both commands share the CD journal. The preview's placeholder origin
-      # is routed to the deployment just created, with a GitHub OIDC header;
-      # the Vercel project must trust this workflow for preview access.
+      # Both commands share the CD journal for this attempt. The preview's
+      # placeholder origin is routed to the deployment just created, with a
+      # GitHub OIDC header; the Vercel project must trust this workflow for
+      # preview access.
       # Bounded by the gate's deadline (the job's timeout less the 3 minute
       # margin, counted from the gate), which hobo enforces before production
       # is created, promoted, and verified live, so recovery is reported before
@@ -128,7 +129,8 @@ jobs:
               --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
               --target "$target" --wait --deadline "$DEPLOY_DEADLINE" \
               --json > "$RUNNER_TEMP/relay-${target}.json" || status=$?
-            node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const redact = (t) => String(t).replaceAll(/bearer\s+[A-Za-z0-9._~+/=-]+/gi, "bearer [redacted]").replaceAll(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, "[jwt redacted]").replaceAll(/\b(?:[A-Za-z0-9]+[_-])*(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|api[_-]?key|token|secret|password)\b\s*[=:]\s*[!-~]{8,}/gi, (m) => m.split(/[=:]/)[0] + "= [redacted]"); console.log(`${process.argv[2]}: ${r.code ?? "HOBO_OK"}: ${redact(r.message ?? "")}`);' "$RUNNER_TEMP/relay-${target}.json" "$target" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            node --import tsx scripts/ci/relay-deploy-result-report.mts \
+              "$RUNNER_TEMP/relay-${target}.json" "$target" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ "$status" -ne 0 ]; then exit "$status"; fi
           done
       # The hosted relay's fleet verdict (ADR-0180) at its public origin. Route
@@ -214,11 +216,12 @@ jobs:
           RELAY_ORIGIN: ${{ github.event.inputs.relay }}
           APP_OWNER_ID: ${{ github.event.inputs.owner_id }}
         run: |
-          set -uo pipefail
+          set -euo pipefail
+          status=0
           node packages/hobo/dist/bin/hobo.js ci app deposit \
             --cwd packages/ci-vercel \
             --relay "$RELAY_ORIGIN" --owner-id "$APP_OWNER_ID" \
-            --json > "$RUNNER_TEMP/app-deposit.json"
-          status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const redact = (t) => String(t).replaceAll(/bearer\s+[A-Za-z0-9._~+/=-]+/gi, "bearer [redacted]").replaceAll(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, "[jwt redacted]").replaceAll(/\b(?:[A-Za-z0-9]+[_-])*(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|api[_-]?key|token|secret|password)\b\s*[=:]\s*[!-~]{8,}/gi, (m) => m.split(/[=:]/)[0] + "= [redacted]"); console.log(`${r.code ?? "HOBO_OK"}: ${redact(r.message ?? "")}`);' "$RUNNER_TEMP/app-deposit.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            --json > "$RUNNER_TEMP/app-deposit.json" || status=$?
+          node --import tsx scripts/ci/relay-deploy-result-report.mts \
+            "$RUNNER_TEMP/app-deposit.json" "app-deposit" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"

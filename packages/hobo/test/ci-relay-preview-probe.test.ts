@@ -15,6 +15,7 @@ describe("protected preview probe", () => {
 		const sent: TransportRequest[] = [];
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
+			project: "hobo-ci",
 			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
 			jwt: async () => "synthetic-oidc-token",
 			base: async (outbound) => {
@@ -42,6 +43,7 @@ describe("protected preview probe", () => {
 			let sent = false;
 			const probe = protectedPreviewProbe({
 				placeholderOrigin: "https://preview.invalid",
+				project: "hobo-ci",
 				deploymentUrl: () => deploymentUrl,
 				jwt: async () => "synthetic-oidc-token",
 				base: async () => {
@@ -54,6 +56,7 @@ describe("protected preview probe", () => {
 		}
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
+			project: "hobo-ci",
 			deploymentUrl: () => "https://a.vercel.app",
 			jwt: async () => {
 				throw new Error("token failure");
@@ -73,6 +76,7 @@ describe("protected preview probe", () => {
 		const calls: { url: string; init: RequestInit }[] = [];
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
+			project: "hobo-ci",
 			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
 			jwt: async () => "synthetic-oidc-token",
 			base: createBoundedFetchTransport({
@@ -105,6 +109,7 @@ describe("protected preview probe", () => {
 		]) {
 			const probe = protectedPreviewProbe({
 				placeholderOrigin: "https://preview.invalid",
+				project: "hobo-ci",
 				deploymentUrl: () => deploymentUrl,
 				jwt: async () => "synthetic-oidc-token",
 				base: async (outbound) => {

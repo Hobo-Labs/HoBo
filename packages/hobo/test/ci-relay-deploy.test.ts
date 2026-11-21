@@ -119,14 +119,21 @@ async function deploy(
 	const deployCredentials = createTrustedVault();
 	if (storeToken !== undefined && plainEnv.GITHUB_ACTIONS !== "true")
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
+	const credentialFetch =
+		options.credentialFetch ??
+		(plainEnv.ACTIONS_ID_TOKEN_REQUEST_URL === undefined
+			? undefined
+			: async () =>
+					Response.json({
+						value:
+							"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+					}));
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
 				env: plainEnv,
 				deployCredentials,
-				...(options.credentialFetch !== undefined
-					? { fetch: options.credentialFetch }
-					: undefined),
+				...(credentialFetch !== undefined ? { credentialFetch } : undefined),
 				vercelFetch: options.fetch,
 				...(options.vercelCli !== undefined
 					? { vercelCli: options.vercelCli }
@@ -1083,10 +1090,11 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
 	});
 
-	it("records the attestation downgrade when OIDC probing is refused while GitHub OIDC is available", async () => {
+	it("refuses the attestation downgrade when OIDC probing is refused while GitHub OIDC is available", async () => {
 		const stale = healthyRelay(200, "f".repeat(40));
+		const vercel = unreachable();
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
-			fetch: scriptedVercel(["READY"]).fetch,
+			fetch: vercel.fetch,
 			env: {
 				...env,
 				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
@@ -1097,34 +1105,33 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			probe: stale.http,
 			...steppingClock(),
 		});
-		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
-		expect(stale.probed).toContain(
-			"https://relay-preview.example.test/healthz",
-		);
-		expect(ran.envelope.message).toEqual(
-			expect.stringContaining(
-				"Preview verification did not pin the deployment's commit",
-			),
-		);
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+			message: expect.stringContaining("deployment just created"),
+		});
+		expect(vercel.sent).toEqual([]);
+		expect(stale.probed).toEqual([]);
 	});
 
-	it("does not pin preview commit on the shared origin when no GitHub OIDC is available", async () => {
+	it("refuses preview --wait with --sha when no GitHub OIDC is available", async () => {
 		const stale = healthyRelay(200, "f".repeat(40));
+		const vercel = unreachable();
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
-			fetch: scriptedVercel(["READY"]).fetch,
+			fetch: vercel.fetch,
 			env,
 			probe: stale.http,
 			...steppingClock(),
 		});
-		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
-		expect(stale.probed).toContain(
-			"https://relay-preview.example.test/healthz",
-		);
-		expect(ran.envelope.message).not.toEqual(
-			expect.stringContaining(
-				"Preview verification did not pin the deployment's commit",
-			),
-		);
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+			message: expect.stringContaining("deployment just created"),
+		});
+		expect(vercel.sent).toEqual([]);
+		expect(stale.probed).toEqual([]);
 	});
 
 	it("provisions the Marketplace cache the Camp chooses when the team has none, then deploys and waits for READY", async () => {
@@ -1249,7 +1256,13 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 });
 
 describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no network)", () => {
-	const env = { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM, ...ORIGINS };
+	const env = {
+		VERCEL_TOKEN: TOKEN,
+		VERCEL_TEAM_ID: TEAM,
+		...ORIGINS,
+		ACTIONS_ID_TOKEN_REQUEST_URL: "https://token.actions.example.test/token",
+		ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+	};
 	const PINNED = ["--repo", "example/hobo", "--ref", "main", "--sha", SHA];
 	const directValues = (deadline?: string) => ({
 		repo: "example/hobo",

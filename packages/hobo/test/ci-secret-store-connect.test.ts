@@ -345,7 +345,12 @@ describe("hobo ci secret-store verify", () => {
 		return `${part({ alg: "RS256" })}.${part({ sub, aud: "https://github.com/Hobo-Labs" })}.c2lnbmF0dXJl`;
 	}
 
-	function infisical(loginStatus: number, names: string[], jwt = JWT) {
+	function infisical(
+		loginStatus: number,
+		names: string[],
+		jwt = JWT,
+		deployReadStatus = 200,
+	) {
 		const seen: string[] = [];
 		const fetch: Fetch = async (request, init) => {
 			const url = String(request);
@@ -373,6 +378,20 @@ describe("hobo ci secret-store verify", () => {
 					})),
 					imports: [],
 				});
+			if (new URL(url).pathname === "/api/v4/secrets/VERCEL_TOKEN")
+				return deployReadStatus === 200
+					? Response.json({
+							secret: {
+								secretKey: "VERCEL_TOKEN",
+								secretValue: "synthetic-vercel-deploy-token",
+								version: 1,
+								type: "shared",
+							},
+						})
+					: Response.json(
+							{ reqId: "req-deploy-denied" },
+							{ status: deployReadStatus },
+						);
 			return Response.json({}, { status: 404 });
 		};
 		return { fetch, seen };
@@ -390,7 +409,7 @@ describe("hobo ci secret-store verify", () => {
 		);
 	});
 
-	it("passes hobo-ci-writer in a GitHub Actions job by signing in and revoking, and says where the relay check runs", async () => {
+	it("passes hobo-ci-deploy in a GitHub Actions job by reading the deploy token and revoking", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
 		const fake = infisical(200, []);
 		const result = await runCiSecretStore(
@@ -400,17 +419,19 @@ describe("hobo ci secret-store verify", () => {
 		expect(result.data).toMatchObject({
 			checks: [
 				{
-					identity: "hobo-ci-writer",
+					identity: "hobo-ci-deploy",
 					method: "GitHub Actions OIDC",
 					result: "pass",
 				},
 				{ identity: "hobo-ci-relay", method: "Vercel OIDC", result: "not-run" },
 			],
 		});
-		// The writer cannot read: nothing is listed, and the token is revoked.
-		expect(fake.seen).not.toContain("GET /api/v4/secrets");
+		expect(fake.seen).toContain("GET /api/v4/secrets/VERCEL_TOKEN");
 		expect(fake.seen).toContain("POST /api/v1/auth/token/revoke");
 		expect(JSON.stringify(result)).not.toContain(ACCESS);
+		expect(JSON.stringify(result)).not.toContain(
+			"synthetic-vercel-deploy-token",
+		);
 	});
 
 	it("reuses the same OIDC workload JWT for sign-in and claim hints", async () => {
@@ -487,7 +508,7 @@ describe("hobo ci secret-store verify", () => {
 		);
 		expect(denied.ok).toBe(false);
 		expect(denied.message).toMatch(
-			/hobo-ci-writer \(GitHub Actions OIDC\): fail — infisical login-denied/u,
+			/hobo-ci-deploy \(GitHub Actions OIDC\): fail — infisical login-denied/u,
 		);
 		expect(denied.message).toMatch(/oidc_sub=repo/u);
 	});
@@ -499,13 +520,26 @@ describe("hobo ci secret-store verify", () => {
 				"verify",
 				{},
 				{ VERCEL_OIDC_TOKEN: JWT },
-				infisical(200, ["HOBO_CI_PUBLIC_URL"]).fetch,
+				infisical(200, ["HOBO_CI_PUBLIC_URL"], JWT, 403).fetch,
 			),
 		);
 		expect(result.data).toMatchObject({
 			checks: [
-				{ identity: "hobo-ci-writer", result: "not-run" },
-				{ identity: "hobo-ci-relay", result: "pass" },
+				{
+					identity: "hobo-ci-deploy",
+					method: "GitHub Actions OIDC",
+					result: "not-run",
+				},
+				{
+					identity: "hobo-ci-relay",
+					method: "Vercel OIDC",
+					result: "pass",
+				},
+				{
+					identity: "hobo-ci-relay",
+					method: "Vercel OIDC deploy-project denial",
+					result: "pass",
+				},
 			],
 		});
 	});

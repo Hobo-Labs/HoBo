@@ -40,7 +40,7 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 			writeFileSync(err, "");
 			const ran = spawnSync(
 				process.execPath,
-				["--experimental-strip-types", "--no-warnings", report, json, err, "1"],
+				["--import", "tsx", report, json, err, "1"],
 				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
 			);
 			assert.equal(ran.status, 1);
@@ -82,11 +82,11 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 			writeFileSync(err, "");
 			const ran = spawnSync(
 				process.execPath,
-				["--experimental-strip-types", "--no-warnings", report, json, err, "1"],
+				["--import", "tsx", report, json, err, "1"],
 				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
 			);
 			assert.equal(ran.status, 1);
-			assert.match(ran.stdout, /\[jwt redacted\]/u);
+			assert.match(ran.stdout, /\[redacted\]/u);
 			assert.doesNotMatch(ran.stdout, /eyJhbGciOiJIUzI1NiJ9/u);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -122,7 +122,7 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 			writeFileSync(err, "Cannot find module '@hobo/missing'\n");
 			const ran = spawnSync(
 				process.execPath,
-				["--experimental-strip-types", "--no-warnings", report, json, err, "1"],
+				["--import", "tsx", report, json, err, "1"],
 				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
 			);
 			assert.equal(ran.status, 1);

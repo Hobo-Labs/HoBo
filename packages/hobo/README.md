@@ -2,7 +2,8 @@
 
 For repository CI, run `hobo ci connect`; see [CI setup and command reference](CI.md)
 for Git remote detection, isolated runner consent, account credentials, run logs,
-retries, and the documented Vercel CLI parity.
+retries, relay deployment OIDC attestation, redacted workflow reporting, and the
+documented Vercel CLI parity.
 
 **Product composition root** for the end-user `hobo` CLI (and `hobo-mcp`).
 This package is the composed product binary; **`@hobo/cli`** is the shell,

@@ -488,6 +488,12 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--wait` | Wait (up to 15 minutes) for the deployment to be READY; ERROR, CANCELED or a timeout fails with `HOBO_CI_DEPLOY_NOT_READY` |
 | `--create-project` | Create the project when Vercel has none by that name, with the Yard's root directory |
 
+Preview `--wait --sha` verifies the commit on the deployment just created with
+a GitHub OIDC token scoped to that deployment's origin. If protected OIDC
+probing is unavailable or disabled, the command refuses before creation with
+`HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; a shared preview origin cannot
+substitute for that attestation.
+
 Nobody runs this against production by hand: the
 [relay deploy workflow](../../.github/workflows/relay-deploy.yml) runs it on
 every merge to `main` that changes the relay, reading the Vercel token from the
@@ -548,7 +554,7 @@ dashboard's OIDC trust one step at a time, then records the ids:
 ```sh
 GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
   --repo <owner/name> --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
-  --deploy-identity-id <hobo-ci-writer> --team team_… \
+  --deploy-identity-id <hobo-ci-deploy> --team team_… \
   [--deploy-project-id <id>] [--site-url https://<self-hosted Infisical>] [--yes]
 hobo ci secret-store verify --cwd packages/ci-vercel --json
 ```
@@ -557,16 +563,18 @@ In the relay deploy workflow, that verify command must finish before the
 summary step runs (`|| status=$?` under bash `-e`); otherwise a non-zero exit
 hides the JSON. The report script fails closed when stdout has no JSON envelope.
 The workflow calls
-`scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines,
-emit `::error::`, and never echo JWTs (details and messages pass JWT-shaped
-redaction). On Infisical OIDC failure, verify appends `oidc_sub` and
-`oidc_aud` from the same memoized workload JWT used for sign-in (GitHub OIDC
-audience `https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
+`scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines
+and emit `::error::`; `scripts/ci/relay-deploy-result-report.mts` reports deploy
+and App-deposit envelopes. Both use the shared provider redactor for JWTs,
+credentials and long token runs. On Infisical OIDC failure, verify appends
+`oidc_sub` and `oidc_aud` from the same memoized workload JWT used for sign-in
+(GitHub OIDC audience `https://github.com/Hobo-Labs`) so the dashboard trust can
+be matched.
 
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
 project is optional and empty by default) and refuses to replace one for
-other ids without `--yes`. Both resolve `hobo-ci-writer`'s GitHub OIDC trust
+other ids without `--yes`. Both resolve `hobo-ci-deploy`'s GitHub OIDC trust
 from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the repository's
 `sub_claim_prefix` (or the immutable `repo:<owner>@<ownerId>/<repo>@<repoId>`
 form from its ids when the template says `use_immutable_subject`), then
@@ -579,11 +587,12 @@ owner's own `INFISICAL_TOKEN` for that run it replaces the identity's OIDC
 trust in place (no new identity); otherwise it prints the subject and claims
 to set in the dashboard. A denied `verify` whose token `sub` differs from the
 recorded subject (or is immutable when none was recorded) says so and names
-that repair. `verify` reports `pass`, `fail` or `not-run` by identity
-name: `hobo-ci-writer` inside a GitHub Actions job (GitHub OIDC sign-in, then
-a revoke; role shape not asserted), `hobo-ci-relay` where `VERCEL_OIDC_TOKEN` is
-present (secret names only). The deploy workflow runs it as *Verify the
-secret store connection*.
+that repair. `verify` reports `pass`, `fail` or `not-run` by identity name:
+`hobo-ci-deploy` inside a GitHub Actions job reads and validates `VERCEL_TOKEN`
+from the deploy project, then revokes its session; `hobo-ci-relay` where
+`VERCEL_OIDC_TOKEN` is present lists its own secret names and must be denied
+the deploy credential. The deploy workflow runs it as *Verify the secret store
+connection*.
 
 The GitHub App's credentials never touch a person or this CLI:
 `hobo ci app create --via-workflow` takes GitHub's one-time manifest code

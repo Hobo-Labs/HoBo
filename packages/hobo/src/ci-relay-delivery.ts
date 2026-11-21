@@ -784,6 +784,7 @@ async function deliverWith(
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
 	const finalizePromotion = input.finalizePromotion;
+	let finalizedFreightId: FreightId | undefined;
 	let finalizationFailure: RelayRealizationFailure | undefined;
 	const handoverFor = async (set: SetRecord | undefined, camp: CampId) => {
 		if (!set) return {};
@@ -807,16 +808,38 @@ async function deliverWith(
 				};
 			}
 			if (finalizePromotion === undefined)
-				return { ok: true, value: { finalized: false } };
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.unavailable,
+							"The relay finalization suite has no finalizer configured",
+							"Run staged production through hobo ci deploy with its finalizer.",
+						),
+					],
+				};
+			if (request.campId !== campId || request.freightId !== freight.freightId)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.unavailable,
+							"The relay finalization suite ran for another promotion",
+							"Run the finalizer for the Freight and Camp being delivered.",
+						),
+					],
+				};
 			const set = await cd.desired.current(request.campId);
 			const failure = await finalizePromotion({
 				report: report(promotion, set),
 				handover: await handoverFor(set, request.campId),
 			});
 			if (failure === undefined) {
+				finalizedFreightId = request.freightId;
 				finalizationFailure = undefined;
 				return { ok: true, value: { finalized: true } };
 			}
+			finalizedFreightId = undefined;
 			finalizationFailure = failure;
 			return {
 				ok: false,
@@ -931,6 +954,7 @@ async function deliverWith(
 			};
 		records = loaded.value;
 	}
+	let finalizationTargets = 0;
 	const deliveryRecords: DeliveryModule =
 		finalizePromotion === undefined
 			? records
@@ -938,27 +962,35 @@ async function deliverWith(
 					...records,
 					pipelines: records.pipelines.map((pipelineRecord) => ({
 						...pipelineRecord,
-						nodes: pipelineRecord.nodes.map((pipelineNode) =>
-							pipelineRecord.name === pipeline && pipelineNode.name === node
-								? {
-										...pipelineNode,
-										hooks: pipelineNode.hooks.some(
-											(hook) => hook.ref === RELAY_FINALIZATION_SUITE,
-										)
-											? pipelineNode.hooks
-											: [
-													...pipelineNode.hooks,
-													create(HookRecordSchema, {
-														kind: HookKind.SUITE,
-														point: HookPoint.AFTER_QUALIFIED,
-														ref: RELAY_FINALIZATION_SUITE,
-													}),
-												],
-									}
-								: pipelineNode,
-						),
+						nodes: pipelineRecord.nodes.map((pipelineNode) => {
+							if (
+								pipelineRecord.name !== pipeline ||
+								pipelineNode.name !== node
+							)
+								return pipelineNode;
+							finalizationTargets += 1;
+							return {
+								...pipelineNode,
+								hooks: [
+									...pipelineNode.hooks.filter(
+										(hook) => hook.ref !== RELAY_FINALIZATION_SUITE,
+									),
+									create(HookRecordSchema, {
+										kind: HookKind.SUITE,
+										point: HookPoint.AFTER_QUALIFIED,
+										ref: RELAY_FINALIZATION_SUITE,
+									}),
+								],
+							};
+						}),
 					})),
 				};
+	if (finalizePromotion !== undefined && finalizationTargets !== 1)
+		return {
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
+			message: `The relay finalizer needs exactly one ${pipeline}/${node} pipeline node; found ${finalizationTargets}.`,
+		};
 	const refusedRecords = await applyRecords(cd, deliveryRecords, ctx);
 	if (refusedRecords.length > 0)
 		return {
@@ -1064,8 +1096,6 @@ async function deliverWith(
 		set: SetRecord | undefined,
 		handover: Readonly<Record<string, string>>,
 	): RelayDeliveryOutcome => {
-		if (terminal.state === PromotionState.PROMOTED)
-			return { ok: true, report: report(terminal, set), handover };
 		if (finalizationFailure !== undefined)
 			return {
 				ok: false,
@@ -1075,6 +1105,20 @@ async function deliverWith(
 				report: report(terminal, set),
 				handover,
 			};
+		if (terminal.state === PromotionState.PROMOTED) {
+			if (
+				finalizePromotion !== undefined &&
+				finalizedFreightId !== freight.freightId
+			)
+				return {
+					ok: false,
+					code: RELAY_DELIVERY_REFUSAL.incomplete,
+					message: `The promotion of ${freight.alias} reached PROMOTED without a successful finalizer run for this delivery.`,
+					report: report(terminal, set),
+					handover,
+				};
+			return { ok: true, report: report(terminal, set), handover };
+		}
 		const verificationFailed = terminal.reasons.some((entry) =>
 			entry.code.includes("verification"),
 		);

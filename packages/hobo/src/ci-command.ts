@@ -409,6 +409,7 @@ export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
 		fetch?: typeof fetch;
+		credentialFetch?: typeof fetch;
 		interactive?: boolean;
 		prompt?: (question: string) => Promise<string>;
 		git?: (args: readonly string[], cwd: string) => Promise<string>;
@@ -553,8 +554,8 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
-					...(deps.fetch !== undefined
-						? { credentialFetch: deps.fetch }
+					...(deps.credentialFetch !== undefined
+						? { credentialFetch: deps.credentialFetch }
 						: undefined),
 					...(deps.deployCredentials !== undefined
 						? { credentials: deps.deployCredentials }

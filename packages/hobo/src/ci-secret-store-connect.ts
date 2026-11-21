@@ -55,6 +55,11 @@ import {
 	writeSecretStoreBinding,
 } from "./ci-secret-store.js";
 import {
+	parseRelayDeployToken,
+	RELAY_DEPLOY_TOKEN_ENTRY,
+	RelayDeployCredentialError,
+} from "./ci-relay-deploy-credential.js";
+import {
 	relayRepository,
 	resolveDeploySubject,
 } from "./ci-secret-store-github.js";
@@ -310,8 +315,7 @@ function subjectRepairSuffix(
 		: ` — ${why}: re-run hobo ci secret-store connect to repair the deploy identity's OIDC trust`;
 }
 
-/** Prove CI writer OIDC sign-in (then revoke); Infisical role shape is not asserted. */
-async function signInOnly(
+async function readDeployToken(
 	identity: string,
 	method: string,
 	client: () => ReturnType<typeof createInfisicalClient>,
@@ -320,9 +324,19 @@ async function signInOnly(
 ): Promise<VerifyCheck> {
 	try {
 		const session = client();
-		await session.signIn();
-		await session.revoke().catch(() => undefined);
-		return { identity, method, result: "pass", detail: "signed in" };
+		try {
+			await session.signIn();
+			const secret = await session.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
+			parseRelayDeployToken(secret.value);
+			return {
+				identity,
+				method,
+				result: "pass",
+				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY} from the deploy project`,
+			};
+		} finally {
+			await session.revoke().catch(() => undefined);
+		}
 	} catch (error) {
 		return {
 			identity,
@@ -331,7 +345,9 @@ async function signInOnly(
 			detail:
 				(error instanceof InfisicalError
 					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in could not run") +
+					: error instanceof RelayDeployCredentialError
+						? error.message
+						: "the deploy credential read could not run") +
 				oidcHintSuffix(workloadJwt()) +
 				(error instanceof Error
 					? subjectRepairSuffix(error, workloadJwt(), trustedSubject)
@@ -374,15 +390,40 @@ async function attempt(
 	}
 }
 
-/**
- * Sign in as each identity this environment can prove, by name. Inside a
- * GitHub Actions job (id-token: write): `hobo-ci-writer` (the binding's
- * `deployIdentityId`) through GitHub OIDC; sign-in then revoke is the check
- * (on Infisical Cloud Free attach, Member may read — see CONFIG-SERVICE.md).
- * Where Vercel's OIDC
- * token is present (`VERCEL_OIDC_TOKEN`): `hobo-ci-relay`, listing secret
- * names. Elsewhere a check is `not-run` with where it does run.
- */
+async function denyDeployTokenRead(
+	client: () => ReturnType<typeof createInfisicalClient>,
+): Promise<VerifyCheck> {
+	const identity = "hobo-ci-relay";
+	const method = "Vercel OIDC deploy-project denial";
+	const session = client();
+	try {
+		await session.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
+		return {
+			identity,
+			method,
+			result: "fail",
+			detail: "the relay runtime identity read the deploy credential project",
+		};
+	} catch (error) {
+		const denied =
+			error instanceof InfisicalError &&
+			["forbidden", "login-denied", "unauthorized", "value-hidden"].includes(
+				error.code,
+			);
+		return {
+			identity,
+			method,
+			result: denied ? "pass" : "fail",
+			detail:
+				error instanceof InfisicalError
+					? `deploy credential read ${denied ? "denied" : "could not be evaluated"}: infisical ${error.code}`
+					: "the deploy credential denial check could not run",
+		};
+	} finally {
+		await session.revoke().catch(() => undefined);
+	}
+}
+
 export async function runCiSecretStoreVerify(
 	input: CiSecretStoreInput,
 ): Promise<CommandResult> {
@@ -430,16 +471,16 @@ export async function runCiSecretStoreVerify(
 	};
 	checks.push(
 		inActions
-			? await signInOnly(
-					"hobo-ci-writer",
+			? await readDeployToken(
+					"hobo-ci-deploy",
 					"GitHub Actions OIDC",
 					() =>
 						createInfisicalClient({
 							binding: parseInfisicalBinding({
 								siteUrl: store.endpoint,
-								projectId: store.projectId,
+								projectId: store.deployProjectId,
 								environment: store.environment,
-								secretPath: store.secretPath,
+								secretPath: "/",
 							}),
 							auth: oidcAuth({
 								identityId: store.deployIdentityId,
@@ -453,7 +494,7 @@ export async function runCiSecretStoreVerify(
 					store.deployOidcSubject,
 				)
 			: {
-					identity: "hobo-ci-writer",
+					identity: "hobo-ci-deploy",
 					method: "GitHub Actions OIDC",
 					result: "not-run",
 					detail:
@@ -494,6 +535,24 @@ export async function runCiSecretStoreVerify(
 						"needs the production deployment's Vercel OIDC token; after the deploy, /readyz answers ready only when the relay signed in and read its folder",
 				},
 	);
+	if (vercelJwt !== "")
+		checks.push(
+			await denyDeployTokenRead(() =>
+				createInfisicalClient({
+					binding: parseInfisicalBinding({
+						siteUrl: store.endpoint,
+						projectId: store.deployProjectId,
+						environment: store.environment,
+						secretPath: "/",
+					}),
+					auth: oidcAuth({
+						identityId: store.relayIdentityId,
+						jwt: async () => vercelJwt,
+					}),
+					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+				}),
+			),
+		);
 	const failed = checks.filter((check) => check.result === "fail");
 	return {
 		ok: failed.length === 0,

@@ -2,6 +2,7 @@ import type { HttpTransport } from "@hobo/core";
 
 export function normalizeDeploymentUrl(
 	raw: string | undefined,
+	project: string,
 ): string | undefined {
 	if (raw === undefined) return undefined;
 	const trimmed = raw.trim();
@@ -19,7 +20,9 @@ export function normalizeDeploymentUrl(
 		url.protocol !== "https:" ||
 		url.username !== "" ||
 		url.password !== "" ||
-		!url.hostname.endsWith(".vercel.app")
+		!url.hostname.endsWith(".vercel.app") ||
+		(url.hostname !== `${project}.vercel.app` &&
+			!url.hostname.startsWith(`${project}-`))
 	)
 		return undefined;
 	return `${url.origin}/`;
@@ -28,14 +31,18 @@ export function normalizeDeploymentUrl(
 export function protectedPreviewProbe(input: {
 	readonly base: HttpTransport;
 	readonly placeholderOrigin: string;
+	readonly project: string;
 	readonly deploymentUrl: () => string | undefined;
-	readonly jwt: () => Promise<string>;
+	readonly jwt: (audience: string) => Promise<string>;
 	readonly paths?: readonly ("/healthz" | "/readyz")[];
 }): HttpTransport {
 	return async (request) => {
 		const url = URL.canParse(request.url) ? new URL(request.url) : undefined;
 		if (url?.origin !== input.placeholderOrigin) return input.base(request);
-		const destination = normalizeDeploymentUrl(input.deploymentUrl());
+		const destination = normalizeDeploymentUrl(
+			input.deploymentUrl(),
+			input.project,
+		);
 		if (
 			request.method !== "GET" ||
 			!(input.paths ?? ["/healthz"]).some((path) => path === url.pathname) ||
@@ -44,7 +51,7 @@ export function protectedPreviewProbe(input: {
 		)
 			return { status: 503, headers: {}, body: "" };
 		try {
-			const jwt = await input.jwt();
+			const jwt = await input.jwt(new URL(destination).origin);
 			return await input.base({
 				...request,
 				url: `${destination}${url.pathname.slice(1)}`,

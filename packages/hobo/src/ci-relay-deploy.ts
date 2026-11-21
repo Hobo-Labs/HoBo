@@ -490,8 +490,24 @@ export async function runCiRelayDeploy(
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
+	const booleanEnvironment = (name: string): boolean | null | undefined => {
+		const value = env[name];
+		if (value === "true") return true;
+		if (value === "false") return false;
+		return value === undefined ? undefined : null;
+	};
+	const stagedProductionSetting = booleanEnvironment(
+		"HOBO_CI_RELAY_STAGED_PRODUCTION",
+	);
+	const previewProbeOidcSetting = booleanEnvironment(
+		"HOBO_CI_RELAY_PREVIEW_PROBE_OIDC",
+	);
+	if (stagedProductionSetting === null || previewProbeOidcSetting === null)
+		return usage(
+			"HOBO_CI_RELAY_STAGED_PRODUCTION and HOBO_CI_RELAY_PREVIEW_PROBE_OIDC accept only true or false.",
+		);
 	const stagedProduction =
-		target === "production" && env.HOBO_CI_RELAY_STAGED_PRODUCTION === "true";
+		target === "production" && stagedProductionSetting === true;
 	if (stagedProduction && values.wait !== true)
 		return usage("A staged production deployment requires --wait.");
 	if (
@@ -771,10 +787,14 @@ export async function runCiRelayDeploy(
 	const protectedPreview =
 		target === "preview" &&
 		wait &&
-		(env.HOBO_CI_RELAY_PREVIEW_PROBE_OIDC ??
-			(oidcMintAvailable ? "true" : undefined)) === "true";
+		(previewProbeOidcSetting ?? oidcMintAvailable);
 	if (protectedPreview && sha === undefined)
 		return usage("OIDC preview verification needs --sha <commit>.");
+	if (target === "preview" && wait && sha !== undefined && !protectedPreview)
+		return refused(
+			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+			"Preview --wait with --sha requires GitHub OIDC verification of the deployment just created; the shared origin cannot attest its commit.",
+		);
 	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
 		return refused(
 			"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
@@ -906,7 +926,7 @@ export async function runCiRelayDeploy(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
 				if (protectedPreview || stagedProduction)
-					deploymentUrl = normalizeDeploymentUrl(outputs.url);
+					deploymentUrl = normalizeDeploymentUrl(outputs.url, project);
 				return {
 					ok: true,
 					outputs: Object.fromEntries(
@@ -957,24 +977,19 @@ export async function runCiRelayDeploy(
 			? protectedPreviewProbe({
 					base: baseProbe,
 					placeholderOrigin: verifyOrigin,
+					project,
 					deploymentUrl: () => deploymentUrl,
 					...(stagedProduction
 						? { paths: ["/healthz", "/readyz"] as const }
 						: undefined),
-					jwt: async () => {
-						const audience =
-							env.HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE ??
-							relayOrigin(normalizeDeploymentUrl(deploymentUrl));
-						if (audience === undefined)
-							throw new Error("no deployment to scope the probe token to");
-						return githubActionsJwtSource({
+					jwt: async (audience) =>
+						githubActionsJwtSource({
 							env,
 							audience,
 							...(input.credentialFetch !== undefined
 								? { fetch: input.credentialFetch }
 								: undefined),
-						})();
-					},
+						})(),
 				})
 			: baseProbe;
 	const commitVerified =

@@ -43,6 +43,14 @@ export class RelayDeployCredentialError extends Error {
 	}
 }
 
+export function parseRelayDeployToken(value: string): string {
+	if (!TOKEN.test(value))
+		throw new RelayDeployCredentialError(
+			`${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy project is not a single-line token.`,
+		);
+	return value;
+}
+
 // Read the deploy token. `fetch` reaches both GitHub's token endpoint and
 // the store; injected in tests. `env` carries only the runner's own OIDC
 // request variables.
@@ -75,11 +83,7 @@ export async function readRelayDeployToken(input: {
 			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 		});
 		const secret = await client.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
-		if (!TOKEN.test(secret.value))
-			throw new RelayDeployCredentialError(
-				`${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy project is not a single-line token.`,
-			);
-		return secret.value;
+		return parseRelayDeployToken(secret.value);
 	} catch (error) {
 		if (error instanceof RelayDeployCredentialError) throw error;
 		// The adapter's messages name the operation, a code, a status and a

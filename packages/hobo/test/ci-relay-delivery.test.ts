@@ -484,7 +484,12 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 			source: nextSource,
 			records: withFinalizationHook,
 		});
-		expect(later.ok, later.ok ? "" : later.message).toBe(true);
+		expect(later.ok, later.ok ? "" : later.message).toBe(false);
+		if (later.ok) return;
+		expect(later.code).toBe(RELAY_DELIVERY_REFUSAL.promotionRefused);
+		expect(later.message).toContain(
+			"The relay finalization suite has no finalizer configured",
+		);
 	}, 180_000);
 
 	it("records two commits as two Freight, and production refuses the one preview has not qualified", async () => {
