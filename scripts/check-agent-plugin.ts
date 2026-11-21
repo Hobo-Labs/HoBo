@@ -29,7 +29,7 @@ const BUNDLE_ATTESTATION = ".bundle-attestation.json";
 const SECRET_KEY_PATTERN =
 	/(?:token|secret|password|passwd|credential|api[-_]?key|private[-_]?key)/iu;
 export const SECRET_VALUE_PATTERN =
-	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-ant-[A-Za-z0-9_-]{16,}|sk-or-[A-Za-z0-9_-]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
+	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-ant-[A-Za-z0-9_-]{16,}|sk-or-[A-Za-z0-9_-]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|sk_live_[A-Za-z0-9]{16,}|rk_live_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9]{16,}|glpat-[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{16,}|npm_[A-Za-z0-9]{16,}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|ASIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
 
 export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
 export const SYNCED_SKILLS = ["hobo-setup", "hobo-deploy"] as const;
@@ -934,7 +934,16 @@ function bundleAttestationIssues(
 	pluginRoot: string,
 	bundlePath: string,
 ): AgentPluginIssue[] {
-	if (process.env.GITHUB_ACTIONS !== "true") return [];
+	if (!agentPluginCiActive()) return [];
+	if (process.env.GITHUB_ACTIONS !== "true") {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); run agent-plugin:check on a GitHub Actions runner",
+			},
+		];
+	}
 	const attestationPath = path.join(pluginRoot, BUNDLE_ATTESTATION);
 	if (!existsSync(attestationPath)) {
 		return [

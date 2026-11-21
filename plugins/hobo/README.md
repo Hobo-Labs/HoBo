@@ -49,8 +49,10 @@ immediately before `check:all` (which calls `agent-plugin:check`). The build wri
 `GITHUB_RUN_ID`, `GITHUB_SHA`, and `runAttempt` when GitHub sets
 `GITHUB_RUN_ATTEMPT`. It is a **job-local consistency record** (same run,
 checkout, and bytes) — not a signature or off-box provenance; any step in the
-same Actions job could mint a matching file. The check refuses a bundle whose
-attestation does not match this workflow run, checkout, attempt, and sha256. In
+same Actions job could mint a matching file. Attestation verification runs only
+when `GITHUB_ACTIONS=true`; other CI signals still require the bundle but fail
+closed on attestation. The check refuses a bundle whose attestation does not
+match this workflow run, checkout, attempt, and sha256. In
 CI, `agent-plugin:check` builds the bundle when it is still absent so repo-wide
 gates do not fail before that build step.
 

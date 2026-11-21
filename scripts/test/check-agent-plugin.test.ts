@@ -416,6 +416,31 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 		expect(messages).toMatch(/"PLUGIN_ROOT" is reserved/u);
 		expect(messages).toMatch(/"api_token" names a secret/u);
 	});
+
+	it("scans benign env keys for secret-shaped values", () => {
+		const secret = "ghp_abcdefghijklmnopqrst";
+		const parsed = parseMcpConfig(
+			JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+						env: { BUILD_TOKEN: secret },
+					},
+				},
+			}),
+		);
+		expect(parsed.value).toBeDefined();
+		const messages = mcpSemanticIssues(
+			parsed.value ?? { $schema: "", mcpServers: {} },
+		)
+			.map((issue) => issue.message)
+			.join("\n");
+		expect(messages).toMatch(/secret-shaped value/u);
+		expect(messages).not.toContain(secret);
+	});
 });
 
 describe("scanTextForSecrets", () => {
@@ -767,11 +792,40 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues[0]?.message).not.toContain(secret);
 	});
 
+	it("rejects a bundle in CI that is not running on GitHub Actions", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", undefined);
+		const bundleBody = "z".repeat(1024 * 1024);
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some((issue) =>
+				/only verified in GitHub Actions/u.test(issue.message),
+			),
+		).toBe(true);
+	});
+
 	it("accepts a matching bundle attestation in a GitHub Actions job", async () => {
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
+		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
 		const bundleBody = "y".repeat(1024 * 1024);
 		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
@@ -793,6 +847,7 @@ describe("checkAgentPlugin (integration)", () => {
 				sha256,
 				runId: "run-current",
 				commitSha: "commit-current",
+				runAttempt: "1",
 			})}\n`,
 		});
 		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
