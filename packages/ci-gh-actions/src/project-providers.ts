@@ -69,6 +69,8 @@ export const CiVercelProviderSchema = z
 	.strict()
 	.meta({ id: "VercelProvider" });
 
+const agent37Hostname =
+	/^(?:\*\.)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/u;
 const agent37Disk = z.number().int().min(1).max(1024);
 const agent37Size = (cpu: 2 | 4 | 8, memory: 4 | 8 | 16 | 32 | 64) =>
 	z
@@ -121,20 +123,19 @@ export const CiAgent37PoolSchema = z
 		template: z
 			.string()
 			.max(255)
-			.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$/),
+			.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$/u),
 		idleTtlSeconds: z.number().int().min(60).max(3600),
 		jobTimeoutSeconds: z.number().int().min(1).max(19800),
-		labels: z.array(base.runsOn).min(1).max(16).meta({ uniqueItems: true }),
+		labels: z
+			.array(base.runsOn)
+			.min(1)
+			.max(16)
+			.refine((labels) => new Set(labels).size === labels.length)
+			.meta({ uniqueItems: true }),
 		network: z
 			.object({
 				allow: z
-					.array(
-						z
-							.string()
-							.min(1)
-							.max(253)
-							.regex(/^(?:\*\.)?[A-Za-z0-9][A-Za-z0-9_.:-]*$/),
-					)
+					.array(z.string().min(1).max(253).regex(agent37Hostname))
 					.max(100),
 			})
 			.strict(),

@@ -32,13 +32,42 @@ export type Agent37SandboxDriverOptions = {
 	now?: () => number;
 };
 
-const sandboxName = /^hobo-([a-f0-9-]{36})$/;
-const maximumJitBytes = 262144;
+const sandboxNamePattern = /^hobo-([a-f0-9-]{36})$/;
+const hostnamePattern =
+	/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const maximumJitBytes = 262_144;
 
 function leaseIdOf(name: string): string {
-	const match = sandboxName.exec(name);
-	if (!match?.[1]) throw new Error("invalid sandbox name");
-	return match[1];
+	const leaseId = sandboxNamePattern.exec(name)?.[1];
+	if (!leaseId) throw new Error("invalid sandbox name");
+	return leaseId;
+}
+
+export function validAgent37NetworkHostname(value: string): boolean {
+	const hostname = value.startsWith("*.") ? value.slice(2) : value;
+	return hostnamePattern.test(hostname);
+}
+
+export function parseAgent37NetworkAllow(values: readonly string[]): string[] {
+	if (values.length === 0 || values.length > 100)
+		throw new Error(
+			"agent37 sandbox network allowlist must contain 1-100 entries",
+		);
+	if (
+		new Set(values).size !== values.length ||
+		values.some((value) => !validAgent37NetworkHostname(value))
+	)
+		throw new Error("invalid or repeated agent37 network hostname");
+	return [...values];
+}
+
+export function resolveAgent37Network(pool: Agent37SandboxPool) {
+	const { network } = pool;
+	if (network === undefined)
+		throw new Error("agent37 sandbox network allowlist required");
+	if (network === "allow-all" || network === "deny-all")
+		throw new Error("agent37 sandbox network must be an explicit allow list");
+	return { allow: parseAgent37NetworkAllow(network.allow) };
 }
 
 function idleTimeoutSeconds(
@@ -53,30 +82,51 @@ function resourcesOf(
 	config: IsolatedSandboxConfiguration,
 	pool: Agent37SandboxPool,
 ) {
-	const cpu = pool.cpu ?? (config.vcpus <= 2 ? 2 : config.vcpus <= 4 ? 4 : 8);
 	return {
-		cpu,
+		cpu: pool.cpu ?? (config.vcpus <= 2 ? 2 : config.vcpus <= 4 ? 4 : 8),
 		memory: pool.memory ?? 4,
 		disk: pool.disk ?? 20,
 	};
 }
 
 function metadataOf(pool: Agent37SandboxPool, leaseId: string) {
-	return pool.label
-		? { hobo: "ci", leaseId, pool: pool.label }
-		: { hobo: "ci", leaseId };
+	if (pool.label === undefined) return { hobo: "ci", leaseId };
+	return { hobo: "ci", leaseId, pool: pool.label };
 }
 
-export function resolveAgent37Network(pool: Agent37SandboxPool) {
-	const network = pool.network;
-	if (network === undefined)
-		throw new Error("agent37 sandbox network allowlist required");
-	if (network === "allow-all" || network === "deny-all")
-		throw new Error("agent37 sandbox network must be an explicit allow list");
-	const allow = network.allow;
-	if (allow.length === 0)
-		throw new Error("agent37 sandbox network allowlist must not be empty");
-	return { allow: [...allow] };
+function sameNetwork(
+	instance: Agent37Instance,
+	pool: Agent37SandboxPool,
+): boolean {
+	const expected = resolveAgent37Network(pool).allow;
+	if (instance.network === "allow-all" || instance.network === "deny-all")
+		return false;
+	return (
+		instance.network.allow.length === expected.length &&
+		instance.network.allow.every((entry, index) => entry === expected[index])
+	);
+}
+
+function verifyReusableInstance(
+	instance: Agent37Instance,
+	config: IsolatedSandboxConfiguration,
+	pool: Agent37SandboxPool,
+	leaseId: string,
+): void {
+	const resources = resourcesOf(config, pool);
+	if (
+		instance.status !== "running" ||
+		instance.name !== config.name ||
+		instance.metadata?.leaseId !== leaseId ||
+		instance.template !== pool.template ||
+		instance.type !== pool.type ||
+		instance.region !== (pool.region ?? "us") ||
+		instance.resources.cpu !== resources.cpu ||
+		instance.resources.memory !== resources.memory ||
+		instance.resources.disk !== resources.disk ||
+		!sameNetwork(instance, pool)
+	)
+		throw new Error("agent37 instance does not match the requested lease");
 }
 
 async function findInstance(
@@ -92,34 +142,8 @@ async function findInstance(
 	return matches[0];
 }
 
-function usageOf(
-	instance: Agent37Instance | undefined,
-	pool: Agent37SandboxPool,
-	stoppedAt: number,
-): SandboxUsage {
-	const startedAt = instance?.created_at
-		? Date.parse(instance.created_at)
-		: Number.NaN;
-	const durationMs =
-		Number.isFinite(startedAt) && startedAt <= stoppedAt
-			? stoppedAt - startedAt
-			: 0;
-	const vcpus = instance?.resources.cpu ?? pool.cpu ?? 2;
-	return {
-		cpuMs: durationMs * vcpus,
-		durationMs,
-		memoryMb: (instance?.resources.memory ?? pool.memory ?? 4) * 1024,
-		vcpus,
-		egressBytes: 0,
-		ingressBytes: 0,
-		creations: 1,
-		stoppedAt,
-	};
-}
-
-function completed(result: Agent37ExecResult) {
-	if (!("stdout" in result)) return undefined;
-	return result;
+function completedExec(result: Agent37ExecResult) {
+	return "stdout" in result ? result : undefined;
 }
 
 function commandIdOf(result: Agent37ExecResult, fallback: string): string {
@@ -128,7 +152,7 @@ function commandIdOf(result: Agent37ExecResult, fallback: string): string {
 	return fallback;
 }
 
-// public-contract: the Agent37 runner bootstrap contract verifies this exact single-use start script.
+// public-contract: the runner bootstrap contract verifies this single-use script.
 export const START_AGENT37_RUNNER = `set -eu
 umask 077
 cd "$HOME"
@@ -151,6 +175,23 @@ code=$?
 set -e
 printf '%s\\n' "$code" > "$HOME/.hobo-ci-exit"
 exit "$code"
+`;
+
+const PREPARE_AGENT37_RUNNER = `set -eu
+umask 077
+cd "$HOME"
+test "$(uname -s)" = Linux
+if command -v dockerd >/dev/null 2>&1 && ! pgrep -x dockerd >/dev/null 2>&1; then
+  (dockerd --data-root "$HOME/docker" >/dev/null 2>&1 &)
+fi
+curl -fsSL ${SANDBOX_RUNNER_URL} -o hobo-ci-runner.tar.gz
+printf '%s  %s\\n' ${SANDBOX_RUNNER_SHA256} hobo-ci-runner.tar.gz | sha256sum --check --status
+mkdir -m 700 hobo-ci-runner
+tar -xzf hobo-ci-runner.tar.gz -C hobo-ci-runner
+rm -f hobo-ci-runner.tar.gz
+test -x hobo-ci-runner/run.sh
+mkdir -m 700 .hobo-ci-home
+: > .hobo-ci-prepared
 `;
 
 function stageRunnerJitCommand(jit: string): string {
@@ -182,37 +223,26 @@ fi
 `;
 }
 
-const PREPARE_AGENT37_RUNNER = `set -eu
-umask 077
-cd "$HOME"
-test "$(uname -s)" = Linux
-if command -v dockerd >/dev/null 2>&1 && ! pgrep -x dockerd >/dev/null 2>&1; then
-  (dockerd --data-root "$HOME/docker" >/dev/null 2>&1 &)
-fi
-curl -fsSL ${SANDBOX_RUNNER_URL} -o hobo-ci-runner.tar.gz
-printf '%s  %s\\n' ${SANDBOX_RUNNER_SHA256} hobo-ci-runner.tar.gz | sha256sum --check --status
-mkdir -m 700 hobo-ci-runner
-tar -xzf hobo-ci-runner.tar.gz -C hobo-ci-runner
-rm -f hobo-ci-runner.tar.gz
-test -x hobo-ci-runner/run.sh
-mkdir -m 700 .hobo-ci-home
-: > .hobo-ci-prepared
-`;
-
 export function createAgent37SandboxDriver(
 	options: Agent37SandboxDriverOptions,
 ): IsolatedSandboxDriver {
 	const { client, pool } = options;
 	const now = options.now ?? Date.now;
+	const creations = new Map<string, number>();
 
 	return {
 		async create(config) {
 			const leaseId = leaseIdOf(config.name);
+			const network = resolveAgent37Network(pool);
 			const existing = await findInstance(client, config.name, leaseId);
 			if (existing) {
-				if (existing.status !== "running")
-					throw new Error("agent37 instance is not running");
-				return { name: config.name, sessionId: existing.id };
+				verifyReusableInstance(existing, config, pool, leaseId);
+				if (!creations.has(existing.id)) creations.set(existing.id, 0);
+				return {
+					name: config.name,
+					sessionId: existing.id,
+					expiresAt: now() + config.timeoutMs,
+				};
 			}
 			const instance = await client.createInstance({
 				template: pool.template,
@@ -227,61 +257,77 @@ export function createAgent37SandboxDriver(
 					config.timeoutMs,
 					pool.idleTimeoutSeconds,
 				),
-				network: resolveAgent37Network(pool),
+				network,
 			});
-			if (!instance.id) throw new Error("agent37 instance identity missing");
-			return { name: config.name, sessionId: instance.id };
+			creations.set(instance.id, 1);
+			return {
+				name: config.name,
+				sessionId: instance.id,
+				expiresAt: now() + config.timeoutMs,
+			};
 		},
 		async discover(name) {
 			const leaseId = leaseIdOf(name);
 			const instance = await findInstance(client, name, leaseId);
-			if (!instance) throw new Error("agent37 instance not found");
+			if (
+				!instance ||
+				instance.name !== name ||
+				instance.metadata?.leaseId !== leaseId
+			)
+				throw new Error("agent37 instance not found");
 			return { sessionId: instance.id };
 		},
 		async prepare(name, sessionId) {
-			const result = await client.exec(sessionId, {
-				command: PREPARE_AGENT37_RUNNER,
-				user: "root",
-				name: `prep-${leaseIdOf(name)}`,
-			});
-			const completedResult = completed(result);
-			if (completedResult?.exit_code !== 0)
+			const result = completedExec(
+				await client.exec(sessionId, {
+					command: PREPARE_AGENT37_RUNNER,
+					user: "root",
+					name: `prep-${leaseIdOf(name)}`,
+				}),
+			);
+			if (result?.exit_code !== 0)
 				throw new Error("agent37 runner preparation failed");
 		},
 		async start(name, sessionId, jit) {
-			if (jit.length > maximumJitBytes || !/^[A-Za-z0-9+/]+={0,2}$/.test(jit))
+			if (
+				jit.length === 0 ||
+				jit.length > maximumJitBytes ||
+				jit.length % 4 !== 0 ||
+				!/^[A-Za-z0-9+/]+={0,2}$/.test(jit)
+			)
 				throw new Error("invalid runner JIT configuration");
 			const leaseId = leaseIdOf(name);
-			const staged = await client.exec(sessionId, {
-				command: stageRunnerJitCommand(jit),
-				user: "root",
-				name: `jit-${leaseId}`,
-			});
-			const stagedResult = completed(staged);
-			if (stagedResult?.exit_code !== 0)
+			const staged = completedExec(
+				await client.exec(sessionId, {
+					command: stageRunnerJitCommand(jit),
+					user: "root",
+					name: `jit-${leaseId}`,
+				}),
+			);
+			if (staged?.exit_code !== 0)
 				throw new Error("agent37 runner JIT staging failed");
-			const result = await client.exec(sessionId, {
+			const started = await client.exec(sessionId, {
 				command: START_AGENT37_RUNNER,
 				user: "root",
 				background: true,
 				name: `start-${leaseId}`,
 			});
-			return { cmdId: commandIdOf(result, `start-${leaseId}`) };
+			return { cmdId: commandIdOf(started, `start-${leaseId}`) };
 		},
 		async inspect(_name, sessionId, commandId) {
-			const result = await client.exec(sessionId, {
-				command: inspectCommand(commandId),
-				user: "root",
-			});
-			const completedResult = completed(result);
-			if (!completedResult)
-				throw new Error("agent37 command observation unavailable");
-			const line = completedResult.stdout.trim().split("\n").at(-1) ?? "";
+			const result = completedExec(
+				await client.exec(sessionId, {
+					command: inspectCommand(commandId),
+					user: "root",
+				}),
+			);
+			if (!result) throw new Error("agent37 command observation unavailable");
+			const line = result.stdout.trim().split("\n").at(-1) ?? "";
 			if (line.startsWith("exit:")) {
-				const code = Number(line.slice("exit:".length));
+				const code = Number(line.slice(5));
 				return {
 					commandId,
-					exitCode: Number.isInteger(code) ? code : null,
+					exitCode: Number.isInteger(code) && code >= 0 ? code : null,
 					terminal: true,
 				};
 			}
@@ -298,13 +344,31 @@ export function createAgent37SandboxDriver(
 					throw error;
 			}
 			const stoppedAt = now();
-			const usage = usageOf(instance, pool, stoppedAt);
+			const startedAt = instance?.created_at
+				? Date.parse(instance.created_at)
+				: Number.NaN;
+			const durationMs =
+				Number.isFinite(startedAt) && startedAt <= stoppedAt
+					? stoppedAt - startedAt
+					: 0;
+			const vcpus = instance?.resources.cpu ?? pool.cpu ?? 2;
+			const usage: SandboxUsage = {
+				cpuMs: durationMs * vcpus,
+				durationMs,
+				memoryMb: (instance?.resources.memory ?? pool.memory ?? 4) * 1024,
+				vcpus,
+				egressBytes: 0,
+				ingressBytes: 0,
+				creations: creations.get(sessionId) ?? 0,
+				stoppedAt,
+			};
 			try {
 				await client.deleteInstance(sessionId);
 			} catch (error) {
 				if (!(error instanceof Agent37Error) || error.status !== 404)
 					throw error;
 			}
+			creations.delete(sessionId);
 			return usage;
 		},
 	};

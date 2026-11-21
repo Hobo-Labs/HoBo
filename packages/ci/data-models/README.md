@@ -22,10 +22,14 @@ Account, leases and observed usage. `ci.cue` constrains policy fixtures.
 `parseCiPolicy` enforces cross-reference and duplicate checks at the protobuf
 JSON boundary; provider/Station authorization requires an external resolver.
 Only manual budget periods are accepted until automatic rollover is implemented.
-`CiPolicyProvider.capacity` is a oneof of a kubernetes-only ARC `scale_set` or
-Dagger `engine`; `location` is vercel-only. CUE and `parseCiPolicy` reject either
-on another kind; fixtures `desired-policy-kubernetes-shapes.json` and the
-`desired-policy-*-wrong-kind` / `scale-set-and-engine` invalids pin the rules.
+`CiPolicyProvider.capacity` is a oneof of a kubernetes-only ARC `scale_set`,
+Dagger `engine`, or Agent37 `pool`; `location` is vercel-only. CUE and
+`parseCiPolicy` reject either on another kind. Agent37 fixtures pin documented
+CPU/memory/disk shapes, region/type compatibility, immutable template revisions,
+idle TTL, the 32 GB memory ceiling and its explicit opt-in, network hostname and
+100-entry limits, labels, and monthly budget/create limits. Agent37 offers pair
+with `backend: "gh-actions"`. Existing kubernetes fixtures cover the ARC/Dagger
+rules.
 
 Azure DevOps offers pair `provider: "azure-devops"` with `backend: "ado"`;
 desired policy accepts the same provider kind. CUE and runtime configuration

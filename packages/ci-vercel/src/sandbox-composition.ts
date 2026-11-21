@@ -18,6 +18,7 @@ import { z } from "zod";
 import {
 	type Agent37SandboxDriverOptions,
 	createAgent37SandboxDriver,
+	parseAgent37NetworkAllow,
 } from "./agent37-sandbox.js";
 import {
 	createIsolatedSandbox,
@@ -72,7 +73,7 @@ export type SandboxProviderKind = "vercel" | "agent37";
 
 export interface SandboxDrivers {
 	driver: IsolatedSandboxDriver;
-	proxyDriver?: SandboxProxyDriver;
+	proxyDriver?: SandboxProxyDriver | undefined;
 }
 
 export const VERCEL_SANDBOX_DRIVERS: Readonly<Required<SandboxDrivers>> =
@@ -99,16 +100,24 @@ export const VERCEL_SANDBOX_DRIVERS: Readonly<Required<SandboxDrivers>> =
 export function parseSandboxProvider(
 	env: NodeJS.ProcessEnv,
 ): SandboxProviderKind {
-	const raw = env.HOBO_CI_SANDBOX_PROVIDER;
-	if (raw === undefined || raw === "") return "vercel";
-	if (raw === "vercel" || raw === "agent37") return raw;
+	const provider = env.HOBO_CI_SANDBOX_PROVIDER;
+	if (provider === undefined || provider === "") return "vercel";
+	if (provider === "vercel" || provider === "agent37") return provider;
 	throw new Error("invalid sandbox provider");
 }
 
 export function createAgent37SandboxDrivers(
 	options: Agent37SandboxDriverOptions,
+	domains?: readonly string[],
 ): SandboxDrivers {
-	return { driver: createAgent37SandboxDriver(options) };
+	const pool =
+		domains === undefined
+			? options.pool
+			: {
+					...options.pool,
+					network: { allow: parseAgent37NetworkAllow(domains) },
+				};
+	return { driver: createAgent37SandboxDriver({ ...options, pool }) };
 }
 
 /** Sandbox execution is opt-in until deployment-specific platform limits and
@@ -124,32 +133,19 @@ export function createSandboxComposition(options: {
 	now?: (() => string) | undefined;
 }) {
 	const { env, store, github } = options;
+	if (!env.HOBO_CI_SANDBOX_ENABLED) return undefined;
+	if (env.HOBO_CI_SANDBOX_ENABLED !== "1")
+		throw new Error("invalid sandbox enablement");
 	const provider = options.sandboxProvider ?? parseSandboxProvider(env);
+	const domains = z
+		.array(z.string())
+		.parse(JSON.parse(required(env, "HOBO_CI_SANDBOX_DOMAINS_JSON")));
 	let drivers: SandboxDrivers;
 	if (options.drivers) drivers = options.drivers;
 	else if (provider === "agent37") {
 		if (!options.agent37) throw new Error("agent37 sandbox driver unavailable");
-		const domains =
-			env.HOBO_CI_SANDBOX_ENABLED === "1"
-				? z
-						.array(z.string())
-						.parse(JSON.parse(required(env, "HOBO_CI_SANDBOX_DOMAINS_JSON")))
-				: undefined;
-		const pool =
-			domains === undefined
-				? options.agent37.pool
-				: {
-						...options.agent37.pool,
-						network: { allow: [...domains] },
-					};
-		drivers = createAgent37SandboxDrivers({ ...options.agent37, pool });
+		drivers = createAgent37SandboxDrivers(options.agent37, domains);
 	} else drivers = VERCEL_SANDBOX_DRIVERS;
-	if (!env.HOBO_CI_SANDBOX_ENABLED) return undefined;
-	if (env.HOBO_CI_SANDBOX_ENABLED !== "1")
-		throw new Error("invalid sandbox enablement");
-	const domains = z
-		.array(z.string())
-		.parse(JSON.parse(required(env, "HOBO_CI_SANDBOX_DOMAINS_JSON")));
 	const plan = env.HOBO_CI_SANDBOX_PLAN ?? "hobby";
 	if (plan !== "hobby" && plan !== "pro" && plan !== "enterprise")
 		throw new Error("invalid sandbox plan");

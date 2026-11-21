@@ -9,40 +9,37 @@ import {
 	stableDigest,
 } from "@hobo/core";
 
-// public-contract: the package id every published document carries.
+// public-contract: the hosting catalog pins the provider package identifier.
 export const AGENT37_PROVIDER_ID = "@hobo/provider-agent37";
-// public-contract: the execution capability selected by CI policy.
+// public-contract: consumers select the provider through this capability name.
 export const AGENT37_CAPABILITY = "ci/runner";
-export const AGENT37_DEFAULT_REGIONS = ["us", "eu", "ap-south"];
-export const AGENT37_COST_SOURCE = {
+export const AGENT37_DEFAULT_REGIONS = Object.freeze(["us", "eu", "ap-south"]);
+export const AGENT37_COST_SOURCE = Object.freeze({
 	sourceUrl: "https://www.agent37.com/docs/agents-api/instance-sizing",
 	transcribedOn: "2026-11-20",
-} as const;
+});
 
-const instanceSizes = [
+const sizes = [
 	{ cpu: 2, memoryGb: 4, monthlyUsd: 4.76 },
 	{ cpu: 4, memoryGb: 8, monthlyUsd: 9.34 },
 	{ cpu: 4, memoryGb: 16, monthlyUsd: 15.48 },
 	{ cpu: 4, memoryGb: 32, monthlyUsd: 27.76 },
 	{ cpu: 8, memoryGb: 64, monthlyUsd: 55.52 },
 ] as const;
-const typeMultipliers = { default: 1, vm: 2.5, performance: 4 } as const;
-const types = ["default", "vm", "performance"] as const;
+const multipliers = { default: 1, vm: 2.5, performance: 4 } as const;
 
 export const AGENT37_COST_FACTS = Object.freeze(
-	types.flatMap((type) =>
-		instanceSizes
+	(["default", "vm", "performance"] as const).flatMap((type) =>
+		sizes
 			.filter((size) => type !== "default" || size.cpu !== 8)
 			.map((size) => ({
 				port: AGENT37_CAPABILITY,
 				pricingStatus: "estimate" as const,
 				sku: `agent37.${type}.${size.cpu}vcpu-${size.memoryGb}gb.instance-minute`,
 				unit: "instance-minute",
-				marginalPrice: (
-					(size.monthlyUsd * typeMultipliers[type]) /
-					730 /
-					60
-				).toFixed(12),
+				marginalPrice: ((size.monthlyUsd * multipliers[type]) / 43800).toFixed(
+					12,
+				),
 				type,
 				cpu: size.cpu,
 				memoryGb: size.memoryGb,
@@ -67,7 +64,7 @@ export function publishCapabilityManifest(
 ): Agent37PublishedManifestDocuments {
 	const providerId = input.providerId ?? AGENT37_PROVIDER_ID;
 	const regions = input.regions ?? AGENT37_DEFAULT_REGIONS;
-	const capabilitiesDocument = {
+	const capabilities = {
 		schema: CAPABILITIES_SCHEMA,
 		providerId,
 		capabilities: [
@@ -83,7 +80,7 @@ export function publishCapabilityManifest(
 			},
 		],
 	};
-	const authDocument = {
+	const auth = {
 		schema: AUTH_SCHEMA,
 		providerId,
 		mode: "static-api-key",
@@ -94,7 +91,7 @@ export function publishCapabilityManifest(
 		oauth: false,
 		keyPage: "https://www.agent37.com/dashboard/cloud/api-keys",
 	};
-	const costDocument = {
+	const cost = {
 		schema: COST_SCHEMA,
 		providerId,
 		currency: "USD",
@@ -111,30 +108,30 @@ export function publishCapabilityManifest(
 		{
 			path: "/.well-known/capability-manifest/capabilities.json",
 			schema: CAPABILITIES_SCHEMA,
-			digest: stableDigest(capabilitiesDocument),
+			digest: stableDigest(capabilities),
 		},
 		{
 			path: "/.well-known/capability-manifest/auth.json",
 			schema: AUTH_SCHEMA,
-			digest: stableDigest(authDocument),
+			digest: stableDigest(auth),
 		},
 		{
 			path: "/.well-known/capability-manifest/cost.json",
 			schema: COST_SCHEMA,
-			digest: stableDigest(costDocument),
+			digest: stableDigest(cost),
 		},
 	];
-	const indexDocument = {
+	const index = {
 		schema: MANIFEST_INDEX_SCHEMA,
 		providerId,
 		manifestSchema: MANIFEST_SCHEMA,
 		documents,
 	};
 	return {
-		"/.well-known/capability-manifest/index.json": canonicalJson(indexDocument),
+		"/.well-known/capability-manifest/index.json": canonicalJson(index),
 		"/.well-known/capability-manifest/capabilities.json":
-			canonicalJson(capabilitiesDocument),
-		"/.well-known/capability-manifest/auth.json": canonicalJson(authDocument),
-		"/.well-known/capability-manifest/cost.json": canonicalJson(costDocument),
+			canonicalJson(capabilities),
+		"/.well-known/capability-manifest/auth.json": canonicalJson(auth),
+		"/.well-known/capability-manifest/cost.json": canonicalJson(cost),
 	};
 }

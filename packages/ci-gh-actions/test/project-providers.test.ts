@@ -150,7 +150,7 @@ describe("shipped provider schema", () => {
 describe("closed provider shapes", () => {
 	it.each(
 		KINDS.filter((kind) => kind !== "vercel"),
-	)("keeps the %s provider valid", (kind) => {
+	)("keeps the existing five-field %s provider valid", (kind) => {
 		expect(CiProjectProviderSchema.safeParse(provider(kind)).success).toBe(
 			true,
 		);
@@ -257,6 +257,7 @@ describe("closed provider shapes", () => {
 		"agent37-ubuntu@latest",
 		"agent37-ubuntu@",
 		"agent37-ubuntu@1.2",
+		"agent37-ubuntu@0",
 	])("requires an immutable numeric Agent37 template revision: %s", (template) => {
 		const parsed = CiAgent37ProviderSchema.parse(
 			agent37Provider("valid", "desired-policy-agent37"),
@@ -272,12 +273,54 @@ describe("closed provider shapes", () => {
 		"desired-policy-agent37-non-us-default",
 		"desired-policy-agent37-oversize",
 		"desired-policy-agent37-network-limit",
+		"desired-policy-agent37-network-hostname",
+		"desired-policy-agent37-memory-ceiling",
 	])("rejects shared Agent37 fixture %s through Zod and project parsing", (name) => {
 		const input = agent37Provider("invalid", name);
 		expect(CiProjectProviderSchema.safeParse(input).success).toBe(false);
 		expect(() => parseCiProjectConfig(project([input]))).toThrow(
 			"invalid CI project configuration",
 		);
+	});
+
+	it.each([
+		"",
+		"bad..example.com",
+		"-bad.example.com",
+		"bad-.example.com",
+		"bad_name.example.com",
+		"*.*.example.com",
+		"https://github.com",
+	])("rejects invalid Agent37 network entry %j in authored configuration", (entry) => {
+		const parsed = CiAgent37ProviderSchema.parse(
+			agent37Provider("valid", "desired-policy-agent37"),
+		);
+		const input = {
+			...parsed,
+			pool: { ...parsed.pool, network: { allow: [entry] } },
+		};
+		expect(CiProjectProviderSchema.safeParse(input).success).toBe(false);
+	});
+
+	it("enforces unique Agent37 labels and explicit free-tier opt-in", () => {
+		const parsed = CiAgent37ProviderSchema.parse(
+			agent37Provider("valid", "desired-policy-agent37"),
+		);
+		expect(
+			CiAgent37ProviderSchema.safeParse({
+				...parsed,
+				pool: {
+					...parsed.pool,
+					labels: ["hobo-agent37", "hobo-agent37"],
+				},
+			}).success,
+		).toBe(false);
+		expect(
+			CiAgent37ProviderSchema.safeParse({
+				...parsed,
+				pool: { ...parsed.pool, maxBoxes: 9, allowAboveFreeTier: true },
+			}).success,
+		).toBe(true);
 	});
 
 	it("never accepts credentials inside the typed shapes", () => {

@@ -2,6 +2,28 @@ import type { HttpTransport, TransportResponse } from "@hobo/core";
 import { createProviderRedactor } from "@hobo/provider-redaction";
 import { z } from "zod";
 import {
+	type Agent37CreateInstanceInput,
+	type Agent37ExecInput,
+	type Agent37ExecResult,
+	type Agent37Instance,
+	type Agent37RegisteredWebhook,
+	type Agent37Usage,
+	type Agent37UsageQuery,
+	type Agent37Webhook,
+	agent37CreateInstanceInputSchema,
+	agent37DeletedSchema,
+	agent37ErrorEnvelopeSchema,
+	agent37ExecInputSchema,
+	agent37ExecResultSchema,
+	agent37InstanceListSchema,
+	agent37InstanceSchema,
+	agent37RegisteredWebhookSchema,
+	agent37UsageQuerySchema,
+	agent37UsageSchema,
+	agent37WebhookListSchema,
+	agent37WebhookUrlSchema,
+} from "./contracts.js";
+import {
 	AGENT37_API_ORIGIN,
 	AGENT37_EXEC_ORIGIN,
 	AGENT37_MAX_RESPONSE_BYTES,
@@ -32,6 +54,7 @@ export type Agent37ErrorOptions = {
 type Agent37ErrorOptionsDraft = {
 	-readonly [Key in keyof Agent37ErrorOptions]: Agent37ErrorOptions[Key];
 };
+
 type Agent37ErrorJson = {
 	name: string;
 	message: string;
@@ -51,14 +74,16 @@ export class Agent37Error extends Error {
 		super(redactAgent37Text(message));
 		this.name = "Agent37Error";
 		if (options.status !== undefined) this.status = options.status;
-		if (options.providerCode !== undefined)
+		if (options.providerCode !== undefined) {
 			this.providerCode = redactAgent37Text(options.providerCode, 80);
-		if (options.retryAfterMs !== undefined)
+		}
+		if (options.retryAfterMs !== undefined) {
 			this.retryAfterMs = options.retryAfterMs;
+		}
 		this.retryable = options.retryable ?? false;
 	}
 
-	toJSON() {
+	toJSON(): Agent37ErrorJson {
 		const json: Agent37ErrorJson = {
 			name: this.name,
 			message: this.message,
@@ -70,225 +95,6 @@ export class Agent37Error extends Error {
 		return json;
 	}
 }
-
-const instanceStatus = z.enum([
-	"provisioning",
-	"running",
-	"stopping",
-	"stopped",
-	"starting",
-	"restarting",
-	"updating",
-	"sleeping",
-	"waking",
-	"failed",
-	"deleting",
-	"deleted",
-]);
-const resources = z.object({
-	cpu: z.number().int().positive(),
-	memory: z.number().int().positive(),
-	disk: z.number().int().positive(),
-});
-const network = z.union([
-	z.literal("allow-all"),
-	z.literal("deny-all"),
-	z.object({ allow: z.array(z.string()).max(100) }),
-]);
-const publicPort = z.object({
-	port: z.number().int().min(1).max(65_535),
-	url: z.url().optional(),
-	domain_urls: z.array(z.url()).optional(),
-	prefix: z.string().nullable().optional(),
-	label: z.string().nullable().optional(),
-	created: z.number().int().optional(),
-});
-const instance = z.object({
-	id: z.string().min(1),
-	status: instanceStatus,
-	status_reason: z.unknown().nullable().optional(),
-	template: z.string().min(1),
-	template_revision: z.number().int().nullable().optional(),
-	image_ref: z.string().nullable().optional(),
-	image_digest: z.string().nullable().optional(),
-	type: z.enum(["default", "vm", "performance"]),
-	region: z.enum(["us", "eu", "ap-south"]),
-	mount_path: z.string().nullable().optional(),
-	resources,
-	url: z.url().optional(),
-	domain_urls: z.array(z.url()).optional(),
-	public_ports: z.array(z.union([z.number().int(), publicPort])),
-	name: z.string().nullable().optional(),
-	metadata: z.record(z.string(), z.string()).nullable().optional(),
-	auto_sleep: z.boolean(),
-	idle_timeout_seconds: z.number().int().min(300).max(86_400),
-	network,
-	sleeping: z.number().int().nullable().optional(),
-	past_due: z.boolean().optional(),
-	created: z.number().int().optional(),
-	created_at: z.string().optional(),
-	updated_at: z.string().optional(),
-});
-
-export type Agent37Instance = z.infer<typeof instance>;
-
-const createInstanceInput = z
-	.object({
-		template: z.string().min(1).optional(),
-		resources: resources.strict().optional(),
-		type: z.enum(["default", "vm", "performance"]).optional(),
-		region: z.enum(["us", "eu", "ap-south"]).optional(),
-		name: z.string().optional(),
-		metadata: z.record(z.string(), z.string()).optional(),
-		env: z.record(z.string(), z.string()).optional(),
-		budget: z
-			.object({
-				monthly_cap_micros: z.number().int().nonnegative(),
-				credit_micros: z.number().int().nonnegative(),
-			})
-			.strict()
-			.optional(),
-		auto_sleep: z.boolean().optional(),
-		idle_timeout_seconds: z.number().int().min(300).max(86_400).optional(),
-		public_ports: z
-			.array(
-				z
-					.object({
-						port: z.number().int().min(1).max(65_535),
-						prefix: z.string().optional(),
-						label: z.string().optional(),
-					})
-					.strict(),
-			)
-			.optional(),
-		network: z
-			.union([
-				z.literal("allow-all"),
-				z.literal("deny-all"),
-				z.object({ allow: z.array(z.string()).max(100) }).strict(),
-			])
-			.optional(),
-		mount_path: z.string().optional(),
-	})
-	.strict();
-export type Agent37CreateInstanceInput = z.infer<typeof createInstanceInput>;
-
-const instanceList = z
-	.union([
-		z.object({ data: z.array(instance) }),
-		z.object({ instances: z.array(instance) }),
-	])
-	.transform((value) => ("data" in value ? value.data : value.instances));
-
-const execInput = z
-	.object({
-		command: z.string().min(1).max(1_048_576),
-		user: z.literal("root").optional(),
-		background: z.boolean().optional(),
-		name: z.string().min(1).max(128).optional(),
-	})
-	.strict();
-export type Agent37ExecInput = z.infer<typeof execInput>;
-
-const execResult = z.union([
-	z.object({ pid: z.number().int().positive() }),
-	z.object({
-		id: z.string().optional(),
-		instance_id: z.string().optional(),
-		background: z.boolean().optional(),
-		status: z.string().optional(),
-		exit_code: z.number().int().nullable(),
-		stdout: z.string(),
-		stderr: z.string(),
-		truncated: z.boolean().optional(),
-		created_at: z.string().optional(),
-		finished_at: z.string().nullable().optional(),
-	}),
-]);
-export type Agent37ExecResult = z.infer<typeof execResult>;
-
-const webhook = z.object({
-	id: z.string().min(1),
-	url: z.url(),
-	last_failure: z.unknown().nullable().optional(),
-	created: z.number().int().optional(),
-	created_at: z.string().optional(),
-});
-const registeredWebhook = webhook.extend({ secret: z.string().min(1) });
-export type Agent37Webhook = z.infer<typeof webhook>;
-export type Agent37RegisteredWebhook = z.infer<typeof registeredWebhook>;
-const webhookList = z
-	.union([
-		z.object({ data: z.array(webhook) }),
-		z.object({ webhooks: z.array(webhook) }),
-	])
-	.transform((value) => ("data" in value ? value.data : value.webhooks));
-
-const deleted = z.object({ id: z.string().min(1), deleted: z.literal(true) });
-const micros = z.number().int().nonnegative().safe();
-const usageTotals = z.object({
-	total_micros: micros,
-	compute_micros: micros,
-	llm_micros: micros,
-	brave_micros: micros,
-	composio_micros: micros,
-	perflo_micros: micros,
-	llm_calls: micros,
-	input_tokens: micros,
-	output_tokens: micros,
-	awake_minutes: micros,
-});
-const usage = z.object({
-	from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
-	to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
-	total_micros: micros,
-	by_integration: z.object({
-		compute: z.object({ cost_micros: micros, awake_minutes: micros }),
-		llm: z.object({
-			cost_micros: micros,
-			calls: micros,
-			input_tokens: micros,
-			output_tokens: micros,
-		}),
-		brave: z.object({ cost_micros: micros }),
-		composio: z.object({ cost_micros: micros }),
-		perflo: z.object({ cost_micros: micros }),
-	}),
-	by_model: z.array(
-		z.object({
-			model: z.string(),
-			cost_micros: micros,
-			calls: micros,
-			input_tokens: micros,
-			output_tokens: micros,
-		}),
-	),
-	days: z.array(usageTotals.extend({ date: z.string() })),
-	instances: z.array(usageTotals.extend({ id: z.string() })),
-});
-export type Agent37Usage = z.infer<typeof usage>;
-const usageQuery = z
-	.object({
-		from: z
-			.string()
-			.regex(/^\d{4}-\d{2}-\d{2}$/u)
-			.optional(),
-		to: z
-			.string()
-			.regex(/^\d{4}-\d{2}-\d{2}$/u)
-			.optional(),
-	})
-	.strict();
-export type Agent37UsageQuery = z.infer<typeof usageQuery>;
-
-const errorEnvelope = z.union([
-	z.object({ error: z.string() }).transform((value) => ({ code: value.error })),
-	z
-		.object({
-			error: z.object({ code: z.string(), message: z.string().optional() }),
-		})
-		.transform((value) => value.error),
-]);
 
 export type Agent37ClientOptions = Agent37TransportOptions & {
 	readonly apiKey: string;
@@ -307,44 +113,54 @@ export type Agent37Client = {
 	usage(query?: Agent37UsageQuery): Promise<Agent37Usage>;
 };
 
+type RequestMethod = "GET" | "HEAD" | "POST" | "DELETE";
 type RequestOptions<T> = {
-	readonly method: "GET" | "HEAD" | "POST" | "DELETE";
+	readonly method: RequestMethod;
 	readonly url: string;
 	readonly headers: Readonly<Record<string, string>>;
 	readonly expected: readonly number[];
-	readonly body?: unknown;
 	readonly timeoutMs: number;
+	readonly body?: unknown;
 	readonly idempotent?: boolean;
-} & (
-	| {
-			readonly responseSchema: z.ZodType<T>;
-			readonly responseSchemaForStatus?: undefined;
-	  }
-	| {
-			readonly responseSchema?: undefined;
-			readonly responseSchemaForStatus: (status: number) => z.ZodType<T>;
-	  }
-);
+	readonly responseSchema?: z.ZodType<T>;
+	readonly responseSchemaForStatus?: (status: number) => z.ZodType<T>;
+};
+
+function parseInput<T>(schema: z.ZodType<T>, input: T): T {
+	const parsed = schema.safeParse(input);
+	if (parsed.success) return parsed.data;
+	throw new Agent37Error("Agent37 request input did not match its contract");
+}
+
+function parseFailureDetails(error: z.ZodError): string {
+	return error.issues
+		.slice(0, 12)
+		.map((issue) => `${issue.path.join(".") || "response"}:${issue.code}`)
+		.join(", ");
+}
 
 function responseError(
 	response: TransportResponse,
 	now: number,
-	method: RequestOptions<unknown>["method"],
+	method: RequestMethod,
 	idempotent: boolean,
 ): Agent37Error {
 	let providerCode: string | undefined;
 	try {
-		const parsed = errorEnvelope.safeParse(JSON.parse(response.body));
+		const parsed = agent37ErrorEnvelopeSchema.safeParse(
+			JSON.parse(response.body),
+		);
 		if (parsed.success) providerCode = parsed.data.code;
 	} catch {}
 	const retryAfterMs = agent37RetryAfterMs(response, now);
+	const safeMethod = method === "GET" || method === "HEAD";
+	const retryableResponse =
+		(response.status >= 500 && response.status <= 599) ||
+		providerCode === "no_capacity" ||
+		providerCode === "try_again";
 	const errorOptions: Agent37ErrorOptionsDraft = {
 		status: response.status,
-		retryable:
-			(method === "GET" || method === "HEAD" || idempotent) &&
-			((response.status >= 500 && response.status <= 599) ||
-				providerCode === "no_capacity" ||
-				providerCode === "try_again"),
+		retryable: (safeMethod || idempotent) && retryableResponse,
 	};
 	if (providerCode !== undefined) errorOptions.providerCode = providerCode;
 	if (retryAfterMs !== undefined) errorOptions.retryAfterMs = retryAfterMs;
@@ -354,10 +170,17 @@ function responseError(
 	);
 }
 
+function parseApiKey(value: string): string {
+	if (!/^sk_live_[A-Za-z0-9_-]{8,248}$/u.test(value)) {
+		throw new Agent37Error("Agent37 API key has an invalid shape");
+	}
+	return value;
+}
+
 export function createAgent37Client(
 	options: Agent37ClientOptions,
 ): Agent37Client {
-	const apiKey = z.string().startsWith("sk_live_").parse(options.apiKey);
+	const apiKey = parseApiKey(options.apiKey);
 	const transport: HttpTransport = createAgent37Transport(options);
 	const now = options.now ?? Date.now;
 	const timeoutMs = options.timeoutMs ?? 20_000;
@@ -384,13 +207,14 @@ export function createAgent37Client(
 				`Agent37 ${input.method} request failed: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
-		if (!input.expected.includes(response.status))
+		if (!input.expected.includes(response.status)) {
 			throw responseError(
 				response,
 				now(),
 				input.method,
 				input.idempotent ?? false,
 			);
+		}
 		let json: unknown;
 		try {
 			json =
@@ -401,14 +225,20 @@ export function createAgent37Client(
 				{ status: response.status },
 			);
 		}
-		const responseSchema =
-			input.responseSchema ?? input.responseSchemaForStatus(response.status);
-		const parsed = responseSchema.safeParse(json);
-		if (!parsed.success)
+		const schema =
+			input.responseSchemaForStatus === undefined
+				? input.responseSchema
+				: input.responseSchemaForStatus(response.status);
+		if (schema === undefined) {
+			throw new Agent37Error("Agent37 response schema is not configured");
+		}
+		const parsed = schema.safeParse(json);
+		if (!parsed.success) {
 			throw new Agent37Error(
-				`Agent37 response did not match its contract: ${parsed.error.message}`,
+				`Agent37 response did not match its contract: ${parseFailureDetails(parsed.error)}`,
 				{ status: response.status },
 			);
+		}
 		return parsed.data;
 	}
 
@@ -419,30 +249,32 @@ export function createAgent37Client(
 	};
 	const execHeaders = {
 		accept: "application/json",
-		"content-type": "application/json",
 		"x-agent37-key": apiKey,
+		"content-type": "application/json",
 	};
 	const apiUrl = (path: string) => `${AGENT37_API_ORIGIN}${path}`;
+	const resourceId = (id: string) => encodeURIComponent(id);
 
 	return {
 		createInstance(input) {
+			const body = parseInput(agent37CreateInstanceInputSchema, input);
 			return request({
 				method: "POST",
 				url: apiUrl("/v1/instances"),
 				headers: apiHeaders,
 				expected: [201],
-				responseSchema: instance,
-				body: createInstanceInput.parse(input),
+				responseSchema: agent37InstanceSchema,
+				body,
 				timeoutMs: AGENT37_MAX_TIMEOUT_MS,
 			});
 		},
 		getInstance(id) {
 			return request({
 				method: "GET",
-				url: apiUrl(`/v1/instances/${encodeURIComponent(id)}`),
+				url: apiUrl(`/v1/instances/${resourceId(id)}`),
 				headers: apiHeaders,
 				expected: [200],
-				responseSchema: instance,
+				responseSchema: agent37InstanceSchema,
 				timeoutMs,
 			});
 		},
@@ -452,62 +284,43 @@ export function createAgent37Client(
 				url: apiUrl("/v1/instances"),
 				headers: apiHeaders,
 				expected: [200],
-				responseSchema: instanceList,
+				responseSchema: agent37InstanceListSchema,
 				timeoutMs,
 			});
 		},
 		async deleteInstance(id) {
 			await request({
 				method: "DELETE",
-				url: apiUrl(`/v1/instances/${encodeURIComponent(id)}`),
+				url: apiUrl(`/v1/instances/${resourceId(id)}`),
 				headers: apiHeaders,
 				expected: [200, 204],
 				responseSchemaForStatus: (status) =>
-					status === 204 ? z.undefined() : deleted,
+					status === 204 ? z.undefined() : agent37DeletedSchema,
 				timeoutMs,
 			});
 		},
 		exec(id, input) {
-			const body = execInput.parse(input);
+			const body = parseInput(agent37ExecInputSchema, input);
 			return request({
 				method: "POST",
-				url: `${AGENT37_EXEC_ORIGIN}/v1/instances/${encodeURIComponent(id)}/exec`,
+				url: `${AGENT37_EXEC_ORIGIN}/v1/instances/${resourceId(id)}/exec`,
 				headers: execHeaders,
 				expected: [200],
-				responseSchema: execResult,
+				responseSchema: agent37ExecResultSchema,
 				body,
 				timeoutMs: AGENT37_MAX_TIMEOUT_MS,
 				idempotent: body.name !== undefined,
 			});
 		},
 		registerWebhook(url) {
+			const webhookUrl = parseInput(agent37WebhookUrlSchema, url);
 			return request({
 				method: "POST",
 				url: apiUrl("/v1/webhooks"),
 				headers: apiHeaders,
 				expected: [201],
-				responseSchema: registeredWebhook,
-				body: {
-					url: z
-						.url()
-						.refine(
-							(value) => {
-								const parsed = new URL(value);
-								return (
-									parsed.protocol === "https:" ||
-									(parsed.protocol === "http:" &&
-										["localhost", "127.0.0.1", "[::1]"].includes(
-											parsed.hostname,
-										))
-								);
-							},
-							{
-								message:
-									"Agent37 webhooks require HTTPS or loopback HTTP",
-							},
-						)
-						.parse(url),
-				},
+				responseSchema: agent37RegisteredWebhookSchema,
+				body: { url: webhookUrl },
 				timeoutMs,
 			});
 		},
@@ -517,23 +330,23 @@ export function createAgent37Client(
 				url: apiUrl("/v1/webhooks"),
 				headers: apiHeaders,
 				expected: [200],
-				responseSchema: webhookList,
+				responseSchema: agent37WebhookListSchema,
 				timeoutMs,
 			});
 		},
 		async deleteWebhook(id) {
 			await request({
 				method: "DELETE",
-				url: apiUrl(`/v1/webhooks/${encodeURIComponent(id)}`),
+				url: apiUrl(`/v1/webhooks/${resourceId(id)}`),
 				headers: apiHeaders,
 				expected: [200, 204],
 				responseSchemaForStatus: (status) =>
-					status === 204 ? z.undefined() : deleted,
+					status === 204 ? z.undefined() : agent37DeletedSchema,
 				timeoutMs,
 			});
 		},
 		usage(query = {}) {
-			const parsed = usageQuery.parse(query);
+			const parsed = parseInput(agent37UsageQuerySchema, query);
 			const search = new URLSearchParams();
 			if (parsed.from !== undefined) search.set("from", parsed.from);
 			if (parsed.to !== undefined) search.set("to", parsed.to);
@@ -543,9 +356,20 @@ export function createAgent37Client(
 				url: apiUrl(`/v1/usage${suffix}`),
 				headers: apiHeaders,
 				expected: [200],
-				responseSchema: usage,
+				responseSchema: agent37UsageSchema,
 				timeoutMs,
 			});
 		},
 	};
 }
+
+export type {
+	Agent37CreateInstanceInput,
+	Agent37ExecInput,
+	Agent37ExecResult,
+	Agent37Instance,
+	Agent37RegisteredWebhook,
+	Agent37Usage,
+	Agent37UsageQuery,
+	Agent37Webhook,
+};

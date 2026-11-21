@@ -190,9 +190,6 @@ export type RelayRuntimeConfig = Message<"hobo.ci.vercel.v1.RelayRuntimeConfig">
   hoboCiFleetVerdictDailyBlockMinutes?: string | undefined;
 
   /**
-   * `vercel` (the default) or `agent37`: which sandbox driver the relay's
-   * isolated runner host launches ephemeral guests through.
-   *
    * @generated from field: optional string hobo_ci_sandbox_provider = 30 [json_name = "HOBO_CI_SANDBOX_PROVIDER"];
    */
   hoboCiSandboxProvider?: string | undefined;

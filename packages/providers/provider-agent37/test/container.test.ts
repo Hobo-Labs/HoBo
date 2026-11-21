@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { startFakeAgent37Server } from "./container.ts";
+import { startFakeAgent37Server } from "../src/fake/container.js";
 
 describe("Agent37 fake container startup", () => {
 	it("requires explicit opt-in for an in-process fallback", async () => {
@@ -20,6 +20,7 @@ describe("Agent37 fake container startup", () => {
 			});
 			try {
 				expect(started.mode).toBe("in-process");
+				expect(started.baseUrl.startsWith("http://127.0.0.1:")).toBe(true);
 			} finally {
 				await started.close();
 			}

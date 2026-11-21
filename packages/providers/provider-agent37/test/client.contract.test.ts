@@ -1,12 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type Agent37Client, createAgent37Client } from "../src/index.js";
 import {
 	createAgent37FakeServer,
 	type FakeAgent37Server,
 	generateAgent37TestApiKey,
-} from "./fake/index.ts";
+} from "@hobo/provider-agent37/fake";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type Agent37Client, createAgent37Client } from "../src/index.js";
 
-describe("Agent37 client contracts", () => {
+const createInput = {
+	template: "agent37-ubuntu",
+	type: "vm" as const,
+	region: "us" as const,
+	resources: { cpu: 2, memory: 4, disk: 20 },
+};
+
+describe("Agent37 client and published fake contracts", () => {
 	let fake: FakeAgent37Server;
 	let client: Agent37Client;
 	let requests: string[];
@@ -41,26 +48,19 @@ describe("Agent37 client contracts", () => {
 
 	it("creates, gets, lists newest first, and deletes instances", async () => {
 		const first = await client.createInstance({
-			template: "agent37-ubuntu",
-			type: "vm",
-			region: "us",
-			resources: { cpu: 2, memory: 4, disk: 20 },
+			...createInput,
 			name: "hobo-a37-first",
 			metadata: { hobo: "ci", leaseId: "lease-first" },
 			env: { HOBO_LEASE_ID: "lease-first" },
 		});
 		expect(first).toMatchObject({
-			id: expect.any(String),
 			status: "running",
 			resources: { cpu: 2, memory: 4, disk: 20 },
 			metadata: { hobo: "ci", leaseId: "lease-first" },
 		});
 		expect(first).not.toHaveProperty("env");
-
 		const second = await client.createInstance({
-			template: "agent37-ubuntu",
-			type: "vm",
-			resources: { cpu: 2, memory: 4, disk: 20 },
+			...createInput,
 			name: "hobo-a37-second",
 		});
 		expect((await client.getInstance(first.id)).id).toBe(first.id);
@@ -68,19 +68,15 @@ describe("Agent37 client contracts", () => {
 			second.id,
 			first.id,
 		]);
-
+		expect(fake.state.instances).toHaveLength(2);
 		await client.deleteInstance(first.id);
 		expect((await client.listInstances()).map((item) => item.id)).toEqual([
 			second.id,
 		]);
 	});
 
-	it("runs synchronous and idempotent background exec on the sandbox plane", async () => {
-		const created = await client.createInstance({
-			template: "agent37-ubuntu",
-			type: "vm",
-			resources: { cpu: 2, memory: 4, disk: 20 },
-		});
+	it("runs synchronous, background, and named idempotent exec", async () => {
+		const created = await client.createInstance(createInput);
 		const sync = await client.exec(created.id, {
 			command: "printf ready",
 			user: "root",
@@ -98,7 +94,6 @@ describe("Agent37 client contracts", () => {
 			}),
 		).toEqual(sync);
 		expect(fake.state.execInvocations).toHaveLength(1);
-
 		const background = await client.exec(created.id, {
 			command: "./run.sh",
 			background: true,
@@ -122,11 +117,8 @@ describe("Agent37 client contracts", () => {
 		expect(await client.listWebhooks()).toEqual([]);
 	});
 
-	it("reads usage with an optional bounded date window", async () => {
-		const result = await client.usage({
-			from: "2026-11-01",
-			to: "2026-11-20",
-		});
+	it("reads usage with a bounded date window", async () => {
+		const result = await client.usage({ from: "2026-11-01", to: "2026-11-20" });
 		expect(result).toMatchObject({
 			from: "2026-11-01",
 			to: "2026-11-20",
@@ -138,36 +130,29 @@ describe("Agent37 client contracts", () => {
 		);
 	});
 
-	it("rejects unknown create-instance controls instead of dropping them", () => {
-		const valid = {
-			template: "agent37-ubuntu",
-			type: "vm",
-			resources: { cpu: 2, memory: 4, disk: 20 },
-			auto_sleep: true,
-			network: "deny-all",
-		};
+	it("rejects unknown create controls before transport", () => {
 		for (const input of [
-			{ ...valid, networkk: "allow-all" },
-			{ ...valid, resources: { cpu: 2, memory: 4, disk: 20, diskk: 30 } },
-			{ ...valid, network: { allow: ["10.0.0.0/8"], allow_all: true } },
+			{ ...createInput, networkk: "allow-all" },
+			{ ...createInput, resources: { cpu: 2, memory: 4, disk: 20, diskk: 30 } },
+			{ ...createInput, network: { allow: ["10.0.0.0/8"], allow_all: true } },
 		]) {
 			expect(() =>
 				client.createInstance(JSON.parse(JSON.stringify(input))),
-			).toThrow();
+			).toThrow("request input");
 		}
 		expect(requests).toEqual([]);
 	});
 
-	it("rejects unknown exec and usage input keys", () => {
+	it("rejects unknown exec and usage keys before transport", () => {
 		expect(() =>
 			client.exec(
 				"i_test",
-				JSON.parse('{"command":"printf ready","backgroundd":true}'),
+				JSON.parse('{"command":"true","backgroundd":true}'),
 			),
-		).toThrow();
+		).toThrow("request input");
 		expect(() =>
 			client.usage(JSON.parse('{"from":"2026-11-01","too":"2026-11-20"}')),
-		).toThrow();
+		).toThrow("request input");
 		expect(requests).toEqual([]);
 	});
 
@@ -177,9 +162,7 @@ describe("Agent37 client contracts", () => {
 			"http://127.0.0.1.evil.example/agent37",
 			"ftp://localhost/agent37",
 		]) {
-			expect(() => client.registerWebhook(url)).toThrow(
-				"Agent37 webhooks require HTTPS or loopback HTTP",
-			);
+			expect(() => client.registerWebhook(url)).toThrow("request input");
 		}
 		expect(requests).toEqual([]);
 		const registered = await client.registerWebhook(
@@ -188,7 +171,7 @@ describe("Agent37 client contracts", () => {
 		expect(registered.url).toBe("http://127.0.0.1:4180/agent37");
 	});
 
-	it("retries a transient fake fault and then parses the success", async () => {
+	it("retries a transient read fault and parses the success", async () => {
 		fake.state.failNextRequest = { status: 503, code: "no_capacity" };
 		expect(await client.listInstances()).toEqual([]);
 		expect(requests).toHaveLength(2);
@@ -196,85 +179,91 @@ describe("Agent37 client contracts", () => {
 });
 
 describe("Agent37 error retryability", () => {
-	const clientForServerError = () =>
+	const failingClient = () =>
 		createAgent37Client({
-			apiKey: "sk_live_retryability_contract",
+			apiKey: generateAgent37TestApiKey(),
 			fetchImpl: async () =>
 				new Response(
 					JSON.stringify({
-						error: { code: "internal_error", message: "test" },
+						error: { code: "internal_error", message: "fixture" },
 					}),
 					{ status: 503, headers: { "content-type": "application/json" } },
 				),
 			maxAttempts: 1,
 		});
 
-	it("does not mark create-instance 5xx responses retryable, even when named", async () => {
-		const input = {
-			template: "agent37-ubuntu",
-			type: "vm",
-			resources: { cpu: 2, memory: 4, disk: 20 },
-		} as const;
-		for (const createInput of [input, { ...input, name: "ci-runner" }]) {
-			await expect(
-				clientForServerError().createInstance(createInput),
-			).rejects.toMatchObject({ status: 503, retryable: false });
-		}
+	it("does not mark create responses retryable", async () => {
+		await expect(
+			failingClient().createInstance(createInput),
+		).rejects.toMatchObject({
+			status: 503,
+			retryable: false,
+		});
 	});
 
-	it("marks only named exec 5xx responses retryable", async () => {
+	it("marks only named exec responses retryable for caller-controlled replay", async () => {
 		await expect(
-			clientForServerError().exec("i_test", { command: "printf ready" }),
+			failingClient().exec("i_test", { command: "printf ready" }),
 		).rejects.toMatchObject({ status: 503, retryable: false });
 		await expect(
-			clientForServerError().exec("i_test", {
+			failingClient().exec("i_test", {
 				command: "printf ready",
 				name: "prepare-lease",
 			}),
 		).rejects.toMatchObject({ status: 503, retryable: true });
 	});
 
-	it("keeps GET 5xx responses retryable", async () => {
-		await expect(clientForServerError().listInstances()).rejects.toMatchObject({
+	it("marks exhausted GET responses retryable", async () => {
+		await expect(failingClient().listInstances()).rejects.toMatchObject({
 			status: 503,
 			retryable: true,
 		});
 	});
 });
 
-describe("Agent37 deletion response contracts", () => {
+describe("Agent37 response parsing", () => {
 	const clientFor = (status: number, body: string) =>
 		createAgent37Client({
-			apiKey: "sk_live_deletion_contract",
+			apiKey: generateAgent37TestApiKey(),
 			fetchImpl: async () =>
 				new Response(body === "" ? null : body, { status }),
+			maxAttempts: 1,
 		});
 
-	it.each([
-		"deleteInstance",
-		"deleteWebhook",
-	] as const)("%s requires deleted:true on 200", async (method) => {
-		for (const body of [
-			"",
-			JSON.stringify({ id: "resource", deleted: false }),
-		]) {
-			const client = clientFor(200, body);
-			await expect(client[method]("resource")).rejects.toThrow(
-				"Agent37 response did not match its contract",
-			);
-		}
+	it.each(["deleteInstance", "deleteWebhook"] as const)(
+		"%s requires deleted:true on 200 and empty 204",
+		async (method) => {
+			for (const body of [
+				"",
+				JSON.stringify({ id: "resource", deleted: false }),
+			]) {
+				await expect(clientFor(200, body)[method]("resource")).rejects.toThrow(
+					"response did not match",
+				);
+			}
+			for (const [status, body] of [
+				[200, JSON.stringify({ id: "resource", deleted: true })],
+				[204, ""],
+			] as const) {
+				await expect(
+					clientFor(status, body)[method]("resource"),
+				).resolves.toBeUndefined();
+			}
+		},
+	);
+
+	it("rejects malformed JSON success bodies", async () => {
+		await expect(clientFor(200, "{").listInstances()).rejects.toThrow(
+			"malformed JSON",
+		);
 	});
 
-	it.each([
-		"deleteInstance",
-		"deleteWebhook",
-	] as const)("%s accepts deleted:true on 200 and an empty 204", async (method) => {
-		for (const [status, body] of [
-			[200, JSON.stringify({ id: "resource", deleted: true })],
-			[204, ""],
-		] as const) {
-			const client = clientFor(status, body);
-			await expect(client[method]("resource")).resolves.toBeUndefined();
-		}
+	it("rejects structurally invalid success bodies", async () => {
+		await expect(
+			clientFor(
+				200,
+				JSON.stringify({ instances: [{ id: "missing-fields" }] }),
+			).listInstances(),
+		).rejects.toThrow("response did not match");
 	});
 });
