@@ -207,10 +207,15 @@ either path never covers the other) with the deploy identity
 `/hobo-ci-deploy` folder in `prod`, scope the deploy identity's read grant to
 that folder only, and deposit the token there (`hobo-secret-writer`'s write
 scope covers it; the MCP capture connector's `deploy` target writes it).
-Until the folder exists the read fails closed. **Built, not proven**: no
-production observation yet exists of the fallback read carrying a real value
-— link one (a relay-deploy run's `deploy token read from
-infisical://…/hobo-ci-deploy/VERCEL_TOKEN` progress line) when it happens.
+Until the folder exists the read fails closed: the preview deploy stops, so
+production deploy and origin verification do not run. **Built, not proven**:
+owner provisioning is still required before a successful production
+observation can exist. After provisioning, link a successful `relay-deploy`
+run here whose preview step records `deploy token read from
+infisical://…/hobo-ci-deploy/VERCEL_TOKEN` as the binding's deploy identity
+and whose production deploy and origin verification succeed. An OIDC-only
+verification or skipped deploy is not evidence. Record only the secret
+reference and outcomes, never the token or OIDC JWT.
 
 ### What provisioning creates
 

@@ -38,6 +38,20 @@ const binding = readSecretStoreBinding(
 	}),
 );
 
+const attachBinding = readSecretStoreBinding(
+	JSON.stringify({
+		kind: "infisical-cloud-attach",
+		endpoint: "https://app.infisical.com",
+		projectId: "relay-project",
+		environment: "prod",
+		secretPath: "/hobo-ci-relay",
+		relayIdentityId: "relay-identity",
+		deployIdentityId: IDENTITY,
+		claimBundleId: "secret-store.ci-vercel.attach-1",
+		claimState: "claimed",
+	}),
+);
+
 // The global `fetch`'s type; each test passes its own, nothing global is replaced.
 type Fetch = typeof fetch;
 
@@ -47,7 +61,7 @@ interface Seen {
 	readonly body: string;
 }
 
-function fakes(secretValue = DEPLOY_TOKEN, loginStatus = 200) {
+function fakes(secretValue = DEPLOY_TOKEN, loginStatus = 200, secretStatus = 200) {
 	const seen: Seen[] = [];
 	const fetch: Fetch = async (input, init) => {
 		const url = String(input);
@@ -71,16 +85,21 @@ function fakes(secretValue = DEPLOY_TOKEN, loginStatus = 200) {
 						{ status: loginStatus },
 					);
 		if (url.startsWith("https://app.infisical.com/api/v4/secrets/VERCEL_TOKEN"))
-			return Response.json({
-				secret: {
-					secretKey: "VERCEL_TOKEN",
-					secretValue,
-					version: 3,
-					type: "shared",
-					environment: "prod",
-					secretPath: "/",
-				},
-			});
+			return secretStatus === 200
+				? Response.json({
+						secret: {
+							secretKey: "VERCEL_TOKEN",
+							secretValue,
+							version: 3,
+							type: "shared",
+							environment: "prod",
+							secretPath: "/",
+						},
+					})
+				: Response.json(
+						{ message: "missing", reqId: "req-2" },
+						{ status: secretStatus },
+					);
 		return Response.json({ message: "unexpected" }, { status: 404 });
 	};
 	return { fetch, seen };
@@ -113,21 +132,12 @@ describe("readRelayDeployToken", () => {
 	});
 
 	it("reads VERCEL_TOKEN from the relay project's deploy-credential folder when an attach binding has no deployProjectId", async () => {
-		const attach = readSecretStoreBinding(
-			JSON.stringify({
-				kind: "infisical-cloud-attach",
-				endpoint: "https://app.infisical.com",
-				projectId: "relay-project",
-				environment: "prod",
-				secretPath: "/hobo-ci-relay",
-				relayIdentityId: "relay-identity",
-				deployIdentityId: IDENTITY,
-				claimBundleId: "secret-store.ci-vercel.attach-1",
-				claimState: "claimed",
-			}),
-		);
 		const { fetch, seen } = fakes();
-		const read = await readRelayDeployToken({ binding: attach, env, fetch });
+		const read = await readRelayDeployToken({
+			binding: attachBinding,
+			env,
+			fetch,
+		});
 
 		expect(read.token).toBe(DEPLOY_TOKEN);
 		expect(read.secretRef).toBe(
@@ -140,6 +150,18 @@ describe("readRelayDeployToken", () => {
 		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
 			"relay-identity",
 		);
+		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
+		expect(secretRead.searchParams.get("projectId")).toBe("relay-project");
+		expect(secretRead.searchParams.get("secretPath")).toBe("/hobo-ci-deploy");
+	});
+
+	it("fails closed without trying another project or path when the attach deploy credential is missing", async () => {
+		const { fetch, seen } = fakes(DEPLOY_TOKEN, 200, 404);
+
+		await expect(
+			readRelayDeployToken({ binding: attachBinding, env, fetch }),
+		).rejects.toThrow("Could not read the deploy token:");
+		expect(seen).toHaveLength(3);
 		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
 		expect(secretRead.searchParams.get("projectId")).toBe("relay-project");
 		expect(secretRead.searchParams.get("secretPath")).toBe("/hobo-ci-deploy");
