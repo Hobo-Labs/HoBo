@@ -76,3 +76,5 @@ pnpm --filter @hobo/provider-agent37 typecheck
 pnpm --filter @hobo/provider-agent37 test
 pnpm --filter @hobo/provider-agent37 build
 ```
+
+Reconcile `pnpm-lock.yaml` with `origin/main` before CI runs on the PR merge tree; HoBo CI Fabric installs with `--frozen-lockfile` against that merge ref.
