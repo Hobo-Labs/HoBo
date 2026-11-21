@@ -409,8 +409,9 @@ production; nobody types them into Vercel.
 deploys the relay to production on every push to `main` that changes it, and on
 a manual run (Actions → HoBo relay deploy → Run workflow). It never asks anyone
 to deploy, holds no secret and reads no repository variable about the relay:
-its gate is the committed binding (no binding, or an unreadable one: a notice,
-and the job succeeds), and its credential step signs in to the store with the
+its gate is the committed binding (no binding: a notice, and the job succeeds;
+an unreadable one: the job fails with the `connect` repair), and its credential
+step signs in to the store with the
 job's GitHub Actions OIDC token as `hobo-ci-deploy-reader` from
 `deployCredentialIdentityId` and reads `VERCEL_TOKEN` from the deploy
 project's root, masked in the log. A

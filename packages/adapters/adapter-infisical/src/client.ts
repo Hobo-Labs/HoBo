@@ -538,15 +538,14 @@ function createInfisicalClientInternal(
 					"GET",
 					`/api/v1/projects/${encodeURIComponent(bound.projectId)}/identities/${encodeURIComponent(parsedIdentityId)}`,
 				);
+				const body = ok(operation, answer);
 				let parsed: ReturnType<
 					typeof fromJson<typeof InfisicalProjectIdentityResponseSchema>
 				>;
 				try {
-					parsed = fromJson(
-						InfisicalProjectIdentityResponseSchema,
-						ok(operation, answer),
-						{ ignoreUnknownFields: true },
-					);
+					parsed = fromJson(InfisicalProjectIdentityResponseSchema, body, {
+						ignoreUnknownFields: true,
+					});
 				} catch {
 					throw new InfisicalError(operation, "invalid-response");
 				}

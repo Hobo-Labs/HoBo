@@ -13,6 +13,7 @@ import type { CommandResult } from "@hobo/cli";
 import {
 	githubDeployReaderTrust,
 	githubDeployTrust,
+	githubReaderSubject,
 	githubSubjectMismatch,
 	type ParsedSecretStoreBinding,
 	parseSecretStoreBinding,
@@ -162,7 +163,16 @@ export async function runCiSecretStoreConnect(
 			data: data("connect", { missing: ["repo"] }),
 		};
 	let binding: ParsedSecretStoreBinding;
+	let trust: ReturnType<typeof githubDeployTrust>;
+	let readerTrust: ReturnType<typeof githubDeployReaderTrust>;
 	try {
+		const subject = await resolveDeploySubject({
+			repository,
+			env: input.env,
+			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		});
+		trust = githubDeployTrust(subject);
+		readerTrust = githubDeployReaderTrust(subject);
 		binding = parseSecretStoreBinding(
 			create(SecretStoreBindingSchema, {
 				// A repair keeps what the store is; a first connect is an attach.
@@ -185,10 +195,20 @@ export async function runCiSecretStoreConnect(
 				claimBundleId:
 					existing?.claimBundleId ??
 					`secret-store:hobo-ci-relay:connect-${input.now?.() ?? Date.now()}`,
-				claimState: "pending",
+				claimState: "claimed",
+				deployOidcSubject: trust.subject,
 			}),
 		);
-	} catch {
+	} catch (error) {
+		if (error instanceof SecretStoreError)
+			return refusedConnect(
+				error.code === "SECRET_STORE_OIDC_SUBJECT_UNRESOLVED"
+					? "HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED"
+					: error.code === "SECRET_STORE_INVALID"
+						? "HOBO_CI_SECRET_STORE_BINDING_INVALID"
+						: error.code,
+				error.message,
+			);
 		return refusedConnect(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
 			"Those ids do not make a valid binding: distinct relay, writer and deploy-credential identities, a deploy project other than the relay's, ids of letters, digits, - and _, an https origin, and a team_ id.",
@@ -208,32 +228,6 @@ export async function runCiSecretStoreConnect(
 			`${SECRET_STORE_BINDING_FILE} already exists for other ids. Pass --yes to replace it, or re-run without ids to repair its deploy trust.`,
 		);
 
-	let trust: ReturnType<typeof githubDeployTrust>;
-	let readerTrust: ReturnType<typeof githubDeployReaderTrust>;
-	try {
-		const subject = await resolveDeploySubject({
-			repository,
-			env: input.env,
-			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-		});
-		trust = githubDeployTrust(subject);
-		readerTrust = githubDeployReaderTrust(subject);
-	} catch (error) {
-		if (!(error instanceof SecretStoreError)) throw error;
-		return refusedConnect(
-			error.code === "SECRET_STORE_OIDC_SUBJECT_UNRESOLVED"
-				? "HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED"
-				: error.code,
-			error.message,
-		);
-	}
-	const connected = parseSecretStoreBinding(
-		create(SecretStoreBindingSchema, {
-			...binding,
-			claimState: "claimed",
-			deployOidcSubject: trust.subject,
-		}),
-	);
 	const trustUpdates = [
 		{
 			identity: "hobo-ci-deploy-reader",
@@ -289,14 +283,15 @@ export async function runCiSecretStoreConnect(
 		claims: readerTrust.claims,
 		applied: deployTrust.applied,
 	};
-	const written = await writeSecretStoreBinding(input.cwd, connected);
-	const claims = Object.entries(trust.claims)
-		.map(([name, value]) => `${name}=${value}`)
-		.join(", ");
+	const written = await writeSecretStoreBinding(input.cwd, binding);
+	const claimLine = (claims: Readonly<Record<string, string>>) =>
+		Object.entries(claims)
+			.map(([name, value]) => `${name}=${value}`)
+			.join(", ");
 	const trustLine =
 		deployTrust.applied === "updated"
-			? `Updated hobo-ci-writer (${deployTrust.identityId}, audience ${deployTrust.audience}) and hobo-ci-deploy-reader (${deployCredentialTrust.identityId}, audience ${deployCredentialTrust.audience}) OIDC trust in place: subject ${trust.subject}, claims ${claims}.`
-			: `In Infisical, set hobo-ci-writer (${deployTrust.identityId}) OIDC Auth to issuer ${trust.issuer}, audience ${deployTrust.audience}, and hobo-ci-deploy-reader (${deployCredentialTrust.identityId}) to issuer ${readerTrust.issuer}, audience ${deployCredentialTrust.audience}, both with subject ${trust.subject}, claims ${claims} (or re-run with INFISICAL_TOKEN from your own infisical login to update them for you).`;
+			? `Updated hobo-ci-writer (${deployTrust.identityId}, audience ${deployTrust.audience}) OIDC trust in place: subject ${trust.subject}, claims ${claimLine(trust.claims)}; and hobo-ci-deploy-reader (${deployCredentialTrust.identityId}, audience ${deployCredentialTrust.audience}): subject ${readerTrust.subject}, claims ${claimLine(readerTrust.claims)}.`
+			: `In Infisical, set hobo-ci-writer (${deployTrust.identityId}) OIDC Auth to issuer ${trust.issuer}, audience ${deployTrust.audience}, subject ${trust.subject}, claims ${claimLine(trust.claims)}; and hobo-ci-deploy-reader (${deployCredentialTrust.identityId}) to issuer ${readerTrust.issuer}, audience ${deployCredentialTrust.audience}, subject ${readerTrust.subject}, claims ${claimLine(readerTrust.claims)} (or re-run with INFISICAL_TOKEN from your own infisical login to update them for you).`;
 	return {
 		ok: true,
 		status: "connected",
@@ -357,6 +352,9 @@ function infisicalFailure(error: Error): string {
 		: "a failure that is not an Infisical answer";
 }
 
+// public-contract: the mutation probe verify sends at a scope it must be refused in; it never names or writes VERCEL_TOKEN.
+export const VERIFY_SCOPE_PROBE_ENTRY = "HOBO_CI_VERIFY_SCOPE_PROBE";
+
 async function forbiddenListing(
 	run: () => ReturnType<
 		ReturnType<typeof createInfisicalClient>["listSecretNames"]
@@ -374,16 +372,70 @@ async function forbiddenListing(
 	}
 }
 
+type ScopeRefusal = Readonly<{ refused: boolean; why: string }>;
+
+async function refusedScope(
+	run: () => Promise<object | undefined>,
+): Promise<ScopeRefusal> {
+	try {
+		await run();
+		return { refused: false, why: "the store answered the request" };
+	} catch (error) {
+		return {
+			refused:
+				error instanceof InfisicalError &&
+				error.code === "forbidden" &&
+				error.status === 403,
+			why:
+				error instanceof Error
+					? infisicalFailure(error)
+					: "a failure that is not an Infisical answer",
+		};
+	}
+}
+
+function scopeNotProven(probe: string, refusal: ScopeRefusal): string {
+	return `${probe} ${
+		refusal.refused === false && refusal.why === "the store answered the request"
+			? "was answered, not refused with HTTP 403"
+			: `ended in ${refusal.why} instead of HTTP 403`
+	}`;
+}
+
+function protectedJobBoundary(
+	expectedSubject: string | undefined,
+	tokenSubject: string | undefined,
+	identity: string,
+	environment: string,
+): string | undefined {
+	if (expectedSubject !== undefined && tokenSubject === expectedSubject)
+		return undefined;
+	if (expectedSubject === undefined)
+		return `the binding records no writer protected-environment subject to derive the ${identity} trust from; re-run hobo ci secret-store connect to record it`;
+	return `the job's GitHub OIDC subject is ${tokenSubject ?? "unreadable"}, but ${identity} trusts ${expectedSubject}: this check must run in the protected ${environment} environment job of relay-deploy.yml on main`;
+}
+
 async function readerRead(
 	store: ParsedSecretStoreBinding,
 	client: () => ReturnType<typeof createInfisicalClient>,
-	workloadJwt: () => string | undefined,
+	workloadJwt: () => Promise<string>,
 ): Promise<VerifyCheck> {
 	const identity = "hobo-ci-deploy-reader";
 	const identityId = store.deployCredentialIdentityId;
 	const method = "GitHub Actions OIDC";
 	let session: ReturnType<typeof createInfisicalClient> | undefined;
+	let obtainedJwt: string | undefined;
 	try {
+		const jwt = await workloadJwt();
+		obtainedJwt = jwt;
+		const boundary = protectedJobBoundary(
+			githubReaderSubject(store.deployOidcSubject),
+			jwtOidcClaimHints(jwt).sub,
+			identity,
+			"hobo-ci-deploy",
+		);
+		if (boundary !== undefined)
+			return { identity, identityId, method, result: "fail", detail: boundary };
 		const active = client();
 		session = active;
 		await active.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
@@ -396,19 +448,18 @@ async function readerRead(
 				result: "fail",
 				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but its deploy-project membership is not exactly Viewer; remove every write-capable, administrator, custom, or temporary role`,
 			};
+		const relayProject = active.forBinding(
+			parseInfisicalBinding({
+				siteUrl: store.endpoint,
+				projectId: store.projectId,
+				environment: store.environment,
+				secretPath: store.secretPath,
+			}),
+		);
 		let relayFolderWhy = "";
 		const relayFolder = await forbiddenListing(async () => {
 			try {
-				return await active
-					.forBinding(
-						parseInfisicalBinding({
-							siteUrl: store.endpoint,
-							projectId: store.projectId,
-							environment: store.environment,
-							secretPath: store.secretPath,
-						}),
-					)
-					.listSecretNames();
+				return await relayProject.listSecretNames();
 			} catch (error) {
 				relayFolderWhy =
 					error instanceof Error
@@ -433,12 +484,37 @@ async function readerRead(
 				result: "fail",
 				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but the attempt to list the relay folder ${store.secretPath} in project ${store.projectId} ended in ${relayFolderWhy} instead of HTTP 403, so the reader's scope is unproven`,
 			};
+		const directRead = await refusedScope(() =>
+			relayProject.getSecret(RELAY_DEPLOY_TOKEN_ENTRY),
+		);
+		if (!directRead.refused)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but the direct read of ${RELAY_DEPLOY_TOKEN_ENTRY} in the relay project ${store.projectId} ${scopeNotProven("it", directRead)}: the reader's scope is unproven, because a listing refusal alone does not refuse a direct read`,
+			};
+		const write = await refusedScope(() =>
+			relayProject.createSecret(
+				VERIFY_SCOPE_PROBE_ENTRY,
+				VERIFY_SCOPE_PROBE_ENTRY,
+			),
+		);
+		if (!write.refused)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but the ${VERIFY_SCOPE_PROBE_ENTRY} write probe in the relay project ${store.projectId} ${scopeNotProven("it", write)}: remove the reader's relay-project membership (a probe entry may have been created there)`,
+			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail: `signed in, read ${RELAY_DEPLOY_TOKEN_ENTRY}, confirmed Viewer-only deploy-project membership, and was refused the relay folder ${store.secretPath} with HTTP 403`,
+			detail: `signed in, read ${RELAY_DEPLOY_TOKEN_ENTRY}, confirmed Viewer-only deploy-project membership, and was refused the relay folder ${store.secretPath}, its ${RELAY_DEPLOY_TOKEN_ENTRY} read, and its ${VERIFY_SCOPE_PROBE_ENTRY} write with HTTP 403`,
 		};
 	} catch (error) {
 		return {
@@ -450,9 +526,9 @@ async function readerRead(
 				(error instanceof InfisicalError
 					? infisicalFailure(error)
 					: "the sign-in, credential read, or role check could not run") +
-				oidcHintSuffix(workloadJwt()) +
+				oidcHintSuffix(obtainedJwt) +
 				(error instanceof Error
-					? subjectRepairSuffix(error, workloadJwt(), store.deployOidcSubject)
+					? subjectRepairSuffix(error, obtainedJwt, store.deployOidcSubject)
 					: ""),
 		};
 	} finally {
@@ -463,46 +539,78 @@ async function readerRead(
 async function writerSignIn(
 	store: ParsedSecretStoreBinding,
 	client: () => ReturnType<typeof createInfisicalClient>,
-	workloadJwt: () => string | undefined,
+	workloadJwt: () => Promise<string>,
 ): Promise<VerifyCheck> {
 	const identity = "hobo-ci-writer";
 	const identityId = store.deployIdentityId;
 	const method = "GitHub Actions OIDC";
 	let session: ReturnType<typeof createInfisicalClient> | undefined;
+	let obtainedJwt: string | undefined;
 	try {
+		const jwt = await workloadJwt();
+		obtainedJwt = jwt;
+		const boundary = protectedJobBoundary(
+			store.deployOidcSubject,
+			jwtOidcClaimHints(jwt).sub,
+			identity,
+			"hobo-ci-app-credentials",
+		);
+		if (boundary !== undefined)
+			return { identity, identityId, method, result: "fail", detail: boundary };
 		const active = client();
 		session = active;
 		await active.signIn();
-		const deployProject = await forbiddenListing(() =>
-			active
-				.forBinding(
-					parseInfisicalBinding({
-						siteUrl: store.endpoint,
-						projectId: store.deployProjectId,
-						environment: store.environment,
-						secretPath: "/",
-					}),
-				)
-				.listSecretNames(),
+		const deployProject = active.forBinding(
+			parseInfisicalBinding({
+				siteUrl: store.endpoint,
+				projectId: store.deployProjectId,
+				environment: store.environment,
+				secretPath: "/",
+			}),
 		);
-		if (deployProject !== "refused")
+		const listing = await forbiddenListing(() => deployProject.listSecretNames());
+		if (listing !== "refused")
 			return {
 				identity,
 				identityId,
 				method,
 				result: "fail",
 				detail:
-					deployProject === "listed"
+					listing === "listed"
 						? "signed in, but it can list the deploy credential project; remove the writer's membership there"
 						: "signed in, but deploy-project isolation was not answered with HTTP 403",
+			};
+		const directRead = await refusedScope(() =>
+			deployProject.getSecret(RELAY_DEPLOY_TOKEN_ENTRY),
+		);
+		if (!directRead.refused)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in, but the direct read of ${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy credential project ${scopeNotProven("it", directRead)}: remove the writer's membership there`,
+			};
+		const write = await refusedScope(() =>
+			deployProject.createSecret(
+				VERIFY_SCOPE_PROBE_ENTRY,
+				VERIFY_SCOPE_PROBE_ENTRY,
+			),
+		);
+		if (!write.refused)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in, but the ${VERIFY_SCOPE_PROBE_ENTRY} write probe in the deploy credential project ${scopeNotProven("it", write)}: remove the writer's membership there (a probe entry may have been created)`,
 			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail:
-				"signed in and was refused the deploy credential project with HTTP 403",
+			detail: `signed in and was refused the deploy credential project's listing, ${RELAY_DEPLOY_TOKEN_ENTRY} read, and ${VERIFY_SCOPE_PROBE_ENTRY} write with HTTP 403`,
 		};
 	} catch (error) {
 		return {
@@ -514,9 +622,9 @@ async function writerSignIn(
 				(error instanceof InfisicalError
 					? infisicalFailure(error)
 					: "the sign-in or isolation check could not run") +
-				oidcHintSuffix(workloadJwt()) +
+				oidcHintSuffix(obtainedJwt) +
 				(error instanceof Error
-					? subjectRepairSuffix(error, workloadJwt(), store.deployOidcSubject)
+					? subjectRepairSuffix(error, obtainedJwt, store.deployOidcSubject)
 					: ""),
 		};
 	} finally {
@@ -536,35 +644,57 @@ async function relayRead(
 		const active = client();
 		session = active;
 		const names = await active.listSecretNames();
-		const deployProject = await forbiddenListing(() =>
-			active
-				.forBinding(
-					parseInfisicalBinding({
-						siteUrl: store.endpoint,
-						projectId: store.deployProjectId,
-						environment: store.environment,
-						secretPath: "/",
-					}),
-				)
-				.listSecretNames(),
+		const deployProject = active.forBinding(
+			parseInfisicalBinding({
+				siteUrl: store.endpoint,
+				projectId: store.deployProjectId,
+				environment: store.environment,
+				secretPath: "/",
+			}),
 		);
-		if (deployProject !== "refused")
+		const listing = await forbiddenListing(() => deployProject.listSecretNames());
+		if (listing !== "refused")
 			return {
 				identity,
 				identityId,
 				method,
 				result: "fail",
 				detail:
-					deployProject === "listed"
+					listing === "listed"
 						? "signed in and listed the relay folder, but it can also list the deploy credential project; remove the relay identity's membership there"
 						: "signed in and listed the relay folder, but deploy-project isolation was not answered with HTTP 403",
+			};
+		const directRead = await refusedScope(() =>
+			deployProject.getSecret(RELAY_DEPLOY_TOKEN_ENTRY),
+		);
+		if (!directRead.refused)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in and listed the relay folder, but the direct read of ${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy credential project ${scopeNotProven("it", directRead)}: remove the relay identity's membership there`,
+			};
+		const write = await refusedScope(() =>
+			deployProject.createSecret(
+				VERIFY_SCOPE_PROBE_ENTRY,
+				VERIFY_SCOPE_PROBE_ENTRY,
+			),
+		);
+		if (!write.refused)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in and listed the relay folder, but the ${VERIFY_SCOPE_PROBE_ENTRY} write probe in the deploy credential project ${scopeNotProven("it", write)}: remove the relay identity's membership there (a probe entry may have been created)`,
 			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail: `signed in and listed ${names.length} relay secret name(s); the deploy credential project was refused with HTTP 403`,
+			detail: `signed in and listed ${names.length} relay secret name(s); the deploy credential project's listing, ${RELAY_DEPLOY_TOKEN_ENTRY} read, and ${VERIFY_SCOPE_PROBE_ENTRY} write were all refused with HTTP 403`,
 		};
 	} catch (error) {
 		return {
@@ -685,7 +815,7 @@ export async function runCiSecretStoreVerify(
 									? { fetch: input.fetch }
 									: undefined),
 							}),
-						() => githubWorkloadJwt,
+						memoGithubJwt,
 					),
 	);
 	checks.push(
@@ -724,7 +854,7 @@ export async function runCiSecretStoreVerify(
 									? { fetch: input.fetch }
 									: undefined),
 							}),
-						() => writerWorkloadJwt,
+						memoWriterJwt,
 					),
 	);
 	const vercelJwt = env.VERCEL_OIDC_TOKEN ?? "";
@@ -757,7 +887,21 @@ export async function runCiSecretStoreVerify(
 							: "needs the production deployment's Vercel OIDC token; after the deploy, /readyz answers ready only when the relay signed in and read its folder",
 				},
 	);
-	const failed = checks.filter((check) => check.result === "fail");
+	const expectedIdentities = new Set(
+		selectedIdentity === undefined
+			? ["hobo-ci-deploy-reader", "hobo-ci-writer", "hobo-ci-relay"]
+			: [
+					selectedIdentity === "reader"
+						? "hobo-ci-deploy-reader"
+						: selectedIdentity === "writer"
+							? "hobo-ci-writer"
+							: "hobo-ci-relay",
+				],
+	);
+	const failed = checks.filter(
+		(check) =>
+			expectedIdentities.has(check.identity) && check.result !== "pass",
+	);
 	return {
 		ok: failed.length === 0,
 		status: failed.length === 0 ? "verified" : "failed",

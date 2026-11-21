@@ -220,19 +220,32 @@ describe("the deploy credential's project", () => {
 });
 
 describe("the recorded deploy subject", () => {
-	it("refuses an empty subject on a claimed binding with the modern fields present, a subject that is not a branch trust, and a wildcard branch or environment subject the trust anchor must never span", () => {
-		for (const deployOidcSubject of [
-			"",
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/pull/7/merge",
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/tags/v1",
-			"repo:Hobo-Labs@*/HoBo@*:ref:refs/heads/main",
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/*",
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/feature/*",
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:production",
-		])
-			expect(() =>
-				readSecretStoreBinding(bindingJson({ deployOidcSubject })),
-			).toThrow("does not meet its constraints");
+	it("refuses an empty subject on a binding with the modern fields present, claimed or pending, a subject that is not a branch trust, and a wildcard branch or environment subject the trust anchor must never span", () => {
+		for (const claimState of ["claimed", "pending"] as const)
+			for (const deployOidcSubject of [
+				"",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/pull/7/merge",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/tags/v1",
+				"repo:Hobo-Labs@*/HoBo@*:ref:refs/heads/main",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/*",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/feature/*",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:production",
+			])
+				expect(() =>
+					readSecretStoreBinding(
+						bindingJson({ claimState, deployOidcSubject }),
+					),
+				).toThrow("does not meet its constraints");
+	});
+
+	it("keeps the subject recorded while the claim is still pending, as provision writes it", () => {
+		const pending = readSecretStoreBinding(
+			bindingJson({ claimState: "pending" }),
+		);
+		expect(pending.claimState).toBe("pending");
+		expect(pending.deployOidcSubject).toBe(
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+		);
 	});
 
 	it("parses a well-formed subject naming another repository, so the recorded subject is the trust anchor and a token that differs from it is named", () => {

@@ -52,7 +52,6 @@ function claimStateOf(
 
 function bindingMeetsConstraints(
 	record: SecretStoreBinding,
-	claimState: "pending" | "claimed",
 	options: { readonly allowLoopback?: boolean },
 	legacy: boolean,
 ): boolean {
@@ -78,12 +77,11 @@ function bindingMeetsConstraints(
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
 		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
-		(record.deployOidcSubject === "" ||
-			DEPLOY_SUBJECT.test(record.deployOidcSubject)) &&
-		(legacy ||
-			record.deployOidcSubject === "" ||
-			DEPLOY_ENVIRONMENT_SUBJECT.test(record.deployOidcSubject)) &&
-		(claimState !== "claimed" || record.deployOidcSubject !== "" || legacy)
+		((legacy &&
+			(record.deployOidcSubject === "" ||
+				DEPLOY_SUBJECT.test(record.deployOidcSubject))) ||
+			(DEPLOY_SUBJECT.test(record.deployOidcSubject) &&
+				DEPLOY_ENVIRONMENT_SUBJECT.test(record.deployOidcSubject)))
 	);
 }
 
@@ -117,11 +115,11 @@ export function parseSecretStoreBinding(
 	const claimState = claimStateOf(record);
 	if (
 		claimState === undefined ||
-		!bindingMeetsConstraints(record, claimState, options, false)
+		!bindingMeetsConstraints(record, options, false)
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's protected-environment deploy subject once the reader is recorded)",
 		);
 	const parsed: ParsedSecretStoreBinding = {
 		...bindingFields(record, kind, claimState),
@@ -164,11 +162,11 @@ export function readSecretStoreBindingForRepair(
 	const claimState = claimStateOf(record);
 	if (
 		claimState === undefined ||
-		!bindingMeetsConstraints(record, claimState, options, true)
+		!bindingMeetsConstraints(record, options, true)
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's protected-environment deploy subject once the reader is recorded)",
 		);
 	return bindingFields(record, kind, claimState);
 }

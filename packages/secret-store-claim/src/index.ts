@@ -61,6 +61,7 @@ export {
 	type GithubOidcSubject,
 	githubDeployReaderTrust,
 	githubDeployTrust,
+	githubReaderSubject,
 	githubSubjectMismatch,
 	parseGithubOidcSubject,
 	resolveGithubOidcSubject,

@@ -44,7 +44,7 @@ type Identity =
 			identityId: string;
 			jwt: string;
 			access: Access;
-			role?: string;
+			projects?: Readonly<Record<string, string>>;
 	  }
 	| {
 			kind: "universal-auth";
@@ -384,22 +384,22 @@ export function createFakeInfisical(): FakeInfisical {
 			if (request.method === "GET" && membership) {
 				if (access === undefined) return error(401, "Token expired or invalid");
 				const identityId = decodeURIComponent(membership[2] ?? "");
+				const projectId = decodeURIComponent(membership[1] ?? "");
 				const identity = identities.find(
 					(candidate) =>
 						candidate.kind === "oidc" && candidate.identityId === identityId,
 				);
-				if (identity?.kind !== "oidc") return error(404, "Identity not found");
+				const role =
+					identity?.kind === "oidc"
+						? identity.projects?.[projectId]
+						: undefined;
+				if (role === undefined) return error(404, "Identity not found");
 				return json({
 					identityMembership: {
 						identityId,
-						roles: [
-							{
-								role:
-									identity.role ?? (access === "read" ? "viewer" : "member"),
-							},
-						],
+						roles: [{ role }],
 						project: {
-							id: decodeURIComponent(membership[1] ?? ""),
+							id: projectId,
 							slug: "hobo-ci",
 							orgId: "org-1",
 						},

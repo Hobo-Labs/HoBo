@@ -99,7 +99,7 @@ describe("a self-hosted Infisical, bootstrapped and handed over by claim", () =>
 			(i) => i.name === "hobo-ci-deploy-reader",
 		);
 		expect(relay?.role).toBe("viewer");
-		expect(deploy?.role).toBe("viewer");
+		expect(deploy?.role).toBe("member");
 		expect(reader?.role).toBe("viewer");
 		expect(deploy?.projectId).toBe(binding.projectId);
 		expect(relay?.projectId).toBe(binding.projectId);

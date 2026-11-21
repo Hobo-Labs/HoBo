@@ -625,15 +625,19 @@ already records the deploy project) instead of refusing the file. A denied
 `verify` whose token `sub` differs from the recorded subject (or is immutable
 when none was recorded) says so and names that repair.
 
-`verify` reports `pass`, `fail` or `not-run` by identity name and id. The reader
-must read the `VERCEL_TOKEN` value from the deploy project root without logging
-it, have exactly one `viewer` membership role and no other role, and receive
-HTTP 403 for the relay folder. The writer must sign in at its own audience in
-the app-credentials environment and receive HTTP 403 for the deploy project.
-The relay check runs where `VERCEL_OIDC_TOKEN` is present and applies the same
-HTTP 403 deploy-project isolation requirement. Every 401, 404, 5xx, timeout,
-network error, or inconclusive scope response fails closed, and every issued
-session is revoked. The deploy-token read itself never signs in as the writer.
+`verify` reports `pass`, `fail` or `not-run` by identity name and id. Each
+GitHub check requires the workload token's subject to match its selected
+protected environment before contacting Infisical. The reader must read the
+`VERCEL_TOKEN` value from the deploy project root without logging it, have
+exactly one `viewer` membership role and no other role, and receive HTTP 403
+for the relay-folder listing, direct `VERCEL_TOKEN` read, and
+`HOBO_CI_VERIFY_SCOPE_PROBE` write. The writer must sign in at its own audience
+in the app-credentials environment and receive HTTP 403 for the deploy-project
+listing, direct credential read, and probe write. The relay check runs where
+`VERCEL_OIDC_TOKEN` is present and applies the same three HTTP 403
+deploy-project isolation requirements. Every 401, 404, 5xx, timeout, network
+error, or inconclusive scope response fails closed, and every issued session is
+revoked. The deploy-token read itself never signs in as the writer.
 
 The GitHub App's credentials never touch a person or this CLI:
 `hobo ci app create --via-workflow` takes GitHub's one-time manifest code

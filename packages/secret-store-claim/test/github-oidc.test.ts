@@ -6,6 +6,7 @@ import {
 	GithubRepositorySchema,
 	githubDeployReaderTrust,
 	githubDeployTrust,
+	githubReaderSubject,
 	githubSubjectMismatch,
 	parseGithubOidcSubject,
 	relayStoreLayout,
@@ -214,5 +215,32 @@ describe("a denied token's subject against the trust", () => {
 		expect(
 			githubSubjectMismatch("repo:Hobo-Labs/HoBo:ref:refs/heads/main", ""),
 		).toBeUndefined();
+	});
+});
+
+describe("the reader's subject from the recorded writer subject", () => {
+	it("moves only the protected environment suffix", () => {
+		expect(
+			githubReaderSubject(
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			),
+		).toBe(
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-deploy",
+		);
+		expect(
+			githubReaderSubject(
+				"repo:Another-Owner@1/Another-Repo@2:environment:hobo-ci-app-credentials",
+			),
+		).toBe("repo:Another-Owner@1/Another-Repo@2:environment:hobo-ci-deploy");
+	});
+
+	it("is undefined for a subject that is not the writer's protected environment", () => {
+		for (const writerSubject of [
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-deploy",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:other",
+			"",
+		])
+			expect(githubReaderSubject(writerSubject)).toBeUndefined();
 	});
 });

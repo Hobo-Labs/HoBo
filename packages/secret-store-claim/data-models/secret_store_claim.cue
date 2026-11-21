@@ -59,18 +59,13 @@ package secret_store_claim
 	vercelTeamId?:    string & =~"^team_[A-Za-z0-9]{1,64}$"
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
-	if claimState == "claimed" {
-		deployOidcSubject: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
-	}
+	deployOidcSubject: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
 	// The deploy credential always has a project of its own, never the
 	// relay's: Infisical project roles cover the whole project (RBAC,
 	// checked 2026-11-12), so a folder inside the relay's project cannot
 	// keep the relay's identity from reading it. A binding recorded before
 	// the field was required parses only for the connect repair.
 	deployProjectId: #Id & !=projectId
-	// The exact subject the deploy writer trusts: GitHub's prefix for the
-	// repository, then its protected environment. Never a glob.
-	deployOidcSubject?: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
 }
 
 // `repo:<owner>/<repo>` (legacy) or `repo:<owner>@<ownerId>/<repo>@<repoId>`

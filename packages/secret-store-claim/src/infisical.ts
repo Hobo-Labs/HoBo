@@ -132,7 +132,7 @@ async function provisionLayout(
 	const deploy = await admin.createProjectIdentity({
 		projectId,
 		name: layout.deployIdentity,
-		role: "viewer",
+		role: "member",
 	});
 	const reader = await admin.createProjectIdentity({
 		projectId: deployProjectId,

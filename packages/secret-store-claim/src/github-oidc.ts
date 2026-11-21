@@ -159,6 +159,12 @@ export function githubDeployReaderTrust(
 	);
 }
 
+export function githubReaderSubject(writerSubject: string): string | undefined {
+	const writerSuffix = `:environment:${DEPLOY_WRITER_ENVIRONMENT}`;
+	if (!writerSubject.endsWith(writerSuffix)) return undefined;
+	return `${writerSubject.slice(0, -writerSuffix.length)}:environment:${DEPLOY_READER_ENVIRONMENT}`;
+}
+
 /**
  * Why a denied GitHub token's `sub` does not fit the trust, or undefined when
  * the subject is not the cause. `trusted` is the binding's recorded subject,

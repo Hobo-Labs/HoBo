@@ -267,6 +267,58 @@ describe("OIDC login and reads", () => {
 			"invalid-response",
 		);
 	});
+
+	it("reports the identity's recorded role for a project it is a member of", async () => {
+		fake.identities.push({
+			kind: "oidc",
+			identityId: "member-identity",
+			jwt: JWT,
+			access: "read",
+			projects: { "proj-1": "viewer" },
+		});
+		const c = client(
+			oidcAuth({ identityId: "member-identity", jwt: async () => JWT }),
+		);
+		expect(await c.readProjectIdentity("member-identity")).toEqual({
+			identityId: "member-identity",
+			projectId: "proj-1",
+			roles: ["viewer"],
+		});
+	});
+
+	it("fails closed for a project the identity is not a member of, whatever the calling token's reach", async () => {
+		fake.identities.push({
+			kind: "oidc",
+			identityId: "deploy-project-identity",
+			jwt: JWT,
+			access: "write",
+			projects: { "proj-deploy": "viewer" },
+		});
+		const deployScope = parseInfisicalBinding({
+			siteUrl: server.url,
+			projectId: "proj-deploy",
+			environment: "prod",
+			secretPath: "/",
+		});
+		const writer = client(
+			oidcAuth({ identityId: "deploy-project-identity", jwt: async () => JWT }),
+		);
+		expect(await writer.forBinding(deployScope).readProjectIdentity(
+			"deploy-project-identity",
+		)).toEqual({
+			identityId: "deploy-project-identity",
+			projectId: "proj-deploy",
+			roles: ["viewer"],
+		});
+		expect(
+			(await caught(
+				writer.readProjectIdentity("deploy-project-identity"),
+			)).code,
+		).toBe("not-found");
+		expect((await caught(client().readProjectIdentity(IDENTITY))).code).toBe(
+			"not-found",
+		);
+	});
 });
 
 describe("writes", () => {
