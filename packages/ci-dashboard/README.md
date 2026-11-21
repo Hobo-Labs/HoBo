@@ -36,7 +36,9 @@ are seeded from the newest decision; the machines are the read API's, online
 when their advert is less than 90 seconds old. The person sets the rest: a
 public repository or a fork, whether the fleet has room, the share of
 included minutes used, and which hosted runner types to treat as failing to
-start jobs. The panel reads nothing and journals nothing.
+start jobs. The panel reads nothing and journals nothing. Left blank, the
+share of included minutes is unmeasured, and the walk passes over a step
+with a minutes limit just as the relay does.
 
 A question the relay would refuse is answered with the reason, never with
 silence: `answerWhatIf` returns a refusal sentence (for example a Started by

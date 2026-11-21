@@ -29,6 +29,7 @@ function question(changes: Partial<WhatIfQuestion> = {}): WhatIfQuestion {
 			["depot", "depot-ubuntu-24.04"],
 		]),
 		startedBy: "42",
+		minutesUsedPercent: 10,
 		...changes,
 	};
 }
@@ -63,20 +64,22 @@ describe("the what-if walk", () => {
 		expect(answer.skipped[0]?.reason).toBe("public_repository");
 	});
 
-	it("applies the minutes limit only when minutes are measured", () => {
+	it("applies the minutes limit, and passes the limited step over when minutes are not measured", () => {
 		const offline = [machine({ id: "m-a", lastSeenMs: 1 })];
 		expect(whatIf(ORDER, question(), offline, NOW).step).toBe("github");
-		const over = whatIf(
-			ORDER,
-			question({ minutesUsedPercent: 90 }),
-			offline,
-			NOW,
-		);
-		expect(over.step).toBe("depot");
-		expect(over.skipped.map((entry) => entry.reason)).toEqual([
-			"no_machine",
-			"minutes_limit",
-		]);
+		for (const minutesUsedPercent of [90, undefined]) {
+			const passed = whatIf(
+				ORDER,
+				question({ minutesUsedPercent }),
+				offline,
+				NOW,
+			);
+			expect(passed.step, String(minutesUsedPercent)).toBe("depot");
+			expect(passed.skipped.map((entry) => entry.reason)).toEqual([
+				"no_machine",
+				"minutes_limit",
+			]);
+		}
 	});
 
 	it("passes over a runner type marked as failing to start jobs", () => {

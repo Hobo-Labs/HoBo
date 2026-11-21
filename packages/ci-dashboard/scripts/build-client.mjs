@@ -27,6 +27,21 @@ const noZodLocales = {
 	},
 };
 
+const browserUtil = {
+	name: "browser-node-util",
+	setup(builder) {
+		builder.onResolve({ filter: /^node:util$/ }, () => ({
+			path: "node-util",
+			namespace: "browser-util",
+		}));
+		builder.onLoad({ filter: /.*/, namespace: "browser-util" }, () => ({
+			contents:
+				"const VT = /[\\u001b\\u009b][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))/g;\nexport function stripVTControlCharacters(text) { return String(text).replace(VT, \"\"); }\n",
+			loader: "js",
+		}));
+	},
+};
+
 await build({
 	entryPoints: [path.join(root, "src", "client.ts")],
 	outfile: path.join(out, "app.js"),
@@ -37,5 +52,5 @@ await build({
 	minify: true,
 	legalComments: "none",
 	logLevel: "warning",
-	plugins: [noZodLocales],
+	plugins: [noZodLocales, browserUtil],
 });

@@ -55,6 +55,15 @@ export type WhatIfQuestion = Readonly<{
 	minutesUsedPercent: number | undefined;
 }>;
 
+export function orderStepKeys(
+	order: ParsedRunnerOrder,
+): readonly RunnerStepKey[] {
+	return order.steps.flatMap((step) => {
+		const key = stepKey(step);
+		return key === undefined ? [] : [key];
+	});
+}
+
 /** A question that names every step of the order with no labels and nothing else set. */
 export function blankQuestion(
 	repository: string,
@@ -62,7 +71,7 @@ export function blankQuestion(
 ): WhatIfQuestion {
 	return {
 		repository,
-		labels: new Map(order.steps.map((step) => [stepKey(step), ""])),
+		labels: new Map(orderStepKeys(order).map((key) => [key, ""])),
 		public: false,
 		fork: false,
 		startedBy: "",
@@ -97,7 +106,7 @@ export function questionFromRoutes(
 		...blank,
 		labels,
 		public: !latest.private,
-		fork: latest.fork,
+		fork: latest.fork ?? false,
 		startedBy: latest.actorId,
 	};
 }
