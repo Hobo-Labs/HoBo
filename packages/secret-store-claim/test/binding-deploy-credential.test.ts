@@ -1,7 +1,10 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
 	formatSecretStoreBinding,
+	githubSubjectMismatch,
 	parseSecretStoreBinding,
 	RELAY_SECRET_PATH,
 	readSecretStoreBinding,
@@ -93,6 +96,79 @@ describe("deploy credential identity", () => {
 			),
 		).toThrow("does not meet its constraints");
 	});
+
+	it("fails closed on the relay identity reused as reader even for repair", () => {
+		expect(() =>
+			readSecretStoreBindingForRepair(
+				bindingJson({ deployCredentialIdentityId: "relay-identity" }),
+			),
+		).toThrow("does not meet its constraints");
+	});
+
+	it("accepts the pre-cutover shape only as a whole: a half-migrated binding is refused even for repair", () => {
+		for (const fields of [
+			{
+				deployProjectId: "deploy-project",
+				deployCredentialIdentityId: undefined,
+				deployOidcSubject: undefined,
+			},
+			{
+				deployCredentialIdentityId: "reader-identity",
+				deployOidcSubject: undefined,
+			},
+			{ deployOidcSubject: undefined },
+		])
+			expect(() =>
+				readSecretStoreBindingForRepair(bindingJson(fields)),
+			).toThrow("does not meet its constraints");
+	});
+
+	it("cannot write a still-legacy binding back: the strict read refuses the repair output as it stands", () => {
+		const repaired = readSecretStoreBindingForRepair(legacyBindingJson());
+		expect(() => readSecretStoreBinding(JSON.stringify(repaired))).toThrow(
+			"does not meet its constraints",
+		);
+	});
+});
+
+describe("the repair read's confinement", () => {
+	const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
+
+	function sourceFiles(dir: string, found: string[] = []): string[] {
+		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+			if (entry.isDirectory()) {
+				if (["dist", "node_modules", "_generated"].includes(entry.name))
+					continue;
+				sourceFiles(path.join(dir, entry.name), found);
+			} else if (/\.(ts|mts)$/u.test(entry.name))
+				found.push(path.join(dir, entry.name));
+		}
+		return found;
+	}
+
+	it("has exactly one caller outside this package: the connect repair, so an empty reader id cannot reach a credential read", () => {
+		const sources = [
+			...sourceFiles(path.join(repoRoot, "packages")),
+			...sourceFiles(path.join(repoRoot, "scripts")),
+			...sourceFiles(path.join(repoRoot, "src")),
+		];
+		const foreign = sources.filter(
+			(file) =>
+				!file.startsWith(
+					path.join(repoRoot, "packages", "secret-store-claim"),
+				) &&
+				readFileSync(file, "utf8").includes("readSecretStoreBindingForRepair"),
+		);
+		expect(foreign).toEqual([
+			path.join(
+				repoRoot,
+				"packages",
+				"hobo",
+				"src",
+				"ci-secret-store-connect.ts",
+			),
+		]);
+	});
 });
 
 describe("the deploy credential's project", () => {
@@ -108,9 +184,7 @@ describe("the deploy credential's project", () => {
 			readSecretStoreBinding(bindingJson({ deployProjectId: undefined })),
 		).toThrow("does not meet its constraints");
 		expect(() =>
-			readSecretStoreBinding(
-				bindingJson({ deployProjectId: "relay-project" }),
-			),
+			readSecretStoreBinding(bindingJson({ deployProjectId: "relay-project" })),
 		).toThrow("does not meet its constraints");
 	});
 
@@ -120,5 +194,34 @@ describe("the deploy credential's project", () => {
 		expect(() => readSecretStoreBinding(legacy)).toThrow(
 			"does not meet its constraints",
 		);
+	});
+});
+
+describe("the recorded deploy subject", () => {
+	it("refuses an empty subject on a claimed binding with the modern fields present, and a subject that is not a branch trust", () => {
+		for (const deployOidcSubject of [
+			"",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/pull/7/merge",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/tags/v1",
+			"repo:Hobo-Labs@*/HoBo@*:ref:refs/heads/main",
+		])
+			expect(() =>
+				readSecretStoreBinding(bindingJson({ deployOidcSubject })),
+			).toThrow("does not meet its constraints");
+	});
+
+	it("parses a well-formed subject naming another repository, so the recorded subject is the trust anchor and a token that differs from it is named", () => {
+		const other = readSecretStoreBinding(
+			bindingJson({
+				deployOidcSubject:
+					"repo:Another-Owner@1/Another-Repo@2:ref:refs/heads/main",
+			}),
+		);
+		expect(
+			githubSubjectMismatch(
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+				other.deployOidcSubject,
+			),
+		).toContain("differs from the subject the deploy identity trusts");
 	});
 });

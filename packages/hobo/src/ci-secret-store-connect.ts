@@ -401,27 +401,46 @@ async function readerRead(
 				result: "fail",
 				detail: `signed in, but ${RELAY_DEPLOY_TOKEN_ENTRY} is not in the deploy credential folder yet`,
 			};
-		const relayFolderLeaked = await session
-			.forBinding(
-				parseInfisicalBinding({
-					siteUrl: store.endpoint,
-					projectId: store.projectId,
-					environment: store.environment,
-					secretPath: store.secretPath,
-				}),
-			)
-			.listSecretNames()
-			.then(
-				() => true,
-				() => false,
-			);
-		if (relayFolderLeaked)
+		let relayFolder: "listed" | "refused" | "unproven" = "unproven";
+		let relayFolderWhy = "";
+		try {
+			await session
+				.forBinding(
+					parseInfisicalBinding({
+						siteUrl: store.endpoint,
+						projectId: store.projectId,
+						environment: store.environment,
+						secretPath: store.secretPath,
+					}),
+				)
+				.listSecretNames();
+			relayFolder = "listed";
+		} catch (error) {
+			relayFolderWhy =
+				error instanceof InfisicalError
+					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
+					: "a failure that is not an Infisical answer";
+			relayFolder =
+				error instanceof InfisicalError &&
+				(error.code === "unauthorized" || error.code === "forbidden")
+					? "refused"
+					: "unproven";
+		}
+		if (relayFolder === "listed")
 			return {
 				identity,
 				identityId,
 				method,
 				result: "fail",
 				detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, but it can also list the relay folder ${store.secretPath} in project ${store.projectId}: scope the reader's grant read-only to the deploy project only`,
+			};
+		if (relayFolder === "unproven")
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, but the attempt to list the relay folder ${store.secretPath} in project ${store.projectId} ended in ${relayFolderWhy} instead of an authorization refusal, so the reader's scope is unproven: only Infisical refusing that listing (401 or 403) can pass this check`,
 			};
 		return {
 			identity,

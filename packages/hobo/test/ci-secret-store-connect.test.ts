@@ -487,6 +487,7 @@ describe("hobo ci secret-store verify", () => {
 		names: string[],
 		jwt = JWT,
 		readerScopedToDeployProject = true,
+		relayFolderStatus = 403,
 	) {
 		const seen: string[] = [];
 		const logins: string[] = [];
@@ -523,7 +524,10 @@ describe("hobo ci secret-store verify", () => {
 					scope.searchParams.get("projectId") === "proj-runtime" &&
 					readerScopedToDeployProject
 				)
-					return Response.json({ reqId: "req-403" }, { status: 403 });
+					return Response.json(
+						{ reqId: "req-relay-folder" },
+						{ status: relayFolderStatus },
+					);
 				reads.push({
 					identityId,
 					secretPath: scope.searchParams.get("secretPath") ?? "",
@@ -629,6 +633,40 @@ describe("hobo ci secret-store verify", () => {
 				secretPath: "/hobo-ci-relay",
 			},
 		]);
+	});
+
+	it("fails the reader when the relay-folder listing ends in anything but an authorization refusal, so a store error cannot pass for least privilege", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const fake = infisical(200, ["VERCEL_TOKEN"], JWT, true, 503);
+		const result = await runCiSecretStore(
+			input("verify", {}, actions, fake.fetch),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("instead of an authorization refusal");
+		expect(result.message).toContain("infisical unavailable (HTTP 503)");
+		expect(result.message).toContain("the reader's scope is unproven");
+		expect(fake.reads).toEqual([
+			{
+				identityId: "deploy-credential-identity",
+				secretPath: "/",
+			},
+		]);
+	});
+
+	it("fails the reader when the relay-folder listing cannot run at all, not only when Infisical answers", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const base = infisical(200, ["VERCEL_TOKEN"]);
+		const unreachable: Fetch = async (request, init) => {
+			if (String(request).includes("projectId=proj-runtime"))
+				throw new Error("network down");
+			return base.fetch(request, init);
+		};
+		const result = await runCiSecretStore(
+			input("verify", {}, actions, unreachable),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("infisical unavailable");
+		expect(result.message).toContain("instead of an authorization refusal");
 	});
 
 	it("refuses a listing whose bearer token no login issued, so a read cannot be attributed to nothing", async () => {
