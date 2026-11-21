@@ -1,11 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { clone, create } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
 	createBudgetAdmissionAuthority,
 	HostingQuoteSchema,
@@ -32,6 +34,7 @@ function snapshot() {
 		entitlements: [
 			{
 				bucketId: "credit",
+				kind: "credit",
 				unit: "micros",
 				periodId: "p1",
 				remainingUnits: 10,
@@ -40,6 +43,21 @@ function snapshot() {
 			},
 		],
 	});
+}
+function multiUnitSnapshot() {
+	const base = snapshot();
+	const bucket = base.entitlements[0];
+	if (!bucket) throw new Error("fixture bucket missing");
+	base.entitlements = (["request", "runner-ms"] as const).map((unit, index) =>
+		create(BudgetEntitlementSchema, {
+			...bucket,
+			bucketId: "shared",
+			kind: "allowance",
+			unit,
+			remainingUnits: (index + 1) * 10,
+		}),
+	);
+	return base;
 }
 function consume(authority: ReturnType<typeof createBudgetAdmissionAuthority>) {
 	const current = authority.read(NOW);
@@ -56,7 +74,9 @@ function consume(authority: ReturnType<typeof createBudgetAdmissionAuthority>) {
 		validUntil: "2026-10-31T00:00:00Z",
 		components: [{ name: "usage", costMicros: 0 }],
 		requestDigest: "request",
-		entitlementClaims: [{ bucketId: "credit", unit: "micros", units: 10 }],
+		entitlementClaims: [
+			{ bucketId: "credit", kind: "credit", unit: "micros", units: 10 },
+		],
 	});
 	authority.reserve({
 		reservationId: "work",
@@ -243,10 +263,13 @@ describe("durable budget history fences", () => {
 
 	it("does not consume an observation when configuration persistence fails", () => {
 		let refuse = false;
+		const base = snapshot();
+		const journal: BudgetAuthorityEvent[] = [];
 		const authority = createBudgetAdmissionAuthority({
-			snapshot: snapshot(),
-			commit() {
+			snapshot: base,
+			commit(event) {
 				if (refuse) throw new Error("durable write refused");
+				journal.push(event);
 			},
 		});
 		const removed = authority.read(NOW);
@@ -259,11 +282,17 @@ describe("durable budget history fences", () => {
 		bucket.remainingUnits = 20;
 		refuse = true;
 		expect(() => authority.configure(refreshed, 1, NOW)).toThrow(
-			"write refused",
+			"budget commit outcome uncertain",
 		);
-		refuse = false;
-		authority.configure(snapshot(), 1, NOW);
-		expect(authority.read(NOW).entitlements[0]?.remainingUnits).toBe(10);
+		expect(() => authority.read(NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		reopened.configure(snapshot(), 1, NOW);
+		expect(reopened.read(NOW).entitlements[0]?.remainingUnits).toBe(10);
 	});
 
 	it("rejects journal entries that revive a period or removed bucket", () => {
@@ -310,23 +339,231 @@ describe("durable budget history fences", () => {
 		).toThrow("retired period");
 	});
 
-	it("does not retire a period when its durable commit fails", () => {
-		let refuse = true;
+	it("keeps multi-unit bucket history independent through configuration and replay", () => {
+		const base = multiUnitSnapshot();
+		const journal: BudgetAuthorityEvent[] = [];
 		const authority = createBudgetAdmissionAuthority({
-			snapshot: snapshot(),
+			snapshot: base,
+			commit: (event) => journal.push(event),
+		});
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const refreshed = multiUnitSnapshot();
+		const runner = refreshed.entitlements.find(
+			(row) => row.unit === "runner-ms",
+		);
+		if (!runner) throw new Error("runner fixture missing");
+		runner.observedAt = "2026-10-30T01:00:00Z";
+		refreshed.entitlements = [runner];
+		authority.configure(refreshed, 1, NOW);
+		const restored = authority.read(NOW);
+		const request = multiUnitSnapshot().entitlements.find(
+			(row) => row.unit === "request",
+		);
+		if (!request) throw new Error("request fixture missing");
+		request.observedAt = "2026-10-30T02:00:00Z";
+		restored.entitlements.push(request);
+		authority.configure(restored, 2, NOW);
+		expect(authority.read(NOW).entitlements).toMatchObject([
+			{ unit: "runner-ms", remainingUnits: 20 },
+			{ unit: "request", remainingUnits: 10 },
+		]);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ unit: "runner-ms", remainingUnits: 20 },
+			{ unit: "request", remainingUnits: 10 },
+		]);
+	});
+
+	it("keeps new units independent in a multi-unit bucket", () => {
+		const base = multiUnitSnapshot();
+		const journal: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => journal.push(event),
+		});
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const added = authority.read(NOW);
+		const request = multiUnitSnapshot().entitlements.find(
+			(row) => row.unit === "request",
+		);
+		if (!request) throw new Error("request fixture missing");
+		added.entitlements = [
+			create(BudgetEntitlementSchema, {
+				...request,
+				unit: "scheduler-ms",
+				remainingUnits: 30,
+				observedAt: "2026-10-30T01:00:00Z",
+			}),
+		];
+		authority.configure(added, 1, NOW);
+		expect(authority.read(NOW).entitlements).toMatchObject([
+			{ unit: "scheduler-ms", remainingUnits: 30 },
+		]);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ unit: "scheduler-ms", remainingUnits: 30 },
+		]);
+	});
+
+	it("uses the latest lineage observation after a unit migration returns to an earlier unit", () => {
+		const base = snapshot();
+		const journal: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
+			commit: (event) => journal.push(event),
+		});
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const migrated = snapshot();
+		const migratedBucket = migrated.entitlements[0];
+		if (!migratedBucket) throw new Error("migrated bucket missing");
+		migratedBucket.unit = "runner-ms";
+		migratedBucket.remainingUnits = 20;
+		migratedBucket.observedAt = "2026-10-30T01:00:00Z";
+		authority.configure(migrated, 1, NOW);
+		const removedAgain = authority.read(NOW);
+		removedAgain.entitlements = [];
+		authority.configure(removedAgain, 2, NOW);
+		const restored = snapshot();
+		expect(() => authority.configure(restored, 3, NOW)).toThrow(
+			"entitlement observation",
+		);
+		const restoredBucket = restored.entitlements[0];
+		if (!restoredBucket) throw new Error("restored bucket missing");
+		restoredBucket.remainingUnits = 30;
+		restoredBucket.observedAt = "2026-10-30T02:00:00Z";
+		authority.configure(restored, 3, NOW);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: base,
+			priorEvents: journal,
+		});
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ unit: "micros", remainingUnits: 30 },
+		]);
+	});
+
+	it("keeps credit and allowance history independent", () => {
+		const base = snapshot();
+		const credit = base.entitlements[0];
+		if (!credit) throw new Error("credit fixture missing");
+		credit.bucketId = "shared";
+		credit.observedAt = "2026-10-30T01:00:00Z";
+		const authority = createBudgetAdmissionAuthority({ snapshot: base });
+		const removed = authority.read(NOW);
+		removed.entitlements = [];
+		authority.configure(removed, 0, NOW);
+		const allowance = snapshot();
+		const allowanceBucket = allowance.entitlements[0];
+		if (!allowanceBucket) throw new Error("allowance fixture missing");
+		allowanceBucket.bucketId = "shared";
+		allowanceBucket.kind = "allowance";
+		authority.configure(allowance, 1, NOW);
+		expect(authority.read(NOW).entitlements[0]?.kind).toBe("allowance");
+		const staleCredit = snapshot();
+		const staleCreditBucket = staleCredit.entitlements[0];
+		if (!staleCreditBucket) throw new Error("stale credit fixture missing");
+		staleCreditBucket.bucketId = "shared";
+		expect(() => authority.configure(staleCredit, 2, NOW)).toThrow(
+			"entitlement observation",
+		);
+	});
+
+	it("rejects a kindless fresh memory seed but reopens a persisted base", () => {
+		const legacy = snapshot();
+		const entitlement = legacy.entitlements[0];
+		if (!entitlement) throw new Error("legacy entitlement missing");
+		entitlement.kind = "";
+		expect(() => createBudgetAdmissionAuthority({ snapshot: legacy })).toThrow(
+			"entitlement scope",
+		);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: legacy,
+			priorEvents: [],
+		});
+		expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
+	});
+
+	it("reopens a legacy SQLite snapshot with an implicit allowance kind", () => {
+		const directory = mkdtempSync(join(tmpdir(), "hobo-legacy-budget-kind-"));
+		directories.push(directory);
+		const path = join(directory, "budget.sqlite");
+		const options = { path, snapshot: snapshot(), now: () => NOW };
+		const initial = createSqliteBudgetAdmissionAuthority(options);
+		initial.close();
+		const database = new DatabaseSync(path);
+		database
+			.prepare(
+				"UPDATE budget_base SET body=json_remove(body, '$.entitlements[0].kind') WHERE id=1",
+			)
+			.run();
+		database.close();
+		const legacySeed = snapshot();
+		const legacyEntitlement = legacySeed.entitlements[0];
+		if (!legacyEntitlement) throw new Error("legacy seed entitlement missing");
+		legacyEntitlement.kind = "";
+		const reopened = createSqliteBudgetAdmissionAuthority({
+			path,
+			snapshot: legacySeed,
+			now: () => NOW,
+		});
+		try {
+			expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
+			const invalidWrite = reopened.read(NOW);
+			const entitlement = invalidWrite.entitlements[0];
+			if (!entitlement) throw new Error("legacy entitlement missing");
+			entitlement.kind = "";
+			expect(() => reopened.configure(invalidWrite, 0, NOW)).toThrow(
+				"entitlement scope",
+			);
+		} finally {
+			reopened.close();
+		}
+		const fresh = snapshot();
+		const entitlement = fresh.entitlements[0];
+		if (!entitlement) throw new Error("fresh entitlement missing");
+		entitlement.kind = "";
+		expect(() =>
+			createSqliteBudgetAdmissionAuthority({
+				path: join(directory, "fresh.sqlite"),
+				snapshot: fresh,
+				now: () => NOW,
+			}),
+		).toThrow("entitlement scope");
+	});
+
+	it("does not retire a period when its durable commit fails", () => {
+		const base = snapshot();
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: base,
 			commit() {
-				if (refuse) throw new Error("durable write refused");
+				throw new Error("durable write refused");
 			},
 		});
 		const p2 = snapshot();
 		if (!p2.identity) throw new Error("fixture identity missing");
 		p2.identity.periodId = "p2";
-		expect(() => authority.configure(p2, 0, NOW)).toThrow("write refused");
-		refuse = false;
-		authority.configure(snapshot(), 0, NOW);
-		expect(authority.read(NOW).identity?.periodId).toBe("p1");
-		authority.configure(p2, 1, NOW);
-		expect(() => authority.configure(snapshot(), 2, NOW)).toThrow(
+		expect(() => authority.configure(p2, 0, NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
+		expect(() => authority.read(NOW)).toThrow(
+			"budget commit outcome uncertain",
+		);
+		const reopened = createBudgetAdmissionAuthority({ snapshot: base });
+		reopened.configure(snapshot(), 0, NOW);
+		expect(reopened.read(NOW).identity?.periodId).toBe("p1");
+		reopened.configure(p2, 1, NOW);
+		expect(() => reopened.configure(snapshot(), 2, NOW)).toThrow(
 			"retired period",
 		);
 	});

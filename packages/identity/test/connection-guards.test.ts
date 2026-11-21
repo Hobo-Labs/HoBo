@@ -545,6 +545,30 @@ describe("revoke and rotate", () => {
 		).toBe("connection-revoked");
 	});
 
+	test("a revoked connection cannot be reauthorized or marked for reauthorization", () => {
+		const svc = service();
+		const connection = connected(svc);
+		svc.revoke({
+			idOrAlias: connection.id,
+			actor: ALICE,
+			reason: "compromised",
+		});
+		const eventCount = svc.events.length;
+		expect(
+			codeOf(() => svc.authorize({ idOrAlias: connection.id, actor: ALICE })),
+		).toBe("connection-revoked");
+		expect(
+			codeOf(() =>
+				svc.markNeedsReauth({
+					idOrAlias: connection.id,
+					reason: "late health check",
+				}),
+			),
+		).toBe("connection-revoked");
+		expect(svc.events).toHaveLength(eventCount);
+		expect(svc.get(connection.id)?.status).toBe("revoked");
+	});
+
 	test("rotating replaces the credential reference and records the previous one", () => {
 		// The previous reference is what lets an operator confirm the old material
 		// was superseded rather than merely duplicated.

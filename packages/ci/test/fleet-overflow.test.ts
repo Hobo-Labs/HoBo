@@ -8,6 +8,7 @@ import {
 	LOCAL_HOST_RUNNER_LABEL,
 	queuedDemandLabels,
 	selectFleetBackend,
+	selectFleetVerification,
 	shouldAbortIsolatedFleetLease,
 } from "../src/fleet-overflow.js";
 
@@ -197,6 +198,162 @@ describe("selectFleetBackend", () => {
 			memberId: "arc-1",
 			spilled: true,
 		});
+	});
+});
+
+describe("fleet verification selection", () => {
+	it("exhausts the four-tier availability matrix for both signoff settings", () => {
+		const states = ["up", "down", "unknown", "disabled"] as const;
+		const backends = ["hobo", "arc", "local", "github"] as const;
+		for (let mask = 0; mask < 4 ** backends.length; mask += 1) {
+			const observed = backends.map((backend, index) => ({
+				backend,
+				state: states[Math.floor(mask / 4 ** index) % 4] ?? "unknown",
+			}));
+			const members = observed
+				.map(({ backend, state }) =>
+					member({
+						id: backend,
+						backend,
+						enabled: state !== "disabled",
+						freeSlots: state === "up" ? 1 : 0,
+					}),
+				)
+				.reverse();
+			const unknownMembers = observed
+				.filter(({ state }) => state === "unknown")
+				.map(({ backend }) => backend);
+			for (const localSignoffEnabled of [false, true]) {
+				const selection = selectFleetVerification({
+					members,
+					unknownMembers,
+					localSignoffEnabled,
+				});
+				const firstUp = observed.find(({ state }) => state === "up");
+				if (firstUp) {
+					expect(selection.kind, JSON.stringify(observed)).toBe("runner");
+					if (selection.kind === "runner")
+						expect(selection.runner.backend).toBe(firstUp.backend);
+				} else if (unknownMembers.length) {
+					expect(selection).toEqual({
+						kind: "wait",
+						reason: "availability-unknown",
+					});
+				} else {
+					expect(selection).toEqual(
+						localSignoffEnabled
+							? { kind: "local-signoff" }
+							: { kind: "wait", reason: "no-capacity" },
+					);
+				}
+			}
+		}
+	});
+
+	it("never treats malformed or contradictory observations as an outage", () => {
+		const unknown = { kind: "wait", reason: "availability-unknown" };
+		for (const freeSlots of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY])
+			expect(
+				selectFleetVerification({
+					members: [hobo(freeSlots)],
+					unknownMembers: [],
+					localSignoffEnabled: true,
+				}),
+			).toEqual(unknown);
+		for (const input of [
+			{ members: [hobo(0), hobo(0)], unknownMembers: [] },
+			{ members: [hobo(0)], unknownMembers: ["missing"] },
+			{ members: [hobo(1)], unknownMembers: ["hobo-1"] },
+			{ members: [hobo(0, { id: "" })], unknownMembers: [] },
+			{ members: [hobo(0, { id: "   " })], unknownMembers: [] },
+			{ members: [hobo(1, { runsOn: "" })], unknownMembers: [] },
+			{ members: [hobo(0, { runsOn: "  " })], unknownMembers: [] },
+		])
+			expect(
+				selectFleetVerification({ ...input, localSignoffEnabled: true }),
+			).toEqual(unknown);
+		// SAFETY: This intentionally models an untyped caller supplying a new
+		// backend before the selector knows how to order or interpret it.
+		const unsupported = { ...hobo(1), backend: "other" } as FleetMember;
+		expect(
+			selectFleetVerification({
+				members: [unsupported],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			}),
+		).toEqual(unknown);
+		// JSON is the boundary here: these represent malformed untyped callers.
+		for (const input of [
+			{ members: [null], unknownMembers: [], localSignoffEnabled: true },
+			{
+				members: [{ ...hobo(0), enabled: null }],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			},
+			{
+				members: [{ ...hobo(0), id: null }],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			},
+			{
+				members: [{ ...hobo(1), runsOn: null }],
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			},
+			{ members: [], unknownMembers: [], localSignoffEnabled: "false" },
+			{ members: null, unknownMembers: [], localSignoffEnabled: true },
+		])
+			expect(
+				selectFleetVerification(JSON.parse(JSON.stringify(input))),
+			).toEqual(unknown);
+	});
+
+	it("keeps the normal runner order when local signoff is enabled", () => {
+		for (const [members, backend] of [
+			[[hobo(1), arc(1), github(1)], "hobo"],
+			[[hobo(0), arc(1), github(1)], "arc"],
+			[[hobo(0), arc(0), github(1)], "github"],
+		] as const) {
+			const choice = selectFleetVerification({
+				members,
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			});
+			expect(choice.kind).toBe("runner");
+			if (choice.kind === "runner") expect(choice.runner.backend).toBe(backend);
+		}
+	});
+
+	it("offers local signoff only when enabled and every enabled runner is known unavailable", () => {
+		const members = [hobo(0), arc(0), github(0)];
+		expect(
+			selectFleetVerification({
+				members,
+				unknownMembers: [],
+				localSignoffEnabled: true,
+			}),
+		).toEqual({ kind: "local-signoff" });
+		expect(
+			selectFleetVerification({
+				members,
+				unknownMembers: [],
+				localSignoffEnabled: false,
+			}),
+		).toEqual({ kind: "wait", reason: "no-capacity" });
+		expect(
+			selectFleetVerification({
+				members,
+				unknownMembers: ["gh-1"],
+				localSignoffEnabled: true,
+			}),
+		).toEqual({ kind: "wait", reason: "availability-unknown" });
+		expect(
+			selectFleetVerification({
+				members: [hobo(0), github(0, { enabled: false })],
+				unknownMembers: ["gh-1"],
+				localSignoffEnabled: true,
+			}),
+		).toEqual({ kind: "local-signoff" });
 	});
 });
 

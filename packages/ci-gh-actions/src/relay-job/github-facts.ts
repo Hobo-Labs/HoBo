@@ -359,7 +359,7 @@ export class GithubRouteFacts implements RouteFactsSource {
 		const slip = await this.readSlip(request, nowMs, ask);
 		const runs = queueRunsOf((await ask("/actions/runs?per_page=100")) ?? null);
 		if (!runs) throw new FactsReadFailure("the run list is not one");
-		const ownRunId = request.runId;
+		const ownRunId = Number(request.runId);
 		const ahead = new Set(runsJustAhead(runs, ownRunId, nowMs));
 		const jobs: QueueJob[] = [];
 		let undecidedAhead = ahead.size;
