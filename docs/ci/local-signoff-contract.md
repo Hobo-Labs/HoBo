@@ -26,8 +26,10 @@ A slip choosing a fallback records a fleet refusal, but a fresh healthy fleet
 pickup takes precedence. A slip choosing an enrolled local runner does not
 establish that it is taking jobs; the queue must establish its availability or
 refusal. A GitHub slip does not rule out a local runner enrolled since the slip
-was issued. An unusable, expired, unreadable, or tier/label-contradictory slip
-leaves the queue rule to decide.
+was issued. An `agent37` slip is valid only when its runner matches a label in
+committed `runnerRouting.externalPools`; provider declarations alone and unknown
+tiers do not authorize a slip. An unusable, expired, unreadable, or
+tier/label-contradictory slip leaves the queue rule to decide.
 
 After pins and slips, availability means *observed* availability, not a
 reservation or a guarantee that a runner will still be free. The generic

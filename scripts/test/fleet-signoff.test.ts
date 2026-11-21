@@ -957,6 +957,65 @@ describe("local signoff in the fleet decision", () => {
 		}
 	});
 
+	it("validates agent37 slips against committed external pools and rejects unknown tiers", async () => {
+		const pinned = (tier: string, runner: string): SlipReading =>
+			JSON.parse(
+				JSON.stringify({
+					ok: true,
+					decision: {
+						tier,
+						runner,
+						reason: "pinned",
+						slip: { kind: "used", reason: "pinned", from: "node@abc" },
+					},
+				}),
+			);
+		const overflow = [
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: true,
+			},
+		];
+		assert.deepEqual(
+			await planFleetVerification({
+				settings,
+				localSignoffEnabled: true,
+				overflow,
+				readSlip: async () => pinned("agent37", "HOBO-AGENT37"),
+				readQueue: async () => {
+					throw new Error("a valid pin must not read the queue");
+				},
+				nowMs: now,
+			}),
+			{ kind: "runner", tier: "overflow", runner: "HOBO-AGENT37" },
+		);
+		for (const slip of [
+			pinned("agent37", "hobo"),
+			pinned("agent37", "uncommitted-agent37"),
+			pinned("unknown-tier", "hobo-agent37"),
+		])
+			assert.deepEqual(await plan(queue([picked("hobo")]), { overflow, slip }), {
+				kind: "runner",
+				tier: "fleet",
+				runner: "hobo",
+			});
+		assert.deepEqual(
+			await plan(queue([picked("hobo")]), {
+				overflow: [
+					{
+						id: "ci:agent37-runners",
+						runsOn: "hobo-agent37",
+						observable: true,
+						backend: "agent37",
+					},
+				],
+				slip: pinned("agent37", "hobo-agent37"),
+			}),
+			{ kind: "runner", tier: "fleet", runner: "hobo" },
+		);
+	});
+
 	it("does not mistake a local routing slip for proof that the local runner is available", async () => {
 		const localSlip: SlipReading = {
 			ok: true,

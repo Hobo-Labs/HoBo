@@ -171,7 +171,11 @@ export async function planFleetVerification(input: {
 				? [labels.fleet, labels.trunk]
 				: tier === "local" || tier === "github"
 					? [labels[tier]]
-					: [runner];
+					: tier === "agent37"
+						? (input.overflow ?? [])
+								.filter((entry) => entry.id.startsWith("external-pool:"))
+								.map((entry) => entry.runsOn)
+						: [];
 		if (!allowed.some((label) => label.toLowerCase() === runner.toLowerCase()))
 			slip = { ok: false, why: "routing slip tier and label disagree" };
 	}
