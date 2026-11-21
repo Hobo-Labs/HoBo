@@ -1730,8 +1730,8 @@ describe("the script reading the slip", () => {
 		}
 	});
 
-	it("treats GitHub-hosted as idle, with a warning, when the same-repository PR batch probe answers 401", async () => {
-		const { decision, lines } = await printedBy(() =>
+	it("fails the same-repository PR batch route when the hosted probe answers 401", async () => {
+		await assert.rejects(
 			main(
 				[],
 				{ ...prBatchCi, GITHUB_API_URL: "https://api.github.com" },
@@ -1744,18 +1744,7 @@ describe("the script reading the slip", () => {
 					now: () => SLIP_NOW,
 				},
 			),
-		);
-		assert.deepEqual(
-			[decision.tier, decision.runner, decision.refusedBy],
-			["github", "ubuntu-24.04", "none"],
-		);
-		assert.ok(
-			warningsIn(lines).some(
-				(line) =>
-					line.includes("PR batch hosted queue probe unreadable") &&
-					line.includes("GitHub-hosted treated as idle"),
-			),
-			lines.join("\n"),
+			/GitHub answered 401/u,
 		);
 	});
 

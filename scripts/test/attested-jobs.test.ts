@@ -29,7 +29,7 @@ const plan = loadPlan();
 
 /** The condition that skips a job the route job verified a signed local run for. */
 const skipWhenAttested = (job: string) =>
-	`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
+	`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
 const skipWhenAttestedOnGreenRoute = (job: string) =>
 	`!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
 
@@ -405,6 +405,23 @@ describe("expressions in the description", () => {
 			assert.equal(
 				evaluateExpression(skipWhenAttested(job), context("pull_request")),
 				true,
+			);
+	});
+
+	it("does not skip a covered job for outputs from a failed route", () => {
+		const failedRoute = (path: string) =>
+			path === "needs.route.result"
+				? "failure"
+				: path === "needs.route.outputs.attested"
+					? "true"
+					: path === "needs.route.outputs.attested-jobs"
+						? JSON.stringify(COVERED_JOBS)
+						: "";
+		for (const job of COVERED_JOBS)
+			assert.equal(
+				evaluateExpression(skipWhenAttested(job), failedRoute),
+				true,
+				job,
 			);
 	});
 

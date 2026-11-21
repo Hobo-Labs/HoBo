@@ -450,7 +450,7 @@ describe("Actions runner policy", () => {
 	});
 
 	const skipFor = (id: string) =>
-		`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
+		`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
 		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
 	const verifierFiles =
@@ -490,6 +490,7 @@ describe("Actions runner policy", () => {
 				id,
 			);
 		for (const condition of [
+			"!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"'))",
 			skipFor("secret-scan"),
 			`${skipFor("ci-guard")} && ${skipFor("secret-scan")}`,
 			"needs.route.outputs.attested != 'true'",

@@ -219,15 +219,9 @@ describe("PR batch routing", () => {
 		);
 	});
 
-	it("warns instead of silently treating GitHub-hosted as idle when the queue probe fails", async () => {
-		const lines: string[] = [];
-		const log = console.log;
-		console.log = (...parts: unknown[]) => {
-			lines.push(parts.map(String).join(" "));
-		};
-		let decision: Awaited<ReturnType<typeof main>>;
-		try {
-			decision = await main([], env, {
+	it("fails closed instead of treating GitHub-hosted as idle when the queue probe fails", async () => {
+		await assert.rejects(
+			main([], env, {
 				routingConfig: routing("auto"),
 				fetch: async (url) => {
 					const path = String(url);
@@ -235,22 +229,8 @@ describe("PR batch routing", () => {
 						return Response.json(publicRepo);
 					throw new Error("queue down");
 				},
-			});
-		} finally {
-			console.log = log;
-		}
-		assert.deepEqual(
-			[decision.tier, decision.runner],
-			["github", "ubuntu-24.04"],
-		);
-		assert.ok(
-			lines.some(
-				(line) =>
-					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
-					line.includes("PR batch hosted queue probe unreadable") &&
-					line.includes("GitHub-hosted treated as idle"),
-			),
-			lines.join("\n"),
+			}),
+			/queue down/u,
 		);
 	});
 

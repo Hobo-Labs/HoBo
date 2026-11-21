@@ -415,7 +415,7 @@ const ATTESTED_HELPER = [
 
 /** The one condition that skips a job for a signed local run: by that job's own id. */
 function skipWhenAttested(jobId: string): string {
-	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+	return `!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
 }
 function attestationSkipPattern(jobId: string, file: string): string {
 	if (jobId === "release-contract" && file.endsWith("release-hobo.yml"))

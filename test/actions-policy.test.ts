@@ -99,7 +99,7 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("ci-guard")
 			.split("\n")
 			.includes(
-				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
 			),
 	);
 });

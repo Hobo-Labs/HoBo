@@ -1513,28 +1513,18 @@ export async function main(
 			const repository = env.GITHUB_REPOSITORY ?? "";
 			const ownRunId = Number(env.GITHUB_RUN_ID);
 			const probeAtMs = now();
-			let hostedIdle = true;
-			let hostedSummary = "";
-			try {
-				const view = await observeQueue({
-					read: probeRead,
-					repository,
-					ownRunId,
-					labels: [labels.github],
-					limits: MERGE_GROUP_HOSTED_LIMITS,
-					exhaustLookups: true,
-					nowMs: probeAtMs,
-				});
-				const hostedLoad = labelLoad(view.jobs, labels.github, probeAtMs);
-				hostedIdle = prBatchHostedHasIdleCapacity(hostedLoad);
-				hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
-			} catch (error) {
-				const code =
-					error instanceof Error && error.name ? error.name : "probe-error";
-				console.log(
-					`::warning title=hobo-ci-route-fallback::${escapeCommand(`PR batch hosted queue probe unreadable (${code}); GitHub-hosted treated as idle`)}`,
-				);
-			}
+			const view = await observeQueue({
+				read: probeRead,
+				repository,
+				ownRunId,
+				labels: [labels.github],
+				limits: MERGE_GROUP_HOSTED_LIMITS,
+				exhaustLookups: true,
+				nowMs: probeAtMs,
+			});
+			const hostedLoad = labelLoad(view.jobs, labels.github, probeAtMs);
+			const hostedIdle = prBatchHostedHasIdleCapacity(hostedLoad);
+			const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
 			if (!hostedIdle) {
 				const fleetProbeAtMs = now();
 				const fleetView = await observeQueue({
