@@ -146,6 +146,7 @@ export interface VercelDeployProviderOptions {
 	// Whether a git deployment creates the project when Vercel answers that it
 	// does not exist. Defaults to true, as the fixture path always does.
 	readonly createMissingProject?: boolean;
+	readonly stageProduction?: boolean;
 	// The Vercel access token (forwarded to `createVercelClient` as the Bearer).
 	readonly token: string;
 	// The transport. Defaults to global `fetch`; injected in tests.
@@ -213,6 +214,9 @@ function gitDeploymentOf(
 			},
 			// Vercel reads a request with no `target` as preview.
 			...(asked === "production" ? { target: asked } : undefined),
+			...(asked === "production" && options.stageProduction === true
+				? { autoAssignCustomDomains: false as const }
+				: undefined),
 			...(artifact.rootDirectory !== undefined
 				? { projectSettings: { rootDirectory: artifact.rootDirectory } }
 				: undefined),

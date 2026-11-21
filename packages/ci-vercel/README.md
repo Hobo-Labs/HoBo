@@ -224,7 +224,7 @@ packages/ci-vercel/deploy/delivery.ts` applies the same records):
 
 | Node | Camp | Takes Freight from | Verified by |
 |---|---|---|---|
-| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz` (the preview Camp has no config-service binding, so its `/readyz` answers 503 and is not required) |
+| `preview` | `hobo-ci-relay/preview` | the relay's HoBo CI source (`hoboSelfDeliverySources`), or pushed by `hobo ci deploy` | a probe of `$HOBO_CI_RELAY_PREVIEW_URL/healthz`; with `--sha` it must name that commit (the preview Camp has no config-service binding, so its `/readyz` is not required) |
 | `production` | `hobo-ci-relay/production` | **only** Freight `preview` qualified | probes of `$HOBO_CI_RELAY_URL/healthz` (which must name the Freight's commit) and `/readyz` |
 
 `hobo ci deploy --adopt` verifies the same nodes differently: preview by its
@@ -234,13 +234,19 @@ deployment record, production at `$HOBO_CI_RELAY_URL` or the Yard's
 Each probe must answer 200 on every attempt across a 60 s window; a probe that
 cannot reach the relay is an unhealthy attempt, and no data fails the
 verification (a node whose origin is unset probes a reserved `.invalid` host).
-PASS is the only qualification. **A failed verification fails the promotion
-and the job; it does not roll anything back.** The deployment that failed
-stays live on Vercel: CI's journal is job-scoped, so a production Camp there
-never has a predecessor Set to restore, the command returns as soon as the
-promotion is terminal, and there is no Vercel rollback realizer (no redeploy or
-re-alias of the previous deployment). Roll back by hand (`vercel rollback`, or
-promote the previous deployment in the dashboard).
+PASS is the only qualification. A failed verification fails the promotion
+and the job. The workflow stages production without assigning domains and
+leaves traffic unchanged if staged verification fails. If the public origin
+still fails after the verified deployment is promoted, the job fails, re-reads
+production, and restores the previous deployment when production still names
+the rejected candidate. Vercel promotion has no conditional current-target
+input, so HoBo re-reads the target before and after rollback and leaves a
+concurrently superseded target untouched. The failure's `data.rollback` is
+`completed` when the previous deployment was restored, `failed` when the
+rejected candidate remains current, `superseded` when another deployment has
+taken production, or `unknown` when the target cannot be established. For
+`failed` or `unknown`, promote the previous deployment by hand (`vercel
+rollback`, or use the dashboard).
 `hobo ci deploy --target production` needs `--sha` and is refused, before
 anything is sent, when preview has not qualified that commit
 (`HOBO_CI_DEPLOY_NOT_QUALIFIED`). `--wait` drives the promotion to its end;
@@ -250,13 +256,24 @@ result keeps its JSON contract (`code`, `data.outputs`, `data.plan`) and adds
 
 Known gaps, stated rather than hidden:
 
-- **Preview on the by-hand token path reads a fixed origin.** `/healthz`
-  names the build's commit (`VERCEL_GIT_COMMIT_SHA`), and production on both
-  paths requires it to equal the Freight's commit, so a stale deployment
-  behind `$HOBO_CI_RELAY_URL` no longer qualifies a newer commit
-  (`HOBO_CI_DEPLOY_COMMIT_MISMATCH`). The by-hand preview probe of
-  `$HOBO_CI_RELAY_PREVIEW_URL` (a branch alias) does not check the commit yet;
-  `--adopt` verifies preview by its deployment record instead.
+- **The ordinary preview probe reads a fixed origin unless GitHub OIDC can
+  protect it.** Commit pinning on preview `/healthz` runs with
+  `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` (protected preview) or for staged
+  production; on a runner where the GitHub OIDC mint is available
+  (`ACTIONS_ID_TOKEN_REQUEST_URL`/`ACTIONS_ID_TOKEN_REQUEST_TOKEN`), the
+  protected probe is the default, and a run that refuses it
+  (`HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=false`) says so in its result: the
+  qualification attests the shared origin only, not the deployment's commit.
+  Without an OIDC mint (a hand run), `--sha` on preview waits without requiring
+  `/healthz` to name that commit. For a protected Vercel preview, HoBo probes
+  the deployment it just created using the GitHub Actions OIDC token, minted
+  with an audience pinned to that deployment's origin
+  (`HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE` overrides the pin where the Vercel
+  trust requires another audience), so the probe token is not replayable to a
+  relying party that expects GitHub's default audience. The project must trust
+  that workload for preview access, and `HOBO_CI_RELAY_PREVIEW_URL` supplies
+  the pipeline's placeholder origin. `--adopt` verifies preview by its
+  deployment record instead.
 
 The journal is the shared CD journal: `$HOBO_HOME/cd`, or the store
 `HOBO_CD_SQLITE_PATH` / `HOBO_CD_POSTGRES_URL` names, the same one
@@ -277,19 +294,34 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 | a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
 
+**Merge cutover (relay CD delivery):** before this branch lands on `main`,
+provision the Infisical deploy project (`deploy/secret-store.binding.json`
+`deployProjectId`), attach the `hobo-ci-deploy` identity with GitHub OIDC
+claims pinned to this repository, `ref == refs/heads/main`, and
+`relay-deploy.yml`, store `VERCEL_TOKEN` there, and configure the Vercel
+Trusted Source with the same claim pin. The workflow disables Vercel Git
+auto-deploy in the same commit; without those prerequisites `main`'s required
+deploy fails and the relay receives no deployment. After merge, link one
+production run that shows the workflow reading `VERCEL_TOKEN` through Infisical
+and a protected preview probe with OIDC (channel-observation rule). Until that
+run is linked, the delivery path is built, not proven: the prerequisites above
+are external and cannot be verified before merge.
+
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
 runs on every push to `main` that changes this package or a workspace package
 it is built from (its pnpm-lock closure, `scripts/ci/relay-deploy-gate.mts`),
 and on `workflow_dispatch`:
 
-0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
-   while it takes jobs, an enrolled box, else GitHub-hosted).
-1. The gate ends the job with a notice, and success, until a secret store is
-   bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
-   which `hobo ci secret-store provision` writes when the HoBo deployment
-   chooses the store and the owner claims it, or `hobo ci secret-store connect`
-   writes from the ids of a secrets manager the owner connected with OIDC
+0. Deployment and App-deposit always use ephemeral GitHub-hosted runners and
+   clean checkouts, so a reused fleet or enrolled runner cannot capture their
+   credentials or contribute workspace files. Both jobs check out the pinned
+   submodule so a fresh runner can install the workspace dependencies.
+1. The gate fails a required deployment when the secret store binding is absent
+   or unreadable: `deploy/secret-store.binding.json`, coordinates only, which
+   `hobo ci secret-store provision` writes when the HoBo deployment chooses the
+   store and the owner claims it, or `hobo ci secret-store connect` writes from
+   the ids of a secrets manager the owner connected with OIDC
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
    No repository variable or secret is read.
@@ -297,16 +329,24 @@ and on `workflow_dispatch`:
    the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
    only — role shape not asserted), then revokes the token, and reports it pass or
    fail by name (`hobo ci secret-store verify`).
-3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration
-   deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
-   write), and `hobo ci deploy --adopt --sha "$GITHUB_SHA"` adopts it
-   ([token-free relay mode](#token-free-relay-mode-hobo-ci-deploy---adopt)):
-   it reads the deployment from GitHub's Deployments API with the job's own
-   `GITHUB_TOKEN` (`deployments: read`), records it as relay Freight and
-   promotes it through HoBo CD preview then production, failing closed:
-   preview by its deployment record, production at the Yard's production
-   domain (`/healthz` names the commit, `/readyz` answers 200). The command's
-   exit status is the step's.
+3. *Deliver the relay through HoBo CD*: `hobo ci deploy` reads the Vercel
+   credential from the separate deploy project using the job's OIDC identity,
+   creates and verifies the pinned preview, then stages the same commit with
+   production configuration. A Vercel Trusted Source lets the job reach the
+   protected deployments using GitHub OIDC. HoBo checks staged production's
+   `/healthz` and `/readyz` before assigning production traffic, then verifies
+   the public origin serves the same healthy commit. The deadline is rechecked
+   immediately before creation and after reading the current production target.
+   A lost promotion response is ambiguous, so HoBo re-reads that target and
+   continues only when it names the staged candidate; a missing target or failed
+   read returns the promotion failure instead of accepting same-commit health as
+   proof. Finalization resumes from the journal's durable handover and recognizes
+   a candidate already assigned to production instead of promoting it again.
+   Failed live verification restores the previous deployment when production
+   still names the rejected candidate, reports `completed`, and leaves a
+   concurrently superseded target untouched. `failed` or `unknown` requires the
+   named manual recovery because Vercel cannot condition promotion on the
+   current target.
 
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:
@@ -321,9 +361,9 @@ session key, Sandbox proxy key and `CRON_SECRET` from the App private key
 
 #### Token-free relay mode (`hobo ci deploy --adopt`)
 
-The workflow holds no Vercel token, so it does not deploy: it adopts.
+For projects that deliberately use a Vercel Git integration,
 `hobo ci deploy --adopt --sha <commit>` is a publisher with an observe-only
-realization:
+realization. The HoBo relay workflow uses direct CD delivery instead:
 
 1. **Find.** It reads `GET /repos/{owner}/{repo}/deployments?sha=<commit>` and
    each record's statuses from GitHub's API, through a transport guarded to
@@ -408,15 +448,10 @@ adds wait, not evidence. When a stage runs out:
 | `HOBO_CI_ADOPT_BUDGET_EXHAUSTED` | the deadline could not hold every stage, or a READY deployment had not finished verifying when its stage's share ended |
 
 None of them changes anything on Vercel, and the deployment is not lost: the
-next push to `main`, or a re-run of the workflow for the same commit, adopts
-it (the CD journal keeps the in-flight promotion). The workflow prints the
-adoption result and records it in the job summary even when the command fails,
-then preserves its nonzero status. In the relay deploy
-workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
-checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
-so the install and build come out of the adopt budget and the command ends
-with its typed reason before GitHub would kill the job; the adopt step's own
-timeout is only a backstop that cannot fire first.
+operator can retry adoption for the same commit (the CD journal keeps the
+in-flight promotion). The direct delivery workflow reports each preview or
+production result in the job summary; a failure stops promotion and preserves
+the command's nonzero exit status.
 
 Stated, not hidden: `/readyz` answers 503 until the relay can read its store,
 so production does not qualify until the store's folder is filled (the old

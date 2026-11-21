@@ -126,6 +126,7 @@ export interface CreateGitDeploymentInput {
 	// "production", or nothing for a preview deployment: Vercel takes a request
 	// with no `target` as preview, so production is only ever asked for by name.
 	readonly target?: "production";
+	readonly autoAssignCustomDomains?: false;
 	// The project name/id (Vercel `project`); defaults to `name` when omitted.
 	readonly project?: string;
 	// Project build settings (Vercel `projectSettings`), sent only when given:
@@ -295,6 +296,8 @@ export interface VercelClient {
 		deploymentId: string,
 	): Promise<VercelDeploymentResult | undefined>;
 	deleteDeployment(deploymentId: string): Promise<void>;
+	getProductionDeploymentId(project: string): Promise<string | undefined>;
+	promoteDeployment(project: string, deploymentId: string): Promise<void>;
 	// Create a deployment from inline files, or, given a `gitSource`, from a
 	// git reference Vercel builds itself.
 	createDeployment(
@@ -922,6 +925,9 @@ function gitDeploymentBody(input: CreateGitDeploymentInput): JsonObject {
 			...(gitSource.sha !== undefined ? { sha: gitSource.sha } : undefined),
 		},
 		...(input.target !== undefined ? { target: input.target } : undefined),
+		...(input.autoAssignCustomDomains === false
+			? { autoAssignCustomDomains: false }
+			: undefined),
 		...(input.projectSettings !== undefined
 			? { projectSettings: input.projectSettings }
 			: undefined),
@@ -1053,6 +1059,19 @@ function envStep(
 
 // Create the REAL Vercel deployment client. No network call happens at
 // construction; a request is formed and sent only by a method call.
+function productionDeploymentId(payload: JsonObject): string | undefined {
+	const targets = payload.targets;
+	if (!isJsonObject(targets)) return undefined;
+	const production = targets.production;
+	if (!isJsonObject(production)) return undefined;
+	const id = production.id;
+	if (!isJsonString(id) || !/^dpl_[A-Za-z0-9_-]+$/u.test(id))
+		throw new Error(
+			"vercel-client: project read returned an invalid production deployment identity",
+		);
+	return id;
+}
+
 export function createVercelClient(options: VercelClientOptions): VercelClient {
 	const { token } = options;
 	if (!token) {
@@ -1148,8 +1167,47 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			raw: payload,
 		};
 	}
+	const readProject = async (
+		reference: string,
+	): Promise<JsonObject & { id: string }> => {
+		const projectResponse = await send(
+			"get project",
+			"GET",
+			`${baseUrl}/v9/projects/${encodeURIComponent(reference)}${query}`,
+		);
+		if (!projectResponse.ok)
+			throw await failure("get project", projectResponse, secrets);
+		const projectData = await payloadFrom("get project", projectResponse);
+		if (
+			!isJsonString(projectData.id) ||
+			!/^prj_[A-Za-z0-9]+$/u.test(projectData.id)
+		)
+			throw new Error(
+				"vercel-client: project read returned an invalid identity",
+			);
+		const id = projectData.id;
+		return { ...projectData, id };
+	};
 	return {
 		getDeployment: readDeployment,
+		async getProductionDeploymentId(project) {
+			const reference = projectRef(project);
+			const projectData = await readProject(reference);
+			return productionDeploymentId(projectData);
+		},
+		async promoteDeployment(project, deploymentId) {
+			if (!deploymentId || !/^[A-Za-z0-9_-]+$/u.test(deploymentId))
+				throw new TypeError("invalid deployment receipt identity");
+			const reference = projectRef(project);
+			const projectData = await readProject(reference);
+			const response = await post(
+				"promote deployment",
+				`/v10/projects/${encodeURIComponent(projectData.id)}/promote/${encodeURIComponent(deploymentId)}`,
+				"{}",
+			);
+			if (!response.ok)
+				throw await failure("promote deployment", response, secrets);
+		},
 		async deleteDeployment(deploymentId: string) {
 			const response = await send(
 				"delete deployment",
