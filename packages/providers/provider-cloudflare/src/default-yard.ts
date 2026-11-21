@@ -36,7 +36,7 @@ import { type CapabilitySlot, type SlotBinding, slotBinding } from "@hobo/core";
 
 import { CLOUDFLARE_PROVIDER_TARGET } from "./hello-bindle.js";
 import { type JsonObject, parseJsonObject } from "./json.js";
-import { d1, kv, pages, queues, r2, workers } from "./slots.js";
+import { cronTriggers, d1, kv, pages, queues, r2, workers } from "./slots.js";
 
 /**
  * `YardBindingInput` as `@hobo/yards` defines it, restated structurally so this
@@ -126,6 +126,8 @@ function buildCatalog(): readonly SlotBinding[] {
 		d1(),
 		kv(),
 		queues(),
+		// A schedule runs as a Cron Trigger on the Worker it depends on.
+		cronTriggers(),
 		workers(),
 		web,
 		alsoServes("web", web, workers({ workersDev: true })),

@@ -5,7 +5,6 @@ import {
 	parseTitleTypes,
 } from "../src/insights/pr-title.js";
 
-/** The reason a title was rejected; fails the test when it was accepted. */
 function reasonFor(title: string, types?: readonly string[]): string {
 	const check =
 		types === undefined

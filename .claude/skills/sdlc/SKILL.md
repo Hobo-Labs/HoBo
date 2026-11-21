@@ -5,6 +5,8 @@ description: Coordinate iterative feature/capability development end to end in t
 
 # SDLC coordinator
 
+The repository-wide rules at the start of `AGENTS.md` override this skill and its references: implement unfinished work, use self-documenting code, and do not create planning or design documents. Skip any instruction below that requests those artifacts.
+
 Drive a feature or capability through the full development loop **in this repo**. You are the
 **parent/coordinator**: you own the conversation with the user, the plan, Linear (or issue tracker)
 state, shared-file mutations, **stack topology**, and the final review→merge gate for every PR.
@@ -48,34 +50,9 @@ If `gh stack` is missing, install it before dispatching multi-layer work. CLI de
 companion **`gh-stack`** skill (mirrored under `.agents/skills/gh-stack` and `.claude/skills/gh-stack`)
 and in `references/stacked-prs.md`. Official docs: https://gh.io/stacks
 
-## Durable state (read this FIRST, every session)
+## Existing state
 
-State lives in `.sdlc/<initiative-slug>/sdlc-state.md` (phase, decisions, dispatched issues →
-worktree/branch/PR/**stack layer**). On entry: read it; if it exists, **reconcile before anything
-else** (see `references/dispatch.md` § Resume). Write it at every phase boundary. Dispatch outcomes
-append to `.sdlc/dispatch-log.md`. Record stack id / branch chain / PR numbers in the state file.
-
-`.sdlc/` is ignored by git. This state is working material and is never committed (AGENTS.md,
-"Plans are not committed"); the issue tracker and the pull requests are the record that outlives
-a machine.
-
-For design-relevant layers, also record `designerConsensus.required`, `reviewId`,
-`cycle`, `result`, `consensusEntryId`, `proposalDigest`, `reviewedHeadSha`, and
-`assertedAt`. This Markdown is a coordinator view, not approval authority; the
-OptimizeXP council state and append-only bus must pass deterministic
-`consensus-loop.mts --mode assert-yay` on the current head.
-
-```yaml
-designerConsensus:
-  required: true
-  reviewId: <id>
-  cycle: <n>
-  result: yay
-  consensusEntryId: <id>
-  proposalDigest: <sha256>
-  reviewedHeadSha: <sha>
-  assertedAt: <timestamp>
-```
+Complete outstanding work in existing session state before removing it. Do not create or extend planning state.
 
 ## Phases (details in references/)
 
@@ -85,11 +62,7 @@ designerConsensus:
    tiny state/docs follow-up if still needed).
 1. **Brainstorm & harden** — `references/brainstorm.md`. Always start here for new
    features/capabilities. Ideas must survive adversarial + rubber-duck passes before planning.
-2. **Plan** — `references/planning.md`. Enter plan mode; map the work onto the draft cascade
-   (technical proofs → epic proofs; experience proofs in parallel; project proofs aggregate);
-   every proof change follows plan → improve → ADR-beside-the-proof; new tech/screens/features go
-   through the **draft** skill. **Slice multi-phase work into stack layers** (dependency order:
-   foundations at the bottom, dependents above).
+2. **Implement** — choose the smallest relevant proof layer and complete the requested behavior with executable verification.
 3. **Issue capture** — `references/linear-planning.md`. Initiative/projects/milestones/issues,
    each issue a self-contained one-shot contract with verifiable outputs and required draft
    artifacts named explicitly. Prefer **one issue per stack layer**.
