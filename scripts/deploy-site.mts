@@ -42,9 +42,9 @@ import {
 	pagesReleaseWallBudgetMs,
 	promoteReleaseStable,
 	qualifyReleaseCandidate,
-	RELEASE_PROMOTION_TIMEOUT,
 	type ReleaseCdSeams,
 	type ReleasePromoteWall,
+	RELEASE_PROMOTION_TIMEOUT,
 	releaseSource,
 	siteTree,
 } from "./ci/create-github-release.mts";
@@ -189,17 +189,8 @@ export async function qualifySiteRelease(input: {
 		throw new Error(
 			`release-pages: only ${remaining}ms wall budget remains after candidate; increase HOBO_RELEASE_PAGES_WALL_BUDGET_MS or reduce site size`,
 		);
-	console.error(
-		`release-pages: candidate qualified; ${remaining}ms left for stable`,
-	);
-	if (
-		!(await promoteReleaseStable(
-			input.home,
-			env,
-			input.seams ?? {},
-			promoteWall,
-		))
-	)
+	console.error(`release-pages: candidate qualified; ${remaining}ms left for stable`);
+	if (!(await promoteReleaseStable(input.home, env, input.seams ?? {}, promoteWall)))
 		throw new Error(
 			"release Freight pages blocked at hobo-release/pages-stable",
 		);

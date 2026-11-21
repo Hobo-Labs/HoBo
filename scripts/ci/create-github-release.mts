@@ -723,9 +723,7 @@ async function awaitReleasePagesWall<T>(
 	const remaining = releasePagesWallRemainingMs(wall);
 	if (remaining === undefined) return work();
 	if (remaining <= 0)
-		throw new Error(
-			`${RELEASE_PROMOTION_TIMEOUT}:${label}: wall budget exhausted`,
-		);
+		throw new Error(`${RELEASE_PROMOTION_TIMEOUT}:${label}: wall budget exhausted`);
 	console.error(
 		`release-pages: await ${label} (≤${Math.max(0, Math.floor(remaining / 1000))}s wall)`,
 	);
