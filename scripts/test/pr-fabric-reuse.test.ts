@@ -170,6 +170,15 @@ describe("pr-fabric reuse on a merge group", () => {
 		assert.match(decision.reason, /merge_group\.base_sha/u);
 	});
 
+	it("refuses when merge_group.base_sha is missing from the event", () => {
+		const decision = decidePrFabricReuse({
+			...input({ eventBase: undefined }),
+			...evidence(),
+		});
+		assert.equal(decision.reuse, false);
+		assert.match(decision.reason, /merge_group\.base_sha/u);
+	});
+
 	it("asks for evidence before any is fetched", () => {
 		const decision = decidePrFabricReuse(input({}));
 		assert.equal(decision.reuse, false);

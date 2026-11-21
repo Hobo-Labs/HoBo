@@ -73,7 +73,7 @@ export function decidePrFabricReuse(
 		};
 	const base = { pr: entry.pr, base: entry.base };
 	const eventBase = input.eventBase?.trim().toLowerCase();
-	if (eventBase !== undefined && eventBase !== base.base)
+	if (!eventBase || !SHA.test(eventBase) || eventBase !== base.base)
 		return {
 			reuse: false,
 			pr: base.pr,
