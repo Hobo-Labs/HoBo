@@ -30,6 +30,8 @@ PR check still examines the full diff against its base.
 
 Third-party AI-coding tools are wired into this repo for **Claude Code**, **Cursor**, **Codex**, and **GitHub Copilot**. Install binaries with [`../scripts/setup-agent-tools.sh`](../scripts/setup-agent-tools.sh). The checked-in `repo`, `draft`, `sdlc`, `gh-stack`, and `optimizexp` skills follow the common rules in [`../AGENTS.md`](../AGENTS.md).
 
+Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup path. The optional gbrain MCP launcher refuses to start without a configured embedding provider and reports how to configure local Ollama.
+
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
 The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
