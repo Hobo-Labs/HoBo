@@ -885,7 +885,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 253,
-      "pattern": "^(?:\\*\\.)?[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+      "pattern": "^(?:\\*\\.)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$"
     },
     "__schema34": {
       "type": "object",

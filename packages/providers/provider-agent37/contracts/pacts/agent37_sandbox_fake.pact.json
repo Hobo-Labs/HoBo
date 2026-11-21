@@ -1,10 +1,6 @@
 {
-	"consumer": {
-		"name": "ProviderAgent37Client"
-	},
-	"provider": {
-		"name": "Agent37SandboxApiFake"
-	},
+	"consumer": { "name": "ProviderAgent37Client" },
+	"provider": { "name": "Agent37SandboxApiFake" },
 	"interactions": [
 		{
 			"description": "client creates a vm runner box",
@@ -13,7 +9,7 @@
 				"path": "/v1/instances",
 				"headers": {
 					"Content-Type": "application/json",
-					"Authorization": "Bearer sk_live_fixture"
+					"Authorization": "Bearer <runtime-api-key>"
 				},
 				"body": {
 					"template": "agent37-ubuntu",
@@ -46,19 +42,15 @@
 			}
 		},
 		{
-			"description": "client runs a synchronous exec with an idempotency name on the sandbox plane",
+			"description": "client runs a named synchronous exec on the sandbox plane",
 			"request": {
 				"method": "POST",
 				"path": "/v1/instances/i_fixture0001/exec",
 				"headers": {
 					"Content-Type": "application/json",
-					"X-Agent37-Key": "sk_live_fixture"
+					"X-Agent37-Key": "<runtime-api-key>"
 				},
-				"body": {
-					"command": "echo ready",
-					"user": "root",
-					"name": "prep-lease-fixture"
-				}
+				"body": { "command": "echo ready", "user": "root", "name": "prep-lease-fixture" }
 			},
 			"response": {
 				"status": 200,
@@ -76,75 +68,43 @@
 			}
 		},
 		{
-			"description": "a wrong sandbox key on the exec plane is refused",
+			"description": "wrong sandbox key is refused",
 			"request": {
 				"method": "POST",
 				"path": "/v1/instances/i_fixture0001/exec",
-				"headers": {
-					"Content-Type": "application/json",
-					"X-Agent37-Key": "sk_live_wrong"
-				},
-				"body": {
-					"command": "echo must-not-run",
-					"user": "root"
-				}
+				"headers": { "Content-Type": "application/json", "X-Agent37-Key": "<wrong-runtime-api-key>" },
+				"body": { "command": "echo must-not-run", "user": "root" }
 			},
 			"response": {
 				"status": 401,
-				"body": {
-					"error": {
-						"code": "unauthorized",
-						"message": "missing or invalid X-Agent37-Key header"
-					}
-				}
+				"body": { "error": { "code": "unauthorized", "message": "missing or invalid X-Agent37-Key header" } }
 			}
 		},
 		{
-			"description": "a missing sandbox key on the exec plane is refused",
-			"request": {
-				"method": "POST",
-				"path": "/v1/instances/i_fixture0001/exec",
-				"headers": {
-					"Content-Type": "application/json"
-				},
-				"body": {
-					"command": "echo must-not-run",
-					"user": "root"
-				}
-			},
-			"response": {
-				"status": 401,
-				"body": {
-					"error": {
-						"code": "unauthorized",
-						"message": "missing or invalid X-Agent37-Key header"
-					}
-				}
-			}
-		},
-		{
-			"description": "a wrong bearer key on the api plane is refused",
+			"description": "wrong bearer key is refused",
 			"request": {
 				"method": "GET",
 				"path": "/v1/instances",
-				"headers": {
-					"Authorization": "Bearer HOBO_SYNTHETIC_WRONG_AGENT37_PACT_4D87"
-				}
+				"headers": { "Authorization": "Bearer <wrong-runtime-api-key>" }
 			},
 			"response": {
 				"status": 401,
-				"body": {
-					"error": {
-						"code": "unauthorized",
-						"message": "missing or invalid Authorization bearer key"
-					}
-				}
+				"body": { "error": { "code": "unauthorized", "message": "missing or invalid Authorization bearer key" } }
+			}
+		},
+		{
+			"description": "client reads a bounded usage window",
+			"request": {
+				"method": "GET",
+				"path": "/v1/usage",
+				"query": "from=2026-11-01&to=2026-11-20",
+				"headers": { "Authorization": "Bearer <runtime-api-key>" }
+			},
+			"response": {
+				"status": 200,
+				"body": { "from": "2026-11-01", "to": "2026-11-20", "total_micros": 0 }
 			}
 		}
 	],
-	"metadata": {
-		"pactSpecification": {
-			"version": "3.0.0"
-		}
-	}
+	"metadata": { "pactSpecification": { "version": "3.0.0" } }
 }

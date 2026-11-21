@@ -341,7 +341,7 @@ be swapped without touching the brokering pipeline:
 | Contracts | `GatePlane` (can-deploy compatibility) | `@hobo/contracts` Gatekeeper (PACT-style boundary semantics) | an external Pact broker verification feed (port-compatible) |
 | Billing | `BillingPlane` | in-proc budget + spend-cap + quota checks | `createMeteredBillingPlane` — folds `meter.UsageRecorded` facts into observed spend and authorizes against the metered remaining budget; `authorizeBillingSpend` prefers `@hobo/pricing` incremental USD when supplied |
 | Delivery | `DeliveryPlane` | `createDeliveryPlane` — in-process conductor only; agent/publisher policies fail closed with `delivery-plane-unwired` | `createReconcilerDeliveryPlane({ requestPromotion })` — every receipt is delivered through `@hobo/cd` (ADR-0182: D14), fail-closed, pinned by `broker_delivery_cd.pact.json`. GitOps rendering (Argo CD `Application`, Flux `Kustomization`) moved to `@hobo/cd-gitops` |
-| Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `agent37`, `custom` configs; Agent37 requires `workspaceId`; optional `apiOrigin`/`execOrigin` settings allow only the credential-free HTTPS origins `https://api.agent37.com` and `https://sandbox.agent37.app` respectively | an external connector catalog |
+| Connectors | `ConnectorRegistry` | event-sourced registry of `github-app`, `pulumi`, `azure`, `vercel`, `cloudflare`, `agent37`, `custom` configs; Agent37 requires `workspaceId`, and its optional origins are fixed to `https://api.agent37.com` and `https://sandbox.agent37.app` | an external connector catalog |
 
 Beyond M0, this package also ships:
 

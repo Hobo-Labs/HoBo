@@ -970,13 +970,26 @@ The isolated Sandbox runner integration is configured via
 `HOBO_CI_SANDBOX_ENABLED=1`, `HOBO_CI_SANDBOX_TEAM_ID`,
 `HOBO_CI_SANDBOX_PROJECT_ID`, `HOBO_CI_SANDBOX_ISSUER` (the pinned Vercel
 team issuer), and `HOBO_CI_SANDBOX_DOMAINS_JSON`
-(an explicit hostname allowlist). GitHub runner setup, checkout, Node setup,
+(an explicit hostname allowlist). `HOBO_CI_SANDBOX_PROVIDER=agent37` selects
+the Agent37 guest driver instead of Vercel Sandbox (the default). Agent37
+receives an injected client and fails closed when driver options are absent.
+The driver copies the domains into `network.allow` only after validating 1–100
+unique lowercase DNS hostnames or leading-label wildcards; URLs, addresses,
+empty lists, `allow-all`, and `deny-all` are refused. Agent37 interprets a
+leading `*.` entry as the apex and its subdomains. This path has no separate
+proxy VM. The single-use GitHub JIT travels only in the named staging exec's
+HTTPS body; the background start exec contains a constant script, deletes the
+0600 staging file before runner launch, and uses a scrubbed environment. Tests
+cover the full lifecycle through `@hobo/provider-agent37/fake`. No production
+Agent37 egress observation has been captured, so this channel is built and
+contract-tested, not production-proven.
+GitHub runner setup, checkout, Node setup,
 and artifact transfer can require `github.com`, `api.github.com`,
 `codeload.github.com`, `raw.githubusercontent.com`, `nodejs.org`,
 `release-assets.githubusercontent.com`, `*.actions.githubusercontent.com`,
 and `*.blob.core.windows.net`. Add the hosts used by each workflow's own
 dependencies and redirect targets; this list does not cover every workflow.
-The only permitted wildcard patterns are
+On the Vercel path, the only permitted wildcard patterns are
 `*.actions.githubusercontent.com` and `*.blob.core.windows.net`, which GitHub
 documents for runner traffic. The Azure Blob suffix includes third-party storage
 accounts; enabling it permits job traffic to those accounts as well.

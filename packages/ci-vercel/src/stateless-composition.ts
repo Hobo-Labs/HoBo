@@ -109,7 +109,7 @@ import type {
 import { runtimeDiagnostic } from "./runtime-diagnostic.js";
 import {
 	createSandboxComposition,
-	type VERCEL_SANDBOX_DRIVERS,
+	type SandboxDrivers,
 } from "./sandbox-composition.js";
 import { createSandboxProxyQuotaHandler } from "./sandbox-proxy-quota.js";
 import { createScheduledRepairHandler } from "./scheduled-repair.js";
@@ -159,7 +159,7 @@ export type StatelessRelayOptions = Readonly<{
 	identity?: IdentityVerifier;
 	/** Verifies a workflow's OIDC token for the fleet reporter status route. */
 	workflowIdentity?: GithubWorkflowVerifier;
-	sandboxDrivers?: typeof VERCEL_SANDBOX_DRIVERS;
+	sandboxDrivers?: SandboxDrivers;
 	fetch?: typeof fetch;
 	now?: () => string;
 	log?: StatelessRelayLog;

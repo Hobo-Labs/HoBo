@@ -63,4 +63,20 @@ describe("committed .hobo/ci.json routing", () => {
 		const route = resolveCiRelayRoute({ config, selection, context });
 		expect(route.environment.name).toBe("ci");
 	});
+
+	it("keeps the Agent37 example disabled without opting into external routing", () => {
+		const provider = config.environments.ci?.policy.providers.find(
+			(entry) => entry.kind === "agent37",
+		);
+		expect(provider).toMatchObject({
+			id: "agent37-runners",
+			enabled: false,
+			runsOn: "hobo-agent37",
+			capacity: {
+				case: "pool",
+				value: { maxBoxes: 4, template: "agent37-ubuntu@1" },
+			},
+		});
+		expect(document.runnerRouting?.externalPools).toEqual([]);
+	});
 });

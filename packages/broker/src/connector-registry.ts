@@ -13,14 +13,6 @@ import {
 	type ConnectorKind,
 } from "./types.js";
 
-// The broker's connector registry: named, policy-checkable configurations for
-// the external systems the broker drives — a HoBo GitHub App, a Pulumi org, an
-// Azure subscription, a Vercel team, a Cloudflare account, or a custom
-// connector. Registrations are commands folded into `connector.Registered` /
-// `connector.Disabled` facts, so the registry read model rebuilds from the
-// event store alone. Credentials never live here: `credentialRef` points into
-// the token broker / secret store (ADR-0008 stays the credential authority).
-
 const REQUIRED_SETTINGS = {
 	"github-app": ["appId", "installationId"],
 	pulumi: ["organization"],
@@ -31,13 +23,13 @@ const REQUIRED_SETTINGS = {
 	custom: [],
 };
 
-const AGENT37_ORIGIN_HOSTS = {
+const AGENT37_ORIGINS = {
 	apiOrigin: "api.agent37.com",
 	execOrigin: "sandbox.agent37.app",
 } as const;
 
 function parseAgent37Origins(settings: JsonObject): void {
-	for (const [setting, host] of Object.entries(AGENT37_ORIGIN_HOSTS)) {
+	for (const [setting, host] of Object.entries(AGENT37_ORIGINS)) {
 		const value = settings[setting];
 		if (value === undefined) continue;
 		try {

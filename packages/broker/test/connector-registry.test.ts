@@ -11,7 +11,7 @@ import { BrokerParseError } from "../src/policies.js";
 import type { BrokerCatalog } from "../src/types.js";
 
 describe("parseConnectorConfig", () => {
-	it("parses each well-known connector kind with its required settings", async () => {
+	it("parses each well-known connector kind with its required settings", () => {
 		const githubApp = parseConnectorConfig({
 			id: "conn-github",
 			kind: "github-app",
@@ -101,7 +101,7 @@ describe("parseConnectorConfig", () => {
 		}
 	});
 
-	it("refuses unknown kinds and missing required settings", async () => {
+	it("refuses unknown kinds and missing required settings", () => {
 		expect(() =>
 			parseConnectorConfig({
 				id: "conn-x",
@@ -117,16 +117,18 @@ describe("parseConnectorConfig", () => {
 				settings: { appId: "12345" },
 			}),
 		).toThrow(/connector-settings-missing/);
-		expect(() =>
-			parseConnectorConfig({
-				id: "agent37-ci",
-				kind: "agent37",
-				displayName: "Agent37 CI",
-				settings: { apiOrigin: "https://api.agent37.com" },
-			}),
-		).toThrow(
-			/connector-settings-missing: agent37 requires settings workspaceId/,
-		);
+		for (const settings of [{}, { workspaceId: "" }, { workspaceId: 37 }]) {
+			expect(() =>
+				parseConnectorConfig({
+					id: "agent37-ci",
+					kind: "agent37",
+					displayName: "Agent37 CI",
+					settings,
+				}),
+			).toThrow(
+				/connector-settings-missing: agent37 requires settings workspaceId/,
+			);
+		}
 	});
 });
 

@@ -58,6 +58,7 @@ const hoboSettings = {
 		.optional(),
 	HOBO_CI_SANDBOX_ISSUER: z.string().url().max(256).optional(),
 	HOBO_CI_SANDBOX_PLAN: z.enum(["hobby", "pro", "enterprise"]).optional(),
+	HOBO_CI_SANDBOX_PROVIDER: z.enum(["vercel", "agent37"]).optional(),
 	HOBO_CI_SANDBOX_DOMAINS_JSON: z.string().min(2).max(16_384).optional(),
 };
 const hoboFields = z.object(hoboSettings);

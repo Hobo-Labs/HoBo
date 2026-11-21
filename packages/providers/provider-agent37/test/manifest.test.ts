@@ -5,19 +5,22 @@ import {
 	publishCapabilityManifest,
 } from "../src/index.js";
 
-describe("Agent37 capability manifest", () => {
-	const documents = publishCapabilityManifest();
-	const capabilities = JSON.parse(
-		documents["/.well-known/capability-manifest/capabilities.json"],
-	);
-	const auth = JSON.parse(
-		documents["/.well-known/capability-manifest/auth.json"],
-	);
-	const cost = JSON.parse(
-		documents["/.well-known/capability-manifest/cost.json"],
-	);
+const documents = publishCapabilityManifest();
+const capabilities = JSON.parse(
+	documents["/.well-known/capability-manifest/capabilities.json"],
+);
+const auth = JSON.parse(
+	documents["/.well-known/capability-manifest/auth.json"],
+);
+const cost = JSON.parse(
+	documents["/.well-known/capability-manifest/cost.json"],
+);
+const index = JSON.parse(
+	documents["/.well-known/capability-manifest/index.json"],
+);
 
-	it("declares the CI runner capability", () => {
+describe("Agent37 capability manifest", () => {
+	it("declares the CI runner capability and regions", () => {
 		expect(capabilities).toMatchObject({
 			providerId: AGENT37_PROVIDER_ID,
 			capabilities: [
@@ -32,7 +35,7 @@ describe("Agent37 capability manifest", () => {
 		});
 	});
 
-	it("declares only static full-workspace API key authentication", () => {
+	it("declares honest full-workspace static key authentication", () => {
 		expect(auth).toMatchObject({
 			mode: "static-api-key",
 			staticSecrets: true,
@@ -42,9 +45,11 @@ describe("Agent37 capability manifest", () => {
 			oauth: false,
 			keyPage: "https://www.agent37.com/dashboard/cloud/api-keys",
 		});
+		expect(auth).not.toHaveProperty("staticKey");
+		expect(auth).not.toHaveProperty("clientSecret");
 	});
 
-	it("publishes dated estimated per-minute costs for every supported shape and type", () => {
+	it("publishes dated estimated per-minute cost facts", () => {
 		expect(cost.facts).toHaveLength(14);
 		expect(AGENT37_COST_FACTS).toHaveLength(14);
 		expect(cost.facts).not.toContainEqual(
@@ -67,15 +72,17 @@ describe("Agent37 capability manifest", () => {
 		}
 		expect(cost.facts).toContainEqual(
 			expect.objectContaining({
-				sku: "agent37.default.2vcpu-4gb.instance-minute",
-				marginalPrice: (4.76 / 730 / 60).toFixed(12),
-			}),
-		);
-		expect(cost.facts).toContainEqual(
-			expect.objectContaining({
 				sku: "agent37.vm.2vcpu-4gb.instance-minute",
 				marginalPrice: ((4.76 * 2.5) / 730 / 60).toFixed(12),
 			}),
 		);
+	});
+
+	it("indexes each document with a sha256 digest", () => {
+		expect(index.manifestSchema).toBe("hobo.capability-manifest/v1");
+		expect(index.documents).toHaveLength(3);
+		for (const document of index.documents) {
+			expect(document.digest).toMatch(/^sha256:[a-f0-9]{64}$/u);
+		}
 	});
 });

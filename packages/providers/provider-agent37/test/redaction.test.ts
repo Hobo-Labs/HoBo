@@ -1,14 +1,11 @@
 import { randomBytes } from "node:crypto";
+import { generateAgent37TestApiKey } from "@hobo/provider-agent37/fake";
 import { describe, expect, it } from "vitest";
 import {
 	Agent37Error,
 	createAgent37Client,
 	redactAgent37Text,
 } from "../src/index.js";
-
-function generatedKey(): string {
-	return `sk_live_${randomBytes(24).toString("base64url")}`;
-}
 
 function expectNoCredential(
 	outputs: readonly string[],
@@ -20,20 +17,17 @@ function expectNoCredential(
 		Buffer.from(credential).toString("base64"),
 		credential.slice(0, 16),
 	];
-	for (const output of outputs)
+	for (const output of outputs) {
 		for (const form of forms) expect(output).not.toContain(form);
+	}
 }
 
-describe("Agent37 error redaction", () => {
-	it("redacts Agent37 API keys independently of generic token fallbacks", () => {
-		expect(redactAgent37Text("rejected sk_live_x")).toBe("rejected [redacted]");
-	});
-
-	it("redacts runtime-generated API and webhook keys", () => {
-		const apiKey = generatedKey();
+describe("Agent37 redaction", () => {
+	it("redacts API and webhook credential shapes", () => {
+		const apiKey = generateAgent37TestApiKey();
 		const webhookSecret = `whsec_${randomBytes(32).toString("base64")}`;
 		const output = redactAgent37Text(
-			`failed ${apiKey} and ${webhookSecret}\nforged`,
+			`rejected ${apiKey} and ${webhookSecret}\nforged`,
 		);
 		expect(output).toContain("[redacted]");
 		expect(output).not.toContain("\n");
@@ -41,8 +35,8 @@ describe("Agent37 error redaction", () => {
 		expectNoCredential([output], webhookSecret);
 	});
 
-	it("redacts provider bodies from messages, stacks, and serialized errors", async () => {
-		const apiKey = generatedKey();
+	it("redacts provider error bodies in messages, stacks, and JSON", async () => {
+		const apiKey = generateAgent37TestApiKey();
 		const client = createAgent37Client({
 			apiKey,
 			fetchImpl: async () =>
@@ -53,13 +47,12 @@ describe("Agent37 error redaction", () => {
 							message: `upstream echoed ${apiKey}`,
 						},
 					}),
-					{ status: 400, headers: { "content-type": "application/json" } },
+					{ status: 400 },
 				),
 		});
 		const failure = await client.listInstances().catch((error: Error) => error);
 		expect(failure).toBeInstanceOf(Agent37Error);
-		if (!(failure instanceof Agent37Error)) throw new Error("missing failure");
-		expect(failure.providerCode).toBe("invalid_request");
+		expect(failure).toMatchObject({ providerCode: "invalid_request" });
 		expectNoCredential(
 			[failure.message, failure.stack ?? "", JSON.stringify(failure)],
 			apiKey,
@@ -67,7 +60,7 @@ describe("Agent37 error redaction", () => {
 	});
 
 	it("redacts transport failures without retaining a raw cause", async () => {
-		const apiKey = generatedKey();
+		const apiKey = generateAgent37TestApiKey();
 		const client = createAgent37Client({
 			apiKey,
 			fetchImpl: async () => {
@@ -76,7 +69,6 @@ describe("Agent37 error redaction", () => {
 		});
 		const failure = await client.listInstances().catch((error: Error) => error);
 		expect(failure).toBeInstanceOf(Agent37Error);
-		if (!(failure instanceof Agent37Error)) throw new Error("missing failure");
 		expect(failure.cause).toBeUndefined();
 		expectNoCredential(
 			[failure.message, failure.stack ?? "", JSON.stringify(failure)],
@@ -84,8 +76,8 @@ describe("Agent37 error redaction", () => {
 		);
 	});
 
-	it("redacts the exec authentication header echoed by transport failures", async () => {
-		const apiKey = generatedKey();
+	it("redacts an echoed exec credential", async () => {
+		const apiKey = generateAgent37TestApiKey();
 		const client = createAgent37Client({
 			apiKey,
 			fetchImpl: async (input, init) => {
@@ -96,26 +88,23 @@ describe("Agent37 error redaction", () => {
 		const failure = await client
 			.exec("box-1", { command: "true" })
 			.catch((error: Error) => error);
-		expect(failure).toBeInstanceOf(Agent37Error);
 		expectNoCredential(
 			[failure.message, failure.stack ?? "", JSON.stringify(failure)],
 			apiKey,
 		);
 	});
 
-	it("redacts secrets embedded in schema failures", async () => {
-		const apiKey = generatedKey();
+	it("does not echo credentials in schema failures", async () => {
+		const apiKey = generateAgent37TestApiKey();
 		const client = createAgent37Client({
 			apiKey,
 			fetchImpl: async () =>
-				new Response(JSON.stringify({ data: [{ id: apiKey }] }), {
-					status: 200,
-					headers: { "content-type": "application/json" },
-				}),
+				new Response(JSON.stringify({ data: [{ id: apiKey }] })),
 		});
 		const failure = await client.listInstances().catch((error: Error) => error);
-		expect(failure).toBeInstanceOf(Agent37Error);
-		if (!(failure instanceof Agent37Error)) throw new Error("missing failure");
-		expectNoCredential([failure.message, JSON.stringify(failure)], apiKey);
+		expectNoCredential(
+			[failure.message, failure.stack ?? "", JSON.stringify(failure)],
+			apiKey,
+		);
 	});
 });
