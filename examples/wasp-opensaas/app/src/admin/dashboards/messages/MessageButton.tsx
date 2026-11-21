@@ -1,22 +1,23 @@
-import { MessageCircleMore } from "lucide-react";
+import { getUnreadContactMessageCount, useQuery } from "wasp/client/operations";
 import { Link as WaspRouterLink, routes } from "wasp/client/router";
+import { MessageIndicator } from "./MessageIndicator";
 
 export function MessageButton() {
+  const { data: unreadCount } = useQuery(
+    getUnreadContactMessageCount,
+    undefined,
+    { refetchInterval: 30_000 },
+  );
   return (
-    <li
-      className="relative"
-      // eslint-disable-next-line react/no-unknown-property
-      x-data="{ dropdownOpen: false, notifying: true }"
-    >
+    <li className="relative">
       <WaspRouterLink
+        aria-label={
+          unreadCount ? `Messages, ${unreadCount} unread` : "Messages"
+        }
         className="border-stroke bg-gray hover:text-primary dark:border-strokedark dark:bg-meta-4 h-8.5 w-8.5 relative flex items-center justify-center rounded-full border-[0.5px] dark:text-white"
         to={routes.AdminMessagesRoute.to}
       >
-        <span className="bg-meta-1 z-1 absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full">
-          {/* TODO: only animate if there are new messages */}
-          <span className="bg-meta-1 -z-1 absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"></span>
-        </span>
-        <MessageCircleMore className="size-5" />
+        <MessageIndicator unreadCount={unreadCount} />
       </WaspRouterLink>
     </li>
   );

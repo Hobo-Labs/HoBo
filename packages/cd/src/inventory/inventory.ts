@@ -188,7 +188,7 @@ function topologyJson(topology: CampTopology): JsonValue {
 	const labels: JsonObject = {};
 	for (const key of Object.keys(topology.labels).sort())
 		labels[key] = topology.labels[key] ?? "";
-	return {
+	const result: JsonObject = {
 		campId: topology.campId,
 		yardId: topology.yardId,
 		stationId: topology.stationId,
@@ -198,6 +198,9 @@ function topologyJson(topology: CampTopology): JsonValue {
 		labels,
 		management: CampManagement[topology.management] ?? "UNSPECIFIED",
 	};
+	if (topology.physicalCampId !== undefined)
+		result.physicalCampId = topology.physicalCampId;
+	return result;
 }
 
 function canonicalTopology(topology: CampTopology): CampTopology {

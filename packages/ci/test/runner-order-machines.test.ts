@@ -96,6 +96,9 @@ describe("chooseMachine", () => {
 	it("lets an only-me machine run only what its owner started and triggered", () => {
 		const mine = machine({ sharing: "only_me" });
 		expect(admits(mine, want())).toBe(true);
+		expect(
+			admits(machine({ sharing: "only_me", ownerCanRead: false }), want()),
+		).toBe(false);
 		expect(admits(mine, want({ triggeredById: "7" }))).toBe(false);
 		expect(admits(mine, want({ starterId: "7" }))).toBe(false);
 		expect(admits(mine, want({ starterId: undefined }))).toBe(false);
@@ -107,8 +110,10 @@ describe("chooseMachine", () => {
 		expect(
 			admits(machine({ ownerCanRead: false }), want({ starterId: "7" })),
 		).toBe(false);
-		// The owner's own job needs no second check.
-		expect(admits(machine({ ownerCanRead: false }), want())).toBe(true);
+		expect(admits(machine({ ownerCanRead: false }), want())).toBe(false);
+		expect(chosen([machine({ ownerCanRead: false })])).toBe(
+			"machine_not_shared",
+		);
 	});
 
 	it("names the last gate anything reached", () => {
@@ -148,7 +153,7 @@ describe("chooseMachine", () => {
 		];
 		expect(chosen(candidates)).toBe("mine-idle");
 		expect(chosen(candidates, want({ starterId: "7" }))).toBe("theirs");
-		// Equal on everything else: the id decides, so the answer is stable.
+
 		expect(chosen([machine({ id: "b" }), machine({ id: "a" })], want())).toBe(
 			"a",
 		);
@@ -161,7 +166,7 @@ describe("chooseMachine", () => {
 		];
 		expect(chosen(candidates, want({ preferMachineId: "b" }))).toBe("b");
 		expect(chosen(candidates, want({ avoidMachineId: "a" }))).toBe("b");
-		// The avoided machine still takes the job when it is the only one.
+
 		expect(chosen([machine({ id: "a" })], want({ avoidMachineId: "a" }))).toBe(
 			"a",
 		);
@@ -169,11 +174,16 @@ describe("chooseMachine", () => {
 });
 
 describe("limits", () => {
-	it("allows when usage is unmeasured or the plan includes nothing", () => {
-		expect(minutesVerdict(80, undefined)).toEqual({ allowed: true });
-		expect(minutesVerdict(80, { usedMinutes: 10, includedMinutes: 0 })).toEqual(
-			{ allowed: true },
-		);
+	it("blocks a limited step when minutes usage is unknown", () => {
+		expect(minutesVerdict(80, undefined)).toEqual({
+			allowed: false,
+			reason: "minutes_limit",
+			detail: "minutes usage is unknown; the limit is 80%",
+		});
+		expect(minutesVerdict(0, undefined)).toEqual({ allowed: true });
+		expect(
+			minutesVerdict(80, { usedMinutes: 10, includedMinutes: 0 }),
+		).toMatchObject({ allowed: false, reason: "minutes_limit" });
 	});
 
 	it("refuses at the limit, not before", () => {
@@ -188,7 +198,7 @@ describe("limits", () => {
 		).toBe(false);
 	});
 
-	it("keeps two hours of burn in reserve", () => {
+	it("keeps two hours of burn in reserve below the configured limit", () => {
 		const usage = (burnPerHour: number) => ({
 			usedMinutes: 1000,
 			includedMinutes: 2000,
@@ -200,11 +210,22 @@ describe("limits", () => {
 			reason: "minutes_runway",
 			detail: "1000 included minutes left at 501 a hour",
 		});
+		expect(minutesVerdict(80, usage(300)).allowed).toBe(true);
+		expect(minutesVerdict(80, usage(301))).toMatchObject({
+			allowed: false,
+			reason: "minutes_runway",
+			detail: "600 included minutes left at 301 a hour",
+		});
 		expect(minutesVerdict(100, usage(0)).allowed).toBe(true);
 	});
 
 	it("refuses a provider at its monthly spend, not before", () => {
-		expect(spendVerdict(50, undefined)).toEqual({ allowed: true });
+		expect(spendVerdict(50, undefined)).toEqual({
+			allowed: false,
+			reason: "spend_limit",
+			detail: "spend is unknown; the limit is $50",
+		});
+		expect(spendVerdict(0, undefined)).toEqual({ allowed: true });
 		expect(spendVerdict(50, 49.99)).toEqual({ allowed: true });
 		expect(spendVerdict(50, 50)).toEqual({
 			allowed: false,
@@ -241,7 +262,7 @@ describe("provider health", () => {
 	it("does not trip on misses spread wider than the window", () => {
 		const spread = misses([0, 20 * minute, 31 * minute]);
 		expect(spread.trippedAtMs).toBeUndefined();
-		// The window slides: the next miss makes three inside thirty minutes.
+
 		expect(
 			recordProviderOutcome(spread, { atMs: 40 * minute, started: false })
 				.trippedAtMs,
@@ -267,7 +288,7 @@ describe("provider health", () => {
 		expect(providerHealthState(tripped, 2 + 10 * minute)).toBe("trial");
 		const trying = startProviderTrial(tripped, 2 + 10 * minute);
 		expect(providerHealthState(trying, 2 + 11 * minute)).toBe("unhealthy");
-		// A trial nobody reported on expires and another is allowed.
+
 		expect(providerHealthState(trying, 2 + 40 * minute)).toBe("trial");
 	});
 
@@ -393,8 +414,9 @@ describe("retries", () => {
 		expect(
 			retryVerdict(policy(), failure({ retriesToday: RUNNER_RETRY_DAILY_CAP })),
 		).toEqual({ retry: false, reason: "daily_limit" });
-		expect(
-			retryVerdict(policy({ runner: "sideways" }), failure()),
-		).toMatchObject({ target: "any" });
+		expect(retryVerdict(policy({ runner: "sideways" }), failure())).toEqual({
+			retry: false,
+			reason: "off",
+		});
 	});
 });

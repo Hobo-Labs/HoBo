@@ -30,6 +30,8 @@ message CdTopologyCamp {
   string env_type = 6;
   map<string, string> labels = 7;
   CampManagement management = 8;
+  // Stable CD identity when a Camp moves between Yards. Empty uses camp_id.
+  string logical_id = 9;
 }
 
 // The part of a @hobo/yards Camp the topology reads.

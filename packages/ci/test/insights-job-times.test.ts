@@ -15,7 +15,6 @@ import type { InsightJob, InsightRun } from "../src/insights/types.js";
 
 const MIN = 60_000;
 
-/** A job that waited `waitMs` from time 0 and then ran for `runMs`. */
 function ran(
 	name: string,
 	waitMs: number,
@@ -36,7 +35,6 @@ function ran(
 	};
 }
 
-/** A job no runner has taken. */
 function queued(name: string, extra: Partial<InsightJob> = {}): InsightJob {
 	return {
 		id: 1,
@@ -69,7 +67,6 @@ function run(partial: Partial<InsightRun> = {}): InsightRun {
 	};
 }
 
-/** `count` successful runs of one job on one runner, each taking `runMs`. */
 function samples(
 	count: number,
 	runMs: number,
@@ -551,7 +548,7 @@ describe("workflowTimes", () => {
 		expect(times?.medianMs).toBe(0);
 	});
 
-	it("takes the median, over attempts, of the time their jobs waited", () => {
+	it("takes the median wait across jobs rather than summing each attempt", () => {
 		const [times] = workflowTimes([
 			attempt(MIN, {
 				jobs: [
@@ -568,7 +565,7 @@ describe("workflowTimes", () => {
 			attempt(MIN, { jobs: [ran("a", 90_000, MIN)] }),
 			attempt(MIN, { jobs: [queued("a")] }),
 		]);
-		expect(times?.medianWaitMs).toBe(30_000);
+		expect(times?.medianWaitMs).toBe(10_000);
 	});
 
 	it("names the job with the highest median run time", () => {

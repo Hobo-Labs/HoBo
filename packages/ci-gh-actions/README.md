@@ -61,6 +61,8 @@ account lease API's actual job attribution to inspect routing and settlement.
 ## Follow HoBo platform budgets
 
 For an owned development machine, see [local CI and the default dev container](LOCAL-DEVELOPMENT.md).
+Its [runnerless local signoff](LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+uses `gh-signoff` to publish the jobs HoBo's local workflow run covered.
 The `local` provider dispatches the existing bridge to `hobo-local-host`; original
 jobs retain `runs-on: hobo`, lease accounting and JIT authorization. Offline act
 also runs the local zero-budget scenario without GitHub credentials.
@@ -758,7 +760,8 @@ Like `runnerRouting`, it is committed configuration, so no variable carries
 it. The record and its rules are `RunnerOrder` in
 [`@hobo/ci`](../ci/RUNNER-ORDER.md); `RunnerOrderDocumentSchema` describes the
 block for the editor schema and fails the project parse on a broken order
-with the parser's own sentence.
+with the parser's own sentence. `parseCiRunnerOrder` applies that same schema,
+so null fields and zero limits or sizes cannot bypass the editor contract.
 
 ```json
 {
@@ -776,11 +779,12 @@ with the parser's own sentence.
 ```
 
 `parseCiRunnerOrder(json)` reads the block: the committed order, or the
-default (`fleet`, `machine`, `github`) when the file has none. A block that
-is there but broken is not silently replaced; the result carries `problem`
-and `source: "default"`, so a caller can refuse to route on an order nobody
-wrote. `hobo ci route` walks the order for one job and shows every step
-passed over. Nothing in the relay reads `runnerOrder` yet.
+default (`fleet`, `machine`, `github`) when the file has none. Invalid JSON,
+a project document that is not a JSON object, or a broken block returns
+`source: "invalid"`, `order: undefined` and a `problem`; there is no default
+order to walk by mistake. `hobo ci route` refuses that result. With a valid
+order it walks the order for one job and shows every step passed over. Nothing
+in the relay reads `runnerOrder` yet.
 
 ### Moving workflow jobs to the fleet
 
@@ -792,8 +796,17 @@ verdict: `ready` (its `runs-on` is a single GitHub-hosted Linux x64 label),
 quoting, line endings and anchors elsewhere in the file are untouched, the old
 label is kept as a trailing comment, and applying twice changes nothing. A job
 whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
-refused rather than changed in two places. Both are pure; `hobo ci init` is
-the command over them ([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
+refused rather than changed in two places; a merged `runs-on` is skipped.
+Multiline `run` blocks count for package-install warnings, and passing the
+whole `secrets` context marks a job deploy-like. Deploy checks read effective
+YAML merge keys too: merged environments, inherited secrets, write permissions
+and secret-bearing workflow environment values cannot make a job look ready.
+Jobs that route others directly, through a matrix, or through reusable-workflow
+inputs stay put.
+Applying also reads the result back and returns the original unless selected
+jobs are routed and every unselected job plan is unchanged. Both are pure;
+`hobo ci init` is the command over them
+([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
 
 ## Connect a repository
 
@@ -1586,9 +1599,8 @@ estimate of about 25 assumed one command per ring append and no routing reads.
 
 ## Relay job seams
 
-A relay job (ADR-0183, [`packages/ci/RELAY-JOB.md`](../ci/RELAY-JOB.md)) is
-answered by `answerRelayJob` from `@hobo/ci`. This package holds the two seams
-on its GitHub side:
+A [relay job](../ci/RELAY-JOB.md) is answered by `answerRelayJob` from
+`@hobo/ci`. This package holds the two seams on its GitHub side:
 
 - [`src/runner-protocol/port.ts`](src/runner-protocol/port.ts): the runner
   protocol a relay-mode node answers over. `RunnerServiceClient.open` signs in
@@ -1604,6 +1616,11 @@ on its GitHub side:
   one `fetch` for REST, billing and the runner service, `queueJob`, `deliver`
   (webhooks to a handler), `advance` (its clock), `dropNextWebhook`, and reads
   of its runners and jobs.
+
+The JIT configuration contains the private RSA parameters used to sign session
+token requests; treat them as secrets and do not log them. The in-memory fake
+accepts completions only from the session that took the job and rejects calls
+after the session closes.
 
 ## Runner protocol client
 

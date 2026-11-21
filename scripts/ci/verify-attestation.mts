@@ -19,12 +19,20 @@ import {
 	ATTESTATION_BRANCH,
 	ATTESTORS_PATH,
 	type AttestationVerdict,
+	asList,
 	asObject,
 	asText,
 	attestationPath,
 	isObjectId,
 	type JsonValue,
+	omitImpactGroup,
 	parseJson,
+	SHADOW_PLAN_BLOB,
+	SHADOW_PLAN_PATH,
+	SHADOW_REQUIRED_PATHS,
+	SHADOW_RESOLUTION_PATHS,
+	SHADOW_WORKFLOW_BLOB,
+	SHADOW_WORKFLOW_PATH,
 	verifyAttestation,
 } from "./attestation.mts";
 
@@ -46,18 +54,17 @@ export function baseShaOf(
 	return sha !== undefined && isObjectId(sha) ? sha : undefined;
 }
 
-/**
- * The head commit of the event, when it has one: the pull request's own tip.
- * A merge group has none that a local run could have seen.
- */
 export function headShaOf(
 	event: string,
 	payload: JsonValue,
 ): string | undefined {
-	if (event !== "pull_request") return undefined;
-	const sha = asText(
-		asObject(asObject(asObject(payload)?.pull_request)?.head)?.sha,
-	);
+	const document = asObject(payload);
+	const sha =
+		event === "pull_request"
+			? asText(asObject(asObject(document?.pull_request)?.head)?.sha)
+			: event === "merge_group"
+				? asText(asObject(document?.merge_group)?.head_sha)
+				: undefined;
 	return sha !== undefined && isObjectId(sha) ? sha : undefined;
 }
 
@@ -87,6 +94,86 @@ const notAttested = (reason: string): AttestationVerdict => ({
 	attested: false,
 	reason,
 });
+
+type TreeEntry = Readonly<{ type: string; mode: string; sha: string }>;
+
+function shadowTree(
+	answer: JsonValue,
+	expected: string,
+): Map<string, TreeEntry> {
+	const tree = asObject(answer);
+	const entries = asList(tree?.tree);
+	if (asText(tree?.sha) !== expected || tree?.truncated !== false || !entries)
+		throw new Error("incomplete tree");
+	const selected = new Set<string>([
+		SHADOW_PLAN_PATH,
+		SHADOW_WORKFLOW_PATH,
+		...SHADOW_REQUIRED_PATHS,
+		...SHADOW_RESOLUTION_PATHS,
+	]);
+	const result = new Map<string, TreeEntry>();
+	for (const value of entries) {
+		const entry = asObject(value);
+		const path = asText(entry?.path);
+		if (!path || !selected.has(path)) continue;
+		const type = asText(entry?.type);
+		const mode = asText(entry?.mode);
+		const sha = asText(entry?.sha);
+		if (!type || !mode || !sha || !isObjectId(sha) || result.has(path))
+			throw new Error("invalid tree entry");
+		result.set(path, { type, mode, sha });
+	}
+	return result;
+}
+
+async function shadowPolicyMatches(input: {
+	read: ApiReader;
+	repo: string;
+	baseTree: string;
+	tree: string;
+}): Promise<boolean> {
+	try {
+		const [baseAnswer, headAnswer] = await Promise.all([
+			input.read(`${input.repo}/git/trees/${input.baseTree}?recursive=1`),
+			input.read(`${input.repo}/git/trees/${input.tree}?recursive=1`),
+		]);
+		const base = shadowTree(baseAnswer, input.baseTree);
+		const head = shadowTree(headAnswer, input.tree);
+		const regular = (entry: TreeEntry | undefined) =>
+			entry?.type === "blob" &&
+			(entry.mode === "100644" || entry.mode === "100755");
+		for (const [path, expected] of [
+			[SHADOW_PLAN_PATH, SHADOW_PLAN_BLOB],
+			[SHADOW_WORKFLOW_PATH, SHADOW_WORKFLOW_BLOB],
+		] as const) {
+			if (
+				!regular(base.get(path)) ||
+				!regular(head.get(path)) ||
+				base.get(path)?.sha !== expected ||
+				head.get(path)?.sha !== expected
+			)
+				return false;
+		}
+		for (const path of SHADOW_REQUIRED_PATHS) {
+			const before = base.get(path);
+			const after = head.get(path);
+			if (!regular(before) || !regular(after)) return false;
+			if (
+				before?.sha !== after?.sha ||
+				before?.type !== after?.type ||
+				before?.mode !== after?.mode
+			)
+				return false;
+		}
+		if (
+			SHADOW_RESOLUTION_PATHS.some((path) => base.has(path) || head.has(path))
+		)
+			return false;
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 /**
  * The verdict for one checked-out tree. The attestation is read first: most
@@ -136,7 +223,7 @@ export async function verifyFromApi(input: {
 	}
 	if (baseTree === undefined)
 		return notAttested(`the base commit ${baseSha} has no tree`);
-	return verifyAttestation({
+	const verdict = verifyAttestation({
 		envelopeText,
 		attestorsText,
 		tree,
@@ -146,6 +233,17 @@ export async function verifyFromApi(input: {
 		head: input.headSha,
 		base: baseSha,
 	});
+	if (
+		!verdict.attested ||
+		!(
+			verdict.jobs.includes("pr_gate_plan") ||
+			verdict.jobs.includes("pr_gate_validation")
+		)
+	)
+		return verdict;
+	return (await shadowPolicyMatches({ read, repo, baseTree, tree }))
+		? verdict
+		: omitImpactGroup(verdict);
 }
 
 function githubReader(apiUrl: string, token: string): ApiReader {

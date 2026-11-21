@@ -13,6 +13,7 @@ const publisher = parse(
 );
 const depsJob = workflow.jobs["ci-deps-image"];
 const prGate = workflow.jobs["pr-gate"];
+const prPlan = workflow.jobs.pr_gate_plan;
 const prValidation = workflow.jobs.pr_gate_validation;
 const workspaceTests = workflow.jobs.workspace_tests;
 const prAffected = workflow.jobs.pr_affected;
@@ -214,22 +215,73 @@ describe("CI deps image push scope", () => {
 
 	it("does not make either gate wait for the deps image", () => {
 		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
-		expect(prValidation.needs).toEqual(["route", "ci-runner-image"]);
+		expect(prPlan.needs).toEqual(["route"]);
+		expect(prValidation.needs).toEqual([
+			"route",
+			"ci-runner-image",
+			"pr_gate_plan",
+		]);
 		expect(prGate.needs).toEqual([
 			"route",
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
 			"scripts-tests",
+			"state-machine-verification",
 		]);
-		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
-		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);
+		expect(workspaceTests.needs).toEqual([
+			"route",
+			"ci-runner-image",
+			"pr_gate_plan",
+		]);
+		expect(prAffected.needs).toEqual([
+			"route",
+			"ci-runner-image",
+			"pr_gate_plan",
+		]);
 		expect(mainGate.needs).not.toContain("ci-deps-image");
+		expect(prPlan.needs).not.toContain("ci-deps-image");
 		expect(prValidation.needs).not.toContain("ci-deps-image");
 		expect(prGate.needs).not.toContain("ci-deps-image");
 		// The deps job is not routed: it builds in the box's Docker context and
 		// starts from route so it can overlap runner image materialize (#1872).
 		expect(depsJob.needs).toEqual(["route"]);
+	});
+
+	it("resolves base, scope, and shards before validation so shards overlap the S0 gate", () => {
+		expect(prPlan.outputs).toEqual({
+			merge_base: "${{ steps.merge-group-base.outputs.base }}",
+			merge_tests: "${{ steps.merge-group-base.outputs.tests }}",
+			merge_scope: "${{ steps.merge-group-base.outputs.scope }}",
+			pr_base: "${{ steps.scm-base.outputs.base }}",
+			shards: "${{ steps.shard-plan.outputs.shards }}",
+		});
+		for (const name of [
+			"Resolve the merge group base and gate scope",
+			"Plan workspace test shards",
+		])
+			expect(prPlan.steps.find((step) => step.name === name).run).toContain(
+				"node --experimental-strip-types",
+			);
+		expect(
+			prPlan.steps.find((step) => step.name === "Resolve Turbo SCM base").run,
+		).toContain("git merge-base");
+		expect(
+			prValidation.steps.find((step) => step.name === "Relevant checks only")
+				.env.BASE,
+		).toBe("${{ needs.pr_gate_plan.outputs.pr_base }}");
+		const s0 = prValidation.steps.find((step) => step.name === "S0 gate set");
+		expect(s0.env.SCOPE).toBe("${{ needs.pr_gate_plan.outputs.merge_scope }}");
+		expect(s0.env.BASE).toBe("${{ needs.pr_gate_plan.outputs.merge_base }}");
+		expect(workspaceTests.strategy.matrix.shard).toBe(
+			"${{ fromJSON(needs.pr_gate_plan.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
+		);
+		expect(workspaceTests.if).toContain(
+			"needs.pr_gate_plan.result == 'success'",
+		);
+		expect(workspaceTests.if).not.toContain("pr_gate_validation");
+		expect(prAffected.if).toContain("needs.pr_gate_plan.result == 'success'");
 	});
 });
 
