@@ -494,6 +494,97 @@ export function createWorkflowEngine(
 			};
 		}
 		const runSeed = startedFact.seed;
+		type RecordedCommand =
+			| { kind: "step"; index: number; name: string }
+			| { kind: "sleep"; index: number; delayMs: number };
+		const commands: RecordedCommand[] = [];
+		const stepNames = new Map<number, string>();
+		const recordedSleepIndices = new Set<number>();
+		let recordedSleeps = 0;
+		for (const event of journal) {
+			if (event.type === "run.StepScheduled") {
+				if (
+					!isRecord(event.data) ||
+					!isJsonNumber(event.data.index) ||
+					!Number.isSafeInteger(event.data.index) ||
+					event.data.index < 0 ||
+					!isJsonString(event.data.name)
+				)
+					throw new Error("invalid recorded workflow command");
+				const { index, name } = event.data;
+				const previous = stepNames.get(index);
+				if (previous !== undefined) {
+					if (previous !== name)
+						throw new Error("recorded workflow command diverged");
+					continue;
+				}
+				stepNames.set(index, name);
+				commands.push({ kind: "step", index, name });
+			} else if (event.type === "run.SleepScheduled") {
+				if (
+					!isRecord(event.data) ||
+					!isJsonNumber(event.data.delayMs) ||
+					!Number.isSafeInteger(event.data.delayMs) ||
+					event.data.delayMs < 0 ||
+					(event.data.index !== undefined &&
+						(!isJsonNumber(event.data.index) ||
+							!Number.isSafeInteger(event.data.index) ||
+							event.data.index < 0))
+				) {
+					throw new Error("invalid recorded workflow command");
+				}
+				const index = event.data.index ?? recordedSleeps;
+				if (recordedSleepIndices.has(index)) continue;
+				commands.push({
+					kind: "sleep",
+					index,
+					delayMs: event.data.delayMs,
+				});
+				recordedSleepIndices.add(index);
+				recordedSleeps = Math.max(recordedSleeps, index + 1);
+			}
+		}
+		let commandIndex = 0;
+		function consumeCommand(command: RecordedCommand): void {
+			if (
+				command.kind === "step" &&
+				!scheduledSteps.has(command.index) &&
+				unconsumedOutcomes.has(command.index)
+			) {
+				return;
+			}
+			const expected = commands[commandIndex];
+			if (expected && !isDeepStrictEqual(expected, command)) {
+				let message = `workflow command history diverged at index ${commandIndex}`;
+				if (
+					expected.kind === "step" &&
+					command.kind === "step" &&
+					expected.index === command.index &&
+					expected.name !== command.name
+				) {
+					message += `: step name differs from journal for ${runId}`;
+				} else if (expected.kind === "sleep" && command.kind === "sleep") {
+					message += `: sleep schedule diverged on replay for ${runId}`;
+				}
+				rejectReplay(message);
+			}
+			commandIndex += 1;
+		}
+		function assertConsumedCommands(): void {
+			assertReplayConsistent();
+			const expected = commands[commandIndex];
+			if (expected) {
+				let detail = `unconsumed scheduled sleep (orphan SleepScheduled) for ${runId}`;
+				if (expected.kind === "step") {
+					detail = unconsumedOutcomes.has(expected.index)
+						? `unconsumed step outcome for ${runId}`
+						: `unconsumed scheduled step (orphan StepScheduled) for ${runId}`;
+				}
+				throw new Error(
+					`unconsumed workflow command at index ${commandIndex}: ${detail}`,
+				);
+			}
+		}
 
 		function assertNoTerminalBeforeRunEvent(type: string): void {
 			if (!type.startsWith("run.")) return;
@@ -597,15 +688,16 @@ export function createWorkflowEngine(
 				if (!isBoundedStepIndex(index)) {
 					rejectReplay(`invalid step journal for ${runId}`);
 				}
-				const scheduled = scheduledSteps.get(index);
-				if (scheduled !== undefined && scheduled !== name) {
-					rejectStepName();
-				}
 				const recorded = stepRecordedAtIndex(index);
 				if (recorded.completed && recorded.completed.name !== name) {
 					rejectStepName();
 				}
 				if (recorded.failed && recorded.failed.name !== name) {
+					rejectStepName();
+				}
+				consumeCommand({ kind: "step", index, name });
+				const scheduled = scheduledSteps.get(index);
+				if (scheduled !== undefined && scheduled !== name) {
 					rejectStepName();
 				}
 				const { completed, failed } = stepOutcomesFor(name, index);
@@ -659,6 +751,11 @@ export function createWorkflowEngine(
 					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 				}
 				const normalizedDurationMs = Object.is(durationMs, -0) ? 0 : durationMs;
+				consumeCommand({
+					kind: "sleep",
+					index,
+					delayMs: normalizedDurationMs,
+				});
 				const scheduled = sleepFacts.get(index);
 				if (scheduled) {
 					if (
@@ -854,12 +951,14 @@ export function createWorkflowEngine(
 
 		try {
 			const value = await def.run(ctx, runArgs);
+			assertConsumedCommands();
 			assertConsumedOutcomes();
 			const result = captureWorkflowResult(value);
 			await appendEvent("run.Completed", { result });
 			return { runId, status: "completed", result, error: undefined };
 		} catch (error) {
 			if (error instanceof WorkflowFailure) {
+				assertConsumedCommands();
 				assertConsumedOutcomes();
 				const failureData: JsonBag = {
 					message: error.message,

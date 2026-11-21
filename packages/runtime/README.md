@@ -90,8 +90,17 @@ the failed step when present; older failure records without a step cannot
 reconstruct that detail.
 
 Replay checks each recorded sleep in order and refuses missing, changed, or
-unused sleep records. Existing records without an index are read in journal
-order; indexed records must also match their position.
+unused sleep records and unused completed steps. Existing sleep records without
+an index are read in journal order; indexed records must also match their
+position. Resume checks previously recorded step and sleep commands in their
+original order before continuing, and rejects a shortened or changed command
+history instead of recording a new terminal result.
+
+Keep `ctx.step` and `ctx.sleep` calls at the workflow orchestration level. The
+journal does not identify child commands inside a memoized step; replay or
+resume can conservatively reject those nested histories when the completed
+parent is reused. The check covers these two command types, not arbitrary
+effects performed directly by workflow code.
 
 `ctx.sleep` records its deadline before waiting and rechecks the clock after
 each wake-up. If a host stops, an explicit `resume` uses that same deadline;
