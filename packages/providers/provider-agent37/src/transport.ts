@@ -94,7 +94,7 @@ export function createAgent37Transport(
 		for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
 			response = await bounded(request);
 			if (
-				(request.method !== "GET" && request.method !== "HEAD") ||
+				request.method !== "GET" ||
 				!retryable(response) ||
 				attempt + 1 === maxAttempts
 			)
