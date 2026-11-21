@@ -1218,6 +1218,16 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 						FleetRejectionCode.BINDING_SECRET_MISMATCH,
 						"binding secret does not match runner slot",
 					);
+				if (
+					slot.accountId !== input.assignment.accountId ||
+					slot.runnerName !== input.assignment.runnerName ||
+					slot.profileId !== input.assignment.profileId ||
+					existing.profileId !== input.assignment.profileId
+				)
+					rejectFleet(
+						FleetRejectionCode.ASSIGNMENT_MISMATCH,
+						"verified assignment does not match the original binding",
+					);
 				return { claim: existing, idempotent: true };
 			}
 			if (this.claimByIdInside(input.claimId))

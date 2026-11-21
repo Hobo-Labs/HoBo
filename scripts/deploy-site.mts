@@ -41,9 +41,12 @@ import { fileURLToPath } from "node:url";
 import {
 	promoteReleaseStable,
 	qualifyReleaseCandidate,
+	RELEASE_PROMOTION_TIMEOUT,
 	type ReleaseCdSeams,
+	releaseChannelVerdict,
 	releaseSource,
 	siteTree,
+	startReleasePagesWall,
 } from "./ci/create-github-release.mts";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
@@ -135,11 +138,6 @@ function build(): void {
 	}
 }
 
-/**
- * Record the tree as `hobo-release-pages` Freight and promote it
- * candidate -> stable; the candidate Camp's realizer publishes gh-pages.
- * Throws unless both qualify.
- */
 export async function qualifySiteRelease(input: {
 	readonly dist: string;
 	readonly home: string;
@@ -147,6 +145,7 @@ export async function qualifySiteRelease(input: {
 	readonly seams?: ReleaseCdSeams;
 }): Promise<void> {
 	const env = input.env ?? process.env;
+	const wall = startReleasePagesWall(env);
 	const tree = siteTree(input.dist);
 	if (tree.files.length === 0)
 		throw new Error(`${input.dist} holds no files to publish`);
@@ -154,6 +153,7 @@ export async function qualifySiteRelease(input: {
 		home: input.home,
 		family: "pages",
 		env,
+		wall,
 		stored: [
 			{
 				name: "site",
@@ -169,10 +169,12 @@ export async function qualifySiteRelease(input: {
 		},
 		...(input.seams ? { seams: input.seams } : undefined),
 	});
-	if (!(await promoteReleaseStable(input.home, env, input.seams)))
+	if (!(await promoteReleaseStable(input.home, env, input.seams, wall))) {
+		const stable = releaseChannelVerdict(input.home, "pages", "stable");
 		throw new Error(
-			"release Freight pages blocked at hobo-release/pages-stable",
+			`release Freight pages blocked at hobo-release/pages-stable${stable ? `: ${stable.codes.join(", ")}` : ""}`,
 		);
+	}
 }
 
 function releaseCdHome(): string {
@@ -268,7 +270,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 			await publish(sha);
 		}
 	} catch (error) {
-		console.error(error instanceof Error ? error.message : String(error));
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(
+			message.includes(RELEASE_PROMOTION_TIMEOUT)
+				? `::error::${message}`
+				: message,
+		);
 		process.exit(1);
 	}
 }
