@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parse as parseAstro } from "@astrojs/compiler/sync";
+import type { Node as AstroNode } from "@astrojs/compiler/types";
 import ts from "typescript";
 import { frontmatterType } from "./check-no-committed-plans.mts";
 import { type CommentDialect, lexComments } from "./source-comment-lexer.mts";
@@ -212,6 +214,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(file).toLowerCase();
+	if (extension === ".astro") return astroComments(file, text);
 	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
 	if (lexicalLanguage) {
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
@@ -273,6 +276,78 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
 		}));
 	});
+}
+
+function astroComments(file: string, text: string): CommentLocation[] {
+	const result = parseAstro(text, { position: true });
+	const error = result.diagnostics.find(
+		(diagnostic) => diagnostic.severity === 1,
+	);
+	if (error) throw new Error(`cannot parse ${file}: ${error.text}`);
+	const found: CommentLocation[] = [];
+	const bytes = Buffer.from(text);
+
+	function inspect(fragment: string, language: ".ts" | ".css", first: number) {
+		for (const comment of commentLocations(`fragment${language}`, fragment)) {
+			found.push({
+				...comment,
+				first: first + comment.first - 1,
+				last: first + comment.last - 1,
+			});
+		}
+	}
+
+	function visit(node: AstroNode, context?: "expression" | "script" | "style") {
+		const line = node.position?.start.line;
+		if (node.type === "comment" && line !== undefined) {
+			found.push({
+				text: `<!--${node.value}-->`,
+				first: line,
+				last: line + node.value.split("\n").length - 1,
+			});
+		} else if (node.type === "frontmatter" && line !== undefined) {
+			inspect(node.value, ".ts", line);
+		} else if (node.type === "text" && context && line !== undefined) {
+			inspect(node.value, context === "style" ? ".css" : ".ts", line);
+		}
+
+		if ("attributes" in node) {
+			for (const attribute of node.attributes) {
+				const value =
+					attribute.kind === "expression"
+						? attribute.value
+						: attribute.kind === "spread" || attribute.kind === "shorthand"
+							? attribute.name
+							: attribute.kind === "template-literal"
+								? attribute.raw
+								: undefined;
+				if (!value) continue;
+				const start = attribute.position?.start;
+				if (!start) throw new Error(`cannot locate an attribute in ${file}`);
+				const offset = bytes.subarray(0, start.offset).toString("utf8").length;
+				const valueStart = text.indexOf(value, offset);
+				if (valueStart < 0)
+					throw new Error(`cannot locate an attribute in ${file}`);
+				const first = text.slice(0, valueStart).split("\n").length;
+				inspect(value, ".ts", first);
+			}
+		}
+
+		if ("children" in node) {
+			const next =
+				node.type === "expression"
+					? "expression"
+					: node.type === "element" && node.name === "script"
+						? "script"
+						: node.type === "element" && node.name === "style"
+							? "style"
+							: undefined;
+			for (const child of node.children) visit(child, next);
+		}
+	}
+
+	visit(result.ast);
+	return found;
 }
 
 export function commentViolations(
@@ -351,6 +426,7 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		if (
 			extension &&
 			!file.startsWith(".githooks/") &&
+			extension !== ".astro" &&
 			!CODE_EXTENSIONS.has(extension) &&
 			!LEXER_LANGUAGES.has(extension) &&
 			!OTHER_LANGUAGES.has(extension)

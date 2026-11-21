@@ -34,7 +34,7 @@ over conflicting repository workflow guidance.
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
 and Copilot. Run `pnpm run source:guard -- --worktree` when checking manually;
 the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
-CSS, HTML, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
+CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift; the same rule applies to every other language.
 
 # Agent tooling for this repo
@@ -450,8 +450,8 @@ Local and CI gates enforce this with `pnpm run docs:freshness`: code changes und
 The repository does not keep plans, roadmaps, or design documents. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
-changed planning and design documents and new comments in JavaScript, TypeScript,
-shell, Python, CSS, and HTML; the common rule above applies to every language.
+changed planning and design documents and new comments in the languages listed
+above; the common rule applies to every language.
 Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules

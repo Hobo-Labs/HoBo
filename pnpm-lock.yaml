@@ -20,6 +20,9 @@ importers:
       '@ast-grep/cli':
         specifier: ^0.44.0
         version: 0.44.0
+      '@astrojs/compiler':
+        specifier: 2.13.1
+        version: 2.13.1
       '@biomejs/biome':
         specifier: ^2.5.2
         version: 2.5.2
