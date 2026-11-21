@@ -26,6 +26,8 @@ export interface ReplaySleepCommand {
 	index: number;
 	delayMs: number;
 	parent: ParentIndex;
+	deadlineMs: number | undefined;
+	completed: boolean;
 }
 
 export type ReplayCommand = ReplayStepCommand | ReplaySleepCommand;
@@ -33,9 +35,11 @@ export type ReplayCommand = ReplayStepCommand | ReplaySleepCommand;
 /** Parse v1 command provenance before reusing a parent result. */
 export function readReplayCommandTree(
 	events: readonly EventEnvelope[],
+	requireSleepCompletion = false,
 ): ReplayCommand[] {
 	const roots: ReplayCommand[] = [];
 	const steps = new Map<number, ReplayStepCommand>();
+	const sleeps = new Map<number, ReplaySleepCommand>();
 	let sleepCount = 0;
 	let afterTerminal = false;
 	let lastSeq = 0;
@@ -67,6 +71,16 @@ export function readReplayCommandTree(
 		}
 		lastSeq = event.seq;
 		if (event.type === "run.Completed" || event.type === "run.Failed") {
+			if (requireSleepCompletion) {
+				for (const root of roots) {
+					if (root.kind === "sleep" && !root.completed)
+						throw new Error("workflow sleep lacks completion evidence");
+					if (root.kind === "step" && root.active)
+						throw new Error(
+							"workflow root step is unfinished at terminal outcome",
+						);
+				}
+			}
 			afterTerminal = true;
 			continue;
 		}
@@ -74,7 +88,8 @@ export function readReplayCommandTree(
 			event.type !== "run.StepScheduled" &&
 			event.type !== "run.StepCompleted" &&
 			event.type !== "run.StepFailed" &&
-			event.type !== "run.SleepScheduled"
+			event.type !== "run.SleepScheduled" &&
+			event.type !== "run.SleepCompleted"
 		)
 			continue;
 		if (afterTerminal)
@@ -88,6 +103,22 @@ export function readReplayCommandTree(
 			throw new Error("invalid recorded workflow command");
 		}
 		const index = event.data.index;
+		if (event.type === "run.SleepCompleted") {
+			const sleep = sleeps.get(index);
+			if (
+				!sleep ||
+				sleep.completed ||
+				(sleep.parent !== null && !steps.get(sleep.parent)?.active) ||
+				!isJsonNumber(event.data.completedAtMs) ||
+				!Number.isSafeInteger(event.data.completedAtMs) ||
+				sleep.deadlineMs === undefined ||
+				event.data.completedAtMs < sleep.deadlineMs
+			) {
+				throw new Error("invalid workflow sleep completion evidence");
+			}
+			sleep.completed = true;
+			continue;
+		}
 		if (event.type === "run.SleepScheduled") {
 			if (
 				index !== sleepCount ||
@@ -98,7 +129,33 @@ export function readReplayCommandTree(
 				throw new Error("sleep schedule diverged");
 			}
 			const parent = parentFor(event.data.parentStepIndex);
-			append({ kind: "sleep", index, delayMs: event.data.delayMs, parent });
+			const { scheduledAtMs, deadlineMs } = event.data;
+			if (
+				scheduledAtMs !== undefined ||
+				deadlineMs !== undefined ||
+				requireSleepCompletion
+			) {
+				if (
+					!isJsonNumber(scheduledAtMs) ||
+					!Number.isSafeInteger(scheduledAtMs) ||
+					scheduledAtMs < 0 ||
+					!isJsonNumber(deadlineMs) ||
+					!Number.isSafeInteger(deadlineMs) ||
+					deadlineMs !== scheduledAtMs + event.data.delayMs
+				) {
+					throw new Error("invalid recorded workflow sleep deadline");
+				}
+			}
+			const command: ReplaySleepCommand = {
+				kind: "sleep",
+				index,
+				delayMs: event.data.delayMs,
+				parent,
+				deadlineMs: isJsonNumber(deadlineMs) ? deadlineMs : undefined,
+				completed: false,
+			};
+			sleeps.set(index, command);
+			append(command);
 			sleepCount += 1;
 			continue;
 		}
@@ -141,9 +198,9 @@ export function readReplayCommandTree(
 			throw new Error("workflow command parent is not active");
 		}
 		for (const child of previous.children) {
-			if (child.kind === "sleep")
+			if (child.kind === "sleep" && !child.completed)
 				throw new Error("nested sleep lacks completion evidence");
-			if (child.active || !child.terminal)
+			if (child.kind === "step" && (child.active || !child.terminal))
 				throw new Error("nested step is unfinished at parent outcome");
 		}
 		previous.active = false;

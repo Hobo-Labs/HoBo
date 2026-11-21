@@ -107,20 +107,46 @@ history instead of recording a new terminal result.
 Keep `ctx.step` and `ctx.sleep` calls at the workflow orchestration level. The
 journal for new runs records a command-tree version and the parent step of
 each step or sleep, including across concurrent step bodies. Replay can use a
-completed parent when its nested steps have recorded outcomes; it refuses a
-child that is unfinished when the parent ends or a nested sleep with no recorded
-completion fact. Resume still treats the history as flat and can reject nested
-commands. Older journals may lack parent information. The check covers these
-two command types, not arbitrary effects performed directly by workflow code.
+completed parent when its nested steps have recorded outcomes and its nested
+sleeps have recorded completion facts. It refuses children that were unfinished
+when the parent ended. Older journals may lack parent information or sleep
+completion facts. Resume still treats the history as flat and can reject nested
+commands. Await durable commands before returning from their parent; replay
+rejects a new-format journal with unfinished commands at a terminal outcome.
+These checks cover the recorded commands, not arbitrary effects performed
+directly by workflow code.
 
-`ctx.sleep` records its deadline before waiting and rechecks the clock after
-each wake-up. If a host stops, an explicit `resume` uses that same deadline;
-time spent offline counts toward the delay. A running host uses Node timers by
+`ctx.sleep` records its deadline before waiting, rechecks the clock after
+each wake-up, and records completion after the deadline. If a host stops, an
+explicit `resume` uses that same deadline and reuses a completion that was
+committed before a response was lost; time spent offline counts toward the delay.
+New-format replay rejects missing, duplicate, or early completion evidence. A
+running host uses Node timers by
 default. Tests and other hosts can supply `clock` and `wait` to the workflow
 engine; the clock must report accurate nonnegative integer milliseconds and
 the waiter must eventually return. The host must arrange recovery and call
 `resume`: this engine does not automatically discover or wake stopped runs.
 Concurrent resumes still require host-side fencing.
+
+The sleep-completion model explores 12 distinct states. Its projection hides nine
+clock and other transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Waiting for deadline
+  s1: Host stopped before completion
+  s2: Completion committed, response lost
+  s3: Completion recorded
+  s4: Sleep returned
+  [*] --> s0
+  s0 --> s1: host stops
+  s1 --> s0: resume and read journal
+  s0 --> s2: record completion or lose response
+  s0 --> s3: record completion or lose response
+  s2 --> s3: resume and read journal
+  s3 --> s2: host stops
+  s3 --> s4: return after completion
+```
 
 An unfinished older sleep record has no deadline. On its first resume the
 engine records a new deadline for the full original delay, then preserves it

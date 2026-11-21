@@ -58,9 +58,14 @@ describe("durable workflow histories", () => {
 				const handle = await engine.start(wf, null);
 				const streamId = `run/${handle.runId}`;
 				const events = await engine.store.readStream(streamId);
-				let seen = 0;
 				const missing = events.filter(
-					(event) => event.type !== "run.SleepScheduled" || ++seen !== 2,
+					(event) =>
+						!(
+							(event.type === "run.SleepScheduled" ||
+								event.type === "run.SleepCompleted") &&
+							isJsonObject(event.data) &&
+							event.data.index === 1
+						),
 				);
 				const incompleteStore = {
 					...engine.store,
@@ -76,10 +81,12 @@ describe("durable workflow histories", () => {
 				).rejects.toThrow(/SleepScheduled/);
 				let changedIndex = 0;
 				const changed = events.map((event) =>
-					event.type === "run.SleepScheduled" && changedIndex++ === 1
+					event.type === "run.SleepScheduled" &&
+					isJsonObject(event.data) &&
+					changedIndex++ === 1
 						? {
 								...event,
-								data: { index: 1, delayMs: delay + 1, parentStepIndex: null },
+								data: { ...event.data, delayMs: delay + 1 },
 							}
 						: event,
 				);
@@ -90,7 +97,7 @@ describe("durable workflow histories", () => {
 						engine.toReplayDefinition(wf),
 						null,
 					),
-				).rejects.toThrow(/sleep schedule diverged/);
+				).rejects.toThrow(/sleep.*(diverged|deadline)/i);
 				const shortened = defineWorkflow({
 					name: wf.name,
 					async run(ctx) {

@@ -845,6 +845,9 @@ export function createWorkflowEngine(
 				const deadlines = journal.filter(
 					(event) => event.type === "run.SleepDeadlineSet",
 				);
+				const completions = journal.filter(
+					(event) => event.type === "run.SleepCompleted",
+				);
 				for (const event of deadlines) {
 					if (
 						!isRecord(event.data) ||
@@ -855,12 +858,27 @@ export function createWorkflowEngine(
 						throw new Error("invalid workflow sleep deadline record");
 					}
 				}
+				for (const event of completions) {
+					if (
+						!isRecord(event.data) ||
+						!isJsonNumber(event.data.index) ||
+						!isBoundedStepIndex(event.data.index) ||
+						!sleepFacts.has(event.data.index)
+					) {
+						throw new Error("invalid workflow sleep completion record");
+					}
+				}
 				const rebased = deadlines.filter(
 					(event) => isRecord(event.data) && event.data.index === index,
 				);
 				if (rebased.length > 1) {
 					throw new Error("duplicate workflow sleep deadline");
 				}
+				const completed = completions.filter(
+					(event) => isRecord(event.data) && event.data.index === index,
+				);
+				if (completed.length > 1)
+					throw new Error("duplicate workflow sleep completion");
 				let deadlineMs: number;
 				if (scheduled) {
 					const scheduledData = sleepData.get(index);
@@ -926,11 +944,29 @@ export function createWorkflowEngine(
 					unconsumedScheduledSleeps.delete(index);
 					deadlineMs = deadline.deadlineMs;
 				}
+				const completion = completed[0];
+				if (completion) {
+					if (
+						!isRecord(completion.data) ||
+						!isJsonNumber(completion.data.completedAtMs) ||
+						!Number.isSafeInteger(completion.data.completedAtMs) ||
+						completion.data.completedAtMs < deadlineMs
+					) {
+						throw new Error("invalid workflow sleep completion time");
+					}
+					return;
+				}
+				let completedAtMs: number;
 				for (;;) {
-					const remaining = deadlineMs - nowMs();
-					if (remaining <= 0) return;
+					const current = nowMs();
+					const remaining = deadlineMs - current;
+					if (remaining <= 0) {
+						completedAtMs = current;
+						break;
+					}
 					await wait(Math.min(remaining, 2_147_483_647));
 				}
+				await appendEvent("run.SleepCompleted", { index, completedAtMs });
 			},
 			async emit(type, data) {
 				assertReplayConsistent();
@@ -1061,7 +1097,7 @@ export function createWorkflowEngine(
 					seed,
 					args: input,
 					workflowName: def.name,
-					commandTreeVersion: 1,
+					commandTreeVersion: 2,
 				}),
 			);
 			await recordEffect(store, started, 0);
