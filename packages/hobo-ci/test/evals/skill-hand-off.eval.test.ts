@@ -92,7 +92,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 		expect(lifecycle).toMatch(/channel is absent or unverified/u);
 		expect(lifecycle).toMatch(
-			/Stop\s+at an owner step and report the missing secure hand-off/u,
+			/stop\s+at an owner step and report the\s+missing secure hand-off/iu,
 		);
 	});
 

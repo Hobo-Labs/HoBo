@@ -18,8 +18,8 @@ reason instead of assuming that trusting the worktree path is sufficient.
 
 If native tools are absent or startup needs diagnosis, initialize HoBo and list
 its tools through a separate MCP client. The repository's isolated cold-start
-test does this with the Cursor-registered launcher and temporary synthetic
-state:
+test (repo-only: it lives in the HoBo checkout) does this with the
+Cursor-registered launcher and temporary synthetic state:
 
 ```sh
 pnpm --filter @hobo/hobo exec vitest run test/mcp-cold-start.test.ts -t 'serves MCP through the registered launcher from a nested directory'
@@ -38,7 +38,7 @@ Report independent server startup, active-host attachment, and authenticated
 owner session as separate observations. Give a cause only when the evidence
 supports it; for example, a missing host tool alone does not establish a trust
 failure. The repository's supported registrations and startup steps are in
-[agent tooling](../../../docs/agent-tooling.md#hobo--hobos-own-mcp-server-this-repo).
+[agent tooling](references/agent-tooling.md#hobo--hobos-own-mcp-server-this-repo).
 
 When HoBo is connected, use its owner setup flow to establish or reuse the
 owner's store session. Before the owner enters anything, verify that the host

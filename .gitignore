@@ -133,3 +133,8 @@ reports/mutation/
 /docs/plans/
 # An interrupted Control Yard capture must remain invalid until it is rerun.
 src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete
+
+# Agent Plugins build outputs (pnpm run agent-plugin:build): the bundled MCP
+# server is tens of megabytes and regenerated from packages/hobo sources.
+plugins/hobo/bin/
+plugins/hobo/fixtures/

@@ -71,6 +71,7 @@
     "//#typecheck:root": {
       "dependsOn": [
         "@hobo/adapter-infisical#build",
+        "@hobo/agent-skills#build",
         "@hobo/bindings#build",
         "@hobo/bindles#build",
         "@hobo/ci#build",

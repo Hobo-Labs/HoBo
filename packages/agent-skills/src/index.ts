@@ -25,7 +25,14 @@ export interface SkillsManifest {
 
 export type SkillConformanceIssue = {
 	readonly skill: string;
-	readonly code: "unparseable" | "duplicate-name" | "missing-skill-md";
+	readonly code:
+		| "unparseable"
+		| "duplicate-name"
+		| "missing-skill-md"
+		| "disallowed-frontmatter-field"
+		| "nested-frontmatter-field"
+		| "name-folder-mismatch"
+		| "non-string-metadata";
 	readonly message: string;
 };
 
@@ -47,28 +54,208 @@ export class SkillParseError extends TypeError {
 export function parseSkillFrontmatter(
 	markdown: string,
 ): Omit<SkillManifestEntry, "entry"> {
+	const frontmatter = parseFrontmatterFields(markdown);
+	const name = frontmatter.fields.get("name");
+	if (name?.kind !== "string" || name.value.length === 0) {
+		throw new SkillParseError("frontmatter is missing a non-empty name");
+	}
+	const description = frontmatter.fields.get("description");
+	if (description?.kind !== "string" || description.value.length === 0) {
+		throw new SkillParseError("frontmatter is missing a non-empty description");
+	}
+	return Object.freeze({ name: name.value, description: description.value });
+}
+
+export const HOBO_OWNED_ALLOWED_FIELDS: readonly string[] = [
+	"name",
+	"description",
+	"license",
+	"compatibility",
+	"metadata",
+	"allowed-tools",
+];
+
+export const HOBO_OWNED_SKILLS: readonly string[] = [
+	"design-md",
+	"draft",
+	"hobo-deploy",
+	"hobo-setup",
+	"optimizexp",
+	"repo",
+	"sdlc",
+] as const;
+
+type YamlScalar =
+	| { readonly kind: "string"; readonly value: string }
+	| { readonly kind: "number"; readonly value: number }
+	| { readonly kind: "boolean"; readonly value: boolean }
+	| { readonly kind: "null"; readonly value: null };
+
+type FrontmatterFields = {
+	readonly fields: ReadonlyMap<string, YamlScalar>;
+	readonly children: ReadonlyMap<string, ReadonlyMap<string, YamlScalar>>;
+	readonly deeplyNested: ReadonlySet<string>;
+	readonly unrecognizedTopLevel: readonly string[];
+};
+
+function parseYamlScalar(value: string): YamlScalar {
+	const scalar = value.trim();
+	if (scalar.startsWith('"')) {
+		if (scalar.length < 2 || !scalar.endsWith('"')) {
+			throw new SkillParseError("invalid double-quoted YAML scalar");
+		}
+		try {
+			return { kind: "string", value: String(JSON.parse(scalar)) };
+		} catch {
+			throw new SkillParseError("invalid double-quoted YAML scalar");
+		}
+	}
+	if (scalar.startsWith("'")) {
+		if (scalar.length < 2 || !scalar.endsWith("'")) {
+			throw new SkillParseError("invalid single-quoted YAML scalar");
+		}
+		return {
+			kind: "string",
+			value: scalar.slice(1, -1).replaceAll("''", "'"),
+		};
+	}
+	if (/^(?:true|false)$/iu.test(scalar)) {
+		return { kind: "boolean", value: scalar.toLowerCase() === "true" };
+	}
+	if (scalar === "" || scalar === "~" || /^null$/iu.test(scalar)) {
+		return { kind: "null", value: null };
+	}
+	if (/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/iu.test(scalar)) {
+		return { kind: "number", value: Number(scalar) };
+	}
+	return { kind: "string", value: scalar };
+}
+
+function parseFrontmatterFields(markdown: string): FrontmatterFields {
 	const match = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(markdown);
 	if (!match || match[1] === undefined) {
 		throw new SkillParseError("SKILL.md has no frontmatter block");
 	}
-	const fields = new Map<string, string>();
+	const fields = new Map<string, YamlScalar>();
+	const children = new Map<string, Map<string, YamlScalar>>();
+	const deeplyNested = new Set<string>();
+	const unrecognizedTopLevel: string[] = [];
+	let currentNestedField: string | undefined;
 	for (const line of match[1].split(/\r?\n/u)) {
-		const field = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
-		if (field && field[1] !== undefined && field[2] !== undefined) {
-			fields.set(field[1], field[2].trim());
+		const top = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
+		if (top && top[1] !== undefined && top[2] !== undefined) {
+			fields.set(top[1], parseYamlScalar(top[2]));
+			currentNestedField =
+				top[2].trim() === "" && top[1] !== "name" && top[1] !== "description"
+					? top[1]
+					: undefined;
+			if (currentNestedField !== undefined)
+				children.set(currentNestedField, new Map());
+			continue;
+		}
+		if (line.trim() === "" || line.trimStart().startsWith("#")) continue;
+		if (/^\S/u.test(line)) {
+			currentNestedField = undefined;
+			unrecognizedTopLevel.push(line);
+			continue;
+		}
+		if (currentNestedField === undefined) {
+			unrecognizedTopLevel.push(line);
+			continue;
+		}
+		const child = /^ {2,}([^:\s]+):\s*(.*)$/u.exec(line);
+		if (child && child[1] !== undefined && child[2] !== undefined) {
+			if (/^ {4,}\S/u.test(line) || /^(?:\[|\{)/u.test(child[2].trim())) {
+				deeplyNested.add(currentNestedField);
+				continue;
+			}
+			children
+				.get(currentNestedField)
+				?.set(child[1], parseYamlScalar(child[2]));
+		} else {
+			deeplyNested.add(currentNestedField);
 		}
 	}
-	const name = fields.get("name");
-	if (name === undefined || name.length === 0) {
-		throw new SkillParseError("frontmatter is missing a non-empty name");
+	return { fields, children, deeplyNested, unrecognizedTopLevel };
+}
+
+function strictSkillIssues(
+	skill: string,
+	markdown: string,
+): SkillConformanceIssue[] {
+	const issues: SkillConformanceIssue[] = [];
+	let frontmatter: FrontmatterFields;
+	try {
+		frontmatter = parseFrontmatterFields(markdown);
+	} catch (error) {
+		return [
+			{
+				skill,
+				code: "unparseable",
+				message: error instanceof Error ? error.message : String(error),
+			},
+		];
 	}
-	const description = fields.get("description");
-	if (description === undefined || description.length === 0) {
-		throw new SkillParseError(
-			`skill "${name}" frontmatter is missing a non-empty description`,
-		);
+	for (const _line of frontmatter.unrecognizedTopLevel) {
+		issues.push({
+			skill,
+			code: "unparseable",
+			message: "unrecognized top-level YAML line",
+		});
 	}
-	return Object.freeze({ name, description });
+	for (const field of frontmatter.fields.keys()) {
+		if (!HOBO_OWNED_ALLOWED_FIELDS.includes(field)) {
+			issues.push({
+				skill,
+				code: "disallowed-frontmatter-field",
+				message: `frontmatter field is not in the allowed set (${HOBO_OWNED_ALLOWED_FIELDS.join(", ")})`,
+			});
+		}
+	}
+	const name = frontmatter.fields.get("name");
+	if (name !== undefined && (name.kind !== "string" || name.value !== skill)) {
+		issues.push({
+			skill,
+			code: "name-folder-mismatch",
+			message: "frontmatter name does not match the skill folder name",
+		});
+	}
+	const metadata = frontmatter.children.get("metadata");
+	if (frontmatter.fields.has("metadata") && metadata === undefined) {
+		issues.push({
+			skill,
+			code: "non-string-metadata",
+			message: "metadata must be a map of string values, not a scalar",
+		});
+	}
+	for (const [field, children] of frontmatter.children) {
+		if (field !== "metadata") {
+			issues.push({
+				skill,
+				code: "nested-frontmatter-field",
+				message:
+					"frontmatter field must be a scalar; nested blocks are only allowed under metadata",
+			});
+			continue;
+		}
+		if (frontmatter.deeplyNested.has(field)) {
+			issues.push({
+				skill,
+				code: "non-string-metadata",
+				message: "metadata values must be strings, not nested structures",
+			});
+		}
+		for (const value of children.values()) {
+			if (value.kind !== "string" || value.value.length === 0) {
+				issues.push({
+					skill,
+					code: "non-string-metadata",
+					message: "metadata values must be non-empty strings",
+				});
+			}
+		}
+	}
+	return issues;
 }
 
 /**
@@ -93,6 +280,10 @@ export async function loadSkillsManifest(
 	});
 }
 
+export type SkillsConformanceOptions = {
+	readonly strictSkillNames?: readonly string[];
+};
+
 /**
  * The bundle conformance gate: every skill directory has a SKILL.md that
  * parses, and no two skills share a name. Returns every issue found rather
@@ -100,14 +291,18 @@ export async function loadSkillsManifest(
  */
 export async function checkSkillsConformance(
 	root: string,
+	options: SkillsConformanceOptions = {},
 ): Promise<readonly SkillConformanceIssue[]> {
+	const strictSkills = new Set(options.strictSkillNames ?? HOBO_OWNED_SKILLS);
 	const issues: SkillConformanceIssue[] = [];
 	const seen = new Map<string, string>();
 	for (const dirent of await readdir(root, { withFileTypes: true })) {
 		if (!dirent.isDirectory()) continue;
 		const skillMd = join(root, dirent.name, "SKILL.md");
+		let markdown: string;
 		try {
 			await stat(skillMd);
+			markdown = await readFile(skillMd, "utf8");
 		} catch {
 			issues.push({
 				skill: dirent.name,
@@ -116,14 +311,17 @@ export async function checkSkillsConformance(
 			});
 			continue;
 		}
+		if (strictSkills.has(dirent.name)) {
+			issues.push(...strictSkillIssues(dirent.name, markdown));
+		}
 		try {
-			const parsed = parseSkillFrontmatter(await readFile(skillMd, "utf8"));
+			const parsed = parseSkillFrontmatter(markdown);
 			const prior = seen.get(parsed.name);
 			if (prior !== undefined) {
 				issues.push({
 					skill: dirent.name,
 					code: "duplicate-name",
-					message: `skill name "${parsed.name}" is also declared by ${prior}`,
+					message: `skill name is also declared by folder "${prior}"`,
 				});
 			} else {
 				seen.set(parsed.name, dirent.name);

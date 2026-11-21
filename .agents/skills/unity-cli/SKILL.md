@@ -3,12 +3,8 @@ name: unity-cli
 description: "Drive Unity from the terminal with the unity CLI: install/manage Editors and modules, open projects, auth, CI builds/tests, com.unity.pipeline automation, unity command/eval against a live Editor or Player, MCP setup, and structured JSON automation. Use when installing Unity CLI, Hub headless migration, batchmode builds, pipeline package, CliCommand, agentic Unity workflows, or unity --help/doctor/status."
 metadata:
   short-description: "Unity CLI, pipeline package, and agent automation."
-  version: 1.7.0
-  tested-against:
-    unity-cli: 1.0.0-beta.2
-    com.unity.pipeline: 0.3.1-exp.1
-    unity-editor: 6000.5.4f1
-    os: macOS 26.5.2
+  version: "1.7.0"
+  tested-against: "unity-cli 1.0.0-beta.2; com.unity.pipeline 0.3.1-exp.1; unity-editor 6000.5.4f1; os macOS 26.5.2"
 ---
 
 # Unity CLI
