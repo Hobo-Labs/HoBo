@@ -1,20 +1,3 @@
-/**
- * The one function both relay modes call to answer a relay job (ADR-0183).
- *
- * Job mode calls it with facts read from GitHub and writes the answer to the
- * job's outputs. Relay mode calls it with the relay's own facts and completes
- * the job through a runner session. Either way the same engine decides.
- *
- * In order it: lets a check handler take a job made only of check steps;
- * journals the request; asks the order source and refuses a broken order with
- * the parser's sentence; reads the job's own `size` and `first`; gathers
- * facts; walks the order; journals the decision; and maps it to an answer.
- * `routed` and `waiting` succeed with a `runner` output. `none` fails, with
- * the reason as an error annotation, so the job behind the relay is skipped
- * instead of queued for a runner that will never come.
- *
- * It reads no clock: `nowMs` is given.
- */
 import { clone, create } from "@bufbuild/protobuf";
 import {
 	type RelayJobAnnotation,
@@ -51,6 +34,7 @@ import {
 	defineRelayJobAnswer,
 	defineRelayJobMessage,
 	defineRunnerRouteEvent,
+	isRelayCheckStep,
 	type ParsedRelayRecord,
 	type RelayJobOutputName,
 	type RelayMode,
@@ -65,15 +49,11 @@ export type AnswerRelayJobDeps = Readonly<{
 	journal: RouteJournal;
 	nowMs: number;
 	mode: RelayMode;
-	/** The node answering: a relay's name, or the job-mode evaluator's. */
 	node: string;
-	/** The HoBo account the journal entries belong to. */
 	accountId: string;
-	/** Answers jobs made only of check steps; without it every relay job is routed. */
 	checks: RelayChecks | undefined;
 }>;
 
-/** The git ref of a workflow ref (`owner/repo/path@ref`), or undefined when it names none. */
 export function workflowGitRef(workflowRef: string): string | undefined {
 	const at = workflowRef.lastIndexOf("@");
 	const ref = at < 0 ? "" : workflowRef.slice(at + 1);
@@ -88,7 +68,6 @@ type JobChoices =
 	  }>
 	| Readonly<{ ok: false; problem: string }>;
 
-/** The job's own `size` and `first`, or the sentence saying why one cannot be read. */
 function jobChoices(message: RelayJobMessage): JobChoices {
 	const sizeText = relayJobInput(message, "size")?.trim() ?? "";
 	const firstText = relayJobInput(message, "first")?.trim() ?? "";
@@ -160,7 +139,6 @@ function refusal(reason: string): RunnerRouteDecision {
 	return create(RunnerRouteDecisionSchema, { outcome: "none", reason });
 }
 
-/** Read the message without touching the caller's copy, or say why it cannot be read. */
 function readMessage(
 	message: RelayJobMessage,
 ):
@@ -185,10 +163,6 @@ function readMessage(
 	}
 }
 
-/**
- * Answer one relay job. Throws only when the message has no job or plan id,
- * since then there is nothing to complete.
- */
 export async function answerRelayJob(
 	message: RelayJobMessage,
 	deps: AnswerRelayJobDeps,
@@ -201,6 +175,13 @@ export async function answerRelayJob(
 		if (checked)
 			return defineRelayJobAnswer(clone(RelayJobAnswerSchema, checked));
 	}
+	if (read.steps.some((step) => isRelayCheckStep(step.uses)))
+		return answerFor(
+			read,
+			refusal(
+				"No relay check handler answered this job; its checks did not run.",
+			),
+		);
 	const request = relayRouteRequest(read);
 	await journal(deps, read, request, undefined);
 	const decision = await decide(read, request, deps);

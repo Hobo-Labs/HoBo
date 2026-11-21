@@ -107,6 +107,7 @@ Given("a failed job and the tail of its log", () => {
 					name: "validation",
 					labels: ["ubuntu-24.04"],
 					runner_name: "GitHub Actions 1000028758",
+					check_run_url: `https://api.github.com/${repo}/check-runs/${JOB_ID}`,
 					conclusion: "failure",
 					created_at: at,
 					started_at: at,
@@ -130,7 +131,7 @@ Given("a failed job and the tail of its log", () => {
 		].join("\n"),
 	);
 	world.responses.set(
-		`${repo}/check-runs/${JOB_ID}/annotations`,
+		`${repo}/check-runs/${JOB_ID}/annotations?per_page=100`,
 		JSON.stringify([{ message: "Process completed with exit code 1." }]),
 	);
 });

@@ -1,16 +1,3 @@
-/**
- * How long CI takes, three ways: per runner (how long jobs wait for it, how
- * long they run on it and how often it takes them at all), per job on each
- * runner it has run on (which runner is fastest for this job), and per
- * workflow.
- *
- * Run-time figures use successful runs only: a job that failed early would
- * make its runner look fast. Medians and percentiles are nearest-rank, so
- * every figure is a duration that actually happened.
- *
- * Pure functions: the caller passes the time as `nowMs` where one is needed.
- */
-
 import { compareText } from "./order.js";
 import {
 	type InsightConclusion,
@@ -21,12 +8,6 @@ import {
 	runnerKey,
 } from "./types.js";
 
-/**
- * The nearest-rank percentile: the smallest value that at least `p` percent of
- * the values are at or below. `p` is in (0, 100]. Undefined when there are no
- * values or `p` is outside that range. The values need not be sorted; ones
- * that are not finite numbers are ignored.
- */
 export function percentile(
 	values: readonly number[],
 	p: number,
@@ -35,18 +16,15 @@ export function percentile(
 	const sorted = values
 		.filter((value) => Number.isFinite(value))
 		.sort((left, right) => left - right);
-	// The small allowance keeps a rank that is whole on paper (70% of 10) from
-	// being pushed up one by floating-point error.
+
 	const rank = Math.max(1, Math.ceil((p * sorted.length) / 100 - 1e-9));
 	return sorted[rank - 1];
 }
 
-/** The 50th percentile. For an even count this is the lower of the middle two. */
 export function median(values: readonly number[]): number | undefined {
 	return percentile(values, 50);
 }
 
-/** Successes over outcomes that say something about the work; undefined with none. */
 function successRateOf(
 	conclusions: readonly InsightConclusion[],
 ): number | undefined {
@@ -65,27 +43,18 @@ function successRateOf(
 export const DEFAULT_MISSED_AFTER_MS = 600_000;
 
 export type RunnerTimeOptions = Readonly<{
-	/** The time of the report. Without it, a job still queued is never counted as missed. */
 	nowMs?: number;
-	/** A job still queued counts as missed once it has waited longer than this. */
 	missedAfterMs?: number;
 }>;
 
 export type RunnerTimes = Readonly<{
-	/** The runner's `runs-on` labels, sorted and joined with ", ". */
 	key: string;
-	/** Jobs that asked for this runner and were either taken or missed. */
 	jobs: number;
-	/** Jobs the runner took. */
 	started: number;
-	/** `started / jobs`. */
 	startedShare: number;
-	/** Median wait of the jobs it took. Undefined when it took none. */
 	medianWaitMs: number | undefined;
-	/** Median and 90th percentile run time of its successful jobs. */
 	medianRunMs: number | undefined;
 	p90RunMs: number | undefined;
-	/** Successes over jobs that ended in success, failure or a time-out. */
 	successRate: number | undefined;
 }>;
 
@@ -97,7 +66,6 @@ type RunnerTally = {
 	conclusions: InsightConclusion[];
 };
 
-/** For a job no runner took: true when none is going to. */
 function missedByRunner(job: InsightJob, options: RunnerTimeOptions): boolean {
 	if (job.completedAtMs !== undefined) return true;
 	if (options.nowMs === undefined) return false;
@@ -105,16 +73,6 @@ function missedByRunner(job: InsightJob, options: RunnerTimeOptions): boolean {
 	return options.nowMs - job.queuedAtMs > missedAfterMs;
 }
 
-/**
- * Per runner: how many jobs asked for it, how many it took, how long they
- * waited and ran, and how often they passed. Most jobs first, then by key.
- *
- * A job counts as missed when no runner took it and it either ended anyway or
- * has been queued for longer than `missedAfterMs` at `nowMs`. A job still
- * inside that window is not counted yet, and a runner with nothing but such
- * jobs is left out. Relay jobs are left out, and so are skipped jobs: a job
- * skipped by its `if:` never asked for a runner, so it was not missed by one.
- */
 export function runnerTimes(
 	runs: readonly InsightRun[],
 	options: RunnerTimeOptions = {},
@@ -165,15 +123,10 @@ export function runnerTimes(
 }
 
 export type JobTimeOptions = Readonly<{
-	/** The most successful runs of a job on one runner that are measured, newest first. */
 	sampleCap: number;
-	/** From this many runs a figure is `enough` to rely on. */
 	enoughRuns: number;
-	/** Under this many runs a figure is `sparse`. */
 	fewRuns: number;
-	/** The runner the others are compared with. */
 	baselineKey: string;
-	/** A runner is compared with the baseline only when both have this many runs. */
 	minSharedJobs: number;
 }>;
 
@@ -190,7 +143,6 @@ export type JobTimeConfidence = "enough" | "few" | "sparse";
 
 export type JobRunnerTimes = Readonly<{
 	key: string;
-	/** Successful runs measured, at most `sampleCap`. */
 	runs: number;
 	medianRunMs: number;
 	p90RunMs: number;
@@ -199,18 +151,14 @@ export type JobRunnerTimes = Readonly<{
 
 export type RunnerSpeedup = Readonly<{
 	key: string;
-	/** Baseline median over this runner's median: 2 means twice as fast as the baseline. */
 	ratio: number;
 }>;
 
 export type JobTimes = Readonly<{
 	job: string;
 	workflow: string;
-	/** Fastest median first. */
 	runners: readonly JobRunnerTimes[];
-	/** The runner with the lowest median among those not `sparse`. */
 	fastest: string | undefined;
-	/** Every runner other than the baseline that can be compared with it. */
 	speedup: readonly RunnerSpeedup[];
 }>;
 
@@ -274,16 +222,6 @@ function speedupOf(
 	return speedup;
 }
 
-/**
- * Per job, the run time on each runner it has succeeded on, from the newest
- * `sampleCap` successful runs on that runner. Ordered by workflow, then job.
- *
- * `fastest` is the runner with the lowest median among those with at least
- * `fewRuns` runs. `speedup` compares each other runner's median with the
- * baseline runner's when both have at least `minSharedJobs` runs; the baseline
- * is matched without regard to case. Relay jobs are left out: a routing job's
- * run time says nothing about the runner the work went to.
- */
 export function jobTimes(
 	runs: readonly InsightRun[],
 	options?: Partial<JobTimeOptions>,
@@ -337,16 +275,11 @@ export function jobTimes(
 
 export type WorkflowTimes = Readonly<{
 	workflow: string;
-	/** Run attempts seen, whatever their result. */
 	runs: number;
-	/** Successes over attempts that ended in success, failure or a time-out. */
 	successRate: number | undefined;
-	/** Median and 90th percentile duration of successful attempts, created to completed. */
 	medianMs: number | undefined;
 	p90Ms: number | undefined;
-	/** Median, over attempts, of the time their jobs spent waiting for runners. */
 	medianWaitMs: number | undefined;
-	/** The job with the highest median run time. */
 	slowestJob: string | undefined;
 }>;
 
@@ -358,7 +291,6 @@ type WorkflowTally = {
 	runTimesByJob: Map<string, number[]>;
 };
 
-/** The job name with the highest median run time; the first by name on a tie. */
 function slowestJobOf(
 	runTimesByJob: ReadonlyMap<string, readonly number[]>,
 ): string | undefined {
@@ -375,15 +307,6 @@ function slowestJobOf(
 	return slowest?.name;
 }
 
-/**
- * Per workflow: how often it passes, how long a successful attempt takes from
- * created to completed, how long its jobs wait for runners, and which job is
- * slowest. Most attempts first, then by name.
- *
- * The wait of an attempt is the sum of the waits of its non-relay jobs that
- * started; attempts of any result count, but one in which no such job started
- * does not. The slowest job is judged on successful, non-relay jobs.
- */
 export function workflowTimes(
 	runs: readonly InsightRun[],
 ): readonly WorkflowTimes[] {
@@ -402,19 +325,15 @@ export function workflowTimes(
 		if (run.conclusion === "success" && run.completedAtMs !== undefined) {
 			tally.durations.push(Math.max(0, run.completedAtMs - run.createdAtMs));
 		}
-		const waits: number[] = [];
 		for (const job of run.jobs) {
 			if (job.relay === true) continue;
 			const waitMs = jobWaitMs(job);
-			if (waitMs !== undefined) waits.push(waitMs);
+			if (waitMs !== undefined) tally.waits.push(waitMs);
 			const runMs = jobRunMs(job);
 			if (job.conclusion !== "success" || runMs === undefined) continue;
 			const runTimes = tally.runTimesByJob.get(job.name) ?? [];
 			tally.runTimesByJob.set(job.name, runTimes);
 			runTimes.push(runMs);
-		}
-		if (waits.length > 0) {
-			tally.waits.push(waits.reduce((total, waitMs) => total + waitMs, 0));
 		}
 	}
 	return [...talliesByWorkflow.entries()]

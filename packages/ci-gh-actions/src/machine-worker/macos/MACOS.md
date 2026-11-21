@@ -1,6 +1,6 @@
 # macOS machines
 
-A Mac can be a machine that runs jobs routed to it, the same way a Linux computer can (see [the machine worker](../MACHINE-WORKER.md)). This is part of the runner-order work recorded in [ADR-0183](../../../../../docs/design/adr/runner-order.md).
+A Mac can be a machine that runs jobs routed to it, the same way a Linux computer can (see [the machine worker](../MACHINE-WORKER.md)). This is part of the runner-order work recorded in [ADR-0183](../../../../../docs/ci/runner-order.md).
 
 ## How a Mac connects
 

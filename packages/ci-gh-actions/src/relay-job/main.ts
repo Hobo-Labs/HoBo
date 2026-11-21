@@ -29,6 +29,7 @@ import { appendFile, readFile } from "node:fs/promises";
 import { create } from "@bufbuild/protobuf";
 import {
 	answerRelayJob,
+	DEFAULT_RUNNER_ORDER,
 	defineRelayJobMessage,
 	type ParsedRelayRecord,
 	RELAY_JOB_INPUTS,
@@ -224,7 +225,7 @@ export class CheckoutRunnerOrderSource implements RunnerOrderSource {
 		const text = await this.read(repository);
 		const committed = parseCiRunnerOrder(text ?? "{}");
 		return {
-			order: committed.order,
+			order: committed.order ?? DEFAULT_RUNNER_ORDER,
 			problem:
 				committed.problem === ""
 					? ""

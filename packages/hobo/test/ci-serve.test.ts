@@ -1,5 +1,6 @@
 import { createHmac, generateKeyPairSync } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { create, toJsonString } from "@bufbuild/protobuf";
@@ -12,16 +13,21 @@ import {
 } from "@hobo/ci";
 import {
 	createAdmissionOrder,
+	createGithubAppManifest,
 	createRelayWiring,
 	RELAY_WIRING_OFF,
 	type RelayWiring,
 } from "@hobo/ci-gh-actions";
+import { startRelayFromEnvironment } from "@hobo/ci-gh-actions/cli-serve";
+import type { OpenedSecretStore } from "@hobo/hobo-ci";
+import { createMemorySecretsPort } from "@hobo/identity";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { importGithubKey } from "../src/ci-github-keys.js";
 import {
 	ciWorkerEnvironment,
 	resolveCiServePlan,
+	runCiServe,
 	startCiServe,
 	startPullAdmission,
 } from "../src/ci-serve.js";
@@ -109,12 +115,77 @@ function withStore(store: Readonly<Record<string, string>>): string {
 
 const git = async () => "git@github.com:example/project.git";
 
+/** The owner's store, holding what a test puts in it (memory only). */
+function memoryStore(entries: Readonly<Record<string, string>>) {
+	const port = createMemorySecretsPort({ id: "memory" });
+	const store: OpenedSecretStore = {
+		id: "infisical",
+		port,
+		reference: (name) => `infisical://proj/prod/hobo-ci/${name}`,
+	};
+	return async () => {
+		for (const [name, value] of Object.entries(entries))
+			await port.put(name, value);
+		return store;
+	};
+}
+
+const githubRelay = "https://ci.hobo.example";
+const githubOwnerEnv = {
+	HOBO_CI_GITHUB_OWNER_ID: "42",
+	HOBO_CI_GITHUB_OWNER_TYPE: "User",
+};
+const githubSettings = JSON.stringify({
+	HOBO_CI_PUBLIC_URL: githubRelay,
+	HOBO_CI_GITHUB_OWNER: "octo",
+});
+function fakeAppFetch(ownerId = 42): typeof fetch {
+	const manifest = createGithubAppManifest({
+		name: "HoBo CI",
+		relayUrl: githubRelay,
+		manifestCallbackUrl: `${githubRelay}/v1/app-bootstrap/callback`,
+		installationCallbackUrl: `${githubRelay}/v1/app-registration/install-callback`,
+	});
+	return async (input) => {
+		const path = new URL(String(input)).pathname;
+		if (path === "/app")
+			return Response.json({
+				id: 4242,
+				slug: "hobo-ci",
+				owner: { id: ownerId, type: "User" },
+				external_url: githubRelay,
+				permissions: manifest.defaultPermissions,
+				events: manifest.defaultEvents,
+			});
+		if (path === "/app/hook/config")
+			return Response.json({
+				url: `${githubRelay}/github/webhooks`,
+				content_type: "json",
+				insecure_ssl: "0",
+			});
+		return new Response(null, { status: 404 });
+	};
+}
+
+/** No store opens (the default opener would read the committed locator). */
+const noStore = async () => undefined;
+
+async function testPort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.listen(0, "127.0.0.1", () => {
+			const port = ListenAddress.parse(server.address()).port;
+			server.close((error) => (error ? reject(error) : resolve(port)));
+		});
+		server.on("error", reject);
+	});
+}
+
 describe("hobo ci serve multi-engine", () => {
 	it.each([
 		{ HOBO_CI_GITHUB_APP_ID: "123" },
 		{ HOBO_CI_GITHUB_APP_ID_FILE: "app-id" },
 		{ HOBO_CI_GITHUB_APP_KEY_FILE: "missing-key.pem" },
-		{ HOBO_CI_GITHUB_APP_PRIVATE_KEY: "unused" },
 	])("refuses incomplete App configuration instead of starting with fixture credentials", async (env) => {
 		const cwd = await projectRoot();
 		const home = await mkdtemp(join(tmpdir(), "hobo-ci-incomplete-app-"));
@@ -130,10 +201,151 @@ describe("hobo ci serve multi-engine", () => {
 				},
 				env,
 				git,
+				openStore: noStore,
 			}),
 		).rejects.toThrow(
 			"GitHub App configuration requires a readable HOBO_CI_GITHUB_APP_KEY_FILE",
 		);
+	});
+
+	it("never reads a secret value from the environment, and names it without its value", async () => {
+		const cwd = await projectRoot();
+		const value = "inline-secret-value-0123456789abcdef";
+		const started = startCiServe({
+			cwd,
+			options: { environment: "local", port: "31235" },
+			env: {
+				HOBO_CI_GITHUB_APP_PRIVATE_KEY: value,
+				HOBO_CI_ACCOUNT_TOKEN: value,
+			},
+			git,
+			openStore: noStore,
+		});
+		await expect(started).rejects.toThrow(
+			/HOBO_CI_GITHUB_APP_PRIVATE_KEY, HOBO_CI_ACCOUNT_TOKEN in the environment are not read/,
+		);
+		await expect(started).rejects.not.toThrow(value);
+	});
+
+	it("refuses a failed store opening without exposing its diagnostic", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-store-refusal-"));
+		directories.push(home);
+		const diagnostic = "fixture-sensitive-store-diagnostic";
+		let handle: Awaited<ReturnType<typeof startCiServe>> | undefined;
+		let failure: unknown;
+		try {
+			handle = await startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					admission: "push",
+					port: String(await testPort()),
+					home,
+				},
+				env: {},
+				git,
+				openStore: async () => {
+					throw new Error(diagnostic);
+				},
+			});
+		} catch (error) {
+			failure = error;
+		} finally {
+			await handle?.stop();
+		}
+		expect(failure).toBeInstanceOf(Error);
+		expect(String(failure)).toContain("Cannot open the owner's secret store");
+		expect(String(failure)).not.toContain(diagnostic);
+	});
+
+	it("stops the relay when reporting readiness throws", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-ready-refusal-"));
+		directories.push(home);
+		let running:
+			| Awaited<ReturnType<typeof startRelayFromEnvironment>>
+			| undefined;
+		let stopped = false;
+		try {
+			await expect(
+				startCiServe({
+					cwd,
+					options: {
+						environment: "local",
+						admission: "push",
+						port: String(await testPort()),
+						home,
+					},
+					env: {},
+					git,
+					openStore: noStore,
+					startRelay: async (env, ports) => {
+						const relay = await startRelayFromEnvironment(env, ports);
+						running = relay;
+						return {
+							...relay,
+							async stop() {
+								stopped = true;
+								await relay.stop();
+							},
+						};
+					},
+					emitProgress: (message) => {
+						if (message.includes('"event":"serve.ready"'))
+							throw new Error("progress failed");
+					},
+				}),
+			).rejects.toThrow("progress failed");
+			expect(running).toBeDefined();
+			expect(stopped).toBe(true);
+		} finally {
+			if (!stopped) await running?.stop();
+		}
+	});
+
+	it("stops the relay when the command cannot report its listening address", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-listening-refusal-"));
+		directories.push(home);
+		let running:
+			| Awaited<ReturnType<typeof startRelayFromEnvironment>>
+			| undefined;
+		let stopped = false;
+		try {
+			const result = await runCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					admission: "push",
+					port: String(await testPort()),
+					home,
+				},
+				env: {},
+				git,
+				waitUntilSignal: false,
+				startRelay: async (env, ports) => {
+					const relay = await startRelayFromEnvironment(env, ports);
+					running = relay;
+					return {
+						...relay,
+						async stop() {
+							stopped = true;
+							await relay.stop();
+						},
+					};
+				},
+				emitProgress: (message) => {
+					if (message.startsWith("HoBo CI relay listening"))
+						throw new Error("listening report failed");
+				},
+			});
+			expect(result.message).toContain("listening report failed");
+			expect(running).toBeDefined();
+			expect(stopped).toBe(true);
+		} finally {
+			if (!stopped) await running?.stop();
+		}
 	});
 
 	it("print-config lists resolved engines", async () => {
@@ -239,13 +451,14 @@ describe("hobo ci serve multi-engine", () => {
 			},
 			git,
 		};
-		await expect(startCiServe({ ...serveInput, env: {} })).rejects.toThrow(
-			"real App credentials require a CI account token",
-		);
+		await expect(
+			startCiServe({ ...serveInput, env: {}, openStore: noStore }),
+		).rejects.toThrow("real App credentials require a CI account token");
 		const accountToken = "test-account-token-0123456789abcdef";
 		const handle = await startCiServe({
 			...serveInput,
-			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
+			env: {},
+			openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 		});
 		try {
 			const control = await readFile(
@@ -368,7 +581,8 @@ describe("hobo ci serve with a CI agent", () => {
 		const events: string[] = [];
 		const handle = await startCiServe({
 			...input,
-			env: { HOBO_CI_ACCOUNT_TOKEN: accountToken, TEST_MODEL_KEY: "not-real" },
+			env: { TEST_MODEL_KEY: "not-real" },
+			openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 			emitProgress: (message) => events.push(message),
 		});
 		try {
@@ -396,7 +610,8 @@ describe("hobo ci serve with a CI agent", () => {
 				...input,
 				options: { ...input.options, ...options },
 				// No model key: without the agent, none is needed.
-				env: { HOBO_CI_ACCOUNT_TOKEN: accountToken },
+				env: {},
+				openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 			});
 			try {
 				expect(
@@ -429,7 +644,8 @@ describe("hobo ci serve with a CI agent", () => {
 			const { input, home } = await serveInput(project);
 			const handle = await startCiServe({
 				...input,
-				env: { HOBO_CI_ACCOUNT_TOKEN: accountToken, ...env },
+				env,
+				openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
 			});
 			try {
 				const origin = `http://127.0.0.1:${handle.plan.port}`;
@@ -450,8 +666,239 @@ describe("hobo ci serve with a CI agent", () => {
 	it("refuses to serve when the agent's model credential is not in the environment", async () => {
 		const { input } = await serveInput({ ...minimalProject, agent });
 		await expect(
-			startCiServe({ ...input, env: { HOBO_CI_ACCOUNT_TOKEN: accountToken } }),
+			startCiServe({
+				...input,
+				env: {},
+				openStore: memoryStore({ HOBO_CI_ACCOUNT_TOKEN: accountToken }),
+			}),
 		).rejects.toThrow("CI agent credential is not set: env:TEST_MODEL_KEY");
+	});
+});
+
+describe("hobo ci serve with the owner's secret store", () => {
+	it("does not fall back to another App when a configured store cannot open", async () => {
+		const cwd = await projectRoot();
+		await writeFile(join(cwd, ".hobo", "secret-store.json"), "{}");
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));
+		directories.push(home);
+		let started = false;
+		await expect(
+			startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					port: String(await testPort()),
+					home,
+					installationId: "1",
+				},
+				env: {},
+				git,
+				startRelay: async () => {
+					started = true;
+					throw new Error("unexpected relay start");
+				},
+			}),
+		).rejects.toThrow(/Cannot open the owner's secret store/u);
+		expect(started).toBe(false);
+	});
+
+	it("serves the App connection hobo ci up deposited, with nothing on disk", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));
+		directories.push(home);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		const secret = "stored-webhook-secret-0123456789abcdef";
+		const accountToken = "stored-account-token-0123456789abcdef";
+		const { createServer } = await import("node:net");
+		const port = await new Promise<number>((resolve, reject) => {
+			const server = createServer();
+			server.listen(0, "127.0.0.1", () => {
+				const picked = ListenAddress.parse(server.address()).port;
+				server.close((error) => (error ? reject(error) : resolve(picked)));
+			});
+		});
+		const handle = await startCiServe({
+			cwd,
+			options: {
+				environment: "local",
+				port: String(port),
+				home,
+				installationId: "1",
+			},
+			env: githubOwnerEnv,
+			fetch: fakeAppFetch(),
+			git,
+			openStore: memoryStore({
+				HOBO_CI_SETTINGS: githubSettings,
+				HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
+				HOBO_CI_WEBHOOK_SECRET: secret,
+				HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
+				HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.client",
+				HOBO_CI_GITHUB_APP_ID: "4242",
+				HOBO_CI_ACCOUNT_TOKEN: accountToken,
+			}),
+		});
+		try {
+			const body = "{}";
+			const webhook = await fetch(
+				`http://127.0.0.1:${port}/engines/gh-actions/github/webhooks`,
+				{
+					method: "POST",
+					headers: {
+						"x-github-event": "ping",
+						"x-hub-signature-256": `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`,
+					},
+					body,
+				},
+			);
+			expect(webhook.status).toBe(202);
+			// The key and the secret were handed over in memory: no file holds them.
+			const state = join(home, "ci", "serve");
+			await expect(readFile(join(state, "github-app.pem"))).rejects.toThrow();
+			const control = await readFile(
+				join(state, "control-tokens.json"),
+				"utf8",
+			);
+			expect(control).not.toContain(accountToken);
+			expect(control).not.toContain(secret);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	it("does not start the relay when the stored App belongs to a different owner", async () => {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-store-"));
+		directories.push(home);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		let started = false;
+		await expect(
+			startCiServe({
+				cwd,
+				options: {
+					environment: "local",
+					port: String(await testPort()),
+					home,
+					installationId: "1",
+				},
+				env: githubOwnerEnv,
+				git,
+				fetch: fakeAppFetch(99),
+				openStore: memoryStore({
+					HOBO_CI_SETTINGS: githubSettings,
+					HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
+					HOBO_CI_WEBHOOK_SECRET: "stored-webhook-secret-0123456789abcdef",
+					HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
+					HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.client",
+					HOBO_CI_GITHUB_APP_ID: "4242",
+				}),
+				startRelay: async () => {
+					started = true;
+					throw new Error("unexpected relay start");
+				},
+			}),
+		).rejects.toThrow();
+		expect(started).toBe(false);
+	});
+});
+
+describe("hobo ci serve --with-worker", () => {
+	async function serveWithWorker(workerSource: string) {
+		const cwd = await projectRoot();
+		const home = await mkdtemp(join(tmpdir(), "hobo-ci-serve-worker-"));
+		directories.push(home);
+		const workerScript = join(home, "worker.mjs");
+		await writeFile(workerScript, workerSource);
+		const key = generateKeyPairSync("rsa", {
+			modulusLength: 2048,
+			privateKeyEncoding: { type: "pkcs8", format: "pem" },
+			publicKeyEncoding: { type: "spki", format: "pem" },
+		}).privateKey;
+		const { createServer } = await import("node:net");
+		const port = await new Promise<number>((resolve, reject) => {
+			const server = createServer();
+			server.listen(0, "127.0.0.1", () => {
+				const picked = ListenAddress.parse(server.address()).port;
+				server.close((error) => (error ? reject(error) : resolve(picked)));
+			});
+		});
+		const report = join(home, "worker-report.json");
+		return {
+			report,
+			start: () =>
+				startCiServe({
+					cwd,
+					options: {
+						environment: "local",
+						port: String(port),
+						home,
+						installationId: "1",
+						withWorker: true,
+					},
+					env: {
+						...githubOwnerEnv,
+						WORKER_REPORT: report,
+						HOBO_CI_WORKER_START_TIMEOUT_MS: "20000",
+					},
+					git,
+					fetch: fakeAppFetch(),
+					workerScript,
+					openStore: memoryStore({
+						HOBO_CI_SETTINGS: githubSettings,
+						HOBO_CI_GITHUB_APP_PRIVATE_KEY: key,
+						HOBO_CI_WEBHOOK_SECRET: "stored-webhook-secret-0123456789abcdef",
+						HOBO_CI_GITHUB_APP_CLIENT_SECRET: "client-secret",
+						HOBO_CI_GITHUB_APP_CLIENT_ID: "Iv1.client",
+						HOBO_CI_GITHUB_APP_ID: "4242",
+						HOBO_CI_ACCOUNT_TOKEN: "stored-account-token-0123456789abcdef",
+					}),
+				}),
+		};
+	}
+
+	it("hands the worker its App key on a pipe, never its environment, and waits until it starts", async () => {
+		// The worker reads the handed secrets the way the real one does.
+		const { report, start } = await serveWithWorker(`
+import { readFileSync, writeFileSync } from "node:fs";
+const handed = JSON.parse(readFileSync(Number(process.env.HOBO_CI_WORKER_SECRETS_FD), "utf8"));
+const envText = JSON.stringify(process.env);
+writeFileSync(process.env.WORKER_REPORT, JSON.stringify({
+	keyHanded: handed.githubAppPrivateKey.includes("PRIVATE KEY"),
+	secretHanded: handed.webhookSecret.length >= 32,
+	keyInEnv: envText.includes("PRIVATE KEY") || "HOBO_CI_GITHUB_APP_KEY_FILE" in process.env,
+	secretInEnv: envText.includes("stored-webhook-secret"),
+	appId: process.env.HOBO_CI_GITHUB_APP_ID,
+}));
+console.error(JSON.stringify({ event: "hobo_ci_isolated_worker_started" }));
+setInterval(() => {}, 1000);
+`);
+		const handle = await start();
+		try {
+			expect(JSON.parse(await readFile(report, "utf8"))).toEqual({
+				keyHanded: true,
+				secretHanded: true,
+				keyInEnv: false,
+				secretInEnv: false,
+				appId: "4242",
+			});
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	it("does not report serving when the worker exits before it starts", async () => {
+		const { start } = await serveWithWorker("process.exit(4);\n");
+		await expect(start()).rejects.toThrow(
+			/CI worker exited before it started \(exit 4\)/u,
+		);
 	});
 });
 

@@ -1,6 +1,6 @@
 # Runner-less checks
 
-A relay in relay mode ([ADR-0183](../../../../docs/design/adr/runner-order.md),
+A relay in relay mode ([ADR-0183](../../../../docs/ci/runner-order.md),
 decision F9) completes a job made only of HoBo check steps itself: it passes
 or fails the job with annotations, and no runner starts, so no minute is
 billed. Relay mode is described in

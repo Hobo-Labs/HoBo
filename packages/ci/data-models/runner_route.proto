@@ -48,9 +48,9 @@ message RunnerRouteRequest {
   string repository = 1;
   bool private = 2;
   // The run's head is a fork of the repository.
-  bool fork = 3;
+  optional bool fork = 3;
   string event = 4;
-  double run_id = 5;
+  uint64 run_id = 5;
   uint32 run_attempt = 6;
   // The relay job's id in its workflow file.
   string job = 7;

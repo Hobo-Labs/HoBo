@@ -119,7 +119,7 @@ function decided(
 			repository: REPO,
 			private: true,
 			event: "push",
-			runId: 9001,
+			runId: 9001n,
 			runAttempt: init.attempt ?? 1,
 			job: "route",
 			inputs: [{ key: "github", labels: ["ubuntu-24.04"] }],
@@ -554,7 +554,7 @@ describe("the retry in the next decision", () => {
 	function request(attempt: number, relayJob = "route"): RunnerRouteRequest {
 		return create(RunnerRouteRequestSchema, {
 			repository: "Octo/App",
-			runId: 9001,
+			runId: 9001n,
 			runAttempt: attempt,
 			job: relayJob,
 		});

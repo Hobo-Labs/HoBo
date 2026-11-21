@@ -91,7 +91,7 @@ function relayNode(
 				accountId,
 				fleet,
 				machines: registry,
-				readers: undefined,
+				readers: async () => new Set([SIMULATED_ACTOR_ID]),
 				spend: undefined,
 				health: undefined,
 				minutes: undefined,

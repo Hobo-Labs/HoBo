@@ -513,7 +513,7 @@ export function renderCatalog(entries: readonly CatalogEntry[]): string {
 		"`code` field. Codes are stable: a code's meaning does not change, and a new failure gets a new",
 		"code. A few codes report an outcome rather than a failure, and their message says so. The",
 		"runner order these codes guard is described in",
-		"[ADR-0183](../design/adr/runner-order.md#adr-0183).",
+		"[ADR-0183](runner-order.md#adr-0183).",
 		"",
 		"This page is generated from the source, so it lists every code the code returns and nothing",
 		"else. Text in braces, such as `{repository}`, is filled in when the command runs. A code whose",

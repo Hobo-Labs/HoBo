@@ -1,5 +1,14 @@
 # GitHub Actions boundary inventory
 
+## Runner service boundary
+
+`github-runner-service.pact.json` records hand-authored consumer expectations
+for the runner service. `../test/runner-protocol-pact.test.ts` executes them
+against the client with injected fixture responses. This is not provider-verified
+by GitHub, published to a Pact broker, or evidence of a live runner session.
+
+## GitHub App boundary
+
 The [local runner broker inventory](LOCAL-RUNNER-PACT.md) covers the generated
 31-interaction relay Pact and 16-interaction GitHub CLI consumer Pact, including
 real broker publication, provider verification and failure/version gates. The

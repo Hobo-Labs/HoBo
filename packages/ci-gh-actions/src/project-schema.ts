@@ -264,11 +264,7 @@ export const CiProjectDocumentSchema = z
 		 * route job and the box; never by the relay's environment selection.
 		 */
 		runnerRouting: RunnerRoutingSchema.optional(),
-		/**
-		 * The committed runner order (`@hobo/ci`, RUNNER-ORDER.md): the ordered
-		 * runner types a relay job is answered against. Absent means the default
-		 * order: the fleet, then machines, then GitHub-hosted.
-		 */
+
 		runnerOrder: RunnerOrderDocumentSchema.optional(),
 		/**
 		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is

@@ -2,7 +2,7 @@
 
 The gauntlet turns each thing RelayRunner says it does into one case with a
 pass condition, and checks each case at the strongest tier that fits it. The
-decision record is ADR-0183 ([runner order](../../docs/design/adr/runner-order.md));
+decision record is ADR-0183 ([runner order](../../docs/ci/runner-order.md));
 the result is the generated [parity scorecard](../../docs/ci/parity-scorecard.md).
 
 | Tier | What runs | Proves |
@@ -32,7 +32,11 @@ catalog (`@t1`, `@t2`, `@t3`). Two more tags say why it does not run:
 
 ## States
 
-The scorecard script reads the tags and the run's results:
+The scorecard script reads the tags and the run's results. An executed
+scenario needs at least one step, and every step and hook must
+pass; setup hooks alone do not establish a passing case.
+When the script runs Cucumber itself, a failed Cucumber process also makes the
+command fail even if its report contains passing steps.
 
 | Scenario | State |
 | --- | --- |

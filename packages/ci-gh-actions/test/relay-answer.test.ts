@@ -71,7 +71,7 @@ function relayNode(sim: GithubSimulator, setup: NodeSetup = {}): RelayNode {
 				accountId,
 				fleet: undefined,
 				machines: registry,
-				readers: undefined,
+				readers: async () => new Set([SIMULATED_ACTOR_ID]),
 				spend: undefined,
 				health: undefined,
 				minutes: undefined,

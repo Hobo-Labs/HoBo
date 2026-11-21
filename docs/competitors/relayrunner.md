@@ -117,7 +117,7 @@ job", and reaches a different answer on where the decision lives.
 ## Primitive mapping
 
 Refreshed 2026-11-17, after the relay job, machines, checks and the dashboard were built
-([ADR-0183](../design/adr/runner-order.md#adr-0183)).
+([ADR-0183](../ci/runner-order.md#adr-0183)).
 
 | RelayRunner | HoBo CI | Honest correspondence |
 | ----------- | ------- | --------------------- |

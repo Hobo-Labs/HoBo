@@ -2,7 +2,7 @@
 
 A runner order's spend limit (`depot<=200usd`) reads what an account spent on
 a hosted provider this month through a `SpendReader` (ADR-0183,
-[runner order](../../../../docs/design/adr/runner-order.md)). The ledger
+[runner order](../../../../docs/ci/runner-order.md)). The ledger
 answers from settled leases and list prices (`LedgerSpendReader` in
 `@hobo/ci`). For Depot, Namespace and WarpBuild this module reads the
 provider's own usage API instead, once an hour, and puts that figure ahead of

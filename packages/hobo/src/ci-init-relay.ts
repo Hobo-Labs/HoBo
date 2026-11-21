@@ -1,16 +1,3 @@
-/**
- * `hobo ci init --relay`, `--undo` and `--check`: put a repository's GitHub
- * Actions jobs behind the HoBo relay job, take them out again, and say
- * whether the relay's generated files are the ones this hobo writes
- * (ADR-0183, `docs/design/adr/runner-order.md`).
- *
- * `--relay job` (the default) has the relay answered on a GitHub-hosted
- * runner by the vendored evaluator; `--relay relay` has a HoBo relay claim it
- * over the runner protocol. Either way each job gets a `relay-<job>` job in
- * front of it, and the two generated files are written next to the
- * workflows. Like plain `hobo ci init`, it edits the working tree and stops
- * there: nothing is committed, pushed or sent anywhere.
- */
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
@@ -45,13 +32,7 @@ export type CiInitFiles = Readonly<{
 }>;
 
 export const diskInitFiles: CiInitFiles = {
-	list: async (directory) => {
-		try {
-			return await readdir(directory);
-		} catch {
-			return [];
-		}
-	},
+	list: (directory) => readdir(directory),
 	read: (path) => readFile(path, "utf8"),
 	write: async (path, text) => {
 		await mkdir(dirname(path), { recursive: true });
@@ -85,6 +66,7 @@ export type WorkflowFiles = Readonly<{
 	unreadable: readonly WorkflowPlan[];
 	/** Every relative path, in name order. */
 	paths: readonly string[];
+	listing: "read" | "missing" | "unreadable";
 }>;
 
 /**
@@ -95,7 +77,20 @@ export async function readWorkflowFiles(
 	cwd: string,
 	files: CiInitFiles,
 ): Promise<WorkflowFiles> {
-	const names = (await files.list(join(cwd, WORKFLOWS)))
+	let listed: readonly string[];
+	try {
+		listed = await files.list(join(cwd, WORKFLOWS));
+	} catch (error) {
+		const missing =
+			error instanceof Error && "code" in error && error.code === "ENOENT";
+		return {
+			sources: new Map(),
+			unreadable: [],
+			paths: [],
+			listing: missing ? "missing" : "unreadable",
+		};
+	}
+	const names = listed
 		.filter(
 			(name) => /\.ya?ml$/u.test(name) && name !== basename(RELAY_WORKFLOW),
 		)
@@ -123,7 +118,7 @@ export async function readWorkflowFiles(
 		}
 		sources.set(file, source);
 	}
-	return { sources, unreadable, paths };
+	return { sources, unreadable, paths, listing: "read" };
 }
 
 /** The names `--apply` may use for a job: `job`, `file:job` and `name.yml:job`. */
@@ -542,6 +537,13 @@ export async function runCiInitRelay(input: {
 	const given = runnerInputs(options);
 	if (given.problem !== "") return usage(given.problem);
 	const workflows = await readWorkflowFiles(cwd, files);
+	if (workflows.listing === "unreadable")
+		return {
+			ok: false,
+			status: "unreadable",
+			code: "HOBO_CI_WORKFLOWS_UNREADABLE",
+			message: `Cannot read ${WORKFLOWS}. Check the directory and its permissions.`,
+		};
 	if (workflows.paths.length === 0)
 		return {
 			ok: false,
