@@ -158,6 +158,10 @@ Surface-brief and critique-file writers reject writes; visual work uses the
 implemented styles and components instead. Do not invoke commands that create
 planning or design documents.
 
+Live preview sessions recover browser checkpoints after a reload or when local
+browser storage is missing, provided the live server is still running. Browser
+checkpoints and publication progress are tracked independently.
+
 - **Install:** `npx impeccable install` from the repo root; it auto-detects
   harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
   and `.github`. `npx impeccable check` reports drift, `npx impeccable update`
