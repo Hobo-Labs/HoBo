@@ -248,10 +248,17 @@ export function manifestSemanticIssues(
 						message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; update it (scripts/ci/compute-release-version.mts)`,
 					});
 				}
-			} else if (comparison > 0 && options.exactReleaseTrain === true) {
+			} else if (comparison > 0) {
+				const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+				const exact =
+					options.exactReleaseTrain === true ||
+					eventName === "pull_request" ||
+					eventName === "merge_group";
 				issues.push({
 					file: "plugin.json",
-					message: `version ${manifest.version} is newer than the release train ${versionFromReleaseTrain}; PR and merge-group validation require an exact pin; update it (scripts/ci/compute-release-version.mts)`,
+					message: exact
+						? `version ${manifest.version} is newer than the release train ${versionFromReleaseTrain}; PR and merge-group validation require an exact pin; update it (scripts/ci/compute-release-version.mts)`
+						: `version ${manifest.version} is newer than the release train ${versionFromReleaseTrain} for the checked commit; ahead-of-train pins are never allowed outside the explicit one-height squash lag on push`,
 				});
 			}
 		}

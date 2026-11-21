@@ -80,7 +80,8 @@ form is unavailable or fails the privacy check below, report that capability
 gap; do not repeat an impossible ask or collect its fields in conversation.
 Say "This host cannot provide a secure HoBo owner hand-off." when host
 capability discovery confirms no private owner form.
-`pnpm run eval:hand-off-transcript <transcript>` derives availability and privacy from that transcript; do not pass self-attested CLI flags.
+`pnpm run eval:hand-off-transcript <transcript>` enforces structured asks with
+default strict options; it accepts no operator flags that weaken that audit.
 Verify the private owner channel as described above; a displayed form alone does not establish privacy.
 
 1. Run `hobo <ci|cd> up --hand-off` through the **HoBo MCP server** (its

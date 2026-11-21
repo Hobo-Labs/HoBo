@@ -193,13 +193,13 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		expect(issues[0]?.message).toMatch(/is stale/u);
 	});
 
-	it("accepts higher heights outside PR validation only on the fixed alpha train", () => {
+	it("rejects higher fixed-alpha heights outside PR validation", () => {
 		expect(
 			manifestSemanticIssues(
 				{ ...validManifest, version: "0.0.0-alpha.500" },
 				"0.0.0-alpha.400",
 			),
-		).toEqual([]);
+		).toHaveLength(1);
 		for (const version of ["0.1.0", "0.0.1-alpha.500", "0.0.0-beta.500"]) {
 			expect(
 				manifestSemanticIssues(
@@ -235,6 +235,19 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		);
 		expect(issues).toHaveLength(1);
 		expect(issues[0]?.message).toMatch(/is newer than the release train/u);
+	});
+
+	it("rejects a newer height on push outside the one-height squash lag", () => {
+		vi.stubEnv("GITHUB_EVENT_NAME", "push");
+		const issues = manifestSemanticIssues(
+			{ ...validManifest, version: "0.0.0-alpha.500" },
+			"0.0.0-alpha.400",
+		);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.message).toMatch(
+			/ahead-of-train pins are never allowed/u,
+		);
+		vi.unstubAllEnvs();
 	});
 
 	it("rejects a name with consecutive dots or dashes", () => {

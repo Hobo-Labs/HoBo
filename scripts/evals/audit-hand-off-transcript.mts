@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 
 import {
 	auditHandOff,
-	inferHandOffAuditOptions,
 	parseClaudeTranscript,
 } from "../../packages/hobo-ci/src/hand-off-audit.ts";
 
@@ -14,8 +13,9 @@ if (files.length === 0) {
 }
 let failed = false;
 for (const file of files) {
-	const events = parseClaudeTranscript(await readFile(file, "utf8"));
-	const findings = auditHandOff(events, inferHandOffAuditOptions(events));
+	const findings = auditHandOff(
+		parseClaudeTranscript(await readFile(file, "utf8")),
+	);
 	if (findings.length === 0) {
 		console.log(`ok    ${file}`);
 		continue;
