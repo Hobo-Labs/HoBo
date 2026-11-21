@@ -667,16 +667,6 @@ export const PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT = 17 * 60_000;
 
 export const RELEASE_PROMOTION_TIMEOUT = "release-promotion-timeout" as const;
 
-export class ReleasePromotionWallError extends Error {
-	override readonly name = "ReleasePromotionWallError";
-	constructor(
-		readonly phase: string,
-		readonly detail: string,
-	) {
-		super(`${RELEASE_PROMOTION_TIMEOUT}:${phase} ${detail}`);
-	}
-}
-
 export const RELEASE_DRIVE_PAGES = Object.freeze({
 	passes:
 		Math.ceil(PAGES_RELEASE_PROMOTION_BUDGET_MS / RELEASE_DRIVE.intervalMs) + 1,
@@ -733,7 +723,9 @@ async function awaitReleasePagesWall<T>(
 	const remaining = releasePagesWallRemainingMs(wall);
 	if (remaining === undefined) return work();
 	if (remaining <= 0)
-		throw new ReleasePromotionWallError(label, "wall budget exhausted");
+		throw new Error(
+			`${RELEASE_PROMOTION_TIMEOUT}:${label}: wall budget exhausted`,
+		);
 	console.error(
 		`release-pages: await ${label} (≤${Math.max(0, Math.floor(remaining / 1000))}s wall)`,
 	);
@@ -745,9 +737,8 @@ async function awaitReleasePagesWall<T>(
 				timer = setTimeout(
 					() =>
 						reject(
-							new ReleasePromotionWallError(
-								label,
-								`exceeded ${remaining}ms wall`,
+							new Error(
+								`${RELEASE_PROMOTION_TIMEOUT}:${label} exceeded ${remaining}ms wall`,
 							),
 						),
 					remaining,
@@ -760,12 +751,14 @@ async function awaitReleasePagesWall<T>(
 }
 
 function releaseTimeoutVerdictFromError(
-	err: ReleasePromotionWallError,
+	err: unknown,
 	promotionId: string,
-): ReleaseVerdict {
+): ReleaseVerdict | undefined {
+	const message = err instanceof Error ? err.message : String(err);
+	if (!message.startsWith(`${RELEASE_PROMOTION_TIMEOUT}:`)) return undefined;
 	return releasePromotionTimeoutVerdict(
 		promotionId,
-		`${err.phase} ${err.detail}`,
+		message.slice(`${RELEASE_PROMOTION_TIMEOUT}:`.length).trim(),
 	);
 }
 
@@ -843,8 +836,8 @@ export async function promoteReleaseFreight(
 				}),
 		);
 	} catch (err) {
-		if (err instanceof ReleasePromotionWallError)
-			return releaseTimeoutVerdictFromError(err, "");
+		const timeout = releaseTimeoutVerdictFromError(err, "");
+		if (timeout) return timeout;
 		throw err;
 	}
 	const promotionId = requested.data?.promotion?.promotionId ?? "";
@@ -882,8 +875,9 @@ export async function promoteReleaseFreight(
 					() => cd.drive(promotionId, camp),
 				);
 			} catch (err) {
-				if (err instanceof ReleasePromotionWallError) {
-					verdict = releaseTimeoutVerdictFromError(err, promotionId);
+				const timeout = releaseTimeoutVerdictFromError(err, promotionId);
+				if (timeout) {
+					verdict = timeout;
 					break;
 				}
 				throw err;
@@ -900,9 +894,7 @@ export async function promoteReleaseFreight(
 					promotionId,
 					camp,
 					state: at?.state ?? "unknown",
-					...(input.promoteWall !== undefined
-						? { wall: input.promoteWall }
-						: {}),
+					wall: input.promoteWall,
 				});
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
 		}
@@ -986,9 +978,7 @@ export async function qualifyReleaseCandidate(input: {
 			channel: "candidate",
 			freightId,
 			drive: input.seams?.drive ?? releaseDriveFor(input.family),
-			...(input.family === "pages" && input.promoteWall !== undefined
-				? { promoteWall: input.promoteWall }
-				: {}),
+			promoteWall: input.promoteWall,
 		});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
@@ -1030,9 +1020,7 @@ export async function promoteReleaseStable(
 				channel: "stable",
 				freightId,
 				drive: seams.drive ?? releaseDriveFor(family),
-				...(family === "pages" && promoteWall !== undefined
-					? { promoteWall }
-					: {}),
+				promoteWall: family === "pages" ? promoteWall : undefined,
 			});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
