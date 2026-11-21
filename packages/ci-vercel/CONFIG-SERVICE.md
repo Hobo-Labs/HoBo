@@ -194,7 +194,10 @@ existing OIDC):
 deposit` writes `store.projectId` and `store.secretPath`, so App credentials
 stay in the relay project. A second project (`deployProjectId`) scopes only
 the deploy-credential **viewer** layout from provisioned connect — not App
-deposit without a new binding/connect design.
+deposit without a new binding/connect design. When `deployProjectId` is empty
+(attach `connect` without `--deploy-project-id`), `hobo ci deploy` reads
+`VERCEL_TOKEN` from the same Infisical project as the relay (`projectId`), at
+path `/`, with the deploy identity (`deployIdentityId`).
 
 ### What provisioning creates
 

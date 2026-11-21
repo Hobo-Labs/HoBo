@@ -128,6 +128,27 @@ describe("readRelayDeployToken", () => {
 			expect(error.message).not.toContain(text);
 	});
 
+	it("reads VERCEL_TOKEN from the relay project when attach binding has no deployProjectId", async () => {
+		const attach = readSecretStoreBinding(
+			JSON.stringify({
+				kind: "infisical-cloud-attach",
+				endpoint: "https://app.infisical.com",
+				projectId: "relay-project",
+				environment: "prod",
+				secretPath: "/hobo-ci-relay",
+				relayIdentityId: "relay-identity",
+				deployIdentityId: IDENTITY,
+				claimBundleId: "secret-store.ci-vercel.attach-1",
+				claimState: "claimed",
+			}),
+		);
+		const { fetch, seen } = fakes();
+		const token = await readRelayDeployToken({ binding: attach, env, fetch });
+		expect(token).toBe(DEPLOY_TOKEN);
+		const read = new URL(seen[2]?.url ?? "https://invalid.test");
+		expect(read.searchParams.get("projectId")).toBe("relay-project");
+	});
+
 	it("refuses a stored value that is not a single-line token, and does not say it", async () => {
 		const { fetch } = fakes("two\nlines-of-synthetic-value");
 		const error = await readRelayDeployToken({ binding, env, fetch }).catch(

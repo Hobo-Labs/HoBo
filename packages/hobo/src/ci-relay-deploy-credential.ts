@@ -25,7 +25,10 @@ import {
 	oidcAuth,
 	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
-import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
+import {
+	type ParsedSecretStoreBinding,
+	secretStoreDeployCredentialProjectId,
+} from "@hobo/secret-store-claim";
 
 // public-contract: the entry in the deploy credential's project that holds the deploy token (CONFIG-SERVICE.md).
 export const RELAY_DEPLOY_TOKEN_ENTRY = "VERCEL_TOKEN";
@@ -57,7 +60,7 @@ export async function readRelayDeployToken(input: {
 	try {
 		const binding = parseInfisicalBinding({
 			siteUrl: store.endpoint,
-			projectId: store.deployProjectId,
+			projectId: secretStoreDeployCredentialProjectId(store),
 			environment: store.environment,
 			secretPath: DEPLOY_SECRET_PATH,
 		});

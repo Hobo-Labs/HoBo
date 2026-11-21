@@ -35,6 +35,14 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/u;
 const DEPLOY_SUBJECT =
 	/^repo:[A-Za-z0-9-]{1,39}(@\d{1,20})?\/[A-Za-z0-9._-]{1,100}(@\d{1,20})?:ref:refs\/heads\/[A-Za-z0-9._/-]{1,200}$/u;
 
+export function secretStoreDeployCredentialProjectId(
+	binding: Pick<ParsedSecretStoreBinding, "projectId" | "deployProjectId">,
+): string {
+	return binding.deployProjectId !== ""
+		? binding.deployProjectId
+		: binding.projectId;
+}
+
 export function parseSecretStoreBinding(
 	record: SecretStoreBinding,
 	options: { readonly allowLoopback?: boolean } = {},
