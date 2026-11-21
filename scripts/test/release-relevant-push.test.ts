@@ -197,6 +197,6 @@ describe("as the release workflow runs it", () => {
 		);
 		expect(run.stderr).toBe("");
 		expect(run.status).toBe(0);
-		expect(readFileSync(out, "utf8")).toBe("run=false\n");
+		expect(readFileSync(out, "utf8")).toBe("run=false\nfrom=HEAD\n");
 	});
 });

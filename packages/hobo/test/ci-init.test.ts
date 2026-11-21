@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCiCommand } from "../src/ci-command.js";
+import { runCiInit } from "../src/ci-init.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -51,7 +52,6 @@ jobs:
     uses: ./.github/workflows/publish.yml
 `;
 
-/** A repository root holding the given workflow files. */
 async function repository(
 	workflows: Readonly<Record<string, string>> = {
 		"ci.yml": CI,
@@ -136,10 +136,60 @@ describe("hobo ci init", () => {
 			).replace("runs-on: ubuntu-24.04 # pinned", "runs-on: hobo # pinned"),
 		);
 		expect(await workflow("release.yaml")).toBe(RELEASE);
-		// A second run finds nothing left to do.
+
 		const again = await init("--apply", "all");
 		expect(again.envelope.data.changed).toEqual([]);
 		expect(await workflow("ci.yml")).toBe(after);
+	});
+
+	it("does not overwrite a workflow edited after it was planned", async () => {
+		const edited = `${CI}\n# another edit\n`;
+		let contents = CI;
+		let reads = 0;
+		let writes = 0;
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: { apply: "test" },
+			files: {
+				list: async () => ["ci.yml"],
+				read: async () => {
+					if (++reads === 2) contents = edited;
+					return contents;
+				},
+				write: async (_path, text) => {
+					writes++;
+					contents = text;
+				},
+			},
+		});
+		expect(writes).toBe(0);
+		expect(contents).toBe(edited);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("changed since it was planned");
+	});
+
+	it("does not recreate a workflow that disappears after planning", async () => {
+		let reads = 0;
+		let writes = 0;
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: { apply: "test" },
+			files: {
+				list: async () => ["ci.yml"],
+				read: async () => {
+					if (++reads > 1) throw new Error("removed");
+					return CI;
+				},
+				write: async () => {
+					writes++;
+				},
+			},
+		});
+		expect(writes).toBe(0);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("cannot be read");
 	});
 
 	it("applies named jobs, by id or by file:id, and says what it refused", async () => {
@@ -150,7 +200,8 @@ describe("hobo ci init", () => {
 			"--apply",
 			"nope",
 		);
-		expect(exitCode).toBe(0);
+		expect(exitCode).not.toBe(0);
+		expect(envelope.code).toBe("HOBO_CI_INIT_PARTIAL");
 		expect(envelope.data.changed).toEqual([
 			{ file: ".github/workflows/ci.yml", job: "build" },
 		]);
@@ -213,6 +264,62 @@ describe("hobo ci init", () => {
 			/\.github\/workflows\/broken\.yml\n {2}cannot be read: /u,
 		);
 		expect(envelope.message).toContain("2 ready");
+	});
+
+	it("reports a workflow directory read failure", async () => {
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: {},
+			files: {
+				list: async () => {
+					throw new Error("permission denied");
+				},
+				read: async () => CI,
+				write: async () => {},
+			},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_WORKFLOWS_UNREADABLE",
+		});
+	});
+
+	it("reports an unreadable workflow and fails a partial apply", async () => {
+		const writes: string[] = [];
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: { apply: "all" },
+			files: {
+				list: async () => ["broken.yml", "ci.yml"],
+				read: async (path) => {
+					if (path.includes("broken.yml")) throw new Error("permission denied");
+					return CI;
+				},
+				write: async (path) => {
+					writes.push(path);
+				},
+			},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_INIT_PARTIAL",
+			data: {
+				changed: [
+					{ file: ".github/workflows/ci.yml", job: "test" },
+					{ file: ".github/workflows/ci.yml", job: "build" },
+				],
+				refused: [
+					{
+						file: ".github/workflows/broken.yml",
+						job: "(workflow)",
+						why: "the file cannot be read",
+					},
+				],
+			},
+		});
+		expect(writes).toEqual(["/repo/.github/workflows/ci.yml"]);
 	});
 
 	it("says so when the repository has no workflows", async () => {
