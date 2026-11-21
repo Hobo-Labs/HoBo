@@ -33,10 +33,17 @@ without evidence.
 Call **`choose_secret_store`** before store selection and proceed only when the
 result documents a private owner ceremony the host can render. Treat
 `secure-form-unavailable`, `owner-setup-unavailable`, unknown status, errors, or
-a missing tool as stop conditions. Do not collect store identifiers in chat or
-tool arguments. When a private hand-off is available, use the same target project
+a missing tool as stop conditions; a status outside that vocabulary is an
+unknown status, so stop. Do not collect store identifiers in chat or tool
+arguments. Before relying on any owner form, apply the hobo-deploy skill's
+owner-channel privacy verification; a rendered form alone does not establish
+privacy. When a private hand-off is available, use the same target project
 `cwd` throughout the ceremony; otherwise report the missing capability without
-collecting settings.
+collecting settings. The MCP implementation this repo ships answers
+`choose_secret_store` with `secure-form-unavailable` (`owner-setup-unavailable`,
+flagged as an error): the verified, scoped owner session has not landed, so that
+stop condition is the expected result today, and any other status must be
+treated as unknown.
 The relay's existing capture adapter reads a separately configured Infisical
 binding; a generic owner-store session is not yet wired to that adapter.
 Its `connected` status indicates that the binding was read; it does not verify

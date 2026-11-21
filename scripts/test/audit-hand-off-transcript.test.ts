@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,13 @@ const scriptPath = join(
 	"evals",
 	"audit-hand-off-transcript.mts",
 );
+const tsx = import.meta.resolve("tsx");
+
+function runScript(args: readonly string[]) {
+	return spawnSync(process.execPath, ["--import", tsx, scriptPath, ...args], {
+		encoding: "utf8",
+	});
+}
 
 describe("audit-hand-off-transcript entry", () => {
 	it("pins strict default hand-off audit options", () => {
@@ -34,6 +42,19 @@ describe("audit-hand-off-transcript entry", () => {
 		const source = readFileSync(scriptPath, "utf8");
 		expect(source).toMatch(/process\.argv\.slice\(2\)/u);
 		expect(source).toMatch(/arg\.startsWith\("-"\)/u);
+	});
+
+	it("exits 2 when run with a weakening operator flag", () => {
+		const legacy = runScript([
+			"--owner-form-privacy-verified",
+			"transcript.jsonl",
+		]);
+		expect(legacy.status).toBe(2);
+		expect(legacy.stderr).toMatch(/no operator flags/u);
+
+		const generic = runScript(["--owner-form-unavailable", "transcript.jsonl"]);
+		expect(generic.status).toBe(2);
+		expect(generic.stderr).toMatch(/no operator flags/u);
 	});
 
 	it("default options stay at least as strict as the legacy CLI defaults", () => {

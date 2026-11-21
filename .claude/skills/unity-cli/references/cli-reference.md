@@ -7,23 +7,36 @@ CLI status: **experimental**.
 
 ## Install the CLI
 
+Interactive dev machines only — never a repo CI lane. Download the installer,
+review it, and record its digest before running it; never pipe it straight into
+a shell:
+
 ```bash
 # macOS / Linux
-curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
+curl -fsSL -o unity-cli-install.sh https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh
+sha256sum unity-cli-install.sh   # macOS: shasum -a 256 — record the digest, then read the script
+UNITY_CLI_CHANNEL=beta bash unity-cli-install.sh
 
-# Windows PowerShell
-$env:UNITY_CLI_CHANNEL='beta'; irm https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.ps1 | iex
+# Windows PowerShell — same order: download, review, record hash, run
+irm https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.ps1 -OutFile unity-cli-install.ps1
+Get-FileHash unity-cli-install.ps1   # record the hash, then read the script
+. unity-cli-install.ps1
 ```
+
+Unity publishes no installer checksum or signature this skill documents; if your
+distribution ships one, verify it. Otherwise the review-plus-recorded-digest
+steps above are the accepted control, and the install stays interactive. CI
+images carry a pre-installed `unity` whose version is recorded in the image.
 
 - Binary (typical): `~/.unity/bin/unity`
 - Env snippet: `~/.unity/env` (adds bin to `PATH`)
-- Update: `unity upgrade`
+- Update: `unity upgrade` (dev machines; keep automation hosts version-pinned)
 - Uninstall CLI: `unity self-uninstall`
 
 Verify:
 
 ```bash
-unity --version
+unity --version   # field-tested: 1.0.0-beta.2 — anything else is drift
 unity doctor --format json
 ```
 

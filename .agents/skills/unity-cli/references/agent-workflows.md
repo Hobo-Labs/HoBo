@@ -11,8 +11,9 @@ export UNITY_NO_BANNER=1
 export UNITY_FORMAT=json
 
 unity --version || {
-  curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh \
-    | UNITY_CLI_CHANNEL=beta bash
+  echo "unity CLI missing: install it per SKILL.md Quick Orientation"
+  echo "(download, review, record digest, run — interactive dev machines only)"
+  exit 1
 }
 
 unity doctor
@@ -20,6 +21,13 @@ unity auth status
 # Interactive machines: unity auth login
 # CI: inject supported service credentials via env (never commit secrets)
 ```
+
+A missing CLI is a stop condition, never an install step: jobs and CI lanes run
+a pre-installed `unity` binary whose version is recorded in the image, and never
+download or pipe the installer unattended. Installing follows the SKILL.md
+review-first flow on interactive dev machines only. `unity --version` should
+report the field-tested `1.0.0-beta.2`; treat any other version as drift and
+re-verify flags against live `--help`.
 
 ## Workflow A — First-time project enablement
 

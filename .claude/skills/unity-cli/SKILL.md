@@ -58,19 +58,25 @@ Think of the Unity CLI as three stacked surfaces:
 ## Quick Orientation
 
 ```bash
-# Install CLI (macOS/Linux; beta channel as of docs)
-curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
-# Windows PowerShell:
-# $env:UNITY_CLI_CHANNEL='beta'; irm https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.ps1 | iex
+# Install CLI (macOS/Linux). Interactive dev machines only — never a repo CI lane.
+# Download the installer, review it, and record its digest before running it;
+# never pipe it straight into a shell:
+curl -fsSL -o unity-cli-install.sh https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh
+sha256sum unity-cli-install.sh   # macOS: shasum -a 256 — record the digest, then read the script
+UNITY_CLI_CHANNEL=beta bash unity-cli-install.sh
+# Windows PowerShell: download install.ps1, review it, record its hash, run the
+# reviewed copy — never `irm … | iex`.
 
-unity --version
+unity --version   # must report the field-tested 1.0.0-beta.2; anything else is drift
 unity --help
 unity doctor --format json
 unity auth status --format json
 unity editors -i --format json
 ```
 
-Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Self-update with `unity upgrade`.
+Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Self-update with `unity upgrade` on dev machines only; keep automation hosts version-pinned.
+
+**Installer trust**: the installer script is unverified input — this skill documents no Unity-published checksum or signature for it. If your distribution ships one, verify it; otherwise the review-plus-recorded-digest steps above are the accepted control, and the install stays an interactive, human-present step. Never bootstrap the CLI by piping the installer into a shell and never install it from a CI lane or unattended job: CI images must carry a pre-installed `unity` whose version is recorded in the image, and a missing CLI there is a stop condition, not an install step. After any install, `unity --version` must report the field-tested `1.0.0-beta.2`; a different version means flag drift — re-verify against live `--help` before trusting this skill's command catalog.
 
 **Global flags worth muscle memory**:
 - `--format json|tsv|human|ndjson` / env `UNITY_FORMAT`
