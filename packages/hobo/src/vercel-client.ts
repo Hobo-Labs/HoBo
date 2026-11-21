@@ -66,6 +66,7 @@ import { redactProviderText } from "@hobo/provider-vercel";
 
 import {
 	isJsonArray,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonObject,
@@ -186,6 +187,15 @@ export interface VercelDeploymentResult {
 	readonly readyState?: string;
 	// The full parsed response body, for callers that need more than url/id.
 	readonly raw: JsonValue;
+}
+
+export interface VercelProjectDeployment {
+	readonly id: string;
+	readonly url: string;
+	readonly readyState?: string;
+	readonly target?: string;
+	readonly meta: Readonly<Record<string, string>>;
+	readonly createdAt?: number;
 }
 
 // The minimal fetch surface this client depends on — a subset of the WHATWG
@@ -314,6 +324,20 @@ export interface VercelClient {
 	// its reason, rather than failing. Any other refusal, another 409 included,
 	// is a VercelApiError.
 	createProject(name: string): Promise<VercelProjectResult>;
+	readProject(
+		project: string,
+	): Promise<Readonly<{ id: string; productionDeploymentId?: string }>>;
+	listProjectDeployments(input: {
+		readonly project: string;
+		readonly target?: "production" | "preview";
+		readonly limit?: number;
+	}): Promise<readonly VercelProjectDeployment[]>;
+	promoteDeployment(project: string, deploymentId: string): Promise<void>;
+	rollbackProduction(
+		project: string,
+		deploymentId: string,
+		description?: string,
+	): Promise<void>;
 }
 
 const DEFAULT_BASE_URL = "https://api.vercel.com";
@@ -1120,6 +1144,30 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			fetchImpl(url, { method, headers: { Authorization: `Bearer ${token}` } }),
 		);
 
+	function projectSegment(project: string) {
+		if (!project || !/^[A-Za-z0-9._-]+$/.test(project))
+			throw new Error("vercel-client: invalid project id or name");
+		return encodeURIComponent(project);
+	}
+	function deploymentSegment(deploymentId: string) {
+		if (!deploymentId || !/^[A-Za-z0-9_-]+$/.test(deploymentId))
+			throw new Error("invalid deployment receipt identity");
+		return encodeURIComponent(deploymentId);
+	}
+	const postEmpty = (what: string, url: string): Promise<VercelFetchResponse> =>
+		untilAnswered(`${what} got no answer`, secrets, () =>
+			fetchImpl(url, {
+				method: "POST",
+				headers: { Authorization: `Bearer ${token}` },
+			}),
+		);
+	function withParams(params: Readonly<Record<string, string>>): string {
+		const search = new URLSearchParams(params);
+		if (teamId !== undefined) search.set("teamId", teamId);
+		const text = search.toString();
+		return text === "" ? "" : `?${text}`;
+	}
+
 	// A deployment's own URL, team-scoped like every other request.
 	function deploymentPath(deploymentId: string) {
 		if (!deploymentId || !/^[A-Za-z0-9_-]+$/.test(deploymentId))
@@ -1150,6 +1198,99 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	return {
 		getDeployment: readDeployment,
+		async readProject(project: string) {
+			const what = "read project";
+			const response = await send(
+				what,
+				"GET",
+				`${baseUrl}/v9/projects/${projectSegment(project)}${query}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+			const payload = await payloadFrom(what, response);
+			if (!isJsonString(payload.id) || payload.id === "")
+				throw new VercelTransportError(
+					`vercel-client: ${what} answered HTTP ${response.status} without a project id`,
+				);
+			const targets = payload.targets;
+			const production = isJsonObject(targets) ? targets.production : undefined;
+			const live = isJsonObject(production) ? production.id : undefined;
+			return {
+				id: payload.id,
+				...(isJsonString(live) && live !== ""
+					? { productionDeploymentId: live }
+					: undefined),
+			};
+		},
+		async listProjectDeployments(input) {
+			const what = "list deployments";
+			const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 20)));
+			const params = {
+				projectId: input.project,
+				limit: String(limit),
+				...(input.target !== undefined ? { target: input.target } : undefined),
+			};
+			projectSegment(input.project);
+			const response = await send(
+				what,
+				"GET",
+				`${baseUrl}/v6/deployments${withParams(params)}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+			const payload = await payloadFrom(what, response);
+			const list = isJsonArray(payload.deployments) ? payload.deployments : [];
+			const found: VercelProjectDeployment[] = [];
+			for (const entry of list) {
+				if (!isJsonObject(entry)) continue;
+				const id = isJsonString(entry.uid) ? entry.uid : entry.id;
+				if (!isJsonString(id) || id === "") continue;
+				const meta: Record<string, string> = {};
+				if (isJsonObject(entry.meta))
+					for (const [key, value] of Object.entries(entry.meta))
+						if (isJsonString(value)) meta[key] = value;
+				const state = isJsonString(entry.readyState)
+					? entry.readyState
+					: isJsonString(entry.state)
+						? entry.state
+						: undefined;
+				found.push({
+					id,
+					url: normalizeUrl(entry.url),
+					meta,
+					...(state !== undefined ? { readyState: state } : undefined),
+					...(isJsonString(entry.target)
+						? { target: entry.target }
+						: undefined),
+					...(isJsonNumber(entry.created)
+						? { createdAt: entry.created }
+						: undefined),
+				});
+			}
+			return found;
+		},
+		async promoteDeployment(project: string, deploymentId: string) {
+			const what = "promote deployment";
+			const response = await postEmpty(
+				what,
+				`${baseUrl}/v10/projects/${projectSegment(project)}/promote/${deploymentSegment(deploymentId)}${query}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+		},
+		async rollbackProduction(
+			project: string,
+			deploymentId: string,
+			description?: string,
+		) {
+			const what = "roll back production";
+			const response = await postEmpty(
+				what,
+				`${baseUrl}/v1/projects/${projectSegment(project)}/rollback/${deploymentSegment(deploymentId)}${withParams(
+					description !== undefined && description !== ""
+						? { description: description.slice(0, 200) }
+						: {},
+				)}`,
+			);
+			if (!response.ok) throw await failure(what, response, secrets);
+		},
 		async deleteDeployment(deploymentId: string) {
 			const response = await send(
 				"delete deployment",

@@ -399,8 +399,6 @@ describe("merge-group required gate", () => {
 	it("skips each of the gate's jobs for an attestation that names it, and nothing else", () => {
 		for (const [block, id] of [
 			[planner, "pr_gate_plan"],
-			[validation, "pr_gate_validation"],
-			[workspace, "workspace_tests"],
 			[affected, "pr_affected"],
 		] as const) {
 			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
@@ -411,6 +409,42 @@ describe("merge-group required gate", () => {
 				id,
 			);
 		}
+		for (const [block, id] of [
+			[validation, "pr_gate_validation"],
+			[workspace, "workspace_tests"],
+		] as const) {
+			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
+			assert.ok(
+				condition.includes(
+					`&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`,
+				),
+				id,
+			);
+			assert.ok(
+				condition.endsWith(
+					"&& !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+				),
+				id,
+			);
+		}
+		const scriptsCondition =
+			job("scripts-tests").match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
+		assert.ok(
+			scriptsCondition.endsWith(
+				"&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+			),
+		);
+		for (const condition of [validation, workspace, job("scripts-tests")])
+			assert.equal(
+				condition.match(/attested-jobs/gu)?.length,
+				1,
+				"a skipped job names only itself",
+			);
+		assert.doesNotMatch(
+			planner,
+			/pr-fabric-green/u,
+			"the plan job still runs for a reused merge group",
+		);
 		// The gate still always runs, and reads the route job's own result.
 		assert.match(gate, /ROUTE_RESULT: \$\{\{ needs\.route\.result \}\}/u);
 		assert.match(
@@ -421,6 +455,100 @@ describe("merge-group required gate", () => {
 			gate,
 			/ATTESTED_JOBS: \$\{\{ needs\.route\.outputs\.attested-jobs \}\}/u,
 		);
+		assert.match(
+			gate,
+			/PR_FABRIC: \$\{\{ needs\.route\.outputs\.pr-fabric-green \}\}/u,
+		);
+	});
+
+	it("accepts a skipped merge-group gate job only for a route job that succeeded and reported pr-fabric-green", () => {
+		const script = shellForStep(
+			gate,
+			"Require successful validation and workspace tests",
+		);
+		const results = ["success", "skipped", "failure"];
+		const routes = ["success", "failure", "skipped", ""];
+		const flags = ["true", "false", "TRUE", ""];
+		type Case = Readonly<{
+			event: string;
+			route: string;
+			flag: string;
+			validation: string;
+			workspace: string;
+			scripts: string;
+			plan: string;
+		}>;
+		const cases: Case[] = [];
+		for (const event of ["pull_request", "merge_group", "push"])
+			for (const route of routes)
+				for (const flag of flags)
+					for (const validation of results)
+						for (const workspace of results)
+							for (const scripts of results)
+								for (const plan of ["success", "skipped", "failure"])
+									cases.push({
+										event,
+										route,
+										flag,
+										validation,
+										workspace,
+										scripts,
+										plan,
+									});
+		const quote = (text: string) => `'${text}'`;
+		const driver = [
+			"gate() {",
+			'  ( export EVENT_NAME="$1" ROUTE_RESULT="$2" PR_FABRIC="$3" VALIDATION_RESULT="$4"',
+			'    export WORKSPACE_RESULT="$5" SCRIPTS_RESULT="$6" PLAN_RESULT="$7"',
+			'    export AFFECTED_RESULT=$([ "$1" = pull_request ] && echo success || echo skipped)',
+			"    export ATTESTED=false ATTESTED_JOBS=[] FORMAL_RESULT=success",
+			script,
+			"  ) >/dev/null 2>&1",
+			"  echo $?",
+			"}",
+			...cases.map(
+				(entry) =>
+					`gate ${[entry.event, entry.route, entry.flag, entry.validation, entry.workspace, entry.scripts, entry.plan].map(quote).join(" ")}`,
+			),
+		].join("\n");
+		const directory = mkdtempSync(join(tmpdir(), "hobo-pr-fabric-gate-"));
+		try {
+			writeFileSync(join(directory, "table.sh"), driver);
+			const run = spawnSync("bash", [join(directory, "table.sh")], {
+				encoding: "utf8",
+				maxBuffer: 64 * 1024 * 1024,
+			});
+			assert.equal(run.status, 0, run.stderr);
+			const exits = run.stdout.trim().split("\n");
+			assert.equal(exits.length, cases.length);
+			let acceptedSkips = 0;
+			for (const [index, entry] of cases.entries()) {
+				const fabric =
+					entry.event === "merge_group" &&
+					entry.route === "success" &&
+					entry.flag === "true";
+				const passed = (result: string, byFabric: boolean) =>
+					result === "success" || (result === "skipped" && byFabric);
+				const expected =
+					entry.plan === "success" &&
+					passed(entry.validation, fabric) &&
+					passed(entry.workspace, fabric) &&
+					passed(entry.scripts, fabric) &&
+					(entry.event === "pull_request" || entry.event === "merge_group");
+				assert.equal(exits[index] === "0", expected, JSON.stringify(entry));
+				if (
+					fabric &&
+					(entry.validation === "skipped" ||
+						entry.workspace === "skipped" ||
+						entry.scripts === "skipped") &&
+					exits[index] === "0"
+				)
+					acceptedSkips += 1;
+			}
+			assert.ok(acceptedSkips > 0);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 
 	it("rejects a missing scope or an unreachable affected base", () => {
