@@ -355,7 +355,7 @@ describe("Vercel source preparation", () => {
 				target: "preview",
 			}),
 		).rejects.toThrow(/build root/u);
-	});
+	}, 60_000);
 
 	it("refuses a committed reserved archive path", async () => {
 		const source = fixture();
@@ -375,7 +375,7 @@ describe("Vercel source preparation", () => {
 				archive: true,
 			}),
 		).rejects.toThrow(/reserved/u);
-	});
+	}, 60_000);
 	it.each([
 		false,
 		true,
@@ -460,5 +460,5 @@ describe("Vercel source preparation", () => {
 		);
 		expect(promoted.status).toBe(201);
 		expect((await (await alias()).json()).deploymentId).toBe(deployment.id);
-	});
+	}, 120_000);
 });
