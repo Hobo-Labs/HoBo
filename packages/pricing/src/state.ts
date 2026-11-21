@@ -180,6 +180,8 @@ function validateFinancialSourceIds(state: FinancialStateView): void {
 			"financial state tenant is missing",
 		);
 	const accounts = new Set<string>();
+	const rateCardAccounts = new Map<string, string>();
+	let hasCrossAccountRateCard = false;
 	for (const agreement of state.agreements) {
 		if (!agreement.providerAccountRef)
 			throw new PricingFault(
@@ -187,9 +189,16 @@ function validateFinancialSourceIds(state: FinancialStateView): void {
 				"agreement provider account is missing",
 			);
 		accounts.add(agreement.providerAccountRef);
+		for (const entry of agreement.rateSchedule) {
+			const account = rateCardAccounts.get(entry.rateCardId);
+			if (account !== undefined && account !== agreement.providerAccountRef)
+				hasCrossAccountRateCard = true;
+			rateCardAccounts.set(entry.rateCardId, agreement.providerAccountRef);
+		}
 	}
 	if (
 		accounts.size > 1 &&
+		hasCrossAccountRateCard &&
 		(state.allowances.length > 0 ||
 			state.credits.length > 0 ||
 			state.commitments.length > 0)
@@ -464,6 +473,7 @@ export function validateScenarioState(
 	time: TemporalPolicy = EXACT_TIME,
 	strictSourceIdentity = true,
 	strictSourceValues = true,
+	strictCompleteness = true,
 	allowDestroy = false,
 ): void {
 	const catalog = scenario.catalog;
@@ -513,6 +523,15 @@ export function validateScenarioState(
 	}
 	if (strictSourceIdentity) validateFinancialSourceIds(state);
 	if (strictSourceValues) validateFinancialSourceValues(state);
+	if (
+		strictCompleteness &&
+		state.completeness !== "complete" &&
+		state.completeness !== "partial"
+	)
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			"unknown financial state completeness",
+		);
 	const allowPartial = scenario.options?.allowPartialFinancialState === true;
 	if (state.completeness !== "complete" && !allowPartial) {
 		throw new PricingFault(
@@ -598,7 +617,7 @@ export function validateScenarioState(
 				"allowance grant is required",
 			);
 		}
-		if (allowance.grant.tenantId !== state.tenantId) {
+		if (strictSourceIdentity && allowance.grant.tenantId !== state.tenantId) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"allowance tenant differs from financial state",
@@ -633,7 +652,7 @@ export function validateScenarioState(
 				"credit grant is required",
 			);
 		}
-		if (credit.grant.tenantId !== state.tenantId) {
+		if (strictSourceIdentity && credit.grant.tenantId !== state.tenantId) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"credit tenant differs from financial state",
@@ -665,7 +684,10 @@ export function validateScenarioState(
 		if (commitment.commitment === undefined) {
 			throw new PricingFault("INVALID_PRICING_INPUT", "commitment is required");
 		}
-		if (commitment.commitment.tenantId !== state.tenantId) {
+		if (
+			strictSourceIdentity &&
+			commitment.commitment.tenantId !== state.tenantId
+		) {
 			throw new PricingFault(
 				"INVALID_PRICING_INPUT",
 				"commitment tenant differs from financial state",
