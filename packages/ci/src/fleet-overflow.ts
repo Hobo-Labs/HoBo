@@ -4,7 +4,7 @@
  * free slots. No I/O. Callers pass already-resolved member capacity.
  */
 
-export type FleetBackend = "hobo" | "arc" | "local" | "agent37" | "github";
+export type FleetBackend = "hobo" | "arc" | "local" | "github";
 
 export type FleetMember = Readonly<{
 	id: string;
@@ -31,13 +31,13 @@ const HOBO_JIT_LABELS = new Set(["hobo", "hobo-trunk"]);
 // public-contract: the `runs-on` label a routed job asks a local box for.
 export const LOCAL_HOST_RUNNER_LABEL = "hobo-local-host";
 
-// public-contract: the `runs-on` label a routed job asks the agent37 pool for.
-export const AGENT37_RUNNER_LABEL = "hobo-agent37";
-
+/**
+ * Nearest first: capacity the operator already runs, then a workstation that
+ * may or may not be connected, then GitHub's own machines, which always are.
+ */
 const OVERFLOW_BACKEND_ORDER: readonly FleetBackend[] = [
 	"arc",
 	"local",
-	"agent37",
 	"github",
 ];
 const VERIFICATION_BACKENDS: ReadonlySet<string> = new Set([
@@ -74,6 +74,12 @@ function isOverflowBackend(backend: FleetBackend): boolean {
 	return backend !== "hobo";
 }
 
+/**
+ * Prefer hobo when it has free slots; else the first enabled overflow member
+ * with freeSlots > 0: ARC, then a local box, then GitHub-hosted.
+ * Config off (no enabled overflow) → hobo, or undefined when hobo is also empty.
+ * Already-bound overflow labels stay on that member (no re-relay back to hobo).
+ */
 export function selectFleetBackend(input: {
 	members: readonly FleetMember[];
 	currentLabels: readonly string[];
@@ -175,72 +181,6 @@ export function selectFleetVerification(input: {
 	return input.localSignoffEnabled
 		? { kind: "local-signoff" }
 		: { kind: "wait", reason: "no-capacity" };
-}
-
-export type Agent37PoolState = Readonly<{
-	healthy: boolean;
-	activeBoxes: number;
-	budgetRemainingMicros: number;
-	jobsInBatch: number;
-	reserveMicros: number;
-}>;
-
-export type Agent37PoolPlan = Readonly<{
-	maxBoxes: number;
-}>;
-
-export type Agent37CapacityRefusal =
-	| "unobserved"
-	| "unhealthy"
-	| "over-budget"
-	| "no-boxes";
-
-export type Agent37Capacity =
-	| Readonly<{ ok: true }>
-	| Readonly<{ ok: false; why: Agent37CapacityRefusal }>;
-
-function wholeCount(count: number): boolean {
-	return (
-		Number.isSafeInteger(count) &&
-		count >= 0 &&
-		count <= Number.MAX_SAFE_INTEGER
-	);
-}
-
-function poolStateObserved(
-	state: Agent37PoolState | undefined,
-	maxBoxes: number,
-): state is Agent37PoolState {
-	return (
-		state !== undefined &&
-		wholeCount(state.activeBoxes) &&
-		wholeCount(state.budgetRemainingMicros) &&
-		wholeCount(state.jobsInBatch) &&
-		wholeCount(state.reserveMicros) &&
-		wholeCount(maxBoxes) &&
-		state.activeBoxes <= maxBoxes
-	);
-}
-
-export function parseAgent37PoolState(
-	state: Agent37PoolState | undefined,
-	maxBoxes: number,
-): Agent37PoolState | undefined {
-	return poolStateObserved(state, maxBoxes) ? state : undefined;
-}
-
-export function agent37Capacity(
-	state: Agent37PoolState | undefined,
-	plan: Agent37PoolPlan,
-): Agent37Capacity {
-	if (!poolStateObserved(state, plan.maxBoxes))
-		return { ok: false, why: "unobserved" };
-	if (!state.healthy) return { ok: false, why: "unhealthy" };
-	if (state.budgetRemainingMicros < state.reserveMicros)
-		return { ok: false, why: "over-budget" };
-	if (plan.maxBoxes - state.activeBoxes < state.jobsInBatch)
-		return { ok: false, why: "no-boxes" };
-	return { ok: true };
 }
 
 /**

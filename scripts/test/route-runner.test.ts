@@ -1174,17 +1174,13 @@ const notice = (fields: {
 	})}`;
 
 describe("the committed routing policy the route job reads", () => {
-	it("holds the code's defaults except the agent37 overflow pool it enrolls", () => {
+	it("holds the code's defaults, so moving them out of variables changed nothing", () => {
 		const { committed, ...fromFile } = routeSettings(
 			readRunnerRouting(COMMITTED),
 		);
 		const { committed: fromCode, ...defaults } = routeSettings(undefined);
-		const { agent37: defaultAgent37, ...defaultsRest } = defaults;
 		assert.deepEqual([committed, fromCode], [true, false]);
-		const { agent37, ...fromFileRest } = fromFile;
-		assert.deepEqual(fromFileRest, defaultsRest);
-		assert.equal(defaultAgent37, undefined);
-		assert.deepEqual(agent37, { label: "hobo-agent37", maxBoxes: 4 });
+		assert.deepEqual(fromFile, defaults);
 		assert.equal(defaults.localRunner, DEFAULT_LOCAL_RUNNER);
 	});
 

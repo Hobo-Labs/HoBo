@@ -35,12 +35,6 @@ export {
 } from "./execution.js";
 export * from "./fleet/index.js";
 export {
-	AGENT37_RUNNER_LABEL,
-	type Agent37Capacity,
-	type Agent37CapacityRefusal,
-	type Agent37PoolPlan,
-	type Agent37PoolState,
-	agent37Capacity,
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
 	type FleetMember,
