@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import type { JsonValue } from "../src/json.js";
+import { parseBudgetPolicy } from "../src/ports/budget-policy.js";
 
 const cue =
 	process.env.HOBO_CUE_BIN ||
@@ -47,6 +48,55 @@ function check(document: JsonValue) {
 	);
 }
 describe("actual shared budget policy CUE contract", () => {
+	it("rejects unpaired surrogates in identities and targets", () => {
+		const invalid = String.fromCharCode(0xd800);
+		for (const document of [
+			{ ...base, tenantId: invalid },
+			{
+				...base,
+				constraints: [
+					{
+						key: "work.count",
+						workload: "ci",
+						unit: "count",
+						maximum: 1,
+						target: invalid,
+					},
+				],
+			},
+		]) {
+			expect(check(document).status).not.toBe(0);
+			expect(() => parseBudgetPolicy(document)).toThrow();
+		}
+	});
+
+	it("counts supplementary Unicode target characters like the authored contract", () => {
+		const document = (length: number) => ({
+			...base,
+			constraints: [
+				{
+					key: "work.count",
+					workload: "ci",
+					unit: "count",
+					maximum: 1,
+					target: "😀".repeat(length),
+				},
+			],
+		});
+		expect(check(document(200)).status).toBe(0);
+		expect(() => parseBudgetPolicy(document(200))).not.toThrow();
+		expect(check(document(201)).status).not.toBe(0);
+		expect(() => parseBudgetPolicy(document(201))).toThrow();
+	});
+
+	it("treats null constraints as invalid at both boundaries", () => {
+		const document = { ...base, constraints: null };
+		expect(check(document).status).not.toBe(0);
+		expect(() => parseBudgetPolicy(document)).toThrow();
+		expect(check(base).status).toBe(0);
+		expect(() => parseBudgetPolicy(base)).not.toThrow();
+	});
+
 	it.each([
 		base,
 		{ ...base, enforcement: "strict", objective: "maximize-credits" },
