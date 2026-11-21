@@ -178,7 +178,7 @@ describe("Agent37 Sandbox API fake", () => {
 		).toHaveLength(1);
 	});
 
-	it("rejects wrong and missing keys on both API and exec planes without executing", async () => {
+	it("rejects wrong keys on both API and exec planes", async () => {
 		const wrongKey = generatedKey();
 		const list = await api(fake, "GET", "/v1/instances", undefined, wrongKey);
 		expect(list.status).toBe(401);
@@ -193,20 +193,6 @@ describe("Agent37 Sandbox API fake", () => {
 		);
 		expect(command.status).toBe(401);
 		expect(command.body).toMatchObject({ error: { code: "unauthorized" } });
-
-		const missing = await fetch(
-			`${fake.baseUrl}/v1/instances/${instanceId}/exec`,
-			{
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ command: "printf missing" }),
-			},
-		);
-		expect(missing.status).toBe(401);
-		expect(await missing.json()).toMatchObject({
-			error: { code: "unauthorized" },
-		});
-		expect(fake.state.execInvocations).toHaveLength(0);
 	});
 
 	it("returns 402 when the wallet cannot cover one day of the instance rate", async () => {

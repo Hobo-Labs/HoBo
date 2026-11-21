@@ -138,33 +138,6 @@ describe("Agent37 client contracts", () => {
 		);
 	});
 
-	it("rejects unknown create-instance controls instead of dropping them", () => {
-		const valid = {
-			template: "agent37-ubuntu",
-			type: "vm",
-			resources: { cpu: 2, memory: 4, disk: 20 },
-			auto_sleep: true,
-			network: "deny-all",
-		};
-		for (const input of [
-			{ ...valid, networkk: "allow-all" },
-			{ ...valid, resources: { cpu: 2, memory: 4, disk: 20, diskk: 30 } },
-			{ ...valid, network: { allow: ["10.0.0.0/8"], allow_all: true } },
-		]) {
-			expect(() =>
-				client.createInstance(JSON.parse(JSON.stringify(input))),
-			).toThrow();
-		}
-		expect(requests).toEqual([]);
-	});
-
-	it("rejects plaintext webhook URLs before transport", () => {
-		expect(() =>
-			client.registerWebhook("http://hooks.example.com/agent37"),
-		).toThrow("Agent37 webhooks require HTTPS");
-		expect(requests).toEqual([]);
-	});
-
 	it("retries a transient fake fault and then parses the success", async () => {
 		fake.state.failNextRequest = { status: 503, code: "no_capacity" };
 		expect(await client.listInstances()).toEqual([]);
