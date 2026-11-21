@@ -989,6 +989,9 @@ export function localContext(state: {
 		if (path === "github.sha") return target.mergeCommit;
 		if (path === "github.base_ref")
 			return eventValue("pull_request", target.baseBranch);
+		// Feature-branch push skip on release-contract reads github.ref.
+		// Local attestation only covers pull_request and merge_group.
+		if (path === "github.ref") return "refs/heads/local";
 		if (path === "github.event.pull_request.base.sha")
 			return eventValue("pull_request", target.base);
 		// The merge commit's second parent, as on GitHub's PR merge ref.

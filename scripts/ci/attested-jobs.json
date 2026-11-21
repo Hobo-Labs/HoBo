@@ -799,7 +799,7 @@
 		{
 			"id": "release-contract",
 			"workflow": ".github/workflows/release-hobo.yml",
-			"if": "${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"')) }}",
+			"if": "${{ !(github.event_name == 'push' && !contains(github.ref, 'refs/tags/')) && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"')) }}",
 			"workflowEnv": {
 				"RELEASE_SPARSE_PATHS": ".github\nscripts\ntest/setup\npackages\nrelease\ndeploy\nsite\nexternal\nmedia\nexamples\nsrc\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n",
 				"HOBO_RELEASE_TURBO_BASE": "origin/main",

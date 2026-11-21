@@ -6,10 +6,11 @@ name: HoBo release PR gate
 # tag-filter miss). This workflow has no path filter on pull_request /
 # merge_group so the required check reports once the file is on main.
 # A workflow that is not on the default branch is started as a 0-job `push`
-# when the file is added or changed; matching that event (not main, not the
-# merge queue) is what actually runs the shards on this PR. job-scope skips
-# install/tests when the diff cannot reach the suites; the job stays
-# success. Tags and the main train still run the lane in release-hobo.yml.
+# even when `on.push` matches (44874977817). Until this file is on main,
+# release-hobo.yml `on.push.branches` lists this PR branch so the existing
+# train starts the shards. job-scope skips install/tests when the diff
+# cannot reach the suites; the job stays success. Tags and the main train
+# still run the lane in release-hobo.yml.
 
 on:
   pull_request:

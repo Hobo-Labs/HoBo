@@ -501,7 +501,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			cacheAction,
-			/steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
+			/steps\.prerequisite\.outputs\.cache-matched-key == ''/u,
 		);
 	});
 });

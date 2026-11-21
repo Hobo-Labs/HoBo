@@ -908,6 +908,10 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          # First run of this job has no same-SHA save. Restore older
+          # scripts-tests shard-0 archives so unchanged import-roots hit
+          # cache and turbo only rebuilds affected packages.
+          preferred-job: scripts-tests
       - name: Build the packages the scripts tests import
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6

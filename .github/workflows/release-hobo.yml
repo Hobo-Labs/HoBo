@@ -81,10 +81,16 @@ on:
       - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
       - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
       - "packages/hobo/test/cd-md-examples.test.ts"
+  # GitHub uses this file from the pushed commit. A new workflow is a 0-job
+  # push until it exists on the default branch (release-hobo-pr.yml on #2931).
+  # Tags and this branch are OR (docs: including branches and tags). Drop the
+  # branch pin once that file is on main.
   push:
     tags:
       - "sdk-v*"
       - "cli-v*"
+    branches:
+      - cursor/mq-critical-path-bf60
   merge_group:
     branches: [main]
     types: [checks_requested]
@@ -373,7 +379,7 @@ jobs:
     needs: route
     # Skipped when the route job verified a signed local run of this job for this
     # tree. A local run signs for this job only when no OCI image is affected.
-    if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
+    if: ${{ !(github.event_name == 'push' && !contains(github.ref, 'refs/tags/')) && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # The realize proof (and its @hobo/hobo build) is release-realize's, so a
     # Turbo cache miss here costs only the affected images.
@@ -656,6 +662,7 @@ jobs:
       !cancelled() && needs.route.result == 'success' && (
       startsWith(github.ref, 'refs/tags/sdk-v') ||
       startsWith(github.ref, 'refs/tags/cli-v') ||
+      github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
       (github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
@@ -1605,3 +1612,27 @@ jobs:
               exit 1
               ;;
           esac
+
+  release-integration-measure-gate:
+    name: HoBo release PR gate (required)
+    # New workflow files do not run until they are on the default branch.
+    # This reports the required check from the train on #2931's branch push.
+    if: always() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+    needs: [route, release-hobo-integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fail closed when slow integration is red
+        env:
+          INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+        run: |
+          set -euo pipefail
+          if [ "${ROUTE_RESULT:-}" != "success" ]; then
+            echo "::error::Runner routing did not succeed (result=${ROUTE_RESULT:-})"
+            exit 1
+          fi
+          if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
+            echo "::error::HoBo slow integration suites must pass (result=${INTEGRATION_RESULT:-})"
+            exit 1
+          fi

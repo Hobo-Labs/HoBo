@@ -217,7 +217,11 @@ describe("turbo-cache action on the box", () => {
 		);
 		assert.match(
 			ACTION,
-			/Restore Turbo local cache fallback\n      if: inputs\.mode == 'restore' && env\.HOBO_TURBO_CACHE_SHARED != '1' && steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
+			/Restore Turbo local cache fallback\n      if: inputs\.mode == 'restore' && env\.HOBO_TURBO_CACHE_SHARED != '1' && steps\.prerequisite\.outputs\.cache-matched-key == ''/u,
+		);
+		assert.match(
+			ACTION,
+			/restore-keys: \|\n          turbo-\$\{\{ runner\.os \}\}-\$\{\{ inputs\.preferred-job \}\}-\$\{\{ hashFiles\('pnpm-lock\.yaml', 'mise\.lock'\) \}\}-\n          turbo-\$\{\{ runner\.os \}\}-\$\{\{ inputs\.preferred-job \}\}-/u,
 		);
 		assert.match(
 			ACTION,

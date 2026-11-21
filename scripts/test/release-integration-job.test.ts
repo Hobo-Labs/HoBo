@@ -143,6 +143,33 @@ describe("the slow integration lane is a merge-group gate", () => {
 		assert.match(asText(prune?.if) ?? "", /matrix\.shard == 0/u);
 	});
 
+	it("the existing train starts shards on this PR branch because a new workflow file does not run", () => {
+		assert.match(
+			trainWorkflow,
+			/\n  push:\n    tags:\n      - "sdk-v\*"\n      - "cli-v\*"\n    branches:\n      - cursor\/mq-critical-path-bf60\n/u,
+		);
+		const trainJobs = asObject(workflowDocument(trainWorkflow).jobs);
+		const trainIntegration = asObject(trainJobs?.["release-hobo-integration"]);
+		assert.match(asText(trainIntegration?.if) ?? "", /github\.event_name == 'push'/u);
+		const measure = asObject(trainJobs?.["release-integration-measure-gate"]);
+		assert.equal(
+			asText(measure?.name),
+			"HoBo release PR gate (required)",
+		);
+		assert.match(
+			asText(measure?.if) ?? "",
+			/github\.event_name == 'push'/u,
+		);
+		assert.match(
+			asText(measure?.if) ?? "",
+			/startsWith\(github\.ref, 'refs\/heads\/'\)/u,
+		);
+		const measureNeeds = asList(measure?.needs) ?? [];
+		assert.ok(
+			measureNeeds.some((entry) => asText(entry) === "release-hobo-integration"),
+		);
+	});
+
 	it("path filters include the workflow, the four suites, this test, and job-scope", () => {
 		assert.doesNotMatch(
 			workflow,

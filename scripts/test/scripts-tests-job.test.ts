@@ -301,6 +301,15 @@ describe("the scripts lane is a pull-request gate", () => {
 			asText(asObject(cache?.with)?.["preferred-job"]),
 			"scripts-tests-build",
 		);
+		const buildCache = (
+			asList(asObject(jobs?.["scripts-tests-build"])?.steps) ?? []
+		)
+			.map(asObject)
+			.find((entry) => entry?.name === "Turbo cache");
+		assert.equal(
+			asText(asObject(buildCache?.with)?.["preferred-job"]),
+			"scripts-tests",
+		);
 		assert.equal(
 			asObject(asObject(jobs?.["scripts-tests-build"])?.strategy)?.matrix,
 			undefined,

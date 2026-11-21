@@ -105,8 +105,14 @@ runs:
       with:
         path: .turbo/cache
         key: turbo-${{ runner.os }}-${{ inputs.preferred-job }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-${{ github.sha }}-${{ github.run_attempt }}
+        # Exact key is this SHA. Prefixes replay an older job's save on a
+        # cold hosted runner so turbo run build only compiles affected
+        # packages. cache-matched-key is set on a prefix hit; cache-hit is not.
+        restore-keys: |
+          turbo-${{ runner.os }}-${{ inputs.preferred-job }}-${{ hashFiles('pnpm-lock.yaml', 'mise.lock') }}-
+          turbo-${{ runner.os }}-${{ inputs.preferred-job }}-
     - name: Restore Turbo local cache fallback
-      if: inputs.mode == 'restore' && env.HOBO_TURBO_CACHE_SHARED != '1' && steps.prerequisite.outputs.cache-hit != 'true'
+      if: inputs.mode == 'restore' && env.HOBO_TURBO_CACHE_SHARED != '1' && steps.prerequisite.outputs.cache-matched-key == ''
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
       with:
         path: .turbo/cache

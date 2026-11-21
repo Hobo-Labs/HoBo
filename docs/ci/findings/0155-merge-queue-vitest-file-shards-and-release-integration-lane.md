@@ -102,13 +102,15 @@ the sum of its files):
   tag-filter miss named `.github/workflows/release-hobo.yml`. The required
   check now lives in `.github/workflows/release-hobo-pr.yml`, which has **no
   `paths` filter** on `pull_request` / `merge_group`. A workflow that is not
-  yet on the default branch is started as that 0-job `push`; matching
-  `on.push` (`branches-ignore: main` and the merge-queue ref) is what
-  actually runs the shards on this PR. `job-scope` still skips the suites
-  when the diff cannot reach them. Tags and the main train keep the lane
-  in `release-hobo.yml`. `actions.lock` lists the new workflow's
-  `actions/checkout` and `actions/cache` pins. The train path list includes
-  `.github/workflows/release-hobo-pr.yml`.
+  yet on the default branch is started as that 0-job `push` even with a
+  matching `on.push` (`44874977817`, 0 jobs). The existing train's `on.push`
+  therefore lists `cursor/mq-critical-path-bf60` next to the release tags
+  (OR), runs the integration shards on that branch, and
+  `release-integration-measure-gate` reports `HoBo release PR gate (required)`.
+  `job-scope` still skips the suites when the diff cannot reach them. Tags
+  and the main train keep the lane in `release-hobo.yml`. `actions.lock`
+  lists the new workflow's `actions/checkout` and `actions/cache` pins. The
+  train path list includes `.github/workflows/release-hobo-pr.yml`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the
