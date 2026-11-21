@@ -29,7 +29,8 @@ a listing serves (boundary fixtured in
   non-comment top-level YAML lines fail closed instead of being ignored.
   `skillsLockExemptionIssues` rejects a lock entry for any other in-tree skill,
   regardless of its declared source, so lock metadata cannot re-label repo-owned,
-  forked, or copied content as vendored.
+  forked, or copied content as vendored. Callers identify repo-authored skills
+  that must never be locked through `neverLockSkillNames`.
   The repo's `skills:mirror-check` remains the parity gate between
   `.agents/skills` and `.claude/skills`; this check layers the per-skill
   contract on top.

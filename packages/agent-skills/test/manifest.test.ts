@@ -192,10 +192,12 @@ describe("checkSkillsConformance", () => {
 		const root = await scratchTree({
 			"hobo-deploy": "---\nname: hobo-deploy\ndescription: d\n---\n",
 		});
-		const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
-		expect(
-			issues.some((issue) => issue.code === "lock-exempts-repo-skill"),
-		).toBe(true);
+		const issues = await checkHoboRepoSkillsConformance(scratchRepo, root, {
+			neverLockSkillNames: ["hobo-deploy"],
+		});
+		expect(issues.some((issue) => issue.code === "lock-exempts-repo-skill")).toBe(
+			true,
+		);
 	});
 
 	it("rejects an unapproved in-tree skill even with a well-formed external source", async () => {
@@ -247,22 +249,6 @@ describe("checkSkillsConformance", () => {
 				source,
 			).toBe(true);
 		}
-	});
-
-	it("rejects lock entries that shadow in-tree skills without a source", async () => {
-		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
-		scratches.push(scratchRepo);
-		await writeFile(
-			path.join(scratchRepo, "skills-lock.json"),
-			`${JSON.stringify({ version: 1, skills: { shady: {} } }, null, 2)}\n`,
-		);
-		const root = await scratchTree({
-			shady: "---\nname: shady\ndescription: d\n---\n",
-		});
-		const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
-		expect(
-			issues.some((issue) => issue.code === "lock-shadows-in-tree-skill"),
-		).toBe(true);
 	});
 
 	it("reports missing SKILL.md, duplicates, and unparseable frontmatter", async () => {

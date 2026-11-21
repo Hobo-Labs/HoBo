@@ -201,11 +201,6 @@ export async function discoverHoboOwnedSkillNames(
 	return Object.freeze(names);
 }
 
-export const HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS = Object.freeze([
-	"hobo-setup",
-	"hobo-deploy",
-] as const);
-
 export type SkillsLockExemptionOptions = {
 	readonly neverLockSkillNames?: readonly string[];
 };
@@ -215,10 +210,7 @@ export async function skillsLockExemptionIssues(
 	repoRoot: string,
 	options: SkillsLockExemptionOptions = {},
 ): Promise<readonly SkillConformanceIssue[]> {
-	const neverLock = new Set([
-		...HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS,
-		...(options.neverLockSkillNames ?? []),
-	]);
+	const neverLock = new Set(options.neverLockSkillNames ?? []);
 	let text: string;
 	try {
 		text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
