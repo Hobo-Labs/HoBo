@@ -893,7 +893,7 @@ export async function promoteReleaseFreight(
 				input.family === "pages" &&
 				(pass === 0 || (progressEvery > 0 && pass % progressEvery === 0))
 			) {
-				const progress: Parameters<typeof logReleasePagesProgress>[0] = {
+				const base = {
 					phase: progressPhase,
 					pass: pass + 1,
 					passes: drive.passes,
@@ -901,8 +901,9 @@ export async function promoteReleaseFreight(
 					camp,
 					state: at?.state ?? "unknown",
 				};
-				if (input.promoteWall !== undefined) progress.wall = input.promoteWall;
-				logReleasePagesProgress(progress);
+				if (input.promoteWall !== undefined)
+					logReleasePagesProgress({ ...base, wall: input.promoteWall });
+				else logReleasePagesProgress(base);
 			}
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
 		}
@@ -981,15 +982,22 @@ export async function qualifyReleaseCandidate(input: {
 			console.error(
 				`release-pages: recorded ${freightId}; promoting hobo-release/pages-candidate`,
 			);
-		const promoteCandidate: Parameters<typeof promoteReleaseFreight>[1] = {
-			family: input.family,
-			channel: "candidate",
-			freightId,
-			drive: input.seams?.drive ?? releaseDriveFor(input.family),
-		};
-		if (input.family === "pages" && input.promoteWall !== undefined)
-			promoteCandidate.promoteWall = input.promoteWall;
-		const verdict = await promoteReleaseFreight(cd, promoteCandidate);
+		const drive = input.seams?.drive ?? releaseDriveFor(input.family);
+		const verdict =
+			input.family === "pages" && input.promoteWall !== undefined
+				? await promoteReleaseFreight(cd, {
+						family: input.family,
+						channel: "candidate",
+						freightId,
+						drive,
+						promoteWall: input.promoteWall,
+					})
+				: await promoteReleaseFreight(cd, {
+						family: input.family,
+						channel: "candidate",
+						freightId,
+						drive,
+					});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
 				`release Freight ${input.family} blocked: ${verdict.codes.join(", ")}`,
@@ -1025,15 +1033,22 @@ export async function promoteReleaseStable(
 				console.error(
 					`release-pages: promoting hobo-release/pages-stable for ${freightId}`,
 				);
-			const promoteStable: Parameters<typeof promoteReleaseFreight>[1] = {
-				family,
-				channel: "stable",
-				freightId,
-				drive: seams.drive ?? releaseDriveFor(family),
-			};
-			if (family === "pages" && promoteWall !== undefined)
-				promoteStable.promoteWall = promoteWall;
-			const verdict = await promoteReleaseFreight(cd, promoteStable);
+			const drive = seams.drive ?? releaseDriveFor(family);
+			const verdict =
+				family === "pages" && promoteWall !== undefined
+					? await promoteReleaseFreight(cd, {
+							family,
+							channel: "stable",
+							freightId,
+							drive,
+							promoteWall,
+						})
+					: await promoteReleaseFreight(cd, {
+							family,
+							channel: "stable",
+							freightId,
+							drive,
+						});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
 	} finally {
