@@ -350,6 +350,16 @@ export type ReleaseCdSeams = Readonly<{
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
 
+const PAGES_BUILD_LATEST =
+	/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pages\/builds\/latest$/u;
+const GITHUB_PROBE_MAX_RESPONSE_BYTES = 64 * 1024 - 1;
+
+type PagesBuildBody = {
+	readonly status?: string;
+	readonly commit?: string;
+};
+type GitRefBody = { readonly object?: { readonly sha?: string } };
+
 export function githubApiProbeTransport(
 	env: Readonly<Record<string, string | undefined>>,
 	inner: ReleaseHttpTransport,
@@ -359,7 +369,7 @@ export function githubApiProbeTransport(
 	return withLatin1MarkerWhenPresent(inner, async (request) => {
 		if (!request.url.startsWith("https://api.github.com/"))
 			return inner(request);
-		return inner({
+		const authorized = {
 			...request,
 			headers: {
 				...request.headers,
@@ -368,7 +378,44 @@ export function githubApiProbeTransport(
 				"x-github-api-version":
 					request.headers["x-github-api-version"] ?? "2022-11-28",
 			},
-		});
+		};
+		if (request.method !== "GET" || !PAGES_BUILD_LATEST.test(request.url))
+			return inner(authorized);
+		const notBuiltForHead = { status: 404, headers: {}, body: "" };
+		const bounded = {
+			...authorized,
+			maxResponseBytes: Math.min(
+				request.maxResponseBytes,
+				GITHUB_PROBE_MAX_RESPONSE_BYTES,
+			),
+		};
+		try {
+			const buildResponse = await inner(bounded);
+			if (buildResponse.status !== 200) return notBuiltForHead;
+			let build: PagesBuildBody;
+			try {
+				build = JSON.parse(buildResponse.body);
+			} catch {
+				return notBuiltForHead;
+			}
+			if (build?.status !== "built" || !build.commit) return notBuiltForHead;
+			const refResponse = await inner({
+				...bounded,
+				url: `${request.url.slice(0, -"/pages/builds/latest".length)}/git/ref/heads/gh-pages`,
+			});
+			if (refResponse.status !== 200) return notBuiltForHead;
+			let ref: GitRefBody;
+			try {
+				ref = JSON.parse(refResponse.body);
+			} catch {
+				return notBuiltForHead;
+			}
+			return ref?.object?.sha === build.commit
+				? buildResponse
+				: notBuiltForHead;
+		} catch {
+			return notBuiltForHead;
+		}
 	});
 }
 

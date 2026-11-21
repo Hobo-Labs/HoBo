@@ -103,15 +103,11 @@ const MODE = {
 // - oci: GHCR answers the distribution API (an anonymous request is
 //   challenged with 401: the registry is up and speaking v2);
 const [owner, repo] = repository.split("/");
-const PAGES_SITE_URL =
-	repo === `${owner}.github.io`
-		? `https://${owner}.github.io/`
-		: `https://${owner}.github.io/${repo}/`;
 const PROBE = {
 	npm: { url: "https://registry.npmjs.org/-/ping", status: 200 },
 	oci: { url: "https://ghcr.io/v2/", status: 401 },
 	pages: {
-		url: PAGES_SITE_URL,
+		url: `https://api.github.com/repos/${owner}/${repo}/pages/builds/latest`,
 		status: 200,
 	},
 } as const satisfies Record<Family, Readonly<{ url: string; status: number }>>;

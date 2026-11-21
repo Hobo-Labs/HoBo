@@ -112,10 +112,16 @@ function withProbes(
 			return { status: 401, headers: {}, body: "" };
 		if (request.url === "https://registry.npmjs.org/-/ping")
 			return { status: 200, headers: {}, body: "{}" };
-		if (request.url === `https://${OWNER}.github.io/${REPO}/`)
-			return pages?.builds.at(-1)?.status === "built"
-				? { status: 200, headers: {}, body: "<h1>HoBo</h1>" }
+		if (
+			request.url ===
+			`https://api.github.com/repos/${OWNER}/${REPO}/pages/builds/latest`
+		) {
+			const build = pages?.builds.at(-1);
+			return build?.status === "built" &&
+				build.commit === pages?.refs.get("gh-pages")
+				? { status: 200, headers: {}, body: JSON.stringify(build) }
 				: { status: 404, headers: {}, body: "" };
+		}
 		return inner(request);
 	};
 }

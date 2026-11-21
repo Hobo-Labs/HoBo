@@ -4,7 +4,9 @@ The GitHub Pages site for HoBo: landing page, developer docs, and agent docs, se
 <https://tyler-r-kendrick.github.io/HoBo/>.
 
 Built with [Astro](https://astro.build) in static output mode — no client-side framework.
-Release verification probes the live GitHub Pages site URL, not only the `gh-pages` ref, so qualification waits for the published site to respond successfully.
+Release verification probes the latest GitHub Pages build and succeeds only when
+it is built for the current `gh-pages` head, so a stale live site cannot qualify
+a new release.
 Most pages are prerendered HTML plus `src/styles/global.css`; the `/examples/`
 ship console is the deliberate exception, using a small TypeScript client and
 build-generated browser Component Model assets. The console is a three-board
@@ -356,10 +358,13 @@ blobs in the HoBo artifact store) and promoted `hobo-release/pages-candidate` ->
 on the observed head, moved by compare-and-swap with `GITHUB_TOKEN` (by hand too).
 The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
 `~/.hobo`), and the `hobo` package must be built. Rollout verification probes
-`api.github.com/repos/<owner>/<repo>/git/ref/heads/gh-pages` on the same egress
-path as the GitHub realizer (small JSON under the CD probe byte cap; not
-`raw.githubusercontent.com`). Pages rollout convergence allows 14 minutes for
-the GitHub Pages build; the five-minute verification window starts after convergence.
+`api.github.com/repos/<owner>/<repo>/pages/builds/latest` on the same egress
+path as the GitHub realizer. The release transport returns success only when
+that build has status `built` and its commit matches `object.sha` from
+`git/ref/heads/gh-pages`; pending, stale, malformed, and failed observations
+return 404. Both authenticated API reads stay below 64 KiB. Pages rollout
+convergence allows 14 minutes for the GitHub Pages build; the five-minute
+verification window starts after convergence.
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built

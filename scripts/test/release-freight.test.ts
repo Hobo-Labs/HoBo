@@ -104,23 +104,40 @@ describe("release topology names", () => {
 		);
 	});
 
-	it("sends GITHUB_TOKEN on api.github.com release verification probes", async () => {
+	it("authenticates GitHub probes and accepts only a built Pages head", async () => {
 		const seen: TransportRequest[] = [];
+		const build = { status: "building", commit: COMMIT };
+		let head = COMMIT;
 		const inner = async (request: TransportRequest) => {
 			seen.push(request);
+			if (request.url.endsWith("/pages/builds/latest"))
+				return { status: 200, headers: {}, body: JSON.stringify(build) };
+			if (request.url.endsWith("/git/ref/heads/gh-pages"))
+				return {
+					status: 200,
+					headers: {},
+					body: JSON.stringify({ object: { sha: head } }),
+				};
 			return { status: 200, headers: {}, body: "{}" };
 		};
 		const probe = githubApiProbeTransport(
 			{ GITHUB_TOKEN: "release-probe-token" },
 			inner,
 		);
-		await probe({
-			method: "GET",
-			url: "https://api.github.com/repos/Hobo-Labs/HoBo/git/ref/heads/gh-pages",
-			headers: {},
-			timeoutMs: 5_000,
-			maxResponseBytes: 1_048_576,
-		});
+		const latestBuild = () =>
+			probe({
+				method: "GET",
+				url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+				headers: {},
+				timeoutMs: 5_000,
+				maxResponseBytes: 1_048_576,
+			});
+		expect((await latestBuild()).status).toBe(404);
+		build.status = "built";
+		head = "f".repeat(40);
+		expect((await latestBuild()).status).toBe(404);
+		head = COMMIT;
+		expect((await latestBuild()).status).toBe(200);
 		await probe({
 			method: "GET",
 			url: "https://registry.npmjs.org/-/ping",
@@ -128,13 +145,16 @@ describe("release topology names", () => {
 			timeoutMs: 5_000,
 			maxResponseBytes: 1_048_576,
 		});
-		expect(seen).toHaveLength(2);
-		expect(seen[0]?.headers.authorization).toBe("Bearer release-probe-token");
-		expect(seen[0]?.headers.accept).toBe("application/vnd.github+json");
-		expect(seen[1]?.headers.authorization).toBeUndefined();
+		expect(seen).toHaveLength(6);
+		for (const request of seen.slice(0, 5)) {
+			expect(request.headers.authorization).toBe("Bearer release-probe-token");
+			expect(request.headers.accept).toBe("application/vnd.github+json");
+			expect(request.maxResponseBytes).toBeLessThan(64 * 1024);
+		}
+		expect(seen[5]?.headers.authorization).toBeUndefined();
 	});
 
-	it("probes the live Pages site for every promotion node", () => {
+	it("probes the latest Pages build for every promotion node", () => {
 		const pages = pipelines.find(
 			(pipeline) => pipeline.name === "hobo-release-pages",
 		);
@@ -145,7 +165,8 @@ describe("release topology names", () => {
 				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
 			});
 			expect(node.verification.probes[0]).toMatchObject({
-				urlRef: "https://Hobo-Labs.github.io/HoBo/",
+				urlRef:
+					"https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
 				expectStatus: 200,
 			});
 		}
