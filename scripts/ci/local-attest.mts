@@ -81,15 +81,15 @@ import {
 	substituteExpressions,
 } from "./attested-jobs.mts";
 import {
+	currentMergeGroup,
+	type MergeGroupIdentity,
+	mergeGroupIdentity,
+} from "./github-merge-group.mts";
+import {
 	type PrHeadProof,
 	PrHeadVerificationError,
 	verifyPrHead,
 } from "./github-pr-target.mts";
-import {
-	currentMergeGroup,
-	mergeGroupIdentity,
-	type MergeGroupIdentity,
-} from "./github-merge-group.mts";
 import { githubAppStatusIsReadOnly } from "./github-status-permission.mts";
 import { trustedGithubTarget } from "./github-target.mts";
 

@@ -234,6 +234,25 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
+	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+		it(`${workflow} keeps the route job on ubuntu-24.04 for merge_group`, () => {
+			const doc = workflowDocument(
+				readFileSync(`.github/workflows/${workflow}`, "utf8"),
+			);
+			const route = asObject(asObject(doc.jobs)?.route);
+			assert.equal(route?.["runs-on"], "ubuntu-24.04");
+			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
+			const routeStep = asList(route?.steps)
+				?.map(asObject)
+				.find((step) => step?.id === "route");
+			const withBlock = asObject(routeStep?.with);
+			assert.equal(
+				asText(withBlock?.route),
+				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
+			);
+		});
+	}
+
 	it("keeps merge-group shards on the original route", () => {
 		const workflow = workflowDocument(
 			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),

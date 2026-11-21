@@ -11,11 +11,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
+import type { PlannedJob } from "../ci/attested-jobs.mts";
 import {
 	resolveMergeGroupTarget,
 	runAttestedJobs,
 } from "../ci/local-attest.mts";
-import type { PlannedJob } from "../ci/attested-jobs.mts";
 
 it("runs and signs the actual merge-group commit against its live base", async () => {
 	const scratch = mkdtempSync(join(tmpdir(), "hobo-merge-group-run-"));

@@ -44,19 +44,20 @@ env:
 # green main). They used to cancel the running one, and with the merge queue landing a
 # commit every few minutes and a main run taking longer than that, no main run finished
 # for hours; the release train and the deps publish run only after a green main run.
-# A newer pull_request push still cancels its PR's older run. The event name keeps
-# schedule and workflow_dispatch on main out of the pushes' group; merge_group runs are
-# never cancelled.
+# A newer pull_request push still cancels its PR's older run. A superseded merge_group
+# build for the same queue ref cancels the older in-progress run so evicted groups stop
+# holding trunk (finding 113 keeps push/main queued, not cancelled).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: >-
+    ${{ github.event_name == 'merge_group' && format('{0}-merge-group-{1}', github.workflow, github.event.merge_group.head_ref) ||
+    format('{0}-{1}-{2}', github.workflow, github.event_name, github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
   route:
     name: Route runners
-    # GitHub-hosted on purpose: the choice of runner must not wait on the fleet
-    # it is choosing against. The fleet while it takes jobs, an enrolled local
-    # box when it does not, GitHub-hosted when neither does (scripts/ci/route-runner.mts).
+    # pull_request stays on GitHub-hosted (fork-safe). merge_group Fabric routing
+    # reads GitHub-hosted queue depth inside route-runner (mergeGroupFabric).
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -128,7 +129,7 @@ jobs:
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          route: ${{ inputs.route || 'auto' }}
+          route: ${{ (inputs.route || 'auto') }}
 
   ci-runner-image:
     name: CI runner image (mise oci)

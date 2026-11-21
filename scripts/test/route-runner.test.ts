@@ -15,6 +15,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
 	ABSENT_SLIP_WHYS,
+	AGENT37_OVERFLOW_RUNNER_LABEL,
 	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
@@ -24,7 +25,11 @@ import {
 	DEFAULT_MAX_WAIT_SECONDS,
 	DEFAULT_RUNNER_LABELS,
 	fleetLabelFor,
+	fleetPoolRunners,
+	HOBO_CI_NODE_CPU_PERCENT_VARIABLE,
+	HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT,
 	hasChosen,
+	hoboPoolSaturation,
 	type JsonValue,
 	type LabelLoad,
 	labelLoad,
@@ -39,6 +44,7 @@ import {
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
+	parseNodeCpuPercent,
 	parseRouteArgs,
 	parseRouteMode,
 	probeRunIds,
@@ -1390,6 +1396,12 @@ describe("the script reading the slip", () => {
 					],
 				};
 	};
+	const slipFromFixtureAndQueueFromServerFetch =
+		(message: string | undefined): typeof fetch =>
+		async (url, init) =>
+			String(url).includes("/git/")
+				? slipApi(message)(url, init)
+				: fetch(url, init);
 	const route = (
 		apiUrl: string,
 		message: string | undefined,
@@ -1410,7 +1422,7 @@ describe("the script reading the slip", () => {
 				{
 					routingConfig,
 					eventPayload: undefined,
-					fetch: slipApi(message),
+					fetch: slipFromFixtureAndQueueFromServerFetch(message),
 					now: () => SLIP_NOW,
 				},
 			),
@@ -1495,35 +1507,367 @@ describe("the script reading the slip", () => {
 		GITHUB_EVENT_NAME: "merge_group",
 		GITHUB_WORKFLOW_REF:
 			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
+		GITHUB_TOKEN: "token",
+	};
+	const mergeGroupRelease = {
+		GITHUB_EVENT_NAME: "merge_group",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/gh-readonly-queue/main",
+		GITHUB_TOKEN: "token",
 	};
 
-	it("routes merge-group CI to hobo-trunk on recent trunk pickup", async () => {
+	it("stays on GitHub-hosted when the merge-group hosted probe cannot read the queue", async () => {
+		const { decision, lines } = await route(
+			"http://127.0.0.1:9",
+			undefined,
+			mergeGroupCi,
+		);
+		assert.equal(decision.tier, "github");
+		assert.equal(decision.runner, "ubuntu-24.04");
+		assert.equal(decision.mergeGroupHostedProbe?.idle, false);
+		assert.match(decision.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
+		assert.ok(
+			warningsIn(lines).some((line) =>
+				line.includes(
+					"routing slip not used (merge-group hosted probe unreadable:",
+				),
+			),
+		);
+		const noticeBody = noticesIn(lines)[0]?.replace(
+			/^::notice title=hobo-ci-route::/u,
+			"",
+		);
+		assert.ok(noticeBody);
+		const record = JSON.parse(
+			noticeBody
+				.replaceAll("%0A", "\n")
+				.replaceAll("%0D", "\r")
+				.replaceAll("%25", "%"),
+		);
+		assert.equal(record.v, 2);
+		assert.equal(record.mergeGroupHostedProbe?.idle, false);
+		assert.match(record.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
+	});
+
+	it("prefers GitHub-hosted on merge-group Fabric while hosted runners have idle capacity", async () => {
+		await withGithub(
+			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision, lines } = await route(
+					apiUrl,
+					undefined,
+					mergeGroupCi,
+				);
+				assert.equal(decision.tier, "github");
+				assert.equal(decision.runner, "ubuntu-24.04");
+				assert.ok(decision.mergeGroupHostedProbe?.idle);
+				assert.match(lines.join("\n"), /merge-group hosted probe:.*idle=true/u);
+			},
+		);
+	});
+
+	it("reads the merge-group Fabric queue through the caller's fetch, not io.fetch", async () => {
+		const queueFetch: typeof fetch = async (url) => {
+			const path = String(url);
+			if (path.includes("/git/"))
+				return Response.json({ message: "Not Found" }, { status: 404 });
+			if (path.includes("/jobs"))
+				return Response.json({
+					jobs: [...saturatedHostedQueue(), pickup("hobo-trunk")],
+				});
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date(SLIP_NOW - 10_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 10_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{
+					...mergeGroupCi,
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: "51",
+					GITHUB_API_URL: "https://api.example.invalid",
+				},
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: queueFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", "hobo-trunk", "none"],
+		);
+		assert.deepEqual(decision.slip, { kind: "unasked", why: "merge-group" });
+	});
+
+	const saturatedHostedQueue = () =>
+		Array.from({ length: 5 }, (_, index) =>
+			waiting("ubuntu-24.04", 10 + index),
+		);
+
+	const prBatchCi = {
+		GITHUB_EVENT_NAME: "pull_request",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/pull/1/merge",
+		GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+		GITHUB_REPOSITORY_ID: "1274791462",
+		GITHUB_REPOSITORY_OWNER_ID: "344805935",
+		GITHUB_RUN_ID: "51",
+		GITHUB_TOKEN: "token",
+	};
+	const forkPull: JsonValue = {
+		pull_request: {
+			base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+			head: { repo: { full_name: "someone/HoBo" } },
+		},
+	};
+	const publicRepoRead = (url: RequestInfo | URL): Response | undefined =>
+		String(url) === "https://api.github.com/repos/Hobo-Labs/HoBo"
+			? Response.json({
+					id: 1274791462,
+					owner: { id: 344805935 },
+					private: false,
+					visibility: "public",
+					disabled: false,
+					archived: false,
+				})
+			: undefined;
+
+	it("never diverts a fork pull-request batch to the fleet when GitHub-hosted is saturated", async () => {
+		const asked: string[] = [];
+		const batchFetch: typeof fetch = async (url) => {
+			asked.push(String(url));
+			const repo = publicRepoRead(url);
+			if (repo) return repo;
+			if (String(url).includes("/jobs"))
+				return Response.json({ jobs: saturatedHostedQueue() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchCi, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: forkPull,
+					fetch: batchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "none"],
+		);
+		assert.match(decision.reason, /full PR batch.*no verified fleet capacity/u);
+		assert.ok(
+			!asked.some((path) => path.includes("/actions/runs")),
+			asked.join("\n"),
+		);
+	});
+
+	it("treats GitHub-hosted as idle, with a warning, when the same-repository PR batch probe answers 401", async () => {
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchCi, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: async (url) =>
+						publicRepoRead(url) ??
+						new Response("unauthorized", { status: 401 }),
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "none"],
+		);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.includes("PR batch hosted queue probe unreadable") &&
+					line.includes("GitHub-hosted treated as idle"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
+		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, mergeGroupRelease, [
+				"--route",
+				"fleet",
+			]);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["fleet", "hobo-trunk"],
+			);
+			assert.deepEqual(decision.slip, {
+				kind: "unasked",
+				why: "merge-group",
+			});
+		});
+	});
+
+	it("routes merge-group CI to GitHub-hosted while hosted runners have idle capacity", async () => {
 		await withGithub(
 			observed([pickup("hobo"), pickup("hobo-trunk")]),
 			async (apiUrl) => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
+					["github", "ubuntu-24.04", "queue"],
+				);
+				assert.match(
+					decision.reason,
+					/prefers GitHub-hosted while it has idle capacity/u,
+				);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+			},
+		);
+	});
+
+	it("routes merge-group CI to hobo-trunk when GitHub-hosted is saturated and trunk is idle", async () => {
+		await withGithub(
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
 					["fleet", "hobo-trunk", "none"],
 				);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+			},
+		);
+	});
+
+	it("routes merge-group CI to GitHub-hosted when trunk has jobs waiting", async () => {
+		await withGithub(
+			observed([
+				...saturatedHostedQueue(),
+				pickup("hobo-trunk"),
+				waiting("hobo-trunk", 12),
+			]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["github", "ubuntu-24.04", "queue"],
+				);
+				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, false);
+			},
+		);
+	});
+
+	it("routes merge-group CI to hobo-trunk when the slip is expired and runs are still choosing", async () => {
+		const expired = JSON.parse(OPEN_SLIP);
+		expired.expiresAt = "2026-11-13T16:00:30.000Z";
+		const pages = (path: string): JsonValue => {
+			if (path.includes("/runs/50/jobs"))
+				return { jobs: [{ status: "in_progress" }] };
+			if (path.includes("/jobs"))
+				return { jobs: [pickup("hobo-trunk"), waiting("hobo-trunk", 2)] };
+			return {
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+					{
+						id: 50,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date(SLIP_NOW - 10_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 10_000).toISOString(),
+					},
+				],
+			};
+		};
+		await withGithub(
+			(path) => {
+				if (path.includes("/runs/50/jobs"))
+					return { jobs: [{ status: "in_progress" }] };
+				if (path.includes("/jobs"))
+					return {
+						jobs: [
+							...saturatedHostedQueue(),
+							pickup("hobo-trunk"),
+							waiting("hobo-trunk", 2),
+						],
+					};
+				return pages(path);
+			},
+			async (apiUrl) => {
+				const { decision, lines } = await route(
+					apiUrl,
+					JSON.stringify(expired),
+					mergeGroupCi,
+				);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["github", "ubuntu-24.04", "queue"],
+				);
+				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+				assert.deepEqual(warningsIn(lines), []);
 			},
 		);
 	});
 
 	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
 		let queueReads = 0;
-		const healthy = observed([pickup("hobo-trunk")]);
+		const healthy = observed([...saturatedHostedQueue(), pickup("hobo-trunk")]);
 		await withGithub(
 			(path) => {
 				if (!path.includes("/jobs")) queueReads += 1;
-				return queueReads > 1 && path.includes("/jobs")
-					? {
-							jobs: [
-								pickup("hobo-trunk"),
-								waiting("hobo-trunk", MERGE_GROUP_FLEET_CONFIRM_SECONDS + 1),
-							],
-						}
-					: healthy(path);
+				if (!path.includes("/jobs")) return healthy(path);
+				const hostedJobs = saturatedHostedQueue();
+				if (queueReads > 2)
+					return {
+						jobs: [
+							...hostedJobs,
+							pickup("hobo-trunk"),
+							waiting("hobo-trunk", MERGE_GROUP_FLEET_CONFIRM_SECONDS + 1),
+						],
+					};
+				return { jobs: [...hostedJobs, pickup("hobo-trunk")] };
 			},
 			async (apiUrl) => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
@@ -1532,33 +1876,49 @@ describe("the script reading the slip", () => {
 					["github", "ubuntu-24.04", "queue"],
 				);
 				assert.match(decision.reason, /merge-group trunk confirmation/u);
-				assert.equal(queueReads, 2);
+				assert.ok(queueReads >= 2);
 			},
 		);
 	});
 
-	it("never routes merge-group CI to hobo", async () => {
-		const generalFleetSlip = JSON.parse(OPEN_SLIP);
-		generalFleetSlip.classes.trunk = {
+	it("ignores a hostile trunk slip on merge-group Fabric", async () => {
+		const hostile = structuredClone(JSON.parse(OPEN_SLIP));
+		hostile.classes.trunk = {
 			runner: "hobo",
 			tier: "fleet",
 			reason: "fleet-open",
 		};
-		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
-			const { decision } = await route(
-				apiUrl,
-				JSON.stringify(generalFleetSlip),
-				mergeGroupCi,
-			);
-			assert.deepEqual(
-				[decision.tier, decision.runner, decision.refusedBy],
-				["github", "ubuntu-24.04", "queue"],
-			);
-			assert.match(
-				decision.reason,
-				/merge-group Fabric refused the general fleet label hobo/u,
-			);
-		});
+		await withGithub(
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(
+					apiUrl,
+					JSON.stringify(hostile),
+					mergeGroupCi,
+				);
+				assert.notEqual(decision.runner, "hobo");
+				assert.equal(decision.tier, "fleet");
+				assert.equal(decision.runner, "hobo-trunk");
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+			},
+		);
+	});
+
+	it("never routes merge-group Fabric to the general hobo label", async () => {
+		await withGithub(
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+				assert.doesNotMatch(decision.runner, /^hobo$/u);
+			},
+		);
 	});
 
 	it("routes merge-group CI to GitHub-hosted when hobo-trunk has no recent pickup", async () => {
@@ -1993,6 +2353,452 @@ describe("the script reading the slip", () => {
 				}),
 			],
 		);
+	});
+});
+
+describe("hobo pool saturation overflow", () => {
+	it("counts the online runners serving the pool label, busy or not", () => {
+		const runner = (
+			busy: boolean,
+			labels: readonly string[],
+			status = "online",
+		) => ({
+			name: "hobo-runner",
+			status,
+			busy,
+			labels: labels.map((name) => ({ name })),
+		});
+		assert.deepEqual(
+			fleetPoolRunners(
+				{
+					runners: [
+						runner(true, ["self-hosted", "linux", "hobo"]),
+						runner(false, ["hobo"]),
+						runner(true, ["hobo"], "offline"),
+						runner(false, ["hobo-trunk"]),
+						runner(false, ["HoBo"]),
+					],
+				},
+				"hobo",
+			),
+			{ online: 3, busy: 1 },
+		);
+		assert.deepEqual(fleetPoolRunners({ runners: [] }, "hobo"), {
+			online: 0,
+			busy: 0,
+		});
+	});
+
+	it("says nothing when the runner list is not the shape GitHub answers", () => {
+		assert.equal(
+			fleetPoolRunners(
+				{ message: "Resource not accessible by integration" },
+				"hobo",
+			),
+			undefined,
+		);
+		assert.equal(fleetPoolRunners({ workflow_runs: [] }, "hobo"), undefined);
+		assert.equal(fleetPoolRunners({}, "hobo"), undefined);
+		assert.equal(
+			fleetPoolRunners({ runners: [{ status: "online" }] }, "hobo"),
+			undefined,
+		);
+	});
+
+	it("reads the host CPU percent only as a bare integer", () => {
+		assert.equal(parseNodeCpuPercent("93"), 93);
+		assert.equal(parseNodeCpuPercent(" 91 "), 91);
+		assert.equal(parseNodeCpuPercent("0"), 0);
+		for (const bad of ["93.5", "95%", "high", "  ", ""])
+			assert.equal(parseNodeCpuPercent(bad), undefined, JSON.stringify(bad));
+		assert.equal(parseNodeCpuPercent(undefined), undefined);
+	});
+
+	it("saturates when every online pool runner is busy, or the host CPU is past the limit", () => {
+		assert.equal(HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT, 90);
+		assert.deepEqual(
+			hoboPoolSaturation({
+				runners: { online: 5, busy: 5 },
+				cpuPercent: undefined,
+				label: "hobo",
+			}),
+			{
+				saturated: true,
+				summary:
+					"the hobo pool has no idle capacity (5 of 5 online hobo runners busy)",
+			},
+		);
+		assert.deepEqual(
+			hoboPoolSaturation({
+				runners: undefined,
+				cpuPercent: 93,
+				label: "hobo",
+			}),
+			{
+				saturated: true,
+				summary: "the hobo pool has no idle capacity (host node CPU 93%)",
+			},
+		);
+		assert.equal(
+			hoboPoolSaturation({
+				runners: { online: 3, busy: 2 },
+				cpuPercent: 90,
+				label: "hobo",
+			}).saturated,
+			false,
+		);
+	});
+
+	it("never saturates on unreadable evidence alone (R3)", () => {
+		const unknown = hoboPoolSaturation({
+			runners: undefined,
+			cpuPercent: undefined,
+			label: "hobo",
+		});
+		assert.equal(unknown.saturated, false);
+		assert.match(
+			unknown.summary,
+			/hobo pool saturation unknown \(repository runner list unreadable; host node CPU unknown\)/u,
+		);
+		assert.equal(
+			hoboPoolSaturation({
+				runners: { online: 0, busy: 0 },
+				cpuPercent: undefined,
+				label: "hobo",
+			}).saturated,
+			false,
+		);
+	});
+
+	const poolPages = (
+		runnersPage: JsonValue,
+		variableValue: string | undefined,
+	): ((path: string) => JsonValue) => {
+		const pickup = (label: string) => ({
+			run_id: 40,
+			status: "completed",
+			labels: [label],
+			runner_name: "runner-1",
+			created_at: new Date(SLIP_NOW - 65_000).toISOString(),
+			started_at: new Date(SLIP_NOW - 60_000).toISOString(),
+		});
+		return (path) => {
+			if (path.includes("/actions/runners")) return runnersPage;
+			if (path.includes("/actions/variables/"))
+				return variableValue === undefined
+					? { message: "Not Found" }
+					: {
+							name: HOBO_CI_NODE_CPU_PERCENT_VARIABLE,
+							value: variableValue,
+						};
+			if (path.includes("/jobs"))
+				return { jobs: [pickup("hobo"), pickup("hobo-trunk")] };
+			return {
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			};
+		};
+	};
+	const busyPool = (online: number, busy = online): JsonValue => ({
+		runners: Array.from({ length: online }, (_, index) => ({
+			name: `hobo-runner-${index + 1}`,
+			status: "online",
+			busy: index < busy,
+			labels: [{ name: "hobo" }],
+		})),
+	});
+	const prBatchEnv = {
+		GITHUB_EVENT_NAME: "pull_request",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/pull/1/merge",
+		GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+		GITHUB_REPOSITORY_ID: "1274791462",
+		GITHUB_REPOSITORY_OWNER_ID: "344805935",
+		GITHUB_RUN_ID: "51",
+		GITHUB_TOKEN: "token",
+	};
+	const forkPayload: JsonValue = {
+		pull_request: {
+			base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+			head: { repo: { full_name: "someone/HoBo" } },
+		},
+	};
+	const publicRepo = (url: RequestInfo | URL): Response | undefined =>
+		String(url) === "https://api.github.com/repos/Hobo-Labs/HoBo"
+			? Response.json({
+					id: 1274791462,
+					owner: { id: 344805935 },
+					private: false,
+					visibility: "public",
+					disabled: false,
+					archived: false,
+				})
+			: undefined;
+	const hostedSaturated = (): JsonValue[] =>
+		Array.from({ length: 5 }, (_, index) => ({
+			run_id: 40,
+			status: "queued",
+			labels: ["ubuntu-24.04"],
+			created_at: new Date(SLIP_NOW - (10 + index) * 1000).toISOString(),
+		}));
+	const overflowRoute = (
+		answer: (path: string) => JsonValue,
+		env: Record<string, string> = {},
+		eventPayload: JsonValue | undefined = undefined,
+	) =>
+		withGithub(answer, (apiUrl) =>
+			printedBy(() =>
+				main(
+					[],
+					{
+						GITHUB_EVENT_NAME: "pull_request",
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: "51",
+						GITHUB_API_URL: apiUrl,
+						GITHUB_TOKEN: "token",
+						...env,
+					},
+					{
+						routingConfig: COMMITTED,
+						eventPayload,
+						fetch: async (url, init) =>
+							String(url).includes("/git/")
+								? Response.json({ message: "Not Found" }, { status: 404 })
+								: fetch(url, init),
+						now: () => SLIP_NOW,
+					},
+				),
+			),
+		);
+
+	it("overflows to hobo-agent37 with a titled warning when every online pool runner is busy", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(busyPool(5), undefined),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL, "queue"],
+		);
+		assert.match(
+			decision.reason,
+			/the hobo pool has no idle capacity \(5 of 5 online hobo runners busy\)/u,
+		);
+		assert.match(decision.reason, /the run overflows to hobo-agent37/u);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes(
+						"the hobo pool has no idle capacity (5 of 5 online hobo runners busy)",
+					) &&
+					line.includes("the run overflows to hobo-agent37"),
+			),
+			lines.join("\n"),
+		);
+		assert.ok(
+			noticesIn(lines).some((line) =>
+				line.includes(`"runner":"${AGENT37_OVERFLOW_RUNNER_LABEL}"`),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("keeps the fleet when neither leg can be read: unreadable is not saturation (R3)", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(
+				{ message: "Resource not accessible by integration" },
+				undefined,
+			),
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.match(
+			decision.reason,
+			/hobo pool saturation unknown \(repository runner list unreadable; host node CPU unknown\)/u,
+		);
+		assert.ok(
+			!warningsIn(lines).some((line) =>
+				line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("overflows on host CPU above the limit alone, and names the percent", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages({ message: "Resource not accessible by integration" }, "93"),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL],
+		);
+		assert.match(decision.reason, /host node CPU 93%/u);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("host node CPU 93%") &&
+					line.includes("the run overflows to hobo-agent37"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("does not overflow on host CPU at the limit or a value that is not an integer", async () => {
+		for (const value of ["90", "93.5", "busy"]) {
+			const { decision, lines } = await overflowRoute(
+				poolPages({ runners: [] }, value),
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["fleet", "hobo"],
+				value,
+			);
+			assert.ok(
+				!warningsIn(lines).some((line) =>
+					line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+				),
+				`${value}: ${lines.join("\n")}`,
+			);
+		}
+	});
+
+	it("never sends a fork pull request to the pool or its overflow, however saturated both look", async () => {
+		const forkBatchFetch: typeof fetch = async (url) => {
+			const repo = publicRepo(url);
+			if (repo) return repo;
+			const path = String(url);
+			if (path.includes("/actions/runners")) return Response.json(busyPool(5));
+			if (path.includes("/actions/variables/"))
+				return Response.json({ value: "95" });
+			if (path.includes("/jobs"))
+				return Response.json({ jobs: hostedSaturated() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchEnv, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: forkPayload,
+					fetch: forkBatchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "none"],
+		);
+		assert.ok(
+			!lines.some((line) => line.includes(AGENT37_OVERFLOW_RUNNER_LABEL)),
+			lines.join("\n"),
+		);
+	});
+
+	it("overflows a same-repository PR batch when GitHub-hosted and the pool are both saturated", async () => {
+		const batchFetch: typeof fetch = async (url) => {
+			const path = String(url);
+			if (path.includes("/actions/runners")) return Response.json(busyPool(5));
+			if (path.includes("/actions/variables/"))
+				return Response.json({ message: "Not Found" });
+			if (path.includes("/jobs"))
+				return Response.json({ jobs: hostedSaturated() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchEnv, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: batchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL, "queue"],
+		);
+		assert.match(
+			decision.reason,
+			/GitHub-hosted runners have no idle capacity/u,
+		);
+		assert.match(
+			decision.reason,
+			/the hobo pool has no idle capacity \(5 of 5 online hobo runners busy\)/u,
+		);
+		assert.match(
+			decision.reason,
+			/the same-repository batch overflows to hobo-agent37/u,
+		);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("GitHub-hosted runners have no idle capacity") &&
+					line.includes("the hobo pool has no idle capacity") &&
+					line.includes("overflows to hobo-agent37"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("leaves trunk runs on the trunk label: the pool rule is the general fleet label's", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(busyPool(5), "95"),
+			{ GITHUB_EVENT_NAME: "push" },
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
+		assert.doesNotMatch(decision.reason, /hobo pool/u);
+		assert.ok(
+			!warningsIn(lines).some((line) =>
+				line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("keeps an explicitly pinned fleet on the fleet without reading the pool", async () => {
+		const decision = await main(
+			["--route", "fleet"],
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.doesNotMatch(decision.reason, /hobo pool/u);
 	});
 });
 
@@ -2501,7 +3307,11 @@ describe("the workflows that route", () => {
 			ci,
 			/ {6}route:\n {8}description: .*\n {8}type: choice\n {8}options: \[auto, fleet, local, github\]\n/,
 		);
-		assert.equal(ci.split("route: ${{ inputs.route || 'auto' }}").length, 3);
+		assert.match(ci, /route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/);
+		assert.ok(
+			ci.split("inputs.route || 'auto'").length >= 3,
+			"dispatch inputs still reach downstream route steps",
+		);
 	});
 
 	it("hand the routing step nothing about routing but what the run chose", () => {

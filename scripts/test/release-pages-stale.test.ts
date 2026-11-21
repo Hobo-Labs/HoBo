@@ -312,7 +312,9 @@ describe("release-hobo pages jobs", () => {
 		expect(gate).toContain("    needs: [route]\n");
 		expect(gate).not.toContain("release-main-train-gate");
 		const pages = job("release-pages");
-		expect(pages).toContain("needs: [release-pages-gate, release-hobo-cli]");
+		expect(pages).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
+		expect(pages).toMatch(/needs: \[[^\]]*\brelease-pages-gate\b[^\]]*\]/u);
+		expect(pages).toMatch(/needs: \[[^\]]*\brelease-hobo-cli\b[^\]]*\]/u);
 		expect(pages).toContain(
 			"needs.release-pages-gate.outputs.deploy == 'true'",
 		);
@@ -371,6 +373,34 @@ describe("release-hobo pages jobs", () => {
 		const build = pages.indexOf("pnpm --filter hobo-site run build");
 		expect(recheck).toBeGreaterThan(-1);
 		expect(recheck).toBeLessThan(build);
+	});
+
+	it("cannot publish Pages from a pull_request or merge_group run", () => {
+		const gate = job("release-pages-gate");
+		expect(gate).toMatch(/github\.event_name == 'workflow_run'/u);
+		expect(gate).not.toMatch(/github\.event_name == 'pull_request'/u);
+		expect(gate).not.toMatch(/github\.event_name == 'merge_group'/u);
+		const pages = job("release-pages");
+		expect(
+			pages,
+			"the gate decides only for a green main push or a main dispatch; a skipped gate never reports deploy=true",
+		).toContain("needs.release-pages-gate.outputs.deploy == 'true'");
+		const step = (marker: string) => {
+			const at = pages.indexOf(marker);
+			expect(at, marker).toBeGreaterThan(-1);
+			const from = pages.lastIndexOf("\n      - ", at);
+			const to = pages.indexOf("\n      - ", at + 1);
+			return pages.slice(from, to < 0 ? pages.length : to);
+		};
+		for (const marker of [
+			"pnpm --filter hobo-site run build",
+			"cp -a media/dist/. site/dist/media/",
+			"deploy-site.mts --release-freight site/dist",
+		])
+			expect(
+				step(marker),
+				`${marker}: re-checks freshness in-job so nothing deploys unless gh-pages is still behind`,
+			).toContain("if: steps.fresh.outputs.deploy == 'true'");
 	});
 
 	it("tags whatever this run's publish did, unless it or its gate failed", () => {
