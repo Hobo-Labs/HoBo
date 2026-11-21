@@ -51,6 +51,11 @@ function stepBefore(first: string, second: string): void {
 }
 
 describe("the relay deploy gate", () => {
+	it("probes no fleet verdict route: route jobs read the box relay's routing slip (ADR-0181)", () => {
+		assert.doesNotMatch(workflow, /\/v1\/fleet\//u);
+		assert.doesNotMatch(workflow, /Probe the fleet verdict/u);
+	});
+
 	it("takes the relay and every workspace package it is built from as its inputs", () => {
 		for (const dir of [
 			"packages/ci-vercel",
@@ -459,10 +464,6 @@ describe("the relay deploy workflow", () => {
 			"Deploy the relay (production)",
 			"Verify the relay at its production origin",
 		);
-		stepBefore(
-			"Verify the relay at its production origin",
-			"Probe the fleet verdict at the public origin",
-		);
 	});
 
 	it("deposits the GitHub App's credentials with OIDC only when handed a manifest code, masked first", () => {
@@ -489,89 +490,6 @@ describe("the relay deploy workflow", () => {
 			workflow.indexOf("Mask the one-time manifest code") <
 				workflow.indexOf("ci app deposit"),
 		);
-	});
-
-	describe("probes the public origin", () => {
-		const name = "Probe the fleet verdict at the public origin";
-
-		/** The step's body check, run as the workflow runs it. */
-		function judge(body: string, repository = "Hobo-Labs/HoBo") {
-			const probe = step(name);
-			const match = /node -e '([^']+)' "\$RUNNER_TEMP\/verdict\.json"/u.exec(
-				probe,
-			);
-			assert.ok(match, "the step judges the answer with one node -e script");
-			const dir = mkdtempSync(join(tmpdir(), "relay-verdict-probe-"));
-			try {
-				const file = join(dir, "verdict.json");
-				writeFileSync(file, body);
-				return spawnSync(process.execPath, ["-e", match[1] ?? "", file], {
-					encoding: "utf8",
-					env: { ...process.env, GITHUB_REPOSITORY: repository },
-				});
-			} finally {
-				rmSync(dir, { recursive: true, force: true });
-			}
-		}
-
-		it("reads the relay's public origin from .hobo/ci.json, not the deployment URL", () => {
-			const probe = step(name);
-			assert.match(probe, /\.hobo\/ci\.json/u);
-			assert.match(probe, /defaultEnvironment/u);
-			assert.match(probe, /relayOrigin/u);
-			assert.match(probe, /https:/u);
-			assert.doesNotMatch(probe, /DEPLOYMENT_URL/u);
-			assert.match(probe, /\/v1\/fleet\/verdicts\/\$\{?repository/u);
-			assert.match(probe, /if: steps\.gate\.outputs\.run == 'true'/u);
-		});
-
-		it("runs after the deploy and its verification, so it reports on what this workflow shipped", () => {
-			stepBefore("Verify the relay at its production origin", name);
-			assert.ok(
-				workflow.indexOf(`- name: ${name}`) <
-					workflow.indexOf("  app-credentials:"),
-			);
-		});
-
-		it("is red, naming the rollback order, unless the read answers 200", () => {
-			const probe = step(name);
-			assert.match(probe, /\[ "\$code" != "200" \]/u);
-			assert.match(probe, /::error title=Relay fleet verdict::/u);
-			assert.match(probe, /exit 1/u);
-			assert.match(probe, /6\.10|rollback/iu);
-		});
-
-		it("accepts a verdict for this repository with a blocked object", () => {
-			const open = judge(
-				JSON.stringify({ repository: "hobo-labs/hobo", blocked: {} }),
-			);
-			assert.equal(open.status, 0, open.stderr);
-			const blocked = judge(
-				JSON.stringify({
-					repository: "hobo-labs/hobo",
-					blocked: { hobo: { reason: "no-capacity" } },
-					observedAt: "2026-11-12T11:14:00.000Z",
-				}),
-			);
-			assert.equal(blocked.status, 0, blocked.stderr);
-		});
-
-		it("refuses an answer that is not a verdict for this repository", () => {
-			for (const body of [
-				"",
-				"not json",
-				"[]",
-				JSON.stringify({ blocked: {} }),
-				JSON.stringify({ repository: "other/repo", blocked: {} }),
-				JSON.stringify({ repository: "hobo-labs/hobo" }),
-				JSON.stringify({ repository: "hobo-labs/hobo", blocked: [] }),
-				JSON.stringify({ repository: "hobo-labs/hobo", blocked: null }),
-				JSON.stringify({ status: "config-unavailable" }),
-			]) {
-				const result = judge(body);
-				assert.notEqual(result.status, 0, `accepted ${body}`);
-			}
-		});
 	});
 
 	it("passes the repository's workflow lint, as an approved CI fabric workflow", async () => {

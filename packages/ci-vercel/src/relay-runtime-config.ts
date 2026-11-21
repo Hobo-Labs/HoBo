@@ -28,6 +28,7 @@ import { z } from "zod";
 import { withDerivedRelayKeys } from "./relay-derived-keys.js";
 import {
 	RELAY_RUNTIME_CONFIG_KEYS,
+	RETIRED_RELAY_RUNTIME_CONFIG_KEYS,
 	RelayRuntimeConfigSchema,
 } from "./relay-runtime-config-schema.js";
 
@@ -51,13 +52,16 @@ export class RelayRuntimeConfigError extends Error {
 }
 
 const KNOWN = new Set(RELAY_RUNTIME_CONFIG_KEYS);
+const RETIRED = new Set(RETIRED_RELAY_RUNTIME_CONFIG_KEYS);
 
 export function parseRelayRuntimeConfig(
 	entries: Readonly<Record<string, string>>,
 ): RelayRuntimeConfig {
 	// An empty entry reads as unset, as an empty environment variable does.
 	const present = Object.fromEntries(
-		Object.entries(entries).filter(([, value]) => value !== ""),
+		Object.entries(entries).filter(
+			([key, value]) => value !== "" && !RETIRED.has(key),
+		),
 	);
 	const unknown = Object.keys(present).filter((key) => !KNOWN.has(key));
 	if (unknown.length)

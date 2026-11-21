@@ -7,9 +7,11 @@ tags: [hobo, ci, routing, fleet, relay, verdict, monitoring, operations]
 
 # Finding 145: fleet verdict channel operating record
 
-**Status:** built in the stack `sdlc/routing-01` to `sdlc/routing-07`; no gate of the operating checklist has
-been passed yet. Fill in each row's **Measured** cell, with links, as its gate is passed, and only then start
-the next.
+**Status:** closed without a gate passed. Built in the stack `sdlc/routing-01` to `sdlc/routing-07`; the
+hosted verdict channel was then retired before any gate of the operating checklist was passed
+([ADR-0181](../../design/adr/routing-slips.md#adr-0181), which supersedes ADR-0180's hosted transport):
+its routes answer 404 and its store, reporter and enrollment are removed. The rows below stay unfilled as the
+record of what was never observed.
 
 Design and authority:
 [ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment) and its
