@@ -9,7 +9,7 @@ import {
 	oidcAuth,
 	parseInfisicalBinding,
 } from "../../packages/adapters/adapter-infisical/dist/index.js";
-import { readSecretStoreBinding } from "../../packages/secret-store-claim/dist/index.js";
+import { readSecretStoreBindingForRepair } from "../../packages/secret-store-claim/dist/index.js";
 
 const repository = "Hobo-Labs/HoBo";
 const workflowRef = `${repository}/.github/workflows/hosting-evidence.yml@refs/heads/main`;
@@ -287,7 +287,7 @@ export async function inspectHostingEvidence(input: {
 }): Promise<HostingEvidenceReport> {
 	if (!trustedMainContext(input.env)) return unavailable();
 	try {
-		const store = readSecretStoreBinding(input.bindingText);
+		const store = readSecretStoreBindingForRepair(input.bindingText);
 		if (
 			store.kind !== "infisical-cloud-attach" ||
 			store.claimState !== "claimed" ||

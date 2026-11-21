@@ -9,8 +9,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-	type CapturePublicKey,
 	CapturedSecret,
+	type CapturePublicKey,
 	createHoboMcpServer,
 	createSecretCaptureApp,
 	SECRET_CAPTURE_SEAL_SOURCE,

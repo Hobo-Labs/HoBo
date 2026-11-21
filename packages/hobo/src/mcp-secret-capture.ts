@@ -178,7 +178,8 @@ export function createInfisicalCaptureConnector(options: {
 				error.code === "HOBO_CI_SECRET_STORE_BINDING_INVALID"
 			)
 				return {
-					reason: "The relay capture adapter's store binding predates the deploy credential project and reader: re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id, then re-capture VERCEL_TOKEN into the deploy project (CONFIG-SERVICE.md).",
+					reason:
+						"The relay capture adapter's store binding predates the deploy credential project and reader: re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id, then re-capture VERCEL_TOKEN into the deploy project (CONFIG-SERVICE.md).",
 				};
 			return {
 				reason: "The relay capture adapter's store binding is unavailable.",
