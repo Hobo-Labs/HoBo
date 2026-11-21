@@ -1,4 +1,4 @@
-// HealthSource conformance (plan 0024 D9, I5). A health source returns the
+// HealthSource conformance (ADR-0182 D9, I5). A health source returns the
 // samples it observed for one cohort and window, or a typed refusal. It never
 // fabricates data: "no data" must reach the verifier as no data, so that the
 // verification fails closed.

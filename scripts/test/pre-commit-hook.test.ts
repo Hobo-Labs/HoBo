@@ -60,7 +60,7 @@ function git(cwd: string, args: string[]) {
 	return result.stdout.trim();
 }
 
-// Stand-ins for the four scripts the hook runs. Each records its name and
+// Stand-ins for the five scripts the hook runs. Each records its name and
 // the arguments it received, so a test sees exactly what reached the gates.
 const RECORD = `import { appendFileSync } from "node:fs";
 const [name, ...args] = process.argv.slice(2);
@@ -96,6 +96,8 @@ function fixture(): string {
 			scripts: {
 				"generated:guard": "node record.mjs generated:guard",
 				"plans:guard": "node record.mjs plans:guard",
+				"secrets:staged": "node record.mjs secrets:staged",
+				"source:guard": "node record.mjs source:guard",
 				"fetch:pr-base": "node fetch.mjs",
 				"check:relevant:staged": "node record.mjs check:relevant:staged",
 			},
@@ -143,6 +145,8 @@ describe(".githooks/pre-commit", () => {
 			{ name: "fetch:pr-base", args: [] },
 			{ name: "generated:guard", args: [] },
 			{ name: "plans:guard", args: ["--staged"] },
+			{ name: "secrets:staged", args: [] },
+			{ name: "source:guard", args: ["--staged"] },
 			{ name: "check:relevant:staged", args: ["--base=main"] },
 		]);
 	});
@@ -199,7 +203,13 @@ describe(".githooks/pre-commit", () => {
 		assert.equal(result.status, 0, result.stderr);
 		assert.deepEqual(
 			calls(repo).map((call) => call.name),
-			["generated:guard", "plans:guard", "check:relevant:staged"],
+			[
+				"generated:guard",
+				"plans:guard",
+				"secrets:staged",
+				"source:guard",
+				"check:relevant:staged",
+			],
 		);
 	});
 

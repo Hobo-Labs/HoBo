@@ -17,7 +17,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `gitleaks@8.22.1`, `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `betterleaks@1.10.1` (secret scan: pre-commit staged changes and the CI history scan; the gitleaks successor, same flags and config format), `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
@@ -55,7 +55,7 @@ mise refuses to run untrusted config:
 - **`MISE_TRUSTED_CONFIG_PATHS`** — colon-separated allowlist (CI/devcontainer).
 - **`mise settings set trusted_config_paths`** — persistent trust.
 
-HoBo CI sets trust via mise-action (`install: true` trusts the checkout). Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
+HoBo CI sets trust via mise-action (`install: true` trusts the checkout). The fleet image bakes `/etc/mise/config.toml` from whichever commit last built it, so `build.sh`, the `dev-env-smoke` mise job and every job that runs `ci-runner-preflight` (which exports it to the rest of the job) set `MISE_IGNORED_CONFIG_PATHS=/etc/mise/config.toml`, so the checkout's pins rule; otherwise a PR that swaps a tool fails `mise install --locked` with `<tool> is not in the lockfile`. Devcontainers run `mise trust -a` or trust the workspace file in `bootstrap-dev.sh`.
 
 ## `mise activate` vs shims
 
@@ -104,7 +104,12 @@ bash scripts/bootstrap-dev.sh
 pnpm run install:check
 ```
 
-Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin`.
+Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin` by default. Set `MISE_INSTALL_PATH` to an absolute executable path to install or find mise elsewhere. Bootstrap prefers that exact executable, even if its filename differs from `mise`, and adds its parent directory to `PATH`.
+
+The bootstrap and retry tests use local installer fixtures and a temporary home.
+The [development bootstrap verification skill](../../.agents/skills/verify-dev-bootstrap/SKILL.md)
+models executable selection and bounded installer retries. A failed installer
+can leave a file at its destination; inspect or remove it before retrying.
 
 ## Hermetic CI runner (`mise oci`)
 

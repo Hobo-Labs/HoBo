@@ -1,4 +1,4 @@
-// Delivery into an air-gapped Yard (plan 0024 D5, D19, I3, I24; §10 WP20).
+// Delivery into an air-gapped Yard (ADR-0182 D5, D19, I3, I24).
 //
 // The plant network has no route to the internet. Artifacts are mirrored by
 // digest into the Yard's registry (D22: mirrors keep digests), CD polls that

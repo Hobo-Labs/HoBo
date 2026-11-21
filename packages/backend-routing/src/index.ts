@@ -1,10 +1,40 @@
 export {
+	type AtomicJournalObject,
+	AtomicObjectJournalError,
+	type AtomicObjectJournalOptions,
+	createAtomicObjectJournalReplica,
+} from "./atomic-object-journal.js";
+export {
+	type ContinuityFleetPlan,
+	type ContinuityRequest,
+	type ContinuityShortfall,
+	continuityBudgetCheck,
+	continuityFleetPlan,
+	continuityShortfalls,
+	MIN_COPY_INTERVAL_MS,
+} from "./continuity.js";
+export {
 	BACKEND_FLEET_ERROR_CODES,
 	BackendFleetError,
 	type BackendFleetErrorCode,
 	type BackendFleetErrorDetail,
 	isBackendFleetError,
 } from "./errors.js";
+export {
+	createImmutableJournal,
+	type ImmutableJournal,
+	type ImmutableJournalEntry,
+	ImmutableJournalError,
+	type ImmutableJournalMember,
+	type ImmutableJournalOptions,
+	type ImmutableJournalReplica,
+	type ImmutableJournalSeal,
+	type SealableImmutableJournalReplica,
+} from "./immutable-journal.js";
+export {
+	createImmutableJournalRollover,
+	JournalRolloverError,
+} from "./journal-rollover.js";
 export {
 	DEFAULT_FLEET_POLICY,
 	decideFleet,

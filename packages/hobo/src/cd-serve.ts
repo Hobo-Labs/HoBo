@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-known-value-widening -- SAFETY: the HTTP edge: node request headers and error values are untrusted and only copied or stringified. */
 /**
- * `hobo serve cd` — the CD conductor service (WP18, plan 0024, C2/C13).
+ * `hobo serve cd` — the CD conductor service (ADR-0182 C2/C13).
  *
  * One process hosts:
  * - the `@hobo/cd/service` tick loop (sources → … → retention) and a
@@ -14,20 +14,14 @@
  * banner and in `/readyz`.
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	createServer,
 	type IncomingMessage,
 	type ServerResponse,
 } from "node:http";
-import {
-	type CampId,
-	CampManagement,
-	type FeedRequest,
-	type FeedResponse,
-} from "@hobo/cd";
-import { defaultRetention } from "@hobo/cd/compose";
-// binds at merge (plan 0024): the service host and read API are WP12.
-import { createCdControlApi, createCdService } from "@hobo/cd/service";
+import type { FeedRequest, FeedResponse } from "@hobo/cd";
+import { cdJson, composeCdHost } from "./cd-host.js";
 import type { CdRuntime } from "./cd-runtime.js";
 
 export type CdServer = Readonly<{
@@ -78,17 +72,6 @@ async function send(
 	res.end();
 }
 
-function json(status: number, value: unknown): FeedResponse {
-	return {
-		status,
-		headers: {
-			"content-type": "application/json; charset=utf-8",
-			"cache-control": "no-store",
-		},
-		body: new TextEncoder().encode(JSON.stringify(value)),
-	};
-}
-
 /** Start the conductor service over an opened CD runtime. */
 export async function startCdServer(
 	input: Readonly<{
@@ -99,80 +82,43 @@ export async function startCdServer(
 	}>,
 ): Promise<CdServer> {
 	const { runtime } = input;
-	const { cd, config } = runtime;
-	const refusals: string[] = [];
-	const managed: CampId[] = (await cd.topology.camps())
-		.filter((camp) => camp.management !== CampManagement.OBSERVE_ONLY)
-		.map((camp) => camp.campId);
-	const reconcilers = [];
-	if (managed.length > 0) {
-		try {
-			reconcilers.push(
-				runtime.conductor(managed, `hobo-serve-cd:${process.pid}`),
-			);
-		} catch (error) {
-			refusals.push(error instanceof Error ? error.message : String(error));
-		}
-	}
-	const service = createCdService({
-		store: runtime.store,
-		tenant: config.tenant,
-		now: runtime.ctx.now,
-		cd,
-		reconcilers,
-		retention: [defaultRetention()],
-		tickIntervalMs: config.tickIntervalMs,
-		principal: { kind: "service", id: `hobo-serve-cd:${config.stationId}` },
-		telemetry: cd.sink,
+	const { config } = runtime;
+	const host = await composeCdHost({
+		runtime,
+		holderId: `hobo-serve-cd:${config.stationId}:${randomUUID()}`,
+		principalId: `hobo-serve-cd:${config.stationId}`,
+		fleetPassLease: true,
 	});
-	const api = createCdControlApi({
-		store: runtime.store,
-		tenant: config.tenant,
-		now: runtime.ctx.now,
-		cd,
-		topology: cd.topology,
-		service,
-		telemetry: cd.sink,
-	});
+	const { service, refusals } = host;
 	const abort = new AbortController();
 	const server = createServer((req, res) => {
 		void (async () => {
 			try {
 				const path = (req.url ?? "/").split("?")[0] ?? "/";
-				if (path === "/healthz")
-					return await send(res, json(200, { ok: true }));
-				if (path === "/readyz") {
-					const health = service.health();
-					return await send(
-						res,
-						json(service.ready() ? 200 : 503, {
-							...health,
-							simulated: config.simulate,
-							refusals,
-						}),
-					);
-				}
-				if (!path.startsWith(api.pathPrefix))
-					return await send(res, json(404, { ok: false, code: "not-found" }));
+				const probe = path === "/healthz" || path === "/readyz";
+				if (probe) req.resume();
 				const request: FeedRequest = {
 					method: req.method ?? "GET",
 					path: req.url ?? path,
 					headers: headersOf(req),
-					body: await readBody(req),
+					body: probe ? new Uint8Array() : await readBody(req),
 				};
 				// A client hang-up aborts its long-poll or stream.
 				const perRequest = new AbortController();
 				res.on("close", () => perRequest.abort());
 				const signal = AbortSignal.any([abort.signal, perRequest.signal]);
-				await send(res, await api.handle(request, signal));
+				await send(res, await host.handle(request, signal));
 			} catch (error) {
+				input.log(
+					`hobo serve cd: request failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
 				if (!res.headersSent)
 					await send(
 						res,
-						json(500, {
+						cdJson(500, {
 							ok: false,
 							code: "cd-serve-error",
-							message: error instanceof Error ? error.message : String(error),
+							message: "The CD request could not be processed.",
 						}),
 					);
 				else res.destroy();
@@ -189,12 +135,12 @@ export async function startCdServer(
 	await service.start();
 	const url = `http://${input.host}:${port}`;
 	input.log(
-		`hobo serve cd: ${url}${api.pathPrefix} (tenant=${config.tenant} station=${config.stationId} store=${config.store.backend}${config.simulate ? " SIMULATED" : ""}) reconcilers=${reconcilers.length}${refusals.length > 0 ? ` refused=${refusals.join("; ")}` : ""}`,
+		`hobo serve cd: ${url}${host.pathPrefix} (tenant=${config.tenant} station=${config.stationId} store=${config.store.backend}${config.simulate ? " SIMULATED" : ""}) reconcilers=${host.reconcilers}${refusals.length > 0 ? ` refused=${refusals.join("; ")}` : ""}`,
 	);
 	return Object.freeze({
 		url,
 		port,
-		reconcilers: reconcilers.length,
+		reconcilers: host.reconcilers,
 		refusals,
 		async close(signal?: AbortSignal) {
 			abort.abort();

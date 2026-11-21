@@ -46,7 +46,7 @@ describe("configuration (parse, don't validate)", () => {
 			applicationName: "hobo-storage-postgres",
 		});
 		expect(Object.isFrozen(config)).toBe(true);
-		// Parity with packages/cd/src/events.ts CD_DEFAULTS (frozen, plan 0024 A.6).
+		// Parity with packages/cd/src/events.ts CD_DEFAULTS (frozen).
 		const events = readFileSync(join(here, "../../cd/src/events.ts"), "utf8");
 		expect(events).toContain(
 			`postgresMinMajorVersion: ${POSTGRES_STORE_DEFAULTS.minServerMajorVersion},`,

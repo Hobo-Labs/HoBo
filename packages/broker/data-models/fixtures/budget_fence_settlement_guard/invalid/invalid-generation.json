@@ -1,0 +1,42 @@
+{
+  "contract": "hobo.budget-fence-guard/v1",
+  "dataset": "orders",
+  "scopeTenant": "",
+  "operationId": "operation",
+  "fenceTokenDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "receiverKeyId": "receiver",
+  "receiverPublicKey": "public",
+  "financeKeyId": "finance",
+  "financePublicKey": "public",
+  "logicalCampId": "camp",
+  "source": {
+    "yardId": "old",
+    "campId": "old-camp",
+    "providerId": "old-provider",
+    "providerAccountId": "old-account",
+    "resourceId": "old-db",
+    "deploymentId": "old-deployment",
+    "incarnationId": "old-incarnation",
+    "manifestHash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "planHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "destination": {
+    "yardId": "new",
+    "campId": "new-camp",
+    "providerId": "new-provider",
+    "providerAccountId": "new-account",
+    "resourceId": "new-db",
+    "deploymentId": "new-deployment",
+    "incarnationId": "new-incarnation",
+    "manifestHash": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "planHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "decision": "to-target",
+  "executionDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "routeDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "expectedRouteGeneration": "0042",
+  "currentSetId": "set:old",
+  "desiredSetId": "set:new",
+  "migrationId": "migration-1",
+  "decisionHead": "5"
+}

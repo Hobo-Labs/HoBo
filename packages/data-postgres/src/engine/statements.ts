@@ -29,7 +29,8 @@ export const FENCE_TRIGGER = "hobo_fence_guard";
 // public-contract: name of the statement trigger that refuses TRUNCATE on a dataset table.
 export const TRUNCATE_TRIGGER = "hobo_truncate_guard";
 // public-contract: comment stamped on the last object the bootstrap creates; a binding that finds it skips the DDL.
-export const BOOTSTRAP_MARKER = "hobo-data-postgres bootstrap 2";
+export const BOOTSTRAP_MARKER = "hobo-data-postgres bootstrap 3";
+const FENCE_RELEASE_TRIGGER = "hobo_fence_operation_release_guard";
 
 /**
  * The object whose comment says a namespace is bootstrapped, as text the
@@ -48,8 +49,9 @@ export function bootstrapStatements(namespace: string): readonly string[] {
 	const meta = (name: string): string => qualifiedName(namespace, name);
 	const datasets = meta(METADATA_TABLES.datasets);
 	const fences = meta(METADATA_TABLES.fences);
+	const operations = meta(METADATA_TABLES.fenceOperations);
 	const blockedBy = (tenants: string): string =>
-		`SELECT EXISTS (SELECT 1 FROM ${fences} f WHERE f.dataset = TG_TABLE_NAME AND f.tenant IN (${tenants}) AND f.token IS DISTINCT FROM presented) INTO blocked`;
+		`SELECT EXISTS (SELECT 1 FROM ${fences} f WHERE f.dataset = TG_TABLE_NAME AND f.tenant IN (${tenants}) AND f.token IS DISTINCT FROM presented) OR EXISTS (SELECT 1 FROM ${operations} o WHERE o.dataset = TG_TABLE_NAME AND o.status = 'held' AND o.tenant IN (${tenants})) INTO blocked`;
 	return [
 		`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(namespace)}`,
 		`CREATE TABLE IF NOT EXISTS ${datasets} (
@@ -65,6 +67,15 @@ export function bootstrapStatements(namespace: string): readonly string[] {
 	reason text NOT NULL,
 	PRIMARY KEY (dataset, tenant)
 )`,
+		`CREATE TABLE IF NOT EXISTS ${operations} (
+	dataset text NOT NULL, tenant text NOT NULL, operation_id text NOT NULL,
+	route_digest text NOT NULL, receiver_key_id text NOT NULL, receiver_key_digest text NOT NULL,
+	fence_token_digest text NOT NULL, status text NOT NULL CHECK (status IN ('held','completed')),
+	PRIMARY KEY (dataset, tenant, operation_id)
+)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS hobo_one_held_fence_operation ON ${operations} (dataset, tenant) WHERE status = 'held'`,
+		`CREATE TABLE IF NOT EXISTS ${meta(METADATA_TABLES.fencePolicy)} (id integer PRIMARY KEY CHECK (id = 1))`,
+		`CREATE TABLE IF NOT EXISTS ${meta(METADATA_TABLES.fenceReceivers)} (key_id text PRIMARY KEY, key_digest text NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS ${meta(METADATA_TABLES.watermarks)} (
 	dataset text NOT NULL,
 	source text NOT NULL,
@@ -89,6 +100,20 @@ export function bootstrapStatements(namespace: string): readonly string[] {
 		// and a lock on a registry row is what `raise` waits on, so neither
 		// may be reachable by a role that merely writes a dataset.
 		`REVOKE ALL ON TABLE ${Object.values(METADATA_TABLES).map(meta).join(", ")} FROM PUBLIC`,
+		`CREATE OR REPLACE FUNCTION ${meta(FENCE_RELEASE_TRIGGER)}() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $hobo$
+BEGIN
+	UPDATE ${datasets} SET fence_epoch = fence_epoch + 1 WHERE dataset = OLD.dataset;
+	IF EXISTS (SELECT 1 FROM ${operations} o WHERE o.dataset = OLD.dataset AND o.status = 'held' AND (o.tenant = '' OR OLD.tenant = '' OR o.tenant = OLD.tenant)) THEN
+		RAISE EXCEPTION 'native fence operation is still held' USING ERRCODE = 'HB003';
+	END IF;
+	IF TG_OP = 'DELETE' THEN
+		RETURN OLD;
+	END IF;
+	RETURN NEW;
+END
+$hobo$`,
+		`CREATE OR REPLACE TRIGGER ${quoteIdentifier(FENCE_RELEASE_TRIGGER)} BEFORE DELETE OR UPDATE ON ${fences} FOR EACH ROW EXECUTE FUNCTION ${meta(FENCE_RELEASE_TRIGGER)}()`,
+		`ALTER TABLE ${fences} ENABLE ALWAYS TRIGGER ${quoteIdentifier(FENCE_RELEASE_TRIGGER)}`,
 		// The fence, enforced by the store. The share lock on the dataset's
 		// metadata row is what makes raising a fence a real barrier: `raise`
 		// updates that row, so it waits for every in-flight writer to finish

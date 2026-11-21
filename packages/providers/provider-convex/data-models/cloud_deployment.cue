@@ -1,4 +1,4 @@
-// CUE constraints for cloud_deployment.proto (plan 0024 WP13).
+// CUE constraints for cloud_deployment.proto.
 package provider_convex
 
 #ConvexDeploymentName: =~"^[a-z][a-z0-9-]{0,62}[a-z0-9]$"

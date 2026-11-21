@@ -10,6 +10,7 @@ export * from "./executors/event-log.js";
 export * from "./executors/in-place.js";
 export * from "./executors/runtime.js";
 export * from "./facts.js";
+export * from "./fence-operation.js";
 export {
 	canonicalEncode,
 	digestOf,

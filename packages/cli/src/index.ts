@@ -27,6 +27,7 @@ export {
 	type ContainerBuildFn,
 	validateContainerArchive,
 } from "./build/container-build.js";
+export { externalBoundaryRefusal } from "./cloud/boundaries.js";
 export {
 	BINDLE_SOURCE_CANDIDATES,
 	compileProjectManifest,
@@ -52,8 +53,10 @@ export {
 	createYardClient,
 	type DownResult,
 	type PlanRendered,
+	planHostingAuthoritatively,
 	type UpResult,
 	type YardClient,
+	type YardPreflightRuntime,
 	type YardRuntime,
 	type YardSession,
 } from "./cloud/yard-client.js";
@@ -89,6 +92,20 @@ export {
 	type DevServeResult,
 } from "./commands/dev.js";
 export { createDownCommand, type DownCommandDeps } from "./commands/down.js";
+export {
+	createLifecycleFamilyCommand,
+	isLifecycleAction,
+	LIFECYCLE_ACTIONS,
+	type LifecycleAction,
+	type LifecycleFamilySpec,
+	type LifecycleFlags,
+	type PreparedStep,
+	type PrepareInput,
+	type PrepareOutcome,
+	type ProjectResolution,
+	parseLifecycleArgs,
+	resolveFamilyProject,
+} from "./commands/lifecycle-family.js";
 export { createLoginCommand, type LoginCommandDeps } from "./commands/login.js";
 export {
 	scaffoldHoboProject,

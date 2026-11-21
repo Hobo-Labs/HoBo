@@ -65,7 +65,7 @@ export type CdHttpResponse = Readonly<{
 }>;
 
 /**
- * The CD surface the control API mounts under `/v1/cd/` (plan 0024 WP12):
+ * The CD surface the control API mounts under `/v1/cd/`:
  * `createCdControlApi` from `@hobo/cd/service` (read API + SSE stream, falling
  * through to the delivery feed). Typed structurally so the control API needs
  * no build-time dependency on `@hobo/cd`; composition (WP18) passes it in.
@@ -405,7 +405,7 @@ export async function createControlApiServer(
 				return;
 			}
 
-			// CD read API, SSE stream and delivery feed (plan 0024 WP12).
+			// CD read API, SSE stream and delivery feed.
 			if (options.cd && path.startsWith(options.cd.pathPrefix)) {
 				await handleCd(options.cd, req, res);
 				return;

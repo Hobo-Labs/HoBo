@@ -118,6 +118,12 @@ export interface QuarantineRecord {
 	reason: string;
 }
 
+/** Writer authority for stores that protect snapshots with an actor lease.
+ * Such stores must check the exact live fence at commit, including expiry. */
+export interface SnapshotWriteOptions {
+	readonly fenceToken?: bigint;
+}
+
 /** Baseline EventStore port — append, stream read, live wake, snapshot. */
 export interface EventStore {
 	append(
@@ -134,6 +140,7 @@ export interface EventStore {
 		streamId: string,
 		state: JsonValue,
 		seq: number,
+		opts?: SnapshotWriteOptions,
 	): Promise<SnapshotRecord>;
 	/** Present on stores that enforce single-writer fencing. */
 	getStreamHead?(streamId: string): StreamHead | undefined;

@@ -1,5 +1,5 @@
 /**
- * `hobo deploy` — continuous delivery through `@hobo/cd` (plan 0024, C2).
+ * `hobo deploy` — continuous delivery through `@hobo/cd` (ADR-0182 C2).
  *
  * Every CD subcommand (`freight`, `source`, `pipeline`, `window`, `promote`,
  * `status`, `logs`, `rollback`, `reconcile`, `preview`, `verify`, `agent`,
@@ -76,8 +76,14 @@ export function cdTopologyFiles(
 /** The default opener: the one composed CD runtime. */
 export const openDefaultCdHost: CdHostOpener = async (input) => {
 	const { openCdRuntime } = await import("./cd-runtime.js");
+	const { withOwnerJournalFleet } = await import("./cd-owner-journal.js");
+	// The journal fleet hobo cd up provisioned, from the owner's store.
+	const journal = await withOwnerJournalFleet(input.env, input.cwd);
 	const runtime = await openCdRuntime({
-		env: input.env,
+		env: journal.env,
+		...(journal.readSecret !== undefined
+			? { readSecret: journal.readSecret }
+			: undefined),
 		home: input.home,
 		cwd: input.cwd,
 		simulate: input.simulate,

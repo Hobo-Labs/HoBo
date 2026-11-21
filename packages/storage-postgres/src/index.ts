@@ -26,6 +26,17 @@ export {
 	translatePgError,
 } from "./errors.js";
 export {
+	createPostgresFleetEventStore,
+	type PostgresFleetEventStore,
+	type PostgresFleetEventStoreOptions,
+	type PostgresFleetMember,
+	type PostgresFleetTickReport,
+} from "./fleet.js";
+export type {
+	PostgresFleetBackup,
+	PostgresFleetBackupOutcome,
+} from "./fleet-backups.js";
+export {
 	notifyChannel,
 	parseSchemaName,
 	quoteSchema,
@@ -56,6 +67,7 @@ export {
 	createPostgresEventStore,
 	type PostgresEventStore,
 	type PostgresEventStoreOptions,
+	type SnapshotWriteOptions,
 	type StoreHealth,
 } from "./store.js";
 export type { CheckpointLogEntry } from "./subscriptions.js";

@@ -18,14 +18,26 @@ import {
 	verbHelpText,
 	type YardRuntime,
 } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, TrustedVault } from "@hobo/core";
 import type { Outcome } from "@hobo/fleet";
+import {
+	type AppHandOffMode,
+	egressFetch,
+	egressFrom,
+	parseAppHandOffMode,
+	REDIRECT_RECEIVER_SETTING,
+	type RedirectReceiver,
+	redirectReceiverFrom,
+	withoutSecretEnv,
+} from "@hobo/hobo-ci";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
+import { runCiInit } from "./ci-init.js";
+import { runCiInsights } from "./ci-insights.js";
 import { CI_DEPLOY_ADOPT_OPTIONS, runCiRelayAdopt } from "./ci-relay-adopt.js";
 import {
 	CI_DEPLOY_ONLY_OPTIONS,
@@ -33,6 +45,7 @@ import {
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
+import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
 	CI_SECRET_STORE_OPTIONS,
@@ -48,6 +61,7 @@ import type { VercelFetch } from "./vercel-client.js";
 const execute = promisify(execFile);
 type CiLink = ReturnType<typeof create<typeof CiRepositoryLinkSchema>>;
 type CiOptions = Record<string, string | boolean | string[] | undefined>;
+type CiGit = (args: readonly string[], cwd: string) => Promise<string>;
 
 import { ciRepositoryFromRemote, validRepository } from "./ci-repository.js";
 
@@ -340,8 +354,27 @@ function parseCiArgs(args: readonly string[]) {
 			"deploy-project-id": { type: "string" },
 			"relay-identity-id": { type: "string" },
 			"deploy-identity-id": { type: "string" },
+			fleet: { type: "string" },
+			machine: { type: "string" },
+			github: { type: "string" },
+			blacksmith: { type: "string" },
+			depot: { type: "string" },
+			namespace: { type: "string" },
+			warpbuild: { type: "string" },
+			ubicloud: { type: "string" },
+			boat: { type: "string" },
+			public: { type: "boolean" },
+			fork: { type: "boolean" },
+			event: { type: "string" },
+			facts: { type: "string" },
+			plan: { type: "boolean" },
+			apply: { type: "string", multiple: true },
+			"fleet-label": { type: "string" },
+			"include-secret-jobs": { type: "boolean" },
 			"site-url": { type: "string" },
 			"via-workflow": { type: "boolean" },
+			"hand-off": { type: "boolean" },
+			receiver: { type: "string" },
 		},
 	});
 }
@@ -380,6 +413,40 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 	return options;
 }
 
+async function localRepository(
+	deps: { env?: NodeJS.ProcessEnv; git?: CiGit },
+	cwd: string,
+	values: CiOptions,
+): Promise<{ root: string; repository: string | undefined }> {
+	const git: CiGit =
+		deps.git ??
+		(async (gitArgs, directory) => {
+			const result = await execute("git", [...gitArgs], {
+				cwd: directory,
+				timeout: 10000,
+				maxBuffer: 65536,
+				env: deps.env ?? process.env,
+			});
+			return result.stdout.trim();
+		});
+	let root = cwd;
+	try {
+		root = await git(["rev-parse", "--show-toplevel"], cwd);
+	} catch {}
+	if (values.repo !== undefined && validRepository(String(values.repo)))
+		return { root, repository: String(values.repo) };
+	try {
+		return {
+			root,
+			repository: ciRepositoryFromRemote(
+				await git(["remote", "get-url", "origin"], root),
+			),
+		};
+	} catch {
+		return { root, repository: undefined };
+	}
+}
+
 export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
@@ -392,6 +459,8 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
+		/** A vault already holding the deploy token (`VERCEL_TOKEN`), read from the store. */
+		deployCredentials?: TrustedVault;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
@@ -419,6 +488,8 @@ export function createCiCommand(
 				);
 			}
 			const { values } = parsed;
+			if (values.repo !== undefined && !validRepository(String(values.repo)))
+				return usage("--repo <owner/name> must be a GitHub owner/name.");
 			const githubConnect =
 				parsed.positionals[0] === "connect" &&
 				parsed.positionals[1] === "github";
@@ -446,9 +517,46 @@ export function createCiCommand(
 					"deploy",
 					"app",
 					"secret-store",
+					"route",
+					"init",
+					"signals",
+					"diagnose",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
+			if (command === "init") {
+				const local = await localRepository(deps, flags.cwd, values);
+				return runCiInit({
+					cwd: local.root,
+					args: positionals.slice(1),
+					options: values,
+				});
+			}
+			if (command === "signals" || command === "diagnose") {
+				const local = await localRepository(deps, flags.cwd, values);
+				if (local.repository === undefined)
+					return usage(
+						"Run from a GitHub repository or pass --repo owner/name.",
+					);
+				return runCiInsights({
+					command,
+					repository: local.repository,
+					cwd: local.root,
+					args: positionals.slice(1),
+					options: values,
+					env: deps.env ?? process.env,
+				});
+			}
+			if (command === "route") {
+				if (positionals.length !== 1)
+					return usage("hobo ci route takes no positional arguments.");
+				const local = await localRepository(deps, flags.cwd, values);
+				return runCiRoute({
+					cwd: local.root,
+					repository: local.repository,
+					options: values,
+				});
+			}
 			if (command === "deploy") {
 				if (positionals.length !== 1)
 					return usage("hobo ci deploy takes no positional arguments.");
@@ -489,6 +597,9 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...(deps.deployCredentials !== undefined
+						? { credentials: deps.deployCredentials }
+						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),
@@ -574,6 +685,8 @@ export function createCiCommand(
 					"yes",
 					"non-interactive",
 					"via-workflow",
+					"hand-off",
+					"receiver",
 				]);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),
@@ -587,6 +700,34 @@ export function createCiCommand(
 						Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
 					!flags.json &&
 					!values["non-interactive"];
+				// The owner's outbound-only tunnel: --receiver, else the
+				// non-secret HOBO_REDIRECT_RECEIVER; none means the hand-off.
+				// Both, and the hand-off mode, are parsed here, at the boundary.
+				let receiver: RedirectReceiver | undefined;
+				let handOffMode: AppHandOffMode;
+				try {
+					handOffMode = parseAppHandOffMode(
+						"HOBO_APP_HANDOFF",
+						(deps.env ?? process.env).HOBO_APP_HANDOFF,
+					);
+					receiver = redirectReceiverFrom({
+						...withoutSecretEnv(deps.env ?? process.env),
+						...(values.receiver !== undefined
+							? { [REDIRECT_RECEIVER_SETTING]: String(values.receiver) }
+							: undefined),
+					});
+				} catch (error) {
+					return usage(
+						error instanceof Error ? error.message : "Unknown receiver.",
+					);
+				}
+				if (
+					(values["hand-off"] === true || receiver !== undefined) &&
+					(flags.json || flags.quiet)
+				)
+					return usage(
+						"The App hand-off needs progress output. Omit --json and -q, then retry.",
+					);
 				return runCiAppCreate({
 					relay: values.relay === undefined ? undefined : String(values.relay),
 					ownerId:
@@ -596,10 +737,17 @@ export function createCiCommand(
 					name: values.name === undefined ? undefined : String(values.name),
 					replace: values.yes === true,
 					viaWorkflow: values["via-workflow"] === true,
+					handOff: values["hand-off"] === true,
+					handOffMode,
+					receiver,
+					// Every request of this run goes through the proxy the
+					// environment requires, read once up front.
+					tunnelProbe:
+						deps.fetch ?? egressFetch(egressFrom(deps.env ?? process.env)),
 					interactive,
 					env: deps.env ?? process.env,
 					emitProgress,
-					fetch: deps.fetch,
+					fetch: deps.fetch ?? egressFetch(egressFrom(deps.env ?? process.env)),
 					openBrowser: deps.openBrowser,
 					prompt: deps.prompt ?? promptOnTerminal,
 					sleep: deps.sleep,

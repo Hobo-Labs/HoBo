@@ -1,4 +1,4 @@
-// PostureService (plan 0024 D25, I22): continuous compliance from reconcile
+// PostureService (ADR-0182 D25, I22): continuous compliance from reconcile
 // observations, one mutator, and the projections HOBO_POSTURE reads.
 import { readdirSync, readFileSync } from "node:fs";
 import { create } from "@bufbuild/protobuf";

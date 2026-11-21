@@ -1,7 +1,7 @@
 /**
  * The runner controller as a process the worker daemon supervises, and the
- * typed control port the host's CD agent drives it through (plan 0024,
- * decision R2; `deploy/runner-fleet/README.md`).
+ * typed control port the host's CD agent drives it through
+ * (`deploy/runner-fleet/README.md`).
  *
  * Today's box worker and local runner run as processes, not containers. The
  * runner-host realizer moves them between versions without a shell script,

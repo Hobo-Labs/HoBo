@@ -1,4 +1,4 @@
-// ArtifactStore conformance (plan 0024 D3, D18). Content-addressed bytes:
+// ArtifactStore conformance (ADR-0182 D3, D18). Content-addressed bytes:
 // the digest is the identity, a read never returns bytes that do not hash to
 // it, and deletion is explicit.
 import { createHash } from "node:crypto";

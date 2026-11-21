@@ -49,6 +49,7 @@ stateDiagram-v2
   Failed --> Compensating: saga rollback
   Compensating --> Destroyed
   Destroying --> Destroyed
+  Destroyed --> Provisioning: up declares it again
   Destroyed --> [*]
 ```
 
@@ -58,6 +59,66 @@ stateDiagram-v2
 3. If empty → emit nothing (converged). If non-empty → emit `resource.Provisioning`/`UpdateRequested`, dispatch an `IacProgram` to an Executor.
 4. On `exec.Succeeded` → record outputs, emit `resource.Provisioned`. On `exec.Failed` → emit `resource.Failed` with classified error (retryable vs fatal, see [Plan 5](./reliability-observability-cost.md#plan-05)).
 5. The actor is **edge-triggered** by events and **level-triggered** by a periodic resync (drift). Both paths run the same loop → reconciliation is convergent and safe to repeat (the controller pattern, Kubernetes-style, but event-sourced).
+
+**Desired State Reconciliation (upsert, idempotent deployment, modes).** `up` is
+the same operation Pulumi calls `up`, Terraform splits into `plan`/`apply` and
+Bicep calls an idempotent deployment: declare the goal, compare it with what the
+log recorded, apply only the difference
+(`packages/cloud/src/orchestrator/desired-state.ts`).
+
+- Every declared resource has a `desiredSpecHash` (port, provider, product,
+  strategy, region, realization parameters, sorted deps; never the deployment
+  id). It is recorded on `resource.Provisioning` and `resource.Provisioned`.
+- **Upsert:** never provisioned, or `Destroyed` → create; `Provisioned` from a
+  different hash → `Updating` (in place) → `Provisioned`; same hash → no-op. A
+  `Provisioned` fact older than spec hashes uses its recorded plan as the
+  baseline when available; otherwise it is treated as converged.
+- **Idempotent:** an unchanged re-run appends no fact, calls no provider and
+  records no second `deployment.Deployed`.
+- **Epochs:** a run sees only the no-go failures after the last
+  `deployment.Deployed`/`deployment.RolledBack`, so a rolled-back `up` or a
+  `down` never blocks the next `up`. A crashed run resumes in its own epoch.
+- **Modes** (Bicep's names): `incremental` (default) keeps resources the log
+  provisioned but the plan no longer declares and reports them `retain`;
+  `complete` destroys them, dependents first, after the declared resources
+  converge. The provider receives the desired resource declaration. Failed or
+  unsafe orphan deletion leaves the run waiting and retains dependencies;
+  unknown orphan dependencies prevent other deletions from being guessed at.
+  A failed update of an existing estate needs human recovery instead of
+  compensating by deleting resources that predate the update.
+- **What-if:** `planDeploymentChanges(plan, events, mode)` is the pure diff
+  (`create` / `update` / `no-op` / `delete` / `retain`) that `hobo plan` and
+  `hobo up --what-if` print and every run reports as `changes`.
+
+**Planning around an unavailable provider.** Matching can exclude providers
+known to be unavailable before any resource is created.
+
+- **Matching** takes `unavailableProviders` (`PlanConfig`): their candidates
+  are rejected as `provider-unavailable`, and the next-ranked candidate that
+  satisfies the resource wins.
+- **`up`** does not infer an outage from an apply error. A timeout can occur
+  after the provider created a resource, so retrying on another provider could
+  create a second resource or abandon data. It reports the incomplete run for
+  reconciliation instead. The orchestrator refuses a provider change for a
+  resource with recorded or uncertain effects until a fenced handover exists.
+  New `resource.Provisioning` facts record the provider before dispatch; older
+  facts use their recorded plan or an exact spec hash, and otherwise fail
+  closed. Upgrade every writer before relying on this guard: an older writer
+  does not enforce it or record the provider.
+- **No provider left.** Only when every satisfying provider is down does
+  planning refuse, with `placement.providers-unavailable` naming them and
+  saying to configure another vendor, e.g. Supabase beside Neon. The fleet
+  placement functions rank candidates; they do not provision, replicate, or
+  fail over a database at runtime.
+
+**Generational admission.** The gateway admits a deployment per generation: a
+`deployment.Requested` opens one, and its `Planned` or `PlanRejected` closes it.
+The same input replays the current generation (idempotent). A different input
+after it completed opens the next one, so an edited project can declare its
+next desired state. A pending generation never replays an older plan, and a
+different input while one is pending is refused. Ownership is bound by the first request, and a
+budgeted deployment keeps its input bound: it changes through a hosting
+transition, never by reserving twice.
 
 **Why actors, not a monolithic engine:** per-resource isolation means one stuck provider call can't block the whole deploy; single-writer leases ([Plan 5](./reliability-observability-cost.md#plan-05)) prevent two reconciles racing on the same resource; and each actor's stream is an independent audit/replay unit.
 
@@ -114,6 +175,38 @@ flowchart TB
   Y1 <-.->|federated identity trust OIDC/SVID| Y2
   Y1 <-.->|signed policy packs + registry bundles + cross-cloud policy| Y2
 ```
+
+**Nothing in a Yard is external.** A Yard holds only what is internal to its
+provider, so domain and provider boundaries stay where the Junction can see
+them. Two rules enforce this:
+
+- **Yard rows.** `yard()` refuses a binding whose product another vendor runs
+  (`YARD_EXTERNAL_FORBIDDEN`, `@hobo/yards` `yardBoundaryViolations`). The
+  vendor is the product id's prefix: `<vendor>.<product>/vN` or
+  `<vendor>:<product>`.
+- **Bindles.** Placement (`hobo plan`, `hobo up`, every lifecycle family and
+  `--what-if`) refuses a Bindle whose `b.external()` would put an external in
+  the Yard (`HOBO_YARD_EXTERNAL_FORBIDDEN`, `@hobo/bindles`
+  `externalBoundaryViolations`). `hobo dev` places nothing and is unaffected.
+
+The remediation is always the same: declare the service in a Yard whose
+provider runs it, and join the two Yards with a Junction. The one exception is
+a service the Yard's provider provisions and runs **on our behalf**, a
+Marketplace resource such as Neon, Supabase or Upstash attached through the
+Vercel Marketplace. The relationship must be verified against the selected
+provider; a Bindle's `managedBy` annotation or a row's `connectivityId` string
+is only a declaration. Placement currently refuses Bindle externals even with
+the annotation. Yard binding validation still accepts the connectivity string
+and needs trusted evidence before its exception can be relied on.
+
+The hosted CI relay is laid out this way (`packages/ci-vercel/deploy/yard.ts`).
+Its Vercel Yard holds Vercel's products plus the Marketplace caches. Infisical
+(the config service), Aiven Valkey and a self-hosted Valkey each have a Yard of
+their own, all joined by `relayJunction`. `hobo ci deploy` satisfies a Camp
+requirement from a joined Yard's rows in one canonical order across the
+Junction, so the split changes nothing a deploy chooses or prints. The CD
+project's Vercel provider junction (`@hobo/hobo-cd`) joins the CD Yard to a
+Vercel Yard the same way.
 
 ### Providers, IaC & build/VM adapters
 
@@ -226,7 +319,7 @@ export interface BuildProvider {
 #### The Planner: Bindle + mapping → DeploymentPlan
 The Planner is a pure function (easy to test, replayable): `plan(bindle, config, registry) → DeploymentPlan`. Steps:
 
-0. **Lower manifest IR → ResourceIntent** — for each resource node in `hobo.manifest/v1`, build a provider-neutral `ResourceIntent` (capability class, budget scope, colocation/deps, routing objective) and run the FinOps routing pipeline ([finops-budget-routing-control-plane.md](./finops-budget-routing-control-plane.md#ifc-and-hobo-plan-spine)); merge `RoutingDecision`, `DecisionGraph`, and plan-time cost back into the plan preview. Provider names, SKUs, and regions enter only after routing via `ExecutionAdapter`.
+0. **Lower manifest IR → ResourceIntent** — for each resource node in `hobo.manifest/v1`, build a provider-neutral `ResourceIntent` (capability class, budget scope, colocation/deps, routing objective) and run the FinOps routing pipeline ([finops-budget-routing-control-plane.md](./finops-budget-routing-control-plane.md#ifc-and-hobo-plan-spine)); merge `RoutingDecision`, `DecisionGraph`, and plan-time cost back into the plan preview. Provider names, SKUs, and regions enter only after routing via `ExecutionAdapter`. A generic `data.v1` node asks for the capability port of its paradigm (`key-value` → `kv`, `object` → `objectStore`, `relational` → `database`, `secret` → `secretRef`, plus `queue`, `topic`, and `schedule`), never the bare `data` port, which no provider advertises. The ports that serve them: `queue` is Cloudflare Queues and Vercel Queues; `schedule` is Cloudflare Cron Triggers and Vercel Cron Jobs; `secretRef` (`access`, `put`) is the owner's secret store, `hobo add infisical | bitwarden | 1password`, each its own provider and Yard, realizing a reference and never a value. A plan rejected for a missing provider names the `hobo add` that would serve each resource, in `plan` and `--what-if` as well as `up`.
 1. **Collect resources** from the Bindle into nodes; collect `bind` edges into a dependency DAG.
 2. **Resolve a Resource Definition per resource** via **context-matching under the selected Yard provider** ([Plan 25](./platform-engineering.md#plan-25), [yard-first-placement](./adr/yard-first-placement.md)): gather definitions of the resource's `type` for that provider, keep those whose criteria match the deploy context `{envType, app, env, tenant, resourceClass, resourceId}`, score by specificity, pick the highest, and record a **`match.Decided`** event (auditable "why this infra"). Inputs are: (a) explicit platform `defineResource` definitions, (b) Camp **`resourceMappings`** (provider-neutral class/resolver/properties **within** the Yard — no cloud pin), (c) the Yard provider's built-in `{}` defaults. Explicit definitions outscore Camp mappings and defaults. Legacy Camp cloud pins (`defaultProvider`/`tiers`/`bindings`) are **rejected at parse** by `camp()` and are not Planner inputs.
 3. **Capability negotiation** — for the resolved definition's provider, call `Capability.satisfies(request)`:

@@ -1,5 +1,5 @@
 /**
- * npm package-version realizer (plan 0024, HoBo.CD; D6, R2).
+ * npm package-version realizer (HoBo.CD; ADR-0182 D6).
  *
  * The resource is one published version of one package on one npm-compatible
  * registry, plus the dist-tag desired state points at it. It is realized

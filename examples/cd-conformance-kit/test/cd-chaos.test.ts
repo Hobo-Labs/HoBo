@@ -1,4 +1,4 @@
-// The CD chaos lane (plan 0024 WP20): kill a reconciler mid-converge,
+// The CD chaos lane: kill a reconciler mid-converge,
 // partition an agent, store failover, source registry outage, an agent
 // flapping conditions (never NO_RUN) and mass lease loss (failover budget
 // holds; nothing purged early). Chaos never ends wedged.

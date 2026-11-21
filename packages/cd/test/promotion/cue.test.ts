@@ -70,6 +70,16 @@ async function journal() {
 		},
 		h.ctx(),
 	);
+	await h.service.promote(
+		{
+			freightId: fid("f1"),
+			targets: [camp("dev-3")],
+			idempotencyKey: "cue-up",
+			intent: "up",
+			deploymentMode: "incremental",
+		},
+		h.ctx(),
+	);
 	await h.service.createPreview(
 		{
 			freightId: fid("f1"),
@@ -127,6 +137,12 @@ describe.skipIf(!cue)("promotion.cue", () => {
 			subject: "FREIGHT_SUBJECT_BINDLE",
 		};
 		expect(vets("#PromotionRecord", good)).toBe(true);
+		expect(
+			vets("#PromotionRecord", { ...good, deploymentMode: "incremental" }),
+		).toBe(true);
+		expect(
+			vets("#PromotionRecord", { ...good, deploymentMode: "complet" }),
+		).toBe(false);
 		expect(vets("#PromotionRecord", { ...good, targetCampIds: [] })).toBe(
 			false,
 		);

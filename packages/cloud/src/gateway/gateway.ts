@@ -21,6 +21,10 @@ import {
 } from "../events.js";
 import type { SharedHostingBudgetAuthority } from "../hosting-transition/budget-authority.js";
 import { isJsonObject, isJsonString } from "../json.js";
+import {
+	DeploymentHistoryScopeError,
+	readDeploymentHistory,
+} from "../orchestrator/history-scope.js";
 import type {
 	DeploymentPlan,
 	MatchDecided,
@@ -39,7 +43,13 @@ import type { PlannerRegistry } from "../registry/catalog.js";
 export interface DeployCommand {
 	deploymentId: string;
 	bindle: ManifestV1;
-	config?: { objective?: string; region?: string; budgetId?: string };
+	config?: {
+		objective?: string;
+		region?: string;
+		budgetId?: string;
+		/** Providers observed unavailable; Matching routes around them. */
+		unavailableProviders?: string[];
+	};
 }
 
 export interface GatewayContext {
@@ -90,7 +100,12 @@ interface DeploymentState {
 }
 
 // The write-model aggregate behind the deployment stream: a single-writer actor
-// (ActorHost lease + fencing) whose only invariant is idempotent request-once.
+// (ActorHost lease + fencing). Admission is generational: a
+// `deployment.Requested` opens a generation and its `deployment.Planned` or
+// `deployment.PlanRejected` closes it. Its one invariant is that a generation
+// is never opened while another is pending; a completed one does not bind the
+// deployment forever, because a changed declaration (or a re-plan around an
+// unavailable provider) is simply the next desired state.
 const deploymentAggregate: Aggregate<
 	DeploymentState,
 	DeployCommand & { bindleHash: string; tenant: string }
@@ -101,11 +116,16 @@ const deploymentAggregate: Aggregate<
 	name: "deployment",
 	initialState: { requested: false },
 	evolve: (state, event) =>
-		event.type === "deployment.Requested" ? { requested: true } : state,
+		event.type === "deployment.Requested"
+			? { requested: true }
+			: event.type === "deployment.Planned" ||
+					event.type === "deployment.PlanRejected"
+				? { requested: false }
+				: state,
 	decide: (state, command, emitter) => {
 		if (state.requested) {
 			throw new AggregateInvariantError(
-				`deployment ${command.deploymentId} already requested`,
+				`deployment ${command.deploymentId} already has a pending request`,
 			);
 		}
 		const requested = deploymentRequested({
@@ -157,23 +177,72 @@ export async function deploy(
 
 	const streamId = deploymentStreamId(command.deploymentId);
 	const bindleHash = canonicalManifestHash(command.bindle);
-	const prior: EventEnvelope[] = [];
-	for await (const event of deps.store.read(streamId)) prior.push(event);
+	let prior: EventEnvelope[];
+	try {
+		prior = await readDeploymentHistory(
+			deps.store,
+			command.deploymentId,
+			context.tenant,
+		);
+	} catch (error) {
+		if (error instanceof DeploymentHistoryScopeError)
+			throw new UnauthorizedCommandError(
+				"deployment history belongs to a different tenant or deployment",
+			);
+		throw error;
+	}
 	const original = prior.find((event) => event.type === "deployment.Requested");
 	if (original && isJsonObject(original.data)) {
+		// Ownership is bound by the first request, for every generation.
 		if (original.data.tenant !== context.tenant)
 			throw new UnauthorizedCommandError(
 				"deployment belongs to a different tenant",
 			);
-		if (
-			original.data.bindleHash !== bindleHash ||
-			canonicalJson(original.data.config ?? {}) !==
-				canonicalJson(command.config ?? {})
-		)
-			throw new AggregateInvariantError(
-				"deployment ID was already bound to different input",
+		if (canonicalJson(original.actor) !== canonicalJson(context.actor))
+			throw new UnauthorizedCommandError(
+				"deployment belongs to a different principal",
 			);
-		const completed = [...prior]
+	}
+	// The current generation: the latest request and whether it completed.
+	let latestIndex = -1;
+	for (const [index, event] of prior.entries())
+		if (event.type === "deployment.Requested") latestIndex = index;
+	const latest = latestIndex < 0 ? undefined : prior[latestIndex];
+	const latestCompleted =
+		latestIndex >= 0 &&
+		prior
+			.slice(latestIndex + 1)
+			.some(
+				(event) =>
+					event.type === "deployment.Planned" ||
+					event.type === "deployment.PlanRejected",
+			);
+	const sameInput =
+		latest !== undefined &&
+		isJsonObject(latest.data) &&
+		latest.data.bindleHash === bindleHash &&
+		canonicalJson(latest.data.config ?? {}) ===
+			canonicalJson(command.config ?? {});
+	if (latest !== undefined && !sameInput && !latestCompleted)
+		throw new AggregateInvariantError(
+			"deployment is pending with different input; reconcile its recorded effects before retrying admission",
+		);
+	// A budgeted deployment holds a financial reservation: a new generation
+	// would reserve again while the first is still held. Its input stays bound;
+	// changes go through the hosting transition model instead.
+	if (
+		latest !== undefined &&
+		!sameInput &&
+		prior.some((event) => event.type === "hosting.BudgetReserved")
+	)
+		throw new AggregateInvariantError(
+			"deployment ID was already bound to different input (a budgeted deployment changes through a hosting transition)",
+		);
+	// The same input as the current generation replays it (idempotent); a
+	// different input after it completed opens the next generation below.
+	if (latest !== undefined && sameInput) {
+		const completed = prior
+			.slice(latestIndex + 1)
 			.reverse()
 			.find(
 				(event) =>
@@ -187,14 +256,15 @@ export async function deploy(
 					completed as EventEnvelope<{ plan: DeploymentPlan; planHash: string }>
 				).data;
 				const decisions = prior
+					.slice(latestIndex + 1)
 					.filter((event) => event.type === "match.Decided")
 					.map((event) => {
 						// SAFETY: match.Decided was emitted by the pure planner on this stream.
 						return event.data as MatchDecided;
 					});
-				const reservation = prior.find(
-					(event) => event.type === "hosting.BudgetReserved",
-				);
+				const reservation = prior
+					.slice(latestIndex + 1)
+					.find((event) => event.type === "hosting.BudgetReserved");
 				const reservationId =
 					reservation && isJsonObject(reservation.data)
 						? reservation.data.reservationId
@@ -252,6 +322,8 @@ export async function deploy(
 		planConfig.objective = command.config.objective;
 	if (command.config?.region !== undefined)
 		planConfig.region = command.config.region;
+	if (command.config?.unavailableProviders !== undefined)
+		planConfig.unavailableProviders = command.config.unavailableProviders;
 
 	let outcome: PlanResult;
 	let hostingReservationId: string | undefined;

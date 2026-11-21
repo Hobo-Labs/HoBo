@@ -183,13 +183,61 @@ export class DatasetStore {
 		return database;
 	}
 
+	async assertNamespaceDisposable(): Promise<void> {
+		await this.ready();
+		const policy = await this.executor.query(
+			`SELECT id::text AS id FROM ${this.meta("fencePolicy")} WHERE id = 1`,
+		);
+		if (policy.rows.length)
+			throw new DataCoreError(
+				"FENCE_OPERATION_HELD",
+				"a namespace with a native fence operation policy cannot be dropped by the engine",
+			);
+	}
+
+	/** Serialize schema mutations with first receiver enrollment. */
+	async assertSchemaMutationAllowed(tx: PostgresExecutor): Promise<void> {
+		await tx.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+		await tx.query(
+			"SELECT pg_advisory_xact_lock(hashtext($1::text))::text AS locked",
+			[`hobo-data-fence-policy:${this.namespace}`],
+		);
+		const policy = await tx.query(
+			`SELECT id::text AS id FROM ${this.meta("fencePolicy")} WHERE id = 1`,
+		);
+		if (policy.rows.length)
+			throw new DataCoreError(
+				"FENCE_OPERATION_HELD",
+				"schema mutations are unavailable while the native fence policy is enrolled",
+			);
+	}
+
 	/** Drop the namespace and everything in it. Only an ephemeral close does this. */
 	async dropNamespace(): Promise<void> {
+		await this.ready();
+		await this.executor.transaction(async (tx) => {
+			await tx.query("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+			// The first enrollment takes this same lock; a stale ephemeral
+			// binding cannot inspect an empty policy and then drop it after a
+			// concurrent claim has made the source authoritative.
+			await tx.query(
+				"SELECT pg_advisory_xact_lock(hashtext($1::text))::text AS locked",
+				[`hobo-data-fence-policy:${this.namespace}`],
+			);
+			const policy = await tx.query(
+				`SELECT id::text AS id FROM ${this.meta("fencePolicy")} WHERE id = 1`,
+			);
+			if (policy.rows.length)
+				throw new DataCoreError(
+					"FENCE_OPERATION_HELD",
+					"a namespace with a native fence operation policy cannot be dropped by the engine",
+				);
+			await tx.query(
+				`DROP SCHEMA IF EXISTS ${quoteIdentifier(this.namespace)} CASCADE`,
+			);
+		});
 		this.known.clear();
 		this.bootstrap = undefined;
-		await this.executor.query(
-			`DROP SCHEMA IF EXISTS ${quoteIdentifier(this.namespace)} CASCADE`,
-		);
 	}
 
 	// ── datasets ──────────────────────────────────────────────────────────────
@@ -434,6 +482,14 @@ export class DatasetStore {
 	): Promise<void> {
 		const stored = await this.dataset(dataset);
 		await this.executor.transaction(async (tx) => {
+			// The watermark covers the complete dataset, including an empty
+			// batch. Serialize it with a source operation even when there are
+			// no row-triggered writes to provide the barrier.
+			await tx.query(
+				`SELECT dataset FROM ${this.meta("datasets")} WHERE dataset = $1::text FOR SHARE`,
+				[dataset],
+			);
+			await this.assertNoFenceOperation(tx, { dataset, tenant: "" });
 			if (expected === undefined) {
 				await this.applyOn(tx, stored, changes, fenceToken);
 				await tx.query(
@@ -575,6 +631,22 @@ export class DatasetStore {
 
 	// ── fence ─────────────────────────────────────────────────────────────────
 
+	/** Caller holds a lock on the dataset registry row until its transaction ends. */
+	async assertNoFenceOperation(
+		on: PostgresExecutor,
+		scope: DatasetScope,
+	): Promise<void> {
+		const found = await on.query(
+			`SELECT operation_id FROM ${this.meta("fenceOperations")} WHERE dataset = $1::text AND status = 'held' AND (tenant = '' OR $2::text = '' OR tenant = $2::text) LIMIT 1`,
+			[scope.dataset, scope.tenant],
+		);
+		if (found.rows.length)
+			throw new DataCoreError(
+				"FENCE_OPERATION_HELD",
+				"native fence operation is still held",
+			);
+	}
+
 	private async fenceToken(
 		on: PostgresExecutor,
 		scope: DatasetScope,
@@ -599,6 +671,7 @@ export class DatasetStore {
 				`UPDATE ${this.meta("datasets")} SET fence_epoch = fence_epoch + 1 WHERE dataset = $1::text`,
 				[scope.dataset],
 			);
+			await this.assertNoFenceOperation(tx, scope);
 			await tx.query(
 				`INSERT INTO ${this.meta("fences")} (dataset, tenant, token, reason) VALUES ($1::text, $2::text, $3::text, $4::text) ON CONFLICT (dataset, tenant) DO NOTHING`,
 				[scope.dataset, scope.tenant, minted, reason],
@@ -618,10 +691,19 @@ export class DatasetStore {
 				{ detail: { dataset: scope.dataset } },
 			);
 		}
-		await this.executor.query(
-			`DELETE FROM ${this.meta("fences")} WHERE dataset = $1::text AND tenant = $2::text AND token = $3::text`,
-			[scope.dataset, scope.tenant, fenceToken],
-		);
+		try {
+			await this.executor.query(
+				`DELETE FROM ${this.meta("fences")} WHERE dataset = $1::text AND tenant = $2::text AND token = $3::text`,
+				[scope.dataset, scope.tenant, fenceToken],
+			);
+		} catch (cause) {
+			if (sqlStateOf(cause) === "HB003")
+				throw new DataCoreError(
+					"FENCE_OPERATION_HELD",
+					"native fence operation is still held",
+				);
+			throw cause;
+		}
 	}
 
 	async isFenced(scope: DatasetScope): Promise<boolean> {
@@ -650,6 +732,7 @@ export class DatasetStore {
 					`SELECT dataset FROM ${this.meta("datasets")} WHERE dataset = $1::text FOR UPDATE`,
 					[scope.dataset],
 				);
+				await this.assertNoFenceOperation(tx, scope);
 				if ((await this.fenceToken(tx, scope)) !== fenceToken) {
 					throw refused(
 						"retire needs the raised fence's token; the store may still be authoritative",

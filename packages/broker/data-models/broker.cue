@@ -36,7 +36,7 @@ package data_models
 	repository?: string & !=""
 }
 
-// Neutral delivery policy (plan 0024, D14). `engine`, `gitops_repo` and
+// Neutral delivery policy (ADR-0182 D14). `engine`, `gitops_repo` and
 // `destination_namespace` are deprecated wire fields: accepted, mapped on
 // parse, never read for routing.
 #DeliveryPolicy: {

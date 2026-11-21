@@ -72,7 +72,7 @@ describe("ci-trace action artifact names", () => {
 		expect(workspaceBlock).toMatch(/matrix:\s*\n\s+shard:/);
 		const defaultShards = ["0", "1", "2", "3", "4", "5", "6", "7"];
 		expect(workspaceBlock).toContain(
-			"fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]')",
+			"fromJSON(needs.pr_gate_plan.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]')",
 		);
 		const shards = defaultShards;
 		const attempt = "1";
@@ -83,7 +83,7 @@ describe("ci-trace action artifact names", () => {
 		);
 		expect(names.size).toBe(shards.length);
 		expect(workspaceBlock).toMatch(
-			/uses: \.\/\.github\/actions\/ci-trace[\s\S]*disambiguator: \$\{\{ matrix\.shard \}\}/,
+			/uses: \$\/\.github\/actions\/ci-trace[\s\S]*disambiguator: \$\{\{ matrix\.shard \}\}/,
 		);
 	});
 });

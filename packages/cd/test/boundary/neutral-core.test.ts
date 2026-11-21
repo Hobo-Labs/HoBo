@@ -1,4 +1,4 @@
-// I11 — Neutral core (plan 0024 §6). @hobo/cd imports no provider-*, iac-*,
+// I11 — Neutral core (ADR-0182 I11). @hobo/cd imports no provider-*, iac-*,
 // runtime-*, ci*, broker, cli, hobo or resolver-components, and names no
 // Kubernetes / OCI-runtime / Git-host / Argo / Flux / vendor-APM type outside
 // `adapters/` and `verification/sources/`. This scan runs over whatever

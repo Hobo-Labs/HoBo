@@ -17,10 +17,13 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@hobo/backend-routing": "workspace:*",
 		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {
+		"@hobo/fleet": "workspace:*",
 		"@types/node": "^22.15.29",
+		"fast-check": "^4.3.0",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
 	},

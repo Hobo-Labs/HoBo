@@ -27,6 +27,8 @@ const trunk =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
 const routed = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const depsRunner =
+	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
 function lintJobs(jobs: string): number | null {
 	const root = mkdtempSync(join(tmpdir(), "hobo-actions-lint-"));
@@ -49,6 +51,8 @@ function lintJobs(jobs: string): number | null {
 /** What the main gate's shards ask for: the plan job's second ask, then the run's route. */
 const shardRunner =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
+const mergeShardRunner =
+	"${{ needs.pr_gate_plan.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 /** Lints a repository holding one composite action and no workflow. */
 function lintAction(text: string): number | null {
@@ -83,7 +87,7 @@ function lintFile(file: string, text: string): number | null {
 }
 
 const routeJob =
-	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
 function lintRunner(
 	file: string,
@@ -108,6 +112,69 @@ function lintRunner(
 }
 
 describe("Actions runner policy", () => {
+	it("rejects a shard route selected by the proposed change", () => {
+		const workflow = (jobId: string, needs: string) =>
+			`name: fixture\non:\n  merge_group:\njobs:\n${routeJob}  ${jobId}:\n    needs: ${needs}\n    runs-on: ${mergeShardRunner}\n    steps:\n      - run: echo ok\n  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`;
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				workflow("workspace_tests", "[route, pr_gate_validation]"),
+			),
+			0,
+		);
+	});
+	it("allows the deps-image fallback only for PR validation without promotion", () => {
+		const deps =
+			"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote";
+		const job = (
+			name: string,
+			runner: string,
+			run: string,
+			needs = "    needs: route\n",
+			condition = "    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}\n",
+		) =>
+			`name: fixture\non:\n  pull_request:\njobs:\n${routeJob}  ${name}:\n${needs}${condition}    runs-on: ${runner}\n    steps:\n      - name: Build\n        run: ${run}\n`;
+		assert.equal(
+			lintFile("hobo-ci.yml", job("ci-deps-image", depsRunner, deps)),
+			0,
+		);
+		assert.notEqual(lintFile("hobo-ci.yml", job("other", depsRunner, deps)), 0);
+		assert.notEqual(
+			lintFile("hobo-ci.yml", job("ci-deps-image", depsRunner, deps, "")),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				job("ci-deps-image", depsRunner, deps, undefined, ""),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				job(
+					"ci-deps-image",
+					depsRunner,
+					deps,
+					undefined,
+					"    if: ${{ !cancelled() && github.event_name == 'pull_request' }}\n",
+				),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile(
+				"hobo-ci.yml",
+				job("ci-deps-image", depsRunner, deps.replace(" --no-promote", "")),
+			),
+			0,
+		);
+		assert.notEqual(
+			lintFile("hobo-ci.yml", job("ci-deps-image", routed, deps)),
+			0,
+		);
+	});
 	it("allows the one GitHub-hosted runner needed for npm trusted publishing", () => {
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
@@ -189,7 +256,7 @@ describe("Actions runner policy", () => {
 		// An action input by that name.
 		const uses = (input: string) =>
 			job(
-				`    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          clean: false\n      - uses: ./.github/actions/route-runner\n        with:\n          ${input}: hobo\n`,
+				`    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          clean: false\n      - uses: ./.github/actions/route-runner\n        with:\n          ${input}: hobo\n`,
 			);
 		assert.equal(uses("route"), 0);
 		assert.notEqual(uses("fleet-routes"), 0);
@@ -347,13 +414,13 @@ describe("Actions runner policy", () => {
 		);
 		assert.notEqual(
 			lintJobs(
-				"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+				"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
 			),
 			0,
 		);
 		assert.notEqual(
 			lintJobs(
-				"  build:\n    if: ${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+				"  build:\n    if: ${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
 			),
 			0,
 		);
@@ -382,14 +449,19 @@ describe("Actions runner policy", () => {
 	const skipFor = (id: string) =>
 		`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
-		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
+		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
 	const verifierFiles =
 		"            scripts/ci/attestation.mts\n            scripts/ci/verify-attestation.mts\n";
 	const skippable = (id: string, condition: string, needs = "route") =>
 		`  ${id}:\n    needs: ${needs}\n    if: \${{ github.event_name == 'pull_request' && ${condition} }}\n    runs-on: ${routed}\n    steps:\n      - run: echo ok\n`;
 
 	it("lets a signed local run skip a covered job that names itself and needs the route job", () => {
-		for (const id of ["ci-guard", "secret-scan", "pr_gate_validation"])
+		for (const id of [
+			"ci-guard",
+			"secret-scan",
+			"pr_gate_plan",
+			"pr_gate_validation",
+		])
 			assert.equal(
 				lintJobs(
 					`${attestingRoute(verifierFiles)}${skippable(id, skipFor(id))}`,
@@ -570,7 +642,7 @@ describe("Actions runner policy", () => {
 		);
 		assert.notEqual(
 			probe(
-				"    runs-on: hobo\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n",
+				"    runs-on: hobo\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
 			),
 			0,
 		);

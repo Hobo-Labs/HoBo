@@ -13,7 +13,7 @@ export const file_hosting_coverage: GenFile = /*@__PURE__*/
   fileDesc("ChZob3N0aW5nX2NvdmVyYWdlLnByb3RvEhhob2JvLnByb3ZpZGVyLnJhaWx3YXkudjEi2gEKD0hvc3RpbmdDb3ZlcmFnZRIQCghjb250cmFjdBgBIAEoCRITCgtwcm92aWRlcl9pZBgCIAEoCRIcChRyZXNvbHZlZF9wcm9kdWN0X2lkcxgDIAMoCRJGCgp1bnJlc29sdmVkGAQgAygLMjIuaG9iby5wcm92aWRlci5yYWlsd2F5LnYxLlVucmVzb2x2ZWRIb3N0aW5nUHJvZHVjdBI6Cgd0cmFmZmljGAUgASgLMikuaG9iby5wcm92aWRlci5yYWlsd2F5LnYxLlRyYWZmaWNDb3ZlcmFnZSJTChhVbnJlc29sdmVkSG9zdGluZ1Byb2R1Y3QSEgoKcHJvZHVjdF9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkSEwoLcmVtZWRpYXRpb24YAyABKAkihgEKD1RyYWZmaWNDb3ZlcmFnZRIMCgRraW5kGAEgASgJEhEKCW9mZmVyaW5ncxgCIAMoCRIRCglmYWxsYmFja3MYAyADKAkSPwoGYWJzZW50GAQgAygLMi8uaG9iby5wcm92aWRlci5yYWlsd2F5LnYxLkFic2VudFRyYWZmaWNPZmZlcmluZyI8ChVBYnNlbnRUcmFmZmljT2ZmZXJpbmcSEwoLb2ZmZXJpbmdfaWQYASABKAkSDgoGcmVhc29uGAIgASgJYgZwcm90bzM");
 
 /**
- * Plan 0024 WP13 (invariant I14): the provider's declaration that every
+ * ADR-0182 (invariant I14): the provider's declaration that every
  * hosting product it catalogs has a realization path (a shipped resolver) or a
  * typed refusal, and which traffic offerings it can and cannot realize.
  * Metadata only: no credentials, endpoints or provider responses.

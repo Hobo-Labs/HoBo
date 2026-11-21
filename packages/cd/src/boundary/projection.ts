@@ -1,4 +1,4 @@
-// Journal → CDEvents projection (WP16, plan 0024 D17).
+// Journal → CDEvents projection (ADR-0182 D17).
 //
 // A pure fold over @hobo/cd journal events. Each fact that has a CDEvents
 // meaning becomes one or more CDEvents of the pinned spec; HoBo-specific

@@ -16,12 +16,20 @@
  * to `vercel.json`, to the entry files and to the settings the deployed code
  * reads, so the declaration cannot drift from the thing it describes.
  *
- * Facts the Bindle model cannot carry yet are exported beside it, keyed by
- * the Bindle's resource names: a schedule's cadence (`b.schedule()` takes
- * none), the capability requirement of the cache (`b.kv()` takes none) and
- * what the relay asks of its config service (`b.secret()` takes none).
+ * The schedule's cadence is its `cadence` trait, which the planner carries
+ * to the placement. Facts the Bindle model cannot carry yet are exported
+ * beside it, keyed by the Bindle's resource names: the capability requirement
+ * of the cache (`b.kv()` takes none) and what the relay asks of its config
+ * service (`b.secret()` takes none).
  */
-import { bindle, config, env, secret } from "@hobo/bindles";
+import {
+	bindle,
+	cadence,
+	config,
+	continuity,
+	env,
+	secret,
+} from "@hobo/bindles";
 import { redisCompatible } from "@hobo/kv-redis-compatible";
 
 /** The Bindle resource names; each is also the name the platform sees. */
@@ -168,18 +176,64 @@ export const relayConfig = config({
 		),
 });
 
+/**
+ * The relay's continuity policies (the `continuity` trait). CI keeps no
+ * database: GitHub is the source of truth, and every piece of relay state is
+ * either rebuilt from it or regenerated, so every stateful resource is
+ * `rebuildable` and nothing is copied, the cheapest tier there is:
+ *
+ * - `cache`: leases, markers and counters are rebuilt by name after any loss;
+ *   the cache fleet moves cold to the next member when one fails or its
+ *   allowance runs out.
+ * - `hobo-ci` (repair): the schedule puts a new repair tick on it every 15
+ *   minutes.
+ * - `hobo-ci-intake`: a delivery lost with the queue is redelivered by the
+ *   webhook repair, which scans GitHub's delivery history from a checkpointed
+ *   cursor, so an interrupted scan resumes where it stopped.
+ * - `hobo-ci-lease-steps`: a lost step is found again by the queued-job
+ *   repair, which scans GitHub's waiting runs the same way.
+ * - `config`: the secret store keeps its own replicas; `hobo ci up` rebuilds
+ *   what the relay reads, idempotently.
+ */
+export const RELAY_CONTINUITY = Object.freeze({
+	cache: continuity({ tier: "rebuildable" }),
+	queue: continuity({ tier: "rebuildable" }),
+	intake: continuity({ tier: "rebuildable" }),
+	steps: continuity({ tier: "rebuildable" }),
+	config: continuity({ tier: "rebuildable" }),
+});
+
 export default bindle("hobo-ci-relay", (b) => {
 	// Lease records, markers, counters and the change ring: reads, writes and
 	// deletes, all with a TTL. Nothing in it outlives a job by much.
-	const cache = b.kv().allow("get", "set", "delete");
+	const cache = b
+		.kv()
+		.allow("get", "set", "delete")
+		.with(RELAY_CONTINUITY.cache);
 	// Read-only: the relay never writes its configuration or a secret.
-	const configService = b.secret().allow("access");
+	const configService = b
+		.secret()
+		.allow("access")
+		.with(RELAY_CONTINUITY.config);
 	// The relay enqueues repairs, deliveries and lease steps, and its
 	// consumers dequeue them.
-	const queue = b.queue().allow("enqueue", "dequeue");
-	const intake = b.queue().allow("enqueue", "dequeue");
-	const steps = b.queue().allow("enqueue", "dequeue");
-	const schedule = b.schedule().dependsOn(queue);
+	const queue = b
+		.queue()
+		.allow("enqueue", "dequeue")
+		.with(RELAY_CONTINUITY.queue);
+	const intake = b
+		.queue()
+		.allow("enqueue", "dequeue")
+		.with(RELAY_CONTINUITY.intake);
+	const steps = b
+		.queue()
+		.allow("enqueue", "dequeue")
+		.with(RELAY_CONTINUITY.steps);
+	// Every 15 minutes the schedule puts a repair tick on the repair queue.
+	const schedule = b
+		.schedule()
+		.dependsOn(queue)
+		.with(cadence(RELAY_REPAIR_SCHEDULE.cron));
 	const http = b.api().dependsOn(cache, configService, queue, intake, steps);
 	return {
 		[RELAY_RESOURCES.http]: http,

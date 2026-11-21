@@ -22,6 +22,13 @@ The [Vercel package](./packages/ci-vercel/README.md) also runs Vercel CI-tagged
 Turbo checks locally with `pnpm ci:local`; keep hosted CI disabled to avoid
 Vercel CI compute charges.
 
+The AWS and Vercel provider tests also have vendor-emulator coverage. The
+[AWS lane](./packages/providers/provider-aws/README.md#aws-emulator-lane)
+is opt-in and starts AWS Emulator locally; the
+[Vercel lane](./packages/providers/provider-vercel/README.md#local-vercel-api-emulation)
+uses Vercel Labs' API emulator in-process. Each documents the scenarios and
+service limitations it covers.
+
 ## HoBo.CD
 
 [HoBo.CD](./packages/cd/README.md) is the delivery sibling of HoBo.CI
@@ -149,7 +156,7 @@ Canonical terminology lives in [`docs/design/glossary.md`](./docs/design/glossar
 
 ### Requirements
 
-- Node.js ≥ 22 locally (`node:sqlite`); CI uses Node 24. `package.json` `engines.node` is `>=22`. `pnpm run setup` and the `pins:*` scripts run TypeScript with `--experimental-strip-types`, which needs Node ≥ 22.6 (22.22 prints no warning; older 22.x releases may print an ExperimentalWarning).
+- Node.js ≥ 22 locally (`node:sqlite`); CI uses Node 24. The root `package.json` `engines.node` is `>=22`. HoBo CI's isolated private HTTP transport supports Node 22.15+ within Node 22, 23.10+ within Node 23, or Node 24.x to inspect effective TLS trust. `pnpm run setup` and the `pins:*` scripts run TypeScript with `--experimental-strip-types`, which needs Node ≥ 22.6 (22.22 prints no warning; older 22.x releases may print an ExperimentalWarning).
 - pnpm through Corepack, using the checked-in `pnpm-lock.yaml`.
 - Clone the git tree with submodules (`git clone --recurse-submodules …`; three packages of `external/ts-autocode`, `grounding`, `training` and `rewrite`, are workspace members). A GitHub zip without that submodule is incomplete, and `pnpm install` silently skips the missing packages until a build fails. A clone made without them is completed by `pnpm run pins:fetch` (a shallow fetch of exactly the pinned commit; add `-- --reference <local clone>` to download nothing that clone has), and `pnpm run setup` does the same before it installs. `pnpm run pins:status` says offline whether the checkout still matches its pin.
 - Run the CLI as `pnpm hobo <verb> …` — the root script builds `@hobo/hobo` + `@hobo/adapter-hono` on first use. Fastest first success: `pnpm hobo dev --cwd examples/hello-bindle` serves a live local URL.
@@ -180,6 +187,8 @@ pnpm run actions:lint
 ```
 
 General hosted GitHub Actions CI uses the **HoBo CI Fabric** on self-hosted `hobo` runners (see [`.github/workflows/hobo-ci.yml`](./.github/workflows/hobo-ci.yml)). Release pipelines ([`release-hobo.yml`](./.github/workflows/release-hobo.yml), [`release-ts-autocode.yml`](./.github/workflows/release-ts-autocode.yml)) and the manual [HoBo runner acceptance workflow](./.github/workflows/hobo-ci-acceptance.yml) are registered in `scripts/lint-actions.ts`. Run `pnpm run actions:lint` before changing workflow YAML; it enforces SHA-pinned third-party actions, `runs-on: hobo` on active fabric workflows, and composite action pinning under `.github/actions/**`. Policy tests call the exported `lintActionsRepository()` in-process (not a subprocess per fixture) and set `HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY=1` so fixture trees are not slowed by per-invocation remote pin checks under CI contention.
+
+The `actions lock` workflow verifies `.github/workflows/actions.lock` and uploads a patch when it needs updating. Its regeneration preserves full-SHA action pins; apply the patch and run `pnpm run actions:lint` before committing it.
 
 For a local release-quality verification pass, use `pnpm run verify:full`. The opt-in `pnpm run verify:extended` adds coverage, mutation, property, and fuzz testing.
 

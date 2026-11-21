@@ -1,5 +1,5 @@
 /**
- * WP13 (plan 0024) Railway coverage: I14 realization path + traffic profile,
+ * Railway coverage: ADR-0182 I14 realization path + traffic profile,
  * typed refusals, telemetry, resolver conformance on fixtures, and a
  * credential-gated read-only live lane.
  */

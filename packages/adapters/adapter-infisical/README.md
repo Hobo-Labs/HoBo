@@ -22,13 +22,19 @@ take it explicitly.
     `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`, read at run time.
 - **Client** (`createInfisicalClient`): one login, the access token cached in
   memory until a tenth of its lifetime (at most a minute) before `expiresIn`,
-  one fresh login after a 401, bounded retries with exponential backoff on 429
-  (honouring `Retry-After`), 5xx and transport failures, a 1 MiB answer cap, no
-  redirects, a 10 s timeout per request.
+  one fresh login after a 401 on reads, bounded read retries with exponential
+  backoff on 429 (honouring `Retry-After`), 5xx and transport failures, a 1 MiB
+  answer cap, no redirects, and a 10 s timeout per request. Secret writes are
+  sent once; an ambiguous response or transport failure reports
+  `write-uncertain` so callers can reconcile before retrying.
+  `createSecret` issues a create request and returns `undefined` for HTTP 400
+  or 409, which can have causes other than an existing key. Do not use it as
+  an atomic claim unless the backend's uniqueness guarantee is independently
+  verified.
 - **Port** (`createInfisicalSecretsPort`): `access` / `accessVersion` read,
   `put` updates or creates (used only by `hobo ci`, the deploy workflow and
   the `hobo-mcp` secret capture; the relay's identity is read-only),
-  `listVersions` returns the current version.
+  `listVersions` returns the current version. It does not offer `createOnly`.
 - **Sessions**: `signIn()` logs in now and says when the token expires;
   `revoke()` ends a token the client obtained by logging in (never one its
   owner supplied); `forBinding(binding)` binds the same sign-in to another
@@ -37,6 +43,19 @@ take it explicitly.
   `numUsesLimit: 1` spent by one login, writes to the relay's folder and the
   deploy project on that login, then a revoke.
   `valueRef` is the entry's `infisical://` SecretRef.
+- **Plan observation** (`createInfisicalPlanObserver`): an enrolled OIDC
+  identity from `oidcAuth` reads its project and organization plan after the
+  host revalidates the exact lease and reserves and claims each request. The
+  project response must name the enrolled organization. The host independently
+  verifies that organization's root, because Infisical returns the caller's
+  root-org plan.
+  The returned limits are provider reports with freshness unverified: Infisical
+  may serve a cached or fallback plan without identifying it. This observation
+  does not establish available shared-IP capacity, pricing, final usage, or
+  deployment readiness. The request and response shapes follow Infisical's
+  [project](https://github.com/Infisical/infisical/blob/8218dcf23cb99b8a1a55b732879996c4b3092b8a/backend/src/server/routes/v1/project-router.ts)
+  and [plan](https://github.com/Infisical/infisical/blob/8218dcf23cb99b8a1a55b732879996c4b3092b8a/backend/src/ee/routes/v1/license-router.ts)
+  routes.
 - **References**: `infisicalSecretRef(binding, key)` and
   `parseInfisicalSecretRef(ref)` map to the `infisical` scheme of
   [`@hobo/bindings`](../../bindings/src/secret-ref.ts):
@@ -95,11 +114,10 @@ secret-protection policy turns into an approval request is reported as
 
 ## Redaction
 
-`InfisicalError` names the operation, a code, the HTTP status and Infisical's
-`reqId`, never a response body (Infisical's error bodies may echo input), a
-token, a JWT or a value. The adapter logs nothing. Tests assert that an error
-raised while the server echoes the token, the JWT and a value contains none of
-them.
+`InfisicalError` names the operation, a code, and the HTTP status. Provider
+response fields, including `reqId`, are omitted because they may echo input.
+The adapter logs nothing. Tests assert that an error raised while the server
+echoes a token, JWT, or value contains none of them.
 
 ## Gates
 

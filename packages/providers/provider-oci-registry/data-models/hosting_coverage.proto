@@ -1,7 +1,7 @@
 syntax = "proto3";
 package hobo.provider.oci_registry.v1;
 
-// Plan 0024 (invariant I14): the package's declaration that every product it
+// ADR-0182 (invariant I14): the package's declaration that every product it
 // catalogs has a realization path (a shipped resolver) or a typed refusal,
 // and which traffic offerings it can and cannot realize. A registry realizes
 // none. Metadata only: no credentials, endpoints or provider responses.

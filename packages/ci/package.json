@@ -20,6 +20,14 @@
       "types": "./dist/execution.d.ts",
       "default": "./dist/execution.js"
     },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./app": {
+      "types": "./dist/app.d.ts",
+      "default": "./dist/app.js"
+    },
     "./store": {
       "types": "./dist/store.d.ts",
       "default": "./dist/store.js"
@@ -31,6 +39,10 @@
     "./sqlite": {
       "types": "./dist/sqlite-store.d.ts",
       "default": "./dist/sqlite-store.js"
+    },
+    "./insights": {
+      "types": "./dist/insights/index.d.ts",
+      "default": "./dist/insights/index.js"
     },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
@@ -45,6 +57,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.12.1",
+    "@hobo/bindles": "workspace:*",
     "@hobo/broker": "workspace:*",
     "@hobo/core": "workspace:*",
     "@hobo/dispatcher": "workspace:*",
@@ -54,6 +67,7 @@
   },
   "devDependencies": {
     "@types/pg": "8.15.5",
+    "fast-check": "^4.3.0",
     "pg": "8.22.0",
     "testcontainers": "11.8.1"
   }

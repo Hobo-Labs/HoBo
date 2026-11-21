@@ -1,4 +1,4 @@
-// The nine @hobo/cd port suites (plan 0024 WP20): each passes its reference
+// The nine @hobo/cd port suites: each passes its reference
 // adapter, and each mutant is caught by the assertion that names its breach.
 import {
 	ARTIFACT_STORE_ASSERTIONS,

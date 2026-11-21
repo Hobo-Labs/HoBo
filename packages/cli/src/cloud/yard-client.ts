@@ -2,6 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import {
 	canonicalManifestHash,
 	type ManifestV1,
+	parseManifest,
 	serializeManifest,
 } from "@hobo/bindles";
 import type {
@@ -35,15 +36,19 @@ import {
 } from "@hobo/cd";
 import {
 	collectStream,
+	type DeploymentChangeSet,
+	type DeploymentMode,
 	type DeploymentPlan,
 	type DeployResult,
 	type DeployResultPlanned,
 	deploy,
 	type GatewayContext,
 	type GatewayDeps,
+	lowerManifest,
 	manifestHostingPolicy,
 	type OrchestratorDeps,
 	type OrchestratorResult,
+	type PlanBindingAuthority,
 	type PlannerRegistry,
 	type PlanRemediation,
 	type PlanResult,
@@ -81,13 +86,15 @@ export interface YardRuntime {
 	readonly executor: OrchestratorDeps["executor"];
 	readonly broker: OrchestratorDeps["broker"];
 	readonly registry: PlannerRegistry;
-	/** Authoritative financial evidence and admission; never supplied by a CLI flag. */
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
 	readonly hostingBudgetRequired?: boolean;
-	/** @hobo/cd desired-state delivery (D13). Composed by WP18; absent = legacy direct path. */
+	readonly hostingPlanBinding?: (request: {
+		readonly deploymentId: string;
+		readonly bindle: ManifestV1;
+		readonly session: YardSession;
+	}) => Promise<PlanBindingAuthority>;
 	readonly delivery?: YardDelivery;
-	/** The production hosting supervisor owns provider effects and observed teardown. */
 	readonly hostingExecution?: {
 		up(request: {
 			admission: DeployResultPlanned;
@@ -101,10 +108,23 @@ export interface YardRuntime {
 	};
 }
 
+export interface YardPreflightRuntime {
+	readonly registry: PlannerRegistry;
+	readonly hostingBudgetAuthority?: Pick<
+		SharedHostingBudgetAuthority,
+		"persistence" | "resolve"
+	>;
+	readonly defaultHostingBudgetId?: string;
+	readonly hostingBudgetRequired?: boolean;
+	readonly hostingPlanBinding?: YardRuntime["hostingPlanBinding"];
+}
+
 export interface DeployConfig {
 	readonly objective?: string;
 	readonly region?: string;
 	readonly budgetId?: string;
+	readonly mode?: DeploymentMode;
+	readonly unavailableProviders?: readonly string[];
 }
 
 export interface PlanRenderedSuccess {
@@ -114,6 +134,10 @@ export interface PlanRenderedSuccess {
 	readonly plan: DeploymentPlan;
 	readonly resources: DeploymentPlan["resources"];
 	readonly dependencyOrder: string[];
+	readonly resourceProviderAccounts?: readonly {
+		readonly resourceName: string;
+		readonly providerAccountId: string;
+	}[];
 }
 
 export interface PlanRenderedRejection {
@@ -129,6 +153,9 @@ export interface ProgressEvent {
 	readonly type: string;
 	readonly resourceId?: string;
 	readonly detail: string;
+	readonly reconciliation?: {
+		readonly operation: "apply" | "destroy" | "unknown";
+	};
 }
 
 export interface UpRejected {
@@ -145,6 +172,12 @@ export interface UpRealized {
 	readonly plan: DeploymentPlan;
 	readonly provisioned: string[];
 	readonly progress: ProgressEvent[];
+	/** The what-if this `up` started from (orchestrator lane). */
+	readonly changes?: DeploymentChangeSet;
+	/** Undeclared resources `complete` mode destroyed. */
+	readonly pruned?: string[];
+	readonly pendingOperations?: OrchestratorResult["pendingOperations"];
+	readonly transitionBlock?: OrchestratorResult["transitionBlock"];
 }
 
 export type UpResult = UpRejected | UpRealized;
@@ -158,7 +191,7 @@ export interface DownResult {
 	readonly progress: ProgressEvent[];
 }
 
-// ── Desired-state delivery (plan 0024 D13) ──────────────────────────────────
+// ── Desired-state delivery (ADR-0182 D13) ───────────────────────────────────
 // With `runtime.delivery` wired, `hobo up` declares desired state instead of
 // driving the orchestrator imperatively: it records LOCAL_BUILD Freight,
 // promotes it into the deployment Camp, and an in-process conductor converges
@@ -319,6 +352,9 @@ export interface YardClient {
 	) => Promise<Readonly<{ result: DownResult; receipt?: DeliveryReceipt }>>;
 }
 
+/** The config the gateway records on `deployment.Requested` and plans with. */
+type GatewayDeployConfig = NonNullable<Parameters<typeof deploy>[1]["config"]>;
+
 function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 	const progress: ProgressEvent[] = [];
 	for (const event of events) {
@@ -333,13 +369,36 @@ function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 			resourceId?: string;
 			summary?: string;
 			reason?: string;
+			requiresReconciliation?: boolean;
+			reconciliationOperation?: string;
 		};
 		const resourceId = data.resourceId;
-		const detail = data.summary ?? data.reason ?? event.type;
+		const reconciliation: ProgressEvent["reconciliation"] =
+			data.requiresReconciliation === true
+				? {
+						operation:
+							data.reconciliationOperation === "apply" ||
+							data.reconciliationOperation === "destroy"
+								? data.reconciliationOperation
+								: ("unknown" as const),
+					}
+				: undefined;
+		const detail = reconciliation
+			? `The ${reconciliation.operation} outcome is unknown or unverified. Reconcile the provider before retrying.${data.reason ? ` ${data.reason}` : ""}`
+			: (data.summary ?? data.reason ?? event.type);
 		progress.push(
 			resourceId !== undefined
-				? { type: event.type, resourceId, detail }
-				: { type: event.type, detail },
+				? {
+						type: event.type,
+						resourceId,
+						detail,
+						...(reconciliation && { reconciliation }),
+					}
+				: {
+						type: event.type,
+						detail,
+						...(reconciliation && { reconciliation }),
+					},
 		);
 	}
 	return progress;
@@ -362,6 +421,101 @@ function planConfig(
 			: undefined),
 		...(config?.region !== undefined ? { region: config.region } : undefined),
 	};
+}
+
+// public-contract: plans with the same financial and binding authorities used for admission, without exposing the gateway, event store, broker, or provider effects.
+export async function planHostingAuthoritatively(
+	runtime: YardPreflightRuntime,
+	bindle: ManifestV1,
+	{
+		deploymentId,
+		session,
+		config,
+	}: {
+		readonly deploymentId: string;
+		readonly session: YardSession;
+		readonly config?: DeployConfig;
+	},
+): Promise<PlanRendered> {
+	const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
+	const authority = runtime.hostingBudgetAuthority;
+	if (
+		!budgetId ||
+		!authority?.resolve ||
+		authority.persistence !== "durable-cas"
+	)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "authoritative hosting budget is not configured",
+			remediations: [],
+		};
+	if (!(runtime.hostingPlanBinding instanceof Function))
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
+			remediations: [],
+		};
+	const binding = await runtime.hostingPlanBinding({
+		deploymentId,
+		bindle,
+		session,
+	});
+	if (!binding)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
+			remediations: [],
+		};
+	const evidence = await authority.resolve({
+		budgetId,
+		tenantId: session.tenant,
+		bindle,
+		objective:
+			config?.objective ??
+			manifestHostingPolicy(bindle).budgetPolicy?.objective ??
+			"min-cost",
+	});
+	if (
+		evidence.budget.tenantId !== session.tenant ||
+		evidence.budget.budgetId !== budgetId
+	)
+		throw new Error("hosting evidence belongs to another tenant or budget");
+	const result = planDeployment(
+		bindle,
+		{
+			...planConfig(deploymentId, config),
+			hostingBudget: evidence,
+			binding,
+		},
+		runtime.registry,
+	);
+	return result.ok
+		? {
+				ok: true,
+				deploymentId,
+				planHash: result.planHash,
+				plan: result.plan,
+				resources: result.plan.resources,
+				dependencyOrder: result.plan.dependencyOrder,
+				...(result.hostingCommitment
+					? {
+							resourceProviderAccounts:
+								result.hostingCommitment.allocations.map((allocation) => ({
+									resourceName: allocation.resourceName,
+									providerAccountId: allocation.providerAccountId,
+								})),
+						}
+					: undefined),
+			}
+		: {
+				ok: false,
+				deploymentId,
+				reason: result.reason,
+				remediations: result.remediations,
+			};
 }
 
 export function createYardClient(runtime: YardRuntime): YardClient {
@@ -396,54 +550,8 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		: undefined;
 
 	const client: YardClient = {
-		async planAuthoritatively(bindle, { deploymentId, session, config }) {
-			const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
-			const authority = runtime.hostingBudgetAuthority;
-			if (
-				!budgetId ||
-				!authority?.resolve ||
-				authority.persistence !== "durable-cas"
-			)
-				return {
-					ok: false,
-					deploymentId,
-					reason: "authoritative hosting budget is not configured",
-					remediations: [],
-				};
-			const evidence = await authority.resolve({
-				budgetId,
-				tenantId: session.tenant,
-				bindle,
-				objective:
-					config?.objective ??
-					manifestHostingPolicy(bindle).budgetPolicy?.objective ??
-					"min-cost",
-			});
-			if (
-				evidence.budget.tenantId !== session.tenant ||
-				evidence.budget.budgetId !== budgetId
-			)
-				throw new Error("hosting evidence belongs to another tenant or budget");
-			const result = planDeployment(
-				bindle,
-				{ ...planConfig(deploymentId, config), hostingBudget: evidence },
-				runtime.registry,
-			);
-			return result.ok
-				? {
-						ok: true,
-						deploymentId,
-						planHash: result.planHash,
-						plan: result.plan,
-						resources: result.plan.resources,
-						dependencyOrder: result.plan.dependencyOrder,
-					}
-				: {
-						ok: false,
-						deploymentId,
-						reason: result.reason,
-						remediations: result.remediations,
-					};
+		planAuthoritatively(bindle, request) {
+			return planHostingAuthoritatively(runtime, bindle, request);
 		},
 		plan(bindle, { deploymentId, config }) {
 			const result = pureplan(bindle, deploymentId, config);
@@ -476,6 +584,15 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				runtime.hostingBudgetRequired === true ||
 				budgetId !== undefined ||
 				manifestHostingPolicy(bindle).required;
+			if (requiresHosting && config?.mode !== undefined)
+				return {
+					result: {
+						status: "rejected",
+						deploymentId,
+						reason: "budgeted hosting does not support deployment modes",
+						remediations: [],
+					},
+				};
 			if (requiresHosting && (!runtime.hostingExecution || !budgetId))
 				return {
 					result: {
@@ -512,15 +629,19 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 				actor: session.principal,
 				correlationId: `deploy:${deploymentId}`,
 			};
-			const effectiveConfig = { ...config };
+			// A retryable error does not establish whether apply took effect. Plan
+			// around preexisting availability information only; do not infer an
+			// outage from an apply failure and silently create elsewhere.
+			const { unavailableProviders: initiallyDown, ...baseConfig } =
+				config ?? {};
+			const unavailable = new Set<string>(initiallyDown ?? []);
+			const effectiveConfig: GatewayDeployConfig = { ...baseConfig };
+			if (unavailable.size > 0)
+				effectiveConfig.unavailableProviders = [...unavailable].sort();
 			if (budgetId) effectiveConfig.budgetId = budgetId;
 			const deployResult: DeployResult = await deploy(
 				gatewayDeps,
-				{
-					deploymentId,
-					bindle,
-					config: effectiveConfig,
-				},
+				{ deploymentId, bindle, config: effectiveConfig },
 				context,
 			);
 			if (deployResult.status === "rejected") {
@@ -554,9 +675,14 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					tenant: session.tenant,
 					actor: session.principal,
 					correlationId: `deploy:${deploymentId}`,
+					...(config?.mode !== undefined ? { mode: config.mode } : undefined),
 				},
 			);
-
+			const blocked = (orchestrated.blockedProviderMoves ?? []).map((move) => ({
+				type: "provider.move-blocked",
+				resourceId: move.resource,
+				detail: `Cannot move from ${move.from ?? "an unknown provider"} to ${move.to} until the existing resource and any uncertain effects are reconciled.`,
+			}));
 			return {
 				result: {
 					status: orchestrated.status,
@@ -564,7 +690,15 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					planHash: deployResult.planHash,
 					plan: deployResult.plan,
 					provisioned: orchestrated.provisioned,
-					progress: progressFrom(orchestrated.events),
+					progress: [...progressFrom(orchestrated.events), ...blocked],
+					changes: orchestrated.changes,
+					pruned: orchestrated.pruned,
+					...(orchestrated.pendingOperations !== undefined && {
+						pendingOperations: orchestrated.pendingOperations,
+					}),
+					...(orchestrated.transitionBlock !== undefined && {
+						transitionBlock: orchestrated.transitionBlock,
+					}),
 				},
 			};
 		},
@@ -1007,6 +1141,31 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 		return (await cd.desired.resolved(set)).plan;
 	}
 
+	async function needsCompletePrune(
+		set: SetRecord,
+		freight: FreightRecord,
+	): Promise<boolean> {
+		const digest = freight.manifest?.declarationHash;
+		if (!digest || !isDigest(digest)) return true;
+		const bytes = await cd.artifacts.get(digest);
+		if (!bytes) return true;
+		try {
+			const declaration = parseManifest(
+				JSON.parse(new TextDecoder().decode(bytes)),
+			);
+			if (canonicalManifestHash(declaration) !== digest) return true;
+			const declared = new Set(
+				lowerManifest(declaration).map((resource) => resource.name),
+			);
+			return (await planOf(set)).resources.some(
+				(resource) => !declared.has(resource.name),
+			);
+		} catch {
+			// Let promotion's normal declaration validation reject corrupt data.
+			return true;
+		}
+	}
+
 	function reconcilerFor(campId: CampId, deploymentId: string): CampReconciler {
 		return cd.createReconciler({
 			mode: ReconcilerMode.CONDUCTOR,
@@ -1044,6 +1203,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				options.onProgress?.(event);
 			};
 			const mode = modeOf(options);
+			const deploymentMode = options.config?.mode ?? "incremental";
 			const finish = async (
 				result: UpResult,
 				receipt: Omit<DeliveryReceipt, "campId" | "mode">,
@@ -1122,14 +1282,17 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 				const alreadyDesired =
 					before !== undefined &&
 					before.freightId === freight.freightId &&
-					before.origin !== SetOrigin.TEARDOWN;
+					before.origin !== SetOrigin.TEARDOWN &&
+					(deploymentMode !== "complete" ||
+						!(await needsCompletePrune(before, freight)));
 				if (!alreadyDesired) {
 					const promoted = await cd.promotions.promote(
 						{
 							freightId: freightIdOf(freight.freightId),
 							targets: [campId],
-							idempotencyKey: `up|${campId}|${freight.freightId}|${before?.setId ?? "genesis"}`,
+							idempotencyKey: `up|${campId}|${freight.freightId}|${before?.setId ?? "genesis"}|${deploymentMode}`,
 							intent: "up",
+							deploymentMode,
 						},
 						ctx,
 					);
@@ -1336,7 +1499,7 @@ function createDesiredStateDriver(delivery: YardDelivery): DesiredStateDriver {
 }
 
 // Brands are minted only from ids the CD ports returned or the caller named.
-function campIdOf(value: string): CampId {
+export function campIdOf(value: string): CampId {
 	// SAFETY: a Camp id is an opaque string; the brand marks where it came from.
 	return value as CampId;
 }

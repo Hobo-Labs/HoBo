@@ -1,4 +1,4 @@
-// Live lane (plan 0024 R16): the realizers against real hubs running in
+// Live lane: the realizers against real hubs running in
 // `kind`. Gated on availability; every skip names what is missing. Set up
 // with the runbook in README.md ("Live kind lane"). It needs kind and live
 // hubs, so it runs under `test:integration`, not the unit `test` run:

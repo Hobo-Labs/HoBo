@@ -35,6 +35,30 @@ function withPipeline(h: ReturnType<typeof harness>) {
 }
 
 describe("promotion saga (WP6)", () => {
+	it("persists the requested up mode, passes it to resolution, and rejects reuse with another mode", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const request = {
+			freightId: fid("f1"),
+			targets: [camp("dev-1")],
+			idempotencyKey: "up-mode",
+			intent: "up" as const,
+			deploymentMode: "incremental" as const,
+		};
+		const result = await h.service.promote(request, h.ctx());
+		if (!result.ok) throw new Error("expected up promotion");
+		expect(h.resolver.calls[0]?.deploymentMode).toBe("incremental");
+		expect(
+			(await h.restart().get(pid(result.value.promotionId)))?.deploymentMode,
+		).toBe("incremental");
+		const reused = await h.service.promote(
+			{ ...request, deploymentMode: "complete" },
+			h.ctx(),
+		);
+		expect(reused.ok).toBe(false);
+		if (!reused.ok)
+			expect(reused.reasons[0]?.code).toBe(PROMOTION_REASON.idempotencyReused);
+	});
 	it("I1 across two providers: the same Freight reaches both Camps unrebuilt and the infrastructure diff is shown", async () => {
 		const h = harness();
 		withPipeline(h);
@@ -292,6 +316,27 @@ describe("promotion saga (WP6)", () => {
 			PromotionState.PROMOTED,
 		);
 		expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f2");
+	});
+
+	it("verification FAIL on a Camp's first Set compensates without rollback-no-predecessor", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		h.verification.verdict = VerificationVerdict.FAIL;
+		const result = await h.service.promote(
+			{
+				freightId: fid("f1"),
+				targets: [camp("dev-1")],
+				idempotencyKey: "first",
+			},
+			h.ctx(),
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const record = await h.service.get(pid(result.value.promotionId));
+		expect(record?.state).toBe(PromotionState.FAILED);
+		const codes = record?.reasons.map((r) => r.code) ?? [];
+		expect(codes).toContain(PROMOTION_REASON.verificationFailed);
+		expect(codes).not.toContain(PROMOTION_REASON.rollbackNoPredecessor);
 	});
 
 	it("a group failure compensates: applied members roll back to their predecessors", async () => {

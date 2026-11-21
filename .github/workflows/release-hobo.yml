@@ -69,6 +69,12 @@ on:
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
+      - "packages/hobo/test/support/release-integration-test-files.ts"
+      - "packages/hobo/vitest.release-integration.config.ts"
+      - "packages/hobo/test/vercel-project.test.ts"
+      - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
+      - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
+      - "packages/hobo/test/cd-md-examples.test.ts"
   push:
     tags:
       - "sdk-v*"
@@ -137,6 +143,12 @@ on:
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
+      - "packages/hobo/test/support/release-integration-test-files.ts"
+      - "packages/hobo/vitest.release-integration.config.ts"
+      - "packages/hobo/test/vercel-project.test.ts"
+      - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
+      - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
+      - "packages/hobo/test/cd-md-examples.test.ts"
   workflow_dispatch:
     inputs:
       push_images:
@@ -228,20 +240,51 @@ jobs:
       attested: ${{ steps.route.outputs.attested }}
       attested-jobs: ${{ steps.route.outputs.attested-jobs }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             .github/actions/route-runner
+            .github/workflows/release-hobo.yml
             scripts/ci/route-runner.mts
             scripts/ci/runner-routing.mts
             .hobo/ci.json
             scripts/ci/attestation.mts
             scripts/ci/verify-attestation.mts
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.routing-base.outputs.sha }}
+          path: .ci-trusted
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            .hobo/ci.json
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
       - id: route
-        uses: ./.github/actions/route-runner
+        uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
@@ -255,17 +298,18 @@ jobs:
       run: ${{ steps.version.outputs.run == 'true' }}
       release_ref: ${{ steps.version.outputs.release_ref }}
       release_sha: ${{ steps.version.outputs.release_sha }}
+      turbo_base: ${{ steps.scope.outputs.from }}
     steps:
       - name: Main train release after green CI (nbgv)
         if: >-
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
         if: >-
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
@@ -326,22 +370,22 @@ jobs:
       packages: read
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 2
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
         run: |
           set -euo pipefail
@@ -379,13 +423,13 @@ jobs:
           scripts/test/deploy-site.test.ts
       - name: Upload release contract vitest log
         if: failure() && steps.release_contract_tests.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: vitest-release-contract-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/release-contract-vitest.log
           if-no-files-found: ignore
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -493,7 +537,7 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
 
@@ -514,22 +558,22 @@ jobs:
       contents: read
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch pinned ts-autocode
         run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - name: Link deps layer or install
         run: |
           set -euo pipefail
@@ -541,7 +585,7 @@ jobs:
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
           fi
       - name: Turbo cache
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
         with:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
@@ -560,7 +604,7 @@ jobs:
           pnpm exec vitest run scripts/test/release-freight-realize.test.ts
       - name: Upload release realize vitest log
         if: failure() && steps.release_realize_tests.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: vitest-release-realize-${{ github.run_id }}-${{ github.run_attempt }}
           path: /tmp/hobo-ci-job-logs/release-realize-vitest.log
@@ -572,7 +616,103 @@ jobs:
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
         if: always() && steps.turbo-prune.outputs.save != 'false'
-        uses: ./.github/actions/turbo-cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          mode: save
+
+  # The slow smoke/integration suites the merge queue leaves out of
+  # packages/hobo's default suite (test/support/release-integration-test-files.ts):
+  # they run here and block publish, so the merge queue stops paying ~300 s of
+  # serial time for them while no release ships without them. A pull request
+  # pays for them only when its diff reaches the suites or the lane itself.
+  release-hobo-integration:
+    name: HoBo slow integration suites (release gate)
+    needs: [route, release-main-train-gate]
+    # On the main train it runs when a release is actually planned (the train
+    # gate's `run`); a tag or a dispatch that pushes images releases without
+    # that gate, and a pull request or merge group run is scoped by the diff.
+    if: >-
+      !cancelled() && needs.route.result == 'success' && (
+      needs.release-main-train-gate.outputs.run == 'true' ||
+      startsWith(github.ref, 'refs/tags/sdk-v') ||
+      startsWith(github.ref, 'refs/tags/cli-v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'merge_group')
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 2
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Decide whether the diff reaches the slow integration suites
+        id: scope
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            echo "HEAD is not a PR merge commit; running the lane"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only HEAD^1 HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              packages/hobo/vitest.release-integration.config.ts \
+              packages/hobo/test/support/release-integration-test-files.ts \
+              packages/hobo/test/vercel-project.test.ts \
+              packages/hobo/test/evals/ceremony-explorer.eval.test.ts \
+              packages/hobo/test/cd-runner-fleet-delivery.test.ts \
+              packages/hobo/test/cd-md-examples.test.ts \
+              >> "$GITHUB_OUTPUT"
+      - name: Fetch pinned ts-autocode
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+        if: steps.scope.outputs.run == 'true'
+      - name: Link deps layer or install
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: HoBo slow integration suites
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 15
+        run: >-
+          pnpm exec turbo run test:release-integration --filter=@hobo/hobo
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        uses: $/.github/actions/turbo-cache
         with:
           mode: save
 
@@ -618,14 +758,14 @@ jobs:
       contents: read
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
@@ -633,7 +773,7 @@ jobs:
           submodules: "false"
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build the hobo CLI (release Freight through hobo deploy)
         run: >-
@@ -643,7 +783,7 @@ jobs:
         id: pack
         run: node --no-warnings scripts/ci/release-freight-cli.mts pack "${RUNNER_TEMP}/hobo-release-cli.tgz" --github-output "$GITHUB_OUTPUT"
       - name: Upload the built hobo CLI
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli.tgz
@@ -672,37 +812,39 @@ jobs:
       contents: read
       packages: read
     env:
-      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_TURBO_BASE: ${{ needs.release-main-train-gate.outputs.run == 'true' && needs.release-main-train-gate.outputs.turbo_base || '' }}
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
+      HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
-    # One at a time. Job containers on a box share its Docker daemon, and the
-    # legs share tags there: the hobo-cli and hobo-mcp legs build
-    # `hobo-sdk:candidate` (hobo-mcp also `hobo-cli:candidate`), and every leg
-    # ends by removing its own `<image>:candidate`
-    # (scripts/ci/build-release-oci-image.mts).
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 6
       matrix:
         image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch previous release for affected builds
+        if: env.HOBO_RELEASE_TURBO_BASE != ''
+        run: |
+          set -euo pipefail
+          git fetch --unshallow --filter=blob:none origin main "refs/tags/${HOBO_RELEASE_TURBO_BASE}:refs/tags/${HOBO_RELEASE_TURBO_BASE}"
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
         # Without a token the GHCR pull is never tried, and a runner that does not
@@ -777,6 +919,7 @@ jobs:
       needs.release-main-train-gate.result == 'success' &&
       needs.release-images.result == 'success' &&
       needs.release-oci-build-tag.result == 'success' &&
+      needs.release-hobo-integration.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -788,17 +931,13 @@ jobs:
         needs.release-contract.result == 'success'
       ) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-images, release-hobo-cli]
+    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-images, release-hobo-cli, release-hobo-integration]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
-    # One image per job: all six built and pushed in one job ran past the
-    # 20-minute limit when one push stalled (run 43144784243). Only the train's
-    # images (release-images). One at a time, because legs on one box share the
-    # `*:candidate` tags.
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 6
       matrix:
         image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     permissions:
@@ -807,28 +946,35 @@ jobs:
       id-token: write
       attestations: write
     env:
-      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_TURBO_BASE: ${{ needs.release-main-train-gate.outputs.run == 'true' && needs.release-main-train-gate.outputs.turbo_base || '' }}
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
       HOBO_RELEASE_REVISION: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
+      HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - name: Fetch previous release for affected builds
+        if: env.HOBO_RELEASE_TURBO_BASE != ''
+        run: |
+          set -euo pipefail
+          git fetch --unshallow --filter=blob:none origin main "refs/tags/${HOBO_RELEASE_TURBO_BASE}:refs/tags/${HOBO_RELEASE_TURBO_BASE}"
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
@@ -847,7 +993,7 @@ jobs:
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
       - name: Download the built hobo CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
@@ -871,13 +1017,13 @@ jobs:
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/oci
         run: node --no-warnings scripts/ci/push-release-ghcr-images.mts --image ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-release-digest.txt"
       - name: Upload the release Freight journal (oci)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-release-freight-oci-${{ matrix.image_id }}
           path: ${{ runner.temp }}/hobo-release-cd/oci
           include-hidden-files: true
       - name: Upload digest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-release-digest-${{ matrix.image_id }}
           path: ${{ runner.temp }}/hobo-release-digest.txt
@@ -905,14 +1051,14 @@ jobs:
       attestations: write
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 6
       matrix:
         image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-digest-${{ matrix.image_id }}
           path: ${{ runner.temp }}/hobo-release-digest
@@ -931,7 +1077,7 @@ jobs:
             exit 1
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/release-oci-attest
+      - uses: $/.github/actions/release-oci-attest
         if: steps.digest.outputs.present == 'true'
         with:
           digest-list-path: ${{ runner.temp }}/hobo-release-digest/hobo-release-digest.txt
@@ -983,22 +1129,22 @@ jobs:
       HOBO_RELEASE_REVISION: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
@@ -1010,7 +1156,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node --no-warnings scripts/ci/ensure-ci-worker-image.mts
       - name: Download the built hobo CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
@@ -1025,7 +1171,7 @@ jobs:
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/service
         run: node --no-warnings scripts/ci/push-release-service-image.mts ${{ matrix.image_id }} "${RUNNER_TEMP}/hobo-service-digest.txt"
       - name: Upload the service image Freight journal
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-service-freight-${{ matrix.image_id }}
           path: ${{ runner.temp }}/hobo-release-cd/service
@@ -1041,7 +1187,7 @@ jobs:
             exit 1
           fi
           echo "present=true" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/release-oci-attest
+      - uses: $/.github/actions/release-oci-attest
         if: steps.digest.outputs.present == 'true'
         with:
           digest-list-path: ${{ runner.temp }}/hobo-service-digest.txt
@@ -1061,6 +1207,7 @@ jobs:
       vars.HOBO_NPM_PUBLISH == 'true' &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-oci-build-tag.result == 'success' &&
+      needs.release-hobo-integration.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
         startsWith(github.ref, 'refs/tags/sdk-v') ||
@@ -1071,7 +1218,7 @@ jobs:
         needs.release-contract.result == 'success'
       ) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-hobo-cli]
+    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-hobo-cli, release-hobo-integration]
     # Keyless provenance signing names a GitHub-hosted builder (npm verifies
     # it) — not self-hosted hobo. The tarballs it signs are built here
     # (stage-sdk-artifacts.mts); only the hobo CLI comes from release-hobo-cli,
@@ -1088,14 +1235,14 @@ jobs:
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
@@ -1103,7 +1250,7 @@ jobs:
           submodules: "false"
       - uses: jdx/mise-action@8008c3f4db491fde6fd6d72dc97fbdb752dac949
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Resolve and validate release version
         env:
@@ -1113,7 +1260,7 @@ jobs:
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
       - name: Download the built hobo CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
@@ -1135,7 +1282,7 @@ jobs:
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
         run: node --no-warnings scripts/ci/publish-npm-sdk.mts /tmp/hobo-npm-release
       - name: Upload the release Freight journal (npm)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hobo-release-freight-npm
           path: ${{ runner.temp }}/hobo-release-cd/npm
@@ -1168,7 +1315,7 @@ jobs:
     env:
       HOBO_RELEASE_CHECKOUT_REF: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           persist-credentials: false
@@ -1224,20 +1371,20 @@ jobs:
       id-token: write
     steps:
       - name: Bootstrap repo-local composite actions
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: true
-      - uses: ./.github/actions/hobo-checkout
+      - uses: $/.github/actions/hobo-checkout
         with:
           fetch-depth: 1
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_PAGES_SPARSE_PATHS }}
           submodules: "false"
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       # The gate answered before this job waited for a runner and for the
       # publish slot; another run may have published a newer commit since.
       - name: Is gh-pages still behind this commit?
@@ -1254,7 +1401,7 @@ jobs:
       - if: steps.fresh.outputs.deploy == 'true'
         run: pnpm run pins:fetch ts-autocode
       - if: steps.fresh.outputs.deploy == 'true'
-        uses: ./.github/actions/pnpm-store
+        uses: $/.github/actions/pnpm-store
       - if: steps.fresh.outputs.deploy == 'true'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Build hobo-site workspace deps for prebuild
@@ -1280,7 +1427,7 @@ jobs:
           cp -a media/dist/. site/dist/media/
       - name: Download the built hobo CLI
         if: steps.fresh.outputs.deploy == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
@@ -1328,20 +1475,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           ref: ${{ needs.release-main-train-gate.outputs.release_sha }}
           fetch-depth: 0
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
       - name: Download the built hobo CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
@@ -1352,13 +1499,13 @@ jobs:
         run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
       # One journal per published image (release-publish runs one image per leg).
       - name: Download the release Freight journals (oci)
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: hobo-release-freight-oci-*
           path: ${{ runner.temp }}/hobo-release-cd/oci
       - name: Download the release Freight journal (npm)
         if: needs.release-npm.result == 'success'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-freight-npm
           path: ${{ runner.temp }}/hobo-release-cd/npm
@@ -1412,19 +1559,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
-      - uses: ./.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
-      - uses: ./.github/actions/pnpm-store
+      - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       # HoBo releases itself through HoBo: the release Freight steps run the
       # `hobo deploy` composition of @hobo/cd from the hobo package
       # release-hobo-cli built for this commit.
       - name: Download the built hobo CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-cli
           path: ${{ runner.temp }}/hobo-release-cli
@@ -1435,13 +1582,13 @@ jobs:
         run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/hobo-release-cli/hobo-release-cli.tgz" --digest "$HOBO_RELEASE_CLI_DIGEST"
       # One journal per published image (release-publish runs one image per leg).
       - name: Download the release Freight journals (oci)
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           pattern: hobo-release-freight-oci-*
           path: ${{ runner.temp }}/hobo-release-cd/oci
       - name: Download the release Freight journal (npm)
         if: needs.release-npm.result == 'success'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hobo-release-freight-npm
           path: ${{ runner.temp }}/hobo-release-cd/npm
@@ -1475,7 +1622,7 @@ jobs:
   release-pr-gate:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [route, release-contract, release-realize]
+    needs: [route, release-contract, release-realize, release-hobo-integration]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1485,6 +1632,7 @@ jobs:
         env:
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
           REALIZE_RESULT: ${{ needs.release-realize.result }}
+          INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1508,6 +1656,12 @@ jobs:
           # The realize proof has no local attestation: it must pass here.
           if [ "${REALIZE_RESULT:-}" != "success" ]; then
             echo "::error::Release Freight realize proof must pass (result=${REALIZE_RESULT:-})"
+            exit 1
+          fi
+          # The slow integration lane has no local attestation either: when a
+          # pull request or merge group reaches its suites, they must pass here.
+          if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
+            echo "::error::HoBo slow integration suites must pass (result=${INTEGRATION_RESULT:-})"
             exit 1
           fi
           case "${CONTRACT_RESULT:-}" in

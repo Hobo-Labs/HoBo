@@ -5,6 +5,14 @@ workflows. Run `hobo ci` or `hobo ci --help` for help. No Bindle, Station setup,
 SDK script, or workspace package invocation is needed.
 CI commands work before local Yard provisioning and do not initialize its journal.
 
+For a relay Git deployment, `hobo ci up` plans and checks the declaration,
+Yard and `vercel.json` from the selected commit, then delivers that same tree.
+It refuses if that tree cannot be inspected, contains symlinks or submodules,
+exceeds 5,000 files or 32 MiB, or cannot load its installed dependencies. These
+limits apply to the relay project's committed files, not the working tree.
+HoBo manages this deployment; the Vercel project is intentionally not linked
+to Git for automatic deployment.
+
 ## Connect once
 
 Your relay operator supplies an HTTPS origin and a CI account credential. Export
@@ -77,16 +85,18 @@ binds **127.0.0.1** by default; non-loopback binds require an explicit public
 **`--origin`** (HTTPS, matching `relayOrigin`) or **`--allow-insecure`**. Use
 **`--host 0.0.0.0`** and **`--port`** for containers; keep **`--origin`** on the
 public URL when a reverse proxy terminates TLS (**`--trust-proxy`** honors
-`X-Forwarded-Proto`). GitHub App credentials load from `HOBO_CI_GITHUB_APP_*` /
-`*_FILE` env vars (never printed). Optional **`HOBO_CI_INGRESS_FORWARD_SECRET`**
-verifies ingress-forwarded webhooks. **`--print-config`** shows the resolved
-plan with secrets redacted. **`--with-worker`** starts the isolated-container
-sidecar with its own lease journal: local SQLite at
-`<HOBO_HOME>/ci/serve/worker.sqlite` (override `HOBO_CI_WORKER_DB`) that polls
-GitHub for `runs-on: hobo` jobs. `"store": { "kind": "sqlite" }` is the only
-store kind; the shared Postgres store was removed with the hosted relay's
-database ([ADR-0179](../../docs/design/adr/hosted-relay-stateless.md#adr-0179)).
-Graceful shutdown on SIGINT/SIGTERM.
+`X-Forwarded-Proto`). GitHub App credentials load from mounted files or the
+owner's secret store. An optional **`HOBO_CI_INGRESS_FORWARD_SECRET_FILE`**
+names the file used to verify ingress-forwarded webhooks. **`--print-config`**
+shows the resolved plan with secrets redacted. **`--with-worker`** starts the
+isolated-container sidecar with its own lease journal (local SQLite at
+`<HOBO_HOME>/ci/serve/worker.sqlite`, override `HOBO_CI_WORKER_DB`) and hands it
+the App key and webhook secret on an inherited pipe (`HOBO_CI_WORKER_SECRETS_FD`,
+written once and closed), never its environment or a file. `ci serve` reports
+serving only after the worker logs `hobo_ci_isolated_worker_started`; a worker
+that exits first, or does not start within `HOBO_CI_WORKER_START_TIMEOUT_MS`
+(10 minutes, as it may build first), stops the relay and fails the command.
+The relay shuts down gracefully on SIGINT/SIGTERM.
 
 When `.hobo/ci.json` has an `agent` block, `hobo ci serve` also starts the
 [CI agent](../ci-agent/README.md) beside the relay: it plans the merge queue
@@ -113,13 +123,21 @@ active version. It stores files with owner-only permissions under
 `HOBO_HOME/ci/github-credentials/`, refuses a HoBo home inside a Git
 checkout, and never prints the key or secret. File import currently requires
 POSIX permissions; on Windows use the relay's mounted secret files instead.
-`hobo ci serve` and its
-`--with-worker` process use this version when no explicit App credential
-environment is set; explicit environment credentials take precedence as a unit.
+`hobo ci serve` takes the App's credentials, in this order: mounted files the
+environment names (`HOBO_CI_GITHUB_APP_KEY_FILE` and the related `_FILE`
+variables, as a unit); else the connection `hobo ci up` deposited in your secret
+store (found through the locator in the owner's HoBo settings), read into the run's trusted
+vault and handed to the relay in memory, so no key or webhook secret is written
+to disk or put in the relay's environment;
+else this imported version. It never reads a secret value from its
+environment: `HOBO_CI_GITHUB_APP_PRIVATE_KEY`, `HOBO_CI_WEBHOOK_SECRET`,
+`HOBO_CI_ACCOUNT_TOKEN` or `HOBO_CI_INGRESS_FORWARD_SECRET` set there stops
+startup, naming the variable and not its value.
 Incomplete or unreadable App credentials fail startup rather than falling back
-to the local fixture App.
-With real App credentials, `ci serve` also requires `HOBO_CI_ACCOUNT_TOKEN`,
-`HOBO_CI_ACCOUNT_TOKEN_FILE`, or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
+to the local fixture App (whose throwaway key is held in memory only).
+With real App credentials, `ci serve` also requires a CI account token
+(`HOBO_CI_ACCOUNT_TOKEN` in your secret store, or a file named by
+`HOBO_CI_ACCOUNT_TOKEN_FILE`) or `HOBO_CI_CONTROL_TOKENS_FILE`. When it generates
 the local control-token configuration, it grants the explicitly selected
 `--installation-id` to the local account and stores only the token's hash. A
 supplied control-token file remains authoritative.
@@ -244,6 +262,95 @@ JSON output uses HoBo's envelope;
 `--format json` and `-F json` are aliases of `--json`. Unsupported filters report
 a usage error rather than silently changing their meaning.
 
+## Move workflow jobs to the fleet
+
+```sh
+hobo ci init                       # show the plan; changes nothing
+hobo ci init --apply all
+hobo ci init --apply test,ci.yml:build --fleet-label hobo-trunk
+```
+
+`hobo ci init` reads `.github/workflows/*.yml` and says, per job, whether its
+`runs-on` can become the fleet label (`ready`), already is, or is left alone
+and why. `--apply` rewrites the jobs named (`job`, `file:job`, or `all`) and
+nothing else: only the `runs-on` value changes, every other byte of the file
+is kept, and the old label stays as a trailing `# was ...` comment so the
+change can be undone by hand. A workflow that changes or becomes unreadable
+after planning is left alone. Any refused selection, including an unreadable
+workflow, makes the apply exit non-zero; a partial apply reports both the jobs
+rewritten and those refused. Nothing is committed.
+
+A job is left alone when it calls another workflow, takes `runs-on` from an
+expression, names a runner group or several labels, asks for Windows, macOS
+or ARM, already runs on a hosted provider's or a self-hosted label, or decides
+where other jobs run (another job's `runs-on`, a matrix, or reusable-workflow
+inputs read its outputs, including through YAML merge keys: a routing job has
+to start even when the fleet cannot). A YAML value shared by an anchor is
+left alone when changing it would affect another part of the workflow. A job
+that uses an environment, any write permission, or a secret other than `GITHUB_TOKEN`
+is left alone unless `--include-secret-jobs` is passed. A ready job can carry
+warnings: it needs Docker, installs system packages, follows `ubuntu-latest`,
+or has a matrix.
+
+This writes the opt-in that works today, `runs-on: <fleet label>`. A job moved
+this way waits when the fleet is down; the fallback to another runner type is
+what a [runner order](../ci/RUNNER-ORDER.md) describes and no host walks yet.
+
+## Signals and diagnosis
+
+```sh
+hobo ci signals                # the last 50 runs
+hobo ci signals --runs 100 --json
+hobo ci diagnose               # the latest failed run
+hobo ci diagnose 123456789
+```
+
+Both read GitHub's run history with the authenticated GitHub CLI and store
+nothing. `signals` reads up to `--runs` completed runs (1-100) with their jobs,
+and the attempt before the latest when a run was re-run. It prints signals
+that cover at least 30 minutes and 1% of job time, grouped as cost,
+speed and complexity, with the worst offenders under each, and one line per
+runner: jobs, share started, median wait, median and p90 run time, share
+passed. Job lists are paged up to 1,000 jobs per attempt; an unreadable page
+or a larger attempt is reported as an error instead of a partial result.
+`diagnose` reads a run's failed jobs (five at most), the last 256 KiB of
+each log and every annotation page of the check run identified by
+`check_run_url`, and prints the first failed step, what kind of failure it
+looks like, whether a re-run is likely to help, and the log lines leading up to
+the last error. A log, annotation, or check-run identity read failure fails the
+command rather than producing a partial diagnosis. If the GitHub CLI truncates
+a log, the diagnosis says it may be incomplete and sets `logTruncated` on that
+job's JSON result. Human-readable reports remove terminal escape sequences,
+control characters, and bidirectional overrides from GitHub metadata, logs, and
+annotations. The rules are fixed pattern tables in `@hobo/ci/insights`; no log
+text leaves the machine.
+
+## Route a job against the runner order
+
+```sh
+hobo ci route --machine self-hosted --github ubuntu-24.04
+hobo ci route --github ubuntu-24.04 --depot auto --facts facts.json --json
+```
+
+`hobo ci route` answers one relay job against the repository's
+[runner order](../ci/RUNNER-ORDER.md) and shows the walk: the committed
+`runnerOrder` in `.hobo/ci.json` (the default order, fleet then machines then
+GitHub-hosted, when there is none), the label the job would ask each runner
+type for, and every step passed over with its reason. It contacts nothing.
+`--facts` names a JSON file, relative to the checkout or absolute, saying what
+is true now (fleet room, machines, minutes used, money spent, tripped runner
+types); without it the fleet and machines are absent and no limit is measured.
+When nothing can take the job the command exits non-zero with
+`HOBO_CI_NO_RUNNER` and the reason. A
+committed order that breaks a rule is refused with
+`HOBO_CI_RUNNER_ORDER_INVALID` instead of being replaced by the default. An
+existing configuration that cannot be read, including a dangling file link,
+or is not a JSON object is also refused; only an absent configuration or a
+valid object without a runner order selects the default.
+
+No relay endpoint or route job walks a runner order yet: this command is how
+an order is checked before it is committed.
+
 ## Vercel reference
 
 Reference checked **2026-10-29** against the official
@@ -282,6 +389,12 @@ link is generated from `data-models/composition.proto` with CUE constraints in
 `composition.cue`. Run scoped TypeScript, schema/codegen drift, CLI consumer
 contracts and documentation gates. These offline checks do not contact GitHub or
 prove deployed relay/runner readiness.
+`test/ci-init.test.ts` runs `hobo ci init` through the real CLI against
+temporary workflow files and compares the rewritten bytes.
+`test/ci-route.test.ts` runs `hobo ci route` through the real CLI against a
+temporary repository; `test/ci-insights.test.ts` runs `signals` and `diagnose`
+over a process seam and executes every read in
+`contracts/ci-insights-github.pact.json`.
 The product unit harness isolates module state between files, gives claim tests
 private credential homes, and uses version-probe stand-ins for Yard argument
 tests so those checks neither touch a developer's credentials nor download tools.

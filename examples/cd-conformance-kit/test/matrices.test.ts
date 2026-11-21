@@ -1,4 +1,4 @@
-// The toolset and platform matrices and the WP20-owned §10 rows (plan 0024):
+// The toolset and platform matrices and the rows this kit owns:
 //   - "Same Freight via seven ingress paths" → same Freight id
 //   - "Air-gapped Yard, egress disabled" → promotes via local source and agent
 //   - "Journal replay of a full pipeline run" → identical state

@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Flux TrafficRouting offerings (plan 0024 WP13, I14; ADR-0143/0144).
+ * Flux TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * FluxOS spreads an app's instances across nodes and its domain manager
  * balances requests across them evenly. A tenant controls neither weights nor

@@ -1,4 +1,4 @@
-// Delivery as code for a Bindle built on GitLab CI (plan 0024 D3, D4, D10).
+// Delivery as code for a Bindle built on GitLab CI (ADR-0182 D3, D4, D10).
 // Apply with `hobo deploy pipeline apply --file src/hobo.delivery.ts`.
 //
 // CD reads the Git repository over smart-HTTP protocol v2 (no Git binary, no

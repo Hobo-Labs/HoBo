@@ -1,4 +1,4 @@
-// NotificationPort over CDEvents webhooks (WP16, plan 0024 D17).
+// NotificationPort over CDEvents webhooks (ADR-0182 D17).
 //
 // A notification is a HoBo custom CDEvent
 // (`dev.cdeventsx.hobo-notification.sent.0.1.0`) delivered to the channel's

@@ -1,6 +1,6 @@
 package data_models
 
-// CUE constraints for kube_fleet.proto (plan 0024, WP25). Values are protobuf
+// CUE constraints for kube_fleet.proto. Values are protobuf
 // JSON field names. The parsers in src/config.ts apply the same rules, so a
 // value violating them never exists past the parse boundary;
 // test/cue-constraints.test.ts keeps the two in agreement.

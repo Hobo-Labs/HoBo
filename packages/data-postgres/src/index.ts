@@ -167,6 +167,12 @@ export {
 } from "./fleet/assignment.js";
 export { ensureFleetControlTables } from "./fleet/control.js";
 export {
+	createPostgresImmutableJournalReplica,
+	type ImmutableJournalCharge,
+	PostgresImmutableJournalError,
+	type PostgresImmutableJournalOptions,
+} from "./fleet/immutable-journal.js";
+export {
 	FLEET_LOCK_CLASS as POSTGRES_FLEET_LOCK_CLASS,
 	type FleetLayout as PostgresFleetLayout,
 	type FleetLayoutInput as PostgresFleetLayoutInput,

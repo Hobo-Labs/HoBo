@@ -9,7 +9,7 @@
 		"pactSpecification": {
 			"version": "3.0.0"
 		},
-		"provenance": "Hand-authored consumer expectations (plan 0024 WP13) for the injected WebernetesStationHost seam and the HTTP readiness probe of the station it stands up. The seam is in-process (messages); only the probe crosses HTTP, and only to the parsed local station host."
+		"provenance": "Hand-authored consumer expectations for the injected WebernetesStationHost seam and the HTTP readiness probe of the station it stands up. The seam is in-process (messages); only the probe crosses HTTP, and only to the parsed local station host."
 	},
 	"interactions": [
 		{

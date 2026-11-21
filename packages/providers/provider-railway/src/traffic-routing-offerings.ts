@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Railway TrafficRouting offerings (plan 0024 WP13, I14; ADR-0143/0144).
+ * Railway TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * Railway routes a service's public domain to its single active deployment and
  * switches traffic only when a new deployment passes its deploy healthcheck.

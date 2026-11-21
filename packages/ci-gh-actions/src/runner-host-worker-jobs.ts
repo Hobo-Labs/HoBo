@@ -1,6 +1,6 @@
 /**
  * The runner-host realizer's job ports, read from the box worker across a
- * process boundary (plan 0024; `deploy/runner-fleet/README.md`).
+ * process boundary (`deploy/runner-fleet/README.md`).
  *
  * The CD agent (`hobo deploy agent run`) and the worker daemon are separate
  * processes on one host. They share the worker's data directory (the

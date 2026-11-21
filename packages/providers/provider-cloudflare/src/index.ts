@@ -24,6 +24,16 @@ export {
 	CORS_RELAY_WORKER_MODULE,
 } from "./cors-relay-source.js";
 export {
+	assertD1ImmutableJournalReplicaWiring,
+	createD1ImmutableJournalReplica,
+	type D1ImmutableJournalCharge,
+	D1ImmutableJournalError,
+	type D1ImmutableJournalOptions,
+	type D1ImmutableJournalReplicaIdentity,
+	d1ImmutableJournalReplicaIdentity,
+	d1ImmutableJournalTable,
+} from "./d1-immutable-journal.js";
+export {
 	CLOUDFLARE_DEFAULT_BINDINGS,
 	CLOUDFLARE_DEFAULT_REGIONS,
 	CLOUDFLARE_DEFAULT_YARD_NAME,
@@ -78,6 +88,13 @@ export {
 	DEFAULT_COLOS,
 } from "./provider.js";
 export {
+	createR2ObjectClient,
+	type R2Condition,
+	type R2Object,
+	R2ObjectError,
+	type R2ObjectOptions,
+} from "./r2-object.js";
+export {
 	type BuildSpec,
 	isRealizablePort,
 	mergeCloudflareOptions,
@@ -89,6 +106,7 @@ export {
 	toResourcePlans,
 } from "./realize.js";
 export {
+	CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID,
 	CLOUDFLARE_D1_PRODUCT_ID,
 	CLOUDFLARE_KV_PRODUCT_ID,
 	CLOUDFLARE_PAGES_PRODUCT_ID,
@@ -102,6 +120,8 @@ export {
 	redactCloudflareText,
 } from "./resolvers.js";
 export {
+	type CronTriggersOptions,
+	cronTriggers,
 	type D1Options,
 	d1,
 	type KvOptions,

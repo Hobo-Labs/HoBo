@@ -1,4 +1,4 @@
-// ShadowRecorder (plan 0024 D24): while a Camp is bound in INFORM, the gate
+// ShadowRecorder (ADR-0182 D24): while a Camp is bound in INFORM, the gate
 // asks for the candidate Rail and its resolved pack, evaluates the same
 // request with it, and records the shadow decision here. The enforced Rail
 // alone decides (I23); this module never touches a verdict.

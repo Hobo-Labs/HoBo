@@ -1,5 +1,5 @@
 /**
- * Out-of-tree platforms in the hosting catalog (WP18, plan 0024, D6/C12).
+ * Out-of-tree platforms in the hosting catalog (ADR-0182 D6/C12).
  *
  * Verified `hobo:resolver` WASM components (`@hobo/resolver-components`)
  * become `ResourceResolver`s through `componentResolvers`, and enter the
@@ -9,7 +9,6 @@
  * component host's job (`loadResolverComponent`); this composes what it loaded.
  */
 
-// binds at merge (plan 0024): componentResolvers is WP8.
 import {
 	componentResolvers,
 	type LoadedResolverComponent,
@@ -24,6 +23,5 @@ export function createCdHostingCatalog(
 	components: readonly LoadedResolverComponent[] = [],
 ): ReturnType<typeof createProductionHostingProviderCatalog> {
 	const extraResolvers = componentResolvers({ components });
-	// binds at merge (plan 0024): the extraResolvers option is WP14's.
 	return createProductionHostingProviderCatalog(entries, { extraResolvers });
 }

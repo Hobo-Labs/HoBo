@@ -79,6 +79,7 @@ import "strings"
 	idempotencyKey:  #Text
 	fanoutId?:       #Id
 	subject:         #FreightSubject
+	deploymentMode?: "incremental" | "complete"
 }
 
 #SourceRef: {

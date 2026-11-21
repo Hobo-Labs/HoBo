@@ -29,7 +29,7 @@ export type StationIsolation = Readonly<{
 		| "ephemeral";
 }>;
 
-/** How a Camp converges (plan 0024, D14). Neutral: no engine or cluster vocabulary. */
+/** How a Camp converges (ADR-0182 D14). Neutral: no engine or cluster vocabulary. */
 export type RailReconcilerMode = "conductor" | "agent" | "publisher";
 
 /**
@@ -97,7 +97,7 @@ export type Rail = Readonly<{
 	guardrailEnvelope: Readonly<Record<string, string>>;
 	metadata: Readonly<Record<string, string>>;
 	/**
-	 * Opaque delivery object (plan 0024, D20). Part of the canonical content and
+	 * Opaque delivery object (ADR-0182 D20). Part of the canonical content and
 	 * the digest; Stations never interprets it. `@hobo/cd` parses it as
 	 * `RailDeliveryRecord`. Absent on Rails published before it existed.
 	 */

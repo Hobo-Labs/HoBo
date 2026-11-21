@@ -1,5 +1,5 @@
 /**
- * Browser WASM guest resolver (plan 0024 WP14, I14; D6).
+ * Browser WASM guest resolver (ADR-0182 I14, D6).
  *
  * A browser guest is not delivered to a server. What a reconciler can own and
  * observe is the host origin's publication: `/_hobo/host/capabilities` and

@@ -5,7 +5,7 @@ import {
 } from "./delivery-coverage.js";
 
 /**
- * OCI registry TrafficRouting offerings (plan 0024, I14; ADR-0143/0144).
+ * OCI registry TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * A registry stores and serves content by digest. It routes no request traffic
  * to a workload, so it realizes no offering, not even the in-process floor:

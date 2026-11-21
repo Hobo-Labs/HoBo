@@ -1,7 +1,7 @@
 syntax = "proto3";
 package hobo.cd.gitops.v1;
 
-// Wire contracts for @hobo/cd-gitops (plan 0024, WP16, D14). A publisher
+// Wire contracts for @hobo/cd-gitops (ADR-0182 D14). A publisher
 // renders a Set as a GitOps engine document, commits it through a Git host's
 // HTTP API and observes the engine. Constraints live in gitops.cue.
 // Records hold credential *references* only, never secret values.

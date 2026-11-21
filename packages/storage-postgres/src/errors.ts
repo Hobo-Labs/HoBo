@@ -41,7 +41,7 @@ const REMEDIATION_OF: Readonly<Record<StoragePostgresFailure, string>> =
 		"invalid-input":
 			"Fix the caller: the named field is outside the EventStore limits (EVENTSTORE_LIMITS) or not a valid value.",
 		"server-too-old":
-			"Upgrade the server to PostgreSQL 16 or newer (plan 0024 R6), or point the store at a supported server.",
+			"Upgrade the server to PostgreSQL 16 or newer, or point the store at a supported server.",
 		"migration-drift":
 			"An applied migration differs from the one this build ships. Restore the shipped migration or run the build that applied it; never edit applied migrations.",
 		"schema-ahead":
@@ -189,6 +189,12 @@ export function translatePgError(error: Error): Error {
 		}
 		return error;
 	}
+	// The deferred actor-commit trigger: the lease lapsed before COMMIT.
+	if (
+		code === "P0001" &&
+		error.message.includes("actor lease expired before protected commit")
+	)
+		return new EventStoreError("STALE_FENCE", error.message);
 	if (code === "57014" || code === "55P03") {
 		return new StoragePostgresError(
 			"statement-timeout",

@@ -1,4 +1,4 @@
-// The catalog resolver realizer (plan 0024): publication Camps declared on
+// The catalog resolver realizer: publication Camps declared on
 // @hobo/provider-npm, @hobo/provider-oci-registry or @hobo/provider-github
 // are realized by that provider's shipped resolver. Offline: no transport is
 // reached in these tests; the end-to-end proof with recorded registry and

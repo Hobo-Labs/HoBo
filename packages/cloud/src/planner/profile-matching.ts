@@ -4,8 +4,8 @@
  * This is the same Matching step the Planner already runs, widened from
  * port/feature comparison to semantic capability profiles with hard gates and
  * a lexicographic order. It composes with {@link matchResource}: a resource
- * that declares a capability requirement resolves here, and everything else
- * keeps the legacy path untouched.
+ * that declares a capability requirement resolves here. When a Yard is
+ * selected, every path remains scoped to that Yard's provider.
  *
  * Yard binding rows (ADR-0157) enter as an *additional hard gate* in front of
  * the ADR-0151 gate sequence. They filter definitions and never reorder them:
@@ -239,6 +239,71 @@ type AttributedRejection = {
 	readonly profile: string;
 };
 
+/** Check every product in a Yard, including rows unused by this Bindle.
+ * Product ownership comes from the trusted catalog, never an ID prefix. */
+export function validateYardBindingOwnership(
+	yard: YardBindingContext,
+	definitions: readonly ResourceDefinitionVNext[],
+): readonly AttributedRejection[] {
+	const byProduct = new Map<string, ResourceDefinitionVNext[]>();
+	for (const definition of definitions) {
+		const productId = definition.semantics?.productId;
+		if (productId === undefined) continue;
+		const bucket = byProduct.get(productId);
+		if (bucket === undefined) byProduct.set(productId, [definition]);
+		else bucket.push(definition);
+	}
+	const rejections: AttributedRejection[] = [];
+	for (const row of yard.bindings) {
+		const productId = row.productId;
+		if (!productId) continue;
+		// The structural input may not have passed through yard(). A catalog
+		// entry must not legitimize an explicitly external placeholder by
+		// labeling it as if it were owned by the Yard's provider.
+		if (/^external(?:[.:/]|$)/iu.test(productId)) {
+			rejections.push({
+				profile: row.profile,
+				rejection: {
+					definitionId: productId,
+					code: "YARD_BINDING_PROVIDER_MISMATCH",
+					detail: `yard ${yard.yardId} cannot own external product placeholder ${productId}; use a provider Yard and Junction`,
+				},
+			});
+			continue;
+		}
+		const matches = byProduct.get(productId);
+		if (!matches?.length) {
+			rejections.push({
+				profile: row.profile,
+				rejection: {
+					definitionId: productId,
+					code: "YARD_BINDING_PRODUCT_UNKNOWN",
+					detail: `yard ${yard.yardId} binds ${row.profile} to product ${productId}, which no registered product declares`,
+				},
+			});
+			continue;
+		}
+		for (const definition of [...matches].sort((a, b) =>
+			a.id.localeCompare(b.id),
+		)) {
+			if (definition.providerId !== yard.providerId)
+				rejections.push({
+					profile: row.profile,
+					rejection: {
+						definitionId: definition.id,
+						code: "YARD_BINDING_PROVIDER_MISMATCH",
+						detail: `product ${productId} is published by provider ${definition.providerId}, but yard ${yard.yardId} is on provider ${yard.providerId}`,
+					},
+				});
+		}
+	}
+	return rejections.sort(
+		(a, b) =>
+			a.profile.localeCompare(b.profile) ||
+			a.rejection.definitionId.localeCompare(b.rejection.definitionId),
+	);
+}
+
 type YardBindingGate = {
 	/** Rows whose profile this requirement names, sorted by canonical key. */
 	readonly applicableRows: readonly YardBindingRow[];
@@ -280,7 +345,9 @@ function resolveYardBindingGate(
 		else bucket.push(definition);
 	}
 
-	const rejections: AttributedRejection[] = [];
+	const rejections: AttributedRejection[] = [
+		...validateYardBindingOwnership(yard, definitions),
+	];
 	const admitted = new Set<string>();
 	let pinsProduct = false;
 
@@ -289,31 +356,11 @@ function resolveYardBindingGate(
 		if (productId === undefined || productId.length === 0) continue;
 		pinsProduct = true;
 		const matches = byProduct.get(productId);
-		if (matches === undefined || matches.length === 0) {
-			rejections.push({
-				profile: row.profile,
-				rejection: {
-					definitionId: productId,
-					code: "YARD_BINDING_PRODUCT_UNKNOWN",
-					detail: `yard ${yard.yardId} binds ${row.profile} to product ${productId}, which no registered product declares`,
-				},
-			});
-			continue;
-		}
+		if (matches === undefined || matches.length === 0) continue;
 		for (const definition of [...matches].sort((a, b) =>
 			a.id.localeCompare(b.id),
 		)) {
-			if (definition.providerId !== yard.providerId) {
-				rejections.push({
-					profile: row.profile,
-					rejection: {
-						definitionId: definition.id,
-						code: "YARD_BINDING_PROVIDER_MISMATCH",
-						detail: `product ${productId} is published by provider ${definition.providerId}, but yard ${yard.yardId} is on provider ${yard.providerId}`,
-					},
-				});
-				continue;
-			}
+			if (definition.providerId !== yard.providerId) continue;
 			admitted.add(definition.id);
 		}
 	}
@@ -537,10 +584,11 @@ export function matchCapabilityRequirement(
 	}
 
 	const admitted = gate?.admitted;
-	const gated =
-		admitted === undefined
-			? candidates
-			: candidates.filter((candidate) => admitted.has(candidate.definitionId));
+	const gated = candidates.filter(
+		(candidate) =>
+			(yard === undefined || candidate.providerId === yard.providerId) &&
+			(admitted === undefined || admitted.has(candidate.definitionId)),
+	);
 	const excluded =
 		admitted === undefined
 			? []

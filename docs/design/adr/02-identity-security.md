@@ -119,7 +119,7 @@ When pure identity federation is impossible (legacy protocols): the **secretless
 - Schema is the primary artifact. `hobo dev` uses **contract-asserted fixtures** (`createContractAssertedConfigFixtures`) matching the same contracts as `can-deploy` ([ADR-0070](#adr-0070)).
 - Agents / MCP / training trajectories receive schema + placeholders only (redaction-at-capture + inert-output invariant).
 - Optional encrypted local overrides (git-ignored) are limited to **non-sensitive** values.
-- Existing gitleaks + hooks block high-severity plaintext leaks.
+- Existing Betterleaks (gitleaks successor) scans + hooks block high-severity plaintext leaks.
 
 #### Events & retention
 - `config.Resolved` — name, source, valueRef (never value); `redacted: true`

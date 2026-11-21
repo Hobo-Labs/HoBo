@@ -69,7 +69,7 @@ export interface BuildCommandOptions
 		| "containerBuild"
 	> {
 	/**
-	 * @hobo/cd delivery (plan 0024 D13). When present, `hobo build` stores
+	 * @hobo/cd delivery (ADR-0182 D13). When present, `hobo build` stores
 	 * every artifact's bytes in the configured artifact store and writes
 	 * `.hobo/freight.json` with the injected `writeFreightManifest`.
 	 */

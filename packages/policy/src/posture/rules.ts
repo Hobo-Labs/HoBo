@@ -1,4 +1,4 @@
-// Observe-phase posture rules (plan 0024 D25): a policy-IR rule profile. A
+// Observe-phase posture rules (ADR-0182 D25): a policy-IR rule profile. A
 // pack is a JSON document (`hobo.policy-ir/v1`, profile `hobo.posture/v1`)
 // of rules that match observed resources by kind and classification and
 // assert `require`/`forbid` clauses over declared attributes with a fixed

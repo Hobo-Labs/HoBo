@@ -108,7 +108,7 @@ export function jwtOidcClaimHints(jwt: string): JwtOidcClaimHints {
 export function oidcAuth(input: {
 	readonly identityId: string | undefined;
 	readonly jwt: JwtSource;
-}): InfisicalAuth {
+}): Extract<InfisicalAuth, { readonly method: "oidc" }> {
 	return Object.freeze({
 		method: "oidc",
 		identityId: parseInfisicalIdentityId(input.identityId),

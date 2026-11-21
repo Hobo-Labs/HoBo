@@ -9,15 +9,13 @@ const markers = [
 	"hobo.bindle.json",
 	"bindle.ts",
 	"bindle.js",
-	// The flagship authoring flow keeps the bindle in src/ (see cloud/loader.ts
-	// BINDLE_SOURCE_CANDIDATES); a built artifact marks a project too.
+
 	"src/bindle.ts",
 	"src/bindle.mts",
 	"src/bindle.js",
 	"src/bindle.mjs",
 	"dist/bindle.js",
-	// try-site catalog apps (examples/try-site/apps/<id>/app.ts) are Bindle
-	// projects too — the loader falls back cleanly if app.ts is not a bindle.
+
 	"app.ts",
 	"app.mts",
 	"app.js",

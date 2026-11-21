@@ -40,3 +40,11 @@ as `constructor` keep their normal meaning.
 Execution claims, offers, orders and receipts are not CI records: they are
 `@hobo/fleet/work` (claims through the `FLEET_CLAIMS` stream in
 `@hobo/fleet-nats`), so this package keeps no fleet data model.
+
+`runner_route.proto` owns the runner order (`RunnerOrder`, its steps and retry
+policy), one relay job's question (`RunnerRouteRequest`) and the answer
+(`RunnerRouteDecision` with every step passed over). `runner_route.cue`
+constrains them: a minutes limit only on `github`, a spend limit only on a
+hosted provider, and a decision whose fields agree with its outcome. Step
+uniqueness is a cross-element rule `parseRunnerOrder` enforces. Fixtures are
+under `fixtures/runner_route/`.

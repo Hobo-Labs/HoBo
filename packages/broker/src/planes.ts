@@ -70,7 +70,7 @@ export interface BillingPlane {
 }
 
 // Delivery plane: hand an accepted receipt to continuous delivery. Neutral
-// (plan 0024, D14): the broker never renders a GitOps document, never names a
+// (ADR-0182 D14): the broker never renders a GitOps document, never names a
 // cluster or namespace, and never applies anything itself. A ticket records
 // how the receipt was routed and, through CD, which promotion carries it.
 export interface DeliveryTicket {
@@ -271,7 +271,7 @@ export interface ReconcilerDeliveryPlaneOptions {
 }
 
 /**
- * The broker delivers through CD (plan 0024, D14). Every reconciler mode —
+ * The broker delivers through CD (ADR-0182 D14). Every reconciler mode —
  * in-process conductor, pull agent, or GitOps publisher — goes through one
  * promotion request; the broker records the returned ticket and nothing else.
  */

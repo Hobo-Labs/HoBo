@@ -9,6 +9,7 @@ import {
 	type YardBinding,
 	type YardBindingInput,
 } from "./binding.js";
+import { YardBoundaryError, yardBoundaryViolations } from "./boundaries.js";
 import {
 	assertNoCredentials,
 	canonicalizeLabels,
@@ -20,6 +21,7 @@ import {
 } from "./canonical.js";
 import { isJsonObject, isJsonString, type JsonValue } from "./json.js";
 
+// public-contract: version tag serialized on Yard topology objects.
 export const TOPOLOGY_CONTRACT_VERSION = "hobo.topology-objects/v1" as const;
 
 /**
@@ -87,14 +89,6 @@ export function yard(name: string, config: YardConfig): Yard {
 		if (entry?.kind !== "camp") {
 			throw new TypeError("yard camps must be Camp objects");
 		}
-		if (
-			entry.derivedProviderId !== undefined &&
-			entry.derivedProviderId !== providerId
-		) {
-			throw new Error(
-				`Yard ${name} cannot attach camp with provider ${entry.derivedProviderId} (yard provider is ${providerId})`,
-			);
-		}
 	}
 
 	const attachedCamps = campsInput.map((c) =>
@@ -114,6 +108,10 @@ export function yard(name: string, config: YardConfig): Yard {
 	const bindings = parseYardBindings(config.bindings, {
 		pinnedSlots: resolverDefaults.pins.map((pin) => pin.slot),
 	});
+	// Nothing in a Yard is external (boundaries.ts): a binding another vendor
+	// runs needs its own Yard and a junction, unless the provider runs it for us.
+	const violations = yardBoundaryViolations(name, providerId, bindings);
+	if (violations.length > 0) throw new YardBoundaryError(violations);
 
 	return deepFreeze({
 		kind: "yard" as const,
@@ -184,6 +182,7 @@ export function yardToContract(yardObject: Yard): {
  */
 export interface CampContract {
 	readonly id?: string;
+	readonly logicalId?: string;
 	readonly env?: string;
 	readonly envType?: string;
 	readonly require: readonly string[];
@@ -198,6 +197,7 @@ function campToContract(campObject: Camp): CampContract {
 		: campObject.id;
 	return deepFreeze({
 		id: localId,
+		...(campObject.logicalId ? { logicalId: campObject.logicalId } : undefined),
 		env: campObject.env,
 		envType: campObject.envType,
 		require: campObject.require,

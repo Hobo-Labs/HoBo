@@ -1,6 +1,6 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion -- SAFETY: config files and CLI flags read here are untrusted JSON narrowed before use; @hobo/cd-kube-fleet parses each realizer record itself. */
 /**
- * The HoBo host's CD runtime (WP18, plan 0024, C2): opens the journal, builds
+ * The HoBo host's CD runtime (ADR-0182 C2): opens the journal, builds
  * the declared topology, binds the host adapters and composes `@hobo/cd`
  * through `composeContinuousDelivery`. `hobo deploy`, `hobo incident`,
  * `hobo serve cd` and the `hobo up` delivery seam all open CD here, so there
@@ -42,7 +42,6 @@ import {
 	type TelemetrySink,
 	type TopologyReader,
 } from "@hobo/cd";
-// binds at merge (plan 0024): the authz baseline pack is WP19.
 import { createCdBaselinePack } from "@hobo/cd/authz";
 import {
 	type CdComposeConfig,
@@ -61,7 +60,6 @@ import {
 } from "@hobo/cd/compose";
 import { createPlacementEngine } from "@hobo/cd/placement";
 import { deltaIdFor, diffResolvedSets } from "@hobo/cd/promotion";
-// binds at merge (plan 0024): drift routing is WP7.
 import { createDriftPolicy } from "@hobo/cd/reconcile";
 import { definitionDigest } from "@hobo/cd/sources";
 import {
@@ -101,7 +99,11 @@ import {
 } from "./cd-declared-rails.js";
 import { defaultModuleImporter } from "./cd-delivery-module.js";
 import type { CdDeployHost } from "./cd-deploy.js";
-import { type CdStoreOpener, openCdStore } from "./cd-store.js";
+import {
+	type CdSecretReader,
+	type CdStoreOpener,
+	openCdStore,
+} from "./cd-store.js";
 import {
 	loadTopologyFiles,
 	mergeTopologyReaders,
@@ -130,6 +132,11 @@ export type CdRuntimeOptions = Readonly<{
 	/** Share an already-open journal (e.g. the Yard runtime's, for `hobo up`). */
 	store?: DurableEventStore;
 	openStore?: CdStoreOpener;
+	/**
+	 * Reads the owner's secret store (a fleet member's connection string); a
+	 * journal on a fleet cannot open without it.
+	 */
+	readSecret?: CdSecretReader;
 	yards?: readonly Yard[];
 	/**
 	 * Topology files (`--yard`, HOBO_CD_TOPOLOGY): Yard modules or delivery
@@ -292,14 +299,20 @@ export async function openCdRuntime(
 	let store = options.store;
 	if (!store) {
 		try {
-			opened = await (options.openStore ?? openCdStore)(config.store, { now });
+			opened = await (options.openStore ?? openCdStore)(
+				config.store,
+				{ now },
+				options.readSecret,
+			);
 		} catch (error) {
 			return refusal(
 				"cd-store-unavailable",
 				error instanceof Error ? error.message : String(error),
-				config.store.backend === "postgres"
-					? "Check HOBO_CD_POSTGRES_URL reachability and that the server is PostgreSQL 16 or later."
-					: "Check that HOBO_HOME is writable (or set HOBO_CD_SQLITE_PATH).",
+				config.store.backend === "postgres-fleet"
+					? "Keep each member's connection string in the secret store (entry HOBO_CD_POSTGRES_URL_<ID>), give the runtime access to the store, and check that a majority of members and witnesses are reachable on PostgreSQL 16 or later."
+					: config.store.backend === "postgres"
+						? "Check HOBO_CD_POSTGRES_URL reachability and that the server is PostgreSQL 16 or later."
+						: "Check that HOBO_HOME is writable (or set HOBO_CD_SQLITE_PATH).",
 			);
 		}
 		store = opened.store;
@@ -334,7 +347,6 @@ export async function openCdRuntime(
 		return rails;
 	}
 	const railCatalog = rails.value;
-	// binds at merge (plan 0024): the baseline delivery policy pack (WP19).
 	const policyPack = options.policyPack ?? createCdBaselinePack();
 	const resolvePack = options.resolvePack ?? (async () => policyPack);
 	// Camps declared on a catalogued publication provider (npm, OCI registry,
@@ -1158,7 +1170,6 @@ export function agentReconciler(
  * into the deployment Camp and an in-process conductor converges it.
  */
 export async function cdYardDelivery(runtime: CdRuntime) {
-	// binds at merge (plan 0024): the manifest codec is WP1.
 	const { parseFreightManifest, writeFreightManifest } = await import(
 		"@hobo/cd/freight"
 	);
@@ -1184,7 +1195,6 @@ export function attachCdDelivery<R extends object, D>(
 	yardRuntime: R,
 	delivery: D,
 ): R & Readonly<{ delivery: D }> {
-	// binds at merge (plan 0024): YardRuntime.delivery is WP15's field.
 	return Object.freeze({ ...yardRuntime, delivery });
 }
 
@@ -1227,7 +1237,6 @@ async function openKubeFleet(
 			throw new Error(`${file} must hold a JSON object`);
 		// SAFETY: a JSON object, parsed member by member by @hobo/cd-kube-fleet below.
 		const config = parsed as Record<string, CdJsonObject | undefined>;
-		// binds at merge (plan 0024): @hobo/cd-kube-fleet is WP25.
 		const fleet = await import("@hobo/cd-kube-fleet");
 		const deps = { http: input.http, credentials: input.credentials };
 		let realizer:

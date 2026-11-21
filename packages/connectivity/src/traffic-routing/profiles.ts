@@ -37,7 +37,7 @@ export const VERCEL_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 };
 
 /** Lakebed dual-layer: in-process + deploy-time driver bind. Mirrors
- * `@hobo/provider-lakebed`'s profile (plan 0024 WP14; asserted in
+ * `@hobo/provider-lakebed`'s profile (asserted in
  * `@hobo/hobo`'s catalog tests). */
 export const LAKEBED_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 	provider: "lakebed",
@@ -53,7 +53,7 @@ export const LAKEBED_TRAFFIC_ROUTING_PROFILE: TrafficRoutingProviderProfile = {
 };
 
 /**
- * Netlify (plan 0024 WP14 audit): no Netlify routing adapter ships, and
+ * Netlify: no Netlify routing adapter ships, and
  * Netlify's split testing splits by git branch, so the only realized offering
  * is in-process weighting between immutable deploy permalinks. Kind `other`:
  * the core union has no Netlify member. Mirrors `@hobo/provider-netlify`.

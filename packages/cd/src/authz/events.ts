@@ -1,5 +1,5 @@
-// The recorded authorization decision (I10). Plan 0024 A.6 names no event or
-// stream for delivery authorization, so they are owned here and reported to
+// The recorded authorization decision (I10). The frozen contract names no
+// event or stream for delivery authorization, so they are owned here and reported to
 // the coordinator as a contract-amendment candidate (an `AuthzDecisionRecord`
 // message in cd.proto). Until then they are wire contract of `@hobo/cd/authz`.
 //

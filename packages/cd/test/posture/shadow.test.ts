@@ -1,4 +1,4 @@
-// ShadowRecorder (plan 0024 D24): the gate's view of the candidate Rail while
+// ShadowRecorder (ADR-0182 D24): the gate's view of the candidate Rail while
 // a Camp is bound in INFORM, and the record of each shadow decision.
 import { create } from "@bufbuild/protobuf";
 import { createPermissiveDefaultPack, type PolicyPack } from "@hobo/contracts";

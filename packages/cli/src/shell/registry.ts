@@ -44,7 +44,8 @@ export interface CommandRunInput {
 		readonly demoSeed: string | null;
 		readonly region: string | null;
 		readonly budgetId?: string | null;
-		/** Options the resolved subcommand declares (subcommands.ts); absent from hand-built inputs. */
+		readonly whatIf?: boolean;
+		readonly mode?: string | null;
 		readonly subcommandOptions?: SubcommandOptions;
 	};
 	readonly args: readonly string[];
@@ -54,9 +55,7 @@ export interface CommandRunInput {
 
 export interface CommandModule {
 	readonly run: (input: CommandRunInput) => Promise<CommandResult>;
-	// false when the module is (or behaves as) the registry stub — e.g. a
-	// cloud-lane command constructed without an injected runtime. Absent
-	// means implemented: an override wired by a composition root is real.
+
 	readonly implemented?: boolean;
 }
 

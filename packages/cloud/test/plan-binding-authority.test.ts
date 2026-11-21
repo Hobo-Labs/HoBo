@@ -96,18 +96,19 @@ function definition(
 	providerId: string,
 	productId: string,
 	profileId: string,
+	port = "kv",
 ): ResourceDefinitionVNext {
 	return parseResourceDefinitionVNext({
 		id,
 		providerId,
-		port: "kv",
+		port,
 		features: [],
 		regions: [],
 		specificity: 1,
 		priority: 1,
 		cost: { sku: id, unit: "hour", marginalPrice: "0" },
-		// SAFETY: `satisfies: () => ({ ok: true, missing: [] }) as never,` is required at this I/O or test boundary.
-		satisfies: () => ({ ok: true, missing: [] }) as never,
+		satisfies: (req) =>
+			req.port === port ? { kind: "full" } : { kind: "none" },
 		semantics: semantics({
 			productId,
 			implementsProfiles: [
@@ -153,7 +154,18 @@ function helloBindle(): ManifestV1 {
 }
 
 function registry() {
-	return createRegistryFromProviders([createCloudflareProvider()]);
+	const base = createRegistryFromProviders([createCloudflareProvider()]);
+	return {
+		...base,
+		definitions: () => [
+			kvDefinition,
+			durableDefinition,
+			...base
+				.definitions()
+				.filter((entry) => entry.port === "objectStore")
+				.map((entry) => ({ ...entry, providerId: "cloudflare" })),
+		],
+	};
 }
 
 function authority(
@@ -188,6 +200,77 @@ const kvYard = (
 });
 
 describe("plan() with Yard binding authority", () => {
+	it("only takes a schedule's target from its single dependency", () => {
+		const schedule = definition(
+			"cloudflare.schedule/v1",
+			"cloudflare",
+			"cloudflare.schedule/v1",
+			"service.scheduled/v1",
+			"schedule",
+		);
+		for (const [bind, target] of [
+			[[], undefined],
+			[["left", "right"], undefined],
+			[["left"], "left"],
+		] as const) {
+			const manifest = parseManifest({
+				schema: "hobo.manifest/v1",
+				componentHost: { kind: "wasmtime", version: "1.0.0" },
+				resources: {
+					left: { type: "data.v1", port: "schedule" },
+					right: { type: "data.v1", port: "schedule" },
+					tick: {
+						type: "data.v1",
+						port: "schedule",
+						bind,
+						annotations: { cadence: "*/5 * * * *" },
+					},
+				},
+			});
+			const result = plan(
+				manifest,
+				{
+					deploymentId: "schedule-target",
+					binding: authority(
+						{
+							yardId: "yard:edge",
+							providerId: "cloudflare",
+							bindings: [
+								{
+									profile: "service.scheduled/v1",
+									productId: schedule.id,
+									properties: {
+										target: "someone-elses-worker",
+										cron: "0 0 * * *",
+									},
+								},
+							],
+						},
+						{
+							definitions: [schedule],
+							requirements: {
+								tick: parseCapabilityRequirement({
+									requiredProfiles: [
+										{ profileId: "service.scheduled/v1", versionRange: ">=1" },
+									],
+								}),
+							},
+						},
+					),
+				},
+				{ ...registry(), definitions: () => [schedule] },
+			);
+			expect(result.ok, JSON.stringify(result)).toBe(true);
+			if (!result.ok) return;
+			const parameters = result.plan.resources.find(
+				(resource) => resource.name === "tick",
+			)?.realizationParameters;
+			if (target === undefined)
+				expect(parameters).toEqual({ cron: "*/5 * * * *" });
+			else expect(parameters).toEqual({ cron: "*/5 * * * *", target });
+		}
+	});
+
 	it("lands the selected product on both the decision and the plan node", () => {
 		const result = plan(
 			helloBindle(),
@@ -271,6 +354,58 @@ describe("plan() with Yard binding authority", () => {
 		expect(JSON.stringify(result.remediations)).toContain(
 			"cloudflare.not-registered/v1",
 		);
+	});
+
+	it("rejects an unused row whose product belongs to another provider", () => {
+		const foreign = definition(
+			"neon.db/v1",
+			"neon",
+			"neon.db/v1",
+			"data.postgres/v1",
+		);
+		const yard = kvYard("cloudflare.kv/v1");
+		const result = plan(
+			helloBindle(),
+			{
+				deploymentId: "unused-foreign",
+				binding: authority(
+					{
+						...yard,
+						bindings: [
+							...yard.bindings,
+							{ profile: "data.postgres/v1", productId: "neon.db/v1" },
+						],
+					},
+					{ definitions: [kvDefinition, foreign] },
+				),
+			},
+			registry(),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok)
+			expect(result.remediations).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ code: "YARD_BINDING_PROVIDER_MISMATCH" }),
+				]),
+			);
+	});
+
+	it("never matches an unprofiled resource to a foreign provider", () => {
+		const base = registry();
+		const foreignOnly = {
+			...base,
+			definitions: () =>
+				base.definitions().map((entry) => ({ ...entry, providerId: "neon" })),
+		};
+		const result = plan(
+			helloBindle(),
+			{
+				deploymentId: "foreign-legacy",
+				binding: authority(kvYard("cloudflare.kv/v1"), { requirements: {} }),
+			},
+			foreignOnly,
+		);
+		expect(result.ok).toBe(false);
 	});
 
 	it("is deterministic: two passes over the same authority are byte-identical", () => {

@@ -1,5 +1,5 @@
-// HoBo delivering its own CI relay through `@hobo/cd` (plan 0024; ADR-0179
-// phase 6).
+// HoBo delivering its own CI relay through `@hobo/cd` (ADR-0179 phase
+// 6).
 //
 // `hobo ci deploy` is a thin front over this module: the relay build is
 // recorded as Freight, promoted through the relay's pipeline (preview, then
@@ -98,6 +98,8 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
+import { RelayDeploymentReadRefusal } from "./ci-relay-verify.js";
+import { loadRelayJoinedYards } from "./ci-relay-yard.js";
 import {
 	isJsonObject,
 	isJsonString,
@@ -295,31 +297,60 @@ function describeReasons(reasons: readonly ReasonRecord[]): string {
  * binding rows cover, in its regions, and nothing else. Realized only by the
  * relay's git deployment.
  */
-export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
+export function relayYardRegistryProvider(
+	yard: Yard,
+	joinedSecretProjection = false,
+): RegistrableProvider {
 	const productIds = [
 		...new Set(
 			yard.bindings
+				.filter(
+					(row) =>
+						!joinedSecretProjection ||
+						row.profile === capability.secretRef.runtimeProjection,
+				)
 				.map((row) => row.productId)
 				.filter((id): id is string => id !== undefined && id !== ""),
 		),
 	].sort();
-	// An HTTP compute entry only when the Yard binds the HTTP API profile.
-	const http = yard.bindings.some((row) => row.profile === capability.api.http);
-	const ports = ["compute", "data"] as const;
-	const none: readonly string[] = [];
-	const offered = {
-		compute: http ? ["http"] : none,
-		data: none,
-	} satisfies Record<(typeof ports)[number], readonly string[]>;
+	const has = (profile: string) =>
+		yard.bindings.some((row) => row.profile === profile);
+	const offered: { port: string; features: readonly string[] }[] = [];
+	if (!joinedSecretProjection) {
+		if (has(capability.api.http))
+			offered.push({ port: "compute", features: ["http"] });
+		if (
+			has(capability.kv.keyValue) ||
+			has(capability.kv.redisCompatible) ||
+			has(capability.kv.valkey)
+		)
+			offered.push({
+				port: "kv",
+				features: has(capability.kv.redisCompatible) ? ["eventual"] : [],
+			});
+		if (has(capability.queue.atLeastOnce) || has(capability.queue.fifo))
+			offered.push({ port: "queue", features: [] });
+		if (has(capability.service.scheduled))
+			offered.push({ port: "schedule", features: [] });
+		if (has(capability.data.postgres) || has(capability.data.relational))
+			offered.push({ port: "database", features: [] });
+	}
+	// A runtime projection can read secrets; it does not imply write access.
+	if (
+		yard.bindings.some(
+			(row) => row.profile === capability.secretRef.runtimeProjection,
+		)
+	)
+		offered.push({ port: "secretRef", features: ["access"] });
 	return {
 		id: `yard:${yard.name}`,
 		regions: [...yard.regions],
-		capabilities: ports.map((port) => ({
+		capabilities: offered.map(({ port, features }) => ({
 			port,
 			satisfies(request) {
 				if (request.port !== port) return { kind: "none" };
 				const missing = (request.features ?? []).filter(
-					(feature) => !offered[port].includes(feature),
+					(feature) => !features.includes(feature),
 				);
 				return missing.length === 0
 					? { kind: "full" }
@@ -339,11 +370,13 @@ export function relayYardRegistryProvider(yard: Yard): RegistrableProvider {
 				providerId: `yard:${yard.name}`,
 				published: {},
 				capabilities: {
-					capabilities: ports.map((port) => ({
+					capabilities: offered.map(({ port, features }) => ({
 						port,
-						features: [...offered[port]],
+						features: [...features],
 						productIds,
-						realizedBy: "relay git deployment",
+						realizedBy: joinedSecretProjection
+							? "declared joined Yard secret projection"
+							: "relay git deployment",
 					})),
 				},
 				cost: { facts: [] },
@@ -526,7 +559,24 @@ export function relayRealizer(
 					),
 				],
 			});
-		const state = await input.realization.readyState(done.deploymentId);
+		let state: string;
+		try {
+			state = await input.realization.readyState(done.deploymentId);
+		} catch (error) {
+			if (error instanceof RelayDeploymentReadRefusal)
+				return observation({
+					...base,
+					status: ReconcileStatus.BLOCKED,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.verificationFailed,
+							`reading deployment ${done.deploymentId} failed (HTTP ${error.status}): ${error.message}`,
+							"No retry fixes this: check the deploy token's scope, and the team the deployment belongs to.",
+						),
+					],
+				});
+			throw error;
+		}
 		const handover = { ...done.outputs, readyState: state };
 		if (state === "READY")
 			return observation({
@@ -735,8 +785,10 @@ async function deliverWith(
 	);
 	const railCatalog = createJournalRailCatalog({ store });
 	const policyPack = createCdBaselinePack();
+	const joined = await loadRelayJoinedYards(input.cwd, input.yard);
 	const registry = createRegistryFromProviders([
 		relayYardRegistryProvider(input.yard),
+		...joined.map((yard) => relayYardRegistryProvider(yard, true)),
 	]);
 	let realizer: ReturnType<typeof relayRealizer> | undefined;
 	const suites = input.suites;

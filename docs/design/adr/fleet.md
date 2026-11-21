@@ -327,6 +327,48 @@ are these.
     wasmCloud v1 lattice over NATS, which wasmCloud v2 removed; that is a
     runtime decision, not a fleet one, and nothing here depends on it.
 
+### Work merged from `main` after the consolidation
+
+61. **D63 Immutable journals and continuity plans live in
+    `@hobo/backend-routing`.** `createImmutableJournal`, its rollover, the
+    single-object voter (`createAtomicObjectJournalReplica`, records in
+    `hobo.backend_routing.atomic_journal.v1`) and `continuityFleetPlan` came
+    to `main` in the deleted `@hobo/backend-fleet`. A journal is a command log
+    whose entries are assignment-register entries, so it calls the one register
+    in `@hobo/fleet/assignment` and keeps nothing of its own; it is choosing and
+    provider-funding policy, not domain, so it sits beside `decideFleet` and
+    not in the frozen contract layer. Its voters stay adapters where their I/O
+    is: Postgres in `@hobo/data-postgres`, the fenced D1 voter in
+    `@hobo/provider-cloudflare`, the Blob voter in `@hobo/provider-upstash`. The
+    CD journal's Postgres fleet (`@hobo/storage-postgres`) is a one-active
+    fleet on `reconcileFleet`; its witnesses are register-only members, never
+    copied to and never a writer.
+62. **D64 The register takes an early answer and stops at a majority
+    (amendment 7).** `AssignmentRegister` gains two optional fields:
+    `earlyCurrent`, a caller's proof that the replies already in hand carry
+    everything it needs from a current assignment, so `readAssignmentReplies`
+    answers without waiting for slow members; and `stopAfterMajority`, which
+    stops offering an entry once a majority of its deciding set holds it and
+    tries members that answered the read first. A journal's voters are paid
+    per request and can be slow; without these, one slow voter delays every
+    command. Both are absent for every other fleet, whose behaviour is
+    unchanged.
+63. **D65 Local signoff is runner routing.** `main`'s verification choice
+    (runner, local `gh signoff`, or wait) is `selectRunnerVerification` in
+    `@hobo/ci` `runner-routing/tiers.ts`, beside `selectRunnerTier`, and its
+    coordinator's names say `Runner`, not `Fleet` (D12). The route job still
+    loads no package source: it checks out only its two scripts from the
+    trusted base, and it never offers local signoff, so it keeps its own
+    fleet, local box, GitHub-hosted order.
+64. **D66 Main's surfaces take fleet-neutral names.** Exported names outside
+    the fleet packages that began with `Fleet` or `FLEET_` were renamed where
+    they arrived (`RunnerFleetState`, `HOBO_FLEET_LABEL`,
+    `HOBO_RUNNER_LABELS`, `HOST_PASS_SUBSCRIPTION`, `PostgresFleetBackup…`);
+    their wire values are unchanged. The box worker's NATS boot settings, the
+    hosted verdict probe in the relay deploy and the local runner's mesh node
+    did not come back: the box reads the `fleet` block (D61), a runner host
+    reports through its fleet member, and the relay serves no verdict (D62).
+
 ## Consequences
 
 - **(+)** One place to fix a bug: compute devices, delivery agents,

@@ -34,6 +34,17 @@ const generator = files.some(
 );
 if (schema || generator) process.exit(0);
 
+// A change to the relay's inputs accounts for its own generated asset only;
+// it must not authorize unrelated generated files in the same commit.
+const relayAsset = "packages/ci-vercel/src/_generated-assets/relay-assets.ts";
+const relayInput = files.some(
+	(file) =>
+		file === "packages/ci-gh-actions/templates/hobo-ci-host.yml" ||
+		file === "packages/ci-gh-actions/src/bootstrap.ts",
+);
+if (relayInput && generated.every((file) => file === relayAsset))
+	process.exit(0);
+
 // Catch-up case: output for a schema that landed in an *earlier* commit.
 //
 // The staged-source check above is a proxy for the property that actually

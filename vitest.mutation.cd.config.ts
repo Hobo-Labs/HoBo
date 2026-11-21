@@ -1,7 +1,7 @@
 /**
- * Vitest config for the CD mutation lane (`stryker.cd.conf.json`, plan 0024
- * WP20). Like `vitest.mutation.config.ts`, it skips the root config's wasmtime
- * global setup and its repo-wide include glob. It collects only the suites
+ * Vitest config for the CD mutation lane (`stryker.cd.conf.json`). Like
+ * `vitest.mutation.config.ts`, it skips the root config's wasmtime global
+ * setup and its repo-wide include glob. It collects only the suites
  * that exercise the mutated modules: the @hobo/cd decision tests, the
  * resolver-component guards, and the CD conformance kit.
  */

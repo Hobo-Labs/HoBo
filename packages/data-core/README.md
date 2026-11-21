@@ -5,8 +5,8 @@ like in transit, the ports a storage engine implements, the closed catalog of
 ways to move live data, how one of them is chosen, how policy is held through
 every intermediate state, and the suite that proves an engine.
 
-It imports `@hobo/core` and nothing else. It opens no connection and holds no
-state. Engine packages (`@hobo/data-sqlite`, `@hobo/data-postgres`,
+It uses `@hobo/core` and generated protobuf types. It opens no connection and
+holds no state. Engine packages (`@hobo/data-sqlite`, `@hobo/data-postgres`,
 `@hobo/data-mongodb`) derive from it; `@hobo/trails` composes its executors
 into runbooks and consumes their evidence.
 
@@ -102,6 +102,14 @@ patterns that need it ineligible, by name.
 | `schema` | expand / backfill / contract statements, with snapshot and restore |
 
 Every method may answer synchronously or asynchronously (`Awaitable`).
+
+The optional `fence.operation` port holds a native source fence while an exact
+route operation is unresolved. A claim binds the dataset, tenant, operation,
+route digest, receiver key and fence-token digest; it has no expiry. The source
+accepts only a signed terminal receipt for that claim and keeps a completion
+tombstone for recovery. Hosts must independently verify the source placement,
+native enforcement, receiver identity and budget authority before relying on
+the port. Its presence alone does not enroll a production route receiver.
 
 A binding's declaration states the real limits of its engine: `captureOrdering`,
 `fenceEnforcement` (`store` or `entry-point`), `snapshotConsistency`,

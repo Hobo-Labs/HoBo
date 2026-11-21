@@ -18,6 +18,7 @@
 		"access": "public"
 	},
 	"dependencies": {
+		"@bufbuild/protobuf": "2.12.1",
 		"@hobo/core": "workspace:*"
 	},
 	"devDependencies": {

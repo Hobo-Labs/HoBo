@@ -161,10 +161,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: hobo
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
 `;
@@ -179,12 +179,14 @@ jobs:
 });
 const trunkRunsOn =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
-const boxOrTrunkRunsOn =
-	"${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+const depsImageRunsOn =
+	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 /** The main gate's shards: the plan job's second ask, then the run's route, then GitHub-hosted. */
 const shardRunsOn =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
+const mergeShardRunsOn =
+	"${{ needs.pr_gate_plan.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -215,7 +217,7 @@ jobs:
     if: \${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           sparse-checkout: .github/actions
       - uses: ./.github/actions/ci-runner-preflight
@@ -252,7 +254,7 @@ jobs:
   pr-gate:
     runs-on: ${runsOn}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683${inputs}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1${inputs}
 `;
 	assert.equal(
 		(
@@ -366,50 +368,59 @@ jobs:
 	}
 });
 
-test("box-label-routing sends the deps image build to the box and nothing else", async () => {
+test("deps-image routing confines the unpromoted PR build to its approved runners", async () => {
 	const workflow = (runsOn: string, command: string) => `name: Routing
 on:
   pull_request:
-  push:
 jobs:
-  build:
+  ci-deps-image:
     needs: route
+    if: \${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}
     runs-on: ${runsOn}
     steps:
-      - run: ${command}
+      - name: Build
+        run: ${command}
 `;
 	const build =
 		"bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh --no-promote";
-	// The image must land in the Docker context job containers start from:
-	// under the shared label an ARC pod can take the job.
+	// The fallback may validate a candidate, but never promotes it.
 	const boxed = await lint(
-		await fixture({ "pricing-ci.yml": workflow(boxOrTrunkRunsOn, build) }),
+		await fixture({ "hobo-ci.yml": workflow(depsImageRunsOn, build) }),
 	);
 	assert.equal(boxed.status, 0, boxed.stderr);
+	const unguarded = await lint(
+		await fixture({
+			"hobo-ci.yml": workflow(depsImageRunsOn, build).replace(
+				"needs.route.result == 'success' && ",
+				"",
+			),
+		}),
+	);
+	assert.equal(unguarded.status, 1);
 	for (const runsOn of [trunkRunsOn, "hobo"]) {
 		const shared = await lint(
-			await fixture({ "pricing-ci.yml": workflow(runsOn, build) }),
+			await fixture({ "hobo-ci.yml": workflow(runsOn, build) }),
 		);
 		assert.equal(shared.status, 1, runsOn);
 		assert.match(
 			shared.stderr,
-			/box-label-routing: a job that runs deps\/build-deps\.sh must use the box-or-trunk label expression/,
+			/box-label-routing: a job that runs deps\/build-deps\.sh must use the deps-image runner expression/,
 		);
 	}
-	// The box label is for that job alone, and never asked for bare.
+	// This expression is for that build alone, and the box label is never bare.
 	const borrowed = await lint(
-		await fixture({ "pricing-ci.yml": workflow(boxOrTrunkRunsOn, "true") }),
+		await fixture({ "hobo-ci.yml": workflow(depsImageRunsOn, "true") }),
 	);
 	assert.equal(borrowed.status, 1);
 	assert.match(borrowed.stderr, /runs-on must be hobo or the trunk label/);
 	const bare = await lint(
-		await fixture({ "pricing-ci.yml": workflow("hobo-box", build) }),
+		await fixture({ "hobo-ci.yml": workflow("hobo-box", build) }),
 	);
 	assert.equal(bare.status, 1);
 	// The box label comes from the route job's answer, so the job must need it.
 	const unrouted = await lint(
 		await fixture({
-			"pricing-ci.yml": workflow(boxOrTrunkRunsOn, build).replace(
+			"hobo-ci.yml": workflow(depsImageRunsOn, build).replace(
 				"    needs: route\n",
 				"",
 			),
@@ -420,7 +431,7 @@ jobs:
 	// A comment naming the script does not make a job a deps image build.
 	const commented = await lint(
 		await fixture({
-			"pricing-ci.yml": workflow(trunkRunsOn, "true").replace(
+			"hobo-ci.yml": workflow("hobo", "true").replace(
 				"    steps:",
 				"    # see packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh\n    steps:",
 			),
@@ -515,7 +526,10 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			// The route job chooses the runner, so it cannot wait on one.
 			if ((lines[start] ?? "") === "  route:") {
 				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
-				assert.match(block, /uses: \.\/\.github\/actions\/route-runner$/m);
+				assert.match(
+					block,
+					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
+				);
 				continue;
 			}
 			// A required gate runs no action on GitHub-hosted too. `always()` is for
@@ -551,18 +565,21 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				assert.match(block, /^    needs: \[route, [^\n]*main-gate-plan/m);
 				continue;
 			}
-			// Everything in hobo-ci.yml is routed except deps-image, which builds in
-			// the box's own Docker context.
+			if (runsOn === mergeShardRunsOn) {
+				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
+				assert.equal(lines[start], "  workspace_tests:");
+				assert.match(block, /^    needs: \[route, [^\n]*pr_gate_plan/m);
+				continue;
+			}
+			// The deps-image route chooses the box or a hosted Docker context.
 			if (file === "hobo-ci.yml")
 				assert.match(
 					lines[start] ?? "",
 					/^  ci-deps-image:$/,
 					`${file}:${lines[start]} is not routed`,
 				);
-			// The deps image job asks for the box on pull requests, the trunk
-			// label otherwise.
 			if ((lines[start] ?? "") === "  ci-deps-image:") {
-				assert.equal(runsOn, boxOrTrunkRunsOn, `${file}: ci-deps-image`);
+				assert.equal(runsOn, depsImageRunsOn, `${file}: ci-deps-image`);
 				continue;
 			}
 			const prOnly =
@@ -619,7 +636,7 @@ for (const [name, original, changed] of [
 	["unbounded timeout", "    timeout-minutes: 10\n", ""],
 	[
 		"floating action",
-		"actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+		"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
 		"actions/checkout@v4",
 	],
 	[

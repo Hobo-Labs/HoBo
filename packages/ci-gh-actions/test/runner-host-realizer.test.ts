@@ -46,8 +46,11 @@ const recordedSelf = JSON.parse(recorded.meshAdvert);
 const recordedAdvert = {
 	freeSlots: Number(recordedSelf.freeSlots),
 	totalSlots: Number(recordedSelf.totalSlots),
-	labels: [...recordedSelf.labels] as string[],
-	platform: recordedSelf.platform as { os: string; arch: string },
+	labels: [...recordedSelf.labels].map(String),
+	platform: {
+		os: String(recordedSelf.platform.os),
+		arch: String(recordedSelf.platform.arch),
+	},
 	sinceMs: Number(recordedSelf.sinceMs),
 };
 const CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";

@@ -1,44 +1,15 @@
-/**
- * Subcommand-declared options (plan 0024; packages/hobo/CD.md).
- *
- * Some verbs are a family of subcommands, each with its own flags:
- * `hobo deploy freight record --file`, `hobo deploy agent token --camp-set`,
- * `hobo incident open --signal`, `hobo serve cd --simulate`. The shell owns
- * their parsing so every caller (the binary, MCP, tests) gets the same typed
- * result: a flag is a declared value or a declared switch, never free-form
- * passthrough. A flag the resolved subcommand does not declare is refused with
- * the shell's ordinary `Unknown option` usage error.
- *
- * A strict verb accepts nothing else beside the shell's global flags
- * (`--json`, `--cwd`, `--verbose`, `-q`, `--help`). A non-strict verb keeps
- * its existing verb-scoped shell flags (`serve --port`) and only routes the
- * names declared here through the table.
- */
-
-/** A value flag takes the next token (or `--name=value`); a switch takes none. */
 export type SubcommandOptionKind = "value" | "switch";
 
-/** A parsed declared option: the value, or `true` for a switch. */
 export type SubcommandOptionValue = string | true;
 
-/**
- * Parsed declared options by name (without `--`). A plain JSON object, so a
- * command reading its flags as JSON (`@hobo/hobo`'s CD commands) reads these
- * the same way.
- */
 // public-contract: the parsed subcommand options on CliFlags.
 export type SubcommandOptions = Readonly<Record<string, SubcommandOptionValue>>;
 
 export type VerbSubcommandTable = Readonly<{
-	/** Option name (without `--`) and its kind; the only names this table accepts. */
 	options: ReadonlyMap<string, SubcommandOptionKind>;
-	/** Options every subcommand of the verb takes. */
 	common: readonly string[];
-	/** Subcommand words (space-joined) and the options each declares. */
 	subcommands: ReadonlyMap<string, readonly string[]>;
-	/** Strict: only global shell flags beside the declared options. */
 	strict: boolean;
-	/** The subcommand a run with no subcommand words resolves to. */
 	defaultSubcommand?: string;
 }>;
 
@@ -73,11 +44,6 @@ function table(input: TableInput): VerbSubcommandTable {
 const value = (name: string) => [name, "value"] as const;
 const flag = (name: string) => [name, "switch"] as const;
 
-/**
- * `hobo deploy` (packages/hobo/src/cd-deploy.ts `CD_DEPLOY_SUBCOMMANDS`; a
- * parity test there keeps both lists equal). `--yard` names a topology file
- * (a Yard module or a delivery module exporting `yards`/`camps`).
- */
 export const DEPLOY_SUBCOMMANDS: VerbSubcommandTable = table({
 	strict: true,
 	options: [
@@ -186,7 +152,6 @@ export const DEPLOY_SUBCOMMANDS: VerbSubcommandTable = table({
 	],
 });
 
-/** `hobo incident status|open` (packages/hobo/src/incident-command.ts). */
 export const INCIDENT_SUBCOMMANDS: VerbSubcommandTable = table({
 	strict: true,
 	options: [
@@ -205,10 +170,6 @@ export const INCIDENT_SUBCOMMANDS: VerbSubcommandTable = table({
 	defaultSubcommand: "status",
 });
 
-/**
- * `hobo serve control|cd`. Not strict: `--port`, `--host`, `--home`, `--once`
- * and the demo flags stay the shell's serve-scoped flags.
- */
 export const SERVE_SUBCOMMANDS: VerbSubcommandTable = table({
 	strict: false,
 	options: [flag("simulate"), value("yard")],
@@ -228,7 +189,6 @@ export const VERB_SUBCOMMANDS: ReadonlyMap<string, VerbSubcommandTable> =
 		["serve", SERVE_SUBCOMMANDS],
 	]);
 
-/** The subcommand `args` names: two words first, then one, else the default. */
 export function resolveSubcommand(
 	verbTable: VerbSubcommandTable,
 	args: readonly string[],
@@ -240,7 +200,6 @@ export function resolveSubcommand(
 	return verbTable.subcommands.has(one) ? one : undefined;
 }
 
-/** The options a resolved subcommand accepts (its own plus the verb's common ones). */
 export function acceptedOptions(
 	verbTable: VerbSubcommandTable,
 	subcommand: string,

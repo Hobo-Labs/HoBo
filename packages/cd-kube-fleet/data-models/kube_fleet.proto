@@ -1,7 +1,7 @@
 syntax = "proto3";
 package hobo.cd.kubefleet.v1;
 
-// Wire contracts for @hobo/cd-kube-fleet (plan 0024, WP25, D26). Kubernetes
+// Wire contracts for @hobo/cd-kube-fleet (ADR-0182 D26). Kubernetes
 // fleet managers (Open Cluster Management, Karmada) and SIG-Multicluster
 // ClusterProfile inventories are transports and inventory for HoBo Camps,
 // never schedulers. Constraints live in kube_fleet.cue. Records hold

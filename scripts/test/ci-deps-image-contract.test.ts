@@ -204,7 +204,7 @@ describe("CI deps image build contract", () => {
 		includes(build, '[ "$local_key" = "$key" ]');
 	});
 
-	it("imports the registry cache only with the containerd image store", () => {
+	it("imports the registry cache and exports it on publisher builds only with containerd", () => {
 		includes(build, "deps_uses_containerd_image_store()");
 		includes(build, "docker info --format '{{json .DriverStatus}}'");
 		includes(build, "*io.containerd.snapshotter*");
@@ -214,11 +214,18 @@ describe("CI deps image build contract", () => {
 		const cacheImport = build.indexOf(
 			'cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")',
 		);
+		const cacheExport = build.indexOf(
+			'cache_args+=(--cache-to "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache,mode=min")',
+		);
 		assert.ok(detection > -1);
 		assert.ok(cacheImport > detection);
+		assert.ok(cacheExport > cacheImport);
+		includes(
+			build,
+			'if [[ "${HOBO_CI_DEPS_EXPORT_BUILDCACHE:-0}" == "1" ]]; then',
+		);
 		includes(build, '"${cache_args[@]}"');
 		includes(build, "deps registry cache import skipped: classic image store");
-		assert.ok(!build.includes("--cache-to"));
 	});
 
 	it("stages the link verification script in the deps context for mount verify", () => {
@@ -354,7 +361,7 @@ describe("CI deps image build contract", () => {
 describe("CI deps workflow contract", () => {
 	const workflow = read(".github/workflows/hobo-ci.yml");
 	const start = workflow.indexOf("  ci-deps-image:");
-	const end = workflow.indexOf("  pr_gate_validation:", start);
+	const end = workflow.indexOf("  pr_gate_plan:", start);
 	const job = workflow.slice(start, end);
 
 	// A cluster runner has no worker image. build-deps.sh then asks
@@ -391,10 +398,8 @@ describe("CI deps workflow contract", () => {
 		assert.ok(start > -1);
 		assert.ok(end > start);
 		includes(job, "name: CI deps layer (pnpm)");
-		// Not routed: it builds in the box's Docker context, which a
-		// GitHub-hosted machine does not have.
 		includes(job, "needs: [route]");
-		assert.ok(!job.includes("needs.route.outputs.runner"));
+		includes(job, "needs.route.outputs.runner");
 		includes(job, "packages/ci-gh-actions/deploy/ci-runner/deps");
 		includes(job, "scripts/ci/deps-layer-buckets.mts");
 		includes(
@@ -423,16 +428,21 @@ describe("CI deps workflow contract", () => {
 	it("runs as its own job on pull requests only, and never promotes there", () => {
 		includes(
 			job,
-			"if: ${{ !cancelled() && github.event_name == 'pull_request' }}",
+			"if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}",
 		);
-		// Not routed: the box's own label on a pull request when committed
-		// runnerRouting.boxRunner makes the route job name it, else the trunk expression.
+		// Use an enrolled box when the fleet is selected. A GitHub-hosted fallback
+		// validates the candidate in its own Docker context without publishing it.
 		includes(
 			job,
-			"    runs-on: ${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || ",
+			"    runs-on: ${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}",
 		);
+		includes(workflow, "box_runner: ${{ steps.route.outputs.box_runner }}");
+		includes(
+			job,
+			"if: steps.scope.outputs.run == 'true' && needs.route.outputs.tier != 'fleet'",
+		);
+		includes(job, 'node-version: "24"');
 		assert.ok(!job.includes("vars."));
-		assert.ok(!job.includes("needs.route.outputs.runner"));
 		assert.ok(!job.includes('docker tag "$candidate" hobo-ci-deps:local'));
 		assert.ok(!job.includes("Promote verified deps image"));
 	});
@@ -844,9 +854,15 @@ describe("CI deps publisher contract", () => {
 		assert.ok(!publish.includes('echo "${{ secrets.GITHUB_TOKEN }}'));
 	});
 
-	it("exports mode=min cache after the push only with the containerd image store", () => {
+	it("exports mode=min during a fresh build and keeps the local-hit export fallback", () => {
+		const freshBuild = publish.indexOf(
+			'HOBO_CI_DEPS_BUILDCACHE_EXPORTED_FILE="$cache_export_marker"',
+		);
 		const push = publish.indexOf(
 			"timeout --signal=TERM --kill-after=15s 240s docker push",
+		);
+		const exported = publish.indexOf(
+			'if [ -s "$cache_export_marker" ] && deps_uses_containerd_image_store; then',
 		);
 		const detection = publish.indexOf(
 			"if ! deps_uses_containerd_image_store; then",
@@ -854,9 +870,16 @@ describe("CI deps publisher contract", () => {
 		const exportCache = publish.indexOf(
 			'--cache-to "type=registry,ref=${cache_image},mode=min"',
 		);
-		assert.ok(push > -1);
-		assert.ok(detection > push);
+		assert.ok(freshBuild > -1);
+		assert.ok(push > freshBuild);
+		assert.ok(exported > push);
+		assert.ok(detection > exported);
 		assert.ok(exportCache > detection);
+		assert.ok(
+			build.indexOf("printf 'exported\\n' > \"$cache_exported_file\"") >
+				build.indexOf('-t "$candidate" "$context"'),
+		);
+		includes(publish, "deps buildcache exported during the image build");
 		includes(publish, "docker info --format '{{json .DriverStatus}}'");
 		includes(publish, "*io.containerd.snapshotter*");
 		includes(

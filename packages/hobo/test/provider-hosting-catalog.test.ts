@@ -885,7 +885,7 @@ async function browserWasmRegistry(): Promise<
 	return () => module.browserWasmResolverRegistry();
 }
 
-describe("plan 0024 WP14: registration of the remaining hosting providers", () => {
+describe("registration of the remaining hosting providers", () => {
 	const digest = `sha256:${"c".repeat(64)}`;
 	const lakebedHost: LakebedDeployHost = {
 		deploy: refuseIO,

@@ -34,7 +34,7 @@ message WorldStreamEvent {
   string json_payload = 4;
 }
 
-// ── CD read API under /v1/cd/ (plan 0024 WP12) ─────────────────────────────
+// ── CD read API under /v1/cd/ ──────────────────────────────────────────────
 // Record payloads are owned by hobo.cd.v1 (packages/cd/data-models/cd.proto)
 // and travel as canonical protobuf JSON — referenced here, not duplicated.
 // The envelope matches the delivery feed's: {ok: true, value} | {ok: false,

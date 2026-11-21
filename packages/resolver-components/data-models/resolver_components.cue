@@ -1,5 +1,5 @@
-// CUE constraints for every protobuf type in resolver_components.proto
-// (plan 0024 WP8). Bounds mirror CD_DEFAULTS in @hobo/cd: 128 MiB memory,
+// CUE constraints for every protobuf type in resolver_components.proto.
+// Bounds mirror CD_DEFAULTS in @hobo/cd: 128 MiB memory,
 // 30 s per call, 10^9 fuel, at most 32 allowlisted hosts.
 
 package data_models

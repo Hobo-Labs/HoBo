@@ -1,5 +1,5 @@
 /**
- * WP13 (plan 0024) Flux: the observation-only flux.app/v1 resolver over the
+ * Flux: the observation-only flux.app/v1 resolver over the
  * public FluxOS API (PACT-replayed fixtures), I14 coverage and traffic
  * profile, typed refusals, wire contract and a gated live lane.
  */

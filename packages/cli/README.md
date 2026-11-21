@@ -46,6 +46,21 @@ Canonical verbs: **43**, defined in `src/shell/verbs.ts` — including lifecycle
 
 Global flags: `--json`, `--camp <camp>`, `--cwd <path>`, `--verbose`, `-q`, `--help`.
 
+Yard desired-state delivery retains resources omitted from a declaration by
+default; use `--mode complete` to remove them through the deployment gate.
+Broker placement and budgeted hosting refuse an explicit `--mode` until their
+execution paths can honor it. `hobo up
+--what-if` and `hobo down --what-if` report changes without applying them and
+require the current CD Set to have a converged observation. `--dry-run` and
+`--preview` are aliases for `--what-if` on these two commands. Revision selectors
+and rollback cannot be combined with `--what-if`; rollback restores the prior
+Set exactly and cannot be combined with `--mode`.
+
+Budgeted hosting plans require a trusted Yard binding before reading budget
+evidence and reject target selectors that the hosting authority cannot verify.
+`up --what-if` uses the same session selection as `up`, including an anonymous
+session when `--anonymous` or `--temporary` is selected.
+
 Subcommand flags: `deploy`, `incident` and `serve` subcommands declare their
 own flags in `src/shell/subcommands.ts` (`DEPLOY_SUBCOMMANDS`,
 `INCIDENT_SUBCOMMANDS`, `SERVE_SUBCOMMANDS`). Each is a typed value or switch;
@@ -194,8 +209,9 @@ The generated `api-tree.ts`, `hooks.ts`, `steps.ts`, `workflows.ts` and
 represent the same parsed model. The generated runtime accepts the application's
 existing core EventStore, writes version-checked resource facts, rebuilds
 projections, maintains snapshots, and delivers real subscriptions. Its workflow
-adapter uses the existing runtime workflow engine and resumes committed steps
-after reopening the durable store.
+adapter uses the existing runtime workflow engine, claims a fresh run before
+execution, and resumes committed steps after reopening the durable store.
+Retrying a terminal run returns its recorded result without executing it again.
 
 ```ts
 import { createRuntimeLocalEventStore } from "@hobo/runtime-local";

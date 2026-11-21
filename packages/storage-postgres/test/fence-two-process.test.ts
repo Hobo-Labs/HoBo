@@ -6,7 +6,7 @@ import {
 } from "./support/worker-process.js";
 
 /**
- * Plan 0024 WP17 Accept: "Two-process fence test". Two OS processes, each
+ * Two-process fence test. Two OS processes, each
  * with its own pool and clock, contend for one Camp's lease and the Camp's
  * fenced stream (I4: one writer per Camp; a stale fence is refused).
  */

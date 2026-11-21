@@ -189,6 +189,7 @@ describe("job-scope", () => {
 				"packages/data-postgres/test/engine-hardening-live.test.ts",
 				"packages/data-postgres/test/native-live.test.ts",
 				"packages/data-postgres/test/cross-engine-live.test.ts",
+				"packages/broker/test/budget-fleet-postgres.test.ts",
 				"packages/data-mongodb/test/live.test.ts",
 				"packages/data-mongodb/test/cross-engine-live.test.ts",
 				"packages/trails/test/data-patterns-e2e.test.ts",

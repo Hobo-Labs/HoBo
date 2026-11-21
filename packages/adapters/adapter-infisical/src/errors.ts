@@ -1,12 +1,3 @@
-/**
- * The one error this adapter throws. Its message names the operation, a code,
- * the HTTP status and Infisical's request id: never a response body, a token,
- * a JWT or a secret value, because Infisical's error bodies may echo input.
- */
-
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
-import { InfisicalErrorEnvelopeSchema } from "./_generated/adapter_infisical_pb.js";
-
 export type InfisicalErrorCode =
 	/** A binding, identity or secret name failed its parser. */
 	| "invalid-input"
@@ -25,6 +16,11 @@ export type InfisicalErrorCode =
 	| "rate-limited"
 	/** Still 5xx or unreachable after the retry budget. */
 	| "unavailable"
+	| "write-uncertain"
+	/** The independently enrolled plan-observation lease could not be verified. */
+	| "lease-unverified"
+	/** The host did not reserve and claim a plan-observation attempt. */
+	| "budget-unavailable"
 	/** A secret-protection policy turned a write into a pending approval. */
 	| "approval-required"
 	/** The identity may list the secret but not read its value. */
@@ -57,18 +53,5 @@ export class InfisicalError extends Error {
 		this.status = details.status;
 		this.reqId = details.reqId;
 		this.retryable = details.retryable ?? false;
-	}
-}
-
-/** Infisical's request id from an error body, when it is a plain token. */
-export function requestIdOf(body: JsonValue | undefined): string | undefined {
-	if (body === undefined) return undefined;
-	try {
-		const { reqId } = fromJson(InfisicalErrorEnvelopeSchema, body, {
-			ignoreUnknownFields: true,
-		});
-		return /^[A-Za-z0-9_-]{1,128}$/u.test(reqId) ? reqId : undefined;
-	} catch {
-		return undefined;
 	}
 }

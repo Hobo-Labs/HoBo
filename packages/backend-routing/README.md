@@ -23,6 +23,9 @@ cache fleet the second.
 | Billing periods and usage units | `billingPeriod`, `FLEET_USAGE_UNITS` |
 | Keep, switch or fail over a database fleet | `decideFleet`, `parseFleetFinancialModel`, `parseFleetPolicy` |
 | Route a loss-tolerant fleet by budget | `routeFleetByBudget`, `parseFleetOffer`, `parseFleetRoutingMarks` |
+| A durable, majority-chosen command log over assignment replicas | `createImmutableJournal`, `createImmutableJournalRollover` |
+| A journal voter whose documents, assignments and seal share one conditional object | `createAtomicObjectJournalReplica` |
+| The operating plan and budget check for a declared continuity policy | `continuityFleetPlan`, `continuityBudgetCheck`, `continuityShortfalls` |
 
 Both functions take the fleet's observations as `NamedObservation`s
 (`{ name, observation }`, `@hobo/fleet`) and the current `AssignmentEntry`;
@@ -35,6 +38,22 @@ gives: `unreachable`, `quota-exhausted`, `auth`, `unknown`, `never-copied`,
 `FleetRoutingMarks.failoverAfterMs` stay input fields; a host fills them from
 the fleet's `FleetPolicy` (`recovery_point_ms`, `failover_after_ms`). The money
 thresholds stay here.
+
+## Journals
+
+The immutable journal is a command log whose entries are assignment-register
+entries (`@hobo/fleet/assignment`): each epoch's reason links the digest of the
+previous entry, so a majority of voters chooses one history. Its voters are
+`AssignmentReplica`s that can also seal: the Postgres voter
+(`@hobo/data-postgres`), the fenced Cloudflare D1 voter
+(`@hobo/provider-cloudflare`), the Upstash Blob voter built on
+`createAtomicObjectJournalReplica` (`@hobo/provider-upstash`), and the in-memory
+voters of the tests. The journal asks the register for an early answer
+(`earlyCurrent`, once a holder's history proves the current entry) and stops
+offering an entry once a majority holds it (`stopAfterMajority`); both are
+optional register fields, so every other one-active fleet behaves as before.
+`createImmutableJournalRollover` moves a journal to a new generation of voters
+with a checkpoint both generations agree on.
 
 ## Budget routing
 

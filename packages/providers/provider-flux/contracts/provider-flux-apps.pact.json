@@ -9,7 +9,7 @@
 		"pactSpecification": {
 			"version": "3.0.0"
 		},
-		"provenance": "Hand-authored consumer expectations (plan 0024 WP13) against the documented public FluxOS API at https://api.runonflux.io (docs.runonflux.io, read 2026-11-12); not provider-verified or captured live traffic. The resolver issues only these two unauthenticated reads and never registers, updates or removes an app."
+		"provenance": "Hand-authored consumer expectations against the documented public FluxOS API at https://api.runonflux.io (docs.runonflux.io, read 2026-11-12); not provider-verified or captured live traffic. The resolver issues only these two unauthenticated reads and never registers, updates or removes an app."
 	},
 	"interactions": [
 		{

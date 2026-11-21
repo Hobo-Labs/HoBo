@@ -6,6 +6,24 @@ export {
 } from "./compensation.js";
 
 export {
+	changedSinceLastDeployed,
+	classifyResource,
+	currentEpochStart,
+	DEPLOYMENT_MODES,
+	type DeploymentChangeSet,
+	type DeploymentMode,
+	type DesiredSpecHash,
+	desiredSpecHash,
+	orphansToPrune,
+	parseDeploymentMode,
+	planDeploymentChanges,
+	planDeploymentChangesFromRecorded,
+	type RecordedResource,
+	type ResourceChange,
+	type ResourceChangeAction,
+	recordedResources,
+} from "./desired-state.js";
+export {
 	type OrchestratorContext,
 	type OrchestratorDeps,
 	type OrchestratorResult,
@@ -13,9 +31,20 @@ export {
 	runOrchestrator,
 } from "./orchestrator.js";
 export {
+	type ReconciliationFinancialEvidence,
+	type ReconciliationOutcome,
+	type ResourceReconciliationClaim,
+	type ResourceReconciliationDeps,
+	ResourceReconciliationError,
+	type ResourceReconciliationVerification,
+	resolveResourceReconciliation,
+} from "./recovery.js";
+
+export {
 	destroyResource,
 	foldResourceActor,
 	iacProgramFor,
+	isConverged,
 	RESOURCE_ACTOR_STATES,
 	type ReconcileContext,
 	type ReconcileOutcome,

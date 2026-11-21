@@ -31,7 +31,7 @@ const recordedSelf = JSON.parse(recorded.meshAdvert);
 const advert = {
 	validUntilMs: Number(recordedSelf.validUntilMs),
 	sinceMs: Number(recordedSelf.sinceMs),
-	labels: [...recordedSelf.labels] as string[],
+	labels: [...recordedSelf.labels].map(String),
 };
 const NOW = advert.validUntilMs - 30_000;
 const DIGEST = `sha256:${"2".repeat(64)}`;

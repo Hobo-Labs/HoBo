@@ -24,6 +24,7 @@ const canonicalVerbNames = [
 	"feature",
 	"deploy",
 	"ci",
+	"cd",
 	"fleet",
 	"incident",
 	"claim",
@@ -99,7 +100,8 @@ Canonical verbs:
   access      identity      Request elevated/cross-env access or break-glass (short-lived capability; audited)
   feature     delivery      OpenFeature flags / canary / experiment status (list|eval|set|kill)
   deploy      delivery      Attested continuous delivery status/logs/rollback (secret-free)
-  ci          delivery      Connect a repository and inspect CI runs (connect/list/inspect)
+  ci          delivery      Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project
+  cd          delivery      Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy
   fleet       control plane Enroll devices and run fleet work (login/enroll/run/status/member/fleet/connect/submit/audit/ops)
   incident    delivery      CD failure disposition: A2H handoff or sandboxed self-heal
   claim       identity      Bind an anonymous deployment to an account

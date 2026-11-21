@@ -137,6 +137,9 @@ export function data(name: string): ResourceHandle<"data"> {
 export function schedule(name: string): ResourceHandle<"schedule"> {
 	return createHandle("schedule", name);
 }
+export function project(name: string): ResourceHandle<"project"> {
+	return createHandle("project", name);
+}
 export function websocket(name: string): ResourceHandle<"websocket"> {
 	return createHandle("websocket", name);
 }

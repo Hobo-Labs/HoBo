@@ -213,6 +213,48 @@ function emptyResolved(
 	});
 }
 
+/** Keep previously declared nodes when an incremental up omits them. */
+function retainUndeclared(
+	before: ResolvedDeploymentSet,
+	after: ResolvedDeploymentSet,
+): ResolvedDeploymentSet {
+	const declared = new Set(
+		after.plan.resources.map((resource) => resource.name),
+	);
+	const retained = before.plan.resources.filter(
+		(resource) => !declared.has(resource.name),
+	);
+	if (retained.length === 0) return after;
+	const retainedNames = new Set(retained.map((resource) => resource.name));
+	const input: Mutable<Parameters<typeof createResolvedDeploymentSet>[0]> = {
+		tenant: after.tenant,
+		environment: after.environment,
+		campId: after.campId,
+		plan: {
+			...after.plan,
+			resources: [...after.plan.resources, ...retained].sort((a, b) =>
+				a.name.localeCompare(b.name),
+			),
+			dependencyOrder: [
+				...after.plan.dependencyOrder,
+				...before.plan.dependencyOrder.filter((name) =>
+					retainedNames.has(name),
+				),
+			],
+		},
+		matches: [
+			...after.matches,
+			...before.matches.filter((match) => retainedNames.has(match.resource)),
+		],
+		gatekeeper: after.gatekeeper,
+		secretRefs: [
+			...new Set([...after.secretRefs, ...before.secretRefs]),
+		].sort(),
+	};
+	if (after.progressive !== undefined) input.progressive = after.progressive;
+	return createResolvedDeploymentSet(input);
+}
+
 export function createPlanningResolver(d: PlanningDeps): SetResolver {
 	const declarationDigest =
 		d.declarationDigest ?? ((value: Declaration) => digestOf(value));
@@ -361,7 +403,12 @@ export function createPlanningResolver(d: PlanningDeps): SetResolver {
 			} else {
 				const planned = await planFor(input.freight, input.campId);
 				if (!planned.ok) return planned;
-				resolved = planned.value;
+				resolved =
+					input.intent === "up" &&
+					input.deploymentMode === "incremental" &&
+					before
+						? retainUndeclared(before, planned.value)
+						: planned.value;
 			}
 			const changes = diffResolvedSets(before, resolved);
 			let infrastructureDiff: ResourceChange[] = [];

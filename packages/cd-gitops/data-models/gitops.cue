@@ -1,6 +1,6 @@
 package data_models
 
-// CUE constraints for gitops.proto (plan 0024, WP16). parsePublisherConfig in
+// CUE constraints for gitops.proto. parsePublisherConfig in
 // src/config.ts applies the same rules, so a value violating them never exists
 // past the parser.
 

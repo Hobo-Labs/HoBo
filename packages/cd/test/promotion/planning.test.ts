@@ -95,7 +95,12 @@ function setup(camps: Record<string, CampPlanning>) {
 		declarations.set(id, declaration);
 		return freights.add(id, { declarationHash: digestOf(declaration) });
 	};
-	return { desired, resolver, addFreight, declarations };
+	const addDeclaration = (id: string, raw: JsonObject) => {
+		const declaration = parseManifest(raw);
+		declarations.set(id, declaration);
+		return freights.add(id, { declarationHash: digestOf(declaration) });
+	};
+	return { desired, resolver, addFreight, addDeclaration, declarations };
 }
 
 /** A Yard pins each resource to its provider through placement selectors. */
@@ -116,6 +121,56 @@ const CAMPS = {
 } satisfies Record<string, CampPlanning>;
 
 describe("planning resolver (planning.ts)", () => {
+	it("retains omitted resources in incremental up and removes them in complete up", async () => {
+		const s = setup(CAMPS);
+		const f1 = s.addFreight("f1", "oci://registry.example/app@sha256:aaaa");
+		const f2 = s.addDeclaration("f2", {
+			...RAW("unused"),
+			resources: { sessions: { type: "data.v1", port: "kv" } },
+		});
+		const first = await s.resolver.resolve(
+			{ freight: f1, campId: camp("us-1"), intent: "up" },
+			context(() => T0),
+		);
+		if (!first.ok) throw new Error("expected initial plan");
+		s.desired.seed("us-1", "f1", first.value.resolved);
+		const incremental = await s.resolver.resolve(
+			{
+				freight: f2,
+				campId: camp("us-1"),
+				intent: "up",
+				deploymentMode: "incremental",
+			},
+			context(() => T0),
+		);
+		if (!incremental.ok) throw new Error("expected incremental plan");
+		expect(
+			incremental.value.resolved.plan.resources.map((r) => r.name).sort(),
+		).toEqual(["app", "sessions"]);
+		expect(
+			incremental.value.resolved.matches.find((m) => m.resource === "app"),
+		).toEqual(first.value.resolved.matches.find((m) => m.resource === "app"));
+		expect(
+			incremental.value.delta.changes.some((c) => c.kind === ChangeKind.REMOVE),
+		).toBe(false);
+		s.desired.seed("us-1", "f2", incremental.value.resolved);
+		const complete = await s.resolver.resolve(
+			{
+				freight: f2,
+				campId: camp("us-1"),
+				intent: "up",
+				deploymentMode: "complete",
+			},
+			context(() => T0),
+		);
+		if (!complete.ok) throw new Error("expected complete plan");
+		expect(complete.value.resolved.plan.resources.map((r) => r.name)).toEqual([
+			"sessions",
+		]);
+		expect(
+			complete.value.delta.changes.map((c) => [c.resource, c.kind]),
+		).toContainEqual(["app", ChangeKind.REMOVE]);
+	});
 	it("I1 across two providers: one declaration, Matching per Camp, provider difference as infrastructure_diff", async () => {
 		const s = setup(CAMPS);
 		const freight = s.addFreight(

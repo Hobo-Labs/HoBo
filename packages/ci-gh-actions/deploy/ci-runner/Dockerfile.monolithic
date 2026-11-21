@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.19
-# Hermetic HoBo CI runner: declared apt packages + mise.lock toolchains + pinned gitleaks.
-FROM debian:bookworm-slim@sha256:67badb485576cbaee9a5694920cb7efd013b6734612075350be5e1a7d8eac56f
+# Hermetic HoBo CI runner: declared apt packages + mise.lock toolchains + pinned betterleaks.
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 
-ARG GITLEAKS_VERSION=8.22.1
-ARG GITLEAKS_SHA256_X64=2f92ab3b8e08319ac30836c32b90818e01519c3a4982771e4f45a7f5607872f7
-ARG GITLEAKS_SHA256_ARM64=598a495a402aa31d10322df04c1deebcd73c586bf7dda1d6df53572280250a85
+ARG BETTERLEAKS_VERSION=1.10.1
+ARG BETTERLEAKS_SHA256_X64=c174b42d7aa60caf58c0c3e555c0e4bed01fe6b0d99a412bce777b5af4ce913e
+ARG BETTERLEAKS_SHA256_ARM64=62a63199f9f61a6b5e5a6f58f048493db20fbc8c770014f4d903a4d97886e1bf
 ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -25,22 +25,22 @@ RUN mise trust ./mise.toml \
   && mise exec -- node --version \
   && mise exec -- pnpm --version \
   && mise exec -- cue version \
-  && mise exec -- gitleaks version \
+  && mise exec -- betterleaks version \
   && mise exec -- shellcheck --version \
   && mise exec -- syft version \
   && mise exec -- turbo --version
 
 RUN case "${TARGETARCH:-amd64}" in \
-      arm64) gitleaks_arch=arm64; digest="${GITLEAKS_SHA256_ARM64}" ;; \
-      amd64) gitleaks_arch=x64; digest="${GITLEAKS_SHA256_X64}" ;; \
+      arm64) betterleaks_arch=arm64; digest="${BETTERLEAKS_SHA256_ARM64}" ;; \
+      amd64) betterleaks_arch=x64; digest="${BETTERLEAKS_SHA256_X64}" ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
-  && archive="gitleaks_${GITLEAKS_VERSION}_linux_${gitleaks_arch}.tar.gz" \
-  && curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" -o "/tmp/${archive}" \
+  && archive="betterleaks_${BETTERLEAKS_VERSION}_linux_${betterleaks_arch}.tar.gz" \
+  && curl -fsSL "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/${archive}" -o "/tmp/${archive}" \
   && echo "${digest}  /tmp/${archive}" | sha256sum -c - \
-  && tar -xzf "/tmp/${archive}" -C /usr/local/bin gitleaks \
+  && tar -xzf "/tmp/${archive}" -C /usr/local/bin betterleaks \
   && rm "/tmp/${archive}" \
-  && gitleaks version
+  && betterleaks version
 
 RUN groupadd --gid 1000 hobo-ci 2>/dev/null || true \
   && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash hobo-ci \

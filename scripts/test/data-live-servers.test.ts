@@ -545,7 +545,27 @@ describe("the proof that the live lanes ran", () => {
 			liveRunVerdict(extra, LIVE_PACKAGES).problems.join("\n"),
 			/@hobo\/pricing: a summary from an unexpected package/u,
 		);
-		assert.equal(liveRunVerdict("", LIVE_PACKAGES).problems.length, 5);
+		assert.equal(
+			liveRunVerdict("", LIVE_PACKAGES).problems.length,
+			LIVE_PACKAGES.length,
+		);
+	});
+
+	it("requires the PostgreSQL Broker recovery test to run", () => {
+		const withoutBroker = LIVE_PACKAGES.filter(
+			(name) => name !== "@hobo/broker",
+		)
+			.map((name) => packageRun(name, "1 passed (1)"))
+			.join("\n");
+		const skipped = `${withoutBroker}\n${packageRun("@hobo/broker", "1 skipped (1)")}`;
+		assert.match(
+			liveRunVerdict(skipped, LIVE_PACKAGES).problems.join("\n"),
+			/@hobo\/broker: not every test ran and passed \(1 skipped\)/u,
+		);
+		assert.match(
+			liveRunVerdict(withoutBroker, LIVE_PACKAGES).problems.join("\n"),
+			/@hobo\/broker: expected one test summary, found 0/u,
+		);
 	});
 });
 
@@ -608,5 +628,14 @@ describe("the workflow job and the script agree", () => {
 			LIVE_PACKAGES,
 		);
 		assert.match(script, /--workspace-concurrency=1/u);
+		assert.match(
+			script,
+			/--filter @hobo\/broker test test\/budget-fleet-postgres\.test\.ts/u,
+		);
+		assert.match(
+			job,
+			/packages\/broker\/test\/budget-fleet-postgres\.test\.ts/u,
+		);
+		assert.match(job, /--filter=@hobo\/broker\.\.\./u);
 	});
 });

@@ -1,7 +1,7 @@
 /**
- * Resolver conformance kit (plan 0024 WP13, I14). Test-only and identical in
- * every WP13 provider package: each package drives its own shipped registry
- * through the same contract checks on recorded fixtures.
+ * Resolver conformance kit (ADR-0182 I14). Test-only and identical in
+ * every provider package that ships one: each package drives its own
+ * shipped registry through the same contract checks on recorded fixtures.
  *
  * What a conforming hosting resolver must show:
  * - the registry lists exactly the products the coverage document resolves;

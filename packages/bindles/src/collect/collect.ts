@@ -6,6 +6,7 @@ import {
 	type ManifestV1,
 	parseManifest,
 } from "../manifest/index.js";
+import type { BindleEdge } from "../types.js";
 import {
 	addContainer,
 	type ComponentHandle,
@@ -35,7 +36,14 @@ export interface ComponentHostDescriptor {
 // Each factory mirrors a wiring factory, records the handle in declaration
 // order, and returns it so bind maps can reference earlier resources.
 export interface CollectionContext {
-	data(name: string, options?: { paradigm?: string }): ResourceHandle;
+	data(
+		name: string,
+		options?: {
+			paradigm?: string;
+			allow?: readonly string[];
+			annotations?: JsonObject;
+		},
+	): ResourceHandle;
 	service(
 		name: string,
 		options?: {
@@ -57,6 +65,8 @@ export interface CollectionContext {
 export interface CollectionTarget {
 	readonly bindleId: string;
 	readonly componentHost: ComponentHostDescriptor;
+	/** Resource ordering edges; connector references are resolved separately. */
+	readonly dependencies?: readonly BindleEdge[];
 	define(collect: CollectionContext): void;
 }
 
@@ -125,7 +135,42 @@ export function collectBindleManifest(
 
 	target.define(Object.freeze(collect));
 
-	const wiring = compileBindleManifest(handles);
+	const compiled = compileBindleManifest(handles);
+	const dependencies = new Map<string, Set<string>>();
+	for (const edge of target.dependencies ?? []) {
+		if (
+			!Object.hasOwn(compiled.resources, edge.from) ||
+			!Object.hasOwn(compiled.resources, edge.to)
+		)
+			throw new CollectionEngineError(
+				"HOBO_COLLECT_DEPENDENCY_UNKNOWN",
+				`Resource dependency ${edge.from} -> ${edge.to} refers to an undeclared resource`,
+			);
+		const targets = dependencies.get(edge.from) ?? new Set<string>();
+		targets.add(edge.to);
+		dependencies.set(edge.from, targets);
+	}
+	const wiring: WiringManifest = dependencies.size
+		? {
+				...compiled,
+				resources: Object.fromEntries(
+					Object.entries(compiled.resources).map(([name, resource]) => {
+						const targets = dependencies.get(name);
+						return [
+							name,
+							targets
+								? {
+										...resource,
+										bind: [
+											...new Set([...(resource.bind ?? []), ...targets]),
+										].sort(),
+									}
+								: resource,
+						];
+					}),
+				),
+			}
+		: compiled;
 	const manifest = manifestFromWiring(wiring, target.componentHost);
 	const manifestHash = canonicalManifestHash(manifest);
 

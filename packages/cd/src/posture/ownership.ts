@@ -1,4 +1,4 @@
-// Ownership checks for posture enforcement (plan 0024 D25, I22). Posture
+// Ownership checks for posture enforcement (ADR-0182 D25, I22). Posture
 // never fights delivery: before a noncompliant finding is remediated, the
 // fields its rule reads and sets are compared with what the Camp's current
 // Set declares.

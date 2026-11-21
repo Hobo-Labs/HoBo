@@ -63,6 +63,21 @@ export interface ActorLeaseHost {
 	acquire(key: string, request: { holderId: string }): ActorLease;
 }
 
+/** A distributed lease must await the shared authority for every transition. */
+export interface AsyncActorLease {
+	readonly key: string;
+	readonly holderId: string;
+	readonly fenceToken: bigint;
+	readonly expiresAt: string;
+	/** Revalidate against the shared authority; this does not fence external I/O. */
+	revalidate(): Promise<void>;
+	release(): Promise<void>;
+}
+
+export interface AsyncActorLeaseHost {
+	acquire(key: string, request: { holderId: string }): Promise<AsyncActorLease>;
+}
+
 /** The virtual-actor host: lease placement + durable per-key state. */
 export interface ActorHost extends ActorLeaseHost {
 	state<S>(

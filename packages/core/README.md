@@ -22,6 +22,12 @@ Deliberately not here: no port has a production backend in this package — the
 helpers; implementations live in runtime/provider packages. No I/O, no network,
 no persistence.
 
+`createTrustedVault` keeps its own copies in buffers, refuses reads after expiry,
+and clears them when the event loop handles the expiry, on explicit removal,
+or at normal process exit. It does not serialize their values.
+Its string inputs and revealed values may have other copies that JavaScript
+cannot reliably erase; it does not guarantee complete memory zeroization.
+
 ### HONEST SCOPE — deployment phases and schema diff
 
 `ports/phase.ts` (ADR-0158) ships **vocabulary, parse boundaries, and the
@@ -74,6 +80,31 @@ then lists every form, so one provider can show a form that qualifies beside
 one that does not. Core holds no vendor facts; the PostgreSQL catalog built from these
 is in `@hobo/cloud-providers`. See
 [`docs/design/postgres-backend-catalog.md`](../../docs/design/postgres-backend-catalog.md).
+
+## Durable lifecycle gate leases
+
+`ports/durable-lifecycle-gate.ts` (`createDurableLifecycleGate`) runs every
+transition under an `AsyncActorLease` on its `hosting-lifecycle-gate:` stream.
+The gate supplies that lease's fence token when it writes a checkpoint
+snapshot. A store used for protected streams must enforce the live token at
+commit; accepting the option alone is not evidence of enforcement.
+Two lease rules keep a participant from leaking:
+
+- **A failed release never undoes a commit.** After the locked work (for
+  example the `ParticipantStarted` append in `begin()`) has committed, an error
+  from `lease.release()` is swallowed: the lease expires on its own, and
+  `begin()` still returns the participant handle, so `finish()` can remove it
+  and `seal()` can complete. If the work itself fails, that error is the one
+  thrown.
+- **Finish and retire wait out contention.** Supervisor transitions
+  (`initialize`, `drain`, `seal`, `resumeDrain`, `stop`, `open`) give up on a
+  busy lease after about 800ms. `finish()` and `retireParticipant()` back off
+  exponentially (10ms doubling to 500ms) for about 60s, which covers a `stop()`
+  holding the lease through a slow `verifyDrained`. Every call still throws
+  once its budget runs out, and callers retry: `finish()` on a removed
+  participant is a no-op, and a retried `retireParticipant()` that throws
+  should be followed by a `status()` read to see whether the participant has
+  already gone.
 
 ## Commands
 

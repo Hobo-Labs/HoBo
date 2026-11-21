@@ -96,6 +96,7 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
+	"packages/r2-object",
 	// The data engine family (ADR-0177). `data-core` is the engine-neutral
 	// contract and imports only `@hobo/core`; each `data-<engine>` package
 	// implements that contract for one storage engine and meets the other
@@ -162,6 +163,13 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/ci-dagger",
 	"packages/ci-cf",
 	"packages/ci-vercel",
+	// public-contract: HoBo.CD on Vercel composes the hobo CD runtime as functions.
+	"packages/cd-vercel",
+	// `hobo ci up` / `hobo cd up` as HoBo projects: the CI and CD projects and
+	// the setup page they open, composed by `packages/hobo` at layer 3.
+	"packages/connect-ui",
+	"packages/hobo-ci",
+	"packages/hobo-cd",
 	// HoBo.CD (ADR-0182) is the delivery sibling of HoBo.CI and
 	// sits at layer 3 beside it. `@hobo/cd` composes Matching, Gatekeeper,
 	// the Harness and SVIDs through their existing packages; the three
@@ -197,6 +205,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
+	"packages/r2-object",
 	"packages/packs/pack-framework",
 	"packages/packs/pack-postgres-oci",
 	"packages/packs/pack-valkey-oci",
@@ -223,6 +232,7 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/identity",
 	"packages/cloud",
 	"packages/connectivity",
+	"packages/connect-ui",
 	"packages/contracts",
 	"packages/broker",
 	"packages/mcp",
@@ -243,7 +253,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/evals",
 	"packages/fuzz",
 	"packages/patterns",
-	"packages/pixel-village",
 	"packages/registry",
 	"packages/dispatcher",
 	"packages/rift",

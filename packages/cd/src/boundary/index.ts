@@ -1,4 +1,4 @@
-// @hobo/cd/boundary — outbound standards boundary (WP16, plan 0024 D17):
+// @hobo/cd/boundary — outbound standards boundary (ADR-0182 D17):
 // CDEvents projection, CloudEvents webhooks, and the NotificationPort.
 export {
 	artifactPurl,

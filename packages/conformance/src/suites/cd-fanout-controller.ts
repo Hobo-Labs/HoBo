@@ -1,4 +1,4 @@
-// FanoutController conformance (plan 0024 D21, I20). Fan-out only schedules
+// FanoutController conformance (ADR-0182 D21, I20). Fan-out only schedules
 // per-Camp promotions: bounded concurrency, mandatory groups first, a failure
 // budget that halts, deferral that never counts as failure, and no wedge.
 import {

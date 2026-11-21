@@ -13,24 +13,24 @@ tags: [hobo, design, ship, security, target-a]
 
 ## Purpose
 
-Before making the repository public, prove the full git history does not contain live credentials. CI `secret-scan` (gitleaks on the current tree/PR) is necessary but not sufficient for a private→public flip.
+Before making the repository public, prove the full git history does not contain live credentials. CI `secret-scan` (Betterleaks on the current tree/PR) is necessary but not sufficient for a private→public flip.
 
 ## Tooling
 
-Prefer **gitleaks** CLI (HoBo CI `secret-scan` job on `runs-on: hobo` reads pin versions from `.github/action-pins.env` with `grep`/`cut` — keys are not shell-sourced — installs **linux x64 or arm64**, then runs `gitleaks git --redact`).
+Prefer the **Betterleaks** CLI, the gitleaks successor maintained by gitleaks' original author. It is pinned in `mise.toml`/`mise.lock` (checksums plus cosign provenance) and mirrored in `.github/action-pins.env` for the runner image; HoBo CI runs `betterleaks git --config .betterleaks.toml --redact`. Betterleaks keeps gitleaks' CLI flags, config format and `gitleaks:allow` comments. The 2026-07-30 Target A evidence below was recorded with gitleaks 8.22.1, before the switch.
 
 ```sh
 # Install once (or use the binary from CI setup)
-# https://github.com/gitleaks/gitleaks
+# https://github.com/betterleaks/betterleaks (or: mise install betterleaks)
 
 # Full history scan from repo root
-gitleaks detect --source . --verbose --redact --report-path pre-public-gitleaks-report.json
+betterleaks git --config .betterleaks.toml --verbose --redact --report-path pre-public-betterleaks-report.json
 ```
 
 Optional baseline (only after a human triage of known false positives):
 
 ```sh
-gitleaks detect --source . --baseline-path .gitleaks-baseline.json --verbose --redact
+betterleaks git --config .betterleaks.toml --baseline-path .betterleaks-baseline.json --verbose --redact
 ```
 
 Do **not** commit raw secret values. Reports that must leave the machine should be redacted.
@@ -39,7 +39,7 @@ Do **not** commit raw secret values. Reports that must leave the machine should 
 
 | Check | Pass when |
 |---|---|
-| History scan | `gitleaks detect` exits 0, or every finding is triaged as false positive with baseline + justification |
+| History scan | `betterleaks git` exits 0, or every finding is triaged as false positive with baseline + justification |
 | Working tree | CI secret-scan job green once Actions runners are restored (H-V1) |
 | Remediation | Any true positive is rotated at the provider, purged from history (filter-repo/BFG with force-push policy), and re-scanned clean |
 

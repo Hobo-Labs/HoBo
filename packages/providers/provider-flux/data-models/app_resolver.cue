@@ -1,4 +1,4 @@
-// CUE constraints for app_resolver.proto (plan 0024 WP13).
+// CUE constraints for app_resolver.proto.
 package hobo
 
 #FluxDigest: =~"^sha256:[a-f0-9]{64}$"

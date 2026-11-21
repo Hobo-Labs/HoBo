@@ -1,5 +1,5 @@
 /**
- * Delivery coverage (plan 0024 WP13/WP14, invariant I14): the shape a hosting
+ * Delivery coverage (ADR-0182 invariant I14): the shape a hosting
  * provider uses to say, for every hosting product it catalogs, whether it has
  * a realization path (a shipped `ResourceResolver`) or a typed refusal, and
  * which traffic offerings it can and cannot realize.
@@ -315,6 +315,7 @@ export function instrumentResolvers(
 	return Object.freeze(
 		resolvers.map((resolver): ResourceResolver => {
 			const read = resolver.read;
+			const observeAbsence = resolver.observeAbsence;
 			const base: ResourceResolver = {
 				providerId: resolver.providerId,
 				productId: resolver.productId,
@@ -346,9 +347,22 @@ export function instrumentResolvers(
 									(value) => (value === undefined ? "absent" : value.action),
 								),
 						};
+			const observable: ResourceResolver =
+				observeAbsence === undefined
+					? readable
+					: {
+							...readable,
+							observeAbsence: (request, transport) =>
+								measured(
+									resolver,
+									"observeAbsence",
+									() => observeAbsence.call(resolver, request, transport),
+									(value) => (value ? "absent" : "present"),
+								),
+						};
 			return resolver.directives === undefined
-				? readable
-				: { ...readable, directives: resolver.directives };
+				? observable
+				: { ...observable, directives: resolver.directives };
 		}),
 	);
 }

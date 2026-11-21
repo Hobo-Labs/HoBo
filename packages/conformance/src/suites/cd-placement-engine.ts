@@ -1,4 +1,4 @@
-// PlacementEngine conformance (plan 0024 D20, I18, I19). The suite owns
+// PlacementEngine conformance (ADR-0182 D20, I18, I19). The suite owns
 // neutral fleet scenarios; the harness binds each to real inventory,
 // placement and score records, in the Camp order the suite dictates.
 import {

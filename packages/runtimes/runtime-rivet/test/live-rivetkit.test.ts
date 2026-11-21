@@ -1,32 +1,41 @@
-import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { setupTest } from "rivetkit/test";
 import { describe, expect, it } from "vitest";
 
-import { loadRivetkit } from "../src/load-rivetkit.js";
+import {
+	assertRivetEngineSupported,
+	loadRivetkit,
+	loadRivetkitClient,
+} from "../src/load-rivetkit.js";
 
+const require = createRequire(import.meta.url);
+const TSX_LOADER = require.resolve("tsx");
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
-
-function stopLocalEngines(): void {
-	const listed = spawnSync("pgrep", ["-x", "rivet-engine"], {
-		encoding: "utf8",
-	});
-	const pids = listed.stdout
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => /^\d+$/.test(line));
-	for (const pid of pids) {
-		spawnSync("kill", [pid], { stdio: "ignore" });
-	}
-}
+const LIVE_FIXTURE = fileURLToPath(
+	new URL("./fixtures/rivet3-live.mts", import.meta.url),
+);
 
 describe("rivetkit live baremetal", () => {
-	it("loads rivetkit from CJS via dynamic import", {
+	it("rejects the unavailable Windows engine before native loading", () => {
+		expect(() => assertRivetEngineSupported("win32")).toThrow(
+			/no Windows engine binary.*unsupported on win32/,
+		);
+		expect(() => assertRivetEngineSupported("linux")).not.toThrow();
+		expect(() => assertRivetEngineSupported("darwin")).not.toThrow();
+	});
+
+	it("loads RivetKit and its client from ESM and CommonJS", {
 		timeout: 30_000,
 	}, async () => {
+		const rivet = await loadRivetkit();
+		const client = await loadRivetkitClient();
+		expect(rivet.actor).toBeInstanceOf(Function);
+		expect(rivet.setup).toBeInstanceOf(Function);
+		expect(client.createClient).toBeInstanceOf(Function);
 		const result = await new Promise<{
 			status: number | null;
 			stdout: string;
@@ -74,48 +83,70 @@ describe("rivetkit live baremetal", () => {
 		expect(result.stdout).toBe("cjs-ok");
 	});
 
-	it("starts the native engine and invokes an action", {
-		timeout: 60_000,
-	}, async (ctx) => {
-		stopLocalEngines();
-		const previousHome = process.env.HOME;
-		const home = await mkdtemp(join(tmpdir(), "hobo-rivet-home-"));
-		process.env.HOME = home;
+	it("persists actor state across an isolated Rivet 3 engine restart", {
+		timeout: 65_000,
+	}, async () => {
+		assertRivetEngineSupported();
+		const directory = await mkdtemp(join(tmpdir(), "hobo-rivet-live-"));
 		try {
-			// SAFETY: assertion required at this I/O or test boundary.
-			const rivet = await loadRivetkit();
-			const ping = rivet.actor({
-				state: { n: 0 },
-				actions: { ping: () => "pong" },
-			});
-			const registry = rivet.setup({
-				use: { ping },
-				noWelcome: true,
-				shutdown: {
-					gracePeriodMs: 2_000,
-					disableSignalHandlers: true,
-				},
-			});
-			const { client } = await setupTest(ctx, registry);
-			interface LivePingHandle {
-				ping: () => Promise<string>;
-			}
-			interface LivePingClient {
-				ping: {
-					getOrCreate: (key: string[]) => LivePingHandle;
+			const result = await new Promise<{
+				status: number | null;
+				stdout: string;
+				stderr: string;
+				timedOut: boolean;
+			}>((resolve, reject) => {
+				const child = spawn(
+					process.execPath,
+					["--import", TSX_LOADER, LIVE_FIXTURE],
+					{
+						cwd: directory,
+						detached: process.platform !== "win32",
+						env: { PATH: process.env.PATH, NODE_ENV: "test" },
+					},
+				);
+				let stdout = "";
+				let stderr = "";
+				let timedOut = false;
+				const stopOwnedGroup = () => {
+					try {
+						if (process.platform !== "win32" && child.pid !== undefined)
+							process.kill(-child.pid, "SIGKILL");
+						else child.kill("SIGKILL");
+					} catch (error: unknown) {
+						if (
+							error instanceof Error &&
+							"code" in error &&
+							error.code === "ESRCH"
+						)
+							return;
+						throw error;
+					}
 				};
-			}
-			// SAFETY: setupTest client is the ping actor registry under test.
-			const pingClient = client as LivePingClient;
-			const handle = pingClient.ping.getOrCreate([`live-${Date.now()}`]);
-			expect(await handle.ping()).toBe("pong");
+				const timer = setTimeout(() => {
+					timedOut = true;
+					stopOwnedGroup();
+				}, 55_000);
+				child.stdout.on("data", (chunk) => {
+					stdout = (stdout + chunk).slice(-20_000);
+				});
+				child.stderr.on("data", (chunk) => {
+					stderr = (stderr + chunk).slice(-20_000);
+				});
+				child.once("exit", stopOwnedGroup);
+				child.once("error", (error) => {
+					clearTimeout(timer);
+					reject(error);
+				});
+				child.once("close", (status) => {
+					clearTimeout(timer);
+					resolve({ status, stdout, stderr, timedOut });
+				});
+			});
+			expect(result.timedOut, result.stderr).toBe(false);
+			expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+			expect(result.stdout).toContain("rivet3-live-ok");
 		} finally {
-			if (previousHome === undefined) {
-				delete process.env.HOME;
-			} else {
-				process.env.HOME = previousHome;
-			}
-			stopLocalEngines();
+			await rm(directory, { recursive: true, force: true });
 		}
 	});
 });

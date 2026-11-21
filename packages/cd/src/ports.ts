@@ -444,6 +444,7 @@ export interface SetResolver {
 			freight: FreightRecord;
 			campId: CampId;
 			intent: DeltaIntent;
+			deploymentMode?: "incremental" | "complete";
 			base?: SetRecord;
 			sourceCampId?: CampId;
 		}>,
@@ -504,6 +505,8 @@ export type PromoteRequest = Readonly<{
 	/** Set by FanoutController; the gate then checks the fan-out aggregate. */
 	fanoutId?: FanoutId;
 	intent?: DeltaIntent;
+	/** How an up promotion handles resources absent from its declaration. */
+	deploymentMode?: "incremental" | "complete";
 }>;
 
 export interface PromotionService {
@@ -954,9 +957,10 @@ export interface CdTelemetry {
 export type FanoutId = string & { readonly __brand: "cd.FanoutId" };
 export type FailoverId = string & { readonly __brand: "cd.FailoverId" };
 
-/** Declared topology of one Camp (from @hobo/camps / @hobo/yards; composed by WP18). */
+/** public-contract: declared topology of one Camp composed by WP18. */
 export type CampTopology = Readonly<{
 	campId: CampId;
+	physicalCampId?: CampId;
 	yardId: string;
 	stationId: string;
 	provider: string;

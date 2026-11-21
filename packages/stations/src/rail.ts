@@ -33,7 +33,7 @@ export const LEGACY_ARGO_PUBLISHER = "argo-cd" as const;
 const RECONCILER_MODES = ["conductor", "agent", "publisher"] as const;
 
 /**
- * Parse a delivery policy into its neutral form (plan 0024, D14).
+ * Parse a delivery policy into its neutral form (ADR-0182 D14).
  *
  * - A neutral policy (`reconcilerMode`) is kept; `publisher` is required in
  *   `publisher` mode and refused elsewhere.

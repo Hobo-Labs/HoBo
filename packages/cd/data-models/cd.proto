@@ -364,6 +364,8 @@ message PromotionRecord {
   string idempotency_key = 16;
   string fanout_id = 17;
   FreightSubject subject = 18;
+  // Present on CLI up promotions; persisted so retries use the same policy.
+  string deployment_mode = 19;
 }
 
 message PreviewEnvironmentRecord {

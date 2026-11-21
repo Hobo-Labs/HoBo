@@ -21,6 +21,13 @@ function secret(env: NodeJS.ProcessEnv, name: string): string {
 	return file ? readFileSync(file, "utf8").trimEnd() : required(env, name);
 }
 
+/** Relay secrets a host hands over in memory (see `startRelayFromEnvironment`). */
+export interface RelaySecrets {
+	readonly githubAppPrivateKey: string;
+	readonly webhookSecret: string;
+	readonly ingressForwardSecret?: string;
+}
+
 /**
  * Start the relay's Node host from `HOBO_CI_*` configuration: one SQLite
  * partition, fenced by its lock file. No process-global signal handler is
@@ -31,6 +38,12 @@ export async function startRelayFromEnvironment(
 	/** A host embedding the relay may supply its own GitHub App transport. */
 	ports: {
 		github?: GithubAppTransport;
+		/**
+		 * The App's private key and webhook secret, held in memory by a host
+		 * that read them from the owner's secret store into its trusted vault.
+		 * When given, neither is read from a file or this configuration.
+		 */
+		secrets?: RelaySecrets;
 		/**
 		 * Builds the optional CI agent once the store is open. It is handed the
 		 * repositories this relay is connected to, read fresh on every call.
@@ -68,19 +81,21 @@ export async function startRelayFromEnvironment(
 	const port = Number(env.HOBO_CI_PORT ?? "8787");
 	if (!Number.isInteger(port) || port < 1 || port > 65535)
 		throw new Error("invalid relay port");
-	const privateKey = readFileSync(
-		required(env, "HOBO_CI_GITHUB_APP_KEY_FILE"),
-		"utf8",
-	);
+	const privateKey =
+		ports.secrets?.githubAppPrivateKey ??
+		readFileSync(required(env, "HOBO_CI_GITHUB_APP_KEY_FILE"), "utf8");
 	if (createPrivateKey(privateKey).asymmetricKeyType !== "rsa")
 		throw new Error("GitHub App key must be RSA");
 	const authenticate = createControlAuthenticator(
 		readFileSync(required(env, "HOBO_CI_CONTROL_TOKENS_FILE"), "utf8"),
 	);
-	const webhookSecret = secret(env, "HOBO_CI_WEBHOOK_SECRET");
-	const ingressForwardSecret = env.HOBO_CI_INGRESS_FORWARD_SECRET
-		? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
-		: undefined;
+	const webhookSecret =
+		ports.secrets?.webhookSecret ?? secret(env, "HOBO_CI_WEBHOOK_SECRET");
+	const ingressForwardSecret =
+		ports.secrets?.ingressForwardSecret ??
+		(env.HOBO_CI_INGRESS_FORWARD_SECRET
+			? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
+			: undefined);
 	const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);

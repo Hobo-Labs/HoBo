@@ -84,13 +84,14 @@ const DEFAULT_MANIFEST = {
 			links: [],
 			env: {},
 			bindings: {},
+			bind: ["api"],
 		},
 	},
 } as const;
 
 /** Canonical hash of DEFAULT_MANIFEST — fails if the default IR drifts. */
 const DEFAULT_MANIFEST_HASH =
-	"sha256:6aac7af02cc319a8559bca291c6f210d42fe0a07cd935113051b2f3c327f4bbe";
+	"sha256:e9472d81fa38b4bd9e25aafc869e061d3fb25395494bdc6bc0048845a8a4e189";
 
 describe("hello-bindle", () => {
 	it("constructs the default bindle definition (authoring graph)", () => {

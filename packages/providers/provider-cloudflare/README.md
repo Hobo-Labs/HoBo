@@ -7,9 +7,12 @@ Capability Manifest.
 ## Scope (in)
 
 - Initial capability ports: **compute / web-service** (Workers), **kv** (KV),
-  **objectStore** (R2)
+  **objectStore** (R2), **queue** (Queues: at-least-once delivery to a
+  consumer Worker, with delays), **schedule** (Cron Triggers: a cron expression
+  on the Worker it runs, nothing provisioned beside it)
 - Equivalence-class mappings per port (`cloudflare:workers-script`,
-  `cloudflare:kv-namespace`, `cloudflare:r2-bucket`)
+  `cloudflare:kv-namespace`, `cloudflare:r2-bucket`, `cloudflare:queue`,
+  `cloudflare:cron-trigger`)
 - `CLOUDFLARE_TRAFFIC_ROUTING_PROFILE` — declared TrafficRouting offerings
   (`lb.lifecycle`, `lb.weighted`, `lb.health`, `observe.health`) for Matching
 - `createCloudflareProvider()` implementing the `CloudProvider` contract:
@@ -17,8 +20,20 @@ Capability Manifest.
   `client(port, outputs)`
 - `realize(plan)` emits a Pulumi `IacProgram` (the exact shape
   `@hobo/iac-pulumi.validateIacProgram()` accepts) plus an optional `BuildSpec`
+- The direct Cron Triggers resolver can observe existing schedules, but refuses
+  additions and removals: Cloudflare's update replaces the Worker's whole
+  schedule list, and this resolver has no verified concurrency fence or
+  ownership evidence for individual triggers.
 - Typed `cloudflare.with.worker/r2/kv` option builders
 - Published Capability Manifest (`capabilities.json`, `auth.json`, `cost.json`)
+- `createR2ObjectClient()` — conditional R2 object reads and writes against the
+  direct account origin. A write R2 acknowledges with 200 is reported as
+  applied even when the response carries no strong ETag; it then returns no
+  `etag`, and the caller re-reads before its next conditional write.
+- `createD1ImmutableJournalReplica()` — a bounded, primary-only D1 voter for
+  HoBo's immutable journal. The voter conditionally appends its assignment log
+  and atomically checks the generation seal when inserting a document, so a
+  delayed write cannot add a new document after that seal.
 
 ## Scope (out)
 
@@ -26,7 +41,14 @@ Capability Manifest.
   emits programs, it does not apply them (temporary Environment Stations are
   the exception below)
 - The Planner (S2-02) and Yard (S2-01)
-- D1, Queues, DNS, Hyperdrive
+- General D1 provisioning, Queues, DNS, Hyperdrive
+
+The D1 voter operates on a separately enrolled Cloudflare-owned database. Its
+host must prove the account, primary endpoint, fresh incarnation and
+anti-rollback state, and fund each bounded provider request through the Broker.
+The voter does not create a database, establish an independent failure domain,
+or fence effects in another provider. An ambiguous request retains its
+financial hold until independently authenticated terminal evidence is available.
 
 ## Temporary Environment Stations (in scope)
 
@@ -399,8 +421,9 @@ resolvers are the effectful edge of that flow, not its owner.
 | `cloudflare.r2/v1` | `GET`/`POST`/`DELETE` `/accounts/{id}/r2/buckets[/{name}]`, `cf-r2-jurisdiction` header, `locationHint`, `storageClass` | public/managed domains (`publicBucket` is reported as a diagnostic, not applied), CORS rules, lifecycle rules, event notifications, sippy, the S3 data plane |
 | `cloudflare.d1/v1` | `GET ?name=`, `POST`, `PATCH` (read replication), `DELETE` on `/accounts/{id}/d1/database` | query execution, imports/exports, time-travel restore, per-database Worker bindings |
 | `cloudflare.kv/v1` | paged `GET`, `POST`, `DELETE` on `/accounts/{id}/storage/kv/namespaces` | key read/write/list (`ttlSeconds` is per write and is reported as a diagnostic), bulk operations, namespace rename |
+| `cloudflare.cron-triggers/v1` | `GET`/`PUT` `/accounts/{id}/workers/scripts/{script}/schedules`: adds the schedule's `cron` (its `desired.cron`, from the Bindle's cadence trait) to the Worker it runs (`desired.target`, its one dependency), keeping the script's other triggers; delete removes only that cron | a Worker that does not exist yet (refused: deploy it first), a schedule on anything but a Worker |
 | `cloudflare.queues/v1` | paged `GET`, `POST`, `PUT` (queue `settings`), `DELETE` on `/accounts/{id}/queues` | consumers (`maxBatchSize` / `maxRetries` are consumer-scoped and reported as diagnostics), producers, dead-letter wiring, message push/pull |
-| `cloudflare.workers/v1` | Native settings and single-module source `GET`, `PUT` module upload (`multipart/form-data`), explicit Workers.dev `GET`/`POST`, observed account subdomain, `DELETE` | routes, custom domains, cron triggers, secret provisioning, tail/logs, versions and gradual deployments, Durable Object migrations, multi-module source proof |
+| `cloudflare.workers/v1` | Native settings and single-module source `GET`, `PUT` module upload (`multipart/form-data`), explicit Workers.dev `GET`/`POST`, observed account subdomain, `DELETE` | routes, custom domains, secret provisioning (cron triggers: `cloudflare.cron-triggers/v1`), tail/logs, versions and gradual deployments, Durable Object migrations, multi-module source proof |
 | `cloudflare.pages/v1` | `GET`, `POST`, `PATCH` (production branch), `DELETE` on `/accounts/{id}/pages/projects[/{name}]` | deployments (upload, rollback, retry), custom domains, build config beyond the production branch, Pages Functions |
 
 Workers compare the actual native source digest and requested settings before

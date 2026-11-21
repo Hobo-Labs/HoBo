@@ -1,5 +1,5 @@
 /**
- * Which realizer `hobo deploy agent run` registers on its host (plan 0024).
+ * Which realizer `hobo deploy agent run` registers on its host.
  *
  * In order: `--simulate` (the labelled fixture), a runner host
  * (HOBO_CD_RUNNER_HOST names its agent config: the runner-host realizer,

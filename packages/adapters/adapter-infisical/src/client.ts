@@ -27,9 +27,10 @@ import type { InfisicalAuth } from "./auth.js";
 import { parseJwt } from "./auth.js";
 import {
 	type ParsedInfisicalBinding,
+	parseInfisicalBinding,
 	parseInfisicalSecretKey,
 } from "./binding.js";
-import { InfisicalError, requestIdOf } from "./errors.js";
+import { InfisicalError } from "./errors.js";
 import {
 	type ParsedSecret,
 	type ParsedSecretName,
@@ -69,6 +70,10 @@ export interface InfisicalClient {
 	getSecret(name: string, version?: number): Promise<ParsedSecret>;
 	/** Update the secret, or create it when it does not exist. */
 	putSecret(name: string, value: string): Promise<{ version: number }>;
+	createSecret(
+		name: string,
+		value: string,
+	): Promise<{ version: number } | undefined>;
 	/** Drop the cached access token; the next request logs in again. */
 	signOut(): void;
 	/**
@@ -138,8 +143,7 @@ function retryAfterMs(response: Response): number | undefined {
 
 /** The adapter error for a non-2xx answer. */
 export function failure(operation: string, answer: Answer): InfisicalError {
-	const reqId = requestIdOf(answer.body);
-	const details = { status: answer.status, reqId };
+	const details = { status: answer.status };
 	switch (answer.status) {
 		case 400:
 		case 422:
@@ -163,9 +167,39 @@ export function failure(operation: string, answer: Answer): InfisicalError {
 	}
 }
 
-export function createInfisicalClient(
+interface InfisicalPlanControl {
+	readOrganizationPlan(organizationId: string): Promise<{
+		readonly slug: string | null;
+		readonly limits: Readonly<{
+			read: number;
+			write: number;
+			secrets: number;
+		}>;
+	}>;
+}
+
+function jsonRecord(value: JsonValue | undefined): Record<string, JsonValue> {
+	if (Object.prototype.toString.call(value) !== "[object Object]")
+		throw new InfisicalError("read organization plan", "invalid-response");
+	// SAFETY: the response was parsed as JSON and the object tag excludes arrays and primitives.
+	return value as Record<string, JsonValue>;
+}
+
+function planLimit(value: JsonValue | undefined): number {
+	if (!Number.isSafeInteger(value) || Number(value) < 0)
+		throw new InfisicalError("read organization plan", "invalid-response");
+	return Number(value);
+}
+
+class InfisicalPlanAdmissionError extends InfisicalError {
+	constructor(code: "lease-unverified" | "budget-unavailable") {
+		super("observe organization plan", code);
+	}
+}
+
+function createInfisicalClientInternal(
 	options: InfisicalClientOptions,
-): InfisicalClient {
+): InfisicalClient & InfisicalPlanControl {
 	const { binding, auth } = options;
 	const send = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
@@ -198,9 +232,11 @@ export function createInfisicalClient(
 		path: string,
 		headers: Record<string, string>,
 		body: string | undefined,
+		mutation = false,
 	): Promise<Answer> {
 		let last: InfisicalError | undefined;
-		for (let attempt = 1; attempt <= retry.attempts; attempt++) {
+		const attempts = mutation ? 1 : retry.attempts;
+		for (let attempt = 1; attempt <= attempts; attempt++) {
 			let waitMs = Math.min(
 				retry.maxDelayMs,
 				retry.baseDelayMs * 2 ** (attempt - 1),
@@ -223,18 +259,27 @@ export function createInfisicalClient(
 					status: response.status,
 					body: await readBody(response),
 				};
+				if (
+					mutation &&
+					(response.status === 408 ||
+						response.status === 429 ||
+						response.status >= 500)
+				)
+					throw new InfisicalError(operation, "write-uncertain");
 				if (response.ok || !RETRYABLE_STATUS.has(response.status))
 					return answer;
 				last = failure(operation, answer);
 				const hinted = retryAfterMs(response);
 				if (hinted !== undefined) waitMs = Math.min(retry.maxDelayMs, hinted);
-			} catch {
+			} catch (error) {
+				if (error instanceof InfisicalPlanAdmissionError) throw error;
+				if (mutation) throw new InfisicalError(operation, "write-uncertain");
 				// The cause is not kept: a transport error may quote the request.
 				last = new InfisicalError(operation, "unavailable", {
 					retryable: true,
 				});
 			}
-			if (attempt < retry.attempts) await sleep(waitMs);
+			if (attempt < attempts) await sleep(waitMs);
 		}
 		throw last ?? new InfisicalError(operation, "unavailable");
 	}
@@ -275,7 +320,6 @@ export function createInfisicalClient(
 			if (["rejected", "unauthorized", "forbidden"].includes(error.code))
 				throw new InfisicalError("login", "login-denied", {
 					status: answer.status,
-					reqId: error.reqId,
 				});
 			throw error;
 		}
@@ -315,10 +359,12 @@ export function createInfisicalClient(
 				path,
 				{ authorization: `Bearer ${token}` },
 				payload,
+				method !== "GET",
 			);
 			if (
 				answer.status === 401 &&
 				round === 0 &&
+				method === "GET" &&
 				auth.method !== "access-token"
 			) {
 				if (cached?.token === token) cached = undefined;
@@ -328,7 +374,9 @@ export function createInfisicalClient(
 		}
 	}
 
-	function build(bound: ParsedInfisicalBinding): InfisicalClient {
+	function build(
+		bound: ParsedInfisicalBinding,
+	): InfisicalClient & InfisicalPlanControl {
 		function scope(extra: Record<string, string> = {}): string {
 			return new URLSearchParams({
 				projectId: bound.projectId,
@@ -357,8 +405,73 @@ export function createInfisicalClient(
 			return answer.body;
 		}
 
+		function writtenVersion(operation: string, answer: Answer): number {
+			try {
+				return parseWrittenVersion(operation, ok(operation, answer));
+			} catch (error) {
+				if (
+					error instanceof InfisicalError &&
+					error.code === "approval-required"
+				)
+					throw error;
+				if (answer.status >= 200 && answer.status < 300)
+					throw new InfisicalError(operation, "write-uncertain");
+				throw error;
+			}
+		}
+
 		return {
 			binding: bound,
+			async readOrganizationPlan(organizationId) {
+				const project = jsonRecord(
+					ok(
+						"read project",
+						await request(
+							"read project",
+							"GET",
+							`/api/v1/projects/${encodeURIComponent(bound.projectId)}`,
+						),
+					),
+				);
+				const account = jsonRecord(project.project);
+				if (account.id !== bound.projectId || account.orgId !== organizationId)
+					throw new InfisicalError("read project", "invalid-response");
+				const body = jsonRecord(
+					ok(
+						"read organization plan",
+						await request(
+							"read organization plan",
+							"GET",
+							`/api/v1/organizations/${encodeURIComponent(organizationId)}/plan`,
+						),
+					),
+				);
+				const plan = jsonRecord(body.plan),
+					limits = jsonRecord(plan.rateLimits);
+				if (
+					plan.slug !== null &&
+					Object.prototype.toString.call(plan.slug) !== "[object String]"
+				)
+					throw new InfisicalError(
+						"read organization plan",
+						"invalid-response",
+					);
+				// SAFETY: the value is null or the JSON string checked above.
+				const slug = plan.slug as string | null;
+				if (slug !== null && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(slug))
+					throw new InfisicalError(
+						"read organization plan",
+						"invalid-response",
+					);
+				return Object.freeze({
+					slug,
+					limits: Object.freeze({
+						read: planLimit(limits.readLimit),
+						write: planLimit(limits.writeLimit),
+						secrets: planLimit(limits.secretsLimit),
+					}),
+				});
+			},
 			async listSecrets() {
 				const answer = await request(
 					"list secrets",
@@ -419,17 +532,33 @@ export function createInfisicalClient(
 				const updated = await request("write secret", "PATCH", target, body);
 				if (updated.status !== 404)
 					return {
-						version: parseWrittenVersion(
-							"write secret",
-							ok("write secret", updated),
-						),
+						version: writtenVersion("write secret", updated),
 					};
 				const created = await request("write secret", "POST", target, body);
 				return {
-					version: parseWrittenVersion(
-						"write secret",
-						ok("write secret", created),
+					version: writtenVersion("write secret", created),
+				};
+			},
+			async createSecret(name, value) {
+				const created = await request(
+					"create secret",
+					"POST",
+					secretPath(name),
+					toJsonString(
+						InfisicalSecretWriteRequestSchema,
+						create(InfisicalSecretWriteRequestSchema, {
+							projectId: bound.projectId,
+							environment: bound.environment,
+							secretPath: bound.secretPath,
+							secretValue: value,
+							type: "shared",
+						}),
+						{ alwaysEmitImplicit: true },
 					),
+				);
+				if (created.status === 400 || created.status === 409) return undefined;
+				return {
+					version: writtenVersion("create secret", created),
 				};
 			},
 			signOut() {
@@ -469,4 +598,171 @@ export function createInfisicalClient(
 	}
 
 	return build(binding);
+}
+
+export function createInfisicalClient(
+	options: InfisicalClientOptions,
+): InfisicalClient {
+	return createInfisicalClientInternal(options);
+}
+
+/** The exact provider account and workload identity enrolled by the host. */
+export type InfisicalPlanLeaseScope = Readonly<{
+	tenantId: string;
+	leaseId: string;
+	siteUrl: string;
+	projectId: string;
+	organizationId: string;
+	rootOrganizationId: string;
+	identityId: string;
+}>;
+
+export type InfisicalPlanAttempt = Readonly<{
+	scope: InfisicalPlanLeaseScope;
+	operation: "login" | "read-project" | "read-plan";
+}>;
+
+/** An API report, not proof of capacity, fresh billing or readiness. */
+export type InfisicalPlanObservation = Readonly<{
+	scope: InfisicalPlanLeaseScope;
+	slug: string | null;
+	limits: Readonly<{ read: number; write: number; secrets: number }>;
+	observedAtMs: number;
+	completedAtMs: number;
+	providerFreshness: "unverified";
+}>;
+
+/**
+ * Observe Infisical's project account and organization plan using an enrolled
+ * OIDC identity. The host verifies the same lease before every wire attempt and
+ * reserves and claims each attempt through its independently funded authority.
+ * The verifier must independently bind the project's organization to its root
+ * organization: Infisical's plan route returns the caller's root-org plan.
+ *
+ * The plan endpoint may return a cached or fallback plan without exposing its
+ * age or fallback marker. A report therefore never establishes provider
+ * freshness, remaining shared-IP capacity, pricing, settlement, or readiness.
+ */
+export function createInfisicalPlanObserver(options: {
+	readonly client: Omit<InfisicalClientOptions, "auth" | "retry"> & {
+		readonly auth: Extract<InfisicalAuth, { readonly method: "oidc" }>;
+	};
+	readonly tenantId: string;
+	readonly leaseId: string;
+	readonly organizationId: string;
+	readonly rootOrganizationId: string;
+	readonly verifyLease: (scope: InfisicalPlanLeaseScope) => Promise<void>;
+	/** Return a guard that claims the funded attempt immediately before I/O. */
+	readonly reserveAttempt: (
+		attempt: InfisicalPlanAttempt,
+	) => Promise<() => Promise<void>>;
+}): Readonly<{ observe(): Promise<InfisicalPlanObservation> }> {
+	const id = /^[A-Za-z0-9-]{1,64}$/u;
+	if (
+		!id.test(options.organizationId) ||
+		!id.test(options.rootOrganizationId) ||
+		!id.test(options.client.auth.identityId) ||
+		!/^[\x21-\x7e]{1,256}$/u.test(options.tenantId) ||
+		!/^[\x21-\x7e]{1,256}$/u.test(options.leaseId) ||
+		!(options.verifyLease instanceof Function) ||
+		!(options.reserveAttempt instanceof Function)
+	)
+		throw new InfisicalError("observe organization plan", "invalid-input");
+	const binding = parseInfisicalBinding(options.client.binding);
+	const auth = Object.freeze({ ...options.client.auth });
+	const scope = Object.freeze({
+		tenantId: options.tenantId,
+		leaseId: options.leaseId,
+		siteUrl: binding.siteUrl,
+		projectId: binding.projectId,
+		organizationId: options.organizationId,
+		rootOrganizationId: options.rootOrganizationId,
+		identityId: auth.identityId,
+	});
+	const verifyLease = options.verifyLease.bind(options);
+	const reserveAttempt = options.reserveAttempt.bind(options);
+	const send = options.client.fetch ?? fetch;
+	const now = options.client.now ?? Date.now;
+	async function verifyBoundLease(): Promise<void> {
+		try {
+			await verifyLease(scope);
+		} catch {
+			throw new InfisicalPlanAdmissionError("lease-unverified");
+		}
+	}
+	const guardedFetch: typeof fetch = async (resource, init) => {
+		const url = new URL(String(resource));
+		if (
+			url.origin !== scope.siteUrl ||
+			url.search ||
+			url.hash ||
+			init?.redirect !== "error"
+		)
+			throw new InfisicalError("observe organization plan", "invalid-input");
+		let operation: InfisicalPlanAttempt["operation"];
+		if (
+			init.method === "POST" &&
+			url.pathname === "/api/v1/auth/oidc-auth/login"
+		)
+			operation = "login";
+		else if (
+			init.method === "GET" &&
+			url.pathname === `/api/v1/projects/${encodeURIComponent(scope.projectId)}`
+		)
+			operation = "read-project";
+		else if (
+			init.method === "GET" &&
+			url.pathname ===
+				`/api/v1/organizations/${encodeURIComponent(scope.organizationId)}/plan`
+		)
+			operation = "read-plan";
+		else throw new InfisicalError("observe organization plan", "invalid-input");
+		await verifyBoundLease();
+		try {
+			const claim = await reserveAttempt(Object.freeze({ scope, operation }));
+			await claim();
+		} catch {
+			throw new InfisicalPlanAdmissionError("budget-unavailable");
+		}
+		await verifyBoundLease();
+		return send(resource, init);
+	};
+	const client = createInfisicalClientInternal({
+		...options.client,
+		binding,
+		auth,
+		fetch: guardedFetch,
+		retry: { attempts: 1 },
+	});
+	function time(): number {
+		const value = now();
+		if (!Number.isSafeInteger(value) || value < 0)
+			throw new InfisicalError("observe organization plan", "invalid-input");
+		return value;
+	}
+	return Object.freeze({
+		async observe() {
+			await verifyBoundLease();
+			const observedAtMs = time();
+			try {
+				const report = await client.readOrganizationPlan(scope.organizationId);
+				await verifyBoundLease();
+				const completedAtMs = time();
+				if (completedAtMs < observedAtMs)
+					throw new InfisicalError(
+						"observe organization plan",
+						"invalid-input",
+					);
+				return Object.freeze({
+					scope,
+					...report,
+					observedAtMs,
+					completedAtMs,
+					providerFreshness: "unverified" as const,
+				});
+			} finally {
+				client.signOut();
+			}
+		},
+	});
 }

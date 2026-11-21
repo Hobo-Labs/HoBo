@@ -1,4 +1,4 @@
-// ArtifactVerifier conformance (plan 0024 D2/D3, I1, I5). Every artifact in
+// ArtifactVerifier conformance (ADR-0182 D2/D3, I1, I5). Every artifact in
 // a manifest must resolve, at its coordinate, to exactly its digest. Anything
 // else is a typed refusal; an unreachable coordinate never passes.
 import {

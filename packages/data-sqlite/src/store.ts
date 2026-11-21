@@ -18,7 +18,13 @@
  *   executors take a capture position first and replay from it, which
  *   converges regardless.
  */
-import { randomUUID } from "node:crypto";
+import {
+	createHash,
+	createPublicKey,
+	KeyObject,
+	randomUUID,
+	verify,
+} from "node:crypto";
 import {
 	DatabaseSync,
 	type SQLInputValue,
@@ -31,6 +37,7 @@ import {
 	CapturePositionError,
 	type ChangeEnvelope,
 	canonicalEncode,
+	canonicalFenceOperationReceipt,
 	DataCoreError,
 	type DatasetDigest,
 	DatasetDigestBuilder,
@@ -41,6 +48,10 @@ import {
 	encodeRecordKey,
 	envelopeOf,
 	FencedWriteError,
+	type FenceOperationClaim,
+	type FenceOperationObservation,
+	type FenceOperationReceipt,
+	fenceTokenDigest,
 	type JsonObject,
 	type JsonValue,
 	type Position,
@@ -185,6 +196,11 @@ export interface SqliteStoreOptions {
 	/** Store file path, or `:memory:`. */
 	readonly path: string;
 	readonly clock?: () => string;
+	/** Independently enrolled Ed25519 routing-receiver public keys. */
+	readonly operationReceivers?: ReadonlyMap<
+		string,
+		string | Buffer | KeyObject
+	>;
 }
 
 /** One page of a keyset scan, and the cursor to continue from. */
@@ -204,12 +220,73 @@ export class SqliteDatasetStore {
 	private readonly clock: () => string;
 	private readonly statements = new Map<string, StatementSync>();
 	private readonly schemas = new Map<string, DatasetSchema>();
+	private readonly operationReceivers: ReadonlyMap<
+		string,
+		{ key: KeyObject; digest: string }
+	>;
 
 	constructor(options: SqliteStoreOptions) {
 		this.path = options.path;
 		this.clock = options.clock ?? (() => new Date().toISOString());
+		this.operationReceivers = new Map(
+			[...(options.operationReceivers ?? [])].map(([id, value]) => {
+				const key = value instanceof KeyObject ? value : createPublicKey(value);
+				if (
+					!id ||
+					id.length > 512 ||
+					id !== id.trim() ||
+					/\p{Cc}/u.test(id) ||
+					key.type !== "public" ||
+					key.asymmetricKeyType !== "ed25519"
+				)
+					throw new Error("invalid native fence receiver enrollment");
+				return [
+					id,
+					{
+						key,
+						digest: createHash("sha256")
+							.update(key.export({ type: "spki", format: "der" }))
+							.digest("hex"),
+					},
+				] as const;
+			}),
+		);
 		this.db = new DatabaseSync(options.path);
-		this.bootstrap();
+		try {
+			this.bootstrap();
+			this.transaction(() => {
+				const policy = this.get(
+					"SELECT id FROM hobo_data_fence_policy WHERE id = 1",
+				);
+				if (!policy && this.operationReceivers.size) {
+					this.run("INSERT INTO hobo_data_fence_policy (id) VALUES (1)");
+					for (const [id, receiver] of this.operationReceivers)
+						this.run(
+							"INSERT INTO hobo_data_fence_receivers (key_id, key_digest) VALUES (?, ?)",
+							id,
+							receiver.digest,
+						);
+				} else if (policy && this.operationReceivers.size) {
+					const enrolled = this.all(
+						"SELECT key_id, key_digest FROM hobo_data_fence_receivers",
+					);
+					if (
+						enrolled.length !== this.operationReceivers.size ||
+						enrolled.some(
+							(row) =>
+								this.operationReceivers.get(String(row.key_id))?.digest !==
+								row.key_digest,
+						)
+					)
+						throw new Error(
+							"native fence receiver policy differs from its durable enrollment",
+						);
+				}
+			});
+		} catch (error) {
+			this.db.close();
+			throw error;
+		}
 	}
 
 	private bootstrap(): void {
@@ -245,6 +322,21 @@ export class SqliteDatasetStore {
 				fenced_at TEXT NOT NULL,
 				PRIMARY KEY (dataset, tenant_id)
 			);
+			CREATE TABLE IF NOT EXISTS hobo_data_fence_operations (
+				dataset TEXT NOT NULL,
+				tenant_id TEXT NOT NULL,
+				operation_id TEXT NOT NULL,
+				route_digest TEXT NOT NULL,
+				receiver_key_id TEXT NOT NULL,
+				receiver_key_digest TEXT NOT NULL,
+				fence_token_digest TEXT NOT NULL,
+				status TEXT NOT NULL CHECK (status IN ('held', 'completed')),
+				PRIMARY KEY (dataset, tenant_id, operation_id)
+			);
+			CREATE UNIQUE INDEX IF NOT EXISTS hobo_data_one_held_fence_operation
+				ON hobo_data_fence_operations (dataset, tenant_id) WHERE status = 'held';
+			CREATE TABLE IF NOT EXISTS hobo_data_fence_policy (id INTEGER PRIMARY KEY CHECK (id = 1));
+			CREATE TABLE IF NOT EXISTS hobo_data_fence_receivers (key_id TEXT PRIMARY KEY, key_digest TEXT NOT NULL);
 			CREATE TABLE IF NOT EXISTS hobo_data_subscriptions (
 				name TEXT PRIMARY KEY,
 				dataset TEXT NOT NULL,
@@ -485,6 +577,8 @@ export class SqliteDatasetStore {
 		mutations: readonly RecordMutation[],
 		fenceToken: string | undefined,
 	): void {
+		for (const tenant of new Set(mutations.map((mutation) => mutation.tenant)))
+			this.assertNoFenceOperation({ dataset, tenant });
 		const fences = this.fences(dataset);
 		if (fences.length === 0) return;
 		for (const mutation of mutations) {
@@ -607,6 +701,8 @@ export class SqliteDatasetStore {
 		);
 		return this.transaction(() => {
 			this.assertWritable(dataset, mutations, fenceToken);
+			if (watermark !== undefined)
+				this.assertNoFenceOperation({ dataset, tenant: "" });
 			// A conditional apply: the comparison is inside the transaction that
 			// writes, so of two appliers naming one watermark only one lands,
 			// and a refusal rolls back with nothing written.
@@ -736,43 +832,46 @@ export class SqliteDatasetStore {
 	 */
 	startSubscription(name: string, scope: DatasetScope): Position {
 		this.schema(scope.dataset);
-		const existing = this.get(
-			"SELECT dataset, tenant_id, start_position FROM hobo_data_subscriptions WHERE name = ?",
-			name,
-		);
-		if (existing !== undefined) {
-			const bound = existing.tenant_id;
-			if (
-				String(existing.dataset) !== scope.dataset ||
-				(bound !== null && String(bound) !== scope.tenant)
-			) {
-				throw new DataCoreError(
-					"CAPTURE_SUBSCRIPTION_CONFLICT",
-					`subscription ${name} is bound to another scope`,
-					{ detail: { subscription: name } },
-				);
+		return this.transaction(() => {
+			this.assertNoFenceOperation(scope);
+			const existing = this.get(
+				"SELECT dataset, tenant_id, start_position FROM hobo_data_subscriptions WHERE name = ?",
+				name,
+			);
+			if (existing !== undefined) {
+				const bound = existing.tenant_id;
+				if (
+					String(existing.dataset) !== scope.dataset ||
+					(bound !== null && String(bound) !== scope.tenant)
+				) {
+					throw new DataCoreError(
+						"CAPTURE_SUBSCRIPTION_CONFLICT",
+						`subscription ${name} is bound to another scope`,
+						{ detail: { subscription: name } },
+					);
+				}
+				if (bound === null) {
+					// Recorded before tenants were kept: bound to the scope that
+					// names it now.
+					this.run(
+						"UPDATE hobo_data_subscriptions SET tenant_id = ? WHERE name = ? AND tenant_id IS NULL",
+						scope.tenant,
+						name,
+					);
+				}
+				return String(existing.start_position);
 			}
-			if (bound === null) {
-				// Recorded before tenants were kept: bound to the scope that
-				// names it now.
-				this.run(
-					"UPDATE hobo_data_subscriptions SET tenant_id = ? WHERE name = ? AND tenant_id IS NULL",
-					scope.tenant,
-					name,
-				);
-			}
-			return String(existing.start_position);
-		}
-		const head = this.head();
-		this.run(
-			"INSERT INTO hobo_data_subscriptions (name, dataset, tenant_id, start_position, ack_position) VALUES (?, ?, ?, ?, ?)",
-			name,
-			scope.dataset,
-			scope.tenant,
-			head,
-			head,
-		);
-		return String(head);
+			const head = this.head();
+			this.run(
+				"INSERT INTO hobo_data_subscriptions (name, dataset, tenant_id, start_position, ack_position) VALUES (?, ?, ?, ?, ?)",
+				name,
+				scope.dataset,
+				scope.tenant,
+				head,
+				head,
+			);
+			return String(head);
+		});
 	}
 
 	/**
@@ -781,15 +880,18 @@ export class SqliteDatasetStore {
 	 * change released.
 	 */
 	pinJournal(name: string, dataset: string): void {
-		const floor = this.journalFloor();
-		this.run(
-			`INSERT INTO hobo_data_subscriptions (name, dataset, start_position, ack_position)
+		this.transaction(() => {
+			this.assertNoFenceOperation({ dataset, tenant: "" });
+			const floor = this.journalFloor();
+			this.run(
+				`INSERT INTO hobo_data_subscriptions (name, dataset, start_position, ack_position)
 			 VALUES (?, ?, ?, ?) ON CONFLICT (name) DO NOTHING`,
-			name,
-			dataset,
-			floor,
-			floor,
-		);
+				name,
+				dataset,
+				floor,
+				floor,
+			);
+		});
 	}
 
 	/**
@@ -887,18 +989,40 @@ export class SqliteDatasetStore {
 
 	/** Record progress and release journal no subscription still needs. */
 	acknowledge(name: string, position: Position): void {
-		this.run(
-			"UPDATE hobo_data_subscriptions SET ack_position = MAX(ack_position, ?) WHERE name = ?",
-			this.parsePosition(position, name),
-			name,
-		);
-		this.prune();
+		this.transaction(() => {
+			const subscription = this.get(
+				"SELECT dataset, tenant_id FROM hobo_data_subscriptions WHERE name = ?",
+				name,
+			);
+			if (subscription)
+				this.assertNoFenceOperation({
+					dataset: String(subscription.dataset),
+					tenant: String(subscription.tenant_id ?? ""),
+				});
+			this.run(
+				"UPDATE hobo_data_subscriptions SET ack_position = MAX(ack_position, ?) WHERE name = ?",
+				this.parsePosition(position, name),
+				name,
+			);
+			this.prune();
+		});
 	}
 
 	/** Drop the subscription and release whatever journal only it was holding. */
 	stopSubscription(name: string): void {
-		this.run("DELETE FROM hobo_data_subscriptions WHERE name = ?", name);
-		this.prune();
+		this.transaction(() => {
+			const subscription = this.get(
+				"SELECT dataset, tenant_id FROM hobo_data_subscriptions WHERE name = ?",
+				name,
+			);
+			if (subscription)
+				this.assertNoFenceOperation({
+					dataset: String(subscription.dataset),
+					tenant: String(subscription.tenant_id ?? ""),
+				});
+			this.run("DELETE FROM hobo_data_subscriptions WHERE name = ?", name);
+			this.prune();
+		});
 	}
 
 	/**
@@ -908,7 +1032,11 @@ export class SqliteDatasetStore {
 	 */
 	private prune(): void {
 		this.run(
-			"DELETE FROM hobo_data_journal WHERE seq <= ?",
+			`DELETE FROM hobo_data_journal WHERE seq <= ? AND NOT EXISTS (
+				SELECT 1 FROM hobo_data_fence_operations AS held
+				WHERE held.status = 'held' AND held.dataset = hobo_data_journal.dataset
+				AND (held.tenant_id = '' OR held.tenant_id = hobo_data_journal.tenant_id)
+			)`,
 			this.journalFloor(),
 		);
 	}
@@ -998,6 +1126,197 @@ export class SqliteDatasetStore {
 
 	// ── fence / retire ────────────────────────────────────────────────────────
 
+	/** Once enabled, file-replacement schema restores remain unavailable on reopen. */
+	operationFenceEnabled(): boolean {
+		return (
+			this.get("SELECT id FROM hobo_data_fence_policy WHERE id = 1") !==
+			undefined
+		);
+	}
+
+	private assertNoFenceOperation(scope: DatasetScope): void {
+		const held = this.get(
+			"SELECT operation_id FROM hobo_data_fence_operations WHERE dataset = ? AND status = 'held' AND (tenant_id = '' OR ? = '' OR tenant_id = ?) LIMIT 1",
+			scope.dataset,
+			scope.tenant,
+			scope.tenant,
+		);
+		if (held)
+			throw new DataCoreError(
+				"FENCE_OPERATION_HELD",
+				"native fence operation is still held",
+			);
+	}
+
+	claimFenceOperation(input: {
+		scope: DatasetScope;
+		fenceToken: string;
+		operationId: string;
+		routeDigest: string;
+		receiverKeyId: string;
+	}): FenceOperationClaim {
+		const { dataset, tenant } = input.scope;
+		const key = this.operationReceivers.get(input.receiverKeyId);
+		if (!key)
+			throw new DataCoreError(
+				"FENCE_OPERATION_UNTRUSTED",
+				"native fence receiver is not enrolled",
+			);
+		const claim = Object.freeze({
+			scope: Object.freeze({ dataset, tenant }),
+			operationId: input.operationId,
+			routeDigest: input.routeDigest,
+			receiverKeyId: input.receiverKeyId,
+			fenceTokenDigest: fenceTokenDigest(input.fenceToken),
+		});
+		canonicalFenceOperationReceipt({
+			...claim,
+			contract: "hobo.fence-operation-receipt/v1",
+			outcome: "committed",
+		});
+		return this.transaction(() => {
+			const fence = this.fences(dataset).find((row) => row.tenant === tenant);
+			if (!fence || fence.fenceToken !== input.fenceToken)
+				throw new DataCoreError(
+					"FENCE_TOKEN_MISMATCH",
+					"native fence token is no longer current",
+				);
+			const prior = this.get(
+				"SELECT route_digest, receiver_key_id, receiver_key_digest, fence_token_digest, status FROM hobo_data_fence_operations WHERE dataset = ? AND tenant_id = ? AND operation_id = ?",
+				dataset,
+				tenant,
+				claim.operationId,
+			);
+			if (prior) {
+				if (
+					prior.status !== "held" ||
+					prior.route_digest !== claim.routeDigest ||
+					prior.receiver_key_id !== claim.receiverKeyId ||
+					prior.receiver_key_digest !== key.digest ||
+					prior.fence_token_digest !== claim.fenceTokenDigest
+				)
+					throw new DataCoreError(
+						"FENCE_OPERATION_CONFLICT",
+						"native fence operation identity was already used",
+					);
+				return claim;
+			}
+			this.assertNoFenceOperation(claim.scope);
+			this.run(
+				"INSERT INTO hobo_data_fence_operations (dataset, tenant_id, operation_id, route_digest, receiver_key_id, receiver_key_digest, fence_token_digest, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'held')",
+				dataset,
+				tenant,
+				claim.operationId,
+				claim.routeDigest,
+				claim.receiverKeyId,
+				key.digest,
+				claim.fenceTokenDigest,
+			);
+			return claim;
+		});
+	}
+
+	completeFenceOperation(input: FenceOperationReceipt): void {
+		const { signature, ...body } = input;
+		const payload = canonicalFenceOperationReceipt(body);
+		const {
+			scope,
+			operationId,
+			routeDigest,
+			receiverKeyId,
+			fenceTokenDigest: tokenDigest,
+		} = body;
+		const key = this.operationReceivers.get(receiverKeyId);
+		if (
+			!key ||
+			!/^[A-Za-z0-9_-]{86}$/u.test(signature) ||
+			Buffer.from(signature, "base64url").toString("base64url") !== signature ||
+			!verify(
+				null,
+				Buffer.from(payload),
+				key.key,
+				Buffer.from(signature, "base64url"),
+			)
+		)
+			throw new DataCoreError(
+				"FENCE_OPERATION_UNTRUSTED",
+				"native fence operation receipt is untrusted",
+			);
+		this.transaction(() => {
+			const row = this.get(
+				"SELECT route_digest, receiver_key_id, receiver_key_digest, fence_token_digest, status FROM hobo_data_fence_operations WHERE dataset = ? AND tenant_id = ? AND operation_id = ?",
+				scope.dataset,
+				scope.tenant,
+				operationId,
+			);
+			if (
+				!row ||
+				row.route_digest !== routeDigest ||
+				row.receiver_key_id !== receiverKeyId ||
+				row.receiver_key_digest !== key.digest ||
+				row.fence_token_digest !== tokenDigest
+			)
+				throw new DataCoreError(
+					"FENCE_OPERATION_CONFLICT",
+					"native fence operation receipt has a foreign scope",
+				);
+			if (row.status === "completed") return;
+			const fence = this.fences(scope.dataset).find(
+				(entry) => entry.tenant === scope.tenant,
+			);
+			if (
+				row.status !== "held" ||
+				!fence ||
+				fenceTokenDigest(fence.fenceToken) !== tokenDigest
+			)
+				throw new DataCoreError(
+					"FENCE_TOKEN_MISMATCH",
+					"native fence changed before operation completion",
+				);
+			this.run(
+				"UPDATE hobo_data_fence_operations SET status = 'completed' WHERE dataset = ? AND tenant_id = ? AND operation_id = ?",
+				scope.dataset,
+				scope.tenant,
+				operationId,
+			);
+		});
+	}
+
+	inspectFenceOperation(
+		scope: DatasetScope,
+		operationId?: string,
+	): FenceOperationObservation | undefined {
+		const row =
+			operationId === undefined
+				? this.get(
+						"SELECT operation_id, route_digest, receiver_key_id, fence_token_digest, status FROM hobo_data_fence_operations WHERE dataset = ? AND tenant_id = ? AND status = 'held'",
+						scope.dataset,
+						scope.tenant,
+					)
+				: this.get(
+						"SELECT operation_id, route_digest, receiver_key_id, fence_token_digest, status FROM hobo_data_fence_operations WHERE dataset = ? AND tenant_id = ? AND operation_id = ?",
+						scope.dataset,
+						scope.tenant,
+						operationId,
+					);
+		if (!row) return undefined;
+		if (row.status !== "held" && row.status !== "completed")
+			throw new DataCoreError(
+				"FENCE_OPERATION_CONFLICT",
+				"native fence operation is malformed",
+			);
+		return Object.freeze({
+			status: row.status,
+			claim: Object.freeze({
+				scope: Object.freeze({ ...scope }),
+				operationId: String(row.operation_id),
+				routeDigest: String(row.route_digest),
+				receiverKeyId: String(row.receiver_key_id),
+				fenceTokenDigest: String(row.fence_token_digest),
+			}),
+		});
+	}
+
 	raiseFence(scope: DatasetScope): string {
 		this.schema(scope.dataset);
 		return this.transaction(() => {
@@ -1005,6 +1324,7 @@ export class SqliteDatasetStore {
 				(fence) => fence.tenant === scope.tenant,
 			);
 			if (existing !== undefined) return existing.fenceToken;
+			this.assertNoFenceOperation(scope);
 			// Random, never derived: a token built from the scope, the head and
 			// the clock repeats when a fence is released and raised again, and
 			// the previous holder would pass the new fence.
@@ -1021,22 +1341,24 @@ export class SqliteDatasetStore {
 	}
 
 	releaseFence(scope: DatasetScope, fenceToken: string): void {
-		const existing = this.fences(scope.dataset).find(
-			(fence) => fence.tenant === scope.tenant,
-		);
-		if (existing === undefined) return;
-		if (existing.fenceToken !== fenceToken) {
-			throw new DataCoreError(
-				"FENCE_TOKEN_MISMATCH",
-				"only the fence token holder may release a fence",
-				{ detail: { dataset: scope.dataset } },
+		this.transaction(() => {
+			this.assertNoFenceOperation(scope);
+			const existing = this.fences(scope.dataset).find(
+				(fence) => fence.tenant === scope.tenant,
 			);
-		}
-		this.run(
-			"DELETE FROM hobo_data_fences WHERE dataset = ? AND tenant_id = ?",
-			scope.dataset,
-			scope.tenant,
-		);
+			if (existing === undefined) return;
+			if (existing.fenceToken !== fenceToken)
+				throw new DataCoreError(
+					"FENCE_TOKEN_MISMATCH",
+					"only the fence token holder may release a fence",
+					{ detail: { dataset: scope.dataset } },
+				);
+			this.run(
+				"DELETE FROM hobo_data_fences WHERE dataset = ? AND tenant_id = ?",
+				scope.dataset,
+				scope.tenant,
+			);
+		});
 	}
 
 	isFenced(scope: DatasetScope): boolean {
@@ -1061,6 +1383,7 @@ export class SqliteDatasetStore {
 		expected: DatasetDigest,
 	): number {
 		return this.transaction(() => {
+			this.assertNoFenceOperation(scope);
 			const fence = this.fences(scope.dataset).find(
 				(entry) => entry.tenant === scope.tenant,
 			);

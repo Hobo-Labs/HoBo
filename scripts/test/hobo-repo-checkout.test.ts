@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const root = join(import.meta.dirname, "..", "..");
-const checkoutSha = "11bd71901bbe5b1630ceea73d27597364c9af683";
+const checkoutSha = "3d3c42e5aac5ba805825da76410c181273ba90b1";
 const workflow = readFileSync(
 	join(root, ".github/workflows/hobo-ci.yml"),
 	"utf8",
@@ -31,7 +31,7 @@ describe("hobo-repo-checkout wiring", () => {
 			workflow.indexOf("\n  main_gate_finish:"),
 		);
 		expect(block).toContain("Resolve repo-local actions");
-		expect(block).toContain("uses: ./.github/actions/hobo-repo-checkout");
+		expect(block).toContain("uses: $/.github/actions/hobo-repo-checkout");
 		expect(block).toContain('bootstrap-composite-actions: "false"');
 		expect(block).toContain("marker: scripts/ci/ci-trace.mts");
 		expect(block).toContain("submodules: recursive");

@@ -1,7 +1,0 @@
-title = "HoBo gitleaks"
-
-[allowlist]
-description = "Adversarial CI contract tests reference GitHub secret syntax without real credentials"
-paths = [
-  '''packages/ci-guard/test/''',
-]

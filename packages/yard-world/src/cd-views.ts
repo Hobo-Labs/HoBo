@@ -1,5 +1,5 @@
 /**
- * HoBo CD views for the yard world (plan 0024 WP19). Pure, zero-dependency.
+ * HoBo CD views for the yard world. Pure, zero-dependency.
  *
  * CD spans follow the OTel CI/CD semantic conventions and carry HoBo topology
  * as SPAN attributes (one CD service delivers to many Camps), so:

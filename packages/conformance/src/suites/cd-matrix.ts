@@ -1,4 +1,4 @@
-// The CD toolset and platform matrices, and the WP20 §10 rows (plan 0024).
+// The CD toolset and platform matrices.
 //
 // - Toolset: one build reaches CD through seven ingress paths and must yield
 //   one Freight id (D2, D3, I15).

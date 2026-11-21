@@ -1,4 +1,4 @@
-// Barrel for the @hobo/cd conformance suites (plan 0024 WP20). Re-exported
+// Barrel for the @hobo/cd conformance suites. Re-exported
 // from the package root; see README.md in this folder for the runbook.
 export {
 	ARTIFACT_STORE_ASSERTIONS,

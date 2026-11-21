@@ -42,7 +42,7 @@ export const S0_ROOT_FILES = [
 	".env.example",
 	".gitattributes",
 	".gitignore",
-	".gitleaks.toml",
+	".betterleaks.toml",
 	".gitmodules",
 	".mcp.json",
 	"AGENTS.md",
@@ -99,7 +99,7 @@ export const S0_INSTALL_REQUIRED_PATHS = [
 ] as const;
 
 export const S0_REQUIRED_PATHS = [
-	".gitleaks.toml",
+	".betterleaks.toml",
 	".github/actions/hobo-checkout/action.yml",
 	"mise.toml",
 	"mise.lock",

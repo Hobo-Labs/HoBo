@@ -1,4 +1,4 @@
-// CampPolicy (plan 0024 D24, I23): which Rail governs a Camp. Bindings are
+// CampPolicy (ADR-0182 D24, I23): which Rail governs a Camp. Bindings are
 // `policy.BindingChanged` facts on the Camp's spec stream `cd-camp-<id>`,
 // written by promotion only (subject RAIL), so one writer per Camp still
 // holds. The body is exactly the protobuf JSON of PolicyBindingRecord (the

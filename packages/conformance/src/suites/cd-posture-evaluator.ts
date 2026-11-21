@@ -1,4 +1,4 @@
-// PostureEvaluator conformance (plan 0024 D25, I8, I22). The Station-side
+// PostureEvaluator conformance (ADR-0182 D25, I8, I22). The Station-side
 // evaluator is pure: the same rules and observation give the same findings in
 // any order, unknown counts against compliance, and only the fixed operator
 // set exists (no expression language).

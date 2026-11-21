@@ -52,10 +52,22 @@ const PROBE_RUNS_ON = new Set(["hobo", "hobo-trunk", "hobo-local-host"]);
  * `ci-health`, that runs the monitor and nothing on the fleet it watches.
  */
 const healthFile = "ci-health.yml";
+/** A manually dispatched, read-only identity observation on a hosted runner. */
+const hostingEvidenceFile = "hosting-evidence.yml";
+/** A manually dispatched, scoped Vercel credential observation. */
+const vercelEvidenceFile = "vercel-credential-evidence.yml";
+/**
+ * GitHub-hosted `gh actions-lock --verify` of .github/workflows/actions.lock;
+ * it reads public action repositories only and runs no repository code.
+ */
+const actionsLockFile = "actions-lock.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
+	actionsLockFile,
 	probeFile,
 	healthFile,
+	hostingEvidenceFile,
+	vercelEvidenceFile,
 	...activeCiFiles,
 ]);
 
@@ -73,7 +85,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
     outputs:
       enrolled: \${{ steps.policy.outputs.enrolled }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -81,7 +93,7 @@ const PROBE_GATE_JOB = `  local-box-enrolled:
           sparse-checkout: |
             scripts/ci/runner-routing.mts
             .hobo/ci.json
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: "24"
       - id: policy
@@ -282,16 +294,13 @@ function lintTemplates(errors: string[], repoRoot: string): void {
 const HOSTED_RUNS_ON = "ubuntu-24.04";
 
 /**
- * For the job that builds the deps image in the box's own Docker context: a
- * pull request's run asks for the box by its own label (`hobo-box`, which the
- * worker serves and no ARC pod does), trunk events keep the trunk label.
- * Opt-in by committed policy: the route job outputs `box_runner`
- * (`runnerRouting.labels.box`) only when `runnerRouting.boxRunner` is true in
- * `.hobo/ci.json`; otherwise, or when the route job gave no answer, the job
- * asks for the shared label. No repository variable decides it (ADR-0181).
+ * For the PR-only job that validates a deps image without promoting it. Use
+ * the enrolled box when the fleet is selected, otherwise its selected fleet
+ * or GitHub-hosted runner. A local runner has no verified Docker capability,
+ * so the job uses GitHub-hosted for that fallback.
  */
-const BOX_OR_TRUNK_RUNS_ON =
-	"${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo') }}";
+const DEPS_IMAGE_RUNS_ON =
+	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
 const DEPS_IMAGE_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
@@ -300,6 +309,28 @@ const DEPS_IMAGE_BUILD_SCRIPT =
 function buildsDepsImage(block: readonly string[]): boolean {
 	return block.some(
 		(line) => !/^\s*#/.test(line) && line.includes(DEPS_IMAGE_BUILD_SCRIPT),
+	);
+}
+
+/** Only the PR validation job may run the candidate build on its fallback. */
+function isNonPromotingDepsJob(
+	file: string,
+	jobLine: string,
+	block: readonly string[],
+): boolean {
+	const calls = block.filter(
+		(line) => !/^\s*#/.test(line) && line.includes(DEPS_IMAGE_BUILD_SCRIPT),
+	);
+	return (
+		file === "hobo-ci.yml" &&
+		jobLine.trim() === "ci-deps-image:" &&
+		block.some(
+			(line) =>
+				line.trim() ===
+				"if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}",
+		) &&
+		calls.length === 1 &&
+		calls[0]?.trim() === `run: bash ${DEPS_IMAGE_BUILD_SCRIPT} --no-promote`
 	);
 }
 
@@ -318,7 +349,10 @@ function isAlwaysHostedJob(
 	if (runsOn !== HOSTED_RUNS_ON) return false;
 	if (/^  route:$/.test(jobLine))
 		return block.some(
-			(line) => line.trim() === "uses: ./.github/actions/route-runner",
+			(line) =>
+				line.trim() === "uses: ./.github/actions/route-runner" ||
+				line.trim() === "uses: $/.github/actions/route-runner" ||
+				line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
 		);
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
 	if (/^  ci-health:$/.test(jobLine))
@@ -520,7 +554,11 @@ function isNpmOidcHostedReleaseJob(
 }
 
 const acceptanceDigest =
-	"ae9f17ce8d8d862722d50c0bd6b66077275edd376c068aaa42112e7ba7e150df";
+	"431c63f690bf69cbed136cd784200a5a257fb3abb6a8abbe1b200274f029bb1a";
+const hostingEvidenceDigest =
+	"2f1da81a27494c207180d16754b41b869ce2615b5cdfd7ed20d4a559be152de7";
+const vercelEvidenceDigest =
+	"c1b554ca60b0d0c1002bac7801a1dbb3b78b9fb1a25192bf9f8193b610f5d324";
 
 const TRUNK_EVENTS = new Set([
 	"push",
@@ -557,7 +595,7 @@ function collectPinnedActionRefs(text: string): Map<string, Set<string>> {
 		if (!match) continue;
 		const action = match[1];
 		const sha = match[2];
-		if (!action || !sha || action.startsWith("./")) continue;
+		if (!action || !sha || /^[.$]\//.test(action)) continue;
 		const segments = action.split("/");
 		const repo =
 			segments.length >= 2
@@ -595,7 +633,7 @@ function lintPinnedActionRefs(
 		const action = match[1];
 		const ref = match[2];
 		if (!action || !ref) continue;
-		if (ref.startsWith("./")) continue;
+		if (/^[.$]\//.test(ref)) continue;
 		if (!/^[0-9a-f]{40}$/.test(ref)) {
 			errors.push(
 				`${file}:${index + 1}: ${action} must pin a full commit SHA, not @${ref}`,
@@ -642,12 +680,16 @@ function lintLocalActionsNeedCheckoutFirst(
 				)
 					return true;
 				return (
-					/^\s+- uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
-					/^\s+uses: \.\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
-					/^\s+- uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+					/^\s+- uses: [.$]\/\.github\/actions\/hobo-checkout\s*$/.test(
 						entry,
 					) ||
-					/^\s+uses: \.\/\.github\/actions\/hobo-repo-checkout\s*$/.test(entry)
+					/^\s+uses: [.$]\/\.github\/actions\/hobo-checkout\s*$/.test(entry) ||
+					/^\s+- uses: [.$]\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					) ||
+					/^\s+uses: [.$]\/\.github\/actions\/hobo-repo-checkout\s*$/.test(
+						entry,
+					)
 				);
 			})
 		) {
@@ -721,7 +763,9 @@ function lintWorkflowYaml(
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
-		const boxOrTrunk = runsOn === BOX_OR_TRUNK_RUNS_ON && depsImageBuild;
+		const depsRoute =
+			runsOn === DEPS_IMAGE_RUNS_ON &&
+			isNonPromotingDepsJob(file, jobLine, block);
 		if (
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
@@ -729,7 +773,7 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
-			!boxOrTrunk &&
+			!depsRoute &&
 			!npmOidcHosted &&
 			!alwaysHosted
 		) {
@@ -737,14 +781,14 @@ function lintWorkflowYaml(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
 			);
 		}
-		// The image has to land in the Docker context job containers start from.
-		if (depsImageBuild && activeCiFiles.has(file) && !boxOrTrunk) {
+		// The special route is limited to the non-promoting deps-image job.
+		if (depsImageBuild && activeCiFiles.has(file) && !depsRoute) {
 			errors.push(
-				`${file}:${start + 1}: box-label-routing: a job that runs deps/build-deps.sh must use the box-or-trunk label expression`,
+				`${file}:${start + 1}: box-label-routing: a job that runs deps/build-deps.sh must use the deps-image runner expression`,
 			);
 		}
 		if (
-			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || boxOrTrunk) &&
+			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || depsRoute) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -761,7 +805,7 @@ function lintWorkflowYaml(
 			runsOn === TRUNK_RUNS_ON ||
 			runsOn === ROUTED_RUNS_ON ||
 			runsOn === SHARD_RUNS_ON ||
-			boxOrTrunk
+			depsRoute
 		) {
 			for (const [index, line] of block.entries()) {
 				if (!/^\s*- uses: actions\/checkout@/.test(line)) continue;
@@ -850,7 +894,7 @@ function lintWorkflowYaml(
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&
-		!text.includes(BOX_OR_TRUNK_RUNS_ON)
+		!text.includes(DEPS_IMAGE_RUNS_ON)
 	) {
 		errors.push(
 			`${file}: authoritative CI jobs must run on self-hosted hobo runners`,
@@ -919,6 +963,20 @@ export async function lintActionsRepository(
 				);
 			}
 		}
+		if (
+			file === hostingEvidenceFile &&
+			createHash("sha256").update(text).digest("hex") !== hostingEvidenceDigest
+		)
+			errors.push(
+				`${file}: read-only hosting evidence workflow differs from its reviewed recipe (update hostingEvidenceDigest after review)`,
+			);
+		if (
+			file === vercelEvidenceFile &&
+			createHash("sha256").update(text).digest("hex") !== vercelEvidenceDigest
+		)
+			errors.push(
+				`${file}: Vercel credential evidence workflow differs from its reviewed recipe (update vercelEvidenceDigest after review)`,
+			);
 		lintWorkflowYaml(errors, file, text, false);
 	}
 

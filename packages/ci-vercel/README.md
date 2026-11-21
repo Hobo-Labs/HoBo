@@ -1,5 +1,9 @@
 # HoBo CI Vercel support
 
+For relay recovery when the deployed relay is unavailable, see [BOOTSTRAP.md](BOOTSTRAP.md). Its local sequence qualifies preview and then deploys production from the same commit and `HOBO_HOME` journal. The deploy workflow uses the Vercel CLI pinned in the root frozen lockfile, and production verification requires `GITHUB_SHA`; neither dependency resolution nor commit attestation can silently fall back.
+
+Manual dispatches run the deploy job only from `main`, before any OIDC or deploy step. Record-based preview verification refuses a delivery module unless it updates a declared preview verification node. Root pnpm overrides replace Vercel's vulnerable `path-to-regexp@6.1.0` and `undici@5.28.4` resolutions with `6.3.0` and `5.29.0`, so frozen installs cannot retain those duplicates.
+
 ## Run Vercel CI checks locally
 
 `@hobo/ci-vercel/turbo-ci` runs the checks declared for the new Vercel CI
@@ -175,7 +179,7 @@ Yard is the binding authority). It is the one place the provider is named.
 
 | Profile | Offering | Attached by | In Camp |
 |---|---|---|---|
-| `provider.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
+| `web.project/v1` | `vercel.project/v1` (`rootDirectory`) | the deploy | both |
 | `api.http/v1` | `vercel.function/v1` (`api/relay.ts`, 300 s) | the git deployment | both |
 | `service.queue-consumer/v1` | `vercel.function/v1` (`api/queue.ts`, topic `hobo-ci`) | the git deployment | both |
 | `queue.at-least-once/v1`, `queue.delay/v1` | `vercel.queues/v1` (topic `hobo-ci`) | `vercel.json` | both |
@@ -409,7 +413,9 @@ adds wait, not evidence. When a stage runs out:
 
 None of them changes anything on Vercel, and the deployment is not lost: the
 next push to `main`, or a re-run of the workflow for the same commit, adopts
-it (the CD journal keeps the in-flight promotion). In the relay deploy
+it (the CD journal keeps the in-flight promotion). The workflow prints the
+adoption result and records it in the job summary even when the command fails,
+then preserves its nonzero status. In the relay deploy
 workflow the gate step (`scripts/ci/relay-deploy-gate.mts`, right after
 checkout) sets the deadline to the job's 20 minutes less a 3-minute margin,
 so the install and build come out of the adopt budget and the command ends
@@ -462,6 +468,18 @@ only by the git deployment), because no provider package resolves
 Vercel CLI, fake probe answers, a temporary CD journal, fake GitHub and
 Infisical endpoints). No live deployment of the relay was made from this
 repository by this change.**
+
+### Continuity
+
+Every stateful relay resource declares its policy with the `continuity` trait
+(`RELAY_CONTINUITY` in `src/bindle.ts`). CI keeps no database and GitHub is the
+source of truth, so all of them are `rebuildable`: nothing is copied, which is
+the cheapest tier. The cache is rebuilt by name and its fleet moves cold; the
+repair queue is refilled by the 15-minute schedule; a lost webhook delivery is
+redelivered by the webhook repair and a lost lease step is found by the
+queued-job repair, both scanning GitHub from a checkpointed cursor, so an
+interrupted scan resumes where it stopped; the config service's store keeps its
+own replicas and `hobo ci up` rebuilds what the relay reads.
 
 ## Config service
 
@@ -651,6 +669,12 @@ per member), the messages, the step ladder and the handoff. The handoff's bodies
 ([`contracts/queue-handoff.pact.json`](contracts/queue-handoff.pact.json)),
 executed by `contracts/queue-handoff.consumer.test.ts` against both sides.
 Nothing here has run against Vercel, Upstash, Infisical or GitHub.
+
+`test/scheduled-relay-emulator.test.ts` registers an explicit 15-minute local
+interval with the schedule emulator. It sends each synthetic tick through the
+relay's authenticated repair endpoint and queue worker, then checks duplicate
+delivery, cache-loss recovery and settlement. It does not emulate Vercel cron
+timing or prove provider delivery guarantees.
 
 ### The cache fleet
 

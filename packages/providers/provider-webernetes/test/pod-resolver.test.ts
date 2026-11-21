@@ -1,5 +1,5 @@
 /**
- * WP13 (plan 0024) Webernetes: the local webernetes.pod/v1 resolver over the
+ * Webernetes: the local webernetes.pod/v1 resolver over the
  * injected station-host seam (PACT-replayed fixtures), a real local HTTP probe,
  * I14 coverage and traffic profile, typed refusals and the wire contract.
  */

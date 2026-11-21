@@ -24,7 +24,7 @@ export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
 
 /** Digest-pinned debian:bookworm-slim for the CI runner base layer (must match base/Dockerfile FROM). */
 export const CI_RUNNER_DEBIAN_BOOKWORM_SLIM =
-	"debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3";
+	"debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc";
 
 export const CI_RUNNER_TURBO_AUBE_LOCK_DIR = ".mise/locks/turbo/2.11.10";
 
@@ -251,7 +251,7 @@ export function spawnCommand(
 }
 
 function miseToolVersionArgs(tool: string): string[] {
-	return tool === "cue" || tool === "gitleaks" || tool === "syft"
+	return tool === "cue" || tool === "betterleaks" || tool === "syft"
 		? ["version"]
 		: ["--version"];
 }
@@ -479,11 +479,6 @@ const SYSTEM_COMMANDS = {
 /** Minimum invocations the repo relies on beyond mise.toml (wasmtime tar extract, etc.). */
 export const REQUIRED_COMMANDS = ["xz", "git", "curl", "ps", "docker"] as const;
 
-/**
- * Commands added after the first hermetic image: skopeo (build.sh loads the mise oci
- * layout with it) and tmux (the @hobo/code resident session runtime). Checked when the contract runs inside a freshly built candidate
- * (`HOBO_CI_RUNNER_CONTRACT=live`), so jobs on an older image are not refused for them.
- */
 export const IMAGE_CONTRACT_COMMANDS = ["skopeo", "tmux"] as const;
 
 /**

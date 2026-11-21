@@ -1,4 +1,4 @@
-// Typed failure modes of the delivery feed (WP11, plan 0024). Each code has
+// Typed failure modes of the delivery feed. Each code has
 // the HTTP status the feed answers with and a remediation. Agent-identity
 // codes (SVID, DPoP, enrollment) live in ../agent/errors.ts.
 import { AGENT_FAILURES, type FailureSpec, reasonOf } from "../agent/errors.js";

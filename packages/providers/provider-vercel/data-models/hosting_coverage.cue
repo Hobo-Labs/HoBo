@@ -1,4 +1,4 @@
-// CUE constraints for hosting_coverage.proto (plan 0024 WP14, I14).
+// CUE constraints for hosting_coverage.proto (ADR-0182 I14).
 package provider_vercel
 
 import "list"

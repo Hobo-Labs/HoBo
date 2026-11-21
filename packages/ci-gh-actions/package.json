@@ -83,6 +83,7 @@
     "@hobo/fleet-nats": "workspace:*",
     "@hobo/provider-redaction": "workspace:*",
     "@modelcontextprotocol/sdk": "1.30.0",
+    "yaml": "2.9.0",
     "zod": "^4.1.13"
   },
   "devDependencies": {
@@ -97,7 +98,6 @@
     "@types/pg": "8.15.5",
     "esbuild": "0.28.1",
     "pg": "8.22.0",
-    "testcontainers": "11.8.1",
-    "yaml": "2.9.0"
+    "testcontainers": "11.8.1"
   }
 }

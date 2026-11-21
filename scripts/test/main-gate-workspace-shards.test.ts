@@ -17,7 +17,8 @@ describe("main full gate workspace sharding", () => {
 		const runnerImage = workflow.indexOf("  ci-runner-image:", routeStart);
 		assert.ok(routeStart > -1);
 		const route = workflow.slice(routeStart, runnerImage);
-		assert.match(route, /packages\/ci\/src\/fleet-overflow\.ts/u);
+		assert.match(route, /scripts\/ci\/route-runner\.mts/u);
+		assert.doesNotMatch(route, /packages\/ci\/src\/fleet-overflow\.ts/u);
 		assert.doesNotMatch(route, /packages\/ci\/src\/fleet\/capacity\.ts/u);
 	});
 
@@ -68,8 +69,8 @@ describe("main full gate workspace sharding", () => {
 			planStart,
 			workflow.indexOf("  main-gate:", planStart),
 		);
-		assert.match(plan, /gitleaks-main-scan\.mts --background/u);
-		assert.match(plan, /gitleaks-main-scan\.mts --wait/u);
+		assert.match(plan, /betterleaks-main-scan\.mts --background/u);
+		assert.match(plan, /betterleaks-main-scan\.mts --wait/u);
 	});
 
 	it("skips the gate and plans no shards when the merge queue passed the tree", () => {
@@ -152,7 +153,7 @@ describe("main full gate workspace sharding", () => {
 			steps.indexOf("\n      - ", reroute),
 		);
 		assert.match(step, /if: needs\.route\.outputs\.tier == 'fleet'/u);
-		assert.match(step, /uses: \.\/\.github\/actions\/route-runner/u);
+		assert.match(step, /uses: \$\/\.github\/actions\/route-runner/u);
 		assert.match(step, /token: \$\{\{ github\.token \}\}/u);
 		for (const input of [
 			"route: ${{ inputs.route || 'auto' }}",
@@ -183,7 +184,7 @@ describe("main full gate workspace sharding", () => {
 		assert.match(deps, /^    needs: \[route\]$/mu);
 		assert.match(
 			deps,
-			/^    if: \$\{\{ !cancelled\(\) && github\.event_name == 'pull_request' \}\}$/mu,
+			/^    if: \$\{\{ !cancelled\(\) && needs\.route\.result == 'success' && github\.event_name == 'pull_request' \}\}$/mu,
 		);
 		const plan = job("main-gate-plan");
 		const check = plan.slice(

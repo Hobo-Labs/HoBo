@@ -79,6 +79,16 @@ describe("upcaster corpus for env.* promotion events", () => {
 			{ freightId: fid("f2"), targets: [camp("dev-1")], idempotencyKey: "b" },
 			h.ctx(),
 		);
+		await h.service.promote(
+			{
+				freightId: fid("f2"),
+				targets: [camp("dev-3")],
+				idempotencyKey: "up-mode",
+				intent: "up",
+				deploymentMode: "incremental",
+			},
+			h.ctx(),
+		);
 		h.verification.verdictByCamp.set("dev-2", VerificationVerdict.FAIL);
 		await h.service.promote(
 			{ freightId: fid("f2"), targets: [camp("dev-2")], idempotencyKey: "c" },

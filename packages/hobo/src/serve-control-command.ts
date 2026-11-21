@@ -2,7 +2,7 @@
  * `hobo serve control` — local control-plane HTTP+SSE for the Yard game UI.
  * Same management surface as CLI/MCP (ADR-0150 / ADR-0111 spirit).
  *
- * `hobo serve cd` — the CD conductor service (plan 0024): tick loop,
+ * `hobo serve cd` — the CD conductor service: tick loop,
  * conductor reconciler, `/v1/cd/` read API + agent delivery feed, health and
  * readiness. `--simulate` is its only fixture path and is labelled.
  */
@@ -58,8 +58,14 @@ async function defaultServeCd(
 	input: Parameters<NonNullable<ServeControlCommandDeps["serveCd"]>>[0],
 ): ReturnType<NonNullable<ServeControlCommandDeps["serveCd"]>> {
 	const { openCdRuntime } = await import("./cd-runtime.js");
+	const { withOwnerJournalFleet } = await import("./cd-owner-journal.js");
+	// The journal fleet hobo cd up provisioned, from the owner's store.
+	const journal = await withOwnerJournalFleet(input.env, input.cwd);
 	const runtime = await openCdRuntime({
-		env: input.env,
+		env: journal.env,
+		...(journal.readSecret !== undefined
+			? { readSecret: journal.readSecret }
+			: undefined),
 		home: input.hoboHome,
 		cwd: input.cwd,
 		simulate: input.simulate,

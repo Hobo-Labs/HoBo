@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { evaluateExpression } from "../../../scripts/ci/attested-jobs.mts";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 const workflow = parse(
@@ -12,6 +13,7 @@ const publisher = parse(
 );
 const depsJob = workflow.jobs["ci-deps-image"];
 const prGate = workflow.jobs["pr-gate"];
+const prPlan = workflow.jobs.pr_gate_plan;
 const prValidation = workflow.jobs.pr_gate_validation;
 const workspaceTests = workflow.jobs.workspace_tests;
 const prAffected = workflow.jobs.pr_affected;
@@ -22,8 +24,9 @@ describe("CI deps image push scope", () => {
 	it("is its own job on pull requests and steps of the plan job on every main run", () => {
 		// Finding 154: on main the check takes seconds, and as a job it cost a
 		// fourth trunk pickup. Still no commit file-list filtering.
+		// The route job (#2022) gates pull-request work before it queues.
 		expect(depsJob.if).toBe(
-			"${{ !cancelled() && github.event_name == 'pull_request' }}",
+			"${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' }}",
 		);
 		expect(mainPlan.if).toContain(
 			"(github.event_name == 'push' && github.ref == 'refs/heads/main') ||",
@@ -99,7 +102,7 @@ describe("CI deps image push scope", () => {
 		);
 	});
 
-	it("publishes from a separate bounded workflow on the same runner labels", () => {
+	it("publishes separately from routed PR validation", () => {
 		expect(publisher.on.workflow_run).toEqual({
 			workflows: ["HoBo CI Fabric"],
 			types: ["completed"],
@@ -117,17 +120,13 @@ describe("CI deps image push scope", () => {
 			"cancel-in-progress": true,
 		});
 		expect(job["timeout-minutes"]).toBe(20);
-		// The publisher pushes the fleet's own image and the deps job builds
-		// it in the box's Docker context, so neither is routed. The PR-only deps
-		// job asks for the publisher's label on trunk events and for the box's
-		// own label on pull requests, where it builds the image, when committed
-		// runnerRouting.boxRunner makes the route job name it (box_runner).
-		// Main's plan job follows the route job; with no route it is
-		// GitHub-hosted, and it only looks at the layer when it is the box worker.
-		expect(depsJob["runs-on"]).toBe(
-			`\${{ github.event_name == 'pull_request' && (needs.route.outputs.box_runner || 'hobo') || (${job["runs-on"].slice(4, -3)}) }}`,
-		);
-		expect(depsJob["runs-on"]).not.toContain("needs.route.outputs.runner");
+		// PR validation follows the chosen fleet or hosted runner; the publisher
+		// alone promotes the box's image after a green main run.
+		expect(depsJob.if).toContain("github.event_name == 'pull_request'");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.tier == 'fleet'");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.box_runner");
+		expect(depsJob["runs-on"]).toContain("needs.route.outputs.runner");
+		expect(depsJob["runs-on"]).toContain("'ubuntu-24.04'");
 		expect(job["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(mainPlan["runs-on"]).toBe(
 			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
@@ -145,6 +144,32 @@ describe("CI deps image push scope", () => {
 		expect(job.steps[1].run).toBe(
 			"bash packages/ci-gh-actions/deploy/ci-runner/deps/publish-deps.sh",
 		);
+	});
+
+	it("routes the PR deps build to an available Docker runner without promoting it", () => {
+		const expression = depsJob["runs-on"].slice(3, -2).trim();
+		const selected = (tier: string, runner: string, box: string) => {
+			return evaluateExpression(expression, (path) => {
+				if (path === "needs.route.outputs.tier") return tier;
+				if (path === "needs.route.outputs.runner") return runner;
+				if (path === "needs.route.outputs.box_runner") return box;
+				throw new Error(`unexpected route input: ${path}`);
+			});
+		};
+		expect(selected("fleet", "hobo", "hobo-local-host")).toBe(
+			"hobo-local-host",
+		);
+		expect(selected("fleet", "hobo", "")).toBe("hobo");
+		expect(selected("github", "ubuntu-24.04", "")).toBe("ubuntu-24.04");
+		expect(selected("local", "hobo-local-host", "")).toBe("ubuntu-24.04");
+		expect(selected("", "", "")).toBe("ubuntu-24.04");
+		expect(depsJob.needs).toEqual(["route"]);
+		const build = depsJob.steps.find(
+			(step) => step.name === "Build deps image and verify offline install",
+		);
+		expect(build.run).toContain("build-deps.sh --no-promote");
+		expect(depsJob.permissions).toEqual({ contents: "read", packages: "read" });
+		expect(JSON.stringify(depsJob)).not.toContain("docker push");
 	});
 
 	it("publishes the worker image after a green main run when GHCR lacks it", () => {
@@ -190,22 +215,73 @@ describe("CI deps image push scope", () => {
 
 	it("does not make either gate wait for the deps image", () => {
 		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
-		expect(prValidation.needs).toEqual(["route", "ci-runner-image"]);
+		expect(prPlan.needs).toEqual(["route"]);
+		expect(prValidation.needs).toEqual([
+			"route",
+			"ci-runner-image",
+			"pr_gate_plan",
+		]);
 		expect(prGate.needs).toEqual([
 			"route",
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
 			"scripts-tests",
+			"state-machine-verification",
 		]);
-		expect(workspaceTests.needs).toEqual(["route", "pr_gate_validation"]);
-		expect(prAffected.needs).toEqual(["route", "pr_gate_validation"]);
+		expect(workspaceTests.needs).toEqual([
+			"route",
+			"ci-runner-image",
+			"pr_gate_plan",
+		]);
+		expect(prAffected.needs).toEqual([
+			"route",
+			"ci-runner-image",
+			"pr_gate_plan",
+		]);
 		expect(mainGate.needs).not.toContain("ci-deps-image");
+		expect(prPlan.needs).not.toContain("ci-deps-image");
 		expect(prValidation.needs).not.toContain("ci-deps-image");
 		expect(prGate.needs).not.toContain("ci-deps-image");
 		// The deps job is not routed: it builds in the box's Docker context and
 		// starts from route so it can overlap runner image materialize (#1872).
 		expect(depsJob.needs).toEqual(["route"]);
+	});
+
+	it("resolves base, scope, and shards before validation so shards overlap the S0 gate", () => {
+		expect(prPlan.outputs).toEqual({
+			merge_base: "${{ steps.merge-group-base.outputs.base }}",
+			merge_tests: "${{ steps.merge-group-base.outputs.tests }}",
+			merge_scope: "${{ steps.merge-group-base.outputs.scope }}",
+			pr_base: "${{ steps.scm-base.outputs.base }}",
+			shards: "${{ steps.shard-plan.outputs.shards }}",
+		});
+		for (const name of [
+			"Resolve the merge group base and gate scope",
+			"Plan workspace test shards",
+		])
+			expect(prPlan.steps.find((step) => step.name === name).run).toContain(
+				"node --experimental-strip-types",
+			);
+		expect(
+			prPlan.steps.find((step) => step.name === "Resolve Turbo SCM base").run,
+		).toContain("git merge-base");
+		expect(
+			prValidation.steps.find((step) => step.name === "Relevant checks only")
+				.env.BASE,
+		).toBe("${{ needs.pr_gate_plan.outputs.pr_base }}");
+		const s0 = prValidation.steps.find((step) => step.name === "S0 gate set");
+		expect(s0.env.SCOPE).toBe("${{ needs.pr_gate_plan.outputs.merge_scope }}");
+		expect(s0.env.BASE).toBe("${{ needs.pr_gate_plan.outputs.merge_base }}");
+		expect(workspaceTests.strategy.matrix.shard).toBe(
+			"${{ fromJSON(needs.pr_gate_plan.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}",
+		);
+		expect(workspaceTests.if).toContain(
+			"needs.pr_gate_plan.result == 'success'",
+		);
+		expect(workspaceTests.if).not.toContain("pr_gate_validation");
+		expect(prAffected.if).toContain("needs.pr_gate_plan.result == 'success'");
 	});
 });
 

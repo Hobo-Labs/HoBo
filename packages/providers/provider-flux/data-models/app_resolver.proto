@@ -1,7 +1,7 @@
 syntax = "proto3";
 package hobo.provider_flux.v1;
 
-// Plan 0024 WP13: the outputs the flux.app/v1 resolver reports from two public
+// The outputs the flux.app/v1 resolver reports from two public
 // FluxOS reads. Observation only: no wallet key, no environment parameters.
 // Design-time wire view (no buf codegen is wired for this package); the CUE
 // definition #FluxAppOutputs constrains the same record.

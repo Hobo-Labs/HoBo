@@ -5,6 +5,7 @@ import {
 	CiProjectProviderSchema,
 } from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
+import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
@@ -305,6 +306,8 @@ export const CiProjectDocumentSchema = z
 		 * route job and the box; never by the relay's environment selection.
 		 */
 		runnerRouting: RunnerRoutingSchema.optional(),
+
+		runnerOrder: RunnerOrderDocumentSchema.optional(),
 		/**
 		 * The box worker's fleet membership (D61): the authority, fleet,
 		 * tenant, region and sandbox settings a box daemon in this checkout
@@ -422,6 +425,7 @@ export function resolveCiProjectReferences(
 		agent: _agent,
 		runnerRouting: _runnerRouting,
 		fleet: _fleet,
+		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
 		...document
 	} = input;

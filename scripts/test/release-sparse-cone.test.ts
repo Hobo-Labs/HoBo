@@ -62,7 +62,7 @@ function parseJobHoboCheckoutSparsePaths(
 		throw new Error(`workflow missing job ${jobName}`);
 	}
 	const jobBlock = workflowText.slice(jobStart);
-	const checkoutMarker = "./.github/actions/hobo-checkout";
+	const checkoutMarker = "$/.github/actions/hobo-checkout";
 	const checkoutIdx = jobBlock.indexOf(checkoutMarker);
 	if (checkoutIdx < 0) {
 		throw new Error(`${jobName} missing hobo-checkout step`);
@@ -233,6 +233,17 @@ describe("release-hobo publish jobs install order", () => {
 		});
 	}
 
+	it("release-hobo-integration fetches the ts-autocode pin before install", () => {
+		const block = parseReleaseJobBlock(
+			hoboWorkflow,
+			"release-hobo-integration",
+		);
+		const fetchIdx = block.indexOf("pnpm run pins:fetch ts-autocode");
+		const installIdx = block.indexOf(ROOT_PNPM_INSTALL);
+		expect(fetchIdx).toBeGreaterThan(0);
+		expect(installIdx).toBeGreaterThan(fetchIdx);
+	});
+
 	it("materialize-release-version avoids npm deps (gate-trust or tag-ref parse)", () => {
 		const source = readFileSync(
 			join(root, "scripts/ci/materialize-release-version.mts"),
@@ -299,7 +310,7 @@ describe("release-hobo affected image job", () => {
 			jobStart,
 			nextJob === -1 ? undefined : nextJob,
 		);
-		expect(block).toContain("./.github/actions/ci-runner-preflight");
+		expect(block).toContain("$/.github/actions/ci-runner-preflight");
 		expect(block).toContain("scripts/ci/ensure-nbgv-toolchain.mts");
 		expect(block).toMatch(/Prepare nbgv dotnet[\s\S]*timeout-minutes: 5/u);
 		expect(block).not.toMatch(/jdx\/mise-action@/u);

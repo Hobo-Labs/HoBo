@@ -1,4 +1,4 @@
-// `createCdService` — the long-running CD host (WP12, plan 0024, C13).
+// `createCdService` — the long-running CD host (ADR-0182 C13).
 //
 // Modelled on the CI relay host: one tick loop drives every module's `tick`
 // in a fixed order (sources → inventory → pipelines → promotions →

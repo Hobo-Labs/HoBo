@@ -20,6 +20,7 @@ import {
 	defaultCodegenLayout,
 } from "../src/codegen/types.js";
 import { createHoboCli } from "../src/index.js";
+import { slow } from "./support/slow.js";
 
 const compilerOptions: ts.CompilerOptions = {
 	noEmit: true,
@@ -263,78 +264,81 @@ describe("generated app declarations compile", () => {
 			await rm(root, { recursive: true, force: true });
 		}
 	});
-	it.each([
-		"todo",
-		"api",
-		"agent",
-		"fullstack",
-	])("regenerates starter %s without deleting its runnable seed", async (template) => {
-		const root = await mkdtemp(join(tmpdir(), "hobo-starter-codegen-"));
-		try {
-			const result = await createHoboCli().run(
-				["new", "app", "-t", template, "--json"],
-				{ cwd: root },
-			);
-			expect(result.exitCode).toBe(0);
-			const projectRoot = join(root, "app");
-			const seed = join(projectRoot, "src/_generated/index.ts");
-			const before = await readFile(seed, "utf8");
-			const app = join(projectRoot, "app.ts");
-			const neighbor = join(
-				projectRoot,
-				"src/_generated/other-generator/model.ts",
-			);
-			await mkdir(join(projectRoot, "src/_generated/other-generator"), {
-				recursive: true,
-			});
-			const neighborSource =
-				'export const otherGeneratorValue = "preserved";\n';
-			await writeFile(neighbor, neighborSource);
-			const authored = `${await readFile(app, "utf8")}\nexport { otherGeneratorValue } from "./src/_generated/other-generator/model.js";\n`;
-			await writeFile(app, authored);
-			let artifacts: readonly CodegenArtifact[] | undefined;
-			const regenerate = async (check: boolean) => {
-				const selected = await selectProjectCodegenEngine(projectRoot);
-				return runCodegen(
-					{ projectRoot, check },
-					{
-						engine: {
-							...selected,
-							async generate(root) {
-								artifacts ??= await selected.generate(root);
-								return artifacts.filter(
-									(artifact) =>
-										selected.layout.ownedFiles?.includes(artifact.path) ===
-											true ||
-										selected.layout.generatedRoots.some((generatedRoot) =>
-											artifact.path.startsWith(`${generatedRoot}/`),
-										),
-								);
+	it.each(["todo", "api", "agent", "fullstack"])(
+		"regenerates starter %s without deleting its runnable seed",
+		async (template) => {
+			const root = await mkdtemp(join(tmpdir(), "hobo-starter-codegen-"));
+			try {
+				const result = await createHoboCli().run(
+					["new", "app", "-t", template, "--json"],
+					{ cwd: root },
+				);
+				expect(result.exitCode).toBe(0);
+				const projectRoot = join(root, "app");
+				const seed = join(projectRoot, "src/_generated/index.ts");
+				const before = await readFile(seed, "utf8");
+				const app = join(projectRoot, "app.ts");
+				const neighbor = join(
+					projectRoot,
+					"src/_generated/other-generator/model.ts",
+				);
+				await mkdir(join(projectRoot, "src/_generated/other-generator"), {
+					recursive: true,
+				});
+				const neighborSource =
+					'export const otherGeneratorValue = "preserved";\n';
+				await writeFile(neighbor, neighborSource);
+				const authored = `${await readFile(app, "utf8")}\nexport { otherGeneratorValue } from "./src/_generated/other-generator/model.js";\n`;
+				await writeFile(app, authored);
+				let artifacts: readonly CodegenArtifact[] | undefined;
+				const regenerate = async (check: boolean) => {
+					const selected = await selectProjectCodegenEngine(projectRoot);
+					return runCodegen(
+						{ projectRoot, check },
+						{
+							engine: {
+								...selected,
+								async generate(root) {
+									artifacts ??= await selected.generate(root);
+									return artifacts.filter(
+										(artifact) =>
+											selected.layout.ownedFiles?.includes(artifact.path) ===
+												true ||
+											selected.layout.generatedRoots.some((generatedRoot) =>
+												artifact.path.startsWith(`${generatedRoot}/`),
+											),
+									);
+								},
 							},
 						},
-					},
+					);
+				};
+				await regenerate(false);
+				await expect(regenerate(true)).resolves.toMatchObject({
+					mode: "check",
+				});
+				expect(await readFile(seed, "utf8")).toBe(before);
+				await writeFile(seed, "stale seed");
+				await expect(regenerate(true)).rejects.toMatchObject({
+					code: "HOBO_CODEGEN_DRIFT",
+				});
+				await regenerate(false);
+				expect(await readFile(seed, "utf8")).toBe(before);
+				expect(await readFile(app, "utf8")).toBe(authored);
+				expect(await readFile(neighbor, "utf8")).toBe(neighborSource);
+				const metadata = join(projectRoot, "hobo.bindle.json");
+				await writeFile(
+					metadata,
+					(await readFile(metadata, "utf8")).replace("app.ts", "custom.ts"),
 				);
-			};
-			await regenerate(false);
-			await expect(regenerate(true)).resolves.toMatchObject({ mode: "check" });
-			expect(await readFile(seed, "utf8")).toBe(before);
-			await writeFile(seed, "stale seed");
-			await expect(regenerate(true)).rejects.toMatchObject({
-				code: "HOBO_CODEGEN_DRIFT",
-			});
-			await regenerate(false);
-			expect(await readFile(seed, "utf8")).toBe(before);
-			expect(await readFile(app, "utf8")).toBe(authored);
-			expect(await readFile(neighbor, "utf8")).toBe(neighborSource);
-			const metadata = join(projectRoot, "hobo.bindle.json");
-			await writeFile(
-				metadata,
-				(await readFile(metadata, "utf8")).replace("app.ts", "custom.ts"),
-			);
-			await expect(regenerate(false)).resolves.toMatchObject({ mode: "write" });
-			expect(await readFile(seed, "utf8")).toBe(before);
-		} finally {
-			await rm(root, { recursive: true, force: true });
-		}
-	}, 30_000);
+				await expect(regenerate(false)).resolves.toMatchObject({
+					mode: "write",
+				});
+				expect(await readFile(seed, "utf8")).toBe(before);
+			} finally {
+				await rm(root, { recursive: true, force: true });
+			}
+		},
+		slow(30_000),
+	);
 });

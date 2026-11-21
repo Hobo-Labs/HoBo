@@ -575,6 +575,7 @@ export function stageReleaseOciApp(
 		skipBuild?: boolean;
 		hardlink?: boolean;
 		sdkArtifactsDir?: string;
+		cliCandidateRef?: string;
 		env?: Readonly<Record<string, string | undefined>>;
 	} = {},
 ): void {
@@ -615,7 +616,10 @@ export function stageReleaseOciApp(
 			stageSite(root, output, spec, options.skipBuild ?? false);
 			break;
 		case "mcp":
-			writeFileSync(join(output, spec.markerPath), "hobo-cli:candidate\n");
+			writeFileSync(
+				join(output, spec.markerPath),
+				`${options.cliCandidateRef ?? "hobo-cli:candidate"}\n`,
+			);
 			break;
 	}
 	writeFileSync(join(output, ".dockerignore"), releaseOciDockerignore(spec));

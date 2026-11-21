@@ -49,7 +49,7 @@ enum CharacterState {
   CHARACTER_STATE_STUCK = 4;
 }
 
-// ── HoBo CD views (plan 0024 WP19) ─────────────────────────────────────────
+// ── HoBo CD views ──────────────────────────────────────────────────────────
 // Wire forms of the read models in src/cd-views.ts (TS interfaces of the same
 // shape without the Record suffix are their parsed domain views).
 

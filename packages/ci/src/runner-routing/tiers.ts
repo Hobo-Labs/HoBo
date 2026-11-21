@@ -40,6 +40,10 @@ const OVERFLOW_BACKEND_ORDER: readonly RunnerTier[] = [
 	"local",
 	"github",
 ];
+const VERIFICATION_BACKENDS: ReadonlySet<string> = new Set([
+	"hobo",
+	...OVERFLOW_BACKEND_ORDER,
+]);
 
 export function isGithubLatestLabel(runsOn: string): boolean {
 	return runsOn.trim().toLowerCase() === "ubuntu-latest";
@@ -117,6 +121,69 @@ export function selectRunnerTier(input: {
 	}
 
 	return undefined;
+}
+
+/** A verification alternative, not a runner label or a GitHub Actions job. */
+export type RunnerVerificationSelection =
+	| Readonly<{ kind: "runner"; runner: RunnerTierSelection }>
+	| Readonly<{ kind: "local-signoff" }>
+	| Readonly<{ kind: "wait"; reason: "availability-unknown" | "no-capacity" }>;
+
+/**
+ * Use the ordinary fleet order first. Offer local signoff only when all
+ * enabled runner tiers were observed unavailable and the operator enabled it.
+ * Unknown capacity is not evidence of an outage. This selects an independent
+ * verification path; it never moves or completes an already queued job.
+ */
+export function selectRunnerVerification(input: {
+	members: readonly RunnerTierState[];
+	unknownMembers: readonly string[];
+	localSignoffEnabled: boolean;
+}): RunnerVerificationSelection {
+	const tag = Object.prototype.toString;
+	if (
+		!Array.isArray(input.members) ||
+		!Array.isArray(input.unknownMembers) ||
+		(input.localSignoffEnabled !== true &&
+			input.localSignoffEnabled !== false) ||
+		input.members.some(
+			(member) =>
+				tag.call(member) !== "[object Object]" ||
+				(member.enabled !== true && member.enabled !== false) ||
+				tag.call(member.id) !== "[object String]" ||
+				member.id.trim().length === 0 ||
+				(member.enabled &&
+					(!VERIFICATION_BACKENDS.has(member.backend) ||
+						tag.call(member.runsOn) !== "[object String]" ||
+						member.runsOn.trim().length === 0)) ||
+				(member.enabled &&
+					(!Number.isSafeInteger(member.freeSlots) || member.freeSlots < 0)) ||
+				(member.enabled &&
+					member.freeSlots > 0 &&
+					input.unknownMembers.includes(member.id)),
+		)
+	)
+		return { kind: "wait", reason: "availability-unknown" };
+	const ids = new Set(input.members.map((member) => member.id));
+	if (
+		ids.size !== input.members.length ||
+		input.unknownMembers.some((id) => !ids.has(id))
+	)
+		return { kind: "wait", reason: "availability-unknown" };
+	const runner = selectRunnerTier({
+		members: input.members,
+		currentLabels: [],
+	});
+	if (runner) return { kind: "runner", runner };
+	if (
+		input.members.some(
+			(member) => member.enabled && input.unknownMembers.includes(member.id),
+		)
+	)
+		return { kind: "wait", reason: "availability-unknown" };
+	return input.localSignoffEnabled
+		? { kind: "local-signoff" }
+		: { kind: "wait", reason: "no-capacity" };
 }
 
 /**

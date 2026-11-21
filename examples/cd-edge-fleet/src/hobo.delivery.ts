@@ -1,4 +1,4 @@
-// Fan a release out to a retail edge fleet (plan 0024 D20, D21, D23).
+// Fan a release out to a retail edge fleet (ADR-0182 D20, D21, D23).
 //
 // The fleet node names a Placement, not a Camp list. The placement spreads
 // across all four regions, honours residency through declared Yard regions

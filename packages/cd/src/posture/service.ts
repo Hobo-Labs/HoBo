@@ -1,4 +1,4 @@
-// PostureService (plan 0024 D25, I22): continuous compliance with one mutator.
+// PostureService (ADR-0182 D25, I22): continuous compliance with one mutator.
 //
 // A Station-side service. On each tick it evaluates every due Camp from the
 // latest status observation (`deployment.StatusObserved` on

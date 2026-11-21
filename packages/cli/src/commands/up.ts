@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { externalBoundaryRefusal } from "../cloud/boundaries.js";
 import { deploymentIdFor, loadProjectManifest } from "../cloud/manifest.js";
 import { createFixtureSession, loadSession } from "../cloud/session.js";
 import { stubResult } from "../cloud/stub.js";
@@ -13,6 +14,7 @@ import {
 	type YardSession,
 } from "../cloud/yard-client.js";
 import type { CommandModule } from "../shell/registry.js";
+import { createPlanCommand } from "./plan.js";
 
 export interface UpCommandDeps {
 	// Injected Yard runtime (tests / dev wiring): in-memory/runtime-local
@@ -26,7 +28,7 @@ export interface UpCommandDeps {
 	readonly session?: YardSession;
 }
 
-// `hobo up` — declare desired state (plan 0024 D13). With `runtime.delivery`
+// `hobo up` — declare desired state (ADR-0182 D13). With `runtime.delivery`
 // wired it records LOCAL_BUILD Freight (the `.hobo/freight.json` that `hobo
 // build` wrote, else the declaration alone), promotes it into the deployment
 // Camp and converges it with an in-process conductor, streaming progress.
@@ -54,10 +56,34 @@ async function readFreightFile(
 export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 	return {
 		implemented: Boolean(deps.runtime),
-		run: async ({ context, flags, emitProgress }) => {
+		run: async (input) => {
+			const { context, flags, emitProgress } = input;
 			const { runtime } = deps;
 			if (!runtime) {
 				return stubResult("up");
+			}
+			// `up --what-if` is the plan: the change set, never applied.
+			if (flags.whatIf) {
+				const session =
+					flags.anonymous || flags.temporary
+						? createFixtureSession()
+						: deps.session;
+				const planned = await createPlanCommand({
+					runtime,
+					...(session ? { session } : undefined),
+				}).run(input);
+				return {
+					...planned,
+					...(planned.message !== undefined
+						? {
+								message: planned.message.replace(
+									/^hobo plan/,
+									"hobo up --what-if",
+								),
+							}
+						: undefined),
+					data: { ...planned.data, command: "up", whatIf: true },
+				};
 			}
 
 			const projectDir = context.projectDir ?? context.cwd;
@@ -65,6 +91,10 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			if (!bindle) {
 				return stubResult("up");
 			}
+
+			// A Yard holds nothing external: refuse before planning.
+			const boundary = await externalBoundaryRefusal(projectDir, "up");
+			if (boundary !== undefined) return boundary;
 
 			// Fold any providers installed via `hobo add` from the durable registry
 			// stream into the matchable snapshot before planning.
@@ -85,6 +115,8 @@ export function createUpCommand(deps: UpCommandDeps = {}): CommandModule {
 			} = {};
 			if (flags.budgetId) config.budgetId = flags.budgetId;
 			if (flags.region) config.region = flags.region;
+			if (flags.mode === "incremental" || flags.mode === "complete")
+				config.mode = flags.mode;
 			const streamed = runtime.delivery !== undefined;
 			const freightManifest = streamed
 				? await readFreightFile(projectDir)

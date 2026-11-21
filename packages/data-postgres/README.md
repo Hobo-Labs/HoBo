@@ -230,6 +230,7 @@ against the real binding.
 | `executor` | — | How the server is reached. |
 | `namespace` | `public` | Server-side schema holding the dataset tables and the binding's metadata. |
 | `capture` | `true` | `false` omits the capture port for a product without logical decoding; the declaration then drops the port and the `logical-copy` fast path, and capture-dependent patterns become ineligible at selection instead of failing at run time. |
+| `operationReceivers` | none | Independently enrolled Ed25519 receiver keys for exact route-operation receipts. |
 | `schemaTables` | `[]` | Tables the schema port snapshots and restores. |
 | `pageSize` | `1000` | Rows per keyset page when digesting. |
 | `ephemeral` | `false` | `true` makes `close()` drop the namespace, its subscriptions, native transfers and replication slots, and its schema snapshots. For tests and previews; refused for `public`. |
@@ -315,6 +316,20 @@ row: it therefore waits for every writer already past the check to finish, and
 every later writer waits for the fence to commit and then sees it. `retire` takes
 the same row exclusively, so no write — not even the token holder's — can land
 between its digest and its delete.
+
+An optional fence operation holds the source while a route decision is in
+flight. The database serializes the claim with source writes and fence release;
+even a writer holding the old token is refused until the matching receiver
+receipt completes the operation. The source retains completed claims for
+recovery and pins the enrolled receiver keys. Schema mutations and ephemeral
+namespace deletion are unavailable after enrollment; key rotation requires a
+separate migration.
+
+The host must independently verify that ordinary workers cannot act as the
+table owner or a superuser, that prior cleanup workers have stopped, and that
+replication-slot operations are safely controlled. The operation port alone
+does not establish those conditions, configure a destination receiver, or
+fund a handover.
 
 `TRUNCATE` on a dataset table is refused outright (`HB002`): it fires no row
 trigger and names no keys, so it could be neither fenced per tenant nor captured.
@@ -576,6 +591,20 @@ fleet packages (ADR-0183, `fleet:vocabulary` rule 9).
 
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
+
+**Whole-schema fleets.** `parseFleetLayout({ dataPrefix: "" })` copies every
+table in the schema except the control tables and `excludedTables`, for an
+application that owns its schema but whose tables share no prefix (the
+EventStore in `@hobo/storage-postgres`, whose fleet store excludes
+`schema_migrations`). A copy inserts tables parents first (`insertionOrder`),
+so foreign keys hold inside the copy's transaction.
+
+**Witnesses.** `reconcileFleet({ witnesses })` adds members that hold only the
+assignment register: never copied to, never a writer. A writer and one standby
+are two members, and losing either leaves no majority, so a fleet of two holds
+rather than fail over by itself. One witness on a third failure domain makes
+the majority for the cost of a few rows; `continuityShortfalls` in
+`@hobo/backend-routing` reports a fleet with no quorum.
 
 ### The assignment register: who the writer is
 
@@ -843,9 +872,9 @@ finishes what it sealed after it. The report carries the loop's
 
 | Move | Entries written | What bounds the loss |
 |---|---|---|
-| Planned switch | `sealed = true, target = T`; wait `leaseMs + graceMs`; copy once more; `active = T` | Nothing is lost: nobody writes while sealed, and the final copy has lag 0 |
+| Planned switch | `sealed = true, target = T`; wait `leaseMs + graceMs`; copy once more; `active = T` | A delayed in-flight write can land after the final copy and be lost; a transaction-boundary fence is required |
 | Switch that cannot finish | `sealed = true, target = T`; the final copy fails; `active = old writer` again (`switch-aborted:<why>`) | Nothing: the old writer never stopped being the source |
-| Unplanned failover | `sealed = true, target = T` with no writer; then `active = T, loss_window_ms = T's lag` (`failover-complete`) | Writes after T's snapshot are lost; `loss_window_ms` is the upper bound |
+| Unplanned failover | `sealed = true, target = T` with no writer; then `active = T, loss_window_ms = T's lag` (`failover-complete`) | Writes after T's snapshot are lost; delayed writes on the old writer are not included in `loss_window_ms` |
 
 A backend that returns after losing the writer role holds an entry saying it
 was the writer. Its log is repaired with the decided entries it missed, and it
@@ -873,8 +902,9 @@ Events are reported through `log` as data (`replication`, `decision`,
   closed. That is by design: a double fault stops the application instead of
   risking two writers.
 - Instances that can still reach an old writer the reconciler could not reach
-  keep writing to it for at most one lease after a failover. Those writes are
-  lost and are not counted in `loss_window_ms`.
+  may dispatch writes under a cached lease. In-flight writes can complete
+  after that lease expires; they are lost and are not counted in
+  `loss_window_ms`.
 
 ### Usage metering
 

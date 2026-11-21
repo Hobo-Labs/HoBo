@@ -29,6 +29,7 @@ await store.ready(); // optional: connect and migrate now instead of on first us
 |---|---|
 | Expected-version append | The stream row is locked (`SELECT … FOR UPDATE`) and `expectedSeq` compared under the lock; a stale value is `OPTIMISTIC_SEQUENCE_CONFLICT` and nothing is written. |
 | Fenced single writer per stream | `owner_epoch` on the stream row, with `@hobo/storage-sqlite` semantics: the first fenced append enters fenced mode; a lower fence is `STALE_FENCE`; an unfenced write is `MISSING_FENCE`. |
+| Live actor leases | Protected stream prefixes use a PostgreSQL-backed actor lease. A deferred constraint trigger rechecks its exact stream and epoch at transaction commit, so a write delayed past lease expiry or takeover rolls back with `STALE_FENCE`. A retry whose events already committed under the same idempotency keys reads them back even after the lease lapses; any new event in it is still fenced. Snapshots and fold quarantine markers on protected or leased streams also require the live caller-supplied `fenceToken` (`MISSING_FENCE` / `STALE_FENCE` otherwise); the store never derives authority from the readable stream head. |
 | `readAll` by global position, never skipping | Positions come from one `partition_head` row, locked just before the insert and held to commit. They are gapless and become visible in order, so a reader paging by position never passes over a position that commits later. |
 | Atomic staged effects | Queue, actor-signal, timer, cron and outbox effects are inserted in the commit's transaction, with the same identities and dedupe as SQLite. |
 | Fenced subscription leases | `claimSubscription` grants with a fence token that only ever increases (also across release); a live lease held by another holder is `SUBSCRIPTION_LEASE_CONFLICT` (`lease-held`). Renew, release and checkpoint require the current fence. |
@@ -41,6 +42,31 @@ await store.ready(); // optional: connect and migrate now instead of on first us
 `getStreamHead` (synchronous in the port) is not provided, because a server
 cannot answer synchronously. Callers fall back to reading the stream;
 `loadStreamHead` is the asynchronous equivalent.
+
+## Protecting actor streams from direct SQL
+
+Configure `protectedActorStreamPrefixes` on the supervisor's store and verify
+each required prefix with `verifyActorStreamProtection`. Prefixes are recorded
+in PostgreSQL and cannot be removed by a later store configuration. The
+deferred commit check protects writes made through the current store, but a
+database role with direct write privileges could bypass its protocol.
+
+Use a separately authenticated, restricted application role and keep the
+supervisor's writer credentials out of the application. Before enrolling an
+application, call `verifyApplicationRoleIsolation` with that role, the exact
+protected prefix, and a pool authenticated with the actual application
+credential. It checks the database, schema, effective and assumable privileges,
+and live application session against the supervisor's database. It rejects
+direct writes, ownership of protected tables or functions, role escalation, and other executable paths that
+could bypass the boundary. Recheck this proof when credentials or grants can
+change; it does not prevent a database administrator from granting new
+privileges later. Application writes must go through an independently
+authenticated supervisor which enforces the lease protocol.
+The supervisor needs permission to observe the application session in
+`pg_stat_activity` (for example, the PostgreSQL `pg_read_all_stats` role); a
+database superuser is not required. Without that access the check fails closed.
+The migration process also needs database `CREATE` permission when it checks
+or creates the store schema.
 
 ## Architecture
 
@@ -62,6 +88,52 @@ and become parsed, derived types: the branded `PostgresStoreConfig`,
 `EventPosition`. Everything past the boundary works on those types and never
 re-checks raw input. Database rows are decoded the same way (`rowToEnvelope`
 goes through `parseEventEnvelope`).
+
+## On a fleet of vendors
+
+`createPostgresFleetEventStore({ members, witnesses, plan, decidedBy })` is a
+store on several PostgreSQL backends: one writer, standbys on other vendors.
+Member names do not verify independent vendors.
+
+- Calls use a time-limited cached writer resolved from the assignment register
+  (`@hobo/data-postgres`, decided by majority across members and witnesses).
+  A fresh resolution refuses a sealed fleet, undecided epoch or no majority.
+- **Writes are fenced at the commit boundary.** Every write transaction first
+  takes `SHARE` on its member's own copy of the register and reads the newest
+  entry; unless that names the member as the unsealed writer, it aborts with a
+  retryable `unavailable`. A register entry is an `INSERT`, which `SHARE`
+  excludes, so a move's seal and a write on the old writer are ordered: a write
+  that committed first is in the final copy, and none commits after. A call
+  under a stale cached writer is refused, not lost (`test/fleet.test.ts`
+  writes a new entry behind a long lease and sees the write refused). The one
+  case it cannot fence is a writer the move never reached (a failover away
+  from a partitioned writer), whose writes fall inside the plan's recovery
+  point.
+- `tick()` runs `reconcileFleet` with the declared policy (`plan`, from
+  `continuityFleetPlan` in `@hobo/backend-routing`) to copy standbys and decide
+  whether to switch writers, then takes a scheduled backup when one is due.
+- **Scheduled backups** (`plan.backups`: `backupEveryMs`, `backupsKept`) are
+  kept on `backupTo`, else the first witness (`src/fleet-backups.ts`). Each is
+  the fleet's verified snapshot copy of the writer into a schema of its own
+  (`<schema>_b<taken-at-ms>`), catalogued in the same transaction, so a backup
+  is whole or absent; the oldest beyond `backupsKept` are dropped after a new
+  one commits. The schedule is the catalog, so whichever process ticks takes
+  the next one. `restore({ into, name? })` copies one back into a standby;
+  the target is fenced against writes and promotion throughout the copy. With
+  nowhere to keep backups, the fleet takes none and `backupsPlaced()` is false,
+  which `continuityShortfalls` reports.
+- Per-member cost models (`models`, `FleetFinancialModel`) keep a move off a
+  member its plan would push over an allowance or the policy's budget.
+- **Interrupted work resumes.** A copy is one transaction on the standby, so an
+  interrupted one leaves it as it was and the next tick copies it whole; a
+  move is a sealed register entry the next tick completes or undoes.
+  `test/fleet.test.ts` cuts a copy mid-way, takes the writer's vendor down and
+  checks the history and the append positions on the new writer.
+- With two members and no witness, losing one leaves no majority: the fleet
+  holds (and says so) instead of guessing. Give it a witness (a few rows on a
+  third backend) to fail over on its own.
+- Live subscriptions follow the writer, but delivery across a move is not yet
+  proven when writes race the move.
 
 ## Defaults
 
@@ -153,6 +225,14 @@ transaction-scoped advisory lock keyed by the schema. Exactly one applies;
 the others wait and then see the result. A failed migration rolls back
 completely. Roll replicas forward; never run an older build against a newer
 schema (`schema-ahead`).
+
+Before installing the actor-fence migration or relying on protected prefixes,
+quiesce and stop every older process with journal write credentials. An older
+process that was already running can continue to use its open connection
+without checking the new policy; the deferred trigger checks writes that the
+new store has marked for verification. Role isolation alone does not prove
+that older supervisors have stopped. Start only updated writers before
+enabling the protected workload.
 
 **Readiness.** `store.health()` reports `server-version` and `schema-version`
 checks. Wire it into the service readiness probe (WP12).

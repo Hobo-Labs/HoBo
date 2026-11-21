@@ -399,7 +399,7 @@ describe("main-gate scope", () => {
 		const TOML = [
 			"[tools]",
 			'cue = "0.14.0"',
-			'gitleaks = "8.22.1"',
+			'betterleaks = "1.10.1"',
 			'node = "24"',
 			'pnpm = "10.33.4"',
 			'shellcheck = "0.10.0"',
@@ -447,7 +447,8 @@ describe("main-gate scope", () => {
 			});
 			// Bumping or dropping one is the same kind of edit.
 			assert.equal(
-				lanes(TOML.replace('gitleaks = "8.22.1"', 'gitleaks = "8.23.0"')).mode,
+				lanes(TOML.replace('betterleaks = "1.10.1"', 'betterleaks = "1.11.0"'))
+					.mode,
 				"skip",
 			);
 			assert.equal(

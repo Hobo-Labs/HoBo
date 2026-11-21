@@ -4,7 +4,7 @@ import type {
 } from "@hobo/core";
 
 /**
- * GitHub Pages TrafficRouting offerings (plan 0024, I14; ADR-0143/0144).
+ * GitHub Pages TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * A Pages site serves exactly one published tree per repository from GitHub's
  * CDN. There is no weighted split, no header or path routing between

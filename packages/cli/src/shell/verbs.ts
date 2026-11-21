@@ -60,7 +60,14 @@ export const CANONICAL_VERBS: readonly Verb[] = [
 	{
 		name: "ci",
 		role: "delivery",
-		summary: "Connect a repository and inspect CI runs (connect/list/inspect)",
+		summary:
+			"Connect a repository and inspect CI runs (connect/list/inspect); up/down/plan/status converge the CI project",
+	},
+	{
+		name: "cd",
+		role: "delivery",
+		summary:
+			"Converge the CD project (up/down/plan/status) and its provider connections; other subcommands are hobo deploy",
 	},
 	{
 		name: "fleet",
@@ -241,7 +248,9 @@ export const projectScopedVerbs = new Set(
 				"new",
 				"doctor",
 				"login",
+
 				"ci",
+				"cd",
 				"fleet",
 				"claim",
 				"identity",
@@ -256,8 +265,7 @@ export const projectScopedVerbs = new Set(
 				"yard",
 				"station",
 				"replay",
-				// CD runs against the Station's journal and declared topology
-				// (`--yard`), never the Bindle in cwd (packages/hobo/CD.md).
+
 				"deploy",
 				"incident",
 				"serve",
@@ -296,9 +304,6 @@ ${verbRows}
 }
 
 export interface VerbHelpOptions {
-	// Whether the current composition wires a real handler for this verb
-	// (registry.isImplemented). Omitted: the status line is left out — help
-	// rendered without registry knowledge must not claim either way.
 	readonly implemented?: boolean;
 }
 
@@ -318,11 +323,35 @@ export function verbHelpText(
 				? "Status: implemented in this composition\n"
 				: "Status: not yet implemented in this composition\n";
 
+	if (verb.name === "cd") {
+		return `HoBo CD
+
+Usage:
+  hobo cd up [--what-if] [--mode incremental|complete] [--project <dir>] [-y]
+  hobo cd down [--what-if] [--project <dir>]
+  hobo cd plan|status [--mode incremental|complete] [--project <dir>]
+  hobo cd <deploy subcommand>     Any hobo deploy subcommand (freight, pipeline, promote, ...)
+
+Role: ${verb.role}
+${statusLine}
+The CD project is a HoBo project. Its lifecycle is the same engine as hobo
+up/down/plan, so re-running up is idempotent, a changed declaration is an
+upsert, down then up re-creates, and --mode complete prunes what is no longer
+declared. --what-if (aliases --dry-run, --preview) prints the change set and
+changes nothing.
+
+Project: --project <dir>, then HOBO_CD_PROJECT, then the bundled CD project,
+then the working directory.
+`;
+	}
+
 	if (verb.name === "ci") {
 		return `HoBo CI
 
 Usage:
   hobo ci [global flags]
+  hobo ci up|down|plan [--what-if] [--mode incremental|complete] [--project <dir>]
+                                   Converge the CI project (same engine as hobo up/down/plan)
   hobo ci enable [--remote <name>] [--relay <https-origin>]
   hobo ci connect                  Alias of enable
   hobo ci connect github           Register, authorize and install the GitHub App
@@ -337,6 +366,12 @@ Usage:
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
+  hobo ci init                     Show which workflow jobs can move to the fleet; --apply rewrites their runs-on
+                                   (see init options)
+  hobo ci signals                  Where recent runs lost time or money: waits, flaky and short jobs, extra runs
+  hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
+  hobo ci route                    Answer one relay job against the runner order and show the walk
+                                   (see route options)
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
   hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
@@ -444,6 +479,27 @@ Connect options (hobo ci secret-store connect; identifiers, none is a secret):
   --site-url <origin>         Infisical origin (default https://app.infisical.com)
   --yes                       Replace an existing binding
 
+Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
+  --plan                        Show each job: ready, already on the fleet, or skipped and why (default)
+  --apply <jobs>                Rewrite runs-on for these jobs: job, file:job or all (repeatable,
+                                comma-separated); the old label is kept as a trailing comment
+  --fleet-label <label>         The label to write (default: hobo)
+  --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
+
+Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
+  --fleet, --machine, --github <label>   The label the job would ask that runner type for
+  --blacksmith, --depot, --namespace, --warpbuild, --ubicloud, --boat, --runs-on <label>
+                                A hosted provider's label; "auto" asks for the order's size
+                                (no runner-type flag at all: any type, at that size)
+  --public                      The repository is public (machines never take it)
+  --fork                        The run's head is a fork
+  --event <name>                The GitHub event (default: push)
+  --facts <file.json>           What is true now: fleet {enabled,taking,isolated}, machines,
+                                minutes {usedMinutes,includedMinutes,burnPerHour}, spendUsd,
+                                unhealthy, publicOptIn, first, retry. Without it the fleet
+                                and machines are absent and no limit is measured.
+  Exits non-zero with HOBO_CI_NO_RUNNER and the reason when nothing can take the job.
+
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch
   --all-branches                Search list/grep across branches
@@ -457,6 +513,7 @@ Run options:
   --task <name>                 Select an exact job name for logs (repeatable)
   --grep <text>                 Filter log lines by text
   --runs <count>                Search this many recent runs with grep (1-50)
+                                For signals: read this many recent runs (1-100, default 50)
 
 --follow, --level and --next are unsupported. GitHub Actions logs are
 unstructured; use --grep for text filtering.

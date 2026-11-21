@@ -2,7 +2,7 @@ import { offering, type TrafficRoutingProviderProfile } from "@hobo/core";
 import type { AbsentTrafficOffering } from "./delivery-coverage.js";
 
 /**
- * Convex TrafficRouting offerings (plan 0024 WP13, I14; ADR-0143/0144).
+ * Convex TrafficRouting offerings (ADR-0182 I14; ADR-0143/0144).
  *
  * A Convex deployment is one backend at one URL; code pushes replace it in
  * place. Convex offers no weighted split, canary, header/path routing or DNS

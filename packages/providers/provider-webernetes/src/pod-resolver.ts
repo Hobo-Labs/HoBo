@@ -1,5 +1,5 @@
 /**
- * Webernetes pod resolver (plan 0024 WP13, I14; D6).
+ * Webernetes pod resolver (ADR-0182 I14, D6).
  *
  * The local yard's hosting product is a station: one pod-shaped endpoint the
  * injected `WebernetesStationHost` stands up on loopback, a private network or

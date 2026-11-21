@@ -61,6 +61,8 @@ account lease API's actual job attribution to inspect routing and settlement.
 ## Follow HoBo platform budgets
 
 For an owned development machine, see [local CI and the default dev container](LOCAL-DEVELOPMENT.md).
+Its [runnerless local signoff](LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+uses `gh-signoff` to publish the jobs HoBo's local workflow run covered.
 The `local` provider dispatches the existing bridge to `hobo-local-host`; original
 jobs retain `runs-on: hobo`, lease accounting and JIT authorization. Offline act
 also runs the local zero-budget scenario without GitHub credentials.
@@ -479,6 +481,8 @@ are included. The runtime uses Node 24, UID/GID 1000, a read-only root filesyste
 a writable temporary directory and one persistent SQLite directory. A kernel
 `flock` fences each partition's owner; process death releases the lock without
 unsafe stale-PID removal. Kubernetes uses one replica and `Recreate`.
+The relay's build and runtime images track the Node 24 LTS line used by the
+repository toolchain; update both image digests together.
 
 The tested container lifecycle includes authenticated policy changes, restart
 persistence, duplicate-owner refusal, online backup, graceful SIGTERM and offline
@@ -747,6 +751,63 @@ default `runs-on: hobo` label is shared: do not run multiple relays for the same
 repository and label at once, since GitHub can assign a job to either runner.
 Switch the active App/relay ownership before using another environment. Local
 offline tests can use simulated GitHub delivery; see [local deployment](deploy/README.md).
+
+### The committed runner order
+
+`.hobo/ci.json` can also hold `runnerOrder`: the ordered runner types a relay
+job is answered against, with an included-minutes limit on `github`, a monthly
+spend limit on a hosted provider, a retry policy and the size `auto` means.
+Like `runnerRouting`, it is committed configuration, so no variable carries
+it. The record and its rules are `RunnerOrder` in
+[`@hobo/ci`](../ci/RUNNER-ORDER.md); `RunnerOrderDocumentSchema` describes the
+block for the editor schema and fails the project parse on a broken order
+with the parser's own sentence. `parseCiRunnerOrder` applies that same schema,
+so null fields and zero limits or sizes cannot bypass the editor contract.
+
+```json
+{
+  "runnerOrder": {
+    "steps": [
+      { "key": "fleet" },
+      { "key": "machine" },
+      { "key": "github", "minutesLimitPercent": 80 },
+      { "key": "depot", "spendLimitUsd": 100 },
+      { "key": "github" }
+    ],
+    "autoSizeVcpus": 4
+  }
+}
+```
+
+`parseCiRunnerOrder(json)` reads the block: the committed order, or the
+default (`fleet`, `machine`, `github`) when the file has none. Invalid JSON,
+a project document that is not a JSON object, or a broken block returns
+`source: "invalid"`, `order: undefined` and a `problem`; there is no default
+order to walk by mistake. `hobo ci route` refuses that result. With a valid
+order it walks the order for one job and shows every step passed over. Nothing
+in the relay reads `runnerOrder` yet.
+
+### Moving workflow jobs to the fleet
+
+`planWorkflow(file, source)` reads one workflow file and gives every job a
+verdict: `ready` (its `runs-on` is a single GitHub-hosted Linux x64 label),
+`routed` (already a fleet label) or `skipped` with one of
+`WORKFLOW_SKIP_REASONS`. `applyWorkflowPlan(file, source, jobs)` rewrites the
+`runs-on` of the ready jobs named, by splicing the value's own bytes: comments,
+quoting, line endings and anchors elsewhere in the file are untouched, the old
+label is kept as a trailing comment, and applying twice changes nothing. A job
+whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
+refused rather than changed in two places; a merged `runs-on` is skipped.
+Multiline `run` blocks count for package-install warnings, and passing the
+whole `secrets` context marks a job deploy-like. Deploy checks read effective
+YAML merge keys too: merged environments, inherited secrets, write permissions
+and secret-bearing workflow environment values cannot make a job look ready.
+Jobs that route others directly, through a matrix, or through reusable-workflow
+inputs stay put.
+Applying also reads the result back and returns the original unless selected
+jobs are routed and every unselected job plan is unchanged. Both are pure;
+`hobo ci init` is the command over them
+([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
 
 ## Connect a repository
 
@@ -1111,7 +1172,8 @@ directory is the data directory: agent config `worker.directory`) answers
 `runners` from `runner-presence.json`, which its controller rewrites with
 its registered runner's GitHub presence (`GET .../actions/runners/{id}`
 with its own `gh` credential) and the time it read it
-(`createLocalRunnerPresenceReporter`). Busy is also what the machine sees
+(`createLocalRunnerPresenceReporter`; the session observer's rewrite runs in
+the background, and `settled()` resolves once it has written). Busy is also what the machine sees
 itself (a job's worker log), so a job is never missed while GitHub cannot be
 asked; online is only what GitHub said, and a missing, corrupt or stale
 (over two minutes) report answers no runner. A local runner honours the
@@ -1251,6 +1313,9 @@ Pacts, real process lifecycle tests, connected act acceptance, deployment confor
 and an actual nonroot container lifecycle. Live GitHub assignment and vendor
 provisioning remain separate release evidence; failed permissions or missing JIT
 must never be reported as a successful runner test.
+
+The deps-image scope test also checks that pull-request jobs wait for successful
+runner routing; main's deps-image check remains part of the workspace plan.
 
 The bound Actions/act command adapter delegates to the shared Node workspace
 backend in `@hobo/ci/workspace-backend`. The Azure Pipelines sibling
@@ -1435,7 +1500,9 @@ the same port, each record short-lived:
   gets a ten-minute owner session that stands for the onboarding control
   token. App registration (the manifest flow) answers 410; `hobo ci` creates
   the App. A verified installation is usable for a day and logged by id for
-  `hobo ci` to write into the config service.
+  `hobo ci` to write into the config service. Manifest verification defaults to
+  a user-owned App; organization ownership must be requested explicitly and
+  still matches the expected account ID on both converted and live metadata.
 - **Proxy VM meter**: `recordSandboxProxyMeter` keeps what the proxy VM
   counted; settlement charges the larger of it and the store's own counters,
   and uses it alone when the cache lost them, so a lease rebuilt after a cache

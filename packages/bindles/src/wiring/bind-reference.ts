@@ -27,9 +27,16 @@ export { BindReferenceError } from "./errors.js";
 
 export function data(
 	name: string,
-	options: { paradigm?: string } = {},
+	options: {
+		paradigm?: string;
+		allow?: readonly string[];
+		/** Platform traits the planner reads (a schedule's `cadence`). */
+		annotations?: JsonObject;
+	} = {},
 ): ResourceHandle {
 	assertResourceName(name, "data.name");
+	const paradigm = options.paradigm ?? "relational";
+	const allow = options.allow ? [...new Set(options.allow)].sort() : undefined;
 
 	return {
 		kind: "resource",
@@ -38,12 +45,20 @@ export function data(
 		port: "hobo:data",
 		clientType: "DataClient",
 		manifest() {
-			return {
+			let resource: ManifestResource = {
 				type: "data.v1",
 				port: "hobo:data",
-				paradigm: options.paradigm ?? "relational",
-				connectionString: `{${name}.connectionString}`,
+				paradigm,
 			};
+			if (paradigm !== "project")
+				resource = {
+					...resource,
+					connectionString: `{${name}.connectionString}`,
+				};
+			if (allow?.length) resource = { ...resource, allow: [...allow] };
+			if (options.annotations !== undefined)
+				resource = { ...resource, annotations: { ...options.annotations } };
+			return resource;
 		},
 	};
 }

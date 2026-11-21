@@ -1,4 +1,4 @@
-// OSCAL assessment results from posture compliance records (plan 0024 D25),
+// OSCAL assessment results from posture compliance records (ADR-0182 D25),
 // beside the control-evidence exporter in ../oscal-export.ts. One OSCAL
 // result per compliance record, one observation per evaluated resource and
 // one finding per control the record's rules cite. Deterministic: UUIDs are

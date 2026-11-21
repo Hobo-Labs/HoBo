@@ -5,7 +5,7 @@
   "version": "1.41.0",
   "schemaUrl": "https://opentelemetry.io/schemas/1.41.0",
   "pinnedOn": "2026-11-11",
-  "pinnedBy": "WP19 (plan 0024, Part I §I.8 R8)",
+  "pinnedBy": "@hobo/cd/telemetry",
   "evidence": "Latest semantic-conventions release referenced by the newest @opentelemetry/semantic-conventions package in the workspace store (1.43.0 links registry docs at blob/v1.41.0); the dispatch container had no network route to GitHub to confirm a later tag.",
   "groups": [
     "cicd",

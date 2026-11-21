@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
-  "_comment": "Mutation lane for @hobo/cd and @hobo/resolver-components (plan 0024 WP20). Scoped, like the other lanes, to the decision modules where a silently-passing test is most dangerous: placement and fan-out scheduling (I18, I20), the Mann-Whitney verdict (D9), lease fencing (I4), DPoP proof and jti replay checks (WP11), the Freight manifest boundary (D2, I9), and the resolver-component egress allowlist and secret scanner (D6, I9). Run with `pnpm exec stryker run stryker.cd.conf.json` after the plan 0024 work packages merge; until then the mutated files do not exist on a single WP branch.",
+  "_comment": "Mutation lane for @hobo/cd and @hobo/resolver-components. Scoped, like the other lanes, to the decision modules where a silently-passing test is most dangerous: placement and fan-out scheduling (I18, I20), the Mann-Whitney verdict (D9), lease fencing (I4), DPoP proof and jti replay checks, the Freight manifest boundary (D2, I9), and the resolver-component egress allowlist and secret scanner (D6, I9). Run with `pnpm exec stryker run stryker.cd.conf.json`.",
   "packageManager": "pnpm",
   "testRunner": "vitest",
   "vitest": {

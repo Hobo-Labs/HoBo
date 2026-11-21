@@ -1,4 +1,4 @@
-// Typed failure modes of the outbound boundary (WP16, plan 0024 D17). Every
+// Typed failure modes of the outbound boundary (ADR-0182 D17). Every
 // code carries its remediation so an operator-facing caller (health, CLI,
 // runbook) can say exactly what to do.
 

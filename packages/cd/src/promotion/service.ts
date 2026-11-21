@@ -709,6 +709,23 @@ export function createPromotionService(
 			campId,
 			intent: view.intent,
 		};
+		if (
+			view.request.deploymentMode === "incremental" ||
+			view.request.deploymentMode === "complete"
+		)
+			resolveInput.deploymentMode = view.request.deploymentMode;
+		else if (view.request.deploymentMode !== "")
+			return {
+				ok: false,
+				reasons: [
+					reason(
+						PROMOTION_REASON.invalidRequest,
+						"invalid recorded deployment mode",
+						"Start a new promotion with a valid mode.",
+						campId,
+					),
+				],
+			};
 		if (current) resolveInput.base = current;
 		if (view.request.sourceCampId !== "")
 			resolveInput.sourceCampId = asCamp(view.request.sourceCampId);
@@ -1512,6 +1529,7 @@ export function createPromotionService(
 		toSetId: SetId | undefined,
 		scope: string,
 		ctx: CdContext,
+		strictCurrent = false,
 	): Promise<Outcome<SetRecord>> {
 		const current = await d.desired.current(campId);
 		if (!current)
@@ -1527,12 +1545,27 @@ export function createPromotionService(
 				],
 			};
 		// Compensation restores only the Set this promotion applied; a newer Set is not ours to undo.
-		if (expectedCurrent !== "" && current.setId !== expectedCurrent)
+		if (expectedCurrent !== "" && current.setId !== expectedCurrent) {
+			if (strictCurrent)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`the current Set changed while rollback ${scope} was being prepared`,
+							"Inspect and reconcile the current Set before retrying.",
+							campId,
+						),
+					],
+				};
 			return { ok: true, value: current };
+		}
 		const targetId = toSetId ?? current.predecessorSetId;
 		const target =
 			targetId === "" ? undefined : await d.desired.get(asSet(targetId));
-		if (!target)
+		if (!target) {
+			if (targetId === "" && !strictCurrent)
+				return { ok: true, value: current };
 			return {
 				ok: false,
 				reasons: [
@@ -1544,6 +1577,7 @@ export function createPromotionService(
 					),
 				],
 			};
+		}
 		const freight = await d.freight.get(asFreight(target.freightId));
 		if (!freight || !(await d.freight.isUsable(asFreight(target.freightId))))
 			return {
@@ -1723,6 +1757,57 @@ export function createPromotionService(
 	}
 
 	// ── Requests ───────────────────────────────────────────────────────────
+	function requestFingerprint(
+		input: PromoteRequest,
+		intent: DeltaIntent,
+		preview?: PreviewEnvironmentRecord,
+	): string {
+		return `sha256:${sha256Hex(
+			canonicalJson({
+				version: 1,
+				freightId: input.freightId,
+				targets: [...input.targets],
+				pipeline: input.pipeline ?? "",
+				node: input.node ?? "",
+				sourceCampId: input.sourceCampId ?? "",
+				strategy: input.strategy ?? null,
+				proposal: input.proposal === true,
+				fanoutId: input.fanoutId ?? "",
+				intent,
+				deploymentMode: input.deploymentMode ?? "",
+				previewTtlMs: preview ? preview.ttlMs.toString() : "",
+				previewSourceCampId: preview ? preview.sourceCampId : "",
+			}),
+		)}`;
+	}
+
+	function sameRequest(
+		loaded: { view: PromotionView; trigger: EventEnvelope },
+		input: PromoteRequest,
+		intent: DeltaIntent,
+		preview?: PreviewEnvironmentRecord,
+	): boolean {
+		const fingerprint = loaded.trigger.meta?.promotionRequestFingerprint;
+		if (fingerprint !== undefined)
+			return fingerprint === requestFingerprint(input, intent, preview);
+		const recorded = loaded.view.request;
+		return (
+			loaded.view.intent === intent &&
+			recorded.freightId === input.freightId &&
+			recorded.deploymentMode === (input.deploymentMode ?? "") &&
+			recorded.pipeline === (input.pipeline ?? "") &&
+			recorded.node === (input.node ?? "") &&
+			recorded.sourceCampId === (input.sourceCampId ?? "") &&
+			recorded.fanoutId === (input.fanoutId ?? "") &&
+			recorded.strategy === (input.strategy ?? RolloutStrategy.UNSPECIFIED) &&
+			recorded.proposal === (input.proposal === true) &&
+			canonicalJson(recorded.targetCampIds) === canonicalJson(input.targets) &&
+			(!preview ||
+				(loaded.view.preview?.ttlMs === preview.ttlMs &&
+					loaded.view.preview?.sourceCampId === preview.sourceCampId))
+		);
+	}
+
 	async function request(
 		input: PromoteRequest,
 		promotionId: PromotionId,
@@ -1746,6 +1831,10 @@ export function createPromotionService(
 		if (
 			input.targets.length === 0 ||
 			input.idempotencyKey === "" ||
+			(input.deploymentMode !== undefined &&
+				(intent !== "up" ||
+					(input.deploymentMode !== "incremental" &&
+						input.deploymentMode !== "complete"))) ||
 			new Set(input.targets).size !== input.targets.length
 		)
 			return refusal(
@@ -1755,15 +1844,11 @@ export function createPromotionService(
 			);
 		const existing = await load(promotionId);
 		if (existing) {
-			const same =
-				existing.view.request.freightId === input.freightId &&
-				canonicalJson([...existing.view.request.targetCampIds].sort()) ===
-					canonicalJson([...input.targets].sort());
-			return same
+			return sameRequest(existing, input, intent, preview)
 				? { ok: true, value: recordOf(existing.view) }
 				: refusal(
 						PROMOTION_REASON.idempotencyReused,
-						`idempotency key ${input.idempotencyKey} already names promotion ${promotionId} of other Freight or targets`,
+						`idempotency key ${input.idempotencyKey} already names a different promotion ${promotionId}`,
 						"Use a new idempotency key for a different promotion.",
 						promotionId,
 					);
@@ -1866,6 +1951,7 @@ export function createPromotionService(
 			idempotencyKey: input.idempotencyKey,
 			fanoutId: input.fanoutId ?? "",
 			subject: rail ? FreightSubject.RAIL : FreightSubject.BINDLE,
+			deploymentMode: input.deploymentMode ?? "",
 			gateDecisionId: "",
 		});
 		const events = [
@@ -1873,6 +1959,13 @@ export function createPromotionService(
 				type: CD_EVENTS.EnvPromoteRequested,
 				data: body(PromotionRecordSchema, promotion),
 				idempotencyKey: "request",
+				meta: {
+					promotionRequestFingerprint: requestFingerprint(
+						input,
+						intent,
+						preview,
+					),
+				},
 			},
 			{
 				type: SAGA_FACT.started,
@@ -1903,13 +1996,31 @@ export function createPromotionService(
 				"Retry with the same idempotency key.",
 				promotionId,
 			);
+		const persisted = await load(promotionId);
+		if (!persisted)
+			return refusal(
+				PROMOTION_REASON.journalConflict,
+				`promotion ${promotionId} could not be read after journaling`,
+				"Retry with the same idempotency key.",
+				promotionId,
+			);
+		if (!sameRequest(persisted, input, intent, preview))
+			return refusal(
+				PROMOTION_REASON.idempotencyReused,
+				`idempotency key ${input.idempotencyKey} already names a different promotion ${promotionId}`,
+				"Use a new idempotency key for a different promotion.",
+				promotionId,
+			);
 		metric(PROMOTION_METRIC.requested, ctx.now(), {
 			intent,
 			subject: rail ? "RAIL" : "BINDLE",
 			proposal: String(proposal),
 		});
 		await advance(promotionId, ctx);
-		return { ok: true, value: (await record(promotionId)) ?? promotion };
+		return {
+			ok: true,
+			value: (await record(promotionId)) ?? persisted.view.request,
+		};
 	}
 
 	// ── Public surface ─────────────────────────────────────────────────────
@@ -1923,9 +2034,43 @@ export function createPromotionService(
 		},
 
 		async rollback(input, ctx) {
+			if (input.idempotencyKey === "")
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.invalidRequest,
+							"a rollback needs an idempotency key",
+							"Pass a stable idempotency key.",
+							input.campId,
+						),
+					],
+				};
 			const rollbackId = rollbackIdFor(d.tenant, input.idempotencyKey);
+			const fingerprint = `sha256:${sha256Hex(
+				canonicalJson({
+					version: 1,
+					campId: input.campId,
+					reason: input.reason,
+					toSetId: input.toSetId ?? "",
+				}),
+			)}`;
+			const differentRequest = (): Outcome<PromotionRecord> => ({
+				ok: false,
+				reasons: [
+					reason(
+						PROMOTION_REASON.idempotencyReused,
+						`idempotency key ${input.idempotencyKey} cannot be matched to this rollback`,
+						"Inspect the prior rollback and use a new key for different work.",
+						rollbackId,
+					),
+				],
+			});
 			const existing = await load(rollbackId);
-			if (existing) return { ok: true, value: recordOf(existing.view) };
+			if (existing)
+				return existing.trigger.meta?.rollbackRequestFingerprint === fingerprint
+					? { ok: true, value: recordOf(existing.view) }
+					: differentRequest();
 			const authz = await d.authorizer.authorize(
 				"rollback",
 				{
@@ -1948,6 +2093,61 @@ export function createPromotionService(
 						),
 					],
 				};
+			const claimStream = `cd-rollback-claim-${rollbackId}`;
+			const initial = await d.desired.current(input.campId);
+			try {
+				await d.store.append(
+					claimStream,
+					[
+						{
+							type: SAGA_FACT.started,
+							data: toJsonValue(startedFact(rollbackId, "rollback").data),
+							meta: {
+								idempotencyKey: "rollback:started",
+								rollbackRequestFingerprint: fingerprint,
+								rollbackBaseSetId: initial?.setId ?? "",
+							},
+						},
+					],
+					{ expectedSeq: 0, actor: ctx.principal, tenant: d.tenant },
+				);
+			} catch {}
+			const reservation = (await readStream(d.store, claimStream)).find(
+				(event) =>
+					event.type === SAGA_FACT.started &&
+					event.meta?.idempotencyKey === "rollback:started",
+			);
+			if (!reservation)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} could not claim its journal`,
+							"Retry with the same idempotency key.",
+							rollbackId,
+						),
+					],
+				};
+			if (reservation.meta?.rollbackRequestFingerprint !== fingerprint)
+				return differentRequest();
+			const current = await d.desired.current(input.campId);
+			if (reservation.meta?.rollbackBaseSetId !== (current?.setId ?? "")) {
+				const completed = await load(rollbackId);
+				if (completed?.trigger.meta?.rollbackRequestFingerprint === fingerprint)
+					return { ok: true, value: recordOf(completed.view) };
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`the current Set changed after rollback ${rollbackId} was claimed`,
+							"Inspect and reconcile the previous rollback before starting new work.",
+							input.campId,
+						),
+					],
+				};
+			}
 			const all = await views();
 			const latest = [...all]
 				.reverse()
@@ -1957,7 +2157,6 @@ export function createPromotionService(
 				);
 			const progress = latest?.camps.get(input.campId);
 			// D11: never roll back past a completed Trails contract.
-			const current = await d.desired.current(input.campId);
 			for (const v of all) {
 				const p = v.camps.get(input.campId);
 				const contracted = p?.steps.get(STEP.contracted)?.handle;
@@ -1994,10 +2193,11 @@ export function createPromotionService(
 				}
 				const restored = await rollbackSet(
 					input.campId,
-					"",
+					current?.setId ?? "",
 					input.toSetId,
 					rollbackId,
 					ctx,
+					true,
 				);
 				if (!restored.ok) return restored;
 				restoredFreight = restored.value.freightId;
@@ -2050,17 +2250,45 @@ export function createPromotionService(
 						? FreightSubject.RAIL
 						: FreightSubject.BINDLE,
 			});
-			await appendOnce({
+			const saved = await appendOnce({
 				store: d.store,
 				streamId: CD_STREAMS.promotion(rollbackId),
 				type: CD_EVENTS.EnvPromoteRolledBack,
 				data: body(PromotionRecordSchema, rolled),
 				idempotencyKey: "rolled-back",
+				meta: { rollbackRequestFingerprint: fingerprint },
 				tenant: d.tenant,
 				actor: ctx.principal,
 			});
+			if (!saved)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} could not record its result`,
+							"Retry with the same idempotency key.",
+							rollbackId,
+						),
+					],
+				};
+			if (saved.meta?.rollbackRequestFingerprint !== fingerprint)
+				return differentRequest();
+			const persisted = await load(rollbackId);
+			if (!persisted)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} could not be read after journaling`,
+							"Retry with the same idempotency key.",
+							rollbackId,
+						),
+					],
+				};
 			metric(PROMOTION_METRIC.rolledBack, ctx.now(), { camp: input.campId });
-			return { ok: true, value: rolled };
+			return { ok: true, value: recordOf(persisted.view) };
 		},
 
 		async approve(promotionId, ctx) {
@@ -2157,7 +2385,13 @@ export function createPromotionService(
 		},
 
 		async createPreview(input, ctx) {
-			if (input.ttlMs <= 0 || input.idempotencyKey === "")
+			const expiresAtMs = ctx.now() + input.ttlMs;
+			if (
+				!Number.isSafeInteger(input.ttlMs) ||
+				input.ttlMs <= 0 ||
+				!Number.isFinite(new Date(expiresAtMs).getTime()) ||
+				input.idempotencyKey === ""
+			)
 				return {
 					ok: false,
 					reasons: [
@@ -2176,15 +2410,35 @@ export function createPromotionService(
 				input.idempotencyKey,
 			);
 			const existing = await load(promotionId);
-			if (existing?.view.preview)
-				return { ok: true, value: existing.view.preview };
+			if (existing?.view.preview) {
+				const preview = existing.view.preview;
+				const same =
+					preview.freightId === input.freightId &&
+					preview.sourceCampId === input.sourceCampId &&
+					preview.ttlMs === BigInt(input.ttlMs) &&
+					preview.pipeline === (input.pipeline ?? "") &&
+					preview.node === (input.node ?? "");
+				return same
+					? { ok: true, value: preview }
+					: {
+							ok: false,
+							reasons: [
+								reason(
+									PROMOTION_REASON.idempotencyReused,
+									`idempotency key ${input.idempotencyKey} already names a different preview`,
+									"Use a new idempotency key for a different preview.",
+									promotionId,
+								),
+							],
+						};
+			}
 			const freight = await d.freight.get(input.freightId);
 			const preview = create(PreviewEnvironmentRecordSchema, {
 				campId,
 				sourceCampId: input.sourceCampId,
 				freightId: input.freightId,
 				ttlMs: BigInt(input.ttlMs),
-				expiresAt: iso(ctx.now() + input.ttlMs),
+				expiresAt: iso(expiresAtMs),
 				createdBy: principalName(ctx.principal),
 				pipeline: input.pipeline ?? "",
 				node: input.node ?? "",
@@ -2207,10 +2461,35 @@ export function createPromotionService(
 				preview,
 			);
 			if (!requested.ok) return requested;
+			const persisted = await load(promotionId);
+			if (!persisted?.view.preview)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`preview ${promotionId} could not be read after journaling`,
+							"Retry with the same idempotency key.",
+							promotionId,
+						),
+					],
+				};
+			if (!sameRequest(persisted, previewRequest, "preview", preview))
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.idempotencyReused,
+							`idempotency key ${input.idempotencyKey} already names a different preview`,
+							"Use a new idempotency key for a different preview.",
+							promotionId,
+						),
+					],
+				};
 			metric(PROMOTION_METRIC.previewCreated, ctx.now(), {
 				source: input.sourceCampId,
 			});
-			return { ok: true, value: preview };
+			return { ok: true, value: persisted.view.preview };
 		},
 
 		async expirePreviews(ctx) {

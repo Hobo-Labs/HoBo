@@ -1,4 +1,4 @@
-// Realizer conformance (plan 0024 D5/D6, I5, I9, I12). A Realizer drives one
+// Realizer conformance (ADR-0182 D5/D6, I5, I9, I12). A Realizer drives one
 // Camp toward a desired Set and reports only what it observed.
 import {
 	abortedSignal,

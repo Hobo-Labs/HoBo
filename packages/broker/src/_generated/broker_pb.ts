@@ -150,7 +150,7 @@ export const DeliveryPublisherSchema: GenMessage<DeliveryPublisher> = /*@__PURE_
   messageDesc(file_broker, 2);
 
 /**
- * Delivery plane configuration (plan 0024, D14). Neutral: every receipt is
+ * Delivery plane configuration (ADR-0182 D14). Neutral: every receipt is
  * delivered through @hobo/cd by a reconciler mode; the broker names no GitOps
  * engine, cluster or namespace.
  *

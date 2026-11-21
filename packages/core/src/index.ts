@@ -97,6 +97,8 @@ export type {
 	ActorLease,
 	ActorLeaseHost,
 	ActorStateHandle,
+	AsyncActorLease,
+	AsyncActorLeaseHost,
 	FoldEvent,
 } from "./ports/actor-host.js";
 export {
@@ -365,6 +367,15 @@ export type {
 	PublicDnsConfig,
 	PublicDnsManager,
 } from "./ports/dns.js";
+export {
+	createDurableLifecycleGate,
+	type DurableLifecycleGate,
+	type DurableLifecycleGateOptions,
+	type DurableLifecycleGateScope,
+	type DurableLifecycleGateStatus,
+	type DurableLifecyclePhase,
+	type LifecycleParticipantKind,
+} from "./ports/durable-lifecycle-gate.js";
 export type {
 	EphemeralEntry,
 	EphemeralKey,
@@ -427,6 +438,7 @@ export type {
 	ReadAllOptions,
 	ResetCheckpointOptions,
 	SnapshotRecord,
+	SnapshotWriteOptions,
 	StreamFilter,
 	StreamHead,
 	Subscription,
@@ -660,6 +672,7 @@ export {
 	type ResourceMutationJournal,
 	type ResourceMutationJournalEntry,
 	ResourceMutationJournalEntrySchema,
+	ResourceMutationNotSentError,
 } from "./ports/resource-lifecycle.js";
 export type {
 	ResolvedResourceRef,
@@ -918,6 +931,11 @@ export {
 	TrainingEngineParseError,
 	TrajectoryRewardSchema,
 } from "./ports/training-engine.js";
+export {
+	createTrustedVault,
+	TRUSTED_VAULT_DEFAULT_TTL_MS,
+	type TrustedVault,
+} from "./ports/trusted-vault.js";
 export type {
 	ComponentRegistration,
 	EstablishedLink,

@@ -1,4 +1,4 @@
-// ProvenanceVerifier conformance (plan 0024 D3, I15). in-toto v1 + SLSA
+// ProvenanceVerifier conformance (ADR-0182 D3, I15). in-toto v1 + SLSA
 // provenance, verified as a signed bundle, bound to the subjects' digests and
 // pinned to trusted builders and signers. Fail closed on everything else.
 import {

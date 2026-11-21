@@ -1,4 +1,4 @@
-// The Rail inform → enforce journey (plan 0024 D24, I23, §10 rows for WP24):
+// The Rail inform → enforce journey (ADR-0182 D24, I23):
 // a new Rail bound INFORM is shadowed while the enforced Rail alone decides;
 // divergences are recorded and feed the INFORM node's verification series;
 // ENFORCE without a qualified INFORM node is refused; rollback restores the

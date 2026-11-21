@@ -56,6 +56,7 @@ describe("pins wiring", () => {
 	it("PR validation jobs check the pins after checkout and before installing", () => {
 		const workflow = read(".github/workflows/hobo-ci.yml");
 		for (const name of [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
@@ -68,12 +69,26 @@ describe("pins wiring", () => {
 				checkout >= 0 && status > checkout,
 				`${name}: status follows checkout`,
 			);
+			if (name === "pr_gate_plan") {
+				assert.equal(
+					install,
+					-1,
+					`${name}: node-builtin planning needs no dependency store or install`,
+				);
+				continue;
+			}
 			assert.ok(install > status, `${name}: status precedes pnpm install`);
-			// The fleet, or the route job's choice (GitHub-hosted when it did not run).
-			assert.match(
-				job,
-				/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
-			);
+			if (name === "workspace_tests") {
+				assert.match(
+					job,
+					/runs-on:\s*\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
+				);
+			} else {
+				assert.match(
+					job,
+					/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
+				);
+			}
 		}
 	});
 

@@ -1,4 +1,4 @@
-// SubscriptionDriver conformance (plan 0024 D3, I15). Pull discovery is a
+// SubscriptionDriver conformance (ADR-0182 D3, I15). Pull discovery is a
 // verified read, forward-only from a high-water mark, bounded per poll, and
 // an outage is a typed refusal that leaves the cursor where it was.
 import {

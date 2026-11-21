@@ -1,5 +1,4 @@
-// HoBo's own release train as delivery-as-code (plan 0024; docs/design/release-channels.md).
-//
+/** public-contract: HoBo release train delivery-as-code. */
 // One Yard, `hobo-release`, with a candidate and a stable Camp per artifact
 // family. Every CD command reads it as topology:
 //   hobo deploy camp list --yard release/hobo-release.delivery.ts
@@ -21,6 +20,11 @@ const RELEASE_YARD = "hobo-release";
 const RELEASE_FAMILIES = ["npm", "oci", "pages"] as const;
 const RELEASE_CHANNELS = ["candidate", "stable"] as const;
 
+export const PAGES_RELEASE_BUILD_MARGIN_MS = 540_000;
+const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
+const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
+	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
+
 type Family = (typeof RELEASE_FAMILIES)[number];
 type Channel = (typeof RELEASE_CHANNELS)[number];
 
@@ -28,6 +32,12 @@ const PROVIDER = {
 	npm: "@hobo/provider-npm",
 	oci: "@hobo/provider-oci-registry",
 	pages: "@hobo/provider-github",
+} as const satisfies Record<Family, string>;
+
+const YARD = {
+	npm: "hobo-release-npm",
+	oci: "hobo-release-oci",
+	pages: "hobo-release-pages",
 } as const satisfies Record<Family, string>;
 
 // Where each family publishes. Shared by both channels: candidate realizes the
@@ -92,29 +102,34 @@ const MODE = {
 // - npm: the registry answers its ping;
 // - oci: GHCR answers the distribution API (an anonymous request is
 //   challenged with 401: the registry is up and speaking v2);
-// - pages: the gh-pages branch serves the site entry (raw, public repo).
 const [owner, repo] = repository.split("/");
 const PROBE = {
 	npm: { url: "https://registry.npmjs.org/-/ping", status: 200 },
 	oci: { url: "https://ghcr.io/v2/", status: 401 },
 	pages: {
-		url: `https://raw.githubusercontent.com/${owner}/${repo}/gh-pages/index.html`,
+		url: `https://api.github.com/repos/${owner}/${repo}/pages/builds/latest`,
 		status: 200,
 	},
 } as const satisfies Record<Family, Readonly<{ url: string; status: number }>>;
 
 function verification(family: Family) {
 	return {
-		windowMs: "10000",
+		windowMs:
+			family === "pages"
+				? String(PAGES_RELEASE_VERIFICATION_WINDOW_MS)
+				: "10000",
 		requiredObservations: 2,
-		progressDeadlineMs: "300000",
+		progressDeadlineMs:
+			family === "pages"
+				? String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS)
+				: "300000",
 		failOnNoData: true,
 		probes: [
 			{
 				name: `${family}-target`,
 				urlRef: PROBE[family].url,
 				expectStatus: PROBE[family].status,
-				intervalMs: "5000",
+				intervalMs: family === "pages" ? "10000" : "5000",
 				minSuccessRatio: 1,
 			},
 		],
@@ -129,8 +144,9 @@ function releaseCampId(family: Family, channel: Channel): string {
 // An empty stationId is the Station the CD runtime composes (HOBO_STATION).
 export const camps = RELEASE_FAMILIES.flatMap((family) =>
 	RELEASE_CHANNELS.map((channel) => ({
-		campId: releaseCampId(family, channel),
-		yardId: RELEASE_YARD,
+		campId: `${YARD[family]}/${family}-${channel}`,
+		logicalId: releaseCampId(family, channel),
+		yardId: YARD[family],
 		provider: PROVIDER[family],
 		envType: channel,
 		labels: {

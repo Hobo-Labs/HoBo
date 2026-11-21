@@ -1,5 +1,6 @@
 import type { ManifestV1 } from "@hobo/bindles";
 
+import { isJsonString } from "./json.js";
 import type { ResourceIntent } from "./plan-types.js";
 
 // Planner step 0 (control-plane.md): lower each `hobo.manifest/v1` resource node
@@ -33,7 +34,32 @@ interface LoweredDataPort {
 	require: string[];
 }
 
-function lowerDataPort(port: string): LoweredDataPort {
+// The capability port a generic `data` resource asks for, by its paradigm
+// (the Bindle loader writes `data(<paradigm>)` for every backing resource:
+// `kv` is key-value, `queue` is a queue, and so on). Without this a KV cache,
+// a queue and a secret all asked for the bare `data` port, which no provider
+// advertises, so nothing a Bindle declared could ever be matched.
+const DATA_PARADIGM_PORTS = new Map<string, LoweredDataPort>([
+	["project", { capabilityPort: "project", require: [] }],
+	// SDK key-value declarations do not imply a consistency guarantee.
+	["key-value", { capabilityPort: "kv", require: [] }],
+	["object", { capabilityPort: "objectStore", require: ["durable"] }],
+	["relational", { capabilityPort: "database", require: [] }],
+	["queue", { capabilityPort: "queue", require: [] }],
+	["topic", { capabilityPort: "topic", require: [] }],
+	["secret", { capabilityPort: "secretRef", require: [] }],
+	["schedule", { capabilityPort: "schedule", require: [] }],
+]);
+
+function lowerDataPort(port: string, paradigm?: string): LoweredDataPort {
+	if ((port === "hobo:data" || port === "data") && paradigm !== undefined) {
+		const byParadigm = DATA_PARADIGM_PORTS.get(paradigm);
+		if (byParadigm !== undefined)
+			return {
+				capabilityPort: byParadigm.capabilityPort,
+				require: [...byParadigm.require],
+			};
+	}
 	for (const rule of DATA_PORT_RULES) {
 		if (rule.match(port)) {
 			return { capabilityPort: rule.capabilityPort, require: rule.require };
@@ -44,6 +70,11 @@ function lowerDataPort(port: string): LoweredDataPort {
 	// remediation — exactly the agent-self-correction path.
 	const bare = port.includes(":") ? (port.split(":").pop() ?? port) : port;
 	return { capabilityPort: bare, require: [] };
+}
+
+/** A five-field cron expression, as the cadence trait writes it. */
+function isCadence<T>(value: T): value is T & string {
+	return isJsonString(value) && /^\S+(\s+\S+){4}$/u.test(value);
 }
 
 export function lowerManifest(
@@ -68,9 +99,17 @@ export function lowerManifest(
 				require = ["http"];
 				break;
 			case "data.v1": {
-				const lowered = lowerDataPort(resource.port ?? "");
+				const lowered = lowerDataPort(resource.port ?? "", resource.paradigm);
 				capabilityPort = lowered.capabilityPort;
 				require = lowered.require;
+				if (capabilityPort === "secretRef" && resource.paradigm === "secret") {
+					const access = resource.allow ?? [];
+					if (access.some((verb) => verb !== "access" && verb !== "put"))
+						throw new Error(
+							"secret resource has an unsupported access operation",
+						);
+					require = [...new Set(access)].sort();
+				}
 				break;
 			}
 			default:
@@ -91,6 +130,9 @@ export function lowerManifest(
 			objective,
 		};
 		if (options.region !== undefined) intent.region = options.region;
+		const cadence = resource.annotations?.cadence;
+		if (capabilityPort === "schedule" && isCadence(cadence))
+			intent.cadence = cadence;
 		intents.push(intent);
 	}
 

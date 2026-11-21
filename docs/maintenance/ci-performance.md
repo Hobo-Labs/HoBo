@@ -37,6 +37,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
+- **Scripts test shards.** When scripts, root tests, or workflows change, the PR and merge-group gate requires all four deterministic scripts-test shards. Vitest and `node:test` file workers both respect `HOBO_TEST_MAX_WORKERS`. Shards can queue on a single runner; they add setup and build work, so measure total wall time as well as each shard's runtime. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md) for the worker-budget limits.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
@@ -95,6 +96,11 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   on a cold worker; a timeout cancels the gate and does not count as a passing check.
   Root typechecking builds the Redis-compatible package first because the Upstash provider sources
   referenced by root tests resolve its declarations from `dist` on a clean worker.
+- **Loaded local release checks.** Set `HOBO_TEST_TIMEOUT` to a larger duration in milliseconds
+  when a busy machine needs more time for release integration tests. The OCI deploy test retains
+  its six-minute default and the freight realization suite retains its two-minute default; smaller
+  or invalid values cannot reduce those limits. For example, `HOBO_TEST_TIMEOUT=900000` allows
+  either check up to fifteen minutes without changing its assertions.
 - **Workspace duration table typing.** `scripts/ci/workspace-test-durations.mts` uses pins-json tag narrowing so root `typecheck:root` accepts the JSON leaf parser on CI.
 - **Main full gate workspace sharding.** `main-gate-plan` (runner image only; install-free mise turbo — [finding 93](../ci/findings/0093-main-sub3m-plan-pickup-shards.md), [finding 92](../ci/findings/0092-main-plan-parallel-deps-affected-shards.md)) resolves the last-green
   base and prints a duration-balanced shard matrix capped by `MAIN_WORKSPACE_PARALLEL_CAP` (default four
@@ -146,6 +152,28 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   succeed. The PR merge base is pinned from the event's base SHA and passed to every job, so a later
   target-branch update cannot silently change their test scope. `scripts/test/merge-group-gate.test.ts`
   covers failed, cancelled, skipped, and missing results.
+- **Merge-group batch routing.** After the validation job plans its shards, an auto-routed batch of
+  more than one uses the configured `ubuntu-24.04` fallback when a fresh GitHub read confirms the
+  exact caller repository is public. A recent fleet pickup does not establish that the whole batch
+  can start within the queue deadline. Explicit pins, a single shard and other events retain the
+  original route. Missing routing policy or unavailable public-price evidence fails validation
+  before the shard matrix is queued.
+  The visibility observation does not prove future capacity, total job cost, or budget admission.
+  The routed workspace shards still check the sibling pins after checkout and before installing;
+  `scripts/test/pins-wiring.test.ts` verifies that order and the shard's runner fallback.
+- **Pull-request batch routing.** Auto-routed PRs in `hobo-ci.yml` and `release-hobo.yml` choose before any
+  dependent jobs are queued. A trusted host may select the fleet only after it verifies a
+  durable, exact-run capacity claim and Broker admission for the complete reviewed fan-out,
+  including the eight-shard maximum and any separately selected box. The standalone action
+  currently has no installed batch-claim authority, so it uses `ubuntu-24.04` after a fresh
+  read verifies the caller repository and public standard-runner compute pricing. A missing
+  policy or unavailable public-price evidence fails the route instead of starting the batch.
+  The PR-only deps-image job also requires the route to succeed, and its candidate is
+  checked without promotion; main runs the deps check in the workspace plan instead.
+  Explicit pins still select their configured tiers. The public-price observation covers
+  compute only; it does not establish availability, other costs, or financial settlement.
+  GitHub documents [free standard-runner minutes for public repositories](https://docs.github.com/en/actions/concepts/billing-and-usage)
+  and lists [`ubuntu-24.04` as a standard runner](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job).
 - **Trace export.** `.github/actions/ci-trace` runs `scripts/ci/ci-trace.mts` to export per-step timings
   (artifact names include a per-matrix `disambiguator`, usually `matrix.shard`, so parallel workspace shards
   do not collide on `upload-artifact`)
@@ -213,7 +241,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   containers of the lane older than 30 minutes. A leaked pair therefore holds memory for at most 25
   minutes and disk until the next job starts on that box.
   The job is in the worker's `heavy` memory class (it installs, builds about two dozen packages and
-  runs five suites). The two servers are **not** counted by admission — up to 2 GiB beside the job
+  runs six package suites, including Broker recovery against PostgreSQL). The two servers are **not** counted by admission — up to 2 GiB beside the job
   that the daemon does not see — which the heavy reservation is meant to leave room for; this has
   not been measured on a box.
   The images are digest-pinned in `packages/data-core/deploy/live-engine-images.json`.
@@ -230,9 +258,9 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   The suites do not run through turbo: it passes `HOBO_*` through without keying its cache on them,
   so a cached offline result would replay as a live pass. A green exit is not taken as proof either:
   the live tests skip themselves when their variable is missing, so the step ends with
-  `data-live-servers.mts verify`, which reads the run's output and fails unless each of the five
+  `data-live-servers.mts verify`, which reads the run's output and fails unless each of the six
   packages printed a summary and no test in it was skipped, failed or left todo. The start step
-  prints the server versions and addresses the run was against. Four of these packages run under the root
+  prints the server versions and addresses the run was against. Five of these packages run under the root
   vitest config and `packages/trails` under its own; both apply `HOBO_TEST_MAX_WORKERS` through
   `capVitestWorkers`. The step used to export the cap as `VITEST_MAX_WORKERS`, which Vitest lets
   override every config (single-worker pins included) and which `scripts/test/memory-env.test.ts`
@@ -520,9 +548,30 @@ runner. `pnpm ci:attest run` runs the covered CI jobs on the machine you are
 sitting at, signs the result, and `pnpm ci:attest publish` pushes that record
 to the `ci-attestations` branch. The **Route runners** job of the next CI run
 verifies the record and the covered jobs are skipped: they need no runner, and
-the few jobs left go to GitHub-hosted machines.
+the remaining jobs follow the ordinary fleet routing decision.
 
-Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `pr-offpath`,
+When even the route job has no runner, `pnpm ci:attest fleet --local-signoff` uses
+[`basecamp/gh-signoff`](https://github.com/basecamp/gh-signoff) to post
+per-job commit statuses after choosing the local fallback and running the checks.
+It first considers the committed fleet policy, routing slip, and queue; known
+runner capacity stays ahead of the opt-in local fallback, and unknown capacity
+waits. It verifies the exact
+head, live remote base, local signature and event coverage first. The statuses
+are separate from Actions job checks and do not by themselves satisfy the
+current required checks or a merge queue's generated commit. The runbook below
+documents installation, status names and the no-Docker partial result.
+`scripts/test/local-attest.test.ts` exercises the CLI-to-`gh` contract with a
+local executable and git remotes, including failed publication and stale or
+partial evidence. `scripts/test/fleet-signoff.test.ts` exercises the fleet
+selection and fallback execution. These TypeScript changes add no Protobuf or
+CUE contract. Live observation of the fleet-to-signoff decision and GitHub
+acceptance of these statuses remains separate evidence.
+
+`pr_gate_plan` uses node builtins only and resolves the base, scope, and shard matrix
+without installing dependencies. `pr_gate_validation` runs S0 and PR-only checks while
+`workspace_tests` and `pr_affected` start from that plan without waiting for validation.
+
+Covered: `pr_gate_plan`, `pr_gate_validation`, `workspace_tests`, `pr_affected`, `scripts-tests`, `pr-offpath`,
 `artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
 `release-contract` in `release-hobo.yml` when no release image is affected. Not
 covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route

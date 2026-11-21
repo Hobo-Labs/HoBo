@@ -324,6 +324,9 @@ describe("the fence cannot be bypassed by a role that merely writes the dataset"
 		for (const table of [
 			"hobo_data_datasets",
 			"hobo_data_fences",
+			"hobo_data_fence_operations",
+			"hobo_data_fence_policy",
+			"hobo_data_fence_receivers",
 			"hobo_data_watermarks",
 			"hobo_data_subscriptions",
 			"hobo_data_schema_snapshots",
@@ -337,7 +340,7 @@ describe("the fence cannot be bypassed by a role that merely writes the dataset"
 	test("a namespace bootstrapped before the change is bootstrapped again", () => {
 		// The marker is what lets a binding skip the DDL; a new one means an
 		// existing namespace gets the hardened function and the revoke.
-		assert.equal(BOOTSTRAP_MARKER, "hobo-data-postgres bootstrap 2");
+		assert.equal(BOOTSTRAP_MARKER, "hobo-data-postgres bootstrap 3");
 		assert.equal(
 			statements[statements.length - 1],
 			`COMMENT ON FUNCTION ${bootstrapProbe("app")} IS '${BOOTSTRAP_MARKER}'`,

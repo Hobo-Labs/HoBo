@@ -12,9 +12,8 @@ import {
 } from "./support/worker-process.js";
 
 /**
- * Plan 0024 WP17 Accept: "Lease failover with no lost or duplicate
- * checkpoint"; §10 row "Postgres lease holder dies → Another resumes; no lost
- * or duplicate checkpoint".
+ * Lease failover with no lost or duplicate checkpoint: when the Postgres
+ * lease holder dies, another resumes with no lost or duplicate checkpoint.
  *
  * A consumer process holds the subscription lease and checkpoints after each
  * event. It is SIGKILLed mid-stream. A second process takes over after the

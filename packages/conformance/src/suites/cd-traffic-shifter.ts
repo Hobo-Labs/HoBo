@@ -1,4 +1,4 @@
-// TrafficShifter conformance (plan 0024 D7/D8, I5, I6). The one path a
+// TrafficShifter conformance (ADR-0182 D7/D8, I5, I6). The one path a
 // rollout uses to move exposure; it reports what was realized, honestly.
 import type { ApplyResult, RoutingPlan, RoutingPlanId } from "@hobo/core";
 import {

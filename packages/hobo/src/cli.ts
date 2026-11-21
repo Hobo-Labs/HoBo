@@ -1,16 +1,25 @@
 import type { CollectionTarget } from "@hobo/bindles";
 import {
+	type CommandModule,
 	createBuildCommand,
 	createCollectCommand,
 	createDevCommand,
 	createDownCommand,
 	createHoboCli,
+	createLifecycleFamilyCommand,
 	createPlanCommand,
 	type DevRuntime,
 	type HoboCli,
 	type YardRuntime,
 } from "@hobo/cli";
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
+import { type DeviceClock, prepareVercelConnection } from "@hobo/hobo-cd";
+import {
+	machineRunner,
+	type OwnerChannel,
+	prepareGithubConnection,
+	whichOnPath,
+} from "@hobo/hobo-ci";
 import { createAwsProvider } from "@hobo/provider-aws";
 import { createAzureProvider } from "@hobo/provider-azure";
 import { createDigitalOceanProvider } from "@hobo/provider-digitalocean";
@@ -23,17 +32,33 @@ import { createBlacksmithCatalogEntry } from "@hobo/runner-blacksmith";
 import { createDepotCatalogEntry } from "@hobo/runner-depot";
 import { createGithubRunnerCatalogEntry } from "@hobo/runner-github";
 import { createAccessCommand } from "./access-command.js";
-import { createAddCommand, registerInstallable } from "./add-command.js";
+import {
+	createAddCommand,
+	installableProvidersFor,
+	registerInstallable,
+} from "./add-command.js";
 import { createAttestCommand } from "./attest-command.js";
 import { createAuthMdIdentityCommand } from "./auth-md-command.js";
 import { createBrokerCommand } from "./broker-command.js";
 import { createBrokerAwareUpCommand } from "./broker-up-command.js";
 import { createCanDeployCommand } from "./can-deploy-command.js";
+import { defaultJournalProvisioners } from "./cd-journal-provisioners.js";
+import {
+	cdPlacementRuntime,
+	createCdPlanCommand,
+	createCdVercelUpCommand,
+	retainPreparedOnDown,
+} from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
+import {
+	createCiRelayPlanCommand,
+	createCiRelayUpCommand,
+} from "./ci-up-relay.js";
 import { createClaimCommand } from "./claim-command.js";
 import {
 	createDefaultYardRuntime,
+	deployEnvironment,
 	resolveProjectCollectionTarget,
 	resolveProjectDevRuntime,
 	toRegistrableProvider,
@@ -44,6 +69,7 @@ import { createDerivativeCommand } from "./derivative-command.js";
 import { createDoctorCommand } from "./doctor-command.js";
 import { createDriftCommand } from "./drift-command.js";
 import { createEraseCommand } from "./erase-command.js";
+import { resolveCdProject, resolveCiProject } from "./family-projects.js";
 import { createFeatureCommand } from "./feature-command.js";
 import { createFleetCommand } from "./fleet-command.js";
 import { createFleetRuntime } from "./fleet-runtime.js";
@@ -60,6 +86,7 @@ import { createBrokerAwareLoginCommand } from "./login-command.js";
 import { createLogsCommand } from "./logs-command.js";
 import { createMessagingCommand } from "./messaging-command.js";
 import { createOfferCommand } from "./offer-command.js";
+import { createProviderCeremonyUp } from "./provider-ceremony.js";
 import { createRecipesCommand } from "./recipes-command.js";
 import { createRegistryCommand } from "./registry-command.js";
 import { createReplayCommand } from "./replay-command.js";
@@ -71,6 +98,7 @@ import {
 	createWasmRuntimeCatalogEntry,
 } from "./runtime-catalog.js";
 import { createSandboxCommand } from "./sandbox-command.js";
+import { createSecretStoreProvider } from "./secret-store-providers.js";
 import { createServeControlCommand } from "./serve-control-command.js";
 import { createStationCommand } from "./station-command.js";
 import { createTrailsCommand } from "./trails-command.js";
@@ -85,6 +113,16 @@ import { createYardCommand } from "./yard-command.js";
 export { removeOwnedDirsOnSignals } from "./owned-temp-dir.js";
 
 export interface ComposedHoboCliOptions {
+	/**
+	 * How a ceremony reaches an owner who is not at this machine (the HoBo MCP
+	 * server's channel); without it, a remote run says where to run instead.
+	 */
+	readonly ownerChannel?: OwnerChannel;
+	/**
+	 * The clock steps that wait on a provider use (the Vercel device grant's
+	 * polling, RFC 8628): the system's by default; a spec drives it virtually.
+	 */
+	readonly clock?: DeviceClock;
 	/** The production host supplies trusted financial and provider wiring. */
 	readonly hosting?: {
 		readonly budgetId: string;
@@ -154,6 +192,11 @@ registerInstallable("runner-blacksmith", () => createBlacksmithCatalogEntry());
 // The Depot remote-build specialist: shared-cache economics make its warm
 // builds competitive with "free" cold options (HOBO-720).
 registerInstallable("runner-depot", () => createDepotCatalogEntry());
+// The owner's secret stores serve the `secretRef` port with references only,
+// each in a Yard of its own: `hobo add infisical | bitwarden | 1password`.
+registerInstallable("infisical", () => createSecretStoreProvider("infisical"));
+registerInstallable("bitwarden", () => createSecretStoreProvider("bitwarden"));
+registerInstallable("1password", () => createSecretStoreProvider("1password"));
 // Local provider — installable via `hobo add local`; default provider id for
 // local Yard topologies (`hobo yard init`).
 registerInstallable("local", () => createLocalProvider());
@@ -180,22 +223,160 @@ export function createComposedHoboCli(
 		: baseRuntime;
 	const explicitFixture =
 		options.yardRuntime !== undefined && options.requireRealExecution !== true;
+	const deployEnv = deployEnvironment();
 	const cloudConfigured =
 		options.hosting !== undefined ||
-		process.env.HOBO_PULUMI_LIVE === "1" ||
+		deployEnv.HOBO_PULUMI_LIVE === "1" ||
 		Boolean(
-			(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID) ||
-				process.env.VERCEL_TOKEN,
+			(deployEnv.CLOUDFLARE_API_TOKEN && deployEnv.CLOUDFLARE_ACCOUNT_ID) ||
+				deployEnv.VERCEL_TOKEN,
 		);
 	const deployRuntime =
 		explicitFixture || cloudConfigured ? runtime : undefined;
 	// `sandbox` and its `test` alias share one command; each run() boots its OWN
 	// fresh runtime-local Camp (isolation), so no shared runtime is threaded here.
 	const sandbox = createSandboxCommand();
+	// The lifecycle engine every family shares (cli-spec.md "Lifecycle
+	// Semantics"): `hobo up|down|plan` and `hobo ci|cd up|down|plan|status` are
+	// the same three commands, pointed at a different project.
+	// Always place through the embedded broker-runtime (prefer wasm-sandbox
+	// yards). Remote --broker / --anonymous paths use discovery + credential
+	// presenter. The cloud mock `createUpCommand` remains for tests that wire
+	// it directly.
+	const add = createAddCommand({ runtime });
+	// Every infra `up` holds a ceremony for what it is missing: a resource no
+	// connected provider serves opens the setup page, offers the installable
+	// providers for its port, connects the chosen ones and runs up again.
+	const up = createProviderCeremonyUp(
+		createBrokerAwareUpCommand({
+			...(deployRuntime ? { runtime: deployRuntime } : undefined),
+			persistentLocal: !explicitFixture,
+			authMdFetch: options.authMdFetch ?? fetch,
+		}),
+		{ add, candidates: installableProvidersFor },
+	);
+	const down = createLocalDeploymentDownCommand(
+		deployRuntime ? createDownCommand({ runtime: deployRuntime }) : undefined,
+	);
+	// Delivery and hosting supervisors own their own executors, so wrapping the
+	// local executor cannot prove that they retain the prepared journal and store.
+	const cdUnavailableResult = (action: "up" | "down") => ({
+		ok: false,
+		status: "unavailable",
+		code: "HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
+		message: `hobo cd ${action} cannot safely manage prepared resources with this runtime.`,
+		remediation: [
+			"Use a runtime that can retain the CD journal and owner store during teardown.",
+		],
+	});
+	const cdUnavailable = (action: "up" | "down"): CommandModule => ({
+		implemented: true,
+		run: async () => cdUnavailableResult(action),
+	});
+	const cdDownFallback =
+		!deployRuntime || deployRuntime.delivery || deployRuntime.hostingExecution
+			? cdUnavailable("down")
+			: createDownCommand({
+					runtime: {
+						...cdPlacementRuntime(deployRuntime),
+						executor: retainPreparedOnDown(deployRuntime.executor),
+					},
+				});
+	const cdDown = createLocalDeploymentDownCommand(cdDownFallback);
+	// `plan` (and every `--what-if`) never opens a page, but a rejection for a
+	// missing provider says which `hobo add` would satisfy each resource.
+	const plan = createProviderCeremonyUp(createPlanCommand({ runtime }), {
+		add,
+		candidates: installableProvidersFor,
+		interactive: false,
+	});
+	const ci = createCiCommand({ runtime });
+	const deploy = createDeployCommand({ hosting: options.hosting?.supervisor });
 
 	return createHoboCli({
 		commands: {
-			ci: createCiCommand({ runtime }),
+			// `hobo ci up|down|plan` converge the CI project; `hobo ci status`
+			// keeps inspecting the relay connection; every other subcommand is
+			// the existing CI surface.
+			ci: createLifecycleFamilyCommand({
+				family: "ci",
+				resolveProject: resolveCiProject,
+				up,
+				down,
+				// GitHub first: the App and its credentials in the owner's secret
+				// store, via the generative connect page (idempotent).
+				// The machine: install and run the chosen store's CLI.
+				prepare: (input) =>
+					prepareGithubConnection(input, {
+						runCommand: machineRunner(),
+						...(options.ownerChannel !== undefined
+							? { ownerChannel: options.ownerChannel }
+							: undefined),
+						...(options.clock !== undefined
+							? { now: options.clock.now, sleep: options.clock.sleep }
+							: undefined),
+						which: (bin) => whichOnPath(bin),
+					}),
+				// The relay is placed through its own Yards (the Vercel project
+				// hobo-ci and the Yards its junction joins), and `up` delivers it.
+				plan: createCiRelayPlanCommand(runtime, plan),
+				upWith: (credentials) => createCiRelayUpCommand(credentials, up),
+				status: ci,
+				fallback: ci,
+			}),
+			// `hobo cd up|down|plan|status` converge the CD project; any other
+			// subcommand is `hobo deploy` (freight, pipeline, promote, ...).
+			cd: createLifecycleFamilyCommand({
+				family: "cd",
+				resolveProject: resolveCdProject,
+				up,
+				down: cdDown,
+				// The journal and config are placed on the Yards cd up makes for
+				// them (the journal's fleet, the owner's config service).
+				plan: createCdPlanCommand(runtime, (placed) =>
+					createProviderCeremonyUp(createPlanCommand({ runtime: placed }), {
+						add,
+						candidates: installableProvidersFor,
+						interactive: false,
+					}),
+				),
+				// Vercel first, then converge through the Vercel provider junction:
+				// the same journal, registry and actor host (one writer), with an
+				// executor whose IaC provider deploys with the junction's token,
+				// resolved from the owner's secret store for this run only.
+				// hobo cd up also provisions the CD journal's fleet.
+				prepare: (input) =>
+					!input.whatIf && (runtime.delivery || runtime.hostingExecution)
+						? Promise.resolve({
+								kind: "refused" as const,
+								result: cdUnavailableResult("up"),
+							})
+						: prepareVercelConnection(input, {
+								journalProvisioners: defaultJournalProvisioners(),
+								runCommand: machineRunner(),
+								...(options.ownerChannel !== undefined
+									? { ownerChannel: options.ownerChannel }
+									: undefined),
+								...(options.clock !== undefined
+									? { now: options.clock.now, sleep: options.clock.sleep }
+									: undefined),
+								which: (bin) => whichOnPath(bin),
+							}),
+				upWith: (credentials) =>
+					runtime.delivery || runtime.hostingExecution
+						? cdUnavailable("up")
+						: createCdVercelUpCommand({
+								credentials,
+								runtime,
+								upWith: (placed) =>
+									createBrokerAwareUpCommand({
+										runtime: placed,
+										persistentLocal: !explicitFixture,
+										authMdFetch: options.authMdFetch ?? fetch,
+									}),
+							}),
+				fallback: deploy,
+			}),
 			fleet: createFleetCommand((progress) =>
 				createFleetRuntime({ env: process.env, progress }),
 			),
@@ -256,15 +437,8 @@ export function createComposedHoboCli(
 					? { target: options.collectionTarget }
 					: { resolveTarget: resolveProjectCollectionTarget },
 			),
-			plan: createPlanCommand({ runtime }),
-			// Always place through the embedded broker-runtime (prefer wasm-sandbox yards).
-			// Remote --broker / --anonymous paths use discovery + credential presenter.
-			// The cloud mock `createUpCommand` remains for tests that wire it directly.
-			up: createBrokerAwareUpCommand({
-				...(deployRuntime ? { runtime: deployRuntime } : undefined),
-				persistentLocal: !explicitFixture,
-				authMdFetch: options.authMdFetch ?? fetch,
-			}),
+			plan,
+			up,
 			// Identity plane: persist profile + optional default broker association.
 			// The composition root injects the platform fetch — the login/grant
 			// modules never reach for the global, so tests drive them offline.
@@ -284,14 +458,10 @@ export function createComposedHoboCli(
 			// OpenFeature flags + canary/experiment observe (Harness ADR-0083).
 			feature: createFeatureCommand(),
 			// Continuous delivery observe / rollback (attested apply plane).
-			deploy: createDeployCommand({ hosting: options.hosting?.supervisor }),
+			deploy,
 			// CD failure disposition (A2H default / sandboxed self-heal).
 			incident: createIncidentCommand(),
-			down: createLocalDeploymentDownCommand(
-				deployRuntime
-					? createDownCommand({ runtime: deployRuntime })
-					: undefined,
-			),
+			down,
 			doctor: createDoctorCommand(),
 			messaging: createMessagingCommand(),
 			verify: createVerifyCommand(),
@@ -321,7 +491,7 @@ export function createComposedHoboCli(
 			recipes: createRecipesCommand(),
 			offer: createOfferCommand({ runtime }),
 			registry: createRegistryCommand({ runtime }),
-			add: createAddCommand({ runtime }),
+			add,
 			import: createImportCommand({ runtime }),
 			generate: createGenerateCommand({ runtime }),
 			derivative: createDerivativeCommand({ runtime }),

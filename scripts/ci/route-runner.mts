@@ -7,20 +7,24 @@
  * Runs first in every workflow, on a GitHub-hosted machine, so the choice does
  * not itself wait on the fleet. It has no dependencies and installs nothing.
  *
- * Without a slip, availability is read from GitHub's queue, the one thing every backend
+ * Availability is read from GitHub's queue, the one thing every backend
  * shares: a backend is taking jobs when it was seen to pick one up recently and
  * quickly, no job asking for its label has waited past the limit, and few jobs
  * are already waiting for it. Nothing is asked of the fleet itself,
  * so a fleet that is down, saturated, or cut off from its relay reads the same.
+ * PR fan-outs in hobo-ci and release-hobo additionally require a verified
+ * full-batch reservation before choosing the fleet.
  *
  * The relay decides first, when it has said anything (ADR-0181):
  * the box relay writes a routing slip to `refs/hobo/routing-slip`, and this
  * script reads it once (`GET /git/ref`, then `GET /git/commits`, three
  * seconds together, with the job's own token). A slip that has not expired,
  * names this repository and names only labels `.hobo/ci.json`'s
- * `runnerRouting.labels` allows decides the run's class (`pr`, `fork` or
- * `trunk`), and nothing else is read. With no usable slip the queue decides
- * at once, exactly as it did before slips (rule R3), and a titled warning
+ * `runnerRouting.labels` allows chooses the run's class (`pr`, `fork` or
+ * `trunk`). A fleet choice also needs current pickup and wait evidence for
+ * its exact label; if it lacks that evidence, the queue rule chooses a
+ * fallback. Non-fleet choices do not need a queue read. With no usable slip
+ * the queue decides as before slips (rule R3), and a titled warning
  * (`hobo-ci-route-fallback`) says why.
  *
  * Every setting comes from `runnerRouting` in `.hobo/ci.json` (the pin, the
@@ -36,7 +40,7 @@
  *
  * A run can ask again later (`--include-own-run true`): the main gate's plan
  * job does, before its shards. It reads the slip again, which may have
- * changed; without one, the queue reading keeps the run's own jobs, which by
+ * changed; the queue reading keeps the run's own jobs, which by
  * then are the freshest evidence there is: a plan job that itself waited past
  * the limit takes the fleet out of the decision.
  *
@@ -94,6 +98,7 @@ export const MAX_PROBE_LOOKUPS = 3;
  */
 export const PROBE_WAIT_SECONDS = 60;
 export const PROBE_POLL_SECONDS = 10;
+export const MERGE_GROUP_FLEET_CONFIRM_SECONDS = 90;
 
 export type RouteTier = "fleet" | "local" | "github";
 
@@ -152,10 +157,11 @@ export type LabelLoad = Readonly<{
 export type RefusedBy = "slip" | "queue" | "none";
 
 /**
- * What became of the routing slip for this decision. `used`: it decided, for
- * the relay's `reason`. `fallback`: none could be used, for `why`, and the
- * queue decided. `unasked`: the tier is pinned or a signed local run covers
- * the tree, so no slip was read.
+ * What became of the routing slip for this decision. `used`: it was consulted,
+ * for the relay's `reason`; the queue may still refuse a fleet it named.
+ * `fallback`: none could be used, for `why`, and the
+ * queue decided. `unasked`: a pin or batch admission decides
+ * the tier without reading a slip.
  */
 export type SlipAnswer =
 	| Readonly<{ kind: "used"; reason: string; from: string }>
@@ -255,7 +261,8 @@ function describeLoad(name: string, load: LabelLoad): string {
 
 /**
  * The decision, from what the queue shows: the queue rule, which decides
- * whenever no routing slip can (R3). `fleetLabel` is the label this run would
+ * whenever no routing slip can (R3), or the chosen fleet is not taking jobs.
+ * `fleetLabel` is the label this run would
  * ask the fleet for (`hobo`, or `hobo-trunk` for trunk events); `localLabel`
  * and `githubLabel` are the committed `runnerRouting.labels`, the code's
  * defaults when left out.
@@ -543,6 +550,8 @@ export async function observeQueue(input: {
 	 * than how long the run's own jobs have waited.
 	 */
 	includeOwnRun?: boolean | undefined;
+	/** Read all bounded candidates even after current labels appear to refuse. */
+	exhaustLookups?: boolean | undefined;
 }): Promise<QueueView> {
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
@@ -569,7 +578,7 @@ export async function observeQueue(input: {
 		const allRefusing = input.labels.every((label) =>
 			refusingJobs(labelLoad(seen, label, input.nowMs), input.limits),
 		);
-		if (allRefusing) break;
+		if (allRefusing && input.exhaustLookups !== true) break;
 		const jobsPage = await jobsOf(runId);
 		seen.push(...seenJobs(jobsPage));
 		if (ahead.includes(runId) && hasChosen(jobsPage)) undecidedAhead -= 1;
@@ -602,6 +611,8 @@ export async function chooseRunner(input: {
 	githubLabel?: string | undefined;
 	localEnrolled: boolean;
 	limits: RouteLimits;
+	/** Confirm a fleet slip against the exact label before trusting it. */
+	confirmFleet?: "open" | "busy" | undefined;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
@@ -611,6 +622,23 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, localLabel, nowMs);
+		// Busy alone does not refuse a healthy fleet (R4). Unlike a fleet-open
+		// claim, a busy claim is not contradicted merely by a full young queue.
+		const confirmationLimits =
+			input.confirmFleet === "busy"
+				? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
+				: limits;
+		if (
+			input.confirmFleet &&
+			(input.confirmFleet === "busy" || view.undecidedAhead === 0) &&
+			takingJobs(fleet, confirmationLimits)
+		)
+			return {
+				tier: "fleet",
+				runner: fleetLabel,
+				reason: describeLoad("the fleet", fleet),
+				refusedBy: "none",
+			};
 		const decision = routeRunner({
 			mode: input.mode,
 			fleetLabel,
@@ -637,6 +665,64 @@ export async function chooseRunner(input: {
 				reason: `${decision.reason}; waited ${waitedSeconds} s for the probe to be picked up`,
 			};
 		await input.sleep(PROBE_POLL_SECONDS);
+	}
+}
+
+export async function confirmMergeGroupFabricFleet(input: {
+	fleetDecision: RouteDecision;
+	observe: (nowMs: number) => Promise<QueueView>;
+	now: () => number;
+	sleep: (seconds: number) => Promise<void>;
+	fleetLabel: string;
+	githubLabel: string;
+	limits: RouteLimits;
+}): Promise<RouteDecision> {
+	const admissionLimits = {
+		...input.limits,
+		maxWaitSeconds: Math.min(
+			input.limits.maxWaitSeconds,
+			MERGE_GROUP_FLEET_CONFIRM_SECONDS,
+		),
+	};
+	const startedAtMs = input.now();
+	const hosted = (outcome: string): RouteDecision => ({
+		tier: "github",
+		runner: input.githubLabel,
+		reason: `merge-group trunk confirmation ${outcome}`,
+		refusedBy: "queue",
+		slip: input.fleetDecision.slip,
+	});
+	for (let poll = 0; ; poll += 1) {
+		const nowMs = input.now();
+		const waitedSeconds = seconds(startedAtMs, nowMs);
+		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
+			return hosted(
+				`timed out after ${waitedSeconds} s without a healthy trunk pickup`,
+			);
+		let view: QueueView;
+		try {
+			view = await input.observe(nowMs);
+		} catch (error) {
+			return hosted(
+				`could not read the queue (${error instanceof Error ? error.message : "unknown error"})`,
+			);
+		}
+		const observedAtMs = input.now();
+		const observedWaitSeconds = seconds(startedAtMs, observedAtMs);
+		if (observedWaitSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
+			return hosted(
+				`timed out after ${observedWaitSeconds} s without a healthy trunk pickup`,
+			);
+		const fleet = labelLoad(view.jobs, input.fleetLabel, observedAtMs);
+		if (takingJobs(fleet, admissionLimits))
+			return {
+				...input.fleetDecision,
+				reason: `${input.fleetDecision.reason}; merge-group trunk confirmation observed ${describeLoad("the fleet", fleet)}`,
+				refusedBy: "none",
+			};
+		if (refusingJobs(fleet, admissionLimits))
+			return hosted("found the trunk fleet refusing jobs");
+		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
 	}
 }
 
@@ -732,6 +818,84 @@ export type RouteArgs = Readonly<{
 	includeOwnRun: boolean;
 	attested: boolean;
 }>;
+
+/**
+ * The independently enrolled supervisor checks the exact workflow bytes and
+ * signed run against its durable capacity claim and Broker admission.  It
+ * must cover every job in the reviewed fan-out and retain both claims until
+ * all possible jobs have stopped. Queue observations are not reservations.
+ * The standalone action has no such authority unless its host supplies one.
+ */
+export type PrBatchCapacityVerifier = (
+	scope: Readonly<{
+		repository: string;
+		repositoryId: number;
+		ownerId: number;
+		runId: number;
+		runAttempt: number;
+		revision: string;
+		workflowRef: string;
+		workflowPath: string;
+		workflow: string;
+		runner: string;
+		boxRunner: string;
+		/** Latest time this routing decision can be made. */
+		decisionDeadlineMs: number;
+		/** Maximum acceptable wait after each job enters the provider queue. */
+		maxQueueWaitSeconds: number;
+	}>,
+) => Promise<boolean>;
+
+function prBatchScope(
+	env: NodeJS.ProcessEnv,
+	runner: string,
+	boxRunner: string,
+	decisionDeadlineMs: number,
+	maxQueueWaitSeconds: number,
+	workflowName: string,
+): Parameters<PrBatchCapacityVerifier>[0] | undefined {
+	const repository = env.GITHUB_REPOSITORY ?? "";
+	const repositoryId = Number(env.GITHUB_REPOSITORY_ID);
+	const ownerId = Number(env.GITHUB_REPOSITORY_OWNER_ID);
+	const runId = Number(env.GITHUB_RUN_ID);
+	const runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
+	const revision = env.GITHUB_SHA ?? "";
+	const workflowRef = env.GITHUB_WORKFLOW_REF ?? "";
+	const workflowPath = `.github/workflows/${workflowName}`;
+	const workflow = readCheckoutFile(env, workflowPath);
+	if (
+		!/^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/u.test(repository) ||
+		repository.split("/").some((part) => part === "." || part === "..") ||
+		![repositoryId, ownerId, runId, runAttempt].every(
+			(value) => Number.isSafeInteger(value) && value > 0,
+		) ||
+		!/^[a-f0-9]{40}$/u.test(revision) ||
+		!Number.isSafeInteger(decisionDeadlineMs) ||
+		decisionDeadlineMs < 1 ||
+		!Number.isSafeInteger(maxQueueWaitSeconds) ||
+		maxQueueWaitSeconds < 1 ||
+		!workflowRef.startsWith(`${repository}/${workflowPath}@`) ||
+		workflowRef.endsWith("@") ||
+		!workflow ||
+		workflow.length > 1_000_000
+	)
+		return undefined;
+	return Object.freeze({
+		repository,
+		repositoryId,
+		ownerId,
+		runId,
+		runAttempt,
+		revision,
+		workflowRef,
+		workflowPath,
+		workflow,
+		runner,
+		boxRunner,
+		decisionDeadlineMs,
+		maxQueueWaitSeconds,
+	});
+}
 
 /**
  * `--route <auto|fleet|local|github>`, `--include-own-run <true|false>` and
@@ -854,6 +1018,17 @@ function readCheckoutFile(
 	}
 }
 
+function readRoutingPolicy(): string | undefined {
+	try {
+		return readFileSync(
+			join(import.meta.dirname, "../..", RUNNER_ROUTING_PATH),
+			"utf8",
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 /** The event that started the run, from the file GitHub names, or nothing. */
 function readEventPayload(env: NodeJS.ProcessEnv): JsonValue | undefined {
 	if (!env.GITHUB_EVENT_PATH) return undefined;
@@ -873,6 +1048,75 @@ const UNREAD: LabelLoad = {
 	slowestRecentPickupSeconds: 0,
 };
 
+/** Read the caller repository, rather than a reusable workflow's repository.
+ * This point-in-time observation covers standard-runner compute pricing only;
+ * it is not a budget admission or a guarantee of later visibility. */
+export async function isPublicCaller(
+	env: NodeJS.ProcessEnv,
+	send: typeof fetch = fetch,
+): Promise<boolean> {
+	const repository = env.GITHUB_REPOSITORY ?? "";
+	const repositoryId = Number(env.GITHUB_REPOSITORY_ID);
+	const ownerId = Number(env.GITHUB_REPOSITORY_OWNER_ID);
+	const token = env.GITHUB_TOKEN ?? "";
+	if (
+		!/^[A-Za-z0-9_.-]{1,39}\/[A-Za-z0-9_.-]{1,100}$/u.test(repository) ||
+		repository.split("/").some((part) => part === "." || part === "..") ||
+		![repositoryId, ownerId].every(
+			(value) => Number.isSafeInteger(value) && value > 0,
+		) ||
+		!token ||
+		token.length > 4096 ||
+		/[\r\n]/u.test(token)
+	)
+		return false;
+	try {
+		const response = await send(`https://api.github.com/repos/${repository}`, {
+			method: "GET",
+			redirect: "error",
+			headers: {
+				Accept: "application/vnd.github+json",
+				Authorization: `Bearer ${token}`,
+				"X-GitHub-Api-Version": "2022-11-28",
+			},
+			signal: AbortSignal.timeout(5_000),
+		});
+		if (response.status !== 200 || !response.body) {
+			await response.body?.cancel();
+			return false;
+		}
+		const reader = response.body.getReader();
+		const chunks: Uint8Array[] = [];
+		let size = 0;
+		try {
+			for (;;) {
+				const part = await reader.read();
+				if (part.done) break;
+				size += part.value.byteLength;
+				if (size > 65_536) return false;
+				chunks.push(part.value);
+			}
+		} finally {
+			await reader.cancel();
+		}
+		// SAFETY: JSON.parse produces a JsonValue, which asObject narrows.
+		const repo = asObject(
+			JSON.parse(Buffer.concat(chunks).toString()) as JsonValue,
+		);
+		const owner = asObject(repo?.owner);
+		return (
+			repo?.id === repositoryId &&
+			owner?.id === ownerId &&
+			repo.private === false &&
+			repo.visibility === "public" &&
+			repo.disabled === false &&
+			repo.archived === false
+		);
+	} catch {
+		return false;
+	}
+}
+
 export async function main(
 	argv: readonly string[],
 	env: NodeJS.ProcessEnv = process.env,
@@ -881,47 +1125,144 @@ export async function main(
 		routingConfig?: string | undefined;
 		/** The event payload; read from `GITHUB_EVENT_PATH` when left out. */
 		eventPayload?: JsonValue | undefined;
-		/** Used for the slip read only. */
+		/** Used for GitHub's routing-slip and public-repository reads. */
 		fetch?: typeof fetch;
 		now?: () => number;
+		/** A trusted host may install the real durable full-run claim verifier. */
+		verifyPrBatchCapacity?: PrBatchCapacityVerifier;
 	}> = {},
 ): Promise<RouteDecision> {
 	const args = parseRouteArgs(argv);
 	const settings = routeSettings(
 		readRunnerRouting(
-			"routingConfig" in io
-				? io.routingConfig
-				: readCheckoutFile(env, RUNNER_ROUTING_PATH),
+			"routingConfig" in io ? io.routingConfig : readRoutingPolicy(),
 		),
 	);
 	const { labels, limits } = settings;
-	// From committed policy alone, so it is written whatever the route turns out to be.
-	if (env.GITHUB_OUTPUT)
-		appendFileSync(env.GITHUB_OUTPUT, `box_runner=${settings.boxRunner}\n`);
 	const event = env.GITHUB_EVENT_NAME ?? "";
 	const fleetLabel = fleetLabelFor(event, labels);
 	// A dispatch's own choice wins; otherwise the committed pin.
 	const mode = args.route === "auto" ? settings.pin : args.route;
+	const mergeBatch =
+		event === "merge_group" &&
+		workflowFile(env) === "release-hobo.yml" &&
+		mode === "auto";
+	const mergeGroupHoboCi =
+		event === "merge_group" &&
+		workflowFile(env) === "hobo-ci.yml" &&
+		mode === "auto";
+	const mergeGroupFabric = mergeGroupHoboCi && !args.includeOwnRun;
+	if (env.GITHUB_OUTPUT)
+		appendFileSync(
+			env.GITHUB_OUTPUT,
+			`box_runner=${mergeBatch ? "" : settings.boxRunner}\n`,
+		);
 	const localEnrolled = settings.localRunner;
 	const defaults = settings.committed
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
-	// A signed local run was verified for this tree, so the jobs it covers are
-	// skipped and only a few short ones are left. They go where a job is known
-	// to start, without reading the slip or the queue. A pinned tier is an
-	// operator's own override and still wins.
-	if (mode === "auto" && args.attested)
+	if (mergeBatch) {
+		if (!settings.committed)
+			throw new Error(
+				"merge-group batch routing requires a valid committed policy",
+			);
+		if (
+			labels.github !== "ubuntu-24.04" ||
+			!(await isPublicCaller(env, io.fetch))
+		)
+			throw new Error(
+				"merge-group batch public compute evidence is unavailable",
+			);
 		return report(
 			{
 				tier: "github",
 				runner: labels.github,
-				reason: `a signed local run covers this tree, so the jobs left do not wait for a fleet${defaults}`,
+				reason:
+					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
 				refusedBy: "none",
-				slip: { kind: "unasked", why: "attested" },
+				slip: { kind: "unasked", why: "batch" },
 			},
 			env,
 		);
+	}
+	if (
+		event === "merge_group" &&
+		workflowFile(env) === "hobo-ci.yml" &&
+		mode === "auto" &&
+		!settings.committed
+	)
+		throw new Error(
+			"merge-group Fabric routing requires a valid committed policy",
+		);
+	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
+	if (
+		event === "pull_request" &&
+		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
+		!args.includeOwnRun &&
+		mode === "auto"
+	) {
+		if (!settings.committed)
+			throw new Error("PR batch routing requires a valid committed policy");
+		const startedAt = now();
+		const scope = prBatchScope(
+			env,
+			fleetLabel,
+			settings.boxRunner,
+			startedAt + limits.maxWaitSeconds * 1_000,
+			limits.maxWaitSeconds,
+			workflowFile(env),
+		);
+		let capacityHeld = false;
+		if (scope && io.verifyPrBatchCapacity) {
+			try {
+				capacityHeld = await io.verifyPrBatchCapacity(scope);
+			} catch {
+				// An unavailable or stale authority cannot admit the fleet.
+			}
+		}
+		const checkedAt = now();
+		if (
+			capacityHeld &&
+			scope &&
+			Number.isSafeInteger(startedAt) &&
+			startedAt > 0 &&
+			Number.isSafeInteger(checkedAt) &&
+			checkedAt >= startedAt &&
+			checkedAt < scope.decisionDeadlineMs
+		)
+			return report(
+				{
+					tier: "fleet",
+					runner: fleetLabel,
+					reason:
+						"the exact PR batch has an independently verified capacity and Broker claim",
+					refusedBy: "none",
+					slip: { kind: "unasked", why: "batch" },
+				},
+				env,
+			);
+		if (
+			labels.github !== "ubuntu-24.04" ||
+			!(await isPublicCaller(env, io.fetch))
+		)
+			throw new Error(
+				"PR batch hosted-runner public compute evidence is unavailable",
+			);
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason:
+					"the full PR batch has no verified fleet capacity and Broker claim; public standard-runner compute was verified",
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "batch" },
+			},
+			env,
+		);
+	}
+	// Local evidence covers only its named jobs. Remaining jobs follow the
+	// same fleet decision as any other run, including its pins and slip.
 	if (mode !== "auto") {
 		const pinned = routeRunner({
 			mode,
@@ -958,37 +1299,56 @@ export async function main(
 		nowMs: now,
 		fetch: io.fetch,
 	});
-	if (slip.ok)
+	if (slip.ok && slip.decision.tier !== "fleet")
 		return report(
 			{ ...slip.decision, reason: `${slip.decision.reason}${defaults}` },
 			env,
 		);
-	// No usable slip: the queue decides at once, as it did before slips (R3).
-	console.log(
-		`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (${slip.why}); the queue rule decides`)}`,
-	);
+	// No usable slip, or a fleet slip requiring an independent queue check.
+	if (!slip.ok)
+		console.log(
+			`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (${slip.why}); the queue rule decides`)}`,
+		);
+	const observedFleetLabel = slip.ok ? slip.decision.runner : fleetLabel;
+	const confirmFleet = slip.ok
+		? slip.decision.slip?.kind === "used" &&
+			slip.decision.slip.reason === "fleet-busy"
+			? "busy"
+			: "open"
+		: undefined;
+	// When a busy slip is valid, a full young queue does not end observation:
+	// later runs may still show a job that has already waited too long.
+	const observationLimits =
+		confirmFleet === "busy"
+			? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
+			: limits;
+	const read = githubReader(apiUrl, token);
+	const observe = (nowMs: number) =>
+		observeQueue({
+			read,
+			repository,
+			ownRunId: Number(env.GITHUB_RUN_ID),
+			labels: localEnrolled
+				? [observedFleetLabel, labels.local]
+				: [observedFleetLabel],
+			limits: observationLimits,
+			nowMs,
+			includeOwnRun: args.includeOwnRun,
+		});
+	const sleep = (wait: number) => delay(wait * 1000);
 	let decision: RouteDecision;
 	try {
-		const read = githubReader(apiUrl, token);
 		decision = await chooseRunner({
-			observe: (nowMs) =>
-				observeQueue({
-					read,
-					repository,
-					ownRunId: Number(env.GITHUB_RUN_ID),
-					labels: localEnrolled ? [fleetLabel, labels.local] : [fleetLabel],
-					limits,
-					nowMs,
-					includeOwnRun: args.includeOwnRun,
-				}),
+			observe,
 			now,
-			sleep: (wait) => delay(wait * 1000),
+			sleep,
 			mode,
-			fleetLabel,
+			fleetLabel: observedFleetLabel,
 			localLabel: labels.local,
 			githubLabel: labels.github,
 			localEnrolled,
 			limits,
+			confirmFleet,
 		});
 	} catch (error) {
 		// This job is running on a GitHub-hosted machine, so that tier is known
@@ -1000,6 +1360,36 @@ export async function main(
 			refusedBy: "queue",
 		};
 	}
+	if (
+		mergeGroupHoboCi &&
+		decision.tier === "fleet" &&
+		decision.runner === labels.fleet
+	)
+		decision = {
+			tier: "github",
+			runner: labels.github,
+			reason: `merge-group Fabric refused the general fleet label ${labels.fleet}`,
+			refusedBy: "queue",
+		};
+	if (mergeGroupFabric && decision.tier === "fleet")
+		decision = await confirmMergeGroupFabricFleet({
+			fleetDecision: decision,
+			observe,
+			now,
+			sleep,
+			fleetLabel: decision.runner,
+			githubLabel: labels.github,
+			limits: observationLimits,
+		});
+	if (slip.ok)
+		return report(
+			{
+				...decision,
+				reason: `${slip.decision.reason}; ${decision.reason}${defaults}`,
+				slip: slip.decision.slip,
+			},
+			env,
+		);
 	return report(
 		{
 			...decision,
@@ -1013,8 +1403,8 @@ export async function main(
 /** How a slip fallback warning starts; the monitor tells it from a route that did not run. */
 export const SLIP_FALLBACK_PREFIX = "routing slip not used";
 
-/** Why no slip was read: the tier is pinned, or a signed local run covers the tree. */
-export type UnaskedWhy = "pinned" | "attested";
+/** Why no slip was read. */
+export type UnaskedWhy = "pinned" | "batch";
 
 /** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
 export function workflowFile(env: NodeJS.ProcessEnv): string {

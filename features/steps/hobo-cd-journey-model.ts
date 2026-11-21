@@ -1,13 +1,13 @@
 /**
- * Journey model for the HoBo.CD acceptance features (plan 0024 WP20).
+ * Journey model for the HoBo.CD acceptance features.
  *
  * A deterministic, port-level model of the delivery decisions the journeys
  * exercise: lineage (I16), windows (I17), approvals, proposal-only agents
  * (I10), rollback as a Delta (I7, D12), drift remediation, previews, GitOps
  * publishing (D5), and the Mann–Whitney verdict (D9). It holds no wall clock,
  * no RNG and no network. These features are executable specs, bound to this
- * model until the merged composition (`composeContinuousDelivery`, WP18)
- * replaces it as the binding (plan 0024 §11).
+ * model until the merged composition (`composeContinuousDelivery`)
+ * replaces it as the binding.
  */
 
 // ── Mann–Whitney U, two-sided, normal approximation with tie correction ─────

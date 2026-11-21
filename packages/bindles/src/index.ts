@@ -21,6 +21,18 @@ export {
 	inferRequirementsFromResources,
 } from "./bindle.js";
 export {
+	type ExternalBoundaryViolation,
+	externalBoundaryViolations,
+} from "./boundaries.js";
+export {
+	CADENCE_OPTION,
+	CadenceError,
+	type CadenceViolation,
+	cadence,
+	cadenceViolations,
+	readCadence,
+} from "./cadence.js";
+export {
 	api,
 	auth,
 	bucket,
@@ -34,6 +46,7 @@ export {
 	job,
 	kv,
 	notify,
+	project,
 	queue,
 	rolloutResource,
 	schedule,
@@ -99,6 +112,27 @@ export {
 	connectionRef,
 	requireConnection,
 } from "./connection.js";
+export {
+	CONTINUITY_KINDS,
+	CONTINUITY_MIGRATION,
+	CONTINUITY_ON_LOSS,
+	CONTINUITY_OPTION,
+	CONTINUITY_TIER_DEFAULTS,
+	CONTINUITY_TIERS,
+	ContinuityError,
+	type ContinuityInput,
+	type ContinuityMigration,
+	type ContinuityOnLoss,
+	type ContinuityPolicy,
+	type ContinuityTier,
+	type ContinuityViolation,
+	continuity,
+	continuityPolicies,
+	continuityViolations,
+	isContinuityAnnotation,
+	parseContinuityPolicy,
+	readContinuity,
+} from "./continuity.js";
 export {
 	collectRequiredRuntimes,
 	containerDependencyAnnotation,

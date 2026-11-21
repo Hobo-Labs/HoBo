@@ -11,7 +11,7 @@ import type { ManifestV1 } from "@hobo/bindles";
 import { FreightSourceRecordSchema } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import { capability, type HttpTransport } from "@hobo/core";
 import type { Yard } from "@hobo/yards";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -28,7 +28,7 @@ import {
 	relayCampId,
 	relayYardRegistryProvider,
 } from "../src/ci-relay-delivery.js";
-import { loadRelayYard } from "../src/ci-relay-yard.js";
+import { loadRelayJoinedYards, loadRelayYard } from "../src/ci-relay-yard.js";
 
 const RELAY_DIR = resolve(import.meta.dirname, "../../ci-vercel");
 const PREVIEW = "https://relay-preview.example.test";
@@ -240,17 +240,133 @@ describe("Matching for the relay (the Yard's declared catalog)", () => {
 		expect(provider.regions).toEqual(["iad1"]);
 		expect(provider.capabilities.map((capability) => capability.port)).toEqual([
 			"compute",
-			"data",
+			"kv",
+			"queue",
+			"schedule",
 		]);
 		const [compute] = provider.capabilities;
 		expect(compute?.satisfies({ port: "database" }).kind).toBe("none");
 		expect(
 			compute?.satisfies({ port: "compute", features: ["gpu"] }).kind,
 		).toBe("partial");
+		for (const port of ["kv", "queue"]) {
+			const entry = provider.capabilities.find((item) => item.port === port);
+			expect(entry?.satisfies({ port })).toEqual({ kind: "full" });
+			expect(entry?.satisfies({ port, features: ["unlisted"] })).toEqual({
+				kind: "partial",
+				missing: ["unlisted"],
+			});
+		}
+		const withoutQueue = relayYardRegistryProvider({
+			...yard,
+			bindings: yard.bindings.filter(
+				(row) => row.profile !== capability.queue.atLeastOnce,
+			),
+		});
+		expect(
+			withoutQueue.capabilities.some((entry) => entry.port === "queue"),
+		).toBe(false);
+	});
+
+	it("keeps a joined secret projection under its own Yard and does not invent other capabilities", async () => {
+		const joined = await loadRelayJoinedYards(RELAY_DIR, yard);
+		const configYard = joined.find(
+			(member) => member.providerId === "infisical",
+		);
+		if (!configYard) throw new Error("missing joined config Yard");
+		const provider = relayYardRegistryProvider(configYard, true);
+		expect(provider.id).toBe("yard:hobo-ci-relay-config");
+		expect(provider.capabilities.map((entry) => entry.port)).toEqual([
+			"secretRef",
+		]);
+		const secrets = provider.capabilities.find(
+			(entry) => entry.port === "secretRef",
+		);
+		expect(
+			secrets?.satisfies({ port: "secretRef", features: ["access"] }).kind,
+		).toBe("full");
+		expect(
+			secrets?.satisfies({ port: "secretRef", features: ["put"] }).kind,
+		).toBe("partial");
+		const noProjection = relayYardRegistryProvider(
+			{
+				...configYard,
+				bindings: configYard.bindings.filter(
+					(row) => row.profile !== capability.secretRef.runtimeProjection,
+				),
+			},
+			true,
+		);
+		expect(
+			noProjection.capabilities.some((entry) => entry.port === "secretRef"),
+		).toBe(false);
+		const withOtherBindings: Yard = {
+			...configYard,
+			bindings: [...configYard.bindings, ...yard.bindings],
+		};
+		expect(
+			relayYardRegistryProvider(withOtherBindings, true).capabilities.map(
+				(entry) => entry.port,
+			),
+		).toEqual(["secretRef"]);
+		expect(
+			await loadRelayJoinedYards(RELAY_DIR, { ...yard, name: "other" }),
+		).toEqual([]);
+	});
+
+	it("does not advertise key-value or queue ports without matching Yard bindings", () => {
+		const withoutDataPorts: Yard = {
+			...yard,
+			bindings: yard.bindings.filter(
+				(row) =>
+					row.profile !== capability.kv.keyValue &&
+					row.profile !== capability.kv.redisCompatible &&
+					row.profile !== capability.kv.valkey &&
+					row.profile !== capability.queue.atLeastOnce &&
+					row.profile !== capability.queue.fifo,
+			),
+		};
+		expect(
+			relayYardRegistryProvider(withoutDataPorts).capabilities.map(
+				(entry) => entry.port,
+			),
+		).toEqual(["compute", "schedule"]);
+	});
+
+	it("recognizes generic key-value and FIFO bindings without inventing guarantees", () => {
+		const alternate: Yard = {
+			...yard,
+			bindings: yard.bindings.map((row) =>
+				row.profile === capability.kv.redisCompatible
+					? { ...row, profile: capability.kv.keyValue }
+					: row.profile === capability.queue.atLeastOnce
+						? { ...row, profile: capability.queue.fifo }
+						: row,
+			),
+		};
+		const provider = relayYardRegistryProvider(alternate);
+		const kv = provider.capabilities.find((entry) => entry.port === "kv");
+		const queue = provider.capabilities.find((entry) => entry.port === "queue");
+		expect(kv?.satisfies({ port: "kv" })).toEqual({ kind: "full" });
+		expect(kv?.satisfies({ port: "kv", features: ["eventual"] })).toEqual({
+			kind: "partial",
+			missing: ["eventual"],
+		});
+		expect(queue?.satisfies({ port: "queue" })).toEqual({ kind: "full" });
 	});
 });
 
 describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
+	it("refuses delivery when the relay is not a member of the declared Junction", async () => {
+		const h = await harness();
+		const outcome = await deliver(h, "preview", { yard: { ...yard } });
+		expect(outcome).toMatchObject({
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.promotionRefused,
+		});
+		expect(h.deployed).toEqual([]);
+	});
+
 	it("records Freight, promotes to preview, realizes it and qualifies it on passing probes", async () => {
 		const h = await harness();
 		const outcome = await deliver(h, "preview");

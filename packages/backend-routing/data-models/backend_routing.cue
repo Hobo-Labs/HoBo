@@ -107,3 +107,23 @@ package data_models
 		target: #FleetBackendId
 	}
 }
+
+// The fleet's operating plan for a declared continuity policy.
+#ContinuityFleetPlan: {
+	tier:                   string & !=""
+	rpo_ms:                 int & >=0
+	failover_after_ms:      int & >=1000
+	min_dwell_ms:           int & >=0
+	standbys:               int & >=0
+	copy:                   "snapshot" | "cold"
+	copy_every_ms:          int & >=0
+	backup_every_ms:        int & >=0
+	backups_kept:           int & >=0
+	monthly_budget_micros?: int & >=0
+	if copy == "cold" {
+		copy_every_ms: 0
+	}
+	if copy == "snapshot" {
+		copy_every_ms: >=15000
+	}
+}

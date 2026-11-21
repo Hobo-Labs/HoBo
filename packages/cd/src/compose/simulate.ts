@@ -1,4 +1,4 @@
-// The labelled `--simulate` fixture path (WP18, plan 0024, C2).
+// The labelled `--simulate` fixture path (ADR-0182 C2).
 //
 // `--simulate` is the only way to reach a fixture. The simulated realizer
 // touches no target: it reports the desired Set as converged and labels every

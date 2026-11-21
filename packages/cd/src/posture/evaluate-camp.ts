@@ -1,4 +1,4 @@
-// One Camp's posture evaluation (plan 0024 D25) as a pure function of its
+// One Camp's posture evaluation (ADR-0182 D25) as a pure function of its
 // recorded inputs: the bound packs, their remediation modes, the status
 // observation (and its journal position), the current Set, the Camp's
 // management mode and the instant. The posture service calls it on every

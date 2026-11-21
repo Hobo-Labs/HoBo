@@ -1,4 +1,4 @@
-// PublisherPort conformance (plan 0024 D5 publisher mode, D14, I5). A
+// PublisherPort conformance (ADR-0182 D5 publisher mode, D14, I5). A
 // publisher writes desired state where an external engine (GitOps) picks it
 // up; convergence is known only from observing that engine.
 import {

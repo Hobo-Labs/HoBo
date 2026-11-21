@@ -1,4 +1,4 @@
-// The CD fan-out load lane (plan 0024 WP20): 10,000 Camps, one fan-out, p99
+// The CD fan-out load lane: 10,000 Camps, one fan-out, p99
 // controller tick under one second. The runner measures; the harness binds
 // the controller and store (Postgres in the real lane, any store otherwise).
 // Measurement uses an injected monotonic clock and is never a decision input.
@@ -12,7 +12,7 @@ import {
 // public-contract: versioned conformance suite id stamped on CD conformance reports.
 export const CD_LOAD_SUITE = "hobo.cd.fanout-load/v1";
 
-// public-contract: the load lane's default shape (plan 0024 WP20 Load).
+// public-contract: the load lane's default shape.
 export const CD_FANOUT_LOAD_DEFAULTS = Object.freeze({
 	camps: 10_000,
 	p99TickBudgetMs: 1_000,
