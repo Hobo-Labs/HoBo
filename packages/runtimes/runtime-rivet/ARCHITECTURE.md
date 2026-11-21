@@ -13,9 +13,10 @@ Parse, don't validate: derived domain types (`RivetRuntimeConfig`,
 `parseLogicalActorIdentity` (core) brands grain keys. SecretRefs are locators;
 URL userinfo and plaintext tokens fail closed.
 
-`loadRivetkit` uses dynamic `import("rivetkit")` because the published 2.3.10
-CJS build cannot `require`. Live RivetKit / wasm tests fail closed (no skip,
-no timeout-as-pass).
+`loadRivetkit` uses dynamic `import("rivetkit")` for ESM and CommonJS hosts.
+The pinned RivetKit 3 engine is tested separately; the HoBo journal remains a
+local SQLite oracle and remote runtime modes fail closed. Live RivetKit / wasm
+tests fail closed (no skip, no timeout-as-pass).
 
 ## Event architecture
 

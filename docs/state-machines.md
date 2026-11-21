@@ -41,8 +41,6 @@ When covered behavior changes, review the code and its intended policy, update t
 
 ## Open work and proof boundaries
 
-- The historical candidate queue covers only selected source languages and paths and has not been fully classified. CI, CD, cloud providers, stores, examples, integrations, and additional stateful subsystems need further source review and their own checks.
-- Strict CI starts remain unavailable in production: the GitHub assignment lookup and hook endpoint are not wired, and the hook does not derive the actual assigned job on its own.
 - Concurrent workflow resumes are not fenced. A crash between an external effect and its completion fact can repeat that effect. Legacy workflow records can lack identifying context.
 - Promotion and rollback binding assumes atomic journal claims and preserved metadata. Concurrent retries of the same operation and Rail effects that do not change the current Set still require fencing and reconciliation. Older records can be refused when their original request cannot be reconstructed.
 - The delivery checks assume the storage transaction and its persisted attempt counter are durable. Callers must pass the attempt returned by each claim. They do not establish exactly-once external delivery.
