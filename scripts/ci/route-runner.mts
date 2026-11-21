@@ -841,18 +841,18 @@ export async function observeHoboPoolSaturation(input: {
 	};
 }
 
-function onlineRunnerUnavailable(
+function idleRunnerUnavailable(
 	runners: FleetPoolRunners | undefined,
 	label: string,
 ): string | undefined {
-	if (runners !== undefined && runners.online > 0) return undefined;
-	return `no online ${label} runner was verified on the fetched runner page`;
+	if (runners !== undefined && runners.online > runners.busy) return undefined;
+	return `no idle ${label} runner was verified on the fetched runner page`;
 }
 
 function agent37OverflowUnavailable(
 	runners: FleetPoolRunners | undefined,
 ): string | undefined {
-	return onlineRunnerUnavailable(runners, AGENT37_OVERFLOW_RUNNER_LABEL);
+	return idleRunnerUnavailable(runners, AGENT37_OVERFLOW_RUNNER_LABEL);
 }
 
 export async function applyHoboPoolSaturation(input: {
@@ -923,6 +923,7 @@ export async function confirmMergeGroupFabricFleet(input: {
 	now: () => number;
 	sleep: (seconds: number) => Promise<void>;
 	fleetLabel: string;
+	githubLabel: string;
 	limits: RouteLimits;
 }): Promise<RouteDecision> {
 	const admissionLimits = {
@@ -933,10 +934,10 @@ export async function confirmMergeGroupFabricFleet(input: {
 		),
 	};
 	const startedAtMs = input.now();
-	const unconfirmed = (outcome: string): RouteDecision => ({
-		tier: "fleet",
-		runner: input.fleetLabel,
-		reason: `${input.fleetDecision.reason}; merge-group trunk confirmation ${outcome}; the run stays on ${input.fleetLabel} because GitHub-hosted has no idle capacity`,
+	const hosted = (outcome: string): RouteDecision => ({
+		tier: "github",
+		runner: input.githubLabel,
+		reason: `merge-group trunk confirmation ${outcome}`,
 		refusedBy: "queue",
 		slip: input.fleetDecision.slip,
 	});
@@ -944,21 +945,21 @@ export async function confirmMergeGroupFabricFleet(input: {
 		const nowMs = input.now();
 		const waitedSeconds = seconds(startedAtMs, nowMs);
 		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
-			return unconfirmed(
+			return hosted(
 				`timed out after ${waitedSeconds} s without a healthy trunk pickup`,
 			);
 		let view: QueueView;
 		try {
 			view = await input.observe(nowMs);
 		} catch (error) {
-			return unconfirmed(
+			return hosted(
 				`could not read the queue (${error instanceof Error ? error.message : "unknown error"})`,
 			);
 		}
 		const observedAtMs = input.now();
 		const observedWaitSeconds = seconds(startedAtMs, observedAtMs);
 		if (observedWaitSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
-			return unconfirmed(
+			return hosted(
 				`timed out after ${observedWaitSeconds} s without a healthy trunk pickup`,
 			);
 		const fleet = labelLoad(view.jobs, input.fleetLabel, observedAtMs);
@@ -969,7 +970,7 @@ export async function confirmMergeGroupFabricFleet(input: {
 				refusedBy: "none",
 			};
 		if (refusingJobs(fleet, admissionLimits))
-			return unconfirmed("found the trunk fleet refusing jobs");
+			return hosted("found the trunk fleet refusing jobs");
 		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
 	}
 }
@@ -1171,23 +1172,20 @@ export function parseRouteArgs(argv: readonly string[]): RouteArgs {
 	};
 }
 
-/**
- * The slip class of this run: `trunk` for trunk events, `fork` for a pull
- * request whose head is another repository (never the trunk label), else `pr`.
- */
 export function routeClass(
 	event: string,
 	payload: JsonValue | undefined,
 ): RoutingSlipClassName {
 	if (TRUNK_EVENTS.has(event)) return "trunk";
+	if (event !== "pull_request") return "pr";
 	const pullRequest = asObject(asObject(payload)?.pull_request);
-	if (!pullRequest) return "pr";
+	if (!pullRequest) return "fork";
 	const repo = (side: string) =>
 		asText(
 			asObject(asObject(asObject(pullRequest[side])?.repo))?.full_name,
 		)?.toLowerCase();
 	const base = repo("base");
-	return base !== undefined && repo("head") !== base ? "fork" : "pr";
+	return base !== undefined && repo("head") === base ? "pr" : "fork";
 }
 
 /** The fallback `why` for a slip the reader refused. */
@@ -1415,6 +1413,30 @@ export async function main(
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
+	if (mergeBatch) {
+		if (!settings.committed)
+			throw new Error(
+				"merge-group batch routing requires a valid committed policy",
+			);
+		if (
+			labels.github !== "ubuntu-24.04" ||
+			!(await isPublicCaller(env, io.fetch))
+		)
+			throw new Error(
+				"merge-group batch public compute evidence is unavailable",
+			);
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason:
+					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "batch" },
+			},
+			env,
+		);
+	}
 	if (
 		event === "merge_group" &&
 		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
@@ -1535,11 +1557,16 @@ export async function main(
 					label: fleetLabel,
 				});
 				const { saturation } = observation;
-				const fleetUnavailable = onlineRunnerUnavailable(
+				const fleetUnavailable = idleRunnerUnavailable(
 					observation.poolRunners,
 					fleetLabel,
 				);
-				if (fleetUnavailable !== undefined) {
+				if (
+					fleetUnavailable !== undefined &&
+					(!saturation.saturated ||
+						agent37OverflowUnavailable(observation.overflowRunners) !==
+							undefined)
+				) {
 					console.log(
 						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository PR batch stays on ${labels.github}`)}`,
 					);
@@ -1715,16 +1742,18 @@ export async function main(
 				trunkIdle,
 				trunkSummary,
 			};
-			if (hostedIdle) {
+			if (hostedIdle || !trunkIdle) {
 				decision = {
 					tier: "github",
 					runner: githubLabel,
-					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
+					reason: hostedIdle
+						? `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`
+						: `merge-group Fabric prefers GitHub-hosted while hobo-trunk has no idle capacity (${trunkSummary})`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
 				};
 			} else {
-				const choice = await chooseRunner({
+				decision = await chooseRunner({
 					observe: observeTrunkChoice,
 					now,
 					sleep,
@@ -1736,27 +1765,16 @@ export async function main(
 					limits: trunkChoiceObservationLimits,
 					trunkPriority: true,
 				});
-				const fleetDecision: RouteDecision =
-					choice.tier === "fleet" && choice.runner === trunkLabel
-						? choice
-						: {
-								tier: "fleet",
-								runner: trunkLabel,
-								reason: `${choice.reason}; merge-group Fabric uses ${trunkLabel} because GitHub-hosted has no idle capacity (${hostedSummary})`,
-								refusedBy: "queue",
-								slip: choice.slip,
-							};
-				decision =
-					fleetDecision.refusedBy === "queue"
-						? fleetDecision
-						: await confirmMergeGroupFabricFleet({
-								fleetDecision,
-								observe: observeTrunkChoice,
-								now,
-								sleep,
-								fleetLabel: trunkLabel,
-								limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
-							});
+				if (decision.tier === "fleet")
+					decision = await confirmMergeGroupFabricFleet({
+						fleetDecision: decision,
+						observe: observeTrunkChoice,
+						now,
+						sleep,
+						fleetLabel: trunkLabel,
+						githubLabel,
+						limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
+					});
 				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		}

@@ -526,11 +526,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
 			if ((lines[start] ?? "") === "  route:") {
-				const expected =
-					file === "hobo-ci.yml" || file === "release-hobo.yml"
-						? "${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}"
-						: "ubuntu-24.04";
-				assert.equal(runsOn, expected, `${file}: route`);
+				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
 				assert.match(
 					block,
 					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,

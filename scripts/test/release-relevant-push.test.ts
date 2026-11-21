@@ -181,13 +181,12 @@ describe("as the release workflow runs it", () => {
 	});
 
 	it("queues main-train runs in one group and cancels stale pull_request or merge_group release runs", () => {
-		expect(workflow).toMatch(
-			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}', github\.workflow, github\.event\.merge_group\.head_ref\)/u,
-		);
-		expect(workflow).toMatch(/hobo-release-train-\{0\}-\{1\}/u);
-		expect(workflow).toContain(
-			"cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
-		);
+		expect(workflow).toContain(`concurrency:
+  group: >-
+    \${{ github.event_name == 'merge_group' && format('{0}-merge-group-{1}', github.workflow, github.event.merge_group.head_ref) ||
+    (github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion)) ||
+    format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: \${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}`);
 	});
 
 	it("keeps publishing jobs out of a merge_group run the queue can cancel", () => {

@@ -171,7 +171,7 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 		const runsOn = block
 			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
 			.find((value) => value !== undefined);
-		if (!isFixedRunnerJob(lines[start] ?? "", block, runsOn))
+		if (!isAlwaysHostedJob(lines[start] ?? "", block, runsOn))
 			errors.push(
 				`${healthFile}:${start + 1}: the health monitor runs one job, ci-health, on ${HOSTED_RUNS_ON}, that runs node scripts/ci/ci-health.mts`,
 			);
@@ -181,9 +181,6 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 /** The one runner choice besides `hobo`: trunk events ask for the box's trunk label. */
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
-
-const ROUTE_RUNS_ON =
-	"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
 
 /**
  * What a routed job asks for: the label the `route` job chose (the routing
@@ -335,14 +332,14 @@ function isNonPromotingDepsJob(
 	);
 }
 
-function isFixedRunnerJob(
+function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
 	runsOn: string | undefined,
 ): boolean {
 	if (/^  route:$/.test(jobLine)) {
 		return (
-			(runsOn === HOSTED_RUNS_ON || runsOn === ROUTE_RUNS_ON) &&
+			runsOn === HOSTED_RUNS_ON &&
 			block.some(
 				(line) =>
 					line.trim() === "uses: ./.github/actions/route-runner" ||
@@ -768,7 +765,7 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
-		const fixedRunner = isFixedRunnerJob(jobLine, block, runsOn);
+		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -783,7 +780,7 @@ function lintWorkflowYaml(
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
-			!fixedRunner
+			!alwaysHosted
 		) {
 			errors.push(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
