@@ -331,6 +331,11 @@ describe("pr-fabric reuse routing", () => {
 		assert.deepEqual(keys.sort(), ["actions", "contents"]);
 	});
 
+	it("invokes the route action only from the trusted base checkout", () => {
+		const routeStep = routeSteps().find((step) => step?.id === "route");
+		assert.equal(routeStep?.uses, "./.ci-trusted/.github/actions/route-runner");
+	});
+
 	it("loads pr-fabric-reuse only from the trusted base sparse checkout", () => {
 		const steps = routeSteps();
 		const trusted = steps.find(

@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
+import { asObject, asText } from "../ci/attestation.mts";
 import {
 	DEFAULT_REUSE_PR_FABRIC,
 	decidePrFabricReuse,
 	type FetchJson,
 	fetchPrFabricEvidence,
 	MERGE_QUEUE_ENTRY_PATTERN,
+	PR_FABRIC_GATE_JOB_SCRIPTS,
+	PR_FABRIC_GATE_JOB_VALIDATION,
 	PR_FABRIC_RUN_LOOKUPS,
+	PR_FABRIC_WORKSPACE_SHARD_PREFIX,
 	type PrFabricReuseInput,
 	parseMergeQueueEntry,
 	prFabricGateJobsSucceeded,
@@ -15,6 +19,7 @@ import {
 } from "../ci/pr-fabric-reuse.mts";
 import type { JsonValue } from "../ci/runner-routing.mts";
 import { readRunnerRouting } from "../ci/runner-routing.mts";
+import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 const HEAD = "ca91473da26278a7c73a4f0dd48390904ba69ffe";
 const TREE = "1111111111111111111111111111111111111111";
@@ -456,5 +461,27 @@ describe("the evidence fetch", () => {
 	it("keeps the entry pattern anchored to the whole branch name", () => {
 		assert.equal(MERGE_QUEUE_ENTRY_PATTERN.test(`x${BRANCH}`), false);
 		assert.equal(MERGE_QUEUE_ENTRY_PATTERN.test(`${BRANCH}x`), false);
+	});
+});
+
+describe("the fabric gate jobs pr-fabric reuse requires", () => {
+	it("use the same display names as hobo-ci.yml", () => {
+		const jobs = asObject(
+			workflowDocument(readFileSync(".github/workflows/hobo-ci.yml", "utf8"))
+				.jobs,
+		);
+		assert.equal(
+			asText(asObject(jobs?.pr_gate_validation)?.name),
+			PR_FABRIC_GATE_JOB_VALIDATION,
+		);
+		assert.equal(
+			asText(asObject(jobs?.["scripts-tests"])?.name),
+			PR_FABRIC_GATE_JOB_SCRIPTS,
+		);
+		assert.ok(
+			asText(asObject(jobs?.workspace_tests)?.name)?.startsWith(
+				PR_FABRIC_WORKSPACE_SHARD_PREFIX,
+			),
+		);
 	});
 });
