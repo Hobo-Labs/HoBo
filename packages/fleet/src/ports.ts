@@ -686,6 +686,11 @@ export type AssignmentReplica = Readonly<{
 export type AssignmentRegister = Readonly<{
 	replicas: readonly AssignmentReplica[];
 	classify?: FailureClassifier;
+	earlyCurrent?: (
+		resolution: Extract<AssignmentResolution, { status: "current" }>,
+		replies: readonly AssignmentReply[],
+	) => boolean;
+	stopAfterMajority?: boolean;
 }>;
 export type AssignmentReply = Readonly<
 	| { replica: MemberName; rows: readonly AssignmentEntry[] }

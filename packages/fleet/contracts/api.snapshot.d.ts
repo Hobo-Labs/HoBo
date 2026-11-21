@@ -1593,6 +1593,10 @@ export type AssignmentReplica = Readonly<{
 export type AssignmentRegister = Readonly<{
     replicas: readonly AssignmentReplica[];
     classify?: FailureClassifier;
+    earlyCurrent?: (resolution: Extract<AssignmentResolution, {
+        status: "current";
+    }>, replies: readonly AssignmentReply[]) => boolean;
+    stopAfterMajority?: boolean;
 }>;
 export type AssignmentReply = Readonly<{
     replica: MemberName;
@@ -2143,6 +2147,8 @@ export declare function fleetMajority(count: number): number;
 export declare function resolveAssignment(members: readonly MemberName[], replies: readonly AssignmentReply[]): AssignmentResolution;
 export declare function parseAssignmentRegister(replicas: readonly AssignmentReplica[], options?: Readonly<{
     classify?: FailureClassifier;
+    earlyCurrent?: AssignmentRegister["earlyCurrent"];
+    stopAfterMajority?: boolean;
 }>): AssignmentRegister;
 export declare function readAssignmentReplies(register: AssignmentRegister, limit?: number): Promise<readonly AssignmentReply[]>;
 export declare function readCurrentAssignment(register: AssignmentRegister): Promise<AssignmentResolution>;
