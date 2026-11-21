@@ -214,7 +214,19 @@ describe("availability-aware up", () => {
 			deploymentId: "uncertain",
 			session: createFixtureSession({ tenant: "tenant" }),
 		};
-		expect((await client.up(bindle, options)).status).toBe("needs-human");
+		const initial = await client.up(bindle, options);
+		expect(initial.status).toBe("needs-human");
+		if (initial.status === "rejected") throw new Error(initial.reason);
+		expect(initial.progress).toContainEqual(
+			expect.objectContaining({
+				type: "resource.Failed",
+				resourceId: "db",
+				reconciliation: { operation: "apply" },
+				detail: expect.stringContaining(
+					"Reconcile the provider before retrying",
+				),
+			}),
+		);
 		expect(applied).toEqual(["db@neon"]);
 		expect(attempts).toEqual(["preview:db@neon", "apply:db@neon"]);
 		const firstHistory = await collectStream(

@@ -77,7 +77,6 @@ export type PricingSupport =
 			readonly unrated: readonly UnratedPlan[];
 	  };
 
-/** Discover executable pricing coverage without treating absent terms as free. */
 export function describePricingSupport(
 	manifest: ParsedProviderManifest,
 ): PricingSupport {

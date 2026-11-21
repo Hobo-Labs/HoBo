@@ -9,6 +9,8 @@ tags: [hobo, release, ci, npm, oci, mise]
 
 Three release pipelines ship independently: **ts-autocode**, **HoBo SDK**, and **HoBo CLI + PWA**. A release in one pipeline neither triggers nor requires a release in another. Versioning, tags, and release approval follow each pipeline's own cadence.
 
+HoBo's own release Freight topology is [`release/hobo-release.delivery.ts`](../../release/hobo-release.delivery.ts): each artifact family (npm, oci, pages) owns a provider Yard (`hobo-release-npm`, `hobo-release-oci`, `hobo-release-pages`) while Camp `logicalId` values keep the `hobo-release/<family>-<channel>` identity for pipelines and journal. [`test/release-provider-yards.test.ts`](../../test/release-provider-yards.test.ts) asserts that split.
+
 Most release jobs have a **10-minute hard timeout** and a **5-minute target duration**; the pull-request jobs that build images, and the publishing jobs, use their explicitly documented larger budgets (for example **30 minutes** for `release-hobo` / `release-contract`). Jobs use **`runs-on: hobo`** and the hermetic worker image. Every third-party GitHub Action is pinned to a **full commit SHA**; mutable version tags are not sufficient.
 
 ### Main train version policy (Nerdbank.GitVersioning)
@@ -215,22 +217,18 @@ The sparse cone remains limited to the workspace members declared by HoBo's sibl
 
 ## Syncing `main` into `feature/hobo-code`
 
-hobo-code (`packages/code`, `@hobo/code`) is developed on the long-lived `feature/hobo-code` branch and is not part of `main` (see the 2026-11-08 amendment to [ADR-0139](../design/adr/03-data-plane.md#adr-0139)). `main` is merged into that branch from time to time so it keeps up with the platform.
+HoBo Code (`packages/code`, `@hobo/code`) was kept on `feature/hobo-code` after
+its removal from `main` in #1772. Its first sync recorded that removal with an
+`-s ours` merge so it would not delete the package on the feature branch.
+Later syncs needed merge commits to preserve that ancestry; squashing lost the
+record and caused a later merge to delete the package.
 
-The first sync after the removal lands on `main` (#1772) must record the removal as merged without applying it. A plain merge would delete hobo-code from the branch too. `R` is #1772's squash commit on `main`:
-
-```bash
-git switch feature/hobo-code
-git fetch origin
-R=<squash commit of #1772 on main>
-git merge --no-ff "$R^"                    # main up to just before the removal
-git merge -s ours "$R" -m "merge: keep hobo-code across main's removal of it"
-git merge origin/main                      # everything after the removal, as usual
-```
-
-Every later sync is `git merge origin/main`. When a `main` change touches a file the removal rewrote (an ADR, these release docs, `@hobo/patterns`), resolve the conflict so the branch keeps its hobo-code content.
-
-**A sync is pushed as merge commits, or landed from a pull request with "Create a merge commit". It is never squash-merged or rebased.** A squash turns the `-s ours` merge into an ordinary commit, so git no longer records `R` as merged, and the next ordinary sync applies it and deletes hobo-code: a simulated squashed first sync left 1 of the 925 `packages/code` files. A rebase drops the merge commits the same way.
+HoBo Code and its release workflow have since been retired from the feature
+branch as well in [#2366](https://github.com/Hobo-Labs/HoBo/pull/2366). The
+preservation-only sync procedure is no longer needed. `packages/pixel-village`
+was also removed from `main` and is absent from the feature branch. References
+to their commands and integrations in historical architecture records describe
+earlier implementations.
 
 ## Related references
 

@@ -2,15 +2,26 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { types as utilTypes } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { runIacRoute } from "../src/iac-route.js";
+import { type IacRouteController, runIacRoute } from "../src/iac-route.js";
 import {
+	type IacRouteRecoveryDependencies,
+	type IacRouteRecoveryStore,
 	normalizeIacRouteRecoveryClaim,
 	recoverIacRoute,
 	recoveryClaimDigest,
 } from "../src/iac-route-recovery.js";
 import { createSqliteIacRouteRecoveryStore } from "../src/iac-route-recovery-sqlite.js";
 import { createSqliteIacRouteAuthority } from "../src/iac-route-sqlite.js";
+
+interface MutableRecoveryDependencies {
+	store: IacRouteRecoveryStore;
+	authorize: IacRouteRecoveryDependencies["authorize"];
+	verifyProvider: IacRouteRecoveryDependencies["verifyProvider"];
+	verifyFinancial: IacRouteRecoveryDependencies["verifyFinancial"];
+	verifyFence: IacRouteRecoveryDependencies["verifyFence"];
+}
 
 const inventoryHash = `sha256:${"a".repeat(64)}`;
 const operationId = `sha256:${"c".repeat(64)}`;
@@ -57,7 +68,7 @@ function fixture() {
 		operationId,
 		authorization: "signed:request",
 	};
-	const deps = {
+	const deps: MutableRecoveryDependencies = {
 		store,
 		authorize: async () => true,
 		verifyProvider: async () => true,
@@ -272,7 +283,7 @@ describe("verified durable IaC route recovery", () => {
 
 	it("recognizes recovery committed before a lost acknowledgement", async () => {
 		const f = await started();
-		const broken = {
+		const broken: IacRouteRecoveryStore = {
 			...f.store,
 			commit: async (request) => {
 				await f.store.commit(request);
@@ -290,6 +301,7 @@ describe("verified durable IaC route recovery", () => {
 			...f.store,
 			commit: async () => ({ status: "committed" as const }),
 		};
+		// @ts-expect-error The test deliberately supplies a fabricated JavaScript receipt.
 		const result = await recoverIacRoute({ ...f.deps, store: broken }, f.claim);
 		expect(result.status).toBe("uncertain");
 		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
@@ -323,10 +335,13 @@ describe("recovery authority boundaries", () => {
 				},
 				verifyFinancial: async ({ claim, snapshot }) => {
 					calls.push("financial");
+					const attempt = snapshot.attempts[0];
+					const expected = f.snapshot.attempts[0];
 					return (
 						claim.evidence.fence.ref === "fence:evidence" &&
-						snapshot.attempts[0].attemptRef ===
-							f.snapshot.attempts[0].attemptRef
+						attempt !== undefined &&
+						expected !== undefined &&
+						attempt.attemptRef === expected.attemptRef
 					);
 				},
 			},
@@ -452,7 +467,7 @@ describe("recovery authority boundaries", () => {
 	it("returns uncertain when the receipt cannot be reread and permits later replay", async () => {
 		const f = await started();
 		let reads = 0;
-		const broken = {
+		const broken: IacRouteRecoveryStore = {
 			...f.store,
 			get: async (identity) => {
 				if (++reads > 1) throw new Error("read unavailable");
@@ -553,7 +568,7 @@ describe("fence causality", () => {
 		const f = await started();
 		let effectExists = false;
 		const fenceTime = Date.now() - 500;
-		// The old zero-effect observation predates an effect and the eventual fence.
+
 		const stale = {
 			...f.claim,
 			evidence: {
@@ -705,7 +720,7 @@ describe("operation lineage", () => {
 		);
 		expect(result.status).toBe("uncertain");
 		expect(await f.store.get(f.identity)).toBeUndefined();
-		// A stale operation mapping also invalidates the old permit.
+
 		expect(await f.authority.verifyAttempt(f.permit)).toBe(false);
 	});
 
@@ -810,7 +825,7 @@ it("executes only the recovery-granted retry and permits a later independent ope
 	const f = await started();
 	expect((await recoverIacRoute(f.deps, f.claim)).status).toBe("recovered");
 	let effects = 0;
-	const run = async (route) => {
+	const run = async (route: IacRouteController) => {
 		const permit = await route.beginAttempt({
 			targetId: "yard-b",
 			inventoryHash,
@@ -1066,4 +1081,414 @@ it("rejects accessor-based store configuration before opening a path", async () 
 	};
 	expect(() => createSqliteIacRouteRecoveryStore(options)).toThrow();
 	expect(reads).toBe(0);
+});
+
+describe("recovery inputs with hostile descriptors", () => {
+	it("rejects proxied claims and store inputs after the proxy predicate changes", async () => {
+		const f = await started();
+		let traps = 0;
+		const original = Object.getOwnPropertyDescriptor(utilTypes, "isProxy");
+		const proxy = <T extends object>(value: T): T =>
+			new Proxy(value, {
+				getOwnPropertyDescriptor() {
+					traps++;
+					throw new Error("descriptor trap");
+				},
+				get() {
+					traps++;
+					throw new Error("get trap");
+				},
+			});
+		let pending: ReturnType<typeof recoverIacRoute>;
+		const refused: boolean[] = [];
+		try {
+			Object.defineProperty(utilTypes, "isProxy", {
+				configurable: true,
+				value: () => false,
+			});
+			pending = recoverIacRoute(f.deps, proxy(f.claim));
+			for (const call of [
+				() => createSqliteIacRouteRecoveryStore(proxy({ path: f.path })),
+				() => f.store.inspect(proxy(f.identity)),
+				() => f.store.get(proxy(f.identity)),
+				() =>
+					f.store.commit(
+						proxy({ claim: f.claim, claimDigest: "sha256:invalid" }),
+					),
+			]) {
+				try {
+					call();
+					refused.push(false);
+				} catch {
+					refused.push(true);
+				}
+			}
+		} finally {
+			if (original) Object.defineProperty(utilTypes, "isProxy", original);
+		}
+		expect(await pending).toEqual({ status: "denied" });
+		expect(refused).toEqual([true, true, true, true]);
+		expect(traps).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+	});
+
+	it("rejects proxied claims and evidence without invoking traps or authorities", async () => {
+		const f = await started();
+		let traps = 0;
+		let calls = 0;
+		const proxy = <T extends object>(value: T): T =>
+			new Proxy(value, {
+				getOwnPropertyDescriptor() {
+					traps++;
+					throw new Error("descriptor trap");
+				},
+				get() {
+					traps++;
+					throw new Error("get trap");
+				},
+			});
+		const deps = {
+			...f.deps,
+			store: {
+				...f.store,
+				get: () => {
+					calls++;
+					return undefined;
+				},
+				inspect: () => {
+					calls++;
+					return undefined;
+				},
+				commit: () => {
+					calls++;
+				},
+			},
+			authorize: () => {
+				calls++;
+				return true;
+			},
+			verifyFence: () => {
+				calls++;
+				return true;
+			},
+			verifyProvider: () => {
+				calls++;
+				return true;
+			},
+			verifyFinancial: () => {
+				calls++;
+				return true;
+			},
+		};
+		const claim = f.claim;
+		const cases = [
+			proxy(claim),
+			{ ...claim, evidence: proxy(claim.evidence) },
+			{
+				...claim,
+				evidence: { ...claim.evidence, fence: proxy(claim.evidence.fence) },
+			},
+			{
+				...claim,
+				evidence: {
+					...claim.evidence,
+					provider: proxy(claim.evidence.provider),
+				},
+			},
+			{
+				...claim,
+				evidence: {
+					...claim.evidence,
+					financial: proxy(claim.evidence.financial),
+				},
+			},
+			{ ...claim, outcome: proxy(claim.outcome) },
+			{ ...claim, outcome: { ...claim.outcome, reservations: proxy([]) } },
+			{
+				...claim,
+				outcome: {
+					...claim.outcome,
+					reservations: [
+						proxy({ reservationId: "r", status: "released" as const }),
+					],
+				},
+			},
+		];
+		for (const candidate of cases)
+			expect(await recoverIacRoute(deps, candidate)).toEqual({
+				status: "denied",
+			});
+		expect(traps).toBe(0);
+		expect(calls).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+		expect(await f.store.get(f.identity)).toBeUndefined();
+	});
+
+	it("ignores inherited descriptor values for claim, store identity, commit and options", async () => {
+		const f = await started();
+		let traps = 0;
+		const badClaim = {
+			...f.claim,
+			get tenantId() {
+				traps++;
+				return "tenant";
+			},
+		};
+		const badFence = {
+			...f.claim.evidence.fence,
+			get ref() {
+				traps++;
+				return "fence:evidence";
+			},
+		};
+		const badReservations: typeof f.claim.outcome.reservations = [];
+		Object.defineProperty(badReservations, "0", {
+			enumerable: true,
+			get() {
+				traps++;
+				return { reservationId: "r", status: "released" };
+			},
+		});
+		const badNestedClaim = {
+			...f.claim,
+			evidence: { ...f.claim.evidence, fence: badFence },
+		};
+		const badArrayClaim = {
+			...f.claim,
+			outcome: { ...f.claim.outcome, reservations: badReservations },
+		};
+		const badIdentity = {
+			...f.identity,
+			get requestId() {
+				traps++;
+				return "request";
+			},
+		};
+		const badCommit = {
+			claim: f.claim,
+			get claimDigest() {
+				traps++;
+				return "sha256:invalid";
+			},
+		};
+		const badOptions = {
+			get path() {
+				traps++;
+				return f.path;
+			},
+		};
+		const previous = Object.getOwnPropertyDescriptor(Object.prototype, "value");
+		const outcomes: boolean[] = [];
+		let results: ReturnType<typeof recoverIacRoute>[] = [];
+		try {
+			Object.defineProperty(Object.prototype, "value", {
+				configurable: true,
+				get() {
+					traps++;
+					return "tenant";
+				},
+			});
+			results = [
+				recoverIacRoute(f.deps, badClaim),
+				recoverIacRoute(f.deps, badNestedClaim),
+				recoverIacRoute(f.deps, badArrayClaim),
+			];
+			for (const call of [
+				() => f.store.inspect(badIdentity),
+				() => f.store.get(badIdentity),
+				() => f.store.commit(badCommit),
+				() => createSqliteIacRouteRecoveryStore(badOptions),
+			]) {
+				try {
+					call();
+					outcomes.push(false);
+				} catch {
+					outcomes.push(true);
+				}
+			}
+		} finally {
+			if (previous) Object.defineProperty(Object.prototype, "value", previous);
+			else Reflect.deleteProperty(Object.prototype, "value");
+		}
+		expect(await Promise.all(results)).toEqual([
+			{ status: "denied" },
+			{ status: "denied" },
+			{ status: "denied" },
+		]);
+		expect(outcomes).toEqual([true, true, true, true]);
+		expect(traps).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+		expect(await f.store.get(f.identity)).toBeUndefined();
+	});
+
+	it("rejects proxied store inputs and clock before reading SQLite", async () => {
+		const f = await started();
+		let traps = 0;
+		const proxy = <T extends object>(value: T): T =>
+			new Proxy(value, {
+				getOwnPropertyDescriptor() {
+					traps++;
+					throw new Error("descriptor trap");
+				},
+				get() {
+					traps++;
+					throw new Error("get trap");
+				},
+				apply() {
+					traps++;
+					throw new Error("apply trap");
+				},
+			});
+		const claim = normalizeIacRouteRecoveryClaim(f.claim);
+		if (!claim) throw new Error("claim missing");
+		expect(() =>
+			createSqliteIacRouteRecoveryStore(proxy({ path: f.path })),
+		).toThrow();
+		expect(() =>
+			createSqliteIacRouteRecoveryStore({
+				path: f.path,
+				now: proxy(() => Date.now()),
+			}),
+		).toThrow();
+		expect(() => f.store.inspect(proxy(f.identity))).toThrow();
+		expect(() => f.store.get(proxy(f.identity))).toThrow();
+		expect(() =>
+			f.store.commit(proxy({ claim, claimDigest: recoveryClaimDigest(claim) })),
+		).toThrow();
+		expect(() =>
+			f.store.commit({
+				claim: proxy(claim),
+				claimDigest: recoveryClaimDigest(claim),
+			}),
+		).toThrow();
+		expect(traps).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+		expect(await f.store.get(f.identity)).toBeUndefined();
+	});
+});
+
+describe("recovery host capability capture", () => {
+	it("does not replace a denying financial verifier while authorization is pending", async () => {
+		const f = await started();
+		let enter = () => {};
+		let release = () => {};
+		const entered = new Promise<void>((resolve) => {
+			enter = resolve;
+		});
+		const paused = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let checked = 0;
+		let forged = 0;
+		const deps = {
+			...f.deps,
+			authorize: async () => {
+				enter();
+				await paused;
+				return true;
+			},
+			verifyFinancial: async () => {
+				checked++;
+				return false;
+			},
+		};
+		const pending = recoverIacRoute(deps, f.claim);
+		await entered;
+		deps.verifyFinancial = async () => {
+			forged++;
+			return true;
+		};
+		release();
+		expect(await pending).toEqual({ status: "denied" });
+		expect(checked).toBe(1);
+		expect(forged).toBe(0);
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(true);
+		expect(await f.store.get(f.identity)).toBeUndefined();
+	});
+
+	it("pins the store, callbacks and detached receivers through a lost commit acknowledgement", async () => {
+		const f = await started();
+		let enter = () => {};
+		let release = () => {};
+		const entered = new Promise<void>((resolve) => {
+			enter = resolve;
+		});
+		const paused = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let forged = 0;
+		let authorizations = 0;
+		let receiversStable = true;
+		const now = () => Date.now();
+		const store: IacRouteRecoveryStore = {
+			persistence: "durable-cas",
+			get(identity: Parameters<IacRouteRecoveryStore["get"]>[0]) {
+				receiversStable &&= Object.isFrozen(this) && this.get === get;
+				return f.store.get(identity);
+			},
+			inspect(identity: Parameters<IacRouteRecoveryStore["inspect"]>[0]) {
+				receiversStable &&= Object.isFrozen(this) && this.inspect === inspect;
+				return f.store.inspect(identity);
+			},
+			commit(input: Parameters<typeof f.store.commit>[0]) {
+				receiversStable &&= Object.isFrozen(this) && this.commit === commit;
+				f.store.commit(input);
+				throw new Error("lost acknowledgement");
+			},
+		};
+		const { get, inspect, commit } = store;
+		const deps = {
+			...f.deps,
+			store,
+			now,
+			async authorize() {
+				authorizations++;
+				if (authorizations === 1) {
+					enter();
+					await paused;
+				}
+				receiversStable &&=
+					Object.isFrozen(this) &&
+					this.now === now &&
+					Object.isFrozen(this.store) &&
+					this.store.get === get &&
+					this.store.inspect === inspect &&
+					this.store.commit === commit;
+				return true;
+			},
+		};
+		const pending = recoverIacRoute(deps, f.claim);
+		await entered;
+		store.get = () => {
+			forged++;
+			return undefined;
+		};
+		store.inspect = () => {
+			forged++;
+			return undefined;
+		};
+		store.commit = () => {
+			forged++;
+		};
+		deps.store = { ...store };
+		deps.now = () => 0;
+		deps.authorize = async () => {
+			forged++;
+			return false;
+		};
+		deps.verifyFinancial = async () => {
+			forged++;
+			return false;
+		};
+		release();
+		expect(await pending).toMatchObject({
+			status: "replay",
+			outcome: { kind: "no-effect" },
+		});
+		expect(authorizations).toBe(2);
+		expect(receiversStable).toBe(true);
+		expect(forged).toBe(0);
+		expect(await f.store.get(f.identity)).toBeDefined();
+		expect(await f.authority.verifyAttempt(f.permit)).toBe(false);
+	});
 });

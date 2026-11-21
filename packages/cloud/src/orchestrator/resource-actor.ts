@@ -85,7 +85,6 @@ export function resourceActorKey(
 	return `resource:${deploymentId}:${resourceId}`;
 }
 
-/** Find unresolved effects even when the latest plan no longer declares them. */
 export function hasUnresolvedReconciliation(
 	events: readonly EventEnvelope[],
 ): boolean {
@@ -434,11 +433,6 @@ function finalStateHash(resourceId: string): string {
 	return `sha256:${createHash("sha256").update(resourceId).digest("hex")}`;
 }
 
-/**
- * True when a resource's recorded state already matches its declaration, so
- * reconciling it must call no provider: it is Provisioned from the same
- * desired spec, with the hash recorded by the provisioned fact.
- */
 export function isConverged(
 	snapshot: ResourceActorSnapshot,
 	resource: ResourcePlan,
@@ -447,10 +441,6 @@ export function isConverged(
 	return snapshot.specHash === desiredSpecHash(resource);
 }
 
-// The reconcile core records the generation before dispatch under the resource
-// lease. After a crash, the same generation is dispatched again only when a
-// trusted host verifies that replay cannot overlap or duplicate an old effect;
-// otherwise the actor records a reconciliation-required failure.
 export async function reconcileResource(
 	deps: ResourceActorDeps,
 	resource: ResourcePlan,

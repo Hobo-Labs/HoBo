@@ -1,6 +1,7 @@
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns -- SAFETY: validate persisted SQLite values before using them. */
 import { randomBytes } from "node:crypto";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
+import { types } from "node:util";
 import { stableHash } from "./dispatcher.js";
 import {
 	type IacRouteIdentity,
@@ -20,12 +21,17 @@ import {
 	recoveryMatchesSnapshot,
 } from "./iac-route-recovery.js";
 
+const hasOwnRecoveryField = Object.hasOwn;
+const isRecoveryProxy = types.isProxy;
+
 function data(input: unknown, key: string): unknown {
-	if (typeof input !== "object" || input === null || Array.isArray(input))
-		return undefined;
+	if (typeof input !== "object" || input === null) return undefined;
+	if (isRecoveryProxy(input))
+		throw new TypeError("proxied recovery store input");
+	if (Array.isArray(input)) return undefined;
 	const descriptor = Object.getOwnPropertyDescriptor(input, key);
 	if (descriptor === undefined) return undefined;
-	if (!("value" in descriptor))
+	if (!hasOwnRecoveryField(descriptor, "value"))
 		throw new TypeError("accessor at recovery store boundary");
 	return descriptor.value;
 }
@@ -61,7 +67,7 @@ function checkRow(
 function readOutcome(value: unknown): IacRouteOutcome {
 	if (typeof value !== "string" || value.length > 1024)
 		throw new Error("corrupt route outcome");
-	// SAFETY: the parsed outcome's status and target are checked before return.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the parsed outcome's status and target are checked before return.
 	const result = JSON.parse(value) as IacRouteOutcome;
 	if (
 		!result ||
@@ -73,7 +79,7 @@ function readOutcome(value: unknown): IacRouteOutcome {
 		? { status: result.status }
 		: { status: result.status, targetId: result.targetId };
 }
-/** Use the same protected SQLite file as the route authority, never a separate ledger. */
+
 export function createSqliteIacRouteRecoveryStore(options: {
 	readonly path: string;
 	readonly now?: () => number;
@@ -84,7 +90,8 @@ export function createSqliteIacRouteRecoveryStore(options: {
 		typeof path !== "string" ||
 		!path ||
 		path === ":memory:" ||
-		(clock !== undefined && typeof clock !== "function")
+		(clock !== undefined &&
+			(typeof clock !== "function" || isRecoveryProxy(clock)))
 	)
 		throw new TypeError(
 			"a persistent route authority path and valid clock are required",
@@ -143,7 +150,7 @@ export function createSqliteIacRouteRecoveryStore(options: {
 			try {
 				database.exec("ROLLBACK");
 			} catch {
-				/* Preserve the original error. */
+				throw error;
 			}
 			throw error;
 		}
@@ -235,15 +242,17 @@ export function createSqliteIacRouteRecoveryStore(options: {
 			routeVersion,
 		};
 		const active = rows.filter((row) => row.status === "running");
+		const activeAttempt = active[0];
 		if (route.phase === "running") {
 			if (
 				route.outcome !== null ||
 				active.length > 1 ||
 				(active.length === 0 && route.active_attempt !== null) ||
 				(active.length === 1 &&
-					(route.active_attempt !== active[0].attempt ||
-						route.target !== active[0].target ||
-						active[0] !== rows.at(-1)))
+					(activeAttempt === undefined ||
+						route.active_attempt !== activeAttempt.attempt ||
+						route.target !== activeAttempt.target ||
+						activeAttempt !== rows.at(-1)))
 			)
 				throw new Error("corrupt active route");
 			return {
