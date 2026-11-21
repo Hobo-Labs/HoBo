@@ -183,8 +183,14 @@ export function addedLineNumbers(patch: string): Set<number> {
 	return added;
 }
 
+function sourcePath(file: string): string {
+	return /\.tpl$/iu.test(file) ? file.slice(0, -4) : file;
+}
+
 export function commentsIn(file: string, text: string): Comment[] {
-	const kind = /\.[jt]sx$/iu.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+	const kind = /\.[jt]sx$/iu.test(sourcePath(file))
+		? ts.ScriptKind.TSX
+		: ts.ScriptKind.TS;
 	const source = ts.createSourceFile(
 		file,
 		text,
@@ -227,7 +233,7 @@ export function commentsIn(file: string, text: string): Comment[] {
 }
 
 function commentLocations(file: string, text: string): CommentLocation[] {
-	const extension = extname(file).toLowerCase();
+	const extension = extname(sourcePath(file)).toLowerCase();
 	if (extension === ".astro") return astroComments(file, text);
 	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
 	if (lexicalLanguage) {
@@ -397,21 +403,22 @@ export function documentViolation(
 	file: string,
 	text: string,
 ): string | undefined {
+	const sourceFile = sourcePath(file);
 	if (
 		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.mdx?$)/iu.test(
-			file,
+			sourceFile,
 		) ||
-		/(?:^|\/)\.sdlc\/.*\.mdx?$/iu.test(file)
+		/(?:^|\/)\.sdlc\/.*\.mdx?$/iu.test(sourceFile)
 	)
 		return "planning and design documents are not allowed";
-	if (!/\.mdx?$/iu.test(file)) return undefined;
-	if (/(?:^|\/)(?:design|designs|plans|roadmaps)\//iu.test(file))
+	if (!/\.mdx?$/iu.test(sourceFile)) return undefined;
+	if (/(?:^|\/)(?:design|designs|plans|roadmaps)\//iu.test(sourceFile))
 		return "planning and design documents are not allowed";
 	if (
 		/(?:^|\/)(?:design|roadmap|(?:implementation[-_])?plan)\.mdx?$/iu.test(
-			file,
+			sourceFile,
 		) ||
-		/(?:^|\/)[^/]+[-_](?:design|roadmap|plan)\.mdx?$/iu.test(file)
+		/(?:^|\/)[^/]+[-_](?:design|roadmap|plan)\.mdx?$/iu.test(sourceFile)
 	)
 		return "planning and design documents are not allowed";
 	const type = frontmatterType(text);
@@ -433,15 +440,16 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	const violations: Violation[] = [];
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
+		const sourceFile = sourcePath(file);
 		if (
-			(/\.mdx?$/iu.test(file) &&
+			(/\.mdx?$/iu.test(sourceFile) &&
 				parents.every((parent) => parent.files.has(file))) ||
-			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(file)
+			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
 		}
-		const extension = extname(file).toLowerCase();
+		const extension = extname(sourceFile).toLowerCase();
 		if (
 			extension &&
 			!file.startsWith(".githooks/") &&

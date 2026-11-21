@@ -497,6 +497,47 @@ f: /* TODO: remove block */`;
 		assert.match(result.stderr, /\.impeccable\/critique\/example\.md/u);
 	});
 
+	it("checks generated source templates and their underlying syntax", () => {
+		for (const [file, text] of [
+			["snippet.ts.tpl", "const value = {{name}}; // explanation"],
+			["view.tsx.tpl", "const view = <p>{{name}}{/* explanation */}</p>"],
+			["style.css.tpl", "p { color: red; } /* explanation */"],
+			["schema.cue.tpl", 'name: "{{name}}" // explanation'],
+		] as const) {
+			assert.equal(commentViolations(file, text, new Set([1])).length, 1, file);
+		}
+		assert.equal(
+			commentViolations(
+				"snippet.ts.tpl",
+				'const url = "https://example.test";',
+				new Set([1]),
+			).length,
+			0,
+		);
+		assert.ok(documentViolation("docs/design/example.md.tpl", "# Example"));
+		assert.ok(documentViolation("notes/DESIGN.md.tpl", "# Example"));
+		assert.ok(documentViolation(".impeccable/design.json.tpl", "{}"));
+	});
+
+	it("rejects staged comments and planning documents in templates", () => {
+		const repo = fixture();
+		write(repo, "snippet.ts.tpl", "export const value = 1; // explanation\n");
+		write(repo, "view.tsx.tpl", "const view = <p>{/* explanation */}</p>;\n");
+		write(repo, "schema.cue.tpl", 'name: "example" // explanation\n');
+		write(repo, "docs/design/example.md.tpl", "# Design\n");
+		git(repo, "add", "--all");
+		const result = guard(repo, "--staged");
+		assert.equal(result.status, 1, result.stderr);
+		for (const file of [
+			"snippet.ts.tpl",
+			"view.tsx.tpl",
+			"schema.cue.tpl",
+			"docs/design/example.md.tpl",
+		]) {
+			assert.ok(result.stderr.includes(file), file);
+		}
+	});
+
 	it("checks the staged snapshot rather than the working tree", () => {
 		const repo = fixture();
 		write(
