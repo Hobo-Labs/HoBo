@@ -122,7 +122,6 @@ function exactly(
 		: undefined;
 }
 
-/** A plain object with these keys, any of `optional`, and nothing else. */
 function withOptional(
 	value: JsonValue | undefined,
 	keys: readonly string[],
@@ -274,7 +273,6 @@ function parseMergeGroup(
 	return reusePrFabric !== undefined ? { reusePrFabric } : undefined;
 }
 
-/** An older committed policy has no `mergeGroup`; reuse stays off. */
 const DEFAULT_MERGE_GROUP: RunnerRouting["mergeGroup"] = {
 	reusePrFabric: false,
 };
