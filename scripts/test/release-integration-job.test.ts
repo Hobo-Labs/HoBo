@@ -106,7 +106,10 @@ describe("the slow integration lane is a merge-group gate", () => {
 		const lane = step(integration, LANE);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
 		assert.match(lane.run, /test:release-integration/u);
-		assert.match(lane.run, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
+		assert.match(
+			lane.run,
+			/--shard="\$\(\(SHARD_INDEX \+ 1\)\)\/\$SHARD_TOTAL"/u,
+		);
 		assert.doesNotMatch(lane.run, /--passWithNoTests/u);
 		assert.deepEqual(integration.needs, ["route"]);
 		assert.doesNotMatch(integration.if, /release-main-train-gate/u);
@@ -123,8 +126,14 @@ describe("the slow integration lane is a merge-group gate", () => {
 			?.map(asObject)
 			.find((entry) => entry?.name === LANE);
 		const env = asObject(lane?.env);
-		assert.equal(env?.SHARD, "${{ strategy.job-index + 1 }}");
+		assert.equal(env?.SHARD_INDEX, "${{ strategy.job-index }}");
 		assert.equal(env?.SHARD_TOTAL, "${{ strategy.job-total }}");
+		assert.doesNotMatch(
+			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
+			/\$\{\{ strategy\.job-index \+ 1 \}\}/u,
+		);
+		assert.doesNotMatch(trainWorkflow, /\$\{\{ strategy\.job-index \+ 1 \}\}/u);
+		assert.doesNotMatch(workflow, /\$\{\{ strategy\.job-index \+ 1 \}\}/u);
 		const listed = [
 			...readFileSync(
 				"packages/hobo/test/support/release-integration-test-files.ts",

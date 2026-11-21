@@ -119,6 +119,11 @@ the sum of its files):
   `release-hobo.yml`. `actions.lock` lists the new workflow's
   `actions/checkout` and `actions/cache` pins. The train path list includes
   `.github/workflows/release-hobo-pr.yml`.
+- GitHub Actions expressions have no `+`. `SHARD: ${{ strategy.job-index + 1 }}`
+  made `.github/workflows/hobo-ci.yml` invalid (`44877157065`: "Unexpected
+  symbol: '+'"). GitHub then started only a 0-job dummy push and never opened
+  the Fabric `pull_request` suite. Shard 1-based indexing is bash
+  `$((SHARD_INDEX + 1))` on `strategy.job-index`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the

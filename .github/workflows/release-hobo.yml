@@ -751,12 +751,14 @@ jobs:
         timeout-minutes: 15
         env:
           # vitest --shard is 1-based; strategy.job-index is 0-based.
-          SHARD: ${{ strategy.job-index + 1 }}
+          # GitHub expressions have no `+`; 44877157065 failed parse:
+          # "Unexpected symbol: '+' ... strategy.job-index + 1"
+          SHARD_INDEX: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
         run: >-
           pnpm exec turbo run test:release-integration --filter=@hobo/hobo
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
-          -- --shard="$SHARD/$SHARD_TOTAL"
+          -- --shard="$((SHARD_INDEX + 1))/$SHARD_TOTAL"
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'
