@@ -165,9 +165,9 @@ describe("as the release workflow runs it", () => {
 		expect(workflow).not.toMatch(/--from "\$\{head_sha\}\^"/);
 	});
 
-	it("queues main-train runs in one group, never cancelling a running release", () => {
+	it("queues main-train runs in one group and cancels stale pull_request or merge_group release runs", () => {
 		expect(workflow).toMatch(
-			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}'/u,
+			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}', github\.workflow, github\.event\.merge_group\.head_ref\)/u,
 		);
 		expect(workflow).toMatch(
 			/hobo-release-train-\{0\}-\{1\}/u,

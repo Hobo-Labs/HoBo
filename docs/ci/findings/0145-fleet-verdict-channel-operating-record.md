@@ -89,5 +89,8 @@ carry `mergeGroupHostedProbe` (`idle`, `summary`).
 | Pull-request **Route runners** carries a `hobo-ci-route` notice v2 | Production: tier `github`, `refusedBy` `queue` on Fabric run | 2026-11-21 | [HoBo CI Fabric run 44868750571](https://github.com/Hobo-Labs/HoBo/actions/runs/44868750571) job **Route runners** (head `3529718c`, `pull_request` event) |
 | `merge_group` carries `mergeGroupHostedProbe` on the notice | Pending first merge-queue run on a branch with this routing (not enqueued here) | | |
 
+Until that row has a run link, [CI health monitor](../health-monitor.md) signals and thresholds do not
+read `mergeGroupHostedProbe`; the field is emitted for observation only.
+
 **Rollback.** Any step: its own switch. To take the code out: remove `HOBO_CI_FLEET_REPORTERS_JSON` and
 `HOBO_CI_FLEET_VERDICT_SERVING` from the hosted relay's configuration first, then revert on `main`.
