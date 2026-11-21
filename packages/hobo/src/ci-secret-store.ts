@@ -150,7 +150,7 @@ export function loadSecretStoreBinding(
 	} catch {
 		throw new SecretStoreBindingRefusal(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
-			`${SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). Run hobo ci secret-store provision again.`,
+			`${SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). It needs a deployCredentialIdentityId distinct from the relay and writer identities and a recorded deployOidcSubject when claimed; re-run hobo ci secret-store connect with --deploy-credential-identity-id.`,
 		);
 	}
 	if (!RUNTIME_BUILT.has(binding.kind))

@@ -34,6 +34,10 @@ import {
 
 // public-contract: the entry in the deploy credential's project that holds the deploy token (CONFIG-SERVICE.md).
 export const RELAY_DEPLOY_TOKEN_ENTRY = "VERCEL_TOKEN";
+// public-contract: the GitHub Actions audience of the deploy credential writer.
+export const RELAY_GITHUB_OIDC_AUDIENCE = "https://github.com/Hobo-Labs";
+// public-contract: the deploy token reader authenticates here, never at the writer's audience.
+export const RELAY_DEPLOY_READER_OIDC_AUDIENCE = `${RELAY_GITHUB_OIDC_AUDIENCE}/hobo-ci-deploy-reader`;
 
 // A token Vercel issues: printable, one line, no spaces.
 const TOKEN = /^[!-~]{8,4096}$/u;
@@ -54,26 +58,28 @@ export async function readRelayDeployToken(input: {
 	/** The audience the deploy identity expects; GitHub's default otherwise. */
 	readonly audience?: string;
 	readonly fetch?: typeof fetch;
-}): Promise<Readonly<{ token: string; secretRef: string }>> {
+}): Promise<
+	Readonly<{
+		token: string;
+		secretRef: string;
+		identityId: string;
+		audience: string;
+	}>
+> {
 	const { env, binding: store } = input;
+	const identityId = store.deployCredentialIdentityId;
+	if (identityId === "" || identityId === store.deployIdentityId)
+		throw new RelayDeployCredentialError(
+			"The binding has no deploy credential identity distinct from the writer. Record deployCredentialIdentityId for a read-only deploy identity; the writer identity is never used for deploy token reads.",
+		);
+	const audience = input.audience ?? RELAY_DEPLOY_READER_OIDC_AUDIENCE;
 	try {
-		const identityId =
-			store.deployCredentialIdentityId !== ""
-				? store.deployCredentialIdentityId
-				: store.deployProjectId !== ""
-					? store.deployIdentityId
-					: "";
-		if (identityId === "")
-			throw new RelayDeployCredentialError(
-				"The attach binding has no dedicated deploy credential identity. Record deployCredentialIdentityId for a read-only deploy identity; the writer identity is never used for deploy token reads.",
-			);
 		const binding = parseInfisicalBinding({
 			siteUrl: store.endpoint,
 			projectId: secretStoreDeployCredentialProjectId(store),
 			environment: store.environment,
 			secretPath: secretStoreDeployCredentialSecretPath(store),
 		});
-		const audience = input.audience;
 		const client = createInfisicalClient({
 			binding,
 			auth: oidcAuth({
@@ -94,6 +100,8 @@ export async function readRelayDeployToken(input: {
 		return {
 			token: secret.value,
 			secretRef: infisicalSecretRef(binding, RELAY_DEPLOY_TOKEN_ENTRY),
+			identityId,
+			audience,
 		};
 	} catch (error) {
 		if (error instanceof RelayDeployCredentialError) throw error;

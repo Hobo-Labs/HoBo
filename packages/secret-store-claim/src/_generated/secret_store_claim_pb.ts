@@ -260,7 +260,8 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
   claimBundleId: string;
 
   /**
-   * "pending" until every claim item is complete, then "claimed".
+   * "pending" until every claim item is complete, then "claimed"; a claimed
+   * binding records the deploy credential identity and OIDC subject.
    *
    * @generated from field: string claim_state = 10;
    */
@@ -285,9 +286,9 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
   deployOidcSubject: string;
 
   /**
-   * The read-only identity deploy-token reads sign in as, distinct from the
-   * writer in `deploy_identity_id`. Empty only for a provisioned binding whose
-   * `deploy_identity_id` is already the deploy project's viewer.
+   * The read-only identity deploy-token reads sign in as, always distinct
+   * from the relay and writer identities and bound to its own GitHub OIDC
+   * audience. Required for every binding, including a provisioned one.
    *
    * @generated from field: string deploy_credential_identity_id = 13;
    */

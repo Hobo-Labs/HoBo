@@ -51,23 +51,25 @@ import {
 } from "@hobo/secret-store-claim";
 
 import {
-	type CiSecretStoreInput,
 	loadSecretStoreBinding,
 	SecretStoreBindingRefusal,
 	writeSecretStoreBinding,
+	type CiSecretStoreInput,
 } from "./ci-secret-store.js";
 import {
 	relayRepository,
 	resolveDeploySubject,
 } from "./ci-secret-store-github.js";
+import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	RELAY_DEPLOY_TOKEN_ENTRY,
+} from "./ci-relay-deploy-credential.js";
 import { isJsonString } from "./json.js";
 
 // public-contract: the relay's folder in its Infisical project (the layout `provision` creates).
 export const RELAY_STORE_ENVIRONMENT = "prod";
 // public-contract: the relay's folder path.
 export const RELAY_STORE_SECRET_PATH = "/hobo-ci-relay";
-// public-contract: audience Infisical expects for hobo-ci-deploy-reader GitHub OIDC.
-export const RELAY_GITHUB_OIDC_AUDIENCE = "https://github.com/Hobo-Labs";
 
 function data(
 	subcommand: string,
@@ -91,6 +93,7 @@ function text(input: CiSecretStoreInput, key: string): string | undefined {
 /** The deploy identity's trust as connect reports it: identifiers, never a secret. */
 export type DeployTrustReport = Readonly<{
 	identity: "hobo-ci-writer" | "hobo-ci-deploy-reader";
+	identityId: string;
 	issuer: string;
 	audience: string;
 	subject: string;
@@ -104,6 +107,7 @@ const CONNECT_ID_OPTIONS = [
 	"project-id",
 	"relay-identity-id",
 	"deploy-identity-id",
+	"deploy-credential-identity-id",
 	"team",
 ] as const;
 type ConnectIdOption = (typeof CONNECT_ID_OPTIONS)[number];
@@ -111,6 +115,7 @@ const CONNECT_IDS = {
 	"project-id": "projectId",
 	"relay-identity-id": "relayIdentityId",
 	"deploy-identity-id": "deployIdentityId",
+	"deploy-credential-identity-id": "deployCredentialIdentityId",
 	team: "vercelTeamId",
 } as const satisfies Record<ConnectIdOption, keyof ParsedSecretStoreBinding>;
 
@@ -143,15 +148,17 @@ export async function runCiSecretStoreConnect(
 		text(input, key) || existing?.[CONNECT_IDS[key]] || undefined;
 	const deployProjectId =
 		text(input, "deploy-project-id") ?? existing?.deployProjectId ?? "";
+	const deployIdentityId = given("deploy-identity-id") ?? "";
 	const deployCredentialIdentityId =
-		text(input, "deploy-credential-identity-id") ??
-		existing?.deployCredentialIdentityId ??
-		"";
-	const missing: string[] = CONNECT_ID_OPTIONS.filter(
+		given("deploy-credential-identity-id") ?? "";
+	const missing = CONNECT_ID_OPTIONS.filter(
 		(key) => given(key) === undefined,
 	);
-	if (deployProjectId === "" && deployCredentialIdentityId === "")
-		missing.push("deploy-credential-identity-id");
+	if (deployCredentialIdentityId !== "" && deployCredentialIdentityId === deployIdentityId)
+		return refusedConnect(
+			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
+			"hobo-ci-deploy-reader must be a different identity from hobo-ci-writer; a shared identity can read the deploy token with the writer's privileges.",
+		);
 	if (missing.length > 0)
 		return {
 			ok: false,
@@ -189,13 +196,13 @@ export async function runCiSecretStoreConnect(
 					RELAY_STORE_ENVIRONMENT,
 				secretPath: RELAY_STORE_SECRET_PATH,
 				relayIdentityId: given("relay-identity-id") ?? "",
-				deployIdentityId: given("deploy-identity-id") ?? "",
+				deployIdentityId,
 				deployCredentialIdentityId,
 				vercelTeamId: given("team") ?? "",
 				claimBundleId:
 					existing?.claimBundleId ??
 					`secret-store:hobo-ci-relay:connect-${input.now?.() ?? Date.now()}`,
-				claimState: existing?.claimState ?? "claimed",
+				claimState: "pending",
 			}),
 		);
 	} catch {
@@ -235,32 +242,53 @@ export async function runCiSecretStoreConnect(
 			error.message,
 		);
 	}
+	const connected = parseSecretStoreBinding(
+		create(SecretStoreBindingSchema, {
+			...binding,
+			claimState: "claimed",
+			deployOidcSubject: trust.subject,
+		}),
+	);
+	const readerTrust = Object.freeze({
+		...trust,
+		audiences: [RELAY_DEPLOY_READER_OIDC_AUDIENCE],
+	});
+	const trustUpdates = [
+		{
+			identity: "hobo-ci-writer",
+			identityId: binding.deployIdentityId,
+			trust,
+		},
+		{
+			identity: "hobo-ci-deploy-reader",
+			identityId: binding.deployCredentialIdentityId,
+			trust: readerTrust,
+		},
+	] as const;
 	const ownerToken = input.env.INFISICAL_TOKEN ?? "";
-	const deployReaderIdentityId =
-		binding.deployCredentialIdentityId || binding.deployIdentityId;
-	if (ownerToken !== "")
-		try {
-			// Replace the trust in place; fail before writing anything.
-			for (const deployIdentityId of new Set([
-				binding.deployIdentityId,
-				deployReaderIdentityId,
-			]))
+	if (ownerToken !== "") {
+		const updated: string[] = [];
+		for (const update of trustUpdates)
+			try {
 				await updateDeployIdentityTrust({
 					siteUrl: binding.endpoint,
 					ownerAccessToken: ownerToken,
-					deployIdentityId,
-					trust,
+					deployIdentityId: update.identityId,
+					trust: update.trust,
 					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 				});
-		} catch (error) {
-			if (!(error instanceof SecretStoreError)) throw error;
-			return refusedConnect(
-				error.code,
-				`${error.message}. Check that --deploy-identity-id is hobo-ci-writer's id, --deploy-credential-identity-id is hobo-ci-deploy-reader's id, and both have OIDC Auth, then re-run; ${SECRET_STORE_BINDING_FILE} was not changed.`,
-			);
-		}
+				updated.push(`${update.identity} (${update.identityId})`);
+			} catch (error) {
+				if (!(error instanceof SecretStoreError)) throw error;
+				return refusedConnect(
+					error.code,
+					`${error.message}. Updated: ${updated.length === 0 ? "none" : updated.join(", ")}. Not updated: ${update.identity} (${update.identityId}). Check that both ids have OIDC Auth, then re-run; ${SECRET_STORE_BINDING_FILE} was not changed.`,
+				);
+			}
+	}
 	const deployTrust: DeployTrustReport = {
 		identity: "hobo-ci-writer",
+		identityId: binding.deployIdentityId,
 		issuer: trust.issuer,
 		audience: trust.audiences.join(","),
 		subject: trust.subject,
@@ -268,20 +296,22 @@ export async function runCiSecretStoreConnect(
 		applied: ownerToken !== "" ? "updated" : "set-in-dashboard",
 	};
 	const deployCredentialTrust: DeployTrustReport = {
-		...deployTrust,
 		identity: "hobo-ci-deploy-reader",
+		identityId: binding.deployCredentialIdentityId,
+		issuer: readerTrust.issuer,
+		audience: readerTrust.audiences.join(","),
+		subject: readerTrust.subject,
+		claims: readerTrust.claims,
+		applied: deployTrust.applied,
 	};
-	const written = await writeSecretStoreBinding(input.cwd, {
-		...binding,
-		deployOidcSubject: trust.subject,
-	});
+	const written = await writeSecretStoreBinding(input.cwd, connected);
 	const claims = Object.entries(trust.claims)
 		.map(([name, value]) => `${name}=${value}`)
 		.join(", ");
 	const trustLine =
 		deployTrust.applied === "updated"
-			? `Updated hobo-ci-writer and hobo-ci-deploy-reader OIDC trust in place: subject ${trust.subject}, claims ${claims}.`
-			: `In Infisical, set hobo-ci-writer and hobo-ci-deploy-reader OIDC Auth to: issuer ${trust.issuer}, audience ${deployTrust.audience}, subject ${trust.subject}, claims ${claims} (or re-run with INFISICAL_TOKEN from your own infisical login to update them for you).`;
+			? `Updated hobo-ci-writer (${deployTrust.identityId}, audience ${deployTrust.audience}) and hobo-ci-deploy-reader (${deployCredentialTrust.identityId}, audience ${deployCredentialTrust.audience}) OIDC trust in place: subject ${trust.subject}, claims ${claims}.`
+			: `In Infisical, set hobo-ci-writer (${deployTrust.identityId}) OIDC Auth to issuer ${trust.issuer}, audience ${deployTrust.audience}, and hobo-ci-deploy-reader (${deployCredentialTrust.identityId}) to issuer ${readerTrust.issuer}, audience ${deployCredentialTrust.audience}, both with subject ${trust.subject}, claims ${claims} (or re-run with INFISICAL_TOKEN from your own infisical login to update them for you).`;
 	return {
 		ok: true,
 		status: "connected",
@@ -298,6 +328,7 @@ export async function runCiSecretStoreConnect(
 
 export type VerifyCheck = Readonly<{
 	identity: string;
+	identityId: string;
 	method: string;
 	result: "pass" | "fail" | "not-run";
 	detail: string;
@@ -335,37 +366,58 @@ function subjectRepairSuffix(
 		: ` — ${why}: re-run hobo ci secret-store connect to repair the deploy identities' OIDC trust`;
 }
 
-async function signInOnly(
-	identity: string,
-	method: string,
+async function readerRead(
+	identityId: string,
 	client: () => ReturnType<typeof createInfisicalClient>,
 	workloadJwt: () => string | undefined,
 	trustedSubject: string,
 ): Promise<VerifyCheck> {
+	const identity = "hobo-ci-deploy-reader";
+	const method = "GitHub Actions OIDC";
+	let session: ReturnType<typeof createInfisicalClient> | undefined;
 	try {
-		const session = client();
-		await session.signIn();
-		await session.revoke().catch(() => undefined);
-		return { identity, method, result: "pass", detail: "signed in" };
+		session = client();
+		const names = (await session.listSecretNames()).map(
+			(secret) => secret.secretKey,
+		);
+		if (!names.includes(RELAY_DEPLOY_TOKEN_ENTRY))
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in, but ${RELAY_DEPLOY_TOKEN_ENTRY} is not in the deploy credential folder yet`,
+			};
+		return {
+			identity,
+			identityId,
+			method,
+			result: "pass",
+			detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}`,
+		};
 	} catch (error) {
 		return {
 			identity,
+			identityId,
 			method,
 			result: "fail",
 			detail:
 				(error instanceof InfisicalError
 					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in could not run") +
+					: "the sign-in or read could not run") +
 				oidcHintSuffix(workloadJwt()) +
 				(error instanceof Error
 					? subjectRepairSuffix(error, workloadJwt(), trustedSubject)
 					: ""),
 		};
+	} finally {
+		await session?.revoke().catch(() => undefined);
 	}
 }
 
 async function attempt(
 	identity: string,
+	identityId: string,
 	method: string,
 	run: () => Promise<readonly string[]>,
 	expect: string | undefined,
@@ -375,12 +427,14 @@ async function attempt(
 		if (expect !== undefined && !names.includes(expect))
 			return {
 				identity,
+				identityId,
 				method,
 				result: "fail",
 				detail: `signed in, but ${expect} is not in its folder yet`,
 			};
 		return {
 			identity,
+			identityId,
 			method,
 			result: "pass",
 			detail: `signed in and listed ${names.length} secret name(s)`,
@@ -388,6 +442,7 @@ async function attempt(
 	} catch (error) {
 		return {
 			identity,
+			identityId,
 			method,
 			result: "fail",
 			detail:
@@ -435,7 +490,7 @@ export async function runCiSecretStoreVerify(
 		(env.ACTIONS_ID_TOKEN_REQUEST_TOKEN ?? "") !== "";
 	const githubJwt = githubActionsJwtSource({
 		env,
-		audience: RELAY_GITHUB_OIDC_AUDIENCE,
+		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 	});
 	let githubWorkloadJwt: string | undefined;
@@ -443,54 +498,44 @@ export async function runCiSecretStoreVerify(
 		if (githubWorkloadJwt === undefined) githubWorkloadJwt = await githubJwt();
 		return githubWorkloadJwt;
 	};
-	const deployCredentialIdentityId =
-		store.deployCredentialIdentityId ||
-		(store.deployProjectId !== "" ? store.deployIdentityId : "");
 	checks.push(
 		!inActions
 			? {
 					identity: "hobo-ci-deploy-reader",
+					identityId: store.deployCredentialIdentityId,
 					method: "GitHub Actions OIDC",
 					result: "not-run",
 					detail:
 						"needs a GitHub Actions job with id-token: write on main; the relay deploy workflow's 'Verify the secret store connection' step runs it",
 				}
-			: deployCredentialIdentityId === ""
-				? {
-						identity: "hobo-ci-deploy-reader",
-						method: "GitHub Actions OIDC",
-						result: "fail",
-						detail:
-							"the attach binding has no deployCredentialIdentityId; the writer is never used for deploy verification",
-					}
-				: await signInOnly(
-						"hobo-ci-deploy-reader",
-						"GitHub Actions OIDC",
-						() =>
-							createInfisicalClient({
-								binding: parseInfisicalBinding({
-									siteUrl: store.endpoint,
-									projectId: secretStoreDeployCredentialProjectId(store),
-									environment: store.environment,
-									secretPath: secretStoreDeployCredentialSecretPath(store),
-								}),
-								auth: oidcAuth({
-									identityId: deployCredentialIdentityId,
-									jwt: memoGithubJwt,
-								}),
-								...(input.fetch !== undefined
-									? { fetch: input.fetch }
-									: undefined),
+			: await readerRead(
+					store.deployCredentialIdentityId,
+					() =>
+						createInfisicalClient({
+							binding: parseInfisicalBinding({
+								siteUrl: store.endpoint,
+								projectId: secretStoreDeployCredentialProjectId(store),
+								environment: store.environment,
+								secretPath: secretStoreDeployCredentialSecretPath(store),
 							}),
-						() => githubWorkloadJwt,
-						store.deployOidcSubject,
-					),
+							auth: oidcAuth({
+								identityId: store.deployCredentialIdentityId,
+								jwt: memoGithubJwt,
+							}),
+							...(input.fetch !== undefined
+								? { fetch: input.fetch }
+								: undefined),
+						}),
+					() => githubWorkloadJwt,
+					store.deployOidcSubject,
+				),
 	);
 	const vercelJwt = env.VERCEL_OIDC_TOKEN ?? "";
 	checks.push(
 		vercelJwt !== ""
 			? await attempt(
 					"hobo-ci-relay",
+					store.relayIdentityId,
 					"Vercel OIDC",
 					async () =>
 						(
@@ -514,6 +559,7 @@ export async function runCiSecretStoreVerify(
 				)
 			: {
 					identity: "hobo-ci-relay",
+					identityId: store.relayIdentityId,
 					method: "Vercel OIDC",
 					result: "not-run",
 					detail:
@@ -531,7 +577,7 @@ export async function runCiSecretStoreVerify(
 		message: checks
 			.map(
 				(check) =>
-					`${check.identity} (${check.method}): ${check.result} — ${check.detail}`,
+					`${check.identity} (${check.identityId}, ${check.method}): ${check.result} — ${check.detail}`,
 			)
 			.join("\n"),
 		data: data("verify", { checks }),

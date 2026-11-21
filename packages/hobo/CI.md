@@ -497,7 +497,15 @@ team come from `deploy/secret-store.binding.json` in the relay's project; a
 `--set` still overrides one. See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
-exercised against fakes only.
+exercised against fakes only. The committed binding has no
+`deployCredentialIdentityId` yet: the owner must provision
+`hobo-ci-deploy-reader`, grant it read-only access to `/hobo-ci-deploy`,
+deposit `VERCEL_TOKEN` there, and re-run `connect` to record its id and
+subject. Until then the deploy token read fails closed. This channel is
+**built, not proven**: link a successful `relay-deploy` run whose preview step
+records the token read as the binding's deploy credential identity and whose
+production `/healthz` and `/readyz` checks pass. See
+[the evidence obligation](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 
 ## Choose the relay's secret store (`hobo ci secret-store`)
 
@@ -562,7 +570,9 @@ The workflow calls
 emit `::error::`, and never echo JWTs (details and messages pass JWT-shaped
 redaction). On Infisical OIDC failure, verify appends `oidc_sub` and
 `oidc_aud` from the same memoized workload JWT used for sign-in (GitHub OIDC
-audience `https://github.com/Hobo-Labs`) so the dashboard trust can be matched.
+audience `https://github.com/Hobo-Labs` for the writer,
+`https://github.com/Hobo-Labs/hobo-ci-deploy-reader` for the reader) so the
+dashboard trust can be matched.
 
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
@@ -586,8 +596,9 @@ identities' OIDC trust in place (no new identity); otherwise it prints the subje
 to set in the dashboard. A denied `verify` whose token `sub` differs from the
 recorded subject (or is immutable when none was recorded) says so and names
 that repair. `verify` reports `pass`, `fail` or `not-run` by identity
-name: `hobo-ci-deploy-reader` inside a GitHub Actions job (GitHub OIDC
-sign-in, then a revoke; role shape not asserted), `hobo-ci-relay` where
+name and id: `hobo-ci-deploy-reader` inside a GitHub Actions job (GitHub OIDC
+sign-in at the reader audience, a folder listing that proves `VERCEL_TOKEN` is
+readable, then a revoke; role shape not asserted), `hobo-ci-relay` where
 `VERCEL_OIDC_TOKEN` is present (secret names only). The deploy workflow runs
 it as *Verify the secret store connection*; the `app-credentials` job proves
 `hobo-ci-writer` by depositing through it, and the deploy job never signs in

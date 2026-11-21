@@ -55,10 +55,13 @@ package secret_store_claim
 	secretPath:  string & =~"^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$"
 	relayIdentityId:  #Id
 	deployIdentityId: #Id & !=relayIdentityId
-	deployCredentialIdentityId?: #Id & !=relayIdentityId & !=deployIdentityId
+	deployCredentialIdentityId: #Id & !=relayIdentityId & !=deployIdentityId
 	vercelTeamId?:    string & =~"^team_[A-Za-z0-9]{1,64}$"
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
+	if claimState == "claimed" {
+		deployOidcSubject: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"
+	}
 	// Apart from the relay's project: the relay identity cannot read it.
 	// Optional: a separate project for deploy-time credentials, empty when the
 	// default path needs none (ADR-0179 amendment "Secretless first").

@@ -76,19 +76,19 @@ export function parseSecretStoreBinding(
 		ID.test(record.relayIdentityId) &&
 		ID.test(record.deployIdentityId) &&
 		record.relayIdentityId !== record.deployIdentityId &&
-		(record.deployCredentialIdentityId === "" ||
-			(ID.test(record.deployCredentialIdentityId) &&
-				record.deployCredentialIdentityId !== record.relayIdentityId &&
-				record.deployCredentialIdentityId !== record.deployIdentityId)) &&
+		ID.test(record.deployCredentialIdentityId) &&
+		record.deployCredentialIdentityId !== record.relayIdentityId &&
+		record.deployCredentialIdentityId !== record.deployIdentityId &&
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
 		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
 		(record.deployOidcSubject === "" ||
-			DEPLOY_SUBJECT.test(record.deployOidcSubject));
+			DEPLOY_SUBJECT.test(record.deployOidcSubject)) &&
+		(claimState !== "claimed" || record.deployOidcSubject !== "");
 	if (!ok || claimState === undefined)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, distinct identities, an HTTPS endpoint without userinfo)",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project other than the relay's when set, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
 		);
 	return Object.freeze({
 		kind,

@@ -155,12 +155,19 @@ export function createInfisicalCaptureConnector(options: {
 		| { reason: string } {
 		try {
 			const found = loadSecretStoreBinding(options.projectDir);
-			return found === undefined
-				? {
-						reason:
-							"The relay capture adapter has no configured store binding.",
-					}
-				: { binding: found };
+			if (found === undefined)
+				return {
+					reason: "The relay capture adapter has no configured store binding.",
+				};
+			if (
+				found.deployCredentialIdentityId === "" ||
+				found.deployCredentialIdentityId === found.deployIdentityId
+			)
+				return {
+					reason:
+						"The relay capture adapter needs a deploy credential identity distinct from the writer before it can authorize a capture session.",
+				};
+			return { binding: found };
 		} catch (error) {
 			if (
 				error instanceof SecretStoreBindingRefusal &&

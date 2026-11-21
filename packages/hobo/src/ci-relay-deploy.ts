@@ -729,6 +729,8 @@ export async function runCiRelayDeploy(
 	// through a file such as $GITHUB_ENV.
 	const vault = input.credentials ?? createTrustedVault();
 	let deployTokenRef: string | undefined;
+	let deployCredentialIdentityId: string | undefined;
+	let deployCredentialAudience: string | undefined;
 	if (
 		!vault.has("VERCEL_TOKEN") &&
 		storeBinding !== undefined &&
@@ -744,8 +746,10 @@ export async function runCiRelayDeploy(
 			});
 			vault.put("VERCEL_TOKEN", credential.token);
 			deployTokenRef = credential.secretRef;
+			deployCredentialIdentityId = credential.identityId;
+			deployCredentialAudience = credential.audience;
 			input.emitProgress(
-				`deploy token read from ${credential.secretRef} as the binding's deploy credential identity`,
+				`deploy token read from ${credential.secretRef} as deploy credential identity ${credential.identityId}, audience ${credential.audience}`,
 			);
 		} catch (error) {
 			return refused(
@@ -1008,6 +1012,12 @@ export async function runCiRelayDeploy(
 				plan: planJson,
 				outputs: safe,
 				...(deployTokenRef !== undefined ? { deployTokenRef } : undefined),
+				...(deployCredentialIdentityId !== undefined
+					? { deployCredentialIdentityId }
+					: undefined),
+				...(deployCredentialAudience !== undefined
+					? { deployCredentialAudience }
+					: undefined),
 				...deliveryData,
 			},
 		};

@@ -130,6 +130,8 @@ export function parseGithubOidcSubject(input: {
 	}) as GithubOidcSubject;
 }
 
+export const DEPLOY_READER_AUDIENCE_SUFFIX = "/hobo-ci-deploy-reader";
+
 /** The deploy identity's trust: GitHub Actions on one branch of the repository. */
 export function githubDeployTrust(
 	subject: GithubOidcSubject,
@@ -146,6 +148,19 @@ export function githubDeployTrust(
 			repository_id: subject.repositoryId,
 			repository_owner_id: subject.repositoryOwnerId,
 		},
+	});
+}
+
+export function githubDeployReaderTrust(
+	subject: GithubOidcSubject,
+	branch = "main",
+): InfisicalOidcTrust {
+	const trust = githubDeployTrust(subject, branch);
+	return Object.freeze({
+		...trust,
+		audiences: trust.audiences.map(
+			(audience) => `${audience}${DEPLOY_READER_AUDIENCE_SUFFIX}`,
+		),
 	});
 }
 

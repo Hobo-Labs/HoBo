@@ -177,6 +177,13 @@ describe("hobo ci secret-store connect", () => {
 				},
 				applied: "set-in-dashboard",
 			},
+			deployCredentialTrust: {
+				identity: "hobo-ci-deploy-reader",
+				issuer: "https://token.actions.githubusercontent.com",
+				audience: "https://github.com/Hobo-Labs/hobo-ci-deploy-reader",
+				subject: IMMUTABLE_SUB,
+				applied: "set-in-dashboard",
+			},
 		});
 		expect(result.message).toContain(IMMUTABLE_SUB);
 		expect(result.message).not.toContain(LEGACY_SUB);
@@ -199,6 +206,28 @@ describe("hobo ci secret-store connect", () => {
 			"gh api repos/Hobo-Labs/HoBo/actions/oidc/customization/sub",
 		);
 		expect(JSON.stringify(result)).not.toContain(GITHUB_TOKEN);
+		expect(existsSync(path.join(cwd, "deploy/secret-store.binding.json"))).toBe(
+			false,
+		);
+	});
+
+	it("refuses to make the writer the deploy credential reader", async () => {
+		const result = await runCiSecretStore(
+			input(
+				"connect",
+				{
+					...IDS,
+					"deploy-credential-identity-id": IDS["deploy-identity-id"],
+				},
+				GH_ENV,
+				github().fetch,
+			),
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
+		});
+		expect(result.message).toContain("different identity");
 		expect(existsSync(path.join(cwd, "deploy/secret-store.binding.json"))).toBe(
 			false,
 		);
@@ -237,7 +266,10 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 				path: `/api/v1/auth/oidc-auth/identities/${identityId}`,
 				body: expect.objectContaining({
 					boundIssuer: "https://token.actions.githubusercontent.com",
-					boundAudiences: "https://github.com/Hobo-Labs",
+					boundAudiences:
+						identityId === "deploy-credential-identity"
+							? "https://github.com/Hobo-Labs/hobo-ci-deploy-reader"
+							: "https://github.com/Hobo-Labs",
 					boundSubject: IMMUTABLE_SUB,
 					boundClaims: {
 						repository_id: "1274791462",
@@ -405,9 +437,9 @@ describe("hobo ci secret-store verify", () => {
 		);
 	});
 
-	it("passes hobo-ci-deploy-reader in a GitHub Actions job by signing in and revoking, and says where the relay check runs", async () => {
+	it("passes hobo-ci-deploy-reader in a GitHub Actions job by reading the deploy credential folder, revoking, and saying where the relay check runs", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
-		const fake = infisical(200, []);
+		const fake = infisical(200, ["VERCEL_TOKEN"]);
 		const result = await runCiSecretStore(
 			input("verify", {}, actions, fake.fetch),
 		);
@@ -416,16 +448,22 @@ describe("hobo ci secret-store verify", () => {
 			checks: [
 				{
 					identity: "hobo-ci-deploy-reader",
+					identityId: "deploy-credential-identity",
 					method: "GitHub Actions OIDC",
 					result: "pass",
 				},
-				{ identity: "hobo-ci-relay", method: "Vercel OIDC", result: "not-run" },
+				{
+					identity: "hobo-ci-relay",
+					identityId: "relay-identity",
+					method: "Vercel OIDC",
+					result: "not-run",
+				},
 			],
 		});
 		expect(fake.logins.map((body) => JSON.parse(body).identityId)).toEqual([
 			"deploy-credential-identity",
 		]);
-		expect(fake.seen).not.toContain("GET /api/v4/secrets");
+		expect(fake.seen).toContain("GET /api/v4/secrets");
 		expect(fake.seen).toContain("POST /api/v1/auth/token/revoke");
 		expect(JSON.stringify(result)).not.toContain(ACCESS);
 	});
@@ -451,7 +489,7 @@ describe("hobo ci secret-store verify", () => {
 			input("verify", {}, actions, fake.fetch),
 		);
 		expect(result.ok).toBe(false);
-		expect(result.message).toContain("no deployCredentialIdentityId");
+		expect(result.message).toContain("needs a deployCredentialIdentityId distinct");
 		expect(fake.seen).toEqual([]);
 	});
 
@@ -473,14 +511,13 @@ describe("hobo ci secret-store verify", () => {
 		expect(jwtFetches).toBe(1);
 	});
 
-	it("says a denied token's subject differs from the trust, and names the repair", async () => {
+	it("says an immutable token needs its subject recorded when none was, and names the repair", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
-		// A binding recorded before connect kept the subject: GitHub now
-		// issues the immutable form, which a legacy trust refuses.
 		const file = path.join(cwd, "deploy/secret-store.binding.json");
-		const legacy = JSON.parse(readFileSync(file, "utf8"));
-		delete legacy.deployOidcSubject;
-		writeFileSync(file, `${JSON.stringify(legacy, null, "\t")}\n`);
+		const pending = JSON.parse(readFileSync(file, "utf8"));
+		pending.claimState = "pending";
+		pending.deployOidcSubject = "";
+		writeFileSync(file, `${JSON.stringify(pending, null, "\t")}\n`);
 		const immutableJwt = jwtWithSub(IMMUTABLE_SUB);
 		const denied = await runCiSecretStore(
 			input("verify", {}, actions, infisical(403, [], immutableJwt).fetch),
@@ -529,7 +566,7 @@ describe("hobo ci secret-store verify", () => {
 		);
 		expect(denied.ok).toBe(false);
 		expect(denied.message).toMatch(
-			/hobo-ci-deploy-reader \(GitHub Actions OIDC\): fail — infisical login-denied/u,
+			/hobo-ci-deploy-reader \(deploy-credential-identity, GitHub Actions OIDC\): fail — infisical login-denied/u,
 		);
 		expect(denied.message).toMatch(/oidc_sub=repo/u);
 	});

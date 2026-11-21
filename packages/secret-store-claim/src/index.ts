@@ -54,8 +54,10 @@ export {
 	type SecretStoreErrorCode,
 } from "./errors.js";
 export {
+	DEPLOY_READER_AUDIENCE_SUFFIX,
 	GITHUB_ACTIONS_ISSUER,
 	type GithubOidcSubject,
+	githubDeployReaderTrust,
 	githubDeployTrust,
 	githubSubjectMismatch,
 	parseGithubOidcSubject,

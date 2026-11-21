@@ -116,9 +116,11 @@ owner handles no secret value on the default path:
   `hobo-ci-deploy-reader` with OIDC Auth trusting GitHub Actions, read-only on
   `/hobo-ci-deploy` only. Both GitHub Actions identities use subject
   `repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main`, GitHub's
-  immutable subject for this repository, audience
-  `https://github.com/Hobo-Labs`, and pinned claims `repository_id`
-  `1274791462` and `repository_owner_id` `344805935`. The subject is never
+  immutable subject for this repository, and pinned claims `repository_id`
+  `1274791462` and `repository_owner_id` `344805935`. The writer's audience is
+  `https://github.com/Hobo-Labs`; the reader's is
+  `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`, so a token the writer
+  can use cannot authenticate the reader. The subject is never
   typed from the repository's name: `connect` reads it from GitHub (below),
   because GitHub issues
   `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/<branch>` to a
@@ -126,7 +128,7 @@ owner handles no secret value on the default path:
   a trust bound to the legacy `repo:<owner>/<repo>` one. (**Connected:** Tyler
   approved using built-in project **Member** (formerly Developer) for
   `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
-  Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). That residual applies only to the writer: Member is not an acceptable role for `hobo-ci-deploy-reader`. `hobo ci secret-store verify` still checks OIDC sign-in only, not Infisical role shape.) Then:
+  Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). That residual applies only to the writer: Member is not an acceptable role for `hobo-ci-deploy-reader`. `hobo ci secret-store verify` proves the reader can list the deploy credential folder, not Infisical role shape.) Then:
 
   ```sh
   GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
@@ -149,9 +151,11 @@ owner handles no secret value on the default path:
   **Repair:** re-run `connect` (no ids needed once the binding exists; adding
   the deploy reader needs its id and `--yes`); with
   `INFISICAL_TOKEN` from your own `infisical login` for that one run it
-  replaces both GitHub Actions identities' OIDC trust in place
-  (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new identity), otherwise
-  it prints the exact subject and claims to set in the dashboard. When
+  replaces each GitHub Actions identity's OIDC trust in place, writer at the
+  writer audience and reader at the reader audience
+  (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new identity), and writes
+  nothing if either update fails; otherwise it prints both exact trust
+  configurations to set in the dashboard. When
   `verify` is denied with a token whose `sub` differs from that subject (or is
   immutable while no subject was recorded), its failure says so and names this
   repair.
@@ -161,18 +165,19 @@ owner handles no secret value on the default path:
   ever typed by a person, into the HoBo MCP App (`capture_secret` on
   `hobo-mcp`), never into the chat; it goes sealed from the form to the MCP
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
-- **Verifying**, by identity name: `hobo-ci-deploy-reader` in the deploy
+- **Verifying**, by identity name and id: `hobo-ci-deploy-reader` in the deploy
   workflow's *Verify the secret store connection* step (`hobo ci secret-store
-  verify`: sign in with GitHub OIDC, audience `https://github.com/Hobo-Labs`,
-  then revoke; failures print `oidc_sub` / `oidc_aud` for dashboard trust
-  matching; does **not** assert Infisical role shape); `hobo-ci-relay` by
-  `/readyz` after Vercel deploys. The workflow step runs
+  verify`: sign in with GitHub OIDC at
+  `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`, list the deploy
+  credential folder to prove `VERCEL_TOKEN` is readable, then revoke; failures
+  print `oidc_sub` / `oidc_aud` for dashboard trust matching; does **not**
+  assert Infisical role shape); `hobo-ci-relay` by `/readyz` after Vercel
+  deploys. The workflow step runs
   `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
   stderr-only crashes fail loudly in the log and job summary.
   `hobo-ci-writer` is exercised only by the `app-credentials` job's deposit;
-  the deploy job never signs in as it. The reader's read grant is proved only
-  by the preview step's scoped deploy token read; sign-in does not prove the
-  grant.
+  the deploy job never signs in as it. A read-only role is a provisioning
+  obligation: verification proves read access, not the absence of write.
 
 ### Least privilege on Infisical Cloud Free (attach)
 

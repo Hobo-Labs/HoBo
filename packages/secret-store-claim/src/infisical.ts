@@ -63,7 +63,11 @@ import {
 	secretStoreClaimItem,
 } from "./claim.js";
 import { SecretStoreError, secretStoreError } from "./errors.js";
-import { type GithubOidcSubject, githubDeployTrust } from "./github-oidc.js";
+import {
+	type GithubOidcSubject,
+	githubDeployReaderTrust,
+	githubDeployTrust,
+} from "./github-oidc.js";
 
 /** What the relay's store holds, and who may sign in to it. */
 export type RelayStoreLayout = Readonly<{
@@ -77,6 +81,8 @@ export type RelayStoreLayout = Readonly<{
 	relayTrust: InfisicalOidcTrust;
 	deployIdentity: string;
 	deployTrust: InfisicalOidcTrust;
+	deployReaderIdentity: string;
+	deployReaderTrust: InfisicalOidcTrust;
 	vercelTeamId: string;
 }>;
 
@@ -128,6 +134,8 @@ export function relayStoreLayout(input: {
 		},
 		deployIdentity: "hobo-ci-deploy",
 		deployTrust: githubDeployTrust(input.github, input.branch),
+		deployReaderIdentity: "hobo-ci-deploy-reader",
+		deployReaderTrust: githubDeployReaderTrust(input.github, input.branch),
 		vercelTeamId: input.vercelTeamId,
 	});
 }
@@ -137,6 +145,7 @@ type Provisioned = Readonly<{
 	deployProjectId: string;
 	relayIdentityId: string;
 	deployIdentityId: string;
+	deployCredentialIdentityId: string;
 }>;
 
 async function provisionLayout(
@@ -166,13 +175,20 @@ async function provisionLayout(
 		name: layout.deployIdentity,
 		role: "viewer",
 	});
+	const reader = await admin.createProjectIdentity({
+		projectId: deployProjectId,
+		name: layout.deployReaderIdentity,
+		role: "viewer",
+	});
 	await admin.attachOidcAuth(relay.identityId, layout.relayTrust);
 	await admin.attachOidcAuth(deploy.identityId, layout.deployTrust);
+	await admin.attachOidcAuth(reader.identityId, layout.deployReaderTrust);
 	return {
 		projectId,
 		deployProjectId,
 		relayIdentityId: relay.identityId,
 		deployIdentityId: deploy.identityId,
+		deployCredentialIdentityId: reader.identityId,
 	};
 }
 
@@ -195,6 +211,7 @@ function bindingOf(input: {
 			secretPath: `/${input.layout.folder}`,
 			relayIdentityId: input.provisioned.relayIdentityId,
 			deployIdentityId: input.provisioned.deployIdentityId,
+			deployCredentialIdentityId: input.provisioned.deployCredentialIdentityId,
 			vercelTeamId: input.layout.vercelTeamId,
 			claimBundleId: input.claimBundleId,
 			claimState: input.claimState,
