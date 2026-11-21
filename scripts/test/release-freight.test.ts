@@ -154,6 +154,33 @@ describe("release topology names", () => {
 		expect(seen[5]?.headers.authorization).toBeUndefined();
 	});
 
+	it("keeps Pages build validation when GITHUB_TOKEN is absent", async () => {
+		const seen: TransportRequest[] = [];
+		const inner = async (request: TransportRequest) => {
+			seen.push(request);
+			return {
+				status: 200,
+				headers: {},
+				body: JSON.stringify({ status: "building", commit: COMMIT }),
+			};
+		};
+		const probe = githubApiProbeTransport({}, inner);
+
+		const response = await probe({
+			method: "GET",
+			url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+			headers: {},
+			timeoutMs: 5_000,
+			maxResponseBytes: 1_048_576,
+		});
+
+		expect(response.status).toBe(404);
+		expect(seen).toHaveLength(1);
+		expect(seen[0]?.headers.authorization).toBeUndefined();
+		expect(seen[0]?.headers.accept).toBe("application/vnd.github+json");
+		expect(seen[0]?.maxResponseBytes).toBeLessThan(64 * 1024);
+	});
+
 	it("probes the latest Pages build for every promotion node", () => {
 		const pages = pipelines.find(
 			(pipeline) => pipeline.name === "hobo-release-pages",

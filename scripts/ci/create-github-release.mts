@@ -365,7 +365,6 @@ export function githubApiProbeTransport(
 	inner: ReleaseHttpTransport,
 ): ReleaseHttpTransport {
 	const token = env.GITHUB_TOKEN?.trim();
-	if (!token) return inner;
 	return withLatin1MarkerWhenPresent(inner, async (request) => {
 		if (!request.url.startsWith("https://api.github.com/"))
 			return inner(request);
@@ -373,12 +372,13 @@ export function githubApiProbeTransport(
 			...request,
 			headers: {
 				...request.headers,
-				authorization: `Bearer ${token}`,
 				accept: request.headers.accept ?? "application/vnd.github+json",
 				"x-github-api-version":
 					request.headers["x-github-api-version"] ?? "2022-11-28",
 			},
 		};
+		if (token)
+			Object.assign(authorized.headers, { authorization: `Bearer ${token}` });
 		if (request.method !== "GET" || !PAGES_BUILD_LATEST.test(request.url))
 			return inner(authorized);
 		const notBuiltForHead = { status: 404, headers: {}, body: "" };

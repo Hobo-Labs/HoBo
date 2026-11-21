@@ -362,7 +362,8 @@ The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
 path as the GitHub realizer. The release transport returns success only when
 that build has status `built` and its commit matches `object.sha` from
 `git/ref/heads/gh-pages`; pending, stale, malformed, and failed observations
-return 404. Both authenticated API reads stay below 64 KiB. Pages rollout
+return 404. Both API reads stay below 64 KiB, with `Authorization` omitted when
+`GITHUB_TOKEN` is absent; the same build validation applies either way. Pages rollout
 convergence allows 14 minutes for the GitHub Pages build; the five-minute
 verification window starts after convergence.
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
