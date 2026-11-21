@@ -20,6 +20,7 @@ const okReport: CdPassReport = Object.freeze({
 	reconciled: Object.freeze([
 		Object.freeze({ campId: "edge/prod" as never, ok: true, detail: "" }),
 	]),
+	journal: Object.freeze({ state: "maintained" }),
 	skipped: false,
 });
 
@@ -94,6 +95,28 @@ describe("runTick", () => {
 			event: "cd.pass",
 			camps: 1,
 			store: true,
+			journal: "maintained",
+		});
+	});
+
+	it("logs why the journal's fleet could not be maintained", async () => {
+		const { lines, write } = capture();
+		await runTick({
+			env: { VERCEL_ENV: "production" },
+			runPass: async () =>
+				Object.freeze({
+					...okReport,
+					journal: Object.freeze({
+						state: "failed",
+						detail: "standby b unreachable",
+					}),
+				}),
+			write,
+		});
+		expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({
+			event: "cd.pass",
+			journal: "failed",
+			journalDetail: "standby b unreachable",
 		});
 	});
 

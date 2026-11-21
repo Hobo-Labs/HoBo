@@ -37,6 +37,12 @@ export type OpenedCdStore = Readonly<{
 	backend: CdStoreSelection["backend"];
 	/** A fleet's writer and what keeps it from its policy; absent off a fleet. */
 	fleet?: () => CdFleetStatus;
+	/**
+	 * One fleet tick: copies to the standbys, and a backup when the catalog
+	 * says one is due. Shared with the instance's own timer, so a call while
+	 * a tick runs waits for that tick. Absent off a fleet.
+	 */
+	maintain?: () => Promise<void>;
 	close(): Promise<void>;
 }>;
 
@@ -123,24 +129,32 @@ async function openFleet(
 	if (shortfalls.length > 0)
 		warn("hobo_cd_journal_continuity_short", { tier: plan.tier, shortfalls });
 	await store.tick();
-	let running = false;
-	const timer = setInterval(() => {
-		if (running) return;
-		running = true;
-		store
+	let running: Promise<void> | undefined;
+	// One fleet tick at a time, whoever asks: the timer or a scheduled pass.
+	const maintain = (): Promise<void> => {
+		if (running !== undefined) return running;
+		const tick = store
 			.tick()
-			.catch((error: Error) =>
-				warn("hobo_cd_journal_fleet_tick_failed", { message: error.message }),
-			)
+			.then(() => undefined)
 			.finally(() => {
-				running = false;
+				if (running === tick) running = undefined;
 			});
+		running = tick;
+		return tick;
+	};
+	// A warm instance keeps copying between passes; on serverless the
+	// scheduled pass (composeCdHost) is what guarantees a tick.
+	const timer = setInterval(() => {
+		maintain().catch((error: Error) =>
+			warn("hobo_cd_journal_fleet_tick_failed", { message: error.message }),
+		);
 	}, plan.copyEveryMs);
 	timer.unref();
 	return {
 		store,
 		backend: "postgres-fleet",
 		fleet: () => ({ writer: store.writer(), shortfalls }),
+		maintain,
 		close: async () => {
 			clearInterval(timer);
 			await store.end();

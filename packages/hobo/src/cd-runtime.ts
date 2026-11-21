@@ -187,6 +187,8 @@ export type CdRuntime = Readonly<{
 	host: CdDeployHost;
 	store: DurableEventStore;
 	conductor(campIds: readonly CampId[], holderId?: string): CampReconciler;
+	/** One tick of the journal's fleet (copies, due backups); absent off a fleet. */
+	maintainJournal?: () => Promise<void>;
 	close(): Promise<void>;
 }>;
 
@@ -560,6 +562,9 @@ export async function openCdRuntime(
 					});
 				},
 			},
+			...(opened?.maintain !== undefined
+				? { maintainJournal: opened.maintain }
+				: undefined),
 			close: async () => {
 				await opened?.close();
 			},
