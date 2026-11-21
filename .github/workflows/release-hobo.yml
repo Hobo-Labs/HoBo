@@ -353,7 +353,9 @@ jobs:
   release-main-train-gate:
     name: Main train release gate (nbgv)
     needs: route
-    if: github.repository == 'Hobo-Labs/HoBo'
+    if: >-
+      !cancelled() && needs.route.result == 'success' &&
+      github.repository == 'Hobo-Labs/HoBo'
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 15
     outputs:
@@ -420,7 +422,9 @@ jobs:
     needs: route
     # Skipped when the route job verified a signed local run of this job for this
     # tree. A local run signs for this job only when no OCI image is affected.
-    if: ${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"')) }}
+    if: >-
+      !cancelled() && needs.route.result == 'success' &&
+      !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"'))
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # The realize proof (and its @hobo/hobo build) is release-realize's, so a
     # Turbo cache miss here costs only the affected images.
@@ -612,7 +616,9 @@ jobs:
   release-realize:
     name: Release Freight realize proof (offline)
     needs: route
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    if: >-
+      !cancelled() && needs.route.result == 'success' &&
+      (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:

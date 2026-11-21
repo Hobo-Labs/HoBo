@@ -290,6 +290,7 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(contract).not.toContain("--filter=@hobo/hobo...");
 		expect(contract).not.toContain("release-freight-realize.test.ts");
 		const realize = job("release-realize");
+		expect(realize).toContain("needs.route.result == 'success'");
 		before(realize, "name: Turbo cache", "--filter=@hobo/hobo...");
 		before(
 			realize,
