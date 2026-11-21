@@ -395,7 +395,10 @@ export function publishAttestation(input: {
 		throw new AttestError(
 			`not publishing: no workflow would accept this record (${verdict.reason})`,
 		);
-	if (statement.jobs.includes("pr_gate_validation")) {
+	if (
+		statement.jobs.includes("pr_gate_plan") ||
+		statement.jobs.includes("pr_gate_validation")
+	) {
 		const problem = shadowPolicyProblem({
 			root: cwd,
 			base: statement.base,
@@ -1053,7 +1056,7 @@ class JobFailed extends Error {
 function shadowSkipIn(plan: readonly PlannedJob[]): boolean {
 	return plan.some(
 		(job) =>
-			job.id === "pr_gate_validation" &&
+			job.id === "pr_gate_plan" &&
 			job.steps.some(
 				(step) =>
 					step.local === "skip" &&
@@ -1176,7 +1179,9 @@ export async function runAttestedJobs(input: {
 				"its tests start containers, and no Docker engine answers here";
 	if (
 		!GATE_JOBS.some((id) => notAttested[id] !== undefined) &&
-		plan.some((job) => job.id === "pr_gate_validation") &&
+		plan.some(
+			(job) => job.id === "pr_gate_plan" || job.id === "pr_gate_validation",
+		) &&
 		(shadowSkipIn(plan) ||
 			shadowSkipAt(root, target.base) ||
 			shadowSkipAt(root, target.head))
@@ -1191,7 +1196,7 @@ export async function runAttestedJobs(input: {
 			});
 		} catch (cause) {
 			if (!(cause instanceof AttestError)) throw cause;
-			notAttested.pr_gate_validation = cause.message;
+			notAttested.pr_gate_plan = cause.message;
 		}
 	}
 	// The PR impact gate takes its jobs together or not at all.
@@ -1512,7 +1517,8 @@ export function verifyLocally(input: {
 		base,
 	});
 	return verdict.attested &&
-		verdict.jobs.includes("pr_gate_validation") &&
+		(verdict.jobs.includes("pr_gate_plan") ||
+			verdict.jobs.includes("pr_gate_validation")) &&
 		shadowPolicyProblem({ root, base, head, tree })
 		? omitImpactGroup(verdict)
 		: verdict;
@@ -1683,7 +1689,7 @@ async function assertSignoffPolicy(input: {
 				`the workflow job or workflow settings for ${id} changed from the base; signoff refused`,
 			);
 		}
-		if (id === "pr_gate_validation") {
+		if (id === "pr_gate_plan") {
 			const skipped = described.steps.filter(
 				(step) =>
 					step.name === "Impact classification (shadow)" &&

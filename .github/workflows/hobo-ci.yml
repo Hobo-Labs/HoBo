@@ -364,24 +364,28 @@ jobs:
         if: always() && steps.source.outputs.source == 'build'
         run: docker image rm "hobo-ci-deps:${{ steps.key.outputs.key }}" >/dev/null 2>&1 || true
 
-  pr_gate_validation:
-    name: PR impact validation
-    # Waits for the image job: a pull request that changes the image inputs must test on the
-    # image it built (that job retags hobo-ci-worker:local, which this job's container starts
-    # from). When the inputs are unchanged that job is a short no-op. !cancelled() keeps this
-    # validation running, never skipped, when the image build fails. The
-    # required PR impact gate below combines this result with merge-group tests.
-    needs: [route, ci-runner-image]
+  pr_gate_plan:
+    name: PR impact plan
+    # The plan is what everything else waits on, so it is its own job: the merge
+    # base, the gate scope and the shard plan are ready after checkout plus
+    # seconds of git and node work (the planning scripts use node builtins
+    # only; no install, no Turbo cache), while the S0 gate set in the
+    # validation job runs two to three minutes more. The shards and the S0
+    # gate start from this job in parallel, and each one's runner setup
+    # overlaps the other's work instead of queueing behind the whole
+    # validation job. The required PR impact gate below still requires plan,
+    # validation and every shard.
+    needs: [route]
     # Skipped when the route job verified a signed local run of this job for this tree.
-    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_plan"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
-    # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
     timeout-minutes: 20
     permissions:
       contents: read
     outputs:
       merge_base: ${{ steps.merge-group-base.outputs.base }}
       merge_tests: ${{ steps.merge-group-base.outputs.tests }}
+      merge_scope: ${{ steps.merge-group-base.outputs.scope }}
       pr_base: ${{ steps.scm-base.outputs.base }}
       shards: ${{ steps.shard-plan.outputs.shards }}
     env:
@@ -393,34 +397,8 @@ jobs:
           clean: false
           fetch-depth: 0
       - uses: $/.github/actions/ci-runner-preflight
-        with:
-          browser: "true"
-      - name: Turbo cache
-        uses: $/.github/actions/turbo-cache
-        with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
-          turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
-      - uses: $/.github/actions/pnpm-store
-      - name: Link deps layer
-        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
-      - name: Check deps layer match
-        id: deps-layer
-        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
-      - name: Verify deps layer sibling links
-        if: steps.deps-layer.outputs.match == 'true'
-        run: node --import tsx scripts/ensure-ts-autocode-links.mts
-      - name: Install dependencies
-        if: steps.deps-layer.outputs.match != 'true'
-        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
-      - name: CI runner image contract (manifest)
-        if: github.event_name == 'merge_group'
-        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
-      - name: Assert CI fabric contract
-        if: github.event_name == 'merge_group'
-        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
       - name: Resolve Turbo SCM base
         if: github.event_name == 'pull_request'
         id: scm-base
@@ -459,44 +437,7 @@ jobs:
           git diff --name-only "${TURBO_SCM_BASE}"...HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="${TURBO_SCM_BASE}" \
             > "$RUNNER_TEMP/impact-plan.json"
-      - name: DCO sign-off check
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          DCO_BASE: origin/${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          # Merge commits carry no sign-off of their own: the checked-out PR merge
-          # ref and an update-branch merge are made by GitHub. Only the commits a
-          # contributor wrote are checked. The list is read into a variable first so
-          # a failing rev-list fails the step instead of reading as zero commits.
-          commits="$(git rev-list --no-merges "${DCO_BASE}..HEAD")"
-          missing=0
-          while read -r sha; do
-            [ -z "$sha" ] && continue
-            author="$(git show -s --format='%an <%ae>' "$sha")"
-            # On a variable rather than a pipe: an early `grep -q` exit would fail the
-            # pipeline under pipefail and read as a missing sign-off.
-            message="$(git show -s --format='%B' "$sha")"
-            if ! grep -qiF "Signed-off-by: $author" <<<"$message"; then
-              echo "::warning::missing or mismatched DCO sign-off on $(git show -s --format='%h %s' "$sha") (expected 'Signed-off-by: $author')"
-              missing=$((missing + 1))
-            fi
-          done <<<"$commits"
-          if [ "$missing" -gt 0 ]; then
-            echo "$missing commit(s) without a matching DCO sign-off. Fix with: git rebase --signoff ${DCO_BASE}"
-            exit 1
-          fi
-          echo "All commits carry a matching DCO sign-off."
-      - name: Code format gate
-        if: github.event_name == 'pull_request'
-        run: pnpm run lint:code
-      - name: Relevant checks only
-        if: github.event_name == 'pull_request'
-        env:
-          BASE: ${{ steps.scm-base.outputs.base }}
-        run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
-      # main-gate's main-base and S0 gate set steps mirror these steps.
+      # main-gate's main-base step mirrors this step.
       - name: Resolve the merge group base and gate scope
         if: github.event_name == 'merge_group'
         id: merge-group-base
@@ -560,6 +501,104 @@ jobs:
           git diff --name-only "$BASE" HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/impact-classifier.mts --base="$BASE" --meaningful-out="$RUNNER_TEMP/impact-meaningful.txt" \
             > "$RUNNER_TEMP/impact-plan.json"
+      - name: CI trace
+        if: always()
+        uses: $/.github/actions/ci-trace
+
+  pr_gate_validation:
+    name: PR impact validation
+    # The gate half of the old validation job: the plan job above resolves the
+    # base, the scope and the shards, and this job runs the S0 gate set (merge
+    # group) and the PR-only gates (DCO, format, agent:check) against its
+    # outputs, beside the shards rather than ahead of them.
+    # Waits for the image job: a pull request that changes the image inputs must test on the
+    # image it built (that job retags hobo-ci-worker:local, which this job's container starts
+    # from). When the inputs are unchanged that job is a short no-op. !cancelled() keeps this
+    # validation running, never skipped, when the image build fails. The
+    # required PR impact gate below combines this result with merge-group tests.
+    needs: [route, ci-runner-image, pr_gate_plan]
+    # Skipped when the route job verified a signed local run of this job for this tree.
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 0
+      - uses: $/.github/actions/ci-runner-preflight
+        with:
+          browser: "true"
+      - name: Turbo cache
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Check the sibling pins (gitlink against checkout, offline)
+        run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
+      - uses: $/.github/actions/pnpm-store
+      - name: Link deps layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: CI runner image contract (manifest)
+        if: github.event_name == 'merge_group'
+        run: node --import tsx --test scripts/test/ci-runner-image-contract.test.ts
+      - name: Assert CI fabric contract
+        if: github.event_name == 'merge_group'
+        run: node --import tsx packages/ci-guard/bin/assert-ci-contract.ts
+      - name: DCO sign-off check
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          DCO_BASE: origin/${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # Merge commits carry no sign-off of their own: the checked-out PR merge
+          # ref and an update-branch merge are made by GitHub. Only the commits a
+          # contributor wrote are checked. The list is read into a variable first so
+          # a failing rev-list fails the step instead of reading as zero commits.
+          commits="$(git rev-list --no-merges "${DCO_BASE}..HEAD")"
+          missing=0
+          while read -r sha; do
+            [ -z "$sha" ] && continue
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            # On a variable rather than a pipe: an early `grep -q` exit would fail the
+            # pipeline under pipefail and read as a missing sign-off.
+            message="$(git show -s --format='%B' "$sha")"
+            if ! grep -qiF "Signed-off-by: $author" <<<"$message"; then
+              echo "::warning::missing or mismatched DCO sign-off on $(git show -s --format='%h %s' "$sha") (expected 'Signed-off-by: $author')"
+              missing=$((missing + 1))
+            fi
+          done <<<"$commits"
+          if [ "$missing" -gt 0 ]; then
+            echo "$missing commit(s) without a matching DCO sign-off. Fix with: git rebase --signoff ${DCO_BASE}"
+            exit 1
+          fi
+          echo "All commits carry a matching DCO sign-off."
+      - name: Code format gate
+        if: github.event_name == 'pull_request'
+        run: pnpm run lint:code
+      - name: Relevant checks only
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ needs.pr_gate_plan.outputs.pr_base }}
+        run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
+      # main-gate's main-base step mirrors the plan job's base resolution and
+      # its S0 gate set mirrors this step.
+
       - name: S0 gate set
         if: github.event_name == 'merge_group'
         timeout-minutes: 20
@@ -567,8 +606,8 @@ jobs:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
-          SCOPE: ${{ steps.merge-group-base.outputs.scope }}
-          BASE: ${{ steps.merge-group-base.outputs.base }}
+          SCOPE: ${{ needs.pr_gate_plan.outputs.merge_scope }}
+          BASE: ${{ needs.pr_gate_plan.outputs.merge_base }}
         run: |
           set -euo pipefail
           node --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts
@@ -596,16 +635,20 @@ jobs:
 
   workspace_tests:
     name: Workspace test shard ${{ matrix.shard }}
-    # The required gate accepts validation only when every shard succeeds.
-    needs: [route, pr_gate_validation]
-    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"workspace_tests"')) }}
+    # Starts from the plan, not the S0 validation: the shard plan is ready a
+    # minute in, and each shard's runner setup then overlaps the S0 gate set.
+    # The required gate accepts the run only when the validation job and every
+    # shard succeed. Waits for the image job like the validation job, so a
+    # pull request that changes the image's inputs tests on the image it built.
+    needs: [route, ci-runner-image, pr_gate_plan]
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"workspace_tests"')) }}
     # The shard list is the planner's; each job splits by its own position in
     # that list (strategy.job-index of strategy.job-total), so whatever list
     # arrives, every planned suite lands in exactly one job.
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.pr_gate_validation.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
+        shard: ${{ fromJSON(needs.pr_gate_plan.outputs.shards || '[0, 1, 2, 3, 4, 5, 6, 7]') }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -654,9 +697,9 @@ jobs:
         timeout-minutes: 19
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
-          MERGE_TESTS: ${{ needs.pr_gate_validation.outputs.merge_tests }}
-          MERGE_BASE: ${{ needs.pr_gate_validation.outputs.merge_base }}
+          PR_BASE: ${{ needs.pr_gate_plan.outputs.pr_base }}
+          MERGE_TESTS: ${{ needs.pr_gate_plan.outputs.merge_tests }}
+          MERGE_BASE: ${{ needs.pr_gate_plan.outputs.merge_base }}
           SHARD: ${{ strategy.job-index }}
           SHARD_TOTAL: ${{ strategy.job-total }}
           # No HOBO_TURBO_CONCURRENCY here: ci-runner-preflight's memory-env
@@ -708,8 +751,11 @@ jobs:
 
   pr_affected:
     name: PR affected package lanes
-    needs: [route, pr_gate_validation]
-    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_validation.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_affected"')) }}
+    # Starts from the plan (whose pr_base output it reads) beside the shards;
+    # the required gate still requires the validation job too. Waits for the
+    # image job like the validation job.
+    needs: [route, ci-runner-image, pr_gate_plan]
+    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_affected"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -760,7 +806,7 @@ jobs:
           pnpm --filter @hobo/ci-dagger checks --plan --config .hobo/dagger.json
       - name: Affected package lanes
         env:
-          TURBO_SCM_BASE: ${{ needs.pr_gate_validation.outputs.pr_base }}
+          TURBO_SCM_BASE: ${{ needs.pr_gate_plan.outputs.pr_base }}
         run: |
           set -euo pipefail
           if [ -z "$TURBO_SCM_BASE" ] || ! git cat-file -e "${TURBO_SCM_BASE}^{commit}"; then
@@ -927,7 +973,7 @@ jobs:
     # failed, or cancelled, and accepts only the event's complete validation:
     # each job succeeded, or the route job succeeded, reported a verified signed
     # local run covering that job, and the job was skipped for it.
-    needs: [route, pr_gate_validation, workspace_tests, pr_affected, scripts-tests]
+    needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
@@ -939,6 +985,7 @@ jobs:
       - name: Require successful validation and workspace tests
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PLAN_RESULT: ${{ needs.pr_gate_plan.result }}
           VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
           AFFECTED_RESULT: ${{ needs.pr_affected.result }}
@@ -962,6 +1009,10 @@ jobs:
             [ "$1" = "success" ] && return 0
             [ "$1" = "skipped" ] && attested "$2"
           }
+          if ! passed "$PLAN_RESULT" pr_gate_plan; then
+            echo "PR impact plan did not succeed: $PLAN_RESULT" >&2
+            exit 1
+          fi
           if ! passed "$VALIDATION_RESULT" pr_gate_validation; then
             echo "PR impact validation did not succeed: $VALIDATION_RESULT" >&2
             exit 1
