@@ -36,4 +36,28 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 			/refuse to ship a bundle without attestation|GITHUB_ACTIONS/u,
 		);
 	});
+
+	it("refuses GitHub Actions attestation without a run attempt", () => {
+		const build = spawnSync(
+			process.execPath,
+			["--import", "tsx", "scripts/build-agent-plugin.mts"],
+			{
+				cwd: repoRoot,
+				encoding: "utf8",
+				timeout: 300_000,
+				env: {
+					...process.env,
+					CI: "1",
+					GITHUB_ACTIONS: "true",
+					GITHUB_RUN_ID: "run-current",
+					GITHUB_RUN_ATTEMPT: "",
+					GITHUB_SHA: "commit-current",
+				},
+			},
+		);
+		expect(build.status).not.toBe(0);
+		expect(`${build.stdout}\n${build.stderr}`).toMatch(
+			/GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT, and GITHUB_SHA are required/u,
+		);
+	});
 });

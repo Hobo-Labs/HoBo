@@ -51,31 +51,31 @@ pnpm run agent-plugin:build
 ```
 
 In CI, HoBo Fabric runs `pnpm run agent-plugin:build` in the same job
-immediately before `check:all` (which calls `agent-plugin:check`). The build writes a gitignored
-`.bundle-attestation.json` (only when `GITHUB_ACTIONS=true`) with `"scope": "job-local"`, the bundle sha256,
-`GITHUB_RUN_ID`, `GITHUB_SHA`, and `runAttempt` when GitHub sets
-`GITHUB_RUN_ATTEMPT`. The recorded sha256 covers only `bin/hobo-mcp.mjs`; copied `fixtures/deploy` is
-checked separately for presence and secrets, not attestation bytes, so fixture
-drift is caught by the gate but not bound to the attestation record. It
-is a **job-local consistency record** (same run, checkout, and bytes) — not
-GitHub OIDC artifact attestation or cross-job provenance; any step in the same
-Actions job could mint a matching file. `pnpm agent:check` selects
-`agent-plugin:check` on affected changes to `plugins/hobo/**`, synced skills, and
-related MCP sources via `scripts/relevant-check-policy.ts`, not only on the full
-`check:all` lane. Attestation verification runs only when `GITHUB_ACTIONS=true`; other CI
-signals (for example `TF_BUILD` alone) still require the bundle but report that
-attestation must be checked on a GitHub Actions runner — they do not skip
-verification silently. The check refuses a bundle whose attestation does not
-match this workflow run, checkout, attempt, and sha256, and fails closed when
-the bundle is present in GitHub Actions without a valid attestation. And
-`agent-plugin:check` always runs `pnpm run agent-plugin:build` first so a
-stale on-disk bundle cannot pass the gate; CI rebuilds before every check.
+immediately before `check:all` (which calls `agent-plugin:check`). Jobs that build
+or exercise the bundle have `id-token: write`. The build requires `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, and
+`GITHUB_SHA`, requests a GitHub OIDC token for the `hobo-agent-plugin` audience,
+and writes a gitignored `.bundle-attestation.json` with `"scope": "github-oidc"`,
+the token, bundle sha256, run, attempt, and commit. Missing metadata or a token
+request failure discards the bundle. The recorded sha256 covers only
+`bin/hobo-mcp.mjs`; copied `fixtures/deploy` is checked separately for presence
+and secrets, not attestation bytes.
+
+The check verifies the token's RS256 signature against GitHub's pinned JWKS
+endpoint, then requires the expected issuer, audience, lifetime, HoBo repository,
+run, attempt, and commit claims. Environment-only records and legacy unsigned
+`job-local` records fail closed, as do digest or metadata mismatches. Attestation
+verification runs only when `GITHUB_ACTIONS=true`; other CI signals (for example
+`TF_BUILD` alone) still require the bundle and report that attestation must be
+checked on a GitHub Actions runner. This remains a job-local consistency record,
+not cross-job artifact provenance: another step with OIDC access in the same job
+can mint its own record. `pnpm agent:check` selects `agent-plugin:check` on
+affected plugin, skill, and MCP inputs, and `agent-plugin:check` always rebuilds
+first so a stale on-disk bundle cannot pass.
 
 The build deletes any prior `.bundle-attestation.json` before bundling so a
-failed rebuild cannot leave a stale attestation beside the bundle. In CI it also refuses to write attestation unless the checkout was clean before
-the build started and `HEAD` matches `GITHUB_SHA`. The record is unsigned
-job-local metadata, not cryptographic provenance — it binds bundle bytes to the
-current GitHub Actions run and checkout only.
+failed rebuild cannot leave a stale attestation beside the bundle. In CI it also
+refuses to write attestation unless the checkout was clean before the build
+started and `HEAD` matches `GITHUB_SHA`.
 
 The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to

@@ -154,18 +154,28 @@ export type SkillsLockExemptionOptions = {
 function parseGitHubOwnerRepo(
 	source: string,
 ): { owner: string; repo: string } | null {
-	let trimmed = source.trim();
-	if (trimmed.length === 0) return null;
-	trimmed = trimmed.replace(/^github:/iu, "");
-	trimmed = trimmed.replace(/^https?:\/\/github\.com\//iu, "");
-	const hash = trimmed.indexOf("#");
-	if (hash >= 0) trimmed = trimmed.slice(0, hash);
-	trimmed = trimmed.replace(/\.git$/iu, "");
-	const slash = trimmed.indexOf("/");
-	if (slash <= 0) return null;
-	const owner = trimmed.slice(0, slash).trim();
-	const repo = trimmed.slice(slash + 1).split("/")[0]?.trim() ?? "";
-	if (owner.length === 0 || repo.length === 0) return null;
+	let path = source.trim();
+	if (path.length === 0) return null;
+	const lower = path.toLowerCase();
+	const prefixes = [
+		"github:",
+		"https://github.com/",
+		"http://github.com/",
+		"git+https://github.com/",
+		"git+http://github.com/",
+		"ssh://git@github.com/",
+		"git+ssh://git@github.com/",
+		"git@github.com:",
+	];
+	const prefix = prefixes.find((candidate) => lower.startsWith(candidate));
+	if (prefix !== undefined) path = path.slice(prefix.length);
+	path = path.split(/[?#]/u, 1)[0] ?? "";
+	path = path.replace(/\/$/u, "").replace(/\.git$/iu, "");
+	const parts = path.split("/");
+	if (parts.length !== 2) return null;
+	const [owner = "", repo = ""] = parts;
+	if (!/^[A-Za-z0-9_.-]+$/u.test(owner) || !/^[A-Za-z0-9_.-]+$/u.test(repo))
+		return null;
 	return { owner, repo };
 }
 

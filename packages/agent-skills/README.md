@@ -29,8 +29,9 @@ a listing serves (boundary fixtured in
   outside that set. `skillsLockExemptionIssues` fails closed when the lock
   lists portable plugin skills, shadows an in-tree `.agents/skills` entry
   without a well-formed external GitHub `source`, or re-labels an in-tree
-  skill as vendored from this repository (any normalized `Hobo-Labs/HoBo`
-  spelling).
+  skill as vendored from this repository. Shorthand, `github:`, HTTP(S), and
+  SSH/SCP GitHub sources are canonicalized, including query, fragment, and
+  `.git` suffixes; ambiguous hosts and paths fail closed.
   The repo's `skills:mirror-check` remains the parity gate between
   `.agents/skills` and `.claude/skills`; this check layers the per-skill
   contract on top.

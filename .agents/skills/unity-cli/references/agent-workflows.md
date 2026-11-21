@@ -74,6 +74,7 @@ Example: "player falls through floor"
 Prefer **spawned** Editor jobs for isolation:
 
 ```bash
+set -e
 unity test "$PROJECT_PATH" --mode EditMode --output test-results.xml
 unity build "$PROJECT_PATH" --target WebGL \
   --execute-method CiBuilder.BuildWebGL \

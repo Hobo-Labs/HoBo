@@ -14,7 +14,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { agentPluginCiActive } from "./check-agent-plugin.ts";
+import { z } from "zod";
+
+import {
+	AGENT_PLUGIN_OIDC_AUDIENCE,
+	agentPluginCiActive,
+} from "./check-agent-plugin.ts";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const pluginRoot = path.join(repoRoot, "plugins", "hobo");
@@ -67,12 +72,42 @@ type EsbuildBuildOptions = {
 };
 
 type BundleAttestationRecord = {
-	scope: "job-local";
+	scope: "github-oidc";
 	sha256: string;
-	runId?: string;
-	runAttempt?: string;
-	commitSha?: string;
+	runId: string;
+	runAttempt: string;
+	commitSha: string;
+	oidcToken: string;
 };
+
+async function requestGithubOidcToken(): Promise<string | undefined> {
+	const requestText = process.env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "";
+	const requestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "";
+	if (requestText.length === 0 || requestToken.length === 0) return undefined;
+	try {
+		const requestUrl = new URL(requestText);
+		if (
+			requestUrl.protocol !== "https:" ||
+			(!requestUrl.hostname.endsWith(".actions.githubusercontent.com") &&
+				requestUrl.hostname !== "actions.githubusercontent.com") ||
+			requestUrl.username.length > 0 ||
+			requestUrl.password.length > 0 ||
+			requestUrl.hash.length > 0
+		)
+			return undefined;
+		requestUrl.searchParams.set("audience", AGENT_PLUGIN_OIDC_AUDIENCE);
+		const response = await fetch(requestUrl, {
+			headers: { authorization: `Bearer ${requestToken}` },
+			redirect: "error",
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (!response.ok) return undefined;
+		return z.object({ value: z.string().min(1) }).parse(await response.json())
+			.value;
+	} catch {
+		return undefined;
+	}
+}
 
 type EsbuildModule = {
 	build: (
@@ -149,7 +184,7 @@ async function buildAgentPlugin(): Promise<void> {
 		return;
 	}
 	const runId = process.env.GITHUB_RUN_ID?.trim() ?? "";
-	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
+	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim() ?? "";
 	const commitSha = process.env.GITHUB_SHA?.trim() ?? "";
 	const headSha = spawnSync("git", ["rev-parse", "HEAD"], {
 		cwd: repoRoot,
@@ -160,6 +195,14 @@ async function buildAgentPlugin(): Promise<void> {
 		rmSync(outfile, { force: true });
 		rmSync(fixturesTarget, { recursive: true, force: true });
 	};
+	if (runId.length === 0 || runAttempt.length === 0 || commitSha.length === 0) {
+		console.error(
+			"agent-plugin:build: GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT, and GITHUB_SHA are required in GitHub Actions",
+		);
+		discardBundleOutput();
+		process.exitCode = 1;
+		return;
+	}
 	if (
 		headSha.status !== 0 ||
 		!checkoutCleanBeforeBuild ||
@@ -172,31 +215,23 @@ async function buildAgentPlugin(): Promise<void> {
 		process.exitCode = 1;
 		return;
 	}
-	if (runId.length === 0 || commitSha.length === 0) {
+	const oidcToken = await requestGithubOidcToken();
+	if (oidcToken === undefined) {
 		console.error(
-			"agent-plugin:build: GITHUB_RUN_ID and GITHUB_SHA are required in GitHub Actions",
-		);
-		discardBundleOutput();
-		process.exitCode = 1;
-		return;
-	}
-	if (runAttempt !== undefined && runAttempt.length === 0) {
-		console.error(
-			"agent-plugin:build: GITHUB_RUN_ATTEMPT must be non-empty when set",
+			"agent-plugin:build: a GitHub OIDC token is required; grant id-token: write to the job",
 		);
 		discardBundleOutput();
 		process.exitCode = 1;
 		return;
 	}
 	const payload: BundleAttestationRecord = {
-		scope: "job-local",
+		scope: "github-oidc",
 		sha256,
 		runId,
+		runAttempt,
 		commitSha,
+		oidcToken,
 	};
-	if (runAttempt !== undefined && runAttempt.length > 0) {
-		payload.runAttempt = runAttempt;
-	}
 	writeFileSync(attestationPath, `${JSON.stringify(payload)}\n`);
 }
 

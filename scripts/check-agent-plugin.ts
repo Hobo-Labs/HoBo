@@ -12,6 +12,7 @@ import {
 } from "@hobo/agent-skills";
 import { z } from "zod";
 
+import { createGithubWorkflowVerifier } from "../packages/ci-gh-actions/src/workflow-oidc.ts";
 import {
 	defaultNbgvRunner,
 	fixedTrainAlphaSemver,
@@ -19,6 +20,7 @@ import {
 	type NbgvRunner,
 } from "./lib/nbgv-release-version.mts";
 
+export const AGENT_PLUGIN_OIDC_AUDIENCE = "hobo-agent-plugin";
 export const PLUGIN_SCHEMA_ID =
 	"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const MCP_SCHEMA_ID =
@@ -84,6 +86,42 @@ export type AgentPluginReport = {
 	readonly issues: readonly AgentPluginIssue[];
 	readonly notes: readonly string[];
 };
+
+type AgentPluginAttestationIdentity = {
+	readonly repository: string;
+	readonly runId: string;
+	readonly runAttempt: string;
+	readonly commitSha: string;
+};
+
+type VerifyAgentPluginAttestation = (
+	token: string,
+) => Promise<AgentPluginAttestationIdentity>;
+
+async function verifyAgentPluginAttestation(
+	token: string,
+): Promise<AgentPluginAttestationIdentity> {
+	const verifier = createGithubWorkflowVerifier({
+		audience: AGENT_PLUGIN_OIDC_AUDIENCE,
+	});
+	const workflow = await verifier.verify(token);
+	const claims = z
+		.object({
+			run_attempt: z.string().min(1),
+			sha: z.string().min(1),
+		})
+		.parse(
+			JSON.parse(
+				Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+			),
+		);
+	return {
+		repository: workflow.repository,
+		runId: workflow.runId,
+		runAttempt: claims.run_attempt,
+		commitSha: claims.sha,
+	};
+}
 
 export const PluginAuthorSchema = z.strictObject({
 	name: z.string(),
@@ -562,7 +600,11 @@ function collapseForComparison(text: string): string {
 }
 
 function redactDiagnosticText(text: string): string {
-	return text.replace(SECRET_VALUE_PATTERN, "[redacted]");
+	const pattern = new RegExp(
+		SECRET_VALUE_PATTERN.source,
+		`${SECRET_VALUE_PATTERN.flags}g`,
+	);
+	return text.replace(pattern, "[redacted]");
 }
 
 function divergenceContext(expected: string, actual: string): string {
@@ -899,11 +941,12 @@ function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 
 const PluginVendoredSchema = z.object({ $id: z.string() });
 
-export function checkAgentPlugin(input: {
+export async function checkAgentPlugin(input: {
 	pluginRoot: string;
 	repoRoot: string;
 	versionFromReleaseTrain?: string | undefined;
-}): AgentPluginReport {
+	verifyAttestation?: VerifyAgentPluginAttestation | undefined;
+}): Promise<AgentPluginReport> {
 	const { pluginRoot, repoRoot } = input;
 	const issues: AgentPluginIssue[] = [];
 	const notes: string[] = [];
@@ -1006,7 +1049,13 @@ export function checkAgentPlugin(input: {
 				"agent-plugin:check: bundle attestation and sha256 binding are verified only when agentPluginCiActive(); production validation runs in GitHub Actions after agent-plugin:build",
 			);
 		}
-		issues.push(...bundleAttestationIssues(pluginRoot, bundle));
+		issues.push(
+			...(await bundleAttestationIssues(
+				pluginRoot,
+				bundle,
+				input.verifyAttestation ?? verifyAgentPluginAttestation,
+			)),
+		);
 		const deployFixtures = path.join(pluginRoot, "fixtures/deploy");
 		if (
 			!existsSync(deployFixtures) ||
@@ -1056,141 +1105,108 @@ export function checkAgentPlugin(input: {
 	return { issues, notes };
 }
 
-function bundleAttestationIssues(
+async function bundleAttestationIssues(
 	pluginRoot: string,
 	bundlePath: string,
-): AgentPluginIssue[] {
+	verifyAttestation: VerifyAgentPluginAttestation,
+): Promise<AgentPluginIssue[]> {
+	const failure = (message: string, file = BUNDLE_ATTESTATION) => [
+		{ file, message },
+	];
 	if (!agentPluginCiActive()) return [];
 	if (process.env.GITHUB_ACTIONS !== "true") {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); run agent-plugin:check on a GitHub Actions runner",
-			},
-		];
+		return failure(
+			"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); run agent-plugin:check on a GitHub Actions runner",
+		);
 	}
 	const attestationPath = path.join(pluginRoot, BUNDLE_ATTESTATION);
 	if (!existsSync(attestationPath)) {
-		return [
-			{
-				file: "bin/hobo-mcp.mjs",
-				message:
-					"exists in CI without a bundle attestation; run pnpm run agent-plugin:build in this job before agent-plugin:check",
-			},
-		];
+		return failure(
+			"exists in CI without a bundle attestation; run pnpm run agent-plugin:build in this job before agent-plugin:check",
+			"bin/hobo-mcp.mjs",
+		);
 	}
 	let attestationJson: unknown;
 	try {
 		attestationJson = JSON.parse(readFileSync(attestationPath, "utf8"));
 	} catch {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"is not valid JSON; run pnpm run agent-plugin:build in this CI job",
-			},
-		];
+		return failure(
+			"is not valid JSON; run pnpm run agent-plugin:build in this CI job",
+		);
 	}
 	const attestation = z
 		.strictObject({
-			scope: z.literal("job-local"),
+			scope: z.literal("github-oidc"),
 			sha256: z.string().min(1),
 			runId: z.string().min(1),
+			runAttempt: z.string().min(1),
 			commitSha: z.string().min(1),
-			runAttempt: z.string().optional(),
+			oidcToken: z.string().min(1),
 		})
 		.safeParse(attestationJson);
 	if (!attestation.success) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"is not a valid bundle attestation; run pnpm run agent-plugin:build in this CI job",
-			},
-		];
+		return failure(
+			"is not a valid bundle attestation; run pnpm run agent-plugin:build in this CI job",
+		);
 	}
 	const runId = process.env.GITHUB_RUN_ID?.trim();
-	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
 	if (runId === undefined || runId.length === 0) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation is only trusted in a GitHub Actions job with GITHUB_RUN_ID; rebuild in CI before agent-plugin:check",
-			},
-		];
+		return failure(
+			"bundle attestation is only trusted in a GitHub Actions job with GITHUB_RUN_ID; rebuild in CI before agent-plugin:check",
+		);
 	}
-	if (attestation.data.runId.length === 0) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation is missing runId; run pnpm run agent-plugin:build in this job",
-			},
-		];
+	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
+	if (runAttempt === undefined || runAttempt.length === 0) {
+		return failure(
+			"bundle attestation is only trusted in a GitHub Actions job with GITHUB_RUN_ATTEMPT; rebuild in CI before agent-plugin:check",
+		);
 	}
 	const commitSha = process.env.GITHUB_SHA?.trim();
 	if (commitSha === undefined || commitSha.length === 0) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation is only trusted in a GitHub Actions job with GITHUB_SHA; rebuild in CI before agent-plugin:check",
-			},
-		];
+		return failure(
+			"bundle attestation is only trusted in a GitHub Actions job with GITHUB_SHA; rebuild in CI before agent-plugin:check",
+		);
 	}
 	if (attestation.data.commitSha !== commitSha) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation commitSha does not match this workflow checkout; rebuild with pnpm run agent-plugin:build in this job",
-			},
-		];
+		return failure(
+			"bundle attestation commitSha does not match this workflow checkout; rebuild with pnpm run agent-plugin:build in this job",
+		);
 	}
 	if (attestation.data.runId !== runId) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation runId does not match this workflow run; rebuild with pnpm run agent-plugin:build in this job",
-			},
-		];
+		return failure(
+			"bundle attestation runId does not match this workflow run; rebuild with pnpm run agent-plugin:build in this job",
+		);
 	}
-	if (runAttempt !== undefined && runAttempt.length > 0) {
-		if (
-			attestation.data.runAttempt === undefined ||
-			attestation.data.runAttempt !== runAttempt
-		) {
-			return [
-				{
-					file: BUNDLE_ATTESTATION,
-					message:
-						"bundle attestation runAttempt does not match this workflow attempt; rebuild with pnpm run agent-plugin:build in this job",
-				},
-			];
-		}
-	} else if (attestation.data.runAttempt !== undefined) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"bundle attestation carries runAttempt but this job has no GITHUB_RUN_ATTEMPT; rebuild with pnpm run agent-plugin:build in this job",
-			},
-		];
+	if (attestation.data.runAttempt !== runAttempt) {
+		return failure(
+			"bundle attestation runAttempt does not match this workflow attempt; rebuild with pnpm run agent-plugin:build in this job",
+		);
 	}
 	const sha256 = createHash("sha256")
 		.update(readFileSync(bundlePath))
 		.digest("hex");
 	if (attestation.data.sha256 !== sha256) {
-		return [
-			{
-				file: BUNDLE_ATTESTATION,
-				message:
-					"sha256 does not match bin/hobo-mcp.mjs; rebuild with pnpm run agent-plugin:build in this CI job",
-			},
-		];
+		return failure(
+			"sha256 does not match bin/hobo-mcp.mjs; rebuild with pnpm run agent-plugin:build in this CI job",
+		);
+	}
+	let identity: AgentPluginAttestationIdentity;
+	try {
+		identity = await verifyAttestation(attestation.data.oidcToken);
+	} catch {
+		return failure(
+			"GitHub OIDC identity could not be verified against GitHub's keys; rebuild with id-token: write in this job",
+		);
+	}
+	if (
+		identity.repository.toLowerCase() !== "hobo-labs/hobo" ||
+		identity.runId !== runId ||
+		identity.runAttempt !== runAttempt ||
+		identity.commitSha !== commitSha
+	) {
+		return failure(
+			"bundle attestation GitHub OIDC identity does not match this repository, workflow run, attempt, and checkout; rebuild in this job",
+		);
 	}
 	return [];
 }
@@ -1429,7 +1445,7 @@ async function main(): Promise<void> {
 			"agent-plugin:check: skipped the release-train comparison only because HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1 was set outside CI",
 		);
 	}
-	const baseReport = checkAgentPlugin({
+	const baseReport = await checkAgentPlugin({
 		pluginRoot: path.join(repoRoot, "plugins/hobo"),
 		repoRoot,
 		versionFromReleaseTrain,
