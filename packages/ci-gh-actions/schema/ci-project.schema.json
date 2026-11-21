@@ -93,7 +93,7 @@
               "maxItems": 50,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema119"
+                "$ref": "#/$defs/__schema120"
               }
             }
           },
@@ -1673,7 +1673,7 @@
         }
       ]
     },
-    "__schema119": {
+    "__schema120": {
       "type": "string",
       "pattern": "^[A-Za-z]{1,30}$"
     }
