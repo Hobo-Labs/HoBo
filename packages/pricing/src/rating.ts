@@ -249,6 +249,7 @@ function aggregateMeasurements(
 	timeOrder: PricingTimeOrder,
 	time: TemporalPolicy,
 	strictTimes: boolean,
+	rejectAmbiguousLatest: boolean,
 ): Quantity {
 	if (meter.aggregation === "unique-count") {
 		if (
@@ -354,6 +355,25 @@ function aggregateMeasurements(
 					"PRICING_MODEL_UNSUPPORTED",
 					"latest measurements conflict at the same instant",
 				);
+		}
+		if (rejectAmbiguousLatest && latest !== undefined) {
+			const latestValue = quantityDecimal(latest.quantity, "latest quantity");
+			for (const candidate of roundedEntries) {
+				if (
+					timeOrder(
+						candidate.entry.measurement.observedAt,
+						latest.entry.measurement.observedAt,
+					) === 0 &&
+					compareDecimal(
+						quantityDecimal(candidate.quantity, "latest quantity"),
+						latestValue,
+					) !== 0
+				)
+					throw new PricingFault(
+						"INVALID_PRICING_INPUT",
+						`conflicting latest measurements for ${meter.dimension}`,
+					);
+			}
 		}
 		aggregate = latest?.quantity ?? quantityOf(DECIMAL_ZERO, meter.unit);
 	} else if (meter.aggregation === "max") {
@@ -897,7 +917,8 @@ export function rateSnapshot(
 	time: TemporalPolicy = LEGACY_TIME,
 	strictTimes = false,
 	strictSourceValues = true,
-	selectorPerWorkload = false,
+	selectorPerWorkload = true,
+	rejectAmbiguousLatest = true,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -1093,9 +1114,9 @@ export function rateSnapshot(
 				commitmentIds: [],
 			});
 		}
-	for (const meter of [...product.meters].sort((left, right) =>
-		order(left.dimension, right.dimension),
-	)) {
+		for (const meter of [...product.meters].sort((left, right) =>
+			order(left.dimension, right.dimension),
+		)) {
 			const entries = agreementWorkloads.flatMap((delta) =>
 				delta.usage
 					.filter((measurement) => measurement.dimension === meter.dimension)
@@ -1151,6 +1172,7 @@ export function rateSnapshot(
 					timeOrder,
 					time,
 					strictTimes,
+					rejectAmbiguousLatest,
 				);
 				usageEntries = charges.map((charge) => [charge, entries]);
 			}
@@ -1165,6 +1187,7 @@ export function rateSnapshot(
 						timeOrder,
 						time,
 						strictTimes,
+						rejectAmbiguousLatest,
 					);
 				const allowance = consumeAllowances(
 					state,

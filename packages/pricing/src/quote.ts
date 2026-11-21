@@ -60,9 +60,10 @@ export type RatingAlgorithmVersion =
 	| "pricing-rating/v3"
 	| "pricing-rating/v4"
 	| "pricing-rating/v5"
-	| "pricing-rating/v6";
+	| "pricing-rating/v6"
+	| "pricing-rating/v7";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v6";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v7";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function unsupportedRealm(): PricingRejected {
@@ -245,7 +246,8 @@ export function quoteScenario(
 		version !== "pricing-rating/v3" &&
 		version !== "pricing-rating/v4" &&
 		version !== "pricing-rating/v5" &&
-		version !== "pricing-rating/v6"
+		version !== "pricing-rating/v6" &&
+		version !== "pricing-rating/v7"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -253,9 +255,7 @@ export function quoteScenario(
 		);
 	return quoteWithOrdering(
 		scenario,
-		version === "pricing-rating/v1"
-			? legacyPricingOrder
-			: codeUnitPricingOrder,
+		version === "pricing-rating/v1" ? legacyPricingOrder : codeUnitPricingOrder,
 		version === "pricing-rating/v1"
 			? legacyPricingTimeOrder
 			: version === "pricing-rating/v2"
@@ -281,10 +281,15 @@ function quoteWithOrdering(
 	ratingAlgorithmVersion: string,
 ): QuoteResult {
 	const strictTimes =
-		ratingAlgorithmVersion === "pricing-rating/v3" ||
-		ratingAlgorithmVersion === "pricing-rating/v4" ||
-		ratingAlgorithmVersion === "pricing-rating/v5" ||
-		ratingAlgorithmVersion === "pricing-rating/v6";
+		ratingAlgorithmVersion !== "pricing-rating/v1" &&
+		ratingAlgorithmVersion !== "pricing-rating/v2";
+	const strictSourceIdentity =
+		strictTimes && ratingAlgorithmVersion !== "pricing-rating/v3";
+	const strictSourceValues =
+		strictSourceIdentity && ratingAlgorithmVersion !== "pricing-rating/v4";
+	const selectorPerWorkload =
+		strictSourceValues && ratingAlgorithmVersion !== "pricing-rating/v5";
+	const rejectAmbiguousLatest = ratingAlgorithmVersion === "pricing-rating/v7";
 	const time: TemporalPolicy = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	if (!isBoundedPricingInput(scenario))
@@ -297,11 +302,8 @@ function quoteWithOrdering(
 		validateScenarioState(
 			scenario,
 			time,
-			ratingAlgorithmVersion === "pricing-rating/v4" ||
-				ratingAlgorithmVersion === "pricing-rating/v5" ||
-				ratingAlgorithmVersion === "pricing-rating/v6",
-			ratingAlgorithmVersion === "pricing-rating/v5" ||
-				ratingAlgorithmVersion === "pricing-rating/v6",
+			strictSourceIdentity,
+			strictSourceValues,
 			timeOrder === utcPricingTimeOrder,
 		);
 		if (timeOrder === utcPricingTimeOrder) {
@@ -379,9 +381,9 @@ function quoteWithOrdering(
 			timeOrder,
 			time,
 			strictTimes,
-			ratingAlgorithmVersion === "pricing-rating/v5" ||
-				ratingAlgorithmVersion === "pricing-rating/v6",
-			ratingAlgorithmVersion === "pricing-rating/v6",
+			strictSourceValues,
+			selectorPerWorkload,
+			rejectAmbiguousLatest,
 		);
 		const candidate = rateSnapshot(
 			scenario,
@@ -390,9 +392,9 @@ function quoteWithOrdering(
 			timeOrder,
 			time,
 			strictTimes,
-			ratingAlgorithmVersion === "pricing-rating/v5" ||
-				ratingAlgorithmVersion === "pricing-rating/v6",
-			ratingAlgorithmVersion === "pricing-rating/v6",
+			strictSourceValues,
+			selectorPerWorkload,
+			rejectAmbiguousLatest,
 		);
 		if (
 			candidate.currency.length === 0 ||

@@ -207,7 +207,7 @@ values for a selector used by that agreement's rate card. Versions 1–5
 retain that aggregated behavior; the v2 target and availability surfaces
 keep the check.
 
-New quotes use `pricing-rating/v6`. It orders ties by string code units,
+New quotes use `pricing-rating/v7`. It orders ties by string code units,
 compares UTC instants without truncating fractional seconds, rejects impossible
 calendar dates, and requires each allowance, credit, and commitment to have a
 unique nonempty identity within its kind and the financial state's tenant. This
@@ -224,8 +224,9 @@ requires its original locale. Versions 1 and 2 also retain their previous
 timestamp comparison and millisecond validation behavior. Versions 1–3 do not
 enforce the new source identity checks. Versions 1–4 also retain earlier source
 amount, basis and commitment-unit behavior. Versions 1–5 retain earlier
-workload-selector and meter behavior. Preserve the original quote as evidence
-rather than treating a new v6 quote as the old one, and reconcile affected old
+workload-selector and meter behavior. Versions 1–6 also retain the earlier
+handling of conflicting latest measurements. Preserve the original quote as evidence
+rather than treating a new v7 quote as the old one, and reconcile affected old
 expiry, evidence, observation, and financial-source decisions before use.
 
 V6 selects charges for each workload and groups matching measurements for each
@@ -234,6 +235,11 @@ agreement, each measurement must have a product meter, and meter dimensions and
 charge IDs must be present and unique. The earlier algorithm selected charges
 from the first workload and could apply its price to other workloads, or ignore
 an unmetered measurement entirely.
+
+V7 rejects a `latest` meter when different quantities share its latest instant.
+Equal quantities are accepted after unit conversion and event-level rounding;
+conflicts at older instants do not prevent selecting a later value. The input
+must supply enough ordering information to distinguish conflicting observations.
 
 V5 requires nonnegative source amounts and rate-card prices and compatible units.
 For allowances and credits it bounds used plus remaining by the declared amount plus rollover; for
@@ -305,7 +311,7 @@ pnpm --filter @hobo/pricing run test:contract:consumer
 pnpm --filter @hobo/pricing run test
 ```
 
-The replay corpus pins complete v1 through v5 quote outputs. The replay test parses
+The replay corpus pins complete v1 through v6 quote outputs. The replay test parses
 each scenario through protobuf JSON, rerates it with the recorded version, and
 compares the stable JSON result, including the quote hash. The quote-boundary
 PACT is a hand-authored consumer expectation; no live provider accuracy is
@@ -315,7 +321,7 @@ claimed.
 
 The [pricing financial-source skill](../../.agents/skills/verify-pricing-credit-order/SKILL.md)
 checks source admission and the equal-priority credit flow against real code,
-bounded TLA+ models, and abstract balance proofs. The credit model explores 48 states and hides twelve
+bounded TLA+ models, and abstract balance proofs. The credit model explores 56 states and hides fourteen
 same-state transitions; a separate counterexample shows that legacy v1 quotes
 can differ by locale.
 
@@ -387,6 +393,19 @@ stateDiagram-v2
   s1 --> s4: check evidence interval
   s2 --> s3: order credit expiry
   s2 --> s4: order credit expiry
+```
+
+The latest-measurement model checks both input orders for two abstract
+observations across 64 states and hides 32 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Measurements received
+  s1: Latest value selected
+  s2: Ambiguous latest rejected
+  [*] --> s0
+  s0 --> s1: compare latest instants and values
+  s0 --> s2: compare latest instants and values
 ```
 
 ## Workload selector verification
