@@ -901,7 +901,8 @@ export async function promoteReleaseFreight(
 					camp,
 					state: at?.state ?? "unknown",
 				};
-				if (input.promoteWall !== undefined) progress.wall = input.promoteWall;
+				if (input.promoteWall !== undefined)
+					progress.wall = input.promoteWall;
 				logReleasePagesProgress(progress);
 			}
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
