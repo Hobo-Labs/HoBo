@@ -211,24 +211,48 @@ describe("as the release workflow runs it", () => {
 				`${id}: the job-level if must not enable a merge_group run the queue can cancel mid-publish`,
 			).not.toMatch(/github\.event_name == 'merge_group'/u);
 		}
+		const realize = jobIf("release-realize");
+		expect(
+			realize,
+			"the offline realize proof runs for exactly the pre-merge events",
+		).toMatch(/github\.event_name == 'pull_request'/u);
+		expect(realize).toMatch(/github\.event_name == 'merge_group'/u);
+		expect(
+			realize,
+			"an offline proof must not grow the publish train gate a cancelled merge_group run could ride",
+		).not.toMatch(
+			/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\//u,
+		);
+		expect(
+			realize,
+			"the workflow_run publish path releases what this proof never witnessed",
+		).not.toMatch(/github\.event_name == 'workflow_run'/u);
 		expect(
 			jobIf("release-github"),
 			"an independent tag release still requires this run's publish",
 		).toContain("needs.release-publish.result == 'success'");
 	});
 
-	it("scopes the offline realize proof to pull_request and merge_group, apart from every publish path", () => {
-		const gate = jobIf("release-realize");
-		expect(gate).toMatch(/github\.event_name == 'pull_request'/u);
-		expect(gate).toMatch(/github\.event_name == 'merge_group'/u);
+	it("gates the publish train on a route that failed, but never the Pages publish", () => {
+		for (const id of [
+			"release-main-train-gate",
+			"release-contract",
+			"release-hobo-integration",
+			"release-realize",
+		]) {
+			expect(
+				jobIf(id),
+				`${id}: a failed route falls back to the pinned hosted runner, and the GHCR/npm publish train behind these gates must still run`,
+			).toContain(
+				"(needs.route.result == 'success' || needs.route.result == 'failure')",
+			);
+		}
+		const pages = jobIf("release-pages");
+		expect(pages).toContain("needs.route.result == 'success'");
 		expect(
-			gate,
-			"an offline proof must not grow the publish train gate a cancelled merge_group run could ride",
-		).not.toContain("release-main-train-gate.outputs.run");
-		expect(
-			gate,
-			"the workflow_run publish path releases what this proof never witnessed",
-		).not.toMatch(/github\.event_name == 'workflow_run'/u);
+			pages,
+			"Pages writes a public surface, so a run whose route never decided must not publish it",
+		).not.toContain("needs.route.result == 'failure'");
 	});
 
 	it("writes run= for the gate under plain node", () => {

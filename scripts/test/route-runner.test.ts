@@ -1507,11 +1507,13 @@ describe("the script reading the slip", () => {
 		GITHUB_EVENT_NAME: "merge_group",
 		GITHUB_WORKFLOW_REF:
 			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
+		GITHUB_TOKEN: "token",
 	};
 	const mergeGroupRelease = {
 		GITHUB_EVENT_NAME: "merge_group",
 		GITHUB_WORKFLOW_REF:
 			"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/gh-readonly-queue/main",
+		GITHUB_TOKEN: "token",
 	};
 
 	it("stays on GitHub-hosted when the merge-group hosted probe cannot read the queue", async () => {
@@ -1613,6 +1615,192 @@ describe("the script reading the slip", () => {
 		Array.from({ length: 5 }, (_, index) =>
 			waiting("ubuntu-24.04", 10 + index),
 		);
+
+	const prBatchCi = {
+		GITHUB_EVENT_NAME: "pull_request",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/pull/1/merge",
+		GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+		GITHUB_REPOSITORY_ID: "1274791462",
+		GITHUB_REPOSITORY_OWNER_ID: "344805935",
+		GITHUB_RUN_ID: "51",
+		GITHUB_TOKEN: "token",
+	};
+	const forkPull: JsonValue = {
+		pull_request: {
+			base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+			head: { repo: { full_name: "someone/HoBo" } },
+		},
+	};
+	const publicRepoRead = (url: RequestInfo | URL): Response | undefined =>
+		String(url) === "https://api.github.com/repos/Hobo-Labs/HoBo"
+			? Response.json({
+					id: 1274791462,
+					owner: { id: 344805935 },
+					private: false,
+					visibility: "public",
+					disabled: false,
+					archived: false,
+				})
+			: undefined;
+
+	it("never diverts a fork pull-request batch to the fleet when GitHub-hosted is saturated", async () => {
+		const asked: string[] = [];
+		const batchFetch: typeof fetch = async (url) => {
+			asked.push(String(url));
+			const repo = publicRepoRead(url);
+			if (repo) return repo;
+			if (String(url).includes("/jobs"))
+				return Response.json({ jobs: saturatedHostedQueue() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchCi, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: forkPull,
+					fetch: batchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "none"],
+		);
+		assert.match(decision.reason, /full PR batch.*no verified fleet capacity/u);
+		assert.ok(
+			!asked.some((path) => path.includes("/actions/runs")),
+			asked.join("\n"),
+		);
+	});
+
+	it("treats GitHub-hosted as idle, with a warning, when the same-repository PR batch probe answers 401", async () => {
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchCi, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: async (url) =>
+						publicRepoRead(url) ??
+						new Response("unauthorized", { status: 401 }),
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "none"],
+		);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.includes("PR batch hosted queue probe unreadable") &&
+					line.includes("GitHub-hosted treated as idle"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("fails the route job when the merge-group Fabric probe has no GITHUB_TOKEN", async () => {
+		await assert.rejects(
+			main(
+				[],
+				{
+					GITHUB_EVENT_NAME: "merge_group",
+					GITHUB_WORKFLOW_REF:
+						"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				},
+				NO_SLIP_CALL,
+			),
+			/merge-group Fabric queue probe token is unavailable/u,
+		);
+	});
+
+	it("fails the route job when the merge-group Fabric probe has no repository", async () => {
+		await assert.rejects(
+			main([], mergeGroupCi, NO_SLIP_CALL),
+			/merge-group Fabric queue probe repository is unavailable/u,
+		);
+	});
+
+	it("fails the route job when the trunk choice read fails after the idle probes, instead of masking it as an unreadable probe", async () => {
+		let runsListReads = 0;
+		const choiceFails: typeof fetch = async (url) => {
+			const path = String(url);
+			if (path.includes("/git/"))
+				return Response.json({ message: "Not Found" }, { status: 404 });
+			if (path.includes("/actions/runs?")) {
+				runsListReads += 1;
+				if (runsListReads > 2)
+					return new Response("server error", { status: 500 });
+			}
+			if (path.includes("/jobs"))
+				return Response.json({
+					jobs: [...saturatedHostedQueue(), pickup("hobo-trunk")],
+				});
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			lines.push(parts.map(String).join(" "));
+		};
+		try {
+			await assert.rejects(
+				main(
+					[],
+					{
+						...mergeGroupCi,
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: "51",
+						GITHUB_API_URL: "https://api.example.invalid",
+					},
+					{
+						routingConfig: COMMITTED,
+						eventPayload: undefined,
+						fetch: choiceFails,
+						now: () => SLIP_NOW,
+					},
+				),
+				/GitHub answered 500/u,
+			);
+		} finally {
+			console.log = log;
+		}
+		assert.ok(runsListReads >= 3, String(runsListReads));
+		assert.ok(
+			!warningsIn(lines).some((line) =>
+				line.includes("merge-group hosted probe unreadable"),
+			),
+			lines.join("\n"),
+		);
+	});
 
 	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
 		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
