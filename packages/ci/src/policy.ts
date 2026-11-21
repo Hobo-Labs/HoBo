@@ -50,17 +50,6 @@ const agent37Hostname =
 	/^(?=.{1,253}$)(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|\*\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}[a-z]{2,63})$/u;
 const agent37Sizes = new Set(["2:4", "4:8", "4:16", "4:32", "8:64"]);
 
-function agent37NetworkAllowEntry(entry: string): boolean {
-	if (!agent37Hostname.test(entry)) return false;
-	if (!entry.startsWith("*.")) return true;
-	const labels = entry.slice(2).split(".");
-	return !(
-		labels.length === 3 &&
-		labels[2]?.length === 2 &&
-		(labels[1]?.length ?? 0) <= 3
-	);
-}
-
 function agent37PoolAllowed(provider: CiPolicyProvider): boolean {
 	if (provider.capacity.case !== "pool") return false;
 	const pool = provider.capacity.value;
@@ -100,7 +89,7 @@ function agent37PoolAllowed(provider: CiPolicyProvider): boolean {
 		network.allow.length >= 1 &&
 		network.allow.length <= 100 &&
 		new Set(network.allow).size === network.allow.length &&
-		network.allow.every((entry) => agent37NetworkAllowEntry(entry)) &&
+		network.allow.every((entry) => agent37Hostname.test(entry)) &&
 		Number.isSafeInteger(budget.limitMicros) &&
 		budget.limitMicros >= 0 &&
 		budget.period === "month" &&

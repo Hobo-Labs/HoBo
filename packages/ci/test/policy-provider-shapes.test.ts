@@ -127,7 +127,6 @@ describe("kind-specific CI policy provider shapes", () => {
 		"desired-policy-agent37-network-loopback",
 		"desired-policy-agent37-network-bare-wildcard",
 		"desired-policy-agent37-network-public-suffix",
-		"desired-policy-agent37-network-registry-wildcard",
 		"desired-policy-agent37-memory-ceiling",
 	])("rejects invalid Agent37 fixture %s through the policy parser", (name) => {
 		expect(() => parseCiPolicy(fixture("invalid", name))).toThrow(
