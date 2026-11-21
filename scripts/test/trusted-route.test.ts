@@ -386,7 +386,7 @@ describe("pr-fabric reuse routing", () => {
 			(step) => step?.id === "pr-fabric",
 		);
 		assert.match(
-			asText(prFabricStep?.if),
+			asText(prFabricStep?.if) ?? "",
 			/github\.event_name == 'merge_group'/u,
 		);
 		const shell = asText(prFabricStep?.run);
