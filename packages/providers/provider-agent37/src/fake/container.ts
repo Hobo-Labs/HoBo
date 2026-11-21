@@ -6,12 +6,13 @@ import {
 	generateAgent37TestApiKey,
 } from "./server.js";
 
-const exposedPort = 4180;
-const entrypoint = `const { createAgent37FakeServer } = await import("./server.mts");
+const containerPort = 4180;
+const containerEntry = `const modulePath = "./server.mts";
+const { createAgent37FakeServer } = await import(modulePath);
 const apiKey = process.env.AGENT37_FAKE_API_KEY;
 if (!apiKey) throw new Error("AGENT37_FAKE_API_KEY is required");
 const port = Number(process.env.AGENT37_FAKE_PORT ?? "4180");
-await createAgent37FakeServer({ apiKey, host: "0.0.0.0", port });
+const fake = await createAgent37FakeServer({ apiKey, host: "0.0.0.0", port });
 console.log("agent37 fake listening");
 `;
 
@@ -35,27 +36,27 @@ export function dockerAvailable(): boolean {
 }
 
 async function startContainer(apiKey: string): Promise<StartedFakeAgent37> {
-	const sourceExtension = import.meta.url.endsWith(".ts") ? "ts" : "js";
+	const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
 	const serverSource = readFileSync(
-		new URL(`./server.${sourceExtension}`, import.meta.url),
+		new URL(`./server.${extension}`, import.meta.url),
 		"utf8",
 	);
 	const container = await new GenericContainer("node:24-alpine")
 		.withEnvironment({
+			AGENT37_FAKE_PORT: String(containerPort),
 			AGENT37_FAKE_API_KEY: apiKey,
-			AGENT37_FAKE_PORT: String(exposedPort),
 		})
 		.withCopyContentToContainer([
 			{ content: serverSource, target: "/opt/agent37-fake/server.mts" },
-			{ content: entrypoint, target: "/opt/agent37-fake/entry.mjs" },
+			{ content: containerEntry, target: "/opt/agent37-fake/entry.mjs" },
 		])
 		.withCommand(["node", "/opt/agent37-fake/entry.mjs"])
-		.withExposedPorts(exposedPort)
+		.withExposedPorts(containerPort)
 		.withWaitStrategy(Wait.forLogMessage("agent37 fake listening", 1))
 		.start();
 	return {
 		mode: "container",
-		baseUrl: `http://${container.getHost()}:${container.getMappedPort(exposedPort)}`,
+		baseUrl: `http://${container.getHost()}:${container.getMappedPort(containerPort)}`,
 		apiKey,
 		async close() {
 			await container.stop();
