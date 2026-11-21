@@ -5,6 +5,7 @@
 // tip. The journal it writes is the same `run.*` shape the existing replay
 // engine (`./replay`) verifies, so a completed run is replay-equivalent.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -346,10 +347,12 @@ export function createWorkflowEngine(
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		const startedFact = parseRunStartedFact(
-			snapshotJournalData(started.data),
-			seed,
-		);
+		const startedData = snapshotJournalData(started.data);
+		if (!isRecord(startedData)) {
+			throw new Error(`missing run.Started for ${runId}`);
+		}
+		Reflect.deleteProperty(startedData, "commandTreeVersion");
+		const startedFact = parseRunStartedFact(startedData, seed);
 		const input = captureWorkflowInput(args);
 		if (!isDeepStrictEqual(cloneAsJson(startedFact.args), cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
@@ -364,7 +367,11 @@ export function createWorkflowEngine(
 		const scheduledSteps = new Map<number, string>();
 		for (const event of journal) {
 			if (event.type !== "run.StepScheduled") continue;
-			const fact = parseRunStepScheduledFact(snapshotJournalData(event.data));
+			const scheduledData = snapshotJournalData(event.data);
+			if (isRecord(scheduledData)) {
+				Reflect.deleteProperty(scheduledData, "parentStepIndex");
+			}
+			const fact = parseRunStepScheduledFact(scheduledData);
 			const previous = scheduledSteps.get(fact.index);
 			if (previous !== undefined && previous !== fact.name) {
 				throw new Error(`step name differs from journal for ${runId}`);
@@ -439,7 +446,11 @@ export function createWorkflowEngine(
 				recordedData = { ...objectData };
 				const scheduleData: JsonBag = {};
 				for (const [key, value] of Object.entries(objectData)) {
-					if (key !== "scheduledAtMs" && key !== "deadlineMs") {
+					if (
+						key !== "scheduledAtMs" &&
+						key !== "deadlineMs" &&
+						key !== "parentStepIndex"
+					) {
 						scheduleData[key] = value;
 					}
 				}
@@ -645,6 +656,7 @@ export function createWorkflowEngine(
 
 		let stepIndex = 0;
 		let sleepIndex = 0;
+		const stepScope = new AsyncLocalStorage<number>();
 		let replayError: Error | undefined;
 		function assertReplayConsistent(): void {
 			if (replayError) throw replayError;
@@ -718,6 +730,7 @@ export function createWorkflowEngine(
 				fn: () => Promise<T> | T,
 				opts?: StepOptions,
 			): Promise<T> {
+				const parentStepIndex = stepScope.getStore() ?? null;
 				assertReplayConsistent();
 				const index = stepIndex;
 				stepIndex += 1;
@@ -758,13 +771,21 @@ export function createWorkflowEngine(
 					});
 				}
 				if (scheduled === undefined) {
-					await appendEvent("run.StepScheduled", { name, index });
+					await appendEvent("run.StepScheduled", {
+						name,
+						index,
+						parentStepIndex,
+					});
 					scheduledSteps.set(index, name);
 				}
 				unconsumedScheduledSteps.delete(index);
 				assertReplayConsistent();
 				try {
-					const value = await runWithRetries(name, fn, opts ?? {});
+					const value = await runWithRetries(
+						name,
+						() => stepScope.run(index, fn),
+						opts ?? {},
+					);
 					const result = captureWorkflowResult(value, name);
 					await appendEvent("run.StepCompleted", { name, index, result });
 					return result;
@@ -780,6 +801,7 @@ export function createWorkflowEngine(
 				}
 			},
 			async sleep(durationMs, sleepOptions) {
+				const parentStepIndex = stepScope.getStore() ?? null;
 				assertReplayConsistent();
 				const index = sleepIndex;
 				sleepIndex += 1;
@@ -886,6 +908,7 @@ export function createWorkflowEngine(
 					const data: JsonBag = {
 						delayMs: normalizedDurationMs,
 						index,
+						parentStepIndex,
 						...deadline,
 					};
 					if (sleepOptions?.label !== undefined)
@@ -1034,7 +1057,12 @@ export function createWorkflowEngine(
 				streamId,
 				1,
 				"run.Started",
-				cloneAsJson({ seed, args: input, workflowName: def.name }),
+				cloneAsJson({
+					seed,
+					args: input,
+					workflowName: def.name,
+					commandTreeVersion: 1,
+				}),
 			);
 			await recordEffect(store, started, 0);
 			return execute(def, runId, input);
