@@ -36,5 +36,9 @@
 		"build:index": "node --import tsx scripts/build-index.ts",
 		"generate:vscode": "node --import tsx scripts/generate-vscode-snippets.ts"
 	},
-	"description": "Canonical HoBo pattern catalog, ontology-vector retrieval, typed rendering, and zero-LLM template receipts (ADR-0153)."
+	"description": "Canonical HoBo pattern catalog, ontology-vector retrieval, typed rendering, and zero-LLM template receipts (ADR-0153).",
+	"devDependencies": {
+		"@hobo/camps": "workspace:*",
+		"@hobo/yards": "workspace:*"
+	}
 }

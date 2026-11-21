@@ -8,5 +8,6 @@ Git-backed snippet atoms. Each folder is one concept:
 
 The catalog loader treats these as first-class patterns: `searchPatterns`
 finds them and `renderPattern` fills them with zero LLM calls, like the rest
-of the catalog. Same-path snippets merge by `@hobo.entity` / `@hobo.slot` /
-`@hobo.hole`.
+of the catalog. Applying Yard patterns to the same file merges literal network
+and Camp entries, preserves a single provider, and rejects conflicting or dynamic
+Yard definitions.
