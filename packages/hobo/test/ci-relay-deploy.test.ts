@@ -19,6 +19,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import { createCiCommand } from "../src/ci-command.js";
+import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	readRelayDeployToken,
+} from "../src/ci-relay-deploy-credential.js";
 import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import {
@@ -144,6 +148,7 @@ interface Ran {
 	readonly stderr: string;
 	readonly envelope: JsonObject;
 	readonly data: JsonObject;
+	readonly credentialReads: number;
 }
 
 async function deploy(
@@ -158,19 +163,37 @@ async function deploy(
 		readonly now?: () => number;
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
+		readonly oidc?: boolean;
 	},
 ): Promise<Ran> {
-	// The deploy token is never read from the environment: a test that means
-	// "the owner holds a token" puts it in the run's vault, as the store would.
 	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
+	const oidc = storeToken !== undefined && options.oidc !== false;
 	const deployCredentials = createTrustedVault();
+	let credentialReads = 0;
+	const readDeployCredential: typeof readRelayDeployToken = async (request) => {
+		credentialReads += 1;
+		if (storeToken === undefined) return readRelayDeployToken(request);
+		return {
+			token: storeToken,
+			secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+			identityId: "ci-deploy-reader-identity",
+			audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+		};
+	};
 	if (storeToken !== undefined)
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
+	const env = { ...plainEnv };
+	if (oidc) {
+		env.ACTIONS_ID_TOKEN_REQUEST_URL =
+			"https://token.actions.example.test/token?api-version=2.0";
+		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "synthetic-request-token";
+	}
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: plainEnv,
+				env,
 				deployCredentials,
+				readDeployCredential,
 				vercelFetch: options.fetch,
 				...(options.vercelCli !== undefined
 					? { vercelCli: options.vercelCli }
@@ -203,6 +226,7 @@ async function deploy(
 			data !== undefined && !Array.isArray(data) && data !== null
 				? parseJsonObject(JSON.stringify(data))
 				: {},
+		credentialReads,
 	};
 }
 
@@ -283,11 +307,11 @@ const INPUTS = [
 ];
 
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
-	it("plans a preview deployment by default, with no token and no request", async () => {
+	it("plans a preview deployment with OIDC available but no credential read or request", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[...RELAY, "--team", TEAM, ...SETTING, "--dry-run"],
-			{ fetch },
+			{ fetch, env: { VERCEL_TOKEN: TOKEN } },
 		);
 
 		expect(ran.exitCode).toBe(0);
@@ -302,6 +326,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			target: "preview",
 			scope: TEAM,
 		});
+		expect(ran.credentialReads).toBe(0);
 		expect(sent).toEqual([]);
 	});
 
@@ -732,6 +757,23 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		expect(sent).toEqual([]);
 	});
 
+	it("refuses a preloaded deploy token when the dedicated reader is unavailable", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			env,
+			oidc: false,
+		});
+
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+			status: "authentication-required",
+		});
+		expect(ran.credentialReads).toBe(0);
+		expect(sent).toEqual([]);
+	});
+
 	it("sets the setting, deploys once for the whole Bindle, and prints the outputs", async () => {
 		const vercel = pactBackedTransport(pact, { lifecycle: LIFECYCLE });
 		const ran = await deploy([...RELAY, ...SETTING], {
@@ -753,6 +795,12 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		});
 		expect(vercel.fidelityViolations()).toEqual([]);
 		expect(ran.envelope).toMatchObject({ ok: true, code: "HOBO_CI_DEPLOYED" });
+		expect(ran.credentialReads).toBe(1);
+		expect(ran.data).toMatchObject({
+			deployTokenRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+			deployCredentialIdentityId: "ci-deploy-reader-identity",
+			deployCredentialAudience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+		});
 		expect(ran.data.outputs).toEqual({
 			url: "https://hobo-ci-git-main.example.vercel.app",
 			deploymentId: "dpl_preview",

@@ -16,6 +16,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
 import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	type readRelayDeployToken,
+} from "../src/ci-relay-deploy-credential.js";
+import {
 	isJsonArray,
 	isJsonObject,
 	isJsonString,
@@ -258,11 +262,23 @@ async function deploy(
 ) {
 	const deployCredentials = createTrustedVault();
 	deployCredentials.put("VERCEL_TOKEN", TOKEN);
+	const readDeployCredential: typeof readRelayDeployToken = async () => ({
+		token: TOKEN,
+		secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+		identityId: "ci-deploy-reader-identity",
+		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	});
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: options.env,
+				env: {
+					...options.env,
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.example.test/token?api-version=2.0",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				},
 				deployCredentials,
+				readDeployCredential,
 				vercelFetch: options.fetch,
 				vercelBuild: options.build,
 				checkoutHead: async () => options.head ?? SHA,

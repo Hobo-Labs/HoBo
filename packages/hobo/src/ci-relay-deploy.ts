@@ -184,9 +184,8 @@ export interface CiRelayDeployInput {
 	// runner's own OIDC request variables. A `VERCEL_TOKEN` here is ignored:
 	// the token comes from the secret store, never the environment.
 	readonly env: NodeJS.ProcessEnv;
-	// The run's trusted vault, when the caller already holds the deploy token
-	// (`VERCEL_TOKEN`), read from the owner's store.
 	readonly credentials?: TrustedVault;
+	readonly readDeployCredential?: typeof readRelayDeployToken;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
@@ -844,21 +843,14 @@ export async function runCiRelayDeploy(
 		wait &&
 		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
 
-	// The deploy token comes from the secret store and lives in this run's
-	// vault: handed in by the caller, or read here with a CI runner's own OIDC
-	// token through the committed binding. Never from the environment, never
-	// through a file such as $GITHUB_ENV.
-	const vault = input.credentials ?? createTrustedVault();
+	const vault = createTrustedVault();
 	let deployTokenRef: string | undefined;
 	let deployCredentialIdentityId: string | undefined;
 	let deployCredentialAudience: string | undefined;
-	if (
-		!vault.has("VERCEL_TOKEN") &&
-		storeBinding !== undefined &&
-		env.ACTIONS_ID_TOKEN_REQUEST_URL
-	) {
+	if (storeBinding !== undefined && env.ACTIONS_ID_TOKEN_REQUEST_URL) {
 		try {
-			const credential = await readRelayDeployToken({
+			const credential = await (input.readDeployCredential ??
+				readRelayDeployToken)({
 				binding: storeBinding,
 				env: {
 					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,

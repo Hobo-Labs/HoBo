@@ -47,6 +47,7 @@ import {
 	CI_DEPLOY_OPTIONS,
 	runCiRelayDeploy,
 } from "./ci-relay-deploy.js";
+import type { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
 import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
@@ -421,8 +422,8 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
-		/** A vault already holding the deploy token (`VERCEL_TOKEN`), read from the store. */
 		deployCredentials?: TrustedVault;
+		readDeployCredential?: typeof readRelayDeployToken;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		vercelBuild?: VercelBuildRunner;
@@ -561,6 +562,9 @@ export function createCiCommand(
 					env: deps.env ?? process.env,
 					...(deps.deployCredentials !== undefined
 						? { credentials: deps.deployCredentials }
+						: undefined),
+					...(deps.readDeployCredential !== undefined
+						? { readDeployCredential: deps.readDeployCredential }
 						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
