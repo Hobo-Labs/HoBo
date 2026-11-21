@@ -552,6 +552,17 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
+					"name": "Download scripts-test build outputs",
+					"if": "steps.scope.outputs.run == 'true'",
+					"uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+					"with": {
+						"name": "scripts-tests-dist-${{ github.run_id }}-${{ github.run_attempt }}",
+						"path": "."
+					},
+					"local": "skip",
+					"reason": "a local run tests build outputs already present in the developer checkout"
+				},
+				{
 					"name": "Scripts tests",
 					"if": "steps.scope.outputs.run == 'true'",
 					"run": "pnpm run test:scripts --shard=\"$SHARD/$SHARD_TOTAL\"",

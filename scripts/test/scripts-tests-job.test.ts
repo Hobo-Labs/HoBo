@@ -280,6 +280,31 @@ describe("the scripts lane is a pull-request gate", () => {
 		);
 	});
 
+	it("passes built dist outputs to every test shard", () => {
+		const upload = step(buildJob, "Upload scripts-test build outputs");
+		const download = step(scripts, "Download scripts-test build outputs");
+		assert.match(upload.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/u);
+		assert.match(download.uses, /^actions\/download-artifact@[a-f0-9]{40}$/u);
+		assert.equal(upload.with.name, download.with.name);
+		assert.equal(upload.with["if-no-files-found"], "error");
+		assert.equal(upload.with["retention-days"], 1);
+		assert.equal(download.with.path, ".");
+		const paths = asText(upload.with.path);
+		assert.match(paths ?? "", /packages\/\*\*\/dist\/\*\*/u);
+		assert.match(
+			paths ?? "",
+			/external\/ts-autocode\/packages\/\*\*\/dist\/\*\*/u,
+		);
+		assert.match(paths ?? "", /!\*\*\/node_modules\/\*\*/u);
+		const buildNames = buildJob.steps.map((entry) => entry.name);
+		const testNames = scripts.steps.map((entry) => entry.name);
+		assert.ok(buildNames.indexOf(BUILD) < buildNames.indexOf(upload.name));
+		assert.ok(
+			buildNames.indexOf(upload.name) < buildNames.indexOf("Save Turbo cache"),
+		);
+		assert.ok(testNames.indexOf(download.name) < testNames.indexOf(LANE));
+	});
+
 	it("fails closed when the two-commit build base is empty", () => {
 		const root = mkdtempSync(join(tmpdir(), "hobo-scripts-build-"));
 		try {
