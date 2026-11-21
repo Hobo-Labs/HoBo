@@ -609,16 +609,18 @@ export async function recordReleaseFreight(
 /** How long and how often a promotion is driven before it reads as blocked. */
 export const RELEASE_DRIVE = Object.freeze({ passes: 150, intervalMs: 2_000 });
 
-export const PAGES_RELEASE_VERIFICATION_PROGRESS_MS = 300_000;
-export const RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS = 120_000;
+export const PAGES_RELEASE_BUILD_MARGIN_MS = 540_000;
+export const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
+export const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
+	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
+export const PAGES_RELEASE_PROMOTION_BUDGET_MS =
+	PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+	PAGES_RELEASE_VERIFICATION_WINDOW_MS +
+	PAGES_RELEASE_BUILD_MARGIN_MS;
 
 export const RELEASE_DRIVE_PAGES = Object.freeze({
 	passes:
-		Math.ceil(
-			(PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-				RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS) /
-				RELEASE_DRIVE.intervalMs,
-		) + 1,
+		Math.ceil(PAGES_RELEASE_PROMOTION_BUDGET_MS / RELEASE_DRIVE.intervalMs) + 1,
 	intervalMs: RELEASE_DRIVE.intervalMs,
 });
 

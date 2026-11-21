@@ -20,6 +20,11 @@ const RELEASE_YARD = "hobo-release";
 const RELEASE_FAMILIES = ["npm", "oci", "pages"] as const;
 const RELEASE_CHANNELS = ["candidate", "stable"] as const;
 
+export const PAGES_RELEASE_BUILD_MARGIN_MS = 540_000;
+const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
+const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
+	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
+
 type Family = (typeof RELEASE_FAMILIES)[number];
 type Channel = (typeof RELEASE_CHANNELS)[number];
 
@@ -110,9 +115,15 @@ const PROBE = {
 
 function verification(family: Family) {
 	return {
-		windowMs: family === "pages" ? "300000" : "10000",
+		windowMs:
+			family === "pages"
+				? String(PAGES_RELEASE_VERIFICATION_WINDOW_MS)
+				: "10000",
 		requiredObservations: 2,
-		progressDeadlineMs: "300000",
+		progressDeadlineMs:
+			family === "pages"
+				? String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS)
+				: "300000",
 		failOnNoData: true,
 		probes: [
 			{

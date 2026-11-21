@@ -7,9 +7,10 @@ import {
 	announceVerdict,
 	classifyRelease,
 	githubApiProbeTransport,
+	PAGES_RELEASE_BUILD_MARGIN_MS,
 	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
+	PAGES_RELEASE_VERIFICATION_WINDOW_MS,
 	RELEASE_DRIVE_PAGES,
-	RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
 	releaseCampId,
 	releaseDeclaration,
 	releaseDriveFor,
@@ -98,7 +99,8 @@ describe("release topology names", () => {
 		const budgetMs = drive.passes * drive.intervalMs - drive.intervalMs;
 		expect(budgetMs).toBeGreaterThanOrEqual(
 			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-				RELEASE_DRIVE_PAGES_REALIZER_MARGIN_MS,
+				PAGES_RELEASE_VERIFICATION_WINDOW_MS +
+				PAGES_RELEASE_BUILD_MARGIN_MS,
 		);
 	});
 
@@ -138,6 +140,10 @@ describe("release topology names", () => {
 		);
 		expect(pages).toBeDefined();
 		for (const node of pages?.nodes ?? []) {
+			expect(node.verification).toMatchObject({
+				windowMs: String(PAGES_RELEASE_VERIFICATION_WINDOW_MS),
+				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
+			});
 			expect(node.verification.probes[0]?.urlRef).toContain("api.github.com");
 			expect(node.verification.probes[0]?.urlRef).toContain(
 				"/git/ref/heads/gh-pages",

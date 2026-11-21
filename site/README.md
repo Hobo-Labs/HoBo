@@ -357,7 +357,8 @@ The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
 `~/.hobo`), and the `hobo` package must be built. Rollout verification probes
 `api.github.com/repos/<owner>/<repo>/git/ref/heads/gh-pages` on the same egress
 path as the GitHub realizer (small JSON under the CD probe byte cap; not
-`raw.githubusercontent.com`).
+`raw.githubusercontent.com`). Pages rollout convergence allows 14 minutes for
+the GitHub Pages build; the five-minute verification window starts after convergence.
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
