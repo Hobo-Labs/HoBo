@@ -85,46 +85,7 @@ the sum of its files):
   the build-once call is unchanged and keeps sharing hashes with plain
   `turbo run test`.
 - `vitest --shard` with inline `projects` (the isolated/shared split) shards
-  each project's files. The release-integration job pins four shards to four
-  files and omits `--passWithNoTests`, so an empty glob fails the shard.
+  each project's files; `--passWithNoTests` covers a slice that draws no file.
 - The merge queue no longer fails on a broken release-integration suite at merge
   time; it fails at publish. That is the accepted trade: the release gate runs
   on every planned release and on every PR that touches the lane.
-- Hosted run 44864749033 still paid 7m18s serial in this job because merge-queue
-  checkouts have no `HEAD^2`, so the scope step always ran the lane. The job now
-  diffs `merge_group.base_sha` and shards the four files on `ubuntu-24.04`.
-- Hosted PR run 44867963592 never started `release-hobo`: GitHub's `paths`
-  filter for that synchronize looked at the merge-from-main commit (attestation
-  blobs only). GitHub evaluates the **default-branch** copy of `paths`, so
-  globs added only in a PR cannot self-trigger until merge. Files already on
-  main's list (the workflow, the suite config, `release-freight.test.ts`)
-  still skipped every synchronize of #2931; each push also minted a 0-job
-  tag-filter miss named `.github/workflows/release-hobo.yml`. The required
-  check now lives in `.github/workflows/release-hobo-pr.yml`, which has **no
-  `paths` filter** on `pull_request` / `merge_group`. A workflow that is not
-  yet on the default branch is started as that 0-job `push` even with a
-  matching `on.push` (`44874977817`, `44876105461`, `44876290888`, 0 jobs).
-  Combining `on.push.tags` with `on.push.branches` on the existing train also
-  produced a 0-job push named after the workflow file; GitHub uses the
-  default-branch `on:` to decide whether to start, and main is still tags-only.
-  Files already on main's `paths` list (the workflow, the suite config, the
-  path-filters lib, `release-freight.test.ts`) still do not start a
-  `pull_request` of the train. Until `release-hobo-pr.yml` is on main, Fabric
-  hosts the four shards as `release-hobo-integration` on pull request **#2931
-  only** (`ubuntu-24.04`, not a `pr-gate` need, skipped on `merge_group`).
-  The train still lists this branch next to the release tags, and
-  `release-integration-measure-gate` reports `HoBo release integration PR gate`
-  if a train run ever starts. `job-scope` still skips the suites when the
-  diff cannot reach them. Tags and the main train keep the lane in
-  `release-hobo.yml`. `actions.lock` lists the new workflow's
-  `actions/checkout` and `actions/cache` pins. The train path list includes
-  `.github/workflows/release-hobo-pr.yml`.
-- GitHub Actions expressions have no `+`. `SHARD: ${{ strategy.job-index + 1 }}`
-  made `.github/workflows/hobo-ci.yml` invalid (`44877157065`: "Unexpected
-  symbol: '+'"). GitHub then started only a 0-job dummy push and never opened
-  the Fabric `pull_request` suite. Shard 1-based indexing is bash
-  `$((SHARD_INDEX + 1))` on `strategy.job-index`.
-- `--passWithNoTests` is gone: four shards are pinned to the four suite files,
-  so an empty glob fails the shard instead of greening a dead lane. Prune/save
-  run only on shard 0. The job `needs: [route]` so it does not wait on the
-  main-train gate (which skipped every step on that PR but still took a runner).
