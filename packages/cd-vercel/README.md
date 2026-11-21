@@ -66,16 +66,18 @@ non-secret declarations.
 
 ## Status
 
-The deployable and its tests (`test/`) exist. Two pieces are not done yet:
-
-- `hobo cd up` does not deliver it yet; it will, by a git deployment of this
-  directory, the way `hobo ci up` delivers the relay.
-- No store binding is committed, because the CD workload identity (an
-  Infisical identity that trusts this Vercel project's OIDC tokens) is not
-  created yet.
-
-Until both land, a deployment answers `/readyz` with
-`cd-store-binding-missing`.
+`hobo cd up` delivers this directory as a git deployment of the current
+commit to the `hobo-cd` project's **production** (`createCdVercelUpCommand`),
+because CD opens its journal only on a production deployment
+(`productionDeploymentRefusal`; a preview answers `/readyz` with
+`cd-non-production-deployment`). Before it deploys, it makes the CD workload
+identity (`@hobo/hobo-cd` `workload-identity.ts`): an Infisical identity that
+trusts this project's production OIDC tokens
+(`owner:<team>:project:hobo-cd:environment:production`). It then sets the
+store's coordinates, ids only, as the deployment's configuration
+(`INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`,
+`INFISICAL_IDENTITY_ID`, `INFISICAL_SITE_URL`). A committed
+`deploy/secret-store.binding.json` takes precedence when there is one.
 
 The scheduled pass (enqueued every five minutes) reconciles the managed Camps and runs one service
 tick (including its retention steps); the fleet pass lease makes the
