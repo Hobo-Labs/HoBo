@@ -1514,9 +1514,23 @@ describe("the script reading the slip", () => {
 		assert.match(decision.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
 		assert.ok(
 			warningsIn(lines).some((line) =>
-				line.includes("merge-group hosted probe unreadable"),
+				line.includes("routing slip not used (merge-group hosted probe unreadable:"),
 			),
 		);
+		const noticeBody = noticesIn(lines)[0]?.replace(
+			/^::notice title=hobo-ci-route::/u,
+			"",
+		);
+		assert.ok(noticeBody);
+		const record = JSON.parse(
+			noticeBody
+				.replaceAll("%0A", "\n")
+				.replaceAll("%0D", "\r")
+				.replaceAll("%25", "%"),
+		);
+		assert.equal(record.v, 2);
+		assert.equal(record.mergeGroupHostedProbe?.idle, false);
+		assert.match(record.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
 	});
 
 	it("prefers GitHub-hosted on merge-group Fabric while hosted runners have idle capacity", async () => {

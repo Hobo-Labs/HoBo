@@ -1408,7 +1408,7 @@ export async function main(
 			const detail =
 				error instanceof Error ? error.message : "unknown error";
 			console.log(
-				`::warning title=hobo-ci-route-fallback::merge-group hosted probe unreadable (${detail}); using GitHub-hosted runners`,
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${detail}); using GitHub-hosted runners`)}`,
 			);
 			decision = {
 				tier: "github",
