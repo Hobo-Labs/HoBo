@@ -32,8 +32,11 @@ Version computation failures fail the gate. In CI (`CI`, `GITHUB_ACTIONS`, or
 `TF_BUILD`), the gate exits non-zero when the release train cannot be computed
 or `versionFromReleaseTrain` would be omitted; only an explicit
 `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check. Turbo tasks
-use `envMode: strict`; `turbo.json` passes `GITHUB_*`, `TF_BUILD`, and `CI`
-through so nested package builds see the same CI identity as `agent-plugin:check`.
+use `envMode: strict`; `turbo.json` passes enumerated GitHub Actions identity
+variables (`GITHUB_ACTIONS`, `GITHUB_EVENT_NAME`, `GITHUB_HEAD_SHA`,
+`GITHUB_RUN_ATTEMPT`, `GITHUB_RUN_ID`, `GITHUB_SHA`, and related refs — not
+`GITHUB_TOKEN`), plus `TF_BUILD` and `CI`, through so nested package builds see
+the same CI identity as `agent-plugin:check`.
 
 ## Build the MCP bundle
 
@@ -62,9 +65,10 @@ related MCP sources via `scripts/relevant-check-policy.ts`, not only on the full
 signals (for example `TF_BUILD` alone) still require the bundle but report that
 attestation must be checked on a GitHub Actions runner — they do not skip
 verification silently. The check refuses a bundle whose attestation does not
-match this workflow run, checkout, attempt, and sha256. In
+match this workflow run, checkout, attempt, and sha256, and fails closed when
+the bundle is present in GitHub Actions without a valid attestation. And
 `agent-plugin:check` always runs `pnpm run agent-plugin:build` first so a
-stale committed bundle cannot pass the gate, and CI rebuilds before every check.
+stale on-disk bundle cannot pass the gate; CI rebuilds before every check.
 
 The build deletes any prior `.bundle-attestation.json` before bundling so a
 failed rebuild cannot leave a stale attestation beside the bundle. In CI it also refuses to write attestation unless the checkout was clean before

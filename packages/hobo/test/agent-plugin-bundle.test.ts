@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -24,6 +24,9 @@ afterEach(() => {
 });
 
 function ensureBundle(): void {
+	if (existsSync(bundle) && statSync(bundle).size >= 1024 * 1024) {
+		return;
+	}
 	const build = spawnSync(
 		process.execPath,
 		["--import", "tsx", "scripts/build-agent-plugin.mts"],
