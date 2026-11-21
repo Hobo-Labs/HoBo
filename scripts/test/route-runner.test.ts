@@ -19,7 +19,6 @@ import {
 	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
-	confirmMergeGroupFabricFleet,
 	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
@@ -37,7 +36,6 @@ import {
 	MAX_FINISHED_LOOKUPS,
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
-	MERGE_GROUP_FLEET_CONFIRM_SECONDS,
 	main,
 	NO_ROUTING_SLIP,
 	observeQueue,
@@ -1522,14 +1520,14 @@ describe("the script reading the slip", () => {
 		GITHUB_TOKEN: "token",
 	};
 
-	it("stays on GitHub-hosted when the merge-group hosted probe cannot read the queue", async () => {
+	it("fails toward hobo-trunk when the merge-group hosted probe cannot read the queue", async () => {
 		const { decision, lines } = await route(
 			"http://127.0.0.1:9",
 			undefined,
 			mergeGroupCi,
 		);
-		assert.equal(decision.tier, "github");
-		assert.equal(decision.runner, "ubuntu-24.04");
+		assert.equal(decision.tier, "fleet");
+		assert.equal(decision.runner, "hobo-trunk");
 		assert.equal(decision.mergeGroupHostedProbe?.idle, false);
 		assert.match(decision.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
 		assert.ok(
@@ -1771,69 +1769,6 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("fails the route job when the trunk choice read fails after the idle probes, instead of masking it as an unreadable probe", async () => {
-		let runsListReads = 0;
-		const choiceFails: typeof fetch = async (url) => {
-			const path = String(url);
-			if (path.includes("/git/"))
-				return Response.json({ message: "Not Found" }, { status: 404 });
-			if (path.includes("/actions/runs?")) {
-				runsListReads += 1;
-				if (runsListReads > 2)
-					return new Response("server error", { status: 500 });
-			}
-			if (path.includes("/jobs"))
-				return Response.json({
-					jobs: [...saturatedHostedQueue(), pickup("hobo-trunk")],
-				});
-			return Response.json({
-				workflow_runs: [
-					{
-						id: 40,
-						path: PROBE_WORKFLOW_PATH,
-						status: "completed",
-						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
-						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
-					},
-				],
-			});
-		};
-		const lines: string[] = [];
-		const log = console.log;
-		console.log = (...parts: unknown[]) => {
-			lines.push(parts.map(String).join(" "));
-		};
-		try {
-			await assert.rejects(
-				main(
-					[],
-					{
-						...mergeGroupCi,
-						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-						GITHUB_RUN_ID: "51",
-						GITHUB_API_URL: "https://api.example.invalid",
-					},
-					{
-						routingConfig: COMMITTED,
-						eventPayload: SAME_REPOSITORY_PULL,
-						fetch: choiceFails,
-						now: () => SLIP_NOW,
-					},
-				),
-				/GitHub answered 500/u,
-			);
-		} finally {
-			console.log = log;
-		}
-		assert.ok(runsListReads >= 3, String(runsListReads));
-		assert.ok(
-			!warningsIn(lines).some((line) =>
-				line.includes("merge-group hosted probe unreadable"),
-			),
-			lines.join("\n"),
-		);
-	});
-
 	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
 		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
 			const { decision } = await route(apiUrl, undefined, mergeGroupRelease, [
@@ -1920,18 +1855,18 @@ describe("the script reading the slip", () => {
 		assert.deepEqual(decision.slip, { kind: "unasked", why: "batch" });
 	});
 
-	it("keeps a saturated hosted batch on GitHub-hosted without a recent trunk pickup", async () => {
+	it("defaults a saturated hosted merge-group batch to hobo-trunk without a recent trunk pickup", async () => {
 		await withGithub(observed(saturatedHostedQueue()), async (apiUrl) => {
 			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 			assert.deepEqual(
 				[decision.tier, decision.runner, decision.refusedBy],
-				["github", "ubuntu-24.04", "queue"],
+				["fleet", "hobo-trunk", "none"],
 			);
-			assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+			assert.match(decision.reason, /defaults to hobo-trunk/u);
 		});
 	});
 
-	it("routes merge-group CI to GitHub-hosted when trunk has jobs waiting", async () => {
+	it("overflows a saturated hosted merge-group batch to the hobo pool when trunk has jobs waiting", async () => {
 		await withGithub(
 			observed([
 				...saturatedHostedQueue(),
@@ -1942,15 +1877,15 @@ describe("the script reading the slip", () => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo", "queue"],
 				);
-				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+				assert.match(decision.reason, /overflows to the hobo pool/u);
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, false);
 			},
 		);
 	});
 
-	it("keeps merge-group CI on GitHub-hosted when trunk has waiters and runs are still choosing", async () => {
+	it("overflows merge-group CI to the hobo pool when trunk has waiters and runs are still choosing", async () => {
 		const expired = JSON.parse(OPEN_SLIP);
 		expired.expiresAt = "2026-11-13T16:00:30.000Z";
 		const pages = (path: string): JsonValue => {
@@ -1999,44 +1934,14 @@ describe("the script reading the slip", () => {
 				);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo", "queue"],
 				);
-				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+				assert.match(decision.reason, /overflows to the hobo pool/u);
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",
 				});
 				assert.deepEqual(warningsIn(lines), []);
-			},
-		);
-	});
-
-	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
-		let queueReads = 0;
-		const healthy = observed([...saturatedHostedQueue(), pickup("hobo-trunk")]);
-		await withGithub(
-			(path) => {
-				if (!path.includes("/jobs")) queueReads += 1;
-				if (!path.includes("/jobs")) return healthy(path);
-				const hostedJobs = saturatedHostedQueue();
-				if (queueReads > 2)
-					return {
-						jobs: [
-							...hostedJobs,
-							pickup("hobo-trunk"),
-							waiting("hobo-trunk", MERGE_GROUP_FLEET_CONFIRM_SECONDS + 1),
-						],
-					};
-				return { jobs: [...hostedJobs, pickup("hobo-trunk")] };
-			},
-			async (apiUrl) => {
-				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
-				assert.deepEqual(
-					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
-				);
-				assert.match(decision.reason, /merge-group trunk confirmation/u);
-				assert.ok(queueReads >= 2);
 			},
 		);
 	});
@@ -2067,7 +1972,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("never routes merge-group Fabric to the general hobo label", async () => {
+	it("never routes merge-group Fabric to the general hobo label while the trunk has idle capacity", async () => {
 		await withGithub(
 			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
@@ -2100,33 +2005,6 @@ describe("the script reading the slip", () => {
 				}),
 			/merge-group Fabric routing requires a valid committed policy/u,
 		);
-	});
-
-	it("times out merge-group trunk confirmation to GitHub-hosted", async () => {
-		let polls = 0;
-		const startedAt = 1_700_000_000_000;
-		const decision = await confirmMergeGroupFabricFleet({
-			fleetDecision: {
-				tier: "fleet",
-				runner: "hobo-trunk",
-				reason: "initial fleet choice",
-			},
-			observe: async () => {
-				polls += 1;
-				return { jobs: [], undecidedAhead: 0, probeUnderway: false };
-			},
-			now: () =>
-				startedAt + polls * (MERGE_GROUP_FLEET_CONFIRM_SECONDS + 5) * 1_000,
-			sleep: async () => {},
-			fleetLabel: "hobo-trunk",
-			githubLabel: "ubuntu-24.04",
-			limits: { maxWaitSeconds: 120, maxQueued: 4 },
-		});
-		assert.deepEqual(
-			[decision.tier, decision.runner],
-			["github", "ubuntu-24.04"],
-		);
-		assert.match(decision.reason, /timed out|without a healthy trunk pickup/u);
 	});
 
 	it("refuses general hobo on merge-group when include-own-run is true", async () => {

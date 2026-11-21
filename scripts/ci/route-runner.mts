@@ -89,7 +89,6 @@ export const MAX_PROBE_LOOKUPS = 3;
  */
 export const PROBE_WAIT_SECONDS = 60;
 export const PROBE_POLL_SECONDS = 10;
-export const MERGE_GROUP_FLEET_CONFIRM_SECONDS = 90;
 
 export type RouteTier = "fleet" | "local" | "github";
 
@@ -917,64 +916,6 @@ export function mergeGroupTrunkHasIdleCapacity(
 	return !refusingJobs(load, limits);
 }
 
-export async function confirmMergeGroupFabricFleet(input: {
-	fleetDecision: RouteDecision;
-	observe: (nowMs: number) => Promise<QueueView>;
-	now: () => number;
-	sleep: (seconds: number) => Promise<void>;
-	fleetLabel: string;
-	githubLabel: string;
-	limits: RouteLimits;
-}): Promise<RouteDecision> {
-	const admissionLimits = {
-		...input.limits,
-		maxWaitSeconds: Math.min(
-			input.limits.maxWaitSeconds,
-			MERGE_GROUP_FLEET_CONFIRM_SECONDS,
-		),
-	};
-	const startedAtMs = input.now();
-	const hosted = (outcome: string): RouteDecision => ({
-		tier: "github",
-		runner: input.githubLabel,
-		reason: `merge-group trunk confirmation ${outcome}`,
-		refusedBy: "queue",
-		slip: input.fleetDecision.slip,
-	});
-	for (let poll = 0; ; poll += 1) {
-		const nowMs = input.now();
-		const waitedSeconds = seconds(startedAtMs, nowMs);
-		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
-			return hosted(
-				`timed out after ${waitedSeconds} s without a healthy trunk pickup`,
-			);
-		let view: QueueView;
-		try {
-			view = await input.observe(nowMs);
-		} catch (error) {
-			return hosted(
-				`could not read the queue (${error instanceof Error ? error.message : "unknown error"})`,
-			);
-		}
-		const observedAtMs = input.now();
-		const observedWaitSeconds = seconds(startedAtMs, observedAtMs);
-		if (observedWaitSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
-			return hosted(
-				`timed out after ${observedWaitSeconds} s without a healthy trunk pickup`,
-			);
-		const fleet = labelLoad(view.jobs, input.fleetLabel, observedAtMs);
-		if (takingJobs(fleet, admissionLimits))
-			return {
-				...input.fleetDecision,
-				reason: `${input.fleetDecision.reason}; merge-group trunk confirmation observed ${describeLoad("the fleet", fleet)}`,
-				refusedBy: "none",
-			};
-		if (refusingJobs(fleet, admissionLimits))
-			return hosted("found the trunk fleet refusing jobs");
-		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
-	}
-}
-
 function githubReader(
 	apiUrl: string,
 	token: string,
@@ -1657,10 +1598,6 @@ export async function main(
 		const trunkLabel = labels.trunk;
 		const githubLabel = labels.github;
 		const read = githubReader(apiUrl, token, io.fetch);
-		const trunkChoiceObservationLimits: RouteLimits = {
-			...limits,
-			maxQueued: Number.MAX_SAFE_INTEGER,
-		};
 		const observeHosted = (nowMs: number) =>
 			observeQueue({
 				read,
@@ -1680,16 +1617,6 @@ export async function main(
 				limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
 				nowMs,
 			});
-		const observeTrunkChoice = (nowMs: number) =>
-			observeQueue({
-				read,
-				repository,
-				ownRunId: Number(env.GITHUB_RUN_ID),
-				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
-				limits: trunkChoiceObservationLimits,
-				nowMs,
-			});
-		const sleep = (wait: number) => delay(wait * 1000);
 		let decision: RouteDecision | undefined;
 		let hostedIdle = false;
 		let trunkIdle = false;
@@ -1712,12 +1639,12 @@ export async function main(
 			const code =
 				error instanceof Error && error.name ? error.name : "probe-error";
 			console.log(
-				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${code}); using GitHub-hosted runners`)}`,
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${code}); failing toward ${trunkLabel}`)}`,
 			);
 			decision = {
-				tier: "github",
-				runner: githubLabel,
-				reason: `merge-group Fabric hosted probe unreadable (${code})`,
+				tier: "fleet",
+				runner: trunkLabel,
+				reason: `merge-group Fabric hosted probe unreadable (${code}); failing toward ${trunkLabel}`,
 				refusedBy: "queue",
 				mergeGroupHostedProbe: {
 					idle: false,
@@ -1732,40 +1659,35 @@ export async function main(
 				trunkIdle,
 				trunkSummary,
 			};
-			if (hostedIdle || !trunkIdle) {
+			if (hostedIdle) {
 				decision = {
 					tier: "github",
 					runner: githubLabel,
-					reason: hostedIdle
-						? `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`
-						: `merge-group Fabric prefers GitHub-hosted while hobo-trunk has no idle capacity (${trunkSummary})`,
+					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
 				};
+			} else if (trunkIdle) {
+				decision = {
+					tier: "fleet",
+					runner: trunkLabel,
+					reason: `merge-group Fabric defaults to ${trunkLabel} while GitHub-hosted has no verified idle capacity (${trunkSummary})`,
+					refusedBy: "none",
+					mergeGroupHostedProbe: hostedProbe,
+				};
 			} else {
-				decision = await chooseRunner({
-					observe: observeTrunkChoice,
-					now,
-					sleep,
-					mode,
-					fleetLabel: trunkLabel,
-					localLabel: labels.local,
-					githubLabel,
-					localEnrolled,
-					limits: trunkChoiceObservationLimits,
-					trunkPriority: true,
+				decision = await applyHoboPoolSaturation({
+					decision: {
+						tier: "fleet",
+						runner: labels.fleet,
+						reason: `merge-group Fabric overflows to the ${labels.fleet} pool while ${trunkLabel} has no idle capacity (${trunkSummary})`,
+						refusedBy: "queue",
+						mergeGroupHostedProbe: hostedProbe,
+					},
+					read,
+					repository,
+					label: labels.fleet,
 				});
-				if (decision.tier === "fleet")
-					decision = await confirmMergeGroupFabricFleet({
-						fleetDecision: decision,
-						observe: observeTrunkChoice,
-						now,
-						sleep,
-						fleetLabel: trunkLabel,
-						githubLabel,
-						limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
-					});
-				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		}
 		return report(

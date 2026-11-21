@@ -235,12 +235,15 @@ describe("base-controlled attestation verification", () => {
 	});
 
 	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
-		it(`${workflow} keeps the route job on ubuntu-24.04 for merge_group`, () => {
+		it(`${workflow} pins the route job on hobo-trunk for merge_group`, () => {
 			const doc = workflowDocument(
 				readFileSync(`.github/workflows/${workflow}`, "utf8"),
 			);
 			const route = asObject(asObject(doc.jobs)?.route);
-			assert.equal(route?.["runs-on"], "ubuntu-24.04");
+			assert.equal(
+				route?.["runs-on"],
+				"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}",
+			);
 			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
 			const routeStep = asList(route?.steps)
 				?.map(asObject)

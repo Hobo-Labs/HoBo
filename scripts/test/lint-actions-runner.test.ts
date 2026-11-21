@@ -392,7 +392,7 @@ describe("Actions runner policy", () => {
 
 	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
-		assert.notEqual(
+		assert.equal(
 			lintJobs(
 				routeJob.replace(
 					"runs-on: ubuntu-24.04",
