@@ -925,17 +925,22 @@ function trustedGithubHeadSha(
 }
 
 export function versionPinCommitIsh(repoRoot: string): string {
-	const headSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
-	if (headSha !== undefined) return headSha;
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+	let mergePrHead: string | undefined;
 	if (eventName === "pull_request" || eventName === "merge_group") {
 		const prHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
 			cwd: repoRoot,
 			encoding: "utf8",
 		});
-		const sha = prHead.stdout?.trim() ?? "";
-		if (prHead.status === 0 && sha.length > 0) return sha;
+		const sha = prHead.stdout?.trim().toLowerCase() ?? "";
+		if (prHead.status === 0 && sha.length > 0) mergePrHead = sha;
 	}
+	const envSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
+	if (mergePrHead !== undefined) {
+		if (envSha !== undefined && envSha === mergePrHead) return envSha;
+		return mergePrHead;
+	}
+	if (envSha !== undefined) return envSha;
 	return "HEAD";
 }
 

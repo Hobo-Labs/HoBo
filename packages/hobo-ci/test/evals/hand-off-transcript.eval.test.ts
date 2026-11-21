@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	auditHandOff,
+	inferHandOffAuditOptions,
 	parseClaudeTranscript,
 } from "../../src/hand-off-audit.js";
 
@@ -190,7 +191,13 @@ describe("EVAL hand-off transcript: every owner-facing line gets a structured as
 				]),
 			]),
 		);
-		expect(auditHandOff(events, { ownerFormAvailable: false })).toEqual([]);
+		expect(inferHandOffAuditOptions(events)).toEqual({
+			ownerFormAvailable: false,
+			ownerFormPrivacyVerified: false,
+		});
+		expect(
+			auditHandOff(events, inferHandOffAuditOptions(events)),
+		).toEqual([]);
 		expect(auditHandOff(events)).toMatchObject([{ rule: "structured-ask" }]);
 		expect(auditHandOff(events, { ownerFormAvailable: true })).toMatchObject([
 			{ rule: "structured-ask" },

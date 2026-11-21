@@ -70,7 +70,8 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(SKILL).toMatch(
 			/agent-visible tool calls,\s+results, traces, and diagnostics/u,
 		);
-		expect(SKILL).toMatch(/--owner-form-privacy-verified/u);
+		expect(SKILL).toMatch(/derives availability and privacy from that transcript/iu);
+		expect(SKILL).not.toMatch(/--owner-form-(?:unavailable|privacy-verified)/u);
 		expect(SKILL).toMatch(/a displayed form alone does not establish privacy/u);
 		const choice = HAND_OFF.slice(
 			HAND_OFF.indexOf("2. On `HOBO_*_STORE_CHOICE`"),

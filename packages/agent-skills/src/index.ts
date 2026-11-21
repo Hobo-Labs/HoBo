@@ -144,6 +144,9 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 	for (const line of match[1].split(/\r?\n/u)) {
 		const top = /^([A-Za-z][\w-]*):\s*(.*)$/u.exec(line);
 		if (top && top[1] !== undefined && top[2] !== undefined) {
+			if (fields.has(top[1])) {
+				throw new SkillParseError("duplicate frontmatter field");
+			}
 			fields.set(top[1], parseYamlScalar(top[2]));
 			currentNestedField =
 				top[2].trim() === "" && top[1] !== "name" && top[1] !== "description"
@@ -169,9 +172,12 @@ function parseFrontmatterFields(markdown: string): FrontmatterFields {
 				deeplyNested.add(currentNestedField);
 				continue;
 			}
-			children
-				.get(currentNestedField)
-				?.set(child[1], parseYamlScalar(child[2]));
+			const nested = children.get(currentNestedField);
+			if (nested === undefined) continue;
+			if (nested.has(child[1])) {
+				throw new SkillParseError("duplicate nested frontmatter field");
+			}
+			nested.set(child[1], parseYamlScalar(child[2]));
 		} else {
 			deeplyNested.add(currentNestedField);
 		}

@@ -158,6 +158,17 @@ describe("checkSkillsConformance", () => {
 		expect(await checkSkillsConformance(root)).toEqual([]);
 	});
 
+	it("rejects duplicate top-level frontmatter keys", () => {
+		expect(() =>
+			parseSkillFrontmatter(`---
+name: hobo-setup
+name: evil
+description: d
+---
+`),
+		).toThrow(/duplicate frontmatter field/u);
+	});
+
 	it("rejects unrecognized non-comment top-level YAML in strict skills", async () => {
 		const secrets = [
 			"github_pat_abcdefghijklmnopqrst",

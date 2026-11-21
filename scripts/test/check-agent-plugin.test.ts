@@ -539,7 +539,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
 			"skills/hobo-setup/references/extra.md": "plugin-only file\n",
 			"skills/hobo-deploy/assets/deep/logo.svg": "<svg/>\n",
-			[`skills/hobo-deploy/notes-${secret}.md`]: "plugin-only nested\n",
+			"skills/hobo-deploy/notes-secret-shaped.md": `plugin-only nested ${secret}\n`,
 			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
 			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
 			"repo:.agents/skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
@@ -552,9 +552,10 @@ describe("checkAgentPlugin (integration)", () => {
 		);
 		expect(unmatched.map((issue) => issue.file).sort()).toEqual([
 			"skills/hobo-deploy/assets/deep/logo.svg",
-			"skills/hobo-deploy/notes-sk-abcdefghijklmnopqrst.md",
+			"skills/hobo-deploy/notes-secret-shaped.md",
 			"skills/hobo-setup/references/extra.md",
 		]);
+		expect(JSON.stringify(report)).not.toContain(secret);
 		expect(unmatched.every((issue) => !issue.message.includes(secret))).toBe(
 			true,
 		);
@@ -898,11 +899,18 @@ describe("agent-tooling extract drift gate", () => {
 });
 
 describe("release-train version pin commit selection", () => {
-	it("prefers a verified GITHUB_HEAD_SHA over the checked-out merge ref", async () => {
+	it("uses HEAD^2 on PR events when GITHUB_HEAD_SHA matches the PR branch tip", async () => {
 		const { repoRoot, prHead } = await scratchMergeRepo();
 		stubCiEnvironment("merge_group", prHead);
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
 		stubCiEnvironment("pull_request", prHead);
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+	});
+
+	it("rejects a verified GITHUB_HEAD_SHA that is not the PR branch tip", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		const baseSha = git(repoRoot, "rev-parse", "HEAD^1");
+		stubCiEnvironment("pull_request", baseSha);
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
 	});
 

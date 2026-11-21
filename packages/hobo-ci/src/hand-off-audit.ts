@@ -500,6 +500,44 @@ function startsTurn(event: TranscriptEvent): boolean {
 	);
 }
 
+function blockText(block: TranscriptBlock): string {
+	if (block.kind === "tool_result") {
+		return block.structuredContent !== undefined
+			? JSON.stringify(block.structuredContent)
+			: block.text;
+	}
+	if (block.kind === "text") return block.text;
+	return "";
+}
+
+export type InferredHandOffAuditOptions = Readonly<{
+	ownerFormAvailable: boolean;
+	ownerFormPrivacyVerified: boolean;
+}>;
+
+export function inferHandOffAuditOptions(
+	events: readonly TranscriptEvent[],
+): InferredHandOffAuditOptions {
+	let reportedNoSecureHandoff = false;
+	let hostFormShown = false;
+	for (const event of events) {
+		for (const block of event.blocks) {
+			if (
+				block.kind === "text" &&
+				event.role === "assistant" &&
+				REPORTS_NO_SECURE_HANDOFF.test(block.text)
+			)
+				reportedNoSecureHandoff = true;
+			if (block.kind === "tool_result" && HOST_FORM.test(blockText(block)))
+				hostFormShown = true;
+		}
+	}
+	return {
+		ownerFormAvailable: !reportedNoSecureHandoff,
+		ownerFormPrivacyVerified: hostFormShown,
+	};
+}
+
 /** Check every owner-facing line got a structured ask before its turn ended. */
 export function auditHandOff(
 	events: readonly TranscriptEvent[],

@@ -12,8 +12,9 @@ entry per schema file; not the gitignored `plugins/hobo/fixtures/` deploy output
 `plugin.json`'s `version` follows the repository's fixed alpha release train
 (`version.json` + Nerdbank.GitVersioning): `0.0.0-alpha.<height>`. The gate
 measures the height at the commit being reviewed — the PR branch tip
-(`GITHUB_HEAD_SHA`, else `HEAD^2` of the `pull_request` / `merge_group`
-checkout) — never at the synthetic merge ref, whose base-branch commits would
+(`HEAD^2` of the `pull_request` / `merge_group` checkout; `GITHUB_HEAD_SHA`
+counts only when it matches that tip) — never at the synthetic merge ref, whose
+base-branch commits would
 inflate the height past the value the branch pinned. Locally, a staged
 `plugin.json` raises the expected height by one to account for the commit that
 has not been made yet. The gate rejects versions outside the fixed alpha train
