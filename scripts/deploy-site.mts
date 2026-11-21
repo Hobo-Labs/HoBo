@@ -39,9 +39,11 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+	pagesReleaseWallBudgetMs,
 	promoteReleaseStable,
 	qualifyReleaseCandidate,
 	type ReleaseCdSeams,
+	type ReleasePromoteWall,
 	releaseSource,
 	siteTree,
 } from "./ci/create-github-release.mts";
@@ -145,11 +147,23 @@ export async function qualifySiteRelease(input: {
 	readonly home: string;
 	readonly env?: Readonly<Record<string, string | undefined>>;
 	readonly seams?: ReleaseCdSeams;
+	readonly promoteWall?: ReleasePromoteWall;
 }): Promise<void> {
 	const env = input.env ?? process.env;
 	const tree = siteTree(input.dist);
 	if (tree.files.length === 0)
 		throw new Error(`${input.dist} holds no files to publish`);
+	const promoteWall = input.promoteWall ?? {
+		startedMs: Date.now(),
+		budgetMs: pagesReleaseWallBudgetMs(env),
+	};
+	if (promoteWall.budgetMs < 60_000)
+		throw new Error(
+			`release-pages: wall budget ${promoteWall.budgetMs}ms is below the 60s minimum`,
+		);
+	console.error(
+		`release-pages: publish ${tree.files.length} files from ${input.dist} (wall budget ${promoteWall.budgetMs}ms)`,
+	);
 	await qualifyReleaseCandidate({
 		home: input.home,
 		family: "pages",
@@ -163,13 +177,19 @@ export async function qualifySiteRelease(input: {
 			},
 		],
 		blobs: tree.files.map((file) => file.bytes),
-		// The freshness gate (check-release-pages-stale) reads this back.
 		labels: {
 			"hobo.cd/github.commit-message": `deploy: ${releaseSource(env).commit}`,
 		},
+		promoteWall,
 		...(input.seams ? { seams: input.seams } : undefined),
 	});
-	if (!(await promoteReleaseStable(input.home, env, input.seams)))
+	const remaining = promoteWall.budgetMs - (Date.now() - promoteWall.startedMs);
+	if (remaining < 30_000)
+		throw new Error(
+			`release-pages: only ${remaining}ms wall budget remains after candidate; increase HOBO_RELEASE_PAGES_WALL_BUDGET_MS or reduce site size`,
+		);
+	console.error(`release-pages: candidate qualified; ${remaining}ms left for stable`);
+	if (!(await promoteReleaseStable(input.home, env, input.seams ?? {}, promoteWall)))
 		throw new Error(
 			"release Freight pages blocked at hobo-release/pages-stable",
 		);
