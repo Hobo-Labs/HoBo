@@ -41,6 +41,7 @@ import {
 import {
 	exportReleaseOciLayout,
 	type ReleaseOciLayout,
+	releaseImageCandidateRef,
 } from "./build-release-oci-image.mts";
 import {
 	qualifyReleaseCandidate,
@@ -288,7 +289,7 @@ export function buildReleaseGhcrImages(options: {
 			join(process.env.RUNNER_TEMP?.trim() || tmpdir(), `hobo-oci-${id}-`),
 		);
 		const layout = (options.exportLayout ?? exportReleaseOciLayout)(
-			`${id}:candidate`,
+			releaseImageCandidateRef(id),
 			layoutDir,
 		);
 		const repository = tag.slice(0, tag.lastIndexOf(":"));
