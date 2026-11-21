@@ -220,15 +220,15 @@ describe("release integration pull-request and merge-queue lane", () => {
 		);
 	});
 
-	it("keeps Turbo credentials for same-repository merge groups and withholds them from fork pull requests", () => {
+	it("keeps Turbo credentials for same-repository pull requests and withholds them from merge groups and forks", () => {
 		assert.ok(
 			pr.text.includes(
-				"turbo-token: ${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
+				"turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
 			),
 		);
 		assert.ok(
 			pr.text.includes(
-				"remote-mode: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}",
+				"remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}",
 			),
 		);
 	});

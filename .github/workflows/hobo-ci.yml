@@ -912,9 +912,9 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           preferred-job: scripts-tests
-          turbo-token: ${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: Build the packages the scripts tests import
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6
@@ -1041,9 +1041,9 @@ jobs:
         uses: $/.github/actions/turbo-cache
         with:
           preferred-job: scripts-tests-build
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: Build current sources for local attestation
         if: steps.scope.outputs.run == 'true' && env.CI != 'true'
         timeout-minutes: 6

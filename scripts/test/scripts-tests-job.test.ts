@@ -275,16 +275,18 @@ describe("the scripts lane is a pull-request gate", () => {
 		);
 	});
 
-	it("keeps the build cache token for same-repository merge groups and withholds it from forks", () => {
-		const cache = step(buildJob, "Turbo cache").with;
-		assert.equal(
-			cache["turbo-token"],
-			"${{ (github.event_name == 'merge_group' || !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
-		);
-		assert.equal(
-			cache["remote-mode"],
-			"${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) && 'remote:ro' || 'remote:rw' }}",
-		);
+	it("keeps Turbo credentials for same-repository pull requests and withholds them from merge groups and forks", () => {
+		for (const entry of [buildJob, scripts]) {
+			const cache = step(entry, "Turbo cache").with;
+			assert.equal(
+				cache["turbo-token"],
+				"${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
+			);
+			assert.equal(
+				cache["remote-mode"],
+				"${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}",
+			);
+		}
 	});
 
 	it("passes built dist outputs to every test shard", () => {
