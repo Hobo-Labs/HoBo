@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -9,9 +18,11 @@ import {
 	coverageProblems,
 	FEATURES_DIR,
 	featureScenarios,
+	main,
 	type ParityCatalog,
 	parseCatalog,
 	renderScorecard,
+	SCORECARD_FILE,
 	scenarioResults,
 	unrunProblems,
 } from "../ci/parity-scorecard.mts";
@@ -232,6 +243,14 @@ describe("coverageProblems", () => {
 });
 
 describe("scenarioResults", () => {
+	it("does not count an empty scenario as passing, even when its setup hook passed", () => {
+		const results = scenarioResults(
+			cucumberJson([{ tags: ["@parity", "@R02", "@t1"], statuses: [] }]),
+			catalog(),
+		);
+		assert.equal(results.get("R02"), "failed");
+	});
+
 	it("passes a scenario only when every hook and step passed", () => {
 		const results = scenarioResults(
 			cucumberJson([
@@ -363,6 +382,45 @@ describe("renderScorecard", () => {
 		assert.match(page, /## Routing/);
 		assert.match(page, /## Surfaces/);
 		assert.ok(page.endsWith("\n") && !page.endsWith("\n\n"));
+	});
+});
+
+describe("scorecard execution", () => {
+	it("fails the check if Cucumber exits unsuccessfully despite a passing report", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-parity-process-"));
+		try {
+			const cases = catalog();
+			const scenarios = featureScenarios(FEATURE, "routing.feature", cases);
+			const report = cucumberJson([
+				{ tags: ["@parity", "@R02", "@t1"], statuses: ["passed"] },
+			]);
+			mkdirSync(join(root, FEATURES_DIR), { recursive: true });
+			mkdirSync(join(root, "docs/ci"), { recursive: true });
+			mkdirSync(join(root, "node_modules/@cucumber/cucumber/bin"), {
+				recursive: true,
+			});
+			writeFileSync(join(root, CASES_FILE), JSON.stringify(cases));
+			writeFileSync(join(root, FEATURES_DIR, "routing.feature"), FEATURE);
+			writeFileSync(
+				join(root, SCORECARD_FILE),
+				renderScorecard(
+					cases,
+					caseRows(cases, scenarios, scenarioResults(report, cases)),
+				),
+			);
+			symlinkSync(
+				join(ROOT, "node_modules/tsx"),
+				join(root, "node_modules/tsx"),
+				"dir",
+			);
+			writeFileSync(
+				join(root, "node_modules/@cucumber/cucumber/bin/cucumber.js"),
+				`const { writeFileSync } = require("node:fs");\nconst report = process.argv.find((arg) => arg.startsWith("json:"));\nwriteFileSync(report.slice(5), ${JSON.stringify(report)});\nprocess.exit(1);\n`,
+			);
+			assert.equal(main(["--check"], root), 1);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

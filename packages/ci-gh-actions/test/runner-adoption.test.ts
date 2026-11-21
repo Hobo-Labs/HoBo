@@ -307,6 +307,53 @@ describe("adoptRunner", () => {
 		});
 	});
 
+	it("rejects an invalid advert before changing GitHub labels", async () => {
+		const github = new FakeGithubRunners();
+		await expect(
+			adoptRunner(github, { ...adoptInput(11), accountId: "" }),
+		).rejects.toThrow();
+		expect(github.requests.some((line) => line.startsWith("POST"))).toBe(false);
+	});
+
+	it("rejects a runner at the label limit before changing GitHub labels", async () => {
+		const github = new FakeGithubRunners();
+		const runner = github.repoRunners[0];
+		if (runner === undefined) throw new Error("fixture runner missing");
+		runner.labels = [
+			"self-hosted",
+			"Linux",
+			"X64",
+			...Array.from({ length: 29 }, (_, index) => `extra-${index}`),
+		];
+		await expect(adoptRunner(github, adoptInput(11))).rejects.toMatchObject({
+			problem: "unsupported_runner",
+		});
+		expect(github.requests.some((line) => line.startsWith("POST"))).toBe(false);
+	});
+
+	it("never reuses another runner's adoption label", async () => {
+		const github = new FakeGithubRunners();
+		const runner = github.repoRunners[0];
+		if (runner === undefined) throw new Error("fixture runner missing");
+		const otherLabel = adoptionLabel("organization", "octo", 21);
+		runner.labels.push(otherLabel);
+		const adoption = await adoptRunner(github, adoptInput(11));
+		expect(adoption.changed).toBe(true);
+		expect(adoption.label).toBe(adoptionLabel("repository", "octo/app", 11));
+		expect(adoption.label).not.toBe(otherLabel);
+	});
+
+	it("refuses a derived label already present on another offered runner", async () => {
+		const github = new FakeGithubRunners();
+		const other = github.orgRunners[0];
+		if (other === undefined) throw new Error("fixture runner missing");
+		other.labels.push(adoptionLabel("repository", "octo/app", 11));
+		await expect(adoptRunner(github, adoptInput(11))).rejects.toMatchObject({
+			problem: "unsupported_runner",
+		});
+		expect(github.requests.some((line) => line.startsWith("POST"))).toBe(false);
+	});
+
 	it("refuses a runner it cannot advertise before writing a label", async () => {
 		const github = new FakeGithubRunners();
 		const runner = github.repoRunners[0];
@@ -339,6 +386,21 @@ describe("releaseRunner", () => {
 			runnerId: 11,
 		});
 		expect(again.removed).toEqual([]);
+	});
+
+	it("leaves another runner's unrelated adoption label alone", async () => {
+		const github = new FakeGithubRunners();
+		const runner = github.repoRunners[0];
+		if (runner === undefined) throw new Error("fixture runner missing");
+		const otherLabel = adoptionLabel("organization", "octo", 21);
+		runner.labels.push(otherLabel);
+		const { label } = await adoptRunner(github, adoptInput(11));
+		const released = await releaseRunner(github, {
+			repository: "octo/app",
+			runnerId: 11,
+		});
+		expect(released.removed).toEqual([label]);
+		expect(runner.labels).toContain(otherLabel);
 	});
 
 	it("releases a runner whose group no longer admits the repository", async () => {

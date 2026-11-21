@@ -233,6 +233,17 @@ describe("release-hobo publish jobs install order", () => {
 		});
 	}
 
+	it("release-hobo-integration fetches the ts-autocode pin before install", () => {
+		const block = parseReleaseJobBlock(
+			hoboWorkflow,
+			"release-hobo-integration",
+		);
+		const fetchIdx = block.indexOf("pnpm run pins:fetch ts-autocode");
+		const installIdx = block.indexOf(ROOT_PNPM_INSTALL);
+		expect(fetchIdx).toBeGreaterThan(0);
+		expect(installIdx).toBeGreaterThan(fetchIdx);
+	});
+
 	it("materialize-release-version avoids npm deps (gate-trust or tag-ref parse)", () => {
 		const source = readFileSync(
 			join(root, "scripts/ci/materialize-release-version.mts"),

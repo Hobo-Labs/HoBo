@@ -17,7 +17,17 @@ import {
 	verbHelpText,
 	type YardRuntime,
 } from "@hobo/cli";
-import type { HttpTransport } from "@hobo/core";
+import type { HttpTransport, TrustedVault } from "@hobo/core";
+import {
+	type AppHandOffMode,
+	egressFetch,
+	egressFrom,
+	parseAppHandOffMode,
+	REDIRECT_RECEIVER_SETTING,
+	type RedirectReceiver,
+	redirectReceiverFrom,
+	withoutSecretEnv,
+} from "@hobo/hobo-ci";
 import { CiRepositoryLinkSchema } from "./_generated/composition_pb.js";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
@@ -64,7 +74,6 @@ class CiLinkSaveError extends Error {}
 
 export const CI_HELP = verbHelpText("ci", { implemented: true });
 
-/** The `hobo ci` commands handled here; any other name is looked up in `CI_COMMANDS`. */
 export const BUILT_IN_CI_COMMANDS = [
 	"enable",
 	"connect",
@@ -344,6 +353,8 @@ function parseCiArgs(args: readonly string[]) {
 			"include-secret-jobs": { type: "boolean" },
 			"site-url": { type: "string" },
 			"via-workflow": { type: "boolean" },
+			"hand-off": { type: "boolean" },
+			receiver: { type: "string" },
 		},
 	});
 }
@@ -382,12 +393,6 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 	return options;
 }
 
-/**
- * Where a command that only reads the working tree runs: the repository root
- * when git knows one, else the working directory, and the GitHub repository
- * when `--repo` or the `origin` remote names it. Never fails: a command that
- * contacts nothing must still work outside a repository.
- */
 async function localRepository(
 	deps: { env?: NodeJS.ProcessEnv; git?: CiGit },
 	cwd: string,
@@ -407,9 +412,7 @@ async function localRepository(
 	let root = cwd;
 	try {
 		root = await git(["rev-parse", "--show-toplevel"], cwd);
-	} catch {
-		/* Not a git repository: the working directory stands in. */
-	}
+	} catch {}
 	if (values.repo !== undefined && validRepository(String(values.repo)))
 		return { root, repository: String(values.repo) };
 	try {
@@ -436,6 +439,8 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
+		/** A vault already holding the deploy token (`VERCEL_TOKEN`), read from the store. */
+		deployCredentials?: TrustedVault;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
@@ -446,7 +451,7 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
-		/** The table-dispatched commands; `CI_COMMANDS` when absent. */
+
 		commands?: readonly CiCommand[];
 	} = {},
 ): CommandModule {
@@ -477,6 +482,8 @@ export function createCiCommand(
 				);
 			}
 			const { values } = parsed;
+			if (values.repo !== undefined && !validRepository(String(values.repo)))
+				return usage("--repo <owner/name> must be a GitHub owner/name.");
 			const githubConnect =
 				parsed.positionals[0] === "connect" &&
 				parsed.positionals[1] === "github";
@@ -563,6 +570,9 @@ export function createCiCommand(
 					cwd: flags.cwd,
 					values,
 					env: deps.env ?? process.env,
+					...(deps.deployCredentials !== undefined
+						? { credentials: deps.deployCredentials }
+						: undefined),
 					...(deps.vercelFetch !== undefined
 						? { fetch: deps.vercelFetch }
 						: undefined),
@@ -648,6 +658,8 @@ export function createCiCommand(
 					"yes",
 					"non-interactive",
 					"via-workflow",
+					"hand-off",
+					"receiver",
 				]);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),
@@ -661,6 +673,34 @@ export function createCiCommand(
 						Boolean(process.stdin.isTTY && process.stderr.isTTY)) &&
 					!flags.json &&
 					!values["non-interactive"];
+				// The owner's outbound-only tunnel: --receiver, else the
+				// non-secret HOBO_REDIRECT_RECEIVER; none means the hand-off.
+				// Both, and the hand-off mode, are parsed here, at the boundary.
+				let receiver: RedirectReceiver | undefined;
+				let handOffMode: AppHandOffMode;
+				try {
+					handOffMode = parseAppHandOffMode(
+						"HOBO_APP_HANDOFF",
+						(deps.env ?? process.env).HOBO_APP_HANDOFF,
+					);
+					receiver = redirectReceiverFrom({
+						...withoutSecretEnv(deps.env ?? process.env),
+						...(values.receiver !== undefined
+							? { [REDIRECT_RECEIVER_SETTING]: String(values.receiver) }
+							: undefined),
+					});
+				} catch (error) {
+					return usage(
+						error instanceof Error ? error.message : "Unknown receiver.",
+					);
+				}
+				if (
+					(values["hand-off"] === true || receiver !== undefined) &&
+					(flags.json || flags.quiet)
+				)
+					return usage(
+						"The App hand-off needs progress output. Omit --json and -q, then retry.",
+					);
 				return runCiAppCreate({
 					relay: values.relay === undefined ? undefined : String(values.relay),
 					ownerId:
@@ -670,10 +710,17 @@ export function createCiCommand(
 					name: values.name === undefined ? undefined : String(values.name),
 					replace: values.yes === true,
 					viaWorkflow: values["via-workflow"] === true,
+					handOff: values["hand-off"] === true,
+					handOffMode,
+					receiver,
+					// Every request of this run goes through the proxy the
+					// environment requires, read once up front.
+					tunnelProbe:
+						deps.fetch ?? egressFetch(egressFrom(deps.env ?? process.env)),
 					interactive,
 					env: deps.env ?? process.env,
 					emitProgress,
-					fetch: deps.fetch,
+					fetch: deps.fetch ?? egressFetch(egressFrom(deps.env ?? process.env)),
 					openBrowser: deps.openBrowser,
 					prompt: deps.prompt ?? promptOnTerminal,
 					sleep: deps.sleep,

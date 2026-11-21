@@ -13,7 +13,8 @@ import {
 
 describe("IdentityMigrationControlPlane (hands-off continuous path)", () => {
 	it("Matching decision auto-starts dual path and creates OpenFeature cohort flag", () => {
-		const plane = new IdentityMigrationControlPlane({ tenant: "t1" });
+		const flags = new FeatureFlagStore();
+		const plane = new IdentityMigrationControlPlane({ tenant: "t1", flags });
 		const progress = plane.onMatchingDecision({
 			tenant: "t1",
 			sourceAdapter: "oidc-a",
@@ -25,13 +26,12 @@ describe("IdentityMigrationControlPlane (hands-off continuous path)", () => {
 		expect(progress.migration?.state).toBe("dual-active");
 		expect(progress.flag?.percentage).toBe(0);
 		expect(progress.flag?.key).toContain("identity-migration.");
-		expect(plane.flags.events.some((e) => e.type === "flag.Defined")).toBe(
-			true,
-		);
+		expect(flags.events.some((e) => e.type === "flag.Defined")).toBe(true);
 	});
 
 	it("JIT link + ramp + OpenFeature cohort eval + cutover", () => {
-		const plane = new IdentityMigrationControlPlane({ tenant: "t1" });
+		const flags = new FeatureFlagStore();
+		const plane = new IdentityMigrationControlPlane({ tenant: "t1", flags });
 		plane.onMatchingDecision({
 			tenant: "t1",
 			sourceAdapter: "src",
@@ -51,12 +51,8 @@ describe("IdentityMigrationControlPlane (hands-off continuous path)", () => {
 		const inCohort = plane.principalInRamp(principal);
 		expect(inCohort.value === true || inCohort.value === false).toBe(true);
 		// flag.Evaluated is sampled (default 1%); force path still defines/changes flags.
-		expect(plane.flags.events.some((e) => e.type === "flag.Defined")).toBe(
-			true,
-		);
-		expect(plane.flags.events.some((e) => e.type === "flag.Changed")).toBe(
-			true,
-		);
+		expect(flags.events.some((e) => e.type === "flag.Defined")).toBe(true);
+		expect(flags.events.some((e) => e.type === "flag.Changed")).toBe(true);
 		expect(inCohort.flagKey).toContain("identity-migration.");
 
 		plane.advanceRamp(100);

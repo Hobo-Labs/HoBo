@@ -1,18 +1,4 @@
-/**
- * A first read of why a job failed, from what GitHub already has: the job's
- * steps, the end of its log and its annotations.
- *
- * The diagnosis names the step that failed, cuts the log down to the lines
- * around the last error, sorts the failure into a kind and says whether
- * running the job again is likely to help. The sorting is a fixed list of
- * text patterns tried in a fixed order, so the same failure always gets the
- * same answer and every answer comes with the lines it was based on. Nothing
- * is guessed: a failure no pattern recognises is `unclear`.
- *
- * Pure functions. The pattern tables are exported so documentation can print
- * exactly what is matched.
- */
-
+import { stripVTControlCharacters } from "node:util";
 import { type InsightJob, ranSteps, SETUP_STEP_NAME } from "./types.js";
 
 export type FailureKind =
@@ -28,36 +14,23 @@ export type RerunOutlook = "likely-passes" | "likely-fails" | "unknown";
 
 export type FailureDiagnosisInput = Readonly<{
 	job: InsightJob;
-	/** The end of the job's log, as downloaded. */
 	logTail?: string;
-	/** The messages of the job's check-run annotations. */
 	annotations?: readonly string[];
 }>;
 
 export type FailedStep = Readonly<{ name: string; number: number }>;
 
 export type FailureDiagnosis = Readonly<{
-	/** The first step that failed or timed out. Absent when no step did. */
 	failedStep?: FailedStep;
-	/** The job failed without running any step of its own. */
 	runnerFailed: boolean;
-	/** The job, or the step that failed, ran out of time. */
 	timedOut: boolean;
-	/** The log lines leading up to the last error, cleaned. */
 	excerpt: readonly string[];
 	kind: FailureKind;
 	rerun: RerunOutlook;
-	/** The lines and step names the kind was decided on. */
 	evidence: readonly string[];
 }>;
 
-/**
- * One thing looked for. It is found when some line matches `pattern` and,
- * where `alongside` is given, some line (the same or another) matches that
- * too.
- */
 export type DiagnosisPattern = Readonly<{
-	/** What is looked for, in words, for documentation. */
 	label: string;
 	pattern: RegExp;
 	alongside?: RegExp;
@@ -211,43 +184,35 @@ export const TEST_STEP_PATTERNS: readonly DiagnosisPattern[] = [
 
 // public-contract: log text that makes a failed test look timing-dependent rather than wrong.
 export const FLAKE_HINT_PATTERNS: readonly DiagnosisPattern[] = [
-	{ label: "Timeout", pattern: /timeout/i },
-	{ label: "timed out", pattern: /timed out/i },
+	{
+		label: "Timeout of <duration>",
+		pattern: /\btimeout of \d+(?:\.\d+)?\s*(?:ms|milliseconds?|s|seconds?)\b/i,
+	},
+	{ label: "Test timed out", pattern: /\btests? timed out\b/i },
 	{ label: "flaky", pattern: /flaky/i },
-	{ label: "retry", pattern: /retry/i },
+	{ label: "Retry #<number>", pattern: /\bretry #\d+\b/i },
 	{ label: "ECONNREFUSED", pattern: /ECONNREFUSED/ },
 	{ label: "Target closed", pattern: /target closed/i },
 	{ label: "Navigation timeout", pattern: /navigation timeout/i },
 ];
 
-const ESCAPE = String.fromCharCode(27);
-
-/** A terminal colour or cursor sequence. Built from the escape character so the source holds no control character. */
-const ANSI_SEQUENCE = new RegExp(`${ESCAPE}\\[[0-9;?]*[ -/]*[@-~]`, "g");
-
 const BYTE_ORDER_MARK = /^﻿/;
 
-/** The timestamp GitHub puts before each log line, e.g. `2026-01-01T00:00:00.0000000Z `. */
 const TIMESTAMP_PREFIX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ?/;
 
 const ERROR_MARKER = "##[error]";
 
-/**
- * A word that announces a problem. Besides the bare words this takes their
- * plurals and names ending in them, such as `TypeError` or `IOException`.
- */
 const ERROR_WORD =
 	/\b(?:\w*errors?|failed|failures?|fatal|panic|\w*exceptions?)\b/i;
 
-/** A count of no problems, which is not a problem: "0 errors", "0 failed", "no failures". */
 const ZERO_PROBLEMS = /\b(?:0|no)\s+(?:errors?|failed|failures?)\b/gi;
 
-/** One log line without colour codes, a byte-order mark, GitHub's timestamp or trailing space. */
 function cleanLine(line: string): string {
-	return line
-		.replace(ANSI_SEQUENCE, "")
+	return stripVTControlCharacters(line)
 		.replace(BYTE_ORDER_MARK, "")
 		.replace(TIMESTAMP_PREFIX, "")
+		.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "")
+		.replace(/\p{Cc}/gu, " ")
 		.trimEnd();
 }
 
@@ -260,11 +225,6 @@ function looksLikeError(line: string): boolean {
 	return ERROR_WORD.test(line.replace(ZERO_PROBLEMS, ""));
 }
 
-/**
- * The number of bytes a text takes in UTF-8. A character outside the basic
- * plane is two code units and four bytes; half of such a pair on its own is
- * written as the three-byte replacement character.
- */
 function utf8Bytes(text: string): number {
 	let bytes = 0;
 	for (const character of text) {
@@ -277,7 +237,6 @@ function utf8Bytes(text: string): number {
 	return bytes;
 }
 
-/** The start of a text, as much as fits in `maxBytes` of UTF-8 without splitting a character. */
 function startWithinBytes(text: string, maxBytes: number): string {
 	let kept = "";
 	let bytes = 0;
@@ -289,16 +248,6 @@ function startWithinBytes(text: string, maxBytes: number): string {
 	return kept;
 }
 
-/**
- * The part of a log worth reading: up to `MAX_EXCERPT_LINES` lines ending at
- * the last line that looks like an error, or the last lines of the log when
- * none does. Lines are cleaned of colour codes and GitHub's timestamps, and
- * blank lines at the very end of the log are dropped.
- *
- * The excerpt, joined with newlines, never exceeds `MAX_EXCERPT_BYTES`: lines
- * are dropped from the top until it fits, and if the last line alone is too
- * long, its start is kept.
- */
 export function logExcerpt(logTail: string): readonly string[] {
 	const lines = [...cleanLines(logTail)];
 	while (lines.length > 0 && lines.at(-1)?.trim() === "") lines.pop();
@@ -325,10 +274,9 @@ export function logExcerpt(logTail: string): readonly string[] {
 }
 
 function quoted(text: string): string {
-	return text.trim().slice(0, MAX_EVIDENCE_LENGTH);
+	return cleanLine(text).trim().slice(0, MAX_EVIDENCE_LENGTH);
 }
 
-/** The first line each found pattern matched, in table order. */
 function linesMatching(
 	lines: readonly string[],
 	patterns: readonly DiagnosisPattern[],
@@ -347,7 +295,6 @@ function linesMatching(
 	return found;
 }
 
-/** The failed step's name as evidence, when any of the patterns matches it. */
 function stepMatching(
 	stepName: string | undefined,
 	patterns: readonly DiagnosisPattern[],
@@ -370,15 +317,6 @@ type Clues = Readonly<{
 	jobTimedOut: boolean;
 }>;
 
-/**
- * The rules, tried in order; the first that finds anything decides.
- *
- * 1. infra: the runner failed, or the log shows the runner or network failing.
- * 2. config: the workflow is set up wrongly.
- * 3. lint, 4. build, 5. test: by log text, or failing that by the step's name.
- *    A failed test with a timing hint in the log is `flaky` instead.
- * 6. Nothing matched: `unclear`, noting a time-out when there was one.
- */
 function classify(clues: Clues): Verdict {
 	const { lines, stepName } = clues;
 
@@ -445,15 +383,6 @@ function classify(clues: Clues): Verdict {
 	};
 }
 
-/**
- * Why a job failed, as far as its steps, log and annotations show.
- *
- * `failedStep` is the first step, by number, that failed or timed out. The
- * kind is decided over the annotations, the excerpt and that step's name; see
- * the pattern tables for what is looked for and in which order. A re-run is
- * only ever called likely to pass for a runner or network failure: a failed
- * test with a timing hint is `flaky` with the outlook left `unknown`.
- */
 export function diagnoseFailure(
 	input: FailureDiagnosisInput,
 ): FailureDiagnosis {
@@ -469,7 +398,7 @@ export function diagnoseFailure(
 	const excerpt = logExcerpt(input.logTail ?? "");
 	const verdict = classify({
 		lines: [...(input.annotations ?? []).flatMap(cleanLines), ...excerpt],
-		stepName: failed?.name,
+		stepName: failed === undefined ? undefined : cleanLine(failed.name).trim(),
 		runnerFailed,
 		jobTimedOut,
 	});
@@ -483,7 +412,10 @@ export function diagnoseFailure(
 	};
 	if (failed === undefined) return diagnosis;
 	return {
-		failedStep: { name: failed.name, number: failed.number },
+		failedStep: {
+			name: cleanLine(failed.name).trim(),
+			number: failed.number,
+		},
 		...diagnosis,
 	};
 }
@@ -518,15 +450,11 @@ function rerunPhrase(rerun: RerunOutlook): string {
 	}
 }
 
-/**
- * The diagnosis as one plain sentence for a terminal, e.g.
- * `Failed at "Run pnpm check": looks like a build error; a re-run will likely fail the same way.`
- */
 export function summarizeDiagnosis(diagnosis: FailureDiagnosis): string {
 	const verb = diagnosis.timedOut ? "Timed out" : "Failed";
 	let lead = verb;
 	if (diagnosis.failedStep !== undefined) {
-		lead = `${verb} at "${diagnosis.failedStep.name}"`;
+		lead = `${verb} at "${cleanLine(diagnosis.failedStep.name).trim()}"`;
 	} else if (diagnosis.runnerFailed) {
 		lead = "Failed before any step ran";
 	}
