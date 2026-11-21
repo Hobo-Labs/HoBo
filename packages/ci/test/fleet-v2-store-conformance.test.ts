@@ -54,6 +54,8 @@ type StoreHandle = {
 	store: StrictFleetStore;
 	close: () => Promise<void>;
 	setCapacitySequence: (sequence: number) => Promise<void>;
+	setEffectFence: (effectId: string, fence: number) => Promise<void>;
+	expireEffectDelivery: (effectId: string) => Promise<void>;
 };
 
 function githubKey(jobId = "1") {
@@ -79,6 +81,7 @@ function demand(
 	jobId: string,
 	source: "webhook" | "pull" | "repair",
 	deliveryId: string,
+	policyRevision = 1,
 ): CiDemand {
 	return parseCiDemand(
 		JSON.stringify({
@@ -86,7 +89,7 @@ function demand(
 			state: "observed",
 			firstObservedAt: NOW,
 			lastObservedAt: NOW,
-			policyRevision: 1,
+			policyRevision,
 			requiredProfileId: "trusted-linux-x64",
 			source,
 			sourceDeliveryIds: [deliveryId],
@@ -99,6 +102,8 @@ function reservation(
 	suffix: string,
 	expectedCapacitySeq: number,
 	costUnits = 1,
+	effectSequence = 1,
+	policyRevision = 1,
 ) {
 	const bindingSecret = randomBytes(32).toString("hex");
 	const bindingSecretHash = createHash("sha256")
@@ -129,7 +134,7 @@ function reservation(
 			subjectType: "runner-slot",
 			subjectId: slot.id,
 			kind: "github.provision-runner",
-			sequence: 1,
+			sequence: effectSequence,
 			state: "planned",
 			idempotencyKey: `provision-${suffix}`,
 			externalLocator: slot.runnerName,
@@ -153,7 +158,7 @@ function reservation(
 			effect,
 			outbox,
 			expectedCapacitySeq,
-			expectedPolicyRevision: 1,
+			expectedPolicyRevision: policyRevision,
 		},
 		bindingSecret,
 	};
@@ -726,6 +731,187 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			expect(deliveries[0]).toMatchObject({ state: "claimed", fence: 1 });
 		});
 
+		it("supports unsigned fleet policy, observation, and delivery counters", async () => {
+			if (!handle) throw new Error("store not initialized");
+			const store = current();
+			await store.putOfferAdmission(
+				parseOfferAdmission(
+					JSON.stringify({
+						offerId: "local-offer",
+						accountId: "hobo-labs",
+						observationHash: OFFER_HASH,
+						policyRevision: 0xffffffff,
+						state: "active",
+					}),
+				),
+			);
+			await store.intake(demand("1", "webhook", "wide-policy", 0xffffffff));
+			const reserved = reservation(
+				parsedKey("1"),
+				"wide-counters",
+				0,
+				1,
+				0xffffffff,
+				0xffffffff,
+			);
+			await store.reserveCapacity(reserved.input);
+			await store.observe(observation(0x80000000));
+			await store.observe(observation(0xffffffff));
+			expect(await store.observationSequence("worker-1")).toBe(0xffffffff);
+			await expect(
+				store.observe(observation(0x80000000)),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.OBSERVATION_SEQUENCE_REGRESSED,
+			});
+			await handle.setEffectFence(reserved.input.effect.id, 0xfffffffe);
+			const delivery = await store.claimEffect({
+				effectId: reserved.input.effect.id,
+				workerId: "worker-1",
+				ownerEpoch: 0xffffffff,
+				leaseMs: 60_000,
+			});
+			expect(delivery).toMatchObject({
+				ownerEpoch: 0xffffffff,
+				fence: 0xffffffff,
+			});
+			const fence = {
+				effectId: reserved.input.effect.id,
+				workerId: "worker-1",
+				ownerEpoch: 0xffffffff,
+				fence: 0xffffffff,
+			};
+			await store.markEffectDispatching(fence);
+			await store.acknowledgeEffect({ ...fence, outcome: "confirmed" });
+			expect(
+				(await store.deliveries(reserved.input.effect.id))[0],
+			).toMatchObject({ fence: 0xffffffff, state: "acked" });
+		});
+
+		it("refuses an exhausted delivery fence without changing the effect", async () => {
+			if (!handle) throw new Error("store not initialized");
+			const store = current();
+			await store.intake(demand("1", "webhook", "exhausted-fence"));
+			const reserved = reservation(parsedKey("1"), "exhausted-fence", 0);
+			await store.reserveCapacity(reserved.input);
+			await handle.setEffectFence(reserved.input.effect.id, 0xffffffff);
+			const before = await store.events();
+			await expect(
+				store.claimEffect({
+					effectId: reserved.input.effect.id,
+					workerId: "worker-1",
+					ownerEpoch: 1,
+					leaseMs: 60_000,
+				}),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.EFFECT_NOT_CLAIMABLE,
+			});
+			expect(await store.effect(reserved.input.effect.id)).toMatchObject({
+				state: "planned",
+			});
+			expect(await store.deliveries(reserved.input.effect.id)).toHaveLength(0);
+			expect(await store.events()).toEqual(before);
+		});
+
+		it("rejects stale delivery tokens across generated lease histories", async () => {
+			await fc.assert(
+				fc.asyncProperty(
+					fc.array(fc.integer({ min: 1, max: 3 }), {
+						minLength: 2,
+						maxLength: 5,
+					}),
+					async (workers) => {
+						const instance = await open();
+						try {
+							const store = instance.store;
+							await seed(store);
+							await store.intake(demand("1", "webhook", "generated-delivery"));
+							const reserved = reservation(
+								parsedKey("1"),
+								"generated-delivery",
+								0,
+							);
+							await store.reserveCapacity(reserved.input);
+							let prior:
+								| { workerId: string; ownerEpoch: number; fence: number }
+								| undefined;
+							for (const worker of workers) {
+								if (prior)
+									await instance.expireEffectDelivery(reserved.input.effect.id);
+								const delivery = await store.claimEffect({
+									effectId: reserved.input.effect.id,
+									workerId: `worker-${worker}`,
+									ownerEpoch: 1,
+									leaseMs: 60_000,
+								});
+								if (prior) {
+									expect(delivery.fence).toBe(prior.fence + 1);
+									const stale = {
+										effectId: reserved.input.effect.id,
+										...prior,
+									};
+									await expect(
+										store.renewEffectDelivery({ ...stale, leaseMs: 60_000 }),
+									).rejects.toMatchObject({
+										code: FleetRejectionCode.STALE_DELIVERY_FENCE,
+									});
+									await expect(
+										store.acknowledgeEffect({ ...stale, outcome: "confirmed" }),
+									).rejects.toMatchObject({
+										code: FleetRejectionCode.STALE_DELIVERY_FENCE,
+									});
+								}
+								prior = {
+									workerId: delivery.workerId,
+									ownerEpoch: delivery.ownerEpoch,
+									fence: delivery.fence,
+								};
+							}
+							expect(
+								await store.deliveries(reserved.input.effect.id),
+							).toHaveLength(workers.length);
+						} finally {
+							await instance.close();
+						}
+					},
+				),
+				{ seed: 614453, numRuns: 25 },
+			);
+		}, 60_000);
+
+		it("does not reissue a dispatching effect after its delivery expires", async () => {
+			if (!handle) throw new Error("store not initialized");
+			const store = current();
+			await store.intake(demand("1", "webhook", "ambiguous-effect"));
+			const reserved = reservation(parsedKey("1"), "ambiguous-effect", 0);
+			await store.reserveCapacity(reserved.input);
+			const delivery = await store.claimEffect({
+				effectId: reserved.input.effect.id,
+				workerId: "worker-1",
+				ownerEpoch: 1,
+				leaseMs: 60_000,
+			});
+			await store.markEffectDispatching({
+				effectId: reserved.input.effect.id,
+				workerId: delivery.workerId,
+				ownerEpoch: delivery.ownerEpoch,
+				fence: delivery.fence,
+			});
+			await handle.expireEffectDelivery(reserved.input.effect.id);
+			const before = await store.events();
+			await expect(
+				store.claimEffect({
+					effectId: reserved.input.effect.id,
+					workerId: "worker-2",
+					ownerEpoch: 1,
+					leaseMs: 60_000,
+				}),
+			).rejects.toMatchObject({
+				code: FleetRejectionCode.EFFECT_NOT_CLAIMABLE,
+			});
+			expect(await store.deliveries(reserved.input.effect.id)).toHaveLength(1);
+			expect(await store.events()).toEqual(before);
+		});
+
 		it("does not mutate for stale worker renewal or acknowledgement", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));
@@ -1033,6 +1219,29 @@ storeContract("SQLite", async () => {
 				database.close();
 			}
 		},
+		setEffectFence: async (effectId, fence) => {
+			const database = new DatabaseSync(path);
+			try {
+				database
+					.prepare("UPDATE fleet_v2_effects SET next_fence=? WHERE id=?")
+					.run(fence, effectId);
+			} finally {
+				database.close();
+			}
+		},
+		expireEffectDelivery: async (effectId) => {
+			const database = new DatabaseSync(path);
+			try {
+				const expired = "2000-01-01T00:00:00.000Z";
+				database
+					.prepare(
+						"UPDATE fleet_v2_deliveries SET expires_at=?,body=json_set(body, '$.expiresAt', ?) WHERE effect_id=? AND state='claimed'",
+					)
+					.run(expired, expired, effectId);
+			} finally {
+				database.close();
+			}
+		},
 	};
 });
 
@@ -1095,7 +1304,7 @@ describe.runIf(postgresEnabled)(
 			await container?.stop();
 		});
 
-		it("upgrades legacy signed capacity columns without losing rows", async () => {
+		it("upgrades legacy signed fleet columns without losing rows", async () => {
 			if (!pool || !postgresTestUrl)
 				throw new Error("postgres pool unavailable");
 			const schema = `fleet_migration_${randomUUID().replaceAll("-", "")}`;
@@ -1109,6 +1318,16 @@ describe.runIf(postgresEnabled)(
 			try {
 				const original = new PostgresStrictFleetStore(isolated, "legacy");
 				await seed(original);
+				await original.intake(demand("1", "webhook", "legacy"));
+				const reserved = reservation(parsedKey("1"), "legacy", 0);
+				await original.reserveCapacity(reserved.input);
+				await original.observe(observation(1));
+				await original.claimEffect({
+					effectId: reserved.input.effect.id,
+					workerId: "worker-1",
+					ownerEpoch: 1,
+					leaseMs: 60_000,
+				});
 				await isolated.query(
 					"ALTER TABLE hobo_ci_fleet_v2_capacity_groups ALTER COLUMN approved_units TYPE integer, ALTER COLUMN reserved_units TYPE integer, ALTER COLUMN seq TYPE integer",
 				);
@@ -1118,37 +1337,59 @@ describe.runIf(postgresEnabled)(
 				await isolated.query(
 					"ALTER TABLE hobo_ci_fleet_v2_capacity_releases ALTER COLUMN units TYPE integer",
 				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_offers ALTER COLUMN policy_revision TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_demands ALTER COLUMN policy_revision TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_effects ALTER COLUMN sequence TYPE integer, ALTER COLUMN next_fence TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_deliveries ALTER COLUMN owner_epoch TYPE integer, ALTER COLUMN fence TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_observations ALTER COLUMN sequence TYPE integer",
+				);
+				await isolated.query(
+					"ALTER TABLE hobo_ci_fleet_v2_observation_watermarks ALTER COLUMN sequence TYPE integer",
+				);
 				const first = new PostgresStrictFleetStore(isolated, "legacy");
 				const second = new PostgresStrictFleetStore(isolated, "legacy");
 				await Promise.all([first.initialize(), second.initialize()]);
 				const columns = await isolated.query(
-					"SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema=$1 AND ((table_name='hobo_ci_fleet_v2_capacity_groups' AND column_name IN ('approved_units','reserved_units','seq')) OR (table_name='hobo_ci_fleet_v2_runner_slots' AND column_name='capacity_cost_units') OR (table_name='hobo_ci_fleet_v2_capacity_releases' AND column_name='units'))",
+					"SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema=$1 AND ((table_name='hobo_ci_fleet_v2_capacity_groups' AND column_name IN ('approved_units','reserved_units','seq')) OR (table_name='hobo_ci_fleet_v2_runner_slots' AND column_name='capacity_cost_units') OR (table_name='hobo_ci_fleet_v2_capacity_releases' AND column_name='units') OR (table_name IN ('hobo_ci_fleet_v2_offers','hobo_ci_fleet_v2_demands') AND column_name='policy_revision') OR (table_name='hobo_ci_fleet_v2_effects' AND column_name IN ('sequence','next_fence')) OR (table_name='hobo_ci_fleet_v2_deliveries' AND column_name IN ('owner_epoch','fence')) OR (table_name IN ('hobo_ci_fleet_v2_observations','hobo_ci_fleet_v2_observation_watermarks') AND column_name='sequence'))",
 					[schema],
 				);
-				expect(columns.rows).toHaveLength(5);
+				expect(columns.rows).toHaveLength(13);
 				expect(
 					columns.rows.every((column) => column.data_type === "bigint"),
 				).toBe(true);
 				expect(await first.capacityGroup("device-1")).toMatchObject({
 					approvedUnits: 1,
-					reservedUnits: 0,
-					seq: 0,
+					reservedUnits: 1,
+					seq: 1,
 				});
+				expect(await first.observationSequence("worker-1")).toBe(1);
+				expect(
+					(await first.deliveries(reserved.input.effect.id))[0],
+				).toMatchObject({ fence: 1, ownerEpoch: 1 });
 				await first.putCapacityGroup(
 					parseCapacityGroup(
 						JSON.stringify({
 							id: "device-1",
 							accountId: "hobo-labs",
 							approvedUnits: 0xffffffff,
-							reservedUnits: 0,
-							seq: 0,
+							reservedUnits: 1,
+							seq: 1,
 							state: "active",
 						}),
 					),
 				);
 				expect(await second.capacityGroup("device-1")).toMatchObject({
 					approvedUnits: 0xffffffff,
-					seq: 1,
+					seq: 2,
 				});
 			} finally {
 				await isolated.end();
@@ -1167,6 +1408,21 @@ describe.runIf(postgresEnabled)(
 					await pool.query(
 						"UPDATE hobo_ci_fleet_v2_capacity_groups SET seq=$3::bigint,body=jsonb_set(body::jsonb, '{seq}', to_jsonb($3::bigint))::text WHERE partition_id=$1 AND id=$2",
 						[partition, "device-1", sequence],
+					);
+				},
+				setEffectFence: async (effectId, fence) => {
+					if (!pool) throw new Error("postgres pool unavailable");
+					await pool.query(
+						"UPDATE hobo_ci_fleet_v2_effects SET next_fence=$3::bigint WHERE partition_id=$1 AND id=$2",
+						[partition, effectId, fence],
+					);
+				},
+				expireEffectDelivery: async (effectId) => {
+					if (!pool) throw new Error("postgres pool unavailable");
+					const expired = "2000-01-01T00:00:00.000Z";
+					await pool.query(
+						"UPDATE hobo_ci_fleet_v2_deliveries SET expires_at=$3,body=jsonb_set(body::jsonb, '{expiresAt}', to_jsonb($3::text))::text WHERE partition_id=$1 AND effect_id=$2 AND state='claimed'",
+						[partition, effectId, expired],
 					);
 				},
 			};
