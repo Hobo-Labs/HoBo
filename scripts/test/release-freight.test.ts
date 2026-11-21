@@ -7,12 +7,10 @@ import {
 	announceVerdict,
 	classifyRelease,
 	githubApiProbeTransport,
-	PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
-	PAGES_RELEASE_PROMOTION_BUDGET_MS,
+	PAGES_RELEASE_BUILD_MARGIN_MS,
 	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
 	PAGES_RELEASE_VERIFICATION_WINDOW_MS,
 	RELEASE_DRIVE_PAGES,
-	pagesReleaseWallBudgetMs,
 	releaseCampId,
 	releaseDeclaration,
 	releaseDriveFor,
@@ -95,19 +93,14 @@ describe("release topology names", () => {
 		);
 	});
 
-	it("sizes Pages promotion drive to the verification progress budget, not job overrun", () => {
+	it("gives Pages promotion drive longer than the verification progress window", () => {
 		const drive = releaseDriveFor("pages");
 		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
 		const budgetMs = drive.passes * drive.intervalMs - drive.intervalMs;
 		expect(budgetMs).toBeGreaterThanOrEqual(
-			PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
-		);
-		expect(budgetMs).toBeLessThan(PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT);
-		expect(PAGES_RELEASE_PROMOTION_BUDGET_MS).toBe(
-			PAGES_RELEASE_VERIFICATION_PROGRESS_MS + drive.intervalMs,
-		);
-		expect(pagesReleaseWallBudgetMs({})).toBe(
-			PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
+			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+				PAGES_RELEASE_VERIFICATION_WINDOW_MS +
+				PAGES_RELEASE_BUILD_MARGIN_MS,
 		);
 	});
 
