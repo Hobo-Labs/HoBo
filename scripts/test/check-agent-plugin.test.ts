@@ -1014,6 +1014,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 			".bundle-attestation.json": `${JSON.stringify({
+				scope: "job-local",
 				sha256,
 				runId: "run-current",
 				commitSha: "commit-current",
@@ -1056,6 +1057,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 			".bundle-attestation.json": `${JSON.stringify({
+				scope: "job-local",
 				sha256,
 				runId: "run-other",
 				commitSha: "commit-current",
@@ -1092,6 +1094,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 			".bundle-attestation.json": `${JSON.stringify({
+				scope: "job-local",
 				sha256,
 				runId: "run-current",
 				commitSha: "commit-other",
@@ -1127,6 +1130,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 			".bundle-attestation.json": `${JSON.stringify({
+				scope: "job-local",
 				sha256: "0".repeat(64),
 				runId: "run-current",
 				commitSha: "commit-current",
@@ -1164,6 +1168,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 			".bundle-attestation.json": `${JSON.stringify({
+				scope: "job-local",
 				sha256,
 				runId: "run-current",
 				commitSha: "commit-current",
@@ -1175,6 +1180,45 @@ describe("checkAgentPlugin (integration)", () => {
 				/runAttempt does not match this workflow attempt/u.test(issue.message),
 			),
 		).toBe(true);
+	});
+
+	it("rejects a bundle attestation that omits scope job-local", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		const bundleBody = "x".repeat(1024 * 1024);
+		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": `${JSON.stringify({
+				sha256,
+				runId: "run-current",
+				commitSha: "commit-current",
+			})}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		expect(
+			report.issues.some(
+				(issue) =>
+					issue.file === ".bundle-attestation.json" &&
+					/not a valid bundle attestation/u.test(issue.message),
+			),
+		).toBe(true);
+		vi.unstubAllEnvs();
 	});
 
 	it("rejects a present bundle without attestation in CI", async () => {
@@ -1231,6 +1275,7 @@ describe("checkAgentPlugin (integration)", () => {
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 			".bundle-attestation.json": `${JSON.stringify({
+				scope: "job-local",
 				sha256,
 				runId: "run-current",
 				commitSha: "commit-current",

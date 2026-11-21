@@ -40,6 +40,17 @@ const FORBIDDEN_ENV_KEYS: readonly string[] = [
 	"NODE_COMPILE_CACHE",
 	"NODE_V8_COVERAGE",
 	"PATH",
+	"GIT_CONFIG",
+	"GIT_CONFIG_GLOBAL",
+	"GIT_CONFIG_SYSTEM",
+	"GIT_SSL_CAINFO",
+	"CURL_CA_BUNDLE",
+	"npm_config_cafile",
+	"npm_config_userconfig",
+	"PYTHONPATH",
+	"PYTHONSTARTUP",
+	"RUBYOPT",
+	"PERL5OPT",
 ];
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const BUNDLE_ATTESTATION = ".bundle-attestation.json";
@@ -714,6 +725,7 @@ function skillIssues(
 function listFilesRecursive(dir: string): string[] {
 	const files: string[] = [];
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		if (entry.isSymbolicLink()) continue;
 		if (entry.isDirectory()) {
 			for (const nested of listFilesRecursive(path.join(dir, entry.name))) {
 				files.push(path.join(entry.name, nested));
@@ -865,6 +877,11 @@ export function checkAgentPlugin(input: {
 				"release-train version could not be computed in CI; fix version.json/nbgv or unset HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN",
 		});
 	}
+	if (input.versionFromReleaseTrain === undefined && !agentPluginCiActive()) {
+		notes.push(
+			"agent-plugin:check: skipped release-train comparison outside CI (set CI plus GitHub/Azure flags or unset HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN to measure the train locally)",
+		);
+	}
 	if (input.versionFromReleaseTrain !== undefined && !exactReleaseTrain) {
 		notes.push(
 			`agent-plugin:check: release-train comparison ran with exactReleaseTrain=false (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME?.trim() || "unset"}, commitIsh=${commitIsh}); only the one-height squash lag can waive a stale pin on push`,
@@ -936,6 +953,11 @@ export function checkAgentPlugin(input: {
 				file: "bin/hobo-mcp.mjs",
 				message: `exists but is only ${size} bytes; a real bundle of the composed server is megabytes — rebuild with pnpm run agent-plugin:build`,
 			});
+		}
+		if (!agentPluginCiActive()) {
+			notes.push(
+				"agent-plugin:check: bundle attestation and sha256 binding are verified only when agentPluginCiActive(); production validation runs in GitHub Actions after agent-plugin:build",
+			);
 		}
 		issues.push(...bundleAttestationIssues(pluginRoot, bundle));
 		const deployFixtures = path.join(pluginRoot, "fixtures/deploy");
@@ -1019,6 +1041,7 @@ function bundleAttestationIssues(
 	}
 	const attestation = z
 		.strictObject({
+			scope: z.literal("job-local"),
 			sha256: z.string().min(1),
 			runId: z.string().min(1),
 			commitSha: z.string().min(1),
@@ -1124,43 +1147,59 @@ function readPluginFile(
 	return readFileSync(full, "utf8");
 }
 
-function pluginManifestStagedGitIssues(
-	repoRoot: string,
-): readonly AgentPluginIssue[] {
+function stagedPluginManifestGitResult(repoRoot: string):
+	| {
+			readonly ok: true;
+			readonly staged: boolean;
+	  }
+	| {
+			readonly ok: false;
+			readonly issue: AgentPluginIssue;
+	  } {
 	const result = spawnSync(
 		"git",
 		["diff", "--cached", "--name-only", "--", "plugins/hobo/plugin.json"],
 		{ cwd: repoRoot, encoding: "utf8" },
 	);
 	if (result.error !== undefined) {
-		return [
-			{
+		return {
+			ok: false,
+			issue: {
 				file: "plugin.json",
 				message:
 					"git is unavailable for staged plugin.json inspection; refuse version measurement",
 			},
-		];
+		};
 	}
 	if (result.status !== 0) {
-		return [
-			{
+		return {
+			ok: false,
+			issue: {
 				file: "plugin.json",
 				message:
 					"git could not list staged plugin.json changes; refuse version measurement",
 			},
-		];
+		};
 	}
-	return [];
+	return {
+		ok: true,
+		staged: (result.stdout ?? "").trim().length > 0,
+	};
+}
+
+function pluginManifestStagedGitIssues(
+	repoRoot: string,
+): readonly AgentPluginIssue[] {
+	const staged = stagedPluginManifestGitResult(repoRoot);
+	return staged.ok ? [] : [staged.issue];
 }
 
 function pluginManifestStaged(repoRoot: string): boolean {
-	const result = spawnSync(
-		"git",
-		["diff", "--cached", "--name-only", "--", "plugins/hobo/plugin.json"],
-		{ cwd: repoRoot, encoding: "utf8" },
-	);
-	if (result.error !== undefined || result.status !== 0) return false;
-	return (result.stdout ?? "").trim().length > 0;
+	const staged = stagedPluginManifestGitResult(repoRoot);
+	if (!staged.ok) {
+		throw new Error(staged.issue.message);
+	}
+	return staged.staged;
 }
 
 function trustedGithubHeadSha(

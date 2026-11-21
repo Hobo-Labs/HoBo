@@ -49,7 +49,7 @@ pnpm run agent-plugin:build
 
 In CI, HoBo Fabric runs `pnpm run agent-plugin:build` in the same job
 immediately before `check:all` (which calls `agent-plugin:check`). The build writes a gitignored
-`.bundle-attestation.json` (only when `GITHUB_ACTIONS=true`) carrying the bundle sha256,
+`.bundle-attestation.json` (only when `GITHUB_ACTIONS=true`) with `"scope": "job-local"`, the bundle sha256,
 `GITHUB_RUN_ID`, `GITHUB_SHA`, and `runAttempt` when GitHub sets
 `GITHUB_RUN_ATTEMPT`. The recorded sha256 covers only `bin/hobo-mcp.mjs`; copied
 `fixtures/deploy` is checked separately for presence, not attestation bytes. It

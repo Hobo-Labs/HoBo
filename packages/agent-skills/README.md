@@ -18,7 +18,8 @@ a listing serves (boundary fixtured in
   sorted by name.
 - `checkSkillsConformance(root, options?)` — the bundle gate: every skill
   directory parses, no duplicate names, entry paths exist. Skills in the
-  default `HOBO_OWNED_SKILLS` set (the repo-local skills plus `hobo-setup`,
+  optional `strictSkillNames` set (callers pass `HOBO_OWNED_SKILLS` for the
+  repo-local skills plus `hobo-setup`,
   `hobo-deploy`, and `design-md`) are additionally held to the repository's
   own frontmatter rules: only Agent Skills fields this repo controls, name
   equal to the folder, and `metadata` as a map of decoded, non-empty string

@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_HAND_OFF_AUDIT_OPTIONS } from "../../packages/hobo-ci/src/hand-off-audit.ts";
+import {
+	auditHandOff,
+	DEFAULT_HAND_OFF_AUDIT_OPTIONS,
+	parseClaudeTranscript,
+} from "../../packages/hobo-ci/src/hand-off-audit.ts";
 
 const scriptPath = join(
 	dirname(fileURLToPath(import.meta.url)),
@@ -29,5 +33,23 @@ describe("audit-hand-off-transcript entry", () => {
 	it("accepts only transcript paths from argv", () => {
 		const source = readFileSync(scriptPath, "utf8");
 		expect(source).toMatch(/process\.argv\.slice\(2\)/u);
+	});
+
+	it("default options stay at least as strict as the legacy CLI defaults", () => {
+		const events = parseClaudeTranscript(
+			[
+				"{",
+				'"type":"assistant",',
+				'"message":{"content":[{"type":"text","text":"This host cannot provide a secure HoBo owner hand-off."}]},',
+				'"timestamp":1',
+				"}",
+			].join(""),
+		);
+		const legacy = auditHandOff(events, {
+			ownerFormAvailable: true,
+			ownerFormPrivacyVerified: false,
+		});
+		const current = auditHandOff(events, DEFAULT_HAND_OFF_AUDIT_OPTIONS);
+		expect(current.length).toBeGreaterThanOrEqual(legacy.length);
 	});
 });

@@ -299,7 +299,7 @@ export async function checkSkillsConformance(
 	root: string,
 	options: SkillsConformanceOptions = {},
 ): Promise<readonly SkillConformanceIssue[]> {
-	const strictSkills = new Set(options.strictSkillNames ?? HOBO_OWNED_SKILLS);
+	const strictSkills = new Set(options.strictSkillNames ?? []);
 	const issues: SkillConformanceIssue[] = [];
 	const seen = new Map<string, string>();
 	for (const dirent of await readdir(root, { withFileTypes: true })) {

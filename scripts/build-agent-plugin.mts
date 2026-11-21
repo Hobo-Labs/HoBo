@@ -35,6 +35,7 @@ type EsbuildBuildOptions = {
 };
 
 type BundleAttestationRecord = {
+	scope: "job-local";
 	sha256: string;
 	runId?: string;
 	runAttempt?: string;
@@ -135,7 +136,12 @@ async function main(): Promise<void> {
 		process.exitCode = 1;
 		return;
 	}
-	const payload: BundleAttestationRecord = { sha256, runId, commitSha };
+	const payload: BundleAttestationRecord = {
+		scope: "job-local",
+		sha256,
+		runId,
+		commitSha,
+	};
 	if (runAttempt !== undefined && runAttempt.length > 0) {
 		payload.runAttempt = runAttempt;
 	}

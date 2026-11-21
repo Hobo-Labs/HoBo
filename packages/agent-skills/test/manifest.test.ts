@@ -127,7 +127,11 @@ describe("loadSkillsManifest", () => {
 
 describe("checkSkillsConformance", () => {
 	it("passes the repo's real tree with zero issues, strict set included", async () => {
-		expect(await checkSkillsConformance(REPO_SKILLS_ROOT)).toEqual([]);
+		expect(
+			await checkSkillsConformance(REPO_SKILLS_ROOT, {
+				strictSkillNames: HOBO_OWNED_SKILLS,
+			}),
+		).toEqual([]);
 	});
 
 	it("reports missing SKILL.md, duplicates, and unparseable frontmatter", async () => {
@@ -155,7 +159,11 @@ describe("checkSkillsConformance", () => {
 			outsider:
 				"---\nname: outsider\ndescription: d\nupstream-field: kept\n---\n",
 		});
-		expect(await checkSkillsConformance(root)).toEqual([]);
+		expect(
+			await checkSkillsConformance(root, {
+				strictSkillNames: HOBO_OWNED_SKILLS,
+			}),
+		).toEqual([]);
 	});
 
 	it("rejects duplicate top-level frontmatter keys", () => {
@@ -179,7 +187,9 @@ description: d
 			"hobo-deploy": `---\nname: hobo-deploy\ndescription: d\nmetadata:\n  plugin: hobo\nlegacy : ${secrets[1]}\n---\n`,
 			outsider: '---\nname: outsider\ndescription: d\n"legacy": x\n---\n',
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: HOBO_OWNED_SKILLS,
+		});
 		expect(issues).toHaveLength(2);
 		expect(issues.map((issue) => issue.skill).sort()).toEqual([
 			"hobo-deploy",
@@ -211,7 +221,9 @@ description: d
 			sdlc: `---\nname: ${secrets[1]}\ndescription: d\n---\n`,
 			outsider: `---\nname: ${secrets[0]}\n---\n`,
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: HOBO_OWNED_SKILLS,
+		});
 		const codes = new Set(issues.map((issue) => issue.code));
 		for (const code of [
 			"name-folder-mismatch",
@@ -232,7 +244,9 @@ description: d
 		const root = await scratchTree({
 			helper: "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: HOBO_OWNED_SKILLS,
+		});
 		expect(
 			issues.some(
 				(issue) =>
@@ -250,7 +264,9 @@ description: d
 			draft: "---\nname: not-draft\ndescription: d\n---\n",
 			repo: "---\nname: repo\ndescription: d\nmetadata: scalar\n---\n",
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: HOBO_OWNED_SKILLS,
+		});
 		const bySkill = new Map(issues.map((issue) => [issue.skill, issue.code]));
 		expect(bySkill.get("hobo-setup")).toBe("disallowed-frontmatter-field");
 		expect(bySkill.get("hobo-deploy")).toBe("non-string-metadata");
@@ -267,7 +283,9 @@ description: d
 			draft:
 				"---\nname: draft\ndescription: d\nmetadata:\n  version: \"1\"\n  enabled: 'true'\n---\n",
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: HOBO_OWNED_SKILLS,
+		});
 		const invalid = issues.filter((issue) => issue.skill !== "draft");
 		expect(invalid).toHaveLength(3);
 		expect(invalid.every((issue) => issue.code === "non-string-metadata")).toBe(
@@ -283,11 +301,20 @@ description: d
 			"hobo-deploy":
 				"---\nname: hobo-deploy\ndescription: d\nmetadata:\n  key: [value]\n---\n",
 		});
-		const issues = await checkSkillsConformance(root);
+		const issues = await checkSkillsConformance(root, {
+			strictSkillNames: HOBO_OWNED_SKILLS,
+		});
 		expect(issues).toHaveLength(2);
 		expect(issues.every((issue) => issue.code === "non-string-metadata")).toBe(
 			true,
 		);
+	});
+
+	it("does not apply the HoBo-owned allowlist unless callers pass strictSkillNames", async () => {
+		const root = await scratchTree({
+			draft: "---\nname: draft\ndescription: d\nlegacy: kept\n---\n",
+		});
+		expect(await checkSkillsConformance(root)).toEqual([]);
 	});
 
 	it("keeps third-party skills outside the default strict set", () => {
