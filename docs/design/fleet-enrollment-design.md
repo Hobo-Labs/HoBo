@@ -459,6 +459,14 @@ The hook:
 4. Exits zero only for that exact authorization.
 5. Produces no secrets in stdout/stderr and exits nonzero on timeout, rejection, or uncertain response.
 
+The hook accepts only HTTP 200 with a JSON receipt containing `ok: true`,
+`slotId`, `claimId`, `accountId`, `profileId`, `runnerName`, and the exact
+`executionKey` from the request. The endpoint must send that receipt only after
+the matching authorization has committed and while it remains nonterminal. The
+hook relies on an authenticated, fresh response. It checks the claimed run ID
+and attempt against its runner context before sending the request. The endpoint
+and assignment lookup are still unwired in the production controller.
+
 The controller verifies current assignment with GitHub using central credentials: installation/repository, job ID, run ID, run attempt, assigned runner name, status, runner group, and required execution profile. A worker-supplied local payload alone is insufficient because a malicious worker could forge it.
 
 Implementation note: `authorizeStartFence` in `packages/ci-gh-actions/src/fleet-v2/start-fence.ts` is the parse boundary for the hook body — it zod-`safeParse`s the untrusted `unknown` input before any field is read (an `anti-slop/no-unknown-parameters` boundary waiver, mirroring `packages/ci/src/fleet-v2/parse.ts`), then cross-checks every claimed identity field against the GitHub assignment lookup.
