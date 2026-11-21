@@ -238,12 +238,17 @@ if build_help="$(docker build --help 2>/dev/null)" && grep -q -- '--rewrite-time
   rewrite_args=(--rewrite-timestamp=true)
 fi
 cache_args=()
+cache_exported_file=""
 deps_uses_containerd_image_store() {
   [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" == *io.containerd.snapshotter* ]]
 }
 if deps_uses_containerd_image_store; then
   if [[ -n "${GITHUB_REPOSITORY:-}" ]]; then
     cache_args=(--cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache")
+    if [[ "${HOBO_CI_DEPS_EXPORT_BUILDCACHE:-0}" == "1" ]]; then
+      cache_args+=(--cache-to "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY,,}/hobo-ci-deps:buildcache,mode=min")
+      cache_exported_file="${HOBO_CI_DEPS_BUILDCACHE_EXPORTED_FILE:-}"
+    fi
   fi
 else
   echo "deps registry cache import skipped: classic image store"
@@ -265,6 +270,9 @@ ensure_deps_build_headroom
   --build-arg "SOURCE_DATE_EPOCH=${epoch}" \
   -f packages/ci-gh-actions/deploy/ci-runner/deps/Dockerfile \
   -t "$candidate" "$context"
+if [[ -n "$cache_exported_file" ]]; then
+  printf 'exported\n' > "$cache_exported_file"
+fi
 
 echo "Verifying the job's offline install is already up to date"
 cp -a "$context/." "$verification/"

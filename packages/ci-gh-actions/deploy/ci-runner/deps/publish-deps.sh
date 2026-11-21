@@ -21,6 +21,8 @@ fi
 
 local_key="$(docker image inspect hobo-ci-deps:local --format '{{ index .Config.Labels "hobo.ci.deps-key" }}' 2>/dev/null || true)"
 source="$candidate"
+cache_export_marker="$(mktemp)"
+trap 'rm -f "$cache_export_marker"' EXIT
 if ! docker image inspect "$candidate" >/dev/null 2>&1; then
   if [ "$local_key" = "$key" ]; then
     source="hobo-ci-deps:local"
@@ -29,7 +31,8 @@ if ! docker image inspect "$candidate" >/dev/null 2>&1; then
     # Five of ci-deps-publish.yml's 20 minutes; build, push and cache export need the rest.
     HOBO_CI_DEPS_BUILD_WAIT_MS="${HOBO_CI_DEPS_BUILD_WAIT_MS:-300000}" \
       node --experimental-strip-types --no-warnings --import ./scripts/lib/ts-source-resolve.mts scripts/ci/wait-deps-build-window.mts
-    bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
+    HOBO_CI_DEPS_EXPORT_BUILDCACHE=1 HOBO_CI_DEPS_BUILDCACHE_EXPORTED_FILE="$cache_export_marker" \
+      bash packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh
   fi
 fi
 
@@ -41,6 +44,10 @@ cache_image="ghcr.io/${repository,,}/hobo-ci-deps:buildcache"
 deps_uses_containerd_image_store() {
   [[ "$(docker info --format '{{json .DriverStatus}}' 2>/dev/null)" == *io.containerd.snapshotter* ]]
 }
+if [ -s "$cache_export_marker" ] && deps_uses_containerd_image_store; then
+  echo "deps buildcache exported during the image build"
+  exit 0
+fi
 if ! deps_uses_containerd_image_store; then
   echo "deps registry cache export skipped: classic image store"
   exit 0
@@ -52,7 +59,7 @@ fi
 buildx_help="$(docker buildx build --help 2>&1 || true)"
 
 context="$(mktemp -d)"
-trap 'rm -rf "$context"' EXIT
+trap 'rm -rf "$context" "$cache_export_marker"' EXIT
 toolchain="$(docker image inspect "$source" --format '{{ index .Config.Labels "hobo.ci.toolchain" }}')"
 if [[ ! "$toolchain" =~ ^v[0-9a-f]{12}$ ]]; then
   echo "deps image has no valid toolchain label; cannot export buildcache" >&2

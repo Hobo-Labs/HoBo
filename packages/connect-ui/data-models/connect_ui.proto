@@ -1,12 +1,16 @@
 syntax = "proto3";
 
 // Wire records for the provider-connection page's loopback boundary
+// (browser client <-> connect page server). The step's generated view
+// (view.ts StepView) is carried as a google.protobuf.Struct; the browser
+// renders it with vercel-labs/ui (UI SDK) parts.
 package hobo.connectui.v1;
 
 import "google/protobuf/struct.proto";
 
 // POST /s/<token>/action: the only request body the server accepts.
 message ConnectActionRequest {
+  // connect.submit | connect.chooseStore | connect.start | connect.cancel
   string action = 1;
   // String values only; the flow refuses params it does not expect.
   map<string, string> params = 2;
@@ -22,20 +26,21 @@ message BrowserDirectiveRecord {
 
 // GET /s/<token>/view and the POST /action response.
 message ConnectViewRecord {
+  // The ConnectStep kind: configure | choose-secret-store |
+  // create-github-app | authorize-vercel | depositing | connected | failed
   string step = 1;
   bool terminal = 2;
   reserved 3;
   reserved "composed_by";
-  google.protobuf.Struct spec = 4;
-  string composition_source = 6 [json_name = "composedBy"];
+  google.protobuf.Struct view = 4;
   BrowserDirectiveRecord directive = 5;
-  google.protobuf.Struct view = 7;
 }
 
 // A terminal step's store references (never values).
 message ConnectedReferences {
   // github | vercel
   string provider = 1;
+  // infisical | 1password | bitwarden
   string store = 2;
   repeated string references = 3;
 }
