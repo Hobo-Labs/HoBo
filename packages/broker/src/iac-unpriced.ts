@@ -1,3 +1,4 @@
+import { types } from "node:util";
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import {
 	isBoundedPricingInput,
@@ -28,6 +29,9 @@ import {
 import { validIacPolicyGate } from "./iac-policy-gate.js";
 import type { IacTargetAdmissionDeps } from "./iac-target.js";
 import type { GateDecision } from "./planes.js";
+
+const hasOwnAdmissionField = Object.hasOwn;
+const isAdmissionProxy = types.isProxy;
 
 export interface IacUnpricedAuthorizationInput {
 	readonly requestId: string;
@@ -105,6 +109,7 @@ function uncertain(
 }
 
 /** Admit an explicitly selected unpriced target without claiming a financial bound. */
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: external request fields are checked before access or authority work. */
 export async function admitUnpricedIacTarget(
 	input: {
 		requestId: string;
@@ -115,20 +120,86 @@ export async function admitUnpricedIacTarget(
 		authorizeUnpriced: IacUnpricedAuthorizer;
 	},
 ): Promise<IacTargetAdmissionDecision> {
-	const { requestId } = input;
-	const targetId = input.inventory.targetId;
-	if (
-		!name(requestId) ||
-		!isBoundedPricingInput(input.inventory) ||
-		!isBoundedPricingInput(input.pricing)
-	)
+	let requestId = "";
+	let requestedInventory: TargetPricingInventory;
+	let requestedPricing: TargetPricingAvailability;
+	try {
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			isAdmissionProxy(input) ||
+			Array.isArray(input)
+		)
+			throw new Error("invalid request");
+		const keys = Reflect.ownKeys(input);
+		if (
+			keys.length !== 3 ||
+			keys.some(
+				(key) =>
+					key !== "requestId" && key !== "inventory" && key !== "pricing",
+			)
+		)
+			throw new Error("invalid request fields");
+		const id = Object.getOwnPropertyDescriptor(input, "requestId");
+		const inventory = Object.getOwnPropertyDescriptor(input, "inventory");
+		const pricing = Object.getOwnPropertyDescriptor(input, "pricing");
+		if (
+			id === undefined ||
+			!hasOwnAdmissionField(id, "value") ||
+			!id.enumerable ||
+			typeof id.value !== "string" ||
+			inventory === undefined ||
+			!hasOwnAdmissionField(inventory, "value") ||
+			!inventory.enumerable ||
+			pricing === undefined ||
+			!hasOwnAdmissionField(pricing, "value") ||
+			!pricing.enumerable
+		)
+			throw new Error("invalid request fields");
+		requestId = id.value;
+		requestedInventory = inventory.value;
+		requestedPricing = pricing.value;
+	} catch {
 		return denied(
-			requestId,
-			targetId,
+			"",
+			"",
 			"REQUEST_INVALID",
 			"a bounded request and target are required",
 		);
-	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, input.pricing))
+	}
+	if (!name(requestId))
+		return denied(
+			"",
+			"",
+			"REQUEST_INVALID",
+			"a bounded request and target are required",
+		);
+	if (
+		!isBoundedPricingInput(requestedInventory) ||
+		!isBoundedPricingInput(requestedPricing)
+	)
+		return denied(
+			requestId,
+			"",
+			"REQUEST_INVALID",
+			"a bounded request and target are required",
+		);
+	if (!isExactProtoMessage(TargetPricingInventorySchema, requestedInventory))
+		return denied(
+			requestId,
+			"",
+			"TARGET_INVENTORY_INCOMPLETE",
+			"target inventory contains unsupported or malformed data",
+		);
+	const targetId = requestedInventory.targetId;
+	if (typeof targetId !== "string" || !name(targetId))
+		return denied(
+			requestId,
+			"",
+			"TARGET_INVENTORY_INCOMPLETE",
+			"a bounded target is required",
+		);
+	if (!isExactProtoMessage(TargetPricingAvailabilitySchema, requestedPricing))
 		return denied(
 			requestId,
 			targetId,
@@ -138,8 +209,8 @@ export async function admitUnpricedIacTarget(
 	let inventory: TargetPricingInventory;
 	let pricing: TargetPricingAvailability;
 	try {
-		inventory = clone(TargetPricingInventorySchema, input.inventory);
-		pricing = clone(TargetPricingAvailabilitySchema, input.pricing);
+		inventory = clone(TargetPricingInventorySchema, requestedInventory);
+		pricing = clone(TargetPricingAvailabilitySchema, requestedPricing);
 	} catch {
 		return denied(
 			requestId,
@@ -276,7 +347,13 @@ export async function admitUnpricedIacTarget(
 		),
 	].sort();
 	const entitlementKeys = ledger.entitlements
-		.map((row) => JSON.stringify([row.bucketId, row.unit]))
+		.map((row) =>
+			JSON.stringify([
+				row.kind === "" ? "allowance" : row.kind,
+				row.bucketId,
+				row.unit,
+			]),
+		)
 		.sort();
 	const validReservation = (value: BudgetReservation): boolean => {
 		try {
@@ -321,7 +398,13 @@ export async function admitUnpricedIacTarget(
 				) &&
 				JSON.stringify(
 					value.entitlementClaims
-						.map((claim) => JSON.stringify([claim.bucketId, claim.unit]))
+						.map((claim) =>
+							JSON.stringify([
+								claim.kind === "" ? "allowance" : claim.kind,
+								claim.bucketId,
+								claim.unit,
+							]),
+						)
 						.sort(),
 				) === JSON.stringify(entitlementKeys) &&
 				value.entitlementClaims.every((claim) => claim.units === 0)
@@ -468,3 +551,4 @@ export async function admitUnpricedIacTarget(
 		unpricedPolicyProof: proof,
 	});
 }
+/* oxlint-enable anti-slop/no-runtime-typeof */

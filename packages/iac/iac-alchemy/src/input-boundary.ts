@@ -3,6 +3,9 @@ import { create } from "@bufbuild/protobuf";
 import { type Target, TargetSchema } from "./_generated/alchemy_iac_pb.js";
 import { AlchemyIacError } from "./plan.js";
 
+const hasOwnDescriptor = Object.hasOwn;
+const isProxy = types.isProxy;
+
 const TARGET_KEYS = [
 	"targetId",
 	"tenantId",
@@ -30,7 +33,7 @@ function dataRecord(
 	if (
 		typeof input !== "object" ||
 		input === null ||
-		types.isProxy(input) ||
+		isProxy(input) ||
 		Array.isArray(input)
 	)
 		return undefined;
@@ -39,8 +42,7 @@ function dataRecord(
 	const allowed = new Set(
 		typeName === undefined ? required : [...required, "$typeName"],
 	);
-	// Refuse enumerable extras before collecting all own keys, so common oversized
-	// records stop at the first unknown property.
+
 	let count = 0;
 	for (const key in input) {
 		if (++count > allowed.size || !allowed.has(key)) return undefined;
@@ -54,7 +56,7 @@ function dataRecord(
 		const property = Object.getOwnPropertyDescriptor(input, key);
 		if (
 			property === undefined ||
-			!("value" in property) ||
+			!hasOwnDescriptor(property, "value") ||
 			!property.enumerable
 		)
 			return undefined;
@@ -67,12 +69,12 @@ function dataRecord(
 }
 
 function dataArray(input: unknown, limit: number): unknown[] | undefined {
-	if (types.isProxy(input) || !Array.isArray(input)) return undefined;
+	if (isProxy(input) || !Array.isArray(input)) return undefined;
 	if (Object.getPrototypeOf(input) !== Array.prototype) return undefined;
 	const length = Object.getOwnPropertyDescriptor(input, "length");
 	if (
 		length === undefined ||
-		!("value" in length) ||
+		!hasOwnDescriptor(length, "value") ||
 		!Number.isSafeInteger(length.value) ||
 		length.value < 0 ||
 		length.value > limit
@@ -85,7 +87,7 @@ function dataArray(input: unknown, limit: number): unknown[] | undefined {
 		const property = Object.getOwnPropertyDescriptor(input, String(index));
 		if (
 			property === undefined ||
-			!("value" in property) ||
+			!hasOwnDescriptor(property, "value") ||
 			!property.enumerable
 		)
 			return undefined;
@@ -104,7 +106,6 @@ function boundedName(value: unknown): value is string {
 	);
 }
 
-/** Copy only complete, bounded data before protobuf can normalize any input. */
 export function captureAlchemyTarget(input: unknown): Target {
 	try {
 		const data = dataRecord(input, TARGET_KEYS, "hobo.iac.alchemy.v1.Target");
@@ -180,19 +181,14 @@ export function captureAlchemyTarget(input: unknown): Target {
 	}
 }
 
-/** Capture the own target field without running an options proxy or accessor. */
 export function captureAlchemyTargetOption(options: unknown): Target {
 	try {
-		if (
-			typeof options !== "object" ||
-			options === null ||
-			types.isProxy(options)
-		)
+		if (typeof options !== "object" || options === null || isProxy(options))
 			throw new Error("invalid options");
 		const property = Object.getOwnPropertyDescriptor(options, "target");
 		if (
 			property === undefined ||
-			!("value" in property) ||
+			!hasOwnDescriptor(property, "value") ||
 			!property.enumerable
 		)
 			throw new Error("invalid target option");
@@ -206,10 +202,9 @@ export function captureAlchemyTargetOption(options: unknown): Target {
 	}
 }
 
-/** Snapshot the host options container before any option accessor can run. */
 export function captureAlchemyOptions<T extends object>(input: T): T {
 	try {
-		if (input === null || types.isProxy(input) || Array.isArray(input))
+		if (input === null || isProxy(input) || Array.isArray(input))
 			throw new Error("invalid options");
 		const prototype = Object.getPrototypeOf(input);
 		if (prototype !== Object.prototype && prototype !== null)
@@ -226,13 +221,13 @@ export function captureAlchemyOptions<T extends object>(input: T): T {
 			const property = Object.getOwnPropertyDescriptor(input, key);
 			if (
 				property === undefined ||
-				!("value" in property) ||
+				!hasOwnDescriptor(property, "value") ||
 				!property.enumerable
 			)
 				throw new Error("computed option");
 			values[key] = property.value;
 		}
-		// SAFETY: this copy contains exactly the original own data fields and preserves their value types.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this copy contains exactly the original own data fields and preserves their value types.
 		return Object.freeze(values) as T;
 	} catch {
 		throw new AlchemyIacError(

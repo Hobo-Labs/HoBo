@@ -10,16 +10,33 @@ import {
 	TargetPricingInventorySchema,
 	type TargetPricingModel,
 	type TargetPricingResource,
+	type WorkloadDelta,
 } from "./_generated/pricing_pb.js";
 import { resolveRateCard } from "./catalog.js";
 import {
+	hasExplicitFixedChargeCoverage,
+	hasExplicitUnreferencedFixedCoverage,
+} from "./fixed-charge-coverage.js";
+import {
 	isBoundedPricingInput,
 	isExactProtoMessage,
+	isSupportedPricingRealm,
 	type JsonValue,
 	stableHash,
 } from "./json.js";
-import { quoteScenario } from "./quote.js";
+import { quoteScenarioV2 } from "./quote.js";
+import { utcPricingTimeOrder } from "./time-order.js";
 import { isQuoteVector } from "./types.js";
+
+const hasOwn = Object.hasOwn;
+const getOwnPropertyDescriptors = Object.getOwnPropertyDescriptors;
+const cloneData = structuredClone;
+function ownDescriptorValue(fields: PropertyDescriptorMap, key: string) {
+	const descriptor = hasOwn(fields, key) ? fields[key] : undefined;
+	return descriptor !== undefined && hasOwn(descriptor, "value")
+		? descriptor.value
+		: undefined;
+}
 
 export type TargetPricingInventoryInput = Omit<
 	TargetPricingInventory,
@@ -49,8 +66,6 @@ export type TargetPricingQuote =
 	  }
 	| { readonly ok: false; readonly code: string; readonly reason: string };
 
-/** A provider's coverage in this declared target; it is not an independently
- * authenticated catalog or a separately allocated provider price. */
 export type TargetProviderPricingCoverage = {
 	readonly providerId: string;
 	readonly resources: readonly {
@@ -81,8 +96,7 @@ export type TargetProviderPricingCoverage = {
 
 export interface TargetPricingAssessment {
 	readonly quote: TargetPricingQuote;
-	/** This describes the caller's declared inventory; a trusted host must still
-	 * verify completeness before execution. No per-provider cost is inferred. */
+
 	readonly providerCoverage:
 		| {
 				readonly basis: "declared-inventory";
@@ -94,11 +108,13 @@ export interface TargetPricingAssessment {
 export function createTargetPricingInventory(
 	input: TargetPricingInventoryInput,
 ): TargetPricingInventory {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	if (!isBoundedPricingInput(input))
 		throw new TypeError("invalid or unbounded target pricing inventory");
 	let stable: TargetPricingInventoryInput;
 	try {
-		stable = structuredClone(input);
+		stable = cloneData(input);
 	} catch {
 		throw new TypeError("invalid target pricing inventory");
 	}
@@ -123,12 +139,12 @@ function validInventoryInput(input: TargetPricingInventoryInput): boolean {
 		allowed: readonly string[],
 		typeName: string,
 	) => {
-		const fields = Object.getOwnPropertyDescriptors(value);
-		const unknown = fields.$unknown?.value;
+		const fields = getOwnPropertyDescriptors(value);
+		const unknown = ownDescriptorValue(fields, "$unknown");
 		return (
-			(!Object.hasOwn(fields, "$typeName") ||
-				fields.$typeName?.value === typeName) &&
-			(!Object.hasOwn(fields, "$unknown") ||
+			(!hasOwn(fields, "$typeName") ||
+				ownDescriptorValue(fields, "$typeName") === typeName) &&
+			(!hasOwn(fields, "$unknown") ||
 				(Array.isArray(unknown) && unknown.length === 0)) &&
 			Object.keys(fields).every(
 				(key) =>
@@ -184,12 +200,13 @@ function validInventoryInput(input: TargetPricingInventoryInput): boolean {
 export function targetPricingUnavailable(
 	reason: string,
 ): TargetPricingAvailability {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	return create(TargetPricingAvailabilitySchema, {
 		state: { case: "unavailable", value: { reason } },
 	});
 }
 
-/** Hash a complete target independently of whether it has a pricing model. */
 export function hashTargetPricingInventory(
 	input: TargetPricingInventory,
 ): string | undefined {
@@ -219,11 +236,13 @@ export function hashTargetPricingInventory(
 export function targetPricingModel(
 	input: TargetPricingModelInput,
 ): TargetPricingAvailability {
+	if (!isSupportedPricingRealm())
+		throw new TypeError("unsupported pricing prototype environment");
 	if (!isBoundedPricingInput(input))
 		throw new TypeError("invalid or unbounded target pricing model");
 	let stable: TargetPricingModelInput;
 	try {
-		stable = structuredClone(input);
+		stable = cloneData(input);
 	} catch {
 		throw new TypeError("invalid target pricing model");
 	}
@@ -246,12 +265,12 @@ function validModelInput(input: TargetPricingModelInput): boolean {
 		allowed: readonly string[],
 		typeName: string,
 	) => {
-		const fields = Object.getOwnPropertyDescriptors(value);
-		const metadata = fields.$typeName?.value;
-		const unknown = fields.$unknown?.value;
+		const fields = getOwnPropertyDescriptors(value);
+		const metadata = ownDescriptorValue(fields, "$typeName");
+		const unknown = ownDescriptorValue(fields, "$unknown");
 		return (
-			(!Object.hasOwn(fields, "$typeName") || metadata === typeName) &&
-			(!Object.hasOwn(fields, "$unknown") ||
+			(!hasOwn(fields, "$typeName") || metadata === typeName) &&
+			(!hasOwn(fields, "$unknown") ||
 				(Array.isArray(unknown) && unknown.length === 0)) &&
 			Object.keys(fields).every(
 				(key) =>
@@ -323,11 +342,15 @@ function refuse(code: string, reason: string): TargetPricingQuote {
 	return { ok: false, code, reason };
 }
 
-/** Quote the complete target jointly so shared credits and commitments are consumed once. */
 export function quoteTargetPricing(
 	inventory: TargetPricingInventory,
 	availability: TargetPricingAvailability,
 ): TargetPricingQuote {
+	if (!isSupportedPricingRealm())
+		return refuse(
+			"PRICING_REALM_UNSUPPORTED",
+			"pricing requires an unchanged standard Object.prototype",
+		);
 	if (!isBoundedPricingInput(inventory) || !isBoundedPricingInput(availability))
 		return refuse(
 			"PRICING_INPUT_TOO_LARGE",
@@ -403,6 +426,16 @@ export function quoteTargetPricing(
 			"PRICING_MODEL_SCOPE_MISMATCH",
 			"model plan or tenant differs from target inventory",
 		);
+	if (inventory.operation === "destroy" && scenario.action !== "destroy")
+		return refuse(
+			"PRICING_MODEL_UNSUPPORTED",
+			"destroy requires an explicit destroy pricing scenario",
+		);
+	if (scenario.action === "destroy" && inventory.operation !== "destroy")
+		return refuse(
+			"PRICING_MODEL_SCOPE_MISMATCH",
+			"destroy pricing requires a destroy operation",
+		);
 	const { catalog, state, options } = scenario;
 	if (
 		catalog === undefined ||
@@ -427,7 +460,11 @@ export function quoteTargetPricing(
 			"TARGET_PRICING_INCOMPLETE",
 			"every target resource needs exactly one candidate and binding",
 		);
-	const used: { productId: string; agreementId: string }[] = [];
+	const used: {
+		productId: string;
+		agreementId: string;
+		workload: WorkloadDelta;
+	}[] = [];
 	for (const workload of scenario.baseline) {
 		const products = catalog.products.filter(
 			(entry) => entry.id === workload.productRef,
@@ -449,10 +486,28 @@ export function quoteTargetPricing(
 				"PRICING_MODEL_SCOPE_MISMATCH",
 				"baseline workload does not match its tenant and product agreement",
 			);
+		const resourceMatch = inventory.resources.find(
+			(resource) =>
+				resource.productId === workload.productRef &&
+				resource.providerId === product.providerId &&
+				resource.providerAccountRef === agreement.providerAccountRef,
+		);
+		if (resourceMatch === undefined) {
+			return refuse(
+				"PRICING_MODEL_SCOPE_MISMATCH",
+				"baseline workload must align with target inventory product, provider, and account",
+			);
+		}
 		const dimensions = product.meters.map((meter) => meter.dimension);
 		const measured = new Set(
 			workload.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== workload.usage.length) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"baseline usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !validName(dimension)) ||
 			new Set(dimensions).size !== dimensions.length ||
@@ -463,7 +518,7 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"baseline usage must cover every declared meter without unmodeled dimensions",
 			);
-		used.push({ productId: product.id, agreementId: agreement.id });
+		used.push({ productId: product.id, agreementId: agreement.id, workload });
 	}
 	for (const binding of model.bindings) {
 		const resource = inventory.resources.find(
@@ -510,6 +565,12 @@ export function quoteTargetPricing(
 		const measured = new Set(
 			candidate.usage.map((measurement) => measurement.dimension),
 		);
+		if (measured.size !== candidate.usage.length) {
+			return refuse(
+				"TARGET_PRICING_INCOMPLETE",
+				"candidate usage must not repeat a meter dimension",
+			);
+		}
 		if (
 			dimensions.some((dimension) => !validName(dimension)) ||
 			new Set(dimensions).size !== dimensions.length ||
@@ -520,10 +581,34 @@ export function quoteTargetPricing(
 				"TARGET_PRICING_INCOMPLETE",
 				"candidate usage must cover every declared meter without unmodeled dimensions",
 			);
-		used.push({ productId: product.id, agreementId: agreement.id });
+		used.push({
+			productId: product.id,
+			agreementId: agreement.id,
+			workload: candidate,
+		});
 	}
-	const quote = quoteScenario(scenario);
-	if (!isQuoteVector(quote)) return refuse(quote.code, quote.message);
+	const quote = quoteScenarioV2(scenario);
+	if (!isQuoteVector(quote))
+		return refuse(
+			quote.code === "PRICING_FIXED_QUANTITY_UNAVAILABLE" ||
+				quote.code === "PRICING_FIXED_SELECTOR_UNAVAILABLE"
+				? "TARGET_PRICING_INCOMPLETE"
+				: quote.code,
+			quote.message,
+		);
+	if (
+		!hasExplicitUnreferencedFixedCoverage(
+			catalog,
+			state.agreements,
+			[...scenario.baseline, ...scenario.candidate],
+			scenario.at,
+			scenario.horizon,
+		)
+	)
+		return refuse(
+			"TARGET_PRICING_INCOMPLETE",
+			"an active agreement is missing a fixed-charge quantity",
+		);
 	if (
 		quote.unpriced.length > 0 ||
 		quote.eligibility?.eligible !== true ||
@@ -551,6 +636,7 @@ export function quoteTargetPricing(
 			agreement,
 			scenario.at,
 			scenario.horizon,
+			utcPricingTimeOrder,
 		);
 		if (
 			rateCard.charges.length === 0 ||
@@ -559,11 +645,17 @@ export function quoteTargetPricing(
 					charge.variant.case === undefined ||
 					(charge.variant.case === "usage" &&
 						!dimensions.has(charge.variant.value.dimension)),
+			) ||
+			!hasExplicitFixedChargeCoverage(
+				rateCard,
+				agreement,
+				row.workload,
+				dimensions.size > 0,
 			)
 		)
 			return refuse(
 				"TARGET_PRICING_INCOMPLETE",
-				"rate-card charges must have declared product meters",
+				"the rate card needs applicable charges and explicit quantities",
 			);
 	}
 	return {
@@ -585,9 +677,6 @@ export function quoteTargetPricing(
 	};
 }
 
-/** Explain provider coverage using the same joint quote used for routing.
- * Binding disclosure is structural only; failed joint quotes do not establish
- * that any provider is independently priceable. */
 export function assessTargetPricing(
 	inventory: TargetPricingInventory,
 	availability: TargetPricingAvailability,

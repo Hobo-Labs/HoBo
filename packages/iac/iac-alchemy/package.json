@@ -77,12 +77,13 @@
 		"miniflare": "4.20260722.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
-		"@types/node": "^22.15.29"
+		"@types/node": "^24.13.2"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
+		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts && node --experimental-strip-types test/ensure-integration-built.mts && tsc --noEmit -p tsconfig.secret-tests.json && tsc --noEmit -p tsconfig.capability-tests.json",
 		"test": "vitest run",
 		"test:contract:consumer": "vitest run contracts/consumer"
 	}
