@@ -54,11 +54,13 @@ const esbuild: EsbuildModule = requireFromHoboPackage("esbuild");
 
 async function main(): Promise<void> {
 	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
+	const porcelainBeforeBuild = spawnSync("git", ["status", "--porcelain"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
 	const checkoutCleanBeforeBuild =
-		spawnSync("git", ["status", "--porcelain"], {
-			cwd: repoRoot,
-			encoding: "utf8",
-		}).stdout?.trim().length === 0;
+		porcelainBeforeBuild.status === 0 &&
+		(porcelainBeforeBuild.stdout ?? "").trim().length === 0;
 	rmSync(attestationPath, { force: true });
 	mkdirSync(outdir, { recursive: true });
 	const result = await esbuild.build({

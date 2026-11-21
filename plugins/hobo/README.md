@@ -58,9 +58,10 @@ GitHub OIDC artifact attestation or cross-job provenance; any step in the same
 Actions job could mint a matching file. `pnpm agent:check` selects
 `agent-plugin:check` on affected changes to `plugins/hobo/**`, synced skills, and
 related MCP sources via `scripts/relevant-check-policy.ts`, not only on the full
-`check:all` lane. Attestation verification runs only
-when `GITHUB_ACTIONS=true`; other CI signals still require the bundle but fail
-closed on attestation. The check refuses a bundle whose attestation does not
+`check:all` lane. Attestation verification runs only when `GITHUB_ACTIONS=true`; other CI
+signals (for example `TF_BUILD` alone) still require the bundle but report that
+attestation must be checked on a GitHub Actions runner — they do not skip
+verification silently. The check refuses a bundle whose attestation does not
 match this workflow run, checkout, attempt, and sha256. In
 `agent-plugin:check` runs `pnpm run agent-plugin:build` when `bin/hobo-mcp.mjs`
 is still absent, so local `check:all` and CI share the same self-contained gate.
