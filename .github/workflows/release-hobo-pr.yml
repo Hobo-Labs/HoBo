@@ -220,7 +220,7 @@ jobs:
           mode: save
 
   release-pr-gate:
-    name: HoBo release PR gate (required)
+    name: HoBo release integration PR gate
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push')
     needs: [route, release-hobo-integration]
     runs-on: ubuntu-24.04

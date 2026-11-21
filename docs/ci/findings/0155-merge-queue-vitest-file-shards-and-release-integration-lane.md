@@ -113,7 +113,7 @@ the sum of its files):
   hosts the four shards as `release-hobo-integration` on pull request **#2931
   only** (`ubuntu-24.04`, not a `pr-gate` need, skipped on `merge_group`).
   The train still lists this branch next to the release tags, and
-  `release-integration-measure-gate` reports `HoBo release PR gate (required)`
+  `release-integration-measure-gate` reports `HoBo release integration PR gate`
   if a train run ever starts. `job-scope` still skips the suites when the
   diff cannot reach them. Tags and the main train keep the lane in
   `release-hobo.yml`. `actions.lock` lists the new workflow's

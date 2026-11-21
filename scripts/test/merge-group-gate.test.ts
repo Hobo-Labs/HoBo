@@ -876,6 +876,7 @@ describe("release required gate", () => {
 		);
 		assert.equal(helper(script), helper(prGate));
 		assert.match(gate, /needs: \[route, release-contract, release-realize\]/u);
+		assert.match(gate, /name: HoBo release PR gate \(required\)/u);
 	});
 
 	it("accepts a skipped contract only for a route job that succeeded and attested it", () => {
@@ -928,6 +929,15 @@ describe("release required gate", () => {
 								if (contract === "failure" || contract === "cancelled")
 									assert.notEqual(run.status, 0, label);
 							}
+			const realizeFailure = spawnSync("bash", ["-c", script], {
+				env: {
+					...process.env,
+					CONTRACT_RESULT: "success",
+					REALIZE_RESULT: "failure",
+					ROUTE_RESULT: "success",
+				},
+			});
+			assert.notEqual(realizeFailure.status, 0);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

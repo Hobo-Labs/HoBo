@@ -21,8 +21,7 @@ describe("HoBo CI Fabric concurrency", () => {
 		expect(block?.[2]).toBe("${{ github.event_name == 'pull_request' }}");
 	});
 
-	it("gives PR sidecar jobs one hosted runner so they cannot starve the gate", () => {
-		const group = "${{ github.workflow }}-pr-sidecar-${{ github.ref }}";
+	it("keeps PR sidecar jobs out of a shared concurrency group that cancels pending runs", () => {
 		const sidecars = [
 			"ci-deps-image",
 			"pr-offpath",
@@ -31,6 +30,8 @@ describe("HoBo CI Fabric concurrency", () => {
 			"data-live",
 			"ci-guard",
 			"secret-scan",
+			"scripts-tests-build",
+			"scripts-tests",
 		];
 		for (const id of sidecars) {
 			const start = workflow.indexOf(`\n  ${id}:\n`);
@@ -38,16 +39,7 @@ describe("HoBo CI Fabric concurrency", () => {
 			const rest = workflow.slice(start + 1);
 			const end = rest.slice(1).search(/\n  [A-Za-z0-9_-]+:\n/);
 			const job = end < 0 ? rest : rest.slice(0, end + 1);
-			expect(job, id).toContain(`group: ${group}`);
-			expect(job, id).toContain("cancel-in-progress: false");
-		}
-		for (const id of ["scripts-tests-build", "scripts-tests"] as const) {
-			const scriptsStart = workflow.indexOf(`\n  ${id}:\n`);
-			const scriptsRest = workflow.slice(scriptsStart + 1);
-			const scriptsEnd = scriptsRest.slice(1).search(/\n  [A-Za-z0-9_-]+:\n/);
-			const scripts =
-				scriptsEnd < 0 ? scriptsRest : scriptsRest.slice(0, scriptsEnd + 1);
-			expect(scripts, id).not.toContain("pr-sidecar");
+			expect(job, id).not.toContain("pr-sidecar");
 		}
 	});
 });

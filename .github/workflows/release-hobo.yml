@@ -1564,7 +1564,7 @@ jobs:
           node --no-warnings scripts/ci/create-github-release.mts --tag "${{ github.ref_name }}" "${prerelease[@]}"
 
   release-pr-gate:
-    name: HoBo release contract PR gate
+    name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     needs: [route, release-contract, release-realize]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
@@ -1618,7 +1618,7 @@ jobs:
           esac
 
   release-integration-measure-gate:
-    name: HoBo release PR gate (required)
+    name: HoBo release integration PR gate
     # New workflow files do not run until they are on the default branch.
     # This reports the required check from the train on #2931's branch push.
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')))

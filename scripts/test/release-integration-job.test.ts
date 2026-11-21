@@ -102,6 +102,7 @@ describe("the slow integration lane is a merge-group gate", () => {
 		assert.match(integration.if, /github\.event_name == 'merge_group'/u);
 		assert.match(integration.if, /github\.event_name == 'push'/u);
 		assert.match(gate.if, /github\.event_name == 'push'/u);
+		assert.equal(gate.name, "HoBo release integration PR gate");
 		assert.ok(gate.needs.includes("release-hobo-integration"));
 		const lane = step(integration, LANE);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
@@ -172,7 +173,7 @@ describe("the slow integration lane is a merge-group gate", () => {
 			/github\.event_name == 'push'/u,
 		);
 		const measure = asObject(trainJobs?.["release-integration-measure-gate"]);
-		assert.equal(asText(measure?.name), "HoBo release PR gate (required)");
+		assert.equal(asText(measure?.name), "HoBo release integration PR gate");
 		assert.match(
 			asText(measure?.if) ?? "",
 			/github\.event_name == 'pull_request'/u,
