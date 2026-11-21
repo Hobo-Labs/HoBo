@@ -13,8 +13,8 @@ import {
 	prFabricGateJobsSucceeded,
 	reusePrFabricSetting,
 } from "../ci/pr-fabric-reuse.mts";
-import { readRunnerRouting } from "../ci/runner-routing.mts";
 import type { JsonValue } from "../ci/runner-routing.mts";
+import { readRunnerRouting } from "../ci/runner-routing.mts";
 
 const HEAD = "ca91473da26278a7c73a4f0dd48390904ba69ffe";
 const TREE = "1111111111111111111111111111111111111111";
@@ -126,7 +126,10 @@ describe("pr-fabric reuse on a merge group", () => {
 		assert.equal(DEFAULT_REUSE_PR_FABRIC, false);
 		const routing = readRunnerRouting(committed);
 		assert.ok(routing);
-		assert.equal(reusePrFabricSetting(committed), routing.mergeGroup.reusePrFabric);
+		assert.equal(
+			reusePrFabricSetting(committed),
+			routing.mergeGroup.reusePrFabric,
+		);
 		const project = JSON.parse(committed);
 		project.runnerRouting.mergeGroup.reusePrFabric = false;
 		assert.equal(reusePrFabricSetting(JSON.stringify(project)), false);
