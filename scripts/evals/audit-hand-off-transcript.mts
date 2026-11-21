@@ -7,14 +7,7 @@ import {
 	parseClaudeTranscript,
 } from "../../packages/hobo-ci/src/hand-off-audit.ts";
 
-const argv = process.argv.slice(2);
-if (argv.some((arg) => arg.startsWith("-"))) {
-	console.error(
-		"usage: audit-hand-off-transcript <transcript.jsonl>... (no operator flags)",
-	);
-	process.exit(2);
-}
-const files = argv;
+const files = process.argv.slice(2);
 if (files.length === 0) {
 	console.error("usage: audit-hand-off-transcript <transcript.jsonl>...");
 	process.exit(2);

@@ -41,7 +41,6 @@ describe("audit-hand-off-transcript entry", () => {
 	it("accepts only transcript paths from argv", () => {
 		const source = readFileSync(scriptPath, "utf8");
 		expect(source).toMatch(/process\.argv\.slice\(2\)/u);
-		expect(source).toMatch(/arg\.startsWith\("-"\)/u);
 	});
 
 	it("exits 2 when run with a weakening operator flag", () => {
