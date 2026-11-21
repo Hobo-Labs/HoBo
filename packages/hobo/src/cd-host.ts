@@ -60,9 +60,22 @@ export type CdPassCampReport = Readonly<{
 	detail: string;
 }>;
 
+/**
+ * What a pass did for the journal's fleet: `maintained` (copies made, a due
+ * backup taken), `failed` (why), or `none` (the journal is not a fleet, or
+ * the pass did not hold the fleet pass).
+ */
+export type CdJournalPass =
+	| Readonly<{ state: "maintained" }>
+	| Readonly<{ state: "failed"; detail: string }>
+	| Readonly<{ state: "none" }>;
+
+const JOURNAL_NONE: CdJournalPass = Object.freeze({ state: "none" });
+
 export type CdPassReport = Readonly<{
 	tick: TickReport;
 	reconciled: readonly CdPassCampReport[];
+	journal: CdJournalPass;
 	skipped: boolean;
 	skipReason?: string;
 }>;
@@ -349,6 +362,20 @@ export async function composeCdHost(
 			.catch(() => undefined);
 	}
 
+	async function maintainJournal(): Promise<CdJournalPass> {
+		const maintain = runtime.maintainJournal;
+		if (maintain === undefined) return JOURNAL_NONE;
+		try {
+			await maintain();
+			return Object.freeze({ state: "maintained" });
+		} catch (error) {
+			return Object.freeze({
+				state: "failed",
+				detail: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
+
 	async function runPass(
 		signal: AbortSignal,
 		allowRecord: () => boolean,
@@ -363,6 +390,7 @@ export async function composeCdHost(
 					steps: Object.freeze([]),
 				}),
 				reconciled: Object.freeze([]),
+				journal: JOURNAL_NONE,
 				skipped: true,
 				...(fleet.skipReason !== undefined
 					? { skipReason: fleet.skipReason }
@@ -409,6 +437,10 @@ export async function composeCdHost(
 				reconciled.every((entry) => entry.ok);
 			const tick = reconcilesOk ? await service.tick() : undefined;
 			if (signal.aborted) throw abortErrorOf(signal);
+			// The fleet's copies and due backups, whatever the Camps did: on
+			// serverless no instance stays warm for the fleet's own timer.
+			const journal = await maintainJournal();
+			if (signal.aborted) throw abortErrorOf(signal);
 			const passCounts = reconcilesOk && tick?.store;
 			if (passCounts && allowRecord()) {
 				if (signal.aborted) throw abortErrorOf(signal);
@@ -423,6 +455,7 @@ export async function composeCdHost(
 						steps: Object.freeze([]),
 					}),
 				reconciled: Object.freeze(reconciled),
+				journal,
 				skipped: false,
 			});
 		} finally {
