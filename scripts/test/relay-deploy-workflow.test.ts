@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { verifyEnvironmentProtection } from "../ci/relay-deploy-environment.mts";
 import {
 	decide,
 	deployDeadline,
@@ -92,7 +93,7 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
-	it("ends with a notice and no deploy until a secret store is bound, and names how one is", () => {
+	it("skips an absent store but makes an unreadable binding fatal", () => {
 		const decision = decide({
 			event: "push",
 			store: "absent",
@@ -100,6 +101,7 @@ describe("the relay deploy gate", () => {
 			inputDirs,
 		});
 		assert.equal(decision.run, false);
+		assert.notEqual(decision.fatal, true);
 		assert.ok(decision.reason.includes(RELAY_SECRET_STORE_BINDING));
 		assert.match(decision.reason, /hobo ci secret-store provision/u);
 		const broken = decide({
@@ -108,9 +110,10 @@ describe("the relay deploy gate", () => {
 			inputDirs,
 		});
 		assert.equal(broken.run, false);
+		assert.equal(broken.fatal, true);
 	});
 
-	it("admits only a complete HTTPS binding with a protected writer subject", () => {
+	it("admits only a complete HTTPS binding with an exact protected writer subject", () => {
 		assert.equal(storeBindingState(undefined), "absent");
 		assert.equal(storeBindingState("not json"), "unreadable");
 		assert.equal(
@@ -119,25 +122,31 @@ describe("the relay deploy gate", () => {
 			),
 			"unreadable",
 		);
-		assert.equal(
-			storeBindingState(
-				JSON.stringify({
-					kind: "infisical-self-hosted",
-					endpoint: "https://secrets.example",
-					projectId: "proj-runtime",
-					deployProjectId: "proj-deploy",
-					relayIdentityId: "relay-identity",
-					deployIdentityId: "deploy-identity",
-					deployCredentialIdentityId: "deploy-credential-identity",
-					deployOidcSubject:
-						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
-				}),
-			),
-			"bound",
-		);
+		const complete = {
+			kind: "infisical-self-hosted",
+			endpoint: "https://secrets.example",
+			projectId: "proj-runtime",
+			deployProjectId: "proj-deploy",
+			relayIdentityId: "relay-identity",
+			deployIdentityId: "deploy-identity",
+			deployCredentialIdentityId: "deploy-credential-identity",
+			deployOidcSubject:
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+		};
+		assert.equal(storeBindingState(JSON.stringify(complete)), "bound");
+		for (const deployOidcSubject of [
+			"repo:Hobo-Labs@*/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/HoBo@*:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:*",
+			"prefix:repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+		])
+			assert.equal(
+				storeBindingState(JSON.stringify({ ...complete, deployOidcSubject })),
+				"unreadable",
+			);
 	});
 
-	it("skips an incomplete legacy binding until repair instead of opening a failing deployment window", () => {
+	it("blocks an incomplete legacy binding with a fatal gate decision until repair", () => {
 		const legacy = JSON.stringify({
 			kind: "infisical-cloud-attach",
 			endpoint: "https://app.infisical.com",
@@ -156,15 +165,14 @@ describe("the relay deploy gate", () => {
 			"utf8",
 		);
 		assert.equal(storeBindingState(committed), "unreadable");
-		assert.equal(
-			decide({
-				event: "push",
-				store: storeBindingState(legacy),
-				changed: [RELAY_SECRET_STORE_BINDING],
-				inputDirs,
-			}).run,
-			false,
-		);
+		const blocked = decide({
+			event: "push",
+			store: storeBindingState(legacy),
+			changed: [RELAY_SECRET_STORE_BINDING],
+			inputDirs,
+		});
+		assert.equal(blocked.run, false);
+		assert.equal(blocked.fatal, true);
 	});
 
 	it("deploys a manual run, and a push whose range it cannot read", () => {
@@ -218,6 +226,81 @@ describe("the relay deploy gate", () => {
 			}).run,
 			false,
 		);
+	});
+});
+
+describe("relay GitHub environment protection", () => {
+	const protectedEnvironment = {
+		deployment_branch_policy: {
+			protected_branches: false,
+			custom_branch_policies: true,
+		},
+	};
+	const mainOnly = { branch_policies: [{ name: "main", type: "branch" }] };
+	type EnvironmentFixture = {
+		deployment_branch_policy: {
+			protected_branches: boolean;
+			custom_branch_policies: boolean;
+		} | null;
+	};
+	type BranchFixture = {
+		branch_policies: { name: string; type: string }[];
+	};
+
+	function github(
+		environment: EnvironmentFixture | null = protectedEnvironment,
+		branches: BranchFixture = mainOnly,
+	) {
+		const paths: string[] = [];
+		const send: typeof fetch = async (request) => {
+			const url = new URL(String(request));
+			paths.push(url.pathname);
+			if (environment === null) return Response.json({}, { status: 404 });
+			return Response.json(
+				url.pathname.endsWith("/deployment-branch-policies")
+					? branches
+					: environment,
+			);
+		};
+		return { send, paths };
+	}
+
+	it("requires an exact main-only deployment branch policy", async () => {
+		const fake = github();
+		const result = await verifyEnvironmentProtection(
+			"hobo-ci-deploy",
+			fake.send,
+		);
+		assert.equal(result.ok, true, result.detail);
+		assert.deepEqual(fake.paths, [
+			"/repos/Hobo-Labs/HoBo/environments/hobo-ci-deploy",
+			"/repos/Hobo-Labs/HoBo/environments/hobo-ci-deploy/deployment-branch-policies",
+		]);
+	});
+
+	it("fails closed on absent, unprotected, malformed, and unreachable environments", async () => {
+		for (const fake of [
+			github(null),
+			github({ ...protectedEnvironment, deployment_branch_policy: null }),
+			github(protectedEnvironment, {
+				branch_policies: [{ name: "release", type: "branch" }],
+			}),
+			github(protectedEnvironment, { branch_policies: [] }),
+		]) {
+			const result = await verifyEnvironmentProtection(
+				"hobo-ci-app-credentials",
+				fake.send,
+			);
+			assert.equal(result.ok, false, result.detail);
+		}
+		const unavailable = await verifyEnvironmentProtection(
+			"hobo-ci-deploy",
+			async () => {
+				throw new Error("offline");
+			},
+		);
+		assert.equal(unavailable.ok, false);
+		assert.equal((await verifyEnvironmentProtection("other")).ok, false);
 	});
 });
 
@@ -455,12 +538,13 @@ describe("the relay deploy workflow", () => {
 		}
 	});
 
-	it("verifies the secret store's CI identity by name before deploying", () => {
+	it("verifies only the reader in the deploy environment before deploying", () => {
 		const verify = step("Verify the secret store connection");
 		assert.match(
 			verify,
 			/node packages\/hobo\/dist\/bin\/hobo\.js ci secret-store verify/u,
 		);
+		assert.match(verify, /--identity reader/u);
 		assert.match(verify, /relay-deploy-secret-store-verify-report\.mts/u);
 		assert.doesNotMatch(verify, /\|\| true/u);
 		stepBefore(
@@ -469,7 +553,7 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("puts the reader and writer jobs in distinct protected environments", () => {
+	it("verifies actual protection and matching identity scopes in both environments", () => {
 		assert.match(
 			workflow,
 			/\n  deploy:\n(?:.*\n)*?    environment: hobo-ci-deploy\n/u,
@@ -477,6 +561,26 @@ describe("the relay deploy workflow", () => {
 		assert.match(
 			workflow,
 			/\n  app-credentials:\n(?:.*\n)*?    environment: hobo-ci-app-credentials\n/u,
+		);
+		const readerEnvironment = step("Verify the protected deploy environment");
+		assert.match(readerEnvironment, /relay-deploy-environment\.mts/u);
+		assert.match(readerEnvironment, /--environment hobo-ci-deploy/u);
+		stepBefore(
+			"Decide whether to deploy",
+			"Verify the protected deploy environment",
+		);
+		stepBefore(
+			"Verify the protected deploy environment",
+			"Build the deploy tool and the relay's declarations",
+		);
+		const writerEnvironment = step("Verify the protected writer environment");
+		assert.match(writerEnvironment, /--environment hobo-ci-app-credentials/u);
+		const writer = step("Verify the writer connection");
+		assert.match(writer, /--identity writer/u);
+		stepBefore("Build the deposit tool", "Verify the writer connection");
+		stepBefore(
+			"Verify the writer connection",
+			"Convert the manifest code and store the credentials (GitHub OIDC)",
 		);
 	});
 

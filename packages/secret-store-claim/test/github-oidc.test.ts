@@ -83,7 +83,7 @@ describe("the OIDC subject GitHub issues for a repository", () => {
 			template({ subClaimPrefix: "repo:Hobo-Labs@*/HoBo@*" }),
 			template({
 				useDefault: false,
-				includeClaimKeys: ["repository_owner", "job_job_workflow_ref"],
+				includeClaimKeys: ["repository_owner", "job_workflow_ref"],
 				useImmutableSubject: true,
 			}),
 		];

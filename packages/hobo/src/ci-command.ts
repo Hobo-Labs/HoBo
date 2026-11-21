@@ -287,6 +287,7 @@ function parseCiArgs(args: readonly string[]) {
 			org: { type: "string" },
 			"runs-on": { type: "string", multiple: true },
 			id: { type: "string" },
+			identity: { type: "string" },
 			"dry-run": { type: "boolean" },
 			launch: { type: "boolean" },
 			ref: { type: "string" },

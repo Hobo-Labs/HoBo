@@ -298,17 +298,20 @@ and on `workflow_dispatch`:
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
    No repository variable or secret is read. A legacy binding without the
    deploy project, distinct reader, or protected writer-environment subject is
-   unreadable to the gate: deployment is skipped with a notice until `connect`
-   repairs and commits it. There is no intentionally failing deploy window.
-2. *Verify the secret store connection*: the deploy job names protected
-   environment `hobo-ci-deploy` and, with `permissions: id-token: write`, signs
-   in as `hobo-ci-deploy-reader` at its own audience. It reads `VERCEL_TOKEN`
-   without logging the value, requires exactly Viewer membership in the deploy
-   project, and requires HTTP 403 from the relay-folder listing. The writer job
-   uses `hobo-ci-app-credentials`; writer verification signs in at its own
-   audience and requires HTTP 403 from the deploy project. Each issued session
-   is revoked and every other scope answer fails closed. The deploy-token read
-   never signs in as the writer. Until the owner provisions and commits the
+   unreadable to the gate: the deploy job fails with the `connect` repair until
+   the complete binding is committed, rather than reporting a green skip.
+2. *Verify the protected environment and secret store connection*: both jobs
+   first require GitHub API proof of an exact `main`-only custom deployment
+   branch policy. The deploy job names
+   `hobo-ci-deploy` and selects only the reader check. With
+   `permissions: id-token: write`, it signs in as `hobo-ci-deploy-reader` at its
+   own audience, reads `VERCEL_TOKEN` without logging the value, requires exactly
+   Viewer membership in the deploy project, and requires HTTP 403 from the
+   relay-folder listing. The app-credentials job names
+   `hobo-ci-app-credentials` and selects only writer verification before deposit:
+   sign-in at its own audience and HTTP 403 from the deploy project. Each issued
+   session is revoked and every other scope answer fails closed. The deploy-token
+   read never signs in as the writer. Until the owner provisions and commits the
    complete binding, no deploy token is read. See
    [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration

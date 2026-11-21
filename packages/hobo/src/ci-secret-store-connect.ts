@@ -612,6 +612,18 @@ export async function runCiSecretStoreVerify(
 			data: data("verify"),
 		};
 	const store = binding;
+	const selectedIdentity = text(input, "identity");
+	if (
+		selectedIdentity !== undefined &&
+		!["reader", "writer", "relay"].includes(selectedIdentity)
+	)
+		return {
+			ok: false,
+			status: "usage",
+			code: "HOBO_CI_SECRET_STORE_USAGE",
+			message: "--identity must be reader, writer, or relay.",
+			data: data("verify"),
+		};
 	const env = input.env;
 	const checks: VerifyCheck[] = [];
 	const inActions =
@@ -638,70 +650,87 @@ export async function runCiSecretStoreVerify(
 		return writerWorkloadJwt;
 	};
 	checks.push(
-		!inActions
+		selectedIdentity === "writer" || selectedIdentity === "relay"
 			? {
 					identity: "hobo-ci-deploy-reader",
 					identityId: store.deployCredentialIdentityId,
 					method: "GitHub Actions OIDC",
 					result: "not-run",
-					detail:
-						"needs a GitHub Actions job with id-token: write on main; the relay deploy workflow's 'Verify the secret store connection' step runs it",
+					detail: `not selected by --identity ${selectedIdentity}`,
 				}
-			: await readerRead(
-					store,
-					() =>
-						createInfisicalClient({
-							binding: parseInfisicalBinding({
-								siteUrl: store.endpoint,
-								projectId: store.deployProjectId,
-								environment: store.environment,
-								secretPath: "/",
+			: !inActions
+				? {
+						identity: "hobo-ci-deploy-reader",
+						identityId: store.deployCredentialIdentityId,
+						method: "GitHub Actions OIDC",
+						result: "not-run",
+						detail:
+							"needs the protected hobo-ci-deploy GitHub Actions job with id-token: write on main",
+					}
+				: await readerRead(
+						store,
+						() =>
+							createInfisicalClient({
+								binding: parseInfisicalBinding({
+									siteUrl: store.endpoint,
+									projectId: store.deployProjectId,
+									environment: store.environment,
+									secretPath: "/",
+								}),
+								auth: oidcAuth({
+									identityId: store.deployCredentialIdentityId,
+									jwt: memoGithubJwt,
+								}),
+								...(input.fetch !== undefined
+									? { fetch: input.fetch }
+									: undefined),
 							}),
-							auth: oidcAuth({
-								identityId: store.deployCredentialIdentityId,
-								jwt: memoGithubJwt,
-							}),
-							...(input.fetch !== undefined
-								? { fetch: input.fetch }
-								: undefined),
-						}),
-					() => githubWorkloadJwt,
-				),
+						() => githubWorkloadJwt,
+					),
 	);
 	checks.push(
-		!inActions
+		selectedIdentity === "reader" || selectedIdentity === "relay"
 			? {
 					identity: "hobo-ci-writer",
 					identityId: store.deployIdentityId,
 					method: "GitHub Actions OIDC",
 					result: "not-run",
-					detail:
-						"needs a GitHub Actions job with id-token: write on main; the relay deploy workflow's 'Verify the secret store connection' step runs it",
+					detail: `not selected by --identity ${selectedIdentity}`,
 				}
-			: await writerSignIn(
-					store,
-					() =>
-						createInfisicalClient({
-							binding: parseInfisicalBinding({
-								siteUrl: store.endpoint,
-								projectId: store.projectId,
-								environment: store.environment,
-								secretPath: store.secretPath,
+			: !inActions
+				? {
+						identity: "hobo-ci-writer",
+						identityId: store.deployIdentityId,
+						method: "GitHub Actions OIDC",
+						result: "not-run",
+						detail:
+							"needs the protected hobo-ci-app-credentials GitHub Actions job with id-token: write on main",
+					}
+				: await writerSignIn(
+						store,
+						() =>
+							createInfisicalClient({
+								binding: parseInfisicalBinding({
+									siteUrl: store.endpoint,
+									projectId: store.projectId,
+									environment: store.environment,
+									secretPath: store.secretPath,
+								}),
+								auth: oidcAuth({
+									identityId: store.deployIdentityId,
+									jwt: memoWriterJwt,
+								}),
+								...(input.fetch !== undefined
+									? { fetch: input.fetch }
+									: undefined),
 							}),
-							auth: oidcAuth({
-								identityId: store.deployIdentityId,
-								jwt: memoWriterJwt,
-							}),
-							...(input.fetch !== undefined
-								? { fetch: input.fetch }
-								: undefined),
-						}),
-					() => writerWorkloadJwt,
-				),
+						() => writerWorkloadJwt,
+					),
 	);
 	const vercelJwt = env.VERCEL_OIDC_TOKEN ?? "";
 	checks.push(
-		vercelJwt !== ""
+		vercelJwt !== "" &&
+			(selectedIdentity === undefined || selectedIdentity === "relay")
 			? await relayRead(store, () =>
 					createInfisicalClient({
 						binding: parseInfisicalBinding({
@@ -723,7 +752,9 @@ export async function runCiSecretStoreVerify(
 					method: "Vercel OIDC",
 					result: "not-run",
 					detail:
-						"needs the production deployment's Vercel OIDC token; after the deploy, /readyz answers ready only when the relay signed in and read its folder",
+						selectedIdentity === "reader" || selectedIdentity === "writer"
+							? `not selected by --identity ${selectedIdentity}`
+							: "needs the production deployment's Vercel OIDC token; after the deploy, /readyz answers ready only when the relay signed in and read its folder",
 				},
 	);
 	const failed = checks.filter((check) => check.result === "fail");

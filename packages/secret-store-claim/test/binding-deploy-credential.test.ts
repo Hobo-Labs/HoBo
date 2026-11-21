@@ -163,7 +163,7 @@ describe("the repair read's confinement", () => {
 		return found;
 	}
 
-	it("allows only connect repair and dry-run planning outside this package, so an empty reader id cannot reach a credential read", () => {
+	it("allows only connect repair, dry-run planning, and read-only hosting evidence outside this package, so an empty reader id cannot reach a deploy credential read", () => {
 		const sources = sourceFiles(repoRoot);
 		const foreign = sources.filter(
 			(file) =>
@@ -188,6 +188,7 @@ describe("the repair read's confinement", () => {
 				"test",
 				"ci-relay-deploy-credential.test.ts",
 			),
+			path.join(repoRoot, "scripts", "ci", "hosting-evidence.mts"),
 		]);
 	});
 });

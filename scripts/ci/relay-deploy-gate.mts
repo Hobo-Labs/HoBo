@@ -31,6 +31,7 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
+	"scripts/ci/relay-deploy-environment.mts",
 	"scripts/ci/relay-deploy-verify.mts",
 ] as const;
 
@@ -54,7 +55,11 @@ export function deployDeadline(nowMs: number): string {
 /** What the gate knows of the binding; it never reads a value out. */
 export type StoreBindingState = "absent" | "unreadable" | "bound";
 
-export type GateDecision = Readonly<{ run: boolean; reason: string }>;
+export type GateDecision = Readonly<{
+	run: boolean;
+	reason: string;
+	fatal?: boolean;
+}>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
@@ -75,6 +80,9 @@ export function touchesRelay(
 			inputDirs.some((dir) => file === dir || file.startsWith(`${dir}/`)),
 	);
 }
+
+const DEPLOY_WRITER_SUBJECT =
+	/^repo:[A-Za-z0-9-]{1,39}(?:@\d{1,20})?\/[A-Za-z0-9._-]{1,100}(?:@\d{1,20})?:environment:hobo-ci-app-credentials$/u;
 
 export function storeBindingState(text: string | undefined): StoreBindingState {
 	if (text === undefined) return "absent";
@@ -104,9 +112,7 @@ export function storeBindingState(text: string | undefined): StoreBindingState {
 		record.projectId === record.deployProjectId ||
 		record.deployCredentialIdentityId === record.deployIdentityId ||
 		record.deployCredentialIdentityId === record.relayIdentityId ||
-		!String(record.deployOidcSubject).endsWith(
-			":environment:hobo-ci-app-credentials",
-		)
+		!DEPLOY_WRITER_SUBJECT.test(String(record.deployOidcSubject))
 	)
 		return "unreadable";
 	return "bound";
@@ -128,6 +134,7 @@ export function decide(input: {
 	if (input.store === "unreadable")
 		return {
 			run: false,
+			fatal: true,
 			reason: `${RELAY_SECRET_STORE_BINDING} is malformed or still needs its deploy project, dedicated reader, and protected writer subject; run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id`,
 		};
 	if (input.event === "workflow_dispatch") {
@@ -201,8 +208,9 @@ function main(argv: readonly string[]): void {
 	process.stdout.write(
 		decision.run
 			? `Deploying the relay: ${decision.reason}.\n`
-			: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
+			: `::${decision.fatal === true ? "error title=Relay deploy blocked" : "notice title=Relay deploy skipped"}::${decision.reason}.\n`,
 	);
+	if (decision.fatal === true) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

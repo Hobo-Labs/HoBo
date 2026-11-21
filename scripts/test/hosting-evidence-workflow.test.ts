@@ -306,15 +306,20 @@ describe("trusted-main hosting evidence", () => {
 		}
 	});
 
-	it("returns unavailable for a legacy binding without producing evidence or contacting a provider", async () => {
+	it("keeps read-only evidence available from a claimed legacy binding without admitting it to deploy", async () => {
 		const fake = fakeTransport();
 		const result = await inspectHostingEvidence({
 			env: baseEnv,
 			bindingText: legacyBindingText,
 			fetch: fake.send,
 		});
-		assert.equal(result.status, "unavailable");
-		assert.equal(fake.calls.length, 0);
+		assert.equal(result.status, "observed");
+		assert.equal(result.storeAccess, "names-only");
+		assert.deepEqual(result.knownNamesPresent, [
+			"HOBO_CI_CONFIG_JSON",
+			"VERCEL_TOKEN",
+		]);
+		assert.ok(fake.calls.length > 0);
 	});
 
 	it("makes at most one names request and never falls through after provider refusal", async () => {
