@@ -527,6 +527,8 @@ const policy = defineCiPolicy({
 
 Optional fleet overflow stays disabled in [`.hobo/ci.json`](../../.hobo/ci.json). Enable `github-hosted` (`ubuntu-24.04`) or `hostinger-arc` (kubernetes scale set, `runsOn: hobo-arc`) only when a full hobo fleet should spill. The default machine type is `ubuntu-24.04`. Policy and `#CiPolicyProvider` CUE both reject `ubuntu-latest` (invalid fixture `desired-policy-github-latest.json`). Bound overflow labels are not re-relayed to hobo, and ARC leases are not aborted as isolated hosts. See [RUNNER-QUEUE.md](./RUNNER-QUEUE.md).
 
+The disabled `agent37-runners` declaration demonstrates the Agent37 pool contract. Pools support `default`, `vm` and `performance` boxes; documented shapes are 2 vCPU/4 GB, 4/8, 4/16 and 4/32, plus 8/64 for VM and performance boxes. Disk is 1–1024 whole GB. Non-US regions require `vm` or `performance`. Templates require a positive numeric `@revision`, idle TTL is 60–3600 seconds, and concurrent memory above 32 GB requires `allowAboveFreeTier: true`. Network allowlists contain at most 100 non-empty valid hostnames or leading `*.` wildcards. Monthly USD-microdollar budgets and create-per-hour limits are required. Agent37 offers use the `gh-actions` backend and the injected `agent37-vm-4vcpu` financial model. Zod, CUE, protobuf round-trips and runtime parsers share valid/invalid fixtures for these rules. The declaration does not provision boxes, capture credentials, or opt into external-runner routing.
+
 Authoring does not itself create provider Connections or publish policy. A
 managed host must authorize each Connection, store operator intent separately
 from dynamic budget/health eligibility, and expose a server-side desired-policy

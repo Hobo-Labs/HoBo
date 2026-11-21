@@ -121,6 +121,10 @@ export const relayConfig = config({
 	HOBO_CI_SANDBOX_PLAN: env
 		.string()
 		.docs("The Sandbox plan; `hobby` if unset."),
+	HOBO_CI_SANDBOX_PROVIDER: env
+		.string()
+		.optional()
+		.docs("The isolated runner guest backend; the runtime default if unset."),
 	HOBO_CI_EVENTS_URL: env
 		.string()
 		.docs("Where relay failures are also delivered as CloudEvents."),
