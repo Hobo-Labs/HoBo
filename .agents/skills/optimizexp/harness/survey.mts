@@ -16,6 +16,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { normalizeCliOptions } from "./lib/cli-options.mts";
+import { isPathIdentifier } from "./lib/slug.mts";
+import { optimizexpWriteProblem } from "./lib/write-containment.mts";
 import {
 	buildPositive,
 	validatePositive,
@@ -241,8 +244,6 @@ function modeTemplate(root: string, runId: string, personasCsv: string) {
 	}
 	const runDir = path.join(root, ".optimizexp", "runs", runId);
 	const surveyDir = path.join(runDir, "survey");
-	mkdirSync(surveyDir, { recursive: true });
-
 	let personas = personasCsv
 		? personasCsv.split(",").map((s) => s.trim()).filter(Boolean)
 		: [];
@@ -264,6 +265,12 @@ function modeTemplate(root: string, runId: string, personasCsv: string) {
 				.slice(0, 5);
 		}
 	}
+	const invalidPersona = personas.find((persona) => !isPathIdentifier(persona));
+	if (invalidPersona !== undefined) {
+		console.error(`Invalid persona id: ${invalidPersona}`);
+		process.exit(2);
+	}
+	mkdirSync(surveyDir, { recursive: true });
 
 	const written: string[] = [];
 	for (const persona of personas) {
@@ -610,12 +617,33 @@ function modeRankBacklog(root: string, runId: string, global: boolean) {
 }
 
 function main() {
-	const args = parseArgs(process.argv.slice(2));
+	const input = normalizeCliOptions(process.argv.slice(2), {
+		values: ["--mode", "--run", "--path", "--personas"],
+		flags: ["--help", "-h", "--global"],
+		allowEmptyValues: ["--personas"],
+	});
+	if (input.error || input.positionals.length > 1 || (input.positionals.length && input.argv.includes("--mode"))) {
+		console.error(input.error ?? "Unexpected positional argument");
+		process.exit(2);
+	}
+	const args = parseArgs(input.argv);
 	const root = repoRoot();
 	const mode = String(args.mode || "help");
 	if (mode === "help") {
 		help();
 		return;
+	}
+	if (["template", "aggregate", "rank-backlog"].includes(mode)) {
+		const runId = String(args.run || "");
+		if (!isPathIdentifier(runId)) {
+			console.error("--run must be a valid run id");
+			process.exit(2);
+		}
+		const problem = optimizexpWriteProblem(root, [""]);
+		if (problem) {
+			console.error(problem);
+			process.exit(2);
+		}
 	}
 	if (mode === "template") {
 		modeTemplate(root, String(args.run || ""), String(args.personas || ""));

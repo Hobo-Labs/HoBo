@@ -1,9 +1,7 @@
-import { clone, create, toJson } from "@bufbuild/protobuf";
+import { createHash } from "node:crypto";
+import { types as utilTypes } from "node:util";
+import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
-	addDecimal,
-	type Consumption,
-	compareDecimal,
-	DECIMAL_ZERO,
 	type Decimal,
 	isBoundedPricingInput,
 	isExactProtoMessage,
@@ -13,16 +11,16 @@ import {
 	QuoteScenarioSchema,
 	type QuoteVector,
 	QuoteVectorSchema,
-	quoteScenario,
+	quoteScenarioV2,
 	quoteTargetPricing,
 	stableHash,
-	subtractDecimal,
 	type TargetPricingAvailability,
 	TargetPricingAvailabilitySchema,
 	type TargetPricingInventory,
 	TargetPricingInventorySchema,
 } from "@hobo/pricing";
 import {
+	type EntitlementClaim,
 	IacPricingPinSchema,
 	type IacTargetAdmissionDecision,
 	IacTargetAdmissionDecisionSchema,
@@ -34,6 +32,8 @@ import {
 	BudgetAdmissionDeniedError,
 	type BudgetIdentity,
 	BudgetIdentitySchema,
+	type BudgetReservation,
+	BudgetReservationSchema,
 	budgetIdentityKey,
 	type HostingPolicyProof,
 	HostingPolicyProofSchema,
@@ -42,8 +42,12 @@ import {
 	validateHostingQuote,
 } from "./budget-authority.js";
 import type { AsyncBudgetAdmissionAuthority } from "./budget-postgres.js";
+import { incrementalEntitlementClaims } from "./iac-incremental-claims.js";
 import { validIacPolicyGate } from "./iac-policy-gate.js";
 import type { GateDecision } from "./planes.js";
+
+const hasOwnAdmissionField = Object.hasOwn;
+const isAdmissionProxy = utilTypes.isProxy;
 
 export type {
 	IacTargetAdmissionDecision,
@@ -58,7 +62,6 @@ export interface IacTargetAdmissionInput {
 	readonly evidence?: IacTargetLiabilityEvidence;
 }
 
-/** Host-owned ports: developer terms are never accepted as liability evidence. */
 export interface IacTargetAdmissionDeps {
 	readonly authority: BudgetAdmissionAuthority | AsyncBudgetAdmissionAuthority;
 	readonly now: () => string;
@@ -79,6 +82,10 @@ export interface IacTargetAdmissionDeps {
 
 const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
 
+function compareIdentifier(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function safeName(value: string): boolean {
 	return (
 		value.length > 0 &&
@@ -87,6 +94,87 @@ function safeName(value: string): boolean {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
+
+/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: the broker validates a potentially untrusted runtime envelope without invoking accessors or proxy traps. */
+function captureTargetAdmissionInput(
+	input: IacTargetAdmissionInput,
+): IacTargetAdmissionInput | undefined {
+	try {
+		if (
+			typeof input !== "object" ||
+			input === null ||
+			isAdmissionProxy(input) ||
+			Array.isArray(input)
+		)
+			return undefined;
+		const keys = Reflect.ownKeys(input);
+		if (
+			keys.length > 4 ||
+			keys.some(
+				(key) =>
+					typeof key !== "string" ||
+					!["requestId", "inventory", "pricing", "evidence"].includes(key),
+			)
+		)
+			return undefined;
+		const requestId = Object.getOwnPropertyDescriptor(input, "requestId");
+		const inventory = Object.getOwnPropertyDescriptor(input, "inventory");
+		const pricing = Object.getOwnPropertyDescriptor(input, "pricing");
+		const evidence = Object.getOwnPropertyDescriptor(input, "evidence");
+		for (const field of [requestId, inventory, pricing]) {
+			if (
+				field === undefined ||
+				!hasOwnAdmissionField(field, "value") ||
+				!field.enumerable
+			)
+				return undefined;
+		}
+		if (
+			evidence !== undefined &&
+			(!hasOwnAdmissionField(evidence, "value") || !evidence.enumerable)
+		)
+			return undefined;
+		if (typeof requestId?.value !== "string") return undefined;
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the detached envelope is further validated against the exact protobuf schemas before use.
+		const captured = {
+			requestId: requestId.value,
+			inventory: inventory?.value as TargetPricingInventory,
+			pricing: pricing?.value as TargetPricingAvailability,
+		};
+		if (evidence !== undefined && evidence.value !== undefined)
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the exact liability-evidence schema is checked before use.
+			return {
+				...captured,
+				evidence: evidence.value as IacTargetLiabilityEvidence,
+			};
+		return captured;
+	} catch {
+		return undefined;
+	}
+}
+
+function safeTargetId(inventory: TargetPricingInventory): string {
+	try {
+		if (
+			typeof inventory !== "object" ||
+			inventory === null ||
+			isAdmissionProxy(inventory) ||
+			Array.isArray(inventory)
+		)
+			return "";
+		const field = Object.getOwnPropertyDescriptor(inventory, "targetId");
+		return field !== undefined &&
+			hasOwnAdmissionField(field, "value") &&
+			field.enumerable &&
+			typeof field.value === "string" &&
+			safeName(field.value)
+			? field.value
+			: "";
+	} catch {
+		return "";
+	}
+}
+/* oxlint-enable anti-slop/no-runtime-typeof */
 
 function ceilUnits(value: Decimal, scale: number): number | undefined {
 	if (value.coefficient < 0n || value.scale > 128) return undefined;
@@ -101,61 +189,85 @@ function readDecimal(value: string): Decimal | undefined {
 	return parseDecimal(value);
 }
 
-/** Reservation quantities are the positive increase over the baseline.
- * Commitment consumption is money in pricing-rating/v1 despite its legacy
- * quantity unit; its dimension is normalized to the quote currency here. */
-function incrementalClaims(
-	full: readonly Consumption[],
-	base: readonly Consumption[],
-	currency: string,
-) {
-	type Row = { bucketId: string; unit: string; scale: number; amount: Decimal };
-	function collect(rows: readonly Consumption[]): Map<string, Row> | undefined {
-		const result = new Map<string, Row>();
-		for (const row of rows) {
-			const quantity = row.quantity;
-			if (
-				!safeName(row.sourceId) ||
-				quantity === undefined ||
-				!safeName(quantity.unit) ||
-				!new Set(["allowance", "credit", "commitment"]).has(row.kind)
-			)
-				return undefined;
-			const decimal = readDecimal(quantity.decimal);
-			if (decimal === undefined || decimal.coefficient < 0n) return undefined;
-			const money = row.kind === "credit" || row.kind === "commitment";
-			if (row.kind === "credit" && quantity.unit !== currency) return undefined;
-			const unit = money ? `${currency}.micros` : quantity.unit;
-			const key = `${row.sourceId}\u0000${unit}`;
-			const prior = result.get(key);
-			result.set(key, {
-				bucketId: row.sourceId,
-				unit,
-				scale: money ? 6 : 0,
-				amount: addDecimal(prior?.amount ?? DECIMAL_ZERO, decimal),
-			});
-		}
-		return result;
+function exactInt64Micros(value: bigint): number | undefined {
+	return value >= 0n && value <= MAX_SAFE ? Number(value) : undefined;
+}
+
+function exactEvidenceMaximumMicros(
+	evidence: IacTargetLiabilityEvidence,
+): number | undefined {
+	const legacyMicros = evidence.maximumMicros;
+	const exactMicros =
+		evidence.maximumMicrosExact !== undefined
+			? exactInt64Micros(evidence.maximumMicrosExact)
+			: undefined;
+	if (evidence.maximumMicrosExact !== undefined && exactMicros === undefined)
+		return undefined;
+	if (exactMicros !== undefined) {
+		if (
+			legacyMicros !== undefined &&
+			Number.isSafeInteger(legacyMicros) &&
+			legacyMicros >= 0 &&
+			legacyMicros !== exactMicros
+		)
+			return undefined;
+		return exactMicros;
 	}
-	const current = collect(full);
-	const before = collect(base);
-	if (current === undefined || before === undefined) return undefined;
-	const claims: { bucketId: string; unit: string; units: number }[] = [];
-	for (const [key, row] of current) {
-		const difference = subtractDecimal(
-			row.amount,
-			before.get(key)?.amount ?? DECIMAL_ZERO,
-		);
-		if (compareDecimal(difference, DECIMAL_ZERO) <= 0) continue;
-		const units = ceilUnits(difference, row.scale);
-		if (units === undefined) return undefined;
-		claims.push({ bucketId: row.bucketId, unit: row.unit, units });
+	return legacyMicros !== undefined &&
+		Number.isSafeInteger(legacyMicros) &&
+		legacyMicros >= 0
+		? legacyMicros
+		: undefined;
+}
+
+function exactProviderAccountMicros(
+	liabilityMicros: number,
+): number | undefined {
+	return Number.isSafeInteger(liabilityMicros) && liabilityMicros >= 0
+		? liabilityMicros
+		: undefined;
+}
+
+function accountRows(
+	rows: IacTargetLiabilityEvidence["providerAccounts"],
+): string[] {
+	return rows
+		.map((row) => JSON.stringify([row.providerAccountId, row.liabilityMicros]))
+		.sort();
+}
+
+function persistedClaimKind(kind: string): string {
+	return kind === "" ? "allowance" : kind;
+}
+
+function entitlementRows(
+	rows: readonly Pick<
+		EntitlementClaim,
+		"kind" | "bucketId" | "unit" | "units"
+	>[],
+): string[] {
+	return rows
+		.map((row) =>
+			JSON.stringify([
+				persistedClaimKind(row.kind),
+				row.bucketId,
+				row.unit,
+				row.units,
+			]),
+		)
+		.sort();
+}
+
+function totalProviderAccountMicros(
+	accounts: IacTargetLiabilityEvidence["providerAccounts"],
+): bigint | undefined {
+	let totalMicros = 0n;
+	for (const account of accounts) {
+		const micros = exactProviderAccountMicros(account.liabilityMicros);
+		if (micros === undefined) return undefined;
+		totalMicros += BigInt(micros);
 	}
-	return claims.sort(
-		(left, right) =>
-			left.bucketId.localeCompare(right.bucketId) ||
-			left.unit.localeCompare(right.unit),
-	);
+	return totalMicros;
 }
 
 function denial(
@@ -197,17 +309,23 @@ function uncertain(
 	});
 }
 
-/** Admission is a broker authority boundary. A successful result owns a newly
- * claimed durable reservation; a replay never authorizes another provider call. */
 export async function admitIacTarget(
-	input: IacTargetAdmissionInput,
+	rawInput: IacTargetAdmissionInput,
 	deps: IacTargetAdmissionDeps,
 ): Promise<IacTargetAdmissionDecision> {
+	const input = captureTargetAdmissionInput(rawInput);
+	if (input === undefined)
+		return denial(
+			"",
+			"",
+			"REQUEST_INVALID",
+			"an inspectable admission request is required",
+		);
 	const { requestId } = input;
-	const targetId = input.inventory.targetId;
+	const targetId = safeTargetId(input.inventory);
 	if (!safeName(requestId))
 		return denial(
-			requestId,
+			"",
 			targetId,
 			"REQUEST_INVALID",
 			"a bounded request id is required",
@@ -221,6 +339,13 @@ export async function admitIacTarget(
 			targetId,
 			"PRICING_INPUT_TOO_LARGE",
 			"financial input exceeds the bounded data limits",
+		);
+	if (!isExactProtoMessage(TargetPricingInventorySchema, input.inventory))
+		return denial(
+			requestId,
+			targetId,
+			"TARGET_INVENTORY_INCOMPLETE",
+			"target inventory contains unsupported or malformed data",
 		);
 	if (
 		input.evidence !== undefined &&
@@ -312,6 +437,8 @@ export async function admitIacTarget(
 			"PRICING_NOT_COMPARABLE",
 			"a current nonnegative USD quote is required",
 		);
+	const maximumMicros =
+		evidence === undefined ? undefined : exactEvidenceMaximumMicros(evidence);
 	if (
 		evidence === undefined ||
 		!safeName(evidence.evidenceRef) ||
@@ -321,9 +448,8 @@ export async function admitIacTarget(
 		evidence.inventoryHash !== priced.inventoryHash ||
 		evidence.modelHash !== priced.modelHash ||
 		evidence.quoteHash !== priced.quote.quoteHash ||
-		evidence.maximumMicros === undefined ||
-		!Number.isSafeInteger(evidence.maximumMicros) ||
-		evidence.maximumMicros < totalMicros ||
+		maximumMicros === undefined ||
+		maximumMicros < totalMicros ||
 		!Number.isFinite(Date.parse(evidence.observedAt)) ||
 		Date.parse(evidence.observedAt) > nowMs ||
 		!Number.isFinite(Date.parse(evidence.validUntil)) ||
@@ -339,22 +465,16 @@ export async function admitIacTarget(
 		...new Set(
 			inventory.resources.map((resource) => resource.providerAccountRef),
 		),
-	].sort();
+	].sort(compareIdentifier);
 	const accounts = [...evidence.providerAccounts].sort((left, right) =>
-		left.providerAccountId.localeCompare(right.providerAccountId),
+		compareIdentifier(left.providerAccountId, right.providerAccountId),
 	);
 	if (
 		accounts.length !== expectedAccounts.length ||
 		accounts.some(
-			(account, index) =>
-				account.providerAccountId !== expectedAccounts[index] ||
-				!Number.isSafeInteger(account.liabilityMicros) ||
-				account.liabilityMicros < 0,
+			(account, index) => account.providerAccountId !== expectedAccounts[index],
 		) ||
-		accounts.reduce(
-			(sum, account) => sum + BigInt(account.liabilityMicros),
-			0n,
-		) !== BigInt(evidence.maximumMicros)
+		totalProviderAccountMicros(accounts) !== BigInt(maximumMicros)
 	)
 		return denial(
 			requestId,
@@ -387,7 +507,7 @@ export async function admitIacTarget(
 	}
 	const baseline = clone(QuoteScenarioSchema, scenario);
 	baseline.candidate = [];
-	const baselineQuote = quoteScenario(baseline);
+	const baselineQuote = quoteScenarioV2(baseline);
 	if (!isQuoteVector(baselineQuote))
 		return denial(
 			requestId,
@@ -395,7 +515,7 @@ export async function admitIacTarget(
 			baselineQuote.code,
 			baselineQuote.message,
 		);
-	const claims = incrementalClaims(
+	const claims = incrementalEntitlementClaims(
 		priced.quote.consumption,
 		baselineQuote.consumption,
 		"USD",
@@ -406,6 +526,17 @@ export async function admitIacTarget(
 			targetId,
 			"ENTITLEMENT_CONSUMPTION_INVALID",
 			"pricing consumption cannot be reserved safely",
+		);
+	if (
+		evidence.entitlementClaims.length > 0 &&
+		JSON.stringify(entitlementRows(evidence.entitlementClaims)) !==
+			JSON.stringify(entitlementRows(claims))
+	)
+		return denial(
+			requestId,
+			targetId,
+			"LIABILITY_EVIDENCE_INVALID",
+			"liability evidence must itemize the exact incremental entitlement claims",
 		);
 	const evidenceHash = stableHash(
 		toJson(IacTargetLiabilityEvidenceSchema, evidence, {
@@ -447,7 +578,7 @@ export async function admitIacTarget(
 		ownerTenantId: inventory.tenantId,
 		currency: "USD",
 		totalMicros,
-		liabilityBoundMicros: evidence.maximumMicros,
+		liabilityBoundMicros: maximumMicros,
 		observedAt: evidence.observedAt,
 		validUntil,
 		components: [{ name: "joint-target-quote", costMicros: totalMicros }],
@@ -468,14 +599,19 @@ export async function admitIacTarget(
 			"budget or quote evidence is unavailable",
 		);
 	}
-	const identity = ledger.identity;
-	if (identity === undefined || identity.tenantId !== inventory.tenantId)
+	const ledgerIdentity = ledger.identity;
+	if (
+		ledgerIdentity === undefined ||
+		!isExactProtoMessage(BudgetIdentitySchema, ledgerIdentity) ||
+		ledgerIdentity.tenantId !== inventory.tenantId
+	)
 		return denial(
 			requestId,
 			targetId,
 			"BUDGET_SCOPE_MISMATCH",
 			"the budget does not belong to the target tenant",
 		);
+	const identity = cloneIdentity(ledgerIdentity);
 	let policy: { gate: GateDecision; proof: HostingPolicyProof };
 	try {
 		policy = await deps.authorize({
@@ -531,6 +667,76 @@ export async function admitIacTarget(
 			false,
 		);
 	const reservationId = `iac:${requestId}`;
+	const pricingPin = create(IacPricingPinSchema, {
+		planDigest: inventory.planDigest,
+		inventoryHash: priced.inventoryHash,
+		modelHash: priced.modelHash,
+		quoteHash: priced.quote.quoteHash,
+		evidenceHash,
+		validUntil: quote.validUntil,
+	});
+	const quoteDigest = createHash("sha256")
+		.update(toJsonString(HostingQuoteSchema, quote))
+		.digest("hex");
+	let legacyQuoteDigest: string | undefined;
+	if (
+		quote.entitlementClaims.every(
+			(claim) => persistedClaimKind(claim.kind) === "allowance",
+		)
+	) {
+		const legacyQuote = clone(HostingQuoteSchema, quote);
+		for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
+		legacyQuoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, legacyQuote))
+			.digest("hex");
+	}
+	let legacyEmptyQuoteDigest: string | undefined;
+	if (evidence.entitlementClaims.length === 0) {
+		const legacyQuote = clone(HostingQuoteSchema, quote);
+		legacyQuote.entitlementClaims = [];
+		legacyEmptyQuoteDigest = createHash("sha256")
+			.update(toJsonString(HostingQuoteSchema, legacyQuote))
+			.digest("hex");
+	}
+	const captureReceipt = (
+		raw: BudgetReservation,
+	): BudgetReservation | undefined => {
+		try {
+			if (!isExactProtoMessage(BudgetReservationSchema, raw)) return undefined;
+			const row = clone(BudgetReservationSchema, raw);
+			const legacyEmptyClaims =
+				row.entitlementClaims.length === 0 &&
+				row.quoteDigest === legacyEmptyQuoteDigest;
+			if (
+				row.reservationId !== reservationId ||
+				row.requestDigest !== requestDigest ||
+				row.quoteId !== quote.quoteId ||
+				(row.quoteDigest !== quoteDigest &&
+					row.quoteDigest !== legacyQuoteDigest &&
+					!legacyEmptyClaims) ||
+				row.financialPlanHash !== financialPlanHash ||
+				row.identity === undefined ||
+				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||
+				row.reservedMicros !== quote.liabilityBoundMicros ||
+				row.actualMicros !== 0 ||
+				row.unboundedExposure ||
+				row.unpricedPolicyProof !== undefined ||
+				row.unpricedScopeProof !== undefined ||
+				row.iacPricingPin === undefined ||
+				toJsonString(IacPricingPinSchema, row.iacPricingPin) !==
+					toJsonString(IacPricingPinSchema, pricingPin) ||
+				JSON.stringify(accountRows(row.providerAccounts)) !==
+					JSON.stringify(accountRows(quote.providerAccounts)) ||
+				(!legacyEmptyClaims &&
+					JSON.stringify(entitlementRows(row.entitlementClaims)) !==
+						JSON.stringify(entitlementRows(quote.entitlementClaims)))
+			)
+				return undefined;
+			return row;
+		} catch {
+			return undefined;
+		}
+	};
 	let reservation: ReturnType<BudgetAdmissionAuthority["reserve"]>;
 	try {
 		validateHostingQuote(quote, deps.now());
@@ -548,16 +754,9 @@ export async function admitIacTarget(
 		reservation = await deps.authority.reserve({
 			reservationId,
 			requestDigest,
-			quote,
-			iacPricingPin: create(IacPricingPinSchema, {
-				planDigest: inventory.planDigest,
-				inventoryHash: priced.inventoryHash,
-				modelHash: priced.modelHash,
-				quoteHash: priced.quote.quoteHash,
-				evidenceHash,
-				validUntil: quote.validUntil,
-			}),
-			identity: ledger.identity,
+			quote: clone(HostingQuoteSchema, quote),
+			iacPricingPin: clone(IacPricingPinSchema, pricingPin),
+			identity: cloneIdentity(identity),
 			expectedSeq: ledger.seq,
 			now: deps.now(),
 		});
@@ -579,6 +778,16 @@ export async function admitIacTarget(
 			requestDigest,
 		);
 	}
+	const capturedReservation = captureReceipt(reservation);
+	if (capturedReservation === undefined)
+		return uncertain(
+			requestId,
+			targetId,
+			"PRICED_RESERVATION_RECEIPT_INVALID",
+			"unknown",
+			requestDigest,
+		);
+	reservation = capturedReservation;
 	if (reservation.status !== "held")
 		return uncertain(
 			requestId,
@@ -615,12 +824,26 @@ export async function admitIacTarget(
 	try {
 		validateHostingQuote(quote, deps.now());
 		const head = await deps.authority.read(deps.now());
-		const claimed = await deps.authority.claimExecution({
-			reservationId,
-			requestDigest,
-			executionDigest,
-			expectedSeq: head.seq,
-		});
+		const claimed = captureReceipt(
+			await deps.authority.claimExecution({
+				reservationId,
+				requestDigest,
+				executionDigest,
+				expectedSeq: head.seq,
+			}),
+		);
+		if (
+			claimed === undefined ||
+			claimed.status !== "held" ||
+			claimed.executionDigest !== executionDigest
+		)
+			return uncertain(
+				requestId,
+				targetId,
+				"PRICED_EXECUTION_RECEIPT_INVALID",
+				"held",
+				requestDigest,
+			);
 		if (claimed.ledgerSeq !== head.seq + 1)
 			return create(IacTargetAdmissionDecisionSchema, {
 				requestId,
@@ -634,6 +857,26 @@ export async function admitIacTarget(
 			});
 		reservation = claimed;
 		validateHostingQuote(quote, deps.now());
+		const stillHeld = await deps.authority.revalidatePriced({
+			reservationId,
+			requestId,
+			targetId,
+			tenantId: inventory.tenantId,
+			requestDigest,
+			planDigest: inventory.planDigest,
+			inventoryHash: priced.inventoryHash,
+			modelHash: priced.modelHash,
+			quoteHash: priced.quote.quoteHash,
+			now: deps.now(),
+		});
+		if (stillHeld !== true)
+			return uncertain(
+				requestId,
+				targetId,
+				"PRICED_EXECUTION_UNVERIFIED",
+				"held",
+				requestDigest,
+			);
 	} catch {
 		return uncertain(
 			requestId,

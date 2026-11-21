@@ -235,6 +235,20 @@ describe("startConnectPage", () => {
 		expect((await fetch(`${origin}/s/wrong-token/view`)).status).toBe(404);
 	});
 
+	it("does not disclose the session path to visitors at its root", async () => {
+		page = await startConnectPage({
+			flow: githubFlow(),
+			assetsDir: "dist/client",
+		});
+		const origin = new URL(page.url).origin;
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const response = await fetch(`${origin}/`, { redirect: "manual" });
+			expect(response.status).toBe(404);
+			expect(response.headers.get("location")).toBeNull();
+		}
+		expect((await fetch(page.url)).status).toBe(200);
+	});
+
 	it("moves the step only through the flow and finishes on the provider callback", async () => {
 		page = await startConnectPage({
 			flow: githubFlow(),

@@ -110,7 +110,6 @@ function parseTransition(event: EventEnvelope): DeploymentTransitionData {
 	return result;
 }
 
-/** Fold the durable CAS barrier; invalid or incomplete histories fail closed. */
 export function foldDeploymentTransition(
 	events: readonly EventEnvelope[],
 ): DeploymentTransitionState {
@@ -320,7 +319,6 @@ export function foldDeploymentTransition(
 	return state;
 }
 
-/** No apply can start after a transition wins the stream CAS. */
 export function requireApplyOpen(
 	events: readonly EventEnvelope[],
 	resource: ResourcePlan,
@@ -336,7 +334,6 @@ export function requireApplyOpen(
 		);
 }
 
-/** A transition can destroy only the targets fixed when it started. */
 export function requireDestroyAllowed(
 	events: readonly EventEnvelope[],
 	resourceId: string,
