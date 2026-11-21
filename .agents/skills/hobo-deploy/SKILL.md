@@ -29,8 +29,9 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before opening any owner form, confirm the lifecycle MCP result `hostSupport`
-reports a privacy-verified owner channel, and without using owner data verify the
+Before opening any owner form, confirm the `capture_secret` / store-choice MCP
+result `hostSupport` reports form elicitation the host can render privately, and
+without using owner data verify the
 connected hand-off keeps selections in a temporary owner session and excludes
 private coordinates, identifiers, and references from agent-visible tool calls,
 results, traces, and diagnostics. This applies to store selection, capture, and

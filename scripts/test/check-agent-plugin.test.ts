@@ -774,7 +774,7 @@ describe("checkAgentPlugin (integration)", () => {
 				missing.issues.some(
 					(issue) =>
 						issue.file === "bin/hobo-mcp.mjs" &&
-						issue.message.includes("is missing in CI"),
+						issue.message.includes("is missing"),
 				),
 			).toBe(true);
 			await writeFile(path.join(pluginRoot, "bin/hobo-mcp.mjs"), "tiny");

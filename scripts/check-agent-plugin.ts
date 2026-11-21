@@ -923,15 +923,12 @@ export function checkAgentPlugin(input: {
 					"is missing or empty while bin/hobo-mcp.mjs is present; rebuild with pnpm run agent-plugin:build",
 			});
 		}
-	} else if (agentPluginCiActive()) {
+	} else {
 		issues.push({
 			file: "bin/hobo-mcp.mjs",
-			message: "is missing in CI; build it with pnpm run agent-plugin:build",
+			message:
+				"is missing; build it with pnpm run agent-plugin:build before agent-plugin:check",
 		});
-	} else {
-		notes.push(
-			"agent-plugin:check: bin/hobo-mcp.mjs not built yet (pnpm run agent-plugin:build); validated committed wiring only",
-		);
 	}
 	return { issues, notes };
 }
