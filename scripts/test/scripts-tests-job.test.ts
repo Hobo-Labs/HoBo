@@ -227,21 +227,28 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
 	});
 
-	it("builds what every package a scripts test imports depends on, before the lane", () => {
-		// A fresh runner has no dist/: scripts/manual/hosting-anonymous-acceptance.mts
-		// imports packages/hobo/src, whose @hobo/core resolves through dist/.
+	it("builds affected packages plus each import root, reusing the Turbo cache", () => {
 		const build = step(scripts, BUILD);
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
 		assert.match(build.run, /turbo run build\b/u);
+		assert.match(build.run, /turbo-scm-base\.mts/u);
+		assert.match(build.run, /--filter="\.\.\.\[\$\{BASE\}\]"/u);
 		const imported = packagesScriptsTestsImport();
 		assert.ok(imported.includes("@hobo/hobo"));
-		for (const name of imported)
+		for (const name of imported) {
 			assert.ok(
-				build.run.includes(`--filter=${name}^...`),
-				`the build step misses --filter=${name}^...`,
+				build.run.includes(`--filter=${name}`),
+				`the build step misses --filter=${name}`,
 			);
+			assert.equal(
+				build.run.includes(`--filter=${name}^...`),
+				false,
+				`the build step still walks ^... for ${name}`,
+			);
+		}
 		const names = scripts.steps.map((entry) => entry.uses || entry.name);
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
+		assert.ok(names.indexOf("Turbo cache") < names.indexOf(BUILD));
 		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
 	});
 

@@ -515,7 +515,12 @@
 				{
 					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "pnpm exec turbo run build --filter=@hobo/cd^... --filter=@hobo/ci^... --filter=@hobo/ci-gh-actions^... --filter=@hobo/cli^... --filter=@hobo/core^... --filter=@hobo/hobo^... --filter=@hobo/provider-cloudflare^... --filter=@hobo/provider-lakebed^... --filter=@hobo/provider-neon^... --filter=@hobo/provider-netlify^... --filter=@hobo/provider-oci-registry^... --filter=@hobo/provider-prisma-postgres^... --filter=@hobo/provider-upstash^... --filter=@hobo/runtime-local^... --filter=@hobo/schema-tools^... --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}",
+					"run": "set -euo pipefail\nBASE=\"$(node --experimental-strip-types --no-warnings scripts/ci/turbo-scm-base.mts)\"\nif [[ \"$BASE\" == origin/* ]]; then\n  git fetch --no-tags --depth=1 origin \"${BASE#origin/}\"\nelif [ -n \"$BASE\" ]; then\n  git cat-file -e \"${BASE}^{commit}\" 2>/dev/null \\\n    || git fetch --no-tags --depth=1 origin \"$BASE\"\nfi\npnpm exec turbo run build \\\n  --filter=\"...[${BASE}]\" \\\n  --filter=@hobo/cd \\\n  --filter=@hobo/ci \\\n  --filter=@hobo/ci-gh-actions \\\n  --filter=@hobo/cli \\\n  --filter=@hobo/core \\\n  --filter=@hobo/hobo \\\n  --filter=@hobo/provider-cloudflare \\\n  --filter=@hobo/provider-lakebed \\\n  --filter=@hobo/provider-neon \\\n  --filter=@hobo/provider-netlify \\\n  --filter=@hobo/provider-oci-registry \\\n  --filter=@hobo/provider-prisma-postgres \\\n  --filter=@hobo/provider-upstash \\\n  --filter=@hobo/runtime-local \\\n  --filter=@hobo/schema-tools \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
+					"env": {
+						"GITHUB_EVENT_NAME": "${{ github.event_name }}",
+						"GITHUB_BASE_REF": "${{ github.base_ref }}",
+						"GITHUB_EVENT_MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
+					},
 					"local": "run"
 				},
 				{
