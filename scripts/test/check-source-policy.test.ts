@@ -106,6 +106,22 @@ describe("source policy", () => {
 		);
 	});
 
+	it("accepts Vite dynamic import directives without exempting deferred work or lookalikes", () => {
+		const text = [
+			"export const loaded = import(/* @vite-ignore */ modulePath);",
+			"export const deferred = import(/* @vite-ignore TODO replace */ modulePath);",
+			"export const lookalike = import(/* @vite-ignored */ modulePath);",
+			"export const extra = import(/* @vite-ignore explanation */ modulePath);",
+			"// @vite-ignore",
+		].join("\n");
+		assert.deepEqual(
+			commentViolations("x.ts", text, new Set([1, 2, 3, 4, 5])).map(
+				(item) => item.line,
+			),
+			[2, 3, 4, 5],
+		);
+	});
+
 	it("rejects a standalone documentation comment", () => {
 		assert.equal(
 			commentViolations("example.ts", "/** explanation */", new Set([1]))
