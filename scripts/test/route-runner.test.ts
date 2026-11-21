@@ -1503,44 +1503,31 @@ describe("the script reading the slip", () => {
 			"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/gh-readonly-queue/main",
 	};
 
-	it("picks hosted merge-group route surface when the trunk fleet is not taking", async () => {
-		await withGithub(observed([waiting("hobo-trunk", 120)]), async (apiUrl) => {
-			const surface = await mergeGroupRouteSurface(
-				{
-					...mergeGroupCi,
-					GITHUB_API_URL: apiUrl,
-					GITHUB_TOKEN: "token",
-					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-				},
-				{ now: () => 0 },
-			);
-			assert.equal(surface, "hosted");
-		});
+	it("keeps the merge-group route surface on hosted while probing GitHub-hosted queue depth", async () => {
+		await withGithub(
+			observed([
+				waiting("ubuntu-24.04", 2),
+				pickup("hobo-trunk"),
+			]),
+			async (apiUrl) => {
+				const surface = await mergeGroupRouteSurface(
+					{
+						...mergeGroupCi,
+						GITHUB_API_URL: apiUrl,
+						GITHUB_TOKEN: "token",
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					},
+					{ now: () => SLIP_NOW },
+				);
+				assert.equal(surface, "hosted");
+			},
+		);
 	});
 
-	it("picks hosted merge-group route surface when trunk pickup is older than two minutes", async () => {
-		const nowMs = 1_700_000_000_000;
-		const stalePickup = {
-			run_id: 40,
-			status: "completed",
-			labels: ["hobo-trunk"],
-			runner_name: "runner-1",
-			created_at: new Date(nowMs - 200_000).toISOString(),
-			started_at: new Date(nowMs - 180_000).toISOString(),
-		};
-		await withGithub(observed([stalePickup]), async (apiUrl) => {
-			const surface = await mergeGroupRouteSurface(
-				{
-					...mergeGroupCi,
-					GITHUB_API_URL: apiUrl,
-					GITHUB_TOKEN: "token",
-					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-				},
-				{ now: () => nowMs },
-			);
-			assert.equal(surface, "hosted");
-		});
-	});
+	const saturatedHostedQueue = () =>
+		Array.from({ length: 5 }, (_, index) =>
+			waiting("ubuntu-24.04", 10 + index),
+		);
 
 	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
 		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
@@ -1559,9 +1546,27 @@ describe("the script reading the slip", () => {
 		});
 	});
 
-	it("routes merge-group CI to hobo-trunk on recent trunk pickup", async () => {
+	it("routes merge-group CI to GitHub-hosted while hosted runners have idle capacity", async () => {
 		await withGithub(
 			observed([pickup("hobo"), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["github", "ubuntu-24.04", "queue"],
+				);
+				assert.match(decision.reason, /prefers GitHub-hosted while it has idle capacity/u);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+			},
+		);
+	});
+
+	it("routes merge-group CI to hobo-trunk when GitHub-hosted is saturated", async () => {
+		await withGithub(
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
@@ -1603,7 +1608,21 @@ describe("the script reading the slip", () => {
 				],
 			};
 		};
-		await withGithub(pages, async (apiUrl) => {
+		await withGithub(
+			(path) => {
+				if (path.includes("/runs/50/jobs"))
+					return { jobs: [{ status: "in_progress" }] };
+				if (path.includes("/jobs"))
+					return {
+						jobs: [
+							...saturatedHostedQueue(),
+							pickup("hobo-trunk"),
+							waiting("hobo-trunk", 2),
+						],
+					};
+				return pages(path);
+			},
+			async (apiUrl) => {
 			const { decision, lines } = await route(
 				apiUrl,
 				JSON.stringify(expired),
@@ -1619,23 +1638,30 @@ describe("the script reading the slip", () => {
 				why: "merge-group",
 			});
 			assert.deepEqual(warningsIn(lines), []);
-		});
+		},
+		);
 	});
 
 	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
 		let queueReads = 0;
-		const healthy = observed([pickup("hobo-trunk")]);
+		const healthy = observed([
+			...saturatedHostedQueue(),
+			pickup("hobo-trunk"),
+		]);
 		await withGithub(
 			(path) => {
 				if (!path.includes("/jobs")) queueReads += 1;
-				return queueReads > 1 && path.includes("/jobs")
-					? {
-							jobs: [
-								pickup("hobo-trunk"),
-								waiting("hobo-trunk", MERGE_GROUP_FLEET_CONFIRM_SECONDS + 1),
-							],
-						}
-					: healthy(path);
+				if (!path.includes("/jobs")) return healthy(path);
+				const hostedJobs = saturatedHostedQueue();
+				if (queueReads > 2)
+					return {
+						jobs: [
+							...hostedJobs,
+							pickup("hobo-trunk"),
+							waiting("hobo-trunk", MERGE_GROUP_FLEET_CONFIRM_SECONDS + 1),
+						],
+					};
+				return { jobs: [...hostedJobs, pickup("hobo-trunk")] };
 			},
 			async (apiUrl) => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
@@ -1644,20 +1670,23 @@ describe("the script reading the slip", () => {
 					["github", "ubuntu-24.04", "queue"],
 				);
 				assert.match(decision.reason, /merge-group trunk confirmation/u);
-				assert.equal(queueReads, 2);
+				assert.ok(queueReads >= 2);
 			},
 		);
 	});
 
 	it("never routes merge-group Fabric to the general hobo label", async () => {
-		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
+		await withGithub(
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
+			async (apiUrl) => {
 			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 			assert.deepEqual(
 				[decision.tier, decision.runner, decision.refusedBy],
 				["fleet", "hobo-trunk", "none"],
 			);
 			assert.doesNotMatch(decision.runner, /^hobo$/u);
-		});
+		},
+		);
 	});
 
 	it("routes merge-group CI to GitHub-hosted when hobo-trunk has no recent pickup", async () => {

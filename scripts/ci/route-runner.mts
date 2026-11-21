@@ -688,35 +688,25 @@ export async function chooseRunner(input: {
 	}
 }
 
-const MERGE_GROUP_ROUTE_SURFACE_SECONDS = 45;
-/** Trunk surface only when a runner took a job on that label inside this window. */
-export const MERGE_GROUP_SURFACE_RECENT_PICKUP_SECONDS = 2 * 60;
+/** Hosted queue limits for merge-group Fabric routing (critical path < 7 min). */
+export const MERGE_GROUP_HOSTED_LIMITS: RouteLimits = {
+	maxWaitSeconds: 120,
+	maxQueued: 4,
+};
 
-function recentPickupsOnLabel(
-	jobs: readonly SeenJob[],
-	label: string,
-	nowMs: number,
-	windowSeconds: number,
-): number {
-	const needle = label.toLowerCase();
-	return jobs.filter(
-		(job) =>
-			job.labels.length === 1 &&
-			job.labels[0]?.toLowerCase() === needle &&
-			job.startedAtMs !== undefined &&
-			seconds(job.startedAtMs, nowMs) <= windowSeconds,
-	).length;
+export function mergeGroupHostedHasIdleCapacity(
+	load: LabelLoad,
+	limits: RouteLimits = MERGE_GROUP_HOSTED_LIMITS,
+): boolean {
+	return !refusingJobs(load, limits);
 }
 
 /**
- * Hosted probe decides where the merge-group **route job** runs: `trunk` when
- * the fleet is taking work on a fresh pickup, else `hosted` so routing can fall
- * back if trunk is offline. Merge-queue ruleset 18324187 evicts the queue entry
- * after its check timeout (~8 minutes); that bounds queue participation but does
- * not necessarily cancel orphaned `gh-readonly-queue` workflow runs still waiting
- * for runners (see #2920 Fabric run 44856751012). Job `timeout-minutes` on the
- * route job still does not include queue wait; the two-minute pickup gate here
- * limits pinning the follow-on route job to `hobo-trunk` when the label is idle.
+ * Merge-queue probe on GitHub-hosted runners: read hosted queue depth, always
+ * choose `hosted` for the route job so routing itself does not wait on the
+ * single `hobo-trunk` node (#2920 run 44864749031). Fabric jobs prefer hosted
+ * while `mergeGroupHostedHasIdleCapacity` holds; `hobo-trunk` only when hosted
+ * is saturated. Ruleset 18324187 evicts the queue entry after ~8 minutes.
  */
 export async function mergeGroupRouteSurface(
 	env: NodeJS.ProcessEnv,
@@ -733,45 +723,35 @@ export async function mergeGroupRouteSurface(
 	const settings = routeSettings(
 		readRunnerRouting(io.routingConfig ?? readRoutingPolicy()),
 	);
-	const { labels, limits } = settings;
-	const surfaceLimits = {
-		...limits,
-		maxWaitSeconds: Math.min(
-			limits.maxWaitSeconds,
-			MERGE_GROUP_ROUTE_SURFACE_SECONDS,
-		),
-		maxQueued: Number.MAX_SAFE_INTEGER,
-	};
+	const { labels } = settings;
 	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
 	const token = env.GITHUB_TOKEN ?? "";
 	const repository = env.GITHUB_REPOSITORY ?? "";
 	if (!token || !repository) return "hosted";
 	const read = githubReader(apiUrl, token);
 	const now = io.now ?? Date.now;
+	const probeLimits = {
+		...MERGE_GROUP_HOSTED_LIMITS,
+		maxQueued: Number.MAX_SAFE_INTEGER,
+	};
 	try {
 		const view = await observeQueue({
 			read,
 			repository,
 			ownRunId: Number(env.GITHUB_RUN_ID),
-			labels: [labels.trunk],
-			limits: surfaceLimits,
+			labels: [labels.github],
+			limits: probeLimits,
 			nowMs: now(),
 		});
-		const nowMs = now();
-		const fleet = labelLoad(view.jobs, labels.trunk, nowMs);
-		if (
-			recentPickupsOnLabel(
-				view.jobs,
-				labels.trunk,
-				nowMs,
-				MERGE_GROUP_SURFACE_RECENT_PICKUP_SECONDS,
-			) === 0
-		) {
-			return "hosted";
-		}
-		if (takingJobs(fleet, surfaceLimits)) return "trunk";
-	} catch {
-		return "hosted";
+		const hosted = labelLoad(view.jobs, labels.github, now());
+		const idle = mergeGroupHostedHasIdleCapacity(hosted);
+		console.log(
+			`merge-group hosted probe: ${describeLoad("GitHub-hosted", hosted)}; idle=${idle}`,
+		);
+	} catch (error) {
+		console.log(
+			`merge-group hosted probe: queue unreadable (${error instanceof Error ? error.message : "unknown error"})`,
+		);
 	}
 	return "hosted";
 }
@@ -1412,6 +1392,7 @@ export async function main(
 		const repository = env.GITHUB_REPOSITORY ?? "";
 		const token = env.GITHUB_TOKEN ?? "";
 		const trunkLabel = labels.trunk;
+		const githubLabel = labels.github;
 		const observationLimits = {
 			...limits,
 			maxQueued: Number.MAX_SAFE_INTEGER,
@@ -1422,43 +1403,60 @@ export async function main(
 				read,
 				repository,
 				ownRunId: Number(env.GITHUB_RUN_ID),
-				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
+				labels: localEnrolled
+					? [githubLabel, trunkLabel, labels.local]
+					: [githubLabel, trunkLabel],
 				limits: observationLimits,
 				nowMs,
 			});
 		const sleep = (wait: number) => delay(wait * 1000);
 		let decision: RouteDecision;
 		try {
-			decision = await chooseRunner({
-				observe,
-				now,
-				sleep,
-				mode,
-				fleetLabel: trunkLabel,
-				localLabel: labels.local,
-				githubLabel: labels.github,
-				localEnrolled,
-				limits: observationLimits,
-				trunkPriority: true,
-			});
+			const firstView = await observe(now());
+			const hostedLoad = labelLoad(
+				firstView.jobs,
+				githubLabel,
+				now(),
+			);
+			if (mergeGroupHostedHasIdleCapacity(hostedLoad)) {
+				decision = {
+					tier: "github",
+					runner: githubLabel,
+					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${describeLoad("GitHub-hosted", hostedLoad)})`,
+					refusedBy: "queue",
+				};
+			} else {
+				decision = await chooseRunner({
+					observe,
+					now,
+					sleep,
+					mode,
+					fleetLabel: trunkLabel,
+					localLabel: labels.local,
+					githubLabel,
+					localEnrolled,
+					limits: observationLimits,
+					trunkPriority: true,
+				});
+				if (decision.tier === "fleet")
+					decision = await confirmMergeGroupFabricFleet({
+						fleetDecision: decision,
+						observe,
+						now,
+						sleep,
+						fleetLabel: trunkLabel,
+						githubLabel,
+						limits: observationLimits,
+					});
+			}
 		} catch (error) {
 			decision = {
 				tier: "github",
-				runner: labels.github,
+				runner: githubLabel,
 				reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
 				refusedBy: "queue",
 			};
 		}
-		if (decision.tier === "fleet")
-			decision = await confirmMergeGroupFabricFleet({
-				fleetDecision: decision,
-				observe,
-				now,
-				sleep,
-				fleetLabel: trunkLabel,
-				githubLabel: labels.github,
-				limits: observationLimits,
-			});
 		return report(
 			{
 				...decision,
