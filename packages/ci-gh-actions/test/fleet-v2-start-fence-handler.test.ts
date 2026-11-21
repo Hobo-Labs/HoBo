@@ -443,6 +443,23 @@ describe("strict start-fence controller", () => {
 		).toBeUndefined();
 	});
 
+	it("does not return a retry receipt after the offer is revoked", async () => {
+		const handle = relay();
+		expect((await handle(request(JSON.stringify(payload)))).status).toBe(200);
+		await store.putOfferAdmission(
+			parseOfferAdmission(
+				JSON.stringify({
+					offerId: "offer-1",
+					accountId: "hobo-labs",
+					observationHash: "b".repeat(64),
+					policyRevision: 1,
+					state: "revoked",
+				}),
+			),
+		);
+		expect((await handle(request(JSON.stringify(payload)))).status).toBe(409);
+	});
+
 	it("rejects foreign runner assignments, forged jobs, and unknown policies", async () => {
 		jobs = [{ ...assignedJob, runner_group_id: 8 }];
 		expect((await relay()(request(JSON.stringify(payload)))).status).toBe(403);
