@@ -11,11 +11,11 @@ import {
 	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
 	PAGES_RELEASE_VERIFICATION_WINDOW_MS,
 	RELEASE_DRIVE_PAGES,
+	type ReleaseHttpTransport,
 	releaseCampId,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
-	type ReleaseHttpTransport,
 	releaseSource,
 	siteTree,
 } from "../ci/create-github-release.mts";
@@ -473,7 +473,9 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		);
 		const pages = job("release-pages");
 		expect(pages).toMatch(/needs\.route\.outputs\.tier == 'github'/u);
-		expect(pages).toMatch(/needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'/u);
+		expect(pages).toMatch(
+			/needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'/u,
+		);
 		expect(pages).toMatch(
 			/contains\(fromJSON\('\["push","workflow_dispatch","merge_group","workflow_run"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo'/u,
 		);

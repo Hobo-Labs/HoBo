@@ -139,7 +139,8 @@ describe("release OCI app staging", () => {
 				"--filter=@hobo/hobo...",
 			]);
 		} finally {
-			if (previousBase === undefined) delete process.env.HOBO_RELEASE_TURBO_BASE;
+			if (previousBase === undefined)
+				delete process.env.HOBO_RELEASE_TURBO_BASE;
 			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
 			rmSync(repo, { recursive: true, force: true });
 		}

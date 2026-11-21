@@ -1429,8 +1429,7 @@ export async function main(
 				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		} catch (error) {
-			const detail =
-				error instanceof Error ? error.message : "unknown error";
+			const detail = error instanceof Error ? error.message : "unknown error";
 			console.log(
 				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${detail}); using GitHub-hosted runners`)}`,
 			);
@@ -1439,7 +1438,10 @@ export async function main(
 				runner: githubLabel,
 				reason: `merge-group Fabric hosted probe unreadable (${detail})`,
 				refusedBy: "queue",
-				mergeGroupHostedProbe: { idle: false, summary: `unreadable: ${detail}` },
+				mergeGroupHostedProbe: {
+					idle: false,
+					summary: `unreadable: ${detail}`,
+				},
 			};
 		}
 		return report(
@@ -1606,9 +1608,7 @@ export function routeAnnotation(
 		refusedBy: decision.refusedBy ?? "none",
 	};
 	const probe = decision.mergeGroupHostedProbe;
-	const record = probe
-		? { ...base, mergeGroupHostedProbe: probe }
-		: base;
+	const record = probe ? { ...base, mergeGroupHostedProbe: probe } : base;
 	return `::notice title=hobo-ci-route::${escapeCommand(JSON.stringify(record))}`;
 }
 

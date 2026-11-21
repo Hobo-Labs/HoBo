@@ -152,15 +152,17 @@ function refExists(root: string, ref: string): boolean {
 function turboBaseReachable(root: string, base: string): boolean {
 	if (!refExists(root, base)) return false;
 	return (
-		spawnSync(
-			"git",
-			["merge-base", "--", base, "HEAD"],
-			{ cwd: root, stdio: "ignore" },
-		).status === 0
+		spawnSync("git", ["merge-base", "--", base, "HEAD"], {
+			cwd: root,
+			stdio: "ignore",
+		}).status === 0
 	);
 }
 
-export function fetchReleaseTurboBase(root: string, configuredBase: string): void {
+export function fetchReleaseTurboBase(
+	root: string,
+	configuredBase: string,
+): void {
 	const base = configuredBase.trim();
 	if (!base) return;
 	const remote = spawnSync("git", ["remote", "get-url", "origin"], {
@@ -196,8 +198,19 @@ export function fetchReleaseTurboBase(root: string, configuredBase: string): voi
 		return;
 	}
 	const tag = base.replace(/^refs\/tags\//u, "");
-	fetch(["--depth=256", "--filter=blob:none", "origin", "main:refs/remotes/origin/main"]);
-	fetch(["--tags", "--depth=256", "--filter=blob:none", "origin", `refs/tags/${tag}:refs/tags/${tag}`]);
+	fetch([
+		"--depth=256",
+		"--filter=blob:none",
+		"origin",
+		"main:refs/remotes/origin/main",
+	]);
+	fetch([
+		"--tags",
+		"--depth=256",
+		"--filter=blob:none",
+		"origin",
+		`refs/tags/${tag}:refs/tags/${tag}`,
+	]);
 }
 
 export function resolveReleaseTurboBase(

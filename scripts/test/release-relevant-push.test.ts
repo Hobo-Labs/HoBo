@@ -169,9 +169,7 @@ describe("as the release workflow runs it", () => {
 		expect(workflow).toMatch(
 			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}', github\.workflow, github\.event\.merge_group\.head_ref\)/u,
 		);
-		expect(workflow).toMatch(
-			/hobo-release-train-\{0\}-\{1\}/u,
-		);
+		expect(workflow).toMatch(/hobo-release-train-\{0\}-\{1\}/u);
 		expect(workflow).toContain(
 			"cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
 		);
