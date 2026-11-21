@@ -1,6 +1,6 @@
 # Relay mode
 
-In relay mode ([ADR-0183](../../../../docs/design/adr/runner-order.md)) a relay
+In relay mode ([ADR-0183](../../../../docs/ci/runner-order.md)) a relay
 job asks for the label `hobo-relay`, and a HoBo node answers it over the
 runner protocol. No runner program starts, so the relay job runs no job code
 and bills no runner minute. The decision is the same one job mode makes:

@@ -24,6 +24,7 @@ GitHub or vendor verification, a published Pact broker, or a live runner pass.
 | Artifact | Executed boundary |
 | --- | --- |
 | `github-app-boundary.pact.json` | Signed App JWT exchange, installation credentials, dispatch and JIT registration, error and redirect handling |
+| `github-runner-service.pact.json` | Runner OAuth sign-in and broker session, job acquisition and completion against injected fixture responses |
 | `relay-boundary.pact.json` | Signed webhook intake into the inbox, then the tick's reservation and dispatch, and single-use authenticated JIT claims |
 | `http-boundary.pact.json` | The shared Fetch handler behind the Node adapter: committed and duplicate deliveries, an unsigned delivery, readiness with its engine map, and the JIT claim envelope. Every host of the relay serves this handler |
 | `mcp-boundary.pact.json` | The MCP server at `/mcp` without sessions, as every host serves it: credential, scope and origin refusals, initialize without subscriptions, the tool and resource lists, an event read after a cursor, a wait that ends without news, queued jobs, status with its limits, the mesh's node list and resource answering `mesh: "not-configured"` on a host with no mesh, a write refused for want of `operations:write`, a lease the account does not own reported as absent, a cursor not issued to the account refused as invalid input, and a request refused for carrying too many messages |

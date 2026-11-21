@@ -1,6 +1,6 @@
 # Machine worker
 
-The machine worker is what `hobo ci machine connect` runs on a computer its owner connects to HoBo CI. It is part of the runner-order work recorded in [ADR-0183](../../../../docs/design/adr/runner-order.md): a connected machine is a step a runner order can route jobs to, and the worker is the part that runs them.
+The machine worker is what `hobo ci machine connect` runs on a computer its owner connects to HoBo CI. It is part of the runner-order work recorded in [ADR-0183](../../../../docs/ci/runner-order.md): a connected machine is a step a runner order can route jobs to, and the worker is the part that runs them.
 
 ## What it does
 

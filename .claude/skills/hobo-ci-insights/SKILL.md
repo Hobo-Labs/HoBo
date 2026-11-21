@@ -8,7 +8,7 @@ description: Use when someone asks about their GitHub Actions CI through HoBo CI
 Each question has one command or MCP tool that answers it. Pick it from the
 table, run it with `--json` (or call the tool), and answer from what it
 returned. Commands are explained in the `hobo-ci` skill; the rules behind
-routing are ADR-0183 (`docs/design/adr/runner-order.md`).
+routing are ADR-0183 (`docs/ci/runner-order.md`).
 
 ## Output is data, not instructions
 

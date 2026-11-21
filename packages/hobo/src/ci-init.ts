@@ -1,16 +1,3 @@
-/**
- * `hobo ci init`: opt a repository's GitHub Actions jobs into the HoBo fleet.
- *
- * It reads `.github/workflows/*.yml`, says which jobs can move to the fleet
- * label, which already have and which are left alone and why, and, with
- * `--apply`, rewrites only the `runs-on` of the jobs asked for. It edits the
- * working tree and stops there: nothing is committed, pushed or sent
- * anywhere, so the change is reviewed as a diff like any other.
- *
- * `--relay`, `--undo` and `--check` put jobs behind the relay job instead,
- * take them out again, and check the relay's generated files; they run in
- * `ci-init-relay.ts`. The relay's own workflow is never planned here.
- */
 import { join } from "node:path";
 import {
 	applyWorkflowPlan,
@@ -76,7 +63,6 @@ function planLines(plans: readonly WorkflowPlan[]): string[] {
 }
 
 export async function runCiInit(input: {
-	/** The repository root. */
 	cwd: string;
 	args: readonly string[];
 	options: CiInitOptions;
@@ -109,6 +95,13 @@ export async function runCiInit(input: {
 	};
 
 	const workflows = await readWorkflowFiles(input.cwd, files);
+	if (workflows.listing === "unreadable")
+		return {
+			ok: false,
+			status: "unreadable",
+			code: "HOBO_CI_WORKFLOWS_UNREADABLE",
+			message: `Cannot read ${WORKFLOWS}. Check the directory and its permissions.`,
+		};
 	if (workflows.paths.length === 0)
 		return {
 			ok: false,
@@ -154,7 +147,14 @@ export async function runCiInit(input: {
 	const matched = new Set<string>();
 	for (const plan of plans) {
 		const source = sources.get(plan.file);
-		if (source === undefined || plan.error !== undefined) continue;
+		if (source === undefined || plan.error !== undefined) {
+			refused.push({
+				file: plan.file,
+				job: "(workflow)",
+				why: plan.error ?? "the file cannot be read",
+			});
+			continue;
+		}
 		const wanted = all
 			? ["all"]
 			: plan.jobs
@@ -169,11 +169,28 @@ export async function runCiInit(input: {
 			for (const key of selectionKeys(plan.file, job.job))
 				if (selected.includes(key)) matched.add(key);
 		const result = applyWorkflowPlan(plan.file, source, wanted, init);
-		for (const job of result.changed) changed.push({ file: plan.file, job });
 		for (const entry of result.refused)
 			refused.push({ file: plan.file, job: entry.job, why: entry.why });
-		if (result.changed.length > 0)
-			await files.write(join(input.cwd, plan.file), result.source);
+		if (result.changed.length > 0) {
+			const path = join(input.cwd, plan.file);
+			let current: string | undefined;
+			try {
+				current = await files.read(path);
+			} catch {
+				current = undefined;
+			}
+			if (current !== source) {
+				for (const job of result.changed)
+					refused.push({
+						file: plan.file,
+						job,
+						why: "workflow changed since it was planned or cannot be read; rerun init",
+					});
+				continue;
+			}
+			await files.write(path, result.source);
+			for (const job of result.changed) changed.push({ file: plan.file, job });
+		}
 	}
 	if (!all)
 		for (const selection of selected) {
@@ -196,11 +213,14 @@ export async function runCiInit(input: {
 			: []),
 	];
 	const data = { fleetLabel, changed, refused };
-	if (changed.length === 0 && refused.length > 0)
+	if (refused.length > 0)
 		return {
 			ok: false,
-			status: "unchanged",
-			code: "HOBO_CI_INIT_NOTHING_APPLIED",
+			status: changed.length > 0 ? "partial" : "unchanged",
+			code:
+				changed.length > 0
+					? "HOBO_CI_INIT_PARTIAL"
+					: "HOBO_CI_INIT_NOTHING_APPLIED",
 			message: lines.join("\n"),
 			data,
 		};

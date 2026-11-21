@@ -2,7 +2,7 @@
 
 A relay that keeps a journal keeps each workflow run attempt it hears about, so
 the insight reports can read stored history instead of asking GitHub each time
-([ADR-0183](../../../docs/design/adr/runner-order.md)). The stateless hosted
+([ADR-0183](../../../docs/ci/runner-order.md)). The stateless hosted
 relay keeps none; there the reports still read GitHub on demand.
 
 ## Where the history comes from

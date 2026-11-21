@@ -143,6 +143,11 @@ export interface ResourceIntent {
 	region?: string;
 	objective: string;
 	placement?: PlacementCriteria;
+	/**
+	 * When the resource runs (a schedule's five-field cron expression), from
+	 * the Bindle's `cadence` trait. Absent for every other resource.
+	 */
+	cadence?: string;
 }
 
 // ---- Parsed derived types. Deeply readonly, frozen, and branded so the type
@@ -188,6 +193,7 @@ export type ParsedResourceIntent = {
 	readonly region?: string;
 	readonly objective: string;
 	readonly placement?: ParsedPlacementCriteria;
+	readonly cadence?: string;
 	readonly [resourceIntentBrand]: "ResourceIntent";
 };
 
@@ -232,6 +238,7 @@ export type ResourceIntentRecord = {
 	readonly region?: string;
 	readonly objective: string;
 	readonly placement?: PlacementCriteriaRecord;
+	readonly cadence?: string;
 };
 
 /** Every refusal from this module. `path` names the offending field. */
@@ -248,6 +255,9 @@ export class ResourceIntentError extends Error {
 
 const UINT32_MAX = 4_294_967_295;
 
+/** Five whitespace-separated cron fields (minute hour day month weekday). */
+const CRON_FIELDS = /^\S+(\s+\S+){4}$/u;
+
 const RESOURCE_INTENT_KEYS: readonly string[] = [
 	"name",
 	"port",
@@ -258,6 +268,7 @@ const RESOURCE_INTENT_KEYS: readonly string[] = [
 	"region",
 	"objective",
 	"placement",
+	"cadence",
 ];
 
 const CRITERIA_KEYS: readonly string[] = [
@@ -304,6 +315,7 @@ type DecodeInput = {
 	objective: UnparsedValue;
 	region?: UnparsedValue;
 	placement?: DecodedCriteria;
+	cadence?: UnparsedValue;
 };
 
 const objectTag = Object.prototype.toString;
@@ -596,6 +608,16 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 		placement = parseCriteria(record.placement, "$.placement");
 	}
 
+	let cadence: string | undefined;
+	if ("cadence" in record) {
+		cadence = requireNonEmptyString(record.cadence, "$.cadence");
+		if (!CRON_FIELDS.test(cadence))
+			throw new ResourceIntentError(
+				"$.cadence",
+				"must be a five-field cron expression",
+			);
+	}
+
 	const result: MutableParsedIntent = {
 		name,
 		port,
@@ -607,6 +629,7 @@ export function parseResourceIntent<T>(input: T): ParsedResourceIntent {
 	};
 	if (region !== undefined) result.region = region;
 	if (placement !== undefined) result.placement = placement;
+	if (cadence !== undefined) result.cadence = cadence;
 	// SAFETY: every property was parsed above and the unique brand is never observable at runtime.
 	return Object.freeze(result) as ParsedResourceIntent;
 }
@@ -633,6 +656,7 @@ export function encodeResourceIntent(
 	if (intent.region !== undefined) record.region = intent.region;
 	if (intent.placement !== undefined)
 		record.placement = encodeCriteria(intent.placement);
+	if (intent.cadence !== undefined) record.cadence = intent.cadence;
 	return record;
 }
 
@@ -683,6 +707,7 @@ export function decodeResourceIntent<T>(record: T): ParsedResourceIntent {
 		"region",
 		"objective",
 		"placement",
+		"cadence",
 	];
 	rejectUnknownKeys(wire, "$", allowed);
 	const input: DecodeInput = {
@@ -696,6 +721,7 @@ export function decodeResourceIntent<T>(record: T): ParsedResourceIntent {
 	};
 	if ("region" in wire) input.region = wire.region;
 	if ("placement" in wire) input.placement = decodeCriteria(wire.placement);
+	if ("cadence" in wire) input.cadence = wire.cadence;
 	return parseResourceIntent(input);
 }
 

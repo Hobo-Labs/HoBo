@@ -40,6 +40,7 @@ import {
 	isHostedStep,
 	isWhatIfRefusal,
 	machineIsOnline,
+	orderStepKeys,
 	type WhatIfAnswer,
 	type WhatIfQuestion,
 } from "./what-if.js";
@@ -375,9 +376,8 @@ function decisionLine(decision: RunnerRouteDecision): string {
 function whatIfForm(model: RouterModel): string {
 	const { question, order } = model;
 	const disabled = model.order.problem === "" ? "" : " disabled";
-	const fields = order.order.steps
-		.map((step) => {
-			const key = stepKey(step);
+	const fields = orderStepKeys(order.order)
+		.map((key) => {
 			const value = question.labels.get(key) ?? "";
 			const unhealthy = isHostedStep(key)
 				? `<label class="check"><input type="checkbox" name="unhealthy" value="${escapeHtml(key)}"${question.unhealthy.has(key) ? " checked" : ""}> ${escapeHtml(key)} has stopped starting jobs</label>`
@@ -415,7 +415,10 @@ export function renderRouter(model: RouterModel): string {
 		"The committed runner order, walked top to bottom",
 		["#", "Step", "Limit", "Health"],
 		order.order.steps.map((step, index) => {
-			const health = stepHealth(stepKey(step), model.routes, nowMs);
+			const key = stepKey(step);
+			const health = key
+				? stepHealth(key, model.routes, nowMs)
+				: { state: "faint" as const, text: "not a runner step" };
 			return [
 				String(index + 1),
 				`<strong>${escapeHtml(step.key)}</strong>`,

@@ -6,7 +6,7 @@ description: "How a committed runner order sends each GitHub Actions job to the 
 
 # Runner order and relay jobs
 
-A **runner order** is a list you commit: for example "the HoBo fleet, then my machines, then Blacksmith while it is under $100 this month, then GitHub-hosted". A job takes the first runner type in the list that can run it now. Nothing is ranked; the list is walked as written. The decision record is [ADR-0183](https://github.com/Hobo-Labs/HoBo/blob/main/docs/design/adr/runner-order.md).
+A **runner order** is a list you commit: for example "the HoBo fleet, then my machines, then Blacksmith while it is under $100 this month, then GitHub-hosted". A job takes the first runner type in the list that can run it now. Nothing is ranked; the list is walked as written. The decision record is [ADR-0183](https://github.com/Hobo-Labs/HoBo/blob/main/docs/ci/runner-order.md).
 
 ## Where it lives
 

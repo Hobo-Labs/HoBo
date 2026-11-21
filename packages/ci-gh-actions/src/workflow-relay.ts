@@ -1,31 +1,3 @@
-/**
- * `hobo ci init --relay` and `--undo`: put a relay job in front of a
- * workflow's jobs, and take it out again (ADR-0183,
- * `docs/design/adr/runner-order.md`).
- *
- * A relay job asks which runner a job should use. For each job chosen, the
- * edit adds a job `relay-<job>` just above it that calls the repository's
- * `.github/workflows/hobo-relay.yml` with `github:` set to the label the job
- * had, adds the relay to the job's `needs`, and sets the job's `runs-on` to
- * the relay's `runner` output. A matrix job gets one relay for all its legs,
- * because the relay is a job of its own and every leg reads its output.
- *
- * The edit splices bytes into the file and never writes it back out from its
- * parsed form, so comments, quoting, indentation and line endings stay as
- * they were. Undoing it removes exactly what was added and puts the label
- * back from the relay's `github:` input. An edit that undoing would not
- * reverse byte for byte is refused before it is made, and a file changed
- * since in a way undoing cannot reverse is refused with the lines that
- * changed.
- *
- * The two files the relay job needs are generated
- * (`_generated-assets/relay-job-assets.ts`). `relayFilesFor` gives them for
- * a mode, and `checkRelayFiles` tells whether the copies in a repository are
- * the ones this build writes.
- *
- * Pure functions: no filesystem, clock or network. The caller reads the files
- * and writes the results.
- */
 import { createHash } from "node:crypto";
 import {
 	RELAY_EVALUATOR_FILE,

@@ -142,7 +142,9 @@ describe("LedgerSpendReader (R08)", () => {
 			],
 			undefined,
 		).spentUsd("acct-1", MONTH);
-		expect(Object.fromEntries(spent)).toEqual({ depot: 2.5, blacksmith: 1 });
+		expect(spent.get("depot")).toBe(2.5);
+		expect(spent.get("blacksmith")).toBe(1);
+		expect(spent.get("ubicloud")).toBe(0);
 	});
 
 	it("prices jobs no settled lease covers at the list rate", async () => {

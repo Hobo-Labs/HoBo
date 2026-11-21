@@ -87,9 +87,17 @@ export type TestPlan =
 			readonly full: readonly string[];
 			/** Package dir → test files (relative to it) that run. */
 			readonly subsets: ReadonlyMap<string, readonly string[]>;
+			readonly vitestShards?:
+				| ReadonlyMap<string, VitestShardSlices>
+				| undefined;
 			/** Dependents none of whose tests reach the change. */
 			readonly skipped: readonly string[];
 	  };
+
+export type VitestShardSlices = Readonly<{
+	count: number;
+	indexes: readonly number[];
+}>;
 
 export function planUnits(
 	plan: TestPlan,
@@ -101,10 +109,20 @@ export function planUnits(
 			: [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
+	const sliced =
+		plan.mode === "all"
+			? new Map<string, VitestShardSlices>()
+			: plan.vitestShards;
 	const wholeDirs = new Set(full);
-	if ([...subsets.keys()].some((dir) => wholeDirs.has(dir)))
+	if (
+		[...subsets.keys()].some(
+			(dir) => wholeDirs.has(dir) || sliced?.has(dir) === true,
+		)
+	)
 		throw new Error("workspace cannot be both a whole suite and a subset");
-	return [...new Set([...full, ...subsets.keys()])].sort();
+	return [
+		...new Set([...full, ...subsets.keys(), ...(sliced?.keys() ?? [])]),
+	].sort();
 }
 
 /**
@@ -152,20 +170,128 @@ function countPackageTestFiles(repo: Repo, packageDir: string): number {
 export function planUnitLoadSeconds(
 	plan: TestPlan,
 	unit: string,
-	repo: Repo,
+	repo?: Repo,
 	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
 ): number {
 	const packageSeconds = workspaceTestSeconds(unit, durations);
 	if (plan.mode === "all") return packageSeconds;
 	if (plan.full.includes(unit)) return packageSeconds;
 	const subset = plan.subsets.get(unit);
-	if (!subset || subset.length === 0) return packageSeconds;
+	if (!subset || subset.length === 0 || repo === undefined)
+		return packageSeconds;
 	const totalFiles = countPackageTestFiles(repo, unit);
 	if (totalFiles <= subset.length) return packageSeconds;
 	return Math.max(
 		durations.defaultSeconds,
 		(packageSeconds * subset.length) / totalFiles,
 	);
+}
+
+export const VITEST_SHARDABLE_PACKAGES: ReadonlySet<string> = new Set([
+	"packages/hobo",
+]);
+
+export const VITEST_SHARD_TARGET_SECONDS = 45;
+
+export const MAX_VITEST_SHARDS_PER_PACKAGE = 4;
+
+export function vitestShardCountForWeight(
+	seconds: number,
+	shardable: boolean,
+): number {
+	if (!shardable || seconds <= VITEST_SHARD_TARGET_SECONDS) return 1;
+	return Math.min(
+		MAX_VITEST_SHARDS_PER_PACKAGE,
+		Math.ceil(seconds / VITEST_SHARD_TARGET_SECONDS),
+	);
+}
+
+export function vitestShardsForUnit(
+	plan: TestPlan,
+	dir: string,
+	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	repo?: Repo,
+): number {
+	if (!VITEST_SHARDABLE_PACKAGES.has(dir)) return 1;
+	if (plan.mode === "scoped" && !plan.full.includes(dir)) return 1;
+	if (repo !== undefined) {
+		const manifest = parseManifest(repo.read(`${dir}/package.json`));
+		const scripts = manifest?.scripts;
+		const test = isObject(scripts) ? scripts.test : undefined;
+		if (!isString(test) || !PLAIN_VITEST.test(test.trim())) return 1;
+	}
+	return vitestShardCountForWeight(workspaceTestSeconds(dir, durations), true);
+}
+
+const SHARD_UNIT_SEPARATOR = "\u0000";
+
+export function formatVitestShardUnit(
+	dir: string,
+	index: number,
+	count: number,
+): string {
+	return `${dir}${SHARD_UNIT_SEPARATOR}${index}/${count}`;
+}
+
+export type ParsedVitestShardUnit = Readonly<{
+	dir: string;
+	slice?: VitestShardSlice;
+}>;
+
+export type VitestShardSlice = Readonly<{ index: number; count: number }>;
+
+export function parseVitestShardUnit(unit: string): ParsedVitestShardUnit {
+	const separator = unit.indexOf(SHARD_UNIT_SEPARATOR);
+	if (separator < 0) return { dir: unit };
+	const dir = unit.slice(0, separator);
+	const match = /^(\d+)\/(\d+)$/u.exec(unit.slice(separator + 1));
+	if (!match) return { dir: unit };
+	return {
+		dir,
+		slice: { index: Number(match[1]), count: Number(match[2]) },
+	};
+}
+
+export function expandShardUnits(
+	plan: TestPlan,
+	units: readonly string[],
+	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	repo?: Repo,
+): string[] {
+	const expanded: string[] = [];
+	for (const dir of units) {
+		const count = vitestShardsForUnit(plan, dir, durations, repo);
+		for (let index = 0; index < count; index++)
+			expanded.push(
+				count === 1 ? dir : formatVitestShardUnit(dir, index, count),
+			);
+	}
+	return expanded;
+}
+
+export function maxVitestShardCount(
+	plan: TestPlan,
+	durations: WorkspaceDurationTable = loadWorkspaceDurations(),
+	repo?: Repo,
+	units?: readonly string[],
+): number {
+	const base = units ?? (plan.mode === "all" ? [] : [...plan.full]);
+	const dirs = base.map((unit) => parseVitestShardUnit(unit).dir);
+	return Math.max(
+		1,
+		...dirs.map((dir) => vitestShardsForUnit(plan, dir, durations, repo)),
+	);
+}
+
+export function shardUnitSeconds(
+	plan: TestPlan,
+	unit: string,
+	repo: Repo | undefined,
+	durations: WorkspaceDurationTable,
+): number {
+	const { dir, slice } = parseVitestShardUnit(unit);
+	const seconds = planUnitLoadSeconds(plan, dir, repo, durations);
+	return slice ? seconds / slice.count : seconds;
 }
 
 /** Longest-processing-time-first multi-way partition by measured workspace seconds. */
@@ -254,20 +380,52 @@ export function shardTestPlan(
 		throw new Error("invalid workspace test shard");
 	// Read once: for a repo-wide plan this is a `turbo --dry=json` run.
 	const dirs = testWorkspaceUnits(plan, workspaces, graph);
-	const full = plan.mode === "all" ? dirs : [...plan.full];
+	const units = expandShardUnits(plan, dirs, durations, repo);
+	const weightFor = (unit: string) =>
+		shardUnitSeconds(plan, unit, repo, durations);
+	const selectedPart = partitionUnitsByWeight(
+		units,
+		durations,
+		count,
+		weightFor,
+	)[index];
+	if (selectedPart === undefined)
+		throw new Error("invalid workspace test shard");
+	const selected: readonly string[] = selectedPart;
+	const sliced = new Map<string, { count: number; indexes: number[] }>();
+	const selectedDirs = new Set<string>();
+	for (const unit of selected) {
+		const { dir, slice } = parseVitestShardUnit(unit);
+		selectedDirs.add(dir);
+		if (!slice) continue;
+		const entry = sliced.get(dir) ?? { count: slice.count, indexes: [] };
+		if (entry.count !== slice.count)
+			throw new Error(`inconsistent vitest shard count for ${dir}`);
+		entry.indexes.push(slice.index);
+		sliced.set(dir, entry);
+	}
+	const baseFull = plan.mode === "all" ? dirs : [...plan.full];
 	const subsets =
 		plan.mode === "all" ? new Map<string, readonly string[]>() : plan.subsets;
-	const weightFor =
-		repo !== undefined
-			? (unit: string) => planUnitLoadSeconds(plan, unit, repo, durations)
+	const sortedSlices =
+		sliced.size > 0
+			? new Map(
+					[...sliced]
+						.sort(([a], [b]) => a.localeCompare(b))
+						.map(([dir, entry]) => [
+							dir,
+							{
+								count: entry.count,
+								indexes: [...entry.indexes].sort((a, b) => a - b),
+							},
+						]),
+				)
 			: undefined;
-	const selected = new Set(
-		partitionUnitsByWeight(dirs, durations, count, weightFor)[index],
-	);
 	return {
 		mode: "scoped",
-		full: full.filter((dir) => selected.has(dir)),
-		subsets: new Map([...subsets].filter(([dir]) => selected.has(dir))),
+		full: baseFull.filter((dir) => selectedDirs.has(dir) && !sliced.has(dir)),
+		vitestShards: sortedSlices,
+		subsets: new Map([...subsets].filter(([dir]) => selectedDirs.has(dir))),
 		skipped: [],
 	};
 }
@@ -293,12 +451,15 @@ export function planShardCountBalanced(
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
 		throw new Error("invalid workspace test shard");
 	if (!(targetSeconds > 0)) throw new Error("invalid workspace shard target");
-	const units = testWorkspaceUnits(plan, workspaces, graph);
+	const units = expandShardUnits(
+		plan,
+		testWorkspaceUnits(plan, workspaces, graph),
+		durations,
+		repo,
+	);
 	if (units.length === 0) return 1;
-	const weightFor =
-		repo !== undefined
-			? (unit: string) => planUnitLoadSeconds(plan, unit, repo, durations)
-			: undefined;
+	const weightFor = (unit: string) =>
+		shardUnitSeconds(plan, unit, repo, durations);
 	let count = 1;
 	const fits = (shards: number) => {
 		if (
@@ -306,9 +467,8 @@ export function planShardCountBalanced(
 		)
 			return false;
 		if (
-			weightFor &&
 			shardLoadSpreadSeconds(units, durations, shards, weightFor) >
-				maxSpreadSeconds
+			maxSpreadSeconds
 		)
 			return false;
 		return true;
@@ -331,6 +491,7 @@ export function planShardCount(
 		targetSeconds?: number;
 		workspaces?: readonly Workspace[];
 		durations?: WorkspaceDurationTable;
+		repo?: Repo;
 	}>,
 ): number {
 	if (!Number.isSafeInteger(max) || max < 1 || max > 64)
@@ -343,11 +504,23 @@ export function planShardCount(
 			max,
 			target,
 			options?.durations,
+			turboTestGraph,
+			options?.repo,
 		);
 	}
 	if (plan.mode === "all") return max;
-	const units = plan.full.length + plan.subsets.size;
-	return Math.min(max, Math.max(1, Math.ceil(units / SUITES_PER_SHARD)));
+	const durations = options?.durations ?? loadWorkspaceDurations();
+	const units = expandShardUnits(
+		plan,
+		[...plan.full, ...plan.subsets.keys()],
+		durations,
+		options?.repo,
+	);
+	const slices = maxVitestShardCount(plan, durations, options?.repo, units);
+	return Math.min(
+		max,
+		Math.max(1, Math.ceil(units.length / SUITES_PER_SHARD), slices),
+	);
 }
 
 /** Slowest-shard wall budget the main train targets when slots are available. */
@@ -437,9 +610,14 @@ export function planMainWorkspaceShardCount(
 		maxSpreadSeconds,
 	);
 	count = Math.max(count, minimumScopedShardCount(plan, parallelCap));
-	const units = testWorkspaceUnits(plan, workspaces);
+	const units = expandShardUnits(
+		plan,
+		testWorkspaceUnits(plan, workspaces),
+		durations,
+		repo,
+	);
 	const weightFor = (unit: string) =>
-		planUnitLoadSeconds(plan, unit, repo, durations);
+		shardUnitSeconds(plan, unit, repo, durations);
 	const peakAt = (shards: number) =>
 		maxShardLoadSeconds(units, durations, shards, weightFor);
 	// A shard job may not run past 20 minutes (the workflow cap, and the box
@@ -995,9 +1173,8 @@ export function planDependentTests(
 	}
 	// A package that declares no dependency can still reach a change: a path
 	// outside every package (the root vitest config, a shared setup file, a doc
-	// a test reads), or another package's file it imports by relative path
-	// (`packages/code` importing `../../cli/src/cloud/loader.js`). Only a
-	// closure that actually reaches it counts: walking every package strictly
+	// a test reads), or another package's file it imports by relative path. Only
+	// a closure that actually reaches it counts: walking every package strictly
 	// would run all of them for a docs edit.
 	const bystanders = repo.workspaces
 		.map((ws) => ws.dir)
@@ -1099,8 +1276,9 @@ export function planCommands(
 	const affected = turboAffectedArgs();
 	if (plan.mode === "all")
 		return [[...test, ...affected, parallel, ...turboArgs]];
+	const slices = plan.vitestShards ?? new Map<string, VitestShardSlices>();
 	const commands: string[][] = [];
-	if (plan.subsets.size === 0) {
+	if (plan.subsets.size === 0 && slices.size === 0) {
 		if (plan.full.length > 0)
 			commands.push([
 				...test,
@@ -1112,11 +1290,11 @@ export function planCommands(
 			]);
 		return commands;
 	}
-	const subsetTests = new Set(
-		[...plan.subsets.keys()].map((dir) => `${dir}\0test`),
+	const separateTests = new Set(
+		[...plan.subsets.keys(), ...slices.keys()].map((dir) => `${dir}\0test`),
 	);
-	const tasks = graph([...plan.full, ...plan.subsets.keys()])
-		.filter((task) => !subsetTests.has(`${task.directory}\0${task.task}`))
+	const tasks = graph([...plan.full, ...plan.subsets.keys(), ...slices.keys()])
+		.filter((task) => !separateTests.has(`${task.directory}\0${task.task}`))
 		.map((task) => task.taskId);
 	if (tasks.length > 0)
 		commands.push([
@@ -1138,6 +1316,17 @@ export function planCommands(
 			"--passWithNoTests",
 			...files,
 		]);
+	for (const [dir, spec] of [...slices].sort(([a], [b]) => a.localeCompare(b)))
+		for (const index of [...spec.indexes].sort((a, b) => a - b))
+			commands.push([
+				...test,
+				`--filter=./${dir}`,
+				"--only",
+				parallel,
+				"--",
+				"--passWithNoTests",
+				`--shard=${index + 1}/${spec.count}`,
+			]);
 	return commands;
 }
 
@@ -1211,6 +1400,14 @@ export function intersectScopedPlanWithTurboAffected(
 	const keep = (dir: string) => affected.has(dir) && workspaceDirs.has(dir);
 	const full = plan.full.filter(keep);
 	const subsets = new Map([...plan.subsets].filter(([dir]) => keep(dir)));
+	const vitestShards =
+		plan.vitestShards === undefined
+			? undefined
+			: new Map(
+					[...plan.vitestShards].filter(
+						([dir]) => keep(dir) && !subsets.has(dir),
+					),
+				);
 	for (const dir of affected) {
 		if (!workspaceDirs.has(dir) || full.includes(dir) || subsets.has(dir))
 			continue;
@@ -1221,6 +1418,7 @@ export function intersectScopedPlanWithTurboAffected(
 		mode: "scoped",
 		full,
 		subsets,
+		vitestShards,
 		skipped: plan.skipped.filter((dir) => !keep(dir)),
 	};
 }
@@ -1258,7 +1456,11 @@ function alignPlanWithTurboAffectedFromEnv(
 /** Whether a plan will run any workspace test suites (whole or subset). */
 export function planHasWorkspaceWork(plan: TestPlan): boolean {
 	if (plan.mode === "all") return true;
-	return plan.full.length > 0 || plan.subsets.size > 0;
+	return (
+		plan.full.length > 0 ||
+		plan.subsets.size > 0 ||
+		(plan.vitestShards?.size ?? 0) > 0
+	);
 }
 
 /** Runs the plan. Every part runs, so one failure hides no other. */
@@ -1285,10 +1487,14 @@ function describePlan(plan: TestPlan): string {
 	if (plan.mode === "all")
 		return `dependent-tests: whole workspace (${plan.reason})`;
 	const lines = [
-		`dependent-tests: ${plan.full.length} whole suite(s), ${plan.subsets.size} subset(s), ${plan.skipped.length} dependent(s) skipped`,
+		`dependent-tests: ${plan.full.length} whole suite(s), ${plan.subsets.size} subset(s), ${plan.vitestShards?.size ?? 0} vitest-sharded suite(s), ${plan.skipped.length} dependent(s) skipped`,
 		...plan.full.map((dir) => `  whole  ${dir}`),
 		...[...plan.subsets].map(
 			([dir, files]) => `  subset ${dir}: ${files.join(" ")}`,
+		),
+		...[...(plan.vitestShards ?? new Map<string, VitestShardSlices>())].map(
+			([dir, spec]) =>
+				`  sliced ${dir}: vitest ${spec.indexes.map((index) => `${index + 1}/${spec.count}`).join(" ")}`,
 		),
 		...(plan.skipped.length > 20
 			? []
@@ -1360,15 +1566,24 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 			plan,
 			shardCap,
 			targetSecondsArg
-				? { targetSeconds, workspaces: repo.workspaces }
-				: undefined,
+				? { targetSeconds, workspaces: repo.workspaces, repo }
+				: { durations: loadWorkspaceDurations(), repo },
 		);
 		if (targetSecondsArg) {
-			const units =
+			const units = expandShardUnits(
+				plan,
 				plan.mode === "all"
 					? testWorkspaceUnits(plan, repo.workspaces)
-					: planUnits(plan, repo.workspaces);
-			const peak = maxShardLoadSeconds(units, loadWorkspaceDurations(), count);
+					: planUnits(plan, repo.workspaces),
+				loadWorkspaceDurations(),
+				repo,
+			);
+			const peak = maxShardLoadSeconds(
+				units,
+				loadWorkspaceDurations(),
+				count,
+				(unit) => shardUnitSeconds(plan, unit, repo, loadWorkspaceDurations()),
+			);
 			console.error(
 				`dependent-tests: balanced ${count} shard(s), peak ${peak.toFixed(1)}s (target ${targetSeconds}s)`,
 			);

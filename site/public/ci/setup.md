@@ -16,7 +16,7 @@ the HoBo fleet, connected machines, GitHub-hosted runners and hosted
 providers. A job takes the first runner type in the order that can run it
 now, waits for a busy one, or fails with one sentence saying why. The design
 is ADR-0183:
-https://github.com/Hobo-Labs/HoBo/blob/main/docs/design/adr/runner-order.md
+https://github.com/Hobo-Labs/HoBo/blob/main/docs/ci/runner-order.md
 
 ## 0. What you need
 

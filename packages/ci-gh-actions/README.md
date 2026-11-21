@@ -61,6 +61,8 @@ account lease API's actual job attribution to inspect routing and settlement.
 ## Follow HoBo platform budgets
 
 For an owned development machine, see [local CI and the default dev container](LOCAL-DEVELOPMENT.md).
+Its [runnerless local signoff](LOCAL-DEVELOPMENT.md#local-signoff-in-fleet-routing)
+uses `gh-signoff` to publish the jobs HoBo's local workflow run covered.
 The `local` provider dispatches the existing bridge to `hobo-local-host`; original
 jobs retain `runs-on: hobo`, lease accounting and JIT authorization. Offline act
 also runs the local zero-budget scenario without GitHub credentials.
@@ -758,7 +760,8 @@ Like `runnerRouting`, it is committed configuration, so no variable carries
 it. The record and its rules are `RunnerOrder` in
 [`@hobo/ci`](../ci/RUNNER-ORDER.md); `RunnerOrderDocumentSchema` describes the
 block for the editor schema and fails the project parse on a broken order
-with the parser's own sentence.
+with the parser's own sentence. `parseCiRunnerOrder` applies that same schema,
+so null fields and zero limits or sizes cannot bypass the editor contract.
 
 ```json
 {
@@ -776,11 +779,12 @@ with the parser's own sentence.
 ```
 
 `parseCiRunnerOrder(json)` reads the block: the committed order, or the
-default (`fleet`, `machine`, `github`) when the file has none. A block that
-is there but broken is not silently replaced; the result carries `problem`
-and `source: "default"`, so a caller can refuse to route on an order nobody
-wrote. `hobo ci route` walks the order for one job and shows every step
-passed over. Nothing in the relay reads `runnerOrder` yet.
+default (`fleet`, `machine`, `github`) when the file has none. Invalid JSON,
+a project document that is not a JSON object, or a broken block returns
+`source: "invalid"`, `order: undefined` and a `problem`; there is no default
+order to walk by mistake. `hobo ci route` refuses that result. With a valid
+order it walks the order for one job and shows every step passed over. Nothing
+in the relay reads `runnerOrder` yet.
 
 ### Moving workflow jobs to the fleet
 
@@ -792,8 +796,17 @@ verdict: `ready` (its `runs-on` is a single GitHub-hosted Linux x64 label),
 quoting, line endings and anchors elsewhere in the file are untouched, the old
 label is kept as a trailing comment, and applying twice changes nothing. A job
 whose `runs-on` cannot be changed alone (it sits behind a YAML anchor) is
-refused rather than changed in two places. Both are pure; `hobo ci init` is
-the command over them ([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
+refused rather than changed in two places; a merged `runs-on` is skipped.
+Multiline `run` blocks count for package-install warnings, and passing the
+whole `secrets` context marks a job deploy-like. Deploy checks read effective
+YAML merge keys too: merged environments, inherited secrets, write permissions
+and secret-bearing workflow environment values cannot make a job look ready.
+Jobs that route others directly, through a matrix, or through reusable-workflow
+inputs stay put.
+Applying also reads the result back and returns the original unless selected
+jobs are routed and every unselected job plan is unchanged. Both are pure;
+`hobo ci init` is the command over them
+([CLI](../hobo/CI.md#move-workflow-jobs-to-the-fleet)).
 
 ## Connect a repository
 
@@ -1586,9 +1599,8 @@ estimate of about 25 assumed one command per ring append and no routing reads.
 
 ## Relay job seams
 
-A relay job (ADR-0183, [`packages/ci/RELAY-JOB.md`](../ci/RELAY-JOB.md)) is
-answered by `answerRelayJob` from `@hobo/ci`. This package holds the two seams
-on its GitHub side:
+A [relay job](../ci/RELAY-JOB.md) is answered by `answerRelayJob` from
+`@hobo/ci`. This package holds the two seams on its GitHub side:
 
 - [`src/runner-protocol/port.ts`](src/runner-protocol/port.ts): the runner
   protocol a relay-mode node answers over. `RunnerServiceClient.open` signs in
@@ -1604,6 +1616,11 @@ on its GitHub side:
   one `fetch` for REST, billing and the runner service, `queueJob`, `deliver`
   (webhooks to a handler), `advance` (its clock), `dropNextWebhook`, and reads
   of its runners and jobs.
+
+The JIT configuration contains the private RSA parameters used to sign session
+token requests; treat them as secrets and do not log them. The in-memory fake
+accepts completions only from the session that took the job and rejects calls
+after the session closes.
 
 ## Runner protocol client
 
@@ -1621,7 +1638,7 @@ GitHub simulator.
 
 [`src/runner-adoption.ts`](src/runner-adoption.ts) brings a self-hosted
 runner that was registered before HoBo into the runner order without
-touching its machine ([ADR-0183](../../docs/design/adr/runner-order.md),
+touching its machine ([ADR-0183](../../docs/ci/runner-order.md),
 gauntlet case M10).
 
 - `listAdoptableRunners` reads a private repository's own runners and its
@@ -1633,17 +1650,19 @@ gauntlet case M10).
   runner labels API and returns a `MachineAdvert`: host isolation, one slot,
   busy as GitHub reports it, signed by `github:runner-labels`. The label is
   derived from where the runner is registered and its id, so adopting twice
-  writes nothing the second time.
-- `releaseRunner` takes every `hobo-runner-` label off again; a label that is
-  already gone is not an error.
+  writes nothing the second time. The prospective advert is checked before the
+  label write, and adoption refuses a label already on another listed runner.
+  The listing is a point-in-time check; hosts must protect runner labels from
+  conflicting concurrent changes.
+- `releaseRunner` removes only the label derived for that runner; a label that
+  is already gone is not an error.
 
 The only writes are the two labels calls. Nothing is installed on the
 machine and no registration token is asked for. The calls are pinned by
 [`contracts/github-runner-labels.pact.json`](contracts/github-runner-labels.pact.json),
 hand-authored from GitHub's REST reference and executed by its consumer test;
 no provider verification or live run has been recorded, so the channel is
-built, not proven. The `hobo ci runners list|adopt|release` command in
-`@hobo/hobo` drives it.
+built, not proven. A CLI for these operations is not yet included.
 
 ## Job-mode facts: queue evidence and the routing slip
 
@@ -1695,7 +1714,7 @@ workflow yet, so the channel is built, not proven.
 
 ## Relay job, job mode
 
-In job mode ([ADR-0183](../../docs/design/adr/runner-order.md)) a relay job
+In job mode ([ADR-0183](../../docs/ci/runner-order.md)) a relay job
 is answered on a GitHub-hosted runner by a vendored evaluator, with no relay
 anywhere. It walks the same engine relay mode does (`answerRelayJob` in
 `@hobo/ci`) on facts its own token can read.
@@ -1762,7 +1781,7 @@ yet, so job mode is built, not proven, in production.
 
 `hobo ci machine connect --repo <owner/name>` makes the computer it runs on a
 machine a runner order can route jobs to (ADR-0183,
-[`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+[`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
 It needs only an installed CLI and a GitHub sign-in (`gh auth login`, or a
 token in `GH_TOKEN`); it assumes no checkout. The command lives in
 `packages/hobo/src/ci-machine-connect.ts`; the worker it runs is in
@@ -1806,7 +1825,7 @@ relay stores from `workflow_run` and `workflow_job` webhooks
 trace per run attempt, and sends it through the relay's existing OTLP sink
 (`relayTraceSinkFromEnv` in [`src/relay-trace.ts`](src/relay-trace.ts)). It is
 part of the runner-order work recorded in
-[ADR-0183](../../docs/design/adr/runner-order.md).
+[ADR-0183](../../docs/ci/runner-order.md).
 
 | Span | From | To | Parent |
 | --- | --- | --- | --- |
@@ -1852,7 +1871,7 @@ runs are built, not proven.
 ## Read API and OpenAPI
 
 [`src/read-api.ts`](src/read-api.ts) is the relay's read API
-([ADR-0183](../../docs/design/adr/runner-order.md), gauntlet case S06): the
+([ADR-0183](../../docs/ci/runner-order.md), gauntlet case S06): the
 records the dashboard, the `hobo ci` commands and agents read, from one
 route table.
 
@@ -1904,7 +1923,7 @@ No deployed relay serves it yet, so the channel is built, not proven.
 ## MCP insight tools
 
 [`src/relay-mcp-insights.ts`](src/relay-mcp-insights.ts) adds the eight
-read-only insight tools of [ADR-0183](../../docs/design/adr/runner-order.md)
+read-only insight tools of [ADR-0183](../../docs/ci/runner-order.md)
 to a relay MCP server: `get_runner_order`, `explain_route`,
 `list_route_decisions`, `list_machines`, `get_signals`, `get_job_times`,
 `get_run_failures` and `get_usage`. `registerRelayMcpInsightTools(server,
@@ -1952,7 +1971,7 @@ deployed relay serves them: they are built, not proven.
 
 `hobo ci init --relay` puts the relay job in front of a workflow's jobs, and
 `hobo ci init --undo` takes it out again (ADR-0183,
-[`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+[`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
 The edits are pure functions over a workflow's bytes in
 [`src/workflow-relay.ts`](src/workflow-relay.ts); the command is
 `packages/hobo/src/ci-init-relay.ts`.
@@ -2065,7 +2084,7 @@ and no run against GitHub's runner service is linked yet. See
 
 A routed job that failed for a reason outside its own steps is run again
 without anyone asking, under the retry policy in the runner order
-(ADR-0183, [`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+(ADR-0183, [`docs/ci/runner-order.md`](../../docs/ci/runner-order.md)).
 [`src/auto-retry.ts`](src/auto-retry.ts) does it when a run attempt completes
 with a failure:
 

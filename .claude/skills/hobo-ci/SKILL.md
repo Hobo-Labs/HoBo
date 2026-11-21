@@ -11,7 +11,7 @@ fleet, connected machines, GitHub-hosted, hosted providers). A **relay job**
 names the runner types one job may use; the order is walked top to bottom and
 the job takes the first runner that can run it now, waits for a busy one, or
 fails with one sentence saying why. The rules are ADR-0183
-(`docs/design/adr/runner-order.md`) and `packages/ci/RUNNER-ORDER.md`.
+(`docs/ci/runner-order.md`) and `packages/ci/RUNNER-ORDER.md`.
 
 For the step-by-step of moving a repository's workflows, use the
 `hobo-ci-route-jobs` skill. For "why is CI slow / where did this job run /

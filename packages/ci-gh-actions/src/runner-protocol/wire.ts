@@ -7,7 +7,6 @@
  */
 import { create } from "@bufbuild/protobuf";
 import {
-	isRelayCheckStep,
 	RELAY_JOB_INPUTS,
 	type RelayJobMessage,
 	RelayJobMessageSchema,
@@ -169,6 +168,9 @@ const STEP_REFERENCE = z.object({
 const STEP = z.object({
 	reference: STEP_REFERENCE.optional(),
 	inputs: TEMPLATE_VALUE.optional(),
+	environment: TEMPLATE_VALUE.nullish(),
+	background: z.boolean().default(false),
+	condition: z.string().nullish(),
 });
 
 /**
@@ -191,6 +193,10 @@ export const JOB_MESSAGE = z.object({
 	jobname: z.string().default(""),
 	contextdata: z.record(z.string(), CONTEXT_VALUE).default({}),
 	steps: z.array(STEP).default([]),
+	environmentvariables: z.array(TEMPLATE_VALUE).nullish(),
+	defaults: z.array(TEMPLATE_VALUE).nullish(),
+	jobcontainer: z.unknown().optional(),
+	jobservicecontainers: z.unknown().optional(),
 	billingownerid: z.string().optional(),
 });
 export type JobMessage = z.infer<typeof JOB_MESSAGE>;
@@ -302,16 +308,118 @@ export function relayJobMessageOf(job: JobMessage): RelayJobMessage {
 	});
 }
 
-/**
- * Whether a job is one a relay answers: it names at least one relay input, or
- * every one of its steps is a HoBo check step. Anything else asked for the
- * relay label by mistake; a relay never runs job code, so it cannot run it.
- */
-export function isRelayJob(message: RelayJobMessage): boolean {
-	if (message.inputs.length > 0) return true;
+// The generated job-mode workflow installed by `hobo ci init --relay` is the
+// only routing job whose steps a relay may replace with its own answer. Match
+// its pinned setup actions and complete evaluator command, not merely common
+// workflow inputs such as `size`; the latter occur on unrelated jobs too.
+const ROUTING_CHECKOUT =
+	"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+const ROUTING_SETUP_NODE =
+	"actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1";
+const SUPPORTED_CHECK_STEPS: ReadonlySet<string> = new Set([
+	"hobo-labs/hobo/checks/pr-title@v1",
+	"hobo-labs/hobo/checks/lint@v1",
+]);
+const ROUTING_ENVIRONMENT: ReadonlySet<string> = new Set([
+	"GITHUB_TOKEN",
+	"RELAY_FLEET",
+	"RELAY_MACHINE",
+	"RELAY_GITHUB",
+	"RELAY_BLACKSMITH",
+	"RELAY_DEPOT",
+	"RELAY_NAMESPACE",
+	"RELAY_WARPBUILD",
+	"RELAY_UBICLOUD",
+	"RELAY_BOAT",
+	"RELAY_RUNS_ON",
+	"RELAY_SIZE",
+	"RELAY_FIRST",
+	"RELAY_PRIVATE",
+	"RELAY_FORK",
+	"RELAY_TRIGGERING_ACTOR_ID",
+]);
+const ROUTING_SCRIPT = [
+	"node --no-warnings .hobo-ci/relay.mjs",
+	'--fleet "$RELAY_FLEET" --machine "$RELAY_MACHINE" --github "$RELAY_GITHUB"',
+	'--blacksmith "$RELAY_BLACKSMITH" --depot "$RELAY_DEPOT" --namespace "$RELAY_NAMESPACE"',
+	'--warpbuild "$RELAY_WARPBUILD" --ubicloud "$RELAY_UBICLOUD" --boat "$RELAY_BOAT"',
+	'--runs-on "$RELAY_RUNS_ON" --size "$RELAY_SIZE" --first "$RELAY_FIRST"',
+	'--repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"',
+	'--job "$GITHUB_JOB" --event "$GITHUB_EVENT_NAME" --actor-id "$GITHUB_ACTOR_ID"',
+	'--triggering-actor-id "$RELAY_TRIGGERING_ACTOR_ID" --private "$RELAY_PRIVATE"',
+	'--fork "$RELAY_FORK" --workflow-ref "$GITHUB_WORKFLOW_REF"',
+].join(" ");
+
+function allowedEnvironment(
+	environment: TemplateValue | null | undefined,
+	allowed: ReadonlySet<string>,
+): boolean {
+	if (environment == null) return true;
+	if (environment.kind !== "map") return false;
+	const seen = new Set<string>();
+	return environment.entries.every(([key]) => {
+		if (key.kind !== "text" || !allowed.has(key.text) || seen.has(key.text))
+			return false;
+		seen.add(key.text);
+		return true;
+	});
+}
+
+const NO_ENVIRONMENT: ReadonlySet<string> = new Set();
+
+export function namesRelayWork(message: RelayJobMessage): boolean {
 	return (
+		message.inputs.length > 0 ||
+		(message.steps.length > 0 &&
+			message.steps.every((step) =>
+				SUPPORTED_CHECK_STEPS.has(step.uses.toLowerCase()),
+			))
+	);
+}
+
+/** Only generated routing jobs or jobs made entirely of HoBo checks can be answered. */
+export function isRelayJob(message: RelayJobMessage, job: JobMessage): boolean {
+	if (
+		job.jobcontainer != null ||
+		job.jobservicecontainers != null ||
+		(job.defaults?.length ?? 0) > 0 ||
+		(job.environmentvariables ?? []).some(
+			(environment) => !allowedEnvironment(environment, NO_ENVIRONMENT),
+		) ||
+		job.steps.some(
+			(step) =>
+				step.background ||
+				(step.condition != null &&
+					step.condition !== "" &&
+					step.condition !== "success()"),
+		)
+	)
+		return false;
+	if (
 		message.steps.length > 0 &&
-		message.steps.every((step) => isRelayCheckStep(step.uses))
+		message.steps.every((step) =>
+			SUPPORTED_CHECK_STEPS.has(step.uses.toLowerCase()),
+		) &&
+		job.steps.every((step) =>
+			allowedEnvironment(step.environment, NO_ENVIRONMENT),
+		)
+	)
+		return true;
+	if (message.inputs.length === 0 || message.steps.length !== 3) return false;
+	const [checkout, setup, run] = message.steps;
+	if (
+		checkout?.uses.toLowerCase() !== ROUTING_CHECKOUT ||
+		setup?.uses.toLowerCase() !== ROUTING_SETUP_NODE ||
+		run?.uses !== "" ||
+		!allowedEnvironment(job.steps[0]?.environment, NO_ENVIRONMENT) ||
+		!allowedEnvironment(job.steps[1]?.environment, NO_ENVIRONMENT) ||
+		!allowedEnvironment(job.steps[2]?.environment, ROUTING_ENVIRONMENT)
+	)
+		return false;
+	return (
+		run.inputs.length === 1 &&
+		run.inputs[0]?.name === "script" &&
+		run.inputs[0].value.trim().replace(/\s+/gu, " ") === ROUTING_SCRIPT
 	);
 }
 
