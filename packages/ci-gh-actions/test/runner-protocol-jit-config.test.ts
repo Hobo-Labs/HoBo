@@ -73,6 +73,32 @@ describe("parseJitConfig", () => {
 		expect(Object.isFrozen(config)).toBe(true);
 	});
 
+	it.each([
+		"AgentId",
+		"PoolId",
+	] as const)("accepts only safely representable %s values", (field) => {
+		const withId = (id: string | number) =>
+			edit(".runner", (text) => {
+				const runner: { AgentId: string | number; PoolId: string | number } =
+					JSON.parse(text);
+				runner[field] = id;
+				return JSON.stringify(runner);
+			});
+		const name = field === "AgentId" ? "agentId" : "poolId";
+		expect(
+			parseJitConfig(withId("9007199254740991"), {
+				runnerName: "hobo-relay-1",
+			}).runner[name],
+		).toBe(Number.MAX_SAFE_INTEGER);
+		for (const id of [
+			"9007199254740992",
+			"9007199254740993",
+			9007199254740992,
+		]) {
+			expect(refusal(withId(id))).toContain(".runner has the wrong shape");
+		}
+	});
+
 	it("refuses a runner other than the one expected", () => {
 		expect(refusal(encoded, "hobo-relay-2")).toContain(
 			'is for runner "hobo-relay-1", not "hobo-relay-2"',
@@ -105,7 +131,7 @@ describe("parseJitConfig", () => {
 					text.replace('"AgentName"', '"agentname":"other","AgentName"'),
 				),
 			),
-		).toContain('differ only by case ("agentname")');
+		).toContain("differ only by case");
 		expect(
 			refusal(
 				edit(".credentials", (text) =>
@@ -187,6 +213,23 @@ describe("parseJitConfig", () => {
 		const key = files.get(".credentials_rsaparams") ?? "";
 		const message = refusal(encoded, "someone-else");
 		expect(message).not.toContain(key.slice(10, 40));
+	});
+
+	it("does not disclose untrusted property names in a refusal", () => {
+		const marker = "fixturesecretmarker";
+		const collision = edit(".credentials", (text) => {
+			const credentials = JSON.parse(text);
+			credentials.Data[marker] = "unused";
+			credentials.Data[marker.toUpperCase()] = "unused";
+			return JSON.stringify(credentials);
+		});
+		expect(refusal(collision)).not.toContain(marker);
+
+		const outer = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+		outer[marker] = 123;
+		expect(
+			refusal(Buffer.from(JSON.stringify(outer)).toString("base64")),
+		).not.toContain(marker);
 	});
 });
 

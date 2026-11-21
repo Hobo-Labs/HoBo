@@ -74,7 +74,8 @@
                 "repository": "octo/app",
                 "private": true,
                 "event": "push",
-                "runId": 9001,
+                "fork": false,
+                "runId": "9001",
                 "runAttempt": 1,
                 "job": "route",
                 "inputs": [
@@ -784,7 +785,7 @@
               "successRate": 1,
               "medianMs": 200000,
               "p90Ms": 200000,
-              "medianWaitMs": 6000,
+              "medianWaitMs": 1000,
               "slowestJob": "test"
             }
           ],

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
@@ -17,6 +18,7 @@ import {
 	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
+	confirmMergeGroupFabricFleet,
 	DEFAULT_LOCAL_RUNNER,
 	DEFAULT_MAX_QUEUED,
 	DEFAULT_MAX_WAIT_SECONDS,
@@ -30,6 +32,7 @@ import {
 	MAX_FINISHED_LOOKUPS,
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
+	MERGE_GROUP_FLEET_CONFIRM_SECONDS,
 	main,
 	NO_ROUTING_SLIP,
 	observeQueue,
@@ -737,6 +740,44 @@ describe("reading GitHub's queue", () => {
 		assert.equal(labelLoad(jobs, "hobo", NOW).oldestWaitSeconds, 4000);
 	});
 
+	it("can exhaust the bounded lookups after refusal without changing the default", async () => {
+		const read = async (path: string): Promise<JsonValue> => {
+			if (!path.includes("/jobs")) return runsPage;
+			if (path.includes("/runs/40/"))
+				return {
+					jobs: [
+						{
+							run_id: 40,
+							status: "completed",
+							labels: ["self-hosted", "hobo"],
+							runner_name: "runner",
+							created_at: at(10),
+							started_at: at(8),
+						},
+					],
+				};
+			return jobsPage(10, 4000);
+		};
+		const observe = (exhaustLookups: boolean) =>
+			observeQueue({
+				read,
+				repository: "acme/app",
+				ownRunId: 7,
+				labels: ["hobo"],
+				limits,
+				nowMs: NOW,
+				exhaustLookups,
+			});
+		assert.equal(
+			(await observe(false)).jobs.some((job) => job.labels.length > 1),
+			false,
+		);
+		assert.equal(
+			(await observe(true)).jobs.some((job) => job.labels.length > 1),
+			true,
+		);
+	});
+
 	it("stops once enough jobs are waiting, though none has waited long", async () => {
 		const many = {
 			workflow_runs: Array.from({ length: 40 }, (_, index) => ({
@@ -1086,7 +1127,7 @@ const withGithub = async <T>(
 
 /** No routing slip: the relay has written none. */
 const NO_SLIP = { routingConfig: COMMITTED, fetch: slipApi(undefined) };
-/** A slip must not be read here: a pinned or attested run decides without it. */
+/** A slip must not be read here: a pinned run decides without it. */
 const NO_SLIP_CALL = {
 	routingConfig: COMMITTED,
 	fetch: async (): Promise<never> => {
@@ -1249,19 +1290,7 @@ describe("the script as a whole", () => {
 		);
 	});
 
-	it("sends what is left of an attested run to GitHub-hosted without reading the slip or the queue", async () => {
-		const attested = await main(
-			["--attested", "true"],
-			{
-				GITHUB_EVENT_NAME: "merge_group",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_SLIP_CALL,
-		);
-		assert.equal(attested.runner, "ubuntu-24.04");
-		assert.equal(attested.tier, "github");
-		assert.match(attested.reason, /signed local run/);
-		// A pin is an operator's override: it still wins.
+	it("honours a pin even when a local run was attested", async () => {
 		const pinned = await main(
 			["--attested", "true", "--route", "fleet"],
 			{
@@ -1271,18 +1300,6 @@ describe("the script as a whole", () => {
 			NO_SLIP_CALL,
 		);
 		assert.equal(pinned.runner, "hobo-trunk");
-		// Anything but the literal `true` is not an attestation.
-		const unattested = await main(
-			["--attested", "false"],
-			{
-				GITHUB_EVENT_NAME: "pull_request",
-				GITHUB_REPOSITORY: "acme/app",
-				GITHUB_RUN_ID: "1",
-				GITHUB_API_URL: "http://127.0.0.1:9",
-			},
-			NO_SLIP,
-		);
-		assert.match(unattested.reason, /could not be read/);
 	});
 
 	it("writes runner, tier and shard_runner as step outputs", async () => {
@@ -1422,6 +1439,27 @@ describe("the script reading the slip", () => {
 		]);
 	});
 
+	it("routes the remaining jobs by the slip or queue even when local evidence exists", async () => {
+		const fromSlip = await route("http://127.0.0.1:9", REFUSED_SLIP, {}, [
+			"--attested",
+			"true",
+		]);
+		assert.deepEqual(
+			[fromSlip.decision.tier, fromSlip.decision.runner],
+			["local", "hobo-local-host"],
+		);
+		await withGithub(fleetUpPages, async (apiUrl) => {
+			const fromQueue = await route(apiUrl, undefined, {}, [
+				"--attested",
+				"true",
+			]);
+			assert.deepEqual(
+				[fromQueue.decision.tier, fromQueue.decision.runner],
+				["fleet", "hobo"],
+			);
+		});
+	});
+
 	/** A finished probe and the actual jobs observed for the requested labels. */
 	const observed =
 		(jobs: JsonValue[]) =>
@@ -1452,6 +1490,148 @@ describe("the script reading the slip", () => {
 		status: "queued",
 		labels: [label],
 		created_at: new Date(SLIP_NOW - seconds * 1000).toISOString(),
+	});
+	const mergeGroupCi = {
+		GITHUB_EVENT_NAME: "merge_group",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
+	};
+
+	it("routes merge-group CI to hobo-trunk on recent trunk pickup", async () => {
+		await withGithub(
+			observed([pickup("hobo"), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+			},
+		);
+	});
+
+	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
+		let queueReads = 0;
+		const healthy = observed([pickup("hobo-trunk")]);
+		await withGithub(
+			(path) => {
+				if (!path.includes("/jobs")) queueReads += 1;
+				return queueReads > 1 && path.includes("/jobs")
+					? {
+							jobs: [
+								pickup("hobo-trunk"),
+								waiting("hobo-trunk", MERGE_GROUP_FLEET_CONFIRM_SECONDS + 1),
+							],
+						}
+					: healthy(path);
+			},
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["github", "ubuntu-24.04", "queue"],
+				);
+				assert.match(decision.reason, /merge-group trunk confirmation/u);
+				assert.equal(queueReads, 2);
+			},
+		);
+	});
+
+	it("never routes merge-group CI to hobo", async () => {
+		const generalFleetSlip = JSON.parse(OPEN_SLIP);
+		generalFleetSlip.classes.trunk = {
+			runner: "hobo",
+			tier: "fleet",
+			reason: "fleet-open",
+		};
+		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
+			const { decision } = await route(
+				apiUrl,
+				JSON.stringify(generalFleetSlip),
+				mergeGroupCi,
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(
+				decision.reason,
+				/merge-group Fabric refused the general fleet label hobo/u,
+			);
+		});
+	});
+
+	it("routes merge-group CI to GitHub-hosted when hobo-trunk has no recent pickup", async () => {
+		await withGithub(observed([]), async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+		});
+	});
+
+	it("refuses merge-group Fabric auto routing without committed policy", async () => {
+		await assert.rejects(
+			() =>
+				main([], mergeGroupCi, {
+					...NO_SLIP_CALL,
+					routingConfig: "{}",
+				}),
+			/merge-group Fabric routing requires a valid committed policy/u,
+		);
+	});
+
+	it("times out merge-group trunk confirmation to GitHub-hosted", async () => {
+		let polls = 0;
+		const startedAt = 1_700_000_000_000;
+		const decision = await confirmMergeGroupFabricFleet({
+			fleetDecision: {
+				tier: "fleet",
+				runner: "hobo-trunk",
+				reason: "initial fleet choice",
+			},
+			observe: async () => {
+				polls += 1;
+				return { jobs: [], undecidedAhead: 0, probeUnderway: false };
+			},
+			now: () =>
+				startedAt + polls * (MERGE_GROUP_FLEET_CONFIRM_SECONDS + 5) * 1_000,
+			sleep: async () => {},
+			fleetLabel: "hobo-trunk",
+			githubLabel: "ubuntu-24.04",
+			limits: { maxWaitSeconds: 120, maxQueued: 4 },
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["github", "ubuntu-24.04"],
+		);
+		assert.match(decision.reason, /timed out|without a healthy trunk pickup/u);
+	});
+
+	it("refuses general hobo on merge-group when include-own-run is true", async () => {
+		const generalFleetSlip = JSON.parse(OPEN_SLIP);
+		generalFleetSlip.classes.trunk = {
+			runner: "hobo",
+			tier: "fleet",
+			reason: "fleet-open",
+		};
+		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
+			const { decision } = await route(
+				apiUrl,
+				JSON.stringify(generalFleetSlip),
+				mergeGroupCi,
+				["--include-own-run", "true"],
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["github", "ubuntu-24.04", "queue"],
+			);
+			assert.match(
+				decision.reason,
+				/merge-group Fabric refused the general fleet label hobo/u,
+			);
+		});
 	});
 
 	it("keeps an open fleet slip only when its exact label is taking jobs", async () => {
@@ -1766,7 +1946,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("annotates why no slip was read for a pinned or attested run", async () => {
+	it("annotates why no slip was read for a pinned run", async () => {
 		const env = {
 			GITHUB_EVENT_NAME: "push",
 			GITHUB_API_URL: "http://127.0.0.1:9",
@@ -1789,13 +1969,6 @@ describe("the script reading the slip", () => {
 					.lines,
 			),
 			unasked("pinned"),
-		);
-		assert.deepEqual(
-			noticesIn(
-				(await printedBy(() => main(["--attested", "true"], env, NO_SLIP_CALL)))
-					.lines,
-			),
-			unasked("attested"),
 		);
 		assert.deepEqual(
 			noticesIn(
@@ -2193,6 +2366,8 @@ describe("the routing step without a decision", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-route-fallback-"));
 		try {
 			const output = join(dir, "output");
+			const actionDir = join(dir, ".github/actions/route-runner");
+			mkdirSync(actionDir, { recursive: true });
 			writeFileSync(output, "");
 			const run = spawnSync("bash", ["-c", expressions], {
 				cwd: dir,
@@ -2201,6 +2376,7 @@ describe("the routing step without a decision", () => {
 					PATH: process.env.PATH ?? "",
 					GITHUB_OUTPUT: output,
 					GITHUB_EVENT_NAME: "push",
+					GITHUB_ACTION_PATH: actionDir,
 				},
 			});
 			assert.equal(run.status, 0, run.stderr);
@@ -2233,7 +2409,7 @@ describe("the routing step without a decision", () => {
 	it("passes what the run chose to the script as arguments, never as environment", () => {
 		assert.match(
 			script,
-			/scripts\/ci\/route-runner\.mts \\\n\s+--route "\$\{route\}" --include-own-run "\$\{include_own_run\}" --attested "\$\{attested\}"/,
+			/"\$\{action_root\}\/scripts\/ci\/route-runner\.mts" \\\n\s+--route "\$\{route\}" --include-own-run "\$\{include_own_run\}" --attested "\$\{attested\}"/,
 		);
 		// Only a fixed literal can come out of each expression.
 		assert.ok(
@@ -2279,9 +2455,14 @@ describe("the workflows that route", () => {
 	};
 	const routed = readdirSync(join(root, ".github/workflows"))
 		.map((name) => `.github/workflows/${name}`)
-		.filter((path) =>
-			read(path).includes("uses: $/.github/actions/route-runner"),
-		);
+		.filter((path) => {
+			const text = read(path);
+			return (
+				text.includes("uses: $/.github/actions/route-runner") ||
+				text.includes("uses: ./.github/actions/route-runner") ||
+				text.includes("uses: ./.ci-trusted/.github/actions/route-runner")
+			);
+		});
 
 	// A file the script loads and a workflow does not check out stops the
 	// script before it decides, and the step then falls back to GitHub-hosted.
