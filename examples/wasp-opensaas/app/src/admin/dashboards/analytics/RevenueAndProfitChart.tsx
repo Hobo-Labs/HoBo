@@ -49,10 +49,6 @@ const options: ApexOptions = {
     width: [2, 2],
     curve: "straight",
   },
-  // labels: {
-  //   show: false,
-  //   position: "top",
-  // },
   grid: {
     xaxis: {
       lines: {
@@ -122,7 +118,6 @@ export function RevenueAndProfitChart({ weeklyStats }: DailyStatsProps) {
   const daysOfWeekArr = useMemo(() => {
     if (!!weeklyStats && weeklyStats?.length > 0) {
       const datesArr = weeklyStats?.map((stat) => {
-        // get day of week, month, and day of month
         const dateArr = stat.date.toString().split(" ");
         return dateArr.slice(0, 3).join(" ");
       });
@@ -144,13 +139,11 @@ export function RevenueAndProfitChart({ weeklyStats }: DailyStatsProps) {
     if (dailyRevenueArray && dailyRevenueArray.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setState((prevState) => {
-        // Check if a "Revenue" series already exists
         const existingSeriesIndex = prevState.series.findIndex(
           (series) => series.name === "Revenue",
         );
 
         if (existingSeriesIndex >= 0) {
-          // Update existing "Revenue" series data
           return {
             ...prevState,
             series: prevState.series.map((serie, index) => {
@@ -161,7 +154,6 @@ export function RevenueAndProfitChart({ weeklyStats }: DailyStatsProps) {
             }),
           };
         } else {
-          // Add "Revenue" series as it does not exist yet
           return {
             ...prevState,
             series: [
@@ -193,7 +185,6 @@ export function RevenueAndProfitChart({ weeklyStats }: DailyStatsProps) {
         },
         yaxis: {
           ...options.yaxis,
-          // get the min & max values to the neareast hundred
           max: Math.ceil(Math.max(...dailyRevenueArray) / 100) * 100,
           min: Math.floor(Math.min(...dailyRevenueArray) / 100) * 100,
         },

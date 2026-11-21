@@ -23,7 +23,6 @@ type FormFieldContextValue<
 };
 
 const FormFieldContext = React.createContext<FormFieldContextValue>(
-  // SAFETY: assertion to `{} as FormFieldContextValue` is required at this boundary.
   {} as FormFieldContextValue,
 );
 
@@ -68,7 +67,6 @@ type FormItemContextValue = {
 };
 
 const FormItemContext = React.createContext<FormItemContextValue>(
-  // SAFETY: assertion to `{} as FormItemContextValue` is required at this boundary.
   {} as FormItemContextValue,
 );
 

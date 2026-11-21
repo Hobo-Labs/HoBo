@@ -32,15 +32,12 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
     storedSidebarExpanded === null ? false : storedSidebarExpanded === "true",
   );
 
-  // close on click outside
   useEffect(() => {
     const clickHandler = ({ target }: PointerEvent) => {
       if (!sidebar.current || !trigger.current) return;
       if (
         !sidebarOpen ||
-        // SAFETY: assertion to `target as Node` is required at this boundary.
         sidebar.current.contains(target as Node) ||
-        // SAFETY: assertion to `target as Node` is required at this boundary.
         trigger.current.contains(target as Node)
       )
         return;
@@ -50,7 +47,6 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
     return () => document.removeEventListener("click", clickHandler);
   });
 
-  // close if the esc key is pressed
   useEffect(() => {
     const keyHandler = ({ keyCode }: KeyboardEvent) => {
       if (!sidebarOpen || keyCode !== 27) return;
@@ -80,7 +76,6 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
         },
       )}
     >
-      {/* <!-- SIDEBAR HEADER --> */}
       <div className="py-5.5 lg:py-6.5 flex items-center justify-between gap-2 px-6">
         <Link to={routes.LandingPageRoute.to}>
           <img src={Logo} alt="Logo" width={50} />
@@ -96,19 +91,15 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
           <X />
         </button>
       </div>
-      {/* <!-- SIDEBAR HEADER --> */}
 
       <div className="no-scrollbar flex flex-col overflow-y-auto duration-300 ease-linear">
-        {/* <!-- Sidebar Menu --> */}
         <nav className="mt-5 px-4 py-4 lg:mt-9 lg:px-6">
-          {/* <!-- Menu Group --> */}
           <div>
             <h3 className="text-muted-foreground mb-4 ml-4 text-sm font-semibold">
               MENU
             </h3>
 
             <ul className="mb-6 flex flex-col gap-1.5">
-              {/* <!-- Menu Item Dashboard --> */}
               <NavLink
                 to={routes.AdminRoute.to}
                 end
@@ -125,9 +116,6 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                 Dashboard
               </NavLink>
 
-              {/* <!-- Menu Item Dashboard --> */}
-
-              {/* <!-- Menu Item Users --> */}
               <li>
                 <NavLink
                   to={routes.AdminUsersRoute.to}
@@ -145,9 +133,7 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                   Users
                 </NavLink>
               </li>
-              {/* <!-- Menu Item Users --> */}
 
-              {/* <!-- Menu Item Settings --> */}
               <li>
                 <NavLink
                   to={routes.AdminSettingsRoute.to}
@@ -165,18 +151,15 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                   Settings
                 </NavLink>
               </li>
-              {/* <!-- Menu Item Settings --> */}
             </ul>
           </div>
 
-          {/* <!-- Others Group --> */}
           <div>
             <h3 className="text-muted-foreground mb-4 ml-4 text-sm font-semibold">
               Extra Components
             </h3>
 
             <ul className="mb-6 flex flex-col gap-1.5">
-              {/* <!-- Menu Item Calendar --> */}
               <li>
                 <NavLink
                   to={routes.AdminCalendarRoute.to}
@@ -194,9 +177,7 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                   Calendar
                 </NavLink>
               </li>
-              {/* <!-- Menu Item Calendar --> */}
 
-              {/* <!-- Menu Item Ui Elements --> */}
               <SidebarLinkGroup
                 activeCondition={pathname === "/ui" || pathname.includes("ui")}
               >
@@ -225,7 +206,6 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                         UI Elements
                         {open ? <ChevronUp /> : <ChevronDown />}
                       </NavLink>
-                      {/* <!-- Dropdown Menu Start --> */}
                       <div
                         className={cn("translate transform overflow-hidden", {
                           hidden: !open,
@@ -248,16 +228,13 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
                           </li>
                         </ul>
                       </div>
-                      {/* <!-- Dropdown Menu End --> */}
                     </React.Fragment>
                   );
                 }}
               </SidebarLinkGroup>
-              {/* <!-- Menu Item Ui Elements --> */}
             </ul>
           </div>
         </nav>
-        {/* <!-- Sidebar Menu --> */}
       </div>
     </aside>
   );
