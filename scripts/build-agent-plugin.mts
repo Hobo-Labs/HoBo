@@ -78,7 +78,13 @@ export function agentPluginBuildAttestationIssue(
 	env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
 	if (!agentPluginCiActive(env)) return undefined;
-	if (env.HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY === "1") return undefined;
+	if (env.GITHUB_ACTIONS !== "true") {
+		return "CI bundle builds require GitHub Actions";
+	}
+	const eventName = env.GITHUB_EVENT_NAME?.trim();
+	if (eventName === "pull_request" || eventName === "merge_group") {
+		return undefined;
+	}
 	const runIdentity = [
 		"GITHUB_RUN_ID",
 		"GITHUB_RUN_ATTEMPT",
@@ -86,21 +92,22 @@ export function agentPluginBuildAttestationIssue(
 		"GITHUB_SERVER_URL",
 	] as const;
 	if (
-		env.GITHUB_ACTIONS !== "true" ||
 		env.GITHUB_REPOSITORY?.toLowerCase() !== "hobo-labs/hobo" ||
+		env.GITHUB_REF !== "refs/heads/main" ||
+		(eventName !== "push" &&
+			eventName !== "schedule" &&
+			eventName !== "workflow_dispatch") ||
 		runIdentity.some((name) => (env[name]?.trim() ?? "").length === 0)
 	) {
-		return "CI bundle builds require GitHub Actions, the HoBo repository, and complete run, attempt, commit, and server identity";
+		return "CI bundle builds require non-publishing PR validation or the HoBo repository's trusted main ref with complete run, attempt, commit, and server identity";
 	}
+	if (env.GITHUB_JOB === "main-gate") return undefined;
 	const publishesProvenance =
 		env.GITHUB_JOB === "agent-plugin-provenance" &&
 		(env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "").length > 0 &&
 		(env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "").length > 0;
-	const verifiesProvenance =
-		env.HOBO_AGENT_PLUGIN_VERIFY === "1" &&
-		(env.GH_TOKEN?.trim() ?? "").length > 0;
-	if (!publishesProvenance && !verifiesProvenance) {
-		return "CI bundle builds require the isolated provenance job's OIDC capability or an agent-plugin:check verification context; GITHUB_ACTIONS alone is insufficient";
+	if (!publishesProvenance) {
+		return "trusted main bundle builds require the main-gate verification job or the isolated provenance job's OIDC capability";
 	}
 	return undefined;
 }

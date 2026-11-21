@@ -175,6 +175,22 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		).toEqual([]);
 	});
 
+	it("does not echo malformed JSON input in parse diagnostics", () => {
+		const secret = "ghp_abcdefghijklmnopqrst";
+		for (const parsed of [
+			parsePluginManifest(`{"name": ${secret} invalid`),
+			parseMcpConfig(`{"mcpServers": ${secret} invalid`),
+		]) {
+			expect(parsed.issues).toEqual([
+				{
+					file: expect.stringMatching(/^(?:plugin|mcp)\.json$/u),
+					message: "cannot be parsed as JSON",
+				},
+			]);
+			expect(JSON.stringify(parsed.issues)).not.toContain(secret);
+		}
+	});
+
 	it("rejects unknown fields, wrong $schema, bad names, and non-semver versions", () => {
 		const parsed = parsePluginManifest(
 			JSON.stringify({
@@ -1000,7 +1016,7 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues[0]?.message).not.toContain(secret);
 	});
 
-	it("pins gh verification to the workflow, source digest, and current run certificate", async () => {
+	it("pins gh verification to the trusted main workflow, source digest, and current run certificate", async () => {
 		stubCiOff();
 		vi.stubEnv("GITHUB_SERVER_URL", "https://github.com");
 		vi.stubEnv("GITHUB_REPOSITORY", "Hobo-Labs/HoBo");
@@ -1010,14 +1026,23 @@ describe("checkAgentPlugin (integration)", () => {
 			runAttempt: "1",
 			commitSha: "commit-current",
 		};
-		const attestation = (runAttempt: string) =>
+		const attestation = (
+			overrides: {
+				runAttempt?: string;
+				signerRef?: string;
+				signerDigest?: string;
+			} = {},
+		) =>
 			JSON.stringify([
 				{
 					verificationResult: {
 						signature: {
 							certificate: {
 								extensions: {
-									runInvocationID: `https://github.com/Hobo-Labs/HoBo/actions/runs/run-current/attempts/${runAttempt}`,
+									buildSignerURI: `https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@${overrides.signerRef ?? "refs/heads/main"}`,
+									buildSignerDigest:
+										overrides.signerDigest ?? expected.commitSha,
+									runInvocationID: `https://github.com/Hobo-Labs/HoBo/actions/runs/run-current/attempts/${overrides.runAttempt ?? "1"}`,
 								},
 							},
 						},
@@ -1028,7 +1053,7 @@ describe("checkAgentPlugin (integration)", () => {
 		await expect(
 			verifyAgentPluginAttestation(expected, (command, args) => {
 				calls.push({ command, args });
-				return { status: 0, stdout: attestation("1") };
+				return { status: 0, stdout: attestation() };
 			}),
 		).resolves.toBeUndefined();
 		expect(calls).toEqual([
@@ -1054,9 +1079,20 @@ describe("checkAgentPlugin (integration)", () => {
 		await expect(
 			verifyAgentPluginAttestation(expected, () => ({
 				status: 0,
-				stdout: attestation("0"),
+				stdout: attestation({ runAttempt: "0" }),
 			})),
 		).rejects.toThrow("not from this workflow run attempt");
+		for (const overrides of [
+			{ signerRef: "refs/pull/2913/head" },
+			{ signerDigest: "attacker-controlled-commit" },
+		]) {
+			await expect(
+				verifyAgentPluginAttestation(expected, () => ({
+					status: 0,
+					stdout: attestation(overrides),
+				})),
+			).rejects.toThrow("not from hobo-ci.yml on refs/heads/main");
+		}
 		await expect(
 			verifyAgentPluginAttestation(expected, () => ({
 				status: 1,
@@ -1134,11 +1170,47 @@ describe("checkAgentPlugin (integration)", () => {
 		).toBe(true);
 	});
 
-	it("uses the required external provenance gate without a validation token", async () => {
+	it("validates PR and merge-group bundles without provenance or credentials", async () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"bin/hobo-mcp.mjs": "x".repeat(1024 * 1024),
+			"fixtures/deploy/vercel/package.json": "{}\n",
+		});
+		for (const eventName of ["pull_request", "merge_group"]) {
+			vi.stubEnv("GITHUB_EVENT_NAME", eventName);
+			let verified = false;
+			const report = await checkAgentPlugin({
+				pluginRoot,
+				repoRoot: scratchRepo,
+				verifyAttestation: async () => {
+					verified = true;
+				},
+			});
+			expect(verified).toBe(false);
+			expect(
+				report.issues.some((issue) => /provenance/u.test(issue.message)),
+			).toBe(false);
+			expect(
+				report.notes.some((note) =>
+					/non-publishing PR validation rebuilt and checked/u.test(note),
+				),
+			).toBe(true);
+		}
+	});
+
+	it("does not let retired environment switches bypass trusted verification", async () => {
+		stubCiOff();
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_EVENT_NAME", "push");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
 		vi.stubEnv("HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY", "1");
+		vi.stubEnv("HOBO_AGENT_PLUGIN_VERIFY", "1");
+		vi.stubEnv("GH_TOKEN", "caller-controlled");
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"bin/hobo-mcp.mjs": "x".repeat(1024 * 1024),
 			"fixtures/deploy/vercel/package.json": "{}\n",
@@ -1149,14 +1221,14 @@ describe("checkAgentPlugin (integration)", () => {
 			repoRoot: scratchRepo,
 			verifyAttestation: async () => {
 				verified = true;
+				throw new Error("not signed by GitHub");
 			},
 		});
-		expect(verified).toBe(false);
+		expect(verified).toBe(true);
 		expect(
-			report.issues.some((issue) => /provenance/u.test(issue.message)),
-		).toBe(false);
-		expect(
-			report.notes.some((note) => /required agent-plugin-provenance job/u.test(note)),
+			report.issues.some((issue) =>
+				/no verified GitHub artifact provenance/u.test(issue.message),
+			),
 		).toBe(true);
 	});
 

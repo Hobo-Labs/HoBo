@@ -367,7 +367,11 @@ jobs:
   agent-plugin-provenance:
     name: Agent plugin provenance
     needs: route
-    if: ${{ !cancelled() && needs.route.result == 'success' }}
+    if: >-
+      ${{ !cancelled() && needs.route.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -398,9 +402,9 @@ jobs:
     # from). When the inputs are unchanged that job is a short no-op. !cancelled() keeps this
     # validation running, never skipped, when the image build fails. The
     # required PR impact gate below combines this result with merge-group tests.
-    needs: [route, ci-runner-image, agent-plugin-provenance]
+    needs: [route, ci-runner-image]
     # Skipped when the route job verified a signed local run of this job for this tree.
-    if: ${{ !cancelled() && needs.route.result == 'success' && needs.agent-plugin-provenance.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr_gate_validation"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # Large affected sets can need a cold-cache run; retain the workflow-wide cap.
     timeout-minutes: 20
@@ -518,15 +522,12 @@ jobs:
       - name: Code format gate
         if: github.event_name == 'pull_request'
         run: pnpm run lint:code
-      - name: Verify agent plugin attestation
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Validate agent plugin without publishing
         run: pnpm run agent-plugin:check
       - name: Relevant checks only
         if: github.event_name == 'pull_request'
         env:
           BASE: ${{ steps.scm-base.outputs.base }}
-          HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1"
         run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
       # main-gate's main-base and S0 gate set steps mirror these steps.
       - name: Resolve the merge group base and gate scope
@@ -599,7 +600,6 @@ jobs:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
-          HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1"
           SCOPE: ${{ steps.merge-group-base.outputs.scope }}
           BASE: ${{ steps.merge-group-base.outputs.base }}
         run: |
@@ -1303,9 +1303,9 @@ jobs:
     needs: [route, ci-runner-image, agent-plugin-provenance]
     if: >-
       !cancelled() && needs.agent-plugin-provenance.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
       needs.route.outputs.merge-queue-green != 'true' && (
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'schedule' ||
+      github.event_name == 'push' || github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch')
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # A main run past 20 minutes is a failure; the step timeouts below fail a hang sooner.
@@ -1313,6 +1313,7 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
+      attestations: read
     outputs:
       main_base: ${{ steps.main-base.outputs.base }}
       main_tests: ${{ steps.main-base.outputs.tests }}
@@ -1497,9 +1498,9 @@ jobs:
         env:
           # Three parallel relevant-check lanes on the 4 GiB main trunk class (finding 135).
           HOBO_RELEVANT_CHECK_CONCURRENCY: "3"
-          HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1"
           SCOPE: ${{ steps.main-base.outputs.scope }}
           BASE: ${{ steps.main-base.outputs.base }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts

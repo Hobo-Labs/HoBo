@@ -34,9 +34,10 @@ or `versionFromReleaseTrain` would be omitted; only an explicit
 `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check. Turbo tasks
 use `envMode: strict`; `turbo.json` passes enumerated GitHub Actions identity
 variables (`GITHUB_ACTIONS`, `GITHUB_EVENT_NAME`, `GITHUB_HEAD_SHA`,
-`GITHUB_RUN_ATTEMPT`, `GITHUB_RUN_ID`, `GITHUB_SHA`, and related refs — not
-`GITHUB_TOKEN`), plus `TF_BUILD` and `CI`, through so nested package builds see
-the same CI identity as `agent-plugin:check`.
+`GITHUB_SHA`, and related refs — not `GITHUB_TOKEN`), plus `TF_BUILD` and `CI`,
+through so nested package builds see the same CI identity as
+`agent-plugin:check`. `GITHUB_RUN_ATTEMPT` and `GITHUB_RUN_ID` are task-level
+`env` inputs on `test`, so every run attempt has a distinct cache identity.
 
 ## Build the MCP bundle
 
@@ -50,31 +51,36 @@ pnpm exec turbo run build --filter=@hobo/hobo...
 pnpm run agent-plugin:build
 ```
 
-In CI, HoBo Fabric's isolated `agent-plugin-provenance` job builds the bundle
-and publishes GitHub artifact provenance with pinned
-`actions/attest-build-provenance`. It is the only job with `id-token: write` and
-`attestations: write`; validation jobs have only read permissions and no OIDC
-grant. The build writes no bearer token or local attestation record.
-`GITHUB_ACTIONS=true` alone cannot admit a CI build: publication requires the
-isolated job's OIDC capability, verification requires complete run identity and
-a step-scoped read token, and other validation steps must explicitly declare
-that the required job covers provenance. Validation jobs have only
-`contents: read` and `attestations: read`. Only their dedicated
-`Verify agent plugin attestation` step receives `GH_TOKEN`; it is never exported
-through `GITHUB_ENV`. Other checks repeat conformance without credentials. The
-signed subject is the sha256 of `bin/hobo-mcp.mjs`; copied `fixtures/deploy` is checked
-separately for presence and secrets, not attestation bytes.
+On trusted `main` pushes, schedules, and manual runs, HoBo Fabric's isolated
+`agent-plugin-provenance` job builds the bundle and publishes GitHub artifact
+provenance with pinned `actions/attest-build-provenance`. It is the only
+`hobo-ci.yml` job with `id-token: write` and `attestations: write`. Pull-request
+and merge-group jobs have only `contents: read`, no OIDC grant, and no
+`GH_TOKEN`; they rebuild and validate the current bundle without publishing.
+The build writes no bearer token or local attestation record.
+`GITHUB_ACTIONS=true`, a caller-provided token, and custom environment switches
+cannot admit a build or substitute for verification. Trusted publication
+requires the isolated job's OIDC capability; trusted verification requires
+complete run identity and a read token.
+
+On trusted `main`, `main-gate` has `contents: read` and `attestations: read`.
+Only its verification and S0 steps receive the step-scoped `GH_TOKEN`; it is
+never exported through `GITHUB_ENV`. The signed subject is the sha256 of
+`bin/hobo-mcp.mjs`; copied `fixtures/deploy` is checked separately for presence
+and secrets, not attestation bytes.
 
 `agent-plugin:check` runs `gh attestation verify` against GitHub's current
 attestation API with the HoBo repository, `.github/workflows/hobo-ci.yml` signer,
 and `GITHUB_SHA` source digest pinned. It then requires the verified
-certificate's run invocation to match `GITHUB_RUN_ID` and
-`GITHUB_RUN_ATTEMPT`. Missing, forged, stale, wrong-workflow, wrong-commit, and
-wrong-attempt attestations fail closed. A legacy `.bundle-attestation.json` is
-rejected rather than treated as provenance. `pnpm agent:check` selects
-`agent-plugin:check` on affected plugin, skill, and MCP inputs, and
-`agent-plugin:check` always rebuilds first so a stale on-disk bundle cannot
-pass.
+certificate's `buildSignerURI` to identify that workflow at `refs/heads/main`,
+its `buildSignerDigest` to equal the checked commit, and its run invocation to
+match `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`. Missing, forged, stale,
+wrong-workflow, wrong-ref, wrong-commit, and wrong-attempt attestations fail
+closed. A legacy `.bundle-attestation.json` is rejected rather than treated as
+provenance. `pnpm agent:check` selects `agent-plugin:check` on affected plugin,
+skill, and MCP inputs. Every check rebuilds first and verifies that rebuilt
+bundle, so caller-controlled files and retired external-attestation switches
+cannot substitute a different artifact.
 
 Any CI signal outside GitHub Actions fails the bundle check. With no `CI`,
 `GITHUB_ACTIONS`, or `TF_BUILD` signal, the command is an explicit local-only,

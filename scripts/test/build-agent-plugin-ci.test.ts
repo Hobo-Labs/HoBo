@@ -50,13 +50,18 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 		);
 	});
 
-	it("does not admit a CI build from GITHUB_ACTIONS alone", () => {
+	it("admits only trusted main publication, main verification, or non-publishing PR builds", () => {
+		const trustedMain = {
+			...githubRun,
+			GITHUB_EVENT_NAME: "push",
+			GITHUB_REF: "refs/heads/main",
+		};
 		expect(agentPluginBuildAttestationIssue(githubRun)).toMatch(
-			/GITHUB_ACTIONS alone is insufficient/u,
+			/trusted main ref/u,
 		);
 		expect(
 			agentPluginBuildAttestationIssue({
-				...githubRun,
+				...trustedMain,
 				GITHUB_JOB: "agent-plugin-provenance",
 				ACTIONS_ID_TOKEN_REQUEST_URL: "https://actions.example/oidc",
 				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-capability",
@@ -64,18 +69,51 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 		).toBeUndefined();
 		expect(
 			agentPluginBuildAttestationIssue({
-				...githubRun,
-				HOBO_AGENT_PLUGIN_VERIFY: "1",
-				GH_TOKEN: "verification-token",
+				...trustedMain,
+				GITHUB_JOB: "main-gate",
 			}),
 		).toBeUndefined();
+		expect(
+			agentPluginBuildAttestationIssue({
+				...trustedMain,
+				GITHUB_JOB: "agent-plugin-provenance",
+			}),
+		).toMatch(/OIDC capability/u);
+		for (const eventName of ["pull_request", "merge_group"]) {
+			expect(
+				agentPluginBuildAttestationIssue({
+					...githubRun,
+					GITHUB_EVENT_NAME: eventName,
+					GITHUB_REF: "refs/pull/2913/merge",
+				}),
+			).toBeUndefined();
+		}
+		expect(
+			agentPluginBuildAttestationIssue({
+				...trustedMain,
+				GITHUB_REF: "refs/heads/feature",
+				GITHUB_JOB: "main-gate",
+			}),
+		).toMatch(/trusted main ref/u);
+	});
+
+	it("does not treat custom environment switches as attestation evidence", () => {
 		expect(
 			agentPluginBuildAttestationIssue({
 				CI: "1",
 				GITHUB_ACTIONS: "true",
 				HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1",
 			}),
-		).toBeUndefined();
+		).toMatch(/trusted main ref/u);
+		expect(
+			agentPluginBuildAttestationIssue({
+				...githubRun,
+				GITHUB_EVENT_NAME: "push",
+				GITHUB_REF: "refs/heads/main",
+				HOBO_AGENT_PLUGIN_VERIFY: "1",
+				GH_TOKEN: "verification-token",
+			}),
+		).toMatch(/main-gate verification job/u);
 	});
 
 	it("does not request or persist an OIDC bearer token", () => {
@@ -88,12 +126,12 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 		expect(source).not.toContain("fetch(");
 	});
 
-	it("scopes run identity to the test task instead of global Turbo env", () => {
+	it("hashes run identity in the test task instead of passing it through", () => {
 		const turbo = z
 			.object({
 				globalPassThroughEnv: z.array(z.string()),
 				tasks: z.object({
-					test: z.object({ passThroughEnv: z.array(z.string()) }),
+					test: z.object({ env: z.array(z.string()) }),
 				}),
 			})
 			.parse(
@@ -101,7 +139,7 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 			);
 		for (const name of ["GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID"]) {
 			expect(turbo.globalPassThroughEnv).not.toContain(name);
-			expect(turbo.tasks.test.passThroughEnv).toContain(name);
+			expect(turbo.tasks.test.env).toContain(name);
 		}
 	});
 });

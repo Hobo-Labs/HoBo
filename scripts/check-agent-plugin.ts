@@ -102,6 +102,8 @@ const VerifiedArtifactAttestations = z.array(
 			signature: z.object({
 				certificate: z.object({
 					extensions: z.object({
+						buildSignerDigest: z.string().optional(),
+						buildSignerURI: z.string().optional(),
 						runInvocationID: z.string().optional(),
 						runInvocationId: z.string().optional(),
 					}),
@@ -143,6 +145,7 @@ export async function verifyAgentPluginAttestation(
 	if (serverUrl.length === 0 || repository.toLowerCase() !== "hobo-labs/hobo") {
 		throw new Error("GitHub repository identity is unavailable");
 	}
+	const signerWorkflow = `${repository}/.github/workflows/hobo-ci.yml`;
 	const verified = run("gh", [
 		"attestation",
 		"verify",
@@ -150,7 +153,7 @@ export async function verifyAgentPluginAttestation(
 		"--repo",
 		repository,
 		"--signer-workflow",
-		`${repository}/.github/workflows/hobo-ci.yml`,
+		signerWorkflow,
 		"--source-digest",
 		expected.commitSha,
 		"--cert-oidc-issuer",
@@ -164,17 +167,35 @@ export async function verifyAgentPluginAttestation(
 	const attestations = VerifiedArtifactAttestations.parse(
 		JSON.parse(verified.stdout),
 	);
-	const invocationId = `${serverUrl.replace(/\/$/u, "")}/${repository}/actions/runs/${expected.runId}/attempts/${expected.runAttempt}`;
+	const normalizedServerUrl = serverUrl.replace(/\/$/u, "");
+	const invocationId = `${normalizedServerUrl}/${repository}/actions/runs/${expected.runId}/attempts/${expected.runAttempt}`;
+	const signerUri = `${normalizedServerUrl}/${signerWorkflow}@refs/heads/main`;
+	const fromCurrentRun = (
+		attestation: z.infer<typeof VerifiedArtifactAttestations>[number],
+	) => {
+		const extensions =
+			attestation.verificationResult.signature.certificate.extensions;
+		return (
+			extensions.runInvocationID === invocationId ||
+			extensions.runInvocationId === invocationId
+		);
+	};
 	if (
 		!attestations.some((attestation) => {
 			const extensions =
 				attestation.verificationResult.signature.certificate.extensions;
 			return (
-				extensions.runInvocationID === invocationId ||
-				extensions.runInvocationId === invocationId
+				fromCurrentRun(attestation) &&
+				extensions.buildSignerURI === signerUri &&
+				extensions.buildSignerDigest === expected.commitSha
 			);
 		})
 	) {
+		if (attestations.some(fromCurrentRun)) {
+			throw new Error(
+				"attestation is not from hobo-ci.yml on refs/heads/main at the checked commit",
+			);
+		}
 		throw new Error("attestation is not from this workflow run attempt");
 	}
 }
@@ -250,15 +271,10 @@ function parseJsonWith<T>(
 	let parsed: ReturnType<JSON["parse"]>;
 	try {
 		parsed = JSON.parse(text);
-	} catch (error) {
+	} catch {
 		return {
 			value: undefined,
-			issues: [
-				{
-					file,
-					message: `cannot be parsed as JSON: ${error instanceof Error ? error.message : String(error)}`,
-				},
-			],
+			issues: [{ file, message: "cannot be parsed as JSON" }],
 		};
 	}
 	const result = schema.safeParse(parsed);
@@ -1123,9 +1139,12 @@ export async function checkAgentPlugin(input: {
 			notes.push(
 				"agent-plugin:check: explicit local-only non-CI path; the freshly rebuilt bundle has no provenance and cannot be reused for CI validation",
 			);
-		} else if (process.env.HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY === "1") {
+		} else if (
+			process.env.GITHUB_EVENT_NAME === "pull_request" ||
+			process.env.GITHUB_EVENT_NAME === "merge_group"
+		) {
 			notes.push(
-				"agent-plugin:check: bundle provenance is verified by the required agent-plugin-provenance job; this job repeats conformance without GitHub credentials",
+				"agent-plugin:check: non-publishing PR validation rebuilt and checked the current bundle without provenance or GitHub credentials",
 			);
 		}
 		issues.push(
@@ -1193,7 +1212,6 @@ async function bundleAttestationIssues(
 		{ file, message },
 	];
 	if (!agentPluginCiActive()) return [];
-	if (process.env.HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY === "1") return [];
 	if (process.env.GITHUB_ACTIONS !== "true") {
 		return failure(
 			"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); non-GitHub CI cannot accept a bundle",
@@ -1204,6 +1222,12 @@ async function bundleAttestationIssues(
 			"is a legacy bearer-token record, not GitHub artifact provenance; remove it and run the isolated attestation job",
 			BUNDLE_ATTESTATION,
 		);
+	}
+	if (
+		process.env.GITHUB_EVENT_NAME === "pull_request" ||
+		process.env.GITHUB_EVENT_NAME === "merge_group"
+	) {
+		return [];
 	}
 	const runId = process.env.GITHUB_RUN_ID?.trim();
 	if (runId === undefined || runId.length === 0) {
@@ -1447,7 +1471,7 @@ function ensureCiPluginBundle(repoRoot: string): void {
 	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
 		cwd: repoRoot,
 		stdio: "inherit",
-		env: { ...process.env, HOBO_AGENT_PLUGIN_VERIFY: "1" },
+		env: process.env,
 	});
 	if (build.status !== 0) process.exit(build.status ?? 1);
 }

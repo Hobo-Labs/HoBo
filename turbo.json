@@ -62,7 +62,7 @@
     "test": {
       "dependsOn": ["build"],
       "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"],
-      "passThroughEnv": ["GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID"],
+      "env": ["GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID"],
       "outputs": []
     },
     "@hobo/iac-alchemy#test": { "dependsOn": ["build", "@hobo/broker#build", "@hobo/dispatcher#build", "@hobo/pricing#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },

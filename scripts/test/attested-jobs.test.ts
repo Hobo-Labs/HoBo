@@ -108,7 +108,6 @@ describe("the description of the covered jobs", () => {
 		);
 		assert.deepEqual(left, [
 			"pr_gate_validation: Impact classification (shadow)",
-			"pr_gate_validation: Verify agent plugin attestation",
 			"pr_gate_validation: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
@@ -122,22 +121,36 @@ describe("the description of the covered jobs", () => {
 		]);
 	});
 
-	it("scopes the attestation read token to the dedicated verification step", () => {
+	it("keeps PR plugin validation credential-free and non-publishing", () => {
 		const gate = plan.find((job) => job.id === "pr_gate_validation");
 		assert.ok(gate);
 		assert.deepEqual(
 			gate.steps
 				.filter((step) => step.env?.GH_TOKEN !== undefined)
 				.map((step) => step.name),
-			["Verify agent plugin attestation"],
+			[],
 		);
+		const plugin = gate.steps.find(
+			(step) => step.name === "Validate agent plugin without publishing",
+		);
+		assert.equal(plugin?.local, "run");
+		assert.equal(plugin?.env, undefined);
 		const document = workflowDocument(readFileSync(gate.workflow, "utf8"));
-		const job = asObject(asObject(document.jobs)?.[gate.id]);
+		const jobs = asObject(document.jobs);
+		const job = asObject(jobs?.[gate.id]);
 		assert.deepEqual(asObject(job?.permissions), { contents: "read" });
+		assert.doesNotMatch(asText(job?.if) ?? "", /agent-plugin-provenance/u);
 		assert.doesNotMatch(
 			gate.steps.map((step) => step.run ?? "").join("\n"),
 			/GH_TOKEN=.*GITHUB_ENV/u,
 		);
+		const provenance = asObject(jobs?.["agent-plugin-provenance"]);
+		assert.match(asText(provenance?.if) ?? "", /refs\/heads\/main/u);
+		assert.deepEqual(asObject(provenance?.permissions), {
+			contents: "read",
+			"id-token": "write",
+			attestations: "write",
+		});
 	});
 
 	it("runs every scripts test shard locally", () => {
