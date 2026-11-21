@@ -380,6 +380,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		const script = step(gate, GATE_STEP).run;
 		const passing = {
 			PLAN_RESULT: "success",
+			FORMAL_RESULT: "success",
 			VALIDATION_RESULT: "success",
 			WORKSPACE_RESULT: "success",
 			ROUTE_RESULT: "success",
@@ -388,6 +389,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		};
 		const attestedAll = {
 			PLAN_RESULT: "skipped",
+			FORMAL_RESULT: "success",
 			VALIDATION_RESULT: "skipped",
 			WORKSPACE_RESULT: "skipped",
 			ROUTE_RESULT: "success",
@@ -457,6 +459,7 @@ describe("the scripts lane is a pull-request gate", () => {
 					WORKSPACE_RESULT: "success",
 					AFFECTED_RESULT: "success",
 					SCRIPTS_RESULT: "skipped",
+					FORMAL_RESULT: "success",
 					ROUTE_RESULT: route,
 					ATTESTED: attested,
 					ATTESTED_JOBS: jobs,
