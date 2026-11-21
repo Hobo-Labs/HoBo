@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-106 codes.
+131 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -36,11 +36,16 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_ADOPT_NOT_FOUND`](#hobo_ci_adopt_not_found) | `packages/hobo/src/ci-relay-adopt.ts` |
 | [`HOBO_CI_ADOPT_NOT_READY_IN_BUDGET`](#hobo_ci_adopt_not_ready_in_budget) | `packages/hobo/src/ci-relay-adopt.ts` |
 | [`HOBO_CI_ADOPT_ORIGIN_UNSET`](#hobo_ci_adopt_origin_unset) | `packages/hobo/src/ci-relay-adopt.ts` |
+| [`HOBO_CI_APP_CODE_INVALID`](#hobo_ci_app_code_invalid) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_CONVERSION_UNCERTAIN`](#hobo_ci_app_conversion_uncertain) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_DEPOSIT_FAILED`](#hobo_ci_app_deposit_failed) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_EXISTS`](#hobo_ci_app_exists) | `packages/hobo/src/ci-app-create.ts` |
+| [`HOBO_CI_APP_FAILED`](#hobo_ci_app_failed) | `packages/hobo-ci/src/remote-app.ts` |
 | [`HOBO_CI_APP_HANDOFF_FAILED`](#hobo_ci_app_handoff_failed) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_HOST_UNSUPPORTED_OWNER`](#hobo_ci_app_host_unsupported_owner) | `packages/hobo-ci/src/prepare.ts` |
+| [`HOBO_CI_APP_INCOMPLETE`](#hobo_ci_app_incomplete) | `packages/hobo/src/ci-app-create.ts` |
+| [`HOBO_CI_APP_NEEDS_OWNER`](#hobo_ci_app_needs_owner) | `packages/hobo-ci/src/prepare.ts`, `packages/hobo-ci/src/remote-app.ts` |
+| [`HOBO_CI_APP_NOT_CREATED`](#hobo_ci_app_not_created) | `packages/hobo-ci/src/remote-app.ts` |
 | [`HOBO_CI_APP_TIMEOUT`](#hobo_ci_app_timeout) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_APP_UNVERIFIED`](#hobo_ci_app_unverified) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_AUTH_REQUIRED`](#hobo_ci_auth_required) | `packages/hobo/src/ci-activity.ts`, `packages/hobo/src/ci-command.ts` |
@@ -49,7 +54,6 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_CONFIG_SERVICE_UNCONFIGURED`](#hobo_ci_config_service_unconfigured) | `packages/hobo/src/ci-app-create.ts` |
 | [`HOBO_CI_CONNECTION_MODE`](#hobo_ci_connection_mode) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECTION_NEEDS_OWNER`](#hobo_ci_connection_needs_owner) | `packages/hobo-ci/src/prepare.ts` |
-| [`HOBO_CI_CONNECTION_UNCONFIGURED`](#hobo_ci_connection_unconfigured) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_CONNECTION_UNCONFIRMED`](#hobo_ci_connection_unconfirmed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_CONNECT_CEREMONY`](#hobo_ci_connect_ceremony) | `packages/hobo/src/ci-connect.ts` |
 | [`HOBO_CI_DEPLOYED`](#hobo_ci_deployed) | `packages/hobo/src/ci-relay-deploy.ts` |
@@ -58,23 +62,31 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_UNAVAILABLE`](#hobo_ci_deploy_binding_unavailable) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDLE_PROVIDER`](#hobo_ci_deploy_bindle_provider) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_BUILD_FAILED`](#hobo_ci_deploy_build_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`](#hobo_ci_deploy_checkout_mismatch) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_COMMIT_MISMATCH`](#hobo_ci_deploy_commit_mismatch) | `packages/hobo/src/ci-relay-verify.ts` |
-| [`HOBO_CI_DEPLOY_DELIVERY_INVALID`](#hobo_ci_deploy_delivery_invalid) | `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-delivery.ts` |
+| [`HOBO_CI_DEPLOY_DELIVERY_INVALID`](#hobo_ci_deploy_delivery_invalid) | `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`](#hobo_ci_deploy_delivery_unavailable) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_FAILED`](#hobo_ci_deploy_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_FREIGHT_REFUSED`](#hobo_ci_deploy_freight_refused) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_INCOMPLETE`](#hobo_ci_deploy_incomplete) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_NOT_QUALIFIED`](#hobo_ci_deploy_not_qualified) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_NOT_READY`](#hobo_ci_deploy_not_ready) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_NOT_STAGED`](#hobo_ci_deploy_not_staged) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_NO_ANSWER`](#hobo_ci_deploy_no_answer) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_NO_CAMP`](#hobo_ci_deploy_no_camp) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_NO_HTTP_ENTRY`](#hobo_ci_deploy_no_http_entry) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_PLANNED`](#hobo_ci_deploy_planned) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_PROMOTE_FAILED`](#hobo_ci_deploy_promote_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_PROMOTION_REFUSED`](#hobo_ci_deploy_promotion_refused) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED`](#hobo_ci_deploy_relay_not_configured) | `packages/hobo/src/ci-relay-verify.ts` |
 | [`HOBO_CI_DEPLOY_RELAY_NOT_READY`](#hobo_ci_deploy_relay_not_ready) | `packages/hobo/src/ci-relay-verify.ts` |
+| [`HOBO_CI_DEPLOY_ROLLBACK_FAILED`](#hobo_ci_deploy_rollback_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_ROLLED_BACK`](#hobo_ci_deploy_rolled_back) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_SETTING_REFUSED`](#hobo_ci_deploy_setting_refused) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-relay-yard.ts` |
-| [`HOBO_CI_DEPLOY_SOURCE_UNPINNED`](#hobo_ci_deploy_source_unpinned) | `packages/hobo/src/ci-relay-delivery.ts` |
+| [`HOBO_CI_DEPLOY_SOURCE_UNPINNED`](#hobo_ci_deploy_source_unpinned) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_STAGED_NOT_READY`](#hobo_ci_deploy_staged_not_ready) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_STAGE_FAILED`](#hobo_ci_deploy_stage_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_VERCEL_REFUSED`](#hobo_ci_deploy_vercel_refused) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_VERIFICATION_FAILED`](#hobo_ci_deploy_verification_failed) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`](#hobo_ci_deploy_verify_origin_unset) | `packages/hobo/src/ci-relay-deploy.ts` |
@@ -87,10 +99,14 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_GITHUB_NOT_CONNECTED`](#hobo_ci_github_not_connected) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_GITHUB_NOT_READY`](#hobo_ci_github_not_ready) | `packages/hobo/src/ci-github-connect.ts` |
 | [`HOBO_CI_GITHUB_OWNER_INVALID`](#hobo_ci_github_owner_invalid) | `packages/hobo-ci/src/prepare.ts` |
+| [`HOBO_CI_GITHUB_OWNER_UNKNOWN`](#hobo_ci_github_owner_unknown) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_GITHUB_SETUP`](#hobo_ci_github_setup) | `packages/hobo/src/ci-github-connect.ts` |
+| [`HOBO_CI_HANDOFF_SILENT`](#hobo_ci_handoff_silent) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_INIT_NOTHING_APPLIED`](#hobo_ci_init_nothing_applied) | `packages/hobo/src/ci-init.ts` |
+| [`HOBO_CI_INIT_PARTIAL`](#hobo_ci_init_partial) | `packages/hobo/src/ci-init.ts` |
 | [`HOBO_CI_INSTALLATION_MISMATCH`](#hobo_ci_installation_mismatch) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_INSTALL_REQUIRED`](#hobo_ci_install_required) | `packages/hobo/src/ci-command.ts`, `packages/hobo/src/ci-github-connect.ts` |
+| [`HOBO_CI_JOB_LIMIT`](#hobo_ci_job_limit) | `packages/hobo/src/ci-insights.ts` |
 | [`HOBO_CI_LINK_SAVE_FAILED`](#hobo_ci_link_save_failed) | `packages/hobo/src/ci-command.ts` |
 | [`HOBO_CI_LOGS_UNAVAILABLE`](#hobo_ci_logs_unavailable) | `packages/hobo/src/ci-runs.ts` |
 | [`HOBO_CI_MACHINE_NOT_FOUND`](#hobo_ci_machine_not_found) | `packages/hobo/src/ci-machine.ts` |
@@ -130,9 +146,18 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_SECRET_STORE_USAGE`](#hobo_ci_secret_store_usage) | `packages/hobo/src/ci-secret-store-connect.ts`, `packages/hobo/src/ci-secret-store.ts` |
 | [`HOBO_CI_SECRET_STORE_VERIFIED`](#hobo_ci_secret_store_verified) | `packages/hobo/src/ci-secret-store-connect.ts` |
 | [`HOBO_CI_SECRET_STORE_VERIFY_FAILED`](#hobo_ci_secret_store_verify_failed) | `packages/hobo/src/ci-secret-store-connect.ts` |
+| [`HOBO_CI_SETTINGS_NEEDED`](#hobo_ci_settings_needed) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_SETUP_ERROR`](#hobo_ci_setup_error) | `packages/hobo/src/ci-command.ts` |
+| [`HOBO_CI_STORE_CHOICE`](#hobo_ci_store_choice) | `packages/hobo-ci/src/prepare.ts` |
+| [`HOBO_CI_STORE_NEEDS_SIGN_IN`](#hobo_ci_store_needs_sign_in) | `packages/hobo-ci/src/prepare.ts` |
+| [`HOBO_CI_STORE_UNAVAILABLE`](#hobo_ci_store_unavailable) | `packages/hobo-ci/src/prepare.ts` |
 | [`HOBO_CI_TOOL_REQUIRED`](#hobo_ci_tool_required) | `packages/hobo/src/ci-insights.ts`, `packages/hobo/src/ci-runs.ts`, `packages/hobo/src/ci-usage.ts` |
+| [`HOBO_CI_UP_NO_BRANCH`](#hobo_ci_up_no_branch) | `packages/hobo/src/ci-up-relay.ts` |
+| [`HOBO_CI_UP_PLATFORM_DRIFT`](#hobo_ci_up_platform_drift) | `packages/hobo/src/ci-up-relay.ts` |
+| [`HOBO_CI_UP_SOURCE_UNAVAILABLE`](#hobo_ci_up_source_unavailable) | `packages/hobo/src/ci-up-relay.ts` |
+| [`HOBO_CI_UP_VERCEL_NOT_CONNECTED`](#hobo_ci_up_vercel_not_connected) | `packages/hobo/src/ci-up-relay.ts` |
 | [`HOBO_CI_WAIT_TIMEOUT`](#hobo_ci_wait_timeout) | `packages/hobo/src/ci-runs.ts` |
+| [`HOBO_CI_WORKFLOWS_UNREADABLE`](#hobo_ci_workflows_unreadable) | `packages/hobo/src/ci-init.ts` |
 
 ## Codes
 
@@ -256,6 +281,18 @@ Message:
 
 What to do: follow the message.
 
+### HOBO_CI_APP_CODE_INVALID
+
+Returned from `packages/hobo/src/ci-app-create.ts`.
+
+Message:
+
+```text
+That is not the code GitHub issued for this run (its state does not match). Nothing was stored; the App GitHub may have created can be deleted at https://github.com/settings/apps, then run again.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_APP_CONVERSION_UNCERTAIN
 
 Returned from `packages/hobo/src/ci-app-create.ts`.
@@ -292,6 +329,16 @@ The config service already holds {…}. Pass --yes to replace them with a new Ap
 
 What to do: follow the message.
 
+### HOBO_CI_APP_FAILED
+
+Returned from `packages/hobo-ci/src/remote-app.ts`.
+
+Message: composed when the command runs.
+
+What to do:
+
+- Run again.
+
 ### HOBO_CI_APP_HANDOFF_FAILED
 
 Returned from `packages/hobo/src/ci-app-create.ts`.
@@ -318,14 +365,58 @@ What to do:
 
 - Use HOBO_CI_APP_HOST=manifest, or unset HOBO_CI_APP_HOST.
 
-### HOBO_CI_APP_TIMEOUT
+### HOBO_CI_APP_INCOMPLETE
 
 Returned from `packages/hobo/src/ci-app-create.ts`.
 
 Message:
 
 ```text
-GitHub did not return to this machine in time. No App was created by HoBo; run the command again.
+{key} is in the store but could not be read.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_APP_NEEDS_OWNER
+
+Returned from `packages/hobo-ci/src/prepare.ts`, `packages/hobo-ci/src/remote-app.ts`.
+
+Message:
+
+```text
+{owner.opened.id} holds no GitHub App for HoBo CI, and creating one needs you once, on GitHub's own page.
+```
+
+What to do:
+
+- Run hobo ci up through the HoBo MCP server (its ci tool): it gives you GitHub's page as a link you open on any device, and takes GitHub's one-time code back in its secret form.
+- {OWNER_SIGN_IN_LINE_PREFIX} url={link} capture=GITHUB_APP_CODE
+- Open the link on any device and click Create GitHub App: GitHub creates HoBo CI's App with your own account (you review its permissions there).
+- GitHub then returns to that page, which shows a single-use code. Hand it over with the HoBo MCP server's secret capture (name GITHUB_APP_CODE); it goes only to this run, never into chat.
+- Then run again: HoBo redeems the code, checks the App and puts its credentials straight into your store.
+
+### HOBO_CI_APP_NOT_CREATED
+
+Returned from `packages/hobo-ci/src/remote-app.ts`.
+
+Message: composed when the command runs.
+
+What to do:
+
+- Run again: HoBo gives you a new link.
+
+### HOBO_CI_APP_TIMEOUT
+
+Returned from `packages/hobo/src/ci-app-create.ts`.
+
+Messages:
+
+```text
+The App's credentials did not appear in your store in time. Run the command again when they are there; nothing else was changed.
+```
+
+```text
+GitHub did not return to this run in time. No App was created by HoBo; run the command again.
 ```
 
 What to do: follow the message.
@@ -334,7 +425,11 @@ What to do: follow the message.
 
 Returned from `packages/hobo/src/ci-app-create.ts`.
 
-Message:
+Messages:
+
+```text
+The App in your store (id {appId}) does not match the reviewed configuration (owner {input.ownerId}, relay {input.relay}). Check its permissions, events and webhook URL against the prefilled form.
+```
 
 ```text
 GitHub App {slug} (id {appId}) was created but does not match the reviewed configuration (owner {ownerId}, relay {relay}); its credentials were not stored and are now discarded. Delete it at {deleteUrl}.
@@ -417,26 +512,14 @@ Returned from `packages/hobo-ci/src/prepare.ts`.
 Message:
 
 ```text
-Connecting GitHub needs the owner at a browser once; this run cannot show a page.
+Connecting GitHub needs the owner at a browser once; this run cannot show the setup page.
 ```
 
 What to do:
 
-- Run hobo ci up once in a terminal; later runs (and CI) find the connection and skip this step.
-
-### HOBO_CI_CONNECTION_UNCONFIGURED
-
-Returned from `packages/hobo-ci/src/prepare.ts`.
-
-Message:
-
-```text
-hobo ci up needs to know where the relay runs and who owns the GitHub App.
-```
-
-What to do:
-
-- Export HOBO_CI_PUBLIC_URL (the relay's https origin), HOBO_CI_GITHUB_OWNER (the user or organization login), HOBO_CI_GITHUB_OWNER_ID (gh api users/\<login> --jq .id) and, for an organization, HOBO_CI_GITHUB_OWNER_TYPE=Organization.
+- Run hobo ci up --hand-off through the HoBo MCP server (its ci tool): it brings each step to you as a link or a form, wherever you are, and keeps what you give it in your secret store.
+- An agent can run hobo ci up --hand-off with a preconnected store and GitHub App; otherwise the run reports the available owner actions.
+- For CI, preconfigure an Infisical machine identity with OIDC Auth (INFISICAL_IDENTITY_ID, a non-secret setting) so the run signs in with its own OIDC token.
 
 ### HOBO_CI_CONNECTION_UNCONFIRMED
 
@@ -487,7 +570,7 @@ Returned from `packages/hobo/src/ci-relay-deploy.ts`.
 Message:
 
 ```text
-Set VERCEL_TOKEN to a Vercel access token for the project's scope, or pass --dry-run to see what would be sent. The token is read from the environment only and is never printed.
+The deploy token is read from the secret store, never the environment: run in GitHub Actions with id-token: write and the committed secret store binding, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.
 ```
 
 What to do: follow the message.
@@ -556,6 +639,35 @@ Message:
 
 What to do: follow the message.
 
+### HOBO_CI_DEPLOY_BUILD_FAILED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Message:
+
+```text
+vercel {…} failed (exit {result.code}) trying to {what}:
+{…}
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_CHECKOUT_MISMATCH
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts`.
+
+Messages:
+
+```text
+{input.cwd} is not inside a git checkout: --build prebuilt builds the checkout of the Freight's commit.
+```
+
+```text
+The checkout at {input.cwd} is at {…}, not the Freight's commit {input.sha}: HoBo builds only the commit the Freight pins. Check out {input.sha} and run again.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_COMMIT_MISMATCH
 
 Returned from `packages/hobo/src/ci-relay-verify.ts`.
@@ -576,7 +688,7 @@ What to do:
 
 ### HOBO_CI_DEPLOY_DELIVERY_INVALID
 
-Returned from `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-delivery.ts`.
+Returned from `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts`.
 
 Messages:
 
@@ -684,6 +796,22 @@ What to do:
 
 - Read the deployment's build log on Vercel, fix it, and deploy again.
 
+### HOBO_CI_DEPLOY_NOT_STAGED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Messages:
+
+```text
+Project {input.project} has no build staged for Freight {input.freightId}: production promotes only the build its staging node uploaded and verified. Run hobo ci deploy --target preview --build prebuilt for {input.sha} first.
+```
+
+```text
+The build staged for Freight {input.freightId} ({staged.id}) names commit {…}, not {input.sha}: it is not promoted.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_NO_ANSWER
 
 Returned from `packages/hobo/src/ci-relay-deploy.ts`.
@@ -731,9 +859,21 @@ Returned from `packages/hobo/src/ci-relay-deploy.ts`.
 Message:
 
 ```text
-Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.
+Dry run: nothing was sent to Vercel, and no deploy token was read.
 {…}
 {…}
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_PROMOTE_FAILED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Message:
+
+```text
+Vercel refused to promote {staged.id}: {…}
 ```
 
 What to do: follow the message.
@@ -803,6 +943,22 @@ What to do:
 - The production domain is behind protection: under Standard Deployment Protection it is public, so the origin named is not this project's production domain, or the project protects all deployments. Name the production domain, or set the project's protection to Standard.
 - The production domain does not serve the relay; check the project's domains on Vercel.
 
+### HOBO_CI_DEPLOY_ROLLBACK_FAILED
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_ROLLED_BACK
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_SETTING_REFUSED
 
 Returned from `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-relay-yard.ts`.
@@ -829,12 +985,49 @@ What to do: follow the message.
 
 ### HOBO_CI_DEPLOY_SOURCE_UNPINNED
 
-Returned from `packages/hobo/src/ci-relay-delivery.ts`.
+Returned from `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts`.
+
+Messages:
+
+```text
+Freight {at.desired.freightId} pins no relay source commit
+```
+
+```text
+Freight {freightId} pins no commit: a prebuilt delivery builds only a pinned commit.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_STAGED_NOT_READY
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
 
 Message:
 
 ```text
-Freight {at.desired.freightId} pins no relay source commit
+The build staged for Freight {input.freightId} ({staged.id}) is {…}, not READY: only a ready build is promoted.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_STAGE_FAILED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Messages:
+
+```text
+Freight id {input.freightId} cannot be carried as Vercel deployment meta.
+```
+
+```text
+vercel {…} failed (exit {result.code}) trying to {what}:
+{…}
+```
+
+```text
+vercel deploy reported success, but project {input.project} lists no production build with {VERCEL_PREBUILT_META.freight}={input.freightId}.
 ```
 
 What to do: follow the message.
@@ -851,13 +1044,19 @@ What to do: follow the message.
 
 Returned from `packages/hobo/src/ci-relay-delivery.ts`.
 
-Message:
+Messages:
+
+```text
+reading deployment {done.deploymentId} failed (HTTP {error.status}): {error.message}
+```
 
 ```text
 The promotion of {freight.alias} to {campId} ended {…}: {…}
 ```
 
-What to do: follow the message.
+What to do:
+
+- No retry fixes this: check the deploy token's scope, and the team the deployment belongs to.
 
 ### HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET
 
@@ -1027,6 +1226,20 @@ What to do:
 
 - Set HOBO_CI_GITHUB_OWNER to the organization's GitHub login.
 
+### HOBO_CI_GITHUB_OWNER_UNKNOWN
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+GitHub has no user or organization named {login}.
+```
+
+What to do:
+
+- Correct HOBO_CI_GITHUB_OWNER when the agent asks, then run again.
+
 ### HOBO_CI_GITHUB_SETUP
 
 Returned from `packages/hobo/src/ci-github-connect.ts`.
@@ -1039,7 +1252,29 @@ GitHub setup could not be confirmed. Check network access and the relay, then re
 
 What to do: follow the message.
 
+### HOBO_CI_HANDOFF_SILENT
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+The owner hand-off needs progress output. Omit --json and -q, then retry.
+```
+
+What to do:
+
+- Run hobo ci up --hand-off without --json or -q.
+
 ### HOBO_CI_INIT_NOTHING_APPLIED
+
+Returned from `packages/hobo/src/ci-init.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_INIT_PARTIAL
 
 Returned from `packages/hobo/src/ci-init.ts`.
 
@@ -1072,6 +1307,14 @@ Connect GitHub and install the HoBo CI App at {origin}/v1/app-registration/setup
 ```text
 The relay has not confirmed an authorized GitHub App installation. Complete the browser setup and retry.
 ```
+
+What to do: follow the message.
+
+### HOBO_CI_JOB_LIMIT
+
+Returned from `packages/hobo/src/ci-insights.ts`.
+
+Message: composed when the command runs.
 
 What to do: follow the message.
 
@@ -1374,7 +1617,11 @@ What to do: follow the message.
 
 Returned from `packages/hobo/src/ci-route.ts`.
 
-Message:
+Messages:
+
+```text
+cannot read {PROJECT_FILE}.
+```
 
 ```text
 runnerOrder in {PROJECT_FILE} cannot be used: {committed.problem}.
@@ -1382,6 +1629,7 @@ runnerOrder in {PROJECT_FILE} cannot be used: {committed.problem}.
 
 What to do:
 
+- Make {PROJECT_FILE} readable, or remove it to use the default order.
 - Fix runnerOrder in {PROJECT_FILE}, or remove it to use the default order.
 
 ### HOBO_CI_RUN_FAILED
@@ -1479,15 +1727,11 @@ What to do: follow the message.
 
 Returned from `packages/hobo-ci/src/prepare.ts`.
 
-Message:
-
-```text
-HOBO_CI_SECRET_STORE must be infisical or 1password.
-```
+Message: composed when the command runs.
 
 What to do:
 
-- Unset it to use Infisical, or set it to 1password.
+- Choose infisical, 1password, or bitwarden in the store locator.
 
 ### HOBO_CI_SECRET_STORE_NOT_CONNECTED
 
@@ -1560,7 +1804,7 @@ Cannot verify the existing GitHub connection in the secret store.
 
 What to do:
 
-- Check store access, the configured App owner and relay, and reconcile any partial credentials before retrying.
+- Check store access, the saved owner and relay, and reconcile any partial credentials before retrying.
 
 ### HOBO_CI_SECRET_STORE_USAGE
 
@@ -1594,6 +1838,25 @@ Message: composed when the command runs.
 
 What to do: follow the message.
 
+### HOBO_CI_SETTINGS_NEEDED
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Messages:
+
+```text
+Those settings were not accepted. {…}
+```
+
+```text
+Creating HoBo CI's GitHub App needs {…}.
+```
+
+What to do:
+
+- Give {…} in the HoBo MCP App's form; they are kept in your secret store with HoBo CI's other settings.
+- Then run again.
+
 ### HOBO_CI_SETUP_ERROR
 
 Returned from `packages/hobo/src/ci-command.ts`.
@@ -1603,6 +1866,40 @@ Message:
 ```text
 CI setup failed. Check your Git remote, HTTPS relay, credential file and saved link; run hobo ci --help for setup options.
 ```
+
+What to do: follow the message.
+
+### HOBO_CI_STORE_CHOICE
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+Choose your secret store first: Infisical, 1Password or Bitwarden.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_STORE_NEEDS_SIGN_IN
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message:
+
+```text
+A handed-off run shows no sign-in page: {owner.id} must open without one.
+```
+
+What to do:
+
+- Choose the store and give its non-secret ids when the run asks; they are kept in your own HoBo settings.
+
+### HOBO_CI_STORE_UNAVAILABLE
+
+Returned from `packages/hobo-ci/src/prepare.ts`.
+
+Message: composed when the command runs.
 
 What to do: follow the message.
 
@@ -1622,6 +1919,62 @@ Install {…}, then retry this CI command.
 
 What to do: follow the message.
 
+### HOBO_CI_UP_NO_BRANCH
+
+Returned from `packages/hobo/src/ci-up-relay.ts`.
+
+Message:
+
+```text
+hobo ci up deploys the current branch, and this checkout is not on one.
+```
+
+What to do:
+
+- Check out the branch to deploy (pushed to GitHub), or use hobo ci deploy --ref \<ref>.
+
+### HOBO_CI_UP_PLATFORM_DRIFT
+
+Returned from `packages/hobo/src/ci-up-relay.ts`.
+
+Message:
+
+```text
+The relay's committed vercel.json does not hold what its plan asks: {…}.
+```
+
+What to do:
+
+- Commit a vercel.json that matches the relay's Bindle, then run hobo ci up again.
+
+### HOBO_CI_UP_SOURCE_UNAVAILABLE
+
+Returned from `packages/hobo/src/ci-up-relay.ts`.
+
+Message:
+
+```text
+Cannot inspect the relay's committed source before deployment.
+```
+
+What to do:
+
+- Make the selected commit and its project dependencies available locally, then retry.
+
+### HOBO_CI_UP_VERCEL_NOT_CONNECTED
+
+Returned from `packages/hobo/src/ci-up-relay.ts`.
+
+Message:
+
+```text
+The relay deploys to the Vercel project hobo-ci, and no Vercel connection is in your secret store.
+```
+
+What to do:
+
+- Run hobo cd up once: it connects HoBo's Vercel account and keeps the token in your secret store, where hobo ci up reads it.
+
 ### HOBO_CI_WAIT_TIMEOUT
 
 Returned from `packages/hobo/src/ci-runs.ts`.
@@ -1630,6 +1983,18 @@ Message:
 
 ```text
 The ten-minute wait expired. Remote work continues; inspect the run before retrying. The CLI did not cancel or repeat it.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_WORKFLOWS_UNREADABLE
+
+Returned from `packages/hobo/src/ci-init.ts`.
+
+Message:
+
+```text
+Cannot read {WORKFLOWS}. Check the directory and its permissions.
 ```
 
 What to do: follow the message.
