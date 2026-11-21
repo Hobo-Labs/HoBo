@@ -1514,7 +1514,9 @@ describe("the script reading the slip", () => {
 		assert.match(decision.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
 		assert.ok(
 			warningsIn(lines).some((line) =>
-				line.includes("routing slip not used (merge-group hosted probe unreadable:"),
+				line.includes(
+					"routing slip not used (merge-group hosted probe unreadable:",
+				),
 			),
 		);
 		const noticeBody = noticesIn(lines)[0]?.replace(
@@ -1537,14 +1539,15 @@ describe("the script reading the slip", () => {
 		await withGithub(
 			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
 			async (apiUrl) => {
-				const { decision, lines } = await route(apiUrl, undefined, mergeGroupCi);
+				const { decision, lines } = await route(
+					apiUrl,
+					undefined,
+					mergeGroupCi,
+				);
 				assert.equal(decision.tier, "github");
 				assert.equal(decision.runner, "ubuntu-24.04");
 				assert.ok(decision.mergeGroupHostedProbe?.idle);
-				assert.match(
-					lines.join("\n"),
-					/merge-group hosted probe:.*idle=true/u,
-				);
+				assert.match(lines.join("\n"), /merge-group hosted probe:.*idle=true/u);
 			},
 		);
 	});
@@ -1622,10 +1625,7 @@ describe("the script reading the slip", () => {
 					[decision.tier, decision.runner, decision.refusedBy],
 					["github", "ubuntu-24.04", "queue"],
 				);
-				assert.match(
-					decision.reason,
-					/hobo-trunk has no idle capacity/u,
-				);
+				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, false);
 			},
 		);
@@ -1682,10 +1682,7 @@ describe("the script reading the slip", () => {
 					[decision.tier, decision.runner, decision.refusedBy],
 					["github", "ubuntu-24.04", "queue"],
 				);
-				assert.match(
-					decision.reason,
-					/hobo-trunk has no idle capacity/u,
-				);
+				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",

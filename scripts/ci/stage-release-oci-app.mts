@@ -160,7 +160,6 @@ function turboBaseReachable(root: string, base: string): boolean {
 	);
 }
 
-/** History and tags the release OCI turbo filter needs; no-op when base is empty. */
 export function fetchReleaseTurboBase(root: string, configuredBase: string): void {
 	const base = configuredBase.trim();
 	if (!base) return;

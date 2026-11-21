@@ -420,7 +420,6 @@ const ATTESTED_HELPER = [
 function skipWhenAttested(jobId: string): string {
 	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
 }
-/** Release may run when the route job failed; attestation skip requires a green route. */
 function attestationSkipPattern(jobId: string, file: string): string {
 	if (jobId === "release-contract" && file.endsWith("release-hobo.yml"))
 		return `!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;

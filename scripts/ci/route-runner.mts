@@ -177,7 +177,6 @@ export type RouteDecision = Readonly<{
 	refusedBy?: RefusedBy | undefined;
 	/** What became of the routing slip; left out by the queue rule alone. */
 	slip?: SlipAnswer | undefined;
-	/** Merge-group Fabric hosted-queue probe carried on the route notice. */
 	mergeGroupHostedProbe?: MergeGroupHostedProbe | undefined;
 }>;
 
@@ -697,7 +696,6 @@ export async function chooseRunner(input: {
 	}
 }
 
-/** Hosted queue limits for merge-group Fabric routing (critical path under 7 min). */
 export const MERGE_GROUP_HOSTED_LIMITS: RouteLimits = {
 	maxWaitSeconds: 90,
 	maxQueued: 3,
@@ -710,7 +708,6 @@ export function mergeGroupHostedHasIdleCapacity(
 	return !refusingJobs(load, limits);
 }
 
-/** One or more jobs already waiting on trunk means no runner slot for a new merge group. */
 export const MERGE_GROUP_TRUNK_IDLE_LIMITS: RouteLimits = {
 	maxWaitSeconds: 45,
 	maxQueued: 1,
@@ -1594,7 +1591,7 @@ export function routeAnnotation(
 	workflow: string,
 ): string {
 	const slip = decision.slip;
-	const record = {
+	const base = {
 		v: ROUTE_NOTICE_VERSION,
 		workflow,
 		tier: decision.tier,
@@ -1607,10 +1604,11 @@ export function routeAnnotation(
 					? slip.why
 					: "",
 		refusedBy: decision.refusedBy ?? "none",
-		...(decision.mergeGroupHostedProbe
-			? { mergeGroupHostedProbe: decision.mergeGroupHostedProbe }
-			: {}),
 	};
+	const probe = decision.mergeGroupHostedProbe;
+	const record = probe
+		? { ...base, mergeGroupHostedProbe: probe }
+		: base;
 	return `::notice title=hobo-ci-route::${escapeCommand(JSON.stringify(record))}`;
 }
 
