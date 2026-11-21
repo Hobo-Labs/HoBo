@@ -93,9 +93,19 @@ Replay checks each recorded sleep in order and refuses missing, changed, or
 unused sleep records. Existing records without an index are read in journal
 order; indexed records must also match their position.
 
-The authoring engine currently journals `ctx.sleep` and returns immediately;
-it does not wait for elapsed time or arrange a durable wake-up. Do not use it
-to enforce a delay until timer scheduling and restart recovery are implemented.
+`ctx.sleep` records its deadline before waiting and rechecks the clock after
+each wake-up. If a host stops, an explicit `resume` uses that same deadline;
+time spent offline counts toward the delay. A running host uses Node timers by
+default. Tests and other hosts can supply `clock` and `wait` to the workflow
+engine; the clock must report accurate nonnegative integer milliseconds and
+the waiter must eventually return. The host must arrange recovery and call
+`resume`: this engine does not automatically discover or wake stopped runs.
+Concurrent resumes still require host-side fencing.
+
+An unfinished older sleep record has no deadline. On its first resume the
+engine records a new deadline for the full original delay, then preserves it
+across later restarts. Older runs that already continued past an immediate
+sleep cannot have their elapsed-time behavior corrected retroactively.
 
 The terminal-outcome model explores 15 distinct states and 18 transitions.
 The verification runner also checks that a resume which writes a second
@@ -127,4 +137,20 @@ stateDiagram-v2
   s0 --> s3: check for remaining sleeps
   s1 --> s2: compare next sleep or check for remaining sleeps
   s1 --> s3: check for remaining sleeps
+```
+
+The sleep-deadline model explores 22 distinct states. The projection hides 20
+clock or wake-up transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Sleep requested
+  s1: Waiting for deadline
+  s2: Host stopped
+  s3: Deadline reached
+  [*] --> s0
+  s0 --> s1: record deadline
+  s1 --> s2: host stops
+  s2 --> s1: resume with recorded deadline
+  s1 --> s3: recheck deadline
 ```

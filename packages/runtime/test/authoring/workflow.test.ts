@@ -316,7 +316,13 @@ describe("durable workflow: journal, restart, replay", () => {
 	});
 
 	it("makes ctx.sleep deterministic under replay", async () => {
-		const engine = createWorkflowEngine();
+		let now = 1_000;
+		const engine = createWorkflowEngine({
+			clock: { now: () => new Date(now).toISOString(), nowMs: () => now },
+			wait: async (delay) => {
+				now += delay;
+			},
+		});
 		const wf = defineWorkflow<{ id: string }, { at: string; slept: boolean }>({
 			name: "delayed",
 			async run(ctx) {
@@ -327,10 +333,8 @@ describe("durable workflow: journal, restart, replay", () => {
 			},
 		});
 
-		const start = Date.now();
 		const handle = await engine.start(wf, { id: "order-3" });
-		// The durable timer is journaled, not a wall-clock wait.
-		expect(Date.now() - start).toBeLessThan(1000);
+		expect(now).toBe(11_000);
 
 		const journal = await engine.journal(handle.runId);
 		const sleepEvent = journal.find(

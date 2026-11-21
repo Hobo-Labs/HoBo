@@ -19,9 +19,11 @@ import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
 	isJsonArray,
+	isJsonNumber,
 	isJsonObject,
 	isJsonString,
 	type JsonBag,
+	type JsonObject,
 	type JsonValue,
 } from "./json.js";
 import type { ActorHost, RuntimeClock } from "./ports.js";
@@ -122,6 +124,8 @@ export interface WorkflowEngineOptions {
 	store?: EventStoreWriter;
 	seed?: string;
 	clock?: RuntimeClock;
+	/** Wait for a duration before rechecking the clock; defaults to a Node timer. */
+	wait?: (delayMs: number) => Promise<void>;
 	actorHost?: ActorHost;
 	tokenBroker?: TokenBroker;
 }
@@ -275,6 +279,44 @@ export function createWorkflowEngine(
 	const seed = options.seed ?? "hobo-runtime-authoring-seed";
 	const tokenBroker = options.tokenBroker ?? DEFAULT_TOKEN_BROKER;
 	const actorHost = options.actorHost;
+	const wait =
+		options.wait ??
+		((delayMs: number) =>
+			new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+
+	function nowMs(): number {
+		const value = options.clock?.nowMs() ?? Date.now();
+		if (!Number.isSafeInteger(value) || value < 0) {
+			throw new Error(
+				"workflow sleep clock must return a nonnegative safe integer",
+			);
+		}
+		return value;
+	}
+
+	function makeDeadline(delayMs: number) {
+		const scheduledAtMs = nowMs();
+		const deadlineMs = scheduledAtMs + delayMs;
+		if (!Number.isSafeInteger(deadlineMs)) {
+			throw new Error("workflow sleep deadline exceeds the safe integer range");
+		}
+		return { scheduledAtMs, deadlineMs };
+	}
+
+	function readDeadline(data: JsonBag, delayMs: number): number {
+		const { scheduledAtMs, deadlineMs } = data;
+		if (
+			!isJsonNumber(scheduledAtMs) ||
+			!Number.isSafeInteger(scheduledAtMs) ||
+			scheduledAtMs < 0 ||
+			!isJsonNumber(deadlineMs) ||
+			!Number.isSafeInteger(deadlineMs) ||
+			deadlineMs !== scheduledAtMs + delayMs
+		) {
+			throw new Error("invalid recorded workflow sleep deadline");
+		}
+		return deadlineMs;
+	}
 
 	async function execute<A, R>(
 		def: WorkflowDefinition<A, R>,
@@ -380,9 +422,24 @@ export function createWorkflowEngine(
 		const unconsumedScheduledSteps = new Set(scheduledSteps.keys());
 		assertContiguousStepJournal(runId, scheduledSteps, unconsumedOutcomes);
 		const sleepFacts = new Map<number, ParsedRunSleepScheduled>();
+		const sleepData = new Map<number, JsonBag>();
 		for (const event of journal) {
 			if (event.type !== "run.SleepScheduled") continue;
-			const fact = parseRunSleepScheduledFact(snapshotJournalData(event.data));
+			const data = snapshotJournalData(event.data);
+			let factData: JsonValue = data;
+			let recordedData: JsonBag | undefined;
+			if (isJsonObject(data)) {
+				const objectData: JsonObject = data;
+				recordedData = { ...objectData };
+				const scheduleData: JsonBag = {};
+				for (const [key, value] of Object.entries(objectData)) {
+					if (key !== "scheduledAtMs" && key !== "deadlineMs") {
+						scheduleData[key] = value;
+					}
+				}
+				factData = scheduleData;
+			}
+			const fact = parseRunSleepScheduledFact(factData);
 			const previous = sleepFacts.get(fact.index);
 			if (previous !== undefined) {
 				if (
@@ -394,6 +451,7 @@ export function createWorkflowEngine(
 				continue;
 			}
 			sleepFacts.set(fact.index, fact);
+			if (recordedData) sleepData.set(fact.index, recordedData);
 		}
 		const unconsumedScheduledSleeps = new Set(sleepFacts.keys());
 		const terminals = journal.filter(
@@ -610,42 +668,113 @@ export function createWorkflowEngine(
 						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
 					}
 					unconsumedScheduledSleeps.delete(index);
-					return;
-				}
-				if (
-					!Number.isSafeInteger(normalizedDurationMs) ||
-					normalizedDurationMs < 0
-				) {
-					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
-				}
-				for (const unconsumedIndex of unconsumedScheduledSleeps) {
-					if (unconsumedIndex < index) {
-						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
-					}
-				}
-				if (unconsumedScheduledSleeps.size > 0) {
-					const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
-					if (nextUnconsumed > index) {
-						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
-					}
-				}
-				const data: JsonBag = { delayMs: normalizedDurationMs, index };
-				if (sleepOptions?.label !== undefined) {
-					if (!isJsonString(sleepOptions.label)) {
+				} else {
+					if (
+						!Number.isSafeInteger(normalizedDurationMs) ||
+						normalizedDurationMs < 0
+					) {
 						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 					}
-					data.label = sleepOptions.label;
+					for (const unconsumedIndex of unconsumedScheduledSleeps) {
+						if (unconsumedIndex < index) {
+							rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+						}
+					}
+					if (unconsumedScheduledSleeps.size > 0) {
+						const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
+						if (nextUnconsumed > index) {
+							rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+						}
+					}
 				}
-				await appendEvent("run.SleepScheduled", data);
-				const recorded: ParsedRunSleepScheduled = {
-					delayMs: normalizedDurationMs,
-					index,
-				};
-				if (sleepOptions?.label !== undefined) {
-					recorded.label = sleepOptions.label;
+				const deadlines = journal.filter(
+					(event) => event.type === "run.SleepDeadlineSet",
+				);
+				for (const event of deadlines) {
+					if (
+						!isRecord(event.data) ||
+						!isJsonNumber(event.data.index) ||
+						!isBoundedStepIndex(event.data.index) ||
+						!sleepFacts.has(event.data.index)
+					) {
+						throw new Error("invalid workflow sleep deadline record");
+					}
 				}
-				sleepFacts.set(index, recorded);
-				unconsumedScheduledSleeps.delete(index);
+				const rebased = deadlines.filter(
+					(event) => isRecord(event.data) && event.data.index === index,
+				);
+				if (rebased.length > 1) {
+					throw new Error("duplicate workflow sleep deadline");
+				}
+				let deadlineMs: number;
+				if (scheduled) {
+					const scheduledData = sleepData.get(index);
+					if (!scheduledData) {
+						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+					}
+					if (
+						scheduledData.deadlineMs !== undefined ||
+						scheduledData.scheduledAtMs !== undefined
+					) {
+						if (rebased.length) {
+							throw new Error("duplicate workflow sleep deadline");
+						}
+						deadlineMs = readDeadline(scheduledData, normalizedDurationMs);
+					} else {
+						const previous = rebased[0];
+						if (previous && isRecord(previous.data)) {
+							deadlineMs = readDeadline(previous.data, normalizedDurationMs);
+						} else {
+							let nextIndex = index + 1;
+							const remainingIndices = [...unconsumedScheduledSleeps].sort(
+								(left, right) => left - right,
+							);
+							for (const remainingIndex of remainingIndices) {
+								if (remainingIndex !== nextIndex) {
+									rejectReplay(
+										`sleep schedule diverged on replay for ${runId}`,
+									);
+								}
+								nextIndex += 1;
+							}
+							const deadline = makeDeadline(normalizedDurationMs);
+							await appendEvent("run.SleepDeadlineSet", { index, ...deadline });
+							deadlineMs = deadline.deadlineMs;
+						}
+					}
+				} else {
+					if (
+						sleepOptions?.label !== undefined &&
+						!isJsonString(sleepOptions.label)
+					) {
+						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+					}
+					const deadline = makeDeadline(normalizedDurationMs);
+					const data: JsonBag = {
+						delayMs: normalizedDurationMs,
+						index,
+						...deadline,
+					};
+					if (sleepOptions?.label !== undefined)
+						data.label = sleepOptions.label;
+					await appendEvent("run.SleepScheduled", data);
+					const recorded: ParsedRunSleepScheduled = {
+						delayMs: normalizedDurationMs,
+						index,
+					};
+					if (sleepOptions?.label !== undefined) {
+						recorded.label = sleepOptions.label;
+					}
+					sleepFacts.set(index, recorded);
+					sleepData.set(index, data);
+					unconsumedScheduledSleeps.delete(index);
+					deadlineMs = deadline.deadlineMs;
+				}
+				for (;;) {
+					const remaining = deadlineMs - nowMs();
+					if (remaining <= 0) return;
+					await wait(Math.min(remaining, 2_147_483_647));
+				}
 			},
 			async emit(type, data) {
 				assertReplayConsistent();

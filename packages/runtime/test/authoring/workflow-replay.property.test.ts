@@ -4,13 +4,23 @@ import { WorkflowFailure } from "../../src/errors.js";
 import { replayRun } from "../../src/replay/replayer.js";
 import { createWorkflowEngine, defineWorkflow } from "../../src/workflow.js";
 
+function advancingClock() {
+	let now = 1_000;
+	return {
+		clock: { now: () => new Date(now).toISOString(), nowMs: () => now },
+		wait: async (delay: number) => {
+			now += delay;
+		},
+	};
+}
+
 describe("durable workflow histories", () => {
 	it("replays each recorded sleep exactly once in order", async () => {
 		await fc.assert(
 			fc.asyncProperty(
 				fc.array(fc.integer({ min: 0, max: 100_000 }), { maxLength: 6 }),
 				async (delays) => {
-					const engine = createWorkflowEngine();
+					const engine = createWorkflowEngine(advancingClock());
 					const wf = defineWorkflow({
 						name: "timer-history",
 						async run(ctx, input: number[]) {
@@ -35,7 +45,7 @@ describe("durable workflow histories", () => {
 	it("rejects a missing, changed, or unconsumed later sleep", async () => {
 		await fc.assert(
 			fc.asyncProperty(fc.integer({ min: 0, max: 100_000 }), async (delay) => {
-				const engine = createWorkflowEngine();
+				const engine = createWorkflowEngine(advancingClock());
 				const wf = defineWorkflow({
 					name: "two-timers",
 					async run(ctx) {
@@ -98,7 +108,7 @@ describe("durable workflow histories", () => {
 	});
 
 	it("accepts ordered legacy sleeps but rejects an inconsistent recorded index", async () => {
-		const engine = createWorkflowEngine();
+		const engine = createWorkflowEngine(advancingClock());
 		const wf = defineWorkflow({
 			name: "legacy-timers",
 			async run(ctx) {

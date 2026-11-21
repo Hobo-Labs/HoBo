@@ -16,7 +16,7 @@ export type {
 	FoldEvent,
 } from "@hobo/core";
 
-/** Deterministic clock seam; `sleep` is journaled, never a wall-clock wait. */
+/** Clock seam used to establish and recheck persisted sleep deadlines. */
 export interface RuntimeClock {
 	now(): string;
 	nowMs(): number;
