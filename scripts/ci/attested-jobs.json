@@ -122,20 +122,21 @@
 					"local": "run"
 				},
 				{
-					"name": "Authorize artifact attestation reads",
-					"run": "echo \"GH_TOKEN=$GH_TOKEN\" >> \"$GITHUB_ENV\"",
+					"name": "Verify agent plugin attestation",
+					"run": "pnpm run agent-plugin:check",
 					"env": {
 						"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
 					},
 					"local": "skip",
-					"reason": "local-only plugin validation rebuilds without provenance and needs no GitHub credential"
+					"reason": "GitHub artifact verification requires hosted run identity and a read token; the required CI step performs it"
 				},
 				{
 					"name": "Relevant checks only",
 					"if": "github.event_name == 'pull_request'",
 					"run": "pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests",
 					"env": {
-						"BASE": "${{ steps.scm-base.outputs.base }}"
+						"BASE": "${{ steps.scm-base.outputs.base }}",
+						"HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY": "1"
 					},
 					"local": "run"
 				},
@@ -176,6 +177,7 @@
 					"run": "set -euo pipefail\nnode --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts\nif [ \"$SCOPE\" = \"affected\" ]; then\n  pnpm agent:check -- --base=\"$BASE\" --external-workspace-tests\nelse\n  pnpm run agent-plugin:build\n  pnpm run check:all\nfi\n",
 					"env": {
 						"HOBO_RELEVANT_CHECK_CONCURRENCY": "1",
+						"HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY": "1",
 						"SCOPE": "${{ steps.merge-group-base.outputs.scope }}",
 						"BASE": "${{ steps.merge-group-base.outputs.base }}"
 					},

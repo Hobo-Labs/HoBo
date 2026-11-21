@@ -54,8 +54,15 @@ In CI, HoBo Fabric's isolated `agent-plugin-provenance` job builds the bundle
 and publishes GitHub artifact provenance with pinned
 `actions/attest-build-provenance`. It is the only job with `id-token: write` and
 `attestations: write`; validation jobs have only read permissions and no OIDC
-grant. The build writes no bearer token or local attestation record. The signed
-subject is the sha256 of `bin/hobo-mcp.mjs`; copied `fixtures/deploy` is checked
+grant. The build writes no bearer token or local attestation record.
+`GITHUB_ACTIONS=true` alone cannot admit a CI build: publication requires the
+isolated job's OIDC capability, verification requires complete run identity and
+a step-scoped read token, and other validation steps must explicitly declare
+that the required job covers provenance. Validation jobs have only
+`contents: read` and `attestations: read`. Only their dedicated
+`Verify agent plugin attestation` step receives `GH_TOKEN`; it is never exported
+through `GITHUB_ENV`. Other checks repeat conformance without credentials. The
+signed subject is the sha256 of `bin/hobo-mcp.mjs`; copied `fixtures/deploy` is checked
 separately for presence and secrets, not attestation bytes.
 
 `agent-plugin:check` runs `gh attestation verify` against GitHub's current
@@ -101,10 +108,11 @@ make the package available, and every pure-JavaScript path (Infisical and
 `skills/hobo-setup` and `skills/hobo-deploy` are the portable copies of the
 repo-local skills of the same names (`.agents/skills/` and `.claude/skills/`).
 `pnpm run agent-plugin:check` fails if their name, description, or body drift
-from the repo copies. It enumerates every shipped file recursively, rejects any
-plugin file with no mirrored `.agents/skills` source (only `SKILL.md` may extend
-the frontmatter), and scans every shipped text file for secret-shaped values.
-Diagnostics identify the file and failure without reproducing rejected path or
+from the repo copies. It compares the recursive repo and plugin file sets in
+both directions before comparing content (only `SKILL.md` may extend the
+frontmatter), rejects missing local Markdown link targets, and scans every
+shipped text file for secret-shaped values. Diagnostics identify the file and
+failure without reproducing rejected path or
 frontmatter values. Commands marked **repo-only** in those skills (the MCP
 cold-start test, `eval:hand-off-transcript`) exist only inside a HoBo
 checkout. The hand-off eval calls `auditHandOff` with

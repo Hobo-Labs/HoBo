@@ -323,7 +323,7 @@ function parseYamlScalar(value: string): YamlScalar {
 		}
 	}
 	if (scalar.startsWith("'")) {
-		if (scalar.length < 2 || !scalar.endsWith("'")) {
+		if (!/^'(?:[^']|'')*'$/u.test(scalar)) {
 			throw new SkillParseError("invalid single-quoted YAML scalar");
 		}
 		return {

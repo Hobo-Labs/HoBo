@@ -564,14 +564,16 @@ describe("checkPluginScopedPath", () => {
 });
 
 describe("markdown link containment", () => {
-	it("flags links that escape the plugin root and keeps anchors and URLs", async () => {
+	it("flags escaping and missing links and keeps anchors and URLs", async () => {
 		const { pluginRoot } = await scratchPlugin({
 			"README.md":
-				"[inside](skills/hobo-setup/SKILL.md) [anchor](#top) [site](https://example.com) [escape](../../../docs/agent-tooling.md)\n",
+				"[inside](skills/hobo-setup/SKILL.md) [anchor](#top) [site](https://example.com) [escape](../../../docs/agent-tooling.md) [missing](skills/hobo-setup/missing.md)\n",
+			"skills/hobo-setup/SKILL.md": "# setup\n",
 		});
 		const issues = checkMarkdownLinks(pluginRoot, "README.md");
-		expect(issues).toHaveLength(1);
+		expect(issues).toHaveLength(2);
 		expect(issues[0]?.message).toMatch(/resolves outside the plugin root/u);
+		expect(issues[1]?.message).toMatch(/has no local target/u);
 	});
 
 	it("redacts every secret-shaped link target in diagnostics", async () => {
@@ -772,7 +774,7 @@ describe("checkAgentPlugin (integration)", () => {
 		).toBe(true);
 	});
 
-	it("rejects plugin-only skill files that have no .agents/skills mirror", async () => {
+	it("compares recursive skill file sets in both directions", async () => {
 		const secret = "sk-abcdefghijklmnopqrst";
 		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
 		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
@@ -792,6 +794,8 @@ describe("checkAgentPlugin (integration)", () => {
 			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
 			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
 			"repo:.agents/skills/hobo-setup/references/agent-tooling.md": `${AGENT_TOOLING_HEADING}\n\nbody\n`,
+			"repo:.agents/skills/hobo-setup/references/repo-only.md": "repo only\n",
+			"repo:.agents/skills/hobo-deploy/assets/deep/repo-only.md": "repo only\n",
 		});
 		const report = await checkAgentPlugin({
 			pluginRoot,
@@ -806,6 +810,13 @@ describe("checkAgentPlugin (integration)", () => {
 			"skills/hobo-deploy/assets/deep/logo.svg",
 			"skills/hobo-deploy/notes-secret-shaped.md",
 			"skills/hobo-setup/references/extra.md",
+		]);
+		const missing = report.issues.filter((issue) =>
+			/is missing from the plugin but exists in/.test(issue.message),
+		);
+		expect(missing.map((issue) => issue.file).sort()).toEqual([
+			"skills/hobo-deploy/assets/deep/repo-only.md",
+			"skills/hobo-setup/references/repo-only.md",
 		]);
 		expect(JSON.stringify(report)).not.toContain(secret);
 		expect(unmatched.every((issue) => !issue.message.includes(secret))).toBe(
@@ -1120,6 +1131,32 @@ describe("checkAgentPlugin (integration)", () => {
 			report.issues.some((issue) =>
 				/no verified GitHub artifact provenance/u.test(issue.message),
 			),
+		).toBe(true);
+	});
+
+	it("uses the required external provenance gate without a validation token", async () => {
+		stubCiOff();
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY", "1");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"bin/hobo-mcp.mjs": "x".repeat(1024 * 1024),
+			"fixtures/deploy/vercel/package.json": "{}\n",
+		});
+		let verified = false;
+		const report = await checkAgentPlugin({
+			pluginRoot,
+			repoRoot: scratchRepo,
+			verifyAttestation: async () => {
+				verified = true;
+			},
+		});
+		expect(verified).toBe(false);
+		expect(
+			report.issues.some((issue) => /provenance/u.test(issue.message)),
+		).toBe(false);
+		expect(
+			report.notes.some((note) => /required agent-plugin-provenance job/u.test(note)),
 		).toBe(true);
 	});
 

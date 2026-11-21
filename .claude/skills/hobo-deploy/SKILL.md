@@ -38,9 +38,16 @@ retroactive proof. Then call `choose_secret_store` and proceed only when the
 result documents a private owner ceremony the host can render. Treat
 `status: secure-form-unavailable`, `reason: owner-setup-unavailable`, unknown
 status, tool errors, and a missing tool as stop conditions — report the missing
-secure hand-off and do not collect store identifiers in chat. For lifecycle and
-capture steps, verify without owner data that the connected implementation keeps
-selections in the temporary owner session and excludes private coordinates,
+secure hand-off and do not collect store identifiers in chat. After the owner
+ceremony, verify the selection itself before any lifecycle or capture step:
+proceed only when a privacy-verified HoBo result for the same `cwd` explicitly
+confirms that the owner's selected store is active in the temporary owner
+session. An absent, ambiguous, stale, unknown, or otherwise unverifiable
+selection is a stop condition. Never infer a selection from a completed form,
+a successful tool call, an available token, or later lifecycle output. For
+lifecycle and capture steps, verify without owner data that the connected
+implementation keeps selections in the temporary owner session and excludes
+private coordinates,
 identifiers, and references from agent-visible tool calls, results, traces, and
 diagnostics. If that cannot be established, report the missing secure hand-off.
 

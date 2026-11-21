@@ -12,7 +12,9 @@ a listing serves (boundary fixtured in
 - `parseSkillFrontmatter(markdown)` — parse, don't validate: the SKILL.md
   YAML frontmatter lowers onto parsed derived types (`SkillManifestEntry`)
   or throws a typed `SkillParseError`; missing/empty name or description and
-  malformed single- or double-quoted scalars never survive.
+  malformed single- or double-quoted scalars never survive. Single-quoted
+  scalars must consume the whole value and may contain quotes only as doubled
+  escapes.
 - `loadSkillsManifest(root)` — scans a skills tree (one directory per
   skill, each with a `SKILL.md`) into a `SkillsManifest`, deterministically
   sorted by name.

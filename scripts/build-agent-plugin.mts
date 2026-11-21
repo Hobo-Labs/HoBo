@@ -9,6 +9,7 @@ import {
 import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 import { agentPluginCiActive } from "./check-agent-plugin.ts";
 
@@ -73,6 +74,37 @@ const requireFromHoboPackage = createRequire(
 );
 const esbuild: EsbuildModule = requireFromHoboPackage("esbuild");
 
+export function agentPluginBuildAttestationIssue(
+	env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+	if (!agentPluginCiActive(env)) return undefined;
+	if (env.HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY === "1") return undefined;
+	const runIdentity = [
+		"GITHUB_RUN_ID",
+		"GITHUB_RUN_ATTEMPT",
+		"GITHUB_SHA",
+		"GITHUB_SERVER_URL",
+	] as const;
+	if (
+		env.GITHUB_ACTIONS !== "true" ||
+		env.GITHUB_REPOSITORY?.toLowerCase() !== "hobo-labs/hobo" ||
+		runIdentity.some((name) => (env[name]?.trim() ?? "").length === 0)
+	) {
+		return "CI bundle builds require GitHub Actions, the HoBo repository, and complete run, attempt, commit, and server identity";
+	}
+	const publishesProvenance =
+		env.GITHUB_JOB === "agent-plugin-provenance" &&
+		(env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "").length > 0 &&
+		(env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "").length > 0;
+	const verifiesProvenance =
+		env.HOBO_AGENT_PLUGIN_VERIFY === "1" &&
+		(env.GH_TOKEN?.trim() ?? "").length > 0;
+	if (!publishesProvenance && !verifiesProvenance) {
+		return "CI bundle builds require the isolated provenance job's OIDC capability or an agent-plugin:check verification context; GITHUB_ACTIONS alone is insufficient";
+	}
+	return undefined;
+}
+
 async function buildAgentPlugin(): Promise<void> {
 	rmSync(path.join(pluginRoot, ".bundle-attestation.json"), { force: true });
 	mkdirSync(outdir, { recursive: true });
@@ -105,14 +137,18 @@ async function buildAgentPlugin(): Promise<void> {
 	}
 	rmSync(fixturesTarget, { recursive: true, force: true });
 	cpSync(fixturesSource, fixturesTarget, { recursive: true });
-	if (agentPluginCiActive() && process.env.GITHUB_ACTIONS !== "true") {
-		console.error(
-			"agent-plugin:build: refuse to ship a bundle without attestation when CI is active; run on a GitHub Actions runner (GITHUB_ACTIONS=true)",
-		);
+	const attestationIssue = agentPluginBuildAttestationIssue();
+	if (attestationIssue !== undefined) {
+		console.error(`agent-plugin:build: ${attestationIssue}`);
 		rmSync(outfile, { force: true });
 		rmSync(fixturesTarget, { recursive: true, force: true });
 		process.exitCode = 1;
 	}
 }
 
-await withBuildLock(buildAgentPlugin);
+if (
+	process.argv[1] &&
+	path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+	await withBuildLock(buildAgentPlugin);
+}

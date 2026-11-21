@@ -108,7 +108,7 @@ describe("the description of the covered jobs", () => {
 		);
 		assert.deepEqual(left, [
 			"pr_gate_validation: Impact classification (shadow)",
-			"pr_gate_validation: Authorize artifact attestation reads",
+			"pr_gate_validation: Verify agent plugin attestation",
 			"pr_gate_validation: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
@@ -120,6 +120,24 @@ describe("the description of the covered jobs", () => {
 			"release-contract: Clean up OCI build artifacts",
 			"release-contract: Prune Turbo cache",
 		]);
+	});
+
+	it("scopes the attestation read token to the dedicated verification step", () => {
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
+		assert.deepEqual(
+			gate.steps
+				.filter((step) => step.env?.GH_TOKEN !== undefined)
+				.map((step) => step.name),
+			["Verify agent plugin attestation"],
+		);
+		const document = workflowDocument(readFileSync(gate.workflow, "utf8"));
+		const job = asObject(asObject(document.jobs)?.[gate.id]);
+		assert.deepEqual(asObject(job?.permissions), { contents: "read" });
+		assert.doesNotMatch(
+			gate.steps.map((step) => step.run ?? "").join("\n"),
+			/GH_TOKEN=.*GITHUB_ENV/u,
+		);
 	});
 
 	it("runs every scripts test shard locally", () => {

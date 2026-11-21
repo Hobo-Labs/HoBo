@@ -390,10 +390,6 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: plugins/hobo/bin/hobo-mcp.mjs
-      - name: Verify bundle and provenance
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run agent-plugin:check
 
   pr_gate_validation:
     name: PR impact validation
@@ -410,7 +406,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      attestations: read
     outputs:
       merge_base: ${{ steps.merge-group-base.outputs.base }}
       merge_tests: ${{ steps.merge-group-base.outputs.tests }}
@@ -523,14 +518,15 @@ jobs:
       - name: Code format gate
         if: github.event_name == 'pull_request'
         run: pnpm run lint:code
-      - name: Authorize artifact attestation reads
+      - name: Verify agent plugin attestation
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: echo "GH_TOKEN=$GH_TOKEN" >> "$GITHUB_ENV"
+        run: pnpm run agent-plugin:check
       - name: Relevant checks only
         if: github.event_name == 'pull_request'
         env:
           BASE: ${{ steps.scm-base.outputs.base }}
+          HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1"
         run: pnpm agent:check -- --base="$BASE" --external-workspace-tests
       # main-gate's main-base and S0 gate set steps mirror these steps.
       - name: Resolve the merge group base and gate scope
@@ -603,6 +599,7 @@ jobs:
           # One vitest fork at a time: four forks (default) with 3 GiB heaps plus
           # componentize-js wizer exceed the 6 GiB job container and get OOM-killed.
           HOBO_RELEVANT_CHECK_CONCURRENCY: "1"
+          HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1"
           SCOPE: ${{ steps.merge-group-base.outputs.scope }}
           BASE: ${{ steps.merge-group-base.outputs.base }}
         run: |
@@ -1316,7 +1313,6 @@ jobs:
     timeout-minutes: ${{ github.event_name == 'schedule' && 60 || 20 }}
     permissions:
       contents: read
-      attestations: read
     outputs:
       main_base: ${{ steps.main-base.outputs.base }}
       main_tests: ${{ steps.main-base.outputs.tests }}
@@ -1492,14 +1488,18 @@ jobs:
             echo "scope=${scope}"
             echo "tests=${tests}"
           } >> "$GITHUB_OUTPUT"
+      - name: Verify agent plugin attestation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm run agent-plugin:check
       - name: S0 gate set
         timeout-minutes: 20
         env:
           # Three parallel relevant-check lanes on the 4 GiB main trunk class (finding 135).
           HOBO_RELEVANT_CHECK_CONCURRENCY: "3"
+          HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1"
           SCOPE: ${{ steps.main-base.outputs.scope }}
           BASE: ${{ steps.main-base.outputs.base }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts

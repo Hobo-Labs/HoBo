@@ -5,6 +5,7 @@ Patterns for using Unity CLI + Pipeline as an **observe → act → verify** loo
 ## Environment bootstrap (once per machine / job)
 
 ```bash
+set -euo pipefail
 export PATH="$HOME/.unity/bin:$PATH"
 export UNITY_NON_INTERACTIVE=1
 export UNITY_NO_BANNER=1

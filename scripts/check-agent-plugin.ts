@@ -551,6 +551,11 @@ export function checkMarkdownLinks(
 				file: relativeFile,
 				message: `relative link "${redactDiagnosticText(target)}" resolves outside the plugin root`,
 			});
+		} else if (!existsSync(resolved)) {
+			issues.push({
+				file: relativeFile,
+				message: `relative link "${redactDiagnosticText(target)}" has no local target in the plugin`,
+			});
 		}
 	}
 	return issues;
@@ -815,17 +820,26 @@ function skillIssues(
 
 	const pluginSkillDir = path.join(pluginRoot, "skills", skill);
 	const repoSkillDir = path.join(repoSkillsRoot, skill);
-	for (const relative of listFilesRecursive(pluginSkillDir)) {
-		if (relative === "SKILL.md") continue;
+	const pluginFiles = new Set(listFilesRecursive(pluginSkillDir));
+	const repoFiles = new Set(listFilesRecursive(repoSkillDir));
+	for (const relative of repoFiles) {
+		if (pluginFiles.has(relative)) continue;
+		issues.push({
+			file: path.join("skills", skill, relative),
+			message: `is missing from the plugin but exists in .agents/skills/${skill}; copy the repo file`,
+		});
+	}
+	for (const relative of pluginFiles) {
+		if (repoFiles.has(relative)) continue;
+		issues.push({
+			file: path.join("skills", skill, relative),
+			message: `is shipped in the plugin but has no mirrored .agents/skills/${skill} source; add it to the repo skill or remove it here`,
+		});
+	}
+	for (const relative of pluginFiles) {
+		if (relative === "SKILL.md" || !repoFiles.has(relative)) continue;
 		const relativeFile = path.join("skills", skill, relative);
 		const repoFile = path.join(repoSkillDir, relative);
-		if (!existsSync(repoFile)) {
-			issues.push({
-				file: relativeFile,
-				message: `is shipped in the plugin but has no mirrored .agents/skills/${skill} source; add it to the repo skill or remove it here`,
-			});
-			continue;
-		}
 		const pluginText = readFileSync(
 			path.join(pluginSkillDir, relative),
 			"utf8",
@@ -837,6 +851,9 @@ function skillIssues(
 			});
 		}
 		issues.push(...scanTextForSecrets(relativeFile, pluginText));
+		if (relative.endsWith(".md")) {
+			issues.push(...checkMarkdownLinks(pluginRoot, relativeFile));
+		}
 	}
 	return issues;
 }
@@ -1106,6 +1123,10 @@ export async function checkAgentPlugin(input: {
 			notes.push(
 				"agent-plugin:check: explicit local-only non-CI path; the freshly rebuilt bundle has no provenance and cannot be reused for CI validation",
 			);
+		} else if (process.env.HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY === "1") {
+			notes.push(
+				"agent-plugin:check: bundle provenance is verified by the required agent-plugin-provenance job; this job repeats conformance without GitHub credentials",
+			);
 		}
 		issues.push(
 			...(await bundleAttestationIssues(
@@ -1172,6 +1193,7 @@ async function bundleAttestationIssues(
 		{ file, message },
 	];
 	if (!agentPluginCiActive()) return [];
+	if (process.env.HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY === "1") return [];
 	if (process.env.GITHUB_ACTIONS !== "true") {
 		return failure(
 			"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); non-GitHub CI cannot accept a bundle",
@@ -1425,7 +1447,7 @@ function ensureCiPluginBundle(repoRoot: string): void {
 	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
 		cwd: repoRoot,
 		stdio: "inherit",
-		env: process.env,
+		env: { ...process.env, HOBO_AGENT_PLUGIN_VERIFY: "1" },
 	});
 	if (build.status !== 0) process.exit(build.status ?? 1);
 }

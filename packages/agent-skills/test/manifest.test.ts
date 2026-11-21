@@ -91,12 +91,27 @@ describe("parseSkillFrontmatter", () => {
 		}
 	});
 
-	it("rejects unterminated single-quoted top-level scalars", () => {
-		expect(() =>
+	it("decodes doubled quotes in single-quoted scalars", () => {
+		expect(
 			parseSkillFrontmatter(
-				"---\nname: sdlc\ndescription: 'unterminated\n---\n",
+				"---\nname: sdlc\ndescription: 'owner''s store'\n---\n",
 			),
-		).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
+		).toEqual({ name: "sdlc", description: "owner's store" });
+	});
+
+	it("rejects malformed single-quoted top-level scalars", () => {
+		for (const description of [
+			"'unterminated",
+			"'closed' trailing",
+			"'owner's store'",
+			"'closed''",
+		]) {
+			expect(() =>
+				parseSkillFrontmatter(
+					`---\nname: sdlc\ndescription: ${description}\n---\n`,
+				),
+			).toThrowError(new SkillParseError("invalid single-quoted YAML scalar"));
+		}
 	});
 
 	it("rejects unterminated single-quoted metadata scalars", () => {
@@ -128,6 +143,22 @@ describe("loadSkillsManifest", () => {
 });
 
 describe("checkSkillsConformance", () => {
+	it("rejects trailing and unescaped content in single-quoted scalars", async () => {
+		const root = await scratchTree({
+			trailing:
+				"---\nname: trailing\ndescription: 'closed' trailing\n---\n",
+			unescaped:
+				"---\nname: unescaped\ndescription: 'owner's store'\n---\n",
+			valid: "---\nname: valid\ndescription: 'owner''s store'\n---\n",
+		});
+		const issues = await checkSkillsConformance(root);
+		expect(issues.map((issue) => issue.skill).sort()).toEqual([
+			"trailing",
+			"unescaped",
+		]);
+		expect(issues.every((issue) => issue.code === "unparseable")).toBe(true);
+	});
+
 	it("passes the repo's real tree with zero issues, strict set included", async () => {
 		expect(
 			await checkSkillsConformance(REPO_SKILLS_ROOT, {
