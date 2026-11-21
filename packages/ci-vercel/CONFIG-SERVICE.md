@@ -257,10 +257,11 @@ to deploy, holds no secret and reads no repository variable about the relay:
 its gate is the committed binding (a required deployment with no binding, or an
 unreadable one, fails), and the deploy command signs in to the store with the
 job's GitHub Actions OIDC token as `hobo-ci-deploy` and reads `VERCEL_TOKEN`
-from the separate deploy project without logging it. Deployment and App-deposit
-always use ephemeral GitHub-hosted runners and clean checkouts, so a reused
-fleet or enrolled runner cannot capture credentials or contribute workspace
-files.
+from the separate deploy project, masking it in the job log
+(`::add-mask::`) and printing only redacted lines to the job summary.
+Deployment and App-deposit always use ephemeral GitHub-hosted runners and clean
+checkouts, so a reused fleet or enrolled runner cannot capture credentials or
+contribute workspace files.
 
 The owner creates a Vercel API token scoped to the deployment account and puts
 it in the deploy project's production environment as `VERCEL_TOKEN`. The

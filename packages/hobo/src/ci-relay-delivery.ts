@@ -791,47 +791,45 @@ async function deliverWith(
 		if (observed?.setId === set.setId) return observed.handover;
 		return realizer?.deployed(set.setId) ?? {};
 	};
-	const suites: VerifyPort | undefined =
-		finalizePromotion === undefined
-			? input.suites
-			: {
-					async run(request, ctx) {
-						if (request.suite !== RELAY_FINALIZATION_SUITE) {
-							if (input.suites !== undefined)
-								return input.suites.run(request, ctx);
-							return {
-								ok: false,
-								reasons: [
-									reason(
-										RELAY_DELIVERY_REFUSAL.unavailable,
-										`Verify suite ${request.suite} is not configured`,
-										"Compose the suite runner or remove the suite hook.",
-									),
-								],
-							};
-						}
-						const set = await cd.desired.current(request.campId);
-						const failure = await finalizePromotion({
-							report: report(promotion, set),
-							handover: await handoverFor(set, request.campId),
-						});
-						if (failure === undefined) {
-							finalizationFailure = undefined;
-							return { ok: true, value: { finalized: true } };
-						}
-						finalizationFailure = failure;
-						return {
-							ok: false,
-							reasons: [
-								reason(
-									failure.code,
-									failure.message,
-									"Inspect the finalization failure before retrying delivery.",
-								),
-							],
-						};
-					},
+	const suites: VerifyPort = {
+		async run(request, ctx) {
+			if (request.suite !== RELAY_FINALIZATION_SUITE) {
+				if (input.suites !== undefined) return input.suites.run(request, ctx);
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.unavailable,
+							`Verify suite ${request.suite} is not configured`,
+							"Compose the suite runner or remove the suite hook.",
+						),
+					],
 				};
+			}
+			if (finalizePromotion === undefined)
+				return { ok: true, value: { finalized: false } };
+			const set = await cd.desired.current(request.campId);
+			const failure = await finalizePromotion({
+				report: report(promotion, set),
+				handover: await handoverFor(set, request.campId),
+			});
+			if (failure === undefined) {
+				finalizationFailure = undefined;
+				return { ok: true, value: { finalized: true } };
+			}
+			finalizationFailure = failure;
+			return {
+				ok: false,
+				reasons: [
+					reason(
+						failure.code,
+						failure.message,
+						"Inspect the finalization failure before retrying delivery.",
+					),
+				],
+			};
+		},
+	};
 	const cd = composeContinuousDelivery({
 		base: { store, tenant: config.tenant, now },
 		factories: defaultCdFactories,
@@ -879,7 +877,7 @@ async function deliverWith(
 					subject: async () => ({ classifications: [], residency: [] }),
 				},
 			}),
-			...(suites !== undefined ? { suites: () => suites } : undefined),
+			suites: () => suites,
 		},
 		http,
 		credentials,

@@ -1,4 +1,4 @@
-import type { TransportRequest } from "@hobo/core";
+import { createBoundedFetchTransport, type TransportRequest } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { protectedPreviewProbe } from "../src/ci-relay-preview-probe.js";
 
@@ -67,6 +67,34 @@ describe("protected preview probe", () => {
 			(await probe({ ...request, url: "https://preview.invalid/other" }))
 				.status,
 		).toBe(503);
+	});
+
+	it("surfaces a redirect answer once and never re-sends the token cross-origin", async () => {
+		const calls: { url: string; init: RequestInit }[] = [];
+		const probe = protectedPreviewProbe({
+			placeholderOrigin: "https://preview.invalid",
+			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
+			jwt: async () => "synthetic-oidc-token",
+			base: createBoundedFetchTransport({
+				fetchImpl: async (url, init) => {
+					calls.push({ url: String(url), init: init ?? {} });
+					return new Response("", {
+						status: 302,
+						headers: { location: "https://evil.test/healthz" },
+					});
+				},
+			}),
+		});
+		const answer = await probe(request);
+		expect(answer.status).toBe(302);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.url).toBe("https://hobo-ci-example.vercel.app/healthz");
+		expect(calls[0]?.init.redirect).toBe("manual");
+		expect(
+			new Headers(calls[0]?.init.headers).get(
+				"x-vercel-trusted-oidc-idp-token",
+			),
+		).toBe("synthetic-oidc-token");
 	});
 
 	it("normalizes a host-only or path-carrying deployment URL to its https origin", async () => {

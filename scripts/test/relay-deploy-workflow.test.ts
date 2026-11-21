@@ -260,7 +260,7 @@ describe("the relay deploy workflow", () => {
 const target = process.argv[process.argv.indexOf("--target") + 1];
 fs.appendFileSync(process.env.CALLS, target + "\\n");
 const failed = target === process.env.FAIL_TARGET;
-process.stdout.write(JSON.stringify({code: failed ? "HOBO_TEST_REFUSED" : "HOBO_OK", message: failed ? "deployment unavailable" : "delivered"}));
+process.stdout.write(JSON.stringify({code: failed ? "HOBO_TEST_REFUSED" : "HOBO_OK", message: failed ? "deployment unavailable VERCEL_TOKEN=supersecretvalue1 and bearer abc.def-ghi_123" : "delivered"}));
 process.exitCode = failed ? 27 : 0;`,
 			);
 			const lines = step("Deliver the relay through HoBo CD").split("\n");
@@ -294,11 +294,16 @@ process.exitCode = failed ? 27 : 0;`,
 				assert.equal(result.status, 27);
 				assert.match(
 					result.stdout,
-					/HOBO_TEST_REFUSED: deployment unavailable/u,
+					/HOBO_TEST_REFUSED: deployment unavailable VERCEL_TOKEN= \[redacted\]/u,
 				);
+				assert.doesNotMatch(`${result.stdout}`, /supersecretvalue1/u);
 				assert.match(
 					readFileSync(summary, "utf8"),
-					/HOBO_TEST_REFUSED: deployment unavailable/u,
+					/HOBO_TEST_REFUSED: deployment unavailable VERCEL_TOKEN= \[redacted\]/u,
+				);
+				assert.doesNotMatch(
+					readFileSync(summary, "utf8"),
+					/supersecretvalue1/u,
 				);
 				assert.equal(
 					readFileSync(calls, "utf8"),

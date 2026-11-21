@@ -641,10 +641,7 @@ export async function runCiRelayDeploy(
 		});
 		if (!parsedDeadline.ok) return usage(parsedDeadline.message);
 		deadlineAt = parsedDeadline.at;
-		if (
-			clock() >= deadlineAt &&
-			(stagedProduction || target === "production")
-		)
+		if (clock() >= deadlineAt && (stagedProduction || target === "production"))
 			return refused(
 				RELAY_DEPLOY_REFUSAL.budgetExhausted,
 				target === "production"
@@ -768,10 +765,14 @@ export async function runCiRelayDeploy(
 		);
 	const wait = values.wait === true;
 	const origin = RELAY_VERIFY_ORIGIN[target];
+	const oidcMintAvailable =
+		env.ACTIONS_ID_TOKEN_REQUEST_URL !== undefined &&
+		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN !== undefined;
 	const protectedPreview =
 		target === "preview" &&
 		wait &&
-		env.HOBO_CI_RELAY_PREVIEW_PROBE_OIDC === "true";
+		(env.HOBO_CI_RELAY_PREVIEW_PROBE_OIDC ??
+			(oidcMintAvailable ? "true" : undefined)) === "true";
 	if (protectedPreview && sha === undefined)
 		return usage("OIDC preview verification needs --sha <commit>.");
 	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
@@ -791,19 +792,19 @@ export async function runCiRelayDeploy(
 		env.ACTIONS_ID_TOKEN_REQUEST_URL
 	) {
 		try {
-			vault.put(
-				"VERCEL_TOKEN",
-				await readRelayDeployToken({
-					binding: storeBinding,
-					env: {
-						ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
-						ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-					},
-					...(input.credentialFetch !== undefined
-						? { fetch: input.credentialFetch }
-						: undefined),
-				}),
-			);
+			const stored = await readRelayDeployToken({
+				binding: storeBinding,
+				env: {
+					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+				},
+				...(input.credentialFetch !== undefined
+					? { fetch: input.credentialFetch }
+					: undefined),
+			});
+			vault.put("VERCEL_TOKEN", stored);
+			if (env.GITHUB_ACTIONS === "true")
+				process.stderr.write(`::add-mask::${stored}\n`);
 		} catch (error) {
 			return refused(
 				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
@@ -960,12 +961,20 @@ export async function runCiRelayDeploy(
 					...(stagedProduction
 						? { paths: ["/healthz", "/readyz"] as const }
 						: undefined),
-					jwt: githubActionsJwtSource({
-						env,
-						...(input.credentialFetch !== undefined
-							? { fetch: input.credentialFetch }
-							: undefined),
-					}),
+					jwt: async () => {
+						const audience =
+							env.HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE ??
+							relayOrigin(normalizeDeploymentUrl(deploymentUrl));
+						if (audience === undefined)
+							throw new Error("no deployment to scope the probe token to");
+						return githubActionsJwtSource({
+							env,
+							audience,
+							...(input.credentialFetch !== undefined
+								? { fetch: input.credentialFetch }
+								: undefined),
+						})();
+					},
 				})
 			: baseProbe;
 	const commitVerified =
@@ -988,11 +997,7 @@ export async function runCiRelayDeploy(
 		verifyProbe !== undefined && verifyOrigin !== undefined
 			? { origin: verifyOrigin, probe: verifyProbe }
 			: undefined;
-	if (
-		deadlineRequested &&
-		target === "production" &&
-		clock() >= deadlineAt
-	)
+	if (deadlineRequested && target === "production" && clock() >= deadlineAt)
 		return refused(
 			RELAY_DEPLOY_REFUSAL.budgetExhausted,
 			`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`,
@@ -1241,6 +1246,14 @@ export async function runCiRelayDeploy(
 				promoted
 					? `  Freight ${delivered.report.alias} promoted through ${delivered.report.pipeline}/${delivered.report.node} to ${delivered.report.campId}: verified and qualified`
 					: `  Freight ${delivered.report.alias} is ${delivered.report.state ?? "in flight"} at ${delivered.report.campId}, not yet verified; run with --wait to verify and qualify it`,
+				...(target === "preview" &&
+				wait &&
+				!protectedPreview &&
+				oidcMintAvailable
+					? [
+							`  Preview verification did not pin the deployment's commit: HOBO_CI_RELAY_PREVIEW_PROBE_OIDC is not "true" while GitHub OIDC is available, so qualification attests the shared origin only.`,
+						]
+					: []),
 				...Object.entries(safe).map(([key, value]) => `  ${key}: ${value}`),
 			].join("\n"),
 			data: {

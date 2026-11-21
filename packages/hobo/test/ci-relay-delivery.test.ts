@@ -6,9 +6,14 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { toJson } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 import type { ManifestV1 } from "@hobo/bindles";
-import { FreightSourceRecordSchema } from "@hobo/cd";
+import {
+	FreightSourceRecordSchema,
+	HookKind,
+	HookPoint,
+	HookRecordSchema,
+} from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
 import { capability, type HttpTransport } from "@hobo/core";
@@ -437,6 +442,50 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(h.deployed.map((pin) => pin.sha)).toEqual([SHA, SHA]);
 		expect(h.probed).toContain(`${PRODUCTION}/readyz`);
 	}, 60_000);
+
+	it("does not let an injected finalization hook outlive its run", async () => {
+		const h = await harness();
+		const stagedPreview = await deliver(h, "preview");
+		expect(stagedPreview.ok).toBe(true);
+		const staged = await deliver(h, "production", {
+			finalizePromotion: async () => undefined,
+		});
+		expect(staged.ok, staged.ok ? "" : staged.message).toBe(true);
+		const nextSource = {
+			repository: "Hobo-Labs/HoBo",
+			ref: "main",
+			sha: "3".repeat(40),
+		};
+		const nextPreview = await deliver(h, "preview", { source: nextSource });
+		expect(nextPreview.ok).toBe(true);
+		const withFinalizationHook: DeliveryModule = {
+			...records,
+			pipelines: records.pipelines.map((pipelineRecord) => ({
+				...pipelineRecord,
+				nodes: pipelineRecord.nodes.map((pipelineNode) =>
+					pipelineRecord.name === HOBO_CI_COMPONENTS.relay.pipeline &&
+					pipelineNode.name === "production"
+						? {
+								...pipelineNode,
+								hooks: [
+									...pipelineNode.hooks,
+									create(HookRecordSchema, {
+										kind: HookKind.SUITE,
+										point: HookPoint.AFTER_QUALIFIED,
+										ref: "relay:finalize-promotion",
+									}),
+								],
+							}
+						: pipelineNode,
+				),
+			})),
+		};
+		const later = await deliver(h, "production", {
+			source: nextSource,
+			records: withFinalizationHook,
+		});
+		expect(later.ok, later.ok ? "" : later.message).toBe(true);
+	}, 180_000);
 
 	it("records two commits as two Freight, and production refuses the one preview has not qualified", async () => {
 		const h = await harness();

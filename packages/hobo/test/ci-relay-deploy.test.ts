@@ -263,18 +263,35 @@ describe("Infisical deployment credential", () => {
 				seenAuthorization.push(init.headers.Authorization ?? "");
 				throw new Error("no request may be sent");
 			};
-			const ran = await deploy([...RELAY], {
-				cwd,
-				fetch: vercelFetch,
-				credentialFetch,
-				env: {
-					GITHUB_ACTIONS: "true",
-					VERCEL_TOKEN: "untrusted-runner-token",
-					ACTIONS_ID_TOKEN_REQUEST_URL:
-						"https://token.actions.example.test/token",
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
-				},
-			});
+			const stderrWrites: string[] = [];
+			const stderr = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk) => {
+					stderrWrites.push(Buffer.from(chunk).toString());
+					return true;
+				});
+			let ran: Awaited<ReturnType<typeof deploy>>;
+			try {
+				ran = await deploy([...RELAY], {
+					cwd,
+					fetch: vercelFetch,
+					credentialFetch,
+					env: {
+						GITHUB_ACTIONS: "true",
+						VERCEL_TOKEN: "untrusted-runner-token",
+						ACTIONS_ID_TOKEN_REQUEST_URL:
+							"https://token.actions.example.test/token",
+						ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+					},
+				});
+			} finally {
+				stderr.mockRestore();
+			}
+			const masked = stderrWrites.join("");
+			expect(masked).toContain(`::add-mask::${TOKEN}\n`);
+			expect(masked.replaceAll(`::add-mask::${TOKEN}\n`, "")).not.toContain(
+				TOKEN,
+			);
 			expect(
 				requests.some(
 					(url) =>
@@ -944,6 +961,72 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 
 	it("verifies the newly created protected preview with GitHub OIDC", async () => {
 		const probed: string[] = [];
+		const minted: string[] = [];
+		const probe: HttpTransport = async (request) => {
+			probed.push(request.url);
+			expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
+				"eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+			);
+			return {
+				status: 200,
+				headers: {},
+				body: JSON.stringify({ ok: true, commit: SHA }),
+			};
+		};
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			credentialFetch: async (input) => {
+				const url = String(input);
+				if (url.includes("token.actions.example.test")) {
+					minted.push(url);
+					return Response.json({
+						value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+					});
+				}
+				if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+					return Response.json({
+						accessToken: "synthetic-infisical-token",
+						expiresIn: 3600,
+						accessTokenMaxTTL: 3600,
+						tokenType: "Bearer",
+					});
+				if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+					return Response.json({
+						secret: {
+							secretKey: "VERCEL_TOKEN",
+							secretValue: TOKEN,
+							version: 1,
+							type: "shared",
+							environment: "prod",
+							secretPath: "/",
+						},
+					});
+				return Response.json({}, { status: 404 });
+			},
+			env: {
+				...env,
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true",
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+			probe,
+			...steppingClock(),
+		});
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(probed).toContain(
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
+		);
+		expect(minted.length, JSON.stringify(ran.envelope)).toBeGreaterThan(0);
+		expect(
+			minted.map((url) => new URL(url).searchParams.get("audience")),
+			JSON.stringify(minted),
+		).toEqual(minted.map(() => "https://hobo-ci-git-main.example.vercel.app"));
+		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
+	});
+
+	it("defaults the protected preview probe on when GitHub OIDC is available", async () => {
+		const probed: string[] = [];
 		const probe: HttpTransport = async (request) => {
 			probed.push(request.url);
 			expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
@@ -985,7 +1068,6 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			},
 			env: {
 				...env,
-				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true",
 				ACTIONS_ID_TOKEN_REQUEST_URL:
 					"https://token.actions.example.test/token",
 				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
@@ -997,10 +1079,36 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(probed).toContain(
 			"https://hobo-ci-git-main.example.vercel.app/healthz",
 		);
+		expect(probed).not.toContain("https://relay-preview.example.test/healthz");
 		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
 	});
 
-	it("does not pin preview commit on the shared origin when OIDC preview probing is off", async () => {
+	it("records the attestation downgrade when OIDC probing is refused while GitHub OIDC is available", async () => {
+		const stale = healthyRelay(200, "f".repeat(40));
+		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env: {
+				...env,
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+			probe: stale.http,
+			...steppingClock(),
+		});
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(stale.probed).toContain(
+			"https://relay-preview.example.test/healthz",
+		);
+		expect(ran.envelope.message).toEqual(
+			expect.stringContaining(
+				"Preview verification did not pin the deployment's commit",
+			),
+		);
+	});
+
+	it("does not pin preview commit on the shared origin when no GitHub OIDC is available", async () => {
 		const stale = healthyRelay(200, "f".repeat(40));
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch: scriptedVercel(["READY"]).fetch,
@@ -1011,6 +1119,11 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
 		expect(stale.probed).toContain(
 			"https://relay-preview.example.test/healthz",
+		);
+		expect(ran.envelope.message).not.toEqual(
+			expect.stringContaining(
+				"Preview verification did not pin the deployment's commit",
+			),
 		);
 	});
 
@@ -2141,16 +2254,13 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const relay = healthyRelay();
 		// One clock across both runs: production comes after preview.
 		const clock = steppingClock();
-		const first = await deploy(
-			[...PINNED, "--project", "hobo-ci", "--wait"],
-			{
-				fetch: scriptedVercel(["READY"]).fetch,
-				env,
-				hoboHome: home,
-				probe: relay.http,
-				...clock,
-			},
-		);
+		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			hoboHome: home,
+			probe: relay.http,
+			...clock,
+		});
 		expect(first.exitCode).toBe(0);
 		expect(first.data.delivery).toMatchObject({
 			node: "preview",
@@ -2197,16 +2307,13 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	it("does not qualify production while HOBO_CI_RELAY_URL serves another commit", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
-		const first = await deploy(
-			[...PINNED, "--project", "hobo-ci", "--wait"],
-			{
-				fetch: scriptedVercel(["READY"]).fetch,
-				env,
-				hoboHome: home,
-				probe: healthyRelay().http,
-				...clock,
-			},
-		);
+		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env,
+			hoboHome: home,
+			probe: healthyRelay().http,
+			...clock,
+		});
 		expect(first.exitCode).toBe(0);
 		const stale = healthyRelay(200, "f".repeat(40));
 		const second = await deploy(

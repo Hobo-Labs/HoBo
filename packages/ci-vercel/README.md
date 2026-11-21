@@ -256,15 +256,24 @@ result keeps its JSON contract (`code`, `data.outputs`, `data.plan`) and adds
 
 Known gaps, stated rather than hidden:
 
-- **The ordinary preview probe reads a fixed origin.** Commit pinning on preview
-  `/healthz` runs only with `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` (protected
-  preview) or for staged production; otherwise `--sha` on preview waits without
-  requiring `/healthz` to name that commit. For a protected Vercel preview,
-  `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` makes HoBo probe the
-  deployment it just created using the GitHub Actions OIDC token. The project
-  must trust that workload for preview access, and `HOBO_CI_RELAY_PREVIEW_URL`
-  supplies the pipeline's placeholder origin. `--adopt` verifies preview by
-  its deployment record instead.
+- **The ordinary preview probe reads a fixed origin unless GitHub OIDC can
+  protect it.** Commit pinning on preview `/healthz` runs with
+  `HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` (protected preview) or for staged
+  production; on a runner where the GitHub OIDC mint is available
+  (`ACTIONS_ID_TOKEN_REQUEST_URL`/`ACTIONS_ID_TOKEN_REQUEST_TOKEN`), the
+  protected probe is the default, and a run that refuses it
+  (`HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=false`) says so in its result: the
+  qualification attests the shared origin only, not the deployment's commit.
+  Without an OIDC mint (a hand run), `--sha` on preview waits without requiring
+  `/healthz` to name that commit. For a protected Vercel preview, HoBo probes
+  the deployment it just created using the GitHub Actions OIDC token, minted
+  with an audience pinned to that deployment's origin
+  (`HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE` overrides the pin where the Vercel
+  trust requires another audience), so the probe token is not replayable to a
+  relying party that expects GitHub's default audience. The project must trust
+  that workload for preview access, and `HOBO_CI_RELAY_PREVIEW_URL` supplies
+  the pipeline's placeholder origin. `--adopt` verifies preview by its
+  deployment record instead.
 
 The journal is the shared CD journal: `$HOBO_HOME/cd`, or the store
 `HOBO_CD_SQLITE_PATH` / `HOBO_CD_POSTGRES_URL` names, the same one
@@ -294,7 +303,9 @@ Trusted Source with the same claim pin. The workflow disables Vercel Git
 auto-deploy in the same commit; without those prerequisites `main`'s required
 deploy fails and the relay receives no deployment. After merge, link one
 production run that shows the workflow reading `VERCEL_TOKEN` through Infisical
-and a protected preview probe with OIDC (channel-observation rule).
+and a protected preview probe with OIDC (channel-observation rule). Until that
+run is linked, the delivery path is built, not proven: the prerequisites above
+are external and cannot be verified before merge.
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)

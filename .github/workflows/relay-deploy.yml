@@ -128,7 +128,7 @@ jobs:
               --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
               --target "$target" --wait --deadline "$DEPLOY_DEADLINE" \
               --json > "$RUNNER_TEMP/relay-${target}.json" || status=$?
-            node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${process.argv[2]}: ${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-${target}.json" "$target" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const redact = (t) => String(t).replaceAll(/bearer\s+[A-Za-z0-9._~+/=-]+/gi, "bearer [redacted]").replaceAll(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, "[jwt redacted]").replaceAll(/\b(?:[A-Za-z0-9]+[_-])*(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|api[_-]?key|token|secret|password)\b\s*[=:]\s*[!-~]{8,}/gi, (m) => m.split(/[=:]/)[0] + "= [redacted]"); console.log(`${process.argv[2]}: ${r.code ?? "HOBO_OK"}: ${redact(r.message ?? "")}`);' "$RUNNER_TEMP/relay-${target}.json" "$target" | tee -a "$GITHUB_STEP_SUMMARY" || true
             if [ "$status" -ne 0 ]; then exit "$status"; fi
           done
       # The hosted relay's fleet verdict (ADR-0180) at its public origin. Route
@@ -220,5 +220,5 @@ jobs:
             --relay "$RELAY_ORIGIN" --owner-id "$APP_OWNER_ID" \
             --json > "$RUNNER_TEMP/app-deposit.json"
           status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/app-deposit.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); const redact = (t) => String(t).replaceAll(/bearer\s+[A-Za-z0-9._~+/=-]+/gi, "bearer [redacted]").replaceAll(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/gu, "[jwt redacted]").replaceAll(/\b(?:[A-Za-z0-9]+[_-])*(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key|api[_-]?key|token|secret|password)\b\s*[=:]\s*[!-~]{8,}/gi, (m) => m.split(/[=:]/)[0] + "= [redacted]"); console.log(`${r.code ?? "HOBO_OK"}: ${redact(r.message ?? "")}`);' "$RUNNER_TEMP/app-deposit.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
