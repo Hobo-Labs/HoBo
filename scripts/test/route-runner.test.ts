@@ -1506,8 +1506,58 @@ describe("the script reading the slip", () => {
 					[decision.tier, decision.runner, decision.refusedBy],
 					["fleet", "hobo-trunk", "none"],
 				);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
 			},
 		);
+	});
+
+	it("routes merge-group CI to hobo-trunk when the slip is expired and runs are still choosing", async () => {
+		const expired = JSON.parse(OPEN_SLIP);
+		expired.expiresAt = "2026-11-13T16:00:30.000Z";
+		const pages = (path: string): JsonValue => {
+			if (path.includes("/runs/50/jobs"))
+				return { jobs: [{ status: "in_progress" }] };
+			if (path.includes("/jobs"))
+				return { jobs: [pickup("hobo-trunk"), waiting("hobo-trunk", 2)] };
+			return {
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+					{
+						id: 50,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date(SLIP_NOW - 10_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 10_000).toISOString(),
+					},
+				],
+			};
+		};
+		await withGithub(pages, async (apiUrl) => {
+			const { decision, lines } = await route(
+				apiUrl,
+				JSON.stringify(expired),
+				mergeGroupCi,
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["fleet", "hobo-trunk", "none"],
+			);
+			assert.match(decision.reason, /merge-group trunk confirmation/u);
+			assert.deepEqual(decision.slip, {
+				kind: "unasked",
+				why: "merge-group",
+			});
+			assert.deepEqual(warningsIn(lines), []);
+		});
 	});
 
 	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
@@ -1537,27 +1587,14 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("never routes merge-group CI to hobo", async () => {
-		const generalFleetSlip = JSON.parse(OPEN_SLIP);
-		generalFleetSlip.classes.trunk = {
-			runner: "hobo",
-			tier: "fleet",
-			reason: "fleet-open",
-		};
-		await withGithub(observed([pickup("hobo")]), async (apiUrl) => {
-			const { decision } = await route(
-				apiUrl,
-				JSON.stringify(generalFleetSlip),
-				mergeGroupCi,
-			);
+	it("never routes merge-group Fabric to the general hobo label", async () => {
+		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 			assert.deepEqual(
 				[decision.tier, decision.runner, decision.refusedBy],
-				["github", "ubuntu-24.04", "queue"],
+				["fleet", "hobo-trunk", "none"],
 			);
-			assert.match(
-				decision.reason,
-				/merge-group Fabric refused the general fleet label hobo/u,
-			);
+			assert.doesNotMatch(decision.runner, /^hobo$/u);
 		});
 	});
 

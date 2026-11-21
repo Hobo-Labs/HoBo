@@ -272,6 +272,7 @@ export function routeRunner(input: {
 	local: LabelLoad;
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
+	trunkPriority?: boolean | undefined;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
@@ -297,7 +298,7 @@ export function routeRunner(input: {
 	// A run that has not chosen yet is taken to choose a self-hosted runner.
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
-	const first = input.undecidedAhead === 0;
+	const first = input.trunkPriority === true || input.undecidedAhead === 0;
 	const members = [
 		{
 			id: "fleet",
@@ -630,6 +631,7 @@ export async function chooseRunner(input: {
 	limits: RouteLimits;
 	/** Confirm a fleet slip against the exact label before trusting it. */
 	confirmFleet?: "open" | "busy" | undefined;
+	trunkPriority?: boolean | undefined;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
@@ -666,6 +668,7 @@ export async function chooseRunner(input: {
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
+			trunkPriority: input.trunkPriority,
 		});
 		const unseen = (load: LabelLoad) =>
 			load.recentPickups === 0 && !refusingJobs(load, limits);
@@ -1301,6 +1304,67 @@ export async function main(
 			env,
 		);
 	}
+	if (mergeGroupFabric) {
+		const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
+		const repository = env.GITHUB_REPOSITORY ?? "";
+		const token = env.GITHUB_TOKEN ?? "";
+		const trunkLabel = labels.trunk;
+		const observationLimits = {
+			...limits,
+			maxQueued: Number.MAX_SAFE_INTEGER,
+		};
+		const read = githubReader(apiUrl, token);
+		const observe = (nowMs: number) =>
+			observeQueue({
+				read,
+				repository,
+				ownRunId: Number(env.GITHUB_RUN_ID),
+				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
+				limits: observationLimits,
+				nowMs,
+			});
+		const sleep = (wait: number) => delay(wait * 1000);
+		let decision: RouteDecision;
+		try {
+			decision = await chooseRunner({
+				observe,
+				now,
+				sleep,
+				mode,
+				fleetLabel: trunkLabel,
+				localLabel: labels.local,
+				githubLabel: labels.github,
+				localEnrolled,
+				limits: observationLimits,
+				trunkPriority: true,
+			});
+		} catch (error) {
+			decision = {
+				tier: "github",
+				runner: labels.github,
+				reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
+				refusedBy: "queue",
+			};
+		}
+		if (decision.tier === "fleet")
+			decision = await confirmMergeGroupFabricFleet({
+				fleetDecision: decision,
+				observe,
+				now,
+				sleep,
+				fleetLabel: trunkLabel,
+				githubLabel: labels.github,
+				limits: observationLimits,
+			});
+		return report(
+			{
+				...decision,
+				reason: `${decision.reason}${defaults}`,
+				slip: { kind: "unasked", why: "merge-group" },
+			},
+			env,
+		);
+	}
 	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
 	const repository = env.GITHUB_REPOSITORY ?? "";
 	const token = env.GITHUB_TOKEN ?? "";
@@ -1379,6 +1443,7 @@ export async function main(
 	}
 	if (
 		mergeGroupHoboCi &&
+		args.includeOwnRun &&
 		decision.tier === "fleet" &&
 		decision.runner === labels.fleet
 	)
@@ -1388,16 +1453,6 @@ export async function main(
 			reason: `merge-group Fabric refused the general fleet label ${labels.fleet}`,
 			refusedBy: "queue",
 		};
-	if (mergeGroupFabric && decision.tier === "fleet")
-		decision = await confirmMergeGroupFabricFleet({
-			fleetDecision: decision,
-			observe,
-			now,
-			sleep,
-			fleetLabel: decision.runner,
-			githubLabel: labels.github,
-			limits: observationLimits,
-		});
 	if (slip.ok)
 		return report(
 			{
@@ -1421,7 +1476,7 @@ export async function main(
 export const SLIP_FALLBACK_PREFIX = "routing slip not used";
 
 /** Why no slip was read. */
-export type UnaskedWhy = "pinned" | "batch";
+export type UnaskedWhy = "pinned" | "batch" | "merge-group";
 
 /** The workflow file a run belongs to, from `GITHUB_WORKFLOW_REF`. */
 export function workflowFile(env: NodeJS.ProcessEnv): string {
