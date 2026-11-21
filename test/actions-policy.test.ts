@@ -514,6 +514,8 @@ test("every trunk-capable CI and release job requests the trunk label by default
 						(lines[start] ?? "").startsWith("  release-hobo-cli:") ||
 						(lines[start] ?? "").startsWith("  release-hobo-integration:"))) ||
 				(file === "release-hobo-pr.yml" &&
+					(lines[start] ?? "").startsWith("  release-hobo-integration:")) ||
+				(file === "hobo-ci.yml" &&
 					(lines[start] ?? "").startsWith("  release-hobo-integration:"))
 			) {
 				assert.equal(

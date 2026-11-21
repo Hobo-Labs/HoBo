@@ -340,6 +340,7 @@ describe("PR batch routing", () => {
 			"pr_affected",
 			"scripts-tests-build",
 			"scripts-tests",
+			"release-hobo-integration",
 		]) {
 			const body =
 				workflow.split(`  ${job}:`)[1]?.split(/\n  [A-Za-z0-9_-]+:/u)[0] ?? "";

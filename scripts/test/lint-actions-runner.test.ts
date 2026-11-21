@@ -197,6 +197,10 @@ describe("Actions runner policy", () => {
 			),
 			0,
 		);
+		assert.equal(
+			lintRunner("hobo-ci.yml", "release-hobo-integration", "ubuntu-24.04"),
+			0,
+		);
 	});
 
 	it("rejects the same runner on another job or workflow and other hosted images", () => {

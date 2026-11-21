@@ -549,7 +549,8 @@ function isNpmOidcHostedReleaseJob(
 				jobId === "release-hobo-cli" ||
 				jobId === "release-hobo-integration")) ||
 			(file === "release-hobo-pr.yml" &&
-				jobId === "release-hobo-integration")) &&
+				jobId === "release-hobo-integration") ||
+			(file === "hobo-ci.yml" && jobId === "release-hobo-integration")) &&
 		runsOn === "ubuntu-24.04"
 	);
 }

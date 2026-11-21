@@ -103,14 +103,22 @@ the sum of its files):
   check now lives in `.github/workflows/release-hobo-pr.yml`, which has **no
   `paths` filter** on `pull_request` / `merge_group`. A workflow that is not
   yet on the default branch is started as that 0-job `push` even with a
-  matching `on.push` (`44874977817`, 0 jobs). The existing train's `on.push`
-  therefore lists `cursor/mq-critical-path-bf60` next to the release tags
-  (OR), runs the integration shards on that branch, and
-  `release-integration-measure-gate` reports `HoBo release PR gate (required)`.
-  `job-scope` still skips the suites when the diff cannot reach them. Tags
-  and the main train keep the lane in `release-hobo.yml`. `actions.lock`
-  lists the new workflow's `actions/checkout` and `actions/cache` pins. The
-  train path list includes `.github/workflows/release-hobo-pr.yml`.
+  matching `on.push` (`44874977817`, `44876105461`, `44876290888`, 0 jobs).
+  Combining `on.push.tags` with `on.push.branches` on the existing train also
+  produced a 0-job push named after the workflow file; GitHub uses the
+  default-branch `on:` to decide whether to start, and main is still tags-only.
+  Files already on main's `paths` list (the workflow, the suite config, the
+  path-filters lib, `release-freight.test.ts`) still do not start a
+  `pull_request` of the train. Until `release-hobo-pr.yml` is on main, Fabric
+  hosts the four shards as `release-hobo-integration` on pull request **#2931
+  only** (`ubuntu-24.04`, not a `pr-gate` need, skipped on `merge_group`).
+  The train still lists this branch next to the release tags, and
+  `release-integration-measure-gate` reports `HoBo release PR gate (required)`
+  if a train run ever starts. `job-scope` still skips the suites when the
+  diff cannot reach them. Tags and the main train keep the lane in
+  `release-hobo.yml`. `actions.lock` lists the new workflow's
+  `actions/checkout` and `actions/cache` pins. The train path list includes
+  `.github/workflows/release-hobo-pr.yml`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the

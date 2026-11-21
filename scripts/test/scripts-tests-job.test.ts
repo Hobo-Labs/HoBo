@@ -194,7 +194,10 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
 		assert.match(scripts.if, /github\.event_name == 'merge_group'/u);
 		assert.match(scripts.if, /attested-jobs.*scripts-tests/u);
-		assert.match(scripts.if, /needs\.scripts-tests-build\.result == 'success'/u);
+		assert.match(
+			scripts.if,
+			/needs\.scripts-tests-build\.result == 'success'/u,
+		);
 		const lane = step(scripts, LANE);
 		assert.equal(
 			lane.run.trim(),

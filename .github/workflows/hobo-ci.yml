@@ -1223,6 +1223,102 @@ jobs:
           FORMAL_SHARD: ${{ matrix.shard }}
         run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
 
+  # Measurement shim for #2931 only. GitHub still starts release-hobo.yml as a
+  # 0-job push (default-branch on.push is tags-only; dummy run named after the
+  # workflow file) even when the PR files match main's paths list. The
+  # unfiltered release-hobo-pr.yml is not on main yet. These shards are not
+  # on the merge-group Fabric path and are not a pr-gate need. Delete after
+  # release-hobo-pr.yml is on main.
+  release-hobo-integration:
+    name: HoBo slow integration suites (release gate)
+    needs: [route]
+    if: ${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.number == 2931 }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 2
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Decide whether the diff reaches the slow integration suites
+        id: scope
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MERGE_GROUP_BASE_SHA:-}" ]; then
+            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
+              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            BASE="$MERGE_GROUP_BASE_SHA"
+          elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            BASE="$(git rev-parse HEAD^1)"
+          else
+            echo "No base to compare with; running the lane"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BASE" HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              packages/hobo/vitest.release-integration.config.ts \
+              packages/hobo/test/support/release-integration-test-files.ts \
+              packages/hobo/test/vercel-project.test.ts \
+              packages/hobo/test/cd-md-examples.test.ts \
+              >> "$GITHUB_OUTPUT"
+      - name: Fetch pinned ts-autocode
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+        if: steps.scope.outputs.run == 'true'
+      - name: Link deps layer
+        if: steps.scope.outputs.run == 'true'
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        if: steps.scope.outputs.run == 'true'
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.scope.outputs.run == 'true' && steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.scope.outputs.run == 'true' && steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          preferred-job: scripts-tests
+      - name: HoBo slow integration suites
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 15
+        env:
+          SHARD: ${{ strategy.job-index + 1 }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        run: >-
+          pnpm exec turbo run test:release-integration --filter=@hobo/hobo
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+          -- --shard="$SHARD/$SHARD_TOTAL"
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        uses: $/.github/actions/turbo-cache
+        with:
+          mode: save
+
   pr-gate:
     name: PR impact gate
     # This is the required check. It runs even if a prerequisite was skipped,

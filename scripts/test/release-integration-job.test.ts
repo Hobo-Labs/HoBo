@@ -158,12 +158,12 @@ describe("the slow integration lane is a merge-group gate", () => {
 			asText(trainIntegration?.if) ?? "",
 			/github\.event_name == 'merge_group'/u,
 		);
-		assert.match(asText(trainIntegration?.if) ?? "", /github\.event_name == 'push'/u);
-		const measure = asObject(trainJobs?.["release-integration-measure-gate"]);
-		assert.equal(
-			asText(measure?.name),
-			"HoBo release PR gate (required)",
+		assert.match(
+			asText(trainIntegration?.if) ?? "",
+			/github\.event_name == 'push'/u,
 		);
+		const measure = asObject(trainJobs?.["release-integration-measure-gate"]);
+		assert.equal(asText(measure?.name), "HoBo release PR gate (required)");
 		assert.match(
 			asText(measure?.if) ?? "",
 			/github\.event_name == 'pull_request'/u,
@@ -172,14 +172,37 @@ describe("the slow integration lane is a merge-group gate", () => {
 			asText(measure?.if) ?? "",
 			/github\.event_name == 'merge_group'/u,
 		);
-		assert.match(
-			asText(measure?.if) ?? "",
-			/github\.event_name == 'push'/u,
-		);
+		assert.match(asText(measure?.if) ?? "", /github\.event_name == 'push'/u);
 		const measureNeeds = asList(measure?.needs) ?? [];
 		assert.ok(
-			measureNeeds.some((entry) => asText(entry) === "release-hobo-integration"),
+			measureNeeds.some(
+				(entry) => asText(entry) === "release-hobo-integration",
+			),
 		);
+	});
+
+	it("Fabric hosts the four shards on this PR until the unfiltered workflow is on main", () => {
+		const fabric = readFileSync(".github/workflows/hobo-ci.yml", "utf8");
+		const fabricJobs = asObject(workflowDocument(fabric).jobs);
+		const shim = asObject(fabricJobs?.["release-hobo-integration"]);
+		assert.equal(asText(shim?.["runs-on"]), "ubuntu-24.04");
+		assert.match(
+			asText(shim?.if) ?? "",
+			/github\.event_name == 'pull_request'/u,
+		);
+		assert.match(
+			asText(shim?.if) ?? "",
+			/github\.event\.pull_request\.number == 2931/u,
+		);
+		assert.doesNotMatch(asText(shim?.if) ?? "", /merge_group/u);
+		const gate = asObject(fabricJobs?.["pr-gate"]);
+		const gateNeeds = asList(gate?.needs) ?? [];
+		assert.ok(
+			!gateNeeds.some((entry) => asText(entry) === "release-hobo-integration"),
+		);
+		const strategy = asObject(shim?.strategy);
+		assert.equal(strategy?.["fail-fast"], false);
+		assert.deepEqual(asList(asObject(strategy?.matrix)?.shard), [0, 1, 2, 3]);
 	});
 
 	it("path filters include the workflow, the four suites, this test, and job-scope", () => {
