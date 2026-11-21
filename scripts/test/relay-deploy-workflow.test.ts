@@ -381,7 +381,7 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("never adopts and never waits for a Git-linked deployment: it deploys directly", () => {
+	it("never adopts and never waits for a Git-linked deployment: HoBo builds once and promotes", () => {
 		assert.doesNotMatch(workflow, /--adopt\b/u);
 		assert.doesNotMatch(workflow, /HOBO_CI_ADOPT_/u);
 		const deploys = [...workflow.matchAll(/hobo\.js ci deploy\b/gu)];
@@ -398,7 +398,7 @@ describe("the relay deploy workflow", () => {
 			assert.match(deployStep, /--cwd packages\/ci-vercel/u);
 			assert.match(deployStep, /--sha "\$GITHUB_SHA"/u);
 			assert.match(deployStep, /--ref "\$GITHUB_REF_NAME"/u);
-			assert.match(deployStep, /--provision --wait/u);
+			assert.match(deployStep, /--build prebuilt --provision --wait/u);
 			assert.match(deployStep, /--deadline "\$DEPLOY_DEADLINE"/u);
 			assert.match(deployStep, /exit "\$status"/u);
 			assert.doesNotMatch(deployStep, /--adopt/u);
