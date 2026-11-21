@@ -40,6 +40,7 @@ import {
 import {
 	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
 	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
+	type OnePasswordServiceAccountVerdict,
 	parseOnePasswordServiceAccountToken,
 	type ValidateOnePasswordServiceAccount,
 	validateOnePasswordServiceAccount,
@@ -487,16 +488,12 @@ export async function openSecretStore(
 							? Number.NaN
 							: Date.parse(expiresAtText);
 					const now = (deps.now ?? Date.now)();
-					const valid =
+					const leaseValid =
 						token !== undefined &&
 						Number.isFinite(expiresAt) &&
 						expiresAt > now &&
-						expiresAt <= now + ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS &&
-						(await (
-							deps.validateOnePasswordServiceAccount ??
-							validateOnePasswordServiceAccount
-						)(token, vaultId).catch(() => false));
-					if (!valid)
+						expiresAt <= now + ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS;
+					if (token === undefined || !leaseValid)
 						return {
 							ok: false,
 							message:
@@ -505,6 +502,30 @@ export async function openSecretStore(
 								"Run again: the private owner form connects a fresh, vault-scoped service account and writes a new reuse lease.",
 							],
 						};
+					const verdict = await (
+						deps.validateOnePasswordServiceAccount ??
+						validateOnePasswordServiceAccount
+					)(token, vaultId).catch(
+						(): OnePasswordServiceAccountVerdict => "unverifiable",
+					);
+					if (verdict !== true)
+						return verdict === "unverifiable"
+							? {
+									ok: false,
+									message:
+										"1Password could not be reached to re-attest the retained service account.",
+									remediation: [
+										"Check that this run reaches 1Password through its required egress proxy and CA bundle, then run again.",
+									],
+								}
+							: {
+									ok: false,
+									message:
+										"The retained 1Password service account was refused before the SDK client opened.",
+									remediation: [
+										"Run again: the private owner form connects a fresh, vault-scoped service account and writes a new reuse lease.",
+									],
+								};
 				}
 				// The owner's Connect server, when named: a bearer token only,
 				// which the egress proxy injects when the run holds none.

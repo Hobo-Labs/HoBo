@@ -136,6 +136,15 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 		});
 	});
 
+	it("keeps the credential off every command line and progress line", async () => {
+		lines.length = 0;
+		const machine = fakeMachine({ opOnPath: true, signedIn: false });
+		const result = await provisionOnePasswordAccess(base(machine));
+		expect(result.kind).toBe("ready");
+		expect(machine.ran.join("\n")).not.toContain(TOKEN);
+		expect(lines.join("\n")).not.toContain(TOKEN);
+	});
+
 	it("refuses an owner-captured token the vault-scope validation rejects", async () => {
 		const owner: OwnerChannel = {
 			openUrl: async () => undefined,

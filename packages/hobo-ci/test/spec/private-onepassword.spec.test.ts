@@ -104,12 +104,20 @@ describe("private remote 1Password access", () => {
 	});
 
 	it.each([
-		false,
-		true,
-	])("fails closed when vault-scope validation returns false or throws (%s)", async (throws) => {
+		{
+			name: "vault-scope validation returns false",
+			throws: false,
+			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
+		},
+		{
+			name: "1Password cannot be reached to validate",
+			throws: true,
+			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT_UNREACHABLE",
+		},
+	])("fails closed when $name", async ({ throws, code }) => {
 		const owner = heldOwnerChannel();
 		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
-		const validate = vi.fn(async () => {
+		const validate = vi.fn(async (): boolean => {
 			if (throws) throw new Error(TOKEN);
 			return false;
 		});
@@ -117,7 +125,7 @@ describe("private remote 1Password access", () => {
 		const result = await request.start();
 		expect(result).toMatchObject({
 			kind: "refused",
-			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
+			code,
 		});
 		expect(JSON.stringify(result)).not.toContain(TOKEN);
 		expect(validate).toHaveBeenCalledWith(TOKEN, VAULT);

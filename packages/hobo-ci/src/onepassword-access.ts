@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
+import { egressFrom } from "./egress.js";
 import {
 	captureAll,
 	type OwnerChannel,
@@ -99,10 +100,18 @@ export function parseOnePasswordServiceAccountToken(
 	return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * `true`: 1Password answered and the account is scoped to exactly the vault.
+ * `false`: 1Password answered and rejected the account or its scope.
+ * `"unverifiable"`: no answer — the transport to 1Password failed (egress
+ * proxy, CA bundle, network), so nothing is claimed about the account.
+ */
+export type OnePasswordServiceAccountVerdict = boolean | "unverifiable";
+
 export type ValidateOnePasswordServiceAccount = (
 	token: OnePasswordServiceAccountToken,
 	vaultId: string,
-) => Promise<boolean>;
+) => Promise<OnePasswordServiceAccountVerdict>;
 
 export interface OnePasswordAccessOptions {
 	readonly family: "ci" | "cd";
@@ -148,8 +157,13 @@ export function onePasswordVaultScope(
 
 export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccount =
 	async (token, vaultId) => {
+		let egressRequired = true;
+		let sdk: typeof import("@1password/sdk") | undefined;
 		try {
-			const sdk = await import("@1password/sdk");
+			const egress = egressFrom(process.env);
+			egressRequired =
+				egress.proxy !== undefined || egress.caFile !== undefined;
+			sdk = await import("@1password/sdk");
 			const client = await sdk.createClient({
 				auth: token,
 				integrationName: "HoBo",
@@ -157,8 +171,12 @@ export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccoun
 			});
 			const vaults = await client.vaults.list({ decryptDetails: false });
 			return onePasswordVaultScope(vaults, vaultId);
-		} catch {
-			return false;
+		} catch (error) {
+			if (sdk === undefined) return "unverifiable";
+			if (error instanceof sdk.RateLimitExceededError) return "unverifiable";
+			return error instanceof sdk.AuthExpiredError || !egressRequired
+				? false
+				: "unverifiable";
 		}
 	};
 
@@ -180,12 +198,7 @@ export async function provisionOnePasswordAccess(
 		value: string,
 	): Promise<OnePasswordAccess> => {
 		const token = parseOnePasswordServiceAccountToken(value);
-		const valid =
-			token !== undefined &&
-			(await options
-				.validateServiceAccount(token, options.vaultId)
-				.catch(() => false));
-		if (token === undefined || !valid)
+		if (token === undefined)
 			return refused(
 				"SERVICE_ACCOUNT",
 				"The 1Password service account is invalid, expired, or not scoped only to the configured vault.",
@@ -193,6 +206,25 @@ export async function provisionOnePasswordAccess(
 					"Use a valid, unexpired service account scoped only to the configured vault.",
 				],
 			);
+		const verdict = await options
+			.validateServiceAccount(token, options.vaultId)
+			.catch((): OnePasswordServiceAccountVerdict => "unverifiable");
+		if (verdict !== true)
+			return verdict === "unverifiable"
+				? refused(
+						"SERVICE_ACCOUNT_UNREACHABLE",
+						"HoBo could not reach 1Password to check the service account.",
+						[
+							"Check that this run reaches 1Password through its required egress proxy and CA bundle, then run again.",
+						],
+					)
+				: refused(
+						"SERVICE_ACCOUNT",
+						"The 1Password service account is invalid, expired, or not scoped only to the configured vault.",
+						[
+							"Use a valid, unexpired service account scoped only to the configured vault.",
+						],
+					);
 		return {
 			kind: "ready",
 			token,

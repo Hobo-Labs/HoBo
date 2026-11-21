@@ -152,6 +152,7 @@ describe("1Password SDK bridge", () => {
 					callback(new Error("offline fixture"), null),
 			}),
 		);
+		vi.stubEnv("HTTPS_PROXY", "http://127.0.0.1:1");
 		try {
 			const signIn = createTrustedVault();
 			signIn.put("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
@@ -162,11 +163,15 @@ describe("1Password SDK bridge", () => {
 				signIn,
 				{ now: () => NOW, onePasswordClient: client },
 			);
-			expect(opened.ok).toBe(false);
+			expect(opened).toMatchObject({
+				ok: false,
+				message: expect.stringMatching(/could not be reached to re-attest/u),
+			});
 			expect(JSON.stringify(opened)).not.toContain(TOKEN);
 			expect(client).not.toHaveBeenCalled();
 			signIn.clear();
 		} finally {
+			vi.unstubAllEnvs();
 			setGlobalDispatcher(prior);
 		}
 	}, 30_000);

@@ -115,6 +115,7 @@ export {
 	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
+	type OnePasswordServiceAccountVerdict,
 	onePasswordCli,
 	type Platform,
 	provisionOnePasswordAccess,
