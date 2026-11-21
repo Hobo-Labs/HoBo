@@ -459,7 +459,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
-	it("rejects a separate legacy binding before any OIDC or deploy request", async () => {
+	it("rejects a credential-free legacy binding before any OIDC or deploy request", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING], {
 			fetch,
@@ -473,10 +473,8 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
 			ok: false,
-			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
-			message: expect.stringContaining(
-				"re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id",
-			),
+			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+			message: expect.stringContaining("no deploy credential identity"),
 		});
 		expect(sent).toEqual([]);
 	});

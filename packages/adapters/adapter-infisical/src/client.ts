@@ -24,7 +24,7 @@ import {
 } from "@bufbuild/protobuf";
 import {
 	InfisicalOidcLoginRequestSchema,
-	InfisicalProjectIdentityResponseSchema,
+	InfisicalProjectIdentityListResponseSchema,
 	InfisicalSecretWriteRequestSchema,
 	InfisicalTokenRevokeRequestSchema,
 	InfisicalUniversalAuthLoginRequestSchema,
@@ -536,23 +536,36 @@ function createInfisicalClientInternal(
 				const answer = await request(
 					operation,
 					"GET",
-					`/api/v1/projects/${encodeURIComponent(bound.projectId)}/identities/${encodeURIComponent(parsedIdentityId)}`,
+					`/api/v1/projects/${encodeURIComponent(bound.projectId)}/identities`,
 				);
 				const body = ok(operation, answer);
 				let parsed: ReturnType<
-					typeof fromJson<typeof InfisicalProjectIdentityResponseSchema>
+					typeof fromJson<typeof InfisicalProjectIdentityListResponseSchema>
 				>;
 				try {
-					parsed = fromJson(InfisicalProjectIdentityResponseSchema, body, {
-						ignoreUnknownFields: true,
-					});
+					const record = jsonRecord(body);
+					if (!Array.isArray(record.identityMemberships))
+						throw new Error("membership list missing");
+					parsed = fromJson(
+						InfisicalProjectIdentityListResponseSchema,
+						record,
+						{
+							ignoreUnknownFields: true,
+						},
+					);
 				} catch {
 					throw new InfisicalError(operation, "invalid-response");
 				}
-				const membership = parsed.identityMembership;
-				const projectId = membership?.project?.id ?? "";
+				const matches = parsed.identityMemberships.filter(
+					(membership) => membership.identityId === parsedIdentityId,
+				);
+				if (matches.length === 0)
+					throw new InfisicalError(operation, "not-found", { status: 404 });
+				const membership = matches.length === 1 ? matches[0] : undefined;
+				const projectId = membership?.identity?.projectId ?? "";
 				if (
-					membership?.identityId !== parsedIdentityId ||
+					membership === undefined ||
+					membership.identity?.id !== parsedIdentityId ||
 					projectId !== bound.projectId ||
 					membership.roles.length === 0 ||
 					membership.roles.some((role) => role.role === "")

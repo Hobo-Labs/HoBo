@@ -55,17 +55,23 @@ package secret_store_claim
 	secretPath:  string & =~"^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$"
 	relayIdentityId:  #Id
 	deployIdentityId: #Id & !=relayIdentityId
-	deployCredentialIdentityId: #Id & !=relayIdentityId & !=deployIdentityId
+	deployCredentialIdentityId?: "" | (#Id & !=relayIdentityId & !=deployIdentityId)
 	vercelTeamId?:    string & =~"^team_[A-Za-z0-9]{1,64}$"
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
-	deployOidcSubject: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
-	// The deploy credential always has a project of its own, never the
+	deployOidcSubject?: "" | (#GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$")
+	// A configured deploy credential has a project of its own, never the
 	// relay's: Infisical project roles cover the whole project (RBAC,
 	// checked 2026-11-12), so a folder inside the relay's project cannot
-	// keep the relay's identity from reading it. A binding recorded before
-	// the field was required parses only for the connect repair.
-	deployProjectId: #Id & !=projectId
+	// keep the relay's identity from reading it.
+	deployProjectId?: "" | (#Id & !=projectId)
+	if deployProjectId != "" {
+		deployCredentialIdentityId: #Id & !=relayIdentityId & !=deployIdentityId
+		deployOidcSubject: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
+	}
+	if deployCredentialIdentityId != "" {
+		deployProjectId: #Id & !=projectId
+	}
 }
 
 // `repo:<owner>/<repo>` (legacy) or `repo:<owner>@<ownerId>/<repo>@<repoId>`

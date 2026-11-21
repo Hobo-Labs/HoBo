@@ -130,6 +130,8 @@ function githubEnvironmentTrust(
 			repository_id: subject.repositoryId,
 			repository_owner_id: subject.repositoryOwnerId,
 			environment,
+			ref: `refs/heads/${branch}`,
+			workflow_ref: `${subject.repository}/.github/workflows/relay-deploy.yml@refs/heads/${branch}`,
 			job_workflow_ref: `${subject.repository}/.github/workflows/relay-deploy.yml@refs/heads/${branch}`,
 		},
 	});

@@ -93,17 +93,17 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
-	it("skips an absent store but makes an unreadable binding fatal", () => {
-		const decision = decide({
+	it("fails an absent or unreadable store closed", () => {
+		const missing = decide({
 			event: "push",
 			store: "absent",
 			changed: ["packages/ci-vercel/src/entry.ts"],
 			inputDirs,
 		});
-		assert.equal(decision.run, false);
-		assert.notEqual(decision.fatal, true);
-		assert.ok(decision.reason.includes(RELAY_SECRET_STORE_BINDING));
-		assert.match(decision.reason, /hobo ci secret-store provision/u);
+		assert.equal(missing.run, false);
+		assert.equal(missing.fatal, true);
+		assert.ok(missing.reason.includes(RELAY_SECRET_STORE_BINDING));
+		assert.match(missing.reason, /hobo ci secret-store provision/u);
 		const broken = decide({
 			event: "workflow_dispatch",
 			store: "unreadable",
@@ -135,6 +135,11 @@ describe("the relay deploy gate", () => {
 		};
 		assert.equal(storeBindingState(JSON.stringify(complete)), "bound");
 		for (const deployOidcSubject of [
+			"repo:untrusted@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/untrusted@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@1/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/HoBo@1:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs/HoBo:environment:hobo-ci-app-credentials",
 			"repo:Hobo-Labs@*/HoBo@1274791462:environment:hobo-ci-app-credentials",
 			"repo:Hobo-Labs@344805935/HoBo@*:environment:hobo-ci-app-credentials",
 			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:*",
@@ -146,7 +151,7 @@ describe("the relay deploy gate", () => {
 			);
 	});
 
-	it("blocks an incomplete legacy binding with a fatal gate decision until repair", () => {
+	it("skips deployment explicitly for the committed credential-free binding without treating corruption as a skip", () => {
 		const legacy = JSON.stringify({
 			kind: "infisical-cloud-attach",
 			endpoint: "https://app.infisical.com",
@@ -159,20 +164,39 @@ describe("the relay deploy gate", () => {
 			claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 			claimState: "claimed",
 		});
-		assert.equal(storeBindingState(legacy), "unreadable");
+		assert.equal(storeBindingState(legacy), "unconfigured");
 		const committed = readFileSync(
 			join(root, RELAY_SECRET_STORE_BINDING),
 			"utf8",
 		);
-		assert.equal(storeBindingState(committed), "unreadable");
-		const blocked = decide({
+		assert.equal(storeBindingState(committed), "unconfigured");
+		const skipped = decide({
 			event: "push",
 			store: storeBindingState(legacy),
 			changed: [RELAY_SECRET_STORE_BINDING],
 			inputDirs,
 		});
-		assert.equal(blocked.run, false);
-		assert.equal(blocked.fatal, true);
+		assert.equal(skipped.run, false);
+		assert.equal(skipped.fatal, undefined);
+		assert.match(skipped.reason, /production observation.*required/u);
+		for (const halfConfigured of [
+			{ ...JSON.parse(legacy), deployProjectId: "proj-deploy" },
+			{ ...JSON.parse(legacy), deployCredentialIdentityId: "reader" },
+		])
+			assert.equal(
+				storeBindingState(JSON.stringify(halfConfigured)),
+				"unreadable",
+			);
+		assert.equal(
+			storeBindingState(
+				JSON.stringify({
+					...JSON.parse(legacy),
+					deployOidcSubject:
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+				}),
+			),
+			"unconfigured",
+		);
 	});
 
 	it("deploys a manual run, and a push whose range it cannot read", () => {
@@ -252,9 +276,11 @@ describe("relay GitHub environment protection", () => {
 		branches: BranchFixture = mainOnly,
 	) {
 		const paths: string[] = [];
-		const send: typeof fetch = async (request) => {
+		const authorizations: (string | null)[] = [];
+		const send: typeof fetch = async (request, init) => {
 			const url = new URL(String(request));
 			paths.push(url.pathname);
+			authorizations.push(new Headers(init?.headers).get("authorization"));
 			if (environment === null) return Response.json({}, { status: 404 });
 			return Response.json(
 				url.pathname.endsWith("/deployment-branch-policies")
@@ -262,7 +288,7 @@ describe("relay GitHub environment protection", () => {
 					: environment,
 			);
 		};
-		return { send, paths };
+		return { send, paths, authorizations };
 	}
 
 	it("requires an exact main-only deployment branch policy", async () => {
@@ -275,6 +301,21 @@ describe("relay GitHub environment protection", () => {
 		assert.deepEqual(fake.paths, [
 			"/repos/Hobo-Labs/HoBo/environments/hobo-ci-deploy",
 			"/repos/Hobo-Labs/HoBo/environments/hobo-ci-deploy/deployment-branch-policies",
+		]);
+		assert.deepEqual(fake.authorizations, [null, null]);
+	});
+
+	it("uses a scoped GitHub token for both reads when supplied", async () => {
+		const fake = github();
+		const result = await verifyEnvironmentProtection(
+			"hobo-ci-app-credentials",
+			fake.send,
+			"scoped-token",
+		);
+		assert.equal(result.ok, true, result.detail);
+		assert.deepEqual(fake.authorizations, [
+			"Bearer scoped-token",
+			"Bearer scoped-token",
 		]);
 	});
 
@@ -329,17 +370,29 @@ describe("the relay deploy workflow", () => {
 		assert.match(workflow, /cancel-in-progress: false/u);
 	});
 
-	it("restricts the OIDC deploy job to main, including manual bootstraps", () => {
+	it("runs the gate without environment protection or OIDC and admits only approved deploys to the protected job", () => {
+		const gate = /^ {2}gate:\n([\s\S]*?)(?=\n {2}deploy:)/mu.exec(
+			workflow,
+		)?.[1];
+		assert.ok(gate, "no gate job");
+		assert.doesNotMatch(gate, /environment:|id-token:/u);
+		assert.match(
+			gate,
+			/outputs:\n {6}run: \$\{\{ steps\.gate\.outputs\.run \}\}/u,
+		);
 		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
 		assert.ok(deploy, "no deploy job");
+		assert.match(deploy, /needs: \[route, gate\]/u);
+		assert.match(deploy, /environment: hobo-ci-deploy/u);
 		assert.match(
 			deploy,
-			/^ {4}if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event\.inputs\.manifest_code == ''$/mu,
+			/^ {4}if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event\.inputs\.manifest_code == '' && needs\.gate\.outputs\.run == 'true'$/mu,
 		);
+		assert.doesNotMatch(deploy, /id: gate/u);
 	});
 
 	it("passes force_bootstrap to the gate as FORCE_BOOTSTRAP, and only there", () => {
-		const gate = step("Decide whether to deploy");
+		const gate = step("Evaluate the relay inputs");
 		assert.match(gate, /id: gate/u);
 		assert.match(gate, /relay-deploy-gate\.mts/u);
 		assert.match(
@@ -348,14 +401,19 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("may read the repository and mint an OIDC token, and nothing more", () => {
+	it("may read the repository, mint deploy OIDC tokens, and authenticate only environment reads", () => {
 		assert.match(workflow, /^permissions:\n {2}contents: read\n/mu);
 		assert.match(
 			workflow,
 			/ {4}permissions:\n {6}contents: read\n {6}id-token: write\n/u,
 		);
 		assert.doesNotMatch(workflow, /deployments:/u);
-		assert.doesNotMatch(workflow, /GITHUB_TOKEN:/u);
+		for (const name of [
+			"Verify the protected deploy environment",
+			"Verify the protected writer environment",
+		])
+			assert.match(step(name), /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
+		assert.equal(workflow.match(/GITHUB_TOKEN:/gu)?.length, 2);
 		assert.doesNotMatch(workflow, /write-all|secrets\.|\$\{\{\s*secrets/u);
 	});
 
@@ -462,7 +520,7 @@ describe("the relay deploy workflow", () => {
 		}
 	});
 
-	it("fits the deploy job in 20 minutes: the gate's deadline bounds both deploys, the step timeouts only back it up", () => {
+	it("fits the deploy job in 20 minutes: its admitted-job deadline bounds both deploys, the step timeouts only back it up", () => {
 		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
 		assert.ok(deploy, "no deploy job");
 		const jobTimeout = Number(
@@ -471,8 +529,11 @@ describe("the relay deploy workflow", () => {
 		assert.equal(jobTimeout, RELAY_DEPLOY_JOB_TIMEOUT_MINUTES);
 		assert.ok(jobTimeout <= 20, "every job is capped at 20 minutes");
 		assert.ok(RELAY_DEPLOY_JOB_MARGIN_MINUTES >= 2);
-		// The deadline is counted from the gate's own run, the job's timeout
-		// less the margin.
+		assert.match(step("Start the deploy deadline"), /id: deadline/u);
+		assert.match(
+			step("Start the deploy deadline"),
+			/deployDeadline\(Date\.now\(\)\)/u,
+		);
 		assert.equal(
 			deployDeadline(Date.UTC(2026, 10, 13, 12)),
 			"2026-11-13T12:17:00.000Z",
@@ -484,7 +545,7 @@ describe("the relay deploy workflow", () => {
 			const deployStep = step(name);
 			assert.match(
 				deployStep,
-				/DEPLOY_DEADLINE: \$\{\{ steps\.gate\.outputs\.deadline \}\}/u,
+				/DEPLOY_DEADLINE: \$\{\{ steps\.deadline\.outputs\.deadline \}\}/u,
 			);
 			assert.match(deployStep, /--deadline "\$DEPLOY_DEADLINE"/u);
 			const stepTimeout = Number(
@@ -566,7 +627,7 @@ describe("the relay deploy workflow", () => {
 		assert.match(readerEnvironment, /relay-deploy-environment\.mts/u);
 		assert.match(readerEnvironment, /--environment hobo-ci-deploy/u);
 		stepBefore(
-			"Decide whether to deploy",
+			"Start the deploy deadline",
 			"Verify the protected deploy environment",
 		);
 		stepBefore(
@@ -610,7 +671,7 @@ describe("the relay deploy workflow", () => {
 		assert.match(verify, /--origin "\$HOBO_CI_RELAY_URL"/u);
 		assert.match(verify, /--sha "\$GITHUB_SHA"/u);
 		assert.doesNotMatch(verify, /\|\| true/u);
-		assert.match(verify, /if: steps\.gate\.outputs\.run == 'true'/u);
+		assert.match(verify, /if: needs\.gate\.outputs\.run == 'true'/u);
 		stepBefore(
 			"Deploy the relay (production)",
 			"Verify the relay at its production origin",
@@ -678,7 +739,7 @@ describe("the relay deploy workflow", () => {
 			assert.match(probe, /https:/u);
 			assert.doesNotMatch(probe, /DEPLOYMENT_URL/u);
 			assert.match(probe, /\/v1\/fleet\/verdicts\/\$\{?repository/u);
-			assert.match(probe, /if: steps\.gate\.outputs\.run == 'true'/u);
+			assert.match(probe, /if: needs\.gate\.outputs\.run == 'true'/u);
 		});
 
 		it("runs after the deploy and its verification, so it reports on what this workflow shipped", () => {

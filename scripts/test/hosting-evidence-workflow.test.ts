@@ -322,6 +322,21 @@ describe("trusted-main hosting evidence", () => {
 		assert.ok(fake.calls.length > 0);
 	});
 
+	it("does not repair a malformed modern binding through the legacy fallback", async () => {
+		for (const removed of ["deployProjectId", "deployOidcSubject"]) {
+			const modern: Record<string, string> = JSON.parse(bindingText);
+			delete modern[removed];
+			const fake = fakeTransport();
+			const result = await inspectHostingEvidence({
+				env: baseEnv,
+				bindingText: JSON.stringify(modern),
+				fetch: fake.send,
+			});
+			assert.equal(result.status, "unavailable");
+			assert.equal(fake.calls.length, 0);
+		}
+	});
+
 	it("makes at most one names request and never falls through after provider refusal", async () => {
 		const fake = fakeTransport({ listStatus: 401 });
 		const result = await inspectHostingEvidence({

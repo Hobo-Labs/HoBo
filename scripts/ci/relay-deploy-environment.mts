@@ -6,15 +6,17 @@ type Send = typeof fetch;
 const repository = "Hobo-Labs/HoBo";
 const environments = new Set(["hobo-ci-deploy", "hobo-ci-app-credentials"]);
 
-async function getJson(send: Send, path: string) {
+async function getJson(send: Send, path: string, token: string) {
+	const headers = new Headers({
+		accept: "application/vnd.github+json",
+		"x-github-api-version": "2022-11-28",
+		"user-agent": "hobo-relay-deploy",
+	});
+	if (token !== "") headers.set("authorization", `Bearer ${token}`);
 	let response: Response;
 	try {
 		response = await send(`https://api.github.com${path}`, {
-			headers: {
-				accept: "application/vnd.github+json",
-				"x-github-api-version": "2022-11-28",
-				"user-agent": "hobo-relay-deploy",
-			},
+			headers,
 			redirect: "error",
 			signal: AbortSignal.timeout(15_000),
 		});
@@ -32,11 +34,12 @@ async function getJson(send: Send, path: string) {
 export async function verifyEnvironmentProtection(
 	environment: string,
 	send: Send = fetch,
+	token = process.env.GITHUB_TOKEN?.trim() ?? "",
 ): Promise<Readonly<{ ok: boolean; detail: string }>> {
 	if (!environments.has(environment))
 		return { ok: false, detail: "unknown relay deploy environment" };
 	const path = `/repos/${repository}/environments/${encodeURIComponent(environment)}`;
-	const answer = await getJson(send, path);
+	const answer = await getJson(send, path, token);
 	const body = answer.body;
 	if (Object.prototype.toString.call(body) !== "[object Object]")
 		return {
@@ -52,6 +55,7 @@ export async function verifyEnvironmentProtection(
 	const policiesAnswer = await getJson(
 		send,
 		`${path}/deployment-branch-policies`,
+		token,
 	);
 	const policies = policiesAnswer.body?.branch_policies;
 	if (

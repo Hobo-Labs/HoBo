@@ -58,11 +58,13 @@ describe("deploy credential identity", () => {
 		).toThrow("does not meet its constraints");
 	});
 
-	it("fails closed on a binding recorded before the deploy credential identity existed; only the unmarked repair read accepts it", () => {
+	it("accepts a credential-free binding through strict and repair reads", () => {
 		const legacy = legacyBindingJson();
-		expect(() => readSecretStoreBinding(legacy)).toThrow(
-			"does not meet its constraints",
-		);
+		const strict = readSecretStoreBinding(legacy);
+		expect(strict.claimState).toBe("claimed");
+		expect(strict.deployProjectId).toBe("");
+		expect(strict.deployCredentialIdentityId).toBe("");
+		expect(strict.strictParse).toBe(true);
 		const repaired = readSecretStoreBindingForRepair(legacy);
 		expect(repaired.claimState).toBe("claimed");
 		expect(repaired.deployCredentialIdentityId).toBe("");
@@ -105,14 +107,10 @@ describe("deploy credential identity", () => {
 		).toThrow("does not meet its constraints");
 	});
 
-	it("takes the reader id as the cutover marker: every binding shape the earlier parser accepted parses for repair", () => {
+	it("accepts earlier half-configured shapes only for repair, never strict reads", () => {
 		for (const fields of [
 			{
 				deployProjectId: "deploy-project",
-				deployCredentialIdentityId: undefined,
-				deployOidcSubject: undefined,
-			},
-			{
 				deployCredentialIdentityId: undefined,
 				deployOidcSubject: undefined,
 			},
@@ -139,10 +137,10 @@ describe("deploy credential identity", () => {
 			).toThrow("does not meet its constraints");
 	});
 
-	it("cannot write a still-legacy binding back: the strict read refuses the repair output as it stands", () => {
+	it("round-trips a credential-free repair through the strict read", () => {
 		const repaired = readSecretStoreBindingForRepair(legacyBindingJson());
-		expect(() => readSecretStoreBinding(JSON.stringify(repaired))).toThrow(
-			"does not meet its constraints",
+		expect(readSecretStoreBinding(JSON.stringify(repaired)).strictParse).toBe(
+			true,
 		);
 	});
 });
@@ -201,7 +199,7 @@ describe("the deploy credential's project", () => {
 		expect(RELAY_SECRET_PATH).not.toBe("/");
 	});
 
-	it("rejects a binding without a deploy project, and one that reuses the relay's project", () => {
+	it("rejects a recorded reader without a deploy project, and a deploy project that reuses the relay's", () => {
 		expect(() =>
 			readSecretStoreBinding(bindingJson({ deployProjectId: undefined })),
 		).toThrow("does not meet its constraints");
@@ -210,12 +208,10 @@ describe("the deploy credential's project", () => {
 		).toThrow("does not meet its constraints");
 	});
 
-	it("accepts a legacy binding without a deploy project only for the unmarked repair read", () => {
+	it("accepts a credential-free binding without a deploy project", () => {
 		const legacy = legacyBindingJson();
 		expect(readSecretStoreBindingForRepair(legacy).deployProjectId).toBe("");
-		expect(() => readSecretStoreBinding(legacy)).toThrow(
-			"does not meet its constraints",
-		);
+		expect(readSecretStoreBinding(legacy).deployProjectId).toBe("");
 	});
 });
 

@@ -156,6 +156,7 @@ package adapter_infisical
 
 #InfisicalIdentity: {
 	id: #id
+	projectId?: #id
 	...
 }
 
@@ -194,15 +195,15 @@ package adapter_infisical
 	roles: [#InfisicalProjectRole]
 }
 
-#InfisicalProjectIdentityMembership: {
+#InfisicalProjectIdentityListMembership: {
 	identityId: #id
 	roles: [...#InfisicalProjectRole]
-	project: #InfisicalProject
+	identity: #InfisicalIdentity
 	...
 }
 
-#InfisicalProjectIdentityResponse: {
-	identityMembership: #InfisicalProjectIdentityMembership
+#InfisicalProjectIdentityListResponse: {
+	identityMemberships: [...#InfisicalProjectIdentityListMembership]
 	...
 }
 

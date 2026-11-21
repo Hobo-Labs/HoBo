@@ -617,28 +617,36 @@ binding exists; adding the deploy project and reader to an older binding needs
 `--yes`) repairs the trust: with the owner's own `INFISICAL_TOKEN` for that run
 it replaces both identities' OIDC trust in place, reader first (no new
 identity); otherwise it prints the subjects and claims to set in the dashboard.
-A binding recorded before the reader id existed — with or without a deploy
-project or a recorded subject, every shape the earlier parser accepted — parses
-only for that repair and read-only hosting evidence: a re-run without ids names
-what is missing (`--deploy-project-id` and
-`--deploy-credential-identity-id`, or the latter alone on a binding that
-already records the deploy project) instead of refusing the file. A denied
-`verify` whose token `sub` differs from the recorded subject (or is immutable
-when none was recorded) says so and names that repair.
+A binding recorded before the reader id existed remains valid without a deploy
+credential. A re-run preserves that mode and its existing claim state; supplying
+one of `--deploy-project-id` and `--deploy-credential-identity-id` requires the
+other. A denied `verify` whose token `sub` differs from the recorded subject (or
+is immutable when none was recorded) says so and names that repair. Trust repair
+is idempotent but not atomic across Infisical identities: if writer repair fails
+after reader repair succeeds, the error names both outcomes and the binding is
+unchanged; re-running completes the repair.
 
-`verify` reports `pass`, `fail` or `not-run` by identity name and id. Each
-GitHub check requires the workload token's subject to match its selected
-protected environment before contacting Infisical. The reader must read the
-`VERCEL_TOKEN` value from the deploy project root without logging it, have
-exactly one `viewer` membership role and no other role, and receive HTTP 403
-for the relay-folder listing, direct `VERCEL_TOKEN` read, and
-`HOBO_CI_VERIFY_SCOPE_PROBE` write. The writer must sign in at its own audience
-in the app-credentials environment and receive HTTP 403 for the deploy-project
-listing, direct credential read, and probe write. The relay check runs where
-`VERCEL_OIDC_TOKEN` is present and applies the same three HTTP 403
-deploy-project isolation requirements. Every 401, 404, 5xx, timeout, network
-error, or inconclusive scope response fails closed, and every issued session is
-revoked. The deploy-token read itself never signs in as the writer.
+`verify` reports `pass`, `fail` or `not-run` by identity name and id. Without
+`--identity`, every applicable identity must pass: an unavailable GitHub or
+Vercel environment therefore fails the unfiltered result. With `--identity`, only
+the selected identity must pass. A binding with no deploy project skips the
+reader and cross-project credential probes, but an explicitly selected reader
+still must pass and therefore fails closed. Required branch-protection checks
+must select reader, writer and relay verification independently; no scoped run
+is a substitute for the others. Each GitHub check requires the workload token's
+subject to match its selected protected environment before contacting Infisical.
+The reader must read the `VERCEL_TOKEN` value from the deploy project root
+without logging it, have exactly one `viewer` membership role and no other role,
+receive HTTP 403 for the relay-folder listing and direct `VERCEL_TOKEN` read,
+and receive HTTP 404 for its own relay-project membership. The writer must sign
+in at its own audience in the app-credentials environment, receive HTTP 403 for
+the deploy-project listing and direct credential read, and receive HTTP 404 for
+its own deploy-project membership. The relay check runs where
+`VERCEL_OIDC_TOKEN` is present and applies the same read and membership isolation
+requirements. Verification is read-only: it never creates or updates a probe
+secret. Every 401, unexpected 404, 5xx, timeout, network error, or inconclusive
+scope response fails closed, and every issued session is revoked. The
+deploy-token read itself never signs in as the writer.
 
 The GitHub App's credentials never touch a person or this CLI:
 `hobo ci app create --via-workflow` takes GitHub's one-time manifest code

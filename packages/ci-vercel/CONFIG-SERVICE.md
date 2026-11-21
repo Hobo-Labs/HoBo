@@ -120,10 +120,11 @@ owner handles no secret value on the default path:
   `:environment:hobo-ci-app-credentials` and `:environment:hobo-ci-deploy` after
   GitHub's immutable repository prefix. Both trusts pin `repository_id`
   `1274791462`, `repository_owner_id` `344805935`, that distinct `environment`,
-  and `job_workflow_ref`
-  `Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main`. An
-  unrelated workflow or reusable-workflow caller therefore cannot authenticate
-  either identity. The writer's audience is `https://github.com/Hobo-Labs`; the
+  `ref` `refs/heads/main`, and both `workflow_ref` and `job_workflow_ref`
+  `Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main`.
+  `job_workflow_ref` identifies the called implementation; `workflow_ref` pins
+  the top-level caller. `relay-deploy.yml` has no `workflow_call` trigger, so no
+  reusable caller is supported. The writer's audience is `https://github.com/Hobo-Labs`; the
   reader's is `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`. Audience is
   caller-selected, so the environment and workflow claims—not the audience—keep
   a reader-eligible job from authenticating as the writer. (**Connected:** Tyler
@@ -157,12 +158,14 @@ owner handles no secret value on the default path:
   replaces each GitHub Actions identity's OIDC trust in place, reader first
   (so a typo'd reader id fails before the writer's working trust is touched),
   writer second, reader at the reader audience and writer at the writer
-  audience (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new identity),
-  and writes nothing if either update fails; otherwise it prints both exact
-  trust configurations to set in the dashboard. When
-  `verify` is denied with a token whose `sub` differs from that subject (or is
-  immutable while no subject was recorded), its failure says so and names this
-  repair.
+  audience (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new identity).
+  The binding is unchanged if either update fails. If reader repair succeeds and
+  writer repair fails, the reader stays repaired and the error names both
+  outcomes; re-running the idempotent repair completes the writer. Otherwise
+  `connect` prints the exact trust configurations to set in the dashboard and
+  preserves an existing pending or claimed state. When `verify` is denied with a
+  token whose `sub` differs from that subject (or is immutable while no subject
+  was recorded), its failure says so and names this repair.
 
 - **The remainder.** Only an optional third-party cache credential
   (`VALKEY_URL`, a `TURSO_AUTH_TOKEN` the Marketplace does not manage) is
@@ -171,26 +174,23 @@ owner handles no secret value on the default path:
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
 - **Verifying**, by identity name and id: `hobo-ci-deploy-reader` in the deploy
   workflow's *Verify the secret store connection* step (`hobo ci secret-store
-  verify --identity reader`: sign in with GitHub OIDC at
-  `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`, actually read
-  `VERCEL_TOKEN` without logging its value, require its deploy-project membership
-  to contain exactly one `viewer` role, and require HTTP **403** when listing the
-  relay folder). A value-hidden response, 401, 404, timeout, store error, or any
-  write-capable/custom/temporary role fails closed. `hobo-ci-writer` is verified
-  separately by `verify --identity writer` in the `hobo-ci-app-credentials`
-  environment before deposit: it signs in at `https://github.com/Hobo-Labs` and
-  must receive HTTP **403** when listing the deploy project. The relay identity
-  gets the same deploy-project denial check wherever its Vercel token is
-  available. Every issued session is revoked. Failures print `oidc_sub` /
-  `oidc_aud` for dashboard trust matching, never an access token or secret value.
-  `hobo-ci-relay` is also checked by `/readyz` after Vercel deploys. Both
-  workflow verification steps run
+  verify --identity reader`) must read `VERCEL_TOKEN` without logging it, have
+  exactly Viewer, and receive HTTP **403** for relay-folder listing and direct
+  token read plus HTTP **404** for relay-project membership. `hobo-ci-writer` is
+  verified separately by `verify --identity writer` in `hobo-ci-app-credentials`:
+  it must sign in and receive the same read/membership refusals for the deploy
+  project. The relay identity receives those checks wherever its Vercel token is
+  available and is also checked by `/readyz` after deployment. Verification never
+  writes a probe secret, and every issued session is revoked. An unfiltered
+  `verify` requires every applicable identity to pass; missing GitHub or Vercel
+  OIDC fails closed. Branch protection must require the scoped reader, writer and
+  relay checks independently. Failures print only `oidc_sub` / `oidc_aud`, never
+  an access token or secret value. Both workflow verification steps run
   `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
-  stderr-only crashes fail loudly in the log and job summary. Before either job
-  installs or signs in, `scripts/ci/relay-deploy-environment.mts` requires its
-  GitHub environment to have exactly one custom deployment branch policy naming
-  `main`. The deploy-token read never signs in as the
-  writer.
+  stderr-only crashes fail loudly. Before either job installs or signs in,
+  `scripts/ci/relay-deploy-environment.mts` uses the job's scoped `GITHUB_TOKEN`
+  to require an exact `main`-only custom deployment branch policy. The
+  deploy-token read never signs in as the writer.
 
 ### Least privilege on Infisical Cloud Free (attach)
 
@@ -213,11 +213,11 @@ existing OIDC):
 
 - **Trust:** the writer subject is
   `repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials`;
-  the reader subject ends in `:environment:hobo-ci-deploy`. Both pin the
-  repository ids, the environment and the exact `job_workflow_ref` of
-  `relay-deploy.yml` on `main`. Their audiences and environments differ, and
-  neither trust admits an unrelated or reusable-workflow caller. Token TTL is
-  **600s**.
+  the reader subject ends in `:environment:hobo-ci-deploy`. Both pin repository
+  ids, environment, `ref`, top-level `workflow_ref` and called
+  `job_workflow_ref` for `relay-deploy.yml` on `main`. Their audiences and
+  environments differ, and no `workflow_call` trigger admits reusable callers.
+  Token TTL is **600s**.
 - **Separation:** `hobo-ci-relay` remains **Viewer**. `hobo-ci-writer` is for
   App-credential deposit, never deploy-token reads. Deploy-token reads require
   the distinct `hobo-ci-deploy-reader`. The MCP/owner `hobo-secret-writer`
@@ -225,54 +225,58 @@ existing OIDC):
 - **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer deposits there;
   the deploy reader is a Viewer-only member of the `hobo-ci-deploy` project
   only. `verify` reads the deploy credential's value, checks that exact role,
-  and requires HTTP **403** for the reader's relay-folder listing. The writer
-  and relay identity must likewise receive HTTP **403** for the deploy project.
-  A successful cross-project listing fails; 401 proves no isolation; and every
-  404, timeout, store error, or inconclusive answer fails closed. The real
-  cross-project response remains **built, not proven** until the production
-  observation below.
+  requires HTTP **403** for the reader's relay-folder listing and direct token
+  read, and requires HTTP **404** for the reader's own relay-project membership.
+  The writer and relay identity must likewise receive HTTP **403** for deploy-
+  project listing and token reads and HTTP **404** for their own memberships.
+  Verification never writes a probe secret. A successful cross-project read or
+  membership fails; 401 proves no isolation; and every timeout, store error, or
+  inconclusive answer fails closed. The real cross-project response remains
+  **built, not proven** until the production observations below.
 - **Residual:** writer Member can read/write secrets in **all environments**
   in the project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12) — accepted on Free until upgrade or a future **(b)** code path. This residual is not inherited by the deploy reader: without a dedicated identity in a project of its own, `deployCredentialIdentityId` stays unset and deployment refuses to read a token.
 
 **(b)** on Free does **not** tighten today's attach binding: `hobo ci app
 deposit` writes `store.projectId` and `store.secretPath`, so App credentials
 stay in the relay project. A second project (`deployProjectId`) scopes the
-deploy credential away from the relay project. A binding **without** a deploy
-project is refused by the strict parser: Infisical project roles cover the
-whole project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12), so a
-`/hobo-ci-deploy` folder inside the relay's project cannot keep the relay's
-Viewer identity — or the writer's Member identity — from reading the deploy
-token, and Free has no custom roles to scope a grant to one folder. The deploy
-credential therefore always lives in a project of its own, at its root, read
-by the dedicated deploy-credential identity (`deployCredentialIdentityId`),
-never the writer in `deployIdentityId`. The owner provisions that side:
-create project `hobo-ci-deploy`, create the read-only `hobo-ci-deploy-reader`
-machine identity in it, and deposit the token at its root through the MCP
-capture connector's `deploy` target (or `hobo-secret-writer`). The committed
-attach binding currently has neither a `deployProjectId` nor a
-`deployCredentialIdentityId`. The workflow gate therefore fails the relay deploy
-job instead of reporting a green skip. Read-only hosting evidence can still use
-the claimed legacy relay coordinates, but cannot authorize deployment. A direct
-real deploy fails closed before requesting GitHub OIDC or authenticating to
-Infisical, while `--dry-run` can still inspect the plan. A missing project or
-token stops preview after repair. **Built, not proven**: owner provisioning of that
-project, identity and token is still required before a successful
-production observation can exist. After provisioning and committing the
-binding, link a successful `relay-deploy` run here whose preview step records
-`deploy token read from infisical://…/VERCEL_TOKEN as the binding's deploy
-credential identity` — the binding's `deployCredentialIdentityId`, provisioned
-as `hobo-ci-deploy-reader` — and whose *Verify the secret store connection*
-step passes the reader (including the exact Viewer and refused-relay-folder
-assertions), and whose production deploy and origin verification succeed. An
-OIDC-only verification or skipped deploy is not evidence. Record only the
-secret reference and outcomes, never the token or OIDC JWT.
+deploy credential away from the relay project. A binding without that project is
+valid in credential-free mode, but cannot authorize deployment. Infisical
+project roles cover the whole project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12), so a configured deploy credential always lives in a separate
+project at its root, read by the dedicated `deployCredentialIdentityId`, never
+the writer in `deployIdentityId`. The owner must create `hobo-ci-deploy`, its
+read-only `hobo-ci-deploy-reader` identity, and deposit the token at its root
+through the MCP capture connector's `deploy` target (or `hobo-secret-writer`).
+The committed attach binding currently lacks `deployProjectId`,
+`deployCredentialIdentityId`, and `deployOidcSubject`. The unprotected gate
+therefore skips deployment with an explicit notice; it never starts the
+protected deploy job. Read-only hosting evidence can still use the claimed relay
+coordinates. A direct real deploy fails closed before requesting GitHub OIDC or
+authenticating to Infisical, while `--dry-run` can inspect the plan. A missing
+project or token stops preview after repair.
+**Built, not proven**: owner provisioning of that project, identity and token is
+still required, and no qualifying production run is linked yet. After
+provisioning and committing the binding, link both observations here:
 
-**Cutover sequence** (fail closed while incomplete): while the committed binding
-is incomplete, the pre-install deploy gate classifies it as unreadable and fails
-the relay deploy job with a repair message. `hobo ci deploy --dry-run` can still
-plan from the confined repair read; every real deploy uses the strict parser and
-refuses before GitHub OIDC or Infisical authentication. The owner (Tyler)
-completes provisioning before committing the repaired binding:
+- A successful production `relay-deploy` run whose *Verify the protected deploy
+  environment* step attests the exact `main`-only policy; whose *Verify the
+  secret store connection* step passes the reader with exactly Viewer, HTTP 403
+  for the relay-folder listing and direct token read, and HTTP 404 for relay-
+  project membership; whose preview step records `deploy token read from
+  infisical://…/VERCEL_TOKEN as the binding's deploy credential identity`; and
+  whose production deploy and origin verification succeed.
+- A successful `app-credentials` run whose *Verify the protected writer
+  environment* step attests the exact `main`-only policy and whose writer check
+  passes sign-in, HTTP 403 deploy-project read isolation, and HTTP 404 deploy-
+  project membership.
+
+An OIDC-only verification or skipped deploy is not evidence. Record only run
+links, secret references and outcomes, never the token or OIDC JWT.
+
+**Cutover sequence** (fail closed while incomplete): the unprotected gate skips
+only a fully credential-free binding and rejects a half-configured one.
+`hobo ci deploy --dry-run` can still plan; every real deploy refuses a
+credential-free binding before GitHub OIDC or Infisical authentication. The
+owner (Tyler) completes provisioning before enabling deployment:
 
 1. In GitHub, create protected environments `hobo-ci-deploy` and
    `hobo-ci-app-credentials`. Each must have exactly one custom deployment branch
@@ -284,10 +288,10 @@ completes provisioning before committing the repaired binding:
    writer identities stay in `hobo-ci`; neither gets deploy-project membership.
 3. Give the reader OIDC Auth at audience
    `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`, subject prefix followed
-   by `:environment:hobo-ci-deploy`, and the pinned repository ids, environment
-   and exact `job_workflow_ref` documented above. Give the writer the distinct
-   `hobo-ci-app-credentials` environment and its own audience. `connect` in step
-   5 applies both exact configurations when given the owner's token.
+   by `:environment:hobo-ci-deploy`, and the pinned repository ids, environment,
+   `ref`, `workflow_ref` and `job_workflow_ref` documented above. Give the writer
+   the distinct `hobo-ci-app-credentials` environment and its own audience.
+   `connect` in step 5 applies both exact configurations with the owner's token.
 4. Deposit `VERCEL_TOKEN` at the `hobo-ci-deploy` project's root through the
    MCP capture connector's `deploy` target (or `hobo-secret-writer`).
 5. Run `hobo ci secret-store connect --cwd packages/ci-vercel
@@ -295,27 +299,21 @@ completes provisioning before committing the repaired binding:
    --deploy-credential-identity-id <hobo-ci-deploy-reader> --yes`, with
    `INFISICAL_TOKEN` from the owner's own `infisical login` for that one run so
    both GitHub Actions identities' trust is repaired in place. It records the
-   deploy project, reader id and writer environment subject. Without the new
-   values it names both missing options instead of refusing the legacy file.
+   deploy project, reader id and writer environment subject. Without those values
+   it preserves credential-free mode; supplying only one fails with the missing
+   paired option.
 6. Commit the rewritten `deploy/secret-store.binding.json`. The gate now admits
-   it, and the next `relay-deploy` run must provide the production observation
-   above: value read as the dedicated reader, exact Viewer and HTTP 403 scope
-   checks, then successful production deploy and origin verification.
+   it, and the next `relay-deploy` runs must provide the production observations
+   above: protected-environment attestations, value read as the dedicated
+   reader, exact Viewer, HTTP 403 read isolation and HTTP 404 membership checks,
+   then successful production deploy and origin verification.
 
-The tightened parser is the breaking change's whole blast radius: the
-package is private (no external consumer), every in-repo constructor of a
-binding (`provision`, `connect`, the tests) writes the deploy project and
-reader id, and the MCP capture connector
-([`mcp-secret-capture.ts`](../hobo/src/mcp-secret-capture.ts)) refuses a
-legacy binding with the repair it names instead of authorizing a capture.
-The reader id is the cutover marker: every binding shape the earlier parser
-accepted — with or without a deploy project or a recorded subject, but never
-a reader id — parses only for connect repair, token-free dry-run planning, and
-the constrained read-only hosting observation, never for a real deploy. A
-binding that records a reader id must satisfy the full modern shape everywhere:
-a deploy project of its own, the writer's protected-environment subject when
-claimed, and a reader distinct from the relay and writer identities. The repair
-output still cannot be written back or reach a deploy-credential read.
+The strict parser accepts either a complete deploy credential or no deploy
+credential; it rejects a half-configured pair. The confined repair parser still
+accepts earlier shapes for connect, token-free dry-run planning and read-only
+hosting evidence, never for a deploy-credential read. A binding that records a
+reader id must have a separate deploy project, the writer's protected-environment
+subject, and a reader distinct from the relay and writer identities.
 
 ### What provisioning creates
 
@@ -330,8 +328,8 @@ what an attach run with the owner's `INFISICAL_TOKEN` creates
 | Project | Environment / folder | Identity | Role | Trusts |
 |---|---|---|---|---|
 | `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-relay` | viewer | the Vercel team issuer: `iss`/discovery `https://oidc.vercel.com/<team-slug>`, `aud` `https://vercel.com/<team-slug>`, `sub` `owner:<team-slug>:project:hobo-ci:environment:production`, claims `owner_id` and `project_id` pinned |
-| `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-deploy` (`deployIdentityId`) | viewer | GitHub Actions writer trust: `aud` `https://github.com/<owner>`, `sub` `<sub_claim_prefix>:environment:hobo-ci-app-credentials`, repository ids, environment and exact `job_workflow_ref` pinned; never a member of the deploy project |
-| `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy-reader` (`deployCredentialIdentityId`) | viewer | GitHub Actions reader trust: `aud` `https://github.com/<owner>/hobo-ci-deploy-reader`, `sub` `<sub_claim_prefix>:environment:hobo-ci-deploy`, repository ids, environment and exact `job_workflow_ref` pinned; `verify` requires this exact role and HTTP 403 from the relay folder |
+| `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-deploy` (`deployIdentityId`) | viewer | GitHub Actions writer trust: `aud` `https://github.com/<owner>`, `sub` `<sub_claim_prefix>:environment:hobo-ci-app-credentials`, repository ids, environment, `ref`, `workflow_ref` and `job_workflow_ref` pinned; never a member of the deploy project |
+| `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy-reader` (`deployCredentialIdentityId`) | viewer | GitHub Actions reader trust: `aud` `https://github.com/<owner>/hobo-ci-deploy-reader`, `sub` `<sub_claim_prefix>:environment:hobo-ci-deploy`, repository ids, environment, `ref`, `workflow_ref` and `job_workflow_ref` pinned; `verify` requires this exact role and HTTP 403 from the relay folder |
 
 Only the dedicated reader is a HoBo member of `hobo-ci-deploy` in the
 provisioned layout. The writer's and relay's memberships in `hobo-ci` do not
@@ -352,21 +350,18 @@ In the attach layout the writer lives in the relay's project and the reader in
 `hobo-ci-deploy`, so project membership is the separation and the writer's
 Member residual never reaches the deploy credential.
 
-Every binding — provisioned or attach — records a `deployProjectId` other
-than the relay's and the read-only `deployCredentialIdentityId`, distinct from
-the relay and writer identities; the parser and the deploy-token read both
-refuse a binding that names the writer (or the relay identity) as the deploy
-credential reader, and one without a deploy project. A binding recorded
-before those fields were required makes the workflow gate fail closed and is
-refused by real deploy commands until `connect --deploy-project-id …
---deploy-credential-identity-id …` records them (sequence above). The deploy credential
-always has a project of its own so the relay's identity, a member of
+A binding that configures a deploy credential records a `deployProjectId` other
+than the relay's and a read-only `deployCredentialIdentityId`, distinct from the
+relay and writer identities. The parser rejects identity reuse and a
+half-configured pair. A credential-free binding skips the workflow deploy and is
+refused by direct real deploy commands until `connect --deploy-project-id …
+--deploy-credential-identity-id …` records both (sequence above). The deploy
+credential always has a project of its own so the relay's identity, a member of
 `hobo-ci` only, can never read it (Infisical project roles cover the whole
 project). Endpoints: `POST /api/v1/admin/bootstrap` (self-hosted only),
 `POST /api/v1/projects`, `POST /api/v1/folders`,
 `POST /api/v1/projects/{projectId}/identities`,
-`GET /api/v1/projects/{projectId}/identities/{identityId}` for the reader's
-roles, `POST /api/v1/auth/oidc-auth/identities/{identityId}` (`PATCH` of it on a
+`GET /api/v1/projects/{projectId}/identities` for the reader's roles, `POST /api/v1/auth/oidc-auth/identities/{identityId}` (`PATCH` of it on a
 connect re-run), GitHub's `GET /repos/{owner}/{repo}` and
 `GET /repos/{owner}/{repo}/actions/oidc/customization/sub` for the subject,
 and at finalize `DELETE`/`GET /api/v1/identities/{identityId}`. The admin calls
@@ -409,13 +404,13 @@ production; nobody types them into Vercel.
 deploys the relay to production on every push to `main` that changes it, and on
 a manual run (Actions → HoBo relay deploy → Run workflow). It never asks anyone
 to deploy, holds no secret and reads no repository variable about the relay:
-its gate is the committed binding (no binding: a notice, and the job succeeds;
-an unreadable one: the job fails with the `connect` repair), and its credential
-step signs in to the store with the
-job's GitHub Actions OIDC token as `hobo-ci-deploy-reader` from
-`deployCredentialIdentityId` and reads `VERCEL_TOKEN` from the deploy
-project's root, masked in the log. A
-binding that names only the writer, or has no deploy project, stops preview
+its unprotected gate reads the committed binding before any protected
+environment admission. On canonical `main`, a missing or malformed binding fails
+that gate. A credential-free binding skips deployment with an explicit notice; a
+half-configured binding fails. When admitted, the protected deploy job signs in
+with its GitHub Actions OIDC token as `hobo-ci-deploy-reader` from
+`deployCredentialIdentityId` and reads `VERCEL_TOKEN` from the deploy project's
+root, masked in the log. A direct deploy with no configured credential stops
 before sign-in. A `route` job picks the
 runner first, as `hobo-ci.yml` does (the fleet while it takes jobs, an
 enrolled box, else GitHub-hosted), so a busy fleet no longer holds the deploy

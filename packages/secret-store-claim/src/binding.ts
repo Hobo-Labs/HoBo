@@ -57,31 +57,37 @@ function bindingMeetsConstraints(
 ): boolean {
 	const deployCredentialIdentityId = record.deployCredentialIdentityId ?? "";
 	const readerUnrecorded = deployCredentialIdentityId === "";
+	const validSubject =
+		DEPLOY_SUBJECT.test(record.deployOidcSubject) &&
+		DEPLOY_ENVIRONMENT_SUBJECT.test(record.deployOidcSubject);
+	const validDeploy =
+		ID.test(record.deployProjectId) &&
+		record.deployProjectId !== record.projectId &&
+		ID.test(deployCredentialIdentityId) &&
+		deployCredentialIdentityId !== record.relayIdentityId &&
+		deployCredentialIdentityId !== record.deployIdentityId &&
+		validSubject;
+	const validWithoutDeploy =
+		readerUnrecorded &&
+		record.deployProjectId === "" &&
+		(record.deployOidcSubject === "" || validSubject);
 	return (
-		(legacy ? readerUnrecorded : !readerUnrecorded) &&
 		(ENDPOINT.test(record.endpoint) ||
 			(options.allowLoopback === true && LOOPBACK.test(record.endpoint))) &&
 		ID.test(record.projectId) &&
-		((legacy && record.deployProjectId === "") ||
-			(ID.test(record.deployProjectId) &&
-				record.deployProjectId !== record.projectId)) &&
 		/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(record.environment) &&
 		/^\/([A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*)?$/u.test(record.secretPath) &&
 		ID.test(record.relayIdentityId) &&
 		ID.test(record.deployIdentityId) &&
 		record.relayIdentityId !== record.deployIdentityId &&
-		((ID.test(deployCredentialIdentityId) &&
-			deployCredentialIdentityId !== record.relayIdentityId &&
-			deployCredentialIdentityId !== record.deployIdentityId) ||
-			(legacy && deployCredentialIdentityId === "")) &&
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
 		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
 		((legacy &&
+			readerUnrecorded &&
 			(record.deployOidcSubject === "" ||
 				DEPLOY_SUBJECT.test(record.deployOidcSubject))) ||
-			(DEPLOY_SUBJECT.test(record.deployOidcSubject) &&
-				DEPLOY_ENVIRONMENT_SUBJECT.test(record.deployOidcSubject)))
+			(!legacy && (validDeploy || validWithoutDeploy)))
 	);
 }
 
@@ -119,7 +125,7 @@ export function parseSecretStoreBinding(
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's protected-environment deploy subject once the reader is recorded)",
+			"the secret store binding does not meet its constraints (coordinates only; either no deploy credential, or a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's protected-environment deploy subject)",
 		);
 	const parsed: ParsedSecretStoreBinding = {
 		...bindingFields(record, kind, claimState),
@@ -166,7 +172,7 @@ export function readSecretStoreBindingForRepair(
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's protected-environment deploy subject once the reader is recorded)",
+			"the secret store binding does not meet its constraints (coordinates only; either no deploy credential, or a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, and the writer's protected-environment deploy subject)",
 		);
 	return bindingFields(record, kind, claimState);
 }

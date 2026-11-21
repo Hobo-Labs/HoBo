@@ -93,6 +93,9 @@ describe("GitHub's REST API, the OIDC subject a repository's tokens carry (consu
 				repository_id: "1274791462",
 				repository_owner_id: "344805935",
 				environment: "hobo-ci-app-credentials",
+				ref: "refs/heads/main",
+				workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 				job_workflow_ref:
 					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 			},

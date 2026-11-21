@@ -312,29 +312,30 @@ and on `workflow_dispatch`:
 
 0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
    while it takes jobs, an enrolled box, else GitHub-hosted).
-1. The gate ends the job with a notice, and success, until a secret store is
-   bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
-   which `hobo ci secret-store provision` writes when the HoBo deployment
-   chooses the store and the owner claims it, or `hobo ci secret-store connect`
-   writes from the ids of a secrets manager the owner connected with OIDC
+1. An unprotected `gate` job reads `deploy/secret-store.binding.json`,
+   coordinates only, before the protected deploy job can start. A missing or
+   malformed binding fails the canonical `main` gate. A valid binding without a
+   deploy credential skips deployment with an explicit notice; a half-configured
+   credential fails closed. The protected `deploy` job starts only when its
+   `run` output is true. No repository variable or secret configures the relay.
+   The binding comes from `hobo ci secret-store provision` after the owner claims
+   the chosen store, or from `hobo ci secret-store connect`
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
-   No repository variable or secret is read. A legacy binding without the
-   deploy project, distinct reader, or protected writer-environment subject is
-   unreadable to the gate: the deploy job fails with the `connect` repair until
-   the complete binding is committed, rather than reporting a green skip.
 2. *Verify the protected environment and secret store connection*: both jobs
    first require GitHub API proof of an exact `main`-only custom deployment
    branch policy. The deploy job names
    `hobo-ci-deploy` and selects only the reader check. With
    `permissions: id-token: write`, it signs in as `hobo-ci-deploy-reader` at its
    own audience, reads `VERCEL_TOKEN` without logging the value, requires exactly
-   Viewer membership in the deploy project, and requires HTTP 403 from the
-   relay-folder listing. The app-credentials job names
+   Viewer membership in the deploy project, requires HTTP 403 from the relay-
+   folder listing and direct token read, and requires HTTP 404 for its own
+   relay-project membership. The app-credentials job names
    `hobo-ci-app-credentials` and selects only writer verification before deposit:
-   sign-in at its own audience and HTTP 403 from the deploy project. Each issued
-   session is revoked and every other scope answer fails closed. The deploy-token
-   read never signs in as the writer. Until the owner provisions and commits the
+   sign-in at its own audience, HTTP 403 from deploy-project listing and token
+   reads, and HTTP 404 for its own deploy-project membership. Verification never
+   writes a probe secret. Each issued session is revoked and every other scope
+   answer fails closed. The deploy-token read never signs in as the writer. Until the owner provisions and commits the
    complete binding, no deploy token is read. See
    [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 3. *Deploy the relay*: `hobo ci deploy --build prebuilt --sha "$GITHUB_SHA"`,

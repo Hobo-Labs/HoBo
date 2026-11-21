@@ -286,6 +286,111 @@ describe("OIDC login and reads", () => {
 		});
 	});
 
+	it("refuses to expose another identity's membership to a valid caller", async () => {
+		fake.identities.push({
+			kind: "oidc",
+			identityId: "member-identity",
+			jwt: JWT,
+			access: "read",
+			projects: { "proj-1": "viewer" },
+		});
+		expect(
+			(await caught(client().readProjectIdentity("member-identity"))).code,
+		).toBe("not-found");
+	});
+
+	it("rejects mismatched, duplicate, missing, and empty membership records", async () => {
+		const membershipPath = "/api/v1/projects/proj-1/identities";
+		for (const [body, code] of [
+			[{}, "invalid-response"],
+			[
+				{
+					identityMemberships: [
+						{
+							identityId: "other-identity",
+							roles: [{ role: "viewer" }],
+							identity: { id: "other-identity", projectId: "proj-1" },
+						},
+					],
+				},
+				"not-found",
+			],
+			[
+				{
+					identityMemberships: [
+						{
+							identityId: IDENTITY,
+							roles: [{ role: "viewer" }],
+							identity: { id: IDENTITY, projectId: "proj-other" },
+						},
+					],
+				},
+				"invalid-response",
+			],
+			[
+				{
+					identityMemberships: [
+						{
+							identityId: IDENTITY,
+							roles: [{ role: "viewer" }],
+							identity: { id: "other-identity", projectId: "proj-1" },
+						},
+					],
+				},
+				"invalid-response",
+			],
+			[
+				{
+					identityMemberships: [
+						{
+							identityId: IDENTITY,
+							roles: [],
+							identity: { id: IDENTITY, projectId: "proj-1" },
+						},
+					],
+				},
+				"invalid-response",
+			],
+			[
+				{
+					identityMemberships: [
+						{
+							identityId: IDENTITY,
+							roles: [{ role: "" }],
+							identity: { id: IDENTITY, projectId: "proj-1" },
+						},
+					],
+				},
+				"invalid-response",
+			],
+			[
+				{
+					identityMemberships: [
+						{
+							identityId: IDENTITY,
+							roles: [{ role: "viewer" }],
+							identity: { id: IDENTITY, projectId: "proj-1" },
+						},
+						{
+							identityId: IDENTITY,
+							roles: [{ role: "viewer" }],
+							identity: { id: IDENTITY, projectId: "proj-1" },
+						},
+					],
+				},
+				"invalid-response",
+			],
+		] as const) {
+			fake.fail((request) => request.path === membershipPath, {
+				status: 200,
+				body,
+			});
+			expect((await caught(client().readProjectIdentity(IDENTITY))).code).toBe(
+				code,
+			);
+		}
+	});
+
 	it("fails closed for a project the identity is not a member of, whatever the calling token's reach", async () => {
 		fake.identities.push({
 			kind: "oidc",
@@ -303,17 +408,18 @@ describe("OIDC login and reads", () => {
 		const writer = client(
 			oidcAuth({ identityId: "deploy-project-identity", jwt: async () => JWT }),
 		);
-		expect(await writer.forBinding(deployScope).readProjectIdentity(
-			"deploy-project-identity",
-		)).toEqual({
+		expect(
+			await writer
+				.forBinding(deployScope)
+				.readProjectIdentity("deploy-project-identity"),
+		).toEqual({
 			identityId: "deploy-project-identity",
 			projectId: "proj-deploy",
 			roles: ["viewer"],
 		});
 		expect(
-			(await caught(
-				writer.readProjectIdentity("deploy-project-identity"),
-			)).code,
+			(await caught(writer.readProjectIdentity("deploy-project-identity")))
+				.code,
 		).toBe("not-found");
 		expect((await caught(client().readProjectIdentity(IDENTITY))).code).toBe(
 			"not-found",
