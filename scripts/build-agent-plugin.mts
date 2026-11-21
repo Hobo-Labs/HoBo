@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	cpSync,
@@ -95,6 +96,27 @@ async function main(): Promise<void> {
 	const runId = process.env.GITHUB_RUN_ID?.trim() ?? "";
 	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
 	const commitSha = process.env.GITHUB_SHA?.trim() ?? "";
+	const headSha = spawnSync("git", ["rev-parse", "HEAD"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	const porcelain = spawnSync("git", ["status", "--porcelain"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	if (
+		headSha.status !== 0 ||
+		porcelain.status !== 0 ||
+		(porcelain.stdout ?? "").trim().length > 0 ||
+		headSha.stdout?.trim() !== commitSha
+	) {
+		console.error(
+			"agent-plugin:build: refuse attestation unless HEAD is clean and matches GITHUB_SHA",
+		);
+		rmSync(attestationPath, { force: true });
+		process.exitCode = 1;
+		return;
+	}
 	if (runId.length === 0 || commitSha.length === 0) {
 		console.error(
 			"agent-plugin:build: GITHUB_RUN_ID and GITHUB_SHA are required in GitHub Actions",

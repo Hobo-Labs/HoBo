@@ -444,6 +444,34 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 		expect(messages).not.toContain(secret);
 	});
 
+	it("rejects TLS and module-resolution env keys in MCP env", () => {
+		const parsed = parseMcpConfig(
+			JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+						env: {
+							NODE_TLS_REJECT_UNAUTHORIZED: "0",
+							NODE_EXTRA_CA_CERTS: "/tmp/evil.pem",
+							NODE_PATH: "/tmp/node_modules",
+						},
+					},
+				},
+			}),
+		);
+		const messages = mcpSemanticIssues(
+			parsed.value ?? { $schema: "", mcpServers: {} },
+		)
+			.map((issue) => issue.message)
+			.join("\n");
+		expect(messages).toMatch(/NODE_TLS_REJECT_UNAUTHORIZED.*reserved/u);
+		expect(messages).toMatch(/NODE_EXTRA_CA_CERTS.*reserved/u);
+		expect(messages).toMatch(/NODE_PATH.*reserved/u);
+	});
+
 	it("rejects NODE_OPTIONS in MCP env", () => {
 		const parsed = parseMcpConfig(
 			JSON.stringify({

@@ -28,6 +28,9 @@ const FORBIDDEN_ENV_KEYS: readonly string[] = [
 	"PLUGIN_DATA",
 	"NODE_OPTIONS",
 	"NODE_PRELOAD",
+	"NODE_TLS_REJECT_UNAUTHORIZED",
+	"NODE_EXTRA_CA_CERTS",
+	"NODE_PATH",
 ];
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const BUNDLE_ATTESTATION = ".bundle-attestation.json";
@@ -800,9 +803,17 @@ function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 				}
 			}
 		}
-		const schema = PluginVendoredSchema.safeParse(
-			JSON.parse(readFileSync(full, "utf8")),
-		);
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(readFileSync(full, "utf8"));
+		} catch {
+			issues.push({
+				file,
+				message: "is not valid JSON",
+			});
+			continue;
+		}
+		const schema = PluginVendoredSchema.safeParse(parsed);
 		if (!schema.success || schema.data.$id !== id) {
 			issues.push({
 				file,

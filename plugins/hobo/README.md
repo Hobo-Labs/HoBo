@@ -66,7 +66,12 @@ match this workflow run, checkout, attempt, and sha256. In
 is still absent, so local `check:all` and CI share the same self-contained gate.
 
 The build deletes any prior `.bundle-attestation.json` before bundling so a
-failed rebuild cannot leave a stale attestation beside the bundle. The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
+failed rebuild cannot leave a stale attestation beside the bundle. In CI it
+also refuses to write attestation unless the checkout has a clean working tree
+and `HEAD` matches `GITHUB_SHA`, so a minted record cannot trail local edits or
+a mismatched ref.
+
+The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to
 `fixtures/deploy` (the deploy providers read it relative to the bundle), and
 leaves `typescript` and the native Bitwarden SDK resolvable from the
@@ -76,7 +81,10 @@ launcher in `.mcp.json`.
 
 `pnpm run agent-plugin:check` resolves the `mcp.json` entrypoint against the
 plugin root, rejects a missing or undersized bundle in CI, and scans an
-existing bundle for secret-shaped values without echoing them.
+existing bundle for secret-shaped values without echoing them. Reserved
+Node execution env keys (`NODE_OPTIONS`, `NODE_TLS_REJECT_UNAUTHORIZED`,
+`NODE_EXTRA_CA_CERTS`, `NODE_PATH`, and related injection keys) are rejected in
+`mcp.json` server `env` maps.
 
 The native `@bitwarden/sdk-napi` binding cannot be carried by a portable
 bundle. Inside a HoBo checkout with installed dependencies it resolves
