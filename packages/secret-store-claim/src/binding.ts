@@ -57,12 +57,9 @@ function bindingMeetsConstraints(
 	legacy: boolean,
 ): boolean {
 	const deployCredentialIdentityId = record.deployCredentialIdentityId ?? "";
-	const preCutover =
-		record.deployProjectId === "" &&
-		deployCredentialIdentityId === "" &&
-		record.deployOidcSubject === "";
+	const readerUnrecorded = deployCredentialIdentityId === "";
 	return (
-		(legacy ? preCutover : !preCutover) &&
+		(legacy ? readerUnrecorded : !readerUnrecorded) &&
 		(ENDPOINT.test(record.endpoint) ||
 			(options.allowLoopback === true && LOOPBACK.test(record.endpoint))) &&
 		ID.test(record.projectId) &&

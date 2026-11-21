@@ -212,7 +212,14 @@ existing OIDC):
   keeps its one-use Universal Auth and has no GitHub Actions trust.
 - **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer deposits there;
   the deploy reader is a member of the `hobo-ci-deploy` project only, and
-  `verify` asserts it is refused the relay project's folder.
+  `verify` asserts it is refused the relay project's folder — and only an
+  authorization refusal counts: Infisical answering 401 or 403 to that
+  listing passes the check; any other answer (a 404, a timeout, a store
+  error) fails it as an unproven scope. Residual: the status Infisical
+  actually returns for a cross-project listing has not been observed against
+  the real service yet (the channel is built, not proven); if it is not 401
+  or 403, the check stays red on purpose and the reader's grant must be
+  adjusted until it is.
 - **Residual:** writer Member can read/write secrets in **all environments**
   in the project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12) — accepted on Free until upgrade or a future **(b)** code path. This residual is not inherited by the deploy reader: without a dedicated identity in a project of its own, `deployCredentialIdentityId` stays unset and deployment refuses to read a token.
 
@@ -251,7 +258,14 @@ reference and outcomes, never the token or OIDC JWT.
 the committed binding does not parse, `hobo ci deploy` refuses before any
 sign-in, and a manual relay-deploy run fails its *Verify the secret store
 connection* and preview steps with the typed reason — by design, not a
-regression):
+regression). Owner and window: the repository owner (Tyler) runs steps 1–5
+immediately after this change merges; the window opens at merge and closes
+with step 5's commit, and every relay-deploy run inside it fails closed as
+described. The red lane gates the relay's own deployment only, not the main
+train's releases — [`release-hobo.yml`](../../.github/workflows/release-hobo.yml)
+triggers off *HoBo CI Fabric*, never off this workflow, so npm, GHCR and
+Pages releases are unaffected while it is red. The same owner links the
+production observation below when step 5's commit first deploys:
 
 1. In Infisical, create project `hobo-ci-deploy` and, in it, the read-only
    `hobo-ci-deploy-reader` machine identity (Viewer at most; Member is not
@@ -290,8 +304,13 @@ binding (`provision`, `connect`, the tests) writes the deploy project and
 reader id, and the MCP capture connector
 ([`mcp-secret-capture.ts`](../hobo/src/mcp-secret-capture.ts)) refuses a
 legacy binding with the repair it names instead of authorizing a capture.
-The pre-cutover shape is accepted only as a whole, and only by the connect
-repair read; a half-migrated binding is refused everywhere.
+The reader id is the cutover marker: every binding shape the earlier parser
+accepted — with or without a deploy project or a recorded subject, but never
+a reader id — parses only for the connect repair read, and a binding that
+records a reader id must satisfy the full modern shape everywhere (a deploy
+project of its own, a recorded subject when claimed, a reader distinct from
+the relay and writer identities). The repair output still cannot be written
+back or reach a credential read.
 
 ### What provisioning creates
 

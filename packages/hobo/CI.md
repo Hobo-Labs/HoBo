@@ -502,8 +502,12 @@ exercised against fakes only. The committed binding has neither a
 create the `hobo-ci-deploy` project and the read-only `hobo-ci-deploy-reader`
 identity in it, deposit `VERCEL_TOKEN` at its root, and re-run `connect` to
 record the deploy project, the reader id and the subject. Until then the
-deploy token read fails closed; the ordered
-operator sequence is [the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach). This channel is
+deploy token read fails closed and, from the moment this change merges, the
+relay's own deploy lane fails its typed reason — the main train's releases
+are not gated by that lane (`release-hobo.yml` triggers off
+*HoBo CI Fabric*, not the relay deploy workflow); the ordered
+operator sequence, its owner and its window are
+[the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach). This channel is
 **built, not proven**: link a successful `relay-deploy` run whose preview step
 records the token read as the binding's deploy credential identity, whose
 *Verify the secret store connection* step passes the reader (including the
@@ -600,11 +604,12 @@ project and reader to an older binding needs `--yes`) repairs the trust:
 with the owner's own `INFISICAL_TOKEN` for that run it replaces both
 identities' OIDC trust in place, reader first (no new identity); otherwise it
 prints the subject and claims
-to set in the dashboard. A binding recorded before `deployProjectId` was
-required and `deployCredentialIdentityId` existed parses only for that
-repair: a re-run without ids names `--deploy-project-id` and
-`--deploy-credential-identity-id` as what is missing instead of refusing the
-file. A denied `verify` whose token `sub` differs from the
+to set in the dashboard. A binding recorded before the reader id existed —
+with or without a deploy project or a recorded subject, every shape the
+earlier parser accepted — parses only for that repair: a re-run without ids
+names what is missing (`--deploy-project-id` and
+`--deploy-credential-identity-id`, or the latter alone on a binding that
+already records the deploy project) instead of refusing the file. A denied `verify` whose token `sub` differs from the
 recorded subject (or is immutable when none was recorded) says so and names
 that repair. `verify` reports `pass`, `fail` or `not-run` by identity
 name and id: `hobo-ci-deploy-reader` inside a GitHub Actions job (GitHub OIDC

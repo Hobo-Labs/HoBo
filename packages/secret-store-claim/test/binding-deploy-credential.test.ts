@@ -105,7 +105,7 @@ describe("deploy credential identity", () => {
 		).toThrow("does not meet its constraints");
 	});
 
-	it("accepts the pre-cutover shape only as a whole: a half-migrated binding is refused even for repair", () => {
+	it("takes the reader id as the cutover marker: every binding shape the earlier parser accepted parses for repair", () => {
 		for (const fields of [
 			{
 				deployProjectId: "deploy-project",
@@ -113,10 +113,26 @@ describe("deploy credential identity", () => {
 				deployOidcSubject: undefined,
 			},
 			{
-				deployCredentialIdentityId: "reader-identity",
+				deployCredentialIdentityId: undefined,
 				deployOidcSubject: undefined,
 			},
+			{ deployCredentialIdentityId: undefined },
+		]) {
+			const repaired = readSecretStoreBindingForRepair(bindingJson(fields));
+			expect(repaired.deployCredentialIdentityId).toBe("");
+			expect(() => readSecretStoreBinding(bindingJson(fields))).toThrow(
+				"does not meet its constraints",
+			);
+		}
+	});
+
+	it("refuses a binding that records the reader without the modern shape everywhere, repair included", () => {
+		for (const fields of [
 			{ deployOidcSubject: undefined },
+			{ deployProjectId: undefined },
+			{ deployProjectId: "relay-project" },
+			{ deployCredentialIdentityId: "writer-identity" },
+			{ deployCredentialIdentityId: "relay-identity" },
 		])
 			expect(() =>
 				readSecretStoreBindingForRepair(bindingJson(fields)),
@@ -134,24 +150,21 @@ describe("deploy credential identity", () => {
 describe("the repair read's confinement", () => {
 	const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
+	const SKIPPED_DIRS = new Set([".git", "dist", "node_modules", "_generated"]);
+
 	function sourceFiles(dir: string, found: string[] = []): string[] {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
 			if (entry.isDirectory()) {
-				if (["dist", "node_modules", "_generated"].includes(entry.name))
-					continue;
-				sourceFiles(path.join(dir, entry.name), found);
-			} else if (/\.(ts|mts)$/u.test(entry.name))
+				if (!SKIPPED_DIRS.has(entry.name))
+					sourceFiles(path.join(dir, entry.name), found);
+			} else if (/\.(?:ts|mts|cts|tsx|js|mjs|cjs|jsx)$/u.test(entry.name))
 				found.push(path.join(dir, entry.name));
 		}
 		return found;
 	}
 
 	it("has exactly one caller outside this package: the connect repair, so an empty reader id cannot reach a credential read", () => {
-		const sources = [
-			...sourceFiles(path.join(repoRoot, "packages")),
-			...sourceFiles(path.join(repoRoot, "scripts")),
-			...sourceFiles(path.join(repoRoot, "src")),
-		];
+		const sources = sourceFiles(repoRoot);
 		const foreign = sources.filter(
 			(file) =>
 				!file.startsWith(
@@ -198,12 +211,15 @@ describe("the deploy credential's project", () => {
 });
 
 describe("the recorded deploy subject", () => {
-	it("refuses an empty subject on a claimed binding with the modern fields present, and a subject that is not a branch trust", () => {
+	it("refuses an empty subject on a claimed binding with the modern fields present, a subject that is not a branch trust, and a wildcard branch or environment subject the trust anchor must never span", () => {
 		for (const deployOidcSubject of [
 			"",
 			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/pull/7/merge",
 			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/tags/v1",
 			"repo:Hobo-Labs@*/HoBo@*:ref:refs/heads/main",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/*",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/feature/*",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:production",
 		])
 			expect(() =>
 				readSecretStoreBinding(bindingJson({ deployOidcSubject })),

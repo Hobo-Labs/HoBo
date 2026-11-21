@@ -224,6 +224,7 @@ export async function runCiSecretStoreConnect(
 		existing !== undefined &&
 		existing.endpoint === binding.endpoint &&
 		existing.projectId === binding.projectId &&
+		existing.deployProjectId === binding.deployProjectId &&
 		existing.relayIdentityId === binding.relayIdentityId &&
 		existing.deployIdentityId === binding.deployIdentityId &&
 		existing.deployCredentialIdentityId === binding.deployCredentialIdentityId;

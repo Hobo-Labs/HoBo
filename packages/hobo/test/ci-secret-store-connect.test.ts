@@ -337,6 +337,32 @@ describe("hobo ci secret-store connect, re-run against an existing store", () =>
 		).toBe(before);
 	});
 
+	it("refuses to swap the deploy project alone without --yes, so a trust-relevant coordinate cannot change silently", async () => {
+		const gh = github().fetch;
+		await runCiSecretStore(input("connect", IDS, GH_ENV, gh));
+		const swapped = await runCiSecretStore(
+			input(
+				"connect",
+				{ ...IDS, "deploy-project-id": "other-deploy" },
+				GH_ENV,
+				gh,
+			),
+		);
+		expect(swapped.code).toBe("HOBO_CI_SECRET_STORE_BINDING_EXISTS");
+		expect(
+			(
+				await runCiSecretStore(
+					input(
+						"connect",
+						{ ...IDS, "deploy-project-id": "other-deploy", yes: true },
+						GH_ENV,
+						gh,
+					),
+				)
+			).ok,
+		).toBe(true);
+	});
+
 	it("names what is missing, refuses one identity for both, and keeps an existing binding", async () => {
 		const gh = github().fetch;
 		const missing = await runCiSecretStore(
