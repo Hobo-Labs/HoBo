@@ -23,7 +23,7 @@ Agents reach this page through the `hobo-ci` skill (`.claude/skills/hobo-ci/`, m
 `.agents/skills/`), beside `hobo-ci-route-jobs` and `hobo-ci-insights`. The one-page setup guide
 for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/public/ci/setup.md).
 
-131 codes.
+139 codes.
 
 | Code | Returned from |
 | --- | --- |
@@ -62,6 +62,8 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_BINDING_MALFORMED`](#hobo_ci_deploy_binding_malformed) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDING_UNAVAILABLE`](#hobo_ci_deploy_binding_unavailable) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_BINDLE_PROVIDER`](#hobo_ci_deploy_bindle_provider) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_BUILD_FAILED`](#hobo_ci_deploy_build_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`](#hobo_ci_deploy_checkout_mismatch) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_COMMIT_MISMATCH`](#hobo_ci_deploy_commit_mismatch) | `packages/hobo/src/ci-relay-verify.ts` |
 | [`HOBO_CI_DEPLOY_DELIVERY_INVALID`](#hobo_ci_deploy_delivery_invalid) | `packages/hobo/src/ci-relay-adopt.ts`, `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`](#hobo_ci_deploy_delivery_unavailable) | `packages/hobo/src/ci-relay-delivery.ts` |
@@ -70,15 +72,21 @@ for an agent starting from nothing is [`site/public/ci/setup.md`](../../site/pub
 | [`HOBO_CI_DEPLOY_INCOMPLETE`](#hobo_ci_deploy_incomplete) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_NOT_QUALIFIED`](#hobo_ci_deploy_not_qualified) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_NOT_READY`](#hobo_ci_deploy_not_ready) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_NOT_STAGED`](#hobo_ci_deploy_not_staged) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_NO_ANSWER`](#hobo_ci_deploy_no_answer) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_NO_CAMP`](#hobo_ci_deploy_no_camp) | `packages/hobo/src/ci-relay-yard.ts` |
 | [`HOBO_CI_DEPLOY_NO_HTTP_ENTRY`](#hobo_ci_deploy_no_http_entry) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_PLANNED`](#hobo_ci_deploy_planned) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_PROMOTE_FAILED`](#hobo_ci_deploy_promote_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_PROMOTION_REFUSED`](#hobo_ci_deploy_promotion_refused) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_RELAY_NOT_CONFIGURED`](#hobo_ci_deploy_relay_not_configured) | `packages/hobo/src/ci-relay-verify.ts` |
 | [`HOBO_CI_DEPLOY_RELAY_NOT_READY`](#hobo_ci_deploy_relay_not_ready) | `packages/hobo/src/ci-relay-verify.ts` |
+| [`HOBO_CI_DEPLOY_ROLLBACK_FAILED`](#hobo_ci_deploy_rollback_failed) | `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_ROLLED_BACK`](#hobo_ci_deploy_rolled_back) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_SETTING_REFUSED`](#hobo_ci_deploy_setting_refused) | `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-relay-yard.ts` |
-| [`HOBO_CI_DEPLOY_SOURCE_UNPINNED`](#hobo_ci_deploy_source_unpinned) | `packages/hobo/src/ci-relay-delivery.ts` |
+| [`HOBO_CI_DEPLOY_SOURCE_UNPINNED`](#hobo_ci_deploy_source_unpinned) | `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts` |
+| [`HOBO_CI_DEPLOY_STAGED_NOT_READY`](#hobo_ci_deploy_staged_not_ready) | `packages/hobo/src/vercel-prebuilt.ts` |
+| [`HOBO_CI_DEPLOY_STAGE_FAILED`](#hobo_ci_deploy_stage_failed) | `packages/hobo/src/vercel-prebuilt.ts` |
 | [`HOBO_CI_DEPLOY_VERCEL_REFUSED`](#hobo_ci_deploy_vercel_refused) | `packages/hobo/src/ci-relay-deploy.ts` |
 | [`HOBO_CI_DEPLOY_VERIFICATION_FAILED`](#hobo_ci_deploy_verification_failed) | `packages/hobo/src/ci-relay-delivery.ts` |
 | [`HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET`](#hobo_ci_deploy_verify_origin_unset) | `packages/hobo/src/ci-relay-deploy.ts` |
@@ -639,6 +647,35 @@ Message:
 
 What to do: follow the message.
 
+### HOBO_CI_DEPLOY_BUILD_FAILED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Message:
+
+```text
+vercel {…} failed (exit {result.code}) trying to {what}:
+{…}
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_CHECKOUT_MISMATCH
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/vercel-prebuilt.ts`.
+
+Messages:
+
+```text
+{input.cwd} is not inside a git checkout: --build prebuilt builds the checkout of the Freight's commit.
+```
+
+```text
+The checkout at {input.cwd} is at {…}, not the Freight's commit {input.sha}: HoBo builds only the commit the Freight pins. Check out {input.sha} and run again.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_COMMIT_MISMATCH
 
 Returned from `packages/hobo/src/ci-relay-verify.ts`.
@@ -767,6 +804,22 @@ What to do:
 
 - Read the deployment's build log on Vercel, fix it, and deploy again.
 
+### HOBO_CI_DEPLOY_NOT_STAGED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Messages:
+
+```text
+Project {input.project} has no build staged for Freight {input.freightId}: production promotes only the build its staging node uploaded and verified. Run hobo ci deploy --target preview --build prebuilt for {input.sha} first.
+```
+
+```text
+The build staged for Freight {input.freightId} ({staged.id}) names commit {…}, not {input.sha}: it is not promoted.
+```
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_NO_ANSWER
 
 Returned from `packages/hobo/src/ci-relay-deploy.ts`.
@@ -817,6 +870,18 @@ Message:
 Dry run: nothing was sent to Vercel, and no deploy token was read.
 {…}
 {…}
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_PROMOTE_FAILED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Message:
+
+```text
+Vercel refused to promote {staged.id}: {…}
 ```
 
 What to do: follow the message.
@@ -886,6 +951,22 @@ What to do:
 - The production domain is behind protection: under Standard Deployment Protection it is public, so the origin named is not this project's production domain, or the project protects all deployments. Name the production domain, or set the project's protection to Standard.
 - The production domain does not serve the relay; check the project's domains on Vercel.
 
+### HOBO_CI_DEPLOY_ROLLBACK_FAILED
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_ROLLED_BACK
+
+Returned from `packages/hobo/src/ci-relay-deploy.ts`.
+
+Message: composed when the command runs.
+
+What to do: follow the message.
+
 ### HOBO_CI_DEPLOY_SETTING_REFUSED
 
 Returned from `packages/hobo/src/ci-relay-deploy.ts`, `packages/hobo/src/ci-relay-yard.ts`.
@@ -912,12 +993,49 @@ What to do: follow the message.
 
 ### HOBO_CI_DEPLOY_SOURCE_UNPINNED
 
-Returned from `packages/hobo/src/ci-relay-delivery.ts`.
+Returned from `packages/hobo/src/ci-relay-delivery.ts`, `packages/hobo/src/ci-relay-deploy.ts`.
+
+Messages:
+
+```text
+Freight {at.desired.freightId} pins no relay source commit
+```
+
+```text
+Freight {freightId} pins no commit: a prebuilt delivery builds only a pinned commit.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_STAGED_NOT_READY
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
 
 Message:
 
 ```text
-Freight {at.desired.freightId} pins no relay source commit
+The build staged for Freight {input.freightId} ({staged.id}) is {…}, not READY: only a ready build is promoted.
+```
+
+What to do: follow the message.
+
+### HOBO_CI_DEPLOY_STAGE_FAILED
+
+Returned from `packages/hobo/src/vercel-prebuilt.ts`.
+
+Messages:
+
+```text
+Freight id {input.freightId} cannot be carried as Vercel deployment meta.
+```
+
+```text
+vercel {…} failed (exit {result.code}) trying to {what}:
+{…}
+```
+
+```text
+vercel deploy reported success, but project {input.project} lists no production build with {VERCEL_PREBUILT_META.freight}={input.freightId}.
 ```
 
 What to do: follow the message.
