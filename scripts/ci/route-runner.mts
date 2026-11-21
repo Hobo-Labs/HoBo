@@ -1415,7 +1415,7 @@ export async function main(
 				runner: githubLabel,
 				reason: `merge-group Fabric hosted probe unreadable (${detail})`,
 				refusedBy: "queue",
-				mergeGroupHostedProbe: { idle: true, summary: `unreadable: ${detail}` },
+				mergeGroupHostedProbe: { idle: false, summary: `unreadable: ${detail}` },
 			};
 		}
 		return report(

@@ -1510,7 +1510,7 @@ describe("the script reading the slip", () => {
 		);
 		assert.equal(decision.tier, "github");
 		assert.equal(decision.runner, "ubuntu-24.04");
-		assert.equal(decision.mergeGroupHostedProbe?.idle, true);
+		assert.equal(decision.mergeGroupHostedProbe?.idle, false);
 		assert.match(decision.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
 		assert.ok(
 			warningsIn(lines).some((line) =>
@@ -1694,7 +1694,7 @@ describe("the script reading the slip", () => {
 			reason: "fleet-open",
 		};
 		await withGithub(
-			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
 				const { decision } = await route(
 					apiUrl,
@@ -1702,6 +1702,8 @@ describe("the script reading the slip", () => {
 					mergeGroupCi,
 				);
 				assert.notEqual(decision.runner, "hobo");
+				assert.equal(decision.tier, "fleet");
+				assert.equal(decision.runner, "hobo-trunk");
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",
