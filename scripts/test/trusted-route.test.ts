@@ -146,7 +146,7 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
-	it("routes from the base action's code and policy and refuses missing base files", () => {
+	it("routes from the base action's code and handles missing base files by route kind", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-trusted-batch-"));
 		try {
 			const action = workflowDocument(
