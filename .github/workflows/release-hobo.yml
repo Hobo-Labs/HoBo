@@ -1253,7 +1253,7 @@ jobs:
       needs.release-pages-gate.outputs.deploy == 'true' &&
       needs.release-hobo-cli.result == 'success'
     needs: [route, release-pages-gate, release-hobo-cli]
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     # One publish at a time. Two runs for different commits used to be free to
     # push gh-pages in either order.

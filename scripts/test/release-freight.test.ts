@@ -466,10 +466,15 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		for (const name of ["release-oci-build-tag", "release-pages"] as const) {
 			const block = job(name);
 			expect(block).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
-			expect(block).toMatch(
-				/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
-			);
 		}
+		const oci = job("release-oci-build-tag");
+		expect(oci).toMatch(
+			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
+		);
+		const pages = job("release-pages");
+		expect(pages).toMatch(
+			/contains\(fromJSON\('\["push","workflow_dispatch","merge_group","workflow_run"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo'/u,
+		);
 	});
 
 	it("publishes Pages only through the realizer: no gh-pages push action", () => {
