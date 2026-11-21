@@ -23,7 +23,6 @@ export const CONNECTOR_KINDS = [
 	"azure",
 	"vercel",
 	"cloudflare",
-	"agent37",
 	"custom",
 ] as const;
 export type ConnectorKind = (typeof CONNECTOR_KINDS)[number];

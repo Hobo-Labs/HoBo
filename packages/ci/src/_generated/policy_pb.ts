@@ -11,7 +11,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file policy.proto.
  */
 export const file_policy: GenFile = /*@__PURE__*/
-  fileDesc("Cgxwb2xpY3kucHJvdG8SCmhvYm8uY2kudjEiZwoaQ2lQb2xpY3lLdWJlcm5ldGVzU2NhbGVTZXQSDAoEbmFtZRgBIAEoCRITCgttaW5fcnVubmVycxgCIAEoDRITCgttYXhfcnVubmVycxgDIAEoDRIRCgluYW1lc3BhY2UYBCABKAkiJAoUQ2lQb2xpY3lEYWdnZXJFbmdpbmUSDAoEbmFtZRgBIAEoCSJAChNDaVBvbGljeUFnZW50MzdTaXplEgsKA2NwdRgBIAEoDRIOCgZtZW1vcnkYAiABKA0SDAoEZGlzaxgDIAEoDSInChZDaVBvbGljeUFnZW50MzdOZXR3b3JrEg0KBWFsbG93GAEgAygJIlsKFUNpUG9saWN5QWdlbnQzN0J1ZGdldBIUCgxsaW1pdF9taWNyb3MYASABKAESDgoGcGVyaW9kGAIgASgJEhwKFG1heF9jcmVhdGVzX3Blcl9ob3VyGAMgASgNIugCChNDaVBvbGljeUFnZW50MzdQb29sEhEKCW1pbl9ib3hlcxgBIAEoDRIRCgltYXhfYm94ZXMYAiABKA0SDAoEdHlwZRgDIAEoCRItCgRzaXplGAQgASgLMh8uaG9iby5jaS52MS5DaVBvbGljeUFnZW50MzdTaXplEg4KBnJlZ2lvbhgFIAEoCRIQCgh0ZW1wbGF0ZRgGIAEoCRIYChBpZGxlX3R0bF9zZWNvbmRzGAcgASgNEhsKE2pvYl90aW1lb3V0X3NlY29uZHMYCCABKA0SDgoGbGFiZWxzGAkgAygJEjMKB25ldHdvcmsYCiABKAsyIi5ob2JvLmNpLnYxLkNpUG9saWN5QWdlbnQzN05ldHdvcmsSMQoGYnVkZ2V0GAsgASgLMiEuaG9iby5jaS52MS5DaVBvbGljeUFnZW50MzdCdWRnZXQSHQoVYWxsb3dfYWJvdmVfZnJlZV90aWVyGAwgASgIIqYCChBDaVBvbGljeVByb3ZpZGVyEgoKAmlkGAEgASgJEgwKBGtpbmQYAiABKAkSFgoOY29ubmVjdGlvbl9yZWYYAyABKAkSDwoHcnVuc19vbhgEIAEoCRIPCgdlbmFibGVkGAUgASgIEjsKCXNjYWxlX3NldBgGIAEoCzImLmhvYm8uY2kudjEuQ2lQb2xpY3lLdWJlcm5ldGVzU2NhbGVTZXRIABIyCgZlbmdpbmUYByABKAsyIC5ob2JvLmNpLnYxLkNpUG9saWN5RGFnZ2VyRW5naW5lSAASLwoEcG9vbBgJIAEoCzIfLmhvYm8uY2kudjEuQ2lQb2xpY3lBZ2VudDM3UG9vbEgAEhAKCGxvY2F0aW9uGAggASgJQgoKCGNhcGFjaXR5Ij8KDENpUG9saWN5UG9vbBINCgVsYWJlbBgBIAEoCRIKCgJvcxgCIAEoCRIUCgxhcmNoaXRlY3R1cmUYAyABKAkiagoOQ2lQb2xpY3lCdWRnZXQSDQoFc2NvcGUYASABKAkSEAoIY3VycmVuY3kYAiABKAkSFAoMbGltaXRfbWljcm9zGAMgASgBEg4KBnBlcmlvZBgEIAEoCRIRCgl0aW1lX3pvbmUYBSABKAkiNAoRQ2lQb2xpY3lUaHJlc2hvbGQSEAoIZnJhY3Rpb24YASABKAESDQoFYWxsb3cYAiADKAkiXQoPQ2lQb2xpY3lSb3V0aW5nEhAKCHN0cmF0ZWd5GAEgASgJEhwKFG5vX2VsaWdpYmxlX3Byb3ZpZGVyGAIgASgJEhoKEnVua25vd25fYWxsb2NhdGlvbhgDIAEoCSLOAgoPRGVzaXJlZENpUG9saWN5EhIKCmFjY291bnRfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEiYKBHBvb2wYAyABKAsyGC5ob2JvLmNpLnYxLkNpUG9saWN5UG9vbBIvCglwcm92aWRlcnMYBCADKAsyHC5ob2JvLmNpLnYxLkNpUG9saWN5UHJvdmlkZXISKgoGYnVkZ2V0GAUgASgLMhouaG9iby5jaS52MS5DaVBvbGljeUJ1ZGdldBIsCgdyb3V0aW5nGAYgASgLMhsuaG9iby5jaS52MS5DaVBvbGljeVJvdXRpbmcSMQoKdGhyZXNob2xkcxgHIAMoCzIdLmhvYm8uY2kudjEuQ2lQb2xpY3lUaHJlc2hvbGQSLgoNYnVkZ2V0X3BvbGljeRgIIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RiBnByb3RvMw", [file_google_protobuf_struct]);
+  fileDesc("Cgxwb2xpY3kucHJvdG8SCmhvYm8uY2kudjEiZwoaQ2lQb2xpY3lLdWJlcm5ldGVzU2NhbGVTZXQSDAoEbmFtZRgBIAEoCRITCgttaW5fcnVubmVycxgCIAEoDRITCgttYXhfcnVubmVycxgDIAEoDRIRCgluYW1lc3BhY2UYBCABKAkiJAoUQ2lQb2xpY3lEYWdnZXJFbmdpbmUSDAoEbmFtZRgBIAEoCSL1AQoQQ2lQb2xpY3lQcm92aWRlchIKCgJpZBgBIAEoCRIMCgRraW5kGAIgASgJEhYKDmNvbm5lY3Rpb25fcmVmGAMgASgJEg8KB3J1bnNfb24YBCABKAkSDwoHZW5hYmxlZBgFIAEoCBI7CglzY2FsZV9zZXQYBiABKAsyJi5ob2JvLmNpLnYxLkNpUG9saWN5S3ViZXJuZXRlc1NjYWxlU2V0SAASMgoGZW5naW5lGAcgASgLMiAuaG9iby5jaS52MS5DaVBvbGljeURhZ2dlckVuZ2luZUgAEhAKCGxvY2F0aW9uGAggASgJQgoKCGNhcGFjaXR5Ij8KDENpUG9saWN5UG9vbBINCgVsYWJlbBgBIAEoCRIKCgJvcxgCIAEoCRIUCgxhcmNoaXRlY3R1cmUYAyABKAkiagoOQ2lQb2xpY3lCdWRnZXQSDQoFc2NvcGUYASABKAkSEAoIY3VycmVuY3kYAiABKAkSFAoMbGltaXRfbWljcm9zGAMgASgBEg4KBnBlcmlvZBgEIAEoCRIRCgl0aW1lX3pvbmUYBSABKAkiNAoRQ2lQb2xpY3lUaHJlc2hvbGQSEAoIZnJhY3Rpb24YASABKAESDQoFYWxsb3cYAiADKAkiXQoPQ2lQb2xpY3lSb3V0aW5nEhAKCHN0cmF0ZWd5GAEgASgJEhwKFG5vX2VsaWdpYmxlX3Byb3ZpZGVyGAIgASgJEhoKEnVua25vd25fYWxsb2NhdGlvbhgDIAEoCSLOAgoPRGVzaXJlZENpUG9saWN5EhIKCmFjY291bnRfaWQYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEiYKBHBvb2wYAyABKAsyGC5ob2JvLmNpLnYxLkNpUG9saWN5UG9vbBIvCglwcm92aWRlcnMYBCADKAsyHC5ob2JvLmNpLnYxLkNpUG9saWN5UHJvdmlkZXISKgoGYnVkZ2V0GAUgASgLMhouaG9iby5jaS52MS5DaVBvbGljeUJ1ZGdldBIsCgdyb3V0aW5nGAYgASgLMhsuaG9iby5jaS52MS5DaVBvbGljeVJvdXRpbmcSMQoKdGhyZXNob2xkcxgHIAMoCzIdLmhvYm8uY2kudjEuQ2lQb2xpY3lUaHJlc2hvbGQSLgoNYnVkZ2V0X3BvbGljeRgIIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3RiBnByb3RvMw", [file_google_protobuf_struct]);
 
 /**
  * Kubernetes only: an ARC AutoscalingRunnerSet that HoBo thinly reconciles.
@@ -68,149 +68,6 @@ export const CiPolicyDaggerEngineSchema: GenMessage<CiPolicyDaggerEngine> = /*@_
   messageDesc(file_policy, 1);
 
 /**
- * @generated from message hobo.ci.v1.CiPolicyAgent37Size
- */
-export type CiPolicyAgent37Size = Message<"hobo.ci.v1.CiPolicyAgent37Size"> & {
-  /**
-   * @generated from field: uint32 cpu = 1;
-   */
-  cpu: number;
-
-  /**
-   * @generated from field: uint32 memory = 2;
-   */
-  memory: number;
-
-  /**
-   * @generated from field: uint32 disk = 3;
-   */
-  disk: number;
-};
-
-/**
- * Describes the message hobo.ci.v1.CiPolicyAgent37Size.
- * Use `create(CiPolicyAgent37SizeSchema)` to create a new message.
- */
-export const CiPolicyAgent37SizeSchema: GenMessage<CiPolicyAgent37Size> = /*@__PURE__*/
-  messageDesc(file_policy, 2);
-
-/**
- * @generated from message hobo.ci.v1.CiPolicyAgent37Network
- */
-export type CiPolicyAgent37Network = Message<"hobo.ci.v1.CiPolicyAgent37Network"> & {
-  /**
-   * @generated from field: repeated string allow = 1;
-   */
-  allow: string[];
-};
-
-/**
- * Describes the message hobo.ci.v1.CiPolicyAgent37Network.
- * Use `create(CiPolicyAgent37NetworkSchema)` to create a new message.
- */
-export const CiPolicyAgent37NetworkSchema: GenMessage<CiPolicyAgent37Network> = /*@__PURE__*/
-  messageDesc(file_policy, 3);
-
-/**
- * @generated from message hobo.ci.v1.CiPolicyAgent37Budget
- */
-export type CiPolicyAgent37Budget = Message<"hobo.ci.v1.CiPolicyAgent37Budget"> & {
-  /**
-   * @generated from field: double limit_micros = 1;
-   */
-  limitMicros: number;
-
-  /**
-   * @generated from field: string period = 2;
-   */
-  period: string;
-
-  /**
-   * @generated from field: uint32 max_creates_per_hour = 3;
-   */
-  maxCreatesPerHour: number;
-};
-
-/**
- * Describes the message hobo.ci.v1.CiPolicyAgent37Budget.
- * Use `create(CiPolicyAgent37BudgetSchema)` to create a new message.
- */
-export const CiPolicyAgent37BudgetSchema: GenMessage<CiPolicyAgent37Budget> = /*@__PURE__*/
-  messageDesc(file_policy, 4);
-
-/**
- * @generated from message hobo.ci.v1.CiPolicyAgent37Pool
- */
-export type CiPolicyAgent37Pool = Message<"hobo.ci.v1.CiPolicyAgent37Pool"> & {
-  /**
-   * @generated from field: uint32 min_boxes = 1;
-   */
-  minBoxes: number;
-
-  /**
-   * @generated from field: uint32 max_boxes = 2;
-   */
-  maxBoxes: number;
-
-  /**
-   * @generated from field: string type = 3;
-   */
-  type: string;
-
-  /**
-   * @generated from field: hobo.ci.v1.CiPolicyAgent37Size size = 4;
-   */
-  size?: CiPolicyAgent37Size | undefined;
-
-  /**
-   * @generated from field: string region = 5;
-   */
-  region: string;
-
-  /**
-   * @generated from field: string template = 6;
-   */
-  template: string;
-
-  /**
-   * @generated from field: uint32 idle_ttl_seconds = 7;
-   */
-  idleTtlSeconds: number;
-
-  /**
-   * @generated from field: uint32 job_timeout_seconds = 8;
-   */
-  jobTimeoutSeconds: number;
-
-  /**
-   * @generated from field: repeated string labels = 9;
-   */
-  labels: string[];
-
-  /**
-   * @generated from field: hobo.ci.v1.CiPolicyAgent37Network network = 10;
-   */
-  network?: CiPolicyAgent37Network | undefined;
-
-  /**
-   * @generated from field: hobo.ci.v1.CiPolicyAgent37Budget budget = 11;
-   */
-  budget?: CiPolicyAgent37Budget | undefined;
-
-  /**
-   * @generated from field: bool allow_above_free_tier = 12;
-   */
-  allowAboveFreeTier: boolean;
-};
-
-/**
- * Describes the message hobo.ci.v1.CiPolicyAgent37Pool.
- * Use `create(CiPolicyAgent37PoolSchema)` to create a new message.
- */
-export const CiPolicyAgent37PoolSchema: GenMessage<CiPolicyAgent37Pool> = /*@__PURE__*/
-  messageDesc(file_policy, 5);
-
-/**
  * Authored intent only. Financial observations and leases live in separate records.
  *
  * @generated from message hobo.ci.v1.CiPolicyProvider
@@ -256,12 +113,6 @@ export type CiPolicyProvider = Message<"hobo.ci.v1.CiPolicyProvider"> & {
      */
     value: CiPolicyDaggerEngine;
     case: "engine";
-  } | {
-    /**
-     * @generated from field: hobo.ci.v1.CiPolicyAgent37Pool pool = 9;
-     */
-    value: CiPolicyAgent37Pool;
-    case: "pool";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -277,7 +128,7 @@ export type CiPolicyProvider = Message<"hobo.ci.v1.CiPolicyProvider"> & {
  * Use `create(CiPolicyProviderSchema)` to create a new message.
  */
 export const CiPolicyProviderSchema: GenMessage<CiPolicyProvider> = /*@__PURE__*/
-  messageDesc(file_policy, 6);
+  messageDesc(file_policy, 2);
 
 /**
  * @generated from message hobo.ci.v1.CiPolicyPool
@@ -304,7 +155,7 @@ export type CiPolicyPool = Message<"hobo.ci.v1.CiPolicyPool"> & {
  * Use `create(CiPolicyPoolSchema)` to create a new message.
  */
 export const CiPolicyPoolSchema: GenMessage<CiPolicyPool> = /*@__PURE__*/
-  messageDesc(file_policy, 7);
+  messageDesc(file_policy, 3);
 
 /**
  * @generated from message hobo.ci.v1.CiPolicyBudget
@@ -341,7 +192,7 @@ export type CiPolicyBudget = Message<"hobo.ci.v1.CiPolicyBudget"> & {
  * Use `create(CiPolicyBudgetSchema)` to create a new message.
  */
 export const CiPolicyBudgetSchema: GenMessage<CiPolicyBudget> = /*@__PURE__*/
-  messageDesc(file_policy, 8);
+  messageDesc(file_policy, 4);
 
 /**
  * @generated from message hobo.ci.v1.CiPolicyThreshold
@@ -363,7 +214,7 @@ export type CiPolicyThreshold = Message<"hobo.ci.v1.CiPolicyThreshold"> & {
  * Use `create(CiPolicyThresholdSchema)` to create a new message.
  */
 export const CiPolicyThresholdSchema: GenMessage<CiPolicyThreshold> = /*@__PURE__*/
-  messageDesc(file_policy, 9);
+  messageDesc(file_policy, 5);
 
 /**
  * @generated from message hobo.ci.v1.CiPolicyRouting
@@ -390,7 +241,7 @@ export type CiPolicyRouting = Message<"hobo.ci.v1.CiPolicyRouting"> & {
  * Use `create(CiPolicyRoutingSchema)` to create a new message.
  */
 export const CiPolicyRoutingSchema: GenMessage<CiPolicyRouting> = /*@__PURE__*/
-  messageDesc(file_policy, 10);
+  messageDesc(file_policy, 6);
 
 /**
  * @generated from message hobo.ci.v1.DesiredCiPolicy
@@ -444,5 +295,5 @@ export type DesiredCiPolicy = Message<"hobo.ci.v1.DesiredCiPolicy"> & {
  * Use `create(DesiredCiPolicySchema)` to create a new message.
  */
 export const DesiredCiPolicySchema: GenMessage<DesiredCiPolicy> = /*@__PURE__*/
-  messageDesc(file_policy, 11);
+  messageDesc(file_policy, 7);
 

@@ -1,7 +1,5 @@
 package ci
 
-import "list"
-
 #SandboxAllowance: {
  cpuVcpuMs: int & >=0
  memoryMbMs: int & >=0
@@ -46,7 +44,7 @@ import "list"
 }
 #Offer: {
  id: string & !=""
- provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops" | "agent37"
+ provider: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "dagger" | "cloudflare" | "vercel" | "azure-devops"
  providerAccountId: string & !=""
  enabled: bool
  runsOn: string & !=""
@@ -61,7 +59,6 @@ import "list"
  bridgeAcknowledged: bool
  backend?: "" | "gh-actions" | "dagger" | "cf" | "sandbox" | "ado" | "isolated-container"
  if provider == "azure-devops" {backend: "ado"}
- if provider == "agent37" {backend: "gh-actions"}
  if backend != _|_ {
   if backend == "ado" {provider: "azure-devops"}
   if backend == "sandbox" {provider: "vercel"}
@@ -283,43 +280,19 @@ import "list"
 // Desired policy does not contain runtime-owned balances, observations or leases.
 #CiPolicyProvider: {
  id: string & =~"^[A-Za-z0-9_-]{1,80}$"
- kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare" | "agent37"
+ kind: "github" | "blacksmith" | "depot" | "warpbuild" | "kubernetes" | "hobo-box-worker" | "local" | "vercel" | "azure-devops" | "dagger" | "cloudflare"
  connectionRef: string & !=""
  runsOn: string & =~"^[A-Za-z0-9_.-]{1,100}$"
  enabled?: bool
  scaleSet?: #CiPolicyKubernetesScaleSet
  engine?: #CiPolicyDaggerEngine
- pool?: #CiPolicyAgent37Pool
  location?: "vercel" | "local" | "remote"
  if kind == "local" {runsOn: "hobo-local-host"}
  // Mirror packages/ci/src/fleet-overflow.ts isGithubLatestLabel — never ubuntu-latest for github.
  if kind == "github" {runsOn: != "ubuntu-latest"}
- if scaleSet != _|_ {kind: "kubernetes", engine?: _|_, pool?: _|_}
- if engine != _|_ {kind: "kubernetes", pool?: _|_}
- if pool != _|_ {kind: "agent37"}
+ if scaleSet != _|_ {kind: "kubernetes", engine?: _|_}
+ if engine != _|_ {kind: "kubernetes"}
  if kind != "vercel" {location?: _|_}
-}
-#CiPolicyAgent37Size: {
- disk: int & >=1 & <=1024
-} & ({cpu: 2, memory: 4} | {cpu: 4, memory: 8} | {cpu: 4, memory: 16} | {cpu: 4, memory: 32} | {cpu: 8, memory: 64})
-#CiPolicyAgent37Network: {allow: [...(string & =~"^(\\*\\.)?[A-Za-z0-9][A-Za-z0-9_.:-]{0,251}$")] & list.MaxItems(100)}
-#CiPolicyAgent37Budget: {limitMicros: int & >=0 & <=9007199254740991, period: "month", maxCreatesPerHour: int & >=1 & <=10000}
-#CiPolicyAgent37Pool: {
- minBoxes: int & >=0 & <=1000
- maxBoxes: int & >=minBoxes & <=1000
- type: "default" | "vm" | "performance"
- size: #CiPolicyAgent37Size
- region: "us" | "eu" | "ap-south"
- template: string & =~"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(@[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$"
- idleTtlSeconds: int & >=60 & <=3600
- jobTimeoutSeconds: int & >=1 & <=19800
- labels: [...(string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"(?i)^hobo$")] & list.MinItems(1) & list.MaxItems(16) & list.UniqueItems()
- network: #CiPolicyAgent37Network
- budget: #CiPolicyAgent37Budget
- allowAboveFreeTier?: bool
- if region != "us" {type: "vm" | "performance"}
- if type == "default" {region: "us", size: {cpu: 2 | 4}}
- if (maxBoxes * size.memory) > 32 {allowAboveFreeTier: true}
 }
 #CiPolicyKubernetesScaleSet: {
  name: string & =~"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
