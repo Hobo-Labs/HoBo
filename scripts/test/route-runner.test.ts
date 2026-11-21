@@ -2581,7 +2581,7 @@ describe("the workflows that route", () => {
 		);
 		assert.match(
 			ci,
-			/route: \$\{\{ github\.event_name == 'merge_group' && 'fleet' \|\| \(inputs\.route \|\| 'auto'\) \}\}/,
+			/route: \$\{\{ github\.event_name == 'merge_group' && \(needs\.mq-route-surface\.outputs\.surface == 'trunk' && 'fleet' \|\| 'auto'\) \|\| \(inputs\.route \|\| 'auto'\) \}\}/,
 		);
 		assert.ok(
 			ci.split("inputs.route || 'auto'").length >= 3,
