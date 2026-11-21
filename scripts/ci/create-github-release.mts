@@ -554,7 +554,6 @@ export function releaseReportPath(home: string, family: ReleaseFamily): string {
 	return join(home, `release-freight-${family}.json`);
 }
 
-/** One recorded channel verdict, as a promote left it (deploy-site reads the stable block). */
 export function releaseChannelVerdict(
 	home: string,
 	family: ReleaseFamily,
@@ -696,7 +695,6 @@ function logReleasePages(message: string): void {
 export const RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT = 20 * 60_000;
 export const RELEASE_PROMOTION_TIMEOUT = "release-promotion-timeout";
 
-/** One Pages release wall: a deadline taken when qualification starts. */
 export type ReleasePagesWall = Readonly<{ readonly deadlineAt: number }>;
 
 export function releasePagesWallBudgetMs(
@@ -718,7 +716,6 @@ export function startReleasePagesWall(
 	return { deadlineAt: now() + releasePagesWallBudgetMs(env) };
 }
 
-/** A Pages record/promote/drive call that outlived the wall budget. */
 export class ReleasePromotionWallError extends Error {
 	override readonly name = "ReleasePromotionWallError";
 	readonly phase: string;
@@ -730,12 +727,6 @@ export class ReleasePromotionWallError extends Error {
 	}
 }
 
-/**
- * Race one record, promote or drive call against the wall's remaining budget:
- * past the deadline it rejects with `ReleasePromotionWallError` (verdict code
- * `release-promotion-timeout`) instead of hanging into the workflow's step
- * timeout. Without a wall the call runs as it would have.
- */
 export async function awaitReleasePagesWall<T>(
 	phase: string,
 	work: () => Promise<T>,
@@ -769,13 +760,6 @@ export async function awaitReleasePagesWall<T>(
 	});
 }
 
-/**
- * Promote recorded release Freight into one channel's Camp through `hobo
- * deploy promote` on the family's pipeline (`@hobo/cd` enforces candidate ->
- * stable lineage), then drive it until it qualifies, the realizer refuses, or
- * the passes run out (blocked: never read as qualified). A Pages wall turns
- * an overrun into `release-promotion-timeout` instead of a silent hang.
- */
 export async function promoteReleaseFreight(
 	cd: ReleaseCd,
 	input: {
@@ -942,10 +926,6 @@ export async function qualifyReleaseCandidate(input: {
 	}
 }
 
-/**
- * Promote every family recorded under `home` to its stable Camp; false when
- * any is blocked. `promoteWall` applies to the Pages family only.
- */
 export async function promoteReleaseStable(
 	home: string,
 	env: Readonly<Record<string, string | undefined>> = process.env,
