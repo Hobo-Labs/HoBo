@@ -30,6 +30,7 @@ export {
 	parseSecretStoreBinding,
 	RELAY_DEPLOY_CREDENTIAL_SECRET_PATH,
 	RELAY_SECRET_PATH,
+	type RepairSecretStoreBinding,
 	readSecretStoreBinding,
 	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,

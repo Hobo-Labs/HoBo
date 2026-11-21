@@ -1,14 +1,20 @@
+import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
+	formatSecretStoreBinding,
+	parseSecretStoreBinding,
 	RELAY_DEPLOY_CREDENTIAL_SECRET_PATH,
 	RELAY_SECRET_PATH,
 	readSecretStoreBinding,
 	readSecretStoreBindingForRepair,
+	SecretStoreBindingSchema,
 	secretStoreDeployCredentialProjectId,
 	secretStoreDeployCredentialSecretPath,
 } from "../src/index.js";
 
-function bindingJson(fields: Readonly<Record<string, string>> = {}): string {
+function bindingJson(
+	fields: Readonly<Record<string, string | undefined>> = {},
+): string {
 	return JSON.stringify({
 		kind: "infisical-cloud-attach",
 		endpoint: "https://app.infisical.com",
@@ -23,6 +29,13 @@ function bindingJson(fields: Readonly<Record<string, string>> = {}): string {
 		deployOidcSubject:
 			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
 		...fields,
+	});
+}
+
+function legacyBindingJson(): string {
+	return bindingJson({
+		deployCredentialIdentityId: undefined,
+		deployOidcSubject: undefined,
 	});
 }
 
@@ -43,25 +56,34 @@ describe("deploy credential identity", () => {
 		).toThrow("does not meet its constraints");
 	});
 
-	it("fails closed on a binding recorded before the deploy credential identity existed, and only the repair read accepts it", () => {
-		const legacy = JSON.stringify({
-			kind: "infisical-cloud-attach",
-			endpoint: "https://app.infisical.com",
-			projectId: "relay-project",
-			environment: "prod",
-			secretPath: "/hobo-ci-relay",
-			relayIdentityId: "relay-identity",
-			deployIdentityId: "writer-identity",
-			claimBundleId: "secret-store.ci-vercel.attach-1",
-			claimState: "claimed",
-		});
+	it("fails closed on a binding recorded before the deploy credential identity existed; only the unmarked repair read accepts it", () => {
+		const legacy = legacyBindingJson();
 		expect(() => readSecretStoreBinding(legacy)).toThrow(
 			"does not meet its constraints",
 		);
-		expect(readSecretStoreBindingForRepair(legacy).claimState).toBe("claimed");
-		expect(
-			readSecretStoreBindingForRepair(legacy).deployCredentialIdentityId,
-		).toBe("");
+		const repaired = readSecretStoreBindingForRepair(legacy);
+		expect(repaired.claimState).toBe("claimed");
+		expect(repaired.deployCredentialIdentityId).toBe("");
+		expect("strictParse" in repaired).toBe(false);
+		expect(readSecretStoreBinding(bindingJson()).strictParse).toBe(true);
+	});
+
+	it("re-serializes a repaired binding through the strict read once the reader id and subject are recorded", () => {
+		const repaired = readSecretStoreBindingForRepair(legacyBindingJson());
+		const rewritten = formatSecretStoreBinding(
+			parseSecretStoreBinding(
+				create(SecretStoreBindingSchema, {
+					...repaired,
+					deployCredentialIdentityId: "reader-identity",
+					deployOidcSubject:
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+				}),
+			),
+		);
+		expect(rewritten).toContain("reader-identity");
+		expect(readSecretStoreBinding(rewritten).deployCredentialIdentityId).toBe(
+			"reader-identity",
+		);
 	});
 
 	it("fails closed on the writer reused as reader even for repair", () => {

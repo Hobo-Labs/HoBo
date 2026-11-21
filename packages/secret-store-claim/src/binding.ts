@@ -27,7 +27,12 @@ export type ParsedSecretStoreBinding = Readonly<
 	Omit<SecretStoreBinding, "kind" | "claimState" | "$typeName" | "$unknown"> & {
 		kind: SecretStoreKind;
 		claimState: "pending" | "claimed";
+		readonly strictParse: true;
 	}
+>;
+
+export type RepairSecretStoreBinding = Readonly<
+	Omit<ParsedSecretStoreBinding, "strictParse">
 >;
 
 const ENDPOINT = /^https:\/\/[A-Za-z0-9.-]+(:\d{1,5})?(\/[A-Za-z0-9._~/-]*)?$/u;
@@ -56,27 +61,22 @@ export function secretStoreDeployCredentialSecretPath(
 		: RELAY_DEPLOY_CREDENTIAL_SECRET_PATH;
 }
 
-export function parseSecretStoreBinding(
+function claimStateOf(
 	record: SecretStoreBinding,
-	options: {
-		readonly allowLoopback?: boolean;
-		readonly forRepair?: boolean;
-	} = {},
-): ParsedSecretStoreBinding {
-	const kind = parseSecretStoreKind(record.kind);
-	const claimState =
-		record.claimState === "pending" || record.claimState === "claimed"
-			? record.claimState
-			: undefined;
-	const legacy = options.forRepair === true;
+): "pending" | "claimed" | undefined {
+	return record.claimState === "pending" || record.claimState === "claimed"
+		? record.claimState
+		: undefined;
+}
+
+function bindingMeetsConstraints(
+	record: SecretStoreBinding,
+	claimState: "pending" | "claimed",
+	options: { readonly allowLoopback?: boolean },
+	legacy: boolean,
+): boolean {
 	const deployCredentialIdentityId = record.deployCredentialIdentityId ?? "";
-	const deployCredentialIdentityOk =
-		(ID.test(deployCredentialIdentityId) &&
-			deployCredentialIdentityId !== record.relayIdentityId &&
-			deployCredentialIdentityId !== record.deployIdentityId) ||
-		(legacy && deployCredentialIdentityId === "");
-	const ok =
-		claimState !== undefined &&
+	return (
 		(ENDPOINT.test(record.endpoint) ||
 			(options.allowLoopback === true && LOOPBACK.test(record.endpoint))) &&
 		ID.test(record.projectId) &&
@@ -88,18 +88,24 @@ export function parseSecretStoreBinding(
 		ID.test(record.relayIdentityId) &&
 		ID.test(record.deployIdentityId) &&
 		record.relayIdentityId !== record.deployIdentityId &&
-		deployCredentialIdentityOk &&
+		((ID.test(deployCredentialIdentityId) &&
+			deployCredentialIdentityId !== record.relayIdentityId &&
+			deployCredentialIdentityId !== record.deployIdentityId) ||
+			(legacy && deployCredentialIdentityId === "")) &&
 		(record.vercelTeamId === "" ||
 			/^team_[A-Za-z0-9]{1,64}$/u.test(record.vercelTeamId)) &&
 		/^[a-z0-9][a-z0-9:._-]{0,127}$/u.test(record.claimBundleId) &&
 		(record.deployOidcSubject === "" ||
 			DEPLOY_SUBJECT.test(record.deployOidcSubject)) &&
-		(claimState !== "claimed" || record.deployOidcSubject !== "" || legacy);
-	if (!ok || claimState === undefined)
-		return secretStoreError(
-			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project other than the relay's when set, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
-		);
+		(claimState !== "claimed" || record.deployOidcSubject !== "" || legacy)
+	);
+}
+
+function bindingFields(
+	record: SecretStoreBinding,
+	kind: SecretStoreKind,
+	claimState: "pending" | "claimed",
+): RepairSecretStoreBinding {
 	return Object.freeze({
 		kind,
 		endpoint: record.endpoint,
@@ -109,12 +115,33 @@ export function parseSecretStoreBinding(
 		secretPath: record.secretPath,
 		relayIdentityId: record.relayIdentityId,
 		deployIdentityId: record.deployIdentityId,
-		deployCredentialIdentityId,
+		deployCredentialIdentityId: record.deployCredentialIdentityId ?? "",
 		vercelTeamId: record.vercelTeamId,
 		claimBundleId: record.claimBundleId,
 		claimState,
 		deployOidcSubject: record.deployOidcSubject,
 	});
+}
+
+export function parseSecretStoreBinding(
+	record: SecretStoreBinding,
+	options: { readonly allowLoopback?: boolean } = {},
+): ParsedSecretStoreBinding {
+	const kind = parseSecretStoreKind(record.kind);
+	const claimState = claimStateOf(record);
+	if (
+		claimState === undefined ||
+		!bindingMeetsConstraints(record, claimState, options, false)
+	)
+		return secretStoreError(
+			"SECRET_STORE_INVALID",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project other than the relay's when set, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
+		);
+	const parsed: ParsedSecretStoreBinding = {
+		...bindingFields(record, kind, claimState),
+		strictParse: true,
+	};
+	return Object.freeze(parsed);
 }
 
 /** Read the committed file's text. The error never quotes it. */
@@ -137,7 +164,7 @@ export function readSecretStoreBinding(
 export function readSecretStoreBindingForRepair(
 	text: string,
 	options: { readonly allowLoopback?: boolean } = {},
-): ParsedSecretStoreBinding {
+): RepairSecretStoreBinding {
 	let record: SecretStoreBinding;
 	try {
 		record = fromJsonString(SecretStoreBindingSchema, text);
@@ -147,7 +174,17 @@ export function readSecretStoreBindingForRepair(
 			"the secret store binding is not a SecretStoreBinding record",
 		);
 	}
-	return parseSecretStoreBinding(record, { ...options, forRepair: true });
+	const kind = parseSecretStoreKind(record.kind);
+	const claimState = claimStateOf(record);
+	if (
+		claimState === undefined ||
+		!bindingMeetsConstraints(record, claimState, options, true)
+	)
+		return secretStoreError(
+			"SECRET_STORE_INVALID",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project other than the relay's when set, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
+		);
+	return bindingFields(record, kind, claimState);
 }
 
 /** The file's text: stable field order, a trailing newline. */

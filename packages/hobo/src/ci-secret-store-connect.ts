@@ -43,6 +43,7 @@ import {
 	type ParsedSecretStoreBinding,
 	parseSecretStoreBinding,
 	RELAY_SECRET_PATH,
+	type RepairSecretStoreBinding,
 	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
 	SecretStoreBindingSchema,
@@ -132,7 +133,7 @@ export async function runCiSecretStoreConnect(
 	input: CiSecretStoreInput,
 ): Promise<CommandResult> {
 	const file = path.join(input.cwd, SECRET_STORE_BINDING_FILE);
-	let existing: ParsedSecretStoreBinding | undefined;
+	let existing: ParsedSecretStoreBinding | RepairSecretStoreBinding | undefined;
 	if (existsSync(file))
 		try {
 			existing = loadSecretStoreBinding(input.cwd);
@@ -153,17 +154,19 @@ export async function runCiSecretStoreConnect(
 		text(input, key) || existing?.[CONNECT_IDS[key]] || undefined;
 	const deployProjectId =
 		text(input, "deploy-project-id") ?? existing?.deployProjectId ?? "";
+	const relayIdentityId = given("relay-identity-id") ?? "";
 	const deployIdentityId = given("deploy-identity-id") ?? "";
 	const deployCredentialIdentityId =
 		given("deploy-credential-identity-id") ?? "";
 	const missing = CONNECT_ID_OPTIONS.filter((key) => given(key) === undefined);
 	if (
 		deployCredentialIdentityId !== "" &&
-		deployCredentialIdentityId === deployIdentityId
+		(deployCredentialIdentityId === deployIdentityId ||
+			deployCredentialIdentityId === relayIdentityId)
 	)
 		return refusedConnect(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
-			"hobo-ci-deploy-reader must be a different identity from hobo-ci-writer; a shared identity can read the deploy token with the writer's privileges.",
+			"hobo-ci-deploy-reader must be a different identity from both hobo-ci-writer and hobo-ci-relay; the writer's identity would read the deploy token with the writer's privileges, and the relay's would reach it from the relay's sign-in.",
 		);
 	if (missing.length > 0)
 		return {

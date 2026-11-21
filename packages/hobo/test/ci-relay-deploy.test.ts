@@ -55,7 +55,10 @@ cpSync(RELAY_DIR, relayFixtureDir, {
 	recursive: true,
 	filter: (source) => !source.includes("node_modules"),
 });
-symlinkSync(join(RELAY_DIR, "node_modules"), join(relayFixtureDir, "node_modules"));
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(relayFixtureDir, "node_modules"),
+);
 {
 	const file = join(relayFixtureDir, "deploy", "secret-store.binding.json");
 	const binding: Record<string, JsonValue> = Object.fromEntries(
@@ -425,6 +428,23 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 				}),
 			]),
 		);
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses the committed binding itself until the deploy reader id is recorded, so the deploy train fails closed across the cutover", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
+			fetch,
+			cwd: RELAY_DIR,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
+			message: expect.stringContaining(
+				"re-run hobo ci secret-store connect with --deploy-credential-identity-id",
+			),
+		});
 		expect(sent).toEqual([]);
 	});
 

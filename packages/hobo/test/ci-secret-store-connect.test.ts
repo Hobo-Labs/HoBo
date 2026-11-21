@@ -20,7 +20,6 @@ import { runCiSecretStore } from "../src/ci-secret-store.js";
 type Fetch = typeof fetch;
 
 const JWT = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl";
-const ACCESS = "synthetic-access-token-verify";
 
 let cwd: string;
 beforeEach(() => {
@@ -228,6 +227,28 @@ describe("hobo ci secret-store connect", () => {
 			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
 		});
 		expect(result.message).toContain("different identity");
+		expect(existsSync(path.join(cwd, "deploy/secret-store.binding.json"))).toBe(
+			false,
+		);
+	});
+
+	it("refuses to make the relay identity the deploy credential reader", async () => {
+		const result = await runCiSecretStore(
+			input(
+				"connect",
+				{
+					...IDS,
+					"deploy-credential-identity-id": IDS["relay-identity-id"],
+				},
+				GH_ENV,
+				github().fetch,
+			),
+		);
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
+		});
+		expect(result.message).toContain("hobo-ci-relay");
 		expect(existsSync(path.join(cwd, "deploy/secret-store.binding.json"))).toBe(
 			false,
 		);
@@ -457,9 +478,13 @@ describe("hobo ci secret-store verify", () => {
 		return `${part({ alg: "RS256" })}.${part({ sub, aud: "https://github.com/Hobo-Labs" })}.c2lnbmF0dXJl`;
 	}
 
+	const accessOf = (identityId: string) => `synthetic-access-${identityId}`;
+
 	function infisical(loginStatus: number, names: string[], jwt = JWT) {
 		const seen: string[] = [];
 		const logins: string[] = [];
+		const sessions = new Map<string, string>();
+		const reads: { identityId: string; secretPath: string }[] = [];
 		const fetch: Fetch = async (request, init) => {
 			const url = String(request);
 			seen.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
@@ -467,18 +492,28 @@ describe("hobo ci secret-store verify", () => {
 				return Response.json({ value: jwt });
 			if (url.endsWith("/api/v1/auth/oidc-auth/login")) {
 				logins.push(String(init?.body ?? ""));
-				return loginStatus === 200
-					? Response.json({
-							accessToken: ACCESS,
-							expiresIn: 600,
-							accessTokenMaxTTL: 600,
-							tokenType: "Bearer",
-						})
-					: Response.json({ reqId: "req-1" }, { status: loginStatus });
+				if (loginStatus !== 200)
+					return Response.json({ reqId: "req-1" }, { status: loginStatus });
+				const identityId = JSON.parse(String(init?.body ?? "{}")).identityId;
+				sessions.set(accessOf(identityId), identityId);
+				return Response.json({
+					accessToken: accessOf(identityId),
+					expiresIn: 600,
+					accessTokenMaxTTL: 600,
+					tokenType: "Bearer",
+				});
 			}
 			if (new URL(url).pathname === "/api/v1/auth/token/revoke")
 				return Response.json({ message: "revoked" });
-			if (new URL(url).pathname === "/api/v4/secrets")
+			if (new URL(url).pathname === "/api/v4/secrets") {
+				const bearer = new Headers(init?.headers).get("authorization") ?? "";
+				const identityId = sessions.get(bearer.replace(/^Bearer /u, ""));
+				if (identityId === undefined)
+					return Response.json({ reqId: "req-auth" }, { status: 401 });
+				reads.push({
+					identityId,
+					secretPath: new URL(url).searchParams.get("secretPath") ?? "",
+				});
 				return Response.json({
 					secrets: names.map((secretKey) => ({
 						secretKey,
@@ -488,9 +523,10 @@ describe("hobo ci secret-store verify", () => {
 					})),
 					imports: [],
 				});
+			}
 			return Response.json({}, { status: 404 });
 		};
-		return { fetch, seen, logins };
+		return { fetch, seen, logins, reads };
 	}
 
 	const actions = {
@@ -541,10 +577,35 @@ describe("hobo ci secret-store verify", () => {
 		expect(
 			fake.seen.filter((line) => line === "GET /api/v4/secrets"),
 		).toHaveLength(1);
+		expect(fake.reads).toEqual([
+			{
+				identityId: "deploy-credential-identity",
+				secretPath: "/",
+			},
+		]);
 		expect(
 			fake.seen.filter((line) => line === "POST /api/v1/auth/token/revoke"),
 		).toHaveLength(2);
-		expect(JSON.stringify(result)).not.toContain(ACCESS);
+		expect(JSON.stringify(result)).not.toContain(
+			accessOf("deploy-credential-identity"),
+		);
+	});
+
+	it("refuses a listing whose bearer token no login issued, so a read cannot be attributed to nothing", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const fake = infisical(200, ["VERCEL_TOKEN"]);
+		const foreign = await fake.fetch(
+			"https://app.infisical.com/api/v4/secrets?projectId=proj-deploy&environment=prod&secretPath=%2F&viewSecretValue=false",
+			{
+				method: "GET",
+				headers: {
+					authorization: `Bearer ${accessOf("deploy-identity")}`,
+				},
+			},
+		);
+		expect(foreign.status).toBe(401);
+		expect(fake.reads).toEqual([]);
+		expect(fake.logins).toEqual([]);
 	});
 
 	it("fails without a dedicated deploy reader before requesting GitHub OIDC", async () => {
@@ -616,7 +677,9 @@ describe("hobo ci secret-store verify", () => {
 			"re-run hobo ci secret-store connect to repair the deploy identities' OIDC trust",
 		);
 		expect(denied.message).not.toContain(immutableJwt);
-		expect(denied.message).not.toContain(ACCESS);
+		expect(denied.message).not.toContain(
+			accessOf("deploy-credential-identity"),
+		);
 	});
 
 	it("names the recorded trust when the token's subject differs from it", async () => {
@@ -660,13 +723,9 @@ describe("hobo ci secret-store verify", () => {
 
 	it("checks hobo-ci-relay where Vercel's OIDC token is present", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const fake = infisical(200, ["HOBO_CI_PUBLIC_URL"]);
 		const result = await runCiSecretStore(
-			input(
-				"verify",
-				{},
-				{ VERCEL_OIDC_TOKEN: JWT },
-				infisical(200, ["HOBO_CI_PUBLIC_URL"]).fetch,
-			),
+			input("verify", {}, { VERCEL_OIDC_TOKEN: JWT }, fake.fetch),
 		);
 		expect(result.data).toMatchObject({
 			checks: [
@@ -675,5 +734,8 @@ describe("hobo ci secret-store verify", () => {
 				{ identity: "hobo-ci-relay", result: "pass" },
 			],
 		});
+		expect(fake.reads).toEqual([
+			{ identityId: "relay-identity", secretPath: "/hobo-ci-relay" },
+		]);
 	});
 });
