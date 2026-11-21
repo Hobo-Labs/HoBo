@@ -228,6 +228,7 @@ describe("CI deps image push scope", () => {
 			"workspace_tests",
 			"pr_affected",
 			"scripts-tests",
+			"state-machine-verification",
 		]);
 		expect(workspaceTests.needs).toEqual([
 			"route",
