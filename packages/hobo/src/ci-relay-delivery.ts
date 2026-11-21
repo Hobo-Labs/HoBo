@@ -178,6 +178,7 @@ export interface RelayRealization {
 	/** Create the git deployment of the pinned commit; the provider's outputs. */
 	deploy(
 		source: RelaySourcePin,
+		context: Readonly<{ freightId: string }>,
 	): Promise<
 		| Readonly<{ ok: true; outputs: Readonly<Record<string, string>> }>
 		| RelayRealizationFailure
@@ -628,7 +629,9 @@ export function relayRealizer(
 						},
 					});
 				} else {
-					const deployed = await input.realization.deploy(pin);
+					const deployed = await input.realization.deploy(pin, {
+						freightId: String(at.desired.freightId),
+					});
 					realized.set(
 						at.desired.setId,
 						deployed.ok
