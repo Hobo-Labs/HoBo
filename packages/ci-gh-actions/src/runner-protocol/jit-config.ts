@@ -74,7 +74,8 @@ const ID = z.union([
 	z
 		.string()
 		.regex(/^[1-9][0-9]{0,18}$/u)
-		.transform(Number),
+		.transform(Number)
+		.pipe(z.number().int().positive()),
 ]);
 
 /** `.runner`, keys lower-cased. JIT runners may leave `GitHubUrl` empty (`IsHostedServer`). */

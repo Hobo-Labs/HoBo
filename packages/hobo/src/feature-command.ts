@@ -8,12 +8,12 @@ import {
 	createContractAssertedHarnessFixtures,
 	createHarness,
 	enrichEvaluationContext,
-	type FeatureFlagStore,
+	type FeatureFlagPort,
 } from "@hobo/identity";
 import { isJsonString, type JsonObject } from "./json.js";
 
 export interface FeatureCommandDeps {
-	readonly store?: FeatureFlagStore;
+	readonly store?: FeatureFlagPort;
 	readonly env?: NodeJS.ProcessEnv;
 }
 

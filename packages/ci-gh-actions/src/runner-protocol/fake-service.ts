@@ -126,12 +126,15 @@ function stepOf(
 	const parts = target.split("/");
 	return {
 		type: "action",
-		reference: {
-			type: "repository",
-			name: parts.slice(0, 2).join("/"),
-			ref,
-			path: parts.slice(2).join("/"),
-		},
+		reference:
+			uses === ""
+				? { type: "script" }
+				: {
+						type: "repository",
+						name: parts.slice(0, 2).join("/"),
+						ref,
+						path: parts.slice(2).join("/"),
+					},
 		inputs: {
 			type: 2,
 			map: inputs.map((input) => ({ Key: input.name, Value: input.value })),

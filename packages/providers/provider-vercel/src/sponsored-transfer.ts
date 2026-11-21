@@ -278,7 +278,7 @@ export function createVercelSponsoredProjectTransferCandidate(
 		// only becomes true after the documented revocation step below, so the
 		// declaration stops at what the ceremony guarantees.
 		creatorAuthorityAfterClaim: "rotatable",
-		claimAtomicity: "provider-bundled",
+		claimAtomicity: "best-effort-saga",
 		claimActionCount: 1,
 		continuity: {
 			endpoint: "preserved",
@@ -321,15 +321,20 @@ export function assertSponsorBudget(input: {
 	}
 }
 
+/** Only providers whose claim and ownership verifier HoBo models end to end. */
+export type ModelledAssociatedResourceProvider =
+	(typeof MODELLED_ASSOCIATED_RESOURCE)["marketplaceProvider"];
+
 /** Stable item ids. Two subjects, because there are two ownership facts. */
 export const SPONSORED_CLAIM_ITEM_IDS = Object.freeze({
 	project: "vercel-project",
-	associatedResource: "vercel-associated-resource",
+	associatedResource: "prisma-resource",
 } as const);
 
 export const SPONSORED_CLAIM_STRATEGY_REFS = Object.freeze({
 	project: `${VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID}#project`,
-	associatedResource: `${VERCEL_SPONSORED_PROJECT_TRANSFER_DEFINITION_ID}#associated-resource`,
+	associatedResource: (provider: ModelledAssociatedResourceProvider) =>
+		`${provider}.marketplace-transfer/v1` as const,
 } as const);
 
 export type SponsoredBundleInput = {
@@ -337,6 +342,9 @@ export type SponsoredBundleInput = {
 	readonly deploymentRef: string;
 	readonly projectSubjectRef: string;
 	readonly resourceSubjectRef: string;
+	/** Marketplace provider that owns the associated resource. Its claim and
+	 * ownership verifier are that provider's, never another provider's. */
+	readonly associatedResourceProvider: ModelledAssociatedResourceProvider;
 	/** Provider-issued instant the 24 hour transfer code stops working. */
 	readonly transferCodeExpiresAt: Instant;
 	/** Opaque handle into the one-time action store. Never the claim URL. */
@@ -346,10 +354,9 @@ export type SponsoredBundleInput = {
 /**
  * Build the claim bundle.
  *
- * `provider-bundled` is asserted rather than assumed: the shared reducer
- * derives atomicity from the items, and both items name Vercel because Vercel
- * is the party running the single ceremony, even though the second subject is a
- * Prisma Postgres database.
+ * The Vercel project and the marketplace resource have distinct provider ownership.
+ * Even when Vercel presents one transfer ceremony, partial transfer is
+ * possible, so the shared reducer models it as a cross-provider saga.
  */
 export function createSponsoredProjectTransferBundle(
 	input: SponsoredBundleInput,
@@ -380,8 +387,10 @@ export function createSponsoredProjectTransferBundle(
 		id: SPONSORED_CLAIM_ITEM_IDS.associatedResource,
 		subjectRef: input.resourceSubjectRef,
 		subjectKind: "resource",
-		providerId: VERCEL_PROVIDER_ID,
-		claimStrategyRef: SPONSORED_CLAIM_STRATEGY_REFS.associatedResource,
+		providerId: input.associatedResourceProvider,
+		claimStrategyRef: SPONSORED_CLAIM_STRATEGY_REFS.associatedResource(
+			input.associatedResourceProvider,
+		),
 		mode: "resource-claim",
 		...(input.oneTimeActionRef !== undefined
 			? { oneTimeActionRef: input.oneTimeActionRef }
@@ -393,7 +402,7 @@ export function createSponsoredProjectTransferBundle(
 			credentials: "rotated",
 		},
 		creatorAuthorityAfterClaim: "unknown",
-		verificationRef: "vercel.verify.associated-resource-probe/v1",
+		verificationRef: `${input.associatedResourceProvider}.verify.ownership/v1`,
 		postClaimActions: ["rotate-binding", "revoke-bootstrap-authority"],
 		completedPostClaimActions: [],
 		status: "pending",
@@ -471,6 +480,8 @@ export type SponsoredBootstrapInput = {
 	readonly lease: GuestLease;
 	readonly projectSubjectRef: string;
 	readonly resourceSubjectRef: string;
+	/** Marketplace provider that owns the associated resource. */
+	readonly associatedResourceProvider: ModelledAssociatedResourceProvider;
 	/** One key per logical attempt, so a retried provision cannot double-create. */
 	readonly idempotencyKey: string;
 };
@@ -514,7 +525,7 @@ export function sponsoredProjectTransferBootstrapCommands(
 			kind: "RecordProvisionedSubject",
 			subjectRef: input.resourceSubjectRef,
 			subjectKind: "resource",
-			providerId: VERCEL_PROVIDER_ID,
+			providerId: input.associatedResourceProvider,
 			idempotencyKey: `${input.idempotencyKey}:resource`,
 		},
 	];

@@ -77,12 +77,39 @@ describe("planMainBetterleaksScan", () => {
 		assert.deepEqual(gitFetchBlobArgs(), ["fetch", "--refetch", "--no-filter"]);
 	});
 
-	it("bounds workflow_dispatch to baseline..HEAD when baseline is an ancestor", () => {
+	it("keeps schedule and workflow_dispatch on the full-history path when a baseline exists", () => {
+		const baseline = "a".repeat(40);
+		const head = "b".repeat(40);
+		for (const eventName of ["schedule", "workflow_dispatch"]) {
+			const plan = planMainBetterleaksScan({
+				eventName,
+				pushBefore: undefined,
+				sha: head,
+				baselineSha: baseline,
+				commitExists: (rev) => rev === baseline || rev === head,
+				isAncestor: () => true,
+			});
+			assert.deepEqual(
+				plan,
+				{
+					mode: "full",
+					logOpts: null,
+					fetchBlobs: true,
+					timeoutSeconds: 600,
+					waitSeconds: FULL_WAIT_SECONDS,
+				},
+				eventName,
+			);
+			assert.ok(!betterleaksArgs(plan).includes("--log-opts"), eventName);
+		}
+	});
+
+	it("bounds a push without a usable before to the recorded baseline", () => {
 		const baseline = "a".repeat(40);
 		const head = "b".repeat(40);
 		const plan = planMainBetterleaksScan({
-			eventName: "workflow_dispatch",
-			pushBefore: undefined,
+			eventName: "push",
+			pushBefore: ZERO_SHA,
 			sha: head,
 			baselineSha: baseline,
 			commitExists: (rev) => rev === baseline || rev === head,

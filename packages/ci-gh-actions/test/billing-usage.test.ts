@@ -271,7 +271,7 @@ describe("GithubMinutesReader (R07)", () => {
 		expect(asked).toHaveLength(4);
 	});
 
-	it("feeds the walk: the github step is used under its limit and passed over at it", async () => {
+	it("feeds the walk: the github step is used under its limit and passed over at it or when unmeasured", async () => {
 		const answer = async (usage: MinutesUsage | undefined) => {
 			const journal = new InMemoryRouteJournal();
 			const result = await answerRelayJob(
@@ -336,7 +336,10 @@ describe("GithubMinutesReader (R07)", () => {
 		const unmeasured = await answer(
 			await reader(new Map()).minutes.usage("octo"),
 		);
-		expect(unmeasured.runner).toBe("ubuntu-24.04");
+		expect(unmeasured).toEqual({
+			runner: "depot-ubuntu-24.04",
+			skipped: ["minutes_limit"],
+		});
 	});
 });
 
