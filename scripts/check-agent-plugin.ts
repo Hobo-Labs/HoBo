@@ -31,6 +31,15 @@ const FORBIDDEN_ENV_KEYS: readonly string[] = [
 	"NODE_TLS_REJECT_UNAUTHORIZED",
 	"NODE_EXTRA_CA_CERTS",
 	"NODE_PATH",
+	"SSL_CERT_FILE",
+	"SSL_CERT_DIR",
+	"LD_PRELOAD",
+	"LD_LIBRARY_PATH",
+	"DYLD_INSERT_LIBRARIES",
+	"ELECTRON_RUN_AS_NODE",
+	"NODE_COMPILE_CACHE",
+	"NODE_V8_COVERAGE",
+	"PATH",
 ];
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const BUNDLE_ATTESTATION = ".bundle-attestation.json";
@@ -1286,7 +1295,7 @@ export function releaseTrainVersionForPluginGate(
 
 function ensureCiPluginBundle(repoRoot: string): void {
 	const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
-	if (existsSync(bundle)) return;
+	if (existsSync(bundle) && !agentPluginCiActive()) return;
 	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
 		cwd: repoRoot,
 		stdio: "inherit",

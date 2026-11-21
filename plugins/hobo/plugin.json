@@ -1,7 +1,7 @@
 {
 	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
 	"name": "hobo",
-	"version": "0.0.0-alpha.413",
+	"version": "0.0.0-alpha.414",
 	"description": "HoBo's own MCP server plus the portable hobo-setup and hobo-deploy skills: owner secret-store sessions, CI/CD identity ceremonies, and private owner hand-offs.",
 	"author": {
 		"name": "Hobo Labs",

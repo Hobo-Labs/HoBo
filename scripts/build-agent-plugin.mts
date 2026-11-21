@@ -54,6 +54,11 @@ const esbuild: EsbuildModule = requireFromHoboPackage("esbuild");
 
 async function main(): Promise<void> {
 	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
+	const checkoutCleanBeforeBuild =
+		spawnSync("git", ["status", "--porcelain"], {
+			cwd: repoRoot,
+			encoding: "utf8",
+		}).stdout?.trim().length === 0;
 	rmSync(attestationPath, { force: true });
 	mkdirSync(outdir, { recursive: true });
 	const result = await esbuild.build({
@@ -100,18 +105,13 @@ async function main(): Promise<void> {
 		cwd: repoRoot,
 		encoding: "utf8",
 	});
-	const porcelain = spawnSync("git", ["status", "--porcelain"], {
-		cwd: repoRoot,
-		encoding: "utf8",
-	});
 	if (
 		headSha.status !== 0 ||
-		porcelain.status !== 0 ||
-		(porcelain.stdout ?? "").trim().length > 0 ||
+		!checkoutCleanBeforeBuild ||
 		headSha.stdout?.trim() !== commitSha
 	) {
 		console.error(
-			"agent-plugin:build: refuse attestation unless HEAD is clean and matches GITHUB_SHA",
+			"agent-plugin:build: refuse attestation unless the checkout was clean before the build and HEAD matches GITHUB_SHA",
 		);
 		rmSync(attestationPath, { force: true });
 		process.exitCode = 1;

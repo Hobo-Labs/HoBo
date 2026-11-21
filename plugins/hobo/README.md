@@ -66,10 +66,10 @@ match this workflow run, checkout, attempt, and sha256. In
 is still absent, so local `check:all` and CI share the same self-contained gate.
 
 The build deletes any prior `.bundle-attestation.json` before bundling so a
-failed rebuild cannot leave a stale attestation beside the bundle. In CI it
-also refuses to write attestation unless the checkout has a clean working tree
-and `HEAD` matches `GITHUB_SHA`, so a minted record cannot trail local edits or
-a mismatched ref.
+failed rebuild cannot leave a stale attestation beside the bundle. In CI it also refuses to write attestation unless the checkout was clean before
+the build started and `HEAD` matches `GITHUB_SHA`. The record is unsigned
+job-local metadata, not cryptographic provenance — it binds bundle bytes to the
+current GitHub Actions run and checkout only.
 
 The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to

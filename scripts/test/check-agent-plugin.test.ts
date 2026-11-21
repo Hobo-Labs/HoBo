@@ -457,6 +457,8 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 							NODE_TLS_REJECT_UNAUTHORIZED: "0",
 							NODE_EXTRA_CA_CERTS: "/tmp/evil.pem",
 							NODE_PATH: "/tmp/node_modules",
+							LD_PRELOAD: "/tmp/evil.so",
+							PATH: "/tmp/evil/bin",
 						},
 					},
 				},
@@ -470,6 +472,8 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 		expect(messages).toMatch(/NODE_TLS_REJECT_UNAUTHORIZED.*reserved/u);
 		expect(messages).toMatch(/NODE_EXTRA_CA_CERTS.*reserved/u);
 		expect(messages).toMatch(/NODE_PATH.*reserved/u);
+		expect(messages).toMatch(/LD_PRELOAD.*reserved/u);
+		expect(messages).toMatch(/PATH.*reserved/u);
 	});
 
 	it("rejects NODE_OPTIONS in MCP env", () => {

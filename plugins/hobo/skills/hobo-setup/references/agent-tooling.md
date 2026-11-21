@@ -30,10 +30,11 @@ attach the server. Report which client worked and which connection or private
 session step remains unverified; do not infer the cause of a missing host tool
 without evidence.
 
-Use **`choose_secret_store`** only when the tool reports a store-choice flow
-the host can keep private; if the result is `secure-form-unavailable`, report
-the capability gap instead of collecting store identifiers in chat or tool
-arguments. When a private hand-off is available, use the same target project
+Call **`choose_secret_store`** before store selection and proceed only when the
+result documents a private owner ceremony the host can render. Treat
+`secure-form-unavailable`, `owner-setup-unavailable`, unknown status, errors, or
+a missing tool as stop conditions. Do not collect store identifiers in chat or
+tool arguments. When a private hand-off is available, use the same target project
 `cwd` throughout the ceremony; otherwise report the missing capability without
 collecting settings.
 The relay's existing capture adapter reads a separately configured Infisical

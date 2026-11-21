@@ -29,14 +29,16 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before using owner forms, call the HoBo MCP tool the step needs. When
-`choose_secret_store` returns `status: secure-form-unavailable` (or
-`reason: owner-setup-unavailable`), report the missing secure hand-off and stop;
-do not collect store identifiers in chat. For lifecycle and capture steps,
-verify without owner data that the connected implementation keeps selections in
-the temporary owner session and excludes private coordinates, identifiers, and
-references from agent-visible tool calls, results, traces, and diagnostics. If
-that cannot be established, report the missing secure hand-off.
+Before using owner forms, call the HoBo MCP tool the step needs. For store
+selection, call `choose_secret_store` first and proceed only when the result
+documents a private owner ceremony the host can render. Treat
+`status: secure-form-unavailable`, `reason: owner-setup-unavailable`, unknown
+status, tool errors, and a missing tool as stop conditions — report the missing
+secure hand-off and do not collect store identifiers in chat. For lifecycle and
+capture steps, verify without owner data that the connected implementation keeps
+selections in the temporary owner session and excludes private coordinates,
+identifiers, and references from agent-visible tool calls, results, traces, and
+diagnostics. If that cannot be established, report the missing secure hand-off.
 
 For the hosted relay, HoBo CD delivers the selected Git commit to Vercel;
 the Vercel project does not need a connected Git repository. A managed deploy
