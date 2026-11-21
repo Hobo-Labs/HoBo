@@ -5,7 +5,7 @@ description: Coordinate iterative feature/capability development end to end in t
 
 # SDLC coordinator
 
-The repository-wide rules at the start of `AGENTS.md` override this skill and its references: implement unfinished work, use self-documenting code, and do not create planning or design documents. Skip any instruction below that requests those artifacts.
+The repository-wide rules at the start of `AGENTS.md` override this skill and its references: use self-documenting code, track unfinished work in Linear, and do not create planning or design documents. Skip any instruction below that requests those artifacts.
 
 Drive a feature or capability through the full development loop **in this repo**. You are the
 **parent/coordinator**: you own the conversation with the user, the plan, Linear (or issue tracker)
@@ -52,7 +52,7 @@ and in `references/stacked-prs.md`. Official docs: https://gh.io/stacks
 
 ## Existing state
 
-Complete outstanding work in existing session state before removing it. Do not create or extend planning state.
+Track genuinely outstanding work in Linear before removing existing session planning state. Do not create or extend planning state in the repository.
 
 ## Phases (details in references/)
 

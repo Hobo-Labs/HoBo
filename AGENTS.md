@@ -6,9 +6,13 @@ over conflicting repository workflow guidance.
 - Write self-documenting code. Do not add explanatory comments, commented-out
   code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
   and functions to make intent clear. Retain only required license notices and
-  directives consumed by compilers or tools.
-- Complete unfinished work when it is found. Do not hide it by deleting its
-  marker or by moving it into a backlog.
+  directives consumed by compilers or tools. Preserve comments used as input
+  by comment-driven training and its executable fixtures. Independent
+  submodules follow their own rules unless their work is explicitly requested.
+- Treat TODOs and other deferred markers as flags. Resolve a small in-scope
+  task directly or record genuinely unfinished work in the HoBo Linear team,
+  using an existing issue when possible, before removing its marker. Do not
+  invent feature work or change behavior merely to remove a comment.
 - Before ending an action request, compare the current user goal with the
   actual result and evidence. Continue any known, safe, authorized action that
   advances essential unfinished work; a partial merge, a failed approach,
@@ -17,8 +21,8 @@ over conflicting repository workflow guidance.
   latest explicit stop, pause, cancellation, scope change, and real permission
   or safety boundary; do not invent work or repeat futile attempts.
 - Do not create or retain planning documents, roadmaps, or design documents.
-  Implement their outstanding work, then remove them. Keep user and operator
-  documentation about behavior that actually exists.
+  Record genuinely outstanding work in Linear, then remove the artifacts. Keep
+  user and operator documentation about behavior that actually exists.
 - These rules apply even when a plugin or skill requests a plan or design
   artifact. Work directly from the request and report concrete blockers.
 - When work needs an MCP server, check the active host's tools. If the server

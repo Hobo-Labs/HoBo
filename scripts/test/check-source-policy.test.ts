@@ -92,6 +92,36 @@ describe("source policy", () => {
 		);
 	});
 
+	it("preserves comments used as training input and flags other comments", () => {
+		const lines = [
+			"// ordinary comment",
+			"export function rank(items: string[]) {",
+			'  "use training";',
+			"  // TODO rank the items",
+			"  /* Keep ties stable. */",
+			"  return items;",
+			"}",
+			"class Ranker {",
+			"  @trainable()",
+			"  rank() {",
+			"    // Rank the items.",
+			"  }",
+			"  ordinary() {",
+			'    const marker = "use training";',
+			"    // ordinary method comment",
+			"    return marker;",
+			"  }",
+			"}",
+		];
+		const added = new Set(lines.map((_, index) => index + 1));
+		assert.deepEqual(
+			commentViolations("example.ts", lines.join("\n"), added).map(
+				(issue) => issue.line,
+			),
+			[1, 15],
+		);
+	});
+
 	it("allows required tool directives but rejects deferred markers, including inside directives", () => {
 		const text = [
 			"// @ts-expect-error required by the compiler test",

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "node \"$(git rev-parse --show-toplevel)/scripts/agent-source-policy.mts\"",
+        "powershell": "node (Join-Path (git rev-parse --show-toplevel) 'scripts/agent-source-policy.mts')",
+        "timeoutSec": 60
+      }
+    ]
+  }
+}
