@@ -100,6 +100,8 @@ describe("the slow integration lane is a merge-group gate", () => {
 		);
 		assert.match(integration.if, /github\.event_name == 'pull_request'/u);
 		assert.match(integration.if, /github\.event_name == 'merge_group'/u);
+		assert.match(integration.if, /github\.event_name == 'push'/u);
+		assert.match(gate.if, /github\.event_name == 'push'/u);
 		assert.ok(gate.needs.includes("release-hobo-integration"));
 		const lane = step(integration, LANE);
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
@@ -147,15 +149,20 @@ describe("the slow integration lane is a merge-group gate", () => {
 			/\n  pull_request:\n    branches: \[main\]\n    paths:/u,
 		);
 		assert.doesNotMatch(workflow, /\n  merge_group:[\s\S]*\n    paths:/u);
+		assert.match(
+			workflow,
+			/\n  push:\n    branches-ignore:\n      - main\n      - "gh-readonly-queue\/\*\*"\n/u,
+		);
 		const pullRequest = parseReleaseHoboPullRequestPathFilters(trainWorkflow);
 		const mergeGroup = parseReleaseHoboMergeGroupPathFilters(trainWorkflow);
 		assert.deepEqual(
 			mergeGroup,
 			pullRequest.filter((path) => path !== "version.json"),
 		);
-		assert.deepEqual(pullRequest.slice(0, 8), [
+		assert.deepEqual(pullRequest.slice(0, 9), [
 			"version.json",
 			".github/workflows/release-hobo.yml",
+			".github/workflows/release-hobo-pr.yml",
 			"packages/hobo/vitest.release-integration.config.ts",
 			"packages/hobo/test/support/release-integration-test-files.ts",
 			"scripts/test/release-integration*",
@@ -165,6 +172,7 @@ describe("the slow integration lane is a merge-group gate", () => {
 		]);
 		const required = [
 			".github/workflows/release-hobo.yml",
+			".github/workflows/release-hobo-pr.yml",
 			"packages/hobo/vitest.release-integration.config.ts",
 			"packages/hobo/test/support/release-integration-test-files.ts",
 			"packages/hobo/test/vercel-project.test.ts",

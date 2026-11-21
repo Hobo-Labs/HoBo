@@ -239,7 +239,7 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		const paths = pull.indexOf("\n    paths:\n");
 		expect(paths).toBeGreaterThan(-1);
 		expect(pull.slice(paths)).toMatch(
-			/\n    paths:\n      - "version.json"\n      - "\.github\/workflows\/release-hobo\.yml"\n      - "packages\/hobo\/vitest\.release-integration\.config\.ts"\n      - "packages\/hobo\/test\/support\/release-integration-test-files\.ts"\n      - "scripts\/test\/release-integration\*"\n      - "scripts\/test\/release-integration-job\.test\.ts"\n      - "scripts\/ci\/job-scope\.mts"\n      - "scripts\/test\/release-freight\.test\.ts"\n/,
+			/\n    paths:\n      - "version.json"\n      - "\.github\/workflows\/release-hobo\.yml"\n      - "\.github\/workflows\/release-hobo-pr\.yml"\n      - "packages\/hobo\/vitest\.release-integration\.config\.ts"\n      - "packages\/hobo\/test\/support\/release-integration-test-files\.ts"\n      - "scripts\/test\/release-integration\*"\n      - "scripts\/test\/release-integration-job\.test\.ts"\n      - "scripts\/ci\/job-scope\.mts"\n      - "scripts\/test\/release-freight\.test\.ts"\n/,
 		);
 	});
 

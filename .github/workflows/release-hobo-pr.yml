@@ -3,9 +3,12 @@ name: HoBo release PR gate
 # GitHub evaluates `on.paths` from the default-branch workflow. Expanding
 # that list in a PR cannot self-trigger, and even files already on main's
 # list have failed to start release-hobo.yml for #2931 (push minting a 0-job
-# tag-filter miss). This workflow has no path filter: it always starts on
-# pull_request and merge_group so the required check reports. job-scope
-# skips install/tests when the diff cannot reach the suites; the job stays
+# tag-filter miss). This workflow has no path filter on pull_request /
+# merge_group so the required check reports once the file is on main.
+# A workflow that is not on the default branch is started as a 0-job `push`
+# when the file is added or changed; matching that event (not main, not the
+# merge queue) is what actually runs the shards on this PR. job-scope skips
+# install/tests when the diff cannot reach the suites; the job stays
 # success. Tags and the main train still run the lane in release-hobo.yml.
 
 on:
@@ -14,6 +17,10 @@ on:
   merge_group:
     branches: [main]
     types: [checks_requested]
+  push:
+    branches-ignore:
+      - main
+      - "gh-readonly-queue/**"
 
 permissions:
   contents: read
@@ -115,7 +122,8 @@ jobs:
     if: >-
       !cancelled() && needs.route.result == 'success' && (
       github.event_name == 'pull_request' ||
-      github.event_name == 'merge_group')
+      github.event_name == 'merge_group' ||
+      github.event_name == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -209,7 +217,7 @@ jobs:
 
   release-pr-gate:
     name: HoBo release PR gate (required)
-    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push')
     needs: [route, release-hobo-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

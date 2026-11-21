@@ -10,6 +10,7 @@ on:
     paths:
       - "version.json"
       - ".github/workflows/release-hobo.yml"
+      - ".github/workflows/release-hobo-pr.yml"
       - "packages/hobo/vitest.release-integration.config.ts"
       - "packages/hobo/test/support/release-integration-test-files.ts"
       - "scripts/test/release-integration*"
@@ -89,6 +90,7 @@ on:
     types: [checks_requested]
     paths:
       - ".github/workflows/release-hobo.yml"
+      - ".github/workflows/release-hobo-pr.yml"
       - "packages/hobo/vitest.release-integration.config.ts"
       - "packages/hobo/test/support/release-integration-test-files.ts"
       - "scripts/test/release-integration*"
