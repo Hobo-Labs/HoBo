@@ -554,6 +554,15 @@ export function releaseReportPath(home: string, family: ReleaseFamily): string {
 	return join(home, `release-freight-${family}.json`);
 }
 
+/** One recorded channel verdict, as a promote left it (deploy-site reads the stable block). */
+export function releaseChannelVerdict(
+	home: string,
+	family: ReleaseFamily,
+	channel: ReleaseChannel,
+): ReleaseVerdict | undefined {
+	return readReport(home, family)?.channels[channel];
+}
+
 function readReport(
 	home: string,
 	family: ReleaseFamily,
@@ -661,9 +670,7 @@ export const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
 export const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
 	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
 export const PAGES_RELEASE_PROMOTION_BUDGET_MS =
-	PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-	PAGES_RELEASE_VERIFICATION_WINDOW_MS +
-	PAGES_RELEASE_BUILD_MARGIN_MS;
+	PAGES_RELEASE_VERIFICATION_PROGRESS_MS + RELEASE_DRIVE.intervalMs;
 
 export const RELEASE_DRIVE_PAGES = Object.freeze({
 	passes:
@@ -678,11 +685,94 @@ export function releaseDriveFor(family: ReleaseFamily): {
 	return family === "pages" ? RELEASE_DRIVE_PAGES : RELEASE_DRIVE;
 }
 
+const RELEASE_PAGES_PROGRESS_LOG_MS = 30_000;
+
+function logReleasePages(message: string): void {
+	console.error(`release-pages: ${message}`);
+}
+
+export const RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT = 17 * 60_000;
+export const RELEASE_PROMOTION_TIMEOUT = "release-promotion-timeout";
+
+/** One Pages release wall: a deadline taken when qualification starts. */
+export type ReleasePagesWall = Readonly<{ readonly deadlineAt: number }>;
+
+export function releasePagesWallBudgetMs(
+	env: Readonly<Record<string, string | undefined>>,
+): number {
+	const requested = Number.parseInt(
+		env.HOBO_RELEASE_PAGES_WALL_BUDGET_MS?.trim() ?? "",
+		10,
+	);
+	if (!Number.isFinite(requested) || requested <= 0)
+		return RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT;
+	return Math.min(requested, RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT);
+}
+
+export function startReleasePagesWall(
+	env: Readonly<Record<string, string | undefined>>,
+	now: () => number = Date.now,
+): ReleasePagesWall {
+	return { deadlineAt: now() + releasePagesWallBudgetMs(env) };
+}
+
+/** A Pages record/promote/drive call that outlived the wall budget. */
+export class ReleasePromotionWallError extends Error {
+	override readonly name = "ReleasePromotionWallError";
+	readonly phase: string;
+	readonly detail: string;
+	constructor(phase: string, detail: string) {
+		super(`${RELEASE_PROMOTION_TIMEOUT}: ${phase} ${detail}`);
+		this.phase = phase;
+		this.detail = detail;
+	}
+}
+
+/**
+ * Race one record, promote or drive call against the wall's remaining budget:
+ * past the deadline it rejects with `ReleasePromotionWallError` (verdict code
+ * `release-promotion-timeout`) instead of hanging into the workflow's step
+ * timeout. Without a wall the call runs as it would have.
+ */
+export async function awaitReleasePagesWall<T>(
+	phase: string,
+	work: () => Promise<T>,
+	wall: ReleasePagesWall | undefined,
+): Promise<T> {
+	if (!wall) return work();
+	const remainingMs = wall.deadlineAt - Date.now();
+	if (remainingMs <= 0)
+		throw new ReleasePromotionWallError(phase, "wall budget already spent");
+	return await new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(
+			() =>
+				reject(
+					new ReleasePromotionWallError(
+						phase,
+						`${remainingMs}ms wall budget ran out`,
+					),
+				),
+			remainingMs,
+		);
+		void (async () => {
+			try {
+				const value = await work();
+				clearTimeout(timer);
+				resolve(value);
+			} catch (rejection) {
+				clearTimeout(timer);
+				reject(rejection);
+			}
+		})();
+	});
+}
+
 /**
  * Promote recorded release Freight into one channel's Camp through `hobo
  * deploy promote` on the family's pipeline (`@hobo/cd` enforces candidate ->
  * stable lineage), then drive it until it qualifies, the realizer refuses, or
- * the passes run out (blocked: never read as qualified).
+ * the passes run out (blocked: never read as qualified). A Pages wall turns
+ * an overrun into `release-promotion-timeout` instead of a silent hang.
  */
 export async function promoteReleaseFreight(
 	cd: ReleaseCd,
@@ -691,40 +781,81 @@ export async function promoteReleaseFreight(
 		readonly channel: ReleaseChannel;
 		readonly freightId: string;
 		readonly drive?: ReleaseCdSeams["drive"];
+		readonly wall?: ReleasePagesWall;
 	},
 ): Promise<ReleaseVerdict> {
 	const camp = releaseCampId(input.family, input.channel);
-	const requested = await cd.run(["promote", input.freightId], {
-		camp,
-		pipeline: releaseBindle(input.family),
-		node: input.channel,
-		...(input.channel === "stable"
-			? { "source-camp": releaseCampId(input.family, "candidate") }
-			: undefined),
-	});
-	const promotionId = requested.data?.promotion?.promotionId ?? "";
+	const pages = input.family === "pages";
+	const wall = pages ? input.wall : undefined;
+	const drive = input.drive ?? releaseDriveFor(input.family);
+	const logEveryPasses =
+		drive.intervalMs > 0
+			? Math.max(
+					1,
+					Math.round(RELEASE_PAGES_PROGRESS_LOG_MS / drive.intervalMs),
+				)
+			: Number.POSITIVE_INFINITY;
+	let promotionId = "";
 	let verdict: ReleaseVerdict | undefined;
-	if (!requested.ok || !promotionId) {
-		const codes = codesOf(requested.data?.reasons);
+	try {
+		if (pages) logReleasePages(`promoting ${input.freightId} -> ${camp}`);
+		const requested = await awaitReleasePagesWall(
+			`promote-${input.channel}`,
+			() =>
+				cd.run(["promote", input.freightId], {
+					camp,
+					pipeline: releaseBindle(input.family),
+					node: input.channel,
+					...(input.channel === "stable"
+						? { "source-camp": releaseCampId(input.family, "candidate") }
+						: undefined),
+				}),
+			wall,
+		);
+		promotionId = requested.data?.promotion?.promotionId ?? "";
+		if (!requested.ok || !promotionId) {
+			const codes = codesOf(requested.data?.reasons);
+			verdict = {
+				outcome: "blocked",
+				codes:
+					codes.length > 0
+						? codes
+						: [requested.code ?? "release-promotion-refused"],
+				message: requested.message ?? "",
+			};
+		} else {
+			const drivePasses = async (): Promise<ReleaseVerdict | undefined> => {
+				let settled: ReleaseVerdict | undefined;
+				for (let pass = 0; pass < drive.passes && !settled; pass++) {
+					const at = await cd.drive(promotionId, camp);
+					if (pages && pass % logEveryPasses === 0)
+						logReleasePages(
+							`${camp} pass ${pass + 1}/${drive.passes}: ${at.state}`,
+						);
+					settled = classifyRelease(promotionId, at);
+					if (!settled && pass + 1 < drive.passes)
+						await delay(drive.intervalMs);
+				}
+				return settled;
+			};
+			verdict = (await awaitReleasePagesWall(
+				`drive-${input.channel}`,
+				drivePasses,
+				wall,
+			)) ?? {
+				outcome: "blocked",
+				codes: ["release-promotion-pending"],
+				message: `promotion ${promotionId} into ${camp} did not finish`,
+				promotionId,
+			};
+		}
+	} catch (error) {
+		if (!(error instanceof ReleasePromotionWallError)) throw error;
 		verdict = {
 			outcome: "blocked",
-			codes:
-				codes.length > 0
-					? codes
-					: [requested.code ?? "release-promotion-refused"],
-			message: requested.message ?? "",
-		};
-	} else {
-		const drive = input.drive ?? releaseDriveFor(input.family);
-		for (let pass = 0; pass < drive.passes && !verdict; pass++) {
-			verdict = classifyRelease(promotionId, await cd.drive(promotionId, camp));
-			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
-		}
-		verdict ??= {
-			outcome: "blocked",
-			codes: ["release-promotion-pending"],
-			message: `promotion ${promotionId} into ${camp} did not finish`,
-			promotionId,
+			codes: [RELEASE_PROMOTION_TIMEOUT],
+			message: error.message,
+			...(promotionId ? { promotionId } : undefined),
 		};
 	}
 	const report = readReport(cd.home, input.family);
@@ -765,27 +896,39 @@ export async function qualifyReleaseCandidate(input: {
 	readonly labels?: Readonly<Record<string, string>>;
 	readonly blobs?: Iterable<Uint8Array>;
 	readonly seams?: ReleaseCdSeams;
+	readonly wall?: ReleasePagesWall;
 }): Promise<{ freightId: string; verdict: ReleaseVerdict }> {
 	const env = input.env ?? process.env;
+	const wall = input.family === "pages" ? input.wall : undefined;
 	const cd = await openReleaseCd({
 		home: input.home,
 		env,
 		...(input.seams ? { seams: input.seams } : undefined),
 	});
 	try {
-		const { freightId } = await recordReleaseFreight(cd, {
-			family: input.family,
-			source: releaseSource(env),
-			stored: input.stored,
-			registry: input.registry,
-			labels: input.labels,
-			blobs: input.blobs,
-		});
+		if (input.family === "pages")
+			logReleasePages(
+				`recording ${releaseBindle("pages")} Freight under ${input.home}`,
+			);
+		const { freightId } = await awaitReleasePagesWall(
+			"record",
+			() =>
+				recordReleaseFreight(cd, {
+					family: input.family,
+					source: releaseSource(env),
+					stored: input.stored,
+					registry: input.registry,
+					labels: input.labels,
+					blobs: input.blobs,
+				}),
+			wall,
+		);
 		const verdict = await promoteReleaseFreight(cd, {
 			family: input.family,
 			channel: "candidate",
 			freightId,
 			drive: input.seams?.drive ?? releaseDriveFor(input.family),
+			...(wall ? { wall } : undefined),
 		});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
@@ -799,12 +942,13 @@ export async function qualifyReleaseCandidate(input: {
 
 /**
  * Promote every family recorded under `home` to its stable Camp; false when
- * any is blocked.
+ * any is blocked. `promoteWall` applies to the Pages family only.
  */
 export async function promoteReleaseStable(
 	home: string,
 	env: Readonly<Record<string, string | undefined>> = process.env,
 	seams: ReleaseCdSeams = {},
+	promoteWall?: ReleasePagesWall,
 ): Promise<boolean> {
 	const families = RELEASE_FAMILIES.filter((f) => readReport(home, f));
 	if (families.length === 0) {
@@ -822,6 +966,9 @@ export async function promoteReleaseStable(
 				channel: "stable",
 				freightId,
 				drive: seams.drive ?? releaseDriveFor(family),
+				...(family === "pages" && promoteWall !== undefined
+					? { wall: promoteWall }
+					: undefined),
 			});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}

@@ -365,7 +365,15 @@ that build has status `built` and its commit matches `object.sha` from
 return 404. Both API reads stay below 64 KiB, with `Authorization` omitted when
 `GITHUB_TOKEN` is absent; the same build validation applies either way. Pages rollout
 convergence allows 14 minutes for the GitHub Pages build; the five-minute
-verification window starts after convergence.
+verification window starts after convergence. The release workflow drives
+promotion for about that verification budget — the drive spans the 14-minute
+progress deadline plus one poll interval (422 passes at two seconds, not a
+doubled 28-minute loop) — and logs `release-pages:` lines to stderr when it
+records, promotes, and while it polls (about every 30 seconds). Every pages
+record, promote and drive call races `HOBO_RELEASE_PAGES_WALL_BUDGET_MS`
+(default and maximum: 17 minutes, under the step's 18-minute timeout), so an
+overrun exits with a `release-promotion-timeout` verdict instead of sitting
+silent until the step is cancelled.
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built
