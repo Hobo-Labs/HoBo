@@ -134,7 +134,7 @@ describe("release topology names", () => {
 		expect(seen[1]?.headers.authorization).toBeUndefined();
 	});
 
-	it("probes the Pages gh-pages index through the GitHub contents API", () => {
+	it("probes the live Pages site for every promotion node", () => {
 		const pages = pipelines.find(
 			(pipeline) => pipeline.name === "hobo-release-pages",
 		);
@@ -144,10 +144,10 @@ describe("release topology names", () => {
 				windowMs: String(PAGES_RELEASE_VERIFICATION_WINDOW_MS),
 				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
 			});
-			expect(node.verification.probes[0]?.urlRef).toContain("api.github.com");
-			expect(node.verification.probes[0]?.urlRef).toContain(
-				"/git/ref/heads/gh-pages",
-			);
+			expect(node.verification.probes[0]).toMatchObject({
+				urlRef: "https://Hobo-Labs.github.io/HoBo/",
+				expectStatus: 200,
+			});
 		}
 	});
 });

@@ -4,6 +4,7 @@ The GitHub Pages site for HoBo: landing page, developer docs, and agent docs, se
 <https://tyler-r-kendrick.github.io/HoBo/>.
 
 Built with [Astro](https://astro.build) in static output mode — no client-side framework.
+Release verification probes the live GitHub Pages site URL, not only the `gh-pages` ref, so qualification waits for the published site to respond successfully.
 Most pages are prerendered HTML plus `src/styles/global.css`; the `/examples/`
 ship console is the deliberate exception, using a small TypeScript client and
 build-generated browser Component Model assets. The console is a three-board

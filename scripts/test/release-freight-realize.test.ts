@@ -104,6 +104,7 @@ function ghcrWorld() {
 function withProbes(
 	inner: HttpTransport,
 	seen: TransportRequest[],
+	pages?: ReturnType<Fixtures["githubWorld"]>,
 ): HttpTransport {
 	return async (request) => {
 		seen.push(request);
@@ -111,8 +112,10 @@ function withProbes(
 			return { status: 401, headers: {}, body: "" };
 		if (request.url === "https://registry.npmjs.org/-/ping")
 			return { status: 200, headers: {}, body: "{}" };
-		if (request.url.startsWith("https://raw.githubusercontent.com/"))
-			return { status: 200, headers: {}, body: "<h1>HoBo</h1>" };
+		if (request.url === `https://${OWNER}.github.io/${REPO}/`)
+			return pages?.builds.at(-1)?.status === "built"
+				? { status: 200, headers: {}, body: "<h1>HoBo</h1>" }
+				: { status: 404, headers: {}, body: "" };
 		return inner(request);
 	};
 }
@@ -530,7 +533,7 @@ describe.skipIf(!built)(
 				dist,
 				home,
 				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-				seams: seams(withProbes(github, []), 700),
+				seams: seams(withProbes(github, [], world), 700),
 			});
 			const head = world.commits.get(world.head("gh-pages"));
 			expect(head?.message).toBe(`deploy: ${COMMIT}`);
@@ -587,7 +590,7 @@ describe.skipIf(!built)(
 				home,
 				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
 				seams: {
-					http: withProbes(github, []),
+					http: withProbes(github, [], world),
 					now,
 					drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
 				},
@@ -611,7 +614,7 @@ describe.skipIf(!built)(
 					home,
 					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
 					seams: {
-						http: withProbes(world.transport, []),
+						http: withProbes(world.transport, [], world),
 						now: clock(60_000),
 						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
 					},
@@ -624,6 +627,40 @@ describe.skipIf(!built)(
 			expect(report.channels.candidate.codes).toContain(
 				"rollout-progress-deadline",
 			);
+		});
+
+		it("Pages: build errored fails closed", async () => {
+			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
+			const github: HttpTransport = async (request) => {
+				const response = await world.transport(request);
+				if (
+					(request.method === "POST" && request.url.endsWith("/git/refs")) ||
+					(request.method === "PATCH" &&
+						request.url.endsWith("/git/refs/heads/gh-pages"))
+				) {
+					world.finishBuild("errored");
+				}
+				return response;
+			};
+			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-"));
+			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
+			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-"));
+			await expect(
+				qualifySiteRelease({
+					dist,
+					home,
+					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
+					seams: {
+						http: withProbes(github, [], world),
+						now: clock(60_000),
+						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
+					},
+				}),
+			).rejects.toThrow(/blocked/u);
+			const report = JSON.parse(
+				readFileSync(releaseReportPath(home, "pages"), "utf8"),
+			);
+			expect(report.channels.candidate.outcome).toBe("blocked");
 		});
 
 		it("npm: candidate publishes the tarball with its signed Sigstore bundle through token auth, stable observes anonymously", async () => {
