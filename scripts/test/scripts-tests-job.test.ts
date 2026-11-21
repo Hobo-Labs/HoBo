@@ -247,7 +247,7 @@ describe("the scripts lane is a pull-request gate", () => {
 		const local = step(scripts, "Build current sources for local attestation");
 		assert.equal(
 			local.if,
-			"steps.scope.outputs.run == 'true' && env.CI != 'true'",
+			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
 		);
 		assert.match(local.run, /turbo run build\b/u);
 		assert.match(local.run, /scripts\/ci\/scripts-test-imports\.mts/u);
@@ -398,11 +398,12 @@ describe("the scripts lane is a pull-request gate", () => {
 
 	it("is required by the PR impact gate", () => {
 		assert.equal(gate.name, "PR impact gate");
+		assert.ok(gate.needs.includes("scripts-tests-build"));
 		assert.ok(gate.needs.includes("scripts-tests"));
 		assert.match(gate.if, /always\(\)/u);
 	});
 
-	it("accepts scripts success or a complete verified local run", () => {
+	it("accepts scripts and build success or a complete verified local run", () => {
 		const script = step(gate, GATE_STEP).run;
 		const passing = {
 			PLAN_RESULT: "success",
@@ -436,34 +437,41 @@ describe("the scripts lane is a pull-request gate", () => {
 					others === passing
 				)
 					continue;
-				for (const result of [
-					"success",
-					"failure",
-					"cancelled",
-					"skipped",
-					"",
-				]) {
-					const run = spawnSync("bash", ["-c", script], {
-						encoding: "utf8",
-						env: {
-							...process.env,
-							...others,
-							EVENT_NAME: event,
-							AFFECTED_RESULT: affected,
-							SCRIPTS_RESULT: result,
-						},
-					});
-					const expected =
-						result === "success" ||
-						(result === "skipped" && others === attestedAll);
-					assert.equal(
-						run.status === 0,
-						expected,
-						`${event} ${JSON.stringify(others)} scripts=${result}: ${run.stderr}`,
-					);
-					if (!expected)
-						assert.match(run.stderr, /Scripts tests did not succeed/u);
-				}
+				for (const result of ["success", "failure", "cancelled", "skipped", ""])
+					for (const buildResult of [
+						"success",
+						"failure",
+						"cancelled",
+						"skipped",
+						"",
+					]) {
+						const run = spawnSync("bash", ["-c", script], {
+							encoding: "utf8",
+							env: {
+								...process.env,
+								...others,
+								EVENT_NAME: event,
+								AFFECTED_RESULT: affected,
+								SCRIPTS_BUILD_RESULT: buildResult,
+								SCRIPTS_RESULT: result,
+							},
+						});
+						const expected =
+							(result === "success" ||
+								(result === "skipped" && others === attestedAll)) &&
+							(buildResult === "success" ||
+								(buildResult === "skipped" && others === attestedAll));
+						assert.equal(
+							run.status === 0,
+							expected,
+							`${event} ${JSON.stringify(others)} build=${buildResult} scripts=${result}: ${run.stderr}`,
+						);
+						if (!expected)
+							assert.match(
+								run.stderr,
+								/Scripts tests(?: build)? did not succeed/u,
+							);
+					}
 			}
 	});
 
@@ -484,6 +492,7 @@ describe("the scripts lane is a pull-request gate", () => {
 					VALIDATION_RESULT: "success",
 					WORKSPACE_RESULT: "success",
 					AFFECTED_RESULT: "success",
+					SCRIPTS_BUILD_RESULT: "success",
 					SCRIPTS_RESULT: "skipped",
 					FORMAL_RESULT: "success",
 					ROUTE_RESULT: route,

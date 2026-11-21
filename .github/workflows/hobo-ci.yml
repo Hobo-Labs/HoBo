@@ -1045,7 +1045,7 @@ jobs:
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: Build current sources for local attestation
-        if: steps.scope.outputs.run == 'true' && env.CI != 'true'
+        if: steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'
         timeout-minutes: 6
         run: |
           set -euo pipefail
@@ -1270,7 +1270,7 @@ jobs:
     # failed, or cancelled, and accepts only the event's complete validation:
     # each job succeeded, or the route job succeeded, reported a verified signed
     # local run covering that job, and the job was skipped for it.
-    needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification]
+    needs: [route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests-build, scripts-tests, state-machine-verification]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
@@ -1286,6 +1286,7 @@ jobs:
           VALIDATION_RESULT: ${{ needs.pr_gate_validation.result }}
           WORKSPACE_RESULT: ${{ needs.workspace_tests.result }}
           AFFECTED_RESULT: ${{ needs.pr_affected.result }}
+          SCRIPTS_BUILD_RESULT: ${{ needs.scripts-tests-build.result }}
           SCRIPTS_RESULT: ${{ needs.scripts-tests.result }}
           FORMAL_RESULT: ${{ needs.state-machine-verification.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
@@ -1344,6 +1345,10 @@ jobs:
               ;;
             *) echo "Unexpected affected-lanes result for $EVENT_NAME: $AFFECTED_RESULT" >&2; exit 1 ;;
           esac
+          if ! passed "${SCRIPTS_BUILD_RESULT:-}" scripts-tests; then
+            echo "Scripts tests build did not succeed: ${SCRIPTS_BUILD_RESULT:-}" >&2
+            exit 1
+          fi
           if ! passed "${SCRIPTS_RESULT:-}" scripts-tests; then
             echo "Scripts tests did not succeed: ${SCRIPTS_RESULT:-}" >&2
             exit 1

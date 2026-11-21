@@ -95,6 +95,7 @@ describe("merge-group required gate", () => {
 						VALIDATION_RESULT: "success",
 						WORKSPACE_RESULT: "success",
 						AFFECTED_RESULT: affectedResult,
+						SCRIPTS_BUILD_RESULT: "success",
 						SCRIPTS_RESULT: "success",
 						FORMAL_RESULT: result,
 						ROUTE_RESULT: "success",
@@ -175,7 +176,7 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			gate,
-			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification\]/u,
+			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests-build, scripts-tests, state-machine-verification\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
@@ -249,6 +250,7 @@ describe("merge-group required gate", () => {
 									VALIDATION_RESULT: validationResult,
 									WORKSPACE_RESULT: workspaceResult,
 									AFFECTED_RESULT: affectedResult,
+									SCRIPTS_BUILD_RESULT: "success",
 									SCRIPTS_RESULT: "success",
 									FORMAL_RESULT: "success",
 								},
@@ -329,7 +331,7 @@ describe("merge-group required gate", () => {
 			'  ( export EVENT_NAME="$1" PLAN_RESULT="$2" VALIDATION_RESULT="$3" WORKSPACE_RESULT="$4"',
 			'    export AFFECTED_RESULT="$5" ROUTE_RESULT="$6" ATTESTED="$7" ATTESTED_JOBS="$8"',
 			// The scripts job's own cases: scripts-tests-job.test.ts.
-			"    export SCRIPTS_RESULT=success",
+			"    export SCRIPTS_BUILD_RESULT=success SCRIPTS_RESULT=success",
 			"    export FORMAL_RESULT=success",
 			script,
 			"  ) >/dev/null 2>&1",
@@ -505,7 +507,7 @@ describe("merge-group required gate", () => {
 		const driver = [
 			"gate() {",
 			'  ( export EVENT_NAME="$1" ROUTE_RESULT="$2" PR_FABRIC="$3" VALIDATION_RESULT="$4"',
-			'    export WORKSPACE_RESULT="$5" SCRIPTS_RESULT="$6" PLAN_RESULT="$7"',
+			'    export WORKSPACE_RESULT="$5" SCRIPTS_BUILD_RESULT="$6" SCRIPTS_RESULT="$6" PLAN_RESULT="$7"',
 			'    export AFFECTED_RESULT=$([ "$1" = pull_request ] && echo success || echo skipped)',
 			"    export ATTESTED=false ATTESTED_JOBS=[] FORMAL_RESULT=success",
 			script,

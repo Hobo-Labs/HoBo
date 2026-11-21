@@ -131,7 +131,7 @@ describe("the description of the covered jobs", () => {
 		assert.equal(build?.local, "run");
 		assert.equal(
 			build?.if,
-			"steps.scope.outputs.run == 'true' && env.CI != 'true'",
+			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
 		);
 		assert.match(build?.run ?? "", /scripts\/ci\/scripts-test-imports\.mts/u);
 		assert.match(build?.run ?? "", /turbo run build\b/u);
