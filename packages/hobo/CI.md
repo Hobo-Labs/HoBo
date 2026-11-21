@@ -651,8 +651,9 @@ deploy-token read itself never signs in as the writer.
 The GitHub App's credentials never touch a person or this CLI:
 `hobo ci app create --via-workflow` takes GitHub's one-time manifest code
 from the browser's redirect and hands it, on stdin to `gh workflow run`, to
-the deploy workflow; its `app-credentials` job masks it and runs
-`hobo ci app deposit` (code from `HOBO_APP_MANIFEST_CODE`), which converts,
+`app-credentials.yml`; its call to the `app-credentials` job in
+`relay-deploy.yml` masks it and runs `hobo ci app deposit` (code from
+`HOBO_APP_MANIFEST_CODE`), which converts,
 verifies the App and writes the credentials as `hobo-ci-writer` over GitHub
 OIDC.
 

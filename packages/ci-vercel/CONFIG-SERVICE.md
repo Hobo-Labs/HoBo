@@ -120,12 +120,19 @@ owner handles no secret value on the default path:
   `:environment:hobo-ci-app-credentials` and `:environment:hobo-ci-deploy` after
   GitHub's immutable repository prefix. Both trusts pin `repository_id`
   `1274791462`, `repository_owner_id` `344805935`, that distinct `environment`,
-  `ref` `refs/heads/main`, and both `workflow_ref` and `job_workflow_ref`
+  and `ref` `refs/heads/main`. The reader pins both `workflow_ref` and
+  `job_workflow_ref` to
+  `Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main`. The
+  writer pins `workflow_ref` to
+  `Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/main` and
+  `job_workflow_ref` to
   `Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main`.
   `job_workflow_ref` identifies the called implementation; `workflow_ref` pins
-  the top-level caller. `relay-deploy.yml` has no `workflow_call` trigger, so no
-  reusable caller is supported. The writer's audience is `https://github.com/Hobo-Labs`; the
-  reader's is `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`. Audience is
+  the top-level caller. `app-credentials.yml` is the only supported reusable
+  caller of the writer job. This caller split is **built, not proven**: link
+  its first successful run whose accepted writer token carries these two
+  workflow claims. The writer's audience is `https://github.com/Hobo-Labs`;
+  the reader's is `https://github.com/Hobo-Labs/hobo-ci-deploy-reader`. Audience is
   caller-selected, so the environment and workflow claims—not the audience—keep
   a reader-eligible job from authenticating as the writer. (**Connected:** Tyler
   approved using built-in project **Member** (formerly Developer) for
@@ -183,10 +190,16 @@ owner handles no secret value on the default path:
   available and is also checked by `/readyz` after deployment. Verification never
   writes a probe secret, and every issued session is revoked. An unfiltered
   `verify` requires every applicable identity to pass; missing GitHub or Vercel
-  OIDC fails closed. Branch protection must require the scoped reader, writer and
-  relay checks independently. Failures print only `oidc_sub` / `oidc_aud`, never
-  an access token or secret value. Both workflow verification steps run
-  `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
+  OIDC fails closed. Branch protection can require named workflow jobs, not
+  these verification steps. `Decide whether to deploy` is the canonical push
+  check; its credential-free skip is explicit and leaves the reader unverified.
+  Once the binding is complete, require `Deploy the hosted CI relay
+  (production)` when reader and relay verification are required on that path.
+  `Deposit the GitHub App's credentials` runs only through the manual
+  `app-credentials.yml` caller and is not a push check. A skipped job is never
+  successful reader, writer, or relay verification. Failures print only
+  `oidc_sub` / `oidc_aud`, never an access token or secret value. Both workflow
+  verification steps run `scripts/ci/relay-deploy-secret-store-verify-report.mts` so empty stdout or
   stderr-only crashes fail loudly. Before either job installs or signs in,
   `scripts/ci/relay-deploy-environment.mts` uses the job's scoped `GITHUB_TOKEN`
   to require an exact `main`-only custom deployment branch policy. The
@@ -214,10 +227,10 @@ existing OIDC):
 - **Trust:** the writer subject is
   `repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials`;
   the reader subject ends in `:environment:hobo-ci-deploy`. Both pin repository
-  ids, environment, `ref`, top-level `workflow_ref` and called
-  `job_workflow_ref` for `relay-deploy.yml` on `main`. Their audiences and
-  environments differ, and no `workflow_call` trigger admits reusable callers.
-  Token TTL is **600s**.
+  ids, environment, `ref`, and called `job_workflow_ref` for `relay-deploy.yml`
+  on `main`. The reader's top-level `workflow_ref` is also `relay-deploy.yml`;
+  the writer's is `app-credentials.yml`, the only supported reusable caller.
+  Their audiences and environments differ. Token TTL is **600s**.
 - **Separation:** `hobo-ci-relay` remains **Viewer**. `hobo-ci-writer` is for
   App-credential deposit, never deploy-token reads. Deploy-token reads require
   the distinct `hobo-ci-deploy-reader`. The MCP/owner `hobo-secret-writer`

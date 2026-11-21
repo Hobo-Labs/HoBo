@@ -42,9 +42,10 @@ with its reason.
   closed when GitHub does not say. `githubDeployTrust` and
   `githubDeployReaderTrust` use distinct protected-environment subjects and pin
   repository ids, environment, `ref`, top-level `workflow_ref` and called
-  `job_workflow_ref`; `relay-deploy.yml` has no `workflow_call` trigger.
-  Caller-selected audiences cannot cross the writer/reader boundary. Pinned by
-  `contracts/pacts/github-oidc-subject.pact.json`.
+  `job_workflow_ref`. The writer caller is `app-credentials.yml`; both
+  implementations are `relay-deploy.yml`, and no other reusable caller is
+  supported. Caller-selected audiences cannot cross the writer/reader boundary.
+  Pinned by `contracts/pacts/github-oidc-subject.pact.json`.
 
 The CLI is `hobo ci secret-store plan|provision` in `@hobo/hobo`
 ([CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store));

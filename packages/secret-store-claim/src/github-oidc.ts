@@ -119,6 +119,7 @@ function githubEnvironmentTrust(
 	environment: string,
 	audience: string,
 	branch: string,
+	workflow = "relay-deploy.yml",
 ): InfisicalOidcTrust {
 	if (!BRANCH.test(branch))
 		return secretStoreError("SECRET_STORE_INVALID", "not a branch name");
@@ -131,7 +132,7 @@ function githubEnvironmentTrust(
 			repository_owner_id: subject.repositoryOwnerId,
 			environment,
 			ref: `refs/heads/${branch}`,
-			workflow_ref: `${subject.repository}/.github/workflows/relay-deploy.yml@refs/heads/${branch}`,
+			workflow_ref: `${subject.repository}/.github/workflows/${workflow}@refs/heads/${branch}`,
 			job_workflow_ref: `${subject.repository}/.github/workflows/relay-deploy.yml@refs/heads/${branch}`,
 		},
 	});
@@ -146,6 +147,7 @@ export function githubDeployTrust(
 		DEPLOY_WRITER_ENVIRONMENT,
 		`https://github.com/${subject.ownerLogin}`,
 		branch,
+		"app-credentials.yml",
 	);
 }
 

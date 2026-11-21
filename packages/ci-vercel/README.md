@@ -335,8 +335,15 @@ and on `workflow_dispatch`:
    sign-in at its own audience, HTTP 403 from deploy-project listing and token
    reads, and HTTP 404 for its own deploy-project membership. Verification never
    writes a probe secret. Each issued session is revoked and every other scope
-   answer fails closed. The deploy-token read never signs in as the writer. Until the owner provisions and commits the
-   complete binding, no deploy token is read. See
+   answer fails closed. The deploy-token read never signs in as the writer.
+   Until the owner provisions and commits the complete binding, no deploy token
+   is read. Branch protection can require named jobs, not these steps.
+   `Decide whether to deploy` is the canonical push check; a credential-free
+   skip leaves the reader unverified. Once the binding is complete, require
+   `Deploy the hosted CI relay (production)` when reader and relay verification
+   are required on that path. The writer job runs only through the manual
+   `app-credentials.yml` caller and is not a push check. A skipped job is not
+   successful verification. See
    [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 3. *Deploy the relay*: `hobo ci deploy --build prebuilt --sha "$GITHUB_SHA"`,
    preview then production, with the deploy token the job reads as
@@ -347,10 +354,12 @@ and on `workflow_dispatch`:
    ([above](#deploying-the-relay-with-hobo)). Vercel's Git integration is
    never connected. Each command's exit status is its step's.
 
-A manual run given a GitHub App manifest code (`hobo ci app create
---via-workflow` dispatches it) runs only the `app-credentials` job instead:
-it masks the code and runs `hobo ci app deposit`, which converts it and
-writes the App's credentials into the store as `hobo-ci-writer`
+A manual run of
+[`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
+given a GitHub App manifest code (`hobo ci app create --via-workflow` dispatches
+it) calls only the `app-credentials` job in `relay-deploy.yml`: it masks the
+code and runs `hobo ci app deposit`, which converts it and writes the App's
+credentials into the store as `hobo-ci-writer`
 ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first)).
 
 In production the relay reads its store's coordinates from the committed

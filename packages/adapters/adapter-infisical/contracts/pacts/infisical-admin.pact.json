@@ -321,7 +321,7 @@
 						"repository_owner_id": "344805935",
 						"environment": "hobo-ci-app-credentials",
 						"ref": "refs/heads/main",
-						"workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
+						"workflow_ref": "Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/main",
 						"job_workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main"
 					},
 					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
@@ -361,7 +361,7 @@
 						"repository_owner_id": "344805935",
 						"environment": "hobo-ci-app-credentials",
 						"ref": "refs/heads/main",
-						"workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
+						"workflow_ref": "Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/main",
 						"job_workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main"
 					},
 					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
@@ -401,7 +401,7 @@
 						"repository_owner_id": "344805935",
 						"environment": "hobo-ci-app-credentials",
 						"ref": "refs/heads/main",
-						"workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
+						"workflow_ref": "Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/main",
 						"job_workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main"
 					},
 					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",

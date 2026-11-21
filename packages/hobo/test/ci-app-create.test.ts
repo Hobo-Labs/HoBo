@@ -362,7 +362,7 @@ describe("hobo ci app create", () => {
 });
 
 describe("secretless first: the App's credentials go from GitHub to the store with no person holding them", () => {
-	it("--via-workflow hands the one-time code to the deploy workflow and touches no credential", async () => {
+	it("--via-workflow hands the one-time code to the app-credentials workflow and touches no credential", async () => {
 		const handed: Readonly<Record<string, string>>[] = [];
 		const githubFake = github();
 		const { result } = await run(
@@ -380,7 +380,7 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 		]);
 		// No conversion here: the credentials never exist on this machine.
 		expect(githubFake.calls).toEqual([]);
-		expect(result.message).toContain("relay-deploy.yml");
+		expect(result.message).toContain("app-credentials.yml");
 	});
 
 	it("app deposit converts in the workflow and writes as the CI writer over GitHub OIDC", async () => {

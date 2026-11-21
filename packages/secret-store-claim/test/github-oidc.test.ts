@@ -147,7 +147,7 @@ describe("the relay layout's deploy trust", () => {
 				environment: "hobo-ci-app-credentials",
 				ref: "refs/heads/main",
 				workflow_ref:
-					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
+					"Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/main",
 				job_workflow_ref:
 					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 			},
@@ -157,6 +157,8 @@ describe("the relay layout's deploy trust", () => {
 	it("takes another branch in the workflow ref without widening the environment", () => {
 		expect(githubDeployTrust(github, "release").claims).toMatchObject({
 			environment: "hobo-ci-app-credentials",
+			workflow_ref:
+				"Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/release",
 			job_workflow_ref:
 				"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/release",
 		});

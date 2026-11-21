@@ -31,21 +31,6 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      # `hobo ci app create --via-workflow` hands these over (on stdin to
-      # `gh workflow run`): GitHub's one-time manifest code, spent by the
-      # app-credentials job within seconds, and two non-secret ids.
-      manifest_code:
-        description: GitHub's one-time App-manifest code (hobo ci app create --via-workflow)
-        required: false
-        default: ""
-      relay:
-        description: The relay's public origin the App was created for
-        required: false
-        default: ""
-      owner_id:
-        description: The numeric GitHub id of the App's owner
-        required: false
-        default: ""
       # Emergency bootstrap: deploy even when the diff does not touch the
       # relay (the gate treats the run as relay-touched).
       force_bootstrap:
@@ -53,6 +38,23 @@ on:
         required: false
         default: false
         type: boolean
+  workflow_call:
+    inputs:
+      # `hobo ci app create --via-workflow` hands these over (on stdin to
+      # `gh workflow run`): GitHub's one-time manifest code, spent by the
+      # app-credentials job within seconds, and two non-secret ids.
+      manifest_code:
+        description: GitHub's one-time App-manifest code (hobo ci app create --via-workflow)
+        required: true
+        type: string
+      relay:
+        description: The relay's public origin the App was created for
+        required: true
+        type: string
+      owner_id:
+        description: The numeric GitHub id of the App's owner
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -100,7 +102,7 @@ jobs:
   gate:
     name: Decide whether to deploy
     needs: route
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name != 'workflow_call'
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
@@ -131,7 +133,7 @@ jobs:
     name: Deploy the hosted CI relay (production)
     needs: [route, gate]
     environment: hobo-ci-deploy
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == '' && needs.gate.outputs.run == 'true'
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name != 'workflow_call' && needs.gate.outputs.run == 'true'
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
@@ -302,7 +304,7 @@ jobs:
     name: Deposit the GitHub App's credentials
     needs: route
     environment: hobo-ci-app-credentials
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.manifest_code != ''
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_call' && github.event.inputs.manifest_code != ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 15

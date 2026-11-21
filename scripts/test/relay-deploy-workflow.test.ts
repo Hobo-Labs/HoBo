@@ -28,6 +28,10 @@ import { lintActionsRepository } from "../lint-actions.ts";
 const root = join(import.meta.dirname, "..", "..");
 const workflowPath = join(root, ".github", "workflows", "relay-deploy.yml");
 const workflow = readFileSync(workflowPath, "utf8");
+const appCredentialsWorkflow = readFileSync(
+	join(root, ".github", "workflows", "app-credentials.yml"),
+	"utf8",
+);
 const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
 const configured = "bound" as const;
@@ -331,6 +335,15 @@ describe("relay GitHub environment protection", () => {
 			github(protectedEnvironment, {
 				branch_policies: [{ name: "release", type: "branch" }],
 			}),
+			github(protectedEnvironment, {
+				branch_policies: [
+					{ name: "main", type: "branch" },
+					{ name: "release", type: "branch" },
+				],
+			}),
+			github(protectedEnvironment, {
+				branch_policies: [{ name: "main", type: "tag" }],
+			}),
 			github(protectedEnvironment, { branch_policies: [] }),
 		]) {
 			const result = await verifyEnvironmentProtection(
@@ -346,7 +359,10 @@ describe("relay GitHub environment protection", () => {
 			},
 		);
 		assert.equal(unavailable.ok, false);
-		assert.equal((await verifyEnvironmentProtection("other")).ok, false);
+		assert.equal(
+			(await verifyEnvironmentProtection("other", github(null).send)).ok,
+			false,
+		);
 	});
 });
 
@@ -360,11 +376,12 @@ describe("the relay deploy workflow", () => {
 			...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu),
 		].map((match) => match[1]);
 		assert.deepEqual(inputs, [
+			"force_bootstrap",
 			"manifest_code",
 			"relay",
 			"owner_id",
-			"force_bootstrap",
 		]);
+		assert.match(workflow, / {2}workflow_call:\n {4}inputs:/u);
 		const bootstrap =
 			/^ {6}force_bootstrap:\n {8}description:[^\n]*\n {8}required: false\n {8}default: false\n {8}type: boolean/mu;
 		assert.match(workflow, bootstrap);
@@ -391,7 +408,7 @@ describe("the relay deploy workflow", () => {
 		assert.match(deploy, /environment: hobo-ci-deploy/u);
 		assert.match(
 			deploy,
-			/^ {4}if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event\.inputs\.manifest_code == '' && needs\.gate\.outputs\.run == 'true'$/mu,
+			/^ {4}if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name != 'workflow_call' && needs\.gate\.outputs\.run == 'true'$/mu,
 		);
 		assert.doesNotMatch(deploy, /id: gate/u);
 	});
@@ -641,6 +658,8 @@ describe("the relay deploy workflow", () => {
 		);
 		const writerEnvironment = step("Verify the protected writer environment");
 		assert.match(writerEnvironment, /--environment hobo-ci-app-credentials/u);
+		for (const environment of [readerEnvironment, writerEnvironment])
+			assert.doesNotMatch(environment, /\|\| true|continue-on-error:\s*true/u);
 		const writer = step("Verify the writer connection");
 		assert.match(writer, /--identity writer/u);
 		stepBefore("Build the deposit tool", "Verify the writer connection");
@@ -690,12 +709,23 @@ describe("the relay deploy workflow", () => {
 	it("deposits the GitHub App's credentials with OIDC only when handed a manifest code, masked first", () => {
 		assert.match(
 			workflow,
-			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event\.inputs\.manifest_code != ''/u,
+			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event_name == 'workflow_call' && github\.event\.inputs\.manifest_code != ''/u,
 		);
 		assert.match(
 			workflow,
-			/ {2}deploy:\n[\s\S]*?if: [^\n]*github\.event\.inputs\.manifest_code == ''/u,
+			/ {2}deploy:\n[\s\S]*?if: [^\n]*github\.event_name != 'workflow_call'/u,
 		);
+		assert.match(appCredentialsWorkflow, /^on:\n {2}workflow_dispatch:/mu);
+		assert.match(
+			appCredentialsWorkflow,
+			/uses: \.\/\.github\/workflows\/relay-deploy\.yml/u,
+		);
+		for (const input of ["manifest_code", "relay", "owner_id"])
+			assert.match(
+				appCredentialsWorkflow,
+				new RegExp(`${input}: \\$\\{\\{ inputs\\.${input} \\}\\}`, "u"),
+			);
+		assert.doesNotMatch(appCredentialsWorkflow, /\$\{\{\s*secrets/u);
 		const mask = step("Mask the one-time manifest code");
 		assert.match(mask, /::add-mask::\$HOBO_APP_MANIFEST_CODE/u);
 		const deposit = step(
