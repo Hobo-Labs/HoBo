@@ -178,7 +178,7 @@ describe("Agent37 Sandbox API fake", () => {
 		).toHaveLength(1);
 	});
 
-	it("rejects wrong keys on both API and exec planes", async () => {
+	it("rejects wrong and missing keys on both API and exec planes without executing", async () => {
 		const wrongKey = generatedKey();
 		const list = await api(fake, "GET", "/v1/instances", undefined, wrongKey);
 		expect(list.status).toBe(401);
@@ -193,6 +193,20 @@ describe("Agent37 Sandbox API fake", () => {
 		);
 		expect(command.status).toBe(401);
 		expect(command.body).toMatchObject({ error: { code: "unauthorized" } });
+
+		const missing = await fetch(
+			`${fake.baseUrl}/v1/instances/${instanceId}/exec`,
+			{
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ command: "printf missing" }),
+			},
+		);
+		expect(missing.status).toBe(401);
+		expect(await missing.json()).toMatchObject({
+			error: { code: "unauthorized" },
+		});
+		expect(fake.state.execInvocations).toHaveLength(0);
 	});
 
 	it("returns 402 when the wallet cannot cover one day of the instance rate", async () => {
@@ -413,6 +427,23 @@ describe("Agent37 Sandbox API fake", () => {
 		expect(response.body).toEqual({
 			error: { code: "internal_error", message: "internal server error" },
 		});
+	});
+
+	it("accepts only HTTPS or loopback HTTP webhook URLs", async () => {
+		for (const url of [
+			"http://hooks.example.com/agent37",
+			"ftp://localhost/agent37",
+		]) {
+			const response = await api(fake, "POST", "/v1/webhooks", { url });
+			expect(response.status).toBe(400);
+			expect(response.body).toMatchObject({
+				error: { code: "invalid_request" },
+			});
+		}
+		const loopback = await api(fake, "POST", "/v1/webhooks", {
+			url: "http://[::1]:4180/agent37",
+		});
+		expect(loopback.status).toBe(201);
 	});
 
 	it("provides webhook CRUD and Standard Webhooks HMAC-SHA256 signatures", async () => {

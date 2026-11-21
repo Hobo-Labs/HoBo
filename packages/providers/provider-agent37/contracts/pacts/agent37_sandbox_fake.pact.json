@@ -76,6 +76,53 @@
 			}
 		},
 		{
+			"description": "a wrong sandbox key on the exec plane is refused",
+			"request": {
+				"method": "POST",
+				"path": "/v1/instances/i_fixture0001/exec",
+				"headers": {
+					"Content-Type": "application/json",
+					"X-Agent37-Key": "sk_live_wrong"
+				},
+				"body": {
+					"command": "echo must-not-run",
+					"user": "root"
+				}
+			},
+			"response": {
+				"status": 401,
+				"body": {
+					"error": {
+						"code": "unauthorized",
+						"message": "missing or invalid X-Agent37-Key header"
+					}
+				}
+			}
+		},
+		{
+			"description": "a missing sandbox key on the exec plane is refused",
+			"request": {
+				"method": "POST",
+				"path": "/v1/instances/i_fixture0001/exec",
+				"headers": {
+					"Content-Type": "application/json"
+				},
+				"body": {
+					"command": "echo must-not-run",
+					"user": "root"
+				}
+			},
+			"response": {
+				"status": 401,
+				"body": {
+					"error": {
+						"code": "unauthorized",
+						"message": "missing or invalid X-Agent37-Key header"
+					}
+				}
+			}
+		},
+		{
 			"description": "a wrong bearer key on the api plane is refused",
 			"request": {
 				"method": "GET",

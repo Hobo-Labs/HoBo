@@ -9,6 +9,7 @@ const FAKE_IMAGE = "node:24-alpine";
 
 export type FakeAgent37StartOptions = {
 	readonly requireContainer?: boolean;
+	readonly allowInProcessFallback?: boolean;
 	readonly apiKey?: string;
 };
 
@@ -63,9 +64,14 @@ export async function startFakeAgent37Server(
 ): Promise<StartedFakeAgent37> {
 	const apiKey = options.apiKey ?? `sk_live_${randomUUID()}`;
 	if (dockerAvailable()) return startFakeInContainer(apiKey);
-	if (options.requireContainer === true)
+	if (
+		options.requireContainer === true ||
+		options.allowInProcessFallback !== true
+	)
 		throw new Error(
-			"startFakeAgent37Server: this docker-required test needs a Docker engine and none is available",
+			options.requireContainer === true
+				? "startFakeAgent37Server: this docker-required test needs a Docker engine and none is available"
+				: "startFakeAgent37Server: Docker is unavailable; set allowInProcessFallback: true to use the in-process fake explicitly",
 		);
 	const fake = await createAgent37FakeServer({ apiKey });
 	return {
