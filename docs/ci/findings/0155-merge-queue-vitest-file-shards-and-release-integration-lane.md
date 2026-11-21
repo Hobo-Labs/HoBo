@@ -103,8 +103,12 @@ the sum of its files):
   lane files now sit at the **top** of both `pull_request.paths` and
   `merge_group.paths` (workflow, `scripts/test/release-integration*`, the
   job-scope script, and `scripts/test/release-freight.test.ts`, which is the
-  file that starts sibling PR 2930). A forward commit that edits that freight
-  test re-measures the four shards and `HoBo release PR gate`.
+  file that starts sibling PR 2930). A branch push still mints a 0-job
+  `push` miss (tags-only). That run used to share a concurrency group with
+  `pull_request`, so the PR lane never started. The group now includes
+  `github.event_name`. A forward commit that edits
+  `scripts/test/release-relevant-push.test.ts` (also on main's filter)
+  re-measures the four shards and `HoBo release PR gate`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the
