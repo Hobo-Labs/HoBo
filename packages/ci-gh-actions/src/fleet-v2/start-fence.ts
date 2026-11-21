@@ -1,8 +1,7 @@
-/* oxlint-disable anti-slop/no-unknown-parameters -- fleet v2 parse boundary; authorizeStartFence zod-parses the untrusted hook body before any use, mirroring packages/ci/src/fleet-v2/parse.ts */
+/* oxlint-disable anti-slop/no-unknown-parameters */
 import { createHash } from "node:crypto";
 import * as z from "zod";
 
-/** Official pre-job hook start fence (design §9.3). Fail-closed: nonzero exit blocks the job. */
 export const START_FENCE_EXIT = {
 	authorized: 0,
 	rejected: 41,
@@ -29,9 +28,6 @@ const githubJobKeySchema = z.strictObject({
 	runAttempt: z.number().int().min(1),
 });
 
-/** Wire body from the pre-job hook. Every field is an unverified claim until the
- * GitHub assignment lookup confirms it; nothing here is coerced — a missing or
- * mistyped field is a rejection, never `"undefined"`. */
 const startFenceRequestSchema = z.strictObject({
 	slotId: z.string().min(1),
 	claimId: z.string().min(1),
@@ -50,10 +46,6 @@ export type VerifiedGithubAssignment = {
 	executionKey: { githubJob: z.infer<typeof githubJobKeySchema> };
 };
 
-/** Port: asks GitHub which job (if any) is currently assigned to this runner
- * name. `undefined` means GitHub reports no such assignment. No production
- * implementation is wired yet, so start authorization stays fail-closed until
- * a controller supplies one. */
 export type GithubAssignmentLookup = {
 	lookupAssignment(
 		runnerName: string,
@@ -74,9 +66,6 @@ export type StartFenceAuthorization =
 	| { ok: true; bindRequest: StartFenceBindRequest }
 	| { ok: false; reason: string };
 
-/** Authorizes one pre-job hook request. The account and job identity in the
- * returned bind request always come from the GitHub lookup, never from the
- * hook body; a body that disagrees with the lookup is forged and rejected. */
 export async function authorizeStartFence(
 	input: unknown,
 	lookup: GithubAssignmentLookup,

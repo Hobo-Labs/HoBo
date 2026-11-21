@@ -1602,6 +1602,9 @@ estimate of about 25 assumed one command per ring append and no routing reads.
 `templates/fleet-pre-job-hook.sh` sends the slot credential and execution key to
 an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
 response with a matching JSON authorization receipt and rejects redirects,
-network failures, and mismatched runner context. The relay does not yet install
-or serve this endpoint; strict runners require a controller that verifies the
-GitHub assignment and commits the start binding before returning the receipt.
+network failures, and mismatched runner context. `createGithubAssignmentLookup`
+verifies the repository, workflow attempt, assigned runner ID and group, job
+state, and required labels using the central GitHub App transport. Its scope
+must come from trusted controller configuration. The relay does not yet install
+or serve the endpoint; strict runners require a controller that commits the
+start binding before returning the receipt.
