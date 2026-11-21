@@ -1,14 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+	closeSync,
 	cpSync,
 	mkdirSync,
+	openSync,
 	readFileSync,
 	rmSync,
+	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { agentPluginCiActive } from "./check-agent-plugin.ts";
 
@@ -19,6 +23,32 @@ const outdir = path.join(pluginRoot, "bin");
 const outfile = path.join(outdir, "hobo-mcp.mjs");
 const fixturesSource = path.join(repoRoot, "packages/hobo/fixtures/deploy");
 const fixturesTarget = path.join(pluginRoot, "fixtures/deploy");
+const buildLockPath = path.join(pluginRoot, ".agent-plugin-build.lock");
+
+async function withBuildLock(run: () => Promise<void>): Promise<void> {
+	const deadline = Date.now() + 600_000;
+	while (Date.now() < deadline) {
+		try {
+			const fd = openSync(buildLockPath, "wx");
+			closeSync(fd);
+			try {
+				await run();
+			} finally {
+				unlinkSync(buildLockPath);
+			}
+			return;
+		} catch (error) {
+			const lockHeld =
+				error instanceof Error && "code" in error && error.code === "EEXIST";
+			if (!lockHeld) throw error;
+			await delay(100);
+		}
+	}
+	console.error(
+		"agent-plugin:build: timed out waiting for another agent-plugin:build",
+	);
+	process.exitCode = 1;
+}
 
 type EsbuildBuildOptions = {
 	entryPoints: readonly string[];
@@ -55,7 +85,7 @@ const requireFromHoboPackage = createRequire(
 );
 const esbuild: EsbuildModule = requireFromHoboPackage("esbuild");
 
-async function main(): Promise<void> {
+async function buildAgentPlugin(): Promise<void> {
 	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
 	const porcelainBeforeBuild = spawnSync(
 		"git",
@@ -167,10 +197,7 @@ async function main(): Promise<void> {
 	if (runAttempt !== undefined && runAttempt.length > 0) {
 		payload.runAttempt = runAttempt;
 	}
-	writeFileSync(
-		path.join(pluginRoot, ".bundle-attestation.json"),
-		`${JSON.stringify(payload)}\n`,
-	);
+	writeFileSync(attestationPath, `${JSON.stringify(payload)}\n`);
 }
 
-await main();
+await withBuildLock(buildAgentPlugin);
