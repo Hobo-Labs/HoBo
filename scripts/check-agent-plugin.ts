@@ -25,6 +25,7 @@ const SEMVER_PATTERN =
 	/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
 const FORBIDDEN_ENV_KEYS = ["PLUGIN_ROOT", "PLUGIN_DATA"];
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
+const BUNDLE_ATTESTATION = ".bundle-attestation.json";
 const SECRET_KEY_PATTERN =
 	/(?:token|secret|password|passwd|credential|api[-_]?key|private[-_]?key)/iu;
 export const SECRET_VALUE_PATTERN =
@@ -262,6 +263,34 @@ export function manifestSemanticIssues(
 				});
 			}
 		}
+	}
+	return issues;
+}
+
+export function hoboMcpServerIssues(config: McpConfig): AgentPluginIssue[] {
+	const issues: AgentPluginIssue[] = [];
+	const names = Object.keys(config.mcpServers);
+	if (names.length !== 1 || names[0] !== "hobo") {
+		issues.push({
+			file: "mcp.json",
+			message: `mcpServers must contain exactly the hobo server; found ${JSON.stringify(names.sort())}`,
+		});
+		return issues;
+	}
+	const hobo = config.mcpServers.hobo;
+	if (hobo === undefined) return issues;
+	if (hobo.command !== "node") {
+		issues.push({
+			file: "mcp.json",
+			message: "hobo MCP server command must be exactly node",
+		});
+	}
+	const args = hobo.args ?? [];
+	if (args.length !== 1 || args[0] !== MCP_ENTRYPOINT) {
+		issues.push({
+			file: "mcp.json",
+			message: `hobo MCP server must run node with a single argument ${MCP_ENTRYPOINT}`,
+		});
 	}
 	return issues;
 }
@@ -787,7 +816,7 @@ export function checkAgentPlugin(input: {
 	);
 	if (input.versionFromReleaseTrain !== undefined && !exactReleaseTrain) {
 		notes.push(
-			`agent-plugin:check: release-train comparison ran with exactReleaseTrain=false (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME?.trim() || "unset"}, commitIsh=${commitIsh}); a manifest newer than the train is allowed here`,
+			`agent-plugin:check: release-train comparison ran with exactReleaseTrain=false (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME?.trim() || "unset"}, commitIsh=${commitIsh}); only the one-height squash lag can waive a stale pin on push`,
 		);
 	}
 
@@ -812,16 +841,7 @@ export function checkAgentPlugin(input: {
 		issues.push(...mcp.issues);
 		if (mcp.value !== undefined) {
 			issues.push(...mcpSemanticIssues(mcp.value));
-			const hoboServer = mcp.value.mcpServers.hobo;
-			if (
-				hoboServer?.command !== "node" ||
-				!hoboServer.args?.includes(MCP_ENTRYPOINT)
-			) {
-				issues.push({
-					file: "mcp.json",
-					message: `hobo MCP server must run node with entrypoint ${MCP_ENTRYPOINT}`,
-				});
-			}
+			issues.push(...hoboMcpServerIssues(mcp.value));
 		}
 		issues.push(...scanTextForSecrets("mcp.json", mcpText));
 	}
@@ -866,6 +886,7 @@ export function checkAgentPlugin(input: {
 				message: `exists but is only ${size} bytes; a real bundle of the composed server is megabytes — rebuild with pnpm run agent-plugin:build`,
 			});
 		}
+		issues.push(...bundleAttestationIssues(pluginRoot, bundle));
 		const deployFixtures = path.join(pluginRoot, "fixtures/deploy");
 		if (
 			!existsSync(deployFixtures) ||
@@ -892,6 +913,52 @@ export function checkAgentPlugin(input: {
 		);
 	}
 	return { issues, notes };
+}
+
+function bundleAttestationIssues(
+	pluginRoot: string,
+	bundlePath: string,
+): AgentPluginIssue[] {
+	const inCi =
+		process.env.CI !== undefined ||
+		process.env.GITHUB_ACTIONS !== undefined ||
+		process.env.TF_BUILD !== undefined;
+	if (!inCi) return [];
+	const attestationPath = path.join(pluginRoot, BUNDLE_ATTESTATION);
+	if (!existsSync(attestationPath)) {
+		return [
+			{
+				file: "bin/hobo-mcp.mjs",
+				message:
+					"exists in CI without a bundle attestation; run pnpm run agent-plugin:build in this job before agent-plugin:check",
+			},
+		];
+	}
+	const attestation = z
+		.object({ sha256: z.string() })
+		.safeParse(JSON.parse(readFileSync(attestationPath, "utf8")));
+	if (!attestation.success) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"is not a valid bundle attestation; run pnpm run agent-plugin:build in this CI job",
+			},
+		];
+	}
+	const sha256 = createHash("sha256")
+		.update(readFileSync(bundlePath))
+		.digest("hex");
+	if (attestation.data.sha256 !== sha256) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"sha256 does not match bin/hobo-mcp.mjs; rebuild with pnpm run agent-plugin:build in this CI job",
+			},
+		];
+	}
+	return [];
 }
 
 function readPluginFile(

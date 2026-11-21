@@ -1,4 +1,11 @@
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+	cpSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -67,6 +74,13 @@ async function main(): Promise<void> {
 	}
 	rmSync(fixturesTarget, { recursive: true, force: true });
 	cpSync(fixturesSource, fixturesTarget, { recursive: true });
+	const sha256 = createHash("sha256")
+		.update(readFileSync(outfile))
+		.digest("hex");
+	writeFileSync(
+		path.join(pluginRoot, ".bundle-attestation.json"),
+		`${JSON.stringify({ sha256 })}\n`,
+	);
 }
 
 await main();

@@ -138,3 +138,4 @@ src/draft/exp-proofs/ux/control-yard/assets/evidence/.capture-incomplete
 # server is tens of megabytes and regenerated from packages/hobo sources.
 plugins/hobo/bin/
 plugins/hobo/fixtures/
+plugins/hobo/.bundle-attestation.json

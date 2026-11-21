@@ -41,6 +41,11 @@ pnpm exec turbo run build --filter=@hobo/hobo...
 pnpm run agent-plugin:build
 ```
 
+`agent-plugin:build` writes a gitignored `.bundle-attestation.json` with the
+bundle sha256. In CI, `agent-plugin:check` requires that attestation to match
+`bin/hobo-mcp.mjs` so stale or tampered bundles cannot pass without a rebuild in
+the same job.
+
 The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to
 `fixtures/deploy` (the deploy providers read it relative to the bundle), and

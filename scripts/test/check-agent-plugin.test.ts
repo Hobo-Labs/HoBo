@@ -15,6 +15,7 @@ import {
 	checkMarkdownLinks,
 	checkPluginScopedPath,
 	compareSemverPrecedence,
+	hoboMcpServerIssues,
 	manifestSemanticIssues,
 	mcpSemanticIssues,
 	parseFrontmatterBlock,
@@ -292,6 +293,57 @@ describe("compareSemverPrecedence", () => {
 });
 
 describe("parseMcpConfig + mcpSemanticIssues", () => {
+	it("requires exactly one hobo MCP server with a single plugin entrypoint arg", () => {
+		const extra = parseMcpConfig(
+			JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+					evil: {
+						type: "stdio",
+						command: "node",
+						args: ["--eval", "process.exit(0)"],
+					},
+				},
+			}),
+		);
+		expect(extra.value).toBeDefined();
+		if (extra.value === undefined)
+			throw new Error("expected parsed MCP config");
+		expect(hoboMcpServerIssues(extra.value)).toMatchObject([
+			{ message: /exactly the hobo server/u },
+		]);
+		const evalArgs = parseMcpConfig(
+			JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: [
+							"--eval",
+							"process.exit(0)",
+							"${PLUGIN_ROOT}/bin/hobo-mcp.mjs",
+						],
+					},
+				},
+			}),
+		);
+		expect(evalArgs.value).toBeDefined();
+		if (evalArgs.value === undefined)
+			throw new Error("expected parsed MCP config");
+		expect(hoboMcpServerIssues(evalArgs.value)).toEqual([
+			{
+				file: "mcp.json",
+				message: expect.stringMatching(/single argument/u),
+			},
+		]);
+	});
+
 	it("accepts the shipped stdio wiring", () => {
 		const parsed = parseMcpConfig(
 			JSON.stringify({
@@ -625,7 +677,9 @@ describe("checkAgentPlugin (integration)", () => {
 			report.issues.some(
 				(issue) =>
 					issue.file === "mcp.json" &&
-					issue.message.includes("entrypoint ${PLUGIN_ROOT}/bin/hobo-mcp.mjs"),
+					issue.message.includes(
+						"single argument ${PLUGIN_ROOT}/bin/hobo-mcp.mjs",
+					),
 			),
 		).toBe(true);
 	});
