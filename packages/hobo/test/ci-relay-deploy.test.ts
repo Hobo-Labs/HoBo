@@ -19,11 +19,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import { createCiCommand } from "../src/ci-command.js";
+import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
 import {
 	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
 	readRelayDeployToken,
 } from "../src/ci-relay-deploy-credential.js";
-import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import {
 	RELAY_VERIFY_REFUSAL,

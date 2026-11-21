@@ -849,8 +849,9 @@ export async function runCiRelayDeploy(
 	let deployCredentialAudience: string | undefined;
 	if (storeBinding !== undefined && env.ACTIONS_ID_TOKEN_REQUEST_URL) {
 		try {
-			const credential = await (input.readDeployCredential ??
-				readRelayDeployToken)({
+			const credential = await (
+				input.readDeployCredential ?? readRelayDeployToken
+			)({
 				binding: storeBinding,
 				env: {
 					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
