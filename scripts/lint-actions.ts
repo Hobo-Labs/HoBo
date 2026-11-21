@@ -420,6 +420,12 @@ const ATTESTED_HELPER = [
 function skipWhenAttested(jobId: string): string {
 	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
 }
+/** Release may run when the route job failed; attestation skip requires a green route. */
+function attestationSkipPattern(jobId: string, file: string): string {
+	if (jobId === "release-contract" && file.endsWith("release-hobo.yml"))
+		return `!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+	return skipWhenAttested(jobId);
+}
 
 /**
  * A signed local run (scripts/ci/local-attest.mts) may stand in for a covered
@@ -466,14 +472,18 @@ function lintAttestedSkips(
 			errors.push(
 				`${file}:${line}: ${jobId} is not a job a signed local run covers (scripts/ci/attestation.mts), so it must not be skipped for one`,
 			);
-		else if (
-			!condition.includes(skipWhenAttested(jobId)) ||
-			condition.split("attested-jobs").length !== 2 ||
-			condition.split("needs.route.outputs.attested ").length !== 2
-		)
-			errors.push(
-				`${file}:${line}: ${jobId} must be skipped for a signed local run by exactly: ${skipWhenAttested(jobId)}`,
-			);
+		else {
+			const skipPattern = attestationSkipPattern(jobId, file);
+			const fold = (value: string) => value.replaceAll(/\s+/g, " ").trim();
+			if (
+				!fold(condition).includes(fold(skipPattern)) ||
+				condition.split("attested-jobs").length !== 2 ||
+				condition.split("needs.route.outputs.attested ").length !== 2
+			)
+				errors.push(
+					`${file}:${line}: ${jobId} must be skipped for a signed local run by exactly: ${skipPattern}`,
+				);
+		}
 		if (!needsRoute(block))
 			errors.push(
 				`${file}:${line}: a job skipped for a signed local run must need the route job`,
