@@ -1429,6 +1429,8 @@ export async function main(
 		const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
 		const repository = env.GITHUB_REPOSITORY ?? "";
 		const token = env.GITHUB_TOKEN ?? "";
+		if (!token)
+			throw new Error("merge-group Fabric queue probe token is unavailable");
 		const trunkLabel = labels.trunk;
 		const githubLabel = labels.github;
 		const read = githubReader(apiUrl, token, io.fetch);
@@ -1465,26 +1467,48 @@ export async function main(
 				nowMs,
 			});
 		const sleep = (wait: number) => delay(wait * 1000);
-		let decision: RouteDecision;
+		let decision: RouteDecision | undefined;
+		let hostedIdle = false;
+		let trunkIdle = false;
+		let hostedSummary = "";
+		let trunkSummary = "";
 		try {
 			const probeAtMs = now();
 			const firstView = await observeHosted(probeAtMs);
 			const trunkView = await observeTrunkIdle(probeAtMs);
 			const hostedLoad = labelLoad(firstView.jobs, githubLabel, probeAtMs);
 			const trunkLoad = labelLoad(trunkView.jobs, trunkLabel, probeAtMs);
-			const hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
-			const trunkIdle = mergeGroupTrunkHasIdleCapacity(trunkLoad);
-			const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
-			const trunkSummary = describeLoad("hobo-trunk", trunkLoad);
+			hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
+			trunkIdle = mergeGroupTrunkHasIdleCapacity(trunkLoad);
+			hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+			trunkSummary = describeLoad("hobo-trunk", trunkLoad);
+			console.log(
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${trunkSummary}; trunkIdle=${trunkIdle}`,
+			);
+		} catch (error) {
+			const code =
+				error instanceof Error && error.name ? error.name : "probe-error";
+			console.log(
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${code}); using GitHub-hosted runners`)}`,
+			);
+			decision = {
+				tier: "github",
+				runner: githubLabel,
+				reason: `merge-group Fabric hosted probe unreadable (${code})`,
+				refusedBy: "queue",
+				mergeGroupHostedProbe: {
+					idle: false,
+					summary: `unreadable: ${code}`,
+				},
+			};
+		}
+		if (!decision) {
 			const hostedProbe = {
 				idle: hostedIdle,
 				summary: hostedSummary,
 				trunkIdle,
 				trunkSummary,
 			};
-			console.log(
-				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${trunkSummary}; trunkIdle=${trunkIdle}`,
-			);
 			if (hostedIdle || !trunkIdle) {
 				decision = {
 					tier: "github",
@@ -1520,22 +1544,6 @@ export async function main(
 					});
 				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
-		} catch (error) {
-			const code =
-				error instanceof Error && error.name ? error.name : "probe-error";
-			console.log(
-				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${code}); using GitHub-hosted runners`)}`,
-			);
-			decision = {
-				tier: "github",
-				runner: githubLabel,
-				reason: `merge-group Fabric hosted probe unreadable (${code})`,
-				refusedBy: "queue",
-				mergeGroupHostedProbe: {
-					idle: false,
-					summary: `unreadable: ${code}`,
-				},
-			};
 		}
 		return report(
 			{
