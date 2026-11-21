@@ -6,13 +6,7 @@ import {
 	LeaseSchema,
 	SandboxPricingSchema,
 } from "@hobo/ci";
-import { createAgent37Client } from "@hobo/provider-agent37";
 import { describe, expect, it, vi } from "vitest";
-import {
-	createAgent37FakeServer,
-	generateAgent37TestApiKey,
-} from "../../providers/provider-agent37/test/fake/server.mts";
-import { createAgent37SandboxDriver } from "../src/agent37-sandbox.js";
 import {
 	createSandboxController,
 	type IsolatedSandboxDriver,
@@ -28,7 +22,6 @@ const now = "2026-10-27T12:00:00Z";
 function fixture(
 	withProxy = false,
 	reportFailure: (failure: SandboxLaunchFailure) => void = () => {},
-	driverOverride?: IsolatedSandboxDriver,
 ) {
 	let lease = create(LeaseSchema, {
 		id,
@@ -94,7 +87,7 @@ function fixture(
 			_id: string,
 			sandboxId: string,
 		) {
-			if (!driverOverride) expect(sandboxId).toBe(session);
+			expect(sandboxId).toBe(session);
 			events.push("quota");
 		},
 		async settleSandboxObserved(
@@ -128,7 +121,7 @@ function fixture(
 			return lease;
 		},
 	};
-	const driver: IsolatedSandboxDriver = driverOverride ?? {
+	const driver: IsolatedSandboxDriver = {
 		create: vi.fn(async ({ name }) => {
 			events.push("guest-create");
 			return {
@@ -837,85 +830,5 @@ describe("isolated runner lifecycle", () => {
 		await f.controller.reconcile(id);
 		expect(f.read().state).toBe("running");
 		expect(f.driver.stop).not.toHaveBeenCalled();
-	});
-});
-
-async function agent37Fixture() {
-	const fake = await createAgent37FakeServer({
-		apiKey: generateAgent37TestApiKey(),
-	});
-	const fetchImpl: typeof globalThis.fetch = async (input, init) => {
-		const source = new URL(new Request(input).url);
-		return fetch(`${fake.baseUrl}${source.pathname}${source.search}`, init);
-	};
-	const client = createAgent37Client({
-		apiKey: fake.apiKey,
-		fetchImpl,
-		sleep: async () => {},
-		random: () => 0,
-	});
-	const driver = createAgent37SandboxDriver({
-		client,
-		pool: {
-			template: "agent37-ubuntu",
-			type: "vm",
-			region: "us",
-			cpu: 2,
-			memory: 4,
-			disk: 20,
-			network: { allow: ["github.com"] },
-		},
-		now: () => Date.parse(now),
-	});
-	return { fake, driver };
-}
-
-describe("Agent37 sandbox driver lifecycle", () => {
-	it("runs guest_create → prepare → jit_register → runner_start → cleanup", async () => {
-		const { fake, driver } = await agent37Fixture();
-		const f = fixture(false, () => {}, driver);
-		await f.controller.launch(id);
-		const instance = fake.state.instances[0];
-		if (!instance) throw new Error("expected one Agent37 instance");
-		expect(instance.name).toBe(`hobo-${id}`);
-		expect(instance.metadata).toMatchObject({ hobo: "ci", leaseId: id });
-		expect(fake.state.execInvocations.map((entry) => entry.name)).toEqual([
-			`prep-${id}`,
-			`start-${id}`,
-		]);
-		expect(fake.state.execInvocations[1]?.background).toBe(true);
-		expect(f.read()).toMatchObject({
-			state: "running",
-			sandboxSessionId: instance.id,
-			sandboxStage: "running",
-			sandboxCommandId: expect.any(String),
-		});
-		expect(f.github.request).toHaveBeenCalledTimes(1);
-
-		await f.controller.reconcile(id);
-		expect(f.read()).toMatchObject({
-			state: "completed",
-			paidMicros: 123,
-			runnerDeletionConfirmed: true,
-		});
-		expect(f.pending.map((job) => job.id)).toEqual([11]);
-		expect(fake.state.instances).toHaveLength(0);
-	});
-
-	it("discovers an Agent37 instance after a lost create response and stops it", async () => {
-		const { fake, driver } = await agent37Fixture();
-		const create = driver.create.bind(driver);
-		driver.create = async (config) => {
-			await create(config);
-			throw new Error("response lost");
-		};
-		const f = fixture(false, () => {}, driver);
-		await f.controller.launch(id);
-		expect(f.read()).toMatchObject({
-			state: "completed",
-			sandboxStage: "stopped",
-		});
-		expect(f.pending.map((job) => job.id)).toEqual([11]);
-		expect(fake.state.instances).toHaveLength(0);
 	});
 });

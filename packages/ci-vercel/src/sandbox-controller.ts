@@ -180,7 +180,7 @@ export function createSandboxController(options: {
 	store: SandboxLeaseStore;
 	github: GithubTransport;
 	driver: IsolatedSandboxDriver;
-	proxyDriver?: SandboxProxyDriver | undefined;
+	proxyDriver?: SandboxProxyDriver;
 	authorize: (lease: Lease) => Promise<SandboxAuthority>;
 	/** A trusted provider-usage ledger calculates the actual all-in charge. */
 	charge: (

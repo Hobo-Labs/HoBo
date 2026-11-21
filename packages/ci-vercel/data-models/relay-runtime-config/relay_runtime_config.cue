@@ -24,7 +24,6 @@ package vercel
 	HOBO_CI_SANDBOX_PROJECT_ID?:       string & =~"^prj_[A-Za-z0-9]{1,100}$"
 	HOBO_CI_SANDBOX_ISSUER?:           string & =~"^https?://"
 	HOBO_CI_SANDBOX_PLAN?:             "hobby" | "pro" | "enterprise"
-	HOBO_CI_SANDBOX_PROVIDER?:         "vercel" | "agent37"
 	HOBO_CI_SANDBOX_DOMAINS_JSON?:     string & =~"(?s)^.{2,}$"
 	HOBO_CI_GITHUB_APP_ID:             string & =~"^[1-9][0-9]{0,15}$"
 	HOBO_CI_GITHUB_APP_PRIVATE_KEY:    string & =~"^-----BEGIN (RSA )?PRIVATE KEY-----"

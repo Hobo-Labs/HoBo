@@ -53,7 +53,4 @@ message RelayRuntimeConfig {
   // Verdict-blocked minutes per label per 24-hour window before a label is
   // served open whatever the reporters say: 1 to 1440, default 240.
   optional string hobo_ci_fleet_verdict_daily_block_minutes = 29 [json_name = "HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES"];
-  // `vercel` (the default) or `agent37`: which sandbox driver the relay's
-  // isolated runner host launches ephemeral guests through.
-  optional string hobo_ci_sandbox_provider = 30 [json_name = "HOBO_CI_SANDBOX_PROVIDER"];
 }

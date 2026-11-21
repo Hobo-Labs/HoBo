@@ -27,7 +27,6 @@
     "@hobo/core": "workspace:*",
     "@hobo/junctions": "workspace:*",
     "@hobo/kv-redis-compatible": "workspace:*",
-    "@hobo/provider-agent37": "workspace:*",
     "@hobo/provider-turso": "workspace:*",
     "@hobo/provider-upstash": "workspace:*",
     "@hobo/provider-vercel-blob": "workspace:*",
