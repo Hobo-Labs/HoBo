@@ -38,8 +38,8 @@ GitHub's native merge queue on `main` in the **Hobo-Labs/HoBo** org so landing
 PRs use `merge_group: checks_requested` with the required check names. PR runs
 use `pnpm agent:check -- --base=origin/<base-ref>`; the post-merge full gate
 runs `check:all`, the architecture guard and full `turbo run test`. Event-aware
-concurrency cancels stale PR runs but never cancels `merge_group` or `push` to
-`main`. Runs that stay **`queued`** with no runner name indicate missing JIT
+concurrency cancels stale PR runs and superseded `merge_group` runs (keyed on
+`merge_group.head_ref`); it never cancels `push` to `main` (finding 113). Runs that stay **`queued`** with no runner name indicate missing JIT
 **`hobo`** registration—see [`packages/ci/RUNNER-QUEUE.md`](../../../../packages/ci/RUNNER-QUEUE.md).
 The `pr-gate` job resolves `TURBO_SCM_BASE` via
 [`scripts/ci/turbo-scm-base.mts`](../../../../scripts/ci/turbo-scm-base.mts):
