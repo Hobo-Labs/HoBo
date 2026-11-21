@@ -29,7 +29,7 @@ const BUNDLE_ATTESTATION = ".bundle-attestation.json";
 const SECRET_KEY_PATTERN =
 	/(?:token|secret|password|passwd|credential|api[-_]?key|private[-_]?key)/iu;
 export const SECRET_VALUE_PATTERN =
-	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-[A-Za-z0-9]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
+	/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|sk-ant-[A-Za-z0-9_-]{16,}|sk-or-[A-Za-z0-9_-]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{12,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})/u;
 
 export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
 export const SYNCED_SKILLS = ["hobo-setup", "hobo-deploy"] as const;
@@ -819,6 +819,8 @@ export function checkAgentPlugin(input: {
 	const issues: AgentPluginIssue[] = [];
 	const notes: string[] = [];
 
+	issues.push(...githubHeadShaMismatchIssues(repoRoot));
+
 	const commitIsh = versionPinCommitIsh(repoRoot);
 	const exactReleaseTrain = requiresExactReleaseTrainVersion(
 		repoRoot,
@@ -1086,17 +1088,40 @@ function trustedGithubHeadSha(
 	return headSha.toLowerCase();
 }
 
-export function versionPinCommitIsh(repoRoot: string): string {
+function mergeGroupPrBranchTip(repoRoot: string): string | undefined {
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
-	let mergePrHead: string | undefined;
-	if (eventName === "pull_request" || eventName === "merge_group") {
-		const prHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
-			cwd: repoRoot,
-			encoding: "utf8",
-		});
-		const sha = prHead.stdout?.trim().toLowerCase() ?? "";
-		if (prHead.status === 0 && sha.length > 0) mergePrHead = sha;
+	if (eventName !== "pull_request" && eventName !== "merge_group") {
+		return undefined;
 	}
+	const prHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	const sha = prHead.stdout?.trim().toLowerCase() ?? "";
+	if (prHead.status === 0 && sha.length > 0) return sha;
+	return undefined;
+}
+
+export function githubHeadShaMismatchIssues(
+	repoRoot: string,
+): readonly AgentPluginIssue[] {
+	const mergePrHead = mergeGroupPrBranchTip(repoRoot);
+	if (mergePrHead === undefined) return [];
+	const envSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
+	if (envSha !== undefined && envSha.length > 0 && envSha !== mergePrHead) {
+		return [
+			{
+				file: "plugin.json",
+				message:
+					"GITHUB_HEAD_SHA does not match the PR branch tip (HEAD^2); refuse version measurement on this checkout topology",
+			},
+		];
+	}
+	return [];
+}
+
+export function versionPinCommitIsh(repoRoot: string): string {
+	const mergePrHead = mergeGroupPrBranchTip(repoRoot);
 	const envSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
 	if (mergePrHead !== undefined) {
 		if (envSha !== undefined && envSha === mergePrHead) return envSha;

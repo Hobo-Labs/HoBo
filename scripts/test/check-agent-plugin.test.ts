@@ -16,6 +16,7 @@ import {
 	checkMarkdownLinks,
 	checkPluginScopedPath,
 	compareSemverPrecedence,
+	githubHeadShaMismatchIssues,
 	hoboMcpServerIssues,
 	manifestSemanticIssues,
 	mcpSemanticIssues,
@@ -421,6 +422,8 @@ describe("scanTextForSecrets", () => {
 	it("flags secret-shaped values", () => {
 		for (const text of [
 			"bearer sk-abcdefghijklmnopqrst",
+			"sk-ant-api03-abcdefghijklmnopqrst",
+			"sk-or-v1-abcdefghijklmnopqrst",
 			"github_token: ghp_abcdefghijklmnopqrst",
 			"github_pat_abcdefghijklmnopqrst",
 			"sk-proj-abcdefghijklmnopqrst",
@@ -1240,6 +1243,24 @@ describe("release-train version pin commit selection", () => {
 		const baseSha = git(repoRoot, "rev-parse", "HEAD^1");
 		stubCiEnvironment("pull_request", baseSha);
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+		expect(githubHeadShaMismatchIssues(repoRoot)).toHaveLength(1);
+	});
+
+	it("fails checkAgentPlugin when GITHUB_HEAD_SHA disagrees with HEAD^2", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		const baseSha = git(repoRoot, "rev-parse", "HEAD^1");
+		stubCiEnvironment("pull_request", baseSha);
+		const report = checkAgentPlugin({
+			pluginRoot: realPluginRoot,
+			repoRoot,
+			versionFromReleaseTrain: undefined,
+		});
+		expect(
+			report.issues.some((issue) =>
+				/GITHUB_HEAD_SHA does not match the PR branch tip/u.test(issue.message),
+			),
+		).toBe(true);
+		expect(prHead).not.toBe(baseSha);
 	});
 
 	it("ignores an unverified GITHUB_HEAD_SHA", async () => {

@@ -43,8 +43,8 @@ pnpm exec turbo run build --filter=@hobo/hobo...
 pnpm run agent-plugin:build
 ```
 
-In CI, `agent-plugin:build` must run in the same GitHub Actions job immediately
-before `agent-plugin:check`. The build writes a gitignored
+In CI, HoBo Fabric runs `pnpm run agent-plugin:build` in the same job
+immediately before `check:all` (which calls `agent-plugin:check`). The build writes a gitignored
 `.bundle-attestation.json` (only when `GITHUB_ACTIONS=true`) carrying the bundle sha256,
 `GITHUB_RUN_ID`, `GITHUB_SHA`, and `runAttempt` when GitHub sets
 `GITHUB_RUN_ATTEMPT`. It is a **job-local consistency record** (same run,

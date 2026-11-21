@@ -575,6 +575,7 @@ jobs:
           if [ "$SCOPE" = "affected" ]; then
             pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else
+            pnpm run agent-plugin:build
             pnpm run check:all
           fi
       # The prune decides whether the save runs at all. Skipped here, the save's
@@ -1465,6 +1466,7 @@ jobs:
           if [ "$SCOPE" = "affected" ]; then
             pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else
+            pnpm run agent-plugin:build
             pnpm run check:all
           fi
       - name: Generated-output drift

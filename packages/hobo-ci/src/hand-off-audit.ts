@@ -501,7 +501,14 @@ function startsTurn(event: TranscriptEvent): boolean {
 }
 
 /** Check every owner-facing line got a structured ask before its turn ended. */
-export const DEFAULT_HAND_OFF_AUDIT_OPTIONS = {} as const;
+type HandOffAuditDefaultOptions = Readonly<{
+	ownerFormAvailable?: boolean;
+	ownerFormPrivacyVerified?: boolean;
+}>;
+const handOffAuditDefaultOptions: HandOffAuditDefaultOptions = {};
+export const DEFAULT_HAND_OFF_AUDIT_OPTIONS = Object.freeze(
+	handOffAuditDefaultOptions,
+);
 
 export function auditHandOff(
 	events: readonly TranscriptEvent[],
