@@ -151,7 +151,12 @@ describe("Vercel older resource scope and replay defenses", () => {
 		const r = resolver();
 		await expect(
 			r.reconcile(
-				{ ...request, ref: { ...request.ref, physicalId: undefined } },
+				{
+					...request,
+					ref: { ...request.ref, physicalId: undefined },
+					// Team and operation are present, so only the journal is missing.
+					desired: { operationId: "deploy-1" },
+				},
 				async (call) => {
 					methods.push(call.method);
 					return { status: 404, headers: {}, body: "" };

@@ -1,16 +1,3 @@
-/**
- * Checks a pull request title against Conventional Commits:
- * `<type>[(<scope>)][!]: <subject>`.
- *
- * The type is letters only and must be one of an allowed list, compared
- * exactly (so `Feat` is not `feat`). The scope is optional, in parentheses,
- * with no parentheses or line breaks inside. `!` marks a breaking change. The
- * subject follows one colon and one space and starts with a character that is
- * not a space.
- *
- * A title that fails gets one reason saying what to change. Pure functions.
- */
-
 // public-contract: the title types allowed unless the caller passes its own.
 export const DEFAULT_PULL_REQUEST_TITLE_TYPES: readonly string[] = [
 	"feat",
@@ -27,7 +14,6 @@ export const DEFAULT_PULL_REQUEST_TITLE_TYPES: readonly string[] = [
 ];
 
 export type PullRequestTitleOptions = Readonly<{
-	/** The allowed types. An empty list means the default ones. */
 	types?: readonly string[];
 }>;
 
@@ -43,13 +29,6 @@ function rejected(reason: string): PullRequestTitleCheck {
 	return { ok: false, reason };
 }
 
-/**
- * The title's type, scope and breaking mark when it is well formed and its
- * type is allowed; otherwise the first thing wrong with it, reading left to
- * right, with an unknown type reported last so that a title that is not in
- * this form at all ("Update readme") is told about the form, not about a type
- * it never meant to give.
- */
 export function checkPullRequestTitle(
 	title: string,
 	options: PullRequestTitleOptions = {},
@@ -127,11 +106,6 @@ export function checkPullRequestTitle(
 	return { ok: true, type, scope, breaking };
 }
 
-/**
- * The allowed types from a setting written as a list separated by commas or
- * line breaks: each entry trimmed, empty entries and repeats dropped, first
- * occurrence kept.
- */
 export function parseTitleTypes(text: string): readonly string[] {
 	const types = text
 		.split(/[,\r\n]/)

@@ -150,13 +150,18 @@
           "steps": [
             {
               "type": "action",
-              "reference": { "type": "repository", "name": "actions/checkout", "ref": "v4" },
+              "reference": { "type": "repository", "name": "actions/checkout", "ref": "3d3c42e5aac5ba805825da76410c181273ba90b1" },
               "inputs": { "type": 2, "map": [{ "Key": "sparse-checkout", "Value": ".hobo" }] }
             },
             {
               "type": "action",
+              "reference": { "type": "repository", "name": "actions/setup-node", "ref": "949feb2413d6458794dcd2491c4babbbce0c15c1" },
+              "inputs": { "type": 2, "map": [{ "Key": "node-version", "Value": "24" }] }
+            },
+            {
+              "type": "action",
               "reference": { "type": "script" },
-              "inputs": { "type": 2, "map": [{ "Key": "script", "Value": { "type": 3, "expr": "inputs.github" } }] }
+              "inputs": { "type": 2, "map": [{ "Key": "script", "Value": "node --no-warnings .hobo-ci/relay.mjs --fleet \"$RELAY_FLEET\" --machine \"$RELAY_MACHINE\" --github \"$RELAY_GITHUB\" --blacksmith \"$RELAY_BLACKSMITH\" --depot \"$RELAY_DEPOT\" --namespace \"$RELAY_NAMESPACE\" --warpbuild \"$RELAY_WARPBUILD\" --ubicloud \"$RELAY_UBICLOUD\" --boat \"$RELAY_BOAT\" --runs-on \"$RELAY_RUNS_ON\" --size \"$RELAY_SIZE\" --first \"$RELAY_FIRST\" --repository \"$GITHUB_REPOSITORY\" --run-id \"$GITHUB_RUN_ID\" --run-attempt \"$GITHUB_RUN_ATTEMPT\" --job \"$GITHUB_JOB\" --event \"$GITHUB_EVENT_NAME\" --actor-id \"$GITHUB_ACTOR_ID\" --triggering-actor-id \"$RELAY_TRIGGERING_ACTOR_ID\" --private \"$RELAY_PRIVATE\" --fork \"$RELAY_FORK\" --workflow-ref \"$GITHUB_WORKFLOW_REF\"" }] }
             }
           ]
         }

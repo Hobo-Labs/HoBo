@@ -211,11 +211,11 @@ export function scenarioResults(
 				.map((tag) => tag.name.slice(1))
 				.find((tag) => ids.has(tag));
 			if (id === undefined) continue;
-			const passed = [
-				...element.before,
-				...element.steps,
-				...element.after,
-			].every((step) => step.result.status === "passed");
+			const passed =
+				element.steps.length > 0 &&
+				[...element.before, ...element.steps, ...element.after].every(
+					(step) => step.result.status === "passed",
+				);
 			if (results.get(id) !== "failed")
 				results.set(id, passed ? "passed" : "failed");
 		}
@@ -373,8 +373,10 @@ export function readScenarios(
 		);
 }
 
-/** Run the parity suite and return its cucumber JSON report. */
-function runSuite(root: string): string {
+type SuiteOutcome = Readonly<{ report: string; failure?: string }>;
+
+/** Run the parity suite and retain both its report and process outcome. */
+function runSuite(root: string): SuiteOutcome {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-parity-"));
 	const report = join(dir, "cucumber.json");
 	try {
@@ -392,7 +394,12 @@ function runSuite(root: string): string {
 			{ cwd: root, stdio: ["ignore", "inherit", "inherit"] },
 		);
 		if (run.error) throw run.error;
-		return readFileSync(report, "utf8");
+		const text = readFileSync(report, "utf8");
+		if (run.status === 0) return { report: text };
+		const reason = run.signal
+			? `signal ${run.signal}`
+			: `exit ${String(run.status)}`;
+		return { report: text, failure: `parity suite failed (${reason})` };
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -407,15 +414,15 @@ export function main(argv: readonly string[], root: string): number {
 	const catalog = parseCatalog(readFileSync(join(root, CASES_FILE), "utf8"));
 	const scenarios = readScenarios(root, catalog);
 	const resultsFile = option(argv, "--results");
-	const results = scenarioResults(
+	const run: SuiteOutcome =
 		resultsFile === undefined
 			? runSuite(root)
-			: readFileSync(resultsFile, "utf8"),
-		catalog,
-	);
+			: { report: readFileSync(resultsFile, "utf8") };
+	const results = scenarioResults(run.report, catalog);
 	const problems = [
 		...coverageProblems(catalog, scenarios),
 		...unrunProblems(scenarios, results),
+		...(run.failure === undefined ? [] : [run.failure]),
 	];
 	const page = renderScorecard(catalog, caseRows(catalog, scenarios, results));
 	const target = join(root, SCORECARD_FILE);

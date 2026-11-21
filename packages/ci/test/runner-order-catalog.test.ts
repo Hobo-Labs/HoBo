@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
-import { RunnerOrderSchema } from "../src/_generated/runner_route_pb.js";
+import {
+	RunnerOrderSchema,
+	RunnerOrderStepSchema,
+} from "../src/_generated/runner_route_pb.js";
 import {
 	DEFAULT_RUNNER_ORDER,
 	defineRunnerOrder,
@@ -68,8 +71,13 @@ describe("runner provider catalog", () => {
 
 	it("tells GitHub-hosted labels from unknown ones", () => {
 		expect(runnerProviderOfLabel("ubuntu-24.04")).toBe("github");
-		expect(isGithubHostedLabel("macos-15")).toBe(true);
-		expect(isGithubHostedLabel("windows-2025")).toBe(true);
+		expect(isGithubHostedLabel(" macos-15 ")).toBe(true);
+		expect(isGithubHostedLabel("WINDOWS-2025")).toBe(true);
+		expect(isGithubHostedLabel("ubuntu-latest")).toBe(true);
+		expect(isGithubHostedLabel("ubuntu-24.04-arm")).toBe(true);
+		expect(isGithubHostedLabel("ubuntu- arbitrary-label")).toBe(false);
+		expect(isGithubHostedLabel("windows-2099")).toBe(false);
+		expect(isGithubHostedLabel("macos-99")).toBe(false);
 		expect(runnerProviderOfLabel("self-hosted")).toBeUndefined();
 		expect(runnerProviderOfLabel("hobo")).toBeUndefined();
 	});
@@ -86,10 +94,10 @@ describe("runner provider catalog", () => {
 		expect(runnerLabelForSize("warpbuild", 16, 1)).toBe(
 			"warp-ubuntu-2404-x64-16x",
 		);
-		// Ubicloud has no 32 vCPU machine and nothing larger.
+
 		expect(runnerLabelForSize("ubicloud", 16, 1)).toBe("ubicloud-standard-16");
 		expect(runnerLabelForSize("ubicloud", 32, 1)).toBeUndefined();
-		// Boat's one read label is its 4 vCPU default: 2 rounds up, 8 has none.
+
 		expect(runnerLabelForSize("boat", 2, 1)).toBe("boat");
 		expect(runnerLabelForSize("boat", 8, 1)).toBeUndefined();
 		expect(runnerLabelForSize("runs-on", 4, 9001)).toBe(
@@ -112,6 +120,9 @@ describe("runner provider catalog", () => {
 	it("parses step keys and auto sizes", () => {
 		expect(runnerStepKey("runs-on")).toBe("runs-on");
 		expect(runnerStepKey("buildjet")).toBeUndefined();
+		expect(
+			stepKey(create(RunnerOrderStepSchema, { key: "buildjet" })),
+		).toBeUndefined();
 		expect(runnerAutoSize(8)).toBe(8);
 		expect(runnerAutoSize(3)).toBeUndefined();
 	});
@@ -217,11 +228,11 @@ describe("runner order", () => {
 		).toThrow(/at least one step/u);
 	});
 
-	it("falls back to the default for a missing or broken stored order", () => {
+	it("defaults only a missing or blank stored order", () => {
 		expect(runnerOrderOrDefault(undefined)).toBe(DEFAULT_RUNNER_ORDER);
 		expect(runnerOrderOrDefault("  ")).toBe(DEFAULT_RUNNER_ORDER);
-		expect(runnerOrderOrDefault("{not json")).toBe(DEFAULT_RUNNER_ORDER);
-		expect(runnerOrderOrDefault('{"steps":[]}')).toBe(DEFAULT_RUNNER_ORDER);
+		expect(() => runnerOrderOrDefault("{not json")).toThrow();
+		expect(() => runnerOrderOrDefault('{"steps":[]}')).toThrow();
 		expect(keys(runnerOrderOrDefault('{"steps":[{"key":"depot"}]}'))).toEqual([
 			"depot",
 		]);
@@ -300,7 +311,7 @@ describe("relay inputs", () => {
 		]);
 	});
 
-	it("turns auto into the label for the size", () => {
+	it("turns auto into the label for the size and omits unsupported sizes", () => {
 		const resolved = resolveAutoInputs(
 			new Map([
 				["machine", ["auto"]],
@@ -315,20 +326,14 @@ describe("relay inputs", () => {
 		expect([...resolved]).toEqual([
 			["machine", ["self-hosted"]],
 			["fleet", ["hobo"]],
-			// GitHub's standard runner is 2 vCPU: nothing answers a 4 vCPU request.
-			["github", ["auto"]],
 			["depot", ["depot-ubuntu-24.04-4"]],
 			["ubicloud", ["ubicloud-standard-8"]],
 		]);
+		expect(resolved.has("github")).toBe(false);
 	});
 
-	it("treats a relay with no inputs as every runner type at the size", () => {
-		const resolved = resolveAutoInputs(new Map(), 2, 55);
-		expect([...resolved.keys()]).toEqual([...RUNNER_STEP_KEYS]);
-		expect(resolved.get("runs-on")).toEqual([
-			"runs-on=55/runner=2cpu-linux-x64",
-		]);
-		expect(resolved.get("github")).toEqual(["ubuntu-24.04"]);
+	it("resolves an empty input map to an empty map", () => {
+		expect(resolveAutoInputs(new Map(), 2, 55).size).toBe(0);
 	});
 });
 

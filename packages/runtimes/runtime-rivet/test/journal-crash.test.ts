@@ -145,4 +145,76 @@ describe("actor-local journal crash windows", () => {
 		expect(ensured.details.fidelity).toBe("local-sqlite");
 		bundle.journal.close();
 	});
+
+	it("replays persisted state and resumes in-flight commands after reopen", () => {
+		const dir = mkdtempSync(join(tmpdir(), "hobo-rivet-"));
+		dirs.push(dir);
+		const path = join(dir, "journal.sqlite");
+		const identity = {
+			tenantId: "acme",
+			projectId: "shop",
+			actorTypeId: "Cart",
+			keySegments: ["room-1"],
+			schemaVersion: 1,
+		};
+		const first = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "shop",
+			journalPath: path,
+		});
+		first.actors.accept({
+			identity,
+			commandId: "cmd-1",
+			commandType: "increment",
+			payload: {},
+			expectedRevision: 0,
+		});
+		first.journal.close();
+
+		const second = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "shop",
+			journalPath: path,
+		});
+		expect(
+			second.actors.processNext(identity, (state) => Number(state) + 1, 0)
+				?.revision,
+		).toBe(1);
+		second.actors.accept({
+			identity,
+			commandId: "cmd-2",
+			commandType: "increment",
+			payload: {},
+			expectedRevision: 1,
+		});
+		second.journal.close();
+
+		const third = createRivetRuntimeHost({
+			tenantId: "acme",
+			campId: "shop",
+			journalPath: path,
+		});
+		const observed: unknown[] = [];
+		expect(
+			third.actors.processNext(
+				identity,
+				(state) => {
+					observed.push(state);
+					return Number(state) + 1;
+				},
+				0,
+			)?.revision,
+		).toBe(2);
+		expect(observed).toEqual([0, 1]);
+		expect(
+			third.actors.accept({
+				identity,
+				commandId: "cmd-1",
+				commandType: "increment",
+				payload: {},
+				expectedRevision: 0,
+			}).duplicate,
+		).toBe(true);
+		third.journal.close();
+	});
 });

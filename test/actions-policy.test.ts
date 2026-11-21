@@ -186,7 +186,7 @@ const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 const shardRunsOn =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 const mergeShardRunsOn =
-	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
+	"${{ needs.pr_gate_plan.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -526,7 +526,10 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			// The route job chooses the runner, so it cannot wait on one.
 			if ((lines[start] ?? "") === "  route:") {
 				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
-				assert.match(block, /uses: \$\/\.github\/actions\/route-runner$/m);
+				assert.match(
+					block,
+					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
+				);
 				continue;
 			}
 			// A required gate runs no action on GitHub-hosted too. `always()` is for
@@ -565,7 +568,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			if (runsOn === mergeShardRunsOn) {
 				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
 				assert.equal(lines[start], "  workspace_tests:");
-				assert.match(block, /^    needs: \[route, pr_gate_validation\]/m);
+				assert.match(block, /^    needs: \[route, [^\n]*pr_gate_plan/m);
 				continue;
 			}
 			// The deps-image route chooses the box or a hosted Docker context.
