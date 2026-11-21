@@ -71,7 +71,7 @@ const started = await startFakeAgent37Server({ requireContainer: true });
 await started.close();
 ```
 
-The wrapper starts `node:24-alpine` with the same fake server. Unavailable Docker is an error by default. `allowInProcessFallback: true` explicitly selects the in-process fallback; `requireContainer: true` forbids it. Normal tests exercise only fallback selection and do not require Docker.
+The wrapper starts the official `node:24-alpine` image pinned by manifest digest with the same fake server, so the cross-process contract cannot drift when the tag moves. Unavailable Docker is an error by default. `allowInProcessFallback: true` explicitly selects the in-process fallback; `requireContainer: true` forbids it. Normal tests exercise only fallback selection and do not require Docker.
 
 ## Contracts and validation
 
