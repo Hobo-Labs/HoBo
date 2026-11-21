@@ -43,10 +43,11 @@ pnpm run agent-plugin:build
 
 In CI, `agent-plugin:build` must run in the same GitHub Actions job immediately
 before `agent-plugin:check`. The build writes a gitignored
-`.bundle-attestation.json` carrying the bundle sha256 plus the current
-`GITHUB_RUN_ID` (and attempt when present). The check refuses a bundle whose
-attestation was not minted for this workflow run, so restored cache artifacts
-from another run cannot pass.
+`.bundle-attestation.json` (GitHub Actions only) carrying the bundle sha256,
+`GITHUB_RUN_ID`, `GITHUB_SHA`, and attempt when present. The check refuses a
+bundle whose attestation was not minted for this workflow run and checkout. In
+CI, `agent-plugin:check` builds the bundle when it is still absent so repo-wide
+gates do not fail before that build step.
 
 The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to

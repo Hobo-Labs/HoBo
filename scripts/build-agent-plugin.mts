@@ -37,6 +37,7 @@ type BundleAttestationRecord = {
 	sha256: string;
 	runId?: string;
 	runAttempt?: string;
+	commitSha?: string;
 };
 
 type EsbuildModule = {
@@ -83,12 +84,23 @@ async function main(): Promise<void> {
 	const sha256 = createHash("sha256")
 		.update(readFileSync(outfile))
 		.digest("hex");
-	const runId = process.env.GITHUB_RUN_ID?.trim();
+	const inActions = process.env.GITHUB_ACTIONS === "true";
+	if (!inActions) return;
+	const runId = process.env.GITHUB_RUN_ID?.trim() ?? "";
 	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
+	const commitSha = process.env.GITHUB_SHA?.trim() ?? "";
+	if (runId.length === 0 || commitSha.length === 0) {
+		console.error(
+			"agent-plugin:build: GITHUB_RUN_ID and GITHUB_SHA are required in GitHub Actions",
+		);
+		process.exitCode = 1;
+		return;
+	}
 	const payload: BundleAttestationRecord = {
 		sha256,
+		runId,
+		commitSha,
 	};
-	if (runId !== undefined && runId.length > 0) payload.runId = runId;
 	if (runAttempt !== undefined && runAttempt.length > 0) {
 		payload.runAttempt = runAttempt;
 	}

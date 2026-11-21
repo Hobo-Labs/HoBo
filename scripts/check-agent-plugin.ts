@@ -311,7 +311,8 @@ export function mcpSemanticIssues(config: McpConfig): AgentPluginIssue[] {
 		if (server.cwd !== undefined) {
 			issues.push(...checkPluginScopedPath(where, server.cwd));
 		}
-		for (const key of Object.keys(server.env ?? {})) {
+		for (const [key, value] of Object.entries(server.env ?? {})) {
+			issues.push(...scanTextForSecrets(`${where} env.${key}`, value));
 			if (FORBIDDEN_ENV_KEYS.includes(key)) {
 				issues.push({
 					file: where,
@@ -936,8 +937,9 @@ function bundleAttestationIssues(
 	}
 	const attestation = z
 		.object({
-			sha256: z.string(),
-			runId: z.string().optional(),
+			sha256: z.string().min(1),
+			runId: z.string().min(1),
+			commitSha: z.string().min(1),
 			runAttempt: z.string().optional(),
 		})
 		.safeParse(JSON.parse(readFileSync(attestationPath, "utf8")));
@@ -958,6 +960,34 @@ function bundleAttestationIssues(
 				file: BUNDLE_ATTESTATION,
 				message:
 					"bundle attestation is only trusted in a GitHub Actions job with GITHUB_RUN_ID; rebuild in CI before agent-plugin:check",
+			},
+		];
+	}
+	if (attestation.data.runId.length === 0) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation is missing runId; run pnpm run agent-plugin:build in this job",
+			},
+		];
+	}
+	const commitSha = process.env.GITHUB_SHA?.trim();
+	if (commitSha === undefined || commitSha.length === 0) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation is only trusted in a GitHub Actions job with GITHUB_SHA; rebuild in CI before agent-plugin:check",
+			},
+		];
+	}
+	if (attestation.data.commitSha !== commitSha) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation commitSha does not match this workflow checkout; rebuild with pnpm run agent-plugin:build in this job",
 			},
 		];
 	}
@@ -1101,11 +1131,38 @@ export function releaseTrainVersionForPluginGate(
 	}
 }
 
+function ciGateActive(): boolean {
+	return (
+		process.env.CI !== undefined ||
+		process.env.GITHUB_ACTIONS !== undefined ||
+		process.env.TF_BUILD !== undefined
+	);
+}
+
+function ensureCiPluginBundle(repoRoot: string): void {
+	if (!ciGateActive()) return;
+	const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
+	if (existsSync(bundle)) return;
+	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
+		cwd: repoRoot,
+		stdio: "inherit",
+		env: process.env,
+	});
+	if (build.status !== 0) process.exit(build.status ?? 1);
+}
+
 function main(): void {
 	const repoRoot = path.resolve(import.meta.dirname, "..");
+	ensureCiPluginBundle(repoRoot);
 	const versionFromReleaseTrain = releaseTrainVersionForPluginGate(repoRoot);
 	if (versionFromReleaseTrain === undefined) {
-		console.log(
+		if (ciGateActive()) {
+			console.error(
+				"agent-plugin:check: release-train version is required in CI; unset HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN",
+			);
+			process.exit(1);
+		}
+		console.warn(
 			"agent-plugin:check: skipped the release-train comparison only because HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1 was set outside CI",
 		);
 	}
