@@ -1,18 +1,3 @@
-/**
- * Parity taxonomy: every per-provider claim is recounted from code.
- *
- * The reason this file exists is that the resolver counts had drifted in three
- * places at once — this package's header said `aws (7/19)`, `src/aws.ts` said
- * AWS "ships no deployment resolvers", and the README said Hostinger resolved
- * 2 of 5 — while the constants in the provider packages said 8, some, and 5.
- * Each prose number was right once. None of them was checked.
- *
- * So the assertions here restate no count except Vercel's 3/5, which pins why
- * its catalog is widened. The catalog side is read through the exported
- * `PARITY_SOURCES` (no hand twin of its Yard calls); the resolved side is
- * imported straight from each provider package's `*_RESOLVED_PRODUCT_IDS`, so
- * a source wired to the wrong constant fails.
- */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -241,16 +226,25 @@ describe("vercel's widened catalog", () => {
 		expect(caught.message).toContain("vercel.project/v1");
 	});
 
-	it("default is four offerings; full catalog adds project() for five", () => {
+	it("the full catalog includes the opt-in project and deployment components", () => {
 		expect(catalogIdsOf(vercel.Yard())).toHaveLength(4);
-		const full = catalogIdsOf(vercel.Yard({ project: {} }));
-		expect(full).toHaveLength(5);
-		expect(full).toContain("vercel.project/v1");
+		const full = catalogIdsOf(PARITY_SOURCES.vercel.catalog());
+		expect(full).toHaveLength(10);
+		expect(full).toEqual(
+			expect.arrayContaining([
+				"vercel.project/v1",
+				"vercel.function/v1",
+				"vercel.queues/v1",
+				"vercel.schedules/v1",
+				"vercel.cron/v1",
+				"vercel.sandbox-host/v1",
+			]),
+		);
 	});
 
-	it("providerParity() reports vercel as 3/5", () => {
+	it("providerParity() reports vercel as 9/10", () => {
 		const row = providerParity().find((r) => r.provider === "vercel");
-		expect(row?.denominator).toBe("3/5");
+		expect(row?.denominator).toBe("9/10");
 	});
 });
 

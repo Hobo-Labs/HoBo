@@ -1,53 +1,22 @@
-/**
- * Whether a hosted runner type is still starting jobs, from what happened to
- * the jobs that asked for it.
- *
- * A hosted provider brings its own runner once a job asks for its label.
- * Nothing tells HoBo when that stops working: the label is still valid, the
- * job just sits queued. So the record is kept from the outside. A job that
- * asked for the label and had no runner after `missedAfterMs` is a miss; a
- * job that got a runner is a start, whatever the job's own result was.
- *
- * Three misses in a row inside the window (earliest to latest, whatever
- * order they were reported in) trip the type, and the walk in
- * `./decide.ts` passes over it. It is not left tripped for good: after a
- * back-off one job is let through as a trial. A trial that starts clears the
- * record; a trial that is missed doubles the back-off, up to a ceiling. A
- * trial nobody reported on expires, so a lost webhook cannot hold a type out
- * forever.
- *
- * Pure functions: no clock, network or store.
- */
-
 export type ProviderOutcome = Readonly<{
 	atMs: number;
-	/** A runner took the job. */
 	started: boolean;
 }>;
 
 export type ProviderHealth = Readonly<{
-	/** Recent outcomes, oldest first, never more than `tripAfter` of them. */
 	outcomes: readonly ProviderOutcome[];
-	/** When the type was tripped. Absent while it is healthy. */
 	trippedAtMs: number | undefined;
-	/** The back-off before the next trial. */
 	backoffMs: number;
-	/** The earliest a trial job may be let through. */
 	nextTrialAtMs: number | undefined;
-	/** When the trial in flight was let through. */
 	trialStartedAtMs: number | undefined;
 }>;
 
 export type ProviderHealthOptions = Readonly<{
-	/** Misses in a row that trip a type. */
 	tripAfter: number;
-	/** The misses must all fall inside this span. */
 	windowMs: number;
-	/** How long a job may wait for a runner before it counts as a miss. */
 	missedAfterMs: number;
 	firstBackoffMs: number;
 	maxBackoffMs: number;
-	/** How long a trial may go unreported before another is allowed. */
 	trialTimeoutMs: number;
 }>;
 
@@ -61,13 +30,7 @@ export const PROVIDER_HEALTH_DEFAULTS: ProviderHealthOptions = {
 	trialTimeoutMs: 30 * 60_000,
 };
 
-export type ProviderHealthState =
-	/** Take jobs as usual. */
-	| "healthy"
-	/** Pass over it. */
-	| "unhealthy"
-	/** Tripped, and due one job to find out whether it has recovered. */
-	| "trial";
+export type ProviderHealthState = "healthy" | "unhealthy" | "trial";
 
 export function newProviderHealth(): ProviderHealth {
 	return {
@@ -79,7 +42,6 @@ export function newProviderHealth(): ProviderHealth {
 	};
 }
 
-/** The key one runner type's record is kept under: provider and label, lower case. */
 export function providerHealthKey(provider: string, label: string): string {
 	return `${provider}:${label.trim().toLowerCase()}`;
 }
@@ -102,11 +64,6 @@ function tripped(
 	return latest - Math.min(...times) <= options.windowMs ? latest : undefined;
 }
 
-/**
- * The record after one more job's outcome. A start clears everything. A miss
- * while healthy is counted and may trip the type; a miss while tripped means
- * the trial failed, so the back-off doubles.
- */
 export function recordProviderOutcome(
 	health: ProviderHealth,
 	outcome: ProviderOutcome,
@@ -145,7 +102,6 @@ export function recordProviderOutcome(
 	};
 }
 
-/** What the walk should do with this runner type at `nowMs`. */
 export function providerHealthState(
 	health: ProviderHealth,
 	nowMs: number,
@@ -161,7 +117,6 @@ export function providerHealthState(
 		: "unhealthy";
 }
 
-/** The record once a trial job has been let through at `nowMs`. */
 export function startProviderTrial(
 	health: ProviderHealth,
 	nowMs: number,
@@ -169,10 +124,6 @@ export function startProviderTrial(
 	return { ...health, trialStartedAtMs: nowMs };
 }
 
-/**
- * Whether a job that asked for a hosted label at `queuedAtMs` and still has
- * no runner at `nowMs` counts as a miss.
- */
 export function isProviderMiss(
 	queuedAtMs: number,
 	nowMs: number,

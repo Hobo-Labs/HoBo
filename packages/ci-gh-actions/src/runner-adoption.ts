@@ -225,7 +225,11 @@ async function readRunners(
 				status: runner.status,
 				busy: runner.busy,
 				labels,
-				adoptedLabel: labels.find(isAdoptionLabel),
+				adoptedLabel: labels.find(
+					(label) =>
+						label.toLowerCase() ===
+						adoptionLabel(scope, registeredOn, runner.id),
+				),
 				groupId:
 					scope === "organization"
 						? (runner.runner_group_id ?? undefined)
@@ -416,21 +420,30 @@ export async function adoptRunner(
 	github: RunnerAdoptionGithub,
 	input: AdoptRunnerInput,
 ): Promise<RunnerAdoption> {
-	const runner = find(
-		await listAdoptableRunners(github, input.repository),
-		input.runnerId,
-	);
-	// Check the runner can be advertised before writing anything.
-	osOf(runner);
-	archOf(runner);
+	const listing = await listAdoptableRunners(github, input.repository);
+	const runner = find(listing, input.runnerId);
+	const label =
+		runner.adoptedLabel ??
+		adoptionLabel(runner.scope, runner.registeredOn, runner.id);
+	// A label shared by two eligible runners cannot target a single machine.
+	if (
+		[...listing.runners, ...listing.leftOut].some(
+			(other) =>
+				(other.scope !== runner.scope ||
+					other.registeredOn !== runner.registeredOn ||
+					other.id !== runner.id) &&
+				other.labels.some((name) => name.toLowerCase() === label.toLowerCase()),
+		)
+	)
+		throw new RunnerAdoptionError(
+			"unsupported_runner",
+			`The label ${label} is also present on another runner; remove the collision before adoption.`,
+		);
+	// Validate the complete prospective advert, including label capacity, before
+	// changing GitHub. A local validation failure must not leave an orphan label.
+	const advert = adoptedRunnerAdvert(runner, label, input);
 	if (runner.adoptedLabel !== undefined)
-		return {
-			runner,
-			label: runner.adoptedLabel,
-			changed: false,
-			advert: adoptedRunnerAdvert(runner, runner.adoptedLabel, input),
-		};
-	const label = adoptionLabel(runner.scope, runner.registeredOn, runner.id);
+		return { runner, label, changed: false, advert };
 	const after = await readJson(
 		await github.request("POST", labelsPath(runner), { labels: [label] }),
 		LabelsSchema,
@@ -461,7 +474,7 @@ export type RunnerRelease = Readonly<{
 }>;
 
 /**
- * Release a runner: take every `hobo-runner-` label off it. A runner whose
+ * Release a runner: remove only the label derived for it. A runner whose
  * group no longer admits the repository can still be released. Safe to
  * repeat: a label already gone is not an error.
  */
@@ -475,7 +488,10 @@ export async function releaseRunner(
 		find(listing, input.runnerId);
 	const removed: string[] = [];
 	let labels = runner.labels;
-	for (const label of runner.labels.filter(isAdoptionLabel)) {
+	const ownLabel = adoptionLabel(runner.scope, runner.registeredOn, runner.id);
+	for (const label of runner.labels.filter(
+		(name) => name.toLowerCase() === ownLabel,
+	)) {
 		const response = await github.request(
 			"DELETE",
 			`${labelsPath(runner)}/${label}`,

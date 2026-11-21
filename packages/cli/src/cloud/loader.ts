@@ -8,6 +8,7 @@ import {
 	type CollectionTarget,
 	collectBindleManifest,
 	type ManifestV1,
+	readCadence,
 } from "@hobo/bindles";
 import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import { BindleImportError } from "../shell/errors.js";
@@ -193,10 +194,17 @@ export function targetFromBindleDefinition(
 					continue;
 				}
 				const paradigm = paradigmFor(record.kind);
-				const options =
-					record.kind === "secret" && record.declaredAllow?.length
-						? { paradigm, allow: [...record.declaredAllow] }
-						: { paradigm };
+				// A schedule's cadence travels to the planner on the manifest.
+				const cron = readCadence(record.annotations);
+				const options = {
+					paradigm,
+					...(record.kind === "secret" && record.declaredAllow?.length
+						? { allow: [...record.declaredAllow] }
+						: undefined),
+					...(cron !== undefined
+						? { annotations: { cadence: cron } }
+						: undefined),
+				};
 				backing.set(name, collect.data(name, options));
 			}
 
