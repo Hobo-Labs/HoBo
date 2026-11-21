@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-/**
- * Plans are working documents and are never committed (AGENTS.md, "Plans are
- * not committed"). This gate refuses one that is.
- *
- * A plan is a Markdown file whose frontmatter `type` names a plan, or any file
- * under `plans/` or `docs/plans/`. The repository has no plans directory: git
- * ignores both paths, so a tool that writes there cannot get a plan committed.
- * A record of what was decided (an ADR, a design document) is not a plan.
- *
- * `--staged` checks what is staged for the commit, read from the index, so a
- * forced `git add` is caught. With no flag it checks every tracked file, so a
- * plan committed with the hook skipped still fails the pull request.
- */
+
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import process from "node:process";
@@ -27,7 +15,6 @@ function planTypes(): ReadonlySet<string> {
 	]);
 }
 
-/** The frontmatter `type` of a Markdown document, lower-cased, if it has one. */
 export function frontmatterType(text: string): string | undefined {
 	const lines = text.split(/\r?\n/);
 	if (lines[0]?.trim() !== "---") return undefined;
@@ -40,7 +27,6 @@ export function frontmatterType(text: string): string | undefined {
 	return undefined;
 }
 
-/** Why this file is a plan, or undefined when it is not one. */
 export function planReason(
 	file: string,
 	read: () => string,
@@ -66,7 +52,6 @@ function git(args: readonly string[]): string {
 
 export type CommittedPlan = Readonly<{ file: string; reason: string }>;
 
-/** Plans among the staged files (`staged`) or among every tracked file. */
 export function committedPlans(staged: boolean): CommittedPlan[] {
 	const files = git(
 		staged
@@ -75,12 +60,17 @@ export function committedPlans(staged: boolean): CommittedPlan[] {
 	)
 		.split("\0")
 		.filter(Boolean);
-	return files.flatMap((file) => {
-		const reason = planReason(file, () =>
-			staged ? git(["show", `:${file}`]) : readFileSync(file, "utf8"),
-		);
-		return reason === undefined ? [] : [{ file, reason }];
-	});
+	const deleted = staged
+		? new Set<string>()
+		: new Set(git(["ls-files", "--deleted", "-z"]).split("\0").filter(Boolean));
+	return files
+		.filter((file) => !deleted.has(file))
+		.flatMap((file) => {
+			const reason = planReason(file, () =>
+				staged ? git(["show", `:${file}`]) : readFileSync(file, "utf8"),
+			);
+			return reason === undefined ? [] : [{ file, reason }];
+		});
 }
 
 function main(argv: readonly string[]): number {
@@ -91,9 +81,7 @@ function main(argv: readonly string[]): number {
 		`plans:guard: ${found.length} plan document(s) ${staged ? "staged for commit" : "tracked by git"}. Plans are never committed.`,
 	);
 	for (const { file, reason } of found) console.error(`  ${file}: ${reason}`);
-	console.error(
-		"Keep a plan outside the repository. Commit what was decided as an ADR or design document, not the plan.",
-	);
+	console.error("Finish the work and remove planning or design documents.");
 	return 1;
 }
 
