@@ -85,6 +85,7 @@ export function testRouteRequest(
 		repository,
 		private: true,
 		event: "push",
+		fork: false,
 		runId: BigInt(runId),
 		runAttempt: 1,
 		job: "route",
