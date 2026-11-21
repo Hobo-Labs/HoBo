@@ -103,7 +103,8 @@ the sum of its files):
   check now lives in `.github/workflows/release-hobo-pr.yml`, which has **no
   `paths` filter**, so a new workflow file in the PR always starts. `job-scope`
   still skips the suites when the diff cannot reach them. Tags and the main
-  train keep the lane in `release-hobo.yml`.
+  train keep the lane in `release-hobo.yml`. `actions.lock` lists the new
+  workflow's `actions/checkout` and `actions/cache` pins.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the
