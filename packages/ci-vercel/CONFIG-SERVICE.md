@@ -118,7 +118,16 @@ The job and the relay each authenticate to Infisical through OIDC:
   reads it from GitHub (below), because GitHub issues
   `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/<branch>` to a
   repository on the immutable subject format and Infisical refuses (HTTP 403)
-  a trust bound to the legacy `repo:<owner>/<repo>` one. (**Connected:** Tyler
+  a trust bound to the legacy `repo:<owner>/<repo>` one. The trust cannot see
+  which workflow minted the token: subject and claims match any job in this
+  repository on `main` that holds `id-token: write` (`ci-health`,
+  `examples-e2e`, `hosting-evidence`, `release-hobo`, `release-pricing` and
+  `relay-deploy` all do), so any of them can sign in as `hobo-ci-deploy` — the
+  recorded residual under *Least privilege* below. Closing it is a dashboard
+  change Tyler owns: pin the `workflow` claim (`relay-deploy.yml`) the same way
+  `repository_id` is pinned today (`connect` does not write it, and a later
+  `connect` repair rewrites the trust *without* it, so re-add the pin after any
+  repair). (**Connected:** Tyler
   approved using built-in project **Member** (formerly Developer) for
   `hobo-ci-deploy` on `hobo-ci` instead of a custom create/edit-only role.
   Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). `hobo ci secret-store verify` still checks OIDC sign-in only, not Infisical role shape.) Then:
@@ -185,12 +194,20 @@ existing OIDC):
   (immutable; resolved by `connect`), `repository_id` and
   `repository_owner_id` pinned, audience `https://github.com/Hobo-Labs`,
   writer token TTL **600s** (Tyler configured).
-- **Separation:** `hobo-ci-relay` remains **Viewer**; only relay-deploy
-  workflow jobs use `hobo-ci-deploy` OIDC.
+- **Separation:** `hobo-ci-relay` remains **Viewer**; in this repository only
+  `relay-deploy.yml`'s `deploy` and `app-credentials` jobs hold `id-token: write`
+  and sign in as `hobo-ci-deploy` OIDC.
 - **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer is for deploy
   deposit paths, not the relay runtime token.
 - **Residual:** Member can read/write secrets in **all environments** in the
   project ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12) — accepted on Free until upgrade or a future **(b)** code path.
+- **Residual (cross-workflow):** the Infisical trust pins repository, ref and
+  ids but no workflow claim, so the repository's *other* `id-token: write`
+  workflows on `main` (`ci-health`, `examples-e2e`, `hosting-evidence`,
+  `release-hobo`, `release-pricing`) could mint an equivalent token and sign in
+  as `hobo-ci-deploy` (Member). Accepted 2026-11-21; closes by pinning the
+  `workflow` claim (`relay-deploy.yml`) in the dashboard (see *Connecting*
+  above for the repair interaction), which needs no HoBo code change.
 
 **(b)** on Free does **not** tighten today's attach binding: `hobo ci app
 deposit` writes `store.projectId` and `store.secretPath`, so App credentials

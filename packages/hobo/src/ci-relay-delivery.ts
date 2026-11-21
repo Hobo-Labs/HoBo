@@ -1154,6 +1154,25 @@ async function deliverWith(
 	let promotion: PromotionRecord | undefined = requested.value;
 	let last: ReconcileObservationRecord | undefined;
 	let lastState: PromotionState | undefined;
+	const realizationRefusal = (
+		current: PromotionRecord | undefined,
+		set: SetRecord,
+	): RelayDeliveryOutcome | undefined => {
+		const failure = realizer?.failure(set.setId);
+		if (failure === undefined) return undefined;
+		const delivery = report(current, set);
+		return {
+			ok: false,
+			code: failure.code,
+			message: failure.message,
+			realization: failure,
+			report:
+				finalizationFailure !== undefined ||
+				failure.code === RELAY_DELIVERY_REFUSAL.promotionRefused
+					? { ...delivery, state: "FAILED" }
+					: delivery,
+		};
+	};
 	const terminalOutcome = async (
 		terminal: PromotionRecord,
 		set: SetRecord | undefined,
@@ -1225,6 +1244,9 @@ async function deliverWith(
 		promotion = await cd.promotions.get(promotionId);
 		if (promotion && TERMINAL.has(promotion.state)) {
 			const set = await cd.desired.current(campId);
+			const refusal =
+				set === undefined ? undefined : realizationRefusal(promotion, set);
+			if (refusal !== undefined) return refusal;
 			return terminalOutcome(promotion, set, await handoverFor(set, campId));
 		}
 		const set = await cd.desired.current(campId);
@@ -1236,21 +1258,8 @@ async function deliverWith(
 				...ctx,
 				signal: AbortSignal.timeout(input.feedWaitMs ?? DEFAULT_FEED_WAIT_MS),
 			});
-			const failure = realizer?.failure(set.setId);
-			if (failure) {
-				const delivery = report(promotion, set);
-				return {
-					ok: false,
-					code: failure.code,
-					message: failure.message,
-					realization: failure,
-					report:
-						finalizationFailure !== undefined ||
-						failure.code === RELAY_DELIVERY_REFUSAL.promotionRefused
-							? { ...delivery, state: "FAILED" }
-							: delivery,
-				};
-			}
+			const refusal = realizationRefusal(promotion, set);
+			if (refusal !== undefined) return refusal;
 			const outputs = realizer?.deployed(set.setId);
 			if (
 				input.wait === false &&

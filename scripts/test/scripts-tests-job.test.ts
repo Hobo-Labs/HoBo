@@ -88,11 +88,6 @@ const BUILD = "Build the packages the scripts tests import";
 
 const RELATIVE_IMPORT = /(?:from|import\()\s*["'](\.{1,2}\/[^"']+)["']/gu;
 
-/**
- * The workspace packages whose `src/` a scripts test reaches through relative
- * imports, directly or through other files under scripts/. Their sources import
- * other workspace packages, which resolve through those packages' built dist/.
- */
 function packagesScriptsTestsImport(): readonly string[] {
 	const queue = readdirSync("scripts/test")
 		.filter((name) => name.endsWith(".test.ts"))
@@ -106,7 +101,7 @@ function packagesScriptsTestsImport(): readonly string[] {
 			RELATIVE_IMPORT,
 		)) {
 			const target = normalize(join(dirname(file), specifier));
-			const owner = /^packages\/(.+?)\/src\//u.exec(target)?.[1];
+			const owner = /^packages\/(.+?)\/(?:src|dist)\//u.exec(target)?.[1];
 			if (owner !== undefined) directories.add(owner);
 			else if (target.startsWith("scripts/")) {
 				const source = [
