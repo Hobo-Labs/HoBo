@@ -529,6 +529,7 @@ describe("checkPluginScopedPath", () => {
 		for (const value of [
 			"/usr/bin/env",
 			"C:\\outside",
+			"C:Windows",
 			"~/outside",
 			"~\\outside",
 			"${PLUGIN_ROOT}/../x.mjs",

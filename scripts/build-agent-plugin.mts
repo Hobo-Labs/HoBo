@@ -57,7 +57,7 @@ async function main(): Promise<void> {
 	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
 	const porcelainBeforeBuild = spawnSync(
 		"git",
-		["status", "--porcelain", "--untracked-files=no"],
+		["status", "--porcelain", "--untracked-files=all"],
 		{
 			cwd: repoRoot,
 			encoding: "utf8",

@@ -108,12 +108,15 @@ function vendoredNamesFromLockJson(text: string): ReadonlySet<string> {
 }
 
 async function loadVendoredSkillNames(repoRoot: string): Promise<ReadonlySet<string>> {
+	let text: string;
 	try {
-		const text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
-		return vendoredNamesFromLockJson(text);
-	} catch {
-		return new Set();
+		text = await readFile(join(repoRoot, "skills-lock.json"), "utf8");
+	} catch (error) {
+		throw new SkillParseError(
+			`skills-lock.json is required for HoBo-owned skill discovery (${error instanceof Error ? error.message : String(error)})`,
+		);
 	}
+	return vendoredNamesFromLockJson(text);
 }
 
 function isRepoOwnedSkill(

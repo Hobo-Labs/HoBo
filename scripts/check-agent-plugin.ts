@@ -396,6 +396,13 @@ export function checkPluginScopedPath(
 			message: "plugin-scoped path must not traverse outside the plugin root",
 		});
 	}
+	if (/^[A-Za-z]:[^\\/]/u.test(value)) {
+		issues.push({
+			file: where,
+			message:
+				"plugin-scoped path must not use a Windows drive-relative form (for example C:foo)",
+		});
+	}
 	if (
 		path.isAbsolute(value) ||
 		path.win32.isAbsolute(value) ||
@@ -1270,15 +1277,27 @@ export function githubHeadShaMismatchIssues(
 		];
 	}
 	if (mergePrHead === undefined) return [];
-	const envSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
-	if (envSha !== undefined && envSha.length > 0 && envSha !== mergePrHead) {
-		return [
-			{
-				file: "plugin.json",
-				message:
-					"GITHUB_HEAD_SHA does not match the PR branch tip (HEAD^2); refuse version measurement on this checkout topology",
-			},
-		];
+	const rawHeadSha = process.env.GITHUB_HEAD_SHA?.trim();
+	if (rawHeadSha !== undefined && rawHeadSha.length > 0) {
+		const envSha = trustedGithubHeadSha(repoRoot, rawHeadSha);
+		if (envSha === undefined) {
+			return [
+				{
+					file: "plugin.json",
+					message:
+						"GITHUB_HEAD_SHA is set but is not a verifiable commit in this checkout; refuse version measurement",
+				},
+			];
+		}
+		if (envSha !== mergePrHead) {
+			return [
+				{
+					file: "plugin.json",
+					message:
+						"GITHUB_HEAD_SHA does not match the PR branch tip (HEAD^2); refuse version measurement on this checkout topology",
+				},
+			];
+		}
 	}
 	return [];
 }
