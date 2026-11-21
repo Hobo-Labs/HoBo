@@ -1505,10 +1505,7 @@ describe("the script reading the slip", () => {
 
 	it("keeps the merge-group route surface on hosted while probing GitHub-hosted queue depth", async () => {
 		await withGithub(
-			observed([
-				waiting("ubuntu-24.04", 2),
-				pickup("hobo-trunk"),
-			]),
+			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
 			async (apiUrl) => {
 				const surface = await mergeGroupRouteSurface(
 					{
@@ -1555,7 +1552,10 @@ describe("the script reading the slip", () => {
 					[decision.tier, decision.runner, decision.refusedBy],
 					["github", "ubuntu-24.04", "queue"],
 				);
-				assert.match(decision.reason, /prefers GitHub-hosted while it has idle capacity/u);
+				assert.match(
+					decision.reason,
+					/prefers GitHub-hosted while it has idle capacity/u,
+				);
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",
@@ -1623,31 +1623,28 @@ describe("the script reading the slip", () => {
 				return pages(path);
 			},
 			async (apiUrl) => {
-			const { decision, lines } = await route(
-				apiUrl,
-				JSON.stringify(expired),
-				mergeGroupCi,
-			);
-			assert.deepEqual(
-				[decision.tier, decision.runner, decision.refusedBy],
-				["fleet", "hobo-trunk", "none"],
-			);
-			assert.match(decision.reason, /merge-group trunk confirmation/u);
-			assert.deepEqual(decision.slip, {
-				kind: "unasked",
-				why: "merge-group",
-			});
-			assert.deepEqual(warningsIn(lines), []);
-		},
+				const { decision, lines } = await route(
+					apiUrl,
+					JSON.stringify(expired),
+					mergeGroupCi,
+				);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+				assert.match(decision.reason, /merge-group trunk confirmation/u);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+				assert.deepEqual(warningsIn(lines), []);
+			},
 		);
 	});
 
 	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
 		let queueReads = 0;
-		const healthy = observed([
-			...saturatedHostedQueue(),
-			pickup("hobo-trunk"),
-		]);
+		const healthy = observed([...saturatedHostedQueue(), pickup("hobo-trunk")]);
 		await withGithub(
 			(path) => {
 				if (!path.includes("/jobs")) queueReads += 1;
@@ -1679,13 +1676,13 @@ describe("the script reading the slip", () => {
 		await withGithub(
 			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
-			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
-			assert.deepEqual(
-				[decision.tier, decision.runner, decision.refusedBy],
-				["fleet", "hobo-trunk", "none"],
-			);
-			assert.doesNotMatch(decision.runner, /^hobo$/u);
-		},
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+				assert.doesNotMatch(decision.runner, /^hobo$/u);
+			},
 		);
 	});
 
@@ -2629,10 +2626,7 @@ describe("the workflows that route", () => {
 			ci,
 			/ {6}route:\n {8}description: .*\n {8}type: choice\n {8}options: \[auto, fleet, local, github\]\n/,
 		);
-		assert.match(
-			ci,
-			/route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/,
-		);
+		assert.match(ci, /route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/);
 		assert.ok(
 			ci.split("inputs.route || 'auto'").length >= 3,
 			"dispatch inputs still reach downstream route steps",

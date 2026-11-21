@@ -250,9 +250,7 @@ describe("base-controlled attestation verification", () => {
 			const withBlock = asObject(routeStep?.with);
 			assert.equal(
 				asText(withBlock?.route),
-				workflow === "hobo-ci.yml"
-					? "${{ (inputs.route || 'auto') }}"
-					: "auto",
+				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
 			);
 		});
 	}

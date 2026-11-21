@@ -1418,11 +1418,7 @@ export async function main(
 		let decision: RouteDecision;
 		try {
 			const firstView = await observeHosted(now());
-			const hostedLoad = labelLoad(
-				firstView.jobs,
-				githubLabel,
-				now(),
-			);
+			const hostedLoad = labelLoad(firstView.jobs, githubLabel, now());
 			if (mergeGroupHostedHasIdleCapacity(hostedLoad)) {
 				decision = {
 					tier: "github",
