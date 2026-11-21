@@ -764,8 +764,50 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues[0]?.message).not.toContain(secret);
 	});
 
+	it("accepts a matching bundle attestation in a GitHub Actions job", async () => {
+		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_SHA", "commit-current");
+		const bundleBody = "y".repeat(1024 * 1024);
+		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": bundleBody,
+			"fixtures/deploy/vercel/package.json": "{}\n",
+			".bundle-attestation.json": `${JSON.stringify({
+				sha256,
+				runId: "run-current",
+				commitSha: "commit-current",
+			})}\n`,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		const attestationIssues = report.issues.filter(
+			(issue) =>
+				issue.file === "bin/hobo-mcp.mjs" ||
+				issue.file === ".bundle-attestation.json",
+		);
+		expect(
+			attestationIssues.filter((issue) =>
+				/attestation|bundle attestation/u.test(issue.message),
+			),
+		).toEqual([]);
+	});
+
 	it("rejects a bundle attestation minted for a different workflow run in CI", async () => {
 		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		const bundleBody = "x".repeat(1024 * 1024);
@@ -801,6 +843,7 @@ describe("checkAgentPlugin (integration)", () => {
 
 	it("rejects a bundle attestation whose commitSha does not match GITHUB_SHA", async () => {
 		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		const bundleBody = "x".repeat(1024 * 1024);
@@ -836,6 +879,7 @@ describe("checkAgentPlugin (integration)", () => {
 
 	it("rejects a bundle attestation whose sha256 does not match the bundle bytes", async () => {
 		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		const bundleBody = "x".repeat(1024 * 1024);
@@ -870,6 +914,7 @@ describe("checkAgentPlugin (integration)", () => {
 
 	it("rejects a bundle attestation missing runAttempt when GITHUB_RUN_ATTEMPT is set", async () => {
 		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "2");
@@ -906,6 +951,7 @@ describe("checkAgentPlugin (integration)", () => {
 
 	it("rejects a present bundle without attestation in CI", async () => {
 		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		const bundleBody = "x".repeat(1024 * 1024);
@@ -936,6 +982,8 @@ describe("checkAgentPlugin (integration)", () => {
 
 	it("rejects attestation when GITHUB_RUN_ID is unset in CI", async () => {
 		vi.stubEnv("CI", "1");
+		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_RUN_ID", undefined);
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		const bundleBody = "x".repeat(1024 * 1024);
 		const sha256 = createHash("sha256").update(bundleBody).digest("hex");

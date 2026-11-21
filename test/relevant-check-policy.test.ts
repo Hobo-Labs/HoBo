@@ -900,6 +900,8 @@ test("agent-plugin changes select the Agent Plugins 1.0.0 gate", () => {
 		"scripts/check-agent-plugin.ts",
 		"scripts/lib/nbgv-release-version.mts",
 		"packages/agent-skills/src/index.ts",
+		"packages/hobo-ci/src/hand-off-audit.ts",
+		"packages/hobo/src/bin/hobo-mcp.ts",
 		"tools/agent-plugins/schemas/1.0.0/mcp.schema.json",
 		"docs/agent-tooling.md",
 		"version.json",

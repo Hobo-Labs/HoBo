@@ -84,8 +84,12 @@ async function main(): Promise<void> {
 	const sha256 = createHash("sha256")
 		.update(readFileSync(outfile))
 		.digest("hex");
+	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
 	const inActions = process.env.GITHUB_ACTIONS === "true";
-	if (!inActions) return;
+	if (!inActions) {
+		rmSync(attestationPath, { force: true });
+		return;
+	}
 	const runId = process.env.GITHUB_RUN_ID?.trim() ?? "";
 	const runAttempt = process.env.GITHUB_RUN_ATTEMPT?.trim();
 	const commitSha = process.env.GITHUB_SHA?.trim() ?? "";

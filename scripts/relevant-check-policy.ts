@@ -589,6 +589,8 @@ export function selectRelevantChecks(
 			file === "scripts/build-agent-plugin.mts" ||
 			file === "scripts/test/check-agent-plugin.test.ts" ||
 			file.startsWith("packages/agent-skills/") ||
+			file.startsWith("packages/hobo-ci/") ||
+			file.startsWith("packages/hobo/src/") ||
 			file === "packages/hobo/test/agent-plugin-bundle.test.ts" ||
 			file.startsWith("tools/agent-plugins/schemas/") ||
 			file === "docs/agent-tooling.md" ||
@@ -607,6 +609,8 @@ export function selectRelevantChecks(
 	const agentPluginBundleInputs = files.some(
 		(file) =>
 			/^plugins\/hobo\/(bin|fixtures|src)\//u.test(file) ||
+			file.startsWith("packages/hobo/src/") ||
+			file.startsWith("packages/hobo-ci/src/") ||
 			file === "scripts/build-agent-plugin.mts",
 	);
 	if (agentPluginBundleInputs && !narrowWorkspaces.has("packages/hobo")) {

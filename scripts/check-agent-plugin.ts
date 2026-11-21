@@ -932,7 +932,7 @@ function bundleAttestationIssues(
 	pluginRoot: string,
 	bundlePath: string,
 ): AgentPluginIssue[] {
-	if (!agentPluginCiActive()) return [];
+	if (process.env.GITHUB_ACTIONS !== "true") return [];
 	const attestationPath = path.join(pluginRoot, BUNDLE_ATTESTATION);
 	if (!existsSync(attestationPath)) {
 		return [
