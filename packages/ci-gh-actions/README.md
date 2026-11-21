@@ -39,7 +39,10 @@ only when an ID is missing. A name-only match can still be ambiguous.
 If a later lookup fails after a queued or unknown match, the result is marked
 incomplete and cannot transfer custody. Fail-closed teardown retains the runner
 on an incomplete or failed lookup; the force-stop path can continue after the
-queued grace period. Job listings are paginated up to 100 pages. Run listings
+queued grace period. A queued match retains the runner when its binding time,
+current time, or grace value is invalid; this rule also applies to a direct
+served-job lookup. At the valid grace boundary, teardown may proceed. Job
+listings are paginated up to 100 pages. Run listings
 are bounded, and reaching a limit while more work exists is treated as an
 incomplete scan. Duplicate or malformed pages fail the lookup. GitHub can
 change its listings between requests, so pagination is not an atomic snapshot
@@ -144,6 +147,20 @@ stateDiagram-v2
   [*] --> s0
   s0 --> s1: compare IDs or available names
   s0 --> s2: compare IDs or available names
+```
+
+The queued-grace model checks direct and scanned observations with invalid,
+recent, or expired timing in 12 states. Its projection hides six same-state
+transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Queued job observed
+  s1: Teardown allowed
+  s2: Runner retained
+  [*] --> s0
+  s0 --> s1: evaluate grace period
+  s0 --> s2: evaluate grace period
 ```
 
 ## Test this branch

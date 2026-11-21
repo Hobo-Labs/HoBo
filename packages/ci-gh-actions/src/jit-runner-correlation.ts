@@ -160,8 +160,15 @@ export function assignmentBlocksRunnerTeardown(
 	)
 		return true;
 	if (assignment.status === "queued") {
-		if (!Number.isFinite(boundSinceMs)) return true;
-		return nowMs - boundSinceMs < queuedBoundGraceMs;
+		if (
+			!Number.isFinite(boundSinceMs) ||
+			!Number.isFinite(nowMs) ||
+			!Number.isFinite(queuedBoundGraceMs) ||
+			queuedBoundGraceMs < 0
+		)
+			return true;
+		const elapsed = nowMs - boundSinceMs;
+		return !Number.isFinite(elapsed) || elapsed < queuedBoundGraceMs;
 	}
 	return false;
 }
@@ -241,8 +248,12 @@ export async function evaluateRunnerTeardownGuard(
 		if (
 			observed.status === "queued" &&
 			runnerMatchesGitHubJob(leaseRef, observed) &&
-			Number.isFinite(fields.boundSinceMs) &&
-			fields.nowMs - fields.boundSinceMs < grace
+			assignmentBlocksRunnerTeardown(
+				{ jobId: job.id, runId: job.run_id, status: observed.status },
+				fields.boundSinceMs,
+				fields.nowMs,
+				grace,
+			)
 		)
 			return true;
 		return false;
