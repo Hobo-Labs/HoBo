@@ -469,8 +469,9 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 ```
 
 `--dry-run` prints the placement, the chosen bindings and every request it
-would send, and sends none. A real run reads `VERCEL_TOKEN` from the environment
-and deploys to **preview** unless `--target production` is given. Production
+would send, and sends none. A real run reads `VERCEL_TOKEN` from its run-scoped
+vault or through the committed store binding with GitHub OIDC, and deploys to
+**preview** unless `--target production` is given. Production
 chooses the config-service binding, which asks for the store's origin and two
 ids; `hobo ci deploy` reads them, and the team, from the committed
 `deploy/secret-store.binding.json`:
@@ -568,7 +569,9 @@ The workflow calls
 `scripts/ci/relay-deploy-secret-store-verify-report.mts` to print check lines
 and emit `::error::`; `scripts/ci/relay-deploy-result-report.mts` reports deploy
 and App-deposit envelopes. Both use the shared provider redactor for JWTs,
-credentials and long token runs. Deploy and App-deposit stderr is captured and
+credentials and long token runs, loaded from the `dist` restored from the same
+digest- and revision-verified CLI bundle as the hobo binary. Deploy and
+App-deposit stderr is captured and
 printed only through that redactor. The result reporter requires the command's
 captured exit status; an omitted or invalid status fails the report. A missing
 or malformed result envelope fails the step, while a failed command retains its
@@ -606,7 +609,7 @@ The GitHub App's credentials never touch a person or this CLI:
 from the browser's redirect and hands it, on stdin to `gh workflow run`, to
 the deploy workflow; its `app-credentials` job masks it and runs
 `hobo ci app deposit` (code from `HOBO_APP_MANIFEST_CODE`), which converts,
-verifies the App and writes the credentials as `hobo-ci-writer` over GitHub
+verifies the App and writes the credentials as `hobo-ci-deploy` over GitHub
 OIDC.
 
 For an optional third-party cache credential, `hobo-mcp` serves the

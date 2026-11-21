@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from "node:fs";
-import { z } from "zod";
-import {
-	createProviderRedactor,
-	LONG_TOKEN_RUN_PROFILE,
-} from "../../packages/provider-redaction/src/provider-redaction.js";
+import { redactRelayDeployText } from "./relay-deploy-redaction.mts";
 
 const [jsonPath, label, stderrPath = "", exitArg] = process.argv.slice(2);
 if (jsonPath === undefined || label === undefined || exitArg === undefined)
@@ -12,18 +8,59 @@ if (jsonPath === undefined || label === undefined || exitArg === undefined)
 		"usage: relay-deploy-result-report.mts <json> <label> [stderr] <status>",
 	);
 
-const envelopeSchema = z.object({
-	ok: z.boolean(),
-	code: z.string().optional(),
-	message: z.string().optional(),
-});
-const envelope = (() => {
+type JsonValue =
+	| null
+	| boolean
+	| number
+	| string
+	| readonly JsonValue[]
+	| JsonObject;
+interface JsonObject {
+	readonly [key: string]: JsonValue;
+}
+
+const tagOf = Object.prototype.toString;
+
+function isObject(value: JsonValue | undefined): value is JsonObject {
+	return tagOf.call(value) === "[object Object]";
+}
+
+function asObject(value: JsonValue | undefined): JsonObject | undefined {
+	return isObject(value) ? value : undefined;
+}
+
+function isText(value: JsonValue | undefined): value is string {
+	return tagOf.call(value) === "[object String]";
+}
+
+function asText(value: JsonValue | undefined): string | undefined {
+	return isText(value) ? value : undefined;
+}
+
+function parseEnvelope(raw: string): JsonObject | undefined {
+	const trimmed = raw.trim();
+	if (trimmed === "") return undefined;
+	let root: JsonValue | undefined;
 	try {
-		return envelopeSchema.parse(JSON.parse(readFileSync(jsonPath, "utf8")));
+		root = JSON.parse(trimmed);
 	} catch {
 		return undefined;
 	}
-})();
+	const envelope = asObject(root);
+	if (envelope === undefined || tagOf.call(envelope.ok) !== "[object Boolean]")
+		return undefined;
+	for (const key of ["code", "message"])
+		if (
+			envelope[key] !== undefined &&
+			tagOf.call(envelope[key]) !== "[object String]"
+		)
+			return undefined;
+	return envelope;
+}
+
+const envelope = parseEnvelope(
+	existsSync(jsonPath) ? readFileSync(jsonPath, "utf8") : "",
+);
 const exitCode = Number(exitArg);
 const validExitCode =
 	exitArg.trim() !== "" &&
@@ -31,22 +68,21 @@ const validExitCode =
 	exitCode >= 0 &&
 	exitCode <= 255;
 const code =
-	envelope?.code ??
+	asText(envelope?.code) ??
 	(envelope === undefined
 		? "HOBO_CI_DEPLOY_NO_ENVELOPE"
 		: envelope.ok
 			? "HOBO_OK"
 			: "HOBO_FAILED_WITHOUT_CODE");
 const message =
-	envelope?.message ??
+	asText(envelope?.message) ??
 	(envelope === undefined ? "command did not emit a valid JSON envelope" : "");
-const redact = createProviderRedactor(LONG_TOKEN_RUN_PROFILE);
-console.log(`${label}: ${code}: ${redact(message, 4096)}`);
+console.log(`${label}: ${code}: ${redactRelayDeployText(message, 4096)}`);
 const stderr =
 	stderrPath !== "" && existsSync(stderrPath)
 		? readFileSync(stderrPath, "utf8")
 		: "";
-if (stderr !== "") console.log(redact(stderr, 4096));
+if (stderr !== "") console.log(redactRelayDeployText(stderr, 4096));
 process.exitCode =
 	validExitCode && envelope?.ok === true
 		? exitCode

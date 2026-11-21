@@ -4,10 +4,7 @@
  * summary and annotate failures. Never prints JWTs or secret values.
  */
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import {
-	createProviderRedactor,
-	LONG_TOKEN_RUN_PROFILE,
-} from "../../packages/provider-redaction/src/provider-redaction.js";
+import { redactRelayDeployText } from "./relay-deploy-redaction.mts";
 
 const [jsonPath, stderrPath = "", exitArg = "0"] = process.argv.slice(2);
 const exitCode = Number.parseInt(exitArg, 10);
@@ -43,7 +40,7 @@ function asList(value: JsonValue | undefined): readonly JsonValue[] {
 	return Array.isArray(value) ? value : [];
 }
 
-const redactNoise = createProviderRedactor(LONG_TOKEN_RUN_PROFILE);
+const redactNoise = redactRelayDeployText;
 
 function parseEnvelopeRoot(raw: string): JsonObject | undefined {
 	const trimmed = raw.trim();

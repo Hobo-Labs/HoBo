@@ -241,7 +241,12 @@ still fails after the verified deployment is promoted, the job fails, re-reads
 production, and restores the previous deployment when production still names
 the rejected candidate. Vercel promotion has no conditional current-target
 input, so HoBo re-reads the target before and after rollback and leaves a
-concurrently superseded target untouched. The failure's `data.rollback` is
+concurrently superseded target untouched. Automatic rollback assumes the relay
+deploy workflow is production's only promoter: its workflow-level
+`concurrency` group serializes its own runs, and a promotion moved by hand or
+by another automation between the re-read and the rollback makes the outcome
+`superseded` — no rollback is sent — rather than a race. The failure's
+`data.rollback` is
 `completed` when the previous deployment was restored, `failed` when the
 rejected candidate remains current, `superseded` when another deployment has
 taken production, or `unknown` when the target cannot be established. For
@@ -314,21 +319,42 @@ trust pinned to this repository — subject `ref == refs/heads/main`,
 `repository_id`/`repository_owner_id` claims, and audience
 `https://github.com/Hobo-Labs` (the exact trust `hobo ci secret-store
 connect` records and repairs) — store `VERCEL_TOKEN` there, and configure
-the Vercel Trusted Source with the same claim pin. The audience pin is what
+the Vercel Trusted Source with the same claim pin. When the store you
+provision has other ids than the committed binding names, re-record the
+binding and repair the deploy identity's trust in one run (a binding for
+other ids refuses without `--yes`):
+
+```sh
+GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
+  --repo Hobo-Labs/HoBo --project-id <projectId> \
+  --deploy-project-id <deployProjectId> \
+  --relay-identity-id <hobo-ci-relay identity id> \
+  --deploy-identity-id <hobo-ci-deploy identity id> --team team_… --yes
+```
+
+With `INFISICAL_TOKEN` from the owner's own login in that run's environment
+it updates `hobo-ci-deploy`'s OIDC trust in place; without it, set the
+printed subject and claims in the dashboard. Commit the rewritten
+`deploy/secret-store.binding.json`: `verify` on `main` fails closed until
+the binding and the trust name the same deploy identity and project. The
+audience pin is what
 keeps the channels disjoint: the deploy-token read mints its token for
 `https://github.com/Hobo-Labs` while the protected-preview probe mints one
 for the deployment's own origin, so a probe token cannot be replayed to
-read `VERCEL_TOKEN`. The workflow disables Vercel Git auto-deploy in the
-same commit; without those prerequisites `main`'s required deploy fails and
-the relay receives no deployment. After merge, link one production run that
+read `VERCEL_TOKEN`. Keep this cutover unmerged until those external
+prerequisites are configured and their evidence is linked from the PR; the
+committed coordinates do not prove them. The workflow disables Vercel Git
+auto-deploy in the same commit, and the required `main` deploy receives no
+fallback deployment if they are absent. After merge, link one production run that
 shows the workflow reading `VERCEL_TOKEN` through Infisical and a protected
 preview probe with OIDC (channel-observation rule): the run of
 [relay-deploy.yml](../../.github/workflows/relay-deploy.yml) on the first
 relay-relevant push to `main`, whose *Verify the secret store connection*
 check passes and whose *Deliver the relay through HoBo CD* step summary
-shows both targets delivered. Until that run is linked, the delivery path
-is built, not proven: the prerequisites above are external and cannot be
-verified before merge.
+shows `hobo ci deploy --target preview` and `hobo ci deploy --target
+production` each delivering the store-read credential's Freight. Until that
+run is linked, the delivery path is built, not proven: the prerequisites
+above are external and cannot be verified before merge.
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
@@ -380,7 +406,7 @@ and on `workflow_dispatch`:
 A manual run given a GitHub App manifest code (`hobo ci app create
 --via-workflow` dispatches it) runs only the `app-credentials` job instead:
 it masks the code and runs `hobo ci app deposit`, which converts it and
-writes the App's credentials into the store as `hobo-ci-writer`
+writes the App's credentials into the store as `hobo-ci-deploy`
 ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first)).
 
 In production the relay reads its store's coordinates from the committed
@@ -502,14 +528,21 @@ By hand, for a preview or to read a plan:
 hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… \
   --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# A real run reads VERCEL_TOKEN from the environment. Preview is the default.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
+# A real run reads VERCEL_TOKEN through the committed store binding in an
+# authorized GitHub Actions job with id-token: write. Preview is the default.
+hobo ci deploy --cwd packages/ci-vercel --ref <branch> --team team_…
 
 # Verify and qualify it (needs HOBO_CI_RELAY_PREVIEW_URL), then promote it
 # (preview's qualification is read from the same CD journal, so keep HOBO_HOME).
-VERCEL_TOKEN=… HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
+HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
   --cwd packages/ci-vercel --ref main --sha <commit> --team team_… --wait
 ```
+
+Preview `--wait` also needs the GitHub OIDC mint, so it runs in a GitHub
+Actions job with `id-token: write` (the relay deploy workflow); by hand
+outside Actions it refuses with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`,
+and a Git-integration deployment is verified by `hobo ci deploy --adopt`
+instead.
 
 It needs a Vercel access token for the project's scope and Vercel's GitHub
 integration able to read the repository. `--set` takes only the `env.*` fields

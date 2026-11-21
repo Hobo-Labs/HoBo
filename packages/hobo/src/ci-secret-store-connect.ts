@@ -68,7 +68,7 @@ import { isJsonString } from "./json.js";
 export const RELAY_STORE_ENVIRONMENT = "prod";
 // public-contract: the relay's folder path.
 export const RELAY_STORE_SECRET_PATH = "/hobo-ci-relay";
-// public-contract: audience Infisical expects for hobo-ci-writer GitHub OIDC.
+// public-contract: audience Infisical expects for hobo-ci-deploy GitHub OIDC.
 export const RELAY_GITHUB_OIDC_AUDIENCE = "https://github.com/Hobo-Labs";
 
 function data(
@@ -91,7 +91,7 @@ function text(input: CiSecretStoreInput, key: string): string | undefined {
 
 /** The deploy identity's trust as connect reports it: identifiers, never a secret. */
 export type DeployTrustReport = Readonly<{
-	identity: "hobo-ci-writer";
+	identity: "hobo-ci-deploy";
 	issuer: string;
 	audience: string;
 	subject: string;
@@ -240,11 +240,11 @@ export async function runCiSecretStoreConnect(
 			if (!(error instanceof SecretStoreError)) throw error;
 			return refusedConnect(
 				error.code,
-				`${error.message}. Check that --deploy-identity-id is hobo-ci-writer's id and that it has OIDC Auth, then re-run; ${SECRET_STORE_BINDING_FILE} was not changed.`,
+				`${error.message}. Check that --deploy-identity-id is hobo-ci-deploy's id and that it has OIDC Auth, then re-run; ${SECRET_STORE_BINDING_FILE} was not changed.`,
 			);
 		}
 	const deployTrust: DeployTrustReport = {
-		identity: "hobo-ci-writer",
+		identity: "hobo-ci-deploy",
 		issuer: trust.issuer,
 		audience: trust.audiences.join(","),
 		subject: trust.subject,
@@ -260,8 +260,8 @@ export async function runCiSecretStoreConnect(
 		.join(", ");
 	const trustLine =
 		deployTrust.applied === "updated"
-			? `Updated hobo-ci-writer's OIDC trust in place: subject ${trust.subject}, claims ${claims}.`
-			: `In Infisical, set hobo-ci-writer's OIDC Auth to: issuer ${trust.issuer}, audience ${deployTrust.audience}, subject ${trust.subject}, claims ${claims} (or re-run with INFISICAL_TOKEN from your own infisical login to update it for you).`;
+			? `Updated hobo-ci-deploy's OIDC trust in place: subject ${trust.subject}, claims ${claims}.`
+			: `In Infisical, set hobo-ci-deploy's OIDC Auth to: issuer ${trust.issuer}, audience ${deployTrust.audience}, subject ${trust.subject}, claims ${claims} (or re-run with INFISICAL_TOKEN from your own infisical login to update it for you).`;
 	return {
 		ok: true,
 		status: "connected",

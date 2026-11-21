@@ -405,8 +405,8 @@ through the git-artifact mode above: the non-secret settings first, then each of
 the Bindle's resources applied through the provider the Yard names, which
 deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
 otherwise). The workflow on `main` (`.github/workflows/relay-deploy.yml`)
-currently adopts and verifies a Git-sourced deployment; it does not run this
-deploy command.
+verifies the secret store, then runs this deploy command for preview and
+production with `id-token: write` and `--sha "$GITHUB_SHA"`.
 
 Delivery planning also reads declared secret projections from Yards in the
 relay's own Junction, keeping each projection under its source Yard. A declared

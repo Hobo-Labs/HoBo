@@ -161,7 +161,7 @@ describe("hobo ci secret-store connect", () => {
 		);
 		expect(result.data).toMatchObject({
 			deployTrust: {
-				identity: "hobo-ci-writer",
+				identity: "hobo-ci-deploy",
 				issuer: "https://token.actions.githubusercontent.com",
 				audience: "https://github.com/Hobo-Labs",
 				subject: IMMUTABLE_SUB,
@@ -574,6 +574,28 @@ describe("hobo ci secret-store verify", () => {
 		expect(result.ok).toBe(false);
 		expect(result.message).toContain(
 			"hobo-ci-relay (Vercel OIDC deploy-project denial): fail",
+		);
+	});
+
+	it("fails when the relay identity can read the deploy credential itself", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const result = await runCiSecretStore(
+			input(
+				"verify",
+				{},
+				{ VERCEL_OIDC_TOKEN: JWT },
+				infisical(200, ["HOBO_CI_PUBLIC_URL"], JWT, 200).fetch,
+			),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain(
+			"hobo-ci-relay (Vercel OIDC deploy-project denial): fail",
+		);
+		expect(result.message).toContain(
+			"the relay runtime identity read the deploy credential project",
+		);
+		expect(JSON.stringify(result)).not.toContain(
+			"synthetic-vercel-deploy-token",
 		);
 	});
 });

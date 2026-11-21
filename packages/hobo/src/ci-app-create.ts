@@ -675,7 +675,7 @@ export async function runCiAppCreate(
 				);
 			}
 			return {
-				message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as hobo-ci-writer; no credential touched this machine. Watch it with \`gh run watch\`.`,
+				message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as hobo-ci-deploy; no credential touched this machine. Watch it with \`gh run watch\`.`,
 				data: { handoff: APP_CREDENTIALS_WORKFLOW },
 			};
 		}

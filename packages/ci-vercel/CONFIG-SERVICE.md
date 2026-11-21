@@ -95,7 +95,7 @@ The job and the relay each authenticate to Infisical through OIDC:
   GitHub App's key, webhook secret and client secret go from GitHub's
   manifest conversion straight into the store (`hobo ci app create
   --via-workflow`, then the deploy workflow's `app-credentials` job runs
-  `hobo ci app deposit` as `hobo-ci-writer` over GitHub OIDC); the cache's
+  `hobo ci app deposit` as `hobo-ci-deploy` over GitHub OIDC); the cache's
   default member is Vercel Blob over OIDC. The amendment's table lists every
   secret, what it became and the vendor evidence.
 - **Coordinates in the repository.** In production (`VERCEL_ENV=production`,
@@ -110,7 +110,7 @@ The job and the relay each authenticate to Infisical through OIDC:
   Vercel (issuer `https://oidc.vercel.com/tyler-r-kendricks-projects`,
   subject `owner:tyler-r-kendricks-projects:project:hobo-ci:environment:production`,
   audience `https://vercel.com/tyler-r-kendricks-projects`, `project_id` and
-  `owner_id` pinned), Viewer; `hobo-ci-writer` with OIDC Auth trusting GitHub
+  `owner_id` pinned), Viewer; `hobo-ci-deploy` with OIDC Auth trusting GitHub
   Actions (subject `repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main`, GitHub's immutable subject for this repository,
   audience `https://github.com/Hobo-Labs`, claims `repository_id`
   `1274791462` and `repository_owner_id` `344805935` pinned), create/edit
@@ -120,13 +120,14 @@ The job and the relay each authenticate to Infisical through OIDC:
   repository on the immutable subject format and Infisical refuses (HTTP 403)
   a trust bound to the legacy `repo:<owner>/<repo>` one. (**Connected:** Tyler
   approved using built-in project **Member** (formerly Developer) for
-  `hobo-ci-writer` on `hobo-ci` instead of a custom create/edit-only role.
+  `hobo-ci-deploy` on `hobo-ci` instead of a custom create/edit-only role.
   Infisical Cloud **Free** has no custom project roles ([pricing](https://infisical.com/pricing) — “Custom roles, multi-role, temporary access” on **Advanced** and up; checked 2026-11-12). **Member** is read/write on secrets across all project environments ([RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls); checked 2026-11-12). `hobo ci secret-store verify` still checks OIDC sign-in only, not Infisical role shape.) Then:
 
   ```sh
   GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
     --repo Hobo-Labs/HoBo --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
-    --deploy-identity-id <hobo-ci-writer> --team team_BRBUnG6uGhSsVV3EG5GFV3FM
+    --deploy-project-id <hobo-ci-deploy> --deploy-identity-id <hobo-ci-deploy> \
+    --team team_BRBUnG6uGhSsVV3EG5GFV3FM --yes
   ```
 
   `connect` resolves the deploy trust from GitHub: `sub_claim_prefix` from
@@ -139,7 +140,7 @@ The job and the relay each authenticate to Infisical through OIDC:
   `repo:Hobo-Labs@*/HoBo@*` (it would match a recycled name). The binding
   records the subject (`deployOidcSubject`). **Repair:** re-run `connect`
   (no ids needed once the binding exists); with `INFISICAL_TOKEN` from your
-  own `infisical login` for that one run it replaces `hobo-ci-writer`'s OIDC
+  own `infisical login` for that one run it replaces `hobo-ci-deploy`'s OIDC
   trust in place (`PATCH /api/v1/auth/oidc-auth/identities/{id}`, no new
   identity), otherwise it prints the exact subject and claims to set in the
   dashboard. When `verify` is denied with a token whose `sub` differs from
@@ -151,7 +152,7 @@ The job and the relay each authenticate to Infisical through OIDC:
   ever typed by a person, into the HoBo MCP App (`capture_secret` on
   `hobo-mcp`), never into the chat; it goes sealed from the form to the MCP
   server to the store. See [`@hobo/mcp`](../mcp/README.md#secret-capture-mcp-app).
-- **Verifying**, by identity name: `hobo-ci-writer` in the deploy workflow's
+- **Verifying**, by identity name: `hobo-ci-deploy` in the deploy workflow's
   *Verify the secret store connection* step (`hobo ci secret-store verify`:
   sign in with GitHub OIDC, audience `https://github.com/Hobo-Labs`, then
   revoke; failures print `oidc_sub` / `oidc_aud` for dashboard trust matching;
@@ -167,7 +168,7 @@ Tyler's org is on the **Free** plan. Custom project roles and several access
 controls are paid features ([pricing](https://infisical.com/pricing) — “Custom
 roles, multi-role, temporary access” from **Advanced**; “Access controls
 (RBAC/ABAC)” from **Pro**; checked 2026-11-12). **Operator decision
-(2026-11-12): option (d)** — accept built-in **Member** for `hobo-ci-writer`
+(2026-11-12): option (d)** — accept built-in **Member** for `hobo-ci-deploy`
 with compensating controls, without upgrading Infisical.
 
 | Candidate | Free? | HoBo / relay fit |
@@ -185,7 +186,7 @@ existing OIDC):
   `repository_owner_id` pinned, audience `https://github.com/Hobo-Labs`,
   writer token TTL **600s** (Tyler configured).
 - **Separation:** `hobo-ci-relay` remains **Viewer**; only relay-deploy
-  workflow jobs use `hobo-ci-writer` OIDC.
+  workflow jobs use `hobo-ci-deploy` OIDC.
 - **Scope:** relay reads `/hobo-ci-relay` in `prod`; writer is for deploy
   deposit paths, not the relay runtime token.
 - **Residual:** Member can read/write secrets in **all environments** in the

@@ -25,16 +25,19 @@ its sha256 (`scripts/ci/release-freight-cli.mts pack`); each job that holds
 `id-token: write` (`deploy`, `app-credentials`) restores it only when the
 digest matches the build job's output and the archive's manifest names the
 commit it checked out (`release-freight-cli.mts restore`, fail closed
-otherwise), before any step that runs the CLI. The delivery and App-deposit summary lines pass the CLI's
-envelope message through a bearer/JWT/credential redaction before the job
-summary sees it, and the report script exits nonzero unless the command's
+otherwise), before any step that runs the CLI. The delivery and App-deposit
+report scripts load the provider redactor from that restored bundle's `dist`.
+Their summary lines pass the CLI's envelope message through a
+bearer/JWT/credential redaction before the job summary sees it, and the result
+report script exits nonzero unless the command's
 envelope is a validated success envelope (`ok: true`) with a valid exit
 status — an absent, malformed, or error envelope is a failure even when the
 recorded status is 0 (the workflow test runs the delivery step's script
 against a fake `hobo.js` that answers with a credential-shaped message and
 asserts the summary shows `[redacted]`), and the CLI masks the store-read
-`VERCEL_TOKEN` with `::add-mask::` on any run the OIDC mint env marks as a
-CI runner (`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an
+`VERCEL_TOKEN` with `::add-mask::` only when `GITHUB_ACTIONS=true`, never merely
+because OIDC mint variables are present
+(`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an
 absent or unreadable `packages/ci-vercel/deploy/secret-store.binding.json`
 as a required-check failure; the committed binding carries coordinates only.
 The store-read-credential → CD-deploy channel is built, not proven: the

@@ -24,7 +24,12 @@ import {
 } from "../src/ci-relay-deploy.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import { RELAY_VERIFY_REFUSAL } from "../src/ci-relay-verify.js";
-import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	parseJsonObject,
+} from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
 // `hobo ci deploy` against the REAL relay declaration
@@ -187,6 +192,26 @@ function freshHome(): string {
 	homes.push(home);
 	return home;
 }
+
+async function promotionJournalEvents(home: string, promotionId: string) {
+	const opened = await openCdStore(
+		{ backend: "sqlite", path: join(home, "cd", "journal.sqlite") },
+		{ now: () => Date.now() },
+	);
+	try {
+		const events = [];
+		for await (const entry of opened.store.readAll({ tenant: "local" }))
+			if (
+				isJsonObject(entry.event.data) &&
+				entry.event.data.promotionId === promotionId
+			)
+				events.push(entry.event);
+		return events;
+	} finally {
+		await opened.close();
+	}
+}
+
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
 });
@@ -330,20 +355,36 @@ describe("Infisical deployment credential", () => {
 			const exposed = `${ran.stdout}${ran.stderr}${JSON.stringify(ran.envelope)}`;
 			for (const value of mints) expect(exposed, value).not.toContain(value);
 			seenAuthorization.length = 0;
-			const denied = await deploy([...RELAY], {
-				cwd,
-				fetch: vercelFetch,
-				credentialFetch: async () => Response.json({}, { status: 401 }),
-				env: {
-					GITHUB_ACTIONS: "true",
-					VERCEL_TOKEN: "untrusted-runner-token",
-					ACTIONS_ID_TOKEN_REQUEST_URL:
-						"https://token.actions.example.test/token",
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
-				},
-			});
+			const deniedStderrWrites: string[] = [];
+			const deniedStderr = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk) => {
+					deniedStderrWrites.push(Buffer.from(chunk).toString());
+					return true;
+				});
+			let denied: Awaited<ReturnType<typeof deploy>>;
+			try {
+				denied = await deploy([...RELAY], {
+					cwd,
+					fetch: vercelFetch,
+					credentialFetch: async () => Response.json({}, { status: 401 }),
+					env: {
+						GITHUB_ACTIONS: "true",
+						VERCEL_TOKEN: "untrusted-runner-token",
+						ACTIONS_ID_TOKEN_REQUEST_URL:
+							"https://token.actions.example.test/token",
+						ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+					},
+				});
+			} finally {
+				deniedStderr.mockRestore();
+			}
 			expect(denied.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
 			expect(seenAuthorization).toEqual([]);
+			expect(deniedStderrWrites.join("")).not.toContain("::add-mask::");
+			const deniedExposed = `${denied.stdout}${denied.stderr}${JSON.stringify(denied.envelope)}`;
+			for (const value of mints)
+				expect(deniedExposed, value).not.toContain(value);
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}
@@ -358,6 +399,53 @@ describe("Infisical deployment credential", () => {
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
 		expect(sent).toEqual([]);
+	});
+
+	it("uses the vault's held token as its post-mint state and never asks the store while the mint env is present", async () => {
+		const held = "held-store-token-4567";
+		const credentialUrls: string[] = [];
+		const seenAuthorization: string[] = [];
+		const vercelFetch: VercelFetch = async (_url, init) => {
+			seenAuthorization.push(init.headers.Authorization ?? "");
+			throw new Error("no request may be sent");
+		};
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch: vercelFetch,
+			heldToken: held,
+			credentialFetch: async (input) => {
+				const url = String(input);
+				credentialUrls.push(url);
+				if (url.startsWith("https://token.actions.example.test/"))
+					return Response.json({
+						value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+					});
+				return Response.json({
+					secret: {
+						secretKey: "VERCEL_TOKEN",
+						secretValue: "other-store-token-89",
+						version: 1,
+						type: "shared",
+						environment: "prod",
+						secretPath: "/",
+					},
+				});
+			},
+			env: {
+				GITHUB_ACTIONS: "true",
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+		});
+		expect(
+			credentialUrls.some((url) => url.includes("infisical")),
+			credentialUrls.join("\n"),
+		).toBe(false);
+		expect(seenAuthorization, JSON.stringify(ran.envelope)).toEqual([
+			`Bearer ${held}`,
+		]);
+		const exposed = `${ran.stdout}${ran.stderr}${JSON.stringify(ran.envelope)}`;
+		expect(exposed).not.toContain("other-store-token-89");
 	});
 
 	it("refuses env VERCEL_TOKEN whenever the OIDC mint env is present, whatever GITHUB_ACTIONS says", async () => {
@@ -388,7 +476,7 @@ describe("Infisical deployment credential", () => {
 		).toBe(false);
 	});
 
-	it("masks the store-read token whenever the OIDC mint env is present, whatever GITHUB_ACTIONS says", async () => {
+	it("writes no mask line outside real GitHub Actions, whatever the mint env says", async () => {
 		const cwd = mkdtempSync(join(RELAY_DIR, ".relay-project-"));
 		try {
 			mkdirSync(join(cwd, "deploy"));
@@ -462,7 +550,10 @@ describe("Infisical deployment credential", () => {
 			} finally {
 				stderr.mockRestore();
 			}
-			expect(stderrWrites.join("")).toContain(`::add-mask::${TOKEN}\n`);
+			const masked = stderrWrites.join("");
+			expect(masked).not.toContain("::add-mask::");
+			for (const value of [TOKEN, "synthetic-request-token"])
+				expect(masked, value).not.toContain(value);
 			expect(ran.envelope.code).not.toBe("HOBO_CI_DEPLOYED");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
@@ -1974,6 +2065,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			return vercel.fetch(url, init);
 		};
 		const publicOrigin = "https://public.example.test";
+		const liveOidcHeaders: unknown[] = [];
 		const probe: HttpTransport = async (request) => {
 			const url = new URL(request.url);
 			if (
@@ -1988,8 +2080,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				};
 			if (url.origin === publicOrigin) {
 				events.push(`live:${url.pathname}`);
-				expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
-					undefined,
+				liveOidcHeaders.push(
+					request.headers["x-vercel-trusted-oidc-idp-token"],
 				);
 				if (!lost && url.pathname === "/readyz") now = deadlineAt;
 			}
@@ -2086,6 +2178,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			expect(events).not.toContain("rollback");
 		}
 		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
+		expect(liveOidcHeaders).toHaveLength(
+			events.filter((event) => event.startsWith("live:")).length,
+		);
+		for (const header of liveOidcHeaders) expect(header).toBe(undefined);
 	});
 
 	it.each([
@@ -2144,6 +2240,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			return vercel.fetch(url, init);
 		};
 		const publicOrigin = "https://public.example.test";
+		const liveOidcHeaders: unknown[] = [];
 		const probe: HttpTransport = async (request) => {
 			if (
 				request.url.startsWith("https://hobo-ci-git-main.example.vercel.app/")
@@ -2159,8 +2256,8 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			if (url.origin === publicOrigin) {
 				concurrentPromotion = true;
 				events.push(`live:${url.pathname}`);
-				expect(request.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
-					undefined,
+				liveOidcHeaders.push(
+					request.headers["x-vercel-trusted-oidc-idp-token"],
 				);
 			}
 			return {
@@ -2235,6 +2332,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			},
 		});
 		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
+		expect(liveOidcHeaders).toHaveLength(
+			events.filter((event) => event.startsWith("live:")).length,
+		);
+		for (const header of liveOidcHeaders) expect(header).toBe(undefined);
 	});
 
 	it.each([
@@ -2338,11 +2439,45 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
 		expect(events).not.toContain("rollback");
 		expect(events.some((event) => event.startsWith("live:"))).toBe(false);
-		if (afterPromote === "error")
+		if (afterPromote === "error") {
 			expect(result.envelope).toMatchObject({
 				code: "HOBO_CI_DEPLOY_NO_ANSWER",
+				data: {
+					delivery: {
+						state: "FAILED",
+						promotionId: expect.any(String),
+					},
+				},
 			});
-		else
+			const delivery = isJsonObject(result.data.delivery)
+				? result.data.delivery
+				: {};
+			const promotionId = isJsonString(delivery.promotionId)
+				? delivery.promotionId
+				: undefined;
+			expect(promotionId).toEqual(expect.any(String));
+			if (promotionId === undefined)
+				throw new Error("the failed production delivery has no promotion id");
+			const journalEvents = await promotionJournalEvents(home, promotionId);
+			expect(journalEvents).toContainEqual(
+				expect.objectContaining({
+					type: "env.PromoteRejected",
+					data: expect.objectContaining({
+						promotionId,
+						state: "PROMOTION_STATE_FAILED",
+						reasons: expect.arrayContaining([
+							expect.objectContaining({
+								code: "hook-suite-failed",
+								message: expect.stringContaining("production read failed"),
+							}),
+						]),
+					}),
+				}),
+			);
+			expect(journalEvents.some((event) => event.type === "env.Promoted")).toBe(
+				false,
+			);
+		} else
 			expect(result.envelope).toMatchObject({
 				code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
 				message: expect.stringContaining(afterPromote ?? "no deployment"),
@@ -2534,6 +2669,31 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(ran.envelope).toMatchObject({
 			code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
 			message: expect.stringContaining("before production was created"),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses preview when the job deadline passed before it started", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[
+				...RELAY,
+				...SETTING,
+				"--wait",
+				"--deadline",
+				"2020-01-01T00:00:00.000Z",
+			],
+			{
+				fetch,
+				env,
+				heldToken: TOKEN,
+				now: () => Date.parse("2026-01-01T00:00:00.000Z"),
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
+			message: expect.stringContaining("before preview started"),
 		});
 		expect(sent).toEqual([]);
 	});

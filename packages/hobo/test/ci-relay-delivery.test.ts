@@ -689,6 +689,41 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(outcome.code).toBe("HOBO_CI_DEPLOY_NOT_READY");
 		expect(outcome.handover?.readyState).toBe("ERROR");
 	}, 60_000);
+
+	it("treats a wait limit of zero as a deadline already passed, not as no limit", async () => {
+		const h = await harness();
+		let reads = 0;
+		let sleeps = 0;
+		const outcome = await deliver(h, "preview", {
+			realization: {
+				async deploy(source) {
+					h.deployed.push(source);
+					return {
+						ok: true,
+						outputs: {
+							deploymentId: "dpl_0",
+							url: "https://hobo-ci-0.vercel.app",
+							target: "preview",
+						},
+					};
+				},
+				async readyState() {
+					reads += 1;
+					return "BUILDING";
+				},
+			},
+			limitMs: 0,
+			sleep: async (ms) => {
+				sleeps += 1;
+				h.clock.now += ms;
+			},
+		});
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.incomplete);
+		expect(reads).toBe(1);
+		expect(sleeps).toBe(0);
+	}, 60_000);
 });
 
 async function journalTypes(

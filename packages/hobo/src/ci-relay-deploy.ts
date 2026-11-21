@@ -659,7 +659,7 @@ export async function runCiRelayDeploy(
 		});
 		if (!parsedDeadline.ok) return usage(parsedDeadline.message);
 		deadlineAt = parsedDeadline.at;
-		if (clock() >= deadlineAt && (stagedProduction || target === "production"))
+		if (clock() >= deadlineAt)
 			return refused(
 				RELAY_DEPLOY_REFUSAL.budgetExhausted,
 				target === "production"
@@ -829,7 +829,7 @@ export async function runCiRelayDeploy(
 					: undefined),
 			});
 			vault.put("VERCEL_TOKEN", stored);
-			if (env.GITHUB_ACTIONS === "true" || oidcMintAvailable)
+			if (env.GITHUB_ACTIONS === "true")
 				process.stderr.write(`::add-mask::${stored}\n`);
 		} catch (error) {
 			return refused(
@@ -1018,10 +1018,10 @@ export async function runCiRelayDeploy(
 		verifyProbe !== undefined && verifyOrigin !== undefined
 			? { origin: verifyOrigin, probe: verifyProbe }
 			: undefined;
-	if (deadlineRequested && target === "production" && clock() >= deadlineAt)
+	if (deadlineRequested && clock() >= deadlineAt)
 		return refused(
 			RELAY_DEPLOY_REFUSAL.budgetExhausted,
-			`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`,
+			`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} was created.`,
 		);
 	const waitLimitMs = deadlineRequested
 		? Math.min(WAIT_LIMIT_MS, Math.max(0, deadlineAt - clock()))

@@ -35,10 +35,13 @@ describe("protected preview probe", () => {
 		for (const deploymentUrl of [
 			undefined,
 			"",
-			"http://evil.vercel.app",
+			"http://hobo-ci-example.vercel.app",
 			"https://vercel.app.evil.test",
-			"https://user@a.vercel.app",
-			"https://a.vercel.app:444",
+			"https://user@hobo-ci-example.vercel.app",
+			"https://hobo-ci-example.vercel.app:444",
+			"https://other.vercel.app",
+			"https://other-hobo-ci.vercel.app",
+			"https://hobo-ci.vercel.app.evil.test",
 		]) {
 			let sent = false;
 			const probe = protectedPreviewProbe({
@@ -48,28 +51,32 @@ describe("protected preview probe", () => {
 				jwt: async () => "synthetic-oidc-token",
 				base: async () => {
 					sent = true;
-					throw new Error("unexpected");
+					return { status: 200, headers: {}, body: "{}" };
 				},
 			});
 			expect((await probe(request)).status).toBe(503);
 			expect(sent).toBe(false);
 		}
+		let sent = false;
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
 			project: "hobo-ci",
-			deploymentUrl: () => "https://a.vercel.app",
+			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
 			jwt: async () => {
 				throw new Error("token failure");
 			},
 			base: async () => {
-				throw new Error("unexpected");
+				sent = true;
+				return { status: 200, headers: {}, body: "{}" };
 			},
 		});
 		expect((await probe(request)).status).toBe(503);
+		expect(sent).toBe(false);
 		expect(
 			(await probe({ ...request, url: "https://preview.invalid/other" }))
 				.status,
 		).toBe(503);
+		expect(sent).toBe(false);
 	});
 
 	it("surfaces a redirect answer once and never re-sends the token cross-origin", async () => {

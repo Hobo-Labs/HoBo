@@ -354,7 +354,7 @@ describe("the relay deploy workflow", () => {
 			]) {
 				const ran = spawnSync(
 					process.execPath,
-					["--import", "tsx", report, ...args],
+					["--experimental-strip-types", "--no-warnings", report, ...args],
 					{ encoding: "utf8" },
 				);
 				assert.equal(ran.status, 1);
@@ -418,7 +418,15 @@ describe("the relay deploy workflow", () => {
 				writeFileSync(json, scenario.body);
 				const ran = spawnSync(
 					process.execPath,
-					["--import", "tsx", report, json, "preview", "", scenario.exitArg],
+					[
+						"--experimental-strip-types",
+						"--no-warnings",
+						report,
+						json,
+						"preview",
+						"",
+						scenario.exitArg,
+					],
 					{ encoding: "utf8" },
 				);
 				assert.equal(

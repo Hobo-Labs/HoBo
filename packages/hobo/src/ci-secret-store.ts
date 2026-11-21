@@ -393,8 +393,8 @@ function claimSteps(kind: string, cwd: string): readonly string[] {
 			];
 		case "infisical-cloud-attach":
 			return [
-				"In Infisical's web app: sign up or in, create project hobo-ci with folder /hobo-ci-relay in prod, and add two OIDC Auth machine identities, hobo-ci-relay (Vercel) and hobo-ci-writer (GitHub Actions). The hobo-deploy skill gives every value.",
-				`Run \`hobo ci secret-store connect ${where} --repo <owner/name> --project-id … --relay-identity-id … --deploy-identity-id … --team …\` with the ids (none is a secret; GH_TOKEN lets it read the OIDC subject GitHub issues for the repository), set hobo-ci-writer's OIDC trust to the subject and claims it prints, then commit ${SECRET_STORE_BINDING_FILE}.`,
+				"In Infisical's web app: sign up or in, create project hobo-ci with folder /hobo-ci-relay in prod, and add two OIDC Auth machine identities, hobo-ci-relay (Vercel) and hobo-ci-deploy (GitHub Actions). The hobo-deploy skill gives every value.",
+				`Run \`hobo ci secret-store connect ${where} --repo <owner/name> --project-id … --relay-identity-id … --deploy-identity-id … --team …\` with the ids (none is a secret; GH_TOKEN lets it read the OIDC subject GitHub issues for the repository), set hobo-ci-deploy's OIDC trust to the subject and claims it prints, then commit ${SECRET_STORE_BINDING_FILE}.`,
 			];
 		default:
 			return [

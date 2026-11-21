@@ -1120,7 +1120,8 @@ async function deliverWith(
 		campIds: [campId],
 		holderId: `hobo-ci-deploy:${process.pid}`,
 	});
-	const limitMs = input.limitMs ?? DEFAULT_LIMIT_MS;
+	const limitMs =
+		input.limitMs === undefined ? DEFAULT_LIMIT_MS : Math.max(0, input.limitMs);
 	const intervalMs = input.intervalMs ?? DEFAULT_INTERVAL_MS;
 	const until = now() + limitMs;
 	// A clock that does not move still ends: at most one pass per interval of the limit.
