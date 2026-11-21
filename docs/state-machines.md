@@ -11,6 +11,7 @@ This is a **partial** verification record, not a claim that the framework is ful
 
 | Subsystem | Maintained verification | Main checked properties |
 | --- | --- | --- |
+| Shared budget policy | [verify-shared-budget-policy](../.agents/skills/verify-shared-budget-policy/SKILL.md) | Scope, windows, monetary and metric limits, native-bound labels, and policy constraint shapes. |
 | Dispatcher budget-policy routing | [verify-budget-policy-routing](../.agents/skills/verify-budget-policy-routing/SKILL.md) | Admission and settlement preserve modeled available budget, subject to overrun and evidence assumptions. |
 | Broker budget authority | [verify-broker-budget-authority](../.agents/skills/verify-broker-budget-authority/SKILL.md) | Holds account for liabilities; claimed work retains funding; signed settlement requires bound receiver and finance evidence. |
 | SQLite queue and outbox | [verify-outbox-lease](../.agents/skills/verify-outbox-lease/SKILL.md) | A stale delivery attempt cannot acknowledge a later attempt, even when lease IDs and fences repeat. |
