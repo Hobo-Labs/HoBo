@@ -665,8 +665,6 @@ export const PAGES_RELEASE_PROMOTION_BUDGET_MS =
 
 export const PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT = 17 * 60_000;
 
-export const RELEASE_PROMOTION_TIMEOUT = "release-promotion-timeout" as const;
-
 export const RELEASE_DRIVE_PAGES = Object.freeze({
 	passes:
 		Math.ceil(PAGES_RELEASE_PROMOTION_BUDGET_MS / RELEASE_DRIVE.intervalMs) + 1,
@@ -688,76 +686,7 @@ export function pagesReleaseWallBudgetMs(
 		throw new Error(
 			`HOBO_RELEASE_PAGES_WALL_BUDGET_MS must be a positive number (got ${JSON.stringify(raw)})`,
 		);
-	if (parsed > PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT)
-		throw new Error(
-			`HOBO_RELEASE_PAGES_WALL_BUDGET_MS must not exceed ${PAGES_RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT}ms (release-pages step is 18m)`,
-		);
 	return Math.floor(parsed);
-}
-
-export function releasePagesWallRemainingMs(
-	wall: ReleasePromoteWall | undefined,
-	nowMs: number = Date.now(),
-): number | undefined {
-	if (!wall) return undefined;
-	return wall.budgetMs - (nowMs - wall.startedMs);
-}
-
-export function releasePromotionTimeoutVerdict(
-	promotionId: string,
-	message: string,
-): ReleaseVerdict {
-	return {
-		outcome: "blocked",
-		codes: [RELEASE_PROMOTION_TIMEOUT],
-		message,
-		promotionId,
-	};
-}
-
-async function awaitReleasePagesWall<T>(
-	label: string,
-	wall: ReleasePromoteWall | undefined,
-	work: () => Promise<T>,
-): Promise<T> {
-	const remaining = releasePagesWallRemainingMs(wall);
-	if (remaining === undefined) return work();
-	if (remaining <= 0)
-		throw new Error(`${RELEASE_PROMOTION_TIMEOUT}:${label}: wall budget exhausted`);
-	console.error(
-		`release-pages: await ${label} (≤${Math.max(0, Math.floor(remaining / 1000))}s wall)`,
-	);
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			work(),
-			new Promise<T>((_, reject) => {
-				timer = setTimeout(
-					() =>
-						reject(
-							new Error(
-								`${RELEASE_PROMOTION_TIMEOUT}:${label} exceeded ${remaining}ms wall`,
-							),
-						),
-					remaining,
-				);
-			}),
-		]);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-	}
-}
-
-function releaseTimeoutVerdictFromError(
-	err: unknown,
-	promotionId: string,
-): ReleaseVerdict | undefined {
-	const message = err instanceof Error ? err.message : String(err);
-	if (!message.startsWith(`${RELEASE_PROMOTION_TIMEOUT}:`)) return undefined;
-	return releasePromotionTimeoutVerdict(
-		promotionId,
-		message.slice(`${RELEASE_PROMOTION_TIMEOUT}:`.length).trim(),
-	);
 }
 
 export function releasePagesElapsedMs(
@@ -818,26 +747,14 @@ export async function promoteReleaseFreight(
 ): Promise<ReleaseVerdict> {
 	const camp = releaseCampId(input.family, input.channel);
 	const progressPhase = `${input.family}-${input.channel}`;
-	let requested: CdResult;
-	try {
-		requested = await awaitReleasePagesWall(
-			`promote ${input.freightId} -> ${camp}`,
-			input.family === "pages" ? input.promoteWall : undefined,
-			() =>
-				cd.run(["promote", input.freightId], {
-					camp,
-					pipeline: releaseBindle(input.family),
-					node: input.channel,
-					...(input.channel === "stable"
-						? { "source-camp": releaseCampId(input.family, "candidate") }
-						: undefined),
-				}),
-		);
-	} catch (err) {
-		const timeout = releaseTimeoutVerdictFromError(err, "");
-		if (timeout) return timeout;
-		throw err;
-	}
+	const requested = await cd.run(["promote", input.freightId], {
+		camp,
+		pipeline: releaseBindle(input.family),
+		node: input.channel,
+		...(input.channel === "stable"
+			? { "source-camp": releaseCampId(input.family, "candidate") }
+			: undefined),
+	});
 	const promotionId = requested.data?.promotion?.promotionId ?? "";
 	let verdict: ReleaseVerdict | undefined;
 	if (!requested.ok || !promotionId) {
@@ -867,21 +784,7 @@ export async function promoteReleaseFreight(
 				};
 				break;
 			}
-			let at: ReleaseDriveState;
-			try {
-				at = await awaitReleasePagesWall(
-					`drive pass ${pass + 1}/${drive.passes}`,
-					input.family === "pages" ? input.promoteWall : undefined,
-					() => cd.drive(promotionId, camp),
-				);
-			} catch (err) {
-				const timeout = releaseTimeoutVerdictFromError(err, promotionId);
-				if (timeout) {
-					verdict = timeout;
-					break;
-				}
-				throw err;
-			}
+			const at = await cd.drive(promotionId, camp);
 			verdict = classifyRelease(promotionId, at);
 			if (
 				input.family === "pages" &&
@@ -893,7 +796,7 @@ export async function promoteReleaseFreight(
 					passes: drive.passes,
 					promotionId,
 					camp,
-					state: at?.state ?? "unknown",
+					state: at.state,
 					wall: input.promoteWall,
 				});
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
@@ -956,19 +859,14 @@ export async function qualifyReleaseCandidate(input: {
 			console.error(
 				`release-pages: recording Freight under ${input.home} (candidate promote follows)`,
 			);
-		const { freightId } = await awaitReleasePagesWall(
-			"record Freight",
-			input.family === "pages" ? input.promoteWall : undefined,
-			() =>
-				recordReleaseFreight(cd, {
-					family: input.family,
-					source: releaseSource(env),
-					stored: input.stored,
-					registry: input.registry,
-					labels: input.labels,
-					blobs: input.blobs,
-				}),
-		);
+		const { freightId } = await recordReleaseFreight(cd, {
+			family: input.family,
+			source: releaseSource(env),
+			stored: input.stored,
+			registry: input.registry,
+			labels: input.labels,
+			blobs: input.blobs,
+		});
 		if (input.family === "pages")
 			console.error(
 				`release-pages: recorded ${freightId}; promoting hobo-release/pages-candidate`,
@@ -1020,7 +918,7 @@ export async function promoteReleaseStable(
 				channel: "stable",
 				freightId,
 				drive: seams.drive ?? releaseDriveFor(family),
-				promoteWall: family === "pages" ? promoteWall : undefined,
+				promoteWall,
 			});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
