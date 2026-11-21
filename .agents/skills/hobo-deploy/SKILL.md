@@ -1,6 +1,11 @@
 ---
 name: hobo-deploy
 description: Use HoBo's owner hand-off and secret-store session when deploying a HoBo service, including the hosted CI relay managed by HoBo CD.
+license: MIT
+compatibility: Agent Skills-compatible hosts (Claude Code, Cursor, Codex, and other skill hosts); the MCP server needs Node.js 22+ and a built plugin bundle (pnpm run agent-plugin:build in the HoBo checkout).
+metadata:
+  source: https://github.com/Hobo-Labs/HoBo
+  plugin: hobo
 ---
 
 # Deploying with HoBo
@@ -24,9 +29,11 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before opening any owner form, verify without using owner data that the
-connected hand-off keeps selections in a temporary owner session and excludes
-private coordinates, identifiers, and references from agent-visible tool calls,
+Before opening any owner form, confirm MCP host capability reports a privacy-
+verified owner channel (see host `ci`/`cd` lifecycle result `hostSupport`) and
+without using owner data that the connected hand-off keeps selections in a
+temporary owner session and excludes private coordinates, identifiers, and
+references from agent-visible tool calls,
 results, traces, and diagnostics. This applies to store selection, capture, and
 the lifecycle itself. If that cannot be established, do not open the form;
 report the missing secure hand-off.

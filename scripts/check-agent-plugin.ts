@@ -825,6 +825,7 @@ export function checkAgentPlugin(input: {
 	const notes: string[] = [];
 
 	issues.push(...githubHeadShaMismatchIssues(repoRoot));
+	issues.push(...pluginManifestStagedGitIssues(repoRoot));
 
 	const commitIsh = versionPinCommitIsh(repoRoot);
 	const exactReleaseTrain = requiresExactReleaseTrainVersion(
@@ -1078,13 +1079,43 @@ function readPluginFile(
 	return readFileSync(full, "utf8");
 }
 
+function pluginManifestStagedGitIssues(
+	repoRoot: string,
+): readonly AgentPluginIssue[] {
+	const result = spawnSync(
+		"git",
+		["diff", "--cached", "--name-only", "--", "plugins/hobo/plugin.json"],
+		{ cwd: repoRoot, encoding: "utf8" },
+	);
+	if (result.error !== undefined) {
+		return [
+			{
+				file: "plugin.json",
+				message:
+					"git is unavailable for staged plugin.json inspection; refuse version measurement",
+			},
+		];
+	}
+	if (result.status !== 0) {
+		return [
+			{
+				file: "plugin.json",
+				message:
+					"git could not list staged plugin.json changes; refuse version measurement",
+			},
+		];
+	}
+	return [];
+}
+
 function pluginManifestStaged(repoRoot: string): boolean {
 	const result = spawnSync(
 		"git",
 		["diff", "--cached", "--name-only", "--", "plugins/hobo/plugin.json"],
 		{ cwd: repoRoot, encoding: "utf8" },
 	);
-	return result.status === 0 && (result.stdout ?? "").trim().length > 0;
+	if (result.error !== undefined || result.status !== 0) return false;
+	return (result.stdout ?? "").trim().length > 0;
 }
 
 function trustedGithubHeadSha(
@@ -1119,7 +1150,19 @@ function mergeGroupPrBranchTip(repoRoot: string): string | undefined {
 export function githubHeadShaMismatchIssues(
 	repoRoot: string,
 ): readonly AgentPluginIssue[] {
+	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+	const expectsPrTip =
+		eventName === "pull_request" || eventName === "merge_group";
 	const mergePrHead = mergeGroupPrBranchTip(repoRoot);
+	if (expectsPrTip && mergePrHead === undefined) {
+		return [
+			{
+				file: "plugin.json",
+				message:
+					"cannot resolve the PR branch tip (HEAD^2) on this checkout; refuse version measurement",
+			},
+		];
+	}
 	if (mergePrHead === undefined) return [];
 	const envSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
 	if (envSha !== undefined && envSha.length > 0 && envSha !== mergePrHead) {

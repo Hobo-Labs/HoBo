@@ -13,7 +13,9 @@ entry per schema file; not the gitignored `plugins/hobo/fixtures/` deploy output
 (`version.json` + Nerdbank.GitVersioning): `0.0.0-alpha.<height>`. The gate
 measures the height at the commit being reviewed — the PR branch tip
 (`HEAD^2` of the `pull_request` / `merge_group` checkout; `GITHUB_HEAD_SHA`
-counts only when it matches that tip) — never at the synthetic merge ref, whose
+counts only when it matches that tip). If `HEAD^2` cannot be resolved on a PR or
+merge-group event, the gate refuses version measurement instead of trusting
+`GITHUB_HEAD_SHA` alone — never at the synthetic merge ref, whose
 base-branch commits would
 inflate the height past the value the branch pinned. Locally, a staged
 `plugin.json` raises the expected height by one to account for the commit that
@@ -29,7 +31,9 @@ not exact.
 Version computation failures fail the gate. In CI (`CI`, `GITHUB_ACTIONS`, or
 `TF_BUILD`), the gate exits non-zero when the release train cannot be computed
 or `versionFromReleaseTrain` would be omitted; only an explicit
-`HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check.
+`HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check. Turbo tasks
+use `envMode: strict`; `turbo.json` passes `GITHUB_*`, `TF_BUILD`, and `CI`
+through so nested package builds see the same CI identity as `agent-plugin:check`.
 
 ## Build the MCP bundle
 

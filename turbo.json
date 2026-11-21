@@ -8,6 +8,13 @@
   "envMode": "strict",
   "globalPassThroughEnv": [
     "CI",
+    "GITHUB_ACTIONS",
+    "GITHUB_EVENT_NAME",
+    "GITHUB_HEAD_SHA",
+    "GITHUB_RUN_ATTEMPT",
+    "GITHUB_RUN_ID",
+    "GITHUB_SHA",
+    "TF_BUILD",
     "HOBO_*",
     "PLAYWRIGHT_*",
     "TMPDIR",

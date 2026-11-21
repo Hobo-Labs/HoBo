@@ -1383,6 +1383,35 @@ describe("release-train version pin commit selection", () => {
 		git(root, "commit", "-q", "-m", "only commit");
 		stubCiEnvironment("merge_group");
 		expect(versionPinCommitIsh(root)).toBe("HEAD");
+		expect(githubHeadShaMismatchIssues(root)).toEqual([
+			expect.objectContaining({
+				message:
+					"cannot resolve the PR branch tip (HEAD^2) on this checkout; refuse version measurement",
+			}),
+		]);
+	});
+
+	it("fails checkAgentPlugin when pull_request lacks HEAD^2", async () => {
+		const root = await mkdtemp(path.join(tmpdir(), "hobo-agent-plugin-git-"));
+		scratches.push(root);
+		git(root, "init", "-q");
+		git(root, "config", "user.email", "test@example.com");
+		git(root, "config", "user.name", "Test");
+		git(root, "config", "commit.gpgsign", "false");
+		await writeFile(path.join(root, "seed.txt"), "seed\n");
+		git(root, "add", "seed.txt");
+		git(root, "commit", "-q", "-m", "only commit");
+		stubCiEnvironment("pull_request", git(root, "rev-parse", "HEAD"));
+		const report = checkAgentPlugin({
+			pluginRoot: realPluginRoot,
+			repoRoot: root,
+			versionFromReleaseTrain: undefined,
+		});
+		expect(
+			report.issues.some((issue) =>
+				/cannot resolve the PR branch tip \(HEAD\^2\)/u.test(issue.message),
+			),
+		).toBe(true);
 	});
 
 	it("measures the height at the PR branch tip, not the inflated merge ref", async () => {

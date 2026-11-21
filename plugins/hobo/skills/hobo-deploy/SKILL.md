@@ -29,9 +29,11 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before opening any owner form, verify without using owner data that the
-connected hand-off keeps selections in a temporary owner session and excludes
-private coordinates, identifiers, and references from agent-visible tool calls,
+Before opening any owner form, confirm MCP host capability reports a privacy-
+verified owner channel (see host `ci`/`cd` lifecycle result `hostSupport`) and
+without using owner data that the connected hand-off keeps selections in a
+temporary owner session and excludes private coordinates, identifiers, and
+references from agent-visible tool calls,
 results, traces, and diagnostics. This applies to store selection, capture, and
 the lifecycle itself. If that cannot be established, do not open the form;
 report the missing secure hand-off.
