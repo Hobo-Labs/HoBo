@@ -77,7 +77,7 @@ export const NEEDS_CONTAINER_ENGINE: readonly CoveredJob[] = [
 	"workspace_tests",
 ];
 
-export const SHADOW_WORKFLOW_BLOB = "3cd9414886eb31592f4060a4d2250159ba491864";
+export const SHADOW_WORKFLOW_BLOB = "dc303fc09a9d9368c447bd2a16811026df0cb1a8";
 export const SHADOW_PLAN_BLOB = "636551fe7e906023169f2b05af1ec7e7872998c0";
 export const SHADOW_WORKFLOW_PATH = ".github/workflows/hobo-ci.yml";
 export const SHADOW_PLAN_PATH = "scripts/ci/attested-jobs.json";

@@ -1563,7 +1563,9 @@ export function createPromotionService(
 		const targetId = toSetId ?? current.predecessorSetId;
 		const target =
 			targetId === "" ? undefined : await d.desired.get(asSet(targetId));
-		if (!target)
+		if (!target) {
+			if (targetId === "" && !strictCurrent)
+				return { ok: true, value: current };
 			return {
 				ok: false,
 				reasons: [
@@ -1575,6 +1577,7 @@ export function createPromotionService(
 					),
 				],
 			};
+		}
 		const freight = await d.freight.get(asFreight(target.freightId));
 		if (!freight || !(await d.freight.isUsable(asFreight(target.freightId))))
 			return {
