@@ -317,11 +317,14 @@ export async function checkSkillsConformance(
 			});
 			continue;
 		}
-		if (strictSkills.has(dirent.name)) {
-			issues.push(...strictSkillIssues(dirent.name, markdown));
-		}
 		try {
 			const parsed = parseSkillFrontmatter(markdown);
+			if (
+				strictSkills.has(dirent.name) ||
+				strictSkills.has(parsed.name)
+			) {
+				issues.push(...strictSkillIssues(dirent.name, markdown));
+			}
 			const prior = seen.get(parsed.name);
 			if (prior !== undefined) {
 				issues.push({
@@ -333,6 +336,9 @@ export async function checkSkillsConformance(
 				seen.set(parsed.name, dirent.name);
 			}
 		} catch (error) {
+			if (strictSkills.has(dirent.name)) {
+				issues.push(...strictSkillIssues(dirent.name, markdown));
+			}
 			// SAFETY: caught values may be non-Error, so message access is guarded by the fallback.
 			issues.push({
 				skill: dirent.name,

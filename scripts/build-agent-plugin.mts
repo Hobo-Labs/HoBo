@@ -52,6 +52,8 @@ const requireFromHoboPackage = createRequire(
 const esbuild: EsbuildModule = requireFromHoboPackage("esbuild");
 
 async function main(): Promise<void> {
+	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
+	rmSync(attestationPath, { force: true });
 	mkdirSync(outdir, { recursive: true });
 	const result = await esbuild.build({
 		entryPoints: [entry],
@@ -76,6 +78,7 @@ async function main(): Promise<void> {
 		},
 	});
 	if (result.errors.length > 0) {
+		rmSync(attestationPath, { force: true });
 		process.exitCode = 1;
 		return;
 	}
@@ -84,7 +87,6 @@ async function main(): Promise<void> {
 	const sha256 = createHash("sha256")
 		.update(readFileSync(outfile))
 		.digest("hex");
-	const attestationPath = path.join(pluginRoot, ".bundle-attestation.json");
 	const inActions = process.env.GITHUB_ACTIONS === "true";
 	if (!inActions) {
 		rmSync(attestationPath, { force: true });
@@ -97,6 +99,7 @@ async function main(): Promise<void> {
 		console.error(
 			"agent-plugin:build: GITHUB_RUN_ID and GITHUB_SHA are required in GitHub Actions",
 		);
+		rmSync(attestationPath, { force: true });
 		process.exitCode = 1;
 		return;
 	}
@@ -104,6 +107,7 @@ async function main(): Promise<void> {
 		console.error(
 			"agent-plugin:build: GITHUB_RUN_ATTEMPT must be non-empty when set",
 		);
+		rmSync(attestationPath, { force: true });
 		process.exitCode = 1;
 		return;
 	}

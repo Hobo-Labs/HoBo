@@ -56,7 +56,8 @@ match this workflow run, checkout, attempt, and sha256. In
 CI, `agent-plugin:check` builds the bundle when it is still absent so repo-wide
 gates do not fail before that build step.
 
-The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
+The build deletes any prior `.bundle-attestation.json` before bundling so a
+failed rebuild cannot leave a stale attestation beside the bundle. The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to
 `fixtures/deploy` (the deploy providers read it relative to the bundle), and
 leaves `typescript` and the native Bitwarden SDK resolvable from the

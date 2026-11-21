@@ -228,6 +228,20 @@ description: d
 		}
 	});
 
+	it("applies strict rules when a HoBo-owned name is declared from another folder", async () => {
+		const root = await scratchTree({
+			helper: "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",
+		});
+		const issues = await checkSkillsConformance(root);
+		expect(
+			issues.some(
+				(issue) =>
+					issue.skill === "helper" &&
+					issue.code === "disallowed-frontmatter-field",
+			),
+		).toBe(true);
+	});
+
 	it("reports every strict violation a HoBo-owned skill can make", async () => {
 		const root = await scratchTree({
 			"hobo-setup": "---\nname: hobo-setup\ndescription: d\nlegacy: x\n---\n",

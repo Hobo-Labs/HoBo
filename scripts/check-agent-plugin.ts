@@ -23,7 +23,12 @@ const PLUGIN_NAME_PATTERN =
 	/^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u;
 const SEMVER_PATTERN =
 	/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u;
-const FORBIDDEN_ENV_KEYS = ["PLUGIN_ROOT", "PLUGIN_DATA"];
+const FORBIDDEN_ENV_KEYS: readonly string[] = [
+	"PLUGIN_ROOT",
+	"PLUGIN_DATA",
+	"NODE_OPTIONS",
+	"NODE_PRELOAD",
+];
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const BUNDLE_ATTESTATION = ".bundle-attestation.json";
 const SECRET_KEY_PATTERN =
