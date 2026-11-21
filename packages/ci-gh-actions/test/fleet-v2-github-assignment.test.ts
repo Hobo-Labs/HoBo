@@ -6,7 +6,7 @@ import {
 	type GithubAssignmentScope,
 } from "../src/fleet-v2/github-assignment.js";
 import { authorizeStartFence } from "../src/fleet-v2/start-fence.js";
-import type { GithubTransport } from "../src/github.js";
+import { type GithubTransport, githubApiUrl } from "../src/github.js";
 
 const scope: GithubAssignmentScope = {
 	accountId: "account-1",
@@ -50,7 +50,8 @@ const github: GithubTransport = {
 	async request(installationId, path) {
 		if (installationId !== scope.installationId)
 			throw new Error("wrong installation");
-		return fetch(`${origin}${path}`);
+		const url = new URL(githubApiUrl(path));
+		return fetch(`${origin}${url.pathname}${url.search}`);
 	},
 };
 

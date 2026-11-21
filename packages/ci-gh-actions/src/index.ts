@@ -58,6 +58,10 @@ export {
 	type GithubAssignmentScope,
 } from "./fleet-v2/github-assignment.js";
 export {
+	createStartFenceHandler,
+	type StartFencePolicy,
+} from "./fleet-v2/start-fence-handler.js";
+export {
 	agreedFleetBlocks,
 	countFleetVerdictAllowance,
 	createFleetVerdictStore,

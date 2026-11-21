@@ -31,7 +31,7 @@ const githubJobKeySchema = z.strictObject({
 const startFenceRequestSchema = z.strictObject({
 	slotId: z.string().min(1),
 	claimId: z.string().min(1),
-	bindingSecret: z.string().min(32),
+	bindingSecret: z.string().min(32).max(1024),
 	accountId: z.string().min(1),
 	runnerName: z.string().min(1),
 	profileId: z.string().min(1),
@@ -39,6 +39,12 @@ const startFenceRequestSchema = z.strictObject({
 		githubJob: githubJobKeySchema,
 	}),
 });
+
+export type StartFenceRequest = z.infer<typeof startFenceRequestSchema>;
+
+export function parseStartFenceRequest(input: unknown) {
+	return startFenceRequestSchema.safeParse(input);
+}
 
 export type VerifiedGithubAssignment = {
 	runnerName: string;
@@ -70,7 +76,7 @@ export async function authorizeStartFence(
 	input: unknown,
 	lookup: GithubAssignmentLookup,
 ): Promise<StartFenceAuthorization> {
-	const parsed = startFenceRequestSchema.safeParse(input);
+	const parsed = parseStartFenceRequest(input);
 	if (!parsed.success)
 		return { ok: false, reason: "malformed start-fence request" };
 	const body = parsed.data;
