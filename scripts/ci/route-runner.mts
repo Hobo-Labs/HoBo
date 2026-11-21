@@ -715,6 +715,166 @@ export function prBatchHostedHasIdleCapacity(
 	return mergeGroupHostedHasIdleCapacity(load, limits);
 }
 
+// public-contract: the Agent37 on-demand overflow runs-on label, emitted while the pool's own runners are all busy; the provider may stay disabled.
+export const AGENT37_OVERFLOW_RUNNER_LABEL = "hobo-agent37";
+// public-contract: host node CPU used percent above which the hobo pool counts as saturated.
+export const HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT = 90;
+// public-contract: the optional repository variable naming the hobo pool host's CPU used percent, read through GitHub's API with the job's own token (never an environment variable, ADR-0181 rule R2).
+export const HOBO_CI_NODE_CPU_PERCENT_VARIABLE = "HOBO_CI_NODE_CPU_PERCENT";
+
+export type FleetPoolRunners = Readonly<{
+	online: number;
+	busy: number;
+}>;
+
+export function fleetPoolRunners(
+	runnersPage: JsonValue,
+	label: string,
+): FleetPoolRunners | undefined {
+	const wanted = label.trim().toLowerCase();
+	if (!wanted) return undefined;
+	const entries = asObject(runnersPage)?.runners;
+	if (!Array.isArray(entries)) return undefined;
+	let online = 0;
+	let busy = 0;
+	for (const entry of entries) {
+		const runner = asObject(entry);
+		const status = asText(runner?.status);
+		if (
+			!runner ||
+			status === undefined ||
+			(runner.busy !== true && runner.busy !== false)
+		)
+			return undefined;
+		const labels = asList(runner.labels).flatMap(
+			(name) => asText(asObject(name)?.name) ?? [],
+		);
+		if (!labels.some((name) => name.trim().toLowerCase() === wanted)) continue;
+		if (status === "online") {
+			online += 1;
+			if (runner.busy) busy += 1;
+		}
+	}
+	return { online, busy };
+}
+
+export function parseNodeCpuPercent(
+	value: string | undefined,
+): number | undefined {
+	const text = value?.trim();
+	if (!text || !/^\d+$/u.test(text)) return undefined;
+	const percent = Number(text);
+	return Number.isSafeInteger(percent) ? percent : undefined;
+}
+
+export type HoboPoolSaturation = Readonly<{
+	saturated: boolean;
+	summary: string;
+}>;
+
+export function hoboPoolSaturation(input: {
+	runners: FleetPoolRunners | undefined;
+	cpuPercent: number | undefined;
+	label: string;
+}): HoboPoolSaturation {
+	const parts = [
+		...(input.runners
+			? [
+					`${input.runners.busy} of ${input.runners.online} online ${input.label} runners busy`,
+				]
+			: []),
+		...(input.cpuPercent !== undefined
+			? [`host node CPU ${input.cpuPercent}%`]
+			: []),
+	];
+	const busyPool =
+		input.runners !== undefined &&
+		input.runners.online > 0 &&
+		input.runners.busy === input.runners.online;
+	const highCpu =
+		input.cpuPercent !== undefined &&
+		input.cpuPercent > HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT;
+	if (busyPool || highCpu)
+		return {
+			saturated: true,
+			summary: `the ${input.label} pool has no idle capacity (${parts.join("; ")})`,
+		};
+	if (parts.length > 0)
+		return {
+			saturated: false,
+			summary: `the ${input.label} pool is not saturated (${parts.join("; ")})`,
+		};
+	return {
+		saturated: false,
+		summary: `${input.label} pool saturation unknown (repository runner list unreadable; host node CPU unknown)`,
+	};
+}
+
+export async function observeHoboPoolSaturation(input: {
+	read: QueueReader;
+	repository: string;
+	label: string;
+}): Promise<HoboPoolSaturation> {
+	const runners = await readFleetPoolRunners(
+		input.read,
+		input.repository,
+		input.label,
+	).catch(() => undefined);
+	const cpuPercent = await readNodeCpuPercent(
+		input.read,
+		input.repository,
+	).catch(() => undefined);
+	return hoboPoolSaturation({ runners, cpuPercent, label: input.label });
+}
+
+export async function applyHoboPoolSaturation(input: {
+	decision: RouteDecision;
+	read: QueueReader;
+	repository: string;
+	label: string;
+}): Promise<RouteDecision> {
+	const saturation = await observeHoboPoolSaturation({
+		read: input.read,
+		repository: input.repository,
+		label: input.label,
+	});
+	if (!saturation.saturated)
+		return {
+			...input.decision,
+			reason: `${input.decision.reason}; ${saturation.summary}`,
+		};
+	console.log(
+		`::warning title=hobo-ci-route-fallback::${escapeCommand(`${saturation.summary}; the run overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`)}`,
+	);
+	return {
+		tier: "fleet",
+		runner: AGENT37_OVERFLOW_RUNNER_LABEL,
+		reason: `${input.decision.reason}; ${saturation.summary}; the run overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`,
+		refusedBy: "queue",
+	};
+}
+
+async function readFleetPoolRunners(
+	read: QueueReader,
+	repository: string,
+	label: string,
+): Promise<FleetPoolRunners | undefined> {
+	return fleetPoolRunners(
+		await read(`/repos/${repository}/actions/runners?per_page=100`),
+		label,
+	);
+}
+
+async function readNodeCpuPercent(
+	read: QueueReader,
+	repository: string,
+): Promise<number | undefined> {
+	const body = await read(
+		`/repos/${repository}/actions/variables/${HOBO_CI_NODE_CPU_PERCENT_VARIABLE}`,
+	);
+	return parseNodeCpuPercent(asText(asObject(body)?.value));
+}
+
 export const MERGE_GROUP_TRUNK_IDLE_LIMITS: RouteLimits = {
 	maxWaitSeconds: 45,
 	maxQueued: 1,
@@ -1363,6 +1523,26 @@ export async function main(
 							labelLoad(fleetView.jobs, fleetLabel, fleetProbeAtMs),
 						)
 					: "the fleet queue could not be read";
+				const saturation = await observeHoboPoolSaturation({
+					read: probeRead,
+					repository,
+					label: fleetLabel,
+				});
+				if (saturation.saturated) {
+					console.log(
+						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} without a verified capacity claim (${fleetSummary})`)}`,
+					);
+					return report(
+						{
+							tier: "fleet",
+							runner: AGENT37_OVERFLOW_RUNNER_LABEL,
+							reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} (${fleetSummary})`,
+							refusedBy: "queue",
+							slip: { kind: "unasked", why: "batch" },
+						},
+						env,
+					);
+				}
 				console.log(
 					`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
 				);
@@ -1370,7 +1550,7 @@ export async function main(
 					{
 						tier: "fleet",
 						runner: fleetLabel,
-						reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary})`,
+						reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary}); ${saturation.summary}`,
 						refusedBy: "queue",
 						slip: { kind: "unasked", why: "batch" },
 					},
@@ -1557,15 +1737,16 @@ export async function main(
 	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
 	const repository = env.GITHUB_REPOSITORY ?? "";
 	const token = env.GITHUB_TOKEN ?? "";
+	const runClassName = routeClass(
+		event,
+		"eventPayload" in io ? io.eventPayload : readEventPayload(env),
+	);
 	const slip = await askSlip({
 		apiUrl,
 		repository,
 		token,
 		labels,
-		routeClass: routeClass(
-			event,
-			"eventPayload" in io ? io.eventPayload : readEventPayload(env),
-		),
+		routeClass: runClassName,
 		nowMs: now,
 		fetch: io.fetch,
 	});
@@ -1641,6 +1822,17 @@ export async function main(
 			reason: `merge-group Fabric refused the general fleet label ${labels.fleet}`,
 			refusedBy: "queue",
 		};
+	if (
+		decision.tier === "fleet" &&
+		decision.runner === labels.fleet &&
+		runClassName !== "fork"
+	)
+		decision = await applyHoboPoolSaturation({
+			decision,
+			read,
+			repository,
+			label: labels.fleet,
+		});
 	if (slip.ok)
 		return report(
 			{

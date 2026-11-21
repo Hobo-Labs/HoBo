@@ -15,6 +15,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
 	ABSENT_SLIP_WHYS,
+	AGENT37_OVERFLOW_RUNNER_LABEL,
 	askSlip,
 	BURST_SECONDS,
 	chooseRunner,
@@ -24,7 +25,11 @@ import {
 	DEFAULT_MAX_WAIT_SECONDS,
 	DEFAULT_RUNNER_LABELS,
 	fleetLabelFor,
+	fleetPoolRunners,
+	HOBO_CI_NODE_CPU_PERCENT_VARIABLE,
+	HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT,
 	hasChosen,
+	hoboPoolSaturation,
 	type JsonValue,
 	type LabelLoad,
 	labelLoad,
@@ -39,6 +44,7 @@ import {
 	PROBE_POLL_SECONDS,
 	PROBE_WAIT_SECONDS,
 	PROBE_WORKFLOW_PATH,
+	parseNodeCpuPercent,
 	parseRouteArgs,
 	parseRouteMode,
 	probeRunIds,
@@ -2347,6 +2353,452 @@ describe("the script reading the slip", () => {
 				}),
 			],
 		);
+	});
+});
+
+describe("hobo pool saturation overflow", () => {
+	it("counts the online runners serving the pool label, busy or not", () => {
+		const runner = (
+			busy: boolean,
+			labels: readonly string[],
+			status = "online",
+		) => ({
+			name: "hobo-runner",
+			status,
+			busy,
+			labels: labels.map((name) => ({ name })),
+		});
+		assert.deepEqual(
+			fleetPoolRunners(
+				{
+					runners: [
+						runner(true, ["self-hosted", "linux", "hobo"]),
+						runner(false, ["hobo"]),
+						runner(true, ["hobo"], "offline"),
+						runner(false, ["hobo-trunk"]),
+						runner(false, ["HoBo"]),
+					],
+				},
+				"hobo",
+			),
+			{ online: 3, busy: 1 },
+		);
+		assert.deepEqual(fleetPoolRunners({ runners: [] }, "hobo"), {
+			online: 0,
+			busy: 0,
+		});
+	});
+
+	it("says nothing when the runner list is not the shape GitHub answers", () => {
+		assert.equal(
+			fleetPoolRunners(
+				{ message: "Resource not accessible by integration" },
+				"hobo",
+			),
+			undefined,
+		);
+		assert.equal(fleetPoolRunners({ workflow_runs: [] }, "hobo"), undefined);
+		assert.equal(fleetPoolRunners({}, "hobo"), undefined);
+		assert.equal(
+			fleetPoolRunners({ runners: [{ status: "online" }] }, "hobo"),
+			undefined,
+		);
+	});
+
+	it("reads the host CPU percent only as a bare integer", () => {
+		assert.equal(parseNodeCpuPercent("93"), 93);
+		assert.equal(parseNodeCpuPercent(" 91 "), 91);
+		assert.equal(parseNodeCpuPercent("0"), 0);
+		for (const bad of ["93.5", "95%", "high", "  ", ""])
+			assert.equal(parseNodeCpuPercent(bad), undefined, JSON.stringify(bad));
+		assert.equal(parseNodeCpuPercent(undefined), undefined);
+	});
+
+	it("saturates when every online pool runner is busy, or the host CPU is past the limit", () => {
+		assert.equal(HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT, 90);
+		assert.deepEqual(
+			hoboPoolSaturation({
+				runners: { online: 5, busy: 5 },
+				cpuPercent: undefined,
+				label: "hobo",
+			}),
+			{
+				saturated: true,
+				summary:
+					"the hobo pool has no idle capacity (5 of 5 online hobo runners busy)",
+			},
+		);
+		assert.deepEqual(
+			hoboPoolSaturation({
+				runners: undefined,
+				cpuPercent: 93,
+				label: "hobo",
+			}),
+			{
+				saturated: true,
+				summary: "the hobo pool has no idle capacity (host node CPU 93%)",
+			},
+		);
+		assert.equal(
+			hoboPoolSaturation({
+				runners: { online: 3, busy: 2 },
+				cpuPercent: 90,
+				label: "hobo",
+			}).saturated,
+			false,
+		);
+	});
+
+	it("never saturates on unreadable evidence alone (R3)", () => {
+		const unknown = hoboPoolSaturation({
+			runners: undefined,
+			cpuPercent: undefined,
+			label: "hobo",
+		});
+		assert.equal(unknown.saturated, false);
+		assert.match(
+			unknown.summary,
+			/hobo pool saturation unknown \(repository runner list unreadable; host node CPU unknown\)/u,
+		);
+		assert.equal(
+			hoboPoolSaturation({
+				runners: { online: 0, busy: 0 },
+				cpuPercent: undefined,
+				label: "hobo",
+			}).saturated,
+			false,
+		);
+	});
+
+	const poolPages = (
+		runnersPage: JsonValue,
+		variableValue: string | undefined,
+	): ((path: string) => JsonValue) => {
+		const pickup = (label: string) => ({
+			run_id: 40,
+			status: "completed",
+			labels: [label],
+			runner_name: "runner-1",
+			created_at: new Date(SLIP_NOW - 65_000).toISOString(),
+			started_at: new Date(SLIP_NOW - 60_000).toISOString(),
+		});
+		return (path) => {
+			if (path.includes("/actions/runners")) return runnersPage;
+			if (path.includes("/actions/variables/"))
+				return variableValue === undefined
+					? { message: "Not Found" }
+					: {
+							name: HOBO_CI_NODE_CPU_PERCENT_VARIABLE,
+							value: variableValue,
+						};
+			if (path.includes("/jobs"))
+				return { jobs: [pickup("hobo"), pickup("hobo-trunk")] };
+			return {
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			};
+		};
+	};
+	const busyPool = (online: number, busy = online): JsonValue => ({
+		runners: Array.from({ length: online }, (_, index) => ({
+			name: `hobo-runner-${index + 1}`,
+			status: "online",
+			busy: index < busy,
+			labels: [{ name: "hobo" }],
+		})),
+	});
+	const prBatchEnv = {
+		GITHUB_EVENT_NAME: "pull_request",
+		GITHUB_WORKFLOW_REF:
+			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/pull/1/merge",
+		GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+		GITHUB_REPOSITORY_ID: "1274791462",
+		GITHUB_REPOSITORY_OWNER_ID: "344805935",
+		GITHUB_RUN_ID: "51",
+		GITHUB_TOKEN: "token",
+	};
+	const forkPayload: JsonValue = {
+		pull_request: {
+			base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+			head: { repo: { full_name: "someone/HoBo" } },
+		},
+	};
+	const publicRepo = (url: RequestInfo | URL): Response | undefined =>
+		String(url) === "https://api.github.com/repos/Hobo-Labs/HoBo"
+			? Response.json({
+					id: 1274791462,
+					owner: { id: 344805935 },
+					private: false,
+					visibility: "public",
+					disabled: false,
+					archived: false,
+				})
+			: undefined;
+	const hostedSaturated = (): JsonValue[] =>
+		Array.from({ length: 5 }, (_, index) => ({
+			run_id: 40,
+			status: "queued",
+			labels: ["ubuntu-24.04"],
+			created_at: new Date(SLIP_NOW - (10 + index) * 1000).toISOString(),
+		}));
+	const overflowRoute = (
+		answer: (path: string) => JsonValue,
+		env: Record<string, string> = {},
+		eventPayload: JsonValue | undefined = undefined,
+	) =>
+		withGithub(answer, (apiUrl) =>
+			printedBy(() =>
+				main(
+					[],
+					{
+						GITHUB_EVENT_NAME: "pull_request",
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+						GITHUB_RUN_ID: "51",
+						GITHUB_API_URL: apiUrl,
+						GITHUB_TOKEN: "token",
+						...env,
+					},
+					{
+						routingConfig: COMMITTED,
+						eventPayload,
+						fetch: async (url, init) =>
+							String(url).includes("/git/")
+								? Response.json({ message: "Not Found" }, { status: 404 })
+								: fetch(url, init),
+						now: () => SLIP_NOW,
+					},
+				),
+			),
+		);
+
+	it("overflows to hobo-agent37 with a titled warning when every online pool runner is busy", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(busyPool(5), undefined),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL, "queue"],
+		);
+		assert.match(
+			decision.reason,
+			/the hobo pool has no idle capacity \(5 of 5 online hobo runners busy\)/u,
+		);
+		assert.match(decision.reason, /the run overflows to hobo-agent37/u);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes(
+						"the hobo pool has no idle capacity (5 of 5 online hobo runners busy)",
+					) &&
+					line.includes("the run overflows to hobo-agent37"),
+			),
+			lines.join("\n"),
+		);
+		assert.ok(
+			noticesIn(lines).some((line) =>
+				line.includes(`"runner":"${AGENT37_OVERFLOW_RUNNER_LABEL}"`),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("keeps the fleet when neither leg can be read: unreadable is not saturation (R3)", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(
+				{ message: "Resource not accessible by integration" },
+				undefined,
+			),
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.match(
+			decision.reason,
+			/hobo pool saturation unknown \(repository runner list unreadable; host node CPU unknown\)/u,
+		);
+		assert.ok(
+			!warningsIn(lines).some((line) =>
+				line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("overflows on host CPU above the limit alone, and names the percent", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages({ message: "Resource not accessible by integration" }, "93"),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL],
+		);
+		assert.match(decision.reason, /host node CPU 93%/u);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("host node CPU 93%") &&
+					line.includes("the run overflows to hobo-agent37"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("does not overflow on host CPU at the limit or a value that is not an integer", async () => {
+		for (const value of ["90", "93.5", "busy"]) {
+			const { decision, lines } = await overflowRoute(
+				poolPages({ runners: [] }, value),
+			);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["fleet", "hobo"],
+				value,
+			);
+			assert.ok(
+				!warningsIn(lines).some((line) =>
+					line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+				),
+				`${value}: ${lines.join("\n")}`,
+			);
+		}
+	});
+
+	it("never sends a fork pull request to the pool or its overflow, however saturated both look", async () => {
+		const forkBatchFetch: typeof fetch = async (url) => {
+			const repo = publicRepo(url);
+			if (repo) return repo;
+			const path = String(url);
+			if (path.includes("/actions/runners")) return Response.json(busyPool(5));
+			if (path.includes("/actions/variables/"))
+				return Response.json({ value: "95" });
+			if (path.includes("/jobs"))
+				return Response.json({ jobs: hostedSaturated() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchEnv, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: forkPayload,
+					fetch: forkBatchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "none"],
+		);
+		assert.ok(
+			!lines.some((line) => line.includes(AGENT37_OVERFLOW_RUNNER_LABEL)),
+			lines.join("\n"),
+		);
+	});
+
+	it("overflows a same-repository PR batch when GitHub-hosted and the pool are both saturated", async () => {
+		const batchFetch: typeof fetch = async (url) => {
+			const path = String(url);
+			if (path.includes("/actions/runners")) return Response.json(busyPool(5));
+			if (path.includes("/actions/variables/"))
+				return Response.json({ message: "Not Found" });
+			if (path.includes("/jobs"))
+				return Response.json({ jobs: hostedSaturated() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchEnv, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: batchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL, "queue"],
+		);
+		assert.match(
+			decision.reason,
+			/GitHub-hosted runners have no idle capacity/u,
+		);
+		assert.match(
+			decision.reason,
+			/the hobo pool has no idle capacity \(5 of 5 online hobo runners busy\)/u,
+		);
+		assert.match(
+			decision.reason,
+			/the same-repository batch overflows to hobo-agent37/u,
+		);
+		assert.ok(
+			warningsIn(lines).some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("GitHub-hosted runners have no idle capacity") &&
+					line.includes("the hobo pool has no idle capacity") &&
+					line.includes("overflows to hobo-agent37"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("leaves trunk runs on the trunk label: the pool rule is the general fleet label's", async () => {
+		const { decision, lines } = await overflowRoute(
+			poolPages(busyPool(5), "95"),
+			{ GITHUB_EVENT_NAME: "push" },
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
+		assert.doesNotMatch(decision.reason, /hobo pool/u);
+		assert.ok(
+			!warningsIn(lines).some((line) =>
+				line.includes(AGENT37_OVERFLOW_RUNNER_LABEL),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("keeps an explicitly pinned fleet on the fleet without reading the pool", async () => {
+		const decision = await main(
+			["--route", "fleet"],
+			{
+				GITHUB_EVENT_NAME: "pull_request",
+				GITHUB_API_URL: "http://127.0.0.1:9",
+			},
+			NO_SLIP_CALL,
+		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.doesNotMatch(decision.reason, /hobo pool/u);
 	});
 });
 
