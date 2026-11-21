@@ -28,7 +28,12 @@ import {
 	type JsonValue,
 } from "./json.js";
 import type { ActorHost, RuntimeClock } from "./ports.js";
-import { readReplayCommandTree } from "./replay/command-tree.js";
+import {
+	type ReplayCommand,
+	type ReplaySleepCommand,
+	type ReplayStepCommand,
+	readReplayCommandTree,
+} from "./replay/command-tree.js";
 import { createDeterministicContext } from "./replay/context.js";
 import { nextEnvelope, recordEffect } from "./replay/recorder.js";
 import type { WorkflowDefinition as ReplayWorkflowDefinition } from "./replay/replayer.js";
@@ -519,6 +524,8 @@ export function createWorkflowEngine(
 			};
 		}
 		const runSeed = startedFact.seed;
+		const rootCommands =
+			version === 2 ? readReplayCommandTree(journal, true) : undefined;
 		type RecordedCommand =
 			| { kind: "step"; index: number; name: string }
 			| { kind: "sleep"; index: number; delayMs: number };
@@ -596,6 +603,10 @@ export function createWorkflowEngine(
 			commandIndex += 1;
 		}
 		function assertConsumedCommands(): void {
+			if (rootCommands) {
+				assertScopeConsumed(rootScope);
+				return;
+			}
 			assertReplayConsistent();
 			const expected = commands[commandIndex];
 			if (expected) {
@@ -625,6 +636,13 @@ export function createWorkflowEngine(
 		// Stores may reject with any thrown value; preserve it for the caller.
 		type JournalAppendFailure = unknown;
 		let appendFailure: JournalAppendFailure;
+		function abortHistory(message: string): never {
+			if (!appendFailed) {
+				appendFailed = true;
+				appendFailure = new WorkflowExecutionAborted(message);
+			}
+			throw appendFailure;
+		}
 		function appendEvent<T>(type: string, data: T): Promise<number> {
 			assertNoTerminalBeforeRunEvent(type);
 			let snapshot:
@@ -664,21 +682,87 @@ export function createWorkflowEngine(
 			return pending;
 		}
 
-		let stepIndex = 0;
-		let sleepIndex = 0;
+		let stepIndex = rootCommands ? stepNames.size : 0;
+		let sleepIndex = rootCommands ? recordedSleeps : 0;
 		type CommandScope = {
 			index: number | null;
 			parent: CommandScope | null;
 			active: boolean;
 			pending: number;
+			commands: ReplayCommand[] | undefined;
+			cursor: number;
 		};
 		const rootScope: CommandScope = {
 			index: null,
 			parent: null,
 			active: true,
 			pending: 0,
+			commands: rootCommands,
+			cursor: 0,
 		};
 		const stepScope = new AsyncLocalStorage<CommandScope>();
+		function assertScopeConsumed(scope: CommandScope): void {
+			if (scope.commands && scope.cursor < scope.commands.length) {
+				abortHistory(`unconsumed workflow command at index ${scope.cursor}`);
+			}
+		}
+		function nextTreeStep(
+			scope: CommandScope,
+			name: string,
+		): ReplayStepCommand | undefined {
+			if (!scope.commands) return undefined;
+			const previous = scope.commands[scope.cursor];
+			if (previous) {
+				if (previous.kind !== "step" || previous.name !== name) {
+					let message = `workflow command history diverged at index ${scope.cursor}`;
+					if (previous.kind === "step" && previous.name !== name) {
+						message += `: step name differs from journal for ${runId}`;
+					}
+					abortHistory(message);
+				}
+				scope.cursor += 1;
+				return previous;
+			}
+			const next: ReplayStepCommand = {
+				kind: "step",
+				index: stepIndex++,
+				name,
+				parent: scope.index,
+				active: true,
+				terminal: undefined,
+				children: [],
+			};
+			scope.commands.push(next);
+			scope.cursor += 1;
+			return next;
+		}
+		function nextTreeSleep(
+			scope: CommandScope,
+			delayMs: number,
+		): ReplaySleepCommand | undefined {
+			if (!scope.commands) return undefined;
+			const previous = scope.commands[scope.cursor];
+			if (previous) {
+				if (previous.kind !== "sleep" || previous.delayMs !== delayMs) {
+					abortHistory(
+						`workflow command history diverged at index ${scope.cursor}`,
+					);
+				}
+				scope.cursor += 1;
+				return previous;
+			}
+			const next: ReplaySleepCommand = {
+				kind: "sleep",
+				index: sleepIndex++,
+				delayMs,
+				parent: scope.index,
+				deadlineMs: undefined,
+				completed: false,
+			};
+			scope.commands.push(next);
+			scope.cursor += 1;
+			return next;
+		}
 		function requireOpen(scope: CommandScope): void {
 			for (
 				let current: CommandScope | null = scope;
@@ -732,6 +816,7 @@ export function createWorkflowEngine(
 					throw new WorkflowExecutionAborted("workflow journal append failed");
 				throw outcome.error;
 			}
+			assertScopeConsumed(scope);
 			return outcome.value;
 		}
 		let replayError: Error | undefined;
@@ -747,6 +832,7 @@ export function createWorkflowEngine(
 		}
 		function assertConsumedOutcomes(): void {
 			assertReplayConsistent();
+			if (appendFailed) throw appendFailure;
 			if (unconsumedOutcomes.size > 0) {
 				throw new Error(`unconsumed step outcome for ${runId}`);
 			}
@@ -801,6 +887,16 @@ export function createWorkflowEngine(
 			return { completed, failed };
 		};
 
+		function consumeTreeOutcomes(command: ReplayCommand): void {
+			if (command.kind === "sleep") {
+				unconsumedScheduledSleeps.delete(command.index);
+				return;
+			}
+			unconsumedOutcomes.delete(command.index);
+			unconsumedScheduledSteps.delete(command.index);
+			for (const child of command.children) consumeTreeOutcomes(child);
+		}
+
 		const effects: CtxEffects = {
 			async step<T>(
 				name: string,
@@ -810,8 +906,8 @@ export function createWorkflowEngine(
 				return command(async (scope) => {
 					const parentStepIndex = scope.index;
 					assertReplayConsistent();
-					const index = stepIndex;
-					stepIndex += 1;
+					const treeStep = nextTreeStep(scope, name);
+					const index = treeStep?.index ?? stepIndex++;
 					if (!isBoundedStepIndex(index)) {
 						rejectReplay(`invalid step journal for ${runId}`);
 					}
@@ -822,7 +918,7 @@ export function createWorkflowEngine(
 					if (recorded.failed && recorded.failed.name !== name) {
 						rejectStepName();
 					}
-					consumeCommand({ kind: "step", index, name });
+					if (!treeStep) consumeCommand({ kind: "step", index, name });
 					const scheduled = scheduledSteps.get(index);
 					if (scheduled !== undefined && scheduled !== name) {
 						rejectStepName();
@@ -833,8 +929,12 @@ export function createWorkflowEngine(
 						const result = replayStepCompletedResult<T>(
 							snapshotJournalData(completedEvent.data),
 						);
-						unconsumedOutcomes.delete(index);
-						unconsumedScheduledSteps.delete(index);
+						if (treeStep) {
+							consumeTreeOutcomes(treeStep);
+						} else {
+							unconsumedOutcomes.delete(index);
+							unconsumedScheduledSteps.delete(index);
+						}
 						return result;
 					}
 					const failedEvent = failed[0];
@@ -842,8 +942,12 @@ export function createWorkflowEngine(
 						const stepFailed = parseRunStepFailedFact(
 							snapshotJournalData(failedEvent.data),
 						);
-						unconsumedOutcomes.delete(index);
-						unconsumedScheduledSteps.delete(index);
+						if (treeStep) {
+							consumeTreeOutcomes(treeStep);
+						} else {
+							unconsumedOutcomes.delete(index);
+							unconsumedScheduledSteps.delete(index);
+						}
 						throw new WorkflowFailure(stepFailed.message, {
 							step: stepFailed.name,
 						});
@@ -859,27 +963,46 @@ export function createWorkflowEngine(
 					unconsumedScheduledSteps.delete(index);
 					assertReplayConsistent();
 					requireOpen(scope);
+					let attemptScope: CommandScope | undefined;
 					try {
 						const value = await runWithRetries(
 							name,
-							() =>
-								runInScope(
-									{ index, parent: scope, active: true, pending: 0 },
-									fn,
-								),
+							() => {
+								attemptScope = {
+									index,
+									parent: scope,
+									active: true,
+									pending: 0,
+									commands: treeStep?.children,
+									cursor: 0,
+								};
+								return runInScope(attemptScope, fn);
+							},
 							opts ?? {},
 						);
 						requireOpen(scope);
 						const result = captureWorkflowResult(value, name);
 						await appendEvent("run.StepCompleted", { name, index, result });
+						if (treeStep) {
+							treeStep.active = false;
+							treeStep.terminal = {
+								kind: "completed",
+								result: stepRecordedAtIndex(index).completed?.result,
+							};
+						}
 						return result;
 					} catch (error) {
 						if (error instanceof WorkflowFailure) {
+							if (attemptScope) assertScopeConsumed(attemptScope);
 							await appendEvent("run.StepFailed", {
 								name,
 								index,
 								message: error.message,
 							});
+							if (treeStep) {
+								treeStep.active = false;
+								treeStep.terminal = { kind: "failed" };
+							}
 						}
 						throw error;
 					}
@@ -889,19 +1012,21 @@ export function createWorkflowEngine(
 				return command(async (scope) => {
 					const parentStepIndex = scope.index;
 					assertReplayConsistent();
-					const index = sleepIndex;
-					sleepIndex += 1;
-					if (!isBoundedStepIndex(index)) {
-						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
-					}
 					const normalizedDurationMs = Object.is(durationMs, -0)
 						? 0
 						: durationMs;
-					consumeCommand({
-						kind: "sleep",
-						index,
-						delayMs: normalizedDurationMs,
-					});
+					const treeSleep = nextTreeSleep(scope, normalizedDurationMs);
+					const index = treeSleep?.index ?? sleepIndex++;
+					if (!isBoundedStepIndex(index)) {
+						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+					}
+					if (!treeSleep) {
+						consumeCommand({
+							kind: "sleep",
+							index,
+							delayMs: normalizedDurationMs,
+						});
+					}
 					const scheduled = sleepFacts.get(index);
 					if (scheduled) {
 						if (
@@ -918,15 +1043,17 @@ export function createWorkflowEngine(
 						) {
 							rejectReplay(`invalid run.SleepScheduled for ${runId}`);
 						}
-						for (const unconsumedIndex of unconsumedScheduledSleeps) {
-							if (unconsumedIndex < index) {
-								rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+						if (!rootCommands) {
+							for (const unconsumedIndex of unconsumedScheduledSleeps) {
+								if (unconsumedIndex < index) {
+									rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+								}
 							}
-						}
-						if (unconsumedScheduledSleeps.size > 0) {
-							const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
-							if (nextUnconsumed > index) {
-								rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+							if (unconsumedScheduledSleeps.size > 0) {
+								const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
+								if (nextUnconsumed > index) {
+									rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+								}
 							}
 						}
 					}

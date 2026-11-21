@@ -105,17 +105,19 @@ export function readReplayCommandTree(
 		const index = event.data.index;
 		if (event.type === "run.SleepCompleted") {
 			const sleep = sleeps.get(index);
+			if (sleep?.completed)
+				throw new Error("duplicate workflow sleep completion");
 			if (
 				!sleep ||
-				sleep.completed ||
 				(sleep.parent !== null && !steps.get(sleep.parent)?.active) ||
 				!isJsonNumber(event.data.completedAtMs) ||
 				!Number.isSafeInteger(event.data.completedAtMs) ||
-				sleep.deadlineMs === undefined ||
-				event.data.completedAtMs < sleep.deadlineMs
+				sleep.deadlineMs === undefined
 			) {
 				throw new Error("invalid workflow sleep completion evidence");
 			}
+			if (event.data.completedAtMs < sleep.deadlineMs)
+				throw new Error("invalid workflow sleep completion time");
 			sleep.completed = true;
 			continue;
 		}

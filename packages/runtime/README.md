@@ -125,18 +125,21 @@ stateDiagram-v2
 Replay checks each recorded sleep in order and refuses missing, changed, or
 unused sleep records and unused completed steps. Existing sleep records without
 an index are read in journal order; indexed records must also match their
-position. Resume checks previously recorded step and sleep commands in their
-original order before continuing, and rejects a shortened or changed command
-history instead of recording a new terminal result.
+position. Resume checks previously recorded step and sleep commands before
+continuing, and a changed or shortened history aborts the execution even if
+application code catches the error.
 
-Keep `ctx.step` and `ctx.sleep` calls at the workflow orchestration level. The
-journal for new runs records a command-tree version and the parent step of
-each step or sleep, including across concurrent step bodies. Replay can use a
-completed parent when its nested steps have recorded outcomes and its nested
-sleeps have recorded completion facts. It refuses children that were unfinished
-when the parent ended. Older journals may lack parent information or sleep
-completion facts. Resume still treats the history as flat and can reject nested
-commands. Await `ctx.step`, `ctx.sleep`, and `ctx.emit` before returning from
+New journals record the parent of each step or sleep, including across
+concurrent step bodies. Resume matches commands in order within each parent,
+reuses completed nested steps and sleeps, and replays recorded step failures.
+Retries of a parent reuse completed child commands. Replay can use a completed
+parent when nested steps have outcomes and nested sleeps have completion facts;
+it refuses children that were unfinished when the parent ended. Older journals
+may lack parent information or sleep completion facts and retain the flat
+resume path. Application `ctx.emit` calls are not memoized and can be repeated
+on resume; use an idempotent consumer when repetition matters.
+
+Await `ctx.step`, `ctx.sleep`, and `ctx.emit` before returning from
 their parent. If a parent finishes with one of these commands still pending,
 the execution aborts without writing a terminal result and refuses further
 queued journal writes. A callback that retains a closed asynchronous parent
@@ -144,6 +147,26 @@ scope cannot start another command. A storage write or external effect already
 in progress may still finish, so the host must account for it before resuming.
 These checks do not control arbitrary effects performed directly by workflow
 code or callbacks invoked from an unrelated asynchronous context.
+
+The nested-resume model explores 72 distinct states. Its projection hides 111
+internal transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: No child results recorded
+  s1: Parents recovering or running
+  s2: History divergence stops execution
+  s3: One child result recorded
+  s4: Both child results recorded
+  [*] --> s0
+  s0 --> s1: enter or retry parent
+  s1 --> s0: host stops parent
+  s1 --> s2: recorded child differs
+  s1 --> s3: finish parent after child or host stops parent
+  s3 --> s1: enter or retry parent
+  s1 --> s4: finish parent after child or host stops parent
+  s4 --> s1: enter or retry parent
+```
 
 The command-lifetime model explores 14 distinct states. This projection hides
 11 internal transitions that do not change the displayed state.
