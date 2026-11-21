@@ -188,7 +188,7 @@ jobs:
         uses: ./.ci-trusted/.github/actions/route-runner
         with:
           token: ${{ github.token }}
-          route: ${{ github.event_name == 'merge_group' && 'fleet' || (inputs.route || 'auto') }}
+          route: ${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'fleet' || 'auto') || (inputs.route || 'auto') }}
 
   ci-runner-image:
     name: CI runner image (mise oci)

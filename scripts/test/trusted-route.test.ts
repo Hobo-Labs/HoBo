@@ -254,8 +254,8 @@ describe("base-controlled attestation verification", () => {
 			assert.equal(
 				asText(withBlock?.route),
 				workflow === "hobo-ci.yml"
-					? "${{ github.event_name == 'merge_group' && 'fleet' || (inputs.route || 'auto') }}"
-					: "${{ github.event_name == 'merge_group' && 'fleet' || 'auto' }}",
+					? "${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'fleet' || 'auto') || (inputs.route || 'auto') }}"
+					: "${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'fleet' || 'auto') || 'auto' }}",
 			);
 		});
 	}
