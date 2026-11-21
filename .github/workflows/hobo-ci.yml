@@ -936,15 +936,27 @@ jobs:
             "${IMPORTED[@]}" \
             "${AFFECTED[@]}" \
             --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+      - name: Pack scripts-test build outputs
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/scripts-tests-dist.tar"
+          find packages external/ts-autocode/packages \
+            \( -type d -name node_modules -prune \) -o \
+            \( -type d -name dist -print0 -prune \) \
+            > "$RUNNER_TEMP/scripts-tests-dist-dirs"
+          test -s "$RUNNER_TEMP/scripts-tests-dist-dirs"
+          tar --null --create --file="$ARCHIVE" \
+            --files-from="$RUNNER_TEMP/scripts-tests-dist-dirs"
+          test -s "$ARCHIVE"
       - name: Upload scripts-test build outputs
         if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 3
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: scripts-tests-dist-${{ github.run_id }}
-          path: |
-            packages/**/dist/**
-            external/ts-autocode/packages/**/dist/**
-            !**/node_modules/**
+          path: ${{ runner.temp }}/scripts-tests-dist.tar
           if-no-files-found: error
           overwrite: true
           retention-days: 1
@@ -1071,7 +1083,15 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: scripts-tests-dist-${{ github.run_id }}
-          path: .
+          path: ${{ runner.temp }}
+      - name: Extract scripts-test build outputs
+        if: steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS == 'true'
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/scripts-tests-dist.tar"
+          test -s "$ARCHIVE"
+          tar -xf "$ARCHIVE" -C .
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
         # The unsharded lane exceeded its 10-minute watchdog on a busy fleet

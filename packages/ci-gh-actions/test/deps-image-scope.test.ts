@@ -227,6 +227,7 @@ describe("CI deps image push scope", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests-build",
 			"scripts-tests",
 			"state-machine-verification",
 		]);

@@ -353,6 +353,8 @@ describe("release integration pull-request and merge-queue lane", () => {
 		);
 		assert.deepEqual(newGate.needs, ["release-integration"]);
 		assert.deepEqual(measureGate.needs, ["release-hobo-integration"]);
+		assert.match(newGate.if, /always\(\)/u);
+		assert.match(measureGate.if, /always\(\)/u);
 		assert.equal(
 			jobName(train, "release-pr-gate"),
 			"HoBo release PR gate (required)",

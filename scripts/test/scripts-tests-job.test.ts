@@ -40,6 +40,7 @@ type Step = Readonly<{
 	uses: string;
 	run: string;
 	if: string;
+	timeout: JsonValue | undefined;
 	with: Readonly<Record<string, JsonValue>>;
 }>;
 type Job = Readonly<{
@@ -57,6 +58,7 @@ function parseStep(value: JsonValue): Step {
 		uses: asText(source?.uses) ?? "",
 		run: asText(source?.run) ?? "",
 		if: asText(source?.if) ?? "",
+		timeout: source?.["timeout-minutes"],
 		with: asObject(source?.with) ?? {},
 	};
 }
@@ -289,31 +291,102 @@ describe("the scripts lane is a pull-request gate", () => {
 		}
 	});
 
-	it("passes built dist outputs to every test shard", () => {
+	it("passes one nonempty dist tarball to every test shard", () => {
+		const pack = step(buildJob, "Pack scripts-test build outputs");
 		const upload = step(buildJob, "Upload scripts-test build outputs");
 		const download = step(scripts, "Download scripts-test build outputs");
+		const extract = step(scripts, "Extract scripts-test build outputs");
 		assert.match(upload.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/u);
 		assert.match(download.uses, /^actions\/download-artifact@[a-f0-9]{40}$/u);
 		assert.equal(upload.with.name, "scripts-tests-dist-${{ github.run_id }}");
 		assert.equal(upload.with.name, download.with.name);
+		assert.equal(upload.with.path, "${{ runner.temp }}/scripts-tests-dist.tar");
+		assert.equal(download.with.path, "${{ runner.temp }}");
 		assert.equal(upload.with.overwrite, true);
 		assert.equal(upload.with["if-no-files-found"], "error");
 		assert.equal(upload.with["retention-days"], 1);
-		assert.equal(download.with.path, ".");
-		const paths = asText(upload.with.path);
-		assert.match(paths ?? "", /packages\/\*\*\/dist\/\*\*/u);
-		assert.match(
-			paths ?? "",
-			/external\/ts-autocode\/packages\/\*\*\/dist\/\*\*/u,
+		assert.equal(pack.timeout, 3);
+		assert.equal(upload.timeout, 3);
+		assert.equal(extract.timeout, 3);
+		assert.match(pack.run, /find packages external\/ts-autocode\/packages/u);
+		assert.match(pack.run, /test -s "\$ARCHIVE"/u);
+		assert.match(extract.run, /test -s "\$ARCHIVE"/u);
+		assert.match(extract.run, /tar -xf "\$ARCHIVE" -C \./u);
+		assert.equal(
+			extract.if,
+			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS == 'true'",
 		);
-		assert.match(paths ?? "", /!\*\*\/node_modules\/\*\*/u);
 		const buildNames = buildJob.steps.map((entry) => entry.name);
 		const testNames = scripts.steps.map((entry) => entry.name);
-		assert.ok(buildNames.indexOf(BUILD) < buildNames.indexOf(upload.name));
+		assert.ok(buildNames.indexOf(BUILD) < buildNames.indexOf(pack.name));
+		assert.ok(buildNames.indexOf(pack.name) < buildNames.indexOf(upload.name));
 		assert.ok(
 			buildNames.indexOf(upload.name) < buildNames.indexOf("Save Turbo cache"),
 		);
-		assert.ok(testNames.indexOf(download.name) < testNames.indexOf(LANE));
+		assert.ok(
+			testNames.indexOf(download.name) < testNames.indexOf(extract.name),
+		);
+		assert.ok(testNames.indexOf(extract.name) < testNames.indexOf(LANE));
+	});
+
+	it("round-trips the dist tarball and rejects missing or empty archives", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-scripts-dist-"));
+		const source = join(root, "source");
+		const target = join(root, "target");
+		const runnerTemp = join(root, "runner-temp");
+		const archive = join(runnerTemp, "scripts-tests-dist.tar");
+		const env = { ...process.env, RUNNER_TEMP: runnerTemp };
+		const extract = () =>
+			spawnSync(
+				"bash",
+				["-c", step(scripts, "Extract scripts-test build outputs").run],
+				{ cwd: target, encoding: "utf8", env },
+			);
+		try {
+			for (const directory of [source, target, runnerTemp])
+				mkdirSync(directory, { recursive: true });
+			for (const file of [
+				"packages/example/dist/index.js",
+				"external/ts-autocode/packages/example/dist/index.js",
+				"packages/example/node_modules/dependency/dist/index.js",
+			]) {
+				mkdirSync(join(source, file, ".."), { recursive: true });
+				writeFileSync(join(source, file), "built\n");
+			}
+			const packed = spawnSync(
+				"bash",
+				["-c", step(buildJob, "Pack scripts-test build outputs").run],
+				{ cwd: source, encoding: "utf8", env },
+			);
+			assert.equal(packed.status, 0, packed.stderr);
+			const extracted = extract();
+			assert.equal(extracted.status, 0, extracted.stderr);
+			assert.equal(
+				readFileSync(join(target, "packages/example/dist/index.js"), "utf8"),
+				"built\n",
+			);
+			assert.equal(
+				readFileSync(
+					join(target, "external/ts-autocode/packages/example/dist/index.js"),
+					"utf8",
+				),
+				"built\n",
+			);
+			assert.throws(() =>
+				readFileSync(
+					join(
+						target,
+						"packages/example/node_modules/dependency/dist/index.js",
+					),
+				),
+			);
+			rmSync(archive);
+			assert.notEqual(extract().status, 0);
+			writeFileSync(archive, "");
+			assert.notEqual(extract().status, 0);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("fails closed when the two-commit build base is empty", () => {
