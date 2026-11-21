@@ -873,8 +873,7 @@ export async function createAgent37FakeServer(
 		if (diskGb === null || diskGb < 1 || diskGb > 1024)
 			return {
 				ok: false,
-				message:
-					"resources.disk must be a whole number of GB between 1 and 1024",
+				message: "resources.disk must be a whole number of GB between 1 and 1024",
 			};
 		return { ok: true, cpu, memoryGb, diskGb };
 	}
@@ -1076,8 +1075,7 @@ export async function createAgent37FakeServer(
 			pathname === "/v1/instances" || pathname.startsWith("/v1/instances/");
 		const underWebhooks =
 			pathname === "/v1/webhooks" || pathname.startsWith("/v1/webhooks/");
-		if (!underInstances && !underWebhooks && pathname !== "/v1/usage")
-			return notFound();
+		if (!underInstances && !underWebhooks) return notFound();
 		const execPlane = underInstances && pathname.endsWith("/exec");
 		const authorized = execPlane
 			? auth.agent37Key === apiKey
@@ -1094,41 +1092,6 @@ export async function createAgent37FakeServer(
 						: { "retry-after": String(fault.retryAfterSeconds) },
 				body: { error: { code: fault.code, message: "injected fault" } },
 			};
-		}
-		if (pathname === "/v1/usage") {
-			if (method !== "GET") return methodNotAllowed();
-			const totals = {
-				total_micros: 0,
-				compute_micros: 0,
-				llm_micros: 0,
-				brave_micros: 0,
-				composio_micros: 0,
-				perflo_micros: 0,
-				llm_calls: 0,
-				input_tokens: 0,
-				output_tokens: 0,
-				awake_minutes: 0,
-			};
-			return jsonResult(200, {
-				from: "2026-11-01",
-				to: "2026-11-20",
-				total_micros: 0,
-				by_integration: {
-					compute: { cost_micros: 0, awake_minutes: 0 },
-					llm: {
-						cost_micros: 0,
-						calls: 0,
-						input_tokens: 0,
-						output_tokens: 0,
-					},
-					brave: { cost_micros: 0 },
-					composio: { cost_micros: 0 },
-					perflo: { cost_micros: 0 },
-				},
-				by_model: [],
-				days: [{ date: "2026-11-01", ...totals }],
-				instances: [],
-			});
 		}
 		if (pathname === "/v1/instances") {
 			if (method === "POST") {
@@ -1242,7 +1205,11 @@ export async function createAgent37FakeServer(
 			if (lifecycleVerb === null) return notFound();
 			const parsedBody = parseBody();
 			if (parsedBody === null)
-				return errorResult(400, "invalid_request", "request body must be JSON");
+				return errorResult(
+					400,
+					"invalid_request",
+					"request body must be JSON",
+				);
 			return handleLifecycle(instance, lifecycleVerb, parsedBody);
 		}
 		return notFound();
