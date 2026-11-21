@@ -1,3 +1,4 @@
+import { stableDigest } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	AGENT37_COST_FACTS,
@@ -81,8 +82,26 @@ describe("Agent37 capability manifest", () => {
 	it("indexes each document with a sha256 digest", () => {
 		expect(index.manifestSchema).toBe("hobo.capability-manifest/v1");
 		expect(index.documents).toHaveLength(3);
+		const paths = index.documents.map(
+			(document: { path: string }) => document.path,
+		);
+		expect(new Set(paths).size).toBe(paths.length);
 		for (const document of index.documents) {
-			expect(document.digest).toMatch(/^sha256:[a-f0-9]{64}$/u);
+			if (
+				document.path === "/.well-known/capability-manifest/capabilities.json"
+			) {
+				expect(document.digest).toBe(stableDigest(capabilities));
+				continue;
+			}
+			if (document.path === "/.well-known/capability-manifest/auth.json") {
+				expect(document.digest).toBe(stableDigest(auth));
+				continue;
+			}
+			if (document.path === "/.well-known/capability-manifest/cost.json") {
+				expect(document.digest).toBe(stableDigest(cost));
+				continue;
+			}
+			throw new Error(`unexpected manifest document path: ${document.path}`);
 		}
 	});
 });

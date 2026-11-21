@@ -268,12 +268,20 @@ export function createAgent37SandboxDriver(
 		async discover(name) {
 			const leaseId = leaseIdOf(name);
 			const instance = await findInstance(client, name, leaseId);
-			if (
-				!instance ||
-				instance.name !== name ||
-				instance.metadata?.leaseId !== leaseId
-			)
-				throw new Error("agent37 instance not found");
+			if (!instance) throw new Error("agent37 instance not found");
+			verifyReusableInstance(
+				instance,
+				{
+					name,
+					timeoutMs: 3_600_000,
+					vcpus: pool.cpu ?? 2,
+					plan: "pro",
+					forwardUrl: "https://invalid.test",
+					allowedDomains: ["invalid.test"],
+				},
+				pool,
+				leaseId,
+			);
 			return { sessionId: instance.id };
 		},
 		async prepare(name, sessionId) {
