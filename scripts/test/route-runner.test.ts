@@ -2538,7 +2538,14 @@ describe("the workflows that route", () => {
 			ci,
 			/ {6}route:\n {8}description: .*\n {8}type: choice\n {8}options: \[auto, fleet, local, github\]\n/,
 		);
-		assert.equal(ci.split("route: ${{ inputs.route || 'auto' }}").length, 3);
+		assert.match(
+			ci,
+			/route: \$\{\{ github\.event_name == 'merge_group' && 'fleet' \|\| \(inputs\.route \|\| 'auto'\) \}\}/,
+		);
+		assert.ok(
+			ci.split("inputs.route || 'auto'").length >= 3,
+			"dispatch inputs still reach downstream route steps",
+		);
 	});
 
 	it("hand the routing step nothing about routing but what the run chose", () => {
