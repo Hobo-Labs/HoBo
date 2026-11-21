@@ -202,6 +202,10 @@ legacy unconstrained selection behavior and do not establish a budget guarantee.
 The combined selection-and-reservation helper uses the account price for both
 steps when present, falling back to the registry price. It selects the provider
 registration for the requested category, including that registration's dimension.
+When an all-in `estimatedCost` is supplied, selection excludes each provider
+whose budget cannot cover that estimate as well as its calculated cost. New
+decision replay inputs retain the estimate; older inputs without it keep their
+original selection behavior.
 
 An older helper could reserve a different category when a provider had multiple
 registrations, leaving the intended account without its hold or settlement. The
@@ -271,6 +275,23 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for evidence and
 The [budget-policy routing skill](../../.agents/skills/verify-budget-policy-routing/SKILL.md) describes generated reservation histories, the bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. The legacy number contract is interpreted as decimal values; liabilities round upward and available balances downward when conversion back to numbers requires it. This protects the budget conservatively but can leave tiny residual holds or reject an edge-case request that is exactly affordable in decimal arithmetic. Provider overruns are recorded, and callers remain responsible for authoritative quotes and fencing.
 
 Run `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing` from the repository root. It includes the hard-budget and overflow regression suites and checks weakened models for counterexamples. The skill also documents a separate scratch-mutation command for the overflow and estimate guards. The abstract proof does not establish that the TypeScript implementation refines it or model numeric overflow.
+
+The estimate-routing model checks 98 bounded states, with two providers and a
+shared estimate. Its projection hides 27 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Dispatch requested
+  s1: Affordable provider selected
+  s2: No provider affordable
+  s3: Full exposure held
+  s4: Same decision replayed
+  [*] --> s0
+  s0 --> s1: compare estimate with budgets
+  s0 --> s2: compare estimate with budgets
+  s1 --> s3: reserve full exposure
+  s3 --> s4: replay original inputs
+```
 
 The category-scope model checks 54 bounded states and hides 27 same-state
 transitions. It assumes a mismatched imported record has already been detected.

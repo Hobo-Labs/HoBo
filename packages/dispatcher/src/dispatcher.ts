@@ -12,7 +12,6 @@ import {
 	addAvailable,
 	addUpper,
 	availableCredits,
-	chargeWithinBudget,
 	costForUnits,
 	exposureWithinBudget,
 	moneySumExceeds,
@@ -204,6 +203,11 @@ export function decideDispatch(request) {
 	const registry = parseRegistry(request.registry);
 	const candidates = registry.byCategory.get(category) ?? [];
 	const ledgerView = parseCreditLedgerView(request.ledgerView);
+	const estimatedCost = nonNegativeNumber(
+		request.estimatedCost,
+		"request.estimatedCost",
+		0,
+	);
 	const hysteresisInput = parseHysteresis(request.hysteresis);
 	const incumbentProviderId =
 		request.incumbentProviderId ?? hysteresisInput?.incumbentProviderId;
@@ -223,6 +227,7 @@ export function decideDispatch(request) {
 		candidates,
 		ledgerView,
 		units,
+		minimumReservationCost: estimatedCost,
 		incumbentProviderId,
 	});
 	const eligible = ranked.filter((candidate) => candidate.eligible);
@@ -275,6 +280,8 @@ export function decideDispatch(request) {
 			dispatchId,
 			objective,
 			units,
+			estimatedCost:
+				request.estimatedCost === undefined ? undefined : estimatedCost,
 			incumbentProviderId,
 			hysteresis: hysteresisInput,
 			reservationId,
@@ -1240,6 +1247,7 @@ function rankCreditCandidates({
 	candidates,
 	ledgerView,
 	units,
+	minimumReservationCost = 0,
 	incumbentProviderId,
 }) {
 	return candidates
@@ -1248,6 +1256,7 @@ function rankCreditCandidates({
 				candidate,
 				ledgerView,
 				units,
+				minimumReservationCost,
 				incumbentProviderId,
 			}),
 		)
@@ -1379,6 +1388,7 @@ function rankCreditCandidate({
 	incumbentProviderId,
 	chargeSwitching = false,
 	unitCostOverride = undefined,
+	minimumReservationCost = 0,
 }) {
 	const account = findLedgerAccount(
 		ledgerView,
@@ -1408,16 +1418,17 @@ function rankCreditCandidate({
 		optionalNonNegativeNumber(account.budgetCap) &&
 		optionalNonNegativeNumber(account.spendToDate ?? 0) &&
 		optionalNonNegativeNumber(account.reservedCost ?? 0)
-			? !chargeWithinBudget(
+			? !exposureWithinBudget(
 					units,
 					freeUnits,
 					listUnitCost,
 					switchingCost,
+					minimumReservationCost,
 					account.budgetCap,
 					account.spendToDate ?? 0,
 					account.reservedCost ?? 0,
 				)
-			: totalCost > credit.budgetHeadroom;
+			: Math.max(totalCost, minimumReservationCost) > credit.budgetHeadroom;
 	const hardBudgetInvalid =
 		account?.budgetCap !== undefined &&
 		(!credit.valid || !optionalNonNegativeNumber(account.reservedCost ?? 0));
