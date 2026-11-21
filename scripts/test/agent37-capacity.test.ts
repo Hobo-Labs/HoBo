@@ -356,17 +356,37 @@ describe("the PR batch spill to agent37", () => {
 		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
 	});
 
-	it("falls back to verified public compute when no observer is installed", async () => {
-		const decision = await main([], env, {
-			routingConfig: committedText,
-			eventPayload: sameRepositoryPullRequest,
-			fetch: readPublic,
-			verifyPrBatchCapacity: async () => false,
-		});
-		assert.deepEqual(
-			[decision.tier, decision.runner],
-			["github", "ubuntu-24.04"],
-		);
+	it("records a missing observer before falling back to verified public compute", async () => {
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			lines.push(parts.map(String).join(" "));
+		};
+		try {
+			const decision = await main([], env, {
+				routingConfig: committedText,
+				eventPayload: sameRepositoryPullRequest,
+				fetch: readPublic,
+				verifyPrBatchCapacity: async () => false,
+			});
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["github", "ubuntu-24.04"],
+			);
+			const refusal = lines.findIndex((line) =>
+				line.startsWith("::warning title=hobo-ci-agent37-refusal::"),
+			);
+			const fallback = lines.findIndex((line) =>
+				line.startsWith("::notice title=hobo-ci-route::"),
+			);
+			assert.equal(
+				lines[refusal],
+				'::warning title=hobo-ci-agent37-refusal::{"v":1,"pool":"hobo-agent37","runId":"73","runAttempt":"2","reason":"observer-missing","fallback":"public"}',
+			);
+			assert.ok(refusal >= 0 && refusal < fallback);
+		} finally {
+			console.log = log;
+		}
 	});
 
 	it("falls back when the observer fails, answers garbage, or reports the pool saturated", async () => {
@@ -592,7 +612,7 @@ describe("the PR batch spill to agent37", () => {
 			);
 			assert.equal(
 				lines[refusal],
-				'::warning title=hobo-ci-agent37-refusal::{"v":1,"pool":"hobo-agent37","reason":"observer-failed","fallback":"public"}',
+				'::warning title=hobo-ci-agent37-refusal::{"v":1,"pool":"hobo-agent37","runId":"73","runAttempt":"2","reason":"observer-failed","fallback":"public"}',
 			);
 			assert.ok(refusal >= 0 && refusal < fallback);
 			assert.equal(

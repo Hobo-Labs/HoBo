@@ -1213,22 +1213,33 @@ export async function main(
 			baseRepository?.toLowerCase() === callerRepository.toLowerCase() &&
 			headRepository?.toLowerCase() === callerRepository.toLowerCase() &&
 			routeClass(event, eventPayload) === "pr";
+		const refuseAgent37 = (
+			pool: Agent37PoolPolicy,
+			reason: "observer-missing" | "observer-failed",
+		) => {
+			console.log(
+				`::warning title=hobo-ci-agent37-refusal::${escapeCommand(
+					JSON.stringify({
+						v: 1,
+						pool: pool.labels[0] ?? "unknown",
+						runId: env.GITHUB_RUN_ID ?? "unknown",
+						runAttempt: env.GITHUB_RUN_ATTEMPT ?? "unknown",
+						reason,
+						fallback: "public",
+					}),
+				)}`,
+			);
+		};
 		for (const pool of agent37Trusted ? settings.externalPools : []) {
-			if (!io.observeAgent37Pool) break;
+			if (!io.observeAgent37Pool) {
+				refuseAgent37(pool, "observer-missing");
+				continue;
+			}
 			let observation: Agent37PoolObservation;
 			try {
 				observation = await io.observeAgent37Pool(pool);
 			} catch {
-				console.log(
-					`::warning title=hobo-ci-agent37-refusal::${escapeCommand(
-						JSON.stringify({
-							v: 1,
-							pool: pool.labels[0] ?? "unknown",
-							reason: "observer-failed",
-							fallback: "public",
-						}),
-					)}`,
-				);
+				refuseAgent37(pool, "observer-failed");
 				continue;
 			}
 			const capacity = agent37Capacity(pool, observation);
