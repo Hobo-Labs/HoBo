@@ -163,7 +163,7 @@ describe("the repair read's confinement", () => {
 		return found;
 	}
 
-	it("has exactly one caller outside this package: the connect repair, so an empty reader id cannot reach a credential read", () => {
+	it("allows only enumerated callers outside this package: connect repair and hosting evidence (names-only), so an empty reader id cannot reach a credential read", () => {
 		const sources = sourceFiles(repoRoot);
 		const foreign = sources.filter(
 			(file) =>
@@ -180,6 +180,7 @@ describe("the repair read's confinement", () => {
 				"src",
 				"ci-secret-store-connect.ts",
 			),
+			path.join(repoRoot, "scripts", "ci", "hosting-evidence.mts"),
 		]);
 	});
 });
