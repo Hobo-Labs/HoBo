@@ -263,6 +263,24 @@ describe("skipping a covered job in the workflows", () => {
 		}
 	});
 
+	it("runs required independent jobs on route failure", () => {
+		for (const id of [
+			"pr-offpath",
+			"artifact-trust",
+			"ci-guard",
+			"secret-scan",
+		]) {
+			const condition = plan.find((job) => job.id === id)?.if ?? "";
+			assert.ok(
+				condition.includes(
+					"!cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure')",
+				),
+				id,
+			);
+			assert.ok(condition.includes(skipWhenAttested(id)), id);
+		}
+	});
+
 	it("tracks every release job the route job can skip for an attestation", () => {
 		const text = readFileSync(".github/workflows/release-hobo.yml", "utf8");
 		const skippable = Object.entries(workflowDocument(text).jobs ?? {}).filter(

@@ -56,11 +56,7 @@ concurrency:
 jobs:
   route:
     name: Route runners
-    # pull_request stays on GitHub-hosted (fork-safe). merge_group pins the
-    # self-hosted trunk: the merge queue must not wait for hosted capacity
-    # while the trunk is idle, and this job's own trunk placement is the live
-    # pickup the mergeGroupFabric default in route-runner relies on.
-    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read
@@ -1127,7 +1123,7 @@ jobs:
     # Off the critical path: these used to run inside the PR impact gate.
     name: PR off-path checks (ts-autocode surface, production packages)
     needs: route
-    if: ${{ github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
+    if: ${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"pr-offpath"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
@@ -1853,7 +1849,7 @@ jobs:
   artifact-trust:
     name: artifact signing and install verification
     needs: route
-    if: ${{ github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"artifact-trust"')) }}
+    if: ${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"artifact-trust"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
@@ -2109,7 +2105,7 @@ jobs:
     name: CI fabric contract guard
     needs: route
     # On other events, these steps run inside Main full gate or PR impact gate.
-    if: ${{ github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"ci-guard"')) }}
+    if: ${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"ci-guard"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
@@ -2131,7 +2127,7 @@ jobs:
     needs: route
     # Skipped (which satisfies the required check) on merge_group and trunk events; trunk runs
     # scan the full history inside Main full gate in parallel with its checks.
-    if: ${{ github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"secret-scan"')) }}
+    if: ${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"secret-scan"')) }}
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:

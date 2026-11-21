@@ -913,7 +913,7 @@ export function mergeGroupTrunkHasIdleCapacity(
 	load: LabelLoad,
 	limits: RouteLimits = MERGE_GROUP_TRUNK_IDLE_LIMITS,
 ): boolean {
-	return !refusingJobs(load, limits);
+	return takingJobs(load, limits);
 }
 
 function githubReader(
@@ -1091,6 +1091,42 @@ function prBatchScope(
 	});
 }
 
+async function hasVerifiedBatchCapacity(
+	env: NodeJS.ProcessEnv,
+	runner: string,
+	boxRunner: string,
+	maxWaitSeconds: number,
+	now: () => number,
+	workflowName: string,
+	verify: PrBatchCapacityVerifier | undefined,
+): Promise<boolean> {
+	const startedAt = now();
+	const scope = prBatchScope(
+		env,
+		runner,
+		boxRunner,
+		startedAt + maxWaitSeconds * 1_000,
+		maxWaitSeconds,
+		workflowName,
+	);
+	if (!scope || !verify) return false;
+	let capacityHeld = false;
+	try {
+		capacityHeld = await verify(scope);
+	} catch {
+		return false;
+	}
+	const checkedAt = now();
+	return (
+		capacityHeld &&
+		Number.isSafeInteger(startedAt) &&
+		startedAt > 0 &&
+		Number.isSafeInteger(checkedAt) &&
+		checkedAt >= startedAt &&
+		checkedAt < scope.decisionDeadlineMs
+	);
+}
+
 /**
  * `--route <auto|fleet|local|github>`, `--include-own-run <true|false>` and
  * `--attested <true|false>`, each also as `--name=value`. Anything else is
@@ -1117,16 +1153,17 @@ export function routeClass(
 	event: string,
 	payload: JsonValue | undefined,
 ): RoutingSlipClassName {
-	if (TRUNK_EVENTS.has(event)) return "trunk";
-	if (event !== "pull_request") return "pr";
 	const pullRequest = asObject(asObject(payload)?.pull_request);
-	if (!pullRequest) return "fork";
-	const repo = (side: string) =>
-		asText(
-			asObject(asObject(asObject(pullRequest[side])?.repo))?.full_name,
-		)?.toLowerCase();
-	const base = repo("base");
-	return base !== undefined && repo("head") === base ? "pr" : "fork";
+	if (pullRequest) {
+		const repo = (side: string) =>
+			asText(
+				asObject(asObject(asObject(pullRequest[side])?.repo))?.full_name,
+			)?.toLowerCase();
+		const base = repo("base");
+		return base !== undefined && repo("head") === base ? "pr" : "fork";
+	}
+	if (TRUNK_EVENTS.has(event)) return "trunk";
+	return "fork";
 }
 
 /** The fallback `why` for a slip the reader refused. */
@@ -1320,7 +1357,7 @@ export async function main(
 		fetch?: typeof fetch;
 		now?: () => number;
 		/** A trusted host may install the real durable full-run claim verifier. */
-		verifyPrBatchCapacity?: PrBatchCapacityVerifier;
+		verifyPrBatchCapacity?: PrBatchCapacityVerifier | undefined;
 	}> = {},
 ): Promise<RouteDecision> {
 	const args = parseRouteArgs(argv);
@@ -1344,6 +1381,19 @@ export async function main(
 			workflowFile(env) === "release-hobo.yml");
 	const mergeGroupHoboCi = mergeGroupTrusted && mode === "auto";
 	const mergeGroupFabric = mergeGroupHoboCi && !args.includeOwnRun;
+	const mergeGroupPayload = mergeGroupTrusted
+		? "eventPayload" in io
+			? io.eventPayload
+			: readEventPayload(env)
+		: undefined;
+	if (
+		mergeGroupTrusted &&
+		asObject(asObject(mergeGroupPayload)?.pull_request) &&
+		routeClass(event, mergeGroupPayload) !== "pr"
+	)
+		throw new Error(
+			"merge-group fork or unknown pull-request provenance cannot use trusted routing",
+		);
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,
@@ -1506,34 +1556,11 @@ export async function main(
 					const overflowUnavailable = saturation.saturated
 						? agent37OverflowUnavailable(observation.overflowRunners)
 						: undefined;
-					if (saturation.saturated && overflowUnavailable === undefined) {
-						console.log(
-							`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} without a verified capacity claim (${fleetSummary})`)}`,
-						);
-						return report(
-							{
-								tier: "fleet",
-								runner: AGENT37_OVERFLOW_RUNNER_LABEL,
-								reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} (${fleetSummary})`,
-								refusedBy: "queue",
-								slip: { kind: "unasked", why: "batch" },
-							},
-							env,
-						);
-					}
+					const capacityEvidence = `${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`;
 					console.log(
-						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${overflowUnavailable ? `${overflowUnavailable}; ` : ""}the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
+						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository PR batch has no Broker claim and stays on ${labels.github} (${fleetSummary})`)}`,
 					);
-					return report(
-						{
-							tier: "fleet",
-							runner: fleetLabel,
-							reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary}); ${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`,
-							refusedBy: "queue",
-							slip: { kind: "unasked", why: "batch" },
-						},
-						env,
-					);
+					hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
 				}
 			}
 		}
@@ -1573,6 +1600,22 @@ export async function main(
 			local: UNREAD,
 			undecidedAhead: 0,
 		});
+		if (
+			mergeGroupTrusted &&
+			pinned.tier === "fleet" &&
+			!(await hasVerifiedBatchCapacity(
+				env,
+				pinned.runner,
+				settings.boxRunner,
+				limits.maxWaitSeconds,
+				now,
+				workflowFile(env),
+				io.verifyPrBatchCapacity,
+			))
+		)
+			throw new Error(
+				"merge-group fleet routing requires a verified capacity and Broker claim",
+			);
 		return report(
 			{
 				...pinned,
@@ -1617,7 +1660,6 @@ export async function main(
 				limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
 				nowMs,
 			});
-		let decision: RouteDecision | undefined;
 		let hostedIdle = false;
 		let trunkIdle = false;
 		let hostedSummary = "";
@@ -1638,62 +1680,61 @@ export async function main(
 		} catch (error) {
 			const code =
 				error instanceof Error && error.name ? error.name : "probe-error";
-			console.log(
-				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${code}); failing toward ${trunkLabel}`)}`,
+			throw new Error(
+				`merge-group Fabric queue probe is unreadable (${code}); no runner selected`,
 			);
-			decision = {
-				tier: "fleet",
-				runner: trunkLabel,
-				reason: `merge-group Fabric hosted probe unreadable (${code}); failing toward ${trunkLabel}`,
-				refusedBy: "queue",
-				mergeGroupHostedProbe: {
-					idle: false,
-					summary: `unreadable: ${code}`,
-				},
-			};
 		}
-		if (!decision) {
-			const hostedProbe = {
-				idle: hostedIdle,
-				summary: hostedSummary,
-				trunkIdle,
-				trunkSummary,
-			};
-			if (hostedIdle) {
-				decision = {
+		const hostedProbe = {
+			idle: hostedIdle,
+			summary: hostedSummary,
+			trunkIdle,
+			trunkSummary,
+		};
+		if (hostedIdle)
+			return report(
+				{
 					tier: "github",
 					runner: githubLabel,
 					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
-				};
-			} else if (trunkIdle) {
-				decision = {
-					tier: "fleet",
-					runner: trunkLabel,
-					reason: `merge-group Fabric defaults to ${trunkLabel} while GitHub-hosted has no verified idle capacity (${trunkSummary})`,
-					refusedBy: "none",
+					slip: { kind: "unasked", why: "merge-group" },
+				},
+				env,
+			);
+		if (!trunkIdle)
+			throw new Error(
+				`merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
+			);
+		if (
+			!(await hasVerifiedBatchCapacity(
+				env,
+				trunkLabel,
+				settings.boxRunner,
+				limits.maxWaitSeconds,
+				now,
+				workflowFile(env),
+				io.verifyPrBatchCapacity,
+			))
+		)
+			return report(
+				{
+					tier: "github",
+					runner: githubLabel,
+					reason: `merge-group Fabric has positive ${trunkLabel} pickup evidence but no verified capacity and Broker claim; the batch remains on ${githubLabel}`,
+					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
-				};
-			} else {
-				decision = await applyHoboPoolSaturation({
-					decision: {
-						tier: "fleet",
-						runner: labels.fleet,
-						reason: `merge-group Fabric overflows to the ${labels.fleet} pool while ${trunkLabel} has no idle capacity (${trunkSummary})`,
-						refusedBy: "queue",
-						mergeGroupHostedProbe: hostedProbe,
-					},
-					read,
-					repository,
-					label: labels.fleet,
-				});
-			}
-		}
+					slip: { kind: "unasked", why: "merge-group" },
+				},
+				env,
+			);
 		return report(
 			{
-				...decision,
-				reason: `${decision.reason}${defaults}`,
+				tier: "fleet",
+				runner: trunkLabel,
+				reason: `merge-group Fabric uses ${trunkLabel} with positive pickup evidence and a verified capacity and Broker claim (${trunkSummary})`,
+				refusedBy: "none",
+				mergeGroupHostedProbe: hostedProbe,
 				slip: { kind: "unasked", why: "merge-group" },
 			},
 			env,
@@ -1798,6 +1839,25 @@ export async function main(
 			repository,
 			label: labels.fleet,
 		});
+	if (
+		mergeGroupHoboCi &&
+		decision.tier === "fleet" &&
+		!(await hasVerifiedBatchCapacity(
+			env,
+			decision.runner,
+			settings.boxRunner,
+			limits.maxWaitSeconds,
+			now,
+			workflowFile(env),
+			io.verifyPrBatchCapacity,
+		))
+	)
+		decision = {
+			tier: "github",
+			runner: labels.github,
+			reason: `${decision.reason}; no verified fleet capacity and Broker claim, so the merge-group batch remains on ${labels.github}`,
+			refusedBy: "queue",
+		};
 	if (slip.ok)
 		return report(
 			{

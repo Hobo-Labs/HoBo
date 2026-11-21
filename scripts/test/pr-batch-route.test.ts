@@ -75,6 +75,12 @@ const saturatedHostedJobs: JsonValue[] = [10, 20, 30].map((wait) => ({
 	labels: ["ubuntu-24.04"],
 	created_at: new Date(Date.now() - wait * 1000).toISOString(),
 }));
+const sameRepositoryPayload: JsonValue = {
+	pull_request: {
+		base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+		head: { repo: { full_name: "Hobo-Labs/HoBo" } },
+	},
+};
 const forkPayload: JsonValue = {
 	pull_request: {
 		base: { repo: { full_name: "Hobo-Labs/HoBo" } },
@@ -127,12 +133,24 @@ describe("PR batch routing", () => {
 		);
 	});
 
-	it("preserves an explicit merge-group fleet pin", async () => {
+	it("requires a Broker claim for an explicit merge-group fleet pin", async () => {
 		const merge = { ...env, GITHUB_EVENT_NAME: "merge_group" };
+		const fetchUnexpected = async () => {
+			throw new Error("unexpected read");
+		};
+		await assert.rejects(
+			main([], merge, {
+				routingConfig: routing("fleet"),
+				fetch: fetchUnexpected,
+			}),
+			/requires a verified capacity and Broker claim/u,
+		);
 		const decision = await main([], merge, {
 			routingConfig: routing("fleet"),
-			fetch: async () => {
-				throw new Error("unexpected read");
+			fetch: fetchUnexpected,
+			verifyPrBatchCapacity: async (scope) => {
+				assert.equal(scope.runner, "hobo-trunk");
+				return true;
 			},
 		});
 		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
@@ -186,6 +204,7 @@ describe("PR batch routing", () => {
 		const asked: string[] = [];
 		const decision = await main([], env, {
 			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
 			fetch: hostedQueueFetch([], asked),
 		});
 		assert.equal(decision.runner, "ubuntu-24.04");
@@ -199,13 +218,18 @@ describe("PR batch routing", () => {
 		);
 	});
 
-	it("sends a same-repository PR batch to the fleet when GitHub-hosted is saturated", async () => {
+	it("keeps an unclaimed same-repository PR batch hosted during saturation", async () => {
 		const decision = await main([], env, {
 			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
 			fetch: hostedQueueFetch(saturatedHostedJobs),
 		});
-		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
 		assert.match(decision.reason, /no idle capacity/u);
+		assert.match(decision.reason, /stays on ubuntu-24\.04/u);
 	});
 
 	it("fails fast when the PR-batch hosted queue probe has no token", async () => {
@@ -213,7 +237,11 @@ describe("PR batch routing", () => {
 			main(
 				[],
 				{ ...env, GITHUB_TOKEN: "" },
-				{ routingConfig: routing("auto"), fetch: readPublic },
+				{
+					routingConfig: routing("auto"),
+					eventPayload: sameRepositoryPayload,
+					fetch: readPublic,
+				},
 			),
 			/PR batch hosted-runner queue probe token is unavailable/u,
 		);
@@ -223,6 +251,7 @@ describe("PR batch routing", () => {
 		await assert.rejects(
 			main([], env, {
 				routingConfig: routing("auto"),
+				eventPayload: sameRepositoryPayload,
 				fetch: async (url) => {
 					const path = String(url);
 					if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
@@ -234,7 +263,7 @@ describe("PR batch routing", () => {
 		);
 	});
 
-	it("warns with both queue summaries when diverting a saturated batch to the fleet", async () => {
+	it("warns with both queue summaries while keeping an unclaimed batch hosted", async () => {
 		const lines: string[] = [];
 		const log = console.log;
 		console.log = (...parts: unknown[]) => {
@@ -244,6 +273,7 @@ describe("PR batch routing", () => {
 		try {
 			decision = await main([], env, {
 				routingConfig: routing("auto"),
+				eventPayload: sameRepositoryPayload,
 				fetch: hostedQueueFetch([
 					...saturatedHostedJobs,
 					{
@@ -257,7 +287,10 @@ describe("PR batch routing", () => {
 		} finally {
 			console.log = log;
 		}
-		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
 		assert.match(
 			decision.reason,
 			/no idle capacity \(GitHub-hosted/u,
@@ -265,14 +298,14 @@ describe("PR batch routing", () => {
 		);
 		assert.match(
 			decision.reason,
-			/the same-repository batch uses the fleet \(the fleet has /u,
+			/the same-repository batch stays on ubuntu-24\.04 \(the fleet has /u,
 			decision.reason,
 		);
 		assert.ok(
 			lines.some(
 				(line) =>
 					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
-					line.includes("diverts to hobo without a verified capacity claim"),
+					line.includes("the same-repository PR batch stays on ubuntu-24.04"),
 			),
 			lines.join("\n"),
 		);

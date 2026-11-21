@@ -99,7 +99,7 @@ test("trunk gates run the CI fabric contract while the standalone guard is PR-on
 		jobText("ci-guard")
 			.split("\n")
 			.includes(
-				"    if: ${{ github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+				"    if: ${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
 			),
 	);
 });
@@ -179,8 +179,6 @@ jobs:
 });
 const trunkRunsOn =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
-const routeRunsOn =
-	"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
 const depsImageRunsOn =
 	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
@@ -528,13 +526,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			const condition =
 				block.match(/^    if:([^\n]*(?:\n      [^\n]*)*)/m)?.[1] ?? "";
 			if ((lines[start] ?? "") === "  route:") {
-				assert.equal(
-					runsOn,
-					file === "hobo-ci.yml" || file === "release-hobo.yml"
-						? routeRunsOn
-						: "ubuntu-24.04",
-					`${file}: route`,
-				);
+				assert.equal(runsOn, "ubuntu-24.04", `${file}: route`);
 				assert.match(
 					block,
 					/uses: (?:[$.]\/\.github|\.\/\.ci-trusted\/\.github)\/actions\/route-runner$/m,
