@@ -132,7 +132,7 @@ function validate(args: Record<string, string>) {
 				if (
 					primary?.scriptName?.startsWith("eval:agent") ||
 					(primary?.scriptName === "agent:check" &&
-						!/agent.?check|staged/i.test(id))
+						!/agent.?check|staged|(?:narrow|local).*validation/i.test(id))
 				) {
 					problems.push(
 						`discovery primary looks like monorepo keyword trap: ${primary.scriptName} (prefer product bin)`,

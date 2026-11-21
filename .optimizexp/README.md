@@ -6,4 +6,6 @@ Use the [OptimizeXP skill](../.agents/skills/optimizexp/SKILL.md) to inspect rea
 
 The feature harness validates existing scenarios; it does not generate review scaffolds. Add executable coverage for the behavior being changed directly.
 
+The staged-validation scenarios use disposable Git repositories to check which gates the real staged runner selects, including its response to an invalid base.
+
 List configured projects with `node --import tsx .agents/skills/optimizexp/harness/init.mts --mode list-projects` and validate their configuration with `--mode validate-config`. Historical bus records can be inspected with `node --import tsx .agents/skills/optimizexp/workflows/cross-agent/review-loop.mts --mode validate-bus`.

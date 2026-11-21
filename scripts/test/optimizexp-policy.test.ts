@@ -198,8 +198,32 @@ for (const harness of [".agents", ".claude"]) {
 			const finished = validate();
 			assert.equal(finished.status, 0, finished.stderr || finished.stdout);
 			assert.equal(existsSync(join(feature, "EXPERIENCE.md")), false);
+			writeFileSync(
+				join(steps, "discovery.json"),
+				'{"bindings":[{"scriptName":"agent:check"}]}\n',
+			);
+			const unrelated = validate();
+			assert.equal(unrelated.status, 1);
+			assert.match(unrelated.stdout, /monorepo keyword trap/u);
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test(`${harness} recognizes staged validation as the feature under test`, () => {
+		for (const id of ["agent-check-staged", "narrow-local-validation"]) {
+			const result = spawnSync(
+				tsx,
+				[
+					join(scripts, "generate-feature.mts"),
+					"--mode",
+					"validate",
+					"--id",
+					id,
+				],
+				{ encoding: "utf8" },
+			);
+			assert.equal(result.status, 0, result.stderr || result.stdout);
 		}
 	});
 
