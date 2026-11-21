@@ -10,18 +10,21 @@
 // reference to it (`infisical://…`, `op://…`).
 
 /** A third-party secret store the flow can deposit into. */
+export const SECRET_STORE_IDS = Object.freeze([
+	"infisical",
+	"1password",
+	"bitwarden",
+	"yard",
+] as const);
+
 export interface SecretStoreOption {
-	readonly id: "infisical" | "1password" | "bitwarden";
+	readonly id: (typeof SECRET_STORE_IDS)[number];
 	readonly label: string;
 	/** How a workload reads it back without a stored secret. */
 	readonly signIn: "oidc" | "service-account";
 	readonly recommended: boolean;
 }
 
-/**
- * The provider a ceremony connects: `github` and `vercel` for `hobo ci up` and
- * `hobo cd up`, or any provider id `hobo up` needs to satisfy a resource.
- */
 export type ConnectProvider = string;
 
 /** One setting a `configure` step asks for. */
@@ -29,10 +32,6 @@ export interface ConfigField {
 	readonly name: string;
 	readonly label: string;
 	readonly description?: string;
-	/**
-	 * `secret` is never shown back or kept by the page: the flow writes it
-	 * straight to the secret store. `choice` offers `options`.
-	 */
 	readonly kind: "text" | "url" | "secret" | "choice";
 	readonly required: boolean;
 	readonly value?: string;
@@ -41,23 +40,17 @@ export interface ConfigField {
 		readonly label: string;
 		readonly description?: string;
 	}[];
-	/** A server-side error to show under the field after a refused submit. */
 	readonly error?: string;
 }
 
 // domain-view: parse-don't-validate parsed/derived step the flow returns; its wire form is ConnectViewRecord.step in data-models/connect_ui.proto.
 export type ConnectStep =
 	| {
-			/**
-			 * Collect what is missing to finish the flow: settings (kept in the
-			 * project's configuration) and secrets (written to the store only).
-			 */
 			readonly kind: "configure";
 			readonly provider: ConnectProvider;
 			readonly title: string;
 			readonly reason: string;
 			readonly fields: readonly ConfigField[];
-			/** Explain a consequential submit before an agent may trigger it. */
 			readonly submitConfirm?: string;
 	  }
 	| {
@@ -90,8 +83,7 @@ export type ConnectStep =
 	| {
 			readonly kind: "connected";
 			readonly provider: ConnectProvider;
-			/** Where the result lives: a secret store, or `the Yard registry`. */
-			readonly store: string;
+			readonly store: SecretStoreOption["id"];
 			/** Store references, never values. */
 			readonly references: readonly string[];
 			readonly nextHint: string;
@@ -128,6 +120,18 @@ export function isConnectAction(name: string): name is ConnectActionName {
 }
 
 /** The stores HoBo offers by default: Infisical with OIDC first (no secret to hold). */
+const SECRET_STORE_LABELS: ReadonlyMap<SecretStoreOption["id"], string> =
+	new Map([
+		["infisical", "Infisical Cloud"],
+		["1password", "1Password"],
+		["bitwarden", "Bitwarden"],
+		["yard", "Yard"],
+	]);
+
+export function storeLabel(id: SecretStoreOption["id"]): string {
+	return SECRET_STORE_LABELS.get(id) ?? id;
+}
+
 export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 	Object.freeze([
 		Object.freeze({
@@ -139,12 +143,6 @@ export const DEFAULT_SECRET_STORES: readonly SecretStoreOption[] =
 		Object.freeze({
 			id: "1password",
 			label: "1Password",
-			signIn: "service-account",
-			recommended: false,
-		}),
-		Object.freeze({
-			id: "bitwarden",
-			label: "Bitwarden Secrets Manager",
 			signIn: "service-account",
 			recommended: false,
 		}),

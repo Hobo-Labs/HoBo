@@ -1,12 +1,3 @@
-/**
- * Design-lint gate for the secret-capture form (packages/mcp/DESIGN.md, HoBo
- * Rubberhose tokens from site/DESIGN.md). Token-only hexes, nothing loaded
- * from the network, a label and a description on every field, one sticker
- * shadow on the one pressable, motion that survives reduced motion.
- */
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	renderSecretCaptureHtml,
@@ -34,21 +25,20 @@ const PAGE = renderSecretCaptureHtml({
 	},
 });
 
-const designMd = readFileSync(
-	join(dirname(fileURLToPath(import.meta.url)), "..", "DESIGN.md"),
-	"utf8",
-);
-
 describe("secret-capture form design lint (HoBo Rubberhose)", () => {
-	it("uses only DESIGN.md palette hexes, and DESIGN.md declares each", () => {
+	it("uses only the implemented palette tokens", () => {
+		const seen = new Set<string>();
 		for (const html of [APP, PAGE])
-			for (const hex of html.match(/#[0-9a-fA-F]{6}\b/gu) ?? [])
+			for (const hex of html.match(/#[0-9a-fA-F]{6}\b/gu) ?? []) {
+				const normalized = hex.toLowerCase();
+				seen.add(normalized);
 				expect(
-					SECRET_CAPTURE_TOKEN_VALUES.has(hex.toLowerCase()),
+					SECRET_CAPTURE_TOKEN_VALUES.has(normalized),
 					`non-token hex ${hex}`,
 				).toBe(true);
-		for (const hex of SECRET_CAPTURE_TOKEN_VALUES)
-			expect(designMd.toLowerCase()).toContain(`"${hex}"`);
+			}
+		for (const token of SECRET_CAPTURE_TOKEN_VALUES)
+			expect(seen.has(token), `unused palette token ${token}`).toBe(true);
 	});
 
 	it("loads nothing from the network: no external script, style, font or image", () => {

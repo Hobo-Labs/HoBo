@@ -82,7 +82,7 @@ Anim isolation: `public/anim-test.html` (phaser-gamedev AnimTest pattern)
 
 ## Design system + art bible
 
-- **`site/DESIGN.md`** (mirrored `DESIGN.md` here) — rubberhose ink-on-paper contract.
+- **`site/src/styles/global.css` and `public/yard.css`** — rubberhose ink-on-paper contract.
 - **`site/public/parallax/README.md`** — Bo sheets; never mirror west.
 - **Plates** — reuse site `trail` / `poles` / `clouds` only. No generative color scenery.
 

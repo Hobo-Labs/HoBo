@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"license": "MIT",
 	"private": true,
-	"description": "Provider-connection ceremonies for HoBo lifecycles (hobo ci up, hobo cd up, hobo up): each step of a flow is generated as exactly the component it needs and rendered with vercel-labs/ui (UI SDK) on a loopback page, agent-ready through createAgent and WebMCP; every action is a transition the flow on the server decides.",
+	"description": "Generative provider-connection pages for HoBo lifecycles (hobo ci up, hobo cd up): a json-render catalog on the shadcn preset, step candidates the flow configures, an AI-composed or deterministic spec, and a loopback page server that turns actions into flow transitions.",
 	"type": "module",
 	"files": [
 		"LICENSE",
@@ -19,20 +19,23 @@
 		"webUi": true
 	},
 	"dependencies": {
+		"@json-render/core": "0.22.0",
+		"@json-render/react": "0.22.0",
+		"@json-render/shadcn": "0.22.0",
 		"zod": "4.3.6"
 	},
 	"devDependencies": {
 		"@testing-library/dom": "10.4.2",
 		"@testing-library/react": "16.3.3",
+		"@tailwindcss/cli": "4.3.3",
 		"@types/node": "^22.15.29",
 		"@types/react": "19.2.2",
 		"@types/react-dom": "19.2.2",
-		"@ui-sdk/core": "0.1.0-beta.2",
-		"@ui-sdk/react": "0.1.0-beta.2",
 		"esbuild": "0.25.12",
 		"jsdom": "26.1.0",
 		"react": "19.2.3",
 		"react-dom": "19.2.3",
+		"tailwindcss": "4.3.3",
 		"vitest": "^4.1.9"
 	},
 	"scripts": {

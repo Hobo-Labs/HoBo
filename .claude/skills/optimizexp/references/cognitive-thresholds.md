@@ -32,7 +32,7 @@ Score integers **0–5** per persona × surface (same scale as harm metrics).
 | Channel | What is high load | Typical evidence |
 |---|---|---|
 | **featureSprawl** | Too many concepts, flags, scripts, nav leaves, skills, or parallel entrypoints for one job | Count of peer options; “which of these 12?” |
-| **visualClutter** | Competing visual density, noise, decoration without hierarchy | Screenshots; DESIGN.md violations; dense dashboards |
+| **visualClutter** | Competing visual density, noise, decoration without hierarchy | Screenshots; visual token violations; dense dashboards |
 | **interactiveClutter** | Too many controls, gestures, modes, or simultaneous affordances | Click maps; toolbar count; modal stacks |
 | **choiceOverload** | Decision paralysis at a step (Hick) | Branching menus; multi-flag CLIs without progressive disclosure |
 | **informationDensity** | Prose/logs/tables that exceed scannable chunking | Wall-of-text errors; unsummarized doctor output |

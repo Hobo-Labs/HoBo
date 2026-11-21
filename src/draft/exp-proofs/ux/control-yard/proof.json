@@ -12,7 +12,9 @@
       "docs/design/adr/07-portability-extensibility.md#adr-0135",
       "docs/design/cli-spec.md",
       "docs/design/accessibility-usability-launch-baseline.md",
-      "packages/control-yard/DESIGN.md"
+      "packages/control-yard/docs/validation/HYX-RUBRIC.md",
+      "packages/control-yard/docs/validation/hyx-rubric.yaml",
+      "packages/control-yard/docs/validation/feel-budgets.json"
     ]
   },
   "artifacts": {
@@ -30,7 +32,15 @@
   },
   "waivers": [],
   "acceptance": {
-    "$comment": "Informational for reviewers; proofManifestSchema ignores unknown keys. A null gate means no complete current executable acceptance gate is recorded; partial evidence may exist.",
+    "rubric": "packages/control-yard/docs/validation/hyx-rubric.yaml",
+    "scenarios": [
+      "packages/control-yard/src/scenarios/quiet-yard.ts",
+      "packages/control-yard/src/scenarios/incident-storm.ts",
+      "packages/control-yard/src/scenarios/quota-exhaustion.ts",
+      "packages/control-yard/src/scenarios/revoked-connection.ts",
+      "packages/control-yard/src/scenarios/deploy-saga.ts",
+      "packages/control-yard/src/scenarios/first-run.ts"
+    ],
     "criteria": [
       {
         "id": "ACC-CORE-LOOP",

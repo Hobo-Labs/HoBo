@@ -147,9 +147,11 @@ A **design skill** for AI harnesses (npm `impeccable`, v3.5.0, homepage
 [impeccable.style](https://impeccable.style)). 23 commands spanning the design
 workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
 `quieter`, `colorize`. **Standing duty on visual work** (TUI, dashboard,
-Evidence, `site/`, any package `DESIGN.md`): run `critique` then `audit`
+Evidence and `site/`): run `critique` then `audit`
 (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
-See `AGENTS.md` “Design system + lint”. **No API keys**, but it is **not**
+`design:lint` invokes `scripts/check-visual-tokens.mts`; the root
+`test/visual-tokens.test.ts` suite pins that wiring.
+See `AGENTS.md` “Visual quality”. **No API keys**, but it is **not**
 offline — see egress below.
 - **Network egress (three paths, one of them automatic):**
   - `scripts/context.mjs` calls `impeccable.style/api/version` when it is run
@@ -190,13 +192,9 @@ offline — see egress below.
   harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
   and `.github`. `npx impeccable check` reports drift, `npx impeccable update`
   applies it. Committed, like the other skills.
-- **Init:** `/impeccable init` writes `PRODUCT.md` (product truth only). It does
-  **not** write `DESIGN.md` — [`site/DESIGN.md`](../site/DESIGN.md) remains the
-  design authority ([ADR-0149](./design/adr/07-portability-extensibility.md#adr-0149)),
-  and its context loader reads that file as incumbent authority. Do not run
-  `/impeccable document` at the repo root: a root `DESIGN.md` would auto-opt-in
-  the root to `design:lint` and introduce a fourth identity beside the three
-  that gate validates.
+- **Context:** `PRODUCT.md` records product behavior and implemented CSS and
+  components define the visual system. Do not invoke commands that create
+  design documents; repository rules apply to every plugin and skill.
 - **Mirror-gate exemption:** impeccable is listed in `VENDORED_SKILLS` in
   [`../scripts/check-skill-mirrors.ts`](../scripts/check-skill-mirrors.ts). The
   byte-identical rule fits skills this repo authors; impeccable deliberately

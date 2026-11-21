@@ -1,116 +1,132 @@
 # `@hobo/connect-ui`
 
-The ceremony page a lifecycle opens when something must be connected or
-configured before it can converge: `hobo ci up` connects GitHub, `hobo cd up`
-connects Vercel, and `hobo up` connects the providers a resource needs. Each
-step is generated as exactly the component it needs and rendered with
-[vercel-labs/ui](https://github.com/vercel-labs/ui) (UI SDK: `@ui-sdk/core`,
-`@ui-sdk/react`). Every action is a transition the flow on the server decides.
+The page a lifecycle opens when a provider must be connected before anything
+can converge: `hobo ci up` connects GitHub (a GitHub App from a reviewed
+manifest), `hobo cd up` connects Vercel. Each step of the flow is rendered as
+the exact component it needs, generated with
+[json-render](https://json-render.dev) on its shadcn/ui preset, and every
+action on the page is a transition the flow on the server decides.
 
-## The generated component
+## Agent-ready ceremony controls
 
-A flow's step (`ConnectStep`, data) becomes a view (`stepView`, `view.ts`): only
-the fields that need an answer or correction, the one choice it asks for, and
-the actions that move it. A `configure` step lists missing or invalid settings
-and secrets, and a finished step lists store references. The browser
-renders the view from UI SDK parts:
-
-| The step needs | UI SDK |
-|---|---|
-| A setting | `Field` + `FieldLabel` + `Input` (+ `FieldDescription`, `FieldError`) |
-| A secret | `Field` + `PasswordInput` (`PasswordInputControl`, `PasswordInputToggle`) |
-| One of a few options | `Field` + `RadioGroup` + `Radio` |
-| An action | `Button` |
-| Progress | `Progress` |
-
-**Agent-ready.** Every control is named by its Field label, and state flows
-through `onValueChange`, so a person and an agent drive the same page.
-`createAgent` and `registerTools` (WebMCP) publish `snapshot`, `query` and
-`act`.
-- A provider hand-off ("Continue on GitHub", "Continue on Vercel") and giving
-  a secret carry `data-agent-confirm`: an agent's press asks the person first.
-- Password fields are secret to the bridge. An agent may fill them, never
-  read them.
-- Actions read the latest values even when an agent sets and presses in one
-  batch.
-
-**Styling.** `@ui-sdk/core/web.css`, themed through its `--ui-*` tokens with
-HoBo Rubberhose (`DESIGN.md`): ink on paper, thick outlines, hard sticker
-shadows. Parts are restyled from their `data-slot` attributes.
-
-## Ceremonies
-
-`configureThen` turns missing settings into a `configure` step, then hands the
-answers to `proceed`, which builds the provider's own flow (or returns field
-errors to show on the same page). `resolveSettings` reads each non-secret setting
-from the environment, then from earlier answers, then from its fallback, and
-lists what is still missing. A field of kind `secret` is read from the run's
-trusted vault only (`SecretHolder`; `createTrustedVault` in `@hobo/core`):
-never from the environment and never from saved answers, and it is never
-saved. `cellSettingsStore(cell)` keeps answers as one JSON document in a
-durable cell, typically an entry in the owner's secret store, so a destroyed
-machine is set up again by signing in rather than by answering again;
-`fileSettingsStore(path)` keeps them in a file (a committed, non-secret
-locator, for example).
+The loopback client labels every control in the composed spec, carries each
+button's connect action (`on.press.action`) onto it, and wraps the buttons
+whose action has a confirm with `data-agent-confirm` — keyed by action, never
+by label, so duplicate labels and multiple `connect.chooseStore` buttons each
+get their own confirm. An untrusted (scripted) press on a confirmed button is
+refused; a person's click passes, and `window.confirm` runs on the same action
+map before the dispatch leaves the page. The runtime exposes
+`collectFormParams(false)` so automation never reads secret fields back out of the
+form store. `test/agent-contract.test.ts`, `test/agent-dom.test.tsx`, and
+`test/agent-press.test.tsx` pin these guarantees on the json-render page.
 
 ## Secretless by construction
 
-A provider's credentials are written to the owner's secret store (Infisical or
-1Password). A `configure` step submits secrets to its flow; some, such as a
-session token, are used only for that run. Views blank secret field values,
-and finished steps show references (`infisical://…`, `op://…`).
+A provider hands its credentials over once. The flow writes them straight from
+the provider's response into a third-party secret store (Infisical Cloud with
+OIDC Auth by default; 1Password when the owner asks) and keeps only the store's
+references. No step, spec or response carries a secret value; the page shows
+references like `infisical://hobo-ci/HOBO_CI_GITHUB_APP_ID`. Workloads read the
+values back with their own identity (OIDC), so no secret lives in a repository,
+a CI variable or this page.
+
+## How a step becomes a page
+
+| Piece | Entry point |
+|---|---|
+| The flow's steps (data) | `ConnectStep`, `DEFAULT_SECRET_STORES` (`src/steps.ts`) |
+| The component vocabulary | `connectCatalog`: shadcn Card, Stack, Heading, Text, Button, Alert, Badge, Link, Progress, Separator, Radio, Input; actions `connect.submit`, `connect.chooseStore`, `connect.start`, `connect.cancel` |
+| What a step may show | `connectCandidates(step)`: configured, already valid component instances |
+| Compose | `composeConnectSpec(step, { evaluate })` |
+| Serve | `startConnectPage({ flow })` |
+
+**Generative, but bounded.** With an evaluator, json-render's composer
+(`experimental_composeSpec`) has a model choose and arrange the step's
+candidates. It cannot invent props or actions, only candidate descriptions and
+the prompt reach the model, and the descriptions name no owner, repository or
+value. The result must pass `validateSpec` *and* contain every required
+candidate (`missingRequiredCandidates`). Otherwise, as when no evaluator is
+configured or the gateway fails, the deterministic page built from the same
+candidates is served. A model's mistake degrades to the plain page, never to
+a broken or stranded one.
+
+**Evaluator, secretless first.** `evaluatorFromEnv` uses `VERCEL_OIDC_TOKEN`
+(short-lived, on Vercel or after `vercel env pull`), then `AI_GATEWAY_API_KEY`.
+Composition is opt-in: `HOBO_CONNECT_UI_COMPOSE=on` (case-sensitive) enables
+the model together with a credential; `off` disables it even when a credential
+is set, and unset means a credential alone does nothing. `HOBO_CONNECT_UI_MODEL`
+picks the model (default `typesafe-ai/jev`). The composer API is experimental, so
+`@json-render/*` is pinned to an exact version.
 
 ## The loopback server
 
 `startConnectPage` binds `127.0.0.1` on an ephemeral port under an unguessable
-per-session path (`/s/<token>/`), plus an optional fixed `callbackPath` for a
-provider whose redirect URL is registered.
-- `GET view` returns the generated view.
-- `POST action` accepts only `{ action, params: string map }` for the four
-  actions (`connect.submit`, `connect.chooseStore`, `connect.start`,
-  `connect.cancel`), Zod-parsed.
-- `GET callback` is where a provider sends the browser back.
+per-session path (`/s/<token>/`); anything else is a 404.
 
-Transitions run one at a time. Actions not offered by the current step, and
-in-flight actions whose step has advanced, are ignored. Repeated starts reuse
-the pending provider handoff until its callback or another transition. A flow
-error becomes a `failed` step, and `close({ graceMs })` waits until the browser
-has seen the finished step.
+- `GET view` returns the step's composed spec.
+- `POST action` accepts only `{ action: one of the four, params: string map }` and asks the flow.
+- `GET callback` is where a provider sends the browser back (GitHub's manifest code, Vercel's authorization). The flow handles it.
 
-CSP: scripts and connections are `'self'` only and forms post only to
-`https://github.com`. Images may be `data:` because `web.css` draws its icons
-as inline SVG masks, and inline styles are allowed for component positioning.
+Transitions run one at a time, so a double click cannot call a provider twice.
+A flow error becomes a `failed` step, never a crash. `done` settles with the
+terminal step.
+
+Responses carry a strict CSP. Scripts and connections are `'self'` only and
+form posts may go only to `https://github.com`. Inline *styles* are allowed
+because Radix positions some shadcn parts with style attributes.
 
 ## Architecture rules (AGENTS.md)
 
-- **PACT**: `contracts/pacts/connect-page.pact.json` (browser client and page
-  server), verified against a real server by `test/connect-page.pact.test.ts`.
-- **Protobuf plus CUE**: `data-models/connect_ui.proto` / `.cue`
-  (`ConnectActionRequest`, `ConnectViewRecord` carrying the view,
-  `BrowserDirectiveRecord`, `ConnectedReferences`).
-- **Parse, don't validate**: request bodies parse into `ActionBody` and
-  renderer params into `ActionParams`. `ConnectStep` is the parsed domain type
-  the flow returns.
-- **Event architecture**: each action is a command and the flow is the single
-  actor that decides it. The view is a projection (a materialized view) of the
-  step, rebuilt per request. There is no event store or read store here: the
-  durable outcome is the secret store's write, and convergence is recorded on
-  the deployment's event store by `hobo up`.
+- **PACT at the boundary.** The browser client and the loopback server meet
+  at `contracts/pacts/connect-page.pact.json`, which
+  `test/connect-page.pact.test.ts` verifies against a real server.
+- **Protobuf plus CUE.** The wire records (`ConnectActionRequest`,
+  `ConnectViewRecord`, `BrowserDirectiveRecord`, `ConnectedReferences`) are in
+  `data-models/connect_ui.proto`, constrained by `data-models/connect_ui.cue`.
+  Closed action, step and store names; a reference must be a reference.
+- **Parse, don't validate.** A request body becomes the derived type
+  `ActionBody` (a Zod parse of the closed action set and string params)
+  before the flow sees it, or it is a `400`. The browser parses renderer
+  params into `ActionParams` the same way. `ConnectStep` is the parsed
+  domain type the flow returns, and a spec reaches a browser only after
+  `isRenderableConnectSpec` and `missingRequiredCandidates`.
+- **Event architecture, and what this package deliberately is not.** Each page
+  action is a command. The flow is the single actor that turns it into the
+  next step, one transition at a time. The view is a projection of that step
+  (a materialized view rebuilt per request), and the composed spec is its
+  snapshot. The page keeps no event store and no read store of its own: a
+  connection is a one-time ceremony whose durable outcome is the
+  secret store's write and, upstream, the lifecycle's own facts on the
+  deployment's event store. The flow's step is in memory and dies with the
+  page.
 
-## Build and tests
+## Build
 
-`pnpm build` compiles the server and bundles the client and its stylesheet with
-esbuild. Nothing loads from a CDN.
-The package's Biome configuration checks the client, server, scripts, and
-tests, and supports Tailwind directives if they are introduced.
+`pnpm build` compiles the server (`tsc`), bundles the browser client
+(`src/client/main.tsx`, React + json-render + the shadcn preset) with esbuild,
+and compiles its Tailwind stylesheet with the HoBo Rubberhose tokens
+mapped onto shadcn's variables. Nothing loads from a CDN.
+The package's Biome configuration enables Tailwind directive parsing while
+checking the client, server, scripts, and tests.
 
-Tests:
-- `test/connect-ui.test.ts`: views, server, CSP and secrets.
-- `test/connect-page.pact.test.ts`: the PACT.
-- `test/agent.test.tsx`: an agent finds every control by name, completes the
-  store choice and a `configure` step, and a GitHub hand-off is refused until
-  a person approves. Run in jsdom with Testing Library, as UI SDK's agent-ready
-  checklist asks.
+## Tests
 
-The flow was also driven in Chromium through real clicks with no console
-errors.
+`test/connect-ui.test.ts` checks:
+- every candidate's props parse against the catalog (choice fields as
+  label+value Radio option pairs);
+- every step renders a valid spec;
+- the model path is used when complete and rejected when it omits the action;
+- a failing evaluator falls back;
+- the server's 404, CSP, action parsing, callback and failure handling;
+- a view response is re-checked against the current step after composition, so
+  a step that changed during a model compose is never answered stale;
+- no secret value in any response;
+- agent confirm metadata on hand-off controls and no secret echo in composition.
+
+`test/agent-press.test.tsx` drives the rendered registry in jsdom: an untrusted
+press on a person-confirmed hand-off is refused, an unconfirmed action
+dispatches, duplicate labels gate by their connect action, and a choice field
+shows its option label while binding the option value.
+
+The flow was also driven end to end in Chromium through real clicks, with no
+console errors.

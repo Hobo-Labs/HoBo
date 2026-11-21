@@ -275,15 +275,15 @@ export function selectRelevantChecks(
 		touched(["apps/web", "packages/ui", "site"]) ||
 		touchedAny([
 			/\.(tsx|jsx|css|astro)$/u,
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/check-visual-tokens\.mts$/u,
 		]);
-	const designMdChanged =
-		touchedAny([
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
-			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
-		]) || uiChanged;
+	const visualTokensChanged = touchedAny([
+		/^scripts\/check-visual-tokens\.mts$/u,
+		/^site\/src\/styles\//u,
+		/^packages\/connect-ui\/src\/client\/styles\.css$/u,
+		/^packages\/status-page\/src\/tokens\.ts$/u,
+		/^packages\/mcp\/src\/secret-capture\/html\.ts$/u,
+	]);
 	const behaviorChanged =
 		touched(["tests/behavior"]) ||
 		// Feature files and step definitions live inside proof packages
@@ -868,14 +868,12 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// Google DESIGN.md visual contract for every web UI package (site + future apps).
-	// Pre-commit routes here via check:relevant:staged when UI/DESIGN.md changes.
-	if (designMdChanged || automationChanged) {
+	if (visualTokensChanged || automationChanged) {
 		checks.push({
 			command: "pnpm",
 			args: ["run", "design:lint"],
 			reason:
-				"web UI or DESIGN.md changed; Google designmd lint must pass for all web UI projects",
+				"UI changes must preserve the implemented palette contrast requirements",
 		});
 	}
 
@@ -929,7 +927,7 @@ export function selectRelevantChecks(
 		schemaChanged && "schema",
 		pactChanged && "contract",
 		uiChanged && "ui",
-		designMdChanged && "design-md",
+		visualTokensChanged && "visual-tokens",
 		behaviorChanged && "behavior",
 		visualChanged && "visual",
 		agentEvalChanged && "agent-eval",

@@ -1,3 +1,9 @@
+export { connectCandidates } from "./candidates.js";
+export {
+	CONNECT_COMPONENTS,
+	connectCatalog,
+	RadioOptionSchema,
+} from "./catalog.js";
 export {
 	type CeremonySetting,
 	type ConfigureOptions,
@@ -11,6 +17,15 @@ export {
 	type SettingsCell,
 	type SettingsStore,
 } from "./ceremony.js";
+export {
+	type ComposedConnectSpec,
+	type ComposeOptions,
+	composeConnectSpec,
+	deterministicConnectSpec,
+	evaluatorFromEnv,
+	isRenderableConnectSpec,
+	missingRequiredCandidates,
+} from "./compose.js";
 export {
 	type BrowserDirective,
 	type ConnectFlow,
