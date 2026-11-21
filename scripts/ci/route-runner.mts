@@ -812,6 +812,7 @@ export function hoboPoolSaturation(input: {
 
 export type HoboPoolObservation = Readonly<{
 	saturation: HoboPoolSaturation;
+	poolRunners: FleetPoolRunners | undefined;
 	overflowRunners: FleetPoolRunners | undefined;
 }>;
 
@@ -838,15 +839,23 @@ export async function observeHoboPoolSaturation(input: {
 			cpuPercent,
 			label: input.label,
 		}),
+		poolRunners: runners,
 		overflowRunners,
 	};
+}
+
+function onlineRunnerUnavailable(
+	runners: FleetPoolRunners | undefined,
+	label: string,
+): string | undefined {
+	if (runners !== undefined && runners.online > 0) return undefined;
+	return `no online ${label} runner was verified on the fetched runner page`;
 }
 
 function agent37OverflowUnavailable(
 	runners: FleetPoolRunners | undefined,
 ): string | undefined {
-	if (runners !== undefined && runners.online > 0) return undefined;
-	return `no online ${AGENT37_OVERFLOW_RUNNER_LABEL} runner was verified on the fetched runner page`;
+	return onlineRunnerUnavailable(runners, AGENT37_OVERFLOW_RUNNER_LABEL);
 }
 
 export async function applyHoboPoolSaturation(input: {
@@ -1490,6 +1499,7 @@ export async function main(
 				},
 				env,
 			);
+		let hostedFallbackReason: string | undefined;
 		if (
 			routeClass(
 				event,
@@ -1553,37 +1563,48 @@ export async function main(
 					label: fleetLabel,
 				});
 				const { saturation } = observation;
-				const overflowUnavailable = saturation.saturated
-					? agent37OverflowUnavailable(observation.overflowRunners)
-					: undefined;
-				if (saturation.saturated && overflowUnavailable === undefined) {
+				const fleetUnavailable = onlineRunnerUnavailable(
+					observation.poolRunners,
+					fleetLabel,
+				);
+				if (fleetUnavailable !== undefined) {
 					console.log(
-						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} without a verified capacity claim (${fleetSummary})`)}`,
+						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository PR batch stays on ${labels.github}`)}`,
+					);
+					hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
+				} else {
+					const overflowUnavailable = saturation.saturated
+						? agent37OverflowUnavailable(observation.overflowRunners)
+						: undefined;
+					if (saturation.saturated && overflowUnavailable === undefined) {
+						console.log(
+							`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} without a verified capacity claim (${fleetSummary})`)}`,
+						);
+						return report(
+							{
+								tier: "fleet",
+								runner: AGENT37_OVERFLOW_RUNNER_LABEL,
+								reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} (${fleetSummary})`,
+								refusedBy: "queue",
+								slip: { kind: "unasked", why: "batch" },
+							},
+							env,
+						);
+					}
+					console.log(
+						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${overflowUnavailable ? `${overflowUnavailable}; ` : ""}the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
 					);
 					return report(
 						{
 							tier: "fleet",
-							runner: AGENT37_OVERFLOW_RUNNER_LABEL,
-							reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} (${fleetSummary})`,
+							runner: fleetLabel,
+							reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary}); ${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`,
 							refusedBy: "queue",
 							slip: { kind: "unasked", why: "batch" },
 						},
 						env,
 					);
 				}
-				console.log(
-					`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${overflowUnavailable ? `${overflowUnavailable}; ` : ""}the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
-				);
-				return report(
-					{
-						tier: "fleet",
-						runner: fleetLabel,
-						reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary}); ${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`,
-						refusedBy: "queue",
-						slip: { kind: "unasked", why: "batch" },
-					},
-					env,
-				);
 			}
 		}
 		if (
@@ -1598,8 +1619,9 @@ export async function main(
 				tier: "github",
 				runner: labels.github,
 				reason:
+					hostedFallbackReason ??
 					"the full PR batch has no verified fleet capacity and Broker claim; public standard-runner compute was verified",
-				refusedBy: "none",
+				refusedBy: hostedFallbackReason === undefined ? "none" : "queue",
 				slip: { kind: "unasked", why: "batch" },
 			},
 			env,
