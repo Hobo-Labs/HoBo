@@ -12,7 +12,10 @@ pull-request CI the gate pins to `GITHUB_HEAD_SHA` or, when that is unset,
 `git rev-parse HEAD^2` so merge ref checkouts do not inflate the expected
 height; during a staged commit the gate expects the next height when
 `plugin.json` is in the index. Version computation failures fail closed;
-`HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` is an explicit local-only skip.
+`HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` is an explicit local-only skip. The
+gate rejects that skip whenever `CI`, `GITHUB_ACTIONS`, or `TF_BUILD` is set,
+even when version computation would otherwise succeed; Turbo's `HOBO_*`
+passthrough does not weaken the CI requirement.
 
 Source: agent-plugins.org, checked 2026-11-20. If the upstream schemas
 change, re-vendor both files in the same change and update this date.

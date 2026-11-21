@@ -167,57 +167,30 @@ describe("checkSkillsConformance", () => {
 		).toBe(true);
 	});
 
-	it("rejects HoBo repo source spelled as a github.com URL", async () => {
-		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
-		scratches.push(scratchRepo);
-		await writeFile(
-			path.join(scratchRepo, "skills-lock.json"),
-			`${JSON.stringify(
-				{
-					version: 1,
-					skills: {
-						"repo-skill": {
-							source: "https://github.com/Hobo-Labs/HoBo",
-							sourceType: "github",
-						},
-					},
-				},
-				null,
-				2,
-			)}\n`,
-		);
-		const root = await scratchTree({
-			"repo-skill": "---\nname: repo-skill\ndescription: d\n---\n",
-		});
-		const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
-		expect(
-			issues.some((issue) => issue.code === "lock-exempts-repo-skill"),
-		).toBe(true);
-	});
-
-	it("recognizes HoBo sources across supported GitHub spellings", async () => {
+	it("rejects an unapproved in-tree skill even with a well-formed external source", async () => {
 		const scratchRepo = await mkdtemp(path.join(tmpdir(), "hobo-skills-repo-"));
 		scratches.push(scratchRepo);
 		const root = await scratchTree({
-			"repo-skill": "---\nname: repo-skill\ndescription: d\n---\n",
+			"repo-skill":
+				"---\nname: repo-skill\ndescription: d\nupstream-field: rejected\n---\n",
 		});
-		const sources = [
-			"https://github.com/Hobo-Labs/HoBo?x=1",
-			"https://github.com/Hobo-Labs/HoBo.git#skills",
-			"github:Hobo-Labs/HoBo?x=1",
-			"git@github.com:Hobo-Labs/HoBo.git",
-			"ssh://git@github.com/Hobo-Labs/HoBo.git",
-			"git+ssh://git@github.com/Hobo-Labs/HoBo.git",
-			"git+https://github.com/Hobo-Labs/HoBo.git?x=1",
-		];
-		for (const source of sources) {
+		for (const source of [
+			"vendor/external",
+			"https://github.com/Hobo-Labs/HoBo",
+			"https://github.com.evil.test/Hobo-Labs/HoBo",
+			"git@github.com:Hobo-Labs/HoBo/extra",
+		]) {
 			await writeFile(
 				path.join(scratchRepo, "skills-lock.json"),
 				`${JSON.stringify({ version: 1, skills: { "repo-skill": { source } } })}\n`,
 			);
 			const issues = await checkHoboRepoSkillsConformance(scratchRepo, root);
 			expect(
-				issues.some((issue) => issue.code === "lock-exempts-repo-skill"),
+				issues.some((issue) => issue.code === "lock-shadows-in-tree-skill"),
+				source,
+			).toBe(true);
+			expect(
+				issues.some((issue) => issue.code === "disallowed-frontmatter-field"),
 				source,
 			).toBe(true);
 		}
@@ -284,13 +257,13 @@ describe("checkSkillsConformance", () => {
 		scratches.push(scratchRepo);
 		await writeFile(
 			path.join(scratchRepo, "skills-lock.json"),
-			`${JSON.stringify({ version: 1, skills: { outsider: { source: "vendor/x" } } }, null, 2)}\n`,
+			`${JSON.stringify({ version: 1, skills: { caveman: { source: "JuliusBrussee/caveman" } } }, null, 2)}\n`,
 		);
 		const root = await scratchTree({
 			"hobo-setup":
 				"---\nname: hobo-setup\ndescription: d\nlicense: MIT\nmetadata:\n  plugin: hobo\n---\n",
-			outsider:
-				"---\nname: outsider\ndescription: d\nupstream-field: kept\n---\n",
+			caveman:
+				"---\nname: caveman\ndescription: d\nupstream-field: kept\n---\n",
 		});
 		const strict = await discoverHoboOwnedSkillNames(root, scratchRepo);
 		expect(strict).toEqual(["hobo-setup"]);

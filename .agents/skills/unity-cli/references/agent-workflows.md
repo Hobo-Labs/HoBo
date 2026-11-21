@@ -19,8 +19,12 @@ unity --version || {
 unity doctor
 unity auth status
 # Interactive machines: unity auth login
-# CI: inject supported service credentials via env (never commit secrets)
 ```
+
+Credentialed CI jobs may run only on protected, trusted refs and environments,
+never on forked or otherwise untrusted pull requests whose tests and build
+methods execute repository-controlled code. Prefer short-lived, least-privilege
+federated credentials where supported, and never commit credentials.
 
 A missing CLI is a stop condition, never an install step: jobs and CI lanes run
 a pre-installed `unity` binary whose version is recorded in the image, and never

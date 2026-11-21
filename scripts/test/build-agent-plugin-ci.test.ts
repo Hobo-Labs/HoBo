@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,27 +38,13 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 		);
 	});
 
-	it("refuses GitHub Actions attestation without a run attempt", () => {
-		const build = spawnSync(
-			process.execPath,
-			["--import", "tsx", "scripts/build-agent-plugin.mts"],
-			{
-				cwd: repoRoot,
-				encoding: "utf8",
-				timeout: 300_000,
-				env: {
-					...process.env,
-					CI: "1",
-					GITHUB_ACTIONS: "true",
-					GITHUB_RUN_ID: "run-current",
-					GITHUB_RUN_ATTEMPT: "",
-					GITHUB_SHA: "commit-current",
-				},
-			},
+	it("does not request or persist an OIDC bearer token", () => {
+		const source = readFileSync(
+			path.join(repoRoot, "scripts/build-agent-plugin.mts"),
+			"utf8",
 		);
-		expect(build.status).not.toBe(0);
-		expect(`${build.stdout}\n${build.stderr}`).toMatch(
-			/GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT, and GITHUB_SHA are required/u,
-		);
+		expect(source).not.toContain("ACTIONS_ID_TOKEN_REQUEST");
+		expect(source).not.toContain("oidcToken");
+		expect(source).not.toContain("requestGithubOidcToken");
 	});
 });

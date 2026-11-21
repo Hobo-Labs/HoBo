@@ -108,6 +108,7 @@ describe("the description of the covered jobs", () => {
 		);
 		assert.deepEqual(left, [
 			"pr_gate_validation: Impact classification (shadow)",
+			"pr_gate_validation: Authorize artifact attestation reads",
 			"pr_gate_validation: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",

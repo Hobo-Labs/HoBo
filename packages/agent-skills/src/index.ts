@@ -88,6 +88,61 @@ export function skillUsesHoboOwnedFrontmatter(
 	return true;
 }
 
+const HOBO_REVIEWED_VENDORED_SKILL_NAMES: ReadonlySet<string> = new Set([
+	"ask-matt",
+	"cavecrew",
+	"caveman",
+	"caveman-commit",
+	"caveman-compress",
+	"caveman-help",
+	"caveman-review",
+	"caveman-stats",
+	"codebase-design",
+	"decision-mapping",
+	"design-an-interface",
+	"diagnosing-bugs",
+	"domain-modeling",
+	"edit-article",
+	"git-guardrails-claude-code",
+	"grill-me",
+	"grill-with-docs",
+	"grilling",
+	"handoff",
+	"implement",
+	"impeccable",
+	"improve-codebase-architecture",
+	"install-anti-slop",
+	"loop-me",
+	"migrate-to-shoehorn",
+	"obsidian-vault",
+	"ponytail",
+	"ponytail-audit",
+	"ponytail-debt",
+	"ponytail-gain",
+	"ponytail-help",
+	"ponytail-review",
+	"prototype",
+	"qa",
+	"request-refactor-plan",
+	"resolving-merge-conflicts",
+	"review",
+	"scaffold-exercises",
+	"setup-matt-pocock-skills",
+	"setup-pre-commit",
+	"spriterrific-api",
+	"tdd",
+	"teach",
+	"to-issues",
+	"to-prd",
+	"triage",
+	"ubiquitous-language",
+	"wizard",
+	"writing-beats",
+	"writing-fragments",
+	"writing-great-skills",
+	"writing-shape",
+]);
+
 function vendoredNamesFromLockJson(text: string): ReadonlySet<string> {
 	/* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: skills-lock.json is untrusted JSON; only skill name keys are read after a shallow object check. */
 	let parsed: unknown;
@@ -131,7 +186,11 @@ export async function discoverHoboOwnedSkillNames(
 	const names: string[] = [];
 	for (const dirent of await readdir(skillsRoot, { withFileTypes: true })) {
 		if (!dirent.isDirectory()) continue;
-		if (vendored.has(dirent.name)) continue;
+		if (
+			vendored.has(dirent.name) &&
+			HOBO_REVIEWED_VENDORED_SKILL_NAMES.has(dirent.name)
+		)
+			continue;
 		const skillMd = join(skillsRoot, dirent.name, "SKILL.md");
 		try {
 			await stat(skillMd);
@@ -150,38 +209,6 @@ export const HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS = Object.freeze([
 export type SkillsLockExemptionOptions = {
 	readonly neverLockSkillNames?: readonly string[];
 };
-
-function parseGitHubOwnerRepo(
-	source: string,
-): { owner: string; repo: string } | null {
-	let path = source.trim();
-	if (path.length === 0) return null;
-	const lower = path.toLowerCase();
-	const prefixes = [
-		"github:",
-		"https://github.com/",
-		"http://github.com/",
-		"git+https://github.com/",
-		"git+http://github.com/",
-		"ssh://git@github.com/",
-		"git+ssh://git@github.com/",
-		"git@github.com:",
-	];
-	const prefix = prefixes.find((candidate) => lower.startsWith(candidate));
-	if (prefix !== undefined) path = path.slice(prefix.length);
-	path = path.split(/[?#]/u, 1)[0] ?? "";
-	path = path.replace(/\/$/u, "").replace(/\.git$/iu, "");
-	const parts = path.split("/");
-	if (parts.length !== 2) return null;
-	const [owner = "", repo = ""] = parts;
-	if (!/^[A-Za-z0-9_.-]+$/u.test(owner) || !/^[A-Za-z0-9_.-]+$/u.test(repo))
-		return null;
-	return { owner, repo };
-}
-
-function isHoboRepositoryOwnerRepo(owner: string, repo: string): boolean {
-	return owner.toLowerCase() === "hobo-labs" && repo.toLowerCase() === "hobo";
-}
 
 export async function skillsLockExemptionIssues(
 	skillsRoot: string,
@@ -218,7 +245,7 @@ export async function skillsLockExemptionIssues(
 	}
 	/* oxlint-enable anti-slop/no-runtime-typeof */
 	const issues: SkillConformanceIssue[] = [];
-	for (const [name, entry] of Object.entries(skills)) {
+	for (const name of Object.keys(skills)) {
 		if (neverLock.has(name)) {
 			issues.push({
 				skill: name,
@@ -235,32 +262,17 @@ export async function skillsLockExemptionIssues(
 		} catch {
 			skillMdExists = false;
 		}
-		if (!skillMdExists) continue;
-		let source = "";
-		/* oxlint-disable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters anti-slop/require-safety-comment-for-type-assertion -- SAFETY: skills-lock.json entry objects are untrusted JSON; only an optional source string field is read after shallow shape checks. */
-		if (typeof entry === "object" && entry !== null && "source" in entry) {
-			const raw = (entry as { source: unknown }).source;
-			if (typeof raw === "string") source = raw.trim();
-		}
-		/* oxlint-enable anti-slop/no-runtime-typeof anti-slop/no-unknown-parameters anti-slop/require-safety-comment-for-type-assertion */
-		const ownerRepo = parseGitHubOwnerRepo(source);
-		if (ownerRepo === null) {
-			issues.push({
-				skill: name,
-				code: "lock-shadows-in-tree-skill",
-				message:
-					"skills-lock.json must not list an in-tree skill without a well-formed external GitHub source",
-			});
+		if (
+			!skillMdExists ||
+			HOBO_REVIEWED_VENDORED_SKILL_NAMES.has(name)
+		)
 			continue;
-		}
-		if (isHoboRepositoryOwnerRepo(ownerRepo.owner, ownerRepo.repo)) {
-			issues.push({
-				skill: name,
-				code: "lock-exempts-repo-skill",
-				message:
-					"skills-lock.json must not use this repository as the vendored source for a skill directory present in .agents/skills",
-			});
-		}
+		issues.push({
+			skill: name,
+			code: "lock-shadows-in-tree-skill",
+			message:
+				"skills-lock.json cannot reclassify an in-tree skill as vendored unless its name is in the reviewed vendored-skill allowlist",
+		});
 	}
 	return Object.freeze(issues);
 }

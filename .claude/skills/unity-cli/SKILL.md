@@ -116,7 +116,7 @@ unity uninstall 6000.3.7f1
 
 **Version aliases**: `latest`, `lts`, `default`, short streams like `6` / `6.5` / `2022`.
 
-**CI installs** need non-interactive flags: `--yes`, `--accept-eula`, and often `--non-interactive`. Use `--cm` when child modules (SDK/NDK) matter.
+CI uses the reviewed, version-pinned Editor and modules already present in the controlled image. A missing CLI or Editor is a stop condition, never an unattended install step.
 
 ### Editors registry
 ```bash

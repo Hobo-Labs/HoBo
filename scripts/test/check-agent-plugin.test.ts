@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
 	mkdir,
@@ -34,6 +33,7 @@ import {
 	releaseTrainVersionForPluginGate,
 	requiresExactReleaseTrainVersion,
 	scanTextForSecrets,
+	verifyAgentPluginAttestation,
 	versionPinCommitIsh,
 } from "../check-agent-plugin.ts";
 
@@ -989,6 +989,71 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues[0]?.message).not.toContain(secret);
 	});
 
+	it("pins gh verification to the workflow, source digest, and current run certificate", async () => {
+		stubCiOff();
+		vi.stubEnv("GITHUB_SERVER_URL", "https://github.com");
+		vi.stubEnv("GITHUB_REPOSITORY", "Hobo-Labs/HoBo");
+		const expected = {
+			bundlePath: "/tmp/hobo-mcp.mjs",
+			runId: "run-current",
+			runAttempt: "1",
+			commitSha: "commit-current",
+		};
+		const attestation = (runAttempt: string) =>
+			JSON.stringify([
+				{
+					verificationResult: {
+						signature: {
+							certificate: {
+								extensions: {
+									runInvocationID: `https://github.com/Hobo-Labs/HoBo/actions/runs/run-current/attempts/${runAttempt}`,
+								},
+							},
+						},
+					},
+				},
+			]);
+		const calls: Array<{ command: string; args: readonly string[] }> = [];
+		await expect(
+			verifyAgentPluginAttestation(expected, (command, args) => {
+				calls.push({ command, args });
+				return { status: 0, stdout: attestation("1") };
+			}),
+		).resolves.toBeUndefined();
+		expect(calls).toEqual([
+			{
+				command: "gh",
+				args: [
+					"attestation",
+					"verify",
+					"/tmp/hobo-mcp.mjs",
+					"--repo",
+					"Hobo-Labs/HoBo",
+					"--signer-workflow",
+					"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml",
+					"--source-digest",
+					"commit-current",
+					"--cert-oidc-issuer",
+					"https://token.actions.githubusercontent.com",
+					"--format",
+					"json",
+				],
+			},
+		]);
+		await expect(
+			verifyAgentPluginAttestation(expected, () => ({
+				status: 0,
+				stdout: attestation("0"),
+			})),
+		).rejects.toThrow("not from this workflow run attempt");
+		await expect(
+			verifyAgentPluginAttestation(expected, () => ({
+				status: 1,
+				stdout: "",
+			})),
+		).rejects.toThrow("verification failed");
+	});
+
 	it("rejects a bundle in CI that is not running on GitHub Actions", async () => {
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", undefined);
@@ -1020,7 +1085,7 @@ describe("checkAgentPlugin (integration)", () => {
 		).toBe(true);
 	});
 
-	it("rejects a bundle without attestation in a GitHub Actions job", async () => {
+	it("rejects a bundle without verified artifact provenance in GitHub Actions", async () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
@@ -1047,15 +1112,18 @@ describe("checkAgentPlugin (integration)", () => {
 		const report = await checkAgentPlugin({
 			pluginRoot,
 			repoRoot: scratchRepo,
+			verifyAttestation: async () => {
+				throw new Error("no attestation");
+			},
 		});
 		expect(
 			report.issues.some((issue) =>
-				/exists in CI without a bundle attestation/u.test(issue.message),
+				/no verified GitHub artifact provenance/u.test(issue.message),
 			),
 		).toBe(true);
 	});
 
-	it("rejects unparseable bundle attestation JSON in a GitHub Actions job", async () => {
+	it("rejects legacy bearer-token attestation records", async () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
@@ -1088,19 +1156,18 @@ describe("checkAgentPlugin (integration)", () => {
 			report.issues.some(
 				(issue) =>
 					issue.file === ".bundle-attestation.json" &&
-					/is not valid JSON/u.test(issue.message),
+					/legacy bearer-token record/u.test(issue.message),
 			),
 		).toBe(true);
 	});
 
-	it("accepts only a matching bundle attestation with verified GitHub OIDC identity", async () => {
+	it("accepts only verified provenance from the current workflow attempt", async () => {
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
 		const bundleBody = "y".repeat(1024 * 1024);
-		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
 			"mcp.json": JSON.stringify({
@@ -1116,34 +1183,21 @@ describe("checkAgentPlugin (integration)", () => {
 			"README.md": "# hobo\n",
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				scope: "github-oidc",
-				sha256,
-				runId: "run-current",
-				commitSha: "commit-current",
-				runAttempt: "1",
-				oidcToken: "signed-token",
-			})}\n`,
 		});
 		const report = await checkAgentPlugin({
 			pluginRoot,
 			repoRoot: scratchRepo,
-			verifyAttestation: async () => ({
-				repository: "Hobo-Labs/HoBo",
-				runId: "run-current",
-				runAttempt: "1",
-				commitSha: "commit-current",
-			}),
+			verifyAttestation: async (expected) => {
+				expect(expected).toEqual({
+					bundlePath: path.join(pluginRoot, "bin/hobo-mcp.mjs"),
+					runId: "run-current",
+					runAttempt: "1",
+					commitSha: "commit-current",
+				});
+			},
 		});
-		const attestationIssues = report.issues.filter(
-			(issue) =>
-				issue.file === "bin/hobo-mcp.mjs" ||
-				issue.file === ".bundle-attestation.json",
-		);
 		expect(
-			attestationIssues.filter((issue) =>
-				/attestation|bundle attestation/u.test(issue.message),
-			),
+			report.issues.filter((issue) => /provenance/u.test(issue.message)),
 		).toEqual([]);
 		const forged = await checkAgentPlugin({
 			pluginRoot,
@@ -1154,274 +1208,21 @@ describe("checkAgentPlugin (integration)", () => {
 		});
 		expect(
 			forged.issues.some((issue) =>
-				/OIDC identity could not be verified/u.test(issue.message),
+				/no verified GitHub artifact provenance/u.test(issue.message),
 			),
 		).toBe(true);
 		const previousAttempt = await checkAgentPlugin({
 			pluginRoot,
 			repoRoot: scratchRepo,
-			verifyAttestation: async () => ({
-				repository: "Hobo-Labs/HoBo",
-				runId: "run-current",
-				runAttempt: "0",
-				commitSha: "commit-current",
-			}),
+			verifyAttestation: async () => {
+				throw new Error("attestation is from attempt 0");
+			},
 		});
 		expect(
 			previousAttempt.issues.some((issue) =>
-				/OIDC identity does not match/u.test(issue.message),
+				/no verified GitHub artifact provenance/u.test(issue.message),
 			),
 		).toBe(true);
-	});
-
-	it("rejects a bundle attestation minted for a different workflow run in CI", async () => {
-		vi.stubEnv("CI", "1");
-		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GITHUB_RUN_ID", "run-current");
-		vi.stubEnv("GITHUB_SHA", "commit-current");
-		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
-		const bundleBody = "x".repeat(1024 * 1024);
-		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
-		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"plugin.json": JSON.stringify(validManifest),
-			"mcp.json": JSON.stringify({
-				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-				mcpServers: {
-					hobo: {
-						type: "stdio",
-						command: "node",
-						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-					},
-				},
-			}),
-			"README.md": "# hobo\n",
-			"bin/hobo-mcp.mjs": bundleBody,
-			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				scope: "github-oidc",
-				sha256,
-				runId: "run-other",
-				commitSha: "commit-current",
-				runAttempt: "1",
-				oidcToken: "signed-token",
-			})}\n`,
-		});
-		const report = await checkAgentPlugin({
-			pluginRoot,
-			repoRoot: scratchRepo,
-		});
-		expect(
-			report.issues.some((issue) =>
-				/runId does not match this workflow run/u.test(issue.message),
-			),
-		).toBe(true);
-	});
-
-	it("rejects a bundle attestation whose commitSha does not match GITHUB_SHA", async () => {
-		vi.stubEnv("CI", "1");
-		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GITHUB_RUN_ID", "run-current");
-		vi.stubEnv("GITHUB_SHA", "commit-current");
-		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
-		const bundleBody = "x".repeat(1024 * 1024);
-		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
-		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"plugin.json": JSON.stringify(validManifest),
-			"mcp.json": JSON.stringify({
-				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-				mcpServers: {
-					hobo: {
-						type: "stdio",
-						command: "node",
-						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-					},
-				},
-			}),
-			"README.md": "# hobo\n",
-			"bin/hobo-mcp.mjs": bundleBody,
-			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				scope: "github-oidc",
-				sha256,
-				runId: "run-current",
-				commitSha: "commit-other",
-				runAttempt: "1",
-				oidcToken: "signed-token",
-			})}\n`,
-		});
-		const report = await checkAgentPlugin({
-			pluginRoot,
-			repoRoot: scratchRepo,
-		});
-		expect(
-			report.issues.some((issue) =>
-				/commitSha does not match this workflow checkout/u.test(issue.message),
-			),
-		).toBe(true);
-	});
-
-	it("rejects a bundle attestation whose sha256 does not match the bundle bytes", async () => {
-		vi.stubEnv("CI", "1");
-		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GITHUB_RUN_ID", "run-current");
-		vi.stubEnv("GITHUB_SHA", "commit-current");
-		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
-		const bundleBody = "x".repeat(1024 * 1024);
-		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"plugin.json": JSON.stringify(validManifest),
-			"mcp.json": JSON.stringify({
-				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-				mcpServers: {
-					hobo: {
-						type: "stdio",
-						command: "node",
-						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-					},
-				},
-			}),
-			"README.md": "# hobo\n",
-			"bin/hobo-mcp.mjs": bundleBody,
-			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				scope: "github-oidc",
-				sha256: "0".repeat(64),
-				runId: "run-current",
-				commitSha: "commit-current",
-				runAttempt: "1",
-				oidcToken: "signed-token",
-			})}\n`,
-		});
-		const report = await checkAgentPlugin({
-			pluginRoot,
-			repoRoot: scratchRepo,
-		});
-		expect(
-			report.issues.some((issue) =>
-				/sha256 does not match bin\/hobo-mcp.mjs/u.test(issue.message),
-			),
-		).toBe(true);
-	});
-
-	it("rejects a bundle attestation missing runAttempt", async () => {
-		vi.stubEnv("CI", "1");
-		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GITHUB_RUN_ID", "run-current");
-		vi.stubEnv("GITHUB_SHA", "commit-current");
-		vi.stubEnv("GITHUB_RUN_ATTEMPT", "2");
-		const bundleBody = "x".repeat(1024 * 1024);
-		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
-		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"plugin.json": JSON.stringify(validManifest),
-			"mcp.json": JSON.stringify({
-				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-				mcpServers: {
-					hobo: {
-						type: "stdio",
-						command: "node",
-						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-					},
-				},
-			}),
-			"README.md": "# hobo\n",
-			"bin/hobo-mcp.mjs": bundleBody,
-			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				scope: "github-oidc",
-				sha256,
-				runId: "run-current",
-				commitSha: "commit-current",
-				oidcToken: "signed-token",
-			})}\n`,
-		});
-		const report = await checkAgentPlugin({
-			pluginRoot,
-			repoRoot: scratchRepo,
-		});
-		expect(
-			report.issues.some((issue) =>
-				/not a valid bundle attestation/u.test(issue.message),
-			),
-		).toBe(true);
-	});
-
-	it("rejects a bundle attestation that omits the GitHub OIDC scope", async () => {
-		vi.stubEnv("CI", "1");
-		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GITHUB_RUN_ID", "run-current");
-		vi.stubEnv("GITHUB_SHA", "commit-current");
-		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
-		const bundleBody = "x".repeat(1024 * 1024);
-		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
-		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"plugin.json": JSON.stringify(validManifest),
-			"mcp.json": JSON.stringify({
-				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-				mcpServers: {
-					hobo: {
-						type: "stdio",
-						command: "node",
-						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-					},
-				},
-			}),
-			"README.md": "# hobo\n",
-			"bin/hobo-mcp.mjs": bundleBody,
-			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				sha256,
-				runId: "run-current",
-				commitSha: "commit-current",
-				runAttempt: "1",
-				oidcToken: "signed-token",
-			})}\n`,
-		});
-		const report = await checkAgentPlugin({
-			pluginRoot,
-			repoRoot: scratchRepo,
-		});
-		expect(
-			report.issues.some(
-				(issue) =>
-					issue.file === ".bundle-attestation.json" &&
-					/not a valid bundle attestation/u.test(issue.message),
-			),
-		).toBe(true);
-		vi.unstubAllEnvs();
-	});
-
-	it("rejects a present bundle without attestation in CI", async () => {
-		vi.stubEnv("CI", "1");
-		vi.stubEnv("GITHUB_ACTIONS", "true");
-		vi.stubEnv("GITHUB_RUN_ID", "run-current");
-		vi.stubEnv("GITHUB_SHA", "commit-current");
-		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
-		const bundleBody = "x".repeat(1024 * 1024);
-		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"plugin.json": JSON.stringify(validManifest),
-			"mcp.json": JSON.stringify({
-				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-				mcpServers: {
-					hobo: {
-						type: "stdio",
-						command: "node",
-						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-					},
-				},
-			}),
-			"README.md": "# hobo\n",
-			"bin/hobo-mcp.mjs": bundleBody,
-			"fixtures/deploy/vercel/package.json": "{}\n",
-		});
-		const report = await checkAgentPlugin({
-			pluginRoot,
-			repoRoot: scratchRepo,
-		});
-		expect(
-			report.issues.some((issue) =>
-				/without a bundle attestation/u.test(issue.message),
-			),
-		).toBe(true);
-		vi.unstubAllEnvs();
 	});
 
 	it("requires GitHub run and attempt metadata in CI", async () => {
@@ -1431,7 +1232,6 @@ describe("checkAgentPlugin (integration)", () => {
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
 		const bundleBody = "x".repeat(1024 * 1024);
-		const sha256 = createHash("sha256").update(bundleBody).digest("hex");
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
 			"mcp.json": JSON.stringify({
@@ -1447,14 +1247,6 @@ describe("checkAgentPlugin (integration)", () => {
 			"README.md": "# hobo\n",
 			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
-			".bundle-attestation.json": `${JSON.stringify({
-				scope: "github-oidc",
-				sha256,
-				runId: "run-current",
-				commitSha: "commit-current",
-				runAttempt: "1",
-				oidcToken: "signed-token",
-			})}\n`,
 		});
 		const report = await checkAgentPlugin({
 			pluginRoot,
@@ -1518,10 +1310,11 @@ describe("checkAgentPlugin (integration)", () => {
 			scratchRepo,
 			"tools/agent-plugins/schemas/1.0.0",
 		);
+		const secret = `github_pat_${"a".repeat(20)}`;
 		await mkdir(schemaDir, { recursive: true });
 		await writeFile(
 			path.join(schemaDir, "MANIFEST.sha256"),
-			`${"a".repeat(64)}  plugin.schema.json\n`,
+			`${"a".repeat(64)}  plugin.schema.json\n${secret}\n`,
 		);
 		await writeFile(
 			path.join(schemaDir, "plugin.schema.json"),
@@ -1538,6 +1331,14 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(
 			report.issues.some((issue) => issue.message.includes("MANIFEST.sha256")),
 		).toBe(true);
+		expect(
+			report.issues.some((issue) =>
+				issue.message.includes("invalid entry at line 2"),
+			),
+		).toBe(true);
+		expect(
+			report.issues.map((issue) => issue.message).join("\n"),
+		).not.toContain(secret);
 	});
 });
 

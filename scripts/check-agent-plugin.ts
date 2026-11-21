@@ -12,7 +12,6 @@ import {
 } from "@hobo/agent-skills";
 import { z } from "zod";
 
-import { createGithubWorkflowVerifier } from "../packages/ci-gh-actions/src/workflow-oidc.ts";
 import {
 	defaultNbgvRunner,
 	fixedTrainAlphaSemver,
@@ -20,7 +19,6 @@ import {
 	type NbgvRunner,
 } from "./lib/nbgv-release-version.mts";
 
-export const AGENT_PLUGIN_OIDC_AUDIENCE = "hobo-agent-plugin";
 export const PLUGIN_SCHEMA_ID =
 	"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const MCP_SCHEMA_ID =
@@ -87,40 +85,98 @@ export type AgentPluginReport = {
 	readonly notes: readonly string[];
 };
 
-type AgentPluginAttestationIdentity = {
-	readonly repository: string;
+type AgentPluginAttestationExpectation = {
+	readonly bundlePath: string;
 	readonly runId: string;
 	readonly runAttempt: string;
 	readonly commitSha: string;
 };
 
 type VerifyAgentPluginAttestation = (
-	token: string,
-) => Promise<AgentPluginAttestationIdentity>;
+	expected: AgentPluginAttestationExpectation,
+) => Promise<void>;
 
-async function verifyAgentPluginAttestation(
-	token: string,
-): Promise<AgentPluginAttestationIdentity> {
-	const verifier = createGithubWorkflowVerifier({
-		audience: AGENT_PLUGIN_OIDC_AUDIENCE,
+const VerifiedArtifactAttestations = z.array(
+	z.object({
+		verificationResult: z.object({
+			signature: z.object({
+				certificate: z.object({
+					extensions: z.object({
+						runInvocationID: z.string().optional(),
+						runInvocationId: z.string().optional(),
+					}),
+				}),
+			}),
+		}),
+	}),
+);
+
+type AttestationCommandResult = {
+	readonly error?: Error | undefined;
+	readonly status: number | null;
+	readonly stdout: string;
+};
+
+type AttestationCommand = (
+	command: string,
+	args: readonly string[],
+) => AttestationCommandResult;
+
+const runAttestationCommand: AttestationCommand = (command, args) => {
+	const result = spawnSync(command, args, {
+		encoding: "utf8",
+		maxBuffer: 16 * 1024 * 1024,
 	});
-	const workflow = await verifier.verify(token);
-	const claims = z
-		.object({
-			run_attempt: z.string().min(1),
-			sha: z.string().min(1),
-		})
-		.parse(
-			JSON.parse(
-				Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
-			),
-		);
 	return {
-		repository: workflow.repository,
-		runId: workflow.runId,
-		runAttempt: claims.run_attempt,
-		commitSha: claims.sha,
+		error: result.error,
+		status: result.status,
+		stdout: result.stdout,
 	};
+};
+
+export async function verifyAgentPluginAttestation(
+	expected: AgentPluginAttestationExpectation,
+	run: AttestationCommand = runAttestationCommand,
+): Promise<void> {
+	const serverUrl = process.env.GITHUB_SERVER_URL?.trim() ?? "";
+	const repository = process.env.GITHUB_REPOSITORY?.trim() ?? "";
+	if (serverUrl.length === 0 || repository.toLowerCase() !== "hobo-labs/hobo") {
+		throw new Error("GitHub repository identity is unavailable");
+	}
+	const verified = run("gh", [
+		"attestation",
+		"verify",
+		expected.bundlePath,
+		"--repo",
+		repository,
+		"--signer-workflow",
+		`${repository}/.github/workflows/hobo-ci.yml`,
+		"--source-digest",
+		expected.commitSha,
+		"--cert-oidc-issuer",
+		"https://token.actions.githubusercontent.com",
+		"--format",
+		"json",
+	]);
+	if (verified.error !== undefined || verified.status !== 0) {
+		throw new Error("GitHub artifact attestation verification failed");
+	}
+	const attestations = VerifiedArtifactAttestations.parse(
+		JSON.parse(verified.stdout),
+	);
+	const invocationId = `${serverUrl.replace(/\/$/u, "")}/${repository}/actions/runs/${expected.runId}/attempts/${expected.runAttempt}`;
+	if (
+		!attestations.some((attestation) => {
+			const extensions =
+				attestation.verificationResult.signature.certificate.extensions;
+			return (
+				extensions.runInvocationID === invocationId ||
+				extensions.runInvocationId === invocationId
+			);
+		})
+	) {
+		throw new Error("attestation is not from this workflow run attempt");
+	}
 }
 
 export const PluginAuthorSchema = z.strictObject({
@@ -853,13 +909,15 @@ function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 			message: "is missing; vendored schema digests must stay pinned",
 		});
 	} else {
-		for (const line of readFileSync(manifestPath, "utf8").split("\n")) {
+		for (const [index, line] of readFileSync(manifestPath, "utf8")
+			.split("\n")
+			.entries()) {
 			if (line === "") continue;
 			const [, digest, name] = VENDORED_SCHEMA_MANIFEST.exec(line) ?? [];
 			if (digest === undefined || name === undefined) {
 				issues.push({
 					file: "tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
-					message: `has invalid line ${JSON.stringify(line)}`,
+					message: `has an invalid entry at line ${index + 1}`,
 				});
 				continue;
 			}
@@ -1046,7 +1104,7 @@ export async function checkAgentPlugin(input: {
 		}
 		if (!agentPluginCiActive()) {
 			notes.push(
-				"agent-plugin:check: bundle attestation and sha256 binding are verified only when agentPluginCiActive(); production validation runs in GitHub Actions after agent-plugin:build",
+				"agent-plugin:check: explicit local-only non-CI path; the freshly rebuilt bundle has no provenance and cannot be reused for CI validation",
 			);
 		}
 		issues.push(
@@ -1110,43 +1168,19 @@ async function bundleAttestationIssues(
 	bundlePath: string,
 	verifyAttestation: VerifyAgentPluginAttestation,
 ): Promise<AgentPluginIssue[]> {
-	const failure = (message: string, file = BUNDLE_ATTESTATION) => [
+	const failure = (message: string, file = "bin/hobo-mcp.mjs") => [
 		{ file, message },
 	];
 	if (!agentPluginCiActive()) return [];
 	if (process.env.GITHUB_ACTIONS !== "true") {
 		return failure(
-			"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); run agent-plugin:check on a GitHub Actions runner",
+			"bundle attestation is only verified in GitHub Actions (GITHUB_ACTIONS=true); non-GitHub CI cannot accept a bundle",
 		);
 	}
-	const attestationPath = path.join(pluginRoot, BUNDLE_ATTESTATION);
-	if (!existsSync(attestationPath)) {
+	if (existsSync(path.join(pluginRoot, BUNDLE_ATTESTATION))) {
 		return failure(
-			"exists in CI without a bundle attestation; run pnpm run agent-plugin:build in this job before agent-plugin:check",
-			"bin/hobo-mcp.mjs",
-		);
-	}
-	let attestationJson: unknown;
-	try {
-		attestationJson = JSON.parse(readFileSync(attestationPath, "utf8"));
-	} catch {
-		return failure(
-			"is not valid JSON; run pnpm run agent-plugin:build in this CI job",
-		);
-	}
-	const attestation = z
-		.strictObject({
-			scope: z.literal("github-oidc"),
-			sha256: z.string().min(1),
-			runId: z.string().min(1),
-			runAttempt: z.string().min(1),
-			commitSha: z.string().min(1),
-			oidcToken: z.string().min(1),
-		})
-		.safeParse(attestationJson);
-	if (!attestation.success) {
-		return failure(
-			"is not a valid bundle attestation; run pnpm run agent-plugin:build in this CI job",
+			"is a legacy bearer-token record, not GitHub artifact provenance; remove it and run the isolated attestation job",
+			BUNDLE_ATTESTATION,
 		);
 	}
 	const runId = process.env.GITHUB_RUN_ID?.trim();
@@ -1167,45 +1201,11 @@ async function bundleAttestationIssues(
 			"bundle attestation is only trusted in a GitHub Actions job with GITHUB_SHA; rebuild in CI before agent-plugin:check",
 		);
 	}
-	if (attestation.data.commitSha !== commitSha) {
-		return failure(
-			"bundle attestation commitSha does not match this workflow checkout; rebuild with pnpm run agent-plugin:build in this job",
-		);
-	}
-	if (attestation.data.runId !== runId) {
-		return failure(
-			"bundle attestation runId does not match this workflow run; rebuild with pnpm run agent-plugin:build in this job",
-		);
-	}
-	if (attestation.data.runAttempt !== runAttempt) {
-		return failure(
-			"bundle attestation runAttempt does not match this workflow attempt; rebuild with pnpm run agent-plugin:build in this job",
-		);
-	}
-	const sha256 = createHash("sha256")
-		.update(readFileSync(bundlePath))
-		.digest("hex");
-	if (attestation.data.sha256 !== sha256) {
-		return failure(
-			"sha256 does not match bin/hobo-mcp.mjs; rebuild with pnpm run agent-plugin:build in this CI job",
-		);
-	}
-	let identity: AgentPluginAttestationIdentity;
 	try {
-		identity = await verifyAttestation(attestation.data.oidcToken);
+		await verifyAttestation({ bundlePath, runId, runAttempt, commitSha });
 	} catch {
 		return failure(
-			"GitHub OIDC identity could not be verified against GitHub's keys; rebuild with id-token: write in this job",
-		);
-	}
-	if (
-		identity.repository.toLowerCase() !== "hobo-labs/hobo" ||
-		identity.runId !== runId ||
-		identity.runAttempt !== runAttempt ||
-		identity.commitSha !== commitSha
-	) {
-		return failure(
-			"bundle attestation GitHub OIDC identity does not match this repository, workflow run, attempt, and checkout; rebuild in this job",
+			"has no verified GitHub artifact provenance binding its digest to this repository, workflow, commit, run, and attempt; run the isolated agent-plugin-provenance job",
 		);
 	}
 	return [];
