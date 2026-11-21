@@ -2,8 +2,6 @@ import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
 import type { GateDecision } from "./planes.js";
 import { REJECTION_PLANES } from "./types.js";
 
-// The caller has already bounded and detached this tree. Informational fields
-// still have to be valid JSON so malformed decisions are not accepted.
 function jsonValue<T>(value: T): boolean {
 	if (value === null || value === true || value === false) return true;
 	if (isJsonString(value) || isJsonNumber(value)) return true;
@@ -11,7 +9,6 @@ function jsonValue<T>(value: T): boolean {
 	return isJsonObject(value) && Object.values(value).every(jsonValue);
 }
 
-/** Verify the complete gate value, not just its effect. */
 export function validIacPolicyGate(gate: GateDecision): boolean {
 	return (
 		isJsonObject(gate) &&

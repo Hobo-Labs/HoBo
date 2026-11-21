@@ -6,7 +6,17 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { must } from "@hobo/core/total-access";
-import { isJsonBoolean, type JsonObject } from "./json.js";
+import {
+	bucket,
+	type ExperimentFlagAllocation,
+	experimentAllocation,
+	experimentRampBucket,
+	pickExperimentVariant,
+	sameExperimentAllocation,
+} from "./experiment-allocation.js";
+import { isJsonBoolean, type JsonObject, sameJson } from "./json.js";
+
+export { bucket } from "./experiment-allocation.js";
 
 // public-contract: flag event schema version.
 export const FLAG_EVENT_SCHEMA_VERSION = "hobo.flag-events/v1" as const;
@@ -61,12 +71,14 @@ export type FlagDefinition = Readonly<{
 	defaultValue: boolean;
 	/** 0–100 progressive ramp for boolean treatment (OpenFeature percentage). */
 	percentage: number;
+	suspendedPercentage?: number;
 	enabled: boolean;
 	state: FlagState;
 	/** Named variants (OpenFeature). Values are the resolved flag values. */
 	variants: Readonly<Record<string, FlagValue>>;
 	defaultVariant: string;
 	targeting?: FlagTargeting;
+	experimentAllocation?: ExperimentFlagAllocation;
 	/** Fast-path kill: always return defaultVariant and bump invalidation. */
 	killSwitch: boolean;
 	/** Optional migration binding (continuous identity). */
@@ -93,6 +105,7 @@ export type FlagEvaluation = Readonly<{
 	rulesetSeq: number;
 	/** OpenFeature-compatible evaluation context hash (no PII). */
 	contextDigest: string;
+	contextBinding?: string;
 }>;
 
 export type FlagEvalContext = Readonly<{
@@ -110,13 +123,58 @@ export type DetailEvaluation<T = FlagValue> = Readonly<{
 	reason: FlagEvaluation["reason"];
 	rulesetSeq: number;
 	contextDigest: string;
+	contextBinding?: string;
 }>;
+
+export interface FlagDefinitionInput {
+	readonly key: string;
+	readonly defaultValue?: boolean;
+	readonly percentage?: number;
+	readonly suspendedPercentage?: number;
+	readonly enabled?: boolean;
+	readonly state?: FlagState;
+	readonly variants?: Readonly<Record<string, FlagValue>>;
+	readonly defaultVariant?: string;
+	readonly targeting?: FlagTargeting;
+	readonly experimentAllocation?: ExperimentFlagAllocation;
+	readonly killSwitch?: boolean;
+	readonly migrationId?: string;
+	readonly autoAbortOnDualFailure?: boolean;
+	readonly metadata?: Readonly<Record<string, string>>;
+}
+
+/** The shared flag boundary used by local services and replacement adapters. */
+export interface FeatureFlagPort {
+	readonly experimentAllocationVersion?: 1;
+	applyExperimentAllocation?(input: FlagDefinitionInput): FlagDefinition;
+	readonly rulesetSeq: number;
+	list(): readonly FlagDefinition[];
+	get(key: string): FlagDefinition | undefined;
+	define(input: FlagDefinitionInput): FlagDefinition;
+	loadDefinitions(
+		defs: readonly FlagDefinitionInput[],
+	): readonly FlagDefinition[];
+	evaluateBoolean(
+		key: string,
+		context: FlagEvalContext,
+		defaultValue?: boolean,
+	): FlagEvaluation;
+	evaluate(
+		key: string,
+		context: FlagEvalContext,
+		defaultValue?: FlagValue,
+	): DetailEvaluation;
+	activateKillSwitch(key: string, actor?: string): FlagDefinition | undefined;
+	clearKillSwitch(key: string): FlagDefinition | undefined;
+	archive(key: string): void;
+}
 
 /**
  * In-process deterministic flag store.
  * Continuous identity migration and app flags share this store (ADR-0132 / ADR-0044).
  */
-export class FeatureFlagStore {
+export class FeatureFlagStore implements FeatureFlagPort {
+	readonly experimentAllocationVersion = 1 as const;
 	private seq = 0;
 	private invalidationSeq = 0;
 	private readonly flags = new Map<string, FlagDefinition>();
@@ -157,27 +215,18 @@ export class FeatureFlagStore {
 		return this.flags.get(key);
 	}
 
+	applyExperimentAllocation(input: FlagDefinitionInput): FlagDefinition {
+		if (!input.experimentAllocation)
+			throw new TypeError("experiment allocation is required");
+		return this.define(input);
+	}
+
 	/**
 	 * Define or replace a flag (emits flag.Defined or flag.Changed).
 	 * Backward compatible with migration-harness fields.
 	 */
-	define(input: {
-		readonly key: string;
-		readonly defaultValue?: boolean;
-		readonly percentage?: number;
-		readonly enabled?: boolean;
-		readonly state?: FlagState;
-		readonly variants?: Readonly<Record<string, FlagValue>>;
-		readonly defaultVariant?: string;
-		readonly targeting?: FlagTargeting;
-		readonly killSwitch?: boolean;
-		readonly migrationId?: string;
-		readonly autoAbortOnDualFailure?: boolean;
-		readonly metadata?: Readonly<Record<string, string>>;
-	}): FlagDefinition {
+	define(input: FlagDefinitionInput): FlagDefinition {
 		const existing = this.flags.get(input.key);
-		const t = this.now();
-		const nextSeq = this.nextSeq();
 		const enabled =
 			input.enabled ??
 			(input.state !== undefined
@@ -202,13 +251,77 @@ export class FeatureFlagStore {
 			input.defaultVariant ??
 			existing?.defaultVariant ??
 			(defaultValue ? "treatment" : "control");
+		const allocation =
+			input.experimentAllocation === undefined
+				? existing?.experimentAllocation
+				: experimentAllocation(
+						input.experimentAllocation.name,
+						input.experimentAllocation.variants,
+						input.experimentAllocation.weights,
+						input.experimentAllocation.strategy,
+					);
+		if (
+			allocation?.variants.some((variant) => !Object.hasOwn(variants, variant))
+		)
+			throw new TypeError(
+				"experiment allocation references a missing flag variant",
+			);
+		if (
+			existing?.experimentAllocation &&
+			allocation &&
+			!sameExperimentAllocation(existing.experimentAllocation, allocation)
+		)
+			throw new TypeError(
+				"an attached experiment allocation cannot be changed",
+			);
+		if (
+			existing?.experimentAllocation &&
+			input.targeting !== undefined &&
+			!sameJson(existing.targeting?.fractional, input.targeting.fractional)
+		)
+			throw new TypeError(
+				"an attached experiment fractional allocation cannot be changed",
+			);
+		if (
+			existing?.experimentAllocation &&
+			input.targeting !== undefined &&
+			existing.targeting?.stickyKey !== input.targeting.stickyKey
+		)
+			throw new TypeError(
+				"an attached experiment sticky key cannot be changed",
+			);
+		const t = this.now();
+		const nextSeq = this.nextSeq();
+		const killed = input.killSwitch ?? existing?.killSwitch ?? false;
+		const requestedPercentage =
+			input.percentage === undefined
+				? undefined
+				: clampPercent(input.percentage);
+		const suspendedPercentage = killed
+			? clampPercent(
+					input.suspendedPercentage ??
+						requestedPercentage ??
+						(existing?.killSwitch
+							? existing.suspendedPercentage
+							: existing?.percentage) ??
+						(enabled ? 100 : 0),
+				)
+			: undefined;
+		const percentage = killed
+			? 0
+			: (requestedPercentage ??
+				(existing?.killSwitch
+					? (existing.suspendedPercentage ?? existing.percentage)
+					: existing?.percentage) ??
+				(enabled ? 100 : 0));
 
 		const def: FlagDefinition = Object.freeze({
 			key: input.key,
 			defaultValue,
-			percentage: clampPercent(
-				input.percentage ?? existing?.percentage ?? (enabled ? 100 : 0),
-			),
+			percentage,
+			...(suspendedPercentage === undefined
+				? undefined
+				: { suspendedPercentage }),
 			enabled: state === "ENABLED" && enabled,
 			state,
 			variants: Object.freeze({ ...variants }),
@@ -218,7 +331,10 @@ export class FeatureFlagStore {
 				: existing?.targeting !== undefined
 					? { targeting: existing.targeting }
 					: undefined),
-			killSwitch: input.killSwitch ?? existing?.killSwitch ?? false,
+			...(allocation === undefined
+				? undefined
+				: { experimentAllocation: allocation }),
+			killSwitch: killed,
 			...(input.migrationId !== undefined
 				? { migrationId: input.migrationId }
 				: existing?.migrationId !== undefined
@@ -248,10 +364,20 @@ export class FeatureFlagStore {
 					key: def.key,
 					defaultValue: def.defaultValue,
 					percentage: def.percentage,
+					...(def.suspendedPercentage === undefined
+						? undefined
+						: { suspendedPercentage: def.suspendedPercentage }),
 					enabled: def.enabled,
 					state: def.state,
 					defaultVariant: def.defaultVariant,
 					killSwitch: def.killSwitch,
+					...(def.experimentAllocation === undefined
+						? undefined
+						: {
+								experimentAllocation: eventExperimentAllocation(
+									def.experimentAllocation,
+								),
+							}),
 					...(def.migrationId !== undefined
 						? { migrationId: def.migrationId }
 						: undefined),
@@ -289,6 +415,9 @@ export class FeatureFlagStore {
 			variant: detail.variant,
 			rulesetSeq: detail.rulesetSeq,
 			contextDigest: detail.contextDigest,
+			...(detail.contextBinding === undefined
+				? undefined
+				: { contextBinding: detail.contextBinding }),
 		});
 		return evaluation;
 	}
@@ -301,6 +430,7 @@ export class FeatureFlagStore {
 	): DetailEvaluation {
 		const def = this.flags.get(key);
 		const contextDigest = digestContext(context);
+		const contextBinding = flagContextBinding(context);
 
 		if (!def || def.state === "DISABLED" || !def.enabled) {
 			const evaluation: DetailEvaluation = Object.freeze({
@@ -314,6 +444,7 @@ export class FeatureFlagStore {
 				reason: def ? ("disabled" as const) : ("fail-safe-default" as const),
 				rulesetSeq: def?.seq ?? 0,
 				contextDigest,
+				contextBinding,
 			});
 			this.sampleEval(evaluation);
 			return evaluation;
@@ -334,6 +465,7 @@ export class FeatureFlagStore {
 				reason: "fail-safe-default",
 				rulesetSeq: def.seq,
 				contextDigest,
+				contextBinding,
 			});
 			this.sampleEval(evaluation);
 			return evaluation;
@@ -349,6 +481,7 @@ export class FeatureFlagStore {
 				reason: "kill-switch",
 				rulesetSeq: this.rulesetSeq,
 				contextDigest,
+				contextBinding,
 			});
 			this.sampleEval(evaluation);
 			return evaluation;
@@ -367,11 +500,51 @@ export class FeatureFlagStore {
 						reason: "targeting-match",
 						rulesetSeq: def.seq,
 						contextDigest,
+						contextBinding,
 					});
 					this.sampleEval(evaluation);
 					return evaluation;
 				}
 			}
+		}
+
+		if (def.experimentAllocation !== undefined) {
+			const gateKey =
+				def.experimentAllocation.strategy === "fractional"
+					? experimentSubjectKey(def, context)
+					: stickyKeyFromContext(
+							context,
+							def.targeting?.stickyKey
+								? [def.targeting.stickyKey]
+								: ["targetingKey"],
+							def.targeting?.stickyKey,
+						);
+			const gate =
+				def.experimentAllocation.strategy === "fractional"
+					? experimentRampBucket(def.experimentAllocation, gateKey)
+					: bucket(gateKey);
+			const inCohort = gate < def.percentage;
+			const variant = inCohort
+				? pickExperimentVariant(
+						def.experimentAllocation,
+						experimentSubjectKey(def, context),
+					)
+				: def.variants.control !== undefined
+					? "control"
+					: def.variants.off !== undefined
+						? "off"
+						: def.defaultVariant;
+			const evaluation: DetailEvaluation = Object.freeze({
+				flagKey: key,
+				value: def.variants[variant] ?? def.defaultValue,
+				variant,
+				reason: inCohort ? "split" : "default",
+				rulesetSeq: def.seq,
+				contextDigest,
+				contextBinding,
+			});
+			this.sampleEval(evaluation);
+			return evaluation;
 		}
 
 		// Fractional multi-variant split
@@ -393,6 +566,7 @@ export class FeatureFlagStore {
 				reason: "split",
 				rulesetSeq: def.seq,
 				contextDigest,
+				contextBinding,
 			});
 			this.sampleEval(evaluation);
 			return evaluation;
@@ -420,6 +594,7 @@ export class FeatureFlagStore {
 				reason: "targeting-match",
 				rulesetSeq: def.seq,
 				contextDigest,
+				contextBinding,
 			});
 			this.sampleEval(evaluation);
 			return evaluation;
@@ -439,6 +614,7 @@ export class FeatureFlagStore {
 			reason: "default",
 			rulesetSeq: def.seq,
 			contextDigest,
+			contextBinding,
 		});
 		this.sampleEval(evaluation);
 		return evaluation;
@@ -458,9 +634,8 @@ export class FeatureFlagStore {
 		const def = this.define({
 			key,
 			killSwitch: true,
-			enabled: true,
-			state: "ENABLED",
-			percentage: 0,
+			enabled: existing.enabled,
+			state: existing.state,
 			defaultVariant: existing.defaultVariant,
 			variants: existing.variants,
 			defaultValue: existing.defaultValue,
@@ -492,7 +667,6 @@ export class FeatureFlagStore {
 		return this.define({
 			key,
 			killSwitch: false,
-			percentage: existing.percentage || 100,
 			enabled: existing.enabled,
 			state: existing.state,
 			defaultVariant: existing.defaultVariant,
@@ -553,7 +727,20 @@ export class FeatureFlagStore {
 	}
 }
 
-export type FlagDefinitionInput = Parameters<FeatureFlagStore["define"]>[0];
+function eventExperimentAllocation(
+	allocation: ExperimentFlagAllocation,
+): JsonObject {
+	const variants = [...allocation.variants];
+	const weights = { ...allocation.weights };
+	Object.freeze(variants);
+	Object.freeze(weights);
+	return Object.freeze({
+		name: allocation.name,
+		variants,
+		weights,
+		strategy: allocation.strategy,
+	});
+}
 
 function freezeTargeting(t: FlagTargeting): FlagTargeting {
 	return Object.freeze({
@@ -581,12 +768,19 @@ function clampPercent(n: number): number {
 	return Math.max(0, Math.min(100, Math.floor(n)));
 }
 
-export function bucket(targetingKey: string): number {
-	let h = 0;
-	for (let i = 0; i < targetingKey.length; i++) {
-		h = (h * 31 + targetingKey.charCodeAt(i)) >>> 0;
-	}
-	return h % 100;
+export function flagContextBinding(context: FlagEvalContext): string {
+	const attributes = Object.entries(context.attributes ?? {}).sort(
+		([left], [right]) => (left < right ? -1 : left > right ? 1 : 0),
+	);
+	return `sha256:${createHash("sha256")
+		.update(
+			JSON.stringify([
+				context.tenant ?? null,
+				context.targetingKey,
+				attributes,
+			]),
+		)
+		.digest("hex")}`;
 }
 
 function digestContext(context: FlagEvalContext): string {
@@ -617,6 +811,23 @@ function stickyKeyFromContext(
 		if (attrs[leaf]) return must(attrs[leaf]);
 	}
 	return context.targetingKey;
+}
+
+export function experimentSubjectKey(
+	definition: FlagDefinition,
+	context: FlagEvalContext,
+): string {
+	const fractional = definition.targeting?.fractional;
+	const stickyKey = definition.targeting?.stickyKey;
+	const subject = stickyKeyFromContext(
+		context,
+		fractional?.key ?? (stickyKey ? [stickyKey] : ["targetingKey"]),
+		stickyKey,
+	);
+	return definition.experimentAllocation?.strategy === "fractional" ||
+		context.tenant === undefined
+		? subject
+		: JSON.stringify([context.tenant, subject]);
 }
 
 /**

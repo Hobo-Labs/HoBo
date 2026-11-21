@@ -48,7 +48,6 @@ interface ResourceReconciliationClaimBase {
 	readonly outcome: ReconciliationOutcome;
 }
 
-/** Destroy recovery names the exact durable generation whose effects are verified. */
 export type ResourceReconciliationClaim = ResourceReconciliationClaimBase &
 	(
 		| { readonly operation: "apply"; readonly operationGeneration?: never }
@@ -60,13 +59,12 @@ export interface ResourceReconciliationVerification {
 	readonly actor: PrincipalRef;
 	readonly failure: EventEnvelope;
 	readonly baseline: ReconciliationBaseline;
-	/** The exact application whose result is being verified, when available. */
+
 	readonly provisioning?: EventEnvelope;
-	/** The exact durable destroy start, required for destroy recovery. */
+
 	readonly destroying?: EventEnvelope;
 }
 
-/** Both verifiers are independently trusted host ports; neither executes recovery. */
 export interface ResourceReconciliationDeps {
 	readonly store: EventStore;
 	readonly actorHost: ActorHost;
@@ -340,7 +338,6 @@ function restoredState(
 			: "failed";
 }
 
-/** Locate the exact unfinished destroy that preceded the named failure. */
 function destroyStartForFailure(
 	events: readonly EventEnvelope[],
 	claim: ResourceReconciliationClaim,
@@ -508,7 +505,6 @@ function recoveryRecord(
 	return record;
 }
 
-/** Verify an exact unresolved operation before atomically recording its recovery. */
 export async function resolveResourceReconciliation(
 	deps: ResourceReconciliationDeps,
 	input: ResourceReconciliationClaim & { readonly actor: PrincipalRef },

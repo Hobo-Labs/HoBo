@@ -325,6 +325,10 @@ package data_models
 	periodActuals: [...#ActualCharge]
 	completeness: "complete" | "partial"
 	observations: [...#StateObservation]
+	_agreementTenants: [for a in agreements {a.tenantId & tenantId}]
+	_allowanceTenants: [for a in allowances {a.grant.tenantId & tenantId}]
+	_creditTenants: [for c in credits {c.grant.tenantId & tenantId}]
+	_commitmentTenants: [for c in commitments {c.commitment.tenantId & tenantId}]
 }
 
 #UsageMeasurement: {
@@ -353,7 +357,7 @@ package data_models
 }
 
 #QuoteScenario: {
-	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel"
+	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel" | "destroy"
 	at:                 #UtcTimestamp
 	horizon:            #UtcTimestamp
 	pricingCatalogHash: #Digest
@@ -363,6 +367,10 @@ package data_models
 	candidate: [...#WorkloadDelta]
 	sourceProviderAgreementIds: [...string & !=""]
 	options:            #QuoteOptions
+	destroyCancelsAgreement?: bool
+	if action == "destroy" {
+		destroyCancelsAgreement: bool
+	}
 	pricingCatalogHash: catalog.catalogHash
 }
 

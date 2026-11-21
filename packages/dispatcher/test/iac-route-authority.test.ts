@@ -34,7 +34,7 @@ function connect(path?: string) {
 	if (directory) directories.push(directory);
 	if (path === undefined && directory === undefined)
 		throw new Error("directory missing");
-	// SAFETY: the preceding check established a directory when path is absent.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the preceding check established a directory when path is absent.
 	const databasePath = path ?? join(directory as string, "routes.sqlite");
 	const authority = createSqliteIacRouteAuthority({
 		path: databasePath,

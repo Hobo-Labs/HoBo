@@ -8,7 +8,9 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
-/** Names used as LocalState directories and BucketState prefix segments. */
+const hasOwnDescriptor = Object.hasOwn;
+const isProxy = types.isProxy;
+
 export function safeAlchemyStateSegment(value: string): boolean {
 	return (
 		value.length > 0 &&
@@ -19,7 +21,6 @@ export function safeAlchemyStateSegment(value: string): boolean {
 	);
 }
 
-/** Canonical registry key for hosts assigning distinct physical stack/stage scopes. */
 export function alchemyStateScopeKey(stack: string, stage: string): string {
 	if (!safeAlchemyStateSegment(stack) || !safeAlchemyStateSegment(stage))
 		throw new Error(
@@ -28,7 +29,6 @@ export function alchemyStateScopeKey(stack: string, stage: string): string {
 	return `${stack.toLowerCase()}/${stage.toLowerCase()}`;
 }
 
-/** Only round-tripping identities can be used with Alchemy's file/object stores. */
 export function safeAlchemyFqn(value: string): boolean {
 	return (
 		value.length > 0 &&
@@ -39,15 +39,14 @@ export function safeAlchemyFqn(value: string): boolean {
 	);
 }
 
-/** Snapshot a bounded dense array without invoking accessor-backed elements. */
 /* oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: state-store data crosses an external boundary. */
 function stateArray(value: unknown): unknown[] | undefined {
 	try {
-		if (types.isProxy(value) || !Array.isArray(value)) return undefined;
+		if (isProxy(value) || !Array.isArray(value)) return undefined;
 		const declaredLength = Object.getOwnPropertyDescriptor(value, "length");
 		if (
 			declaredLength === undefined ||
-			!("value" in declaredLength) ||
+			!hasOwnDescriptor(declaredLength, "value") ||
 			!Number.isSafeInteger(declaredLength.value) ||
 			declaredLength.value < 0 ||
 			declaredLength.value > 1024
@@ -64,8 +63,12 @@ function stateArray(value: unknown): unknown[] | undefined {
 			return undefined;
 		const snapshot: unknown[] = [];
 		for (let index = 0; index < length; index++) {
-			const element = properties[String(index)];
-			if (element === undefined || !("value" in element)) return undefined;
+			const key = String(index);
+			const element = hasOwnDescriptor(properties, key)
+				? properties[key]
+				: undefined;
+			if (element === undefined || !hasOwnDescriptor(element, "value"))
+				return undefined;
 			snapshot.push(element.value);
 		}
 		return snapshot;
@@ -85,11 +88,10 @@ function stateFqns(value: unknown): string[] | undefined {
 		)
 	)
 		return undefined;
-	// SAFETY: the predicate above establishes that every element is a bounded FQN.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the predicate above establishes that every element is a bounded FQN.
 	return snapshot as string[];
 }
 
-/** Guard case-insensitive stores as well as Alchemy's FQN encoding. */
 export function uniqueAlchemyFqns(values: readonly string[]): boolean {
 	const snapshot = stateFqns(values);
 	return (
@@ -99,10 +101,6 @@ export function uniqueAlchemyFqns(values: readonly string[]): boolean {
 	);
 }
 
-/**
- * Capture every identity-bearing row and downstream list. Other fields retain
- * their provider values; the host fences their mutation during execution.
- */
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-unknown-returns -- SAFETY: persisted state is an external boundary; bounded data descriptors are inspected before copying. */
 function snapshotStateIdentity(
 	value: unknown,
@@ -114,7 +112,7 @@ function snapshotStateIdentity(
 			depth >= 64 ||
 			typeof current !== "object" ||
 			current === null ||
-			types.isProxy(current) ||
+			isProxy(current) ||
 			Array.isArray(current) ||
 			seen.has(current)
 		)
@@ -126,33 +124,45 @@ function snapshotStateIdentity(
 		if (keys.length > 256 || keys.some((key) => typeof key !== "string"))
 			return undefined;
 		const properties = Object.getOwnPropertyDescriptors(current);
-		const fqn = properties.fqn;
+		const fqn = hasOwnDescriptor(properties, "fqn")
+			? properties.fqn
+			: undefined;
 		if (
 			fqn === undefined ||
-			!("value" in fqn) ||
+			!hasOwnDescriptor(fqn, "value") ||
 			typeof fqn.value !== "string" ||
 			!safeAlchemyFqn(fqn.value) ||
 			(depth === 0 && fqn.value !== expected)
 		)
 			return undefined;
-		const downstreamProperty = properties.downstream;
-		if (downstreamProperty === undefined || !("value" in downstreamProperty))
+		const downstreamProperty = hasOwnDescriptor(properties, "downstream")
+			? properties.downstream
+			: undefined;
+		if (
+			downstreamProperty === undefined ||
+			!hasOwnDescriptor(downstreamProperty, "value")
+		)
 			return undefined;
 		const downstream = stateFqns(downstreamProperty.value);
 		if (downstream === undefined) return undefined;
-		const status = properties.status;
-		if (status !== undefined && !("value" in status)) return undefined;
-		const old = properties.old;
+		const status = hasOwnDescriptor(properties, "status")
+			? properties.status
+			: undefined;
+		if (status !== undefined && !hasOwnDescriptor(status, "value"))
+			return undefined;
+		const old = hasOwnDescriptor(properties, "old")
+			? properties.old
+			: undefined;
 		let oldSnapshot: object | undefined;
 		if (old !== undefined) {
-			if (!("value" in old)) return undefined;
-			// Alchemy's updating checkpoint permits an old values-only snapshot.
+			if (!hasOwnDescriptor(old, "value")) return undefined;
+
 			const oldValue = old.value;
 			if (
 				status?.value === "updating" &&
 				typeof oldValue === "object" &&
 				oldValue !== null &&
-				!types.isProxy(oldValue) &&
+				!isProxy(oldValue) &&
 				!Array.isArray(oldValue) &&
 				Object.getOwnPropertyDescriptor(oldValue, "fqn") === undefined
 			) {
@@ -168,7 +178,7 @@ function snapshotStateIdentity(
 				const descriptors = Object.getOwnPropertyDescriptors(oldValue);
 				if (
 					Object.values(descriptors).some(
-						(descriptor) => !("value" in descriptor),
+						(descriptor) => !hasOwnDescriptor(descriptor, "value"),
 					)
 				)
 					return undefined;
@@ -183,8 +193,11 @@ function snapshotStateIdentity(
 		const copied: PropertyDescriptorMap = Object.create(null);
 		for (const key of keys) {
 			if (typeof key !== "string") return undefined;
-			const property = properties[key];
-			if (property === undefined || !("value" in property)) return undefined;
+			const property = hasOwnDescriptor(properties, key)
+				? properties[key]
+				: undefined;
+			if (property === undefined || !hasOwnDescriptor(property, "value"))
+				return undefined;
 			copied[key] = {
 				...property,
 				value:
@@ -206,7 +219,6 @@ function snapshotStateIdentity(
 	}
 }
 
-/** Check persisted identity, including bounded replacement and update history. */
 export function safeAlchemyState(value: unknown, expected: string): boolean {
 	return snapshotStateIdentity(value, expected) !== undefined;
 }
@@ -214,26 +226,23 @@ export function safeAlchemyState(value: unknown, expected: string): boolean {
 
 /* oxlint-disable-next-line anti-slop/no-unknown-parameters -- SAFETY: stack output is external persisted data. */
 function isLegacyOutputState(output: unknown): boolean {
+	/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: stack output is external persisted data. */
+	if (typeof output !== "object" || output === null) return false;
+	if (isProxy(output)) return true;
+	const field = Object.getOwnPropertyDescriptor(output, "fqn");
 	return (
-		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: stack output is external persisted data. */
-		typeof output === "object" &&
-		output !== null &&
-		(types.isProxy(output) ||
-			Object.getOwnPropertyDescriptor(output, "fqn")?.value ===
-				"__stack_output__")
+		field !== undefined &&
+		(!hasOwnDescriptor(field, "value") || field.value === "__stack_output__")
 	);
 }
 
-/** Read every live row while the plan still owns its state-store scope. */
 export function verifyAlchemyStateIdentities(
 	plan: StackPlan,
 ): Effect.Effect<boolean> {
 	return Effect.gen(function* () {
 		const state = yield* Context.get(plan.context, State);
 		const scope = { stack: plan.stack.name, stage: plan.stack.stage };
-		// The file and bucket stores omit their stack-output bookkeeping key
-		// from list(). A legacy resource stored under that same key must not
-		// disappear from the scan and be mistaken for an empty history.
+
 		const output = yield* state.getOutput(scope);
 		if (isLegacyOutputState(output)) return false;
 		const keys = stateFqns(yield* state.list(scope));
@@ -257,10 +266,12 @@ function stateProperty(
 	name: string,
 ): PropertyDescriptor | undefined {
 	try {
-		if (typeof input !== "object" || input === null || types.isProxy(input))
+		if (typeof input !== "object" || input === null || isProxy(input))
 			return undefined;
 		const property = Object.getOwnPropertyDescriptor(input, name);
-		return property !== undefined && "value" in property ? property : undefined;
+		return property !== undefined && hasOwnDescriptor(property, "value")
+			? property
+			: undefined;
 	} catch {
 		return undefined;
 	}
@@ -274,7 +285,6 @@ function scopedRequest(input: unknown, scope: StateScope): boolean {
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
 
-/** Guard the compiled engine's state service; stack evaluation requires a host sandbox. */
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: provider requests cross the state boundary and FQNs must be checked before use. */
 export function guardAlchemyState(
 	state: StateService,
@@ -297,7 +307,7 @@ export function guardAlchemyState(
 	const guarded: StateService = {
 		id: state.id,
 		getVersion: () => state.getVersion(),
-		// Account-wide discovery and migration are outside an authorized stage.
+
 		listStacks: () => Effect.fail(failure()),
 		listStages: () => Effect.fail(failure()),
 		list: (request: Parameters<StateService["list"]>[0]) =>
@@ -329,7 +339,7 @@ export function guardAlchemyState(
 					if (row === undefined) return Effect.succeed(undefined);
 					const captured = snapshotStateIdentity(row, fqn);
 					if (captured === undefined) return Effect.fail(failure());
-					// SAFETY: the snapshot preserves the stored typed row's data fields and copies its identity.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the snapshot preserves the stored typed row's data fields and copies its identity.
 					return Effect.succeed(captured as typeof row);
 				}),
 			);
@@ -351,7 +361,7 @@ export function guardAlchemyState(
 				return Effect.fail(failure());
 			const captured = snapshotStateIdentity(value.value, fqn);
 			if (captured === undefined) return Effect.fail(failure());
-			// SAFETY: the snapshot preserves the original typed row's own data fields and copies every verified identity field.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the snapshot preserves the original typed row's own data fields and copies every verified identity field.
 			return state.set({ ...scope, fqn, value: captured as V });
 		},
 		delete: (request: Parameters<StateService["delete"]>[0]) => {
@@ -379,7 +389,7 @@ export function guardAlchemyState(
 									return Effect.fail(failure());
 								const captured = snapshotStateIdentity(row, fqn.value);
 								if (captured === undefined) return Effect.fail(failure());
-								// SAFETY: the snapshot preserves the backend's typed replacement row's fields and verified identity.
+								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the snapshot preserves the backend's typed replacement row's fields and verified identity.
 								capturedRows.push(captured as (typeof rows)[number]);
 							}
 							/* oxlint-enable anti-slop/no-runtime-typeof */
@@ -414,7 +424,6 @@ export function guardAlchemyState(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/** Preserve the store's own lifetime/lease while adding a guard in each stack build. */
 export function guardAlchemyStack<Output, Requirements>(
 	stack: Stack.ConfiguredStack<Output, Requirements>,
 	scope: StateScope,

@@ -1,4 +1,11 @@
+import { clone, create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
+import {
+	ChargeComponentSchema,
+	ProviderAgreementSchema,
+	ProviderProductSchema,
+	RateCardSchema,
+} from "../src/_generated/pricing_pb.js";
 import {
 	assessTargetPricing,
 	createTargetPricingInventory,
@@ -10,6 +17,7 @@ import {
 } from "../src/target-pricing.js";
 import {
 	creditState,
+	fixedCharge,
 	makeScenario,
 	perUnitCharge,
 	rehashScenario,
@@ -54,11 +62,155 @@ function modeled() {
 	});
 }
 
+function fixedModel(price = "12") {
+	const fixed = makeScenario({
+		charges: [fixedCharge("subscription", price)],
+		meters: [],
+		candidate: [workload("agreement-a", [])],
+	});
+	const charge = fixed.catalog?.rateCards[0]?.charges[0];
+	const candidate = fixed.candidate[0];
+	const agreement = fixed.state?.agreements[0];
+	if (
+		charge?.variant.case !== "fixed" ||
+		candidate === undefined ||
+		agreement === undefined
+	)
+		throw new Error("fixed-price fixture is incomplete");
+	charge.variant.value.quantityDimension = "instance";
+	candidate.quantities.instance = "1";
+	agreement.quantities.instance = "0";
+	rehashScenario(fixed);
+	return fixed;
+}
+
+function fixedTargetModel(fixed: ReturnType<typeof fixedModel>) {
+	return targetPricingModel({
+		modelId: "fixed-terms",
+		revision: "1",
+		planDigest: digest,
+		scenario: fixed,
+		bindings: [{ resourceId: "stack/compute", candidateIndex: 0 }],
+	});
+}
+
 describe("whole-target pricing contract", () => {
+	it.each([
+		"12",
+		"0",
+	])("quotes an explicitly quantified fixed-only target at %s", (price) => {
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(fixedModel(price))),
+		).toMatchObject({
+			ok: true,
+			quote: { incremental: { billed: { decimal: price, currency: "USD" } } },
+		});
+	});
+
+	it.each([
+		"candidate",
+		"agreement",
+	] as const)("rejects a fixed target with no explicit %s quantity", (missing) => {
+		const fixed = fixedModel();
+		const quantities =
+			missing === "candidate"
+				? fixed.candidate[0]?.quantities
+				: fixed.state?.agreements[0]?.quantities;
+		if (quantities === undefined) throw new Error("fixture missing");
+		delete quantities.instance;
+		rehashScenario(fixed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(fixed)),
+		).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+	});
+
+	it("rejects a fixed target whose charge does not match the workload", () => {
+		const fixed = fixedModel();
+		const charge = fixed.catalog?.rateCards[0]?.charges[0];
+		const candidate = fixed.candidate[0];
+		if (charge?.base === undefined || candidate === undefined)
+			throw new Error("fixture missing");
+		charge.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		rehashScenario(fixed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(fixed)),
+		).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+	});
+
+	it("does not require quantities for an unrelated fixed charge", () => {
+		const metered = scenario();
+		const fixed = fixedModel().catalog?.rateCards[0]?.charges[0];
+		const rateCard = metered.catalog?.rateCards[0];
+		const candidate = metered.candidate[0];
+		if (
+			fixed?.base === undefined ||
+			rateCard === undefined ||
+			candidate === undefined
+		)
+			throw new Error("fixture missing");
+		fixed.base.selectors.region = "west";
+		candidate.attributes.region = "east";
+		metered.baseline.push(structuredClone(candidate));
+		rateCard.charges.push(fixed);
+		rehashScenario(metered);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(metered)),
+		).toMatchObject({
+			ok: true,
+			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
+		});
+	});
+	it("does not rate a destroy operation as a placement", () => {
+		const target = inventory();
+		target.operation = "destroy";
+		expect(quoteTargetPricing(target, modeled())).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_UNSUPPORTED",
+		});
+		expect(
+			quoteTargetPricing(target, targetPricingUnavailable("no model")),
+		).toMatchObject({ ok: false, code: "PRICING_MODEL_UNAVAILABLE" });
+	});
+
+	it("rates a destroy only with its own non-canceling model", () => {
+		const target = inventory();
+		target.operation = "destroy";
+		const destroyScenario = Object.assign(scenario(), {
+			action: "destroy",
+			destroyCancelsAgreement: false,
+		});
+		const destroyModel = targetPricingModel({
+			modelId: "destroy-terms",
+			revision: "1",
+			planDigest: digest,
+			scenario: destroyScenario,
+			bindings: [{ resourceId: "stack/compute", candidateIndex: 0 }],
+		});
+		expect(quoteTargetPricing(target, destroyModel)).toMatchObject({
+			ok: true,
+			modelId: "destroy-terms",
+			quote: { incremental: { billed: { decimal: "1", currency: "USD" } } },
+		});
+		target.operation = "deploy";
+		expect(quoteTargetPricing(target, destroyModel)).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_SCOPE_MISMATCH",
+		});
+	});
+
 	it("discloses unknown pricing for each provider without fabricating costs", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -103,8 +255,10 @@ describe("whole-target pricing contract", () => {
 
 	it("identifies missing and ambiguous bindings without claiming a partial provider quote", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -175,8 +329,10 @@ describe("whole-target pricing contract", () => {
 			candidateIndex: 1,
 		});
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -240,8 +396,10 @@ describe("whole-target pricing contract", () => {
 
 	it("exhausts two-resource binding choices without reporting a partial quote", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/worker",
 		});
 		const joint = makeScenario({
@@ -251,8 +409,7 @@ describe("whole-target pricing contract", () => {
 				workload("agreement-a", [usage("minute", "4", "minute")]),
 			],
 		});
-		// -1 means absent; 2 is out of range. The only valid assignments are
-		// the two permutations that bind each resource to a different candidate.
+
 		for (const first of [-1, 0, 1, 2])
 			for (const second of [-1, 0, 1, 2]) {
 				const bindings: { resourceId: string; candidateIndex: number }[] = [];
@@ -448,6 +605,113 @@ describe("whole-target pricing contract", () => {
 		expect(quoteTargetPricing(target, model)).toMatchObject({
 			ok: true,
 			quote: { incremental: { billed: { decimal: "2", currency: "USD" } } },
+		});
+	});
+
+	it("rejects an active agreement outside the inventory when its fixed quantity is missing", () => {
+		const model = modeled();
+		if (
+			model.state.case !== "model" ||
+			model.state.value.scenario === undefined
+		) {
+			throw new Error("fixture model missing");
+		}
+		const joint = model.state.value.scenario;
+		const catalog = joint.catalog;
+		const state = joint.state;
+		const sourceCard = catalog?.rateCards[0];
+		const sourceAgreement = state?.agreements[0];
+		const sandboxProduct = catalog?.products[0];
+		if (
+			catalog === undefined ||
+			state === undefined ||
+			sourceCard === undefined ||
+			sourceAgreement === undefined ||
+			sandboxProduct === undefined
+		) {
+			throw new Error("fixture scenario incomplete");
+		}
+		const support = clone(ProviderProductSchema, sandboxProduct);
+		support.id = "support";
+		support.meters = [];
+		catalog.products.push(support);
+		const supportCard = clone(RateCardSchema, sourceCard);
+		supportCard.id = "card-support";
+		supportCard.charges = [
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		];
+		catalog.rateCards.push(supportCard);
+		const supportAgreement = clone(ProviderAgreementSchema, sourceAgreement);
+		supportAgreement.id = "agreement-support";
+		supportAgreement.productId = "support";
+		for (const entry of supportAgreement.rateSchedule)
+			entry.rateCardId = "card-support";
+		state.agreements.push(supportAgreement);
+		rehashScenario(joint);
+		expect(quoteTargetPricing(inventory(), model)).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+		supportAgreement.quantities.seat = "2";
+		rehashScenario(joint);
+		expect(quoteTargetPricing(inventory(), model)).toMatchObject({ ok: true });
+	});
+
+	it("accepts baseline usage for the target provider account", () => {
+		const proposed = scenario();
+		const candidate = proposed.candidate[0];
+		if (candidate === undefined) throw new Error("fixture missing");
+		proposed.baseline.push({ ...candidate });
+		rehashScenario(proposed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(proposed)),
+		).toMatchObject({
+			ok: true,
+		});
+	});
+
+	it("rejects baseline usage for a different provider account", () => {
+		const proposed = scenario();
+		const agreement = proposed.state?.agreements[0];
+		const candidate = proposed.candidate[0];
+		if (
+			proposed.state === undefined ||
+			agreement === undefined ||
+			candidate === undefined
+		)
+			throw new Error("fixture missing");
+		proposed.state.agreements.push({
+			...agreement,
+			id: "agreement-other-account",
+			providerAccountRef: "account-other",
+		});
+		proposed.baseline.push({
+			...candidate,
+			agreementRef: "agreement-other-account",
+		});
+		rehashScenario(proposed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(proposed)),
+		).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_SCOPE_MISMATCH",
 		});
 	});
 

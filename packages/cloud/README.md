@@ -34,6 +34,10 @@ deployment, resource and action, and fence prior uncertain effects before
 authorizing a successor.
 Destroy records its own generation, distinct from the preceding apply, so a
 replayed apply authorization cannot identify the destroy operation.
+Deployment transitions use the same stream CAS as resource starts. An active
+transition prevents new applies and permits destroys only for its recorded
+resource IDs. Unresolved work blocks convergence, and rollback cannot overtake
+a pending apply.
 The resume verifier is a trusted host boundary: a point-in-time status check
 alone is insufficient unless credentials or the provider enforce that fence
 through the resumed operation.

@@ -87,7 +87,7 @@ describe("shape refusals", () => {
 	it("refuses an unknown field rather than dropping it", () => {
 		const error = refusal({ ...VALID, provider: "neon" });
 		expect(error.message).toBe(
-			"resource intent $.provider: unknown field; expected one of name, port, require, prefer, negotiation, deps, region, objective, placement",
+			"resource intent $.provider: unknown field; expected one of name, port, require, prefer, negotiation, deps, region, objective, placement, cadence",
 		);
 		expect(error.path).toBe("$.provider");
 	});

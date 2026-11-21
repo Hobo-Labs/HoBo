@@ -17,11 +17,6 @@ const actions = [
 ] as const;
 type Action = (typeof actions)[number];
 
-/** Exhaustive finite traces against the actual journal, not a mock.
- * Assumptions: every effect consumes its permit first; denial means an
- * independently verified no-effect/fenced result with no live reservation;
- * all contenders for the logical request share the same transactional file.
- */
 describe("bounded route authority state machine", () => {
 	it("prevents a second live effect across every four-step trace", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-route-model-"));
@@ -94,7 +89,6 @@ describe("bounded route authority state machine", () => {
 									phase === "running" &&
 									permit !== undefined
 								) {
-									// The trusted denial proof includes permanent fencing of this effect.
 									liveEffects = 0;
 									await first.denyAttempt({ ...identity, claimToken, permit });
 									expect(await second.verifyAttempt(permit)).toBe(false);
