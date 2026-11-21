@@ -26,11 +26,7 @@ import {
 	oidcAuth,
 	parseInfisicalBinding,
 } from "@hobo/adapter-infisical";
-import {
-	type ParsedSecretStoreBinding,
-	secretStoreDeployCredentialProjectId,
-	secretStoreDeployCredentialSecretPath,
-} from "@hobo/secret-store-claim";
+import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 
 // public-contract: the entry in the deploy credential's project that holds the deploy token (CONFIG-SERVICE.md).
 export const RELAY_DEPLOY_TOKEN_ENTRY = "VERCEL_TOKEN";
@@ -38,6 +34,9 @@ export const RELAY_DEPLOY_TOKEN_ENTRY = "VERCEL_TOKEN";
 export const RELAY_GITHUB_OIDC_AUDIENCE = "https://github.com/Hobo-Labs";
 // public-contract: the deploy token reader authenticates here, never at the writer's audience.
 export const RELAY_DEPLOY_READER_OIDC_AUDIENCE = `${RELAY_GITHUB_OIDC_AUDIENCE}/hobo-ci-deploy-reader`;
+
+// public-contract: the deploy credential sits at the root of its own project, apart from the relay's (CONFIG-SERVICE.md).
+const DEPLOY_SECRET_PATH = "/";
 
 // A token Vercel issues: printable, one line, no spaces.
 const TOKEN = /^[!-~]{8,4096}$/u;
@@ -80,9 +79,9 @@ export async function readRelayDeployToken(input: {
 	try {
 		const binding = parseInfisicalBinding({
 			siteUrl: store.endpoint,
-			projectId: secretStoreDeployCredentialProjectId(store),
+			projectId: store.deployProjectId,
 			environment: store.environment,
-			secretPath: secretStoreDeployCredentialSecretPath(store),
+			secretPath: DEPLOY_SECRET_PATH,
 		});
 		const client = createInfisicalClient({
 			binding,

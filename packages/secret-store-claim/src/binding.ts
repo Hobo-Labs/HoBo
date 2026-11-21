@@ -42,25 +42,6 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/u;
 const DEPLOY_SUBJECT =
 	/^repo:[A-Za-z0-9-]{1,39}(@\d{1,20})?\/[A-Za-z0-9._-]{1,100}(@\d{1,20})?:ref:refs\/heads\/[A-Za-z0-9._/-]{1,200}$/u;
 
-export function secretStoreDeployCredentialProjectId(
-	binding: Pick<ParsedSecretStoreBinding, "projectId" | "deployProjectId">,
-): string {
-	return binding.deployProjectId !== ""
-		? binding.deployProjectId
-		: binding.projectId;
-}
-
-// public-contract: the deploy credential's folder in the relay project when the binding has no deploy project. A sibling of the relay's folder, never the project root and never inside the relay's folder: Infisical grants are path-prefix based, so a grant on `/` or on the relay's folder would cascade onto the other audience's entries (CONFIG-SERVICE.md).
-export const RELAY_DEPLOY_CREDENTIAL_SECRET_PATH = "/hobo-ci-deploy";
-
-export function secretStoreDeployCredentialSecretPath(
-	binding: Pick<ParsedSecretStoreBinding, "deployProjectId">,
-): string {
-	return binding.deployProjectId !== ""
-		? "/"
-		: RELAY_DEPLOY_CREDENTIAL_SECRET_PATH;
-}
-
 function claimStateOf(
 	record: SecretStoreBinding,
 ): "pending" | "claimed" | undefined {
@@ -80,7 +61,7 @@ function bindingMeetsConstraints(
 		(ENDPOINT.test(record.endpoint) ||
 			(options.allowLoopback === true && LOOPBACK.test(record.endpoint))) &&
 		ID.test(record.projectId) &&
-		(record.deployProjectId === "" ||
+		((legacy && record.deployProjectId === "") ||
 			(ID.test(record.deployProjectId) &&
 				record.deployProjectId !== record.projectId)) &&
 		/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(record.environment) &&
@@ -135,7 +116,7 @@ export function parseSecretStoreBinding(
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project other than the relay's when set, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
 		);
 	const parsed: ParsedSecretStoreBinding = {
 		...bindingFields(record, kind, claimState),
@@ -182,7 +163,7 @@ export function readSecretStoreBindingForRepair(
 	)
 		return secretStoreError(
 			"SECRET_STORE_INVALID",
-			"the secret store binding does not meet its constraints (coordinates only, a deploy project other than the relay's when set, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
+			"the secret store binding does not meet its constraints (coordinates only, a deploy project of its own other than the relay's, a deploy credential identity distinct from the relay and writer identities, a recorded deploy subject when claimed, and an HTTPS endpoint without userinfo)",
 		);
 	return bindingFields(record, kind, claimState);
 }

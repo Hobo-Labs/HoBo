@@ -3,13 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
 	formatSecretStoreBinding,
 	parseSecretStoreBinding,
-	RELAY_DEPLOY_CREDENTIAL_SECRET_PATH,
 	RELAY_SECRET_PATH,
 	readSecretStoreBinding,
 	readSecretStoreBindingForRepair,
 	SecretStoreBindingSchema,
-	secretStoreDeployCredentialProjectId,
-	secretStoreDeployCredentialSecretPath,
 } from "../src/index.js";
 
 function bindingJson(
@@ -19,6 +16,7 @@ function bindingJson(
 		kind: "infisical-cloud-attach",
 		endpoint: "https://app.infisical.com",
 		projectId: "relay-project",
+		deployProjectId: "deploy-project",
 		environment: "prod",
 		secretPath: "/hobo-ci-relay",
 		relayIdentityId: "relay-identity",
@@ -34,6 +32,7 @@ function bindingJson(
 
 function legacyBindingJson(): string {
 	return bindingJson({
+		deployProjectId: undefined,
 		deployCredentialIdentityId: undefined,
 		deployOidcSubject: undefined,
 	});
@@ -74,6 +73,7 @@ describe("deploy credential identity", () => {
 			parseSecretStoreBinding(
 				create(SecretStoreBindingSchema, {
 					...repaired,
+					deployProjectId: "deploy-project",
 					deployCredentialIdentityId: "reader-identity",
 					deployOidcSubject:
 						"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
@@ -95,42 +95,30 @@ describe("deploy credential identity", () => {
 	});
 });
 
-describe("secretStoreDeployCredentialProjectId", () => {
-	it("prefers deployProjectId when the binding has one", () => {
-		expect(
-			secretStoreDeployCredentialProjectId({
-				projectId: "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7",
-				deployProjectId: "d08a4752-b0e7-4784-b869-ada54f20f4e6",
-			}),
-		).toBe("d08a4752-b0e7-4784-b869-ada54f20f4e6");
+describe("the deploy credential's project", () => {
+	it("keeps the deploy credential's coordinates apart from the relay's: another project, never the relay's folder", () => {
+		const binding = readSecretStoreBinding(bindingJson());
+		expect(binding.deployProjectId).not.toBe(binding.projectId);
+		expect(binding.secretPath).toBe(RELAY_SECRET_PATH);
+		expect(RELAY_SECRET_PATH).not.toBe("/");
 	});
 
-	it("falls back to projectId for an attach binding without deployProjectId", () => {
-		expect(
-			secretStoreDeployCredentialProjectId({
-				projectId: "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7",
-				deployProjectId: "",
-			}),
-		).toBe("6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7");
-	});
-});
-
-describe("secretStoreDeployCredentialSecretPath", () => {
-	it("keeps the deploy credential at the root of its own project", () => {
-		expect(
-			secretStoreDeployCredentialSecretPath({
-				deployProjectId: "d08a4752-b0e7-4784-b869-ada54f20f4e6",
-			}),
-		).toBe("/");
+	it("rejects a binding without a deploy project, and one that reuses the relay's project", () => {
+		expect(() =>
+			readSecretStoreBinding(bindingJson({ deployProjectId: undefined })),
+		).toThrow("does not meet its constraints");
+		expect(() =>
+			readSecretStoreBinding(
+				bindingJson({ deployProjectId: "relay-project" }),
+			),
+		).toThrow("does not meet its constraints");
 	});
 
-	it("falls back to a folder that is neither the relay project's root nor inside the relay's folder", () => {
-		const path = secretStoreDeployCredentialSecretPath({
-			deployProjectId: "",
-		});
-		expect(path).toBe(RELAY_DEPLOY_CREDENTIAL_SECRET_PATH);
-		expect(path).not.toBe("/");
-		expect(path).not.toBe(RELAY_SECRET_PATH);
-		expect(path.startsWith(`${RELAY_SECRET_PATH}/`)).toBe(false);
+	it("accepts a legacy binding without a deploy project only for the unmarked repair read", () => {
+		const legacy = legacyBindingJson();
+		expect(readSecretStoreBindingForRepair(legacy).deployProjectId).toBe("");
+		expect(() => readSecretStoreBinding(legacy)).toThrow(
+			"does not meet its constraints",
+		);
 	});
 });

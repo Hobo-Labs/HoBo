@@ -28,14 +28,11 @@ export {
 	formatSecretStoreBinding,
 	type ParsedSecretStoreBinding,
 	parseSecretStoreBinding,
-	RELAY_DEPLOY_CREDENTIAL_SECRET_PATH,
 	RELAY_SECRET_PATH,
 	type RepairSecretStoreBinding,
 	readSecretStoreBinding,
 	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
-	secretStoreDeployCredentialProjectId,
-	secretStoreDeployCredentialSecretPath,
 } from "./binding.js";
 export {
 	type ClaimScope,

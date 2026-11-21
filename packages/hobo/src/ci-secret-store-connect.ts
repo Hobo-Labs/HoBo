@@ -48,8 +48,6 @@ import {
 	SECRET_STORE_BINDING_FILE,
 	SecretStoreBindingSchema,
 	SecretStoreError,
-	secretStoreDeployCredentialProjectId,
-	secretStoreDeployCredentialSecretPath,
 	updateDeployIdentityTrust,
 } from "@hobo/secret-store-claim";
 import {
@@ -158,7 +156,10 @@ export async function runCiSecretStoreConnect(
 	const deployIdentityId = given("deploy-identity-id") ?? "";
 	const deployCredentialIdentityId =
 		given("deploy-credential-identity-id") ?? "";
-	const missing = CONNECT_ID_OPTIONS.filter((key) => given(key) === undefined);
+	const missing = [
+		...(deployProjectId === "" ? (["deploy-project-id"] as const) : []),
+		...CONNECT_ID_OPTIONS.filter((key) => given(key) === undefined),
+	];
 	if (
 		deployCredentialIdentityId !== "" &&
 		(deployCredentialIdentityId === deployIdentityId ||
@@ -173,7 +174,7 @@ export async function runCiSecretStoreConnect(
 			ok: false,
 			status: "usage",
 			code: "HOBO_CI_SECRET_STORE_USAGE",
-			message: `hobo ci secret-store connect needs ${missing.map((key) => `--${key}`).join(", ")} (identifiers from the Infisical dashboard and the Vercel team id; none is a secret).`,
+			message: `hobo ci secret-store connect needs ${missing.map((key) => `--${key}`).join(", ")} (identifiers from the Infisical dashboard and the Vercel team id; none is a secret${deployProjectId === "" ? "; the deploy project must be a project other than the relay's, because Infisical project roles cover the whole project and a folder inside the relay's project cannot keep the relay's identity from reading the deploy credential" : ""}).`,
 			data: data("connect", { missing }),
 		};
 	const repository = await relayRepository(input.cwd, input.values);
@@ -197,7 +198,6 @@ export async function runCiSecretStoreConnect(
 					existing?.endpoint ??
 					"https://app.infisical.com",
 				projectId: given("project-id") ?? "",
-				// Optional: the default path keeps no deploy-time credential.
 				deployProjectId,
 				environment:
 					text(input, "environment") ??
@@ -217,7 +217,7 @@ export async function runCiSecretStoreConnect(
 	} catch {
 		return refusedConnect(
 			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
-			"Those ids do not make a valid binding: distinct relay, writer and deploy-credential identities, a deploy project (if given) other than the relay's, ids of letters, digits, - and _, an https origin, and a team_ id.",
+			"Those ids do not make a valid binding: distinct relay, writer and deploy-credential identities, a deploy project other than the relay's, ids of letters, digits, - and _, an https origin, and a team_ id.",
 		);
 	}
 	const sameStore =
@@ -264,14 +264,14 @@ export async function runCiSecretStoreConnect(
 	});
 	const trustUpdates = [
 		{
-			identity: "hobo-ci-writer",
-			identityId: binding.deployIdentityId,
-			trust,
-		},
-		{
 			identity: "hobo-ci-deploy-reader",
 			identityId: binding.deployCredentialIdentityId,
 			trust: readerTrust,
+		},
+		{
+			identity: "hobo-ci-writer",
+			identityId: binding.deployIdentityId,
+			trust,
 		},
 	] as const;
 	const ownerToken = input.env.INFISICAL_TOKEN ?? "";
@@ -291,7 +291,11 @@ export async function runCiSecretStoreConnect(
 				if (!(error instanceof SecretStoreError)) throw error;
 				return refusedConnect(
 					error.code,
-					`${error.message}. Updated: ${updated.length === 0 ? "none" : updated.join(", ")}. Not updated: ${update.identity} (${update.identityId}). Check that both ids have OIDC Auth, then re-run; ${SECRET_STORE_BINDING_FILE} was not changed.`,
+					`${error.message}. Updated: ${updated.length === 0 ? "none" : updated.join(", ")}. Not updated: ${update.identity} (${update.identityId}). ${
+						update.identity === "hobo-ci-deploy-reader"
+							? "Check that the id is the reader identity's (a typo'd id is a 404 here) and that it has OIDC Auth, then re-run with the corrected --deploy-credential-identity-id"
+							: "Check that the id has OIDC Auth, then re-run"
+					}; ${SECRET_STORE_BINDING_FILE} was not changed.`,
 				);
 			}
 	}
@@ -376,12 +380,12 @@ function subjectRepairSuffix(
 }
 
 async function readerRead(
-	identityId: string,
+	store: ParsedSecretStoreBinding,
 	client: () => ReturnType<typeof createInfisicalClient>,
 	workloadJwt: () => string | undefined,
-	trustedSubject: string,
 ): Promise<VerifyCheck> {
 	const identity = "hobo-ci-deploy-reader";
+	const identityId = store.deployCredentialIdentityId;
 	const method = "GitHub Actions OIDC";
 	let session: ReturnType<typeof createInfisicalClient> | undefined;
 	try {
@@ -397,12 +401,34 @@ async function readerRead(
 				result: "fail",
 				detail: `signed in, but ${RELAY_DEPLOY_TOKEN_ENTRY} is not in the deploy credential folder yet`,
 			};
+		const relayFolderLeaked = await session
+			.forBinding(
+				parseInfisicalBinding({
+					siteUrl: store.endpoint,
+					projectId: store.projectId,
+					environment: store.environment,
+					secretPath: store.secretPath,
+				}),
+			)
+			.listSecretNames()
+			.then(
+				() => true,
+				() => false,
+			);
+		if (relayFolderLeaked)
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, but it can also list the relay folder ${store.secretPath} in project ${store.projectId}: scope the reader's grant read-only to the deploy project only`,
+			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}`,
+			detail: `signed in, read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, and was refused the relay folder ${store.secretPath}`,
 		};
 	} catch (error) {
 		return {
@@ -416,7 +442,7 @@ async function readerRead(
 					: "the sign-in or read could not run") +
 				oidcHintSuffix(workloadJwt()) +
 				(error instanceof Error
-					? subjectRepairSuffix(error, workloadJwt(), trustedSubject)
+					? subjectRepairSuffix(error, workloadJwt(), store.deployOidcSubject)
 					: ""),
 		};
 	} finally {
@@ -567,14 +593,14 @@ export async function runCiSecretStoreVerify(
 						"needs a GitHub Actions job with id-token: write on main; the relay deploy workflow's 'Verify the secret store connection' step runs it",
 				}
 			: await readerRead(
-					store.deployCredentialIdentityId,
+					store,
 					() =>
 						createInfisicalClient({
 							binding: parseInfisicalBinding({
 								siteUrl: store.endpoint,
-								projectId: secretStoreDeployCredentialProjectId(store),
+								projectId: store.deployProjectId,
 								environment: store.environment,
-								secretPath: secretStoreDeployCredentialSecretPath(store),
+								secretPath: "/",
 							}),
 							auth: oidcAuth({
 								identityId: store.deployCredentialIdentityId,
@@ -585,7 +611,6 @@ export async function runCiSecretStoreVerify(
 								: undefined),
 						}),
 					() => githubWorkloadJwt,
-					store.deployOidcSubject,
 				),
 	);
 	checks.push(

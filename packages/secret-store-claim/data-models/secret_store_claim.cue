@@ -62,10 +62,12 @@ package secret_store_claim
 	if claimState == "claimed" {
 		deployOidcSubject: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"
 	}
-	// Apart from the relay's project: the relay identity cannot read it.
-	// Optional: a separate project for deploy-time credentials, empty when the
-	// default path needs none (ADR-0179 amendment "Secretless first").
-	deployProjectId?: #Id & !=projectId
+	// The deploy credential always has a project of its own, never the
+	// relay's: Infisical project roles cover the whole project (RBAC,
+	// checked 2026-11-12), so a folder inside the relay's project cannot
+	// keep the relay's identity from reading it. A binding recorded before
+	// the field was required parses only for the connect repair.
+	deployProjectId: #Id & !=projectId
 	// The exact subject the deploy identity trusts: GitHub's prefix for the
 	// repository, then the branch. Never a glob (a recycled name would match).
 	deployOidcSubject?: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"

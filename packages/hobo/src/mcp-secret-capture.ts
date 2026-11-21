@@ -41,11 +41,7 @@ import {
 	type SecretStoreStatus,
 	secretCaptureSpec,
 } from "@hobo/mcp";
-import {
-	type ParsedSecretStoreBinding,
-	secretStoreDeployCredentialProjectId,
-	secretStoreDeployCredentialSecretPath,
-} from "@hobo/secret-store-claim";
+import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
 
 import {
 	loadSecretStoreBinding,
@@ -58,6 +54,9 @@ export const WRITER_SECRET_NAME = "INFISICAL_WRITER_CLIENT_SECRET";
 export const WRITER_IDENTITY_NAME = "hobo-secret-writer";
 /** The longest a writer session lasts, whatever the token's own lifetime. */
 export const WRITER_SESSION_MAX_MS = 15 * 60_000;
+
+// public-contract: the deploy credential sits at the root of its own project, apart from the relay's (CONFIG-SERVICE.md).
+const DEPLOY_SECRET_PATH = "/";
 
 const NEXT_STEP_CONNECT =
 	"Start HoBo's private owner setup for the owner's existing store. This relay capture adapter also needs a supported connection before capture can continue.";
@@ -179,7 +178,7 @@ export function createInfisicalCaptureConnector(options: {
 				error.code === "HOBO_CI_SECRET_STORE_BINDING_INVALID"
 			)
 				return {
-					reason: "The relay capture adapter's store binding is invalid.",
+					reason: "The relay capture adapter's store binding predates the deploy credential project and reader: re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id, then re-capture VERCEL_TOKEN into the deploy project (CONFIG-SERVICE.md).",
 				};
 			return {
 				reason: "The relay capture adapter's store binding is unavailable.",
@@ -257,9 +256,9 @@ export function createInfisicalCaptureConnector(options: {
 				const deploy = runtime.forBinding(
 					parseInfisicalBinding({
 						siteUrl: store.endpoint,
-						projectId: secretStoreDeployCredentialProjectId(store),
+						projectId: store.deployProjectId,
 						environment: store.environment,
-						secretPath: secretStoreDeployCredentialSecretPath(store),
+						secretPath: DEPLOY_SECRET_PATH,
 					}),
 				);
 				const until = Math.min(expiresAtMs, now() + WRITER_SESSION_MAX_MS);

@@ -71,6 +71,7 @@ symlinkSync(
 			),
 		),
 	);
+	binding.deployProjectId = "ci-deploy-project";
 	binding.deployCredentialIdentityId = "ci-deploy-reader-identity";
 	binding.deployOidcSubject =
 		"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
@@ -431,7 +432,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses the committed binding itself until the deploy reader id is recorded, so the deploy train fails closed across the cutover", async () => {
+	it("refuses the committed binding itself until the deploy project and reader id are recorded, so the deploy train fails closed across the cutover", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
 			fetch,
@@ -442,7 +443,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			ok: false,
 			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
 			message: expect.stringContaining(
-				"re-run hobo ci secret-store connect with --deploy-credential-identity-id",
+				"re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id",
 			),
 		});
 		expect(sent).toEqual([]);

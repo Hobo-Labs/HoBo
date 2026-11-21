@@ -268,8 +268,10 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
   claimState: string;
 
   /**
-   * The project holding the deploy credential (`VERCEL_TOKEN`), apart from
-   * the relay's so the relay's identity cannot read it.
+   * The project holding the deploy credential (`VERCEL_TOKEN`), always a
+   * project of its own, apart from the relay's so the relay's identity
+   * cannot read it. Empty only in bindings recorded before it was required,
+   * which parse only for the connect repair.
    *
    * @generated from field: string deploy_project_id = 11;
    */

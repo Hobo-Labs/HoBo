@@ -393,6 +393,7 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 					kind: "infisical-cloud-attach",
 					endpoint: "https://infisical.test",
 					projectId: "proj-runtime",
+					deployProjectId: "proj-deploy",
 					environment: "prod",
 					secretPath: "/hobo-ci-relay",
 					relayIdentityId: "relay-identity",

@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -377,8 +383,8 @@ describe("hobo-mcp secret capture without a store or without MCP Apps", () => {
 			}).status();
 			expect(status).toMatchObject({
 				connected: false,
-				reason: "The relay capture adapter's store binding is invalid.",
 			});
+			expect(JSON.stringify(status)).toContain("hobo ci secret-store connect");
 			expect(JSON.stringify(status)).not.toContain("secret-store provision");
 		} finally {
 			rmSync(invalidDir, { recursive: true, force: true });
@@ -434,7 +440,7 @@ describe("the connector's deploy-credential path", () => {
 		charset: "printable-line",
 	});
 
-	function attachProjectDir(deployProjectId?: string): string {
+	function attachProjectDir(): string {
 		const dir = mkdtempSync(path.join(tmpdir(), "hobo-capture-attach-"));
 		mkdirSync(path.join(dir, "deploy"));
 		writeFileSync(
@@ -444,9 +450,7 @@ describe("the connector's deploy-credential path", () => {
 					kind: "infisical-cloud-attach",
 					endpoint: "https://infisical.test",
 					projectId: "proj-1",
-					...(deployProjectId === undefined
-						? undefined
-						: { deployProjectId }),
+					deployProjectId: "proj-deploy",
 					environment: "prod",
 					secretPath: "/hobo-ci-relay",
 					relayIdentityId: "relay-identity",
@@ -493,35 +497,55 @@ describe("the connector's deploy-credential path", () => {
 		return { infisical, stored };
 	}
 
-	it("writes a deploy-target value to the relay project's /hobo-ci-deploy folder when no deploy project is bound", async () => {
+	it("refuses to capture for a binding with no deploy project, naming the repair instead of writing into the relay's project", async () => {
 		const dir = attachProjectDir();
 		try {
-			const value = `deploy-${randomBytes(16).toString("hex")}`;
-			const { infisical, stored } = await authorizeAndStore(dir, value);
-			expect(stored.ref).toBe(
-				"infisical://proj-1/prod/hobo-ci-deploy/VERCEL_TOKEN",
-			);
-			expect(infisical.stored.get("proj-1|/hobo-ci-deploy|VERCEL_TOKEN")).toBe(
-				value,
-			);
-			expect(infisical.stored.get("proj-1|/|VERCEL_TOKEN")).toBeUndefined();
-			expect(
-				infisical.stored.get("proj-1|/hobo-ci-relay|VERCEL_TOKEN"),
-			).toBeUndefined();
+			const file = path.join(dir, "deploy", "secret-store.binding.json");
+			const binding = JSON.parse(readFileSync(file, "utf8"));
+			delete binding.deployProjectId;
+			writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
+			const infisical = fakeInfisical();
+			const connector = createInfisicalCaptureConnector({
+				projectDir: dir,
+				fetch: infisical.fetcher,
+			});
+			const status = await connector.status();
+			expect(status.connected).toBe(false);
+			if (!status.connected)
+				expect(status.reason).toContain("--deploy-project-id");
+			await expect(
+				connector.authorizeWriter({
+					clientId: WRITER_CLIENT,
+					secret: CapturedSecret.parse(
+						secretCaptureSpec({
+							name: WRITER_SECRET_NAME,
+							target: "writer",
+							label: "writer",
+							purpose: "writer",
+							minBytes: 16,
+							maxBytes: 512,
+							charset: "printable-line",
+						}),
+						WRITER_SECRET,
+					),
+				}),
+			).rejects.toThrow("not-connected");
+			expect(infisical.stored.size).toBe(0);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});
 
-	it("writes a deploy-target value to the deploy project's root when the binding has one", async () => {
-		const dir = attachProjectDir("proj-deploy");
+	it("writes a deploy-target value to the deploy project's root, never the relay's project", async () => {
+		const dir = attachProjectDir();
 		try {
 			const value = `deploy-${randomBytes(16).toString("hex")}`;
 			const { infisical, stored } = await authorizeAndStore(dir, value);
 			expect(stored.ref).toBe("infisical://proj-deploy/prod/VERCEL_TOKEN");
 			expect(infisical.stored.get("proj-deploy|/|VERCEL_TOKEN")).toBe(value);
+			expect(infisical.stored.get("proj-1|/|VERCEL_TOKEN")).toBeUndefined();
 			expect(
-				infisical.stored.get("proj-1|/hobo-ci-deploy|VERCEL_TOKEN"),
+				infisical.stored.get("proj-1|/hobo-ci-relay|VERCEL_TOKEN"),
 			).toBeUndefined();
 		} finally {
 			rmSync(dir, { recursive: true, force: true });

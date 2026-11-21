@@ -497,14 +497,17 @@ team come from `deploy/secret-store.binding.json` in the relay's project; a
 `--set` still overrides one. See
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
-exercised against fakes only. The committed binding has no
-`deployCredentialIdentityId` yet: the owner must provision
-`hobo-ci-deploy-reader`, grant it read-only access to `/hobo-ci-deploy`,
-deposit `VERCEL_TOKEN` there, and re-run `connect` to record its id and
-subject. Until then the deploy token read fails closed; the ordered
+exercised against fakes only. The committed binding has neither a
+`deployProjectId` nor a `deployCredentialIdentityId` yet: the owner must
+create the `hobo-ci-deploy` project and the read-only `hobo-ci-deploy-reader`
+identity in it, deposit `VERCEL_TOKEN` at its root, and re-run `connect` to
+record the deploy project, the reader id and the subject. Until then the
+deploy token read fails closed; the ordered
 operator sequence is [the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach). This channel is
 **built, not proven**: link a successful `relay-deploy` run whose preview step
-records the token read as the binding's deploy credential identity and whose
+records the token read as the binding's deploy credential identity, whose
+*Verify the secret store connection* step passes the reader (including the
+refused-relay-folder assertion), and whose
 production `/healthz` and `/readyz` checks pass. See
 [the evidence obligation](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 
@@ -556,10 +559,11 @@ dashboard's OIDC trust one step at a time, then records the ids:
 
 ```sh
 GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
-  --repo <owner/name> --project-id <hobo-ci> --relay-identity-id <hobo-ci-relay> \
+  --repo <owner/name> --project-id <hobo-ci> --deploy-project-id <hobo-ci-deploy> \
+  --relay-identity-id <hobo-ci-relay> \
   --deploy-identity-id <hobo-ci-writer> \
   --deploy-credential-identity-id <hobo-ci-deploy-reader> --team team_… \
-  [--deploy-project-id <id>] [--site-url https://<self-hosted Infisical>] [--yes]
+  [--site-url https://<self-hosted Infisical>] [--yes]
 hobo ci secret-store verify --cwd packages/ci-vercel --json
 ```
 
@@ -577,10 +581,11 @@ dashboard trust can be matched.
 
 `connect` writes the same `SecretStoreBinding` as `provision` (kind
 `infisical-cloud-attach`, folder `/hobo-ci-relay` in `prod`; the deploy
-project is optional and empty by default) and refuses to replace one for
-other ids without `--yes`. An attach binding without a deploy project requires
-`--deploy-credential-identity-id` for the read-only
-`hobo-ci-deploy-reader`, distinct from the writer in `--deploy-identity-id`.
+project is required: Infisical project roles cover the whole project, so the
+deploy credential always lives in a project of its own) and refuses to replace
+one for other ids without `--yes`. The deploy project and the read-only
+`hobo-ci-deploy-reader` in it are required, the reader distinct from the
+writer in `--deploy-identity-id`.
 `connect` resolves the shared GitHub OIDC trust for `hobo-ci-writer` and
 `hobo-ci-deploy-reader` from GitHub (with `GH_TOKEN` or `GITHUB_TOKEN`): the
 repository's
@@ -591,18 +596,22 @@ pinned; when GitHub does not say, they fail closed with
 `HOBO_CI_SECRET_STORE_OIDC_SUBJECT_UNRESOLVED` and the `gh api` command to
 check. The binding records the subject (`deployOidcSubject`). Re-running
 `connect` (ids optional once the complete binding exists; adding the deploy
-reader to an older binding needs `--yes`) repairs the trust:
+project and reader to an older binding needs `--yes`) repairs the trust:
 with the owner's own `INFISICAL_TOKEN` for that run it replaces both
-identities' OIDC trust in place (no new identity); otherwise it prints the subject and claims
-to set in the dashboard. A binding recorded before `deployCredentialIdentityId`
-existed parses only for that repair: a re-run without ids names
+identities' OIDC trust in place, reader first (no new identity); otherwise it
+prints the subject and claims
+to set in the dashboard. A binding recorded before `deployProjectId` was
+required and `deployCredentialIdentityId` existed parses only for that
+repair: a re-run without ids names `--deploy-project-id` and
 `--deploy-credential-identity-id` as what is missing instead of refusing the
 file. A denied `verify` whose token `sub` differs from the
 recorded subject (or is immutable when none was recorded) says so and names
 that repair. `verify` reports `pass`, `fail` or `not-run` by identity
 name and id: `hobo-ci-deploy-reader` inside a GitHub Actions job (GitHub OIDC
-sign-in at the reader audience, a folder listing that proves `VERCEL_TOKEN` is
-readable, then a revoke; role shape not asserted), `hobo-ci-writer` in the
+sign-in at the reader audience, a deploy-project listing that proves
+`VERCEL_TOKEN` is readable, a refused listing of the relay project's folder —
+a reader that can list it fails — then a revoke; role shape not asserted
+beyond that refusal), `hobo-ci-writer` in the
 same job (sign-in at the writer audience, no read, then a revoke), and
 `hobo-ci-relay` where
 `VERCEL_OIDC_TOKEN` is present (secret names only). The deploy workflow runs

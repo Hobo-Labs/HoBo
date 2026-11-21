@@ -299,14 +299,17 @@ and on `workflow_dispatch`:
    No repository variable or secret is read.
 2. *Verify the secret store connection*: with `permissions: id-token: write`
    the job signs in to the store as `hobo-ci-deploy-reader` at its own GitHub
-   OIDC audience, lists the `/hobo-ci-deploy` folder to prove `VERCEL_TOKEN`
-   is readable, then revokes the token, and signs in as `hobo-ci-writer` at
-   the writer audience (sign-in only, no read) before revoking it too,
+   OIDC audience, lists the deploy project's root folder to prove `VERCEL_TOKEN`
+   is readable, and must be refused the relay project's folder (an over-scoped
+   reader fails the step), then revokes the token, and signs in as
+   `hobo-ci-writer` at the writer audience (sign-in only, no read) before
+   revoking it too,
    reporting each pass or fail by name
    and id (`hobo ci secret-store verify`). Infisical role shape is not
-   asserted; a read-only grant is a provisioning obligation. The deploy-token
-   read never signs in as the writer. Until the owner provisions the reader and
-   commits its id, the binding fails closed and no deploy token is read. See
+   asserted beyond that refusal. The deploy-token
+   read never signs in as the writer. Until the owner provisions the deploy
+   project and reader and commits their ids, the binding fails closed and no
+   deploy token is read. See
    [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration
    deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
