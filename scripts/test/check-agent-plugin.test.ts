@@ -1455,6 +1455,18 @@ describe("agent-tooling extract drift gate", () => {
 		expect(issues[0]?.message).toMatch(/drifted from docs\/agent-tooling\.md/u);
 	});
 
+	it("does not exclude reference body lines between Source and the first blank line", () => {
+		const body = "Docs body with tooling links.";
+		const docs = `# Agent tooling\n\n${AGENT_TOOLING_HEADING}\n\n${body}\n`;
+		const reference = `${AGENT_TOOLING_HEADING}\n\nSource: extracted from docs/agent-tooling.md.\nInjected drift that must fail.\n\n${body}\n`;
+		expect(
+			agentToolingReferenceDriftIssues({
+				docsMarkdown: docs,
+				referenceMarkdown: reference,
+			}),
+		).not.toEqual([]);
+	});
+
 	it("reports a missing docs section and a replaced reference heading", () => {
 		expect(
 			agentToolingReferenceDriftIssues({

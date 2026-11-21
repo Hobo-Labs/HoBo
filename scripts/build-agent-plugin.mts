@@ -108,6 +108,11 @@ async function main(): Promise<void> {
 		cwd: repoRoot,
 		encoding: "utf8",
 	});
+	const discardBundleOutput = (): void => {
+		rmSync(attestationPath, { force: true });
+		rmSync(outfile, { force: true });
+		rmSync(fixturesTarget, { recursive: true, force: true });
+	};
 	if (
 		headSha.status !== 0 ||
 		!checkoutCleanBeforeBuild ||
@@ -116,7 +121,7 @@ async function main(): Promise<void> {
 		console.error(
 			"agent-plugin:build: refuse attestation unless the checkout was clean before the build and HEAD matches GITHUB_SHA",
 		);
-		rmSync(attestationPath, { force: true });
+		discardBundleOutput();
 		process.exitCode = 1;
 		return;
 	}
@@ -124,7 +129,7 @@ async function main(): Promise<void> {
 		console.error(
 			"agent-plugin:build: GITHUB_RUN_ID and GITHUB_SHA are required in GitHub Actions",
 		);
-		rmSync(attestationPath, { force: true });
+		discardBundleOutput();
 		process.exitCode = 1;
 		return;
 	}
@@ -132,7 +137,7 @@ async function main(): Promise<void> {
 		console.error(
 			"agent-plugin:build: GITHUB_RUN_ATTEMPT must be non-empty when set",
 		);
-		rmSync(attestationPath, { force: true });
+		discardBundleOutput();
 		process.exitCode = 1;
 		return;
 	}

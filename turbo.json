@@ -6,6 +6,11 @@
     "tsconfig.base.json"
   ],
   "envMode": "strict",
+  "globalEnv": [
+    "GITHUB_RUN_ATTEMPT",
+    "GITHUB_RUN_ID",
+    "GITHUB_SHA"
+  ],
   "globalPassThroughEnv": [
     "CI",
     "GITHUB_ACTIONS",

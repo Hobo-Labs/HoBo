@@ -5,7 +5,11 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { HOBO_OWNED_ALLOWED_FIELDS } from "@hobo/agent-skills";
+import {
+	checkSkillsConformance,
+	HOBO_OWNED_ALLOWED_FIELDS,
+	HOBO_OWNED_SKILLS,
+} from "@hobo/agent-skills";
 import { z } from "zod";
 
 import {
@@ -522,8 +526,11 @@ function rewriteDocsLinksForPlugin(section: string): string {
 }
 
 function dropSourceParagraph(text: string): string {
-	const match = /^Source:[^\n]*(?:\n[^\n]+)*(?:\n|$)/u.exec(text);
-	return match && match[0] !== undefined ? text.slice(match[0].length) : text;
+	const lines = text.split("\n");
+	if (!lines[0]?.startsWith("Source:")) return text;
+	let index = 1;
+	while (index < lines.length && lines[index]?.trim() === "") index++;
+	return lines.slice(index).join("\n").trimStart();
 }
 
 function stripRepoOnlyMarkers(text: string): string {
@@ -1333,8 +1340,6 @@ export function releaseTrainVersionForPluginGate(
 }
 
 function ensureCiPluginBundle(repoRoot: string): void {
-	const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
-	if (existsSync(bundle) && !agentPluginCiActive()) return;
 	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
 		cwd: repoRoot,
 		stdio: "inherit",
@@ -1343,7 +1348,7 @@ function ensureCiPluginBundle(repoRoot: string): void {
 	if (build.status !== 0) process.exit(build.status ?? 1);
 }
 
-function main(): void {
+async function main(): Promise<void> {
 	const repoRoot = path.resolve(import.meta.dirname, "..");
 	ensureCiPluginBundle(repoRoot);
 	const versionFromReleaseTrain = releaseTrainVersionForPluginGate(repoRoot);
@@ -1358,11 +1363,23 @@ function main(): void {
 			"agent-plugin:check: skipped the release-train comparison only because HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1 was set outside CI",
 		);
 	}
-	const report = checkAgentPlugin({
+	const baseReport = checkAgentPlugin({
 		pluginRoot: path.join(repoRoot, "plugins/hobo"),
 		repoRoot,
 		versionFromReleaseTrain,
 	});
+	const conformance = await checkSkillsConformance(
+		path.join(repoRoot, ".agents/skills"),
+		{ strictSkillNames: HOBO_OWNED_SKILLS },
+	);
+	const conformanceIssues: AgentPluginIssue[] = conformance.map((issue) => ({
+		file: `.agents/skills/${issue.skill}`,
+		message: `${issue.code}: ${issue.message}`,
+	}));
+	const report: AgentPluginReport = {
+		issues: [...baseReport.issues, ...conformanceIssues],
+		notes: baseReport.notes,
+	};
 	for (const note of report.notes) console.log(note);
 	if (report.issues.length > 0) {
 		console.error("agent-plugin gate failed:");
@@ -1379,4 +1396,6 @@ function main(): void {
 const invokedDirectly =
 	process.argv[1] &&
 	path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedDirectly) main();
+if (invokedDirectly) {
+	void main();
+}

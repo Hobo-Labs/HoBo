@@ -63,8 +63,8 @@ signals (for example `TF_BUILD` alone) still require the bundle but report that
 attestation must be checked on a GitHub Actions runner — they do not skip
 verification silently. The check refuses a bundle whose attestation does not
 match this workflow run, checkout, attempt, and sha256. In
-`agent-plugin:check` runs `pnpm run agent-plugin:build` when `bin/hobo-mcp.mjs`
-is still absent, so local `check:all` and CI share the same self-contained gate.
+`agent-plugin:check` always runs `pnpm run agent-plugin:build` first so a
+stale committed bundle cannot pass the gate, and CI rebuilds before every check.
 
 The build deletes any prior `.bundle-attestation.json` before bundling so a
 failed rebuild cannot leave a stale attestation beside the bundle. In CI it also refuses to write attestation unless the checkout was clean before
