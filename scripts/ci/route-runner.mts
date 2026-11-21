@@ -708,6 +708,13 @@ export function mergeGroupHostedHasIdleCapacity(
 	return !refusingJobs(load, limits);
 }
 
+export function prBatchHostedHasIdleCapacity(
+	load: LabelLoad,
+	limits: RouteLimits = MERGE_GROUP_HOSTED_LIMITS,
+): boolean {
+	return mergeGroupHostedHasIdleCapacity(load, limits);
+}
+
 export const MERGE_GROUP_TRUNK_IDLE_LIMITS: RouteLimits = {
 	maxWaitSeconds: 45,
 	maxQueued: 1,
@@ -778,9 +785,13 @@ export async function confirmMergeGroupFabricFleet(input: {
 	}
 }
 
-function githubReader(apiUrl: string, token: string): QueueReader {
+function githubReader(
+	apiUrl: string,
+	token: string,
+	fetchImpl: typeof fetch = fetch,
+): QueueReader {
 	return async (path) => {
-		const response = await fetch(`${apiUrl}${path}`, {
+		const response = await fetchImpl(`${apiUrl}${path}`, {
 			headers: {
 				accept: "application/vnd.github+json",
 				authorization: `Bearer ${token}`,
@@ -1295,6 +1306,47 @@ export async function main(
 				},
 				env,
 			);
+		if (
+			routeClass(
+				event,
+				"eventPayload" in io ? io.eventPayload : readEventPayload(env),
+			) !== "fork"
+		) {
+			const probeAtMs = now();
+			let hostedIdle = true;
+			try {
+				const view = await observeQueue({
+					read: githubReader(
+						env.GITHUB_API_URL ?? "https://api.github.com",
+						env.GITHUB_TOKEN ?? "",
+						io.fetch,
+					),
+					repository: env.GITHUB_REPOSITORY ?? "",
+					ownRunId: Number(env.GITHUB_RUN_ID),
+					labels: [labels.github],
+					limits: MERGE_GROUP_HOSTED_LIMITS,
+					exhaustLookups: true,
+					nowMs: probeAtMs,
+				});
+				hostedIdle = prBatchHostedHasIdleCapacity(
+					labelLoad(view.jobs, labels.github, probeAtMs),
+				);
+			} catch {
+				hostedIdle = true;
+			}
+			if (!hostedIdle)
+				return report(
+					{
+						tier: "fleet",
+						runner: fleetLabel,
+						reason:
+							"the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity; the same-repository batch uses the fleet",
+						refusedBy: "queue",
+						slip: { kind: "unasked", why: "batch" },
+					},
+					env,
+				);
+		}
 		if (
 			labels.github !== "ubuntu-24.04" ||
 			!(await isPublicCaller(env, io.fetch))
