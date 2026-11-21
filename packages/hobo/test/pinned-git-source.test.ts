@@ -15,7 +15,12 @@ import { readPinnedGitSource } from "../src/pinned-git-source.js";
 const directories: string[] = [];
 
 function git(cwd: string, ...args: string[]): string {
-	return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+	const env: NodeJS.ProcessEnv = {
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: "/dev/null",
+	};
+	if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+	return execFileSync("git", args, { cwd, encoding: "utf8", env }).trim();
 }
 
 function repository(): string {
@@ -31,6 +36,10 @@ function commit(cwd: string): string {
 	git(cwd, "add", "-A");
 	git(cwd, "commit", "-qm", "fixture");
 	return git(cwd, "rev-parse", "HEAD");
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 afterEach(() => {
@@ -117,6 +126,66 @@ describe("pinned Git deployment source", () => {
 		}
 	});
 
+	it("respects an explicit ceiling on repository discovery", () => {
+		const cwd = repository();
+		writeFileSync(join(cwd, "source"), "committed source");
+		const sha = commit(cwd);
+		const ceiling = join(cwd, "nested");
+		const nested = join(ceiling, "inside");
+		mkdirSync(nested, { recursive: true });
+		const previous = process.env.GIT_CEILING_DIRECTORIES;
+		try {
+			process.env.GIT_CEILING_DIRECTORIES = ceiling;
+			expect(() =>
+				readPinnedGitSource({ cwd: nested, sha, paths: ["source"] }),
+			).toThrow();
+		} finally {
+			if (previous === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+			else process.env.GIT_CEILING_DIRECTORIES = previous;
+		}
+	});
+
+	it.skipIf(process.platform === "win32")(
+		"does not pass unrelated owner-session values to the Git subprocess",
+		() => {
+			const cwd = repository();
+			writeFileSync(join(cwd, "source"), "committed source");
+			const sha = commit(cwd);
+			const realGit = execFileSync("which", ["git"], {
+				encoding: "utf8",
+			}).trim();
+			const bin = join(cwd, "bin");
+			mkdirSync(bin);
+			writeFileSync(
+				join(bin, "git"),
+				`#!/bin/sh\nif [ "\${HOBO_OWNER_CONTEXT+x}" = x ] || [ "\${ORDINARY_SESSION_VALUE+x}" = x ] || [ "\${HOME+x}" = x ]; then exit 91; fi\nexec ${shellQuote(realGit)} "$@"\n`,
+				{ mode: 0o755 },
+			);
+			const oldPath = process.env.PATH;
+			const oldOwner = process.env.HOBO_OWNER_CONTEXT;
+			const oldSession = process.env.ORDINARY_SESSION_VALUE;
+			try {
+				process.env.PATH = `${bin}:${oldPath ?? ""}`;
+				process.env.HOBO_OWNER_CONTEXT = "synthetic-owner-context";
+				process.env.ORDINARY_SESSION_VALUE = "synthetic-session-context";
+				expect(
+					readPinnedGitSource({
+						cwd,
+						sha,
+						paths: ["source"],
+					}).files[0]?.content.toString(),
+				).toBe("committed source");
+			} finally {
+				if (oldPath === undefined) delete process.env.PATH;
+				else process.env.PATH = oldPath;
+				if (oldOwner === undefined) delete process.env.HOBO_OWNER_CONTEXT;
+				else process.env.HOBO_OWNER_CONTEXT = oldOwner;
+				if (oldSession === undefined) delete process.env.ORDINARY_SESSION_VALUE;
+				else process.env.ORDINARY_SESSION_VALUE = oldSession;
+			}
+		},
+	);
+
 	it.skipIf(process.platform === "win32")(
 		"does not fetch missing objects when Git ignores the no-lazy-fetch setting",
 		() => {
@@ -152,27 +221,23 @@ describe("pinned Git deployment source", () => {
 			expect(hasBlob()).toBe(false);
 			const bin = join(cwd, "bin");
 			mkdirSync(bin);
-			writeFileSync(
-				join(bin, "git"),
-				'#!/bin/sh\nunset GIT_NO_LAZY_FETCH\nexec "$HOBO_TEST_REAL_GIT" "$@"\n',
-				{ mode: 0o755 },
-			);
-			const oldPath = process.env.PATH;
-			const oldRealGit = process.env.HOBO_TEST_REAL_GIT;
 			const realGit = execFileSync("which", ["git"], {
 				encoding: "utf8",
 			}).trim();
+			writeFileSync(
+				join(bin, "git"),
+				`#!/bin/sh\nunset GIT_NO_LAZY_FETCH\nexec ${shellQuote(realGit)} "$@"\n`,
+				{ mode: 0o755 },
+			);
+			const oldPath = process.env.PATH;
 			try {
 				process.env.PATH = `${bin}:${oldPath ?? ""}`;
-				process.env.HOBO_TEST_REAL_GIT = realGit;
 				expect(() =>
 					readPinnedGitSource({ cwd: clone, sha, paths: ["payload"] }),
 				).toThrow();
 			} finally {
 				if (oldPath === undefined) delete process.env.PATH;
 				else process.env.PATH = oldPath;
-				if (oldRealGit === undefined) delete process.env.HOBO_TEST_REAL_GIT;
-				else process.env.HOBO_TEST_REAL_GIT = oldRealGit;
 			}
 			expect(hasBlob()).toBe(false);
 		},

@@ -76,6 +76,7 @@
   },
   "devDependencies": {
     "@types/pg": "8.15.5",
+    "fast-check": "^4.3.0",
     "pg": "8.22.0",
     "testcontainers": "11.8.1"
   }

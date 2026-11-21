@@ -1,3 +1,9 @@
+import {
+	createInfisicalClient,
+	createInfisicalSecretsPort,
+	oidcAuth,
+	parseInfisicalBinding,
+} from "@hobo/adapter-infisical";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it, vi } from "vitest";
@@ -63,6 +69,47 @@ describe("the CD journal provisioner", () => {
 					expect(String(result.reason)).toMatch(/durable.*atomic/i);
 			}
 		}
+		expect(fetch).not.toHaveBeenCalled();
+	});
+
+	it("refuses concurrent Neon creates when the Infisical adapter has no verified atomic claim", async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>();
+		const port = createInfisicalSecretsPort({
+			client: createInfisicalClient({
+				binding: parseInfisicalBinding({
+					siteUrl: "https://self-hosted.example",
+					projectId: "fixture-project",
+					environment: "prod",
+				}),
+				auth: oidcAuth({ identityId: "fixture", jwt: async () => "fixture" }),
+				fetch,
+			}),
+		});
+		const provisioner = neonJournalProvisioner(fetch);
+		const store: OpenedSecretStore = {
+			id: "infisical",
+			port,
+			reference: () => "infisical://fixture",
+		};
+		const input = {
+			member: "journal-1",
+			idempotencyKey: "hobo-cd-journal:journal-1",
+			store,
+		};
+		const attempts = await Promise.allSettled([
+			provisioner.create(input),
+			provisioner.create(input),
+		]);
+		expect(attempts.map((result) => result.status)).toEqual([
+			"rejected",
+			"rejected",
+		]);
+		for (const result of attempts)
+			if (result.status === "rejected")
+				expect(result.reason).toMatchObject({
+					name: "ClaimStoreUnavailableError",
+					message: expect.stringMatching(/durable.*atomic/u),
+				});
 		expect(fetch).not.toHaveBeenCalled();
 	});
 

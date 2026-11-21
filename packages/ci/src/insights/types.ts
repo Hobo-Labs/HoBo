@@ -22,6 +22,7 @@ export type InsightJob = Readonly<{
 	labels: readonly string[];
 	runnerName?: string;
 	runnerGroup?: string;
+	checkRunId?: number;
 	conclusion: InsightConclusion;
 	queuedAtMs: number;
 	startedAtMs?: number;
@@ -74,6 +75,7 @@ export function jobRunMinutes(job: InsightJob): number {
 }
 
 export function jobBilledMinutes(job: InsightJob): number {
+	if (!job.billed) return 0;
 	const runMs = jobRunMs(job);
 	if (runMs === undefined) return 0;
 	return Math.max(1, Math.ceil(runMs / MS_PER_MINUTE));

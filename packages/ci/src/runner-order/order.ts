@@ -32,8 +32,8 @@ export const DEFAULT_SPEND_LIMIT_USD = 100;
 export const RUNNER_RETRY_TARGETS = ["any", "same", "other"] as const;
 export type RunnerRetryTarget = (typeof RUNNER_RETRY_TARGETS)[number];
 
-export function stepKey(step: RunnerOrderStep): RunnerStepKey {
-	return runnerStepKey(step.key) ?? "machine";
+export function stepKey(step: RunnerOrderStep): RunnerStepKey | undefined {
+	return runnerStepKey(step.key);
 }
 
 function stepSlot(step: RunnerOrderStep): string {
@@ -124,11 +124,7 @@ export function runnerOrderOrDefault(
 ): ParsedRunnerOrder {
 	if (json === undefined || json.trim().length === 0)
 		return DEFAULT_RUNNER_ORDER;
-	try {
-		return parseRunnerOrder(json);
-	} catch {
-		return DEFAULT_RUNNER_ORDER;
-	}
+	return parseRunnerOrder(json);
 }
 
 export function skipsUnhealthy(order: ParsedRunnerOrder): boolean {

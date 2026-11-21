@@ -98,7 +98,7 @@ const LEGAL_FILE_NAME = /^(?:licen[cs]e|copying|notice)(?:-[a-z0-9.]+)?$/i;
 
 const DOCS_TITLE = /^docs(?:\([^()\r\n]*\))?:/i;
 
-const DOCS_WORKFLOW = /doc/i;
+const DOCS_WORKFLOW = /\bdoc(?:s|umentation)?\b/i;
 
 export function isDocsPath(path: string): boolean {
 	const segments = path

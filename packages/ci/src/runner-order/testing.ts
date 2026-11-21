@@ -85,7 +85,7 @@ export function testRouteRequest(
 		repository,
 		private: true,
 		event: "push",
-		runId,
+		runId: BigInt(runId),
 		runAttempt: 1,
 		job: "route",
 		inputs: [{ key: "github", labels: ["ubuntu-24.04"] }],

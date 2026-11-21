@@ -174,11 +174,16 @@ describe("chooseMachine", () => {
 });
 
 describe("limits", () => {
-	it("allows when usage is unmeasured or the plan includes nothing", () => {
-		expect(minutesVerdict(80, undefined)).toEqual({ allowed: true });
-		expect(minutesVerdict(80, { usedMinutes: 10, includedMinutes: 0 })).toEqual(
-			{ allowed: true },
-		);
+	it("blocks a limited step when minutes usage is unknown", () => {
+		expect(minutesVerdict(80, undefined)).toEqual({
+			allowed: false,
+			reason: "minutes_limit",
+			detail: "minutes usage is unknown; the limit is 80%",
+		});
+		expect(minutesVerdict(0, undefined)).toEqual({ allowed: true });
+		expect(
+			minutesVerdict(80, { usedMinutes: 10, includedMinutes: 0 }),
+		).toMatchObject({ allowed: false, reason: "minutes_limit" });
 	});
 
 	it("refuses at the limit, not before", () => {
@@ -193,7 +198,7 @@ describe("limits", () => {
 		).toBe(false);
 	});
 
-	it("keeps two hours of burn in reserve", () => {
+	it("keeps two hours of burn in reserve below the configured limit", () => {
 		const usage = (burnPerHour: number) => ({
 			usedMinutes: 1000,
 			includedMinutes: 2000,
@@ -205,11 +210,22 @@ describe("limits", () => {
 			reason: "minutes_runway",
 			detail: "1000 included minutes left at 501 a hour",
 		});
+		expect(minutesVerdict(80, usage(300)).allowed).toBe(true);
+		expect(minutesVerdict(80, usage(301))).toMatchObject({
+			allowed: false,
+			reason: "minutes_runway",
+			detail: "600 included minutes left at 301 a hour",
+		});
 		expect(minutesVerdict(100, usage(0)).allowed).toBe(true);
 	});
 
 	it("refuses a provider at its monthly spend, not before", () => {
-		expect(spendVerdict(50, undefined)).toEqual({ allowed: true });
+		expect(spendVerdict(50, undefined)).toEqual({
+			allowed: false,
+			reason: "spend_limit",
+			detail: "spend is unknown; the limit is $50",
+		});
+		expect(spendVerdict(0, undefined)).toEqual({ allowed: true });
 		expect(spendVerdict(50, 49.99)).toEqual({ allowed: true });
 		expect(spendVerdict(50, 50)).toEqual({
 			allowed: false,
@@ -398,8 +414,9 @@ describe("retries", () => {
 		expect(
 			retryVerdict(policy(), failure({ retriesToday: RUNNER_RETRY_DAILY_CAP })),
 		).toEqual({ retry: false, reason: "daily_limit" });
-		expect(
-			retryVerdict(policy({ runner: "sideways" }), failure()),
-		).toMatchObject({ target: "any" });
+		expect(retryVerdict(policy({ runner: "sideways" }), failure())).toEqual({
+			retry: false,
+			reason: "off",
+		});
 	});
 });

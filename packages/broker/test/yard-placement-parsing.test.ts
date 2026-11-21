@@ -33,10 +33,10 @@ import {
 } from "../src/yard-placement/inventory.js";
 import * as yardPlacementTypes from "../src/yard-placement/types.js";
 
-const contentHashOf = yardPlacementTypes["contentHashOf"];
-const emptyYardPlacement = yardPlacementTypes["emptyYardLayout"];
-const parseCampPlacement = yardPlacementTypes["parseCampLayout"];
-const parseYardPlacement = yardPlacementTypes["parseYardLayout"];
+const contentHashOf = yardPlacementTypes.contentHashOf;
+const emptyYardPlacement = yardPlacementTypes.emptyYardLayout;
+const parseCampPlacement = yardPlacementTypes.parseCampLayout;
+const parseYardPlacement = yardPlacementTypes.parseYardLayout;
 type YardPlacement = ReturnType<typeof parseYardPlacement>;
 type YardGenerationPlan = yardPlacementTypes.YardGenerationPlan;
 type YardGenerationPolicy = yardPlacementTypes.YardGenerationPolicy;
@@ -1004,8 +1004,8 @@ describe("localYardInstance", () => {
 		});
 		expect(yard.status).toBe("ready");
 		expect(yard.runtimeId).toBe("local-runtime");
-		expect(yard["layout"].regions).toEqual(["local"]);
-		expect(yard["layout"].componentHosts).toEqual(["local", "wasm", "oci"]);
+		expect(yard.layout.regions).toEqual(["local"]);
+		expect(yard.layout.componentHosts).toEqual(["local", "wasm", "oci"]);
 	});
 
 	test("explicit options override each default", () => {
@@ -1020,9 +1020,9 @@ describe("localYardInstance", () => {
 			capabilities: ["host:wasm"],
 		});
 		expect(yard.runtimeId).toBe("custom-rt");
-		expect(yard["layout"].regions).toEqual(["eu-west"]);
-		expect(yard["layout"].residency).toEqual(["eu"]);
-		expect(yard["layout"].componentHosts).toEqual(["wasm"]);
+		expect(yard.layout.regions).toEqual(["eu-west"]);
+		expect(yard.layout.residency).toEqual(["eu"]);
+		expect(yard.layout.componentHosts).toEqual(["wasm"]);
 		expect(yard.capabilities).toEqual(["host:wasm"]);
 	});
 
@@ -1034,7 +1034,7 @@ describe("localYardInstance", () => {
 			ownerTenantId: "t1",
 			providerId: "local",
 		});
-		expect(yard["layout"].residency).toEqual([]);
+		expect(yard.layout.residency).toEqual([]);
 	});
 
 	test("the instance and its nested shape are frozen", () => {
@@ -1044,7 +1044,7 @@ describe("localYardInstance", () => {
 			providerId: "local",
 		});
 		expect(Object.isFrozen(yard)).toBe(true);
-		expect(Object.isFrozen(yard["layout"])).toBe(true);
+		expect(Object.isFrozen(yard.layout)).toBe(true);
 		expect(Object.isFrozen(yard.capacity)).toBe(true);
 	});
 });

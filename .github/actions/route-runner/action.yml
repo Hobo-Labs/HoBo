@@ -5,8 +5,9 @@ description: >-
   is. When the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen and a warning says why. Auto-routed pull-request
   batches require verified public standard-runner pricing or a verified fleet
-  batch claim; if routing fails, they stop before queuing jobs. Pinned to the
-  fleet, it stays there.
+  batch claim. Automatic release merge-group batches use a verified public
+  standard runner unless explicitly pinned. If routing fails, these batches stop
+  before queuing jobs. Pinned to the fleet, it stays there.
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
@@ -84,7 +85,15 @@ runs:
           echo "not attested: $1"
           { echo "attested=false"; echo "attested-jobs=[]"; } >> "$GITHUB_OUTPUT"
         }
-        if [ ! -f scripts/ci/verify-attestation.mts ]; then
+        verifier="scripts/ci/verify-attestation.mts"
+        if [ -n "${GITHUB_ACTION_PATH:-}" ]; then
+          action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)" || {
+            not_attested "the route action directory cannot be resolved"
+            exit 0
+          }
+          verifier="${action_root}/scripts/ci/verify-attestation.mts"
+        fi
+        if [ ! -f "${verifier}" ]; then
           not_attested "this workflow does not check for a signed local run"
           exit 0
         fi
@@ -104,7 +113,7 @@ runs:
         fi
         # The script writes both outputs itself; if it dies first, say no here.
         outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
-        if ! "${node_bin}" --no-warnings scripts/ci/verify-attestation.mts \
+        if ! "${node_bin}" --no-warnings "${verifier}" \
           || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
           not_attested "the verification script failed"
         fi
@@ -119,8 +128,8 @@ runs:
         route='${{ contains(fromJSON('["auto","fleet","local","github"]'), inputs.route) && inputs.route || 'auto' }}'
         include_own_run='${{ inputs.include-own-run == 'true' && 'true' || 'false' }}'
         attested='${{ steps.attest.outputs.attested == 'true' && 'true' || 'false' }}'
-        if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${route}" = "auto" ] && [ -z "${GITHUB_WORKFLOW_REF:-}" ]; then
-          echo "::error title=hobo-ci-route-fallback::PR workflow identity is unavailable; no batch was queued"
+        if { [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; } && [ "${route}" = "auto" ] && [ -z "${GITHUB_WORKFLOW_REF:-}" ]; then
+          echo "::error title=hobo-ci-route-fallback::Batch workflow identity is unavailable; no batch was queued"
           exit 1
         fi
         fleet=hobo
@@ -137,8 +146,8 @@ runs:
           elif [ "${route}" = "fleet" ]; then
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); pinned to the fleet"
             { echo "runner=${fleet}"; echo "tier=fleet"; echo "shard_runner=${fleet}"; } >> "$GITHUB_OUTPUT"
-          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${route}" = "auto" ] && { [ -z "${GITHUB_WORKFLOW_REF:-}" ] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/hobo-ci.yml@* ]] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/release-hobo.yml@* ]]; }; then
-            echo "::error title=hobo-ci-route-fallback::PR batch routing did not verify a runner ($1); no batch was queued"
+          elif { [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; } && [ "${route}" = "auto" ] && { [ -z "${GITHUB_WORKFLOW_REF:-}" ] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/hobo-ci.yml@* ]] || [[ "${GITHUB_WORKFLOW_REF}" == */.github/workflows/release-hobo.yml@* ]]; }; then
+            echo "::error title=hobo-ci-route-fallback::Batch routing did not verify a runner ($1); no batch was queued"
             return 1
           else
             echo "::warning title=hobo-ci-route-fallback::runner routing did not run ($1); using GitHub-hosted runners"
@@ -160,7 +169,11 @@ runs:
           without_a_decision "no Node 22.18 or later on this machine" || exit 1
           exit 0
         fi
-        "${node_bin}" --no-warnings scripts/ci/route-runner.mts \
+        if [ -z "${GITHUB_ACTION_PATH:-}" ] || ! action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"; then
+          without_a_decision "the route action directory cannot be resolved" || exit 1
+          exit 0
+        fi
+        "${node_bin}" --no-warnings "${action_root}/scripts/ci/route-runner.mts" \
           --route "${route}" --include-own-run "${include_own_run}" --attested "${attested}" \
           || without_a_decision "the routing script failed"
     # Never fails and never blocks: anything short of a verified green

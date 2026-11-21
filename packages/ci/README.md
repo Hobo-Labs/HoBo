@@ -197,6 +197,13 @@ limit and evidence URL. Prices are account-supplied integer USD microdollars per
 minute, including applicable platform fees; this package ships no vendor price
 catalog or assumed marketing allowances. One microdollar is $0.000001. Each provider
 account entitlement has one account/offer owner; there is no cross-tenant pooling.
+The public router can also receive an account directly, without the configuration
+parser. If multiple offers report the same provider account and any reports free
+runner minutes or a sandbox allowance, those offers are ineligible: the router
+cannot establish which allocation snapshot is authoritative. Other providers
+remain eligible. This rule applies even when the duplicate reports agree; publish
+a single current offer to restore that provider account's availability. Duplicate
+cash-only reports use the greatest reported exposure.
 
 `Offer.freeMinutes` is measured in **minutes on the selected runner SKU**, not
 in the provider's shared base-unit minutes. Blacksmith's x64 free balance and
@@ -401,8 +408,11 @@ on a provider. A relay job names the label it would ask each type for, and
 `decideRunnerRoute(order, request, facts)` walks the order and returns a
 `RunnerRouteDecision`: the label to run on, the label to queue on when every
 runner that fits is busy, or one sentence saying why nothing can take the
-job. Every step passed over is recorded with its reason. Allocation routing
-above ranks published offers by cost; a runner order is walked as written.
+job. Every step passed over is recorded with its reason. GitHub-hosted routing
+accepts only the known standard GitHub labels; an arbitrary label beginning
+with `ubuntu-`, `windows-`, or `macos-` is not treated as GitHub-hosted.
+Allocation routing above ranks published offers by cost; a runner order is
+walked as written.
 
 ```ts
 import { decideRunnerRoute, parseRunnerOrder } from "@hobo/ci";
@@ -430,7 +440,7 @@ journal parses into those types first.
 | --- | --- |
 | `ciSignals(runs)` | Where time or money went that did not have to: `no-concurrency`, `same-commit`, `short-jobs` (cost); `queue-waits`, `slowest-job`, `flaky-jobs`, `runner-failures` (speed); `docs-changes`, `wide-fanout` (complexity). A signal is `shown` once it covers 30 minutes and 1% of all job minutes |
 | `runnerTimes`, `jobTimes`, `workflowTimes` | Per runner: jobs, share started, median wait, median and p90 run time, success rate. Per job: the same by runner, the fastest runner, and the speed-up against a baseline |
-| `diagnoseFailure({ job, logTail, annotations })` | The first failed step, a log excerpt ending at the last error, a kind (`infra`, `config`, `lint`, `build`, `test`, `flaky`, `unclear`) and whether a re-run is likely to pass. The pattern tables are exported; nothing is sent to a model |
+| `diagnoseFailure({ job, logTail, annotations })` | The first failed step, a log excerpt ending at the last error, a kind (`infra`, `config`, `lint`, `build`, `test`, `flaky`, `unclear`) and whether a re-run is likely to pass. Terminal controls and bidirectional overrides are stripped from quoted evidence. The pattern tables are exported; nothing is sent to a model |
 | `checkPullRequestTitle(title)` | Whether a title is a Conventional Commits title, with the reason when it is not |
 
 A re-run is only ever called likely to pass for a runner or network failure.
@@ -673,6 +683,30 @@ node --import tsx scripts/ci/verify-relay-dispatch.mts
 Native Dagger checks use [`.hobo/dagger.json`](../../.hobo/dagger.json); see [`@hobo/ci-dagger`](../ci-dagger/README.md). Manual runner acceptance: [`.github/workflows/hobo-ci-acceptance.yml`](../../.github/workflows/hobo-ci-acceptance.yml) (optional `dagger_acceptance` input).
 
 `#Offer` guards every `backend` comparison behind `backend != _|_`: CUE 0.14 rejects references to an absent optional field, so unguarded `if backend == …` clauses broke `cue vet` for offers without a backend.
+
+CI routing counts the largest reported exposure among offers for the same
+provider account when applying both offer budgets and shared-policy limits.
+The configuration parser rejects duplicate provider-account offers; this
+check also protects direct calls to the public router with unvalidated data.
+An unknown observation time cannot prove that completed local usage was
+included, so that usage remains counted. See the
+[CI budget verification skill](../../.agents/skills/verify-ci-budget-routing/SKILL.md)
+for the model, generated tests, and assumptions.
+The skill also runs weakened models, a weakened proof, and broken scratch
+implementations, then restores and reruns the generated routing properties.
+Bounded TLC models disable deadlock checking on intentional terminal stutter.
+Provider snapshot aggregation ties broken on equal reports via the recorded order index.
+
+The following projection of the provider-observation model is not a runtime
+trace. TLC explored 36 states and 36 steps; the chart hides 18 steps that
+remain within a displayed state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ReadObservations
+  ReadObservations --> Admitted: highest exposure fits
+  ReadObservations --> Refused: highest exposure exceeds budget
+```
 
 ## Relay job seams
 

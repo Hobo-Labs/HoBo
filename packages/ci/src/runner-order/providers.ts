@@ -163,10 +163,25 @@ export const GITHUB_HOSTED_SIZES: readonly Readonly<{
 	label: string;
 }>[] = [{ vcpus: 2, label: "ubuntu-24.04" }];
 
-const GITHUB_HOSTED_LABEL = /^(ubuntu|windows|macos)-[a-z0-9.-]+$/u;
+const GITHUB_HOSTED_LABELS: ReadonlySet<string> = new Set([
+	"ubuntu-latest",
+	"ubuntu-24.04",
+	"ubuntu-22.04",
+	"ubuntu-24.04-arm",
+	"ubuntu-22.04-arm",
+	"windows-latest",
+	"windows-2025",
+	"windows-2022",
+	"windows-11-arm",
+	"macos-latest",
+	"macos-15",
+	"macos-15-intel",
+	"macos-14",
+	"macos-13",
+]);
 
 export function isGithubHostedLabel(label: string): boolean {
-	return GITHUB_HOSTED_LABEL.test(label.trim().toLowerCase());
+	return GITHUB_HOSTED_LABELS.has(label.trim().toLowerCase());
 }
 
 function prefixMatches(prefix: string, label: string): boolean {
@@ -197,7 +212,7 @@ export function runnerProviderOfLabel(
 export function runnerLabelForSize(
 	key: RunnerStepKey,
 	vcpus: number,
-	runId: number,
+	runId: number | bigint,
 ): string | undefined {
 	const sizes =
 		key === "github"
