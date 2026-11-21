@@ -192,16 +192,20 @@ jobs:
           status=0
           node packages/hobo/dist/bin/hobo.js ci deploy \
             --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
-            --target preview --provision --wait --deadline "$DEPLOY_DEADLINE" \
+            --target preview --build prebuilt --provision --wait --deadline "$DEPLOY_DEADLINE" \
             --json > "$RUNNER_TEMP/relay-preview.json" || status=$?
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-preview.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
-      # Production takes exactly the commit preview verified (--sha pins it)
-      # and is verified at the Yard's production domain (HOBO_CI_RELAY_URL
-      # above): /healthz must name this commit, /readyz must answer 200, and
-      # the promotion fails closed on anything else. A failed production
-      # verification is recorded in the CD journal, never rolled back on
-      # Vercel; the next push or a re-run deploys the same Freight again.
+      # `--build prebuilt`: HoBo.CD is the only builder; Vercel's Git
+      # integration is never connected or used. The preview node builds this
+      # checkout once and uploads it, prebuilt, as a production build that
+      # serves no domain yet; production promotes that exact build, with no
+      # rebuild. The Vercel CLI runs inside hobo, never as a step here.
+      # Production is verified at the Yard's production domain
+      # (HOBO_CI_RELAY_URL above): /healthz must name this commit, /readyz
+      # must answer 200, and the promotion fails closed on anything else. A
+      # failed production verification rolls production back to the
+      # deployment it served before (HOBO_CI_DEPLOY_ROLLED_BACK).
       - name: Deploy the relay (production)
         if: steps.gate.outputs.run == 'true'
         timeout-minutes: 17
@@ -212,7 +216,7 @@ jobs:
           status=0
           node packages/hobo/dist/bin/hobo.js ci deploy \
             --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
-            --target production --provision --wait --deadline "$DEPLOY_DEADLINE" \
+            --target production --build prebuilt --provision --wait --deadline "$DEPLOY_DEADLINE" \
             --json > "$RUNNER_TEMP/relay-production.json" || status=$?
           node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-production.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"

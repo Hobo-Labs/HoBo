@@ -452,6 +452,15 @@ function vercelCliFrom(
 		});
 }
 
+// What a `--build prebuilt` run did on Vercel: the project's canonical id,
+// the build it promoted, and what production served before (the rollback
+// target).
+interface PrebuiltState {
+	projectId?: string;
+	promoted?: string;
+	promotedFrom?: string;
+}
+
 // What a `--build prebuilt` run sends instead of the git deployment: the
 // production settings (staging) and the lookups and promotion of the staged
 // build (production). The CLI's build and upload are not requests.
@@ -925,11 +934,7 @@ export async function runCiRelayDeploy(
 	};
 	// `--build prebuilt`: the build HoBo staged or promoted, and what
 	// production served before a promotion (the rollback target).
-	const prebuiltState: {
-		projectId?: string;
-		promoted?: string;
-		promotedFrom?: string;
-	} = {};
+	const prebuiltState: PrebuiltState = {};
 	const realizePrebuilt = async (
 		pin: Parameters<RelayRealization["deploy"]>[0],
 		freightId: string,

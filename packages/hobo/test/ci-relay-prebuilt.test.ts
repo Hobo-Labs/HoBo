@@ -93,10 +93,12 @@ type Deployment = {
 // each deployment, its environment settings, promote and rollback. A
 // request to build from Git (POST /v13/deployments) is an error.
 function prebuiltVercel(initial: { production?: string } = {}) {
+	const deployments: Deployment[] = [];
+	const sent: string[] = [];
 	const state = {
 		production: initial.production ?? "dpl_live",
-		deployments: [] as Deployment[],
-		sent: [] as string[],
+		deployments,
+		sent,
 	};
 	const answer = (status: number, body: JsonObject) => ({
 		ok: status >= 200 && status < 300,
