@@ -34,7 +34,6 @@ import {
 	MAX_RUN_LOOKUPS,
 	MERGE_GROUP_FLEET_CONFIRM_SECONDS,
 	main,
-	mergeGroupRouteSurface,
 	NO_ROUTING_SLIP,
 	observeQueue,
 	PROBE_POLL_SECONDS,
@@ -1503,20 +1502,35 @@ describe("the script reading the slip", () => {
 			"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/gh-readonly-queue/main",
 	};
 
-	it("keeps the merge-group route surface on hosted while probing GitHub-hosted queue depth", async () => {
+	it("stays on GitHub-hosted when the merge-group hosted probe cannot read the queue", async () => {
+		const { decision, lines } = await route(
+			"http://127.0.0.1:9",
+			undefined,
+			mergeGroupCi,
+		);
+		assert.equal(decision.tier, "github");
+		assert.equal(decision.runner, "ubuntu-24.04");
+		assert.equal(decision.mergeGroupHostedProbe?.idle, true);
+		assert.match(decision.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
+		assert.ok(
+			warningsIn(lines).some((line) =>
+				line.includes("merge-group hosted probe unreadable"),
+			),
+		);
+	});
+
+	it("prefers GitHub-hosted on merge-group Fabric while hosted runners have idle capacity", async () => {
 		await withGithub(
 			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
 			async (apiUrl) => {
-				const surface = await mergeGroupRouteSurface(
-					{
-						...mergeGroupCi,
-						GITHUB_API_URL: apiUrl,
-						GITHUB_TOKEN: "token",
-						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
-					},
-					{ now: () => SLIP_NOW },
+				const { decision, lines } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.equal(decision.tier, "github");
+				assert.equal(decision.runner, "ubuntu-24.04");
+				assert.ok(decision.mergeGroupHostedProbe?.idle);
+				assert.match(
+					lines.join("\n"),
+					/merge-group hosted probe:.*idle=true/u,
 				);
-				assert.equal(surface, "hosted");
 			},
 		);
 	});

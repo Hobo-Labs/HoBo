@@ -708,58 +708,6 @@ export function mergeGroupHostedHasIdleCapacity(
 	return !refusingJobs(load, limits);
 }
 
-/**
- * Merge-queue probe on GitHub-hosted runners: read hosted queue depth, always
- * choose `hosted` for the route job so routing itself does not wait on the
- * single `hobo-trunk` node (#2920 run 44864749031). Fabric jobs prefer hosted
- * while `mergeGroupHostedHasIdleCapacity` holds; `hobo-trunk` only when hosted
- * is saturated. Ruleset 18324187 evicts the queue entry after ~8 minutes.
- */
-export async function mergeGroupRouteSurface(
-	env: NodeJS.ProcessEnv,
-	io: Readonly<{
-		routingConfig?: string | undefined;
-		now?: () => number;
-	}> = {},
-): Promise<"trunk" | "hosted"> {
-	const event = env.GITHUB_EVENT_NAME ?? "";
-	if (event !== "merge_group") return "hosted";
-	const workflow = workflowFile(env);
-	if (workflow !== "hobo-ci.yml" && workflow !== "release-hobo.yml")
-		return "hosted";
-	const settings = routeSettings(
-		readRunnerRouting(io.routingConfig ?? readRoutingPolicy()),
-	);
-	const { labels } = settings;
-	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
-	const token = env.GITHUB_TOKEN ?? "";
-	const repository = env.GITHUB_REPOSITORY ?? "";
-	if (!token || !repository) return "hosted";
-	const read = githubReader(apiUrl, token);
-	const now = io.now ?? Date.now;
-	try {
-		const view = await observeQueue({
-			read,
-			repository,
-			ownRunId: Number(env.GITHUB_RUN_ID),
-			labels: [labels.github],
-			limits: MERGE_GROUP_HOSTED_LIMITS,
-			exhaustLookups: true,
-			nowMs: now(),
-		});
-		const hosted = labelLoad(view.jobs, labels.github, now());
-		const idle = mergeGroupHostedHasIdleCapacity(hosted);
-		console.log(
-			`merge-group hosted probe: ${describeLoad("GitHub-hosted", hosted)}; idle=${idle}`,
-		);
-	} catch (error) {
-		console.log(
-			`merge-group hosted probe: queue unreadable (${error instanceof Error ? error.message : "unknown error"})`,
-		);
-	}
-	return "hosted";
-}
-
 export async function confirmMergeGroupFabricFleet(input: {
 	fleetDecision: RouteDecision;
 	observe: (nowMs: number) => Promise<QueueView>;
@@ -1457,11 +1405,17 @@ export async function main(
 				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		} catch (error) {
+			const detail =
+				error instanceof Error ? error.message : "unknown error";
+			console.log(
+				`::warning title=hobo-ci-route-fallback::merge-group hosted probe unreadable (${detail}); using GitHub-hosted runners`,
+			);
 			decision = {
 				tier: "github",
 				runner: githubLabel,
-				reason: `the queue could not be read (${error instanceof Error ? error.message : "unknown error"})`,
+				reason: `merge-group Fabric hosted probe unreadable (${detail})`,
 				refusedBy: "queue",
+				mergeGroupHostedProbe: { idle: true, summary: `unreadable: ${detail}` },
 			};
 		}
 		return report(
