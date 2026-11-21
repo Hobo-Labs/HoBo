@@ -62,21 +62,14 @@ function resourcesOf(
 }
 
 function metadataOf(pool: Agent37SandboxPool, leaseId: string) {
-	return pool.label
-		? { hobo: "ci", leaseId, pool: pool.label }
-		: { hobo: "ci", leaseId };
+	return pool.label ? { hobo: "ci", leaseId, pool: pool.label } : { hobo: "ci", leaseId };
 }
 
-export function resolveAgent37Network(pool: Agent37SandboxPool) {
-	const network = pool.network;
-	if (network === undefined)
-		throw new Error("agent37 sandbox network allowlist required");
-	if (network === "allow-all" || network === "deny-all")
-		throw new Error("agent37 sandbox network must be an explicit allow list");
-	const allow = network.allow;
-	if (allow.length === 0)
-		throw new Error("agent37 sandbox network allowlist must not be empty");
-	return { allow: [...allow] };
+function networkOf(pool: Agent37SandboxPool) {
+	if (!pool.network) return undefined;
+	if (pool.network === "allow-all" || pool.network === "deny-all")
+		return pool.network;
+	return { allow: [...pool.network.allow] };
 }
 
 async function findInstance(
@@ -128,14 +121,15 @@ function commandIdOf(result: Agent37ExecResult, fallback: string): string {
 	return fallback;
 }
 
-// public-contract: the Agent37 runner bootstrap contract verifies this exact single-use start script.
-export const START_AGENT37_RUNNER = `set -eu
+function startCommand(jit: string): string {
+	return `set -eu
 umask 077
 cd "$HOME"
 trap 'rm -f .hobo-ci-jit' EXIT
 test -f .hobo-ci-prepared
-test -f .hobo-ci-jit
-mkdir -m 700 .hobo-ci-started
+cat > .hobo-ci-jit <<'HOBO_RUNNER_JIT'
+${jit}
+HOBO_RUNNER_JIT
 jit=$(cat .hobo-ci-jit)
 rm -f .hobo-ci-jit
 trap - EXIT
@@ -151,18 +145,6 @@ code=$?
 set -e
 printf '%s\\n' "$code" > "$HOME/.hobo-ci-exit"
 exit "$code"
-`;
-
-function stageRunnerJitCommand(jit: string): string {
-	return `set -eu
-umask 077
-cd "$HOME"
-test -f .hobo-ci-prepared
-cat > .hobo-ci-jit <<'HOBO_RUNNER_JIT'
-${jit}
-HOBO_RUNNER_JIT
-chmod 600 .hobo-ci-jit
-test -s .hobo-ci-jit
 `;
 }
 
@@ -220,15 +202,15 @@ export function createAgent37SandboxDriver(
 				region: pool.region ?? "us",
 				resources: resourcesOf(config, pool),
 				name: config.name,
-				metadata: metadataOf(pool, leaseId),
-				env: { HOBO_LEASE_ID: leaseId },
-				auto_sleep: false,
-				idle_timeout_seconds: idleTimeoutSeconds(
-					config.timeoutMs,
-					pool.idleTimeoutSeconds,
-				),
-				network: resolveAgent37Network(pool),
-			});
+			metadata: metadataOf(pool, leaseId),
+			env: { HOBO_LEASE_ID: leaseId },
+			auto_sleep: false,
+			idle_timeout_seconds: idleTimeoutSeconds(
+				config.timeoutMs,
+				pool.idleTimeoutSeconds,
+			),
+			network: networkOf(pool),
+		});
 			if (!instance.id) throw new Error("agent37 instance identity missing");
 			return { name: config.name, sessionId: instance.id };
 		},
@@ -252,16 +234,8 @@ export function createAgent37SandboxDriver(
 			if (jit.length > maximumJitBytes || !/^[A-Za-z0-9+/]+={0,2}$/.test(jit))
 				throw new Error("invalid runner JIT configuration");
 			const leaseId = leaseIdOf(name);
-			const staged = await client.exec(sessionId, {
-				command: stageRunnerJitCommand(jit),
-				user: "root",
-				name: `jit-${leaseId}`,
-			});
-			const stagedResult = completed(staged);
-			if (stagedResult?.exit_code !== 0)
-				throw new Error("agent37 runner JIT staging failed");
 			const result = await client.exec(sessionId, {
-				command: START_AGENT37_RUNNER,
+				command: startCommand(jit),
 				user: "root",
 				background: true,
 				name: `start-${leaseId}`,
