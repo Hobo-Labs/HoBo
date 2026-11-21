@@ -63,15 +63,35 @@ serves, and `notifications/elicitation/complete` after the write; a client with
 neither gets the page's address and an instruction that the owner opens it.
 Form-mode elicitation is never used (the MCP spec forbids it for secrets).
 
-**What never leaves.** The value exists sealed in transit and as a
-`CapturedSecret` (prints `[redacted secret]`) in this process until the
-connector's single `reveal()`. Results are tickets, then `{ticketId, name,
-stored, ref, status}`; refusals carry a code and a reason, never the value.
-Nothing in `src/secret-capture/` writes a log line. The tests feed random
-synthetic values through every path and assert that no tool result, refusal,
-event, page, HTTP answer, console line or stdout/stderr write contains the
-value (raw, JSON-escaped, base64 or a 16-character slice), and that the watch
-does catch a planted leak.
+### Security boundaries
+
+- **No value egress to the network or model context.** The MCP App has empty
+  CSP `connectDomains` and `resourceDomains`, loads no external resources, and
+  never calls `ui/message` or `ui/update-model-context`. Only the sealed value
+  goes to the app-owned `submit_secret_value` tool or the same-origin loopback
+  POST. `test/secret-capture.test.ts` checks the CSP and model-context boundary;
+  `test/secret-capture-design-lint.test.ts` rejects external resource loads.
+- **Text-only rendering.** Ticket metadata, status, and errors render through
+  `textContent`, never an HTML parsing sink. The design-lint test rejects
+  `innerHTML`, `outerHTML`, `insertAdjacentHTML`, and `document.write`, and pins
+  the dynamic field, error, and result assignments to `textContent`.
+- **Script-safe JSON embedding.** The loopback ticket is embedded in an
+  `application/json` script with `<`, `>`, `&`, U+2028, and U+2029 escaped. The
+  design-lint test supplies a hostile ticket label and checks the embedded JSON.
+- **No secret values in errors.** Results are tickets, then `{ticketId, name,
+  stored, ref, status}`; refusals carry a code and a reason, never the value.
+  `test/secret-capture.test.ts` feeds random synthetic values through every path
+  and asserts that no tool result, refusal, event, page, HTTP answer, console
+  line, or stdout/stderr write contains the value (raw, JSON-escaped, base64, or
+  a 16-character slice), and that its leak watch catches a planted leak.
+- **Immediate field clearing.** Both the input and textarea are cleared on the
+  statement immediately after reading a submission, before validation,
+  encryption, or any request. The design-lint test pins that ordering and the
+  clearing of both fields.
+
+The value exists sealed in transit and as a `CapturedSecret` (prints
+`[redacted secret]`) in this process until the connector's single `reveal()`.
+Nothing in `src/secret-capture/` writes a log line.
 
 **The store** is an injected `SecretStoreConnector`: `status()` (connected?
 writable?), `authorizeWriter()` (a one-use credential that authorizes writes
@@ -83,5 +103,8 @@ memory `SecretsPort`. With no store connected `capture_secret` refuses with
 **Gates.** TypeScript (`tsc`), Protobuf (`pnpm run codegen`, opted in by
 `data-models/buf.yaml`; `src/_generated/`), CUE (closed definitions vetted
 against `fixtures/secret_capture/{valid,invalid}`), PACT
-(`contracts/consumer/secret-capture.test.ts`), design lint
-(`pnpm run design:lint` and `test/secret-capture-design-lint.test.ts`).
+(`contracts/consumer/secret-capture.test.ts`), and design lint
+(`pnpm run design:lint`, root `scripts/check-visual-tokens.mts`, and
+`test/secret-capture-design-lint.test.ts`). The design-lint test compares the
+exact rendered palette with the independent `scripts/visual-token-contract.json`
+contract rather than a token list owned by the renderer.

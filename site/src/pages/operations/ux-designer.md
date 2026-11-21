@@ -6,7 +6,7 @@ description: "Crew operator that generates and maintains app UI against implemen
 
 # UX Designer (Crew)
 
-Generates and maintains application UI against design specs — for this site the implemented visual system is `site/src/styles/global.css` (rubberhose / Steamboat Willie / Cuphead) — under the same guardrails and sandbox rules as other generators.
+Generates and maintains application UI against implemented visual tokens — for this site the palette is `site/src/styles/global.css` (rubberhose / Steamboat Willie / Cuphead) — under the same guardrails and sandbox rules as other generators. The independent `scripts/visual-token-contract.json` is the reviewed palette authority. Root `pnpm run design:lint` executes the contrast gate, fails closed for missing or unreadable palettes, and works with the affected package's design-lint and rendered-surface tests to reject unauthorized changes.
 
 ## Mission
 

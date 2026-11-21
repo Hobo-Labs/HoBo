@@ -279,7 +279,14 @@ export function selectRelevantChecks(
 		]);
 	const visualTokensChanged =
 		touchedAny([
-			/^scripts\/check-visual-tokens\.mts$/u,
+			/^scripts\/(?:check-visual-tokens\.mts|visual-token-contract\.json)$/u,
+			/^test\/visual-tokens\.test\.ts$/u,
+			/^turbo\.json$/u,
+			/^packages\/connect-ui\/src\/client\/styles\.css$/u,
+			/^packages\/control-yard\/public\/yard\.css$/u,
+			/^packages\/mcp\/(?:src\/secret-capture\/html\.ts|test\/secret-capture-design-lint\.test\.ts)$/u,
+			/^packages\/status-page\/(?:src\/tokens\.ts|test\/status-page-design-lint\.test\.ts)$/u,
+			/(?:^|\/)(?:palette|visual-tokens?|themes?)(?:\.[^/]+)?$/u,
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
 		]) || uiChanged;
 	const behaviorChanged =

@@ -22,3 +22,22 @@ test("discovers UI review from implemented tokens without a design document", ()
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("reports an unresolved finding instead of substituting a palette file for a check", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "hobo-visual-discovery-"));
+	try {
+		mkdirSync(path.join(root, "site/src/styles"), { recursive: true });
+		writeFileSync(path.join(root, "README.md"), "# Fixture\n\nA site.\n");
+		writeFileSync(path.join(root, "package.json"), JSON.stringify({ scripts: {} }));
+		writeFileSync(path.join(root, "site/src/styles/global.css"), ":root { --ink: #101010; }\n");
+		const discovery = discoverProduct(root);
+		assert.equal(discovery.featurePlans.some((feature) => feature.id === "design-system-contract"), false);
+		const unresolved = discovery.featurePlans.find((feature) => feature.id === "design-system-contract-unresolved");
+		assert.ok(unresolved);
+		assert.deepEqual(unresolved.surfaces, []);
+		assert.match(unresolved.seed, /not an executed check/u);
+		assert.ok(discovery.notes.some((note) => /Unresolved visual check:.*design:lint/u.test(note)));
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

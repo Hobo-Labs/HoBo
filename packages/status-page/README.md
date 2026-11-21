@@ -37,7 +37,11 @@ static site is the **read store**, rebuildable from zero. Types follow
   explicit `evaluatedAt`. Components without a signal inside the freshness
   budget render **delayed/unknown — never stale operational** (ADR-0077 §4).
 - **Render** (`src/render.ts`): pure HTML string renderer, HoBo Rubberhose
-  chrome (see `src/tokens.ts`), strict inline CSP, `escapeHtml` on every value.
+  chrome, strict inline CSP, and `escapeHtml` on every value. The implemented
+  `src/tokens.ts` palette must match the independent reviewed
+  `scripts/visual-token-contract.json`; root `pnpm run design:lint` checks its
+  contrast, and `test/status-page-design-lint.test.ts` rejects rendered palette
+  drift from that contract.
 - **Statuspage-v2 JSON** (`src/statuspage-json.ts`): emits the de-facto
   standard `/api/v2/summary.json` shape used by githubstatus.com and
   status.claude.com, so existing ecosystem tooling can consume HoBo pages.

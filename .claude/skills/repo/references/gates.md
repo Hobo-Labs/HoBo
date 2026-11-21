@@ -24,7 +24,7 @@ Failed validation is not a completion state. Fix the failure or report the block
 - Branch path: `pnpm run check:relevant -- --base=origin/main`
 - Final PR-base path: `pnpm run agent:check -- --base=origin/main`
 - Technical standards: `pnpm run standards:check -- --base=origin/main`
-- Visual tokens: `pnpm run design:lint` and affected rendered-surface tests for UI changes
+- Visual tokens: always for visual/UI/TUI/dashboard changes, run impeccable critique/audit, `pnpm run design:lint`, and the affected package's design-lint and rendered-surface tests; do not wait to be asked
 - OKF structure: `pnpm run docs:okf`
 - Skill validation: no standalone validator ships in-repo; skill integrity is covered by `pnpm run skills:mirror-check` (byte-identical `.claude`/`.agents` mirrors) plus `pnpm run docs:okf` for reference bundles.
 

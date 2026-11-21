@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import visualTokenContract from "../../../scripts/visual-token-contract.json" with {
+	type: "json",
+};
 
 import {
 	createStatusPageProjection,
 	parseStatusScope,
 	renderStatusPageHtml,
 	STATUS_PAGE_FORBIDDEN_HEX,
-	STATUS_PAGE_TOKEN_VALUES,
+	STATUS_PAGE_TOKENS,
 	STATUS_SIGNAL_EVENTS,
 	statusEnvelope,
 	toStatusPageModel,
@@ -62,14 +65,21 @@ function renderedSurface(): string {
 const html = renderedSurface();
 
 describe("status-page design lint (HoBo Rubberhose)", () => {
-	it("uses only implemented palette tokens", () => {
-		const hexes = html.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
-		for (const hex of hexes) {
-			expect(
-				STATUS_PAGE_TOKEN_VALUES.has(hex.toLowerCase()),
-				`non-token hex ${hex}`,
-			).toBe(true);
-		}
+	it("uses exactly the palette approved by the independent token contract", () => {
+		expect(STATUS_PAGE_TOKENS).toEqual(
+			visualTokenContract["status-page"].tokens,
+		);
+		const approved = new Set(
+			Object.values(visualTokenContract["status-page"].tokens),
+		);
+		const rendered = new Set(
+			(html.match(/#[0-9a-fA-F]{3,8}\b/gu) ?? []).map((hex) =>
+				hex.toLowerCase(),
+			),
+		);
+		expect(rendered.size).toBeGreaterThan(0);
+		for (const hex of rendered)
+			expect(approved.has(hex), `non-contract hex ${hex}`).toBe(true);
 	});
 
 	it("bans the forbidden SaaS/Catppuccin palette", () => {

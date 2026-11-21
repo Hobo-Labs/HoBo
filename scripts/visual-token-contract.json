@@ -1,0 +1,116 @@
+{
+	"site": {
+		"project": "site",
+		"palette": "site/src/styles/global.css",
+		"format": "css",
+		"contrast": [
+			{ "foreground": "--text", "background": "--bg" },
+			{ "foreground": "--text", "background": "--bg-raised" },
+			{ "foreground": "--text", "background": "--bg-inset" },
+			{ "foreground": "--text-mute", "background": "--bg" },
+			{ "foreground": "--text-faint", "background": "--bg" }
+		],
+		"themes": [
+			{ "selector": ":root[data-theme=\"light\"]" },
+			{ "selector": ":root[data-theme=\"dark\"]" },
+			{ "selector": ":root[data-design=\"cutout\"]" },
+			{ "selector": ":root[data-design=\"cutout\"][data-theme=\"dark\"]" },
+			{ "selector": ":root[data-design=\"broadsheet\"]" },
+			{ "selector": ":root[data-design=\"broadsheet\"][data-theme=\"dark\"]" },
+			{ "selector": ":root[data-design=\"titlecard\"]" },
+			{ "selector": ":root[data-design=\"titlecard\"][data-theme=\"dark\"]" },
+			{ "selector": ":root[data-design=\"ledger\"]" },
+			{ "selector": ":root[data-design=\"ledger\"][data-theme=\"dark\"]" }
+		]
+	},
+	"connect-ui": {
+		"project": "packages/connect-ui",
+		"palette": "packages/connect-ui/src/client/styles.css",
+		"format": "css",
+		"contrast": [
+			{ "foreground": "--ink", "background": "--paper" },
+			{ "foreground": "--ink", "background": "--cream" },
+			{ "foreground": "--mute", "background": "--paper" }
+		],
+		"themes": [
+			{ "selector": ":root" },
+			{ "selector": ":root", "media": "(prefers-color-scheme: dark)" }
+		]
+	},
+	"control-yard": {
+		"project": "packages/control-yard",
+		"palette": "packages/control-yard/public/yard.css",
+		"format": "css",
+		"contrast": [
+			{ "foreground": "--ink", "background": "--paper" },
+			{ "foreground": "--ink", "background": "--cream" },
+			{ "foreground": "--mute", "background": "--paper" },
+			{ "foreground": "--mute", "background": "--cream" },
+			{ "foreground": "--faint", "background": "--paper" }
+		],
+		"themes": [{ "selector": ":root" }]
+	},
+	"mcp": {
+		"project": "packages/mcp",
+		"palette": "packages/mcp/src/secret-capture/html.ts",
+		"format": "style-template",
+		"tokens": {
+			"lightPaper": "#ffffff",
+			"lightInk": "#101010",
+			"lightMute": "#4a4a46",
+			"lightFaint": "#6e6d68",
+			"lightRule": "#c9c8c2",
+			"lightInset": "#f4f4f2",
+			"lightCodeBg": "#f7f7f5",
+			"spark": "#c5301c",
+			"go": "#14672c",
+			"darkPaper": "#0a0a0a",
+			"darkRaised": "#111111",
+			"darkInk": "#f2f1ec"
+		},
+		"contrast": [
+			{ "foreground": "--ink", "background": "--paper" },
+			{ "foreground": "--ink", "background": "--inset" },
+			{ "foreground": "--mute", "background": "--paper" },
+			{ "foreground": "--faint", "background": "--paper" }
+		],
+		"themes": [
+			{ "selector": ":root" },
+			{ "selector": ":root[data-theme=\"dark\"]" },
+			{
+				"selector": ":root:not([data-theme=\"light\"])",
+				"media": "(prefers-color-scheme: dark)"
+			}
+		]
+	},
+	"status-page": {
+		"project": "packages/status-page",
+		"palette": "packages/status-page/src/tokens.ts",
+		"format": "typescript-tokens",
+		"tokens": {
+			"ink": "#101010",
+			"paper": "#ffffff",
+			"mute": "#4a4a46",
+			"cream": "#f2f1ec",
+			"spark": "#c5301c",
+			"go": "#14672c",
+			"soot": "#1a1512",
+			"faint": "#6e6d68",
+			"border": "#e3e2de",
+			"borderStrong": "#c9c8c2",
+			"inset": "#f4f4f2",
+			"codeBg": "#f7f7f5",
+			"nightBg": "#0a0a0a",
+			"nightRaised": "#111111"
+		},
+		"contrast": [
+			{ "foreground": "ink", "background": "paper" },
+			{ "foreground": "ink", "background": "cream" },
+			{ "foreground": "mute", "background": "paper" },
+			{ "foreground": "faint", "background": "paper" },
+			{ "foreground": "cream", "background": "nightRaised" },
+			{ "foreground": "borderStrong", "background": "nightRaised" },
+			{ "foreground": "border", "background": "nightRaised" }
+		]
+	}
+}
