@@ -146,6 +146,9 @@ export class GithubCiOrderSource implements RunnerOrderSource {
 			};
 		}
 		const committed = parseCiRunnerOrder(text ?? "{}");
-		return { order: committed.order, problem: committed.problem };
+		return {
+			order: committed.order ?? DEFAULT_RUNNER_ORDER,
+			problem: committed.problem,
+		};
 	}
 }
