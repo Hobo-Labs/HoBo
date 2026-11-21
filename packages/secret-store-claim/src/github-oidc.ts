@@ -109,7 +109,9 @@ export function parseGithubOidcSubject(input: {
 
 // public-contract: suffix appended to the org-wide GitHub Actions audience for the deploy-token reader OIDC trust.
 export const DEPLOY_READER_AUDIENCE_SUFFIX = "/hobo-ci-deploy-reader";
+// public-contract: GitHub environment name used to scope the deploy-token writer OIDC trust for app credentials.
 export const DEPLOY_WRITER_ENVIRONMENT = "hobo-ci-app-credentials";
+// public-contract: GitHub environment name used to scope the deploy-token reader OIDC trust.
 export const DEPLOY_READER_ENVIRONMENT = "hobo-ci-deploy";
 
 function githubEnvironmentTrust(
