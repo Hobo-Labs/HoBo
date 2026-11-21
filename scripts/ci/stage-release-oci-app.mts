@@ -149,6 +149,16 @@ function refExists(root: string, ref: string): boolean {
 	);
 }
 
+function warnTurboBaseFallback(message: string): void {
+	const detail = message
+		.replace(/%/gu, "%25")
+		.replace(/\r/gu, "%0D")
+		.replace(/\n/gu, "%0A");
+	console.log(
+		`::warning title=release-turbo-base::${detail}; release OCI build uses full turbo graph`,
+	);
+}
+
 function turboBaseReachable(root: string, base: string): boolean {
 	if (!refExists(root, base)) return false;
 	return (
@@ -225,10 +235,15 @@ export function resolveReleaseTurboBase(
 	if (base === "origin/main") {
 		if (refExists(root, "HEAD^1") && turboBaseReachable(root, "HEAD^1"))
 			return "HEAD^1";
-		if (releaseTagOrDispatchCheckout()) return undefined;
+		if (releaseTagOrDispatchCheckout()) {
+			warnTurboBaseFallback(`${base} unreachable on tag or dispatch checkout`);
+			return undefined;
+		}
 	}
-	if (releaseTagOrDispatchCheckout() || /^v0\.0\.0-alpha\.\d+$/u.test(base))
+	if (releaseTagOrDispatchCheckout() || /^v0\.0\.0-alpha\.\d+$/u.test(base)) {
+		warnTurboBaseFallback(`${base} unreachable after fetch`);
 		return undefined;
+	}
 	throw new Error(
 		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
 	);

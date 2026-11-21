@@ -852,10 +852,10 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch previous release for affected builds
         if: env.HOBO_RELEASE_TURBO_BASE != ''
         run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
-      - uses: $/.github/actions/ci-runner-preflight
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
         # Without a token the GHCR pull is never tried, and a runner that does not
@@ -978,10 +978,10 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
       - name: Fetch previous release for affected builds
         if: env.HOBO_RELEASE_TURBO_BASE != ''
         run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts
-      - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
