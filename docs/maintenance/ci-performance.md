@@ -138,7 +138,10 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
   `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
-- **Merge groups reuse a green PR Fabric run of the same tree at the same base.** 15 of the last 50
+- **Merge groups reuse a green PR Fabric run of the same tree at the same base (off until enabled).**
+  Committed `.hobo/ci.json` keeps `runnerRouting.mergeGroup.reusePrFabric` at `false` until a merge
+  group logs `pr-fabric reuse: yes` in production ([finding 156](../ci/findings/0156-merge-queue-tree-reuse.md)).
+  When enabled, 15 of the last 50
   merge-group runs (30%) tested a tree a green same-repo pull_request run of this workflow had already
   tested at the entry's base tip ([finding 156](../ci/findings/0156-merge-queue-tree-reuse.md)). The
   route job (`scripts/ci/pr-fabric-reuse.mts`, run from the trusted base checkout) verifies the shape from

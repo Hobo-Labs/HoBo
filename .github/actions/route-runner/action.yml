@@ -245,7 +245,7 @@ runs:
       run: |
         set -uo pipefail
         no_reuse() {
-          echo "::warning title=hobo-ci-pr-fabric-reuse::pr-fabric reuse: no: $1"
+          echo "::warning title=hobo-ci-route-fallback::pr-fabric reuse: no: $1"
           echo "reuse=false" >> "$GITHUB_OUTPUT"
         }
         if [ -z "${GITHUB_ACTION_PATH:-}" ] || ! action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"; then

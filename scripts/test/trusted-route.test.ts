@@ -382,11 +382,13 @@ describe("pr-fabric reuse routing", () => {
 		const attestAt = ids.indexOf("attest");
 		const prFabricAt = ids.indexOf("pr-fabric");
 		assert.ok(attestAt >= 0 && prFabricAt > attestAt);
-		const shell = asText(
-			compositeSteps().find((step) => step?.id === "pr-fabric")?.run,
+		const prFabricStep = compositeSteps().find((step) => step?.id === "pr-fabric");
+		assert.match(
+			asText(prFabricStep?.if),
+			/github\.event_name == 'merge_group'/u,
 		);
+		const shell = asText(prFabricStep?.run);
 		assert.ok(shell);
-		assert.match(shell, /GITHUB_EVENT_NAME.*merge_group/s);
 		assert.match(
 			shell,
 			/script="\$\{action_root\}\/scripts\/ci\/pr-fabric-reuse\.mts"/u,

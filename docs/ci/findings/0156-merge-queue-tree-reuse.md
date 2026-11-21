@@ -174,6 +174,10 @@ uses for an attestation. Everything else is untouched:
 
 ## Expected savings
 
+Committed `.hobo/ci.json` ships `runnerRouting.mergeGroup.reusePrFabric: false`
+until a merge group produces the first production observation below; savings in
+this section apply only after that flag flips to `true`.
+
 The 2026-11-20 read-only latency analysis measured the typical merge (the
 average of #2019/#2020) at 10.8 minutes enqueue-to-merged, of which the S0
 gate set (~1.6 min), the critical shard's setup+build+tests (~5.5 min), and
