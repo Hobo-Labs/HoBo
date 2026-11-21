@@ -57,9 +57,10 @@ import type { PricingRejectionCode, QuoteResult } from "./types.js";
 export type RatingAlgorithmVersion =
 	| "pricing-rating/v1"
 	| "pricing-rating/v2"
-	| "pricing-rating/v3";
+	| "pricing-rating/v3"
+	| "pricing-rating/v4";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v3";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v4";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function unsupportedRealm(): PricingRejected {
@@ -239,7 +240,8 @@ export function quoteScenario(
 	if (
 		version !== "pricing-rating/v1" &&
 		version !== "pricing-rating/v2" &&
-		version !== "pricing-rating/v3"
+		version !== "pricing-rating/v3" &&
+		version !== "pricing-rating/v4"
 	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
@@ -274,7 +276,9 @@ function quoteWithOrdering(
 	timeOrder: PricingTimeOrder,
 	ratingAlgorithmVersion: string,
 ): QuoteResult {
-	const strictTimes = ratingAlgorithmVersion === "pricing-rating/v3";
+	const strictTimes =
+		ratingAlgorithmVersion === "pricing-rating/v3" ||
+		ratingAlgorithmVersion === "pricing-rating/v4";
 	const time: TemporalPolicy = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	if (!isBoundedPricingInput(scenario))
@@ -284,7 +288,12 @@ function quoteWithOrdering(
 		);
 	try {
 		if (timeOrder === utcPricingTimeOrder) validateV2ScenarioTimes(scenario);
-		validateScenarioState(scenario, time, timeOrder === utcPricingTimeOrder);
+		validateScenarioState(
+			scenario,
+			time,
+			ratingAlgorithmVersion === "pricing-rating/v4",
+			timeOrder === utcPricingTimeOrder,
+		);
 		if (timeOrder === utcPricingTimeOrder) {
 			validateV2FinancialIdentities(scenario.state);
 			if (scenario.state !== undefined) {
