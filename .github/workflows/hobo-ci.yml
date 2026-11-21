@@ -46,9 +46,9 @@ env:
 # for hours; the release train and the deps publish run only after a green main run.
 # A newer pull_request push still cancels its PR's older run. The event name keeps
 # schedule and workflow_dispatch on main out of the pushes' group; merge_group runs are
-# never cancelled.
+# never cancelled and use their head SHA instead of the reused temporary queue ref.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'merge_group' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

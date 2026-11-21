@@ -173,9 +173,10 @@ permissions:
 # and it asks after the running release has tagged, not before (two releases of
 # overlapping changes, or an older one finishing last). Keyed by the CI run's event and
 # conclusion so a completion the gate skips (scheduled, dispatched, or a main push that was
-# dropped or failed) never displaces a release waiting on a green push.
+# dropped or failed) never displaces a release waiting on a green push. Other events keep
+# the workflow/ref group except merge_group, whose head SHA isolates each re-enqueued group.
 concurrency:
-  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
+  group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion) || format('hobo-release-{0}-{1}', github.workflow, github.event_name == 'merge_group' && github.sha || github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
