@@ -161,6 +161,7 @@ export {
 	type PostgresDataErrorOptions,
 } from "./errors.js";
 export {
+	type AssignmentColumns,
 	readAssignmentRows,
 	sqlAssignmentRegister,
 	sqlAssignmentReplica,

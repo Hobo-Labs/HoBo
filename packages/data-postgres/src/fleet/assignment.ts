@@ -83,10 +83,17 @@ function assignmentFromRow(row: SqlRow): AssignmentEntry {
 	});
 }
 
-const SELECT_ASSIGNMENT = `epoch::text AS epoch, active, sealed::text AS sealed, target, reason,
+const SELECT_ENTRY = `epoch::text AS epoch, active, sealed::text AS sealed, target, reason,
 	loss_window_ms::text AS loss_window_ms,
-	round(extract(epoch FROM decided_at) * 1000)::bigint::text AS decided_at_ms, decided_by,
+	round(extract(epoch FROM decided_at) * 1000)::bigint::text AS decided_at_ms, decided_by`;
+const SELECT_ASSIGNMENT = `${SELECT_ENTRY},
 	members::text AS members`;
+
+export interface AssignmentColumns {
+	readonly members: boolean;
+}
+
+const WITH_MEMBERS: AssignmentColumns = { members: true };
 
 /**
  * Read one backend's log on a given session, newest `limit` entries, ascending.
@@ -96,10 +103,11 @@ export async function readAssignmentRows(
 	session: SqlSession,
 	layout: FleetLayout,
 	limit?: number,
+	columns: AssignmentColumns = WITH_MEMBERS,
 ): Promise<readonly AssignmentEntry[]> {
 	try {
 		const result = await session.query(
-			`SELECT ${SELECT_ASSIGNMENT} FROM ${layout.assignmentTable} ORDER BY epoch DESC LIMIT $1::bigint`,
+			`SELECT ${columns.members ? SELECT_ASSIGNMENT : SELECT_ENTRY} FROM ${layout.assignmentTable} ORDER BY epoch DESC LIMIT $1::bigint`,
 			[limit ?? 1_000_000],
 		);
 		return result.rows.map(assignmentFromRow).reverse();
@@ -121,21 +129,29 @@ export async function readAssignmentRows(
 export function sqlAssignmentReplica(
 	backend: PostgresBackend,
 	layout: FleetLayout,
+	columns: AssignmentColumns = WITH_MEMBERS,
 ): AssignmentReplica {
 	const table = layout.assignmentTable;
 	const id = parseMemberName(backend.id, "backend");
+	const select = columns.members ? SELECT_ASSIGNMENT : SELECT_ENTRY;
 	return {
 		id,
-		read: (limit) => readAssignmentRows(backend.executor, layout, limit),
+		read: (limit) =>
+			readAssignmentRows(backend.executor, layout, limit, columns),
 		async accept(assignment) {
+			if (!columns.members && assignment.members !== undefined)
+				throw new PostgresDataError(
+					"FLEET_RECORD_INVALID",
+					"this log holds no membership epochs",
+				);
 			const result = await backend.executor.query(
 				`WITH gate AS (
 					SELECT pg_try_advisory_xact_lock_shared($9::int, hashtext($10)) AS free
 				), inserted AS (
 					INSERT INTO ${table}
-						(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by, members)
+						(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by${columns.members ? ", members" : ""})
 					SELECT $1::bigint, $2::text, $3::boolean, $4::text, $5::text, $6::bigint,
-						timestamptz 'epoch' + $7::bigint * interval '1 millisecond', $8::text, $11::text[]
+						timestamptz 'epoch' + $7::bigint * interval '1 millisecond', $8::text${columns.members ? ", $11::text[]" : ""}
 					FROM gate
 					WHERE gate.free
 						AND coalesce((SELECT max(epoch) FROM ${table}), 0) = $1::bigint - 1
@@ -156,7 +172,7 @@ export function sqlAssignmentReplica(
 					assignment.decidedBy,
 					FLEET_LOCK_CLASS,
 					table,
-					membersToParameter(assignment.members),
+					...(columns.members ? [membersToParameter(assignment.members)] : []),
 				],
 			);
 			const outcome = result.rows[0];
@@ -168,7 +184,7 @@ export function sqlAssignmentReplica(
 			if (!parseFlag(column(outcome, "free"), "free")) return "busy";
 			if (column(outcome, "inserted") === "1") return "accepted";
 			const held = await backend.executor.query(
-				`SELECT ${SELECT_ASSIGNMENT} FROM ${table} WHERE epoch = $1::bigint`,
+				`SELECT ${select} FROM ${table} WHERE epoch = $1::bigint`,
 				[assignment.epoch],
 			);
 			const existing = held.rows[0];

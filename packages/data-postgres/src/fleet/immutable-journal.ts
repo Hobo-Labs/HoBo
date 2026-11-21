@@ -310,7 +310,9 @@ export function createPostgresImmutableJournalReplica(
 			session: executor.session.bind(executor),
 		},
 	};
-	const assignmentsReplica = sqlAssignmentReplica(scopedBackend, layout);
+	const assignmentsReplica = sqlAssignmentReplica(scopedBackend, layout, {
+		members: false,
+	});
 	const replica: SealableImmutableJournalReplica = {
 		id: assignmentsReplica.id,
 		async read(max) {

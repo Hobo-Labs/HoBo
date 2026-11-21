@@ -121,3 +121,19 @@ describe("the SQL replica's members column", () => {
 		);
 	});
 });
+
+describe("the SQL replica of an immutable journal's log, which has no members column (ADR-0183 D67)", () => {
+	it("never names the column, and refuses a membership epoch", async () => {
+		const executor = new FleetSqlDouble();
+		const replica = sqlAssignmentReplica({ id: "a", executor }, layout, {
+			members: false,
+		});
+		expect(await replica.accept(entry(1, undefined))).toBe("accepted");
+		expect(await replica.accept(entry(1, undefined))).toBe("duplicate");
+		expect((await replica.read()).map((row) => row.epoch)).toEqual([1]);
+		await expect(replica.accept(entry(2, [A, B, C]))).rejects.toThrow(
+			/membership epochs/u,
+		);
+		expect(executor.statements.join("\n")).not.toMatch(/members/u);
+	});
+});
