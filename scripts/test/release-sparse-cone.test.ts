@@ -223,6 +223,25 @@ describe("release-hobo publish jobs install order", () => {
 		"utf8",
 	);
 
+	it("toolchain resolver checkout covers the script and every version input", () => {
+		const paths = parseJobHoboCheckoutSparsePaths(
+			hoboWorkflow,
+			"release-toolchain-image",
+		);
+		for (const required of [
+			"scripts/ci/ensure-ci-worker-image.mts",
+			"scripts/lib/ci-runner-contract.mts",
+			"mise.toml",
+			"mise.lock",
+			"packages/ci-gh-actions/deploy/ci-runner/system-packages.txt",
+			"packages/ci-gh-actions/deploy/ci-runner/base/Dockerfile",
+			"packages/ci-gh-actions/deploy/ci-runner/base/install-playwright-headless-shell.sh",
+			"packages/ci-gh-actions/deploy/ci-runner/build.sh",
+		]) {
+			expect(coneCoversPath(paths, required), required).toBe(true);
+		}
+	});
+
 	for (const jobId of ["release-publish", "release-npm"] as const) {
 		it(`${jobId} runs materialize-release-version after pnpm install`, () => {
 			const block = parseReleaseJobBlock(hoboWorkflow, jobId);
