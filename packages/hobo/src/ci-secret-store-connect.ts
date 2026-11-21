@@ -388,10 +388,7 @@ async function readerRead(
 		session = active;
 		await active.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
 		const membership = await active.readProjectIdentity(identityId);
-		if (
-			membership.roles.length !== 1 ||
-			membership.roles[0] !== "viewer"
-		)
+		if (membership.roles.length !== 1 || membership.roles[0] !== "viewer")
 			return {
 				identity,
 				identityId,
@@ -504,7 +501,8 @@ async function writerSignIn(
 			identityId,
 			method,
 			result: "pass",
-			detail: "signed in and was refused the deploy credential project with HTTP 403",
+			detail:
+				"signed in and was refused the deploy credential project with HTTP 403",
 		};
 	} catch (error) {
 		return {
@@ -716,9 +714,7 @@ export async function runCiSecretStoreVerify(
 							identityId: store.relayIdentityId,
 							jwt: async () => vercelJwt,
 						}),
-						...(input.fetch !== undefined
-							? { fetch: input.fetch }
-							: undefined),
+						...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 					}),
 				)
 			: {
