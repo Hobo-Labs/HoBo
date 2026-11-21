@@ -367,7 +367,10 @@ jobs:
     # tree. A local run signs for this job only when no OCI image is affected.
     if: >-
       !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') &&
-      !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"release-contract"'))
+      !(
+      needs.route.result == 'success' &&
+      needs.route.outputs.attested == 'true' &&
+      contains(needs.route.outputs.attested-jobs, '"release-contract"'))
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     # The realize proof (and its @hobo/hobo build) is release-realize's, so a
     # Turbo cache miss here costs only the affected images.

@@ -30,6 +30,8 @@ const plan = loadPlan();
 /** The condition that skips a job the route job verified a signed local run for. */
 const skipWhenAttested = (job: string) =>
 	`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
+const skipWhenAttestedOnGreenRoute = (job: string) =>
+	`!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
 
 describe("the description of the covered jobs", () => {
 	it("pins the workflow and plan reviewed for the shadow skips", () => {
@@ -228,8 +230,12 @@ describe("skipping a covered job in the workflows", () => {
 					);
 					continue;
 				}
+				const skipPattern =
+					id === "release-contract" && path.endsWith("release-hobo.yml")
+						? skipWhenAttestedOnGreenRoute(id)
+						: skipWhenAttested(id);
 				assert.ok(
-					condition.includes(skipWhenAttested(id)),
+					condition.includes(skipPattern),
 					`${path}: ${id} must be skipped when attested, by its own id`,
 				);
 				assert.equal(
