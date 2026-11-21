@@ -743,13 +743,9 @@ export async function confirmMergeGroupFabricFleet(input: {
 	}
 }
 
-function githubReader(
-	apiUrl: string,
-	token: string,
-	send: typeof fetch = fetch,
-): QueueReader {
+function githubReader(apiUrl: string, token: string): QueueReader {
 	return async (path) => {
-		const response = await send(`${apiUrl}${path}`, {
+		const response = await fetch(`${apiUrl}${path}`, {
 			headers: {
 				accept: "application/vnd.github+json",
 				authorization: `Bearer ${token}`,
@@ -1161,119 +1157,108 @@ export async function main(
 	);
 	const { labels, limits } = settings;
 	const event = env.GITHUB_EVENT_NAME ?? "";
-	const workflow = workflowFile(env);
 	const fleetLabel = fleetLabelFor(event, labels);
 	// A dispatch's own choice wins; otherwise the committed pin.
 	const mode = args.route === "auto" ? settings.pin : args.route;
-	const batchWorkflow = ["hobo-ci.yml", "release-hobo.yml"].includes(workflow);
-	const mergeGroupAuto =
-		event === "merge_group" && batchWorkflow && mode === "auto";
-	const prBatchAuto =
-		event === "pull_request" &&
-		batchWorkflow &&
-		!args.includeOwnRun &&
+	const mergeBatch =
+		event === "merge_group" &&
+		workflowFile(env) === "release-hobo.yml" &&
 		mode === "auto";
-	const eventPayload =
-		"eventPayload" in io ? io.eventPayload : readEventPayload(env);
-	const eventClass = routeClass(event, eventPayload);
+	const mergeGroupHoboCi =
+		event === "merge_group" &&
+		workflowFile(env) === "hobo-ci.yml" &&
+		mode === "auto";
+	const mergeGroupFabric = mergeGroupHoboCi && !args.includeOwnRun;
 	if (env.GITHUB_OUTPUT)
 		appendFileSync(
 			env.GITHUB_OUTPUT,
-			`box_runner=${mergeGroupAuto ? "" : settings.boxRunner}\n`,
+			`box_runner=${mergeBatch ? "" : settings.boxRunner}\n`,
 		);
 	const localEnrolled = settings.localRunner;
 	const defaults = settings.committed
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
-	if (mergeGroupAuto && !settings.committed)
+	if (mergeBatch) {
+		if (!settings.committed)
+			throw new Error(
+				"merge-group batch routing requires a valid committed policy",
+			);
+		if (
+			labels.github !== "ubuntu-24.04" ||
+			!(await isPublicCaller(env, io.fetch))
+		)
+			throw new Error(
+				"merge-group batch public compute evidence is unavailable",
+			);
+		return report(
+			{
+				tier: "github",
+				runner: labels.github,
+				reason:
+					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
+				refusedBy: "none",
+				slip: { kind: "unasked", why: "batch" },
+			},
+			env,
+		);
+	}
+	if (
+		event === "merge_group" &&
+		workflowFile(env) === "hobo-ci.yml" &&
+		mode === "auto" &&
+		!settings.committed
+	)
 		throw new Error(
 			"merge-group Fabric routing requires a valid committed policy",
 		);
-	if (prBatchAuto && !settings.committed)
-		throw new Error("PR batch routing requires a valid committed policy");
-	if (prBatchAuto) {
+	// Preserve explicit pins; a missing or malformed policy is not an auto pin.
+	if (
+		event === "pull_request" &&
+		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
+		!args.includeOwnRun &&
+		mode === "auto"
+	) {
+		if (!settings.committed)
+			throw new Error("PR batch routing requires a valid committed policy");
 		const startedAt = now();
-		const deadlineMs = startedAt + limits.maxWaitSeconds * 1_000;
-		if (eventClass !== "fork") {
-			const scope = prBatchScope(
-				env,
-				labels.fleet,
-				settings.boxRunner,
-				deadlineMs,
-				limits.maxWaitSeconds,
-				workflow,
-			);
-			let capacityHeld = false;
-			if (scope && io.verifyPrBatchCapacity) {
-				try {
-					capacityHeld = await io.verifyPrBatchCapacity(scope);
-				} catch {}
-			}
-			const checkedAt = now();
-			if (
-				capacityHeld &&
-				scope &&
-				Number.isSafeInteger(startedAt) &&
-				startedAt > 0 &&
-				Number.isSafeInteger(checkedAt) &&
-				checkedAt >= startedAt &&
-				checkedAt < deadlineMs
-			)
-				return report(
-					{
-						tier: "fleet",
-						runner: labels.fleet,
-						reason:
-							"the exact PR batch has an independently verified capacity and Broker claim",
-						refusedBy: "none",
-						slip: { kind: "unasked", why: "batch" },
-					},
-					env,
-				);
-			const trunkObservedAt = now();
-			let trunkTakingJobs = false;
+		const scope = prBatchScope(
+			env,
+			fleetLabel,
+			settings.boxRunner,
+			startedAt + limits.maxWaitSeconds * 1_000,
+			limits.maxWaitSeconds,
+			workflowFile(env),
+		);
+		let capacityHeld = false;
+		if (scope && io.verifyPrBatchCapacity) {
 			try {
-				const view = await observeQueue({
-					read: githubReader(
-						env.GITHUB_API_URL ?? "https://api.github.com",
-						env.GITHUB_TOKEN ?? "",
-						io.fetch,
-					),
-					repository: env.GITHUB_REPOSITORY ?? "",
-					ownRunId: Number(env.GITHUB_RUN_ID),
-					labels: [labels.trunk],
-					limits,
-					nowMs: trunkObservedAt,
-					includeOwnRun: false,
-				});
-				trunkTakingJobs = takingJobs(
-					labelLoad(view.jobs, labels.trunk, trunkObservedAt),
-					limits,
-				);
+				capacityHeld = await io.verifyPrBatchCapacity(scope);
 			} catch {
-				trunkTakingJobs = false;
+				// An unavailable or stale authority cannot admit the fleet.
 			}
-			const trunkCheckedAt = now();
-			if (
-				trunkTakingJobs &&
-				Number.isSafeInteger(startedAt) &&
-				startedAt > 0 &&
-				Number.isSafeInteger(trunkCheckedAt) &&
-				trunkCheckedAt >= startedAt &&
-				trunkCheckedAt < deadlineMs
-			)
-				return report(
-					{
-						tier: "fleet",
-						runner: labels.trunk,
-						reason: "the full PR batch has healthy hobo-trunk queue pickup",
-						refusedBy: "none",
-						slip: { kind: "unasked", why: "batch" },
-					},
-					env,
-				);
 		}
+		const checkedAt = now();
+		if (
+			capacityHeld &&
+			scope &&
+			Number.isSafeInteger(startedAt) &&
+			startedAt > 0 &&
+			Number.isSafeInteger(checkedAt) &&
+			checkedAt >= startedAt &&
+			checkedAt < scope.decisionDeadlineMs
+		)
+			return report(
+				{
+					tier: "fleet",
+					runner: fleetLabel,
+					reason:
+						"the exact PR batch has an independently verified capacity and Broker claim",
+					refusedBy: "none",
+					slip: { kind: "unasked", why: "batch" },
+				},
+				env,
+			);
 		if (
 			labels.github !== "ubuntu-24.04" ||
 			!(await isPublicCaller(env, io.fetch))
@@ -1286,9 +1271,7 @@ export async function main(
 				tier: "github",
 				runner: labels.github,
 				reason:
-					eventClass === "fork"
-						? "the fork PR batch must not use the fleet; public standard-runner compute was verified"
-						: "the full PR batch has no verified fleet capacity or healthy trunk pickup; public standard-runner compute was verified",
+					"the full PR batch has no verified fleet capacity and Broker claim; public standard-runner compute was verified",
 				refusedBy: "none",
 				slip: { kind: "unasked", why: "batch" },
 			},
@@ -1326,42 +1309,18 @@ export async function main(
 		repository,
 		token,
 		labels,
-		routeClass: eventClass,
+		routeClass: routeClass(
+			event,
+			"eventPayload" in io ? io.eventPayload : readEventPayload(env),
+		),
 		nowMs: now,
 		fetch: io.fetch,
 	});
-	if (slip.ok && slip.decision.tier !== "fleet") {
-		if (mergeGroupAuto && slip.decision.tier !== "github") {
-			if (
-				labels.github !== "ubuntu-24.04" ||
-				!(await isPublicCaller(env, io.fetch))
-			)
-				throw new Error(
-					"merge-group batch public compute evidence is unavailable",
-				);
-			return report(
-				{
-					...slip.decision,
-					tier: "github",
-					runner: labels.github,
-					reason: `merge-group Fabric refused the ${slip.decision.tier} fallback; ${slip.decision.reason}${defaults}`,
-				},
-				env,
-			);
-		}
-		if (
-			mergeGroupAuto &&
-			(labels.github !== "ubuntu-24.04" ||
-				!(await isPublicCaller(env, io.fetch)))
-		)
-			throw new Error(
-				"merge-group batch public compute evidence is unavailable",
-			);
+	if (slip.ok && slip.decision.tier !== "fleet")
 		return report(
 			{ ...slip.decision, reason: `${slip.decision.reason}${defaults}` },
 			env,
 		);
-	}
 	// No usable slip, or a fleet slip requiring an independent queue check.
 	if (!slip.ok)
 		console.log(
@@ -1419,7 +1378,7 @@ export async function main(
 		};
 	}
 	if (
-		mergeGroupAuto &&
+		mergeGroupHoboCi &&
 		decision.tier === "fleet" &&
 		decision.runner === labels.fleet
 	)
@@ -1429,7 +1388,7 @@ export async function main(
 			reason: `merge-group Fabric refused the general fleet label ${labels.fleet}`,
 			refusedBy: "queue",
 		};
-	if (mergeGroupAuto && decision.tier === "fleet")
+	if (mergeGroupFabric && decision.tier === "fleet")
 		decision = await confirmMergeGroupFabricFleet({
 			fleetDecision: decision,
 			observe,
@@ -1439,23 +1398,6 @@ export async function main(
 			githubLabel: labels.github,
 			limits: observationLimits,
 		});
-	if (mergeGroupAuto && decision.tier !== "fleet") {
-		if (decision.tier !== "github")
-			decision = {
-				...decision,
-				tier: "github",
-				runner: labels.github,
-				reason: `merge-group Fabric refused the ${decision.tier} fallback`,
-				refusedBy: "queue",
-			};
-		if (
-			labels.github !== "ubuntu-24.04" ||
-			!(await isPublicCaller(env, io.fetch))
-		)
-			throw new Error(
-				"merge-group batch public compute evidence is unavailable",
-			);
-	}
 	if (slip.ok)
 		return report(
 			{

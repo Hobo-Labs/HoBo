@@ -182,9 +182,6 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-const ROUTE_JOB_RUNS_ON =
-	"${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'hobo-trunk' || 'ubuntu-24.04' }}";
-
 /**
  * What a routed job asks for: the label the `route` job chose (the routing
  * slip's answer, else the queue rule's), and GitHub-hosted when that job did
@@ -331,22 +328,26 @@ function isNonPromotingDepsJob(
 	);
 }
 
+/**
+ * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
+ * chooses the runner, so it cannot wait on one. A hosted job with no `uses:`
+ * step is a gate: it runs no repository code, only adds up other jobs' results.
+ * PR gates use `always()`; release train gates use `!cancelled()` so a
+ * cancelled run does not keep scheduling downstream work.
+ */
 function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
 	runsOn: string | undefined,
 ): boolean {
-	const routeJob = /^  route:$/.test(jobLine);
-	if (routeJob) {
-		if (runsOn !== HOSTED_RUNS_ON && runsOn !== ROUTE_JOB_RUNS_ON) return false;
+	if (runsOn !== HOSTED_RUNS_ON) return false;
+	if (/^  route:$/.test(jobLine))
 		return block.some(
 			(line) =>
 				line.trim() === "uses: ./.github/actions/route-runner" ||
 				line.trim() === "uses: $/.github/actions/route-runner" ||
 				line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
 		);
-	}
-	if (runsOn !== HOSTED_RUNS_ON) return false;
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
 	if (/^  ci-health:$/.test(jobLine))
 		return block.some((line) =>

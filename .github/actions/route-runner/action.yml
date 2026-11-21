@@ -4,13 +4,10 @@ description: >-
   taking jobs, an enrolled local box when it is not, GitHub-hosted when neither
   is. When the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen and a warning says why. Auto-routed pull-request
-  batches require verified public standard-runner pricing, a verified fleet
-  batch claim, or a healthy trunk pickup; fork pull requests stay on
-  GitHub-hosted without the fleet. Automatic merge-group batches follow the
-  same fleet decision with the trunk label and a 90-second trunk confirmation,
-  falling back to a verified public standard runner only when trunk is
-  unavailable. If routing fails, these batches stop before queuing jobs. Pinned
-  to the fleet, it stays there.
+  batches require verified public standard-runner pricing or a verified fleet
+  batch claim. Automatic release merge-group batches use a verified public
+  standard runner unless explicitly pinned. If routing fails, these batches stop
+  before queuing jobs. Pinned to the fleet, it stays there.
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
