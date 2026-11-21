@@ -648,14 +648,14 @@ secret. Every 401, unexpected 404, 5xx, timeout, network error, or inconclusive
 scope response fails closed, and every issued session is revoked. The
 deploy-token read itself never signs in as the writer.
 
-The GitHub App's credentials never touch a person or this CLI:
-`hobo ci app create --via-workflow` takes GitHub's one-time manifest code
-from the browser's redirect and hands it, on stdin to `gh workflow run`, to
-`app-credentials.yml`; its call to the `app-credentials` job in
-`relay-deploy.yml` masks it and runs `hobo ci app deposit` (code from
-`HOBO_APP_MANIFEST_CODE`), which converts,
-verifies the App and writes the credentials as `hobo-ci-writer` over GitHub
-OIDC.
+The GitHub App's converted credentials never touch a person or this CLI.
+Provision GitHub's one-time manifest code as the `HOBO_APP_MANIFEST_CODE`
+Actions secret, then dispatch `app-credentials.yml` with only the relay origin
+and owner id. Its call to the `app-credentials` job in `relay-deploy.yml`
+passes the code as a required reusable-workflow secret, refuses a missing or
+empty value, masks it, and runs `hobo ci app deposit`, which converts, verifies
+the App and writes the credentials as `hobo-ci-writer` over GitHub OIDC. The
+code is never accepted as a dispatch or reusable-workflow input.
 
 For an optional third-party cache credential, `hobo-mcp` serves the
 secret-capture MCP App: `capture_secret` opens a form the owner types into

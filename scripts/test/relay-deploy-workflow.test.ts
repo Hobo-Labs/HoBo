@@ -375,13 +375,12 @@ describe("the relay deploy workflow", () => {
 		const inputs = [
 			...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu),
 		].map((match) => match[1]);
-		assert.deepEqual(inputs, [
-			"force_bootstrap",
-			"manifest_code",
-			"relay",
-			"owner_id",
-		]);
+		assert.deepEqual(inputs, ["force_bootstrap", "relay", "owner_id"]);
 		assert.match(workflow, / {2}workflow_call:\n {4}inputs:/u);
+		assert.match(
+			workflow,
+			/ {4}secrets:\n {6}manifest_code:\n {8}required: true/u,
+		);
 		const bootstrap =
 			/^ {6}force_bootstrap:\n {8}description:[^\n]*\n {8}required: false\n {8}default: false\n {8}type: boolean/mu;
 		assert.match(workflow, bootstrap);
@@ -436,7 +435,11 @@ describe("the relay deploy workflow", () => {
 		])
 			assert.match(step(name), /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
 		assert.equal(workflow.match(/GITHUB_TOKEN:/gu)?.length, 2);
-		assert.doesNotMatch(workflow, /write-all|secrets\.|\$\{\{\s*secrets/u);
+		assert.deepEqual(workflow.match(/\$\{\{ secrets\.[a-z_]+ \}\}/gu), [
+			"${{ secrets.manifest_code }}",
+			"${{ secrets.manifest_code }}",
+		]);
+		assert.doesNotMatch(workflow, /write-all/u);
 	});
 
 	it("reads no repository variable or secret for the relay's configuration", () => {
@@ -706,10 +709,10 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("deposits the GitHub App's credentials with OIDC only when handed a manifest code, masked first", () => {
+	it("deposits the GitHub App's credentials from a required reusable-workflow secret, masked first", () => {
 		assert.match(
 			workflow,
-			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event_name == 'workflow_call' && github\.event\.inputs\.manifest_code != ''/u,
+			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event_name == 'workflow_call'$/mu,
 		);
 		assert.match(
 			workflow,
@@ -720,23 +723,37 @@ describe("the relay deploy workflow", () => {
 			appCredentialsWorkflow,
 			/uses: \.\/\.github\/workflows\/relay-deploy\.yml/u,
 		);
-		for (const input of ["manifest_code", "relay", "owner_id"])
+		for (const input of ["relay", "owner_id"])
 			assert.match(
 				appCredentialsWorkflow,
 				new RegExp(`${input}: \\$\\{\\{ inputs\\.${input} \\}\\}`, "u"),
 			);
-		assert.doesNotMatch(appCredentialsWorkflow, /\$\{\{\s*secrets/u);
+		assert.match(
+			appCredentialsWorkflow,
+			/ {4}secrets:\n {6}manifest_code: \$\{\{ secrets\.HOBO_APP_MANIFEST_CODE \}\}/u,
+		);
+		assert.equal(appCredentialsWorkflow.match(/\$\{\{ secrets\./gu)?.length, 1);
+		assert.doesNotMatch(
+			`${workflow}\n${appCredentialsWorkflow}`,
+			/github\.event\.inputs\.manifest_code|inputs\.manifest_code/u,
+		);
 		const mask = step("Mask the one-time manifest code");
+		assert.match(
+			mask,
+			/HOBO_APP_MANIFEST_CODE: \$\{\{ secrets\.manifest_code \}\}/u,
+		);
+		assert.match(mask, /\[ -z "\$HOBO_APP_MANIFEST_CODE" \]/u);
+		assert.match(mask, /exit 1/u);
 		assert.match(mask, /::add-mask::\$HOBO_APP_MANIFEST_CODE/u);
 		const deposit = step(
 			"Convert the manifest code and store the credentials (GitHub OIDC)",
 		);
 		assert.match(deposit, /ci app deposit/u);
-		// The code reaches the command through the environment, never argv.
-		assert.doesNotMatch(
+		assert.match(
 			deposit,
-			/--code|\$\{\{ github\.event\.inputs\.manifest_code \}\}"/u,
+			/HOBO_APP_MANIFEST_CODE: \$\{\{ secrets\.manifest_code \}\}/u,
 		);
+		assert.doesNotMatch(deposit, /--code/u);
 		assert.ok(
 			workflow.indexOf("Mask the one-time manifest code") <
 				workflow.indexOf("ci app deposit"),

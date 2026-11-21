@@ -93,9 +93,10 @@ owner handles no secret value on the default path:
   `HOBO_CI_SANDBOX_PROXY_TOKEN_KEY` and `CRON_SECRET` are derived from the App
   private key (`src/relay-derived-keys.ts`; a stored value still wins); the
   GitHub App's key, webhook secret and client secret go from GitHub's
-  manifest conversion straight into the store (`hobo ci app create
-  --via-workflow`, then the deploy workflow's `app-credentials` job runs
-  `hobo ci app deposit` as `hobo-ci-writer` over GitHub OIDC); the cache's
+  manifest conversion straight into the store (the one-time code crosses as the
+  required `HOBO_APP_MANIFEST_CODE` secret, never a workflow input, then the
+  `app-credentials` job runs `hobo ci app deposit` as `hobo-ci-writer` over
+  GitHub OIDC); the cache's
   default member is Vercel Blob over OIDC. The amendment's table lists every
   secret, what it became and the vendor evidence.
 - **Coordinates in the repository.** In production (`VERCEL_ENV=production`,
@@ -341,14 +342,14 @@ what an attach run with the owner's `INFISICAL_TOKEN` creates
 | Project | Environment / folder | Identity | Role | Trusts |
 |---|---|---|---|---|
 | `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-relay` | viewer | the Vercel team issuer: `iss`/discovery `https://oidc.vercel.com/<team-slug>`, `aud` `https://vercel.com/<team-slug>`, `sub` `owner:<team-slug>:project:hobo-ci:environment:production`, claims `owner_id` and `project_id` pinned |
-| `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-deploy` (`deployIdentityId`) | viewer | GitHub Actions writer trust: `aud` `https://github.com/<owner>`, `sub` `<sub_claim_prefix>:environment:hobo-ci-app-credentials`, repository ids, environment, `ref`, `workflow_ref` and `job_workflow_ref` pinned; never a member of the deploy project |
+| `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy` (`deployIdentityId`) | viewer | GitHub Actions writer trust: `aud` `https://github.com/<owner>`, `sub` `<sub_claim_prefix>:environment:hobo-ci-app-credentials`, repository ids, environment, `ref`, `workflow_ref` and `job_workflow_ref` pinned |
 | `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy-reader` (`deployCredentialIdentityId`) | viewer | GitHub Actions reader trust: `aud` `https://github.com/<owner>/hobo-ci-deploy-reader`, `sub` `<sub_claim_prefix>:environment:hobo-ci-deploy`, repository ids, environment, `ref`, `workflow_ref` and `job_workflow_ref` pinned; `verify` requires this exact role and HTTP 403 from the relay folder |
 
-Only the dedicated reader is a HoBo member of `hobo-ci-deploy` in the
-provisioned layout. The writer's and relay's memberships in `hobo-ci` do not
-reach the credential project, and `verify` tests both denial paths. Distinct
-protected environment and workflow claims also prevent a reader-eligible job
-from selecting the writer's audience and authenticating as the writer.
+The deploy identity and dedicated reader are Viewer-only members of
+`hobo-ci-deploy` in the provisioned layout; only the relay identity belongs to
+`hobo-ci`. Distinct protected environment and workflow claims prevent a
+reader-eligible job from selecting the writer's audience and authenticating as
+the writer.
 
 **The attach layout** — what the owner creates by hand in Infisical's web app
 and `connect` records (HoBo's own binding today):

@@ -354,11 +354,13 @@ and on `workflow_dispatch`:
    ([above](#deploying-the-relay-with-hobo)). Vercel's Git integration is
    never connected. Each command's exit status is its step's.
 
-A manual run of
+To deposit GitHub App credentials, provision the one-time manifest code as the
+`HOBO_APP_MANIFEST_CODE` Actions secret, then manually run
 [`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
-given a GitHub App manifest code (`hobo ci app create --via-workflow` dispatches
-it) calls only the `app-credentials` job in `relay-deploy.yml`: it masks the
-code and runs `hobo ci app deposit`, which converts it and writes the App's
+with the relay origin and owner id. The code is never a dispatch or reusable-
+workflow input. The caller passes it as a required secret to only the
+`app-credentials` job in `relay-deploy.yml`, which refuses a missing or empty
+value, masks it, and runs `hobo ci app deposit` to convert it and write the App's
 credentials into the store as `hobo-ci-writer`
 ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first)).
 

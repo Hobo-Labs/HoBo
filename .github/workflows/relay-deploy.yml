@@ -20,7 +20,7 @@ name: HoBo relay deploy
 # gate job decides whether that job starts. A final step probes the production
 # origin again and fails the job on anything but a serving relay.
 #
-# No secret and no repository variable configures this workflow. The store's
+# No secret and no repository variable configures relay deployment. The store's
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
 # reads in production. A missing or malformed binding fails the gate; a valid
@@ -40,13 +40,6 @@ on:
         type: boolean
   workflow_call:
     inputs:
-      # `hobo ci app create --via-workflow` hands these over (on stdin to
-      # `gh workflow run`): GitHub's one-time manifest code, spent by the
-      # app-credentials job within seconds, and two non-secret ids.
-      manifest_code:
-        description: GitHub's one-time App-manifest code (hobo ci app create --via-workflow)
-        required: true
-        type: string
       relay:
         description: The relay's public origin the App was created for
         required: true
@@ -55,6 +48,9 @@ on:
         description: The numeric GitHub id of the App's owner
         required: true
         type: string
+    secrets:
+      manifest_code:
+        required: true
 
 permissions:
   contents: read
@@ -304,7 +300,7 @@ jobs:
     name: Deposit the GitHub App's credentials
     needs: route
     environment: hobo-ci-app-credentials
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_call' && github.event.inputs.manifest_code != ''
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_call'
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 15
@@ -314,8 +310,14 @@ jobs:
     steps:
       - name: Mask the one-time manifest code
         env:
-          HOBO_APP_MANIFEST_CODE: ${{ github.event.inputs.manifest_code }}
-        run: echo "::add-mask::$HOBO_APP_MANIFEST_CODE"
+          HOBO_APP_MANIFEST_CODE: ${{ secrets.manifest_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "$HOBO_APP_MANIFEST_CODE" ]; then
+            echo "::error title=GitHub App credentials::HOBO_APP_MANIFEST_CODE must contain the one-time manifest code"
+            exit 1
+          fi
+          echo "::add-mask::$HOBO_APP_MANIFEST_CODE"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
@@ -347,7 +349,7 @@ jobs:
             "$verify_json" "$verify_err" "$status"
       - name: Convert the manifest code and store the credentials (GitHub OIDC)
         env:
-          HOBO_APP_MANIFEST_CODE: ${{ github.event.inputs.manifest_code }}
+          HOBO_APP_MANIFEST_CODE: ${{ secrets.manifest_code }}
           RELAY_ORIGIN: ${{ github.event.inputs.relay }}
           APP_OWNER_ID: ${{ github.event.inputs.owner_id }}
         run: |
