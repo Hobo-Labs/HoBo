@@ -296,6 +296,10 @@ const HOSTED_RUNS_ON = "ubuntu-24.04";
 const DEPS_IMAGE_RUNS_ON =
 	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
+/** Merge-queue route job: trunk when the hosted surface probe sees capacity. */
+const MERGE_GROUP_ROUTE_JOB_RUNS_ON =
+	"${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface != 'hosted' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
+
 const DEPS_IMAGE_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
 
@@ -340,14 +344,28 @@ function isAlwaysHostedJob(
 	block: readonly string[],
 	runsOn: string | undefined,
 ): boolean {
-	if (runsOn !== HOSTED_RUNS_ON) return false;
-	if (/^  route:$/.test(jobLine))
-		return block.some(
-			(line) =>
-				line.trim() === "uses: ./.github/actions/route-runner" ||
-				line.trim() === "uses: $/.github/actions/route-runner" ||
-				line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
+	if (/^  mq-route-surface:$/.test(jobLine))
+		return (
+			runsOn === HOSTED_RUNS_ON &&
+			block.some((line) => line.includes("--merge-group-route-surface"))
 		);
+	if (/^  route:$/.test(jobLine)) {
+		const allowedRouteRunsOn = new Set([
+			HOSTED_RUNS_ON,
+			MERGE_GROUP_ROUTE_JOB_RUNS_ON,
+		]);
+		return (
+			runsOn !== undefined &&
+			allowedRouteRunsOn.has(runsOn) &&
+			block.some(
+				(line) =>
+					line.trim() === "uses: ./.github/actions/route-runner" ||
+					line.trim() === "uses: $/.github/actions/route-runner" ||
+					line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
+			)
+		);
+	}
+	if (runsOn !== HOSTED_RUNS_ON) return false;
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
 	if (/^  ci-health:$/.test(jobLine))
 		return block.some((line) =>
@@ -767,6 +785,7 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
+			runsOn !== MERGE_GROUP_ROUTE_JOB_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
 			!alwaysHosted
