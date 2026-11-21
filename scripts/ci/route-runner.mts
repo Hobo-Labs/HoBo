@@ -1348,11 +1348,11 @@ export async function main(
 		const token = env.GITHUB_TOKEN ?? "";
 		const trunkLabel = labels.trunk;
 		const githubLabel = labels.github;
-		const trunkObservationLimits = {
+		const read = githubReader(apiUrl, token);
+		const trunkChoiceObservationLimits: RouteLimits = {
 			...limits,
 			maxQueued: Number.MAX_SAFE_INTEGER,
 		};
-		const read = githubReader(apiUrl, token);
 		const observeHosted = (nowMs: number) =>
 			observeQueue({
 				read,
@@ -1363,13 +1363,22 @@ export async function main(
 				exhaustLookups: true,
 				nowMs,
 			});
-		const observeTrunk = (nowMs: number) =>
+		const observeTrunkIdle = (nowMs: number) =>
 			observeQueue({
 				read,
 				repository,
 				ownRunId: Number(env.GITHUB_RUN_ID),
 				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
-				limits: trunkObservationLimits,
+				limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
+				nowMs,
+			});
+		const observeTrunkChoice = (nowMs: number) =>
+			observeQueue({
+				read,
+				repository,
+				ownRunId: Number(env.GITHUB_RUN_ID),
+				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
+				limits: trunkChoiceObservationLimits,
 				nowMs,
 			});
 		const sleep = (wait: number) => delay(wait * 1000);
@@ -1377,7 +1386,7 @@ export async function main(
 		try {
 			const probeAtMs = now();
 			const firstView = await observeHosted(probeAtMs);
-			const trunkView = await observeTrunk(probeAtMs);
+			const trunkView = await observeTrunkIdle(probeAtMs);
 			const hostedLoad = labelLoad(firstView.jobs, githubLabel, probeAtMs);
 			const trunkLoad = labelLoad(trunkView.jobs, trunkLabel, probeAtMs);
 			const hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
@@ -1405,7 +1414,7 @@ export async function main(
 				};
 			} else {
 				decision = await chooseRunner({
-					observe: observeTrunk,
+					observe: observeTrunkChoice,
 					now,
 					sleep,
 					mode,
@@ -1413,34 +1422,35 @@ export async function main(
 					localLabel: labels.local,
 					githubLabel,
 					localEnrolled,
-					limits: trunkObservationLimits,
+					limits: trunkChoiceObservationLimits,
 					trunkPriority: true,
 				});
 				if (decision.tier === "fleet")
 					decision = await confirmMergeGroupFabricFleet({
 						fleetDecision: decision,
-						observe: observeTrunk,
+						observe: observeTrunkChoice,
 						now,
 						sleep,
 						fleetLabel: trunkLabel,
 						githubLabel,
-						limits: trunkObservationLimits,
+						limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
 					});
 				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		} catch (error) {
-			const detail = error instanceof Error ? error.message : "unknown error";
+			const code =
+				error instanceof Error && error.name ? error.name : "probe-error";
 			console.log(
-				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${detail}); using GitHub-hosted runners`)}`,
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${SLIP_FALLBACK_PREFIX} (merge-group hosted probe unreadable: ${code}); using GitHub-hosted runners`)}`,
 			);
 			decision = {
 				tier: "github",
 				runner: githubLabel,
-				reason: `merge-group Fabric hosted probe unreadable (${detail})`,
+				reason: `merge-group Fabric hosted probe unreadable (${code})`,
 				refusedBy: "queue",
 				mergeGroupHostedProbe: {
 					idle: false,
-					summary: `unreadable: ${detail}`,
+					summary: `unreadable: ${code}`,
 				},
 			};
 		}

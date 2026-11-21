@@ -1249,6 +1249,7 @@ jobs:
     name: Publish GitHub Pages (site/)
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       needs.release-pages-gate.result == 'success' &&
       needs.release-pages-gate.outputs.deploy == 'true' &&
       needs.release-hobo-cli.result == 'success'

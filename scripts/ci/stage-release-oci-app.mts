@@ -159,6 +159,26 @@ function warnTurboBaseFallback(message: string): void {
 	);
 }
 
+function assertReleaseTurboRefName(
+	root: string,
+	segment: string,
+	kind: "branch" | "tag",
+): void {
+	if (!segment || segment.startsWith("-")) {
+		throw new Error(`invalid release turbo base ${kind} name`);
+	}
+	const ref =
+		kind === "branch" ? `refs/heads/${segment}` : `refs/tags/${segment}`;
+	if (
+		spawnSync("git", ["check-ref-format", ref], {
+			cwd: root,
+			stdio: "ignore",
+		}).status !== 0
+	) {
+		throw new Error(`invalid release turbo base ${kind} name`);
+	}
+}
+
 function turboBaseReachable(root: string, base: string): boolean {
 	if (!refExists(root, base)) return false;
 	return (
@@ -187,10 +207,7 @@ export function fetchReleaseTurboBase(
 			{ cwd: root, encoding: "utf8" },
 		);
 		if (result.status !== 0) {
-			const detail = (result.stderr || result.stdout || "").trim();
-			throw new Error(
-				`git fetch ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`,
-			);
+			throw new Error(`git fetch failed with exit status ${result.status}`);
 		}
 	};
 	if (base === "origin/main") {
@@ -199,19 +216,23 @@ export function fetchReleaseTurboBase(
 	}
 	if (base.startsWith("origin/")) {
 		const branch = base.slice("origin/".length);
+		assertReleaseTurboRefName(root, branch, "branch");
 		fetch([
 			"--depth=256",
 			"--filter=blob:none",
 			"origin",
+			"--",
 			`${branch}:refs/remotes/origin/${branch}`,
 		]);
 		return;
 	}
 	const tag = base.replace(/^refs\/tags\//u, "");
+	assertReleaseTurboRefName(root, tag, "tag");
 	fetch([
 		"--depth=256",
 		"--filter=blob:none",
 		"origin",
+		"--",
 		"main:refs/remotes/origin/main",
 	]);
 	fetch([
@@ -219,6 +240,7 @@ export function fetchReleaseTurboBase(
 		"--depth=256",
 		"--filter=blob:none",
 		"origin",
+		"--",
 		`refs/tags/${tag}:refs/tags/${tag}`,
 	]);
 }
