@@ -65,7 +65,6 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-
 import { create, toJson } from "@bufbuild/protobuf";
 import {
 	assertNoBindleProviderSelection,
@@ -79,13 +78,17 @@ import {
 	loadBindleDefinition,
 } from "@hobo/cli";
 import type { IacOutputs, IacProgram } from "@hobo/cloud";
-import { createBoundedFetchTransport, type HttpTransport } from "@hobo/core";
+import {
+	createBoundedFetchTransport,
+	createTrustedVault,
+	type HttpTransport,
+	type TrustedVault,
+} from "@hobo/core";
 import {
 	type ParsedSecretStoreBinding,
 	SECRET_STORE_BINDING_FILE,
 } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
-
 import {
 	type VercelGitDeploymentPlan,
 	VercelGitDeploymentPlanSchema,
@@ -96,6 +99,7 @@ import {
 	type RelayRealizationFailure,
 	relayCampId,
 } from "./ci-relay-delivery.js";
+import { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -177,8 +181,13 @@ export interface CiRelayDeployInput {
 	readonly values: Readonly<
 		Record<string, string | boolean | string[] | undefined>
 	>;
-	// Read for `VERCEL_TOKEN` (a real run only) and `VERCEL_TEAM_ID`.
+	// Non-secret settings only (`VERCEL_TEAM_ID`, verify origins) and a CI
+	// runner's own OIDC request variables. A `VERCEL_TOKEN` here is ignored:
+	// the token comes from the secret store, never the environment.
 	readonly env: NodeJS.ProcessEnv;
+	// The run's trusted vault, when the caller already holds the deploy token
+	// (`VERCEL_TOKEN`), read from the owner's store.
+	readonly credentials?: TrustedVault;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
@@ -678,7 +687,7 @@ export async function runCiRelayDeploy(
 		return {
 			status: "dry-run",
 			code: "HOBO_CI_DEPLOY_PLANNED",
-			message: `Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.\n${describePlan(plan)}\n${describeDelivery(relayYard, target, `${org}/${repo}@${sha ?? ref}`)}`,
+			message: `Dry run: nothing was sent to Vercel, and no deploy token was read.\n${describePlan(plan)}\n${describeDelivery(relayYard, target, `${org}/${repo}@${sha ?? ref}`)}`,
 			data: {
 				command: "ci deploy",
 				dryRun: true,
@@ -704,14 +713,44 @@ export async function runCiRelayDeploy(
 			`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
 		);
 
-	const token = env.VERCEL_TOKEN;
+	// The deploy token comes from the secret store and lives in this run's
+	// vault: handed in by the caller, or read here with a CI runner's own OIDC
+	// token through the committed binding. Never from the environment, never
+	// through a file such as $GITHUB_ENV.
+	const vault = input.credentials ?? createTrustedVault();
+	if (
+		!vault.has("VERCEL_TOKEN") &&
+		storeBinding !== undefined &&
+		env.ACTIONS_ID_TOKEN_REQUEST_URL
+	) {
+		try {
+			vault.put(
+				"VERCEL_TOKEN",
+				await readRelayDeployToken({
+					binding: storeBinding,
+					env: {
+						ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
+						ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+					},
+				}),
+			);
+		} catch (error) {
+			return refused(
+				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
+				error instanceof Error
+					? error.message
+					: "Could not read the deploy token.",
+			);
+		}
+	}
+	const token = vault.reveal("VERCEL_TOKEN");
 	if (token === undefined || token === "")
 		return {
 			ok: false,
 			status: "authentication-required",
 			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
 			message:
-				"Set VERCEL_TOKEN to a Vercel access token for the project's scope, or pass --dry-run to see what would be sent. The token is read from the environment only and is never printed.",
+				"The deploy token is read from the secret store, never the environment: run in GitHub Actions with id-token: write and the committed secret store binding, or deploy through hobo cd up, which signs in to the store. Pass --dry-run to see what would be sent.",
 		};
 	// Whatever a result says, it does not say the token: a Vercel answer is
 	// redacted where it is read, and this is the last line before the terminal.

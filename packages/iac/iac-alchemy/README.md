@@ -511,6 +511,22 @@ and plans exceeding 256 nodes remain refused. Action state is not included in
 Alchemy's resource drift scan, so refresh of an action-bearing target reports
 incomplete drift rather than claiming it is in sync. The caller owns final
 usage reconciliation and can use the budget authority's settlement APIs.
+These restrictions can exclude valid Alchemy programs; there is no automatic
+fallback to an unbudgeted apply.
+
+The isolation test scans selected shared runtime, Bindle, financial and policy
+packages for literal Alchemy references, including escaped spellings. It does
+not prove the absence of computed references or transitive dependencies.
+The financial integration test builds broker, dispatcher and pricing as test
+prerequisites; they are not dependencies of the adapter package.
+The repository-level `test/iac-alchemy-integration.test.ts` exercise adds
+ranked dispatcher execution, durable route SQLite, Rivet Alchemy resources, and
+the RivetKit 3 runtime package in one host-shaped fixture. It imports the
+Alchemy, Effect, Rivet and protobuf pins directly under their root-manifest
+declarations (the same peer-aligned instances the adapter resolves) and builds
+its pricing scenarios from `test/iac-alchemy-pricing-fixture.ts` beside it.
+The bounded `model/IacGrant.tla` checks grant and fencing decisions under stated
+host assumptions; it does not prove the implementation or external provider.
 
 ### Standalone Rivet asynchronous queue
 

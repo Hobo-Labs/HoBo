@@ -25,6 +25,14 @@ export {
 	externalBoundaryViolations,
 } from "./boundaries.js";
 export {
+	CADENCE_OPTION,
+	CadenceError,
+	type CadenceViolation,
+	cadence,
+	cadenceViolations,
+	readCadence,
+} from "./cadence.js";
+export {
 	api,
 	auth,
 	bucket,

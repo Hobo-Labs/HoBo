@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	makeScenario,
 	perUnitCharge,
+	rehashScenario,
 	usage,
 	workload,
 } from "../../pricing/test/fixtures.js";
@@ -16,8 +17,6 @@ import {
 	rankIacTargets,
 } from "../src/iac-target-routing.js";
 
-// These combinatorial dispatcher tests isolate routing decisions; separate tests
-// exercise the actual SQLite authority and cross-process claim semantics.
 function executeRankedIacTargets(
 	input: Omit<
 		Parameters<typeof executeWithAuthority>[0],
@@ -146,6 +145,77 @@ function request(candidates: ReturnType<typeof candidate>[]) {
 }
 
 describe("whole-target price ranking", () => {
+	it("does not rank a destroy operation using a placement quote", () => {
+		const input = candidate("target", "1");
+		input.inventory.operation = "destroy";
+		expect(rankIacTargets(request([input]))).toMatchObject({
+			ranking: [],
+			rejected: [{ targetId: "target", code: "PRICING_MODEL_UNSUPPORTED" }],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+	});
+
+	it.each([
+		"migrate",
+		"cancel",
+		"rebalance",
+		"place-removal",
+		"place-source",
+		"dispatch-removal",
+		"dispatch-source",
+	] as const)("does not rank a target whose %s costs are unsupported", (action) => {
+		const input = candidate("target", "1");
+		if (
+			input.pricing.state.case !== "model" ||
+			!input.pricing.state.value.scenario
+		)
+			throw new Error("missing model fixture");
+		const scenario = input.pricing.state.value.scenario;
+		scenario.action = action.startsWith("place-")
+			? "place"
+			: action.startsWith("dispatch-")
+				? "dispatch"
+				: action;
+		if (action.endsWith("-removal")) {
+			const candidate = scenario.candidate[0];
+			if (!candidate) throw new Error("missing candidate fixture");
+			scenario.baseline = [structuredClone(candidate)];
+			candidate.direction = "remove";
+		}
+		if (action.endsWith("-source"))
+			scenario.sourceProviderAgreementIds = ["agreement-a"];
+		if (!scenario.options) throw new Error("missing options fixture");
+		scenario.options.allowCancellation = true;
+		expect(rankIacTargets(request([input]))).toMatchObject({
+			ranking: [],
+			rejected: [{ targetId: "target", code: "PRICING_MODEL_UNSUPPORTED" }],
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+		});
+	});
+
+	it("orders equal-cost targets and rejections by code unit independent of locale", () => {
+		const rejectedUpper = candidate("Z-unpriced", "1");
+		const rejectedLower = candidate("a-unpriced", "1");
+		rejectedUpper.pricing = targetPricingUnavailable("no model");
+		rejectedLower.pricing = targetPricingUnavailable("no model");
+		const result = rankIacTargets(
+			request([
+				candidate("a-priced", "1"),
+				candidate("Z-priced", "1"),
+				rejectedLower,
+				rejectedUpper,
+			]),
+		);
+		expect(result.ranking.map((entry) => entry.targetId)).toEqual([
+			"Z-priced",
+			"a-priced",
+		]);
+		expect(result.rejected.map((entry) => entry.targetId)).toEqual([
+			"Z-unpriced",
+			"a-unpriced",
+		]);
+	});
+
 	it.each([
 		"root-accessor",
 		"root-proxy",
@@ -236,6 +306,36 @@ describe("whole-target price ranking", () => {
 				{ targetId: "expensive" },
 			],
 			rejected: [{ targetId: "unknown", code: "PRICING_MODEL_UNAVAILABLE" }],
+		});
+	});
+
+	it("excludes shared agreements whose selector values differ across resources", () => {
+		const ambiguous = candidate("ambiguous", "0.25");
+		if (ambiguous.pricing.state.case !== "model")
+			throw new Error("missing fixture model");
+		const model = ambiguous.pricing.state.value;
+		const scenario = model.scenario;
+		const first = scenario?.candidate[0];
+		const charge = scenario?.catalog?.rateCards[0]?.charges[0]?.base;
+		const resource = ambiguous.inventory.resources[0];
+		if (!scenario || !first || !charge || !resource)
+			throw new Error("missing fixture inputs");
+		first.attributes = { region: "east" };
+		scenario.candidate.push({ ...first, attributes: { region: "west" } });
+		charge.selectors = { region: "east" };
+		ambiguous.inventory.resources.push({ ...resource, resourceId: "worker" });
+		model.bindings.push({
+			$typeName: "hobo.pricing.v1.TargetPricingBinding",
+			resourceId: "worker",
+			candidateIndex: 1,
+		});
+		rehashScenario(scenario);
+		const result = rankIacTargets(request([candidate("good", "1"), ambiguous]));
+		expect(result).toMatchObject({
+			coverage: "partial",
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			ranking: [{ targetId: "good" }],
+			rejected: [{ targetId: "ambiguous", code: "PRICING_MODEL_UNSUPPORTED" }],
 		});
 	});
 
@@ -1025,9 +1125,9 @@ describe("budget-aware target execution", () => {
 			candidates: [
 				{
 					targetId: "cheap",
+					// @ts-expect-error Exercise malformed provider output at the boundary.
 					run: async (_id, expected) => ({
-						// SAFETY: deliberately violate the provider contract to test the boundary parser.
-						outputs: bad as Record<string, string>,
+						outputs: bad,
 						admission: { ...decision("cheap", "admitted"), ...expected },
 					}),
 				},

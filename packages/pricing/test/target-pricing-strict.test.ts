@@ -72,9 +72,10 @@ describe("strict developer target pricing data", () => {
 			{ ...inventory, resources: [null] },
 			{ ...inventory, $typeName: "foreign.Inventory" },
 		]) {
-			// SAFETY: this test exercises an untrusted JavaScript caller at the typed boundary.
-			const value = malformed as typeof inventory;
-			expect(quoteTargetPricing(value, unavailable)).toMatchObject({
+			expect(
+				// @ts-expect-error Exercise an untrusted JavaScript caller at the typed boundary.
+				quoteTargetPricing(malformed, unavailable),
+			).toMatchObject({
 				ok: false,
 				code: "TARGET_INVENTORY_INCOMPLETE",
 			});

@@ -50,7 +50,7 @@ export interface DeploymentViewRow {
 		| "pruning"
 		| "rolled-back"
 		| "needs-human";
-	/** Last recorded deployment status before any unresolved resource. */
+
 	statusBeforeReconciliation?: DeploymentViewRow["status"];
 	bindleHash?: string;
 	decisions: DeploymentDecisionRow[];
@@ -266,7 +266,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceReconciled]: (row, event) => {
-				// SAFETY: resource.Reconciled is the verified recovery fact from this package.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: resource.Reconciled is the verified recovery fact from this package.
 				const data = event.data as {
 					deploymentId: string;
 					resourceId: string;
