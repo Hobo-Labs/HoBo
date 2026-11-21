@@ -354,7 +354,14 @@ export function mcpSemanticIssues(config: McpConfig): AgentPluginIssue[] {
 		}
 		for (const [key, value] of Object.entries(server.env ?? {})) {
 			issues.push(...scanTextForSecrets(`${where} env.${key}`, value));
-			if (FORBIDDEN_ENV_KEYS.includes(key)) {
+			if (
+				FORBIDDEN_ENV_KEYS.some(
+					(forbidden) =>
+						forbidden.localeCompare(key, undefined, {
+							sensitivity: "accent",
+						}) === 0,
+				)
+			) {
 				issues.push({
 					file: where,
 					message: `env key "${key}" is reserved by the specification`,
@@ -1125,6 +1132,14 @@ function bundleAttestationIssues(
 				},
 			];
 		}
+	} else if (attestation.data.runAttempt !== undefined) {
+		return [
+			{
+				file: BUNDLE_ATTESTATION,
+				message:
+					"bundle attestation carries runAttempt but this job has no GITHUB_RUN_ATTEMPT; rebuild with pnpm run agent-plugin:build in this job",
+			},
+		];
 	}
 	const sha256 = createHash("sha256")
 		.update(readFileSync(bundlePath))

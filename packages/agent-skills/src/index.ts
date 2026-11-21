@@ -66,16 +66,16 @@ export function parseSkillFrontmatter(
 	return Object.freeze({ name: name.value, description: description.value });
 }
 
-export const HOBO_OWNED_ALLOWED_FIELDS: readonly string[] = [
+export const HOBO_OWNED_ALLOWED_FIELDS: readonly string[] = Object.freeze([
 	"name",
 	"description",
 	"license",
 	"compatibility",
 	"metadata",
 	"allowed-tools",
-];
+]);
 
-export const HOBO_OWNED_SKILLS: readonly string[] = [
+export const HOBO_OWNED_SKILLS: readonly string[] = Object.freeze([
 	"design-md",
 	"draft",
 	"hobo-deploy",
@@ -83,7 +83,7 @@ export const HOBO_OWNED_SKILLS: readonly string[] = [
 	"optimizexp",
 	"repo",
 	"sdlc",
-] as const;
+]);
 
 type YamlScalar =
 	| { readonly kind: "string"; readonly value: string }
@@ -319,10 +319,7 @@ export async function checkSkillsConformance(
 		}
 		try {
 			const parsed = parseSkillFrontmatter(markdown);
-			if (
-				strictSkills.has(dirent.name) ||
-				strictSkills.has(parsed.name)
-			) {
+			if (strictSkills.has(dirent.name) || strictSkills.has(parsed.name)) {
 				issues.push(...strictSkillIssues(dirent.name, markdown));
 			}
 			const prior = seen.get(parsed.name);
