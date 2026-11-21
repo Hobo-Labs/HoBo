@@ -194,3 +194,87 @@ describe("Agent37 client contracts", () => {
 		expect(requests).toHaveLength(2);
 	});
 });
+
+describe("Agent37 error retryability", () => {
+	const clientForServerError = () =>
+		createAgent37Client({
+			apiKey: "sk_live_retryability_contract",
+			fetchImpl: async () =>
+				new Response(
+					JSON.stringify({
+						error: { code: "internal_error", message: "test" },
+					}),
+					{ status: 503, headers: { "content-type": "application/json" } },
+				),
+			maxAttempts: 1,
+		});
+
+	it("does not mark create-instance 5xx responses retryable, even when named", async () => {
+		const input = {
+			template: "agent37-ubuntu",
+			type: "vm",
+			resources: { cpu: 2, memory: 4, disk: 20 },
+		} as const;
+		for (const createInput of [input, { ...input, name: "ci-runner" }]) {
+			await expect(
+				clientForServerError().createInstance(createInput),
+			).rejects.toMatchObject({ status: 503, retryable: false });
+		}
+	});
+
+	it("marks only named exec 5xx responses retryable", async () => {
+		await expect(
+			clientForServerError().exec("i_test", { command: "printf ready" }),
+		).rejects.toMatchObject({ status: 503, retryable: false });
+		await expect(
+			clientForServerError().exec("i_test", {
+				command: "printf ready",
+				name: "prepare-lease",
+			}),
+		).rejects.toMatchObject({ status: 503, retryable: true });
+	});
+
+	it("keeps GET 5xx responses retryable", async () => {
+		await expect(clientForServerError().listInstances()).rejects.toMatchObject({
+			status: 503,
+			retryable: true,
+		});
+	});
+});
+
+describe("Agent37 deletion response contracts", () => {
+	const clientFor = (status: number, body: string) =>
+		createAgent37Client({
+			apiKey: "sk_live_deletion_contract",
+			fetchImpl: async () =>
+				new Response(body === "" ? null : body, { status }),
+		});
+
+	it.each([
+		"deleteInstance",
+		"deleteWebhook",
+	] as const)("%s requires deleted:true on 200", async (method) => {
+		for (const body of [
+			"",
+			JSON.stringify({ id: "resource", deleted: false }),
+		]) {
+			const client = clientFor(200, body);
+			await expect(client[method]("resource")).rejects.toThrow(
+				"Agent37 response did not match its contract",
+			);
+		}
+	});
+
+	it.each([
+		"deleteInstance",
+		"deleteWebhook",
+	] as const)("%s accepts deleted:true on 200 and an empty 204", async (method) => {
+		for (const [status, body] of [
+			[200, JSON.stringify({ id: "resource", deleted: true })],
+			[204, ""],
+		] as const) {
+			const client = clientFor(status, body);
+			await expect(client[method]("resource")).resolves.toBeUndefined();
+		}
+	});
+});

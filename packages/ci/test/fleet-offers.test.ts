@@ -91,6 +91,27 @@ describe("fleet offers", () => {
 		expect(runnerModelForOffer(blacksmith)?.id).toBe("blacksmith-4vcpu");
 	});
 
+	it("prices an Agent37 offer as injected isolated capacity", () => {
+		const agent37 = offer("agent37", "agent37", "hobo-agent37", {
+			backend: "gh-actions",
+			priceMicrosPerMinute: 522,
+		});
+		expect(fleetRoleOfOffer(agent37)).toBe("overflow");
+		expect(runnerModelForOffer(agent37)?.id).toBe("agent37-vm-4vcpu");
+		const accountWithAgent37 = create(AccountSchema, {
+			id: "hobo-labs",
+			offers: [agent37],
+		});
+		expect(
+			fleetMembersFromAccount(accountWithAgent37, [], { poolLabel: "hobo" }),
+		).toMatchObject([
+			{
+				model: { id: "agent37", binding: "inject", runsOn: "hobo" },
+				enabled: true,
+			},
+		]);
+	});
+
 	it("turns a model into the rate an operator would observe for an offer", () => {
 		const blacksmith = runnerFinancialModel("blacksmith-4vcpu");
 		const agent37 = runnerFinancialModel("agent37-vm-4vcpu");
