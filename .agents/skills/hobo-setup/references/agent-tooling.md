@@ -30,11 +30,12 @@ attach the server. Report which client worked and which connection or private
 session step remains unverified; do not infer the cause of a missing host tool
 without evidence.
 
-Use **`choose_secret_store`** only after the **hobo-deploy** skill's privacy
-check passes (`hostSupport` on the capture/store-choice result). Do not collect
-store identifiers in chat or tool arguments. When that gate passes, use the same
-target project `cwd` throughout the ceremony; otherwise report the missing
-capability without collecting settings.
+Use **`choose_secret_store`** only when the tool reports a store-choice flow
+the host can keep private; if the result is `secure-form-unavailable`, report
+the capability gap instead of collecting store identifiers in chat or tool
+arguments. When a private hand-off is available, use the same target project
+`cwd` throughout the ceremony; otherwise report the missing capability without
+collecting settings.
 The relay's existing capture adapter reads a separately configured Infisical
 binding; a generic owner-store session is not yet wired to that adapter.
 Its `connected` status indicates that the binding was read; it does not verify

@@ -561,6 +561,18 @@ describe("markdown link containment", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0]?.message).toMatch(/resolves outside the plugin root/u);
 	});
+
+	it("does not echo secret-shaped link targets in diagnostics", async () => {
+		const secret = "sk-abcdefghijklmnopqrst";
+		const { pluginRoot } = await scratchPlugin({
+			"README.md": `[escape](../${secret})\n`,
+		});
+		const messages = checkMarkdownLinks(pluginRoot, "README.md")
+			.map((issue) => issue.message)
+			.join("\n");
+		expect(messages).toMatch(/resolves outside the plugin root/u);
+		expect(messages).not.toContain(secret);
+	});
 });
 
 describe("frontmatter helpers", () => {
@@ -655,6 +667,40 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(messages).toMatch(/body drifted/u);
 		expect(messages).toMatch(/contains a secret-shaped value/u);
 		expect(messages).not.toContain(secret);
+	});
+
+	it("scans shipped fixtures and plugin src for secret-shaped values", async () => {
+		const secret = "ghp_abcdefghijklmnopqrst";
+		const big = "x".repeat(1024 * 1024 + 1);
+		const setup = "---\nname: hobo-setup\ndescription: d\n---\n\nb\n";
+		const deploy = "---\nname: hobo-deploy\ndescription: d\n---\n\nb\n";
+		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
+			"plugin.json": JSON.stringify(validManifest),
+			"mcp.json": JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					hobo: {
+						type: "stdio",
+						command: "node",
+						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
+					},
+				},
+			}),
+			"README.md": "# hobo\n",
+			"bin/hobo-mcp.mjs": big,
+			"fixtures/deploy/vercel/index.html": `<html>${secret}</html>\n`,
+			"src/bitwarden-sdk-napi.mts": `export const x = "${secret}";\n`,
+			"skills/hobo-setup/SKILL.md": setup,
+			"skills/hobo-deploy/SKILL.md": deploy,
+			"repo:.agents/skills/hobo-setup/SKILL.md": setup,
+			"repo:.agents/skills/hobo-deploy/SKILL.md": deploy,
+		});
+		const report = checkAgentPlugin({ pluginRoot, repoRoot: scratchRepo });
+		const files = report.issues
+			.filter((issue) => issue.message.includes("secret-shaped"))
+			.map((issue) => issue.file);
+		expect(files).toContain("fixtures/deploy/vercel/index.html");
+		expect(files).toContain("src/bitwarden-sdk-napi.mts");
 	});
 
 	it("fails when a repo-only skill ships in the plugin", async () => {
@@ -1291,6 +1337,31 @@ describe("agent-tooling extract drift gate", () => {
 		expect(issues[0]?.message).toMatch(/drifted from docs\/agent-tooling\.md/u);
 	});
 
+	it("does not echo secret-shaped drift windows in diagnostics", async () => {
+		const secret = "sk-ant-api03-abcdefghijklmnopqrst";
+		const docsMarkdown = (
+			await readFile(path.join(repoRoot, "docs/agent-tooling.md"), "utf8")
+		).replace(
+			"Registration alone does not establish",
+			`keep ${secret} here; Registration by itself no longer establishes`,
+		);
+		const referenceMarkdown = await readFile(
+			path.join(
+				realPluginRoot,
+				"skills/hobo-setup/references/agent-tooling.md",
+			),
+			"utf8",
+		);
+		const messages = agentToolingReferenceDriftIssues({
+			docsMarkdown,
+			referenceMarkdown,
+		})
+			.map((issue) => issue.message)
+			.join("\n");
+		expect(messages).toMatch(/drifted from docs\/agent-tooling\.md/u);
+		expect(messages).not.toContain(secret);
+	});
+
 	it("requires docs links into .agents/skills/hobo-setup to be rewritten plugin-relative", async () => {
 		const docsMarkdown = await readFile(
 			path.join(repoRoot, "docs/agent-tooling.md"),
@@ -1573,8 +1644,19 @@ describe("release-train version pin commit selection", () => {
 			vi.stubEnv(variable, value);
 			expect(() =>
 				releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
-			).toThrow("nbgv unavailable");
+			).toThrow("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN is not allowed in CI");
 			vi.stubEnv(variable, undefined);
 		}
+	});
+
+	it("rejects HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN in CI even when nbgv succeeds", () => {
+		const succeedingNbgv = () => "5";
+		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", "1");
+		vi.stubEnv("CI", "1");
+		expect(() =>
+			releaseTrainVersionForPluginGate(repoRoot, succeedingNbgv),
+		).toThrow("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN is not allowed in CI");
+		vi.stubEnv("CI", undefined);
+		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", undefined);
 	});
 });

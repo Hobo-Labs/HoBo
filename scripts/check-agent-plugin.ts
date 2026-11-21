@@ -417,7 +417,7 @@ export function checkMarkdownLinks(
 		if (!contained) {
 			issues.push({
 				file: relativeFile,
-				message: `relative link "${target}" resolves outside the plugin root`,
+				message: `relative link "${redactDiagnosticText(target)}" resolves outside the plugin root`,
 			});
 		}
 	}
@@ -520,6 +520,10 @@ function collapseForComparison(text: string): string {
 	return text.trim().split(/\s+/u).join(" ");
 }
 
+function redactDiagnosticText(text: string): string {
+	return text.replace(SECRET_VALUE_PATTERN, "[redacted]");
+}
+
 function divergenceContext(expected: string, actual: string): string {
 	let index = 0;
 	while (
@@ -531,7 +535,9 @@ function divergenceContext(expected: string, actual: string): string {
 	}
 	const window = (text: string): string => {
 		const start = Math.max(0, index - 30);
-		return text.slice(start, start + 50) || "(end of text)";
+		return redactDiagnosticText(
+			text.slice(start, start + 50) || "(end of text)",
+		);
 	};
 	return `docs reads "...${window(expected)}...", reference reads "...${window(actual)}..."`;
 }
@@ -933,6 +939,28 @@ export function checkAgentPlugin(input: {
 				message:
 					"is missing or empty while bin/hobo-mcp.mjs is present; rebuild with pnpm run agent-plugin:build",
 			});
+		} else {
+			for (const relative of listFilesRecursive(deployFixtures)) {
+				const relativeFile = path.join("fixtures/deploy", relative);
+				issues.push(
+					...scanTextForSecrets(
+						relativeFile,
+						readFileSync(path.join(deployFixtures, relative), "utf8"),
+					),
+				);
+			}
+		}
+		const pluginSrc = path.join(pluginRoot, "src");
+		if (existsSync(pluginSrc)) {
+			for (const relative of listFilesRecursive(pluginSrc)) {
+				const relativeFile = path.join("src", relative);
+				issues.push(
+					...scanTextForSecrets(
+						relativeFile,
+						readFileSync(path.join(pluginSrc, relative), "utf8"),
+					),
+				);
+			}
 		}
 	} else {
 		issues.push({
@@ -1237,6 +1265,14 @@ export function releaseTrainVersionForPluginGate(
 	repoRoot: string,
 	nbgv: NbgvRunner = defaultNbgvRunner(repoRoot),
 ): string | undefined {
+	if (
+		agentPluginCiActive() &&
+		process.env.HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN === "1"
+	) {
+		throw new Error(
+			"HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN is not allowed in CI",
+		);
+	}
 	try {
 		return releaseTrainSemverForPluginCheck(repoRoot, nbgv);
 	} catch (error) {
