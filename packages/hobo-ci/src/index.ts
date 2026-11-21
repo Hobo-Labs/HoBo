@@ -73,6 +73,7 @@ export {
 export {
 	type AskKind,
 	auditHandOff,
+	DEFAULT_HAND_OFF_AUDIT_OPTIONS,
 	type HandOffFinding,
 	parseClaudeTranscript,
 	STRUCTURED_ASK_TOOLS,

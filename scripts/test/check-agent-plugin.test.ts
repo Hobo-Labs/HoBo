@@ -729,6 +729,9 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("scans an existing plugin-rooted bundle for secrets", async () => {
+		for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"]) {
+			vi.stubEnv(variable, "");
+		}
 		const secret = `github_pat_${"a".repeat(20)}`;
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
 			"plugin.json": JSON.stringify(validManifest),
@@ -753,6 +756,7 @@ describe("checkAgentPlugin (integration)", () => {
 		expect(bundleIssues).toHaveLength(1);
 		expect(bundleIssues[0]?.message).toContain("secret-shaped value");
 		expect(bundleIssues[0]?.message).not.toContain(secret);
+		vi.unstubAllEnvs();
 	});
 
 	it("rejects a bundle attestation minted for a different workflow run in CI", async () => {

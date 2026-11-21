@@ -501,12 +501,14 @@ function startsTurn(event: TranscriptEvent): boolean {
 }
 
 /** Check every owner-facing line got a structured ask before its turn ended. */
+export const DEFAULT_HAND_OFF_AUDIT_OPTIONS = {} as const;
+
 export function auditHandOff(
 	events: readonly TranscriptEvent[],
 	options: Readonly<{
 		ownerFormAvailable?: boolean;
 		ownerFormPrivacyVerified?: boolean;
-	}> = {},
+	}> = DEFAULT_HAND_OFF_AUDIT_OPTIONS,
 ): HandOffFinding[] {
 	const findings: HandOffFinding[] = [];
 	const owed = new Map<AskKind, string>();

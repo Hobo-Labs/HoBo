@@ -815,6 +815,13 @@ export function checkAgentPlugin(input: {
 		repoRoot,
 		commitIsh,
 	);
+	if (input.versionFromReleaseTrain === undefined && ciGateActive()) {
+		issues.push({
+			file: "plugin.json",
+			message:
+				"release-train version could not be computed in CI; fix version.json/nbgv or unset HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN",
+		});
+	}
 	if (input.versionFromReleaseTrain !== undefined && !exactReleaseTrain) {
 		notes.push(
 			`agent-plugin:check: release-train comparison ran with exactReleaseTrain=false (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME?.trim() || "unset"}, commitIsh=${commitIsh}); only the one-height squash lag can waive a stale pin on push`,

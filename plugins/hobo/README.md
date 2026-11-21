@@ -26,7 +26,9 @@ pass a stale pin (`alpha.N` when the train is `alpha.N+1`); ahead-of-train
 pins are rejected everywhere. Non-PR runs add a report note with
 `GITHUB_EVENT_NAME` and the commit ish they measured when the comparison is
 not exact.
-Version computation failures fail the gate; only an explicit
+Version computation failures fail the gate. In CI (`CI`, `GITHUB_ACTIONS`, or
+`TF_BUILD`), the gate exits non-zero when the release train cannot be computed
+or `versionFromReleaseTrain` would be omitted; only an explicit
 `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` outside CI skips the check.
 
 ## Build the MCP bundle
@@ -78,7 +80,9 @@ the frontmatter), and scans every shipped text file for secret-shaped values.
 Diagnostics identify the file and failure without reproducing rejected path or
 frontmatter values. Commands marked **repo-only** in those skills (the MCP
 cold-start test, `eval:hand-off-transcript`) exist only inside a HoBo
-checkout.
+checkout. The hand-off eval calls `auditHandOff` with
+`DEFAULT_HAND_OFF_AUDIT_OPTIONS` from `@hobo/hobo-ci` (strict owner-form
+defaults; no CLI flags that could spoof those options).
 
 `skills/hobo-setup/references/agent-tooling.md` is an extract of the `hobo`
 MCP-server section in `docs/agent-tooling.md`. The same gate fails when that
