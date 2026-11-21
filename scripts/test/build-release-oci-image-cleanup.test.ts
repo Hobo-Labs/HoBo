@@ -27,4 +27,28 @@ describe("build-release-oci-image cleanup", () => {
 		expect(chain).toMatch(/deferBuilderPrune/);
 		expect((chain.match(/builder", "prune"/g) ?? []).length).toBe(1);
 	});
+
+	it("namespaces candidate refs for parallel matrix legs and rejects unsafe suffixes", async () => {
+		const previous = process.env.HOBO_RELEASE_CANDIDATE_SUFFIX;
+		try {
+			const { releaseImageCandidateRef } = await import(
+				"../ci/build-release-oci-image.mts"
+			);
+			process.env.HOBO_RELEASE_CANDIDATE_SUFFIX = "-hobo-mcp";
+			expect(releaseImageCandidateRef("hobo-sdk")).toBe(
+				"hobo-sdk:candidate-hobo-mcp",
+			);
+			expect(releaseImageCandidateRef("hobo-cli")).toBe(
+				"hobo-cli:candidate-hobo-mcp",
+			);
+			process.env.HOBO_RELEASE_CANDIDATE_SUFFIX = "shared";
+			expect(() => releaseImageCandidateRef("hobo-cli")).toThrow(
+				/invalid HOBO_RELEASE_CANDIDATE_SUFFIX/u,
+			);
+		} finally {
+			if (previous === undefined)
+				delete process.env.HOBO_RELEASE_CANDIDATE_SUFFIX;
+			else process.env.HOBO_RELEASE_CANDIDATE_SUFFIX = previous;
+		}
+	});
 });

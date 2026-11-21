@@ -1,13 +1,4 @@
-/**
- * `hobo ci signals` and `hobo ci diagnose`: what a repository's recent runs
- * say about its CI, read from GitHub with the authenticated GitHub CLI.
- *
- * Nothing is stored and no relay is asked. GitHub already holds every run,
- * job, step time and log; these commands read a bounded number of them, parse
- * them into the insight types of `@hobo/ci/insights` and print what those
- * pure reports compute. The same reports can be fed from a relay's journal
- * later without changing them.
- */
+import { stripVTControlCharacters } from "node:util";
 import { isGithubHostedLabel } from "@hobo/ci";
 import {
 	type CiSignal,
@@ -24,6 +15,7 @@ import {
 } from "@hobo/ci/insights";
 import type { CommandResult } from "@hobo/cli";
 import { z } from "zod";
+import { validRepository } from "./ci-repository.js";
 import { CiProcessError, type CiRunExec, runCiProcess } from "./ci-runs.js";
 
 export type CiInsightOptions = Readonly<
@@ -34,12 +26,17 @@ export type CiInsightOptions = Readonly<
 export const DEFAULT_SIGNAL_RUNS = 50;
 // public-contract: failed jobs `hobo ci diagnose` reads from one run.
 export const MAX_DIAGNOSED_JOBS = 5;
-/** How much of the end of a job's log is read. */
+
 const LOG_TAIL_BYTES = 256 * 1024;
-/** Log lines printed per job; the whole excerpt is in the JSON data. */
+
 const PRINTED_EXCERPT_LINES = 12;
+const JOBS_PER_PAGE = 100;
+const MAX_JOBS_PER_ATTEMPT = 1_000;
+const ANNOTATIONS_PER_PAGE = 100;
+const MAX_ANNOTATION_PAGES = 10;
 
 class InsightUsage extends Error {}
+class InsightJobsLimit extends Error {}
 
 const time = z.string().min(1).nullish();
 
@@ -57,6 +54,7 @@ const JobSchema = z.looseObject({
 	labels: z.array(z.string()).nullish(),
 	runner_name: z.string().nullish(),
 	runner_group_name: z.string().nullish(),
+	check_run_url: z.string().nullish(),
 	conclusion: z.string().nullish(),
 	created_at: z.string().min(1),
 	started_at: time,
@@ -64,7 +62,10 @@ const JobSchema = z.looseObject({
 	steps: z.array(StepSchema).nullish(),
 });
 
-const JobsPageSchema = z.looseObject({ jobs: z.array(JobSchema) });
+const JobsPageSchema = z.looseObject({
+	total_count: z.number().int().nonnegative().optional(),
+	jobs: z.array(JobSchema),
+});
 
 const RunSchema = z.looseObject({
 	id: z.number().int().positive(),
@@ -118,7 +119,6 @@ function at(value: string | null | undefined): number | undefined {
 	return Number.isNaN(ms) ? undefined : ms;
 }
 
-/** A routing job hands the real work to another runner: it is left out of waits. */
 function isRelayJob(name: string): boolean {
 	return /^(?:relay|route)(?:$|[\s\-_/(])/iu.test(name);
 }
@@ -137,14 +137,29 @@ function insightStep(step: z.infer<typeof StepSchema>): InsightStep {
 		: { ...base, startedAtMs: started, completedAtMs: completed };
 }
 
+function checkRunId(job: GithubJob): number | undefined {
+	if (job.check_run_url === undefined || job.check_run_url === null) {
+		return undefined;
+	}
+	try {
+		const match = /\/check-runs\/([1-9]\d*)$/u.exec(
+			new URL(job.check_run_url).pathname,
+		);
+		const id = Number(match?.[1]);
+		return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 	const labels = job.labels ?? [];
 	const steps = (job.steps ?? []).map(insightStep);
 	const queuedAtMs = at(job.created_at) ?? 0;
-	// GitHub stamps `started_at` on a job no runner ever took; a runner name is
-	// what shows one did.
+
 	const started = job.runner_name ? at(job.started_at) : undefined;
 	const completed = at(job.completed_at);
+	const checkRun = checkRunId(job);
 	const base = {
 		id: job.id,
 		name: job.name,
@@ -158,9 +173,11 @@ function insightJob(job: GithubJob, privateRepository: boolean): InsightJob {
 			labels.every((label) => isGithubHostedLabel(label)),
 		relay: isRelayJob(job.name),
 	};
+	const identified =
+		checkRun === undefined ? base : { ...base, checkRunId: checkRun };
 	const named = job.runner_name
-		? { ...base, runnerName: job.runner_name }
-		: base;
+		? { ...identified, runnerName: job.runner_name }
+		: identified;
 	if (started === undefined)
 		return completed === undefined
 			? named
@@ -191,7 +208,7 @@ function insightRun(
 		defaultBranch: repository.defaultBranch,
 		headSha: run.head_sha,
 		actor: run.actor?.login ?? "",
-		// An earlier attempt's own result is not on the run; its jobs carry it.
+
 		conclusion: latest
 			? conclusion(run.conclusion)
 			: jobs.some(
@@ -212,6 +229,12 @@ function insightRun(
 		run.status !== "completed"
 		? base
 		: { ...base, completedAtMs: completed };
+}
+
+function terminalText(text: string): string {
+	return stripVTControlCharacters(text)
+		.replace(/[\u202a-\u202e\u2066-\u2069]/gu, "")
+		.replace(/\p{Cc}/gu, " ");
 }
 
 function duration(ms: number | undefined): string {
@@ -283,6 +306,13 @@ function count(
 }
 
 function failure(error: Error): CommandResult {
+	if (error instanceof InsightJobsLimit)
+		return {
+			ok: false,
+			status: "unconfirmed",
+			code: "HOBO_CI_JOB_LIMIT",
+			message: error.message,
+		};
 	if (error instanceof InsightUsage)
 		return {
 			ok: false,
@@ -332,32 +362,65 @@ export async function runCiInsights(input: {
 	env?: NodeJS.ProcessEnv;
 	now?: () => number;
 }): Promise<CommandResult> {
+	if (!validRepository(input.repository))
+		return failure(new InsightUsage("--repo must be a GitHub owner/name."));
 	const exec = input.execFile ?? runCiProcess;
 	const env = { ...(input.env ?? process.env) };
 	delete env.HOBO_CI_ACCOUNT_TOKEN;
 	delete env.HOBO_CI_ACCOUNT_TOKEN_FILE;
 	const repo = `repos/${input.repository}`;
+	const apiResult = (path: string, maxBuffer = 16 * 1024 * 1024) =>
+		exec("gh", ["api", path], {
+			cwd: input.cwd,
+			timeout: 30_000,
+			maxBuffer,
+			env,
+		});
 	const api = async (path: string, maxBuffer = 16 * 1024 * 1024) =>
-		(
-			await exec("gh", ["api", path], {
-				cwd: input.cwd,
-				timeout: 30_000,
-				maxBuffer,
-				env,
-			})
-		).stdout;
+		(await apiResult(path, maxBuffer)).stdout;
 	const jobsOf = async (
 		run: GithubRun,
 		attempt: number,
 		privateRepository: boolean,
-	): Promise<InsightJob[]> =>
-		JobsPageSchema.parse(
-			JSON.parse(
-				await api(
-					`${repo}/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=100`,
-				),
-			),
-		).jobs.map((job) => insightJob(job, privateRepository));
+	): Promise<InsightJob[]> => {
+		const jobs: InsightJob[] = [];
+		const path = `${repo}/actions/runs/${run.id}/attempts/${attempt}/jobs?per_page=${JOBS_PER_PAGE}`;
+		for (let page = 1; page <= MAX_JOBS_PER_ATTEMPT / JOBS_PER_PAGE; page++) {
+			const suffix = page === 1 ? "" : `&page=${page}`;
+			const response = JobsPageSchema.parse(
+				JSON.parse(await api(`${path}${suffix}`)),
+			);
+			if (
+				response.jobs.length > JOBS_PER_PAGE ||
+				(response.total_count !== undefined &&
+					response.total_count > MAX_JOBS_PER_ATTEMPT)
+			)
+				throw new InsightJobsLimit(
+					`A run attempt has more than ${MAX_JOBS_PER_ATTEMPT} jobs.`,
+				);
+			jobs.push(
+				...response.jobs.map((job) => insightJob(job, privateRepository)),
+			);
+			if (
+				response.total_count !== undefined &&
+				jobs.length > response.total_count
+			)
+				throw new Error("GitHub returned an inconsistent job count");
+			if (
+				response.total_count !== undefined &&
+				jobs.length === response.total_count
+			)
+				return jobs;
+			if (response.jobs.length < JOBS_PER_PAGE) {
+				if (response.total_count !== undefined)
+					throw new Error("GitHub returned an incomplete job list");
+				return jobs;
+			}
+		}
+		throw new InsightJobsLimit(
+			`A run attempt may have more than ${MAX_JOBS_PER_ATTEMPT} jobs.`,
+		);
+	};
 
 	try {
 		const repository = RepositorySchema.parse(JSON.parse(await api(repo)));
@@ -381,8 +444,7 @@ export async function runCiInsights(input: {
 			const runs: InsightRun[] = [];
 			for (const run of listed) {
 				const latest = run.run_attempt ?? 1;
-				// The attempt before the latest is what shows a job failed and then
-				// passed; older attempts are not read.
+
 				for (const attempt of latest > 1 ? [latest - 1, latest] : [latest])
 					runs.push(
 						insightRun(
@@ -418,7 +480,7 @@ export async function runCiInsights(input: {
 			if (runners.length > 0)
 				lines.push("runners", ...runners.slice(0, 10).map(runnerLine));
 			return {
-				message: lines.join("\n"),
+				message: lines.map(terminalText).join("\n"),
 				data: {
 					repository: input.repository,
 					runs: listed.length,
@@ -457,27 +519,38 @@ export async function runCiInsights(input: {
 			job: string;
 			id: number;
 			runner: string;
+			logTruncated: boolean;
 			diagnosis: FailureDiagnosis;
 			summary: string;
 		}[] = [];
 		for (const job of failed.slice(0, MAX_DIAGNOSED_JOBS)) {
-			// A job whose log or annotations cannot be read is still diagnosed
-			// from its steps; the missing text only makes the answer less sure.
-			const logTail = await api(`${repo}/actions/jobs/${job.id}/logs`)
-				.then((log) => log.slice(-LOG_TAIL_BYTES))
-				.catch(() => "");
-			const annotations = await api(`${repo}/check-runs/${job.id}/annotations`)
-				.then((body) =>
-					AnnotationsSchema.parse(JSON.parse(body)).flatMap(
-						(annotation) => annotation.message ?? [],
+			if (job.checkRunId === undefined)
+				throw new Error(`GitHub returned no check-run ID for job ${job.id}`);
+			const log = await apiResult(`${repo}/actions/jobs/${job.id}/logs`);
+			const logTail = log.stdout.slice(-LOG_TAIL_BYTES);
+			const annotations: string[] = [];
+			for (let page = 1; page <= MAX_ANNOTATION_PAGES; page++) {
+				const suffix = page === 1 ? "" : `&page=${page}`;
+				const batch = AnnotationsSchema.parse(
+					JSON.parse(
+						await api(
+							`${repo}/check-runs/${job.checkRunId}/annotations?per_page=${ANNOTATIONS_PER_PAGE}${suffix}`,
+						),
 					),
-				)
-				.catch(() => []);
+				);
+				annotations.push(
+					...batch.flatMap((annotation) => annotation.message ?? []),
+				);
+				if (batch.length < ANNOTATIONS_PER_PAGE) break;
+				if (page === MAX_ANNOTATION_PAGES)
+					throw new Error("GitHub returned too many check-run annotations");
+			}
 			const diagnosis = diagnoseFailure({ job, logTail, annotations });
 			diagnosed.push({
 				job: job.name,
 				id: job.id,
 				runner: job.runnerName ?? job.labels.join(", "),
+				logTruncated: log.truncated === true,
 				diagnosis,
 				summary: summarizeDiagnosis(diagnosis),
 			});
@@ -492,6 +565,9 @@ export async function runCiInsights(input: {
 							"",
 							`${entry.job}  (${entry.runner || "no runner"})`,
 							`  ${entry.summary}`,
+							...(entry.logTruncated
+								? ["  Log output was truncated; diagnosis may be incomplete."]
+								: []),
 							...entry.diagnosis.excerpt
 								.slice(-PRINTED_EXCERPT_LINES)
 								.map((line) => `    ${line}`),
@@ -504,7 +580,7 @@ export async function runCiInsights(input: {
 							: []),
 					];
 		return {
-			message: lines.join("\n"),
+			message: lines.map(terminalText).join("\n"),
 			data: {
 				repository: input.repository,
 				run: { id: run.id, attempt, url: run.html_url ?? "" },
