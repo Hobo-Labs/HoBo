@@ -293,23 +293,31 @@ describe("Infisical deployment credential", () => {
 			} finally {
 				stderr.mockRestore();
 			}
-			const masked = stderrWrites.join("");
-			expect(masked).toContain(`::add-mask::${TOKEN}\n`);
-			expect(masked.replaceAll(`::add-mask::${TOKEN}\n`, "")).not.toContain(
-				TOKEN,
-			);
-			expect(
-				requests.some(
-					(url) =>
-						url.includes("6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7") &&
-						url.includes("/api/v4/secrets/VERCEL_TOKEN"),
-				),
-				JSON.stringify({ envelope: ran.envelope, requests }),
-			).toBe(true);
-			expect(seenAuthorization, JSON.stringify(ran.envelope)).toContain(
-				`Bearer ${TOKEN}`,
-			);
-			expect(`${ran.stdout}${ran.stderr}`).not.toContain(TOKEN);
+		const masked = stderrWrites.join("");
+		const mints = [
+			TOKEN,
+			"synthetic.jwt.value",
+			"synthetic-infisical-token",
+			"synthetic-request-token",
+			"untrusted-runner-token",
+		];
+		expect(masked).toContain(`::add-mask::${TOKEN}\n`);
+		const withoutMaskLines = masked.replaceAll(`::add-mask::${TOKEN}\n`, "");
+		for (const value of mints)
+			expect(withoutMaskLines, value).not.toContain(value);
+		expect(
+			requests.some(
+				(url) =>
+					url.includes("6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7") &&
+					url.includes("/api/v4/secrets/VERCEL_TOKEN"),
+			),
+			JSON.stringify({ envelope: ran.envelope, requests }),
+		).toBe(true);
+		expect(seenAuthorization, JSON.stringify(ran.envelope)).toContain(
+			`Bearer ${TOKEN}`,
+		);
+		const exposed = `${ran.stdout}${ran.stderr}${JSON.stringify(ran.envelope)}`;
+		for (const value of mints) expect(exposed, value).not.toContain(value);
 			seenAuthorization.length = 0;
 			const denied = await deploy([...RELAY], {
 				cwd,
@@ -1396,11 +1404,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(preview.exitCode).toBe(0);
 		const vercel = scriptedVercel(["READY"]);
 		const events: string[] = [];
+		let promotedToStaged = false;
 		const fetch: VercelFetch = async (url, init) => {
 			if (url.includes("/v9/projects/hobo-ci")) {
 				const project = {
 					id: "prj_relay",
-					targets: { production: { id: "dpl_previous_prod" } },
+					targets: {
+						production: {
+							id: promotedToStaged ? "dpl_wait" : "dpl_previous_prod",
+						},
+					},
 				};
 				return {
 					ok: true,
@@ -1412,6 +1425,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			if (url.includes("/promote/")) {
 				expect(url).toContain("/projects/prj_relay/promote/dpl_wait");
 				trafficOnPublic = true;
+				promotedToStaged = true;
 				events.push("promote");
 				return {
 					ok: true,
@@ -2079,6 +2093,117 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		});
 		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
 	});
+
+	it.each([
+		"dpl_concurrent_prod",
+		undefined,
+		"error",
+	] as const)("refuses a promotion whose re-read names another deployment (%s)", async (afterPromote) => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+		const vercel = scriptedVercel(["READY"]);
+		const events: string[] = [];
+		let promoted = false;
+		const fetch: VercelFetch = async (url, init) => {
+			if (url.includes("/v9/projects/hobo-ci")) {
+				if (promoted && afterPromote === "error")
+					throw new Error("production read failed");
+				const production = promoted
+					? afterPromote === undefined
+						? undefined
+						: { id: afterPromote }
+					: { id: "dpl_previous_prod" };
+				return {
+					ok: true,
+					status: 200,
+					text: async () =>
+						JSON.stringify({ id: "prj_relay", targets: { production } }),
+					json: async () => ({ id: "prj_relay", targets: { production } }),
+				};
+			}
+			if (url.includes("/promote/")) {
+				expect(url).toContain("/promote/dpl_wait");
+				promoted = true;
+				events.push("promote");
+				return {
+					ok: true,
+					status: 202,
+					text: async () => "{}",
+					json: async () => ({}),
+				};
+			}
+			return vercel.fetch(url, init);
+		};
+		const publicOrigin = "https://public.example.test";
+		const probe: HttpTransport = async (request) => {
+			if (
+				request.url.startsWith("https://hobo-ci-git-main.example.vercel.app/")
+			)
+				return {
+					status: 200,
+					headers: {},
+					body: request.url.endsWith("/healthz")
+						? JSON.stringify({ commit: SHA })
+						: JSON.stringify({ ready: true }),
+				};
+			const url = new URL(request.url);
+			if (url.origin === publicOrigin) events.push(`live:${url.pathname}`);
+			return {
+				status: 200,
+				headers: {},
+				body: request.url.endsWith("/healthz")
+					? JSON.stringify({ commit: SHA })
+					: JSON.stringify({ ready: true }),
+			};
+		};
+		const result = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch,
+				hoboHome: home,
+				probe,
+				...clock,
+				env: {
+					...env,
+					HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
+					HOBO_CI_RELAY_PUBLIC_URL: publicOrigin,
+				},
+			},
+		);
+		expect(result.exitCode).toBe(1);
+		expect(events.filter((event) => event === "promote")).toEqual(["promote"]);
+		expect(events).not.toContain("rollback");
+		expect(events.some((event) => event.startsWith("live:"))).toBe(false);
+		if (afterPromote === "error")
+			expect(result.envelope).toMatchObject({
+				code: "HOBO_CI_DEPLOY_NO_ANSWER",
+			});
+		else
+			expect(result.envelope).toMatchObject({
+				code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+				message: expect.stringContaining(afterPromote ?? "no deployment"),
+				data: { delivery: { state: "FAILED" } },
+			});
+	}, 120_000);
 
 	it.each([
 		{ previousProduction: undefined, expires: false },

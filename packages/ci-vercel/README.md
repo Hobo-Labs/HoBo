@@ -299,6 +299,14 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 | a 15-minute wait | a 20-minute wait; `HOBO_CI_DEPLOY_NOT_READY` also covers a rollout deadline |
 | — | new codes: `HOBO_CI_DEPLOY_INCOMPLETE`, `HOBO_CI_DEPLOY_VERIFICATION_FAILED`, `HOBO_CI_DEPLOY_NOT_QUALIFIED`, `HOBO_CI_DEPLOY_SOURCE_UNPINNED`, `HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE`, `HOBO_CI_DEPLOY_DELIVERY_INVALID`, `HOBO_CI_DEPLOY_FREIGHT_REFUSED`, `HOBO_CI_DEPLOY_PROMOTION_REFUSED` |
 
+**Migrating existing preview `--wait` CI jobs:** the verify step now requires
+both `--sha <commit>` and `permissions: id-token: write` on the job (the
+GitHub OIDC mint the protected probe attests the deployment with). A job that
+runs `--target preview --wait` without either refuses before creation with
+`HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED` instead of verifying a shared
+origin it cannot attest; add the two inputs, or drop `--wait` and accept that
+nothing is verified or qualified.
+
 **Merge cutover (relay CD delivery):** before this branch lands on `main`,
 provision the Infisical deploy project (`deploy/secret-store.binding.json`
 `deployProjectId`), attach the `hobo-ci-deploy` identity with GitHub OIDC

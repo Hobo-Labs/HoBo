@@ -530,6 +530,21 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(finalized).toHaveLength(2);
 	}, 240_000);
 
+	it("never reports a wait-free staged promotion as successful before its finalizer ran", async () => {
+		const h = await harness();
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const finalized: string[] = [];
+		const outcome = await deliver(h, "production", {
+			wait: false,
+			finalizePromotion: async ({ handover }) => {
+				finalized.push(String(handover.deploymentId));
+				return undefined;
+			},
+		});
+		expect(outcome.ok).toBe(false);
+		expect(finalized).toEqual([]);
+	}, 120_000);
+
 	it("records two commits as two Freight, and production refuses the one preview has not qualified", async () => {
 		const h = await harness();
 		expect((await deliver(h, "preview")).ok).toBe(true);

@@ -1186,7 +1186,12 @@ async function deliverWith(
 					report: report(promotion, set),
 				};
 			const outputs = realizer?.deployed(set.setId);
-			if (input.wait === false && outputs) {
+			if (
+				input.wait === false &&
+				outputs &&
+				(finalizePromotion === undefined ||
+					(finalizationFailure === undefined && finalizedSetId === set.setId))
+			) {
 				const current = await cd.promotions.get(promotionId);
 				return {
 					ok: true,

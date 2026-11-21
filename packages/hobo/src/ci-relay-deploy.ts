@@ -1004,17 +1004,17 @@ export async function runCiRelayDeploy(
 		protectedPreview ||
 		stagedProduction ||
 		(target === "production" && wait && sha !== undefined);
+	if (verifyOrigin !== undefined && sha !== undefined && !commitVerified)
+		return refused(
+			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
+			`A --wait deploy pinned to --sha verifies exactly that commit's deployment; this ${target} deploy would verify none. Pass --sha with GitHub OIDC verification (preview) or --target production with --sha.`,
+		);
 	const verifyProbe =
-		verifyOrigin !== undefined && sha !== undefined
-			? commitVerified
-				? commitCheckingProbe(previewProbe, {
-						origin: verifyOrigin,
-						commit: sha.toLowerCase(),
-					})
-				: {
-						transport: previewProbe,
-						findings: () => ({}),
-					}
+		commitVerified && verifyOrigin !== undefined && sha !== undefined
+			? commitCheckingProbe(previewProbe, {
+					origin: verifyOrigin,
+					commit: sha.toLowerCase(),
+				})
 			: undefined;
 	const verify =
 		verifyProbe !== undefined && verifyOrigin !== undefined
@@ -1113,16 +1113,27 @@ export async function runCiRelayDeploy(
 										? error
 										: new Error("promotion failed");
 							}
-							if (promotionError !== undefined) {
-								let afterPromotion: string | undefined;
-								try {
-									afterPromotion =
-										await client.getProductionDeploymentId(project);
-								} catch {
+							let afterPromotion: string | undefined;
+							try {
+								afterPromotion =
+									await client.getProductionDeploymentId(project);
+							} catch (error) {
+								return realizationFailure(
+									promotionError ??
+										(error instanceof Error
+											? error
+											: new Error("promotion read failed")),
+									withoutToken,
+								);
+							}
+							if (afterPromotion !== safe.deploymentId) {
+								if (promotionError !== undefined)
 									return realizationFailure(promotionError, withoutToken);
-								}
-								if (afterPromotion !== safe.deploymentId)
-									return realizationFailure(promotionError, withoutToken);
+								return {
+									ok: false as const,
+									code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+									message: `Production traffic names ${afterPromotion ?? "no deployment"}, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
+								};
 							}
 						}
 						const pauseBeforeRetry = async (attempt: number) => {

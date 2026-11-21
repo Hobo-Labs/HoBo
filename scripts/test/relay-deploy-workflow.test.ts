@@ -163,16 +163,29 @@ describe("the relay deploy gate", () => {
 			false,
 		);
 	});
+
+	it("never quietly skips a manual run, so the app-credentials artifact download always has its artifact", () => {
+		for (const store of ["absent", "unreadable", "bound"] as const) {
+			const decision = decide({ event: "workflow_dispatch", store, inputDirs });
+			assert.ok(
+				decision.run === true || decision.failure === true,
+				`workflow_dispatch with a ${store} store must deploy or fail the job, never skip it: app-credentials needs deploy-build and downloads its artifact unconditionally`,
+			);
+		}
+	});
 });
 
 describe("the relay deploy workflow", () => {
 	it("checks out pinned workspace dependencies on fresh runners", () => {
+		const build = workflow
+			.split("\n  deploy-build:\n")[1]
+			?.split("\n  deploy:\n")[0];
 		const deploy = workflow
 			.split("\n  deploy:\n")[1]
 			?.split("\n  app-credentials:\n")[0];
 		const deposit = workflow.split("\n  app-credentials:\n")[1];
-		assert.ok(deploy && deposit);
-		for (const job of [deploy, deposit]) {
+		assert.ok(build && deploy && deposit);
+		for (const job of [build, deploy, deposit]) {
 			assert.match(job, /submodules: recursive/u);
 			assert.match(job, /persist-credentials: false/u);
 		}

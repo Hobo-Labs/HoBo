@@ -11,8 +11,12 @@ tags: [hobo, ci, relay, workflow]
 pins the relay deploy workflow: the *Verify the secret store connection* step
 must invoke `hobo ci secret-store verify` in its own body and must appear
 before *Deliver the relay through HoBo CD* by step line order, not by
-whole-file substring search. The credential-bearing deploy and App-deposit jobs
-must use `ubuntu-24.04` and `clean: true`. `scripts/lint-actions.ts` exempts
+whole-file substring search. Every job's checkout (`deploy-build` included)
+pins submodules and persists no credentials. The gate never quietly skips a
+manual run — on `workflow_dispatch` it either deploys or fails the job — so
+`app-credentials`, which needs `deploy-build` and downloads its artifact
+unconditionally, can never hit a missing artifact. The credential-bearing
+deploy and App-deposit jobs must use `ubuntu-24.04` and `clean: true`. `scripts/lint-actions.ts` exempts
 this workflow from fleet routing and scopes its per-job hosted-runner exception
 to those jobs and the unprivileged `deploy-build` job. Building and deploying
 are separated so the GitHub OIDC identity reaches no build code:

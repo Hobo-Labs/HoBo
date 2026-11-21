@@ -264,10 +264,17 @@ checkouts, so a reused fleet or enrolled runner cannot capture credentials or
 contribute workspace files.
 
 The owner creates a Vercel API token scoped to the deployment account and puts
-it in the deploy project's production environment as `VERCEL_TOKEN`. The
-separate project keeps the token outside the relay runtime identity's access.
-Infisical's Vercel app connection uses API tokens and does not rotate them
-automatically; replace the stored credential before its expiry.
+it in the deploy project's production environment as `VERCEL_TOKEN`. Scope it
+to the single Vercel account/team that owns the relay project — the narrowest
+scope that account offers — so its blast radius is that account's deployments
+and nothing else; the workflow never needs a broader one. The separate project
+keeps the token outside the relay runtime identity's access. Infisical's
+Vercel app connection uses API tokens and does not rotate them automatically;
+replace the stored credential before its expiry. Rotation is: write the new
+token into the deploy project (every later deploy run reads the current value;
+nothing in the workflow or repo changes), then revoke the old token in Vercel.
+If a token is exposed, revoke it in Vercel first — that cuts access whatever
+copies exist — then store a fresh one as above.
 
 ### What the workflow does, and the claim steps the skill drives
 
@@ -287,9 +294,12 @@ HoBo promotes it only after it passes verification and then checks the public
 origin before the deploy deadline. Creation also refuses a deadline crossed
 while CD is being prepared. Staged promotion requires a distinct previous
 production deployment, recorded in the durable handover so an interrupted run can
-verify an already-promoted candidate without promoting it again. A lost
-promotion response continues only when a fresh production read names the staged
-candidate; a missing target or failed read returns the original failure. Failed
+verify an already-promoted candidate without promoting it again. Every
+promotion is confirmed by a fresh production read naming the staged candidate
+before live verification starts: a lost promotion response continues only when
+that read names it, and a read naming another deployment (or none) means a
+concurrent promotion moved production, which this run leaves untouched and
+reports. A missing target or failed read returns the original failure. Failed
 live verification marks the CD promotion failed and runs its compensation. When
 production still names the rejected candidate, HoBo restores the previous
 deployment and re-reads the target. The result reports `completed` when that
