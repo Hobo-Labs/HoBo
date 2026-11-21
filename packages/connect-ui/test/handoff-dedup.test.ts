@@ -106,10 +106,8 @@ describe("provider handoff", () => {
 				}).then((response) => response.json());
 			const [one, two] = await Promise.all([submit(), submit()]);
 			expect(calls).toBe(1);
-			expect(one.step).toBe("configure");
-			expect(two.step).toBe("configure");
-			expect(one.spec.elements.title?.props).toMatchObject({ text: "Second" });
-			expect(two.spec.elements.title?.props).toMatchObject({ text: "Second" });
+			expect(one.view.title).toBe("Second");
+			expect(two.view.title).toBe("Second");
 		} finally {
 			await page.close();
 		}

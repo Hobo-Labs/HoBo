@@ -15,6 +15,7 @@
     "boxRunner": false,
     "mainWorkspaceParallelCap": 4,
     "mainGate": { "reuseMergeQueue": true },
+    "mergeGroup": { "reusePrFabric": false },
     "verdict": {
       "minFreeRunners": 1,
       "enterMs": 60000,

@@ -726,7 +726,7 @@ describe("a local run", () => {
 		const plan = parsePlan(
 			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
 		);
-		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		const gate = plan.find((job) => job.id === "pr_gate_plan");
 		assert.ok(gate);
 		const reports = gate.steps.filter(
 			(step) => step.name === "Impact classification (shadow)",
@@ -736,7 +736,7 @@ describe("a local run", () => {
 			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
 		);
 		const oldGate = oldPlan.jobs.find(
-			(job: { id: string }) => job.id === "pr_gate_validation",
+			(job: { id: string }) => job.id === "pr_gate_plan",
 		);
 		for (const step of oldGate.steps.filter(
 			(entry: { name?: string }) =>
@@ -748,7 +748,7 @@ describe("a local run", () => {
 		const run = await runIn(
 			[
 				{
-					id: "pr_gate_validation",
+					id: "pr_gate_plan",
 					steps: [
 						reports[0],
 						{
@@ -806,7 +806,7 @@ describe("a local run", () => {
 		);
 		const { envelope, notAttested } = await run.outcome;
 		assert.match(
-			notAttested.pr_gate_validation ?? "",
+			notAttested.pr_gate_plan ?? "",
 			/policy.*differs from the base/u,
 		);
 		assert.ok(notAttested.workspace_tests);
@@ -820,7 +820,7 @@ describe("a local run", () => {
 			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
 		);
 		const gate = source.jobs.find(
-			(job: { id: string }) => job.id === "pr_gate_validation",
+			(job: { id: string }) => job.id === "pr_gate_plan",
 		);
 		const headPlan = {
 			jobs: [
@@ -879,7 +879,7 @@ describe("a local run", () => {
 		assert.equal(run.status, 0, run.stderr);
 		assert.match(
 			run.stdout,
-			/local job policy for pr_gate_validation differs from the base/u,
+			/local job policy for pr_gate_plan differs from the base/u,
 		);
 		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
 		const record = parseEnvelope(
@@ -923,9 +923,7 @@ describe("a local run", () => {
 			"symlink",
 		]) {
 			const gate = structuredClone(
-				source.jobs.find(
-					(job: { id: string }) => job.id === "pr_gate_validation",
-				),
+				source.jobs.find((job: { id: string }) => job.id === "pr_gate_plan"),
 			);
 			if (variant === "removed")
 				gate.steps = gate.steps.filter(
@@ -976,11 +974,9 @@ describe("a local run", () => {
 			);
 			const outcome = await run.outcome;
 			const rejected =
-				variant === "other-group-job"
-					? "workspace_tests"
-					: "pr_gate_validation";
+				variant === "other-group-job" ? "pr_gate_validation" : "pr_gate_plan";
 			assert.match(
-				outcome.notAttested.pr_gate_validation ?? "",
+				outcome.notAttested.pr_gate_plan ?? "",
 				variant === "symlink"
 					? /classifier dependency.*unreviewed/u
 					: new RegExp(
@@ -1886,6 +1882,7 @@ describe("local gh-signoff", () => {
 		headFiles: Readonly<Record<string, string>> = {},
 	) {
 		const jobs = [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
@@ -1978,6 +1975,7 @@ describe("local gh-signoff", () => {
 		const executed = await run.outcome;
 		const gateResults: AttestedJobResult[] = hasEngine
 			? [
+					"pr_gate_plan",
 					"pr_gate_validation",
 					"workspace_tests",
 					"pr_affected",
@@ -2303,6 +2301,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"--commit",
 			run.head,
 			...[
+				"pr_gate_plan",
 				"pr_gate_validation",
 				"workspace_tests",
 				"pr_affected",
@@ -2315,7 +2314,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"github.com",
 			"github.com/acme/app",
 		]);
-		assert.match(result.stdout, /posted 6 local signoff/u);
+		assert.match(result.stdout, /posted 7 local signoff/u);
 	});
 
 	it("signs only an exact active merge-group commit and rechecks it around publication", async () => {
@@ -3656,7 +3655,7 @@ console.log("changed classifier set GITHUB_ENV");
 			(files) => {
 				const base = JSON.parse(files[path] ?? "");
 				const gate = base.jobs.find(
-					(job: { id: string }) => job.id === "pr_gate_validation",
+					(job: { id: string }) => job.id === "pr_gate_plan",
 				);
 				for (const step of gate.steps.filter(
 					(entry: { name?: string }) =>
@@ -3675,7 +3674,7 @@ console.log("changed classifier set GITHUB_ENV");
 		assert.notEqual(result.status, 0);
 		assert.match(
 			result.stderr,
-			/local job policy for pr_gate_validation differs from the base/u,
+			/local job policy for pr_gate_plan differs from the base/u,
 		);
 		assert.equal(existsSync(run.calls), false);
 	});

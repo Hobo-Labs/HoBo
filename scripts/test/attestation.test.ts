@@ -29,6 +29,7 @@ const HEAD = "c".repeat(40);
 const BASE = "d".repeat(40);
 /** Jobs the workflows run on merge groups as well as pull requests. */
 const BOTH_EVENTS = [
+	"pr_gate_plan",
 	"pr_gate_validation",
 	"workspace_tests",
 	"scripts-tests",
@@ -180,30 +181,34 @@ describe("verifying an attestation", () => {
 		});
 		// A record made for merge groups alone covers the merge group's jobs,
 		// and says nothing about a pull request.
+		const groupJobs = [
+			"pr_gate_plan",
+			"pr_gate_validation",
+			"workspace_tests",
+			"scripts-tests",
+		];
 		const groupOnly = signStatement(
 			{
 				...statement(signer.entry.id, {
-					jobs: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
+					jobs: groupJobs,
 					events: ["merge_group"],
 				}),
-				results: ["pr_gate_validation", "workspace_tests", "scripts-tests"].map(
-					(id) => {
-						const result = {
-							id,
-							status: "passed" as const,
-							events: ["merge_group"],
-							commands: id === "scripts-tests" ? 4 : 1,
-							durationMs: 1,
-							logDigest: `sha256:${"f".repeat(64)}`,
-						};
-						if (id === "scripts-tests")
-							Object.assign(result, {
-								eventChecks: { merge_group: 4 },
-								executionMode: "each-step-v1" as const,
-							});
-						return result;
-					},
-				),
+				results: groupJobs.map((id) => {
+					const result = {
+						id,
+						status: "passed" as const,
+						events: ["merge_group"],
+						commands: id === "scripts-tests" ? 4 : 1,
+						durationMs: 1,
+						logDigest: `sha256:${"f".repeat(64)}`,
+					};
+					if (id === "scripts-tests")
+						Object.assign(result, {
+							eventChecks: { merge_group: 4 },
+							executionMode: "each-step-v1" as const,
+						});
+					return result;
+				}),
 			},
 			signer.privateKey,
 		);
@@ -211,7 +216,7 @@ describe("verifying an attestation", () => {
 			verify(groupOnly, [signer.entry], { event: "merge_group" }),
 			{
 				attested: true,
-				jobs: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
+				jobs: groupJobs,
 				attestor: signer.entry.id,
 			},
 		);
