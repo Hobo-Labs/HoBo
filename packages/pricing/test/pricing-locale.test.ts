@@ -35,7 +35,7 @@ it("uses the same credit and effective cost across locales while retaining expli
 	expect(english.locale).toBe("en-US");
 	expect(swedish.locale).toBe("sv-SE");
 	for (const result of [english, swedish, reversed]) {
-		expect(result.version).toBe("pricing-rating/v7");
+		expect(result.version).toBe("pricing-rating/v8");
 		expect(result.effective).toBe("9");
 		expect(result.consumption).toEqual(["z"]);
 		expect(result.v2Version).toBe("pricing-rating/v2");
