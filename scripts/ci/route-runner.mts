@@ -715,7 +715,7 @@ export function prBatchHostedHasIdleCapacity(
 	return mergeGroupHostedHasIdleCapacity(load, limits);
 }
 
-// public-contract: the Agent37 on-demand overflow runs-on label, emitted while the pool's own runners are all busy; the provider may stay disabled.
+// public-contract: the Agent37 on-demand overflow runs-on label, emitted on pool saturation only when its fetched runner page shows an online runner.
 export const AGENT37_OVERFLOW_RUNNER_LABEL = "hobo-agent37";
 // public-contract: host node CPU used percent above which the hobo pool counts as saturated.
 export const HOBO_POOL_CPU_SATURATED_ABOVE_PERCENT = 90;
@@ -810,21 +810,43 @@ export function hoboPoolSaturation(input: {
 	};
 }
 
+export type HoboPoolObservation = Readonly<{
+	saturation: HoboPoolSaturation;
+	overflowRunners: FleetPoolRunners | undefined;
+}>;
+
 export async function observeHoboPoolSaturation(input: {
 	read: QueueReader;
 	repository: string;
 	label: string;
-}): Promise<HoboPoolSaturation> {
-	const runners = await readFleetPoolRunners(
-		input.read,
-		input.repository,
-		input.label,
-	).catch(() => undefined);
+}): Promise<HoboPoolObservation> {
+	const runnersPage = await input
+		.read(`/repos/${input.repository}/actions/runners?per_page=100`)
+		.catch(() => null);
+	const runners = fleetPoolRunners(runnersPage, input.label);
+	const overflowRunners = fleetPoolRunners(
+		runnersPage,
+		AGENT37_OVERFLOW_RUNNER_LABEL,
+	);
 	const cpuPercent = await readNodeCpuPercent(
 		input.read,
 		input.repository,
 	).catch(() => undefined);
-	return hoboPoolSaturation({ runners, cpuPercent, label: input.label });
+	return {
+		saturation: hoboPoolSaturation({
+			runners,
+			cpuPercent,
+			label: input.label,
+		}),
+		overflowRunners,
+	};
+}
+
+function agent37OverflowUnavailable(
+	runners: FleetPoolRunners | undefined,
+): string | undefined {
+	if (runners !== undefined && runners.online > 0) return undefined;
+	return `no online ${AGENT37_OVERFLOW_RUNNER_LABEL} runner was verified on the fetched runner page`;
 }
 
 export async function applyHoboPoolSaturation(input: {
@@ -833,16 +855,29 @@ export async function applyHoboPoolSaturation(input: {
 	repository: string;
 	label: string;
 }): Promise<RouteDecision> {
-	const saturation = await observeHoboPoolSaturation({
+	const observation = await observeHoboPoolSaturation({
 		read: input.read,
 		repository: input.repository,
 		label: input.label,
 	});
+	const { saturation } = observation;
 	if (!saturation.saturated)
 		return {
 			...input.decision,
 			reason: `${input.decision.reason}; ${saturation.summary}`,
 		};
+	const overflowUnavailable = agent37OverflowUnavailable(
+		observation.overflowRunners,
+	);
+	if (overflowUnavailable !== undefined) {
+		console.log(
+			`::warning title=hobo-ci-route-fallback::${escapeCommand(`${saturation.summary}; ${overflowUnavailable}; the run stays on ${input.decision.runner}`)}`,
+		);
+		return {
+			...input.decision,
+			reason: `${input.decision.reason}; ${saturation.summary}; ${overflowUnavailable}; the run stays on ${input.decision.runner}`,
+		};
+	}
 	console.log(
 		`::warning title=hobo-ci-route-fallback::${escapeCommand(`${saturation.summary}; the run overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`)}`,
 	);
@@ -852,17 +887,6 @@ export async function applyHoboPoolSaturation(input: {
 		reason: `${input.decision.reason}; ${saturation.summary}; the run overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`,
 		refusedBy: "queue",
 	};
-}
-
-async function readFleetPoolRunners(
-	read: QueueReader,
-	repository: string,
-	label: string,
-): Promise<FleetPoolRunners | undefined> {
-	return fleetPoolRunners(
-		await read(`/repos/${repository}/actions/runners?per_page=100`),
-		label,
-	);
 }
 
 async function readNodeCpuPercent(
@@ -1523,12 +1547,16 @@ export async function main(
 							labelLoad(fleetView.jobs, fleetLabel, fleetProbeAtMs),
 						)
 					: "the fleet queue could not be read";
-				const saturation = await observeHoboPoolSaturation({
+				const observation = await observeHoboPoolSaturation({
 					read: probeRead,
 					repository,
 					label: fleetLabel,
 				});
-				if (saturation.saturated) {
+				const { saturation } = observation;
+				const overflowUnavailable = saturation.saturated
+					? agent37OverflowUnavailable(observation.overflowRunners)
+					: undefined;
+				if (saturation.saturated && overflowUnavailable === undefined) {
 					console.log(
 						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL} without a verified capacity claim (${fleetSummary})`)}`,
 					);
@@ -1544,13 +1572,13 @@ export async function main(
 					);
 				}
 				console.log(
-					`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${overflowUnavailable ? `${overflowUnavailable}; ` : ""}the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
 				);
 				return report(
 					{
 						tier: "fleet",
 						runner: fleetLabel,
-						reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary}); ${saturation.summary}`,
+						reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary}); ${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`,
 						refusedBy: "queue",
 						slip: { kind: "unasked", why: "batch" },
 					},

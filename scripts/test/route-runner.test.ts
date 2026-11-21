@@ -2592,13 +2592,29 @@ describe("hobo pool saturation overflow", () => {
 			};
 		};
 	};
-	const busyPool = (online: number, busy = online): JsonValue => ({
-		runners: Array.from({ length: online }, (_, index) => ({
-			name: `hobo-runner-${index + 1}`,
-			status: "online",
-			busy: index < busy,
-			labels: [{ name: "hobo" }],
-		})),
+	const busyPool = (
+		online: number,
+		busy = online,
+		overflowStatus: "online" | "offline" | null = "online",
+	): JsonValue => ({
+		runners: [
+			...Array.from({ length: online }, (_, index) => ({
+				name: `hobo-runner-${index + 1}`,
+				status: "online",
+				busy: index < busy,
+				labels: [{ name: "hobo" }],
+			})),
+			...(overflowStatus === null
+				? []
+				: [
+						{
+							name: "agent37-runner-1",
+							status: overflowStatus,
+							busy: false,
+							labels: [{ name: AGENT37_OVERFLOW_RUNNER_LABEL }],
+						},
+					]),
+		],
 	});
 	const prBatchEnv = {
 		GITHUB_EVENT_NAME: "pull_request",
@@ -2696,6 +2712,37 @@ describe("hobo pool saturation overflow", () => {
 		);
 	});
 
+	it("stays on the prior fleet decision without a verified online hobo-agent37 runner", async () => {
+		const scenarios = [
+			{ runnersPage: busyPool(5, 5, null), cpuPercent: undefined },
+			{ runnersPage: busyPool(5, 5, "offline"), cpuPercent: undefined },
+			{
+				runnersPage: { message: "Resource not accessible by integration" },
+				cpuPercent: "93",
+			},
+		];
+		for (const scenario of scenarios) {
+			const { decision, lines } = await overflowRoute(
+				poolPages(scenario.runnersPage, scenario.cpuPercent),
+			);
+			assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+			assert.match(
+				decision.reason,
+				/no online hobo-agent37 runner was verified on the fetched runner page/u,
+			);
+			assert.match(decision.reason, /the run stays on hobo/u);
+			assert.ok(
+				warningsIn(lines).some(
+					(line) =>
+						line.includes(
+							"no online hobo-agent37 runner was verified on the fetched runner page",
+						) && line.includes("the run stays on hobo"),
+				),
+				lines.join("\n"),
+			);
+		}
+	});
+
 	it("keeps the fleet when neither leg can be read: unreadable is not saturation (R3)", async () => {
 		const { decision, lines } = await overflowRoute(
 			poolPages(
@@ -2718,7 +2765,7 @@ describe("hobo pool saturation overflow", () => {
 
 	it("overflows on host CPU above the limit alone, and names the percent", async () => {
 		const { decision, lines } = await overflowRoute(
-			poolPages({ message: "Resource not accessible by integration" }, "93"),
+			poolPages(busyPool(0), "93"),
 		);
 		assert.deepEqual(
 			[decision.tier, decision.runner],
@@ -2857,6 +2904,61 @@ describe("hobo pool saturation overflow", () => {
 			),
 			lines.join("\n"),
 		);
+	});
+
+	it("keeps a saturated PR batch on the fleet when hobo-agent37 has no online runner", async () => {
+		let runnerPageReads = 0;
+		const batchFetch: typeof fetch = async (url) => {
+			const path = String(url);
+			if (path.includes("/actions/runners")) {
+				runnerPageReads += 1;
+				return Response.json(busyPool(5, 5, null));
+			}
+			if (path.includes("/actions/variables/"))
+				return Response.json({ message: "Not Found" });
+			if (path.includes("/jobs"))
+				return Response.json({ jobs: hostedSaturated() });
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: PROBE_WORKFLOW_PATH,
+						status: "completed",
+						created_at: new Date(SLIP_NOW - 70_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 50_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision, lines } = await printedBy(() =>
+			main(
+				[],
+				{ ...prBatchEnv, GITHUB_API_URL: "https://api.github.com" },
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: batchFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", "hobo", "queue"],
+		);
+		assert.match(
+			decision.reason,
+			/no online hobo-agent37 runner was verified on the fetched runner page/u,
+		);
+		assert.ok(
+			warningsIn(lines).some((line) =>
+				line.includes(
+					"no online hobo-agent37 runner was verified on the fetched runner page",
+				),
+			),
+			lines.join("\n"),
+		);
+		assert.equal(runnerPageReads, 1);
 	});
 
 	it("leaves trunk runs on the trunk label: the pool rule is the general fleet label's", async () => {

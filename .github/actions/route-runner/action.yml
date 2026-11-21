@@ -19,9 +19,10 @@ description: >-
   saturated — every online hobo-label runner busy, or the pool host's CPU used
   percent above 90 in the optional repository variable the script reads
   itself through GitHub's API — the run overflows to the Agent37 on-demand
-  label hobo-agent37 with a titled fallback warning; an unreadable reading is
-  not saturation, a fork never receives the pool's or the overflow's label,
-  and a pinned tier stays pinned.
+  label hobo-agent37 only when the same runner page shows an online runner for
+  that label. Otherwise the prior decision stays and a titled fallback warning
+  records why; an unreadable reading is not saturation, a fork never receives
+  the pool's or the overflow's label, and a pinned tier stays pinned.
   First it checks for a signed local run of this tree (verify-attestation.mts,
   when the workflow checked that script out): the jobs such a run covers are
   skipped, and the remaining jobs follow the normal fleet routing decision.
