@@ -388,13 +388,15 @@ export function createFakeInfisical(): FakeInfisical {
 					(candidate) =>
 						candidate.kind === "oidc" && candidate.identityId === identityId,
 				);
-				if (identity?.kind !== "oidc")
-					return error(404, "Identity not found");
+				if (identity?.kind !== "oidc") return error(404, "Identity not found");
 				return json({
 					identityMembership: {
 						identityId,
 						roles: [
-							{ role: identity.role ?? (access === "read" ? "viewer" : "member") },
+							{
+								role:
+									identity.role ?? (access === "read" ? "viewer" : "member"),
+							},
 						],
 						project: {
 							id: decodeURIComponent(membership[1] ?? ""),
