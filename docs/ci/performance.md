@@ -162,6 +162,8 @@ unindexed new finding files as notices.
 - [Finding 153: deps build window, release-image GC, and leaner release contexts](./findings/0153-deps-build-window-release-image-gc-and-leaner-release-contexts.md)
 - [Finding 154: main waited for runners between jobs](./findings/0154-main-waited-for-runners-between-jobs.md)
 - [Finding 155: merge queue vitest file shards and release integration lane](./findings/0155-merge-queue-vitest-file-shards-and-release-integration-lane.md)
+- [Finding 156: merge queue tree reuse](./findings/0156-merge-queue-tree-reuse.md)
+- [Finding 157: release publish critical path](./findings/0157-release-publish-critical-path.md)
 <!-- findings-index:end -->
 
 ## Data

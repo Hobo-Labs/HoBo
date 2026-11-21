@@ -1,25 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
-import {
-	confirmForPressAction,
-	specWithPressActions,
-} from "../src/client/confirm-labels.js";
+import { afterEach, describe, expect, it } from "vitest";
+
 import {
 	type ConnectFlow,
 	type ConnectPage,
 	type ConnectStep,
-	composeConnectSpec,
-	connectCandidates,
-	connectCatalog,
 	DEFAULT_SECRET_STORES,
-	deterministicConnectSpec,
-	evaluatorFromEnv,
-	isRenderableConnectSpec,
-	missingRequiredCandidates,
-	RadioOptionSchema,
+	missingRequiredFields,
 	startConnectPage,
+	stepView,
 } from "../src/index.js";
-import { stepView } from "../src/view.js";
 
 // The connect page: every step renders a valid spec from HoBo's own catalog,
 // composition degrades to the deterministic page instead of failing, and the
@@ -68,32 +57,6 @@ const FAILED_STEP: ConnectStep = {
 	message: "Vercel refused the authorization",
 	remediation: ["Run hobo cd up again."],
 };
-const ViewStepSchema = z.object({ step: z.string() });
-type ViewStep = z.infer<typeof ViewStepSchema>;
-type Evaluate = NonNullable<
-	Parameters<typeof composeConnectSpec>[1]
->["evaluate"];
-const viewStepFromResponse = (response: Response): Promise<ViewStep> =>
-	response.json().then((body) => ViewStepSchema.parse(body));
-const CONFIGURE_STEP: ConnectStep = {
-	kind: "configure",
-	provider: "hobo",
-	title: "Choose a provider",
-	reason: "A provider is needed.",
-	fields: [
-		{
-			name: "provider:db",
-			label: "Provider for db",
-			kind: "choice",
-			required: true,
-			options: [
-				{ value: "neon", label: "Neon Postgres" },
-				{ value: "supabase", label: "Supabase" },
-			],
-		},
-		{ name: "slug", label: "Project slug", kind: "text", required: true },
-	],
-};
 
 const STEPS: readonly ConnectStep[] = [
 	STORE_STEP,
@@ -102,264 +65,93 @@ const STEPS: readonly ConnectStep[] = [
 	DEPOSIT_STEP,
 	CONNECTED_STEP,
 	FAILED_STEP,
-	CONFIGURE_STEP,
 ];
 
-describe("connectCandidates", () => {
+describe("stepView: the exact component each step needs", () => {
 	it.each(
 		STEPS.map((step) => [step.kind, step] as const),
-	)("every %s candidate's props parse against the catalog", (_kind, step) => {
-		for (const candidate of connectCandidates(step)) {
-			const component = connectCatalog.data.components[candidate.element.type];
-			expect(component, candidate.id).toBeDefined();
-			const parsed = component?.props.safeParse(candidate.element.props);
-			expect(
-				parsed?.success,
-				`${candidate.id}: ${parsed?.error?.message}`,
-			).toBe(true);
-		}
-	});
-});
-
-describe("deterministicConnectSpec", () => {
-	it.each(
-		STEPS.map((step) => [step.kind, step] as const),
-	)("renders a valid spec for %s", (_kind, step) => {
-		const spec = deterministicConnectSpec(step);
-		expect(isRenderableConnectSpec(spec)).toBe(true);
-		expect(spec.elements[spec.root]?.type).toBe("Card");
+	)("generates a named view for %s", (_kind, step) => {
+		const view = stepView(step);
+		expect(view.step).toBe(step.kind);
+		expect(view.title.length).toBeGreaterThan(0);
+		for (const field of view.fields)
+			expect(field.label.length).toBeGreaterThan(0);
+		for (const action of view.actions)
+			expect(action.label.length).toBeGreaterThan(0);
 	});
 
-	it("masks secret configure fields and never echoes their values in the spec", () => {
-		const step: ConnectStep = {
+	it("asks for the store as one choice, recommended store preselected", () => {
+		const view = stepView(STORE_STEP);
+		expect(view.fields).toEqual([
+			expect.objectContaining({
+				name: "store",
+				kind: "choice",
+				value: "infisical",
+			}),
+		]);
+		expect(view.actions[0]).toMatchObject({
+			action: "connect.chooseStore",
+			submits: true,
+		});
+	});
+
+	it("makes a provider hand-off need a person when an agent presses it", () => {
+		for (const step of [APP_STEP, VERCEL_STEP])
+			expect(stepView(step).actions[0]?.confirm).toMatch(/Opens/);
+	});
+
+	it("shows only what a configure step is missing, and never echoes a secret", () => {
+		const view = stepView({
 			kind: "configure",
-			provider: "github",
-			title: "GitHub settings",
-			reason: "HoBo needs these values to continue.",
+			provider: "vercel",
+			title: "Configure HoBo CD's Vercel Integration",
+			reason: "hobo cd up needs these to connect Vercel.",
 			fields: [
 				{
-					name: "private_key",
-					label: "Private key",
+					name: "HOBO_CD_VERCEL_INTEGRATION",
+					label: "Integration slug",
+					kind: "text",
+					required: true,
+				},
+				{
+					name: "HOBO_CD_VERCEL_CLIENT_SECRET",
+					label: "Client secret",
 					kind: "secret",
 					required: true,
 					value: "must-not-show",
 				},
 			],
-			submitConfirm:
-				"Submits the GitHub settings, including the secret you entered.",
-		};
-		const spec = deterministicConnectSpec(step);
-		const serialized = JSON.stringify(spec);
-		expect(serialized).not.toContain("must-not-show");
-		expect(serialized).toContain('"type":"password"');
-		expect(serialized).toContain('"$bindState":"/form/private_key"');
+		});
+		expect(view.fields.map((f) => f.name)).toEqual([
+			"HOBO_CD_VERCEL_INTEGRATION",
+			"HOBO_CD_VERCEL_CLIENT_SECRET",
+		]);
+		expect(view.actions[0]).toMatchObject({
+			action: "connect.submit",
+			submits: true,
+		});
+		expect(view.actions[0]?.confirm).toMatch(/secret/);
+		expect(JSON.stringify(view)).not.toContain("must-not-show");
+		expect(
+			missingRequiredFields(view.fields, {
+				HOBO_CD_VERCEL_INTEGRATION: "hobo-cd",
+			}),
+		).toEqual(["HOBO_CD_VERCEL_CLIENT_SECRET"]);
 	});
 
-	it("binds choice fields to form state with label+value Radio options", () => {
-		const spec = deterministicConnectSpec(CONFIGURE_STEP);
-		const field = spec.elements["field-provider:db"];
-		expect(field?.type).toBe("Radio");
-		if (field === undefined) throw new Error("missing choice field element");
-		const options = z
-			.object({ options: z.array(RadioOptionSchema) })
-			.parse(field.props).options;
-		expect(options).toEqual([
-			{ label: "Neon Postgres", value: "neon" },
-			{ label: "Supabase", value: "supabase" },
+	it("shows references, never values, once connected", () => {
+		const view = stepView(CONNECTED_STEP);
+		expect(view.tone).toBe("success");
+		expect(view.references).toEqual([
+			"infisical://hobo-ci/HOBO_CI_GITHUB_APP_ID",
 		]);
 	});
 
-	it("puts the recommended OIDC store first and binds each choice to the flow action", () => {
-		const spec = deterministicConnectSpec(STORE_STEP);
-		const buttons = Object.values(spec.elements).filter(
-			(e) => e.type === "Button",
+	it("describes stored Vercel credentials and does not promise rollback on failure", () => {
+		expect(stepView(VERCEL_STEP).explanation.join(" ")).toContain(
+			"reads the token",
 		);
-		expect(buttons[0]?.props).toMatchObject({ variant: "primary" });
-		expect(JSON.stringify(buttons[0]?.on)).toContain('"store":"infisical"');
-		expect(JSON.stringify(buttons)).toContain('"store":"1password"');
-	});
-});
-
-describe("specWithPressActions", () => {
-	it("carries each button's connect action so confirms key by action, not label", () => {
-		const spec = specWithPressActions(deterministicConnectSpec(APP_STEP));
-		const byLabel = new Map(
-			Object.values(spec.elements)
-				.filter((element) => element.type === "Button")
-				.map((element) => {
-					const props = z
-						.object({
-							label: z.string(),
-							pressAction: z.string().optional(),
-						})
-						.parse(element.props);
-					return [props.label, props.pressAction] as const;
-				}),
-		);
-		expect(byLabel.get("Continue on GitHub")).toBe("connect.start");
-		expect(byLabel.get("Cancel")).toBe("connect.cancel");
-		const confirmByAction = new Map(
-			stepView(APP_STEP)
-				.actions.filter(
-					(action): action is typeof action & { confirm: string } =>
-						action.confirm !== undefined,
-				)
-				.map((action) => [action.action, action.confirm]),
-		);
-		expect(
-			confirmForPressAction(byLabel.get("Continue on GitHub"), confirmByAction),
-		).toMatch(/GitHub/);
-		expect(
-			confirmForPressAction(byLabel.get("Cancel"), confirmByAction),
-		).toBeUndefined();
-	});
-});
-
-describe("stepView", () => {
-	it("requires person confirmation before provider handoff and configure submit", () => {
-		expect(
-			stepView(APP_STEP).actions.find(
-				(action) => action.action === "connect.start",
-			)?.confirm,
-		).toMatch(/GitHub/);
-		expect(
-			stepView({
-				kind: "configure",
-				provider: "github",
-				title: "Settings",
-				reason: "Needed",
-				fields: [
-					{
-						name: "token",
-						label: "Token",
-						kind: "secret",
-						required: true,
-					},
-				],
-				submitConfirm: "Submits secrets to continue.",
-			}).actions.find((action) => action.action === "connect.submit")?.confirm,
-		).toBeTruthy();
-	});
-});
-
-describe("missingRequiredCandidates", () => {
-	it("treats distinct form bind paths as distinct required elements", () => {
-		const step: ConnectStep = {
-			kind: "configure",
-			provider: "github",
-			title: "GitHub app",
-			reason: "Finish settings",
-			fields: [{ name: "slug", label: "Slug", kind: "text", required: true }],
-			submitConfirm: "Save settings?",
-		};
-		const spec = deterministicConnectSpec(step);
-		const fieldEntry = Object.entries(spec.elements).find(
-			([, element]) => element.type === "Input",
-		);
-		expect(fieldEntry).toBeDefined();
-		const [fieldKey, field] = fieldEntry ?? ["", spec.elements.root];
-		const props = z.record(z.string(), z.unknown()).parse(field.props);
-		const elements = {
-			...spec.elements,
-			[fieldKey]: {
-				...field,
-				props: { ...props, value: { $bindState: "/form/wrong-path" } },
-			},
-		};
-		expect(missingRequiredCandidates(step, { ...spec, elements })).toContain(
-			"field-slug",
-		);
-	});
-});
-
-describe("composeConnectSpec", () => {
-	it("is deterministic without an evaluator", async () => {
-		const composed = await composeConnectSpec(APP_STEP);
-		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toBeUndefined();
-	});
-
-	const including: Evaluate = async ({ questions }) => ({
-		answers: Object.fromEntries(
-			Object.entries(questions).map(([id, question]) => {
-				const keys = Object.keys(question.criteria);
-				const choice =
-					keys.find((key) => key.startsWith("use:")) ??
-					keys.find((key) => key === "root") ??
-					keys[0];
-				return [id, { choice: choice ?? "" }];
-			}),
-		),
-	});
-	const omitting: Evaluate = async ({ questions }) => ({
-		answers: Object.fromEntries(
-			Object.entries(questions).map(([id, question]) => [
-				id,
-				{ choice: Object.keys(question.criteria)[0] ?? "" },
-			]),
-		),
-	});
-
-	it("uses the model's page when it keeps every required element", async () => {
-		const composed = await composeConnectSpec(APP_STEP, {
-			evaluate: including,
-		});
-		expect(composed.composedBy).toBe("model");
-		expect(isRenderableConnectSpec(composed.spec)).toBe(true);
-		expect(JSON.stringify(composed.spec)).toContain("Continue on GitHub");
-	});
-
-	it("rejects a model page that omits the step's action", async () => {
-		const composed = await composeConnectSpec(APP_STEP, {
-			evaluate: omitting,
-		});
-		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toMatch(
-			/omitted .*start|composed spec failed validation/,
-		);
-	});
-
-	it("falls back to the deterministic page when the evaluator fails", async () => {
-		const composed = await composeConnectSpec(APP_STEP, {
-			evaluate: async () => {
-				throw new Error("gateway unreachable");
-			},
-		});
-		expect(composed.composedBy).toBe("deterministic");
-		expect(composed.fallbackReason).toMatch(/gateway unreachable/);
-		expect(isRenderableConnectSpec(composed.spec)).toBe(true);
-	});
-
-	it("configures an evaluator only with compose=on plus a credential", () => {
-		expect(evaluatorFromEnv({})).toBeUndefined();
-		expect(evaluatorFromEnv({ HOBO_CONNECT_UI_COMPOSE: "on" })).toBeUndefined();
-		expect(evaluatorFromEnv({ VERCEL_OIDC_TOKEN: "t" })).toBeUndefined();
-		expect(evaluatorFromEnv({ AI_GATEWAY_API_KEY: "k" })).toBeUndefined();
-		expect(
-			evaluatorFromEnv({
-				VERCEL_OIDC_TOKEN: "t",
-				HOBO_CONNECT_UI_COMPOSE: "on",
-			}),
-		).toBeTypeOf("function");
-		expect(
-			evaluatorFromEnv({
-				AI_GATEWAY_API_KEY: "k",
-				HOBO_CONNECT_UI_COMPOSE: "on",
-			}),
-		).toBeTypeOf("function");
-		expect(
-			evaluatorFromEnv({
-				VERCEL_OIDC_TOKEN: "t",
-				HOBO_CONNECT_UI_COMPOSE: "ON",
-			}),
-		).toBeUndefined();
-		expect(
-			evaluatorFromEnv({
-				AI_GATEWAY_API_KEY: "k",
-				VERCEL_OIDC_TOKEN: "t",
-				HOBO_CONNECT_UI_COMPOSE: "off",
-			}),
-		).toBeUndefined();
+		expect(stepView(FAILED_STEP).description).not.toContain("Nothing was left");
 	});
 });
 
@@ -372,28 +164,15 @@ describe("startConnectPage", () => {
 
 	const SECRET = "-----BEGIN RSA PRIVATE KEY----- never-shown";
 
-	it("includes person-confirmation metadata on the view wire before handoff", async () => {
+	it("settles immediately when a flow starts in a terminal state", async () => {
 		page = await startConnectPage({
 			flow: {
-				initial: APP_STEP,
-				async onAction(_action, _params, current) {
-					return { step: current };
-				},
+				initial: FAILED_STEP,
+				onAction: async (_action, _params, current) => ({ step: current }),
 			},
-			assetsDir: "dist/client",
 		});
-		const view = await (await fetch(`${page.url}view`)).json();
-		expect(view.step).toBe("create-github-app");
-		expect(view.spec?.root).toBeTruthy();
-		expect(view.view?.actions).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					action: "connect.start",
-					confirm: expect.stringMatching(/GitHub/u),
-				}),
-			]),
-		);
-	});
+		await expect(page.done).resolves.toEqual(FAILED_STEP);
+	}, 2_000);
 
 	function githubFlow(): ConnectFlow {
 		return {
@@ -439,16 +218,6 @@ describe("startConnectPage", () => {
 		};
 	}
 
-	it("settles immediately when a flow starts in a terminal state", async () => {
-		page = await startConnectPage({
-			flow: {
-				initial: FAILED_STEP,
-				onAction: async (_action, _params, current) => ({ step: current }),
-			},
-		});
-		await expect(page.done).resolves.toEqual(FAILED_STEP);
-	}, 2_000);
-
 	it("serves the shell with a strict CSP under an unguessable loopback path", async () => {
 		page = await startConnectPage({
 			flow: githubFlow(),
@@ -460,9 +229,6 @@ describe("startConnectPage", () => {
 		const shell = await fetch(page.url);
 		expect(shell.headers.get("content-security-policy")).toContain(
 			"default-src 'self'",
-		);
-		expect(shell.headers.get("content-security-policy")).toContain(
-			"img-src 'self' data:",
 		);
 		expect(await shell.text()).toContain("connect.js");
 		const origin = new URL(page.url).origin;
@@ -551,96 +317,6 @@ describe("startConnectPage", () => {
 			"partially completed setup",
 		);
 	});
-
-	it("answers a view with the step current when the response is written", async () => {
-		const gates: { kind: string; release: () => void }[] = [];
-		const evaluate: Evaluate = async ({ questions }) => {
-			const root = questions.root;
-			if (root !== undefined) {
-				const keys = Object.keys(root.criteria);
-				const kind = keys.includes("store-1password")
-					? "choose-secret-store"
-					: keys.includes("start")
-						? "create-github-app"
-						: "depositing";
-				await new Promise<void>((resolve) => {
-					gates.push({ kind, release: resolve });
-				});
-			}
-			return {
-				answers: Object.fromEntries(
-					Object.entries(questions).map(([id, question]) => {
-						const keys = Object.keys(question.criteria);
-						const choice =
-							keys.find((key) => key.startsWith("use:")) ??
-							keys.find((key) => key === "root") ??
-							keys[0];
-						return [id, { choice: choice ?? "" }];
-					}),
-				),
-			};
-		};
-		const countGates = (kind: string) =>
-			gates.filter((gate) => gate.kind === kind).length;
-		const releaseGates = (kind: string, count: number) => {
-			const matching = gates.filter((gate) => gate.kind === kind);
-			for (const gate of matching.slice(0, count)) {
-				gates.splice(gates.indexOf(gate), 1);
-				gate.release();
-			}
-		};
-		page = await startConnectPage({
-			flow: {
-				initial: STORE_STEP,
-				async onAction(action, params, current) {
-					if (action === "connect.chooseStore" && params.store === "infisical")
-						return { step: APP_STEP };
-					if (action === "connect.start") return { step: DEPOSIT_STEP };
-					return { step: current };
-				},
-			},
-			evaluate,
-			assetsDir: "dist/client",
-		});
-		const post = (body: string) =>
-			fetch(`${page?.url}action`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body,
-			}).then(viewStepFromResponse);
-		const firstView = fetch(`${page.url}view`).then(viewStepFromResponse);
-		await vi.waitFor(() => expect(countGates("choose-secret-store")).toBe(1));
-		const post1 = post(
-			'{"action":"connect.chooseStore","params":{"store":"infisical"}}',
-		);
-		await vi.waitFor(() => expect(countGates("create-github-app")).toBe(1));
-		releaseGates("choose-secret-store", 1);
-		await vi.waitFor(() => expect(countGates("create-github-app")).toBe(2));
-		const post2 = post('{"action":"connect.start","params":{}}');
-		await vi.waitFor(() => expect(countGates("depositing")).toBe(1));
-		let settled: [ViewStep, ViewStep, ViewStep] | undefined;
-		for (let spin = 0; spin < 200 && settled === undefined; spin += 1) {
-			for (const gate of gates.splice(0)) gate.release();
-			settled = await Promise.race([
-				Promise.all([firstView, post1, post2]).then(
-					(value) => value,
-					() => undefined,
-				),
-				new Promise<undefined>((resolve) =>
-					setTimeout(() => resolve(undefined), 5),
-				),
-			]);
-		}
-		expect(settled).toBeDefined();
-		const [racingView, chosenView, startedView] = settled ?? [
-			{ step: "unsettled" },
-			{ step: "unsettled" },
-			{ step: "unsettled" },
-		];
-		expect(racingView.step).toBe("depositing");
-		expect(chosenView.step).toBe("depositing");
-		expect(startedView.step).toBe("depositing");
-	}, 10_000);
 });
 
 describe("startConnectPage with a fixed callback path", () => {

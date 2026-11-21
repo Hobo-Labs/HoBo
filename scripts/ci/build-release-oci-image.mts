@@ -165,9 +165,12 @@ function buildArgs(
 		args.push("--label", label);
 	}
 	if (image.id === "hobo-mcp") {
-		args.push("--build-arg", "HOBO_CLI_CANDIDATE=hobo-cli:candidate");
+		args.push(
+			"--build-arg",
+			`HOBO_CLI_CANDIDATE=${releaseImageCandidateRef("hobo-cli")}`,
+		);
 	}
-	args.push("-t", `${image.name}:candidate`, stagingDir);
+	args.push("-t", releaseImageCandidateRef(image.id), stagingDir);
 	return args;
 }
 
@@ -181,15 +184,25 @@ function dockerImageExists(ref: string): boolean {
 }
 
 function ensureCliCandidate(): void {
-	if (dockerImageExists(releaseImageCandidateRef("hobo-cli"))) return;
-	throw new Error("hobo-mcp requires hobo-cli:candidate; build hobo-cli first");
+	const ref = releaseImageCandidateRef("hobo-cli");
+	if (dockerImageExists(ref)) return;
+	throw new Error(`hobo-mcp requires ${ref}; build hobo-cli first`);
 }
 
-function releaseImageCandidateRef(imageId: string): string {
+function releaseCandidateSuffix(): string {
+	const suffix = process.env.HOBO_RELEASE_CANDIDATE_SUFFIX?.trim() ?? "";
+	if (!suffix) return "";
+	if (!/^-[A-Za-z0-9][A-Za-z0-9._-]{0,117}$/u.test(suffix)) {
+		throw new Error(`invalid HOBO_RELEASE_CANDIDATE_SUFFIX: ${suffix}`);
+	}
+	return suffix;
+}
+
+export function releaseImageCandidateRef(imageId: string): string {
 	const manifest = loadReleaseOciManifest(root);
 	const dep = manifest.images.find((entry) => entry.id === imageId);
 	if (!dep) throw new Error(`unknown release image id: ${imageId}`);
-	return `${dep.name}:candidate`;
+	return `${dep.name}:candidate${releaseCandidateSuffix()}`;
 }
 
 function ensureReleaseImageCandidate(
@@ -253,12 +266,12 @@ function cleanupReleaseOciBuildChain(
 	options: { keepCandidate?: boolean } = {},
 ): void {
 	const deferBuilderPrune = true;
-	cleanupReleaseOciBuild(imageId, `${imageId}:candidate`, {
+	cleanupReleaseOciBuild(imageId, releaseImageCandidateRef(imageId), {
 		...options,
 		deferBuilderPrune,
 	});
 	if (imageId === "hobo-mcp") {
-		cleanupReleaseOciBuild("hobo-cli", "hobo-cli:candidate", {
+		cleanupReleaseOciBuild("hobo-cli", releaseImageCandidateRef("hobo-cli"), {
 			...options,
 			deferBuilderPrune,
 		});
@@ -330,6 +343,8 @@ export function buildReleaseImage(options: {
 		};
 		if (sdkArtifactsDir !== undefined)
 			stageOptions.sdkArtifactsDir = sdkArtifactsDir;
+		if (image.id === "hobo-mcp")
+			stageOptions.cliCandidateRef = releaseImageCandidateRef("hobo-cli");
 		stageReleaseOciApp(image.id, staging.stagingRoot, stageOptions);
 		if (image.id === "hobo-mcp") ensureCliCandidate();
 		run(
@@ -340,7 +355,7 @@ export function buildReleaseImage(options: {
 		if (sdkArtifactsDir)
 			rmSync(sdkArtifactsDir, { recursive: true, force: true });
 	}
-	const localTag = `${image.name}:candidate`;
+	const localTag = releaseImageCandidateRef(image.id);
 	cleanupReleaseOciBuildChain(image.id, {
 		keepCandidate: options.keepCandidate === true,
 	});

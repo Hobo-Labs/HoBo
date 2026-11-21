@@ -30,7 +30,13 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
-The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
+The mirrored subsystem verification skills pair implementation tests with TLA+
+models and, where applicable, mathematical proofs of abstractions. See the
+[state-machine verification index](state-machines.md) for covered behavior,
+the audit queue, assumptions, and `pnpm run verify:state-machines`. These checks
+do not by themselves prove implementation refinement or external effects. The
+budget-routing Z3 proof treats settled cost above the reserved hold as outside
+its inductive cap, aligned with truthful overrun recording at confirmation.
 
 The mirrored `verify-broker-budget-authority` skill's BrokerBudget model keeps unused-release evidence and final settlement evidence mutually exclusive, so a reservation cannot be claimed after unused evidence is recorded, cannot carry both evidence kinds, and cannot be released once final evidence exists.
 
@@ -142,22 +148,54 @@ A **skill + always-on rule** that compresses the agent's **output** (~65–87% f
 - **It is ON by default.** To disable: delete `.cursor/rules/caveman.mdc`, remove the `<!-- caveman:begin … end -->` block from `AGENTS.md`, and run `npx -y github:JuliusBrussee/caveman -- --uninstall`.
 
 ### impeccable — `pbakaus/impeccable` (Apache-2.0)
-A **design skill** for AI harnesses (npm `impeccable`, homepage
-[impeccable.style](https://impeccable.style)). The checked-in skill supports
-visual review and implementation across Claude Code, Codex, Cursor, and Copilot.
-**Standing duty on visual work** (TUI, dashboard, Evidence and `site/`): run
-`critique` then `audit` (and `polish` on P0/P1) and `pnpm run design:lint`
-without being asked. `design:lint` invokes `scripts/check-visual-tokens.mts`;
-the root `test/visual-tokens.test.ts` suite pins that wiring. See `AGENTS.md`
-“Visual quality”.
-
-Its context command uses existing source and does not contact the network. The
-image generator and concept-seed helper make network requests only when
-explicitly invoked. The common source-policy hooks apply to every harness.
-Surface-brief and critique-file writers reject writes; visual work uses the
-implemented styles and components instead. Do not invoke commands that create
-planning or design documents.
-
+A **design skill** for AI harnesses (npm `impeccable`, v3.5.0, homepage
+[impeccable.style](https://impeccable.style)). 23 commands spanning the design
+workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
+`quieter`, `colorize`. The checked-in skill supports visual review and
+implementation across Claude Code, Codex, Cursor, and Copilot. **Standing duty
+on visual work** (TUI, dashboard, Evidence and `site/`): run `critique` then
+`audit` (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
+`design:lint` invokes `scripts/check-visual-tokens.mts`; the root
+`test/visual-tokens.test.ts` suite pins that wiring. See `AGENTS.md` “Visual
+quality”. **No API keys**, but it is **not** offline — see egress below. The
+common source-policy hooks apply to every harness. Surface-brief and
+critique-file writers reject writes; visual work uses the implemented styles and
+components instead. Do not invoke commands that create planning or design
+documents.
+- **Network egress (three paths, one of them automatic):**
+  - `scripts/context.mjs` calls `impeccable.style/api/version` when it is run
+    **as a command** (`node scripts/context.mjs`, i.e. the skill's context
+    step) — on by default, throttled to once a day. The per-edit **hook does
+    not fetch**: `hook-lib.mjs` imports only `extractPlatform`/`loadContext`,
+    and the fetch sits behind `cli()`, which runs only when the file is invoked
+    as a script. Measured 0 requests from `hook.mjs` in both repo root and a
+    subdirectory, including the absolute-path Copilot variant. Disabled here
+    by **`IMPECCABLE_NO_UPDATE_CHECK=1`**, set in
+    [`../.claude/settings.json`](../.claude/settings.json) `env`. That is the
+    control that actually holds: upstream reads
+    [`../.impeccable/config.json`](../.impeccable/config.json)'s
+    `"updateCheck": false` relative to `process.cwd()`, so the file alone
+    covers repo-root sessions and **not** `cd site && …` — verified by driving
+    the real code path with a stubbed `fetch` (subdirectory: 1 request with the
+    config alone, 0 with the env var). Both are in place. Run
+    `npx impeccable check` deliberately instead.
+  - **Residual, stated rather than papered over:** `.claude/settings.json` is
+    Claude Code's file. A **Codex / Cursor / Copilot** session that runs an
+    impeccable command from a subdirectory gets neither control and will still
+    make that once-a-day request. `.codex/config.toml` has no env facility and
+    direnv is not used in this repo, so there is no mechanism here that would
+    close it without inventing one. The exposure is a version string, once a
+    day, from those harnesses only.
+  - `scripts/generate-image.mjs` posts to `api.openai.com` — opt-in, only when
+    you invoke it, and it needs your own key.
+  - `scripts/concept-seed.mjs` calls `impeccable.style/api/roll` — opt-in.
+- **Hooks (ON by default):** the install writes `PostToolUse` manifests to
+  `.codex/hooks.json`, `.cursor/hooks.json` and `.github/hooks/`, which run the
+  design detector after **every** `Edit`/`Write`/`apply_patch`. Each is guarded
+  (`[ ! -f <script> ] || node <script>`) so it no-ops when the skill is absent.
+  Claude Code does not install the impeccable visual hook; its repository
+  settings include the shared source-policy hook. The Codex, Cursor, and
+  Copilot hook manifests also run the same source-policy guard after edits.
 - **Install:** `npx impeccable install` from the repo root; it auto-detects
   harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
   and `.github`. `npx impeccable check` reports drift, `npx impeccable update`

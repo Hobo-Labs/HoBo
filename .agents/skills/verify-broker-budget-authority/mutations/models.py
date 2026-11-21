@@ -1,4 +1,4 @@
-"""Check that weakened broker models violate their independent invariants."""
+"""Check weakened broker models against independent invariants."""
 
 import os
 from pathlib import Path
@@ -14,11 +14,11 @@ cases = [
     ("reuse after thrown commit", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = FALSE\n          SeparateCommitFailure = TRUE", "NoUseAfterThrownCommit", None, "BrokerCommitResult.cfg"),
     ("commit failure reported as denial", "BrokerCommitResult", "RejectAmbiguous = TRUE\n          FenceUncertain = TRUE\n          FenceThrown = TRUE\n          SeparateCommitFailure = FALSE", "NoCommitFailureAsDenial", None, "BrokerCommitResult.cfg"),
     ("reentrant admission", "BrokerCommit", "GuardReentry = FALSE", "NoOverlappingAdmissions", None, "BrokerCommit.cfg"),
-    ("active entitlement scope", "BrokerEntitlement", "PreserveScope = FALSE\n          CheckReplayScope = TRUE\n          FenceUncertain = FALSE", "ActiveClaimKeepsScope", None, "BrokerEntitlement.cfg"),
-    ("replayed entitlement scope", "BrokerEntitlement", "PreserveScope = TRUE\n          CheckReplayScope = FALSE\n          FenceUncertain = FALSE", "ReplayRejectsMismatch", None, "BrokerEntitlement.cfg"),
+    ("active entitlement scope", "BrokerEntitlement", "PreserveScope = FALSE\n          CheckReplayScope = TRUE\n          FenceUncertain = FALSE\n          AllowTerminalScopeRetarget = FALSE", "ActiveClaimKeepsScope", None, "BrokerEntitlement.cfg"),
+    ("replayed entitlement scope", "BrokerEntitlement", "PreserveScope = TRUE\n          CheckReplayScope = FALSE\n          FenceUncertain = FALSE\n          AllowTerminalScopeRetarget = FALSE", "ReplayRejectsMismatch", None, "BrokerEntitlement.cfg"),
     ("unused evidence", "BrokerBudget", "Requests = {1, 2}", "ReleaseNeedsEvidence", (
-        '/\\ ((phase[r] = "held") \\/ (phase[r] = "uncertain" /\\ unusedEvidence[r]))\n           /\\ ~claimed[r] /\\ unusedEvidence[r]',
-        '/\\ phase[r] \\in {"held", "uncertain"} /\\ ~claimed[r]'), "BrokerBudget.cfg"),
+        '/\\ ~claimed[r] /\\ unusedEvidence[r] /\\ ~evidence[r]',
+        '/\\ ~claimed[r]'), "BrokerBudget.cfg"),
     ("final evidence", "BrokerBudget", "Requests = {1, 2}", "SettlementNeedsEvidence", (
         '/\\ phase[r] \\in {"held", "uncertain"} /\\ claimed[r] /\\ evidence[r]',
         '/\\ phase[r] \\in {"held", "uncertain"} /\\ claimed[r]'), "BrokerBudget.cfg"),
@@ -26,15 +26,15 @@ cases = [
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed /\\ Valid(candidate)',
         '/\\ phase \\in {"held", "uncertain"} /\\ claimed'), "BrokerFence.cfg"),
     ("claimed release", "BrokerFence", None, "NoClaimedRelease", (
-        '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed /\\ unusedWitness\n           /\\ phase\' = "released"',
-        '/\\ phase \\in {"held", "uncertain"}\n           /\\ phase\' = "released"'), "BrokerFence.cfg"),
+        '/\\ phase \\in {"held", "uncertain"} /\\ ~claimed /\\ unusedWitness',
+        '/\\ phase \\in {"held", "uncertain"}'), "BrokerFence.cfg"),
 ]
 
 for label, name, constants, invariant, mutation, cfg_name in cases:
     with tempfile.TemporaryDirectory(prefix=f"hobo-broker-model-{name}-") as directory:
         scratch = Path(directory)
         original = (models / f"{name}.tla").read_text()
-        baseline_cfg = (models / cfg_name).read_text() if constants else (models / cfg_name).read_text()
+        baseline_cfg = (models / cfg_name).read_text()
         (scratch / f"{name}.tla").write_text(original)
         (scratch / "Baseline.cfg").write_text(baseline_cfg)
         baseline = subprocess.run(
@@ -56,11 +56,18 @@ for label, name, constants, invariant, mutation, cfg_name in cases:
         mutant_lines: list[str] = []
         if constants:
             mutant_lines.append(f"CONSTANTS {constants}")
+        in_constants = False
         for line in baseline_cfg.splitlines():
             stripped = line.strip()
-            if not stripped or stripped.startswith("CONSTANT"):
+            if not stripped:
+                continue
+            if stripped.startswith("CONSTANT"):
+                in_constants = True
                 continue
             if stripped.startswith("SPECIFICATION") or stripped.startswith("INVARIANT"):
+                in_constants = False
+                continue
+            if in_constants:
                 continue
             mutant_lines.append(line)
         mutant_lines.extend(["SPECIFICATION Spec", f"INVARIANT {invariant}", ""])
