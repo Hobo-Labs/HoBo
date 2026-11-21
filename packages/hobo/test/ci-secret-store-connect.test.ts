@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { jwtOidcClaimHints } from "@hobo/adapter-infisical";
 import { readSecretStoreBinding } from "@hobo/secret-store-claim";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -557,14 +558,29 @@ describe("hobo ci secret-store connect, secretless first", () => {
 });
 
 describe("hobo ci secret-store verify", () => {
-	function jwtWithSub(sub: string): string {
+	const WRITER_AUDIENCE = "https://github.com/Hobo-Labs";
+	const READER_AUDIENCE = `${WRITER_AUDIENCE}/hobo-ci-deploy-reader`;
+	function jwtWithSub(sub: string, aud = WRITER_AUDIENCE): string {
 		const part = (value: Readonly<Record<string, string>>) =>
 			Buffer.from(JSON.stringify(value)).toString("base64url");
-		return `${part({ alg: "RS256" })}.${part({ sub, aud: "https://github.com/Hobo-Labs" })}.c2lnbmF0dXJl`;
+		return `${part({ alg: "RS256" })}.${part({ sub, aud })}.c2lnbmF0dXJl`;
 	}
 
 	const READER_SUB =
 		"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-deploy";
+	const OIDC_TRUST = [
+		{
+			identityId: "deploy-credential-identity",
+			sub: READER_SUB,
+			aud: READER_AUDIENCE,
+		},
+		{
+			identityId: "deploy-identity",
+			sub: IMMUTABLE_SUB,
+			aud: WRITER_AUDIENCE,
+		},
+		{ identityId: "relay-identity", sub: "repo", aud: undefined },
+	] as const;
 	const PROBES = [
 		"readerRelayRead",
 		"readerRelayMembership",
@@ -589,10 +605,11 @@ describe("hobo ci secret-store verify", () => {
 		credentialStatus = 200,
 		writerIsolationStatus?: number,
 		relayIsolationStatus?: number,
-		probeAnswers: Readonly<Partial<Record<Probe, number>>> = {},
+		probeAnswers: Readonly<Partial<Record<Probe, number | "network">>> = {},
 	) {
 		const seen: string[] = [];
 		const logins: string[] = [];
+		const oidcAudiences: string[] = [];
 		const revocations: string[] = [];
 		const sessions = new Map<string, string>();
 		const reads: { identityId: string; secretPath: string }[] = [];
@@ -607,12 +624,14 @@ describe("hobo ci secret-store verify", () => {
 			seen.push(`${method} ${url.origin}${url.pathname}`);
 			if (url.href.startsWith("https://token.actions.example.test/")) {
 				const audience = url.searchParams.get("audience") ?? "";
+				oidcAudiences.push(audience);
 				return Response.json({
 					value:
 						jwt ??
-						(audience.includes("hobo-ci-deploy-reader")
-							? jwtWithSub(READER_SUB)
-							: jwtWithSub(IMMUTABLE_SUB)),
+						jwtWithSub(
+							audience === READER_AUDIENCE ? READER_SUB : IMMUTABLE_SUB,
+							audience,
+						),
 				});
 			}
 			if (url.origin !== "https://app.infisical.com")
@@ -620,10 +639,21 @@ describe("hobo ci secret-store verify", () => {
 			if (url.pathname === "/api/v1/auth/oidc-auth/login") {
 				if (method !== "POST")
 					return Response.json({ reqId: "req-method" }, { status: 404 });
+				const body = JSON.parse(String(init?.body ?? "{}"));
 				logins.push(String(init?.body ?? ""));
 				if (loginStatus !== 200)
 					return Response.json({ reqId: "req-1" }, { status: loginStatus });
-				const identityId = JSON.parse(String(init?.body ?? "{}")).identityId;
+				const identityId = String(body.identityId ?? "");
+				const trust = OIDC_TRUST.find(
+					(candidate) => candidate.identityId === identityId,
+				);
+				const claims = jwtOidcClaimHints(String(body.jwt ?? ""));
+				if (
+					trust === undefined ||
+					claims.sub !== trust.sub ||
+					claims.aud !== trust.aud
+				)
+					return Response.json({ reqId: "req-trust" }, { status: 401 });
 				sessions.set(accessOf(identityId), identityId);
 				return Response.json({
 					accessToken: accessOf(identityId),
@@ -667,6 +697,7 @@ describe("hobo ci secret-store verify", () => {
 							: identityId === "relay-identity" && projectId === "proj-deploy"
 								? probeAnswers.relayDeployRead
 								: undefined;
+				if (readOverride === "network") throw new Error("network down");
 				if (readOverride !== undefined)
 					return Response.json(
 						{ reqId: "req-scope" },
@@ -710,7 +741,8 @@ describe("hobo ci secret-store verify", () => {
 							: identityId === "relay-identity" && projectId === "proj-deploy"
 								? probeAnswers.relayDeployMembership
 								: undefined;
-				if (membershipOverride !== undefined && membershipOverride !== 404)
+				if (membershipOverride === "network") throw new Error("network down");
+				if (membershipOverride !== undefined)
 					return membershipOverride === 200
 						? Response.json({
 								identityMemberships: [
@@ -782,7 +814,15 @@ describe("hobo ci secret-store verify", () => {
 			}
 			return Response.json({}, { status: 404 });
 		};
-		return { fetch, seen, logins, reads, credentialReads, revocations };
+		return {
+			fetch,
+			seen,
+			logins,
+			oidcAudiences,
+			reads,
+			credentialReads,
+			revocations,
+		};
 	}
 
 	const actions = {
@@ -935,15 +975,16 @@ describe("hobo ci secret-store verify", () => {
 
 	it("runs only the selected GitHub identity and rejects an unknown selection before OIDC", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
-		for (const [identity, identityId] of [
-			["reader", "deploy-credential-identity"],
-			["writer", "deploy-identity"],
+		for (const [identity, identityId, audience] of [
+			["reader", "deploy-credential-identity", READER_AUDIENCE],
+			["writer", "deploy-identity", WRITER_AUDIENCE],
 		] as const) {
 			const fake = infisical(200, ["VERCEL_TOKEN"]);
 			const result = await runCiSecretStore(
 				input("verify", { identity }, actions, fake.fetch),
 			);
 			expect(result.ok).toBe(true);
+			expect(fake.oidcAudiences).toEqual([audience]);
 			expect(fake.logins.map((body) => JSON.parse(body).identityId)).toEqual([
 				identityId,
 			]);
@@ -957,6 +998,65 @@ describe("hobo ci secret-store verify", () => {
 			code: "HOBO_CI_SECRET_STORE_USAGE",
 		});
 		expect(fake.seen).toEqual([]);
+	});
+
+	it("rejects swapped identities, subjects, and audiences at the login boundary", async () => {
+		for (const [identityId, jwt] of [
+			["deploy-credential-identity", jwtWithSub(IMMUTABLE_SUB)],
+			["deploy-identity", jwtWithSub(READER_SUB, READER_AUDIENCE)],
+			["deploy-credential-identity", jwtWithSub(READER_SUB)],
+			["deploy-identity", jwtWithSub(IMMUTABLE_SUB, READER_AUDIENCE)],
+			[
+				"deploy-credential-identity",
+				jwtWithSub(IMMUTABLE_SUB, READER_AUDIENCE),
+			],
+			["deploy-identity", jwtWithSub(READER_SUB)],
+		] as const) {
+			const fake = infisical(200, ["VERCEL_TOKEN"]);
+			const response = await fake.fetch(
+				"https://app.infisical.com/api/v1/auth/oidc-auth/login",
+				{ method: "POST", body: JSON.stringify({ identityId, jwt }) },
+			);
+			expect(response.status).toBe(401);
+			expect(fake.revocations).toEqual([]);
+		}
+	});
+
+	it("returns a membership override's actual HTTP status", async () => {
+		const fake = infisical(
+			200,
+			["VERCEL_TOKEN"],
+			undefined,
+			true,
+			403,
+			"viewer",
+			false,
+			false,
+			200,
+			undefined,
+			undefined,
+			{ readerRelayMembership: 404 },
+		);
+		const login = await fake.fetch(
+			"https://app.infisical.com/api/v1/auth/oidc-auth/login",
+			{
+				method: "POST",
+				body: JSON.stringify({
+					identityId: "deploy-credential-identity",
+					jwt: jwtWithSub(READER_SUB, READER_AUDIENCE),
+				}),
+			},
+		);
+		expect(login.status).toBe(200);
+		const membership = await fake.fetch(
+			"https://app.infisical.com/api/v1/projects/proj-runtime/identities",
+			{
+				headers: {
+					authorization: `Bearer ${accessOf("deploy-credential-identity")}`,
+				},
+			},
+		);
+		expect(membership.status).toBe(404);
 	});
 
 	it("does not return the deploy credential to a writer session, even at the reader's path", async () => {
@@ -1139,7 +1239,7 @@ describe("hobo ci secret-store verify", () => {
 			["relayDeployRead", "relay"],
 			["relayDeployMembership", "relay"],
 		] as const) {
-			for (const status of [200, 503]) {
+			for (const status of [200, 401, 404, 503, "network"] as const) {
 				const fake = infisical(
 					200,
 					["VERCEL_TOKEN"],
@@ -1162,14 +1262,21 @@ describe("hobo ci secret-store verify", () => {
 						fake.fetch,
 					),
 				);
-				expect(result.ok).toBe(false);
-				expect(result.message).toContain(
-					probe.endsWith("Membership") ? "HTTP 404" : "HTTP 403",
+				const provenAbsence =
+					probe.endsWith("Membership") && status === 404;
+				expect(result.ok, `${probe}: ${status}: ${result.message}`).toBe(
+					provenAbsence,
 				);
+				if (!provenAbsence)
+					expect(result.message, `${probe}: ${status}`).toContain(
+						probe.endsWith("Membership") ? "HTTP 404" : "HTTP 403",
+					);
 				const issued = fake.logins.map((body) =>
 					accessOf(JSON.parse(body).identityId),
 				);
-				expect(fake.revocations).toEqual(issued);
+				expect(new Set(fake.revocations), `${probe}: ${status}`).toEqual(
+					new Set(issued),
+				);
 				const serialized = JSON.stringify(result);
 				for (const credential of [...issued, "synthetic-deploy-token-0123"])
 					expect(serialized).not.toContain(credential);
