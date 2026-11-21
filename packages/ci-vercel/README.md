@@ -276,10 +276,10 @@ Known gaps, stated rather than hidden:
   minted with an audience pinned to that deployment's origin — a URL accepted
   only when Vercel's own record of the deployment this run created (read back
   by deployment id, team-scoped) names the same URL the create answer did, so a
-  host whose name merely starts with the project's never receives the token
-  (`HOBO_CI_RELAY_PREVIEW_PROBE_AUDIENCE` overrides the pin where the Vercel
-  trust requires another audience), so the probe token is not replayable
-  to a relying party that expects GitHub's default audience. The probe
+  host whose name merely starts with the project's never receives the token.
+  The audience is always the verified deployment's origin, never an override:
+  the probe token is not replayable to a relying party that expects GitHub's
+  default audience. The probe
   transport does not follow redirects or forward that token to a redirect
   target. The project must trust that workload for preview access,
   and `HOBO_CI_RELAY_PREVIEW_URL` supplies the pipeline's placeholder origin.
@@ -312,17 +312,32 @@ runs `--target preview --wait` without either refuses before creation with
 origin it cannot attest; add the two inputs, or drop `--wait` and accept that
 nothing is verified or qualified.
 
-**Merge cutover (relay CD delivery):** before this branch lands on `main`,
-provision the Infisical deploy project (`deploy/secret-store.binding.json`
-`deployProjectId`), attach the `hobo-ci-deploy` identity with GitHub OIDC
-trust pinned to this repository — subject `ref == refs/heads/main`,
-`repository_id`/`repository_owner_id` claims, and audience
-`https://github.com/Hobo-Labs` (the exact trust `hobo ci secret-store
-connect` records and repairs) — store `VERCEL_TOKEN` there, and configure
-the Vercel Trusted Source with the same claim pin. When the store you
-provision has other ids than the committed binding names, re-record the
-binding and repair the deploy identity's trust in one run (a binding for
-other ids refuses without `--yes`):
+**Merge cutover (relay CD delivery):** this change lands with the Vercel Git
+integration still enabled (`vercel.json`) and no `deployProjectId` in
+`deploy/secret-store.binding.json`. Those are the fallback and the two
+switches that retire them; neither is flipped before the new channels carry a
+value in a linked production run. With no deploy project bound, the gate
+skips the CD delivery on a relay push — a notice on the run names this
+fallback, so the required check stays green — a manual run fails naming the
+cutover, and `hobo ci deploy` run directly in that state refuses with
+`HOBO_CI_DEPLOY_AUTH_REQUIRED`, while Vercel's Git integration keeps
+deploying the relay. The prerequisites can be
+prepared before merge: provision the Infisical deploy project, attach the
+`hobo-ci-deploy` identity with GitHub OIDC trust pinned to this repository —
+subject `ref == refs/heads/main`, `repository_id`/`repository_owner_id`
+claims, and audience `https://github.com/Hobo-Labs` (the exact trust
+`hobo ci secret-store connect` records and repairs) — store `VERCEL_TOKEN`
+there, and configure the Vercel Trusted Source with the same claim pin. The
+audience pin is what keeps the channels disjoint: the deploy-token read
+mints its token for `https://github.com/Hobo-Labs` while the
+protected-preview probe mints one for the deployment's own origin, so a
+probe token cannot be replayed to read `VERCEL_TOKEN`. The committed
+coordinates alone prove none of that.
+
+**Cutover:** one push both binds the deploy project and retires the
+fallback. First record the deploy project and repair the identity's trust in
+one run; a binding for ids other than the committed ones refuses without
+`--yes`:
 
 ```sh
 GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel \
@@ -334,27 +349,20 @@ GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel 
 
 With `INFISICAL_TOKEN` from the owner's own login in that run's environment
 it updates `hobo-ci-deploy`'s OIDC trust in place; without it, set the
-printed subject and claims in the dashboard. Commit the rewritten
-`deploy/secret-store.binding.json`: `verify` on `main` fails closed until
-the binding and the trust name the same deploy identity and project. The
-audience pin is what
-keeps the channels disjoint: the deploy-token read mints its token for
-`https://github.com/Hobo-Labs` while the protected-preview probe mints one
-for the deployment's own origin, so a probe token cannot be replayed to
-read `VERCEL_TOKEN`. Keep this cutover unmerged until those external
-prerequisites are configured and their evidence is linked from the PR; the
-committed coordinates do not prove them. The workflow disables Vercel Git
-auto-deploy in the same commit, and the required `main` deploy receives no
-fallback deployment if they are absent. After merge, link one production run that
-shows the workflow reading `VERCEL_TOKEN` through Infisical and a protected
-preview probe with OIDC (channel-observation rule): the run of
-[relay-deploy.yml](../../.github/workflows/relay-deploy.yml) on the first
-relay-relevant push to `main`, whose *Verify the secret store connection*
-check passes and whose *Deliver the relay through HoBo CD* step summary
-shows `hobo ci deploy --target preview` and `hobo ci deploy --target
-production` each delivering the store-read credential's Freight. Until that
-run is linked, the delivery path is built, not proven: the prerequisites
-above are external and cannot be verified before merge.
+printed subject and claims in the dashboard. In that cutover commit add the
+recorded `deployProjectId` to `deploy/secret-store.binding.json`, set
+`git.deploymentEnabled: false` in `vercel.json`, and restore the test that
+pins both switches: `verify` on `main` then fails closed until the binding
+and the trust name the same deploy identity and project. The cutover push is
+itself relay-relevant, so its own `relay-deploy.yml` run is the new
+channel's first production observation (channel-observation rule): its
+*Verify the secret store connection* check must pass and its *Deliver the
+relay through HoBo CD* step summary must show `hobo ci deploy --target
+preview` and `hobo ci deploy --target production` each delivering the
+store-read credential's Freight, with the protected preview probe using
+OIDC. Link that run; until it is linked the new delivery path is built, not
+proven, and if it fails, revert the cutover commit — the Git fallback
+returns and the gate skips the CD delivery again.
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
@@ -373,7 +381,11 @@ and on `workflow_dispatch`:
    the ids of a secrets manager the owner connected with OIDC
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
-   No repository variable or secret is read.
+   No repository variable or secret is read. While the binding names no deploy
+   project (the fallback period above), a relay push skips the CD delivery
+   with a notice naming that fallback and a manual run fails naming the
+   cutover, so the required check stays green while Vercel's Git integration
+   delivers.
 2. *Verify the secret store connection*: with `permissions: id-token: write`
    the job reads its scoped Vercel credential as `hobo-ci-deploy` (GitHub OIDC),
    then revokes the store session and reports the identities by name

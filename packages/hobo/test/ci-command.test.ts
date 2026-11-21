@@ -35,6 +35,7 @@ async function fixture(
 		prompt?: (question: string) => Promise<string>;
 		env?: NodeJS.ProcessEnv;
 		fetch?: typeof fetch;
+		credentialFetch?: typeof fetch;
 	} = {},
 ) {
 	const home = await mkdtemp(join(tmpdir(), "hobo-ci-command-"));
@@ -90,6 +91,9 @@ async function fixture(
 		},
 		interactive: options.interactive ?? false,
 		fetch: send,
+		...(options.credentialFetch !== undefined
+			? { credentialFetch: options.credentialFetch }
+			: undefined),
 		git: async (args) => {
 			if (args[0] === "rev-parse") return home;
 			if (args.length === 1) return options.remotes ?? "origin";
@@ -819,5 +823,61 @@ describe("hobo ci setup", () => {
 			"--repo <owner/name> must be a GitHub owner/name",
 		);
 		expect(requests).toEqual([]);
+	});
+	it("forwards credentialFetch to secret-store credentials, not the relay fetch", async () => {
+		const credentialSeen: string[] = [];
+		const credentialFetch: typeof fetch = async (url, init) => {
+			const target = new URL(String(url));
+			credentialSeen.push(
+				`${init?.method ?? "GET"} ${target.host}${target.pathname}`,
+			);
+			if (target.host !== "api.github.com")
+				return Response.json({}, { status: 404 });
+			if (target.pathname === "/repos/Hobo-Labs/HoBo")
+				return Response.json({
+					id: 1274791462,
+					name: "HoBo",
+					owner: { login: "Hobo-Labs", id: 344805935 },
+				});
+			if (
+				target.pathname ===
+				"/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub"
+			)
+				return Response.json({
+					use_default: true,
+					use_immutable_subject: true,
+					sub_claim_prefix: "repo:Hobo-Labs@344805935/HoBo@1274791462",
+				});
+			return Response.json({ message: "Not Found" }, { status: 404 });
+		};
+		const { cli, home, requests } = await fixture({
+			env: { GH_TOKEN: "synthetic-github-token" },
+			credentialFetch,
+		});
+		const result = await cli.run(
+			[
+				"ci",
+				"secret-store",
+				"connect",
+				"--project-id",
+				"proj-runtime",
+				"--relay-identity-id",
+				"relay-identity",
+				"--deploy-identity-id",
+				"deploy-identity",
+				"--team",
+				"team_BRBUnG6uGhSsVV3EG5GFV3FM",
+				"--repo",
+				"Hobo-Labs/HoBo",
+				"--json",
+			],
+			{ cwd: home },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(requests).toEqual([]);
+		expect(credentialSeen).toEqual([
+			"GET api.github.com/repos/Hobo-Labs/HoBo",
+			"GET api.github.com/repos/Hobo-Labs/HoBo/actions/oidc/customization/sub",
+		]);
 	});
 });

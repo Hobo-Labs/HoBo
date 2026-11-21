@@ -147,6 +147,8 @@ import {
 	type VercelClient,
 	VercelEnvRefusal,
 	type VercelFetch,
+	VercelProductionDeploymentMissingError,
+	VercelPromotionUnconfirmedError,
 	VercelTransportError,
 } from "./vercel-client.js";
 import {
@@ -684,7 +686,6 @@ export async function runCiRelayDeploy(
 		projectName: project,
 		target,
 		createMissingProject: createProject,
-		...(stagedProduction ? { stageProduction: true } : undefined),
 		configuration: Object.fromEntries(configuration),
 		gitArtifact: {
 			org,
@@ -913,9 +914,27 @@ export async function runCiRelayDeploy(
 					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 				});
 				const deploymentId = `hobo-ci-deploy-${randomUUID()}`;
-				const rollbackDeploymentId = stagedProduction
-					? await client.getProductionDeploymentId(project)
-					: undefined;
+				let rollbackDeploymentId: string | undefined;
+				if (stagedProduction)
+					try {
+						rollbackDeploymentId =
+							await client.getProductionDeploymentId(project);
+					} catch (error) {
+						if (error instanceof VercelProductionDeploymentMissingError)
+							return {
+								ok: false,
+								status: "rejected",
+								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+								message:
+									"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
+							};
+						return realizationFailure(
+							error instanceof Error
+								? error
+								: new Error("production read failed"),
+							withoutToken,
+						);
+					}
 				if (clock() >= deadlineAt)
 					return {
 						ok: false,
@@ -1076,25 +1095,32 @@ export async function runCiRelayDeploy(
 							currentProduction =
 								await client.getProductionDeploymentId(project);
 						} catch (error) {
+							if (error instanceof VercelProductionDeploymentMissingError)
+								return {
+									ok: false as const,
+									code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+									message:
+										"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
+								};
 							return realizationFailure(
 								error instanceof Error ? error : new Error("promotion failed"),
 								withoutToken,
 							);
 						}
 						const alreadyPromoted = currentProduction === safe.deploymentId;
-						if (currentProduction === undefined)
-							return {
-								ok: false as const,
-								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-								message:
-									"Staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
-							};
 						const recordedRollback = safe.rollbackDeploymentId;
 						const previousProduction = alreadyPromoted
 							? recordedRollback !== safe.deploymentId
 								? recordedRollback
 								: undefined
 							: currentProduction;
+						if (previousProduction === undefined)
+							return {
+								ok: false as const,
+								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+								message:
+									"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
+							};
 						if (!alreadyPromoted) {
 							if (clock() >= deadlineAt)
 								return {
@@ -1106,6 +1132,12 @@ export async function runCiRelayDeploy(
 							try {
 								await client.promoteDeployment(project, safe.deploymentId);
 							} catch (error) {
+								if (error instanceof VercelPromotionUnconfirmedError)
+									return {
+										ok: false as const,
+										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+										message: `Production traffic names ${error.observedProduction ?? "no deployment"}, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
+									};
 								promotionError =
 									error instanceof Error
 										? error
@@ -1116,6 +1148,15 @@ export async function runCiRelayDeploy(
 								afterPromotion =
 									await client.getProductionDeploymentId(project);
 							} catch (error) {
+								if (
+									error instanceof VercelProductionDeploymentMissingError ||
+									error instanceof VercelPromotionUnconfirmedError
+								)
+									return {
+										ok: false as const,
+										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+										message: `Production traffic names no deployment, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
+									};
 								return realizationFailure(
 									promotionError ??
 										(error instanceof Error
@@ -1204,7 +1245,12 @@ export async function runCiRelayDeploy(
 							let current: string | undefined;
 							try {
 								current = await client.getProductionDeploymentId(project);
-							} catch {
+							} catch (error) {
+								if (error instanceof VercelProductionDeploymentMissingError)
+									return {
+										status: "unknown",
+										note: ` Production has no current deployment; promote the previous deployment ${previousProduction} by hand.`,
+									};
 								return {
 									status: "unknown",
 									note: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`,
@@ -1220,9 +1266,13 @@ export async function runCiRelayDeploy(
 											status: "superseded",
 											note: ` Production traffic was concurrently moved to ${current}; no rollback was sent.`,
 										};
+							let rollbackError: Error | undefined;
 							try {
 								await client.promoteDeployment(project, previousProduction);
-							} catch {}
+							} catch (error) {
+								rollbackError =
+									error instanceof Error ? error : new Error("rollback failed");
+							}
 							try {
 								current = await client.getProductionDeploymentId(project);
 							} catch {
@@ -1243,7 +1293,11 @@ export async function runCiRelayDeploy(
 								};
 							return {
 								status: current === safe.deploymentId ? "failed" : "unknown",
-								note: ` Automatic rollback to ${previousProduction} did not restore production; promote it by hand.`,
+								note: ` Automatic rollback to ${previousProduction} did not restore production${
+									rollbackError === undefined
+										? ""
+										: `: ${withoutToken(rollbackError.message)}`
+								}; promote it by hand.`,
 							};
 						};
 						const recovery = await rollbackFailedPromotion();
@@ -1384,6 +1438,7 @@ async function attestedDeploymentUrl(
 	}
 	const created = normalizeDeploymentUrl(outputs.url, project);
 	return record !== undefined &&
+		record.id === deploymentId &&
 		created !== undefined &&
 		normalizeDeploymentUrl(record.url, project) === created
 		? created

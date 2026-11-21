@@ -670,6 +670,126 @@ describe("Actions runner policy", () => {
 		);
 	});
 
+	const relayCheckout = `      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: true
+          submodules: recursive
+          persist-credentials: false
+`;
+
+	const relayFixture = ({
+		job = "deploy",
+		restoreFirst = true,
+		digestEnv = "HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}",
+		downloadSha = "9000827ccba6bdab643e8b6fd33ac0654aef8333",
+	}: {
+		job?: string;
+		restoreFirst?: boolean;
+		digestEnv?: string | null;
+		downloadSha?: string;
+	} = {}): string => {
+		const build = `  deploy-build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      digest: \${{ steps.pack.outputs.digest }}
+    steps:
+${relayCheckout}      - id: pack
+        run: node --no-warnings scripts/ci/release-freight-cli.mts pack cli.tgz
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+`;
+		const restore = `      - name: Restore
+        env:
+          ${digestEnv ?? "UNRELATED: x"}
+        run: node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"
+`;
+		const cli = `      - name: Run the CLI
+        run: node packages/hobo/dist/bin/hobo.js ci deploy
+`;
+		return `name: fixture
+on:
+  push:
+jobs:
+${build}  ${job}:
+    needs: deploy-build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+${relayCheckout}      - name: Download
+        uses: actions/download-artifact@${downloadSha}
+${restoreFirst ? restore + cli : cli + restore}`;
+	};
+
+	const lintRelayFixture = (text: string) => {
+		const temp = mkdtempSync(join(tmpdir(), "hobo-relay-lint-"));
+		try {
+			const dir = join(temp, ".github", "workflows");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "relay-deploy.yml"), text);
+			const result = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", lint],
+				{
+					cwd: temp,
+					encoding: "utf8",
+					env: {
+						...process.env,
+						HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY: "1",
+					},
+				},
+			);
+			return { status: result.status, stderr: result.stderr };
+		} finally {
+			rmSync(temp, { recursive: true, force: true });
+		}
+	};
+
+	const relayRunnerError =
+		/runs-on must be hobo|authoritative CI jobs must run on self-hosted hobo runners/u;
+
+	it("lets the attested hosted relay fixture pass", () => {
+		const result = lintRelayFixture(relayFixture());
+		assert.equal(result.status, 0, result.stderr);
+	});
+
+	it("rejects a hosted relay job whose digest restore runs after the CLI", () => {
+		const result = lintRelayFixture(relayFixture({ restoreFirst: false }));
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, relayRunnerError);
+	});
+
+	it("rejects a hosted relay job whose digest env is missing or not the build job's output", () => {
+		for (const digestEnv of [
+			null,
+			"HOBO_RELAY_CLI_DIGEST: ${{ github.event.inputs.digest }}",
+			"HOBO_RELAY_CLI_DIGEST: ${{ needs.verify.outputs.digest }}",
+		]) {
+			const result = lintRelayFixture(relayFixture({ digestEnv }));
+			assert.notEqual(result.status, 0, String(digestEnv));
+			assert.match(result.stderr, relayRunnerError, String(digestEnv));
+		}
+	});
+
+	it("rejects a hosted relay job that swaps the pinned artifact download action", () => {
+		const result = lintRelayFixture(
+			relayFixture({
+				downloadSha: "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+			}),
+		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, relayRunnerError);
+	});
+
+	it("does not exempt a hosted relay job whose id is not listed", () => {
+		const result = lintRelayFixture(relayFixture({ job: "deploy-extra" }));
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, relayRunnerError);
+	});
+
 	it("passes on this repository's own workflows", () => {
 		// The cases above lint fixtures. Nothing else in the commit or PR gates
 		// runs the lint on the real files, so a workflow edit that broke a rule

@@ -18,7 +18,10 @@ manual run — on `workflow_dispatch` it either deploys or fails the job — so
 unconditionally, can never hit a missing artifact. The credential-bearing
 deploy and App-deposit jobs must use `ubuntu-24.04` and `clean: true`. `scripts/lint-actions.ts` exempts
 this workflow from fleet routing and scopes its per-job hosted-runner exception
-to those jobs and the unprivileged `deploy-build` job. This workflow carries no
+to those jobs and the unprivileged `deploy-build` job. That exception is earned, not name-based: every hosted
+job must pin the reviewed checkout, set `clean: true`, keep no credentials or
+route-runner step, hold only its declared permissions, and restore the CLI from
+the build job's digest before running repository code. This workflow carries no
 route-runner step; `scripts/test/route-runner.test.ts` pins the five workflows
 that still route. Building and deploying
 are separated so the GitHub OIDC identity reaches no build code:
@@ -29,7 +32,7 @@ digest matches the build job's output and the archive's manifest names the
 commit it checked out (`release-freight-cli.mts restore`, fail closed
 otherwise), before any step that runs the CLI. The delivery and App-deposit
 report scripts load the provider redactor from that restored bundle's `dist`.
-Their summary lines pass the CLI's envelope message through a
+Their summary lines pass both the CLI's envelope code and message through a
 bearer/JWT/credential redaction before the job summary sees it, and the result
 report script exits nonzero unless the command's
 envelope is a validated success envelope (`ok: true`) with a valid exit
@@ -42,9 +45,38 @@ because OIDC mint variables are present
 (`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an
 absent or unreadable `packages/ci-vercel/deploy/secret-store.binding.json`
 as a required-check failure; the committed binding carries coordinates only.
+The fallback stays active until a linked production run proves the new
+channel: Vercel Git auto-deploy remains enabled in `vercel.json` and the
+binding has no `deployProjectId`, so the gate skips the store-read CD
+delivery on a relay push (a notice on the run names the fallback) and a
+manual run fails naming the cutover, while `hobo ci deploy` run directly in
+that state still refuses with `HOBO_CI_DEPLOY_AUTH_REQUIRED` and Vercel
+keeps deploying the relay.
 The store-read-credential → CD-deploy channel is built, not proven: the
-first production run after merge — relay-deploy.yml on the first
-relay-relevant push to `main` — must show the *Verify the secret store
-connection* check passing and the *Deliver the relay through HoBo CD* step
-summary carrying both targets, and be linked per the cutover plan
-(`packages/ci-vercel/README.md`, "Merge cutover").
+first production run after the cutover commit — the relay-relevant push
+that records `deployProjectId` and disables the Git fallback — must show
+the *Verify the secret store connection* check passing and the *Deliver the
+relay through HoBo CD* step summary carrying both targets, and be linked
+(`packages/ci-vercel/README.md`, "Merge cutover"). The delivery step runs both
+targets as `hobo ci deploy --cwd packages/ci-vercel --sha "$GITHUB_SHA" --target
+"$target" --wait` in the `id-token: write` job; preview `--wait` is refused
+without `--sha` and GitHub OIDC, and production creation never assigns custom
+domains before HoBo promotes it.
+
+## Gate contract
+
+`scripts/ci/relay-deploy-gate.mts` answers two questions from a closed input
+set: does this event deploy, and by when. A pull request never deploys. A push
+deploys only when a changed path is a relay input; an unreadable push range is
+a required-check failure, never a reason to deploy. A manual run always needs a
+decision, so it deploys or fails. An absent or unreadable secret-store binding
+is a required-check failure for any event that would deploy; a bound file is
+read for shape only, never for a value. A binding that names no deploy project
+(`deployProjectId`) is the fallback period's committed shape: a relay push
+skips the CD delivery with a notice naming the Git fallback, and a manual run
+fails naming the cutover. The gate writes `run`, `reason`, and
+the ISO `deadline` to GitHub's output, prints the skip or deploy notice, and on
+failure prints `::error title=Relay deploy failed::` with exit 1. The deadline
+is the job timeout less its setup and summary margin, and bounds the whole
+delivery step, not only adoption. The workflow test pins this decision table
+and output contract; no repository variable or secret is read.

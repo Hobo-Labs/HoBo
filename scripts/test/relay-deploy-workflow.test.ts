@@ -126,13 +126,24 @@ describe("the relay deploy gate", () => {
 		assert.equal(decision.failure, true);
 	});
 
-	it("ships the secret store binding its required deploy demands", () => {
+	it("ships the fallback-period binding: coordinates, no deploy project", () => {
 		assert.ok(existsSync(join(root, RELAY_SECRET_STORE_BINDING)));
 		assert.equal(
 			storeBindingState(
 				readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8"),
 			),
-			"bound",
+			"coordinates",
+		);
+	});
+
+	it("keeps the Git fallback until the new channels carry a production value", () => {
+		assert.doesNotMatch(
+			readFileSync(join(root, "packages/ci-vercel/vercel.json"), "utf8"),
+			/"git"\s*:/u,
+		);
+		assert.doesNotMatch(
+			readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8"),
+			/deployProjectId/u,
 		);
 	});
 
@@ -145,26 +156,71 @@ describe("the relay deploy gate", () => {
 			),
 			"unreadable",
 		);
+		const coordinates = JSON.stringify({
+			kind: "infisical-self-hosted",
+			endpoint: "https://secrets.example",
+		});
+		assert.equal(storeBindingState(coordinates), "coordinates");
 		assert.equal(
 			storeBindingState(
 				JSON.stringify({
 					kind: "infisical-self-hosted",
 					endpoint: "https://secrets.example",
+					deployProjectId: "",
+				}),
+			),
+			"coordinates",
+		);
+		assert.equal(
+			storeBindingState(
+				JSON.stringify({
+					kind: "infisical-self-hosted",
+					endpoint: "https://secrets.example",
+					deployProjectId: "b89dd05a-be1e-46bd-ad04-8f1510df4a31",
 				}),
 			),
 			"bound",
 		);
 	});
 
-	it("deploys a manual run, and a push whose range it cannot read", () => {
+	it("keeps the required check green on the fallback, and fails a manual run there", () => {
+		const skipped = decide({
+			event: "push",
+			store: "coordinates",
+			changed: ["packages/ci-vercel/src/entry.ts"],
+			inputDirs,
+		});
+		assert.equal(skipped.run, false);
+		assert.equal(skipped.failure, undefined);
+		assert.match(skipped.reason, /Vercel's Git integration still deploys/u);
+		assert.match(skipped.reason, /Merge cutover/u);
+		assert.equal(
+			decide({
+				event: "push",
+				store: "coordinates",
+				changed: ["README.md"],
+				inputDirs,
+			}).failure,
+			undefined,
+		);
+		const manual = decide({
+			event: "workflow_dispatch",
+			store: "coordinates",
+			inputDirs,
+		});
+		assert.equal(manual.run, false);
+		assert.equal(manual.failure, true);
+		assert.match(manual.reason, /names no deploy project/u);
+	});
+
+	it("deploys a manual run and fails a push whose range it cannot read", () => {
 		assert.equal(
 			decide({ event: "workflow_dispatch", store: configured, inputDirs }).run,
 			true,
 		);
-		assert.equal(
-			decide({ event: "push", store: configured, inputDirs }).run,
-			true,
-		);
+		const unreadable = decide({ event: "push", store: configured, inputDirs });
+		assert.equal(unreadable.run, false);
+		assert.equal(unreadable.failure, true);
 		assert.equal(
 			decide({
 				event: "push",
@@ -181,12 +237,172 @@ describe("the relay deploy gate", () => {
 	});
 
 	it("never quietly skips a manual run, so the app-credentials artifact download always has its artifact", () => {
-		for (const store of ["absent", "unreadable", "bound"] as const) {
+		for (const store of [
+			"absent",
+			"unreadable",
+			"coordinates",
+			"bound",
+		] as const) {
 			const decision = decide({ event: "workflow_dispatch", store, inputDirs });
 			assert.ok(
 				decision.run === true || decision.failure === true,
 				`workflow_dispatch with a ${store} store must deploy or fail the job, never skip it: app-credentials needs deploy-build and downloads its artifact unconditionally`,
 			);
+		}
+	});
+
+	it("writes the exact run/reason/deadline contract and a notice or error", () => {
+		const work = mkdtempSync(join(tmpdir(), "relay-gate-output-"));
+		const scriptDir = join(work, "scripts", "ci");
+		mkdirSync(scriptDir, { recursive: true });
+		symlinkSync(
+			join(root, "scripts/ci/release-oci-affected.mts"),
+			join(scriptDir, "release-oci-affected.mts"),
+		);
+		const gate = join(scriptDir, "relay-deploy-gate.mts");
+		writeFileSync(
+			gate,
+			readFileSync(join(root, "scripts/ci/relay-deploy-gate.mts"), "utf8"),
+		);
+		symlinkSync(join(root, "pnpm-lock.yaml"), join(work, "pnpm-lock.yaml"));
+		mkdirSync(join(work, "packages", "ci-vercel", "deploy"), {
+			recursive: true,
+		});
+		writeFileSync(
+			join(work, RELAY_SECRET_STORE_BINDING),
+			JSON.stringify({
+				...JSON.parse(
+					readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8"),
+				),
+				deployProjectId: "prj_gate_contract_test",
+			}),
+		);
+		const runGate = (args: readonly string[], output?: string) => {
+			const before = Date.now();
+			const result = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					gate,
+					...args,
+					...(output === undefined ? [] : ["--github-output", output]),
+				],
+				{ cwd: work, encoding: "utf8" },
+			);
+			return {
+				status: result.status,
+				stdout: result.stdout,
+				stderr: result.stderr,
+				before,
+				after: Date.now(),
+			};
+		};
+		const assertDeadline = (line: string, before: number, after: number) => {
+			const match =
+				/^deadline=(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)$/u.exec(line);
+			assert.ok(match, `not an ISO deadline: ${line}`);
+			const at = Date.parse(match[1] ?? "");
+			assert.ok(
+				at >= Date.parse(adoptDeadline(before)) &&
+					at <= Date.parse(adoptDeadline(after)),
+				`deadline outside the gate's run: ${line}`,
+			);
+		};
+		const message = (decision: ReturnType<typeof decide>) =>
+			decision.failure === true
+				? `::error title=Relay deploy failed::${decision.reason}.`
+				: decision.run
+					? `Deploying the relay: ${decision.reason}.`
+					: `::notice title=Relay deploy skipped::${decision.reason}.`;
+		const assertContract = (
+			lines: readonly string[],
+			decision: ReturnType<typeof decide>,
+			before: number,
+			after: number,
+		) => {
+			assert.deepEqual(lines.slice(0, 2), [
+				`run=${decision.run}`,
+				`reason=${decision.reason}`,
+			]);
+			assertDeadline(lines[2] ?? "", before, after);
+			assert.deepEqual(lines.slice(3), [message(decision), ""]);
+		};
+		try {
+			const manualExpected = decide({
+				event: "workflow_dispatch",
+				store: "bound",
+				inputDirs: [],
+			});
+			assert.equal(manualExpected.run, true);
+			const manual = runGate(["--event", "workflow_dispatch"]);
+			assert.equal(manual.status, 0, `${manual.stdout}${manual.stderr}`);
+			assert.equal(manual.stderr, "");
+			assertContract(
+				manual.stdout.split("\n"),
+				manualExpected,
+				manual.before,
+				manual.after,
+			);
+
+			const skippedExpected = decide({
+				event: "pull_request",
+				store: "bound",
+				inputDirs: [],
+			});
+			assert.equal(skippedExpected.failure, undefined);
+			const skipped = runGate(["--event", "pull_request"]);
+			assert.equal(skipped.status, 0, `${skipped.stdout}${skipped.stderr}`);
+			assert.equal(skipped.stderr, "");
+			assertContract(
+				skipped.stdout.split("\n"),
+				skippedExpected,
+				skipped.before,
+				skipped.after,
+			);
+
+			const unreadableExpected = decide({
+				event: "push",
+				store: "bound",
+				inputDirs,
+			});
+			assert.equal(
+				unreadableExpected.failure,
+				true,
+				"an unreadable push range must fail",
+			);
+			const unreadable = runGate([
+				"--event",
+				"push",
+				"--from",
+				"0000000000000000000000000000000000000000",
+			]);
+			assert.equal(
+				unreadable.status,
+				1,
+				`${unreadable.stdout}${unreadable.stderr}`,
+			);
+			assert.equal(unreadable.stderr, "");
+			assertContract(
+				unreadable.stdout.split("\n"),
+				unreadableExpected,
+				unreadable.before,
+				unreadable.after,
+			);
+
+			const output = join(work, "gate.output");
+			const written = runGate(["--event", "workflow_dispatch"], output);
+			assert.equal(written.status, 0, `${written.stdout}${written.stderr}`);
+			assert.equal(written.stdout, `${message(manualExpected)}\n`);
+			const contract = readFileSync(output, "utf8").split("\n");
+			assert.deepEqual(contract.slice(0, 2), [
+				`run=${manualExpected.run}`,
+				`reason=${manualExpected.reason}`,
+			]);
+			assertDeadline(contract[2] ?? "", written.before, written.after);
+			assert.deepEqual(contract.slice(3), [""]);
+		} finally {
+			rmSync(work, { recursive: true, force: true });
 		}
 	});
 });
@@ -300,6 +516,17 @@ describe("the relay deploy workflow", () => {
 			);
 		}
 		assert.match(workflow, /digest: \$\{\{ steps\.pack\.outputs\.digest \}\}/u);
+	});
+
+	it("fails the gate when a required base commit cannot be fetched", () => {
+		const gates = workflow.split("- name: Decide whether to deploy");
+		assert.equal(gates.length - 1, 2);
+		for (const gate of gates.slice(1)) {
+			assert.match(gate, /git fetch --no-tags --depth=1 origin/u);
+			assert.doesNotMatch(gate, /git fetch[^\n]*\|\| true/u);
+			assert.match(gate, /::error title=Relay deploy gate::/u);
+			assert.match(gate, /exit 1/u);
+		}
 	});
 
 	it("keeps deployment and App credentials on ephemeral clean runners", () => {
@@ -440,6 +667,40 @@ describe("the relay deploy workflow", () => {
 		}
 	});
 
+	it("redacts an untrusted refusal code before printing it", () => {
+		const work = mkdtempSync(join(tmpdir(), "relay-result-redaction-"));
+		try {
+			const json = join(work, "result.json");
+			writeFileSync(
+				json,
+				JSON.stringify({
+					ok: false,
+					code: "HOBO_TEST_REFUSED Bearer SECRetKpR9wZ",
+					message: "deployment unavailable",
+				}),
+			);
+			const ran = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(root, "scripts/ci/relay-deploy-result-report.mts"),
+					json,
+					"preview",
+					"",
+					"1",
+				],
+				{ encoding: "utf8" },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /^preview:/mu);
+			assert.match(ran.stdout, /\[redacted\]/iu);
+			assert.doesNotMatch(ran.stdout, /SECRetKpR9wZ/u);
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
+	});
+
 	it("reports a delivery refusal and stops before any later target", () => {
 		const work = mkdtempSync(join(tmpdir(), "relay-adopt-report-"));
 		try {
@@ -486,6 +747,8 @@ process.exitCode = failed ? 27 : 0;`,
 								GITHUB_STEP_SUMMARY: summary,
 								GITHUB_SHA: "test",
 								GITHUB_REF_NAME: "main",
+								ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.test/oidc",
+								ACTIONS_ID_TOKEN_REQUEST_TOKEN: "test-oidc-token",
 								DEPLOY_DEADLINE: "2099-01-01T00:00:00.000Z",
 								FAIL_TARGET: failedTarget,
 								MALFORMED: String(malformed),
@@ -496,7 +759,9 @@ process.exitCode = failed ? 27 : 0;`,
 					assert.equal(result.status, 27, result.stderr);
 					assert.match(
 						result.stdout,
-						malformed ? /HOBO_CI_DEPLOY_NO_ENVELOPE/u : /HOBO_TEST_REFUSED/u,
+						malformed
+							? /command did not emit a valid JSON envelope/u
+							: /HOBO_TEST_REFUSED/u,
 					);
 					assert.match(result.stdout, /provider diagnostic/u);
 					assert.match(result.stdout, /\[redacted\]/u);
@@ -586,6 +851,9 @@ process.exitCode = failed ? 27 : 0;`,
 		);
 		const delivery = step("Deliver the relay through HoBo CD");
 		assert.match(delivery, /HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"/u);
+		assert.match(delivery, /ACTIONS_ID_TOKEN_REQUEST_URL/u);
+		assert.match(delivery, /ACTIONS_ID_TOKEN_REQUEST_TOKEN/u);
+		assert.match(delivery, /OIDC mint unavailable/u);
 		assert.ok(origin[1]);
 		assert.match(
 			delivery,
@@ -677,9 +945,7 @@ process.exitCode = failed ? 27 : 0;`,
 		it("runs after the existing checks, so it reports on what Vercel already deployed", () => {
 			assert.ok(
 				workflow.indexOf(`- name: ${name}`) >
-					workflow.indexOf(
-						"- name: Adopt Vercel's Git deployment of this commit",
-					),
+					workflow.indexOf("- name: Deliver the relay through HoBo CD"),
 			);
 			assert.ok(
 				workflow.indexOf(`- name: ${name}`) <
@@ -738,6 +1004,62 @@ process.exitCode = failed ? 27 : 0;`,
 			if (previous === undefined)
 				delete process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY;
 			else process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY = previous;
+		}
+	});
+
+	it("rejects a hosted relay job that loses an attestation", async () => {
+		const previous = process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY;
+		process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY = "1";
+		const temp = mkdtempSync(join(tmpdir(), "relay-runner-lint-"));
+		try {
+			const workflowDir = join(temp, ".github", "workflows");
+			mkdirSync(workflowDir, { recursive: true });
+			const mutated = [
+				[
+					"an unclean checkout",
+					workflow.replaceAll("clean: true", "clean: false"),
+				],
+				[
+					"a route-runner step",
+					workflow.replace(
+						"      - name: Decide whether to deploy",
+						"      - uses: ./.github/actions/route-runner\n      - name: Decide whether to deploy",
+					),
+				],
+				[
+					"an overbroad permission",
+					workflow.replaceAll("id-token: write", "deployments: write"),
+				],
+				[
+					"an unbound digest source",
+					workflow.replace(
+						"${{ needs.deploy-build.outputs.digest }}",
+						"${{ vars.HOBO_RELAY_CLI_DIGEST }}",
+					),
+				],
+				[
+					"an unpinned artifact download",
+					workflow.replace(
+						"actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
+						"actions/download-artifact@1111111111111111111111111111111111111111",
+					),
+				],
+			] as const;
+			for (const [name, text] of mutated) {
+				writeFileSync(join(workflowDir, "relay-deploy.yml"), text);
+				const result = await lintActionsRepository(temp);
+				assert.equal(result.exitCode, 1, `${name}: ${result.stdout}`);
+				assert.match(
+					result.stderr,
+					/runs-on must be hobo|authoritative CI jobs must run on self-hosted hobo runners/u,
+					`${name}: ${result.stderr}`,
+				);
+			}
+		} finally {
+			if (previous === undefined)
+				delete process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY;
+			else process.env.HOBO_LINT_ACTIONS_SKIP_REMOTE_PIN_VERIFY = previous;
+			rmSync(temp, { recursive: true, force: true });
 		}
 	});
 });

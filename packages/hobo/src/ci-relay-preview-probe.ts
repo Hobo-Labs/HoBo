@@ -20,11 +20,17 @@ export function normalizeDeploymentUrl(
 		url.protocol !== "https:" ||
 		url.username !== "" ||
 		url.password !== "" ||
-		!url.hostname.endsWith(".vercel.app") ||
-		(url.hostname !== `${project}.vercel.app` &&
-			!url.hostname.startsWith(`${project}-`))
+		!url.hostname.endsWith(".vercel.app")
 	)
 		return undefined;
+	const host = url.hostname.slice(0, -".vercel.app".length);
+	const gitPrefix = `${project}-git-`;
+	if (host !== project) {
+		if (!host.startsWith(gitPrefix)) return undefined;
+		const suffix = host.slice(gitPrefix.length);
+		if (suffix === "" || !/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/u.test(suffix))
+			return undefined;
+	}
 	return `${url.origin}/`;
 }
 

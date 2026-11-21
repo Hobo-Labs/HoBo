@@ -39,7 +39,11 @@ export function adoptDeadline(nowMs: number): string {
 }
 
 /** What the gate knows of the binding; it never reads a value out. */
-export type StoreBindingState = "absent" | "unreadable" | "bound";
+export type StoreBindingState =
+	| "absent"
+	| "unreadable"
+	| "coordinates"
+	| "bound";
 
 export type GateDecision = Readonly<{
 	run: boolean;
@@ -85,10 +89,14 @@ export function storeBindingState(text: string | undefined): StoreBindingState {
 	} catch {
 		return "unreadable";
 	}
-	return /"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) &&
-		/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
+	if (
+		!/"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) ||
+		!/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
+	)
+		return "unreadable";
+	return /"deployProjectId"\s*:\s*"[^"]+"/u.test(text)
 		? "bound"
-		: "unreadable";
+		: "coordinates";
 }
 
 export function decide(input: {
@@ -121,12 +129,28 @@ export function decide(input: {
 			failure: true,
 			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
 		};
+	if (input.store === "coordinates") {
+		if (input.event === "workflow_dispatch")
+			return {
+				run: false,
+				failure: true,
+				reason:
+					"the committed binding names no deploy project, so this manual run cannot deliver through HoBo CD: complete the cutover (packages/ci-vercel/README.md, Merge cutover) that records the deploy project",
+			};
+		return {
+			run: false,
+			reason:
+				"the committed binding names no deploy project, so Vercel's Git integration still deploys the relay and the store-read CD delivery waits for the cutover (packages/ci-vercel/README.md, Merge cutover)",
+		};
+	}
 	if (input.event === "workflow_dispatch")
 		return { run: true, reason: "a manual run deploys" };
 	if (input.changed === undefined)
 		return {
-			run: true,
-			reason: "the pushed range could not be read, so the relay deploys",
+			run: false,
+			failure: true,
+			reason:
+				"the pushed range could not be read, so the relay cannot prove this push changes it",
 		};
 	return {
 		run: true,

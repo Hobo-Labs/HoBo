@@ -42,6 +42,39 @@ import type { VercelFetch } from "../src/vercel-client.js";
 // reaches api.vercel.com, and the verification probes answer from a fake.
 
 const RELAY_DIR = fileURLToPath(new URL("../../ci-vercel/", import.meta.url));
+const BOUND_DEPLOY_PROJECT_ID = "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7";
+const boundDirs: string[] = [];
+let boundRelayDir: string | undefined;
+function boundRelayCwd(): string {
+	if (boundRelayDir !== undefined) return boundRelayDir;
+	const cwd = mkdtempSync(join(RELAY_DIR, ".relay-bound-"));
+	mkdirSync(join(cwd, "deploy"));
+	symlinkSync(join(RELAY_DIR, "src"), join(cwd, "src"));
+	symlinkSync(
+		join(RELAY_DIR, "deploy", "yard.ts"),
+		join(cwd, "deploy", "yard.ts"),
+	);
+	symlinkSync(
+		join(RELAY_DIR, "deploy", "delivery.ts"),
+		join(cwd, "deploy", "delivery.ts"),
+	);
+	const binding = {
+		...parseJsonObject(
+			readFileSync(
+				join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+				"utf8",
+			),
+		),
+		deployProjectId: BOUND_DEPLOY_PROJECT_ID,
+	};
+	writeFileSync(
+		join(cwd, "deploy", "secret-store.binding.json"),
+		JSON.stringify(binding),
+	);
+	boundDirs.push(cwd);
+	boundRelayDir = cwd;
+	return cwd;
+}
 const TOKEN = "synthetic-token-0123";
 /** Pact corpus uses `team_hobo`; override the committed binding team in tests. */
 const TEAM = "team_hobo";
@@ -55,6 +88,14 @@ const fixture = (name: string) =>
 				import.meta.url,
 			),
 			"utf8",
+		),
+	);
+
+const productionPlan = (name: string) =>
+	parseJsonObject(
+		JSON.stringify(fixture(name)).replace(
+			'\\"target\\":\\"production\\"',
+			'\\"target\\":\\"production\\",\\"autoAssignCustomDomains\\":false',
 		),
 	);
 
@@ -169,7 +210,7 @@ async function deploy(
 		...args,
 		...teamOverride,
 		"--cwd",
-		options.cwd ?? RELAY_DIR,
+		options.cwd ?? boundRelayCwd(),
 		...(options.json === false ? [] : ["--json"]),
 	]);
 	const envelope = options.json === false ? {} : parseJsonObject(result.stdout);
@@ -214,6 +255,7 @@ async function promotionJournalEvents(home: string, promotionId: string) {
 
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	for (const cwd of boundDirs) rmSync(cwd, { recursive: true, force: true });
 });
 
 // The relay answering its probes, and the URLs it was asked for. Its
@@ -632,7 +674,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		);
 
 		expect(ran.exitCode).toBe(0);
-		expect(ran.data.plan).toEqual(fixture("relay-production-own-scope"));
+		expect(ran.data.plan).toEqual(productionPlan("relay-production-own-scope"));
 		expect(ran.data.plan).toMatchObject({
 			target: "production",
 			scope: TEAM,
@@ -796,7 +838,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			{ fetch },
 		);
 		expect(ran.exitCode).toBe(0);
-		expect(ran.data.plan).toEqual(fixture("relay-production-provision"));
+		expect(ran.data.plan).toEqual(productionPlan("relay-production-provision"));
 		expect(sent).toEqual([]);
 	});
 
@@ -1324,7 +1366,18 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
 	});
 
-	it("mints no OIDC token when the deployment record names another URL than the create answer", async () => {
+	it.each([
+		[
+			"another URL",
+			{ id: "dpl_wait", url: "hobo-ci-evil.vercel.app" },
+			"HOBO_CI_DEPLOY_RELAY_NOT_READY",
+		],
+		[
+			"another id",
+			{ id: "dpl_other", url: "hobo-ci-git-main.example.vercel.app" },
+			"realize-failed",
+		],
+	])("mints no OIDC token when the deployment record names %s", async (_case, record, code) => {
 		const probed: string[] = [];
 		const minted: string[] = [];
 		const relay = healthyRelay();
@@ -1347,11 +1400,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 					readyState: "QUEUED",
 				});
 			if (init.method === "GET" && path.startsWith("/v13/deployments/"))
-				return answer({
-					id: "dpl_wait",
-					url: "hobo-ci-evil.vercel.app",
-					readyState: "READY",
-				});
+				return answer({ ...record, readyState: "READY" });
 			if (path.startsWith("/v10/projects/hobo-ci/env"))
 				return answer(init.method === "GET" ? { envs: [] } : { created: {} });
 			return {
@@ -1390,10 +1439,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(1);
 		expect(minted).toEqual([]);
 		expect(probed).toEqual([]);
-		expect(ran.envelope).toMatchObject({
-			ok: false,
-			code: "HOBO_CI_DEPLOY_RELAY_NOT_READY",
-		});
+		expect(ran.envelope).toMatchObject({ ok: false, code });
 	});
 
 	it("refuses preview --wait without --sha: it cannot attest which deployment it qualifies", async () => {
@@ -1799,7 +1845,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const credentials = createTrustedVault();
 		credentials.put("VERCEL_TOKEN", TOKEN);
 		const result = await runCiRelayDeploy({
-			cwd: RELAY_DIR,
+			cwd: boundRelayCwd(),
 			values: directValues(new Date(deadlineAt).toISOString()),
 			env: { ...directEnv, HOBO_CI_RELAY_STAGED_PRODUCTION: "false" },
 			credentials,
@@ -1918,7 +1964,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			const credentials = createTrustedVault();
 			credentials.put("VERCEL_TOKEN", TOKEN);
 			return runCiRelayDeploy({
-				cwd: RELAY_DIR,
+				cwd: boundRelayCwd(),
 				values: directValues(),
 				env: directEnv,
 				credentials,
@@ -1951,6 +1997,149 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(publicHealthChecks).toBeGreaterThan(healthBeforeResume);
 	}, 60_000);
 
+	it("refuses an already-promoted rerun without a distinct recorded rollback target", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env,
+				heldToken: TOKEN,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+		const vercel = scriptedVercel(["READY"]);
+		const events: string[] = [];
+		let promotions = 0;
+		const fetch: VercelFetch = async (url, init) => {
+			if (url.includes("/v9/projects/hobo-ci")) {
+				const project = {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_wait" } },
+				};
+				return {
+					ok: true,
+					status: 200,
+					text: async () => JSON.stringify(project),
+					json: async () => project,
+				};
+			}
+			if (url.includes("/promote/")) {
+				promotions++;
+				events.push("promote");
+				return {
+					ok: true,
+					status: 202,
+					text: async () => "{}",
+					json: async () => ({}),
+				};
+			}
+			return vercel.fetch(url, init);
+		};
+		const publicOrigin = "https://public.example.test";
+		let publicProbes = 0;
+		const probe: HttpTransport = async (request) => {
+			const url = new URL(request.url);
+			if (url.origin === publicOrigin) publicProbes++;
+			return {
+				status: 200,
+				headers: {},
+				body: request.url.endsWith("/healthz")
+					? JSON.stringify({ commit: SHA })
+					: JSON.stringify({ ready: true }),
+			};
+		};
+		const credentialFetch: typeof globalThis.fetch = async (input) => {
+			const url = String(input);
+			if (url.includes("token.actions.example.test"))
+				return Response.json({
+					value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
+				});
+			if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+				return Response.json({
+					accessToken: "synthetic-infisical-token",
+					expiresIn: 3600,
+					accessTokenMaxTTL: 3600,
+					tokenType: "Bearer",
+				});
+			if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+				return Response.json({
+					secret: {
+						secretKey: "VERCEL_TOKEN",
+						secretValue: TOKEN,
+						version: 1,
+						type: "shared",
+						environment: "prod",
+						secretPath: "/",
+					},
+				});
+			return Response.json({}, { status: 404 });
+		};
+		let interruptHandover = true;
+		const openStore: CdStoreOpener = async (
+			selection,
+			storeClock,
+			readSecret,
+		) => {
+			const opened = await openCdStore(selection, storeClock, readSecret);
+			const append = opened.store.append.bind(opened.store);
+			opened.store.append = async (streamId, storeEvents, options) => {
+				if (
+					interruptHandover &&
+					storeEvents.some((event) => event.type === "env.Promoted")
+				) {
+					await append(streamId, storeEvents, options);
+					throw new Error("interrupted after promotion");
+				}
+				return append(streamId, storeEvents, options);
+			};
+			return {
+				...opened,
+				async close() {
+					await opened.close();
+					if (interruptHandover && events.length === 0)
+						throw new Error("process interrupted");
+				},
+			};
+		};
+		const run = () => {
+			const credentials = createTrustedVault();
+			credentials.put("VERCEL_TOKEN", TOKEN);
+			return runCiRelayDeploy({
+				cwd: boundRelayCwd(),
+				values: directValues(),
+				env: {
+					...directEnv,
+					HOBO_CI_RELAY_PUBLIC_URL: publicOrigin,
+				},
+				credentials,
+				fetch,
+				credentialFetch,
+				home,
+				probe,
+				openStore,
+				now: clock.now,
+				sleep: clock.sleep,
+				emitProgress: () => {},
+			});
+		};
+		await expect(run()).rejects.toThrow("process interrupted");
+		interruptHandover = false;
+		const resumed = await run();
+		expect(resumed, JSON.stringify(resumed)).toMatchObject({
+			code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
+			message: expect.stringContaining("distinct previous production"),
+			data: { delivery: { state: "FAILED" } },
+		});
+		expect(promotions).toBe(0);
+		expect(events).toEqual([]);
+		expect(publicProbes).toBe(0);
+	}, 120_000);
+
 	it.each([
 		{
 			lost: false,
@@ -1966,6 +2155,12 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		},
 		{
 			lost: false,
+			confirmation: "candidate",
+			rollbackRefused: true,
+			publicHealth: { commit: SHA },
+		},
+		{
+			lost: true,
 			confirmation: "candidate",
 			rollbackRefused: true,
 			publicHealth: { commit: SHA },
@@ -2052,7 +2247,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				promotionAttempted = true;
 				events.push(rollingBack ? "rollback" : "promote");
 				if (rollingBack && rollbackRefused)
-					throw new Error("rollback response refused");
+					throw new Error(`rollback response refused: Bearer ${TOKEN}`);
 				promotedNewDeployment = !rollingBack;
 				if (lost && !rollingBack) throw new Error("promotion response lost");
 				return {
@@ -2165,13 +2360,22 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 					delivery: { state: "FAILED" },
 				},
 			});
+			if (rollbackRefused) {
+				expect(result.envelope.message).toContain(
+					"rollback response refused: [redacted]",
+				);
+				expect(result.envelope.message).not.toContain(TOKEN);
+			}
 			expect(events).toContain("live:/healthz");
 			expect(events.filter((event) => event === "rollback")).toEqual([
 				"rollback",
 			]);
 		} else {
 			expect(result.envelope).toMatchObject({
-				code: "HOBO_CI_DEPLOY_NO_ANSWER",
+				code:
+					confirmation === "missing"
+						? "HOBO_CI_DEPLOY_PROMOTION_REFUSED"
+						: "HOBO_CI_DEPLOY_NO_ANSWER",
 				data: { delivery: { state: "FAILED" } },
 			});
 			expect(events).not.toContain("live:/healthz");
@@ -2486,9 +2690,30 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 	}, 120_000);
 
 	it.each([
-		{ previousProduction: undefined, expires: false },
-		{ previousProduction: "dpl_previous_prod", expires: true },
-	])("refuses staged production safely (%s)", async (scenario) => {
+		{
+			label: "no targets",
+			project: { id: "prj_relay" },
+			expires: false,
+		},
+		{
+			label: "no production target",
+			project: { id: "prj_relay", targets: {} },
+			expires: false,
+		},
+		{
+			label: "a non-object production target",
+			project: { id: "prj_relay", targets: { production: null } },
+			expires: false,
+		},
+		{
+			label: "an expiring deadline",
+			project: {
+				id: "prj_relay",
+				targets: { production: { id: "dpl_previous_prod" } },
+			},
+			expires: true,
+		},
+	])("refuses staged production safely ($label)", async (scenario) => {
 		const home = freshHome();
 		let now = Date.UTC(2026, 10, 12, 12);
 		const deadlineAt = now + 10 * 60_000;
@@ -2516,20 +2741,11 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			if (url.includes("/v9/projects/hobo-ci")) {
 				if (scenario.expires && vercel.deploymentBodies.length > 0)
 					now = deadlineAt;
-				const project: JsonObject =
-					scenario.previousProduction === undefined
-						? { id: "prj_relay" }
-						: {
-								id: "prj_relay",
-								targets: {
-									production: { id: scenario.previousProduction },
-								},
-							};
 				return {
 					ok: true,
 					status: 200,
-					text: async () => JSON.stringify(project),
-					json: async () => project,
+					text: async () => JSON.stringify(scenario.project),
+					json: async () => scenario.project,
 				};
 			}
 			if (url.includes("/promote/")) {

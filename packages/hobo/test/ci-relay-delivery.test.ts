@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-reflect-get, anti-slop/no-runtime-typeof, anti-slop/require-safety-comment-for-type-assertion */
 // HoBo delivering its own CI relay through @hobo/cd: Freight, the preview ->
 // production pipeline, the gate, the conductor realizer and the probe
 // verification, all offline (a fake Vercel realization, a fake probe
@@ -6,13 +7,16 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { create, toJson } from "@bufbuild/protobuf";
+import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
 import type { ManifestV1 } from "@hobo/bindles";
 import {
+	CD_EVENTS,
+	CD_STREAMS,
 	FreightSourceRecordSchema,
 	HookKind,
 	HookPoint,
 	HookRecordSchema,
+	PipelineRecordSchema,
 } from "@hobo/cd";
 import { HOBO_CI_COMPONENTS, hoboSelfDeliverySources } from "@hobo/cd/compose";
 import { compileProjectManifest } from "@hobo/cli";
@@ -113,6 +117,31 @@ async function harness(): Promise<Harness> {
 		finalized: [],
 		clock: { now: Date.UTC(2026, 10, 12, 12) },
 	};
+}
+
+async function finalizationHooks(home: string): Promise<number> {
+	const opened = await openCdStore(
+		{ backend: "sqlite", path: join(home, "cd", "journal.sqlite") },
+		{ now: () => Date.now() },
+	);
+	try {
+		const applied: { data: unknown }[] = [];
+		for await (const event of opened.store.read(
+			CD_STREAMS.pipeline(HOBO_CI_COMPONENTS.relay.pipeline),
+		))
+			if (event.type === CD_EVENTS.PipelineApplied) applied.push(event);
+		const last = applied.at(-1);
+		if (!last) throw new Error("missing pipeline record");
+		const pipeline = fromJson(PipelineRecordSchema, last.data as JsonObject);
+		return (
+			pipeline.nodes
+				.find((node) => node.name === "production")
+				?.hooks.filter((hook) => hook.ref === "relay:finalize-promotion")
+				.length ?? 0
+		);
+	} finally {
+		await opened.close();
+	}
 }
 
 function realization(
@@ -472,6 +501,47 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		]);
 	}, 180_000);
 
+	it("refuses an unconfigured non-finalization suite before deploying", async () => {
+		const h = await harness();
+		const withSuite: DeliveryModule = {
+			...records,
+			pipelines: records.pipelines.map((pipelineRecord) => ({
+				...pipelineRecord,
+				nodes: pipelineRecord.nodes.map((pipelineNode) =>
+					pipelineRecord.name === HOBO_CI_COMPONENTS.relay.pipeline &&
+					pipelineNode.name === "preview"
+						? {
+								...pipelineNode,
+								hooks: [
+									...pipelineNode.hooks,
+									create(HookRecordSchema, {
+										kind: HookKind.SUITE,
+										point: HookPoint.BEFORE_APPLY,
+										ref: "relay:unconfigured-suite",
+									}),
+								],
+							}
+						: pipelineNode,
+				),
+			})),
+		};
+		const finalized: string[] = [];
+		const outcome = await deliver(h, "preview", {
+			records: withSuite,
+			finalizePromotion: async () => {
+				finalized.push("must-not-run");
+				return undefined;
+			},
+		});
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.report?.reasons.map((reason) => reason.code)).toContain(
+			"compose-suite-unconfigured",
+		);
+		expect(h.deployed).toEqual([]);
+		expect(finalized).toEqual([]);
+	}, 60_000);
+
 	it.each([
 		["no finalizer configured", undefined],
 		[
@@ -573,6 +643,31 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(h.finalized).toEqual(["dpl_2", "dpl_2"]);
 	}, 240_000);
 
+	it("reuses the stored finalization hook on a finalizer-present retry without appending another", async () => {
+		const h = await harness();
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const finalizer = async ({
+			handover,
+		}: {
+			readonly handover: Readonly<Record<string, string>>;
+		}) => {
+			h.finalized.push(String(handover.deploymentId));
+			return undefined;
+		};
+		const first = await deliver(h, "production", {
+			finalizePromotion: finalizer,
+		});
+		expect(first.ok, first.ok ? "" : first.message).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(1);
+		const retry = await deliver(h, "production", {
+			finalizePromotion: finalizer,
+		});
+		expect(retry.ok, retry.ok ? "" : retry.message).toBe(true);
+		expect(await finalizationHooks(h.home)).toBe(1);
+		expect(h.deployed).toHaveLength(2);
+		expect(h.finalized).toEqual(["dpl_2", "dpl_2"]);
+	}, 240_000);
+
 	it("never finalizes another promotion's candidate when a newer promotion replaced the Camp's Set", async () => {
 		const h = await harness();
 		const other = {
@@ -630,6 +725,60 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(outcome.ok).toBe(false);
 		expect(finalized).toEqual([]);
 	}, 120_000);
+
+	it("refuses a promoted promotion without a desired Set before calling the finalizer", async () => {
+		const h = await harness();
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const campId = relayCampId(yard, "production");
+		const hideSet = { current: false };
+		const openStore: NonNullable<
+			Parameters<typeof deliverRelay>[0]["openStore"]
+		> = async (selection, clock, readSecret) => {
+			const opened = await openCdStore(selection, clock, readSecret);
+			return {
+				...opened,
+				store: new Proxy(opened.store, {
+					get(target, property, receiver) {
+						if (property === "read")
+							return async function* (streamId: string, fromSeq?: number) {
+								for await (const event of target.read(streamId, fromSeq)) {
+									if (
+										hideSet.current &&
+										streamId === CD_STREAMS.campSpec(campId) &&
+										event.type === CD_EVENTS.SetCreated
+									)
+										continue;
+									yield event;
+								}
+							};
+						const value = Reflect.get(target, property, receiver);
+						return typeof value === "function" ? value.bind(target) : value;
+					},
+				}),
+			};
+		};
+		const finalized: string[] = [];
+		const finalizer = async () => {
+			finalized.push("must-not-run");
+			return undefined;
+		};
+		const first = await deliver(h, "production", {
+			openStore,
+			finalizePromotion: finalizer,
+		});
+		expect(first.ok, first.ok ? "" : first.message).toBe(true);
+		hideSet.current = true;
+		const outcome = await deliver(h, "production", {
+			openStore,
+			finalizePromotion: finalizer,
+		});
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.promotionRefused);
+		expect(outcome.message).toContain("no desired Set exists");
+		expect(finalized).toEqual(["must-not-run"]);
+		expect(h.deployed).toHaveLength(2);
+	}, 240_000);
 
 	it("records two commits as two Freight, and production refuses the one preview has not qualified", async () => {
 		const h = await harness();

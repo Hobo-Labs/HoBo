@@ -267,6 +267,7 @@ export interface CiSecretStoreInput {
 	readonly values: Values;
 	readonly env: Readonly<Record<string, string | undefined>>;
 	readonly fetch?: typeof fetch;
+	readonly credentialFetch?: typeof fetch;
 	readonly runtime?: YardRuntime;
 	readonly interactive: boolean;
 	readonly prompt: (question: string) => Promise<string>;

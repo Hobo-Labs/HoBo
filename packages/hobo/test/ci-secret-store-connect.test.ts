@@ -32,6 +32,7 @@ function input(
 	values: Record<string, string | boolean>,
 	env: Record<string, string> = {},
 	fetch?: Fetch,
+	credentialFetch?: Fetch,
 ) {
 	return {
 		subcommand,
@@ -42,6 +43,7 @@ function input(
 		prompt: async () => "",
 		now: () => 1_700_000_000_000,
 		...(fetch !== undefined ? { fetch } : undefined),
+		...(credentialFetch !== undefined ? { credentialFetch } : undefined),
 	};
 }
 
@@ -205,6 +207,28 @@ describe("hobo ci secret-store connect", () => {
 		);
 		expect(result.code).toBe("HOBO_CI_SECRET_STORE_USAGE");
 		expect(result.message).toContain("--repo");
+	});
+
+	it("keeps credential reads off the provider's fetch", async () => {
+		const providerSeen: string[] = [];
+		const providerFetch: Fetch = async (request, init) => {
+			const url = new URL(String(request));
+			providerSeen.push(`${init?.method ?? "GET"} ${url.host}${url.pathname}`);
+			return Response.json({}, { status: 404 });
+		};
+		const credential = withInfisicalPatch(github().fetch);
+		const result = await runCiSecretStore(
+			input(
+				"connect",
+				IDS,
+				{ ...GH_ENV, INFISICAL_TOKEN: OWNER_TOKEN },
+				providerFetch,
+				credential.fetch,
+			),
+		);
+		expect(result.ok).toBe(true);
+		expect(providerSeen).toEqual([]);
+		expect(credential.patches).toHaveLength(1);
 	});
 });
 
@@ -431,6 +455,30 @@ describe("hobo ci secret-store verify", () => {
 		expect(JSON.stringify(result)).not.toContain(ACCESS);
 		expect(JSON.stringify(result)).not.toContain(
 			"synthetic-vercel-deploy-token",
+		);
+	});
+
+	it("keeps GitHub and Infisical credential reads off the provider's fetch", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const providerSeen: string[] = [];
+		const providerFetch: Fetch = async (request, init) => {
+			const url = new URL(String(request));
+			providerSeen.push(`${init?.method ?? "GET"} ${url.host}${url.pathname}`);
+			return Response.json({}, { status: 404 });
+		};
+		const credential = infisical(200, []);
+		const result = await runCiSecretStore(
+			input("verify", {}, actions, providerFetch, credential.fetch),
+		);
+		expect(result.ok).toBe(true);
+		expect(providerSeen).toEqual([]);
+		expect(credential.seen).toEqual(
+			expect.arrayContaining([
+				"GET /token",
+				"POST /api/v1/auth/oidc-auth/login",
+				"GET /api/v4/secrets/VERCEL_TOKEN",
+				"POST /api/v1/auth/token/revoke",
+			]),
 		);
 	});
 

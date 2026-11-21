@@ -85,6 +85,7 @@ import {
 	defaultCdFactories,
 	HOBO_CI_COMPONENTS,
 	parseCdComposeConfig,
+	unconfiguredSuites,
 } from "@hobo/cd/compose";
 import {
 	createRegistryFromProviders,
@@ -786,6 +787,7 @@ async function deliverWith(
 	const finalizePromotion = input.finalizePromotion;
 	let finalizedSetId: string | undefined;
 	let finalizationFailure: RelayRealizationFailure | undefined;
+	let suiteFallback: VerifyPort = unconfiguredSuites();
 	const handoverFor = async (set: SetRecord | undefined, camp: CampId) => {
 		if (!set) return {};
 		const observed = await cd.desired.status(camp);
@@ -794,19 +796,8 @@ async function deliverWith(
 	};
 	const suites: VerifyPort = {
 		async run(request, ctx) {
-			if (request.suite !== RELAY_FINALIZATION_SUITE) {
-				if (input.suites !== undefined) return input.suites.run(request, ctx);
-				return {
-					ok: false,
-					reasons: [
-						reason(
-							RELAY_DELIVERY_REFUSAL.unavailable,
-							`Verify suite ${request.suite} is not configured`,
-							"Compose the suite runner or remove the suite hook.",
-						),
-					],
-				};
-			}
+			if (request.suite !== RELAY_FINALIZATION_SUITE)
+				return (input.suites ?? suiteFallback).run(request, ctx);
 			if (finalizePromotion === undefined)
 				return {
 					ok: false,
@@ -887,8 +878,7 @@ async function deliverWith(
 				},
 				planning: {
 					registry,
-					declarationDigest: (declaration) =>
-						canonicalManifestHash(declaration),
+					declarationDigest: (declaration) => canonicalManifestHash(declaration),
 					async declaration(freight) {
 						const bytes = await cd.artifacts.get(
 							// SAFETY: a Freight's declaration hash is a sha256 digest.
@@ -911,7 +901,9 @@ async function deliverWith(
 					subject: async () => ({ classifications: [], residency: [] }),
 				},
 			}),
-			suites: () => suites,
+			...(input.suites !== undefined || finalizePromotion !== undefined
+				? { suites: () => suites }
+				: undefined),
 		},
 		http,
 		credentials,
@@ -941,6 +933,7 @@ async function deliverWith(
 			? { telemetryEndpoint: config.telemetryEndpoint }
 			: { telemetry: DISCARDING_TELEMETRY }),
 	});
+	suiteFallback = unconfiguredSuites({ telemetry: cd.sink });
 	const ctx: CdContext = {
 		tenant: config.tenant,
 		principal: cdPrincipal(input.env),
@@ -981,48 +974,71 @@ async function deliverWith(
 			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
 			message: `${RELAY_DELIVERY_FILE} declares the ${RELAY_FINALIZATION_SUITE} hook on ${declaredFinalizationHooks.join(", ")}: that ref is reserved for hobo ci deploy's own injection, never a delivery file. Remove the hook; the run that carries a finalizer injects it.`,
 		};
-	if (finalizePromotion === undefined) {
-		const stored = await cd.pipelines.get(pipeline);
-		const storedNode = stored?.nodes.find(
-			(pipelineNode) => pipelineNode.name === node,
-		);
-		if (storedNode?.hooks.some((hook) => hook.ref === RELAY_FINALIZATION_SUITE))
-			return {
-				ok: false,
-				code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
-				message: `Pipeline ${pipeline}/${node} already carries the ${RELAY_FINALIZATION_SUITE} hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true (the relay deploy workflow), which finalizes the promotion it drove.`,
-			};
-	}
+	const stored = await cd.pipelines.get(pipeline);
+	const storedNode = stored?.nodes.find(
+		(pipelineNode) => pipelineNode.name === node,
+	);
+	const storedFinalizationHook =
+		storedNode?.hooks.some((hook) => hook.ref === RELAY_FINALIZATION_SUITE) ??
+		false;
+	if (storedFinalizationHook && finalizePromotion === undefined)
+		return {
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
+			message: `Pipeline ${pipeline}/${node} already carries the ${RELAY_FINALIZATION_SUITE} hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true (the relay deploy workflow), which finalizes the promotion it drove.`,
+		};
+	const reuseStoredFinalizationHook =
+		storedFinalizationHook && finalizePromotion !== undefined;
 	let finalizationTargets = 0;
 	const deliveryRecords: DeliveryModule =
 		finalizePromotion === undefined
 			? records
-			: {
-					...records,
-					pipelines: records.pipelines.map((pipelineRecord) => ({
-						...pipelineRecord,
-						nodes: pipelineRecord.nodes.map((pipelineNode) => {
-							if (
-								pipelineRecord.name !== pipeline ||
-								pipelineNode.name !== node
-							)
-								return pipelineNode;
-							finalizationTargets += 1;
-							return {
-								...pipelineNode,
-								hooks: [
-									...pipelineNode.hooks,
-									create(HookRecordSchema, {
-										kind: HookKind.SUITE,
-										point: HookPoint.AFTER_QUALIFIED,
-										ref: RELAY_FINALIZATION_SUITE,
-									}),
-								],
-							};
-						}),
-					})),
-				};
-	if (finalizePromotion !== undefined && finalizationTargets !== 1)
+			: reuseStoredFinalizationHook
+				? {
+						...records,
+						pipelines: records.pipelines.map((pipelineRecord) =>
+							pipelineRecord.name === pipeline && storedNode !== undefined
+								? {
+										...pipelineRecord,
+										nodes: pipelineRecord.nodes.map((pipelineNode) =>
+											pipelineNode.name === node
+												? { ...pipelineNode, hooks: [...storedNode.hooks] }
+												: pipelineNode,
+										),
+									}
+								: pipelineRecord,
+						),
+					}
+				: {
+						...records,
+						pipelines: records.pipelines.map((pipelineRecord) => ({
+							...pipelineRecord,
+							nodes: pipelineRecord.nodes.map((pipelineNode) => {
+								if (
+									pipelineRecord.name !== pipeline ||
+									pipelineNode.name !== node
+								)
+									return pipelineNode;
+								finalizationTargets += 1;
+								return {
+									...pipelineNode,
+									hooks: [
+										...pipelineNode.hooks,
+										create(HookRecordSchema, {
+											kind: HookKind.SUITE,
+											point: HookPoint.AFTER_QUALIFIED,
+											ref: RELAY_FINALIZATION_SUITE,
+										}),
+									],
+								};
+							}),
+						})),
+					};
+	if (
+		finalizePromotion !== undefined &&
+		!reuseStoredFinalizationHook &&
+		finalizationTargets !== 1
+	)
 		return {
 			ok: false,
 			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
@@ -1140,7 +1156,7 @@ async function deliverWith(
 				code: finalizationFailure.code,
 				message: finalizationFailure.message,
 				realization: finalizationFailure,
-				report: report(terminal, set),
+				report: { ...report(terminal, set), state: "FAILED" },
 				handover,
 			};
 		if (terminal.state === PromotionState.PROMOTED) {
@@ -1148,7 +1164,15 @@ async function deliverWith(
 				finalizePromotion !== undefined &&
 				(set === undefined || finalizedSetId !== set.setId)
 			) {
-				if (set !== undefined && set.freightId !== freight.freightId)
+				if (set === undefined)
+					return {
+						ok: false,
+						code: RELAY_DELIVERY_REFUSAL.promotionRefused,
+						message: `The promotion of ${freight.alias} to ${campId} ended promoted, but no desired Set exists to bind its finalizer to: the finalizer never runs without the Set it promoted.`,
+						report: report(terminal, set),
+						handover,
+					};
+				if (set.freightId !== freight.freightId)
 					return {
 						ok: false,
 						code: RELAY_DELIVERY_REFUSAL.promotionRefused,
@@ -1169,7 +1193,7 @@ async function deliverWith(
 						report: report(terminal, set),
 						handover,
 					};
-				finalizedSetId = set?.setId;
+				finalizedSetId = set.setId;
 			}
 			return { ok: true, report: report(terminal, set), handover };
 		}
@@ -1204,14 +1228,20 @@ async function deliverWith(
 				signal: AbortSignal.timeout(input.feedWaitMs ?? DEFAULT_FEED_WAIT_MS),
 			});
 			const failure = realizer?.failure(set.setId);
-			if (failure)
+			if (failure) {
+				const delivery = report(promotion, set);
 				return {
 					ok: false,
 					code: failure.code,
 					message: failure.message,
 					realization: failure,
-					report: report(promotion, set),
+					report:
+						finalizationFailure !== undefined ||
+						failure.code === RELAY_DELIVERY_REFUSAL.promotionRefused
+							? { ...delivery, state: "FAILED" }
+							: delivery,
 				};
+			}
 			const outputs = realizer?.deployed(set.setId);
 			if (
 				input.wait === false &&

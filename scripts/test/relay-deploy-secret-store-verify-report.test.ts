@@ -140,6 +140,31 @@ describe("relay-deploy-secret-store-verify-report.mts", () => {
 			);
 	});
 
+	it("redacts an untrusted envelope code in the summary and annotation", () => {
+		const dir = mkdtempSync(join(tmpdir(), "verify-report-"));
+		const json = join(dir, "out.json");
+		try {
+			writeFileSync(
+				json,
+				JSON.stringify({
+					ok: false,
+					code: "HOBO_TEST Bearer SECRetKpR9wZ",
+					message: "login-denied",
+				}),
+			);
+			const ran = spawnSync(
+				process.execPath,
+				["--experimental-strip-types", "--no-warnings", report, json, "", "1"],
+				{ encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: "" } },
+			);
+			assert.equal(ran.status, 1);
+			assert.match(ran.stdout, /\[redacted\]/iu);
+			assert.doesNotMatch(ran.stdout, /SECRetKpR9wZ/u);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("keeps the relay bearer coverage linear on its adversarial sweep", () => {
 		assertPatternSweepLinear(RELAY_DEPLOY_BEARER_PATTERN);
 	});

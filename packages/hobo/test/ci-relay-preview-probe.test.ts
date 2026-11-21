@@ -16,7 +16,7 @@ describe("protected preview probe", () => {
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
 			project: "hobo-ci",
-			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
+			deploymentUrl: () => "https://hobo-ci-git-main.example.vercel.app",
 			jwt: async () => "synthetic-oidc-token",
 			base: async (outbound) => {
 				sent.push(outbound);
@@ -25,7 +25,7 @@ describe("protected preview probe", () => {
 		});
 		expect((await probe(request)).status).toBe(200);
 		expect(sent).toHaveLength(1);
-		expect(sent[0]?.url).toBe("https://hobo-ci-example.vercel.app/healthz");
+		expect(sent[0]?.url).toBe("https://hobo-ci-git-main.example.vercel.app/healthz");
 		expect(sent[0]?.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
 			"synthetic-oidc-token",
 		);
@@ -35,13 +35,16 @@ describe("protected preview probe", () => {
 		for (const deploymentUrl of [
 			undefined,
 			"",
-			"http://hobo-ci-example.vercel.app",
+			"http://hobo-ci-git-main.example.vercel.app",
 			"https://vercel.app.evil.test",
-			"https://user@hobo-ci-example.vercel.app",
-			"https://hobo-ci-example.vercel.app:444",
+			"https://user@hobo-ci-git-main.example.vercel.app",
+			"https://hobo-ci-git-main.example.vercel.app:444",
 			"https://other.vercel.app",
 			"https://other-hobo-ci.vercel.app",
 			"https://hobo-ci.vercel.app.evil.test",
+			"https://hobo-ci-evil.vercel.app",
+			"https://hobo-ci-example.vercel.app",
+			"https://hobo-ci-git-main.example.evil.test",
 		]) {
 			let sent = false;
 			const probe = protectedPreviewProbe({
@@ -61,7 +64,7 @@ describe("protected preview probe", () => {
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
 			project: "hobo-ci",
-			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
+			deploymentUrl: () => "https://hobo-ci-git-main.example.vercel.app",
 			jwt: async () => {
 				throw new Error("token failure");
 			},
@@ -84,7 +87,7 @@ describe("protected preview probe", () => {
 		const probe = protectedPreviewProbe({
 			placeholderOrigin: "https://preview.invalid",
 			project: "hobo-ci",
-			deploymentUrl: () => "https://hobo-ci-example.vercel.app",
+			deploymentUrl: () => "https://hobo-ci-git-main.example.vercel.app",
 			jwt: async () => "synthetic-oidc-token",
 			base: createBoundedFetchTransport({
 				fetchImpl: async (url, init) => {
@@ -99,7 +102,7 @@ describe("protected preview probe", () => {
 		const answer = await probe(request);
 		expect(answer.status).toBe(302);
 		expect(calls).toHaveLength(1);
-		expect(calls[0]?.url).toBe("https://hobo-ci-example.vercel.app/healthz");
+		expect(calls[0]?.url).toBe("https://hobo-ci-git-main.example.vercel.app/healthz");
 		expect(calls[0]?.init.redirect).toBe("manual");
 		expect(
 			new Headers(calls[0]?.init.headers).get(
@@ -111,8 +114,8 @@ describe("protected preview probe", () => {
 	it("normalizes a host-only or path-carrying deployment URL to its https origin", async () => {
 		const sent: TransportRequest[] = [];
 		for (const deploymentUrl of [
-			"hobo-ci-example.vercel.app",
-			"https://hobo-ci-example.vercel.app/anything/deep?query=1#fragment",
+			"hobo-ci-git-main.example.vercel.app",
+			"https://hobo-ci-git-main.example.vercel.app/anything/deep?query=1#fragment",
 		]) {
 			const probe = protectedPreviewProbe({
 				placeholderOrigin: "https://preview.invalid",
@@ -127,8 +130,45 @@ describe("protected preview probe", () => {
 			expect((await probe(request)).status).toBe(200);
 		}
 		expect(sent.map((outbound) => outbound.url)).toEqual([
-			"https://hobo-ci-example.vercel.app/healthz",
-			"https://hobo-ci-example.vercel.app/healthz",
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
 		]);
+	});
+
+	it("binds each probe to the host its own deployment URL names, even when that URL mutates", async () => {
+		let deploymentUrl: string | undefined =
+			"https://hobo-ci-git-main.example.vercel.app";
+		const sent: TransportRequest[] = [];
+		const audiences: string[] = [];
+		const probe = protectedPreviewProbe({
+			placeholderOrigin: "https://preview.invalid",
+			project: "hobo-ci",
+			deploymentUrl: () => deploymentUrl,
+			jwt: async (audience) => {
+				audiences.push(audience);
+				return "synthetic-oidc-token";
+			},
+			base: async (outbound) => {
+				sent.push(outbound);
+				return { status: 200, headers: {}, body: "{}" };
+			},
+		});
+		expect((await probe(request)).status).toBe(200);
+		deploymentUrl = "https://hobo-ci-git-next.example.vercel.app";
+		expect((await probe(request)).status).toBe(200);
+		deploymentUrl = "https://hobo-ci-evil.vercel.app";
+		expect((await probe(request)).status).toBe(503);
+		expect(sent.map((outbound) => outbound.url)).toEqual([
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
+			"https://hobo-ci-git-next.example.vercel.app/healthz",
+		]);
+		expect(audiences).toEqual([
+			"https://hobo-ci-git-main.example.vercel.app",
+			"https://hobo-ci-git-next.example.vercel.app",
+		]);
+		for (const outbound of sent)
+			expect(new URL(outbound.url).origin).toBe(
+				audiences[sent.indexOf(outbound)],
+			);
 	});
 });

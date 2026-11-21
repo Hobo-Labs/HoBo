@@ -267,6 +267,27 @@ export class VercelEnvRefusal extends Error {
 	}
 }
 
+export class VercelProductionDeploymentMissingError extends Error {
+	constructor() {
+		super("vercel-client: project read has no production deployment");
+		this.name = "VercelProductionDeploymentMissingError";
+	}
+}
+
+export class VercelPromotionUnconfirmedError extends Error {
+	readonly observedProduction: string | undefined;
+
+	constructor(observedProduction?: string) {
+		super(
+			observedProduction === undefined
+				? "vercel-client: promotion remains unconfirmed; production has no deployment"
+				: `vercel-client: promotion remains unconfirmed; production names ${observedProduction}`,
+		);
+		this.name = "VercelPromotionUnconfirmedError";
+		this.observedProduction = observedProduction;
+	}
+}
+
 // Create Deployment's answer when the project it names does not exist: 404,
 // `{"error":{"code":"not_found","message":"Project not found"}}`.
 export function isProjectNotFound(error: Error): boolean {
@@ -296,7 +317,7 @@ export interface VercelClient {
 		deploymentId: string,
 	): Promise<VercelDeploymentResult | undefined>;
 	deleteDeployment(deploymentId: string): Promise<void>;
-	getProductionDeploymentId(project: string): Promise<string | undefined>;
+	getProductionDeploymentId(project: string): Promise<string>;
 	promoteDeployment(project: string, deploymentId: string): Promise<void>;
 	// Create a deployment from inline files, or, given a `gitSource`, from a
 	// git reference Vercel builds itself.
@@ -1059,11 +1080,13 @@ function envStep(
 
 // Create the REAL Vercel deployment client. No network call happens at
 // construction; a request is formed and sent only by a method call.
-function productionDeploymentId(payload: JsonObject): string | undefined {
+function productionDeploymentId(payload: JsonObject): string {
 	const targets = payload.targets;
-	if (!isJsonObject(targets)) return undefined;
+	if (!isJsonObject(targets))
+		throw new VercelProductionDeploymentMissingError();
 	const production = targets.production;
-	if (!isJsonObject(production)) return undefined;
+	if (!isJsonObject(production))
+		throw new VercelProductionDeploymentMissingError();
 	const id = production.id;
 	if (!isJsonString(id) || !/^dpl_[A-Za-z0-9_-]+$/u.test(id))
 		throw new Error(
@@ -1207,6 +1230,10 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			);
 			if (!response.ok)
 				throw await failure("promote deployment", response, secrets);
+			const confirmed = await readProject(reference);
+			const observed = productionDeploymentId(confirmed);
+			if (observed !== deploymentId)
+				throw new VercelPromotionUnconfirmedError(observed);
 		},
 		async deleteDeployment(deploymentId: string) {
 			const response = await send(

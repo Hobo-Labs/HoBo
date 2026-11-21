@@ -77,7 +77,9 @@ const code =
 const message =
 	asText(envelope?.message) ??
 	(envelope === undefined ? "command did not emit a valid JSON envelope" : "");
-console.log(`${label}: ${code}: ${redactRelayDeployText(message, 4096)}`);
+console.log(
+	`${label}: ${redactRelayDeployText(code, 4096)}: ${redactRelayDeployText(message, 4096)}`,
+);
 const stderr =
 	stderrPath !== "" && existsSync(stderrPath)
 		? readFileSync(stderrPath, "utf8")

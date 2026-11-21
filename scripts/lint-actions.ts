@@ -287,6 +287,135 @@ function lintTemplates(errors: string[], repoRoot: string): void {
 /** The one GitHub-hosted machine type; never `ubuntu-latest`. */
 const HOSTED_RUNS_ON = "ubuntu-24.04";
 
+const HOSTED_RELAY_JOBS = new Set([
+	"deploy-build",
+	"deploy",
+	"app-credentials",
+]);
+const RELAY_CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1";
+const RELAY_UPLOAD_SHA = "cf430e030ddbb5b0abf93d22962f4752f3646cd9";
+const RELAY_DOWNLOAD_SHA = "9000827ccba6bdab643e8b6fd33ac0654aef8333";
+const RELAY_DIGEST_ENV =
+	"HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}";
+
+function stepLines(block: readonly string[], at: number): readonly string[] {
+	let end = at + 1;
+	while (end < block.length && !/^ {6}- /u.test(block[end] ?? "")) end += 1;
+	return block.slice(at, end);
+}
+
+function attestedRelayCheckout(block: readonly string[]): boolean {
+	const at = block.findIndex(
+		(line) => line.trim() === `- uses: actions/checkout@${RELAY_CHECKOUT_SHA}`,
+	);
+	if (at < 0) return false;
+	const values = stepLines(block, at).map((line) => line.trim());
+	return (
+		values.filter((value) => value === "clean: true").length === 1 &&
+		!values.includes("clean: false") &&
+		values.includes("submodules: recursive") &&
+		values.includes("persist-credentials: false") &&
+		!values.some((value) => value.startsWith("path:"))
+	);
+}
+
+function attestedRelayPermissions(
+	block: readonly string[],
+	expected: readonly string[],
+): boolean {
+	const at = block.findIndex((line) => line === "    permissions:");
+	if (at < 0) return false;
+	const actual: string[] = [];
+	for (const line of block.slice(at + 1)) {
+		if (!/^ {6}\S/u.test(line)) break;
+		actual.push(line.trim());
+	}
+	return (
+		actual.length === expected.length &&
+		[...actual].sort().join(",") === [...expected].sort().join(",")
+	);
+}
+
+function attestedHostedRelayJob(
+	file: string,
+	jobLine: string,
+	block: readonly string[],
+	runsOn: string | undefined,
+): boolean {
+	const job = jobLine.trim().replace(/:$/u, "");
+	if (
+		file !== "relay-deploy.yml" ||
+		!HOSTED_RELAY_JOBS.has(job) ||
+		runsOn !== HOSTED_RUNS_ON ||
+		!attestedRelayCheckout(block) ||
+		block.some((line) => line.includes("route-runner")) ||
+		needsRoute(block)
+	)
+		return false;
+	const build = job === "deploy-build";
+	if (
+		!attestedRelayPermissions(
+			block,
+			build ? ["contents: read"] : ["contents: read", "id-token: write"],
+		)
+	)
+		return false;
+	if (build)
+		return (
+			block.some((line) => line.includes("release-freight-cli.mts pack")) &&
+			block.some(
+				(line) => line.trim() === "digest: ${{ steps.pack.outputs.digest }}",
+			) &&
+			block.some(
+				(line) =>
+					line.trim() === `uses: actions/upload-artifact@${RELAY_UPLOAD_SHA}`,
+			)
+		);
+	const restoreAt = block.findIndex(
+		(line) =>
+			line.includes("release-freight-cli.mts restore") &&
+			line.includes('--digest "$HOBO_RELAY_CLI_DIGEST"'),
+	);
+	const cliAt = block.findIndex((line) =>
+		line.includes("packages/hobo/dist/bin/hobo.js"),
+	);
+	return (
+		restoreAt >= 0 &&
+		cliAt >= 0 &&
+		restoreAt < cliAt &&
+		block.some(
+			(line) =>
+				line.trim() === `uses: actions/download-artifact@${RELAY_DOWNLOAD_SHA}`,
+		) &&
+		block.some((line) => line.trim() === RELAY_DIGEST_ENV)
+	);
+}
+
+function attestedHostedRelayFile(
+	file: string,
+	blockAt: readonly number[],
+	lines: readonly string[],
+): boolean {
+	if (file !== "relay-deploy.yml" || blockAt.length === 0) return false;
+	const hosted = blockAt
+		.map((start) => ({
+			jobLine: lines[start] ?? "",
+			block: lines.slice(
+				start,
+				blockAt[blockAt.indexOf(start) + 1] ?? lines.length,
+			),
+		}))
+		.filter(({ block }) =>
+			block.some((line) => /^\s*runs-on:\s*ubuntu-24\.04\s*$/u.test(line)),
+		);
+	return (
+		hosted.length > 0 &&
+		hosted.every(({ jobLine, block }) =>
+			attestedHostedRelayJob(file, jobLine, block, HOSTED_RUNS_ON),
+		)
+	);
+}
+
 /**
  * For the PR-only job that validates a deps image without promoting it. Use
  * the enrolled box when the fleet is selected, otherwise its selected fleet
@@ -756,12 +885,7 @@ function lintWorkflowYaml(
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
-		const hostedRelayJob =
-			file === "relay-deploy.yml" &&
-			(jobLine === "  deploy:" ||
-				jobLine === "  deploy-build:" ||
-				jobLine === "  app-credentials:") &&
-			runsOn === HOSTED_RUNS_ON;
+		const hostedRelayJob = attestedHostedRelayJob(file, jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -890,9 +1014,12 @@ function lintWorkflowYaml(
 	if (firstSetupNode !== -1 && !/node-version:\s*['"]?24['"]?/.test(text)) {
 		errors.push(`${file}: Node version must be explicit and set to 24`);
 	}
+	const hostedRelayFileAttested =
+		file !== "relay-deploy.yml" ||
+		attestedHostedRelayFile(file, jobStarts, lines);
 	if (
 		activeCiFiles.has(file) &&
-		file !== "relay-deploy.yml" &&
+		!hostedRelayFileAttested &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&

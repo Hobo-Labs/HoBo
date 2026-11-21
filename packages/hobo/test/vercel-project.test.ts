@@ -12,6 +12,8 @@ import {
 	VercelApiError,
 	type VercelFetch,
 	type VercelFetchResponse,
+	VercelProductionDeploymentMissingError,
+	VercelPromotionUnconfirmedError,
 	VercelTransportError,
 } from "../src/vercel-client.js";
 import {
@@ -1527,12 +1529,17 @@ describe("production promotion", () => {
 
 	it.each([
 		["no targets", { id: "prj_relay" }],
+		["a non-object targets", { id: "prj_relay", targets: [] }],
 		["no production target", { id: "prj_relay", targets: {} }],
 		[
 			"a null production target",
 			{ id: "prj_relay", targets: { production: null } },
 		],
-	])("reads no current production deployment when the project has %s", async (_case, body) => {
+		[
+			"a non-object production target",
+			{ id: "prj_relay", targets: { production: "dpl_current" } },
+		],
+	])("refuses to read a current production deployment when the project has %s", async (_case, body) => {
 		const transport = scripted({
 			"GET /v9/projects/hobo-ci": [reply(200, body)],
 		});
@@ -1540,9 +1547,13 @@ describe("production promotion", () => {
 			token: "test-token",
 			fetch: transport.fetch,
 		});
-		await expect(
-			client.getProductionDeploymentId("hobo-ci"),
-		).resolves.toBeUndefined();
+		const pending = client.getProductionDeploymentId("hobo-ci");
+		await expect(pending).rejects.toBeInstanceOf(
+			VercelProductionDeploymentMissingError,
+		);
+		await expect(pending).rejects.toMatchObject({
+			name: "VercelProductionDeploymentMissingError",
+		});
 		expect(transport.routes()).toEqual(["GET /v9/projects/hobo-ci"]);
 	});
 
@@ -1564,12 +1575,16 @@ describe("production promotion", () => {
 		);
 	});
 
-	it("promotes with the verb and path Vercel documents: POST /v10/projects/{id}/promote/{deploymentId}", async () => {
+	it("promotes with the verb and path Vercel documents, then confirms the read-back", async () => {
 		const transport = scripted({
 			"GET /v9/projects/hobo-ci": [
 				reply(200, {
 					id: "prj_relay",
 					targets: { production: { id: "dpl_current" } },
+				}),
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_123" } },
 				}),
 			],
 			"POST /v10/projects/prj_relay/promote/dpl_123": [reply(202, {})],
@@ -1584,6 +1599,39 @@ describe("production promotion", () => {
 		expect(transport.routes()).toEqual([
 			"GET /v9/projects/hobo-ci",
 			"POST /v10/projects/prj_relay/promote/dpl_123",
+			"GET /v9/projects/hobo-ci",
+		]);
+	});
+
+	it("refuses a promotion whose read-back still names the previous deployment", async () => {
+		const transport = scripted({
+			"GET /v9/projects/hobo-ci": [
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+				reply(200, {
+					id: "prj_relay",
+					targets: { production: { id: "dpl_current" } },
+				}),
+			],
+			"POST /v10/projects/prj_relay/promote/dpl_123": [reply(202, {})],
+		});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		const pending = client.promoteDeployment("hobo-ci", "dpl_123");
+		await expect(pending).rejects.toBeInstanceOf(
+			VercelPromotionUnconfirmedError,
+		);
+		await expect(pending).rejects.toThrow(
+			"vercel-client: promotion remains unconfirmed",
+		);
+		expect(transport.routes()).toEqual([
+			"GET /v9/projects/hobo-ci",
+			"POST /v10/projects/prj_relay/promote/dpl_123",
+			"GET /v9/projects/hobo-ci",
 		]);
 	});
 

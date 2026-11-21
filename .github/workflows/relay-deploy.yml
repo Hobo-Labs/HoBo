@@ -19,7 +19,10 @@ name: HoBo relay deploy
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
 # reads in production. A required deploy fails until that binding exists and is
-# readable.
+# readable. While the binding names no deploy project (the fallback period),
+# a relay push skips the CD delivery with a recorded notice — Vercel's Git
+# integration still deploys the relay — and a manual run fails naming the
+# cutover (packages/ci-vercel/README.md, "Merge cutover").
 
 on:
   push:
@@ -76,7 +79,10 @@ jobs:
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "${BEFORE:-}" ] \
             && ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            git fetch --no-tags --depth=1 origin "$BEFORE" || true
+            git fetch --no-tags --depth=1 origin "$BEFORE" || {
+              echo "::error title=Relay deploy gate::cannot fetch base commit $BEFORE"
+              exit 1
+            }
           fi
           node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-gate.mts \
             --event "$GITHUB_EVENT_NAME" --from "${BEFORE:-}" --to "$GITHUB_SHA" \
@@ -134,7 +140,10 @@ jobs:
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "${BEFORE:-}" ] \
             && ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            git fetch --no-tags --depth=1 origin "$BEFORE" || true
+            git fetch --no-tags --depth=1 origin "$BEFORE" || {
+              echo "::error title=Relay deploy gate::cannot fetch base commit $BEFORE"
+              exit 1
+            }
           fi
           node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-gate.mts \
             --event "$GITHUB_EVENT_NAME" --from "${BEFORE:-}" --to "$GITHUB_SHA" \
@@ -194,6 +203,10 @@ jobs:
           HOBO_CI_RELAY_STAGED_PRODUCTION: "true"
         run: |
           set -euo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error title=Relay deploy::OIDC mint unavailable; protected preview probe requires id-token: write"
+            exit 1
+          fi
           for target in preview production; do
             status=0
             node packages/hobo/dist/bin/hobo.js ci deploy \

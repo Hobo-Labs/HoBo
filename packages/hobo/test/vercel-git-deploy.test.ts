@@ -181,6 +181,17 @@ describe("the Vercel git-deploy pact (pact-backed transport, no network)", () =>
 				"create a production deployment from a GitHub ref pinned to a commit",
 			),
 		]);
+		expect(Object.keys(at(vercel.calls, 0).body ?? {})).toEqual([
+			"name",
+			"project",
+			"gitSource",
+			"target",
+			"autoAssignCustomDomains",
+		]);
+		expect(at(vercel.calls, 0).body).toMatchObject({
+			target: "production",
+			autoAssignCustomDomains: false,
+		});
 		expect(vercel.fidelityViolations()).toEqual([]);
 		expect(outputs).toMatchObject({
 			deploymentId: "dpl_production",
