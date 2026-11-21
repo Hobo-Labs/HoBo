@@ -4,6 +4,19 @@
 import type { DiscoveryReport, DiscoveredBinding } from "./code-discovery.mts";
 import { pickPrimaryCommand } from "./code-discovery.mts";
 
+function projectPath(value: string | undefined): string {
+	const relative = (value ?? "").split("\\").join("/");
+	if (
+		relative.startsWith("/") ||
+		/^[a-zA-Z]:/.test(relative) ||
+		/[\x00-\x1f\x7f]/.test(relative) ||
+		relative.split("/").some((part) => part === "..")
+	) {
+		throw new Error("projectDir must be relative to the repository");
+	}
+	return relative.split("/").filter((part) => part && part !== ".").join("/");
+}
+
 export function generateWorldTs(featureId: string): string {
 	return `/**
  * OptimizeXP World for feature \`${featureId}\`.
@@ -45,7 +58,9 @@ export function generateImplementationsTs(input: {
 	featureId: string;
 	primary: DiscoveredBinding | null;
 	report: DiscoveryReport;
+	projectDir?: string;
 }): string {
+	const project = projectPath(input.projectDir);
 	const cmd = input.primary?.command
 		? JSON.stringify(input.primary.command)
 		: "null";
@@ -60,9 +75,39 @@ export function generateImplementationsTs(input: {
  * Agent may refine; do not call live third-party services from default tests.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { OptimizexpWorld } from "./world.ts";
+
+const featureDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/** Find the checkout independently of the directory used to invoke Cucumber. */
+function checkoutRoot(): string {
+  let directory = featureDirectory;
+  for (;;) {
+    if (existsSync(path.join(directory, ".git"))) return realpathSync(directory);
+    const parent = path.dirname(directory);
+    if (parent === directory) return realpathSync(process.cwd());
+    directory = parent;
+  }
+}
+
+/** Refuse a moved or redirected project before executing its command. */
+function commandDirectory(): string {
+  const root = checkoutRoot();
+  const project = path.resolve(root, ${JSON.stringify(project)});
+  const relative = path.relative(root, project);
+  const actual = realpathSync(project);
+  const samePath = process.platform === "win32"
+    ? actual.toLowerCase() === project.toLowerCase()
+    : actual === project;
+  if (relative === ".." || relative.startsWith(\`..\${path.sep}\`) || path.isAbsolute(relative) ||
+      !samePath || !statSync(project).isDirectory()) {
+    throw new Error("The generated binding's project directory is no longer valid");
+  }
+  return project;
+}
 
 /** Discovery snapshot — see discovery.json for full report. */
 export const DISCOVERY_PRIMARY = {
@@ -89,16 +134,13 @@ export function setFeatureContext(world: OptimizexpWorld, featureId: string): vo
 
 export function onCriticalPath(world: OptimizexpWorld): void {
   // Prefer asserting local artifacts / seed presence over network.
+  const feature = path.join(path.dirname(featureDirectory), world.featureId);
   const seed = path.join(
-    process.cwd(),
-    ".optimizexp/features",
-    world.featureId,
+    feature,
     "SEED.md",
   );
   const featureJson = path.join(
-    process.cwd(),
-    ".optimizexp/features",
-    world.featureId,
+    feature,
     "feature.json",
   );
   if (!existsSync(seed) && !existsSync(featureJson)) {
@@ -123,8 +165,8 @@ export function exerciseSurface(world: OptimizexpWorld): void {
     return;
   }
   world.lastCommand = command;
-  const r = spawnSync("bash", ["-lc", command], {
-    cwd: process.cwd(),
+  const r = spawnSync("bash", ["-c", command], {
+    cwd: commandDirectory(),
     encoding: "utf8",
     timeout: 120_000,
     maxBuffer: 4 * 1024 * 1024,
@@ -371,6 +413,9 @@ ${
 		: "- None — implementations are stubs until a command/path is discovered or filled by the agent."
 }
 
+Commands run in a non-login Bash shell with the invoking process's environment.
+Login profiles are not loaded, so set \`PATH\` and other needed variables before running.
+
 ## Run
 
 \`\`\`bash
@@ -397,6 +442,8 @@ node --import tsx node_modules/@cucumber/cucumber/bin/cucumber.js \\
 export function buildImplementationsFromDiscovery(input: {
 	featureId: string;
 	report: DiscoveryReport;
+	primaryOverride?: DiscoveredBinding | null;
+	projectDir?: string;
 }): {
 	implementations: string;
 	bindings: string;
@@ -405,7 +452,7 @@ export function buildImplementationsFromDiscovery(input: {
 	stepsReadme: string;
 	primary: DiscoveredBinding | null;
 } {
-	const primary = pickPrimaryCommand(input.report);
+	const primary = input.primaryOverride === undefined ? pickPrimaryCommand(input.report) : input.primaryOverride;
 	return {
 		primary,
 		world: generateWorldTs(input.featureId),
@@ -413,6 +460,7 @@ export function buildImplementationsFromDiscovery(input: {
 			featureId: input.featureId,
 			primary,
 			report: input.report,
+			projectDir: input.projectDir,
 		}),
 		bindings: generateBindingsStepsTs(input.featureId),
 		vitest: generateVitestStub({
