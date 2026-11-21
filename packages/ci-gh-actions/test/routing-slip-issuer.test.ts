@@ -454,11 +454,21 @@ describe("the budget", () => {
 describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 	const root = fileURLToPath(new URL("../../..", import.meta.url));
 
-	it("reads runnerRouting from the checkout, and it equals the code's defaults", () => {
+	it("reads runnerRouting from the checkout; it defaults but for the agent37 pool", () => {
 		const read = readBoxRoutingPolicy(root);
 		expect(read.source).toBe("committed");
-		expect(read.policy).toEqual(DEFAULT_RUNNER_ROUTING);
-		expect(DEFAULT_RUNNER_ROUTING.externalPools).toEqual([]);
+		const { externalPools: committedPools, ...committed } = read.policy;
+		const { externalPools: fallbackPools, ...fallback } =
+			DEFAULT_RUNNER_ROUTING;
+		expect(committed).toEqual(fallback);
+		expect(fallbackPools).toEqual([]);
+		expect(committedPools).toEqual([
+			{
+				labels: ["hobo-agent37"],
+				runnerNamePrefix: "hobo-a37-",
+				maxRunners: 4,
+			},
+		]);
 	});
 
 	it("enables an external pool only through the committed project policy", () => {

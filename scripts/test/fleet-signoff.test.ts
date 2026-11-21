@@ -578,14 +578,32 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), []);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: true,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: true,
+			},
+		];
+		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), agent37);
 		const arc = source.environments.ci.policy.providers.find(
 			(entry: { id: string }) => entry.id === "hostinger-arc",
 		);
 		arc.enabled = true;
 		source.integrations[0].enabled = true;
 		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
-			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: true },
+			{
+				id: "ci:hostinger-arc",
+				runsOn: "hobo-arc",
+				observable: true,
+			},
+			...agent37,
 			{
 				id: "integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
 				runsOn: "blacksmith-2vcpu-ubuntu-2404",
@@ -594,9 +612,10 @@ describe("local signoff in the fleet decision", () => {
 		]);
 		delete arc.enabled;
 		source.integrations[0].enabled = false;
-		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), []);
+		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), agent37);
 		delete source.integrations[0].enabled;
 		assert.deepEqual(readFleetOverflowPolicy(JSON.stringify(source)), [
+			...agent37,
 			{
 				id: "integration:blacksmith:blacksmith-2vcpu-ubuntu-2404",
 				runsOn: "blacksmith-2vcpu-ubuntu-2404",
@@ -649,12 +668,26 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: true,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: true,
+			},
+		];
 		const arc = source.environments.ci.policy.providers[3];
 		arc.enabled = true;
 		const scaleSet = arc.scaleSet;
 		const read = () => readFleetOverflowPolicy(JSON.stringify(source));
 		assert.deepEqual(read(), [
 			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: true },
+			...agent37,
 		]);
 		for (const malformed of [
 			{ ...scaleSet, garbage: true },
@@ -682,6 +715,7 @@ describe("local signoff in the fleet decision", () => {
 		arc.engine = { name: "dagger-engine" };
 		assert.deepEqual(read(), [
 			{ id: "ci:hostinger-arc", runsOn: "hobo-arc", observable: false },
+			...agent37,
 		]);
 	});
 
@@ -689,6 +723,19 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: true,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: true,
+			},
+		];
 		const hosted = source.environments.ci.policy.providers[2];
 		hosted.enabled = true;
 		hosted.runsOn = "ubuntu-22.04";
@@ -700,6 +747,7 @@ describe("local signoff in the fleet decision", () => {
 				observable: true,
 				backend: "github",
 			},
+			...agent37,
 		]);
 		assert.ok(overflow);
 		assert.deepEqual(
@@ -708,6 +756,7 @@ describe("local signoff in the fleet decision", () => {
 					waiting("hobo"),
 					picked("hobo-local-host"),
 					picked("ubuntu-22.04"),
+					waiting("hobo-agent37"),
 				]),
 				{ overflow },
 			),
@@ -722,6 +771,7 @@ describe("local signoff in the fleet decision", () => {
 				observable: true,
 				backend: "github",
 			},
+			...agent37,
 		]);
 	});
 
@@ -729,6 +779,19 @@ describe("local signoff in the fleet decision", () => {
 		const source = JSON.parse(
 			readFileSync(new URL("../../.hobo/ci.json", import.meta.url), "utf8"),
 		);
+		const agent37 = [
+			{
+				id: "ci:agent37-runners",
+				runsOn: "hobo-agent37",
+				observable: true,
+				backend: "agent37",
+			},
+			{
+				id: "external-pool:0:hobo-agent37",
+				runsOn: "hobo-agent37",
+				observable: true,
+			},
+		];
 		const arc = source.environments.ci.policy.providers[3];
 		arc.enabled = true;
 		arc.runsOn = "ubuntu-24.04";
@@ -736,6 +799,7 @@ describe("local signoff in the fleet decision", () => {
 		assert.ok(overflow);
 		assert.deepEqual(overflow, [
 			{ id: "ci:hostinger-arc", runsOn: "ubuntu-24.04", observable: true },
+			...agent37,
 		]);
 		assert.deepEqual(
 			await plan(queue([waiting("hobo"), waiting("hobo-local-host")]), {
@@ -1527,14 +1591,24 @@ exec /usr/bin/git "$@"
 				reason: "availability-unknown",
 			});
 			const queued = JSON.parse(readFileSync(jobs, "utf8"));
-			queued.jobs.push({
-				run_id: 123,
-				status: "queued",
-				labels: ["hobo-arc"],
-				created_at: at(500),
-				runner_name: null,
-				started_at: null,
-			});
+			queued.jobs.push(
+				{
+					run_id: 123,
+					status: "queued",
+					labels: ["hobo-arc"],
+					created_at: at(500),
+					runner_name: null,
+					started_at: null,
+				},
+				{
+					run_id: 123,
+					status: "queued",
+					labels: ["hobo-agent37"],
+					created_at: at(500),
+					runner_name: null,
+					started_at: null,
+				},
+			);
 			writeFileSync(jobs, JSON.stringify(queued));
 			assert.deepEqual(
 				await observeFleetVerification({
@@ -1673,6 +1747,10 @@ exec /usr/bin/git "$@"
 			rmSync(join(repo, "dirty.txt"));
 			// A silent queue needs independently observed outages for both enabled tiers.
 			writeFileSync(jobs, JSON.stringify({ jobs: [] }));
+			const agent37Assertions = [
+				"ci:agent37-runners",
+				"external-pool:0:hobo-agent37",
+			];
 			const silent = (
 				runnerUnavailable: string[],
 				policyCurrent = true,
@@ -1685,6 +1763,7 @@ exec /usr/bin/git "$@"
 					localSignoffEnabled: true,
 					githubUnavailable: true,
 					policyCurrent,
+					providerUnavailable: agent37Assertions,
 					runnerUnavailable,
 				});
 			assert.deepEqual(await silent([]), {
@@ -1741,6 +1820,7 @@ exec /usr/bin/git "$@"
 				"--github-unavailable",
 				"--runner-unavailable=fleet",
 				"--runner-unavailable=local",
+				...agent37Assertions.map((id) => `--provider-unavailable=${id}`),
 			]);
 			assert.match(
 				assertedRunners.stdout,
@@ -1751,6 +1831,7 @@ exec /usr/bin/git "$@"
 				"--base=origin/many-policy",
 				"--github-unavailable",
 				"--runner-unavailable=fleet",
+				"--provider-unavailable=external-pool:0:hobo-agent37",
 				...Array.from(
 					{ length: 100 },
 					(_, index) => `--provider-unavailable=ci:provider-${index}`,
@@ -1774,6 +1855,7 @@ exec /usr/bin/git "$@"
 				"--github-unavailable",
 				"--runner-unavailable=fleet",
 				"--runner-unavailable=local",
+				...agent37Assertions.map((id) => `--provider-unavailable=${id}`),
 			];
 			const jobBase = {
 				run_id: 123,

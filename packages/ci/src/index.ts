@@ -35,6 +35,10 @@ export {
 } from "./execution.js";
 export * from "./fleet/index.js";
 export {
+	type Agent37Capacity,
+	type Agent37PoolObservation,
+	type Agent37PoolPolicy,
+	agent37Capacity,
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetBackend,
 	type FleetMember,
