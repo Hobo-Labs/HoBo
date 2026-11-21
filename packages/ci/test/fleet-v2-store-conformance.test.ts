@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import fc from "fast-check";
 import pg from "pg";
 import {
 	GenericContainer,
@@ -390,6 +391,74 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			});
 		});
 
+		it("authorizes at most one slot racing for the same actual job", async () => {
+			const store = current();
+			await store.putCapacityGroup(
+				parseCapacityGroup(
+					JSON.stringify({
+						id: "device-1",
+						accountId: "hobo-labs",
+						approvedUnits: 2,
+						reservedUnits: 0,
+						seq: 0,
+						state: "active",
+					}),
+				),
+			);
+			await store.intake(demand("1", "webhook", "webhook-1"));
+			await store.intake(demand("2", "webhook", "webhook-2"));
+			const first = reservation(parsedKey("1"), "first-start", 1);
+			const second = reservation(parsedKey("2"), "second-start", 2);
+			for (const reserved of [first, second]) {
+				await store.reserveCapacity(reserved.input);
+				await store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"reserved",
+					"provisioning",
+				);
+				await store.transitionRunnerSlot(
+					reserved.input.slot.id,
+					"provisioning",
+					"registered",
+					`runner-${reserved.input.slot.id}`,
+				);
+			}
+			const attempts = [first, second].map((reserved, index) =>
+				parseStartBindingInput({
+					slotId: reserved.input.slot.id,
+					claimId: `race-claim-${index}`,
+					key: githubKey("1"),
+					bindingSecret: reserved.bindingSecret,
+					assignment: {
+						verified: true,
+						accountId: "hobo-labs",
+						runnerName: reserved.input.slot.runnerName,
+						profileId: "trusted-linux-x64",
+					},
+				}),
+			);
+			const results = await Promise.allSettled(
+				attempts.map((attempt) => store.bindStart(attempt)),
+			);
+			expect(
+				results.filter((result) => result.status === "fulfilled"),
+			).toHaveLength(1);
+			expect(
+				results.filter((result) => result.status === "rejected"),
+			).toHaveLength(1);
+			expect(
+				(await store.events()).filter(
+					(event) => event.type === FleetEventType.EXECUTION_START_AUTHORIZED,
+				),
+			).toHaveLength(1);
+			const winner = results.findIndex(
+				(result) => result.status === "fulfilled",
+			);
+			const winningAttempt = attempts[winner];
+			if (!winningAttempt) throw new Error("missing winning attempt");
+			expect((await store.bindStart(winningAttempt)).idempotent).toBe(true);
+		});
+
 		it("settles duplicate completion and releases capacity once", async () => {
 			const store = current();
 			await store.intake(demand("1", "webhook", "webhook-1"));
@@ -421,6 +490,58 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			const authorized = await store.bindStart(binding);
 			expect(authorized.idempotent).toBe(false);
 			expect((await store.bindStart(binding)).idempotent).toBe(true);
+			for (const assignment of [
+				{ ...binding.assignment, runnerName: "hobo-other-slot" },
+				{ ...binding.assignment, profileId: "other-profile" },
+			]) {
+				await expect(
+					store.bindStart(
+						parseStartBindingInput({
+							...binding,
+							key: githubKey("1"),
+							assignment,
+						}),
+					),
+				).rejects.toMatchObject({
+					code: FleetRejectionCode.ASSIGNMENT_MISMATCH,
+				});
+			}
+			const eventsBeforeRetries = await store.events();
+			await fc.assert(
+				fc.asyncProperty(
+					fc.boolean(),
+					fc.boolean(),
+					fc.boolean(),
+					fc.boolean(),
+					async (sameRunner, sameProfile, sameSecret, sameClaim) => {
+						const retry = parseStartBindingInput({
+							...binding,
+							key: githubKey("1"),
+							claimId: sameClaim ? binding.claimId : "another-claim",
+							bindingSecret: sameSecret
+								? binding.bindingSecret
+								: "x".repeat(64),
+							assignment: {
+								...binding.assignment,
+								runnerName: sameRunner
+									? binding.assignment.runnerName
+									: "other-runner",
+								profileId: sameProfile
+									? binding.assignment.profileId
+									: "other-profile",
+							},
+						});
+						const result = store.bindStart(retry);
+						if (sameRunner && sameProfile && sameSecret && sameClaim) {
+							expect((await result).idempotent).toBe(true);
+						} else {
+							await expect(result).rejects.toBeInstanceOf(FleetRejection);
+						}
+					},
+				),
+				{ seed: 614449, numRuns: 150 },
+			);
+			expect(await store.events()).toEqual(eventsBeforeRetries);
 			const first = await store.completeExecution({
 				claimId: "claim-1",
 				state: "completed",
@@ -433,6 +554,9 @@ function storeContract(name: string, open: () => Promise<StoreHandle>): void {
 			});
 			expect(first).toMatchObject({ settled: true, capacityReleased: true });
 			expect(second).toMatchObject({ settled: false, capacityReleased: false });
+			await expect(store.bindStart(binding)).rejects.toMatchObject({
+				code: FleetRejectionCode.EXECUTION_ALREADY_CLAIMED,
+			});
 			expect(await store.capacityGroup("device-1")).toMatchObject({
 				reservedUnits: 0,
 				seq: 2,
