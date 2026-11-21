@@ -70,7 +70,7 @@ export const CiVercelProviderSchema = z
 	.meta({ id: "VercelProvider" });
 
 const agent37Hostname =
-	/^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u;
+	/^(?=.{1,253}$)(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|\*\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){2,}[a-z]{2,63})$/u;
 const agent37Disk = z.number().int().min(1).max(1024);
 const agent37Size = (cpu: 2 | 4 | 8, memory: 4 | 8 | 16 | 32 | 64) =>
 	z

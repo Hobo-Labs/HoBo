@@ -728,6 +728,7 @@ describe("isolated runner lifecycle", () => {
 			state: "completed",
 			sandboxStage: "stopped",
 		});
+		expect(f.read().result).toBeUndefined();
 		expect(f.pending.map((job) => job.id)).toEqual([11]);
 	});
 	it("retains budget if final usage cannot be confirmed after stopping", async () => {

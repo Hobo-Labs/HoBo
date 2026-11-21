@@ -278,6 +278,7 @@ describe("closed provider shapes", () => {
 		"desired-policy-agent37-network-duplicate",
 		"desired-policy-agent37-network-loopback",
 		"desired-policy-agent37-network-bare-wildcard",
+		"desired-policy-agent37-network-public-suffix",
 		"desired-policy-agent37-memory-ceiling",
 	])("rejects shared Agent37 fixture %s through Zod and project parsing", (name) => {
 		const input = agent37Provider("invalid", name);

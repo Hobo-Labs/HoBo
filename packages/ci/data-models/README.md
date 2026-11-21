@@ -28,7 +28,8 @@ Dagger `engine`, or Agent37 `pool`; `location` is vercel-only. CUE and
 CPU/memory/disk shapes, region/type compatibility, immutable template revisions,
 idle TTL, the 32 GB memory ceiling and its explicit opt-in, 1–100 unique
 lowercase DNS network hostnames or leading-label wildcards (never IP addresses
-or bare public-suffix wildcards), labels, and monthly budget/create limits.
+or wildcard bases with fewer than three DNS labels, including `*.com`, `*.co.uk`,
+and `*.github.io`), labels, and monthly budget/create limits.
 Agent37 offers pair with `backend: "gh-actions"`. Existing kubernetes fixtures
 cover the ARC/Dagger rules.
 

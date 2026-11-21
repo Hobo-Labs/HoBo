@@ -90,6 +90,8 @@ describe("Agent37 network allowlists", () => {
 		"*",
 		"*.",
 		"*.com",
+		"*.co.uk",
+		"*.github.io",
 		"GitHub.com",
 		"127.0.0.1",
 	])("rejects non-hostname or overly broad entry %s", (entry) => {
