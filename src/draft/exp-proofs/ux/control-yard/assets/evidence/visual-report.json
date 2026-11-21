@@ -1,17 +1,23 @@
 {
-  "gameUrl": "http://127.0.0.1:33897/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36095",
-  "apiUrl": "http://127.0.0.1:36095",
+  "gameUrl": "http://127.0.0.1:37757/?test=1&seed=42&api=http%3A%2F%2F127.0.0.1%3A36805",
+  "apiUrl": "http://127.0.0.1:36805",
   "checks": [
     "PASS test seam ready",
+    "PASS initial Bo facing matches its source — bo.walk.east, facing=east (rendered-walk)",
     "PASS connection authorized present — conn=1",
     "PASS traffic rate > 0 — traffic=0.4",
     "PASS bootstrap inactive",
-    "PASS imgdiff boot — baseline created",
-    "PASS canvas renders a populated scene — colours=2925 dominant=20.4%",
+    "PASS imgdiff boot — match",
+    "PASS sampled Bo facing matches its source — bo.walk.east, facing=east (rendered-walk)",
+    "PASS canvas dark ink near Bo — dark=5009",
     "PASS no console errors",
     "PASS connection bay zone — zone=connectionBay",
     "PASS sheet opens — kind=connection.create",
-    "PASS imgdiff connection bay — baseline created",
+    "PASS imgdiff connection bay — accepted image drift (RMS=13.91 ≤ 25)",
+    "PASS connection created and sheet closed — default optional alias omitted",
+    "PASS anim harness bo.idle — bo.idle",
+    "PASS anim harness bo.walk.east — bo.walk.east",
+    "PASS anim harness bo.walk.west — bo.walk.west",
     "PASS policyBoard zone — zone=policyBoard",
     "PASS costBooth zone — zone=costBooth",
     "PASS errorBunker zone — zone=errorBunker"
@@ -23,9 +29,10 @@
     "playwright-testing"
   ],
   "recordings": [
-    "/home/codex/.herdr/worktrees/hobo/worktree-rapid-meadow-3f6e/packages/control-yard/public/shots/recordings/01-yard-loop.mp4",
-    "/home/codex/.herdr/worktrees/hobo/worktree-rapid-meadow-3f6e/packages/control-yard/public/shots/recordings/02-connection-sheet.mp4",
-    "/home/codex/.herdr/worktrees/hobo/worktree-rapid-meadow-3f6e/packages/control-yard/public/shots/recordings/04-rail-cost-doctor.mp4"
+    "recordings/01-yard-loop.mp4",
+    "recordings/02-connection-sheet.mp4",
+    "recordings/03-bo-walk-east-west.mp4",
+    "recordings/04-rail-cost-doctor.mp4"
   ],
   "initialState": {
     "scene": "Yard",
@@ -33,12 +40,13 @@
     "seed": 42,
     "frameCount": 8,
     "zone": "activeRailTrack",
-    "hoveredZone": null,
     "bo": {
-      "x": 264,
-      "y": 576,
-      "state": "walking",
-      "facing": "west"
+      "x": 211,
+      "y": 589,
+      "animationId": "bo.walk.east",
+      "facing": "east",
+      "facingSource": "rendered-walk",
+      "projectedFacing": "west"
     },
     "occupyMode": "occupying",
     "connCount": 1,
@@ -47,41 +55,17 @@
     "sheetOpen": false,
     "sheetKind": null,
     "seq": 4,
-    "hazards": [],
-    "waybillCount": 0,
-    "highball": true,
-    "theme": "day",
-    "reducedMotion": false,
-    "scenario": null,
-    "tick": 0,
-    "entities": [
-      {
-        "id": "operator",
-        "sprite": "operator.walking",
-        "x": 528,
-        "y": 528
-      }
-    ],
-    "recentFx": [
-      {
-        "fx": "highball",
-        "atFrame": 0
-      }
-    ],
-    "world": {
-      "campCount": 0,
-      "characterCount": 0,
-      "demo": false
-    }
+    "hazards": []
   },
   "pixelSample": {
-    "colours": 2925,
-    "dominant": 0.2041,
+    "dark": 5009,
     "bo": {
-      "x": 533,
-      "y": 524,
-      "state": "walking",
-      "facing": "west"
+      "x": 579,
+      "y": 375,
+      "animationId": "bo.walk.east",
+      "facing": "east",
+      "facingSource": "rendered-walk",
+      "projectedFacing": "west"
     }
   },
   "consoleErrors": []

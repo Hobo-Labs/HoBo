@@ -104,7 +104,6 @@ interface ExecResultFailureBase {
 	sandbox: ExecSandboxContext;
 }
 
-/** Reconciliation-required failures cannot be retried or compensated. */
 export type ExecResultFailed = ExecResultFailureBase &
 	(
 		| {

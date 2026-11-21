@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { types } from "node:util";
 import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import { budgetScopeIdentityKey } from "@hobo/core";
 import { stableHash } from "@hobo/pricing";
@@ -26,6 +27,8 @@ import {
 	type BudgetFenceTrust,
 	createBudgetFenceVerifier,
 } from "./budget-fence-settlement.js";
+
+const currentBudgetFenceSettlementPayloadVersion = "v2";
 
 export type {
 	BudgetEntitlement,
@@ -121,6 +124,40 @@ function boundedName(value: string, limit = 200): boolean {
 	);
 }
 
+function validEntitlementKind(kind: string): boolean {
+	return ["allowance", "credit", "commitment"].includes(kind);
+}
+
+type EntitlementScope = { kind: string; bucketId: string; unit: string };
+
+function persistedEntitlementKind(kind: string): string {
+	return kind === "" ? "allowance" : kind;
+}
+
+function entitlementScopeKey(row: EntitlementScope): string {
+	return JSON.stringify([
+		persistedEntitlementKind(row.kind),
+		row.bucketId,
+		row.unit,
+	]);
+}
+
+function sameEntitlementScope(
+	left: EntitlementScope,
+	right: EntitlementScope,
+): boolean {
+	return entitlementScopeKey(left) === entitlementScopeKey(right);
+}
+
+function normalizeLegacyBudgetSnapshot(
+	snapshot: BudgetLedgerSnapshot,
+): BudgetLedgerSnapshot {
+	const normalized = clone(BudgetLedgerSnapshotSchema, snapshot);
+	for (const entitlement of normalized.entitlements)
+		entitlement.kind = persistedEntitlementKind(entitlement.kind);
+	return normalized;
+}
+
 function unboundedFingerprint(input: {
 	requestDigest: string;
 	inventoryHash: string;
@@ -176,25 +213,102 @@ export interface IacPricedSettlementTrust {
 	}): boolean;
 }
 
-/** Capture the verifier once; replacing a host object's method cannot weaken trust. */
+const applyTrust = Reflect.apply;
+const trustGetPrototype = Object.getPrototypeOf;
+const trustGetDescriptor = Object.getOwnPropertyDescriptor;
+const trustHasOwn = Object.hasOwn;
+const isProxyTrust = types.isProxy;
+const isNativePromise = types.isPromise;
+const nativePromise = Promise;
+const nativePromisePrototype = Promise.prototype;
+const nativePromiseThen = Promise.prototype.then;
+const initialPromiseSpecies = trustGetDescriptor(Promise, Symbol.species);
+const nativePromiseSpecies =
+	initialPromiseSpecies !== undefined &&
+	trustHasOwn(initialPromiseSpecies, "get")
+		? initialPromiseSpecies.get
+		: undefined;
+
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof -- SAFETY: host verifier results and callable ports cross a runtime authority boundary. */
+function synchronousVerdict(value: unknown): boolean {
+	if (value === true) return true;
+	try {
+		if (isProxyTrust(value) || !isNativePromise(value)) return false;
+		const constructorField = trustGetDescriptor(
+			nativePromisePrototype,
+			"constructor",
+		);
+		const species = trustGetDescriptor(nativePromise, Symbol.species);
+		if (
+			trustGetPrototype(value) === nativePromisePrototype &&
+			trustGetDescriptor(value, "constructor") === undefined &&
+			constructorField !== undefined &&
+			trustHasOwn(constructorField, "value") &&
+			constructorField.value === nativePromise &&
+			nativePromiseSpecies !== undefined &&
+			species !== undefined &&
+			trustHasOwn(species, "get") &&
+			species.get === nativePromiseSpecies
+		)
+			void applyTrust(nativePromiseThen, value, [() => {}, () => {}]);
+	} catch {
+		return false;
+	}
+	return false;
+}
+
+function trustCallback<T extends object, Key extends keyof T>(
+	trust: T,
+	key: Key,
+): T[Key] {
+	if (
+		typeof trust !== "object" ||
+		trust === null ||
+		isProxyTrust(trust) ||
+		Array.isArray(trust)
+	)
+		throw new TypeError("invalid financial trust authority");
+	const field = trustGetDescriptor(trust, key);
+	if (
+		field === undefined ||
+		!trustHasOwn(field, "value") ||
+		!field.enumerable ||
+		typeof field.value !== "function" ||
+		isProxyTrust(field.value)
+	)
+		throw new TypeError("financial trust callbacks must be own data functions");
+	return field.value;
+}
+/* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof */
+
 export function captureIacPricedSettlementTrust(
 	trust: IacPricedSettlementTrust | undefined,
 ): IacPricedSettlementTrust | undefined {
-	if (!trust) return undefined;
-	return Object.freeze({ verify: trust.verify.bind(trust) });
+	if (trust === undefined) return undefined;
+	const verify = trustCallback(trust, "verify");
+	const captured: IacPricedSettlementTrust = {
+		verify: (input) =>
+			synchronousVerdict(applyTrust(verify, captured, [input])),
+	};
+	return Object.freeze(captured);
 }
 
-/** Enroll verifier functions once. Mutable policy data may still be consulted by
- * the host so revocation is observed; replacing a method cannot weaken trust. */
 export function captureIacUnpricedScopeTrust(
 	trust: IacUnpricedScopeTrust | undefined,
 ): IacUnpricedScopeTrust | undefined {
-	if (!trust) return undefined;
-	return Object.freeze({
-		verify: trust.verify.bind(trust),
-		isCurrent: trust.isCurrent.bind(trust),
-		settlement: trust.settlement.bind(trust),
-	});
+	if (trust === undefined) return undefined;
+	const verify = trustCallback(trust, "verify");
+	const isCurrent = trustCallback(trust, "isCurrent");
+	const settlement = trustCallback(trust, "settlement");
+	const captured: IacUnpricedScopeTrust = {
+		verify: (proof) =>
+			synchronousVerdict(applyTrust(verify, captured, [proof])),
+		isCurrent: (proof) =>
+			synchronousVerdict(applyTrust(isCurrent, captured, [proof])),
+		settlement: (input) =>
+			synchronousVerdict(applyTrust(settlement, captured, [input])),
+	};
+	return Object.freeze(captured);
 }
 
 function validScopeProof(
@@ -281,7 +395,7 @@ export function validateBudgetSnapshot(
 	if (
 		new Set(snapshot.providerAccounts.map((row) => row.providerAccountId))
 			.size !== snapshot.providerAccounts.length ||
-		new Set(snapshot.entitlements.map((row) => row.bucketId)).size !==
+		new Set(snapshot.entitlements.map(entitlementScopeKey)).size !==
 			snapshot.entitlements.length
 	)
 		throw new TypeError("duplicate financial scope");
@@ -298,6 +412,7 @@ export function validateBudgetSnapshot(
 	}
 	for (const row of snapshot.entitlements) {
 		if (
+			!validEntitlementKind(row.kind) ||
 			!row.bucketId ||
 			!row.unit ||
 			!row.periodId ||
@@ -326,7 +441,11 @@ export function validateBudgetSnapshot(
 		throw new TypeError("budget snapshot is stale or future-dated");
 }
 
-export function validateHostingQuote(quote: HostingQuote, now: string): void {
+export function validateHostingQuote(
+	quote: HostingQuote,
+	now: string,
+	options?: { allowLegacyKindless?: boolean },
+): void {
 	if (
 		!quote.quoteId ||
 		!quote.yardId ||
@@ -354,7 +473,7 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 	if (
 		new Set(quote.providerAccounts.map((row) => row.providerAccountId)).size !==
 			quote.providerAccounts.length ||
-		new Set(quote.entitlementClaims.map((row) => row.bucketId)).size !==
+		new Set(quote.entitlementClaims.map(entitlementScopeKey)).size !==
 			quote.entitlementClaims.length
 	)
 		throw new TypeError("duplicate quote financial scope");
@@ -368,6 +487,10 @@ export function validateHostingQuote(quote: HostingQuote, now: string): void {
 			"provider-account exposures must itemize the liability bound",
 		);
 	for (const row of quote.entitlementClaims) {
+		const kind =
+			options?.allowLegacyKindless && row.kind === "" ? "allowance" : row.kind;
+		if (!validEntitlementKind(kind))
+			throw new TypeError("unsupported entitlement kind");
 		if (!row.bucketId || !row.unit)
 			throw new TypeError("entitlement scope missing");
 		budgetMicros(row.units);
@@ -396,6 +519,7 @@ export interface BudgetAdmissionAuthority {
 		/** Head used to revalidate policy and exposure immediately before execution. */
 		expectedSeq?: number;
 		/** Trusted clock. Required when the reservation has unpriced policy proof. */
+
 		now?: string;
 	}): BudgetReservation;
 	reserve(input: {
@@ -411,6 +535,7 @@ export interface BudgetAdmissionAuthority {
 	}): BudgetReservation;
 	/** Journal unknown liability only after an explicit host policy decision.
 	 * The marker is not a monetary bound. It blocks all bounded admissions. */
+
 	reserveUnbounded(input: {
 		reservationId: string;
 		requestDigest: string;
@@ -478,8 +603,15 @@ export function createBudgetAdmissionAuthority(options: {
 		evidence?: { liabilityResolutionEvidenceRef?: string },
 	): void;
 } {
-	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
+	let current =
+		options.priorEvents === undefined
+			? clone(BudgetLedgerSnapshotSchema, options.snapshot)
+			: normalizeLegacyBudgetSnapshot(
+					clone(BudgetLedgerSnapshotSchema, options.snapshot),
+				);
 	let reservations = new Map<string, BudgetReservation>();
+	let committing = false;
+	let commitOutcomeUncertain = false;
 	const fenced = createBudgetFenceVerifier(options.fenceTrust);
 	const scopeTrust = captureIacUnpricedScopeTrust(options.unpricedScopeTrust);
 	const pricedSettlementTrust = captureIacPricedSettlementTrust(
@@ -503,23 +635,63 @@ export function createBudgetAdmissionAuthority(options: {
 				.map((row) => row.providerAccountId)
 				.sort(),
 			entitlements: snapshot.entitlements
-				.map((row) => [row.bucketId, row.unit, row.periodId].join("\u0000"))
+				.map((row) =>
+					[
+						persistedEntitlementKind(row.kind),
+						row.bucketId,
+						row.unit,
+						row.periodId,
+					].join("\u0000"),
+				)
 				.sort(),
 		});
 	const policyBindings = new Map<string, string>();
 	// Derived from the complete journal, including snapshots that no longer expose
 	// a bucket. Dropping a projection row must never erase its financial history.
 	const retiredPeriods = new Set<string>();
-	const entitlementHistory = new Map<
+	type EntitlementHistory = Pick<
+		BudgetLedgerSnapshot["entitlements"][number],
+		"unit" | "observedAt" | "validUntil" | "remainingUnits"
+	>;
+	const entitlementHistory = new Map<string, EntitlementHistory>();
+	const entitlementUnitChangeHistory = new Map<
 		string,
-		Pick<
-			BudgetLedgerSnapshot["entitlements"][number],
-			"unit" | "observedAt" | "validUntil" | "remainingUnits"
-		>
+		Map<string, EntitlementHistory>
 	>();
-	const entitlementKey = (
+	const entitlementStableKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) => JSON.stringify([bucket.periodId, bucket.bucketId]);
+	) =>
+		JSON.stringify([
+			persistedEntitlementKind(bucket.kind),
+			bucket.periodId,
+			bucket.bucketId,
+			bucket.unit,
+		]);
+	const entitlementLineageKey = (
+		bucket: BudgetLedgerSnapshot["entitlements"][number],
+	) =>
+		JSON.stringify([
+			persistedEntitlementKind(bucket.kind),
+			bucket.periodId,
+			bucket.bucketId,
+		]);
+	function resolveEntitlementPrevious(
+		bucket: BudgetLedgerSnapshot["entitlements"][number],
+	): EntitlementHistory | undefined {
+		const direct = entitlementHistory.get(entitlementStableKey(bucket));
+		const unitChanges = entitlementUnitChangeHistory.get(
+			entitlementLineageKey(bucket),
+		);
+		if (!unitChanges || unitChanges.size === 0) return direct;
+		let latest = unitChanges.get(bucket.unit) ?? direct;
+		for (const candidate of unitChanges.values())
+			if (
+				!latest ||
+				Date.parse(candidate.observedAt) > Date.parse(latest.observedAt)
+			)
+				latest = candidate;
+		return latest;
+	}
 	function assertFinancialHistory(
 		next: BudgetLedgerSnapshot,
 		type: string,
@@ -533,14 +705,15 @@ export function createBudgetAdmissionAuthority(options: {
 		const configuration =
 			type === "budget.PolicyRevised" || type === "budget.PeriodReset";
 		for (const bucket of next.entitlements) {
-			const key = entitlementKey(bucket);
-			const previous = entitlementHistory.get(key);
+			const previous = resolveEntitlementPrevious(bucket);
 			// Settlement legitimately reduces a live bucket at its existing observation.
 			// Configuration and any reintroduced bucket must respect the retained fence.
 			if (
 				!previous ||
 				(!configuration &&
-					current.entitlements.some((row) => entitlementKey(row) === key))
+					current.entitlements.some(
+						(row) => entitlementStableKey(row) === entitlementStableKey(bucket),
+					))
 			)
 				continue;
 			const observedAt = Date.parse(bucket.observedAt);
@@ -563,13 +736,21 @@ export function createBudgetAdmissionAuthority(options: {
 			next.identity?.periodId !== current.identity.periodId
 		)
 			retiredPeriods.add(current.identity.periodId);
-		for (const bucket of next.entitlements)
-			entitlementHistory.set(entitlementKey(bucket), {
+		for (const bucket of next.entitlements) {
+			const history = {
 				unit: bucket.unit,
 				observedAt: bucket.observedAt,
 				validUntil: bucket.validUntil,
 				remainingUnits: bucket.remainingUnits,
-			});
+			};
+			entitlementHistory.set(entitlementStableKey(bucket), history);
+			const unitChangeKey = entitlementLineageKey(bucket);
+			const unitChanges =
+				entitlementUnitChangeHistory.get(unitChangeKey) ??
+				new Map<string, EntitlementHistory>();
+			unitChanges.set(bucket.unit, history);
+			entitlementUnitChangeHistory.set(unitChangeKey, unitChanges);
+		}
 	}
 	rememberFinancialHistory(current);
 	if (current.identity)
@@ -584,7 +765,19 @@ export function createBudgetAdmissionAuthority(options: {
 		current.entitlements.some((row) => row.reservedUnits !== 0)
 	)
 		throw new TypeError("reservation history required for held exposure");
-	for (const event of options.priorEvents ?? []) {
+	for (const persistedEvent of options.priorEvents ?? []) {
+		const event = clone(BudgetAuthorityEventSchema, persistedEvent);
+		if (event.snapshot)
+			event.snapshot = normalizeLegacyBudgetSnapshot(event.snapshot);
+		for (const reservation of event.reservations) {
+			if (
+				reservation.fenceSettlementGuard !== undefined &&
+				reservation.fenceSettlementPayloadVersion === "" &&
+				reservation.entitlementClaims.some((claim) => claim.kind !== "")
+			)
+				reservation.fenceSettlementPayloadVersion =
+					currentBudgetFenceSettlementPayloadVersion;
+		}
 		if (!event.snapshot?.identity || !current.identity)
 			throw new Error("budget journal snapshot identity missing");
 		if (
@@ -722,6 +915,8 @@ export function createBudgetAdmissionAuthority(options: {
 			}
 			if (
 				!next.fenceSettlementGuard ||
+				old.fenceSettlementPayloadVersion !==
+					next.fenceSettlementPayloadVersion ||
 				toJsonString(
 					BudgetFenceSettlementGuardSchema,
 					old.fenceSettlementGuard,
@@ -950,7 +1145,7 @@ export function createBudgetAdmissionAuthority(options: {
 				claims.length !== old.entitlementClaims.length ||
 				new Set(accounts.map((account) => account.providerAccountId)).size !==
 					accounts.length ||
-				new Set(claims.map((claim) => claim.bucketId)).size !== claims.length ||
+				new Set(claims.map(entitlementScopeKey)).size !== claims.length ||
 				(accounts.length > 0 &&
 					add(...accounts.map((account) => account.liabilityMicros)) !==
 						row.actualMicros)
@@ -973,15 +1168,13 @@ export function createBudgetAdmissionAuthority(options: {
 				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
 			}
 			for (const claim of claims) {
-				const target = expected.entitlements.find(
-					(entry) =>
-						entry.bucketId === claim.bucketId && entry.unit === claim.unit,
+				const target = expected.entitlements.find((entry) =>
+					sameEntitlementScope(entry, claim),
 				);
 				if (
 					!target ||
-					!old.entitlementClaims.some(
-						(entry) =>
-							entry.bucketId === claim.bucketId && entry.unit === claim.unit,
+					!old.entitlementClaims.some((entry) =>
+						sameEntitlementScope(entry, claim),
 					)
 				)
 					throw new Error("foreign entitlement settlement");
@@ -1080,7 +1273,7 @@ export function createBudgetAdmissionAuthority(options: {
 			entitlement.reservedUnits = add(
 				...holding.flatMap((row) =>
 					row.entitlementClaims
-						.filter((entry) => entry.bucketId === entitlement.bucketId)
+						.filter((entry) => sameEntitlementScope(entry, entitlement))
 						.map((entry) => entry.units),
 				),
 			);
@@ -1096,7 +1289,10 @@ export function createBudgetAdmissionAuthority(options: {
 				row.entitlementClaims.some(
 					(entry) =>
 						!snapshot.entitlements.some(
-							(bucket) => bucket.bucketId === entry.bucketId,
+							(bucket) =>
+								sameEntitlementScope(bucket, entry) &&
+								(row.identity === undefined ||
+									bucket.periodId === row.identity.periodId),
 						),
 				)
 			)
@@ -1126,12 +1322,18 @@ export function createBudgetAdmissionAuthority(options: {
 			throw new Error("budget journal financial dimension mismatch");
 	}
 	assertProjection();
+	function assertCommitCertain(): void {
+		if (commitOutcomeUncertain)
+			throw new Error("budget commit outcome uncertain; reopen the authority");
+	}
 	function save(
 		type: string,
 		next: BudgetLedgerSnapshot,
 		rows: Map<string, BudgetReservation>,
 		reconciliationEvidenceRef = "",
 	): void {
+		assertCommitCertain();
+		if (committing) throw new Error("budget authority mutation during commit");
 		const expectedSeq = current.seq;
 		if (!next.identity) throw new Error("budget identity missing");
 		assertFinancialHistory(next, type);
@@ -1151,14 +1353,26 @@ export function createBudgetAdmissionAuthority(options: {
 			reservations: [...rows.values()],
 			reconciliationEvidenceRef,
 		});
-		const committed: unknown = options.commit?.(
-			clone(BudgetAuthorityEventSchema, event),
-			expectedSeq,
-		);
-		if (committed instanceof Promise)
+		const payload = clone(BudgetAuthorityEventSchema, event);
+		let committed: unknown;
+		committing = true;
+		try {
+			committed = options.commit?.(payload, expectedSeq);
+		} catch (error) {
+			commitOutcomeUncertain = true;
+			throw new Error("budget commit outcome uncertain; reopen the authority", {
+				cause: error,
+			});
+		} finally {
+			committing = false;
+		}
+		if (committed !== null && Object(committed) === committed) {
+			commitOutcomeUncertain = true;
+			void synchronousVerdict(committed);
 			throw new Error(
 				"budget commit must append synchronously before acknowledgement",
 			);
+		}
 		rememberFinancialHistory(next);
 		current = clone(BudgetLedgerSnapshotSchema, next);
 		policyBindings.set(policyKey, policyFingerprint(current));
@@ -1224,7 +1438,7 @@ export function createBudgetAdmissionAuthority(options: {
 				claims.length !== existing.entitlementClaims.length ||
 				new Set(accounts.map((row) => row.providerAccountId)).size !==
 					accounts.length ||
-				new Set(claims.map((row) => row.bucketId)).size !== claims.length
+				new Set(claims.map(entitlementScopeKey)).size !== claims.length
 			)
 				throw new Error(
 					"complete account and entitlement usage evidence required",
@@ -1248,13 +1462,13 @@ export function createBudgetAdmissionAuthority(options: {
 				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
 			}
 			for (const claim of claims) {
-				const target = next.entitlements.find(
-					(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
+				const target = next.entitlements.find((row) =>
+					sameEntitlementScope(row, claim),
 				);
 				if (
 					!target ||
-					!existing.entitlementClaims.some(
-						(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
+					!existing.entitlementClaims.some((row) =>
+						sameEntitlementScope(row, claim),
 					)
 				)
 					throw new Error("foreign entitlement settlement");
@@ -1288,14 +1502,17 @@ export function createBudgetAdmissionAuthority(options: {
 	return {
 		persistence: options.commit ? "durable-cas" : "memory",
 		read(now) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, now);
 			return clone(BudgetLedgerSnapshotSchema, current);
 		},
 		lookup(id) {
+			assertCommitCertain();
 			const row = reservations.get(id);
 			return row ? clone(BudgetReservationSchema, row) : undefined;
 		},
 		claimExecution(input) {
+			assertCommitCertain();
 			if (input.expectedSeq !== undefined && input.expectedSeq !== current.seq)
 				throw new Error("budget sequence conflict");
 			const previous = reservations.get(input.reservationId);
@@ -1366,8 +1583,8 @@ export function createBudgetAdmissionAuthority(options: {
 			return clone(BudgetReservationSchema, updated);
 		},
 		reserve(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
-			validateHostingQuote(input.quote, input.now);
 			if (
 				input.iacPricingPin &&
 				(!validIacPin(input.iacPricingPin, input.quote.financialPlanHash) ||
@@ -1387,6 +1604,9 @@ export function createBudgetAdmissionAuthority(options: {
 			)
 				throw new Error("budget reservation scope mismatch");
 			const previous = reservations.get(input.reservationId);
+			validateHostingQuote(input.quote, input.now, {
+				allowLegacyKindless: !!previous,
+			});
 			const quoteDigest = createHash("sha256")
 				.update(toJsonString(HostingQuoteSchema, input.quote))
 				.digest("hex");
@@ -1397,9 +1617,32 @@ export function createBudgetAdmissionAuthority(options: {
 						budgetIdentityKey(current.identity)
 				)
 					throw new Error("reservation belongs to a superseded budget policy");
+				let legacyQuoteDigest: string | undefined;
+				if (
+					previous.entitlementClaims.every((claim) => claim.kind === "") &&
+					input.quote.entitlementClaims.every(
+						(claim) => persistedEntitlementKind(claim.kind) === "allowance",
+					)
+				) {
+					const legacyQuote = clone(HostingQuoteSchema, input.quote);
+					for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
+					legacyQuoteDigest = createHash("sha256")
+						.update(toJsonString(HostingQuoteSchema, legacyQuote))
+						.digest("hex");
+				}
+				let legacyEmptyQuoteDigest: string | undefined;
+				if (previous.entitlementClaims.length === 0) {
+					const legacyQuote = clone(HostingQuoteSchema, input.quote);
+					legacyQuote.entitlementClaims = [];
+					legacyEmptyQuoteDigest = createHash("sha256")
+						.update(toJsonString(HostingQuoteSchema, legacyQuote))
+						.digest("hex");
+				}
 				if (
 					previous.requestDigest !== input.requestDigest ||
-					previous.quoteDigest !== quoteDigest ||
+					(previous.quoteDigest !== quoteDigest &&
+						previous.quoteDigest !== legacyQuoteDigest &&
+						previous.quoteDigest !== legacyEmptyQuoteDigest) ||
 					JSON.stringify(previous.iacPricingPin) !==
 						JSON.stringify(input.iacPricingPin) ||
 					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||
@@ -1467,8 +1710,8 @@ export function createBudgetAdmissionAuthority(options: {
 					);
 			}
 			for (const claim of input.quote.entitlementClaims) {
-				const bucket = current.entitlements.find(
-					(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
+				const bucket = current.entitlements.find((row) =>
+					sameEntitlementScope(row, claim),
 				);
 				if (
 					!bucket ||
@@ -1514,11 +1757,14 @@ export function createBudgetAdmissionAuthority(options: {
 				status: "held",
 				ledgerSeq: current.seq + 1,
 			});
-			if (input.fenceSettlementGuard)
+			if (input.fenceSettlementGuard) {
+				reservation.fenceSettlementPayloadVersion =
+					currentBudgetFenceSettlementPayloadVersion;
 				reservation.fenceSettlementGuard = fenced.createGuard(
 					reservation,
 					input.fenceSettlementGuard,
 				);
+			}
 			const rows = new Map(reservations);
 			rows.set(input.reservationId, reservation);
 			save(
@@ -1529,6 +1775,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return clone(BudgetReservationSchema, reservation);
 		},
 		reserveUnbounded(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			if (
 				!current.identity ||
@@ -1627,6 +1874,7 @@ export function createBudgetAdmissionAuthority(options: {
 					liabilityMicros: 0,
 				})),
 				entitlementClaims: current.entitlements.map((row) => ({
+					kind: row.kind,
 					bucketId: row.bucketId,
 					unit: row.unit,
 					units: 0,
@@ -1642,6 +1890,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return clone(BudgetReservationSchema, reservation);
 		},
 		revalidateUnbounded(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			const row = reservations.get(input.reservationId);
 			if (
@@ -1692,6 +1941,7 @@ export function createBudgetAdmissionAuthority(options: {
 			return true;
 		},
 		revalidatePriced(input) {
+			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
 			const row = reservations.get(input.reservationId);
 			if (
@@ -1729,12 +1979,14 @@ export function createBudgetAdmissionAuthority(options: {
 			return true;
 		},
 		settle(id, actualMicros, evidence) {
+			assertCommitCertain();
 			if (!evidence)
 				throw new Error(
 					"authoritative usage and confirmed source retirement evidence required",
 				);
 			// Normalize once before verification: the exact evidence authenticated by
 			// the host must be the evidence used for booking and durable replay.
+
 			const proof = clone(
 				BudgetSettlementEvidenceSchema,
 				create(BudgetSettlementEvidenceSchema, {
@@ -1752,6 +2004,7 @@ export function createBudgetAdmissionAuthority(options: {
 			if (!existing) throw new Error("unknown budget reservation");
 			// An exact replay is checked against the already authenticated immutable
 			// terminal record; verifiers saw the original live claim when it settled.
+
 			if (
 				existing.status === "settled" &&
 				(existing.iacPricingPin || existing.unboundedExposure)
@@ -1789,9 +2042,11 @@ export function createBudgetAdmissionAuthority(options: {
 			return change(id, "settled", actualMicros, proof);
 		},
 		uncertain(id) {
+			assertCommitCertain();
 			return change(id, "uncertain");
 		},
 		release(id, confirmedUnused, evidenceRef) {
+			assertCommitCertain();
 			if (confirmedUnused !== true || !evidenceRef)
 				throw new Error("confirmed unused funds and evidence required");
 			return change(id, "released", undefined, {
@@ -1800,6 +2055,7 @@ export function createBudgetAdmissionAuthority(options: {
 			});
 		},
 		configure(snapshot, expectedSeq, now, evidence) {
+			assertCommitCertain();
 			validateBudgetSnapshot(snapshot, now);
 			if (
 				current.seq !== expectedSeq ||
@@ -1888,11 +2144,19 @@ export function createBudgetAdmissionAuthority(options: {
 				}
 			for (const bucket of snapshot.entitlements) {
 				const old = current.entitlements.find(
-					(row) => row.bucketId === bucket.bucketId,
+					(row) =>
+						row.bucketId === bucket.bucketId &&
+						persistedEntitlementKind(row.kind) ===
+							persistedEntitlementKind(bucket.kind),
 				);
 				if (
 					old &&
-					old.reservedUnits > 0 &&
+					(old.reservedUnits > 0 ||
+						active().some((row) =>
+							row.entitlementClaims.some((claim) =>
+								sameEntitlementScope(claim, old),
+							),
+						)) &&
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)
 				)
 					throw new Error("active entitlement cannot change unit or period");

@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-	type CdEvent,
-	type CdEventSink,
 	createCdEventsRelay,
 	createNotificationPort,
 	NOTIFICATION_EVENT_TYPE,
 	projectCdEvents,
-	type WebhookDelivery,
 } from "../../src/boundary/index.js";
 import type { CdContext } from "../../src/ports.js";
+import { createRecordingCdEventSink } from "../../src/testing/index.js";
 import { journalStore, recordingTelemetry } from "./fakes.js";
 import { fixtureJournal } from "./journal.js";
 
@@ -19,26 +17,9 @@ const ctx: CdContext = {
 	now: () => NOW,
 };
 
-function recordingSink(
-	outcome: WebhookDelivery["outcome"] = "delivered",
-): CdEventSink & {
-	readonly events: CdEvent[];
-} {
-	const events: CdEvent[] = [];
-	return {
-		events,
-		async deliver(event) {
-			events.push(event);
-			return outcome === "delivered"
-				? { outcome, attempts: 1, status: 202 }
-				: { outcome, attempts: 8, code: "webhook-retries-exhausted" };
-		},
-	};
-}
-
 describe("NotificationPort over CDEvents webhooks", () => {
 	it("sends a hobo-notification custom CDEvent to the channel's sink", async () => {
-		const sink = recordingSink();
+		const sink = createRecordingCdEventSink();
 		const port = createNotificationPort({
 			channels: { ops: sink },
 			source: "/hobo/cd/acme",
@@ -63,7 +44,7 @@ describe("NotificationPort over CDEvents webhooks", () => {
 	});
 
 	it("is deterministic: the same notification at the same instant has the same id", async () => {
-		const sink = recordingSink();
+		const sink = createRecordingCdEventSink();
 		const port = createNotificationPort({
 			channels: { ops: sink },
 			source: "/s",
@@ -77,7 +58,15 @@ describe("NotificationPort over CDEvents webhooks", () => {
 
 	it("never fails the caller on a dead-lettered delivery", async () => {
 		const port = createNotificationPort({
-			channels: { ops: recordingSink("dead-lettered") },
+			channels: {
+				ops: createRecordingCdEventSink({
+					delivery: {
+						outcome: "dead-lettered",
+						attempts: 8,
+						code: "webhook-retries-exhausted",
+					},
+				}),
+			},
 			source: "/s",
 		});
 		await expect(
@@ -99,7 +88,7 @@ describe("NotificationPort over CDEvents webhooks", () => {
 
 describe("CDEvents relay (journal → projection → sinks)", () => {
 	it("delivers every projected event once, in journal order, with metrics", async () => {
-		const sink = recordingSink();
+		const sink = createRecordingCdEventSink();
 		const telemetry = recordingTelemetry();
 		const relay = createCdEventsRelay({
 			store: journalStore(fixtureJournal()),
@@ -136,7 +125,7 @@ describe("CDEvents relay (journal → projection → sinks)", () => {
 	});
 
 	it("resumes after a restart without re-sending and without losing history", async () => {
-		const sink = recordingSink();
+		const sink = createRecordingCdEventSink();
 		const journal = fixtureJournal();
 		// The first run delivered through position 7 (the service.upgraded step).
 		const relay = createCdEventsRelay({

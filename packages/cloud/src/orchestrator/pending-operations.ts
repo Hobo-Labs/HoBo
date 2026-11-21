@@ -39,7 +39,6 @@ function latestApply(
 	return undefined;
 }
 
-/** Block orphaned or conflicting effects before convergence or any new provider work. */
 export async function pendingOrchestrationBarriers(
 	events: readonly EventEnvelope[],
 	plan: DeploymentPlan,
@@ -125,7 +124,6 @@ export async function pendingOrchestrationBarriers(
 	return output.sort((a, b) => a.resourceId.localeCompare(b.resourceId));
 }
 
-/** Rollback can resume a recorded destroy, but cannot overtake a pending apply. */
 export function pendingCompensationBarriers(
 	events: readonly EventEnvelope[],
 	plan: DeploymentPlan,

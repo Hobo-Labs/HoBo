@@ -12,7 +12,14 @@ export type YardTestState = Readonly<{
 	seed: number | null;
 	frameCount: number;
 	zone: ZoneId | null;
-	bo: { x: number; y: number; animationId: string; facing: string };
+	bo: {
+		x: number;
+		y: number;
+		animationId: string;
+		facing: string;
+		facingSource?: "rendered-walk" | "projected" | "default";
+		projectedFacing?: string | null;
+	};
 	occupyMode: string | null;
 	connCount: number;
 	trafficRate: number;
@@ -111,10 +118,7 @@ export function seededRandom(seed: number): () => number {
 	};
 }
 
-export function isTestMode(search = ""): {
-	testMode: boolean;
-	seed: number;
-} {
+export function isTestMode(search = "") {
 	const params = new URLSearchParams(
 		search.startsWith("?") ? search.slice(1) : search,
 	);
