@@ -27,7 +27,6 @@ const WORK: InsightStep = {
 	conclusion: "success",
 };
 
-/** A job a runner took at `startMs`, with no wait, that finished at `endMs`. */
 function ran(
 	name: string,
 	startMs: number,
@@ -48,7 +47,6 @@ function ran(
 	};
 }
 
-/** A job no runner has taken. */
 function queued(name: string, extra: Partial<InsightJob> = {}): InsightJob {
 	return {
 		id: 1,
@@ -142,7 +140,6 @@ describe("ciSignals", () => {
 });
 
 describe("shown", () => {
-	/** One job that waited `waitMs` for a runner and then ran for `runMs`. */
 	const waited = (waitMs: number, runMs: number): InsightRun =>
 		run({
 			jobs: [ran("a", waitMs, waitMs + runMs, { queuedAtMs: 0 })],
@@ -863,6 +860,17 @@ describe("docs-changes", () => {
 				).occurrences,
 			).toBe(0);
 		}
+	});
+
+	it("does not mistake a Docker workflow for a documentation workflow", () => {
+		const signal = signalOf(
+			[pullRequest({ workflow: "Docker", changedPaths: ["README.md"] })],
+			"docs-changes",
+		);
+		expect(signal.occurrences).toBe(1);
+		expect(signal.rows).toEqual([
+			{ key: "Docker", minutes: 8, occurrences: 1 },
+		]);
 	});
 
 	it("leaves out runs that are not for a pull request", () => {

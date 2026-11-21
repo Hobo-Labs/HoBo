@@ -120,8 +120,10 @@ export class GithubSimulator implements GithubSimulatorPort {
 			options.installationId ?? 1,
 			options.startMs ?? SIMULATOR_EPOCH_MS,
 		);
-		const send = (input: string | URL | Request, init?: RequestInit) =>
-			this.send(new Request(input, init), init?.redirect ?? "follow");
+		const send = (input: string | URL | Request, init?: RequestInit) => {
+			const request = new Request(input, init);
+			return this.send(request, request.redirect);
+		};
 		// SAFETY: `send` takes fetch's arguments and returns its result; the
 		// static members `typeof fetch` may carry are not used by any caller.
 		this.fetch = send as typeof fetch;
@@ -183,8 +185,12 @@ export class GithubSimulator implements GithubSimulatorPort {
 			area: routed.area,
 		});
 		const location = routed.response.headers.get("location");
-		if (routed.response.status === 302 && location && redirect === "follow")
-			return this.send(new Request(location), redirect);
+		if (routed.response.status === 302 && location) {
+			if (redirect === "error")
+				throw new TypeError("fetch failed: unexpected redirect");
+			if (redirect === "follow")
+				return this.send(new Request(location), redirect);
+		}
 		return routed.response;
 	}
 

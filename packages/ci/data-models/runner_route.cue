@@ -6,6 +6,7 @@ import "list"
 #RunnerStepKey:        "fleet" | "machine" | "github" | #HostedRunnerProvider
 // A `runs-on` label: one label, never a comma-separated list.
 #RunnerLabel: string & =~"^[A-Za-z0-9][A-Za-z0-9_.:=/@+-]{0,199}$"
+#ConcreteRunnerLabel: #RunnerLabel & != "auto"
 
 // A limit belongs to the kind of step that can measure it: included minutes
 // are GitHub's, a monthly spend is a hosted provider's.
@@ -23,12 +24,12 @@ import "list"
 }
 
 // `auto` asks for the order's size; it is never mixed with a written label.
-#RunnerRelayInput: {key: #RunnerStepKey, labels: [#RunnerLabel, ...#RunnerLabel] & list.MaxItems(16)}
+#RunnerRelayInput: {key: #RunnerStepKey, labels: ["auto"]} | {key: #RunnerStepKey, labels: [#ConcreteRunnerLabel, ...#ConcreteRunnerLabel] & list.MaxItems(16)}
 
 #RunnerRouteRequest: {
 	repository: string & =~"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
 	private?:   bool
-	fork?:      bool
+	fork:       bool
 	event:      string & =~"^[a-z_]{1,60}$"
 	runId:      int & >0
 	runAttempt: int & >=1 & <=1000

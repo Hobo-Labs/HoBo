@@ -34,7 +34,6 @@ const SETUP: InsightStep = {
 	conclusion: "success",
 };
 
-/** A step name none of the step-name patterns recognise. */
 const PLAIN_STEP = "Run script";
 
 function step(
@@ -60,12 +59,10 @@ function job(partial: Partial<InsightJob> = {}): InsightJob {
 	};
 }
 
-/** A job that failed at a step of the given name. */
 function failedAt(stepName: string): InsightJob {
 	return job({ steps: [SETUP, step(stepName, "failure")] });
 }
 
-/** The diagnosis of a job that failed at an unremarkable step with this log. */
 function diagnoseLog(logTail: string, stepName = PLAIN_STEP): FailureDiagnosis {
 	return diagnoseFailure({ job: failedAt(stepName), logTail });
 }
@@ -167,7 +164,7 @@ describe("logExcerpt", () => {
 			(_, index) => `${String(index).padStart(2, "0")}${"é".repeat(99)}`,
 		);
 		const excerpt = logExcerpt(lines.join("\n"));
-		// Each line is 200 bytes; forty of them and their newlines are 8039 bytes.
+
 		expect(excerpt).toHaveLength(40);
 		expect(excerpt[0]?.slice(0, 2)).toBe("10");
 		expect(excerpt.at(-1)?.slice(0, 2)).toBe("49");
@@ -546,6 +543,21 @@ describe("diagnoseFailure: tests", () => {
 	it("does not call a failure flaky on a hint alone", () => {
 		expect(diagnoseLog("Retry #1").kind).toBe("unclear");
 	});
+
+	it("does not treat any mention of retrying as flake evidence", () => {
+		expect(
+			diagnoseLog(["Do not retry this request", "2 failed"].join("\n")),
+		).toMatchObject({
+			kind: "test",
+			rerun: "likely-fails",
+		});
+	});
+
+	it("does not treat an unrelated operation timeout as flake evidence", () => {
+		expect(
+			diagnoseLog(["The operation timed out", "2 failed"].join("\n")).kind,
+		).toBe("test");
+	});
 });
 
 describe("diagnoseFailure: order and evidence", () => {
@@ -561,6 +573,24 @@ describe("diagnoseFailure: order and evidence", () => {
 		expect(kindOf(["error TS2322", "3 failed"])).toBe("build");
 		expect(kindOf(["3 failed"], "Build and test")).toBe("build");
 		expect(kindOf(["3 failed"])).toBe("test");
+	});
+
+	it("strips terminal controls and bidirectional overrides", () => {
+		const stepName = "Run \u001b[31mtests\u001b[0m\u202e";
+		const diagnosis = diagnoseFailure({
+			job: failedAt(stepName),
+			annotations: ["\u001b]0;owned\u0007error TS2322\u0007\r\u0008\u202e"],
+		});
+		expect(diagnosis.evidence).toContain("error TS2322");
+		expect(summarizeDiagnosis(diagnosis)).toContain('Failed at "Run tests"');
+		const testDiagnosis = diagnoseFailure({
+			job: failedAt(stepName),
+			logTail: "2 failed",
+		});
+		expect(testDiagnosis.evidence).toContain('step "Run tests"');
+		expect(JSON.stringify(diagnosis)).not.toMatch(
+			/[\p{Cc}\u202a-\u202e\u2066-\u2069]/u,
+		);
 	});
 
 	it("reads annotations as well as the log", () => {
