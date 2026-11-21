@@ -245,7 +245,7 @@ runs:
       run: |
         set -uo pipefail
         no_reuse() {
-          echo "pr-fabric reuse: no: $1"
+          echo "::notice title=hobo-ci-pr-fabric-reuse::pr-fabric reuse: no: $1"
           echo "reuse=false" >> "$GITHUB_OUTPUT"
         }
         if [ "${GITHUB_EVENT_NAME}" != "merge_group" ]; then
