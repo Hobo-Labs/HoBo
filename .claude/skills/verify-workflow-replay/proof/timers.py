@@ -68,3 +68,16 @@ prove(
     [now < deadline],
     deadline - now > 0,
 )
+
+sequence = Int("sequence")
+maximum = Int("maximum")
+sequence_guard = (
+    sequence <= maximum
+    if os.environ.get("WORKFLOW_APPEND_PROOF_MUTATION") == "allow-exhausted"
+    else sequence < maximum
+)
+prove(
+    "a permitted next sequence stays within its bound",
+    [0 <= sequence, 0 < maximum, sequence_guard],
+    sequence + 1 <= maximum,
+)

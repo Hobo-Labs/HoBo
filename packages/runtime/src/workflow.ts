@@ -326,6 +326,12 @@ export function createWorkflowEngine(
 		const streamId = `run/${runId}`;
 		const journal = await store.readStream(streamId);
 		let seq = journal.at(-1)?.seq ?? 0;
+		if (!Number.isSafeInteger(seq) || seq < 0) {
+			throw new Error("invalid workflow journal sequence");
+		}
+		if (seq >= Number.MAX_SAFE_INTEGER) {
+			throw new Error("workflow journal sequence exhausted");
+		}
 		const startedEvents = journal.filter(
 			(event) => event.type === "run.Started",
 		);
@@ -595,16 +601,46 @@ export function createWorkflowEngine(
 			}
 		}
 
-		async function appendEvent<T>(type: string, data: T): Promise<number> {
+		let appendTail: Promise<void> = Promise.resolve();
+		let appendFailed = false;
+		let appendFailure: unknown;
+		function appendEvent<T>(type: string, data: T): Promise<number> {
 			assertNoTerminalBeforeRunEvent(type);
-			const payload = cloneAsJson(data);
-			seq += 1;
-			const envelope = nextEnvelope(streamId, seq, type, payload, {
-				meta: { idempotencyKey: `${runId}:${type}:${seq}` },
+			let snapshot:
+				| { ok: true; value: JsonValue }
+				| { ok: false; error: unknown };
+			try {
+				snapshot = { ok: true, value: cloneAsJson(data) };
+			} catch (error) {
+				snapshot = { ok: false, error };
+			}
+			const pending = appendTail.then(async () => {
+				if (appendFailed) throw appendFailure;
+				try {
+					if (seq >= Number.MAX_SAFE_INTEGER) {
+						throw new Error("workflow journal sequence exhausted");
+					}
+					if (!snapshot.ok) throw snapshot.error;
+					const payload = snapshot.value;
+					const nextSeq = seq + 1;
+					const envelope = nextEnvelope(streamId, nextSeq, type, payload, {
+						meta: { idempotencyKey: `${runId}:${type}:${nextSeq}` },
+					});
+					await recordEffect(store, envelope, seq);
+					seq = nextSeq;
+					journal.push(envelope);
+					return seq;
+				} catch (error) {
+					appendFailed = true;
+					appendFailure = error;
+					throw error;
+				}
 			});
-			await recordEffect(store, envelope, seq - 1);
-			journal.push(envelope);
-			return seq;
+			appendTail = pending.then(
+				() => undefined,
+				() => undefined,
+			);
+			return pending;
 		}
 
 		let stepIndex = 0;

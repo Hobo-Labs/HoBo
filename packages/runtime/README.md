@@ -81,6 +81,14 @@ complete. Replay rethrows the saved failure into the workflow so it can take
 the same path. The workflow cannot record either terminal state while a prior
 outcome remains unconsumed. The bounded models check these paths and guards.
 
+Within one execution, journal appends are serialized even when workflow steps
+run concurrently. If an append fails or its result is uncertain, later appends
+in that execution fail with the same error; use a fresh `resume` to reread the
+durable journal. An effect already authorized before the failure may still be
+running, and separate executions are not fenced by this queue. A journal at
+`Number.MAX_SAFE_INTEGER` cannot accept another event until its sequence format
+is migrated; invalid or exhausted sequences fail before the next step runs.
+
 Resuming a completed or failed run returns its recorded terminal outcome without
 calling the workflow or appending another event. Live `appendEvent` refuses
 further `run.*` facts once a terminal is already in the in-memory journal, so
