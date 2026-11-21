@@ -362,7 +362,7 @@ describe("pr-fabric reuse routing", () => {
 		);
 		const outputs = asObject(routeAction.outputs);
 		assert.equal(
-			asText(outputs?.["pr-fabric-green"]?.value),
+			asText(asObject(outputs?.["pr-fabric-green"])?.value),
 			"${{ steps.pr-fabric.outputs.reuse || 'false' }}",
 		);
 	});

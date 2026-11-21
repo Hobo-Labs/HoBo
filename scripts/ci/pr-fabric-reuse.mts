@@ -129,7 +129,7 @@ export const PR_FABRIC_WORKSPACE_SHARD_PREFIX = "Workspace test shard ";
 export function prFabricGateJobsSucceeded(
 	page: JsonValue | undefined,
 ): boolean {
-	const jobs = asList(asObject(page)?.jobs);
+	const jobs = asList(asObject(page)?.jobs) ?? [];
 	if (jobs.length === 0) return false;
 	let validation = false;
 	let scripts = false;
