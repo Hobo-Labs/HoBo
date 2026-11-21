@@ -9,7 +9,7 @@ description: Check the transactional CI fleet start-binding and exact retry boun
 
 **Why:** Two different runner slots must not receive start authorization for the same actual job, and a changed request must not be treated as the original committed authorization.
 
-**Result at sync commit `0f806c040`:** PASS for the stated SQLite and PostgreSQL contract cases, generated retry cases, the bounded model, and the mathematical induction below.
+**Result at sync commit `5b1189203aaf503ae5d4c6271daae7b9342689af`:** PASS for the stated SQLite and PostgreSQL contract cases, generated retry cases, the bounded model, and the mathematical induction below.
 
 ## Covered code
 
@@ -27,7 +27,7 @@ The command runs the shared conformance suite on SQLite and a bounded TLC 1.7.4 
 
 ## Scope and evidence
 
-The real-store conformance suite races two registered slots for one actual job, checks one committed claim and an identical retry, and generates 150 combinations of matching or mismatched runner, profile, secret and claim. It checks that retries do not append events and that a completed claim cannot authorize again. The same suite passed with SQLite and a PostgreSQL 17 test container at the sync commit. It does not cover a live GitHub runner, process crashes, network failures, or every possible database schedule.
+The real-store conformance suite races two registered slots for one actual job, checks one committed claim and an identical retry, and generates 150 combinations of matching or mismatched runner, profile, secret and claim. It checks that retries do not append events and that a completed claim cannot authorize again. The same suite passed with SQLite and a PostgreSQL 17 test container at the sync commit. The later capacity-column migration and exhaustion guard change settlement availability, not the modeled assignment binding; the conformance suite checks those boundaries separately. It does not cover a live GitHub runner, process crashes, network failures, or every possible database schedule.
 
 TLC explores two jobs and two slots (213 reachable states). A boolean abstracts all checks that must match for a receipt; a terminal boolean abstracts terminal and uncertain claims. A committed job-to-slot association remains a tombstone. The model checks that neither a job nor a slot is rebound and that an accepted receipt matches a nonterminal binding. Removing the retry-match guard violates `ReceiptValid`; removing slot uniqueness violates `NoSlotRebinding`. Removing the implementation's retry-assignment check in a scratch SQLite copy causes the conformance test to fail.
 
