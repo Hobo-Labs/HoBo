@@ -55,6 +55,7 @@ function stepTimeoutMinutes(block: string, name: string): number {
 }
 
 describe("merge-group required gate", () => {
+	const planner = job("pr_gate_plan");
 	const validation = job("pr_gate_validation");
 	const workspace = job("workspace_tests");
 	const affected = job("pr_affected");
@@ -88,6 +89,7 @@ describe("merge-group required gate", () => {
 					env: {
 						...process.env,
 						EVENT_NAME: event,
+						PLAN_RESULT: "success",
 						VALIDATION_RESULT: "success",
 						WORKSPACE_RESULT: "success",
 						AFFECTED_RESULT: affectedResult,
@@ -107,7 +109,42 @@ describe("merge-group required gate", () => {
 		}
 	});
 
-	it("requires validation, all workspace shards, and the PR package lanes", () => {
+	it("requires the plan, validation, all workspace shards, and the PR package lanes", () => {
+		assert.match(planner, /needs: \[route\]/u);
+		assert.match(
+			planner,
+			/merge_scope: \$\{\{ steps\.merge-group-base\.outputs\.scope \}\}/u,
+		);
+		assert.match(
+			planner,
+			/shards: \$\{\{ steps\.shard-plan\.outputs\.shards \}\}/u,
+		);
+		assert.match(
+			planner,
+			/pr_base: \$\{\{ steps\.scm-base\.outputs\.base \}\}/u,
+		);
+		assert.match(
+			planner,
+			/merge_base: \$\{\{ steps\.merge-group-base\.outputs\.base \}\}/u,
+		);
+		assert.match(
+			planner,
+			/merge_tests: \$\{\{ steps\.merge-group-base\.outputs\.tests \}\}/u,
+		);
+		const planUsesNodeBuiltinsOnly =
+			"pr_gate_plan uses node builtins only, without dependency installation or Turbo tasks";
+		assert.doesNotMatch(
+			planner,
+			/pnpm-install\.mts/u,
+			planUsesNodeBuiltinsOnly,
+		);
+		assert.doesNotMatch(planner, /deps-layer\.mts/u, planUsesNodeBuiltinsOnly);
+		assert.doesNotMatch(planner, /turbo-cache/u, planUsesNodeBuiltinsOnly);
+		assert.match(
+			validation,
+			/needs: \[route, ci-runner-image, pr_gate_plan\]/u,
+		);
+		assert.match(validation, /needs\.pr_gate_plan\.result == 'success'/u);
 		assert.match(validation, /name: S0 gate set/u);
 		assert.match(
 			validation,
@@ -115,38 +152,35 @@ describe("merge-group required gate", () => {
 		);
 		assert.match(
 			validation,
-			/merge_base: \$\{\{ steps\.merge-group-base\.outputs\.base \}\}/u,
+			/SCOPE: \$\{\{ needs\.pr_gate_plan\.outputs\.merge_scope \}\}/u,
 		);
 		assert.match(
 			validation,
-			/merge_tests: \$\{\{ steps\.merge-group-base\.outputs\.tests \}\}/u,
+			/BASE: \$\{\{ needs\.pr_gate_plan\.outputs\.merge_base \}\}/u,
 		);
-		assert.match(workspace, /needs: \[route, pr_gate_validation\]/u);
-		assert.match(workspace, /needs\.pr_gate_validation\.result == 'success'/u);
-		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_base/u);
-		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.merge_tests/u);
-		assert.match(workspace, /needs\.pr_gate_validation\.outputs\.pr_base/u);
-		assert.match(
-			validation,
-			/shards: \$\{\{ steps\.shard-plan\.outputs\.shards \}\}/u,
-		);
+		assert.match(workspace, /needs: \[route, ci-runner-image, pr_gate_plan\]/u);
+		assert.match(workspace, /needs\.pr_gate_plan\.result == 'success'/u);
+		assert.doesNotMatch(workspace, /needs\.pr_gate_validation\.result/u);
+		assert.match(workspace, /needs\.pr_gate_plan\.outputs\.merge_base/u);
+		assert.match(workspace, /needs\.pr_gate_plan\.outputs\.merge_tests/u);
+		assert.match(workspace, /needs\.pr_gate_plan\.outputs\.pr_base/u);
 		assert.match(workspace, /fail-fast: false/u);
 		assert.match(workspace, /scripts\/ci\/dependent-tests\.mts/u);
-		assert.match(affected, /needs: \[route, pr_gate_validation\]/u);
+		assert.match(affected, /needs: \[route, ci-runner-image, pr_gate_plan\]/u);
 		assert.match(
 			affected,
 			/turbo run build typecheck lint test:unit test:schema test:contract:consumer/u,
 		);
 		assert.match(
 			gate,
-			/needs: \[route, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification\]/u,
+			/needs: \[route, pr_gate_plan, pr_gate_validation, workspace_tests, pr_affected, scripts-tests, state-machine-verification\]/u,
 		);
 		assert.match(gate, /if: \$\{\{ always\(\)/u);
 	});
 
 	it("runs the planned shards, all eight when the plan is missing, and splits by job position", () => {
-		const plan = validation.slice(
-			validation.indexOf("name: Plan workspace test shards"),
+		const plan = planner.slice(
+			planner.indexOf("name: Plan workspace test shards"),
 		);
 		// Every way of not having a plan keeps the eight shards.
 		assert.match(plan, /shards='\[0, 1, 2, 3, 4, 5, 6, 7\]'/u);
@@ -158,7 +192,7 @@ describe("merge-group required gate", () => {
 		assert.match(plan, /\[ "\$TESTS" = "affected" \] && \[ -n "\$BASE" \]/u);
 		assert.match(
 			workspace,
-			/shard: \$\{\{ fromJSON\(needs\.pr_gate_validation\.outputs\.shards \|\| '\[0, 1, 2, 3, 4, 5, 6, 7\]'\) \}\}/u,
+			/shard: \$\{\{ fromJSON\(needs\.pr_gate_plan\.outputs\.shards \|\| '\[0, 1, 2, 3, 4, 5, 6, 7\]'\) \}\}/u,
 		);
 		// The split follows the matrix GitHub actually built, not the plan's
 		// own count: a list and a count could disagree and drop a suite.
@@ -199,31 +233,34 @@ describe("merge-group required gate", () => {
 			"",
 		];
 		for (const event of ["pull_request", "merge_group", "push"]) {
-			for (const validationResult of statuses) {
-				for (const workspaceResult of statuses) {
-					for (const affectedResult of statuses) {
-						const run = spawnSync("bash", ["-c", script], {
-							env: {
-								...process.env,
-								EVENT_NAME: event,
-								VALIDATION_RESULT: validationResult,
-								WORKSPACE_RESULT: workspaceResult,
-								AFFECTED_RESULT: affectedResult,
-								// The scripts job's own cases: scripts-tests-job.test.ts.
-								SCRIPTS_RESULT: "success",
-								FORMAL_RESULT: "success",
-							},
-						});
-						const expected =
-							validationResult === "success" &&
-							workspaceResult === "success" &&
-							((event === "pull_request" && affectedResult === "success") ||
-								(event === "merge_group" && affectedResult === "skipped"));
-						assert.equal(
-							run.status === 0,
-							expected,
-							`${event}/${validationResult}/${workspaceResult}/${affectedResult}`,
-						);
+			for (const planResult of statuses) {
+				for (const validationResult of statuses) {
+					for (const workspaceResult of statuses) {
+						for (const affectedResult of statuses) {
+							const run = spawnSync("bash", ["-c", script], {
+								env: {
+									...process.env,
+									EVENT_NAME: event,
+									PLAN_RESULT: planResult,
+									VALIDATION_RESULT: validationResult,
+									WORKSPACE_RESULT: workspaceResult,
+									AFFECTED_RESULT: affectedResult,
+									SCRIPTS_RESULT: "success",
+									FORMAL_RESULT: "success",
+								},
+							});
+							const expected =
+								planResult === "success" &&
+								validationResult === "success" &&
+								workspaceResult === "success" &&
+								((event === "pull_request" && affectedResult === "success") ||
+									(event === "merge_group" && affectedResult === "skipped"));
+							assert.equal(
+								run.status === 0,
+								expected,
+								`${event}/${planResult}/${validationResult}/${workspaceResult}/${affectedResult}`,
+							);
+						}
 					}
 				}
 			}
@@ -241,7 +278,7 @@ describe("merge-group required gate", () => {
 		const routes = ["success", "failure", "skipped", ""];
 		const flags = ["true", "false", ""];
 		const lists = [
-			'["pr_gate_validation","workspace_tests","pr_affected","ci-guard"]',
+			'["pr_gate_plan","pr_gate_validation","workspace_tests","pr_affected","ci-guard"]',
 			'["pr_gate_validation"]',
 			'["ci-guard","secret-scan"]',
 			// Ids that only contain a gate job's id are other jobs.
@@ -251,6 +288,7 @@ describe("merge-group required gate", () => {
 		];
 		type Case = Readonly<{
 			event: string;
+			plan: string;
 			validation: string;
 			workspace: string;
 			affected: string;
@@ -260,28 +298,30 @@ describe("merge-group required gate", () => {
 		}>;
 		const cases: Case[] = [];
 		for (const event of ["pull_request", "merge_group", "push"])
-			for (const validation of statuses)
-				for (const workspace of statuses)
-					for (const affected of statuses)
-						for (const route of routes)
-							for (const flag of flags)
-								for (const list of lists)
-									cases.push({
-										event,
-										validation,
-										workspace,
-										affected,
-										route,
-										flag,
-										list,
-									});
+			for (const plan of statuses)
+				for (const validation of statuses)
+					for (const workspace of statuses)
+						for (const affected of statuses)
+							for (const route of routes)
+								for (const flag of flags)
+									for (const list of lists)
+										cases.push({
+											event,
+											plan,
+											validation,
+											workspace,
+											affected,
+											route,
+											flag,
+											list,
+										});
 		// One shell for the whole table: each case runs the gate's own script
 		// in a subshell and prints its exit status.
 		const quote = (text: string) => `'${text}'`;
 		const driver = [
 			"gate() {",
-			'  ( export EVENT_NAME="$1" VALIDATION_RESULT="$2" WORKSPACE_RESULT="$3"',
-			'    export AFFECTED_RESULT="$4" ROUTE_RESULT="$5" ATTESTED="$6" ATTESTED_JOBS="$7"',
+			'  ( export EVENT_NAME="$1" PLAN_RESULT="$2" VALIDATION_RESULT="$3" WORKSPACE_RESULT="$4"',
+			'    export AFFECTED_RESULT="$5" ROUTE_RESULT="$6" ATTESTED="$7" ATTESTED_JOBS="$8"',
 			// The scripts job's own cases: scripts-tests-job.test.ts.
 			"    export SCRIPTS_RESULT=success",
 			"    export FORMAL_RESULT=success",
@@ -291,7 +331,7 @@ describe("merge-group required gate", () => {
 			"}",
 			...cases.map(
 				(entry) =>
-					`gate ${[entry.event, entry.validation, entry.workspace, entry.affected, entry.route, entry.flag, entry.list].map(quote).join(" ")}`,
+					`gate ${[entry.event, entry.plan, entry.validation, entry.workspace, entry.affected, entry.route, entry.flag, entry.list].map(quote).join(" ")}`,
 			),
 		].join("\n");
 		// From a file: the table is too long for one argument.
@@ -315,6 +355,7 @@ describe("merge-group required gate", () => {
 			const passed = (result: string, job: string) =>
 				result === "success" || (result === "skipped" && attested(job));
 			const expected =
+				passed(entry.plan, "pr_gate_plan") &&
 				passed(entry.validation, "pr_gate_validation") &&
 				passed(entry.workspace, "workspace_tests") &&
 				((entry.event === "pull_request" &&
@@ -322,19 +363,28 @@ describe("merge-group required gate", () => {
 					(entry.event === "merge_group" && entry.affected === "skipped"));
 			const accepted = exits[index] === "0";
 			assert.equal(accepted, expected, JSON.stringify(entry));
-			const results = [entry.validation, entry.workspace, entry.affected];
+			const results = [
+				entry.plan,
+				entry.validation,
+				entry.workspace,
+				entry.affected,
+			];
 			// A failed or cancelled job never passes, attested or not.
 			if (
 				results.some((result) => result === "failure" || result === "cancelled")
 			)
 				assert.equal(accepted, false, JSON.stringify(entry));
-			// Without a route job that succeeded and said `true`, nothing changes:
-			// a skipped validation or workspace job is refused as before.
 			if (
 				(entry.route !== "success" || entry.flag !== "true") &&
-				(entry.validation !== "success" || entry.workspace !== "success")
+				(entry.plan !== "success" ||
+					entry.validation !== "success" ||
+					entry.workspace !== "success")
 			)
-				assert.equal(accepted, false, JSON.stringify(entry));
+				assert.equal(
+					accepted,
+					false,
+					`skipped jobs require a successful attesting route: ${JSON.stringify(entry)}`,
+				);
 			if (
 				accepted &&
 				results.includes("skipped") &&
@@ -348,6 +398,7 @@ describe("merge-group required gate", () => {
 
 	it("skips each of the gate's jobs for an attestation that names it, and nothing else", () => {
 		for (const [block, id] of [
+			[planner, "pr_gate_plan"],
 			[validation, "pr_gate_validation"],
 			[workspace, "workspace_tests"],
 			[affected, "pr_affected"],
@@ -420,7 +471,7 @@ describe("merge-group required gate", () => {
 	});
 
 	it("pins the PR merge base before passing it between jobs", () => {
-		const script = shellForStep(validation, "Resolve Turbo SCM base");
+		const script = shellForStep(planner, "Resolve Turbo SCM base");
 		const directory = mkdtempSync(join(tmpdir(), "hobo-pr-base-"));
 		try {
 			const sha = "a".repeat(40);

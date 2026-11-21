@@ -308,6 +308,7 @@ describe("the scripts lane is a pull-request gate", () => {
 	it("accepts scripts success or a complete verified local run", () => {
 		const script = step(gate, GATE_STEP).run;
 		const passing = {
+			PLAN_RESULT: "success",
 			FORMAL_RESULT: "success",
 			VALIDATION_RESULT: "success",
 			WORKSPACE_RESULT: "success",
@@ -316,13 +317,14 @@ describe("the scripts lane is a pull-request gate", () => {
 			ATTESTED_JOBS: "",
 		};
 		const attestedAll = {
+			PLAN_RESULT: "skipped",
 			FORMAL_RESULT: "success",
 			VALIDATION_RESULT: "skipped",
 			WORKSPACE_RESULT: "skipped",
 			ROUTE_RESULT: "success",
 			ATTESTED: "true",
 			ATTESTED_JOBS:
-				'["pr_gate_validation","workspace_tests","pr_affected","scripts-tests"]',
+				'["pr_gate_plan","pr_gate_validation","workspace_tests","pr_affected","scripts-tests"]',
 		};
 		for (const [event, affected] of [
 			["pull_request", "success"],
@@ -381,6 +383,7 @@ describe("the scripts lane is a pull-request gate", () => {
 				env: {
 					...process.env,
 					EVENT_NAME: "pull_request",
+					PLAN_RESULT: "success",
 					VALIDATION_RESULT: "success",
 					WORKSPACE_RESULT: "success",
 					AFFECTED_RESULT: "success",
