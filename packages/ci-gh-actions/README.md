@@ -27,6 +27,31 @@ claims a single-use JIT configuration with GitHub OIDC and starts the official
 Actions runner. GitHub assigns an original queued job to that runner. The
 original workflow, checkout, job token, logs and artifacts stay in GitHub Actions.
 
+## Runner teardown correlation
+
+When GitHub returns several jobs associated with a runner, correlation selects
+an executing job before a queued or finished reservation. This keeps cleanup
+from treating a runner as idle while another observed job is still executing.
+The rule applies to jobs returned by the lookup; bounded or incomplete GitHub
+listings can still omit an assignment. The maintained
+[runner-correlation verification skill](../../.agents/skills/verify-ci-runner-correlation/SKILL.md)
+records the checks and assumptions.
+
+The model explores 22 distinct states. This projection hides 13 internal
+transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Matching jobs observed
+  s1: Executing job blocks teardown
+  s2: No executing job selected
+  s3: Runner may be stopped
+  [*] --> s0
+  s0 --> s1: select highest-priority job
+  s0 --> s2: select highest-priority job
+  s2 --> s3: allow teardown
+```
+
 ## Test this branch
 
 Run from the monorepo root with Node 24, Linux x64, bash and git:

@@ -104,6 +104,7 @@
     "@pact-foundation/pact": "17.1.4",
     "@types/pg": "8.15.5",
     "esbuild": "0.28.1",
+    "fast-check": "^4.9.0",
     "pg": "8.22.0",
     "testcontainers": "11.8.1"
   }
