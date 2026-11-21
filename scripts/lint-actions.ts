@@ -296,10 +296,6 @@ const HOSTED_RUNS_ON = "ubuntu-24.04";
 const DEPS_IMAGE_RUNS_ON =
 	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
-/** Merge-queue route job: trunk when the hosted surface probe sees capacity. */
-const MERGE_GROUP_ROUTE_JOB_RUNS_ON =
-	"ubuntu-24.04";
-
 const DEPS_IMAGE_BUILD_SCRIPT =
 	"packages/ci-gh-actions/deploy/ci-runner/deps/build-deps.sh";
 
@@ -350,13 +346,8 @@ function isAlwaysHostedJob(
 			block.some((line) => line.includes("--merge-group-route-surface"))
 		);
 	if (/^  route:$/.test(jobLine)) {
-		const allowedRouteRunsOn = new Set([
-			HOSTED_RUNS_ON,
-			MERGE_GROUP_ROUTE_JOB_RUNS_ON,
-		]);
 		return (
-			runsOn !== undefined &&
-			allowedRouteRunsOn.has(runsOn) &&
+			runsOn === HOSTED_RUNS_ON &&
 			block.some(
 				(line) =>
 					line.trim() === "uses: ./.github/actions/route-runner" ||
@@ -785,7 +776,6 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
-			runsOn !== MERGE_GROUP_ROUTE_JOB_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
 			!alwaysHosted
