@@ -323,7 +323,11 @@ describe("promotion saga (WP6)", () => {
 		h.freight.add("f1");
 		h.verification.verdict = VerificationVerdict.FAIL;
 		const result = await h.service.promote(
-			{ freightId: fid("f1"), targets: [camp("dev-1")], idempotencyKey: "first" },
+			{
+				freightId: fid("f1"),
+				targets: [camp("dev-1")],
+				idempotencyKey: "first",
+			},
 			h.ctx(),
 		);
 		expect(result.ok).toBe(true);
