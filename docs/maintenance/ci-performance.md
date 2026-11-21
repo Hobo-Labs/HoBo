@@ -138,6 +138,20 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
   `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
+- **Merge-group gate jobs skipped when a green PR Fabric run tested the same tree at the same base.**
+  30% of the last 50 merge groups tested a tree a green same-repo `pull_request` run of this
+  workflow had already tested with the queue's base absorbed into the PR head
+  ([finding 156](../ci/findings/0156-merge-queue-tree-reuse.md)). The route job's `pr-fabric`
+  step (`scripts/ci/pr-fabric-reuse.mts`) verifies that shape from the trusted base checkout —
+  same-repo run, bound to the entry's PR, base tip matching the branch name and the event, tree
+  SHAs from the commits API, base contained in the PR head by the compare API — and reports it
+  as the route job's `pr-fabric-green` output. On a verified match, **PR impact validation**,
+  **Workspace test shards** and **Scripts tests** are skipped and the `pr-gate` required check
+  accepts them; anything short of a verified match is `reuse=false` and the merge group runs its
+  gate jobs as before. The plan job, secret scan, merge-only required checks and the gate itself
+  are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
+  `.hobo/ci.json` (`false`, and an absent block means the same, until a merge group has produced
+  the first production observation of the route step logging a verified reuse).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
@@ -567,7 +581,11 @@ selection and fallback execution. These TypeScript changes add no Protobuf or
 CUE contract. Live observation of the fleet-to-signoff decision and GitHub
 acceptance of these statuses remains separate evidence.
 
-Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `scripts-tests`, `pr-offpath`,
+`pr_gate_plan` uses node builtins only and resolves the base, scope, and shard matrix
+without installing dependencies. `pr_gate_validation` runs S0 and PR-only checks while
+`workspace_tests` and `pr_affected` start from that plan without waiting for validation.
+
+Covered: `pr_gate_plan`, `pr_gate_validation`, `workspace_tests`, `pr_affected`, `scripts-tests`, `pr-offpath`,
 `artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
 `release-contract` in `release-hobo.yml` when no release image is affected. Not
 covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route

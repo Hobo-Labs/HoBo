@@ -97,11 +97,7 @@ export function SettingsPage({ user }: { user: AuthUser }) {
       setDraft(profile);
       setLayoutUser((current) => ({ ...current, ...profile }));
       setNotice("Settings saved.");
-      try {
-        await refetchAuth();
-      } catch {
-        setNotice("Settings saved (session refresh is still catching up).");
-      }
+      void refetchAuth();
     } catch {
       setError("Settings could not be saved. Check the fields and try again.");
     } finally {
