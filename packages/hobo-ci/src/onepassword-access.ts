@@ -173,8 +173,7 @@ export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccoun
 			return onePasswordVaultScope(vaults, vaultId);
 		} catch (error) {
 			if (sdk === undefined) return "unverifiable";
-			if (error instanceof sdk.RateLimitExceededError) return "unverifiable";
-			return error instanceof sdk.AuthExpiredError || !egressRequired
+			return error instanceof sdk.AuthExpiredError && !egressRequired
 				? false
 				: "unverifiable";
 		}

@@ -144,7 +144,7 @@ describe("1Password SDK bridge", () => {
 		vault.clear();
 	});
 
-	it("refuses a valid retained token when no re-attestation validator is wired", async () => {
+	it("refuses a retained token it cannot re-attest through the required egress", async () => {
 		const prior = getGlobalDispatcher();
 		setGlobalDispatcher(
 			new Agent({
