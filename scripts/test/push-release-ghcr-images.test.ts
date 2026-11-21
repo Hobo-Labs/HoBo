@@ -68,10 +68,28 @@ describe("release-hobo publish and attest, one image per job", () => {
 			);
 		const publish = job("release-publish", "release-attest");
 		const attest = job("release-attest", "release-npm");
+		const build = job("release-oci-build-tag", "release-images");
 		const fromTrain =
 			"image_id: ${{ fromJSON(needs.release-images.outputs.images) }}";
+		expect(build).toMatch(/max-parallel: 6/u);
+		expect(build).toContain(
+			"HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}",
+		);
+		expect(build).toContain("needs.release-main-train-gate.outputs.turbo_base");
+		expect(publish).toContain(
+			"needs.release-main-train-gate.outputs.turbo_base",
+		);
+		expect(publish).toContain("Fetch previous release for affected builds");
+		expect(workflow).toContain("turbo_base: ${{ steps.scope.outputs.from }}");
 		expect(publish).toContain(fromTrain);
-		expect(publish).toMatch(/max-parallel: 1/u);
+		expect(publish).toMatch(/max-parallel: 6/u);
+		expect(publish).toContain(
+			"HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}",
+		);
+		expect(publish).toContain(
+			"HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}",
+		);
+		expect(attest).toMatch(/max-parallel: 6/u);
 		// 20 for the build and bounded push, plus the hobo CLI build that records
 		// the leg's image as release Freight.
 		expect(publish).toContain("timeout-minutes: 20");
