@@ -216,7 +216,7 @@ describe("main full gate workspace sharding", () => {
 		);
 		assert.match(
 			job("route"),
-			/route: \$\{\{ github\.event_name == 'merge_group' && \(needs\.mq-route-surface\.outputs\.surface == 'trunk' && 'fleet' \|\| 'auto'\) \|\| \(inputs\.route \|\| 'auto'\) \}\}/u,
+			/route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/u,
 		);
 		assert.doesNotMatch(workflow, /vars\.HOBO_CI_/u);
 	});

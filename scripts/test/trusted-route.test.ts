@@ -251,8 +251,8 @@ describe("base-controlled attestation verification", () => {
 			assert.equal(
 				asText(withBlock?.route),
 				workflow === "hobo-ci.yml"
-					? "${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'fleet' || 'auto') || (inputs.route || 'auto') }}"
-					: "${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'fleet' || 'auto') || 'auto' }}",
+					? "${{ (inputs.route || 'auto') }}"
+					: "auto",
 			);
 		});
 	}
@@ -262,12 +262,14 @@ describe("base-controlled attestation verification", () => {
 			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
 		);
 		const jobs = asObject(workflow.jobs);
-		const validation = asObject(jobs?.pr_gate_validation);
-		const steps = asList(validation?.steps)?.map(asObject) ?? [];
-		assert.equal(
-			steps.some((step) => step?.id === "shard-route"),
-			false,
-		);
+		for (const id of ["pr_gate_plan", "pr_gate_validation"]) {
+			const steps = asList(asObject(jobs?.[id])?.steps)?.map(asObject) ?? [];
+			assert.equal(
+				steps.some((step) => step?.id === "shard-route"),
+				false,
+				id,
+			);
+		}
 		assert.equal(
 			asObject(jobs?.workspace_tests)?.["runs-on"],
 			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",

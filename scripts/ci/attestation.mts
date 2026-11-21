@@ -36,6 +36,7 @@ export type AttestationEvent = (typeof ATTESTATION_EVENTS)[number];
  * is never reported as attested, whatever a statement says.
  */
 export const COVERED_JOBS = [
+	"pr_gate_plan",
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
@@ -49,6 +50,7 @@ export const COVERED_JOBS = [
 export type CoveredJob = (typeof COVERED_JOBS)[number];
 
 export const GATE_JOBS: readonly CoveredJob[] = [
+	"pr_gate_plan",
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
@@ -58,7 +60,12 @@ export const GATE_JOBS: readonly CoveredJob[] = [
 /** The gate's jobs that run on each event; `pr_affected` is pull-request only. */
 export const GATE_JOBS_BY_EVENT = {
 	pull_request: GATE_JOBS,
-	merge_group: ["pr_gate_validation", "workspace_tests", "scripts-tests"],
+	merge_group: [
+		"pr_gate_plan",
+		"pr_gate_validation",
+		"workspace_tests",
+		"scripts-tests",
+	],
 } satisfies Record<AttestationEvent, readonly CoveredJob[]>;
 
 /**
@@ -70,8 +77,8 @@ export const NEEDS_CONTAINER_ENGINE: readonly CoveredJob[] = [
 	"workspace_tests",
 ];
 
-export const SHADOW_WORKFLOW_BLOB = "8ddaff4fb8a1c30dc2c1463cc864ca76ee797e7b";
-export const SHADOW_PLAN_BLOB = "3c814cfd9640459ecc03936f44541d98ce565f86";
+export const SHADOW_WORKFLOW_BLOB = "64313fa7f0b24bad4129745e3dfa26cf7e501c58";
+export const SHADOW_PLAN_BLOB = "d98a252891f8447053abf214f361c98e99589d01"
 export const SHADOW_WORKFLOW_PATH = ".github/workflows/hobo-ci.yml";
 export const SHADOW_PLAN_PATH = "scripts/ci/attested-jobs.json";
 export const SHADOW_REQUIRED_PATHS = [
@@ -576,10 +583,15 @@ export type AttestationVerdict =
 	| Readonly<{ attested: true; jobs: readonly CoveredJob[]; attestor: string }>
 	| Readonly<{ attested: false; reason: string }>;
 
+const includesPrImpactGatePlanOrValidation = (
+	jobs: readonly string[],
+): boolean =>
+	jobs.includes("pr_gate_plan") || jobs.includes("pr_gate_validation");
+
 export function omitImpactGroup(
 	verdict: AttestationVerdict,
 ): AttestationVerdict {
-	if (!verdict.attested || !verdict.jobs.includes("pr_gate_validation"))
+	if (!verdict.attested || !includesPrImpactGatePlanOrValidation(verdict.jobs))
 		return verdict;
 	const jobs = verdict.jobs.filter((job) => !GATE_JOBS.includes(job));
 	return jobs.length > 0

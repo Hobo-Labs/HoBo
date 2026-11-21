@@ -688,10 +688,10 @@ export async function chooseRunner(input: {
 	}
 }
 
-/** Hosted queue limits for merge-group Fabric routing (critical path < 7 min). */
+/** Hosted queue limits for merge-group Fabric routing (critical path under 7 min). */
 export const MERGE_GROUP_HOSTED_LIMITS: RouteLimits = {
-	maxWaitSeconds: 120,
-	maxQueued: 4,
+	maxWaitSeconds: 90,
+	maxQueued: 3,
 };
 
 export function mergeGroupHostedHasIdleCapacity(
@@ -730,17 +730,14 @@ export async function mergeGroupRouteSurface(
 	if (!token || !repository) return "hosted";
 	const read = githubReader(apiUrl, token);
 	const now = io.now ?? Date.now;
-	const probeLimits = {
-		...MERGE_GROUP_HOSTED_LIMITS,
-		maxQueued: Number.MAX_SAFE_INTEGER,
-	};
 	try {
 		const view = await observeQueue({
 			read,
 			repository,
 			ownRunId: Number(env.GITHUB_RUN_ID),
 			labels: [labels.github],
-			limits: probeLimits,
+			limits: MERGE_GROUP_HOSTED_LIMITS,
+			exhaustLookups: true,
 			nowMs: now(),
 		});
 		const hosted = labelLoad(view.jobs, labels.github, now());
@@ -1393,26 +1390,34 @@ export async function main(
 		const token = env.GITHUB_TOKEN ?? "";
 		const trunkLabel = labels.trunk;
 		const githubLabel = labels.github;
-		const observationLimits = {
+		const trunkObservationLimits = {
 			...limits,
 			maxQueued: Number.MAX_SAFE_INTEGER,
 		};
 		const read = githubReader(apiUrl, token);
-		const observe = (nowMs: number) =>
+		const observeHosted = (nowMs: number) =>
 			observeQueue({
 				read,
 				repository,
 				ownRunId: Number(env.GITHUB_RUN_ID),
-				labels: localEnrolled
-					? [githubLabel, trunkLabel, labels.local]
-					: [githubLabel, trunkLabel],
-				limits: observationLimits,
+				labels: [githubLabel],
+				limits: MERGE_GROUP_HOSTED_LIMITS,
+				exhaustLookups: true,
+				nowMs,
+			});
+		const observeTrunk = (nowMs: number) =>
+			observeQueue({
+				read,
+				repository,
+				ownRunId: Number(env.GITHUB_RUN_ID),
+				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
+				limits: trunkObservationLimits,
 				nowMs,
 			});
 		const sleep = (wait: number) => delay(wait * 1000);
 		let decision: RouteDecision;
 		try {
-			const firstView = await observe(now());
+			const firstView = await observeHosted(now());
 			const hostedLoad = labelLoad(
 				firstView.jobs,
 				githubLabel,
@@ -1427,7 +1432,7 @@ export async function main(
 				};
 			} else {
 				decision = await chooseRunner({
-					observe,
+					observe: observeTrunk,
 					now,
 					sleep,
 					mode,
@@ -1435,18 +1440,18 @@ export async function main(
 					localLabel: labels.local,
 					githubLabel,
 					localEnrolled,
-					limits: observationLimits,
+					limits: trunkObservationLimits,
 					trunkPriority: true,
 				});
 				if (decision.tier === "fleet")
 					decision = await confirmMergeGroupFabricFleet({
 						fleetDecision: decision,
-						observe,
+						observe: observeTrunk,
 						now,
 						sleep,
 						fleetLabel: trunkLabel,
 						githubLabel,
-						limits: observationLimits,
+						limits: trunkObservationLimits,
 					});
 			}
 		} catch (error) {
