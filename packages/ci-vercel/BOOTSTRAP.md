@@ -17,11 +17,13 @@ ref=main
 sha=<40-character-lowercase-commit>
 
 hobo ci deploy --cwd packages/ci-vercel --ref "$ref" --sha "$sha" \
-  --target preview --provision --wait
+  --target preview --build prebuilt --provision --wait
 hobo ci deploy --cwd packages/ci-vercel --ref "$ref" --sha "$sha" \
-  --target production --provision --wait
+  --target production --build prebuilt --provision --wait
 ```
 
 Do not change `HOBO_HOME` between commands: production consumes preview's qualification from the CD journal under that home. Production also verifies that `HOBO_CI_RELAY_URL/healthz` serves `$sha` and that `/readyz` answers 200.
+
+Run both from a checkout at `$sha`: preview builds that checkout once and stages it, and production promotes that same build, rolling back if production verification fails.
 
 Never Git-link the Vercel project or use `hobo ci deploy --adopt`. Bootstrap uses direct HoBo CD deployment only.
