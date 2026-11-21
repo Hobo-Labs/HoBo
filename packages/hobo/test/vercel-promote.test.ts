@@ -131,7 +131,7 @@ describe("promote and rollback", () => {
 });
 
 describe("what production serves, and what a Freight staged", () => {
-	it("reads the deployment production serves from the project's targets", async () => {
+	it("reads the canonical project id and the deployment production serves", async () => {
 		const transport = scripted([
 			reply(200, {
 				id: PROJECT,
@@ -145,9 +145,12 @@ describe("what production serves, and what a Freight staged", () => {
 			teamId: TEAM,
 			fetch: transport.fetch,
 		});
-		expect(await client.productionDeploymentId(PROJECT)).toBe("dpl_live");
+		expect(await client.readProject("hobo-ci")).toEqual({
+			id: PROJECT,
+			productionDeploymentId: "dpl_live",
+		});
 		expect(transport.sent[0]?.url).toBe(
-			`https://api.vercel.com/v9/projects/${PROJECT}?teamId=${TEAM}`,
+			`https://api.vercel.com/v9/projects/hobo-ci?teamId=${TEAM}`,
 		);
 		expect(transport.sent[0]?.init.method).toBe("GET");
 	});
@@ -155,7 +158,7 @@ describe("what production serves, and what a Freight staged", () => {
 	it("answers undefined for a project production has never served", async () => {
 		const transport = scripted([reply(200, { id: PROJECT, targets: {} })]);
 		const client = createVercelClient({ token: TOKEN, fetch: transport.fetch });
-		expect(await client.productionDeploymentId(PROJECT)).toBeUndefined();
+		expect(await client.readProject(PROJECT)).toEqual({ id: PROJECT });
 	});
 
 	it("lists production builds with their meta, newest first as Vercel answers", async () => {

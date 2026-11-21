@@ -332,10 +332,13 @@ export interface VercelClient {
 	// its reason, rather than failing. Any other refusal, another 409 included,
 	// is a VercelApiError.
 	createProject(name: string): Promise<VercelProjectResult>;
-	// The id of the deployment the project's production domains serve now
-	// (Vercel project `targets.production.id`), or undefined when it has
-	// none. A project Vercel does not know is a VercelApiError (404).
-	productionDeploymentId(project: string): Promise<string | undefined>;
+	// The project's canonical id (`prj_…`, whether `project` was its id or its
+	// name) and the deployment its production domains serve now (Vercel
+	// project `targets.production.id`), undefined when it serves none. A
+	// project Vercel does not know is a VercelApiError (404).
+	readProject(
+		project: string,
+	): Promise<Readonly<{ id: string; productionDeploymentId?: string }>>;
 	// The project's most recent deployments, newest first, one page of at most
 	// `limit` (default 20, at most 100). `target: "production"` keeps the
 	// production builds, staged or live.
@@ -1221,7 +1224,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 	}
 	return {
 		getDeployment: readDeployment,
-		async productionDeploymentId(project: string) {
+		async readProject(project: string) {
 			const what = "read project";
 			const response = await send(
 				what,
@@ -1230,10 +1233,19 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			);
 			if (!response.ok) throw await failure(what, response, secrets);
 			const payload = await payloadFrom(what, response);
+			if (!isJsonString(payload.id) || payload.id === "")
+				throw new VercelTransportError(
+					`vercel-client: ${what} answered HTTP ${response.status} without a project id`,
+				);
 			const targets = payload.targets;
 			const production = isJsonObject(targets) ? targets.production : undefined;
-			const id = isJsonObject(production) ? production.id : undefined;
-			return isJsonString(id) && id !== "" ? id : undefined;
+			const live = isJsonObject(production) ? production.id : undefined;
+			return {
+				id: payload.id,
+				...(isJsonString(live) && live !== ""
+					? { productionDeploymentId: live }
+					: undefined),
+			};
 		},
 		async listProjectDeployments(input) {
 			const what = "list deployments";
