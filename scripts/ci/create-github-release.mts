@@ -350,7 +350,6 @@ export type ReleaseCdSeams = Readonly<{
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
 
-/** Adds GITHUB_TOKEN to every api.github.com call (release verification probes). */
 export function githubApiProbeTransport(
 	env: Readonly<Record<string, string | undefined>>,
 	inner: ReleaseHttpTransport,
