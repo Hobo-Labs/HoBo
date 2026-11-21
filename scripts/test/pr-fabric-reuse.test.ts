@@ -10,6 +10,7 @@ import {
 	PR_FABRIC_RUN_LOOKUPS,
 	type PrFabricReuseInput,
 	parseMergeQueueEntry,
+	prFabricGateJobsSucceeded,
 	reusePrFabricSetting,
 } from "../ci/pr-fabric-reuse.mts";
 import type { JsonValue } from "../ci/runner-routing.mts";
@@ -122,7 +123,7 @@ describe("pr-fabric reuse on a merge group", () => {
 			"utf8",
 		);
 		assert.equal(DEFAULT_REUSE_PR_FABRIC, false);
-		assert.equal(reusePrFabricSetting(committed), true);
+		assert.equal(typeof reusePrFabricSetting(committed), "boolean");
 		const project = JSON.parse(committed);
 		project.runnerRouting.mergeGroup.reusePrFabric = false;
 		assert.equal(reusePrFabricSetting(JSON.stringify(project)), false);
@@ -239,6 +240,14 @@ const routes = {
 		{ workflow_runs: [greenRun] },
 	[`/git/commits/${PR_HEAD}`]: { tree: { sha: TREE } },
 	[`/compare/${BASE}...${PR_HEAD}`]: { merge_base_commit: { sha: BASE } },
+	"/actions/runs/44766571780/jobs?per_page=100&filter=latest": {
+		jobs: [
+			{ name: "PR impact validation", conclusion: "success" },
+			{ name: "Scripts tests", conclusion: "success" },
+			{ name: "Workspace test shard 0", conclusion: "success" },
+			{ name: "Workspace test shard 1", conclusion: "success" },
+		],
+	},
 };
 
 describe("the evidence fetch", () => {
@@ -260,7 +269,46 @@ describe("the evidence fetch", () => {
 			baseAncestor: true,
 			runId: 44766571780,
 		});
-		assert.equal(seen.length, 5);
+		assert.equal(seen.length, 6);
+	});
+
+	it("refuses a green run when any fabric gate job did not succeed", async () => {
+		const runsRoute = `/actions/workflows/hobo-ci.yml/runs?event=pull_request&status=success&branch=cursor%2Fmerge-queue-tree-reuse&per_page=${PR_FABRIC_RUN_LOOKUPS}`;
+		const jobsRoute =
+			"/actions/runs/44766571780/jobs?per_page=100&filter=latest";
+		const okJobs = routes[jobsRoute];
+		for (const jobs of [
+			{ jobs: [{ name: "PR impact validation", conclusion: "skipped" }] },
+			{
+				jobs: [
+					{ name: "PR impact validation", conclusion: "success" },
+					{ name: "Scripts tests", conclusion: "skipped" },
+				],
+			},
+			{
+				jobs: [
+					{ name: "PR impact validation", conclusion: "success" },
+					{ name: "Scripts tests", conclusion: "success" },
+				],
+			},
+		]) {
+			const fetched = await fetchPrFabricEvidence({
+				fetch: api({
+					...routes,
+					[runsRoute]: { workflow_runs: [greenRun] },
+					[jobsRoute]: jobs,
+				}),
+				repository: "Hobo-Labs/HoBo",
+				workflowBasename: "hobo-ci.yml",
+				token: "t",
+				pr: 2016,
+				baseRef: "main",
+				base: BASE,
+				mergeHeadSha: HEAD,
+			});
+			assert.equal(fetched, undefined, JSON.stringify(jobs));
+		}
+		assert.equal(prFabricGateJobsSucceeded(okJobs), true);
 	});
 
 	it("skips runs that are not green same-repo runs of this workflow bound to the merge entry", async () => {

@@ -121,6 +121,35 @@ export type PrFabricEvidence = Readonly<{
 	runId?: number;
 }>;
 
+export const PR_FABRIC_GATE_JOB_VALIDATION = "PR impact validation";
+export const PR_FABRIC_GATE_JOB_SCRIPTS = "Scripts tests";
+export const PR_FABRIC_WORKSPACE_SHARD_PREFIX = "Workspace test shard ";
+
+export function prFabricGateJobsSucceeded(
+	page: JsonValue | undefined,
+): boolean {
+	const jobs = asList(asObject(page)?.jobs);
+	if (jobs.length === 0) return false;
+	let validation = false;
+	let scripts = false;
+	let workspaceShards = 0;
+	for (const entry of jobs) {
+		const job = asObject(entry);
+		const name = asText(job?.name) ?? "";
+		const conclusion = asText(job?.conclusion);
+		const fabricJob =
+			name === PR_FABRIC_GATE_JOB_VALIDATION ||
+			name === PR_FABRIC_GATE_JOB_SCRIPTS ||
+			name.startsWith(PR_FABRIC_WORKSPACE_SHARD_PREFIX);
+		if (!fabricJob) continue;
+		if (conclusion !== "success") return false;
+		if (name === PR_FABRIC_GATE_JOB_VALIDATION) validation = true;
+		else if (name === PR_FABRIC_GATE_JOB_SCRIPTS) scripts = true;
+		else workspaceShards++;
+	}
+	return validation && scripts && workspaceShards > 0;
+}
+
 function parsedSha(value: JsonValue | undefined): string | undefined {
 	const sha = asText(value)?.trim().toLowerCase();
 	return sha !== undefined && SHA.test(sha) ? sha : undefined;
@@ -222,8 +251,12 @@ export async function fetchPrFabricEvidence(
 		const mergeBase = parsedSha(asObject(compare?.merge_base_commit)?.sha);
 		if (mergeBase !== options.base) continue;
 		const runId = asNumber(run.id);
-		const evidence = { mergeTree, prHeadTree, baseAncestor: true };
-		return runId === undefined ? evidence : { ...evidence, runId };
+		if (runId === undefined) continue;
+		const jobsPage = await read(
+			`/actions/runs/${runId}/jobs?per_page=100&filter=latest`,
+		);
+		if (!prFabricGateJobsSucceeded(jobsPage)) continue;
+		return { mergeTree, prHeadTree, baseAncestor: true, runId };
 	}
 	return undefined;
 }

@@ -396,4 +396,12 @@ describe("pr-fabric reuse routing", () => {
 		);
 		assert.equal(asText(env?.GITHUB_TOKEN), "${{ inputs.token }}");
 	});
+
+	it("reads mergeGroup reuse policy from the trusted-base script tree", () => {
+		const source = readFileSync("scripts/ci/pr-fabric-reuse.mts", "utf8");
+		assert.match(
+			source,
+			/join\(import\.meta\.dirname, "\.\.", "\.\.", RUNNER_ROUTING_PATH\)/u,
+		);
+	});
 });
