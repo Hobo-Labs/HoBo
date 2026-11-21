@@ -250,6 +250,29 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /curl [^\n]*\/(healthz|readyz)/u);
 	});
 
+	it("fails a result report whose command status is omitted or invalid", () => {
+		const work = mkdtempSync(join(tmpdir(), "relay-result-report-"));
+		try {
+			const json = join(work, "result.json");
+			writeFileSync(json, JSON.stringify({ code: "HOBO_TEST_REFUSED" }));
+			const report = join(root, "scripts/ci/relay-deploy-result-report.mts");
+			for (const args of [
+				[json, "preview"],
+				[json, "preview", "", "0junk"],
+			]) {
+				const ran = spawnSync(
+					process.execPath,
+					["--import", "tsx", report, ...args],
+					{ encoding: "utf8" },
+				);
+				assert.equal(ran.status, 1);
+				assert.doesNotMatch(ran.stdout, /HOBO_OK/u);
+			}
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
+	});
+
 	it("reports a delivery refusal and stops before any later target", () => {
 		const work = mkdtempSync(join(tmpdir(), "relay-adopt-report-"));
 		try {

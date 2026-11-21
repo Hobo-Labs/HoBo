@@ -543,4 +543,27 @@ describe("hobo ci secret-store verify", () => {
 			],
 		});
 	});
+
+	it.each([
+		{ loginStatus: 401, deployReadStatus: 403 },
+		{ loginStatus: 200, deployReadStatus: 401 },
+	])("does not attest deploy-project denial without an authenticated authorization refusal", async ({
+		loginStatus,
+		deployReadStatus,
+	}) => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const result = await runCiSecretStore(
+			input(
+				"verify",
+				{},
+				{ VERCEL_OIDC_TOKEN: JWT },
+				infisical(loginStatus, ["HOBO_CI_PUBLIC_URL"], JWT, deployReadStatus)
+					.fetch,
+			),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain(
+			"hobo-ci-relay (Vercel OIDC deploy-project denial): fail",
+		);
+	});
 });

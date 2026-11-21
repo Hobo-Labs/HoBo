@@ -6,10 +6,10 @@ import {
 	LONG_TOKEN_RUN_PROFILE,
 } from "../../packages/provider-redaction/src/provider-redaction.js";
 
-const [jsonPath, label, stderrPath = "", exitArg = "0"] = process.argv.slice(2);
-if (jsonPath === undefined || label === undefined)
+const [jsonPath, label, stderrPath = "", exitArg] = process.argv.slice(2);
+if (jsonPath === undefined || label === undefined || exitArg === undefined)
 	throw new Error(
-		"usage: relay-deploy-result-report.mts <json> <label> [stderr] [status]",
+		"usage: relay-deploy-result-report.mts <json> <label> [stderr] <status>",
 	);
 
 const envelopeSchema = z.object({
@@ -23,7 +23,12 @@ const envelope = (() => {
 		return undefined;
 	}
 })();
-const exitCode = Number.parseInt(exitArg, 10);
+const exitCode = Number(exitArg);
+const validExitCode =
+	exitArg.trim() !== "" &&
+	Number.isInteger(exitCode) &&
+	exitCode >= 0 &&
+	exitCode <= 255;
 const code =
 	envelope?.code ??
 	(envelope === undefined ? "HOBO_CI_DEPLOY_NO_ENVELOPE" : "HOBO_OK");
@@ -38,6 +43,4 @@ const stderr =
 		: "";
 if (stderr !== "") console.log(redact(stderr, 4096));
 process.exitCode =
-	Number.isFinite(exitCode) && (envelope !== undefined || exitCode !== 0)
-		? exitCode
-		: 1;
+	validExitCode && (envelope !== undefined || exitCode !== 0) ? exitCode : 1;

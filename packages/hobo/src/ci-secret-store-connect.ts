@@ -397,6 +397,7 @@ async function denyDeployTokenRead(
 	const method = "Vercel OIDC deploy-project denial";
 	const session = client();
 	try {
+		await session.signIn();
 		await session.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
 		return {
 			identity,
@@ -407,9 +408,7 @@ async function denyDeployTokenRead(
 	} catch (error) {
 		const denied =
 			error instanceof InfisicalError &&
-			["forbidden", "login-denied", "unauthorized", "value-hidden"].includes(
-				error.code,
-			);
+			["forbidden", "value-hidden"].includes(error.code);
 		return {
 			identity,
 			method,
