@@ -24,7 +24,13 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
-The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
+The mirrored subsystem verification skills pair implementation tests with TLA+
+models and, where applicable, mathematical proofs of abstractions. See the
+[state-machine verification index](state-machines.md) for covered behavior,
+the audit queue, assumptions, and `pnpm run verify:state-machines`. These checks
+do not by themselves prove implementation refinement or external effects. The
+budget-routing Z3 proof treats settled cost above the reserved hold as outside
+its inductive cap, aligned with truthful overrun recording at confirmation.
 
 The mirrored `verify-broker-budget-authority` skill's BrokerBudget model keeps unused-release evidence and final settlement evidence mutually exclusive, so a reservation cannot be claimed after unused evidence is recorded, cannot carry both evidence kinds, and cannot be released once final evidence exists.
 
@@ -149,8 +155,6 @@ workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
 `quieter`, `colorize`. **Standing duty on visual work** (TUI, dashboard,
 Evidence and `site/`): run `critique` then `audit`
 (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
-`design:lint` invokes `scripts/check-visual-tokens.mts`; the root
-`test/visual-tokens.test.ts` suite pins that wiring.
 See `AGENTS.md` “Visual quality”. **No API keys**, but it is **not**
 offline — see egress below.
 - **Network egress (three paths, one of them automatic):**
