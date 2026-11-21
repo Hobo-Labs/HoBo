@@ -83,7 +83,7 @@ function lintFile(file: string, text: string): number | null {
 }
 
 const routeJob =
-	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
 function lintRunner(
 	file: string,
@@ -390,7 +390,7 @@ describe("Actions runner policy", () => {
 			);
 	});
 
-	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
+	it("permits the route job's event-selected runner and hosted no-action gates, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
 		assert.equal(
 			lintJobs(

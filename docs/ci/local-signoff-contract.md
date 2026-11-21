@@ -40,19 +40,15 @@ Unsupported inventory stays unknown. An Actions workflow continues
 to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
 
-Automatically routed `merge_group` batches in `hobo-ci.yml` use the normal slip
-and queue decision with the `hobo-trunk` label. Admission is queue-observed
-trunk pickup, not a Broker PR-batch claim. A recent timely trunk pickup keeps
-the batch on the fleet only after trunk pickup confirmation that polls the queue
-for up to 90 seconds; an immediate refusal, a timed-out confirmation, or a
-persistently unhealthy trunk selects the configured GitHub-hosted fallback. The
-general `hobo` fleet label is never used for merge-queue Fabric. For automatically routed `merge_group`
-batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
-verifying the public repository and committed routing policy. It does not
-dispatch the optional box job: a one-time fleet observation cannot reserve
-capacity or recover jobs if the fleet becomes unavailable after routing. Missing
-evidence stops the release batch before jobs are queued. Explicit operator pins
-remain in effect.
+Automatically routed `merge_group` batches in `hobo-ci.yml` and
+`release-hobo.yml` start their route jobs on `hobo-trunk` and read the hosted
+and trunk queues. Any hosted waiter or other saturation signal means hosted
+has no idle capacity, so the whole batch uses `hobo-trunk`; trunk waiters or a
+failed pickup confirmation never send it back to `ubuntu-24.04`. Hosted is
+selected only with zero hosted waiters and no other saturation signal. The
+general `hobo` fleet label is never used for merge-queue Fabric. Release merge
+groups do not dispatch the optional box job. Explicit operator pins remain in
+effect.
 On pull requests, the route action, its executable dependencies, and routing
 policy come from the event's base checkout. Proposed workflow content can still
 change the job graph itself; that requires a separately trusted required

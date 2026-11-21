@@ -4,9 +4,6 @@
  * taking jobs, a local box when one is enrolled and the fleet is not, and
  * GitHub's own machines when neither is.
  *
- * Runs first in every workflow, on a GitHub-hosted machine, so the choice does
- * not itself wait on the fleet. It has no dependencies and installs nothing.
- *
  * Availability is read from GitHub's queue, the one thing every backend
  * shares: a backend is taking jobs when it was seen to pick one up recently and
  * quickly, no job asking for its label has waited past the limit, and few jobs
@@ -705,14 +702,14 @@ export function mergeGroupHostedHasIdleCapacity(
 	load: LabelLoad,
 	limits: RouteLimits = MERGE_GROUP_HOSTED_LIMITS,
 ): boolean {
-	return !refusingJobs(load, limits);
+	return load.queued === 0 && !refusingJobs(load, limits);
 }
 
 export function prBatchHostedHasIdleCapacity(
 	load: LabelLoad,
 	limits: RouteLimits = MERGE_GROUP_HOSTED_LIMITS,
 ): boolean {
-	return mergeGroupHostedHasIdleCapacity(load, limits);
+	return !refusingJobs(load, limits);
 }
 
 // public-contract: the Agent37 on-demand overflow runs-on label, emitted on pool saturation only when its fetched runner page shows an online runner.
@@ -926,7 +923,6 @@ export async function confirmMergeGroupFabricFleet(input: {
 	now: () => number;
 	sleep: (seconds: number) => Promise<void>;
 	fleetLabel: string;
-	githubLabel: string;
 	limits: RouteLimits;
 }): Promise<RouteDecision> {
 	const admissionLimits = {
@@ -937,10 +933,10 @@ export async function confirmMergeGroupFabricFleet(input: {
 		),
 	};
 	const startedAtMs = input.now();
-	const hosted = (outcome: string): RouteDecision => ({
-		tier: "github",
-		runner: input.githubLabel,
-		reason: `merge-group trunk confirmation ${outcome}`,
+	const unconfirmed = (outcome: string): RouteDecision => ({
+		tier: "fleet",
+		runner: input.fleetLabel,
+		reason: `${input.fleetDecision.reason}; merge-group trunk confirmation ${outcome}; the run stays on ${input.fleetLabel} because GitHub-hosted has no idle capacity`,
 		refusedBy: "queue",
 		slip: input.fleetDecision.slip,
 	});
@@ -948,21 +944,21 @@ export async function confirmMergeGroupFabricFleet(input: {
 		const nowMs = input.now();
 		const waitedSeconds = seconds(startedAtMs, nowMs);
 		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
-			return hosted(
+			return unconfirmed(
 				`timed out after ${waitedSeconds} s without a healthy trunk pickup`,
 			);
 		let view: QueueView;
 		try {
 			view = await input.observe(nowMs);
 		} catch (error) {
-			return hosted(
+			return unconfirmed(
 				`could not read the queue (${error instanceof Error ? error.message : "unknown error"})`,
 			);
 		}
 		const observedAtMs = input.now();
 		const observedWaitSeconds = seconds(startedAtMs, observedAtMs);
 		if (observedWaitSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
-			return hosted(
+			return unconfirmed(
 				`timed out after ${observedWaitSeconds} s without a healthy trunk pickup`,
 			);
 		const fleet = labelLoad(view.jobs, input.fleetLabel, observedAtMs);
@@ -973,7 +969,7 @@ export async function confirmMergeGroupFabricFleet(input: {
 				refusedBy: "none",
 			};
 		if (refusingJobs(fleet, admissionLimits))
-			return hosted("found the trunk fleet refusing jobs");
+			return unconfirmed("found the trunk fleet refusing jobs");
 		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
 	}
 }
@@ -1419,30 +1415,6 @@ export async function main(
 		? ""
 		: `; ${RUNNER_ROUTING_PATH} holds no valid runnerRouting, so the code's defaults apply`;
 	const now = io.now ?? Date.now;
-	if (mergeBatch) {
-		if (!settings.committed)
-			throw new Error(
-				"merge-group batch routing requires a valid committed policy",
-			);
-		if (
-			labels.github !== "ubuntu-24.04" ||
-			!(await isPublicCaller(env, io.fetch))
-		)
-			throw new Error(
-				"merge-group batch public compute evidence is unavailable",
-			);
-		return report(
-			{
-				tier: "github",
-				runner: labels.github,
-				reason:
-					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
-				refusedBy: "none",
-				slip: { kind: "unasked", why: "batch" },
-			},
-			env,
-		);
-	}
 	if (
 		event === "merge_group" &&
 		["hobo-ci.yml", "release-hobo.yml"].includes(workflowFile(env)) &&
@@ -1743,18 +1715,16 @@ export async function main(
 				trunkIdle,
 				trunkSummary,
 			};
-			if (hostedIdle || !trunkIdle) {
+			if (hostedIdle) {
 				decision = {
 					tier: "github",
 					runner: githubLabel,
-					reason: hostedIdle
-						? `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`
-						: `merge-group Fabric prefers GitHub-hosted while hobo-trunk has no idle capacity (${trunkSummary})`,
+					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
 				};
 			} else {
-				decision = await chooseRunner({
+				const choice = await chooseRunner({
 					observe: observeTrunkChoice,
 					now,
 					sleep,
@@ -1766,16 +1736,27 @@ export async function main(
 					limits: trunkChoiceObservationLimits,
 					trunkPriority: true,
 				});
-				if (decision.tier === "fleet")
-					decision = await confirmMergeGroupFabricFleet({
-						fleetDecision: decision,
-						observe: observeTrunkChoice,
-						now,
-						sleep,
-						fleetLabel: trunkLabel,
-						githubLabel,
-						limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
-					});
+				const fleetDecision: RouteDecision =
+					choice.tier === "fleet" && choice.runner === trunkLabel
+						? choice
+						: {
+								tier: "fleet",
+								runner: trunkLabel,
+								reason: `${choice.reason}; merge-group Fabric uses ${trunkLabel} because GitHub-hosted has no idle capacity (${hostedSummary})`,
+								refusedBy: "queue",
+								slip: choice.slip,
+							};
+				decision =
+					fleetDecision.refusedBy === "queue"
+						? fleetDecision
+						: await confirmMergeGroupFabricFleet({
+								fleetDecision,
+								observe: observeTrunkChoice,
+								now,
+								sleep,
+								fleetLabel: trunkLabel,
+								limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
+							});
 				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		}

@@ -1549,7 +1549,7 @@ describe("the script reading the slip", () => {
 		assert.match(record.mergeGroupHostedProbe?.summary ?? "", /unreadable/u);
 	});
 
-	it("prefers GitHub-hosted on merge-group Fabric while hosted runners have idle capacity", async () => {
+	it("treats one queued hosted job as no merge-group hosted capacity", async () => {
 		await withGithub(
 			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
 			async (apiUrl) => {
@@ -1558,10 +1558,13 @@ describe("the script reading the slip", () => {
 					undefined,
 					mergeGroupCi,
 				);
-				assert.equal(decision.tier, "github");
-				assert.equal(decision.runner, "ubuntu-24.04");
-				assert.ok(decision.mergeGroupHostedProbe?.idle);
-				assert.match(lines.join("\n"), /merge-group hosted probe:.*idle=true/u);
+				assert.equal(decision.tier, "fleet");
+				assert.equal(decision.runner, "hobo-trunk");
+				assert.equal(decision.mergeGroupHostedProbe?.idle, false);
+				assert.match(
+					lines.join("\n"),
+					/merge-group hosted probe:.*idle=false/u,
+				);
 			},
 		);
 	});
@@ -1857,7 +1860,35 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("routes merge-group CI to GitHub-hosted when trunk has jobs waiting", async () => {
+	it("routes a saturated merge-group release batch to hobo-trunk", async () => {
+		await withGithub(
+			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupRelease);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["fleet", "hobo-trunk", "none"],
+				);
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+			},
+		);
+	});
+
+	it("uses hobo-trunk for a saturated hosted batch without a recent trunk pickup", async () => {
+		await withGithub(observed(saturatedHostedQueue()), async (apiUrl) => {
+			const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+			assert.deepEqual(
+				[decision.tier, decision.runner, decision.refusedBy],
+				["fleet", "hobo-trunk", "queue"],
+			);
+			assert.match(decision.reason, /GitHub-hosted has no idle capacity/u);
+		});
+	});
+
+	it("keeps a saturated merge-group batch on hobo-trunk when trunk has jobs waiting", async () => {
 		await withGithub(
 			observed([
 				...saturatedHostedQueue(),
@@ -1868,9 +1899,9 @@ describe("the script reading the slip", () => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo-trunk", "queue"],
 				);
-				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+				assert.match(decision.reason, /trunk fleet refusing jobs/u);
 				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, false);
 			},
 		);
@@ -1925,9 +1956,9 @@ describe("the script reading the slip", () => {
 				);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo-trunk", "queue"],
 				);
-				assert.match(decision.reason, /hobo-trunk has no idle capacity/u);
+				assert.match(decision.reason, /trunk fleet refusing jobs/u);
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",
@@ -1937,7 +1968,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("falls back to GitHub-hosted when trunk health is lost before confirmation", async () => {
+	it("stays on hobo-trunk when trunk health is lost before confirmation", async () => {
 		let queueReads = 0;
 		const healthy = observed([...saturatedHostedQueue(), pickup("hobo-trunk")]);
 		await withGithub(
@@ -1959,7 +1990,7 @@ describe("the script reading the slip", () => {
 				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["github", "ubuntu-24.04", "queue"],
+					["fleet", "hobo-trunk", "queue"],
 				);
 				assert.match(decision.reason, /merge-group trunk confirmation/u);
 				assert.ok(queueReads >= 2);
@@ -2028,7 +2059,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("times out merge-group trunk confirmation to GitHub-hosted", async () => {
+	it("times out merge-group trunk confirmation without returning to GitHub-hosted", async () => {
 		let polls = 0;
 		const startedAt = 1_700_000_000_000;
 		const decision = await confirmMergeGroupFabricFleet({
@@ -2045,13 +2076,9 @@ describe("the script reading the slip", () => {
 				startedAt + polls * (MERGE_GROUP_FLEET_CONFIRM_SECONDS + 5) * 1_000,
 			sleep: async () => {},
 			fleetLabel: "hobo-trunk",
-			githubLabel: "ubuntu-24.04",
 			limits: { maxWaitSeconds: 120, maxQueued: 4 },
 		});
-		assert.deepEqual(
-			[decision.tier, decision.runner],
-			["github", "ubuntu-24.04"],
-		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
 		assert.match(decision.reason, /timed out|without a healthy trunk pickup/u);
 	});
 
@@ -2596,6 +2623,7 @@ describe("hobo pool saturation overflow", () => {
 		online: number,
 		busy = online,
 		overflowStatus: "online" | "offline" | null = "online",
+		overflowBusy = false,
 	): JsonValue => ({
 		runners: [
 			...Array.from({ length: online }, (_, index) => ({
@@ -2610,7 +2638,7 @@ describe("hobo pool saturation overflow", () => {
 						{
 							name: "agent37-runner-1",
 							status: overflowStatus,
-							busy: false,
+							busy: overflowBusy,
 							labels: [{ name: AGENT37_OVERFLOW_RUNNER_LABEL }],
 						},
 					]),
@@ -2709,6 +2737,16 @@ describe("hobo pool saturation overflow", () => {
 				line.includes(`"runner":"${AGENT37_OVERFLOW_RUNNER_LABEL}"`),
 			),
 			lines.join("\n"),
+		);
+	});
+
+	it("overflows as soon as hobo-agent37 is online, even when that runner is busy", async () => {
+		const { decision } = await overflowRoute(
+			poolPages(busyPool(5, 5, "online", true), undefined),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL, "queue"],
 		);
 	});
 

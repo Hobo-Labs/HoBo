@@ -227,8 +227,8 @@ env:
 jobs:
   route:
     name: Route runners
-    # merge_group Fabric routing reads GitHub-hosted queue depth in route-runner.
-    runs-on: ubuntu-24.04
+    # merge_group avoids the hosted queue; pull_request stays fork-safe.
+    runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       actions: read
