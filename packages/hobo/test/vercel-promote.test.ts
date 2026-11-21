@@ -88,12 +88,13 @@ describe("promote and rollback", () => {
 			}),
 		]);
 		const client = createVercelClient({ token: TOKEN, fetch: transport.fetch });
-		const error = await client
-			.promoteDeployment(PROJECT, "dpl_staged1")
-			.catch((caught: unknown) => caught);
-		expect(error).toBeInstanceOf(VercelApiError);
-		expect(String(error)).not.toContain(TOKEN);
-		expect(error).toMatchObject({ status: 409, code: "deployment_not_ready" });
+		const refused = client.promoteDeployment(PROJECT, "dpl_staged1");
+		await expect(refused).rejects.toBeInstanceOf(VercelApiError);
+		await expect(refused).rejects.toMatchObject({
+			status: 409,
+			code: "deployment_not_ready",
+			message: expect.not.stringContaining(TOKEN),
+		});
 	});
 
 	it("rolls production back to an earlier deployment, with a bounded description", async () => {

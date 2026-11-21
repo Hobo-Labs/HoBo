@@ -23,6 +23,8 @@
 
 import { execFile } from "node:child_process";
 
+import { isJsonNumber } from "./json.js";
+
 import type { VercelClient, VercelProjectDeployment } from "./vercel-client.js";
 
 // public-contract: the meta keys a HoBo-staged Vercel build carries.
@@ -64,25 +66,35 @@ export type VercelPrebuiltFailure = Readonly<{
 const CREDENTIAL_NAME =
 	/(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE|CREDENTIAL|API_?KEY|ACCESS_?KEY|AUTH)/i;
 
+/** The variables the Vercel CLI runs with, by name. */
+export interface VercelBuildEnvironment {
+	readonly [name: string]: string;
+}
+
 /** The CLI's environment: the caller's, credentials removed, `extra` added. */
 export function vercelBuildEnvironment(
 	env: Readonly<Record<string, string | undefined>>,
-	extra: Readonly<Record<string, string>>,
-): Record<string, string> {
-	const out: Record<string, string> = {};
+	extra: VercelBuildEnvironment,
+): VercelBuildEnvironment {
+	const kept: [string, string][] = [];
 	for (const [name, value] of Object.entries(env)) {
 		if (value === undefined || CREDENTIAL_NAME.test(name)) continue;
 		if (name.startsWith("VERCEL_") || name.startsWith("ACTIONS_ID_TOKEN"))
 			continue;
-		out[name] = value;
+		kept.push([name, value]);
 	}
-	return { ...out, NO_COLOR: "1", CI: "1", ...extra };
+	return Object.fromEntries([
+		...kept,
+		["NO_COLOR", "1"],
+		["CI", "1"],
+		...Object.entries(extra),
+	]);
 }
 
 /** The Vercel CLI the build runs: `executable`, no shell, bounded output. */
 export function vercelBuildRunnerFrom(
 	executable: string,
-	env: Readonly<Record<string, string>>,
+	env: VercelBuildEnvironment,
 ): VercelBuildRunner {
 	return (args, options) =>
 		new Promise((resolve) => {
@@ -98,11 +110,7 @@ export function vercelBuildRunnerFrom(
 				},
 				(error, stdout, stderr) => {
 					const code =
-						error === null
-							? 0
-							: typeof error.code === "number"
-								? error.code
-								: 1;
+						error === null ? 0 : isJsonNumber(error.code) ? error.code : 1;
 					resolve({ code, stdout: String(stdout), stderr: String(stderr) });
 				},
 			);

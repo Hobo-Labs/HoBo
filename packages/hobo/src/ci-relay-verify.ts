@@ -227,7 +227,7 @@ export function deployedPreviewSuites(
 					deploymentId: string;
 					commit: string;
 					project: string;
-					target: "preview";
+					target: "preview" | "production";
 			  }>
 			| undefined;
 		deployment(
@@ -290,9 +290,13 @@ export function deployedPreviewSuites(
 					record !== undefined && isJsonObject(record.project)
 						? record.project
 						: undefined;
+				// Vercel's Git integration records the commit it built; a build HoBo
+				// staged (`--build prebuilt`) carries the commit HoBo checked out.
 				const commit = isJsonString(meta?.githubCommitSha)
 					? meta.githubCommitSha.toLowerCase()
-					: undefined;
+					: isJsonString(meta?.hoboSha)
+						? meta.hoboSha.toLowerCase()
+						: undefined;
 				const canonicalProjectId = isJsonString(record?.projectId)
 					? record.projectId
 					: project !== undefined && isJsonString(project.id)
@@ -313,7 +317,7 @@ export function deployedPreviewSuites(
 				)
 					return refuse(
 						"verification-deployment-mismatch",
-						`Vercel deployment ${intended.deploymentId} is READY but does not match Freight ${input.freightId}: expected commit ${intended.commit}, project ${intended.project}${canonicalProjectId !== undefined ? ` (the deployment's canonical project id is ${canonicalProjectId})` : ""}, target preview`,
+						`Vercel deployment ${intended.deploymentId} is READY but does not match Freight ${input.freightId}: expected commit ${intended.commit}, project ${intended.project}${canonicalProjectId !== undefined ? ` (the deployment's canonical project id is ${canonicalProjectId})` : ""}, target ${intended.target}`,
 						"Inspect the Vercel deployment record and deploy the Freight's commit to the intended preview project again: a project binds by its canonical id, not by a display name another team's project can share.",
 					);
 				return {

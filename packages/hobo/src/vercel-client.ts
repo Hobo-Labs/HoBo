@@ -1250,7 +1250,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 		async listProjectDeployments(input) {
 			const what = "list deployments";
 			const limit = Math.min(100, Math.max(1, Math.trunc(input.limit ?? 20)));
-			const params: Record<string, string> = {
+			const params = {
 				projectId: input.project,
 				limit: String(limit),
 				...(input.target !== undefined ? { target: input.target } : undefined),

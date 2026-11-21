@@ -106,7 +106,8 @@ function recordingRunner(
 
 describe("staging a Freight's build", () => {
 	it("pulls, builds and uploads a staged production build in the checkout, tagged with the Freight", async () => {
-		const state = { deployments: [] as VercelProjectDeployment[] };
+		const deployments: VercelProjectDeployment[] = [];
+		const state = { deployments };
 		const { client } = fakeClient(state);
 		const runner = recordingRunner({}, () => state.deployments.push(staged()));
 		const result = await stageVercelBuild({
