@@ -155,8 +155,23 @@ it("executes every interaction of the GitHub runner service pact in order", asyn
 			step.inputs.map((input) => [input.name, input.value]),
 		]),
 	).toEqual([
-		["actions/checkout@v4", [["sparse-checkout", ".hobo"]]],
-		["", [["script", "${{ inputs.github }}"]]],
+		[
+			"actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+			[["sparse-checkout", ".hobo"]],
+		],
+		[
+			"actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+			[["node-version", "24"]],
+		],
+		[
+			"",
+			[
+				[
+					"script",
+					expect.stringContaining("node --no-warnings .hobo-ci/relay.mjs"),
+				],
+			],
+		],
 	]);
 	await session.complete(
 		create(RelayJobAnswerSchema, {

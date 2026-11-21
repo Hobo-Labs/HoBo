@@ -3,8 +3,7 @@
 A relay job is the small job a workflow puts in front of the real one to ask
 which runner it should run on. Its answer is a `runner` output the next job
 reads in `runs-on`. This file describes the seams that answer it; the walk
-itself is in [RUNNER-ORDER.md](RUNNER-ORDER.md) and the decision record is
-ADR-0183 ([`docs/design/adr/runner-order.md`](../../docs/design/adr/runner-order.md)).
+itself is in [RUNNER-ORDER.md](RUNNER-ORDER.md).
 
 There are two ways to answer one, over one engine:
 
@@ -73,6 +72,11 @@ A conformance function throws a `PortConformanceError` naming the first rule a
 port breaks. The fakes pass their own; a real port's test calls the same
 function with its own factory.
 
+Journal reads are account-scoped, bounded and newest first; a redelivery keeps
+the first event for the same relay job and event type. Machine pause and sharing
+changes reject unknown IDs, while removing an unknown machine is a no-op. An
+unreadable minutes total or missing provider spend entry means unmeasured usage.
+
 ## Answering a relay job
 
 `answerRelayJob(message, deps)` in
@@ -81,8 +85,8 @@ both modes call. In order, it:
 
 1. Reads the message. One it cannot read still gets a failed answer naming the
    broken rule, so the job is completed rather than left queued.
-2. Gives a job made only of check steps to `deps.checks`, when there is one.
-   Without it, every relay job is routed.
+2. Gives a job containing check steps to `deps.checks`. If no handler answers
+   that job, it fails instead of reporting success for checks that did not run.
 3. Journals `runner.route.Requested`.
 4. Asks the order source for the repository's order at the workflow's ref. A
    broken order is refused with the parser's sentence and no facts are read.

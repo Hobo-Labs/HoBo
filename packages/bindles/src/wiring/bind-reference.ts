@@ -27,7 +27,12 @@ export { BindReferenceError } from "./errors.js";
 
 export function data(
 	name: string,
-	options: { paradigm?: string; allow?: readonly string[] } = {},
+	options: {
+		paradigm?: string;
+		allow?: readonly string[];
+		/** Platform traits the planner reads (a schedule's `cadence`). */
+		annotations?: JsonObject;
+	} = {},
 ): ResourceHandle {
 	assertResourceName(name, "data.name");
 	const paradigm = options.paradigm ?? "relational";
@@ -50,7 +55,9 @@ export function data(
 					...resource,
 					connectionString: `{${name}.connectionString}`,
 				};
-			if (allow?.length) return { ...resource, allow: [...allow] };
+			if (allow?.length) resource = { ...resource, allow: [...allow] };
+			if (options.annotations !== undefined)
+				resource = { ...resource, annotations: { ...options.annotations } };
 			return resource;
 		},
 	};

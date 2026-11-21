@@ -88,7 +88,224 @@ function resolveBlocker(root: string, state: CouncilState, body: Record<string, 
 	return run(root, ["--mode", "append", "--run", state.runId, "--review", state.reviewId, "--entry", file]);
 }
 
+function supersessionFixture() {
+	const root = mkdtempSync(path.join(tmpdir(), "design-council-supersession-"));
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+	git("init", "-q");
+	writeFileSync(path.join(root, "file.txt"), "base\n");
+	git("add", "file.txt");
+	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base");
+	const base = git("rev-parse", "HEAD");
+	git("update-ref", "refs/remotes/origin/main", base);
+	writeFileSync(path.join(root, "file.txt"), "old\n");
+	git("add", "file.txt");
+	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "old");
+	const oldHead = git("rev-parse", "HEAD");
+	const oldDiff = inspectGitReviewSubject(root, base, oldHead);
+	const oldProposal = proposal(root, { subject: { kind: "pull-request", number: 123 }, changedPaths: oldDiff.changedPaths, normalizedDiffHash: oldDiff.normalizedDiffHash, relevanceSignals: { categories: ["design"], acceptanceTags: [], featureTags: [], keywords: [] }, evidenceSignals: { evidenceTypes: ["executable-test"], currentHead: true, acceptanceMapped: true } });
+	const old = run(root, ["--mode", "init", "--run", "old-run", "--review", "old-review", "--base-sha", base, "--head-sha", oldHead, "--proposal", oldProposal]);
+	assert.equal(old.code, 0, old.output);
+	writeFileSync(path.join(root, "file.txt"), "new\n");
+	git("add", "file.txt");
+	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "new");
+	const head = git("rev-parse", "HEAD");
+	const diff = inspectGitReviewSubject(root, base, head);
+	const currentProposal = proposal(root, { subject: { kind: "pull-request", number: 123 }, changedPaths: diff.changedPaths, normalizedDiffHash: diff.normalizedDiffHash, relevanceSignals: { categories: ["design"], acceptanceTags: [], featureTags: [], keywords: [] }, evidenceSignals: { evidenceTypes: ["executable-test"], currentHead: true, acceptanceMapped: true } });
+	const replacement = run(root, ["--mode", "init", "--run", "new-run", "--review", "new-review", "--base-sha", base, "--head-sha", head, "--proposal", currentProposal]);
+	assert.equal(replacement.code, 0, replacement.output);
+	const close = (replacementRun = "new-run", replacementReview = "new-review") => run(root, ["--mode", "close", "--run", "old-run", "--review", "old-review", "--result", "superseded", "--replacement-run", replacementRun, "--replacement-review", replacementReview]);
+	return { root, git, base, oldHead, head, old: old.json.state as CouncilState, replacement: replacement.json.state as CouncilState, close };
+}
+
 describe("designer consensus CLI", () => {
+	it("records a replay-verified replacement without approving the superseded review", () => {
+		const fixture = supersessionFixture();
+		try {
+			const closed = fixture.close();
+			assert.equal(closed.code, 0, closed.output);
+			const state = closed.json.state as CouncilState;
+			assert.equal(state.status, "closed");
+			assert.equal(state.closedResult, "superseded");
+			assert.equal(state.supersededBy?.headSha, fixture.head);
+			assert.equal(state.supersededBy?.reviewId, "new-review");
+			fixture.git("checkout", "-q", "--detach", fixture.oldHead);
+			const oldProposal = path.join(fixture.root, ".optimizexp", "runs", "old-run", "consensus", "old-review", "proposal-cycle-0.json");
+			const unapproved = run(fixture.root, ["--mode", "assert-yay", "--run", "old-run", "--review", "old-review", "--base-sha", fixture.base, "--head-sha", fixture.oldHead, "--proposal", oldProposal]);
+			assert.notEqual(unapproved.code, 0);
+			assert.match(unapproved.output, /not-approved/);
+			fixture.git("checkout", "-q", "--detach", fixture.head);
+			const advanced = append(fixture.root, fixture.replacement, "steve-jobs", "position");
+			assert.equal(advanced.code, 0, advanced.output);
+			writeFileSync(path.join(fixture.root, "file.txt"), "later\n");
+			fixture.git("add", "file.txt");
+			fixture.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "later");
+			const valid = run(fixture.root, ["--mode", "validate", "--run", "old-run", "--review", "old-review"]);
+			assert.equal(valid.code, 0, valid.output);
+			const stateFile = path.join(fixture.root, ".optimizexp", "runs", "old-run", "consensus", "old-review", "state.json");
+			const originalState = readFileSync(stateFile, "utf8");
+			const modifiedState = JSON.parse(originalState);
+			modifiedState.supersededBy.reviewId = "other";
+			writeFileSync(stateFile, JSON.stringify(modifiedState));
+			assert.notEqual(run(fixture.root, ["--mode", "validate", "--run", "old-run", "--review", "old-review"]).code, 0);
+			writeFileSync(stateFile, originalState);
+			const bus = path.join(fixture.root, ".optimizexp", "bus", "entries");
+			const opening = readdirSync(bus).map((name) => path.join(bus, name)).find((file) => {
+				const entry = JSON.parse(readFileSync(file, "utf8"));
+				return entry.runId === "new-run" && entry.stage === "open";
+			});
+			if (!opening) throw new Error("Replacement opening not found.");
+			const entry = JSON.parse(readFileSync(opening, "utf8"));
+			entry.subject.headSha = fixture.oldHead;
+			writeFileSync(opening, JSON.stringify(entry));
+			const tampered = run(fixture.root, ["--mode", "validate", "--run", "old-run", "--review", "old-review"]);
+			assert.notEqual(tampered.code, 0);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("rejects a replacement whose append-only history repeats an entry id", () => {
+		const fixture = supersessionFixture();
+		try {
+			const bus = path.join(fixture.root, ".optimizexp", "bus", "entries");
+			const opening = readdirSync(bus).map((name) => path.join(bus, name)).find((file) => {
+				const entry = JSON.parse(readFileSync(file, "utf8"));
+				return entry.runId === "new-run" && entry.stage === "open";
+			});
+			if (!opening) throw new Error("Replacement opening not found.");
+			writeFileSync(path.join(bus, "duplicate-opening.json"), readFileSync(opening));
+			assert.match(fixture.close().output, /duplicate-entry-id/);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("does not accept a replacement link from a persona entry", () => {
+		const fixture = supersessionFixture();
+		try {
+			const forged = append(fixture.root, fixture.old, "steve-jobs", "position", { supersededBy: { reviewId: "new-review" } });
+			assert.match(forged.output, /coordinator-only-field/);
+			assert.equal(fixture.close().code, 0);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("supersession rejects missing, unrelated, same-head, and stale replacement reviews", () => {
+		const fixture = supersessionFixture();
+		try {
+			assert.notEqual(fixture.close("missing", "review").code, 0);
+			assert.notEqual(fixture.close("old-run", "old-review").code, 0);
+			const different = proposal(fixture.root, { subject: { kind: "pull-request", number: 124 } });
+			const unrelated = run(fixture.root, ["--mode", "init", "--run", "other", "--review", "review", "--base-sha", fixture.base, "--head-sha", fixture.head, "--proposal", different]);
+			assert.equal(unrelated.code, 0, unrelated.output);
+			assert.match(fixture.close("other", "review").output, /supersession-subject/);
+			const same = proposal(fixture.root, { subject: { kind: "pull-request", number: 123 } });
+			const sameHead = run(fixture.root, ["--mode", "init", "--run", "same", "--review", "review", "--base-sha", fixture.base, "--head-sha", fixture.oldHead, "--proposal", same]);
+			assert.equal(sameHead.code, 0, sameHead.output);
+			assert.match(fixture.close("same", "review").output, /supersession-subject/);
+			writeFileSync(path.join(fixture.root, "file.txt"), "later\n");
+			fixture.git("add", "file.txt");
+			fixture.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "later");
+			assert.match(fixture.close().output, /supersession-git/);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("does not use supersession to discard an unresolved blocker", () => {
+		const fixture = supersessionFixture();
+		try {
+			const blocked = append(fixture.root, fixture.old, "steve-jobs", "position", {
+				arguments: [{ id: "A-old", claim: "The old behavior violates the acceptance contract.", kind: "hard-blocker", respondsTo: [], evidenceRefs: ["test/old"], requestedChange: "Resolve the failure." }],
+				hardBlockers: [{ id: "HB-old", claim: "The old behavior violates the acceptance contract.", rule: "acceptance:old", evidenceRefs: ["test/old"], requestedResolution: "Resolve the failure.", status: "open" }],
+			});
+			assert.equal(blocked.code, 0, blocked.output);
+			assert.match(fixture.close().output, /supersession-blockers/);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("does not use supersession to discard a nay or accept a blocked replacement", () => {
+		const fixture = supersessionFixture();
+		try {
+			let state = fixture.old;
+			let result = append(fixture.root, state, "steve-jobs", "position", {
+				arguments: [{ id: "A-preference", claim: "The documented interaction needs clearer feedback.", kind: "preference", respondsTo: [], evidenceRefs: ["test/feedback"], requestedChange: "Clarify the feedback." }],
+			});
+			assert.equal(result.code, 0, result.output);
+			state = result.json.state as CouncilState;
+			for (const persona of COUNCIL_PERSONAS.slice(1)) {
+				result = append(fixture.root, state, persona, "position");
+				assert.equal(result.code, 0, result.output);
+				state = result.json.state as CouncilState;
+			}
+			result = append(fixture.root, state, "steve-jobs", "vote", { stance: "nay", respondsTo: ["A-preference"] });
+			assert.equal(result.code, 0, result.output);
+			assert.match(fixture.close().output, /supersession-blockers/);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+		const second = supersessionFixture();
+		try {
+			const blocked = append(second.root, second.replacement, "steve-jobs", "position", {
+				arguments: [{ id: "A-new", claim: "The replacement violates acceptance.", kind: "hard-blocker", respondsTo: [], evidenceRefs: ["test/new"], requestedChange: "Resolve the failure." }],
+				hardBlockers: [{ id: "HB-new", claim: "The replacement violates acceptance.", rule: "acceptance:new", evidenceRefs: ["test/new"], requestedResolution: "Resolve the failure.", status: "open" }],
+			});
+			assert.equal(blocked.code, 0, blocked.output);
+			assert.match(second.close().output, /supersession-replacement/);
+		} finally { rmSync(second.root, { recursive: true, force: true }); }
+	});
+
+	it("does not supersede when the replacement is locked or its Git diff does not match", () => {
+		const fixture = supersessionFixture();
+		try {
+			const lock = path.join(fixture.root, ".optimizexp", "runs", "new-run", "consensus", "new-review", ".lock");
+			writeFileSync(lock, "occupied");
+			assert.match(fixture.close().output, /concurrent-writer/);
+			rmSync(lock);
+			const mismatch = proposal(fixture.root, { subject: { kind: "pull-request", number: 123 }, normalizedDiffHash: sha("8") });
+			const opened = run(fixture.root, ["--mode", "init", "--run", "mismatch", "--review", "review", "--base-sha", fixture.base, "--head-sha", fixture.head, "--proposal", mismatch]);
+			assert.equal(opened.code, 0, opened.output);
+			assert.match(fixture.close("mismatch", "review").output, /supersession-git/);
+			assert.equal((run(fixture.root, ["--mode", "status", "--run", "old-run", "--review", "old-review"]).json.state as CouncilState).status, "open");
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("rejects an abbreviated alias of the same commit as a replacement", () => {
+		const fixture = supersessionFixture();
+		try {
+			const alias = proposal(fixture.root, { subject: { kind: "pull-request", number: 123 } });
+			const opened = run(fixture.root, ["--mode", "init", "--run", "alias", "--review", "review", "--base-sha", fixture.base, "--head-sha", fixture.head.slice(0, 7), "--proposal", alias]);
+			assert.equal(opened.code, 0, opened.output);
+			const result = run(fixture.root, ["--mode", "close", "--run", "alias", "--review", "review", "--result", "superseded", "--replacement-run", "new-run", "--replacement-review", "new-review"]);
+			assert.match(result.output, /supersession-subject/);
+		} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+	});
+
+	it("cannot supersede user or safety termination or use a terminated replacement", () => {
+		for (const termination of ["user", "safety"] as const) {
+			const fixture = supersessionFixture();
+			try {
+				const ended = run(fixture.root, ["--mode", "close", "--run", "old-run", "--review", "old-review", "--result", termination]);
+				assert.equal(ended.code, 0, ended.output);
+				assert.match(fixture.close().output, /illegal-transition/);
+			} finally { rmSync(fixture.root, { recursive: true, force: true }); }
+			const second = supersessionFixture();
+			try {
+				const ended = run(second.root, ["--mode", "close", "--run", "new-run", "--review", "new-review", "--result", termination]);
+				assert.equal(ended.code, 0, ended.output);
+				assert.match(second.close().output, /supersession-replacement/);
+			} finally { rmSync(second.root, { recursive: true, force: true }); }
+		}
+	});
+
+	it("rejects Git process errors even when the process reports zero status", () => {
+		const root = seedRepo();
+		try {
+			writeFileSync(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+			const error = new Error("synthetic process failure");
+			const failedHead = inspectGitReviewSubject(root, sha("a"), sha("b"), "origin/main", () => ({ status: 0, stdout: `${sha("b")}\n`, error }));
+			assert.deepEqual(failedHead.problems, ["git_unavailable"]);
+			const failedDiff = inspectGitReviewSubject(root, sha("a"), sha("b"), "origin/main", (...args) => {
+				if (args[0] === "rev-parse" && args[1] === "HEAD") return { status: 0, stdout: `${sha("b")}\n` };
+				if (args[0] === "rev-parse" || args[0] === "merge-base") return { status: 0, stdout: `${sha("a")}\n` };
+				if (args.includes("--name-only")) return { status: 0, stdout: "file.txt\n" };
+				return { status: 0, stdout: "incomplete diff", error };
+			});
+			assert.deepEqual(failedDiff.problems, ["git_unavailable"]);
+			assert.equal(failedDiff.normalizedDiffHash, null);
+		} finally { rmSync(root, { recursive: true, force: true }); }
+	});
 	it("inspects a 16 MiB high-entropy binary evidence diff", () => {
 		const root = mkdtempSync(path.join(tmpdir(), "design-council-binary-"));
 		const git = (...args: string[]) =>
@@ -588,6 +805,22 @@ describe("designer consensus CLI", () => {
 			assert.equal(result.code, 1, result.output);
 			assert.equal(result.json.blocked, true);
 			assert.equal((result.json.state as CouncilState).status, "blocked");
+			const bus = path.join(root, ".optimizexp", "bus", "entries");
+			const diagnostic = readdirSync(bus).map((name) => path.join(bus, name)).find((entryFile) => {
+				const entry = JSON.parse(readFileSync(entryFile, "utf8"));
+				return entry.id === "review-1-cycle-0-max-turns-blocked";
+			});
+			if (!diagnostic) throw new Error("Diagnostic blocked entry not found.");
+			const original = readFileSync(diagnostic, "utf8");
+			const entry = JSON.parse(original);
+			entry.supersededBy = { runId: "unverified", reviewId: "replacement" };
+			writeFileSync(diagnostic, JSON.stringify(entry));
+			const tampered = run(root, ["--mode", "validate", "--run", "run-1", "--review", "review-1"]);
+			assert.notEqual(tampered.code, 0, tampered.output);
+			assert.match(tampered.output, /unexpected replacement/);
+			writeFileSync(diagnostic, original);
+			const valid = run(root, ["--mode", "validate", "--run", "run-1", "--review", "review-1"]);
+			assert.equal(valid.code, 0, valid.output);
 			const closed = run(root, ["--mode", "close", "--run", "run-1", "--review", "review-1", "--result", "blocked", "--reason", "Diagnostic turn ceiling with unresolved discussion."]);
 			assert.equal(closed.code, 0, closed.output);
 			assert.equal(closed.json.result, "blocked");

@@ -367,6 +367,16 @@ describe("release OCI app staging", () => {
 			expect(
 				readFileSync(join(fixtureRoot, "allowed/.hobo-cli-candidate"), "utf8"),
 			).toBe("hobo-cli:candidate\n");
+			stageReleaseOciApp("hobo-mcp", join(fixtureRoot, "namespaced"), {
+				root,
+				cliCandidateRef: "hobo-cli:candidate-hobo-mcp",
+			});
+			expect(
+				readFileSync(
+					join(fixtureRoot, "namespaced/.hobo-cli-candidate"),
+					"utf8",
+				),
+			).toBe("hobo-cli:candidate-hobo-mcp\n");
 		} finally {
 			rmSync(fixtureRoot, { recursive: true, force: true });
 		}

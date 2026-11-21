@@ -4,13 +4,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { clone, create, toJsonString } from "@bufbuild/protobuf";
 import { canonicalFenceOperationReceipt } from "@hobo/data-core";
+import { stableHash } from "@hobo/pricing";
+import fc from "fast-check";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
-import { BudgetFenceSettlementGuardSchema } from "../src/_generated/yard_placement_pb.js";
 import {
+	BudgetFenceSettlementGuardSchema,
+	IacPricingPinSchema,
+} from "../src/_generated/yard_placement_pb.js";
+import {
+	type BudgetAuthorityEvent,
 	BudgetAuthorityEventSchema,
+	BudgetEntitlementSchema,
 	BudgetLedgerSnapshotSchema,
+	BudgetReservationSchema,
 	createBudgetAdmissionAuthority,
+	EntitlementClaimSchema,
 	HostingQuoteSchema,
 	ProviderAccountExposureSchema,
 } from "../src/budget-authority.js";
@@ -146,6 +155,7 @@ function fixture() {
 			ReturnType<typeof createBudgetAdmissionAuthority>["lookup"]
 		>,
 		actualMicros = 30,
+		payloadVersion: "v1" | "v2" = "v2",
 	) {
 		const guard = reservation?.fenceSettlementGuard;
 		if (!guard || !reservation) throw new Error("guard missing");
@@ -173,20 +183,28 @@ function fixture() {
 			providerAccounts: [
 				create(ProviderAccountExposureSchema, {
 					providerAccountId: "source-account",
-					liabilityMicros: 10,
+					liabilityMicros: Math.floor(actualMicros / 3),
 				}),
 				create(ProviderAccountExposureSchema, {
 					providerAccountId: "dest-account",
-					liabilityMicros: 20,
+					liabilityMicros: actualMicros - Math.floor(actualMicros / 3),
 				}),
 			],
+			entitlementClaims: reservation.entitlementClaims.map((claim) => ({
+				...claim,
+			})),
 		};
 		return {
 			...result,
 			financeSignature: sign(
 				null,
 				Buffer.from(
-					canonicalBudgetFenceSettlement(reservation, actualMicros, result),
+					canonicalBudgetFenceSettlement(
+						reservation,
+						actualMicros,
+						result,
+						payloadVersion,
+					),
 				),
 				finance.privateKey,
 			).toString("base64url"),
@@ -196,6 +214,64 @@ function fixture() {
 }
 
 describe("receiver-bound budget settlement", () => {
+	it("accepts an authenticated fence guard as the priced IaC settlement authority", () => {
+		const f = fixture();
+		const fields = {
+			planDigest: `sha256:${"1".repeat(64)}`,
+			inventoryHash: `sha256:${"2".repeat(64)}`,
+			modelHash: `sha256:${"3".repeat(64)}`,
+			quoteHash: `sha256:${"4".repeat(64)}`,
+			evidenceHash: `sha256:${"5".repeat(64)}`,
+		};
+		const financialPlanHash = stableHash(fields);
+		const destinationWithPlan = { ...destination, planHash: financialPlanHash };
+		f.quote.financialPlanHash = financialPlanHash;
+		const trust = {
+			...f.trust,
+			receivers: f.trust.receivers.map((receiver) => ({
+				...receiver,
+				destination: destinationWithPlan,
+			})),
+		};
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: trust,
+		});
+		expect(() =>
+			authority.reserve({
+				...f.input,
+				fenceSettlementGuard: {
+					...fenceRequest,
+					destination: destinationWithPlan,
+					financeKeyId: "unknown",
+				},
+				iacPricingPin: create(IacPricingPinSchema, {
+					...fields,
+					validUntil: f.quote.validUntil,
+				}),
+			}),
+		).toThrow("independently enrolled");
+		expect(authority.read(now).reservedMicros).toBe(0);
+		const held = authority.reserve({
+			...f.input,
+			fenceSettlementGuard: {
+				...fenceRequest,
+				destination: destinationWithPlan,
+			},
+			iacPricingPin: create(IacPricingPinSchema, {
+				...fields,
+				validUntil: f.quote.validUntil,
+			}),
+		});
+		expect(held.fenceSettlementGuard).toBeDefined();
+		expect(
+			authority.claimExecution({
+				reservationId: held.reservationId,
+				requestDigest: REQUEST,
+				executionDigest: EXECUTION,
+			}),
+		).toMatchObject({ status: "held", executionDigest: EXECUTION });
+	});
 	it("retains claimed funds until both the exact receiver and finance authorities sign", () => {
 		const f = fixture();
 		const authority = createBudgetAdmissionAuthority({
@@ -257,6 +333,180 @@ describe("receiver-bound budget settlement", () => {
 		});
 		expect(authority.settle("reservation-1", 30, proof).status).toBe("settled");
 		expect(() => authority.settle("reservation-1", 31, proof)).toThrow();
+	});
+
+	it("verifies legacy v1 finance signatures only for pre-kind reservations", () => {
+		const f = fixture();
+		f.base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				periodId: "2026-10",
+				remainingUnits: 5,
+				reservedUnits: 0,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		];
+		f.quote.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				units: 2,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const currentProof = f.evidence(held);
+		expect(
+			canonicalBudgetFenceSettlement(held, 30, currentProof).startsWith(
+				'["hobo.budget-fence-settlement/v2"',
+			),
+		).toBe(true);
+		const legacyHeld = clone(BudgetReservationSchema, held);
+		legacyHeld.fenceSettlementPayloadVersion = "";
+		for (const claim of legacyHeld.entitlementClaims) claim.kind = "";
+		const legacyProof = f.evidence(legacyHeld, 30, "v1");
+		expect(canonicalBudgetFenceSettlement(legacyHeld, 30, legacyProof)).toBe(
+			canonicalBudgetFenceSettlement(legacyHeld, 30, legacyProof, "v1"),
+		);
+		expect(() => authority.settle("reservation-1", 30, legacyProof)).toThrow();
+		authority.settle("reservation-1", 30, currentProof);
+		const legacyBase = clone(BudgetLedgerSnapshotSchema, f.base);
+		for (const entitlement of legacyBase.entitlements) entitlement.kind = "";
+		const legacyEvents = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const entitlement of legacy.snapshot?.entitlements ?? [])
+				entitlement.kind = "";
+			for (const reservation of legacy.reservations) {
+				reservation.fenceSettlementPayloadVersion = "";
+				for (const claim of reservation.entitlementClaims) claim.kind = "";
+				for (const claim of reservation.settlementEvidence?.entitlementClaims ??
+					[])
+					claim.kind = "";
+				if (reservation.settlementEvidence)
+					reservation.settlementEvidence.financeSignature =
+						legacyProof.financeSignature;
+			}
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: legacyBase,
+			priorEvents: legacyEvents,
+			fenceTrust: f.trust,
+		});
+		expect(reopened.lookup("reservation-1")?.status).toBe("settled");
+		expect(reopened.read(now).entitlements[0]).toMatchObject({
+			kind: "allowance",
+			remainingUnits: 3,
+		});
+	});
+
+	it("backfills v2 for kind-bearing fenced reservation replay", () => {
+		const f = fixture();
+		f.base.entitlements = [
+			create(BudgetEntitlementSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				periodId: "2026-10",
+				remainingUnits: 5,
+				reservedUnits: 0,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		];
+		f.quote.entitlementClaims = [
+			create(EntitlementClaimSchema, {
+				bucketId: "free-requests",
+				kind: "allowance",
+				unit: "request",
+				units: 2,
+			}),
+		];
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const proof = f.evidence(held);
+		const unversioned = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const reservation of legacy.reservations)
+				reservation.fenceSettlementPayloadVersion = "";
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			priorEvents: unversioned,
+			fenceTrust: f.trust,
+		});
+		expect(
+			reopened.lookup("reservation-1")?.fenceSettlementPayloadVersion,
+		).toBe("v2");
+		expect(reopened.settle("reservation-1", 30, proof).status).toBe("settled");
+	});
+
+	it("replays a legacy v1 reservation without entitlement claims", () => {
+		const f = fixture();
+		const events: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			fenceTrust: f.trust,
+			commit: (event) => events.push(event),
+		});
+		authority.reserve(f.input);
+		authority.claimExecution({
+			reservationId: "reservation-1",
+			requestDigest: REQUEST,
+			executionDigest: EXECUTION,
+		});
+		const held = authority.lookup("reservation-1");
+		if (!held) throw new Error("held reservation missing");
+		const legacyHeld = clone(BudgetReservationSchema, held);
+		legacyHeld.fenceSettlementPayloadVersion = "";
+		const legacyProof = f.evidence(legacyHeld, 30, "v1");
+		expect(() => authority.settle("reservation-1", 30, legacyProof)).toThrow();
+		authority.settle("reservation-1", 30, f.evidence(held));
+		const legacyEvents = events.map((event) => {
+			const legacy = clone(BudgetAuthorityEventSchema, event);
+			for (const reservation of legacy.reservations) {
+				reservation.fenceSettlementPayloadVersion = "";
+				if (reservation.settlementEvidence)
+					reservation.settlementEvidence.financeSignature =
+						legacyProof.financeSignature;
+			}
+			return legacy;
+		});
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: f.base,
+			priorEvents: legacyEvents,
+			fenceTrust: f.trust,
+		});
+		expect(reopened.lookup("reservation-1")?.status).toBe("settled");
 	});
 
 	it("requires matching independently enrolled destination and both funded accounts before reservation", () => {
@@ -491,6 +741,13 @@ describe("receiver-bound budget settlement", () => {
 		if (!row) throw new Error("fixture missing");
 		row.fenceSettlementGuard = undefined;
 		expect(() => reopen(removed)).toThrow("immutable fenced reservation");
+		const reversioned = events.map((event) =>
+			clone(BudgetAuthorityEventSchema, event),
+		);
+		const versioned = reversioned[1]?.reservations[0];
+		if (!versioned) throw new Error("fixture missing");
+		versioned.fenceSettlementPayloadVersion = "";
+		expect(() => reopen(reversioned)).toThrow("immutable fenced reservation");
 		const reallocated = events.map((event) =>
 			clone(BudgetAuthorityEventSchema, event),
 		);
@@ -638,3 +895,172 @@ it.runIf(!!process.env.HOBO_TEST_POSTGRES_URL)(
 		}
 	},
 );
+
+describe("receiver-bound budget settlement generated histories", () => {
+	it("retains the hold across forged or mismatched proofs and replay", () => {
+		const attacks = fc.constantFrom(
+			"receiver",
+			"finance",
+			"amount",
+			"usage-reference",
+			"account-usage",
+			"receipt-scope",
+		);
+		fc.assert(
+			fc.property(
+				fc.integer({ min: 0, max: 60 }),
+				fc.boolean(),
+				fc.array(attacks, { minLength: 1, maxLength: 8 }),
+				(actual, markUncertain, attempts) => {
+					const f = fixture();
+					const attacker = generateKeyPairSync("ed25519");
+					const events: Parameters<
+						typeof createBudgetAdmissionAuthority
+					>[0]["priorEvents"] extends readonly (infer E)[] | undefined
+						? E[]
+						: never = [];
+					const authority = createBudgetAdmissionAuthority({
+						snapshot: f.base,
+						fenceTrust: f.trust,
+						commit(event) {
+							events.push(event);
+						},
+					});
+					authority.reserve(f.input);
+					if (markUncertain) authority.uncertain("reservation-1");
+					const claim = {
+						reservationId: "reservation-1",
+						requestDigest: REQUEST,
+						executionDigest: EXECUTION,
+					};
+					const held = authority.lookup("reservation-1");
+					const proof = f.evidence(held, actual);
+					expect(() =>
+						authority.settle("reservation-1", actual, proof),
+					).toThrow();
+					expect(() =>
+						authority.claimExecution({ ...claim, executionDigest: PLAN }),
+					).toThrow("admitted execution");
+					authority.claimExecution(claim);
+					const reservation = authority.lookup("reservation-1");
+					if (!reservation) throw new Error("reservation missing");
+					for (const attack of attempts) {
+						const before = authority.read(now);
+						const eventCount = events.length;
+						let altered = proof;
+						let charged = actual;
+						switch (attack) {
+							case "receiver": {
+								const receipt = JSON.parse(proof.fenceOperationReceiptJson);
+								const { signature: _signature, ...body } = receipt;
+								const forged = {
+									...body,
+									signature: sign(
+										null,
+										Buffer.from(canonicalFenceOperationReceipt(body)),
+										attacker.privateKey,
+									).toString("base64url"),
+								};
+								const unsigned = {
+									...proof,
+									fenceOperationReceiptJson: JSON.stringify(forged),
+								};
+								altered = {
+									...unsigned,
+									financeSignature: sign(
+										null,
+										Buffer.from(
+											canonicalBudgetFenceSettlement(
+												reservation,
+												actual,
+												unsigned,
+											),
+										),
+										f.finance.privateKey,
+									).toString("base64url"),
+								};
+								break;
+							}
+							case "finance":
+								altered = {
+									...proof,
+									financeSignature: sign(
+										null,
+										Buffer.from(
+											canonicalBudgetFenceSettlement(
+												reservation,
+												actual,
+												proof,
+											),
+										),
+										attacker.privateKey,
+									).toString("base64url"),
+								};
+								break;
+							case "amount":
+								charged++;
+								break;
+							case "usage-reference":
+								altered = { ...proof, usageEvidenceRef: "substituted" };
+								break;
+							case "account-usage":
+								altered = {
+									...proof,
+									providerAccounts: proof.providerAccounts.map((row, index) =>
+										index === 0
+											? { ...row, liabilityMicros: row.liabilityMicros + 1 }
+											: row,
+									),
+								};
+								break;
+							case "receipt-scope": {
+								const receipt = JSON.parse(proof.fenceOperationReceiptJson);
+								altered = {
+									...proof,
+									fenceOperationReceiptJson: JSON.stringify({
+										...receipt,
+										operationId: "other-operation",
+									}),
+								};
+								break;
+							}
+						}
+						expect(() =>
+							authority.settle("reservation-1", charged, altered),
+						).toThrow();
+						expect(authority.read(now)).toEqual(before);
+						expect(events).toHaveLength(eventCount);
+						expect(before.reservedMicros).toBe(60);
+						expect(() =>
+							authority.release("reservation-1", true, "unused"),
+						).toThrow();
+						expect(
+							createBudgetAdmissionAuthority({
+								snapshot: f.base,
+								fenceTrust: f.trust,
+								priorEvents: events,
+							}).read(now),
+						).toEqual(before);
+					}
+					authority.settle("reservation-1", actual, proof);
+					const after = authority.read(now);
+					expect(after).toMatchObject({
+						reservedMicros: 0,
+						spentMicros: actual,
+					});
+					const eventCount = events.length;
+					authority.settle("reservation-1", actual, proof);
+					expect(events).toHaveLength(eventCount);
+					expect(
+						createBudgetAdmissionAuthority({
+							snapshot: f.base,
+							fenceTrust: f.trust,
+							priorEvents: events,
+						}).read(now),
+					).toEqual(after);
+				},
+			),
+			{ seed: 614450, numRuns: 120 },
+		);
+	});
+});
