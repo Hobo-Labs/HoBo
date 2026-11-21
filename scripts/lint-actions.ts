@@ -542,7 +542,9 @@ function isNpmOidcHostedReleaseJob(
 	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
 	return (
 		file === "release-hobo.yml" &&
-		(jobId === "release-npm" || jobId === "release-hobo-cli") &&
+		(jobId === "release-npm" ||
+			jobId === "release-hobo-cli" ||
+			jobId === "release-hobo-integration") &&
 		runsOn === "ubuntu-24.04"
 	);
 }

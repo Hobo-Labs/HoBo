@@ -89,3 +89,6 @@ the sum of its files):
 - The merge queue no longer fails on a broken release-integration suite at merge
   time; it fails at publish. That is the accepted trade: the release gate runs
   on every planned release and on every PR that touches the lane.
+- Hosted run 44864749033 still paid 7m18s serial in this job because merge-queue
+  checkouts have no `HEAD^2`, so the scope step always ran the lane. The job now
+  diffs `merge_group.base_sha` and shards the four files on `ubuntu-24.04`.

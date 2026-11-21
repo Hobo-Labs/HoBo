@@ -625,7 +625,12 @@ jobs:
   # packages/hobo's default suite (test/support/release-integration-test-files.ts):
   # they run here and block publish, so the merge queue stops paying ~300 s of
   # serial time for them while no release ships without them. A pull request
-  # pays for them only when its diff reaches the suites or the lane itself.
+  # or merge group pays for them only when its diff reaches the suites or the
+  # lane itself. Merge-queue checkouts are not PR merge commits (no HEAD^2), so
+  # the scope step diffs github.event.merge_group.base_sha. Hosted shards keep
+  # the required check under the merge queue's 8-minute timeout without taking
+  # fleet slots. A skipped install still reports success so the required gate
+  # stays green.
   release-hobo-integration:
     name: HoBo slow integration suites (release gate)
     needs: [route, release-main-train-gate]
@@ -640,10 +645,16 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
       github.event_name == 'pull_request' ||
       github.event_name == 'merge_group')
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    # GitHub-hosted: four shards start at once. Fleet slots would queue them
+    # past the merge queue's 8-minute check timeout.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -661,20 +672,31 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches the slow integration suites
         id: scope
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
-            echo "HEAD is not a PR merge commit; running the lane"
+          if [ -n "${MERGE_GROUP_BASE_SHA:-}" ]; then
+            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
+              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            BASE="$MERGE_GROUP_BASE_SHA"
+          elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            BASE="$(git rev-parse HEAD^1)"
+          else
+            echo "No base to compare with; running the lane"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git diff --name-only HEAD^1 HEAD \
+          # Ceremony-explorer and cd-runner-fleet-delivery are not entries:
+          # their graphs fail-close the walk (unresolvable relative import /
+          # computed import()), which would run the lane on every merge group.
+          # Both files still live under packages/hobo, which vercel-project
+          # already reaches.
+          git diff --name-only "$BASE" HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
               packages/hobo/vitest.release-integration.config.ts \
               packages/hobo/test/support/release-integration-test-files.ts \
               packages/hobo/test/vercel-project.test.ts \
-              packages/hobo/test/evals/ceremony-explorer.eval.test.ts \
-              packages/hobo/test/cd-runner-fleet-delivery.test.ts \
               packages/hobo/test/cd-md-examples.test.ts \
               >> "$GITHUB_OUTPUT"
       - name: Fetch pinned ts-autocode
@@ -703,16 +725,21 @@ jobs:
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 15
+        env:
+          # vitest --shard is 1-based; strategy.job-index is 0-based.
+          SHARD: ${{ strategy.job-index + 1 }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
         run: >-
           pnpm exec turbo run test:release-integration --filter=@hobo/hobo
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+          -- --shard="$SHARD/$SHARD_TOTAL" --passWithNoTests
       - name: Prune Turbo cache
         id: turbo-prune
         if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
