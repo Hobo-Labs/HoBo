@@ -41,11 +41,13 @@ describe("HoBo CI Fabric concurrency", () => {
 			expect(job, id).toContain(`group: ${group}`);
 			expect(job, id).toContain("cancel-in-progress: false");
 		}
-		const scriptsStart = workflow.indexOf("\n  scripts-tests:\n");
-		const scriptsRest = workflow.slice(scriptsStart + 1);
-		const scriptsEnd = scriptsRest.slice(1).search(/\n  [A-Za-z0-9_-]+:\n/);
-		const scripts =
-			scriptsEnd < 0 ? scriptsRest : scriptsRest.slice(0, scriptsEnd + 1);
-		expect(scripts).not.toContain("pr-sidecar");
+		for (const id of ["scripts-tests-build", "scripts-tests"] as const) {
+			const scriptsStart = workflow.indexOf(`\n  ${id}:\n`);
+			const scriptsRest = workflow.slice(scriptsStart + 1);
+			const scriptsEnd = scriptsRest.slice(1).search(/\n  [A-Za-z0-9_-]+:\n/);
+			const scripts =
+				scriptsEnd < 0 ? scriptsRest : scriptsRest.slice(0, scriptsEnd + 1);
+			expect(scripts, id).not.toContain("pr-sidecar");
+		}
 	});
 });

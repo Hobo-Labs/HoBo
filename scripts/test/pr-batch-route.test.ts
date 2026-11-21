@@ -338,6 +338,7 @@ describe("PR batch routing", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests-build",
 			"scripts-tests",
 		]) {
 			const body =

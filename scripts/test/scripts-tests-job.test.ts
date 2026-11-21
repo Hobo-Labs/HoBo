@@ -187,13 +187,14 @@ function scope(cwd: string, mergeGroupBase: string): string {
 describe("the scripts lane is a pull-request gate", () => {
 	it("runs pnpm run test:scripts on the routed runner for pull requests and merge groups", () => {
 		assert.equal(scripts.name, "Scripts tests");
-		assert.deepEqual(scripts.needs, ["route"]);
+		assert.deepEqual(scripts.needs, ["route", "scripts-tests-build"]);
 		assert.ok(!scripts.needs.includes("ci-runner-image"));
 		assert.equal(scripts.runsOn, ROUTED);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
 		assert.match(scripts.if, /github\.event_name == 'merge_group'/u);
 		assert.match(scripts.if, /attested-jobs.*scripts-tests/u);
+		assert.match(scripts.if, /needs\.scripts-tests-build\.result == 'success'/u);
 		const lane = step(scripts, LANE);
 		assert.equal(
 			lane.run.trim(),
@@ -278,6 +279,32 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
 		const prune = step(scripts, "Prune Turbo cache");
 		assert.match(prune.if, /matrix\.shard == 0/u);
+	});
+
+	it("builds once per run, then shards restore that Turbo cache", () => {
+		const buildJob = job("scripts-tests-build");
+		assert.equal(buildJob.name, "Scripts tests build");
+		assert.deepEqual(buildJob.needs, ["route"]);
+		assert.equal(buildJob.runsOn, ROUTED);
+		assert.doesNotMatch(buildJob.if, /attested/u);
+		assert.match(buildJob.if, /github\.event_name == 'pull_request'/u);
+		assert.match(buildJob.if, /github\.event_name == 'merge_group'/u);
+		assert.ok(!buildJob.steps.some((entry) => entry.name === LANE));
+		const build = step(buildJob, BUILD);
+		assert.match(build.run, /turbo run build\b/u);
+		assert.match(build.run, /--filter=@hobo\/provider-vercel\.\.\./u);
+		const source = asObject(jobs?.["scripts-tests"]);
+		const cache = (asList(source?.steps) ?? [])
+			.map(asObject)
+			.find((entry) => entry?.name === "Turbo cache");
+		assert.equal(
+			asText(asObject(cache?.with)?.["preferred-job"]),
+			"scripts-tests-build",
+		);
+		assert.equal(
+			asObject(asObject(jobs?.["scripts-tests-build"])?.strategy)?.matrix,
+			undefined,
+		);
 	});
 
 	it("never waits for the deps image", () => {

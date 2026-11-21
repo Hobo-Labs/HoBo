@@ -1004,6 +1004,9 @@ export function localContext(state: {
 		// The remote route is checked separately by the required gate; locally,
 		// evaluate covered jobs as if that prerequisite succeeded.
 		if (path === "needs.route.result") return "success";
+		// scripts-tests-build is not a covered job: a local run already built
+		// inside the scripts-tests steps. Treat the GitHub helper as success.
+		if (path === "needs.scripts-tests-build.result") return "success";
 		if (path === "needs.route.outputs.attested") return "false";
 		if (path === "needs.route.outputs.attested-jobs") return "[]";
 		if (path === "strategy.job-index" && shard) return shard.index;

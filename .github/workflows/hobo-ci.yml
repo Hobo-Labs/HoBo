@@ -842,6 +842,146 @@ jobs:
         if: always()
         uses: $/.github/actions/ci-trace
 
+  scripts-tests-build:
+    name: Scripts tests build
+    # Hosted 44867963592: four scripts-tests shards each rebuilt 81–140s cold
+    # while queued 23–181s behind PR sidecars. One build saves this run's
+    # Turbo cache; the shards restore it (preferred-job) and materialize
+    # dist from cache hits. Merge-group has no sidecars; the remaining
+    # pole is one build plus the slowest test shard.
+    needs: [route]
+    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          submodules: recursive
+          clean: false
+          fetch-depth: 2
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Decide whether the change reaches scripts, tests or workflows
+        id: scope
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MERGE_GROUP_BASE_SHA:-}" ]; then
+            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
+              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            BASE="$MERGE_GROUP_BASE_SHA"
+          elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            BASE="$(git rev-parse HEAD^1)"
+          else
+            echo "No base to compare with; running the scripts lane"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE" HEAD)"
+          if grep -qE '^(scripts|test|\.github)/' <<<"${changed}"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing under scripts/, test/ or .github/ changed; skipping the scripts lane"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: $/.github/actions/pnpm-store
+        if: steps.scope.outputs.run == 'true'
+      - name: Link deps layer
+        if: steps.scope.outputs.run == 'true'
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts link
+      - name: Check deps layer match
+        if: steps.scope.outputs.run == 'true'
+        id: deps-layer
+        run: node --experimental-strip-types scripts/ci/deps-layer.mts check
+      - name: Verify deps layer sibling links
+        if: steps.scope.outputs.run == 'true' && steps.deps-layer.outputs.match == 'true'
+        run: node --import tsx scripts/ensure-ts-autocode-links.mts
+      - name: Install dependencies
+        if: steps.scope.outputs.run == 'true' && steps.deps-layer.outputs.match != 'true'
+        run: node --experimental-strip-types --no-warnings scripts/ci/pnpm-install.mts --frozen-lockfile --config.confirmModulesPurge=false
+      - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: Build the packages the scripts tests import
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 6
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_EVENT_MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          BASE="$(node --experimental-strip-types --no-warnings scripts/ci/turbo-scm-base.mts)"
+          if [ -z "$BASE" ]; then
+            echo "turbo-scm-base produced an empty base" >&2
+            exit 1
+          fi
+          if [[ "$BASE" == origin/* ]]; then
+            git fetch --no-tags --depth=1 origin "${BASE#origin/}"
+          else
+            git cat-file -e "${BASE}^{commit}" 2>/dev/null \
+              || git fetch --no-tags --depth=1 origin "$BASE"
+          fi
+          mapfile -t FILTERS < <(
+            git diff --name-only "$BASE" HEAD \
+              | node --experimental-strip-types --no-warnings \
+                scripts/ci/affected-lanes.mts --base="$BASE"
+          )
+          ROOTS=(
+            --filter=@hobo/adapter-infisical...
+            --filter=@hobo/bindings...
+            --filter=@hobo/cd...
+            --filter=@hobo/ci...
+            --filter=@hobo/ci-gh-actions...
+            --filter=@hobo/cli...
+            --filter=@hobo/core...
+            --filter=@hobo/hobo...
+            --filter=@hobo/provider-cloudflare...
+            --filter=@hobo/provider-github...
+            --filter=@hobo/provider-lakebed...
+            --filter=@hobo/provider-neon...
+            --filter=@hobo/provider-netlify...
+            --filter=@hobo/provider-npm...
+            --filter=@hobo/provider-oci-registry...
+            --filter=@hobo/provider-prisma-postgres...
+            --filter=@hobo/provider-redaction...
+            --filter=@hobo/provider-upstash...
+            --filter=@hobo/provider-vercel...
+            --filter=@hobo/runtime-local...
+            --filter=@hobo/schema-tools...
+            --filter=@hobo/secret-store-claim...
+          )
+          if [ ${#FILTERS[@]} -eq 0 ]; then
+            echo "No package source changed since ${BASE}; materialize import-root dist from Turbo cache"
+            pnpm exec turbo run build \
+              "${ROOTS[@]}" \
+              --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+          else
+            pnpm exec turbo run build \
+              "${ROOTS[@]}" \
+              "${FILTERS[@]}" \
+              --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+          fi
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        uses: $/.github/actions/turbo-cache
+        with:
+          mode: save
+      - name: CI trace
+        if: always()
+        uses: $/.github/actions/ci-trace
+
   scripts-tests:
     name: Scripts tests
     # Every test under scripts/test (pnpm run test:scripts), which no job ran until
@@ -850,8 +990,10 @@ jobs:
     # passes at once. Does not wait for ci-runner-image: hosted shards do not
     # boot that image, and waiting serialized them behind a 20s no-op plus the
     # hosted queue. Image-input PRs still rebuild it; validation still waits.
-    needs: [route]
-    if: ${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"scripts-tests"')) }}
+    # Hosted 44867963592 rebuilt the import graph four times; scripts-tests-build
+    # does it once and the shards restore that run's Turbo cache.
+    needs: [route, scripts-tests-build]
+    if: ${{ !cancelled() && needs.route.result == 'success' && needs.scripts-tests-build.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"scripts-tests"')) }}
     # Each test file is assigned to exactly one shard. Splitting the lane keeps
     # its watchdog useful even on a busy, smaller self-hosted runner.
     strategy:
@@ -921,7 +1063,8 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
-      # Some scripts tests import a package's src/ or dist/ (scripts/ci/*.mts
+          preferred-job: scripts-tests-build
+      # Some scripts tests import a package's src/ or dist/ (scripts/ci/*.mts)
       # imports packages/.../dist). Restore Turbo cache first. Package source
       # changes use affected-lanes (a two-commit tree diff, no turbo merge-base
       # on a shallow fetch) unioned with the import-root dependency closures
