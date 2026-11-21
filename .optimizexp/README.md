@@ -10,4 +10,6 @@ The staged-validation scenarios use disposable Git repositories to check which g
 
 The visual-token scenarios check the implemented CSS palettes and verify that unreadable text produces a source-specific contrast error.
 
+The public-site scenarios start a local development server and use a browser to check the landing page and follow its getting-started link. The browser blocks external requests during the check.
+
 List configured projects with `node --import tsx .agents/skills/optimizexp/harness/init.mts --mode list-projects` and validate their configuration with `--mode validate-config`. Historical bus records can be inspected with `node --import tsx .agents/skills/optimizexp/workflows/cross-agent/review-loop.mts --mode validate-bus`.
