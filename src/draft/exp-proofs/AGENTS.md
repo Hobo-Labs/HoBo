@@ -1,26 +1,15 @@
-# Experience proofs — agent instructions
+# Experience proof instructions
 
-Experience proofs live under a type folder: `src/draft/exp-proofs/<type>/<slug>`, classified in
-[`_classification.md`](_classification.md). Layer reference:
-`.claude/skills/draft/references/exp-proofs/process.md` (use the **draft** skill).
+Follow `src/draft/AGENTS.md` and the repository-wide rules. Implement the requested experience and exercise its observable behavior. Do not create design documents, planning documents, synthetic personas, or placeholder scenarios.
 
-| Type | Audience | Required artifacts (gate-enforced by `pnpm run draft:artifacts`) |
+Experience packages live under `src/draft/exp-proofs/<type>/<slug>`:
+
+| Type | Audience | Evidence checked by the artifact gate |
 |---|---|---|
-| `dx` | developers/operators | pseudo-code, protobuf + CUE contracts, mermaid diagrams |
-| `ux` | end users | `assets/` with **real visuals** (SVG/PNG wireframes, mockups, screenshots). Interactive/game proofs also require Playwright **screenshots + MP4 recordings** + `evidence-manifest.json` (see `ux/AGENTS.md`) |
-| `cx` | customers/publishers | journey maps/scripts, comms fixtures (`assets/*.md` or `journeys/`) |
-| `ax` | agents | MCP transcripts, tool schemas, llms.txt fixtures (`assets/` or `transcripts/`) |
-| `api` | API/SDK consumers | interface declarations, type tests (`type-tests/`), example consumers |
+| `dx` | Developers and operators | Protobuf and CUE contracts |
+| `ux` | End users | Visual assets |
+| `cx` | Customers and publishers | Executable tests or feature steps |
+| `ax` | Agents | MCP transcripts or tool-schema fixtures |
+| `api` | API and SDK consumers | Type tests |
 
-All types additionally need `proof.json` (with matching `experienceType`), executed `examples/`,
-and an executed `notebook.ipynb` demonstrating the experience.
-
-## Run / modify
-
-- `pnpm exec turbo run test --filter ./src/draft/exp-proofs/<type>/<slug>` (note the THREE-level path)
-- Moving/reclassifying a package: `git mv` + update `_classification.md` + rerun the gates.
-- Changing an exp proof cascades: update referencing epic rollups in the same diff
-  (`pnpm run draft:cascade -- --staged` enforces; see the per-type AGENTS.md and
-  `src/draft/epic-proofs/AGENTS.md`).
-
-New packages: scaffold from `src/draft/_templates/exp/` into the right type folder.
+Keep `proof.json` aligned with the type folder. Run the package tests, runnable examples, required notebook checks, and relevant staged artifact and cascade gates. Update and test affected referencing packages when behavior changes.
