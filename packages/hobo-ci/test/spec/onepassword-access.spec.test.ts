@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
 	onePasswordVaultScope,
 	parseOnePasswordServiceAccountToken,
 	provisionOnePasswordAccess,
+	validateOnePasswordServiceAccount,
 } from "../../src/onepassword-access.js";
 import type { OwnerChannel } from "../../src/owner-channel.js";
 import type { CommandResult, RunCommand } from "../../src/store-cli.js";
@@ -163,6 +164,32 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 		});
 		expect(machine.ran).toEqual([]);
 		expect(JSON.stringify(result)).not.toContain(TOKEN);
+	});
+
+	it.each([
+		["HTTPS_PROXY", "http://127.0.0.1:1"],
+		["SSL_CERT_FILE", "/fixture/egress-ca.pem"],
+	])("refuses unrouteable SDK egress through %s before authentication", async (name, value) => {
+		for (const variable of [
+			"HTTPS_PROXY",
+			"https_proxy",
+			"ALL_PROXY",
+			"all_proxy",
+			"NODE_EXTRA_CA_CERTS",
+			"SSL_CERT_FILE",
+			"REQUESTS_CA_BUNDLE",
+		])
+			vi.stubEnv(variable, "");
+		vi.stubEnv(name, value);
+		const token = parseOnePasswordServiceAccountToken(TOKEN);
+		if (token === undefined) throw new Error("Invalid fixture token.");
+		try {
+			await expect(
+				validateOnePasswordServiceAccount(token, VAULT),
+			).resolves.toBe("unverifiable");
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it("accepts exactly the configured vault and nothing wider", () => {

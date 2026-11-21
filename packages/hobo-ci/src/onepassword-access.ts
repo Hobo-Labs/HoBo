@@ -157,12 +157,11 @@ export function onePasswordVaultScope(
 
 export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccount =
 	async (token, vaultId) => {
-		let egressRequired = true;
 		let sdk: typeof import("@1password/sdk") | undefined;
 		try {
 			const egress = egressFrom(process.env);
-			egressRequired =
-				egress.proxy !== undefined || egress.caFile !== undefined;
+			if (egress.proxy !== undefined || egress.caFile !== undefined)
+				return "unverifiable";
 			sdk = await import("@1password/sdk");
 			const client = await sdk.createClient({
 				auth: token,
@@ -173,9 +172,7 @@ export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccoun
 			return onePasswordVaultScope(vaults, vaultId);
 		} catch (error) {
 			if (sdk === undefined) return "unverifiable";
-			return error instanceof sdk.AuthExpiredError && !egressRequired
-				? false
-				: "unverifiable";
+			return error instanceof sdk.AuthExpiredError ? false : "unverifiable";
 		}
 	};
 

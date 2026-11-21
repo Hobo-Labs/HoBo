@@ -173,6 +173,25 @@ describe("Bitwarden owner hand-off privacy", () => {
 			"fixture-private-capture-error",
 		);
 
+		const requested = setup(true);
+		requested.vault.drop("BW_CLIENTID");
+		requested.vault.drop("BW_CLIENTSECRET");
+		const requestResult = await ensureBitwardenSignIn({
+			...requested.options,
+			handOff: true,
+			silent: false,
+			owner: {
+				...basicOwner,
+				requestCaptures: () => {
+					throw new Error("fixture-private-request-error");
+				},
+			},
+		});
+		expect(requestResult?.code).toBe("HOBO_CD_OWNER_CHANNEL_FAILED");
+		expect(JSON.stringify(requestResult)).not.toContain(
+			"fixture-private-request-error",
+		);
+
 		const approved = setup();
 		const approvalResult = await ensureBitwardenSignIn({
 			...approved.options,

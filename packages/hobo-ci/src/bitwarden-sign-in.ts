@@ -96,23 +96,28 @@ export async function ensureBitwardenSignIn(
 		const clientSecret = vault.reveal("BW_CLIENTSECRET");
 		const page = bitwardenApiKeyPage(endpoints);
 		const captureApiKey = async () => {
+			const owner = options.owner;
 			const given =
-				options.owner === undefined
+				owner === undefined
 					? undefined
-					: await captureAll(options.owner, [
-							{
-								name: "BW_CLIENTID",
-								title: "Bitwarden API key: client_id",
-								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_id.`,
-							},
-							{
-								name: "BW_CLIENTSECRET",
-								title: "Bitwarden API key: client_secret",
-								instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
-							},
-						]).catch(() => {
-							throw new BitwardenOwnerChannelError();
-						});
+					: await Promise.resolve()
+							.then(() =>
+								captureAll(owner, [
+									{
+										name: "BW_CLIENTID",
+										title: "Bitwarden API key: client_id",
+										instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_id.`,
+									},
+									{
+										name: "BW_CLIENTSECRET",
+										title: "Bitwarden API key: client_secret",
+										instructions: `In your Bitwarden vault (${page}): Account settings → Security → Keys → View API key. Paste client_secret.`,
+									},
+								]),
+							)
+							.catch(() => {
+								throw new BitwardenOwnerChannelError();
+							});
 			if (given === undefined) return undefined;
 			const parsed = parseBitwardenApiKey(given[0] ?? "", given[1] ?? "");
 			vault.put("BW_CLIENTID", parsed.clientId);
