@@ -312,7 +312,9 @@ describe("release-hobo pages jobs", () => {
 		expect(gate).toContain("    needs: [route]\n");
 		expect(gate).not.toContain("release-main-train-gate");
 		const pages = job("release-pages");
-		expect(pages).toContain("needs: [release-pages-gate, release-hobo-cli]");
+		expect(pages).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
+		expect(pages).toMatch(/needs: \[[^\]]*\brelease-pages-gate\b[^\]]*\]/u);
+		expect(pages).toMatch(/needs: \[[^\]]*\brelease-hobo-cli\b[^\]]*\]/u);
 		expect(pages).toContain(
 			"needs.release-pages-gate.outputs.deploy == 'true'",
 		);

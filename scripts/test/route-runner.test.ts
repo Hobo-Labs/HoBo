@@ -1686,6 +1686,30 @@ describe("the script reading the slip", () => {
 		);
 	});
 
+	it("ignores a hostile trunk slip on merge-group Fabric", async () => {
+		const hostile = structuredClone(JSON.parse(OPEN_SLIP));
+		hostile.classes.trunk = {
+			runner: "hobo",
+			tier: "fleet",
+			reason: "fleet-open",
+		};
+		await withGithub(
+			observed([waiting("ubuntu-24.04", 2), pickup("hobo-trunk")]),
+			async (apiUrl) => {
+				const { decision } = await route(
+					apiUrl,
+					JSON.stringify(hostile),
+					mergeGroupCi,
+				);
+				assert.notEqual(decision.runner, "hobo");
+				assert.deepEqual(decision.slip, {
+					kind: "unasked",
+					why: "merge-group",
+				});
+			},
+		);
+	});
+
 	it("never routes merge-group Fabric to the general hobo label", async () => {
 		await withGithub(
 			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),

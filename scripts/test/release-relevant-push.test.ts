@@ -166,11 +166,14 @@ describe("as the release workflow runs it", () => {
 	});
 
 	it("queues main-train runs in one group, never cancelling a running release", () => {
-		expect(workflow).toContain(
-			"group: ${{ github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion) || format('hobo-release-{0}-{1}', github.workflow, github.ref) }}",
+		expect(workflow).toMatch(
+			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}'/u,
+		);
+		expect(workflow).toMatch(
+			/hobo-release-train-\{0\}-\{1\}/u,
 		);
 		expect(workflow).toContain(
-			"cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+			"cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
 		);
 	});
 
