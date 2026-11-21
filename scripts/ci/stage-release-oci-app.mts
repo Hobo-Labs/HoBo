@@ -207,10 +207,7 @@ export function fetchReleaseTurboBase(
 			{ cwd: root, encoding: "utf8" },
 		);
 		if (result.status !== 0) {
-			warnTurboBaseFallback(
-				`git fetch failed with exit status ${result.status}`,
-			);
-			return;
+			throw new Error(`git fetch failed with exit status ${result.status}`);
 		}
 	};
 	if (base === "origin/main") {

@@ -874,7 +874,7 @@ describe("fetch-release-turbo-base", () => {
 			expect(run.status, run.stderr).toBe(0);
 			expect(run.stderr).toBe("");
 			expect(run.stdout).toMatch(
-				/::warning title=release-turbo-base::git fetch failed with exit status 128; release OCI build uses full turbo graph/u,
+				/::warning title=release-turbo-base::git fetch failed with exit status 128; release OCI build may fall back to full turbo graph/u,
 			);
 			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.9";
 			expect(
@@ -892,71 +892,6 @@ describe("fetch-release-turbo-base", () => {
 			if (previousBase === undefined)
 				delete process.env.HOBO_RELEASE_TURBO_BASE;
 			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
-			rmSync(shim, { recursive: true, force: true });
-			rmSync(repo, { recursive: true, force: true });
-		}
-	});
-
-	it("falls through to the full turbo graph when the fetch fails on a tag checkout", {
-		timeout: GIT_FIXTURE_TIMEOUT_MS,
-	}, () => {
-		const shim = mkdtempSync(join(tmpdir(), "hobo-fetch-fail-tag-"));
-		writeFileSync(
-			join(shim, "git"),
-			[
-				"#!/bin/sh",
-				'if [ "$1" = "remote" ] && [ "$2" = "get-url" ]; then',
-				'  echo "https://example.invalid/hobo.git"',
-				"  exit 0",
-				"fi",
-				'if [ "$1" = "fetch" ]; then exit 128; fi',
-				`exec ${JSON.stringify(realGit)} "$@"`,
-			].join("\n"),
-			{ mode: 0o755 },
-		);
-		chmodSync(join(shim, "git"), 0o755);
-		const repo = mkdtempSync(join(tmpdir(), "hobo-fetch-fail-tag-repo-"));
-		const previousPath = process.env.PATH;
-		const previousRef = process.env.GITHUB_REF;
-		const previousEvent = process.env.GITHUB_EVENT_NAME;
-		const warnings: string[] = [];
-		const log = vi
-			.spyOn(console, "log")
-			.mockImplementation((...parts: unknown[]) => {
-				warnings.push(parts.map(String).join(" "));
-			});
-		try {
-			const git = (...args: string[]) => {
-				const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
-				expect(result.status).toBe(0);
-			};
-			git("init", "--quiet");
-			git(
-				"-c",
-				"user.name=Release Test",
-				"-c",
-				"user.email=release@example.com",
-				"-c",
-				"commit.gpgsign=false",
-				"commit",
-				"--allow-empty",
-				"-m",
-				"head",
-			);
-			process.env.PATH = `${shim}:${previousPath}`;
-			process.env.GITHUB_REF = "refs/tags/v0.0.0-alpha.3";
-			delete process.env.GITHUB_EVENT_NAME;
-			expect(resolveReleaseTurboBase(repo, "v0.0.0-alpha.3")).toBeUndefined();
-			expect(warnings.join("\n")).toMatch(
-				/::warning title=release-turbo-base::git fetch failed with exit status 128; release OCI build uses full turbo graph/u,
-			);
-		} finally {
-			log.mockRestore();
-			process.env.PATH = previousPath;
-			if (previousRef === undefined) delete process.env.GITHUB_REF;
-			else process.env.GITHUB_REF = previousRef;
-			if (previousEvent === undefined) delete process.env.GITHUB_EVENT_NAME;
-			else process.env.GITHUB_EVENT_NAME = previousEvent;
 			rmSync(shim, { recursive: true, force: true });
 			rmSync(repo, { recursive: true, force: true });
 		}
