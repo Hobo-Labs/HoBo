@@ -11,7 +11,11 @@ import {
 } from "./_generated/pricing_pb.js";
 import { parseDecimal } from "./decimal.js";
 import { stableHash } from "./json.js";
-import { legacyPricingOrder, type PricingOrder } from "./ordering.js";
+import {
+	codeUnitPricingOrder,
+	legacyPricingOrder,
+	type PricingOrder,
+} from "./ordering.js";
 import { legacyPricingTimeOrder, type PricingTimeOrder } from "./time-order.js";
 import type { PricingRejectionCode } from "./types.js";
 
@@ -29,7 +33,7 @@ export class PricingFault extends Error {
 	}
 }
 
-export function parseUtc(value: string, path: string): number {
+function parseLegacyUtc(value: string, path: string): number {
 	if (!UTC_PATTERN.test(value)) {
 		throw new PricingFault(
 			"INVALID_PRICING_INPUT",
@@ -46,17 +50,75 @@ export function parseUtc(value: string, path: string): number {
 	return parsed;
 }
 
+/** Validate calendar components without silently normalizing impossible dates. */
+export function parseUtc(value: string, path: string): number {
+	const parsed = parseLegacyUtc(value, path);
+	if (new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19))
+		throw new PricingFault(
+			"INVALID_PRICING_INPUT",
+			`${path} is not a valid calendar timestamp`,
+		);
+	return parsed;
+}
+
+/** Compare validated UTC instants without truncating fractional seconds. */
+export function compareUtcExact(left: string, right: string): number {
+	parseUtc(left, "timestamp");
+	parseUtc(right, "timestamp");
+	const second = codeUnitPricingOrder(left.slice(0, 19), right.slice(0, 19));
+	if (second !== 0) return second;
+	const fraction = (value: string) =>
+		value[19] === "." ? value.slice(20, -1).replace(/0+$/, "") : "";
+	return codeUnitPricingOrder(fraction(left), fraction(right));
+}
+
+export type TemporalPolicy = Readonly<{
+	parse(value: string, path: string): number;
+	compare(left: string, right: string): number;
+}>;
+export const EXACT_TIME: TemporalPolicy = {
+	parse: parseUtc,
+	compare: compareUtcExact,
+};
+export const LEGACY_TIME: TemporalPolicy = {
+	parse: parseLegacyUtc,
+	compare: (left, right) => Math.sign(Date.parse(left) - Date.parse(right)),
+};
+
+/** Exact UTC ordering for pricing-rating/v3: open ends last, fractions intact. */
+export const exactPricingTimeOrder: PricingTimeOrder = (left, right) => {
+	if (left === undefined) return right === undefined ? 0 : 1;
+	if (right === undefined) return -1;
+	return compareUtcExact(left, right);
+};
+
+function compareChecked(
+	left: string,
+	leftPath: string,
+	right: string,
+	rightPath: string,
+	time: TemporalPolicy,
+): number {
+	time.parse(left, leftPath);
+	time.parse(right, rightPath);
+	return time.compare(left, right);
+}
+
 export function intervalCovers(
 	interval: EffectiveInterval,
 	at: string,
 	horizon: string,
+	time: TemporalPolicy = EXACT_TIME,
 ): boolean {
-	const start = parseUtc(interval.start, "interval.start");
-	const end =
-		interval.end === undefined
-			? Number.POSITIVE_INFINITY
-			: parseUtc(interval.end, "interval.end");
-	return start <= parseUtc(at, "at") && end >= parseUtc(horizon, "horizon");
+	time.parse(interval.start, "interval.start");
+	if (interval.end !== undefined) time.parse(interval.end, "interval.end");
+	time.parse(at, "at");
+	if (time.compare(interval.start, at) > 0) return false;
+	time.parse(horizon, "horizon");
+	return (
+		time.compare(at, horizon) <= 0 &&
+		(interval.end === undefined || time.compare(interval.end, horizon) >= 0)
+	);
 }
 
 function validateEvidence(
@@ -64,6 +126,7 @@ function validateEvidence(
 	at: string,
 	horizon: string,
 	path: string,
+	time: TemporalPolicy,
 ): void {
 	if (evidence === undefined) {
 		throw new PricingFault(
@@ -72,10 +135,17 @@ function validateEvidence(
 		);
 	}
 	if (
-		parseUtc(evidence.observedAt, `${path}.observedAt`) > parseUtc(at, "at") ||
-		parseUtc(evidence.validFrom, `${path}.validFrom`) > parseUtc(at, "at") ||
-		parseUtc(evidence.validUntil, `${path}.validUntil`) <
-			parseUtc(horizon, "horizon")
+		compareChecked(evidence.observedAt, `${path}.observedAt`, at, "at", time) >
+			0 ||
+		compareChecked(evidence.validFrom, `${path}.validFrom`, at, "at", time) >
+			0 ||
+		compareChecked(
+			evidence.validUntil,
+			`${path}.validUntil`,
+			horizon,
+			"horizon",
+			time,
+		) < 0
 	) {
 		throw new PricingFault(
 			"STALE_OBSERVATION",
@@ -96,6 +166,7 @@ export function stateHashOf(state: FinancialStateView): string {
 
 export function validateScenarioState(
 	scenario: QuoteScenario,
+	time: TemporalPolicy = EXACT_TIME,
 	allowDestroy = false,
 ): void {
 	const catalog = scenario.catalog;
@@ -114,9 +185,9 @@ export function validateScenarioState(
 	) {
 		throw new PricingFault("INVALID_PRICING_INPUT", "unknown quote action");
 	}
-	const at = parseUtc(scenario.at, "scenario.at");
-	const horizon = parseUtc(scenario.horizon, "scenario.horizon");
-	if (horizon < at) {
+	time.parse(scenario.at, "scenario.at");
+	time.parse(scenario.horizon, "scenario.horizon");
+	if (time.compare(scenario.horizon, scenario.at) < 0) {
 		throw new PricingFault(
 			"INVALID_PRICING_INPUT",
 			"quote horizon precedes quote time",
@@ -156,7 +227,10 @@ export function validateScenarioState(
 			"invalid financial state hash",
 		);
 	}
-	if (parseUtc(state.asOf, "state.asOf") > at) {
+	if (
+		compareChecked(state.asOf, "state.asOf", scenario.at, "scenario.at", time) >
+		0
+	) {
 		throw new PricingFault(
 			"STALE_OBSERVATION",
 			"financial state is from the future",
@@ -170,10 +244,20 @@ export function validateScenarioState(
 	}
 	for (const [index, observation] of state.observations.entries()) {
 		if (
-			parseUtc(observation.observedAt, `observations.${index}.observedAt`) >
-				at ||
-			parseUtc(observation.validUntil, `observations.${index}.validUntil`) <
-				horizon
+			compareChecked(
+				observation.observedAt,
+				`observations.${index}.observedAt`,
+				scenario.at,
+				"scenario.at",
+				time,
+			) > 0 ||
+			compareChecked(
+				observation.validUntil,
+				`observations.${index}.validUntil`,
+				scenario.horizon,
+				"scenario.horizon",
+				time,
+			) < 0
 		) {
 			throw new PricingFault(
 				"STALE_OBSERVATION",
@@ -193,7 +277,7 @@ export function validateScenarioState(
 		}
 		if (
 			agreement.term === undefined ||
-			!intervalCovers(agreement.term, scenario.at, scenario.horizon)
+			!intervalCovers(agreement.term, scenario.at, scenario.horizon, time)
 		) {
 			throw new PricingFault(
 				"STALE_OBSERVATION",
@@ -205,6 +289,7 @@ export function validateScenarioState(
 			scenario.at,
 			scenario.horizon,
 			`agreement.${agreement.id}`,
+			time,
 		);
 	}
 	for (const allowance of state.allowances) {
@@ -225,10 +310,16 @@ export function validateScenarioState(
 			scenario.at,
 			scenario.horizon,
 			`allowance.${allowance.grant?.id ?? "unknown"}`,
+			time,
 		);
 		if (
 			allowance.grant?.effective === undefined ||
-			!intervalCovers(allowance.grant.effective, scenario.at, scenario.horizon)
+			!intervalCovers(
+				allowance.grant.effective,
+				scenario.at,
+				scenario.horizon,
+				time,
+			)
 		) {
 			throw new PricingFault(
 				"STALE_OBSERVATION",
@@ -254,10 +345,16 @@ export function validateScenarioState(
 			scenario.at,
 			scenario.horizon,
 			`credit.${credit.grant?.id ?? "unknown"}`,
+			time,
 		);
 		if (
 			credit.grant?.effective === undefined ||
-			!intervalCovers(credit.grant.effective, scenario.at, scenario.horizon)
+			!intervalCovers(
+				credit.grant.effective,
+				scenario.at,
+				scenario.horizon,
+				time,
+			)
 		) {
 			throw new PricingFault(
 				"STALE_OBSERVATION",
@@ -280,10 +377,16 @@ export function validateScenarioState(
 			scenario.at,
 			scenario.horizon,
 			`commitment.${commitment.commitment?.id ?? "unknown"}`,
+			time,
 		);
 		if (
 			commitment.commitment?.term === undefined ||
-			!intervalCovers(commitment.commitment.term, scenario.at, scenario.horizon)
+			!intervalCovers(
+				commitment.commitment.term,
+				scenario.at,
+				scenario.horizon,
+				time,
+			)
 		) {
 			throw new PricingFault(
 				"STALE_OBSERVATION",

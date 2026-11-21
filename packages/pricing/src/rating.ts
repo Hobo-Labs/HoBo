@@ -52,7 +52,13 @@ import {
 } from "./decimal.js";
 import { hasExplicitFixedQuantity } from "./fixed-charge-coverage.js";
 import { legacyPricingOrder, type PricingOrder } from "./ordering.js";
-import { PricingFault, scopeMatches, workingState } from "./state.js";
+import {
+	LEGACY_TIME,
+	PricingFault,
+	scopeMatches,
+	type TemporalPolicy,
+	workingState,
+} from "./state.js";
 import {
 	legacyPricingTimeOrder,
 	type PricingTimeOrder,
@@ -200,6 +206,8 @@ function aggregateMeasurements(
 	meter: MeterDefinition,
 	entries: readonly { delta: WorkloadDelta; measurement: UsageMeasurement }[],
 	timeOrder: PricingTimeOrder,
+	time: TemporalPolicy,
+	strictTimes: boolean,
 ): Quantity {
 	if (meter.aggregation === "unique-count") {
 		if (
@@ -274,6 +282,12 @@ function aggregateMeasurements(
 	});
 	let aggregate: Quantity;
 	if (meter.aggregation === "latest") {
+		if (strictTimes)
+			for (const entry of roundedEntries)
+				time.parse(
+					entry.entry.measurement.observedAt,
+					"measurement.observedAt",
+				);
 		const latest = [...roundedEntries].sort((left, right) =>
 			timeOrder(
 				right.entry.measurement.observedAt,
@@ -824,6 +838,8 @@ export function rateSnapshot(
 	workloads: readonly WorkloadDelta[],
 	order: PricingOrder = legacyPricingOrder,
 	timeOrder: PricingTimeOrder = legacyPricingTimeOrder,
+	time: TemporalPolicy = LEGACY_TIME,
+	strictTimes = false,
 ): RatedSnapshot {
 	const stateView = scenario.state;
 	const catalog = scenario.catalog;
@@ -857,6 +873,7 @@ export function rateSnapshot(
 			scenario.at,
 			scenario.horizon,
 			timeOrder,
+			time,
 		);
 		if (
 			timeOrder === utcPricingTimeOrder &&
@@ -995,7 +1012,13 @@ export function rateSnapshot(
 					`no charge for ${meter.dimension}`,
 				);
 			}
-		const measured = aggregateMeasurements(meter, entries, timeOrder);
+		const measured = aggregateMeasurements(
+			meter,
+			entries,
+			timeOrder,
+			time,
+			strictTimes,
+		);
 			for (const charge of charges) {
 				if (charge.variant.case !== "usage" || charge.base === undefined)
 					continue;

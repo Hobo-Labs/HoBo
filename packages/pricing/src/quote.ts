@@ -35,8 +35,12 @@ import {
 } from "./ordering.js";
 import { type RatedSnapshot, rateSnapshot } from "./rating.js";
 import {
+	EXACT_TIME,
+	exactPricingTimeOrder,
+	LEGACY_TIME,
 	PricingFault,
 	stateHashOf,
+	type TemporalPolicy,
 	validateScenarioState,
 	validateV2FinancialBalances,
 	validateV2FinancialIdentities,
@@ -50,9 +54,12 @@ import {
 } from "./time-order.js";
 import type { PricingRejectionCode, QuoteResult } from "./types.js";
 
-export type RatingAlgorithmVersion = "pricing-rating/v1" | "pricing-rating/v2";
+export type RatingAlgorithmVersion =
+	| "pricing-rating/v1"
+	| "pricing-rating/v2"
+	| "pricing-rating/v3";
 export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-const RATING_ALGORITHM_VERSION = "pricing-rating/v2";
+const RATING_ALGORITHM_VERSION = "pricing-rating/v3";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
 
 function unsupportedRealm(): PricingRejected {
@@ -229,7 +236,11 @@ export function quoteScenario(
 		options.ratingAlgorithmVersion === undefined
 			? RATING_ALGORITHM_VERSION
 			: options.ratingAlgorithmVersion;
-	if (version !== "pricing-rating/v1" && version !== "pricing-rating/v2")
+	if (
+		version !== "pricing-rating/v1" &&
+		version !== "pricing-rating/v2" &&
+		version !== "pricing-rating/v3"
+	)
 		return rejection(
 			"INVALID_PRICING_INPUT",
 			"unknown rating algorithm version",
@@ -241,7 +252,9 @@ export function quoteScenario(
 			: codeUnitPricingOrder,
 		version === "pricing-rating/v1"
 			? legacyPricingTimeOrder
-			: utcPricingTimeOrder,
+			: version === "pricing-rating/v2"
+				? utcPricingTimeOrder
+				: exactPricingTimeOrder,
 		version,
 	);
 }
@@ -261,6 +274,8 @@ function quoteWithOrdering(
 	timeOrder: PricingTimeOrder,
 	ratingAlgorithmVersion: string,
 ): QuoteResult {
+	const strictTimes = ratingAlgorithmVersion === "pricing-rating/v3";
+	const time: TemporalPolicy = strictTimes ? EXACT_TIME : LEGACY_TIME;
 	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	if (!isBoundedPricingInput(scenario))
 		return rejection(
@@ -269,7 +284,7 @@ function quoteWithOrdering(
 		);
 	try {
 		if (timeOrder === utcPricingTimeOrder) validateV2ScenarioTimes(scenario);
-		validateScenarioState(scenario, timeOrder === utcPricingTimeOrder);
+		validateScenarioState(scenario, time, timeOrder === utcPricingTimeOrder);
 		if (timeOrder === utcPricingTimeOrder) {
 			validateV2FinancialIdentities(scenario.state);
 			if (scenario.state !== undefined) {
@@ -343,12 +358,16 @@ function quoteWithOrdering(
 			scenario.baseline,
 			order,
 			timeOrder,
+			time,
+			strictTimes,
 		);
 		const candidate = rateSnapshot(
 			scenario,
 			[...scenario.baseline, ...scenario.candidate],
 			order,
 			timeOrder,
+			time,
+			strictTimes,
 		);
 		if (
 			candidate.currency.length === 0 ||
