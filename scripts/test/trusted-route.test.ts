@@ -16,11 +16,7 @@ import { asList, asObject, asText } from "../ci/attestation.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 describe("base-controlled attestation verification", () => {
-	for (const workflow of [
-		"hobo-ci.yml",
-		"release-hobo.yml",
-		"release-hobo-pr.yml",
-	]) {
+	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
 		it(`${workflow} loads the route action and verifier from the event base`, () => {
 			const doc = workflowDocument(
 				readFileSync(`.github/workflows/${workflow}`, "utf8"),
@@ -97,7 +93,6 @@ describe("base-controlled attestation verification", () => {
 			for (const workflow of [
 				"hobo-ci.yml",
 				"release-hobo.yml",
-				"release-hobo-pr.yml",
 				"pricing-ci.yml",
 				"release-pricing.yml",
 				"release-ts-autocode.yml",

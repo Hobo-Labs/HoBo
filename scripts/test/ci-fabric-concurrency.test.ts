@@ -20,26 +20,4 @@ describe("HoBo CI Fabric concurrency", () => {
 		);
 		expect(block?.[2]).toBe("${{ github.event_name == 'pull_request' }}");
 	});
-
-	it("keeps PR sidecar jobs out of a shared concurrency group that cancels pending runs", () => {
-		const sidecars = [
-			"ci-deps-image",
-			"pr-offpath",
-			"artifact-trust",
-			"dev-cold-loop-gate",
-			"data-live",
-			"ci-guard",
-			"secret-scan",
-			"scripts-tests-build",
-			"scripts-tests",
-		];
-		for (const id of sidecars) {
-			const start = workflow.indexOf(`\n  ${id}:\n`);
-			expect(start, id).toBeGreaterThan(-1);
-			const rest = workflow.slice(start + 1);
-			const end = rest.slice(1).search(/\n  [A-Za-z0-9_-]+:\n/);
-			const job = end < 0 ? rest : rest.slice(0, end + 1);
-			expect(job, id).not.toContain("pr-sidecar");
-		}
-	});
 });

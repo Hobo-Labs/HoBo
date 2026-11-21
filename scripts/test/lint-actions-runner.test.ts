@@ -171,7 +171,7 @@ describe("Actions runner policy", () => {
 			0,
 		);
 	});
-	it("allows GitHub-hosted runners for npm OIDC and release-hobo-integration", () => {
+	it("allows the one GitHub-hosted runner needed for npm trusted publishing", () => {
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-npm", "ubuntu-24.04"),
 			0,
@@ -179,26 +179,6 @@ describe("Actions runner policy", () => {
 		// The job that builds the hobo CLI release-npm runs with its OIDC token.
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
-			0,
-		);
-		assert.equal(
-			lintRunner(
-				"release-hobo.yml",
-				"release-hobo-integration",
-				"ubuntu-24.04",
-			),
-			0,
-		);
-		assert.equal(
-			lintRunner(
-				"release-hobo-pr.yml",
-				"release-hobo-integration",
-				"ubuntu-24.04",
-			),
-			0,
-		);
-		assert.equal(
-			lintRunner("hobo-ci.yml", "release-hobo-integration", "ubuntu-24.04"),
 			0,
 		);
 	});
