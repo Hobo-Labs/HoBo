@@ -8,10 +8,6 @@
  * provider's list rate (`HOSTED_LIST_PRICES`) for the minutes it ran. A job
  * whose label has no list rate adds nothing: an unpriced minute is left
  * unmeasured, never guessed.
- *
- * A provider with nothing measured gets no entry, which the walk reads as
- * "unmeasured" and allows. A reader that cannot reach a source never blocks a
- * step either: it answers with what it could read.
  */
 
 import type { Lease } from "../_generated/ci_pb.js";
@@ -62,6 +58,15 @@ function hostedProvider(text: string): HostedRunnerProvider | undefined {
 	return HOSTED_RUNNER_PROVIDERS.find((provider) => provider === lower);
 }
 
+function hostedProvidersOfJob(job: JobFact): readonly HostedRunnerProvider[] {
+	if (job.startedAtMs === undefined || job.completedAtMs === undefined)
+		return [];
+	return job.labels.flatMap((label) => {
+		const provider = runnerProviderOfLabel(label);
+		return provider === undefined || provider === "github" ? [] : [provider];
+	});
+}
+
 /**
  * A job's provider and its list-rate cost, or undefined when it ran on no
  * hosted provider's label, did not run, or its label has no list rate.
@@ -99,7 +104,9 @@ export class LedgerSpendReader implements SpendReader {
 		accountId: string,
 		monthStartMs: number,
 	): Promise<ReadonlyMap<HostedRunnerProvider, number>> {
-		const spent = new Map<HostedRunnerProvider, number>();
+		const spent = new Map<HostedRunnerProvider, number>(
+			HOSTED_RUNNER_PROVIDERS.map((provider) => [provider, 0]),
+		);
 		const add = (provider: HostedRunnerProvider, usd: number): void => {
 			if (!(usd >= 0) || !Number.isFinite(usd)) return;
 			spent.set(provider, (spent.get(provider) ?? 0) + usd);
@@ -107,7 +114,8 @@ export class LedgerSpendReader implements SpendReader {
 		const covered = new Set<number>();
 		const leases = await this.deps.ledger
 			.accountLeases(accountId)
-			.catch((): readonly Lease[] => []);
+			.catch(() => undefined);
+		if (!leases) return new Map();
 		for (const lease of leases) {
 			const provider = hostedProvider(lease.provider);
 			const at = settledAtMs(lease);
@@ -120,18 +128,22 @@ export class LedgerSpendReader implements SpendReader {
 		}
 		const source = this.deps.finishedJobs;
 		const jobs = source
-			? await source(accountId, monthStartMs).catch(
-					(): readonly JobFact[] => [],
-				)
+			? await source(accountId, monthStartMs).catch(() => undefined)
 			: [];
+		if (!jobs) return new Map();
 		const seen = new Set<number>();
+		const unpriced = new Set<HostedRunnerProvider>();
 		for (const job of jobs) {
 			if (covered.has(job.id) || seen.has(job.id)) continue;
 			seen.add(job.id);
 			if ((job.completedAtMs ?? 0) < monthStartMs) continue;
 			const priced = listPriceOfJob(job);
 			if (priced) add(priced.provider, priced.usd);
+			else
+				for (const provider of hostedProvidersOfJob(job))
+					unpriced.add(provider);
 		}
+		for (const provider of unpriced) spent.delete(provider);
 		return spent;
 	}
 }

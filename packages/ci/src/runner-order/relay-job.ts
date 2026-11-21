@@ -1,20 +1,3 @@
-/**
- * The relay job's records and the names every part of it agrees on.
- *
- * A relay job is the small job a workflow puts in front of the real one to
- * ask "which runner should this run on". Two answerers exist over one engine
- * (ADR-0183): in job mode a vendored evaluator answers it on a GitHub-hosted
- * runner; in relay mode a HoBo node claims it over the runner protocol. Both
- * read a `RelayJobMessage` and produce a `RelayJobAnswer`; both journal a
- * `RunnerRouteEvent`.
- *
- * The records are protobuf (`data-models/relay_job.proto`) with CUE rules
- * (`data-models/relay_job.cue`). Each parser here returns the generated record,
- * checked against the same rules and frozen. The conversions turn the stored
- * records into the shapes the walk and the insight reports already read.
- *
- * Pure functions: no clock, network or store.
- */
 import { create, fromJsonString } from "@bufbuild/protobuf";
 import {
 	type JobFact,
@@ -54,10 +37,6 @@ import { RUNNER_STEP_KEYS, runnerStepKey } from "./providers.js";
 // public-contract: the label a relay job asks for in relay mode.
 export const RELAY_LABEL = "hobo-relay";
 
-/**
- * `relayJobs` in `.hobo/ci.json`: whether a relay answers relay jobs at all,
- * and the label it answers. Off unless a repository turns it on.
- */
 export type RelayJobsConfig = Readonly<{ answer: boolean; label: string }>;
 // public-contract: the `relayJobs` a repository gets when it writes none.
 export const DEFAULT_RELAY_JOBS: RelayJobsConfig = Object.freeze({
@@ -168,7 +147,6 @@ export const RELAY_MCP_TOOLS = [
 // public-contract: where the generated parity scorecard lives.
 export const PARITY_SCORECARD_PATH = "docs/ci/parity-scorecard.md";
 
-/** The tags a parity scenario carries: `@parity @<case id> @t2` (or `@t3`). */
 export function parityTags(
 	caseId: string,
 	tier: "t2" | "t3",
@@ -192,10 +170,9 @@ const VALUE_NAME = /^[a-z][a-z0-9_-]{0,63}$/u;
 const USER_ID = /^[0-9]{1,20}$/u;
 
 declare const parsedRelayRecord: unique symbol;
-/** A record that passed its parser: every rule in `relay_job.cue` holds, and it is frozen. */
+
 export type ParsedRelayRecord<T> = T & { readonly [parsedRelayRecord]: true };
 
-/** A relay record broke one of its rules. The message names the rule. */
 export class RelayRecordRejection extends Error {
 	override readonly name = "RelayRecordRejection";
 }
@@ -216,9 +193,16 @@ function freezeValues(values: readonly RelayJobValue[]): void {
 	Object.freeze(values);
 }
 
+function assertFrozenRelayRecord<T>(
+	value: T,
+): asserts value is ParsedRelayRecord<T> {
+	if (!Object.isFrozen(value))
+		throw new RelayRecordRejection("a parsed relay record must be frozen");
+}
+
 function branded<T>(value: T): ParsedRelayRecord<T> {
-	// SAFETY: every caller checked the record's rules and froze it first.
-	return value as ParsedRelayRecord<T>;
+	assertFrozenRelayRecord(value);
+	return value;
 }
 
 function valueNamesProblem(
@@ -235,7 +219,6 @@ function valueNamesProblem(
 	return undefined;
 }
 
-/** A relay job message, checked and frozen. */
 export function defineRelayJobMessage(
 	message: RelayJobMessage,
 ): ParsedRelayRecord<RelayJobMessage> {
@@ -266,14 +249,12 @@ export function defineRelayJobMessage(
 	return branded(Object.freeze(message));
 }
 
-/** Parse protobuf JSON for a `RelayJobMessage`. Throws on an unknown field or a broken rule. */
 export function parseRelayJobMessage(
 	json: string,
 ): ParsedRelayRecord<RelayJobMessage> {
 	return defineRelayJobMessage(fromJsonString(RelayJobMessageSchema, json));
 }
 
-/** A relay job answer, checked and frozen. A failed answer must say why. */
 export function defineRelayJobAnswer(
 	answer: RelayJobAnswer,
 ): ParsedRelayRecord<RelayJobAnswer> {
@@ -302,14 +283,12 @@ export function defineRelayJobAnswer(
 	return branded(Object.freeze(answer));
 }
 
-/** Parse protobuf JSON for a `RelayJobAnswer`. */
 export function parseRelayJobAnswer(
 	json: string,
 ): ParsedRelayRecord<RelayJobAnswer> {
 	return defineRelayJobAnswer(fromJsonString(RelayJobAnswerSchema, json));
 }
 
-/** A route journal entry, checked and frozen. A decision is on `Decided` and nowhere else. */
 export function defineRunnerRouteEvent(
 	event: RunnerRouteEvent,
 ): ParsedRelayRecord<RunnerRouteEvent> {
@@ -332,14 +311,12 @@ export function defineRunnerRouteEvent(
 	return branded(Object.freeze(event));
 }
 
-/** Parse protobuf JSON for a `RunnerRouteEvent`. */
 export function parseRunnerRouteEvent(
 	json: string,
 ): ParsedRelayRecord<RunnerRouteEvent> {
 	return defineRunnerRouteEvent(fromJsonString(RunnerRouteEventSchema, json));
 }
 
-/** A machine advert, checked and frozen. */
 export function defineMachineAdvert(
 	advert: MachineAdvert,
 ): ParsedRelayRecord<MachineAdvert> {
@@ -370,18 +347,12 @@ export function defineMachineAdvert(
 	return branded(Object.freeze(advert));
 }
 
-/** Parse protobuf JSON for a `MachineAdvert`. */
 export function parseMachineAdvert(
 	json: string,
 ): ParsedRelayRecord<MachineAdvert> {
 	return defineMachineAdvert(fromJsonString(MachineAdvertSchema, json));
 }
 
-/**
- * What the walk needs of an advertised machine. Whether it is online (its
- * advert is fresh) and whether its owner can read the job's repository are
- * facts the caller holds; the advert does not.
- */
 export function machineCandidate(
 	advert: MachineAdvert,
 	known: Readonly<{ online: boolean; ownerCanRead: boolean }>,
@@ -403,7 +374,6 @@ export function machineCandidate(
 	};
 }
 
-/** A stored provider health record, checked and frozen. */
 export function defineProviderHealthRecord(
 	record: ProviderHealthRecord,
 ): ParsedRelayRecord<ProviderHealthRecord> {
@@ -420,7 +390,6 @@ export function defineProviderHealthRecord(
 	return branded(Object.freeze(record));
 }
 
-/** Parse protobuf JSON for a `ProviderHealthRecord`. */
 export function parseProviderHealthRecord(
 	json: string,
 ): ParsedRelayRecord<ProviderHealthRecord> {
@@ -429,7 +398,6 @@ export function parseProviderHealthRecord(
 	);
 }
 
-/** The record a store keeps for one runner type's health. */
 export function providerHealthRecord(
 	key: string,
 	health: ProviderHealth,
@@ -448,7 +416,6 @@ export function providerHealthRecord(
 	);
 }
 
-/** The health a stored record holds, as `recordProviderOutcome` reads it. */
 export function providerHealthOf(record: ProviderHealthRecord): ProviderHealth {
 	return {
 		outcomes: record.outcomes.map((outcome) => ({
@@ -466,7 +433,6 @@ function conclusion(text: string): InsightConclusion {
 	return INSIGHT_CONCLUSIONS.find((entry) => entry === text) ?? "unknown";
 }
 
-/** A stored run fact, checked and frozen. */
 export function defineRunFact(run: RunFact): ParsedRelayRecord<RunFact> {
 	need(Number.isSafeInteger(run.id) && run.id > 0, "id is a run id");
 	need(run.attempt >= 1, "attempt starts at 1");
@@ -494,7 +460,6 @@ export function defineRunFact(run: RunFact): ParsedRelayRecord<RunFact> {
 	return branded(Object.freeze(run));
 }
 
-/** Parse protobuf JSON for a `RunFact`. */
 export function parseRunFact(json: string): ParsedRelayRecord<RunFact> {
 	return defineRunFact(fromJsonString(RunFactSchema, json));
 }
@@ -539,7 +504,6 @@ function insightJob(job: JobFact): InsightJob {
 	};
 }
 
-/** The run a stored fact holds, as the insight reports read it. */
 export function insightRunOf(run: RunFact): InsightRun {
 	return {
 		id: run.id,
@@ -565,7 +529,6 @@ export function insightRunOf(run: RunFact): InsightRun {
 	};
 }
 
-/** The fact a store keeps for one run attempt. An empty `needs` or `changedPaths` reads back as not known. */
 export function runFactOf(run: InsightRun): ParsedRelayRecord<RunFact> {
 	return defineRunFact(
 		create(RunFactSchema, {
@@ -605,7 +568,6 @@ export function runFactOf(run: InsightRun): ParsedRelayRecord<RunFact> {
 	);
 }
 
-/** One relay input's value, or undefined when the workflow did not set it. */
 export function relayJobInput(
 	message: RelayJobMessage,
 	name: RelayJobInputName,
@@ -613,11 +575,6 @@ export function relayJobInput(
 	return message.inputs.find((input) => input.name === name)?.value;
 }
 
-/**
- * The walk's question for a relay job: the run's facts, and the labels each
- * runner type input names. `size` and `first` are not runner types and are
- * left out; an empty input means the type was not named.
- */
 export function relayRouteRequest(
 	message: RelayJobMessage,
 ): RunnerRouteRequest {
@@ -626,7 +583,7 @@ export function relayRouteRequest(
 		private: message.private,
 		fork: message.fork,
 		event: message.event,
-		runId: message.runId,
+		runId: BigInt(message.runId),
 		runAttempt: message.runAttempt,
 		job: message.job,
 		inputs: message.inputs.flatMap((input) => {
@@ -640,7 +597,6 @@ export function relayRouteRequest(
 	});
 }
 
-/** Whether a step is a HoBo check step: its `uses:` path ends in a check's name. */
 export function isRelayCheckStep(uses: string): boolean {
 	const path = uses.split("@")[0] ?? "";
 	return RELAY_CHECK_STEP_SUFFIXES.some((suffix) => path.endsWith(suffix));
