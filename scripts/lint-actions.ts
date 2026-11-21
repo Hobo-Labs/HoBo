@@ -59,7 +59,6 @@ const vercelEvidenceFile = "vercel-credential-evidence.yml";
  * it reads public action repositories only and runs no repository code.
  */
 const actionsLockFile = "actions-lock.yml";
-/** GitHub-hosted required integration gate: no path filter, no fleet slots. */
 const releaseHoboPrFile = "release-hobo-pr.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,

@@ -207,16 +207,14 @@ describe("job-scope", () => {
 			"packages/cli/src/index.ts",
 			"packages/data-mongodb/src/index.ts",
 		];
-		// Jobs whose entries reach the root vitest setup (index 0 is the
-		// #2931-only release-integration shim; its suites still import it).
-		const vitestJobs = [0, 1, 3];
+		const rootVitestSetupJobIndexes = [0, 1, 3];
 		for (const [index, entries] of jobs.entries()) {
 			const skip = jobScope(["docs/a.md"], entries, fs);
 			assert.equal(skip.run, false, skip.reason);
 			assert.equal(jobScope([own[index] ?? ""], entries, fs).run, true);
 			assert.equal(
 				jobScope(["test/setup/isolate-hobo-home.ts"], entries, fs).run,
-				vitestJobs.includes(index),
+				rootVitestSetupJobIndexes.includes(index),
 				"the root vitest setup is an input of the vitest-run jobs only",
 			);
 		}

@@ -94,7 +94,7 @@ function packageNameAt(file: string): string | undefined {
 		const manifest = join(dir, "package.json");
 		if (existsSync(manifest)) {
 			const name = asText(
-				asObject(JSON.parse(readFileSync(manifest, "utf8")) as JsonValue)?.name,
+				asObject(JSON.parse(readFileSync(manifest, "utf8")))?.name,
 			);
 			return name ?? undefined;
 		}
@@ -105,11 +105,6 @@ function packageNameAt(file: string): string | undefined {
 	return undefined;
 }
 
-/**
- * Workspace packages a scripts test reaches through relative imports, including
- * `dist/` (scripts/ci/*.mts imports built files, not `src/`). Nested packages
- * (`packages/providers/provider-vercel`) own their own package.json.
- */
 function packagesScriptsTestsImport(): readonly string[] {
 	const queue = readdirSync("scripts/test")
 		.filter((name) => name.endsWith(".test.ts"))

@@ -1,4 +1,3 @@
-// Four suite files, four GitHub-hosted vitest shards in release-hobo-integration.
 import { defineConfig, mergeConfig } from "vitest/config";
 import { capVitestWorkers } from "../../scripts/ci/vitest-max-workers.mts";
 import rootConfig from "../../vitest.config.js";
