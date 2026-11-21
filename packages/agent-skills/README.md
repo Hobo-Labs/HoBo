@@ -27,8 +27,10 @@ a listing serves (boundary fixtured in
   values. Unrecognized non-comment top-level YAML lines fail closed instead of
   being ignored.   Third-party skills (`skills-lock.json`, vendored installs) stay
   outside that set. `skillsLockExemptionIssues` fails closed when the lock
-  lists portable plugin skills or re-labels an in-tree `.agents/skills`
-  directory as vendored from this repository.
+  lists portable plugin skills, shadows an in-tree `.agents/skills` entry
+  without a well-formed external GitHub `source`, or re-labels an in-tree
+  skill as vendored from this repository (any normalized `Hobo-Labs/HoBo`
+  spelling).
   The repo's `skills:mirror-check` remains the parity gate between
   `.agents/skills` and `.claude/skills`; this check layers the per-skill
   contract on top.
