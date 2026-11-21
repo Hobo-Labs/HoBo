@@ -1,8 +1,11 @@
 import {
+	chmodSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -62,6 +65,17 @@ const SURROGATE = new RegExp(SURROGATE_PATTERN, "u");
 // Each relaunch starts the stand-in, its `--version` probe and the command: a few
 // processes, which the default 10 s does not always cover beside a full suite.
 const RUN_TIMEOUT_MS = 60_000;
+const CAN_TRUST_PATH =
+	process.platform !== "win32" &&
+	[0, process.geteuid?.()].includes(statSync("/").uid);
+it.runIf(process.env.GITHUB_ACTIONS === "true" && !CAN_TRUST_PATH)(
+	"OpenSesame credential boundary suites have a trusted PATH in GitHub Actions",
+	({ expect }) => {
+		expect.fail(
+			"OpenSesame credential boundary tests require a trusted system PATH in GitHub Actions; refusing to skip them.",
+		);
+	},
+);
 
 const BINDINGS = {
 	bindings: [
@@ -77,14 +91,31 @@ const BINDINGS = {
 	],
 };
 
+let root = "";
 let work = "";
+let binDir = "";
 beforeEach(() => {
-	work = mkdtempSync(join(tmpdir(), "hobo-opensesame-relaunch-"));
+	root = mkdtempSync(join(tmpdir(), "hobo-opensesame-relaunch-"));
+	work = join(root, "work");
+	binDir = join(root, "bin");
+	for (const directory of [work, binDir]) {
+		mkdirSync(directory, { mode: 0o755 });
+		chmodSync(directory, 0o755);
+	}
+	writeFileSync(
+		join(binDir, "node"),
+		`#!/bin/sh\nexec '${process.execPath}' "$@"\n`,
+	);
+	chmodSync(join(binDir, "node"), 0o755);
 	writeFileSync(join(work, CREDENTIAL_BINDINGS_FILE), JSON.stringify(BINDINGS));
 });
 afterEach(() => {
-	rmSync(work, { recursive: true, force: true });
+	rmSync(root, { recursive: true, force: true });
 });
+
+function fixturePath(): string {
+	return `${binDir}:${process.env.PATH ?? ""}`;
+}
 
 interface Relaunched {
 	readonly status: number;
@@ -123,7 +154,7 @@ async function relaunch(
 	const input: RelaunchInput = {
 		argv: [process.execPath, CHILD, childOut, childStatus],
 		env: {
-			PATH: process.env.PATH ?? "",
+			PATH: fixturePath(),
 			NODE_NO_WARNINGS: "1",
 			HOBO_CREDENTIALS: "opensesame",
 			FAKE_OPENSESAME_RECORD: record,
@@ -166,7 +197,7 @@ function countingFetch() {
 	return { fetch, calls: () => calls };
 }
 
-describe("HOBO_CREDENTIALS=opensesame relaunch", () => {
+describe.runIf(CAN_TRUST_PATH)("HOBO_CREDENTIALS=opensesame relaunch", () => {
 	it(
 		"relaunches once and not twice",
 		async () => {
@@ -230,7 +261,7 @@ describe("HOBO_CREDENTIALS=opensesame relaunch", () => {
 						execArgv: [],
 						argv: [process.execPath, CHILD, join(work, "child-env.json")],
 						env: {
-							PATH: process.env.PATH ?? "",
+							PATH: fixturePath(),
 							NODE_NO_WARNINGS: "1",
 							HOBO_CREDENTIALS: "opensesame",
 							FAKE_OPENSESAME_SCENARIO: "surrogate-delivered",
@@ -274,7 +305,7 @@ describe("HOBO_CREDENTIALS=opensesame relaunch", () => {
 				tmpRoot: work,
 			};
 			const env = {
-				PATH: process.env.PATH ?? "",
+				PATH: fixturePath(),
 				NODE_NO_WARNINGS: "1",
 				HOBO_CREDENTIALS: "opensesame",
 				FAKE_OPENSESAME_RECORD: record,
