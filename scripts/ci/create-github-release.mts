@@ -46,9 +46,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = join(import.meta.dirname, "..", "..");
 const CORE_DIST = join(repoRoot, "packages/core/dist/index.js");
 
-type ReleaseHttpTransport = (
+export type ReleaseHttpTransport = (
 	request: Readonly<{
-		method: string;
+		method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
 		url: string;
 		headers: Readonly<Record<string, string>>;
 		body?: string;
@@ -345,7 +345,7 @@ const ARTIFACT_KIND = {
  * Freight verification and probes use; the CD clock; how a promotion is driven.
  */
 export type ReleaseCdSeams = Readonly<{
-	http?: unknown;
+	http?: ReleaseHttpTransport;
 	now?: () => number;
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
@@ -404,9 +404,11 @@ export async function openReleaseCd(options: {
 		HOBO_HOME: options.home,
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
-	const seamHttp = options.seams?.http as ReleaseHttpTransport | undefined;
-	let baseHttp = seamHttp;
-	if (!baseHttp) {
+	const seamHttp = options.seams?.http;
+	let baseHttp: ReleaseHttpTransport;
+	if (seamHttp) {
+		baseHttp = seamHttp;
+	} else {
 		const { createBoundedFetchTransport } = await import(
 			pathToFileURL(CORE_DIST).href
 		);

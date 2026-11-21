@@ -1,7 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { TransportRequest } from "@hobo/core";
 import { describe, expect, it, vi } from "vitest";
 import { pipelines } from "../../release/hobo-release.delivery.ts";
 import {
@@ -15,9 +14,12 @@ import {
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
+	type ReleaseHttpTransport,
 	releaseSource,
 	siteTree,
 } from "../ci/create-github-release.mts";
+
+type TransportRequest = Parameters<ReleaseHttpTransport>[0];
 
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const DIGEST = `sha256:${"a".repeat(64)}`;
