@@ -29,12 +29,15 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before using owner forms, call the HoBo MCP tool the step needs. For store
-selection, verify without owner data that the host exposes HoBo MCP and can
-render a private owner ceremony (secure elicitation or equivalent) for store
-choice. If that cannot be established from host capability alone, stop and
-report the capability gap; do not treat a later `choose_secret_store` status as
-retroactive proof. Then call `choose_secret_store` and proceed only when the
+Before opening any owner form, call the HoBo MCP tool the step needs. For
+store selection, capture, and the lifecycle itself, verify without owner data
+that the host exposes HoBo MCP and can render a private owner ceremony (secure
+elicitation or equivalent) for that step. If that cannot be established from
+host capability alone, do not open the form; report
+the missing secure hand-off. For store selection, verify that the ceremony
+supports store choice and do not treat a later `choose_secret_store` status as
+retroactive proof.
+Then call `choose_secret_store` and proceed only when the
 result documents a private owner ceremony the host can render. Treat
 `status: secure-form-unavailable`, `reason: owner-setup-unavailable`, unknown
 status, tool errors, and a missing tool as stop conditions — report the missing
@@ -47,9 +50,9 @@ selection is a stop condition. Never infer a selection from a completed form,
 a successful tool call, an available token, or later lifecycle output. For
 lifecycle and capture steps, verify without owner data that the connected
 implementation keeps selections in the temporary owner session and excludes
-private coordinates,
-identifiers, and references from agent-visible tool calls, results, traces, and
-diagnostics. If that cannot be established, report the missing secure hand-off.
+private coordinates, identifiers, and references from agent-visible tool calls,
+results, traces, and diagnostics. If that cannot be established, report the
+missing secure hand-off.
 
 For the hosted relay, HoBo CD delivers the selected Git commit to Vercel;
 the Vercel project does not need a connected Git repository. A managed deploy

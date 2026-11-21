@@ -321,9 +321,11 @@ result documents a private owner ceremony the host can render. Treat
 `secure-form-unavailable`, `owner-setup-unavailable`, unknown status, errors, or
 a missing tool as stop conditions; a status outside that vocabulary is an
 unknown status, so stop. Do not collect store identifiers in chat or tool
-arguments. Before relying on any owner form, apply the hobo-deploy skill's
-owner-channel privacy verification; a rendered form alone does not establish
-privacy. When a private hand-off is available, use the same target project
+arguments. Before opening any owner form for store selection, capture, or the
+lifecycle itself, apply the hobo-deploy skill's owner-channel privacy
+verification. If that fails, do not open the form; report the missing secure
+hand-off. A rendered form alone does not establish privacy. When a private
+hand-off is available, use the same target project
 `cwd` throughout the ceremony; otherwise report the missing capability without
 collecting settings. The MCP implementation this repo ships answers
 `choose_secret_store` with `secure-form-unavailable` (`owner-setup-unavailable`,
