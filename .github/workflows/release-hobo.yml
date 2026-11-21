@@ -439,9 +439,9 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: npm pack dry-run (allowlist staging)
         run: |
           set -euo pipefail
@@ -595,9 +595,9 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: Build the hobo CLI (release Freight realize proof)
         run: >-
           pnpm exec turbo run build --filter=@hobo/hobo...
@@ -716,9 +716,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6

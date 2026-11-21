@@ -544,9 +544,9 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
       - uses: $/.github/actions/pnpm-store
@@ -683,9 +683,9 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
           preferred-job: pr_gate_validation
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
@@ -790,9 +790,9 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
           preferred-job: pr_gate_validation
       - name: Check the sibling pins (gitlink against checkout, offline)
         run: node --experimental-strip-types scripts/bootstrap-siblings.mts --status --offline
@@ -940,12 +940,13 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: scripts-tests-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          name: scripts-tests-dist-${{ github.run_id }}
           path: |
             packages/**/dist/**
             external/ts-autocode/packages/**/dist/**
             !**/node_modules/**
           if-no-files-found: error
+          overwrite: true
           retention-days: 1
       - name: Prune Turbo cache
         id: turbo-prune
@@ -1069,7 +1070,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: scripts-tests-dist-${{ github.run_id }}-${{ github.run_attempt }}
+          name: scripts-tests-dist-${{ github.run_id }}
           path: .
       - name: Scripts tests
         if: steps.scope.outputs.run == 'true'
@@ -1185,9 +1186,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6
@@ -1230,9 +1231,9 @@ jobs:
       - name: Turbo cache
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
         with:
           distribution: temurin
@@ -1399,9 +1400,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - uses: $/.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - if: steps.scope.outputs.run == 'true'
@@ -2276,9 +2277,9 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: $/.github/actions/turbo-cache
         with:
-          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
-          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+          remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
       - uses: $/.github/actions/pnpm-store
         if: steps.scope.outputs.run == 'true'
       - if: steps.scope.outputs.run == 'true'

@@ -221,16 +221,22 @@ describe("release integration pull-request and merge-queue lane", () => {
 	});
 
 	it("keeps Turbo credentials for same-repository pull requests and withholds them from merge groups and forks", () => {
-		assert.ok(
-			pr.text.includes(
-				"turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}",
-			),
-		);
-		assert.ok(
-			pr.text.includes(
-				"remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}",
-			),
-		);
+		const token =
+			"turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}";
+		const remote =
+			"remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}";
+		for (const workflow of [pr, train, fabric]) {
+			assert.ok(workflow.text.includes(token));
+			assert.ok(workflow.text.includes(remote));
+			assert.doesNotMatch(
+				workflow.text,
+				/github\.event\.pull_request\.head\.repo\.fork && '' \|\| secrets\.TURBO_TOKEN/u,
+			);
+			assert.doesNotMatch(
+				workflow.text,
+				/github\.event\.pull_request\.head\.repo\.fork && 'remote:ro' \|\| 'remote:rw'/u,
+			);
+		}
 	});
 
 	it("keeps the Fabric shim pull-request-only and outside the required Fabric gate", () => {

@@ -562,7 +562,7 @@
 					"if": "steps.scope.outputs.run == 'true'",
 					"uses": "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
 					"with": {
-						"name": "scripts-tests-dist-${{ github.run_id }}-${{ github.run_attempt }}",
+						"name": "scripts-tests-dist-${{ github.run_id }}",
 						"path": "."
 					},
 					"local": "skip",

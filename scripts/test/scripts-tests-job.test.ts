@@ -294,7 +294,9 @@ describe("the scripts lane is a pull-request gate", () => {
 		const download = step(scripts, "Download scripts-test build outputs");
 		assert.match(upload.uses, /^actions\/upload-artifact@[a-f0-9]{40}$/u);
 		assert.match(download.uses, /^actions\/download-artifact@[a-f0-9]{40}$/u);
+		assert.equal(upload.with.name, "scripts-tests-dist-${{ github.run_id }}");
 		assert.equal(upload.with.name, download.with.name);
+		assert.equal(upload.with.overwrite, true);
 		assert.equal(upload.with["if-no-files-found"], "error");
 		assert.equal(upload.with["retention-days"], 1);
 		assert.equal(download.with.path, ".");

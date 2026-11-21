@@ -61,7 +61,9 @@ the sum of its files):
   train and Fabric exercise the lane before `release-hobo-pr.yml` reaches `main`;
   Fabric's shards are pull-request-only and are not a PR-impact-gate dependency.
   Every shard fetches the pinned ts-autocode before install, and only shard zero
-  prunes or saves the L1 Turbo archive. The default suite remains measured at
+  prunes or saves the L1 Turbo archive. Turbo credentials and remote writes are
+  enabled only for same-repository pull requests, never forks or merge groups.
+  The default suite remains measured at
   170 s and slices hobo into four workspace Vitest shards.
 - **Turbo concurrency from memory-env**: the workspace-tests step-level
   `HOBO_TURBO_CONCURRENCY: "1"` pin is gone (main shards never had one); the
