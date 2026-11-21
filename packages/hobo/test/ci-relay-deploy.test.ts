@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +25,12 @@ import {
 	RELAY_VERIFY_REFUSAL,
 	recordVerifiedPreviewRecords,
 } from "../src/ci-relay-verify.js";
-import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+	parseJsonObject,
+} from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
 // `hobo ci deploy` against the REAL relay declaration
@@ -35,6 +47,36 @@ const TOKEN = "synthetic-token-0123";
 /** Pact corpus uses `team_hobo`; override the committed binding team in tests. */
 const TEAM = "team_hobo";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+const relayFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-fixture-"),
+);
+cpSync(RELAY_DIR, relayFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(relayFixtureDir, "node_modules"),
+);
+{
+	const file = join(relayFixtureDir, "deploy", "secret-store.binding.json");
+	const binding: Record<string, JsonValue> = Object.fromEntries(
+		Object.entries(
+			parseJsonObject(
+				readFileSync(
+					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+					"utf8",
+				),
+			),
+		),
+	);
+	binding.deployProjectId = "ci-deploy-project";
+	binding.deployCredentialIdentityId = "ci-deploy-reader-identity";
+	binding.deployOidcSubject =
+		"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
+	writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
+}
 
 const fixture = (name: string) =>
 	parseJsonObject(
@@ -137,7 +179,7 @@ async function deploy(
 		...args,
 		...teamOverride,
 		"--cwd",
-		options.cwd ?? RELAY_DIR,
+		options.cwd ?? relayFixtureDir,
 		...(options.json === false ? [] : ["--json"]),
 	]);
 	const envelope = options.json === false ? {} : parseJsonObject(result.stdout);
@@ -162,6 +204,7 @@ function freshHome(): string {
 }
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	rmSync(relayFixtureDir, { recursive: true, force: true });
 });
 
 // The relay answering its probes, and the URLs it was asked for. Its
@@ -386,6 +429,23 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 				}),
 			]),
 		);
+		expect(sent).toEqual([]);
+	});
+
+	it("refuses the committed binding itself until the deploy project and reader id are recorded, so the deploy train fails closed across the cutover", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
+			fetch,
+			cwd: RELAY_DIR,
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_SECRET_STORE_BINDING_INVALID",
+			message: expect.stringContaining(
+				"re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id",
+			),
+		});
 		expect(sent).toEqual([]);
 	});
 

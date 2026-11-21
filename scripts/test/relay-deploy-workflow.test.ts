@@ -130,6 +130,36 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
+	it("treats a binding the strict parser refuses as bound, so a legacy binding fails the deploy typed instead of green-skipping it", () => {
+		const legacy = JSON.stringify({
+			kind: "infisical-cloud-attach",
+			endpoint: "https://app.infisical.com",
+			projectId: "proj-runtime",
+			environment: "prod",
+			secretPath: "/hobo-ci-relay",
+			relayIdentityId: "relay-identity",
+			deployIdentityId: "deploy-identity",
+			vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+			claimBundleId: "secret-store:hobo-ci-relay:connect-1",
+			claimState: "claimed",
+		});
+		assert.equal(storeBindingState(legacy), "bound");
+		const committed = readFileSync(
+			join(root, RELAY_SECRET_STORE_BINDING),
+			"utf8",
+		);
+		assert.equal(storeBindingState(committed), "bound");
+		assert.equal(
+			decide({
+				event: "push",
+				store: storeBindingState(legacy),
+				changed: [RELAY_SECRET_STORE_BINDING],
+				inputDirs,
+			}).run,
+			true,
+		);
+	});
+
 	it("deploys a manual run, and a push whose range it cannot read", () => {
 		assert.equal(
 			decide({ event: "workflow_dispatch", store: configured, inputDirs }).run,
@@ -289,8 +319,12 @@ describe("the relay deploy workflow", () => {
 	});
 
 	it("holds no Vercel token and deploys no Vercel command itself", () => {
+		const actionable = workflow
+			.split("\n")
+			.filter((line) => !/^\s*#/u.test(line))
+			.join("\n");
 		assert.doesNotMatch(
-			workflow,
+			actionable,
 			/VERCEL_TOKEN|relay-deploy-credential|vercel deploy|--token\b/u,
 		);
 		assert.ok(

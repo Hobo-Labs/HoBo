@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file secret_store_claim.proto.
  */
 export const file_secret_store_claim: GenFile = /*@__PURE__*/
-  fileDesc("ChhzZWNyZXRfc3RvcmVfY2xhaW0ucHJvdG8SGmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxIvgBChBTZWNyZXRTdG9yZU9mZmVyEgwKBGtpbmQYASABKAkSEgoKcHJlZmVyZW5jZRgCIAEoDRIXCg9jbGFpbV9tZWNoYW5pc20YAyABKAkSHAoUY2xhaW1fd2luZG93X21pbnV0ZXMYBCABKA0SFwoPcnVudGltZV9iaW5kaW5nGAUgASgJEgwKBGNvc3QYBiABKAkSFAoMYXZhaWxhYmlsaXR5GAcgASgJEhIKCnNvdXJjZV91cmwYCCABKAkSEgoKY2hlY2tlZF9hdBgJIAEoCRIQCghwcm92aWRlchgKIAEoCRIUCgxydW50aW1lX2F1dGgYCyABKAkiRgoTU2VjcmV0U3RvcmVFdmlkZW5jZRIMCgRraW5kGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIOCgZkZXRhaWwYAyABKAkiLwoPU2VjcmV0U3RvcmVTa2lwEgwKBGtpbmQYASABKAkSDgoGcmVhc29uGAIgASgJIpMBChRTZWNyZXRTdG9yZVNlbGVjdGlvbhISCgpjYXBhYmlsaXR5GAEgASgJEhUKDXNlbGVjdGVkX2tpbmQYAiABKAkSPAoHc2tpcHBlZBgDIAMoCzIrLmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxLlNlY3JldFN0b3JlU2tpcBISCgpkZWNpZGVkX2F0GAQgASgJIqcCChJTZWNyZXRTdG9yZUJpbmRpbmcSDAoEa2luZBgBIAEoCRIQCghlbmRwb2ludBgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEhMKC3NlY3JldF9wYXRoGAUgASgJEhkKEXJlbGF5X2lkZW50aXR5X2lkGAYgASgJEhoKEmRlcGxveV9pZGVudGl0eV9pZBgHIAEoCRIWCg52ZXJjZWxfdGVhbV9pZBgIIAEoCRIXCg9jbGFpbV9idW5kbGVfaWQYCSABKAkSEwoLY2xhaW1fc3RhdGUYCiABKAkSGQoRZGVwbG95X3Byb2plY3RfaWQYCyABKAkSGwoTZGVwbG95X29pZGNfc3ViamVjdBgMIAEoCSJuChBHaXRodWJSZXBvc2l0b3J5EgoKAmlkGAEgASgDEgwKBG5hbWUYAiABKAkSQAoFb3duZXIYAyABKAsyMS5ob2JvLnNlY3JldF9zdG9yZV9jbGFpbS52MS5HaXRodWJSZXBvc2l0b3J5T3duZXIiMgoVR2l0aHViUmVwb3NpdG9yeU93bmVyEg0KBWxvZ2luGAEgASgJEgoKAmlkGAIgASgDIqQBChlHaXRodWJPaWRjU3ViamVjdFRlbXBsYXRlEhMKC3VzZV9kZWZhdWx0GAEgASgIEhoKEmluY2x1ZGVfY2xhaW1fa2V5cxgCIAMoCRIiChV1c2VfaW1tdXRhYmxlX3N1YmplY3QYAyABKAhIAIgBARIYChBzdWJfY2xhaW1fcHJlZml4GAQgASgJQhgKFl91c2VfaW1tdXRhYmxlX3N1YmplY3RiBnByb3RvMw");
+  fileDesc("ChhzZWNyZXRfc3RvcmVfY2xhaW0ucHJvdG8SGmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxIvgBChBTZWNyZXRTdG9yZU9mZmVyEgwKBGtpbmQYASABKAkSEgoKcHJlZmVyZW5jZRgCIAEoDRIXCg9jbGFpbV9tZWNoYW5pc20YAyABKAkSHAoUY2xhaW1fd2luZG93X21pbnV0ZXMYBCABKA0SFwoPcnVudGltZV9iaW5kaW5nGAUgASgJEgwKBGNvc3QYBiABKAkSFAoMYXZhaWxhYmlsaXR5GAcgASgJEhIKCnNvdXJjZV91cmwYCCABKAkSEgoKY2hlY2tlZF9hdBgJIAEoCRIQCghwcm92aWRlchgKIAEoCRIUCgxydW50aW1lX2F1dGgYCyABKAkiRgoTU2VjcmV0U3RvcmVFdmlkZW5jZRIMCgRraW5kGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIOCgZkZXRhaWwYAyABKAkiLwoPU2VjcmV0U3RvcmVTa2lwEgwKBGtpbmQYASABKAkSDgoGcmVhc29uGAIgASgJIpMBChRTZWNyZXRTdG9yZVNlbGVjdGlvbhISCgpjYXBhYmlsaXR5GAEgASgJEhUKDXNlbGVjdGVkX2tpbmQYAiABKAkSPAoHc2tpcHBlZBgDIAMoCzIrLmhvYm8uc2VjcmV0X3N0b3JlX2NsYWltLnYxLlNlY3JldFN0b3JlU2tpcBISCgpkZWNpZGVkX2F0GAQgASgJIs4CChJTZWNyZXRTdG9yZUJpbmRpbmcSDAoEa2luZBgBIAEoCRIQCghlbmRwb2ludBgCIAEoCRISCgpwcm9qZWN0X2lkGAMgASgJEhMKC2Vudmlyb25tZW50GAQgASgJEhMKC3NlY3JldF9wYXRoGAUgASgJEhkKEXJlbGF5X2lkZW50aXR5X2lkGAYgASgJEhoKEmRlcGxveV9pZGVudGl0eV9pZBgHIAEoCRIWCg52ZXJjZWxfdGVhbV9pZBgIIAEoCRIXCg9jbGFpbV9idW5kbGVfaWQYCSABKAkSEwoLY2xhaW1fc3RhdGUYCiABKAkSGQoRZGVwbG95X3Byb2plY3RfaWQYCyABKAkSGwoTZGVwbG95X29pZGNfc3ViamVjdBgMIAEoCRIlCh1kZXBsb3lfY3JlZGVudGlhbF9pZGVudGl0eV9pZBgNIAEoCSJuChBHaXRodWJSZXBvc2l0b3J5EgoKAmlkGAEgASgDEgwKBG5hbWUYAiABKAkSQAoFb3duZXIYAyABKAsyMS5ob2JvLnNlY3JldF9zdG9yZV9jbGFpbS52MS5HaXRodWJSZXBvc2l0b3J5T3duZXIiMgoVR2l0aHViUmVwb3NpdG9yeU93bmVyEg0KBWxvZ2luGAEgASgJEgoKAmlkGAIgASgDIqQBChlHaXRodWJPaWRjU3ViamVjdFRlbXBsYXRlEhMKC3VzZV9kZWZhdWx0GAEgASgIEhoKEmluY2x1ZGVfY2xhaW1fa2V5cxgCIAMoCRIiChV1c2VfaW1tdXRhYmxlX3N1YmplY3QYAyABKAhIAIgBARIYChBzdWJfY2xhaW1fcHJlZml4GAQgASgJQhgKFl91c2VfaW1tdXRhYmxlX3N1YmplY3RiBnByb3RvMw");
 
 /**
  * One way to satisfy the capability, as HoBo policy ranks it.
@@ -260,15 +260,18 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
   claimBundleId: string;
 
   /**
-   * "pending" until every claim item is complete, then "claimed".
+   * "pending" until every claim item is complete, then "claimed"; a claimed
+   * binding records the deploy credential identity and OIDC subject.
    *
    * @generated from field: string claim_state = 10;
    */
   claimState: string;
 
   /**
-   * The project holding the deploy credential (`VERCEL_TOKEN`), apart from
-   * the relay's so the relay's identity cannot read it.
+   * The project holding the deploy credential (`VERCEL_TOKEN`), always a
+   * project of its own, apart from the relay's so the relay's identity
+   * cannot read it. Empty only in bindings recorded before it was required,
+   * which parse only for the connect repair.
    *
    * @generated from field: string deploy_project_id = 11;
    */
@@ -283,6 +286,15 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
    * @generated from field: string deploy_oidc_subject = 12;
    */
   deployOidcSubject: string;
+
+  /**
+   * The read-only identity deploy-token reads sign in as, always distinct
+   * from the relay and writer identities and bound to its own GitHub OIDC
+   * audience. Required for every binding, including a provisioned one.
+   *
+   * @generated from field: string deploy_credential_identity_id = 13;
+   */
+  deployCredentialIdentityId: string;
 };
 
 /**

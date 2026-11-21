@@ -149,10 +149,17 @@ jobs:
           pnpm exec turbo run build \
             --filter=@hobo/hobo... --filter=@hobo/ci-vercel^... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # Pass/fail by identity name: hobo-ci-writer signs in with this job's
-      # GitHub OIDC token (sign-in only, then revoke; Infisical role shape is
-      # not asserted — on Free attach, Member may read). hobo-ci-relay is
-      # not-run here; Vercel OIDC is proved by production's /readyz below.
+      # Pass/fail by identity name and id: hobo-ci-deploy-reader signs in with
+      # this job's GitHub OIDC token at its own audience, lists the deploy
+      # project's root folder to prove VERCEL_TOKEN is readable, and must be
+      # refused the relay project's folder (an over-scoped reader fails the
+      # step), then revokes; hobo-ci-writer signs in at the writer audience
+      # and revokes (sign-in only, no read), so a broken writer trust
+      # surfaces here rather than at the next app-credentials deposit.
+      # Infisical role shape is not asserted beyond that refusal; the reader
+      # stays scoped to the deploy project. The deploy-token read never signs
+      # in as the writer. hobo-ci-relay is not-run here; Vercel OIDC is
+      # proved by /readyz below.
       - name: Verify the secret store connection
         if: steps.gate.outputs.run == 'true'
         run: |

@@ -393,12 +393,16 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 					kind: "infisical-cloud-attach",
 					endpoint: "https://infisical.test",
 					projectId: "proj-runtime",
+					deployProjectId: "proj-deploy",
 					environment: "prod",
 					secretPath: "/hobo-ci-relay",
 					relayIdentityId: "relay-identity",
 					deployIdentityId: "ci-writer-identity",
+					deployCredentialIdentityId: "ci-reader-identity",
 					claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 					claimState: "claimed",
+					deployOidcSubject:
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
 				}),
 			);
 			const githubFake = github();

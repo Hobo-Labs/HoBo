@@ -28,7 +28,10 @@ export {
 	formatSecretStoreBinding,
 	type ParsedSecretStoreBinding,
 	parseSecretStoreBinding,
+	RELAY_SECRET_PATH,
+	type RepairSecretStoreBinding,
 	readSecretStoreBinding,
+	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
 } from "./binding.js";
 export {
@@ -51,8 +54,10 @@ export {
 	type SecretStoreErrorCode,
 } from "./errors.js";
 export {
+	DEPLOY_READER_AUDIENCE_SUFFIX,
 	GITHUB_ACTIONS_ISSUER,
 	type GithubOidcSubject,
+	githubDeployReaderTrust,
 	githubDeployTrust,
 	githubSubjectMismatch,
 	parseGithubOidcSubject,

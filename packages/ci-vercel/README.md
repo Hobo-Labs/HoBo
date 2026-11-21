@@ -296,11 +296,27 @@ and on `workflow_dispatch`:
    writes from the ids of a secrets manager the owner connected with OIDC
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
-   No repository variable or secret is read.
+   No repository variable or secret is read. A binding the strict parser
+   refuses (one recorded before the deploy project and reader id existed)
+   still counts as bound for the gate, so the deploy runs and the credential
+   step fails with the typed remediation instead of the job green-skipping
+   on a notice.
 2. *Verify the secret store connection*: with `permissions: id-token: write`
-   the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
-   only — role shape not asserted), then revokes the token, and reports it pass or
-   fail by name (`hobo ci secret-store verify`).
+   the job signs in to the store as `hobo-ci-deploy-reader` at its own GitHub
+   OIDC audience, lists the deploy project's root folder to prove `VERCEL_TOKEN`
+   is readable, and must be refused the relay project's folder — and only an
+   authorization refusal counts: a store error or timeout there fails the
+   check as an unproven scope rather than passing for least privilege —
+   then revokes the token, and signs in as
+   `hobo-ci-writer` at the writer audience (sign-in only, no read) before
+   revoking it too,
+   reporting each pass or fail by name
+   and id (`hobo ci secret-store verify`). Infisical role shape is not
+   asserted beyond that refusal. The deploy-token
+   read never signs in as the writer. Until the owner provisions the deploy
+   project and reader and commits their ids, the binding fails closed and no
+   deploy token is read. See
+   [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 3. *Adopt Vercel's Git deployment of this commit*: Vercel's Git integration
    deploys `hobo-ci` on the push (no Vercel token anywhere, no Vercel API
    write), and `hobo ci deploy --adopt --sha "$GITHUB_SHA"` adopts it

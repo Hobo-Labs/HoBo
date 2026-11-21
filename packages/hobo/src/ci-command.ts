@@ -312,6 +312,7 @@ function parseCiArgs(args: readonly string[]) {
 			"deploy-project-id": { type: "string" },
 			"relay-identity-id": { type: "string" },
 			"deploy-identity-id": { type: "string" },
+			"deploy-credential-identity-id": { type: "string" },
 			fleet: { type: "string" },
 			machine: { type: "string" },
 			github: { type: "string" },
