@@ -2,6 +2,7 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { asList } from "./attestation.mts";
 import {
 	asNumber,
 	asObject,
