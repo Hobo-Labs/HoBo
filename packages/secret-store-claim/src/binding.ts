@@ -40,8 +40,7 @@ const LOOPBACK = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/u;
 const ID = /^[A-Za-z0-9_-]{1,64}$/u;
 const DEPLOY_SUBJECT =
 	/^repo:[A-Za-z0-9-]{1,39}(@\d{1,20})?\/[A-Za-z0-9._-]{1,100}(@\d{1,20})?:(?:ref:refs\/heads\/[A-Za-z0-9._/-]{1,200}|environment:(?:hobo-ci-deploy|hobo-ci-app-credentials))$/u;
-const DEPLOY_ENVIRONMENT_SUBJECT =
-	/:environment:hobo-ci-app-credentials$/u;
+const DEPLOY_ENVIRONMENT_SUBJECT = /:environment:hobo-ci-app-credentials$/u;
 
 function claimStateOf(
 	record: SecretStoreBinding,

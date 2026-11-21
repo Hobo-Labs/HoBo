@@ -173,13 +173,7 @@ describe("the repair read's confinement", () => {
 				readFileSync(file, "utf8").includes("readSecretStoreBindingForRepair"),
 		);
 		expect(foreign).toEqual([
-			path.join(
-				repoRoot,
-				"packages",
-				"hobo",
-				"src",
-				"ci-relay-deploy.ts",
-			),
+			path.join(repoRoot, "packages", "hobo", "src", "ci-relay-deploy.ts"),
 			path.join(
 				repoRoot,
 				"packages",
