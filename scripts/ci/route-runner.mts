@@ -162,6 +162,11 @@ export type SlipAnswer =
 	| Readonly<{ kind: "fallback"; why: string }>
 	| Readonly<{ kind: "unasked"; why: UnaskedWhy }>;
 
+export type MergeGroupHostedProbe = Readonly<{
+	idle: boolean;
+	summary: string;
+}>;
+
 export type RouteDecision = Readonly<{
 	tier: RouteTier;
 	runner: string;
@@ -170,6 +175,8 @@ export type RouteDecision = Readonly<{
 	refusedBy?: RefusedBy | undefined;
 	/** What became of the routing slip; left out by the queue rule alone. */
 	slip?: SlipAnswer | undefined;
+	/** Merge-group Fabric hosted-queue probe carried on the route notice. */
+	mergeGroupHostedProbe?: MergeGroupHostedProbe | undefined;
 }>;
 
 const seconds = (fromMs: number, toMs: number) =>
@@ -751,15 +758,6 @@ export async function mergeGroupRouteSurface(
 		);
 	}
 	return "hosted";
-}
-
-export async function runMergeGroupRouteSurface(
-	env: NodeJS.ProcessEnv = process.env,
-): Promise<void> {
-	const surface = await mergeGroupRouteSurface(env);
-	if (env.GITHUB_OUTPUT)
-		appendFileSync(env.GITHUB_OUTPUT, `surface=${surface}\n`);
-	console.log(`merge-group route surface: ${surface}`);
 }
 
 export async function confirmMergeGroupFabricFleet(input: {
@@ -1420,15 +1418,18 @@ export async function main(
 			const firstView = await observeHosted(now());
 			const hostedLoad = labelLoad(firstView.jobs, githubLabel, now());
 			const hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
+			const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+			const hostedProbe = { idle: hostedIdle, summary: hostedSummary };
 			console.log(
-				`merge-group hosted probe: ${describeLoad("GitHub-hosted", hostedLoad)}; idle=${hostedIdle}`,
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}`,
 			);
 			if (hostedIdle) {
 				decision = {
 					tier: "github",
 					runner: githubLabel,
-					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${describeLoad("GitHub-hosted", hostedLoad)})`,
+					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
 					refusedBy: "queue",
+					mergeGroupHostedProbe: hostedProbe,
 				};
 			} else {
 				decision = await chooseRunner({
@@ -1453,6 +1454,7 @@ export async function main(
 						githubLabel,
 						limits: trunkObservationLimits,
 					});
+				decision = { ...decision, mergeGroupHostedProbe: hostedProbe };
 			}
 		} catch (error) {
 			decision = {
@@ -1624,6 +1626,9 @@ export function routeAnnotation(
 					? slip.why
 					: "",
 		refusedBy: decision.refusedBy ?? "none",
+		...(decision.mergeGroupHostedProbe
+			? { mergeGroupHostedProbe: decision.mergeGroupHostedProbe }
+			: {}),
 	};
 	return `::notice title=hobo-ci-route::${escapeCommand(JSON.stringify(record))}`;
 }
@@ -1648,7 +1653,5 @@ function report(
 
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
-	if (process.argv.includes("--merge-group-route-surface"))
-		await runMergeGroupRouteSurface();
-	else await main(process.argv.slice(2));
+	await main(process.argv.slice(2));
 }
