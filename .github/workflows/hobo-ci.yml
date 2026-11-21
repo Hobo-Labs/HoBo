@@ -918,26 +918,15 @@ jobs:
             echo "Scripts-test build base is empty" >&2
             exit 1
           fi
+          node --import tsx scripts/ci/scripts-test-imports.mts \
+            > "$RUNNER_TEMP/scripts-tests-import-filters"
+          mapfile -t IMPORTED < "$RUNNER_TEMP/scripts-tests-import-filters"
           git diff --name-only "$BASE" HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/affected-lanes.mts --base="$BASE" \
               > "$RUNNER_TEMP/scripts-tests-affected-lanes"
           mapfile -t AFFECTED < "$RUNNER_TEMP/scripts-tests-affected-lanes"
           pnpm exec turbo run build \
-            --filter=@hobo/cd... \
-            --filter=@hobo/ci... \
-            --filter=@hobo/ci-gh-actions... \
-            --filter=@hobo/cli... \
-            --filter=@hobo/core... \
-            --filter=@hobo/hobo... \
-            --filter=@hobo/provider-cloudflare... \
-            --filter=@hobo/provider-lakebed... \
-            --filter=@hobo/provider-neon... \
-            --filter=@hobo/provider-netlify... \
-            --filter=@hobo/provider-oci-registry... \
-            --filter=@hobo/provider-prisma-postgres... \
-            --filter=@hobo/provider-upstash... \
-            --filter=@hobo/runtime-local... \
-            --filter=@hobo/schema-tools... \
+            "${IMPORTED[@]}" \
             "${AFFECTED[@]}" \
             --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: Upload scripts-test build outputs
