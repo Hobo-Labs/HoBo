@@ -3,34 +3,34 @@
 	"version": "0.0.1",
 	"license": "MIT",
 	"type": "module",
-	"private": true,
-	"files": [
-		"dist"
-	],
+	"files": ["LICENSE", "dist", "data-models", "contracts"],
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./fake": {
+			"types": "./dist/fake.d.ts",
+			"default": "./dist/fake.js"
+		},
+		"./fake/container": {
+			"types": "./dist/fake/container.d.ts",
+			"default": "./dist/fake/container.js"
 		}
 	},
+	"publishConfig": { "access": "public" },
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"typecheck": "tsc --noEmit -p tsconfig.json",
 		"lint": "biome check .",
 		"pretest": "node --experimental-strip-types ../../../scripts/ensure-built.mts",
-		"test": "vitest run",
-		"test:live": "vitest run --config vitest.live.config.ts"
-	},
-	"dependencies": {
-		"@hobo/core": "workspace:*",
-		"@hobo/provider-redaction": "workspace:*",
-		"zod": "^4.1.13"
+		"test": "vitest run test/"
 	},
 	"devDependencies": {
-		"@types/node": "^22.15.3",
+		"@types/node": "^22.15.29",
 		"testcontainers": "11.8.1",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.9"
 	},
-	"description": "HoBo Agent37 CI runner provider: bounded Sandbox API client, honest capability manifest, redacted errors, and an offline contract fake."
+	"description": "Offline Agent37 Sandbox API fake and explicit Testcontainers wrapper for CI provider contract tests."
 }

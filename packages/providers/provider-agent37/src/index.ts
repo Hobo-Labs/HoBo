@@ -1,36 +1,12 @@
 export {
-	type Agent37Client,
-	type Agent37ClientOptions,
-	type Agent37CreateInstanceInput,
-	Agent37Error,
-	type Agent37ErrorOptions,
-	type Agent37ExecInput,
-	type Agent37ExecResult,
-	type Agent37Instance,
-	type Agent37RegisteredWebhook,
-	type Agent37Usage,
-	type Agent37UsageQuery,
-	type Agent37Webhook,
-	createAgent37Client,
-	redactAgent37Text,
-} from "./client.js";
+	dockerAvailable,
+	type FakeAgent37StartOptions,
+	type StartedFakeAgent37,
+	startFakeAgent37Server,
+} from "./fake/container.js";
 export {
-	AGENT37_CAPABILITY,
-	AGENT37_COST_FACTS,
-	AGENT37_COST_SOURCE,
-	AGENT37_DEFAULT_REGIONS,
-	AGENT37_PROVIDER_ID,
-	type Agent37ManifestInput,
-	type Agent37PublishedManifestDocuments,
-	publishCapabilityManifest,
-} from "./manifest.js";
-export {
-	AGENT37_ALLOWED_HOSTS,
-	AGENT37_API_ORIGIN,
-	AGENT37_EXEC_ORIGIN,
-	AGENT37_MAX_RESPONSE_BYTES,
-	AGENT37_MAX_TIMEOUT_MS,
-	type Agent37TransportOptions,
-	agent37RetryAfterMs,
-	createAgent37Transport,
-} from "./transport.js";
+	createAgent37FakeServer,
+	type FakeAgent37Server,
+	type FakeAgent37ServerOptions,
+	generateAgent37TestApiKey,
+} from "./fake/server.js";
