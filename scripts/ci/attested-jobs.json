@@ -554,7 +554,7 @@
 				{
 					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "set -euo pipefail\nBASE=\"$(node --experimental-strip-types --no-warnings scripts/ci/turbo-scm-base.mts)\"\nif [[ \"$BASE\" == origin/* ]]; then\n  git fetch --no-tags --depth=1 origin \"${BASE#origin/}\"\nelif [ -n \"$BASE\" ]; then\n  git cat-file -e \"${BASE}^{commit}\" 2>/dev/null \\\n    || git fetch --no-tags --depth=1 origin \"$BASE\"\nfi\npnpm exec turbo run build \\\n  --filter=\"...[${BASE}]\" \\\n  --filter=@hobo/cd \\\n  --filter=@hobo/ci \\\n  --filter=@hobo/ci-gh-actions \\\n  --filter=@hobo/cli \\\n  --filter=@hobo/core \\\n  --filter=@hobo/hobo \\\n  --filter=@hobo/provider-cloudflare \\\n  --filter=@hobo/provider-lakebed \\\n  --filter=@hobo/provider-neon \\\n  --filter=@hobo/provider-netlify \\\n  --filter=@hobo/provider-oci-registry \\\n  --filter=@hobo/provider-prisma-postgres \\\n  --filter=@hobo/provider-upstash \\\n  --filter=@hobo/runtime-local \\\n  --filter=@hobo/schema-tools \\\n  --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\n",
+					"run": "set -euo pipefail\nBASE=\"$(node --experimental-strip-types --no-warnings scripts/ci/turbo-scm-base.mts)\"\nif [ -z \"$BASE\" ]; then\n  echo \"turbo-scm-base produced an empty base\" >&2\n  exit 1\nfi\nif [[ \"$BASE\" == origin/* ]]; then\n  git fetch --no-tags --depth=1 origin \"${BASE#origin/}\"\nelse\n  git cat-file -e \"${BASE}^{commit}\" 2>/dev/null \\\n    || git fetch --no-tags --depth=1 origin \"$BASE\"\nfi\n# Tree diff of two commits: no merge-base, safe on depth-1 fetches.\nmapfile -t FILTERS < <(\n  git diff --name-only \"$BASE\" HEAD \\\n    | node --experimental-strip-types --no-warnings \\\n      scripts/ci/affected-lanes.mts --base=\"$BASE\"\n)\nif [ ${#FILTERS[@]} -eq 0 ]; then\n  echo \"No package source changed since ${BASE}; materialize import-root dist from Turbo cache\"\n  pnpm exec turbo run build \\\n    --filter=@hobo/cd \\\n    --filter=@hobo/ci \\\n    --filter=@hobo/ci-gh-actions \\\n    --filter=@hobo/cli \\\n    --filter=@hobo/core \\\n    --filter=@hobo/hobo \\\n    --filter=@hobo/provider-cloudflare \\\n    --filter=@hobo/provider-lakebed \\\n    --filter=@hobo/provider-neon \\\n    --filter=@hobo/provider-netlify \\\n    --filter=@hobo/provider-oci-registry \\\n    --filter=@hobo/provider-prisma-postgres \\\n    --filter=@hobo/provider-upstash \\\n    --filter=@hobo/runtime-local \\\n    --filter=@hobo/schema-tools \\\n    --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\nelse\n  pnpm exec turbo run build \\\n    \"${FILTERS[@]}\" \\\n    --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\nfi\n",
 					"env": {
 						"GITHUB_EVENT_NAME": "${{ github.event_name }}",
 						"GITHUB_BASE_REF": "${{ github.base_ref }}",
@@ -575,7 +575,7 @@
 				{
 					"name": "Prune Turbo cache",
 					"id": "turbo-prune",
-					"if": "always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''",
+					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'",
 					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
 					"continueOnError": true,
 					"local": "skip",

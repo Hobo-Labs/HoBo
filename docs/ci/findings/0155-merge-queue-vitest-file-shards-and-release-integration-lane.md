@@ -85,10 +85,21 @@ the sum of its files):
   the build-once call is unchanged and keeps sharing hashes with plain
   `turbo run test`.
 - `vitest --shard` with inline `projects` (the isolated/shared split) shards
-  each project's files; `--passWithNoTests` covers a slice that draws no file.
+  each project's files. The release-integration job pins four shards to four
+  files and omits `--passWithNoTests`, so an empty glob fails the shard.
 - The merge queue no longer fails on a broken release-integration suite at merge
   time; it fails at publish. That is the accepted trade: the release gate runs
   on every planned release and on every PR that touches the lane.
 - Hosted run 44864749033 still paid 7m18s serial in this job because merge-queue
   checkouts have no `HEAD^2`, so the scope step always ran the lane. The job now
   diffs `merge_group.base_sha` and shards the four files on `ubuntu-24.04`.
+- Hosted PR run 44867963592 never started `release-hobo`: GitHub's `paths`
+  filter for that synchronize looked at the merge-from-main commit (attestation
+  blobs only). `pull_request.paths` / `merge_group.paths` now also list
+  `scripts/test/release-integration*` and `scripts/ci/job-scope.mts`, and a
+  forward commit that edits the workflow file (already on main's filter)
+  re-measures the four shards and `HoBo release PR gate`.
+- `--passWithNoTests` is gone: four shards are pinned to the four suite files,
+  so an empty glob fails the shard instead of greening a dead lane. Prune/save
+  run only on shard 0. The job `needs: [route]` so it does not wait on the
+  main-train gate (which skipped every step on that PR but still took a runner).

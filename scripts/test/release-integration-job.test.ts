@@ -11,6 +11,11 @@ import {
 	type JsonValue,
 } from "../ci/attestation.mts";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import {
+	anyPathMatchesReleaseHoboFilters,
+	parseReleaseHoboMergeGroupPathFilters,
+	parseReleaseHoboPullRequestPathFilters,
+} from "../lib/release-hobo-path-filters.mts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
 
 for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
@@ -96,7 +101,9 @@ describe("the slow integration lane is a merge-group gate", () => {
 		assert.equal(lane.if, "steps.scope.outputs.run == 'true'");
 		assert.match(lane.run, /test:release-integration/u);
 		assert.match(lane.run, /--shard="\$SHARD\/\$SHARD_TOTAL"/u);
-		assert.match(lane.run, /--passWithNoTests/u);
+		assert.doesNotMatch(lane.run, /--passWithNoTests/u);
+		assert.deepEqual(integration.needs, ["route"]);
+		assert.doesNotMatch(integration.if, /release-main-train-gate/u);
 	});
 
 	it("shards the four suites on GitHub-hosted runners so the merge queue does not wait for fleet slots", () => {
@@ -112,10 +119,52 @@ describe("the slow integration lane is a merge-group gate", () => {
 		const env = asObject(lane?.env);
 		assert.equal(env?.SHARD, "${{ strategy.job-index + 1 }}");
 		assert.equal(env?.SHARD_TOTAL, "${{ strategy.job-total }}");
+		const listed = [
+			...readFileSync(
+				"packages/hobo/test/support/release-integration-test-files.ts",
+				"utf8",
+			).matchAll(/"(test\/[^"]+)"/g),
+		].map((match) => match[1]);
+		assert.equal(listed.length, 4);
+		assert.equal(asList(matrix?.shard)?.length, listed.length);
 		const save = asList(source?.steps)
 			?.map(asObject)
 			.find((entry) => entry?.name === "Save Turbo cache");
 		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
+		const prune = asList(source?.steps)
+			?.map(asObject)
+			.find((entry) => entry?.name === "Prune Turbo cache");
+		assert.match(asText(prune?.if) ?? "", /matrix\.shard == 0/u);
+	});
+
+	it("path filters include the workflow, the four suites, this test, and job-scope", () => {
+		const pullRequest = parseReleaseHoboPullRequestPathFilters(workflow);
+		const mergeGroup = parseReleaseHoboMergeGroupPathFilters(workflow);
+		assert.deepEqual(
+			mergeGroup,
+			pullRequest.filter((path) => path !== "version.json"),
+		);
+		const required = [
+			".github/workflows/release-hobo.yml",
+			"packages/hobo/vitest.release-integration.config.ts",
+			"packages/hobo/test/support/release-integration-test-files.ts",
+			"packages/hobo/test/vercel-project.test.ts",
+			"packages/hobo/test/evals/ceremony-explorer.eval.test.ts",
+			"packages/hobo/test/cd-runner-fleet-delivery.test.ts",
+			"packages/hobo/test/cd-md-examples.test.ts",
+			"scripts/test/release-integration-job.test.ts",
+			"scripts/ci/job-scope.mts",
+		];
+		for (const path of required) {
+			assert.ok(
+				anyPathMatchesReleaseHoboFilters([path], pullRequest),
+				`pull_request.paths misses ${path}`,
+			);
+			assert.ok(
+				anyPathMatchesReleaseHoboFilters([path], mergeGroup),
+				`merge_group.paths misses ${path}`,
+			);
+		}
 	});
 
 	it("diffs merge_group.base_sha, not a missing HEAD^2 parent", () => {
@@ -155,7 +204,11 @@ describe("the slow integration lane is a merge-group gate", () => {
 				stdio: ["pipe", "pipe", "ignore"],
 			},
 		);
-		assert.equal(skip, "run=false\n");
+		assert.equal(
+			skip,
+			"run=false\n",
+			"docs-only skip proves the surviving entries' walk is scoped; an unscoped walk would always run",
+		);
 		for (const path of [
 			"packages/hobo/src/index.ts",
 			"packages/hobo/test/evals/ceremony-explorer.eval.test.ts",

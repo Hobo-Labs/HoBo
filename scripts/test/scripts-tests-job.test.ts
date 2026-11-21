@@ -227,18 +227,21 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
 	});
 
-	it("builds affected packages plus each import root, reusing the Turbo cache", () => {
+	it("builds affected packages from a tree diff, failing closed on an empty base", () => {
 		const build = step(scripts, BUILD);
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
 		assert.match(build.run, /turbo run build\b/u);
 		assert.match(build.run, /turbo-scm-base\.mts/u);
-		assert.match(build.run, /--filter="\.\.\.\[\$\{BASE\}\]"/u);
+		assert.match(build.run, /turbo-scm-base produced an empty base/u);
+		assert.match(build.run, /affected-lanes\.mts/u);
+		assert.match(build.run, /git diff --name-only "\$BASE" HEAD/u);
+		assert.doesNotMatch(build.run, /--filter="\.\.\.\[\$\{BASE\}\]"/u);
 		const imported = packagesScriptsTestsImport();
 		assert.ok(imported.includes("@hobo/hobo"));
 		for (const name of imported) {
 			assert.ok(
 				build.run.includes(`--filter=${name}`),
-				`the build step misses --filter=${name}`,
+				`the no-package-change branch misses --filter=${name}`,
 			);
 			assert.equal(
 				build.run.includes(`--filter=${name}^...`),
@@ -246,10 +249,17 @@ describe("the scripts lane is a pull-request gate", () => {
 				`the build step still walks ^... for ${name}`,
 			);
 		}
+		assert.match(
+			build.run,
+			/No package source changed since \$\{BASE\}; materialize import-root dist from Turbo cache/u,
+		);
+		assert.match(build.run, /"\$\{FILTERS\[@\]\}"/u);
 		const names = scripts.steps.map((entry) => entry.uses || entry.name);
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
 		assert.ok(names.indexOf("Turbo cache") < names.indexOf(BUILD));
 		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
+		const prune = step(scripts, "Prune Turbo cache");
+		assert.match(prune.if, /matrix\.shard == 0/u);
 	});
 
 	it("never waits for the deps image", () => {

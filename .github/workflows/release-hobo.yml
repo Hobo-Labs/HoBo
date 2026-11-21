@@ -75,6 +75,8 @@ on:
       - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
       - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
       - "packages/hobo/test/cd-md-examples.test.ts"
+      - "scripts/test/release-integration*"
+      - "scripts/ci/job-scope.mts"
   push:
     tags:
       - "sdk-v*"
@@ -149,6 +151,8 @@ on:
       - "packages/hobo/test/evals/ceremony-explorer.eval.test.ts"
       - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
       - "packages/hobo/test/cd-md-examples.test.ts"
+      - "scripts/test/release-integration*"
+      - "scripts/ci/job-scope.mts"
   workflow_dispatch:
     inputs:
       push_images:
@@ -634,18 +638,22 @@ jobs:
   # stays green.
   release-hobo-integration:
     name: HoBo slow integration suites (release gate)
-    needs: [route, release-main-train-gate]
-    # On the main train it runs when a release is actually planned (the train
-    # gate's `run`); a tag or a dispatch that pushes images releases without
-    # that gate, and a pull request or merge group run is scoped by the diff.
+    # Starts at route. The train gate is not an input of this job; waiting on
+    # it serialized PR/merge-group shards behind a runner that skipped every
+    # step. A green main push still runs the lane so publish (which needs this
+    # job) is not skipped. Scope below skips install/tests when the diff
+    # cannot reach the suites.
+    needs: [route]
     if: >-
       !cancelled() && needs.route.result == 'success' && (
-      needs.release-main-train-gate.outputs.run == 'true' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'merge_group' ||
       startsWith(github.ref, 'refs/tags/sdk-v') ||
       startsWith(github.ref, 'refs/tags/cli-v') ||
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'merge_group')
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'))
     # GitHub-hosted: four shards start at once. Fleet slots would queue them
     # past the merge queue's 8-minute check timeout.
     runs-on: ubuntu-24.04
@@ -733,10 +741,10 @@ jobs:
         run: >-
           pnpm exec turbo run test:release-integration --filter=@hobo/hobo
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
-          -- --shard="$SHARD/$SHARD_TOTAL" --passWithNoTests
+          -- --shard="$SHARD/$SHARD_TOTAL"
       - name: Prune Turbo cache
         id: turbo-prune
-        if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache

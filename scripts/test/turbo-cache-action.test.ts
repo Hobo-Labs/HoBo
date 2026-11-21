@@ -210,6 +210,25 @@ describe("turbo-cache action on the box", () => {
 			);
 	});
 
+	it("restores and saves hosted local cache even when remote is configured", () => {
+		assert.match(
+			ACTION,
+			/Restore prerequisite Turbo cache\n      id: prerequisite\n      if: inputs\.mode == 'restore' && inputs\.preferred-job != '' && env\.HOBO_TURBO_CACHE_SHARED != '1'/u,
+		);
+		assert.match(
+			ACTION,
+			/Restore Turbo local cache fallback\n      if: inputs\.mode == 'restore' && env\.HOBO_TURBO_CACHE_SHARED != '1' && steps\.prerequisite\.outputs\.cache-hit != 'true'/u,
+		);
+		assert.match(
+			ACTION,
+			/Save Turbo local cache fallback\n      if: always\(\) && inputs\.mode == 'save' && env\.HOBO_TURBO_CACHE_SHARED != '1'/u,
+		);
+		assert.doesNotMatch(
+			ACTION.slice(ACTION.indexOf("Restore prerequisite Turbo cache")),
+			/env\.TURBO_TOKEN == ''/u,
+		);
+	});
+
 	it("takes no cache address from a repository variable at any call site", () => {
 		for (const name of [
 			"hobo-ci.yml",
