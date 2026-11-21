@@ -567,9 +567,12 @@ describe("the route action's attestation step", () => {
 
 	it("runs first, before the runner is chosen, and hands the route step its answer", () => {
 		assert.equal(asText(step?.id), "attest");
-		assert.equal(asText(asObject(steps[1])?.id), "route");
+		assert.equal(asText(asObject(steps[1])?.id), "pr-fabric");
+		const routeStep = steps.find(
+			(candidate) => asObject(candidate)?.id === "route",
+		);
 		// The answer reaches the routing script as an argument, never as environment.
-		const route = asText(asObject(steps[1])?.run) ?? "";
+		const route = asText(asObject(routeStep)?.run) ?? "";
 		assert.ok(
 			route.includes(
 				"attested='${{ steps.attest.outputs.attested == 'true' && 'true' || 'false' }}'",
@@ -577,7 +580,7 @@ describe("the route action's attestation step", () => {
 		);
 		assert.match(route, /--attested "\$\{attested\}"/u);
 		assert.equal(
-			asObject(asObject(steps[1])?.env)?.HOBO_CI_ATTESTED,
+			asObject(asObject(routeStep)?.env)?.HOBO_CI_ATTESTED,
 			undefined,
 		);
 		const outputs = asObject(action.outputs);
