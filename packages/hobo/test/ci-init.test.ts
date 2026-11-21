@@ -200,7 +200,8 @@ describe("hobo ci init", () => {
 			"--apply",
 			"nope",
 		);
-		expect(exitCode).toBe(0);
+		expect(exitCode).not.toBe(0);
+		expect(envelope.code).toBe("HOBO_CI_INIT_PARTIAL");
 		expect(envelope.data.changed).toEqual([
 			{ file: ".github/workflows/ci.yml", job: "build" },
 		]);
@@ -263,6 +264,62 @@ describe("hobo ci init", () => {
 			/\.github\/workflows\/broken\.yml\n {2}cannot be read: /u,
 		);
 		expect(envelope.message).toContain("2 ready");
+	});
+
+	it("reports a workflow directory read failure", async () => {
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: {},
+			files: {
+				list: async () => {
+					throw new Error("permission denied");
+				},
+				read: async () => CI,
+				write: async () => {},
+			},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_WORKFLOWS_UNREADABLE",
+		});
+	});
+
+	it("reports an unreadable workflow and fails a partial apply", async () => {
+		const writes: string[] = [];
+		const result = await runCiInit({
+			cwd: "/repo",
+			args: [],
+			options: { apply: "all" },
+			files: {
+				list: async () => ["broken.yml", "ci.yml"],
+				read: async (path) => {
+					if (path.includes("broken.yml")) throw new Error("permission denied");
+					return CI;
+				},
+				write: async (path) => {
+					writes.push(path);
+				},
+			},
+		});
+		expect(result).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_INIT_PARTIAL",
+			data: {
+				changed: [
+					{ file: ".github/workflows/ci.yml", job: "test" },
+					{ file: ".github/workflows/ci.yml", job: "build" },
+				],
+				refused: [
+					{
+						file: ".github/workflows/broken.yml",
+						job: "(workflow)",
+						why: "the file cannot be read",
+					},
+				],
+			},
+		});
+		expect(writes).toEqual(["/repo/.github/workflows/ci.yml"]);
 	});
 
 	it("says so when the repository has no workflows", async () => {

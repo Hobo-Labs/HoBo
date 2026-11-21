@@ -70,6 +70,10 @@ export function retryVerdict(
 	}>,
 ): RetryVerdict {
 	if (!policy.enabled) return { retry: false, reason: "off" };
+	const target = RUNNER_RETRY_TARGETS.find(
+		(candidate) => candidate === policy.runner,
+	);
+	if (!target) return { retry: false, reason: "off" };
 	const kind = retryKind(failure.job);
 	if (!kind) return { retry: false, reason: "own_failure" };
 	if (failure.relaysInRun !== 1)
@@ -78,8 +82,5 @@ export function retryVerdict(
 		return { retry: false, reason: "run_limit" };
 	if (failure.retriesToday >= RUNNER_RETRY_DAILY_CAP)
 		return { retry: false, reason: "daily_limit" };
-	const target =
-		RUNNER_RETRY_TARGETS.find((candidate) => candidate === policy.runner) ??
-		"any";
 	return { retry: true, kind, target };
 }

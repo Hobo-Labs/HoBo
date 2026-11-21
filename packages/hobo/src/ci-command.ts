@@ -482,6 +482,8 @@ export function createCiCommand(
 				);
 			}
 			const { values } = parsed;
+			if (values.repo !== undefined && !validRepository(String(values.repo)))
+				return usage("--repo <owner/name> must be a GitHub owner/name.");
 			const githubConnect =
 				parsed.positionals[0] === "connect" &&
 				parsed.positionals[1] === "github";

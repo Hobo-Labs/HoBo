@@ -11,6 +11,7 @@ import { providerHealthKey } from "./health.js";
 import {
 	isUnresolvedAuto,
 	type RelayInputs,
+	RUNNER_INPUT_AUTO,
 	relayInputs,
 	resolveAutoInputs,
 } from "./inputs.js";
@@ -27,8 +28,10 @@ import {
 } from "./order.js";
 import {
 	type HostedRunnerProvider,
+	isGithubHostedLabel,
 	isProviderLabel,
 	RUNNER_PROVIDER_CATALOG,
+	RUNNER_STEP_KEYS,
 	type RunnerStepKey,
 } from "./providers.js";
 
@@ -189,6 +192,7 @@ function githubStep(
 	const one = singleLabel(labels);
 	if ("refused" in one) return one.refused;
 	const { label } = one;
+	if (!isGithubHostedLabel(label)) return skip("not_provider_label", label);
 	if (step.minutesLimitPercent > 0) {
 		const verdict = minutesVerdict(step.minutesLimitPercent, facts.minutes);
 		if (!verdict.allowed) return skip(verdict.reason, verdict.detail);
@@ -208,8 +212,9 @@ function hostedStep(
 ): StepResult {
 	const { order, request, facts } = context;
 	const stance = RUNNER_PROVIDER_CATALOG.get(key)?.publicRepositories;
-	if (!request.private && stance === "opt-in" && !facts.publicOptIn.has(key))
+	if (!request.private && stance !== "yes" && !facts.publicOptIn.has(key))
 		return skip("public_repository");
+	if (request.fork) return skip("fork_pull_request");
 	const one = singleLabel(labels);
 	if ("refused" in one) return one.refused;
 	const { label } = one;
@@ -249,7 +254,13 @@ export function effectiveRelayInputs(
 ): RelayInputs {
 	const inputs = relayInputs(request.inputs);
 	if (request.inputs.length > 0 && inputs.size === 0) return inputs;
-	return resolveAutoInputs(inputs, orderAutoSize(order), request.runId);
+	const requested =
+		request.inputs.length === 0
+			? new Map<RunnerStepKey, readonly string[]>(
+					RUNNER_STEP_KEYS.map((key) => [key, [RUNNER_INPUT_AUTO]] as const),
+				)
+			: inputs;
+	return resolveAutoInputs(requested, orderAutoSize(order), request.runId);
 }
 
 function namedButNotOrdered(
@@ -321,6 +332,14 @@ export function decideRunnerRoute(
 	request: RunnerRouteRequest,
 	facts: RouteFacts = NO_ROUTE_FACTS,
 ): RunnerRouteDecision {
+	if (request.fork === undefined)
+		return create(RunnerRouteDecisionSchema, {
+			outcome: "none",
+			reason:
+				"No runner available. The fork fact is required: RunnerRouteRequest.fork is unset, so whether the run comes from a fork is unknown and routing cannot be decided safely.",
+			skipped: [],
+			notInOrder: [],
+		});
 	const inputs = effectiveRelayInputs(order, request);
 	const walked = retryOrder(
 		preferFirst(order, facts.first),
@@ -333,6 +352,7 @@ export function decideRunnerRoute(
 	let unhealthy: Target | undefined;
 	for (const step of walked.steps) {
 		const key = stepKey(step);
+		if (!key) throw new Error(`unknown runner step "${step.key}"`);
 		const labels = inputs.get(key);
 		const result: StepResult = !labels
 			? skip("not_configured")
@@ -356,15 +376,6 @@ export function decideRunnerRoute(
 		busy ??= result.busy;
 		unhealthy ??= result.unhealthy;
 	}
-	if (unhealthy)
-		return create(RunnerRouteDecisionSchema, {
-			outcome: "routed",
-			runner: unhealthy.runner,
-			step: unhealthy.step,
-			skipped,
-			notInOrder,
-			unhealthyFallback: true,
-		});
 	if (busy)
 		return create(RunnerRouteDecisionSchema, {
 			outcome: "waiting",
@@ -373,6 +384,15 @@ export function decideRunnerRoute(
 			machineId: busy.machineId,
 			skipped,
 			notInOrder,
+		});
+	if (unhealthy)
+		return create(RunnerRouteDecisionSchema, {
+			outcome: "routed",
+			runner: unhealthy.runner,
+			step: unhealthy.step,
+			skipped,
+			notInOrder,
+			unhealthyFallback: true,
 		});
 	return create(RunnerRouteDecisionSchema, {
 		outcome: "none",

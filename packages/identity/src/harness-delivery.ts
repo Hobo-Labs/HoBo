@@ -147,6 +147,41 @@ export type DeliveryHealthSignal = Readonly<{
 	guardrailRegressed?: boolean;
 }>;
 
+export interface DeliveryPort {
+	readonly events: readonly RolloutEvent[];
+	list(): readonly RolloutState[];
+	get(id: string): RolloutState | undefined;
+	start(policy: RolloutPolicy): RolloutState;
+	step(rolloutId: string, health?: DeliveryHealthSignal): RolloutState;
+	nextBatch(rolloutId: string): readonly string[];
+	reportOutcomes(
+		rolloutId: string,
+		outcomes: readonly RolloutTargetOutcome[],
+	): RolloutState;
+	grantApproval(rolloutId: string, approver: string): RolloutState;
+	resume(rolloutId: string): RolloutState;
+	rollback(
+		rolloutId: string,
+		reason: Readonly<Record<string, boolean | string>>,
+	): RolloutState;
+	gatewayWeight(rolloutId: string): number;
+}
+
+export function validateRolloutPolicy(policy: RolloutPolicy): void {
+	if (!policy.stages.length) {
+		throw new TypeError("rollout requires at least one stage");
+	}
+	for (const stage of policy.stages) {
+		for (const group of stage.groups ?? []) {
+			if (!group.targets.length) {
+				throw new TypeError(
+					`rollout group requires at least one target: ${group.name}`,
+				);
+			}
+		}
+	}
+}
+
 const EMPTY_TARGETS: readonly string[] = Object.freeze([]);
 
 const EMPTY_STAGED_PROGRESS: StagedRolloutProgress = Object.freeze({
@@ -365,7 +400,7 @@ export function replayRolloutJournal(
  * reportOutcomes, halt on maxFailures, pause at approval barriers, and resume
  * deterministically from the journal.
  */
-export class OpenDeliveryEngine {
+export class OpenDeliveryEngine implements DeliveryPort {
 	readonly events: RolloutEvent[] = [];
 	private seq = 0;
 	private readonly rollouts = new Map<string, RolloutState>();
@@ -389,18 +424,7 @@ export class OpenDeliveryEngine {
 	}
 
 	start(policy: RolloutPolicy): RolloutState {
-		if (!policy.stages.length) {
-			throw new TypeError("rollout requires at least one stage");
-		}
-		for (const stage of policy.stages) {
-			for (const group of stage.groups ?? []) {
-				if (!group.targets.length) {
-					throw new TypeError(
-						`rollout group requires at least one target: ${group.name}`,
-					);
-				}
-			}
-		}
+		validateRolloutPolicy(policy);
 		const frozen = freezePolicy(policy);
 		const id = `rollout_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
 		const stage0 = first(frozen.stages);
@@ -726,10 +750,9 @@ export class OpenDeliveryEngine {
 		const killSwitch = existing?.killSwitch === true;
 		this.store.define({
 			key: flag,
-			// Kill-switch forces zero percent; otherwise apply the stage percent.
-			percentage: killSwitch ? 0 : percent,
-			enabled: true,
-			state: "ENABLED",
+			percentage: percent,
+			enabled: existing?.enabled ?? true,
+			state: existing?.state ?? "ENABLED",
 			killSwitch,
 			defaultValue: existing?.defaultValue ?? false,
 			variants: existing?.variants,
@@ -742,6 +765,9 @@ export class OpenDeliveryEngine {
 				: undefined),
 			...(existing?.targeting !== undefined
 				? { targeting: existing.targeting }
+				: undefined),
+			...(existing?.experimentAllocation !== undefined
+				? { experimentAllocation: existing.experimentAllocation }
 				: undefined),
 		});
 	}

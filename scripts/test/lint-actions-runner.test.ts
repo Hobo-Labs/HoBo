@@ -48,7 +48,7 @@ function lintJobs(jobs: string): number | null {
 const shardRunner =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 const mergeShardRunner =
-	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
+	"${{ needs.pr_gate_plan.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 /** Lints a repository holding one composite action and no workflow. */
 function lintAction(text: string): number | null {
@@ -108,28 +108,13 @@ function lintRunner(
 }
 
 describe("Actions runner policy", () => {
-	it("limits the merge-group batch route to the workspace job with both dependencies", () => {
+	it("rejects a shard route selected by the proposed change", () => {
 		const workflow = (jobId: string, needs: string) =>
 			`name: fixture\non:\n  merge_group:\njobs:\n${routeJob}  ${jobId}:\n    needs: ${needs}\n    runs-on: ${mergeShardRunner}\n    steps:\n      - run: echo ok\n  trunk:\n    runs-on: ${trunk}\n    steps:\n      - run: echo ok\n`;
-		assert.equal(
+		assert.notEqual(
 			lintFile(
 				"hobo-ci.yml",
 				workflow("workspace_tests", "[route, pr_gate_validation]"),
-			),
-			0,
-		);
-		assert.notEqual(
-			lintFile("hobo-ci.yml", workflow("other", "[route, pr_gate_validation]")),
-			0,
-		);
-		assert.notEqual(
-			lintFile("hobo-ci.yml", workflow("workspace_tests", "route")),
-			0,
-		);
-		assert.notEqual(
-			lintFile(
-				"hobo-ci.yml",
-				workflow("workspace_tests", "pr_gate_validation"),
 			),
 			0,
 		);
@@ -465,7 +450,12 @@ describe("Actions runner policy", () => {
 		`  ${id}:\n    needs: ${needs}\n    if: \${{ github.event_name == 'pull_request' && ${condition} }}\n    runs-on: ${routed}\n    steps:\n      - run: echo ok\n`;
 
 	it("lets a signed local run skip a covered job that names itself and needs the route job", () => {
-		for (const id of ["ci-guard", "secret-scan", "pr_gate_validation"])
+		for (const id of [
+			"ci-guard",
+			"secret-scan",
+			"pr_gate_plan",
+			"pr_gate_validation",
+		])
 			assert.equal(
 				lintJobs(
 					`${attestingRoute(verifierFiles)}${skippable(id, skipFor(id))}`,
