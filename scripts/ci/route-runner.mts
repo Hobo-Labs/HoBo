@@ -1443,7 +1443,6 @@ export async function main(
 	}
 	if (
 		mergeGroupHoboCi &&
-		args.includeOwnRun &&
 		decision.tier === "fleet" &&
 		decision.runner === labels.fleet
 	)
