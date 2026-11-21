@@ -513,6 +513,16 @@ describe("hobo ci secret-store verify", () => {
 		expect(denied.message).toMatch(/oidc_sub=repo/u);
 	});
 
+	it("names a missing deploy credential as not provisioned, with the runbook", async () => {
+		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
+		const result = await runCiSecretStore(
+			input("verify", {}, actions, infisical(200, [], JWT, 404).fetch),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("not provisioned");
+		expect(result.message).toContain("Merge cutover");
+	});
+
 	it("checks hobo-ci-relay where Vercel's OIDC token is present", async () => {
 		await runCiSecretStore(input("connect", IDS, GH_ENV, github().fetch));
 		const result = await runCiSecretStore(

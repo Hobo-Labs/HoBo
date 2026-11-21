@@ -965,6 +965,34 @@ async function deliverWith(
 			};
 		records = loaded.value;
 	}
+	const declaredFinalizationHooks = records.pipelines.flatMap(
+		(pipelineRecord) =>
+			pipelineRecord.nodes
+				.filter((pipelineNode) =>
+					pipelineNode.hooks.some(
+						(hook) => hook.ref === RELAY_FINALIZATION_SUITE,
+					),
+				)
+				.map((pipelineNode) => `${pipelineRecord.name}/${pipelineNode.name}`),
+	);
+	if (declaredFinalizationHooks.length > 0)
+		return {
+			ok: false,
+			code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
+			message: `${RELAY_DELIVERY_FILE} declares the ${RELAY_FINALIZATION_SUITE} hook on ${declaredFinalizationHooks.join(", ")}: that ref is reserved for hobo ci deploy's own injection, never a delivery file. Remove the hook; the run that carries a finalizer injects it.`,
+		};
+	if (finalizePromotion === undefined) {
+		const stored = await cd.pipelines.get(pipeline);
+		const storedNode = stored?.nodes.find(
+			(pipelineNode) => pipelineNode.name === node,
+		);
+		if (storedNode?.hooks.some((hook) => hook.ref === RELAY_FINALIZATION_SUITE))
+			return {
+				ok: false,
+				code: RELAY_DELIVERY_REFUSAL.recordsInvalid,
+				message: `Pipeline ${pipeline}/${node} already carries the ${RELAY_FINALIZATION_SUITE} hook a staged run injected (pipeline records are append-once, so it stays), and this run has no finalizer: production would deploy, verify and then stop unfinalized. Run with HOBO_CI_RELAY_STAGED_PRODUCTION=true (the relay deploy workflow), which finalizes the promotion it drove.`,
+			};
+	}
 	let finalizationTargets = 0;
 	const deliveryRecords: DeliveryModule =
 		finalizePromotion === undefined
@@ -983,9 +1011,7 @@ async function deliverWith(
 							return {
 								...pipelineNode,
 								hooks: [
-									...pipelineNode.hooks.filter(
-										(hook) => hook.ref !== RELAY_FINALIZATION_SUITE,
-									),
+									...pipelineNode.hooks,
 									create(HookRecordSchema, {
 										kind: HookKind.SUITE,
 										point: HookPoint.AFTER_QUALIFIED,

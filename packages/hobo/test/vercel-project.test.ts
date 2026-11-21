@@ -1588,6 +1588,22 @@ describe("production promotion", () => {
 	});
 
 	it.each([
+		["an id without the dpl_ prefix", "hobo-ci-deploy-123"],
+		["an empty id", ""],
+		["an id with a path separator", "dpl_1/../../v13/deployments"],
+	])("refuses to promote %s before any request is sent", async (_case, id) => {
+		const transport = scripted({});
+		const client = createVercelClient({
+			token: "test-token",
+			fetch: transport.fetch,
+		});
+		await expect(client.promoteDeployment("hobo-ci", id)).rejects.toThrow(
+			"invalid deployment receipt identity",
+		);
+		expect(transport.routes()).toEqual([]);
+	});
+
+	it.each([
 		[
 			"a production id that is not a deployment id",
 			{ id: "prj_relay", targets: { production: { id: "not-a-deployment" } } },

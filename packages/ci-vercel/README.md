@@ -310,15 +310,25 @@ nothing is verified or qualified.
 **Merge cutover (relay CD delivery):** before this branch lands on `main`,
 provision the Infisical deploy project (`deploy/secret-store.binding.json`
 `deployProjectId`), attach the `hobo-ci-deploy` identity with GitHub OIDC
-claims pinned to this repository, `ref == refs/heads/main`, and
-`relay-deploy.yml`, store `VERCEL_TOKEN` there, and configure the Vercel
-Trusted Source with the same claim pin. The workflow disables Vercel Git
-auto-deploy in the same commit; without those prerequisites `main`'s required
-deploy fails and the relay receives no deployment. After merge, link one
-production run that shows the workflow reading `VERCEL_TOKEN` through Infisical
-and a protected preview probe with OIDC (channel-observation rule). Until that
-run is linked, the delivery path is built, not proven: the prerequisites above
-are external and cannot be verified before merge.
+trust pinned to this repository — subject `ref == refs/heads/main`,
+`repository_id`/`repository_owner_id` claims, and audience
+`https://github.com/Hobo-Labs` (the exact trust `hobo ci secret-store
+connect` records and repairs) — store `VERCEL_TOKEN` there, and configure
+the Vercel Trusted Source with the same claim pin. The audience pin is what
+keeps the channels disjoint: the deploy-token read mints its token for
+`https://github.com/Hobo-Labs` while the protected-preview probe mints one
+for the deployment's own origin, so a probe token cannot be replayed to
+read `VERCEL_TOKEN`. The workflow disables Vercel Git auto-deploy in the
+same commit; without those prerequisites `main`'s required deploy fails and
+the relay receives no deployment. After merge, link one production run that
+shows the workflow reading `VERCEL_TOKEN` through Infisical and a protected
+preview probe with OIDC (channel-observation rule): the run of
+[relay-deploy.yml](../../.github/workflows/relay-deploy.yml) on the first
+relay-relevant push to `main`, whose *Verify the secret store connection*
+check passes and whose *Deliver the relay through HoBo CD* step summary
+shows both targets delivered. Until that run is linked, the delivery path
+is built, not proven: the prerequisites above are external and cannot be
+verified before merge.
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)
@@ -356,7 +366,11 @@ and on `workflow_dispatch`:
    proof. Finalization is idempotent: a retry of an already-terminal promotion
    reconciles it from the journal's durable handover, recognizes a candidate
    already assigned to production instead of promoting it again, and rechecks
-   the public origin before reporting success.
+   the public origin before reporting success. The finalization hook a
+   staged run injects is a durable pipeline record (append-once), so a
+   later `--target production` run without a finalizer is refused before
+   anything is deployed (`HOBO_CI_DEPLOY_DELIVERY_INVALID`); deliver
+   production through the workflow, which carries the finalizer.
    Failed live verification restores the previous deployment when production
    still names the rejected candidate, reports `completed`, and leaves a
    concurrently superseded target untouched. `failed` or `unknown` requires the

@@ -111,22 +111,33 @@ async function deploy(
 		readonly now?: () => number;
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
+		readonly heldToken?: string;
 	},
 ): Promise<Ran> {
 	// The deploy token is never read from the environment: a test that means
 	// "the owner holds a token" puts it in the run's vault, as the store would.
 	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
+	const ciRunner =
+		plainEnv.GITHUB_ACTIONS === "true" ||
+		plainEnv.ACTIONS_ID_TOKEN_REQUEST_URL !== undefined;
 	const deployCredentials = createTrustedVault();
-	if (storeToken !== undefined && plainEnv.GITHUB_ACTIONS !== "true")
+	if (options.heldToken !== undefined)
+		deployCredentials.put("VERCEL_TOKEN", options.heldToken);
+	else if (storeToken !== undefined && !ciRunner)
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
+	const mintUrl = plainEnv.ACTIONS_ID_TOKEN_REQUEST_URL;
 	const credentialFetch =
 		options.credentialFetch ??
-		(plainEnv.ACTIONS_ID_TOKEN_REQUEST_URL === undefined
+		(mintUrl === undefined
 			? undefined
-			: async () =>
-					Response.json({
+			: async (input) => {
+					const url = String(input);
+					if (!url.startsWith(mintUrl))
+						throw new Error(`unexpected credential request: ${url}`);
+					return Response.json({
 						value: "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvIn0.c2lnbmF0dXJl",
-					}));
+					});
+				});
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
@@ -293,31 +304,31 @@ describe("Infisical deployment credential", () => {
 			} finally {
 				stderr.mockRestore();
 			}
-		const masked = stderrWrites.join("");
-		const mints = [
-			TOKEN,
-			"synthetic.jwt.value",
-			"synthetic-infisical-token",
-			"synthetic-request-token",
-			"untrusted-runner-token",
-		];
-		expect(masked).toContain(`::add-mask::${TOKEN}\n`);
-		const withoutMaskLines = masked.replaceAll(`::add-mask::${TOKEN}\n`, "");
-		for (const value of mints)
-			expect(withoutMaskLines, value).not.toContain(value);
-		expect(
-			requests.some(
-				(url) =>
-					url.includes("6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7") &&
-					url.includes("/api/v4/secrets/VERCEL_TOKEN"),
-			),
-			JSON.stringify({ envelope: ran.envelope, requests }),
-		).toBe(true);
-		expect(seenAuthorization, JSON.stringify(ran.envelope)).toContain(
-			`Bearer ${TOKEN}`,
-		);
-		const exposed = `${ran.stdout}${ran.stderr}${JSON.stringify(ran.envelope)}`;
-		for (const value of mints) expect(exposed, value).not.toContain(value);
+			const masked = stderrWrites.join("");
+			const mints = [
+				TOKEN,
+				"synthetic.jwt.value",
+				"synthetic-infisical-token",
+				"synthetic-request-token",
+				"untrusted-runner-token",
+			];
+			expect(masked).toContain(`::add-mask::${TOKEN}\n`);
+			const withoutMaskLines = masked.replaceAll(`::add-mask::${TOKEN}\n`, "");
+			for (const value of mints)
+				expect(withoutMaskLines, value).not.toContain(value);
+			expect(
+				requests.some(
+					(url) =>
+						url.includes("6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7") &&
+						url.includes("/api/v4/secrets/VERCEL_TOKEN"),
+				),
+				JSON.stringify({ envelope: ran.envelope, requests }),
+			).toBe(true);
+			expect(seenAuthorization, JSON.stringify(ran.envelope)).toContain(
+				`Bearer ${TOKEN}`,
+			);
+			const exposed = `${ran.stdout}${ran.stderr}${JSON.stringify(ran.envelope)}`;
+			for (const value of mints) expect(exposed, value).not.toContain(value);
 			seenAuthorization.length = 0;
 			const denied = await deploy([...RELAY], {
 				cwd,
@@ -347,6 +358,115 @@ describe("Infisical deployment credential", () => {
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
 		expect(sent).toEqual([]);
+	});
+
+	it("refuses env VERCEL_TOKEN whenever the OIDC mint env is present, whatever GITHUB_ACTIONS says", async () => {
+		const { fetch, sent } = unreachable();
+		const credentialUrls: string[] = [];
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			credentialFetch: async (input) => {
+				const url = String(input);
+				credentialUrls.push(url);
+				throw new Error(`no credential request may succeed: ${url}`);
+			},
+			env: {
+				VERCEL_TOKEN: "untrusted-runner-token",
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
+		expect(sent).toEqual([]);
+		expect(
+			credentialUrls.some(
+				(url) => !url.startsWith("https://token.actions.example.test/token"),
+			),
+			credentialUrls.join("\n"),
+		).toBe(false);
+	});
+
+	it("masks the store-read token whenever the OIDC mint env is present, whatever GITHUB_ACTIONS says", async () => {
+		const cwd = mkdtempSync(join(RELAY_DIR, ".relay-project-"));
+		try {
+			mkdirSync(join(cwd, "deploy"));
+			symlinkSync(join(RELAY_DIR, "src"), join(cwd, "src"));
+			symlinkSync(
+				join(RELAY_DIR, "deploy", "yard.ts"),
+				join(cwd, "deploy", "yard.ts"),
+			);
+			symlinkSync(
+				join(RELAY_DIR, "deploy", "delivery.ts"),
+				join(cwd, "deploy", "delivery.ts"),
+			);
+			const binding = JSON.parse(
+				readFileSync(
+					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+					"utf8",
+				),
+			);
+			binding.deployProjectId = "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7";
+			writeFileSync(
+				join(cwd, "deploy", "secret-store.binding.json"),
+				JSON.stringify(binding),
+			);
+			const credentialFetch: typeof fetch = async (input) => {
+				const url = String(input);
+				if (url.startsWith("https://token.actions.example.test/"))
+					return Response.json({ value: "synthetic.jwt.value" });
+				if (url.endsWith("/api/v1/auth/oidc-auth/login"))
+					return Response.json({
+						accessToken: "synthetic-infisical-token",
+						expiresIn: 3600,
+						accessTokenMaxTTL: 3600,
+						tokenType: "Bearer",
+					});
+				if (url.includes("/api/v4/secrets/VERCEL_TOKEN"))
+					return Response.json({
+						secret: {
+							secretKey: "VERCEL_TOKEN",
+							secretValue: TOKEN,
+							version: 1,
+							type: "shared",
+							environment: "prod",
+							secretPath: "/",
+						},
+					});
+				return Response.json({}, { status: 404 });
+			};
+			const vercelFetch: VercelFetch = async () => {
+				throw new Error("no request may be sent");
+			};
+			const stderrWrites: string[] = [];
+			const stderr = vi
+				.spyOn(process.stderr, "write")
+				.mockImplementation((chunk) => {
+					stderrWrites.push(Buffer.from(chunk).toString());
+					return true;
+				});
+			let ran: Awaited<ReturnType<typeof deploy>>;
+			try {
+				ran = await deploy([...RELAY], {
+					cwd,
+					fetch: vercelFetch,
+					credentialFetch,
+					env: {
+						VERCEL_TOKEN: "untrusted-runner-token",
+						ACTIONS_ID_TOKEN_REQUEST_URL:
+							"https://token.actions.example.test/token",
+						ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+					},
+				});
+			} finally {
+				stderr.mockRestore();
+			}
+			expect(stderrWrites.join("")).toContain(`::add-mask::${TOKEN}\n`);
+			expect(ran.envelope.code).not.toBe("HOBO_CI_DEPLOYED");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
 	});
 });
 // deploy/delivery.ts reads its probe origins from the process environment
@@ -1036,10 +1156,22 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			"https://hobo-ci-git-main.example.vercel.app/healthz",
 		);
 		expect(minted.length, JSON.stringify(ran.envelope)).toBeGreaterThan(0);
+		const audiences = minted.map((url) =>
+			new URL(url).searchParams.get("audience"),
+		);
 		expect(
-			minted.map((url) => new URL(url).searchParams.get("audience")),
+			audiences.filter(
+				(audience) => audience === "https://github.com/Hobo-Labs",
+			),
 			JSON.stringify(minted),
-		).toEqual(minted.map(() => "https://hobo-ci-git-main.example.vercel.app"));
+		).toHaveLength(1);
+		expect(
+			audiences.filter(
+				(audience) =>
+					audience === "https://hobo-ci-git-main.example.vercel.app",
+			),
+			JSON.stringify(minted),
+		).toHaveLength(audiences.length - 1);
 		expect(ran.data.delivery).toMatchObject({ state: "PROMOTED" });
 	});
 
@@ -1135,7 +1267,9 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 				ok: false,
 				status: 404,
 				async text() {
-					return JSON.stringify({ error: { code: "not_found", message: "no" } });
+					return JSON.stringify({
+						error: { code: "not_found", message: "no" },
+					});
 				},
 				async json() {
 					return {};
@@ -1144,6 +1278,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		};
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch,
+			heldToken: TOKEN,
 			credentialFetch: async (input) => {
 				const url = String(input);
 				if (url.includes("token.actions.example.test")) {
@@ -1242,6 +1377,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			{
 				fetch: vercel.fetch,
 				env: { ...env, ...oidcEnv },
+				heldToken: TOKEN,
 				vercelCli: cli.run,
 				probe: relay.http,
 				...steppingClock(),
@@ -1327,6 +1463,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch: scriptedVercel(["BUILDING", "ERROR"]).fetch,
 			env: { ...env, ...oidcEnv },
+			heldToken: TOKEN,
 			...steppingClock(),
 		});
 		expect(ran.exitCode).toBe(1);
@@ -1341,6 +1478,7 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 		const ran = await deploy([...RELAY, "--sha", SHA, "--wait"], {
 			fetch: scriptedVercel(["BUILDING"]).fetch,
 			env: { ...env, ...oidcEnv },
+			heldToken: TOKEN,
 			...steppingClock(),
 		});
 		expect(ran.exitCode).toBe(1);
@@ -1396,6 +1534,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				...clock,
@@ -1554,6 +1693,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				now: () => now,
@@ -1602,6 +1742,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				...clock,
@@ -1775,6 +1916,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				...clock,
@@ -1957,6 +2099,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				...clock,
@@ -2106,6 +2249,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				...clock,
@@ -2179,6 +2323,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			],
 			{
 				fetch,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe,
 				...clock,
@@ -2223,6 +2368,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: healthyRelay().http,
 				...clock,
@@ -2380,6 +2526,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch,
 				env: { ...env, VERCEL_TOKEN: TOKEN },
+				heldToken: TOKEN,
 				now: () => Date.parse("2026-01-01T00:00:00.000Z"),
 			},
 		);
@@ -2396,6 +2543,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
 			fetch: scriptedVercel(["READY"]).fetch,
 			env,
+			heldToken: TOKEN,
 			hoboHome: home,
 			probe: healthyRelay().http,
 			...steppingClock(),
@@ -2478,7 +2626,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				...INPUTS,
 				"--wait",
 			],
-			{ fetch, env, ...steppingClock() },
+			{ fetch, env, heldToken: TOKEN, ...steppingClock() },
 		);
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
@@ -2496,6 +2644,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
 			fetch: scriptedVercel(["READY"]).fetch,
 			env,
+			heldToken: TOKEN,
 			hoboHome: home,
 			probe: relay.http,
 			...clock,
@@ -2519,6 +2668,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: relay.http,
 				...clock,
@@ -2549,6 +2699,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
 			fetch: scriptedVercel(["READY"]).fetch,
 			env,
+			heldToken: TOKEN,
 			hoboHome: home,
 			probe: healthyRelay().http,
 			...clock,
@@ -2568,6 +2719,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			{
 				fetch: scriptedVercel(["READY"]).fetch,
 				env,
+				heldToken: TOKEN,
 				hoboHome: home,
 				probe: stale.http,
 				...clock,
@@ -2585,6 +2737,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		const ran = await deploy([...PINNED, "--project", "hobo-ci"], {
 			fetch: scriptedVercel(["READY"]).fetch,
 			env,
+			heldToken: TOKEN,
 		});
 		expect(ran.exitCode).toBe(0);
 		expect(ran.data.outputs).not.toHaveProperty("readyState");

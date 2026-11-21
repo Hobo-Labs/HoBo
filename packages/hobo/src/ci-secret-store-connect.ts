@@ -47,18 +47,17 @@ import {
 	SecretStoreError,
 	updateDeployIdentityTrust,
 } from "@hobo/secret-store-claim";
-
+import {
+	parseRelayDeployToken,
+	RELAY_DEPLOY_TOKEN_ENTRY,
+	RelayDeployCredentialError,
+} from "./ci-relay-deploy-credential.js";
 import {
 	type CiSecretStoreInput,
 	loadSecretStoreBinding,
 	SecretStoreBindingRefusal,
 	writeSecretStoreBinding,
 } from "./ci-secret-store.js";
-import {
-	parseRelayDeployToken,
-	RELAY_DEPLOY_TOKEN_ENTRY,
-	RelayDeployCredentialError,
-} from "./ci-relay-deploy-credential.js";
 import {
 	relayRepository,
 	resolveDeploySubject,
@@ -338,6 +337,13 @@ async function readDeployToken(
 			await session.revoke().catch(() => undefined);
 		}
 	} catch (error) {
+		if (error instanceof InfisicalError && error.code === "not-found")
+			return {
+				identity,
+				method,
+				result: "fail",
+				detail: `signed in, but the deploy project holds no ${RELAY_DEPLOY_TOKEN_ENTRY} yet: the deploy credential is not provisioned. Provision it before the relay deploy workflow's required deploy runs (packages/ci-vercel/README.md, "Merge cutover").`,
+			};
 		return {
 			identity,
 			method,

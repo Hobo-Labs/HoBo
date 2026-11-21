@@ -1196,7 +1196,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 			return productionDeploymentId(projectData);
 		},
 		async promoteDeployment(project, deploymentId) {
-			if (!deploymentId || !/^[A-Za-z0-9_-]+$/u.test(deploymentId))
+			if (!deploymentId || !/^dpl_[A-Za-z0-9_-]+$/u.test(deploymentId))
 				throw new TypeError("invalid deployment receipt identity");
 			const reference = projectRef(project);
 			const projectData = await readProject(reference);

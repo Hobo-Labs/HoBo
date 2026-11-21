@@ -133,6 +133,7 @@ import {
 	SecretStoreBindingRefusal,
 	secretStoreDeployInputs,
 } from "./ci-secret-store.js";
+import { RELAY_GITHUB_OIDC_AUDIENCE } from "./ci-secret-store-connect.js";
 import { defaultHoboHome } from "./hobo-home.js";
 import {
 	isJsonNumber,
@@ -818,6 +819,7 @@ export async function runCiRelayDeploy(
 		try {
 			const stored = await readRelayDeployToken({
 				binding: storeBinding,
+				audience: RELAY_GITHUB_OIDC_AUDIENCE,
 				env: {
 					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
 					ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
@@ -827,7 +829,7 @@ export async function runCiRelayDeploy(
 					: undefined),
 			});
 			vault.put("VERCEL_TOKEN", stored);
-			if (env.GITHUB_ACTIONS === "true")
+			if (env.GITHUB_ACTIONS === "true" || oidcMintAvailable)
 				process.stderr.write(`::add-mask::${stored}\n`);
 		} catch (error) {
 			return refused(
@@ -930,11 +932,7 @@ export async function runCiRelayDeploy(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
 				if (protectedPreview || stagedProduction)
-					deploymentUrl = await attestedDeploymentUrl(
-						client,
-						outputs,
-						project,
-					);
+					deploymentUrl = await attestedDeploymentUrl(client, outputs, project);
 				return {
 					ok: true,
 					outputs: Object.fromEntries(

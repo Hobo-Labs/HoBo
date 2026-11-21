@@ -33,9 +33,13 @@ status — an absent, malformed, or error envelope is a failure even when the
 recorded status is 0 (the workflow test runs the delivery step's script
 against a fake `hobo.js` that answers with a credential-shaped message and
 asserts the summary shows `[redacted]`), and the CLI masks the store-read
-`VERCEL_TOKEN` with `::add-mask::` on Actions runs
-(`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an absent or
-unreadable `packages/ci-vercel/deploy/secret-store.binding.json` as a
-required-check failure; the committed binding carries coordinates only. The
-first production run after merge must show the store-verify to deliver channel
-carrying a value (`packages/ci-vercel/README.md`, "Merge cutover").
+`VERCEL_TOKEN` with `::add-mask::` on any run the OIDC mint env marks as a
+CI runner (`packages/hobo/test/ci-relay-deploy.test.ts`). The gate treats an
+absent or unreadable `packages/ci-vercel/deploy/secret-store.binding.json`
+as a required-check failure; the committed binding carries coordinates only.
+The store-read-credential → CD-deploy channel is built, not proven: the
+first production run after merge — relay-deploy.yml on the first
+relay-relevant push to `main` — must show the *Verify the secret store
+connection* check passing and the *Deliver the relay through HoBo CD* step
+summary carrying both targets, and be linked per the cutover plan
+(`packages/ci-vercel/README.md`, "Merge cutover").

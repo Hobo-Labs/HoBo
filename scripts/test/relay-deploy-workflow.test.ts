@@ -120,6 +120,22 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
+	it("fails a required deploy when the pushed range cannot be read and no store is bound", () => {
+		const decision = decide({ event: "push", store: "absent", inputDirs });
+		assert.equal(decision.run, false);
+		assert.equal(decision.failure, true);
+	});
+
+	it("ships the secret store binding its required deploy demands", () => {
+		assert.ok(existsSync(join(root, RELAY_SECRET_STORE_BINDING)));
+		assert.equal(
+			storeBindingState(
+				readFileSync(join(root, RELAY_SECRET_STORE_BINDING), "utf8"),
+			),
+			"bound",
+		);
+	});
+
 	it("reads the binding's shape only, and only an HTTPS endpoint counts", () => {
 		assert.equal(storeBindingState(undefined), "absent");
 		assert.equal(storeBindingState("not json"), "unreadable");
@@ -265,6 +281,25 @@ describe("the relay deploy workflow", () => {
 
 	it("reads no repository variable or secret for the relay's configuration", () => {
 		assert.doesNotMatch(workflow, /INFISICAL_|VERCEL_TEAM_ID|\$\{\{\s*vars\./u);
+	});
+
+	it("restores the CLI only against the build job's own digest output", () => {
+		const deploy = workflow
+			.split("\n  deploy:\n")[1]
+			?.split("\n  app-credentials:\n")[0];
+		const deposit = workflow.split("\n  app-credentials:\n")[1];
+		assert.ok(deploy && deposit);
+		for (const job of [deploy, deposit]) {
+			assert.match(
+				job,
+				/HOBO_RELAY_CLI_DIGEST: \$\{\{ needs\.deploy-build\.outputs\.digest \}\}/u,
+			);
+			assert.doesNotMatch(
+				job,
+				/HOBO_RELAY_CLI_DIGEST: \$\{\{ (github\.event|env|vars)\./u,
+			);
+		}
+		assert.match(workflow, /digest: \$\{\{ steps\.pack\.outputs\.digest \}\}/u);
 	});
 
 	it("keeps deployment and App credentials on ephemeral clean runners", () => {

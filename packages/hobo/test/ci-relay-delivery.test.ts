@@ -91,6 +91,7 @@ type Harness = Readonly<{
 	home: string;
 	deployed: RelaySourcePin[];
 	probed: string[];
+	finalized: string[];
 	clock: { now: number };
 }>;
 
@@ -109,6 +110,7 @@ async function harness(): Promise<Harness> {
 		home,
 		deployed: [],
 		probed: [],
+		finalized: [],
 		clock: { now: Date.UTC(2026, 10, 12, 12) },
 	};
 }
@@ -443,7 +445,7 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		expect(h.probed).toContain(`${PRODUCTION}/readyz`);
 	}, 60_000);
 
-	it("does not let an injected finalization hook outlive its run", async () => {
+	it("refuses, before deploying, a production run without a finalizer once a staged run injected the hook", async () => {
 		const h = await harness();
 		const stagedPreview = await deliver(h, "preview");
 		expect(stagedPreview.ok).toBe(true);
@@ -458,43 +460,126 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 		};
 		const nextPreview = await deliver(h, "preview", { source: nextSource });
 		expect(nextPreview.ok).toBe(true);
-		const withFinalizationHook: DeliveryModule = {
-			...records,
-			pipelines: records.pipelines.map((pipelineRecord) => ({
-				...pipelineRecord,
-				nodes: pipelineRecord.nodes.map((pipelineNode) =>
-					pipelineRecord.name === HOBO_CI_COMPONENTS.relay.pipeline &&
-					pipelineNode.name === "production"
-						? {
-								...pipelineNode,
-								hooks: [
-									...pipelineNode.hooks,
-									create(HookRecordSchema, {
-										kind: HookKind.SUITE,
-										point: HookPoint.AFTER_QUALIFIED,
-										ref: "relay:finalize-promotion",
-									}),
-								],
-							}
-						: pipelineNode,
-				),
-			})),
-		};
-		const later = await deliver(h, "production", {
-			source: nextSource,
-			records: withFinalizationHook,
-		});
-		expect(later.ok, later.ok ? "" : later.message).toBe(false);
+		const later = await deliver(h, "production", { source: nextSource });
+		expect(later.ok).toBe(false);
 		if (later.ok) return;
-		expect(later.code).toBe(RELAY_DELIVERY_REFUSAL.promotionRefused);
-		expect(later.message).toContain(
-			"The relay finalization suite has no finalizer configured",
-		);
+		expect(later.code).toBe(RELAY_DELIVERY_REFUSAL.recordsInvalid);
+		expect(later.message).toContain("HOBO_CI_RELAY_STAGED_PRODUCTION=true");
+		expect(h.deployed.map((pin) => pin.sha)).toEqual([
+			SHA,
+			SHA,
+			"3".repeat(40),
+		]);
 	}, 180_000);
+
+	it.each([
+		["no finalizer configured", undefined],
+		[
+			"a finalizer configured",
+			async () =>
+				({
+					ok: false as const,
+					code: "HOBO_CI_TEST_FINALIZER",
+					message: "must not run",
+				}) as const,
+		],
+	])(
+		"refuses records that declare the finalization hook themselves, with %s",
+		async (_case, finalizePromotion) => {
+			const h = await harness();
+			const stagedPreview = await deliver(h, "preview");
+			expect(stagedPreview.ok).toBe(true);
+			const withFinalizationHook: DeliveryModule = {
+				...records,
+				pipelines: records.pipelines.map((pipelineRecord) => ({
+					...pipelineRecord,
+					nodes: pipelineRecord.nodes.map((pipelineNode) =>
+						pipelineRecord.name === HOBO_CI_COMPONENTS.relay.pipeline &&
+						pipelineNode.name === "production"
+							? {
+									...pipelineNode,
+									hooks: [
+										...pipelineNode.hooks,
+										create(HookRecordSchema, {
+											kind: HookKind.SUITE,
+											point: HookPoint.AFTER_QUALIFIED,
+											ref: "relay:finalize-promotion",
+										}),
+									],
+								}
+							: pipelineNode,
+					),
+				})),
+			};
+			const outcome = await deliver(h, "production", {
+				records: withFinalizationHook,
+				...(finalizePromotion !== undefined
+					? { finalizePromotion }
+					: undefined),
+			});
+			expect(outcome.ok).toBe(false);
+			if (outcome.ok) return;
+			expect(outcome.code).toBe(RELAY_DELIVERY_REFUSAL.recordsInvalid);
+			expect(outcome.message).toContain(
+				"ref is reserved for hobo ci deploy's own injection",
+			);
+			expect(h.deployed).toEqual([
+				{ repository: "Hobo-Labs/HoBo", ref: "main", sha: SHA },
+			]);
+		},
+		120_000,
+	);
+
+	it("returns a finalizer's failure as the delivery's own result", async () => {
+		const h = await harness();
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const outcome = await deliver(h, "production", {
+			finalizePromotion: async () => ({
+				ok: false as const,
+				code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+				message: "the public origin never became healthy for the commit",
+				data: { rollback: "completed" },
+			}),
+		});
+		expect(outcome.ok).toBe(false);
+		if (outcome.ok) return;
+		expect(outcome.code).toBe("HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED");
+		expect(outcome.message).toContain("never became healthy");
+		expect(outcome.realization).toMatchObject({
+			data: { rollback: "completed" },
+		});
+	}, 120_000);
+
+	it("retries a finished staged promotion from the durable handover without deploying again", async () => {
+		const h = await harness();
+		expect((await deliver(h, "preview")).ok).toBe(true);
+		const finalizer = async ({
+			handover,
+		}: {
+			readonly handover: Readonly<Record<string, string>>;
+		}) => {
+			h.finalized.push(String(handover.deploymentId));
+			return undefined;
+		};
+		const first = await deliver(h, "production", {
+			finalizePromotion: finalizer,
+		});
+		expect(first.ok, first.ok ? "" : first.message).toBe(true);
+		const retry = await deliver(h, "production", {
+			finalizePromotion: finalizer,
+		});
+		expect(retry.ok, retry.ok ? "" : retry.message).toBe(true);
+		expect(h.deployed).toHaveLength(2);
+		expect(h.finalized).toEqual(["dpl_2", "dpl_2"]);
+	}, 240_000);
 
 	it("never finalizes another promotion's candidate when a newer promotion replaced the Camp's Set", async () => {
 		const h = await harness();
-		const other = { repository: "Hobo-Labs/HoBo", ref: "main", sha: "3".repeat(40) };
+		const other = {
+			repository: "Hobo-Labs/HoBo",
+			ref: "main",
+			sha: "3".repeat(40),
+		};
 		expect((await deliver(h, "preview")).ok).toBe(true);
 		const finalized: string[] = [];
 		const promoted = await deliver(h, "production", {
@@ -513,9 +598,10 @@ describe("deliverRelay: HoBo's relay delivered by @hobo/cd", () => {
 				return undefined;
 			},
 		});
-		expect(promotedOther.ok, promotedOther.ok ? "" : promotedOther.message).toBe(
-			true,
-		);
+		expect(
+			promotedOther.ok,
+			promotedOther.ok ? "" : promotedOther.message,
+		).toBe(true);
 		expect(finalized).toHaveLength(2);
 		const retried = await deliver(h, "production", {
 			finalizePromotion: async () => {
