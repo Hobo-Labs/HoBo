@@ -1,42 +1,26 @@
 {
   "schemaVersion": 1,
   "id": "design-system-contract",
-  "title": "Design system contract is agent-followable",
+  "title": "Source-based visual token checks",
   "experiences": [
     "ux",
     "dx"
   ],
   "personas": [
-    "product-app-developer",
-    "product-agent-operator",
-    "product-platform-engineer",
-    "product-coding-agent",
-    "product-end-user",
-    "product-designer",
-    "role-developers",
-    "role-devsecops",
-    "role-finops",
-    "role-platform-engineers",
-    "role-sre"
+    "product-designer"
   ],
   "interfaces": [
-    "cli",
-    "mcp",
-    "web"
+    "cli"
   ],
   "driver": "cli",
   "surfaces": [
-    "pnpm run design:lint",
-    "pnpm run docs:design-lint"
+    "pnpm run design:lint"
   ],
   "tags": [
     "@optimizexp",
     "@ux",
     "@dx"
   ],
-  "generatedFromSeed": true,
-  "seedDigest": "535490c46dce4f66",
-  "personaResolution": "explicit --personas",
   "bindings": {
     "steps": "steps/bindings.steps.ts",
     "implementations": "steps/implementations.ts",
