@@ -33,7 +33,8 @@ over conflicting repository workflow guidance.
 
 Agent edit hooks run the common source policy for Claude Code, Codex, Cursor,
 and Copilot. Standalone documentation comments follow the same rule. Run
-`pnpm run source:guard -- --worktree` when checking manually;
+`pnpm run source:guard -- --worktree` when checking manually, including ignored
+agent artifacts in nested projects;
 the pre-commit hook checks staged changes. The guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.

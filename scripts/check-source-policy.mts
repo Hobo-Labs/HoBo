@@ -148,16 +148,25 @@ function renameSources(args: string[]): Map<string, string> {
 function untrackedFiles(mode: Mode): string[] {
 	if (mode.kind !== "worktree") return [];
 	const untracked = git(["ls-files", "--others", "--exclude-standard", "-z"]);
-	const ignoredAgentArtifacts = git([
-		"ls-files",
-		"--others",
-		"--ignored",
-		"--exclude-standard",
-		"-z",
-		"--",
-		".sdlc",
-		".impeccable",
-	]);
+	const ignoredAgentArtifacts = execFileSync(
+		"git",
+		[
+			"ls-files",
+			"--others",
+			"--ignored",
+			"--exclude-standard",
+			"-z",
+			"--",
+			":(glob)**/.sdlc/**",
+			":(glob)**/.impeccable/**",
+			":(glob)**/.optimizexp/**",
+		],
+		{
+			encoding: "utf8",
+			maxBuffer: 64 * 1024 * 1024,
+			stdio: ["ignore", "pipe", "pipe"],
+		},
+	);
 	return `${untracked}${ignoredAgentArtifacts}`.split("\0").filter(Boolean);
 }
 
@@ -399,12 +408,19 @@ export function commentViolations(
 	});
 }
 
+function isExperiencePlanningArtifact(file: string): boolean {
+	return /(?:^|\/)\.optimizexp\/(?:backlog\/|(?:INIT\.md|init-report\.json|experience-catalog\.json)$|personas\/[^/]+\.md$|features\/[^/]+\/(?:EXPERIENCE|SEED|README)\.md$|runs\/[^/]+\/(?:INCOMPLETE\.md|backlog\.json)$)/iu.test(
+		file,
+	);
+}
+
 export function documentViolation(
 	file: string,
 	text: string,
 ): string | undefined {
 	const sourceFile = sourcePath(file);
 	if (
+		isExperiencePlanningArtifact(sourceFile) ||
 		/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/|.*\.mdx?$)/iu.test(
 			sourceFile,
 		) ||
@@ -442,7 +458,8 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
 		const sourceFile = sourcePath(file);
 		if (
-			(/\.mdx?$/iu.test(sourceFile) &&
+			((isExperiencePlanningArtifact(sourceFile) ||
+				/\.mdx?$/iu.test(sourceFile)) &&
 				parents.every((parent) => parent.files.has(file))) ||
 			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(sourceFile)
 		) {
