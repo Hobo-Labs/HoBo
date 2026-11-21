@@ -322,13 +322,14 @@ describe("pr-fabric reuse routing", () => {
 	const compositeSteps = () =>
 		asList(asObject(routeAction.runs)?.steps)?.map(asObject) ?? [];
 
-	it("limits the hobo-ci route job to reading Actions and repository contents", () => {
+	it("limits the hobo-ci route job to reading Actions, contents, and pull requests", () => {
 		assert.deepEqual(asObject(routeJob()?.permissions), {
 			actions: "read",
 			contents: "read",
+			"pull-requests": "read",
 		});
 		const keys = Object.keys(asObject(routeJob()?.permissions) ?? {});
-		assert.deepEqual(keys.sort(), ["actions", "contents"]);
+		assert.deepEqual(keys.sort(), ["actions", "contents", "pull-requests"]);
 	});
 
 	it("invokes the route action only from the trusted base checkout", () => {
@@ -347,6 +348,10 @@ describe("pr-fabric reuse routing", () => {
 				!asObject(step?.with)?.path,
 		);
 		assert.ok(trusted && candidate);
+		assert.equal(
+			asText(asObject(trusted.with)?.ref),
+			"${{ steps.routing-base.outputs.sha }}",
+		);
 		const trustedSparse =
 			asText(asObject(trusted.with)?.["sparse-checkout"]) ?? "";
 		const candidateSparse =

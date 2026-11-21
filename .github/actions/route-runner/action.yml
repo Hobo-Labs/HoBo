@@ -236,7 +236,7 @@ runs:
     # The script and its policy come from the trusted base checkout, so a pull
     # request cannot vouch for itself with its own copy of either.
     - id: pr-fabric
-      if: inputs.include-own-run != 'true'
+      if: inputs.include-own-run != 'true' && github.event_name == 'merge_group'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
@@ -245,13 +245,9 @@ runs:
       run: |
         set -uo pipefail
         no_reuse() {
-          echo "::notice title=hobo-ci-pr-fabric-reuse::pr-fabric reuse: no: $1"
+          echo "::warning title=hobo-ci-pr-fabric-reuse::pr-fabric reuse: no: $1"
           echo "reuse=false" >> "$GITHUB_OUTPUT"
         }
-        if [ "${GITHUB_EVENT_NAME}" != "merge_group" ]; then
-          no_reuse "not a merge group"
-          exit 0
-        fi
         if [ -z "${GITHUB_ACTION_PATH:-}" ] || ! action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"; then
           no_reuse "the route action directory cannot be resolved"
           exit 0

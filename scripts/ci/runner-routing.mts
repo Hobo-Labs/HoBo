@@ -376,7 +376,9 @@ export function parseRunnerRouting(
 	const boxRunner = asBoolean(top?.boxRunner);
 	const mainWorkspaceParallelCap = whole(top?.mainWorkspaceParallelCap, 1, 8);
 	const mainGate = parseMainGate(top?.mainGate);
-	const mergeGroup = parseMergeGroup(top?.mergeGroup);
+	const mergeGroup = parseMergeGroup(top?.mergeGroup) ?? {
+		reusePrFabric: false,
+	};
 	const verdict = parseVerdict(top?.verdict);
 	const box = parseBox(top?.box);
 	const externalPools = listOf(top?.externalPools, 32, parsePool);
@@ -388,7 +390,6 @@ export function parseRunnerRouting(
 		boxRunner !== undefined &&
 		mainWorkspaceParallelCap !== undefined &&
 		mainGate &&
-		mergeGroup &&
 		verdict &&
 		box &&
 		externalPools &&
