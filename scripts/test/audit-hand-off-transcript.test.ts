@@ -33,6 +33,7 @@ describe("audit-hand-off-transcript entry", () => {
 	it("accepts only transcript paths from argv", () => {
 		const source = readFileSync(scriptPath, "utf8");
 		expect(source).toMatch(/process\.argv\.slice\(2\)/u);
+		expect(source).toMatch(/arg\.startsWith\("-"\)/u);
 	});
 
 	it("default options stay at least as strict as the legacy CLI defaults", () => {
