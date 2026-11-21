@@ -227,6 +227,12 @@ Reservation IDs are unique. Identical pending reserve retries return the
 original commitment without another debit; changed payloads fail. Terminal or
 expired IDs cannot authorize new work. The dispatch-and-reserve helper persists
 its replay input in the reservation, so a retry retains the original winner.
+Imported reservations are checked before use: free and rate consumption cannot
+exceed the reservation's units, a reservation can hold at most one concurrency
+slot, and credit entries must be unique and fit the reserved units under the
+ledger's conservative rounding. These checks reject impossible restoration
+amounts; callers must still trust or reconstruct the history proving that the
+recorded quantities were actually deducted.
 
 Ledger sequence values must be nonnegative safe integers. A mutation that would
 exceed `Number.MAX_SAFE_INTEGER` throws before changing the ledger; expiry
@@ -271,6 +277,21 @@ stateDiagram-v2
   s0 --> s3: return prior result
   s0 --> s4: mutate if space remains
   s1 --> s5: finish expiry
+```
+
+The consumption model checks an abstract free, rate, credit, or slot quantity
+in 129 states. Its projection hides 48 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Snapshot loaded
+  s1: Reservation pending
+  s2: Snapshot rejected
+  s3: Consumption restored
+  [*] --> s0
+  s0 --> s2: validate recorded consumption
+  s0 --> s1: validate recorded consumption
+  s1 --> s3: release once
 ```
 
 ### Recovering a blocked IaC route

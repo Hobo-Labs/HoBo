@@ -1836,6 +1836,11 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			)
 		)
 			throw new TypeError("invalid reservation status");
+		if (reservation.consumption !== undefined)
+			validateReservationConsumption(
+				reservation.consumption,
+				reservation.units,
+			);
 		if (reservation.reservedCost !== undefined)
 			nonNegativeNumber(
 				reservation.reservedCost,
@@ -1870,6 +1875,53 @@ export function parseCreditLedgerView(ledgerView): CreditLedgerView {
 			);
 	}
 	return clone(ledgerView);
+}
+
+function validateReservationConsumption(consumption, units: number): void {
+	assertObject(consumption, "reservation.consumption");
+	for (const key of ["freeHeadroom", "rateUnits"]) {
+		const amount = consumption[key];
+		if (
+			amount !== undefined &&
+			(!optionalNonNegativeNumber(amount) || amount > units)
+		)
+			throw new TypeError(
+				`reservation.consumption.${key} exceeds reserved units or is invalid`,
+			);
+	}
+	if (
+		consumption.concurrencySlots !== undefined &&
+		(!Number.isInteger(consumption.concurrencySlots) ||
+			consumption.concurrencySlots < 0 ||
+			consumption.concurrencySlots > 1)
+	)
+		throw new TypeError(
+			"reservation.consumption.concurrencySlots must be zero or one",
+		);
+	if (consumption.credits === undefined) return;
+	if (!Array.isArray(consumption.credits))
+		throw new TypeError("reservation.consumption.credits must be an array");
+	const creditIds = new Set<string>();
+	let remaining = units;
+	for (const credit of consumption.credits) {
+		assertObject(credit, "reservation.consumption.credit");
+		const creditId = requireString(
+			credit.creditId,
+			"reservation.consumption.creditId",
+		);
+		if (creditIds.has(creditId))
+			throw new TypeError("duplicate reservation.consumption credit");
+		creditIds.add(creditId);
+		const used = requirePositiveNumber(
+			credit.units,
+			"reservation.consumption.credit units",
+		);
+		if (used > remaining)
+			throw new TypeError(
+				"reservation.consumption credits exceed reserved units",
+			);
+		remaining = subtractUpper(remaining, used);
+	}
 }
 
 function parseHysteresis(hysteresis): HysteresisInput | null {

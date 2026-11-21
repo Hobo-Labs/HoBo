@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 const root=process.env.BUDGET_ROUTER_VERIFY_PACKAGE_ROOT ?? path.resolve('packages/dispatcher');
 const config=fileURLToPath(new URL('../models/vitest.config.mts',import.meta.url));
 const vitest=path.resolve('node_modules/vitest/vitest.mjs');
-const args=[vitest,'run','test/budget-routing.property.test.ts','test/budget-safety.test.ts','test/money-overflow.test.ts','test/ledger-sequence-safety.test.ts','--root',root,'--config',config,'--maxWorkers=1','--no-file-parallelism'];
+const args=[vitest,'run','test/budget-routing.property.test.ts','test/budget-safety.test.ts','test/money-overflow.test.ts','test/ledger-sequence-safety.test.ts','test/ledger-consumption-safety.test.ts','--root',root,'--config',config,'--maxWorkers=1','--no-file-parallelism'];
 const result=spawnSync(process.execPath,args,{stdio:'inherit'});
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
