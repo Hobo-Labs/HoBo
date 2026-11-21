@@ -6,6 +6,7 @@ import { dirname, extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { frontmatterType } from "./check-no-committed-plans.mts";
+import { type CommentDialect, lexComments } from "./source-comment-lexer.mts";
 
 type Comment = { start: number; end: number; text: string };
 type CommentLocation = { first: number; last: number; text: string };
@@ -25,7 +26,29 @@ const CODE_EXTENSIONS = new Set([
 	".mjs",
 	".cjs",
 ]);
+const LEXER_LANGUAGES = new Map<string, CommentDialect>([
+	[".cue", "cue"],
+	[".proto", "proto"],
+	[".wit", "wit"],
+	[".prisma", "prisma"],
+	[".sql", "sql"],
+	[".toml", "toml"],
+]);
 const OTHER_LANGUAGES = new Map([
+	[".yaml", "yaml"],
+	[".yml", "yaml"],
+	[".rs", "rust"],
+	[".go", "go"],
+	[".c", "c"],
+	[".h", "c"],
+	[".cpp", "cpp"],
+	[".cc", "cpp"],
+	[".hpp", "cpp"],
+	[".java", "java"],
+	[".kt", "kotlin"],
+	[".rb", "ruby"],
+	[".lua", "lua"],
+	[".swift", "swift"],
 	[".sh", "bash"],
 	[".bash", "bash"],
 	[".py", "python"],
@@ -40,7 +63,7 @@ const AST_GREP = join(
 const GENERATED_OR_VENDOR =
 	/^(?:external\/|tools\/oxlint\/anti-slop\/)|(?:^|\/)(?:_generated|dist|node_modules)\//u;
 const DIRECTIVE =
-	/^(?:\/\/\/\s*|\/\/\s*|\/\*+\s*(?:\*\s*)?|#\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:)/iu;
+	/^(?:\/\/go:[A-Za-z][A-Za-z0-9_]*\b|\/\/(?:line|export|extern)\s|\/\/ (?:#cgo|\+build)\s|(?:\/\/\/\s*|\/\/\s*|\/\*+!?\s*(?:\*\s*)?|#\s*|--\s*|<!--\s*)(?:@ts-(?:check|nocheck|ignore|expect-error)\b|@(?:jsx|jsxFrag|jsxImportSource|jsxRuntime|vitest-environment)\b|(?:eslint|oxlint|biome|prettier|stylelint)-(?:disable|enable|ignore)\b|(?:istanbul|c8|v8)\s+ignore\b|(?:shellcheck|pyright|ruff|fmt|type|pragma):|buf:(?:lint|breaking):|atlas:(?:nolint|lint|txmode|delimiter|assert)\b|cue:generate\b|yaml-language-server:|noqa\b|[#@]__(?:PURE|NO_SIDE_EFFECTS)__|[#@]\s*sourceMappingURL=|<reference\b|@license\b|SPDX-License-Identifier:|copyright\b|domain-view:|parallel-type-allowed:|public-contract:))/iu;
 const DEFERRED = /\b(?:TODO|FIXME|HACK|XXX|TBD)\b/iu;
 
 function git(args: string[]): string {
@@ -189,10 +212,20 @@ export function commentsIn(file: string, text: string): Comment[] {
 
 function commentLocations(file: string, text: string): CommentLocation[] {
 	const extension = extname(file).toLowerCase();
+	const lexicalLanguage = LEXER_LANGUAGES.get(extension);
+	if (lexicalLanguage) {
+		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+		return lexComments(text, lexicalLanguage).map((comment) => ({
+			text: comment.text,
+			first: source.getLineAndCharacterOfPosition(comment.start).line + 1,
+			last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
+		}));
+	}
 	const extensionLanguage = OTHER_LANGUAGES.get(extension);
 	const language =
 		extensionLanguage ??
-		(!CODE_EXTENSIONS.has(extension) && file.startsWith(".githooks/")
+		(!CODE_EXTENSIONS.has(extension) &&
+		(file.startsWith(".githooks/") || (!extension && text.startsWith("#!")))
 			? /^#![^\n]*\bpython(?:\d+(?:\.\d+)?)?\b/u.test(text)
 				? "python"
 				: /^#![^\n]*\b(?:node|deno|bun)\b/u.test(text)
@@ -207,29 +240,39 @@ function commentLocations(file: string, text: string): CommentLocation[] {
 			last: source.getLineAndCharacterOfPosition(comment.end - 1).line + 1,
 		}));
 	}
-	const result = spawnSync(
-		AST_GREP,
-		["run", "--stdin", "--lang", language, "--kind", "comment", "--json"],
-		{
-			input: text,
-			encoding: "utf8",
-			maxBuffer: 64 * 1024 * 1024,
-		},
-	);
-	if (result.error || (result.status !== 0 && result.status !== 1)) {
-		throw new Error(
-			`cannot parse ${file}: ${result.error?.message ?? result.stderr}`,
+	const kinds =
+		language === "kotlin"
+			? ["line_comment", "multiline_comment"]
+			: language === "swift"
+				? ["comment", "multiline_comment"]
+				: ["rust", "java"].includes(language)
+					? ["line_comment", "block_comment"]
+					: ["comment"];
+	return kinds.flatMap((kind) => {
+		const result = spawnSync(
+			AST_GREP,
+			["run", "--stdin", "--lang", language, "--kind", kind, "--json"],
+			{
+				input: text,
+				encoding: "utf8",
+				maxBuffer: 64 * 1024 * 1024,
+			},
 		);
-	}
-	const matches: {
-		text: string;
-		range: { start: { line: number }; end: { line: number; column: number } };
-	}[] = JSON.parse(result.stdout);
-	return matches.map((match) => ({
-		text: match.text,
-		first: match.range.start.line + 1,
-		last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
-	}));
+		if (result.error || (result.status !== 0 && result.status !== 1)) {
+			throw new Error(
+				`cannot parse ${file}: ${result.error?.message ?? result.stderr}`,
+			);
+		}
+		const matches: {
+			text: string;
+			range: { start: { line: number }; end: { line: number; column: number } };
+		}[] = JSON.parse(result.stdout);
+		return matches.map((match) => ({
+			text: match.text,
+			first: match.range.start.line + 1,
+			last: match.range.end.line + (match.range.end.column === 0 ? 0 : 1),
+		}));
+	});
 }
 
 export function commentViolations(
@@ -248,11 +291,7 @@ export function commentViolations(
 		};
 		if (!intersects(added) || !parentAdditions.every(intersects)) return [];
 		if (first === 1 && comment.text.startsWith("#!")) return [];
-		if (
-			!DEFERRED.test(comment.text) &&
-			(DIRECTIVE.test(comment.text) || comment.text.startsWith("/*!"))
-		)
-			return [];
+		if (!DEFERRED.test(comment.text) && DIRECTIVE.test(comment.text)) return [];
 		return [
 			{
 				file,
@@ -269,6 +308,8 @@ export function documentViolation(
 	file: string,
 	text: string,
 ): string | undefined {
+	if (/(?:^|\/)\.impeccable\/(?:design\.json|surfaces\/)/iu.test(file))
+		return "planning and design documents are not allowed";
 	if (!/\.mdx?$/iu.test(file)) return undefined;
 	if (/(?:^|\/)(?:design|designs|plans|roadmaps)\//iu.test(file))
 		return "planning and design documents are not allowed";
@@ -299,20 +340,25 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 	for (const file of files) {
 		if (GENERATED_OR_VENDOR.test(file)) continue;
 		if (
-			/\.mdx?$/iu.test(file) &&
-			parents.every((parent) => parent.files.has(file))
+			(/\.mdx?$/iu.test(file) &&
+				parents.every((parent) => parent.files.has(file))) ||
+			/(?:^|\/)\.impeccable\/(?:design\.json$|surfaces\/)/iu.test(file)
 		) {
 			const reason = documentViolation(file, contents(mode, file));
 			if (reason) violations.push({ file, line: 1, message: reason });
 		}
 		const extension = extname(file).toLowerCase();
 		if (
+			extension &&
 			!file.startsWith(".githooks/") &&
 			!CODE_EXTENSIONS.has(extension) &&
+			!LEXER_LANGUAGES.has(extension) &&
 			!OTHER_LANGUAGES.has(extension)
 		)
 			continue;
 		const text = contents(mode, file);
+		if (!extension && !file.startsWith(".githooks/") && !text.startsWith("#!"))
+			continue;
 		const source = renamed.get(file);
 		const added = untracked.includes(file)
 			? new Set(text.split(/\r?\n/u).map((_, index) => index + 1))
