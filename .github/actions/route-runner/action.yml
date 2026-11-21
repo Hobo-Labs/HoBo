@@ -5,9 +5,9 @@ description: >-
   is. When the queue cannot be read, or the script cannot run,
   GitHub-hosted is chosen and a warning says why. Auto-routed pull-request
   batches require verified public standard-runner pricing or a verified fleet
-  batch claim. Automatic merge-group batches use a verified public standard
-  runner unless explicitly pinned. If routing fails, these batches stop before
-  queuing jobs. Pinned to the fleet, it stays there.
+  batch claim. Automatic release merge-group batches use a verified public
+  standard runner unless explicitly pinned. If routing fails, these batches stop
+  before queuing jobs. Pinned to the fleet, it stays there.
   What the fleet can take is not passed in: the script reads the routing slip
   the box relay writes to refs/hobo/routing-slip (ADR-0181) and the routing
   policy committed in .hobo/ci.json (runnerRouting), so the workflow must check
@@ -69,6 +69,13 @@ outputs:
       that script out), else `false`. Committed
       runnerRouting.mainGate.reuseMergeQueue `false` turns reuse off.
     value: ${{ steps.reuse.outputs.reuse || 'false' }}
+  pr-fabric-green:
+    description: >-
+      `true` on a merge group whose tree a green same-repo pull_request run of
+      this workflow already tested at the queue entry's base tip
+      (pr-fabric-reuse.mts, run from the trusted base checkout), else `false`.
+      Committed runnerRouting.mergeGroup.reusePrFabric `false` turns reuse off.
+    value: ${{ steps.pr-fabric.outputs.reuse || 'false' }}
 runs:
   using: composite
   steps:
@@ -116,6 +123,58 @@ runs:
         if ! "${node_bin}" --no-warnings "${verifier}" \
           || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
           not_attested "the verification script failed"
+        fi
+    # Never fails and never blocks: anything short of a verified green
+    # pull-request Fabric run of this tree at this base is reuse=false, and the
+    # merge group runs its gate jobs as before. The script and the policy it
+    # reads come from the trusted base checkout beside this action, never from
+    # the candidate's own tree.
+    - id: pr-fabric
+      # A second ask later in a run only re-reads the fleet; the reuse answer is the first one.
+      if: inputs.include-own-run != 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        HEAD_SHA: ${{ github.sha }}
+        BASE_SHA: ${{ github.event.merge_group.base_sha }}
+      run: |
+        set -uo pipefail
+        no_reuse() {
+          echo "pr-fabric reuse: no: $1"
+          echo "reuse=false" >> "$GITHUB_OUTPUT"
+        }
+        if [ "${GITHUB_EVENT_NAME}" != "merge_group" ]; then
+          no_reuse "not a merge group"
+          exit 0
+        fi
+        if [ -z "${GITHUB_ACTION_PATH:-}" ] || ! action_root="$(cd "${GITHUB_ACTION_PATH}/../../.." && pwd -P)"; then
+          no_reuse "the route action directory cannot be resolved"
+          exit 0
+        fi
+        reuse_script="${action_root}/scripts/ci/pr-fabric-reuse.mts"
+        if [ ! -f "${reuse_script}" ]; then
+          no_reuse "this workflow does not reuse pull-request Fabric runs"
+          exit 0
+        fi
+        cache="${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"
+        node_bin=""
+        for candidate in "$(command -v node || true)" \
+          "${cache}"/node/24.*/*/bin/node "${cache}"/node/22.*/*/bin/node; do
+          [ -x "${candidate}" ] || continue
+          if "${candidate}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1)'; then
+            node_bin="${candidate}"
+            break
+          fi
+        done
+        if [ -z "${node_bin}" ]; then
+          no_reuse "no Node 22.18 or later on this machine"
+          exit 0
+        fi
+        # The script writes the output itself; if it dies first, say no here.
+        outputs_before="$(wc -c < "$GITHUB_OUTPUT")"
+        if ! "${node_bin}" --no-warnings "${reuse_script}" \
+          || [ "$(wc -c < "$GITHUB_OUTPUT")" = "${outputs_before}" ]; then
+          no_reuse "the reuse check failed"
         fi
     - id: route
       shell: bash

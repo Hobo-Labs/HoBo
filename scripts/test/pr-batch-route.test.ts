@@ -41,32 +41,36 @@ const readPublic: typeof fetch = async (url) => {
 };
 
 describe("PR batch routing", () => {
-	it("keeps the merge-group release and CI batches off an unreserved fleet", async () => {
-		for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
-			const merge = {
-				...env,
-				GITHUB_EVENT_NAME: "merge_group",
-				GITHUB_WORKFLOW_REF: `Hobo-Labs/HoBo/.github/workflows/${workflow}@refs/heads/main`,
-			};
-			for (const args of [[], ["--include-own-run", "true"]]) {
-				const decision = await main(args, merge, {
-					routingConfig: routing("auto"),
-					fetch: readPublic,
-				});
-				assert.deepEqual(
-					[decision.tier, decision.runner],
-					["github", "ubuntu-24.04"],
-				);
-				assert.match(
-					decision.reason,
-					/merge-group batch.*no verified fleet capacity/u,
-				);
-			}
+	it("keeps merge-group release batches off an unreserved fleet", async () => {
+		const merge = {
+			...env,
+			GITHUB_EVENT_NAME: "merge_group",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/main",
+		};
+		for (const args of [[], ["--include-own-run", "true"]]) {
+			const decision = await main(args, merge, {
+				routingConfig: routing("auto"),
+				fetch: readPublic,
+			});
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["github", "ubuntu-24.04"],
+			);
+			assert.match(
+				decision.reason,
+				/merge-group batch.*no verified fleet capacity/u,
+			);
 		}
 	});
 
-	it("refuses the merge-group fallback when public compute cannot be verified", async () => {
-		const merge = { ...env, GITHUB_EVENT_NAME: "merge_group" };
+	it("refuses the merge-group release fallback when public compute cannot be verified", async () => {
+		const merge = {
+			...env,
+			GITHUB_EVENT_NAME: "merge_group",
+			GITHUB_WORKFLOW_REF:
+				"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/main",
+		};
 		await assert.rejects(
 			main([], merge, {
 				routingConfig: routing("auto"),
@@ -92,14 +96,20 @@ describe("PR batch routing", () => {
 		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
 	});
 
-	it("does not send an optional box into an unreserved merge-group batch", async () => {
+	it("does not send an optional box into an unreserved merge-group release batch", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "merge-batch-route-"));
 		try {
 			const output = join(dir, "output");
 			writeFileSync(output, "");
 			await main(
 				[],
-				{ ...env, GITHUB_EVENT_NAME: "merge_group", GITHUB_OUTPUT: output },
+				{
+					...env,
+					GITHUB_EVENT_NAME: "merge_group",
+					GITHUB_WORKFLOW_REF:
+						"Hobo-Labs/HoBo/.github/workflows/release-hobo.yml@refs/heads/main",
+					GITHUB_OUTPUT: output,
+				},
 				{
 					routingConfig: JSON.stringify({
 						...config,
@@ -324,6 +334,7 @@ describe("PR batch routing", () => {
 		);
 		for (const job of [
 			"ci-deps-image",
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",

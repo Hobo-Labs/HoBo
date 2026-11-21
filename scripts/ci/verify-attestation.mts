@@ -233,7 +233,13 @@ export async function verifyFromApi(input: {
 		head: input.headSha,
 		base: baseSha,
 	});
-	if (!verdict.attested || !verdict.jobs.includes("pr_gate_validation"))
+	if (
+		!verdict.attested ||
+		!(
+			verdict.jobs.includes("pr_gate_plan") ||
+			verdict.jobs.includes("pr_gate_validation")
+		)
+	)
 		return verdict;
 	return (await shadowPolicyMatches({ read, repo, baseTree, tree }))
 		? verdict
