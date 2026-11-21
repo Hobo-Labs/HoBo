@@ -515,7 +515,7 @@
 				{
 					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "pnpm exec turbo run build --filter=@hobo/cd^... --filter=@hobo/ci^... --filter=@hobo/ci-gh-actions^... --filter=@hobo/cli^... --filter=@hobo/core^... --filter=@hobo/hobo^... --filter=@hobo/provider-cloudflare^... --filter=@hobo/provider-lakebed^... --filter=@hobo/provider-neon^... --filter=@hobo/provider-netlify^... --filter=@hobo/provider-oci-registry^... --filter=@hobo/provider-prisma-postgres^... --filter=@hobo/provider-upstash^... --filter=@hobo/runtime-local^... --filter=@hobo/schema-tools^... --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}",
+					"run": "pnpm exec turbo run build --filter=@hobo/cd^... --filter=@hobo/ci^... --filter=@hobo/ci-gh-actions^... --filter=@hobo/cli^... --filter=@hobo/core^... --filter=@hobo/hobo^... --filter=@hobo/hobo-ci^... --filter=@hobo/provider-cloudflare^... --filter=@hobo/provider-lakebed^... --filter=@hobo/provider-neon^... --filter=@hobo/provider-netlify^... --filter=@hobo/provider-oci-registry^... --filter=@hobo/provider-prisma-postgres^... --filter=@hobo/provider-upstash^... --filter=@hobo/runtime-local^... --filter=@hobo/schema-tools^... --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}",
 					"local": "run"
 				},
 				{
