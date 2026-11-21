@@ -127,6 +127,13 @@ async function scratchPlugin(
 			),
 		);
 	}
+	await writeFile(
+		path.join(schemaDir, "MANIFEST.sha256"),
+		await readFile(
+			path.join(repoRoot, "tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256"),
+			"utf8",
+		),
+	);
 	return { pluginRoot, repoRoot: scratchRepoRoot };
 }
 
@@ -201,6 +208,23 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 				),
 			).toHaveLength(1);
 		}
+	});
+
+	it("tolerates a one-height squash merge lag on push outside exact PR pins", () => {
+		vi.stubEnv("GITHUB_EVENT_NAME", "push");
+		expect(
+			manifestSemanticIssues(
+				{ ...validManifest, version: "0.0.0-alpha.399" },
+				"0.0.0-alpha.400",
+			),
+		).toEqual([]);
+		expect(
+			manifestSemanticIssues(
+				{ ...validManifest, version: "0.0.0-alpha.398" },
+				"0.0.0-alpha.400",
+			),
+		).toHaveLength(1);
+		vi.unstubAllEnvs();
 	});
 
 	it("rejects a newer height when PR validation requires an exact pin", () => {
@@ -874,13 +898,18 @@ describe("agent-tooling extract drift gate", () => {
 });
 
 describe("release-train version pin commit selection", () => {
-	it("prefers GITHUB_HEAD_SHA over the checked-out merge ref", async () => {
-		const { repoRoot } = await scratchMergeRepo();
-		const headSha = "b".repeat(40);
-		stubCiEnvironment("merge_group", headSha);
-		expect(versionPinCommitIsh(repoRoot)).toBe(headSha);
-		stubCiEnvironment("pull_request", headSha);
-		expect(versionPinCommitIsh(repoRoot)).toBe(headSha);
+	it("prefers a verified GITHUB_HEAD_SHA over the checked-out merge ref", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		stubCiEnvironment("merge_group", prHead);
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+		stubCiEnvironment("pull_request", prHead);
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+	});
+
+	it("ignores an unverified GITHUB_HEAD_SHA", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		stubCiEnvironment("pull_request", "b".repeat(40));
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
 	});
 
 	it("resolves the PR branch tip (HEAD^2) for pull_request and merge_group checkouts", async () => {

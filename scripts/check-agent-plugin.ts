@@ -229,10 +229,25 @@ export function manifestSemanticIssues(
 				versionFromReleaseTrain,
 			);
 			if (comparison < 0) {
-				issues.push({
-					file: "plugin.json",
-					message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; update it (scripts/ci/compute-release-version.mts)`,
-				});
+				const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+				const manifestHeight = FIXED_ALPHA_HEIGHT_PATTERN.exec(
+					manifest.version,
+				)?.[1];
+				const trainHeight = FIXED_ALPHA_HEIGHT_PATTERN.exec(
+					versionFromReleaseTrain,
+				)?.[1];
+				const squashMergeLag =
+					eventName === "push" &&
+					options.exactReleaseTrain !== true &&
+					manifestHeight !== undefined &&
+					trainHeight !== undefined &&
+					Number(manifestHeight) === Number(trainHeight) - 1;
+				if (!squashMergeLag) {
+					issues.push({
+						file: "plugin.json",
+						message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; update it (scripts/ci/compute-release-version.mts)`,
+					});
+				}
 			} else if (comparison > 0 && options.exactReleaseTrain === true) {
 				issues.push({
 					file: "plugin.json",
@@ -648,6 +663,11 @@ function listSubdirectories(dir: string): string[] {
 }
 
 const VENDORED_SCHEMA_MANIFEST = /^([0-9a-f]{64}) {2}([A-Za-z0-9._-]+)$/u;
+const PINNED_VENDORED_SCHEMA_FILES = [
+	"plugin.schema.json",
+	"mcp.schema.json",
+] as const;
+const FIXED_ALPHA_HEIGHT_PATTERN = /^0\.0\.0-alpha\.(\d+)$/u;
 
 function sha256File(full: string): string {
 	return createHash("sha256").update(readFileSync(full)).digest("hex");
@@ -674,7 +694,29 @@ function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 				});
 				continue;
 			}
+			let pinnedName = false;
+			for (const pinned of PINNED_VENDORED_SCHEMA_FILES) {
+				if (name === pinned) {
+					pinnedName = true;
+					break;
+				}
+			}
+			if (!pinnedName) {
+				issues.push({
+					file: "tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
+					message: `lists unexpected file ${JSON.stringify(name)}`,
+				});
+				continue;
+			}
 			expectedDigests.set(name, digest);
+		}
+		for (const file of PINNED_VENDORED_SCHEMA_FILES) {
+			if (!expectedDigests.has(file)) {
+				issues.push({
+					file: "tools/agent-plugins/schemas/1.0.0/MANIFEST.sha256",
+					message: `missing digest entry for ${file}`,
+				});
+			}
 		}
 	}
 	for (const [file, id] of [
@@ -691,13 +733,20 @@ function vendoredSchemaIssues(repoRoot: string): AgentPluginIssue[] {
 			continue;
 		}
 		const expected = expectedDigests.get(file);
-		if (expected !== undefined) {
-			const actual = sha256File(full);
-			if (actual !== expected) {
+		if (existsSync(manifestPath)) {
+			if (expected === undefined) {
 				issues.push({
 					file: `tools/agent-plugins/schemas/1.0.0/${file}`,
-					message: `digest ${actual} does not match MANIFEST.sha256 (${expected})`,
+					message: "has no MANIFEST.sha256 digest entry",
 				});
+			} else {
+				const actual = sha256File(full);
+				if (actual !== expected) {
+					issues.push({
+						file: `tools/agent-plugins/schemas/1.0.0/${file}`,
+						message: `digest ${actual} does not match MANIFEST.sha256 (${expected})`,
+					});
+				}
 			}
 		}
 		const schema = PluginVendoredSchema.safeParse(
@@ -860,9 +909,24 @@ function pluginManifestStaged(repoRoot: string): boolean {
 	return result.status === 0 && (result.stdout ?? "").trim().length > 0;
 }
 
+function trustedGithubHeadSha(
+	repoRoot: string,
+	raw: string | undefined,
+): string | undefined {
+	const headSha = raw?.trim();
+	if (headSha === undefined || headSha.length === 0) return undefined;
+	if (!/^[0-9a-f]{40,64}$/iu.test(headSha)) return undefined;
+	const verified = spawnSync("git", ["cat-file", "-e", `${headSha}^{commit}`], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	if (verified.status !== 0) return undefined;
+	return headSha.toLowerCase();
+}
+
 export function versionPinCommitIsh(repoRoot: string): string {
-	const headSha = process.env.GITHUB_HEAD_SHA?.trim();
-	if (headSha !== undefined && headSha.length > 0) return headSha;
+	const headSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
+	if (headSha !== undefined) return headSha;
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
 	if (eventName === "pull_request" || eventName === "merge_group") {
 		const prHead = spawnSync("git", ["rev-parse", "HEAD^2"], {

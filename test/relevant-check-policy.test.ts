@@ -932,7 +932,7 @@ test("unrelated docs, config, or skill edits do not select the Agent Plugins gat
 	}
 });
 
-	test("bundle-input changes select the plugin bundle build and smoke test", () => {
+test("bundle-input changes select the plugin bundle build and smoke test", () => {
 	for (const file of [
 		"plugins/hobo/src/bitwarden-sdk-napi.mts",
 		"scripts/build-agent-plugin.mts",
@@ -956,10 +956,7 @@ test("unrelated docs, config, or skill edits do not select the Agent Plugins gat
 
 test("plugin bundle test still runs when packages/hobo co-changes", () => {
 	const { checks } = plan(
-		[
-			"packages/hobo/src/foo.ts",
-			"plugins/hobo/src/bitwarden-sdk-napi.mts",
-		],
+		["packages/hobo/src/foo.ts", "plugins/hobo/src/bitwarden-sdk-napi.mts"],
 		{ staged: true },
 	);
 	assert.ok(
