@@ -88,17 +88,34 @@ const BUILD = "Build the packages the scripts tests import";
 
 const RELATIVE_IMPORT = /(?:from|import\()\s*["'](\.{1,2}\/[^"']+)["']/gu;
 
+function packageNameAt(file: string): string | undefined {
+	let dir = dirname(file);
+	while (dir === "packages" || dir.startsWith("packages/")) {
+		const manifest = join(dir, "package.json");
+		if (existsSync(manifest)) {
+			const name = asText(
+				asObject(JSON.parse(readFileSync(manifest, "utf8")) as JsonValue)?.name,
+			);
+			return name ?? undefined;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return undefined;
+}
+
 /**
- * The workspace packages whose `src/` a scripts test reaches through relative
- * imports, directly or through other files under scripts/. Their sources import
- * other workspace packages, which resolve through those packages' built dist/.
+ * Workspace packages a scripts test reaches through relative imports, including
+ * `dist/` (scripts/ci/*.mts imports built files, not `src/`). Nested packages
+ * (`packages/providers/provider-vercel`) own their own package.json.
  */
 function packagesScriptsTestsImport(): readonly string[] {
 	const queue = readdirSync("scripts/test")
 		.filter((name) => name.endsWith(".test.ts"))
 		.map((name) => join("scripts/test", name));
 	const seen = new Set<string>();
-	const directories = new Set<string>();
+	const names = new Set<string>();
 	for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
 		if (seen.has(file)) continue;
 		seen.add(file);
@@ -106,9 +123,12 @@ function packagesScriptsTestsImport(): readonly string[] {
 			RELATIVE_IMPORT,
 		)) {
 			const target = normalize(join(dirname(file), specifier));
-			const owner = /^packages\/(.+?)\/src\//u.exec(target)?.[1];
-			if (owner !== undefined) directories.add(owner);
-			else if (target.startsWith("scripts/")) {
+			if (target.startsWith("packages/")) {
+				const name = packageNameAt(target);
+				if (name !== undefined) names.add(name);
+				continue;
+			}
+			if (target.startsWith("scripts/")) {
 				const source = [
 					target,
 					target.replace(/\.js$/u, ".ts"),
@@ -118,14 +138,7 @@ function packagesScriptsTestsImport(): readonly string[] {
 			}
 		}
 	}
-	return [...directories].sort().map((directory) => {
-		const parsed: JsonValue = JSON.parse(
-			readFileSync(join("packages", directory, "package.json"), "utf8"),
-		);
-		const name = asText(asObject(parsed)?.name);
-		assert.ok(name, `packages/${directory}/package.json has no name`);
-		return name;
-	});
+	return [...names].sort();
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -239,21 +252,25 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.doesNotMatch(build.run, /--filter="\.\.\.\[\$\{BASE\}\]"/u);
 		const imported = packagesScriptsTestsImport();
 		assert.ok(imported.includes("@hobo/hobo"));
+		assert.ok(imported.includes("@hobo/provider-vercel"));
+		assert.ok(imported.includes("@hobo/adapter-infisical"));
 		for (const name of imported) {
 			assert.ok(
-				build.run.includes(`--filter=${name}`),
-				`the no-package-change branch misses --filter=${name}`,
+				build.run.includes(`--filter=${name}...`),
+				`the no-package-change branch misses --filter=${name}...`,
 			);
 			assert.equal(
 				build.run.includes(`--filter=${name}^...`),
 				false,
-				`the build step still walks ^... for ${name}`,
+				`the build step still walks dependents (^...) for ${name}`,
 			);
 		}
 		assert.match(
 			build.run,
 			/No package source changed since \$\{BASE\}; materialize import-root dist from Turbo cache/u,
 		);
+		assert.match(build.run, /ROOTS=\(/u);
+		assert.match(build.run, /"\$\{ROOTS\[@\]\}"/u);
 		assert.match(build.run, /"\$\{FILTERS\[@\]\}"/u);
 		const names = scripts.steps.map((entry) => entry.uses || entry.name);
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));

@@ -97,18 +97,17 @@ the sum of its files):
   filter for that synchronize looked at the merge-from-main commit (attestation
   blobs only). GitHub evaluates the **default-branch** copy of `paths`, so
   globs added only in this PR cannot self-trigger until merge. The workflow
-  file and `scripts/lib/release-hobo-path-filters.mts` are already on main's
-  list, yet a later synchronize that edited both still skipped (run
-  44870024997 is the tag-filtered `push` miss; no `pull_request` run). The
-  lane files now sit at the **top** of both `pull_request.paths` and
-  `merge_group.paths` (workflow, `scripts/test/release-integration*`, the
-  job-scope script, and `scripts/test/release-freight.test.ts`, which is the
-  file that starts sibling PR 2930). A branch push still mints a 0-job
-  `push` miss (tags-only). That run used to share a concurrency group with
-  `pull_request`, so the PR lane never started. The group now includes
-  `github.event_name`. A forward commit that edits
-  `scripts/test/release-relevant-push.test.ts` (also on main's filter)
-  re-measures the four shards and `HoBo release PR gate`.
+  file, `scripts/lib/release-hobo-path-filters.mts`, and
+  `scripts/test/release-freight.test.ts` are already on main's list, yet
+  later synchronizes that edited them still skipped (run 44870024997 is the
+  tag-filtered `push` miss; no `pull_request` run). The lane files now sit at
+  the **top** of both `pull_request.paths` and `merge_group.paths`, including
+  `packages/hobo/vitest.release-integration.config.ts` and
+  `packages/hobo/test/support/release-integration-test-files.ts` — the suite
+  config other PRs successfully trigger on, and which this PR now edits so
+  the default-branch list matches. A branch push still mints a 0-job `push`
+  miss (tags-only). That run used to share a concurrency group with
+  `pull_request`; the group now includes `github.event_name`.
 - `--passWithNoTests` is gone: four shards are pinned to the four suite files,
   so an empty glob fails the shard instead of greening a dead lane. Prune/save
   run only on shard 0. The job `needs: [route]` so it does not wait on the

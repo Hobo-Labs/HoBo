@@ -921,13 +921,13 @@ jobs:
           turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
-      # Some scripts tests import a package's src/ (scripts/manual/hosting-anonymous-acceptance.mts
-      # imports packages/hobo/src), whose own imports resolve through other packages' dist/.
-      # Restore Turbo cache first. Package source changes use affected-lanes
-      # (a two-commit tree diff, no turbo merge-base on a shallow fetch). When
-      # no package source changed, only the import roots run so a cache hit
-      # restores dist/ without rebuilding the world. Empty BASE fails closed.
-      # scripts/test/scripts-tests-job.test.ts derives the root list from imports.
+      # Some scripts tests import a package's src/ or dist/ (scripts/ci/*.mts
+      # imports packages/.../dist). Restore Turbo cache first. Package source
+      # changes use affected-lanes (a two-commit tree diff, no turbo merge-base
+      # on a shallow fetch) unioned with the import-root dependency closures
+      # (`name...`) so a cache hit on one package cannot omit a dep's dist/.
+      # Empty BASE fails closed. scripts/test/scripts-tests-job.test.ts derives
+      # the root list from relative imports, including dist/.
       - name: Build the packages the scripts tests import
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6
@@ -954,27 +954,43 @@ jobs:
               | node --experimental-strip-types --no-warnings \
                 scripts/ci/affected-lanes.mts --base="$BASE"
           )
+          # Trailing `...` is the package plus its dependencies. A cache hit
+          # on an import root alone does not restore a dep's dist (hosted
+          # 44872153461 missed provider-vercel, adapter-infisical, provider-redaction).
+          # Always union the roots with any affected filters so a packages/
+          # edit cannot drop dist/ the scripts tests still import.
+          ROOTS=(
+            --filter=@hobo/adapter-infisical...
+            --filter=@hobo/bindings...
+            --filter=@hobo/cd...
+            --filter=@hobo/ci...
+            --filter=@hobo/ci-gh-actions...
+            --filter=@hobo/cli...
+            --filter=@hobo/core...
+            --filter=@hobo/hobo...
+            --filter=@hobo/provider-cloudflare...
+            --filter=@hobo/provider-github...
+            --filter=@hobo/provider-lakebed...
+            --filter=@hobo/provider-neon...
+            --filter=@hobo/provider-netlify...
+            --filter=@hobo/provider-npm...
+            --filter=@hobo/provider-oci-registry...
+            --filter=@hobo/provider-prisma-postgres...
+            --filter=@hobo/provider-redaction...
+            --filter=@hobo/provider-upstash...
+            --filter=@hobo/provider-vercel...
+            --filter=@hobo/runtime-local...
+            --filter=@hobo/schema-tools...
+            --filter=@hobo/secret-store-claim...
+          )
           if [ ${#FILTERS[@]} -eq 0 ]; then
             echo "No package source changed since ${BASE}; materialize import-root dist from Turbo cache"
             pnpm exec turbo run build \
-              --filter=@hobo/cd \
-              --filter=@hobo/ci \
-              --filter=@hobo/ci-gh-actions \
-              --filter=@hobo/cli \
-              --filter=@hobo/core \
-              --filter=@hobo/hobo \
-              --filter=@hobo/provider-cloudflare \
-              --filter=@hobo/provider-lakebed \
-              --filter=@hobo/provider-neon \
-              --filter=@hobo/provider-netlify \
-              --filter=@hobo/provider-oci-registry \
-              --filter=@hobo/provider-prisma-postgres \
-              --filter=@hobo/provider-upstash \
-              --filter=@hobo/runtime-local \
-              --filter=@hobo/schema-tools \
+              "${ROOTS[@]}" \
               --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
           else
             pnpm exec turbo run build \
+              "${ROOTS[@]}" \
               "${FILTERS[@]}" \
               --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
           fi
