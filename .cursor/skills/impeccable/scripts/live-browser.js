@@ -22,6 +22,7 @@
   const TOKEN = window.__IMPECCABLE_TOKEN__;
   const PORT = window.__IMPECCABLE_PORT__;
   const APP_ROOT = window.__IMPECCABLE_APP_ROOT__ || null;
+  const INJECTION_FRAMEWORK = document.currentScript?.getAttribute('data-impeccable-live-framework') || '';
   if (!TOKEN || !PORT) {
     window.__IMPECCABLE_LIVE_INIT__ = false; // reset so the real load can init
     return;
@@ -7857,20 +7858,7 @@
       nodes.push(node);
     };
     add(document.getElementById(PREFIX + '-root'));
-    [
-      PREFIX + '-highlight',
-      PREFIX + '-tooltip',
-      PREFIX + '-bar',
-      PREFIX + '-picker',
-      PREFIX + '-params-panel',
-      PREFIX + '-insert-line',
-      PREFIX + '-insert-placeholder',
-      PREFIX + '-insert-create-tooltip',
-      PREFIX + '-annot',
-      PREFIX + '-design-host',
-      PREFIX + '-toast',
-      PREFIX + '-shader',
-    ].forEach((id) => add(uiGetById(id)));
+    LIVE_UI_COMPONENT_IDS.forEach((id) => add(uiGetById(id)));
     return nodes;
   }
 
@@ -7894,10 +7882,8 @@
   }
 
   function shouldUseAncestorCropShaderProxy(el) {
-    // TODO: Enable this proxy for React/Vue/etc. adapters once their live
-    // preview mounts are covered by the same shader regression checks.
-    const adapter = String(window.__IMPECCABLE_LIVE_ADAPTER__ || '').toLowerCase();
-    if (adapter === 'svelte' || adapter === 'sveltekit') return true;
+    const adapter = String(window.__IMPECCABLE_LIVE_ADAPTER__ || INJECTION_FRAMEWORK).toLowerCase();
+    if (['svelte', 'sveltekit', 'react', 'vue', 'tanstack-start', 'nuxt', 'nextjs', 'vite-generic', 'astro'].includes(adapter)) return true;
     if (isFrameworkComponentPreviewMode(currentPreviewMode) || svelteComponentSession) return true;
     const wrapper = el?.closest?.('[data-impeccable-variants]');
     return isFrameworkComponentPreviewMode(wrapper?.dataset?.impeccablePreview);
@@ -7936,7 +7922,7 @@
   async function captureElementFromRenderedAncestor(ms, el, opts) {
     const doc = el.ownerDocument || document;
     const captureRoot = findShaderProxyCaptureRoot(el);
-    if (!captureRoot) throw new Error('No painted ancestor for Svelte shader proxy');
+    if (!captureRoot) throw new Error('No painted ancestor for shader capture');
     const rootCanvas = await ms.domToCanvas(captureRoot, opts);
     const S = opts.scale;
     const er = el.getBoundingClientRect();
@@ -7982,7 +7968,7 @@
         try {
           return await hideCaptureChromeForShaderProxy(() => captureElementFromRenderedAncestor(ms, el, opts));
         } catch (err) {
-          console.warn('[impeccable] Svelte ancestor crop capture failed, falling back to element capture:', err);
+          console.warn('[impeccable] Ancestor crop capture failed, falling back to element capture:', err);
         }
       }
       const bg = resolveCanvasBackground(el);

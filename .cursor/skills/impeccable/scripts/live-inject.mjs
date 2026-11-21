@@ -265,7 +265,11 @@ Output (JSON):
     const withoutOld = revertCspMeta(removeTag(content, config.commentSyntax));
     // Per-file, not per-project: a Vite app can hold an .astro partial, and a
     // framework project's entry template is often plain HTML.
-    const scriptAttrs = resolveSourceTraits(relFile).injectScriptAttrs;
+    const sourceAttrs = resolveSourceTraits(relFile).injectScriptAttrs || '';
+    const frameworkAttrs = resolved?.framework.name
+      ? `data-impeccable-live-framework="${resolved.framework.name}" `
+      : '';
+    const scriptAttrs = sourceAttrs + frameworkAttrs;
     const withTag = insertTag(withoutOld, config, port, token, scriptAttrs);
     if (withTag === withoutOld) {
       return { file: relFile, error: 'insertion_point_not_found', anchor: config.insertBefore || config.insertAfter };
