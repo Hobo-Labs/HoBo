@@ -182,6 +182,11 @@ describe("the relay deploy gate", () => {
 		for (const halfConfigured of [
 			{ ...JSON.parse(legacy), deployProjectId: "proj-deploy" },
 			{ ...JSON.parse(legacy), deployCredentialIdentityId: "reader" },
+			{
+				...JSON.parse(legacy),
+				deployOidcSubject:
+					"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:untrusted",
+			},
 		])
 			assert.equal(
 				storeBindingState(JSON.stringify(halfConfigured)),

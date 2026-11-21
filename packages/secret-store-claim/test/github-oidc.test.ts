@@ -179,8 +179,15 @@ describe("the relay layout's deploy trust", () => {
 			sub: reader.subject,
 			aud: reader.audiences[0] ?? "",
 		};
+		const writerToken = {
+			...writer.claims,
+			sub: writer.subject,
+			aud: writer.audiences[0] ?? "",
+		};
 		expect(admits(reader, readerToken)).toBe(true);
+		expect(admits(writer, writerToken)).toBe(true);
 		expect(admits(writer, readerToken)).toBe(false);
+		expect(admits(reader, writerToken)).toBe(false);
 		expect(
 			admits(reader, {
 				...readerToken,
@@ -191,6 +198,20 @@ describe("the relay layout's deploy trust", () => {
 		expect(
 			admits(reader, {
 				...readerToken,
+				workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/caller.yml@refs/heads/main",
+			}),
+		).toBe(false);
+		expect(
+			admits(writer, {
+				...writerToken,
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/other.yml@refs/heads/main",
+			}),
+		).toBe(false);
+		expect(
+			admits(writer, {
+				...writerToken,
 				workflow_ref:
 					"Hobo-Labs/HoBo/.github/workflows/caller.yml@refs/heads/main",
 			}),

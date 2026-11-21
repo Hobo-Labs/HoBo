@@ -449,6 +449,10 @@ build `packages/ci-vercel` (or the chosen `--root-directory`), and Vercel's
 GitHub integration must be able to read the
 repository.
 
+A credential-free legacy binding may omit `deployOidcSubject` or carry the
+exact writer subject. Any other nonempty subject is malformed and makes the
+workflow gate fatal rather than a credential-free skip.
+
 What it deliberately does not do:
 
 - **Set a secret.** A `--set` must name a field the app's `config()` schema

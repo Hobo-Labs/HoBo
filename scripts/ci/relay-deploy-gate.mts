@@ -101,12 +101,13 @@ export function storeBindingState(text: string | undefined): StoreBindingState {
 		(deployProjectId === "") !== (deployCredentialIdentityId === "")
 	)
 		return "unreadable";
+	if (deployOidcSubject !== "" && deployOidcSubject !== DEPLOY_WRITER_SUBJECT)
+		return "unreadable";
 	if (deployProjectId === "") return "unconfigured";
 	if (
 		record.projectId === deployProjectId ||
 		deployCredentialIdentityId === record.deployIdentityId ||
-		deployCredentialIdentityId === record.relayIdentityId ||
-		deployOidcSubject !== DEPLOY_WRITER_SUBJECT
+		deployCredentialIdentityId === record.relayIdentityId
 	)
 		return "unreadable";
 	return "bound";
