@@ -261,11 +261,9 @@ Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/tec
 
 Use the owning surface's implemented tokens and shared components. For visual
 changes, run `pnpm run design:lint`, the affected package's rendered-surface
-tests, and impeccable `critique` / `audit` (and `polish` when they find P0/P1)
-on the changed surface — the same always-on expectation as the `impeccable` row
-in the agent tooling table. The gate checks contrast in the site and connection
-UI palettes directly from their CSS. Status-page and secret-capture tests cover
-their rendered tokens and accessibility behavior.
+tests, and the applicable visual review. The gate checks contrast in the site
+and connection UI palettes directly from their CSS. Status-page and secret
+capture tests cover their rendered tokens and accessibility behavior.
 
 Do not create design documents or use plugin commands that generate them.
 

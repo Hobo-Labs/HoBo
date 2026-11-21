@@ -334,6 +334,7 @@ describe("PR batch routing", () => {
 		);
 		for (const job of [
 			"ci-deps-image",
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",

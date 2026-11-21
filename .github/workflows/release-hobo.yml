@@ -300,6 +300,7 @@ jobs:
       run: ${{ steps.version.outputs.run == 'true' }}
       release_ref: ${{ steps.version.outputs.release_ref }}
       release_sha: ${{ steps.version.outputs.release_sha }}
+      turbo_base: ${{ steps.scope.outputs.from }}
     steps:
       - name: Main train release after green CI (nbgv)
         if: >-
@@ -813,19 +814,16 @@ jobs:
       contents: read
       packages: read
     env:
-      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_TURBO_BASE: ${{ needs.release-main-train-gate.outputs.run == 'true' && needs.release-main-train-gate.outputs.turbo_base || '' }}
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
+      HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
-    # One at a time. Job containers on a box share its Docker daemon, and the
-    # legs share tags there: the hobo-cli and hobo-mcp legs build
-    # `hobo-sdk:candidate` (hobo-mcp also `hobo-cli:candidate`), and every leg
-    # ends by removing its own `<image>:candidate`
-    # (scripts/ci/build-release-oci-image.mts).
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 6
       matrix:
         image_id: [hobo-sdk, hobo-codegen, hobo-cli, hobo-mcp, hobo-ci-serve, hobo-site]
     steps:
@@ -843,6 +841,11 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
+      - name: Fetch previous release for affected builds
+        if: env.HOBO_RELEASE_TURBO_BASE != ''
+        run: |
+          set -euo pipefail
+          git fetch --unshallow --filter=blob:none origin main "refs/tags/${HOBO_RELEASE_TURBO_BASE}:refs/tags/${HOBO_RELEASE_TURBO_BASE}"
       - uses: $/.github/actions/ci-runner-preflight
       - name: Ensure digest-pinned content-keyed toolchain image
         timeout-minutes: 5
@@ -934,13 +937,9 @@ jobs:
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
-    # One image per job: all six built and pushed in one job ran past the
-    # 20-minute limit when one push stalled (run 43144784243). Only the train's
-    # images (release-images). One at a time, because legs on one box share the
-    # `*:candidate` tags.
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 6
       matrix:
         image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     permissions:
@@ -949,10 +948,12 @@ jobs:
       id-token: write
       attestations: write
     env:
-      HOBO_RELEASE_TURBO_BASE: ""
+      HOBO_RELEASE_TURBO_BASE: ${{ needs.release-main-train-gate.outputs.run == 'true' && needs.release-main-train-gate.outputs.turbo_base || '' }}
       HOBO_RELEASE_VERSION: ${{ needs.release-main-train-gate.outputs.release_ref != '' && needs.release-main-train-gate.outputs.release_ref || github.ref_name || inputs.release_version }}
       HOBO_RELEASE_CHECKOUT_REF: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
       HOBO_RELEASE_REVISION: ${{ needs.release-main-train-gate.outputs.release_sha != '' && needs.release-main-train-gate.outputs.release_sha || github.sha }}
+      HOBO_RELEASE_CANDIDATE_SUFFIX: -${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.image_id }}
+      HOBO_RELEASE_STAGING_ID: ${{ github.run_id }}-${{ github.job }}-${{ matrix.image_id }}-${{ github.run_attempt }}
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -968,6 +969,11 @@ jobs:
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
+      - name: Fetch previous release for affected builds
+        if: env.HOBO_RELEASE_TURBO_BASE != ''
+        run: |
+          set -euo pipefail
+          git fetch --unshallow --filter=blob:none origin main "refs/tags/${HOBO_RELEASE_TURBO_BASE}:refs/tags/${HOBO_RELEASE_TURBO_BASE}"
       - uses: $/.github/actions/ci-runner-preflight
       - run: pnpm run pins:fetch ts-autocode
       - uses: $/.github/actions/pnpm-store
@@ -1047,7 +1053,7 @@ jobs:
       attestations: write
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 6
       matrix:
         image_id: ${{ fromJSON(needs.release-images.outputs.images) }}
     steps:
@@ -1332,10 +1338,12 @@ jobs:
       # tip of main), because the freshness gate reads it back.
       - name: Record, promote and publish the Pages site (hobo deploy)
         if: steps.fresh.outputs.deploy == 'true'
+        timeout-minutes: 21
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
+          HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"
         run: node --no-warnings scripts/deploy-site.mts --release-freight site/dist
 
   release-tag:
