@@ -161,11 +161,6 @@ describe("redactProviderText", () => {
 		["\u212a", "\u212ask_live_SECRB2SKabcdefghijkl"],
 		["ſ", "ſBearer SECRB2BEARER"],
 	])("finds a credential after %s, which `i` with `u` folds to an ASCII letter", (letter, text) => {
-		// The letter is part of the key's run now, so a prefixed key takes it
-		// with it; a JWT keeps it as the run's lead. The bearer row may also
-		// take the trailing word: the glued-bearer shape has no boundary, so a
-		// `bearer` inside the first match's value is searched again and chains
-		// onto the run after it — over-redaction, never a revealed credential.
 		const out = redactProviderText(`x ${text} y`, 10_000);
 		expect(out).not.toMatch(/SECR|ghp_|sk_live|Bearer/u);
 		expect([

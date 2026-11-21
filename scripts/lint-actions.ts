@@ -304,7 +304,6 @@ function stepLines(block: readonly string[], at: number): readonly string[] {
 	return block.slice(at, end);
 }
 
-/** A job's steps as line arrays, comment lines aside. */
 function jobSteps(block: readonly string[]): readonly (readonly string[])[] {
 	return block
 		.reduce<number[]>((starts, line, index) => {
@@ -316,7 +315,6 @@ function jobSteps(block: readonly string[]): readonly (readonly string[])[] {
 		);
 }
 
-/** A step's `env:` entries, trimmed. */
 function envEntries(step: readonly string[]): readonly string[] {
 	const at = step.findIndex((line) => line.trim() === "env:");
 	if (at < 0) return [];
@@ -328,7 +326,6 @@ function envEntries(step: readonly string[]): readonly string[] {
 	return entries;
 }
 
-/** A line that runs the built CLI, not one that only names it. */
 function cliLine(line: string): boolean {
 	return (
 		line.includes("packages/hobo/dist/bin/hobo.js") &&

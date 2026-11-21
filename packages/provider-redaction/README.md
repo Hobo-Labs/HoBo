@@ -19,7 +19,8 @@ The harness that holds it linear and never weaker than the copies it replaced
 ## Provider redaction
 
 `@hobo/provider-redaction` is the one redactor for provider text. `redactProviderText`
-replaces the shared credential shapes (private key, JWT, bearer token, an
+replaces the shared credential shapes (private key, JWT, bearer token —
+including a scheme glued into a longer word, `token%3DBearer …` —, an
 `Authorization` header in any scheme, `Basic` and `Token` credentials,
 connection strings, URL credentials, secret-named keys, prefixed keys) with
 `[redacted]`, turns control characters into spaces, and cuts to `maxLength`; it

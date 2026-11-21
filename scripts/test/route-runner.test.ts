@@ -2329,10 +2329,6 @@ describe("the workflows that route", () => {
 			"scripts/ci/route-runner.mts",
 			"scripts/ci/runner-routing.mts",
 		]);
-		// relay-deploy.yml is deliberately unrouted: its OIDC jobs trust an
-		// oidc_sub pinned to main and run GitHub-hosted, so no route job may
-		// decide their runner. Name the exact set so a workflow joining or
-		// leaving it is a reviewed change, not a silent drift past a floor.
 		assert.deepEqual([...routed].sort(), [
 			".github/workflows/hobo-ci.yml",
 			".github/workflows/pricing-ci.yml",
