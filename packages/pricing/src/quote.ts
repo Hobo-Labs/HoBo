@@ -260,11 +260,9 @@ export function quoteScenario(
 	return quoteWithOrdering(
 		scenario,
 		version === "pricing-rating/v1" ? legacyPricingOrder : codeUnitPricingOrder,
-		version === "pricing-rating/v1"
+		version === "pricing-rating/v1" || version === "pricing-rating/v2"
 			? legacyPricingTimeOrder
-			: version === "pricing-rating/v2"
-				? utcPricingTimeOrder
-				: exactPricingTimeOrder,
+			: exactPricingTimeOrder,
 		version,
 	);
 }
@@ -396,7 +394,7 @@ function quoteWithOrdering(
 			strictSourceValues,
 			selectorPerWorkload,
 			rejectAmbiguousLatest,
-			strictTiers,
+			strictTiers || timeOrder === utcPricingTimeOrder,
 		);
 		const candidate = rateSnapshot(
 			scenario,
@@ -408,7 +406,7 @@ function quoteWithOrdering(
 			strictSourceValues,
 			selectorPerWorkload,
 			rejectAmbiguousLatest,
-			strictTiers,
+			strictTiers || timeOrder === utcPricingTimeOrder,
 		);
 		if (
 			candidate.currency.length === 0 ||

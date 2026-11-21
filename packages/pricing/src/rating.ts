@@ -1025,6 +1025,7 @@ export function rateSnapshot(
 			(workload) => workload.agreementRef === agreementRef,
 		);
 		if (
+			selectorPerWorkload &&
 			agreementWorkloads.some(
 				(workload) => workload.productRef !== agreement.productId,
 			)
@@ -1056,6 +1057,7 @@ export function rateSnapshot(
 				),
 			);
 			for (const key of [...selectors].sort()) {
+				if (timeOrder !== utcPricingTimeOrder && key === "class") continue;
 				const selected = chargeSelectorValue(workload, key, undefined);
 				if (
 					agreementWorkloads.some(
@@ -1244,7 +1246,7 @@ export function rateSnapshot(
 					measured,
 					consumption,
 				);
-			const billed = priceUsage(
+				const billed = priceUsage(
 					charge,
 					allowance.quantity,
 					currency,
