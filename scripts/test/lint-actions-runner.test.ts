@@ -83,7 +83,7 @@ function lintFile(file: string, text: string): number | null {
 }
 
 const routeJob =
-	"  route:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
+	"  route:\n    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'hobo-trunk' || 'ubuntu-24.04' }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n      - id: route\n        uses: ./.github/actions/route-runner\n";
 
 function lintRunner(
 	file: string,

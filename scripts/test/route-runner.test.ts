@@ -436,6 +436,15 @@ const slipApi =
 	async (url, init) => {
 		asked.push(String(url));
 		headers.push(new Headers(init?.headers));
+		if (String(url).endsWith("/repos/Hobo-Labs/HoBo"))
+			return Response.json({
+				id: 1274791462,
+				owner: { id: 344805935 },
+				private: false,
+				visibility: "public",
+				disabled: false,
+				archived: false,
+			});
 		if (String(url).endsWith("/git/ref/hobo/routing-slip"))
 			return message === undefined
 				? Response.json({ message: "Not Found" }, { status: 404 })
@@ -1495,6 +1504,10 @@ describe("the script reading the slip", () => {
 		GITHUB_EVENT_NAME: "merge_group",
 		GITHUB_WORKFLOW_REF:
 			"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/gh-readonly-queue/main",
+		GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+		GITHUB_REPOSITORY_ID: "1274791462",
+		GITHUB_REPOSITORY_OWNER_ID: "344805935",
+		GITHUB_TOKEN: "token",
 	};
 
 	it("routes merge-group CI to hobo-trunk on recent trunk pickup", async () => {
