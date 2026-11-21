@@ -338,7 +338,9 @@ describe("PR batch routing", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests-build",
 			"scripts-tests",
+			"release-hobo-integration",
 		]) {
 			const body =
 				workflow.split(`  ${job}:`)[1]?.split(/\n  [A-Za-z0-9_-]+:/u)[0] ?? "";
@@ -347,7 +349,11 @@ describe("PR batch routing", () => {
 	});
 
 	it("checks out the exact workflow bytes for both batch scopes", () => {
-		for (const name of ["hobo-ci.yml", "release-hobo.yml"]) {
+		for (const name of [
+			"hobo-ci.yml",
+			"release-hobo.yml",
+			"release-hobo-pr.yml",
+		]) {
 			const source = readFileSync(
 				join(root, ".github/workflows", name),
 				"utf8",

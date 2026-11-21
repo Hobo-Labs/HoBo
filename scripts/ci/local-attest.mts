@@ -989,21 +989,17 @@ export function localContext(state: {
 		if (path === "github.sha") return target.mergeCommit;
 		if (path === "github.base_ref")
 			return eventValue("pull_request", target.baseBranch);
+		if (path === "github.ref") return "refs/heads/local";
 		if (path === "github.event.pull_request.base.sha")
 			return eventValue("pull_request", target.base);
-		// The merge commit's second parent, as on GitHub's PR merge ref.
 		if (path === "github.event.pull_request.head.sha")
 			return eventValue("pull_request", target.head);
 		if (path === "github.event.merge_group.base_sha")
 			return eventValue("merge_group", target.base);
-		// Not known on a developer's machine: no pull request number, no
-		// repository variables, no secrets.
 		if (path === "github.event.pull_request.number") return "";
 		if (path.startsWith("vars.") || path.startsWith("secrets.")) return "";
-		// A local run is what produces an attestation; it never has one.
-		// The remote route is checked separately by the required gate; locally,
-		// evaluate covered jobs as if that prerequisite succeeded.
 		if (path === "needs.route.result") return "success";
+		if (path === "needs.scripts-tests-build.result") return "success";
 		if (path === "needs.route.outputs.attested") return "false";
 		if (path === "needs.route.outputs.attested-jobs") return "[]";
 		if (path === "strategy.job-index" && shard) return shard.index;

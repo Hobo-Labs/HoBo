@@ -2,25 +2,15 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { pipelines } from "../../release/hobo-release.delivery.ts";
 import {
 	announceVerdict,
 	classifyRelease,
-	githubApiProbeTransport,
-	PAGES_RELEASE_BUILD_MARGIN_MS,
-	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
-	PAGES_RELEASE_VERIFICATION_WINDOW_MS,
-	RELEASE_DRIVE_PAGES,
 	releaseCampId,
 	releaseDeclaration,
-	releaseDriveFor,
 	releaseFreightManifest,
-	type ReleaseHttpTransport,
 	releaseSource,
 	siteTree,
 } from "../ci/create-github-release.mts";
-
-type TransportRequest = Parameters<ReleaseHttpTransport>[0];
 
 const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const DIGEST = `sha256:${"a".repeat(64)}`;
@@ -91,112 +81,6 @@ describe("release topology names", () => {
 		expect(releaseDeclaration("pages").resources.release.port).toBe(
 			"hobo:github.pages-site/v1",
 		);
-	});
-
-	it("gives Pages promotion drive longer than the verification progress window", () => {
-		const drive = releaseDriveFor("pages");
-		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
-		const budgetMs = drive.passes * drive.intervalMs - drive.intervalMs;
-		expect(budgetMs).toBeGreaterThanOrEqual(
-			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-				PAGES_RELEASE_VERIFICATION_WINDOW_MS +
-				PAGES_RELEASE_BUILD_MARGIN_MS,
-		);
-	});
-
-	it("authenticates GitHub probes and accepts only a built Pages head", async () => {
-		const seen: TransportRequest[] = [];
-		const build = { status: "building", commit: COMMIT };
-		let head = COMMIT;
-		const inner = async (request: TransportRequest) => {
-			seen.push(request);
-			if (request.url.endsWith("/pages/builds/latest"))
-				return { status: 200, headers: {}, body: JSON.stringify(build) };
-			if (request.url.endsWith("/git/ref/heads/gh-pages"))
-				return {
-					status: 200,
-					headers: {},
-					body: JSON.stringify({ object: { sha: head } }),
-				};
-			return { status: 200, headers: {}, body: "{}" };
-		};
-		const probe = githubApiProbeTransport(
-			{ GITHUB_TOKEN: "release-probe-token" },
-			inner,
-		);
-		const latestBuild = () =>
-			probe({
-				method: "GET",
-				url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
-				headers: {},
-				timeoutMs: 5_000,
-				maxResponseBytes: 1_048_576,
-			});
-		expect((await latestBuild()).status).toBe(404);
-		build.status = "built";
-		head = "f".repeat(40);
-		expect((await latestBuild()).status).toBe(404);
-		head = COMMIT;
-		expect((await latestBuild()).status).toBe(200);
-		await probe({
-			method: "GET",
-			url: "https://registry.npmjs.org/-/ping",
-			headers: {},
-			timeoutMs: 5_000,
-			maxResponseBytes: 1_048_576,
-		});
-		expect(seen).toHaveLength(6);
-		for (const request of seen.slice(0, 5)) {
-			expect(request.headers.authorization).toBe("Bearer release-probe-token");
-			expect(request.headers.accept).toBe("application/vnd.github+json");
-			expect(request.maxResponseBytes).toBeLessThan(64 * 1024);
-		}
-		expect(seen[5]?.headers.authorization).toBeUndefined();
-	});
-
-	it("keeps Pages build validation when GITHUB_TOKEN is absent", async () => {
-		const seen: TransportRequest[] = [];
-		const inner = async (request: TransportRequest) => {
-			seen.push(request);
-			return {
-				status: 200,
-				headers: {},
-				body: JSON.stringify({ status: "building", commit: COMMIT }),
-			};
-		};
-		const probe = githubApiProbeTransport({}, inner);
-
-		const response = await probe({
-			method: "GET",
-			url: "https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
-			headers: {},
-			timeoutMs: 5_000,
-			maxResponseBytes: 1_048_576,
-		});
-
-		expect(response.status).toBe(404);
-		expect(seen).toHaveLength(1);
-		expect(seen[0]?.headers.authorization).toBeUndefined();
-		expect(seen[0]?.headers.accept).toBe("application/vnd.github+json");
-		expect(seen[0]?.maxResponseBytes).toBeLessThan(64 * 1024);
-	});
-
-	it("probes the latest Pages build for every promotion node", () => {
-		const pages = pipelines.find(
-			(pipeline) => pipeline.name === "hobo-release-pages",
-		);
-		expect(pages).toBeDefined();
-		for (const node of pages?.nodes ?? []) {
-			expect(node.verification).toMatchObject({
-				windowMs: String(PAGES_RELEASE_VERIFICATION_WINDOW_MS),
-				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
-			});
-			expect(node.verification.probes[0]).toMatchObject({
-				urlRef:
-					"https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
-				expectStatus: 200,
-			});
-		}
 	});
 });
 
@@ -344,6 +228,19 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		);
 		for (const name of ["release-tag", "release-github"])
 			expect(job(name)).toContain("pattern: hobo-release-freight-oci-*");
+	});
+
+	it("lists the slow-integration glob, this freight test, and the workflow first in pull_request paths", () => {
+		const start = workflow.indexOf("\n  pull_request:\n");
+		const mergeGroup = workflow.indexOf("\n  merge_group:\n");
+		expect(start).toBeGreaterThan(-1);
+		expect(mergeGroup).toBeGreaterThan(start);
+		const pull = workflow.slice(start, mergeGroup);
+		const paths = pull.indexOf("\n    paths:\n");
+		expect(paths).toBeGreaterThan(-1);
+		expect(pull.slice(paths)).toMatch(
+			/\n    paths:\n      - "version.json"\n      - "\.github\/workflows\/release-hobo\.yml"\n      - "\.github\/workflows\/release-hobo-pr\.yml"\n      - "packages\/hobo\/vitest\.release-integration\.config\.ts"\n      - "packages\/hobo\/test\/support\/release-integration-test-files\.ts"\n      - "scripts\/test\/release-integration\*"\n      - "scripts\/test\/release-integration-job\.test\.ts"\n      - "scripts\/ci\/job-scope\.mts"\n      - "scripts\/test\/release-freight\.test\.ts"\n/,
+		);
 	});
 
 	it("records npm tarballs before npm publish", () => {

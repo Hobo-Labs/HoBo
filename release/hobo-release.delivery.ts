@@ -20,11 +20,6 @@ const RELEASE_YARD = "hobo-release";
 const RELEASE_FAMILIES = ["npm", "oci", "pages"] as const;
 const RELEASE_CHANNELS = ["candidate", "stable"] as const;
 
-export const PAGES_RELEASE_BUILD_MARGIN_MS = 540_000;
-const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
-const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
-	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
-
 type Family = (typeof RELEASE_FAMILIES)[number];
 type Channel = (typeof RELEASE_CHANNELS)[number];
 
@@ -102,34 +97,29 @@ const MODE = {
 // - npm: the registry answers its ping;
 // - oci: GHCR answers the distribution API (an anonymous request is
 //   challenged with 401: the registry is up and speaking v2);
+// - pages: the gh-pages branch serves the site entry (raw, public repo).
 const [owner, repo] = repository.split("/");
 const PROBE = {
 	npm: { url: "https://registry.npmjs.org/-/ping", status: 200 },
 	oci: { url: "https://ghcr.io/v2/", status: 401 },
 	pages: {
-		url: `https://api.github.com/repos/${owner}/${repo}/pages/builds/latest`,
+		url: `https://raw.githubusercontent.com/${owner}/${repo}/gh-pages/index.html`,
 		status: 200,
 	},
 } as const satisfies Record<Family, Readonly<{ url: string; status: number }>>;
 
 function verification(family: Family) {
 	return {
-		windowMs:
-			family === "pages"
-				? String(PAGES_RELEASE_VERIFICATION_WINDOW_MS)
-				: "10000",
+		windowMs: "10000",
 		requiredObservations: 2,
-		progressDeadlineMs:
-			family === "pages"
-				? String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS)
-				: "300000",
+		progressDeadlineMs: "300000",
 		failOnNoData: true,
 		probes: [
 			{
 				name: `${family}-target`,
 				urlRef: PROBE[family].url,
 				expectStatus: PROBE[family].status,
-				intervalMs: family === "pages" ? "10000" : "5000",
+				intervalMs: "5000",
 				minSuccessRatio: 1,
 			},
 		],

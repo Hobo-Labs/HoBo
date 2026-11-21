@@ -59,6 +59,7 @@ const vercelEvidenceFile = "vercel-credential-evidence.yml";
  * it reads public action repositories only and runs no repository code.
  */
 const actionsLockFile = "actions-lock.yml";
+const releaseHoboPrFile = "release-hobo-pr.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
 	actionsLockFile,
@@ -66,6 +67,7 @@ const allowedEnabled = new Set([
 	healthFile,
 	hostingEvidenceFile,
 	vercelEvidenceFile,
+	releaseHoboPrFile,
 	...activeCiFiles,
 ]);
 
@@ -541,8 +543,13 @@ function isNpmOidcHostedReleaseJob(
 ): boolean {
 	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
 	return (
-		file === "release-hobo.yml" &&
-		(jobId === "release-npm" || jobId === "release-hobo-cli") &&
+		((file === "release-hobo.yml" &&
+			(jobId === "release-npm" ||
+				jobId === "release-hobo-cli" ||
+				jobId === "release-hobo-integration")) ||
+			(file === "release-hobo-pr.yml" &&
+				jobId === "release-hobo-integration") ||
+			(file === "hobo-ci.yml" && jobId === "release-hobo-integration")) &&
 		runsOn === "ubuntu-24.04"
 	);
 }

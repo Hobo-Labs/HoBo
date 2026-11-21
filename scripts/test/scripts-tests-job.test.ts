@@ -88,17 +88,29 @@ const BUILD = "Build the packages the scripts tests import";
 
 const RELATIVE_IMPORT = /(?:from|import\()\s*["'](\.{1,2}\/[^"']+)["']/gu;
 
-/**
- * The workspace packages whose `src/` a scripts test reaches through relative
- * imports, directly or through other files under scripts/. Their sources import
- * other workspace packages, which resolve through those packages' built dist/.
- */
+function packageNameAt(file: string): string | undefined {
+	let dir = dirname(file);
+	while (dir === "packages" || dir.startsWith("packages/")) {
+		const manifest = join(dir, "package.json");
+		if (existsSync(manifest)) {
+			const name = asText(
+				asObject(JSON.parse(readFileSync(manifest, "utf8")))?.name,
+			);
+			return name ?? undefined;
+		}
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return undefined;
+}
+
 function packagesScriptsTestsImport(): readonly string[] {
 	const queue = readdirSync("scripts/test")
 		.filter((name) => name.endsWith(".test.ts"))
 		.map((name) => join("scripts/test", name));
 	const seen = new Set<string>();
-	const directories = new Set<string>();
+	const names = new Set<string>();
 	for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
 		if (seen.has(file)) continue;
 		seen.add(file);
@@ -106,9 +118,12 @@ function packagesScriptsTestsImport(): readonly string[] {
 			RELATIVE_IMPORT,
 		)) {
 			const target = normalize(join(dirname(file), specifier));
-			const owner = /^packages\/(.+?)\/src\//u.exec(target)?.[1];
-			if (owner !== undefined) directories.add(owner);
-			else if (target.startsWith("scripts/")) {
+			if (target.startsWith("packages/")) {
+				const name = packageNameAt(target);
+				if (name !== undefined) names.add(name);
+				continue;
+			}
+			if (target.startsWith("scripts/")) {
 				const source = [
 					target,
 					target.replace(/\.js$/u, ".ts"),
@@ -118,14 +133,7 @@ function packagesScriptsTestsImport(): readonly string[] {
 			}
 		}
 	}
-	return [...directories].sort().map((directory) => {
-		const parsed: JsonValue = JSON.parse(
-			readFileSync(join("packages", directory, "package.json"), "utf8"),
-		);
-		const name = asText(asObject(parsed)?.name);
-		assert.ok(name, `packages/${directory}/package.json has no name`);
-		return name;
-	});
+	return [...names].sort();
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -174,12 +182,17 @@ function scope(cwd: string, mergeGroupBase: string): string {
 describe("the scripts lane is a pull-request gate", () => {
 	it("runs pnpm run test:scripts on the routed runner for pull requests and merge groups", () => {
 		assert.equal(scripts.name, "Scripts tests");
-		assert.ok(scripts.needs.includes("route"));
+		assert.deepEqual(scripts.needs, ["route", "scripts-tests-build"]);
+		assert.ok(!scripts.needs.includes("ci-runner-image"));
 		assert.equal(scripts.runsOn, ROUTED);
 		assert.match(scripts.if, /!cancelled\(\)/u);
 		assert.match(scripts.if, /github\.event_name == 'pull_request'/u);
 		assert.match(scripts.if, /github\.event_name == 'merge_group'/u);
 		assert.match(scripts.if, /attested-jobs.*scripts-tests/u);
+		assert.match(
+			scripts.if,
+			/needs\.scripts-tests-build\.result == 'success'/u,
+		);
 		const lane = step(scripts, LANE);
 		assert.equal(
 			lane.run.trim(),
@@ -227,22 +240,78 @@ describe("the scripts lane is a pull-request gate", () => {
 		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
 	});
 
-	it("builds what every package a scripts test imports depends on, before the lane", () => {
-		// A fresh runner has no dist/: scripts/manual/hosting-anonymous-acceptance.mts
-		// imports packages/hobo/src, whose @hobo/core resolves through dist/.
+	it("builds affected packages from a tree diff, failing closed on an empty base", () => {
 		const build = step(scripts, BUILD);
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
 		assert.match(build.run, /turbo run build\b/u);
+		assert.match(build.run, /turbo-scm-base\.mts/u);
+		assert.match(build.run, /turbo-scm-base produced an empty base/u);
+		assert.match(build.run, /affected-lanes\.mts/u);
+		assert.match(build.run, /git diff --name-only "\$BASE" HEAD/u);
+		assert.doesNotMatch(build.run, /--filter="\.\.\.\[\$\{BASE\}\]"/u);
 		const imported = packagesScriptsTestsImport();
 		assert.ok(imported.includes("@hobo/hobo"));
-		for (const name of imported)
+		assert.ok(imported.includes("@hobo/provider-vercel"));
+		assert.ok(imported.includes("@hobo/adapter-infisical"));
+		for (const name of imported) {
 			assert.ok(
-				build.run.includes(`--filter=${name}^...`),
-				`the build step misses --filter=${name}^...`,
+				build.run.includes(`--filter=${name}...`),
+				`the no-package-change branch misses --filter=${name}...`,
 			);
+			assert.equal(
+				build.run.includes(`--filter=${name}^...`),
+				false,
+				`the build step still walks dependents (^...) for ${name}`,
+			);
+		}
+		assert.match(
+			build.run,
+			/No package source changed since \$\{BASE\}; materialize import-root dist from Turbo cache/u,
+		);
+		assert.match(build.run, /ROOTS=\(/u);
+		assert.match(build.run, /"\$\{ROOTS\[@\]\}"/u);
+		assert.match(build.run, /"\$\{FILTERS\[@\]\}"/u);
 		const names = scripts.steps.map((entry) => entry.uses || entry.name);
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
+		assert.ok(names.indexOf("Turbo cache") < names.indexOf(BUILD));
 		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
+		const prune = step(scripts, "Prune Turbo cache");
+		assert.match(prune.if, /matrix\.shard == 0/u);
+	});
+
+	it("builds once per run, then shards restore that Turbo cache", () => {
+		const buildJob = job("scripts-tests-build");
+		assert.equal(buildJob.name, "Scripts tests build");
+		assert.deepEqual(buildJob.needs, ["route"]);
+		assert.equal(buildJob.runsOn, ROUTED);
+		assert.doesNotMatch(buildJob.if, /attested/u);
+		assert.match(buildJob.if, /github\.event_name == 'pull_request'/u);
+		assert.match(buildJob.if, /github\.event_name == 'merge_group'/u);
+		assert.ok(!buildJob.steps.some((entry) => entry.name === LANE));
+		const build = step(buildJob, BUILD);
+		assert.match(build.run, /turbo run build\b/u);
+		assert.match(build.run, /--filter=@hobo\/provider-vercel\.\.\./u);
+		const source = asObject(jobs?.["scripts-tests"]);
+		const cache = (asList(source?.steps) ?? [])
+			.map(asObject)
+			.find((entry) => entry?.name === "Turbo cache");
+		assert.equal(
+			asText(asObject(cache?.with)?.["preferred-job"]),
+			"scripts-tests-build",
+		);
+		const buildCache = (
+			asList(asObject(jobs?.["scripts-tests-build"])?.steps) ?? []
+		)
+			.map(asObject)
+			.find((entry) => entry?.name === "Turbo cache");
+		assert.equal(
+			asText(asObject(buildCache?.with)?.["preferred-job"]),
+			"scripts-tests",
+		);
+		assert.equal(
+			asObject(asObject(jobs?.["scripts-tests-build"])?.strategy)?.matrix,
+			undefined,
+		);
 	});
 
 	it("never waits for the deps image", () => {

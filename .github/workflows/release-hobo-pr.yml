@@ -1,0 +1,242 @@
+name: HoBo release PR gate
+
+# GitHub evaluates `on.paths` from the default-branch workflow. Expanding
+# that list in a PR cannot self-trigger, and even files already on main's
+# list have failed to start release-hobo.yml for #2931 (push minting a 0-job
+# tag-filter miss). This workflow has no path filter on pull_request /
+# merge_group so the required check reports once the file is on main.
+# A workflow that is not on the default branch is started as a 0-job `push`
+# even when `on.push` matches (44874977817). Until this file is on main,
+# release-hobo.yml `on.push.branches` lists this PR branch so the existing
+# train starts the shards. job-scope skips install/tests when the diff
+# cannot reach the suites; the job stays success. Tags and the main train
+# still run the lane in release-hobo.yml.
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+    branches: [main]
+    types: [checks_requested]
+  push:
+    branches-ignore:
+      - main
+      - "gh-readonly-queue/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hobo-release-pr-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RELEASE_SPARSE_PATHS: |
+    .github
+    scripts
+    test/setup
+    packages
+    release
+    deploy
+    site
+    external
+    media
+    examples
+    src
+    tools/pins
+    .mise/locks
+    mise.toml
+    mise.lock
+    package.json
+    pnpm-lock.yaml
+    pnpm-workspace.yaml
+    turbo.json
+    tsconfig.base.json
+
+jobs:
+  route:
+    name: Route runners
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      runner: ${{ steps.route.outputs.runner }}
+      tier: ${{ steps.route.outputs.tier }}
+      attested: ${{ steps.route.outputs.attested }}
+      attested-jobs: ${{ steps.route.outputs.attested-jobs }}
+    steps:
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            .github/workflows/release-hobo-pr.yml
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
+            .hobo/ci.json
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
+            packages/ci/src/fleet-overflow.ts
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.routing-base.outputs.sha }}
+          path: .ci-trusted
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/route-runner
+            .hobo/ci.json
+            scripts/ci/route-runner.mts
+            scripts/ci/runner-routing.mts
+            scripts/ci/attestation.mts
+            scripts/ci/verify-attestation.mts
+            packages/ci/src/fleet-overflow.ts
+      - id: route
+        uses: ./.ci-trusted/.github/actions/route-runner
+        with:
+          token: ${{ github.token }}
+
+  release-hobo-integration:
+    name: HoBo slow integration suites (release gate)
+    needs: [route]
+    if: >-
+      !cancelled() && needs.route.result == 'success' && (
+      github.event_name == 'pull_request' ||
+      github.event_name == 'merge_group' ||
+      github.event_name == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - name: Bootstrap repo-local composite actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: true
+      - uses: $/.github/actions/hobo-checkout
+        with:
+          fetch-depth: 2
+          sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
+          submodules: "false"
+      - uses: $/.github/actions/ci-runner-preflight
+      - name: Decide whether the diff reaches the slow integration suites
+        id: scope
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${MERGE_GROUP_BASE_SHA:-}" ]; then
+            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
+              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            BASE="$MERGE_GROUP_BASE_SHA"
+          elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            BASE="$(git rev-parse HEAD^1)"
+          else
+            echo "No base to compare with; running the lane"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BASE" HEAD \
+            | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              packages/hobo/vitest.release-integration.config.ts \
+              packages/hobo/test/support/release-integration-test-files.ts \
+              packages/hobo/test/vercel-project.test.ts \
+              packages/hobo/test/cd-md-examples.test.ts \
+              >> "$GITHUB_OUTPUT"
+      - name: Fetch pinned ts-autocode
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm run pins:fetch ts-autocode
+      - uses: $/.github/actions/pnpm-store
+        if: steps.scope.outputs.run == 'true'
+      - name: Link deps layer or install
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          if [ -n "${HOBO_CI_DEPS_LAYER:-}" ] \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts link \
+            && node --experimental-strip-types scripts/ci/deps-layer.mts check --require; then
+            echo "reusing HOBO_CI_DEPS_LAYER=${HOBO_CI_DEPS_LAYER}; skip pnpm install"
+          else
+            pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          fi
+      - name: Turbo cache
+        if: steps.scope.outputs.run == 'true'
+        uses: $/.github/actions/turbo-cache
+        with:
+          turbo-token: ${{ github.event.pull_request.head.repo.fork && '' || secrets.TURBO_TOKEN }}
+          turbo-team: ${{ vars.TURBO_TEAM }}
+          remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
+      - name: HoBo slow integration suites
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 15
+        env:
+          # vitest --shard is 1-based; strategy.job-index is 0-based.
+          # GitHub expressions have no `+`; 44877157065 failed parse:
+          # "Unexpected symbol: '+' ... strategy.job-index + 1"
+          SHARD_INDEX: ${{ strategy.job-index }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        run: >-
+          pnpm exec turbo run test:release-integration --filter=@hobo/hobo
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+          -- --shard="$((SHARD_INDEX + 1))/$SHARD_TOTAL"
+      - name: Prune Turbo cache
+        id: turbo-prune
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'
+        continue-on-error: true
+        run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
+      - name: Save Turbo cache
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        uses: $/.github/actions/turbo-cache
+        with:
+          mode: save
+
+  release-pr-gate:
+    name: HoBo release integration PR gate
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'push')
+    needs: [route, release-hobo-integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fail closed when slow integration is red
+        env:
+          INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
+          ROUTE_RESULT: ${{ needs.route.result }}
+        run: |
+          set -euo pipefail
+          if [ "${ROUTE_RESULT:-}" != "success" ]; then
+            echo "::error::Runner routing did not succeed (result=${ROUTE_RESULT:-})"
+            exit 1
+          fi
+          if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
+            echo "::error::HoBo slow integration suites must pass (result=${INTEGRATION_RESULT:-})"
+            exit 1
+          fi

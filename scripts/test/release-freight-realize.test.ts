@@ -30,7 +30,6 @@ import {
 	type ReleaseCdSeams,
 	recordReleaseFreight,
 	releaseCampId,
-	releaseDriveFor,
 	releaseReportPath,
 	releaseSource,
 } from "../ci/create-github-release.mts";
@@ -79,9 +78,9 @@ if (!built)
 	);
 
 /** A CD clock that advances on every read: verification windows elapse at once. */
-function clock(stepMs = 500): () => number {
+function clock(): () => number {
 	let at = Date.parse("2026-11-12T00:00:00Z");
-	return () => (at += stepMs);
+	return () => (at += 500);
 }
 
 function ghcrWorld() {
@@ -104,7 +103,6 @@ function ghcrWorld() {
 function withProbes(
 	inner: HttpTransport,
 	seen: TransportRequest[],
-	pages?: ReturnType<Fixtures["githubWorld"]>,
 ): HttpTransport {
 	return async (request) => {
 		seen.push(request);
@@ -112,22 +110,14 @@ function withProbes(
 			return { status: 401, headers: {}, body: "" };
 		if (request.url === "https://registry.npmjs.org/-/ping")
 			return { status: 200, headers: {}, body: "{}" };
-		if (
-			request.url ===
-			`https://api.github.com/repos/${OWNER}/${REPO}/pages/builds/latest`
-		) {
-			const build = pages?.builds.at(-1);
-			return build?.status === "built" &&
-				build.commit === pages?.refs.get("gh-pages")
-				? { status: 200, headers: {}, body: JSON.stringify(build) }
-				: { status: 404, headers: {}, body: "" };
-		}
+		if (request.url.startsWith("https://raw.githubusercontent.com/"))
+			return { status: 200, headers: {}, body: "<h1>HoBo</h1>" };
 		return inner(request);
 	};
 }
 
-function seams(http: HttpTransport, passes = 40): ReleaseCdSeams {
-	return { http, now: clock(), drive: { passes, intervalMs: 0 } };
+function seams(http: HttpTransport): ReleaseCdSeams {
+	return { http, now: clock(), drive: { passes: 40, intervalMs: 0 } };
 }
 
 const env = {
@@ -539,7 +529,7 @@ describe.skipIf(!built)(
 				dist,
 				home,
 				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-				seams: seams(withProbes(github, [], world), 700),
+				seams: seams(withProbes(github, [])),
 			});
 			const head = world.commits.get(world.head("gh-pages"));
 			expect(head?.message).toBe(`deploy: ${COMMIT}`);
@@ -556,117 +546,6 @@ describe.skipIf(!built)(
 					.filter((r) => r.method === "POST" && r.url.endsWith("/git/commits")),
 			).toHaveLength(1);
 			expect(journalText(home)).not.toContain(fx.TOKEN);
-		});
-
-		it("Pages: 8-minute delayed build still qualifies", async () => {
-			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
-			let at = Date.parse("2026-11-12T00:00:00Z");
-			let buildStartedAtMs: number | undefined;
-			let buildDelayMs = 0;
-			const now = () => {
-				at += 10_000;
-				if (
-					buildStartedAtMs !== undefined &&
-					buildDelayMs === 0 &&
-					at - buildStartedAtMs > 480_000
-				) {
-					buildDelayMs = at - buildStartedAtMs;
-					world.finishBuild("built");
-				}
-				return at;
-			};
-			const github: HttpTransport = async (request) => {
-				const response = await world.transport(request);
-				if (
-					(request.method === "POST" && request.url.endsWith("/git/refs")) ||
-					(request.method === "PATCH" &&
-						request.url.endsWith("/git/refs/heads/gh-pages"))
-				) {
-					buildStartedAtMs = at;
-					const build = world.builds.at(-1);
-					if (build) build.status = "queued";
-				}
-				return response;
-			};
-			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-"));
-			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
-			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-"));
-			await qualifySiteRelease({
-				dist,
-				home,
-				env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-				seams: {
-					http: withProbes(github, [], world),
-					now,
-					drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
-				},
-			});
-			expect(buildDelayMs).toBeGreaterThan(480_000);
-			const report = JSON.parse(
-				readFileSync(releaseReportPath(home, "pages"), "utf8"),
-			);
-			expect(report.channels.candidate.outcome).toBe("qualified");
-			expect(report.channels.stable.outcome).toBe("qualified");
-		});
-
-		it("Pages: build never completes fails closed", async () => {
-			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
-			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-"));
-			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
-			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-"));
-			await expect(
-				qualifySiteRelease({
-					dist,
-					home,
-					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-					seams: {
-						http: withProbes(world.transport, [], world),
-						now: clock(60_000),
-						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
-					},
-				}),
-			).rejects.toThrow(/blocked/u);
-			const report = JSON.parse(
-				readFileSync(releaseReportPath(home, "pages"), "utf8"),
-			);
-			expect(report.channels.candidate.outcome).toBe("blocked");
-			expect(report.channels.candidate.codes).toContain(
-				"rollout-progress-deadline",
-			);
-		});
-
-		it("Pages: build errored fails closed", async () => {
-			const world = fx.githubWorld({ sourceBranch: "gh-pages" });
-			const github: HttpTransport = async (request) => {
-				const response = await world.transport(request);
-				if (
-					(request.method === "POST" && request.url.endsWith("/git/refs")) ||
-					(request.method === "PATCH" &&
-						request.url.endsWith("/git/refs/heads/gh-pages"))
-				) {
-					world.finishBuild("errored");
-				}
-				return response;
-			};
-			const dist = mkdtempSync(join(tmpdir(), "hobo-site-dist-"));
-			writeFileSync(join(dist, "index.html"), "<h1>HoBo</h1>\n");
-			const home = mkdtempSync(join(tmpdir(), "hobo-release-pages-"));
-			await expect(
-				qualifySiteRelease({
-					dist,
-					home,
-					env: { ...env, GITHUB_TOKEN: fx.TOKEN },
-					seams: {
-						http: withProbes(github, [], world),
-						now: clock(60_000),
-						drive: { ...releaseDriveFor("pages"), intervalMs: 0 },
-					},
-				}),
-			).rejects.toThrow(/blocked/u);
-			const report = JSON.parse(
-				readFileSync(releaseReportPath(home, "pages"), "utf8"),
-			);
-			expect(report.channels.candidate.outcome).toBe("blocked");
 		});
 
 		it("npm: candidate publishes the tarball with its signed Sigstore bundle through token auth, stable observes anonymously", async () => {

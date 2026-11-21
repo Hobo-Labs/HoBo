@@ -150,6 +150,7 @@ export const SIGNED_LOCAL_RUN_TESTS = [
 const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	".github/workflows/hobo-ci.yml",
 	".github/workflows/release-hobo.yml",
+	".github/workflows/release-hobo-pr.yml",
 	".hobo/ci-attestors.json",
 	"scripts/ci/attested-jobs.json",
 	"scripts/ci/attested-jobs.mts",

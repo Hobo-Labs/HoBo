@@ -44,42 +44,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // ── Release Freight ─────────────────────────────────────────────────────────
 
 const repoRoot = join(import.meta.dirname, "..", "..");
-const CORE_DIST = join(repoRoot, "packages/core/dist/index.js");
-
-export type ReleaseHttpTransport = (
-	request: Readonly<{
-		method: "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE";
-		url: string;
-		headers: Readonly<Record<string, string>>;
-		body?: string;
-		timeoutMs: number;
-		maxResponseBytes: number;
-	}>,
-) => Promise<{
-	status: number;
-	headers: Readonly<Record<string, string>>;
-	body: string;
-}>;
-
-const HTTP_TRANSPORT_BODY_ENCODING = Symbol.for(
-	"hobo.http-transport.body-encoding",
-);
-
-function withLatin1MarkerWhenPresent(
-	inner: ReleaseHttpTransport,
-	wrapped: ReleaseHttpTransport,
-): ReleaseHttpTransport {
-	if (
-		Object.getOwnPropertyDescriptor(inner, HTTP_TRANSPORT_BODY_ENCODING)
-			?.value === "latin1"
-	) {
-		Object.defineProperty(wrapped, HTTP_TRANSPORT_BODY_ENCODING, {
-			value: "latin1",
-			enumerable: false,
-		});
-	}
-	return wrapped;
-}
 
 /** The built `hobo` package whose `hobo deploy` composition records and promotes. */
 export const HOBO_CLI_DIST = join(
@@ -345,79 +309,10 @@ const ARTIFACT_KIND = {
  * Freight verification and probes use; the CD clock; how a promotion is driven.
  */
 export type ReleaseCdSeams = Readonly<{
-	http?: ReleaseHttpTransport;
+	http?: unknown;
 	now?: () => number;
 	drive?: { readonly passes: number; readonly intervalMs: number };
 }>;
-
-const PAGES_BUILD_LATEST =
-	/^https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/pages\/builds\/latest$/u;
-const GITHUB_PROBE_MAX_RESPONSE_BYTES = 64 * 1024 - 1;
-
-type PagesBuildBody = {
-	readonly status?: string;
-	readonly commit?: string;
-};
-type GitRefBody = { readonly object?: { readonly sha?: string } };
-
-export function githubApiProbeTransport(
-	env: Readonly<Record<string, string | undefined>>,
-	inner: ReleaseHttpTransport,
-): ReleaseHttpTransport {
-	const token = env.GITHUB_TOKEN?.trim();
-	return withLatin1MarkerWhenPresent(inner, async (request) => {
-		if (!request.url.startsWith("https://api.github.com/"))
-			return inner(request);
-		const authorized = {
-			...request,
-			headers: {
-				...request.headers,
-				accept: request.headers.accept ?? "application/vnd.github+json",
-				"x-github-api-version":
-					request.headers["x-github-api-version"] ?? "2022-11-28",
-			},
-		};
-		if (token)
-			Object.assign(authorized.headers, { authorization: `Bearer ${token}` });
-		if (request.method !== "GET" || !PAGES_BUILD_LATEST.test(request.url))
-			return inner(authorized);
-		const notBuiltForHead = { status: 404, headers: {}, body: "" };
-		const bounded = {
-			...authorized,
-			maxResponseBytes: Math.min(
-				request.maxResponseBytes,
-				GITHUB_PROBE_MAX_RESPONSE_BYTES,
-			),
-		};
-		try {
-			const buildResponse = await inner(bounded);
-			if (buildResponse.status !== 200) return notBuiltForHead;
-			let build: PagesBuildBody;
-			try {
-				build = JSON.parse(buildResponse.body);
-			} catch {
-				return notBuiltForHead;
-			}
-			if (build?.status !== "built" || !build.commit) return notBuiltForHead;
-			const refResponse = await inner({
-				...bounded,
-				url: `${request.url.slice(0, -"/pages/builds/latest".length)}/git/ref/heads/gh-pages`,
-			});
-			if (refResponse.status !== 200) return notBuiltForHead;
-			let ref: GitRefBody;
-			try {
-				ref = JSON.parse(refResponse.body);
-			} catch {
-				return notBuiltForHead;
-			}
-			return ref?.object?.sha === build.commit
-				? buildResponse
-				: notBuiltForHead;
-		} catch {
-			return notBuiltForHead;
-		}
-	});
-}
 
 /**
  * Open the `hobo deploy` composition (SQLite journal and filesystem artifact
@@ -450,24 +345,13 @@ export async function openReleaseCd(options: {
 		HOBO_HOME: options.home,
 		HOBO_USER: options.env.HOBO_USER || "hobo-release",
 	};
-	const seamHttp = options.seams?.http;
-	let baseHttp: ReleaseHttpTransport;
-	if (seamHttp) {
-		baseHttp = seamHttp;
-	} else {
-		const { createBoundedFetchTransport } = await import(
-			pathToFileURL(CORE_DIST).href
-		);
-		baseHttp = createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	}
-	const http = githubApiProbeTransport(options.env, baseHttp);
 	const opened = await runtimeModule.openCdRuntime({
 		simulate: false,
 		cwd: repoRoot,
 		env,
 		home: options.home,
 		topologyFiles: [RELEASE_DELIVERY_MODULE],
-		http,
+		...(options.seams?.http ? { http: options.seams.http } : undefined),
 		...(options.seams?.now ? { now: options.seams.now } : undefined),
 	});
 	if (!opened.ok)
@@ -656,28 +540,6 @@ export async function recordReleaseFreight(
 /** How long and how often a promotion is driven before it reads as blocked. */
 export const RELEASE_DRIVE = Object.freeze({ passes: 150, intervalMs: 2_000 });
 
-export const PAGES_RELEASE_BUILD_MARGIN_MS = 540_000;
-export const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
-export const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
-	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
-export const PAGES_RELEASE_PROMOTION_BUDGET_MS =
-	PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-	PAGES_RELEASE_VERIFICATION_WINDOW_MS +
-	PAGES_RELEASE_BUILD_MARGIN_MS;
-
-export const RELEASE_DRIVE_PAGES = Object.freeze({
-	passes:
-		Math.ceil(PAGES_RELEASE_PROMOTION_BUDGET_MS / RELEASE_DRIVE.intervalMs) + 1,
-	intervalMs: RELEASE_DRIVE.intervalMs,
-});
-
-export function releaseDriveFor(family: ReleaseFamily): {
-	readonly passes: number;
-	readonly intervalMs: number;
-} {
-	return family === "pages" ? RELEASE_DRIVE_PAGES : RELEASE_DRIVE;
-}
-
 /**
  * Promote recorded release Freight into one channel's Camp through `hobo
  * deploy promote` on the family's pipeline (`@hobo/cd` enforces candidate ->
@@ -715,7 +577,7 @@ export async function promoteReleaseFreight(
 			message: requested.message ?? "",
 		};
 	} else {
-		const drive = input.drive ?? releaseDriveFor(input.family);
+		const drive = input.drive ?? RELEASE_DRIVE;
 		for (let pass = 0; pass < drive.passes && !verdict; pass++) {
 			verdict = classifyRelease(promotionId, await cd.drive(promotionId, camp));
 			if (!verdict && pass + 1 < drive.passes) await delay(drive.intervalMs);
@@ -785,7 +647,7 @@ export async function qualifyReleaseCandidate(input: {
 			family: input.family,
 			channel: "candidate",
 			freightId,
-			drive: input.seams?.drive ?? releaseDriveFor(input.family),
+			...(input.seams?.drive ? { drive: input.seams.drive } : undefined),
 		});
 		if (!announceVerdict(input.family, "candidate", freightId, verdict, env))
 			throw new Error(
@@ -821,7 +683,7 @@ export async function promoteReleaseStable(
 				family,
 				channel: "stable",
 				freightId,
-				drive: seams.drive ?? releaseDriveFor(family),
+				...(seams.drive ? { drive: seams.drive } : undefined),
 			});
 			ok = announceVerdict(family, "stable", freightId, verdict, env) && ok;
 		}
