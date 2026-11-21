@@ -80,7 +80,8 @@ export const RunnerRoutingSchema = z
 			.object({
 				reusePrFabric: z.boolean(),
 			})
-			.strict(),
+			.strict()
+			.default({ reusePrFabric: false }),
 		verdict: z
 			.object({
 				minFreeRunners: whole(1, 9999),

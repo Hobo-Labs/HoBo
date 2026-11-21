@@ -122,6 +122,22 @@ function exactly(
 		: undefined;
 }
 
+/** A plain object with these keys, any of `optional`, and nothing else. */
+function withOptional(
+	value: JsonValue | undefined,
+	keys: readonly string[],
+	optional: readonly string[],
+): JsonObject | undefined {
+	const object = asObject(value);
+	if (!object) return undefined;
+	const own = Object.keys(object);
+	const allowed = new Set([...keys, ...optional]);
+	return own.every((key) => allowed.has(key)) &&
+		keys.every((key) => own.includes(key))
+		? object
+		: undefined;
+}
+
 function whole(
 	value: JsonValue | undefined,
 	min: number,
@@ -258,6 +274,11 @@ function parseMergeGroup(
 	return reusePrFabric !== undefined ? { reusePrFabric } : undefined;
 }
 
+/** An older committed policy has no `mergeGroup`; reuse stays off. */
+const DEFAULT_MERGE_GROUP: RunnerRouting["mergeGroup"] = {
+	reusePrFabric: false,
+};
+
 function parseVerdict(
 	value: JsonValue | undefined,
 ): RunnerRouting["verdict"] | undefined {
@@ -355,20 +376,23 @@ function retiredName(entry: JsonValue): string | undefined {
 export function parseRunnerRouting(
 	value: JsonValue | undefined,
 ): RunnerRouting | undefined {
-	const top = exactly(value, [
-		"pin",
-		"queue",
-		"labels",
-		"localRunner",
-		"boxRunner",
-		"mainWorkspaceParallelCap",
-		"mainGate",
-		"mergeGroup",
-		"verdict",
-		"box",
-		"externalPools",
-		"retiredVariables",
-	]);
+	const top = withOptional(
+		value,
+		[
+			"pin",
+			"queue",
+			"labels",
+			"localRunner",
+			"boxRunner",
+			"mainWorkspaceParallelCap",
+			"mainGate",
+			"verdict",
+			"box",
+			"externalPools",
+			"retiredVariables",
+		],
+		["mergeGroup"],
+	);
 	const pin = oneOf(top?.pin, ["auto", "fleet", "local", "github"] as const);
 	const queue = parseQueue(top?.queue);
 	const labels = parseLabels(top?.labels);
@@ -376,9 +400,10 @@ export function parseRunnerRouting(
 	const boxRunner = asBoolean(top?.boxRunner);
 	const mainWorkspaceParallelCap = whole(top?.mainWorkspaceParallelCap, 1, 8);
 	const mainGate = parseMainGate(top?.mainGate);
-	const mergeGroup = parseMergeGroup(top?.mergeGroup) ?? {
-		reusePrFabric: false,
-	};
+	const mergeGroup =
+		top?.mergeGroup === undefined
+			? DEFAULT_MERGE_GROUP
+			: parseMergeGroup(top.mergeGroup);
 	const verdict = parseVerdict(top?.verdict);
 	const box = parseBox(top?.box);
 	const externalPools = listOf(top?.externalPools, 32, parsePool);
@@ -390,6 +415,7 @@ export function parseRunnerRouting(
 		boxRunner !== undefined &&
 		mainWorkspaceParallelCap !== undefined &&
 		mainGate &&
+		mergeGroup &&
 		verdict &&
 		box &&
 		externalPools &&

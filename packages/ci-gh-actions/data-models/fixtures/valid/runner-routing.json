@@ -18,7 +18,7 @@
     "reuseMergeQueue": true
   },
   "mergeGroup": {
-    "reusePrFabric": true
+    "reusePrFabric": false
   },
   "verdict": {
     "minFreeRunners": 1,

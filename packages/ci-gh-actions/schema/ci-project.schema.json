@@ -1308,6 +1308,9 @@
       "additionalProperties": false
     },
     "__schema99": {
+      "default": {
+        "reusePrFabric": false
+      },
       "type": "object",
       "properties": {
         "reusePrFabric": {

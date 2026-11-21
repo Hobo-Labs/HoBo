@@ -382,7 +382,9 @@ describe("pr-fabric reuse routing", () => {
 		const attestAt = ids.indexOf("attest");
 		const prFabricAt = ids.indexOf("pr-fabric");
 		assert.ok(attestAt >= 0 && prFabricAt > attestAt);
-		const prFabricStep = compositeSteps().find((step) => step?.id === "pr-fabric");
+		const prFabricStep = compositeSteps().find(
+			(step) => step?.id === "pr-fabric",
+		);
 		assert.match(
 			asText(prFabricStep?.if),
 			/github\.event_name == 'merge_group'/u,
