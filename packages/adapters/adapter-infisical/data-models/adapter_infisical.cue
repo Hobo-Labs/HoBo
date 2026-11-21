@@ -194,6 +194,18 @@ package adapter_infisical
 	roles: [#InfisicalProjectRole]
 }
 
+#InfisicalProjectIdentityMembership: {
+	identityId: #id
+	roles: [...#InfisicalProjectRole]
+	project: #InfisicalProject
+	...
+}
+
+#InfisicalProjectIdentityResponse: {
+	identityMembership: #InfisicalProjectIdentityMembership
+	...
+}
+
 #InfisicalAttachOidcAuthRequest: {
 	oidcDiscoveryUrl: string & =~"^https://"
 	boundIssuer:      oidcDiscoveryUrl

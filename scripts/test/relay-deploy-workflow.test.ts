@@ -110,7 +110,7 @@ describe("the relay deploy gate", () => {
 		assert.equal(broken.run, false);
 	});
 
-	it("reads the binding's shape only, and only an HTTPS endpoint counts", () => {
+	it("admits only a complete HTTPS binding with a protected writer subject", () => {
 		assert.equal(storeBindingState(undefined), "absent");
 		assert.equal(storeBindingState("not json"), "unreadable");
 		assert.equal(
@@ -124,13 +124,20 @@ describe("the relay deploy gate", () => {
 				JSON.stringify({
 					kind: "infisical-self-hosted",
 					endpoint: "https://secrets.example",
+					projectId: "proj-runtime",
+					deployProjectId: "proj-deploy",
+					relayIdentityId: "relay-identity",
+					deployIdentityId: "deploy-identity",
+					deployCredentialIdentityId: "deploy-credential-identity",
+					deployOidcSubject:
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 				}),
 			),
 			"bound",
 		);
 	});
 
-	it("treats a binding the strict parser refuses as bound, so a legacy binding fails the deploy typed instead of green-skipping it", () => {
+	it("skips an incomplete legacy binding until repair instead of opening a failing deployment window", () => {
 		const legacy = JSON.stringify({
 			kind: "infisical-cloud-attach",
 			endpoint: "https://app.infisical.com",
@@ -143,12 +150,12 @@ describe("the relay deploy gate", () => {
 			claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 			claimState: "claimed",
 		});
-		assert.equal(storeBindingState(legacy), "bound");
+		assert.equal(storeBindingState(legacy), "unreadable");
 		const committed = readFileSync(
 			join(root, RELAY_SECRET_STORE_BINDING),
 			"utf8",
 		);
-		assert.equal(storeBindingState(committed), "bound");
+		assert.equal(storeBindingState(committed), "unreadable");
 		assert.equal(
 			decide({
 				event: "push",
@@ -156,7 +163,7 @@ describe("the relay deploy gate", () => {
 				changed: [RELAY_SECRET_STORE_BINDING],
 				inputDirs,
 			}).run,
-			true,
+			false,
 		);
 	});
 
@@ -459,6 +466,17 @@ describe("the relay deploy workflow", () => {
 		stepBefore(
 			"Verify the secret store connection",
 			"Deploy the relay (preview)",
+		);
+	});
+
+	it("puts the reader and writer jobs in distinct protected environments", () => {
+		assert.match(
+			workflow,
+			/\n  deploy:\n(?:.*\n)*?    environment: hobo-ci-deploy\n/u,
+		);
+		assert.match(
+			workflow,
+			/\n  app-credentials:\n(?:.*\n)*?    environment: hobo-ci-app-credentials\n/u,
 		);
 	});
 

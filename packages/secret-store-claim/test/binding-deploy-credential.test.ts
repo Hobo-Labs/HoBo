@@ -28,7 +28,7 @@ function bindingJson(
 		claimBundleId: "secret-store.ci-vercel.attach-1",
 		claimState: "claimed",
 		deployOidcSubject:
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 		...fields,
 	});
 }
@@ -79,7 +79,7 @@ describe("deploy credential identity", () => {
 					deployProjectId: "deploy-project",
 					deployCredentialIdentityId: "reader-identity",
 					deployOidcSubject:
-						"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 				}),
 			),
 		);
@@ -163,7 +163,7 @@ describe("the repair read's confinement", () => {
 		return found;
 	}
 
-	it("allows only enumerated callers outside this package: connect repair and hosting evidence (names-only), so an empty reader id cannot reach a credential read", () => {
+	it("allows only connect repair and dry-run planning outside this package, so an empty reader id cannot reach a credential read", () => {
 		const sources = sourceFiles(repoRoot);
 		const foreign = sources.filter(
 			(file) =>
@@ -178,9 +178,22 @@ describe("the repair read's confinement", () => {
 				"packages",
 				"hobo",
 				"src",
+				"ci-relay-deploy.ts",
+			),
+			path.join(
+				repoRoot,
+				"packages",
+				"hobo",
+				"src",
 				"ci-secret-store-connect.ts",
 			),
-			path.join(repoRoot, "scripts", "ci", "hosting-evidence.mts"),
+			path.join(
+				repoRoot,
+				"packages",
+				"hobo",
+				"test",
+				"ci-relay-deploy-credential.test.ts",
+			),
 		]);
 	});
 });
@@ -231,12 +244,12 @@ describe("the recorded deploy subject", () => {
 		const other = readSecretStoreBinding(
 			bindingJson({
 				deployOidcSubject:
-					"repo:Another-Owner@1/Another-Repo@2:ref:refs/heads/main",
+					"repo:Another-Owner@1/Another-Repo@2:environment:hobo-ci-app-credentials",
 			}),
 		);
 		expect(
 			githubSubjectMismatch(
-				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 				other.deployOidcSubject,
 			),
 		).toContain("differs from the subject the deploy identity trusts");

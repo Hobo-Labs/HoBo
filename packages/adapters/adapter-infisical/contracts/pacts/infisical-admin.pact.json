@@ -234,11 +234,11 @@
 			}
 		},
 		{
-			"description": "The deploy identity, which reads the deploy credential only, is created in its project",
-			"providerState": "project proj-2 exists",
+			"description": "The deploy writer is created in the relay project, outside the deploy credential project",
+			"providerState": "project proj-1 exists",
 			"request": {
 				"method": "POST",
-				"path": "/api/v1/projects/proj-2/identities",
+				"path": "/api/v1/projects/proj-1/identities",
 				"headers": {
 					"authorization": "Bearer fixture-instance-admin-token",
 					"content-type": "application/json"
@@ -261,7 +261,7 @@
 					"identity": {
 						"id": "deploy-identity",
 						"name": "hobo-ci-deploy",
-						"projectId": "proj-2"
+						"projectId": "proj-1"
 					}
 				}
 			}
@@ -318,9 +318,11 @@
 					"boundAudiences": "https://github.com/Hobo-Labs",
 					"boundClaims": {
 						"repository_id": "1274791462",
-						"repository_owner_id": "344805935"
+						"repository_owner_id": "344805935",
+						"environment": "hobo-ci-app-credentials",
+						"job_workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main"
 					},
-					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 					"accessTokenTTL": 3600,
 					"accessTokenMaxTTL": 3600
 				}
@@ -354,9 +356,11 @@
 					"boundAudiences": "https://github.com/Hobo-Labs",
 					"boundClaims": {
 						"repository_id": "1274791462",
-						"repository_owner_id": "344805935"
+						"repository_owner_id": "344805935",
+						"environment": "hobo-ci-app-credentials",
+						"job_workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main"
 					},
-					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 					"accessTokenTTL": 3600,
 					"accessTokenMaxTTL": 3600
 				}
@@ -390,9 +394,11 @@
 					"boundAudiences": "https://github.com/Hobo-Labs",
 					"boundClaims": {
 						"repository_id": "1274791462",
-						"repository_owner_id": "344805935"
+						"repository_owner_id": "344805935",
+						"environment": "hobo-ci-app-credentials",
+						"job_workflow_ref": "Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main"
 					},
-					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+					"boundSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 					"accessTokenTTL": 3600,
 					"accessTokenMaxTTL": 3600
 				}

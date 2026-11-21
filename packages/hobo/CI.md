@@ -469,8 +469,9 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --team team_… --dry-run
 ```
 
 `--dry-run` prints the placement, the chosen bindings and every request it
-would send, and sends none. A real run reads `VERCEL_TOKEN` from the environment
-and deploys to **preview** unless `--target production` is given. Production
+would send, and sends none. A real run reads `VERCEL_TOKEN` from the bound
+secret store as the dedicated deploy reader and deploys to **preview** unless
+`--target production` is given. Production
 chooses the config-service binding, which asks for the store's origin and two
 ids; `hobo ci deploy` reads them, and the team, from the committed
 `deploy/secret-store.binding.json`:
@@ -498,21 +499,20 @@ team come from `deploy/secret-store.binding.json` in the relay's project; a
 [`CONFIG-SERVICE.md`](../ci-vercel/CONFIG-SERVICE.md#the-deploy-workflow-on-main)
 and [the README](README.md) for the plan record and its gates. It has been
 exercised against fakes only. The committed binding has neither a
-`deployProjectId` nor a `deployCredentialIdentityId` yet: the owner must
-create the `hobo-ci-deploy` project and the read-only `hobo-ci-deploy-reader`
-identity in it, deposit `VERCEL_TOKEN` at its root, and re-run `connect` to
-record the deploy project, the reader id and the subject. Until then the
-deploy token read fails closed and, from the moment this change merges, the
-relay's own deploy lane fails its typed reason — the main train's releases
-are not gated by that lane (`release-hobo.yml` triggers off
-*HoBo CI Fabric*, not the relay deploy workflow); the ordered
-operator sequence, its owner and its window are
-[the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach). This channel is
-**built, not proven**: link a successful `relay-deploy` run whose preview step
-records the token read as the binding's deploy credential identity, whose
-*Verify the secret store connection* step passes the reader (including the
-refused-relay-folder assertion), and whose
-production `/healthz` and `/readyz` checks pass. See
+`deployProjectId` nor a `deployCredentialIdentityId` yet: the owner must create
+protected GitHub environments for the reader and writer, create the
+`hobo-ci-deploy` project and exactly-Viewer `hobo-ci-deploy-reader` identity,
+deposit `VERCEL_TOKEN` at its root, and re-run `connect` to record the complete
+binding. Until then the workflow gate skips relay deployment rather than
+creating a failing window. Token-free `--dry-run` planning can read the legacy
+coordinates through the confined repair parser; every real run uses strict
+parsing and refuses before OIDC sign-in. The ordered operator sequence is
+[the cutover runbook](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
+This channel is **built, not proven**: after repair, link a successful
+`relay-deploy` run whose preview step records the token read as the dedicated
+reader, whose verification proves the value read, exact Viewer membership and
+HTTP 403 project isolation, and whose production `/healthz` and `/readyz` checks
+pass. See
 [the evidence obligation](../ci-vercel/CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 
 ## Choose the relay's secret store (`hobo ci secret-store`)

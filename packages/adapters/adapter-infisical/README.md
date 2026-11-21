@@ -69,6 +69,7 @@ take it explicitly.
 | Universal Auth login | `POST /api/v1/auth/universal-auth/login` `{clientId, clientSecret}` | <https://infisical.com/docs/api-reference/endpoints/universal-auth/login> |
 | List a folder | `GET /api/v4/secrets?projectId&environment&secretPath&viewSecretValue&recursive=false&expandSecretReferences=false&includeImports=false` | <https://infisical.com/docs/api-reference/endpoints/secrets/list> |
 | Read one | `GET /api/v4/secrets/{secretName}?projectId&environment&secretPath&type=shared[&version]` | <https://infisical.com/docs/api-reference/endpoints/secrets/read> |
+| Read a project identity's assigned roles | `GET /api/v1/projects/{projectId}/identities/{identityId}` | <https://infisical.com/docs/api-reference/endpoints/deprecated/project-identities/get-by-id> |
 | Create | `POST /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/create> |
 | Update | `PATCH /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/update> |
 | Revoke an access token this client obtained | `POST /api/v1/auth/token/revoke` `{accessToken}` (no Authorization header) | <https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token> |

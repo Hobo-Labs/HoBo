@@ -76,23 +76,40 @@ export function touchesRelay(
 	);
 }
 
-/**
- * Whether the binding file is there, is JSON, and names a kind and an HTTPS
- * endpoint. A shape hint only: the full parse (`@hobo/secret-store-claim`'s
- * `readSecretStoreBinding`) runs in the credential step, and this gate runs
- * before anything is installed, on node builtins only.
- */
 export function storeBindingState(text: string | undefined): StoreBindingState {
 	if (text === undefined) return "absent";
+	let record;
 	try {
-		JSON.parse(text);
+		record = JSON.parse(text);
 	} catch {
 		return "unreadable";
 	}
-	return /"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) &&
-		/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
-		? "bound"
-		: "unreadable";
+	if (record === null || Array.isArray(record)) return "unreadable";
+	const coordinates = [
+		"projectId",
+		"deployProjectId",
+		"relayIdentityId",
+		"deployIdentityId",
+		"deployCredentialIdentityId",
+		"deployOidcSubject",
+	];
+	if (
+		record.kind !== String(record.kind) ||
+		!/^[a-z-]{1,64}$/u.test(record.kind) ||
+		record.endpoint !== String(record.endpoint) ||
+		!/^https:\/\/[A-Za-z0-9.-]+/u.test(record.endpoint) ||
+		coordinates.some(
+			(key) => !record[key] || record[key] !== String(record[key]),
+		) ||
+		record.projectId === record.deployProjectId ||
+		record.deployCredentialIdentityId === record.deployIdentityId ||
+		record.deployCredentialIdentityId === record.relayIdentityId ||
+		!String(record.deployOidcSubject).endsWith(
+			":environment:hobo-ci-app-credentials",
+		)
+	)
+		return "unreadable";
+	return "bound";
 }
 
 export function decide(input: {
@@ -111,7 +128,7 @@ export function decide(input: {
 	if (input.store === "unreadable")
 		return {
 			run: false,
-			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
+			reason: `${RELAY_SECRET_STORE_BINDING} is malformed or still needs its deploy project, dedicated reader, and protected writer subject; run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id`,
 		};
 	if (input.event === "workflow_dispatch") {
 		if (input.forceBootstrap === true)

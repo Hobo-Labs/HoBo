@@ -60,7 +60,7 @@ package secret_store_claim
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
 	if claimState == "claimed" {
-		deployOidcSubject: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"
+		deployOidcSubject: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
 	}
 	// The deploy credential always has a project of its own, never the
 	// relay's: Infisical project roles cover the whole project (RBAC,
@@ -68,9 +68,9 @@ package secret_store_claim
 	// keep the relay's identity from reading it. A binding recorded before
 	// the field was required parses only for the connect repair.
 	deployProjectId: #Id & !=projectId
-	// The exact subject the deploy identity trusts: GitHub's prefix for the
-	// repository, then the branch. Never a glob (a recycled name would match).
-	deployOidcSubject?: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"
+	// The exact subject the deploy writer trusts: GitHub's prefix for the
+	// repository, then its protected environment. Never a glob.
+	deployOidcSubject?: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
 }
 
 // `repo:<owner>/<repo>` (legacy) or `repo:<owner>@<ownerId>/<repo>@<repoId>`

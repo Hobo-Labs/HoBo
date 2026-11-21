@@ -1,4 +1,7 @@
-import { readSecretStoreBinding } from "@hobo/secret-store-claim";
+import {
+	readSecretStoreBinding,
+	readSecretStoreBindingForRepair,
+} from "@hobo/secret-store-claim";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,7 +20,8 @@ const DEPLOY_TOKEN = "synthetic-vercel-deploy-token-0123";
 const READER_IDENTITY = "3f2b1c9e-8a7d-4e6f-9b0c-1d2e3f4a5b6c";
 const WRITER_IDENTITY = "63f5b1e2-8a4d-4c7f-9e0b-2d3a4c5b6a7f";
 const PROJECT = "6512a1b0-c3d4-4e5f-8071-8293a4b5c6d7";
-const SUBJECT = "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
+const SUBJECT =
+	"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
 
 const env = {
 	ACTIONS_ID_TOKEN_REQUEST_URL:
@@ -25,23 +29,21 @@ const env = {
 	ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
 };
 
-// What `hobo ci secret-store provision` commits: coordinates only.
-const binding = readSecretStoreBinding(
-	JSON.stringify({
-		kind: "infisical-cloud-attach",
-		endpoint: "https://app.infisical.com",
-		projectId: "relay-project",
-		deployProjectId: PROJECT,
-		environment: "prod",
-		secretPath: "/hobo-ci-relay",
-		relayIdentityId: "relay-identity",
-		deployIdentityId: WRITER_IDENTITY,
-		deployCredentialIdentityId: READER_IDENTITY,
-		claimBundleId: "secret-store.ci-vercel.attach-1",
-		claimState: "claimed",
-		deployOidcSubject: SUBJECT,
-	}),
-);
+const bindingRecord = {
+	kind: "infisical-cloud-attach",
+	endpoint: "https://app.infisical.com",
+	projectId: "relay-project",
+	deployProjectId: PROJECT,
+	environment: "prod",
+	secretPath: "/hobo-ci-relay",
+	relayIdentityId: "relay-identity",
+	deployIdentityId: WRITER_IDENTITY,
+	deployCredentialIdentityId: READER_IDENTITY,
+	claimBundleId: "secret-store.ci-vercel.attach-1",
+	claimState: "claimed",
+	deployOidcSubject: SUBJECT,
+};
+const binding = readSecretStoreBinding(JSON.stringify(bindingRecord));
 
 // The global `fetch`'s type; each test passes its own, nothing global is replaced.
 type Fetch = typeof fetch;
@@ -157,22 +159,18 @@ describe("readRelayDeployToken", () => {
 		).toThrow("does not meet its constraints");
 	});
 
-	it("refuses a writer-only binding when the binding is read, so no identity is mistaken for the reader", () => {
-		expect(() =>
-			readSecretStoreBinding(
-				JSON.stringify({
-					kind: "infisical-cloud-attach",
-					endpoint: "https://app.infisical.com",
-					projectId: "relay-project",
-					environment: "prod",
-					secretPath: "/hobo-ci-relay",
-					relayIdentityId: "relay-identity",
-					deployIdentityId: WRITER_IDENTITY,
-					claimBundleId: "secret-store.ci-vercel.attach-1",
-					claimState: "claimed",
-				}),
-			),
-		).toThrow("does not meet its constraints");
+	it("refuses only the missing reader field before any OIDC or store request", async () => {
+		const legacy = readSecretStoreBindingForRepair(
+			JSON.stringify({
+				...bindingRecord,
+				deployCredentialIdentityId: undefined,
+			}),
+		);
+		const { fetch, seen } = fakes();
+		await expect(
+			readRelayDeployToken({ binding: legacy, env, fetch }),
+		).rejects.toThrow("no deploy credential identity of its own");
+		expect(seen).toEqual([]);
 	});
 
 	it("fails closed without trying another project or path when the deploy credential is missing", async () => {

@@ -9,8 +9,10 @@ tags: [hobo, ci, hosting, evidence]
 
 The manually dispatched `HoBo hosting evidence (read-only)` workflow checks
 whether this repository's main-branch GitHub Actions identity can list names in
-the committed Infisical folder. It uses the HoBo secret-store SDK and reports
-only a small allowlist of key names. It may also read and report the public,
+the committed Infisical folder. The binding must pass the strict modern parser;
+a legacy repair-only binding returns unavailable before any provider request.
+The workflow uses the HoBo secret-store SDK and reports only a small allowlist
+of key names. It may also read and report the public,
 numeric GitHub App ID from that original folder; it never reports credentials.
 After that, it reads the enrolled project's environment and folder metadata,
 then lists names only in scopes exposed by that identity and accepted by the

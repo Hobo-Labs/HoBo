@@ -372,6 +372,30 @@
 					"statusCode": 503
 				}
 			}
+		},
+		{
+			"description": "project identity membership reports its assigned roles",
+			"providerState": "identity relay-identity is a viewer of proj-1",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/projects/proj-1/identities/relay-identity",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityMembership": {
+						"identityId": "relay-identity",
+						"roles": [{ "role": "viewer" }],
+						"project": { "id": "proj-1", "slug": "hobo-ci", "orgId": "org-1" }
+					}
+				}
+			}
 		}
 	],
 	"metadata": {

@@ -43,7 +43,7 @@
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
@@ -67,6 +67,8 @@ import {
 } from "@hobo/core";
 import {
 	type ParsedSecretStoreBinding,
+	type RepairSecretStoreBinding,
+	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
 } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
@@ -474,13 +476,26 @@ export async function runCiRelayDeploy(
 	// (`hobo ci secret-store provision`): its committed coordinates fill the
 	// config-service binding's inputs and name the team, so no repository
 	// variable or Vercel secret holds them.
-	let storeBinding: ParsedSecretStoreBinding | undefined;
+	let storeBinding:
+		| ParsedSecretStoreBinding
+		| RepairSecretStoreBinding
+		| undefined;
 	try {
 		storeBinding = loadSecretStoreBinding(input.cwd);
 	} catch (error) {
-		if (error instanceof SecretStoreBindingRefusal)
+		if (!(error instanceof SecretStoreBindingRefusal)) throw error;
+		if (
+			values["dry-run"] !== true ||
+			error.code !== "HOBO_CI_SECRET_STORE_BINDING_INVALID"
+		)
 			return refused(error.code, error.message);
-		throw error;
+		try {
+			storeBinding = readSecretStoreBindingForRepair(
+				readFileSync(path.join(input.cwd, SECRET_STORE_BINDING_FILE), "utf8"),
+			);
+		} catch {
+			return refused(error.code, error.message);
+		}
 	}
 	const teamId =
 		text("team") ??

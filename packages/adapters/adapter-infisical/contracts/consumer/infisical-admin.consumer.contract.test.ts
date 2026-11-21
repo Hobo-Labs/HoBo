@@ -27,10 +27,14 @@ const PASSWORD = "fixture-bootstrap-password-0123456789";
 const DEPLOY_TRUST = {
 	issuer: "https://token.actions.githubusercontent.com",
 	audiences: ["https://github.com/Hobo-Labs"],
-	subject: "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+	subject:
+		"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 	claims: {
 		repository_id: "1274791462",
 		repository_owner_id: "344805935",
+		environment: "hobo-ci-app-credentials",
+		job_workflow_ref:
+			"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 	},
 };
 
@@ -193,7 +197,7 @@ describe("Infisical's admin API (consumer contract)", () => {
 		});
 		expect(deployProject.projectId).toBe("proj-2");
 		const deploy = await admin.createProjectIdentity({
-			projectId: deployProject.projectId,
+			projectId,
 			name: "hobo-ci-deploy",
 			role: "viewer",
 		});

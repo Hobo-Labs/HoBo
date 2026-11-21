@@ -39,7 +39,13 @@ export type FakeResponse = {
 type Access = "read" | "write" | "write-only";
 
 type Identity =
-	| { kind: "oidc"; identityId: string; jwt: string; access: Access }
+	| {
+			kind: "oidc";
+			identityId: string;
+			jwt: string;
+			access: Access;
+			role?: string;
+	  }
 	| {
 			kind: "universal-auth";
 			clientId: string;
@@ -369,10 +375,37 @@ export function createFakeInfisical(): FakeInfisical {
 				revokedTokens.push(presented.accessToken);
 				return json({ message: "Successfully revoked access token" });
 			}
-			if (!url.pathname.startsWith("/api/v4/secrets"))
-				return error(404, "Route not found");
 			const token = /^Bearer (.+)$/u.exec(authorization)?.[1];
 			const access = token === undefined ? undefined : tokens.get(token);
+			const membership =
+				/^\/api\/v1\/projects\/([^/]+)\/identities\/([^/]+)$/u.exec(
+					url.pathname,
+				);
+			if (request.method === "GET" && membership) {
+				if (access === undefined) return error(401, "Token expired or invalid");
+				const identityId = decodeURIComponent(membership[2] ?? "");
+				const identity = identities.find(
+					(candidate) =>
+						candidate.kind === "oidc" && candidate.identityId === identityId,
+				);
+				if (identity?.kind !== "oidc")
+					return error(404, "Identity not found");
+				return json({
+					identityMembership: {
+						identityId,
+						roles: [
+							{ role: identity.role ?? (access === "read" ? "viewer" : "member") },
+						],
+						project: {
+							id: decodeURIComponent(membership[1] ?? ""),
+							slug: "hobo-ci",
+							orgId: "org-1",
+						},
+					},
+				});
+			}
+			if (!url.pathname.startsWith("/api/v4/secrets"))
+				return error(404, "Route not found");
 			if (access === undefined) return error(401, "Token expired or invalid");
 			return secrets(request, url, access);
 		},

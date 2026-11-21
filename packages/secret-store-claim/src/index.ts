@@ -55,6 +55,8 @@ export {
 } from "./errors.js";
 export {
 	DEPLOY_READER_AUDIENCE_SUFFIX,
+	DEPLOY_READER_ENVIRONMENT,
+	DEPLOY_WRITER_ENVIRONMENT,
 	GITHUB_ACTIONS_ISSUER,
 	type GithubOidcSubject,
 	githubDeployReaderTrust,

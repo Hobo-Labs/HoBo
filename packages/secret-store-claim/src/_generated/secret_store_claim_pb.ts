@@ -278,9 +278,9 @@ export type SecretStoreBinding = Message<"hobo.secret_store_claim.v1.SecretStore
   deployProjectId: string;
 
   /**
-   * The exact OIDC subject the deploy identity trusts, as GitHub issues it
-   * for this repository (`<sub_claim_prefix>:ref:refs/heads/<branch>`). Empty
-   * in bindings recorded before it was kept; `verify` compares a denied
+   * The exact OIDC subject the deploy writer trusts in its protected
+   * environment (`<sub_claim_prefix>:environment:hobo-ci-app-credentials`).
+   * Empty in bindings recorded before it was kept; `verify` compares a denied
    * token's `sub` with it.
    *
    * @generated from field: string deploy_oidc_subject = 12;

@@ -1,44 +1,3 @@
-/**
- * The two Infisical offers: a self-hosted instance HoBo bootstraps and hands
- * over by claim (`infisical-self-hosted`), and an Infisical Cloud
- * organization the owner already has (`infisical-cloud-attach`). Both end in
- * the same layout, which is what the relay's config loader and the deploy
- * workflow already read:
- *
- * - project `hobo-ci`, environment `prod`, folder `/hobo-ci-relay`: the
- *   relay's config and secrets;
- * - identity `hobo-ci-relay` in it, role viewer, OIDC Auth trusting the
- *   Vercel team issuer for the relay's production deployments only;
- * - project `hobo-ci-deploy`, environment `prod`, folder `/`: the deploy
- *   credential, in a project of its own so the relay's identity can never
- *   read it (Infisical project roles cover the whole project);
- * - identity `hobo-ci-deploy` in it, role viewer, OIDC Auth trusting GitHub
- *   Actions on the repository's default branch, by the subject GitHub issues
- *   for the repository (`github-oidc.ts`: the immutable
- *   `repo:<owner>@<ownerId>/<repo>@<repoId>` form when the repository uses it)
- *   and its pinned `repository_id` and `repository_owner_id`.
- *
- * Self-hosted, step by step:
- *
- * 1. The Yard places Infisical (with its PostgreSQL and Redis) on a compute
- *    fleet host. Placement is the Yard's; this module starts from the
- *    instance's HTTPS origin and requires it to be fresh.
- * 2. Bootstrap with a password HoBo generates and never prints
- *    (`POST /api/v1/admin/bootstrap`): admin user, organization and the
- *    instance-admin machine identity with its Token Auth token.
- * 3. With that token, create the layout above.
- * 4. Seal the owner's sign-in (site, email, password) into a one-time action;
- *    the claim item carries its reference. Seal the instance-admin token into
- *    a second action only `verifySelfHostedInfisicalClaim` redeems.
- * 5. `hobo claim open secret-store` shows the owner the sign-in once.
- *    `hobo claim finalize secret-store` deletes HoBo's bootstrap identity
- *    and verifies, through Infisical, that its token is refused: HoBo keeps
- *    no authority over the store after the claim.
- *
- * HONEST SCOPE: exercised against the pact mock of Infisical's admin API and
- * a local stand-in. The owner changing the bootstrap password is asked for,
- * not observed: Infisical exposes no read of it to an identity HoBo keeps.
- */
 import { randomBytes } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -171,7 +130,7 @@ async function provisionLayout(
 		slug: layout.deployProjectSlug,
 	});
 	const deploy = await admin.createProjectIdentity({
-		projectId: deployProjectId,
+		projectId,
 		name: layout.deployIdentity,
 		role: "viewer",
 	});

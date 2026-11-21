@@ -163,7 +163,10 @@ export function loadSecretStoreBinding(
 
 /** The deploy inputs a binding fills: names to non-secret values. */
 export function secretStoreDeployInputs(
-	binding: ParsedSecretStoreBinding,
+	binding: Pick<
+		ParsedSecretStoreBinding,
+		"endpoint" | "projectId" | "relayIdentityId"
+	>,
 ): ReadonlyMap<string, string> {
 	return new Map(
 		Object.entries(SECRET_STORE_DEPLOY_INPUTS).map(([name, field]) => [

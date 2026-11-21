@@ -39,8 +39,10 @@ with its reason.
 - `github-oidc.ts`: `resolveGithubOidcSubject` reads from GitHub the OIDC
   subject a repository's tokens carry (`sub_claim_prefix`, or the immutable
   `repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids) and fails
-  closed when GitHub does not say; `githubDeployTrust` binds it on a branch
-  with `repository_id` and `repository_owner_id` pinned. Pinned by
+  closed when GitHub does not say. `githubDeployTrust` and
+  `githubDeployReaderTrust` use distinct protected-environment subjects and pin
+  repository ids, environment and the exact `job_workflow_ref`; caller-selected
+  audiences cannot cross the writer/reader boundary. Pinned by
   `contracts/pacts/github-oidc-subject.pact.json`.
 
 The CLI is `hobo ci secret-store plan|provision` in `@hobo/hobo`

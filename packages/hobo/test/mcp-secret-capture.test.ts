@@ -141,7 +141,7 @@ beforeAll(() => {
 				deployProjectId: "proj-deploy",
 				claimState: "claimed",
 				deployOidcSubject:
-					"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+					"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 			},
 			null,
 			"\t",
@@ -459,7 +459,7 @@ describe("the connector's deploy-credential path", () => {
 					claimBundleId: "secret-store:hobo-ci-relay:1",
 					claimState: "claimed",
 					deployOidcSubject:
-						"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 				},
 				null,
 				"\t",

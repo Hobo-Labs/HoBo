@@ -14,10 +14,21 @@ import { fileURLToPath } from "node:url";
 import { inspectHostingEvidence } from "../ci/hosting-evidence.mts";
 import { decide, relayInputDirs } from "../ci/relay-deploy-gate.mts";
 
-const bindingText = readFileSync(
+const legacyBindingText = readFileSync(
 	"packages/ci-vercel/deploy/secret-store.binding.json",
 	"utf8",
 );
+const bindingText = `${JSON.stringify(
+	{
+		...JSON.parse(legacyBindingText),
+		deployProjectId: "proj-deploy",
+		deployCredentialIdentityId: "deploy-credential-identity",
+		deployOidcSubject:
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+	},
+	null,
+	"\t",
+)}\n`;
 const workflow = readFileSync(".github/workflows/hosting-evidence.yml", "utf8");
 const baseEnv = {
 	GITHUB_ACTIONS: "true",
@@ -293,6 +304,17 @@ describe("trusted-main hosting evidence", () => {
 			assert.equal(result.status, "unavailable");
 			assert.equal(fake.calls.length, 0);
 		}
+	});
+
+	it("returns unavailable for a legacy binding without producing evidence or contacting a provider", async () => {
+		const fake = fakeTransport();
+		const result = await inspectHostingEvidence({
+			env: baseEnv,
+			bindingText: legacyBindingText,
+			fetch: fake.send,
+		});
+		assert.equal(result.status, "unavailable");
+		assert.equal(fake.calls.length, 0);
 	});
 
 	it("makes at most one names request and never falls through after provider refusal", async () => {

@@ -1,30 +1,3 @@
-// `hobo ci secret-store connect|verify` — the Infisical path of the relay's
-// secret store when the owner connects it by hand (ADR-0179 amendment
-// "Deploy secrets captured by an MCP App into the secret store").
-//
-// Infisical Cloud has no agent signup or claim (checked 2026-11-12), so the
-// hobo-deploy skill walks the owner through the dashboard one step at a time:
-// the projects, the folder, OIDC Auth for `hobo-ci-relay` (Vercel) and
-// `hobo-ci-deploy` (GitHub Actions), and the `hobo-secret-writer` identity.
-// The owner then pastes the ids (identifiers, not secrets) and `connect`
-// records them as `deploy/secret-store.binding.json`, the same
-// `SecretStoreBinding` record `provision` writes. `verify` then signs in as
-// each identity it can from where it runs and reports pass, fail or not-run
-// by identity name, reading secret names only, never a value.
-//
-// The deploy identity's GitHub OIDC trust is resolved from GitHub, never
-// formatted from the repository's name (`ci-secret-store-github.ts`): the
-// subject GitHub issues for the repository (the immutable
-// `repo:<owner>@<ownerId>/<repo>@<repoId>` form when it uses it) and its
-// pinned `repository_id` and `repository_owner_id`. Re-running connect
-// against an existing store repairs that trust: with the owner's own
-// INFISICAL_TOKEN for this one run it replaces the deploy identity's OIDC
-// trust in place (no new identity), and without it names the exact values to
-// set in the dashboard.
-//
-// HONEST SCOPE: exercised against fakes of GitHub's REST API and token
-// endpoint, Vercel's OIDC token and Infisical only.
-
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { create } from "@bufbuild/protobuf";
@@ -38,6 +11,7 @@ import {
 } from "@hobo/adapter-infisical";
 import type { CommandResult } from "@hobo/cli";
 import {
+	githubDeployReaderTrust,
 	githubDeployTrust,
 	githubSubjectMismatch,
 	type ParsedSecretStoreBinding,
@@ -235,14 +209,15 @@ export async function runCiSecretStoreConnect(
 		);
 
 	let trust: ReturnType<typeof githubDeployTrust>;
+	let readerTrust: ReturnType<typeof githubDeployReaderTrust>;
 	try {
-		trust = githubDeployTrust(
-			await resolveDeploySubject({
-				repository,
-				env: input.env,
-				...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
-			}),
-		);
+		const subject = await resolveDeploySubject({
+			repository,
+			env: input.env,
+			...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
+		});
+		trust = githubDeployTrust(subject);
+		readerTrust = githubDeployReaderTrust(subject);
 	} catch (error) {
 		if (!(error instanceof SecretStoreError)) throw error;
 		return refusedConnect(
@@ -259,10 +234,6 @@ export async function runCiSecretStoreConnect(
 			deployOidcSubject: trust.subject,
 		}),
 	);
-	const readerTrust = Object.freeze({
-		...trust,
-		audiences: [RELAY_DEPLOY_READER_OIDC_AUDIENCE],
-	});
 	const trustUpdates = [
 		{
 			identity: "hobo-ci-deploy-reader",
@@ -380,6 +351,29 @@ function subjectRepairSuffix(
 		: ` — ${why}: re-run hobo ci secret-store connect to repair the deploy identities' OIDC trust`;
 }
 
+function infisicalFailure(error: Error): string {
+	return error instanceof InfisicalError
+		? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
+		: "a failure that is not an Infisical answer";
+}
+
+async function forbiddenListing(
+	run: () => ReturnType<
+		ReturnType<typeof createInfisicalClient>["listSecretNames"]
+	>,
+): Promise<"listed" | "refused" | "unproven"> {
+	try {
+		await run();
+		return "listed";
+	} catch (error) {
+		return error instanceof InfisicalError &&
+			error.code === "forbidden" &&
+			error.status === 403
+			? "refused"
+			: "unproven";
+	}
+}
+
 async function readerRead(
 	store: ParsedSecretStoreBinding,
 	client: () => ReturnType<typeof createInfisicalClient>,
@@ -390,50 +384,49 @@ async function readerRead(
 	const method = "GitHub Actions OIDC";
 	let session: ReturnType<typeof createInfisicalClient> | undefined;
 	try {
-		session = client();
-		const names = (await session.listSecretNames()).map(
-			(secret) => secret.secretKey,
-		);
-		if (!names.includes(RELAY_DEPLOY_TOKEN_ENTRY))
+		const active = client();
+		session = active;
+		await active.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
+		const membership = await active.readProjectIdentity(identityId);
+		if (
+			membership.roles.length !== 1 ||
+			membership.roles[0] !== "viewer"
+		)
 			return {
 				identity,
 				identityId,
 				method,
 				result: "fail",
-				detail: `signed in, but ${RELAY_DEPLOY_TOKEN_ENTRY} is not in the deploy credential folder yet`,
+				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but its deploy-project membership is not exactly Viewer; remove every write-capable, administrator, custom, or temporary role`,
 			};
-		let relayFolder: "listed" | "refused" | "unproven" = "unproven";
 		let relayFolderWhy = "";
-		try {
-			await session
-				.forBinding(
-					parseInfisicalBinding({
-						siteUrl: store.endpoint,
-						projectId: store.projectId,
-						environment: store.environment,
-						secretPath: store.secretPath,
-					}),
-				)
-				.listSecretNames();
-			relayFolder = "listed";
-		} catch (error) {
-			relayFolderWhy =
-				error instanceof InfisicalError
-					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "a failure that is not an Infisical answer";
-			relayFolder =
-				error instanceof InfisicalError &&
-				(error.code === "unauthorized" || error.code === "forbidden")
-					? "refused"
-					: "unproven";
-		}
+		const relayFolder = await forbiddenListing(async () => {
+			try {
+				return await active
+					.forBinding(
+						parseInfisicalBinding({
+							siteUrl: store.endpoint,
+							projectId: store.projectId,
+							environment: store.environment,
+							secretPath: store.secretPath,
+						}),
+					)
+					.listSecretNames();
+			} catch (error) {
+				relayFolderWhy =
+					error instanceof Error
+						? infisicalFailure(error)
+						: "a failure that is not an Infisical answer";
+				throw error;
+			}
+		});
 		if (relayFolder === "listed")
 			return {
 				identity,
 				identityId,
 				method,
 				result: "fail",
-				detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, but it can also list the relay folder ${store.secretPath} in project ${store.projectId}: scope the reader's grant read-only to the deploy project only`,
+				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but it can also list the relay folder ${store.secretPath} in project ${store.projectId}: scope the reader's grant read-only to the deploy project only`,
 			};
 		if (relayFolder === "unproven")
 			return {
@@ -441,14 +434,14 @@ async function readerRead(
 				identityId,
 				method,
 				result: "fail",
-				detail: `signed in and read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, but the attempt to list the relay folder ${store.secretPath} in project ${store.projectId} ended in ${relayFolderWhy} instead of an authorization refusal, so the reader's scope is unproven: only Infisical refusing that listing (401 or 403) can pass this check`,
+				detail: `signed in and read ${RELAY_DEPLOY_TOKEN_ENTRY}, but the attempt to list the relay folder ${store.secretPath} in project ${store.projectId} ended in ${relayFolderWhy} instead of HTTP 403, so the reader's scope is unproven`,
 			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail: `signed in, read ${names.length} secret name(s), including ${RELAY_DEPLOY_TOKEN_ENTRY}, and was refused the relay folder ${store.secretPath}`,
+			detail: `signed in, read ${RELAY_DEPLOY_TOKEN_ENTRY}, confirmed Viewer-only deploy-project membership, and was refused the relay folder ${store.secretPath} with HTTP 403`,
 		};
 	} catch (error) {
 		return {
@@ -458,8 +451,8 @@ async function readerRead(
 			result: "fail",
 			detail:
 				(error instanceof InfisicalError
-					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in or read could not run") +
+					? infisicalFailure(error)
+					: "the sign-in, credential read, or role check could not run") +
 				oidcHintSuffix(workloadJwt()) +
 				(error instanceof Error
 					? subjectRepairSuffix(error, workloadJwt(), store.deployOidcSubject)
@@ -471,23 +464,47 @@ async function readerRead(
 }
 
 async function writerSignIn(
-	identityId: string,
+	store: ParsedSecretStoreBinding,
 	client: () => ReturnType<typeof createInfisicalClient>,
 	workloadJwt: () => string | undefined,
-	trustedSubject: string,
 ): Promise<VerifyCheck> {
 	const identity = "hobo-ci-writer";
+	const identityId = store.deployIdentityId;
 	const method = "GitHub Actions OIDC";
 	let session: ReturnType<typeof createInfisicalClient> | undefined;
 	try {
-		session = client();
-		await session.signIn();
+		const active = client();
+		session = active;
+		await active.signIn();
+		const deployProject = await forbiddenListing(() =>
+			active
+				.forBinding(
+					parseInfisicalBinding({
+						siteUrl: store.endpoint,
+						projectId: store.deployProjectId,
+						environment: store.environment,
+						secretPath: "/",
+					}),
+				)
+				.listSecretNames(),
+		);
+		if (deployProject !== "refused")
+			return {
+				identity,
+				identityId,
+				method,
+				result: "fail",
+				detail:
+					deployProject === "listed"
+						? "signed in, but it can list the deploy credential project; remove the writer's membership there"
+						: "signed in, but deploy-project isolation was not answered with HTTP 403",
+			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail: "signed in",
+			detail: "signed in and was refused the deploy credential project with HTTP 403",
 		};
 	} catch (error) {
 		return {
@@ -497,11 +514,11 @@ async function writerSignIn(
 			result: "fail",
 			detail:
 				(error instanceof InfisicalError
-					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in could not run") +
+					? infisicalFailure(error)
+					: "the sign-in or isolation check could not run") +
 				oidcHintSuffix(workloadJwt()) +
 				(error instanceof Error
-					? subjectRepairSuffix(error, workloadJwt(), trustedSubject)
+					? subjectRepairSuffix(error, workloadJwt(), store.deployOidcSubject)
 					: ""),
 		};
 	} finally {
@@ -509,29 +526,47 @@ async function writerSignIn(
 	}
 }
 
-async function attempt(
-	identity: string,
-	identityId: string,
-	method: string,
-	run: () => Promise<readonly string[]>,
-	expect: string | undefined,
+async function relayRead(
+	store: ParsedSecretStoreBinding,
+	client: () => ReturnType<typeof createInfisicalClient>,
 ): Promise<VerifyCheck> {
+	const identity = "hobo-ci-relay";
+	const identityId = store.relayIdentityId;
+	const method = "Vercel OIDC";
+	let session: ReturnType<typeof createInfisicalClient> | undefined;
 	try {
-		const names = await run();
-		if (expect !== undefined && !names.includes(expect))
+		const active = client();
+		session = active;
+		const names = await active.listSecretNames();
+		const deployProject = await forbiddenListing(() =>
+			active
+				.forBinding(
+					parseInfisicalBinding({
+						siteUrl: store.endpoint,
+						projectId: store.deployProjectId,
+						environment: store.environment,
+						secretPath: "/",
+					}),
+				)
+				.listSecretNames(),
+		);
+		if (deployProject !== "refused")
 			return {
 				identity,
 				identityId,
 				method,
 				result: "fail",
-				detail: `signed in, but ${expect} is not in its folder yet`,
+				detail:
+					deployProject === "listed"
+						? "signed in and listed the relay folder, but it can also list the deploy credential project; remove the relay identity's membership there"
+						: "signed in and listed the relay folder, but deploy-project isolation was not answered with HTTP 403",
 			};
 		return {
 			identity,
 			identityId,
 			method,
 			result: "pass",
-			detail: `signed in and listed ${names.length} secret name(s)`,
+			detail: `signed in and listed ${names.length} relay secret name(s); the deploy credential project was refused with HTTP 403`,
 		};
 	} catch (error) {
 		return {
@@ -541,9 +576,11 @@ async function attempt(
 			result: "fail",
 			detail:
 				error instanceof InfisicalError
-					? `infisical ${error.code}${error.status === undefined ? "" : ` (HTTP ${error.status})`}`
-					: "the sign-in could not run",
+					? infisicalFailure(error)
+					: "the sign-in or isolation check could not run",
 		};
+	} finally {
+		await session?.revoke().catch(() => undefined);
 	}
 }
 
@@ -644,7 +681,7 @@ export async function runCiSecretStoreVerify(
 						"needs a GitHub Actions job with id-token: write on main; the relay deploy workflow's 'Verify the secret store connection' step runs it",
 				}
 			: await writerSignIn(
-					store.deployIdentityId,
+					store,
 					() =>
 						createInfisicalClient({
 							binding: parseInfisicalBinding({
@@ -662,35 +699,27 @@ export async function runCiSecretStoreVerify(
 								: undefined),
 						}),
 					() => writerWorkloadJwt,
-					store.deployOidcSubject,
 				),
 	);
 	const vercelJwt = env.VERCEL_OIDC_TOKEN ?? "";
 	checks.push(
 		vercelJwt !== ""
-			? await attempt(
-					"hobo-ci-relay",
-					store.relayIdentityId,
-					"Vercel OIDC",
-					async () =>
-						(
-							await createInfisicalClient({
-								binding: parseInfisicalBinding({
-									siteUrl: store.endpoint,
-									projectId: store.projectId,
-									environment: store.environment,
-									secretPath: store.secretPath,
-								}),
-								auth: oidcAuth({
-									identityId: store.relayIdentityId,
-									jwt: async () => vercelJwt,
-								}),
-								...(input.fetch !== undefined
-									? { fetch: input.fetch }
-									: undefined),
-							}).listSecretNames()
-						).map((secret) => secret.secretKey),
-					undefined,
+			? await relayRead(store, () =>
+					createInfisicalClient({
+						binding: parseInfisicalBinding({
+							siteUrl: store.endpoint,
+							projectId: store.projectId,
+							environment: store.environment,
+							secretPath: store.secretPath,
+						}),
+						auth: oidcAuth({
+							identityId: store.relayIdentityId,
+							jwt: async () => vercelJwt,
+						}),
+						...(input.fetch !== undefined
+							? { fetch: input.fetch }
+							: undefined),
+					}),
 				)
 			: {
 					identity: "hobo-ci-relay",

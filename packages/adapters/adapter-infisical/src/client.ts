@@ -16,9 +16,15 @@
  * reads is exactly what was written there.
  */
 
-import { create, type JsonValue, toJsonString } from "@bufbuild/protobuf";
+import {
+	create,
+	fromJson,
+	type JsonValue,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import {
 	InfisicalOidcLoginRequestSchema,
+	InfisicalProjectIdentityResponseSchema,
 	InfisicalSecretWriteRequestSchema,
 	InfisicalTokenRevokeRequestSchema,
 	InfisicalUniversalAuthLoginRequestSchema,
@@ -28,6 +34,7 @@ import { parseJwt } from "./auth.js";
 import {
 	type ParsedInfisicalBinding,
 	parseInfisicalBinding,
+	parseInfisicalIdentityId,
 	parseInfisicalSecretKey,
 } from "./binding.js";
 import { InfisicalError } from "./errors.js";
@@ -68,6 +75,13 @@ export interface InfisicalClient {
 	/** Keys and versions only (`viewSecretValue=false`). */
 	listSecretNames(): Promise<readonly ParsedSecretName[]>;
 	getSecret(name: string, version?: number): Promise<ParsedSecret>;
+	readProjectIdentity(identityId: string): Promise<
+		Readonly<{
+			identityId: string;
+			projectId: string;
+			roles: readonly string[];
+		}>
+	>;
 	/** Update the secret, or create it when it does not exist. */
 	putSecret(name: string, value: string): Promise<{ version: number }>;
 	createSecret(
@@ -515,6 +529,41 @@ function createInfisicalClientInternal(
 					secretPath(name, query.toString()),
 				);
 				return parseSecretEnvelope("read secret", ok("read secret", answer));
+			},
+			async readProjectIdentity(identityId) {
+				const parsedIdentityId = parseInfisicalIdentityId(identityId);
+				const operation = "read project identity";
+				const answer = await request(
+					operation,
+					"GET",
+					`/api/v1/projects/${encodeURIComponent(bound.projectId)}/identities/${encodeURIComponent(parsedIdentityId)}`,
+				);
+				let parsed: ReturnType<
+					typeof fromJson<typeof InfisicalProjectIdentityResponseSchema>
+				>;
+				try {
+					parsed = fromJson(
+						InfisicalProjectIdentityResponseSchema,
+						ok(operation, answer),
+						{ ignoreUnknownFields: true },
+					);
+				} catch {
+					throw new InfisicalError(operation, "invalid-response");
+				}
+				const membership = parsed.identityMembership;
+				const projectId = membership?.project?.id ?? "";
+				if (
+					membership?.identityId !== parsedIdentityId ||
+					projectId !== bound.projectId ||
+					membership.roles.length === 0 ||
+					membership.roles.some((role) => role.role === "")
+				)
+					throw new InfisicalError(operation, "invalid-response");
+				return Object.freeze({
+					identityId: membership.identityId,
+					projectId,
+					roles: Object.freeze(membership.roles.map((role) => role.role)),
+				});
 			},
 			async putSecret(name, value) {
 				const target = secretPath(name);

@@ -74,9 +74,21 @@ symlinkSync(
 	binding.deployProjectId = "ci-deploy-project";
 	binding.deployCredentialIdentityId = "ci-deploy-reader-identity";
 	binding.deployOidcSubject =
-		"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
+		"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
 	writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
 }
+
+const legacyFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-legacy-fixture-"),
+);
+cpSync(RELAY_DIR, legacyFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(legacyFixtureDir, "node_modules"),
+);
 
 const fixture = (name: string) =>
 	parseJsonObject(
@@ -205,6 +217,7 @@ function freshHome(): string {
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
 	rmSync(relayFixtureDir, { recursive: true, force: true });
+	rmSync(legacyFixtureDir, { recursive: true, force: true });
 });
 
 // The relay answering its probes, and the URLs it was asked for. Its
@@ -432,11 +445,30 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses the committed binding itself until the deploy project and reader id are recorded, so the deploy train fails closed across the cutover", async () => {
+	it("plans the committed declaration without requiring owner-provisioned ids for a dry run", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
 			fetch,
 			cwd: RELAY_DIR,
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.envelope).toMatchObject({
+			ok: true,
+			code: "HOBO_CI_DEPLOY_PLANNED",
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("rejects a separate legacy binding before any OIDC or deploy request", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			cwd: legacyFixtureDir,
+			env: {
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token?api-version=2.0",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
 		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({

@@ -201,6 +201,18 @@ message InfisicalIdentityResponse {
   InfisicalIdentity identity = 1;
 }
 
+message InfisicalProjectIdentityMembership {
+  string identity_id = 1;
+  repeated InfisicalProjectRole roles = 2;
+  InfisicalProject project = 3;
+}
+
+// GET /api/v1/projects/{projectId}/identities/{identityId}: the identity's
+// effective project membership and assigned roles.
+message InfisicalProjectIdentityResponse {
+  InfisicalProjectIdentityMembership identity_membership = 1;
+}
+
 // POST /api/v1/auth/oidc-auth/identities/{identityId}: trust one workload
 // issuer (Vercel's team issuer, GitHub Actions) for one identity. PATCH of the
 // same path takes the same body and replaces an existing trust in place.

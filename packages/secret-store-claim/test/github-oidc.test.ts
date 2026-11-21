@@ -4,6 +4,7 @@ import {
 	type GithubOidcSubject,
 	GithubOidcSubjectTemplateSchema,
 	GithubRepositorySchema,
+	githubDeployReaderTrust,
 	githubDeployTrust,
 	githubSubjectMismatch,
 	parseGithubOidcSubject,
@@ -82,7 +83,7 @@ describe("the OIDC subject GitHub issues for a repository", () => {
 			template({ subClaimPrefix: "repo:Hobo-Labs@*/HoBo@*" }),
 			template({
 				useDefault: false,
-				includeClaimKeys: ["repository_owner", "job_workflow_ref"],
+				includeClaimKeys: ["repository_owner", "job_job_workflow_ref"],
 				useImmutableSubject: true,
 			}),
 		];
@@ -127,7 +128,7 @@ describe("the relay layout's deploy trust", () => {
 		template: template({ useImmutableSubject: true }),
 	});
 
-	it("binds the subject the repository's tokens carry and pins its ids", () => {
+	it("binds the writer to its protected environment and exact workflow", () => {
 		const layout = relayStoreLayout({
 			vercelTeamSlug: "hobo-team",
 			vercelTeamId: "team_fixture",
@@ -137,21 +138,59 @@ describe("the relay layout's deploy trust", () => {
 		expect(layout.deployTrust).toEqual({
 			issuer: "https://token.actions.githubusercontent.com",
 			audiences: ["https://github.com/Hobo-Labs"],
-			subject: "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+			subject:
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 			claims: {
 				repository_id: "1274791462",
 				repository_owner_id: "344805935",
+				environment: "hobo-ci-app-credentials",
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 			},
 		});
-		expect(layout.deployTrust.subject).not.toBe(
-			"repo:Hobo-Labs/HoBo:ref:refs/heads/main",
-		);
 	});
 
-	it("takes another branch", () => {
-		expect(githubDeployTrust(github, "release").subject).toBe(
-			"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/release",
-		);
+	it("takes another branch in the workflow ref without widening the environment", () => {
+		expect(githubDeployTrust(github, "release").claims).toMatchObject({
+			environment: "hobo-ci-app-credentials",
+			job_workflow_ref:
+				"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/release",
+		});
+	});
+
+	it("denies writer authentication to reader-eligible, unrelated, and reusable-workflow tokens", () => {
+		const reader = githubDeployReaderTrust(github);
+		const writer = githubDeployTrust(github);
+		const admits = (
+			trust: ReturnType<typeof githubDeployTrust>,
+			claims: Readonly<Record<string, string>>,
+		) =>
+			claims.sub === trust.subject &&
+			trust.audiences.includes(claims.aud ?? "") &&
+			Object.entries(trust.claims).every(
+				([name, value]) => claims[name] === value,
+			);
+		const readerToken = {
+			...reader.claims,
+			sub: reader.subject,
+			aud: reader.audiences[0] ?? "",
+		};
+		expect(admits(reader, readerToken)).toBe(true);
+		expect(admits(writer, readerToken)).toBe(false);
+		expect(
+			admits(reader, {
+				...readerToken,
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/other.yml@refs/heads/main",
+			}),
+		).toBe(false);
+		expect(
+			admits(reader, {
+				...readerToken,
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/caller.yml@refs/heads/main",
+			}),
+		).toBe(false);
 	});
 });
 
