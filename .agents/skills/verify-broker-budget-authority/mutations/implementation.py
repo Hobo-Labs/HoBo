@@ -28,7 +28,7 @@ timeout = int(os.environ.get("BROKER_MUTATION_TIMEOUT_SEC", "600"))
 cases = [
     ("ambiguous commit result", authority, "committed !== null && Object(committed) === committed", "committed instanceof Promise", properties, ambiguous, True),
     ("uncertain commit reuse", authority, "if (commitOutcomeUncertain)", "if (false && commitOutcomeUncertain)", properties, ambiguous, True),
-    ("thrown commit reuse", authority, "} catch (error) {\n\t\t\tcommitOutcomeUncertain = true;\n\t\t\tthrow new Error", "} catch (error) {\n\t\t\tcommitOutcomeUncertain = false;\n\t\t\tthrow new Error", properties, ambiguous, True),
+    ("thrown commit reuse", authority, "} catch (error) {\n\t\t\tcommitOutcomeUncertain = true;\n\t\t\tthrow new Error", "} catch (error) {\n\t\t\tcommitOutcomeUncertain = false;\n\t\t\tthrow new Error", denials, "rejects reuse after a durable commit failure while retaining its cause", False),
     ("commit failure reported as denial", authority, 'throw new Error("budget commit outcome uncertain; reopen the authority", {\n\t\t\t\tcause: error,\n\t\t\t});', "throw error;", denials, "does not classify a commit exception as a denial", False),
     ("unresolved exposure", authority, "current.unresolvedMicros,\n\t\t\t\t\tcurrent.recoveryReserveMicros", "0,\n\t\t\t\t\tcurrent.recoveryReserveMicros", properties, admission, True),
     ("provider holds", authority, "account.reservedMicros,\n\t\t\t\t\t\taccount.externalCommittedMicros", "0,\n\t\t\t\t\t\taccount.externalCommittedMicros", properties, dimensions, True),
@@ -36,9 +36,9 @@ cases = [
     ("claimed release", authority, 'status === "released" && existing.executionDigest', 'status === "released" && false', properties, claimed, True),
     ("commit before state", authority, "\t\tcommitting = true;", "\t\tcurrent = clone(BudgetLedgerSnapshotSchema, next);\n\t\treservations = new Map(rows);\n\t\tcommitting = true;", properties, commit, True),
     ("reentrant commit", authority, 'if (committing) throw new Error("budget authority mutation during commit");', 'if (false) throw new Error("budget authority mutation during commit");', properties, reentry, True),
-    ("zero-unit configuration", authority, "active().some((row) =>\n\t\t\t\t\t\trow.entitlementClaims.some(\n\t\t\t\t\t\t\t(claim) => claim.bucketId === old.bucketId,\n\t\t\t\t\t\t),\n\t\t\t\t\t)", "old.reservedUnits > 0", properties, scope, True),
-    ("replayed unit", authority, "bucket.unit === entry.unit &&", "true &&", properties, scope, True),
-    ("replayed period", authority, "bucket.periodId === row.identity?.periodId,", "true,", properties, scope, True),
+    ("zero-unit configuration", authority, "active().some((row) =>\n\t\t\t\t\t\t\trow.entitlementClaims.some((claim) =>\n\t\t\t\t\t\t\t\tsameEntitlementScope(claim, old),\n\t\t\t\t\t\t\t),\n\t\t\t\t\t\t)", "false", properties, scope, True),
+    ("replayed unit", authority, "row.bucketId,\n\t\trow.unit,\n\t]);", "row.bucketId,\n\t]);", properties, scope, True),
+    ("replayed period", authority, "(row.identity === undefined ||\n\t\t\t\t\t\t\t\t\tbucket.periodId === row.identity.periodId),", "true,", properties, scope, True),
     ("receiver signature", settlement, "!verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(canonicalFenceOperationReceipt(body)),", "false && !verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(canonicalFenceOperationReceipt(body)),", fenced, signed, True),
     ("finance signature", settlement, "!verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(payload),", "false && !verify(\n\t\t\t\tnull,\n\t\t\t\tBuffer.from(payload),", fenced, signed, True),
 ]
@@ -47,7 +47,7 @@ cases = [
 def killed(property_run, output: str) -> bool:
     if property_run:
         return "Property failed after" in output
-    return "AssertionError" in output or "expect(" in output or "Property failed after" in output
+    return "AssertionError" in output or "Property failed after" in output
 
 
 with tempfile.TemporaryDirectory(prefix="hobo-broker-code-mutants-") as directory:

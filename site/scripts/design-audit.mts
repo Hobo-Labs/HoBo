@@ -231,10 +231,6 @@ async function matrixPass(browser: Browser, base: string) {
 						const de = document.documentElement;
 						const pre = document.querySelector(".terminal pre");
 						const proseH2 = document.querySelector(".prose h2");
-						// Wide code that scrolls inside its own container is the
-						// sanctioned pattern (DESIGN.md). Clipped means wider than its
-						// box with NO scroll affordance — that is content you cannot
-						// reach, which is what shipped on desktop broadsheet once.
 						const preStyle = pre ? getComputedStyle(pre) : null;
 						return {
 							overflowX: de.scrollWidth > de.clientWidth + 1,
