@@ -30,10 +30,12 @@ original workflow, checkout, job token, logs and artifacts stay in GitHub Action
 ## Runner teardown correlation
 
 When GitHub returns several jobs associated with a runner, correlation selects
-an executing job before a queued or finished reservation. This keeps cleanup
-from treating a runner as idle while another observed job is still executing.
-The rule applies to jobs returned by the lookup; bounded or incomplete GitHub
-listings can still omit an assignment. The maintained
+an executing job before a queued or finished reservation, including when the
+jobs belong to different observed runs. If a later lookup fails after a queued
+match, the result is marked incomplete. Fail-closed teardown retains the runner
+on an incomplete or failed lookup; the force-stop path can continue after the
+queued grace period. Bounded or truncated GitHub listings can still omit an
+assignment. The maintained
 [runner-correlation verification skill](../../.agents/skills/verify-ci-runner-correlation/SKILL.md)
 records the checks and assumptions.
 
@@ -50,6 +52,29 @@ stateDiagram-v2
   s0 --> s1: select highest-priority job
   s0 --> s2: select highest-priority job
   s2 --> s3: allow teardown
+```
+
+The cross-run model explores 96 distinct states, including lookup failure and
+force-stop behavior. Its projection hides 48 same-state transitions.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking runs
+  s1: Executing job observed
+  s2: No execution observed
+  s3: Lookup incomplete
+  s4: Teardown allowed
+  s5: Runner retained
+  [*] --> s0
+  s0 --> s1: check later runs
+  s0 --> s3: later lookup fails
+  s0 --> s2: check later runs
+  s1 --> s5: apply teardown policy
+  s2 --> s3: served-job lookup fails
+  s2 --> s4: apply teardown policy
+  s3 --> s4: apply teardown policy
+  s3 --> s5: apply teardown policy
+  s2 --> s5: apply teardown policy
 ```
 
 ## Test this branch

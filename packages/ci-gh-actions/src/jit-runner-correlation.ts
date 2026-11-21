@@ -27,6 +27,8 @@ export type ResolvedRunnerAssignment = Readonly<{
 	jobId: number;
 	runId: number;
 	status: string;
+	/** A queued match was found, but a later GitHub scan failed. */
+	incomplete?: true;
 }>;
 
 export type RunnerRunCorrelation = Readonly<
@@ -154,7 +156,7 @@ export async function evaluateRunnerTeardownGuard(
 	}>,
 	opts?: Readonly<{
 		/**
-		 * When true and GitHub cannot be read, defer teardown (`runnerId > 0`).
+		 * When true and GitHub cannot be read, defer teardown.
 		 * When false (`forceStop` paths), unreadable GitHub does not block — a
 		 * **confirmed** executing assignment still blocks via `assignmentBlocksRunnerTeardown`.
 		 */
@@ -182,6 +184,7 @@ export async function evaluateRunnerTeardownGuard(
 				preferRunIds: fields.preferRunIds,
 			},
 		);
+		if (assignment?.incomplete && opts?.failClosed === true) return true;
 		if (
 			assignmentBlocksRunnerTeardown(
 				assignment,
@@ -193,7 +196,8 @@ export async function evaluateRunnerTeardownGuard(
 			return true;
 		if (!observeServedJob) return false;
 	} catch {
-		if (!observeServedJob) return opts?.failClosed === true;
+		if (opts?.failClosed === true) return true;
+		if (!observeServedJob) return false;
 		// Fall through to direct observation of the served workflow job.
 	}
 	try {
@@ -218,7 +222,7 @@ export async function evaluateRunnerTeardownGuard(
 			return true;
 		return false;
 	} catch {
-		return opts?.failClosed === true && fields.runnerId > 0;
+		return opts?.failClosed === true;
 	}
 }
 
@@ -253,22 +257,32 @@ export async function resolveRunnerAssignedJob(
 		);
 		return servedOnRun(jobs, reservedJobId, runnerName, runnerId);
 	};
-	for (const runId of options?.preferRunIds ?? []) {
-		const hit = await scanRun(runId);
-		if (hit && RUNNER_HELD_JOB_STATUSES.has(hit.status)) return hit;
-	}
-	const runIds = await listInProgressWorkflowRunIds(
-		api,
-		installationId,
-		repository,
-		options?.inProgressRunLimit ?? 25,
-	);
+	let queued: ResolvedRunnerAssignment | undefined;
 	let inactive: ResolvedRunnerAssignment | undefined;
-	for (const runId of runIds) {
-		const hit = await scanRun(runId);
-		if (!hit) continue;
-		if (RUNNER_HELD_JOB_STATUSES.has(hit.status)) return hit;
-		inactive ??= hit;
+	try {
+		for (const runId of options?.preferRunIds ?? []) {
+			const hit = await scanRun(runId);
+			if (hit && RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
+			if (hit?.status === "queued") queued ??= hit;
+		}
+		const runIds = await listInProgressWorkflowRunIds(
+			api,
+			installationId,
+			repository,
+			options?.inProgressRunLimit ?? 25,
+		);
+		for (const runId of runIds) {
+			const hit = await scanRun(runId);
+			if (!hit) continue;
+			if (RUNNER_EXECUTING_JOB_STATUSES.has(hit.status)) return hit;
+			if (hit.status === "queued") queued ??= hit;
+			else inactive ??= hit;
+		}
+	} catch (error) {
+		// Preserve an already observed queued binding, but tell the guard that
+		// later runs could not be checked before it makes a fail-closed decision.
+		if (queued) return { ...queued, incomplete: true };
+		throw error;
 	}
-	return inactive;
+	return queued ?? inactive;
 }
