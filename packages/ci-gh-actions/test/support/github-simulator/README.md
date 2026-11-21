@@ -24,7 +24,7 @@ All of it is reached through `github.fetch` under `github.baseUrl`. Every reques
 | Area | Routes |
 | --- | --- |
 | Runs | list (`status`, `event`, `per_page`, `page`), get, get an attempt, jobs (`filter=latest` or `all`), an attempt's jobs, `rerun`, `rerun-failed-jobs`, `cancel` |
-| Jobs | get, `logs` (answers 302 to a download URL, as GitHub does; `fetch` follows it unless `redirect: "manual"`), check-run annotations |
+| Jobs | get, `logs` (answers 302 to a download URL, as GitHub does; `fetch` follows it by default, returns it for `redirect: "manual"`, and rejects it for `redirect: "error"`), check-run annotations |
 | Runners | for a repository or an organization: list (`name`), get, delete, `generate-jitconfig`, and labels (list, add, set, remove all custom, remove one) |
 | Repository | the repository, its installation, file contents (`ref` as a branch or its head commit) |
 | Git | `GET git/ref/...`, `GET git/commits/{sha}`, and the writes the routing slip uses: `POST git/trees`, `POST git/commits`, `POST git/refs`, `PATCH git/refs/...` |

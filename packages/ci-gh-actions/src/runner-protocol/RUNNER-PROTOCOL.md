@@ -62,10 +62,13 @@ machines refuse. The relay's inputs come from the `inputs` context a called
 workflow's job is given; names that are not relay inputs are left out. Each
 step becomes its `uses:` and `with:`.
 
-A job is a relay job when it names at least one relay input, or when every
-step is a HoBo check step. Anything else asked for the relay label by
-mistake. The client completes it as failed, with an annotation saying so,
-and keeps waiting: a relay runs no job code, so it could never run it.
+A routing job must contain the pinned setup steps and evaluator command from
+the generated relay workflow, with no additional shell options, containers,
+job-level environment or unexpected step environment. A check job must
+contain only the supported
+`hobo-labs/hobo/checks/pr-title@v1` or `checks/lint@v1` steps.
+The client fails anything else with an annotation and keeps waiting: a relay
+runs no other job code, even if an unrelated job has a matching input name.
 
 ## Behaviour
 

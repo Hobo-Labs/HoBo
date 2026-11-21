@@ -1,17 +1,3 @@
-/**
- * Nine signals of CI time that did not have to be spent, in three areas:
- * minutes paid for (cost), minutes a person waited (speed) and work started
- * that the change did not call for (complexity).
- *
- * Each signal finds its occurrences in a set of run attempts, adds up the
- * minutes they cover and names the worst offenders. A signal is `shown` only
- * when it covers enough minutes, both outright and as a share of all job
- * minutes in the input, so a report leads with what matters in this
- * repository rather than listing every signal every time.
- *
- * Minutes are fractional (milliseconds / 60 000) throughout. Pure functions.
- */
-
 import { compareText } from "./order.js";
 import {
 	type InsightJob,
@@ -44,21 +30,13 @@ export type CiSignalId = (typeof CI_SIGNAL_IDS)[number];
 export type SignalArea = "cost" | "speed" | "complexity";
 
 export type SignalThresholds = Readonly<{
-	/** A job waits too long for a runner when it waits longer than this. */
 	queueWaitMs: number;
-	/** A run's last job holds it up when it runs on alone for at least this long. */
 	slowestJobMs: number;
-	/** A run fans out wide when it starts at least this many jobs. */
 	fanoutJobs: number;
-	/** A billed job is short when it runs for less than this. */
 	shortJobMs: number;
-	/** A signal is shown only when it covers at least this many minutes. */
 	minMinutes: number;
-	/** ... and at least this share of all job minutes in the input. */
 	minShare: number;
-	/** The most offenders a signal names. */
 	maxRows: number;
-	/** An offender with fewer minutes than this is not named. */
 	minRowMinutes: number;
 }>;
 
@@ -74,7 +52,6 @@ export const DEFAULT_SIGNAL_THRESHOLDS: SignalThresholds = {
 	minRowMinutes: 1,
 };
 
-/** One offender: everything a signal found under one runner, job or workflow. */
 export type SignalRow = Readonly<{
 	key: string;
 	minutes: number;
@@ -84,7 +61,6 @@ export type SignalRow = Readonly<{
 export type CiSignal = Readonly<{
 	id: CiSignalId;
 	area: SignalArea;
-	/** Minutes over every occurrence, named in `rows` or not. */
 	minutes: number;
 	occurrences: number;
 	shown: boolean;
@@ -92,12 +68,10 @@ export type CiSignal = Readonly<{
 }>;
 
 export type CiSignals = Readonly<{
-	/** Run time of every job that started and finished, in minutes. */
 	totalJobMinutes: number;
 	signals: readonly CiSignal[];
 }>;
 
-/** One occurrence of a signal, before occurrences are grouped into rows. */
 type Finding = Readonly<{ key: string; minutes: number }>;
 
 type Detector = Readonly<{
@@ -120,22 +94,12 @@ const DOCS_EXTENSIONS = new Set([
 
 const DOCS_FOLDERS = new Set(["doc", "docs"]);
 
-/** LICENSE, COPYING or NOTICE, alone or with a suffix such as LICENSE-MIT. */
 const LEGAL_FILE_NAME = /^(?:licen[cs]e|copying|notice)(?:-[a-z0-9.]+)?$/i;
 
-/** `docs:` or `docs(<scope>):` at the start of a title. */
 const DOCS_TITLE = /^docs(?:\([^()\r\n]*\))?:/i;
 
-/** A workflow named for documentation is meant to run when documentation changes. */
-const DOCS_WORKFLOW = /doc/i;
+const DOCS_WORKFLOW = /\bdoc(?:s|umentation)?\b/i;
 
-/**
- * True for a path that holds documentation rather than code: a file ending in
- * md, mdx, markdown, rst, adoc or txt; anything under a folder named `doc` or
- * `docs`; and LICENSE, COPYING and NOTICE files at any depth. Letter case is
- * ignored. A legal file counts by its whole name (`LICENSE`, `LICENSE-MIT`),
- * so a source file such as `notice.ts` does not.
- */
 export function isDocsPath(path: string): boolean {
 	const segments = path
 		.split(/[/\\]/)
@@ -149,13 +113,6 @@ export function isDocsPath(path: string): boolean {
 	return dot > 0 && DOCS_EXTENSIONS.has(fileName.slice(dot + 1));
 }
 
-/**
- * True when a run was started by a change to documentation only. The changed
- * paths decide when they are known: every one must be documentation, and a
- * change with no paths is not a documentation change. Only when the paths are
- * not known does the title decide, by starting with `docs:` or
- * `docs(<scope>):`.
- */
 function changedDocsOnly(run: InsightRun): boolean {
 	if (run.changedPaths !== undefined) {
 		return run.changedPaths.length > 0 && run.changedPaths.every(isDocsPath);
@@ -163,7 +120,6 @@ function changedDocsOnly(run: InsightRun): boolean {
 	return run.title !== undefined && DOCS_TITLE.test(run.title.trim());
 }
 
-/** Non-relay jobs that waited longer than `queueWaitMs` for a runner. */
 function queueWaitFindings(
 	runs: readonly InsightRun[],
 	thresholds: SignalThresholds,
@@ -189,7 +145,6 @@ type FinishedJob = Readonly<{
 	completedAtMs: number;
 }>;
 
-/** The jobs of a run that started and finished, last to finish first. */
 function finishedJobs(run: InsightRun): readonly FinishedJob[] {
 	const finished: FinishedJob[] = [];
 	for (const job of run.jobs) {
@@ -208,15 +163,6 @@ function finishedJobs(run: InsightRun): readonly FinishedJob[] {
 	);
 }
 
-/**
- * Run attempts held up by one job. The job that finished last counts when it
- * names no `needs` and started before the next-to-last job finished, so it ran
- * alongside the others rather than as a later stage. The minutes are how long
- * the run went on with only that job left, and count only from `slowestJobMs`.
- *
- * "Finished" means started and finished: a skipped job never held a run up.
- * Two jobs finishing in the same millisecond leave no job running alone.
- */
 function slowestJobFindings(
 	runs: readonly InsightRun[],
 	thresholds: SignalThresholds,
@@ -241,14 +187,6 @@ function attemptKey(repository: string, id: number, attempt: number): string {
 	return [repository, id, attempt].join("\n");
 }
 
-/**
- * Jobs that failed or timed out after running steps, and passed when the same
- * run was tried again. The minutes are the failed attempt's run time.
- *
- * Only the very next attempt of the same run is looked at, and every job of
- * that name in it must have succeeded: when a name is not unique, one success
- * does not show which of the jobs recovered.
- */
 function flakyJobFindings(runs: readonly InsightRun[]): readonly Finding[] {
 	const runsByAttempt = new Map<string, InsightRun>();
 	for (const run of runs) {
@@ -278,11 +216,6 @@ function flakyJobFindings(runs: readonly InsightRun[]): readonly Finding[] {
 	return findings;
 }
 
-/**
- * Jobs a runner started that failed without running a step: the runner broke,
- * not the job. The minutes are the job's run time, often next to nothing; the
- * count is what matters.
- */
 function runnerFailureFindings(
 	runs: readonly InsightRun[],
 ): readonly Finding[] {
@@ -300,7 +233,6 @@ function runnerFailureFindings(
 	return findings;
 }
 
-/** Minutes of a run's jobs that fall after `fromMs`. */
 function jobMinutesAfter(run: InsightRun, fromMs: number): number {
 	let overlapMs = 0;
 	for (const job of run.jobs) {
@@ -315,18 +247,6 @@ function jobMinutesAfter(run: InsightRun, fromMs: number): number {
 	return overlapMs / MS_PER_MINUTE;
 }
 
-/**
- * Runs on a branch other than the default one that kept going after a newer
- * run of the same workflow started on that branch. The minutes are the older
- * run's job minutes, billed or not, from the moment the newer run was created.
- *
- * The newer run is another run id of the same repository, workflow file,
- * branch and event, created after the older run and before it completed; the
- * earliest such run sets the cut-off. The same event is required because a
- * push run and a pull request run of one commit start together and would not
- * replace each other (that is the `same-commit` signal). A run that was
- * cancelled or skipped, or has not completed, is not counted.
- */
 function noConcurrencyFindings(
 	runs: readonly InsightRun[],
 ): readonly Finding[] {
@@ -371,10 +291,6 @@ function commitKey(run: InsightRun): string {
 	return [run.repository, run.workflowPath, run.headSha].join("\n");
 }
 
-/**
- * Push runs of a commit that the same workflow also ran for a pull request.
- * The push run is the extra one, and the minutes are all of its job minutes.
- */
 function sameCommitFindings(runs: readonly InsightRun[]): readonly Finding[] {
 	const pullRequestCommits = new Set<string>();
 	for (const run of runs) {
@@ -390,11 +306,6 @@ function sameCommitFindings(runs: readonly InsightRun[]): readonly Finding[] {
 	return findings;
 }
 
-/**
- * Billed jobs that ran for less than `shortJobMs`. GitHub bills a whole minute
- * for any part of one, so the minutes are the part of the first billed minute
- * the job did not use.
- */
 function shortJobFindings(
 	runs: readonly InsightRun[],
 	thresholds: SignalThresholds,
@@ -414,11 +325,6 @@ function shortJobFindings(
 	return findings;
 }
 
-/**
- * Pull request runs for a change to documentation only, in workflows that are
- * not themselves about documentation. The minutes are all of the run's job
- * minutes.
- */
 function docsChangeFindings(runs: readonly InsightRun[]): readonly Finding[] {
 	const findings: Finding[] = [];
 	for (const run of runs) {
@@ -429,11 +335,6 @@ function docsChangeFindings(runs: readonly InsightRun[]): readonly Finding[] {
 	return findings;
 }
 
-/**
- * Push and pull request runs on a branch other than the default one in which
- * at least `fanoutJobs` non-relay jobs started. The minutes are all of the
- * run's job minutes.
- */
 function wideFanoutFindings(
 	runs: readonly InsightRun[],
 	thresholds: SignalThresholds,
@@ -463,7 +364,6 @@ const DETECTORS: readonly Detector[] = [
 	{ id: "wide-fanout", area: "complexity", find: wideFanoutFindings },
 ];
 
-/** The worst offenders: most minutes first, then by key; small ones dropped. */
 function offenderRows(
 	findings: readonly Finding[],
 	thresholds: SignalThresholds,
@@ -486,15 +386,6 @@ function offenderRows(
 		.slice(0, Math.max(0, thresholds.maxRows));
 }
 
-/**
- * The nine signals over a set of run attempts, in the order of
- * `CI_SIGNAL_IDS`.
- *
- * A signal is `shown` when it has at least one occurrence, covers at least
- * `minMinutes`, and covers at least `minShare` of all job minutes in the
- * input. Time spent waiting is measured against job minutes too, though it is
- * not part of them.
- */
 export function ciSignals(
 	runs: readonly InsightRun[],
 	options?: Partial<SignalThresholds>,

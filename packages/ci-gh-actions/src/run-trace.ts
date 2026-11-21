@@ -141,7 +141,7 @@ export function routeForJob(
 			route.type !== "runner.route.Decided" ||
 			route.decision === undefined ||
 			request === undefined ||
-			request.runId !== run.id ||
+			request.runId !== BigInt(run.id) ||
 			Math.max(1, request.runAttempt) !== run.attempt ||
 			request.repository.toLowerCase() !== run.repository.toLowerCase()
 		)

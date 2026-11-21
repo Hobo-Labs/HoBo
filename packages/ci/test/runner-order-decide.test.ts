@@ -39,7 +39,7 @@ function request(
 		private: extra.private ?? true,
 		fork: extra.fork ?? false,
 		event: "pull_request",
-		runId: 9001,
+		runId: 9001n,
 		runAttempt: 1,
 		job: "relay-test",
 		actorId: extra.actorId ?? "42",
@@ -186,6 +186,30 @@ describe("decideRunnerRoute", () => {
 		expect(reasons(fork)).toContain("machine:fork_pull_request");
 	});
 
+	it("fails closed when the fork fact is missing", () => {
+		const missingFork = create(RunnerRouteRequestSchema, {
+			repository: "acme/app",
+			private: true,
+			event: "pull_request",
+			runId: 9001n,
+			runAttempt: 1,
+			job: "relay-test",
+			actorId: "42",
+			triggeringActorId: "42",
+			inputs: [{ key: "machine", labels: ["self-hosted"] }],
+		});
+		expect(missingFork.fork).toBeUndefined();
+		const decision = decideRunnerRoute(
+			DEFAULT_RUNNER_ORDER,
+			missingFork,
+			facts({ machines: [machine()] }),
+		);
+		expect(decision.outcome).toBe("none");
+		expect(decision.reason).toContain("fork");
+		expect(decision.reason).toContain("required");
+		expect(decision.skipped).toEqual([]);
+	});
+
 	it("lets only an isolated fleet take untrusted code", () => {
 		const ask = (
 			isolated: boolean,
@@ -308,12 +332,19 @@ describe("decideRunnerRoute", () => {
 			reason: "minutes_limit",
 			detail: "1600 of 2000 included minutes used; the limit is 80%",
 		});
-		expect(reasons(ask(1000, 600))).toEqual(["github:minutes_runway"]);
-		expect(ask(1000, 499).step).toBe("github");
-		// Unmeasured usage never blocks.
-		expect(
-			decideRunnerRoute(limited, request({ github: "ubuntu-24.04" })).step,
-		).toBe("github");
+		expect(reasons(ask(1000, 301))).toEqual(["github:minutes_runway"]);
+		expect(ask(1000, 300).step).toBe("github");
+
+		const unknown = decideRunnerRoute(
+			limited,
+			request({ github: "ubuntu-24.04" }),
+		);
+		expect(unknown.outcome).toBe("none");
+		expect(unknown.skipped[0]).toMatchObject({
+			key: "github",
+			reason: "minutes_limit",
+			detail: "minutes usage is unknown; the limit is 80%",
+		});
 	});
 
 	it("uses the unlimited github step after the limited one refuses", () => {
@@ -351,7 +382,13 @@ describe("decideRunnerRoute", () => {
 				}),
 			);
 		expect(ask(99.99).step).toBe("blacksmith");
-		expect(ask(undefined).step).toBe("blacksmith");
+		const unknown = ask(undefined);
+		expect(unknown.step).toBe("github");
+		expect(unknown.skipped[0]).toMatchObject({
+			key: "blacksmith",
+			reason: "spend_limit",
+			detail: "spend is unknown; the limit is $100",
+		});
 		const over = ask(100);
 		expect(over.step).toBe("github");
 		expect(over.skipped[0]?.detail).toBe("$100.00 of $100 spent this month");
@@ -381,14 +418,40 @@ describe("decideRunnerRoute", () => {
 		expect(many.outcome).toBe("none");
 	});
 
-	it("keeps an opt-in provider off public repositories until it is turned on", () => {
-		const hosted = order({ key: "depot" }, { key: "blacksmith" });
-		const ask = (publicOptIn: ReadonlySet<"depot">) =>
+	it.each([
+		["self-hosted", { private: false }],
+		["self-hosted", { fork: true }],
+		["department-runner", { private: false }],
+		["department-runner", { fork: true }],
+		["department-runner", {}],
+	])("refuses GitHub routing to %s for %j", (label, extra) => {
+		const decision = decideRunnerRoute(
+			order({ key: "github" }),
+			request({ github: label }, extra),
+		);
+		expect(decision.outcome).toBe("none");
+		expect(decision.skipped).toEqual([
+			expect.objectContaining({
+				key: "github",
+				reason: "not_provider_label",
+				detail: label,
+			}),
+		]);
+	});
+
+	it("keeps providers off public repositories unless allowed or opted in", () => {
+		const hosted = order(
+			{ key: "depot" },
+			{ key: "namespace" },
+			{ key: "blacksmith" },
+		);
+		const ask = (publicOptIn: ReadonlySet<"depot" | "namespace">) =>
 			decideRunnerRoute(
 				hosted,
 				request(
 					{
 						depot: "depot-ubuntu-24.04",
+						namespace: "nscloud-ubuntu-24.04-amd64-2x4",
 						blacksmith: "blacksmith-2vcpu-ubuntu-2404",
 					},
 					{ private: false },
@@ -397,11 +460,27 @@ describe("decideRunnerRoute", () => {
 			);
 		const closed = ask(new Set());
 		expect(closed.step).toBe("blacksmith");
-		expect(reasons(closed)).toEqual(["depot:public_repository"]);
+		expect(reasons(closed)).toEqual([
+			"depot:public_repository",
+			"namespace:public_repository",
+		]);
 		expect(ask(new Set(["depot"])).step).toBe("depot");
+		expect(ask(new Set(["namespace"])).step).toBe("namespace");
 	});
 
-	it("resolves auto to the order's size and reports a size nobody has", () => {
+	it("keeps hosted providers away from forks", () => {
+		const decision = decideRunnerRoute(
+			order({ key: "depot" }, { key: "github" }),
+			request(
+				{ depot: "depot-ubuntu-24.04", github: "ubuntu-24.04" },
+				{ fork: true },
+			),
+		);
+		expect(decision.step).toBe("github");
+		expect(reasons(decision)).toEqual(["depot:fork_pull_request"]);
+	});
+
+	it("omits auto inputs for sizes nobody has", () => {
 		const sized = parseRunnerOrder(
 			JSON.stringify({
 				steps: [{ key: "github" }, { key: "ubicloud" }, { key: "depot" }],
@@ -417,7 +496,10 @@ describe("decideRunnerRoute", () => {
 			runner: "depot-ubuntu-24.04-32",
 			step: "depot",
 		});
-		expect(reasons(decision)).toEqual(["github:no_size", "ubicloud:no_size"]);
+		expect(reasons(decision)).toEqual([
+			"github:not_configured",
+			"ubicloud:not_configured",
+		]);
 	});
 
 	it("routes a relay with no inputs to any step at the default size", () => {
@@ -462,7 +544,7 @@ describe("decideRunnerRoute", () => {
 		expect(describeDecision(alone)).toContain("failing to start jobs");
 	});
 
-	it("prefers an unhealthy runner over waiting for a full machine", () => {
+	it("prefers waiting for a full machine over an unhealthy runner", () => {
 		const decision = decideRunnerRoute(
 			order({ key: "machine" }, { key: "depot" }),
 			request({ machine: "self-hosted", depot: "depot-ubuntu-24.04" }),
@@ -472,9 +554,9 @@ describe("decideRunnerRoute", () => {
 			}),
 		);
 		expect(decision).toMatchObject({
-			outcome: "routed",
-			step: "depot",
-			unhealthyFallback: true,
+			outcome: "waiting",
+			step: "machine",
+			unhealthyFallback: false,
 		});
 	});
 

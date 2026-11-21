@@ -1,25 +1,3 @@
-/**
- * `hobo ci init`: which jobs of a GitHub Actions workflow can move to the HoBo
- * CI fleet, and the edit that moves them.
- *
- * A job opts into the fleet by naming the fleet's label in `runs-on`. The plan
- * reads one workflow file and gives every job a verdict: `ready` (a
- * GitHub-hosted Linux x64 job whose label can be swapped), `routed` (already
- * on a fleet label) or `skipped`, with the reason. A job is skipped whenever
- * swapping the label could change what it does: its machine is chosen while
- * the workflow runs, it wants another operating system, it already runs
- * somewhere deliberate, or it looks like a deploy, which is left on the runner
- * that holds its secrets today unless the owner asks otherwise.
- *
- * Applying a plan changes the bytes of the chosen `runs-on` values and nothing
- * else. The file is never written back out from its parsed form, so comments,
- * blank lines, quoting, indentation and line endings stay as they were, and
- * the label that was there is left in a trailing comment so the change can be
- * undone by hand.
- *
- * Pure functions: no filesystem, clock or network. The caller reads the file
- * and writes the result.
- */
 import { runnerProviderOfLabel } from "@hobo/ci";
 import {
 	type Document,
@@ -69,59 +47,44 @@ export type WorkflowWarning = (typeof WORKFLOW_WARNINGS)[number];
 
 export type WorkflowJobPlan = Readonly<{
 	file: string;
-	/** The job id: its key under `jobs:`. */
 	job: string;
-	/** The job's `name:` when it is a plain string. */
 	name: string | undefined;
 	verdict: "ready" | "routed" | "skipped";
-	/** The current `runs-on` as written: a list's labels joined with `, `, and empty when absent. */
 	runsOn: string;
-	/** Set only when the job is skipped. */
 	reason: WorkflowSkipReason | undefined;
-	/** Set only when the job is ready, in `WORKFLOW_WARNINGS` order. */
 	warnings: readonly WorkflowWarning[];
 }>;
 
 export type WorkflowPlan = Readonly<{
 	file: string;
-	/** Every job, in file order. Empty when `error` is set. */
 	jobs: readonly WorkflowJobPlan[];
-	/** One sentence when the file is not valid YAML or has no `jobs:` mapping. */
 	error: string | undefined;
 }>;
 
 export type WorkflowInitOptions = Readonly<{
-	/** The label written into `runs-on`. A job already on it counts as routed. */
 	fleetLabel: string;
-	/** Deploy-like jobs are ready instead of skipped as `uses_secrets`. */
 	includeSecretJobs: boolean;
 }>;
 
 export type WorkflowApplyResult = Readonly<{
-	/** The new file text. The input text when nothing was rewritten. */
 	source: string;
-	/** Job ids rewritten, in file order. */
 	changed: readonly string[];
-	/** Selected jobs that were not rewritten, each with why. */
 	refused: readonly Readonly<{ job: string; why: string }>[];
 }>;
 
-/** Selects every ready job when given in place of a job id. */
 const EVERY_READY_JOB = "all";
 
 const EXPRESSION_OPEN = "${{";
 
 const SECRET_REFERENCE =
-	/\bsecrets\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\2\s*\]|\[)/giu;
+	/\bsecrets\b\s*(?:(?:\.\s*(?:\*(?![A-Za-z0-9_])|([A-Za-z_][A-Za-z0-9_-]*)(?![\w.-]|[\s]*\[))|\[\s*(?:\*(?![A-Za-z0-9_])|(['"])([A-Za-z_][A-Za-z0-9_-]*)\2\s*\](?![\s]*(?:\.|\[)))|\[))?/giu;
 
 const PACKAGE_INSTALL = /\b(apt-get|apt|yum|dnf|apk)\s+(-\S+\s+)*install\b/u;
 
 const SUDO = /\bsudo\b/u;
 
-/** A label that reads back as the same string when written without quotes. */
 const PLAIN_LABEL = /^[A-Za-z][A-Za-z0-9._-]*$/u;
 
-/** Words YAML reads as a boolean or as nothing rather than as a string. */
 const YAML_KEYWORDS: ReadonlySet<string> = new Set([
 	"true",
 	"false",
@@ -143,31 +106,23 @@ const NOT_LOCATED =
 	"its runs-on could not be located in the file; change it by hand";
 
 const WOULD_NOT_READ_BACK =
-	"rewriting it would not leave a workflow that reads back with the job routed; change it by hand";
+	"rewriting it would not leave the selected jobs routed and every unselected job unchanged; change it by hand";
 
-/** A node an alias can stand for: anything but another alias. */
 type Value = Scalar | YAMLMap | YAMLSeq;
 
-/** One parsed workflow file and how it is being read. */
 type Workflow = Readonly<{
 	file: string;
 	source: string;
 	doc: Document;
-	/** The top-level mapping: its `permissions` and `env` reach every job. */
 	root: YAMLMap;
-	/** The `jobs:` mapping is one a YAML anchor shares with another place. */
 	jobsShared: boolean;
 	settings: WorkflowInitOptions;
 }>;
 
-/** What a job's `runs-on` says. */
 type RunsOn = Readonly<{
 	form: "absent" | "mapping" | "labels";
-	/** Every label written, in order. Empty unless `form` is `labels`. */
 	labels: readonly string[];
-	/** The label when `runs-on` is one string, or a list holding one string. */
 	label: string | undefined;
-	/** What the plan reports as the current `runs-on`. */
 	text: string;
 }>;
 
@@ -176,23 +131,23 @@ type Standing = Readonly<{
 	reason: WorkflowSkipReason | undefined;
 }>;
 
-/** The edit that moves a job, or why it cannot be made. */
 type Rewrite =
 	| Readonly<{
 			kind: "splice";
-			/** The bytes `[start, end)` of the file are replaced. */
 			start: number;
 			end: number;
-			/** Written before the label: a space where the label needs one to stay a value. */
 			lead: string;
-			/** The quote character the label was written in, kept for the new one. */
 			quote: string;
-			/** The label being replaced. */
 			was: string;
 	  }>
 	| Readonly<{ kind: "refuse"; why: string }>;
 
-type InspectedJob = Readonly<{ plan: WorkflowJobPlan; rewrite: Rewrite }>;
+type InspectedJob = Readonly<{
+	plan: WorkflowJobPlan;
+	rewrite: Rewrite;
+	indirectRouting: string;
+	routingFields: string;
+}>;
 
 type WorkflowReading = Readonly<{
 	error: string | undefined;
@@ -228,7 +183,6 @@ function settingsOf(
 	};
 }
 
-/** The node an alias stands for. Any other node is itself. */
 function follow(doc: Document, node: Node | undefined): Value | undefined {
 	return isAlias(node) ? node.resolve(doc) : node;
 }
@@ -237,7 +191,6 @@ function pairOf(map: YAMLMap, key: string): Pair | undefined {
 	return map.items.find((pair) => isScalar(pair.key) && pair.key.value === key);
 }
 
-/** The value under `key` as written, before any alias is followed. */
 function writtenUnder(map: YAMLMap, key: string): Node | undefined {
 	const value = pairOf(map, key)?.value;
 	return isNode(value) ? value : undefined;
@@ -251,12 +204,71 @@ function valueUnder(
 	return follow(workflow.doc, writtenUnder(map, key));
 }
 
-/**
- * A scalar's text when YAML read it as a string. A number, a boolean and an
- * empty value are not strings, and neither is a mapping or a list.
- */
+function mergeSources(workflow: Workflow, map: YAMLMap): readonly YAMLMap[] {
+	const merged = follow(workflow.doc, writtenUnder(map, "<<"));
+	if (isMap(merged)) return [merged];
+	if (!isSeq(merged)) return [];
+	return merged.items.flatMap((item) => {
+		const source = follow(workflow.doc, isNode(item) ? item : undefined);
+		return isMap(source) ? [source] : [];
+	});
+}
+
+function effectivePairs(
+	workflow: Workflow,
+	map: YAMLMap,
+	seen = new Set<YAMLMap>(),
+): readonly Pair[] {
+	if (seen.has(map)) return [];
+	seen.add(map);
+	const inherited = mergeSources(workflow, map).flatMap((source) =>
+		effectivePairs(workflow, source, seen),
+	);
+	const pairs: Pair[] = [];
+	const keys = new Set<unknown>();
+	for (const pair of [...map.items, ...inherited]) {
+		if (isScalar(pair.key)) {
+			if (pair.key.value === "<<" || keys.has(pair.key.value)) continue;
+			keys.add(pair.key.value);
+		}
+		pairs.push(pair);
+	}
+	return pairs;
+}
+
+function effectivePairOf(
+	workflow: Workflow,
+	map: YAMLMap,
+	key: string,
+): Pair | undefined {
+	return effectivePairs(workflow, map).find(
+		(pair) => isScalar(pair.key) && pair.key.value === key,
+	);
+}
+
+function effectiveWrittenUnder(
+	workflow: Workflow,
+	map: YAMLMap,
+	key: string,
+): Node | undefined {
+	const value = effectivePairOf(workflow, map, key)?.value;
+	return isNode(value) ? value : undefined;
+}
+
+function effectiveValueUnder(
+	workflow: Workflow,
+	map: YAMLMap,
+	key: string,
+): Value | undefined {
+	return follow(workflow.doc, effectiveWrittenUnder(workflow, map, key));
+}
+
 function stringOf(node: Node | undefined): string | undefined {
-	return isScalar(node) && node.value === node.source ? node.source : undefined;
+	if (!isScalar(node)) return undefined;
+	if (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL") {
+		return node.source?.trim().length ? node.source : String(node.value ?? "");
+	}
+	return node.value === node.source ? node.source : undefined;
 }
 
 function sliceOf(source: string, node: Node): string {
@@ -264,25 +276,21 @@ function sliceOf(source: string, node: Node): string {
 	return range ? source.slice(range[0], range[1]) : "";
 }
 
-/** A node's source on one line, for reporting a `runs-on` that is not a label. */
 function onOneLine(source: string, node: Node): string {
 	return sliceOf(source, node).trim().replace(/\s+/gu, " ");
 }
 
-/**
- * The source text of a node and of everything it reaches through aliases. An
- * `env: *deploy_env` is two characters where it is used, and what it stands
- * for is written somewhere else in the file.
- */
 function reachableText(workflow: Workflow, from: Node): readonly string[] {
 	const seen = new Set<Node>();
 	const pending: Node[] = [from];
 	const texts: string[] = [];
 	for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
-		if (seen.has(node)) continue;
-		seen.add(node);
-		texts.push(sliceOf(workflow.source, node));
-		visit(node, {
+		const subject = follow(workflow.doc, node);
+		if (!isNode(subject)) continue;
+		if (seen.has(subject)) continue;
+		seen.add(subject);
+		texts.push(sliceOf(workflow.source, subject));
+		visit(subject, {
 			Alias: (_key, alias) => {
 				const target = alias.resolve(workflow.doc);
 				if (target !== undefined) pending.push(target);
@@ -293,39 +301,359 @@ function reachableText(workflow: Workflow, from: Node): readonly string[] {
 }
 
 function namesSecret(text: string): boolean {
-	return [...text.matchAll(SECRET_REFERENCE)].some(
+	const reference = new RegExp(SECRET_REFERENCE.source, SECRET_REFERENCE.flags);
+	return [...text.matchAll(reference)].some(
 		(match) => (match[1] ?? match[3])?.toUpperCase() !== "GITHUB_TOKEN",
 	);
 }
 
-/** `permissions` that let a job write anywhere or sign in to a cloud as the repository. */
 function grantsDeployPermissions(workflow: Workflow, holder: YAMLMap): boolean {
-	const permissions = valueUnder(workflow, holder, "permissions");
+	const permissions = effectiveValueUnder(workflow, holder, "permissions");
 	if (stringOf(permissions) === "write-all") return true;
 	return (
 		isMap(permissions) &&
-		stringOf(valueUnder(workflow, permissions, "id-token")) === "write"
+		effectivePairs(workflow, permissions).some(
+			(pair) =>
+				stringOf(
+					follow(workflow.doc, isNode(pair.value) ? pair.value : undefined),
+				) === "write",
+		)
 	);
 }
 
-/**
- * A job that deploys or holds a secret: it names an environment, has
- * `write-all` or `id-token: write` permissions, or reads a secret other than
- * `GITHUB_TOKEN`. The workflow's own `permissions` count for a job that sets
- * none, and the workflow's own `env` counts for every job, because that is
- * what GitHub hands the job.
- */
+function secretInputNames(workflow: Workflow): readonly string[] {
+	const triggers = effectiveValueUnder(workflow, workflow.root, "on");
+	const call = isMap(triggers)
+		? effectiveValueUnder(workflow, triggers, "workflow_call")
+		: undefined;
+	const declared = isMap(call)
+		? effectiveValueUnder(workflow, call, "inputs")
+		: undefined;
+	if (!isMap(declared)) return [];
+	return declared.items.flatMap((pair) => {
+		const name = isScalar(pair.key) ? String(pair.key.value ?? "") : "";
+		const spec = follow(
+			workflow.doc,
+			isNode(pair.value) ? pair.value : undefined,
+		);
+		return name.length > 0 &&
+			isMap(spec) &&
+			stringOf(effectiveValueUnder(workflow, spec, "type")) === "secret"
+			? [name]
+			: [];
+	});
+}
+
+function referencesSecretInput(
+	workflow: Workflow,
+	texts: readonly string[],
+): boolean {
+	const names = secretInputNames(workflow);
+	if (names.length === 0) return false;
+	const named = names.map(propertyAccessPattern).join("|");
+	const starIndex = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
+	const dynamicIndex = String.raw`\[\s*(?!${staticNeedsIndex()}\s*\])[\s\S]*?\]`;
+	const pattern = String.raw`\b${caseFoldLiteral("inputs")}\b\s*(?:${named}|\.\s*\*|${starIndex}|${dynamicIndex}|(?![\s]*[.\[]))`;
+	return texts.some((text) => patternMatches(pattern, text));
+}
+
 function isDeployLike(workflow: Workflow, job: YAMLMap): boolean {
-	if (pairOf(job, "environment") !== undefined) return true;
-	if (stringOf(valueUnder(workflow, job, "secrets")) === "inherit") return true;
+	if (effectivePairOf(workflow, job, "environment") !== undefined) return true;
+	if (stringOf(effectiveValueUnder(workflow, job, "secrets")) === "inherit")
+		return true;
 	const permissionsHolder =
-		pairOf(job, "permissions") !== undefined ? job : workflow.root;
+		effectivePairOf(workflow, job, "permissions") !== undefined
+			? job
+			: workflow.root;
 	if (grantsDeployPermissions(workflow, permissionsHolder)) return true;
-	const workflowEnv = writtenUnder(workflow.root, "env");
-	return [
+	const workflowEnv = effectiveWrittenUnder(workflow, workflow.root, "env");
+	const texts = [
 		...reachableText(workflow, job),
 		...(workflowEnv === undefined ? [] : reachableText(workflow, workflowEnv)),
-	].some(namesSecret);
+	];
+	if (referencesSecretInput(workflow, texts)) return true;
+	return texts.some(namesSecret);
+}
+
+function needsJobId(node: Node | undefined): string | undefined {
+	if (!isScalar(node)) return undefined;
+	const source = node.source?.trim();
+	if (source !== undefined && source.length > 0) return source;
+	if (node.type === "QUOTE_SINGLE" || node.type === "QUOTE_DOUBLE") {
+		const quoted = String(node.value ?? "").trim();
+		return quoted.length > 0 ? quoted : undefined;
+	}
+	return undefined;
+}
+
+type NeedsRead = Readonly<{
+	ids: readonly string[];
+	opaque: boolean;
+	present: boolean;
+}>;
+
+const EMPTY_NEEDS: NeedsRead = { ids: [], opaque: false, present: false };
+
+const DOT_JOB_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/u;
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function caseFoldEscaped(escaped: string): string {
+	return escaped.replace(/[A-Za-z]/gu, (letter) => {
+		const lower = letter.toLowerCase();
+		const upper = letter.toUpperCase();
+		return `[${lower}${upper}]`;
+	});
+}
+
+function caseFoldLiteral(value: string): string {
+	return caseFoldEscaped(escapeRegExp(value));
+}
+
+const MATRIX_CONTEXT = new RegExp(
+	String.raw`\b${caseFoldLiteral("matrix")}\b`,
+	"u",
+);
+
+function expressionDouble(value: string): string {
+	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function quoteAlternatives(value: string): string {
+	const expressionSingle = `'${caseFoldEscaped(escapeRegExp(value.replaceAll("'", "''")))}'`;
+	const expressionDoubleQuoted = `"${caseFoldEscaped(escapeRegExp(expressionDouble(value)))}"`;
+	const yamlDoubledSingle = caseFoldEscaped(
+		escapeRegExp(`'${value.replaceAll("'", "''")}'`.replaceAll("'", "''")),
+	);
+	const yamlEscapedDouble = caseFoldEscaped(
+		escapeRegExp(
+			`"${expressionDouble(value)}"`
+				.replaceAll("\\", "\\\\")
+				.replaceAll('"', '\\"'),
+		),
+	);
+	return [
+		expressionSingle,
+		expressionDoubleQuoted,
+		yamlDoubledSingle,
+		yamlEscapedDouble,
+	].join("|");
+}
+
+function patternMatches(pattern: string, text: string): boolean {
+	try {
+		return new RegExp(pattern, "u").test(text);
+	} catch {
+		return false;
+	}
+}
+
+function propertyAccessPattern(name: string): string {
+	return String.raw`(?:\.\s*${caseFoldLiteral(name)}\b|\[\s*(?:${quoteAlternatives(name)})\s*\])`;
+}
+
+function outputsAccessPattern(): string {
+	return propertyAccessPattern("outputs");
+}
+
+function routingAccessPattern(): string {
+	return `(?:${propertyAccessPattern("outputs")}|${propertyAccessPattern("result")})`;
+}
+
+function needsJobReferencePattern(jobId: string): string {
+	const index = String.raw`\[\s*(?:${quoteAlternatives(jobId)})\s*\]`;
+	const nestedIndex = String.raw`(?:${index})+`;
+	const dot = DOT_JOB_ID.test(jobId)
+		? String.raw`\.\s*${caseFoldLiteral(jobId)}(?![\w-])|`
+		: "";
+	return String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*(?:${dot}(?:${index}|${nestedIndex})|${nestedIndex})`;
+}
+
+function needsWildcardPattern(): string {
+	const index = String.raw`\[\s*(?:${quoteAlternatives("*")}|\*)\s*\]`;
+	return String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*(?:\.\s*\*|${index})`;
+}
+
+function staticNeedsIndex(): string {
+	const expressionSingle = `'(?:[^']|'')*'`;
+	const yamlDoubledSingle = `''(?:[^']|'')*''`;
+	const expressionDouble = String.raw`"(?:[^"\\]|\\.)*"`;
+	const yamlEscapedDouble = String.raw`\\"(?:[^"\\]|\\.)*\\"`;
+	return String.raw`(?:\*|${yamlDoubledSingle}|${expressionSingle}|${expressionDouble}|${yamlEscapedDouble})`;
+}
+
+const DYNAMIC_NEEDS_INDEX = String.raw`\b${caseFoldLiteral("needs")}(?:\s*\))*\s*\[(?!\s*${staticNeedsIndex()}\s*\])`;
+
+function classifyNeedsItem(
+	workflow: Workflow,
+	node: Node | undefined,
+): "blank" | "opaque" | string {
+	if (node === undefined) return "blank";
+	const resolved = follow(workflow.doc, node);
+	if (!isScalar(resolved)) return "opaque";
+	const id = needsJobId(resolved);
+	if (id === undefined) return "blank";
+	if (id.includes(EXPRESSION_OPEN)) return "opaque";
+	return id;
+}
+
+function readNeeds(workflow: Workflow, job: YAMLMap): NeedsRead {
+	const needs = effectiveValueUnder(workflow, job, "needs");
+	if (needs === undefined) return EMPTY_NEEDS;
+	const items = isScalar(needs)
+		? [classifyNeedsItem(workflow, needs)]
+		: isSeq(needs)
+			? needs.items.map((item) =>
+					classifyNeedsItem(workflow, isNode(item) ? item : undefined),
+				)
+			: ["opaque" as const];
+	return {
+		present: true,
+		opaque: items.some((item) => item === "opaque"),
+		ids: items.filter(
+			(item): item is string => item !== "blank" && item !== "opaque",
+		),
+	};
+}
+
+function sameJobId(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase();
+}
+
+function needsCanSee(needs: NeedsRead, jobId: string): boolean {
+	if (!needs.present || needs.opaque) return needs.present;
+	return needs.ids.some((id) => sameJobId(id, jobId));
+}
+
+function toJsonCallPattern(argument: string): string {
+	return (
+		String.raw`\b${caseFoldLiteral("toJSON")}\s*\(\s*(?:\(\s*)*` +
+		argument +
+		String.raw`\s*(?:\)\s*)*\)`
+	);
+}
+
+function groupedNeeds(reference: string): string {
+	return String.raw`(?:\(\s*)*${reference}\s*(?:\)\s*)*`;
+}
+
+function jobPropertyPattern(access: string): string {
+	const starFilter = String.raw`(?:\.\s*\*|\[\s*(?:${quoteAlternatives("*")}|\*)\s*\])`;
+	const nonLiteralIndex = String.raw`\[(?!\s*${staticNeedsIndex()}\s*\])[\s\S]*?\]`;
+	const nestedNonLiteralIndex = String.raw`(?:${nonLiteralIndex})+`;
+	return `(?:${access}|${starFilter}|${nonLiteralIndex}|${nestedNonLiteralIndex})`;
+}
+
+function referencesNeedsAccess(
+	text: string,
+	jobId: string,
+	needs: NeedsRead,
+	access: string,
+	strictOpen = false,
+): boolean {
+	const jobReference = needsJobReferencePattern(jobId);
+	if (
+		patternMatches(
+			`${groupedNeeds(jobReference)}\\s*${jobPropertyPattern(access)}`,
+			text,
+		)
+	) {
+		return true;
+	}
+	if (patternMatches(toJsonCallPattern(jobReference), text)) return true;
+	if (
+		patternMatches(
+			String.raw`\b${caseFoldLiteral("fromJSON")}\s*\(\s*${groupedNeeds(jobReference)}(?:\s*${jobPropertyPattern(access)}|[^)]*)\s*\)`,
+			text,
+		)
+	) {
+		return true;
+	}
+	const property = `\\s*${jobPropertyPattern(access)}`;
+	const bareNeedsJson =
+		patternMatches(toJsonCallPattern(caseFoldLiteral("needs")), text) ||
+		patternMatches(toJsonCallPattern(needsWildcardPattern()), text);
+	if (bareNeedsJson && needsCanSee(needs, jobId)) {
+		if (!strictOpen) return true;
+		if (needs.opaque) return true;
+		if (needs.ids.some((id) => sameJobId(id, jobId))) return true;
+	}
+	const open =
+		patternMatches(
+			`${groupedNeeds(needsWildcardPattern())}${property}`,
+			text,
+		) ||
+		(strictOpen
+			? patternMatches(
+					`${toJsonCallPattern(caseFoldLiteral("needs"))}${property}`,
+					text,
+				) ||
+				patternMatches(
+					`${toJsonCallPattern(needsWildcardPattern())}${property}`,
+					text,
+				)
+			: false);
+	if (open && needsCanSee(needs, jobId)) return true;
+	const dynamicIndex = `${DYNAMIC_NEEDS_INDEX}[\\s\\S]*?\\]`;
+	if (patternMatches(`${groupedNeeds(dynamicIndex)}${property}`, text)) {
+		return true;
+	}
+	return patternMatches(toJsonCallPattern(dynamicIndex), text);
+}
+
+function referencesNeedsOutputs(
+	text: string,
+	jobId: string,
+	needs: NeedsRead,
+): boolean {
+	return referencesNeedsAccess(text, jobId, needs, outputsAccessPattern());
+}
+
+type WorkflowJobEntry = Readonly<{ id: string; job: YAMLMap }>;
+
+function computeSecretJobIds(
+	workflow: Workflow,
+	entries: readonly WorkflowJobEntry[],
+	needsByJob: ReadonlyMap<string, NeedsRead>,
+): ReadonlySet<string> {
+	const secret = new Set<string>();
+	for (const { id, job } of entries) {
+		if (isDeployLike(workflow, job)) secret.add(id);
+	}
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const { id, job } of entries) {
+			if (secret.has(id)) continue;
+			const needs = needsByJob.get(id) ?? EMPTY_NEEDS;
+			if (needs.present && needs.opaque && secret.size > 0) {
+				secret.add(id);
+				grew = true;
+				continue;
+			}
+			if (
+				needs.ids.some((need) =>
+					[...secret].some((secretId) => sameJobId(secretId, need)),
+				)
+			) {
+				secret.add(id);
+				grew = true;
+				continue;
+			}
+			const text = reachableText(workflow, job).join("\n");
+			if (
+				[...secret].some((upstream) =>
+					referencesNeedsOutputs(text, upstream, needs),
+				)
+			) {
+				secret.add(id);
+				grew = true;
+			}
+		}
+	}
+	return secret;
 }
 
 function readRunsOn(workflow: Workflow, job: YAMLMap): RunsOn {
@@ -361,7 +689,6 @@ function readRunsOn(workflow: Workflow, job: YAMLMap): RunsOn {
 	};
 }
 
-/** Where one label already sends a job, before the job's own content is read. */
 function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	const lower = label.toLowerCase();
 	if (
@@ -370,8 +697,7 @@ function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	) {
 		return ROUTED;
 	}
-	// A label with a space or a line break in it is nobody's known label, even
-	// when trimming it would make it one.
+
 	if (lower === "self-hosted" || /\s/u.test(label)) {
 		return skipped("self_hosted");
 	}
@@ -388,11 +714,11 @@ function labelStanding(label: string, settings: WorkflowInitOptions): Standing {
 	return READY;
 }
 
-/** The verdict rules, first match wins. */
 function standingOf(
 	workflow: Workflow,
 	job: YAMLMap,
 	runsOn: RunsOn,
+	usesSecrets: boolean,
 ): Standing {
 	if (pairOf(job, "uses") !== undefined) return skipped("reusable_workflow");
 	if (runsOn.form === "absent") return skipped("no_runs_on");
@@ -408,7 +734,7 @@ function standingOf(
 	}
 	const standing = labelStanding(runsOn.label, workflow.settings);
 	if (standing.verdict !== "ready") return standing;
-	if (!workflow.settings.includeSecretJobs && isDeployLike(workflow, job)) {
+	if (!workflow.settings.includeSecretJobs && usesSecrets) {
 		return skipped("uses_secrets");
 	}
 	return READY;
@@ -456,7 +782,6 @@ function warningsOf(
 	return WORKFLOW_WARNINGS.filter((warning) => found.has(warning));
 }
 
-/** Other places in the file can stand for this node, so editing it edits them too. */
 function isAnchored(node: Node): boolean {
 	return !isAlias(node) && node.anchor !== undefined;
 }
@@ -465,10 +790,6 @@ function columnOf(source: string, offset: number): number {
 	return offset - (source.lastIndexOf("\n", offset - 1) + 1);
 }
 
-/**
- * A splice over `[start, end)`, cut back so it never takes the line break or
- * the spaces a value's range can end with.
- */
 function spliceOver(
 	source: string,
 	span: readonly [number, number],
@@ -487,11 +808,6 @@ function spliceOver(
 	};
 }
 
-/**
- * A block list of one label becomes the label on the key's own line. When a
- * comment sits between the key and the list, the label takes the place of the
- * `- label` item instead, so the comment stays where it is.
- */
 function blockListRewrite(
 	source: string,
 	keyRange: Range,
@@ -505,27 +821,18 @@ function blockListRewrite(
 	if (source.slice(afterColon, dash).trim().length === 0) {
 		return spliceOver(source, [afterColon, itemRange[1]], " ", "", was);
 	}
-	// A value on its own line has to sit deeper than its key. A list may start
-	// in the key's column; a plain label may not.
+
 	const lead =
 		columnOf(source, dash) > columnOf(source, keyRange[0]) ? "" : " ";
 	return spliceOver(source, [dash, itemRange[1]], lead, "", was);
 }
 
-/** The quote character a label is written in, when it is written in one. */
 function quoteOf(node: Node): string {
 	if (!isScalar(node)) return "";
 	if (node.type === "QUOTE_DOUBLE") return '"';
 	return node.type === "QUOTE_SINGLE" ? "'" : "";
 }
 
-/**
- * Where a ready job's `runs-on` value is in the file. Refused when the value,
- * the job or the whole `jobs:` mapping is one that a YAML anchor shares with
- * other places: the edit would then change more than the job that was
- * selected. A `runs-on` that is itself an alias is safe, because only the
- * alias is replaced.
- */
 function locateRunsOn(
 	workflow: Workflow,
 	entry: Node,
@@ -554,8 +861,7 @@ function locateRunsOn(
 	if (value.flow !== true) {
 		return blockListRewrite(source, keyRange, valueRange, itemRange, was);
 	}
-	// A flow list becomes the bare label. One with a comment inside keeps its
-	// brackets, and so the comment: only the label in it changes.
+
 	if (!source.slice(whole[0], whole[1]).includes("#")) {
 		return spliceOver(source, whole, "", "", was);
 	}
@@ -568,10 +874,63 @@ function locateRunsOn(
 	);
 }
 
+const ROUTING_FIELD_KEYS = [
+	"env",
+	"if",
+	"container",
+	"services",
+	"with",
+	"outputs",
+] as const;
+
+const STEP_ROUTING_KEYS = ["env", "if", "runs-on"] as const;
+
+function stepRoutingText(workflow: Workflow, job: YAMLMap): string {
+	const parts: string[] = [];
+	for (const step of stepsOf(workflow, job)) {
+		for (const key of STEP_ROUTING_KEYS) {
+			const node = effectiveValueUnder(workflow, step, key);
+			if (node === undefined || !isNode(node)) continue;
+			parts.push(...reachableText(workflow, node));
+		}
+	}
+	return parts.join("\n");
+}
+
+function routingFieldsOf(workflow: Workflow, job: YAMLMap): string {
+	const parts: string[] = [];
+	for (const key of ROUTING_FIELD_KEYS) {
+		const node = effectiveValueUnder(workflow, job, key);
+		if (node === undefined || !isNode(node)) continue;
+		parts.push(...reachableText(workflow, node));
+	}
+	parts.push(stepRoutingText(workflow, job));
+	return parts.join("\n");
+}
+
+function indirectRoutingOf(
+	workflow: Workflow,
+	job: YAMLMap,
+	runsOn: RunsOn,
+): string {
+	const key =
+		effectivePairOf(workflow, job, "uses") !== undefined
+			? "with"
+			: runsOn.text.includes(EXPRESSION_OPEN) &&
+					MATRIX_CONTEXT.test(runsOn.text)
+				? "strategy"
+				: undefined;
+	if (key === undefined) return "";
+	const node = effectiveValueUnder(workflow, job, key);
+	if (node === undefined || !isNode(node)) return "";
+	return reachableText(workflow, node).join("\n");
+}
+
 function inspectJob(
 	workflow: Workflow,
 	id: string,
 	entry: Node | undefined,
+	usesSecrets: boolean,
 ): InspectedJob {
 	const job = follow(workflow.doc, entry);
 	if (entry === undefined || !isMap(job)) {
@@ -587,11 +946,15 @@ function inspectJob(
 				warnings: [],
 			},
 			rewrite: refuse(`skipped: ${describeWorkflowSkip(reason)}`),
+			indirectRouting: "",
+			routingFields: "",
 		};
 	}
 	const runsOn = readRunsOn(workflow, job);
-	const standing = standingOf(workflow, job, runsOn);
+	const standing = standingOf(workflow, job, runsOn, usesSecrets);
 	const label = runsOn.label ?? "";
+	const indirectRouting = indirectRoutingOf(workflow, job, runsOn);
+	const routingFields = routingFieldsOf(workflow, job);
 	const plan: WorkflowJobPlan = {
 		file: workflow.file,
 		job: id,
@@ -603,15 +966,27 @@ function inspectJob(
 			standing.verdict === "ready" ? warningsOf(workflow, job, label) : [],
 	};
 	if (standing.verdict === "routed") {
-		return { plan, rewrite: refuse(ALREADY_ROUTED) };
+		return {
+			plan,
+			rewrite: refuse(ALREADY_ROUTED),
+			indirectRouting,
+			routingFields,
+		};
 	}
 	if (standing.reason !== undefined) {
 		return {
 			plan,
 			rewrite: refuse(`skipped: ${describeWorkflowSkip(standing.reason)}`),
+			indirectRouting,
+			routingFields,
 		};
 	}
-	return { plan, rewrite: locateRunsOn(workflow, entry, job, label) };
+	return {
+		plan,
+		rewrite: locateRunsOn(workflow, entry, job, label),
+		indirectRouting,
+		routingFields,
+	};
 }
 
 function readWorkflow(
@@ -622,8 +997,6 @@ function readWorkflow(
 	const doc = parseDocument(source);
 	const failure = doc.errors[0];
 	if (failure !== undefined) {
-		// The parser's message is a first line saying what and where, then an
-		// excerpt of the file.
 		const [summary = "it could not be parsed"] = failure.message.split("\n");
 		return {
 			error: `The file is not valid YAML: ${summary.replace(/[:.\s]+$/u, "")}.`,
@@ -644,51 +1017,75 @@ function readWorkflow(
 		jobsShared: isAlias(writtenJobs) || isAnchored(jobs),
 		settings,
 	};
+	const entries = jobs.items.flatMap((pair) => {
+		const id = isScalar(pair.key) ? pair.key.source : undefined;
+		if (id === undefined) return [];
+		const entry = isNode(pair.value) ? pair.value : undefined;
+		const job = follow(workflow.doc, entry);
+		if (!isMap(job)) return [];
+		return [{ id, job }] satisfies WorkflowJobEntry[];
+	});
+	const needsByJob = new Map(
+		entries.map(({ id, job }) => [id, readNeeds(workflow, job)]),
+	);
+	const secretJobIds = computeSecretJobIds(workflow, entries, needsByJob);
 	const inspected = jobs.items.flatMap((pair) => {
 		const id = isScalar(pair.key) ? pair.key.source : undefined;
 		if (id === undefined) return [];
 		return [
-			inspectJob(workflow, id, isNode(pair.value) ? pair.value : undefined),
+			inspectJob(
+				workflow,
+				id,
+				isNode(pair.value) ? pair.value : undefined,
+				secretJobIds.has(id),
+			),
 		];
 	});
-	return {
-		error: undefined,
-		jobs: inspected.map((job) =>
-			job.plan.verdict === "ready" && routesJobs(job.plan.job, inspected)
-				? asRouter(job)
-				: job,
-		),
-	};
+	const routed = inspected.map((job) =>
+		routesJobs(job.plan.job, inspected, needsByJob) ? asRouter(job) : job,
+	);
+	return { error: undefined, jobs: routed };
 }
 
-/**
- * Whether another job takes its `runs-on` from this job's outputs. Such a job
- * decides where the others run, so it has to start even when the fleet is
- * down or full: it stays on the runner it has.
- */
-function routesJobs(id: string, jobs: readonly InspectedJob[]): boolean {
-	const escaped = id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-	const reference = new RegExp(
-		`\\bneeds\\s*(?:\\.\\s*${escaped}(?![\\w-])|\\[\\s*(['"])${escaped}\\1\\s*\\])`,
-		"iu",
+function routingText(job: InspectedJob): string {
+	return `${job.plan.runsOn}\n${job.indirectRouting}\n${job.routingFields}`;
+}
+
+function referencesRoutedJob(
+	text: string,
+	jobId: string,
+	needs: NeedsRead,
+): boolean {
+	return referencesNeedsAccess(
+		text,
+		jobId,
+		needs,
+		routingAccessPattern(),
+		true,
 	);
-	return jobs.some(
-		(other) => other.plan.job !== id && reference.test(other.plan.runsOn),
-	);
+}
+
+function routesJobs(
+	id: string,
+	jobs: readonly InspectedJob[],
+	needsByJob: ReadonlyMap<string, NeedsRead>,
+): boolean {
+	return jobs.some((other) => {
+		if (other.plan.job === id) return false;
+		const needs = needsByJob.get(other.plan.job) ?? EMPTY_NEEDS;
+		return referencesRoutedJob(routingText(other), id, needs);
+	});
 }
 
 function asRouter(job: InspectedJob): InspectedJob {
 	const reason = "routes_jobs";
 	return {
+		...job,
 		plan: { ...job.plan, verdict: "skipped", reason, warnings: [] },
 		rewrite: refuse(`skipped: ${describeWorkflowSkip(reason)}`),
 	};
 }
 
-/**
- * Every job in one workflow file with its verdict. `file` is only reported
- * back; `source` is the file's text.
- */
 export function planWorkflow(
 	file: string,
 	source: string,
@@ -702,19 +1099,12 @@ export function planWorkflow(
 	};
 }
 
-/** The label as YAML that reads back as that string, in the quotes it replaces when it can keep them. */
 function labelText(label: string, quote: string): string {
 	const plain =
 		PLAIN_LABEL.test(label) && !YAML_KEYWORDS.has(label.toLowerCase());
 	return plain ? `${quote}${label}${quote}` : JSON.stringify(label);
 }
 
-/**
- * The text that takes a splice's place: the new label, then what was there as
- * a comment when nothing else follows on the line. A line that already ends
- * in a comment keeps it and gets no second one, and a value followed by more
- * of a flow mapping gets none either, since a comment there would swallow it.
- */
 function replacementFor(
 	source: string,
 	rewrite: Extract<Rewrite, { kind: "splice" }>,
@@ -729,13 +1119,6 @@ function replacementFor(
 	return `${rewrite.lead}${labelText(fleetLabel, rewrite.quote)}${note}`;
 }
 
-/**
- * Rewrites the chosen jobs' `runs-on` to the fleet label. `jobs` are job ids;
- * the literal `all` selects every ready job. Only a ready job is rewritten.
- * A named job that is routed, skipped or missing is listed in `refused`, and
- * so is a ready job whose `runs-on` cannot be changed alone. Applying the
- * result again changes nothing.
- */
 export function applyWorkflowPlan(
 	file: string,
 	source: string,
@@ -777,8 +1160,7 @@ export function applyWorkflowPlan(
 			: [],
 	);
 	if (splices.length === 0) return { source, changed: [], refused };
-	// From the end of the file backwards, so an earlier offset is still right
-	// after a later value has changed length.
+
 	const rewritten = [...splices]
 		.sort((left, right) => right.rewrite.start - left.rewrite.start)
 		.reduce(
@@ -789,14 +1171,19 @@ export function applyWorkflowPlan(
 			source,
 		);
 	const changed = splices.map((splice) => splice.job);
-	// Nothing known gets here. A file that no longer reads back with every
-	// rewritten job on the fleet is not handed to the caller to write.
+	const changedSet = new Set(changed);
+	const unselectedPlans = (jobs: readonly InspectedJob[]) =>
+		jobs.filter((job) => !changedSet.has(job.plan.job)).map((job) => job.plan);
+	const after = readWorkflow(file, rewritten, settings);
 	const routed = new Set(
-		readWorkflow(file, rewritten, settings)
-			.jobs.filter((job) => job.plan.verdict === "routed")
+		after.jobs
+			.filter((job) => job.plan.verdict === "routed")
 			.map((job) => job.plan.job),
 	);
-	if (!changed.every((job) => routed.has(job))) {
+	const preservesUnselected =
+		JSON.stringify(unselectedPlans(reading.jobs)) ===
+		JSON.stringify(unselectedPlans(after.jobs));
+	if (!changed.every((job) => routed.has(job)) || !preservesUnselected) {
 		return {
 			source,
 			changed: [],
@@ -809,7 +1196,6 @@ export function applyWorkflowPlan(
 	return { source: rewritten, changed, refused };
 }
 
-/** Why a job is left as it is, as one sentence for a table. */
 export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 	switch (reason) {
 		case "reusable_workflow":
@@ -825,7 +1211,7 @@ export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 		case "self_hosted":
 			return "The job runs on a self-hosted runner or on a label nothing recognises, so what machine it expects is not known.";
 		case "uses_secrets":
-			return "The job looks like a deploy (an environment, write-all or id-token permissions, or a secret other than GITHUB_TOKEN) and stays where its secrets already are unless such jobs are asked for.";
+			return "The job looks like a deploy (an environment, write permissions, or a secret other than GITHUB_TOKEN) and stays where its secrets already are unless such jobs are asked for.";
 		case "routes_jobs":
 			return "Another job takes its `runs-on` from this job's outputs, so it decides where the others run and has to start even when the fleet cannot.";
 		case "no_runs_on":
@@ -833,7 +1219,6 @@ export function describeWorkflowSkip(reason: WorkflowSkipReason): string {
 	}
 }
 
-/** What to check before moving a ready job, as one sentence for a table. */
 export function describeWorkflowWarning(warning: WorkflowWarning): string {
 	switch (warning) {
 		case "needs_docker":
