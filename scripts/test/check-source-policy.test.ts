@@ -106,6 +106,19 @@ describe("source policy", () => {
 		);
 	});
 
+	it("rejects a standalone documentation comment", () => {
+		assert.equal(
+			commentViolations("example.ts", "/** explanation */", new Set([1]))
+				.length,
+			1,
+		);
+		assert.equal(
+			commentViolations("example.astro", "{/* explanation */}", new Set([1]))
+				.length,
+			1,
+		);
+	});
+
 	it("checks added lines inside an existing multiline comment", () => {
 		const text = "/* existing\nnew explanation\n*/\nexport const value = 1;\n";
 		assert.equal(commentViolations("x.ts", text, new Set([2])).length, 1);
