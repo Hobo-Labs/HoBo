@@ -52,6 +52,10 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import {
+	AGENT37_RUNNER_LABEL,
+	type Agent37Capacity,
+	type Agent37PoolState,
+	agent37Capacity,
 	DEFAULT_GITHUB_MACHINE_TYPE,
 	type FleetMember,
 	LOCAL_HOST_RUNNER_LABEL,
@@ -93,7 +97,7 @@ export const MAX_PROBE_LOOKUPS = 3;
 export const PROBE_WAIT_SECONDS = 60;
 export const PROBE_POLL_SECONDS = 10;
 
-export type RouteTier = "fleet" | "local" | "github";
+export type RouteTier = "fleet" | "local" | "agent37" | "github";
 
 /** A job has waited this long for a label: that backend is not taking jobs. */
 export const DEFAULT_MAX_WAIT_SECONDS = 120;
@@ -252,20 +256,13 @@ function describeLoad(name: string, load: LabelLoad): string {
 		: `${waiting}, and in the last ${SLOW_PICKUP_MEMORY_SECONDS / 60} minutes took up to ${load.slowestRecentPickupSeconds} s to pick a job up`;
 }
 
-/**
- * The decision, from what the queue shows: the queue rule, which decides
- * whenever no routing slip can (R3), or the chosen fleet is not taking jobs.
- * `fleetLabel` is the label this run would
- * ask the fleet for (`hobo`, or `hobo-trunk` for trunk events); `localLabel`
- * and `githubLabel` are the committed `runnerRouting.labels`, the code's
- * defaults when left out.
- */
 export function routeRunner(input: {
 	mode: RouteMode;
 	fleetLabel: string;
 	localLabel?: string | undefined;
 	githubLabel?: string | undefined;
 	localEnrolled: boolean;
+	agent37?: Readonly<{ label: string; load: LabelLoad }> | undefined;
 	limits: RouteLimits;
 	fleet: LabelLoad;
 	local: LabelLoad;
@@ -300,21 +297,32 @@ export function routeRunner(input: {
 	const members = [
 		{
 			id: "fleet",
-			backend: "hobo",
+			backend: "hobo" as const,
 			enabled: true,
 			runsOn: fleetLabel,
 			freeSlots: first && takingJobs(input.fleet, limits) ? 1 : 0,
 		},
 		{
 			id: "local",
-			backend: "local",
+			backend: "local" as const,
 			enabled: input.localEnrolled,
 			runsOn: localLabel,
 			freeSlots: first && takingJobs(input.local, limits) ? 1 : 0,
 		},
+		...(input.agent37
+			? [
+					{
+						id: "agent37",
+						backend: "agent37" as const,
+						enabled: true,
+						runsOn: input.agent37.label,
+						freeSlots: first && takingJobs(input.agent37.load, limits) ? 1 : 0,
+					},
+				]
+			: []),
 		{
 			id: "github",
-			backend: "github",
+			backend: "github" as const,
 			enabled: true,
 			runsOn: githubLabel,
 			freeSlots: 1,
@@ -333,6 +341,9 @@ export function routeRunner(input: {
 		input.localEnrolled
 			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
+		...(input.agent37
+			? [describeLoad("the agent37 pool", input.agent37.load)]
+			: []),
 		...(first
 			? []
 			: [
@@ -347,7 +358,12 @@ export function routeRunner(input: {
 			refusedBy: "none",
 		};
 	return {
-		tier: selected.backend === "local" ? "local" : "github",
+		tier:
+			selected.backend === "local"
+				? "local"
+				: selected.backend === "agent37"
+					? "agent37"
+					: "github",
 		runner: selected.runsOn,
 		reason: `${loads}; the limits are ${limits.maxWaitSeconds} s and ${limits.maxQueued} waiting`,
 		refusedBy: "queue",
@@ -626,6 +642,7 @@ export async function chooseRunner(input: {
 	localLabel?: string | undefined;
 	githubLabel?: string | undefined;
 	localEnrolled: boolean;
+	agent37Label?: string | undefined;
 	limits: RouteLimits;
 	/** Confirm a fleet slip against the exact label before trusting it. */
 	confirmFleet?: "open" | "busy" | undefined;
@@ -638,6 +655,12 @@ export async function chooseRunner(input: {
 		const view = await input.observe(nowMs);
 		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
 		const local = labelLoad(view.jobs, localLabel, nowMs);
+		const agent37 = input.agent37Label
+			? {
+					label: input.agent37Label,
+					load: labelLoad(view.jobs, input.agent37Label, nowMs),
+				}
+			: undefined;
 		// Busy alone does not refuse a healthy fleet (R4). Unlike a fleet-open
 		// claim, a busy claim is not contradicted merely by a full young queue.
 		const confirmationLimits =
@@ -661,6 +684,7 @@ export async function chooseRunner(input: {
 			localLabel,
 			githubLabel: input.githubLabel,
 			localEnrolled,
+			agent37,
 			limits,
 			fleet,
 			local,
@@ -721,12 +745,27 @@ export const DEFAULT_LOCAL_RUNNER = false;
 /** Pull requests' deps-image job keeps the fleet label unless committed configuration says so. */
 export const DEFAULT_BOX_RUNNER = false;
 
+export type Agent37OverflowPool = Readonly<{
+	label: string;
+	maxBoxes: number;
+}>;
+
+export function agent37Pool(
+	policy: RunnerRouting | undefined,
+): Agent37OverflowPool | undefined {
+	for (const pool of policy?.externalPools ?? [])
+		if (pool.labels.includes(AGENT37_RUNNER_LABEL) && pool.maxRunners > 0)
+			return { label: AGENT37_RUNNER_LABEL, maxBoxes: pool.maxRunners };
+	return undefined;
+}
+
 /** What the route job takes from `runnerRouting`, or the code's defaults. */
 export type RouteSettings = Readonly<{
 	pin: RouteMode;
 	limits: RouteLimits;
 	labels: RunnerRouting["labels"];
 	localRunner: boolean;
+	agent37: Agent37OverflowPool | undefined;
 	/**
 	 * The label pull requests' deps-image job asks for (`box_runner`):
 	 * `labels.box` when `runnerRouting.boxRunner` is on, else empty, and the
@@ -746,6 +785,7 @@ export function routeSettings(
 			limits: policy.queue,
 			labels: policy.labels,
 			localRunner: policy.localRunner,
+			agent37: agent37Pool(policy),
 			boxRunner: policy.boxRunner ? policy.labels.box : "",
 			committed: true,
 		};
@@ -757,6 +797,7 @@ export function routeSettings(
 		},
 		labels: DEFAULT_RUNNER_LABELS,
 		localRunner: DEFAULT_LOCAL_RUNNER,
+		agent37: undefined,
 		boxRunner: DEFAULT_BOX_RUNNER ? DEFAULT_RUNNER_LABELS.box : "",
 		committed: false,
 	};
@@ -784,25 +825,29 @@ export type RouteArgs = Readonly<{
  * all possible jobs have stopped. Queue observations are not reservations.
  * The standalone action has no such authority unless its host supplies one.
  */
+export type PrBatchCapacityScope = Readonly<{
+	repository: string;
+	repositoryId: number;
+	ownerId: number;
+	runId: number;
+	runAttempt: number;
+	revision: string;
+	workflowRef: string;
+	workflowPath: string;
+	workflow: string;
+	runner: string;
+	boxRunner: string;
+	decisionDeadlineMs: number;
+	maxQueueWaitSeconds: number;
+}>;
+
 export type PrBatchCapacityVerifier = (
-	scope: Readonly<{
-		repository: string;
-		repositoryId: number;
-		ownerId: number;
-		runId: number;
-		runAttempt: number;
-		revision: string;
-		workflowRef: string;
-		workflowPath: string;
-		workflow: string;
-		runner: string;
-		boxRunner: string;
-		/** Latest time this routing decision can be made. */
-		decisionDeadlineMs: number;
-		/** Maximum acceptable wait after each job enters the provider queue. */
-		maxQueueWaitSeconds: number;
-	}>,
+	scope: PrBatchCapacityScope,
 ) => Promise<boolean>;
+
+export type Agent37PoolObserver = (
+	scope: PrBatchCapacityScope,
+) => Promise<Agent37PoolState | undefined>;
 
 function prBatchScope(
 	env: NodeJS.ProcessEnv,
@@ -811,7 +856,7 @@ function prBatchScope(
 	decisionDeadlineMs: number,
 	maxQueueWaitSeconds: number,
 	workflowName: string,
-): Parameters<PrBatchCapacityVerifier>[0] | undefined {
+): PrBatchCapacityScope | undefined {
 	const repository = env.GITHUB_REPOSITORY ?? "";
 	const repositoryId = Number(env.GITHUB_REPOSITORY_ID);
 	const ownerId = Number(env.GITHUB_REPOSITORY_OWNER_ID);
@@ -1088,6 +1133,7 @@ export async function main(
 		now?: () => number;
 		/** A trusted host may install the real durable full-run claim verifier. */
 		verifyPrBatchCapacity?: PrBatchCapacityVerifier;
+		observeAgent37Pool?: Agent37PoolObserver;
 	}> = {},
 ): Promise<RouteDecision> {
 	const args = parseRouteArgs(argv);
@@ -1131,8 +1177,9 @@ export async function main(
 			{
 				tier: "github",
 				runner: labels.github,
-				reason:
-					"the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
+				reason: settings.agent37
+					? "the merge-group batch has no verified fleet capacity; the agent37 overflow pool is not a merge-group main-gate runner; public standard-runner compute was verified"
+					: "the merge-group batch has no verified fleet capacity; public standard-runner compute was verified",
 				refusedBy: "none",
 				slip: { kind: "unasked", why: "batch" },
 			},
@@ -1186,6 +1233,34 @@ export async function main(
 				},
 				env,
 			);
+		let agent37: Agent37Capacity = { ok: false, why: "unobserved" };
+		if (settings.agent37 && scope && io.observeAgent37Pool) {
+			const askedAt = now();
+			try {
+				agent37 = agent37Capacity(await io.observeAgent37Pool(scope), {
+					maxBoxes: settings.agent37.maxBoxes,
+				});
+			} catch {}
+			const answeredAt = now();
+			if (
+				agent37.ok &&
+				Number.isSafeInteger(askedAt) &&
+				Number.isSafeInteger(answeredAt) &&
+				answeredAt >= askedAt &&
+				answeredAt < scope.decisionDeadlineMs
+			)
+				return report(
+					{
+						tier: "agent37",
+						runner: settings.agent37.label,
+						reason:
+							"the full PR batch has no verified fleet capacity and Broker claim; the agent37 overflow pool is healthy within its budget and box reserve",
+						refusedBy: "none",
+						slip: { kind: "unasked", why: "batch" },
+					},
+					env,
+				);
+		}
 		if (
 			labels.github !== "ubuntu-24.04" ||
 			!(await isPublicCaller(env, io.fetch))
@@ -1197,8 +1272,9 @@ export async function main(
 			{
 				tier: "github",
 				runner: labels.github,
-				reason:
-					"the full PR batch has no verified fleet capacity and Broker claim; public standard-runner compute was verified",
+				reason: settings.agent37
+					? `the full PR batch has no verified fleet capacity and Broker claim; the agent37 overflow pool could not be admitted (${agent37.ok === false ? agent37.why : "unobserved"}); public standard-runner compute was verified`
+					: "the full PR batch has no verified fleet capacity and Broker claim; public standard-runner compute was verified",
 				refusedBy: "none",
 				slip: { kind: "unasked", why: "batch" },
 			},
@@ -1231,15 +1307,20 @@ export async function main(
 	const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
 	const repository = env.GITHUB_REPOSITORY ?? "";
 	const token = env.GITHUB_TOKEN ?? "";
+	const className = routeClass(
+		event,
+		"eventPayload" in io ? io.eventPayload : readEventPayload(env),
+	);
+	const agent37Label =
+		settings.agent37 && className !== "trunk"
+			? settings.agent37.label
+			: undefined;
 	const slip = await askSlip({
 		apiUrl,
 		repository,
 		token,
 		labels,
-		routeClass: routeClass(
-			event,
-			"eventPayload" in io ? io.eventPayload : readEventPayload(env),
-		),
+		routeClass: className,
 		nowMs: now,
 		fetch: io.fetch,
 	});
@@ -1275,9 +1356,11 @@ export async function main(
 					read,
 					repository,
 					ownRunId: Number(env.GITHUB_RUN_ID),
-					labels: localEnrolled
-						? [observedFleetLabel, labels.local]
-						: [observedFleetLabel],
+					labels: [
+						observedFleetLabel,
+						...(localEnrolled ? [labels.local] : []),
+						...(agent37Label ? [agent37Label] : []),
+					],
 					limits: observationLimits,
 					nowMs,
 					includeOwnRun: args.includeOwnRun,
@@ -1289,6 +1372,7 @@ export async function main(
 			localLabel: labels.local,
 			githubLabel: labels.github,
 			localEnrolled,
+			agent37Label,
 			limits,
 			confirmFleet,
 		});

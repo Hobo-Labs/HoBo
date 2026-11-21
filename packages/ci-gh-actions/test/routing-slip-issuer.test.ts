@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ import {
 	writeRoutingSlipCommit,
 } from "../src/isolated-worker/routing-slip-issuer.js";
 import { judgeRoutingSlip } from "../src/routing-slip.js";
+import { parseCiRunnerRouting } from "../src/relay-routing.js";
 import { runnerRoutingLabels } from "../src/runner-routing.js";
 
 const REPOSITORY = "Hobo-Labs/HoBo";
@@ -454,10 +455,16 @@ describe("the budget", () => {
 describe("the box's committed routing policy (ADR-0181, decision 4)", () => {
 	const root = fileURLToPath(new URL("../../..", import.meta.url));
 
-	it("reads runnerRouting from the checkout, and it equals the code's defaults", () => {
+	it("reads runnerRouting from the checkout, and it equals the committed project policy", () => {
 		const read = readBoxRoutingPolicy(root);
 		expect(read.source).toBe("committed");
-		expect(read.policy).toEqual(DEFAULT_RUNNER_ROUTING);
+		const committed = readFileSync(
+			join(root, ".hobo", "ci.json"),
+			"utf8",
+		);
+		const fromCheckout = parseCiRunnerRouting(committed);
+		expect(fromCheckout).toBeDefined();
+		expect(read.policy).toEqual(fromCheckout);
 		expect(DEFAULT_RUNNER_ROUTING.externalPools).toEqual([]);
 	});
 
