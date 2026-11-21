@@ -10,6 +10,7 @@ import {
 	type QuoteVector,
 	quoteAvailablePricing,
 } from "@hobo/pricing";
+import { compareCodeUnits } from "./order.js";
 
 // public-contract: consumers pin the dispatcher v2 wire schema by this id.
 export const DISPATCHER_V2_SCHEMA_VERSION = "hobo.dispatcher/v2";
@@ -143,7 +144,7 @@ export function decideDispatchV2(
 	}
 	const objective = DISPATCHER_V2_OBJECTIVE;
 	const candidates = [...request.candidates].sort((left, right) =>
-		left.providerId.localeCompare(right.providerId),
+		compareCodeUnits(left.providerId, right.providerId),
 	);
 	if (
 		new Set(candidates.map((candidate) => candidate.providerId)).size !==
@@ -274,7 +275,10 @@ export function decideDispatchV2(
 		const leftExpiry = earliestExpiryMs(left.quote);
 		const rightExpiry = earliestExpiryMs(right.quote);
 		if (leftExpiry !== rightExpiry) return leftExpiry - rightExpiry;
-		return left.candidate.providerId.localeCompare(right.candidate.providerId);
+		return compareCodeUnits(
+			left.candidate.providerId,
+			right.candidate.providerId,
+		);
 	});
 	const ranking = comparable.map((entry, index) => {
 		const ranked: DispatchRankingV2 = {
@@ -288,7 +292,7 @@ export function decideDispatchV2(
 		return ranked;
 	});
 	rejectedCandidates.sort((left, right) =>
-		left.providerId.localeCompare(right.providerId),
+		compareCodeUnits(left.providerId, right.providerId),
 	);
 	const winner = ranking[0];
 	if (winner === undefined) {

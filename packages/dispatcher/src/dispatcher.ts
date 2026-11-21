@@ -19,6 +19,7 @@ import {
 	subtractAvailable,
 	subtractUpper,
 } from "./money.js";
+import { compareCodeUnits } from "./order.js";
 
 // public-contract: consumers pin the dispatcher wire schema by this id.
 export const DISPATCHER_SCHEMA_VERSION = "hobo.dispatcher/v1";
@@ -194,7 +195,20 @@ export function createDispatcherRegistry(
 
 export type DispatcherRegistry = ReturnType<typeof createDispatcherRegistry>;
 
+type ReplayOrdering = "code-unit-v1" | "legacy-locale";
+const compareLocale = (left: string, right: string): number =>
+	left.localeCompare(right);
 export function decideDispatch(request) {
+	return decideDispatchWithOrdering(request, "code-unit-v1");
+}
+function decideDispatchWithOrdering(request, orderingVersion: ReplayOrdering) {
+	const compare =
+		orderingVersion === "legacy-locale" ? compareLocale : compareCodeUnits;
+	let comparedDistinctStrings = false;
+	const compareStrings = (left: string, right: string): number => {
+		if (left !== right) comparedDistinctStrings = true;
+		return compare(left, right);
+	};
 	assertObject(request, "request");
 	const category = requireCategory(request.category);
 	const objective = requireObjective(request.objective ?? "maximize-credits");
@@ -227,6 +241,7 @@ export function decideDispatch(request) {
 		candidates,
 		ledgerView,
 		units,
+		compareStrings,
 		minimumReservationCost: estimatedCost,
 		incumbentProviderId,
 	});
@@ -276,6 +291,7 @@ export function decideDispatch(request) {
 		hysteresis: hysteresis.public,
 		dispatchEvent,
 		replayInput: {
+			orderingVersion: comparedDistinctStrings ? orderingVersion : undefined,
 			category,
 			dispatchId,
 			objective,
@@ -1117,10 +1133,20 @@ export function decideAndReserveDispatch(request) {
 
 export function replayDispatchDecision(replayInput) {
 	assertObject(replayInput, "replayInput");
-	return decideDispatch({
-		...clone(replayInput),
-		registry: createDispatcherRegistry(replayInput.candidates ?? []),
-	});
+	// Unversioned records were created with the process locale's collation.
+	const orderingVersion =
+		replayInput.orderingVersion === undefined
+			? "legacy-locale"
+			: replayInput.orderingVersion;
+	if (orderingVersion !== "code-unit-v1" && orderingVersion !== "legacy-locale")
+		throw new TypeError("unknown replay ordering version");
+	return decideDispatchWithOrdering(
+		{
+			...clone(replayInput),
+			registry: createDispatcherRegistry(replayInput.candidates ?? []),
+		},
+		orderingVersion,
+	);
 }
 
 function reservationMatchesReplay(reservation: DispatchReservation): boolean {
@@ -1247,6 +1273,7 @@ function rankCreditCandidates({
 	candidates,
 	ledgerView,
 	units,
+	compareStrings = compareCodeUnits,
 	minimumReservationCost = 0,
 	incumbentProviderId,
 }) {
@@ -1257,10 +1284,11 @@ function rankCreditCandidates({
 				ledgerView,
 				units,
 				minimumReservationCost,
+				compareStrings,
 				incumbentProviderId,
 			}),
 		)
-		.sort(compareRankedCandidates)
+		.sort((left, right) => compareRankedCandidates(left, right, compareStrings))
 		.map((candidate, index) => ({
 			...candidate,
 			rank: index + 1,
@@ -1389,6 +1417,7 @@ function rankCreditCandidate({
 	chargeSwitching = false,
 	unitCostOverride = undefined,
 	minimumReservationCost = 0,
+	compareStrings = compareCodeUnits,
 }) {
 	const account = findLedgerAccount(
 		ledgerView,
@@ -1452,7 +1481,7 @@ function rankCreditCandidate({
 	const freeButNotDepletable =
 		credit.valid && credit.freeHeadroom > 0 && freeUnits === 0;
 	const nextCreditExpiresAt = credit.valid
-		? nextCreditExpiry(account, ledgerView.asOf)
+		? nextCreditExpiry(account, ledgerView.asOf, compareStrings)
 		: null;
 	const concurrencyScore = Number.isFinite(credit.concurrencyHeadroom)
 		? credit.concurrencyHeadroom
@@ -1617,7 +1646,11 @@ function grantExpiry(credit: CreditGrant): string | undefined {
 		.sort((left, right) => Date.parse(left) - Date.parse(right))[0];
 }
 
-function nextCreditExpiry(account: CreditAccount | null, asOf?: string) {
+function nextCreditExpiry(
+	account: CreditAccount | null,
+	asOf: string | undefined,
+	compareStrings: (left: string, right: string) => number,
+) {
 	const expiries = (account?.credits ?? [])
 		.filter(
 			(credit) =>
@@ -1629,7 +1662,7 @@ function nextCreditExpiry(account: CreditAccount | null, asOf?: string) {
 		.filter((value) => isJsonString(value) && !Number.isNaN(Date.parse(value)))
 		.sort(
 			(left, right) =>
-				Date.parse(left) - Date.parse(right) || left.localeCompare(right),
+				Date.parse(left) - Date.parse(right) || compareStrings(left, right),
 		);
 	return expiries[0] ?? null;
 }
@@ -1653,7 +1686,11 @@ function budgetHeadroomFor(account: CreditAccount) {
 	return remainingMoney(budgetCap, spendToDate, reservedCost);
 }
 
-function compareRankedCandidates(left, right) {
+function compareRankedCandidates(
+	left,
+	right,
+	compareStrings: (left: string, right: string) => number,
+) {
 	for (
 		let index = 0;
 		index < Math.max(left.rankVector.length, right.rankVector.length);
@@ -1662,7 +1699,8 @@ function compareRankedCandidates(left, right) {
 		const leftValue = left.rankVector[index];
 		const rightValue = right.rankVector[index];
 		if (isJsonString(leftValue) || isJsonString(rightValue)) {
-			const comparison = String(leftValue ?? "").localeCompare(
+			const comparison = compareStrings(
+				String(leftValue ?? ""),
 				String(rightValue ?? ""),
 			);
 			if (comparison !== 0) return comparison;
@@ -2112,7 +2150,7 @@ function consumeReservedFreeHeadroom(
 			(left, right) =>
 				Date.parse(grantExpiry(left) ?? "9999-12-31") -
 					Date.parse(grantExpiry(right) ?? "9999-12-31") ||
-				left.creditId.localeCompare(right.creditId),
+				compareCodeUnits(left.creditId, right.creditId),
 		);
 	for (const credit of ordered) {
 		if (!optionalNonNegativeNumber(credit?.freeHeadroom)) continue;
