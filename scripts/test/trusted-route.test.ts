@@ -317,8 +317,7 @@ describe("pr-fabric reuse routing", () => {
 	const routeJob = () =>
 		asObject(asObject(workflowDocument(hoboCi).jobs)?.route);
 
-	const routeSteps = () =>
-		asList(routeJob()?.steps)?.map(asObject) ?? [];
+	const routeSteps = () => asList(routeJob()?.steps)?.map(asObject) ?? [];
 
 	const compositeSteps = () =>
 		asList(asObject(routeAction.runs)?.steps)?.map(asObject) ?? [];
