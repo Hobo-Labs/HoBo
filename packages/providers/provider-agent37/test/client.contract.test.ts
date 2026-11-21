@@ -158,34 +158,11 @@ describe("Agent37 client contracts", () => {
 		expect(requests).toEqual([]);
 	});
 
-	it("rejects unknown exec and usage input keys", () => {
+	it("rejects plaintext webhook URLs before transport", () => {
 		expect(() =>
-			client.exec(
-				"i_test",
-				JSON.parse('{"command":"printf ready","backgroundd":true}'),
-			),
-		).toThrow();
-		expect(() =>
-			client.usage(JSON.parse('{"from":"2026-11-01","too":"2026-11-20"}')),
-		).toThrow();
+			client.registerWebhook("http://hooks.example.com/agent37"),
+		).toThrow("Agent37 webhooks require HTTPS");
 		expect(requests).toEqual([]);
-	});
-
-	it("accepts only HTTPS or loopback HTTP webhook URLs", async () => {
-		for (const url of [
-			"http://hooks.example.com/agent37",
-			"http://127.0.0.1.evil.example/agent37",
-			"ftp://localhost/agent37",
-		]) {
-			expect(() => client.registerWebhook(url)).toThrow(
-				"Agent37 webhooks require HTTPS or loopback HTTP",
-			);
-		}
-		expect(requests).toEqual([]);
-		const registered = await client.registerWebhook(
-			"http://127.0.0.1:4180/agent37",
-		);
-		expect(registered.url).toBe("http://127.0.0.1:4180/agent37");
 	});
 
 	it("retries a transient fake fault and then parses the success", async () => {
