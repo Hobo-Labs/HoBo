@@ -33,8 +33,8 @@ import {
 	MAX_PROBE_LOOKUPS,
 	MAX_RUN_LOOKUPS,
 	MERGE_GROUP_FLEET_CONFIRM_SECONDS,
-	mergeGroupRouteSurface,
 	main,
+	mergeGroupRouteSurface,
 	NO_ROUTING_SLIP,
 	observeQueue,
 	PROBE_POLL_SECONDS,
@@ -1504,9 +1504,7 @@ describe("the script reading the slip", () => {
 	};
 
 	it("picks hosted merge-group route surface when the trunk fleet is not taking", async () => {
-		await withGithub(
-			observed([waiting("hobo-trunk", 120)]),
-			async (apiUrl) => {
+		await withGithub(observed([waiting("hobo-trunk", 120)]), async (apiUrl) => {
 			const surface = await mergeGroupRouteSurface(
 				{
 					...mergeGroupCi,
@@ -1517,8 +1515,7 @@ describe("the script reading the slip", () => {
 				{ now: () => 0 },
 			);
 			assert.equal(surface, "hosted");
-			},
-		);
+		});
 	});
 
 	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
@@ -1527,10 +1524,10 @@ describe("the script reading the slip", () => {
 				"--route",
 				"fleet",
 			]);
-			assert.deepEqual([decision.tier, decision.runner], [
-				"fleet",
-				"hobo-trunk",
-			]);
+			assert.deepEqual(
+				[decision.tier, decision.runner],
+				["fleet", "hobo-trunk"],
+			);
 			assert.deepEqual(decision.slip, {
 				kind: "unasked",
 				why: "merge-group",
