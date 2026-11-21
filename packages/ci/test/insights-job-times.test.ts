@@ -548,7 +548,7 @@ describe("workflowTimes", () => {
 		expect(times?.medianMs).toBe(0);
 	});
 
-	it("takes the median, over attempts, of the time their jobs waited", () => {
+	it("takes the median wait across jobs rather than summing each attempt", () => {
 		const [times] = workflowTimes([
 			attempt(MIN, {
 				jobs: [
@@ -565,7 +565,7 @@ describe("workflowTimes", () => {
 			attempt(MIN, { jobs: [ran("a", 90_000, MIN)] }),
 			attempt(MIN, { jobs: [queued("a")] }),
 		]);
-		expect(times?.medianWaitMs).toBe(30_000);
+		expect(times?.medianWaitMs).toBe(10_000);
 	});
 
 	it("names the job with the highest median run time", () => {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createHoboCli } from "@hobo/cli";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCiCommand } from "../src/ci-command.js";
+import { runCiRoute } from "../src/ci-route.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -115,6 +116,39 @@ describe("hobo ci route", () => {
 		expect(envelope.message).not.toContain("No --facts given");
 	});
 
+	it("accepts an absolute facts path", async () => {
+		const { root, route } = await repository({ facts: "{}" });
+		const { exitCode, envelope } = await route(
+			"--github",
+			"ubuntu-24.04",
+			"--facts",
+			join(root, "facts.json"),
+		);
+		expect(exitCode).toBe(0);
+		expect(envelope.data.decision).toMatchObject({
+			outcome: "routed",
+			step: "github",
+		});
+		expect(envelope.data.request.runId).toBe("1");
+	});
+
+	it("refuses boolean and array values where route text is required", async () => {
+		const { root } = await repository();
+		for (const options of [
+			{ event: true },
+			{ facts: ["facts.json"] },
+			{ github: ["ubuntu-24.04"] },
+		]) {
+			const result = await runCiRoute({
+				cwd: root,
+				repository: "acme/app",
+				options,
+			});
+			expect(result).toMatchObject({ ok: false, code: "HOBO_CLI_USAGE" });
+			expect(result.message).toContain("takes a text value");
+		}
+	});
+
 	it("uses machines, the fleet and a retry from the facts file", async () => {
 		const machine = {
 			id: "m1",
@@ -124,7 +158,7 @@ describe("hobo ci route", () => {
 			online: true,
 			paused: false,
 			slots: 1,
-			busy: 1,
+			busy: 0,
 			sharing: "anyone",
 			ownerId: "42",
 			ownerCanRead: true,
@@ -133,7 +167,7 @@ describe("hobo ci route", () => {
 		const { route } = await repository({
 			project: order("fleet", "machine"),
 			facts: JSON.stringify({
-				fleet: { enabled: true, taking: false, isolated: true },
+				fleet: { enabled: true, taking: true, isolated: true },
 				machines: [machine],
 				first: "machine",
 			}),
@@ -147,15 +181,13 @@ describe("hobo ci route", () => {
 			"facts.json",
 		);
 		expect(exitCode).toBe(0);
-		expect(envelope.data.decision).toMatchObject({
-			outcome: "waiting",
+		expect(envelope.data.decision).toEqual({
+			outcome: "routed",
 			runner: "hobo-local-host",
 			step: "machine",
 			machineId: "m1",
 		});
-		expect(envelope.message).toContain(
-			"Queued on hobo-local-host (machine): every runner that fits is busy.",
-		);
+		expect(envelope.message).toContain("Routed to hobo-local-host (machine).");
 	});
 
 	it("fails with the reason when nothing can take the job", async () => {
@@ -173,8 +205,31 @@ describe("hobo ci route", () => {
 		expect(envelope.message).toContain(
 			"No runner available. machine: the repository is public. Not in the runner order, so never tried: depot.",
 		);
+		expect(envelope.message).toContain(
+			"Passed over:\n  machine: the repository is public",
+		);
+		expect(envelope.message).toContain(
+			"Not in the runner order, so never tried: depot.\nNo --facts given:",
+		);
 		expect(envelope.data.decision.outcome).toBe("none");
 		expect(envelope.data.request.private).toBeUndefined();
+	});
+
+	it("accepts the route parser's array form of --runs-on", async () => {
+		const { route } = await repository({ project: order("runs-on") });
+		const { exitCode, envelope } = await route(
+			"--runs-on",
+			"runs-on=7/runner=2cpu-linux-x64",
+		);
+		expect(exitCode).toBe(0);
+		expect(envelope.data.request.inputs).toEqual([
+			{ key: "runs-on", labels: ["runs-on=7/runner=2cpu-linux-x64"] },
+		]);
+		expect(envelope.data.decision).toMatchObject({
+			outcome: "routed",
+			runner: "runs-on=7/runner=2cpu-linux-x64",
+			step: "runs-on",
+		});
 	});
 
 	it("treats a relay with no inputs as any runner type", async () => {

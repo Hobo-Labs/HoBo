@@ -583,7 +583,7 @@ export function relayRouteRequest(
 		private: message.private,
 		fork: message.fork,
 		event: message.event,
-		runId: message.runId,
+		runId: BigInt(message.runId),
 		runAttempt: message.runAttempt,
 		job: message.job,
 		inputs: message.inputs.flatMap((input) => {

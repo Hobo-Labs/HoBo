@@ -45,20 +45,20 @@ describe("committed runner order", () => {
 		);
 		expect(committed.source).toBe("committed");
 		expect(committed.problem).toBe("");
-		expect(committed.order.steps.map((step) => step.key)).toEqual([
+		expect(committed.order?.steps.map((step) => step.key)).toEqual([
 			"machine",
 			"github",
 			"depot",
 		]);
-		expect(committed.order.autoSizeVcpus).toBe(4);
+		expect(committed.order?.autoSizeVcpus).toBe(4);
 	});
 
-	it("keeps the default and says why when the committed order is broken", () => {
+	it("returns no order and says why when the committed order is broken", () => {
 		const duplicated = parseCiRunnerOrder(
 			project('{"steps":[{"key":"machine"},{"key":"machine"}]}'),
 		);
-		expect(duplicated.source).toBe("default");
-		expect(duplicated.order).toBe(DEFAULT_RUNNER_ORDER);
+		expect(duplicated.source).toBe("invalid");
+		expect(duplicated.order).toBeUndefined();
 		expect(duplicated.problem).toContain(
 			"the machine step appears more than once",
 		);
@@ -68,13 +68,34 @@ describe("committed runner order", () => {
 		expect(parseCiRunnerOrder(project('"fleet-first"')).problem).not.toBe("");
 	});
 
-	it("never throws on a file that is not JSON", () => {
+	it.each([
+		"null",
+		'{"steps":null}',
+		'{"steps":[{"key":"github","minutesLimitPercent":null}]}',
+		'{"steps":[{"key":"github","minutesLimitPercent":0}]}',
+		'{"steps":[{"key":"depot","spendLimitUsd":null}]}',
+		'{"steps":[{"key":"depot","spendLimitUsd":0}]}',
+		'{"steps":[{"key":"github"}],"autoSizeVcpus":0}',
+		'{"steps":[{"key":"github"}],"retry":null}',
+		'{"steps":[{"key":"github"}],"retry":{"runner":"any","max":0}}',
+	])("applies the editor schema to null and zero values: %s", (order) => {
+		const parsed = parseCiRunnerOrder(project(order));
+		expect(parsed.source).toBe("invalid");
+		expect(parsed.order).toBeUndefined();
+		expect(parsed.problem).not.toBe("");
+		expect(RunnerOrderDocumentSchema.safeParse(JSON.parse(order)).success).toBe(
+			false,
+		);
+	});
+
+	it("never throws or supplies a fallback order for a file that is not JSON", () => {
 		expect(parseCiRunnerOrder("{not json")).toEqual({
-			order: DEFAULT_RUNNER_ORDER,
-			source: "default",
+			order: undefined,
+			source: "invalid",
 			problem: "the project file is not JSON",
 		});
-		expect(parseCiRunnerOrder("[]").source).toBe("default");
+		expect(parseCiRunnerOrder("[]").source).toBe("invalid");
+		expect(parseCiRunnerOrder("[]").order).toBeUndefined();
 	});
 
 	it.each([

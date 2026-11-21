@@ -32,6 +32,70 @@ const HAND_OFF = SKILL.slice(
 const DEVICE_PREFIX = "HOBO_OWNER_DEVICE";
 
 describe("EVAL hobo-deploy skill: remote hand-off", () => {
+	it("starts the relevant setup ceremony for missing or unverified identities", () => {
+		const setup = SKILL.slice(
+			SKILL.indexOf("## Set up missing identities through HoBo"),
+			SKILL.indexOf("## Running `hobo ci up` / `hobo cd up` for the owner"),
+		);
+		expect(setup).toMatch(/missing or unverified identity/u);
+		expect(setup).toContain("hobo ci up --hand-off");
+		expect(setup).toContain("hobo cd up --hand-off");
+		expect(setup).toMatch(/when a\s+deployment needs both, run both/u);
+		expect(setup).toMatch(
+			/do not claim setup completed until HoBo\s+reports completion/iu,
+		);
+	});
+
+	it("checks server registration and startup before reporting an unavailable hand-off", () => {
+		expect(HAND_OFF).toMatch(
+			/check the project MCP registration\s+and its startup prerequisites/u,
+		);
+		expect(HAND_OFF).toContain(
+			"pnpm exec turbo run build --filter=@hobo/hobo...",
+		);
+		expect(HAND_OFF).toMatch(/supported MCP discovery or reload mechanism/u);
+		expect(HAND_OFF).toMatch(
+			/does not establish that a private owner form is available or safe/u,
+		);
+	});
+
+	it("requires a private owner session before invoking the store chooser", () => {
+		expect(SKILL).toMatch(/Before opening any owner form/iu);
+		expect(SKILL).toMatch(
+			/store selection, capture, and\s+the lifecycle itself/u,
+		);
+		expect(SKILL).toMatch(
+			/do not open the form;\s+report\s+the missing secure hand-off/u,
+		);
+		expect(SKILL).toMatch(
+			/agent-visible tool calls,\s+results, traces, and diagnostics/u,
+		);
+		expect(SKILL).toMatch(/--owner-form-privacy-verified/u);
+		expect(SKILL).toMatch(/a displayed form alone does not establish privacy/u);
+		const choice = HAND_OFF.slice(
+			HAND_OFF.indexOf("2. On `HOBO_*_STORE_CHOICE`"),
+			HAND_OFF.indexOf("3. On `HOBO_OWNER_CREDENTIAL"),
+		);
+		expect(choice).toMatch(
+			/only when the connected implementation keeps the choice\s+in the temporary owner session/u,
+		);
+		expect(choice).toMatch(
+			/excludes store coordinates from every\s+agent-visible response/u,
+		);
+		expect(choice).toMatch(/do not collect the choice's fields/u);
+		const lifecycle = HAND_OFF.slice(
+			HAND_OFF.indexOf("1. Run `hobo <ci|cd> up --hand-off`"),
+			HAND_OFF.indexOf("2. On `HOBO_*_STORE_CHOICE`"),
+		);
+		expect(lifecycle).toMatch(
+			/only when its\s+owner channel has passed the privacy check/u,
+		);
+		expect(lifecycle).toMatch(/channel is absent or unverified/u);
+		expect(lifecycle).toMatch(
+			/Stop\s+at an owner step and report the missing secure hand-off/u,
+		);
+	});
+
 	it("has the hand-off section and its mirror is identical", () => {
 		expect(HAND_OFF.length).toBeGreaterThan(0);
 		const mirror = readFileSync(
@@ -57,7 +121,8 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(step).toMatch(/AskUserQuestion/u);
 		for (const store of ["Infisical", "1Password", "Bitwarden"])
 			expect(step).toContain(`**${store}**`);
-		expect(step).toMatch(/OP_CONNECT_HOST/u);
+		expect(step).toMatch(/never to the agent/u);
+		expect(step).toMatch(/instead of collecting identifiers in\s+chat/u);
 		// Never env, never the owner's terminal, never hand-made identities.
 		expect(step).toMatch(
 			/Never ask the owner to set\s+environment\s+variables,\s+never\s+send\s+them\s+to\s+a\s+terminal/u,
@@ -79,7 +144,6 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		// Bitwarden: the API key through the credential form, then one approval.
 		expect(HAND_OFF).toMatch(/HOBO_OWNER_BITWARDEN_APPROVE/u);
 		expect(HAND_OFF).toMatch(/suggested_type: "basic"/u);
-		expect(HAND_OFF).toMatch(/BITWARDEN_SERVER_URL/u);
 		expect(HAND_OFF).not.toMatch(/BW_CLIENTID|Vaultwarden/u);
 		// The choice is the owner's: a present token never picks the store.
 		expect(step).toMatch(
@@ -87,25 +151,24 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 	});
 
-	it("routes the credential line: steps and guide first, then the credential form, then wait", () => {
+	it("keeps credential guidance in the private owner form", () => {
 		const at = HAND_OFF.indexOf(OWNER_CREDENTIAL_LINE_PREFIX);
 		expect(at).toBeGreaterThan(-1);
 		const step = HAND_OFF.slice(
 			at,
-			HAND_OFF.indexOf(`On \`${DEVICE_PREFIX}`, at),
+			HAND_OFF.indexOf("4. **Through a privacy-verified HoBo MCP server", at),
 		);
-		const steps = step.indexOf("guide link");
-		const form = step.indexOf("request_credential");
-		expect(steps).toBeGreaterThan(-1);
-		expect(form).toBeGreaterThan(steps);
+		expect(step).toMatch(/privacy-verified owner form/u);
+		expect(step).toMatch(/without returning them to the agent/u);
+		expect(step).toMatch(/Do not relay a host,\s+guide, or raw steps/u);
 		expect(step).toMatch(/continues by itself; do\s+not rerun it/u);
-		expect(step).toMatch(/decline/u);
+		expect(step).toMatch(/report the missing secure hand-off/u);
 	});
 
 	it("routes the device line to the provider's own site from any device", () => {
 		const at = HAND_OFF.indexOf(`On \`${DEVICE_PREFIX}`);
 		expect(at).toBeGreaterThan(-1);
-		expect(HAND_OFF.slice(at, at + 300)).toMatch(/on any\s+device/u);
+		expect(HAND_OFF.slice(at, at + 300)).toMatch(/any device/u);
 	});
 
 	it("keeps the loopback page for the owner's own terminal and never routes a remote owner to it", () => {
@@ -118,8 +181,10 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/Never give the owner a `127\.0\.0\.1`/u);
 	});
 
-	it("shows every remediation line of a refusal, unparaphrased", () => {
-		expect(HAND_OFF).toMatch(/every\*\* remediation line/u);
+	it("does not repeat private coordinates from a refusal", () => {
+		expect(HAND_OFF).toMatch(
+			/excluding any private coordinates or\s+references/u,
+		);
 	});
 
 	it("describes the credential line the run really prints", async () => {
@@ -141,10 +206,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 			timeoutMs: 1,
 		});
 		const [line] = lines;
-		// The format the skill names: `HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`.
-		expect(HAND_OFF).toContain(
-			"`HOBO_OWNER_CREDENTIAL host=<host> guide=<url> — <steps>`",
-		);
+		expect(HAND_OFF).toContain("`HOBO_OWNER_CREDENTIAL`");
 		expect(line).toMatch(
 			/^HOBO_OWNER_CREDENTIAL host=app\.infisical\.com guide=https:\/\/\S+ — .+/u,
 		);
@@ -160,7 +222,7 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 	it("runs through the HoBo MCP server, which asks the owner itself", () => {
 		expect(HAND_OFF).toMatch(/through the \*\*HoBo MCP server\*\*/u);
 		expect(HAND_OFF).toMatch(/the run asks the owner itself/u);
-		expect(HAND_OFF).toMatch(/Never ask for the value\s+in chat/u);
+		expect(HAND_OFF).toMatch(/Never ask for a value in chat/u);
 	});
 
 	it("never tells the agent to send a remote owner anywhere they cannot reach", () => {
@@ -194,12 +256,12 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		expect(HAND_OFF).toMatch(/elicitation form/u);
 	});
 
-	it("through MCP, every step is a form carrying its link; chat only as the fallback for an unanswered form", () => {
+	it("keeps owner links in private forms and reports unavailable forms", () => {
 		// Derived from the live runs: the paste form opened with no link; then
 		// the links went as prompts the owner's app never showed, and the
 		// agent relayed them in chat, which the owner rejected.
 		const step = HAND_OFF.slice(
-			HAND_OFF.indexOf("4. **Through the HoBo MCP server"),
+			HAND_OFF.indexOf("4. **Through a privacy-verified HoBo MCP server"),
 			HAND_OFF.indexOf("5. On `HOBO_OWNER_BITWARDEN_APPROVE"),
 		);
 		expect(step).toMatch(/its link inside it/u);
@@ -209,26 +271,21 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 		);
 		expect(step).toMatch(/run the lifecycle again: the same form comes back/u);
 		expect(step).not.toMatch(/linkShown|LINK_FIRST|link prompt/u);
-		// A form nobody answers ends the call (never a hang), and only then
-		// does the link go to chat, once, as the fallback.
 		expect(step).toMatch(
 			/withdrawn and the call ends the same way, so it never hangs/u,
 		);
 		expect(step).toMatch(
-			/as the\s+fallback, show the link from that line once in chat/u,
+			/report that capability gap; do not\s+relay a dynamic link or value through chat/u,
 		);
 	});
 
-	it("a host with no form: the device step ends the turn and runs again once the owner approved", () => {
-		// Derived from the real-binary smoke: the run used to wait inside the
-		// call on a link nobody could see.
+	it("keeps device approval in the owner form or reports the missing form", () => {
 		const step = HAND_OFF.slice(
 			HAND_OFF.indexOf("6. On `HOBO_OWNER_DEVICE"),
 			HAND_OFF.indexOf("7. When the run ends"),
 		);
-		// Only a host that shows no form gets the line in chat.
-		expect(step).toMatch(/from a host that shows\s+no form/u);
-		expect(step).toMatch(/end your turn/u);
-		expect(step).toMatch(/run the\s+lifecycle\s+again/u);
+		expect(step).toMatch(/secure owner form must present the approval/u);
+		expect(step).toMatch(/report the missing\s+secure hand-off/u);
+		expect(step).toMatch(/instead of relaying dynamic fields/u);
 	});
 });

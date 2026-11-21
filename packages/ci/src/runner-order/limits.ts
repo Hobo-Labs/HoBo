@@ -19,7 +19,14 @@ export function minutesVerdict(
 	percent: number,
 	usage: MinutesUsage | undefined,
 ): MinutesVerdict {
-	if (!usage || usage.includedMinutes <= 0) return { allowed: true };
+	if (!usage)
+		return percent > 0
+			? {
+					allowed: false,
+					reason: "minutes_limit",
+					detail: `minutes usage is unknown; the limit is ${percent}%`,
+				}
+			: { allowed: true };
 	const limit = (usage.includedMinutes * percent) / 100;
 	if (usage.usedMinutes >= limit)
 		return {
@@ -27,7 +34,7 @@ export function minutesVerdict(
 			reason: "minutes_limit",
 			detail: `${Math.round(usage.usedMinutes)} of ${usage.includedMinutes} included minutes used; the limit is ${percent}%`,
 		};
-	const left = usage.includedMinutes - usage.usedMinutes;
+	const left = limit - usage.usedMinutes;
 	const burn = usage.burnPerHour ?? 0;
 	if (burn > 0 && left < burn * MINUTES_RUNWAY_HOURS)
 		return {
@@ -46,7 +53,15 @@ export function spendVerdict(
 	limitUsd: number,
 	spentUsd: number | undefined,
 ): SpendVerdict {
-	if (spentUsd === undefined || spentUsd < limitUsd) return { allowed: true };
+	if (spentUsd === undefined)
+		return limitUsd > 0
+			? {
+					allowed: false,
+					reason: "spend_limit",
+					detail: `spend is unknown; the limit is $${limitUsd}`,
+				}
+			: { allowed: true };
+	if (spentUsd < limitUsd) return { allowed: true };
 	return {
 		allowed: false,
 		reason: "spend_limit",

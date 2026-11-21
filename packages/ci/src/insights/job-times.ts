@@ -325,19 +325,15 @@ export function workflowTimes(
 		if (run.conclusion === "success" && run.completedAtMs !== undefined) {
 			tally.durations.push(Math.max(0, run.completedAtMs - run.createdAtMs));
 		}
-		const waits: number[] = [];
 		for (const job of run.jobs) {
 			if (job.relay === true) continue;
 			const waitMs = jobWaitMs(job);
-			if (waitMs !== undefined) waits.push(waitMs);
+			if (waitMs !== undefined) tally.waits.push(waitMs);
 			const runMs = jobRunMs(job);
 			if (job.conclusion !== "success" || runMs === undefined) continue;
 			const runTimes = tally.runTimesByJob.get(job.name) ?? [];
 			tally.runTimesByJob.set(job.name, runTimes);
 			runTimes.push(runMs);
-		}
-		if (waits.length > 0) {
-			tally.waits.push(waits.reduce((total, waitMs) => total + waitMs, 0));
 		}
 	}
 	return [...talliesByWorkflow.entries()]

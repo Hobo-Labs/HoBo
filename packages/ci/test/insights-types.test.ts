@@ -101,7 +101,7 @@ describe("jobRunMs and jobRunMinutes", () => {
 
 describe("jobBilledMinutes", () => {
 	const ranFor = (runMs: number): InsightJob =>
-		job({ startedAtMs: 0, completedAtMs: runMs });
+		job({ billed: true, startedAtMs: 0, completedAtMs: runMs });
 
 	it("bills at least one minute for a job that ran at all", () => {
 		expect(jobBilledMinutes(ranFor(0))).toBe(1);
@@ -113,6 +113,14 @@ describe("jobBilledMinutes", () => {
 		expect(jobBilledMinutes(ranFor(MS_PER_MINUTE))).toBe(1);
 		expect(jobBilledMinutes(ranFor(MS_PER_MINUTE + 1))).toBe(2);
 		expect(jobBilledMinutes(ranFor(2 * MS_PER_MINUTE))).toBe(2);
+	});
+
+	it("bills nothing for an unbilled job", () => {
+		expect(
+			jobBilledMinutes(
+				job({ startedAtMs: 0, completedAtMs: 5 * MS_PER_MINUTE }),
+			),
+		).toBe(0);
 	});
 
 	it("bills nothing for a job that did not start or has not finished", () => {

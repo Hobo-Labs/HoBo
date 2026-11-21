@@ -17,7 +17,9 @@ import { CampManagement } from "@hobo/cd";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	loadTopologyFiles,
+	mergeTopologyReaders,
 	parseTopologyExports,
+	staticTopologyReader,
 	topologyFilesOf,
 } from "../src/cd-topology.js";
 
@@ -26,6 +28,7 @@ const REPO = join(PACKAGE, "..", "..");
 const BIN = join(PACKAGE, "dist", "bin", "hobo.js");
 const RELAY_YARD = join(REPO, "packages/ci-vercel/deploy/yard.ts");
 const RELAY_DELIVERY = join(REPO, "packages/ci-vercel/deploy/delivery.ts");
+const RELEASE_DELIVERY = join(REPO, "release/hobo-release.delivery.ts");
 const RUNNER_FLEET = join(
 	REPO,
 	"packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.ts",
@@ -137,6 +140,102 @@ describe("topology files (parse once with the generated schemas)", () => {
 		expect(box?.management).toBe(CampManagement.MANAGED);
 	});
 
+	it("keeps a Camp's CD identity when its physical Yard changes", () => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{
+						campId: "new-yard/release",
+						logicalId: "old-yard/release",
+						yardId: "new-yard",
+						provider: "example",
+						envType: "production",
+					},
+				],
+			},
+			{ stationId: "local", source: "moved.ts" },
+		);
+		expect(parsed.ok, parsed.ok ? "" : parsed.message).toBe(true);
+		if (!parsed.ok) return;
+		expect(parsed.value[0]).toMatchObject({
+			campId: "old-yard/release",
+			physicalCampId: "new-yard/release",
+			yardId: "new-yard",
+			provider: "example",
+		});
+	});
+
+	it("refuses two logical Camps that name the same physical Camp", async () => {
+		const camp = {
+			campId: "new-yard/release",
+			yardId: "new-yard",
+			provider: "example",
+			envType: "production",
+		};
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{ ...camp, logicalId: "old-yard/a" },
+					{ ...camp, logicalId: "old-yard/b" },
+				],
+			},
+			{ stationId: "local", source: "duplicates.ts" },
+		);
+		if (!parsed.ok) throw new Error(parsed.message);
+		expect(() => staticTopologyReader(parsed.value)).toThrow(/duplicate-camp/u);
+		const first = parsed.value[0];
+		const second = parsed.value[1];
+		if (!first || !second) throw new Error("expected two Camps");
+		const combined = mergeTopologyReaders([
+			staticTopologyReader([first]),
+			staticTopologyReader([second]),
+		]);
+		await expect(combined.camps()).rejects.toThrow(/duplicate-camp/u);
+	});
+
+	it("still refuses a physical Camp id outside its declared Yard", () => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{
+						campId: "other-yard/release",
+						logicalId: "old-yard/release",
+						yardId: "new-yard",
+						provider: "example",
+						envType: "production",
+					},
+				],
+			},
+			{ stationId: "local", source: "bad.ts" },
+		);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.code).toBe("cd-topology-invalid");
+	});
+
+	it.each([
+		"",
+		" old-yard/release ",
+		"old-yard/\nrelease",
+		"x".repeat(513),
+	])("refuses an invalid stable identity: %s", (logicalId) => {
+		const parsed = parseTopologyExports(
+			{
+				camps: [
+					{
+						campId: "new-yard/release",
+						logicalId,
+						yardId: "new-yard",
+						provider: "example",
+						envType: "production",
+					},
+				],
+			},
+			{ stationId: "local", source: "bad.ts" },
+		);
+		expect(parsed.ok).toBe(false);
+		if (!parsed.ok) expect(parsed.code).toBe("cd-topology-invalid");
+	});
+
 	it("refuses a malformed Camp record", () => {
 		const parsed = parseTopologyExports(
 			{ camps: [{ campId: "x/y", yardId: "x", envTyp: "ci" }] },
@@ -227,6 +326,20 @@ describe.skipIf(!existsSync(BIN))(
 	"hobo deploy resolves repo-declared Camps (built binary)",
 	{ timeout: 120_000 },
 	() => {
+		it("camp list preserves both release Camp identities across the CLI boundary", async () => {
+			const home = await freshHome();
+			const listed = await deploy(home, [
+				"camp",
+				"list",
+				"--yard",
+				RELEASE_DELIVERY,
+			]);
+			expect(listed.ok, listed.message).toBe(true);
+			const text = JSON.stringify(listed.data);
+			expect(text).toContain("hobo-release/npm-candidate");
+			expect(text).toContain("hobo-release-npm/npm-candidate");
+		});
+
 		it("camp list shows the relay's preview and production Camps from its Yard module", async () => {
 			const home = await freshHome();
 			const listed = await deploy(home, ["camp", "list", "--yard", RELAY_YARD]);
