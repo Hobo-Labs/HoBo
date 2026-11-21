@@ -18,7 +18,9 @@ manual run — on `workflow_dispatch` it either deploys or fails the job — so
 unconditionally, can never hit a missing artifact. The credential-bearing
 deploy and App-deposit jobs must use `ubuntu-24.04` and `clean: true`. `scripts/lint-actions.ts` exempts
 this workflow from fleet routing and scopes its per-job hosted-runner exception
-to those jobs and the unprivileged `deploy-build` job. Building and deploying
+to those jobs and the unprivileged `deploy-build` job. This workflow carries no
+route-runner step; `scripts/test/route-runner.test.ts` pins the five workflows
+that still route. Building and deploying
 are separated so the GitHub OIDC identity reaches no build code:
 `deploy-build` holds `contents: read` only and packs the built hobo CLI with
 its sha256 (`scripts/ci/release-freight-cli.mts pack`); each job that holds

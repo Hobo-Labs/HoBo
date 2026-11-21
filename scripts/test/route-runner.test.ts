@@ -2329,7 +2329,7 @@ describe("the workflows that route", () => {
 			"scripts/ci/route-runner.mts",
 			"scripts/ci/runner-routing.mts",
 		]);
-		assert.ok(routed.length >= 6, `found ${routed.length} routed workflows`);
+		assert.ok(routed.length >= 5, `found ${routed.length} routed workflows`);
 		for (const path of routed) {
 			const lines = new Set(
 				read(path)
