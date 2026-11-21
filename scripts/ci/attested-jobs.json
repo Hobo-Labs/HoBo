@@ -482,7 +482,7 @@
 		{
 			"id": "scripts-tests",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && needs.scripts-tests-build.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -554,7 +554,12 @@
 				{
 					"name": "Build the packages the scripts tests import",
 					"if": "steps.scope.outputs.run == 'true'",
-					"run": "pnpm exec turbo run build --filter=@hobo/cd^... --filter=@hobo/ci^... --filter=@hobo/ci-gh-actions^... --filter=@hobo/cli^... --filter=@hobo/core^... --filter=@hobo/hobo^... --filter=@hobo/provider-cloudflare^... --filter=@hobo/provider-lakebed^... --filter=@hobo/provider-neon^... --filter=@hobo/provider-netlify^... --filter=@hobo/provider-oci-registry^... --filter=@hobo/provider-prisma-postgres^... --filter=@hobo/provider-upstash^... --filter=@hobo/runtime-local^... --filter=@hobo/schema-tools^... --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}",
+					"run": "set -euo pipefail\nBASE=\"$(node --experimental-strip-types --no-warnings scripts/ci/turbo-scm-base.mts)\"\nif [ -z \"$BASE\" ]; then\n  echo \"turbo-scm-base produced an empty base\" >&2\n  exit 1\nfi\nif [[ \"$BASE\" == origin/* ]]; then\n  git fetch --no-tags --depth=1 origin \"${BASE#origin/}\"\nelse\n  git cat-file -e \"${BASE}^{commit}\" 2>/dev/null \\\n    || git fetch --no-tags --depth=1 origin \"$BASE\"\nfi\n# Tree diff of two commits: no merge-base, safe on depth-1 fetches.\nmapfile -t FILTERS < <(\n  git diff --name-only \"$BASE\" HEAD \\\n    | node --experimental-strip-types --no-warnings \\\n      scripts/ci/affected-lanes.mts --base=\"$BASE\"\n)\n# Trailing `...` is the package plus its dependencies. A cache hit\n# on an import root alone does not restore a dep's dist (hosted\n# 44872153461 missed provider-vercel, adapter-infisical, provider-redaction).\n# Always union the roots with any affected filters so a packages/\n# edit cannot drop dist/ the scripts tests still import.\nROOTS=(\n  --filter=@hobo/adapter-infisical...\n  --filter=@hobo/bindings...\n  --filter=@hobo/cd...\n  --filter=@hobo/ci...\n  --filter=@hobo/ci-gh-actions...\n  --filter=@hobo/cli...\n  --filter=@hobo/core...\n  --filter=@hobo/hobo...\n  --filter=@hobo/provider-cloudflare...\n  --filter=@hobo/provider-github...\n  --filter=@hobo/provider-lakebed...\n  --filter=@hobo/provider-neon...\n  --filter=@hobo/provider-netlify...\n  --filter=@hobo/provider-npm...\n  --filter=@hobo/provider-oci-registry...\n  --filter=@hobo/provider-prisma-postgres...\n  --filter=@hobo/provider-redaction...\n  --filter=@hobo/provider-upstash...\n  --filter=@hobo/provider-vercel...\n  --filter=@hobo/runtime-local...\n  --filter=@hobo/schema-tools...\n  --filter=@hobo/secret-store-claim...\n)\nif [ ${#FILTERS[@]} -eq 0 ]; then\n  echo \"No package source changed since ${BASE}; materialize import-root dist from Turbo cache\"\n  pnpm exec turbo run build \\\n    \"${ROOTS[@]}\" \\\n    --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\nelse\n  pnpm exec turbo run build \\\n    \"${ROOTS[@]}\" \\\n    \"${FILTERS[@]}\" \\\n    --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}\nfi\n",
+					"env": {
+						"GITHUB_EVENT_NAME": "${{ github.event_name }}",
+						"GITHUB_BASE_REF": "${{ github.base_ref }}",
+						"GITHUB_EVENT_MERGE_GROUP_BASE_SHA": "${{ github.event.merge_group.base_sha }}"
+					},
 					"local": "run"
 				},
 				{
@@ -570,7 +575,7 @@
 				{
 					"name": "Prune Turbo cache",
 					"id": "turbo-prune",
-					"if": "always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''",
+					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.HOBO_TURBO_CACHE_SHARED != '1'",
 					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
 					"continueOnError": true,
 					"local": "skip",
@@ -794,7 +799,7 @@
 		{
 			"id": "release-contract",
 			"workflow": ".github/workflows/release-hobo.yml",
-			"if": "${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"')) }}",
+			"if": "${{ !(github.event_name == 'push' && !contains(github.ref, 'refs/tags/')) && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"')) }}",
 			"workflowEnv": {
 				"RELEASE_SPARSE_PATHS": ".github\nscripts\ntest/setup\npackages\nrelease\ndeploy\nsite\nexternal\nmedia\nexamples\nsrc\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n",
 				"HOBO_RELEASE_TURBO_BASE": "origin/main",

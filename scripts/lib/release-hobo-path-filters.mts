@@ -1,20 +1,21 @@
-/** Path filters aligned with `.github/workflows/release-hobo.yml` pull_request.paths. */
-
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export function parseReleaseHoboPullRequestPathFilters(
+export type ReleaseHoboPathFilterEvent = "pull_request" | "merge_group";
+
+export function parseReleaseHoboPathFilters(
 	workflowYaml: string,
+	event: ReleaseHoboPathFilterEvent,
 ): string[] {
-	const marker = "pull_request:";
+	const marker = `${event}:`;
 	const start = workflowYaml.indexOf(marker);
 	if (start < 0) {
-		throw new Error("release-hobo workflow missing pull_request trigger");
+		throw new Error(`release-hobo workflow missing ${event} trigger`);
 	}
 	const block = workflowYaml.slice(start);
 	const pathsIdx = block.indexOf("\n    paths:");
 	if (pathsIdx < 0) {
-		throw new Error("release-hobo workflow missing pull_request.paths");
+		throw new Error(`release-hobo workflow missing ${event}.paths`);
 	}
 	const afterPaths = block.slice(pathsIdx + "\n    paths:".length);
 	const filters: string[] = [];
@@ -26,9 +27,21 @@ export function parseReleaseHoboPullRequestPathFilters(
 		filters.push(line.slice("      - ".length).replace(/^"|"$/g, "").trim());
 	}
 	if (filters.length === 0) {
-		throw new Error("release-hobo pull_request.paths is empty");
+		throw new Error(`release-hobo ${event}.paths is empty`);
 	}
 	return filters;
+}
+
+export function parseReleaseHoboPullRequestPathFilters(
+	workflowYaml: string,
+): string[] {
+	return parseReleaseHoboPathFilters(workflowYaml, "pull_request");
+}
+
+export function parseReleaseHoboMergeGroupPathFilters(
+	workflowYaml: string,
+): string[] {
+	return parseReleaseHoboPathFilters(workflowYaml, "merge_group");
 }
 
 export function loadReleaseHoboPullRequestPathFilters(
@@ -40,7 +53,6 @@ export function loadReleaseHoboPullRequestPathFilters(
 	);
 }
 
-/** Match GitHub workflow path filter globs (no leading `./`). */
 export function pathMatchesReleaseHoboFilter(
 	filePath: string,
 	filter: string,

@@ -69,6 +69,7 @@ export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"local box enrolled",
 	"PR impact gate",
 	"HoBo release PR gate (required)",
+	"HoBo release integration PR gate",
 	"CI health",
 ]);
 export const FLEET_LABELS: ReadonlySet<string> = new Set([
