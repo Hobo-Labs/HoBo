@@ -89,9 +89,12 @@ function fakes(secretValue = DEPLOY_TOKEN, loginStatus = 200) {
 describe("readRelayDeployToken", () => {
 	it("signs in with the job's OIDC token as the deploy identity and reads VERCEL_TOKEN from the deploy project", async () => {
 		const { fetch, seen } = fakes();
-		const token = await readRelayDeployToken({ binding, env, fetch });
+		const read = await readRelayDeployToken({ binding, env, fetch });
 
-		expect(token).toBe(DEPLOY_TOKEN);
+		expect(read.token).toBe(DEPLOY_TOKEN);
+		expect(read.secretRef).toBe(
+			`infisical://${PROJECT}/prod/VERCEL_TOKEN`,
+		);
 		expect(
 			seen.map((request) => `${request.method} ${request.url.split("?")[0]}`),
 		).toEqual([
@@ -103,13 +106,13 @@ describe("readRelayDeployToken", () => {
 			identityId: IDENTITY,
 			jwt: JWT,
 		});
-		const read = new URL(seen[2]?.url ?? "https://invalid.test");
-		expect(read.searchParams.get("projectId")).toBe(PROJECT);
-		expect(read.searchParams.get("environment")).toBe("prod");
-		expect(read.searchParams.get("secretPath")).toBe("/");
+		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
+		expect(secretRead.searchParams.get("projectId")).toBe(PROJECT);
+		expect(secretRead.searchParams.get("environment")).toBe("prod");
+		expect(secretRead.searchParams.get("secretPath")).toBe("/");
 	});
 
-	it("reads VERCEL_TOKEN from the relay project when an attach binding has no deployProjectId", async () => {
+	it("reads VERCEL_TOKEN from the relay project's deploy-credential folder when an attach binding has no deployProjectId", async () => {
 		const attach = readSecretStoreBinding(
 			JSON.stringify({
 				kind: "infisical-cloud-attach",
@@ -124,11 +127,22 @@ describe("readRelayDeployToken", () => {
 			}),
 		);
 		const { fetch, seen } = fakes();
-		const token = await readRelayDeployToken({ binding: attach, env, fetch });
+		const read = await readRelayDeployToken({ binding: attach, env, fetch });
 
-		expect(token).toBe(DEPLOY_TOKEN);
-		const read = new URL(seen[2]?.url ?? "https://invalid.test");
-		expect(read.searchParams.get("projectId")).toBe("relay-project");
+		expect(read.token).toBe(DEPLOY_TOKEN);
+		expect(read.secretRef).toBe(
+			"infisical://relay-project/prod/hobo-ci-deploy/VERCEL_TOKEN",
+		);
+		expect(JSON.parse(seen[1]?.body ?? "{}")).toEqual({
+			identityId: IDENTITY,
+			jwt: JWT,
+		});
+		expect(JSON.parse(seen[1]?.body ?? "{}").identityId).not.toBe(
+			"relay-identity",
+		);
+		const secretRead = new URL(seen[2]?.url ?? "https://invalid.test");
+		expect(secretRead.searchParams.get("projectId")).toBe("relay-project");
+		expect(secretRead.searchParams.get("secretPath")).toBe("/hobo-ci-deploy");
 	});
 
 	it("needs the runner's OIDC request: without it nothing is asked of the store", async () => {

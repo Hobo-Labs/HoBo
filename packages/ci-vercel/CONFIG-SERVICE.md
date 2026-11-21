@@ -196,8 +196,21 @@ stay in the relay project. A second project (`deployProjectId`) scopes only
 the deploy-credential **viewer** layout from provisioned connect — not App
 deposit without a new binding/connect design. When `deployProjectId` is
 empty (attach `connect` without `--deploy-project-id`), `hobo ci deploy`
-reads `VERCEL_TOKEN` from the relay project itself (`projectId`, at `/`)
-with the deploy identity (`deployIdentityId`).
+reads `VERCEL_TOKEN` from the relay project's **`/hobo-ci-deploy` folder**
+(`secretStoreDeployCredentialSecretPath` in
+[`secret-store-claim`](../secret-store-claim/src/binding.ts); the relay
+project's root is never used: Infisical grants are path-prefix based, so a
+read grant on `/` would cascade onto `/hobo-ci-relay`'s App credentials, and
+the folder is a **sibling** of `/hobo-ci-relay`, not inside it, so a grant on
+either path never covers the other) with the deploy identity
+(`deployIdentityId`). The owner provisions that side: create the
+`/hobo-ci-deploy` folder in `prod`, scope the deploy identity's read grant to
+that folder only, and deposit the token there (`hobo-secret-writer`'s write
+scope covers it; the MCP capture connector's `deploy` target writes it).
+Until the folder exists the read fails closed. **Built, not proven**: no
+production observation yet exists of the fallback read carrying a real value
+— link one (a relay-deploy run's `deploy token read from
+infisical://…/hobo-ci-deploy/VERCEL_TOKEN` progress line) when it happens.
 
 ### What provisioning creates
 
@@ -207,6 +220,7 @@ loader and the deploy workflow read:
 | Project | Environment / folder | Identity | Role | Trusts |
 |---|---|---|---|---|
 | `hobo-ci` | `prod` / `/hobo-ci-relay` | `hobo-ci-relay` | viewer | the Vercel team issuer: `iss`/discovery `https://oidc.vercel.com/<team-slug>`, `aud` `https://vercel.com/<team-slug>`, `sub` `owner:<team-slug>:project:hobo-ci:environment:production`, claims `owner_id` and `project_id` pinned |
+| `hobo-ci` (attach, `deployProjectId` empty) | `prod` / `/hobo-ci-deploy` | `hobo-ci-writer` (the binding's `deployIdentityId`) | read scoped to `/hobo-ci-deploy` (a custom-role path grant; the accepted Member residual above where no custom role exists) | GitHub Actions: the deploy identity's trust as `connect` resolved it |
 | `hobo-ci-deploy` | `prod` / `/` | `hobo-ci-deploy` | viewer | GitHub Actions: `iss` `https://token.actions.githubusercontent.com`, `aud` `https://github.com/<owner>`, `sub` `<sub_claim_prefix>:ref:refs/heads/main` as GitHub issues it for the repository (`repo:<owner>@<ownerId>/<repo>@<repoId>` on the immutable format), claims `repository_id` and `repository_owner_id` pinned |
 
 The deploy credential has a project of its own so the relay's identity, a

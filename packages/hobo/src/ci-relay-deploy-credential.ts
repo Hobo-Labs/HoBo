@@ -21,6 +21,7 @@
 import {
 	createInfisicalClient,
 	githubActionsJwtSource,
+	infisicalSecretRef,
 	InfisicalError,
 	oidcAuth,
 	parseInfisicalBinding,
@@ -28,13 +29,11 @@ import {
 import {
 	type ParsedSecretStoreBinding,
 	secretStoreDeployCredentialProjectId,
+	secretStoreDeployCredentialSecretPath,
 } from "@hobo/secret-store-claim";
 
 // public-contract: the entry in the deploy credential's project that holds the deploy token (CONFIG-SERVICE.md).
 export const RELAY_DEPLOY_TOKEN_ENTRY = "VERCEL_TOKEN";
-
-// The deploy credential sits at the root of its own project.
-const DEPLOY_SECRET_PATH = "/";
 
 // A token Vercel issues: printable, one line, no spaces.
 const TOKEN = /^[!-~]{8,4096}$/u;
@@ -55,14 +54,14 @@ export async function readRelayDeployToken(input: {
 	/** The audience the deploy identity expects; GitHub's default otherwise. */
 	readonly audience?: string;
 	readonly fetch?: typeof fetch;
-}): Promise<string> {
+}): Promise<Readonly<{ token: string; secretRef: string }>> {
 	const { env, binding: store } = input;
 	try {
 		const binding = parseInfisicalBinding({
 			siteUrl: store.endpoint,
 			projectId: secretStoreDeployCredentialProjectId(store),
 			environment: store.environment,
-			secretPath: DEPLOY_SECRET_PATH,
+			secretPath: secretStoreDeployCredentialSecretPath(store),
 		});
 		const audience = input.audience;
 		const client = createInfisicalClient({
@@ -80,9 +79,12 @@ export async function readRelayDeployToken(input: {
 		const secret = await client.getSecret(RELAY_DEPLOY_TOKEN_ENTRY);
 		if (!TOKEN.test(secret.value))
 			throw new RelayDeployCredentialError(
-				`${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy project is not a single-line token.`,
+				`${RELAY_DEPLOY_TOKEN_ENTRY} in the deploy credential's path is not a single-line token.`,
 			);
-		return secret.value;
+		return {
+			token: secret.value,
+			secretRef: infisicalSecretRef(binding, RELAY_DEPLOY_TOKEN_ENTRY),
+		};
 	} catch (error) {
 		if (error instanceof RelayDeployCredentialError) throw error;
 		// The adapter's messages name the operation, a code, a status and a

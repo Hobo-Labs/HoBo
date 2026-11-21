@@ -43,6 +43,17 @@ export function secretStoreDeployCredentialProjectId(
 		: binding.projectId;
 }
 
+// public-contract: the deploy credential's folder in the relay project when the binding has no deploy project. A sibling of the relay's folder, never the project root and never inside the relay's folder: Infisical grants are path-prefix based, so a grant on `/` or on the relay's folder would cascade onto the other audience's entries (CONFIG-SERVICE.md).
+export const RELAY_DEPLOY_CREDENTIAL_SECRET_PATH = "/hobo-ci-deploy";
+
+export function secretStoreDeployCredentialSecretPath(
+	binding: Pick<ParsedSecretStoreBinding, "deployProjectId">,
+): string {
+	return binding.deployProjectId !== ""
+		? "/"
+		: RELAY_DEPLOY_CREDENTIAL_SECRET_PATH;
+}
+
 export function parseSecretStoreBinding(
 	record: SecretStoreBinding,
 	options: { readonly allowLoopback?: boolean } = {},

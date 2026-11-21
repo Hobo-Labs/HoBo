@@ -728,21 +728,24 @@ export async function runCiRelayDeploy(
 	// token through the committed binding. Never from the environment, never
 	// through a file such as $GITHUB_ENV.
 	const vault = input.credentials ?? createTrustedVault();
+	let deployTokenRef: string | undefined;
 	if (
 		!vault.has("VERCEL_TOKEN") &&
 		storeBinding !== undefined &&
 		env.ACTIONS_ID_TOKEN_REQUEST_URL
 	) {
 		try {
-			vault.put(
-				"VERCEL_TOKEN",
-				await readRelayDeployToken({
-					binding: storeBinding,
-					env: {
-						ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
-						ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-					},
-				}),
+			const credential = await readRelayDeployToken({
+				binding: storeBinding,
+				env: {
+					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+				},
+			});
+			vault.put("VERCEL_TOKEN", credential.token);
+			deployTokenRef = credential.secretRef;
+			input.emitProgress(
+				`deploy token read from ${credential.secretRef} as the binding's deploy identity`,
 			);
 		} catch (error) {
 			return refused(
@@ -1004,6 +1007,7 @@ export async function runCiRelayDeploy(
 				dryRun: false,
 				plan: planJson,
 				outputs: safe,
+				...(deployTokenRef !== undefined ? { deployTokenRef } : undefined),
 				...deliveryData,
 			},
 		};

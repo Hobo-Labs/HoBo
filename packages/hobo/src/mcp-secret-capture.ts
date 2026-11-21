@@ -41,7 +41,11 @@ import {
 	type SecretStoreStatus,
 	secretCaptureSpec,
 } from "@hobo/mcp";
-import type { ParsedSecretStoreBinding } from "@hobo/secret-store-claim";
+import {
+	type ParsedSecretStoreBinding,
+	secretStoreDeployCredentialProjectId,
+	secretStoreDeployCredentialSecretPath,
+} from "@hobo/secret-store-claim";
 
 import {
 	loadSecretStoreBinding,
@@ -54,10 +58,6 @@ export const WRITER_SECRET_NAME = "INFISICAL_WRITER_CLIENT_SECRET";
 export const WRITER_IDENTITY_NAME = "hobo-secret-writer";
 /** The longest a writer session lasts, whatever the token's own lifetime. */
 export const WRITER_SESSION_MAX_MS = 15 * 60_000;
-
-// The deploy credential sits at the root of its own project (as
-// ci-relay-deploy-credential.ts reads it).
-const DEPLOY_SECRET_PATH = "/";
 
 const NEXT_STEP_CONNECT =
 	"Start HoBo's private owner setup for the owner's existing store. This relay capture adapter also needs a supported connection before capture can continue.";
@@ -127,8 +127,7 @@ export function secretCaptureProjectDir(
 type Session = {
 	readonly clientId: string;
 	readonly runtime: InfisicalClient;
-	/** Absent when the binding names no deploy project (the default path). */
-	readonly deploy: InfisicalClient | undefined;
+	readonly deploy: InfisicalClient;
 	readonly expiresAtMs: number;
 };
 
@@ -248,17 +247,14 @@ export function createInfisicalCaptureConnector(options: {
 						: undefined),
 				});
 				const { expiresAtMs } = await runtime.signIn();
-				const deploy =
-					store.deployProjectId === ""
-						? undefined
-						: runtime.forBinding(
-								parseInfisicalBinding({
-									siteUrl: store.endpoint,
-									projectId: store.deployProjectId,
-									environment: store.environment,
-									secretPath: DEPLOY_SECRET_PATH,
-								}),
-							);
+				const deploy = runtime.forBinding(
+					parseInfisicalBinding({
+						siteUrl: store.endpoint,
+						projectId: secretStoreDeployCredentialProjectId(store),
+						environment: store.environment,
+						secretPath: secretStoreDeployCredentialSecretPath(store),
+					}),
+				);
 				const until = Math.min(expiresAtMs, now() + WRITER_SESSION_MAX_MS);
 				session = { clientId, runtime, deploy, expiresAtMs: until };
 				return {
@@ -276,8 +272,6 @@ export function createInfisicalCaptureConnector(options: {
 			if (held === undefined)
 				throw new SecretStoreConnectorError("writer-session-ended");
 			const client = target === "deploy" ? held.deploy : held.runtime;
-			if (client === undefined)
-				throw new SecretStoreConnectorError("no-deploy-project");
 			try {
 				await client.putSecret(secret.name, secret.reveal());
 				return { ref: infisicalSecretRef(client.binding, secret.name) };
