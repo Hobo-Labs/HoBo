@@ -2723,9 +2723,30 @@ describe("the workflows that route", () => {
 			for (const line of lines)
 				assert.doesNotMatch(
 					line,
-					/^packages\/ci\/src\/(fleet-overflow\.ts|fleet\/|runner-routing\/)/,
+					/^packages\/ci\/src\/(fleet\/|runner-routing\/)/,
 					path,
 				);
+		}
+	});
+
+	it("check out the overflow module, still imported by a base before ADR-0183 D67, only at the trusted routing base", () => {
+		for (const path of routed) {
+			const text = read(path);
+			const base = text.indexOf("ref: ${{ steps.routing-base.outputs.sha }}");
+			const overflow = text.indexOf("packages/ci/src/fleet-overflow.ts");
+			if (base === -1) {
+				assert.equal(overflow, -1, path);
+				continue;
+			}
+			assert.ok(
+				overflow > base,
+				`${path} lists the overflow module outside the trusted checkout`,
+			);
+			assert.equal(
+				text.indexOf("packages/ci/src/fleet-overflow.ts", overflow + 1),
+				-1,
+				path,
+			);
 		}
 	});
 

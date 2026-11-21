@@ -57,6 +57,7 @@ import { fleetViews } from "./fleet-command.js";
 import { createFleetRuntime } from "./fleet-runtime.js";
 import { type NamedFleetView, renderFleetStatus } from "./fleet-status.js";
 import type { VercelFetch } from "./vercel-client.js";
+import type { VercelBuildRunner } from "./vercel-prebuilt.js";
 
 const execute = promisify(execFile);
 type CiLink = ReturnType<typeof create<typeof CiRepositoryLinkSchema>>;
@@ -338,6 +339,7 @@ function parseCiArgs(args: readonly string[]) {
 			team: { type: "string" },
 			set: { type: "string", multiple: true },
 			"root-directory": { type: "string" },
+			build: { type: "string" },
 			"create-project": { type: "boolean" },
 			provision: { type: "boolean" },
 			adopt: { type: "boolean" },
@@ -463,6 +465,8 @@ export function createCiCommand(
 		deployCredentials?: TrustedVault;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
+		vercelBuild?: VercelBuildRunner;
+		checkoutHead?: (repoRoot: string) => Promise<string>;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
 		hoboHome?: string;
 		/** The transport `hobo ci deploy --adopt` reads GitHub's Deployments API with. */
@@ -605,6 +609,12 @@ export function createCiCommand(
 						: undefined),
 					...(deps.vercelCli !== undefined
 						? { runVercelCli: deps.vercelCli }
+						: undefined),
+					...(deps.vercelBuild !== undefined
+						? { runVercelBuild: deps.vercelBuild }
+						: undefined),
+					...(deps.checkoutHead !== undefined
+						? { checkoutHead: deps.checkoutHead }
 						: undefined),
 					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 					...(deps.now !== undefined ? { now: deps.now } : undefined),
