@@ -43,6 +43,11 @@ scripts/ci/runner-routing.mts
 .hobo/ci.json
 ```
 
+A checkout at the trusted routing base (`.ci-trusted`) runs the base
+revision's script. A base from before the fleet consolidation still imports
+`packages/ci/src/fleet-overflow.ts`, so those checkouts also list that path;
+at a base without the file the line checks out nothing.
+
 `scripts/test/route-runner.test.ts` checks each routed workflow against the
 files the script loads, and runs the script from a copy of only those files.
 

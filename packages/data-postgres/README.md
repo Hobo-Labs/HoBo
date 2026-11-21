@@ -618,6 +618,10 @@ the fleet runs with `membershipEpochs` (ADR-0183), so that adding or
 removing a backend is itself a decided epoch. It is null on every entry
 written without them, which the configured backends decide, as before;
 `ensureFleetControlTables` adds the column to a log created before it existed.
+An immutable journal's log table has no `members` column, and its runtime
+role may not add one, so the journal reads and writes it through
+`sqlAssignmentReplica(backend, layout, { members: false })`, which never
+names the column and refuses an entry that carries a member set.
 
 An epoch is **decided** when a majority of the *configured* backends hold the
 same entry for it. The **current assignment** is the highest decided epoch.

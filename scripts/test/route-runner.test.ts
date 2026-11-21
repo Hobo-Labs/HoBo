@@ -2729,7 +2729,7 @@ describe("the workflows that route", () => {
 		}
 	});
 
-	it("check out the overflow module, still imported by a base before ADR-0183 D67, only at the trusted routing base", () => {
+	it("check out the overflow module, still imported by a base before the fleet consolidation, only at the trusted routing base", () => {
 		for (const path of routed) {
 			const text = read(path);
 			const base = text.indexOf("ref: ${{ steps.routing-base.outputs.sha }}");

@@ -122,7 +122,7 @@ describe("the SQL replica's members column", () => {
 	});
 });
 
-describe("the SQL replica of an immutable journal's log, which has no members column (ADR-0183 D67)", () => {
+describe("the SQL replica of an immutable journal's log, which has no members column", () => {
 	it("never names the column, and refuses a membership epoch", async () => {
 		const executor = new FleetSqlDouble();
 		const replica = sqlAssignmentReplica({ id: "a", executor }, layout, {
