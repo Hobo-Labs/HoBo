@@ -165,6 +165,8 @@ export type SlipAnswer =
 export type MergeGroupHostedProbe = Readonly<{
 	idle: boolean;
 	summary: string;
+	trunkIdle?: boolean | undefined;
+	trunkSummary?: string | undefined;
 }>;
 
 export type RouteDecision = Readonly<{
@@ -704,6 +706,19 @@ export const MERGE_GROUP_HOSTED_LIMITS: RouteLimits = {
 export function mergeGroupHostedHasIdleCapacity(
 	load: LabelLoad,
 	limits: RouteLimits = MERGE_GROUP_HOSTED_LIMITS,
+): boolean {
+	return !refusingJobs(load, limits);
+}
+
+/** One or more jobs already waiting on trunk means no runner slot for a new merge group. */
+export const MERGE_GROUP_TRUNK_IDLE_LIMITS: RouteLimits = {
+	maxWaitSeconds: 45,
+	maxQueued: 1,
+};
+
+export function mergeGroupTrunkHasIdleCapacity(
+	load: LabelLoad,
+	limits: RouteLimits = MERGE_GROUP_TRUNK_IDLE_LIMITS,
 ): boolean {
 	return !refusingJobs(load, limits);
 }
@@ -1363,19 +1378,31 @@ export async function main(
 		const sleep = (wait: number) => delay(wait * 1000);
 		let decision: RouteDecision;
 		try {
-			const firstView = await observeHosted(now());
-			const hostedLoad = labelLoad(firstView.jobs, githubLabel, now());
+			const probeAtMs = now();
+			const firstView = await observeHosted(probeAtMs);
+			const trunkView = await observeTrunk(probeAtMs);
+			const hostedLoad = labelLoad(firstView.jobs, githubLabel, probeAtMs);
+			const trunkLoad = labelLoad(trunkView.jobs, trunkLabel, probeAtMs);
 			const hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
+			const trunkIdle = mergeGroupTrunkHasIdleCapacity(trunkLoad);
 			const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
-			const hostedProbe = { idle: hostedIdle, summary: hostedSummary };
+			const trunkSummary = describeLoad("hobo-trunk", trunkLoad);
+			const hostedProbe = {
+				idle: hostedIdle,
+				summary: hostedSummary,
+				trunkIdle,
+				trunkSummary,
+			};
 			console.log(
-				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}`,
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${trunkSummary}; trunkIdle=${trunkIdle}`,
 			);
-			if (hostedIdle) {
+			if (hostedIdle || !trunkIdle) {
 				decision = {
 					tier: "github",
 					runner: githubLabel,
-					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
+					reason: hostedIdle
+						? `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`
+						: `merge-group Fabric prefers GitHub-hosted while hobo-trunk has no idle capacity (${trunkSummary})`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
 				};

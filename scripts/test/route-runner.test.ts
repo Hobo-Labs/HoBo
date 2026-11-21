@@ -1592,7 +1592,7 @@ describe("the script reading the slip", () => {
 		);
 	});
 
-	it("routes merge-group CI to hobo-trunk when GitHub-hosted is saturated", async () => {
+	it("routes merge-group CI to hobo-trunk when GitHub-hosted is saturated and trunk is idle", async () => {
 		await withGithub(
 			observed([...saturatedHostedQueue(), pickup("hobo-trunk")]),
 			async (apiUrl) => {
@@ -1605,6 +1605,28 @@ describe("the script reading the slip", () => {
 					kind: "unasked",
 					why: "merge-group",
 				});
+			},
+		);
+	});
+
+	it("routes merge-group CI to GitHub-hosted when trunk has jobs waiting", async () => {
+		await withGithub(
+			observed([
+				...saturatedHostedQueue(),
+				pickup("hobo-trunk"),
+				waiting("hobo-trunk", 12),
+			]),
+			async (apiUrl) => {
+				const { decision } = await route(apiUrl, undefined, mergeGroupCi);
+				assert.deepEqual(
+					[decision.tier, decision.runner, decision.refusedBy],
+					["github", "ubuntu-24.04", "queue"],
+				);
+				assert.match(
+					decision.reason,
+					/hobo-trunk has no idle capacity/u,
+				);
+				assert.equal(decision.mergeGroupHostedProbe?.trunkIdle, false);
 			},
 		);
 	});
@@ -1658,9 +1680,12 @@ describe("the script reading the slip", () => {
 				);
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
-					["fleet", "hobo-trunk", "none"],
+					["github", "ubuntu-24.04", "queue"],
 				);
-				assert.match(decision.reason, /merge-group trunk confirmation/u);
+				assert.match(
+					decision.reason,
+					/hobo-trunk has no idle capacity/u,
+				);
 				assert.deepEqual(decision.slip, {
 					kind: "unasked",
 					why: "merge-group",
