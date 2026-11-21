@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	mkdirSync,
@@ -10,177 +9,209 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertTlcExited, runBoundedTlc } from "./lib/bounded-tlc.ts";
 
 const configuredJar = process.env.HOBO_TLA_TOOLS;
 const expected =
-	"7e53aa636dac8a3cb0533f343115c0548e03fc0ce5edc7739becf58d3d0fb84f";
-if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.8.0");
+	"936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
+if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.7.4");
 const jar = resolve(configuredJar);
 const actual = createHash("sha256").update(readFileSync(jar)).digest("hex");
 if (actual !== expected)
 	throw new Error("TLA+ tool digest does not match the pinned release");
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const modelDirectory = join(root, "packages/pricing/model");
 const scratch = mkdtempSync(join(tmpdir(), "hobo-iac-models-"));
-try {
-	for (const [directory, name] of [
-		["dispatcher", "IacRouting"],
-		["broker", "IacBudget"],
-		["cloud", "IacTransitions"],
-		["iac/iac-alchemy", "IacGrant"],
-	] as const) {
-		const result = spawnSync(
-			"java",
-			[
-				"-XX:+UseParallelGC",
-				"-cp",
-				jar,
-				"tlc2.TLC",
-				"-workers",
-				"2",
-				"-metadir",
-				join(scratch, name),
-				"-config",
-				`${name}.cfg`,
-				`${name}.tla`,
-			],
-			{
-				cwd: join(root, "packages", directory, "model"),
-				stdio: "inherit",
-			},
-		);
-		if (result.error) throw result.error;
-		if (result.status !== 0) throw new Error(`${name} model checking failed`);
-	}
-	// Check the same safety invariants with less headroom, not just the default
-	// limit of two. This makes competing unit reservations exceed the budget.
-	const narrowBudget = join(scratch, "budget-limit-one");
-	mkdirSync(narrowBudget);
-	const budgetModelDirectory = join(root, "packages/broker/model");
-	writeFileSync(
-		join(narrowBudget, "IacBudget.tla"),
-		readFileSync(join(budgetModelDirectory, "IacBudget.tla")),
-	);
-	const budgetConfig = readFileSync(
-		join(budgetModelDirectory, "IacBudget.cfg"),
-		"utf8",
-	);
-	if (budgetConfig.split("CONSTANT Limit = 2").length !== 2)
-		throw new Error("IacBudget limit configuration changed");
-	writeFileSync(
-		join(narrowBudget, "IacBudget.cfg"),
-		`${budgetConfig.replace("CONSTANT Limit = 2", "CONSTANT Limit = 1")}\nINVARIANT AtMostOnePricedHold\n`,
-	);
-	const narrowResult = spawnSync(
-		"java",
+
+function check(name: string, directory: string, stateDirectory: string) {
+	const result = runBoundedTlc(
+		jar,
 		[
-			"-XX:+UseParallelGC",
-			"-cp",
-			jar,
-			"tlc2.TLC",
 			"-workers",
 			"2",
 			"-metadir",
-			join(narrowBudget, "states"),
+			stateDirectory,
 			"-config",
-			"IacBudget.cfg",
-			"IacBudget.tla",
+			`${name}.cfg`,
+			`${name}.tla`,
 		],
-		{ cwd: narrowBudget, stdio: "inherit" },
+		directory,
 	);
-	if (narrowResult.error) throw narrowResult.error;
-	if (narrowResult.status !== 0)
-		throw new Error("IacBudget limit-one model checking failed");
-	// Check that representative removals of safety guards produce counterexamples.
-	const mutations = [
+	assertTlcExited(result);
+	return result;
+}
+
+try {
+	const transitionDirectory = join(root, "packages/cloud/model");
+	const transitionSource = readFileSync(
+		join(transitionDirectory, "IacTransitions.tla"),
+		"utf8",
+	);
+	const transitionConfig = readFileSync(
+		join(transitionDirectory, "IacTransitions.cfg"),
+		"utf8",
+	);
+	const transitionResult = check(
+		"IacTransitions",
+		transitionDirectory,
+		join(scratch, "IacTransitions"),
+	);
+	process.stdout.write(transitionResult.stdout);
+	process.stderr.write(transitionResult.stderr);
+	if (transitionResult.status !== 0)
+		throw new Error("IacTransitions model checking failed");
+	const transitionMutations = [
 		[
-			"broker",
-			"IacBudget",
-			"/\\ guard \\in BOOLEAN /\\ (settlementTrust \\/ guard)",
-			"/\\ guard \\in BOOLEAN",
-		],
-		[
-			"broker",
-			"IacBudget",
-			'/\\ mode[o] # "priced" \\/ settlementTrust \\/ guarded[o]',
-			"/\\ TRUE",
-		],
-		[
-			"broker",
-			"IacBudget",
-			'/\\ status[o] = "idle" /\\ ActiveUnpriced = {}',
-			'/\\ status[o] = "idle"',
-		],
-		[
-			"broker",
-			"IacBudget",
-			"/\\ fenced[o] /\\ verified[o] /\\ ~live[o] /\\ actual \\in 0..3",
-			"/\\ actual \\in 0..3",
-		],
-		[
-			"dispatcher",
-			"IacRouting",
-			'/\\ phase = "uncertain" /\\ candidate \\in fenced /\\ candidate \\notin live\n  /\\ verified\' = TRUE',
-			'/\\ phase = "uncertain"\n  /\\ verified\' = TRUE',
-		],
-		[
-			"cloud",
-			"IacTransitions",
 			"StartApply(c) ==\n  /\\ snapshot[c] = version /\\ version < MaxVersion",
 			"StartApply(c) ==\n  /\\ version < MaxVersion",
 		],
 		[
-			"cloud",
-			"IacTransitions",
 			'/\\ apply = "uncertain" /\\ fenced /\\ verified /\\ live = "none"\n  /\\ result',
 			'/\\ apply = "uncertain"\n  /\\ result',
 		],
 	] as const;
-	for (const [index, [directory, name, before, after]] of mutations.entries()) {
-		const original = join(root, "packages", directory, "model");
-		const source = readFileSync(join(original, `${name}.tla`), "utf8");
-		if (source.split(before).length !== 2)
-			throw new Error(`${name} mutation target changed`);
-		const isolated = join(scratch, `mutation-${index}`);
+	for (const [index, [before, after]] of transitionMutations.entries()) {
+		if (transitionSource.split(before).length !== 2)
+			throw new Error("IacTransitions mutation target changed");
+		const isolated = join(scratch, `transition-mutation-${index}`);
 		mkdirSync(isolated);
-		writeFileSync(join(isolated, `${name}.tla`), source.replace(before, after));
 		writeFileSync(
-			join(isolated, `${name}.cfg`),
-			readFileSync(join(original, `${name}.cfg`)),
+			join(isolated, "IacTransitions.tla"),
+			transitionSource.replace(before, after),
 		);
-		const result = spawnSync(
-			"java",
-			[
-				"-XX:+UseParallelGC",
-				"-cp",
-				jar,
-				"tlc2.TLC",
-				"-workers",
-				"2",
-				"-metadir",
-				join(isolated, "states"),
-				"-config",
-				`${name}.cfg`,
-				`${name}.tla`,
-			],
-			{ cwd: isolated, encoding: "utf8" },
-		);
-		if (result.error) throw result.error;
+		writeFileSync(join(isolated, "IacTransitions.cfg"), transitionConfig);
+		const result = check("IacTransitions", isolated, join(isolated, "states"));
 		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
 			throw new Error(
-				`${name} mutation did not produce an invariant counterexample`,
+				"IacTransitions mutation did not produce an invariant counterexample",
 			);
 		process.stdout.write(
-			`${name} mutation ${index + 1}: counterexample found\n`,
+			`IacTransitions mutation ${index + 1}: counterexample found\n`,
 		);
 	}
-
-	// Check both the reserve-time budget guarantee and its limit: actual
-	// provider charges can exceed an estimate, even after a valid reservation.
+	const routeDirectory = join(root, "packages/dispatcher/model");
+	const routeSource = readFileSync(
+		join(routeDirectory, "IacRouting.tla"),
+		"utf8",
+	);
+	const routeConfig = readFileSync(
+		join(routeDirectory, "IacRouting.cfg"),
+		"utf8",
+	);
+	const routeResult = check(
+		"IacRouting",
+		routeDirectory,
+		join(scratch, "IacRouting"),
+	);
+	process.stdout.write(routeResult.stdout);
+	process.stderr.write(routeResult.stderr);
+	if (routeResult.status !== 0)
+		throw new Error("IacRouting model checking failed");
+	const routeGuard =
+		'/\\ phase = "uncertain" /\\ candidate \\in fenced /\\ candidate \\notin live\n  /\\ verified\' = TRUE';
+	if (routeSource.split(routeGuard).length !== 2)
+		throw new Error("IacRouting mutation target changed");
+	const routeMutation = join(scratch, "route-mutation");
+	mkdirSync(routeMutation);
+	writeFileSync(
+		join(routeMutation, "IacRouting.tla"),
+		routeSource.replace(
+			routeGuard,
+			'/\\ phase = "uncertain"\n  /\\ verified\' = TRUE',
+		),
+	);
+	writeFileSync(join(routeMutation, "IacRouting.cfg"), routeConfig);
+	const routeMutationResult = check(
+		"IacRouting",
+		routeMutation,
+		join(routeMutation, "states"),
+	);
+	if (
+		routeMutationResult.status === 0 ||
+		!/Invariant .+ is violated/u.test(routeMutationResult.stdout)
+	)
+		throw new Error(
+			"IacRouting mutation did not produce an invariant counterexample",
+		);
+	process.stdout.write("IacRouting mutation: counterexample found\n");
+	for (const name of [
+		"IacAgreementStatus",
+		"IacSharedFixedQuantity",
+		"IacPricingScope",
+		"IacDestroyPricing",
+		"IacFixedPricing",
+	]) {
+		const result = check(name, modelDirectory, join(scratch, name));
+		process.stdout.write(result.stdout);
+		process.stderr.write(result.stderr);
+		if (result.status !== 0) throw new Error(`${name} model checking failed`);
+	}
 	const budgetDirectory = join(root, "packages/broker/model");
 	const budgetSource = readFileSync(
 		join(budgetDirectory, "IacBudget.tla"),
 		"utf8",
 	);
+	const budgetConfig = readFileSync(
+		join(budgetDirectory, "IacBudget.cfg"),
+		"utf8",
+	);
+	const budgetResult = check(
+		"IacBudget",
+		budgetDirectory,
+		join(scratch, "IacBudget"),
+	);
+	process.stdout.write(budgetResult.stdout);
+	process.stderr.write(budgetResult.stderr);
+	if (budgetResult.status !== 0)
+		throw new Error("IacBudget model checking failed");
+	const narrow = join(scratch, "budget-limit-one");
+	mkdirSync(narrow);
+	if (budgetConfig.split("CONSTANT Limit = 2").length !== 2)
+		throw new Error("IacBudget limit configuration changed");
+	writeFileSync(join(narrow, "IacBudget.tla"), budgetSource);
+	writeFileSync(
+		join(narrow, "IacBudget.cfg"),
+		`${budgetConfig.replace("CONSTANT Limit = 2", "CONSTANT Limit = 1")}\nINVARIANT AtMostOnePricedHold\n`,
+	);
+	const narrowResult = check("IacBudget", narrow, join(narrow, "states"));
+	process.stdout.write(narrowResult.stdout);
+	process.stderr.write(narrowResult.stderr);
+	if (narrowResult.status !== 0)
+		throw new Error("IacBudget limit-one model checking failed");
+	const budgetMutations = [
+		[
+			"/\\ guard \\in BOOLEAN /\\ (settlementTrust \\/ guard)",
+			"/\\ guard \\in BOOLEAN",
+		],
+		['/\\ mode[o] # "priced" \\/ settlementTrust \\/ guarded[o]', "/\\ TRUE"],
+		[
+			'/\\ status[o] = "idle" /\\ ActiveUnpriced = {}',
+			'/\\ status[o] = "idle"',
+		],
+		[
+			"/\\ fenced[o] /\\ verified[o] /\\ ~live[o] /\\ actual \\in 0..3",
+			"/\\ actual \\in 0..3",
+		],
+	] as const;
+	for (const [index, [before, after]] of budgetMutations.entries()) {
+		if (budgetSource.split(before).length !== 2)
+			throw new Error("IacBudget mutation target changed");
+		const isolated = join(scratch, `budget-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacBudget.tla"),
+			budgetSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacBudget.cfg"), budgetConfig);
+		const result = check("IacBudget", isolated, join(isolated, "states"));
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"IacBudget mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacBudget mutation ${index + 1}: counterexample found\n`,
+		);
+	}
 	const expectBudgetViolation = (
 		label: string,
 		source: string,
@@ -194,24 +225,7 @@ try {
 			join(isolated, "IacBudget.cfg"),
 			`SPECIFICATION Spec\nCONSTANT Limit = ${limit}\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`,
 		);
-		const result = spawnSync(
-			"java",
-			[
-				"-XX:+UseParallelGC",
-				"-cp",
-				jar,
-				"tlc2.TLC",
-				"-workers",
-				"2",
-				"-metadir",
-				join(isolated, "states"),
-				"-config",
-				"IacBudget.cfg",
-				"IacBudget.tla",
-			],
-			{ cwd: isolated, encoding: "utf8" },
-		);
-		if (result.error) throw result.error;
+		const result = check("IacBudget", isolated, join(isolated, "states"));
 		if (
 			result.status === 0 ||
 			!result.stdout.includes(`Invariant ${invariant} is violated`)
@@ -253,10 +267,210 @@ try {
 		budgetSource,
 		"PricedActualNeverExceedsBudget",
 	);
+	const mutations = [
+		["IacAgreementStatus", "IF NeedsRejection", "IF FALSE"],
+		[
+			"IacSharedFixedQuantity",
+			"Eligible == targetKnown /\\ otherKnown /\\ selectorKnown",
+			"Eligible == targetKnown /\\ selectorKnown",
+		],
+		[
+			"IacSharedFixedQuantity",
+			"Eligible == targetKnown /\\ otherKnown /\\ selectorKnown",
+			"Eligible == targetKnown /\\ otherKnown",
+		],
+		[
+			"IacSharedFixedQuantity",
+			"BaselineAmount == otherCost",
+			'BaselineAmount == IF status = "past-due" THEN 0 ELSE otherCost',
+		],
+		[
+			"IacDestroyPricing",
+			'ELSE IF operation = "destroy" /\\ model # "destroy" THEN "unsupported"',
+			'ELSE IF FALSE THEN "unsupported"',
+		],
+		[
+			"IacDestroyPricing",
+			'ELSE IF model = "destroy" /\\ declaration = "missing" THEN "incomplete"',
+			'ELSE IF FALSE THEN "incomplete"',
+		],
+		[
+			"IacDestroyPricing",
+			'ELSE IF model = "destroy" /\\\n          (declaration = "cancels" \\/ workload = "remove" \\/ sourceRefs)',
+			"ELSE IF FALSE",
+		],
+		[
+			"IacDestroyPricing",
+			'ELSE IF model = "source-action" THEN "unsupported"',
+			'ELSE IF FALSE THEN "unsupported"',
+		],
+		[
+			"IacDestroyPricing",
+			'ELSE IF workload = "remove" THEN "unsupported"',
+			'ELSE IF FALSE THEN "unsupported"',
+		],
+		[
+			"IacDestroyPricing",
+			'ELSE IF sourceRefs THEN "unsupported"',
+			'ELSE IF FALSE THEN "unsupported"',
+		],
+		[
+			"IacDestroyPricing",
+			'/\\ assessment = "unavailable" /\\ route = "pending"',
+			'/\\ assessment # "pending" /\\ route = "pending"',
+		],
+		[
+			"IacDestroyPricing",
+			'/\\ route\' = IF budgetAllows THEN "priced-held" ELSE "denied"',
+			'/\\ route\' = "priced-held"',
+		],
+		[
+			"IacPricingScope",
+			"IF present /\\ ScopeMatches",
+			"IF ~present \\/ ScopeMatches",
+		],
+		["IacFixedPricing", "/\\ usagePriced \\/ fixedApplicable", "/\\ TRUE"],
+		[
+			"IacFixedPricing",
+			"/\\ ~fixedApplicable \\/ ~requiresQuantity \\/ (agreementQuantity /\\ workloadQuantity)",
+			"/\\ TRUE",
+		],
+		["IacFixedPricing", 'ELSE "unavailable"', 'ELSE "zero"'],
+	] as const;
+	for (const [index, [name, before, after]] of mutations.entries()) {
+		const source = readFileSync(join(modelDirectory, `${name}.tla`), "utf8");
+		if (source.split(before).length !== 2)
+			throw new Error(`${name} mutation target changed`);
+		const isolated = join(scratch, `mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, `${name}.tla`), source.replace(before, after));
+		writeFileSync(
+			join(isolated, `${name}.cfg`),
+			readFileSync(join(modelDirectory, `${name}.cfg`)),
+		);
+		const result = check(name, isolated, join(isolated, "states"));
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				`${name} mutation did not produce an invariant counterexample`,
+			);
+		process.stdout.write(
+			`${name} mutation ${index + 1}: counterexample found\n`,
+		);
+	}
+	for (const [name, invariant] of [
+		["IacAgreementStatus", "AgreementNoUnavailable"],
+		["IacAgreementStatus", "AgreementNoContinuation"],
+		["IacAgreementStatus", "NoUnknownStatusRejection"],
+		["IacAgreementStatus", "NoUnreferencedTrialRejection"],
+		["IacSharedFixedQuantity", "NoMissingQuantity"],
+		["IacSharedFixedQuantity", "NoUnknownSelector"],
+		["IacSharedFixedQuantity", "NoExplicitZeroQuote"],
+		["IacSharedFixedQuantity", "NoPastDueQuote"],
+		["IacDestroyPricing", "NoPricedHold"],
+		["IacDestroyPricing", "NoUnpricedHold"],
+		["IacFixedPricing", "NoFixedZero"],
+		["IacFixedPricing", "NoFixedPositive"],
+		["IacFixedPricing", "NoUnavailable"],
+	] as const) {
+		const witness = join(scratch, invariant);
+		mkdirSync(witness);
+		writeFileSync(
+			join(witness, `${name}.tla`),
+			readFileSync(join(modelDirectory, `${name}.tla`)),
+		);
+		writeFileSync(
+			join(witness, `${name}.cfg`),
+			`${readFileSync(join(modelDirectory, `${name}.cfg`), "utf8")}\nINVARIANT ${invariant}\n`,
+		);
+		const result = check(name, witness, join(witness, "states"));
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`${invariant} witness was not reached`);
+		process.stdout.write(`${invariant}: witness found\n`);
+	}
 
-	// The normal safety check cannot prove that an interesting history was
-	// reachable. Find an A -> B -> A witness and then require a real stale
-	// credential counterexample when epoch non-reuse is deliberately removed.
+	const receiptDirectory = join(root, "packages/broker/model");
+	const receiptSource = readFileSync(
+		join(receiptDirectory, "IacPricedReceipt.tla"),
+		"utf8",
+	);
+	const receiptConfig = readFileSync(
+		join(receiptDirectory, "IacPricedReceipt.cfg"),
+		"utf8",
+	);
+	const receiptResult = check(
+		"IacPricedReceipt",
+		receiptDirectory,
+		join(scratch, "IacPricedReceipt"),
+	);
+	process.stdout.write(receiptResult.stdout);
+	process.stderr.write(receiptResult.stderr);
+	if (receiptResult.status !== 0)
+		throw new Error("IacPricedReceipt model checking failed");
+	const receiptMutations = [
+		[
+			'IF reserveMatches THEN "await-claim" ELSE "uncertain-reserve"',
+			'IF TRUE THEN "await-claim" ELSE "uncertain-reserve"',
+		],
+		[
+			'IF claimMatches THEN "await-check" ELSE "uncertain-claim"',
+			'IF TRUE THEN "await-check" ELSE "uncertain-claim"',
+		],
+		[
+			'IF stillHeld THEN "admitted" ELSE "uncertain-revalidation"',
+			'IF TRUE THEN "admitted" ELSE "uncertain-revalidation"',
+		],
+	] as const;
+	for (const [index, [before, after]] of receiptMutations.entries()) {
+		if (receiptSource.split(before).length !== 2)
+			throw new Error("receipt mutation target changed");
+		const isolated = join(scratch, `receipt-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacPricedReceipt.tla"),
+			receiptSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacPricedReceipt.cfg"), receiptConfig);
+		const result = check(
+			"IacPricedReceipt",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"receipt mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacPricedReceipt mutation ${index + 1}: counterexample found\n`,
+		);
+	}
+	for (const invariant of [
+		"NoAdmission",
+		"NoReserveUncertainty",
+		"NoClaimUncertainty",
+		"NoRevalidationUncertainty",
+	] as const) {
+		const isolated = join(scratch, `receipt-${invariant}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacPricedReceipt.tla"), receiptSource);
+		writeFileSync(
+			join(isolated, "IacPricedReceipt.cfg"),
+			`${receiptConfig}\nINVARIANT ${invariant}\n`,
+		);
+		const result = check(
+			"IacPricedReceipt",
+			isolated,
+			join(isolated, "states"),
+		);
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`${invariant} witness was not reached`);
+		process.stdout.write(`${invariant}: witness found\n`);
+	}
 	const grantDirectory = join(root, "packages/iac/iac-alchemy/model");
 	const grantSource = readFileSync(
 		join(grantDirectory, "IacGrant.tla"),
@@ -266,6 +480,15 @@ try {
 		join(grantDirectory, "IacGrant.cfg"),
 		"utf8",
 	);
+	const grantResult = check(
+		"IacGrant",
+		grantDirectory,
+		join(scratch, "IacGrant"),
+	);
+	process.stdout.write(grantResult.stdout);
+	process.stderr.write(grantResult.stderr);
+	if (grantResult.status !== 0)
+		throw new Error("IacGrant model checking failed");
 	const expectGrantViolation = (
 		label: string,
 		source: string,
@@ -276,13 +499,9 @@ try {
 		mkdirSync(isolated);
 		writeFileSync(join(isolated, "IacGrant.tla"), source);
 		writeFileSync(join(isolated, "IacGrant.cfg"), config);
-		const result = spawnSync(
-			"java",
+		const result = runBoundedTlc(
+			jar,
 			[
-				"-XX:+UseParallelGC",
-				"-cp",
-				jar,
-				"tlc2.TLC",
 				"-workers",
 				"2",
 				"-metadir",
@@ -291,9 +510,9 @@ try {
 				"IacGrant.cfg",
 				"IacGrant.tla",
 			],
-			{ cwd: isolated, encoding: "utf8" },
+			isolated,
 		);
-		if (result.error) throw result.error;
+		assertTlcExited(result);
 		if (
 			result.status === 0 ||
 			!result.stdout.includes(`Invariant ${invariant} is violated`)
@@ -395,13 +614,9 @@ try {
 	mkdirSync(concurrencyDirectory);
 	writeFileSync(join(concurrencyDirectory, "IacGrant.tla"), grantSource);
 	writeFileSync(join(concurrencyDirectory, "IacGrant.cfg"), concurrencyConfig);
-	const concurrent = spawnSync(
-		"java",
+	const concurrent = runBoundedTlc(
+		jar,
 		[
-			"-XX:+UseParallelGC",
-			"-cp",
-			jar,
-			"tlc2.TLC",
 			"-workers",
 			"2",
 			"-metadir",
@@ -410,9 +625,11 @@ try {
 			"IacGrant.cfg",
 			"IacGrant.tla",
 		],
-		{ cwd: concurrencyDirectory, stdio: "inherit" },
+		concurrencyDirectory,
 	);
-	if (concurrent.error) throw concurrent.error;
+	assertTlcExited(concurrent);
+	process.stdout.write(concurrent.stdout);
+	process.stderr.write(concurrent.stderr);
 	if (concurrent.status !== 0)
 		throw new Error("IacGrant two-request model checking failed");
 	const allRequests =
