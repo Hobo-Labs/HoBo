@@ -31,7 +31,13 @@
       "trunkHeadroomFleetDeferMs": 45000,
       "jobAdmission": "pull"
     },
-    "externalPools": [],
+    "externalPools": [
+      {
+        "labels": ["hobo-agent37"],
+        "runnerNamePrefix": "hobo-a37-",
+        "maxRunners": 4
+      }
+    ],
     "retiredVariables": [
       "HOBO_CI_FLEET_ROUTES",
       "HOBO_CI_FLEET_STATE",
@@ -181,7 +187,7 @@
               "type": "vm",
               "size": { "cpu": 2, "memory": 4, "disk": 20 },
               "region": "us",
-              "template": "agent37-ubuntu@1",
+              "template": "agent37-ubuntu",
               "idleTtlSeconds": 600,
               "jobTimeoutSeconds": 1800,
               "labels": ["hobo-agent37"],

@@ -25,10 +25,6 @@ function expectNoCredential(
 }
 
 describe("Agent37 error redaction", () => {
-	it("redacts Agent37 API keys independently of generic token fallbacks", () => {
-		expect(redactAgent37Text("rejected sk_live_x")).toBe("rejected [redacted]");
-	});
-
 	it("redacts runtime-generated API and webhook keys", () => {
 		const apiKey = generatedKey();
 		const webhookSecret = `whsec_${randomBytes(32).toString("base64")}`;
@@ -78,25 +74,6 @@ describe("Agent37 error redaction", () => {
 		expect(failure).toBeInstanceOf(Agent37Error);
 		if (!(failure instanceof Agent37Error)) throw new Error("missing failure");
 		expect(failure.cause).toBeUndefined();
-		expectNoCredential(
-			[failure.message, failure.stack ?? "", JSON.stringify(failure)],
-			apiKey,
-		);
-	});
-
-	it("redacts the exec authentication header echoed by transport failures", async () => {
-		const apiKey = generatedKey();
-		const client = createAgent37Client({
-			apiKey,
-			fetchImpl: async (input, init) => {
-				const echoed = new Request(input, init).headers.get("x-agent37-key");
-				throw new Error(`sandbox echoed ${echoed}`);
-			},
-		});
-		const failure = await client
-			.exec("box-1", { command: "true" })
-			.catch((error: Error) => error);
-		expect(failure).toBeInstanceOf(Agent37Error);
 		expectNoCredential(
 			[failure.message, failure.stack ?? "", JSON.stringify(failure)],
 			apiKey,

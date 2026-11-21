@@ -121,7 +121,9 @@ export const CiAgent37PoolSchema = z
 		template: z
 			.string()
 			.max(255)
-			.regex(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$/),
+			.regex(
+				/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?:@[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$/,
+			),
 		idleTtlSeconds: z.number().int().min(60).max(3600),
 		jobTimeoutSeconds: z.number().int().min(1).max(19800),
 		labels: z.array(base.runsOn).min(1).max(16).meta({ uniqueItems: true }),

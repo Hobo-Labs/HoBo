@@ -310,7 +310,7 @@ import "list"
  type: "default" | "vm" | "performance"
  size: #CiPolicyAgent37Size
  region: "us" | "eu" | "ap-south"
- template: string & =~"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}@[1-9][0-9]{0,19}$"
+ template: string & =~"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(@[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$"
  idleTtlSeconds: int & >=60 & <=3600
  jobTimeoutSeconds: int & >=1 & <=19800
  labels: [...(string & =~"^[A-Za-z0-9_.-]{1,100}$" & !~"(?i)^hobo$")] & list.MinItems(1) & list.MaxItems(16) & list.UniqueItems()

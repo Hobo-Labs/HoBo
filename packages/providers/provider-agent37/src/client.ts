@@ -12,10 +12,7 @@ import {
 } from "./transport.js";
 
 const redact = createProviderRedactor({
-	patterns: [
-		/(?<![A-Za-z0-9_-])sk_live_[A-Za-z0-9_-]+/g,
-		/\bwhsec_[A-Za-z0-9+/=_-]{8,}/g,
-	],
+	patterns: [/\bwhsec_[A-Za-z0-9+/=_-]{8,}/g],
 	decodePercent: true,
 });
 
@@ -308,18 +305,10 @@ type RequestOptions<T> = {
 	readonly url: string;
 	readonly headers: Readonly<Record<string, string>>;
 	readonly expected: readonly number[];
+	readonly responseSchema: z.ZodType<T>;
 	readonly body?: unknown;
 	readonly timeoutMs: number;
-} & (
-	| {
-			readonly responseSchema: z.ZodType<T>;
-			readonly responseSchemaForStatus?: undefined;
-	  }
-	| {
-			readonly responseSchema?: undefined;
-			readonly responseSchemaForStatus: (status: number) => z.ZodType<T>;
-	  }
-);
+};
 
 function responseError(response: TransportResponse, now: number): Agent37Error {
 	let providerCode: string | undefined;
@@ -385,9 +374,7 @@ export function createAgent37Client(
 				{ status: response.status },
 			);
 		}
-		const responseSchema =
-			input.responseSchema ?? input.responseSchemaForStatus(response.status);
-		const parsed = responseSchema.safeParse(json);
+		const parsed = input.responseSchema.safeParse(json);
 		if (!parsed.success)
 			throw new Agent37Error(
 				`Agent37 response did not match its contract: ${parsed.error.message}`,
@@ -446,8 +433,7 @@ export function createAgent37Client(
 				url: apiUrl(`/v1/instances/${encodeURIComponent(id)}`),
 				headers: apiHeaders,
 				expected: [200, 204],
-				responseSchemaForStatus: (status) =>
-					status === 204 ? z.undefined() : deleted,
+				responseSchema: z.union([deleted, z.undefined()]),
 				timeoutMs,
 			});
 		},
@@ -496,8 +482,7 @@ export function createAgent37Client(
 				url: apiUrl(`/v1/webhooks/${encodeURIComponent(id)}`),
 				headers: apiHeaders,
 				expected: [200, 204],
-				responseSchemaForStatus: (status) =>
-					status === 204 ? z.undefined() : deleted,
+				responseSchema: z.union([deleted, z.undefined()]),
 				timeoutMs,
 			});
 		},

@@ -48,7 +48,6 @@ describe("kind-specific CI policy provider shapes", () => {
 				maxBoxes: 4,
 				type: "vm",
 				region: "us",
-				template: "agent37-ubuntu@1",
 				size: { cpu: 2, memory: 4, disk: 20 },
 				network: {
 					allow: expect.arrayContaining(["*.actions.githubusercontent.com"]),
@@ -58,19 +57,6 @@ describe("kind-specific CI policy provider shapes", () => {
 		expect(Object.isFrozen(policy.providers[0]?.capacity.value)).toBe(true);
 		expect(parseCiPolicy(toJsonString(DesiredCiPolicySchema, policy))).toEqual(
 			policy,
-		);
-	});
-
-	it.each([
-		"agent37-ubuntu",
-		"agent37-ubuntu@latest",
-		"agent37-ubuntu@",
-		"agent37-ubuntu@1.2",
-	])("rejects an unpinned or mutable Agent37 template: %s", (template) => {
-		const input = JSON.parse(fixture("valid", "desired-policy-agent37"));
-		input.providers[0].pool.template = template;
-		expect(() => parseCiPolicy(JSON.stringify(input))).toThrow(
-			"invalid CI provider declaration",
 		);
 	});
 

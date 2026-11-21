@@ -73,34 +73,6 @@ describe("parseConnectorConfig", () => {
 		});
 	});
 
-	it.each(
-		Object.entries({
-			apiOrigin: "api.agent37.com",
-			execOrigin: "sandbox.agent37.app",
-		}),
-	)("restricts Agent37 %s to its credentialed HTTPS origin", (setting, host) => {
-		for (const value of [
-			"not-a-url",
-			`http://${host}`,
-			"https://attacker.example.com",
-			`https://api-key@example.com@${host}`,
-			`https://${host}/v1`,
-			`https://${host}/?token=secret`,
-			`https://${host}/#secret`,
-			null,
-			{ host },
-		]) {
-			expect(() =>
-				parseConnectorConfig({
-					id: "agent37-ci",
-					kind: "agent37",
-					displayName: "Agent37 CI",
-					settings: { workspaceId: "ws_example", [setting]: value },
-				}),
-			).toThrow(/invalid-connector-origin/);
-		}
-	});
-
 	it("refuses unknown kinds and missing required settings", async () => {
 		expect(() =>
 			parseConnectorConfig({

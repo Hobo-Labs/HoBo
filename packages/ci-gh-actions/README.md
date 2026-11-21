@@ -590,7 +590,7 @@ five-field providers of every kind except `vercel` stay valid unchanged.
 | `local`, `github`, `blacksmith`, `depot`, `warpbuild`, `hobo-box-worker` | none; `scaleSet`, `engine`, `pool` and `location` are rejected |
 | `kubernetes` | optional `scaleSet` **or** optional `engine` (never both); neither keeps the existing disposable-pod path |
 | `vercel` | required `location`: `vercel`, `local` or `remote`; `scaleSet`, `engine` and `pool` are rejected |
-| `agent37` | required `pool`: box type, documented size, region, `template@revision` with a positive numeric revision, lifecycle, labels, egress allowlist and monthly create/budget limits |
+| `agent37` | required `pool`: box type, documented size, region, template, lifecycle, labels, egress allowlist and monthly create/budget limits |
 
 `scaleSet` names an [ARC](https://github.com/actions/actions-runner-controller)
 `AutoscalingRunnerSet`: `{ "name", "namespace", "maxRunners", "minRunners"? }`.
@@ -605,11 +605,8 @@ out of `.hobo/ci.json` and resolve through the `connectionRef`.
 Agent37 pools allow only documented CPU/memory shapes and at most 100 network
 allow entries. Non-US regions and the 8 vCPU shape require `vm` or `performance`;
 `default` boxes are US-only. Pools above 32 GB of concurrent memory require
-`allowAboveFreeTier: true`. Templates require a positive numeric revision, such
-as `agent37-ubuntu@1`; mutable names and tags are rejected. The committed
-`agent37-runners` example is disabled and stores no API key or webhook secret.
-The default `runnerRouting.externalPools` list is empty. A project must explicitly
-configure an external pool to opt into externally hosted runners.
+`allowAboveFreeTier: true`. The committed `agent37-runners` example is disabled
+and stores no API key or webhook secret.
 
 ```json
 {
