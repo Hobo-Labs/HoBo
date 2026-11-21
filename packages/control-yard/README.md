@@ -83,6 +83,7 @@ Anim isolation: `public/anim-test.html` (phaser-gamedev AnimTest pattern)
 ## Design system + art bible
 
 - **`site/src/styles/global.css` and `public/yard.css`** — rubberhose ink-on-paper contract.
+- **[Chewy](https://github.com/google/fonts/tree/7af0d90b4d532ffa4b041937b560c6df4e7b1e95/apache/chewy)** is bundled locally under the Apache 2.0 license in `public/fonts/LICENSE.txt`.
 - **`site/public/parallax/README.md`** — Bo sheets; never mirror west.
 - **Plates** — reuse site `trail` / `poles` / `clouds` only. No generative color scenery.
 
