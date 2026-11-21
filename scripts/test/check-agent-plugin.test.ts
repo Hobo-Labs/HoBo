@@ -556,6 +556,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("rejects a newer manifest pin during PR validation", () => {
+		stubCiOff();
 		stubCiEnvironment("pull_request");
 		const report = checkAgentPlugin({
 			pluginRoot: realPluginRoot,
@@ -573,6 +574,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("notes the event name and commit ish when the comparison runs without the exact pin", () => {
+		stubCiOff();
 		stubCiEnvironment("push");
 		const train = parsePluginManifest(
 			readFileSync(path.join(realPluginRoot, "plugin.json"), "utf8"),
@@ -1424,6 +1426,14 @@ describe("release-train version pin commit selection", () => {
 		expect(recorder.calls).toEqual([
 			{ variable: "VersionHeight", commitIsh: prHead },
 		]);
+	});
+
+	it("rejects empty nbgv VersionHeight output", async () => {
+		const { repoRoot } = await scratchMergeRepo();
+		stubCiEnvironment("push");
+		expect(() =>
+			releaseTrainSemverForPluginCheck(repoRoot, () => "   "),
+		).toThrow(/empty VersionHeight output/u);
 	});
 
 	it("bumps the expected height only for a locally staged plugin.json at HEAD", async () => {

@@ -1208,7 +1208,16 @@ export function releaseTrainSemverForPluginCheck(
 ): string {
 	const config = loadVersionJsonHeightConfig(repoRoot);
 	const commitIsh = versionPinCommitIsh(repoRoot);
-	const height = Number(nbgv("VersionHeight", commitIsh));
+	if (pluginManifestStagedGitIssues(repoRoot).length > 0) {
+		throw new Error(
+			`cannot inspect staged plugin.json for release-train bump at ${commitIsh}`,
+		);
+	}
+	const rawHeight = nbgv("VersionHeight", commitIsh).trim();
+	if (rawHeight.length === 0) {
+		throw new Error(`empty VersionHeight output at ${commitIsh}`);
+	}
+	const height = Number(rawHeight);
 	if (!Number.isInteger(height) || height < 0) {
 		throw new Error(`invalid VersionHeight at ${commitIsh}: ${height}`);
 	}

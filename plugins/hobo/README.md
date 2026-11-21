@@ -51,9 +51,14 @@ In CI, HoBo Fabric runs `pnpm run agent-plugin:build` in the same job
 immediately before `check:all` (which calls `agent-plugin:check`). The build writes a gitignored
 `.bundle-attestation.json` (only when `GITHUB_ACTIONS=true`) carrying the bundle sha256,
 `GITHUB_RUN_ID`, `GITHUB_SHA`, and `runAttempt` when GitHub sets
-`GITHUB_RUN_ATTEMPT`. It is a **job-local consistency record** (same run,
-checkout, and bytes) — not a signature or off-box provenance; any step in the
-same Actions job could mint a matching file. Attestation verification runs only
+`GITHUB_RUN_ATTEMPT`. The recorded sha256 covers only `bin/hobo-mcp.mjs`; copied
+`fixtures/deploy` is checked separately for presence, not attestation bytes. It
+is a **job-local consistency record** (same run, checkout, and bytes) — not
+GitHub OIDC artifact attestation or cross-job provenance; any step in the same
+Actions job could mint a matching file. `pnpm agent:check` selects
+`agent-plugin:check` on affected changes to `plugins/hobo/**`, synced skills, and
+related MCP sources via `scripts/relevant-check-policy.ts`, not only on the full
+`check:all` lane. Attestation verification runs only
 when `GITHUB_ACTIONS=true`; other CI signals still require the bundle but fail
 closed on attestation. The check refuses a bundle whose attestation does not
 match this workflow run, checkout, attempt, and sha256. In
