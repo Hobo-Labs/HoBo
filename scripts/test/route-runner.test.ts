@@ -1390,6 +1390,12 @@ describe("the script reading the slip", () => {
 					],
 				};
 	};
+	const slipFromFixtureAndQueueFromServerFetch =
+		(message: string | undefined): typeof fetch =>
+		async (url, init) =>
+			String(url).includes("/git/")
+				? slipApi(message)(url, init)
+				: fetch(url, init);
 	const route = (
 		apiUrl: string,
 		message: string | undefined,
@@ -1410,7 +1416,7 @@ describe("the script reading the slip", () => {
 				{
 					routingConfig,
 					eventPayload: undefined,
-					fetch: slipApi(message),
+					fetch: slipFromFixtureAndQueueFromServerFetch(message),
 					now: () => SLIP_NOW,
 				},
 			),
@@ -1550,6 +1556,51 @@ describe("the script reading the slip", () => {
 				assert.match(lines.join("\n"), /merge-group hosted probe:.*idle=true/u);
 			},
 		);
+	});
+
+	it("reads the merge-group Fabric queue through the caller's fetch, not io.fetch", async () => {
+		const queueFetch: typeof fetch = async (url) => {
+			const path = String(url);
+			if (path.includes("/git/"))
+				return Response.json({ message: "Not Found" }, { status: 404 });
+			if (path.includes("/jobs"))
+				return Response.json({
+					jobs: [...saturatedHostedQueue(), pickup("hobo-trunk")],
+				});
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date(SLIP_NOW - 10_000).toISOString(),
+						updated_at: new Date(SLIP_NOW - 10_000).toISOString(),
+					},
+				],
+			});
+		};
+		const { decision } = await printedBy(() =>
+			main(
+				[],
+				{
+					...mergeGroupCi,
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					GITHUB_RUN_ID: "51",
+					GITHUB_API_URL: "https://api.example.invalid",
+				},
+				{
+					routingConfig: COMMITTED,
+					eventPayload: undefined,
+					fetch: queueFetch,
+					now: () => SLIP_NOW,
+				},
+			),
+		);
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["fleet", "hobo-trunk", "none"],
+		);
+		assert.deepEqual(decision.slip, { kind: "unasked", why: "merge-group" });
 	});
 
 	const saturatedHostedQueue = () =>

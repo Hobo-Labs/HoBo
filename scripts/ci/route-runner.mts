@@ -1312,40 +1312,71 @@ export async function main(
 				"eventPayload" in io ? io.eventPayload : readEventPayload(env),
 			) !== "fork"
 		) {
+			const token = env.GITHUB_TOKEN ?? "";
+			if (!token)
+				throw new Error(
+					"PR batch hosted-runner queue probe token is unavailable",
+				);
+			const probeRead = githubReader(
+				env.GITHUB_API_URL ?? "https://api.github.com",
+				token,
+				io.fetch,
+			);
+			const repository = env.GITHUB_REPOSITORY ?? "";
+			const ownRunId = Number(env.GITHUB_RUN_ID);
 			const probeAtMs = now();
 			let hostedIdle = true;
+			let hostedSummary = "";
 			try {
 				const view = await observeQueue({
-					read: githubReader(
-						env.GITHUB_API_URL ?? "https://api.github.com",
-						env.GITHUB_TOKEN ?? "",
-						io.fetch,
-					),
-					repository: env.GITHUB_REPOSITORY ?? "",
-					ownRunId: Number(env.GITHUB_RUN_ID),
+					read: probeRead,
+					repository,
+					ownRunId,
 					labels: [labels.github],
 					limits: MERGE_GROUP_HOSTED_LIMITS,
 					exhaustLookups: true,
 					nowMs: probeAtMs,
 				});
-				hostedIdle = prBatchHostedHasIdleCapacity(
-					labelLoad(view.jobs, labels.github, probeAtMs),
+				const hostedLoad = labelLoad(view.jobs, labels.github, probeAtMs);
+				hostedIdle = prBatchHostedHasIdleCapacity(hostedLoad);
+				hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+			} catch (error) {
+				const code =
+					error instanceof Error && error.name ? error.name : "probe-error";
+				console.log(
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(`PR batch hosted queue probe unreadable (${code}); GitHub-hosted treated as idle`)}`,
 				);
-			} catch {
-				hostedIdle = true;
 			}
-			if (!hostedIdle)
+			if (!hostedIdle) {
+				const fleetProbeAtMs = now();
+				const fleetView = await observeQueue({
+					read: probeRead,
+					repository,
+					ownRunId,
+					labels: [fleetLabel],
+					limits,
+					nowMs: fleetProbeAtMs,
+				}).catch(() => undefined);
+				const fleetSummary = fleetView
+					? describeLoad(
+							"the fleet",
+							labelLoad(fleetView.jobs, fleetLabel, fleetProbeAtMs),
+						)
+					: "the fleet queue could not be read";
+				console.log(
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository PR batch diverts to ${fleetLabel} without a verified capacity claim (${fleetSummary})`)}`,
+				);
 				return report(
 					{
 						tier: "fleet",
 						runner: fleetLabel,
-						reason:
-							"the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity; the same-repository batch uses the fleet",
+						reason: `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; the same-repository batch uses the fleet (${fleetSummary})`,
 						refusedBy: "queue",
 						slip: { kind: "unasked", why: "batch" },
 					},
 					env,
 				);
+			}
 		}
 		if (
 			labels.github !== "ubuntu-24.04" ||
@@ -1400,7 +1431,7 @@ export async function main(
 		const token = env.GITHUB_TOKEN ?? "";
 		const trunkLabel = labels.trunk;
 		const githubLabel = labels.github;
-		const read = githubReader(apiUrl, token);
+		const read = githubReader(apiUrl, token, io.fetch);
 		const trunkChoiceObservationLimits: RouteLimits = {
 			...limits,
 			maxQueued: Number.MAX_SAFE_INTEGER,

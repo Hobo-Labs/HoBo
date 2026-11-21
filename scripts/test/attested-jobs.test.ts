@@ -262,6 +262,35 @@ describe("skipping a covered job in the workflows", () => {
 				assert.ok(route.includes(needed), `${path}: route job lacks ${needed}`);
 		}
 	});
+
+	it("tracks every release job the route job can skip for an attestation", () => {
+		const text = readFileSync(".github/workflows/release-hobo.yml", "utf8");
+		const skippable = Object.entries(workflowDocument(text).jobs ?? {}).filter(
+			([, job]) => {
+				const condition = asText(asObject(job)?.if) ?? "";
+				return (
+					condition.includes("needs.route.result") &&
+					condition.includes("attested-jobs")
+				);
+			},
+		);
+		assert.deepEqual(
+			skippable.map(([id]) => id),
+			["release-contract"],
+			"only release-contract is attestation-skippable; release-main-train-gate, release-realize and release-hobo-integration gate on needs.route.result but resolve a version or prove things in CI that no local attestation can stand in for",
+		);
+		const normalize = (condition: string) =>
+			condition.replaceAll(/\s+/gu, " ").trim();
+		for (const [id, job] of skippable) {
+			const planned = plan.find((entry) => entry.id === id);
+			if (!planned) continue;
+			assert.equal(
+				normalize(planned.if ?? ""),
+				normalize(asText(asObject(job)?.if) ?? ""),
+				`${id}: the plan's condition drifted from the workflow's`,
+			);
+		}
+	});
 });
 
 describe("expressions in the description", () => {

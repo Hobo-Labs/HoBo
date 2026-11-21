@@ -175,6 +175,37 @@ describe("as the release workflow runs it", () => {
 		);
 	});
 
+	it("keeps publishing jobs out of a merge_group run the queue can cancel", () => {
+		const body = (id: string) => {
+			const start = workflow.indexOf(`\n  ${id}:\n`);
+			expect(start, id).toBeGreaterThan(-1);
+			const rest = workflow.slice(start + 1);
+			const end = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
+			return end < 0 ? rest : rest.slice(0, end + 1);
+		};
+		for (const id of [
+			"release-hobo-cli",
+			"release-oci-build-tag",
+			"release-images",
+			"release-publish",
+			"release-attest",
+			"release-npm",
+			"release-tag",
+		]) {
+			expect(
+				body(id).match(
+					/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\//u,
+				),
+				`${id}: a superseded merge_group run is cancelled mid-run, so only the main train, a release tag, or a dispatch may publish`,
+			).not.toBeNull();
+			expect(body(id), id).not.toMatch(/github\.event_name == 'merge_group'/u);
+		}
+		expect(
+			body("release-github"),
+			"an independent tag release still requires this run's publish",
+		).toContain("needs.release-publish.result == 'success'");
+	});
+
 	it("writes run= for the gate under plain node", () => {
 		const out = join(
 			mkdtempSync(join(tmpdir(), "hobo-release-output-")),

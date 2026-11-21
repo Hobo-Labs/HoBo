@@ -110,6 +110,16 @@ describe("release-hobo publish and attest, one image per job", () => {
 		expect(attest).toContain("if: steps.digest.outputs.present == 'true'");
 		expect(workflow).not.toContain("name: hobo-release-digests\n");
 	});
+
+	it("ships the fetch wrapper both release build jobs call", async () => {
+		const { existsSync } = await import("node:fs");
+		const { join } = await import("node:path");
+		expect(
+			existsSync(
+				join(import.meta.dirname, "..", "ci/fetch-release-turbo-base.mts"),
+			),
+		).toBe(true);
+	});
 });
 
 describe("release-images job", () => {

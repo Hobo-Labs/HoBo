@@ -52,7 +52,9 @@ queue rule decided; `why` says which: `no routing slip`, `slip expired`, `slip m
 repository`, `slip names a label not in runnerRouting.labels`, or the Git API failure) or `unasked` (`why`:
 `pinned`, `batch`, or `merge-group` on HoBo CI Fabric `merge_group` route jobs that skip the slip). `refusedBy` is `slip`, `queue` or `none`. A slip fallback also prints a
 `hobo-ci-route-fallback` warning that starts `routing slip not used`; the monitor reads the notice for it, and
-counts under H1 only the warnings that say the route did not run at all. Version-1 notices (the hosted relay's
+counts under H1 only the warnings that say the route did not run at all. The same titled warning records an
+unreadable PR-batch hosted queue probe and a same-repository batch diverted to the fleet without a verified
+capacity claim. Version-1 notices (the hosted relay's
 `relay`/`verdict` fields) are no longer read.
 
 ## Signals

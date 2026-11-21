@@ -208,6 +208,96 @@ describe("PR batch routing", () => {
 		assert.match(decision.reason, /no idle capacity/u);
 	});
 
+	it("fails fast when the PR-batch hosted queue probe has no token", async () => {
+		await assert.rejects(
+			main(
+				[],
+				{ ...env, GITHUB_TOKEN: "" },
+				{ routingConfig: routing("auto"), fetch: readPublic },
+			),
+			/PR batch hosted-runner queue probe token is unavailable/u,
+		);
+	});
+
+	it("warns instead of silently treating GitHub-hosted as idle when the queue probe fails", async () => {
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			lines.push(parts.map(String).join(" "));
+		};
+		let decision: Awaited<ReturnType<typeof main>>;
+		try {
+			decision = await main([], env, {
+				routingConfig: routing("auto"),
+				fetch: async (url) => {
+					const path = String(url);
+					if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
+						return Response.json(publicRepo);
+					throw new Error("queue down");
+				},
+			});
+		} finally {
+			console.log = log;
+		}
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["github", "ubuntu-24.04"],
+		);
+		assert.ok(
+			lines.some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("PR batch hosted queue probe unreadable") &&
+					line.includes("GitHub-hosted treated as idle"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("warns with both queue summaries when diverting a saturated batch to the fleet", async () => {
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			lines.push(parts.map(String).join(" "));
+		};
+		let decision: Awaited<ReturnType<typeof main>>;
+		try {
+			decision = await main([], env, {
+				routingConfig: routing("auto"),
+				fetch: hostedQueueFetch([
+					...saturatedHostedJobs,
+					{
+						run_id: 40,
+						status: "queued",
+						labels: ["hobo"],
+						created_at: new Date(Date.now() - 2 * 1000).toISOString(),
+					},
+				]),
+			});
+		} finally {
+			console.log = log;
+		}
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo"]);
+		assert.match(
+			decision.reason,
+			/no idle capacity \(GitHub-hosted/u,
+			decision.reason,
+		);
+		assert.match(
+			decision.reason,
+			/the same-repository batch uses the fleet \(the fleet has /u,
+			decision.reason,
+		);
+		assert.ok(
+			lines.some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("diverts to hobo without a verified capacity claim"),
+			),
+			lines.join("\n"),
+		);
+	});
+
 	it("keeps a fork PR batch on GitHub-hosted when GitHub-hosted is saturated", async () => {
 		const asked: string[] = [];
 		const decision = await main([], env, {
