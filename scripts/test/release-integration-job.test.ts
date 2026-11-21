@@ -150,6 +150,14 @@ describe("the slow integration lane is a merge-group gate", () => {
 		);
 		const trainJobs = asObject(workflowDocument(trainWorkflow).jobs);
 		const trainIntegration = asObject(trainJobs?.["release-hobo-integration"]);
+		assert.match(
+			asText(trainIntegration?.if) ?? "",
+			/github\.event_name == 'pull_request'/u,
+		);
+		assert.match(
+			asText(trainIntegration?.if) ?? "",
+			/github\.event_name == 'merge_group'/u,
+		);
 		assert.match(asText(trainIntegration?.if) ?? "", /github\.event_name == 'push'/u);
 		const measure = asObject(trainJobs?.["release-integration-measure-gate"]);
 		assert.equal(
@@ -158,11 +166,15 @@ describe("the slow integration lane is a merge-group gate", () => {
 		);
 		assert.match(
 			asText(measure?.if) ?? "",
-			/github\.event_name == 'push'/u,
+			/github\.event_name == 'pull_request'/u,
 		);
 		assert.match(
 			asText(measure?.if) ?? "",
-			/startsWith\(github\.ref, 'refs\/heads\/'\)/u,
+			/github\.event_name == 'merge_group'/u,
+		);
+		assert.match(
+			asText(measure?.if) ?? "",
+			/github\.event_name == 'push'/u,
 		);
 		const measureNeeds = asList(measure?.needs) ?? [];
 		assert.ok(

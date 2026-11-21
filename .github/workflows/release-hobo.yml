@@ -662,6 +662,8 @@ jobs:
       !cancelled() && needs.route.result == 'success' && (
       startsWith(github.ref, 'refs/tags/sdk-v') ||
       startsWith(github.ref, 'refs/tags/cli-v') ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'merge_group' ||
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
       (github.event_name == 'workflow_run' &&
@@ -1617,7 +1619,7 @@ jobs:
     name: HoBo release PR gate (required)
     # New workflow files do not run until they are on the default branch.
     # This reports the required check from the train on #2931's branch push.
-    if: always() && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')))
     needs: [route, release-hobo-integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
