@@ -89,6 +89,14 @@ terminal facts is rejected before returning an outcome. New failure records pres
 the failed step when present; older failure records without a step cannot
 reconstruct that detail.
 
+Replay checks each recorded sleep in order and refuses missing, changed, or
+unused sleep records. Existing records without an index are read in journal
+order; indexed records must also match their position.
+
+The authoring engine currently journals `ctx.sleep` and returns immediately;
+it does not wait for elapsed time or arrange a durable wake-up. Do not use it
+to enforce a delay until timer scheduling and restart recovery are implemented.
+
 The terminal-outcome model explores 15 distinct states and 18 transitions.
 The verification runner also checks that a resume which writes a second
 terminal fact violates the model's invariant.
@@ -102,4 +110,21 @@ stateDiagram-v2
   Running --> Failed: record terminal outcome
   Completed --> ResultReturned: return recorded outcome
   Failed --> FailureReturned: return recorded outcome
+```
+
+The timer replay model explores 120 distinct states. This projection hides 53
+transitions that do not change the displayed state.
+
+```mermaid
+stateDiagram-v2
+  s0: Checking recorded sleeps
+  s1: Matching sleep consumed
+  s2: Replay rejected
+  s3: Recorded sleeps match
+  [*] --> s0
+  s0 --> s1: compare next sleep
+  s0 --> s2: compare next sleep or check for remaining sleeps
+  s0 --> s3: check for remaining sleeps
+  s1 --> s2: compare next sleep or check for remaining sleeps
+  s1 --> s3: check for remaining sleeps
 ```
