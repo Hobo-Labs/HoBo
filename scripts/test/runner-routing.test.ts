@@ -100,6 +100,15 @@ describe("the dependency-free routing reader", () => {
 				assert.deepEqual(mine, parseWithZod(value), name);
 				assert.equal(mine !== undefined, kind === "valid", name);
 			}
+		const base = JSON.parse(fixture("valid", "runner-routing.json"));
+		const withoutMergeGroup = { ...base };
+		delete withoutMergeGroup.mergeGroup;
+		assert.deepEqual(parseRunnerRouting(withoutMergeGroup)?.mergeGroup, {
+			reusePrFabric: false,
+		});
+		assert.deepEqual(parseWithZod(withoutMergeGroup)?.mergeGroup, {
+			reusePrFabric: false,
+		});
 		assert.deepEqual(committed, parseCiRunnerRouting(committedText));
 	});
 
@@ -113,6 +122,7 @@ describe("the dependency-free routing reader", () => {
 			{ ...base, labels: { ...base.labels, github: "Ubuntu-24.04" } },
 			{ ...base, box: { ...base.box, trunkLend: true } },
 			{ ...base, box: { ...base.box, jobAdmission: "poll" } },
+			{ ...base, mergeGroup: { reusePrFabric: "false" } },
 			{ ...base, mainWorkspaceParallelCap: 9 },
 			{
 				...base,
