@@ -477,7 +477,7 @@ describe("merge-group required gate", () => {
 			"gate() {",
 			'  ( export EVENT_NAME="$1" PLAN_RESULT="success" VALIDATION_RESULT="$2" WORKSPACE_RESULT="$3"',
 			'    export SCRIPTS_RESULT="$4" AFFECTED_RESULT="$5" ROUTE_RESULT="$6"',
-			'    export PR_FABRIC_GREEN="$7" ATTESTED=false ATTESTED_JOBS="[]"',
+			'    export PR_FABRIC_GREEN="$7" ATTESTED=false ATTESTED_JOBS="[]" FORMAL_RESULT=success',
 			script,
 			"  ) >/dev/null 2>&1",
 			"  echo $?",
@@ -548,6 +548,8 @@ describe("merge-group required gate", () => {
 				PR_FABRIC_GREEN: "true",
 				ATTESTED: "false",
 				ATTESTED_JOBS: "[]",
+				FORMAL_RESULT: "success",
+				PLAN_RESULT: "success",
 			},
 		});
 		assert.notEqual(run.status, 0);
