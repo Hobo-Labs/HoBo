@@ -137,66 +137,6 @@ export function checkGherkinQuality(featureDir: string): GherkinQualityResult {
 	return { ok: problems.length === 0, problems, templateOnly };
 }
 
-/** Skeleton EXPERIENCE.md for plan mode. */
-export function experienceMdSkeleton(input: {
-	featureId: string;
-	experienceId: string;
-	personaId: string;
-	entryCommand: string;
-	driver: string;
-	intent: string;
-}): string {
-	return `# EXPERIENCE: ${input.featureId}
-
-- experienceId: ${input.experienceId}
-- personaId: ${input.personaId}
-- entryCommand: \`${input.entryCommand}\`
-- driver: ${input.driver}
-- intent: ${input.intent}
-
-## Rubber-duck (explain to a new teammate)
-
-1. Who is the persona and what are they trying to finish in the next 2 minutes?
-   - TODO
-2. What exact command / UI path do they take from a clean machine?
-   - \`${input.entryCommand}\`
-3. What do they see first? (quote expected chrome, not vibes)
-   - TODO
-4. What would make them think they opened the wrong product?
-   - TODO
-5. Happy path: step-by-step (Given/When/Then in prose first).
-   - TODO
-6. Failure path: how do they break it, what must the product say?
-   - TODO
-7. What evidence will prove a human/agent actually ran this? (driver + command)
-   - driver: ${input.driver}; command: \`${input.entryCommand}\`
-8. What is deliberately out of scope for this feature folder?
-   - TODO
-
-## Adversarial critique (must check all)
-
-- [ ] Did not skip default entry because a secondary verb is easier to automate
-- [ ] Not testing a monorepo script instead of the product binary
-- [ ] No When-step is only “exercise the surface” without a real command
-- [ ] Scores cannot be invented without reading stdout/TUI
-- [ ] Persona vocabulary/asserts considered for shared paths
-- [ ] Security: secrets, destructive promote, network—fail-closed
-- [ ] Cognitive load: journey stays within persona thresholds
-- [ ] Confusion twin: stock UI / wrong binary / wrong verb—covered
-- [ ] If this feature were the only one we ship, the persona would not still be lost
-
-## Verdict
-
-- accept | revise | reject
-- primaryCommand: \`${input.entryCommand}\`
-- driver: ${input.driver}
-- scenarios:
-  - TODO happy
-  - TODO failure
-  - TODO discoverability (if P0 entry/chat)
-`;
-}
-
 /** High-quality Gherkin template by kind. */
 export function gherkinTemplate(input: {
 	kind:
