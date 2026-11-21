@@ -80,14 +80,13 @@ const sections = {
 } as const satisfies Record<string, readonly string[]>;
 
 /** Rows with no wired implementation behind them. Stated plainly instead of
- * inherited "pass": the fence authorizes only through a GitHub assignment
- * lookup port with no production implementation, the hook template is not
- * installed by any controller endpoint, and the Kubernetes/Dagger paths are
- * planner/shape only. */
+ * inherited "pass": a scoped GitHub lookup exists but is not wired into the
+ * controller, the hook template is not installed by any controller endpoint,
+ * and the Kubernetes/Dagger paths are planner/shape only. */
 const notImplementedRows = new Map<string, string>([
 	[
 		"Strict v2 at-most-once start authorization",
-		"Store enforces single start_authorized, but the GitHub assignment lookup port has no production implementation; authorization fails closed until a controller wires one",
+		"Store enforces single start_authorized and a scoped GitHub lookup exists, but the controller and hook endpoint are not wired",
 	],
 	[
 		"Official pre-job hook start fence",
@@ -95,7 +94,7 @@ const notImplementedRows = new Map<string, string>([
 	],
 	[
 		"GitHub RunnerSlot + pre-job protocol",
-		"Protocol types + fail-closed authorizer exist; live controller endpoint + GitHub assignment lookup not implemented",
+		"The scoped GitHub lookup and fail-closed hook exist; live controller integration and its endpoint are not implemented",
 	],
 	[
 		"Kubernetes realization assets + tests",
