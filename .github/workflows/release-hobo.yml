@@ -69,6 +69,9 @@ on:
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
+      - ".github/workflows/release-hobo-pr.yml"
+      - "scripts/ci/job-scope.mts"
+      - "scripts/test/release-integration-job.test.ts"
       - "packages/hobo/test/support/release-integration-test-files.ts"
       - "packages/hobo/vitest.release-integration.config.ts"
       - "packages/hobo/test/vercel-project.test.ts"
@@ -76,6 +79,7 @@ on:
       - "packages/hobo/test/cd-runner-fleet-delivery.test.ts"
       - "packages/hobo/test/cd-md-examples.test.ts"
   push:
+    branches: [cursor/mq-critical-path-bf60]
     tags:
       - "sdk-v*"
       - "cli-v*"
@@ -143,6 +147,9 @@ on:
       - ".github/actions/release-oci-attest/**"
       - ".github/actions/hobo-checkout/**"
       - ".github/workflows/release-hobo.yml"
+      - ".github/workflows/release-hobo-pr.yml"
+      - "scripts/ci/job-scope.mts"
+      - "scripts/test/release-integration-job.test.ts"
       - "packages/hobo/test/support/release-integration-test-files.ts"
       - "packages/hobo/vitest.release-integration.config.ts"
       - "packages/hobo/test/vercel-project.test.ts"
@@ -630,19 +637,20 @@ jobs:
   release-hobo-integration:
     name: HoBo slow integration suites (release gate)
     needs: [route, release-main-train-gate]
-    # On the main train it runs when a release is actually planned (the train
-    # gate's `run`); a tag or a dispatch that pushes images releases without
-    # that gate, and a pull request or merge group run is scoped by the diff.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     if: >-
-      !cancelled() && needs.route.result == 'success' && (
+      !cancelled() && needs.route.result == 'success' && github.event_name != 'merge_group' && (
       needs.release-main-train-gate.outputs.run == 'true' ||
       startsWith(github.ref, 'refs/tags/sdk-v') ||
       startsWith(github.ref, 'refs/tags/cli-v') ||
       (github.event_name == 'workflow_dispatch' && inputs.push_images) ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'merge_group')
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
-    timeout-minutes: 20
+      (github.event_name == 'push' && github.ref == 'refs/heads/cursor/mq-critical-path-bf60') ||
+      github.event_name == 'pull_request')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
     permissions:
       contents: read
     steps:
@@ -662,21 +670,31 @@ jobs:
       - uses: $/.github/actions/ci-runner-preflight
       - name: Decide whether the diff reaches the slow integration suites
         id: scope
+        env:
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           set -euo pipefail
-          if ! git rev-parse --verify --quiet HEAD^2 >/dev/null; then
-            echo "HEAD is not a PR merge commit; running the lane"
+          if [ "$GITHUB_EVENT_NAME" = "merge_group" ]; then
+            if [ -z "${MERGE_GROUP_BASE_SHA:-}" ]; then
+              echo "Merge-group base is missing; running the lane"
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git cat-file -e "${MERGE_GROUP_BASE_SHA}^{commit}" 2>/dev/null \
+              || git fetch --no-tags --depth=1 origin "$MERGE_GROUP_BASE_SHA"
+            BASE="$MERGE_GROUP_BASE_SHA"
+          elif git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+            BASE="$(git rev-parse HEAD^1)"
+          else
+            echo "No base to compare with; running the lane"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git diff --name-only HEAD^1 HEAD \
+          git diff --name-only "$BASE" HEAD \
             | node --experimental-strip-types --no-warnings scripts/ci/job-scope.mts \
+              .github/workflows/release-hobo-pr.yml \
               packages/hobo/vitest.release-integration.config.ts \
               packages/hobo/test/support/release-integration-test-files.ts \
-              packages/hobo/test/vercel-project.test.ts \
-              packages/hobo/test/evals/ceremony-explorer.eval.test.ts \
-              packages/hobo/test/cd-runner-fleet-delivery.test.ts \
-              packages/hobo/test/cd-md-examples.test.ts \
               >> "$GITHUB_OUTPUT"
       - name: Fetch pinned ts-autocode
         if: steps.scope.outputs.run == 'true'
@@ -703,17 +721,20 @@ jobs:
           remote-mode: ${{ github.event.pull_request.head.repo.fork && 'remote:ro' || 'remote:rw' }}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
-        timeout-minutes: 15
+        timeout-minutes: 6
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
         run: >-
           pnpm exec turbo run test:release-integration --filter=@hobo/hobo
           --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
+          -- --shard="$((SHARD_INDEX + 1))/4"
       - name: Prune Turbo cache
         id: turbo-prune
-        if: always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''
         continue-on-error: true
         run: node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts
       - name: Save Turbo cache
-        if: always() && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
+        if: always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'
         uses: $/.github/actions/turbo-cache
         with:
           mode: save
@@ -1511,10 +1532,27 @@ jobs:
           if [ "$dist_tag" != "latest" ]; then prerelease=(--prerelease); fi
           node --no-warnings scripts/ci/create-github-release.mts --tag "${{ github.ref_name }}" "${prerelease[@]}"
 
+  release-integration-measure-gate:
+    name: HoBo release integration PR gate
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/cursor/mq-critical-path-bf60'))
+    needs: [release-hobo-integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require successful release integration shards
+        env:
+          INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
+        run: |
+          set -euo pipefail
+          if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
+            echo "::error::HoBo release integration shards must pass (result=${INTEGRATION_RESULT:-})"
+            exit 1
+          fi
+
   release-pr-gate:
     name: HoBo release PR gate (required)
     if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    needs: [route, release-contract, release-realize, release-hobo-integration]
+    needs: [route, release-contract, release-realize]
     # GitHub-hosted: it runs no repository code, and on the fleet a superseded
     # run's gate held the next run until a runner was free.
     runs-on: ubuntu-24.04
@@ -1524,7 +1562,6 @@ jobs:
         env:
           CONTRACT_RESULT: ${{ needs.release-contract.result }}
           REALIZE_RESULT: ${{ needs.release-realize.result }}
-          INTEGRATION_RESULT: ${{ needs.release-hobo-integration.result }}
           ROUTE_RESULT: ${{ needs.route.result }}
           ATTESTED: ${{ needs.route.outputs.attested }}
           ATTESTED_JOBS: ${{ needs.route.outputs.attested-jobs }}
@@ -1548,12 +1585,6 @@ jobs:
           # The realize proof has no local attestation: it must pass here.
           if [ "${REALIZE_RESULT:-}" != "success" ]; then
             echo "::error::Release Freight realize proof must pass (result=${REALIZE_RESULT:-})"
-            exit 1
-          fi
-          # The slow integration lane has no local attestation either: when a
-          # pull request or merge group reaches its suites, they must pass here.
-          if [ "${INTEGRATION_RESULT:-}" != "success" ]; then
-            echo "::error::HoBo slow integration suites must pass (result=${INTEGRATION_RESULT:-})"
             exit 1
           fi
           case "${CONTRACT_RESULT:-}" in

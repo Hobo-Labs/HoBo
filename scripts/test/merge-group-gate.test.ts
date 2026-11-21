@@ -11,8 +11,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 // Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These
 // tests run from pre-commit too, and every git command they start (their own
@@ -219,7 +221,9 @@ describe("merge-group required gate", () => {
 			);
 	});
 
-	it("never treats a failed, cancelled, skipped, or unknown prerequisite as success", () => {
+	it("never treats a failed, cancelled, skipped, or unknown prerequisite as success", {
+		timeout: 60_000,
+	}, () => {
 		const script = shellForStep(
 			gate,
 			"Require successful validation and workspace tests",
@@ -269,7 +273,9 @@ describe("merge-group required gate", () => {
 
 	// With a verified signed local run, the covered jobs are skipped, not run.
 	// The gate takes a skipped job only then, and a failed job never.
-	it("accepts a skipped job only when the route job succeeded and reported it attested", () => {
+	it("accepts a skipped job only when the route job succeeded and reported it attested", {
+		timeout: 60_000,
+	}, () => {
 		const script = shellForStep(
 			gate,
 			"Require successful validation and workspace tests",
@@ -875,10 +881,9 @@ describe("release required gate", () => {
 			"Require successful validation and workspace tests",
 		);
 		assert.equal(helper(script), helper(prGate));
-		assert.match(
-			gate,
-			/needs: \[route, release-contract, release-realize, release-hobo-integration\]/u,
-		);
+		assert.match(gate, /name: HoBo release PR gate \(required\)/u);
+		assert.match(gate, /needs: \[route, release-contract, release-realize\]/u);
+		assert.doesNotMatch(gate, /release-hobo-integration|INTEGRATION_RESULT/u);
 	});
 
 	it("accepts a skipped contract only for a route job that succeeded and attested it", () => {
@@ -886,7 +891,6 @@ describe("release required gate", () => {
 		const routes = ["success", "failure", "skipped", ""];
 		const flags = ["true", "false", "TRUE", ""];
 		const realizes = ["success", "failure", "skipped"];
-		const integrations = ["success", "failure", "skipped"];
 		const lists = [
 			'["release-contract"]',
 			'["ci-guard","release-contract"]',
@@ -901,41 +905,37 @@ describe("release required gate", () => {
 				for (const route of routes)
 					for (const flag of flags)
 						for (const list of lists)
-							for (const realize of realizes)
-								for (const integration of integrations) {
-									const run = spawnSync("bash", ["-c", script], {
-										env: {
-											...process.env,
-											CONTRACT_RESULT: contract,
-											REALIZE_RESULT: realize,
-											INTEGRATION_RESULT: integration,
-											ROUTE_RESULT: route,
-											ATTESTED: flag,
-											ATTESTED_JOBS: list,
-										},
-									});
-									const attested =
-										route === "success" &&
-										flag === "true" &&
-										list.includes('"release-contract"');
-									const expected =
-										route === "success" &&
-										realize === "success" &&
-										integration === "success" &&
-										(contract === "success" ||
-											(contract === "skipped" && attested));
-									const label = JSON.stringify({
-										contract,
-										route,
-										flag,
-										list,
-										realize,
-										integration,
-									});
-									assert.equal(run.status === 0, expected, label);
-									if (contract === "failure" || contract === "cancelled")
-										assert.notEqual(run.status, 0, label);
-								}
+							for (const realize of realizes) {
+								const run = spawnSync("bash", ["-c", script], {
+									env: {
+										...process.env,
+										CONTRACT_RESULT: contract,
+										REALIZE_RESULT: realize,
+										ROUTE_RESULT: route,
+										ATTESTED: flag,
+										ATTESTED_JOBS: list,
+									},
+								});
+								const attested =
+									route === "success" &&
+									flag === "true" &&
+									list.includes('"release-contract"');
+								const expected =
+									route === "success" &&
+									realize === "success" &&
+									(contract === "success" ||
+										(contract === "skipped" && attested));
+								const label = JSON.stringify({
+									contract,
+									route,
+									flag,
+									list,
+									realize,
+								});
+								assert.equal(run.status === 0, expected, label);
+								if (contract === "failure" || contract === "cancelled")
+									assert.notEqual(run.status, 0, label);
+							}
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

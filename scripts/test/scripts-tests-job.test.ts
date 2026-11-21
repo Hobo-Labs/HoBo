@@ -11,7 +11,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, normalize } from "node:path";
-import { describe, it } from "node:test";
 import {
 	asList,
 	asObject,
@@ -25,6 +24,9 @@ import {
 	selectShard,
 } from "../lib/unit-test-selection.ts";
 import { workflowDocument } from "../lib/workflow-job-steps.mts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 // The scope step's git commands must act on the temporary repositories below,
 // never on the one a pre-commit hook is committing.
@@ -34,7 +36,13 @@ const jobs = asObject(
 	workflowDocument(readFileSync(".github/workflows/hobo-ci.yml", "utf8")).jobs,
 );
 
-type Step = Readonly<{ name: string; uses: string; run: string; if: string }>;
+type Step = Readonly<{
+	name: string;
+	uses: string;
+	run: string;
+	if: string;
+	with: Readonly<Record<string, JsonValue>>;
+}>;
 type Job = Readonly<{
 	name: string;
 	needs: readonly string[];
@@ -50,6 +58,7 @@ function parseStep(value: JsonValue): Step {
 		uses: asText(source?.uses) ?? "",
 		run: asText(source?.run) ?? "",
 		if: asText(source?.if) ?? "",
+		with: asObject(source?.with) ?? {},
 	};
 }
 
@@ -79,6 +88,7 @@ function step(entry: Job, name: string): Step {
 /** The routed `runs-on` expression, as the route job's other consumers use it. */
 const ROUTED = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
+const buildJob = job("scripts-tests-build");
 const scripts = job("scripts-tests");
 const gate = job("pr-gate");
 const SCOPE = "Decide whether the change reaches scripts, tests or workflows";
@@ -221,32 +231,74 @@ describe("the scripts lane is a pull-request gate", () => {
 			.map(asObject)
 			.find((entry) => entry?.name === "CI trace");
 		assert.equal(asObject(trace?.with)?.disambiguator, "${{ matrix.shard }}");
-		const save = steps
-			.map(asObject)
-			.find((entry) => entry?.name === "Save Turbo cache");
-		assert.match(asText(save?.if) ?? "", /matrix\.shard == 0/u);
+		assert.ok(
+			!scripts.steps.some((entry) => entry.name === "Save Turbo cache"),
+		);
 	});
 
-	it("builds what every package a scripts test imports depends on, before the lane", () => {
-		// A fresh runner has no dist/: scripts/manual/hosting-anonymous-acceptance.mts
-		// imports packages/hobo/src, whose @hobo/core resolves through dist/.
-		const build = step(scripts, BUILD);
+	it("builds every scripts-test import root and the affected-lanes union once per run", () => {
+		const build = step(buildJob, BUILD);
 		assert.equal(build.if, "steps.scope.outputs.run == 'true'");
 		assert.match(build.run, /turbo run build\b/u);
+		assert.match(build.run, /git diff --name-only "\$BASE" HEAD/u);
+		assert.match(
+			build.run,
+			/scripts\/ci\/affected-lanes\.mts --base="\$BASE"/u,
+		);
+		assert.ok(build.run.includes('"${AFFECTED[@]}"'));
 		const imported = packagesScriptsTestsImport();
 		assert.ok(imported.includes("@hobo/hobo"));
 		for (const name of imported)
 			assert.ok(
-				build.run.includes(`--filter=${name}^...`),
-				`the build step misses --filter=${name}^...`,
+				build.run.includes(`--filter=${name}...`),
+				`the build step misses --filter=${name}...`,
 			);
-		const names = scripts.steps.map((entry) => entry.uses || entry.name);
+		const names = buildJob.steps.map((entry) => entry.uses || entry.name);
 		assert.ok(names.indexOf("Install dependencies") < names.indexOf(BUILD));
-		assert.ok(names.indexOf(BUILD) < names.indexOf(LANE));
+		assert.ok(scripts.needs.includes("scripts-tests-build"));
+		assert.equal(
+			[buildJob, scripts]
+				.flatMap((entry) => entry.steps)
+				.filter((entry) => /turbo run build\b/u.test(entry.run)).length,
+			1,
+		);
+		assert.ok(!scripts.steps.some((entry) => entry.name === BUILD));
+	});
+
+	it("restores older scripts caches for the build and the new build cache in every shard", () => {
+		assert.equal(
+			asText(step(buildJob, "Turbo cache").with["preferred-job"]),
+			"scripts-tests",
+		);
+		assert.equal(
+			asText(step(scripts, "Turbo cache").with["preferred-job"]),
+			"scripts-tests-build",
+		);
+		assert.equal(
+			step(buildJob, "Save Turbo cache").uses,
+			"$/.github/actions/turbo-cache",
+		);
+	});
+
+	it("fails closed when the two-commit build base is empty", () => {
+		const root = mkdtempSync(join(tmpdir(), "hobo-scripts-build-"));
+		try {
+			git(root, "init", "-q", "-b", "main");
+			const run = spawnSync("bash", ["-c", step(buildJob, BUILD).run], {
+				cwd: root,
+				encoding: "utf8",
+				env: { ...process.env, RUNNER_TEMP: root },
+			});
+			assert.notEqual(run.status, 0);
+			assert.match(run.stderr, /build base is empty/u);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it("never waits for the deps image", () => {
 		assert.ok(!scripts.needs.includes("ci-deps-image"));
+		assert.ok(!buildJob.needs.includes("ci-deps-image"));
 	});
 
 	for (const [changed, expected] of [

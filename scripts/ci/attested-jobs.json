@@ -552,12 +552,6 @@
 					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
-					"name": "Build the packages the scripts tests import",
-					"if": "steps.scope.outputs.run == 'true'",
-					"run": "pnpm exec turbo run build --filter=@hobo/cd^... --filter=@hobo/ci^... --filter=@hobo/ci-gh-actions^... --filter=@hobo/cli^... --filter=@hobo/core^... --filter=@hobo/hobo^... --filter=@hobo/provider-cloudflare^... --filter=@hobo/provider-lakebed^... --filter=@hobo/provider-neon^... --filter=@hobo/provider-netlify^... --filter=@hobo/provider-oci-registry^... --filter=@hobo/provider-prisma-postgres^... --filter=@hobo/provider-upstash^... --filter=@hobo/runtime-local^... --filter=@hobo/schema-tools^... --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}",
-					"local": "run"
-				},
-				{
 					"name": "Scripts tests",
 					"if": "steps.scope.outputs.run == 'true'",
 					"run": "pnpm run test:scripts --shard=\"$SHARD/$SHARD_TOTAL\"",
@@ -566,22 +560,6 @@
 						"SHARD_TOTAL": "${{ strategy.job-total }}"
 					},
 					"local": "run"
-				},
-				{
-					"name": "Prune Turbo cache",
-					"id": "turbo-prune",
-					"if": "always() && steps.scope.outputs.run == 'true' && env.TURBO_TOKEN == ''",
-					"run": "node --experimental-strip-types --no-warnings scripts/ci/turbo-cache-prune.mts",
-					"continueOnError": true,
-					"local": "skip",
-					"reason": "pruning the shared CI cache does not validate the checkout on a developer machine"
-				},
-				{
-					"name": "Save Turbo cache",
-					"if": "always() && matrix.shard == 0 && steps.scope.outputs.run == 'true' && steps.turbo-prune.outputs.save != 'false'",
-					"uses": "$/.github/actions/turbo-cache",
-					"local": "skip",
-					"reason": "checkout, runner setup, cache and trace actions do not run checks on the local checkout"
 				},
 				{
 					"name": "CI trace",

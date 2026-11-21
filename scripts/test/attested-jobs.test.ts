@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { describe, it } from "node:test";
 import {
 	ATTESTATION_EVENTS,
 	asObject,
@@ -24,7 +23,9 @@ import {
 } from "../ci/attested-jobs.mts";
 import { localContext, type StepValues } from "../ci/local-attest.mts";
 import { workflowDocument, workflowJob } from "../lib/workflow-job-steps.mts";
+import { testRunner } from "./support/test-runner.ts";
 
+const { describe, it } = await testRunner();
 const plan = loadPlan();
 
 /** The condition that skips a job the route job verified a signed local run for. */
@@ -112,7 +113,6 @@ describe("the description of the covered jobs", () => {
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",
-			"scripts-tests: Prune Turbo cache",
 			"pr-offpath: Prune Turbo cache",
 			"release-contract: Ensure worker toolchain image",
 			"release-contract: Build affected images + live OCI config contract",
