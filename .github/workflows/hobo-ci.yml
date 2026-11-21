@@ -114,9 +114,9 @@ jobs:
     needs:
       - mq-route-surface
     if: always() && !cancelled() && (needs.mq-route-surface.result == 'success' || needs.mq-route-surface.result == 'skipped')
-    # pull_request stays on GitHub-hosted (fork-safe). merge_group prefers
-    # hobo-trunk when the hosted surface probe sees trunk capacity; otherwise
-    # ubuntu-24.04 so routing can fall back if trunk is offline.
+    # pull_request stays on GitHub-hosted (fork-safe). merge_group picks
+    # hobo-trunk only when the hosted probe sees a trunk pickup in the last 2 minutes
+    # (scripts/ci/route-runner.mts mergeGroupRouteSurface); otherwise ubuntu-24.04.
     runs-on: ${{ github.event_name == 'merge_group' && (needs.mq-route-surface.outputs.surface == 'trunk' && 'hobo-trunk' || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:

@@ -1518,6 +1518,26 @@ describe("the script reading the slip", () => {
 		});
 	});
 
+	it("picks hosted merge-group route surface when trunk pickup is older than two minutes", async () => {
+		const stalePickup = {
+			...pickup("hobo-trunk"),
+			created_at: new Date(SLIP_NOW - 200_000).toISOString(),
+			started_at: new Date(SLIP_NOW - 180_000).toISOString(),
+		};
+		await withGithub(observed([stalePickup]), async (apiUrl) => {
+			const surface = await mergeGroupRouteSurface(
+				{
+					...mergeGroupCi,
+					GITHUB_API_URL: apiUrl,
+					GITHUB_TOKEN: "token",
+					GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+				},
+				{ now: () => 0 },
+			);
+			assert.equal(surface, "hosted");
+		});
+	});
+
 	it("routes merge-group release to hobo-trunk when pinned fleet", async () => {
 		await withGithub(observed([pickup("hobo-trunk")]), async (apiUrl) => {
 			const { decision } = await route(apiUrl, undefined, mergeGroupRelease, [

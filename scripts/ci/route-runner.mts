@@ -689,11 +689,34 @@ export async function chooseRunner(input: {
 }
 
 const MERGE_GROUP_ROUTE_SURFACE_SECONDS = 45;
+/** Trunk surface only when a runner took a job on that label inside this window. */
+export const MERGE_GROUP_SURFACE_RECENT_PICKUP_SECONDS = 2 * 60;
+
+function recentPickupsOnLabel(
+	jobs: readonly SeenJob[],
+	label: string,
+	nowMs: number,
+	windowSeconds: number,
+): number {
+	const needle = label.toLowerCase();
+	return jobs.filter(
+		(job) =>
+			job.labels.length === 1 &&
+			job.labels[0]?.toLowerCase() === needle &&
+			job.startedAtMs !== undefined &&
+			seconds(job.startedAtMs, nowMs) <= windowSeconds,
+	).length;
+}
 
 /**
  * Hosted probe decides where the merge-group **route job** runs: `trunk` when
- * the fleet is taking work, else `hosted` so routing can fall back if trunk is
- * offline (job `timeout-minutes` does not include queue wait).
+ * the fleet is taking work on a fresh pickup, else `hosted` so routing can fall
+ * back if trunk is offline. Merge-queue ruleset 18324187 evicts the queue entry
+ * after its check timeout (~8 minutes); that bounds queue participation but does
+ * not necessarily cancel orphaned `gh-readonly-queue` workflow runs still waiting
+ * for runners (see #2920 Fabric run 44856751012). Job `timeout-minutes` on the
+ * route job still does not include queue wait; the two-minute pickup gate here
+ * limits pinning the follow-on route job to `hobo-trunk` when the label is idle.
  */
 export async function mergeGroupRouteSurface(
 	env: NodeJS.ProcessEnv,
@@ -734,7 +757,18 @@ export async function mergeGroupRouteSurface(
 			limits: surfaceLimits,
 			nowMs: now(),
 		});
-		const fleet = labelLoad(view.jobs, labels.trunk, now());
+		const nowMs = now();
+		const fleet = labelLoad(view.jobs, labels.trunk, nowMs);
+		if (
+			recentPickupsOnLabel(
+				view.jobs,
+				labels.trunk,
+				nowMs,
+				MERGE_GROUP_SURFACE_RECENT_PICKUP_SECONDS,
+			) === 0
+		) {
+			return "hosted";
+		}
 		if (takingJobs(fleet, surfaceLimits)) return "trunk";
 	} catch {
 		return "hosted";
