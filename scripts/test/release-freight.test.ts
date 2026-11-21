@@ -106,17 +106,15 @@ describe("release topology names", () => {
 		);
 	});
 
-	it("sizes the Pages drive from the verification progress window plus one interval", () => {
+	it("sizes the Pages drive from convergence, verification, and one poll interval", () => {
 		const drive = releaseDriveFor("pages");
 		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
-		expect(RELEASE_DRIVE_PAGES.passes).toBe(422);
+		expect(RELEASE_DRIVE_PAGES.passes).toBe(572);
 		const drivenMs = (drive.passes - 1) * drive.intervalMs;
-		expect(drivenMs).toBeGreaterThanOrEqual(
-			PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
-		);
-		expect(drivenMs).toBeLessThan(
+		expect(drivenMs).toBe(
 			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
-				PAGES_RELEASE_VERIFICATION_WINDOW_MS,
+				PAGES_RELEASE_VERIFICATION_WINDOW_MS +
+				drive.intervalMs,
 		);
 	});
 
@@ -298,8 +296,12 @@ describe("announceVerdict", () => {
 });
 
 describe("Pages wall budget", () => {
-	it("defaults to 17 minutes and clamps the environment to that maximum", () => {
-		expect(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT).toBe(17 * 60_000);
+	it("defaults to 20 minutes, covers the full drive, and clamps the environment to that maximum", () => {
+		expect(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT).toBe(20 * 60_000);
+		expect(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT).toBeGreaterThan(
+			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+				PAGES_RELEASE_VERIFICATION_WINDOW_MS,
+		);
 		expect(releasePagesWallBudgetMs({})).toBe(
 			RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
 		);
@@ -607,8 +609,8 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 
 	it("bounds the Pages promote step with a wall budget under its step timeout", () => {
 		const block = job("release-pages");
-		expect(block).toMatch(/\n {8}timeout-minutes: 18\n/u);
-		expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1020000"');
+		expect(block).toMatch(/\n {8}timeout-minutes: 21\n/u);
+		expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"');
 	});
 
 	it("promotes to stable before the signed tag and the GitHub Release", () => {

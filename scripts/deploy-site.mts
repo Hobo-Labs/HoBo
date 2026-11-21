@@ -138,13 +138,6 @@ function build(): void {
 	}
 }
 
-/**
- * Record the tree as `hobo-release-pages` Freight and promote it
- * candidate -> stable; the candidate Camp's realizer publishes gh-pages.
- * Throws unless both qualify. One wall (HOBO_RELEASE_PAGES_WALL_BUDGET_MS,
- * 17 minutes by default) covers record, both promotes and both drives, so an
- * overrun surfaces as `release-promotion-timeout` here.
- */
 export async function qualifySiteRelease(input: {
 	readonly dist: string;
 	readonly home: string;

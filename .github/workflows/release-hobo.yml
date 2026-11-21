@@ -1338,12 +1338,12 @@ jobs:
       # tip of main), because the freshness gate reads it back.
       - name: Record, promote and publish the Pages site (hobo deploy)
         if: steps.fresh.outputs.deploy == 'true'
-        timeout-minutes: 18
+        timeout-minutes: 21
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOBO_RELEASE_CD_HOME: ${{ runner.temp }}/hobo-release-cd/pages
           HOBO_RELEASE_REVISION: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
-          HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1020000"
+          HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"
         run: node --no-warnings scripts/deploy-site.mts --release-freight site/dist
 
   release-tag:

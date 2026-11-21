@@ -670,7 +670,9 @@ export const PAGES_RELEASE_VERIFICATION_WINDOW_MS = 300_000;
 export const PAGES_RELEASE_VERIFICATION_PROGRESS_MS =
 	PAGES_RELEASE_BUILD_MARGIN_MS + PAGES_RELEASE_VERIFICATION_WINDOW_MS;
 export const PAGES_RELEASE_PROMOTION_BUDGET_MS =
-	PAGES_RELEASE_VERIFICATION_PROGRESS_MS + RELEASE_DRIVE.intervalMs;
+	PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+	PAGES_RELEASE_VERIFICATION_WINDOW_MS +
+	RELEASE_DRIVE.intervalMs;
 
 export const RELEASE_DRIVE_PAGES = Object.freeze({
 	passes:
@@ -691,7 +693,7 @@ function logReleasePages(message: string): void {
 	console.error(`release-pages: ${message}`);
 }
 
-export const RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT = 17 * 60_000;
+export const RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT = 20 * 60_000;
 export const RELEASE_PROMOTION_TIMEOUT = "release-promotion-timeout";
 
 /** One Pages release wall: a deadline taken when qualification starts. */
