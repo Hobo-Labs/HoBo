@@ -40,8 +40,8 @@ import { createRequire } from "node:module";
 import process from "node:process";
 import { readStdin } from "../lib/read-stdin.mts";
 import {
-	affectedLanes,
 	type AffectedLanes,
+	affectedLanes,
 	cliRootFileReader,
 } from "./affected-lanes.mts";
 

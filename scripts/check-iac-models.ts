@@ -13,8 +13,8 @@ import { assertTlcExited, runBoundedTlc } from "./lib/bounded-tlc.ts";
 
 const configuredJar = process.env.HOBO_TLA_TOOLS;
 const expected =
-	"7e53aa636dac8a3cb0533f343115c0548e03fc0ce5edc7739becf58d3d0fb84f";
-if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.8.0");
+	"936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
+if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.7.4");
 const jar = resolve(configuredJar);
 const actual = createHash("sha256").update(readFileSync(jar)).digest("hex");
 if (actual !== expected)
@@ -42,6 +42,53 @@ function check(name: string, directory: string, stateDirectory: string) {
 }
 
 try {
+	const transitionDirectory = join(root, "packages/cloud/model");
+	const transitionSource = readFileSync(
+		join(transitionDirectory, "IacTransitions.tla"),
+		"utf8",
+	);
+	const transitionConfig = readFileSync(
+		join(transitionDirectory, "IacTransitions.cfg"),
+		"utf8",
+	);
+	const transitionResult = check(
+		"IacTransitions",
+		transitionDirectory,
+		join(scratch, "IacTransitions"),
+	);
+	process.stdout.write(transitionResult.stdout);
+	process.stderr.write(transitionResult.stderr);
+	if (transitionResult.status !== 0)
+		throw new Error("IacTransitions model checking failed");
+	const transitionMutations = [
+		[
+			"StartApply(c) ==\n  /\\ snapshot[c] = version /\\ version < MaxVersion",
+			"StartApply(c) ==\n  /\\ version < MaxVersion",
+		],
+		[
+			'/\\ apply = "uncertain" /\\ fenced /\\ verified /\\ live = "none"\n  /\\ result',
+			'/\\ apply = "uncertain"\n  /\\ result',
+		],
+	] as const;
+	for (const [index, [before, after]] of transitionMutations.entries()) {
+		if (transitionSource.split(before).length !== 2)
+			throw new Error("IacTransitions mutation target changed");
+		const isolated = join(scratch, `transition-mutation-${index}`);
+		mkdirSync(isolated);
+		writeFileSync(
+			join(isolated, "IacTransitions.tla"),
+			transitionSource.replace(before, after),
+		);
+		writeFileSync(join(isolated, "IacTransitions.cfg"), transitionConfig);
+		const result = check("IacTransitions", isolated, join(isolated, "states"));
+		if (result.status === 0 || !/Invariant .+ is violated/u.test(result.stdout))
+			throw new Error(
+				"IacTransitions mutation did not produce an invariant counterexample",
+			);
+		process.stdout.write(
+			`IacTransitions mutation ${index + 1}: counterexample found\n`,
+		);
+	}
 	const routeDirectory = join(root, "packages/dispatcher/model");
 	const routeSource = readFileSync(
 		join(routeDirectory, "IacRouting.tla"),
@@ -424,6 +471,195 @@ try {
 			throw new Error(`${invariant} witness was not reached`);
 		process.stdout.write(`${invariant}: witness found\n`);
 	}
+	const grantDirectory = join(root, "packages/iac/iac-alchemy/model");
+	const grantSource = readFileSync(
+		join(grantDirectory, "IacGrant.tla"),
+		"utf8",
+	);
+	const grantConfig = readFileSync(
+		join(grantDirectory, "IacGrant.cfg"),
+		"utf8",
+	);
+	const grantResult = check(
+		"IacGrant",
+		grantDirectory,
+		join(scratch, "IacGrant"),
+	);
+	process.stdout.write(grantResult.stdout);
+	process.stderr.write(grantResult.stderr);
+	if (grantResult.status !== 0)
+		throw new Error("IacGrant model checking failed");
+	const expectGrantViolation = (
+		label: string,
+		source: string,
+		config: string,
+		invariant: string,
+	) => {
+		const isolated = join(scratch, `grant-${label}`);
+		mkdirSync(isolated);
+		writeFileSync(join(isolated, "IacGrant.tla"), source);
+		writeFileSync(join(isolated, "IacGrant.cfg"), config);
+		const result = runBoundedTlc(
+			jar,
+			[
+				"-workers",
+				"2",
+				"-metadir",
+				join(isolated, "states"),
+				"-config",
+				"IacGrant.cfg",
+				"IacGrant.tla",
+			],
+			isolated,
+		);
+		assertTlcExited(result);
+		if (
+			result.status === 0 ||
+			!result.stdout.includes(`Invariant ${invariant} is violated`)
+		)
+			throw new Error(`IacGrant ${label} did not violate ${invariant}`);
+		process.stdout.write(
+			`IacGrant ${label}: ${invariant} counterexample found\n`,
+		);
+	};
+	const witnessConfig = (invariant: string) =>
+		`SPECIFICATION Spec\nCONSTANTS MaxEpochs = 3\n          RequestSlots = 1\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`;
+	expectGrantViolation(
+		"A-B-A-witness",
+		grantSource,
+		witnessConfig("AtoBtoAUnreachable"),
+		"AtoBtoAUnreachable",
+	);
+	expectGrantViolation(
+		"timed-out-provider-still-completes",
+		grantSource,
+		witnessConfig("NoTimeoutCompletionAfterRouteFence"),
+		"NoTimeoutCompletionAfterRouteFence",
+	);
+	const grantMutations = [
+		[
+			"fresh-epoch",
+			'/\\ phase[e] = "unused"',
+			'/\\ phase[e] \\in {"unused", "retired"}',
+			"FreshGrantEpochs",
+		],
+		[
+			"route-fence",
+			"/\\ ~routeOpen[current]",
+			"/\\ TRUE",
+			"RetiredRoutesFenced",
+		],
+		[
+			"drain",
+			"/\\ \\A r \\in Requests : requestGeneration[r] # Len(history) \\/\n       ~ledgerPending[r] \\/ Len(history) \\in permanentlyFenced",
+			"/\\ TRUE",
+			"NoRetiredOutstanding",
+		],
+		[
+			"timeout",
+			"TimeoutPending(r) == ledgerPending",
+			"TimeoutPending(r) == [ledgerPending EXCEPT ![r] = FALSE]",
+			"NoRetiredOutstanding",
+		],
+		[
+			"provider-fence",
+			"/\\ requestGeneration[r] \\notin permanentlyFenced",
+			"/\\ TRUE",
+			"NoLateEffect",
+		],
+		[
+			"ownership",
+			"MigrateOwnership ==\n  /\\ owner = 1\n  /\\ current = 0",
+			"MigrateOwnership ==\n  /\\ owner = 1",
+			"CurrentGrantOwnsResource",
+		],
+	] as const;
+	let reusedEpochSource = "";
+	let unfencedRouteSource = "";
+	for (const [label, before, after, invariant] of grantMutations) {
+		if (grantSource.split(before).length !== 2)
+			throw new Error(`IacGrant ${label} mutation target changed`);
+		const mutated = grantSource.replace(before, after);
+		if (label === "fresh-epoch") reusedEpochSource = mutated;
+		if (label === "route-fence") unfencedRouteSource = mutated;
+		expectGrantViolation(label, mutated, grantConfig, invariant);
+	}
+	expectGrantViolation(
+		"A-B-A-stale-request",
+		reusedEpochSource,
+		witnessConfig("StaleAfterAtoBtoA"),
+		"StaleAfterAtoBtoA",
+	);
+	expectGrantViolation(
+		"retired-proxy-remains-reachable",
+		unfencedRouteSource,
+		witnessConfig("NoLateStart"),
+		"NoLateStart",
+	);
+	expectGrantViolation(
+		"old-proxy-after-successor",
+		unfencedRouteSource,
+		witnessConfig("NoOldProxyAfterSuccessor"),
+		"NoOldProxyAfterSuccessor",
+	);
+	if (
+		grantConfig.split("MaxEpochs = 3").length !== 2 ||
+		grantConfig.split("RequestSlots = 1").length !== 2
+	)
+		throw new Error("IacGrant concurrency bounds changed");
+	const concurrencyConfig = grantConfig
+		.replace("MaxEpochs = 3", "MaxEpochs = 2")
+		.replace("RequestSlots = 1", "RequestSlots = 2");
+	const concurrencyDirectory = join(scratch, "grant-two-requests");
+	mkdirSync(concurrencyDirectory);
+	writeFileSync(join(concurrencyDirectory, "IacGrant.tla"), grantSource);
+	writeFileSync(join(concurrencyDirectory, "IacGrant.cfg"), concurrencyConfig);
+	const concurrent = runBoundedTlc(
+		jar,
+		[
+			"-workers",
+			"2",
+			"-metadir",
+			join(concurrencyDirectory, "states"),
+			"-config",
+			"IacGrant.cfg",
+			"IacGrant.tla",
+		],
+		concurrencyDirectory,
+	);
+	assertTlcExited(concurrent);
+	process.stdout.write(concurrent.stdout);
+	process.stderr.write(concurrent.stderr);
+	if (concurrent.status !== 0)
+		throw new Error("IacGrant two-request model checking failed");
+	const allRequests =
+		"/\\ \\A r \\in Requests : requestGeneration[r] # Len(history) \\/\n       ~ledgerPending[r] \\/ Len(history) \\in permanentlyFenced";
+	if (grantSource.split(allRequests).length !== 2)
+		throw new Error("IacGrant all-request drain guard changed");
+	const oneDrained = grantSource.replace(
+		allRequests,
+		allRequests.replace("\\A r", "\\E r"),
+	);
+	expectGrantViolation(
+		"drain-one-of-two",
+		oneDrained,
+		concurrencyConfig,
+		"NoRetiredOutstanding",
+	);
+	const concurrencyWitness = (invariant: string) =>
+		`SPECIFICATION Spec\nCONSTANTS MaxEpochs = 2\n          RequestSlots = 2\nCHECK_DEADLOCK FALSE\nINVARIANT TypeOK\nINVARIANT ${invariant}\n`;
+	expectGrantViolation(
+		"two-concurrent-requests",
+		grantSource,
+		concurrencyWitness("TwoConcurrentRequestsUnreachable"),
+		"TwoConcurrentRequestsUnreachable",
+	);
+	expectGrantViolation(
+		"one-completes-one-still-running",
+		oneDrained,
+		concurrencyWitness("NoPartialConcurrentDrain"),
+		"NoPartialConcurrentDrain",
+	);
 } finally {
 	rmSync(scratch, { recursive: true, force: true });
 }

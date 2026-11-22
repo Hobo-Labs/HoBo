@@ -6,7 +6,9 @@
 	"secretPath": "/hobo-ci-relay",
 	"relayIdentityId": "relay-identity",
 	"deployIdentityId": "deploy-identity",
+	"deployCredentialIdentityId": "deploy-credential-identity",
 	"claimBundleId": "secret-store:hobo-ci-relay:2",
 	"deployProjectId": "proj-deploy-2",
-	"claimState": "claimed"
+	"claimState": "claimed",
+	"deployOidcSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials"
 }

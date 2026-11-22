@@ -33,6 +33,7 @@ import type { EngineBinding } from "@hobo/data-core";
 import type { DeliveryPort, ExperimentPort, SecretsPort } from "@hobo/identity";
 import { createLocalBindingResolver } from "@hobo/runtime-local";
 import {
+	assertNotInScheduleHandler,
 	type BucketEmulator,
 	createBucketEmulator,
 	createDataEmulator,
@@ -51,6 +52,7 @@ import {
 	type ScheduleEmulator,
 	type ServiceEmulator,
 	type ServiceEmulatorFactories,
+	trackScheduleEmulator,
 } from "./../emulators.js";
 import { TestHarnessError } from "./../errors.js";
 import { inProcessFidelity, isHttpServedKind } from "./../fidelity.js";
@@ -359,6 +361,9 @@ function validateEmulator(
 				portRecord.declaration === null ||
 				!hasMethods(datasets, ["ensureDataset", "describeDataset"]) ||
 				!hasMethods(records, ["write", "read"]))) ||
+		(kind === "schedule" &&
+			service.driver !== undefined &&
+			!hasMethods(service.driver, ["registerJob", "advance"])) ||
 		(kind === "bucket" &&
 			service.inspector !== undefined &&
 			!hasMethods(service.inspector, ["readBody"])) ||
@@ -472,6 +477,7 @@ export async function deployInProcess(
 				);
 				schedules.set(alias, emulator);
 				validateEmulator(emulator, alias, "schedule");
+				schedules.set(alias, trackScheduleEmulator(emulator));
 			} else if (node.kind === "kv") {
 				const emulator = await (factories.kv ?? createKeyValueEmulator)(
 					context,
@@ -594,6 +600,7 @@ export async function deployInProcess(
 export async function destroyInProcess(
 	deployment: InProcessDeployment,
 ): Promise<readonly string[]> {
+	assertNotInScheduleHandler(deployment.schedules.values());
 	const existing = teardownRuns.get(deployment);
 	if (existing !== undefined) return existing;
 	const pending = (async () => {

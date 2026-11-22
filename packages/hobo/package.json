@@ -20,6 +20,10 @@
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
 		},
+		"./cd-platform": {
+			"types": "./dist/cd-platform.d.ts",
+			"default": "./dist/cd-platform.js"
+		},
 		"./hosting-mutation-journal": {
 			"types": "./dist/hosting-mutation-journal.d.ts",
 			"default": "./dist/hosting-mutation-journal.js"
@@ -104,6 +108,7 @@
 		"@hobo/trust": "workspace:*",
 		"@hobo/yards": "workspace:*",
 		"esbuild": "^0.25.0",
+		"tar-stream": "3.1.7",
 		"tsx": "4.22.4",
 		"zod": "^4.1.13"
 	},
@@ -116,6 +121,7 @@
 		"@hobo/redaction-test-harness": "workspace:*",
 		"@hobo/testing": "workspace:*",
 		"@types/pg": "8.15.5",
+		"@types/tar-stream": "3.1.5",
 		"fast-check": "^4.3.0",
 		"pg": "8.22.0",
 		"undici": "7.29.0"
@@ -127,6 +133,8 @@
 		"pretest": "node --experimental-strip-types ../../scripts/ensure-built.mts",
 		"test": "vitest run",
 		"pretest:ci-e2e": "node --experimental-strip-types ../../scripts/ensure-built.mts",
-		"test:ci-e2e": "vitest run --config vitest.ci-e2e.config.ts"
+		"test:ci-e2e": "vitest run --config vitest.ci-e2e.config.ts",
+		"pretest:release-integration": "node --experimental-strip-types ../../scripts/ensure-built.mts",
+		"test:release-integration": "vitest run --config vitest.release-integration.config.ts"
 	}
 }

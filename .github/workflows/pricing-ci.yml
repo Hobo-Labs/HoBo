@@ -5,6 +5,8 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
+      - "packages/cloud/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -23,6 +25,8 @@ on:
     paths:
       - "packages/pricing/**"
       - "packages/broker/**"
+      - "packages/cloud/**"
+      - "packages/iac/iac-alchemy/**"
       - "packages/provider-manifest/**"
       - "scripts/check-iac-models.ts"
       - "scripts/lib/bounded-tlc.ts"
@@ -100,7 +104,7 @@ jobs:
   pricing-gate:
     name: "@hobo/pricing affected gate"
     needs: route
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -127,6 +131,8 @@ jobs:
           pnpm exec turbo run build test \
             --filter=@hobo/pricing \
             --filter=@hobo/broker \
+            --filter=@hobo/cloud \
+            --filter=@hobo/iac-alchemy \
             --filter=@hobo/dispatcher \
             --filter=@hobo/events \
             --filter=@hobo/provider-manifest \
@@ -143,9 +149,9 @@ jobs:
           mode: save
 
   pricing-models:
-    name: Check bounded pricing models
+    name: Check bounded IaC models
     needs: route
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -163,7 +169,7 @@ jobs:
         run: |
           curl --fail --location --silent --show-error --retry 3 --max-time 60 \
             --output "$RUNNER_TEMP/tla2tools.jar" \
-            https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
       - name: Test model checker process bounds
         run: node --experimental-strip-types --test scripts/test/bounded-tlc.test.ts
       - name: Verify tool digest and check models

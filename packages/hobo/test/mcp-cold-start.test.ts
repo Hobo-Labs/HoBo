@@ -166,7 +166,15 @@ describe("SPEC hobo-mcp cold start", { timeout: 120_000 }, () => {
 			method: "initialize",
 			params: {
 				protocolVersion: "2025-11-25",
-				capabilities: { elicitation: { form: {}, url: {} } },
+				capabilities: {
+					elicitation: { form: {}, url: {} },
+					extensions: {
+						"io.modelcontextprotocol/ui": {
+							mimeTypes: ["text/html;profile=mcp-app"],
+						},
+					},
+					syntheticPrivateField: "synthetic-private-owner-coordinate",
+				},
 			},
 		});
 		send({ method: "notifications/initialized" });
@@ -176,6 +184,9 @@ describe("SPEC hobo-mcp cold start", { timeout: 120_000 }, () => {
 		expect((await answerTo(1)).result).toMatchObject({
 			protocolVersion: "2025-11-25",
 			capabilities: { tools: {}, resources: {} },
+			instructions: expect.stringMatching(
+				/On initial connection.*private owner setup/u,
+			),
 			serverInfo: { name: "hobo-mcp" },
 		});
 		expect(seen.some((message) => message.id === 2)).toBe(false);
@@ -187,7 +198,11 @@ describe("SPEC hobo-mcp cold start", { timeout: 120_000 }, () => {
 			.object({ tools: z.array(z.object({ name: z.string() })) })
 			.parse((await answerTo(2)).result);
 		expect(tools.tools.map((tool) => tool.name)).toContain("capture_secret");
-		expect(stderr).toContain('"elicitation":{"form":{},"url":{}}');
+		expect(tools.tools.map((tool) => tool.name)).toContain(
+			"submit_secret_value",
+		);
+		expect(stderr).not.toContain('"elicitation":{"form":{},"url":{}}');
+		expect(stderr).not.toContain("synthetic-private-owner-coordinate");
 		expect(seen.filter((message) => message.id === 1)).toHaveLength(1);
 
 		const exited = new Promise((resolve) => child.once("exit", resolve));
