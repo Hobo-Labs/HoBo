@@ -197,6 +197,9 @@ jobs:
       # and the post-deploy check probes. Standard Deployment Protection
       # leaves it public; the protected per-deployment URLs are never probed.
       HOBO_CI_RELAY_URL: https://hobo-ci.vercel.app
+      HOBO_CI_RELAY_PUBLIC_URL: https://hobo-ci.vercel.app
+      HOBO_CI_RELAY_STAGED_PRODUCTION: "true"
+      HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"
       HOBO_VERCEL_CLI: ${{ github.workspace }}/packages/ci-vercel/node_modules/.bin/vercel
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

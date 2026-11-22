@@ -25,12 +25,22 @@ export function normalizeDeploymentUrl(
 		return undefined;
 	const host = url.hostname.slice(0, -".vercel.app".length);
 	const gitPrefix = `${project}-git-`;
-	if (host !== project) {
-		if (!host.startsWith(gitPrefix)) return undefined;
+	const deployPrefix = `${project}-`;
+	if (host === project) return `${url.origin}/`;
+	if (host.startsWith(gitPrefix)) {
 		const suffix = host.slice(gitPrefix.length);
 		if (suffix === "" || !/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/u.test(suffix))
 			return undefined;
+		return `${url.origin}/`;
 	}
+	if (!host.startsWith(deployPrefix)) return undefined;
+	const label = host.slice(deployPrefix.length);
+	if (label === "" || label.startsWith("git-")) return undefined;
+	const deploymentHost =
+		label === "staged" ||
+		(label.length <= 3 && /^[a-z0-9]+$/u.test(label)) ||
+		/^[a-f0-9]{8,}$/u.test(label);
+	if (!deploymentHost) return undefined;
 	return `${url.origin}/`;
 }
 

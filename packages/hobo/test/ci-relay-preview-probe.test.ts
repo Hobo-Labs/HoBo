@@ -115,6 +115,32 @@ describe("protected preview probe", () => {
 		).toBe("synthetic-oidc-token");
 	});
 
+	it("accepts prebuilt deployment hosts under the project prefix", async () => {
+		const sent: TransportRequest[] = [];
+		for (const deploymentUrl of [
+			"https://hobo-ci-staged.vercel.app",
+			"https://hobo-ci-abc.vercel.app",
+			"https://hobo-ci-a1b2c3d4e5f67890.vercel.app",
+		]) {
+			const probe = protectedPreviewProbe({
+				placeholderOrigin: "https://preview.invalid",
+				project: "hobo-ci",
+				deploymentUrl: () => deploymentUrl,
+				jwt: async () => "synthetic-oidc-token",
+				base: async (outbound) => {
+					sent.push(outbound);
+					return { status: 200, headers: {}, body: "{}" };
+				},
+			});
+			expect((await probe(request)).status).toBe(200);
+		}
+		expect(sent.map((outbound) => new URL(outbound.url).origin)).toEqual([
+			"https://hobo-ci-staged.vercel.app",
+			"https://hobo-ci-abc.vercel.app",
+			"https://hobo-ci-a1b2c3d4e5f67890.vercel.app",
+		]);
+	});
+
 	it("normalizes a host-only or path-carrying deployment URL to its https origin", async () => {
 		const sent: TransportRequest[] = [];
 		for (const deploymentUrl of [

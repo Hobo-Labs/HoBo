@@ -576,8 +576,11 @@ HOBO_CI_RELAY_PREVIEW_URL=https://… hobo ci deploy \
 ```
 
 Preview `--wait` also needs the GitHub OIDC mint, so it runs in a GitHub
-Actions job with `id-token: write` (the relay deploy workflow); by hand
-outside Actions it refuses with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`,
+Actions job with `id-token: write` (the relay deploy workflow); that job
+sets `HOBO_CI_RELAY_STAGED_PRODUCTION=true`,
+`HOBO_CI_RELAY_PUBLIC_URL` to the Yard's production origin, and
+`HOBO_CI_RELAY_PREVIEW_PROBE_OIDC=true` for its `hobo ci deploy` steps. By
+hand outside Actions it refuses with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`,
 and a Git-integration deployment is verified by `hobo ci deploy --adopt`
 instead.
 

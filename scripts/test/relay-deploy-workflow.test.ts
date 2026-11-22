@@ -769,6 +769,11 @@ describe("the relay deploy workflow", () => {
 			workflow,
 			new RegExp(`HOBO_CI_RELAY_URL: ${originLiteral}`, "u"),
 		);
+		const deployJob = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
+		assert.ok(deployJob, "no deploy job");
+		assert.match(deployJob, /HOBO_CI_RELAY_PUBLIC_URL: https:\/\/hobo-ci\.vercel\.app/u);
+		assert.match(deployJob, /HOBO_CI_RELAY_STAGED_PRODUCTION: "true"/u);
+		assert.match(deployJob, /HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "true"/u);
 		// Nothing in the workflow reaches past protection or names a probe URL.
 		assert.doesNotMatch(
 			workflow,
