@@ -9,9 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 // Retired variable names are joined from parts, so the repository-wide
 // retired-variable grep and fleet:vocabulary rule 6 do not find this file.
@@ -26,7 +28,8 @@ const lint = fileURLToPath(new URL("../lint-actions.ts", import.meta.url));
 const trunk =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-const routed = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const routed =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 const depsRunner =
 	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
@@ -183,6 +186,19 @@ describe("Actions runner policy", () => {
 		// The job that builds the hobo CLI release-npm runs with its OIDC token.
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
+			0,
+		);
+	});
+
+	it("allows exactly the hosted release-integration shard jobs", () => {
+		for (const [file, id] of [
+			["release-hobo-pr.yml", "release-integration"],
+			["release-hobo.yml", "release-hobo-integration"],
+			["hobo-ci.yml", "release-hobo-integration"],
+		] as const)
+			assert.equal(lintRunner(file, id, "ubuntu-24.04"), 0, `${file}:${id}`);
+		assert.notEqual(
+			lintRunner("release-hobo-pr.yml", "other", "ubuntu-24.04"),
 			0,
 		);
 	});
@@ -398,6 +414,15 @@ describe("Actions runner policy", () => {
 
 	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
+		assert.notEqual(
+			lintJobs(
+				routeJob.replace(
+					"runs-on: ubuntu-24.04",
+					"runs-on: ${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}",
+				),
+			),
+			0,
+		);
 		assert.equal(
 			lintJobs(
 				"  gate:\n    if: ${{ always() }}\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo ok\n",
@@ -447,7 +472,7 @@ describe("Actions runner policy", () => {
 	});
 
 	const skipFor = (id: string) =>
-		`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
+		`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`;
 	const attestingRoute = (sparse: string) =>
 		`  route:\n    runs-on: ubuntu-24.04\n    outputs:\n      runner: \${{ steps.route.outputs.runner }}\n      attested: \${{ steps.route.outputs.attested }}\n      attested-jobs: \${{ steps.route.outputs.attested-jobs }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          persist-credentials: false\n          sparse-checkout: |\n            .github/actions/route-runner\n${sparse}      - id: route\n        uses: ./.github/actions/route-runner\n`;
 	const verifierFiles =
@@ -487,6 +512,7 @@ describe("Actions runner policy", () => {
 				id,
 			);
 		for (const condition of [
+			"!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"'))",
 			skipFor("secret-scan"),
 			`${skipFor("ci-guard")} && ${skipFor("secret-scan")}`,
 			"needs.route.outputs.attested != 'true'",

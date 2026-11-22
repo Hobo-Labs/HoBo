@@ -66,7 +66,7 @@ Host workflow (if any): load from `workflows/<host>/` after reading `references/
 For each persona × surface cell, score harms / friction / uncertainty (`references/metrics.md`). Prefer evidence from:
 
 - **Prior bus entries** for this run and prior runs on the same feature/persona (read via bus feedback)
-- Existing docs (`AGENTS.md`, `site/DESIGN.md`, `docs/agent-tooling.md`)
+- Existing docs (`AGENTS.md`, `site/src/styles/global.css`, `docs/agent-tooling.md`)
 - One cheap probe command (smoke, lint --help, design:lint) rather than full suites
 
 Write `baseline.json` and iteration `000/scores.json`.

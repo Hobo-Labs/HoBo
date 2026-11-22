@@ -1714,7 +1714,7 @@ describe("a job that routes other jobs", () => {
         run: echo "runner=hobo" >> "$GITHUB_OUTPUT"
   test:
     needs: route
-    runs-on: \${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: \${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     steps:
       - run: pnpm test
   lint:
@@ -1768,7 +1768,7 @@ describe("a job that routes other jobs", () => {
 
 	it("recognizes routing through a matrix built from needs outputs", () => {
 		const matrix = source.replace(
-			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
 			"    strategy:\n      matrix: ${{ fromJSON(needs.route.outputs.matrix) }}\n    runs-on: ${{ matrix.runner }}",
 		);
 		expect(planWorkflow("ci.yml", matrix).jobs[0]).toMatchObject({
@@ -1780,7 +1780,7 @@ describe("a job that routes other jobs", () => {
 
 	it("recognizes routing passed to a reusable workflow", () => {
 		const reusable = source.replace(
-			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
+			"    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
 			"    uses: ./.github/workflows/reusable.yml\n    with:\n      runner: ${{ needs.route.outputs.runner }}",
 		);
 		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({
@@ -1792,7 +1792,7 @@ describe("a job that routes other jobs", () => {
 
 	it("recognizes reusable workflow inputs behind a YAML merge", () => {
 		const reusable = source.replace(
-			"    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
+			"    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}\n    steps:\n      - run: pnpm test",
 			"    uses: ./.github/workflows/reusable.yml\n    <<: &call\n      with:\n        runner: ${{ needs.route.outputs.runner }}",
 		);
 		expect(planWorkflow("ci.yml", reusable).jobs[0]).toMatchObject({

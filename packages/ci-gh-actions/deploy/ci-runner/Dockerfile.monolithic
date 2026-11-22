@@ -24,6 +24,7 @@ RUN mise trust ./mise.toml \
   && mise install --locked \
   && mise exec -- node --version \
   && mise exec -- pnpm --version \
+  && mise exec -- python --version \
   && mise exec -- cue version \
   && mise exec -- betterleaks version \
   && mise exec -- shellcheck --version \

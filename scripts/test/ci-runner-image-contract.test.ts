@@ -27,7 +27,10 @@ import {
 	ciRunnerImageVersion,
 	evaluateCiRunnerContract,
 	IMAGE_CONTRACT_COMMANDS,
+	lockedMiseToolVersion,
 	MISE_LOCK,
+	MISE_PYTHON_TOOL,
+	MISE_PYTHON_VERSION,
 	MISE_TOML,
 	parseDockerHubDigestRef,
 	parseMiseToolNames,
@@ -367,6 +370,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(toml).toContain('user = "1000:1000"');
 		expect(toml).toContain("betterleaks");
 		expect(toml).toContain("shellcheck");
+		expect(toml).toContain('python = "3.12"');
 		expect(toml).toContain("127.0.0.1:5000");
 	});
 
@@ -382,10 +386,16 @@ describe("ci-runner image contract (repo manifests)", () => {
 			"cue",
 			"node",
 			"pnpm",
+			"python",
 			"shellcheck",
 			"syft",
 			"turbo",
 		]);
+		expect(
+			lockedMiseToolVersion(lock, MISE_PYTHON_TOOL)?.startsWith(
+				`${MISE_PYTHON_VERSION}.`,
+			),
+		).toBe(true);
 		const platforms = [
 			...new Set(
 				[...lock.matchAll(/^\[tools\.[\w-]+\."platforms\.([^"]+)"\]$/gm)].map(
@@ -477,6 +487,57 @@ describe("ci-runner image contract (repo manifests)", () => {
 		}
 	});
 
+	it("uses mise-pinned Python in state-machine verification", () => {
+		const workflow = readFileSync(
+			join(root, ".github/workflows/hobo-ci.yml"),
+			"utf8",
+		);
+		expect(workflow).not.toContain("actions/setup-python@");
+		const start = workflow.indexOf("  state-machine-verification:\n");
+		const end = workflow.indexOf("\n  pr-gate:", start);
+		expect(start).toBeGreaterThan(-1);
+		expect(end).toBeGreaterThan(start);
+		const job = workflow.slice(start, end);
+		expect(job).toContain("name: Use locked Python from mise");
+		expect(job).toContain(`mise which ${MISE_PYTHON_TOOL}`);
+		expect(job).toContain("python3 --version");
+	});
+
+	it("asserts the locked Python image contract in preflight", () => {
+		const pythonVersion: CommandRunner = (cmd, args) => {
+			if (cmd === "mise" && args.includes("which"))
+				return { ok: true, out: "/usr/bin/stub" };
+			if (cmd === "mise" && args[0] === "exec" && args[2] === MISE_PYTHON_TOOL)
+				return { ok: true, out: `Python ${MISE_PYTHON_VERSION}.16` };
+			return { ok: true, out: "stub 0.14.0" };
+		};
+		const checks = evaluateCiRunnerContract(root, { run: pythonVersion });
+		expect(checks.find((c) => c.name === "python-version")).toMatchObject({
+			ok: true,
+		});
+		expect(
+			checks.find((c) => c.name === `mise.lock:${MISE_PYTHON_TOOL}`),
+		).toBeUndefined();
+
+		const dir = mkdtempSync(join(tmpdir(), "ci-runner-python-lock-"));
+		try {
+			const lock = readFileSync(join(root, MISE_LOCK), "utf8");
+			const version = lockedMiseToolVersion(lock, MISE_PYTHON_TOOL);
+			expect(version).toBeDefined();
+			writeFileSync(join(dir, MISE_TOML), readFileSync(join(root, MISE_TOML)));
+			writeFileSync(
+				join(dir, MISE_LOCK),
+				lock.replace(`version = "${version}"`, 'version = "3.11.9"'),
+			);
+			const drifted = evaluateCiRunnerContract(dir, { run: present });
+			expect(
+				drifted.find((c) => c.name === `mise.lock:${MISE_PYTHON_TOOL}`),
+			).toMatchObject({ ok: false });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("checks the image-build commands only inside a built candidate", () => {
 		const names = (live: boolean) =>
 			new Set(
@@ -512,6 +573,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 			"cue",
 			"node",
 			"pnpm",
+			"python",
 			"shellcheck",
 			"syft",
 			"turbo",
@@ -524,19 +586,26 @@ describe("ci-runner image contract (repo manifests)", () => {
 			expect(call.args).toEqual(["--cd", root, "which", call.args[3]!]);
 		}
 		expect(
-			calls.find((call) => call.cmd === "mise" && call.args[0] === "exec"),
-		).toEqual({
-			cmd: "mise",
-			args: ["exec", "--", "cue", "version"],
-			cwd: root,
-		});
+			calls.filter((call) => call.cmd === "mise" && call.args[0] === "exec"),
+		).toEqual([
+			{
+				cmd: "mise",
+				args: ["exec", "--", "python", "--version"],
+				cwd: root,
+			},
+			{
+				cmd: "mise",
+				args: ["exec", "--", "cue", "version"],
+				cwd: root,
+			},
+		]);
 		expect(calls.some((call) => tools.includes(call.cmd))).toBe(false);
 	});
 
 	it("verifies shellcheck through mise exec before building the OCI image", () => {
 		const build = readFileSync(join(root, CI_RUNNER_BUILD_SCRIPT), "utf8");
 		expect(build).toContain(
-			"mise install --locked\nmise exec -- shellcheck --version\n",
+			"mise install --locked\nmise exec -- python --version\nmise exec -- shellcheck --version\n",
 		);
 	});
 
