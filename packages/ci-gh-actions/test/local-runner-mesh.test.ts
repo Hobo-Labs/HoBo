@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -23,6 +24,11 @@ import { parseMeshNodeReports } from "../src/mesh-records.js";
 
 const scratch: string[] = [];
 const closers: Array<() => void> = [];
+
+function mkdirPrivate(path: string) {
+	mkdirSync(path, { mode: 0o700 });
+	chmodSync(path, 0o700);
+}
 afterEach(() => {
 	for (const close of closers.splice(0)) close();
 	for (const path of scratch.splice(0))
@@ -40,7 +46,7 @@ function fixture(exitCode = 0) {
 	const source = join(directory, "source");
 	const state = join(directory, "state");
 	const signals = join(directory, "signals");
-	for (const folder of [source, state, signals]) mkdirSync(folder);
+	for (const folder of [source, state, signals]) mkdirPrivate(folder);
 	writeFileSync(
 		join(source, "run.sh"),
 		`#!/bin/sh
@@ -96,6 +102,20 @@ const report = (state: string) =>
 	);
 
 describe("a local runner as a mesh node", () => {
+	it("creates mesh state under umask 0002 without group-writable directories", async () => {
+		const previous = process.umask(0o002);
+		try {
+			const { state } = fixture();
+			expect((statSync(state).mode & 0o777) === 0o700).toBe(true);
+			const node = await meshNode(state);
+			await node.beat();
+			expect(report(state).nodes).toHaveLength(1);
+			expect(statSync(join(state, "mesh-node.key")).mode & 0o777).toBe(0o600);
+		} finally {
+			process.umask(previous);
+		}
+	});
+
 	it("reports itself to disk with no mesh configured, so status works offline", async () => {
 		const { state } = fixture();
 		const node = await meshNode(state);

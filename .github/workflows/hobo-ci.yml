@@ -1279,10 +1279,15 @@ jobs:
           --filter=@hobo/ci --filter=@hobo/cd --filter=@hobo/identity
           --filter=@hobo/storage-sqlite --filter=@hobo/runtime --concurrency=1
           --output-logs=new-only
+      - name: Prefetch formal verification tools
+        timeout-minutes: 10
+        run: node --import tsx scripts/ci/prefetch-formal-verification-tools.mts
       - name: Check state machines
-        timeout-minutes: 20
+        timeout-minutes: 18
         env:
           FORMAL_SHARD: ${{ matrix.shard }}
+          FORMAL_MODEL_TIMEOUT_SEC: 600
+          FORMAL_SKILL_TIMEOUT_SEC: 1500
         run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
 
   pr-gate:

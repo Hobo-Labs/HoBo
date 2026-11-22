@@ -70,6 +70,11 @@ describe("merge-group required gate", () => {
 		assert.match(verification, /github\.event_name == 'merge_group'/u);
 		assert.match(verification, /shard: \[0, 1, 2, 3\]/u);
 		assert.match(verification, /--shard=\$\{FORMAL_SHARD\}\/4/u);
+		assert.match(
+			verification,
+			/prefetch-formal-verification-tools\.mts/u,
+		);
+		assert.match(verification, /FORMAL_MODEL_TIMEOUT_SEC/u);
 		assert.match(gate, /needs: \[[^\]]*state-machine-verification/u);
 		const script = shellForStep(
 			gate,
