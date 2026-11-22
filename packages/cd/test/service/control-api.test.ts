@@ -391,38 +391,40 @@ describe("CD read API — routes", () => {
 		});
 	});
 
-	it.each(["all", "started", "store", "step:sources"])(
-		"refuses a healthy report with missing %s gating evidence",
-		async (missing) => {
-			const { cd, store } = setupApi();
-			const required = [
-				{ name: "started", ok: true, detail: "fixture" },
-				{ name: "store", ok: true, detail: "fixture" },
-				{ name: "step:sources", ok: true, detail: "fixture" },
-			];
-			const api = createCdControlApi({
-				store,
-				cd,
-				tenant: "t1",
-				now: () => 1,
-				service: {
-					health: () => ({
-						ok: true,
-						checks:
-							missing === "all"
-								? []
-								: required.filter((check) => check.name !== missing),
-					}),
-				},
-			});
-			const res = await api.handle(get("/v1/cd/ready"), signal());
-			expect(res.status).toBe(503);
-			expect((await json(res)).reasons?.[0]).toMatchObject({
-				code: "not-ready",
-				subject: "service",
-			});
-		},
-	);
+	it.each([
+		"all",
+		"started",
+		"store",
+		"step:sources",
+	])("refuses a healthy report with missing %s gating evidence", async (missing) => {
+		const { cd, store } = setupApi();
+		const required = [
+			{ name: "started", ok: true, detail: "fixture" },
+			{ name: "store", ok: true, detail: "fixture" },
+			{ name: "step:sources", ok: true, detail: "fixture" },
+		];
+		const api = createCdControlApi({
+			store,
+			cd,
+			tenant: "t1",
+			now: () => 1,
+			service: {
+				health: () => ({
+					ok: true,
+					checks:
+						missing === "all"
+							? []
+							: required.filter((check) => check.name !== missing),
+				}),
+			},
+		});
+		const res = await api.handle(get("/v1/cd/ready"), signal());
+		expect(res.status).toBe(503);
+		expect((await json(res)).reasons?.[0]).toMatchObject({
+			code: "not-ready",
+			subject: "service",
+		});
+	});
 
 	it.each([
 		{ name: "started", ok: false, subject: "started" },

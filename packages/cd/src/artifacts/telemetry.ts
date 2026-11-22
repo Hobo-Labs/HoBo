@@ -23,5 +23,7 @@ export async function emit(
 	value = 1,
 	unit = "{event}",
 ): Promise<void> {
-	await emitMetrics(sink, [{ name, kind: "counter", value, unit, atMs, attributes }]);
+	await emitMetrics(sink, [
+		{ name, kind: "counter", value, unit, atMs, attributes },
+	]);
 }
