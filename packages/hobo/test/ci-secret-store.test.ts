@@ -183,10 +183,13 @@ describe("provision → claim open → claim finalize → deploy inputs", () => 
 				?.oidc,
 		).toMatchObject({
 			boundSubject:
-				"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 			boundClaims: {
 				repository_id: "1274791462",
 				repository_owner_id: "344805935",
+				environment: "hobo-ci-app-credentials",
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 			},
 		});
 		expect(provisioned.status).toBe("claim_pending");

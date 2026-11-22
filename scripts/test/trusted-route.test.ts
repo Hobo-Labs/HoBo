@@ -201,14 +201,14 @@ describe("base-controlled attestation verification", () => {
 				trustedPolicy,
 				JSON.stringify({
 					...policy,
-					runnerRouting: { ...policy.runnerRouting, pin: "fleet" },
+					runnerRouting: { ...policy.runnerRouting, pin: "github" },
 				}),
 			);
 			writeFileSync(
 				join(workspace, ".hobo/ci.json"),
 				JSON.stringify({
 					...policy,
-					runnerRouting: { ...policy.runnerRouting, pin: "github" },
+					runnerRouting: { ...policy.runnerRouting, pin: "fleet" },
 				}),
 			);
 			const candidate = join(workspace, "scripts/ci");
@@ -238,7 +238,7 @@ describe("base-controlled attestation verification", () => {
 			};
 			const selected = run();
 			assert.equal(selected.child.status, 0, selected.child.stderr);
-			assert.match(selected.output, /^runner=hobo-trunk$/mu);
+			assert.match(selected.output, /^runner=ubuntu-24\.04$/mu);
 			assert.equal(existsSync(marker), false);
 			rmSync(trustedPolicy);
 			const missingPolicy = run();
@@ -253,6 +253,25 @@ describe("base-controlled attestation verification", () => {
 			rmSync(workspace, { recursive: true, force: true });
 		}
 	});
+
+	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+		it(`${workflow} keeps merge-group routing on hosted runners`, () => {
+			const doc = workflowDocument(
+				readFileSync(`.github/workflows/${workflow}`, "utf8"),
+			);
+			const route = asObject(asObject(doc.jobs)?.route);
+			assert.equal(route?.["runs-on"], "ubuntu-24.04");
+			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
+			const routeStep = asList(route?.steps)
+				?.map(asObject)
+				.find((step) => step?.id === "route");
+			const withBlock = asObject(routeStep?.with);
+			assert.equal(
+				asText(withBlock?.route),
+				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
+			);
+		});
+	}
 
 	it("decides PR Fabric reuse beside the checked-out base action, never from the candidate's copy", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-pr-fabric-route-"));
@@ -375,7 +394,7 @@ describe("base-controlled attestation verification", () => {
 		}
 		assert.equal(
 			asObject(jobs?.workspace_tests)?.["runs-on"],
-			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
 		);
 	});
 

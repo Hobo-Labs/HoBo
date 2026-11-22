@@ -11,7 +11,7 @@ Scanned: 2026-07-31T03:31:22.206Z
 | Signal | Value |
 |---|---|
 | site | true |
-| DESIGN.md | true |
+| implemented visual token contract | true |
 | CLI packages | true |
 | MCP | true |
 | AGENTS.md | true |

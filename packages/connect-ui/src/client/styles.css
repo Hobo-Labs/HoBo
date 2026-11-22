@@ -5,6 +5,7 @@
 	--paper: #ffffff;
 	--cream: #f2f1ec;
 	--mute: #4a4a46;
+	--faint: #6e6d68;
 	--spark: #c5301c;
 	--go: #14672c;
 	--ui-background: var(--paper);
@@ -29,6 +30,9 @@
 		--paper: #0a0a0a;
 		--cream: #1c1c1a;
 		--mute: #c4c3bc;
+		--faint: #c9c8c2;
+		--spark: #ff7a63;
+		--go: #57c777;
 		color-scheme: dark;
 	}
 }
@@ -154,6 +158,10 @@ a {
 	max-width: 32rem;
 	margin: 4rem auto;
 	text-align: center;
+}
+
+.hobo-loading {
+	color: var(--faint);
 }
 
 .hobo-error {

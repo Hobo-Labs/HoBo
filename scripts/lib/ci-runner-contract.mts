@@ -13,6 +13,8 @@ export const CI_RUNNER_SYSTEM_PACKAGES =
 	"packages/ci-gh-actions/deploy/ci-runner/system-packages.txt";
 export const MISE_TOML = "mise.toml";
 export const MISE_LOCK = "mise.lock";
+export const MISE_PYTHON_TOOL = "python";
+export const MISE_PYTHON_VERSION = "3.12";
 export const CI_RUNNER_IMAGE_VERSION_INPUTS = [
 	MISE_LOCK,
 	MISE_TOML,
@@ -317,6 +319,14 @@ export function parseMiseToolNames(miseToml: string): string[] {
 	return names;
 }
 
+export function lockedMiseToolVersion(
+	lock: string,
+	tool: string,
+): string | undefined {
+	const entry = lock.split(`[[tools.${tool}]]`)[1]?.split("\n[")[0];
+	return entry?.match(/^version = "([^"]+)"/m)?.[1];
+}
+
 const MISE_TOOL_REMEDY = `Remedy: preflight installs missing tools with mise install --locked from the checkout's ${MISE_LOCK}; if the tool still fails, rebuild with bash ${CI_RUNNER_BUILD_SCRIPT}`;
 
 export function probeMiseTool(
@@ -532,8 +542,45 @@ export function evaluateCiRunnerContract(
 	}
 
 	const miseToml = readFileSync(join(root, MISE_TOML), "utf8");
-	for (const tool of parseMiseToolNames(miseToml)) {
+	const miseLock = readFileSync(join(root, MISE_LOCK), "utf8");
+	const configuredTools = parseMiseToolNames(miseToml);
+	for (const tool of configuredTools) {
 		checks.push(probeMiseTool(tool, run, root));
+	}
+
+	if (!configuredTools.includes(MISE_PYTHON_TOOL)) {
+		checks.push({
+			ok: false,
+			name: `mise:${MISE_PYTHON_TOOL}`,
+			detail: `${MISE_TOML} must pin ${MISE_PYTHON_TOOL} ${MISE_PYTHON_VERSION}`,
+		});
+	}
+	const lockedPython = lockedMiseToolVersion(miseLock, MISE_PYTHON_TOOL);
+	if (!lockedPython?.startsWith(`${MISE_PYTHON_VERSION}.`)) {
+		checks.push({
+			ok: false,
+			name: `mise.lock:${MISE_PYTHON_TOOL}`,
+			detail: `${MISE_LOCK} must lock ${MISE_PYTHON_TOOL} ${MISE_PYTHON_VERSION}, got ${lockedPython ?? "(missing)"}`,
+		});
+	}
+	const python = runMiseToolVersion(run, root, MISE_PYTHON_TOOL);
+	if (python.ok && python.out.includes(`${MISE_PYTHON_VERSION}.`)) {
+		checks.push({
+			ok: true,
+			name: "python-version",
+			detail: python.out.split("\n")[0]!,
+		});
+	} else {
+		checks.push({
+			ok: false,
+			name: "python-version",
+			detail: python.ok
+				? `expected ${MISE_PYTHON_TOOL} ${MISE_PYTHON_VERSION}, got: ${python.out}`
+				: commandFailure(
+						python,
+						commandLine("mise", ["exec", "--", MISE_PYTHON_TOOL, "--version"]),
+					),
+		});
 	}
 
 	const commands = live
