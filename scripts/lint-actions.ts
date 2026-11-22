@@ -361,6 +361,28 @@ function attestedRelayCheckout(block: readonly string[]): boolean {
 	});
 }
 
+function attestedRelayCredentialCheckout(block: readonly string[]): boolean {
+	const checkouts = block.reduce<number[]>((found, line, index) => {
+		if (/^ {6}- uses: actions\/checkout@/u.test(line)) found.push(index);
+		return found;
+	}, []);
+	if (checkouts.length === 0) return false;
+	return checkouts.every((at) => {
+		if (block[at] !== `      - uses: actions/checkout@${RELAY_CHECKOUT_SHA}`)
+			return false;
+		const values = stepLines(block, at)
+			.filter((line) => /^ {8}/u.test(line))
+			.map((line) => line.trim());
+		return (
+			values.filter((value) => value === "clean: false").length === 1 &&
+			!values.includes("clean: true") &&
+			values.some((value) => value.startsWith("fetch-depth:")) &&
+			values.includes("persist-credentials: false") &&
+			!values.some((value) => value.startsWith("path:"))
+		);
+	});
+}
+
 function attestedRelayPermissions(
 	block: readonly string[],
 	expected: readonly string[],
@@ -451,6 +473,59 @@ function attestedHostedRelayJob(
 	);
 }
 
+function attestedRoutedRelayJob(
+	file: string,
+	jobLine: string,
+	block: readonly string[],
+	runsOn: string | undefined,
+): boolean {
+	const job = jobLine.trim().replace(/:$/u, "");
+	if (
+		file !== "relay-deploy.yml" ||
+		(job !== "deploy" && job !== "app-credentials") ||
+		runsOn !== ROUTED_RUNS_ON ||
+		!needsRoute(block) ||
+		!attestedRelayCredentialCheckout(block) ||
+		block.some((line) => line.includes("route-runner"))
+	)
+		return false;
+	if (!attestedRelayPermissions(block, ["contents: read", "id-token: write"]))
+		return false;
+	const steps = jobSteps(block);
+	const checkoutAt = steps.reduce(
+		(found, step, index) =>
+			step.some(
+				(line) =>
+					line.trim().replace(/^- /u, "") ===
+					`uses: actions/checkout@${RELAY_CHECKOUT_SHA}`,
+			)
+				? index
+				: found,
+		-1,
+	);
+	const downloadAt = steps.findIndex((step) =>
+		step.some(
+			(line) =>
+				line.trim() === `uses: actions/download-artifact@${RELAY_DOWNLOAD_SHA}`,
+		),
+	);
+	const restoreAt = steps.findIndex(
+		(step) =>
+			step.some((line) => line.includes("bootstrap-restore.mjs")) &&
+			step.some((line) => line.includes("HOBO_RELAY_CLI_DIGEST")),
+	);
+	const restoreEnv = restoreAt >= 0 ? envEntries(steps[restoreAt] ?? []) : [];
+	const cliAt = steps.findIndex((step) => step.some(cliLine));
+	return (
+		checkoutAt >= 0 &&
+		downloadAt > checkoutAt &&
+		restoreAt > downloadAt &&
+		cliAt > restoreAt &&
+		restoreEnv.length === 1 &&
+		restoreEnv[0] === RELAY_DIGEST_ENV
+	);
+}
+
 function lintHostedRelayTriggers(
 	errors: string[],
 	file: string,
@@ -509,31 +584,59 @@ function lintHostedRelayTriggers(
 		);
 }
 
-function attestedHostedRelayFile(
+const RELAY_CREDENTIAL_JOBS = new Set(["deploy", "app-credentials"]);
+
+function lintRelayJobAttestation(
+	errors: string[],
 	file: string,
 	blockAt: readonly number[],
 	lines: readonly string[],
 ): boolean {
 	if (file !== "relay-deploy.yml" || blockAt.length === 0) return false;
-	const hosted = blockAt
-		.map((start) => ({
-			jobLine: lines[start] ?? "",
-			block: lines.slice(
-				start,
-				blockAt[blockAt.indexOf(start) + 1] ?? lines.length,
-			),
-		}))
-		.filter(
-			({ jobLine, block }) =>
-				HOSTED_RELAY_JOBS.has(jobLine.trim().replace(/:$/u, "")) &&
-				block.some((line) => /^\s*runs-on:\s*ubuntu-24\.04\s*$/u.test(line)),
+	let sawRelayJob = false;
+	let allAttested = true;
+	for (const start of blockAt) {
+		const jobLine = lines[start] ?? "";
+		const job = jobLine.trim().replace(/:$/u, "");
+		if (
+			job.startsWith("deploy") &&
+			job !== "deploy-build" &&
+			!RELAY_CREDENTIAL_JOBS.has(job)
+		) {
+			allAttested = false;
+			errors.push(
+				`${file}:${start + 1}: relay credential job ${job} is not an allowed id (deploy or app-credentials)`,
+			);
+		}
+		if (!HOSTED_RELAY_JOBS.has(job)) continue;
+		sawRelayJob = true;
+		const block = lines.slice(
+			start,
+			blockAt[blockAt.indexOf(start) + 1] ?? lines.length,
 		);
-	return (
-		hosted.length > 0 &&
-		hosted.every(({ jobLine, block }) =>
-			attestedHostedRelayJob(file, jobLine, block, HOSTED_RUNS_ON),
-		)
-	);
+		const runsOn = block
+			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
+			.find((value) => value !== undefined);
+		const attested =
+			job === "deploy-build"
+				? attestedHostedRelayJob(file, jobLine, block, runsOn)
+				: attestedRoutedRelayJob(file, jobLine, block, runsOn);
+		if (!attested) {
+			allAttested = false;
+			errors.push(
+				`${file}:${start + 1}: relay job ${job} does not meet the hosted/routed attestation contract`,
+			);
+		}
+	}
+	return sawRelayJob && allAttested;
+}
+
+function attestedHostedRelayFile(
+	file: string,
+	blockAt: readonly number[],
+	lines: readonly string[],
+): boolean {
+	return lintRelayJobAttestation([], file, blockAt, lines);
 }
 
 /**
@@ -1024,7 +1127,9 @@ function lintWorkflowYaml(
 			runsOn,
 		);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
-		const hostedRelayJob = attestedHostedRelayJob(file, jobLine, block, runsOn);
+		const hostedRelayJob =
+			attestedHostedRelayJob(file, jobLine, block, runsOn) ||
+			attestedRoutedRelayJob(file, jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
@@ -1156,7 +1261,7 @@ function lintWorkflowYaml(
 	}
 	const hostedRelayFileAttested =
 		file !== "relay-deploy.yml" ||
-		attestedHostedRelayFile(file, jobStarts, lines);
+		lintRelayJobAttestation(errors, file, jobStarts, lines);
 	if (file === "relay-deploy.yml") lintHostedRelayTriggers(errors, file, text);
 	if (
 		activeCiFiles.has(file) &&

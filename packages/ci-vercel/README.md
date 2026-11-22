@@ -295,14 +295,11 @@ Known gaps, stated rather than hidden:
   deployment-specific commit attestation. For a protected Vercel preview, HoBo
   probes the deployment it just created using the GitHub Actions OIDC token,
   minted with an audience pinned to that deployment's origin — a URL accepted
-  only when Vercel's own record of the deployment this run created (read back
-  by deployment id, team-scoped) names the same URL the create answer did, so a
-  host whose name merely starts with the project's never receives the token.
-  A read-back that cannot attest the URL the create answer gave refuses the
-  delivery with `HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED` — the deployment is
-  never probed behind protection, and production traffic is never changed on
-  its say-so. The
-  audience is always the verified deployment's origin, never an override:
+  only when it normalizes to an `https` `*.vercel.app` host under the project
+  (`{project}`, `{project}-git-{ref}`, or `{project}-` deployment aliases such as
+  prebuilt hashes). A host outside that grammar is never probed and the probe
+  fails closed with HTTP 503. The audience is always the normalized deployment
+  origin, never an override:
   the probe token is not replayable to a relying party that expects GitHub's
   default audience. The probe
   transport does not follow redirects or forward that token to a redirect

@@ -491,10 +491,10 @@ hobo ci deploy --cwd packages/ci-vercel --ref main --sha <commit> \
 | `--build git\|prebuilt` | `git` (the default): Vercel builds the commit through its Git integration. `prebuilt` (what the relay workflow runs): HoBo builds the checkout of `--sha` once (`vercel pull`, `vercel build --prod`, `vercel deploy --prebuilt --prod --skip-domain`, the CLI `HOBO_VERCEL_CLI` names, with production's settings set first) and the preview node qualifies that staged production build by its record; `--target production` then promotes that exact build (no rebuild) and, when production verification fails, rolls production back to the deployment it served before (`HOBO_CI_DEPLOY_ROLLED_BACK`). Needs `--sha`, and a checkout at that commit (`HOBO_CI_DEPLOY_CHECKOUT_MISMATCH`) |
 
 Preview `--wait` requires `--sha` and verifies the commit on the deployment
-just created with a GitHub OIDC token scoped to that deployment's origin, which
-Vercel's own record of that deployment must attest (the read-back URL must
-match the create answer, or no token is minted; a read-back that cannot attest
-it refuses with `HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED`). If protected OIDC probing is
+just created with a GitHub OIDC token scoped to that deployment's origin. The
+deployment URL must normalize to an `https` `*.vercel.app` host under the
+project name; otherwise the protected probe fails closed (HTTP 503) and no token
+is minted. If protected OIDC probing is
 unavailable or disabled, or `--sha` is omitted, the command refuses before
 creation with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`; a shared preview
 origin cannot substitute for that attestation.

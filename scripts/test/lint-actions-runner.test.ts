@@ -697,6 +697,13 @@ describe("Actions runner policy", () => {
           persist-credentials: false
 `;
 
+	const relayCredentialCheckout = `      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 2
+          persist-credentials: false
+`;
+
 	const relayFixture = ({
 		job = "deploy",
 		restoreFirst = true,
@@ -730,7 +737,7 @@ ${relayCheckout}      - id: pack
           ${digestEnv ?? "UNRELATED: x"}
 `;
 		const restore = `      - name: Restore
-${digestEnvOnCli ? "" : envBlock}${restoreAsComment ? `        # node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"\n` : ""}        run: ${restoreAsComment ? "echo ok" : 'node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"'}
+${digestEnvOnCli ? "" : envBlock}${restoreAsComment ? `        # node bootstrap-restore.mjs "$HOBO_RELAY_CLI_DIGEST"\n` : ""}        run: ${restoreAsComment ? "echo ok" : 'node bootstrap-restore.mjs "$HOBO_RELAY_CLI_DIGEST"'}
 `;
 		const cli = `      - name: Run the CLI
 ${digestEnvOnCli ? envBlock : ""}        run: node packages/hobo/dist/bin/hobo.js ci deploy
@@ -743,19 +750,28 @@ ${digestEnvOnCli ? envBlock : ""}        run: node packages/hobo/dist/bin/hobo.j
 			: restoreFirst
 				? restore + cli
 				: cli + restore;
+		const route = `  route:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: route
+        uses: ./.github/actions/route-runner
+`;
 		return `name: fixture
 on:
   push:
     branches: [main]
 jobs:
-${build}  ${job}:
-    needs: deploy-build
-    runs-on: ubuntu-24.04
+${route}${build}  ${job}:
+    needs: [deploy-build, route]
+    runs-on: \${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write
     steps:
-${relayCheckout}${downloadAfterRestore ? "" : download}${tail}`;
+${relayCredentialCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 	};
 
 	const lintRelayFixture = (text: string) => {
@@ -763,6 +779,12 @@ ${relayCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 		try {
 			const dir = join(temp, ".github", "workflows");
 			mkdirSync(dir, { recursive: true });
+			const routeAction = join(temp, ".github", "actions", "route-runner");
+			mkdirSync(routeAction, { recursive: true });
+			writeFileSync(
+				join(routeAction, "action.yml"),
+				"runs:\n  using: composite\n  steps: []\n",
+			);
 			writeFileSync(join(dir, "relay-deploy.yml"), text);
 			const result = spawnSync(
 				process.execPath,
@@ -783,7 +805,7 @@ ${relayCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 	};
 
 	const relayRunnerError =
-		/runs-on must be hobo|authoritative CI jobs must run on self-hosted hobo runners/u;
+		/runs-on must be hobo|authoritative CI jobs must run on self-hosted hobo runners|hosted\/routed attestation contract|not an allowed id/u;
 
 	it("lets the attested hosted relay fixture pass", () => {
 		const result = lintRelayFixture(relayFixture());
