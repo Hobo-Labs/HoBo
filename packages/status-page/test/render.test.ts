@@ -101,6 +101,38 @@ describe("renderStatusPageHtml", () => {
 		expect(html).toContain("aria-label");
 	});
 
+	it("bounds history to 90 titled cells with a row label", () => {
+		const start = Date.parse("2026-08-17T00:00:00.000Z");
+		const dayMs = 24 * 60 * 60 * 1000;
+		const events = Array.from({ length: 91 }, (_, day) => {
+			const measuredAt = new Date(start + day * dayMs).toISOString();
+			return statusEnvelope(
+				STATUS_SIGNAL_EVENTS.SloMeasured,
+				{
+					componentId: "kit-web",
+					sloName: "availability",
+					attainment: 1,
+					target: 0.999,
+					measuredAt,
+				},
+				{
+					streamId: "status:test",
+					seq: day + 1,
+					ts: measuredAt,
+					project: "shop",
+				},
+			);
+		});
+		const html = renderStatusPageHtml(
+			modelWith(events, new Date(start + 90 * dayMs + 300_000).toISOString()),
+		);
+		expect(html.match(/<i data-day=/gu)).toHaveLength(90);
+		expect(html.match(/<i data-day="[^"]+" title="[^"]+"/gu)).toHaveLength(90);
+		expect(html).toContain('aria-label="90-day history for kit-web"');
+		expect(html).not.toContain('title="2026-08-17:');
+		expect(html).toContain('title="2026-08-18:');
+	});
+
 	it("renders empty states honestly", () => {
 		const html = renderStatusPageHtml(
 			modelWith([], "2026-08-17T00:00:00.000Z"),

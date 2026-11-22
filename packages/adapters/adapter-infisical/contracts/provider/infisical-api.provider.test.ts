@@ -34,6 +34,7 @@ describe("the local Infisical stand-in (provider verification)", () => {
 				identityId: "relay-identity",
 				jwt: "fixture-header.fixture-payload.fixture-signature",
 				access: "write",
+				projects: { "proj-1": "viewer" },
 			},
 			{
 				kind: "universal-auth",

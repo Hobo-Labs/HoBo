@@ -151,18 +151,28 @@ function parseActionBody(text: string): ActionBody | undefined {
 	return parsed.success ? parsed.data : undefined;
 }
 
-function shell(base: string): string {
+export function escapeHtml(value: string): string {
+	return value
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&#39;");
+}
+
+export function renderConnectPageShell(base: string): string {
+	const escapedBase = escapeHtml(base);
 	return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HoBo · Connect</title>
-<link rel="stylesheet" href="${base}connect.css">
+<link rel="stylesheet" href="${escapedBase}connect.css">
 </head>
 <body>
-<main id="root" data-base="${base}"><noscript>This page needs JavaScript to show the connection step.</noscript></main>
-<script type="module" src="${base}connect.js"></script>
+<main id="root" data-base="${escapedBase}"><noscript>This page needs JavaScript to show the connection step.</noscript></main>
+<script type="module" src="${escapedBase}connect.js"></script>
 </body>
 </html>`;
 }
@@ -240,7 +250,12 @@ export async function startConnectPage(
 				? "callback"
 				: url.pathname.slice(base.length);
 			if (req.method === "GET" && route === "")
-				return send(res, 200, "text/html; charset=utf-8", shell(base));
+				return send(
+					res,
+					200,
+					"text/html; charset=utf-8",
+					renderConnectPageShell(base),
+				);
 			if (
 				req.method === "GET" &&
 				(route === "connect.js" || route === "connect.css")
