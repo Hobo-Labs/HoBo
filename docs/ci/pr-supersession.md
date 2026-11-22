@@ -33,7 +33,7 @@ Each closed PR gets a comment naming its carrier. Branches are never deleted, an
 ## Pacing
 
 Comments and closes are spaced three seconds apart. On a `403` or `429` the job stops and reports
-how many it closed; the next hourly run continues from the current set of open PRs.
+how many it closed. It also stops after 15 minutes of closing so the job stays inside its 20-minute limit. Either way the next hourly run continues from the current set of open PRs.
 
 ## Dry run
 

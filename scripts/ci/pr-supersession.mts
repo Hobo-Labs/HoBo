@@ -171,6 +171,7 @@ export async function listOpenPulls(
 }
 
 const PACE_MS = 3_000;
+const BUDGET_MS = 15 * 60_000;
 
 const PULL_REFS = "refs/supersession/";
 
@@ -242,7 +243,14 @@ async function main(): Promise<void> {
 		gitContains(sha, mainRef),
 	);
 	let closed = 0;
+	const deadline = Date.now() + BUDGET_MS;
 	for (const item of found) {
+		if (!dryRun && Date.now() > deadline) {
+			process.stdout.write(
+				`time budget spent after ${closed}; the next run continues\n`,
+			);
+			break;
+		}
 		const target = item.carriedBy === "main" ? base : `#${item.carriedBy}`;
 		process.stdout.write(`#${item.number} carried by ${target}\n`);
 		if (dryRun) continue;
