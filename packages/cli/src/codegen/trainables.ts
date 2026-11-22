@@ -26,7 +26,6 @@ import {
 	TrainableStubSchema,
 } from "./types.js";
 
-
 export interface DirectiveFunction {
 	readonly name: string;
 	readonly file: string;

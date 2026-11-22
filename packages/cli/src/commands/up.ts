@@ -21,7 +21,6 @@ export interface UpCommandDeps {
 	readonly session?: YardSession;
 }
 
-
 function progressLine(step: ProgressEvent): string {
 	return step.resourceId
 		? `${step.type} ${step.resourceId}: ${step.detail}`

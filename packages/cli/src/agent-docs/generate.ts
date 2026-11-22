@@ -1,7 +1,6 @@
 import { normalizeText } from "../codegen/text.js";
 import { CANONICAL_VERBS, GLOBAL_FLAGS, type Verb } from "../shell/verbs.js";
 
-
 export const AGENT_DOCS_SCHEMA_VERSION = "hobo.agent-docs/v1";
 export const AGENT_DOCS_GENERATOR = "@hobo/cli/agent-docs";
 export const AGENT_DOCS_PRODUCT = "hobo";

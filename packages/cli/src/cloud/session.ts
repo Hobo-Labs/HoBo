@@ -6,7 +6,6 @@ import type { PrincipalRef } from "@hobo/core";
 import { isJsonString } from "../json.js";
 import type { YardSession } from "./yard-client.js";
 
-
 export const SESSION_FILE = path.join(".hobo", "session.json");
 export const DEFAULT_TENANT = "hobo-dev"; // public-contract: tenant id recorded for a session opened without one
 export const ANONYMOUS_SUBJECT = "anonymous"; // public-contract: subject recorded for an unauthenticated session

@@ -59,7 +59,6 @@ import {
 } from "@hobo/cloud";
 import type { PrincipalRef } from "@hobo/core";
 
-
 export interface YardSession {
 	readonly tenant: string;
 	readonly principal: PrincipalRef;
@@ -173,7 +172,6 @@ export interface DownResult {
 	readonly destroyed: string[];
 	readonly progress: ProgressEvent[];
 }
-
 
 // public-contract: where `hobo build` writes the hobo.freight-manifest/v1 document.
 export const FREIGHT_FILE = ".hobo/freight.json";
@@ -715,7 +713,6 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 	};
 	return client;
 }
-
 
 type DriverUp = Readonly<{ result: UpResult; receipt: DeliveryReceipt }>;
 type DriverDown = Readonly<{ result: DownResult; receipt: DeliveryReceipt }>;

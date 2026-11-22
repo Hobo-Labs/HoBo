@@ -10,7 +10,6 @@ import { MARKERS, mayHoldMarkedClass } from "./marker-prefilter.js";
 import { projectPath, scannedSources } from "./source-files.js";
 import { CodegenError, type CodegenLayout } from "./types.js";
 
-
 export interface AmbientTrainableClass {
 	readonly file: string;
 	readonly declared: DeclaredTrainableClass;

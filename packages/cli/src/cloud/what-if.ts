@@ -13,7 +13,6 @@ import {
 import type { EventStore } from "@hobo/core";
 import { campIdOf, type YardDelivery } from "./yard-client.js";
 
-
 function deploymentStream(deploymentId: string): string {
 	return `deployment:${deploymentId}`;
 }

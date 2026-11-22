@@ -1,4 +1,3 @@
-
 export const MARKERS: ReadonlySet<string> = new Set(["trainable", "component"]);
 
 function spelled(char: string): string {

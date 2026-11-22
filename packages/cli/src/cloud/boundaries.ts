@@ -3,7 +3,6 @@ import { externalBoundaryViolations } from "@hobo/bindles";
 import type { CommandResult } from "../types/envelope.js";
 import { loadBindleDefinition } from "./loader.js";
 
-
 export async function externalBoundaryRefusal(
 	projectDir: string,
 	command: string,
