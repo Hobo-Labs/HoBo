@@ -697,13 +697,6 @@ describe("Actions runner policy", () => {
           persist-credentials: false
 `;
 
-	const relayCredentialCheckout = `      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          clean: false
-          fetch-depth: 2
-          persist-credentials: false
-`;
-
 	const relayFixture = ({
 		job = "deploy",
 		restoreFirst = true,
