@@ -9,7 +9,8 @@ const TOKEN = ONE_PASSWORD_TEST_TOKEN;
 
 function provision(
 	owner?: ReturnType<typeof heldOwnerChannel>,
-	validateServiceAccount: () => Promise<boolean> = async () => true,
+	validateServiceAccount: () => Promise<boolean | "unverifiable"> = async () =>
+		true,
 ) {
 	const run = vi.fn(async () => ({ code: 1, stdout: "", stderr: "" }));
 	return {
@@ -106,20 +107,25 @@ describe("private remote 1Password access", () => {
 	it.each([
 		{
 			name: "vault-scope validation returns false",
-			throws: false,
+			verdict: false as const,
 			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT",
 		},
 		{
-			name: "1Password cannot be reached to validate",
-			throws: true,
+			name: "validation is unverifiable",
+			verdict: "unverifiable" as const,
 			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT_UNREACHABLE",
 		},
-	])("fails closed when $name", async ({ throws, code }) => {
+		{
+			name: "1Password cannot be reached to validate",
+			verdict: "throw" as const,
+			code: "HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT_UNREACHABLE",
+		},
+	])("fails closed when $name", async ({ verdict, code }) => {
 		const owner = heldOwnerChannel();
 		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
-		const validate = vi.fn(async (): boolean => {
-			if (throws) throw new Error(TOKEN);
-			return false;
+		const validate = vi.fn(async (): Promise<boolean | "unverifiable"> => {
+			if (verdict === "throw") throw new Error(TOKEN);
+			return verdict;
 		});
 		const request = provision(owner, validate);
 		const result = await request.start();
@@ -129,6 +135,25 @@ describe("private remote 1Password access", () => {
 		});
 		expect(JSON.stringify(result)).not.toContain(TOKEN);
 		expect(validate).toHaveBeenCalledWith(TOKEN, VAULT);
+		expect(request.run).not.toHaveBeenCalled();
+	});
+
+	it("refuses a channel without explicit private capture authorization", async () => {
+		const owner = {
+			...heldOwnerChannel(),
+			privateCaptureAllowed: false,
+		};
+		owner.deposit("OP_SERVICE_ACCOUNT_TOKEN", TOKEN);
+		const validate = vi.fn(async () => true);
+		const request = provision(owner, validate);
+		const result = await request.start();
+		expect(result).toMatchObject({
+			kind: "refused",
+			code: "HOBO_CD_ONEPASSWORD_SIGN_IN",
+		});
+		expect(JSON.stringify(result)).not.toContain(TOKEN);
+		expect(validate).not.toHaveBeenCalled();
+		expect(owner.holds("OP_SERVICE_ACCOUNT_TOKEN")).toBe(true);
 		expect(request.run).not.toHaveBeenCalled();
 	});
 

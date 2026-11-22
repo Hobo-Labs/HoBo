@@ -21,8 +21,11 @@ tests, and no production observation of a real value crossing them:
    `packages/hobo/src/mcp-owner-channel.ts`).
 2. **The service-account reuse lease.** The owner form's provisioning writes
    `OP_SERVICE_ACCOUNT_EXPIRES_AT` beside the retained token, and every later
-   run re-attests the retained token — parse, lease window, vault scope —
-   before the SDK client opens (`packages/hobo-ci/src/secret-stores.ts`).
+   run re-attests the retained token — parse, lease window, vault scope, and a
+   non-secret read/create/update/delete capability probe — before the SDK client
+   opens (`packages/hobo-ci/src/secret-stores.ts`). The lease bounds the time
+   between owner setup and re-attestation; it is not evidence of the token's own
+   expiry, which 1Password does not expose in the token.
 
 Per the repo's channel-evidence rule, every signal here was built and
 unit-tested on both sides; neither has been seen carrying a value in

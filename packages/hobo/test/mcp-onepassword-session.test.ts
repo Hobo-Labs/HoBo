@@ -177,4 +177,20 @@ describe("MCP 1Password owner hand-off", () => {
 		expect(result.spawned).not.toHaveBeenCalled();
 		expect(result.cleared).toEqual([]);
 	});
+
+	it("refuses an unverifiable validation result without storing the token", async () => {
+		const result = await runHandOff({
+			formAvailable: true,
+			token: TOKEN,
+			validateServiceAccount: async () => "unverifiable",
+		});
+		expect(result.visible).toContain(
+			"HOBO_CD_ONEPASSWORD_SERVICE_ACCOUNT_UNREACHABLE",
+		);
+		expect(result.visible).not.toContain(TOKEN);
+		expect(result.stored).toBeUndefined();
+		expect(result.validate).toHaveBeenCalledWith(TOKEN, VAULT);
+		expect(result.spawned).not.toHaveBeenCalled();
+		expect(result.cleared).toEqual([]);
+	});
 });

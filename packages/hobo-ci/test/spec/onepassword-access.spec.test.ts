@@ -1,3 +1,4 @@
+import { AuthExpiredError, type Item, ItemCategory } from "@1password/sdk";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -65,6 +66,54 @@ const base = (machine: ReturnType<typeof fakeMachine>, interactive = true) => ({
 	exists: () => false,
 	validateServiceAccount: async () => true,
 });
+
+function validationSdk() {
+	const calls: string[] = [];
+	const item: Item = {
+		id: "b".repeat(26),
+		title: "HoBo access attestation",
+		category: ItemCategory.SecureNote,
+		vaultId: VAULT,
+		fields: [],
+		sections: [],
+		notes: "",
+		tags: [],
+		websites: [],
+		version: 1,
+		files: [],
+		createdAt: new Date(0),
+		updatedAt: new Date(0),
+	};
+	const client = {
+		vaults: { list: async () => [{ id: VAULT }] },
+		items: {
+			list: async () => {
+				calls.push("read");
+				return [];
+			},
+			create: async () => {
+				calls.push("create");
+				return item;
+			},
+			put: async () => {
+				calls.push("update");
+				return item;
+			},
+			delete: async () => {
+				calls.push("delete");
+			},
+		},
+	};
+	return {
+		calls,
+		client,
+		sdk: {
+			AuthExpiredError,
+			ItemCategory,
+			createClient: async () => client,
+		},
+	};
+}
 
 describe("SPEC R7: choosing 1Password installs its CLI when missing", () => {
 	it("installs op from 1Password's official download into HoBo's tools directory", async () => {
@@ -148,6 +197,7 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 
 	it("refuses an owner-captured token the vault-scope validation rejects", async () => {
 		const owner: OwnerChannel = {
+			privateCaptureAllowed: true,
 			openUrl: async () => undefined,
 			captureSecret: async () => TOKEN,
 			holds: () => true,
@@ -169,7 +219,7 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 	it.each([
 		["HTTPS_PROXY", "http://127.0.0.1:1"],
 		["SSL_CERT_FILE", "/fixture/egress-ca.pem"],
-	])("refuses unrouteable SDK egress through %s before authentication", async (name, value) => {
+	])("attempts SDK attestation with required egress through %s", async (name, value) => {
 		for (const variable of [
 			"HTTPS_PROXY",
 			"https_proxy",
@@ -183,13 +233,30 @@ describe("SPEC R1: HoBo creates its own vault-scoped service account", () => {
 		vi.stubEnv(name, value);
 		const token = parseOnePasswordServiceAccountToken(TOKEN);
 		if (token === undefined) throw new Error("Invalid fixture token.");
+		const fixture = validationSdk();
 		try {
 			await expect(
-				validateOnePasswordServiceAccount(token, VAULT),
-			).resolves.toBe("unverifiable");
+				validateOnePasswordServiceAccount(token, VAULT, fixture.sdk),
+			).resolves.toBe(true);
+			expect(process.env[name]).toBe(value);
+			expect(fixture.calls).toEqual(["read", "create", "update", "delete"]);
 		} finally {
 			vi.unstubAllEnvs();
 		}
+	});
+
+	it("refuses a service account that cannot write to the configured vault", async () => {
+		const token = parseOnePasswordServiceAccountToken(TOKEN);
+		if (token === undefined) throw new Error("Invalid fixture token.");
+		const fixture = validationSdk();
+		fixture.client.items.create = async () => {
+			fixture.calls.push("create");
+			throw new Error("read-only fixture");
+		};
+		await expect(
+			validateOnePasswordServiceAccount(token, VAULT, fixture.sdk),
+		).resolves.toBe("unverifiable");
+		expect(fixture.calls).toEqual(["read", "create"]);
 	});
 
 	it("accepts exactly the configured vault and nothing wider", () => {

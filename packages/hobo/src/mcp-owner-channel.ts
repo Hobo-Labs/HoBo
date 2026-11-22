@@ -229,6 +229,7 @@ export function createMcpOwnerChannel(
 			waiting.get(name)?.value !== undefined,
 	});
 	const owner: McpOwnerChannel = {
+		privateCaptureAllowed: true,
 		...(options.storeSettings
 			? { storeSettings: options.storeSettings }
 			: undefined),

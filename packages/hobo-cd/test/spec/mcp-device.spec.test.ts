@@ -161,6 +161,7 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 		const kept = createTrustedVault();
 		let pending = true;
 		const owner: OwnerChannel = {
+			privateCaptureAllowed: true,
 			vault: kept,
 			openUrl: async () => undefined,
 			holds: (name) => name === "OP_SERVICE_ACCOUNT_TOKEN" && pending,
@@ -231,6 +232,7 @@ describe("SPEC cd up through MCP: Vercel's device grant off the request path", (
 		const kept = createTrustedVault();
 		let pending = true;
 		const owner: OwnerChannel = {
+			privateCaptureAllowed: true,
 			vault: kept,
 			openUrl: async () => undefined,
 			holds: (name) => name === "OP_SERVICE_ACCOUNT_TOKEN" && pending,

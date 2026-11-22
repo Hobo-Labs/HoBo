@@ -19,6 +19,7 @@ export interface OwnerSettingsStore extends SettingsStore {
  * HoBo MCP App's secret capture, for one).
  */
 export interface OwnerChannel {
+	readonly privateCaptureAllowed?: boolean;
 	/** Show the owner a link for the named capture, and why. */
 	openUrl(url: string, message: string, captureName: string): Promise<void>;
 	/** Ask for a secret; `undefined` when the owner declined or did not answer. */

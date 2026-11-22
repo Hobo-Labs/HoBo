@@ -151,6 +151,7 @@ export function heldOwnerChannel() {
 		restart(): void;
 		readonly opened: typeof opened;
 	} = {
+		privateCaptureAllowed: true,
 		opened,
 		openUrl: async (url, _message, capture) => {
 			opened.push({ url, capture });

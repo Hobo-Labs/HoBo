@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import type { Client } from "@1password/sdk";
 import { z } from "zod";
 
-import { egressFrom } from "./egress.js";
 import {
 	captureAll,
 	type OwnerChannel,
@@ -100,18 +101,27 @@ export function parseOnePasswordServiceAccountToken(
 	return parsed.success ? parsed.data : undefined;
 }
 
-/**
- * `true`: 1Password answered and the account is scoped to exactly the vault.
- * `false`: 1Password answered and rejected the account or its scope.
- * `"unverifiable"`: no answer — the transport to 1Password failed (egress
- * proxy, CA bundle, network), so nothing is claimed about the account.
- */
 export type OnePasswordServiceAccountVerdict = boolean | "unverifiable";
 
 export type ValidateOnePasswordServiceAccount = (
 	token: OnePasswordServiceAccountToken,
 	vaultId: string,
 ) => Promise<OnePasswordServiceAccountVerdict>;
+
+type OnePasswordValidationClient = {
+	readonly vaults: Pick<Client["vaults"], "list">;
+	readonly items: Pick<Client["items"], "list" | "create" | "put" | "delete">;
+};
+
+type OnePasswordValidationSdk = {
+	readonly createClient: (config: {
+		readonly auth: OnePasswordServiceAccountToken;
+		readonly integrationName: string;
+		readonly integrationVersion: string;
+	}) => Promise<OnePasswordValidationClient>;
+	readonly AuthExpiredError: typeof import("@1password/sdk").AuthExpiredError;
+	readonly ItemCategory: typeof import("@1password/sdk").ItemCategory;
+};
 
 export interface OnePasswordAccessOptions {
 	readonly family: "ci" | "cd";
@@ -130,7 +140,9 @@ export interface OnePasswordAccessOptions {
 	readonly validateServiceAccount: ValidateOnePasswordServiceAccount;
 }
 
+// public-contract: the private owner form and retained vault coordinate on this capture name.
 export const ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE = "OP_SERVICE_ACCOUNT_TOKEN";
+// public-contract: retained-token reuse reads this non-secret lease coordinate.
 export const ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT =
 	"OP_SERVICE_ACCOUNT_EXPIRES_AT";
 export const ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS = 24 * 60 * 60_000;
@@ -155,26 +167,38 @@ export function onePasswordVaultScope(
 	return vaults.length === 1 && vaults[0]?.id === vaultId;
 }
 
-export const validateOnePasswordServiceAccount: ValidateOnePasswordServiceAccount =
-	async (token, vaultId) => {
-		let sdk: typeof import("@1password/sdk") | undefined;
+export const validateOnePasswordServiceAccount = async (
+	token: OnePasswordServiceAccountToken,
+	vaultId: string,
+	sdk?: OnePasswordValidationSdk,
+): Promise<OnePasswordServiceAccountVerdict> => {
+	let activeSdk = sdk;
+	try {
+		activeSdk ??= await import("@1password/sdk");
+		const client = await activeSdk.createClient({
+			auth: token,
+			integrationName: "HoBo",
+			integrationVersion: "1",
+		});
+		const vaults = await client.vaults.list({ decryptDetails: false });
+		if (!onePasswordVaultScope(vaults, vaultId)) return false;
+		await client.items.list(vaultId);
+		const probe = await client.items.create({
+			vaultId,
+			title: `HoBo access attestation ${randomUUID()}`,
+			category: activeSdk.ItemCategory.SecureNote,
+		});
 		try {
-			const egress = egressFrom(process.env);
-			if (egress.proxy !== undefined || egress.caFile !== undefined)
-				return "unverifiable";
-			sdk = await import("@1password/sdk");
-			const client = await sdk.createClient({
-				auth: token,
-				integrationName: "HoBo",
-				integrationVersion: "1",
-			});
-			const vaults = await client.vaults.list({ decryptDetails: false });
-			return onePasswordVaultScope(vaults, vaultId);
-		} catch (error) {
-			if (sdk === undefined) return "unverifiable";
-			return error instanceof sdk.AuthExpiredError ? false : "unverifiable";
+			await client.items.put(probe);
+		} finally {
+			await client.items.delete(vaultId, probe.id);
 		}
-	};
+		return true;
+	} catch (error) {
+		if (activeSdk === undefined) return "unverifiable";
+		return error instanceof activeSdk.AuthExpiredError ? false : "unverifiable";
+	}
+};
 
 export async function provisionOnePasswordAccess(
 	options: OnePasswordAccessOptions,
@@ -233,7 +257,7 @@ export async function provisionOnePasswordAccess(
 	const exists = options.exists ?? existsSync;
 	const remote = !options.interactive;
 	if (remote) {
-		if (options.owner === undefined)
+		if (options.owner?.privateCaptureAllowed !== true)
 			return refused(
 				"SIGN_IN",
 				"1Password needs a private owner sign-in for this session.",
