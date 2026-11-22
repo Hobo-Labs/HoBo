@@ -1,4 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +15,10 @@ import { createTrustedVault } from "@hobo/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createCiCommand } from "../src/ci-command.js";
+import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	type readRelayDeployToken,
+} from "../src/ci-relay-deploy-credential.js";
 import {
 	isJsonArray,
 	isJsonObject,
@@ -46,6 +57,38 @@ const INPUTS = [
 ];
 const PRODUCTION_ORIGIN = "https://relay.example.test";
 
+const relayFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-prebuilt-fixture-"),
+);
+cpSync(RELAY_DIR, relayFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+rmSync(join(relayFixtureDir, "package.json"), { force: true });
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(relayFixtureDir, "node_modules"),
+);
+writeFileSync(
+	join(relayFixtureDir, "deploy", "secret-store.binding.json"),
+	`${JSON.stringify(
+		{
+			...parseJsonObject(
+				readFileSync(
+					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+					"utf8",
+				),
+			),
+			deployProjectId: "ci-deploy-project",
+			deployCredentialIdentityId: "ci-deploy-reader-identity",
+			deployOidcSubject:
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+		},
+		null,
+		"\t",
+	)}\n`,
+);
+
 beforeAll(() => {
 	vi.stubEnv("HOBO_CI_RELAY_URL", PRODUCTION_ORIGIN);
 });
@@ -61,6 +104,7 @@ function freshHome(): string {
 }
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	rmSync(relayFixtureDir, { recursive: true, force: true });
 });
 
 function steppingClock() {
@@ -219,11 +263,23 @@ async function deploy(
 ) {
 	const deployCredentials = createTrustedVault();
 	deployCredentials.put("VERCEL_TOKEN", TOKEN);
+	const readDeployCredential: typeof readRelayDeployToken = async () => ({
+		token: TOKEN,
+		secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+		identityId: "ci-deploy-reader-identity",
+		audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	});
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: options.env,
+				env: {
+					...options.env,
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.example.test/token?api-version=2.0",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+				},
 				deployCredentials,
+				readDeployCredential,
 				vercelFetch: options.fetch,
 				vercelBuild: options.build,
 				checkoutHead: async () => options.head ?? SHA,
@@ -241,7 +297,7 @@ async function deploy(
 		"--team",
 		TEAM,
 		"--cwd",
-		RELAY_DIR,
+		relayFixtureDir,
 		"--json",
 	]);
 	const envelope = parseJsonObject(result.stdout);

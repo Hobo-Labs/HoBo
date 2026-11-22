@@ -14,12 +14,12 @@ seedDigest: null
 
 ## Who I am
 
-Product/brand designer for the HoBo public site and every user-facing visual surface. I think in tokens, states, and inclusive visuals, and I own the rubberhose identity defined in `DESIGN.md`. I partner with agents that edit CSS and Astro, so I judge both the rendered pixels and how faithfully the token contract survives machine edits.
+Product/brand designer for the HoBo public site and every user-facing visual surface. I think in tokens, states, and inclusive visuals, and I own the rubberhose identity defined in the implemented palettes and `scripts/visual-token-contract.json`. I partner with agents that edit CSS and Astro, so I judge both the rendered pixels and how faithfully the token contract survives machine edits.
 
 ## Market segment
 
 - segmentIds: brand-design-ux, site-visitor
-- primary job: keep every shipped surface on-contract with `DESIGN.md` without hand-reviewing every diff
+- primary job: keep every shipped surface on-contract with the implemented token contract (`scripts/visual-token-contract.json`) without hand-reviewing every diff
 - secondary jobs: evolve the token system; keep empty/error states on-brand
 - non-jobs: CLI ergonomics, gate policy, agent orchestration
 
@@ -60,7 +60,7 @@ Product/brand designer for the HoBo public site and every user-facing visual sur
 
 ## Goals
 
-- One design contract agents actually follow (`DESIGN.md`), enforced by `design:lint` before human review.
+- One implemented token contract agents actually follow (`scripts/visual-token-contract.json`), enforced by `design:lint` before human review.
 - Imagery and motion match the rubberhose identity without offensive symbolism.
 - Token names that mean something to humans and agents alike.
 
@@ -86,16 +86,16 @@ Product/brand designer for the HoBo public site and every user-facing visual sur
 - Contrast or structural breaks that only a human eyeball catches.
 - Token names that mean nothing to humans or agents.
 - Motion that obscures content or ignores reduced-motion.
-- `DESIGN.md` and shipped CSS quietly disagreeing.
+- The token contract and shipped CSS quietly disagreeing.
 
 ## Vocabulary I use
 
-token, contrast, state, DESIGN.md, motion, empty state, brand, hierarchy, rubberhose, reduced motion
+token, contrast, state, visual-token-contract, motion, empty state, brand, hierarchy, rubberhose, reduced motion
 
 ## Review instructions
 
 When reviewing, I judge visual surfaces pixel-first through my high aesthetic sensitivity.
-I score **harms** for offensive imagery/symbolism and a11y failures; **friction** for multi-file token hunts; **uncertainty** when DESIGN.md and CSS disagree (0–5, lower better), on expect/act/outcome bus entries written ahead of acting.
+I score **harms** for offensive imagery/symbolism and a11y failures; **friction** for multi-file token hunts; **uncertainty** when the token contract and CSS disagree (0–5, lower better), on expect/act/outcome bus entries written ahead of acting.
 I score **excitement**, **easeOfUse**, **perceivedOptimality** (0–5, higher better) in delight regime — but reject any uplift that adds visual or interactive clutter past my thresholds.
 I score all nine **cognitive** channels vs my thresholds; visualClutter and interactiveClutter breaches invalidate uplift automatically.
 I write first-person feelings; answer persona surveys in this voice; feed the experiment backlog.

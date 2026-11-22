@@ -43,7 +43,7 @@
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
@@ -67,6 +67,8 @@ import {
 } from "@hobo/core";
 import {
 	type ParsedSecretStoreBinding,
+	type RepairSecretStoreBinding,
+	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
 } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
@@ -182,9 +184,8 @@ export interface CiRelayDeployInput {
 	// runner's own OIDC request variables. A `VERCEL_TOKEN` here is ignored:
 	// the token comes from the secret store, never the environment.
 	readonly env: NodeJS.ProcessEnv;
-	// The run's trusted vault, when the caller already holds the deploy token
-	// (`VERCEL_TOKEN`), read from the owner's store.
 	readonly credentials?: TrustedVault;
+	readonly readDeployCredential?: typeof readRelayDeployToken;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
@@ -573,13 +574,26 @@ export async function runCiRelayDeploy(
 	// (`hobo ci secret-store provision`): its committed coordinates fill the
 	// config-service binding's inputs and name the team, so no repository
 	// variable or Vercel secret holds them.
-	let storeBinding: ParsedSecretStoreBinding | undefined;
+	let storeBinding:
+		| ParsedSecretStoreBinding
+		| RepairSecretStoreBinding
+		| undefined;
 	try {
 		storeBinding = loadSecretStoreBinding(input.cwd);
 	} catch (error) {
-		if (error instanceof SecretStoreBindingRefusal)
+		if (!(error instanceof SecretStoreBindingRefusal)) throw error;
+		if (
+			values["dry-run"] !== true ||
+			error.code !== "HOBO_CI_SECRET_STORE_BINDING_INVALID"
+		)
 			return refused(error.code, error.message);
-		throw error;
+		try {
+			storeBinding = readSecretStoreBindingForRepair(
+				readFileSync(path.join(input.cwd, SECRET_STORE_BINDING_FILE), "utf8"),
+			);
+		} catch {
+			return refused(error.code, error.message);
+		}
 	}
 	const teamId =
 		text("team") ??
@@ -829,26 +843,27 @@ export async function runCiRelayDeploy(
 		wait &&
 		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
 
-	// The deploy token comes from the secret store and lives in this run's
-	// vault: handed in by the caller, or read here with a CI runner's own OIDC
-	// token through the committed binding. Never from the environment, never
-	// through a file such as $GITHUB_ENV.
-	const vault = input.credentials ?? createTrustedVault();
-	if (
-		!vault.has("VERCEL_TOKEN") &&
-		storeBinding !== undefined &&
-		env.ACTIONS_ID_TOKEN_REQUEST_URL
-	) {
+	const vault = createTrustedVault();
+	let deployTokenRef: string | undefined;
+	let deployCredentialIdentityId: string | undefined;
+	let deployCredentialAudience: string | undefined;
+	if (storeBinding !== undefined && env.ACTIONS_ID_TOKEN_REQUEST_URL) {
 		try {
-			vault.put(
-				"VERCEL_TOKEN",
-				await readRelayDeployToken({
-					binding: storeBinding,
-					env: {
-						ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
-						ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
-					},
-				}),
+			const credential = await (
+				input.readDeployCredential ?? readRelayDeployToken
+			)({
+				binding: storeBinding,
+				env: {
+					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
+				},
+			});
+			vault.put("VERCEL_TOKEN", credential.token);
+			deployTokenRef = credential.secretRef;
+			deployCredentialIdentityId = credential.identityId;
+			deployCredentialAudience = credential.audience;
+			input.emitProgress(
+				`deploy token read from ${credential.secretRef} as deploy credential identity ${credential.identityId}, audience ${credential.audience}`,
 			);
 		} catch (error) {
 			return refused(
@@ -1316,6 +1331,13 @@ export async function runCiRelayDeploy(
 				dryRun: false,
 				plan: planJson,
 				outputs: safe,
+				...(deployTokenRef !== undefined ? { deployTokenRef } : undefined),
+				...(deployCredentialIdentityId !== undefined
+					? { deployCredentialIdentityId }
+					: undefined),
+				...(deployCredentialAudience !== undefined
+					? { deployCredentialAudience }
+					: undefined),
 				...deliveryData,
 			},
 		};

@@ -1,7 +1,3 @@
-/* HoBo Yard — ink-on-paper rubberhose (site/DESIGN.md / packages/control-yard/DESIGN.md).
-   Steamboat Willie / Cuphead / Fleischer: thick ink, sticker shadows, paper ground.
-   Accents spark/go only for status — never SaaS blues or generative color plates. */
-
 @font-face {
 	font-family: "Chewy";
 	font-style: normal;
@@ -39,7 +35,6 @@
 	box-sizing: border-box;
 }
 
-/* faint film grain */
 body::after {
 	content: "";
 	position: fixed;
@@ -117,7 +112,6 @@ header h1 {
 	margin-bottom: 14px;
 }
 
-/* Cartoon sign boards — not Material pills */
 button {
 	font-family: var(--font-display);
 	font-size: 1rem;
@@ -152,7 +146,6 @@ button:focus-visible {
 	outline-offset: 2px;
 }
 
-/* Ghost / sheet secondary */
 #sheet-close {
 	font-family: var(--font-display);
 	font-size: 1.5rem;
@@ -272,4 +265,31 @@ main {
 	padding: 8px 16px 28px;
 	font-size: 0.85rem;
 	color: var(--mute);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms;
+		animation-delay: 0s;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+		transition-delay: 0s;
+		scroll-behavior: auto;
+	}
+
+	button {
+		transition-duration: 0.01ms;
+		transition-delay: 0s;
+	}
+
+	button:hover,
+	button:active {
+		transform: none;
+	}
+
+	body::after {
+		opacity: 0;
+	}
 }
