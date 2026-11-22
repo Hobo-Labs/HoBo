@@ -1,7 +1,7 @@
 {
   "schemaVersion": "hobo.browser-wit-runtime/v1",
   "entryModule": "station.js",
-  "componentDigest": "sha256:a5e25fb2c909bfbdc5a81bbed696b3be18764c69c7708ee1a9bd4a760cb96703",
+  "componentDigest": "sha256:256ffb6feebd4153811698bd2ec1cbf633fa3d729ab7a1724f000c250f6f2782",
   "witWorld": "hobo:try/browser-station@0.1.0",
   "toolchain": {
     "jco": "1.24.3",
@@ -16,8 +16,8 @@
     "station.js"
   ],
   "assetDigests": {
-    "station.core.wasm": "sha256:b76fa4945d133ba3932f09cb8ba74f494c8d7fb17b2b0ffed9bffdabb3085e80",
+    "station.core.wasm": "sha256:6128bcee4371adc82974b02b42ede84fe84320d82deb4f6cefd2296b353e5673",
     "station.js": "sha256:2a216981017ed695776273f4ba090153b3327210552b1eb699d05bb05e56cc56",
-    "station.component.wasm": "sha256:a5e25fb2c909bfbdc5a81bbed696b3be18764c69c7708ee1a9bd4a760cb96703"
+    "station.component.wasm": "sha256:256ffb6feebd4153811698bd2ec1cbf633fa3d729ab7a1724f000c250f6f2782"
   }
 }
