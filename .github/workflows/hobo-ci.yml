@@ -1742,6 +1742,7 @@ jobs:
         external
         features
         packages
+        plugins
         release
         scripts
         site

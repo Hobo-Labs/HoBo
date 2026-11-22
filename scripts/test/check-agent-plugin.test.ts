@@ -1470,6 +1470,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("accepts only verified provenance from the current workflow attempt", async () => {
+		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GH_TOKEN", "caller-controlled");
@@ -1535,6 +1536,7 @@ describe("checkAgentPlugin (integration)", () => {
 	});
 
 	it("requires GitHub run and attempt metadata in CI", async () => {
+		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
 		vi.stubEnv("GH_TOKEN", "caller-controlled");
