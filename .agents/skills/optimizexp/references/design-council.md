@@ -143,7 +143,7 @@ Closed stage enum:
 - `consensus`: coordinator-only exact-six vote aggregation;
 - `rework`: coordinator packet after any nay;
 - `blocker-resolution`: append-only resolution evidence; and
-- `closed`: approved or honest blocked/user/safety termination.
+- `closed`: approved, superseded, or honest blocked/user/safety termination.
 
 Persona stages record `persona`, `respondsTo`, investment before/decay/after,
 stance, arguments, blockers, preferences, evidence, and requested changes.
@@ -177,6 +177,17 @@ arguments; it can never approve.
 `approved`, `blocked`, and `closed` are terminal for persona entries. A user or
 safety close cannot be reopened into approval; changed work starts a legal new
 cycle or review instead.
+
+An unfinished or unclosed approved review may be closed as `superseded` when a
+separate, replay-verified review of the same pull request names the current Git
+head and a different commit. Its stored proposal must match the effective Git
+diff. Both reviews must be free of open blockers and active nay votes, and the
+replacement must be active or approved. The closing entry records the exact
+replacement opening and proposal; validation replays that history later.
+Supersession is never an approval and does not replace the new review's own
+votes, checks, or merge gate. The Git check verifies the local checkout; the
+coordinator must still verify the pull request's remote head. User, safety,
+blocked, or already closed reviews cannot be superseded.
 
 ## State and commands
 
@@ -226,6 +237,11 @@ node --import tsx .agents/skills/optimizexp/workflows/cross-agent/consensus-loop
   --mode close --run <runId> --review <reviewId> --result approved \
   --base-sha "$(git merge-base origin/main HEAD)" \
   --head-sha "$(git rev-parse HEAD)" --proposal <manifest.json>
+
+node --import tsx .agents/skills/optimizexp/workflows/cross-agent/consensus-loop.mts \
+  --mode close --run <oldRunId> --review <oldReviewId> --result superseded \
+  --replacement-run <newRunId> --replacement-review <newReviewId> \
+  [--base-ref origin/main]
 ```
 
 All non-help output is JSON. Invalid transitions and state/bus disagreement fail
@@ -253,7 +269,7 @@ current-head validation does not fail on reviewed recordings or screenshots.
 
 A change is design-relevant when paths or acceptance tags touch user-facing web,
 TUI, CLI, docs, SDK/API, configuration, onboarding, examples, brand, motion,
-interaction, `DESIGN.md`, design tokens, components, public errors, or OptimizeXP
+interaction, design tokens, components, public errors, or OptimizeXP
 evidence; when user/coordinator explicitly requests review; or when a prior
 council cycle exists. A purely internal refactor may use a machine-readable,
 justified exemption. Skipping silently is invalid.

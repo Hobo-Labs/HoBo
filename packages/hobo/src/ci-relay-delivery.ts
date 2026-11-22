@@ -94,6 +94,7 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
+import { RelayDeploymentReadRefusal } from "./ci-relay-verify.js";
 import { loadRelayJoinedYards } from "./ci-relay-yard.js";
 import {
 	isJsonObject,
@@ -172,6 +173,7 @@ export type RelayRealizationFailure = Readonly<{
 export interface RelayRealization {
 	deploy(
 		source: RelaySourcePin,
+		context: Readonly<{ freightId: string }>,
 	): Promise<
 		| Readonly<{ ok: true; outputs: Readonly<Record<string, string>> }>
 		| RelayRealizationFailure
@@ -544,7 +546,24 @@ export function relayRealizer(
 					),
 				],
 			});
-		const state = await input.realization.readyState(done.deploymentId);
+		let state: string;
+		try {
+			state = await input.realization.readyState(done.deploymentId);
+		} catch (error) {
+			if (error instanceof RelayDeploymentReadRefusal)
+				return observation({
+					...base,
+					status: ReconcileStatus.BLOCKED,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.verificationFailed,
+							`reading deployment ${done.deploymentId} failed (HTTP ${error.status}): ${error.message}`,
+							"No retry fixes this: check the deploy token's scope, and the team the deployment belongs to.",
+						),
+					],
+				});
+			throw error;
+		}
 		const handover = { ...done.outputs, readyState: state };
 		if (state === "READY")
 			return observation({
@@ -596,7 +615,9 @@ export function relayRealizer(
 						},
 					});
 				} else {
-					const deployed = await input.realization.deploy(pin);
+					const deployed = await input.realization.deploy(pin, {
+						freightId: String(at.desired.freightId),
+					});
 					realized.set(
 						at.desired.setId,
 						deployed.ok

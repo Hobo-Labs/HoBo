@@ -36,9 +36,11 @@ export type AttestationEvent = (typeof ATTESTATION_EVENTS)[number];
  * is never reported as attested, whatever a statement says.
  */
 export const COVERED_JOBS = [
+	"pr_gate_plan",
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
+	"scripts-tests",
 	"pr-offpath",
 	"artifact-trust",
 	"ci-guard",
@@ -47,20 +49,23 @@ export const COVERED_JOBS = [
 ] as const;
 export type CoveredJob = (typeof COVERED_JOBS)[number];
 
-/**
- * The jobs the PR impact gate adds up. Each needs the one before it, so they
- * are attested together or not at all.
- */
 export const GATE_JOBS: readonly CoveredJob[] = [
+	"pr_gate_plan",
 	"pr_gate_validation",
 	"workspace_tests",
 	"pr_affected",
+	"scripts-tests",
 ];
 
 /** The gate's jobs that run on each event; `pr_affected` is pull-request only. */
 export const GATE_JOBS_BY_EVENT = {
 	pull_request: GATE_JOBS,
-	merge_group: ["pr_gate_validation", "workspace_tests"],
+	merge_group: [
+		"pr_gate_plan",
+		"pr_gate_validation",
+		"workspace_tests",
+		"scripts-tests",
+	],
 } satisfies Record<AttestationEvent, readonly CoveredJob[]>;
 
 /**
@@ -72,8 +77,8 @@ export const NEEDS_CONTAINER_ENGINE: readonly CoveredJob[] = [
 	"workspace_tests",
 ];
 
-export const SHADOW_WORKFLOW_BLOB = "dc252ac87927a390b20859e544bec2facd562e98";
-export const SHADOW_PLAN_BLOB = "52d2e041eceb031445f0872433d4d10ed4fa3469";
+export const SHADOW_WORKFLOW_BLOB = "a24bf3759a3cadeae944a82fd9eee356f29153fe";
+export const SHADOW_PLAN_BLOB = "9e7368cfe3349ce685b411f3642950bc61a3031a";
 export const SHADOW_WORKFLOW_PATH = ".github/workflows/hobo-ci.yml";
 export const SHADOW_PLAN_PATH = "scripts/ci/attested-jobs.json";
 export const SHADOW_REQUIRED_PATHS = [
@@ -103,12 +108,10 @@ export const SHADOW_RESOLUTION_PATHS = [
 	"scripts/lib/.gitattributes",
 ] as const;
 
-/**
- * Jobs that examine commits, not a tree: the secret scan reads every commit
- * between the base and the head. Two histories can end in the same tree, so
- * these are accepted only for the exact head and base commits that were run.
- */
-export const COMMIT_BOUND_JOBS: readonly CoveredJob[] = ["secret-scan"];
+export const COMMIT_BOUND_JOBS: readonly CoveredJob[] = [
+	"secret-scan",
+	"scripts-tests",
+];
 
 /** No trust entry may reach further into the future than this. */
 export const MAX_TRUST_DAYS = 90;
@@ -580,10 +583,15 @@ export type AttestationVerdict =
 	| Readonly<{ attested: true; jobs: readonly CoveredJob[]; attestor: string }>
 	| Readonly<{ attested: false; reason: string }>;
 
+const includesPrImpactGatePlanOrValidation = (
+	jobs: readonly string[],
+): boolean =>
+	jobs.includes("pr_gate_plan") || jobs.includes("pr_gate_validation");
+
 export function omitImpactGroup(
 	verdict: AttestationVerdict,
 ): AttestationVerdict {
-	if (!verdict.attested || !verdict.jobs.includes("pr_gate_validation"))
+	if (!verdict.attested || !includesPrImpactGatePlanOrValidation(verdict.jobs))
 		return verdict;
 	const jobs = verdict.jobs.filter((job) => !GATE_JOBS.includes(job));
 	return jobs.length > 0
@@ -609,10 +617,6 @@ const refused = (reason: string): AttestationVerdict => ({
  * caller reads it there and nowhere else: the list in the tree under test is
  * the pull request's own, and a pull request may not vouch for itself.
  *
- * The jobs reported are those that ran for `event` on a machine able to run
- * them. A job that examines commits (the secret scan) is reported only when
- * `head` and `base`, the event's own commits, are the commits that were run:
- * another history can end in the same tree.
  */
 export function verifyAttestation(input: {
 	envelopeText: string;
@@ -686,6 +690,17 @@ export function verifyAttestation(input: {
 			statement.jobs.includes(job) &&
 			results.get(job)?.events.includes(event) === true,
 	);
+	const scripts = results.get("scripts-tests");
+	if (
+		!scripts ||
+		scripts.executionMode !== "each-step-v1" ||
+		(event === "merge_group" && statement.testedCommit !== input.head) ||
+		(scripts.eventChecks?.[event] ?? 0) < 4 ||
+		scripts.commands <
+			(scripts.eventChecks?.pull_request ?? 0) +
+				(scripts.eventChecks?.merge_group ?? 0)
+	)
+		jobs = jobs.filter((job) => job !== "scripts-tests");
 	if (!statement.environment.dockerEngine)
 		jobs = jobs.filter((job) => !NEEDS_CONTAINER_ENGINE.includes(job));
 	const sameCommits =

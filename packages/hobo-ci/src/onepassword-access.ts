@@ -137,6 +137,10 @@ export interface OnePasswordAccessOptions {
 	readonly now?: () => number;
 	/** How to reach an owner who is not at this machine (a remote dev box). */
 	readonly owner?: OwnerChannel;
+	/** The account's sign-in address; 1Password's US cloud by default. */
+	readonly signInAddress?: string;
+	/** Where a remote sign-in keeps its throwaway CLI config (tests). */
+	readonly tempDir?: () => Promise<string>;
 	readonly validateServiceAccount: ValidateOnePasswordServiceAccount;
 }
 
@@ -146,6 +150,13 @@ export const ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE = "OP_SERVICE_ACCOUNT_TOKEN";
 export const ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT =
 	"OP_SERVICE_ACCOUNT_EXPIRES_AT";
 export const ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS = 24 * 60 * 60_000;
+
+// public-contract: the capture names a remote 1Password sign-in hands to the waiting run.
+export const ONE_PASSWORD_SIGN_IN_CAPTURES = [
+	"ONEPASSWORD_EMAIL",
+	"ONEPASSWORD_SECRET_KEY",
+	"ONEPASSWORD_PASSWORD",
+] as const;
 
 export type OnePasswordAccess =
 	| {

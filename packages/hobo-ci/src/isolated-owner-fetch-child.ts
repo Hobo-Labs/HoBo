@@ -1,7 +1,10 @@
 import { isolatedOwnerEgressFetch } from "./egress.js";
 import {
+	assertPrivateOwnerProxy,
+	isolatedOwnerOrigin,
+} from "./isolated-owner-origin.js";
+import {
 	authenticatedOwnerRun,
-	OWNER_BODY_LIMIT,
 	OWNER_MESSAGE_LIMIT,
 	ownerRequest,
 	ownerRun,
@@ -37,15 +40,22 @@ async function run(): Promise<void> {
 	if (!authenticatedOwnerRun(parsed, authorizedRun))
 		throw new Error("Private owner run authentication failed.");
 	const route = {
-		proxy: parsed.egress?.proxy
+		proxy: parsed.egress.proxy
 			? parseProxyUrl("HTTPS_PROXY", parsed.egress.proxy)
 			: undefined,
-		noProxy: parsed.egress?.noProxy,
-		caFile: parsed.egress?.caFile,
+		noProxy: parsed.egress.noProxy,
+		caFile: parsed.egress.caFile,
 	};
+	assertPrivateOwnerProxy(route.proxy);
+	const origin = isolatedOwnerOrigin(
+		parsed.url,
+		parsed.allowInsecureLoopback,
+		route.proxy !== undefined,
+	);
 	const response = await isolatedOwnerEgressFetch(
 		route,
-		new URL(parsed.url).origin,
+		parsed.trustedCertificates,
+		origin,
 	)(parsed.url, {
 		method: parsed.method,
 		headers: parsed.headers,
@@ -65,11 +75,21 @@ async function run(): Promise<void> {
 	const chunks: Uint8Array[] = [];
 	let size = 0;
 	if (reader) {
+		const declared = Number(response.headers.get("content-length") ?? "0");
+		const encoding = response.headers.get("content-encoding");
+		if (
+			(encoding === null || encoding.toLowerCase() === "identity") &&
+			Number.isFinite(declared) &&
+			declared > parsed.maxResponseBytes
+		) {
+			await reader.cancel();
+			throw new Error("Response too large.");
+		}
 		for (;;) {
 			const part = await reader.read();
 			if (part.done) break;
 			size += part.value.byteLength;
-			if (size > OWNER_BODY_LIMIT) {
+			if (size > parsed.maxResponseBytes) {
 				await reader.cancel();
 				throw new Error("Response too large.");
 			}

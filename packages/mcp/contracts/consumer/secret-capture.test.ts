@@ -136,6 +136,7 @@ describe("secret-capture-mcp-app pact", () => {
 		// "only": the receipt has exactly these keys.
 		expect(Object.keys(submitted.structuredContent).sort()).toEqual([
 			"name",
+			"ref",
 			"status",
 			"stored",
 			"ticketId",

@@ -365,11 +365,6 @@ export async function handleMcpMessage(
 			const requested = (request.params as { protocolVersion?: string })
 				?.protocolVersion;
 			if (session !== undefined) {
-				// What this host declared, for diagnosing what it can show the
-				// owner (capabilities only: nothing secret is in them).
-				process.stderr.write(
-					`hobo-mcp: client capabilities ${JSON.stringify(request.params?.capabilities ?? null)}\n`,
-				);
 				session.support = negotiateSecretCaptureSupport(
 					request.params?.capabilities,
 				);

@@ -75,12 +75,26 @@ function defaultWorkspacePackageExists(workspace: string) {
 	return existsSync(`${workspace}/package.json`);
 }
 
-function defaultWorkspacePackageName(workspace: string): string | undefined {
+function defaultWorkspaceTestInfo(
+	workspace: string,
+): { name: string; narrow: boolean } | undefined {
 	try {
-		const manifest: { name?: string } = JSON.parse(
-			readFileSync(`${workspace}/package.json`, "utf8"),
-		);
-		return manifest.name;
+		const manifest: {
+			name?: string;
+			scripts?: { test?: string; pretest?: string; posttest?: string };
+		} = JSON.parse(readFileSync(`${workspace}/package.json`, "utf8"));
+		if (!manifest.name) return undefined;
+		const { test, pretest, posttest } = manifest.scripts ?? {};
+		return {
+			name: manifest.name,
+			narrow:
+				test === "vitest run" &&
+				posttest === undefined &&
+				(pretest === undefined ||
+					/^node --experimental-strip-types (?:\.\.\/)+scripts\/ensure-built\.mts$/u.test(
+						pretest,
+					)),
+		};
 	} catch {
 		return undefined;
 	}
@@ -261,15 +275,26 @@ export function selectRelevantChecks(
 		touched(["apps/web", "packages/ui", "site"]) ||
 		touchedAny([
 			/\.(tsx|jsx|css|astro)$/u,
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/check-visual-tokens\.mts$/u,
 		]);
-	const designMdChanged =
+	const uiDiscoveryManifestChanged = touchedAny([
+		/^(?:packages|examples|apps)\/.+\/package\.json$/u,
+	]);
+	const visualTokensChanged =
 		touchedAny([
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/(?:check-visual-tokens\.mts|visual-token-contract\.json)$/u,
+			/^test\/visual-tokens\.test\.ts$/u,
+			/^turbo\.json$/u,
+			/^packages\/connect-ui\/(?:src\/client\/styles\.css|test\/connect-ui-design-lint\.test\.ts)$/u,
+			/^packages\/control-yard\/(?:public\/yard\.css|test\/design-lint\.test\.ts)$/u,
+			/^packages\/mcp\/(?:src\/secret-capture\/html\.ts|test\/secret-capture-design-lint\.test\.ts)$/u,
+			/^packages\/status-page\/(?:src\/tokens\.ts|test\/status-page-design-lint\.test\.ts)$/u,
+			/(?:^|\/)(?:palette|visual-tokens?|themes?)(?:\.[^/]+)?$/u,
+			/(?:^|\/)DESIGN\.md$/u,
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
-		]) || uiChanged;
+		]) ||
+		uiChanged ||
+		uiDiscoveryManifestChanged;
 	const behaviorChanged =
 		touched(["tests/behavior"]) ||
 		// Feature files and step definitions live inside proof packages
@@ -453,9 +478,9 @@ export function selectRelevantChecks(
 			files.some((file) => file.startsWith(`${workspace}/vitest.config.`)) ||
 			(testFiles.length > 0 && vitestPaths.length === 0);
 		if (requiresFullWorkspaceTest) return [];
-		const packageName = defaultWorkspacePackageName(workspace);
-		if (!packageName) return [];
-		return [{ workspace, packageName, vitestPaths }];
+		const testInfo = defaultWorkspaceTestInfo(workspace);
+		if (!testInfo?.narrow) return [];
+		return [{ workspace, packageName: testInfo.name, vitestPaths }];
 	});
 	const narrowWorkspaces = new Set(
 		narrowWorkspaceTests.map(({ workspace }) => workspace),
@@ -481,6 +506,29 @@ export function selectRelevantChecks(
 				reason: `workspace tests for ${turboWorkspaces.length} changed package(s) via Turbo; strict env passes HOBO_* and NODE_OPTIONS; warm runs replay from cache`,
 			});
 		}
+	}
+
+	if (
+		narrowWorkspaceTests.length > 0 &&
+		!options.workspaceTestsCoveredExternally
+	) {
+		checks.push({
+			command: "pnpm",
+			args: [
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				...narrowWorkspaceTests.map(
+					({ workspace }) => `--filter=./${workspace}`,
+				),
+				"--output-logs=new-only",
+				turboConcurrencyArg(),
+			],
+			reason:
+				"build each narrow-test workspace and its dependencies before running its selected tests",
+			serial: true,
+		});
 	}
 
 	for (const {
@@ -720,6 +768,25 @@ export function selectRelevantChecks(
 			reason: "agent workflow/eval changed; live evals are manual only",
 		});
 
+	const openSaasVitestInputs = (file: string) => {
+		const normalized = file.replaceAll("\\", "/");
+		return (
+			normalized.startsWith("examples/wasp-opensaas/app/src/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/test/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/scripts/") ||
+			normalized === "examples/wasp-opensaas/app/package.json" ||
+			normalized === "examples/wasp-opensaas/app/vitest.config.ts"
+		);
+	};
+	if (files.some(openSaasVitestInputs)) {
+		checks.push({
+			command: "npm",
+			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
+			reason:
+				"Open SaaS example app source/tests changed; npm ci:test:unit lane (not a pnpm workspace)",
+		});
+	}
+
 	if (touched(["scripts", "test", "tests"]) || rootConfigChanged) {
 		checks.push({
 			command: "pnpm",
@@ -812,14 +879,12 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// Google DESIGN.md visual contract for every web UI package (site + future apps).
-	// Pre-commit routes here via check:relevant:staged when UI/DESIGN.md changes.
-	if (designMdChanged || automationChanged) {
+	if (visualTokensChanged || automationChanged) {
 		checks.push({
 			command: "pnpm",
 			args: ["run", "design:lint"],
 			reason:
-				"web UI or DESIGN.md changed; Google designmd lint must pass for all web UI projects",
+				"UI changes must preserve the implemented palette contrast requirements",
 		});
 	}
 
@@ -873,7 +938,7 @@ export function selectRelevantChecks(
 		schemaChanged && "schema",
 		pactChanged && "contract",
 		uiChanged && "ui",
-		designMdChanged && "design-md",
+		visualTokensChanged && "visual-tokens",
 		behaviorChanged && "behavior",
 		visualChanged && "visual",
 		agentEvalChanged && "agent-eval",

@@ -53,7 +53,12 @@ supplies tenant-scoped planning evidence, independent revalidation, a trusted
 clock, and final provider-account/entitlement settlement evidence. Paid charges
 and shared credits are reserved together before deployment facts are published.
 Each charge stays with its source or destination billing account; credit scope
-and cost class remain part of the pinned plan.
+and cost class remain part of the pinned plan. Hosting free-tier snapshots,
+claims and settlement evidence use the explicit `allowance` entitlement kind;
+older hosting snapshots and settlement evidence without a kind retain that same
+meaning, including snapshots supplied by custom durable authorities.
+Legacy v1 fenced settlement evidence stays kindless for signature verification;
+the bridge does not inject a kind into that signed payload.
 
 Execution adopts the gateway's existing reservation through an atomic claim.
 Another transition cannot spend the same authorization. A lost provider response
@@ -221,6 +226,11 @@ opening a form, verify that its owner settings remain private; otherwise report
 the missing capability instead of collecting identifiers or values in chat.
 The transcript audit flags known private fields in nested owner-tool inputs and
 results, including API keys and numeric identifiers, without printing their values.
+
+Vercel source preparation builds a file manifest from a pinned commit without
+contacting the provider or deploying. The [CD guide](./CD.md#delivery-as-code)
+describes archive fallback, the synthetic emulator's aggregate limit, and the
+authorization still required before production dispatch.
 
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
@@ -429,14 +439,19 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
 
-A real run needs the deploy token in the owner's secret store. An embedding
-caller can provide it in a run-scoped vault; a GitHub Actions job with
-`id-token: write` can read it through the committed secret-store binding. A
-`VERCEL_TOKEN` supplied in the command's environment is ignored. When
-`--provision` runs the Vercel CLI, HoBo passes that child the token from the
-vault. The target project must build `packages/ci-vercel` (or the chosen
-`--root-directory`), and Vercel's GitHub integration must be able to read the
+A real run reads the deploy token from the owner's secret store as the
+dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
+through the committed secret-store binding; a token preloaded in an embedding
+caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
+command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
+passes that child the token from the run's fresh vault. The target project must
+build `packages/ci-vercel` (or the chosen `--root-directory`), and Vercel's
+GitHub integration must be able to read the
 repository.
+
+A credential-free legacy binding may omit `deployOidcSubject` or carry the
+exact writer subject. Any other nonempty subject is malformed and makes the
+workflow gate fatal rather than a credential-free skip.
 
 What it deliberately does not do:
 

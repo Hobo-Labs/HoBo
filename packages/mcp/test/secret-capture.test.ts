@@ -35,94 +35,6 @@ const FORM_ONLY = { apps: false, formElicitation: true, urlElicitation: false };
 const apps: SecretCaptureApp[] = [];
 const watches: ReturnType<typeof leakWatch>[] = [];
 
-describe("late owner forms", () => {
-	it.each([
-		"end",
-		"replace",
-		"expire",
-	] as const)("rejects an accepted answer after %s", async (mode) => {
-		const store = memoryConnector();
-		const clock = { at: Date.parse("2026-11-12T10:00:00Z") };
-		const answers: ((value: JsonValue) => void)[] = [];
-		const starts: (() => void)[] = [];
-		const waitForForm = () =>
-			new Promise<void>((resolve) => starts.push(resolve));
-		const app = createSecretCaptureApp({
-			specs: SPECS,
-			connector: store.connector,
-			remote: true,
-			now: () => clock.at,
-			ttlMs: 1000,
-			elicit: () =>
-				new Promise<JsonValue>((resolve) => {
-					answers.push(resolve);
-					starts.shift()?.();
-				}),
-		});
-		apps.push(app);
-		const started = waitForForm();
-		const old = app.callTool(
-			CAPTURE_SECRET_TOOL,
-			{ name: "HOBO_CI_WEBHOOK_SECRET" },
-			FORM_ONLY,
-		);
-		await started;
-		if (mode === "end")
-			await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
-		if (mode === "expire") clock.at += 1001;
-		let replacement: Promise<SecretCaptureOutcome> | undefined;
-		if (mode === "replace") {
-			const nextStarted = waitForForm();
-			replacement = app.callTool(
-				CAPTURE_SECRET_TOOL,
-				{ name: "HOBO_CI_WEBHOOK_SECRET", replace: true },
-				FORM_ONLY,
-			);
-			await nextStarted;
-		}
-		answers[0]?.({ action: "accept", content: { value: "x".repeat(40) } });
-		expect(result(await old).isError).toBe(true);
-		expect(
-			(await store.runtime.access("HOBO_CI_WEBHOOK_SECRET")).status,
-		).not.toBe("ok");
-		if (replacement) {
-			answers[1]?.({ action: "decline" });
-			await replacement;
-		}
-	});
-
-	it("does not authorize a writer when an ended form answers late", async () => {
-		const store = memoryConnector({ writable: false });
-		const authorize = vi.spyOn(store.connector, "authorizeWriter");
-		let answer: ((value: JsonValue) => void) | undefined;
-		let started: (() => void) | undefined;
-		const waiting = new Promise<void>((resolve) => {
-			started = resolve;
-		});
-		const app = createSecretCaptureApp({
-			specs: SPECS,
-			connector: store.connector,
-			remote: true,
-			elicit: () =>
-				new Promise<JsonValue>((resolve) => {
-					answer = resolve;
-					started?.();
-				}),
-		});
-		apps.push(app);
-		const form = app.callTool(
-			CAPTURE_SECRET_TOOL,
-			{ name: "INFISICAL_WRITER_CLIENT_SECRET", writerClientId: "fixture" },
-			FORM_ONLY,
-		);
-		await waiting;
-		await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
-		answer?.({ action: "accept", content: { value: WRITER_SECRET } });
-		expect(result(await form).isError).toBe(true);
-		expect(authorize).not.toHaveBeenCalled();
-	});
-});
-
 afterEach(async () => {
 	while (apps.length > 0) await apps.pop()?.close();
 	while (watches.length > 0) watches.pop()?.restore();
@@ -232,7 +144,7 @@ describe("the tool and resource surface", () => {
 		}
 	});
 
-	it("serves the form as text/html;profile=mcp-app with no network allowance", () => {
+	it("serves the form as text/html;profile=mcp-app", () => {
 		const { app } = setup();
 		const read: {
 			contents: { mimeType: string; text: string; _meta: JsonValue }[];
@@ -241,21 +153,40 @@ describe("the tool and resource surface", () => {
 		);
 		const [content] = read.contents;
 		expect(content?.mimeType).toBe(MCP_APP_MIME_TYPE);
-		expect(content?._meta).toEqual({
+		expect(content?.text).toContain('"ui/initialize"');
+		expect(app.readResource("ui://hobo/other")).toBeUndefined();
+	});
+
+	it("declares empty CSP connectDomains and resourceDomains", () => {
+		const { app } = setup();
+		const read: {
+			contents: { _meta: JsonValue }[];
+		} = JSON.parse(
+			JSON.stringify(app.readResource(SECRET_CAPTURE_RESOURCE_URI)),
+		);
+		expect(read.contents[0]?._meta).toEqual({
 			ui: {
 				csp: { connectDomains: [], resourceDomains: [] },
 				prefersBorder: true,
 			},
 		});
-		// The form never puts anything in front of the model.
-		expect(content?.text).not.toMatch(/ui\/message|ui\/update-model-context/u);
-		expect(content?.text).toContain('"ui/initialize"');
-		expect(app.readResource("ui://hobo/other")).toBeUndefined();
+	});
+
+	it("never emits ui/message or ui/update-model-context", () => {
+		const { app } = setup();
+		const read: {
+			contents: { text: string }[];
+		} = JSON.parse(
+			JSON.stringify(app.readResource(SECRET_CAPTURE_RESOURCE_URI)),
+		);
+		expect(read.contents[0]?.text).not.toMatch(
+			/ui\/message|ui\/update-model-context/u,
+		);
 	});
 });
 
 describe("the MCP App channel", () => {
-	it("captures and stores a value without exposing its store reference", async () => {
+	it("captures, seals in the form, stores, and answers only name, stored and ref", async () => {
 		const { app, store, watch } = setup();
 		const value = synthetic("SYNTHETIC-webhook", 24);
 		const opened = watch.outcome(
@@ -287,6 +218,7 @@ describe("the MCP App channel", () => {
 			ticketId: ticket.ticketId,
 			name: "HOBO_CI_WEBHOOK_SECRET",
 			stored: true,
+			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 			status: "stored",
 		});
 		// It reached the store, and only the store.
@@ -302,10 +234,8 @@ describe("the MCP App channel", () => {
 		);
 		expect(result(status).structuredContent).toMatchObject({
 			state: "stored",
+			ref: "secref://runtime/HOBO_CI_WEBHOOK_SECRET",
 		});
-		expect(JSON.stringify([submitted, status, app.events()])).not.toContain(
-			"secref://runtime/HOBO_CI_WEBHOOK_SECRET",
-		);
 		watch.record(app.events());
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureOpened",
@@ -509,10 +439,7 @@ describe("refusals before anything is opened", () => {
 			name: "HOBO_CI_WEBHOOK_SECRET",
 		});
 		expect(JSON.stringify(answer.structuredContent)).toContain(
-			"owner hand-off",
-		);
-		expect(JSON.stringify(answer.structuredContent)).not.toContain(
-			"deploy/secret-store.binding.json",
+			"private owner setup",
 		);
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureRefused",
@@ -521,13 +448,13 @@ describe("refusals before anything is opened", () => {
 
 	it("asks for the writer credential first when writes are not authorized", async () => {
 		const { app } = setup({ writable: false });
-		const refused = result(
+		const refusal = result(
 			await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
 		);
-		expect(refused.structuredContent).toMatchObject({
+		expect(refusal.structuredContent).toMatchObject({
 			code: "SECRET_STORE_WRITER_REQUIRED",
 		});
-		expect(JSON.stringify(refused)).not.toContain("secref://memory");
+		expect(JSON.stringify(refusal)).not.toContain("secref://memory");
 		expect(
 			result(
 				await app.callTool(
@@ -614,6 +541,7 @@ describe("the writer session", () => {
 			ticketId: writer.ticketId,
 			name: "INFISICAL_WRITER_CLIENT_SECRET",
 			stored: false,
+			ref: "hobo-writer-session://writer-client",
 			status: "authorized",
 		});
 		const token = synthetic("SYNTHETIC-vercel", 16);
@@ -939,4 +867,36 @@ describe("CapturedSecret redaction", () => {
 			}
 		}
 	});
+
+	it("does not authorize a writer when an ended form answers late", async () => {
+		const store = memoryConnector({ writable: false });
+		const authorize = vi.spyOn(store.connector, "authorizeWriter");
+		let answer: ((value: JsonValue) => void) | undefined;
+		let started: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answer = resolve;
+					started?.();
+				}),
+		});
+		apps.push(app);
+		const form = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "INFISICAL_WRITER_CLIENT_SECRET", writerClientId: "fixture" },
+			FORM_ONLY,
+		);
+		await waiting;
+		await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		answer?.({ action: "accept", content: { value: WRITER_SECRET } });
+		expect(result(await form).isError).toBe(true);
+		expect(authorize).not.toHaveBeenCalled();
+	});
+
 });

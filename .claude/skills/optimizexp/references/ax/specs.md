@@ -1,7 +1,7 @@
 ---
 type: Agent Skill Reference
 title: "OptimizeXP AX — specs and standing contracts"
-description: "Standing contract files agents must discover: WorkOS AUTH.md/auth.md, AGENTS.md, DESIGN.md, llms.txt, env examples."
+description: "Standing contract files agents must discover: WorkOS AUTH.md/auth.md, AGENTS.md, UI tokens, llms.txt, env examples."
 tags: [hobo, optimizexp, ax, specs, agents-md, auth, design-md, workos]
 timestamp: 2026-07-31T00:00:00Z
 ---
@@ -10,7 +10,7 @@ timestamp: 2026-07-31T00:00:00Z
 
 Agents treat **repo files as data**, but **standing contracts** must be findable, consistent, and
 small enough to load first. This section audits those surfaces. Call standards by their **real
-names** (WorkOS auth.md, DESIGN.md, llms.txt) — do not invent house brands for external protocols.
+names** (WorkOS auth.md, UI tokens, llms.txt) — do not invent house brands for external protocols.
 
 ## Spec inventory
 
@@ -21,7 +21,7 @@ names** (WorkOS auth.md, DESIGN.md, llms.txt) — do not invent house brands for
 | `CLAUDE.md` | Claude-oriented include / summary | points at AGENTS / skills |
 | `.env.example` | Env var **names** only (local residual) | no secrets committed |
 | `docs/agent-tooling.md` | Full coding-agent tooling narrative (repo) | linked from AGENTS |
-| `site/DESIGN.md` (+ package DESIGN.md) | Visual/system contract for UI | `pnpm run design:lint` |
+| `site/src/styles/global.css` | Implemented visual tokens | `pnpm run design:lint` |
 | `site/public/llms.txt` (+ full dump) | Public agent briefing for the product site | file exists; no internal secrets |
 | Nested `AGENTS.md` | Folder law (`src/draft/**`, etc.) | only when path is in scope |
 | `docs/design/**` | Product design suite | OKF / design lints as needed |
@@ -39,7 +39,7 @@ Detail: [agents-md.md](agents-md.md) · [auth.md](auth.md) (WorkOS auth.md) · U
 
 - Product agent APIs with no discoverable auth.md
 - Auth only buried in a long tooling doc with no AUTH.md / auth.md
-- DESIGN.md missing or unlinted while UI packages exist
+- UI tokens fail contrast checks
 - AGENTS.md and a skill contradict (gates, install, MCP)
 - Specs require reading 500+ lines before a first green command
 
@@ -60,11 +60,11 @@ Detail: [agents-md.md](agents-md.md) · [auth.md](auth.md) (WorkOS auth.md) · U
 1. Treat **AUTH.md as WorkOS auth.md protocol** for product/agent registration; residual local tooling keys only when clearly labeled.  
 2. Doctor may require AUTH.md present; remediation cites the protocol, not a proprietary name.  
 3. Progressive disclosure: short tables in AGENTS; detail in docs/agent-tooling.  
-4. DESIGN.md + designmd gate for every web UI project.  
+4. Check implemented UI tokens and rendered surfaces.
 5. When specs change, update the other linked specs in the same diff (docs freshness).
 
 ## Evidence for optimizexp
 
 - Transcripts of `pnpm run doctor`, setup `--help`  
-- Paths: `AUTH.md`, `AGENTS.md`, `site/DESIGN.md`  
+- Paths: `AUTH.md`, `AGENTS.md`, `site/src/styles/global.css`
 - Diffs that correct AUTH.md attribution or remove AGENTS↔skill contradictions  

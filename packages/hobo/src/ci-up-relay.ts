@@ -98,7 +98,7 @@ export function createCiRelayPlanCommand(
 }
 
 /** The current branch and commit of the repository holding `dir`. */
-function gitHead(
+export function gitHead(
 	dir: string,
 ): Promise<{ ref: string; sha: string } | undefined> {
 	const git = (args: readonly string[]) =>
@@ -110,12 +110,16 @@ function gitHead(
 				(error, stdout) => resolve(error ? undefined : String(stdout).trim()),
 			),
 		);
-	return Promise.all([
-		git(["rev-parse", "--abbrev-ref", "HEAD"]),
-		git(["rev-parse", "HEAD"]),
-	]).then(([ref, sha]) =>
-		ref && sha && ref !== "HEAD" ? { ref, sha } : undefined,
-	);
+	return (async () => {
+		const sha = await git(["rev-parse", "HEAD"]);
+		if (!sha) return undefined;
+		let ref = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
+		if (!ref || ref === "HEAD") ref = await git(["branch", "--show-current"]);
+		const envRef = process.env.GITHUB_HEAD_REF?.trim();
+		if ((!ref || ref === "HEAD") && envRef) ref = envRef;
+		if (!ref || ref === "HEAD") return undefined;
+		return { ref, sha };
+	})();
 }
 
 /**

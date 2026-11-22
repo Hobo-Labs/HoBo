@@ -106,13 +106,17 @@ export {
 	PrivateOwnerDispatchError,
 	PrivateOwnerRequestError,
 } from "./isolated-owner-errors.js";
-export { isolatedOwnerFetch } from "./isolated-owner-fetch.js";
+export {
+	type IsolatedOwnerFetchOptions,
+	isolatedOwnerFetch,
+} from "./isolated-owner-fetch.js";
 export {
 	currentPlatform,
 	ONE_PASSWORD_CLI_VERSION,
 	ONE_PASSWORD_SERVICE_ACCOUNT_CAPTURE,
 	ONE_PASSWORD_SERVICE_ACCOUNT_EXPIRES_AT,
 	ONE_PASSWORD_SERVICE_ACCOUNT_REUSE_MS,
+	ONE_PASSWORD_SIGN_IN_CAPTURES,
 	type OnePasswordAccess,
 	type OnePasswordAccessOptions,
 	type OnePasswordServiceAccountVerdict,

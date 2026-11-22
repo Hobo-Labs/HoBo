@@ -40,6 +40,24 @@ Unsupported inventory stays unknown. An Actions workflow continues
 to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
 
+Automatically routed `merge_group` batches in `hobo-ci.yml` use the normal slip
+and queue decision with the `hobo-trunk` label. Admission is queue-observed
+trunk pickup, not a Broker PR-batch claim. A recent timely trunk pickup keeps
+the batch on the fleet only after trunk pickup confirmation that polls the queue
+for up to 90 seconds; an immediate refusal, a timed-out confirmation, or a
+persistently unhealthy trunk selects the configured GitHub-hosted fallback. The
+general `hobo` fleet label is never used for merge-queue Fabric. For automatically routed `merge_group`
+batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
+verifying the public repository and committed routing policy. It does not
+dispatch the optional box job: a one-time fleet observation cannot reserve
+capacity or recover jobs if the fleet becomes unavailable after routing. Missing
+evidence stops the release batch before jobs are queued. Explicit operator pins
+remain in effect.
+On pull requests, the route action, its executable dependencies, and routing
+policy come from the event's base checkout. Proposed workflow content can still
+change the job graph itself; that requires a separately trusted required
+workflow to enforce.
+
 The candidates are general PR routes and enabled provider inventory. The
 special `runnerRouting.boxRunner` label is reserved for the deps-image job and
 is not a general PR route, so the local coordinator does not select it. That
@@ -187,6 +205,12 @@ serialize access to the checkout while running and signing.
 The attestor key's new parent directory is created with mode `0700` or more
 restrictive according to the umask. An existing parent must already deny
 group and other access; the command refuses to change its permissions.
+Keep the key outside the checkout and shared tool directories, including an
+explicit `TMPDIR`. The tests give child commands a separate temporary directory
+so their fixture keys remain private even when the parent sets `TMPDIR`.
+They also isolate inherited Git configuration paths and settings injected by a
+parent `git -c` command, so fixture-local settings remain the values exercised
+by the signoff tests.
 
 Statuses are `signoff/hobo-ci/local/<event>/<job>` on the tested head. They are
 separate from Actions job results, cannot complete queued jobs, and do not by

@@ -119,6 +119,49 @@ keeps is rebuilt from GitHub, so every policy is `rebuildable` and nothing is
 copied. HoBo CD, which does keep a ledger, runs it on a PostgreSQL fleet
 (`packages/hobo-cd` README, "Continuity").
 
+## Private owner HTTP
+
+`isolatedOwnerFetch(env, options)` sends each request in a child process. It
+buffers the response before resolving and defaults to a 1 MiB response limit;
+`maxResponseBytes` accepts an integer from zero through 32 MiB. Request bodies,
+including streams, are fully buffered before the child starts; bodies over
+32 MiB are refused. URL, header, certificate and encoded-packet limits can also
+refuse a request before the child starts.
+It isolates request diagnostics from the parent process; it is not connected to
+a verified production owner session. Requests require HTTPS, and automatic
+redirects stay within the original origin so credential headers do not cross
+origins. A caller can inspect a redirect with `redirect: "manual"`. For local
+synthetic tests only, `allowInsecureLoopback` permits HTTP to the literal
+loopback address `127.0.0.1` or `::1` without a proxy, with redirects limited
+to that same origin. An HTTPS request cannot be downgraded to HTTP.
+Configured proxies with URL credentials must use HTTPS, even when a bypass
+list is present; unauthenticated HTTP CONNECT proxies remain supported. Each
+private request permits at most 32 proxy connection attempts; exhaustion after
+dispatch has an uncertain outcome.
+The `env` argument is read when the transport is constructed. A proxy value that
+is not a valid HTTP(S) URL throws `HOBO_SETTING_INVALID` synchronously during
+construction. Proxy selection uses the first nonempty `HTTPS_PROXY`,
+`https_proxy`, `ALL_PROXY`, or `all_proxy`;
+the bypass list uses `NO_PROXY` then `no_proxy`. The extra CA bundle uses
+`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, then `REQUESTS_CA_BUNDLE`.
+Oversized responses and cancellation after dispatch fail with an uncertain
+outcome. `PrivateOwnerRequestError` indicates the request could not be prepared;
+cancellation before dispatch raises `AbortError`. `PrivateOwnerDispatchError`
+means the operation may have reached its target. Confirm a terminal outcome
+using operation-specific evidence or reconcile it before retrying; if the
+outcome remains unknown, do not retry. Pass an `AbortSignal` to cancel a slow
+response. The child uses the parent's effective trust roots and the selected
+extra CA bundle without inheriting Node preload options. Encoded trust snapshots
+are limited to 8 MiB; larger snapshots are refused before the child starts.
+Request-body preparation and the dispatched request each have a 120-second
+ceiling.
+Private owner HTTP requires a runtime that exposes `tls.getCACertificates`:
+Node 22.15 or later within Node 22, Node 23.10 or later within Node 23, or Node
+24. Other versions are refused before dispatch until their trust behavior is
+verified. Requests are also refused if Node's reported default roots omit
+occurrences of its bundled or startup-extra roots, because that report may not
+match the active TLS configuration.
+
 ## Architecture rules (AGENTS.md)
 
 - **PACT**: `contracts/pacts/github-app-manifest.pact.json` (conversion, App

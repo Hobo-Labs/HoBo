@@ -50,6 +50,12 @@ Anything else is refused by name rather than ignored.
    - otherwise **upload** the bytes from the host `artifactStore` or the source
      registry, monolithically or in `Content-Range` chunks.
 
+   Upload `Location` is opaque per the distribution spec and may be relative or
+   absolute. A same-host session inside this repository's upload surface is
+   accepted, including GHCR's singular `/blobs/upload/<id>`; a Location naming
+   a foreign host, scheme, port or userinfo is refused before the credential
+   can follow it.
+
    Bytes are hashed before upload and must match the descriptor, and the
    registry verifies the digest again on the closing PUT. The manifest is then
    PUT by digest with its **exact bytes**.

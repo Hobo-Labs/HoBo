@@ -40,7 +40,7 @@ the protocol over `postMessage` itself, and the composing server
 | Piece | File |
 |---|---|
 | Tools, resource, tickets, channel choice | `src/secret-capture/app.ts` (`createSecretCaptureApp`) |
-| The form (MCP App resource and loopback page) | `src/secret-capture/html.ts`; visual contract [`DESIGN.md`](./DESIGN.md) |
+| The form (MCP App resource and loopback page) | `src/secret-capture/html.ts` |
 | Sealing (ECDH-ES P-256, HKDF-SHA256, AES-256-GCM) | `src/secret-capture/seal.ts`; the browser source `SECRET_CAPTURE_SEAL_SOURCE` is what the tests run |
 | Loopback fallback page | `src/secret-capture/loopback.ts` |
 | Size, charset and shape checks; the redacting value | `src/secret-capture/value.ts` (`CapturedSecret`) |
@@ -52,12 +52,9 @@ the protocol over `postMessage` itself, and the composing server
 Apps host) opens a ticket; `submit_secret_value {ticketId, sealed}` is the
 form's own tool, listed only to an MCP Apps host and with
 `_meta.ui.visibility: ["app"]`; `secret_capture_status {ticketId}` reads a
-ticket's state; `end_secret_capture {}` closes open tickets and
+ticket's state and reference; `end_secret_capture {}` closes open tickets and
 ends the writer session. The resource is `text/html;profile=mcp-app` with
 empty CSP domain lists.
-
-The form labels an owner hand-off with its human-readable label. A secret
-destined for a store is labelled with its stored name.
 
 **Channels.** The host's `initialize` capabilities decide: an MCP Apps host
 renders the form; a client with `elicitation.url` gets
@@ -66,16 +63,47 @@ serves, and `notifications/elicitation/complete` after the write; a client with
 neither gets the page's address and an instruction that the owner opens it.
 Form-mode elicitation is never used (the MCP spec forbids it for secrets).
 
-**What never leaves.** The value exists sealed in transit and as a
-`CapturedSecret` (prints `[redacted secret]`) in this process until the
-connector's single `reveal()`. Results are tickets, then `{ticketId, name,
-stored, status}`; refusals carry a code and a reason. Store coordinates and
-values do not appear in results or audit events.
-Nothing in `src/secret-capture/` writes a log line. The tests feed random
-synthetic values through every path and assert that no tool result, refusal,
-event, page, HTTP answer, console line or stdout/stderr write contains the
-value (raw, JSON-escaped, base64 or a 16-character slice), and that the watch
-does catch a planted leak.
+### Security boundaries
+
+- **No network access.** The form loads no external script, stylesheet, font,
+  image, or other resource. Only the sealed value goes to the app-owned
+  `submit_secret_value` tool or the same-origin loopback POST. Enforced by
+  `test/secret-capture-design-lint.test.ts` → `"loads nothing from the network:
+  no external script, style, font or image"`.
+- **Empty MCP connect/resource domains.** The MCP App resource declares empty
+  CSP `connectDomains` and `resourceDomains`. Enforced by
+  `test/secret-capture.test.ts` → `"declares empty CSP connectDomains and
+  resourceDomains"`.
+- **No model-context messages.** The form never sends `ui/message` or
+  `ui/update-model-context`; nothing it holds goes in front of the model.
+  Enforced by `test/secret-capture.test.ts` → `"never emits ui/message or
+  ui/update-model-context"`.
+- **`textContent`-only rendering.** Ticket metadata, status, and errors render
+  through `textContent`, never `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
+  or `document.write`. Enforced by `test/secret-capture-design-lint.test.ts` →
+  `"renders dynamic content through textContent without HTML parsing sinks"`.
+- **Script-safe JSON embedding.** The loopback ticket is embedded in an
+  `application/json` script with `<`, `>`, `&`, U+2028, and U+2029 escaped so
+  ticket text cannot close the element. Enforced by
+  `test/secret-capture-design-lint.test.ts` → `"embeds the loopback page's
+  ticket so it cannot close its script element"`.
+- **Errors never contain the secret.** Results contain only ticket/reference
+  fields; refusals carry a code and reason, never the submitted value.
+  `test/secret-capture.test.ts` → `"captures, seals in the form, stores, and
+  answers only name, stored and ref"`, the `"size and charset checks"` refusal
+  cases, and `"reports a store failure by its code only"` use `leakWatch` to
+  reject raw, JSON-escaped, base64, and sliced values in results, events, pages,
+  HTTP answers, consoles, and process output. `"has a leak watch that does catch
+  a leak (raw, base64, or a log line)"` proves the detector is not vacuous.
+- **Sealed fields clear immediately.** Both input and textarea clear on the
+  statement immediately after reading a submission, before validation,
+  encryption, or any request. Enforced by
+  `test/secret-capture-design-lint.test.ts` → `"clears both fields immediately
+  after reading the submitted value"`.
+
+The value exists sealed in transit and as a `CapturedSecret` (prints
+`[redacted secret]`) in this process until the connector's single `reveal()`.
+Nothing in `src/secret-capture/` writes a log line.
 
 **The store** is an injected `SecretStoreConnector`: `status()` (connected?
 writable?), `authorizeWriter()` (a one-use credential that authorizes writes
@@ -87,5 +115,8 @@ memory `SecretsPort`. With no store connected `capture_secret` refuses with
 **Gates.** TypeScript (`tsc`), Protobuf (`pnpm run codegen`, opted in by
 `data-models/buf.yaml`; `src/_generated/`), CUE (closed definitions vetted
 against `fixtures/secret_capture/{valid,invalid}`), PACT
-(`contracts/consumer/secret-capture.test.ts`), design lint
-(`pnpm run design:lint` and `test/secret-capture-design-lint.test.ts`).
+(`contracts/consumer/secret-capture.test.ts`), and design lint
+(`pnpm run design:lint`, root `scripts/check-visual-tokens.mts`, and
+`test/secret-capture-design-lint.test.ts`). The design-lint test compares the
+exact rendered palette with the independent `scripts/visual-token-contract.json`
+contract rather than a token list owned by the renderer.

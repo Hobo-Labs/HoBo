@@ -10,12 +10,6 @@ const run = {
 };
 const request = {
 	run,
-	policy: {
-		allowedOrigins: ["https://fixture.invalid"],
-		allowInsecureLoopback: false,
-		allowProxy: false,
-		allowExtraCa: false,
-	},
 	url: "https://fixture.invalid/private",
 	method: "POST",
 	headers: [],
@@ -28,11 +22,14 @@ const request = {
 	referrer: "about:client",
 	referrerPolicy: "",
 	body: null,
+	maxResponseBytes: 1024,
+	allowInsecureLoopback: false,
+	trustedCertificates: [],
 	egress: {},
 };
 
 describe("private owner wire policy", () => {
-	it("accepts an authenticated HTTPS request to an allowed origin", () => {
+	it("accepts an authenticated run", () => {
 		const parsed = ownerRequest.parse(request);
 		expect(authenticatedOwnerRun(parsed, run)).toBe(true);
 		expect(authenticatedOwnerRun(parsed, { ...run, secret: "B".repeat(43) })).toBe(
@@ -44,22 +41,20 @@ describe("private owner wire policy", () => {
 	});
 
 	it.each([
-		{ url: "https://other.invalid/private" },
-		{ url: "http://fixture.invalid/private" },
-		{ url: "https://owner:secret@fixture.invalid/private" },
-		{ egress: { proxy: "https://proxy.invalid" } },
-		{ egress: { noProxy: "fixture.invalid" } },
-		{ egress: { caFile: "/fixture/ca.pem" } },
+		{ url: "not a url" },
+		{ method: "" },
 		{ run: { ...run, secret: "" } },
-	])("refuses a request outside its run or transport policy", (change) => {
+		{ run: { ...run, id: "not-a-uuid" } },
+		{ maxResponseBytes: -1 },
+		{ trustedCertificates: ["x".repeat(70_000)] },
+	])("refuses a malformed owner request", (change) => {
 		expect(ownerRequest.safeParse({ ...request, ...change }).success).toBe(false);
 	});
 
-	it("permits proxy and extra CA settings only with explicit policy", () => {
+	it("permits proxy and extra CA settings in the wire request", () => {
 		expect(
 			ownerRequest.safeParse({
 				...request,
-				policy: { ...request.policy, allowProxy: true, allowExtraCa: true },
 				egress: { proxy: "https://proxy.invalid", caFile: "/fixture/ca.pem" },
 			}).success,
 		).toBe(true);

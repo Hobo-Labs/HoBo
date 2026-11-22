@@ -4,6 +4,7 @@
  * the distribution pact). Live registries run only in the credential-gated
  * lane at the bottom, which skips visibly.
  */
+import { randomUUID } from "node:crypto";
 import {
 	type HttpTransport,
 	type ResolveRequest,
@@ -21,6 +22,7 @@ import type { JsonValue } from "../src/json.js";
 import {
 	type FakeHostConfig,
 	FakeRegistryWorld,
+	type FakeUploadSessionHost,
 } from "./support/fake-registry.js";
 import {
 	attestation,
@@ -406,6 +408,208 @@ describe("converge: copy from a source registry", () => {
 			{ tag: "prod", digest: fixture.digest },
 		]);
 	});
+});
+
+describe("upload session Location (GHCR and foreign hosts)", () => {
+	const secret = `fake-${randomUUID()}`;
+	const FOREIGN = "upload.foreign.test";
+	const credentialHosts = new Set([TARGET, new URL(TARGET_REALM).hostname]);
+
+	const resolveCredential = async (): Promise<OciRegistryCredential> => ({
+		kind: "basic",
+		username: "robot",
+		password: secret,
+	});
+
+	function locationWorld(
+		uploadSessionHost: FakeUploadSessionHost,
+		extraHosts: readonly FakeHostConfig[] = [],
+	) {
+		return new FakeRegistryWorld("latin1", [
+			targetConfig({
+				auth: {
+					kind: "bearer",
+					realm: TARGET_REALM,
+					service: TARGET,
+					username: "robot",
+					password: secret,
+				},
+				uploadSessionHost,
+			}),
+			...extraHosts,
+		]);
+	}
+
+	function resolverFor(
+		fixture: ImageFixture,
+		options: Partial<OciRegistryResolverOptions> = {},
+	) {
+		const store = new Map<string, Uint8Array>([
+			[fixture.digest, Buffer.from(fixture.text, "utf8")],
+		]);
+		for (const blob of fixture.blobs) store.set(blob.digest, blob.bytes);
+		return resolverOf({
+			sourceRegistries: [],
+			resolveCredential,
+			artifactStore: { get: async (digest) => store.get(digest) },
+			...options,
+		});
+	}
+
+	function storeRequest(fixture: ImageFixture): ResolveRequest {
+		return request(fixture, {
+			sourceRegistry: undefined,
+			sourceRepository: undefined,
+		});
+	}
+
+	function uploaded(w: FakeRegistryWorld, fixture: ImageFixture): boolean {
+		return w.repo(TARGET, "team/app").blobs.has(fixture.blobs[1]?.digest ?? "");
+	}
+
+	it("accepts a GHCR-style singular relative Location for a monolithic upload", async () => {
+		const fixture = image({ platform: "amd64", binary: true });
+		const w = locationWorld({ kind: "ghcr" });
+		const outcome = await resolverFor(fixture).reconcile(
+			storeRequest(fixture),
+			w.transport,
+		);
+		expect(outcome.outputs.ready).toBe(true);
+		expect(uploaded(w, fixture)).toBe(true);
+		expect(w.paths("PUT").some((path) => path.includes("/blobs/upload/"))).toBe(
+			true,
+		);
+	});
+
+	it("accepts a GHCR-style singular relative Location for a chunked upload", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+		const w = locationWorld({ kind: "ghcr" });
+		await resolverFor(fixture, { chunkBytes: 1000 }).reconcile(
+			storeRequest(fixture),
+			w.transport,
+		);
+		const patches = w.calls.filter((call) => call.method === "PATCH");
+		expect(patches.map((call) => call.headers["content-range"])).toEqual([
+			"0-999",
+			"1000-1999",
+			"2000-2499",
+		]);
+		expect(
+			patches.every((call) =>
+				new URL(call.url).pathname.includes("/blobs/upload/"),
+			),
+		).toBe(true);
+		expect(uploaded(w, fixture)).toBe(true);
+	});
+
+	it("accepts a same-host absolute Location and preserves its _state query", async () => {
+		const fixture = image({ platform: "amd64", binary: true, size: 2500 });
+		const w = locationWorld({ kind: "absolute" });
+		await resolverFor(fixture, { chunkBytes: 1000 }).reconcile(
+			storeRequest(fixture),
+			w.transport,
+		);
+		const uploads = w.calls.filter(
+			(call) =>
+				["PATCH", "PUT"].includes(call.method) &&
+				new URL(call.url).pathname.includes("/blobs/uploads/"),
+		);
+		expect(uploads.length).toBeGreaterThan(0);
+		for (const call of uploads) {
+			const url = new URL(call.url);
+			expect(url.hostname).toBe(TARGET);
+			expect(url.searchParams.get("_state")).toMatch(/^s\d+$/u);
+		}
+		expect(new URL(uploads.at(-1)?.url ?? "").searchParams.get("digest")).toBe(
+			fixture.blobs[1]?.digest,
+		);
+		expect(uploaded(w, fixture)).toBe(true);
+	});
+
+	const refusals: [
+		string,
+		FakeUploadSessionHost,
+		RegExp,
+		readonly FakeHostConfig[],
+	][] = [
+		[
+			"a foreign host",
+			{ kind: "foreign", host: FOREIGN },
+			/foreign host/u,
+			[{ host: FOREIGN }],
+		],
+		[
+			"a protocol-relative foreign host",
+			{
+				kind: "raw",
+				location: `//${FOREIGN}/v2/team/app/blobs/uploads/x`,
+			},
+			/foreign host/u,
+			[{ host: FOREIGN }],
+		],
+		[
+			"http on the same host",
+			{ kind: "raw", location: `http://${TARGET}/v2/team/app/blobs/uploads/x` },
+			/foreign host/u,
+			[],
+		],
+		[
+			"userinfo on the same host",
+			{
+				kind: "raw",
+				location: `https://user@${TARGET}/v2/team/app/blobs/uploads/x`,
+			},
+			/foreign host/u,
+			[],
+		],
+		[
+			"a port on the same host",
+			{
+				kind: "raw",
+				location: `https://${TARGET}:8443/v2/team/app/blobs/uploads/x`,
+			},
+			/foreign host/u,
+			[],
+		],
+		[
+			"another repository",
+			{ kind: "raw", location: "/v2/other/repo/blobs/uploads/x" },
+			/outside its own blob upload path/u,
+			[],
+		],
+		[
+			"dot segments",
+			{
+				kind: "raw",
+				location: "/v2/team/app/blobs/uploads/../uploads/x",
+			},
+			/outside its own blob upload path/u,
+			[],
+		],
+		[
+			"an encoded slash in the session id",
+			{ kind: "raw", location: "/v2/team/app/blobs/uploads/x%2Fy" },
+			/outside its own blob upload path/u,
+			[],
+		],
+	];
+	for (const [name, uploadSessionHost, pattern, extraHosts] of refusals)
+		it(`refuses ${name}`, async () => {
+			const fixture = image({ platform: "amd64", binary: true });
+			const w = locationWorld(uploadSessionHost, extraHosts);
+			const error = await rejection(
+				resolverFor(fixture).reconcile(storeRequest(fixture), w.transport),
+			);
+			expect(error.code).toBe("RESOLVER_PROVIDER_REJECTED");
+			expect(error.message).toMatch(pattern);
+			expect(error.message).not.toContain(secret);
+			for (const call of w.calls) {
+				const hostname = new URL(call.url).hostname;
+				expect(hostname).not.toBe(FOREIGN);
+				if (call.headers.authorization !== undefined)
+					expect(credentialHosts.has(hostname)).toBe(true);
+			}
+		});
 });
 
 describe("converge: body encoding honesty", () => {

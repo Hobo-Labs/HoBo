@@ -267,8 +267,9 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
-			expect(fourth).toContain("HOBO_UP_INCOMPLETE");
-			expect(check(REACHES_FRONTIER, events).holds).toBe(false);
+			expect(fourth).toContain("HOBO_OK");
+			expect(fourth).toContain("deployed");
+			expect(check(REACHES_FRONTIER, events).holds).toBe(true);
 			// Not vacuous: the run's own sign-in form is the capture the link
 			// property holds to.
 			expect(
@@ -560,4 +561,5 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 	it.todo(
 		"cd up converges the CD project after the ceremony (the hobo-cd Bindle is not deployable yet)",
 	);
+
 });

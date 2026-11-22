@@ -36,6 +36,7 @@ const activeCiFiles = new Set([
 	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
+	"release-hobo-pr.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
@@ -54,6 +55,7 @@ const healthFile = "ci-health.yml";
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
 const vercelEvidenceFile = "vercel-credential-evidence.yml";
+const appCredentialsFile = "app-credentials.yml";
 /**
  * GitHub-hosted `gh actions-lock --verify` of .github/workflows/actions.lock;
  * it reads public action repositories only and runs no repository code.
@@ -61,6 +63,7 @@ const vercelEvidenceFile = "vercel-credential-evidence.yml";
 const actionsLockFile = "actions-lock.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
+	appCredentialsFile,
 	actionsLockFile,
 	probeFile,
 	healthFile,
@@ -196,10 +199,6 @@ const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
  */
 const SHARD_RUNS_ON =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
-
-/** The merge-group workspace batch uses its validated plan's route first. */
-const MERGE_SHARD_RUNS_ON =
-	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 /**
  * No repository variable reaches a workflow, an action or a template as
@@ -551,6 +550,20 @@ function isNpmOidcHostedReleaseJob(
 	);
 }
 
+function isHostedReleaseIntegrationJob(
+	file: string,
+	jobLine: string,
+	runsOn: string | undefined,
+): boolean {
+	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	return (
+		runsOn === "ubuntu-24.04" &&
+		((file === "release-hobo-pr.yml" && jobId === "release-integration") ||
+			((file === "release-hobo.yml" || file === "hobo-ci.yml") &&
+				jobId === "release-hobo-integration"))
+	);
+}
+
 const acceptanceDigest =
 	"431c63f690bf69cbed136cd784200a5a257fb3abb6a8abbe1b200274f029bb1a";
 const hostingEvidenceDigest =
@@ -759,16 +772,16 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		const releaseIntegrationHosted = isHostedReleaseIntegrationJob(
+			file,
+			jobLine,
+			runsOn,
+		);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
 			runsOn === DEPS_IMAGE_RUNS_ON &&
 			isNonPromotingDepsJob(file, jobLine, block);
-		const mergeShardRoute =
-			runsOn === MERGE_SHARD_RUNS_ON &&
-			file === "hobo-ci.yml" &&
-			jobLine.trim() === "workspace_tests:" &&
-			needsJob(block, "pr_gate_validation");
 		if (
 			activeCiFiles.has(file) &&
 			runsOn !== undefined &&
@@ -776,9 +789,9 @@ function lintWorkflowYaml(
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
-			!mergeShardRoute &&
 			!depsRoute &&
 			!npmOidcHosted &&
+			!releaseIntegrationHosted &&
 			!alwaysHosted
 		) {
 			errors.push(
@@ -792,10 +805,7 @@ function lintWorkflowYaml(
 			);
 		}
 		if (
-			(runsOn === ROUTED_RUNS_ON ||
-				runsOn === SHARD_RUNS_ON ||
-				mergeShardRoute ||
-				depsRoute) &&
+			(runsOn === ROUTED_RUNS_ON || runsOn === SHARD_RUNS_ON || depsRoute) &&
 			!needsRoute(block)
 		) {
 			errors.push(
@@ -812,7 +822,6 @@ function lintWorkflowYaml(
 			runsOn === TRUNK_RUNS_ON ||
 			runsOn === ROUTED_RUNS_ON ||
 			runsOn === SHARD_RUNS_ON ||
-			mergeShardRoute ||
 			depsRoute
 		) {
 			for (const [index, line] of block.entries()) {
@@ -899,6 +908,7 @@ function lintWorkflowYaml(
 	}
 	if (
 		activeCiFiles.has(file) &&
+		file !== "release-hobo-pr.yml" &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&
