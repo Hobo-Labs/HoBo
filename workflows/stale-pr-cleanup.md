@@ -25,10 +25,10 @@ For each open PR, classify:
 
 | Class | Signals | Action |
 |---|---|---|
-| **Ready** | mergeable, CI green, work complete | rebase on `main`, validate, mark ready, squash merge |
-| **Superseded** | conflicts + same intent already on `main` (e.g. duplicate pnpm migration) | zero-out branch |
+| **Ready** | mergeable, CI green, work complete | merge `origin/main` in, validate, mark ready, merge (merge commit) |
+| **Superseded** | head is an ancestor of another open PR's head or already in `origin/main` (`git merge-base --is-ancestor <head> <other-head>`), or same intent already on `main` (e.g. duplicate pnpm migration) | close `Superseded by #N`, keep branch |
 | **Needs work** | mergeable but failing checks or incomplete acceptance | own branch, fix, validate, merge |
-| **Blocked** | conflicts + unique unmerged work | rebase, resolve conflicts, validate, merge |
+| **Blocked** | conflicts + unique unmerged work | merge `origin/main` in, resolve conflicts, validate, merge |
 
 Priority: **Ready** and **Superseded** first (fast wins).
 
@@ -44,19 +44,19 @@ Many review-and-merge workers may run concurrently. Before touching a PR:
 
 ### 3. Own (autonomous)
 
-Pick highest-priority claimed PR. Checkout head branch, rebase on `origin/main`.
+Pick highest-priority claimed PR. Checkout head branch, `git merge origin/main` (never rebase a pushed branch).
 
 ### 4. Review & optimize (autonomous)
 
 - Read changed scope only
 - Run `pnpm agent:check -- --base=origin/main`
 - Apply minimal fixes; no scope creep
-- Squash to one commit if multiple
+- Keep the branch's commits as-is; never squash or rewrite pushed history
 
 ### 5. Push & wait for CI (autonomous)
 
 ```bash
-git push -u origin <branch> --force-with-lease
+git push -u origin <branch>
 ```
 
 Poll until `docs` and `PR impact gate` are `SUCCESS`.
@@ -66,16 +66,18 @@ Poll until `docs` and `PR impact gate` are `SUCCESS`.
 **Ready / Needs work / Blocked (resolved):**
 ```bash
 gh pr ready <n>
-gh pr merge <n> --squash --subject "<conventional commit>" --body "Closes HOBO-N"
+gh pr merge <n> --merge --subject "<conventional commit>" --body "Closes HOBO-N"
 ```
+
+Never `--squash`, never `--rebase`. A merge commit puts the PR's own commits on `main`, so PRs
+whose heads it contains are marked merged automatically.
 
 **Superseded:**
 ```bash
-git push origin $(git rev-parse origin/main):refs/heads/<head-branch> --force
+gh pr close <n> --comment "Superseded by #N"
 ```
-GitHub auto-closes when head equals base (0 commits, 0 diff).
-
-If `gh pr close` is permitted, close with comment instead.
+Keep the branch. If `gh pr close` is not permitted, post the `Superseded by #N` comment and
+report the PR for a human to close; never force-push the head branch.
 
 ### 7. Update Linear (autonomous)
 
@@ -124,7 +126,7 @@ Defer human involvement until step 6 fails or step 8 completes for all scanned s
 - Every PR matching stale scan criteria is classified and acted on (merged, zeroed-out, or checkpoint brief posted)
 - Every merged PR has Linear comment with SHA + proof paths (when linked to `HOBO-N`)
 - No failing `agent:check` on merged work
-- Superseded PRs closed (zero-out or explicit close)
+- Superseded PRs closed with `Superseded by #N` (branches kept)
 - Merge comments include `run=<RUN_ID>` for audit trail
 
 ## Out of scope
