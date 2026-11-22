@@ -415,8 +415,6 @@ function checkedReservation(
 		throw new Error("exact original CI financial reservation required");
 	return reservation;
 }
-/** Once the parent has committed, no callback error is a definitive
- * pre-commit refusal. Keep typed denials from triggering offer fallback. */
 function recheckCommitted(
 	lease: Lease,
 	reservation: BudgetReservation,
@@ -570,8 +568,6 @@ export function createCiSharedBudgetHooks(
 				executionDigest: ciExecutionDigest(lease),
 				expectedSeq: current.seq,
 			});
-			// Financial storage may have waited for a lock. Recheck the full
-			// policy at return, including the remaining funded work duration.
 			recheckCommitted(
 				lease,
 				claimed,

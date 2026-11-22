@@ -45,7 +45,6 @@ export type ReplayCommand =
 	| ReplaySleepCommand
 	| ReplayEmitCommand;
 
-/** Parse versioned command provenance before reusing recorded results. */
 export function readReplayCommandTree(
 	events: readonly EventEnvelope[],
 	requireSleepCompletion = false,

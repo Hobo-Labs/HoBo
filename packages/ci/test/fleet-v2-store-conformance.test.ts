@@ -1308,7 +1308,6 @@ describe.runIf(postgresEnabled)(
 			if (!pool || !postgresTestUrl)
 				throw new Error("postgres pool unavailable");
 			const schema = `fleet_migration_${randomUUID().replaceAll("-", "")}`;
-			// The schema name is generated locally from a UUID, not user input.
 			await pool.query(`CREATE SCHEMA ${schema}`);
 			const isolated = new pg.Pool({
 				connectionString: postgresTestUrl,

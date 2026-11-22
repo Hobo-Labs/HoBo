@@ -9,7 +9,6 @@ import {
 } from "../github.js";
 import type { GithubAssignmentLookup } from "./start-fence.js";
 
-/** These values come from trusted controller configuration and the registered slot. */
 export type StrictGithubAssignmentScope = Readonly<{
 	installationId: number;
 	repository: string;

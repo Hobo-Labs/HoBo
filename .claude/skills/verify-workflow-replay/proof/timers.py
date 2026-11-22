@@ -97,7 +97,6 @@ prove(
     selected == left,
 )
 
-# Each parent has its own ordered command history and its own cursor.
 tree_history = Array("tree_history", IntSort(), ArraySort(IntSort(), IntSort()))
 tree_requests = Array("tree_requests", IntSort(), ArraySort(IntSort(), IntSort()))
 tree_cursors = Array("tree_cursors", IntSort(), IntSort())

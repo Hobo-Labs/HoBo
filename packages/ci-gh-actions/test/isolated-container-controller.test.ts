@@ -910,7 +910,6 @@ describe("isolated container controller reconcile", () => {
 			exitState: vi.fn(async () => ({ exitCode: 137, oomKilled: true })),
 		};
 		if (memory?.peak) docker.memoryPeak = memory.peak;
-		// The scan sees no other assignment; settlement uses the mocked getJob seam.
 		const github = jitRunnerGithubWithoutAssignments();
 		vi.spyOn(githubModule, "getJob").mockResolvedValue(
 			githubJob(lease.jobId, "queued"),

@@ -7,7 +7,6 @@ import {
 	type Row,
 } from "./generate-fleet-enrollment-scorecard.mts";
 
-/** A complete generated record is necessary for readiness; evidence still needs review. */
 export function assessScorecard(
 	markdown: string,
 	expected: readonly Row[] = expectedRows,

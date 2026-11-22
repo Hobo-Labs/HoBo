@@ -90,11 +90,14 @@ running, and separate executions are not fenced by this queue. A journal at
 is migrated; invalid or exhausted sequences fail before the next step runs.
 
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. Live `appendEvent` refuses
-further `run.*` facts once a terminal is already in the in-memory journal, so
-an unawaited step cannot corrupt a sealed run. For versioned journals, resume
-first validates the command tree and refuses missing completion evidence,
-duplicate terminal outcomes, and records after the terminal outcome. A journal
+calling the workflow or appending another event. A workflow that returns while
+a step, sleep, or event it started is still outstanding is aborted with
+`WorkflowExecutionAborted` before any terminal outcome is recorded, and the
+orphaned command cannot append afterward. Live `appendEvent` also refuses
+further `run.*` facts once a terminal is already in the in-memory journal. For
+versioned journals, resume first validates the command tree and refuses missing
+completion evidence, duplicate terminal outcomes, and records after the
+terminal outcome. A journal
 with multiple terminal facts is rejected before returning an outcome. Unknown
 command-tree versions are refused. New failure records preserve the failed step
 when present; older failure records without a step cannot reconstruct that

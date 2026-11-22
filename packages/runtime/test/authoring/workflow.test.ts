@@ -2543,38 +2543,38 @@ describe("durable workflow: journal, restart, replay", () => {
 		expect(compensations).toBe(1);
 	});
 
-	it("refuses run.* appends after a terminal fact is already in the journal", async () => {
+	it("refuses run.* appends after its parent returns with a step outstanding", async () => {
 		const engine = createWorkflowEngine();
 		let release!: () => void;
 		const gate = new Promise<void>((resolve) => {
 			release = resolve;
 		});
-		let lateStep: Promise<string> | undefined;
+		let lateStep: Promise<unknown> = Promise.resolve();
 		const wf = defineWorkflow({
 			name: "late-step",
 			async run(ctx) {
-				lateStep = ctx.step("slow", async () => {
-					await gate;
-					return "slow";
-				});
-				void lateStep;
+				lateStep = ctx
+					.step("slow", async () => {
+						await gate;
+						return "slow";
+					})
+					.catch((error) => error);
 				return "fast";
 			},
 		});
-		const handle = await engine.start(wf, {}, { runId: "late-step" });
-		expect(handle.status).toBe("completed");
-		expect(handle.result).toBe("fast");
+		await expect(engine.start(wf, {}, { runId: "late-step" })).rejects.toThrow(
+			/outstanding/,
+		);
+		const journalAtReturn = await engine.journal("late-step");
 		release();
-		await expect(lateStep).rejects.toThrow(
-			"events after terminal for late-step",
-		);
+		expect(await lateStep).toBeInstanceOf(Error);
 		const journal = await engine.journal("late-step");
-		const terminalIndex = journal.findIndex(
-			(event) => event.type === "run.Completed" || event.type === "run.Failed",
-		);
-		expect(terminalIndex).toBeGreaterThanOrEqual(0);
-		for (const event of journal.slice(terminalIndex + 1)) {
-			expect(event.type.startsWith("run.")).toBe(false);
-		}
+		expect(journal).toEqual(journalAtReturn);
+		expect(
+			journal.some(
+				(event) =>
+					event.type === "run.Completed" || event.type === "run.Failed",
+			),
+		).toBe(false);
 	});
 });

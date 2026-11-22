@@ -132,7 +132,6 @@ export interface WorkflowEngineOptions {
 	store?: EventStoreWriter;
 	seed?: string;
 	clock?: RuntimeClock;
-	/** Wait for a duration before rechecking the clock; defaults to a Node timer. */
 	wait?: (delayMs: number) => Promise<void>;
 	actorHost?: ActorHost;
 	tokenBroker?: TokenBroker;
@@ -647,7 +646,6 @@ export function createWorkflowEngine(
 
 		let appendTail: Promise<void> = Promise.resolve();
 		let appendFailed = false;
-		// Stores may reject with any thrown value; preserve it for the caller.
 		type JournalAppendFailure = unknown;
 		let appendFailure: JournalAppendFailure;
 		function poison(error: JournalAppendFailure): never {
@@ -881,7 +879,6 @@ export function createWorkflowEngine(
 				);
 			}
 			if (!outcome.ok) {
-				// A failed append is an infrastructure failure, even inside a step.
 				if (appendFailed)
 					throw new WorkflowExecutionAborted("workflow journal append failed");
 				throw outcome.error;
@@ -1117,13 +1114,17 @@ export function createWorkflowEngine(
 						if (!rootCommands) {
 							for (const unconsumedIndex of unconsumedScheduledSleeps) {
 								if (unconsumedIndex < index) {
-									rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+									rejectReplay(
+										`sleep schedule diverged on replay for ${runId}`,
+									);
 								}
 							}
 							if (unconsumedScheduledSleeps.size > 0) {
 								const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
 								if (nextUnconsumed > index) {
-									rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+									rejectReplay(
+										`sleep schedule diverged on replay for ${runId}`,
+									);
 								}
 							}
 						}

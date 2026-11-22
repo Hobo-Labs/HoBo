@@ -22,7 +22,6 @@ export function jitRunnerDeregisterGithub(
 	};
 }
 
-/** A complete empty assignment scan for tests that exercise unrelated cleanup. */
 export function jitRunnerGithubWithoutAssignments(): GithubTransport {
 	return jitRunnerDeregisterGithub({
 		async request(_installationId, path) {

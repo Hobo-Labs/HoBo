@@ -146,7 +146,6 @@ export function transitionRunnerSlot(
 	return transition(from, to, slotTransitions[from], "runner slot");
 }
 
-/** Resolve an uncertain slot only after its caller has confirmed teardown. */
 export function releaseRunnerSlotAfterTeardown(
 	from: RunnerSlotState,
 	teardownConfirmed: boolean,

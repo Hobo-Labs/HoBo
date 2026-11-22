@@ -218,8 +218,6 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				 partition_id text NOT NULL,claim_id text NOT NULL,capacity_group_id text NOT NULL,
 				 units bigint NOT NULL,released_at text NOT NULL,PRIMARY KEY(partition_id,claim_id))`,
 			);
-			// Older installations used signed int32 columns for uint32 fleet
-			// fields. Widen them under the schema advisory lock before use.
 			await client.query(`DO $$ BEGIN
 				IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
 				 AND table_name='hobo_ci_fleet_v2_capacity_groups' AND data_type='integer'
@@ -1028,8 +1026,6 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				);
 			if (resolvingUncertainty) releaseRunnerSlotAfterTeardown(expected, true);
 			else transitionRunnerSlot(expected, next);
-			// Uncertainty retains capacity. A confirmed unclaimed release gives
-			// it back; claimed slots release only via completeExecution.
 			if (
 				next === "released" &&
 				["reserved", "provisioning", "registered", "uncertain"].includes(

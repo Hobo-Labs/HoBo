@@ -885,8 +885,6 @@ export function createReservationLedger(initialLedgerView) {
 						Date.parse(reservation.expiresAt) <= Date.parse(now),
 				)
 				.map((reservation) => reservation.reservationId);
-			// Preflight the whole expiry batch so exhaustion cannot advance time or
-			// release only some reservations before the operation fails.
 			advanceLedgerSequence(
 				current.seq,
 				expiredIds.length + (advancesTime ? 1 : 0),
@@ -958,8 +956,6 @@ export function decideAndReserveDispatch(request) {
 		providers: registry.records.map((record) => record.source),
 	});
 	const existingSnapshot = reservationLedger.snapshot();
-	// Older helpers could reserve a different category's account. Do not issue
-	// any further dispatch from a ledger that still records such exposure.
 	if (
 		(existingSnapshot.reservations ?? []).some(
 			(reservation) =>
@@ -1048,8 +1044,6 @@ export function decideAndReserveDispatch(request) {
 			};
 		}
 
-		// A provider may have separate registrations and budgets for several
-		// categories. Reserve the exact category used by the decision.
 		const selectedCategory = decision.dispatchEvent.data.category;
 		const selectedRecord = registry.byCategory
 			.get(selectedCategory)
@@ -1071,8 +1065,6 @@ export function decideAndReserveDispatch(request) {
 			(candidate) => candidate.providerId === decision.selectedProvider,
 		);
 		const dimension = selectedRecord.dimension;
-		// Selection prefers the account's price over the registry fallback. Pass
-		// that same price to reserve so the two stages price the same exposure.
 		const accountPrice = findLedgerAccount(
 			ledgerView,
 			decision.selectedProvider,
@@ -1133,7 +1125,6 @@ export function decideAndReserveDispatch(request) {
 
 export function replayDispatchDecision(replayInput) {
 	assertObject(replayInput, "replayInput");
-	// Unversioned records were created with the process locale's collation.
 	const orderingVersion =
 		replayInput.orderingVersion === undefined
 			? "legacy-locale"

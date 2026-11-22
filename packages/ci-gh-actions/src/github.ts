@@ -111,7 +111,6 @@ const WorkflowRunPage = z.object({
 	),
 });
 
-/** The bounded scan found more runs than it can examine safely in this pass. */
 export class IncompleteGithubRunListing extends Error {
 	readonly runIds: readonly number[];
 	constructor(runIds: readonly number[]) {

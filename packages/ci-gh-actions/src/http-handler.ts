@@ -21,7 +21,6 @@ export type HostedRelayApplication = Readonly<{
 	claim(leaseId: string, oidc: string): Promise<Response>;
 	control(request: Request): Promise<Response | undefined>;
 	ready(): Promise<boolean>;
-	/** Optional strict start fence; a host without one fails closed. */
 	startFence?(request: Request): Promise<Response>;
 	/** The relay's MCP server (`createRelayMcp`); a host without one answers 404. */
 	mcp?(request: Request): Promise<Response>;

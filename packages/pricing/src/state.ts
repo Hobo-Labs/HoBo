@@ -59,7 +59,6 @@ function parseLegacyUtc(value: string, path: string): number {
 	return parsed;
 }
 
-/** Validate calendar components without silently normalizing impossible dates. */
 export function parseUtc(value: string, path: string): number {
 	const parsed = parseLegacyUtc(value, path);
 	if (new Date(parsed).toISOString().slice(0, 19) !== value.slice(0, 19))
@@ -70,7 +69,6 @@ export function parseUtc(value: string, path: string): number {
 	return parsed;
 }
 
-/** Compare validated UTC instants without truncating fractional seconds. */
 export function compareUtcExact(left: string, right: string): number {
 	parseUtc(left, "timestamp");
 	parseUtc(right, "timestamp");
@@ -94,7 +92,6 @@ export const LEGACY_TIME: TemporalPolicy = {
 	compare: (left, right) => Math.sign(Date.parse(left) - Date.parse(right)),
 };
 
-/** Exact UTC ordering for pricing-rating/v3: open ends last, fractions intact. */
 export const exactPricingTimeOrder: PricingTimeOrder = (left, right) => {
 	if (left === undefined) return right === undefined ? 0 : 1;
 	if (right === undefined) return -1;

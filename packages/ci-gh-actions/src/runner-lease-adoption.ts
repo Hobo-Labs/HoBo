@@ -32,7 +32,6 @@ function reservedJobWithdraw(lease: Lease) {
 	});
 }
 
-/** Pin confirmed custody; uncertain observations retain the existing binding. */
 export async function adoptRunnerAssignment(
 	store: Pick<HostedRelayStore, "get" | "transition" | "withdrawQueuedJob">,
 	github: GithubTransport,
@@ -67,8 +66,6 @@ export async function adoptRunnerAssignment(
 		(RUNNER_EXECUTING_JOB_STATUSES.has(assignment.status) ||
 			isUnknownRunnerJobStatus(assignment.status));
 	if (!assignment) return { lease, holdsActive: false };
-	// A partial scan or unfamiliar status can protect the runner without
-	// authorizing custody transfer or withdrawing the reserved job.
 	if (assignment.incomplete || isUnknownRunnerJobStatus(assignment.status))
 		return { lease, assignment, holdsActive };
 	const servedJobId = assignment.jobId;

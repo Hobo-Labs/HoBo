@@ -111,7 +111,7 @@ export async function replayRun<S, A>(
 					);
 				}
 				treeCursor += 1;
-				// SAFETY: the recorded JSON result has the workflow step's result type.
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: memoized step results are the JSON values the step returned.
 				return command.terminal.result as T;
 			}
 			const stepId = `${name}:${stepCounter}`;
