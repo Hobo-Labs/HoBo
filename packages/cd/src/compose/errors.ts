@@ -22,7 +22,7 @@ export const COMPOSE_FAILURES = Object.freeze({
 	"compose-simulate-required":
 		"The in-memory store and the simulated realizer are fixtures; they are reachable only with --simulate.",
 	"compose-artifacts-invalid":
-		"The artifact store configuration is invalid. Use filesystem (default under HOBO_HOME), s3-compatible with a credentialRef, or memory with --simulate.",
+		"The artifact store configuration is invalid. Use filesystem or simulated memory for one replica, or s3-compatible storage with a credentialRef for multiple replicas.",
 	"compose-runbook-unconfigured":
 		"No RunbookExecutor is composed, so RUNBOOK hooks fail closed. Compose the Station runbook executor (hobo runbook) before declaring RUNBOOK hooks.",
 	"compose-suite-unconfigured":

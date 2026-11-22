@@ -1,9 +1,9 @@
 # HoBo CD from the `hobo` binary
 
 `hobo deploy`, `hobo incident status` and `hobo serve cd --port 8791` all run
-against one composition of `@hobo/cd` (`composeContinuousDelivery`). There is no second delivery lane and no fixture path except
-`--simulate`, which is labelled in every result (`data.simulated: true`, reason
-code `simulated` on every observation). None of them needs a Bindle in the
+against one composition of `@hobo/cd` (`composeContinuousDelivery`). The
+`--simulate` path labels its command results and observations (`data.simulated:
+true`, reason code `simulated`). None of them needs a Bindle in the
 working directory: they act on the Station's journal and its declared topology.
 
 ## Composition
@@ -273,6 +273,26 @@ reconciler over the Station's MANAGED Camps, `/v1/cd/` (read API for
 operators, delivery feed for enrolled agents), `/healthz` and `/readyz`.
 Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
 
+The CLI listener binds to loopback only and permits unauthenticated operator
+reads; other local processes can read deployment records and event streams.
+A hosted Node service can use
+`openCdRuntime` from `@hobo/hobo/cd-runtime` and `startCdServer` from
+`@hobo/hobo/cd-serve`, with the same public HTTPS origin, a TLS certificate
+and key, and an operator authorizer that validates each caller's identity.
+The TLS and SVID signing keys must be distinct.
+Operator reads require that authorizer; the delivery feed verifies agent
+enrollment and proof of possession, and is unavailable while the service is
+unready. Public readiness exposes only its status. A simulated public runtime
+stays unready and never dispatches the agent feed; authenticated operator
+readiness reports the simulation. Loopback readiness labels simulated mode.
+Public runtime startup also reads the pre-provisioned CD SVID RSA signing key
+from the owner's store through `readSecret`; it refuses to start if that key is
+missing or invalid. All replicas must read the same key. Replacing it invalidates
+outstanding SVIDs, so coordinate rotation and agent reactivation across the
+service. The key is never generated independently by a replica.
+This listener requires a continuously running process; the CD lifecycle command
+does not yet provide a production executor for it.
+
 ## Runbook
 
 - **`Unknown option` (`HOBO_CLI_USAGE`)**: the flag is not one the subcommand
@@ -284,6 +304,9 @@ Agents connect outbound to `/v1/cd/`; the Station never dials an agent (I3).
   `--simulate` for a labelled dry run. `/readyz` lists the refusal.
 - **`compose-store-multinode`**: more than one replica on SQLite. Set
   `HOBO_CD_POSTGRES_URL`.
+- **`compose-artifacts-invalid`**: multiple replicas require a shared
+  S3-compatible artifact store; configure its endpoint, bucket, region, and
+  credential reference.
 - **`cd-store-unavailable`**: the journal could not be opened. For SQLite check
   that `$HOBO_HOME` is writable; for Postgres check reachability and version.
 - **`cd-kube-fleet-invalid`**: fix the `HOBO_CD_KUBE_FLEET` file (exactly one of
