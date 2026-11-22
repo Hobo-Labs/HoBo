@@ -138,7 +138,10 @@ describe("authorizeBillingSpend", () => {
 	it("rejects a genuine partial showback quote", () => {
 		const corpus = JSON.parse(
 			readFileSync(
-				new URL("../../pricing/corpus/golden-replay-baseline.json", import.meta.url),
+				new URL(
+					"../../pricing/corpus/golden-replay-baseline.json",
+					import.meta.url,
+				),
 				"utf8",
 			),
 		);
@@ -159,7 +162,10 @@ describe("authorizeBillingSpend", () => {
 	it("accepts an eligible current quote from the pricing engine", () => {
 		const corpus = JSON.parse(
 			readFileSync(
-				new URL("../../pricing/corpus/golden-replay-baseline.json", import.meta.url),
+				new URL(
+					"../../pricing/corpus/golden-replay-baseline.json",
+					import.meta.url,
+				),
 				"utf8",
 			),
 		);
