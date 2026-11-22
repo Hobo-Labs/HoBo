@@ -2103,10 +2103,7 @@ describe("staged production finalizePromotion recovery", () => {
 					},
 				};
 			}
-			if (
-				init.method === "POST" &&
-				path.includes("/promote/dpl_wait")
-			) {
+			if (init.method === "POST" && path.includes("/promote/dpl_wait")) {
 				sent.push(`${init.method} ${path}`);
 				return {
 					ok: false,
