@@ -752,6 +752,12 @@ refused rather than shadowed.
 
 ## Local server and guest execution checks
 
+Local Bindle serving releases listeners, component hosts, and its mesh hook if
+startup fails. On failure or close, it restores environment values that still
+match its own injections and leaves later external changes intact. Overlapping
+serving scopes retain their active environment injections when closed in either
+order. A requested port of zero publishes the actual port assigned by the OS.
+
 `serve control` removes both signal handlers when either shutdown signal fires,
 and propagates close failures to the command rather than producing an unhandled
 rejection. `test/serve-control-command.test.ts` exercises binding, shutdown on

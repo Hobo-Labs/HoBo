@@ -221,6 +221,52 @@ describe("capability vocabulary", () => {
 		expect(model.replay()).toBe(model.fingerprint());
 	});
 
+	it("rejects invalid verbs before a cross-tenant refusal changes history", () => {
+		const model = new ControlModel();
+		model.addCapability(TENANT, "c1", ["read"]);
+		const before = model.serialize();
+		const events = structuredClone(model.events);
+		expect(() =>
+			model.addCapability("other", "c1", JSON.parse('["admin"]')),
+		).toThrow("invalid capability verb");
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual(events);
+	});
+
+	it("rejects invalid attenuation without changing state or history", () => {
+		const model = new ControlModel();
+		model.addCapability(TENANT, "c1", ["read", "write"]);
+		const before = model.serialize();
+		const events = structuredClone(model.events);
+		for (const [tenant, capability] of [
+			[TENANT, "c1"],
+			["other", "c1"],
+			[TENANT, "missing"],
+		] as const) {
+			expect(() =>
+				model.attenuate(tenant, capability, JSON.parse('["read", "admin"]')),
+			).toThrow("invalid capability verb");
+			expect(model.serialize()).toBe(before);
+			expect(model.events).toEqual(events);
+		}
+	});
+
+	it("rejects sparse verb arrays without changing state or history", () => {
+		const model = new ControlModel();
+		const verbs: Verb[] = [];
+		verbs.length = 2;
+		verbs[1] = "read";
+		const before = model.serialize();
+		expect(() => model.addCapability(TENANT, "c1", verbs)).toThrow(
+			"invalid capability verb",
+		);
+		expect(() => model.attenuate(TENANT, "missing", verbs)).toThrow(
+			"invalid capability verb",
+		);
+		expect(model.serialize()).toBe(before);
+		expect(model.events).toEqual([]);
+	});
+
 	it("rejects invalid verbs in recorded history", () => {
 		const model = new ControlModel();
 		model.addCapability(TENANT, "c1", ["read"]);

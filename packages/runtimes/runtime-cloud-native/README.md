@@ -20,6 +20,10 @@ const host = createCloudNativeRuntimeHost({ defaultProvider: "mock" });
 await host.ensure({ hoboHome });
 ```
 
+The mock provider restores an injected environment value when its host closes
+only if the value still matches the injection, preserving later changes made by
+the caller.
+
 ## Remote providers
 
 Every provider realizes the same
