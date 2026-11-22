@@ -31,9 +31,14 @@ export async function startCdServer(
 	try {
 		const { cd, config } = runtime;
 		const refusals: string[] = [];
-		const managed: CampId[] = (await cd.topology.camps())
-			.filter((camp) => camp.management !== CampManagement.OBSERVE_ONLY)
-			.map((camp) => camp.campId);
+		let managed: CampId[];
+		try {
+			managed = (await cd.topology.camps())
+				.filter((camp) => camp.management !== CampManagement.OBSERVE_ONLY)
+				.map((camp) => camp.campId);
+		} catch {
+			throw new Error("The CD service topology could not be read.");
+		}
 		const reconcilers = [];
 		if (managed.length > 0) {
 			try {
@@ -55,6 +60,16 @@ export async function startCdServer(
 			principal: { kind: "service", id: `hobo-serve-cd:${config.stationId}` },
 			telemetry: cd.sink,
 		});
+		const issuerReady = () => {
+			try {
+				return (
+					input.access?.kind !== "authenticated" ||
+					runtime.issuerReady?.() === true
+				);
+			} catch {
+				return false;
+			}
+		};
 		const api = createCdControlApi({
 			store: runtime.store,
 			tenant: config.tenant,
@@ -64,19 +79,24 @@ export async function startCdServer(
 			service: {
 				health: () => {
 					const health = sanitizedCdHealth(service.health());
-					return refusals.length === 0
-						? health
-						: {
-								ok: false,
-								checks: [
-									...health.checks,
-									{
-										name: "conductor",
-										ok: false,
-										detail: "conductor could not be composed",
-									},
-								],
-							};
+					const checks = [...health.checks];
+					if (refusals.length > 0)
+						checks.push({
+							name: "conductor",
+							ok: false,
+							detail: "conductor could not be composed",
+						});
+					const signingReady = issuerReady();
+					if (!signingReady)
+						checks.push({
+							name: "issuer",
+							ok: false,
+							detail: "signing key unavailable",
+						});
+					return {
+						ok: health.ok && refusals.length === 0 && signingReady,
+						checks,
+					};
 				},
 			},
 			telemetry: cd.sink,
@@ -91,7 +111,7 @@ export async function startCdServer(
 			...(runtime.issuerKeyId === undefined
 				? undefined
 				: { issuerKeyId: runtime.issuerKeyId }),
-			service,
+			service: { ...service, ready: () => service.ready() && issuerReady() },
 			api,
 			simulated: config.simulate,
 			refusals,

@@ -95,6 +95,52 @@ page listens on.
 
 ## Continuity: what CD keeps, and how hard
 
+The private issuer bootstrap contract can establish a stable agent-signing key
+without a shared secret being supplied in chat. `prepareCdIssuer` is for the
+owner's setup ceremony; `openCdIssuer` only opens an existing winner and never
+creates one. A new candidate must be readable and match its generated RSA
+fingerprint before the journal can select it. Every open reads the winner's
+private candidate again, checks its RSA key and fingerprint, and binds it to the
+configured HTTPS origin. Closing the returned signing handle releases its key
+reference. `createIssuerKms`
+adapts that handle to the existing JWT-SVID issuer interface without generating
+or rotating another key. It verifies returned signatures against the public key
+and translates signing-handle failures to a fixed error.
+
+The host must explicitly provide two private authorities. A
+`PrivateIssuerCandidates` implementation must allocate a separate owner-store
+item per attempt, keep the winner unchanged, and make it durably readable by
+every replica. A `PrivateIssuerJournal` implementation
+must keep its contents private, return linearizable reads, and atomically claim
+the one permanent winner. It must never rewind, delete, or replace that winner,
+including across failover and restore. These guarantees are part of the injected
+port contracts; the functions cannot establish them from a boolean setting.
+`createIssuerCandidatesFromSecrets` adapts a `SecretsPort` that actually offers
+atomic `createOnly`, allocating a new uppercase random entry for every attempt.
+The owner store must also prevent later modification or deletion of a winning entry.
+For stores without atomic create, `createRandomIssuerCandidatesFromSecrets`
+uses uppercase 256-bit random names, refuses observed existing entries and name
+or value mismatches, and retries only the same value under the same name. This is
+probabilistic uniqueness, not a conditional write: a concurrent name collision
+or another writer can still overwrite an entry. Use it only with an exclusive
+candidate namespace and a provider proven to preserve every name byte. Before
+any access or write, the host's `supportsExactName` operation must verify that
+the provider preserves the full candidate name. The host's `canonicalName`
+operation must independently verify the stored name and version after a write;
+missing or mismatched confirmation refuses the candidate. Both operations are
+trusted provider-specific contracts, not proofs supplied by this package.
+`createIssuerJournalFromEventStore` adapts an explicitly supplied event store
+using an expected-sequence-zero append. The caller remains responsible for
+ensuring that store is private, linearizable, durable, and non-rewinding.
+
+Contenders may leave unused private candidates after a crash or lost response.
+The bootstrap does not delete them. Any cleanup must first establish that a
+candidate cannot be the permanent winner or referenced by a live replica.
+The current owner-store adapters and journal fleet do not yet supply these
+guarantees, and `hobo cd up` and the hosted runtime do not yet call these
+functions. They must be wired to real authorities before this bootstrap can
+enable public deployment.
+
 Each stateful resource declares its policy with the `continuity` trait
 (`src/continuity.ts`, attached in `src/bindle.ts`), choosing the cheapest tier
 that keeps what the data is for:

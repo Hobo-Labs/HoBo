@@ -285,11 +285,21 @@ enrollment and proof of possession, and is unavailable while the service is
 unready. Public readiness exposes only its status. A simulated public runtime
 stays unready and never dispatches the agent feed; authenticated operator
 readiness reports the simulation. Loopback readiness labels simulated mode.
-Public runtime startup also reads the pre-provisioned CD SVID RSA signing key
-from the owner's store through `readSecret`; it refuses to start if that key is
-missing or invalid. All replicas must read the same key. Replacing it invalidates
-outstanding SVIDs, so coordinate rotation and agent reactivation across the
-service. The key is never generated independently by a replica.
+Public runtime startup can use `openSigningKey(origin)` to reopen the elected
+private issuer, for example by calling `openCdIssuer` with the supplied origin
+and private candidate and journal authorities. Each call must return a fresh
+handle; the runtime owns it and closes it on shutdown or failed startup. A
+failed injected authority refuses startup without falling back to another key.
+If the handle later reports that it is unavailable, public readiness and the
+agent feed stay unavailable until it recovers.
+A host may call `prepareCdIssuer` during owner setup to elect a key; the
+built-in ceremony does not yet connect these authorities.
+Without an injected authority, public startup reads the pre-provisioned CD SVID
+RSA signing key from the owner's store through `readSecret`; it refuses to
+start if that key is missing or invalid. All replicas must read the same key.
+Replacing it invalidates outstanding SVIDs, so coordinate rotation and agent
+reactivation across the service. The key is never generated independently by a
+replica.
 This listener requires a continuously running process; the CD lifecycle command
 does not yet provide a production executor for it.
 
