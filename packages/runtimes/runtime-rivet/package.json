@@ -20,8 +20,8 @@
 	},
 	"dependencies": {
 		"@hobo/core": "workspace:*",
-		"@rivetkit/rivetkit-wasm": "2.3.10",
-		"rivetkit": "2.3.10"
+		"@rivetkit/rivetkit-wasm": "3.0.0",
+		"rivetkit": "3.0.0"
 	},
 	"devDependencies": {
 		"@types/node": ">=24.0.0"

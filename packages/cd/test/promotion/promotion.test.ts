@@ -312,6 +312,27 @@ describe("promotion saga (WP6)", () => {
 		expect((await h.desired.current(camp("dev-1")))?.freightId).toBe("f2");
 	});
 
+	it("verification FAIL on a Camp's first Set compensates without rollback-no-predecessor", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		h.verification.verdict = VerificationVerdict.FAIL;
+		const result = await h.service.promote(
+			{
+				freightId: fid("f1"),
+				targets: [camp("dev-1")],
+				idempotencyKey: "first",
+			},
+			h.ctx(),
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		const record = await h.service.get(pid(result.value.promotionId));
+		expect(record?.state).toBe(PromotionState.FAILED);
+		const codes = record?.reasons.map((r) => r.code) ?? [];
+		expect(codes).toContain(PROMOTION_REASON.verificationFailed);
+		expect(codes).not.toContain(PROMOTION_REASON.rollbackNoPredecessor);
+	});
+
 	it("a group failure compensates: applied members roll back to their predecessors", async () => {
 		const h = harness();
 		h.freight.add("f0");

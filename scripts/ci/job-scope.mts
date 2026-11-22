@@ -28,6 +28,7 @@ const ALWAYS = [
 	/^tools\/pins\//,
 	/^vitest\.config\.[^/]+$/,
 	/^scripts\/ci\/(job-scope|affected-lanes)\.mts$/,
+	/^scripts\/test\/release-integration-job\.test\.ts$/,
 	/^scripts\/lib\/read-stdin\.mts$/,
 	/^packages\/ci-gh-actions\/deploy\/ci-runner\//,
 	/^scripts\/(lib\/ci-runner-contract|ci-runner-preflight)\.mts$/,

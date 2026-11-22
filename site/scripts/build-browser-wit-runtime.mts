@@ -37,6 +37,7 @@ interface ToolchainModule {
 		witPath: string;
 		worldName: string;
 		disableFeatures: string[];
+		env?: { XDG_CACHE_HOME: string } | undefined;
 	}): Promise<{ component: Uint8Array }>;
 }
 
@@ -110,7 +111,9 @@ export async function buildBrowserWitRuntime(
 		const guestPath = path.join(workRoot, "station-guest.mjs");
 		await writeFile(guestPath, guestSource, "utf8");
 		process.stderr.write("browser-wit: componentizing real guest\n");
+		const cacheHome = process.env.XDG_CACHE_HOME;
 		const built = await toolchain.componentize.componentize({
+			env: cacheHome ? { XDG_CACHE_HOME: cacheHome } : undefined,
 			sourcePath: guestPath,
 			witPath: WIT_DIR,
 			worldName: "browser-station",

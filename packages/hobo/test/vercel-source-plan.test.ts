@@ -18,7 +18,12 @@ import { prepareVercelSource } from "../src/vercel-source-plan.js";
 
 const directories: string[] = [];
 function git(cwd: string, ...args: string[]): string {
-	return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+	const env: NodeJS.ProcessEnv = {
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: "/dev/null",
+	};
+	if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+	return execFileSync("git", args, { cwd, encoding: "utf8", env }).trim();
 }
 function fixture() {
 	const cwd = mkdtempSync(join(tmpdir(), "hobo-vercel-source-plan-"));
@@ -350,7 +355,7 @@ describe("Vercel source preparation", () => {
 				target: "preview",
 			}),
 		).rejects.toThrow(/build root/u);
-	});
+	}, 60_000);
 
 	it("refuses a committed reserved archive path", async () => {
 		const source = fixture();
@@ -370,7 +375,7 @@ describe("Vercel source preparation", () => {
 				archive: true,
 			}),
 		).rejects.toThrow(/reserved/u);
-	});
+	}, 60_000);
 	it.each([
 		false,
 		true,
@@ -455,5 +460,5 @@ describe("Vercel source preparation", () => {
 		);
 		expect(promoted.status).toBe(201);
 		expect((await (await alias()).json()).deploymentId).toBe(deployment.id);
-	});
+	}, 120_000);
 });

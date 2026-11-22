@@ -28,11 +28,13 @@ describe("release OCI SDK deploy integration", () => {
 		"overlays SDK tarballs into a pnpm-deploy app without npm install",
 		() => {
 			const previousSemver = process.env.HOBO_RELEASE_SEMVER;
+			const previousNpmCache = process.env.npm_config_cache;
 			const fixtureRoot = mkdtempSync(join(tmpdir(), "hobo-sdk-overlay-"));
 			const appDir = join(fixtureRoot, "app");
 			const artifactsDir = join(fixtureRoot, "artifacts");
 			try {
 				process.env.HOBO_RELEASE_SEMVER = "0.0.0-pr.test";
+				process.env.npm_config_cache = join(fixtureRoot, "npm-cache");
 				mkdirSync(appDir, { recursive: true });
 				runQuiet(
 					root,
@@ -59,6 +61,8 @@ describe("release OCI SDK deploy integration", () => {
 				if (previousSemver === undefined)
 					delete process.env.HOBO_RELEASE_SEMVER;
 				else process.env.HOBO_RELEASE_SEMVER = previousSemver;
+				if (previousNpmCache === undefined) delete process.env.npm_config_cache;
+				else process.env.npm_config_cache = previousNpmCache;
 				rmSync(fixtureRoot, { recursive: true, force: true });
 			}
 		},

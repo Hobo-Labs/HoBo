@@ -5,14 +5,25 @@ import { type JsonObject, parseJsonObject } from "./json.js";
 import { PROVIDER_TARGET } from "./options.js";
 import {
 	blob,
+	cron,
+	delayedQueue,
 	edgeConfig,
 	edgeFunction,
+	gitFunction,
 	project,
+	queue,
+	sandboxHost,
+	schedule,
 	staticDeployment,
 	type VercelBlobSlotOptions,
+	type VercelCronSlotOptions,
 	type VercelEdgeConfigSlotOptions,
 	type VercelEdgeFunctionSlotOptions,
+	type VercelGitFunctionSlotOptions,
 	type VercelProjectSlotOptions,
+	type VercelQueueSlotOptions,
+	type VercelSandboxHostSlotOptions,
+	type VercelScheduleSlotOptions,
 	type VercelStaticDeploySlotOptions,
 } from "./slots.js";
 
@@ -62,6 +73,11 @@ export interface VercelYardSpecOptions {
 	readonly edgeFunction?: VercelEdgeFunctionSlotOptions;
 	readonly blob?: VercelBlobSlotOptions;
 	readonly edgeConfig?: VercelEdgeConfigSlotOptions;
+	readonly gitFunction?: VercelGitFunctionSlotOptions;
+	readonly queue?: VercelQueueSlotOptions;
+	readonly schedule?: VercelScheduleSlotOptions;
+	readonly cron?: VercelCronSlotOptions;
+	readonly sandboxHost?: VercelSandboxHostSlotOptions;
 }
 
 export const VERCEL_DEFAULT_BINDINGS: VercelSlotCatalog = Object.freeze({
@@ -95,7 +111,23 @@ export function vercelSlotCatalog(
 			staticDeployment(options.staticDeployment ?? {}),
 			...(options.project ? [project(options.project)] : []),
 		]),
-		service: Object.freeze([edgeFunction(options.edgeFunction ?? {})]),
+		service: Object.freeze([
+			edgeFunction(options.edgeFunction ?? {}),
+			...(options.schedule ? [schedule(options.schedule)] : []),
+			...(options.cron ? [cron(options.cron)] : []),
+			...(options.sandboxHost ? [sandboxHost(options.sandboxHost)] : []),
+		]),
+		...(options.gitFunction
+			? { api: Object.freeze([gitFunction(options.gitFunction)]) }
+			: undefined),
+		...(options.queue
+			? {
+					queue: Object.freeze([
+						queue(options.queue),
+						delayedQueue(options.queue),
+					]),
+				}
+			: undefined),
 		bucket: Object.freeze([blob(options.blob ?? {})]),
 		kv: Object.freeze([edgeConfig(options.edgeConfig ?? {})]),
 	});

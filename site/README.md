@@ -4,6 +4,9 @@ The GitHub Pages site for HoBo: landing page, developer docs, and agent docs, se
 <https://tyler-r-kendrick.github.io/HoBo/>.
 
 Built with [Astro](https://astro.build) in static output mode — no client-side framework.
+Release verification probes the latest GitHub Pages build and succeeds only when
+it is built for the current `gh-pages` head, so a stale live site cannot qualify
+a new release.
 Most pages are prerendered HTML plus `src/styles/global.css`; the `/examples/`
 ship console is the deliberate exception, using a small TypeScript client and
 build-generated browser Component Model assets. The console is a three-board
@@ -57,39 +60,17 @@ pnpm --filter hobo-site codegen    # regenerate protobuf TS and vet CUE
 ```
 
 
-## Design system (DESIGN.md)
+## Visual system
 
-Visual identity for agents lives in **[`DESIGN.md`](./DESIGN.md)** — Google’s open
-[DESIGN.md](https://github.com/google-labs-code/design.md) format (`@google/design.md`).
-
-Aesthetic: **Steamboat Willie / Cuphead / rubberhose** (thick ink, sticker shadows,
-film grain, Chewy title cards, B&W day/night inversion). Runtime CSS remains
-`src/styles/global.css`; keep the two aligned.
-
-### Repo-wide gate (pre-commit)
-
-Every **web UI** package must ship a root `DESIGN.md`. Discovery:
-
-| Signal | Meaning |
-|---|---|
-| Path is `site/` | Always a web UI root |
-| `"hobo": { "webUi": true }` in package.json | Explicit web UI |
-| Depends on `astro` / `next` / `nuxt` / … | Framework-hosted web app |
-| Already has `DESIGN.md` | Opt-in visual contract |
-
-Lint all of them with the same CLI:
-
-```sh
-pnpm run design:lint                            # all web UI DESIGN.md files (pre-commit)
-pnpm --filter hobo-site run design:lint         # this package only
-pnpm --filter hobo-site run design:export:css   # Tailwind v4 @theme export
-pnpm --filter hobo-site run design:export:dtcg  # W3C design tokens
-```
-
-`pnpm run check:relevant:staged` (the pre-commit path) selects `design:lint` when
-`DESIGN.md`, `site/` UI sources, or `scripts/check-design-md.mts` change.
-
-Agent skill mirrors: `.agents/skills/design-md` and `.claude/skills/design-md`.
+The site uses the HoBo Rubberhose identity: thick ink, sticker shadows, title
+cards, and light/dark inversion. The implemented tokens are in
+`src/styles/global.css`; the independent reviewed authority is
+`scripts/visual-token-contract.json`. Run `pnpm run design:lint` from the
+repository root to execute `scripts/check-visual-tokens.mts`, which discovers
+every web UI project, checks the site and connection UI contrast matrices and
+all registered palettes, and refuses a missing contract or a missing, empty, or
+unreadable palette. Run the affected package's design-lint and rendered-surface
+tests for UI changes; raw CSS output is not its own approval.
 
 ## Layout
 
@@ -124,7 +105,7 @@ Agent skill mirrors: `.agents/skills/design-md` and `.claude/skills/design-md`.
 - **Voice:** playful "homeward bound" theme — the guiding principle is continuous
   migration to the cheapest home that passes policy. Whimsy in the prose, precision in
   the tables and code.
-- **Design language:** strict black-and-white **rubberhose** 1930s cartoon (Steamboat Willie / Cuphead / Fleischer) — see `DESIGN.md`. All artwork is *supplied*
+- **Design language:** strict black-and-white **rubberhose** 1930s cartoon (Steamboat Willie / Cuphead / Fleischer) — see `src/styles/global.css`. All artwork is *supplied*
   (never procedural): Bo's sprite sheets, the scenery plates, the landmarks beside
   the trail and the cast of hobits are files, traced or generated-then-reviewed,
   and used as given. White paper/black ink by day, exact inversion at night —
@@ -354,7 +335,24 @@ blobs in the HoBo artifact store) and promoted `hobo-release/pages-candidate` ->
 `@hobo/provider-github`, publishes `gh-pages` itself: one commit `deploy: <sha>`
 on the observed head, moved by compare-and-swap with `GITHUB_TOKEN` (by hand too).
 The journal lives in `HOBO_RELEASE_CD_HOME` (by hand: `HOBO_HOME`, default
-`~/.hobo`), and the `hobo` package must be built.
+`~/.hobo`), and the `hobo` package must be built. Rollout verification probes
+`api.github.com/repos/<owner>/<repo>/pages/builds/latest` on the same egress
+path as the GitHub realizer. The release transport returns success only when
+that build has status `built` and its commit matches `object.sha` from
+`git/ref/heads/gh-pages`; pending, stale, malformed, and failed observations
+return 404. Both API reads stay below 64 KiB, with `Authorization` omitted when
+`GITHUB_TOKEN` is absent; the same build validation applies either way. Pages rollout
+convergence allows 14 minutes for the GitHub Pages build; the five-minute
+verification window starts after convergence. The release workflow drives
+promotion for about that combined budget — the drive spans the 14-minute
+progress deadline, the subsequent five-minute verification window, and one poll
+interval (572 passes at two seconds, not a doubled 28-minute loop) — and logs
+`release-pages:` lines to stderr when it records, promotes, and while it polls
+(about every 30 seconds). Every pages record, promote and drive call races
+`HOBO_RELEASE_PAGES_WALL_BUDGET_MS` (default and maximum: 20 minutes, under the
+step's 21-minute timeout), so an overrun exits with a
+`release-promotion-timeout` verdict instead of sitting silent until the step is
+cancelled.
 See [release channels](../docs/design/release-channels.md#hobo-releases-through-hobo-cd).
 
 "Merged" is not "live": check the `gh-pages` commit message for the sha it was built

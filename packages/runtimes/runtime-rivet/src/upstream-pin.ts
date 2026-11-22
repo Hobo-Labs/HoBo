@@ -1,21 +1,21 @@
 export const RIVETKIT_PIN = {
 	packageName: "rivetkit",
-	version: "2.3.10",
+	version: "3.0.0",
 	license: "Apache-2.0",
 	enginesNode: ">=22.0.0",
 	integrity:
-		"sha512-E+H0lBc3O8dK9Pj7W2XW3VwrCnfpwYYm5LlsZyHrmk5bCrJIBdnEFdZXn5nsYMz0waCfP1ieyP6d1tdvBG76Dg==",
-	checkedAt: "2026-08-13",
-	source: "https://registry.npmjs.org/rivetkit/2.3.10",
+		"sha512-xUa0+hD3rjvuIzzZU3Y9j6PbD1tG88+pseiwHclDejdCGMm33mLR10fuHUN82Ly45pcBigE5Nn6M1RXkHjdJJg==",
+	checkedAt: "2026-11-16",
+	source: "https://registry.npmjs.org/rivetkit/3.0.0",
 } as const;
 
 export const RIVET_ENGINE_PIN = {
 	image: "rivetdev/engine",
-	tag: "2.3.10",
+	tag: "3.0.0",
 	indexDigest:
-		"sha256:efaaa24ecdae3c0b608a45f9d9efdecf36e4159ab6d3443e5f3c410bcfb45467",
-	checkedAt: "2026-08-13",
-	source: "https://hub.docker.com/v2/repositories/rivetdev/engine/tags/2.3.10",
+		"sha256:5ae3c24275eeff87ad1962f4d66fcdb85786fc1397feeeb55afc2ca1f7ccf6f2",
+	checkedAt: "2026-11-16",
+	source: "https://hub.docker.com/v2/repositories/rivetdev/engine/tags/3.0.0",
 } as const;
 
 export function rivetEngineImageRef(): string {

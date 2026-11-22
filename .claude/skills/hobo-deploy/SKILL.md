@@ -5,6 +5,9 @@ description: Use HoBo's owner hand-off and secret-store session when deploying a
 
 # Deploying with HoBo
 
+Use the [HoBo setup skill](../hobo-setup/SKILL.md) for the initial MCP connection
+and owner-store session before starting a deployment-specific ceremony.
+
 Use the HoBo CLI and its owner hand-off for provider connections. The owner
 chooses an existing secret store; the run opens it through HoBo's common store
 interface. Do not select a provider because a token happens to be available,

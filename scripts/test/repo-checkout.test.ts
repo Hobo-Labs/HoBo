@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -103,6 +103,37 @@ describe("checkoutFromBareMirror", () => {
 			retryDelaysMs: [0],
 		});
 		expect(result.ok).toBe(true);
+		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
+	});
+});
+
+describe("hobo-checkout sparse recovery", () => {
+	it("materializes the requested cone in a working copy with no checked-out files", () => {
+		const action = readFileSync(
+			join(
+				import.meta.dirname,
+				"../../.github/actions/hobo-checkout/action.yml",
+			),
+			"utf8",
+		);
+		const step =
+			/    - name: Initialize sparse cone before root files\n[\s\S]*?      run: \|\n((?:        .*\n)+)/u.exec(
+				action,
+			);
+		if (!step?.[1]) throw new Error("sparse initialization step is missing");
+		const script = step[1]
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => line.slice(8))
+			.join("\n");
+		const work = join(temp, "work-sparse-recovery");
+		execFileSync("git", ["clone", "--no-checkout", source, work]);
+		const initialized = spawnSync("bash", ["-c", script], {
+			cwd: work,
+			encoding: "utf8",
+			env: { ...process.env, DIR_CONES: "scripts/ci" },
+		});
+		expect(initialized.status, initialized.stderr).toBe(0);
 		expect(existsSync(join(work, "scripts/ci/ci-trace.mts"))).toBe(true);
 	});
 });

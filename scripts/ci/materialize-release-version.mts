@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { appendFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+	type ParsedReleaseRef,
 	parseReleaseRef,
 	tryParseReleaseRef,
-	type ParsedReleaseRef,
 } from "../lib/release-version.mts";
 
 export function shouldTrustGateReleaseVersion(

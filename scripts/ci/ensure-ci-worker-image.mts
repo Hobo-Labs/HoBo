@@ -79,33 +79,102 @@ export function remoteWorkerTag(repo: string, version: string): string {
 	return `ghcr.io/${repo.toLowerCase()}/hobo-ci-worker:${version}`;
 }
 
+export const DEFAULT_WORKER_PULL_BUDGET_SEC = 540;
+
+export function workerPullBudgetSec(
+	raw: string | undefined = process.env.HOBO_CI_WORKER_PULL_BUDGET_SEC,
+): number {
+	if (!raw || !/^\d+$/u.test(raw.trim())) {
+		return DEFAULT_WORKER_PULL_BUDGET_SEC;
+	}
+	const parsed = Number(raw.trim());
+	return Number.isSafeInteger(parsed) && parsed > 0
+		? parsed
+		: DEFAULT_WORKER_PULL_BUDGET_SEC;
+}
+
+export function validatedWorkerDigestRef(
+	repo: string,
+	ref: string | undefined,
+): string | null {
+	if (!ref) return null;
+	const prefix = `ghcr.io/${repo.toLowerCase()}/hobo-ci-worker@`;
+	if (!ref.startsWith(prefix)) return null;
+	return /^sha256:[a-f0-9]{64}$/u.test(ref.slice(prefix.length)) ? ref : null;
+}
+
+export function resolveWorkerRemoteRef(
+	repo: string,
+	version: string,
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	const suppliedImageRef = env.HOBO_CI_WORKER_IMAGE_REF;
+	if (suppliedImageRef === undefined) return remoteWorkerTag(repo, version);
+	const validatedDigestRef = validatedWorkerDigestRef(repo, suppliedImageRef);
+	if (!validatedDigestRef) {
+		throw new Error(
+			`HOBO_CI_WORKER_IMAGE_REF must be ghcr.io/${repo.toLowerCase()}/hobo-ci-worker@sha256:<64 lowercase hex>; refusing to fall back to the mutable version tag`,
+		);
+	}
+	return validatedDigestRef;
+}
+
 export function pullWorkerFromGhcr(
 	remote: string,
 	options?: Readonly<{
 		attempts?: number;
-		perPullTimeoutSec?: number;
+		budgetSec?: number;
+		now?: () => number;
+		random?: () => number;
 	}>,
 ): boolean {
-	const attempts = options?.attempts ?? 3;
-	const perPull = options?.perPullTimeoutSec ?? 120;
+	const attempts = Math.max(1, Math.floor(options?.attempts ?? 4));
+	const budgetSec = options?.budgetSec ?? workerPullBudgetSec();
+	const now = options?.now ?? Date.now;
+	const random = options?.random ?? Math.random;
+	const deadline = now() + budgetSec * 1000;
 	for (let i = 1; i <= attempts; i++) {
-		const result =
-			perPull > 0
-				? spawnSync("timeout", [String(perPull), "docker", "pull", remote], {
-						cwd: root,
-						stdio: "inherit",
-					})
-				: spawnSync("docker", ["pull", remote], {
-						cwd: root,
-						stdio: "inherit",
-					});
+		const remainingMs = deadline - now();
+		if (remainingMs <= 0) break;
+		const result = spawnSync(
+			"timeout",
+			[String(Math.ceil(remainingMs / 1000)), "docker", "pull", remote],
+			{
+				cwd: root,
+				stdio: "inherit",
+			},
+		);
 		if (result.status === 0) return true;
 		if (i < attempts) {
-			const backoff = Math.min(30, 2 ** i);
-			spawnSync("sleep", [String(backoff)], { stdio: "ignore" });
+			const backoffCap = Math.min(30, 5 * 2 ** (i - 1));
+			const backoff = Math.floor(random() * (backoffCap + 1));
+			const remainingBeforeSleep = deadline - now();
+			const sleepSec = Math.min(
+				backoff,
+				Math.floor(remainingBeforeSleep / 1000),
+			);
+			if (sleepSec > 0) {
+				console.log(
+					`GHCR pull attempt ${i}/${attempts} failed; retrying in ${sleepSec}s`,
+				);
+				spawnSync("sleep", [String(sleepSec)], { stdio: "ignore" });
+			}
 		}
 	}
 	return false;
+}
+
+function workerManifestReachable(remote: string, token: string): boolean {
+	if (!token) return false;
+	// GHCR's registry API refuses the raw GITHUB_TOKEN as a bearer, so a curl probe
+	// read "absent" for a tag `docker pull` fetched two seconds later (run
+	// 43043419831). Ask the Docker CLI, which holds the login made just before.
+	const result = spawnSync(
+		"timeout",
+		["45", "docker", "manifest", "inspect", remote],
+		{ stdio: "ignore" },
+	);
+	return result.status === 0;
 }
 
 export function ghcrWorkerManifestReachable(
@@ -113,16 +182,49 @@ export function ghcrWorkerManifestReachable(
 	version: string,
 	token: string,
 ): boolean {
-	if (!token) return false;
-	// GHCR's registry API refuses the raw GITHUB_TOKEN as a bearer, so a curl probe
-	// read "absent" for a tag `docker pull` fetched two seconds later (run
-	// 43043419831). Ask the Docker CLI, which holds the login made just before.
-	const result = spawnSync(
+	return workerManifestReachable(remoteWorkerTag(repo, version), token);
+}
+
+export function digestFromVerboseManifest(stdout: string): string | null {
+	const digests = new Set<string>();
+	for (const match of stdout.matchAll(
+		/"Descriptor"\s*:\s*\{[^}]*"digest"\s*:\s*"(sha256:[a-f0-9]{64})"/gu,
+	)) {
+		if (match[1]) digests.add(match[1]);
+	}
+	const [digest] = digests.size === 1 ? [...digests] : [];
+	return digest ?? null;
+}
+
+export function resolveWorkerDigestRef(repo: string, version: string): string {
+	const token = ghcrAuthToken();
+	if (!repo || !token) {
+		throw new Error(
+			"resolving the GHCR worker digest requires repository and token",
+		);
+	}
+	const actor = process.env.GITHUB_ACTOR?.trim() || "github-actions";
+	if (!dockerLoginGhcr(actor, token)) {
+		throw new Error("GHCR login failed while resolving the worker digest");
+	}
+	const remote = remoteWorkerTag(repo, version);
+	const inspected = spawnSync(
 		"timeout",
-		["45", "docker", "manifest", "inspect", remoteWorkerTag(repo, version)],
-		{ stdio: "ignore" },
+		["60", "docker", "manifest", "inspect", "-v", remote],
+		{ cwd: root, encoding: "utf8", stdio: ["inherit", "pipe", "inherit"] },
 	);
-	return result.status === 0;
+	if (inspected.status !== 0) {
+		throw new Error(
+			`GHCR manifest absent or unreadable for ${remote} (inspect status ${inspected.status ?? "unknown"})`,
+		);
+	}
+	const digest = digestFromVerboseManifest(inspected.stdout);
+	if (!digest) {
+		throw new Error(
+			`GHCR manifest digest unavailable for ${remote}; expected one verbose Descriptor digest`,
+		);
+	}
+	return `${remote.slice(0, remote.lastIndexOf(":"))}@${digest}`;
 }
 
 export function materializeCiWorkerImageOnly(): string | null {
@@ -145,9 +247,9 @@ export function materializeCiWorkerImageOnly(): string | null {
 		process.env.HOBO_CI_SKIP_GHCR_PULL !== "1";
 
 	if (mayPullFromGhcr && repo) {
+		const remote = resolveWorkerRemoteRef(repo, version);
 		dockerLoginGhcr(actor, token);
-		const remote = remoteWorkerTag(repo, version);
-		const manifestOk = ghcrWorkerManifestReachable(repo, version, token);
+		const manifestOk = workerManifestReachable(remote, token);
 		if (!manifestOk) {
 			console.log(`GHCR manifest absent for ${remote}`);
 			return null;
@@ -238,6 +340,17 @@ export function ciWorkerImagePublished(): CiWorkerImagePresence {
 }
 
 function main(): void {
+	if (process.argv.includes("--resolve-digest")) {
+		const repo = process.env.GITHUB_REPOSITORY?.trim() ?? "";
+		const version = ciRunnerImageVersion(root);
+		const imageRef = resolveWorkerDigestRef(repo, version);
+		console.log(imageRef);
+		const out = process.env.GITHUB_OUTPUT;
+		if (out) {
+			appendFileSync(out, `image_ref=${imageRef}\nversion=${version}\n`);
+		}
+		return;
+	}
 	if (process.argv.includes("--published-status")) {
 		const status = ciWorkerImagePublished();
 		console.log(

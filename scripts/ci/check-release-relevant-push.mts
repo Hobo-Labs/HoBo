@@ -142,7 +142,7 @@ function main(): void {
 		console.log(scope.reason);
 		appendFileSync(
 			githubOutput,
-			`run=${scope.run ? "true" : "false"}\n`,
+			`run=${scope.run ? "true" : "false"}\nfrom=${scope.from ?? ""}\n`,
 			"utf8",
 		);
 		return;

@@ -210,7 +210,15 @@ export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 			resolved: KUBERNETES_RESOLVED_PRODUCT_IDS,
 		},
 		vercel: {
-			catalog: () => vercel.Yard({ project: {} }),
+			catalog: () =>
+				vercel.Yard({
+					project: {},
+					gitFunction: {},
+					queue: {},
+					schedule: {},
+					cron: {},
+					sandboxHost: {},
+				}),
 			resolved: VERCEL_RESOLVED_PRODUCT_IDS,
 		},
 	});

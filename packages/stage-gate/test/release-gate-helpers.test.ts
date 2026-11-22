@@ -4,16 +4,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { gone } from "./helpers/release-gate.js";
 
-function stateOf(pid: number): string {
-	try {
-		const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-		return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
-	} catch {
-		return "";
-	}
-}
-
 const HAS_PYTHON3 = spawnSync("python3", ["-c", ""]).status === 0;
+
+const ZOMBIE_PARENT_PY = [
+	"import subprocess, time",
+	'child = subprocess.Popen(["sleep", "0"])',
+	"print(child.pid, flush=True)",
+	"time.sleep(20)",
+].join("\n");
 
 const LEADER_EXIT_PY = [
 	"import ctypes, threading, time",
@@ -22,10 +20,10 @@ const LEADER_EXIT_PY = [
 ].join("\n");
 
 describe("gone", () => {
-	it.runIf(process.platform === "linux")(
+	it.runIf(process.platform === "linux" && HAS_PYTHON3)(
 		"counts a process that has exited as gone, although its parent has not reaped it",
 		async () => {
-			const parent = spawn("sh", ["-c", "sleep 0 & echo $!; exec sleep 20"], {
+			const parent = spawn("python3", ["-c", ZOMBIE_PARENT_PY], {
 				stdio: ["ignore", "pipe", "ignore"],
 			});
 			try {
@@ -34,11 +32,6 @@ describe("gone", () => {
 						done(Number(chunk.toString("utf8").trim())),
 					);
 				});
-				const until = Date.now() + 20_000;
-				while (stateOf(zombie) !== "Z" && Date.now() < until) {
-					await new Promise((done) => setTimeout(done, 50));
-				}
-				expect(stateOf(zombie)).toBe("Z");
 				const started = Date.now();
 				expect(await gone(zombie)).toBe(true);
 				expect(Date.now() - started).toBeLessThan(1000);

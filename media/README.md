@@ -94,20 +94,11 @@ fan for nothing), keeps the still render as a poster until the mesh is ready,
 and does not auto-spin under `prefers-reduced-motion` — you can still orbit by
 hand.
 
-## Identity: inherited, not defined
+## Identity
 
-This surface renders **HoBo Rubberhose**, and it does not get a vote. The
-authority is [`site/DESIGN.md`](../site/DESIGN.md) under
-[ADR-0149](../docs/design/adr/07-portability-extensibility.md#adr-0149).
-
-**There is deliberately no `media/DESIGN.md`.** `scripts/check-design-md.mts`
-treats any directory containing one as a design project with its own identity,
-and duplicating the site contract would create another source of drift. Pointing
-at the single contract serves the gate's purpose better than duplicating it.
-
-The consequence, stated plainly: `pnpm run design:lint` does **not** lint this
-package. If this surface ever grows its own visual language, that is the moment
-to add a DESIGN.md and accept the fourth identity — not before.
+This surface uses the HoBo Rubberhose identity implemented in the site's
+styles and supplied artwork. Keep the existing character proportions and
+light/dark treatment when changing the media experience.
 
 ## Bo is asymmetric
 

@@ -1,4 +1,4 @@
-import type { PrincipalRef } from "@hobo/core";
+import type { DurableEventStore, PrincipalRef } from "@hobo/core";
 import { createA2HApprover } from "../../src/adapters/approval.js";
 import type { FanoutAggregateGate } from "../../src/adapters/gatekeeper.js";
 import type { TrailsMigrations } from "../../src/adapters/trails.js";
@@ -64,9 +64,9 @@ export function harness(options: HarnessOptions = {}) {
 		authorizer,
 		telemetry,
 	});
-	const build = () => {
+	const build = (journal: DurableEventStore = store) => {
 		const deps: Mutable<PromotionServiceDeps> = {
-			store,
+			store: journal,
 			tenant: TENANT,
 			now: c.now,
 			freight,
@@ -109,7 +109,8 @@ export function harness(options: HarnessOptions = {}) {
 		telemetry,
 		approvals,
 		service,
-		restart: build,
+		restart: () => build(),
+		withStore: (journal: DurableEventStore) => build(journal),
 		ctx,
 	};
 }

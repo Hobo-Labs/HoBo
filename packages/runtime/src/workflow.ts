@@ -12,7 +12,9 @@ import {
 import { WorkflowFailure } from "./errors.js";
 import {
 	cloneAsJson,
+	isJsonArray,
 	isJsonObject,
+	isJsonString,
 	type JsonBag,
 	type JsonValue,
 } from "./json.js";
@@ -29,10 +31,12 @@ import type { WitTokenHandle, WitTokenRequest } from "./wit.js";
 import {
 	captureWorkflowInput,
 	captureWorkflowResult,
+	type ParsedRunSleepScheduled,
 	type ParsedRunStepCompleted,
 	type ParsedRunStepFailed,
 	parseRunCompletedFact,
 	parseRunFailedFact,
+	parseRunSleepScheduledFact,
 	parseRunStartedFact,
 	parseRunStepCompletedFact,
 	parseRunStepFailedFact,
@@ -135,28 +139,120 @@ const DEFAULT_TOKEN_BROKER: TokenBroker = (request: WitTokenRequest) =>
 		ref: `stub://${request.provider}/${request.scope}`,
 	}) satisfies WitTokenHandle;
 
+function snapshotOwnProperty(
+	copy: JsonValue[] | JsonBag,
+	source: JsonValue[] | JsonBag,
+	key: string | symbol,
+	seen: Set<object>,
+): void {
+	const descriptor = Object.getOwnPropertyDescriptor(source, key);
+	if (!descriptor) return;
+	if (!("value" in descriptor)) {
+		const accessor: PropertyDescriptor = {
+			enumerable: descriptor.enumerable === true,
+			configurable: true,
+		};
+		if (descriptor.get) accessor.get = descriptor.get;
+		if (descriptor.set) accessor.set = descriptor.set;
+		Object.defineProperty(copy, key, accessor);
+		return;
+	}
+	const value =
+		descriptor.value === undefined
+			? undefined
+			: snapshotJournalData(descriptor.value, seen);
+	Object.defineProperty(copy, key, {
+		value,
+		enumerable: descriptor.enumerable === true,
+		writable: true,
+		configurable: true,
+	});
+}
+
+function snapshotJournalData(
+	value: JsonValue,
+	seen = new Set<object>(),
+): JsonValue {
+	if (!isJsonObject(value) && !isJsonArray(value)) return value;
+	if (seen.has(value)) throw new Error("cyclic journal data");
+	seen.add(value);
+	try {
+		if (Array.isArray(value)) {
+			const copy: JsonValue[] = [];
+			copy.length = value.length;
+			for (const name of Object.getOwnPropertyNames(value)) {
+				if (name === "length") continue;
+				snapshotOwnProperty(copy, value, name, seen);
+			}
+			for (const symbol of Object.getOwnPropertySymbols(value)) {
+				snapshotOwnProperty(copy, value, symbol, seen);
+			}
+			return copy;
+		}
+		const copy: JsonBag = {};
+		for (const key of Object.getOwnPropertyNames(value)) {
+			snapshotOwnProperty(copy, value, key, seen);
+		}
+		for (const symbol of Object.getOwnPropertySymbols(value)) {
+			snapshotOwnProperty(copy, value, symbol, seen);
+		}
+		return copy;
+	} finally {
+		seen.delete(value);
+	}
+}
+
 function listStepOutcomeIndices(
 	journal: ReadonlyArray<{ type: string; data: JsonValue }>,
 ): number[] {
 	const indices: number[] = [];
 	for (const event of journal) {
 		if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-			const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+			const fact = parseRunStepCompletedFact(snapshotJournalData(event.data));
 			indices.push(fact.index);
 		} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-			const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+			const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 			indices.push(fact.index);
 		}
 	}
 	return indices;
 }
 
-function maxStepOutcomeIndex(indices: number[]): number {
-	let max = -1;
-	for (const index of indices) {
-		if (index > max) max = index;
+function isBoundedStepIndex(index: number): boolean {
+	return (
+		Number.isSafeInteger(index) &&
+		index >= 0 &&
+		index <= 1_000_000 &&
+		!Object.is(index, -0)
+	);
+}
+
+function assertContiguousStepJournal(
+	runId: string,
+	scheduledSteps: ReadonlyMap<number, string>,
+	outcomeIndices: ReadonlySet<number>,
+): void {
+	let maxOutcome = -1;
+	for (const index of outcomeIndices) {
+		if (!isBoundedStepIndex(index)) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+		if (index > maxOutcome) maxOutcome = index;
 	}
-	return max;
+	for (const index of scheduledSteps.keys()) {
+		if (!isBoundedStepIndex(index)) {
+			throw new Error(`invalid step journal for ${runId}`);
+		}
+	}
+	let maxIndex = maxOutcome;
+	for (const index of scheduledSteps.keys()) {
+		if (index > maxIndex) maxIndex = index;
+	}
+	for (let index = 0; index <= maxIndex; index += 1) {
+		if (!outcomeIndices.has(index) && !scheduledSteps.has(index)) {
+			throw new Error(`gapped step journal for ${runId}`);
+		}
+	}
 }
 
 export function createWorkflowEngine(
@@ -189,9 +285,12 @@ export function createWorkflowEngine(
 		if (!started || !isRecord(started.data)) {
 			throw new Error(`missing run.Started for ${runId}`);
 		}
-		const startedFact = parseRunStartedFact(started.data, seed);
+		const startedFact = parseRunStartedFact(
+			snapshotJournalData(started.data),
+			seed,
+		);
 		const input = captureWorkflowInput(args);
-		if (!isDeepStrictEqual(startedFact.args, cloneAsJson(input))) {
+		if (!isDeepStrictEqual(cloneAsJson(startedFact.args), cloneAsJson(input))) {
 			throw new Error(`workflow input differs from run.Started for ${runId}`);
 		}
 		const runArgs = input;
@@ -204,12 +303,14 @@ export function createWorkflowEngine(
 		const scheduledSteps = new Map<number, string>();
 		for (const event of journal) {
 			if (event.type !== "run.StepScheduled") continue;
-			const fact = parseRunStepScheduledFact(cloneAsJson(event.data));
+			const fact = parseRunStepScheduledFact(snapshotJournalData(event.data));
 			const previous = scheduledSteps.get(fact.index);
 			if (previous !== undefined && previous !== fact.name) {
 				throw new Error(`step name differs from journal for ${runId}`);
 			}
-			scheduledSteps.set(fact.index, fact.name);
+			if (previous === undefined) {
+				scheduledSteps.set(fact.index, fact.name);
+			}
 		}
 		const stepOutcomeCounts = new Map<
 			string,
@@ -220,7 +321,7 @@ export function createWorkflowEngine(
 				if (!isRecord(event.data)) {
 					throw new Error(`invalid run.StepCompleted for ${runId}`);
 				}
-				const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+				const fact = parseRunStepCompletedFact(snapshotJournalData(event.data));
 				const scheduled = scheduledSteps.get(fact.index);
 				if (scheduled !== undefined && scheduled !== fact.name) {
 					throw new Error(`step name differs from journal for ${runId}`);
@@ -236,7 +337,7 @@ export function createWorkflowEngine(
 				if (!isRecord(event.data)) {
 					throw new Error(`invalid run.StepFailed for ${runId}`);
 				}
-				const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+				const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 				const scheduled = scheduledSteps.get(fact.index);
 				if (scheduled !== undefined && scheduled !== fact.name) {
 					throw new Error(`step name differs from journal for ${runId}`);
@@ -263,21 +364,25 @@ export function createWorkflowEngine(
 		}
 		const journaledOutcomeIndices = listStepOutcomeIndices(journal);
 		const unconsumedOutcomes = new Set(journaledOutcomeIndices);
-		if (journaledOutcomeIndices.length > 0) {
-			const outcomeIndexSet = new Set(journaledOutcomeIndices);
-			const maxOutcomeIndex = maxStepOutcomeIndex(journaledOutcomeIndices);
-			if (
-				!Number.isSafeInteger(maxOutcomeIndex) ||
-				maxOutcomeIndex > 1_000_000
-			) {
-				throw new Error(`invalid step journal for ${runId}`);
-			}
-			for (let index = 0; index < maxOutcomeIndex; index += 1) {
-				if (!outcomeIndexSet.has(index) && !scheduledSteps.has(index)) {
-					throw new Error(`gapped step journal for ${runId}`);
+		const unconsumedScheduledSteps = new Set(scheduledSteps.keys());
+		assertContiguousStepJournal(runId, scheduledSteps, unconsumedOutcomes);
+		const sleepFacts = new Map<number, ParsedRunSleepScheduled>();
+		for (const event of journal) {
+			if (event.type !== "run.SleepScheduled") continue;
+			const fact = parseRunSleepScheduledFact(snapshotJournalData(event.data));
+			const previous = sleepFacts.get(fact.index);
+			if (previous !== undefined) {
+				if (
+					previous.delayMs !== fact.delayMs ||
+					previous.label !== fact.label
+				) {
+					throw new Error(`invalid run.SleepScheduled for ${runId}`);
 				}
+				continue;
 			}
+			sleepFacts.set(fact.index, fact);
 		}
+		const unconsumedScheduledSleeps = new Set(sleepFacts.keys());
 		const terminals = journal.filter(
 			(event) => event.type === "run.Completed" || event.type === "run.Failed",
 		);
@@ -358,6 +463,16 @@ export function createWorkflowEngine(
 			if (unconsumedOutcomes.size > 0) {
 				throw new Error(`unconsumed step outcome for ${runId}`);
 			}
+			if (unconsumedScheduledSteps.size > 0) {
+				throw new Error(
+					`unconsumed scheduled step (orphan StepScheduled) for ${runId}`,
+				);
+			}
+			if (unconsumedScheduledSleeps.size > 0) {
+				throw new Error(
+					`unconsumed scheduled sleep (orphan SleepScheduled) for ${runId}`,
+				);
+			}
 		}
 		const deterministic = createDeterministicContext({
 			seed: runSeed,
@@ -370,10 +485,12 @@ export function createWorkflowEngine(
 			let failed: ParsedRunStepFailed | undefined;
 			for (const event of journal) {
 				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+					const fact = parseRunStepCompletedFact(
+						snapshotJournalData(event.data),
+					);
 					if (fact.index === index) completed = fact;
 				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+					const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 					if (fact.index === index) failed = fact;
 				}
 			}
@@ -385,10 +502,12 @@ export function createWorkflowEngine(
 			const failed: typeof journal = [];
 			for (const event of journal) {
 				if (event.type === "run.StepCompleted" && isRecord(event.data)) {
-					const fact = parseRunStepCompletedFact(cloneAsJson(event.data));
+					const fact = parseRunStepCompletedFact(
+						snapshotJournalData(event.data),
+					);
 					if (fact.name === name && fact.index === index) completed.push(event);
 				} else if (event.type === "run.StepFailed" && isRecord(event.data)) {
-					const fact = parseRunStepFailedFact(cloneAsJson(event.data));
+					const fact = parseRunStepFailedFact(snapshotJournalData(event.data));
 					if (fact.name === name && fact.index === index) failed.push(event);
 				}
 			}
@@ -404,6 +523,9 @@ export function createWorkflowEngine(
 				assertReplayConsistent();
 				const index = stepIndex;
 				stepIndex += 1;
+				if (!isBoundedStepIndex(index)) {
+					rejectReplay(`invalid step journal for ${runId}`);
+				}
 				const scheduled = scheduledSteps.get(index);
 				if (scheduled !== undefined && scheduled !== name) {
 					rejectStepName();
@@ -419,22 +541,28 @@ export function createWorkflowEngine(
 				const completedEvent = completed[0];
 				if (completedEvent && isRecord(completedEvent.data)) {
 					const result = replayStepCompletedResult<T>(
-						cloneAsJson(completedEvent.data),
+						snapshotJournalData(completedEvent.data),
 					);
 					unconsumedOutcomes.delete(index);
+					unconsumedScheduledSteps.delete(index);
 					return result;
 				}
 				const failedEvent = failed[0];
 				if (failedEvent && isRecord(failedEvent.data)) {
 					const stepFailed = parseRunStepFailedFact(
-						cloneAsJson(failedEvent.data),
+						snapshotJournalData(failedEvent.data),
 					);
 					unconsumedOutcomes.delete(index);
+					unconsumedScheduledSteps.delete(index);
 					throw new WorkflowFailure(stepFailed.message, {
 						step: stepFailed.name,
 					});
 				}
-				await appendEvent("run.StepScheduled", { name, index });
+				if (scheduled === undefined) {
+					await appendEvent("run.StepScheduled", { name, index });
+					scheduledSteps.set(index, name);
+				}
+				unconsumedScheduledSteps.delete(index);
 				assertReplayConsistent();
 				try {
 					const value = await runWithRetries(name, fn, opts ?? {});
@@ -456,30 +584,68 @@ export function createWorkflowEngine(
 				assertReplayConsistent();
 				const index = sleepIndex;
 				sleepIndex += 1;
-				const scheduled = journal.find(
-					(event) =>
-						event.type === "run.SleepScheduled" &&
-						isRecord(event.data) &&
-						event.data.index === index,
-				);
-				if (scheduled && isRecord(scheduled.data)) {
-					if (scheduled.data.delayMs !== durationMs) {
+				if (!isBoundedStepIndex(index)) {
+					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+				}
+				const normalizedDurationMs = Object.is(durationMs, -0) ? 0 : durationMs;
+				const scheduled = sleepFacts.get(index);
+				if (scheduled) {
+					if (
+						scheduled.delayMs !== normalizedDurationMs ||
+						scheduled.label !== sleepOptions?.label
+					) {
 						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
 					}
+					unconsumedScheduledSleeps.delete(index);
 					return;
 				}
-				const data: JsonBag = { delayMs: durationMs, index };
+				if (
+					!Number.isSafeInteger(normalizedDurationMs) ||
+					normalizedDurationMs < 0
+				) {
+					rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+				}
+				for (const unconsumedIndex of unconsumedScheduledSleeps) {
+					if (unconsumedIndex < index) {
+						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+					}
+				}
+				if (unconsumedScheduledSleeps.size > 0) {
+					const nextUnconsumed = Math.min(...unconsumedScheduledSleeps);
+					if (nextUnconsumed > index) {
+						rejectReplay(`sleep schedule diverged on replay for ${runId}`);
+					}
+				}
+				const data: JsonBag = { delayMs: normalizedDurationMs, index };
 				if (sleepOptions?.label !== undefined) {
+					if (!isJsonString(sleepOptions.label)) {
+						rejectReplay(`invalid run.SleepScheduled for ${runId}`);
+					}
 					data.label = sleepOptions.label;
 				}
 				await appendEvent("run.SleepScheduled", data);
+				const recorded: ParsedRunSleepScheduled = {
+					delayMs: normalizedDurationMs,
+					index,
+				};
+				if (sleepOptions?.label !== undefined) {
+					recorded.label = sleepOptions.label;
+				}
+				sleepFacts.set(index, recorded);
+				unconsumedScheduledSleeps.delete(index);
 			},
 			async emit(type, data) {
 				assertReplayConsistent();
 				return appendEvent(type, data ?? null);
 			},
-			now: () => deterministic.now(),
-			random: (label) => deterministic.random(label),
+			now: () => {
+				assertReplayConsistent();
+				return deterministic.now();
+			},
+			random: (label) => {
+				assertReplayConsistent();
+				return deterministic.random(label);
+			},
 			token(request) {
 				assertReplayConsistent();
 				return tokenBroker(request);

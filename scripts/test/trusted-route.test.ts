@@ -87,6 +87,26 @@ describe("base-controlled attestation verification", () => {
 		});
 	}
 
+	it("exposes the merge-group PR Fabric reuse answer from the trusted base only (hobo-ci.yml)", () => {
+		const doc = workflowDocument(
+			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
+		);
+		const route = asObject(asObject(doc.jobs)?.route);
+		const steps = asList(route?.steps)?.map(asObject) ?? [];
+		const checkout = steps.find(
+			(step) => asObject(step?.with)?.path === ".ci-trusted",
+		);
+		const sparse = asText(asObject(checkout?.with)?.["sparse-checkout"]) ?? "";
+		assert.ok(
+			sparse.split(/\s+/u).includes("scripts/ci/pr-fabric-reuse.mts"),
+			"the trusted base checkout must hold the pr-fabric reuse script",
+		);
+		assert.equal(
+			asObject(route?.outputs)?.["pr-fabric-green"],
+			"${{ steps.route.outputs.pr-fabric-green }}",
+		);
+	});
+
 	it("refuses a missing or invalid event base instead of trusting the candidate", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-routing-base-"));
 		try {
@@ -146,7 +166,7 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
-	it("routes from the base action's code and policy and refuses missing base files", () => {
+	it("routes from the base action's code and handles missing base files by route kind", () => {
 		const workspace = mkdtempSync(join(tmpdir(), "hobo-trusted-batch-"));
 		try {
 			const action = workflowDocument(
@@ -181,14 +201,14 @@ describe("base-controlled attestation verification", () => {
 				trustedPolicy,
 				JSON.stringify({
 					...policy,
-					runnerRouting: { ...policy.runnerRouting, pin: "fleet" },
+					runnerRouting: { ...policy.runnerRouting, pin: "github" },
 				}),
 			);
 			writeFileSync(
 				join(workspace, ".hobo/ci.json"),
 				JSON.stringify({
 					...policy,
-					runnerRouting: { ...policy.runnerRouting, pin: "github" },
+					runnerRouting: { ...policy.runnerRouting, pin: "fleet" },
 				}),
 			);
 			const candidate = join(workspace, "scripts/ci");
@@ -218,7 +238,7 @@ describe("base-controlled attestation verification", () => {
 			};
 			const selected = run();
 			assert.equal(selected.child.status, 0, selected.child.stderr);
-			assert.match(selected.output, /^runner=hobo-trunk$/mu);
+			assert.match(selected.output, /^runner=ubuntu-24\.04$/mu);
 			assert.equal(existsSync(marker), false);
 			rmSync(trustedPolicy);
 			const missingPolicy = run();
@@ -234,20 +254,147 @@ describe("base-controlled attestation verification", () => {
 		}
 	});
 
+	for (const workflow of ["hobo-ci.yml", "release-hobo.yml"]) {
+		it(`${workflow} keeps merge-group routing on hosted runners`, () => {
+			const doc = workflowDocument(
+				readFileSync(`.github/workflows/${workflow}`, "utf8"),
+			);
+			const route = asObject(asObject(doc.jobs)?.route);
+			assert.equal(route?.["runs-on"], "ubuntu-24.04");
+			assert.equal(asObject(doc.jobs)?.["mq-route-surface"], undefined);
+			const routeStep = asList(route?.steps)
+				?.map(asObject)
+				.find((step) => step?.id === "route");
+			const withBlock = asObject(routeStep?.with);
+			assert.equal(
+				asText(withBlock?.route),
+				workflow === "hobo-ci.yml" ? "${{ (inputs.route || 'auto') }}" : "auto",
+			);
+		});
+	}
+
+	it("decides PR Fabric reuse beside the checked-out base action, never from the candidate's copy", () => {
+		const workspace = mkdtempSync(join(tmpdir(), "hobo-pr-fabric-route-"));
+		try {
+			const action = workflowDocument(
+				readFileSync(".github/actions/route-runner/action.yml", "utf8"),
+			);
+			const steps = asList(asObject(action.runs)?.steps)?.map(asObject) ?? [];
+			const shell = asText(steps.find((step) => step?.id === "pr-fabric")?.run);
+			assert.ok(shell);
+			const actionDir = join(
+				workspace,
+				".ci-trusted",
+				".github",
+				"actions",
+				"route-runner",
+			);
+			const trustedCi = join(workspace, ".ci-trusted", "scripts", "ci");
+			const candidateCi = join(workspace, "scripts", "ci");
+			mkdirSync(actionDir, { recursive: true });
+			mkdirSync(trustedCi, { recursive: true });
+			mkdirSync(candidateCi, { recursive: true });
+			copyFileSync(
+				"scripts/ci/pr-fabric-reuse.mts",
+				join(trustedCi, "pr-fabric-reuse.mts"),
+			);
+			copyFileSync(
+				"scripts/ci/runner-routing.mts",
+				join(trustedCi, "runner-routing.mts"),
+			);
+			const marker = join(workspace, "candidate-ran");
+			writeFileSync(
+				join(candidateCi, "pr-fabric-reuse.mts"),
+				`import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "yes");`,
+			);
+			mkdirSync(join(workspace, ".ci-trusted", ".hobo"), { recursive: true });
+			mkdirSync(join(workspace, ".hobo"), { recursive: true });
+			const policy = JSON.parse(readFileSync(".hobo/ci.json", "utf8"));
+			const trustedPolicy = (enabled: boolean) =>
+				JSON.stringify({
+					...policy,
+					runnerRouting: {
+						...policy.runnerRouting,
+						mergeGroup: { reusePrFabric: enabled },
+					},
+				});
+			writeFileSync(
+				join(workspace, ".ci-trusted", ".hobo", "ci.json"),
+				trustedPolicy(false),
+			);
+			writeFileSync(join(workspace, ".hobo", "ci.json"), trustedPolicy(true));
+			const output = join(workspace, "output");
+			const run = () => {
+				writeFileSync(output, "");
+				const child = spawnSync("bash", ["-c", shell], {
+					cwd: workspace,
+					encoding: "utf8",
+					env: {
+						PATH: process.env.PATH ?? "",
+						GITHUB_ACTION_PATH: actionDir,
+						GITHUB_OUTPUT: output,
+						GITHUB_EVENT_NAME: "merge_group",
+						GITHUB_REF: `refs/heads/gh-readonly-queue/main/pr-12-${"b".repeat(40)}`,
+						BASE_SHA: "b".repeat(40),
+						HEAD_SHA: "d".repeat(40),
+						GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+					},
+				});
+				return {
+					status: child.status,
+					stdout: child.stdout + child.stderr,
+					output: readFileSync(output, "utf8"),
+				};
+			};
+			const policyOff = run();
+			assert.equal(policyOff.status, 0, policyOff.stdout);
+			assert.match(
+				policyOff.stdout,
+				/runnerRouting\.mergeGroup\.reusePrFabric is false/u,
+			);
+			assert.equal(policyOff.output, "reuse=false\nreuse-run=\n");
+			assert.equal(existsSync(marker), false);
+			writeFileSync(
+				join(workspace, ".ci-trusted", ".hobo", "ci.json"),
+				trustedPolicy(true),
+			);
+			const unreadRuns = run();
+			assert.equal(unreadRuns.status, 0, unreadRuns.stdout);
+			assert.match(
+				unreadRuns.stdout,
+				/the workflow's pull-request runs could not be read/u,
+			);
+			assert.equal(unreadRuns.output, "reuse=false\nreuse-run=\n");
+			assert.equal(existsSync(marker), false);
+			rmSync(join(trustedCi, "pr-fabric-reuse.mts"));
+			const missing = run();
+			assert.equal(missing.status, 0, missing.stdout);
+			assert.match(
+				missing.stdout,
+				/this workflow does not reuse pull-request Fabric runs/u,
+			);
+			assert.equal(existsSync(marker), false);
+		} finally {
+			rmSync(workspace, { recursive: true, force: true });
+		}
+	});
+
 	it("keeps merge-group shards on the original route", () => {
 		const workflow = workflowDocument(
 			readFileSync(".github/workflows/hobo-ci.yml", "utf8"),
 		);
 		const jobs = asObject(workflow.jobs);
-		const validation = asObject(jobs?.pr_gate_validation);
-		const steps = asList(validation?.steps)?.map(asObject) ?? [];
-		assert.equal(
-			steps.some((step) => step?.id === "shard-route"),
-			false,
-		);
+		for (const id of ["pr_gate_plan", "pr_gate_validation"]) {
+			const steps = asList(asObject(jobs?.[id])?.steps)?.map(asObject) ?? [];
+			assert.equal(
+				steps.some((step) => step?.id === "shard-route"),
+				false,
+				id,
+			);
+		}
 		assert.equal(
 			asObject(jobs?.workspace_tests)?.["runs-on"],
-			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
 		);
 	});
 

@@ -101,10 +101,7 @@ describe("a PR's own changes, against the base its merge commit was made on", ()
 		const { eventBase, mainTip, prHead } = mergeRef(
 			"packages/ci-agent/src/agent.ts",
 		);
-		const base = shellForStep(
-			job("pr_gate_validation"),
-			"Resolve Turbo SCM base",
-		);
+		const base = shellForStep(job("pr_gate_plan"), "Resolve Turbo SCM base");
 		assert.equal(
 			run(base, { PR_BASE_SHA: eventBase, PR_HEAD_SHA: prHead }),
 			`base=${mainTip}\n`,
@@ -115,10 +112,7 @@ describe("a PR's own changes, against the base its merge commit was made on", ()
 		const { eventBase, prHead } = mergeRef("packages/ci-agent/src/agent.ts");
 		git("checkout", "-q", "pr");
 		git("merge", "-q", "--no-ff", "--no-edit", "main");
-		const base = shellForStep(
-			job("pr_gate_validation"),
-			"Resolve Turbo SCM base",
-		);
+		const base = shellForStep(job("pr_gate_plan"), "Resolve Turbo SCM base");
 		assert.equal(
 			run(base, { PR_BASE_SHA: eventBase, PR_HEAD_SHA: prHead }),
 			`base=${eventBase}\n`,

@@ -32,6 +32,7 @@ export {
 } from "./placement.js";
 export {
 	CD_SETTINGS,
+	CD_VERCEL_PROJECT,
 	DEFAULT_VERCEL_REDIRECT_URI,
 	type PrepareVercelDeps,
 	prepareVercelConnection,
@@ -59,3 +60,11 @@ export {
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "./vercel-device.js";
+export {
+	CD_DEPLOY_SETTINGS,
+	CD_WORKLOAD_IDENTITY_ENTRY,
+	type CdDeployEnvironment,
+	type CdWorkloadDeps,
+	ensureCdWorkloadIdentity,
+	vercelProjectTrust,
+} from "./workload-identity.js";

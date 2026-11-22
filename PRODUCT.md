@@ -75,8 +75,8 @@ lowest-common-denominator abstraction that hides the provider.
 - **The identity is `HoBo Rubberhose`, and it is binding.** Steamboat Willie /
   Cuphead / Fleischer-style rubberhose cartoon: thick ink outlines, hard sticker
   shadows, film grain, black-and-white day/night inversion, title-card
-  lettering — **never flat SaaS chrome**. The authority is
-  [`site/DESIGN.md`](site/DESIGN.md).
+  lettering — **never flat SaaS chrome**. The implemented tokens live in
+  `site/src/styles/global.css` and the owning UI packages.
 - **Bo is the character.** `bo-idle`, `bo-walk`, `bo-walk-left` in
   `site/public/parallax/`, plus five generated action sheets in
   `site/public/bo-actions/` (site-only, geometry in `sheets.json`).
@@ -85,7 +85,7 @@ lowest-common-denominator abstraction that hides the provider.
   governing rule from that reversal: **an implementation problem is never
   grounds to replace a product identity**, and art is authored as art and
   vendored as assets — never assembled from `rect`/`line` primitives in a
-  renderer. `pnpm run design:lint` validates the active DESIGN.md files.
+  renderer. `pnpm run design:lint` checks contrast in the implemented UI palettes.
 
 ## Evidence on Hand
 

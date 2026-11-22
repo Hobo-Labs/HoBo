@@ -129,6 +129,7 @@ export const CD_API_SCHEMAS: Readonly<Record<CdApiSchemaName, CdApiSchema>> =
 			],
 			{
 				campId: str,
+				physicalCampId: str,
 				yardId: str,
 				stationId: str,
 				provider: str,

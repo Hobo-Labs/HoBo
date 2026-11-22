@@ -54,7 +54,6 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	);
 	if (!initialSnapshot.identity?.tenantId || !initialSnapshot.identity.budgetId)
 		throw new Error("complete shared budget ownership required");
-	createBudgetAdmissionAuthority({ snapshot: initialSnapshot });
 	const now = options.now ?? (() => new Date().toISOString());
 	const journal = options.journal;
 	const recover = options.recover;
@@ -174,6 +173,12 @@ export function createFleetBudgetAdmissionAuthority(options: {
 	return {
 		persistence: "durable-cas",
 		async initializeFresh(verifyFresh) {
+			try {
+				createBudgetAdmissionAuthority({ snapshot: initialSnapshot });
+			} catch (error) {
+				const persisted = await journal.read().catch(() => []);
+				if (persisted.length === 0) throw error;
+			}
 			try {
 				await journal.bootstrap(verifyFresh);
 			} catch (error) {

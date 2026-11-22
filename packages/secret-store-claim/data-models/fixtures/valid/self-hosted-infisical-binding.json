@@ -6,8 +6,10 @@
 	"secretPath": "/hobo-ci-relay",
 	"relayIdentityId": "relay-identity",
 	"deployIdentityId": "deploy-identity",
+	"deployCredentialIdentityId": "deploy-credential-identity",
 	"vercelTeamId": "team_fixture",
 	"claimBundleId": "secret-store:hobo-ci-relay:1",
 	"deployProjectId": "proj-deploy-1",
+	"deployOidcSubject": "repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 	"claimState": "pending"
 }

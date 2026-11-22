@@ -133,34 +133,168 @@ function releaseTagOrDispatchCheckout(): boolean {
 	return process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
 }
 
+function releaseTurboBaseCommit(root: string, ref: string): string | undefined {
+	const result = spawnSync(
+		"git",
+		["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`],
+		{ cwd: root, encoding: "utf8" },
+	);
+	if (result.status !== 0) return undefined;
+	const commit = result.stdout.trim();
+	return /^[0-9a-f]{40,64}$/u.test(commit) ? commit : undefined;
+}
+
+function refExists(root: string, ref: string): boolean {
+	return releaseTurboBaseCommit(root, ref) !== undefined;
+}
+
+function releaseTurboBaseFilterValue(
+	root: string,
+	ref: string,
+): string | undefined {
+	const commit = releaseTurboBaseCommit(root, ref);
+	if (!commit) {
+		warnTurboBaseFallback(`${ref} does not resolve to a commit`);
+		return undefined;
+	}
+	const kind = spawnSync("git", ["cat-file", "-t", ref], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	return kind.status === 0 && kind.stdout.trim() === "tag" ? commit : ref;
+}
+
+function warnTurboBaseFallback(message: string): void {
+	const detail = message
+		.replace(/%/gu, "%25")
+		.replace(/\r/gu, "%0D")
+		.replace(/\n/gu, "%0A");
+	console.log(
+		`::warning title=release-turbo-base::${detail}; release OCI build uses full turbo graph`,
+	);
+}
+
+function assertReleaseTurboRefName(
+	root: string,
+	segment: string,
+	kind: "branch" | "tag",
+): void {
+	if (!segment || segment.startsWith("-")) {
+		throw new Error(`invalid release turbo base ${kind} name`);
+	}
+	const ref =
+		kind === "branch" ? `refs/heads/${segment}` : `refs/tags/${segment}`;
+	if (
+		spawnSync("git", ["check-ref-format", ref], {
+			cwd: root,
+			stdio: "ignore",
+		}).status !== 0
+	) {
+		throw new Error(`invalid release turbo base ${kind} name`);
+	}
+}
+
+function turboBaseReachable(root: string, base: string): boolean {
+	if (!refExists(root, base)) return false;
+	return (
+		spawnSync("git", ["merge-base", "--is-ancestor", base, "HEAD"], {
+			cwd: root,
+			stdio: "ignore",
+		}).status === 0
+	);
+}
+
+export function fetchReleaseTurboBase(
+	root: string,
+	configuredBase: string,
+): void {
+	const base = configuredBase.trim();
+	if (!base) return;
+	const remote = spawnSync("git", ["remote", "get-url", "origin"], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	if (remote.status !== 0 || !remote.stdout.trim()) return;
+	const fetch = (args: readonly string[]) => {
+		const result = spawnSync(
+			"git",
+			["-c", "http.version=HTTP/1.1", "fetch", ...args],
+			{ cwd: root, encoding: "utf8" },
+		);
+		if (result.status !== 0) {
+			warnTurboBaseFallback(
+				`git fetch failed with exit status ${result.status}`,
+			);
+			return;
+		}
+	};
+	if (base === "origin/main") {
+		tryShallowFetchOriginMain(root);
+		return;
+	}
+	if (base.startsWith("origin/")) {
+		const branch = base.slice("origin/".length);
+		assertReleaseTurboRefName(root, branch, "branch");
+		fetch([
+			"--depth=256",
+			"--filter=blob:none",
+			"origin",
+			"--",
+			`${branch}:refs/remotes/origin/${branch}`,
+		]);
+		return;
+	}
+	const tag = base.replace(/^refs\/tags\//u, "");
+	assertReleaseTurboRefName(root, tag, "tag");
+	fetch([
+		"--depth=256",
+		"--filter=blob:none",
+		"origin",
+		"--",
+		"main:refs/remotes/origin/main",
+	]);
+	fetch([
+		"--tags",
+		"--depth=256",
+		"--filter=blob:none",
+		"origin",
+		"--",
+		`refs/tags/${tag}:refs/tags/${tag}`,
+	]);
+}
+
 export function resolveReleaseTurboBase(
 	root: string,
 	configuredBase = process.env.HOBO_RELEASE_TURBO_BASE,
 ): string | undefined {
 	const base = configuredBase?.trim();
 	if (!base) return undefined;
-	const refExists = (ref: string): boolean =>
-		spawnSync(
-			"git",
-			[
-				"rev-parse",
-				"--verify",
-				"--quiet",
-				"--end-of-options",
-				`${ref}^{commit}`,
-			],
-			{ cwd: root, stdio: "ignore" },
-		).status === 0;
-	if (refExists(base)) return base;
-	if (base === "origin/main") {
-		tryShallowFetchOriginMain(root);
-		if (refExists("origin/main")) return "origin/main";
-		if (refExists("HEAD^1")) return "HEAD^1";
-		if (releaseTagOrDispatchCheckout()) return undefined;
+	if (!turboBaseReachable(root, base)) {
+		fetchReleaseTurboBase(root, base);
+		if (!turboBaseReachable(root, base)) {
+			if (base === "origin/main") {
+				if (refExists(root, "HEAD^1") && turboBaseReachable(root, "HEAD^1"))
+					return releaseTurboBaseFilterValue(root, "HEAD^1");
+				if (releaseTagOrDispatchCheckout()) {
+					warnTurboBaseFallback(
+						`${base} unreachable on tag or dispatch checkout`,
+					);
+					return undefined;
+				}
+			}
+			if (
+				releaseTagOrDispatchCheckout() ||
+				/^v0\.0\.0-alpha\.\d+$/u.test(base)
+			) {
+				warnTurboBaseFallback(`${base} unreachable after fetch`);
+				return undefined;
+			}
+			throw new Error(
+				`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
+			);
+		}
 	}
-	throw new Error(
-		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
-	);
+	return releaseTurboBaseFilterValue(root, base);
 }
 
 export function releaseOciTurboBuildArgs(
@@ -554,6 +688,7 @@ export function stageReleaseOciApp(
 		skipBuild?: boolean;
 		hardlink?: boolean;
 		sdkArtifactsDir?: string;
+		cliCandidateRef?: string;
 		env?: Readonly<Record<string, string | undefined>>;
 	} = {},
 ): void {
@@ -594,7 +729,10 @@ export function stageReleaseOciApp(
 			stageSite(root, output, spec, options.skipBuild ?? false);
 			break;
 		case "mcp":
-			writeFileSync(join(output, spec.markerPath), "hobo-cli:candidate\n");
+			writeFileSync(
+				join(output, spec.markerPath),
+				`${options.cliCandidateRef ?? "hobo-cli:candidate"}\n`,
+			);
 			break;
 	}
 	writeFileSync(join(output, ".dockerignore"), releaseOciDockerignore(spec));

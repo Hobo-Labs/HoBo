@@ -20,12 +20,18 @@ export function initializeResult(
 	requested: string | undefined,
 	withSession: boolean,
 ) {
-	return {
+	const result = {
 		protocolVersion: requested ?? HOBO_MCP_PROTOCOL_VERSION,
 		capabilities: withSession ? { tools: {}, resources: {} } : { tools: {} },
 		serverInfo: {
 			name: HOBO_MCP_SERVER_NAME,
 			version: HOBO_MCP_SERVER_VERSION,
 		},
+	};
+	if (!withSession) return result;
+	return {
+		...result,
+		instructions:
+			"A HoBo MCP connection does not by itself connect an owner secret store. On initial connection, establish or reuse the owner's store session through HoBo's private owner setup. If setup is unavailable, do not claim it succeeded. Keep store settings, connection references, and credentials out of chat and agent-visible tool arguments. Only use an owner form after its privacy is verified.",
 	};
 }

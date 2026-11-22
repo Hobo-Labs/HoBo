@@ -164,6 +164,25 @@ describe("Main full gate S0 sparse checkout", () => {
 		expect(S0_INSTALL_REQUIRED_PATHS).toContain("media/package.json");
 	});
 
+	it("initializes a partial working copy's cone before root files", () => {
+		const ready = action.indexOf("Initialize sparse cone before root files");
+		const checkoutRoot = action.indexOf(
+			"Checkout sparse root files (non-cone)",
+		);
+		expect(ready).toBeGreaterThan(
+			action.indexOf("Require successful sparse checkout"),
+		);
+		expect(ready).toBeLessThan(checkoutRoot);
+		const initialization = action.slice(ready, checkoutRoot);
+		expect(initialization).toContain(
+			"DIR_CONES: ${{ steps.sparse.outputs.dir_cones }}",
+		);
+		expect(initialization).toContain("git rev-parse --verify HEAD");
+		expect(initialization).toContain(
+			'git sparse-checkout set --cone --skip-checks -- "${cones[@]}"',
+		);
+	});
+
 	it("materializes nested S0 files with sparse-checkout --skip-checks", () => {
 		const checkoutRoot = action.indexOf(
 			"Checkout sparse root files (non-cone)",

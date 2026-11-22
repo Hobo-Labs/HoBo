@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { releaseImageCandidateRef } from "../ci/build-release-oci-image.mts";
 import {
 	assertNpmScopeMapAllowlist,
 	loadNpmScopeMap,
@@ -141,7 +142,7 @@ describe("release OCI image contract (live docker)", () => {
 				revision,
 				liveLabelVersion(),
 			);
-			const config = dockerInspectConfig(`${image.name}:candidate`);
+			const config = dockerInspectConfig(releaseImageCandidateRef(image.id));
 			const checks = evaluateImageConfig(expected, config);
 			const failed = checks.filter((check) => !check.ok);
 			expect(
@@ -153,7 +154,7 @@ describe("release OCI image contract (live docker)", () => {
 		it.runIf(selected)(`${image.id} runs its version probe as non-root`, () => {
 			if (!image.versionProbe?.length) return;
 			const run = dockerRunVersion(
-				`${image.name}:candidate`,
+				releaseImageCandidateRef(image.id),
 				image.versionProbe,
 			);
 			expect(run.ok, run.out).toBe(true);

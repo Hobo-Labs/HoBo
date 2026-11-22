@@ -26,7 +26,7 @@ the same three steps, each with its own segmentation rules.
    the approval preview artifact).
 3. **`gen-crossroads.mjs`** — emit the live Astro component from the layers:
    behind-arms, then base, then front-arms; wobble keyframes per arm around
-   its pivot; plates/clouds/Bo composed per `site/DESIGN.md` night rules.
+   its pivot; plates/clouds/Bo composed per `site/src/styles/global.css` night rules.
 
 ## Running
 
