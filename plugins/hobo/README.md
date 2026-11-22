@@ -77,12 +77,14 @@ and secrets, not attestation bytes.
 attestation API with the HoBo repository, `.github/workflows/hobo-ci.yml` signer,
 and `GITHUB_SHA` source digest pinned. It then requires the verified
 certificate's `buildSignerURI` to identify that workflow at `refs/heads/main`,
-its `buildSignerDigest` to equal the checked commit, and its run invocation to
-match `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`. Missing, forged, stale,
-wrong-workflow, wrong-ref, wrong-commit, and wrong-attempt attestations fail
-closed. A legacy `.bundle-attestation.json` is rejected rather than treated as
-provenance, required on `main` through `--verify-attestation`. Outside main CI,
-`pnpm agent:check` selects `agent-plugin:check` on affected plugin, skill, and
+its `buildSignerDigest` to equal the checked commit, and its `runInvocationURI`
+extension (the field `gh attestation verify --format json` emits) to match
+`GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`; tests pin a captured verify result.
+Missing, forged, stale, wrong-workflow, wrong-ref, wrong-commit, and
+wrong-attempt attestations fail closed. A legacy `.bundle-attestation.json` is
+rejected rather than treated as provenance, required on `main` through
+`--verify-attestation`. Outside main CI, `pnpm agent:check` selects
+`agent-plugin:check` on affected plugin, skill, and
 MCP inputs; on main CI the dedicated attestation-verification step covers the
 plugin instead. The check hashes the built bundle and does not rebuild it, so
 caller-controlled files and retired external-attestation switches cannot

@@ -1180,7 +1180,7 @@ describe("checkAgentPlugin (integration)", () => {
 									buildSignerURI: `https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@${overrides.signerRef ?? "refs/heads/main"}`,
 									buildSignerDigest:
 										overrides.signerDigest ?? expected.commitSha,
-									runInvocationID: `https://github.com/Hobo-Labs/HoBo/actions/runs/run-current/attempts/${overrides.runAttempt ?? "1"}`,
+									runInvocationURI: `https://github.com/Hobo-Labs/HoBo/actions/runs/run-current/attempts/${overrides.runAttempt ?? "1"}`,
 								},
 							},
 						},
@@ -1239,6 +1239,34 @@ describe("checkAgentPlugin (integration)", () => {
 				stdout: "",
 			})),
 		).rejects.toThrow("verification failed");
+	});
+
+	it("accepts a captured gh attestation verify --format json result", async () => {
+		stubCiOff();
+		vi.stubEnv("GITHUB_SERVER_URL", "https://github.com");
+		vi.stubEnv("GITHUB_REPOSITORY", "Hobo-Labs/HoBo");
+		const fixture = readFileSync(
+			path.join(repoRoot, "scripts/test/fixtures/gh-attestation-verify.json"),
+			"utf8",
+		);
+		const extensions =
+			JSON.parse(fixture)[0].verificationResult.signature.certificate
+				.extensions;
+		expect(extensions).toHaveProperty("runInvocationURI");
+		expect(extensions).not.toHaveProperty("runInvocationID");
+		expect(extensions).not.toHaveProperty("runInvocationId");
+		const commitSha = extensions.buildSignerDigest;
+		await expect(
+			verifyAgentPluginAttestation(
+				{
+					bundlePath: "/tmp/hobo-mcp.mjs",
+					runId: "14923456789",
+					runAttempt: "1",
+					commitSha,
+				},
+				() => ({ status: 0, stdout: fixture }),
+			),
+		).resolves.toBeUndefined();
 	});
 
 	it("rejects a bundle in CI that is not running on GitHub Actions", async () => {

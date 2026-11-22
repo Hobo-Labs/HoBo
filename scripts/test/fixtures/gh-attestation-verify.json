@@ -1,0 +1,76 @@
+[
+  {
+    "attestation": {
+      "bundle": {
+        "mediaType": "application/vnd.dev.sigstore.bundle+json;version=0.3",
+        "verificationMaterial": {
+          "x509CertificateChain": {
+            "certificates": [
+              {
+                "rawBytes": "MIIC7DCCAdSgAwIBAgIUExampleCapturedCertificateBytesForShapeOnly=="
+              }
+            ]
+          }
+        }
+      }
+    },
+    "verificationResult": {
+      "signature": {
+        "certificate": {
+          "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+          "subjectAlternativeName": "https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+          "extensions": {
+            "buildSignerURI": "https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+            "buildSignerDigest": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/Hobo-Labs/HoBo",
+            "sourceRepositoryDigest": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "123456789",
+            "sourceRepositoryOwnerURI": "https://github.com/Hobo-Labs",
+            "sourceRepositoryOwnerIdentifier": "987654321",
+            "buildConfigURI": "https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
+            "buildConfigDigest": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+            "buildTrigger": "push",
+            "runInvocationURI": "https://github.com/Hobo-Labs/HoBo/actions/runs/14923456789/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          }
+        }
+      },
+      "verifiedTimestamps": [
+        {
+          "timestamp": "2026-11-20T04:00:00Z",
+          "type": "TLOG"
+        }
+      ],
+      "statement": {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [
+          {
+            "name": "hobo-mcp.mjs",
+            "digest": {
+              "sha256": "c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00"
+            }
+          }
+        ],
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+          "buildDefinition": {
+            "buildType": "https://github.com/actions/runner",
+            "externalParameters": {},
+            "internalParameters": {},
+            "resolvedDependencies": []
+          },
+          "runDetails": {
+            "builder": {
+              "id": "https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main"
+            },
+            "metadata": {
+              "invocationId": "https://github.com/Hobo-Labs/HoBo/actions/runs/14923456789/attempts/1"
+            }
+          }
+        }
+      }
+    }
+  }
+]

@@ -130,8 +130,7 @@ const VerifiedArtifactAttestations = z.array(
 					extensions: z.object({
 						buildSignerDigest: z.string().optional(),
 						buildSignerURI: z.string().optional(),
-						runInvocationID: z.string().optional(),
-						runInvocationId: z.string().optional(),
+						runInvocationURI: z.string().optional(),
 					}),
 				}),
 			}),
@@ -203,10 +202,7 @@ export async function verifyAgentPluginAttestation(
 	) => {
 		const extensions =
 			attestation.verificationResult.signature.certificate.extensions;
-		return (
-			extensions.runInvocationID === invocationId ||
-			extensions.runInvocationId === invocationId
-		);
+		return extensions.runInvocationURI === invocationId;
 	};
 	if (
 		!attestations.some((attestation) => {
