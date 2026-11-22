@@ -866,6 +866,73 @@ ${relayCredentialCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 		assert.match(result.stderr, relayRunnerError);
 	});
 
+	it("rejects a workflow_call OIDC job gated only by a step-level if", () => {
+		const withWorkflowCall = relayFixture().replace(
+			"on:\n  push:\n    branches: [main]\n",
+			"on:\n  push:\n    branches: [main]\n  workflow_call:\n",
+		);
+		const stepOnlyGate = withWorkflowCall.replace(
+			"      - name: Download\n",
+			"      - name: Download\n        if: github.ref == 'refs/heads/main'\n",
+		);
+		const result = lintRelayFixture(stepOnlyGate);
+		assert.notEqual(result.status, 0);
+		assert.match(
+			result.stderr,
+			/workflow_call job must be gated to refs\/heads\/main/u,
+		);
+	});
+
+	it("accepts a workflow_call OIDC job with a job-level main-ref gate", () => {
+		const withWorkflowCall = relayFixture().replace(
+			"on:\n  push:\n    branches: [main]\n",
+			"on:\n  push:\n    branches: [main]\n  workflow_call:\n",
+		);
+		const jobGate = withWorkflowCall.replace(
+			"  deploy:\n    needs: [deploy-build, route]\n",
+			"  deploy:\n    if: github.ref == 'refs/heads/main'\n    needs: [deploy-build, route]\n",
+		);
+		const result = lintRelayFixture(jobGate);
+		assert.equal(result.status, 0, result.stderr);
+	});
+
+	it("rejects dangerous checkout overrides in relay credential jobs", () => {
+		for (const key of [
+			"repository: evil/repo",
+			"ref: refs/heads/evil",
+			"github-server-url: https://evil.example",
+			"token: ${{ secrets.EVIL }}",
+			"ssh-key: ${{ secrets.EVIL }}",
+			"ssh-known-hosts: evil",
+		]) {
+			const result = lintRelayFixture(
+				relayFixture().replace(
+					"          clean: false\n          fetch-depth: 2\n          persist-credentials: false\n",
+					`          clean: false\n          fetch-depth: 2\n          persist-credentials: false\n          ${key}\n`,
+				),
+			);
+			assert.notEqual(result.status, 0, key);
+			assert.match(result.stderr, relayRunnerError, key);
+		}
+	});
+
+	it("rejects dangerous checkout overrides in the hosted relay build job", () => {
+		for (const key of [
+			"repository: evil/repo",
+			"ref: refs/heads/evil",
+			"github-server-url: https://evil.example",
+		]) {
+			const result = lintRelayFixture(
+				relayFixture().replace(
+					"          submodules: recursive\n          persist-credentials: false\n",
+					`          submodules: recursive\n          persist-credentials: false\n          ${key}\n`,
+				),
+			);
+			assert.notEqual(result.status, 0, key);
+			assert.match(result.stderr, relayRunnerError, key);
+		}
+	});
+
 	it("passes on this repository's own workflows", () => {
 		// The cases above lint fixtures. Nothing else in the commit or PR gates
 		// runs the lint on the real files, so a workflow edit that broke a rule

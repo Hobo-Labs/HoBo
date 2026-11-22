@@ -4,7 +4,6 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
-	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -669,13 +668,25 @@ describe("the relay deploy workflow", () => {
 				);
 			const redactionDist = join(work, "packages/provider-redaction/dist");
 			mkdirSync(redactionDist, { recursive: true });
-			for (const file of readdirSync(
-				join(root, "packages/provider-redaction/dist"),
-			))
-				writeFileSync(
-					join(redactionDist, file),
-					readFileSync(join(root, "packages/provider-redaction/dist", file)),
-				);
+			writeFileSync(
+				join(redactionDist, "provider-redaction.js"),
+				[
+					"export const GLUED_BEARER_PATTERN = /Bearer\\s+[A-Za-z0-9._~+/=-]+/gu;",
+					"export const LONG_TOKEN_RUN_PROFILE = { patterns: [] };",
+					"export function createProviderRedactor() {",
+					"  return (text, maxLength = 256) => {",
+					"    const redacted = String(text)",
+					'      .replace(/gh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]")',
+					'      .replace(/Bearer\\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]");',
+					'    return redacted.length > maxLength ? redacted.slice(0, maxLength) + "...[cut]" : redacted;',
+					"  };",
+					"}",
+					"export function redactProviderText(text, maxLength = 256) {",
+					"  return createProviderRedactor()(text, maxLength);",
+					"}",
+					"",
+				].join("\n"),
+			);
 			const summary = join(work, "summary.md");
 			const lines = step("Deploy the relay (preview)").split("\n");
 			const start = lines.findIndex((line) => line.trim() === "run: |");

@@ -339,6 +339,9 @@ function cliLine(line: string): boolean {
 	);
 }
 
+const DANGEROUS_CHECKOUT_KEYS =
+	/^(repository|ref|github-server-url|token|ssh-key|ssh-known-hosts|ssh-strict):/u;
+
 function attestedRelayCheckout(block: readonly string[]): boolean {
 	const checkouts = block.reduce<number[]>((found, line, index) => {
 		if (/^ {6}- uses: actions\/checkout@/u.test(line)) found.push(index);
@@ -356,7 +359,8 @@ function attestedRelayCheckout(block: readonly string[]): boolean {
 			!values.includes("clean: false") &&
 			values.includes("submodules: recursive") &&
 			values.includes("persist-credentials: false") &&
-			!values.some((value) => value.startsWith("path:"))
+			!values.some((value) => value.startsWith("path:")) &&
+			!values.some((value) => DANGEROUS_CHECKOUT_KEYS.test(value))
 		);
 	});
 }
@@ -378,7 +382,8 @@ function attestedRelayCredentialCheckout(block: readonly string[]): boolean {
 			!values.includes("clean: true") &&
 			values.some((value) => value.startsWith("fetch-depth:")) &&
 			values.includes("persist-credentials: false") &&
-			!values.some((value) => value.startsWith("path:"))
+			!values.some((value) => value.startsWith("path:")) &&
+			!values.some((value) => DANGEROUS_CHECKOUT_KEYS.test(value))
 		);
 	});
 }
@@ -569,15 +574,18 @@ function lintHostedRelayTriggers(
 		.filter(({ block }) =>
 			block.some((line) => line.includes("id-token: write")),
 		);
+	const hasJobMainGate = (block: readonly string[]): boolean => {
+		const stepsAt = block.findIndex((line) => line === "    steps:");
+		const header = stepsAt < 0 ? block : block.slice(0, stepsAt);
+		return header.some(
+			(line) =>
+				/^ {4}if:/u.test(line) &&
+				line.includes("github.ref == 'refs/heads/main'"),
+		);
+	};
 	if (
 		/workflow_call:/u.test(onBlock) &&
-		oidcJobs.some(({ block }) =>
-			block.every(
-				(line) =>
-					!/^\s*if:/u.test(line) ||
-					!line.includes("github.ref == 'refs/heads/main'"),
-			),
-		)
+		oidcJobs.some(({ block }) => !hasJobMainGate(block))
 	)
 		errors.push(
 			`${file}: the relay's OIDC jobs trust an oidc_sub pinned to main; a workflow_call job must be gated to refs/heads/main`,
@@ -629,14 +637,6 @@ function lintRelayJobAttestation(
 		}
 	}
 	return sawRelayJob && allAttested;
-}
-
-function attestedHostedRelayFile(
-	file: string,
-	blockAt: readonly number[],
-	lines: readonly string[],
-): boolean {
-	return lintRelayJobAttestation([], file, blockAt, lines);
 }
 
 /**

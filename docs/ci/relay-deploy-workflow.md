@@ -16,10 +16,12 @@ pins submodules and persists no credentials. The gate never quietly skips a
 manual run — on `workflow_dispatch` it either deploys or fails the job — so
 `app-credentials`, which needs `deploy-build` and downloads its artifact
 unconditionally, can never hit a missing artifact. The credential-bearing
-deploy and App-deposit jobs must use `ubuntu-24.04` and `clean: true`. `scripts/lint-actions.ts` exempts
+deploy and App-deposit jobs must use `ubuntu-24.04` and `clean: false` with
+`persist-credentials: false` and an explicit `fetch-depth`. The unprivileged
+`deploy-build` job uses `clean: true`. `scripts/lint-actions.ts` exempts
 this workflow from fleet routing and scopes its per-job hosted-runner exception
 to those jobs and the unprivileged `deploy-build` job. That exception is earned, not name-based: every hosted
-job must pin the reviewed checkout, set `clean: true`, keep no credentials or
+job must pin the reviewed checkout, set the reviewed clean/fetch policy, keep no credentials or
 route-runner step, hold only its declared permissions, and restore the CLI from
 the build job's digest before running repository code. That order is enforced
 on parsed steps, comments aside — checkout, then the pinned artifact download,

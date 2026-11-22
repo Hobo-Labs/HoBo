@@ -1247,7 +1247,7 @@ async function deliverWith(
 			return { ok: true, report: report(terminal, set), handover };
 		}
 		const verificationFailed = terminal.reasons.some((entry) =>
-			entry.code.includes("verification"),
+			entry.code.toLowerCase().includes("verification"),
 		);
 		return {
 			ok: false,
