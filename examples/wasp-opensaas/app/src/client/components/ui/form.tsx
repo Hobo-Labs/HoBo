@@ -22,9 +22,8 @@ type FormFieldContextValue<
   name: TName;
 };
 
-// SAFETY: consumers render below FormFieldContext.Provider, which supplies name.
-const FormFieldContext = React.createContext<FormFieldContextValue>(
-  {} as FormFieldContextValue,
+const FormFieldContext = React.createContext<FormFieldContextValue | undefined>(
+  undefined,
 );
 
 const FormField = <
@@ -45,13 +44,13 @@ const useFormField = () => {
   const itemContext = React.useContext(FormItemContext);
   const { getFieldState, formState } = useFormContext();
 
-  const fieldState = getFieldState(fieldContext.name, formState);
-
   if (!fieldContext) {
     throw new Error("useFormField should be used within <FormField>");
   }
 
-  const { id } = itemContext;
+  const fieldState = getFieldState(fieldContext.name, formState);
+
+  const id = itemContext?.id;
 
   return {
     id,
@@ -67,9 +66,8 @@ type FormItemContextValue = {
   id: string;
 };
 
-// SAFETY: consumers render below FormItemContext.Provider, which supplies id.
-const FormItemContext = React.createContext<FormItemContextValue>(
-  {} as FormItemContextValue,
+const FormItemContext = React.createContext<FormItemContextValue | undefined>(
+  undefined,
 );
 
 function FormItem({ className, ...props }: React.ComponentProps<"div">) {

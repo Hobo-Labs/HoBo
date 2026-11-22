@@ -13,6 +13,7 @@ import {
   PaymentPlanId,
   SubscriptionStatus,
   parsePaymentPlanId,
+  parseSubscriptionStatus,
   prettyPaymentPlanName,
 } from "../payment/plans";
 
@@ -113,8 +114,7 @@ function UserCurrentSubscriptionPlan({
     subscriptionPlanMessage = formatSubscriptionStatusMessage(
       parsePaymentPlanId(subscriptionPlan),
       datePaid,
-      // SAFETY: payment webhooks persist subscriptionStatus from SubscriptionStatus values.
-      subscriptionStatus as SubscriptionStatus,
+      parseSubscriptionStatus(subscriptionStatus),
     );
   }
 

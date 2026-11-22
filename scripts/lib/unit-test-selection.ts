@@ -68,8 +68,7 @@ export function isNodeTestSource(source: string, file = "test.ts"): boolean {
 		Boolean(
 			node &&
 				ts.isStringLiteralLike(node) &&
-				(node.text === "node:test" ||
-					node.text === "./support/test-runner.ts"),
+				(node.text === "node:test" || node.text === "./support/test-runner.ts"),
 		);
 	const visit = (node: ts.Node): boolean => {
 		if (ts.isImportDeclaration(node) && namesNodeTest(node.moduleSpecifier)) {

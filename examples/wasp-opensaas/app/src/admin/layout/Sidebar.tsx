@@ -35,12 +35,11 @@ export function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
   useEffect(() => {
     const clickHandler = ({ target }: PointerEvent) => {
       if (!sidebar.current || !trigger.current) return;
+      const targetNode = target instanceof Node ? target : null;
       if (
         !sidebarOpen ||
-        // SAFETY: document click targets are DOM Nodes accepted by contains().
-        sidebar.current.contains(target as Node) ||
-        // SAFETY: document click targets are DOM Nodes accepted by contains().
-        trigger.current.contains(target as Node)
+        sidebar.current.contains(targetNode) ||
+        trigger.current.contains(targetNode)
       )
         return;
       setSidebarOpen(false);

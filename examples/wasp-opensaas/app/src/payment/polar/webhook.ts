@@ -34,10 +34,14 @@ export const polarWebhook: PaymentsWebhook = async (
 ) => {
   const prismaUserDelegate = context.entities.User;
   try {
-    // SAFETY: Polar's validator reads signed header names from the Express request header object.
     const event = validateEvent(
       request.body,
-      request.headers as Record<string, string>,
+      Object.fromEntries(
+        Object.entries(request.headers).map(([name, value]) => [
+          name,
+          String(value),
+        ]),
+      ),
       env.POLAR_WEBHOOK_SECRET,
     );
 

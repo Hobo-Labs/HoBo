@@ -127,10 +127,9 @@ export function artifactsFor(
 
 function main() {
 	const force = process.argv.includes("--force");
-	// SAFETY: _grandfathered.json is the checked-in registry whose packages array contains workspace strings.
-	const registry = JSON.parse(
+	const registry: { packages: string[] } = JSON.parse(
 		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
-	) as { packages: string[] };
+	);
 	let written = 0;
 	let skipped = 0;
 	for (const workspace of registry.packages) {

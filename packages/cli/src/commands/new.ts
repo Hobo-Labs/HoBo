@@ -115,10 +115,9 @@ export async function scaffoldHoboProject(input: {
 export async function validateScaffoldProject(projectDir: string) {
 	let template: ReturnType<typeof parseTemplateId>;
 	try {
-		// SAFETY: validation reads only the optional template field before parsing its string value.
-		const bindleRaw = JSON.parse(
+		const bindleRaw: { template?: unknown } = JSON.parse(
 			await readFile(path.join(projectDir, "hobo.bindle.json"), "utf8"),
-		) as { template?: unknown };
+		);
 		template = parseTemplateId(String(bindleRaw.template ?? ""));
 	} catch {
 		return {
@@ -152,12 +151,9 @@ export async function validateScaffoldProject(projectDir: string) {
 		};
 	}
 
-	// SAFETY: scaffold validation reads only the optional scripts record from package.json.
-	const packageJson = JSON.parse(
-		await readFile(path.join(projectDir, "package.json"), "utf8"),
-	) as {
+	const packageJson: {
 		scripts?: Record<string, string>;
-	};
+	} = JSON.parse(await readFile(path.join(projectDir, "package.json"), "utf8"));
 	const bindle = { template };
 	const app = await readFile(path.join(projectDir, "app.ts"), "utf8");
 	const appTest = await readFile(path.join(projectDir, "app.test.ts"), "utf8");
@@ -297,8 +293,8 @@ async function existingDirectory(projectDir: string) {
 		};
 	} catch (error) {
 		if (isNotFound(error)) {
-			// SAFETY: the missing-directory result starts with an empty mutable string array.
-			return { exists: false, isDirectory: false, entries: [] as string[] };
+			const entries: string[] = [];
+			return { exists: false, isDirectory: false, entries };
 		}
 		throw error;
 	}

@@ -186,11 +186,10 @@ export function checkWorkspace(
 			problems.push(`missing notebook: ${manifest.artifacts.notebook}`);
 		} else {
 			try {
-				// SAFETY: this JSON boundary reads only optional notebook metadata and cell fields, with defaults below.
-				const nb = JSON.parse(readFileSync(notebookPath, "utf8")) as {
+				const nb: {
 					nbformat?: number;
 					cells?: Array<{ cell_type?: string; outputs?: unknown[] }>;
-				};
+				} = JSON.parse(readFileSync(notebookPath, "utf8"));
 				const codeCells = (nb.cells ?? []).filter(
 					(c) => c.cell_type === "code",
 				);
@@ -314,17 +313,10 @@ export function checkWorkspace(
 
 function main() {
 	const argv = process.argv.slice(2);
-	// SAFETY: _grandfathered.json is the checked-in registry whose packages array contains workspace strings.
-	const grandfathered = new Set(
-		(
-			JSON.parse(
-				readFileSync(
-					path.join(repoRoot, "src/draft/_grandfathered.json"),
-					"utf8",
-				),
-			) as { packages: string[] }
-		).packages,
+	const grandfatheredRegistry: { packages: string[] } = JSON.parse(
+		readFileSync(path.join(repoRoot, "src/draft/_grandfathered.json"), "utf8"),
 	);
+	const grandfathered = new Set(grandfatheredRegistry.packages);
 	const positional = argv.filter((arg) => !arg.startsWith("--"));
 	const workspaces = [
 		...new Set(

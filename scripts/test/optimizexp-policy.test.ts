@@ -125,11 +125,10 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert.equal(result.status, 1, result.stderr);
-			// SAFETY: validate-bus writes this report shape when malformed records fail validation.
-			const report = JSON.parse(result.stdout) as {
+			const report: {
 				ok: boolean;
 				problems: string[];
-			};
+			} = JSON.parse(result.stdout);
 			assert.equal(report.ok, false);
 			assert(
 				report.problems.some((problem) =>
@@ -247,8 +246,7 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert(result.stdout, result.stderr);
-			// SAFETY: doctor repair --json writes a repairsApplied string array.
-			const report = JSON.parse(result.stdout) as { repairsApplied: string[] };
+			const report: { repairsApplied: string[] } = JSON.parse(result.stdout);
 			assert.deepEqual(report.repairsApplied, []);
 			assert.equal(existsSync(join(feature, "EXPERIENCE.md")), false);
 			assert.equal(
@@ -269,10 +267,9 @@ for (const harness of [".agents", ".claude"]) {
 				{ cwd: directory, encoding: "utf8" },
 			);
 			assert(snapshotResult.stdout, snapshotResult.stderr);
-			// SAFETY: doctor snapshot writes a manifest whose files entries carry relative paths.
-			const manifest = JSON.parse(
+			const manifest: { files: Array<{ rel: string }> } = JSON.parse(
 				readFileSync(join(snapshot, "manifest.json"), "utf8"),
-			) as { files: Array<{ rel: string }> };
+			);
 			const copied = manifest.files.map((file) => file.rel);
 			assert(copied.includes(".optimizexp/features/example/feature.json"));
 			assert(
