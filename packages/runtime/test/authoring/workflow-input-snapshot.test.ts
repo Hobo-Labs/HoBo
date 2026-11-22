@@ -152,6 +152,23 @@ it("rejects inputs that cannot be reproduced from the JSON journal", async () =>
 	expect(calls).toBe(0);
 });
 
+it("does not resume a null-bound run with an undefined input", async () => {
+	let calls = 0;
+	const wf = defineWorkflow({
+		name: "null-input",
+		run: () => {
+			calls++;
+			return null;
+		},
+	});
+	const engine = createWorkflowEngine();
+	await engine.start(wf, null, { runId: "null-input" });
+	await expect(engine.resume(wf, "null-input", undefined)).rejects.toThrow(
+		"workflow input must be JSON-normalized",
+	);
+	expect(calls).toBe(1);
+});
+
 it("refuses shared references and cycles before any workflow work", async () => {
 	const shared = { count: 1 };
 	const cycle: CyclicInput = {};
@@ -267,7 +284,6 @@ it("accepts ordinary generated JSON trees including special property names", asy
 	});
 	await fc.assert(
 		fc.asyncProperty(fc.jsonValue({ maxDepth: 3 }), async (generated) => {
-			// JSON parsing supplies ordinary descriptors and normalizes negative zero.
 			const input = JSON.parse(JSON.stringify(generated));
 			const result = await createWorkflowEngine().start(wf, input);
 			expect(result.result).toEqual(input);

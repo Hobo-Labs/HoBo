@@ -7,15 +7,11 @@ import {
 	type JsonObject,
 	type JsonValue,
 } from "../json.js";
-import { isNonEmptyPrimitiveString } from "../workflow-boundary.js";
-import {
-	compareCanonicalStrings,
-	canonicalizationVersion as requireCanonicalizationVersion,
-} from "./canonicalization.js";
+import { isNonEmptyPrimitiveString } from "../workflow-value.js";
+import { compareCanonicalStrings } from "./canonicalization.js";
 import { createDeterministicContext } from "./context.js";
 import { ReplayDivergenceError } from "./divergence.js";
 import type {
-	CanonicalizationVersion,
 	EventEnvelope,
 	FoldFn,
 	ReplayMode,
@@ -33,7 +29,6 @@ export interface AssertReplayEqualsLiveInput<S> {
 	seed?: string;
 	normalize?: (value: JsonValue) => JsonValue;
 	runId?: string;
-	canonicalizationVersion?: CanonicalizationVersion;
 }
 
 export function assertReplayEqualsLive<S>({
@@ -45,15 +40,13 @@ export function assertReplayEqualsLive<S>({
 	seed = "hobo-replay-live",
 	normalize,
 	runId = "fold-proof",
-	canonicalizationVersion: requestedVersion,
 }: AssertReplayEqualsLiveInput<S>): ReplayReport {
-	const version = requireCanonicalizationVersion(requestedVersion, 2);
 	if (!isNonEmptyPrimitiveString(runId))
 		throw new TypeError("replay runId must be a non-empty string");
 	if (!isNonEmptyPrimitiveString(seed))
 		throw new TypeError("replay seed must be a non-empty string");
 	const capturedEvents = events.map((event) => clone(event));
-	const defaultTarget = seqVectorForVersion(capturedEvents, version);
+	const defaultTarget = seqVector(capturedEvents);
 	const requestedTarget = targetSeq === undefined ? defaultTarget : targetSeq;
 	const capturedTarget = Object.fromEntries(
 		Object.getOwnPropertyNames(requestedTarget).map((streamId) => {
@@ -74,7 +67,7 @@ export function assertReplayEqualsLive<S>({
 		isAtOrBefore(event, capturedTarget),
 	);
 	const replayEvents = [...eventSlice].sort((left, right) =>
-		compareCanonicalEventOrder(left, right, version),
+		compareCanonicalEventOrder(left, right),
 	);
 
 	const liveState = runFold({
@@ -99,8 +92,7 @@ export function assertReplayEqualsLive<S>({
 		ambientRandom: 0.999999999,
 	});
 
-	const normalizeState =
-		normalize ?? ((value) => stableValueForVersion(value, version));
+	const normalizeState = normalize ?? stableValue;
 	const normalizedLive = normalizeState(cloneAsJson(liveState));
 	const normalizedReplay = normalizeState(cloneAsJson(replayState));
 
@@ -108,7 +100,6 @@ export function assertReplayEqualsLive<S>({
 		assert.deepEqual(normalizedLive, normalizedReplay);
 	} catch {
 		throw new ReplayDivergenceError({
-			canonicalizationVersion: version,
 			runId,
 			liveState: normalizedLive,
 			replayState: normalizedReplay,
@@ -118,13 +109,12 @@ export function assertReplayEqualsLive<S>({
 	}
 
 	return Object.freeze({
-		canonicalizationVersion: version,
 		runId,
-		seqVector: toSeqVectorEntries(capturedTarget, version),
+		seqVector: toSeqVectorEntries(capturedTarget),
 		readSetHash: hashReadSet(capturedEvents),
 		stateDigest: crypto
 			.createHash("sha256")
-			.update(stableStringifyForVersion(normalizedReplay, version))
+			.update(stableStringify(normalizedReplay))
 			.digest("hex"),
 		mode: "replay",
 		seed,
@@ -173,14 +163,6 @@ export function runFold<S>({
 }
 
 export function seqVector(events: EventEnvelope[]): SeqVector {
-	return seqVectorForVersion(events, 2);
-}
-
-export function seqVectorForVersion(
-	events: EventEnvelope[],
-	requestedVersion: CanonicalizationVersion,
-): SeqVector {
-	const version = requireCanonicalizationVersion(requestedVersion);
 	const positions = new Map<string, number>();
 	for (const event of events) {
 		if (!isNonEmptyPrimitiveString(event.streamId))
@@ -194,7 +176,7 @@ export function seqVectorForVersion(
 			Math.max(positions.get(event.streamId) ?? 0, event.seq),
 		);
 	}
-	return stableObject(Object.fromEntries(positions), version);
+	return stableObject(Object.fromEntries(positions));
 }
 
 export function hashReadSet(events: EventEnvelope[]): string {
@@ -246,65 +228,45 @@ export function interleaveStreams(
 export function compareCanonicalEventOrder(
 	left: EventEnvelope,
 	right: EventEnvelope,
-	requestedVersion?: CanonicalizationVersion,
 ): number {
-	const version = requireCanonicalizationVersion(requestedVersion, 2);
 	return (
-		compareCanonicalStrings(left.streamId, right.streamId, version) ||
+		compareCanonicalStrings(left.streamId, right.streamId) ||
 		left.seq - right.seq ||
-		compareCanonicalStrings(String(left.type), String(right.type), version) ||
-		compareCanonicalStrings(String(left.id), String(right.id), version)
+		compareCanonicalStrings(String(left.type), String(right.type)) ||
+		compareCanonicalStrings(String(left.id), String(right.id))
 	);
 }
 
 export function stableValue(value: JsonValue): JsonValue {
-	return stableValueForVersion(value, 2);
-}
-
-function stableValueForVersion(
-	value: JsonValue,
-	requestedVersion: CanonicalizationVersion,
-): JsonValue {
-	const version = requireCanonicalizationVersion(requestedVersion);
 	if (value instanceof Map) {
 		return [...value.entries()]
-			.map(([key, entry]) => [
-				stableValueForVersion(key, version),
-				stableValueForVersion(entry, version),
-			])
-			.sort(([leftKey, leftValue], [rightKey, rightValue]) => {
-				const keys = compareCanonicalStrings(
-					stableStringifyForVersion(leftKey ?? null, version),
-					stableStringifyForVersion(rightKey ?? null, version),
-					version,
-				);
-				return (
-					keys ||
-					(version === 1
-						? 0
-						: compareCanonicalStrings(
-								stableStringifyForVersion(leftValue ?? null, version),
-								stableStringifyForVersion(rightValue ?? null, version),
-								version,
-							))
-				);
-			});
+			.map(([key, entry]) => [stableValue(key), stableValue(entry)])
+			.sort(
+				([leftKey, leftValue], [rightKey, rightValue]) =>
+					compareCanonicalStrings(
+						stableStringify(leftKey ?? null),
+						stableStringify(rightKey ?? null),
+					) ||
+					compareCanonicalStrings(
+						stableStringify(leftValue ?? null),
+						stableStringify(rightValue ?? null),
+					),
+			);
 	}
 
 	if (value instanceof Set) {
 		return [...value]
-			.map((entry) => stableValueForVersion(entry, version))
+			.map((entry) => stableValue(entry))
 			.sort((left, right) =>
 				compareCanonicalStrings(
-					stableStringifyForVersion(left ?? null, version),
-					stableStringifyForVersion(right ?? null, version),
-					version,
+					stableStringify(left ?? null),
+					stableStringify(right ?? null),
 				),
 			);
 	}
 
 	if (Array.isArray(value)) {
-		return value.map((entry) => stableValueForVersion(entry, version));
+		return value.map((entry) => stableValue(entry));
 	}
 
 	if (value && isJsonObject(value)) {
@@ -312,10 +274,9 @@ function stableValueForVersion(
 			Object.fromEntries(
 				Object.entries(value).map(([key, entry]) => [
 					key,
-					stableValueForVersion(entry ?? null, version),
+					stableValue(entry ?? null),
 				]),
 			),
-			version,
 		);
 	}
 
@@ -323,14 +284,7 @@ function stableValueForVersion(
 }
 
 export function stableStringify(value: JsonValue): string {
-	return stableStringifyForVersion(value, 2);
-}
-
-export function stableStringifyForVersion(
-	value: JsonValue,
-	requestedVersion: CanonicalizationVersion,
-): string {
-	return JSON.stringify(stableValueForVersion(value, requestedVersion));
+	return JSON.stringify(stableValue(value));
 }
 
 function isAtOrBefore(event: EventEnvelope, targetSeq: SeqVector): boolean {
@@ -353,14 +307,11 @@ function seededUnit(input: string): number {
 	return Number.parseInt(hex, 16) / 0xffffffffffff;
 }
 
-function stableObject<T extends JsonObject>(
-	value: T,
-	version: CanonicalizationVersion,
-): T {
+function stableObject<T extends JsonObject>(value: T): T {
 	// SAFETY: sorting and rebuilding preserves the object's own JSON entries.
 	return Object.fromEntries(
 		Object.entries(value).sort(([left], [right]) =>
-			compareCanonicalStrings(left, right, version),
+			compareCanonicalStrings(left, right),
 		),
 	) as T;
 }
@@ -406,14 +357,11 @@ function withAmbientNondeterminism<T>(
 	}
 }
 
-export function toSeqVectorEntries(
-	vector: SeqVector,
-	version: CanonicalizationVersion,
-) {
+export function toSeqVectorEntries(vector: SeqVector) {
 	const entries = Object.entries(vector)
 		.map(([streamId, seq]) => ({ streamId, seq }))
 		.sort((left, right) =>
-			compareCanonicalStrings(left.streamId, right.streamId, version),
+			compareCanonicalStrings(left.streamId, right.streamId),
 		);
 	return Object.freeze(entries.map((entry) => Object.freeze(entry)));
 }

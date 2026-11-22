@@ -122,11 +122,12 @@ describe("authorizeBillingSpend", () => {
 			authorizeBillingSpend({ quote: changed, billing: policy }).reasons[0]
 				?.code,
 		).toBe("quote-invalid");
-		const old = quote("1");
-		old.ratingAlgorithmVersion = "pricing-rating/v8";
-		old.quoteHash = quoteHashOf(old);
+		const foreign = quote("1");
+		foreign.ratingAlgorithmVersion = "external-rating";
+		foreign.quoteHash = quoteHashOf(foreign);
 		expect(
-			authorizeBillingSpend({ quote: old, billing: policy }).reasons[0]?.code,
+			authorizeBillingSpend({ quote: foreign, billing: policy }).reasons[0]
+				?.code,
 		).toBe("quote-invalid");
 		expect(
 			authorizeBillingSpend({ quote: quote("1", "EUR"), billing: policy })

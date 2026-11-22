@@ -1,12 +1,8 @@
 import crypto from "node:crypto";
 import { cloneAsJson } from "../json.js";
-import { isNonEmptyPrimitiveString } from "../workflow-boundary.js";
-import { canonicalizationVersion } from "./canonicalization.js";
-import { stableStringifyForVersion } from "./equivalence.js";
-import type {
-	CanonicalizationVersion,
-	ReplayDivergenceRecord,
-} from "./types.js";
+import { isNonEmptyPrimitiveString } from "../workflow-value.js";
+import { stableStringify } from "./equivalence.js";
+import type { ReplayDivergenceRecord } from "./types.js";
 
 export class ReplayDivergenceError extends Error {
 	readonly liveState: unknown;
@@ -23,12 +19,10 @@ export class ReplayDivergenceError extends Error {
 		liveOrder: string[];
 		replayOrder: string[];
 		firstDivergentEventKey?: string;
-		canonicalizationVersion?: CanonicalizationVersion;
 	}) {
 		super("replay/live materialization mismatch");
 		if (!isNonEmptyPrimitiveString(input.runId))
 			throw new TypeError("replay runId must be a non-empty string");
-		const version = canonicalizationVersion(input.canonicalizationVersion, 2);
 		const liveOrder = [...input.liveOrder];
 		const replayOrder = [...input.replayOrder];
 		this.name = "ReplayDivergenceError";
@@ -40,10 +34,9 @@ export class ReplayDivergenceError extends Error {
 			input.firstDivergentEventKey ??
 			findFirstDivergentKey(liveOrder, replayOrder);
 		this.divergence = Object.freeze({
-			canonicalizationVersion: version,
 			runId: input.runId,
-			liveStateDigest: digestForVersion(input.liveState, version),
-			replayStateDigest: digestForVersion(input.replayState, version),
+			liveStateDigest: digest(input.liveState),
+			replayStateDigest: digest(input.replayState),
 			liveOrder: Object.freeze(liveOrder),
 			replayOrder: Object.freeze(replayOrder),
 			firstDivergentEventKey: this.firstDivergentEventKey,
@@ -52,16 +45,9 @@ export class ReplayDivergenceError extends Error {
 }
 
 export function digest<T>(value: T): string {
-	return digestForVersion(value, 2);
-}
-
-export function digestForVersion<T>(
-	value: T,
-	version: CanonicalizationVersion,
-): string {
 	return crypto
 		.createHash("sha256")
-		.update(stableStringifyForVersion(cloneAsJson(value), version))
+		.update(stableStringify(cloneAsJson(value)))
 		.digest("hex");
 }
 

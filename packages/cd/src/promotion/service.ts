@@ -1565,7 +1565,9 @@ export function createPromotionService(
 		const targetId = toSetId ?? current.predecessorSetId;
 		const target =
 			targetId === "" ? undefined : await d.desired.get(asSet(targetId));
-		if (!target)
+		if (!target) {
+			if (targetId === "" && !strictCurrent)
+				return { ok: true, value: current };
 			return {
 				ok: false,
 				reasons: [
@@ -1577,6 +1579,7 @@ export function createPromotionService(
 					),
 				],
 			};
+		}
 		const freight = await d.freight.get(asFreight(target.freightId));
 		if (!freight || !(await d.freight.isUsable(asFreight(target.freightId))))
 			return {
@@ -1765,7 +1768,7 @@ export function createPromotionService(
 			canonicalJson({
 				version: 1,
 				freightId: input.freightId,
-				targets: [...input.targets].sort(),
+				targets: [...input.targets],
 				pipeline: input.pipeline ?? "",
 				node: input.node ?? "",
 				sourceCampId: input.sourceCampId ?? "",
@@ -1775,6 +1778,7 @@ export function createPromotionService(
 				intent,
 				deploymentMode: input.deploymentMode ?? "",
 				previewTtlMs: preview ? preview.ttlMs.toString() : "",
+				previewSourceCampId: preview ? preview.sourceCampId : "",
 			}),
 		)}`;
 	}
@@ -1788,8 +1792,6 @@ export function createPromotionService(
 		const fingerprint = loaded.trigger.meta?.promotionRequestFingerprint;
 		if (fingerprint !== undefined)
 			return fingerprint === requestFingerprint(input, intent, preview);
-		// Historical records lack the original optional strategy and proposal
-		// inputs. Refuse ambiguous replays instead of acknowledging a new request.
 		const recorded = loaded.view.request;
 		return (
 			loaded.view.intent === intent &&
@@ -1801,8 +1803,7 @@ export function createPromotionService(
 			recorded.fanoutId === (input.fanoutId ?? "") &&
 			recorded.strategy === (input.strategy ?? RolloutStrategy.UNSPECIFIED) &&
 			recorded.proposal === (input.proposal === true) &&
-			canonicalJson([...recorded.targetCampIds].sort()) ===
-				canonicalJson([...input.targets].sort()) &&
+			canonicalJson(recorded.targetCampIds) === canonicalJson(input.targets) &&
 			(!preview ||
 				(loaded.view.preview?.ttlMs === preview.ttlMs &&
 					loaded.view.preview?.sourceCampId === preview.sourceCampId))
@@ -1997,8 +1998,6 @@ export function createPromotionService(
 				"Retry with the same idempotency key.",
 				promotionId,
 			);
-		// A competing request can win after the initial lookup. The store may
-		// deduplicate its append, so compare the persisted binding before effects.
 		const persisted = await load(promotionId);
 		if (!persisted)
 			return refusal(
@@ -2097,8 +2096,6 @@ export function createPromotionService(
 						),
 					],
 				};
-			// Bind the request before any rollback effect. A competing writer may
-			// have claimed the stream after our first lookup; read its binding.
 			const claimStream = `cd-rollback-claim-${rollbackId}`;
 			const initial = await d.desired.current(request.campId);
 			try {
@@ -2118,9 +2115,7 @@ export function createPromotionService(
 					],
 					{ expectedSeq: 0, actor: ctx.principal, tenant: d.tenant },
 				);
-			} catch {
-				// A concurrent claim or a failed append is resolved by reading the stream.
-			}
+			} catch {}
 			const reservation = (await readStream(d.store, claimStream)).find(
 				(event) =>
 					event.type === SAGA_FACT.started &&
@@ -2367,7 +2362,18 @@ export function createPromotionService(
 			if (saved.meta?.rollbackRequestFingerprint !== fingerprint)
 				return differentRequest();
 			const persisted = await load(rollbackId);
-			if (!persisted) return differentRequest();
+			if (!persisted)
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.journalConflict,
+							`rollback ${rollbackId} could not be read after journaling`,
+							"Retry with the same idempotency key.",
+							rollbackId,
+						),
+					],
+				};
 			metric(PROMOTION_METRIC.rolledBack, ctx.now(), { camp: request.campId });
 			return { ok: true, value: recordOf(persisted.view) };
 		},
@@ -2551,6 +2557,18 @@ export function createPromotionService(
 							PROMOTION_REASON.journalConflict,
 							`preview ${promotionId} could not be read after journaling`,
 							"Retry with the same idempotency key.",
+							promotionId,
+						),
+					],
+				};
+			if (!sameRequest(persisted, previewRequest, "preview", preview))
+				return {
+					ok: false,
+					reasons: [
+						reason(
+							PROMOTION_REASON.idempotencyReused,
+							`idempotency key ${input.idempotencyKey} already names a different preview`,
+							"Use a new idempotency key for a different preview.",
 							promotionId,
 						),
 					],

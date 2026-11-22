@@ -9,7 +9,6 @@ interface Varint {
 /** Check fields whose truncation would change the meaning of replay evidence. */
 export function checkReplayWire(bytes: Uint8Array, kind: MessageKind): void {
 	let offset = 0;
-	let sawVersion = false;
 	while (offset < bytes.length) {
 		const tag = readVarint(bytes, offset);
 		offset = tag.next;
@@ -18,14 +17,6 @@ export function checkReplayWire(bytes: Uint8Array, kind: MessageKind): void {
 		const field = Number(tag.value >> 3n);
 		const wireType = Number(tag.value & 7n);
 		if (field === 0) throw new ReplayParseError("invalid protobuf field tag");
-		const version = kind !== "entry" && field === 7;
-		if (version) {
-			if (sawVersion || wireType !== 0)
-				throw new ReplayParseError(
-					"duplicate or invalid canonicalization version",
-				);
-			sawVersion = true;
-		}
 		if (kind === "report" && field === 2 && wireType !== 2)
 			throw new ReplayParseError("invalid protobuf sequence vector");
 		if (kind === "entry" && field === 2 && wireType !== 0)
@@ -34,8 +25,6 @@ export function checkReplayWire(bytes: Uint8Array, kind: MessageKind): void {
 		if (wireType === 0) {
 			const value = readVarint(bytes, offset);
 			offset = value.next;
-			if (version && value.value > 0xffffffffn)
-				throw new ReplayParseError("invalid canonicalization version");
 			if (
 				kind === "entry" &&
 				field === 2 &&

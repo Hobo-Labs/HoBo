@@ -19,7 +19,6 @@ description: Verify replay cleanup, sequence boundaries, input snapshots and num
 - `packages/runtime/test/replay/target-snapshot.test.ts` checks hidden own targets, getters, and caller edits to targets and events; seed 614611 generates 100 target edits.
 - `packages/runtime/test/replay/sequence-vector.test.ts` checks special property names, inherited target entries including the captured target’s prototype, and 150 generated event histories (seed 614610).
 - `packages/runtime/test/replay/equivalence.test.ts` exercises the existing deterministic-fold and divergence checks.
-- The related [ordering skill](../verify-replay-ordering/SKILL.md) checks versioned canonical order and report markers.
 - The related [evidence skill](../verify-replay-evidence/SKILL.md) checks that returned reports remain immutable.
 
 - The related [stream identity skill](../verify-replay-stream-identity/SKILL.md) checks primitive identities and binds captured journal events to their requested stream.

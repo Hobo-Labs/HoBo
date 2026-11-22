@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { isJsonObject } from "../../src/json.js";
 import { replayRun } from "../../src/replay/replayer.js";
 import { createInMemoryEventStore } from "../../src/replay/store.js";
 import { createWorkflowEngine, defineWorkflow } from "../../src/workflow.js";
@@ -22,9 +21,6 @@ describe("workflow sleep completion facts", () => {
 			journal.filter((event) => event.type === "run.SleepCompleted"),
 		).toHaveLength(1);
 		expect(
-			journal.find((event) => event.type === "run.Started")?.data,
-		).toMatchObject({ commandTreeVersion: 3 });
-		expect(
 			(
 				await replayRun(
 					engine.store,
@@ -36,7 +32,7 @@ describe("workflow sleep completion facts", () => {
 		).toBe("done");
 	});
 
-	it("refuses a version-two root sleep without completion evidence", async () => {
+	it("refuses a root sleep without completion evidence", async () => {
 		const engine = createWorkflowEngine();
 		const wf = defineWorkflow({
 			name: "missing-sleep-completion",
@@ -49,11 +45,6 @@ describe("workflow sleep completion facts", () => {
 		const events = await engine.store.readStream(`run/${live.runId}`);
 		const missing = events
 			.filter((event) => event.type !== "run.SleepCompleted")
-			.map((event) => {
-				if (event.type !== "run.Started" || !isJsonObject(event.data))
-					return event;
-				return { ...event, data: { ...event.data, commandTreeVersion: 2 } };
-			})
 			.map((event, index) => ({ ...event, seq: index + 1 }));
 		await expect(
 			replayRun(

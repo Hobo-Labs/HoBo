@@ -56,11 +56,6 @@ it.each([
 		);
 		rejected(quoteScenario(input));
 		if (kind === "graduated") {
-			const old = quoteScenario(input, {
-				ratingAlgorithmVersion: "pricing-rating/v7",
-			});
-			if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-			expect(old.incremental?.billed?.decimal).toBe(end === "5" ? "5" : "11");
 		}
 	}
 });
@@ -98,11 +93,6 @@ it("rejects usage beyond a finite final tier", () => {
 		"RATE_CARD_NOT_FOUND",
 	);
 	rejected(quoteScenario(scenario("volume", tiers, 10)), "RATE_CARD_NOT_FOUND");
-	const prior = quoteScenario(scenario("graduated", tiers, 11), {
-		ratingAlgorithmVersion: "pricing-rating/v7",
-	});
-	if (!isQuoteVector(prior)) throw new Error("legacy quote rejected");
-	expect(prior.incremental?.billed?.decimal).toBe("10");
 });
 
 it("prices generated contiguous tier boundaries without gaps or double counts", () => {
@@ -169,8 +159,4 @@ it("rejects an empty tier schedule even when no usage is present", () => {
 	const input = scenario("graduated", [], 1);
 	input.candidate = [];
 	rejected(quoteScenario(input));
-	const prior = quoteScenario(input, {
-		ratingAlgorithmVersion: "pricing-rating/v7",
-	});
-	expect(isQuoteVector(prior)).toBe(true);
 });

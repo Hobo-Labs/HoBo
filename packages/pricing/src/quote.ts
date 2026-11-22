@@ -10,6 +10,8 @@ import {
 	type QuoteVector,
 	QuoteVectorSchema,
 } from "./_generated/pricing_pb.js";
+import { hasBaselineCharges } from "./agreement-status.js";
+import { validateBillingPeriods } from "./billing-period.js";
 import { catalogHashOf } from "./catalog.js";
 import {
 	addDecimal,
@@ -20,41 +22,45 @@ import {
 	subtractDecimal,
 } from "./decimal.js";
 import {
+	isBoundedPricingInput,
+	isSupportedPricingRealm,
 	type JsonValue,
 	parseQuoteScenario,
 	quoteVectorToJson,
 	stableHash,
 } from "./json.js";
-import { compareCodeUnits, compareLegacyLocale } from "./order.js";
 import { type RatedSnapshot, rateSnapshot } from "./rating.js";
 import {
-	compareUtcExact,
-	EXACT_TIME,
-	LEGACY_TIME,
 	PricingFault,
 	stateHashOf,
+	validateFinancialBalances,
+	validateFinancialIdentities,
+	validateFinancialSourceIds,
+	validateFinancialSourceValues,
+	validateGrantScopes,
 	validateScenarioState,
 } from "./state.js";
+import { validateScenarioTimes } from "./time-order.js";
 import type { PricingRejectionCode, QuoteResult } from "./types.js";
 
-export type RatingAlgorithmVersion =
-	| "pricing-rating/v1"
-	| "pricing-rating/v2"
-	| "pricing-rating/v3"
-	| "pricing-rating/v4"
-	| "pricing-rating/v5"
-	| "pricing-rating/v6"
-	| "pricing-rating/v7"
-	| "pricing-rating/v8"
-	| "pricing-rating/v9";
-export type RatingOptions = { ratingAlgorithmVersion?: RatingAlgorithmVersion };
-export const RATING_ALGORITHM_VERSION = "pricing-rating/v9";
 const EMPTY_CAPABILITY_HASH = `sha256:${"0".repeat(64)}`;
+export const RATING_ALGORITHM_VERSION = "pricing-rating/v1";
 
 export function quoteHashOf(quote: QuoteVector): string {
 	const unhashed = clone(QuoteVectorSchema, quote);
 	unhashed.quoteHash = "";
 	return stableHash(quoteVectorToJson(unhashed));
+}
+
+function unsupportedRealm(): PricingRejected {
+	return {
+		$typeName: "hobo.pricing.v1.PricingRejected",
+		schema: "hobo.pricing.rejected/v1",
+		code: "PRICING_REALM_UNSUPPORTED",
+		message: "pricing requires an unchanged standard Object.prototype",
+		unpriced: [],
+		rejectedCandidates: [],
+	};
 }
 
 function rejection(
@@ -142,6 +148,36 @@ function migrationAndTerminationTotal(
 	return create(MoneySchema, { decimal: decimalText(total), currency });
 }
 
+function validateAgreementAvailability(scenario: QuoteScenario): void {
+	const referenced = new Set(
+		[...scenario.baseline, ...scenario.candidate].map(
+			(workload) => workload.agreementRef,
+		),
+	);
+	for (const agreement of scenario.state?.agreements ?? []) {
+		const used = referenced.has(agreement.id);
+		if (hasBaselineCharges(agreement.status)) continue;
+		if (agreement.status === "trialing") {
+			if (used) continue;
+			throw new PricingFault(
+				"PRICING_AGREEMENT_UNAVAILABLE",
+				`trial agreement ${agreement.id} needs an explicit workload to determine its liability`,
+			);
+		}
+		if (agreement.status === "suspended" || agreement.status === "cancelled") {
+			if (!used) continue;
+			throw new PricingFault(
+				"PRICING_AGREEMENT_UNAVAILABLE",
+				`agreement ${agreement.id} is not available for pricing`,
+			);
+		}
+		throw new PricingFault(
+			"PRICING_AGREEMENT_UNAVAILABLE",
+			`agreement ${agreement.id} has an unrecognized status`,
+		);
+	}
+}
+
 function validateQuoteOptions(scenario: QuoteScenario): void {
 	const options = scenario.options;
 	if (
@@ -182,56 +218,57 @@ function validateQuoteOptions(scenario: QuoteScenario): void {
 	}
 }
 
-export function quoteScenario(
-	scenario: QuoteScenario,
-	options: RatingOptions = {},
-): QuoteResult {
-	const version =
-		options.ratingAlgorithmVersion === undefined
-			? RATING_ALGORITHM_VERSION
-			: options.ratingAlgorithmVersion;
-	if (
-		version !== "pricing-rating/v1" &&
-		version !== "pricing-rating/v2" &&
-		version !== "pricing-rating/v3" &&
-		version !== "pricing-rating/v4" &&
-		version !== "pricing-rating/v5" &&
-		version !== "pricing-rating/v6" &&
-		version !== "pricing-rating/v7" &&
-		version !== "pricing-rating/v8" &&
-		version !== "pricing-rating/v9"
-	)
+export function quoteScenario(scenario: QuoteScenario): QuoteResult {
+	if (!isSupportedPricingRealm()) return unsupportedRealm();
+	if (!isBoundedPricingInput(scenario))
 		return rejection(
 			"INVALID_PRICING_INPUT",
-			"unknown rating algorithm version",
+			"request is not bounded pricing data",
 		);
-	const compareStrings =
-		version === "pricing-rating/v1" ? compareLegacyLocale : compareCodeUnits;
-	const strictTimes =
-		version !== "pricing-rating/v1" && version !== "pricing-rating/v2";
-	const strictSourceIdentity = strictTimes && version !== "pricing-rating/v3";
-	const strictSourceValues =
-		strictSourceIdentity && version !== "pricing-rating/v4";
-	const selectorPerWorkload =
-		strictSourceValues && version !== "pricing-rating/v5";
-	const rejectAmbiguousLatest =
-		version === "pricing-rating/v7" ||
-		version === "pricing-rating/v8" ||
-		version === "pricing-rating/v9";
-	const strictTiers =
-		version === "pricing-rating/v8" || version === "pricing-rating/v9";
-	const strictCompleteness = version === "pricing-rating/v9";
-	const time = strictTimes ? EXACT_TIME : LEGACY_TIME;
-	const compareTimes = strictTimes ? compareUtcExact : compareStrings;
 	try {
-		validateScenarioState(
-			scenario,
-			time,
-			strictSourceIdentity,
-			strictSourceValues,
-			strictCompleteness,
-		);
+		validateScenarioTimes(scenario);
+		validateScenarioState(scenario);
+		validateFinancialIdentities(scenario.state);
+		if (scenario.state !== undefined) {
+			validateFinancialBalances(scenario.state);
+			validateGrantScopes(scenario.state);
+			validateFinancialSourceIds(scenario.state);
+			validateFinancialSourceValues(scenario.state);
+		}
+		validateBillingPeriods(scenario);
+		validateAgreementAvailability(scenario);
 		validateQuoteOptions(scenario);
+		if (scenario.action === "destroy") {
+			if (scenario.destroyCancelsAgreement === undefined)
+				throw new PricingFault(
+					"INCOMPLETE_FINANCIAL_STATE",
+					"destroy must explicitly declare whether an agreement is canceled",
+				);
+			if (
+				scenario.destroyCancelsAgreement ||
+				scenario.sourceProviderAgreementIds.length > 0 ||
+				scenario.candidate.some((candidate) => candidate.direction !== "add")
+			)
+				throw new PricingFault(
+					"PRICING_MODEL_UNSUPPORTED",
+					"destroy cancellation and removed-workload costs are not fully modeled",
+				);
+		} else if (scenario.destroyCancelsAgreement !== undefined)
+			throw new PricingFault(
+				"INVALID_PRICING_INPUT",
+				"destroy cancellation terms require a destroy scenario",
+			);
+		if (
+			scenario.action === "rebalance" ||
+			scenario.action === "migrate" ||
+			scenario.action === "cancel" ||
+			scenario.sourceProviderAgreementIds.length > 0 ||
+			scenario.candidate.some((candidate) => candidate.direction === "remove")
+		)
+			throw new PricingFault(
+				"PRICING_MODEL_UNSUPPORTED",
+				"source-side changes and their costs are not fully modeled",
+			);
 		const catalog = scenario.catalog;
 		const state = scenario.state;
 		const options = scenario.options;
@@ -253,30 +290,11 @@ export function quoteScenario(
 				"financial state content does not match its pinned hash",
 			);
 		}
-		const baseline = rateSnapshot(
-			scenario,
-			scenario.baseline,
-			compareStrings,
-			compareTimes,
-			time,
-			strictTimes,
-			strictSourceValues,
-			selectorPerWorkload,
-			rejectAmbiguousLatest,
-			strictTiers,
-		);
-		const candidate = rateSnapshot(
-			scenario,
-			[...scenario.baseline, ...scenario.candidate],
-			compareStrings,
-			compareTimes,
-			time,
-			strictTimes,
-			strictSourceValues,
-			selectorPerWorkload,
-			rejectAmbiguousLatest,
-			strictTiers,
-		);
+		const baseline = rateSnapshot(scenario, scenario.baseline);
+		const candidate = rateSnapshot(scenario, [
+			...scenario.baseline,
+			...scenario.candidate,
+		]);
 		if (
 			candidate.currency.length === 0 ||
 			candidate.currency !== baseline.currency
@@ -304,8 +322,7 @@ export function quoteScenario(
 				candidate.currency,
 			),
 		});
-		const informationalPartial =
-			strictCompleteness && state.completeness === "partial";
+		const informationalPartial = state.completeness === "partial";
 		const assumptions = [
 			"allocatedEffective is advisory and is not a dispatcher v1 input",
 			"external provider quotes are evidence only; no live provider call was made",
@@ -316,7 +333,7 @@ export function quoteScenario(
 			);
 		const initial = create(QuoteVectorSchema, {
 			schema: "hobo.pricing.quote/v1",
-			ratingAlgorithmVersion: version,
+			ratingAlgorithmVersion: RATING_ALGORITHM_VERSION,
 			pricingCatalogHash: scenario.pricingCatalogHash,
 			capabilityCatalogHash: EMPTY_CAPABILITY_HASH,
 			stateHash: state.stateHash,
@@ -380,10 +397,8 @@ export function quoteScenario(
 
 export const QuoteEngine = Object.freeze({ quote: quoteScenario });
 
-export function quoteScenarioJson(
-	value: JsonValue | undefined,
-	options: RatingOptions = {},
-): QuoteResult {
+export function quoteScenarioJson(value: JsonValue | undefined): QuoteResult {
+	if (!isSupportedPricingRealm()) return unsupportedRealm();
 	const scenario = value === undefined ? undefined : parseQuoteScenario(value);
 	if (scenario === undefined) {
 		return rejection(
@@ -391,5 +406,5 @@ export function quoteScenarioJson(
 			"request is not a valid QuoteScenario",
 		);
 	}
-	return quoteScenario(scenario, options);
+	return quoteScenario(scenario);
 }

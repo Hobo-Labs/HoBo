@@ -40,7 +40,7 @@ Each `pass` row is checked statically, without spawning another test runner. The
 | §13.allocation | pass | packages/pricing/test/section-13-coverage.test.ts | §13 allocation exposes advisory allocatedEffective separate from incremental effective |
 | §13.baselines | pass | packages/pricing/test/adversarial-10.test.ts | 10.10 prices joint non-additive actions once instead of summing independent deltas |
 | §13.multidimensional | pass | packages/pricing/test/adversarial-10.test.ts | 10.5 rates a multidimensional sandbox composite independently |
-| §13.migration | pass | packages/pricing/test/adversarial-10.test.ts | 10.6 rates migration source removal and target addition jointly |
+| §13.migration | pass | packages/pricing/test/adversarial-10.test.ts | 10.6 refuses a migration whose source-side costs are not modeled |
 | §13.freshness | pass | packages/pricing/test/adversarial-10.test.ts | 10.8 rejects observations that do not cover the quote horizon |
 | §13.currency | pass | packages/pricing/test/adversarial-10.test.ts | 10.9 refuses to rank or sum mixed currencies |
 | §13.reservations | pass | packages/dispatcher/test/reservation-ledger.test.ts | restores exactly the headroom the reservation consumed |
@@ -54,7 +54,7 @@ Each `pass` row is checked statically, without spawning another test runner. The
 | §10.3 | pass | packages/pricing/test/adversarial-10.test.ts | 10.3 consumes a $100 commitment with $40 used and $30 candidate |
 | §10.4 | pass | packages/pricing/test/adversarial-10.test.ts | 10.4 keeps graduated and volume tiers distinct for 90 + 20 units |
 | §10.5 | pass | packages/pricing/test/adversarial-10.test.ts | 10.5 rates a multidimensional sandbox composite independently |
-| §10.6 | pass | packages/pricing/test/adversarial-10.test.ts | 10.6 rates migration source removal and target addition jointly |
+| §10.6 | pass | packages/pricing/test/adversarial-10.test.ts | 10.6 refuses a migration whose source-side costs are not modeled |
 | §10.7 | pass | packages/pricing/test/adversarial-10.test.ts | 10.7 enforces a free plan hard limit without billing overage |
 | §10.8 | pass | packages/pricing/test/adversarial-10.test.ts | 10.8 rejects observations that do not cover the quote horizon |
 | §10.9 | pass | packages/pricing/test/adversarial-10.test.ts | 10.9 refuses to rank or sum mixed currencies |

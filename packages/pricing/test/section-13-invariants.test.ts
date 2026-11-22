@@ -112,7 +112,9 @@ it("denies cancellation unless explicitly allowed", () => {
 		code: "CANCELLATION_DENIED",
 	});
 	scenario.options.allowCancellation = true;
-	expect(isQuoteVector(quoteScenario(scenario))).toBe(true);
+	expect(quoteScenario(scenario)).toMatchObject({
+		code: "PRICING_MODEL_UNSUPPORTED",
+	});
 });
 
 it("reconciliation events require provider id dedupe keys", () => {

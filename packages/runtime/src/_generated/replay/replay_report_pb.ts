@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file replay/replay_report.proto.
  */
 export const file_replay_replay_report: GenFile = /*@__PURE__*/
-  fileDesc("ChpyZXBsYXkvcmVwbGF5X3JlcG9ydC5wcm90bxIWaG9iby5ydW50aW1lLnJlcGxheS52MSIwCg5TZXFWZWN0b3JFbnRyeRIRCglzdHJlYW1faWQYASABKAkSCwoDc2VxGAIgASgEIucBCgxSZXBsYXlSZXBvcnQSDgoGcnVuX2lkGAEgASgJEjoKCnNlcV92ZWN0b3IYAiADKAsyJi5ob2JvLnJ1bnRpbWUucmVwbGF5LnYxLlNlcVZlY3RvckVudHJ5EhUKDXJlYWRfc2V0X2hhc2gYAyABKAkSFAoMc3RhdGVfZGlnZXN0GAQgASgJEgwKBG1vZGUYBSABKAkSDAoEc2VlZBgGIAEoCRIlChhjYW5vbmljYWxpemF0aW9uX3ZlcnNpb24YByABKA1IAIgBAUIbChlfY2Fub25pY2FsaXphdGlvbl92ZXJzaW9uIusBChBSZXBsYXlEaXZlcmdlbmNlEg4KBnJ1bl9pZBgBIAEoCRIZChFsaXZlX3N0YXRlX2RpZ2VzdBgCIAEoCRIbChNyZXBsYXlfc3RhdGVfZGlnZXN0GAMgASgJEhIKCmxpdmVfb3JkZXIYBCADKAkSFAoMcmVwbGF5X29yZGVyGAUgAygJEiEKGWZpcnN0X2RpdmVyZ2VudF9ldmVudF9rZXkYBiABKAkSJQoYY2Fub25pY2FsaXphdGlvbl92ZXJzaW9uGAcgASgNSACIAQFCGwoZX2Nhbm9uaWNhbGl6YXRpb25fdmVyc2lvbmIGcHJvdG8z");
+  fileDesc("ChpyZXBsYXkvcmVwbGF5X3JlcG9ydC5wcm90bxIWaG9iby5ydW50aW1lLnJlcGxheS52MSIwCg5TZXFWZWN0b3JFbnRyeRIRCglzdHJlYW1faWQYASABKAkSCwoDc2VxGAIgASgEIqMBCgxSZXBsYXlSZXBvcnQSDgoGcnVuX2lkGAEgASgJEjoKCnNlcV92ZWN0b3IYAiADKAsyJi5ob2JvLnJ1bnRpbWUucmVwbGF5LnYxLlNlcVZlY3RvckVudHJ5EhUKDXJlYWRfc2V0X2hhc2gYAyABKAkSFAoMc3RhdGVfZGlnZXN0GAQgASgJEgwKBG1vZGUYBSABKAkSDAoEc2VlZBgGIAEoCSKnAQoQUmVwbGF5RGl2ZXJnZW5jZRIOCgZydW5faWQYASABKAkSGQoRbGl2ZV9zdGF0ZV9kaWdlc3QYAiABKAkSGwoTcmVwbGF5X3N0YXRlX2RpZ2VzdBgDIAEoCRISCgpsaXZlX29yZGVyGAQgAygJEhQKDHJlcGxheV9vcmRlchgFIAMoCRIhChlmaXJzdF9kaXZlcmdlbnRfZXZlbnRfa2V5GAYgASgJYgZwcm90bzM");
 
 /**
  * @generated from message hobo.runtime.replay.v1.SeqVectorEntry
@@ -67,13 +67,6 @@ export type ReplayReport = Message<"hobo.runtime.replay.v1.ReplayReport"> & {
    * @generated from field: string seed = 6;
    */
   seed: string;
-
-  /**
-   * Missing on historical reports, which used locale-sensitive version 1.
-   *
-   * @generated from field: optional uint32 canonicalization_version = 7;
-   */
-  canonicalizationVersion?: number | undefined;
 };
 
 /**
@@ -116,13 +109,6 @@ export type ReplayDivergence = Message<"hobo.runtime.replay.v1.ReplayDivergence"
    * @generated from field: string first_divergent_event_key = 6;
    */
   firstDivergentEventKey: string;
-
-  /**
-   * Missing on historical records, which used locale-sensitive version 1.
-   *
-   * @generated from field: optional uint32 canonicalization_version = 7;
-   */
-  canonicalizationVersion?: number | undefined;
 };
 
 /**

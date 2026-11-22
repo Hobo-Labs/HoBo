@@ -236,11 +236,11 @@
         },
         "body": {
           "schema": "hobo.pricing.quote/v1",
-          "ratingAlgorithmVersion": "pricing-rating/v9",
+          "ratingAlgorithmVersion": "pricing-rating/v1",
           "pricingCatalogHash": "sha256:6120bc93207b4272821b21f2c6b3b390bc9c14efdabff79da2b7c5b853b2e76a",
           "capabilityCatalogHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
           "stateHash": "sha256:bce0366e297bf2e708bf90384e88559f9f02db4be523e78b3a39f148af2f076e",
-          "quoteHash": "sha256:27b10974f84cfdd040d88b1fd72eebd558de7fdc65425444df95c5f0dbe7bc85",
+          "quoteHash": "sha256:5d6fee1b98350776c4dba2871611faae7690579fa53600e7580d7701a82ea3f2",
           "baseline": {
             "billed": {
               "decimal": "20",

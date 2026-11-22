@@ -1,7 +1,6 @@
 export { createDeterministicContext } from "./context.js";
 export {
 	digest,
-	digestForVersion,
 	ReplayDivergenceError,
 } from "./divergence.js";
 export {
@@ -13,7 +12,6 @@ export {
 	runFold,
 	seqVector,
 	stableStringify,
-	stableStringifyForVersion,
 	stableValue,
 } from "./equivalence.js";
 export {
@@ -30,7 +28,6 @@ export {
 export { nextEnvelope, recordEffect } from "./recorder.js";
 export {
 	canonicalStateBytes,
-	canonicalStateBytesForVersion,
 	type ReplayOptions,
 	type ReplayResult,
 	replayRun,
@@ -51,7 +48,6 @@ export {
 	type WorkflowHandlers,
 } from "./test-runtime.js";
 export type {
-	CanonicalizationVersion,
 	DeterministicContext,
 	EventEnvelope,
 	FoldFn,

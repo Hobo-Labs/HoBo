@@ -14,7 +14,7 @@
     "productSummary": "**HoBo is a design-first meta-cloud project for deploying one application shape onto many real infrastructure shapes.** A developer or agent should be able to describe an app once, then let HoBo place it on a provider, mix of providers, or self-hosted yard without rewriting app code. The design uses **WIT/WASM Component Model interfaces** as the portable membrane, provider adapters as the integrat",
     "signals": {
       "hasSite": true,
-      "hasDesignMd": true,
+      "hasVisualTokenContract": true,
       "hasCli": true,
       "hasMcp": true,
       "hasAgentsMd": true,
@@ -117,7 +117,7 @@
         "source": [
           "README.md",
           "site/",
-          "/home/codex/.herdr/worktrees/hobo/hobo-devx/site/DESIGN.md"
+          "site/src/styles/global.css"
         ]
       },
       {
@@ -130,9 +130,10 @@
           "docs"
         ],
         "priority": 25,
-        "seed": "Product/brand designer for HoBo's public UI. Needs a design contract agents follow (DESIGN.md present), inclusive visuals, and lintable tokens.",
+        "seed": "Product/brand designer for HoBo's public UI. Needs implemented palette tokens and a fail-closed contrast contract, inclusive visuals, and lintable CSS.",
         "source": [
-          "/home/codex/.herdr/worktrees/hobo/hobo-devx/site/DESIGN.md",
+          "scripts/visual-token-contract.json",
+          "site/src/styles/global.css",
           "README.md"
         ]
       },
@@ -323,17 +324,19 @@
       {
         "id": "design-system-contract",
         "title": "Design system contract is agent-followable",
-        "seed": "A designer or agent edits UI using the DESIGN.md contract; design lint (or equivalent) fails closed on contrast/token breaks with file references.",
+        "seed": "A designer or agent edits UI using implemented palette tokens and CSS; design lint (or equivalent) fails closed on contrast/token breaks with file references.",
         "experiences": [
           "ux",
           "dx"
         ],
         "driver": "cli",
         "surfaces": [
-          "file:site/DESIGN.md"
+          "file:scripts/visual-token-contract.json",
+          "file:site"
         ],
         "source": [
-          "/home/codex/.herdr/worktrees/hobo/hobo-devx/site/DESIGN.md"
+          "scripts/visual-token-contract.json",
+          "site/src/styles/global.css"
         ],
         "personaExperiences": [
           "ux",

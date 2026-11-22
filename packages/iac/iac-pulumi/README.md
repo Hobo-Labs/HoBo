@@ -36,6 +36,42 @@ The composed runtime's live lane (`HOBO_PULUMI_LIVE=1`, see `@hobo/hobo`
 `compose.ts`) defaults to the Automation API engine; `HOBO_PULUMI_LIVE_ENGINE=cli`
 (or setting `HOBO_PULUMI_BIN`) selects the CLI engine instead.
 
+### Translations
+
+`renderPulumiYamlProgram` turns the resource classes `@hobo/provider-cloudflare`
+realizes into Pulumi Cloudflare v6 resources, and refuses any other class with
+`pulumi-unsupported-resource-type`:
+
+| HoBo class | Pulumi type | Inputs |
+|---|---|---|
+| `cloudflare:workers-script` | `cloudflare:WorkersScript` | `name`, `content` |
+| `cloudflare:kv-namespace` | `cloudflare:WorkersKvNamespace` | `title` |
+| `cloudflare:r2-bucket` | `cloudflare:R2Bucket` | `name` |
+| `cloudflare:queue` | `cloudflare:Queue` | `queueName` |
+| `cloudflare:cron-trigger` | `cloudflare:WorkersCronTrigger` | `scriptName` (its one dependency, which the Cloudflare realizer must type as `cloudflare:workers-script`), `schedules: [{ cron }]` from the Cloudflare option `cron` |
+
+A cron trigger is refused rather than created with a guessed cadence or
+target when it has no `cron` option, or when its one dependency is not a typed
+Workers script. The cadence comes from the Bindle's `cadence` trait: the
+planner puts it in the node's realization parameters, and the Cloudflare
+realizer turns it into the `cron` option. The realizer (`realizeResourcePlans`
+in `@hobo/provider-cloudflare`) records each binding's `resourceType` from its
+sibling plans; an untyped binding, or one on a queue, is not a Worker. A
+schedule on a queue, like the CI relay's repair schedule, is a Vercel schedule
+(`vercel.json`), never a Cron Trigger.
+
+### State secrets
+
+Both engines keep their state under a local `file://` backend. Pulumi encrypts
+the secrets in it with `PULUMI_CONFIG_PASSPHRASE`; an empty passphrase leaves
+them readable by any process that can read the state directory. For a retained
+workspace, pass a recoverable non-empty `statePassphrase` from the caller's
+secret store (the legacy `PULUMI_CONFIG_PASSPHRASE` environment variable is
+also accepted). Reuse the same key when reopening the state. Without one,
+operations refuse before creating or changing state. A caller that guarantees a
+workspace is disposable may explicitly set `ephemeralState: true`; its key is
+random, kept in memory, and lost when the process ends.
+
 ## Exports
 
 - `createPulumiAutomationAdapter` — the `IacProvider` adapter.

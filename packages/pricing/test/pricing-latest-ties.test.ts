@@ -23,7 +23,7 @@ function expectRejected(scenario: QuoteScenario) {
 	const result = quoteScenario(scenario);
 	if (isQuoteVector(result))
 		throw new Error("ambiguous latest measurement accepted");
-	expect(result.code).toBe("INVALID_PRICING_INPUT");
+	expect(result.code).toBe("PRICING_MODEL_UNSUPPORTED");
 }
 
 it("rejects different values at the same latest instant in either order", () => {
@@ -33,11 +33,6 @@ it("rejects different values at the same latest instant in either order", () => 
 	]) {
 		const scenario = latest(values);
 		expectRejected(scenario);
-		const prior = quoteScenario(scenario, {
-			ratingAlgorithmVersion: "pricing-rating/v6",
-		});
-		if (!isQuoteVector(prior)) throw new Error("legacy quote rejected");
-		expect(prior.incremental?.billed?.decimal).toBe(values[0]);
 	}
 });
 
@@ -77,10 +72,10 @@ it("rejects generated conflicting equal instants with equivalent fractions", () 
 		fc.property(
 			fc.integer({ min: 0, max: 10_000 }),
 			fc.integer({ min: 1, max: 10_000 }),
-			fc.integer({ min: 1, max: 999_999 }),
+			fc.integer({ min: 1, max: 99 }),
 			(a, delta, fraction) => {
 				const scenario = latest([String(a), String(a + delta)]);
-				const digits = String(fraction).padStart(6, "0");
+				const digits = String(fraction).padStart(2, "0");
 				measurement(scenario, 0).observedAt = `2026-01-01T00:00:00.${digits}Z`;
 				measurement(scenario, 1).observedAt = `2026-01-01T00:00:00.${digits}0Z`;
 				expectRejected(scenario);

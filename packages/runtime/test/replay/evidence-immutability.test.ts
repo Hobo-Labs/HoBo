@@ -21,7 +21,6 @@ const raw = {
 	stateDigest: "b".repeat(64),
 	mode: "replay",
 	seed: "seed",
-	canonicalizationVersion: 2,
 };
 
 it("keeps parsed report evidence immutable through every entry point", () => {
@@ -51,7 +50,7 @@ it("keeps parsed report evidence immutable through every entry point", () => {
 			}),
 		).toThrow(TypeError);
 		expect(Reflect.set(report.seqVector[0], "seq", 5)).toBe(false);
-		expect(Reflect.set(report, "canonicalizationVersion", 1)).toBe(false);
+		expect(Reflect.set(report, "seed", "changed")).toBe(false);
 		expect(report.seqVector).toEqual([{ streamId: "s", seq: 1 }]);
 	}
 });

@@ -337,6 +337,7 @@ describe("shared financial admission", () => {
 		initial.entitlements = [
 			create(BudgetEntitlementSchema, {
 				bucketId: "account-free",
+				kind: "allowance",
 				unit: "runner-ms",
 				periodId: "2026-10",
 				remainingUnits: 100,
@@ -349,6 +350,7 @@ describe("shared financial admission", () => {
 		free.entitlementClaims = [
 			create(EntitlementClaimSchema, {
 				bucketId: "account-free",
+				kind: "allowance",
 				unit: "runner-ms",
 				units: 70,
 			}),
@@ -370,6 +372,7 @@ describe("shared financial admission", () => {
 			entitlementClaims: [
 				create(EntitlementClaimSchema, {
 					bucketId: "account-free",
+					kind: "allowance",
 					unit: "runner-ms",
 					units: 50,
 				}),
@@ -383,6 +386,72 @@ describe("shared financial admission", () => {
 			"entitlement exhausted",
 		);
 	});
+
+	it("settles and replays distinct kinds sharing a bucket and unit", () => {
+		const initial = snapshot(0);
+		initial.entitlements = (["credit", "commitment"] as const).map((kind) =>
+			create(BudgetEntitlementSchema, {
+				bucketId: "shared",
+				kind,
+				unit: "USD.micros",
+				periodId: "2026-10",
+				remainingUnits: 100,
+				observedAt: "2026-10-29T00:00:00Z",
+				validUntil: "2026-11-01T00:00:00Z",
+			}),
+		);
+		const claim = (kind: "credit" | "commitment", units: number) =>
+			create(EntitlementClaimSchema, {
+				bucketId: "shared",
+				kind,
+				unit: "USD.micros",
+				units,
+			});
+		const journal: BudgetAuthorityEvent[] = [];
+		const authority = createBudgetAdmissionAuthority({
+			snapshot: initial,
+			commit: (event) => journal.push(event),
+		});
+		const shared = quote("shared", 0, 0);
+		shared.entitlementClaims = [claim("credit", 60), claim("commitment", 40)];
+		authority.reserve(input(authority, "shared", shared));
+		expect(authority.read(NOW).entitlements).toMatchObject([
+			{ kind: "credit", reservedUnits: 60 },
+			{ kind: "commitment", reservedUnits: 40 },
+		]);
+		const excess = quote("excess", 0, 0);
+		excess.entitlementClaims = [claim("credit", 50)];
+		expect(() => authority.reserve(input(authority, "excess", excess))).toThrow(
+			"entitlement exhausted",
+		);
+		expect(() =>
+			authority.settle("shared", 0, {
+				usageEvidenceRef: "meter",
+				sourceStoppedEvidenceRef: "retired",
+				entitlementClaims: [claim("credit", 30), claim("credit", 20)],
+			}),
+		).toThrow("complete account and entitlement");
+		expect(authority.lookup("shared")?.status).toBe("held");
+		authority.settle("shared", 0, {
+			usageEvidenceRef: "meter",
+			sourceStoppedEvidenceRef: "retired",
+			entitlementClaims: [claim("credit", 30), claim("commitment", 20)],
+		});
+		expect(authority.read(NOW).entitlements).toMatchObject([
+			{ kind: "credit", remainingUnits: 70, reservedUnits: 0 },
+			{ kind: "commitment", remainingUnits: 80, reservedUnits: 0 },
+		]);
+		const reopened = createBudgetAdmissionAuthority({
+			snapshot: initial,
+			priorEvents: journal,
+		});
+		expect(reopened.lookup("shared")?.status).toBe("settled");
+		expect(reopened.read(NOW).entitlements).toMatchObject([
+			{ kind: "credit", remainingUnits: 70, reservedUnits: 0 },
+			{ kind: "commitment", remainingUnits: 80, reservedUnits: 0 },
+		]);
+	});
+
 	it("enforces provider-account ceilings independently of the parent budget", () => {
 		const initial = snapshot(1000);
 		initial.providerAccounts = [

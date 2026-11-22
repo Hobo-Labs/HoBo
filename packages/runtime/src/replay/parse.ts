@@ -7,9 +7,8 @@ import {
 import {
 	isNonEmptyPrimitiveString,
 	isPrimitiveString,
-} from "../workflow-boundary.js";
+} from "../workflow-value.js";
 import type {
-	CanonicalizationVersion,
 	ReplayDivergenceRecord,
 	ReplayMode,
 	ReplayReport,
@@ -41,7 +40,6 @@ export function parseReplayReport(raw: JsonValue): ReplayReport {
 	const seed = nonEmptyString(source.seed, "seed");
 
 	return Object.freeze({
-		canonicalizationVersion: parseCanonicalizationVersion(source),
 		runId,
 		seqVector: Object.freeze([...seqVector]),
 		readSetHash,
@@ -69,7 +67,6 @@ export function parseReplayDivergence(raw: JsonValue): ReplayDivergenceRecord {
 	}
 
 	return Object.freeze({
-		canonicalizationVersion: parseCanonicalizationVersion(source),
 		runId,
 		liveStateDigest,
 		replayStateDigest,
@@ -83,19 +80,6 @@ export function parseReplayDivergence(raw: JsonValue): ReplayDivergenceRecord {
 			"first_divergent_event_key",
 		),
 	});
-}
-
-function parseCanonicalizationVersion(
-	source: JsonObject,
-): CanonicalizationVersion {
-	const snake = source.canonicalization_version;
-	const camel = source.canonicalizationVersion;
-	if (snake !== undefined && camel !== undefined && snake !== camel)
-		throw new ReplayParseError("conflicting canonicalization versions");
-	const version = snake === undefined ? camel : snake;
-	if (version === undefined) return 1;
-	if (version === 1 || version === 2) return version;
-	throw new ReplayParseError("unsupported replay canonicalization version");
 }
 
 function parseSeqVector(value: JsonValue | undefined) {

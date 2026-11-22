@@ -86,3 +86,25 @@ it("rejects non-string and empty IDs at start, resume and journal boundaries", a
 		);
 	}
 });
+
+it("rejects object IDs without invoking their traps", async () => {
+	let traps = 0;
+	const id = new Proxy(JSON.parse("{}"), {
+		get() {
+			traps++;
+			throw new Error("unexpected conversion");
+		},
+	});
+	const engine = createWorkflowEngine();
+	const wf = defineWorkflow({ name: "proxy-run-id", run: () => null });
+	await expect(engine.start(wf, null, { runId: id })).rejects.toThrow(
+		"workflow runId must be a non-empty string",
+	);
+	await expect(engine.resume(wf, id, null)).rejects.toThrow(
+		"workflow runId must be a non-empty string",
+	);
+	await expect(engine.journal(id)).rejects.toThrow(
+		"workflow runId must be a non-empty string",
+	);
+	expect(traps).toBe(0);
+});

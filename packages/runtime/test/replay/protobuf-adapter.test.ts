@@ -27,31 +27,24 @@ const divergence = {
 	firstDivergentEventKey: "unknown",
 };
 
-it("reads default protobuf JSON and binary reports without losing empty arrays or versions", () => {
-	for (const canonicalizationVersion of [undefined, 1, 2] as const) {
-		const message = create(ReplayReportSchema, {
-			...report,
-			canonicalizationVersion,
-		});
-		const json = toJson(ReplayReportSchema, message);
-		const binary = toBinary(ReplayReportSchema, message);
-		expect(() => parseReplayReportProtoJson(json)).not.toThrow();
-		expect(() => parseReplayReportBinary(binary)).not.toThrow();
-		for (const parsed of [
-			parseReplayReportProtoJson(json),
-			parseReplayReportBinary(binary),
-		]) {
-			expect(parsed.seqVector).toEqual([]);
-			expect(parsed.canonicalizationVersion).toBe(canonicalizationVersion ?? 1);
-			expect(parsed.runId).toBe(report.runId);
-		}
+it("reads default protobuf JSON and binary reports without losing empty arrays", () => {
+	const message = create(ReplayReportSchema, report);
+	const json = toJson(ReplayReportSchema, message);
+	const binary = toBinary(ReplayReportSchema, message);
+	expect(() => parseReplayReportProtoJson(json)).not.toThrow();
+	expect(() => parseReplayReportBinary(binary)).not.toThrow();
+	for (const parsed of [
+		parseReplayReportProtoJson(json),
+		parseReplayReportBinary(binary),
+	]) {
+		expect(parsed.seqVector).toEqual([]);
+		expect(parsed.runId).toBe(report.runId);
 	}
 });
 
 it("preserves protobuf uint64 positions exactly through JSON and binary", () => {
 	const message = create(ReplayReportSchema, {
 		...report,
-		canonicalizationVersion: 2,
 		seqVector: [
 			{ streamId: "zero", seq: 0n },
 			{ streamId: "maximum", seq: BigInt(Number.MAX_SAFE_INTEGER) },
@@ -73,19 +66,13 @@ it("preserves protobuf uint64 positions exactly through JSON and binary", () => 
 });
 
 it("reads default protobuf JSON and binary divergence records with empty orders", () => {
-	for (const canonicalizationVersion of [undefined, 2] as const) {
-		const message = create(ReplayDivergenceSchema, {
-			...divergence,
-			canonicalizationVersion,
-		});
-		for (const parsed of [
-			parseReplayDivergenceProtoJson(toJson(ReplayDivergenceSchema, message)),
-			parseReplayDivergenceBinary(toBinary(ReplayDivergenceSchema, message)),
-		]) {
-			expect(parsed.liveOrder).toEqual([]);
-			expect(parsed.replayOrder).toEqual([]);
-			expect(parsed.canonicalizationVersion).toBe(canonicalizationVersion ?? 1);
-		}
+	const message = create(ReplayDivergenceSchema, divergence);
+	for (const parsed of [
+		parseReplayDivergenceProtoJson(toJson(ReplayDivergenceSchema, message)),
+		parseReplayDivergenceBinary(toBinary(ReplayDivergenceSchema, message)),
+	]) {
+		expect(parsed.liveOrder).toEqual([]);
+		expect(parsed.replayOrder).toEqual([]);
 	}
 });
 
@@ -111,35 +98,7 @@ it("refuses unsafe numbers before protobuf JSON conversion and unsafe uint64 val
 	).toThrow(/safe integer/i);
 });
 
-it("retains report validation and rejects malformed or ambiguous version fields", () => {
-	for (const version of [
-		null,
-		0,
-		3,
-		"3",
-		"1.0000000000000001",
-		"2.0000000000000001",
-	]) {
-		expect(() =>
-			parseReplayReportProtoJson({
-				...report,
-				canonicalizationVersion: version,
-			}),
-		).toThrow(/canonicalization/i);
-		expect(() =>
-			parseReplayDivergenceProtoJson({
-				...divergence,
-				canonicalizationVersion: version,
-			}),
-		).toThrow(/canonicalization/i);
-	}
-	expect(() =>
-		parseReplayReportProtoJson({
-			...report,
-			canonicalization_version: 1,
-			canonicalizationVersion: 2,
-		}),
-	).toThrow(/canonicalization/i);
+it("retains report validation", () => {
 	expect(() =>
 		parseReplayReportProtoJson({ ...report, unknown: true }),
 	).toThrow();
@@ -161,7 +120,7 @@ it("retains report validation and rejects malformed or ambiguous version fields"
 	expect(() => parseReplayReportBinary(new Uint8Array([255]))).toThrow();
 });
 
-it("refuses overflowing wire integers and duplicate version markers before decoding", () => {
+it("refuses overflowing wire integers before decoding", () => {
 	const base = toBinary(ReplayReportSchema, create(ReplayReportSchema, report));
 	const concat = (...parts: Uint8Array[]) =>
 		Uint8Array.from(parts.flatMap((part) => [...part]));
@@ -176,25 +135,10 @@ it("refuses overflowing wire integers and duplicate version markers before decod
 		...Array(9).fill(128),
 		2,
 	]);
-	// The marker exceeds uint32 but would otherwise truncate to version 2.
-	const overflowVersion = Uint8Array.from([56, 130, 128, 128, 128, 16]);
-	const repeatedVersion = Uint8Array.from([56, 2, 56, 1]);
 	const overflowUnknown = Uint8Array.from([160, 6, ...Array(9).fill(128), 2]);
-	for (const suffix of [
-		overflowSeq,
-		overflowVersion,
-		repeatedVersion,
-		overflowUnknown,
-	]) {
+	for (const suffix of [overflowSeq, overflowUnknown]) {
 		expect(() => parseReplayReportBinary(concat(base, suffix))).toThrow();
 	}
-	const divergenceBase = toBinary(
-		ReplayDivergenceSchema,
-		create(ReplayDivergenceSchema, divergence),
-	);
-	expect(() =>
-		parseReplayDivergenceBinary(concat(divergenceBase, repeatedVersion)),
-	).toThrow(/canonicalization/i);
 });
 
 it("preserves forward-compatible ordinary unknown binary fields", () => {
@@ -210,11 +154,11 @@ it("refuses JSON accessors without invoking them before decoding", () => {
 		[{ ...report }, parseReplayReportProtoJson],
 		[{ ...divergence }, parseReplayDivergenceProtoJson],
 	] as const) {
-		Object.defineProperty(raw, "canonicalizationVersion", {
+		Object.defineProperty(raw, "runId", {
 			enumerable: true,
 			get() {
 				reads += 1;
-				return 2;
+				return "run";
 			},
 		});
 		expect(() => parse(raw)).toThrow();
@@ -224,11 +168,10 @@ it("refuses JSON accessors without invoking them before decoding", () => {
 
 it("accepts frozen JSON data and null-prototype objects", () => {
 	const raw = Object.assign(Object.create(null), report, {
-		canonicalizationVersion: 2,
 		seqVector: Object.freeze([]),
 	});
 	Object.freeze(raw);
-	expect(parseReplayReportProtoJson(raw).canonicalizationVersion).toBe(2);
+	expect(parseReplayReportProtoJson(raw).runId).toBe("run");
 });
 
 it("refuses proxies and cycles before inspecting their contents", () => {
@@ -286,19 +229,6 @@ it("uses the same captured binary bytes for validation and decoding", () => {
 	expect(bytes[sequenceOffset]).toBe(1);
 });
 
-it("accepts protobuf JSON's quoted representations of known versions", () => {
-	for (const canonicalizationVersion of ["2", "2.0", "2e0", "20e-1", "0.2e1"]) {
-		expect(
-			parseReplayReportProtoJson({ ...report, canonicalizationVersion })
-				.canonicalizationVersion,
-		).toBe(2);
-		expect(
-			parseReplayDivergenceProtoJson({ ...divergence, canonicalizationVersion })
-				.canonicalizationVersion,
-		).toBe(2);
-	}
-});
-
 it("round trips generated safe positions through both representations", () => {
 	fc.assert(
 		fc.property(
@@ -306,7 +236,6 @@ it("round trips generated safe positions through both representations", () => {
 			(seq) => {
 				const message = create(ReplayReportSchema, {
 					...report,
-					canonicalizationVersion: 2,
 					seqVector: [{ streamId: "s", seq: BigInt(seq) }],
 				});
 				expect(

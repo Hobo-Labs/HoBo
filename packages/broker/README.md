@@ -1,6 +1,181 @@
 # @hobo/broker
 
+The finite TLA+ model in `model/IacBudget.tla` checks admission, fencing and
+disclosure invariants under its stated host-trust assumptions. The model also
+checks enrollment or an authenticated guard at both reservation and execution
+claim, including a reopen with changed enrollment. It checks that each priced
+reservation fit the available budget when admitted, and demonstrates that
+actual charges can later exceed the modeled bound. The budget abstraction has
+two operations, unit-sized reservations, one aggregate currency budget, no
+initial or external commitments, and atomic reserve transitions. It checks the
+same invariants at limits of one and two. It does not
+model provider-account or entitlement limits, unresolved or recovery reserves,
+external commitments, the concrete journal or CAS implementation, or unreported
+charges before settlement. Run them with
+`HOBO_TLA_TOOLS=/path/to/tla2tools-1.7.4.jar node --experimental-strip-types scripts/check-iac-models.ts`
+from the repository root. The tool is the immutable
+[TLA+ 1.7.4 release](https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4) `tla2tools.jar`;
+the runner verifies its pinned SHA256 digest and limits each checker invocation to
+60 seconds, a 512 MiB Java heap and 16 MiB per captured output stream. A timeout,
+resource failure or signal-terminated process fails the check. The host must
+separately bound total process memory and logs. These abstractions complement the
+implementation's bounded tests; they do not prove the external host or provider
+implementation.
+The runner also removes representative guards in temporary model copies and
+requires the checker to find counterexamples. The pricing CI workflow runs the
+same checks when either model or its runner changes.
+
 ## Hosting budget admission
+
+`admitIacTarget` applies the same durable authority to a provider-neutral IaC
+inventory and whole-target pricing model. It refuses unknown pricing and
+requires a trusted host to authenticate liability evidence covering the exact
+plan, inventory, model, quote and provider accounts. It reserves the verified
+upper bound and incremental entitlement consumption, checks policy, and claims
+execution once. Each decision discloses budget evaluation and reservation
+state. An uncertain write or execution claim must be reconciled; it is never
+permission to retry the provider call. The host remains responsible for
+verifying inventory completeness and eventual usage and source-stop evidence.
+Price ranking alone does not create a reservation; admission is the budget gate.
+Reservation and execution acknowledgements must match the exact quote, scope,
+liability bound and pricing pin. Admitted priced reservations carry a SHA-256
+execution digest; a held reservation without that claim is not executable.
+Mismatched receipts are reported as uncertain;
+after a claim, the authority must revalidate that the exact hold remains active.
+These checks rely on the host's durable authority and do not prove its behavior.
+Liability evidence must cover each distinct provider-account ID exactly once;
+the input order of those account records does not affect the scope check. New
+evidence carries the exact integer `maximumMicrosExact` as a ProtoJSON decimal
+string bounded by the runtime's nonnegative safe-integer range; admission also
+decodes legacy fixed64 `maximumMicros` evidence in that range. Normalized claim
+scope includes kind, bucket and unit, while the latest observation across each
+kind and bucket lineage fences stale unit migrations, including A→B→A restores.
+Persisted pre-kind snapshots reopen with an empty kind normalized to `allowance`,
+while fresh writes require an explicit kind. An exact idempotent retry may replay
+a persisted kindless quote before strict validation. Legacy evidence and receipt
+rows that both omit entitlement claims retain their original quote digest; current
+claims are still recomputed from the pinned pricing model.
+Fenced reservations pin their settlement payload version through journal replay;
+v1 signs kindless claims and v2 signs explicit kinds.
+The admission request accepts only its declared own data fields; unknown fields,
+accessors, proxies and inventory fields outside the exact schema are denied
+before financial authority calls. Enumerating JavaScript object keys can itself
+allocate before these bounds are checked, so the host must enforce input size,
+memory and execution-time limits before materializing untrusted requests.
+`createIacFinancialServices` combines these checks into an injectable port for
+IaC adapters. Its optional `pricing` model is developer supplied; the trusted
+host still provides liability issuance and verification, policy and authority.
+The whole-target quote and its baseline entitlement calculation both use
+`pricing-rating/v2`; a quote from another rating version cannot supply the same
+plan-bound hash. Reconcile outstanding holds before switching a live operation
+to a different rating version.
+When no model is available, omit `pricing`. Supplied model data is checked
+before normalization; malformed or unsupported input raises an error instead of
+becoming an unavailable model or a lower quote. Incomplete bindings cannot
+produce a quote.
+It accepts both the synchronous local authority and the asynchronous shared
+authority, including the PostgreSQL implementation.
+
+The financial service inspects and detaches plan and expectation data before
+using them. Invalid assessment input raises an error; invalid admission input
+returns `REQUEST_INVALID` without consulting authorities. JavaScript own-key
+enumeration can allocate before its size is known, so the host must bound
+input before materialization and enforce independent memory and time limits.
+Financial authority callbacks and their state are trusted host infrastructure;
+the host must fence them throughout each operation.
+Provide the authority and callbacks as own enumerable data properties. The
+service invokes captured callbacks with a frozen, detached configuration
+receiver, so methods must not rely on the original options object's identity or
+private fields. Pricing data in that receiver is detached and frozen; the
+authority remains the original host object. Revocation must be enforced by the
+captured callbacks and that authority, including its mutable state and backend
+credentials, as well as callback closure state.
+
+
+Before creating or starting a priced IaC hold without a separately verified
+fence guard, install `iacPricedSettlementTrust` on the budget authority.
+Absent trust denies admission with `budget.settlement-unavailable`; it also
+prevents a previously unclaimed hold from starting. Existing holds remain
+readable for reconciliation, but cannot revalidate for execution until the
+required trust is present. Its synchronous,
+independently enrolled verifier must authenticate the exact tenant, budget,
+reservation, plan, execution, provider accounts, final usage and permanent
+source-retirement evidence. Nonempty references or a caller assertion alone do
+not establish those facts. The verifier receives the original live reservation
+on settlement and journal replay; retain historical verification material.
+Missing, forged, asynchronous or unavailable evidence leaves the hold in place.
+Unclaimed holds may be released only when confirmed unused.
+
+The budget journal and its append authority are trusted host infrastructure.
+Restrict the database and journal writer to the budget authority, and protect
+against rollback or rewriting. Replay checks reservation transitions and
+settlement accounting, but the first priced reservation records quote and
+liability digests rather than the complete authenticated quote evidence; replay
+cannot authenticate an initial event supplied by an arbitrary journal writer.
+Never expose raw journal writes as an admission or recovery API.
+
+`financial.assess(plan)` exposes `providerCoverage` for the declared target. It
+distinguishes unavailable models and missing bindings from a successfully
+quoted joint model, and labels failures that cannot be attributed to a single
+provider as unverified. `admissionPath` says whether the configured next step
+is a bounded budget evaluation, an explicit unpriced policy check that would
+bypass the budget if allowed, or an unavailable path with a reason code. This
+reflects the authority callbacks captured when the financial service was
+constructed; later changes to the original options do not enable or disable a
+path. It does not evaluate the policy or predict its outcome. Its `budget` is
+always `not-evaluated` and `not-created`: price assessment and ranking are not
+budget authorization.
+Only the later admission receipt says whether a bounded hold was allowed, an
+explicit unbounded policy bypass was held, or the request was denied or left
+uncertain.
+
+When pricing is unavailable, admission denies by default. A host may explicitly
+configure `unpriced.authorize` and an independently enrolled
+`unpricedScopeTrust` on the budget authority to permit a particular request.
+Its policy proof pins the request, inventory, budget identity, revision,
+obligations and validity window. The signed scope proof covers exactly the
+target's provider accounts. A receipt then says `evaluation: "bypassed"`,
+`reservation: "held"` and `unboundedExposure: true`: it states that the
+budget did not bound the cost. It carries no quote or price. It is never a
+zero-cost estimate. The host supplies a trusted clock for claim revalidation
+and policy expiration. `unboundedExposureCount` remains visible through replay.
+Outstanding bounded holds and unbounded holds cannot coexist in one ledger;
+active unbounded holds prevent new bounded admission, including across
+connections sharing that ledger. Unpriced admission also refuses shared
+entitlements.
+
+Unpriced admission rejects inaccessible, malformed or extra envelope fields and
+unknown inventory data before policy or budget authority work. JavaScript must
+enumerate own keys before their count is known; the host must bound input size
+before materialization and enforce independent process memory and time limits.
+
+The host-enrolled scope authority is a necessary trust boundary: it must
+independently authenticate globally canonical account IDs across providers and
+aliases, reject alternate names for the same billable account, and enforce
+exclusive financial ownership across every budget authority and billing period,
+including authorities created later, until source retirement and settlement.
+The ledger cannot independently prove
+that other ledgers or provider accounts obey that contract. Its synchronous
+verifier also authenticates settlement for the exact claim, plan, account
+charges, final usage and permanent source retirement; it is called again during
+journal replay. Keep historical verification material available. Failed,
+unavailable or asynchronous verification preserves the exposure.
+Trust callbacks are own enumerable host functions invoked with a frozen receiver
+containing the captured callbacks. They must not rely on the original trust
+object's identity or private fields. Only a synchronous `true` authorizes a
+decision; ordinary same-realm native Promise rejections are observed and refused.
+Fulfilled values are discarded without inspecting or assimilating their contents.
+The host must prevent and
+reconcile any asynchronous verifier effects, handle rejections from other
+thenables or exotic/cross-realm Promises, and initialize and fence trusted
+JavaScript intrinsics and the verifier's mutable state.
+
+The adapter must revalidate the exact claimed receipt and plan immediately
+before provider start, and use a shared route authority across all candidate
+targets to prevent retries from starting a second effect. The host must fence
+scope or policy revocation and provider credentials through provider start;
+an external provider call cannot be atomic with the local ledger. Claims remain
+held for reconciliation after expiry or revocation.
 
 `resolveBindleDeployment` ranks compatible Yards using trusted, normalized,
 whole-request hosting quotes. Capacity is never a substitute for price. A quote
@@ -886,8 +1061,12 @@ The in-memory factory is explicitly marked `persistence: 'memory'` and cannot
 authorize funded Yard hosting.
 
 `createFleetBudgetAdmissionAuthority` replays decisions from a fixed,
-majority-chosen journal. Its inspection calls do not repair an undecided tail.
-For active workloads, `createOperationalFleetBudgetAdmissionAuthority` can
+majority-chosen journal. Reopen and interrupted initialization normalize legacy
+kindless entitlement records from the persisted base instead of strictly
+validating the reopen seed; entirely fresh initialization still requires
+explicit entitlement kinds. Its inspection calls
+do not repair an undecided tail. For active workloads,
+`createOperationalFleetBudgetAdmissionAuthority` can
 recover an already offered entry under a separately funded, revalidated actor
 lease before retrying the operation. The host must provide independently
 verified member identities, anti-rollback protection and per-voter funding;
@@ -900,17 +1079,39 @@ results. The test does not establish a distributed actor lease.
 
 One transaction reserves global money, provider-account ceilings and each named
 free-allocation bucket. Quantities use integer normalized base units; unknown
-accounts, units, periods and expired allowance evidence refuse admission. Every
-entitlement must have one authoritative owner, including across budget scopes;
+accounts, units, periods and expired allowance evidence refuse admission. Entitlement
+identity includes its kind, bucket and unit throughout configuration and replay.
+Persisted snapshots written before entitlement kinds reopen with an empty kind
+interpreted as `allowance`; new configurations require an explicit supported kind.
+Provider-account rows must match independent of input order. Evidence that
+itemizes entitlement claims must match the admitted quote and current reservation;
+legacy evidence can omit those rows and replay a reservation whose claims are
+also absent. Every entitlement must have one authoritative owner, including
+across budget scopes;
 independent ledgers may not duplicate a provider account's free allocation.
 `unresolvedMicros`, `externalCommittedMicros` and `recoveryReserveMicros` remain
 protected in every reserve calculation. `reservedMicros` is exclusively the
 authority's journal-derived holds; external commitments use their separate field.
 
+The synchronous commit callback must finish its durable append before returning.
+An object or function return is refused because it could represent unfinished
+work; incidental primitive returns are ignored. After an ambiguous return or any
+callback exception, the authority refuses reads and operations until the host
+reconciles any pending write and reopens it from the durable journal: a callback
+can append successfully and then throw. The authority wraps every callback
+exception as an uncertain commit with the original error as its cause, so even a
+denial from another module cannot be mistaken for a definite refusal.
+A callback that starts asynchronous
+work but returns a primitive cannot be detected; the host must honor the contract.
+The host must also handle rejections from foreign promises and other thenables,
+which the authority does not await or inspect.
+
 `settle` requires confirmed source retirement and authoritative usage evidence,
 including complete actual account charges and entitlement consumption when those
-dimensions were reserved. Actual overruns are recorded and consume remaining
-headroom. Unknown outcomes retain all holds. `release` requires positive evidence
+dimensions were reserved. A reservation is an admission-time bound, not a
+provider spending cap: actual charges can exceed it and the overall budget.
+Actual overruns are recorded and consume remaining headroom. Unknown outcomes
+retain all holds. `release` requires positive evidence
 that the reservation was unused. Policy revisions cannot erase commitments, and
 period rollover refuses while journal-owned work remains outstanding. Reducing
 external unresolved/committed exposure requires reconciliation evidence.
@@ -935,9 +1136,13 @@ and separately enrolled receiver and financial authority keys. A later claim
 cannot change that scope.
 The hold remains reserved until the receiver signs the exact committed route and
 the financial authority independently signs the final usage and source-stop
-evidence. Both proofs and the guard are checked again when replaying the journal.
-Keep historical public enrollments available while their records remain in the
-journal. An unsigned or uncertain result leaves the hold in place.
+evidence. Current reservations use the `hobo.budget-fence-settlement/v2` canonical
+payload, which includes entitlement kinds. Reservations persisted before kinds
+were introduced retain v1 signature verification; current reservations cannot
+select that legacy payload. Both proofs and the guard are checked again when
+replaying the journal. Keep historical public enrollments available while their
+records remain in the journal. An unsigned or uncertain result leaves the hold in
+place.
 
 The host must authenticate those enrollments and use a receiver that atomically
 holds the source operation and commits the route before signing. The finance
@@ -1527,11 +1732,35 @@ label (`in-proc`, `agent`, `publisher:<target>`) for existing readers.
 
 ## Budget authority verification
 
+The authority rejects mutations made from its journal commit callback.
+Configure refuses to retarget a bucket's unit or period while reserved units
+remain on that bucket or a live claim still references it. A live entitlement
+claim also keeps its bucket's unit and period stable, including when the claim
+has zero units; reconcile or settle the reservation before changing that scope.
+Replay rejects journal entries that violate the same scope rule, without
+requiring reservation identity when matching entitlement buckets.
+The journal commit path clones events before invoking the host callback so local
+schema failures do not fence the authority.
+
 The [budget-authority verification skill](../../.agents/skills/verify-broker-budget-authority/SKILL.md)
 checks admission, held liabilities, replay, and receiver- and finance-signed
 settlement. Generated histories exercise the TypeScript authority; the finite
 TLA+ models and unbounded arithmetic abstraction state their assumptions and do
-not prove the storage adapters, cryptography, or provider effects.
+not prove the storage adapters, cryptography, or provider effects. The
+`BrokerBudget` finite model admits a unit reserve only while `Spent + Held` stays
+under the aggregate cap; unfunded reserve transitions are omitted from `Next`,
+and the `BrokerEntitlement` config keeps claim/settle on held phases while
+`RecordZeroUnits` may run under uncertain fencing; optional Z3 scope lemmas in
+the skill mirror those same bucket rules. `BrokerCommit` does not complete after
+a rejected reentry; `BrokerEntitlement` release keeps the unused-evidence guard;
+TLC mutation runs keep the baseline cfg constraints. `Settle` updates usage without
+freezing the prior usage map, and terminal scope change is disabled for zero-unit claims.
+Pricing CI pins immutable TLC 1.7.4. Entitlement TLC settles from `uncertain` when claimed.
+The verify-broker-budget-authority skill cites TLC state counts matching BrokerBudget (81) and BrokerCommit (5).
+BrokerFence TLC stutters on a claimed uncertain hold after three invalid proof offers.
+Terminal entitlement scope retarget is cfg-gated (`AllowTerminalScopeRetarget = FALSE`).
+Fence mutation needles track `BrokerFence` release guards and thrown-commit reuse rules.
+Invalid fence offers clear the candidate instead of retaining a prior valid proof.
 
 The following is a projection of the signed-settlement model, not a production
 trace. TLC explored 129 states and 830 steps; the chart hides 723 steps that
@@ -1544,4 +1773,29 @@ stateDiagram-v2
   UnclaimedHold --> ClaimedHold: claim admitted execution
   UnclaimedHold --> Released: confirm unused work
   ClaimedHold --> Settled: accept both signed proofs
+```
+
+The active entitlement-scope model follows zero-unit claims as well as claims
+that consume an allocation. TLC explored 35 states and 81 steps; this view draws
+eight states and 16 arrows and hides 38 steps within a displayed state.
+
+```mermaid
+stateDiagram-v2
+  [*] --> NoReservation
+  NoReservation --> Reserved: reserve entitlement claim
+  Reserved --> Claimed: claim execution
+  Reserved --> Uncertain: execution outcome uncertain
+  Reserved --> ScopeRefused: refuse scope change while active
+  Reserved --> Released: release unused reservation
+  Reserved --> Settled: settle final usage
+  Uncertain --> Claimed: claim execution
+  Uncertain --> ScopeRefused: refuse scope change while active
+  Uncertain --> Released: release unused reservation
+  Uncertain --> Settled: settle final usage
+  Claimed --> ClaimedScopeRefused: refuse scope change while active
+  Claimed --> Settled: settle final usage
+  ScopeRefused --> ClaimedScopeRefused: claim execution
+  ScopeRefused --> Released: release unused reservation
+  ScopeRefused --> Settled: settle final usage
+  ClaimedScopeRefused --> Settled: settle final usage
 ```

@@ -87,7 +87,6 @@ it("uses the captured completed-step result when the original journal changes", 
 				args: null,
 				workflowName: "context",
 				seed: "seed",
-				commandTreeVersion: 3,
 			},
 		},
 		{
@@ -184,7 +183,6 @@ it("refuses foreign journal events before resume, terminal reuse, replay and jou
 					args: null,
 					workflowName: "context",
 					seed: "seed",
-					commandTreeVersion: 3,
 				},
 			},
 			{
@@ -268,7 +266,6 @@ it("uses captured journal events when the caller changes the original during rep
 			args: null,
 			workflowName: "context",
 			seed: "seed",
-			commandTreeVersion: 3,
 		},
 	};
 	const store = {

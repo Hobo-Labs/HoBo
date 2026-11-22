@@ -33,10 +33,9 @@ const started = () => ({
 	args: null,
 	workflowName: "context",
 	seed: "recorded",
-	commandTreeVersion: 3,
 });
 
-it("requires version-three context before executing or reusing a terminal result", async () => {
+it("requires recorded context before executing or reusing a terminal result", async () => {
 	for (const field of ["args", "workflowName", "seed"] as const) {
 		for (const terminal of [false, true]) {
 			let calls = 0;
@@ -60,50 +59,24 @@ it("requires version-three context before executing or reusing a terminal result
 });
 
 it("refuses malformed present names and seeds rather than silently falling back", async () => {
-	for (const version of [1, 2, 3] as const) {
-		for (const field of ["workflowName", "seed"] as const) {
-			for (const value of [null, "", 42]) {
-				let calls = 0;
-				const data: JsonBag = {
-					...started(),
-					commandTreeVersion: version,
-					[field]: value,
-				};
-				const { store, writes } = journal(data);
-				const definition = defineWorkflow({
-					name: "context",
-					run: () => {
-						calls++;
-						return "new";
-					},
-				});
-				await expect(
-					createWorkflowEngine({ store }).resume(definition, "context", null),
-				).rejects.toThrow(/run.Started/i);
-				expect(calls).toBe(0);
-				expect(writes()).toBe(0);
-			}
+	for (const field of ["workflowName", "seed"] as const) {
+		for (const value of [null, "", 42]) {
+			let calls = 0;
+			const data: JsonBag = { ...started(), [field]: value };
+			const { store, writes } = journal(data);
+			const definition = defineWorkflow({
+				name: "context",
+				run: () => {
+					calls++;
+					return "new";
+				},
+			});
+			await expect(
+				createWorkflowEngine({ store }).resume(definition, "context", null),
+			).rejects.toThrow(/run.Started/i);
+			expect(calls).toBe(0);
+			expect(writes()).toBe(0);
 		}
-	}
-});
-
-it("allows old records with genuinely absent optional context", async () => {
-	for (const data of [
-		{ args: null, commandTreeVersion: 1 },
-		{ commandTreeVersion: 1 },
-		{},
-	]) {
-		const { store } = journal(data);
-		const definition = defineWorkflow({ name: "context", run: () => "ok" });
-		expect(
-			(
-				await createWorkflowEngine({ store, seed: "fallback" }).resume(
-					definition,
-					"context",
-					null,
-				)
-			).result,
-		).toBe("ok");
 	}
 });
 
@@ -157,8 +130,8 @@ it("refuses empty supplied and recorded replay seeds before workflow callbacks",
 		replayRun(valid.store, "context", workflow, null, { seed: "" }),
 	).rejects.toThrow(/seed/i);
 	let reads = 0;
-	const older = journal({ args: null });
-	const legacyReader = {
+	const older = journal(started());
+	const reader = {
 		...older.store,
 		async readStream() {
 			reads++;
@@ -166,13 +139,13 @@ it("refuses empty supplied and recorded replay seeds before workflow callbacks",
 		},
 	};
 	await expect(
-		replayRun(legacyReader, "context", workflow, null, { seed: "" }),
+		replayRun(reader, "context", workflow, null, { seed: "" }),
 	).rejects.toBeInstanceOf(TypeError);
 	expect(reads).toBe(0);
 	expect(calls).toBe(0);
 });
 
-it("refuses generated invalid version-three contexts without effects", async () => {
+it("refuses generated invalid recorded contexts without effects", async () => {
 	await fc.assert(
 		fc.asyncProperty(
 			fc.constantFrom("args", "workflowName", "seed"),

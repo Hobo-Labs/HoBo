@@ -5,7 +5,6 @@ import type { EventInput } from "@hobo/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createRuntimeLocalEventStore } from "../../../runtimes/runtime-local/dist/eventstore/eventstore.js";
-import { nextEnvelope } from "../../src/replay/recorder.js";
 import { replayRun } from "../../src/replay/replayer.js";
 import {
 	createEventStoreReader,
@@ -253,35 +252,6 @@ describe("workflow event recovery", () => {
 				store: { ...engine.store, readStream: async () => damaged },
 			}).resume(wf, live.runId, null),
 		).rejects.toThrow(/parent.*active/i);
-	});
-
-	it("retains legacy version-two event behavior", async () => {
-		const store = createInMemoryEventStore();
-		await store.append(
-			nextEnvelope("run/legacy-event", 1, "run.Started", {
-				args: null,
-				workflowName: "legacy-event",
-				commandTreeVersion: 2,
-			}),
-			0,
-		);
-		await store.append(
-			nextEnvelope("run/legacy-event", 2, "app.Recorded", { value: 1 }),
-			1,
-		);
-		const wf = defineWorkflow({
-			name: "legacy-event",
-			async run(ctx) {
-				return ctx.emit("app.Recorded", { value: 1 });
-			},
-		});
-		const engine = createWorkflowEngine({ store });
-		expect((await engine.resume(wf, "legacy-event", null)).result).toBe(3);
-		expect(
-			(await engine.journal("legacy-event")).filter(
-				(event) => event.type === "app.Recorded",
-			),
-		).toHaveLength(2);
 	});
 
 	it.each([

@@ -4,7 +4,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import type { OpenDeliveryEngine, RolloutState } from "./harness-delivery.js";
+import type { DeliveryPort, RolloutState } from "./harness-delivery.js";
 import type { JsonObject } from "./json.js";
 
 // public-contract: gateway weight composition schema.
@@ -126,7 +126,7 @@ export function composeGatewayWeightFromRollout(
  * Live projection: read current weight from delivery engine and compose routing.
  */
 export function applyRolloutToGatewayRouting(
-	delivery: OpenDeliveryEngine,
+	delivery: DeliveryPort,
 	rolloutId: string,
 	options?: {
 		readonly now?: () => string;

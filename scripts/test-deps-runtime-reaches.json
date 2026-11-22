@@ -1,6 +1,16 @@
 {
 	"reaches": [
 		{
+			"from": "packages/iac/iac-alchemy/test/core-isolation.test.ts",
+			"needs": ["@hobo/core#build"],
+			"why": "inspects shared package source and metadata through computed paths; the test dependency checker conservatively schedules core's build even though the scan does not execute it"
+		},
+		{
+			"from": "packages/control-yard/test/evidence-launch.test.ts",
+			"stubOnly": true,
+			"reason": "creates a temporary checkout and evidence tree to test symlink handling; it does not load the draft workspace"
+		},
+		{
 			"from": "packages/cli/test/generated-runtime-execution.test.ts",
 			"needs": [
 				"@hobo/core#build",
@@ -28,6 +38,21 @@
 			"from": "packages/hobo/test/persistent-local-deployment.test.ts",
 			"needs": ["@hobo/bindles#build"],
 			"why": "loads ../../bindles/dist/index.js by URL"
+		},
+		{
+			"from": "packages/hobo/src/ci-up-relay.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "finds the bundled relay project at ../ci-vercel beside the CI project and imports its deploy/yard.ts by URL, which imports its packages by name"
+		},
+		{
+			"from": "packages/hobo/test/ci-relay-deploy.test.ts",
+			"needs": ["@hobo/ci-vercel#build", "@hobo/contracts#build"],
+			"why": "exercises relay deploy against packages/ci-vercel and contract fixtures resolved under ../../ci-vercel at run time"
+		},
+		{
+			"from": "packages/hobo/test/ci-relay-prebuilt.test.ts",
+			"needs": ["@hobo/ci-vercel#build"],
+			"why": "copies packages/ci-vercel into a fixture rooted under ../../ci-vercel at run time"
 		}
 	]
 }

@@ -30,10 +30,13 @@ function scenarioFor(kind: Kind): QuoteScenario {
 		commitments: kind === "commitment" ? [commitmentState()] : [],
 	});
 }
-function expectRejected(scenario: QuoteScenario) {
+function expectRejected(
+	scenario: QuoteScenario,
+	code = "INVALID_PRICING_INPUT",
+) {
 	const result = quoteScenario(rehashScenario(scenario));
 	if (isQuoteVector(result)) throw new Error("invalid state was accepted");
-	expect(result.code).toBe("INVALID_PRICING_INPUT");
+	expect(result.code).toBe(code);
 }
 function monetary(value: CreditValue | CommitmentAmount | undefined) {
 	if (value?.value.case !== "money") throw new Error("missing money");
@@ -121,7 +124,7 @@ it("rejects negative source and recorded-basis values across source kinds", () =
 it.each([
 	"credit",
 	"commitment",
-] as const)("rejects a negative %s balance that v4 consumed negatively", (kind) => {
+] as const)("rejects a negative %s balance", (kind) => {
 	const scenario = scenarioFor(kind);
 	const entry =
 		kind === "credit"
@@ -129,11 +132,6 @@ it.each([
 			: scenario.state?.commitments[0]?.remaining;
 	monetary(entry).decimal = "-10";
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.consumption[0]?.quantity?.decimal).toBe("-10");
 });
 
 it("rejects an additional acquisition basis on a derived credit", () => {
@@ -142,11 +140,6 @@ it("rejects an additional acquisition basis on a derived credit", () => {
 	if (!grant) throw new Error("missing credit");
 	grant.derivedFrom = "subscription";
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.incremental?.effective?.decimal).toBe("19");
 });
 
 it("allows a derived credit with zero acquisition and recorded basis", () => {
@@ -169,11 +162,6 @@ it("rejects spending more credit basis than remains", () => {
 	if (!basis) throw new Error("missing basis");
 	basis.decimal = "1";
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.incremental?.effective?.decimal).toBe("19");
 });
 
 it("rejects recorded basis on a zero-basis credit", () => {
@@ -194,13 +182,13 @@ it("rejects mismatched credit and commitment currencies", () => {
 				: scenario.state?.commitments[0]?.used;
 		const value = monetary(entry);
 		value.currency = "EUR";
-		expectRejected(scenario);
+		expectRejected(scenario, "CROSS_CURRENCY");
 	}
 	const scenario = scenarioFor("credit");
 	const basis = scenario.state?.credits[0]?.remainingBasis;
 	if (!basis) throw new Error("missing basis");
 	basis.currency = "EUR";
-	expectRejected(scenario);
+	expectRejected(scenario, "CROSS_CURRENCY");
 });
 
 it("rejects a negative gross charge before applying a financial source", () => {
@@ -210,11 +198,6 @@ it("rejects a negative gross charge before applying a financial source", () => {
 		credits: [creditState("c", "acquisition", 0)],
 	});
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-	expect(old.consumption[0]?.quantity?.decimal).toBe("-20");
 });
 
 it.each([
@@ -258,31 +241,15 @@ it.each([
 		],
 	});
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	expect(isQuoteVector(old)).toBe(true);
-	if (kind === "graduated" || kind === "volume") {
-		if (!isQuoteVector(old)) throw new Error("legacy quote rejected");
-		expect(old.candidate?.billed?.decimal).toBe("80");
-	}
 });
 
 it("records monetary commitment consumption in its currency", () => {
 	const scenario = scenarioFor("commitment");
 	const current = quoteScenario(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	if (!isQuoteVector(current) || !isQuoteVector(old))
-		throw new Error("quote rejected");
+	if (!isQuoteVector(current)) throw new Error("quote rejected");
 	expect(current.consumption[0]?.quantity).toMatchObject({
 		decimal: "20",
 		unit: "USD",
-	});
-	expect(old.consumption[0]?.quantity).toMatchObject({
-		decimal: "20",
-		unit: "minute",
 	});
 });
 
@@ -307,10 +274,6 @@ it("rejects source balances above their declared capacity", () => {
 					);
 				}
 				expectRejected(scenario);
-				const old = quoteScenario(scenario, {
-					ratingAlgorithmVersion: "pricing-rating/v4",
-				});
-				expect(isQuoteVector(old)).toBe(true);
 			},
 		),
 		{ seed: 614487, numRuns: 300 },
@@ -357,10 +320,6 @@ it.each([
 	const result = quoteScenario(rehashScenario(scenario));
 	if (isQuoteVector(result)) throw new Error("unsupported commitment accepted");
 	expect(result.code).toBe("PRICING_MODEL_UNSUPPORTED");
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	expect(isQuoteVector(old)).toBe(true);
 });
 
 it("rejects a derived acquisition even when no source is consumed", () => {
@@ -404,10 +363,6 @@ it.each([
 		monetary(scenario.state?.commitments[0]?.used).decimal = "41";
 	}
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	expect(isQuoteVector(old)).toBe(true);
 });
 
 it.each([
@@ -429,10 +384,6 @@ it.each([
 	}
 	credit.usedBasis.decimal = "1";
 	expectRejected(scenario);
-	const old = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v4",
-	});
-	expect(isQuoteVector(old)).toBe(true);
 });
 
 it("rejects positive paid-credit rollover without attributable acquisition basis", () => {

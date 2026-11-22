@@ -120,10 +120,10 @@ describe("durable workflow histories", () => {
 		);
 	});
 
-	it("accepts ordered legacy sleeps but rejects an inconsistent recorded index", async () => {
+	it("rejects an inconsistent recorded sleep index", async () => {
 		const engine = createWorkflowEngine(advancingClock());
 		const wf = defineWorkflow({
-			name: "legacy-timers",
+			name: "indexed-timers",
 			async run(ctx) {
 				await ctx.sleep(3);
 				await ctx.sleep(7);
@@ -132,30 +132,13 @@ describe("durable workflow histories", () => {
 		});
 		const handle = await engine.start(wf, null);
 		const events = await engine.store.readStream(`run/${handle.runId}`);
-		let index = 0;
-		const legacy = events.map((event) => {
-			if (event.type === "run.Started" && isJsonObject(event.data)) {
-				const data = { ...event.data };
-				delete data.commandTreeVersion;
-				return { ...event, data };
-			}
-			return event.type === "run.SleepScheduled"
-				? { ...event, data: { delayMs: index++ === 0 ? 3 : 7 } }
-				: event;
-		});
 		const definition = engine.toReplayDefinition(wf);
-		await expect(
-			replayRun(
-				{ ...engine.store, readStream: async () => legacy },
-				handle.runId,
-				definition,
-				null,
-			),
-		).resolves.toMatchObject({ state: "done" });
-		index = 0;
+		let index = 0;
 		const wrongIndex = events.map((event) =>
-			event.type === "run.SleepScheduled" && index++ === 1
-				? { ...event, data: { delayMs: 7, index: 0 } }
+			event.type === "run.SleepScheduled" &&
+			isJsonObject(event.data) &&
+			index++ === 1
+				? { ...event, data: { ...event.data, index: 0 } }
 				: event,
 		);
 		await expect(
@@ -211,6 +194,68 @@ describe("durable workflow histories", () => {
 				},
 			),
 			{ seed: 614448, numRuns: 150 },
+		);
+	});
+
+	it("replays caught failures and later steps after a crash", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.array(fc.boolean(), { minLength: 1, maxLength: 5 }),
+				fc.integer({ min: -1, max: 4 }),
+				async (failures, crashChoice) => {
+					const engine = createWorkflowEngine();
+					const calls = failures.map(() => 0);
+					const crashAt = crashChoice < 0 ? -1 : crashChoice % failures.length;
+					let crashed = false;
+					const wf = defineWorkflow({
+						name: "compensation-history",
+						async run(ctx) {
+							const results: number[] = [];
+							for (const [index, shouldFail] of failures.entries()) {
+								try {
+									const value = await ctx.step(
+										`step-${index}`,
+										() => {
+											calls[index] = (calls[index] ?? 0) + 1;
+											if (shouldFail) throw new Error("declined");
+											return index;
+										},
+										{ retries: 0 },
+									);
+									results.push(value);
+								} catch (error) {
+									if (!(error instanceof WorkflowFailure)) throw error;
+									results.push(-1);
+								}
+								if (!crashed && index === crashAt) {
+									crashed = true;
+									throw new Error("SIMULATED_HOST_CRASH");
+								}
+							}
+							return results;
+						},
+					});
+					const start = engine.start(wf, {}, { runId: "compensation" });
+					if (crashAt >= 0) {
+						await expect(start).rejects.toThrow("SIMULATED_HOST_CRASH");
+					} else {
+						await expect(start).resolves.toMatchObject({ status: "completed" });
+					}
+					const restarted = createWorkflowEngine({ store: engine.store });
+					const completed = await restarted.resume(wf, "compensation", {});
+					expect(completed.status).toBe("completed");
+					expect(completed.result).toEqual(
+						failures.map((shouldFail, index) => (shouldFail ? -1 : index)),
+					);
+					const saved = await restarted.journal("compensation");
+					expect(await restarted.resume(wf, "compensation", {})).toEqual(
+						completed,
+					);
+					expect(await restarted.journal("compensation")).toEqual(saved);
+					expect(calls).toEqual(failures.map(() => 1));
+				},
+			),
+			{ seed: 614450, numRuns: 150 },
 		);
 	});
 

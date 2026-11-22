@@ -1,7 +1,6 @@
 import type { JsonObject, JsonValue } from "../json.js";
 
 export type ReplayMode = "live" | "replay";
-export type CanonicalizationVersion = 1 | 2;
 
 export interface EventEnvelope {
 	id: string;
@@ -24,8 +23,6 @@ export interface SeqVectorEntry {
 
 // domain-view: parse-don't-validate parsed/derived type (branded ids, generics, or richer domain fields); its generated *_pb.ts is the wire form (technical-standards.md, IMPL-011).
 export interface ReplayReport {
-	/** Missing in historical records, which used version 1. */
-	readonly canonicalizationVersion?: CanonicalizationVersion;
 	readonly runId: string;
 	readonly seqVector: readonly SeqVectorEntry[];
 	readonly readSetHash: string;
@@ -35,8 +32,6 @@ export interface ReplayReport {
 }
 
 export interface ReplayDivergenceRecord {
-	/** Missing in historical records, which used version 1. */
-	readonly canonicalizationVersion?: CanonicalizationVersion;
 	readonly runId: string;
 	readonly liveStateDigest: string;
 	readonly replayStateDigest: string;

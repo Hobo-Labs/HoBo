@@ -52,8 +52,7 @@ and frozen or non-extensible objects are refused. Objects and arrays must have
 their standard prototypes and ordinary writable, enumerable, configurable data
 properties; arrays must have only their indexed elements. Validation inspects
 properties without invoking getters. Convert other inputs to explicit JSON values
-before starting or resuming a run. Older journals created from those inputs may
-need application-specific recovery.
+before starting or resuming a run.
 
 The input-capture model explores 18 states and 34 steps. This five-state
 projection hides 22 same-label steps, including caller edits, and assumes the
@@ -96,13 +95,10 @@ stateDiagram-v2
   s1 --> s4: start execution
 ```
 
-`resume` requires an existing `run.Started` and the original JSON-normalized input. Version-three records must contain the input, workflow name and seed; present names and seeds in older records must also be valid. Old journals without a name cannot validate workflow identity, and those without a seed use the engine seed. New definitions and engine seeds require nonempty primitive strings. Start, resume and replay adapters capture the definition's name, callback, tool bindings and capabilities before waiting, although the application callback and its external state remain trusted. Completed journaled steps are reused, but an external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
+`resume` requires an existing `run.Started` and the original JSON-normalized input. Every `run.Started` must contain the input and a nonempty workflow name and seed; a record missing any of them, or carrying an unknown field, is refused. New definitions and engine seeds require nonempty primitive strings. Start, resume and replay adapters capture the definition's name, callback, tool bindings and capabilities before waiting, although the application callback and its external state remain trusted. Completed journaled steps are reused; a recorded `run.StepFailed` replays as failure without re-running the step. An external effect can repeat if the host crashes after the effect and before recording its completion. See the [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md).
 
-`replayRun` requires the recorded input and checks the recorded workflow name and
-seed. Version-three records must contain all three; older records without a name
-cannot establish workflow identity, and an older record without a seed uses the
-explicit replay seed or the run ID fallback. An explicitly supplied seed must
-match a recorded seed. Replay captures input, options, and callback references
+`replayRun` requires the recorded input, workflow name and seed and checks
+them. An explicitly supplied seed must match the recorded seed. Replay captures input, options, and callback references
 before waiting for the journal. Workflow callbacks and the journal remain
 trusted; a callback can still read mutable application state, and a matching
 workflow name does not identify a specific code version. The replay report
@@ -150,26 +146,16 @@ Resume, replay and journal reads refuse records returned for a different
 run's stream before using them. This checks the reader's returned identities;
 it does not authenticate the journal or prove that its contents are complete.
 
-New replay reports and divergence records carry `canonicalizationVersion: 2`.
-This version uses locale-independent UTF-16 ordering for keys and event
-identifiers, so equivalent JSON objects do not acquire different digests when
-the machine locale or insertion order changes. Compare digests only when their
-canonicalization versions match. Unmarked historical records used version 1;
-`parseReplayReport` and `parseReplayDivergence` interpret the missing marker as
-version 1. To reproduce one, pass `{ canonicalizationVersion: 1 }` to the
-replay operation or use `digestForVersion` / `canonicalStateBytesForVersion`.
-Version 1 uses the current process locale, which must match the original locale
-to reproduce locale-sensitive historical digests. A legacy digest cannot
-reliably reveal which locale produced it. Existing callers of the unversioned
-helpers now receive version 2 results.
+Replay reports and divergence records use locale-independent UTF-16 ordering
+for keys and event identifiers, so equivalent JSON objects do not acquire
+different digests when the machine locale or insertion order changes.
 
 Use `parseReplayReportProtoJson` or `parseReplayDivergenceProtoJson` for
 protobuf JSON, and `parseReplayReportBinary` or `parseReplayDivergenceBinary`
 for protobuf bytes. These adapters restore omitted empty arrays, accept exact
 safe `uint64` sequence positions, and apply the same domain checks as the
-strict parsers. They reject an explicit null or duplicate version marker;
-the binary adapters also reject overflowing varints, duplicate version markers
-and deprecated protobuf groups. Unknown ordinary binary fields remain allowed.
+strict parsers. The binary adapters also reject overflowing varints and
+deprecated protobuf groups. Unknown ordinary binary fields remain allowed.
 The adapters capture inputs before validation; JSON accessors, proxies, cycles,
 sparse arrays and nesting deeper than 100 are refused, while frozen ordinary
 JSON values are accepted. Binary decoding uses a detached copy of the bytes.
@@ -217,15 +203,38 @@ stateDiagram-v2
   s3 --> s0: command settles
 ```
 
+Workflow and step results must be ordinary JSON trees or top-level `undefined`.
+Dates, non-finite numbers, shared or circular references, accessors, proxies,
+sparse arrays, frozen objects and other values that cannot be faithfully
+replayed are refused. Results are captured before storage waits, so later edits
+to the original do not change the first returned value. An unsupported result
+raises a workflow failure; an unsupported step result also records a step
+failure. A journaled `run.StepFailed` replays by rethrowing that failure without
+re-running the step effect. Convert other values to explicit JSON.
+
+The [workflow replay verification skill](../../.agents/skills/verify-workflow-replay/SKILL.md)
+includes statecharts and bounded models for input and result capture. They
+check 18 input states and 15 result states, including start and resume input
+isolation (mutation checks on those capture sites), edits around journal
+writes, and restarts. A 16-state model checks run-ID validation.
+
+A missing earlier step outcome is accepted only when that step was scheduled;
+this permits recovery when parallel steps finish out of order. Replay validates
+the recorded name before running the unfinished step and reuses later saved
+outcomes. A workflow may catch a step failure, perform compensating steps, and
+complete. Replay rethrows the saved failure into the workflow so it can take
+the same path. The workflow cannot record either terminal state while a prior
+outcome remains unconsumed. The bounded models check these paths and guards.
+
 Resuming a completed or failed run returns its recorded terminal outcome without
-calling the workflow or appending another event. Before execution or replay,
-all journal versions must start with exactly one `run.Started`, have contiguous
-safe-integer sequences beginning at one, and have no record after a terminal
-outcome. Current version-three journals also reject unknown reserved `run.*`
-records. Versioned journals validate the command tree and refuse missing
-completion evidence. Unknown command-tree versions are refused. New failure
-records preserve the failed step when present; older failure records without a
-step cannot reconstruct that detail. A damaged history may need reconciliation;
+calling the workflow or appending another event. An unawaited step
+aborts the execution before a terminal fact is written, so it cannot corrupt a
+sealed run. A journal with multiple
+terminal facts is rejected before returning an outcome. Before execution or replay,
+a journal must start with exactly one `run.Started`, have contiguous
+safe-integer sequences beginning at one, have no record after a terminal
+outcome and contain no unknown reserved `run.*` records. The command tree is
+validated and missing completion evidence is refused. A damaged history may need reconciliation;
 `journal()` remains available to inspect it when the stream identity matches.
 
 The journal-history model checks 298 bounded states. This projection hides 144
@@ -250,14 +259,12 @@ its original sequence, including when the write response was lost. Changed
 event type, payload, or order aborts the execution. The event store must
 preserve this metadata and provide atomic expected-sequence writes. SQLite
 normalizes a null event payload to `{}`; the metadata preserves the original
-command value for recovery. Older journals do not identify emitted commands,
-so an event can be repeated when they resume.
+command value for recovery.
 
-The journal and its writer are trusted: records written by older versions or by
-another writer cannot be authenticated retroactively. A truncated tail or
-records that a reader has removed and renumbered cannot be detected from the
-visible prefix alone. Legacy unversioned journals retain their previous command
-checks in addition to the structural checks above.
+The journal and its writer are trusted: records written by another writer
+cannot be authenticated retroactively. A truncated tail or records that a
+reader has removed and renumbered cannot be detected from the visible prefix
+alone.
 
 The event-recovery model explores five distinct states. Its projection hides one
 internal transition that does not change the displayed state.
@@ -303,15 +310,14 @@ position. Resume checks previously recorded step and sleep commands before
 continuing, and a changed or shortened history aborts the execution even if
 application code catches the error.
 
-New journals record the parent of each step or sleep, including across
+Journals record the parent of each step or sleep, including across
 concurrent step bodies. Resume matches commands in order within each parent,
 reuses completed nested steps and sleeps, and replays recorded step failures.
 Retries of a parent reuse completed child commands. Replay can use a completed
 parent when nested steps have outcomes and nested sleeps have completion facts;
-it refuses children that were unfinished when the parent ended. Older journals
-may lack parent information or sleep completion facts and retain the flat
-resume path. Version-three histories also include `ctx.emit` commands in each
-parent's ordered history.
+it refuses children that were unfinished when the parent ended. Histories also
+include `ctx.emit` commands in each parent's ordered history. A step or sleep
+recorded without a parent belongs to the root.
 
 Await `ctx.step`, `ctx.sleep`, and `ctx.emit` before returning from
 their parent. If a parent finishes with one of these commands still pending,
@@ -393,12 +399,12 @@ stateDiagram-v2
   s3 --> s4: return after completion
 ```
 
-An unfinished older sleep record has no deadline. On its first resume the
-engine records a new deadline for the full original delay, then preserves it
-across later restarts. Older runs that already continued past an immediate
-sleep cannot have their elapsed-time behavior corrected retroactively.
+Every `run.SleepScheduled` record carries its scheduled time and deadline; a
+record without them is refused.
 
 The terminal-outcome model explores 15 distinct states and 18 transitions.
+The verification runner also checks that a resume which writes a second
+terminal fact violates the model's invariant.
 This projection hides ten transitions that do not change the displayed state;
 it shows the modeled flow, rather than a trace of one execution.
 

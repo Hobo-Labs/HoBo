@@ -9,16 +9,7 @@ import {
 import { quoteScenario } from "../src/quote.js";
 import { isQuoteVector } from "../src/types.js";
 
-const baselines = [
-	"golden-replay-baseline.json",
-	"golden-replay-v2.json",
-	"golden-replay-v3.json",
-	"golden-replay-v4.json",
-	"golden-replay-v5.json",
-	"golden-replay-v6.json",
-	"golden-replay-v7.json",
-	"golden-replay-v8.json",
-].map((name) =>
+const baselines = ["golden-replay-baseline.json"].map((name) =>
 	JSON.parse(
 		readFileSync(join(import.meta.dirname, "../corpus", name), "utf8"),
 	),
@@ -36,9 +27,7 @@ describe("pricing golden replay corpus", () => {
 			if (scenario === undefined) {
 				throw new Error(`invalid pinned scenario: ${entry.key}`);
 			}
-			const result = quoteScenario(scenario, {
-				ratingAlgorithmVersion: entry.quote.ratingAlgorithmVersion,
-			});
+			const result = quoteScenario(scenario);
 			if (!isQuoteVector(result)) {
 				throw new Error(`${entry.key}: ${result.code}: ${result.message}`);
 			}

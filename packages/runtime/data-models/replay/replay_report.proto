@@ -14,8 +14,6 @@ message ReplayReport {
   string state_digest = 4;
   string mode = 5;
   string seed = 6;
-  // Missing on historical reports, which used locale-sensitive version 1.
-  optional uint32 canonicalization_version = 7;
 }
 
 message ReplayDivergence {
@@ -25,7 +23,5 @@ message ReplayDivergence {
   repeated string live_order = 4;
   repeated string replay_order = 5;
   string first_divergent_event_key = 6;
-  // Missing on historical records, which used locale-sensitive version 1.
-  optional uint32 canonicalization_version = 7;
 }
 

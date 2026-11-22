@@ -58,15 +58,6 @@ function expectRejected(scenario: QuoteScenario) {
 it("rejects duplicated credit rather than spending the same $10 twice", () => {
 	const scenario = sourceScenario("credit", 2);
 	expectRejected(scenario);
-	const prior = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v3",
-	});
-	if (!isQuoteVector(prior)) throw new Error("legacy quote rejected");
-	expect(prior.incremental?.billed?.decimal).toBe("0");
-	expect(prior.consumption.map((item) => item.sourceId)).toEqual([
-		"source",
-		"source",
-	]);
 });
 
 it("rejects duplicate or foreign sources for every financial source kind", () => {
@@ -88,10 +79,6 @@ it("rejects duplicate or foreign sources for every financial source kind", () =>
 					entry.tenantId = duplicate ? "tenant-a" : "foreign-tenant";
 				}
 				expectRejected(scenario);
-				const prior = quoteScenario(scenario, {
-					ratingAlgorithmVersion: "pricing-rating/v3",
-				});
-				expect(isQuoteVector(prior)).toBe(true);
 			},
 		),
 		{ seed: 614485, numRuns: 300 },
@@ -110,7 +97,7 @@ it.each([
 	expectRejected(scenario);
 });
 
-it("allows a shared ID across different source kinds for the same tenant", () => {
+it("rejects a shared ID across different source kinds for the same tenant", () => {
 	const scenario = makeScenario({
 		charges: [perUnitCharge("usage", "minute", "1")],
 		candidate: [workload("agreement-a", [usage("minute", "20", "minute")])],
@@ -121,7 +108,7 @@ it("allows a shared ID across different source kinds for the same tenant", () =>
 	const commitment = sources(scenario, "commitment")[0];
 	if (!commitment) throw new Error("missing commitment");
 	commitment.id = "shared";
-	expect(isQuoteVector(quoteScenario(rehashScenario(scenario)))).toBe(true);
+	expectRejected(scenario);
 });
 
 it("rejects a financial state without a tenant", () => {
@@ -151,10 +138,6 @@ it.each([
 	const scenario = sourceScenario(kind, 1);
 	addAccount(scenario, "account-b");
 	expectRejected(scenario);
-	const prior = quoteScenario(scenario, {
-		ratingAlgorithmVersion: "pricing-rating/v3",
-	});
-	expect(isQuoteVector(prior)).toBe(true);
 });
 
 it("allows multiple accounts when no financial source is present", () => {

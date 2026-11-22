@@ -97,7 +97,6 @@ it("captures the initial-state callback before waiting for the journal", async (
 			args: "recorded",
 			workflowName: "callback",
 			seed: "s",
-			commandTreeVersion: 3,
 		}),
 		0,
 	);
@@ -148,7 +147,7 @@ it("rejects generated changed replay inputs", async () => {
 	);
 });
 
-it("requires input, name and seed in a version-three start record", async () => {
+it("requires input, name and seed in a start record", async () => {
 	const wf = defineWorkflow({ name: "required-binding", run: () => null });
 	const engine = createWorkflowEngine();
 	await engine.start(wf, null, { runId: "required" });
@@ -181,24 +180,6 @@ it("requires input, name and seed in a version-three start record", async () => 
 	await expect(
 		replayRun(malformedSeed, "required", engine.toReplayDefinition(wf), null),
 	).rejects.toThrow(/seed.*run.Started/i);
-});
-
-it("allows an explicitly supplied seed for an older record without a name or seed", async () => {
-	const store = createInMemoryEventStore();
-	await store.append(
-		nextEnvelope("run/legacy", 1, "run.Started", { args: "old" }),
-		0,
-	);
-	const wf = {
-		name: "legacy",
-		initialState: (input: string) => input,
-		execute: (_ctx: WorkflowReplayContext, state: string) => state,
-	};
-	const replay = await replayRun(store, "legacy", wf, "old", {
-		seed: "fallback",
-	});
-	expect(replay.state).toBe("old");
-	expect(replay.report.seed).toBe("fallback");
 });
 
 it("rejects invalid IDs and unreproducible input before reading the journal", async () => {

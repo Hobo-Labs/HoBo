@@ -1,16 +1,20 @@
 ---
-type: Operational reference
+type: Reference
 title: "Hosting evidence observation"
-description: "Read-only checks for the hosting identity and enrolled secret-store scopes."
-tags: [ci, hosting, evidence]
+description: "Read-only observations of secret-store access by the main-branch Actions identity."
+tags: [hobo, ci, hosting, evidence]
 ---
 
 # Hosting evidence observation
 
 The manually dispatched `HoBo hosting evidence (read-only)` workflow checks
 whether this repository's main-branch GitHub Actions identity can list names in
-the committed Infisical folder. It uses the HoBo secret-store SDK and reports
-only a small allowlist of key names. It may also read and report the public,
+the committed Infisical folder. A claimed legacy binding may use the confined
+repair parser for this read-only observation; that does not admit it to the
+relay deploy gate or any real deploy command. Foreign, pending, or malformed
+bindings return unavailable before any provider request. The workflow uses the
+HoBo secret-store SDK and reports only a small allowlist
+of key names. It may also read and report the public,
 numeric GitHub App ID from that original folder; it never reports credentials.
 After that, it reads the enrolled project's environment and folder metadata,
 then lists names only in scopes exposed by that identity and accepted by the

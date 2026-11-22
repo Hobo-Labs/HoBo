@@ -13,7 +13,7 @@ export const DISCOVERY_PRIMARY = {
   command: "pnpm run design:lint" as string | null,
   confidence: "high",
   reason:
-    "seed requires DESIGN.md contract fail-closed (designmd); design:lint not docs:design-lint",
+    "seed requires implemented palette tokens fail-closed (visual-token-contract); design:lint not docs:design-lint",
 };
 
 export const IMPLEMENTATION_STATUS = {

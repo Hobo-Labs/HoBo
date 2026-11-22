@@ -26,9 +26,11 @@ import {
 	WRITER_SECRET,
 } from "./secret-capture-support.js";
 
-const APPS = { apps: true, urlElicitation: false };
-const URL_ONLY = { apps: false, urlElicitation: true };
-const NEITHER = { apps: false, urlElicitation: false };
+const APPS = { apps: true, formElicitation: false, urlElicitation: false };
+const URL_ONLY = { apps: false, formElicitation: false, urlElicitation: true };
+const NEITHER = { apps: false, formElicitation: false, urlElicitation: false };
+/** A host that renders elicitation forms (MCP 2025-06-18 `{}` or `{ form }`). */
+const FORM_ONLY = { apps: false, formElicitation: true, urlElicitation: false };
 
 const apps: SecretCaptureApp[] = [];
 const watches: ReturnType<typeof leakWatch>[] = [];
@@ -86,7 +88,7 @@ describe("host negotiation (MCP Apps 2026-01-26, MCP 2025-11-25 elicitation)", (
 					"io.modelcontextprotocol/ui": { mimeTypes: [MCP_APP_MIME_TYPE] },
 				},
 			}),
-		).toEqual({ apps: true, urlElicitation: false });
+		).toEqual(APPS);
 		expect(
 			negotiateSecretCaptureSupport({
 				extensions: {
@@ -94,10 +96,12 @@ describe("host negotiation (MCP Apps 2026-01-26, MCP 2025-11-25 elicitation)", (
 				},
 			}).apps,
 		).toBe(false);
-		expect(negotiateSecretCaptureSupport({ elicitation: {} })).toEqual(NEITHER);
+		expect(negotiateSecretCaptureSupport({ elicitation: {} })).toEqual(
+			FORM_ONLY,
+		);
 		expect(
 			negotiateSecretCaptureSupport({ elicitation: { form: {}, url: {} } }),
-		).toEqual(URL_ONLY);
+		).toEqual({ ...URL_ONLY, formElicitation: true });
 		expect(negotiateSecretCaptureSupport(null)).toEqual(NEITHER);
 		expect(negotiateSecretCaptureSupport("apps")).toEqual(NEITHER);
 	});
@@ -140,7 +144,7 @@ describe("the tool and resource surface", () => {
 		}
 	});
 
-	it("serves the form as text/html;profile=mcp-app with no network allowance", () => {
+	it("serves the form as text/html;profile=mcp-app", () => {
 		const { app } = setup();
 		const read: {
 			contents: { mimeType: string; text: string; _meta: JsonValue }[];
@@ -149,16 +153,35 @@ describe("the tool and resource surface", () => {
 		);
 		const [content] = read.contents;
 		expect(content?.mimeType).toBe(MCP_APP_MIME_TYPE);
-		expect(content?._meta).toEqual({
+		expect(content?.text).toContain('"ui/initialize"');
+		expect(app.readResource("ui://hobo/other")).toBeUndefined();
+	});
+
+	it("declares empty CSP connectDomains and resourceDomains", () => {
+		const { app } = setup();
+		const read: {
+			contents: { _meta: JsonValue }[];
+		} = JSON.parse(
+			JSON.stringify(app.readResource(SECRET_CAPTURE_RESOURCE_URI)),
+		);
+		expect(read.contents[0]?._meta).toEqual({
 			ui: {
 				csp: { connectDomains: [], resourceDomains: [] },
 				prefersBorder: true,
 			},
 		});
-		// The form never puts anything in front of the model.
-		expect(content?.text).not.toMatch(/ui\/message|ui\/update-model-context/u);
-		expect(content?.text).toContain('"ui/initialize"');
-		expect(app.readResource("ui://hobo/other")).toBeUndefined();
+	});
+
+	it("never emits ui/message or ui/update-model-context", () => {
+		const { app } = setup();
+		const read: {
+			contents: { text: string }[];
+		} = JSON.parse(
+			JSON.stringify(app.readResource(SECRET_CAPTURE_RESOURCE_URI)),
+		);
+		expect(read.contents[0]?.text).not.toMatch(
+			/ui\/message|ui\/update-model-context/u,
+		);
 	});
 });
 
@@ -423,11 +446,13 @@ describe("refusals before anything is opened", () => {
 
 	it("asks for the writer credential first when writes are not authorized", async () => {
 		const { app } = setup({ writable: false });
-		expect(
-			result(
-				await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
-			).structuredContent,
-		).toMatchObject({ code: "SECRET_STORE_WRITER_REQUIRED" });
+		const refusal = result(
+			await app.callTool(CAPTURE_SECRET_TOOL, { name: "VERCEL_TOKEN" }, APPS),
+		);
+		expect(refusal.structuredContent).toMatchObject({
+			code: "SECRET_STORE_WRITER_REQUIRED",
+		});
+		expect(JSON.stringify(refusal)).not.toContain("secref://memory");
 		expect(
 			result(
 				await app.callTool(

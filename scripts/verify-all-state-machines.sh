@@ -2,18 +2,40 @@
 set -u -o pipefail
 
 repo_dir="$(git rev-parse --show-toplevel)"
-scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/hobo-all-state-checks.XXXXXX")"
-trap 'rm -rf -- "$scratch_dir"' EXIT
 cd "$repo_dir" || exit 2
 
-# Package managers differ on whether they forward their argument separator.
-if [[ "${1:-}" == "--" ]]; then
-	shift
-fi
+list_only=false
+shard_index=0
+shard_count=1
+shard_seen=false
+while (( $# > 0 )); do
+	case "$1" in
+		--) shift ;;
+		--list) list_only=true; shift ;;
+		--shard=*)
+			if [[ "$shard_seen" == true || ! "${1#--shard=}" =~ ^(0|[1-9][0-9]?)/([1-9][0-9]?)$ ]]; then
+				echo 'Shard must be a single zero-based INDEX/COUNT.' >&2
+				exit 2
+			fi
+			shard_index="${BASH_REMATCH[1]}"
+			shard_count="${BASH_REMATCH[2]}"
+			if (( shard_index >= shard_count )); then
+				echo 'Shard index must be less than its count.' >&2
+				exit 2
+			fi
+			shard_seen=true
+			shift ;;
+		--*) echo "Unknown verification option: $1" >&2; exit 2 ;;
+		*) break ;;
+	esac
+done
 
 shopt -s nullglob
 if (( $# == 0 )); then
 	skills=("$repo_dir"/.agents/skills/verify-*)
+	if (( ${#skills[@]} > 0 )); then
+		mapfile -t skills < <(printf '%s\n' "${skills[@]}" | LC_ALL=C sort)
+	fi
 else
 	skills=()
 	for name in "$@"; do
@@ -28,6 +50,25 @@ if (( ${#skills[@]} == 0 )); then
 	echo 'No state-machine verification skills found.' >&2
 	exit 2
 fi
+
+selected=()
+for index in "${!skills[@]}"; do
+	if (( index % shard_count == shard_index )); then
+		selected+=("${skills[index]}")
+	fi
+done
+skills=("${selected[@]}")
+if [[ "$list_only" == true ]]; then
+	for skill in "${skills[@]}"; do printf '%s\n' "${skill##*/}"; done
+	exit 0
+fi
+if (( ${#skills[@]} == 0 )); then
+	echo 'No state-machine verification skills assigned to this shard.'
+	exit 0
+fi
+
+scratch_dir="$(mktemp -d "${TMPDIR:-/tmp}/hobo-all-state-checks.XXXXXX")"
+trap 'rm -rf -- "$scratch_dir"' EXIT
 
 if [[ -z "${TLA2TOOLS:-}" ]]; then
 	TLA2TOOLS="$scratch_dir/tla2tools.jar"
@@ -52,14 +93,15 @@ for skill in "${skills[@]}"; do
 done
 if [[ "$needs_z3" == true ]]; then
 	if [[ -n "${BUDGET_Z3_PYTHONPATH:-}" ]]; then
-		if ! PYTHONPATH="$BUDGET_Z3_PYTHONPATH" python3 -c 'import z3; assert z3.get_version_string() == "4.15.4"'; then
+		if ! PYTHONPATH="$BUDGET_Z3_PYTHONPATH" python3 -c $'import sys, z3\nversion = z3.get_version_string()\nif version != "4.15.4":\n\tprint(f"Z3 4.15.4 is required; found {version}.", file=sys.stderr)\n\tsys.exit(1)'; then
 			echo 'BUDGET_Z3_PYTHONPATH must contain z3-solver 4.15.4.0.' >&2
 			exit 2
 		fi
-	elif ! python3 -c 'import z3; assert z3.get_version_string() == "4.15.4"' 2>/dev/null; then
+	elif ! python3 -c $'import sys, z3\nversion = z3.get_version_string()\nif version != "4.15.4":\n\tprint(f"Z3 4.15.4 is required; found {version}.", file=sys.stderr)\n\tsys.exit(1)' 2>/dev/null; then
 		if ! python3 -m pip install --disable-pip-version-check --no-cache-dir --no-deps \
-			--target "$scratch_dir/python" 'z3-solver==4.15.4.0'; then
-			echo 'Unable to install pinned Z3; set BUDGET_Z3_PYTHONPATH.' >&2
+			--require-hashes --only-binary=:all: --target "$scratch_dir/python" \
+			-r "$repo_dir/.agents/skills/verify-broker-budget-authority/proof/requirements-z3.txt"; then
+			echo 'Unable to install hash-pinned Z3; set BUDGET_Z3_PYTHONPATH.' >&2
 			exit 2
 		fi
 		BUDGET_Z3_PYTHONPATH="$scratch_dir/python"

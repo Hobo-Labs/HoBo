@@ -2,7 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import { RolloutStrategy } from "../../src/_generated/cd_pb.js";
 import { CD_EVENTS } from "../../src/events.js";
-import type { FanoutId, PromoteRequest } from "../../src/ports.js";
+import { fanoutIdFor } from "../../src/fanout/controller.js";
+import type { PromoteRequest } from "../../src/ports.js";
 import { PROMOTION_REASON } from "../../src/promotion/index.js";
 import { resolvedFor } from "./doubles.js";
 import { harness } from "./harness.js";
@@ -23,8 +24,10 @@ function changedRequest(base: PromoteRequest, field: string): PromoteRequest {
 		case "proposal":
 			return { ...base, proposal: true };
 		case "fanout":
-			// SAFETY: test fixture fan-out identifiers are literal strings.
-			return { ...base, fanoutId: "other-fanout" as FanoutId };
+			return {
+				...base,
+				fanoutId: fanoutIdFor("acme", "pipe", "node", "other"),
+			};
 		default:
 			throw new Error(`unknown field ${field}`);
 	}
@@ -113,6 +116,28 @@ describe("promotion request binding", () => {
 		expect(h.store.events(CD_EVENTS.EnvPromoteRequested)).toHaveLength(1);
 	});
 
+	it("binds the target execution order", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		const request = {
+			freightId: fid("f1"),
+			targets: [camp("dev-1"), camp("dev-2")],
+			idempotencyKey: "target-order",
+		};
+		expect((await h.service.promote(request, h.ctx())).ok).toBe(true);
+		const reversed = await h
+			.restart()
+			.promote(
+				{ ...request, targets: [...request.targets].reverse() },
+				h.ctx(),
+			);
+		expect(reversed.ok).toBe(false);
+		if (!reversed.ok)
+			expect(reversed.reasons[0]?.code).toBe(
+				PROMOTION_REASON.idempotencyReused,
+			);
+	});
+
 	it("checks legacy records using available fields and refuses ambiguous replays", async () => {
 		const h = harness();
 		h.freight.add("f1");
@@ -173,6 +198,26 @@ describe("promotion request binding", () => {
 				).ok,
 			).toBe(false);
 		}
+	});
+
+	it("refuses one of two different preview requests racing for a key", async () => {
+		const h = harness();
+		h.freight.add("f1");
+		h.desired.seed("dev-1", "f1", resolvedFor("dev-1", "alpha", "f1"));
+		const request = {
+			freightId: fid("f1"),
+			sourceCampId: camp("dev-1"),
+			ttlMs: HOUR,
+			idempotencyKey: "preview-race",
+		};
+		const [first, second] = await Promise.all([
+			h.service.createPreview(request, h.ctx()),
+			h
+				.restart()
+				.createPreview({ ...request, sourceCampId: camp("dev-2") }, h.ctx()),
+		]);
+		expect([first.ok, second.ok].filter(Boolean)).toHaveLength(1);
+		expect(h.store.events(CD_EVENTS.EnvPromoteRequested)).toHaveLength(1);
 	});
 
 	it("claims a rollback key before effects and refuses different concurrent work", async () => {

@@ -1,14 +1,47 @@
+# Repository rules for every agent
+
+These rules apply to every agent, plugin, skill, and harness and take precedence
+over conflicting repository workflow guidance.
+
+- Write self-documenting code. Do not add explanatory comments, commented-out
+  code, TODOs, FIXMEs, or other deferred-work markers. Refactor names, types,
+  and functions to make intent clear. Retain only required license notices and
+  directives consumed by compilers or tools.
+- Complete unfinished work when it is found. Do not hide it by deleting its
+  marker or by moving it into a backlog.
+- Before ending an action request, compare the current user goal with the
+  actual result and evidence. Continue any known, safe, authorized action that
+  advances essential unfinished work; a partial merge, a failed approach,
+  passing subtask, or report of next steps is not completion. Consider available
+  alternatives and independent work before reporting a blocker. Respect the
+  latest explicit stop, pause, cancellation, scope change, and real permission
+  or safety boundary; do not invent work or repeat futile attempts.
+- Do not create or retain planning documents, roadmaps, or design documents.
+  Implement their outstanding work, then remove them. Keep user and operator
+  documentation about behavior that actually exists.
+- These rules apply even when a plugin or skill requests a plan or design
+  artifact. Work directly from the request and report concrete blockers.
+- When work needs an MCP server, check the active host's tools. If the server
+  is absent, inspect its registration and try supported discovery or reload;
+  where safe, also initialize and list tools through a separate client. Use
+  that client for permitted non-sensitive work when practical. Report server
+  availability, host attachment, and authenticated sessions as separate
+  observations, and do not assert a cause without evidence. Follow the
+  relevant setup skill before any private owner flow.
+- HoBo manages deployment of its CI relay. Its Vercel project is intentionally
+  not Git-linked; do not reconnect it or treat the missing link as a defect.
+
 # Agent tooling for this repo
 
 This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub Copilot CLI** for Superpowers) with the installable agent tools listed in the [`docs/agent-tooling.md`](docs/agent-tooling.md) table plus repo-local `repo`, `draft`, `sdlc`, and `optimizexp` skills. Full reference + risks: [`docs/agent-tooling.md`](docs/agent-tooling.md). Auth/keys summary: [`AUTH.md`](AUTH.md). One-time binary install: [`scripts/setup-agent-tools.sh`](scripts/setup-agent-tools.sh). `pnpm run doctor` also checks agent-tooling (AUTH, MCP configs, setup `--help`, fail-closed launchers, optional PATH tools). In devcontainers, start with the common layer before agent-specific shims.
 
 | Tool | Type | What it does | Invoke |
 |---|---|---|---|
-| **sdlc** (repo-local) | skill | Full-loop coordinator: brainstorm → plan → issues → subagents (incremental checkins) → **GitHub stacked PRs** (`gh stack`) → bottom-up rubber-duck/adversarial review → fix comments/checks → squash-merge each PR. **`--finish`** lands the session (commit, rebase, PR, squash-merge all session PRs). Mirrored for all agents. | `sdlc`, `/sdlc --finish`, stacked multi-phase work |
+| **sdlc** (repo-local) | skill | Coordinates implementation and review across harnesses under the repository rules above. | `sdlc`, `/sdlc --finish` |
+| **hobo-setup** (repo-local) | skill | Guides HoBo MCP connection and private owner store setup independently of deployment. | automatic for HoBo MCP or owner-store setup |
 | **gh-stack** (repo-local) | skill + CLI ext | Non-interactive rules for official `github/gh-stack` (`gh extension install github/gh-stack`). | `gh stack init\|add\|submit\|sync\|merge` |
-| **improve** (`shadcn/improve`) | skill (read-only) | Audits the codebase and writes prioritized implementation **plans** to `plans/`, which git ignores, for other agents to execute. They are never committed. Never edits source. | `/improve`, `/improve quick`, `/improve security`, `/improve execute <plan>` |
-| **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: structured **brainstorming**, plan-writing, TDD, systematic debugging, subagent-driven dev, and code-review workflows. No keys. | `brainstorming`, `writing-plans`, `requesting-code-review`, `subagent-driven-development`, `systematic-debugging`, … (14 skills) |
-| **impeccable** (`pbakaus/impeccable`) | skill (design) | A **design language** for AI harnesses: 23 commands from `shape`/`critique`/`audit`/`polish` to dials like `bolder`/`quieter`/`colorize`. **Always-on for UI/TUI/dashboard work** — do not wait for the user to invoke it (see **Design system + lint** below). No keys, but not offline: a daily update check to `impeccable.style` from `scripts/context.mjs` run as a command — the hook does **not** fetch (disabled here by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`). `/impeccable init` writes `PRODUCT.md` only — `site/DESIGN.md` stays the design authority (ADR-0149). | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
+| **superpowers** (`obra/Superpowers`) | plugin (skills library) | A development **methodology**: TDD, systematic debugging, and code-review workflows. Planning and design artifact workflows are prohibited by the repository rules above. No keys. | `requesting-code-review`, `systematic-debugging` |
+| **impeccable** (`pbakaus/impeccable`) | skill (design) | A **design language** for AI harnesses: 23 commands from `shape`/`critique`/`audit`/`polish` to dials like `bolder`/`quieter`/`colorize`. **Always-on for UI/TUI/dashboard work** — do not wait for the user to invoke it (see **Visual quality** below). No keys, but not offline: a daily update check to `impeccable.style` from `scripts/context.mjs` run as a command — the hook does **not** fetch (disabled here by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`). `/impeccable init` writes `PRODUCT.md`; visual tokens and components are defined in source. Do not create design documents. | automatic on visual surfaces; `impeccable critique` / `audit` / `polish` |
 | **Higgsfield MCP** (`mcp.higgsfield.ai`) | MCP (hosted, official) | Image/video generation across 30+ models. Account **OAuth**, no API key stored in-repo; project-scoped so it needs human approval before use. Sends prompts to Higgsfield. | `mcp__higgsfield__*` |
 | **mattpocock/skills** (`mattpocock/skills`) | skills collection | Engineering disciplines: **`grill-with-docs`** (relentless design interview that writes ADRs + glossary), `domain-modeling`, `codebase-design`, `diagnosing-bugs`, `tdd`, `to-prd`, `to-issues`, `prototype`, … No keys. | `/grill-with-docs`, `/ask-matt`, `/domain-modeling`, `/setup-matt-pocock-skills` (one-time config) |
 | **caveman** (`JuliusBrussee/caveman`) | skill + rules | Compresses **agent output** (~65–87% fewer tokens) while keeping technical accuracy. | active by default (see below); `/caveman [lite\|full\|ultra\|wenyan]`, `/caveman-commit`, `/caveman-review`, `/caveman-stats` |
@@ -22,7 +55,7 @@ This repo is wired for **Claude Code**, **Cursor**, and **Codex** (plus **GitHub
 | **SkillOpt** (`microsoft/SkillOpt`) | optimizer / research harness | Trains reusable markdown skills from scored rollouts and exports `best_skill.md` artifacts for multiple harnesses. Optional, not runtime config. | `skillopt-train`; `scripts/skillopt-sleep.sh status|dry-run|run|adopt`; installed from microsoft/SkillOpt |
 | **anti-slop** (`dmmulroy/anti-slop`) | vendored Oxlint plugin + skill | Opinionated lint rules rejecting low-evidence/low-signal TS patterns (chained assertions, `unknown` contracts, ad hoc `typeof`, module mocking, unjustified casts). Vendored at `tools/oxlint/anti-slop/`, configured in `oxlint.config.ts`. Local, no keys. Pre-commit / `agent:check` run `lint:slop:changed` on touched TS/JS (`--deny-warnings`); full-repo `lint:slop` is opt-in because of a large pre-existing backlog. Each copy (tools + both skill assets) carries `MANIFEST.sha256`; `scripts/test/anti-slop-vendor.test.ts` is the drift gate (ADR-0173). | `pnpm run lint:slop:changed`; `pnpm run lint:slop`; reinstall/refresh via the `install-anti-slop` skill (all agents) |
 
-How they fit together: **Serena** gives agents semantic code tools, **superpowers** + **mattpocock/skills** supply the *workflow & rigor* (brainstorm → grill-with-docs → plan → build/TDD → review), **improve** decides *what* to do, **ponytail** keeps the code itself minimal (YAGNI / stdlib-first), **impeccable** + `pnpm run design:lint` are the standing visual quality loop (not opt-in), **headroom** + **RTK** + **caveman** keep token use down (context-in, shell-output, and agent-output — complementary), **gbrain** remembers across sessions, and **SkillOpt** is reserved for offline improvement of reusable skills when we have scored tasks.
+How they fit together: **Serena** gives agents semantic code tools, **superpowers** and **mattpocock/skills** supply workflow and review techniques, **ponytail** keeps code minimal, **impeccable** and `pnpm run design:lint` support visual quality, **headroom**, **RTK**, and **caveman** reduce token use, **gbrain** supplies memory, and **SkillOpt** supports offline improvement of reusable skills. All remain subject to the repository rules above.
 
 ## Repo-local repo skill
 
@@ -40,12 +73,7 @@ The skill defaults to local hybrid retrieval: OKF `index.md` files, `tgrep` when
 
 ## Repo-local sdlc skill + implementer/reviewer subagents
 
-The repo-local **sdlc** skill (mirrored in `.agents/skills/sdlc` and `.claude/skills/sdlc` — Claude Code, Cursor, Codex, Grok, and any agent that loads those trees) coordinates full-loop feature development: brainstorm → adversarial/rubber-duck hardening → plan mode over the draft-proof cascade (technical → epic; experience proofs in parallel; projects aggregate) → Linear capture as one-shot issues (verifiable outputs + required draft artifacts named per issue) → **permission-gated** dispatch through a harness-detected backend matrix (see `references/dispatch.md`): cloud coding agents (GitHub coding agent via MCP/`gh agent-task`, Codex cloud, Cursor background) are preferred for isolated one-shot issues; local subagent worktrees handle shared-file-adjacent work; a sequential fallback keeps the loop alive when no delegation capability probes true. **Leverage subagents as much as possible**; implementers **commit incrementally** (red→green→commit, not one dump at the end). For multi-step/phase/task work the **parent** opens a **GitHub stacked PR** with the official `gh stack` extension (`github/gh-stack`, also documented in the companion **`gh-stack`** skill). Every backend receives the same one-shot issue contract and returns the same handback schema — `.sdlc/report.json` in a worktree, or a fenced `sdlc-report` JSON block in the PR body for cloud dispatches. The Claude Code backend is two subagent definitions under `.claude/agents/`:
-
-- **implementer** — one Linear issue, one isolated worktree, strict red/green TDD/BDD/ATDD (the acceptance checklist becomes the failing tests: unit, PACT contract, cucumber feature, bench), **incremental checkins**. Zero Linear access; never edits shared files; hands back `.sdlc/report.json` with gates, cascade deltas, and requirement discoveries.
-- **reviewer** — read-only; independently re-runs the gates and walks the acceptance checklist (cloud PRs get the same walk against a local checkout of the PR branch).
-
-The coordinator owns ALL Linear state, shared-file mutations, and **stack topology** (single-writer). When implementation is done, the parent **must close every opened PR from the bottom up**: rubber-duck + adversarial review of each layer, address all PR comments and review feedback, fix required status checks that actually ran, then **squash-merge** that PR (`gh stack merge <pr> --yes --squash` or `gh pr merge --squash`) and sync before moving up the stack. **Billing/spending-limit/quota CI failures do not block squash-merge** — document them on the PR and merge anyway (use `--admin` if protection requires green checks). An issue is Done only when checks are green **or only billing-red**, independent review passes, comments are resolved, and the PR is squash-merged — never on an implementation agent's self-report. Durable loop state lives in `.sdlc/<initiative>/sdlc-state.md`; dispatch outcomes feed `.sdlc/dispatch-log.md`, which the next Linear-planning pass consults to improve issue contracts.
+The repo-local **sdlc** skill is mirrored in `.agents/skills/sdlc` and `.claude/skills/sdlc`. It coordinates implementation and review while following the repository rules above. Do not create planning state or design documents, even when an older skill reference requests them.
 
 **Stacked PRs install:** `gh extension install github/gh-stack` (also via `scripts/setup-agent-tools.sh` common layer). Local git defaults `rerere.enabled=true` and `remote.pushDefault=origin` are applied by `scripts/install-hooks.mts` / the setup script.
 
@@ -229,40 +257,15 @@ These rules are harness-neutral and apply to Claude Code, Cursor, Codex, Copilot
 
 Canonical detail lives in [`docs/design/technical-standards.md`](docs/design/technical-standards.md).
 
-## Design system + lint (always-on)
+## Visual quality
 
-Visual work is a first-class gate, same as typecheck and PACT. **Do not wait for the user to say “run design lint” or “use /impeccable.”** If you touch a visual surface, apply the design system while editing and run the linters before you claim the work is done.
+Use the owning surface's implemented tokens and shared components. For visual
+changes, run `pnpm run design:lint`, the affected package's rendered-surface
+tests, and the applicable visual review. The gate checks contrast in the site
+and connection UI palettes directly from their CSS. Status-page and secret
+capture tests cover their rendered tokens and accessibility behavior.
 
-A change is visual when it touches any of: `site/`, `packages/control-yard`, `packages/status-page` rendered HTML, a package `DESIGN.md`, CSS/HTML chrome, or rendered copy/color/layout/motion.
-
-### Authority
-
-| Surface | Binding DESIGN.md | Implementation |
-|---|---|---|
-| Public site | [`site/DESIGN.md`](site/DESIGN.md) | `site/src/styles/` |
-| Status page | [`packages/status-page/DESIGN.md`](packages/status-page/DESIGN.md) | that package only |
-| Control-yard | [`packages/control-yard/DESIGN.md`](packages/control-yard/DESIGN.md) | that package only |
-
-`site/DESIGN.md` is the product identity (ADR-0149). Do not run `/impeccable document` at the repo root. Do not invent another identity.
-
-### While editing
-
-1. Read the owning `DESIGN.md` **before** the first visual edit.
-2. Use the owning package's tokens and shared components. Do not hand-roll hex, SaaS blues or extra accents.
-3. Spark (`#c5301c`) and go (`#14672c`) stay rare. Never paint a whole frame, hover-every-control, or night-collapse cards into the ground.
-4. After visual edits, run impeccable `critique` then `audit` (and `polish` if they find P0/P1) on the files you changed. That is part of the implementation loop, not a later favor.
-
-### Before you say done
-
-```bash
-pnpm run design:lint
-```
-
-Plus the package lints that actually cover the files you touched:
-
-- Status page HTML: `packages/status-page/test/status-page-design-lint.test.ts`
-
-`pnpm agent:check -- --staged` already selects `design:lint` when UI/`DESIGN.md` files change. That is not a reason to skip the explicit lint or to skip impeccable on a visual diff. A change that fails `design:lint` or the package design-lint tests is not complete.
+Do not create design documents or use plugin commands that generate them.
 
 ## Lint budget (ratchet)
 
@@ -436,14 +439,12 @@ Local and CI gates enforce this with `pnpm run docs:freshness`: code changes und
 
 ## Plans are not committed
 
-A plan is a working document for people and agents who are still deciding. It is never committed, pushed or put in a pull request, whoever wrote it and however finished it looks. The repository keeps no plans directory.
-
-- **What counts.** An implementation plan, a delivery plan, a roadmap of work to do, a backlog staged for import, a swarm or one-shot agent instruction, planning state, or any document that says what will be built rather than what was decided.
-- **Where a plan lives.** Outside the repository: a session scratch folder, or a document the owner asked for. `sdlc` keeps its working state in `.sdlc/`, which git ignores. Git also ignores `plans/` and `docs/plans/`, so a tool that writes there, such as `/improve`, cannot get a plan committed.
-- **What is committed instead.** The decision, once made: an ADR or a design document.
-- **No references to plans.** Code, comments, package metadata and documents do not cite a plan, by path or by number. Cite the ADR, the design document or the issue. Ids that only a plan defined (work packages, register entries, section numbers) go with it; decision, invariant and defect ids an ADR records are cited through that ADR, such as `ADR-0182 D14`.
-- **Asked for a plan, deliver a document.** Write it where the owner can read it and stop. Do not commit it, do not open a pull request for it, and do not treat a session's default git instructions as permission to.
-- **The gate.** `pnpm run plans:guard` fails when a tracked or staged Markdown file has the frontmatter type `Plan`, `Implementation Plan`, `Delivery Plan` or `One-Shot Agent Instruction`, or when anything under `plans/` or `docs/plans/` is tracked. The pre-commit hook runs it on staged files, and the docs checks run it over the whole tree. Do not rename a plan's type to get past it.
+The repository does not keep plans, roadmaps, or design documents. Implement
+their outstanding work before removing existing artifacts. The existing
+`plans:guard` checks tracked plan documents. `source:guard` checks added or
+changed planning and design documents and new comments in JavaScript, TypeScript,
+shell, Python, CSS, and HTML; the common rule above applies to every language.
+Both run through the shared pre-commit and CI checks.
 
 ## Legal hygiene rules
 
@@ -458,7 +459,7 @@ These are cheap to honor and expensive to unwind.
 
 ## Keys & risks (read before enabling gbrain)
 - **gbrain needs an initialized embedding provider.** `gbrain init --pglite` can use local Ollama with no key or egress. Remote `OPENAI_API_KEY` / `ZEROENTROPY_API_KEY` / `VOYAGE_API_KEY` providers receive embedding/query text and may cost money; don't send them sensitive content. Configure remote keys via `.env` (see `.env.example`).
-- **Serena / headroom / RTK / improve / caveman / ponytail / superpowers** need **no keys** and run locally; superpowers has optional telemetry (set `SUPERPOWERS_DISABLE_TELEMETRY=1` to disable).
+- **Serena / headroom / RTK / caveman / ponytail / superpowers** need **no keys** and run locally; superpowers has optional telemetry (set `SUPERPOWERS_DISABLE_TELEMETRY=1` to disable).
 - **SkillOpt** is installed from `microsoft/SkillOpt`; its default sleep mock backend is no-spend, but real `codex`, `claude`, OpenAI, Azure OpenAI, Qwen, or MiniMax backends use the credentials/budget you configure.
 - **caveman** was installed via a `curl … | bash` shim (forwarding to `npx github:JuliusBrussee/caveman`); the pinned installer is handled in `scripts/setup-agent-tools.sh`.
 - Committing `.mcp.json` / `.cursor/mcp.json` means opening this repo in Claude Code or Cursor will prompt to launch the `serena`, `headroom`, and `gbrain` MCP servers. Decline if you don't want them.
@@ -468,7 +469,7 @@ These are cheap to honor and expensive to unwind.
 - **Cursor** — `.cursor/mcp.json` (same three servers).
 - **Codex** — trusted projects load `.codex/config.toml`; copy its `[mcp_servers.*]` tables into `~/.codex/config.toml`, or run `codex mcp add …`, only for a global fallback (see the setup script).
 
-Progressive setup: run `bash scripts/setup-agent-tools.sh --common-only --no-gbrain` first (this is also the devcontainer default), then run `bash scripts/setup-agent-tools.sh --agent claude-code|cursor|codex|copilot --no-gbrain` only for the client you actually use. Shared MCP launchers should live in `scripts/` first (for example `scripts/agent-mcp-serena.sh`) and then be referenced by `.mcp.json`, `.cursor/mcp.json`, and `.codex/config.toml`. When one agent-specific config changes, update the other supported configs in the same commit or document why it does not apply. Skills (`repo`, `draft`, `improve`, `caveman`, `ponytail`) live in `.claude/skills/` (Claude Code) and `.agents/skills/` (Cursor + Codex). ponytail is invocation-based here (`/ponytail …`), not always-on — run `/ponytail` to activate it for a session (it can be made always-on via `/plugin install ponytail@ponytail` in Claude Code if you want that).
+Progressive setup: run `bash scripts/setup-agent-tools.sh --common-only --no-gbrain` first (this is also the devcontainer default), then run `bash scripts/setup-agent-tools.sh --agent claude-code|cursor|codex|copilot --no-gbrain` only for the client you actually use. Shared MCP launchers should live in `scripts/` first (for example `scripts/agent-mcp-serena.sh`) and then be referenced by `.mcp.json`, `.cursor/mcp.json`, and `.codex/config.toml`. When one agent-specific config changes, update the other supported configs in the same commit or document why it does not apply. Skills (`repo`, `draft`, `caveman`, `ponytail`) live in `.claude/skills/` (Claude Code) and `.agents/skills/` (Cursor + Codex). ponytail is invocation-based here (`/ponytail …`), not always-on — run `/ponytail` to activate it for a session (it can be made always-on via `/plugin install ponytail@ponytail` in Claude Code if you want that).
 
 ## Superpowers plugin (Claude Code · Codex · Copilot)
 `superpowers` is a **plugin** (not a skills-dir install), from the `obra/superpowers-marketplace`. It's wired repo-portably for **Claude Code** via [`.claude/settings.json`](.claude/settings.json) (`extraKnownMarketplaces` + `enabledPlugins`), so it auto-enables when you open the repo. For **Codex** and **GitHub Copilot CLI**, install per-machine (the setup script runs these if those CLIs are present):
@@ -480,7 +481,7 @@ codex plugin marketplace add obra/superpowers-marketplace && codex plugin instal
 # GitHub Copilot CLI:
 copilot plugin marketplace add obra/superpowers-marketplace && copilot plugin install superpowers@superpowers-marketplace
 ```
-Skills load at **session start** (a SessionStart hook), so enable it, then start a fresh session to use `brainstorming`, `writing-plans`, `requesting-code-review`, etc.
+Skills load at **session start** (a SessionStart hook). Every skill remains subject to the repository rules above.
 
 <!-- caveman:begin — terse-output directive. Caveman mode is INSTALLED and ON by default.
      To disable: delete `.cursor/rules/caveman.mdc`, remove this block, and run
@@ -722,13 +723,14 @@ other — `site/src/lib/examples`, `packages/componentize`, and the
 shared run. A red bare-root run is not by itself evidence of a regression;
 reproduce under the owning package before believing it.
 
-The root config excludes three things it cannot execute, each of which runs
-elsewhere: `external/` (vendored third-party source — `external/ts-autocode` is a
-git submodule with its own CI), `dist/` (build output, where every compiled
-`*.test.js` is a staler duplicate of a source test that already runs), and
-Playwright specs (`@playwright/test`, driven from `packages/pixel-village`'s own
-`playwright.config.ts`). Before that exclude existed a bare root run reported
-~40 failures on a clean tree, which is enough noise to hide a real one.
+The root config excludes `external/` (vendored third-party source —
+`external/ts-autocode` is a git submodule with its own CI), `dist/` (build
+output whose compiled tests duplicate source tests), and files under `**/e2e/**`
+or matching `**/*.spec.ts`. The latter patterns keep other runners' suites out
+of root Vitest; they do not show that those suites have run. For example,
+Bombadil browser specs run through their evaluation harness when present. Before
+these exclusions a bare root run reported ~40 failures on a clean tree, enough
+noise to hide a real one.
 
 Tests that require a binary or hardware **fail rather than skip** when it is
 absent — `packages/runtimes/runtime-celld/test/live-*.test.ts` says so in the
