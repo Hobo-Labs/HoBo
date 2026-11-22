@@ -1,12 +1,16 @@
 import { tmpdir } from "node:os";
 import { PassThrough } from "node:stream";
-import { readOwnerTurn } from "@hobo/hobo-ci";
+import {
+	OwnerStoreOperationUncertainError,
+	readOwnerTurn,
+} from "@hobo/hobo-ci";
 import { createHoboMcpServer } from "@hobo/mcp";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createComposedHoboCli } from "../src/cli.js";
 import { composeHoboMcp } from "../src/mcp-serve.js";
 import { handleMcpMessage, localOperatorAuth } from "../src/mcp-stdio.js";
+import { OwnerWriteGuardUnavailableError } from "../src/owner-write-guard.js";
 
 const textResult = z.object({
 	result: z.object({
@@ -61,6 +65,32 @@ function fixture(limited = false) {
 }
 
 describe("MCP owner setup privacy", () => {
+	it("reports an unavailable write guard without exposing private errors", async () => {
+		const f = fixture();
+		try {
+			f.run.mockRejectedValueOnce(new OwnerWriteGuardUnavailableError());
+			const unavailable = await f.call("cd", ["up", "--hand-off"]);
+			expect(unavailable.body).toMatchObject({
+				ok: false,
+				code: "HOBO_MCP_OWNER_WRITE_GUARD_UNAVAILABLE",
+			});
+			f.run.mockRejectedValueOnce(new OwnerStoreOperationUncertainError());
+			const uncertain = await f.call("cd", ["up", "--hand-off"]);
+			expect(uncertain.body).toMatchObject({
+				ok: false,
+				code: "HOBO_CD_STORE_OPERATION_UNCERTAIN",
+			});
+			f.run.mockRejectedValueOnce(new Error("synthetic-private-value"));
+			const failed = await f.call("cd", ["up", "--hand-off"]);
+			expect(failed.body.code).toBe("HOBO_MCP_SETUP_FAILED");
+			expect(JSON.stringify(failed.response)).not.toContain(
+				"synthetic-private-value",
+			);
+		} finally {
+			await f.owner.close();
+		}
+	});
+
 	it("rejects interactive and legacy setup before provider dispatch, including leading options", async () => {
 		const f = fixture();
 		try {

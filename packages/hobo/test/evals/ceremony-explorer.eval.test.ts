@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -104,6 +104,7 @@ async function runSchedule(schedule: Schedule) {
 	}
 	for (const [name, value] of Object.entries({
 		XDG_CONFIG_HOME: config,
+		XDG_STATE_HOME: config,
 		CLAUDE_CODE_REMOTE: "true",
 		HTTPS_PROXY: world.proxyUrl,
 		HTTP_PROXY: world.proxyUrl,
@@ -317,11 +318,7 @@ async function runSchedule(schedule: Schedule) {
 				await next((m) => m.id === ids);
 				continue;
 			}
-			if (
-				code !== undefined &&
-				code.startsWith("HOBO_CD_") &&
-				!/PLAN_REJECTED/u.test(code)
-			)
+			if (code?.startsWith("HOBO_CD_") && !/PLAN_REJECTED/u.test(code))
 				continue;
 			break;
 		}
@@ -331,6 +328,7 @@ async function runSchedule(schedule: Schedule) {
 		await world.close();
 		await api.close();
 		vi.unstubAllEnvs();
+		rmSync(config, { recursive: true, force: true });
 	}
 	return {
 		events: eventsFromWire(wire),

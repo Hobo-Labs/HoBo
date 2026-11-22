@@ -108,7 +108,7 @@ describe("prepareJournalFleet", () => {
 		const broken = fakeNeon("journal-3");
 		await expect(
 			prepareJournalFleet({ store, provisioners: [broken.provisioner] }),
-		).rejects.toThrow(/unreachable/u);
+		).rejects.toThrow(/uncertain outcome/u);
 		expect(broken.created).toEqual(["journal-1", "journal-2"]);
 		const resumed = fakeNeon();
 		expect(

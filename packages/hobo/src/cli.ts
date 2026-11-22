@@ -207,6 +207,23 @@ registerInstallable("runtime-cloud-native", () =>
 	createCloudNativeRuntimeCatalogEntry(),
 );
 
+export function ownerForFamily(
+	owner: OwnerChannel | undefined,
+	family: "ci" | "cd",
+	cwd: string,
+): OwnerChannel | undefined {
+	if (!owner) return undefined;
+	if (owner.bindScope) return owner.bindScope(family, cwd);
+	const scoped = owner.forScope?.(family, cwd) ?? owner;
+	return {
+		...scoped,
+		...(owner.vaultFor ? { vault: owner.vaultFor(family, cwd) } : undefined),
+		...(owner.storeSettingsFor
+			? { storeSettings: owner.storeSettingsFor(family, cwd) }
+			: undefined),
+	};
+}
+
 export function createComposedHoboCli(
 	options: ComposedHoboCliOptions = {},
 ): HoboCli {
@@ -292,18 +309,8 @@ export function createComposedHoboCli(
 	const familyOwner = (
 		family: "ci" | "cd",
 		cwd: string,
-	): OwnerChannel | undefined => {
-		const owner = options.ownerChannel;
-		if (!owner) return undefined;
-		const scoped = owner.forScope?.(family, cwd) ?? owner;
-		return {
-			...scoped,
-			...(owner.vaultFor ? { vault: owner.vaultFor(family, cwd) } : undefined),
-			...(owner.storeSettingsFor
-				? { storeSettings: owner.storeSettingsFor(family, cwd) }
-				: undefined),
-		};
-	};
+	): OwnerChannel | undefined =>
+		ownerForFamily(options.ownerChannel, family, cwd);
 	const ci = createCiCommand({
 		runtime,
 		ownerFor: (cwd) => familyOwner("cd", cwd),

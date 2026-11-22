@@ -1,14 +1,28 @@
 import type { SettingsStore } from "@hobo/connect-ui";
 import type { TrustedVault } from "@hobo/core";
+import type { PreparedStoreWrite } from "./secret-stores.js";
 
 export interface OwnerSettingsStore extends SettingsStore {
 	readonly hasSessionChoice?: () => boolean;
+	readonly requiresOwnerChoice?: () => boolean;
+	readonly selectionRevision?: () => number;
+	readonly locatorRevision?: () => number;
+	readonly canReuseOwnerProof?: () => boolean;
+	readonly hasExclusiveMutationAuthority?: () => boolean;
+	readonly recordStoreChange?: () => void;
 	readonly onOwnerChoice?: () => void;
 	readonly assertCurrent?: () => void;
 	readonly selectionSignal?: AbortSignal;
 	readonly hasPendingWrites?: () => boolean;
 	readonly markUncertainWrite?: () => void;
-	readonly runStoreWrite?: <T>(write: () => Promise<T>) => Promise<T>;
+	readonly runStoreWrite?: <T>(
+		write: () => Promise<T>,
+		validateBeforeDispatch?: () => true,
+	) => Promise<T>;
+	readonly runPreparedStoreWrite?: <P, T>(
+		prepareReadOnly: () => Promise<PreparedStoreWrite<P, T>>,
+		write: (prepared: P) => Promise<T>,
+	) => Promise<T>;
 }
 
 /**
@@ -33,6 +47,7 @@ export interface OwnerChannel {
 	reserveCaptures?(names: readonly string[]): void;
 	requestCaptures?(names: readonly string[]): Promise<void>;
 	forScope?(family: "ci" | "cd", cwd: string): OwnerChannel;
+	bindScope?(family: "ci" | "cd", cwd: string): OwnerChannel;
 	/**
 	 * Show the owner a link now, while the run waits on what they do there (a
 	 * device code to approve). Through the HoBo MCP server: the host's own

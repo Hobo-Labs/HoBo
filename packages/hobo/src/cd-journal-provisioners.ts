@@ -27,6 +27,9 @@ export function neonJournalProvisioner(
 ): JournalMemberProvisioner {
 	return {
 		plan: "neon-claimable",
+		...(claims === undefined
+			? { requiredOwnerStoreCapability: "atomic-create" as const }
+			: undefined),
 		async create({ idempotencyKey, store: owner }) {
 			// Neon has no server-side idempotency. An in-memory claim cannot
 			// prevent a second process or a retry after a crash from creating

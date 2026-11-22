@@ -365,6 +365,10 @@ export async function ownerStoreSessionEnvironment(
 ): Promise<Env> {
 	const locator = ownerLocator(deps);
 	locator.assertCurrent?.();
+	if (locator.requiresOwnerChoice?.())
+		return Object.fromEntries(
+			Object.entries(env).filter(([name]) => !isOwnerStoreSetting(name)),
+		);
 	if (
 		!locator.hasSessionChoice?.() ||
 		!(await locator.read()).HOBO_SECRET_STORE
@@ -402,9 +406,22 @@ export async function ownerStore(
 		const check = locator.assertCurrent;
 		const write = <T>(operation: () => Promise<T>): Promise<T> =>
 			locator.runStoreWrite ? locator.runStoreWrite(operation) : operation();
+		const writePrepared: NonNullable<
+			OpenedSecretStore["withPreparedWriteLock"]
+		> = (prepareReadOnly, operation) => {
+			if (locator.runPreparedStoreWrite)
+				return locator.runPreparedStoreWrite(prepareReadOnly, operation);
+			return write(async () => {
+				const prepared = await prepareReadOnly();
+				return prepared.kind === "completed"
+					? prepared.result
+					: operation(prepared.value);
+			});
+		};
 		const mutate = <T>(operation: () => Promise<T>): Promise<T> =>
 			write(async () => {
 				check();
+				locator.recordStoreChange?.();
 				try {
 					return await operation();
 				} catch (error) {
@@ -415,6 +432,7 @@ export async function ownerStore(
 		return {
 			...store,
 			withWriteLock: write,
+			withPreparedWriteLock: writePrepared,
 			port: {
 				id: port.id,
 				kind: port.kind,
