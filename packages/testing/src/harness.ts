@@ -388,7 +388,9 @@ export function createTestHarness(
 	async function ensure(bindle: unknown): Promise<HarnessState> {
 		const existing = states.get(bindle);
 		if (existing?.closing !== undefined) {
-			await existing.closing;
+			await existing.closing.catch(() => undefined);
+			if (existing.closeFailure !== undefined)
+				throw existing.closeFailure.cause;
 			return ensure(bindle);
 		}
 		if (existing?.closeFailure !== undefined) throw existing.closeFailure.cause;

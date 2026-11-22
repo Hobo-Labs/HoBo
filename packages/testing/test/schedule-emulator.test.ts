@@ -627,10 +627,12 @@ describe("in-process schedules", () => {
 		await running;
 		const closing = harness.destroy(bindle)();
 		await startedClosing;
-		const replacement = await harness.deploy(bindle)();
+		const pending = harness.deploy(bindle)();
 		release();
 		await advancing;
 		await closing;
+		const replacement = await pending;
+		expect(replacement).not.toBe(original);
 		expect(await harness.deploy(bindle)()).toBe(replacement);
 		await harness.destroy(bindle)();
 	});

@@ -4,7 +4,7 @@ import {
 	parseQueueName,
 	parseTopicName,
 } from "@hobo/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	createQueueEmulator,
 	createTestHarness,
@@ -304,11 +304,14 @@ describe("in-process service emulators", () => {
 		const oldDestroy = harness
 			.destroy(bindle)()
 			.catch((error: Error) => error);
-		const replacement = await harness.deploy(bindle)();
-		if (!failFirst) throw new Error("first factory did not start");
-		failFirst();
+		const pending = harness.deploy(bindle)();
+		await vi.waitFor(() => {
+			if (!failFirst) throw new Error("first factory did not start");
+		});
+		failFirst?.();
 		await oldDeploy;
 		await oldDestroy;
+		const replacement = await pending;
 		try {
 			expect(await harness.deploy(bindle)()).toBe(replacement);
 			expect(calls).toBe(2);
@@ -338,11 +341,14 @@ describe("in-process service emulators", () => {
 		});
 		const oldDeploy = harness.deploy(bindle)();
 		const oldDestroy = harness.destroy(bindle)();
-		await harness.deploy(bindle)();
-		if (!finishFirst) throw new Error("first factory did not start");
-		finishFirst();
+		const pending = harness.deploy(bindle)();
+		await vi.waitFor(() => {
+			if (!finishFirst) throw new Error("first factory did not start");
+		});
+		finishFirst?.();
 		await oldDeploy;
 		await oldDestroy;
+		await pending;
 		try {
 			await expect(harness.untilReady("jobs")).rejects.toMatchObject({
 				code: "HARNESS_ENDPOINT_UNAVAILABLE",

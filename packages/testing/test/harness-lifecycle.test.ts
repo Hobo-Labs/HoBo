@@ -29,6 +29,7 @@ function deployment(id: number) {
 		handles: new Map(),
 		bindings: {},
 		servers: new Map(),
+		schedules: new Map(),
 		topology: { nodes: [], edges: [] },
 	};
 }
@@ -153,7 +154,7 @@ describe("harness deployment lifecycle", () => {
 		expect(lane.deploy).toHaveBeenCalledTimes(1);
 	});
 
-	it("propagates a failed start to waiters and permits a later retry", async () => {
+	it("propagates a failed start to its waiters and starts a queued redeploy fresh", async () => {
 		const start = deferred<ReturnType<typeof deployment>>();
 		const failure = new Error("start failed");
 		lane.deploy
@@ -162,9 +163,10 @@ describe("harness deployment lifecycle", () => {
 		const harness = harnessForTest();
 		const bindle = {};
 		const first = harness.deploy(bindle)();
+		const second = harness.deploy(bindle)();
 		const close = harness.destroy(bindle)();
 		const retryWhileClosing = harness.deploy(bindle)();
-		const outcomes = Promise.allSettled([first, close, retryWhileClosing]);
+		const outcomes = Promise.allSettled([first, second, close]);
 		start.reject(failure);
 		expect(await outcomes).toEqual(
 			Array.from({ length: 3 }, () => ({
@@ -172,7 +174,8 @@ describe("harness deployment lifecycle", () => {
 				reason: failure,
 			})),
 		);
-		await harness.deploy(bindle)();
+		const retried = await retryWhileClosing;
+		expect(await harness.deploy(bindle)()).toBe(retried);
 		expect(lane.deploy).toHaveBeenCalledTimes(2);
 	});
 });
