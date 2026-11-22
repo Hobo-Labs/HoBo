@@ -1,24 +1,3 @@
-/**
- * `hobo ci app create`: create the hosted relay's GitHub App with GitHub's
- * manifest flow and deposit its credentials straight into the config service
- * (Infisical, ADR-0179). The private key, webhook secret and client secret are
- * held in this process's memory between GitHub's answer and Infisical's, and
- * are never written to disk, printed, or put in an error.
- *
- * Manifest flow: https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
- * The conversion is one-time: GitHub returns the credentials once, so a failed
- * deposit is retried from memory, and if it cannot succeed the App has to be
- * deleted and created again.
- *
- * Secretless first (ADR-0179 amendment): with `--via-workflow` this machine
- * never holds the credentials or any Infisical credential. It gets GitHub's
- * one-time manifest code from the browser's redirect and hands it, on stdin
- * to `gh workflow run`, to the relay deploy workflow's App-credentials job,
- * which converts it and writes the credentials straight into the relay's
- * folder as `hobo-ci-writer` over GitHub OIDC (`hobo ci app deposit`). The
- * one browser click on GitHub's "Create GitHub App" page stays.
- */
-
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
@@ -671,7 +650,7 @@ export async function runCiAppCreate(
 				);
 			}
 			return {
-				message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as hobo-ci-deploy; no credential touched this machine. Watch it with \`gh run watch\`.`,
+				message: `Handed GitHub's one-time code to ${APP_CREDENTIALS_WORKFLOW} (job "Deposit the GitHub App's credentials"). It converts the code and writes the App's credentials straight into the relay's folder as the store writer identity; no credential touched this machine. Watch it with \`gh run watch\`.`,
 				data: { handoff: APP_CREDENTIALS_WORKFLOW },
 			};
 		}

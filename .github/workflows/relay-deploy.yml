@@ -22,9 +22,10 @@ name: HoBo relay deploy
 #
 # Building and deploying are separate jobs: `deploy-build` holds no OIDC
 # identity (contents: read only) and builds the hobo CLI the privileged jobs
-# run, handing it over as an artifact whose sha256 each consumer verifies
-# before it runs anything (scripts/ci/release-freight-cli.mts restore, fail
-# closed on digest or revision mismatch). The `deploy` and `app-credentials`
+# run. Each privileged consumer downloads the artifact and verifies its sha256
+# and revision with an inline bootstrap before running repository code; the
+# checked-out repository, dependency install (no lifecycle scripts) and local
+# actions run only after that verification. The `deploy` and `app-credentials`
 # jobs alone hold id-token: write, and build nothing.
 #
 # No secret and no repository variable configures relay deployment. The store's
@@ -160,7 +161,13 @@ jobs:
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
       - name: Pack the built hobo CLI (digest + revision)
         id: pack
-        run: node --no-warnings scripts/ci/release-freight-cli.mts pack "${RUNNER_TEMP}/relay-deploy-cli.tgz" --github-output "$GITHUB_OUTPUT"
+        run: |
+          node --no-warnings scripts/ci/release-freight-cli.mts pack "${RUNNER_TEMP}/relay-deploy-cli.tgz" \
+            --github-output "$GITHUB_OUTPUT" \
+            --include scripts/ci/relay-deploy-environment.mts \
+            --include scripts/ci/relay-deploy-secret-store-verify-report.mts \
+            --include scripts/ci/relay-deploy-redaction.mts \
+            --include scripts/ci/relay-deploy-verify.mts
       - name: Upload the built hobo CLI
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -196,9 +203,12 @@ jobs:
         with:
           clean: false
           fetch-depth: 2
+          persist-credentials: false
       - name: Start the deploy deadline
         id: deadline
-        run: node --input-type=module --experimental-strip-types --no-warnings -e 'import { deployDeadline } from "./scripts/ci/relay-deploy-gate.mts"; console.log(`deadline=${deployDeadline(Date.now())}`);' >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          node --input-type=module --no-warnings -e 'const m=17*60_000; console.log(`deadline=${new Date(Date.now()+m).toISOString()}`);' >> "$GITHUB_OUTPUT"
       - name: Require the GitHub OIDC mint
         if: needs.gate.outputs.run == 'true'
         run: |
@@ -207,28 +217,81 @@ jobs:
             echo "::error title=Relay deploy::OIDC mint unavailable; the deploy credential read requires id-token: write"
             exit 1
           fi
-      - name: Verify the protected deploy environment
-        if: needs.gate.outputs.run == 'true'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-environment.mts --environment hobo-ci-deploy
-      - if: needs.gate.outputs.run == 'true'
-        uses: $/.github/actions/ci-runner-preflight
-      - if: needs.gate.outputs.run == 'true'
-        uses: $/.github/actions/pnpm-store
-      - if: needs.gate.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
       - name: Download the built hobo CLI
         if: needs.gate.outputs.run == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: relay-deploy-cli
           path: ${{ runner.temp }}/relay-deploy-cli
-      - name: Restore the built hobo CLI (deploy runs only this artifact)
+      - name: Restore the built hobo CLI (inline bootstrap, no repo code)
         if: needs.gate.outputs.run == 'true'
         env:
           HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}
-        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/relay-deploy-cli/relay-deploy-cli.tgz" --digest "$HOBO_RELAY_CLI_DIGEST"
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/bootstrap-restore.mjs" <<'BOOTSTRAP'
+          import { createHash } from "node:crypto";
+          import { existsSync, readFileSync, rmSync } from "node:fs";
+          import { join } from "node:path";
+          import { spawnSync } from "node:child_process";
+          const [bundle, digest, root, revision] = process.argv.slice(2);
+          if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) throw new Error(`bad digest: ${digest}`);
+          if (!existsSync(bundle)) throw new Error(`missing bundle: ${bundle}`);
+          const actual = `sha256:${createHash("sha256").update(readFileSync(bundle)).digest("hex")}`;
+          if (actual !== digest) throw new Error(`digest mismatch: ${actual} != ${digest}`);
+          const tar = (args, input) => {
+            const r = spawnSync("tar", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, input });
+            if (r.status !== 0) throw new Error(`tar ${args.join(" ")} failed: ${(r.stderr || "").trim()}`);
+            return r.stdout ?? "";
+          };
+          const manifest = JSON.parse(tar(["-xzOf", bundle, "hobo-release-cli.json"]));
+          if (manifest.schema !== "hobo.release-cli-bundle/v1") throw new Error("bad manifest schema");
+          if (!/^[0-9a-f]{40}$/u.test(manifest.revision)) throw new Error("bad manifest revision");
+          if (manifest.revision !== revision) throw new Error(`revision mismatch: ${manifest.revision} != ${revision}`);
+          if (!Array.isArray(manifest.packages) || manifest.packages.length === 0) throw new Error("bad manifest packages");
+          const allowed = manifest.packages.map((p) => {
+            const dir = String(p?.directory ?? "");
+            if (!/^(?:packages|external)\/[A-Za-z0-9._/-]+$/u.test(dir)) throw new Error(`bad directory: ${dir}`);
+            if (dir.split("/").includes("..")) throw new Error(`bad directory: ${dir}`);
+            return `${dir}/dist`;
+          });
+          const allowedFiles = Array.isArray(manifest.files) ? manifest.files.map((f) => {
+            const file = String(f ?? "");
+            if (!/^(?:scripts|packages)\/[A-Za-z0-9._/-]+\.(?:mts|ts|mjs|js|json)$/u.test(file)) throw new Error(`bad file: ${file}`);
+            if (file.split("/").includes("..")) throw new Error(`bad file: ${file}`);
+            return file;
+          }) : [];
+          const listing = tar(["-tvzf", bundle]).split("\n").filter((l) => l.trim() !== "");
+          for (const line of listing) {
+            const kind = line[0];
+            if (kind !== "-" && kind !== "d") throw new Error(`unsafe entry kind: ${line}`);
+          }
+          const entries = tar(["-tzf", bundle]).split("\n").map((l) => l.trim().replace(/^\.\//u, "")).filter((l) => l !== "" && l !== ".");
+          for (const entry of entries) {
+            if (entry === "hobo-release-cli.json") continue;
+            const path = entry.replace(/\/$/u, "");
+            if (path.split("/").includes("..")) throw new Error(`unsafe path: ${entry}`);
+            const inside = allowed.some((d) => path === d || path.startsWith(`${d}/`)) || allowedFiles.includes(path);
+            if (!inside) throw new Error(`outside dist: ${entry}`);
+          }
+          for (const d of allowed) rmSync(join(root, d), { recursive: true, force: true });
+          tar(["-xzf", bundle, "--no-same-owner", "-C", root, ...allowed, ...allowedFiles]);
+          for (const d of allowed) if (!existsSync(join(root, d))) throw new Error(`missing restored: ${d}`);
+          for (const f of allowedFiles) if (!existsSync(join(root, f))) throw new Error(`missing restored: ${f}`);
+          console.log(`restored ${allowed.length} dist dirs and ${allowedFiles.length} files at ${revision}`);
+          BOOTSTRAP
+          node --no-warnings "$RUNNER_TEMP/bootstrap-restore.mjs" "${RUNNER_TEMP}/relay-deploy-cli/relay-deploy-cli.tgz" "$HOBO_RELAY_CLI_DIGEST" "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+      - if: needs.gate.outputs.run == 'true'
+        uses: $/.github/actions/ci-runner-preflight
+      - if: needs.gate.outputs.run == 'true'
+        uses: $/.github/actions/pnpm-store
+      - if: needs.gate.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false --ignore-scripts
+      - name: Verify the protected deploy environment
+        if: needs.gate.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-environment.mts --environment hobo-ci-deploy
       # Pass/fail by identity name and id: hobo-ci-deploy-reader signs in with
       # this job's GitHub OIDC token at its own audience, reads VERCEL_TOKEN
       # without logging its value, proves exactly Viewer membership, and must
@@ -378,22 +441,76 @@ jobs:
         with:
           clean: false
           fetch-depth: 1
-      - name: Verify the protected writer environment
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-environment.mts --environment hobo-ci-app-credentials
-      - uses: $/.github/actions/ci-runner-preflight
-      - uses: $/.github/actions/pnpm-store
-      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+          persist-credentials: false
       - name: Download the built hobo CLI
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: relay-deploy-cli
           path: ${{ runner.temp }}/relay-deploy-cli
-      - name: Restore the built hobo CLI (the deposit runs only this artifact)
+      - name: Restore the built hobo CLI (inline bootstrap, no repo code)
         env:
           HOBO_RELAY_CLI_DIGEST: ${{ needs.deploy-build.outputs.digest }}
-        run: node --no-warnings scripts/ci/release-freight-cli.mts restore "${RUNNER_TEMP}/relay-deploy-cli/relay-deploy-cli.tgz" --digest "$HOBO_RELAY_CLI_DIGEST"
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/bootstrap-restore.mjs" <<'BOOTSTRAP'
+          import { createHash } from "node:crypto";
+          import { existsSync, readFileSync, rmSync } from "node:fs";
+          import { join } from "node:path";
+          import { spawnSync } from "node:child_process";
+          const [bundle, digest, root, revision] = process.argv.slice(2);
+          if (!/^sha256:[0-9a-f]{64}$/u.test(digest)) throw new Error(`bad digest: ${digest}`);
+          if (!existsSync(bundle)) throw new Error(`missing bundle: ${bundle}`);
+          const actual = `sha256:${createHash("sha256").update(readFileSync(bundle)).digest("hex")}`;
+          if (actual !== digest) throw new Error(`digest mismatch: ${actual} != ${digest}`);
+          const tar = (args, input) => {
+            const r = spawnSync("tar", args, { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, input });
+            if (r.status !== 0) throw new Error(`tar ${args.join(" ")} failed: ${(r.stderr || "").trim()}`);
+            return r.stdout ?? "";
+          };
+          const manifest = JSON.parse(tar(["-xzOf", bundle, "hobo-release-cli.json"]));
+          if (manifest.schema !== "hobo.release-cli-bundle/v1") throw new Error("bad manifest schema");
+          if (!/^[0-9a-f]{40}$/u.test(manifest.revision)) throw new Error("bad manifest revision");
+          if (manifest.revision !== revision) throw new Error(`revision mismatch: ${manifest.revision} != ${revision}`);
+          if (!Array.isArray(manifest.packages) || manifest.packages.length === 0) throw new Error("bad manifest packages");
+          const allowed = manifest.packages.map((p) => {
+            const dir = String(p?.directory ?? "");
+            if (!/^(?:packages|external)\/[A-Za-z0-9._/-]+$/u.test(dir)) throw new Error(`bad directory: ${dir}`);
+            if (dir.split("/").includes("..")) throw new Error(`bad directory: ${dir}`);
+            return `${dir}/dist`;
+          });
+          const allowedFiles = Array.isArray(manifest.files) ? manifest.files.map((f) => {
+            const file = String(f ?? "");
+            if (!/^(?:scripts|packages)\/[A-Za-z0-9._/-]+\.(?:mts|ts|mjs|js|json)$/u.test(file)) throw new Error(`bad file: ${file}`);
+            if (file.split("/").includes("..")) throw new Error(`bad file: ${file}`);
+            return file;
+          }) : [];
+          const listing = tar(["-tvzf", bundle]).split("\n").filter((l) => l.trim() !== "");
+          for (const line of listing) {
+            const kind = line[0];
+            if (kind !== "-" && kind !== "d") throw new Error(`unsafe entry kind: ${line}`);
+          }
+          const entries = tar(["-tzf", bundle]).split("\n").map((l) => l.trim().replace(/^\.\//u, "")).filter((l) => l !== "" && l !== ".");
+          for (const entry of entries) {
+            if (entry === "hobo-release-cli.json") continue;
+            const path = entry.replace(/\/$/u, "");
+            if (path.split("/").includes("..")) throw new Error(`unsafe path: ${entry}`);
+            const inside = allowed.some((d) => path === d || path.startsWith(`${d}/`)) || allowedFiles.includes(path);
+            if (!inside) throw new Error(`outside dist: ${entry}`);
+          }
+          for (const d of allowed) rmSync(join(root, d), { recursive: true, force: true });
+          tar(["-xzf", bundle, "--no-same-owner", "-C", root, ...allowed, ...allowedFiles]);
+          for (const d of allowed) if (!existsSync(join(root, d))) throw new Error(`missing restored: ${d}`);
+          for (const f of allowedFiles) if (!existsSync(join(root, f))) throw new Error(`missing restored: ${f}`);
+          console.log(`restored ${allowed.length} dist dirs and ${allowedFiles.length} files at ${revision}`);
+          BOOTSTRAP
+          node --no-warnings "$RUNNER_TEMP/bootstrap-restore.mjs" "${RUNNER_TEMP}/relay-deploy-cli/relay-deploy-cli.tgz" "$HOBO_RELAY_CLI_DIGEST" "$GITHUB_WORKSPACE" "$GITHUB_SHA"
+      - uses: $/.github/actions/ci-runner-preflight
+      - uses: $/.github/actions/pnpm-store
+      - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false --ignore-scripts
+      - name: Verify the protected writer environment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-environment.mts --environment hobo-ci-app-credentials
       - name: Verify the writer connection
         run: |
           set -euo pipefail

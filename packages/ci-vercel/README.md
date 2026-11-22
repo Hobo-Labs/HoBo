@@ -235,11 +235,14 @@ is the only builder, and the Vercel project is never connected to Git.
   (`POST /v10/projects/{project}/promote/{deployment}`): no rebuild, so
   production serves the bytes preview verified. It is READY only once
   production serves it.
-- **A failed production verification rolls back.** Production goes back to
-  the deployment it served before the promotion (`POST
-  /v1/projects/{project}/rollback/{deployment}`), and the command fails with
+- **A failed production verification attempts rollback.** HoBo attempts to
+  restore the deployment production served before the promotion (`POST
+  /v1/projects/{project}/rollback/{deployment}`) and fails the command with
   `HOBO_CI_DEPLOY_ROLLED_BACK` (or `HOBO_CI_DEPLOY_ROLLBACK_FAILED`, naming
-  the deployment to restore by hand).
+  the deployment to restore by hand). Vercel rollback has no conditional
+  current-target input, so an external promotion between the pre-rollback
+  check and the rollback cannot be prevented; the result reports the observed
+  outcome and requires manual recovery when it is not `rolled-back`.
 
 `--build git` (the default for other callers) still realizes from a git ref
 through `createVercelDeployProvider`'s git-artifact mode, which needs
@@ -263,11 +266,13 @@ cannot reach the relay is an unhealthy attempt, and no data fails the
 verification (a node whose origin is unset probes a reserved `.invalid` host).
 PASS is the only qualification. **A failed verification fails the promotion
 and the job.** With `--build prebuilt` a failed production verification also
-rolls production back to the deployment it served before the promotion (no
-rebuild). With `--build git` nothing is rolled back: the deployment that
-failed stays live on Vercel, because CI's journal is job-scoped and a
-production Camp there never has a predecessor Set to restore; roll back by
-hand (`vercel rollback`).
+attempts to restore the deployment production served before the promotion (no
+rebuild), but Vercel rollback has no conditional current-target input, so the
+command reports the observed outcome and requires manual recovery when the
+rollback cannot be established. With `--build git` nothing is rolled back: the
+deployment that failed stays live on Vercel, because CI's journal is
+job-scoped and a production Camp there never has a predecessor Set to restore;
+roll back by hand (`vercel rollback`).
 `hobo ci deploy --target production` needs `--sha` and is refused, before
 anything is sent, when preview has not qualified that commit
 (`HOBO_CI_DEPLOY_NOT_QUALIFIED`). `--wait` drives the promotion to its end;
@@ -332,32 +337,28 @@ runs `--target preview --wait` without either refuses before creation with
 origin it cannot attest; add the two inputs, or drop `--wait` and accept that
 nothing is verified or qualified.
 
-**Merge cutover (relay CD delivery):** this change lands with no
-`deployProjectId` in `deploy/secret-store.binding.json` (the fallback
-period). The relay's Vercel project is intentionally not Git-linked, and
-`vercel.json` keeps `"git": { "deploymentEnabled": false }` committed so a
-re-link cannot start deploying behind the gate either, so while no deploy
-project is bound **nothing deploys the relay**: the gate
-fails every event that would deploy — a relay push fails the required
-check, and a manual run fails the same way — naming this cutover, and
-`hobo ci deploy` run directly in that state refuses with
-`HOBO_CI_DEPLOY_AUTH_REQUIRED`. Merge and cutover are one step: the relay
-cannot ship through any channel until the cutover commit records the deploy
-project. The prerequisites can be
-prepared before merge: provision the Infisical deploy project, attach the
-`hobo-ci-deploy` identity with GitHub OIDC trust pinned to this repository —
-subject `ref == refs/heads/main`, `repository_id`/`repository_owner_id`
-claims, and audience `https://github.com/Hobo-Labs` (the exact trust
-`hobo ci secret-store connect` records and repairs) — store `VERCEL_TOKEN`
-there, and configure the Vercel Trusted Source with the same claim pin. The
-audience pin is what keeps the channels disjoint: the deploy-token read
-mints its token for `https://github.com/Hobo-Labs` while the
-protected-preview probe mints one for the deployment's own origin, so a
-probe token cannot be replayed to read `VERCEL_TOKEN`. The committed
-coordinates alone prove none of that.
+**Merge cutover (relay CD delivery):** this change lands with no deploy
+credential in `deploy/secret-store.binding.json` (a credential-free binding).
+The relay's Vercel project is intentionally not Git-linked, and `vercel.json`
+keeps `"git": { "deploymentEnabled": false }` committed so a re-link cannot
+start deploying behind the gate either. While no deploy credential is bound,
+the gate skips relay deployment with an explicit notice (no deployment, no red
+required check) and a direct `hobo ci deploy` run in that state refuses with
+`HOBO_CI_DEPLOY_AUTH_REQUIRED`. Provision the Infisical deploy project, attach
+the read-only `hobo-ci-deploy-reader` identity with GitHub OIDC trust pinned
+to this repository — `repository_id`/`repository_owner_id`, protected
+environment, `ref == refs/heads/main`, `workflow_ref` and `job_workflow_ref`
+(the exact trust `hobo ci secret-store connect` records and repairs) — store
+`VERCEL_TOKEN` there, and configure the Vercel Trusted Source with the same
+claim pin. The audience/environment/workflow pin keeps the channels disjoint:
+the deploy-token read mints its token for
+`https://github.com/Hobo-Labs/hobo-ci-deploy-reader` while the protected-
+preview probe mints one for the deployment's own origin, so a probe token
+cannot be replayed to read `VERCEL_TOKEN`. The committed coordinates alone
+prove none of that.
 
-**Cutover:** one push both binds the deploy project and retires the
-fallback. First record the deploy project and repair the identity's trust in
+**Cutover:** one push binds the deploy credential and enables deployment.
+First record the deploy project and repair the identity's trust in
 one run; a binding for ids other than the committed ones refuses without
 `--yes`:
 
@@ -366,25 +367,24 @@ GH_TOKEN=$(gh auth token) hobo ci secret-store connect --cwd packages/ci-vercel 
   --repo Hobo-Labs/HoBo --project-id <projectId> \
   --deploy-project-id <deployProjectId> \
   --relay-identity-id <hobo-ci-relay identity id> \
-  --deploy-identity-id <hobo-ci-deploy identity id> --team team_… --yes
+  --deploy-identity-id <hobo-ci-writer identity id> \
+  --deploy-credential-identity-id <hobo-ci-deploy-reader identity id> \
+  --team team_… --yes
 ```
 
 With `INFISICAL_TOKEN` from the owner's own login in that run's environment
-it updates `hobo-ci-deploy`'s OIDC trust in place; without it, set the
-printed subject and claims in the dashboard. In that cutover commit add the
-recorded `deployProjectId` to `deploy/secret-store.binding.json` and restore
-the test that pins it: `verify` on `main` then fails closed until the binding
-and the trust name the same deploy identity and project. The cutover push is
-itself relay-relevant, so its own `relay-deploy.yml` run is the new
+it updates the writer and deploy-reader OIDC trust in place; without it, set
+the printed subject and claims in the dashboard. In that cutover commit add the
+recorded deploy credential to `deploy/secret-store.binding.json`. The cutover
+push is itself relay-relevant, so its own `relay-deploy.yml` run is the new
 channel's first production observation (channel-observation rule): its
 *Verify the secret store connection* check must pass and its *Deliver the
 relay through HoBo CD* step summary must show `hobo ci deploy --target
 preview` and `hobo ci deploy --target production` each delivering the
 store-read credential's Freight, with the protected preview probe using
 OIDC. Link that run; until it is linked the new delivery path is built, not
-proven, and if it fails, revert the cutover commit — the gate then fails
-relay pushes closed again, and nothing deploys the relay until the cutover
-is retried.
+proven, and if it fails, revert the cutover commit — the gate then skips relay
+deployment again until the cutover is retried.
 
 **Production is deployed by CI, not by hand**:
 [`.github/workflows/relay-deploy.yml`](../../.github/workflows/relay-deploy.yml)

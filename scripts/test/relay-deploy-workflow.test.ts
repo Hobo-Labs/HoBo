@@ -478,8 +478,10 @@ describe("the relay deploy workflow", () => {
 			deploy,
 			/actions\/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333/u,
 		);
-		assert.match(deploy, /--digest "\$HOBO_RELAY_CLI_DIGEST"/u);
-		const restoreAt = deploy.indexOf("release-freight-cli.mts restore");
+		assert.match(deploy, /bootstrap-restore/u);
+		assert.match(deploy, /HOBO_RELAY_CLI_DIGEST/u);
+		assert.doesNotMatch(deploy, /release-freight-cli\.mts restore/u);
+		const restoreAt = deploy.indexOf("bootstrap-restore");
 		assert.ok(restoreAt > 0, "no digest-pinned restore");
 		assert.ok(
 			restoreAt < deploy.indexOf("ci secret-store verify"),
@@ -490,11 +492,11 @@ describe("the relay deploy workflow", () => {
 		assert.ok(deposit, "no app-credentials job");
 		assert.match(deposit, /needs: \[route, deploy-build\]/u);
 		assert.doesNotMatch(deposit, /turbo run build/u);
-		assert.match(deposit, /release-freight-cli\.mts restore/u);
-		assert.match(deposit, /--digest "\$HOBO_RELAY_CLI_DIGEST"/u);
+		assert.match(deposit, /bootstrap-restore/u);
+		assert.doesNotMatch(deposit, /release-freight-cli\.mts restore/u);
+		assert.match(deposit, /HOBO_RELAY_CLI_DIGEST/u);
 		assert.ok(
-			deposit.indexOf("release-freight-cli.mts restore") <
-				deposit.indexOf("ci app deposit"),
+			deposit.indexOf("bootstrap-restore") < deposit.indexOf("ci app deposit"),
 		);
 	});
 
@@ -626,10 +628,7 @@ describe("the relay deploy workflow", () => {
 		assert.ok(jobTimeout <= 20, "every job is capped at 20 minutes");
 		assert.ok(RELAY_DEPLOY_JOB_MARGIN_MINUTES >= 2);
 		assert.match(step("Start the deploy deadline"), /id: deadline/u);
-		assert.match(
-			step("Start the deploy deadline"),
-			/deployDeadline\(Date\.now\(\)\)/u,
-		);
+		assert.match(step("Start the deploy deadline"), /17\s*\*\s*60_000/u);
 		assert.equal(
 			deployDeadline(Date.UTC(2026, 10, 13, 12)),
 			"2026-11-13T12:17:00.000Z",
@@ -728,7 +727,7 @@ describe("the relay deploy workflow", () => {
 		);
 		stepBefore(
 			"Verify the protected deploy environment",
-			"Build the deploy tool and the relay's declarations",
+			"Verify the secret store connection",
 		);
 		const writerEnvironment = step("Verify the protected writer environment");
 		assert.match(writerEnvironment, /--environment hobo-ci-app-credentials/u);
@@ -737,7 +736,7 @@ describe("the relay deploy workflow", () => {
 		const writer = step("Verify the writer connection");
 		assert.match(writer, /--identity writer/u);
 		stepBefore(
-			"Restore the built hobo CLI (the deposit runs only this artifact)",
+			"Restore the built hobo CLI (inline bootstrap, no repo code)",
 			"Verify the writer connection",
 		);
 		stepBefore(

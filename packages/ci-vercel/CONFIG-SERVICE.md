@@ -469,13 +469,15 @@ before live verification starts: a lost promotion response continues only when
 that read names it, and a read naming another deployment (or none) means a
 concurrent promotion moved production, which this run leaves untouched and
 reports. A missing target or failed read returns the original failure. Failed
-live verification marks the CD promotion failed and runs its compensation. When
-production still names the rejected candidate, HoBo restores the previous
-deployment and re-reads the target. The result reports `completed` when that
-rollback succeeds, `failed` when the rejected candidate remains current,
-`superseded` when a concurrent promotion has taken production, or `unknown`
-when the target cannot be established. `failed` or `unknown` requires the named
-manual recovery.
+live verification marks the CD promotion failed and runs compensation. When
+production still names the rejected candidate, HoBo attempts to restore the
+previous deployment and re-reads the target. Vercel's rollback has no
+conditional current-target input, so HoBo cannot guarantee a concurrent
+promotion between the final pre-rollback read and the rollback is left
+untouched; a post-rollback read reports what happened. The command fails on a
+rejected candidate: a compensation result of `completed` means only that
+rollback succeeded, not that the deploy passed, and `failed`, `superseded`, or
+`unknown` requires the named manual recovery.
 When `--provision` is requested, the
 cache step runs the Vercel CLI (pinned `vercel@65.2.0`) with the
 deploy token in its environment: it lists the project's `upstash` resources,

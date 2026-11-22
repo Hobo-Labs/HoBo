@@ -654,8 +654,8 @@ export function createCiCommand(
 								: String(values["owner-id"]),
 						env: deps.env ?? process.env,
 						emitProgress,
-						...(deps.credentialFetch !== undefined
-							? { fetch: deps.credentialFetch }
+						...((deps.credentialFetch ?? deps.fetch) !== undefined
+							? { fetch: deps.credentialFetch ?? deps.fetch }
 							: undefined),
 						sleep: deps.sleep,
 					});
