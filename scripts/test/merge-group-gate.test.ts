@@ -418,7 +418,7 @@ describe("merge-group required gate", () => {
 			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
 			assert.ok(
 				condition.endsWith(
-					`&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"')) }}`,
+					`&& !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"')) }}`,
 				),
 				id,
 			);
@@ -430,7 +430,7 @@ describe("merge-group required gate", () => {
 			const condition = block.match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
 			assert.ok(
 				condition.includes(
-					`&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`,
+					`&& !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${id}"'))`,
 				),
 				id,
 			);
@@ -445,7 +445,7 @@ describe("merge-group required gate", () => {
 			job("scripts-tests").match(/^ {4}if: (.*)$/mu)?.[1] ?? "";
 		assert.ok(
 			scriptsCondition.endsWith(
-				"&& !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+				"&& !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
 			),
 		);
 		for (const condition of [validation, workspace, job("scripts-tests")])

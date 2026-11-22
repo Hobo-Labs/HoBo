@@ -304,6 +304,14 @@ describe("release-hobo pages jobs", () => {
 		const end = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
 		return end < 0 ? rest : rest.slice(0, end + 1);
 	}
+	function jobIf(id: string): string {
+		const body = job(id);
+		const start = body.indexOf("if: >-");
+		expect(start, `${id}: job-level if`).toBeGreaterThan(-1);
+		const runsOn = body.indexOf("runs-on:", start);
+		expect(runsOn, `${id}: runs-on after the job-level if`).toBeGreaterThan(-1);
+		return body.slice(start, runsOn);
+	}
 
 	it("decides the deploy from what is published, apart from the release train", () => {
 		const gate = job("release-pages-gate");
@@ -312,7 +320,9 @@ describe("release-hobo pages jobs", () => {
 		expect(gate).toContain("    needs: [route]\n");
 		expect(gate).not.toContain("release-main-train-gate");
 		const pages = job("release-pages");
-		expect(pages).toContain("needs: [release-pages-gate, release-hobo-cli]");
+		expect(pages).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
+		expect(pages).toMatch(/needs: \[[^\]]*\brelease-pages-gate\b[^\]]*\]/u);
+		expect(pages).toMatch(/needs: \[[^\]]*\brelease-hobo-cli\b[^\]]*\]/u);
 		expect(pages).toContain(
 			"needs.release-pages-gate.outputs.deploy == 'true'",
 		);
@@ -371,6 +381,39 @@ describe("release-hobo pages jobs", () => {
 		const build = pages.indexOf("pnpm --filter hobo-site run build");
 		expect(recheck).toBeGreaterThan(-1);
 		expect(recheck).toBeLessThan(build);
+	});
+
+	it("cannot publish Pages from a pull_request or merge_group run", () => {
+		const gate = job("release-pages-gate");
+		expect(gate).toMatch(/github\.event_name == 'workflow_run'/u);
+		expect(gate).not.toMatch(/github\.event_name == 'pull_request'/u);
+		expect(gate).not.toMatch(/github\.event_name == 'merge_group'/u);
+		const pagesIf = jobIf("release-pages").replace(/^if: >-\n/u, "");
+		expect(pagesIf).toMatch(/needs\.route\.result == 'success'/u);
+		expect(pagesIf).toMatch(/needs\.release-pages-gate\.result == 'success'/u);
+		expect(pagesIf).toMatch(
+			/needs\.release-pages-gate\.outputs\.deploy == 'true'/u,
+		);
+		expect(pagesIf).toMatch(/needs\.release-hobo-cli\.result == 'success'/u);
+		expect(pagesIf).not.toMatch(/github\.event_name == 'pull_request'/u);
+		expect(pagesIf).not.toMatch(/github\.event_name == 'merge_group'/u);
+		const step = (marker: string) => {
+			const pages = job("release-pages");
+			const at = pages.indexOf(marker);
+			expect(at, marker).toBeGreaterThan(-1);
+			const from = pages.lastIndexOf("\n      - ", at);
+			const to = pages.indexOf("\n      - ", at + 1);
+			return pages.slice(from, to < 0 ? pages.length : to);
+		};
+		for (const marker of [
+			"pnpm --filter hobo-site run build",
+			"cp -a media/dist/. site/dist/media/",
+			"deploy-site.mts --release-freight site/dist",
+		])
+			expect(
+				step(marker),
+				`${marker}: re-checks freshness in-job so nothing deploys unless gh-pages is still behind`,
+			).toContain("if: steps.fresh.outputs.deploy == 'true'");
 	});
 
 	it("tags whatever this run's publish did, unless it or its gate failed", () => {
