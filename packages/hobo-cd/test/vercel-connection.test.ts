@@ -1122,7 +1122,6 @@ describe("prepareVercelConnection", () => {
 				{ id: "cd-identity", outcome: "created" },
 			],
 		});
-		// HoBo.CD opens its journal only on production, so that is the subject.
 		expect(trusted).toEqual([
 			"owner:acme:project:hobo-cd:environment:production",
 		]);

@@ -187,7 +187,6 @@ export type CdRuntime = Readonly<{
 	host: CdDeployHost;
 	store: DurableEventStore;
 	conductor(campIds: readonly CampId[], holderId?: string): CampReconciler;
-	/** One tick of the journal's fleet (copies, due backups); absent off a fleet. */
 	maintainJournal?: () => Promise<void>;
 	close(): Promise<void>;
 }>;

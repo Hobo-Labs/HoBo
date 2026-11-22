@@ -60,11 +60,6 @@ export type CdPassCampReport = Readonly<{
 	detail: string;
 }>;
 
-/**
- * What a pass did for the journal's fleet: `maintained` (copies made, a due
- * backup taken), `failed` (why), or `none` (the journal is not a fleet, or
- * the pass did not hold the fleet pass).
- */
 export type CdJournalPass =
 	| Readonly<{ state: "maintained" }>
 	| Readonly<{ state: "failed"; detail: string }>
@@ -437,8 +432,6 @@ export async function composeCdHost(
 				reconciled.every((entry) => entry.ok);
 			const tick = reconcilesOk ? await service.tick() : undefined;
 			if (signal.aborted) throw abortErrorOf(signal);
-			// The fleet's copies and due backups, whatever the Camps did: on
-			// serverless no instance stays warm for the fleet's own timer.
 			const journal = await maintainJournal();
 			if (signal.aborted) throw abortErrorOf(signal);
 			const passCounts = reconcilesOk && tick?.store;
