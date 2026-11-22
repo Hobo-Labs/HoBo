@@ -183,15 +183,14 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-const ROUTE_RUNS_ON =
-	"${{ github.event_name == 'merge_group' && 'hobo-trunk' || 'ubuntu-24.04' }}";
-
 /**
- * What a routed job asks for: the label the `route` job chose (the routing
- * slip's answer, else the queue rule's), and GitHub-hosted when that job did
- * not run, the one tier known to be up.
+ * What a routed job asks for: the label the `route` job chose only when it
+ * succeeded, and GitHub-hosted when that job failed or did not run, the one
+ * tier known to be up. Outputs written before a failed route cannot select a
+ * self-hosted runner.
  */
-const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const ROUTED_RUNS_ON =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
 const RELEASE_PAGES_RUNS_ON =
 	"${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
@@ -343,7 +342,7 @@ function isAlwaysHostedJob(
 ): boolean {
 	if (/^  route:$/.test(jobLine)) {
 		return (
-			(runsOn === HOSTED_RUNS_ON || runsOn === ROUTE_RUNS_ON) &&
+			runsOn === HOSTED_RUNS_ON &&
 			block.some(
 				(line) =>
 					line.trim() === "uses: ./.github/actions/route-runner" ||
@@ -798,7 +797,6 @@ function lintWorkflowYaml(
 			runsOn !== undefined &&
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
-			runsOn !== ROUTE_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
 			runsOn !== RELEASE_PAGES_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&

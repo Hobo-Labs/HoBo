@@ -222,7 +222,8 @@ describe("main full gate workspace sharding", () => {
 	});
 });
 
-const ROUTED = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const ROUTED =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 const SHARD =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 

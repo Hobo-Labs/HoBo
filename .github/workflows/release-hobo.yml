@@ -305,7 +305,7 @@ jobs:
     if: >-
       !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') &&
       github.repository == 'Hobo-Labs/HoBo'
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     outputs:
       run: ${{ steps.version.outputs.run == 'true' }}
@@ -322,6 +322,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          fetch-tags: true
       - uses: $/.github/actions/ci-runner-preflight
         if: >-
           github.event_name == 'workflow_run' &&
@@ -378,7 +379,7 @@ jobs:
       needs.route.result == 'success' &&
       needs.route.outputs.attested == 'true' &&
       contains(needs.route.outputs.attested-jobs, '"release-contract"'))
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     # The realize proof (and its @hobo/hobo build) is release-realize's, so a
     # Turbo cache miss here costs only the affected images.
     timeout-minutes: 20
@@ -572,7 +573,7 @@ jobs:
     if: >-
       !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') &&
       (github.event_name == 'pull_request' || github.event_name == 'merge_group')
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -767,6 +768,7 @@ jobs:
     # finish long before any consumer starts.
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       github.repository == 'Hobo-Labs/HoBo' &&
       needs.release-main-train-gate.result == 'success' &&
       (
@@ -776,7 +778,7 @@ jobs:
         startsWith(github.ref, 'refs/tags/cli-v') ||
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    needs: [release-main-train-gate, release-pages-gate]
+    needs: [route, release-main-train-gate, release-pages-gate]
     # GitHub-hosted, like release-npm: release-npm runs this CLI while it holds
     # the OIDC token whose npm provenance names a GitHub-hosted builder, so no
     # self-hosted runner produces code that runs inside that job.
@@ -883,6 +885,7 @@ jobs:
     name: Build all OCI images on tag (gate publish)
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-toolchain-image.result == 'success' &&
       (
@@ -973,6 +976,7 @@ jobs:
     # Hosted like the other gates: it runs no repository code, only a case on the ref.
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       needs.release-main-train-gate.result == 'success' &&
       (
         needs.release-main-train-gate.outputs.run == 'true' ||
@@ -980,7 +984,7 @@ jobs:
         startsWith(github.ref, 'refs/tags/cli-v') ||
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    needs: [release-main-train-gate]
+    needs: [route, release-main-train-gate]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
@@ -1005,6 +1009,7 @@ jobs:
     name: Publish GHCR images (tagged release)
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-toolchain-image.result == 'success' &&
       needs.release-images.result == 'success' &&
@@ -1021,7 +1026,7 @@ jobs:
         needs.release-contract.result == 'success'
       ) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [release-main-train-gate, release-contract, release-toolchain-image, release-oci-build-tag, release-images, release-hobo-cli, release-hobo-integration]
+    needs: [route, release-main-train-gate, release-contract, release-toolchain-image, release-oci-build-tag, release-images, release-hobo-cli, release-hobo-integration]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     environment: release
@@ -1123,6 +1128,7 @@ jobs:
     name: Attest GHCR images
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-publish.result == 'success' &&
       (
@@ -1131,7 +1137,7 @@ jobs:
         startsWith(github.ref, 'refs/tags/cli-v') ||
         (github.event_name == 'workflow_dispatch' && inputs.push_images)
       )
-    needs: [release-main-train-gate, release-publish, release-images]
+    needs: [route, release-main-train-gate, release-publish, release-images]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 20
     permissions:
@@ -1184,6 +1190,7 @@ jobs:
     # Release down with it.
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       vars.HOBO_NPM_PUBLISH == 'true' &&
       needs.release-main-train-gate.result == 'success' &&
       needs.release-oci-build-tag.result == 'success' &&
@@ -1198,7 +1205,7 @@ jobs:
         needs.release-contract.result == 'success'
       ) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [release-main-train-gate, release-contract, release-oci-build-tag, release-hobo-cli, release-hobo-integration]
+    needs: [route, release-main-train-gate, release-contract, release-oci-build-tag, release-hobo-cli, release-hobo-integration]
     # Keyless provenance signing names a GitHub-hosted builder (npm verifies
     # it) — not self-hosted hobo. The tarballs it signs are built here
     # (stage-sdk-artifacts.mts); only the hobo CLI comes from release-hobo-cli,
@@ -1286,7 +1293,7 @@ jobs:
           github.ref == 'refs/heads/main')
       )
     needs: [route]
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -1443,6 +1450,7 @@ jobs:
     # queue. A failed publish, or a gate that failed to decide, still blocks it.
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       needs.release-main-train-gate.outputs.run == 'true' &&
       needs.release-publish.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
@@ -1451,7 +1459,7 @@ jobs:
       contains(fromJSON('["success","skipped"]'), needs.release-pages-gate.result) &&
       contains(fromJSON('["success","skipped","cancelled"]'), needs.release-pages.result) &&
       needs.release-hobo-cli.result == 'success'
-    needs: [release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-hobo-cli]
+    needs: [route, release-main-train-gate, release-publish, release-npm, release-attest, release-pages-gate, release-pages, release-hobo-cli]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     environment: production
     timeout-minutes: 15
@@ -1530,13 +1538,14 @@ jobs:
     name: GitHub Release (independent train tag)
     if: >-
       !cancelled() &&
+      needs.route.result == 'success' &&
       (startsWith(github.ref, 'refs/tags/sdk-v') || startsWith(github.ref, 'refs/tags/cli-v')) &&
       needs.release-publish.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.release-npm.result) &&
       (vars.HOBO_NPM_PUBLISH != 'true' || startsWith(github.ref, 'refs/tags/cli-v') || needs.release-npm.result == 'success') &&
       needs.release-attest.result == 'success' &&
       needs.release-hobo-cli.result == 'success'
-    needs: [release-publish, release-npm, release-attest, release-hobo-cli]
+    needs: [route, release-publish, release-npm, release-attest, release-hobo-cli]
     runs-on: ${{ contains(fromJSON('["push","workflow_dispatch","merge_group","workflow_run"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}
     timeout-minutes: 15
     permissions:

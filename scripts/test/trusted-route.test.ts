@@ -394,7 +394,7 @@ describe("base-controlled attestation verification", () => {
 		}
 		assert.equal(
 			asObject(jobs?.workspace_tests)?.["runs-on"],
-			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
 		);
 	});
 

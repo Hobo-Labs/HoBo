@@ -101,7 +101,7 @@ jobs:
     needs: route
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
     # gate hands both deploy steps a deadline 3 minutes short of it, so each
     # command ends with a typed reason before the job is killed.
@@ -275,7 +275,7 @@ jobs:
     needs: route
     if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.manifest_code != ''
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read

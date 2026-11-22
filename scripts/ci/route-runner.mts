@@ -79,6 +79,14 @@ export type RouteMode = (typeof ROUTE_MODES)[number];
 export const BURST_SECONDS = 60;
 /** The workflow whose only work is to be picked up by each self-hosted label. */
 export const PROBE_WORKFLOW_PATH = ".github/workflows/fleet-probe.yml";
+export const ROUTED_WORKFLOW_PATHS: ReadonlySet<string> = new Set([
+	".github/workflows/hobo-ci.yml",
+	".github/workflows/release-ts-autocode.yml",
+	".github/workflows/relay-deploy.yml",
+	".github/workflows/release-hobo.yml",
+	".github/workflows/pricing-ci.yml",
+	".github/workflows/release-pricing.yml",
+]);
 /** Probe runs read per decision: the newest may still be waiting, the ones before it say how the last went. */
 export const MAX_PROBE_LOOKUPS = 3;
 
@@ -187,6 +195,7 @@ export function labelLoad(
 	jobs: readonly SeenJob[],
 	label: string,
 	nowMs: number,
+	slowPickupWindowSeconds = SLOW_PICKUP_MEMORY_SECONDS,
 ): LabelLoad {
 	const asking = jobs.filter(
 		(job) => job.labels.length === 1 && job.labels[0]?.toLowerCase() === label,
@@ -208,7 +217,7 @@ export function labelLoad(
 		oldestWaitSeconds: longest(waits),
 		recentPickups: pickedUpWithin(RECENT_PICKUP_SECONDS).length,
 		slowestRecentPickupSeconds: longest(
-			pickedUpWithin(SLOW_PICKUP_MEMORY_SECONDS),
+			pickedUpWithin(slowPickupWindowSeconds),
 		),
 	};
 }
@@ -247,14 +256,18 @@ export function parseRouteMode(value: string | undefined): RouteMode {
 	return mode ?? "auto";
 }
 
-function describeLoad(name: string, load: LabelLoad): string {
+function describeLoad(
+	name: string,
+	load: LabelLoad,
+	slowPickupWindowSeconds = SLOW_PICKUP_MEMORY_SECONDS,
+): string {
 	const waiting =
 		load.queued === 0
 			? `${name} has nothing waiting`
 			: `${name} has ${load.queued} waiting, the oldest for ${load.oldestWaitSeconds} s`;
 	return load.recentPickups === 0
 		? `${waiting}, and has not been seen to pick a job up in the last ${RECENT_PICKUP_SECONDS / 60} minutes`
-		: `${waiting}, and in the last ${SLOW_PICKUP_MEMORY_SECONDS / 60} minutes took up to ${load.slowestRecentPickupSeconds} s to pick a job up`;
+		: `${waiting}, and in the last ${slowPickupWindowSeconds / 60} minutes took up to ${load.slowestRecentPickupSeconds} s to pick a job up`;
 }
 
 /**
@@ -277,6 +290,7 @@ export function routeRunner(input: {
 	/** Runs that started just ahead of this one and have not chosen a runner yet. */
 	undecidedAhead: number;
 	trunkPriority?: boolean | undefined;
+	slowPickupWindowSeconds?: number | undefined;
 }): RouteDecision {
 	const { mode, fleetLabel, limits } = input;
 	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
@@ -335,7 +349,7 @@ export function routeRunner(input: {
 	});
 	const selected = choice.kind === "runner" ? choice.runner : undefined;
 	const loads = [
-		describeLoad("the fleet", input.fleet),
+		describeLoad("the fleet", input.fleet, input.slowPickupWindowSeconds),
 		input.localEnrolled
 			? describeLoad("the local box", input.local)
 			: "no local box is enrolled",
@@ -396,13 +410,15 @@ function asList(value: JsonValue | undefined): readonly JsonValue[] {
 	return Array.isArray(value) ? value : [];
 }
 
-type ListedRun = Readonly<{
+export type ListedRun = Readonly<{
 	id: number;
 	createdAtMs: number;
 	/** When the run last changed; for a finished run, when it finished. */
 	updatedAtMs: number;
 	finished: boolean;
 	probe: boolean;
+	headSha: string | undefined;
+	path: string | undefined;
 }>;
 
 function listedRuns(runsPage: JsonValue): ListedRun[] {
@@ -410,13 +426,16 @@ function listedRuns(runsPage: JsonValue): ListedRun[] {
 		const run = asObject(entry);
 		const id = asNumber(run?.id);
 		if (!run || id === undefined) return [];
+		const path = asText(run.path);
 		return [
 			{
 				id,
 				createdAtMs: Date.parse(asText(run.created_at) ?? ""),
 				updatedAtMs: Date.parse(asText(run.updated_at) ?? ""),
 				finished: asText(run.status) === "completed",
-				probe: asText(run.path) === PROBE_WORKFLOW_PATH,
+				probe: path === PROBE_WORKFLOW_PATH,
+				headSha: asText(run.head_sha),
+				path,
 			},
 		];
 	});
@@ -493,7 +512,11 @@ export function runsJustAhead(
 				!run.finished &&
 				!run.probe &&
 				run.id < ownRunId &&
-				ownCreatedAtMs - run.createdAtMs <= BURST_SECONDS * 1000,
+				ownCreatedAtMs - run.createdAtMs <= BURST_SECONDS * 1000 &&
+				(!own ||
+					((own.headSha === undefined || run.headSha !== own.headSha) &&
+						run.path !== undefined &&
+						ROUTED_WORKFLOW_PATHS.has(run.path))),
 		)
 		.map((run) => run.id)
 		.sort((left, right) => right - left);
@@ -565,6 +588,8 @@ export async function observeQueue(input: {
 	labels: readonly string[];
 	limits: RouteLimits;
 	nowMs: number;
+	ignoreQueuedCount?: boolean | undefined;
+	slowPickupWindowSeconds?: number | undefined;
 	/**
 	 * Read this run's own jobs first. The route job leaves its run out: at that
 	 * moment the run has queued nothing. A job asking again later in the run
@@ -575,6 +600,9 @@ export async function observeQueue(input: {
 	/** Read all bounded candidates even after current labels appear to refuse. */
 	exhaustLookups?: boolean | undefined;
 }): Promise<QueueView> {
+	const limits = input.ignoreQueuedCount
+		? { ...input.limits, maxQueued: Number.MAX_SAFE_INTEGER }
+		: input.limits;
 	const runsPage = await input.read(
 		`/repos/${input.repository}/actions/runs?per_page=100`,
 	);
@@ -598,7 +626,10 @@ export async function observeQueue(input: {
 	let undecidedAhead = ahead.length;
 	for (const runId of [...ahead, ...rest].slice(0, MAX_RUN_LOOKUPS)) {
 		const allRefusing = input.labels.every((label) =>
-			refusingJobs(labelLoad(seen, label, input.nowMs), input.limits),
+			refusingJobs(
+				labelLoad(seen, label, input.nowMs, input.slowPickupWindowSeconds),
+				limits,
+			),
 		);
 		if (allRefusing && input.exhaustLookups !== true) break;
 		const jobsPage = await jobsOf(runId);
@@ -636,21 +667,31 @@ export async function chooseRunner(input: {
 	/** Confirm a fleet slip against the exact label before trusting it. */
 	confirmFleet?: "open" | "busy" | undefined;
 	trunkPriority?: boolean | undefined;
+	ignoreQueuedCount?: boolean | undefined;
+	slowPickupWindowSeconds?: number | undefined;
 }): Promise<RouteDecision> {
 	const { fleetLabel, localEnrolled, limits } = input;
 	const localLabel = input.localLabel ?? LOCAL_HOST_RUNNER_LABEL;
+	const fleetLimits = input.ignoreQueuedCount
+		? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
+		: limits;
 	const startMs = input.now();
 	for (;;) {
 		const nowMs = input.now();
 		const view = await input.observe(nowMs);
-		const fleet = labelLoad(view.jobs, fleetLabel, nowMs);
+		const fleet = labelLoad(
+			view.jobs,
+			fleetLabel,
+			nowMs,
+			input.slowPickupWindowSeconds,
+		);
 		const local = labelLoad(view.jobs, localLabel, nowMs);
 		// Busy alone does not refuse a healthy fleet (R4). Unlike a fleet-open
 		// claim, a busy claim is not contradicted merely by a full young queue.
 		const confirmationLimits =
 			input.confirmFleet === "busy"
-				? { ...limits, maxQueued: Number.MAX_SAFE_INTEGER }
-				: limits;
+				? { ...fleetLimits, maxQueued: Number.MAX_SAFE_INTEGER }
+				: fleetLimits;
 		if (
 			input.confirmFleet &&
 			(input.confirmFleet === "busy" || view.undecidedAhead === 0) &&
@@ -659,7 +700,7 @@ export async function chooseRunner(input: {
 			return {
 				tier: "fleet",
 				runner: fleetLabel,
-				reason: describeLoad("the fleet", fleet),
+				reason: describeLoad("the fleet", fleet, input.slowPickupWindowSeconds),
 				refusedBy: "none",
 			};
 		const decision = routeRunner({
@@ -668,19 +709,22 @@ export async function chooseRunner(input: {
 			localLabel,
 			githubLabel: input.githubLabel,
 			localEnrolled,
-			limits,
+			limits: fleetLimits,
 			fleet,
 			local,
 			undecidedAhead: view.undecidedAhead,
 			trunkPriority: input.trunkPriority,
+			slowPickupWindowSeconds: input.slowPickupWindowSeconds,
 		});
-		const unseen = (load: LabelLoad) =>
-			load.recentPickups === 0 && !refusingJobs(load, limits);
+		const unseenFleet =
+			fleet.recentPickups === 0 && !refusingJobs(fleet, fleetLimits);
+		const unseenLocal =
+			local.recentPickups === 0 && !refusingJobs(local, limits);
 		const probeMayHelp =
 			view.probeUnderway &&
 			view.undecidedAhead === 0 &&
-			((decision.tier !== "fleet" && unseen(fleet)) ||
-				(decision.tier === "github" && localEnrolled && unseen(local)));
+			((decision.tier !== "fleet" && unseenFleet) ||
+				(decision.tier === "github" && localEnrolled && unseenLocal));
 		const waitedSeconds = seconds(startMs, nowMs);
 		if (!probeMayHelp) return decision;
 		if (waitedSeconds + PROBE_POLL_SECONDS > PROBE_WAIT_SECONDS)
@@ -689,6 +733,73 @@ export async function chooseRunner(input: {
 				reason: `${decision.reason}; waited ${waitedSeconds} s for the probe to be picked up`,
 			};
 		await input.sleep(PROBE_POLL_SECONDS);
+	}
+}
+
+export const MERGE_GROUP_FLEET_CONFIRM_SECONDS = 90;
+
+export async function confirmMergeGroupFabricFleet(input: {
+	fleetDecision: RouteDecision;
+	observe: (nowMs: number) => Promise<QueueView>;
+	now: () => number;
+	sleep: (seconds: number) => Promise<void>;
+	fleetLabel: string;
+	githubLabel: string;
+	limits: RouteLimits;
+	slowPickupWindowSeconds: number;
+}): Promise<RouteDecision> {
+	const admissionLimits = {
+		...input.limits,
+		maxWaitSeconds: Math.min(
+			input.limits.maxWaitSeconds,
+			MERGE_GROUP_FLEET_CONFIRM_SECONDS,
+		),
+		maxQueued: Number.MAX_SAFE_INTEGER,
+	};
+	const startedAtMs = input.now();
+	const hosted = (outcome: string): RouteDecision => ({
+		tier: "github",
+		runner: input.githubLabel,
+		reason: `merge-group trunk confirmation ${outcome}`,
+		refusedBy: "queue",
+		slip: input.fleetDecision.slip,
+	});
+	for (let poll = 0; ; poll += 1) {
+		const nowMs = input.now();
+		const waitedSeconds = seconds(startedAtMs, nowMs);
+		if (waitedSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
+			return hosted(
+				`timed out after ${waitedSeconds} s without a healthy trunk pickup`,
+			);
+		let view: QueueView;
+		try {
+			view = await input.observe(nowMs);
+		} catch (error) {
+			return hosted(
+				`could not read the queue (${error instanceof Error ? error.message : "unknown error"})`,
+			);
+		}
+		const observedAtMs = input.now();
+		const observedWaitSeconds = seconds(startedAtMs, observedAtMs);
+		if (observedWaitSeconds >= MERGE_GROUP_FLEET_CONFIRM_SECONDS)
+			return hosted(
+				`timed out after ${observedWaitSeconds} s without a healthy trunk pickup`,
+			);
+		const fleet = labelLoad(
+			view.jobs,
+			input.fleetLabel,
+			observedAtMs,
+			input.slowPickupWindowSeconds,
+		);
+		if (takingJobs(fleet, admissionLimits))
+			return {
+				...input.fleetDecision,
+				reason: `${input.fleetDecision.reason}; merge-group trunk confirmation observed ${describeLoad("the fleet", fleet, input.slowPickupWindowSeconds)}`,
+				refusedBy: "none",
+			};
+		if (refusingJobs(fleet, admissionLimits))
+			return hosted("found the trunk fleet refusing jobs");
+		if (poll > 0) await input.sleep(PROBE_POLL_SECONDS);
 	}
 }
 
@@ -1492,76 +1603,93 @@ export async function main(
 			) !== "fork"
 		) {
 			const token = env.GITHUB_TOKEN ?? "";
-			if (!token)
-				throw new Error(
-					"PR batch hosted-runner queue probe token is unavailable",
-				);
-			const probeRead = githubReader(
-				env.GITHUB_API_URL ?? "https://api.github.com",
-				token,
-				io.fetch,
-			);
+			const probeRead = token
+				? githubReader(
+						env.GITHUB_API_URL ?? "https://api.github.com",
+						token,
+						io.fetch,
+					)
+				: undefined;
 			const repository = env.GITHUB_REPOSITORY ?? "";
 			const ownRunId = Number(env.GITHUB_RUN_ID);
 			const probeAtMs = now();
-			const view = await observeQueue({
-				read: probeRead,
-				repository,
-				ownRunId,
-				labels: [labels.github],
-				limits: MERGE_GROUP_HOSTED_LIMITS,
-				exhaustLookups: true,
-				nowMs: probeAtMs,
-			});
-			const hostedLoad = labelLoad(view.jobs, labels.github, probeAtMs);
-			const hostedIdle = prBatchHostedHasIdleCapacity(hostedLoad);
-			const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
-			if (!hostedIdle) {
-				const fleetProbeAtMs = now();
-				const fleetView = await observeQueue({
+			try {
+				if (!probeRead)
+					throw new Error(
+						"PR batch hosted-runner queue probe token is unavailable",
+					);
+				const view = await observeQueue({
 					read: probeRead,
 					repository,
 					ownRunId,
-					labels: [fleetLabel],
-					limits,
-					nowMs: fleetProbeAtMs,
-				}).catch(() => undefined);
-				const fleetSummary = fleetView
-					? describeLoad(
-							"the fleet",
-							labelLoad(fleetView.jobs, fleetLabel, fleetProbeAtMs),
-						)
-					: "the fleet queue could not be read";
-				const observation = await observeHoboPoolSaturation({
-					read: probeRead,
-					repository,
-					label: fleetLabel,
+					labels: [labels.github],
+					limits: MERGE_GROUP_HOSTED_LIMITS,
+					exhaustLookups: true,
+					nowMs: probeAtMs,
 				});
-				const { saturation } = observation;
-				const fleetUnavailable = idleRunnerUnavailable(
-					observation.poolRunners,
-					fleetLabel,
-				);
-				if (
-					fleetUnavailable !== undefined &&
-					(!saturation.saturated ||
-						agent37OverflowUnavailable(observation.overflowRunners) !==
-							undefined)
-				) {
-					console.log(
-						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository PR batch stays on ${labels.github}`)}`,
+				const hostedLoad = labelLoad(view.jobs, labels.github, probeAtMs);
+				const hostedIdle = prBatchHostedHasIdleCapacity(hostedLoad);
+				const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
+				if (!hostedIdle) {
+					const fleetProbeAtMs = now();
+					const fleetView = await observeQueue({
+						read: probeRead,
+						repository,
+						ownRunId,
+						labels: [fleetLabel],
+						limits,
+						nowMs: fleetProbeAtMs,
+					}).catch(() => undefined);
+					const fleetSummary = fleetView
+						? describeLoad(
+								"the fleet",
+								labelLoad(fleetView.jobs, fleetLabel, fleetProbeAtMs),
+							)
+						: "the fleet queue could not be read";
+					const observation = await observeHoboPoolSaturation({
+						read: probeRead,
+						repository,
+						label: fleetLabel,
+					}).catch(() => ({
+						saturation: {
+							saturated: false,
+							summary: `${fleetLabel} pool saturation unknown (repository runner list unreadable; host node CPU unknown)`,
+						},
+						poolRunners: undefined,
+						overflowRunners: undefined,
+					}));
+					const { saturation } = observation;
+					const fleetUnavailable = idleRunnerUnavailable(
+						observation.poolRunners,
+						fleetLabel,
 					);
-					hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
-				} else {
-					const overflowUnavailable = saturation.saturated
-						? agent37OverflowUnavailable(observation.overflowRunners)
-						: undefined;
-					const capacityEvidence = `${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`;
-					console.log(
-						`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository PR batch has no Broker claim and stays on ${labels.github} (${fleetSummary})`)}`,
-					);
-					hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
+					if (
+						fleetUnavailable !== undefined &&
+						(!saturation.saturated ||
+							agent37OverflowUnavailable(observation.overflowRunners) !==
+								undefined)
+					) {
+						console.log(
+							`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository PR batch stays on ${labels.github}`)}`,
+						);
+						hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
+					} else {
+						const overflowUnavailable = saturation.saturated
+							? agent37OverflowUnavailable(observation.overflowRunners)
+							: undefined;
+						const capacityEvidence = `${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`;
+						console.log(
+							`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository PR batch has no Broker claim and stays on ${labels.github} (${fleetSummary})`)}`,
+						);
+						hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
+					}
 				}
+			} catch (error) {
+				const detail = error instanceof Error ? error.message : "unknown error";
+				console.log(
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(`PR batch hosted-runner queue probe failed (${detail}); falling back to ${labels.github}`)}`,
+				);
+				hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim; the hosted-runner queue probe failed (${detail}); public standard-runner compute was verified`;
 			}
 		}
 		if (
@@ -1632,80 +1760,142 @@ export async function main(
 		const apiUrl = env.GITHUB_API_URL ?? "https://api.github.com";
 		const repository = env.GITHUB_REPOSITORY ?? "";
 		const token = env.GITHUB_TOKEN ?? "";
-		if (!token)
-			throw new Error("merge-group Fabric queue probe token is unavailable");
-		if (!repository)
-			throw new Error(
-				"merge-group Fabric queue probe repository is unavailable",
-			);
 		const trunkLabel = labels.trunk;
 		const githubLabel = labels.github;
-		const read = githubReader(apiUrl, token, io.fetch);
+		const read =
+			token && repository ? githubReader(apiUrl, token, io.fetch) : undefined;
+		const requireRead = (): QueueReader => {
+			if (read) return read;
+			throw new Error(
+				token
+					? "merge-group Fabric queue probe repository is unavailable"
+					: "merge-group Fabric queue probe token is unavailable",
+			);
+		};
+		const ownRunId = Number(env.GITHUB_RUN_ID);
+		const mergeGroupLimits = {
+			...limits,
+			maxQueued: Number.MAX_SAFE_INTEGER,
+		};
 		const observeHosted = (nowMs: number) =>
 			observeQueue({
-				read,
+				read: requireRead(),
 				repository,
-				ownRunId: Number(env.GITHUB_RUN_ID),
+				ownRunId,
 				labels: [githubLabel],
 				limits: MERGE_GROUP_HOSTED_LIMITS,
 				exhaustLookups: true,
 				nowMs,
 			});
-		const observeTrunkIdle = (nowMs: number) =>
+		const observeTrunk = (nowMs: number) =>
 			observeQueue({
-				read,
+				read: requireRead(),
 				repository,
-				ownRunId: Number(env.GITHUB_RUN_ID),
+				ownRunId,
 				labels: localEnrolled ? [trunkLabel, labels.local] : [trunkLabel],
-				limits: MERGE_GROUP_TRUNK_IDLE_LIMITS,
+				limits: mergeGroupLimits,
 				nowMs,
+				slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
 			});
 		let hostedIdle = false;
-		let trunkIdle = false;
 		let hostedSummary = "";
-		let trunkSummary = "";
+		let hostedProbe = {
+			idle: false,
+			summary: "GitHub-hosted queue unreadable",
+			trunkIdle: false,
+			trunkSummary: "hobo-trunk queue unreadable",
+		};
+		let decision: RouteDecision;
 		try {
 			const probeAtMs = now();
-			const firstView = await observeHosted(probeAtMs);
-			const trunkView = await observeTrunkIdle(probeAtMs);
-			const hostedLoad = labelLoad(firstView.jobs, githubLabel, probeAtMs);
-			const trunkLoad = labelLoad(trunkView.jobs, trunkLabel, probeAtMs);
+			const hostedView = await observeHosted(probeAtMs);
+			const hostedLoad = labelLoad(hostedView.jobs, githubLabel, probeAtMs);
 			hostedIdle = mergeGroupHostedHasIdleCapacity(hostedLoad);
-			trunkIdle = mergeGroupTrunkHasIdleCapacity(trunkLoad);
 			hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
-			trunkSummary = describeLoad("hobo-trunk", trunkLoad);
+			decision = await chooseRunner({
+				observe: observeTrunk,
+				now,
+				sleep: (wait) => delay(wait * 1000),
+				mode,
+				fleetLabel: trunkLabel,
+				localLabel: labels.local,
+				githubLabel,
+				localEnrolled,
+				limits,
+				ignoreQueuedCount: true,
+				slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
+			});
+			if (decision.tier === "fleet" && decision.runner === trunkLabel)
+				decision = await confirmMergeGroupFabricFleet({
+					fleetDecision: decision,
+					observe: observeTrunk,
+					now,
+					sleep: (wait) => delay(wait * 1000),
+					fleetLabel: trunkLabel,
+					githubLabel,
+					limits,
+					slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
+				});
+			hostedProbe = {
+				idle: hostedIdle,
+				summary: hostedSummary,
+				trunkIdle: decision.tier === "fleet" && decision.runner === trunkLabel,
+				trunkSummary: decision.reason,
+			};
 			console.log(
-				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${trunkSummary}; trunkIdle=${trunkIdle}`,
+				`merge-group hosted probe: ${hostedSummary}; idle=${hostedIdle}; trunk: ${decision.reason}; trunkIdle=${hostedProbe.trunkIdle}`,
 			);
 		} catch (error) {
-			const code =
-				error instanceof Error && error.name ? error.name : "probe-error";
-			throw new Error(
-				`merge-group Fabric queue probe is unreadable (${code}); no runner selected`,
+			const detail = error instanceof Error ? error.message : "probe-error";
+			const probeError = `merge-group Fabric queue probe is unreadable (${detail})`;
+			console.log(
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`${probeError}; falling back to ${githubLabel}`)}`,
 			);
-		}
-		const hostedProbe = {
-			idle: hostedIdle,
-			summary: hostedSummary,
-			trunkIdle,
-			trunkSummary,
-		};
-		if (hostedIdle)
+			if (
+				githubLabel !== "ubuntu-24.04" ||
+				!(await isPublicCaller(env, io.fetch))
+			)
+				throw new Error(
+					"merge-group hosted fallback requires verified public compute evidence",
+				);
 			return report(
 				{
 					tier: "github",
 					runner: githubLabel,
-					reason: `merge-group Fabric prefers GitHub-hosted while it has idle capacity (${hostedSummary})`,
+					reason: `${probeError}; public standard-runner compute was verified`,
+					refusedBy: "queue",
+					mergeGroupHostedProbe: {
+						...hostedProbe,
+						summary: probeError,
+					},
+					slip: { kind: "unasked", why: "merge-group" },
+				},
+				env,
+			);
+		}
+		if (decision.tier !== "fleet" || decision.runner !== trunkLabel) {
+			if (
+				githubLabel !== "ubuntu-24.04" ||
+				!(await isPublicCaller(env, io.fetch))
+			)
+				throw new Error(
+					`merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
+				);
+			console.log(
+				`::warning title=hobo-ci-route-fallback::${escapeCommand(`merge-group Fabric found no healthy ${trunkLabel} capacity; falling back to ${githubLabel}`)}`,
+			);
+			return report(
+				{
+					tier: "github",
+					runner: githubLabel,
+					reason: `merge-group Fabric found no healthy ${trunkLabel} capacity; public standard-runner compute was verified`,
 					refusedBy: "queue",
 					mergeGroupHostedProbe: hostedProbe,
 					slip: { kind: "unasked", why: "merge-group" },
 				},
 				env,
 			);
-		if (!trunkIdle)
-			throw new Error(
-				`merge-group Fabric found no healthy ${trunkLabel} capacity; refusing general ${labels.fleet} overflow`,
-			);
+		}
 		if (
 			!(await hasVerifiedBatchCapacity(
 				env,
@@ -1730,10 +1920,8 @@ export async function main(
 			);
 		return report(
 			{
-				tier: "fleet",
-				runner: trunkLabel,
-				reason: `merge-group Fabric uses ${trunkLabel} with positive pickup evidence and a verified capacity and Broker claim (${trunkSummary})`,
-				refusedBy: "none",
+				...decision,
+				reason: `merge-group Fabric uses ${trunkLabel} with positive pickup evidence and a verified capacity and Broker claim (${decision.reason})`,
 				mergeGroupHostedProbe: hostedProbe,
 				slip: { kind: "unasked", why: "merge-group" },
 			},
@@ -1832,13 +2020,23 @@ export async function main(
 		decision.tier === "fleet" &&
 		decision.runner === labels.fleet &&
 		runClassName !== "fork"
-	)
+	) {
 		decision = await applyHoboPoolSaturation({
 			decision,
 			read,
 			repository,
 			label: labels.fleet,
 		});
+		if (decision.runner !== labels.fleet) {
+			const rechecked = await applyHoboPoolSaturation({
+				decision,
+				read,
+				repository,
+				label: decision.runner,
+			});
+			if (rechecked.runner !== decision.runner) decision = rechecked;
+		}
+	}
 	if (
 		mergeGroupHoboCi &&
 		decision.tier === "fleet" &&

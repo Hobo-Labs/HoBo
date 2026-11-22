@@ -24,7 +24,8 @@ const lint = fileURLToPath(new URL("../lint-actions.ts", import.meta.url));
 const trunk =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-const routed = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const routed =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 const depsRunner =
 	"${{ (needs.route.outputs.tier == 'fleet' && (needs.route.outputs.box_runner || needs.route.outputs.runner)) || (needs.route.outputs.tier == 'github' && needs.route.outputs.runner) || 'ubuntu-24.04' }}";
 
@@ -407,7 +408,7 @@ describe("Actions runner policy", () => {
 
 	it("keeps the route job and gates that run no action GitHub-hosted, and nothing else", () => {
 		assert.equal(lintJobs(routeJob), 0);
-		assert.equal(
+		assert.notEqual(
 			lintJobs(
 				routeJob.replace(
 					"runs-on: ubuntu-24.04",

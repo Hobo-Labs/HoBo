@@ -232,7 +232,7 @@ describe("PR batch routing", () => {
 		assert.match(decision.reason, /stays on ubuntu-24\.04/u);
 	});
 
-	it("fails fast when the PR-batch hosted queue probe has no token", async () => {
+	it("fails closed when PR-batch hosted queue probe has no token", async () => {
 		await assert.rejects(
 			main(
 				[],
@@ -243,24 +243,26 @@ describe("PR batch routing", () => {
 					fetch: readPublic,
 				},
 			),
-			/PR batch hosted-runner queue probe token is unavailable/u,
+			/PR batch hosted-runner public compute evidence is unavailable/u,
 		);
 	});
 
-	it("fails closed instead of treating GitHub-hosted as idle when the queue probe fails", async () => {
-		await assert.rejects(
-			main([], env, {
-				routingConfig: routing("auto"),
-				eventPayload: sameRepositoryPayload,
-				fetch: async (url) => {
-					const path = String(url);
-					if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
-						return Response.json(publicRepo);
-					throw new Error("queue down");
-				},
-			}),
-			/queue down/u,
+	it("falls back to GitHub-hosted when the PR-batch hosted queue probe fails", async () => {
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: async (url) => {
+				const path = String(url);
+				if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
+					return Response.json(publicRepo);
+				throw new Error("queue down");
+			},
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
 		);
+		assert.match(decision.reason, /hosted-runner queue probe failed/u);
 	});
 
 	it("warns with both queue summaries while keeping an unclaimed batch hosted", async () => {

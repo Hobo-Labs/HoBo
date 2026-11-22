@@ -528,9 +528,10 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 
 	it("builds the hobo CLI only for a run that publishes or promotes", () => {
 		const block = job("release-hobo-cli");
-		expect(block).toMatch(
-			/needs: \[release-main-train-gate, release-pages-gate\]/u,
+		expect(block).toContain(
+			"needs: [route, release-main-train-gate, release-pages-gate]",
 		);
+		expect(block).toContain("needs.route.result == 'success'");
 		expect(block).toContain(
 			"needs.release-main-train-gate.outputs.run == 'true'",
 		);
