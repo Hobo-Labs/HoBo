@@ -87,10 +87,17 @@ describe("GitHub's REST API, the OIDC subject a repository's tokens carry (consu
 		expect(githubDeployTrust(subject)).toEqual({
 			issuer: "https://token.actions.githubusercontent.com",
 			audiences: ["https://github.com/Hobo-Labs"],
-			subject: "repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main",
+			subject:
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 			claims: {
 				repository_id: "1274791462",
 				repository_owner_id: "344805935",
+				environment: "hobo-ci-app-credentials",
+				ref: "refs/heads/main",
+				workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/app-credentials.yml@refs/heads/main",
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 			},
 		});
 		expect(seen.map((request) => request.path)).toEqual([

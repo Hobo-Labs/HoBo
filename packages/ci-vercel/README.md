@@ -312,31 +312,56 @@ and on `workflow_dispatch`:
 
 0. A `route` job picks the runner first, as `hobo-ci.yml` does (the fleet
    while it takes jobs, an enrolled box, else GitHub-hosted).
-1. The gate ends the job with a notice, and success, until a secret store is
-   bound to the relay: `deploy/secret-store.binding.json`, coordinates only,
-   which `hobo ci secret-store provision` writes when the HoBo deployment
-   chooses the store and the owner claims it, or `hobo ci secret-store connect`
-   writes from the ids of a secrets manager the owner connected with OIDC
+1. An unprotected `gate` job reads `deploy/secret-store.binding.json`,
+   coordinates only, before the protected deploy job can start. A missing or
+   malformed binding fails the canonical `main` gate. A valid binding without a
+   deploy credential skips deployment with an explicit notice; a half-configured
+   credential fails closed. The protected `deploy` job starts only when its
+   `run` output is true. No repository variable or secret configures the relay.
+   The binding comes from `hobo ci secret-store provision` after the owner claims
+   the chosen store, or from `hobo ci secret-store connect`
    ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first);
    [Config service](CONFIG-SERVICE.md#where-the-store-comes-from-chosen-at-deploy-handed-over-by-claim)).
-   No repository variable or secret is read.
-2. *Verify the secret store connection*: with `permissions: id-token: write`
-   the job signs in to the store as `hobo-ci-writer` (GitHub OIDC; sign-in
-   only — role shape not asserted), then revokes the token, and reports it pass or
-   fail by name (`hobo ci secret-store verify`).
+2. *Verify the protected environment and secret store connection*: both jobs
+   first require GitHub API proof of an exact `main`-only custom deployment
+   branch policy. The deploy job names
+   `hobo-ci-deploy` and selects only the reader check. With
+   `permissions: id-token: write`, it signs in as `hobo-ci-deploy-reader` at its
+   own audience, reads `VERCEL_TOKEN` without logging the value, requires exactly
+   Viewer membership in the deploy project, requires HTTP 403 from the relay-
+   folder listing and direct token read, and requires HTTP 404 for its own
+   relay-project membership. The app-credentials job names
+   `hobo-ci-app-credentials` and selects only writer verification before deposit:
+   sign-in at its own audience, HTTP 403 from deploy-project listing and token
+   reads, and HTTP 404 for its own deploy-project membership. Verification never
+   writes a probe secret. Each issued session is revoked and every other scope
+   answer fails closed. The deploy-token read never signs in as the writer.
+   Until the owner provisions and commits the complete binding, no deploy token
+   is read. Branch protection can require named jobs, not these steps.
+   `Decide whether to deploy` is the canonical push check; a credential-free
+   skip leaves the reader unverified. Once the binding is complete, require
+   `Deploy the hosted CI relay (production)` when reader and relay verification
+   are required on that path. The writer job runs only through the manual
+   `app-credentials.yml` caller and is not a push check. A skipped job is not
+   successful verification. See
+   [the production evidence obligation](CONFIG-SERVICE.md#least-privilege-on-infisical-cloud-free-attach).
 3. *Deploy the relay*: `hobo ci deploy --build prebuilt --sha "$GITHUB_SHA"`,
-   preview then production, with the deploy token the job reads from the
-   store as `hobo-ci-writer`. Preview builds this checkout once and stages it;
+   preview then production, with the deploy token the job reads as
+   `hobo-ci-deploy-reader`. Preview builds this checkout once and stages it;
    production promotes that same build and is verified at the Yard's
    production domain (`/healthz` names the commit, `/readyz` answers 200),
    rolling back when that fails
    ([above](#deploying-the-relay-with-hobo)). Vercel's Git integration is
    never connected. Each command's exit status is its step's.
 
-A manual run given a GitHub App manifest code (`hobo ci app create
---via-workflow` dispatches it) runs only the `app-credentials` job instead:
-it masks the code and runs `hobo ci app deposit`, which converts it and
-writes the App's credentials into the store as `hobo-ci-writer`
+To deposit GitHub App credentials, provision the one-time manifest code as the
+`HOBO_APP_MANIFEST_CODE` Actions secret, then manually run
+[`.github/workflows/app-credentials.yml`](../../.github/workflows/app-credentials.yml)
+with the relay origin and owner id. The code is never a dispatch or reusable-
+workflow input. The caller passes it as a required secret to only the
+`app-credentials` job in `relay-deploy.yml`, which refuses a missing or empty
+value, masks it, and runs `hobo ci app deposit` to convert it and write the App's
+credentials into the store as `hobo-ci-writer`
 ([secretless first](CONFIG-SERVICE.md#the-relays-store-today-secretless-first)).
 
 In production the relay reads its store's coordinates from the committed

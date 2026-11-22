@@ -95,11 +95,25 @@ describe("a self-hosted Infisical, bootstrapped and handed over by claim", () =>
 		]);
 		const relay = stub.identities.find((i) => i.name === "hobo-ci-relay");
 		const deploy = stub.identities.find((i) => i.name === "hobo-ci-deploy");
+		const reader = stub.identities.find(
+			(i) => i.name === "hobo-ci-deploy-reader",
+		);
 		expect(relay?.role).toBe("viewer");
 		expect(deploy?.role).toBe("viewer");
-		// The deploy credential lives in a project the relay identity is not in.
+		expect(reader?.role).toBe("viewer");
 		expect(deploy?.projectId).toBe(binding.deployProjectId);
 		expect(relay?.projectId).toBe(binding.projectId);
+		expect(reader?.projectId).toBe(binding.deployProjectId);
+		expect(
+			stub.identities
+				.filter((identity) => identity.projectId === binding.projectId)
+				.map((identity) => identity.name),
+		).toEqual(["hobo-ci-relay"]);
+		expect(
+			stub.identities
+				.filter((identity) => identity.projectId === binding.deployProjectId)
+				.map((identity) => identity.name),
+		).toEqual(["hobo-ci-deploy", "hobo-ci-deploy-reader"]);
 		expect(binding.deployProjectId).not.toBe(binding.projectId);
 		expect(relay?.oidc).toMatchObject({
 			boundIssuer: "https://oidc.vercel.com/hobo-team",
@@ -115,6 +129,9 @@ describe("a self-hosted Infisical, bootstrapped and handed over by claim", () =>
 			boundClaims: {
 				repository_id: "1274791462",
 				repository_owner_id: "344805935",
+				environment: "hobo-ci-app-credentials",
+				job_workflow_ref:
+					"Hobo-Labs/HoBo/.github/workflows/relay-deploy.yml@refs/heads/main",
 			},
 		});
 		expect(binding.deployOidcSubject).toBe(RELAY_DEPLOY_SUBJECT);

@@ -1244,3 +1244,19 @@ test("a change to anything that guards signed local runs runs those guards", () 
 			file,
 		);
 });
+
+test("UI discovery manifest changes select the visual-token gate", () => {
+	for (const file of [
+		"packages/connect-ui/package.json",
+		"packages/mcp/package.json",
+		"packages/runtimes/runtime-local/package.json",
+		"examples/custom-ui/package.json",
+		"apps/web/package.json",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(
+			checks.some((check) => check.args.join(" ") === "run design:lint"),
+			file,
+		);
+	}
+});

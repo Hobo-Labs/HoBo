@@ -110,6 +110,7 @@ describe("release-oci-attest composite action", () => {
 
 /** Jobs that hold release runners or the main-train concurrency queue must not use `always()`. */
 const RELEASE_PUBLISH_CHAIN_JOBS = [
+	"release-toolchain-image",
 	"release-oci-build-tag",
 	"release-images",
 	"release-publish",

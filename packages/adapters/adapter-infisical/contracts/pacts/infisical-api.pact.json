@@ -372,6 +372,30 @@
 					"statusCode": 503
 				}
 			}
+		},
+		{
+			"description": "project identity memberships report their assigned roles",
+			"providerState": "identity relay-identity is a viewer of proj-1",
+			"request": {
+				"method": "GET",
+				"path": "/api/v1/projects/proj-1/identities",
+				"headers": {
+					"authorization": "Bearer fixture-access-token"
+				}
+			},
+			"response": {
+				"status": 200,
+				"headers": {
+					"content-type": "application/json"
+				},
+				"body": {
+					"identityMemberships": [{
+						"identityId": "relay-identity",
+						"roles": [{ "role": "viewer" }],
+						"identity": { "id": "relay-identity", "name": "relay-identity", "projectId": "proj-1" }
+					}]
+				}
+			}
 		}
 	],
 	"metadata": {
