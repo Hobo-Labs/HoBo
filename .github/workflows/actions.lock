@@ -31,6 +31,7 @@ workflows:
     '.github/workflows/hobo-ci.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+        - 'actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333'
         - 'actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00'
         - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
         - 'actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1'
@@ -44,6 +45,9 @@ workflows:
         - 'actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00'
         - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
     '.github/workflows/relay-deploy.yml':
+        - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
+        - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
+    '.github/workflows/release-hobo-pr.yml':
         - 'actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9'
         - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
     '.github/workflows/release-hobo.yml':
