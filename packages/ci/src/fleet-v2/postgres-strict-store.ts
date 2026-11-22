@@ -1376,6 +1376,11 @@ export class PostgresStrictFleetStore implements StrictFleetStore {
 				if (!demand)
 					rejectFleet(FleetRejectionCode.NOT_FOUND, "actual demand not found");
 				await this.verifyStart(client, slot, demand, input);
+				if (existing.profileId !== input.assignment.profileId)
+					rejectFleet(
+						FleetRejectionCode.ASSIGNMENT_MISMATCH,
+						"verified assignment does not match the original binding",
+					);
 				return { claim: existing, idempotent: true };
 			}
 			if (await this.claimByIdInside(client, input.claimId))

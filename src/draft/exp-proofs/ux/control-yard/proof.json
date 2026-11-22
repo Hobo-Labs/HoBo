@@ -12,6 +12,9 @@
       "docs/design/adr/07-portability-extensibility.md#adr-0135",
       "docs/design/cli-spec.md",
       "docs/design/accessibility-usability-launch-baseline.md",
+      "scripts/visual-token-contract.json",
+      "scripts/check-visual-tokens.mts",
+      "packages/control-yard/README.md#design-requirements",
       "packages/control-yard/docs/validation/HYX-RUBRIC.md",
       "packages/control-yard/docs/validation/hyx-rubric.yaml",
       "packages/control-yard/docs/validation/feel-budgets.json"

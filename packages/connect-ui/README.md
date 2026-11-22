@@ -38,6 +38,24 @@ through `onValueChange`, so a person and an agent drive the same page.
 HoBo Rubberhose: ink on paper, thick outlines, hard sticker shadows. Parts are
 restyled from their `data-slot` attributes.
 
+## Design requirements
+
+The reviewed palette and contrast authority is
+`scripts/visual-token-contract.json`, checked by
+`scripts/check-visual-tokens.mts` through root `pnpm run design:lint`.
+Rendered behavior is enforced beside this package:
+
+- **Delayed/unknown status is gray, never green.** The initial unloaded
+  envelope renders `.hobo-loading`, whose foreground is `--faint`; it must not
+  use `--go`. Enforced by `test/connect-ui-design-lint.test.ts` →
+  `"renders delayed or unknown status in faint gray, never green"`.
+- **Every interpolated HTML value is escaped.** `renderConnectPageShell` sends
+  its base path through `escapeHtml` for stylesheet, data, and script
+  attributes, covering `&`, `<`, `>`, double quotes, and single quotes.
+  Enforced by `test/connect-ui-design-lint.test.ts` →
+  `"escapes every interpolated shell value"` and `"escapeHtml covers the five
+  metacharacters"`.
+
 ## Ceremonies
 
 `configureThen` turns missing settings into a `configure` step, then hands the

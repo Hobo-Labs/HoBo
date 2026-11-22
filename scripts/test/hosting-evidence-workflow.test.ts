@@ -14,10 +14,21 @@ import { fileURLToPath } from "node:url";
 import { inspectHostingEvidence } from "../ci/hosting-evidence.mts";
 import { decide, relayInputDirs } from "../ci/relay-deploy-gate.mts";
 
-const bindingText = readFileSync(
+const legacyBindingText = readFileSync(
 	"packages/ci-vercel/deploy/secret-store.binding.json",
 	"utf8",
 );
+const bindingText = `${JSON.stringify(
+	{
+		...JSON.parse(legacyBindingText),
+		deployProjectId: "proj-deploy",
+		deployCredentialIdentityId: "deploy-credential-identity",
+		deployOidcSubject:
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+	},
+	null,
+	"\t",
+)}\n`;
 const workflow = readFileSync(".github/workflows/hosting-evidence.yml", "utf8");
 const baseEnv = {
 	GITHUB_ACTIONS: "true",
@@ -288,6 +299,37 @@ describe("trusted-main hosting evidence", () => {
 			const result = await inspectHostingEvidence({
 				env: baseEnv,
 				bindingText: JSON.stringify(foreign),
+				fetch: fake.send,
+			});
+			assert.equal(result.status, "unavailable");
+			assert.equal(fake.calls.length, 0);
+		}
+	});
+
+	it("keeps read-only evidence available from a claimed legacy binding without admitting it to deploy", async () => {
+		const fake = fakeTransport();
+		const result = await inspectHostingEvidence({
+			env: baseEnv,
+			bindingText: legacyBindingText,
+			fetch: fake.send,
+		});
+		assert.equal(result.status, "observed");
+		assert.equal(result.storeAccess, "names-only");
+		assert.deepEqual(result.knownNamesPresent, [
+			"HOBO_CI_CONFIG_JSON",
+			"VERCEL_TOKEN",
+		]);
+		assert.ok(fake.calls.length > 0);
+	});
+
+	it("does not repair a malformed modern binding through the legacy fallback", async () => {
+		for (const removed of ["deployProjectId", "deployOidcSubject"]) {
+			const modern: Record<string, string> = JSON.parse(bindingText);
+			delete modern[removed];
+			const fake = fakeTransport();
+			const result = await inspectHostingEvidence({
+				env: baseEnv,
+				bindingText: JSON.stringify(modern),
 				fetch: fake.send,
 			});
 			assert.equal(result.status, "unavailable");

@@ -266,3 +266,30 @@ main {
 	font-size: 0.85rem;
 	color: var(--mute);
 }
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms;
+		animation-delay: 0s;
+		animation-iteration-count: 1;
+		transition-duration: 0.01ms;
+		transition-delay: 0s;
+		scroll-behavior: auto;
+	}
+
+	button {
+		transition-duration: 0.01ms;
+		transition-delay: 0s;
+	}
+
+	button:hover,
+	button:active {
+		transform: none;
+	}
+
+	body::after {
+		opacity: 0;
+	}
+}

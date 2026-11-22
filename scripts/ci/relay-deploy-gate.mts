@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * Whether the relay deploy workflow deploys this run (ADR-0179 phase 6).
- *
- * Two questions, both answered before anything is installed:
- *
- * 1. Is a secret store bound to the relay? The store is chosen and
- *    provisioned when the HoBo deployment first runs
- *    (`hobo ci secret-store provision`, ADR-0179 amendment "Secret store
- *    chosen at deploy, provisioned by claim"), which commits its coordinates
- *    to `packages/ci-vercel/deploy/secret-store.binding.json`. Until then the
- *    job ends with a notice and succeeds. No repository variable or secret is
- *    read: the gate is the committed binding.
- * 2. For a push: does the pushed range touch the relay? The relay's inputs are
- *    `packages/ci-vercel` and every workspace package in its pnpm-lock.yaml
- *    closure (`importerClosure`, the release OCI impact tooling's), plus this
- *    workflow and this gate. A manual run always deploys.
- */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,6 +14,7 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
+	"scripts/ci/relay-deploy-environment.mts",
 	"scripts/ci/relay-deploy-verify.mts",
 ] as const;
 
@@ -52,9 +36,17 @@ export function deployDeadline(nowMs: number): string {
 }
 
 /** What the gate knows of the binding; it never reads a value out. */
-export type StoreBindingState = "absent" | "unreadable" | "bound";
+export type StoreBindingState =
+	| "absent"
+	| "unreadable"
+	| "unconfigured"
+	| "bound";
 
-export type GateDecision = Readonly<{ run: boolean; reason: string }>;
+export type GateDecision = Readonly<{
+	run: boolean;
+	reason: string;
+	fatal?: boolean;
+}>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
 export function relayInputDirs(lockfileText: string): readonly string[] {
@@ -76,23 +68,49 @@ export function touchesRelay(
 	);
 }
 
-/**
- * Whether the binding file is there, is JSON, and names a kind and an HTTPS
- * endpoint. A shape hint only: the full parse (`@hobo/secret-store-claim`'s
- * `readSecretStoreBinding`) runs in the credential step, and this gate runs
- * before anything is installed, on node builtins only.
- */
+const DEPLOY_WRITER_SUBJECT =
+	"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
+
 export function storeBindingState(text: string | undefined): StoreBindingState {
 	if (text === undefined) return "absent";
+	let record;
 	try {
-		JSON.parse(text);
+		record = JSON.parse(text);
 	} catch {
 		return "unreadable";
 	}
-	return /"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) &&
-		/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
-		? "bound"
-		: "unreadable";
+	if (record === null || Array.isArray(record)) return "unreadable";
+	const coordinates = ["projectId", "relayIdentityId", "deployIdentityId"];
+	if (
+		record.kind !== String(record.kind) ||
+		!/^[a-z-]{1,64}$/u.test(record.kind) ||
+		record.endpoint !== String(record.endpoint) ||
+		!/^https:\/\/[A-Za-z0-9.-]+/u.test(record.endpoint) ||
+		coordinates.some(
+			(key) => !record[key] || record[key] !== String(record[key]),
+		)
+	)
+		return "unreadable";
+	const deployProjectId = record.deployProjectId ?? "";
+	const deployCredentialIdentityId = record.deployCredentialIdentityId ?? "";
+	const deployOidcSubject = record.deployOidcSubject ?? "";
+	if (
+		deployProjectId !== String(deployProjectId) ||
+		deployCredentialIdentityId !== String(deployCredentialIdentityId) ||
+		deployOidcSubject !== String(deployOidcSubject) ||
+		(deployProjectId === "") !== (deployCredentialIdentityId === "")
+	)
+		return "unreadable";
+	if (deployOidcSubject !== "" && deployOidcSubject !== DEPLOY_WRITER_SUBJECT)
+		return "unreadable";
+	if (deployProjectId === "") return "unconfigured";
+	if (
+		record.projectId === deployProjectId ||
+		deployCredentialIdentityId === record.deployIdentityId ||
+		deployCredentialIdentityId === record.relayIdentityId
+	)
+		return "unreadable";
+	return "bound";
 }
 
 export function decide(input: {
@@ -106,12 +124,19 @@ export function decide(input: {
 	if (input.store === "absent")
 		return {
 			run: false,
-			reason: `no secret store is bound to the relay yet: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
+			fatal: true,
+			reason: `no secret store is bound to the relay: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
 		};
 	if (input.store === "unreadable")
 		return {
 			run: false,
-			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
+			fatal: true,
+			reason: `${RELAY_SECRET_STORE_BINDING} is malformed or half-configured; run hobo ci secret-store connect with both --deploy-project-id and --deploy-credential-identity-id`,
+		};
+	if (input.store === "unconfigured")
+		return {
+			run: false,
+			reason: `${RELAY_SECRET_STORE_BINDING} has no deploy credential project or reader, so no deployment is attempted; owner provisioning and the production observation in packages/ci-vercel/CONFIG-SERVICE.md remain required`,
 		};
 	if (input.event === "workflow_dispatch") {
 		if (input.forceBootstrap === true)
@@ -184,8 +209,9 @@ function main(argv: readonly string[]): void {
 	process.stdout.write(
 		decision.run
 			? `Deploying the relay: ${decision.reason}.\n`
-			: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
+			: `::${decision.fatal === true ? "error title=Relay deploy blocked" : "notice title=Relay deploy skipped"}::${decision.reason}.\n`,
 	);
+	if (decision.fatal === true) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

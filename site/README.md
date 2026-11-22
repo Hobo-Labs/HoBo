@@ -64,9 +64,13 @@ pnpm --filter hobo-site codegen    # regenerate protobuf TS and vet CUE
 
 The site uses the HoBo Rubberhose identity: thick ink, sticker shadows, title
 cards, and light/dark inversion. The implemented tokens are in
-`src/styles/global.css`. Run `pnpm run design:lint` from the repository root to
-check contrast in the site and connection UI palettes, and run the affected
-package's rendered-surface tests for UI changes.
+`src/styles/global.css`; the independent reviewed authority is
+`scripts/visual-token-contract.json`. Run `pnpm run design:lint` from the
+repository root to execute `scripts/check-visual-tokens.mts`, which discovers
+every web UI project, checks the site and connection UI contrast matrices and
+all registered palettes, and refuses a missing contract or a missing, empty, or
+unreadable palette. Run the affected package's design-lint and rendered-surface
+tests for UI changes; raw CSS output is not its own approval.
 
 ## Layout
 
