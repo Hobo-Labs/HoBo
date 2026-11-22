@@ -221,8 +221,10 @@ service.
 A catalog owner who needs the stronger claim should re-run the suite against a
 real database and re-sign the ref.
 
-`advanceTime(ms)` waits on the live endpoint's clock. Tests inject the reference
-server's deterministic clock through the executor's `wait` option. A harness
+`advanceTime(ms)` waits on the live endpoint's clock, splitting long waits into
+safe timer delays and rejecting durations above `Number.MAX_SAFE_INTEGER`.
+Tests inject the reference server's deterministic clock through the executor's
+`wait` option. A harness
 that removes time control still reports `incomplete` and cannot substantiate
 TTL behavior.
 

@@ -33,6 +33,8 @@ information.
   or managed identity environment credentials.
 - `servePrivate` proxies each request through
   `bindleEnv["HOBO_CLOUD_NATIVE_ENDPOINT_<RESOURCE>"]`.
+- Request paths stay on the bound endpoint origin. Redirects within that origin
+  are returned to the caller; redirects outside it return `502`.
 - An unbound resource returns HTTP 501 with a machine-readable remediation.
 
 The default registry remains ready when optional cloud credentials are absent;

@@ -187,13 +187,30 @@ describe("createUpstashRestExecutor", () => {
 		assert.deepEqual(waits, [250]);
 	});
 
+	it("waits the full duration when it exceeds a timer's maximum delay", async () => {
+		const { transport } = createReferenceRestTransport();
+		const waits: number[] = [];
+		const executor = executorOver(transport, async (ms) => {
+			waits.push(ms);
+		});
+		await executor.advanceTime?.(2_147_483_772);
+		assert.deepEqual(waits, [2_147_483_647, 125]);
+	});
+
 	it("rejects invalid time advancement", async () => {
 		const { transport } = createReferenceRestTransport();
-		await assert.rejects(
-			executorOver(transport).advanceTime?.(-1),
-			(error: Error) =>
-				isProviderError(error) && error.code === "PROVIDER_CONTRACT_CHANGED",
-		);
+		for (const duration of [
+			-1,
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.MAX_SAFE_INTEGER + 1,
+		]) {
+			await assert.rejects(
+				executorOver(transport).advanceTime?.(duration),
+				(error: Error) =>
+					isProviderError(error) && error.code === "PROVIDER_CONTRACT_CHANGED",
+			);
+		}
 	});
 });
 

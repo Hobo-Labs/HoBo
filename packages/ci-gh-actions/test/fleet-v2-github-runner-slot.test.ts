@@ -111,10 +111,18 @@ function runners(
 	}>
 ): Response {
 	return Response.json({
+		total_count: values.length,
 		runners: values.map((runner) => ({
 			...runner,
 			name: runner.name ?? "hobo-slot-1",
-			labels: (runner.labels ?? scope.labels).map((name) => ({ name })),
+			os: "linux",
+			status: "offline",
+			busy: false,
+			labels: (runner.labels ?? scope.labels).map((name, id) => ({
+				id,
+				name,
+				type: "custom",
+			})),
 		})),
 	});
 }
@@ -134,7 +142,14 @@ describe("strict GitHub runner slots", () => {
 				return Response.json(
 					{
 						encoded_jit_config: "jit-config",
-						runner: { id: 101, name: "hobo-slot-1" },
+						runner: {
+							id: 101,
+							name: "hobo-slot-1",
+							os: "unknown",
+							status: "offline",
+							busy: false,
+							labels: [{ id: 1, name: "hobo", type: "custom" }],
+						},
 					},
 					{ status: 201 },
 				);
@@ -173,6 +188,23 @@ describe("strict GitHub runner slots", () => {
 			}),
 		).rejects.toMatchObject({ code: "runner-foreign" });
 		expect(store.slot.state).toBe("uncertain");
+		expect(store.quarantined).toBe(true);
+		expect(transport.calls).toHaveLength(1);
+	});
+
+	it("quarantines an incomplete runner listing before registration", async () => {
+		const store = new MemoryRunnerSlotStore("reserved");
+		const transport = github(() =>
+			Response.json({ total_count: 101, runners: [] }),
+		);
+		await expect(
+			provisionGithubRunnerSlot({
+				store,
+				github: transport.api,
+				slotId: "slot-1",
+				scope,
+			}),
+		).rejects.toMatchObject({ code: "registration-uncertain" });
 		expect(store.quarantined).toBe(true);
 		expect(transport.calls).toHaveLength(1);
 	});

@@ -107,15 +107,42 @@ function parseEndpoint(resourceName: string, key: string, value: string): URL {
 function proxyHandler(endpoint: URL, fetchImpl: typeof fetch): FetchHandler {
 	return async (request: Request): Promise<Response> => {
 		const incoming = new URL(request.url);
-		const target = new URL(incoming.pathname + incoming.search, endpoint);
+		const target = new URL(endpoint);
+		target.pathname = incoming.pathname;
+		target.search = incoming.search;
+		target.hash = "";
 		const init: RequestInit = {
 			method: request.method,
 			headers: request.headers,
+			redirect: "manual",
 		};
 		if (request.method !== "GET" && request.method !== "HEAD") {
 			init.body = await request.arrayBuffer();
 		}
 		const upstream = await fetchImpl(target, init);
+		const location = upstream.headers.get("location");
+		if (
+			upstream.status >= 300 &&
+			upstream.status < 400 &&
+			upstream.status !== 304 &&
+			location !== null
+		) {
+			let bound = false;
+			try {
+				bound = new URL(location, target).origin === target.origin;
+			} catch {
+				bound = false;
+			}
+			if (!bound) {
+				await upstream.body?.cancel().catch(() => undefined);
+				return new Response(
+					"Cloudflare remote endpoint redirected outside its configured origin",
+					{
+						status: 502,
+					},
+				);
+			}
+		}
 		return new Response(upstream.body, {
 			status: upstream.status,
 			statusText: upstream.statusText,
