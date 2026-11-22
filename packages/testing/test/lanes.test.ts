@@ -140,7 +140,7 @@ describe("ephemeral-camp lane gates", () => {
 		});
 		expect(graph.fidelity()).toMatchObject({
 			byFidelity: { real: 3, simulated: 0, mocked: 0, "camp-only": 0 },
-			prodReadinessClaimable: true,
+			prodReadinessClaimable: false,
 		});
 		await harness.destroy(bindle)();
 		expect(destroyed).toBe(1);

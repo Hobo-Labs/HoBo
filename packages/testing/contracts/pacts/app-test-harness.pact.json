@@ -39,7 +39,7 @@
 			}
 		},
 		{
-			"description": "the ephemeral-camp lane deploys real resources through its Camp driver",
+			"description": "the ephemeral-camp lane deploys real resources through its Camp driver without claiming readiness",
 			"request": {
 				"method": "POST",
 				"path": "/harness/deploy",
@@ -74,7 +74,7 @@
 							"camp-only": 0
 						},
 						"asserted_against": [],
-						"prod_readiness_claimable": true
+						"prod_readiness_claimable": false
 					},
 					"teardown_order": ["api", "db", "cache"]
 				}

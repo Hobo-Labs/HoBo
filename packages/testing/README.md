@@ -304,9 +304,10 @@ await driver.advance(3_000);
 
 Register a handler explicitly for each interval schedule. The built-in driver
 deduplicates schedules by ID, including schedules created through the shared
-port or raw clock. Re-registering an ID keeps its original interval and start
-time even if the new spec differs, but replaces any prior handler. The returned
-schedule has `deduped: true` and reports the actual interval and next fire time.
+port or raw clock. Re-registering an ID with the same interval, jitter and start
+time replaces any prior handler; a different recurrence for the same ID is
+refused with a `TypeError`. The returned schedule has `deduped: true` and
+reports the actual interval and next fire time.
 The replacement handler receives fires collected after registration; a batch
 already collected retains its earlier handler.
 
