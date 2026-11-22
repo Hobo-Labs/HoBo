@@ -1032,42 +1032,53 @@ export async function divertSaturatedPrBatch(input: {
 			nowMs,
 			slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
 		});
-	try {
-		const trunkDecision = await chooseRunner({
-			observe: observeTrunk,
-			now: input.now,
-			sleep: input.sleep,
-			mode: "auto",
-			fleetLabel: input.labels.trunk,
-			localLabel: input.labels.local,
-			githubLabel: input.labels.github,
-			localEnrolled: input.localEnrolled,
-			limits: mergeGroupLimits,
-			ignoreQueuedCount: true,
-			slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
-		});
-		if (
-			trunkDecision.tier === "fleet" &&
-			trunkDecision.runner === input.labels.trunk
-		) {
-			const confirmed = await confirmMergeGroupFabricFleet({
-				fleetDecision: trunkDecision,
+	const tryPrBatchTrunkDivert = async (): Promise<
+		RouteDecision | undefined
+	> => {
+		try {
+			const trunkDecision = await chooseRunner({
 				observe: observeTrunk,
 				now: input.now,
 				sleep: input.sleep,
+				mode: "auto",
 				fleetLabel: input.labels.trunk,
+				localLabel: input.labels.local,
 				githubLabel: input.labels.github,
-				limits: input.limits,
+				localEnrolled: input.localEnrolled,
+				limits: mergeGroupLimits,
+				ignoreQueuedCount: true,
 				slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
 			});
-			if (confirmed.tier === "fleet" && confirmed.runner === input.labels.trunk)
-				return confirmed;
+			if (
+				trunkDecision.tier === "fleet" &&
+				trunkDecision.runner === input.labels.trunk
+			) {
+				const confirmed = await confirmMergeGroupFabricFleet({
+					fleetDecision: trunkDecision,
+					observe: observeTrunk,
+					now: input.now,
+					sleep: input.sleep,
+					fleetLabel: input.labels.trunk,
+					githubLabel: input.labels.github,
+					limits: input.limits,
+					slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
+				});
+				if (
+					confirmed.tier === "fleet" &&
+					confirmed.runner === input.labels.trunk
+				)
+					return confirmed;
+			}
+			return undefined;
+		} catch {
+			return undefined;
 		}
-	} catch {
-		// Trunk queue unreadable; try the next fleet tier.
-	}
-	const fleet = input.labels.fleet;
-	if (fleet !== input.labels.trunk) {
+	};
+	const tryPrBatchFleetDivert = async (): Promise<
+		RouteDecision | undefined
+	> => {
+		const fleet = input.labels.fleet;
+		if (fleet === input.labels.trunk) return undefined;
 		try {
 			const observation = await observeHoboPoolSaturation({
 				read: input.read,
@@ -1082,9 +1093,9 @@ export async function divertSaturatedPrBatch(input: {
 						reason: `the same-repository PR batch diverts from saturated GitHub-hosted to ${fleet} (${observation.saturation.summary})`,
 						refusedBy: "none",
 					};
-			} else if (
-				agent37OverflowUnavailable(observation.overflowRunners) === undefined
-			) {
+				return undefined;
+			}
+			if (agent37OverflowUnavailable(observation.overflowRunners) === undefined) {
 				console.log(
 					`::warning title=hobo-ci-route-fallback::${escapeCommand(`${observation.saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`)}`,
 				);
@@ -1095,11 +1106,12 @@ export async function divertSaturatedPrBatch(input: {
 					refusedBy: "queue",
 				};
 			}
+			return undefined;
 		} catch {
-			// Fleet saturation unreadable; no verified fleet diversion.
+			return undefined;
 		}
-	}
-	return undefined;
+	};
+	return (await tryPrBatchTrunkDivert()) ?? (await tryPrBatchFleetDivert());
 }
 
 async function readNodeCpuPercent(
