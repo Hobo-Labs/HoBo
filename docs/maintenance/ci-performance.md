@@ -20,7 +20,15 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `release-contract` resolves `hobo-ci-worker` through
   `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
   runner's own content-keyed image, else a GHCR pull with the job token
-  (`packages: read`), and `build.sh` only when neither has it. The
+  (`packages: read`), and `build.sh` only when neither has it. Tag releases resolve
+  the worker tag to one immutable digest in `release-toolchain-image` before either
+  matrix starts. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
+  immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
+  an empty or invalid value fails the job instead of falling back to the version
+  tag, and only an absent variable uses the version tag. Build and publish legs pull that digest under one overall
+  `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
+  four attempts and exponential backoff plus jitter instead of 120-second
+  per-attempt kills; their ensure steps have a 10-minute bound. The
   `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
   job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
   legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
@@ -37,7 +45,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
-- **Scripts test shards.** When scripts, root tests, or workflows change, the PR and merge-group gate requires all four deterministic scripts-test shards. Vitest and `node:test` file workers both respect `HOBO_TEST_MAX_WORKERS`. Shards can queue on a single runner; they add setup and build work, so measure total wall time as well as each shard's runtime. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md) for the worker-budget limits.
+- **Scripts test shards build once.** `scripts-tests-build` restores older `scripts-tests` L1 Turbo archives, derives `--filter=<name>...` arguments through `scripts/ci/scripts-test-imports.mts` from the tests' complete relative-import graph (including nested workspace packages and `src/` or `dist/` imports), adds the `affected-lanes` filters from the `HEAD^1..HEAD` tree diff, and saves one same-run Turbo archive. It packs the built workspace and ts-autocode `dist` trees into one nonempty tarball in `$RUNNER_TEMP`; packing and upload each have a three-minute limit. The four deterministic `scripts-tests` shards need that job, restore its Turbo archive with `preferred-job: scripts-tests-build`, and download and extract the tarball before testing rather than rebuilding or saving competing archives. An empty build base, dist file list, or downloaded tarball fails closed. Neither job waits for `ci-deps-image`. The PR impact gate requires the build and all four shards.
+- **Hosted release-integration critical path.** `release-hobo-pr.yml` has unfiltered pull-request and merge-group triggers, four GitHub-hosted Vitest shards with an 8-minute job ceiling, and the `HoBo release integration PR gate`. Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the lane, fetch or object-verification failure fails the scope step, and only a successfully computed out-of-scope diff skips install and tests successfully. The protected `HoBo release PR gate (required)` no longer needs integration. Fabric and the release train carry temporary hosted PR shards until the new workflow is on `main`; the Fabric shards are not a PR-impact-gate dependency. PR sidecar jobs have no shared `pr-sidecar` cancellation group.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted

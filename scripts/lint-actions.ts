@@ -36,6 +36,7 @@ const activeCiFiles = new Set([
 	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
+	"release-hobo-pr.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
@@ -549,6 +550,20 @@ function isNpmOidcHostedReleaseJob(
 	);
 }
 
+function isHostedReleaseIntegrationJob(
+	file: string,
+	jobLine: string,
+	runsOn: string | undefined,
+): boolean {
+	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	return (
+		runsOn === "ubuntu-24.04" &&
+		((file === "release-hobo-pr.yml" && jobId === "release-integration") ||
+			((file === "release-hobo.yml" || file === "hobo-ci.yml") &&
+				jobId === "release-hobo-integration"))
+	);
+}
+
 const acceptanceDigest =
 	"431c63f690bf69cbed136cd784200a5a257fb3abb6a8abbe1b200274f029bb1a";
 const hostingEvidenceDigest =
@@ -757,6 +772,11 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		const releaseIntegrationHosted = isHostedReleaseIntegrationJob(
+			file,
+			jobLine,
+			runsOn,
+		);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
@@ -771,6 +791,7 @@ function lintWorkflowYaml(
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
+			!releaseIntegrationHosted &&
 			!alwaysHosted
 		) {
 			errors.push(
@@ -887,6 +908,7 @@ function lintWorkflowYaml(
 	}
 	if (
 		activeCiFiles.has(file) &&
+		file !== "release-hobo-pr.yml" &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&
