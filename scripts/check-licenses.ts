@@ -210,8 +210,7 @@ function productionDependencyNames(): Set<string> {
 								(manifest as { dependencies?: object }).dependencies ?? {},
 							),
 						);
-					} catch {
-					}
+					} catch {}
 				}
 			}
 		}

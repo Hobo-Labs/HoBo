@@ -193,9 +193,16 @@ describe("release integration pull-request and merge-queue lane", () => {
 		for (const [label, workflow, id] of integrationJobs) {
 			const entry = job(workflow, id);
 			assert.equal(entry.runsOn, "ubuntu-24.04", label);
-			assert.equal(entry.timeout, 8, label);
+			assert.equal(entry.timeout, 20, label);
 			assert.deepEqual(entry.shards, [0, 1, 2, 3], label);
+			const build = namedStep(entry, "Build HoBo integration dependencies");
+			assert.match(
+				build.run,
+				/turbo run build --filter=@hobo\/hobo\.\.\./u,
+				label,
+			);
 			const lane = namedStep(entry, "HoBo slow integration suites");
+			assert.ok(entry.steps.indexOf(build) < entry.steps.indexOf(lane), label);
 			assert.equal(lane.env.SHARD_INDEX, "${{ matrix.shard }}", label);
 			assert.match(lane.run, /\$\(\(SHARD_INDEX \+ 1\)\)\/4/u, label);
 			assert.doesNotMatch(

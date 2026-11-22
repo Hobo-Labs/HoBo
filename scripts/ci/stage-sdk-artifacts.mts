@@ -100,8 +100,7 @@ function findPackageDir(name: string): string {
 			const raw: unknown = JSON.parse(readFileSync(pkgPath, "utf8"));
 			const manifest = raw as { name?: string };
 			if (manifest.name === name) return join(root, "packages", rel);
-		} catch {
-		}
+		} catch {}
 	}
 	throw new Error(`package dir not found for ${name}`);
 }

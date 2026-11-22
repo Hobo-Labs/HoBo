@@ -86,8 +86,7 @@ function sweep(wrapper: ChildProcess, setup: Rig): boolean {
 	}
 	try {
 		process.kill(-(wrapper.pid ?? 0), "SIGKILL");
-	} catch {
-	}
+	} catch {}
 	return survived;
 }
 

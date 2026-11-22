@@ -66,8 +66,7 @@ function loadAggregators(root: string): Aggregator[] {
 						for (const ref of list ?? [])
 							references.add(ref.replace(/\/+$/u, ""));
 					}
-				} catch {
-				}
+				} catch {}
 			}
 			for (const file of scanFiles(path.join(root, workspace))) {
 				const content = readFileSync(file, "utf8");

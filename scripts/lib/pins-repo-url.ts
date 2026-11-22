@@ -1,4 +1,3 @@
-
 export function sameRepo(left: string, right: string): boolean {
 	const normal = (value: string): string => {
 		const bare = value

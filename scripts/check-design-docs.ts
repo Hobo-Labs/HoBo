@@ -368,15 +368,13 @@ function extractAnchors(markdown: string) {
 }
 
 function slugifyHeading(heading: string) {
-	return (
-		heading
-			.replace(/`([^`]+)`/g, "$1")
-			.toLowerCase()
-			.replace(/&/g, "")
-			.replace(/[^a-z0-9\s_-]/g, "")
-			.trim()
-			.replace(/\s/g, "-")
-	);
+	return heading
+		.replace(/`([^`]+)`/g, "$1")
+		.toLowerCase()
+		.replace(/&/g, "")
+		.replace(/[^a-z0-9\s_-]/g, "")
+		.trim()
+		.replace(/\s/g, "-");
 }
 
 function lineNumberAt(content: string, offset: number) {

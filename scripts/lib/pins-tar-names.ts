@@ -1,4 +1,3 @@
-
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 const asText = (name: string): string =>

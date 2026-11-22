@@ -82,8 +82,7 @@ function writeNotebook(abs: string, slug: string) {
 				(c) => Array.isArray(c.outputs) && c.outputs.length > 0,
 			);
 			if (nb.nbformat && nb.nbformat >= 4 && code.length > 0 && hasOut) return;
-		} catch {
-		}
+		} catch {}
 	}
 	const nb = {
 		cells: [

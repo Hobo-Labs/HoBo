@@ -81,16 +81,14 @@ function expandGlob(glob: string): string[] {
 					const full = join(base, name);
 					try {
 						if (statSync(full).isDirectory()) next.push(full);
-					} catch {
-					}
+					} catch {}
 				}
 				continue;
 			}
 			const full = join(base, part);
 			try {
 				if (statSync(full).isDirectory()) next.push(full);
-			} catch {
-			}
+			} catch {}
 		}
 		candidates = next;
 	}
@@ -106,8 +104,7 @@ function listPackageJsonFiles(dir: string): string[] {
 			const candidate = join(dir, "package.json");
 			try {
 				if (statSync(candidate).isFile()) entries.push(candidate);
-			} catch {
-			}
+			} catch {}
 		}
 	}
 	return [...new Set(entries)].sort();

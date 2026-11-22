@@ -50,8 +50,7 @@ function sweepStale(): void {
 			) {
 				rmSync(path, { recursive: true, force: true });
 			}
-		} catch {
-		}
+		} catch {}
 	}
 }
 

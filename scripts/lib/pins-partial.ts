@@ -58,8 +58,7 @@ function onSignal(signal: NodeJS.Signals): void {
 		guard.abort();
 		try {
 			clean(guard);
-		} catch {
-		}
+		} catch {}
 	}
 	stopListening();
 	if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);

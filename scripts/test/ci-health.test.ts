@@ -492,9 +492,7 @@ type SentIssue = Readonly<{
 function issuesOpened(calls: readonly Call[]): SentIssue[] {
 	return calls
 		.filter((call) => call.method === "POST" && call.url.endsWith("/issues"))
-		.map(
-			(call) => JSON.parse(call.body) as SentIssue,
-		);
+		.map((call) => JSON.parse(call.body) as SentIssue);
 }
 
 function largestWindow(count: number): Recorded {

@@ -171,8 +171,7 @@ function main(root: string): void {
 	for (const file of plan.keep) {
 		try {
 			utimesSync(join(cacheDir, file), stamp, stamp);
-		} catch {
-		}
+		} catch {}
 	}
 	for (const file of plan.drop) rmSync(join(cacheDir, file), { force: true });
 	save(plan.save);

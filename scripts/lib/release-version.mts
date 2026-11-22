@@ -1,4 +1,3 @@
-
 export type ReleaseTrain = "full" | "sdk" | "cli";
 
 export type ParsedReleaseRef = {

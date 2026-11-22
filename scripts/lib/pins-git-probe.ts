@@ -20,8 +20,7 @@ import { armGuard } from "./pins-partial.ts";
 function assertPrivate(cache: string): void {
 	try {
 		mkdirSync(cache, { recursive: true, mode: 0o700 });
-	} catch {
-	}
+	} catch {}
 	const info = lstatSync(cache);
 	const problem = dirProblem(
 		{ uid: info.uid, mode: info.mode, directory: info.isDirectory() },
@@ -63,8 +62,7 @@ function probeGit(
 	const group = (signal: NodeJS.Signals): void => {
 		try {
 			if (child.pid !== undefined) process.kill(-child.pid, signal);
-		} catch {
-		}
+		} catch {}
 	};
 	let escalation: ReturnType<typeof setTimeout> | undefined;
 	const stop = (): void => {

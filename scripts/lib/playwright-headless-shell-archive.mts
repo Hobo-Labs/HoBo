@@ -136,8 +136,7 @@ export function ensurePlaywrightHeadlessShellArchive(
 					join(cacheDir, `${spec.cacheName}.ok`),
 					`${Date.now()}\n`,
 				);
-			} catch {
-			}
+			} catch {}
 			return dest;
 		}
 		lastErr =

@@ -108,8 +108,7 @@ export function sweepProbes(cache: string, now: number = Date.now()): string[] {
 				rmSync(path, { recursive: true, force: true });
 				removed.push(path);
 			}
-		} catch {
-		}
+		} catch {}
 	}
 	return removed;
 }
@@ -144,8 +143,7 @@ export async function sweepPartials(
 					await rm(path, { force: true });
 					removed.push(path);
 				}
-			} catch {
-			}
+			} catch {}
 		}
 	}
 	return removed;

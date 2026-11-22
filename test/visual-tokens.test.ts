@@ -44,12 +44,7 @@ function fixtureRoot(): string {
 test("repository discovery checks the real site and every registered UI palette", () => {
 	assert.deepEqual(
 		listWebUiProjects().map((project) => project.rel),
-		[
-			"packages/connect-ui",
-			"packages/mcp",
-			"packages/status-page",
-			"site",
-		],
+		["packages/connect-ui", "packages/mcp", "packages/status-page", "site"],
 	);
 	assert.deepEqual(checkRepositoryVisualTokens(), []);
 });
