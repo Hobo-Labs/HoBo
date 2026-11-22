@@ -8,7 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { pipelines } from "../../release/hobo-release.delivery.ts";
+import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
 import {
 	announceVerdict,
 	awaitReleasePagesWall,
@@ -196,6 +196,16 @@ describe("release topology names", () => {
 	});
 
 	it("probes the latest Pages build for every promotion node", () => {
+		const pagesCamp = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		);
+		expect(pagesCamp).toBeDefined();
+		const pagesRepository =
+			pagesCamp && "hobo.cd/github.repository" in pagesCamp.labels
+				? pagesCamp.labels["hobo.cd/github.repository"]
+				: undefined;
+		expect(pagesRepository).toBeDefined();
+		const pagesBuildProbe = `https://api.github.com/repos/${pagesRepository}/pages/builds/latest`;
 		const pages = pipelines.find(
 			(pipeline) => pipeline.name === "hobo-release-pages",
 		);
@@ -206,8 +216,7 @@ describe("release topology names", () => {
 				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
 			});
 			expect(node.verification.probes[0]).toMatchObject({
-				urlRef:
-					"https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+				urlRef: pagesBuildProbe,
 				expectStatus: 200,
 			});
 		}
@@ -528,9 +537,10 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 
 	it("builds the hobo CLI only for a run that publishes or promotes", () => {
 		const block = job("release-hobo-cli");
-		expect(block).toMatch(
-			/needs: \[release-main-train-gate, release-pages-gate\]/u,
+		expect(block).toContain(
+			"needs: [route, release-main-train-gate, release-pages-gate]",
 		);
+		expect(block).toContain("needs.route.result == 'success'");
 		expect(block).toContain(
 			"needs.release-main-train-gate.outputs.run == 'true'",
 		);
@@ -547,6 +557,9 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(contract).not.toContain("--filter=@hobo/hobo...");
 		expect(contract).not.toContain("release-freight-realize.test.ts");
 		const realize = job("release-realize");
+		expect(realize).toContain(
+			"(needs.route.result == 'success' || needs.route.result == 'failure')",
+		);
 		before(realize, "name: Turbo cache", "--filter=@hobo/hobo...");
 		before(
 			realize,
@@ -598,6 +611,25 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 			"utf8",
 		);
 		expect(oci).not.toMatch(/"push"|runDockerPushWithRetry/u);
+	});
+
+	it("routes OCI image build and Pages publish through the route job", () => {
+		for (const name of ["release-oci-build-tag", "release-pages"] as const) {
+			const block = job(name);
+			expect(block).toMatch(/needs: \[[^\]]*\broute\b[^\]]*\]/u);
+		}
+		const oci = job("release-oci-build-tag");
+		expect(oci).toMatch(
+			/contains\(fromJSON\('\["push","workflow_dispatch","merge_group","workflow_run"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo'/u,
+		);
+		const pages = job("release-pages");
+		expect(pages).toMatch(/needs\.route\.outputs\.tier == 'github'/u);
+		expect(pages).toMatch(
+			/needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'/u,
+		);
+		expect(pages).toMatch(
+			/contains\(fromJSON\('\["push","workflow_dispatch","merge_group","workflow_run"\]'\), github\.event_name\) && 'hobo-trunk' \|\| 'hobo'/u,
+		);
 	});
 
 	it("publishes Pages only through the realizer: no gh-pages push action", () => {
