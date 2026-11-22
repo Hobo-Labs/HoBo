@@ -442,7 +442,8 @@ Local and CI gates enforce this with `pnpm run docs:freshness`: code changes und
 The repository does not keep plans, roadmaps, or design documents. Implement
 their outstanding work before removing existing artifacts. The existing
 `plans:guard` checks tracked plan documents. `source:guard` checks added or
-changed planning and design documents and new comments in JavaScript, TypeScript,
+changed planning and design documents (a change that only removes lines is allowed, so
+existing ones can be retired) and new comments in JavaScript, TypeScript,
 shell, Python, CSS, and HTML; the common rule above applies to every language.
 Both run through the shared pre-commit and CI checks.
 
