@@ -125,7 +125,7 @@ export const JSON_JWT_PATTERN = redactionPattern(
  * run of characters a bearer value holds, whole.
  */
 export const GLUED_BEARER_PATTERN = redactionPattern(
-	/bearer\s+[A-Za-z0-9._~+/=\u017F\u212A-]+/gi,
+	/bearer\s+[A-Za-z0-9._~+/=%\u017F\u212A-]+/gi,
 );
 
 /**

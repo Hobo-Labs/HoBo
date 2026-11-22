@@ -39,7 +39,7 @@ commit it checked out (`release-freight-cli.mts restore`, fail closed
 otherwise), before any step that runs the CLI. The delivery and App-deposit
 report scripts load the provider redactor from that restored bundle's `dist`.
 Their summary lines pass both the CLI's envelope code and message through a
-bearer/JWT/credential redaction before the job summary sees it, and the result
+bearer/JWT/credential redaction, including percent-encoded bearer tokens, before the job summary sees it, and the result
 report script exits nonzero unless the command's
 envelope is a validated success envelope (`ok: true`) with a valid exit
 status — an absent, malformed, or error envelope is a failure even when the

@@ -1493,15 +1493,15 @@ export async function runCiRelayDeploy(
 								afterPromotion =
 									await client.getProductionDeploymentId(project);
 							} catch (error) {
-								if (promotionError !== undefined)
-									return realizationFailure(promotionError, withoutToken);
-								if (error instanceof VercelPromotionUnconfirmedError)
+								if (promotionError !== undefined) {
+									promotionReadAmbiguous = true;
+								} else if (error instanceof VercelPromotionUnconfirmedError)
 									return {
 										ok: false as const,
 										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
 										message: `Production traffic names no deployment, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
 									};
-								promotionReadAmbiguous = true;
+								else promotionReadAmbiguous = true;
 							}
 							if (
 								!promotionReadAmbiguous &&

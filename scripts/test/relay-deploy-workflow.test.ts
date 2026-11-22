@@ -675,13 +675,13 @@ describe("the relay deploy workflow", () => {
 			writeFileSync(
 				join(redactionDist, "provider-redaction.js"),
 				[
-					"export const GLUED_BEARER_PATTERN = /Bearer\\s+[A-Za-z0-9._~+/=-]+/gu;",
+					"export const GLUED_BEARER_PATTERN = /Bearer\\s+[A-Za-z0-9._~+/=%-]+/gu;",
 					"export const LONG_TOKEN_RUN_PROFILE = { patterns: [] };",
 					"export function createProviderRedactor() {",
 					"  return (text, maxLength = 256) => {",
 					"    const redacted = String(text)",
 					'      .replace(/gh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]")',
-					'      .replace(/Bearer\\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]");',
+					'      .replace(/Bearer\\s+[A-Za-z0-9._~+/=%-]+/g, "Bearer [redacted]");',
 					'    return redacted.length > maxLength ? redacted.slice(0, maxLength) + "...[cut]" : redacted;',
 					"  };",
 					"}",
