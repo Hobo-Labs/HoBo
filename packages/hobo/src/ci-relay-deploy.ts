@@ -1377,7 +1377,7 @@ export async function runCiRelayDeploy(
 							);
 						}
 						const alreadyPromoted = currentProduction === safe.deploymentId;
-						const recordedRollback = safe.rollbackDeploymentId;
+						const recordedRollback = safe.promotedFrom;
 						const previousProduction = alreadyPromoted
 							? recordedRollback !== safe.deploymentId
 								? recordedRollback
