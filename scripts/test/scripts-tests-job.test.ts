@@ -87,7 +87,8 @@ function step(entry: Job, name: string): Step {
 }
 
 /** The routed `runs-on` expression, as the route job's other consumers use it. */
-const ROUTED = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const ROUTED =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
 const buildJob = job("scripts-tests-build");
 const scripts = job("scripts-tests");

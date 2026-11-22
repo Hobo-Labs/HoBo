@@ -460,7 +460,7 @@ describe("the relay deploy workflow", () => {
 		assert.match(workflow, / {4}needs: route\n/u);
 		assert.match(
 			workflow,
-			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| /u,
+			/runs-on: \$\{\{ needs\.route\.result == 'success' && \(needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'\) \|\| 'ubuntu-24\.04' \}\}/u,
 		);
 	});
 

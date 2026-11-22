@@ -3,7 +3,7 @@
 		{
 			"id": "pr_gate_plan",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_plan\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_plan\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -103,7 +103,7 @@
 		{
 			"id": "pr_gate_validation",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_gate_validation\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -239,7 +239,7 @@
 		{
 			"id": "workspace_tests",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.pr_gate_plan.result == 'success' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"workspace_tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -361,7 +361,7 @@
 		{
 			"id": "pr_affected",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_plan.result == 'success' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && github.event_name == 'pull_request' && needs.pr_gate_plan.result == 'success' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr_affected\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -482,7 +482,7 @@
 		{
 			"id": "scripts-tests",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
+			"if": "${{ !cancelled() && needs.route.result == 'success' && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"scripts-tests\"')) && !(needs.route.outputs.pr-fabric-green == 'true' && github.event_name == 'merge_group') }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -597,7 +597,7 @@
 		{
 			"id": "pr-offpath",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr-offpath\"')) }}",
+			"if": "${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"pr-offpath\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -682,7 +682,7 @@
 		{
 			"id": "artifact-trust",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"artifact-trust\"')) }}",
+			"if": "${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"artifact-trust\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -725,7 +725,7 @@
 		{
 			"id": "ci-guard",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
+			"if": "${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"ci-guard\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -765,7 +765,7 @@
 		{
 			"id": "secret-scan",
 			"workflow": ".github/workflows/hobo-ci.yml",
-			"if": "${{ github.event_name == 'pull_request' && !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"secret-scan\"')) }}",
+			"if": "${{ !cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && github.event_name == 'pull_request' && !(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"secret-scan\"')) }}",
 			"workflowEnv": {
 				"HOBO_TURBO_CONCURRENCY": "1",
 				"HOBO_TEST_MAX_WORKERS": "1",
@@ -796,7 +796,7 @@
 		{
 			"id": "release-contract",
 			"workflow": ".github/workflows/release-hobo.yml",
-			"if": "${{ !(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"')) }}",
+			"if": "!cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure') && !( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '\"release-contract\"'))",
 			"workflowEnv": {
 				"RELEASE_SPARSE_PATHS": ".github\nscripts\ntest/setup\npackages\nrelease\ndeploy\nsite\nexternal\nmedia\nexamples\nsrc\ntools/pins\n.mise/locks\nmise.toml\nmise.lock\npackage.json\npnpm-lock.yaml\npnpm-workspace.yaml\nturbo.json\ntsconfig.base.json\n",
 				"HOBO_RELEASE_TURBO_BASE": "origin/main",
