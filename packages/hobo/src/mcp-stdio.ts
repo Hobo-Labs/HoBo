@@ -257,6 +257,12 @@ function ownerSetupResponse(
 			: OWNER_SETUP_CODES.has(result.code)
 				? result.code
 				: "HOBO_MCP_SETUP_RESULT";
+	const completedMessage =
+		completed &&
+		isJsonObject(result.output) &&
+		isJsonString(result.output.message)
+			? result.output.message
+			: undefined;
 	return {
 		ok: result.ok,
 		status:
@@ -307,7 +313,8 @@ function ownerSetupResponse(
 										? "Run again to request a new Vercel approval."
 										: !result.ok && OWNER_STEP_CODES.has(result.code)
 											? "Run again when the owner is ready."
-											: "HoBo returned a setup status. Owner steps use the secure form.",
+											: (completedMessage ??
+												"HoBo returned a setup status. Owner steps use the secure form."),
 	};
 }
 

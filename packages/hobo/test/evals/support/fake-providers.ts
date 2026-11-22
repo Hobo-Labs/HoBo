@@ -1,52 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { z } from "zod";
-
 import { bodyOf, json, type ProviderHandler } from "./tls-world.js";
-
-type VercelProjectEnv = Readonly<{
-	id: string;
-	key: string;
-	value: string;
-	type: string;
-	target: readonly string[];
-}>;
-
-type VercelProjectCreate = Readonly<{ name: string }>;
-
-const vercelProjectCreateBody = z.object({
-	name: z.union([z.string(), z.number()]).optional(),
-});
-
-const vercelEnvCreateBody = z.object({
-	key: z.string().optional(),
-	value: z.string().optional(),
-	type: z.string().optional(),
-	target: z.array(z.string()).optional(),
-});
-
-function parseVercelProjectCreate(body: string): VercelProjectCreate {
-	try {
-		const parsed = vercelProjectCreateBody.parse(JSON.parse(body || "{}"));
-		return { name: String(parsed.name ?? "") };
-	} catch {
-		return { name: "" };
-	}
-}
-
-function parseVercelEnvCreate(body: string): Omit<VercelProjectEnv, "id"> {
-	try {
-		const parsed = vercelEnvCreateBody.parse(JSON.parse(body || "{}"));
-		return {
-			key: parsed.key ?? "",
-			value: parsed.value ?? "",
-			type: parsed.type ?? "",
-			target: parsed.target ?? [],
-		};
-	} catch {
-		return { key: "", value: "", type: "", target: [] };
-	}
-}
 
 export function fakeVercel() {
 	const calls: string[] = [];
@@ -56,7 +10,6 @@ export function fakeVercel() {
 	>();
 	const tokens = new Set<string>();
 	const deployments: string[] = [];
-	const projects = new Map<string, VercelProjectEnv[]>();
 	const handle: ProviderHandler = async (request, response) => {
 		const url = new URL(request.url ?? "/", "https://api.vercel.com");
 		const method = request.method ?? "GET";
@@ -103,40 +56,6 @@ export function fakeVercel() {
 				teams: [{ id: "team_owner", slug: "owner" }],
 				pagination: { next: null },
 			});
-		if (method === "POST" && url.pathname === "/v9/projects") {
-			const { name } = parseVercelProjectCreate(body);
-			if (projects.has(name))
-				return json(response, 409, { error: { code: "conflict" } });
-			projects.set(name, []);
-			return json(response, 200, { id: `prj_${name}`, name });
-		}
-		const env = /^\/v10\/projects\/([^/]+)\/env$/u.exec(url.pathname);
-		if (env !== null) {
-			const name = decodeURIComponent(env[1] ?? "");
-			const envs = projects.get(name);
-			if (envs === undefined)
-				return json(response, 404, {
-					error: { code: "not_found", message: "Project not found" },
-				});
-			if (method === "GET") return json(response, 200, { envs });
-			if (method === "POST") {
-				const made = parseVercelEnvCreate(body);
-				envs.push({ id: `env_${envs.length}`, ...made });
-				return json(response, 200, { created: made, failed: [] });
-			}
-		}
-		const team = /^\/v2\/teams\/([^/]+)$/u.exec(url.pathname);
-		if (method === "GET" && team !== null)
-			return team[1] === "team_owner"
-				? json(response, 200, { id: "team_owner", slug: "owner" })
-				: json(response, 404, { error: { code: "not_found" } });
-		const patched = /^\/v9\/projects\/([^/]+)$/u.exec(url.pathname);
-		if (method === "PATCH" && patched !== null)
-			return projects.has(decodeURIComponent(patched[1] ?? ""))
-				? json(response, 200, {
-						oidcTokenConfig: { enabled: true, issuerMode: "team" },
-					})
-				: json(response, 404, { error: { code: "not_found" } });
 		if (method === "POST" && /^\/v1[03]\/deployments$/u.test(url.pathname)) {
 			const id = `dpl_${randomUUID().replace(/-/gu, "")}`;
 			deployments.push(id);

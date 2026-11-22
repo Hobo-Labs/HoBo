@@ -23,14 +23,6 @@ argument arrays, repository/host selection, bounded JSON parsing, current commit
 resolution, retry admission and new-attempt fencing. It uses a process seam;
 live GitHub assignment, logs, and reruns remain release checks.
 
-`ci-insights-github.pact.json` pins the GitHub REST reads `hobo ci signals`
-and `hobo ci diagnose` make through `gh api`: the repository, the run list,
-one attempt's jobs, a job's log and its annotations through the distinct
-check-run ID from `check_run_url`, with the fields the insight reports read.
-`test/ci-insights.test.ts` executes every interaction in order through
-`runCiInsights`. GitHub does not verify this
-consumer fixture; a read against a live repository remains a release check.
-
 `e2e/ci.test.ts` additionally exercises the built executable over real HTTPS to
 the production hosted control plane and native PostgreSQL journal. Restart and
 lost-response cases verify idempotent recovery after a durable commit. GitHub App

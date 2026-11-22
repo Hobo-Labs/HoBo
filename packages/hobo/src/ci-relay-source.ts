@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { posix } from "node:path";
+import { join, posix } from "node:path";
 import { isJsonString } from "./json.js";
 import {
 	type PinnedGitSource,
 	pinnedGitEnvironment,
+	readPinnedGitLinks,
 	readPinnedGitSource,
 } from "./pinned-git-source.js";
 
@@ -123,9 +124,35 @@ export function readRelaySource(cwd: string, sha: string): PinnedGitSource {
 		)
 	)
 		throw new Error("Invalid optional workspace input.");
-	return readPinnedGitSource({
-		cwd: root,
-		sha,
-		paths: [...RELAY_ROOT_INPUTS, ...optionalPaths, ...directories],
-	});
+	const gitlinkPins = readPinnedGitLinks({ cwd: root, sha });
+	const mounts = [...gitlinkPins.keys()].sort((a, b) => b.length - a.length);
+	const repoDirectories: string[] = [];
+	const submoduleDirectories = new Map<string, string[]>();
+	for (const dir of directories) {
+		const mount = mounts.find((path) => dir.startsWith(`${path}/`));
+		if (mount === undefined) repoDirectories.push(dir);
+		else {
+			const stripped = dir.slice(mount.length + 1);
+			const group = submoduleDirectories.get(mount);
+			if (group === undefined) submoduleDirectories.set(mount, [stripped]);
+			else group.push(stripped);
+		}
+	}
+	const files = [
+		...readPinnedGitSource({
+			cwd: root,
+			sha,
+			paths: [...RELAY_ROOT_INPUTS, ...optionalPaths, ...repoDirectories],
+		}).files,
+	];
+	for (const mount of [...submoduleDirectories.keys()].sort()) {
+		const pinned = readPinnedGitSource({
+			cwd: join(root, mount),
+			sha: gitlinkPins.get(mount) ?? "",
+			paths: submoduleDirectories.get(mount) ?? [],
+		});
+		for (const file of pinned.files)
+			files.push({ ...file, path: posix.join(mount, file.path) });
+	}
+	return { commit: sha, files };
 }

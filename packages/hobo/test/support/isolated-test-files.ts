@@ -22,7 +22,6 @@ export const ISOLATED_TEST_FILES = [
 	"test/drift-command.test.ts",
 	"test/evals/ceremony-explorer.eval.test.ts",
 	"test/import-command.test.ts",
-	"test/mcp-owner-session.test.ts",
 	"test/pinned-git-source.test.ts",
 	"test/serve-control-command.test.ts",
 	"test/vercel-deploy.test.ts",

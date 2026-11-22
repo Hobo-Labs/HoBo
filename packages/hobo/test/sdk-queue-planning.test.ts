@@ -16,7 +16,6 @@ describe("SDK queue planning", () => {
 	it.each([
 		["AWS", createAwsProvider(), "@hobo/provider-aws"],
 		["GCP", createGcpProvider(), "@hobo/provider-gcp"],
-		["Vercel", createVercelProvider(), "@hobo/provider-vercel"],
 	] as const)("plans a queue using %s's queue definition", (_name, provider, providerId) => {
 		const result = plan(
 			manifest,

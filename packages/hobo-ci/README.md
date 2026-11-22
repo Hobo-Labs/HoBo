@@ -60,7 +60,9 @@ sign-in, so a relay on Bitwarden reads back with its own machine account
 token, kept by the platform; Infisical stays the default for that reason.
 Selecting the Infisical OAuth application sign-in keeps the store read-only
 even if another credential is available. Selecting the egress proxy sends its
-placeholder rather than a token retained from another sign-in choice.
+placeholder rather than a token retained from another sign-in choice. Owner-selection
+currency is checked again after reading the locator. A selection change immediately
+after a store mutation marks that write uncertain instead of hiding its committed outcome.
 The intended relay connection reads credentials with its own workload identity
 (OIDC); it still needs an end-to-end observation with the configured store.
 For a remote owner hand-off, an existing 1Password service account can be

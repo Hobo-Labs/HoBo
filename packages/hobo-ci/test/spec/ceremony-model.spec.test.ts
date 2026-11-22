@@ -5,6 +5,7 @@ import {
 	check,
 	eventsFromWire,
 	REACHES_FRONTIER,
+	readOwnerTurn,
 	type WireMessage,
 } from "../../src/index.js";
 
@@ -247,6 +248,12 @@ describe("SPEC ceremony model: the derived properties catch the real failures", 
 				holds: false,
 			},
 		);
+	});
+
+	it("lets an explicit denial dominate a readiness marker", () => {
+		expect(readOwnerTurn(true, ["MCP_SCOPE_DENIED"])).toMatchObject({
+			kind: "blocked",
+		});
 	});
 
 	it("does not treat a failed payload with a success code as completion", () => {

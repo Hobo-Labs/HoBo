@@ -816,9 +816,6 @@ importers:
         specifier: 5.0.1
         version: 5.0.1
     devDependencies:
-      '@hobo/runtime-local':
-        specifier: workspace:*
-        version: link:../runtimes/runtime-local
       fast-check:
         specifier: ^4.3.0
         version: 4.9.0
@@ -1073,9 +1070,6 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
       zod:
         specifier: ^4.1.13
         version: 4.4.3
@@ -1116,6 +1110,9 @@ importers:
       testcontainers:
         specifier: 11.8.1
         version: 11.8.1
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   packages/ci-guard:
     devDependencies:
@@ -2130,9 +2127,6 @@ importers:
 
   packages/hobo-cd:
     dependencies:
-      '@hobo/adapter-infisical':
-        specifier: workspace:*
-        version: link:../adapters/adapter-infisical
       '@hobo/bindles':
         specifier: workspace:*
         version: link:../bindles

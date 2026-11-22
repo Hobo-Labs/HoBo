@@ -8,7 +8,6 @@ import {
 	oidcAuth,
 	type ParsedInfisicalBinding,
 	parseInfisicalBinding,
-	parseInfisicalIdentityId,
 } from "@hobo/adapter-infisical";
 import type { OpenedSecretStore } from "@hobo/hobo-ci";
 import { getVercelOidcToken } from "@vercel/oidc";
@@ -94,7 +93,7 @@ export function parseCdStoreCoordinates(text: string): CdStoreCoordinates {
 			environment: record.data.environment,
 			secretPath: record.data.secretPath,
 		});
-		const identityId = parseInfisicalIdentityId(record.data.relayIdentityId);
+		const identityId = record.data.relayIdentityId;
 		oidcAuth({ identityId, jwt: vercelOidcJwtSource });
 		return Object.freeze({ binding, identityId });
 	} catch {
@@ -128,44 +127,6 @@ export function readCdStoreCoordinates(
 		);
 	}
 	return parseCdStoreCoordinates(text);
-}
-
-type Env = Readonly<Record<string, string | undefined>>;
-
-export function cdStoreCoordinatesFromEnv(
-	env: Env,
-): CdStoreCoordinates | undefined {
-	const identityId = env.INFISICAL_IDENTITY_ID;
-	const projectId = env.INFISICAL_PROJECT_ID;
-	if (identityId === undefined || projectId === undefined) return undefined;
-	return parseCdStoreCoordinates(
-		JSON.stringify({
-			kind: "infisical-cloud-attach",
-			endpoint: env.INFISICAL_SITE_URL ?? "https://app.infisical.com",
-			projectId,
-			environment: env.INFISICAL_ENVIRONMENT ?? "prod",
-			secretPath: env.INFISICAL_SECRET_PATH ?? "/hobo-cd",
-			relayIdentityId: identityId,
-		}),
-	);
-}
-
-export function cdStoreCoordinates(
-	env: Env,
-	url: URL = CD_STORE_BINDING_URL,
-): CdStoreCoordinates {
-	try {
-		return readCdStoreCoordinates(url);
-	} catch (error) {
-		if (
-			!(error instanceof CdStoreBindingError) ||
-			error.code !== "cd-store-binding-missing"
-		)
-			throw error;
-		const configured = cdStoreCoordinatesFromEnv(env);
-		if (configured === undefined) throw error;
-		return configured;
-	}
 }
 
 export function openCdStore(

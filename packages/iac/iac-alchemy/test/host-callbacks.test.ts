@@ -118,7 +118,6 @@ function fixture(denial: Denial = "none") {
 				budget: { evaluation: "allowed", reservation: "held" },
 				reservation: {
 					reservationId: `iac:${requestId}`,
-					executionDigest: `sha256:${"4".repeat(64)}`,
 					unboundedExposure: false,
 				},
 				requestDigest: `sha256:${"d".repeat(64)}`,

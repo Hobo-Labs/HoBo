@@ -432,7 +432,6 @@ interface InspectedFinancialDecision
 	reservation?:
 		| {
 				reservationId: string;
-				executionDigest?: string;
 				unboundedExposure?: boolean;
 				unpricedScopeProof?: UnpricedScopeProof;
 		  }
@@ -937,7 +936,6 @@ const reservationFields = new Set([
 	"executionDigest",
 	"financialPlanHash",
 	"fenceSettlementGuard",
-	"fenceSettlementPayloadVersion",
 	"unboundedExposure",
 	"unpricedPolicyProof",
 	"unpricedScopeProof",
@@ -1432,7 +1430,6 @@ function readFinancialDecision(
 		)
 			return undefined;
 		let reservationId: string | undefined;
-		let executionDigest: string | undefined;
 		let unboundedExposure: boolean | undefined;
 		let unpricedScopeProof: UnpricedScopeProof | undefined;
 		if (reservationInput !== undefined) {
@@ -1457,17 +1454,6 @@ function readFinancialDecision(
 			)
 				return undefined;
 			reservationId = id.value;
-			const execution = getOwnDescriptor(reservationInput, "executionDigest");
-			if (execution !== undefined) {
-				if (
-					!hasOwnDescriptor(execution, "value") ||
-					typeof execution.value !== "string" ||
-					((execution.value !== "" || status === "admitted") &&
-						!/^sha256:[a-f0-9]{64}$/u.test(execution.value))
-				)
-					return undefined;
-				executionDigest = execution.value;
-			}
 			const unbounded = getOwnDescriptor(reservationInput, "unboundedExposure");
 			if (unbounded !== undefined) {
 				if (
@@ -1520,8 +1506,6 @@ function readFinancialDecision(
 		};
 		if (reservationId !== undefined) {
 			result.reservation = { reservationId };
-			if (executionDigest !== undefined)
-				result.reservation.executionDigest = executionDigest;
 			if (unboundedExposure !== undefined)
 				result.reservation.unboundedExposure = unboundedExposure;
 			if (unpricedScopeProof !== undefined)
@@ -2521,11 +2505,8 @@ export function createAlchemyIacProvider<
 								knownReservation,
 							),
 						};
-					const executionDigest = decision.reservation?.executionDigest;
 					if (
 						decision.reservation === undefined ||
-						executionDigest === undefined ||
-						!/^sha256:[a-f0-9]{64}$/u.test(executionDigest) ||
 						!reservationName(decision.reservation.reservationId) ||
 						decision.reservation.reservationId !== `iac:${requestId}` ||
 						decision.budget?.reservation !== "held" ||
@@ -2629,7 +2610,6 @@ export function createAlchemyIacProvider<
 							budget: { evaluation: "bypassed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,
-								executionDigest,
 								unboundedExposure: true,
 								unpricedScopeProof: scope,
 							},
@@ -2645,7 +2625,6 @@ export function createAlchemyIacProvider<
 							budget: { evaluation: "allowed", reservation: "held" },
 							reservation: {
 								reservationId: claimedReservationId,
-								executionDigest,
 								unboundedExposure: false,
 							},
 						};

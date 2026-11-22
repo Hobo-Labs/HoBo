@@ -1,11 +1,5 @@
 import { spawn } from "node:child_process";
-import {
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,29 +39,11 @@ const message = z.record(z.string(), z.json());
 type Message = z.infer<typeof message>;
 
 function startServer(env: NodeJS.ProcessEnv) {
-	const launcher = z
-		.object({
-			mcpServers: z.object({
-				hobo: z.object({ command: z.string(), args: z.array(z.string()) }),
-			}),
-		})
-		.parse(JSON.parse(readFileSync(path.join(REPO, ".mcp.json"), "utf8")))
-		.mcpServers.hobo;
-	const child = spawn(launcher.command, launcher.args, {
-		cwd: path.join(REPO, "packages/hobo"),
-		env: {
-			...env,
-			CLAUDE_CODE_REMOTE: "",
-			CODESPACES: "",
-			GITPOD_WORKSPACE_ID: "",
-			CODER: "",
-			REMOTE_CONTAINERS: "",
-			DEVCONTAINER: "",
-			CLOUD_SHELL: "",
-			SSH_CONNECTION: "",
-		},
-		stdio: ["pipe", "pipe", "pipe"],
-	});
+	const child = spawn(
+		process.execPath,
+		["--import", "tsx", "packages/hobo/src/bin/hobo-mcp.ts"],
+		{ cwd: REPO, env, stdio: ["pipe", "pipe", "pipe"] },
+	);
 	const inbox: Message[] = [];
 	// The whole exchange, both ways, for the spec model's properties.
 	const wire: WireMessage[] = [];
@@ -252,23 +228,28 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			expect(world.requests).not.toContainEqual(
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
-			// Nothing more is asked of the owner: no sign-in, approval, store or
-			// hand-off refusal remains. What follows is the CD project's own
-			// convergence (see the todo below).
+			expect(fourth).toContain("HOBO_OK");
+			expect(fourth).toContain(
+				"hobo cd up deployed 4 resources (cd-api, cd-config, cd-journal, cd-tick)",
+			);
+			expect(
+				world.requests.filter((request) =>
+					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
+				),
+			).toHaveLength(1);
 			expect(fourth).not.toMatch(
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
 			const events = eventsFromWire(server.wire);
-			const verdicts = ceremonyProperties({ secrets: [copied, jwt] }).map(
-				(property) => check(property, events),
-			);
+			const verdicts = [
+				...ceremonyProperties({ secrets: [copied, jwt] }),
+				REACHES_FRONTIER,
+			].map((property) => check(property, events));
 			for (const verdict of verdicts)
 				trail.push(
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
-			expect(fourth).toContain("HOBO_OK");
-			expect(fourth).toContain("deployed");
 			expect(check(REACHES_FRONTIER, events).holds).toBe(true);
 			// Not vacuous: the run's own sign-in form is the capture the link
 			// property holds to.
@@ -327,7 +308,9 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				}),
 			);
 			const run = server.tool("cd", { args: ["up", "--hand-off"], cwd: REPO });
-			const signIn = await server.next((m) => m.method === "elicitation/create");
+			const signIn = await server.next(
+				(m) => m.method === "elicitation/create",
+			);
 			const jwt = api.signIn();
 			const copied = copiedSession(jwt);
 			server.send({
@@ -553,13 +536,4 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 			await api.close();
 		}
 	}, 120_000);
-
-	// The CD project's own declaration (packages/hobo-cd/src/bindle.ts) says
-	// its resources must be wired before it can deploy: the API has no handler
-	// binding, the schedule no cadence, and cd-config / cd-journal no
-	// providers in the composed runtime. The plan is rejected there today.
-	it.todo(
-		"cd up converges the CD project after the ceremony (the hobo-cd Bindle is not deployable yet)",
-	);
-
 });

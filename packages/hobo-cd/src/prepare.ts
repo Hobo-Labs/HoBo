@@ -1,9 +1,4 @@
-import type {
-	CommandResult,
-	PreparedStep,
-	PrepareInput,
-	PrepareOutcome,
-} from "@hobo/cli";
+import type { CommandResult, PrepareInput, PrepareOutcome } from "@hobo/cli";
 import {
 	type CeremonySetting,
 	type ConnectFlow,
@@ -73,10 +68,6 @@ import {
 	vercelDeviceTeam,
 	vercelDeviceToken,
 } from "./vercel-device.js";
-import {
-	type CdWorkloadDeps,
-	ensureCdWorkloadIdentity,
-} from "./workload-identity.js";
 
 // `hobo cd up`'s prepare step: an interactive ceremony that sets up whatever
 // the Vercel connection is missing — HoBo CD's Vercel Integration (slug and
@@ -156,12 +147,13 @@ export interface PrepareVercelDeps extends OwnerStoreDeps {
 	readonly handOffTimeoutMs?: number;
 	/** The run's trusted vault; a fresh one by default. */
 	readonly vault?: TrustedVault;
+	/**
+	 * public-contract: what creates the CD journal's fleet members
+	 * (`journal-fleet.ts`). With none, `hobo cd up` provisions no journal and
+	 * the CD runtime keeps its single-process SQLite journal.
+	 */
 	readonly journalProvisioners?: readonly JournalMemberProvisioner[];
-	readonly workload?: CdWorkloadDeps;
 }
-
-// public-contract: the project name hobo cd up delivers CD to and trusts tokens from.
-export const CD_VERCEL_PROJECT = "hobo-cd";
 
 function refused(
 	code: string,
@@ -210,10 +202,9 @@ async function ready(
 	store: OpenedSecretStore,
 	outcome: "created" | "unchanged",
 	vault: TrustedVault,
-	deps: PrepareVercelDeps,
+	provisioners: readonly JournalMemberProvisioner[] | undefined,
 	matches: (connection: StoredVercelConnection) => boolean,
 ): Promise<PrepareOutcome> {
-	const provisioners = deps.journalProvisioners;
 	const resolved = await resolveVercelJunction(store, vault, matches);
 	if (!resolved.ok)
 		return refused("HOBO_CD_VERCEL_JUNCTION_UNRESOLVED", resolved.message, [
@@ -228,24 +219,6 @@ async function ready(
 				"Run hobo cd up again; if it persists, check access to the secret store.",
 			]);
 	}
-	let identity: PreparedStep;
-	try {
-		identity = await ensureCdWorkloadIdentity({
-			store,
-			vault,
-			project: CD_VERCEL_PROJECT,
-			environment: "preview",
-			...(deps.workload !== undefined ? { deps: deps.workload } : undefined),
-		});
-	} catch (error) {
-		return refused(
-			"HOBO_CD_WORKLOAD_IDENTITY_FAILED",
-			`The identity HoBo.CD on Vercel reads its journal with could not be made: ${error instanceof Error ? error.message : String(error)}`,
-			[
-				"Run hobo cd up again; if it persists, check that your Infisical sign-in may manage identities in the project.",
-			],
-		);
-	}
 	return {
 		kind: "ready",
 		steps: [
@@ -255,7 +228,6 @@ async function ready(
 				detail: `junction ${resolved.junction.name} (${resolved.junction.yards.map((y) => y.name).join(" <-> ")}); credential in ${store.id}`,
 			},
 			...journal,
-			identity,
 		],
 		credentials: vault,
 	};
@@ -615,8 +587,12 @@ async function prepareVercelWithVault(
 			};
 		}
 		const expected = connection;
-		return ready(owner.opened, "unchanged", vault, deps, (current) =>
-			sameVercelConnection(expected, current),
+		return ready(
+			owner.opened,
+			"unchanged",
+			vault,
+			deps.journalProvisioners,
+			(current) => sameVercelConnection(expected, current),
 		);
 	}
 	if (input.whatIf)
@@ -713,8 +689,12 @@ async function prepareVercelWithVault(
 					}
 					if (current !== undefined) {
 						const expected = current;
-						return ready(store, "created", vault, deps, (next) =>
-							sameVercelConnection(expected, next),
+						return ready(
+							store,
+							"created",
+							vault,
+							deps.journalProvisioners,
+							(next) => sameVercelConnection(expected, next),
 						);
 					}
 				}
@@ -826,8 +806,12 @@ async function prepareVercelWithVault(
 							["Check store access and retry."],
 						);
 					const expected = current;
-					return ready(store, "unchanged", vault, deps, (next) =>
-						sameVercelConnection(expected, next),
+					return ready(
+						store,
+						"unchanged",
+						vault,
+						deps.journalProvisioners,
+						(next) => sameVercelConnection(expected, next),
 					);
 				}
 				throw new Error("owner job rejected without a pending grant");
@@ -873,7 +857,7 @@ async function prepareVercelWithVault(
 				teamId,
 				installationId: VERCEL_DEVICE_INSTALLATION,
 			};
-			return ready(store, "created", vault, deps, (c) =>
+			return ready(store, "created", vault, deps.journalProvisioners, (c) =>
 				sameVercelConnection(expected, c),
 			);
 		} catch (error) {
@@ -1081,7 +1065,7 @@ async function prepareVercelWithVault(
 		connectedStore,
 		vercel?.outcome() ?? "unchanged",
 		vault,
-		deps,
+		deps.journalProvisioners,
 		matches,
 	);
 }

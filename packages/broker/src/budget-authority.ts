@@ -28,8 +28,6 @@ import {
 	createBudgetFenceVerifier,
 } from "./budget-fence-settlement.js";
 
-const currentBudgetFenceSettlementPayloadVersion = "v2";
-
 export type {
 	BudgetEntitlement,
 	BudgetProviderAccount,
@@ -122,40 +120,6 @@ function boundedName(value: string, limit = 200): boolean {
 		value.trim() === value &&
 		!/[\p{Cc}]/u.test(value)
 	);
-}
-
-function validEntitlementKind(kind: string): boolean {
-	return ["allowance", "credit", "commitment"].includes(kind);
-}
-
-type EntitlementScope = { kind: string; bucketId: string; unit: string };
-
-function persistedEntitlementKind(kind: string): string {
-	return kind === "" ? "allowance" : kind;
-}
-
-function entitlementScopeKey(row: EntitlementScope): string {
-	return JSON.stringify([
-		persistedEntitlementKind(row.kind),
-		row.bucketId,
-		row.unit,
-	]);
-}
-
-function sameEntitlementScope(
-	left: EntitlementScope,
-	right: EntitlementScope,
-): boolean {
-	return entitlementScopeKey(left) === entitlementScopeKey(right);
-}
-
-function normalizeLegacyBudgetSnapshot(
-	snapshot: BudgetLedgerSnapshot,
-): BudgetLedgerSnapshot {
-	const normalized = clone(BudgetLedgerSnapshotSchema, snapshot);
-	for (const entitlement of normalized.entitlements)
-		entitlement.kind = persistedEntitlementKind(entitlement.kind);
-	return normalized;
 }
 
 function unboundedFingerprint(input: {
@@ -383,7 +347,7 @@ export function validateBudgetSnapshot(
 	if (
 		new Set(snapshot.providerAccounts.map((row) => row.providerAccountId))
 			.size !== snapshot.providerAccounts.length ||
-		new Set(snapshot.entitlements.map(entitlementScopeKey)).size !==
+		new Set(snapshot.entitlements.map((row) => row.bucketId)).size !==
 			snapshot.entitlements.length
 	)
 		throw new TypeError("duplicate financial scope");
@@ -400,7 +364,6 @@ export function validateBudgetSnapshot(
 	}
 	for (const row of snapshot.entitlements) {
 		if (
-			!validEntitlementKind(row.kind) ||
 			!row.bucketId ||
 			!row.unit ||
 			!row.periodId ||
@@ -429,11 +392,7 @@ export function validateBudgetSnapshot(
 		throw new TypeError("budget snapshot is stale or future-dated");
 }
 
-export function validateHostingQuote(
-	quote: HostingQuote,
-	now: string,
-	options?: { allowLegacyKindless?: boolean },
-): void {
+export function validateHostingQuote(quote: HostingQuote, now: string): void {
 	if (
 		!quote.quoteId ||
 		!quote.yardId ||
@@ -461,7 +420,7 @@ export function validateHostingQuote(
 	if (
 		new Set(quote.providerAccounts.map((row) => row.providerAccountId)).size !==
 			quote.providerAccounts.length ||
-		new Set(quote.entitlementClaims.map(entitlementScopeKey)).size !==
+		new Set(quote.entitlementClaims.map((row) => row.bucketId)).size !==
 			quote.entitlementClaims.length
 	)
 		throw new TypeError("duplicate quote financial scope");
@@ -475,10 +434,6 @@ export function validateHostingQuote(
 			"provider-account exposures must itemize the liability bound",
 		);
 	for (const row of quote.entitlementClaims) {
-		const kind =
-			options?.allowLegacyKindless && row.kind === "" ? "allowance" : row.kind;
-		if (!validEntitlementKind(kind))
-			throw new TypeError("unsupported entitlement kind");
 		if (!row.bucketId || !row.unit)
 			throw new TypeError("entitlement scope missing");
 		budgetMicros(row.units);
@@ -588,12 +543,7 @@ export function createBudgetAdmissionAuthority(options: {
 		evidence?: { liabilityResolutionEvidenceRef?: string },
 	): void;
 } {
-	let current =
-		options.priorEvents === undefined
-			? clone(BudgetLedgerSnapshotSchema, options.snapshot)
-			: normalizeLegacyBudgetSnapshot(
-					clone(BudgetLedgerSnapshotSchema, options.snapshot),
-				);
+	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
 	let committing = false;
 	let commitOutcomeUncertain = false;
@@ -620,63 +570,23 @@ export function createBudgetAdmissionAuthority(options: {
 				.map((row) => row.providerAccountId)
 				.sort(),
 			entitlements: snapshot.entitlements
-				.map((row) =>
-					[
-						persistedEntitlementKind(row.kind),
-						row.bucketId,
-						row.unit,
-						row.periodId,
-					].join("\u0000"),
-				)
+				.map((row) => [row.bucketId, row.unit, row.periodId].join("\u0000"))
 				.sort(),
 		});
 	const policyBindings = new Map<string, string>();
 	// Derived from the complete journal, including snapshots that no longer expose
 	// a bucket. Dropping a projection row must never erase its financial history.
 	const retiredPeriods = new Set<string>();
-	type EntitlementHistory = Pick<
-		BudgetLedgerSnapshot["entitlements"][number],
-		"unit" | "observedAt" | "validUntil" | "remainingUnits"
-	>;
-	const entitlementHistory = new Map<string, EntitlementHistory>();
-	const entitlementUnitChangeHistory = new Map<
+	const entitlementHistory = new Map<
 		string,
-		Map<string, EntitlementHistory>
+		Pick<
+			BudgetLedgerSnapshot["entitlements"][number],
+			"unit" | "observedAt" | "validUntil" | "remainingUnits"
+		>
 	>();
-	const entitlementStableKey = (
+	const entitlementKey = (
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) =>
-		JSON.stringify([
-			persistedEntitlementKind(bucket.kind),
-			bucket.periodId,
-			bucket.bucketId,
-			bucket.unit,
-		]);
-	const entitlementLineageKey = (
-		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	) =>
-		JSON.stringify([
-			persistedEntitlementKind(bucket.kind),
-			bucket.periodId,
-			bucket.bucketId,
-		]);
-	function resolveEntitlementPrevious(
-		bucket: BudgetLedgerSnapshot["entitlements"][number],
-	): EntitlementHistory | undefined {
-		const direct = entitlementHistory.get(entitlementStableKey(bucket));
-		const unitChanges = entitlementUnitChangeHistory.get(
-			entitlementLineageKey(bucket),
-		);
-		if (!unitChanges || unitChanges.size === 0) return direct;
-		let latest = unitChanges.get(bucket.unit) ?? direct;
-		for (const candidate of unitChanges.values())
-			if (
-				!latest ||
-				Date.parse(candidate.observedAt) > Date.parse(latest.observedAt)
-			)
-				latest = candidate;
-		return latest;
-	}
+	) => JSON.stringify([bucket.periodId, bucket.bucketId]);
 	function assertFinancialHistory(
 		next: BudgetLedgerSnapshot,
 		type: string,
@@ -690,15 +600,14 @@ export function createBudgetAdmissionAuthority(options: {
 		const configuration =
 			type === "budget.PolicyRevised" || type === "budget.PeriodReset";
 		for (const bucket of next.entitlements) {
-			const previous = resolveEntitlementPrevious(bucket);
+			const key = entitlementKey(bucket);
+			const previous = entitlementHistory.get(key);
 			// Settlement legitimately reduces a live bucket at its existing observation.
 			// Configuration and any reintroduced bucket must respect the retained fence.
 			if (
 				!previous ||
 				(!configuration &&
-					current.entitlements.some(
-						(row) => entitlementStableKey(row) === entitlementStableKey(bucket),
-					))
+					current.entitlements.some((row) => entitlementKey(row) === key))
 			)
 				continue;
 			const observedAt = Date.parse(bucket.observedAt);
@@ -721,21 +630,13 @@ export function createBudgetAdmissionAuthority(options: {
 			next.identity?.periodId !== current.identity.periodId
 		)
 			retiredPeriods.add(current.identity.periodId);
-		for (const bucket of next.entitlements) {
-			const history = {
+		for (const bucket of next.entitlements)
+			entitlementHistory.set(entitlementKey(bucket), {
 				unit: bucket.unit,
 				observedAt: bucket.observedAt,
 				validUntil: bucket.validUntil,
 				remainingUnits: bucket.remainingUnits,
-			};
-			entitlementHistory.set(entitlementStableKey(bucket), history);
-			const unitChangeKey = entitlementLineageKey(bucket);
-			const unitChanges =
-				entitlementUnitChangeHistory.get(unitChangeKey) ??
-				new Map<string, EntitlementHistory>();
-			unitChanges.set(bucket.unit, history);
-			entitlementUnitChangeHistory.set(unitChangeKey, unitChanges);
-		}
+			});
 	}
 	rememberFinancialHistory(current);
 	if (current.identity)
@@ -750,19 +651,7 @@ export function createBudgetAdmissionAuthority(options: {
 		current.entitlements.some((row) => row.reservedUnits !== 0)
 	)
 		throw new TypeError("reservation history required for held exposure");
-	for (const persistedEvent of options.priorEvents ?? []) {
-		const event = clone(BudgetAuthorityEventSchema, persistedEvent);
-		if (event.snapshot)
-			event.snapshot = normalizeLegacyBudgetSnapshot(event.snapshot);
-		for (const reservation of event.reservations) {
-			if (
-				reservation.fenceSettlementGuard !== undefined &&
-				reservation.fenceSettlementPayloadVersion === "" &&
-				reservation.entitlementClaims.some((claim) => claim.kind !== "")
-			)
-				reservation.fenceSettlementPayloadVersion =
-					currentBudgetFenceSettlementPayloadVersion;
-		}
+	for (const event of options.priorEvents ?? []) {
 		if (!event.snapshot?.identity || !current.identity)
 			throw new Error("budget journal snapshot identity missing");
 		if (
@@ -900,8 +789,6 @@ export function createBudgetAdmissionAuthority(options: {
 			}
 			if (
 				!next.fenceSettlementGuard ||
-				old.fenceSettlementPayloadVersion !==
-					next.fenceSettlementPayloadVersion ||
 				toJsonString(
 					BudgetFenceSettlementGuardSchema,
 					old.fenceSettlementGuard,
@@ -1130,7 +1017,7 @@ export function createBudgetAdmissionAuthority(options: {
 				claims.length !== old.entitlementClaims.length ||
 				new Set(accounts.map((account) => account.providerAccountId)).size !==
 					accounts.length ||
-				new Set(claims.map(entitlementScopeKey)).size !== claims.length ||
+				new Set(claims.map((claim) => claim.bucketId)).size !== claims.length ||
 				(accounts.length > 0 &&
 					add(...accounts.map((account) => account.liabilityMicros)) !==
 						row.actualMicros)
@@ -1153,13 +1040,15 @@ export function createBudgetAdmissionAuthority(options: {
 				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
 			}
 			for (const claim of claims) {
-				const target = expected.entitlements.find((entry) =>
-					sameEntitlementScope(entry, claim),
+				const target = expected.entitlements.find(
+					(entry) =>
+						entry.bucketId === claim.bucketId && entry.unit === claim.unit,
 				);
 				if (
 					!target ||
-					!old.entitlementClaims.some((entry) =>
-						sameEntitlementScope(entry, claim),
+					!old.entitlementClaims.some(
+						(entry) =>
+							entry.bucketId === claim.bucketId && entry.unit === claim.unit,
 					)
 				)
 					throw new Error("foreign entitlement settlement");
@@ -1258,7 +1147,7 @@ export function createBudgetAdmissionAuthority(options: {
 			entitlement.reservedUnits = add(
 				...holding.flatMap((row) =>
 					row.entitlementClaims
-						.filter((entry) => sameEntitlementScope(entry, entitlement))
+						.filter((entry) => entry.bucketId === entitlement.bucketId)
 						.map((entry) => entry.units),
 				),
 			);
@@ -1275,7 +1164,8 @@ export function createBudgetAdmissionAuthority(options: {
 					(entry) =>
 						!snapshot.entitlements.some(
 							(bucket) =>
-								sameEntitlementScope(bucket, entry) &&
+								bucket.bucketId === entry.bucketId &&
+								bucket.unit === entry.unit &&
 								(row.identity === undefined ||
 									bucket.periodId === row.identity.periodId),
 						),
@@ -1423,7 +1313,7 @@ export function createBudgetAdmissionAuthority(options: {
 				claims.length !== existing.entitlementClaims.length ||
 				new Set(accounts.map((row) => row.providerAccountId)).size !==
 					accounts.length ||
-				new Set(claims.map(entitlementScopeKey)).size !== claims.length
+				new Set(claims.map((row) => row.bucketId)).size !== claims.length
 			)
 				throw new Error(
 					"complete account and entitlement usage evidence required",
@@ -1447,13 +1337,13 @@ export function createBudgetAdmissionAuthority(options: {
 				target.spentMicros = add(target.spentMicros, account.liabilityMicros);
 			}
 			for (const claim of claims) {
-				const target = next.entitlements.find((row) =>
-					sameEntitlementScope(row, claim),
+				const target = next.entitlements.find(
+					(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
 				);
 				if (
 					!target ||
-					!existing.entitlementClaims.some((row) =>
-						sameEntitlementScope(row, claim),
+					!existing.entitlementClaims.some(
+						(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
 					)
 				)
 					throw new Error("foreign entitlement settlement");
@@ -1570,6 +1460,7 @@ export function createBudgetAdmissionAuthority(options: {
 		reserve(input) {
 			assertCommitCertain();
 			validateBudgetSnapshot(current, input.now);
+			validateHostingQuote(input.quote, input.now);
 			if (
 				input.iacPricingPin &&
 				(!validIacPin(input.iacPricingPin, input.quote.financialPlanHash) ||
@@ -1589,9 +1480,6 @@ export function createBudgetAdmissionAuthority(options: {
 			)
 				throw new Error("budget reservation scope mismatch");
 			const previous = reservations.get(input.reservationId);
-			validateHostingQuote(input.quote, input.now, {
-				allowLegacyKindless: !!previous,
-			});
 			const quoteDigest = createHash("sha256")
 				.update(toJsonString(HostingQuoteSchema, input.quote))
 				.digest("hex");
@@ -1602,32 +1490,9 @@ export function createBudgetAdmissionAuthority(options: {
 						budgetIdentityKey(current.identity)
 				)
 					throw new Error("reservation belongs to a superseded budget policy");
-				let legacyQuoteDigest: string | undefined;
-				if (
-					previous.entitlementClaims.every((claim) => claim.kind === "") &&
-					input.quote.entitlementClaims.every(
-						(claim) => persistedEntitlementKind(claim.kind) === "allowance",
-					)
-				) {
-					const legacyQuote = clone(HostingQuoteSchema, input.quote);
-					for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
-					legacyQuoteDigest = createHash("sha256")
-						.update(toJsonString(HostingQuoteSchema, legacyQuote))
-						.digest("hex");
-				}
-				let legacyEmptyQuoteDigest: string | undefined;
-				if (previous.entitlementClaims.length === 0) {
-					const legacyQuote = clone(HostingQuoteSchema, input.quote);
-					legacyQuote.entitlementClaims = [];
-					legacyEmptyQuoteDigest = createHash("sha256")
-						.update(toJsonString(HostingQuoteSchema, legacyQuote))
-						.digest("hex");
-				}
 				if (
 					previous.requestDigest !== input.requestDigest ||
-					(previous.quoteDigest !== quoteDigest &&
-						previous.quoteDigest !== legacyQuoteDigest &&
-						previous.quoteDigest !== legacyEmptyQuoteDigest) ||
+					previous.quoteDigest !== quoteDigest ||
 					JSON.stringify(previous.iacPricingPin) !==
 						JSON.stringify(input.iacPricingPin) ||
 					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||
@@ -1695,8 +1560,8 @@ export function createBudgetAdmissionAuthority(options: {
 					);
 			}
 			for (const claim of input.quote.entitlementClaims) {
-				const bucket = current.entitlements.find((row) =>
-					sameEntitlementScope(row, claim),
+				const bucket = current.entitlements.find(
+					(row) => row.bucketId === claim.bucketId && row.unit === claim.unit,
 				);
 				if (
 					!bucket ||
@@ -1742,14 +1607,11 @@ export function createBudgetAdmissionAuthority(options: {
 				status: "held",
 				ledgerSeq: current.seq + 1,
 			});
-			if (input.fenceSettlementGuard) {
-				reservation.fenceSettlementPayloadVersion =
-					currentBudgetFenceSettlementPayloadVersion;
+			if (input.fenceSettlementGuard)
 				reservation.fenceSettlementGuard = fenced.createGuard(
 					reservation,
 					input.fenceSettlementGuard,
 				);
-			}
 			const rows = new Map(reservations);
 			rows.set(input.reservationId, reservation);
 			save(
@@ -1859,7 +1721,6 @@ export function createBudgetAdmissionAuthority(options: {
 					liabilityMicros: 0,
 				})),
 				entitlementClaims: current.entitlements.map((row) => ({
-					kind: row.kind,
 					bucketId: row.bucketId,
 					unit: row.unit,
 					units: 0,
@@ -2125,17 +1986,14 @@ export function createBudgetAdmissionAuthority(options: {
 				}
 			for (const bucket of snapshot.entitlements) {
 				const old = current.entitlements.find(
-					(row) =>
-						row.bucketId === bucket.bucketId &&
-						persistedEntitlementKind(row.kind) ===
-							persistedEntitlementKind(bucket.kind),
+					(row) => row.bucketId === bucket.bucketId,
 				);
 				if (
 					old &&
 					(old.reservedUnits > 0 ||
 						active().some((row) =>
-							row.entitlementClaims.some((claim) =>
-								sameEntitlementScope(claim, old),
+							row.entitlementClaims.some(
+								(claim) => claim.bucketId === old.bucketId,
 							),
 						)) &&
 					(old.periodId !== bucket.periodId || old.unit !== bucket.unit)

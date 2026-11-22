@@ -39,7 +39,6 @@ type Widget = Resource<"Spec.Widget", object, { id: string }>;
 const Widget = Resource<Widget>("Spec.Widget");
 interface FixtureReservation {
 	reservationId: string;
-	executionDigest?: string;
 	unboundedExposure?: boolean;
 	unpricedScopeProof?: UnpricedScopeProof;
 }
@@ -189,7 +188,6 @@ function admitted(
 ) {
 	const reservation: FixtureReservation = {
 		reservationId: `iac:${requestId}`,
-		executionDigest: `sha256:${"4".repeat(64)}`,
 	};
 	if (unboundedExposure !== undefined)
 		reservation.unboundedExposure = unboundedExposure;
@@ -310,10 +308,6 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 	const quoteId = `sha256:${"a".repeat(64)}`;
 	const observedAt = "2026-01-01T00:00:00Z";
 	const validUntil = "2027-01-01T00:00:00Z";
-	const entitlementClaims = [
-		{ bucketId: "shared", kind: "allowance", unit: "request", units: 1 },
-		{ bucketId: "shared", kind: "allowance", unit: "runner-ms", units: 2 },
-	];
 	return create(IacTargetAdmissionDecisionSchema, {
 		...base,
 		quote: {
@@ -329,7 +323,7 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 			components: [{ name: "joint", costMicros: 10 }],
 			requestDigest: base.requestDigest,
 			providerAccounts: [{ providerAccountId: "account", liabilityMicros: 10 }],
-			entitlementClaims,
+			entitlementClaims: [],
 			financialPlanHash: quoteId,
 		},
 		policyProof: {
@@ -343,7 +337,6 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 		},
 		reservation: {
 			reservationId: base.reservation.reservationId,
-			executionDigest: base.reservation.executionDigest,
 			unboundedExposure: false,
 			identity,
 			requestDigest: base.requestDigest,
@@ -352,7 +345,6 @@ function generatedAdmission(id: string, mode: "priced" | "unpriced") {
 			reservedMicros: 10,
 			status: "held",
 			providerAccounts: [{ providerAccountId: "account", liabilityMicros: 10 }],
-			entitlementClaims,
 			iacPricingPin: {
 				planDigest: `sha256:${"1".repeat(64)}`,
 				inventoryHash: base.inventoryHash,
@@ -1041,7 +1033,6 @@ describe("financial admission modes", () => {
 		"reservation-liability",
 		"reservation-accounts",
 		"reservation-entitlements",
-		"duplicate-entitlement-kind-alias",
 		"quote-liability",
 		"quote-components",
 		"quote-currency",
@@ -1142,21 +1133,6 @@ describe("financial admission modes", () => {
 							units: 1,
 						}),
 					);
-				if (kind === "duplicate-entitlement-kind-alias" && decision.quote) {
-					const claim = decision.quote.entitlementClaims[0];
-					if (claim === undefined) throw new Error("fixture claim missing");
-					const kindlessClaim = {
-						bucketId: claim.bucketId,
-						unit: claim.unit,
-						units: claim.units,
-					};
-					decision.quote.entitlementClaims.push(
-						create(EntitlementClaimSchema, kindlessClaim),
-					);
-					reservation.entitlementClaims.push(
-						create(EntitlementClaimSchema, kindlessClaim),
-					);
-				}
 				if (kind === "quote-liability" && decision.quote)
 					decision.quote.liabilityBoundMicros = 5;
 				if (kind === "quote-components" && decision.quote) {
@@ -2595,53 +2571,6 @@ describe("financial admission modes", () => {
 		});
 		expect(f.applies()).toBe(0);
 		expect(f.uncertain).toEqual(["iac:attempt"]);
-	});
-
-	it.each([
-		"priced",
-		"unpriced",
-	] as const)("preserves a %s execution claim through revalidation", async (mode) => {
-		let executionDigest: string | undefined;
-		const f = fixture(
-			(id) => generatedAdmission(id, mode),
-			(admission) => {
-				executionDigest = admission.reservation?.executionDigest;
-				return true;
-			},
-		);
-		await f.provider.preview(f.program);
-		await f.provider.applyWithAdmission(f.program, "attempt");
-		expect(executionDigest).toBe(`sha256:${"4".repeat(64)}`);
-		expect(f.applies()).toBe(1);
-	});
-
-	it.each([
-		"allowed",
-		"bypassed",
-	] as const)("refuses a %s direct apply without a valid execution claim", async (evaluation) => {
-		for (const kind of ["missing", "empty", "malformed"] as const) {
-			const f = fixture((id) => {
-				const decision = admitted(id, evaluation, evaluation === "bypassed");
-				if (kind === "missing") delete decision.reservation.executionDigest;
-				else
-					decision.reservation.executionDigest =
-						kind === "empty" ? "" : "sha256:not-a-digest";
-				return decision;
-			});
-			await f.provider.preview(f.program);
-			const attempt = f.provider.applyWithAdmission(f.program, "attempt");
-			await expect(attempt).rejects.toMatchObject({
-				code: "ADMISSION_RECEIPT_INVALID",
-				requiresReconciliation: true,
-			});
-			if (kind !== "missing")
-				await expect(attempt).rejects.toMatchObject({
-					message:
-						"ADMISSION_RECEIPT_INVALID: admission receipt could not be safely inspected",
-				});
-			expect(f.applies()).toBe(0);
-			expect(f.uncertain).toEqual(["iac:attempt"]);
-		}
 	});
 
 	it.each([

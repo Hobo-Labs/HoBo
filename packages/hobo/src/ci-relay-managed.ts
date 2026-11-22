@@ -254,10 +254,13 @@ export async function runCiRelayManaged(
 		const boundedFetch: typeof fetch = (url, init) => {
 			const remaining = Math.min(20_000, limit.at - now());
 			if (remaining <= 0) throw new Error("The delivery deadline expired.");
+			const timeout = AbortSignal.timeout(remaining);
 			return http(url, {
 				...init,
 				redirect: "error",
-				signal: AbortSignal.timeout(remaining),
+				signal: init?.signal
+					? AbortSignal.any([init.signal, timeout])
+					: timeout,
 			});
 		};
 		const vercelFetch: VercelFetch = (url, init) => boundedFetch(url, init);
@@ -286,7 +289,7 @@ export async function runCiRelayManaged(
 								token: githubToken,
 								commit: sha,
 								deadline: limit.at,
-								...(input.fetch ? { fetch: input.fetch } : undefined),
+								fetch: boundedFetch,
 							})
 						: await findPendingLocalRelease(home, projectId);
 			} catch {
@@ -306,7 +309,7 @@ export async function runCiRelayManaged(
 			teamId,
 			projectId,
 			productionOrigin,
-			fetch: http,
+			fetch: boundedFetch,
 			deadline: limit.at,
 			...(input.now ? { now: input.now } : undefined),
 		});
@@ -331,7 +334,7 @@ export async function runCiRelayManaged(
 								commit: recovery.commit,
 								deadline: limit.at,
 								deploymentId: recovery.deploymentId,
-								fetch: http,
+								fetch: boundedFetch,
 							})
 						: createReleaseJournal(home, projectId, recovery.deploymentId);
 				const recovered = await promoteVerifiedRelease({
@@ -419,7 +422,7 @@ export async function runCiRelayManaged(
 								"cd ../.. && pnpm exec turbo run build --filter=@hobo/ci-vercel... --concurrency=1",
 						},
 						deadline: limit.at - 60_000,
-						fetch: http,
+						fetch: boundedFetch,
 					});
 					ids[target] = deployment.id;
 					return {
@@ -463,7 +466,7 @@ export async function runCiRelayManaged(
 									commit: sha,
 									deadline: limit.at,
 									deploymentId: ids.production,
-									fetch: http,
+									fetch: boundedFetch,
 								})
 							: createReleaseJournal(home, projectId, ids.production);
 					release ??= await promoteVerifiedRelease({

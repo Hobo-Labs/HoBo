@@ -197,7 +197,12 @@ export interface ParitySource {
 	readonly resolved: readonly string[];
 }
 
-// public-contract: where each parity row's catalog and resolved halves are read from.
+/* public-contract: where each parity row's catalog and resolved halves are read
+ * from. Vercel's catalog is read with its opt-in `project()` row enabled: the
+ * bare `vercel.Yard()` omits that row, yet `vercel.project/v1` is an
+ * allocatable offering with a shipped resolver, so the full allocatable
+ * catalog is the honest denominator; no other namespace has an opt-in row
+ * today. */
 export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 	Object.freeze({
 		aws: { catalog: () => aws.Yard(), resolved: AWS_RESOLVED_PRODUCT_IDS },
@@ -227,15 +232,7 @@ export const PARITY_SOURCES: Readonly<Record<ParityProvider, ParitySource>> =
 			resolved: KUBERNETES_RESOLVED_PRODUCT_IDS,
 		},
 		vercel: {
-			catalog: () =>
-				vercel.Yard({
-					project: {},
-					gitFunction: {},
-					queue: {},
-					schedule: {},
-					cron: {},
-					sandboxHost: {},
-				}),
+			catalog: () => vercel.Yard({ project: {} }),
 			resolved: VERCEL_RESOLVED_PRODUCT_IDS,
 		},
 	});

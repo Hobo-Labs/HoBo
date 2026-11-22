@@ -48,7 +48,13 @@ async function harness(
 	const store = createMemorySecretsPort({ id: "memory" });
 	if (options.store)
 		await store.put("HOBO_CD_VERCEL_TOKEN", "synthetic-deploy-token");
-	const calls: { method: string; path: string; body?: string }[] = [];
+	const calls: {
+		method: string;
+		path: string;
+		body?: string;
+		redirect?: RequestRedirect;
+		signal?: AbortSignal | null;
+	}[] = [];
 	let current = options.resume ? "dpl_new" : "dpl_old";
 	const resumeSha =
 		options.resumeOlderWhilePreviousServes ||
@@ -88,6 +94,8 @@ async function harness(
 		calls.push({
 			method,
 			path: url.pathname,
+			redirect: init?.redirect,
+			signal: init?.signal,
 			...(isJsonString(init?.body) ? { body: init.body } : undefined),
 		});
 		if (url.hostname === "api.github.com") {
@@ -281,6 +289,17 @@ describe("managed relay delivery through HoBo CD", () => {
 		const { result, calls } = await harness({ storeDenied: true });
 		expect(result.code).toBe("HOBO_CI_DEPLOY_AUTH_REQUIRED");
 		expect(calls).toEqual([]);
+	});
+
+	it("redirect-guards and bounds every deployment and journal request", async () => {
+		const { result, calls } = await harness({ github: true });
+		expect(result.code).toBe("HOBO_CI_MANAGED_DEPLOYED");
+		expect(calls.length).toBeGreaterThan(0);
+		for (const call of calls) {
+			expect(call.redirect).toBe("error");
+			expect(call.signal).toBeInstanceOf(AbortSignal);
+			expect(call.signal?.aborted).toBe(false);
+		}
 	});
 
 	it("refuses a project lookup that does not match the selected project", async () => {

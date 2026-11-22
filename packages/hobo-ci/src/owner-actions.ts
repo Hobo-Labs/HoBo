@@ -66,7 +66,6 @@ export function readOwnerTurn(
 				"The run told a remote owner to do something only possible at the box.",
 			lines: infeasible,
 		};
-	if (ready) return { kind: "ready" };
 	if (lines.includes("HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE"))
 		return {
 			kind: "blocked",
@@ -91,6 +90,7 @@ export function readOwnerTurn(
 			kind: "blocked",
 			reason: "HoBo setup cannot proceed in this session.",
 		};
+	if (ready) return { kind: "ready" };
 	const captures: string[] = [];
 	for (const line of lines) {
 		const capture = CAPTURE.exec(line);

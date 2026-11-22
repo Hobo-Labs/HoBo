@@ -12,6 +12,7 @@ import {
 	type SecretCaptureApp,
 	type SecretCaptureOutcome,
 	SUBMIT_SECRET_VALUE_TOOL,
+	secretCaptureSpec,
 	URL_ELICITATION_REQUIRED,
 } from "../src/index.js";
 import type { JsonValue } from "../src/json.js";
@@ -35,6 +36,153 @@ const FORM_ONLY = { apps: false, formElicitation: true, urlElicitation: false };
 const apps: SecretCaptureApp[] = [];
 const watches: ReturnType<typeof leakWatch>[] = [];
 
+describe("late owner forms", () => {
+	it.each([
+		"end",
+		"replace",
+		"expire",
+	] as const)("rejects an accepted answer after %s", async (mode) => {
+		const store = memoryConnector();
+		const clock = { at: Date.parse("2026-11-12T10:00:00Z") };
+		const answers: ((value: JsonValue) => void)[] = [];
+		const starts: (() => void)[] = [];
+		const waitForForm = () =>
+			new Promise<void>((resolve) => starts.push(resolve));
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			now: () => clock.at,
+			ttlMs: 1000,
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answers.push(resolve);
+					starts.shift()?.();
+				}),
+		});
+		apps.push(app);
+		const started = waitForForm();
+		const old = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "HOBO_CI_WEBHOOK_SECRET" },
+			FORM_ONLY,
+		);
+		await started;
+		if (mode === "end")
+			await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		if (mode === "expire") clock.at += 1001;
+		let replacement: Promise<SecretCaptureOutcome> | undefined;
+		if (mode === "replace") {
+			const nextStarted = waitForForm();
+			replacement = app.callTool(
+				CAPTURE_SECRET_TOOL,
+				{ name: "HOBO_CI_WEBHOOK_SECRET", replace: true },
+				FORM_ONLY,
+			);
+			await nextStarted;
+		}
+		answers[0]?.({ action: "accept", content: { value: "x".repeat(40) } });
+		expect(result(await old).isError).toBe(true);
+		expect(
+			(await store.runtime.access("HOBO_CI_WEBHOOK_SECRET")).status,
+		).not.toBe("ok");
+		if (replacement) {
+			answers[1]?.({ action: "decline" });
+			await replacement;
+		}
+	});
+
+	it("does not authorize a writer when an ended form answers late", async () => {
+		const store = memoryConnector({ writable: false });
+		const authorize = vi.spyOn(store.connector, "authorizeWriter");
+		let answer: ((value: JsonValue) => void) | undefined;
+		let started: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const app = createSecretCaptureApp({
+			specs: SPECS,
+			connector: store.connector,
+			remote: true,
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answer = resolve;
+					started?.();
+				}),
+		});
+		apps.push(app);
+		const form = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "INFISICAL_WRITER_CLIENT_SECRET", writerClientId: "fixture" },
+			FORM_ONLY,
+		);
+		await waiting;
+		await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		answer?.({ action: "accept", content: { value: WRITER_SECRET } });
+		expect(result(await form).isError).toBe(true);
+		expect(authorize).not.toHaveBeenCalled();
+	});
+
+	it("closes a capture even when handoff cancellation throws", async () => {
+		const store = memoryConnector();
+		let answer: ((value: JsonValue) => void) | undefined;
+		let started: (() => void) | undefined;
+		const waiting = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const app = createSecretCaptureApp({
+			specs: [
+				secretCaptureSpec({
+					name: "HANDOFF_VALUE",
+					target: "handoff",
+					label: "Handoff value",
+					purpose: "Test cancellation cleanup.",
+					minBytes: 1,
+					maxBytes: 64,
+					charset: "printable-line",
+				}),
+			],
+			connector: store.connector,
+			remote: true,
+			handoffFor: () => ({
+				held: () => true,
+				receive: async () => undefined,
+				link: () => undefined,
+				cancel: () => {
+					throw new Error("handoff cancellation failed");
+				},
+			}),
+			elicit: () =>
+				new Promise<JsonValue>((resolve) => {
+					answer = resolve;
+					started?.();
+				}),
+		});
+		apps.push(app);
+		const opened = app.callTool(
+			CAPTURE_SECRET_TOOL,
+			{ name: "HANDOFF_VALUE" },
+			FORM_ONLY,
+		);
+		await waiting;
+		const capture = app
+			.events()
+			.find((event) => event.type === "secret.CaptureOpened");
+		if (!capture || !("ticketId" in capture))
+			throw new Error("Capture did not open.");
+		const end = await app.callTool(END_SECRET_CAPTURE_TOOL, {}, FORM_ONLY);
+		expect(result(end).structuredContent).toMatchObject({ closedCaptures: 1 });
+		const status = await app.callTool(
+			SECRET_CAPTURE_STATUS_TOOL,
+			{ ticketId: capture.ticketId },
+			FORM_ONLY,
+		);
+		expect(result(status).structuredContent).toMatchObject({ state: "closed" });
+		answer?.({ action: "accept", content: { value: "late" } });
+		expect(result(await opened).isError).toBe(true);
+	});
+});
+
 afterEach(async () => {
 	while (apps.length > 0) await apps.pop()?.close();
 	while (watches.length > 0) watches.pop()?.restore();
@@ -43,6 +191,7 @@ afterEach(async () => {
 function setup(
 	options: Parameters<typeof memoryConnector>[0] & {
 		clock?: { at: number };
+		onEnd?: () => void;
 	} = {},
 ) {
 	const store = memoryConnector(options);
@@ -52,6 +201,7 @@ function setup(
 		specs: SPECS,
 		connector: store.connector,
 		now: () => clock.at,
+		onEnd: options.onEnd,
 		notify: (method, params) => notifications.push({ method, params }),
 	});
 	apps.push(app);
@@ -438,9 +588,7 @@ describe("refusals before anything is opened", () => {
 			code: "SECRET_STORE_NOT_CONNECTED",
 			name: "HOBO_CI_WEBHOOK_SECRET",
 		});
-		expect(JSON.stringify(answer.structuredContent)).toContain(
-			"private owner setup",
-		);
+		expect(JSON.stringify(answer.structuredContent)).toContain("OIDC Auth");
 		expect(app.events().map((event) => event.type)).toEqual([
 			"secret.CaptureRefused",
 		]);
@@ -570,6 +718,19 @@ describe("the writer session", () => {
 		expect(store.ended).toEqual(["ended"]);
 		watch.record(app.events());
 		watch.assertNever(WRITER_SECRET, token);
+	});
+
+	it("ends the writer session even when the end callback throws", async () => {
+		const { app, store } = setup({
+			onEnd: () => {
+				throw new Error("host cleanup failed");
+			},
+		});
+		const end = await app.callTool(END_SECRET_CAPTURE_TOOL, {}, APPS);
+		expect(result(end).structuredContent).toMatchObject({
+			writerSession: "ended",
+		});
+		expect(store.ended).toEqual(["ended"]);
 	});
 
 	it("reports a refused writer credential without its value", async () => {

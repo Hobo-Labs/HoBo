@@ -80,7 +80,6 @@ function snapshot() {
 		entitlements: [
 			{
 				bucketId: "shared-credit",
-				kind: "credit",
 				unit: "micro-minutes",
 				periodId: "p1",
 				remainingUnits: 1000000,
@@ -142,7 +141,6 @@ function quoteLease(row: Lease) {
 			? [
 					{
 						bucketId: "shared-credit",
-						kind: "credit",
 						unit: "micro-minutes",
 						units: row.reservedFreeMinutes * 1000000,
 					},
@@ -763,24 +761,14 @@ describe("CI bridge to the shared hosting financial authority", () => {
 					{ providerAccountId: "foreign", liabilityMicros: 20 },
 				],
 				entitlementClaims: [
-					{
-						bucketId: "shared-credit",
-						kind: "credit",
-						unit: "micro-minutes",
-						units: 0,
-					},
+					{ bucketId: "shared-credit", unit: "micro-minutes", units: 0 },
 				],
 			}),
 		).toThrow("foreign provider");
 		hooks.settle(row, {
 			...evidence,
 			entitlementClaims: [
-				{
-					bucketId: "shared-credit",
-					kind: "credit",
-					unit: "micro-minutes",
-					units: 0,
-				},
+				{ bucketId: "shared-credit", unit: "micro-minutes", units: 0 },
 			],
 		});
 		expect(first.read(NOW).spentMicros).toBe(20);

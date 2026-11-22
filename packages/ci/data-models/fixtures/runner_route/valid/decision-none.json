@@ -1,1 +1,0 @@
-{"outcome":"none","reason":"No runner available: the machine step was skipped because the repository is public.","skipped":[{"key":"machine","reason":"public_repository"}]}

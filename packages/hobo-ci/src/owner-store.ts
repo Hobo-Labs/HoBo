@@ -368,11 +368,10 @@ export async function ownerStoreSessionEnvironment(
 ): Promise<Env> {
 	const locator = ownerLocator(deps);
 	locator.assertCurrent?.();
-	if (
-		!locator.hasSessionChoice?.() ||
-		!(await locator.read()).HOBO_SECRET_STORE
-	)
-		return env;
+	if (!locator.hasSessionChoice?.()) return env;
+	const saved = await locator.read();
+	locator.assertCurrent?.();
+	if (!saved.HOBO_SECRET_STORE) return env;
 	return Object.fromEntries(
 		Object.entries(env).filter(([name]) => !isOwnerStoreSetting(name)),
 	);
@@ -409,7 +408,9 @@ export async function ownerStore(
 			write(async () => {
 				check();
 				try {
-					return await operation();
+					const result = await operation();
+					check();
+					return result;
 				} catch (error) {
 					locator.markUncertainWrite?.();
 					throw error;

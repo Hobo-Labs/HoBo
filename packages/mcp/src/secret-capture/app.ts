@@ -456,16 +456,21 @@ export function createSecretCaptureApp(
 		state: TicketState,
 		cancelHandoff = true,
 	): void {
-		if (
+		const cancel =
 			cancelHandoff &&
 			ticket.state === "awaiting-owner" &&
 			(state === "closed" || state === "expired")
-		)
-			ticket.handoff?.cancel();
+				? ticket.handoff?.cancel
+				: undefined;
 		ticket.state = state;
 		ticket.keys?.destroy();
 		ticket.keys = undefined;
 		ticket.tokenDigest = undefined;
+		try {
+			cancel?.();
+		} catch {
+			return;
+		}
 	}
 
 	function sweep(): void {
@@ -672,14 +677,14 @@ export function createSecretCaptureApp(
 		if (status.connected === false)
 			return new SecretCaptureError(
 				"SECRET_STORE_NOT_CONNECTED",
-				`No secret store is connected, so ${spec.name} has nowhere to go.`,
-				"Start HoBo's private owner setup for the selected store.",
+				`No secret store is connected (${status.reason}), so ${spec.name} has nowhere to go.`,
+				status.nextStep ?? "Start HoBo's private owner setup for the selected store.",
 			);
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(
 				"SECRET_STORE_WRITER_REQUIRED",
-				"The selected secret store is connected, but this session may not write to it yet.",
-				"Start HoBo's private owner setup to authorize the session.",
+				"A secret store is configured, but this session may not write to it yet.",
+				`Call ${CAPTURE_SECRET_TOOL} with name ${status.writerSpec} and writerClientId (the writer identity's Client ID) first; the owner enters its one-use client secret in the same kind of form.`,
 			);
 		return undefined;
 	}
@@ -1100,7 +1105,6 @@ export function createSecretCaptureApp(
 				emit("secret.CaptureClosed", ticketFields(ticket));
 				captures += 1;
 			}
-		options.onEnd?.();
 		let writerSession: "ended" | "none" | "unavailable";
 		try {
 			writerSession = await options.connector.endWriterSession();
@@ -1110,6 +1114,11 @@ export function createSecretCaptureApp(
 		const running = page;
 		page = undefined;
 		if (running !== undefined) await (await running).close();
+		try {
+			options.onEnd?.();
+		} catch {
+			return { captures, writerSession };
+		}
 		return { captures, writerSession };
 	}
 
