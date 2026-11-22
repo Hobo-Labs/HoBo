@@ -833,7 +833,10 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 								code: "",
 								message: "",
 								budget: { evaluation: "allowed", reservation: "held" },
-								reservation: { reservationId: `iac:${requestId}` },
+								reservation: {
+									reservationId: `iac:${requestId}`,
+									executionDigest: `sha256:${"4".repeat(64)}`,
+								},
 								requestDigest: `sha256:${"c".repeat(64)}`,
 								inventoryHash: `sha256:${"d".repeat(64)}`,
 								modelHash: `sha256:${"e".repeat(64)}`,
@@ -889,7 +892,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					makeProvider(target, sourceRequirements, mismatchedStack).preview(
 						program,
 					),
-				).rejects.toThrow("ENTRYPOINT_UNSUPPORTED");
+				).rejects.toThrow("PLAN_UNAVAILABLE");
 			}
 			expect(created).toEqual([]);
 			expect((await provider.preview(program)).changes).toBe(3);
@@ -917,16 +920,20 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			expect(admissions).toBe(0);
 			proxyAuthorized = false;
 			await expect(provider.preview(program)).rejects.toThrow(
-				"SOURCE_FENCE_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(created).toEqual([]);
 			proxyAuthorized = true;
 			presentedProxyDigest = "changed";
 			await expect(provider.preview(program)).rejects.toThrow(
-				"SOURCE_FENCE_UNVERIFIED",
+				"PLAN_UNAVAILABLE",
 			);
 			expect(created).toEqual([]);
 			presentedProxyDigest = approvedProxyDigest;
+
+			await expect(
+				provider.applyWithAdmission(program, "stale-preview"),
+			).rejects.toMatchObject({ code: "PREVIEW_REQUIRED" });
 			const revokedProvider = makeProvider();
 			await revokedProvider.preview(program);
 			revokeOnFinancialRevalidation = true;
@@ -960,6 +967,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			expect(created).toEqual([]);
 			revokeGrantOnFinancialRevalidation = false;
 			grantAuthorized = true;
+			await provider.preview(program);
 			await provider.applyWithAdmission(program, "request");
 			expect(
 				created.filter((entry) => entry.type === Namespace.Type),
@@ -1137,7 +1145,10 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 							code: "",
 							message: "",
 							budget: { evaluation: "allowed", reservation: "held" },
-							reservation: { reservationId: `iac:${requestId}` },
+							reservation: {
+								reservationId: `iac:${requestId}`,
+								executionDigest: `sha256:${"4".repeat(64)}`,
+							},
 							requestDigest: `sha256:${"c".repeat(64)}`,
 							inventoryHash: `sha256:${"d".repeat(64)}`,
 							modelHash: `sha256:${"e".repeat(64)}`,
