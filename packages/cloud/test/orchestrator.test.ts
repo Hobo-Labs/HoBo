@@ -31,7 +31,6 @@ import {
 } from "../src/index.js";
 import { isJsonObject, isJsonString } from "../src/json.js";
 
-
 let stores: RuntimeLocalEventStore[] = [];
 function freshStore(): RuntimeLocalEventStore {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-cloud-orch-"));
@@ -76,8 +75,7 @@ function mockIac(opts: { failApply?: string[] } = {}): IacProvider {
 				);
 			return { endpoint: `${program.resourceId}.local` };
 		},
-		async destroy() {
-		},
+		async destroy() {},
 		async refresh() {
 			return { drift: false, observed: {} };
 		},
@@ -630,17 +628,17 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 
 		const events = await drain(deps.store, "deployment:shop-rollback");
 		const types = events.map((e) => e.type);
-		expect(types).toContain("deployment.RollbackStarted");
 		expect(types).toContain("deployment.RolledBack");
-		const rollbackStartedIdx = types.indexOf("deployment.RollbackStarted");
 		const rolledBackIdx = types.indexOf("deployment.RolledBack");
 		const firstDestroyIdx = types.indexOf("resource.Destroying");
-		expect(rollbackStartedIdx).toBeLessThan(firstDestroyIdx);
 		expect(rolledBackIdx).toBeGreaterThan(
 			types.lastIndexOf("resource.Destroyed"),
 		);
 		expect(types.indexOf("deployment.TransitionStarted")).toBeLessThan(
 			firstDestroyIdx,
+		);
+		expect(types.indexOf("deployment.TransitionCompleted")).toBe(
+			rolledBackIdx - 1,
 		);
 
 		const destroyed = events

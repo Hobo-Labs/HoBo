@@ -64,7 +64,7 @@ Before apply or destroy, the resource actor records a fresh operation generation
 and the exact program and desired-spec hashes in the deployment stream. It
 passes that generation through the generic IaC program to the executor and
 only reuses it on crash recovery when the trusted host verifies that the exact
-generation cannot overlap or duplicate a prior effect. A changed or legacy
+generation cannot overlap or duplicate a prior effect. A changed
 in-flight operation, or one without that guarantee, enters reconciliation. A
 trusted route issuer must bind the generation to its tenant,
 deployment, resource and action, and fence prior uncertain effects before
@@ -75,6 +75,14 @@ Deployment transitions use the same stream CAS as resource starts. An active
 transition prevents new applies and permits destroys only for its recorded
 resource IDs. Unresolved work blocks convergence, and rollback cannot overtake
 a pending apply.
+Rollback records `deployment.TransitionStarted` and
+`deployment.TransitionCompleted` for the plan hash, then `deployment.RolledBack`.
+It destroys every resource that reached the provider, dependents first,
+including one that failed after provisioning, and resumes an interrupted destroy
+only after the resume verifier confirms it. When a destroy fails or its outcome
+cannot be established, rollback records `resource.CompensationFailed` and
+`incident.EscalationRequested` and returns `needs-human` with the blocked
+resources.
 The resume verifier is a trusted host boundary: a point-in-time status check
 alone is insufficient unless credentials or the provider enforce that fence
 through the resumed operation.

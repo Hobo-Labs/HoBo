@@ -286,6 +286,7 @@ message ResourceCompensationFailedData {
   string deployment_id = 1;
   string resource_id = 2;
   string reason = 3;
+  string outcome = 4;
 }
 
 message CompensationBlockedResource {
@@ -318,12 +319,6 @@ message ResourceDestroyedRecord {
 message DeploymentDeployedRecord {
   string deployment_id = 1;
   repeated string resource_ids = 2;
-}
-
-message DeploymentRollbackStartedData {
-  string deployment_id = 1;
-  string resource_id = 2;
-  string reason = 3;
 }
 
 message DeploymentRolledBackRecord {

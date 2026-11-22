@@ -271,7 +271,6 @@ export async function runOrchestrator(
 		};
 	}
 	if (transitionState.status === "closed") {
-		const legacyRollback = transitionState.legacy;
 		if (
 			hasUnresolvedReconciliation(initialEvents) ||
 			[...recordedResources(initialEvents).values()].some(
@@ -280,8 +279,7 @@ export async function runOrchestrator(
 					resource.state === "Provisioning" ||
 					resource.state === "Destroying" ||
 					(resource.state === "Failed" &&
-						(legacyRollback ||
-							resource.hasProvisionedBaseline === true ||
+						(resource.hasProvisionedBaseline === true ||
 							resource.specHash !== undefined)),
 			)
 		)

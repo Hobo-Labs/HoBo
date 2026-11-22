@@ -41,7 +41,6 @@ export const CLOUD_EVENTS = Object.freeze({
 	ExecDiff: "exec.Diff",
 	ExecSucceeded: "exec.Succeeded",
 	DeploymentDeployed: "deployment.Deployed",
-	DeploymentRollbackStarted: "deployment.RollbackStarted",
 	DeploymentRolledBack: "deployment.RolledBack",
 	DeploymentTransitionStarted: "deployment.TransitionStarted",
 	DeploymentTransitionCompleted: "deployment.TransitionCompleted",
@@ -265,6 +264,7 @@ export interface ResourceCompensationFailedData {
 	deploymentId: string;
 	resourceId: string;
 	reason: string;
+	outcome: "destroy-failed" | "destroy-outcome-unknown";
 }
 
 export function resourceCompensationFailed(
@@ -357,18 +357,6 @@ export interface DeploymentDeployedData {
 
 export function deploymentDeployed(data: DeploymentDeployedData): EventInput {
 	return { type: CLOUD_EVENTS.DeploymentDeployed, data };
-}
-
-export interface DeploymentRollbackStartedData {
-	deploymentId: string;
-	resourceId: string;
-	reason: string;
-}
-
-export function deploymentRollbackStarted(
-	data: DeploymentRollbackStartedData,
-): EventInput {
-	return { type: CLOUD_EVENTS.DeploymentRollbackStarted, data };
 }
 
 export interface DeploymentRolledBackData {

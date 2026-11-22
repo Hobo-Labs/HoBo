@@ -309,18 +309,6 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				delete next.rollback;
 				return next;
 			},
-			[CLOUD_EVENTS.DeploymentRollbackStarted]: (row, event) => {
-				const data = event.data as {
-					deploymentId: string;
-					resourceId: string;
-					reason: string;
-				};
-				const next = base(row, data.deploymentId);
-				if (next.reconciliations === undefined) next.status = "rolling-back";
-				else next.statusBeforeReconciliation = "rolling-back";
-				next.rollback = { resourceId: data.resourceId, reason: data.reason };
-				return next;
-			},
 			[CLOUD_EVENTS.ResourceCompensationFailed]: (row, event) => {
 				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
@@ -345,6 +333,15 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 				const status = data.kind === "rollback" ? "rolling-back" : "pruning";
 				if (next.reconciliations === undefined) next.status = status;
 				else next.statusBeforeReconciliation = status;
+				if (
+					data.kind === "rollback" &&
+					isJsonString(data.triggerResource) &&
+					isJsonString(data.reason)
+				)
+					next.rollback = {
+						resourceId: data.triggerResource,
+						reason: data.reason,
+					};
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentTransitionCompleted]: (row, event) => {

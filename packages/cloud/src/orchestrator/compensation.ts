@@ -1,11 +1,10 @@
 import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
-import { type ActorHost, isOptimisticConflict } from "@hobo/data";
+import type { ActorHost } from "@hobo/data";
 import { emit } from "@hobo/events";
 
 import {
 	CLOUD_EVENTS,
 	type DeploymentTransitionData,
-	deploymentRollbackStarted,
 	deploymentRolledBack,
 	deploymentTransitionCompleted,
 	deploymentTransitionStarted,
@@ -38,7 +37,6 @@ import {
 	type ResourceActorState,
 } from "./resource-actor.js";
 
-
 export interface CompensationDeps {
 	store: EventStore;
 	actorHost: ActorHost;
@@ -67,8 +65,7 @@ export interface CompensationBlockedResource {
 	reason:
 		| "waiting-for-dependent-destroyed"
 		| "destroy-outcome-unknown"
-		| "destroy-failed"
-		| "failed-after-provisioning";
+		| "destroy-failed";
 	dependents: string[];
 }
 
@@ -119,13 +116,21 @@ function dependentsOf(plan: DeploymentPlan, resourceId: string): string[] {
 		.map((r) => r.name);
 }
 
-function hasLiveResource(snapshot: ResourceActorSnapshot | undefined): boolean {
+function hasLiveResource(
+	snapshot: ResourceActorSnapshot | undefined,
+	recorded: ReturnType<typeof recordedResources>,
+): boolean {
 	return (
 		snapshot !== undefined &&
-		(snapshot.state === "Provisioned" ||
+		(snapshot.state === "Provisioning" ||
+			snapshot.state === "Provisioned" ||
 			snapshot.state === "Updating" ||
 			snapshot.state === "Destroying" ||
-			(snapshot.state === "Failed" && snapshot.specHash !== undefined))
+			snapshot.state === "ReconciliationRequired" ||
+			(snapshot.state === "Failed" &&
+				(snapshot.specHash !== undefined ||
+					recorded.get(snapshot.resourceId)?.hasProvisionedBaseline === true ||
+					recorded.get(snapshot.resourceId)?.specHash !== undefined)))
 	);
 }
 
@@ -134,51 +139,65 @@ function compensationBlockers(
 	events: EventEnvelope[],
 	deploymentId: string,
 ): CompensationBlockedResource[] {
+	const recorded = recordedResources(events);
 	const snapshots = new Map(
 		plan.resources.map((resource) => [
 			resource.name,
 			foldResourceActor(events, { ...resource, deploymentId }),
 		]),
 	);
-	const blocked: CompensationBlockedResource[] = [];
+	const unresolved = new Map<string, CompensationBlockedResource["reason"]>();
 	for (const resource of plan.resources) {
 		const snapshot = snapshots.get(resource.name);
-		if (!hasLiveResource(snapshot)) continue;
-		const dependents = dependentsOf(plan, resource.name).filter((id) =>
-			hasLiveResource(snapshots.get(id)),
+		if (snapshot === undefined || !hasLiveResource(snapshot, recorded))
+			continue;
+		const destroyingSeq =
+			events
+				.filter(
+					(event) =>
+						event.type === CLOUD_EVENTS.ResourceDestroying &&
+						isJsonObject(event.data) &&
+						event.data.resourceId === resource.name,
+				)
+				.at(-1)?.seq ?? 0;
+		const failure = events
+			.filter(
+				(event) =>
+					event.type === CLOUD_EVENTS.ResourceCompensationFailed &&
+					event.seq > destroyingSeq &&
+					isJsonObject(event.data) &&
+					event.data.resourceId === resource.name,
+			)
+			.at(-1);
+		if (failure === undefined && snapshot.state !== "Destroying") continue;
+		unresolved.set(
+			resource.name,
+			failure !== undefined &&
+				isJsonObject(failure.data) &&
+				failure.data.outcome === "destroy-failed"
+				? "destroy-failed"
+				: "destroy-outcome-unknown",
 		);
-		if (dependents.length) {
+	}
+	const blocked: CompensationBlockedResource[] = [];
+	for (const resource of plan.resources) {
+		const reason = unresolved.get(resource.name);
+		if (reason !== undefined) {
+			blocked.push({ resourceId: resource.name, reason, dependents: [] });
+			continue;
+		}
+		const snapshot = snapshots.get(resource.name);
+		if (snapshot === undefined || !hasLiveResource(snapshot, recorded))
+			continue;
+		const dependents = dependentsOf(plan, resource.name).filter((id) =>
+			unresolved.has(id),
+		);
+		if (dependents.length > 0)
 			blocked.push({
 				resourceId: resource.name,
 				reason: "waiting-for-dependent-destroyed",
 				dependents,
 			});
-		} else if (snapshot?.state === "Destroying") {
-			const facts = events.filter(
-				(event) =>
-					isJsonObject(event.data) && event.data.resourceId === resource.name,
-			);
-			const destroyingSeq =
-				facts
-					.filter((event) => event.type === CLOUD_EVENTS.ResourceDestroying)
-					.at(-1)?.seq ?? 0;
-			const failed = facts.some(
-				(event) =>
-					event.type === CLOUD_EVENTS.ResourceCompensationFailed &&
-					event.seq > destroyingSeq,
-			);
-			blocked.push({
-				resourceId: resource.name,
-				reason: failed ? "destroy-failed" : "destroy-outcome-unknown",
-				dependents: [],
-			});
-		} else if (snapshot?.state === "Failed") {
-			blocked.push({
-				resourceId: resource.name,
-				reason: "failed-after-provisioning",
-				dependents: [],
-			});
-		}
 	}
 	return blocked;
 }
@@ -201,7 +220,10 @@ export async function runCompensation(
 	);
 	return {
 		...result,
-		blocked: compensationBlockers(plan, result.events, deploymentId),
+		blocked:
+			result.status === "needs-human"
+				? compensationBlockers(plan, result.events, deploymentId)
+				: [],
 	};
 }
 
@@ -281,8 +303,7 @@ async function compensate(
 				resource.state === "Provisioning" ||
 				resource.state === "Destroying" ||
 				(resource.state === "Failed" &&
-					(state.legacy ||
-						resource.hasProvisionedBaseline === true ||
+					(resource.hasProvisionedBaseline === true ||
 						resource.specHash !== undefined)),
 		);
 		return {
@@ -313,23 +334,11 @@ async function compensate(
 			// SAFETY: `events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;` is required at this I/O or test boundary.
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
 		const fenceToken = currentFenceToken(deps.store, stream);
-		await emit(
-			deps.store,
-			stream,
-			[
-				deploymentRollbackStarted({
-					deploymentId,
-					resourceId: triggeringFailure.resourceId,
-					reason: triggeringFailure.reason,
-				}),
-				deploymentTransitionStarted(transition),
-			],
-			{
-				expectedSeq: lastSeq,
-				...(fenceToken !== undefined ? { fenceToken } : undefined),
-				...appendOpts,
-			},
-		);
+		await emit(deps.store, stream, [deploymentTransitionStarted(transition)], {
+			expectedSeq: lastSeq,
+			...(fenceToken !== undefined ? { fenceToken } : undefined),
+			...appendOpts,
+		});
 		events = await readHistory();
 		const confirmed = foldDeploymentTransition(events);
 		if (
@@ -435,43 +444,30 @@ async function compensate(
 			);
 			if (outcome.kind === "failed") {
 				const reason = outcome.reason.trim() || "provider destroy failed";
-				let recorded = false;
-				for (let attempt = 0; attempt < 8; attempt += 1) {
-					events = await readHistory();
-					const fenceToken = currentFenceToken(deps.store, stream);
-					try {
-						await emit(
-							deps.store,
-							stream,
-							[
-								resourceCompensationFailed({
-									deploymentId,
-									resourceId,
-									reason,
-								}),
-								incidentEscalationRequested({
-									deploymentId,
-									resourceId,
-									reason: "compensation-failed",
-								}),
-							],
-							{
-								expectedSeq: events.at(-1)?.seq ?? 0,
-								...(fenceToken !== undefined ? { fenceToken } : undefined),
-								...appendOpts,
-							},
-						);
-						recorded = true;
-						break;
-					} catch (error) {
-						if (!(error instanceof Error) || !isOptimisticConflict(error))
-							throw error;
-					}
-				}
-				if (!recorded)
-					throw new Error(
-						"deployment remained busy while recording compensation failure",
-					);
+				events = await readHistory();
+				const fenceToken = currentFenceToken(deps.store, stream);
+				await emit(
+					deps.store,
+					stream,
+					[
+						resourceCompensationFailed({
+							deploymentId,
+							resourceId,
+							reason,
+							outcome: outcome.outcome,
+						}),
+						incidentEscalationRequested({
+							deploymentId,
+							resourceId,
+							reason: "compensation-failed",
+						}),
+					],
+					{
+						expectedSeq: events.at(-1)?.seq ?? 0,
+						...(fenceToken !== undefined ? { fenceToken } : undefined),
+						...appendOpts,
+					},
+				);
 				events = await readHistory();
 				return { status: "needs-human", destroyedOrder, events };
 			}
@@ -534,7 +530,7 @@ async function compensate(
 	);
 	events = await readHistory();
 	const finished = foldDeploymentTransition(events);
-	if (finished.status !== "closed" || finished.legacy)
+	if (finished.status !== "closed")
 		throw new Error("rollback transition completion could not be confirmed");
 	return { status: "rolled-back", destroyedOrder, events };
 }

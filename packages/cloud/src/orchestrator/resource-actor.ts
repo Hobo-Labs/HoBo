@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
-import { type ActorHost, isOptimisticConflict } from "@hobo/data";
+import type { ActorHost } from "@hobo/data";
 import { emit } from "@hobo/events";
 import {
 	CLOUD_EVENTS,
@@ -406,7 +406,9 @@ export function isConverged(
 	resource: ResourcePlan,
 ): boolean {
 	if (snapshot.state !== "Provisioned") return false;
-	return snapshot.specHash === desiredSpecHash(resource);
+	return (
+		requireResourceSpecHash(snapshot.specHash) === desiredSpecHash(resource)
+	);
 }
 
 export async function reconcileResource(
@@ -732,7 +734,12 @@ export async function destroyResource(
 	ctx: ReconcileContext,
 ): Promise<
 	| { kind: "destroyed" | "converged"; snapshot: ResourceActorSnapshot }
-	| { kind: "failed"; snapshot: ResourceActorSnapshot; reason: string }
+	| {
+			kind: "failed";
+			snapshot: ResourceActorSnapshot;
+			reason: string;
+			outcome: "destroy-failed" | "destroy-outcome-unknown";
+	  }
 > {
 	const key = resourceActorKey(ctx.deploymentId, resource.name);
 	const lease = deps.actorHost.acquire(key, {
@@ -756,6 +763,7 @@ export async function destroyResource(
 				kind: "failed",
 				snapshot,
 				reason: "reconciliation required before destroy",
+				outcome: "destroy-outcome-unknown",
 			};
 
 		const fenceToken = currentFenceToken(deps.store, stream);
@@ -799,6 +807,7 @@ export async function destroyResource(
 				kind: "failed",
 				snapshot,
 				reason: "reconciliation required before destroy",
+				outcome: "destroy-outcome-unknown",
 			};
 		}
 		if (
@@ -840,6 +849,7 @@ export async function destroyResource(
 				snapshot,
 				reason:
 					"recorded resource provenance does not match the destroy target",
+				outcome: "destroy-outcome-unknown",
 			};
 		}
 
@@ -946,6 +956,7 @@ export async function destroyResource(
 				kind: "failed",
 				snapshot,
 				reason: "reconciliation required before destroy",
+				outcome: "destroy-outcome-unknown",
 			};
 		}
 		program.operationGeneration = generation;
@@ -989,46 +1000,25 @@ export async function destroyResource(
 					...resource,
 					deploymentId: ctx.deploymentId,
 				});
-				return { kind: "failed", snapshot, reason: result.reason };
+				return {
+					kind: "failed",
+					snapshot,
+					reason: result.reason,
+					outcome: "destroy-failed",
+				};
 			}
-			let recorded = false;
-			for (let attempt = 0; attempt < 8; attempt += 1) {
-				try {
-					await emit(
-						deps.store,
-						stream,
-						[
-							resourceDestroyed({
-								deploymentId: ctx.deploymentId,
-								resourceId: resource.name,
-								finalStateHash: finalStateHash(resource.name),
-							}),
-						],
-						{ expectedSeq: lastSeq, ...appendOpts },
-					);
-					recorded = true;
-					break;
-				} catch (error) {
-					if (!(error instanceof Error) || !isOptimisticConflict(error))
-						throw error;
-					events = await readDeploymentHistory(
-						deps.store,
-						ctx.deploymentId,
-						ctx.tenant,
-					);
-					snapshot = foldResourceActor(events, {
-						...resource,
+			await emit(
+				deps.store,
+				stream,
+				[
+					resourceDestroyed({
 						deploymentId: ctx.deploymentId,
-					});
-					if (snapshot.state === "Destroyed")
-						return { kind: "converged", snapshot };
-					lastSeq = events.at(-1)?.seq ?? 0;
-				}
-			}
-			if (!recorded)
-				throw new Error(
-					"deployment remained busy while recording resource destruction",
-				);
+						resourceId: resource.name,
+						finalStateHash: finalStateHash(resource.name),
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
 			events = await readDeploymentHistory(
 				deps.store,
 				ctx.deploymentId,

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,31 +13,32 @@ import {
 	type RuntimeLocalEventStore,
 } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
+import { deploymentTransitionStarted } from "../src/events.js";
+import type { Executor } from "../src/executor/executor.js";
 import {
 	createInProcessCredentialBroker,
 	createInProcessExecutor,
 	type DeploymentPlan,
 	deploymentPlanned,
-	deploymentRollbackStarted,
 	deploymentViewProjection,
 	desiredSpecHash,
 	foldResourceActor,
-	isConverged,
 	type IacProgram,
 	type IacProvider,
+	isConverged,
 	type OrchestratorDeps,
 	orphansToPrune,
 	parseDeploymentMode,
 	planDeploymentChanges,
 	reconcileResource,
+	resourceFailed,
 	resourceProvisioned,
 	resourceProvisioning,
-	resourceDestroying,
-	resourceFailed,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
 import { isJsonObject } from "../src/json.js";
+import { deploymentPlanHash } from "../src/orchestrator/deployment-transition.js";
 
 let stores: RuntimeLocalEventStore[] = [];
 afterEach(() => {
@@ -262,6 +264,14 @@ describe("upsert", () => {
 			store,
 			stream,
 			[
+				resourceProvisioning({
+					deploymentId: "invalid-fact",
+					resourceId: "network",
+					execId: "apply",
+					programHash: `sha256:${"0".repeat(64)}`,
+					specHash: desiredSpecHash(resource),
+					providerId: resource.provider,
+				}),
 				{
 					type: "resource.Provisioned",
 					data: {
@@ -527,9 +537,13 @@ describe("create/destroy cycle", () => {
 				store,
 				stream,
 				[
-					deploymentRollbackStarted({
+					deploymentTransitionStarted({
 						deploymentId: "resume-rollback",
-						resourceId: "web",
+						transitionId: randomUUID(),
+						kind: "rollback",
+						planHash: deploymentPlanHash(plan),
+						resourceIds: plan.resources.map((entry) => entry.name).sort(),
+						triggerResource: "web",
 						reason: "operator requested rollback",
 					}),
 				],
@@ -540,8 +554,11 @@ describe("create/destroy cycle", () => {
 				stream,
 			);
 			expect(
-				deploymentViewProjection.get(before, "resume-rollback")?.status,
-			).toBe("rolling-back");
+				deploymentViewProjection.get(before, "resume-rollback"),
+			).toMatchObject({
+				status: "rolling-back",
+				rollback: { resourceId: "web", reason: "operator requested rollback" },
+			});
 			store.close();
 			store = createRuntimeLocalEventStore({ dataDir: directory });
 			const result = await runCompensation(
@@ -553,24 +570,25 @@ describe("create/destroy cycle", () => {
 			);
 			expect(result.status).toBe("rolled-back");
 			expect(result.blocked).toEqual([]);
-			expect(
-				result.events.filter(
-					(event) => event.type === "deployment.RollbackStarted",
-				),
-			).toHaveLength(1);
-			expect(
-				result.events.filter((event) => event.type === "deployment.RolledBack"),
-			).toHaveLength(1);
+			for (const type of [
+				"deployment.TransitionStarted",
+				"deployment.TransitionCompleted",
+				"deployment.RolledBack",
+			])
+				expect(
+					result.events.filter((event) => event.type === type),
+				).toHaveLength(1);
 			const started = result.events.find(
-				(event) => event.type === "deployment.RollbackStarted",
+				(event) => event.type === "deployment.TransitionStarted",
 			);
 			const completed = result.events.find(
 				(event) => event.type === "deployment.RolledBack",
 			);
 			if (!started || !completed) throw new Error("missing rollback facts");
-			expect(started.data).toEqual({
+			expect(started.data).toMatchObject({
 				deploymentId: "resume-rollback",
-				resourceId: "web",
+				kind: "rollback",
+				triggerResource: "web",
 				reason: "operator requested rollback",
 			});
 			expect(completed.data).toEqual({ deploymentId: "resume-rollback" });
@@ -584,7 +602,7 @@ describe("create/destroy cycle", () => {
 			);
 			const path = join(directory, "rollback.json");
 			for (const [definition, data] of [
-				["#DeploymentRollbackStartedData", started.data],
+				["#DeploymentTransitionRecord", started.data],
 				["#DeploymentRolledBackRecord", completed.data],
 			] as const) {
 				writeFileSync(path, JSON.stringify(data));
@@ -610,7 +628,7 @@ describe("create/destroy cycle", () => {
 		}
 	});
 
-	it("serializes competing rollback facts and records independent destroys once", async () => {
+	it("refuses a competing rollback while a destroy is in flight and never repeats it", async () => {
 		const store = freshStore();
 		const fixture = loadPlan();
 		const template = fixture.resources[0];
@@ -623,16 +641,22 @@ describe("create/destroy cycle", () => {
 			],
 		};
 		const attempts: string[] = [];
+		let entered: (() => void) | undefined;
+		const destroying = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
 		let release: (() => void) | undefined;
-		const bothStarted = new Promise<void>((resolve) => {
+		const released = new Promise<void>((resolve) => {
 			release = resolve;
 		});
 		const iac: IacProvider = {
 			...recordingIac(),
 			async destroy(program) {
 				attempts.push(program.resourceId);
-				if (attempts.length === 2) release?.();
-				await bothStarted;
+				if (attempts.length === 1) {
+					entered?.();
+					await released;
+				}
 			},
 		};
 		const runtime = deps(store, iac);
@@ -641,33 +665,34 @@ describe("create/destroy cycle", () => {
 			actor,
 		});
 		const failure = { resourceId: "first", reason: "rollback requested" };
-		const results = await Promise.all([
-			runCompensation(
-				runtime,
-				plan,
-				"parallel-rollback",
-				{ resourceId: "second", reason: "second failure" },
-				{
-					tenant,
-					actor,
-				},
-			),
-			runCompensation(runtime, plan, "parallel-rollback", failure, {
-				tenant,
-				actor,
-			}),
-		]);
-		expect(results.some((result) => result.status === "rolled-back")).toBe(
-			true,
+		const owner = runCompensation(runtime, plan, "parallel-rollback", failure, {
+			tenant,
+			actor,
+		});
+		await destroying;
+		const competitor = await runCompensation(
+			runtime,
+			plan,
+			"parallel-rollback",
+			{ resourceId: "second", reason: "second failure" },
+			{ tenant, actor },
+		).then(
+			(result) => result.status,
+			() => "refused" as const,
 		);
+		expect(competitor).not.toBe("rolled-back");
+		release?.();
+		const result = await owner;
+		expect(result.status).toBe("rolled-back");
+		expect(result.blocked).toEqual([]);
 		expect(attempts.sort()).toEqual(["first", "second"]);
 		const events = await drain(store, "deployment:parallel-rollback");
-		expect(
-			events.filter((event) => event.type === "deployment.RollbackStarted"),
-		).toHaveLength(1);
-		expect(
-			events.filter((event) => event.type === "deployment.RolledBack"),
-		).toHaveLength(1);
+		for (const type of [
+			"deployment.TransitionStarted",
+			"deployment.TransitionCompleted",
+			"deployment.RolledBack",
+		])
+			expect(events.filter((event) => event.type === type)).toHaveLength(1);
 		expect(
 			events.filter((event) => event.type === "resource.Destroying"),
 		).toHaveLength(2);
@@ -676,7 +701,7 @@ describe("create/destroy cycle", () => {
 		).toHaveLength(2);
 	}, 10000);
 
-	it("keeps dependencies when a failed dependent was previously provisioned", async () => {
+	it("destroys a dependent that failed after provisioning before its dependencies", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
 		const plan = loadPlan();
@@ -706,25 +731,17 @@ describe("create/destroy cycle", () => {
 			{ resourceId: "web", reason: "update failed" },
 			{ tenant, actor },
 		);
-		expect(result.status).toBe("needs-human");
-		expect(result.blocked).toEqual(
-			expect.arrayContaining([
-				{
-					resourceId: "web",
-					reason: "failed-after-provisioning",
-					dependents: [],
-				},
-				{
-					resourceId: "api",
-					reason: "waiting-for-dependent-destroyed",
-					dependents: ["web"],
-				},
-			]),
-		);
-		expect(iac.calls).toEqual([]);
+		expect(result.status).toBe("rolled-back");
+		expect(result.blocked).toEqual([]);
+		expect(result.destroyedOrder[0]).toBe("web");
+		expect(iac.calls[0]).toBe("destroy:web");
+		expect(iac.calls).toHaveLength(plan.resources.length);
+		expect(
+			iac.calls.indexOf("destroy:web") < iac.calls.indexOf("destroy:api"),
+		).toBe(true);
 	});
 
-	it("does not claim rollback while an interrupted dependent is still destroying", async () => {
+	it("resumes an interrupted destroy only after read-back confirms it is safe", async () => {
 		const store = freshStore();
 		const iac = recordingIac();
 		const plan = loadPlan();
@@ -734,25 +751,90 @@ describe("create/destroy cycle", () => {
 			actor,
 		});
 		iac.calls.length = 0;
+		const crashing: Executor = {
+			async run(program, credential, options) {
+				if (program.action === "destroy")
+					throw new Error("worker crashed during destroy");
+				return runtime.executor.run(program, credential, options);
+			},
+		};
+		const failure = { resourceId: "web", reason: "interrupted" };
+		await expect(
+			runCompensation(
+				{ ...runtime, executor: crashing },
+				plan,
+				"interrupted-destroy",
+				failure,
+				{ tenant, actor },
+			),
+		).rejects.toThrow("worker crashed during destroy");
 		const stream = "deployment:interrupted-destroy";
-		const events = await drain(store, stream);
-		await emit(
-			store,
-			stream,
-			[
-				resourceDestroying({
-					deploymentId: "interrupted-destroy",
-					resourceId: "web",
-					reason: "rollback-compensation",
-				}),
-			],
-			{ expectedSeq: events.at(-1)?.seq ?? 0, tenant, actor },
-		);
+		const checked: string[] = [];
 		const result = await runCompensation(
-			runtime,
+			{
+				...runtime,
+				verifyResume: async (request) => {
+					checked.push(`${request.action}:${request.resourceId}`);
+					return true;
+				},
+			},
 			plan,
 			"interrupted-destroy",
-			{ resourceId: "web", reason: "interrupted" },
+			failure,
+			{ tenant, actor },
+		);
+		expect(checked).toEqual(["destroy:web"]);
+		expect(result.status).toBe("rolled-back");
+		expect(result.blocked).toEqual([]);
+		expect(result.destroyedOrder[0]).toBe("web");
+		expect(iac.calls[0]).toBe("destroy:web");
+		const events = await drain(store, stream);
+		expect(
+			events.filter(
+				(event) =>
+					event.type === "resource.Destroying" &&
+					isJsonObject(event.data) &&
+					event.data.resourceId === "web",
+			),
+		).toHaveLength(1);
+		const view = await deploymentViewProjection.rebuildFromZero(store, stream);
+		expect(
+			deploymentViewProjection.get(view, "interrupted-destroy")?.status,
+		).toBe("rolled-back");
+	});
+
+	it("escalates an interrupted destroy whose outcome read-back cannot establish", async () => {
+		const store = freshStore();
+		const iac = recordingIac();
+		const plan = loadPlan();
+		const runtime = deps(store, iac);
+		await runOrchestrator(runtime, plan, "unverified-destroy", {
+			tenant,
+			actor,
+		});
+		iac.calls.length = 0;
+		const crashing: Executor = {
+			async run(program, credential, options) {
+				if (program.action === "destroy")
+					throw new Error("worker crashed during destroy");
+				return runtime.executor.run(program, credential, options);
+			},
+		};
+		const failure = { resourceId: "web", reason: "interrupted" };
+		await expect(
+			runCompensation(
+				{ ...runtime, executor: crashing },
+				plan,
+				"unverified-destroy",
+				failure,
+				{ tenant, actor },
+			),
+		).rejects.toThrow("worker crashed during destroy");
+		const result = await runCompensation(
+			{ ...runtime, verifyResume: async () => false },
+			plan,
+			"unverified-destroy",
+			failure,
 			{ tenant, actor },
 		);
 		expect(result.status).toBe("needs-human");
@@ -772,10 +854,18 @@ describe("create/destroy cycle", () => {
 			]),
 		);
 		expect(iac.calls).toEqual([]);
-		const view = await deploymentViewProjection.rebuildFromZero(store, stream);
 		expect(
-			deploymentViewProjection.get(view, "interrupted-destroy")?.status,
-		).toBe("rolling-back");
+			result.events.filter(
+				(event) => event.type === "incident.EscalationRequested",
+			),
+		).toHaveLength(1);
+		const view = await deploymentViewProjection.rebuildFromZero(
+			store,
+			"deployment:unverified-destroy",
+		);
+		expect(
+			deploymentViewProjection.get(view, "unverified-destroy")?.status,
+		).toBe("needs-human");
 	});
 
 	it("records a failed compensation and escalation once without repeating the destroy", async () => {

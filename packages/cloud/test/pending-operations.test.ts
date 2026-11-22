@@ -17,6 +17,7 @@ import {
 	type IacProvider,
 	reconcileResource,
 	resourceProvisioned,
+	resourceProvisioning,
 	runCompensation,
 	runOrchestrator,
 } from "../src/index.js";
@@ -90,6 +91,29 @@ function fixture() {
 	return { store, calls, deps, context, append };
 }
 
+function provisioned(
+	data: Parameters<typeof resourceProvisioned>[0] & { specHash: string },
+): EventInput[] {
+	const resource = data.resourceId === child.name ? child : dependency;
+	const program = iacProgramFor(
+		data.deploymentId,
+		{ ...resource, deploymentId: data.deploymentId },
+		"apply",
+		tenant,
+	);
+	return [
+		resourceProvisioning({
+			deploymentId: data.deploymentId,
+			resourceId: data.resourceId,
+			execId: data.execId,
+			programHash: `sha256:${createHash("sha256").update(JSON.stringify(program)).digest("hex")}`,
+			specHash: data.specHash,
+			providerId: resource.provider,
+		}),
+		resourceProvisioned(data),
+	];
+}
+
 function pending(action: "apply" | "destroy"): EventInput {
 	const program = iacProgramFor(
 		deploymentId,
@@ -120,7 +144,7 @@ async function seedPending(
 ) {
 	await f.append([
 		deploymentPlanned({ deploymentId, planHash: "sha256:test", plan }),
-		resourceProvisioned({
+		...provisioned({
 			deploymentId,
 			resourceId: dependency.name,
 			outputs: {},
@@ -130,7 +154,7 @@ async function seedPending(
 		...(action === "apply"
 			? []
 			: [
-					resourceProvisioned({
+					...provisioned({
 						deploymentId,
 						resourceId: child.name,
 						outputs: {},
@@ -237,14 +261,14 @@ describe("orchestration with pending provider effects", () => {
 		try {
 			await f.append([
 				deploymentPlanned({ deploymentId, planHash: "sha256:test", plan }),
-				resourceProvisioned({
+				...provisioned({
 					deploymentId,
 					resourceId: dependency.name,
 					outputs: {},
 					execId: "prior-network",
 					specHash: desiredSpecHash(dependency),
 				}),
-				resourceProvisioned({
+				...provisioned({
 					deploymentId,
 					resourceId: child.name,
 					outputs: {},
@@ -383,7 +407,7 @@ describe("deployment stream ownership", () => {
 		try {
 			await f.append(
 				[
-					resourceProvisioned({
+					...provisioned({
 						deploymentId: mismatch === "deployment" ? "other" : deploymentId,
 						resourceId: dependency.name,
 						outputs: {},

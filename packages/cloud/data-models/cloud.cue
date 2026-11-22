@@ -334,11 +334,12 @@ package hobo
 	deploymentId: string & !=""
 	resourceId:   string & !=""
 	reason:       string & !=""
+	outcome:      "destroy-failed" | "destroy-outcome-unknown"
 }
 
 #CompensationBlockedResource: {
 	resourceId: string & !=""
-	reason:     "waiting-for-dependent-destroyed" | "destroy-outcome-unknown" | "destroy-failed" | "failed-after-provisioning"
+	reason:     "waiting-for-dependent-destroyed" | "destroy-outcome-unknown" | "destroy-failed"
 	dependents: [...string & !=""]
 	if reason == "waiting-for-dependent-destroyed" {dependents: [string & !="", ...string & !=""]}
 	if reason != "waiting-for-dependent-destroyed" {dependents: []}
@@ -368,12 +369,6 @@ package hobo
 #DeploymentDeployedRecord: {
 	deploymentId: string & !=""
 	resourceIds: [...string]
-}
-
-#DeploymentRollbackStartedData: {
-	deploymentId: string & !=""
-	resourceId:   string & !=""
-	reason:       string & !=""
 }
 
 #DeploymentRolledBackRecord: {
