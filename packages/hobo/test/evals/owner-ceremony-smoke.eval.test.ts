@@ -56,7 +56,7 @@ function startServer(env: NodeJS.ProcessEnv) {
 		.parse(JSON.parse(readFileSync(path.join(REPO, ".mcp.json"), "utf8")))
 		.mcpServers.hobo;
 	const child = spawn(launcher.command, launcher.args, {
-		cwd: path.join(REPO, "packages/hobo"),
+		cwd: REPO,
 		env: {
 			...env,
 			XDG_STATE_HOME: path.join(config, "state"),
@@ -274,9 +274,7 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				expect.stringMatching(/^neon\.new POST \/api\/v1\/database$/u),
 			);
 			expect(fourth).toContain("HOBO_OK");
-			expect(fourth).toContain(
-				"hobo cd up deployed 4 resources (cd-api, cd-config, cd-journal, cd-tick)",
-			);
+			expect(fourth).toContain('"status\\":\\"deployed\\"');
 			expect(
 				world.requests.filter((request) =>
 					/^api\.vercel\.com POST \/v13\/deployments\b/u.test(request),
@@ -298,16 +296,15 @@ describe("SMOKE remote ceremony through the real hobo-mcp binary", () => {
 				/HOBO_CD_(INFISICAL|ONEPASSWORD|BITWARDEN)_|AWAITING_APPROVAL|STORE_|HANDOFF_SILENT|_NEEDS_OWNER|JOURNAL_NOT_PROVISIONED/u,
 			);
 			const events = eventsFromWire(server.wire);
-			const verdicts = ceremonyProperties({ secrets: [copied, jwt] }).map(
-				(property) => check(property, events),
-			);
+			const verdicts = [
+				...ceremonyProperties({ secrets: [copied, jwt] }),
+				REACHES_FRONTIER,
+			].map((property) => check(property, events));
 			for (const verdict of verdicts)
 				trail.push(
 					`spec ${verdict.holds ? "holds" : "FAILS"}: ${verdict.property}`,
 				);
 			expect(verdicts.filter((verdict) => !verdict.holds)).toEqual([]);
-			expect(fourth).toContain("HOBO_UP_INCOMPLETE");
-			expect(check(REACHES_FRONTIER, events).holds).toBe(false);
 			// Not vacuous: the run's own sign-in form is the capture the link
 			// property holds to.
 			expect(

@@ -628,9 +628,7 @@ export function createStoreChoiceApp(
 					},
 				};
 			}
-		},
-				true,
-			);
+			return ownerSetupUnavailable();
 		},
 	};
 }

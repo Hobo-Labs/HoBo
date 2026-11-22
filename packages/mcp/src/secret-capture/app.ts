@@ -670,7 +670,7 @@ export function createSecretCaptureApp(
 			return new SecretCaptureError(
 				"SECRET_STORE_NOT_CONNECTED",
 				`No secret store is connected, so ${spec.name} has nowhere to go.`,
-				"Use the secure HoBo owner hand-off to open the selected store.",
+				status.nextStep,
 			);
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(

@@ -821,7 +821,7 @@ describe("composed CD server", () => {
 			expect(logs.join("\n")).not.toContain("synthetic-private-tenant");
 			expect(logs.join("\n")).not.toContain("synthetic-private-station");
 			expect(logs.join("\n")).not.toContain(server.url);
-			expect(server.refusals).toEqual(["conductor-unavailable"]);
+			expect(server.refusals).toEqual(["cd-host-refused"]);
 		} finally {
 			await server.close();
 			rmSync(home, { recursive: true, force: true });

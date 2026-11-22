@@ -74,7 +74,7 @@ export type CdHost = Readonly<{
 	managed: readonly CampId[];
 	reconcilers: number;
 	refusals: readonly string[];
-	pathPrefix: string;
+	pathPrefix: "/v1/cd/";
 	passDeadlineMs: number;
 	handle(request: FeedRequest, signal: AbortSignal): Promise<FeedResponse>;
 	pass(signal?: AbortSignal): Promise<CdPassReport>;
@@ -185,7 +185,11 @@ export async function composeCdHost(
 	const managed: CampId[] = camps
 		.filter((camp) => camp.management === CampManagement.MANAGED)
 		.map((camp) => camp.campId);
-	if (camps.length > 0 && managed.length === 0)
+	if (
+		input.readiness === "composed" &&
+		camps.length > 0 &&
+		managed.length === 0
+	)
 		refusals.push(CD_NO_MANAGED_CAMPS);
 	const reconcilers: CampReconciler[] = [];
 	if (managed.length > 0) {

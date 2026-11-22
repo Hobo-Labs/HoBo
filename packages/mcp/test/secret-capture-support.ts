@@ -106,7 +106,7 @@ export function memoryConnector(
 					connected: false,
 					reason: "deploy/secret-store.binding.json is missing",
 					nextStep:
-						"Connect Infisical with OIDC Auth (the hobo-deploy skill walks through it), then capture again.",
+						"Use the secure HoBo owner hand-off to open the selected store, then capture again.",
 				};
 			return {
 				connected: true,

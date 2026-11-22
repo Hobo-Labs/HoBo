@@ -148,7 +148,7 @@ async function holds(store: OpenedSecretStore, name: string): Promise<boolean> {
 }
 
 /** Provision what the journal's fleet is missing (see the module comment). */
-export function prepareJournalFleet(input: {
+export async function prepareJournalFleet(input: {
 	readonly store: OpenedSecretStore;
 	readonly provisioners: readonly JournalMemberProvisioner[];
 	readonly whatIf?: boolean;

@@ -87,13 +87,15 @@ function publicFeed(request: CdOperatorRequest): boolean {
 	);
 }
 
+class CdRequestRefusal extends Error {}
+
 async function readBody(req: IncomingMessage): Promise<Uint8Array> {
 	const chunks: Buffer[] = [];
 	let size = 0;
 	for await (const chunk of req) {
 		const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
 		size += buf.length;
-		if (size > MAX_BODY_BYTES) throw new Error("request body exceeds 4 MiB");
+		if (size > MAX_BODY_BYTES) throw new CdRequestRefusal("request body exceeds 4 MiB");
 		chunks.push(buf);
 	}
 	return new Uint8Array(Buffer.concat(chunks));
@@ -220,6 +222,7 @@ export async function startCdListener(
 		api: Pick<CdControlApi, "handle" | "pathPrefix">;
 		simulated: boolean;
 		refusals: readonly string[];
+		onRequestError?: (detail: string) => void;
 	}>,
 ): Promise<CdListener> {
 	const { access, service, api } = input;
@@ -355,7 +358,14 @@ export async function startCdListener(
 						? json(503, { ok: false, code: "feed-unavailable" })
 						: response,
 				);
-			} catch {
+			} catch (error) {
+				try {
+					input.onRequestError?.(
+						error instanceof CdRequestRefusal
+							? error.message
+							: "the request could not be processed",
+					);
+				} catch {}
 				if (!res.headersSent)
 					await sendCdResponse(
 						res,

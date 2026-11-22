@@ -91,6 +91,8 @@ export async function startCdServer(
 			},
 			simulated: config.simulate,
 			refusals,
+			onRequestError: (detail) =>
+				input.log(`hobo serve cd: request failed: ${detail}`),
 		});
 		try {
 			input.log(
