@@ -1251,7 +1251,12 @@ export async function runCiRelayDeploy(
 	const commitVerified =
 		protectedPreview ||
 		stagedProduction ||
-		(wait && sha !== undefined && verifyOrigin !== undefined);
+		(target === "production" && wait && sha !== undefined) ||
+		(target === "preview" &&
+			wait &&
+			sha !== undefined &&
+			HTTPS_ORIGIN.test(originGiven) &&
+			!recordVerifiedPreview);
 	if (
 		verifyOrigin !== undefined &&
 		sha !== undefined &&
