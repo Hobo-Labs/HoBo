@@ -9,8 +9,8 @@ import { parseKeyId } from "../../../src/ids.js";
 import type { AgentState, DeviceKeys, KeyStore } from "../../../src/ports.js";
 import {
 	createSuiteKey,
-	ed25519RawOf,
 	createSuiteSealKey,
+	ed25519RawOf,
 	randomMemberId,
 } from "../../../src/testing/conformance/crypto.js";
 import type { KeyStoreMake } from "../../../src/testing/conformance/keystore.js";

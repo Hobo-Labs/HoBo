@@ -139,7 +139,10 @@ describe("acceptFederatedTrust()", () => {
 
 		const again = acceptFederatedTrust(exchange, pinned.value);
 
-		expect(again).toMatchObject({ ok: false, error: { code: "proof-invalid" } });
+		expect(again).toMatchObject({
+			ok: false,
+			error: { code: "proof-invalid" },
+		});
 	});
 
 	it("refuses a record signed by another authority than the pinned one", async () => {
