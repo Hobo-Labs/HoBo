@@ -47,7 +47,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 20
     steps:
       - name: Bootstrap repo-local composite actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -116,6 +116,12 @@ jobs:
           turbo-token: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && secrets.TURBO_TOKEN || '' }}
           turbo-team: ${{ vars.TURBO_TEAM }}
           remote-mode: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork) && 'remote:rw' || 'remote:ro' }}
+      - name: Build HoBo integration dependencies
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 12
+        run: >-
+          pnpm exec turbo run build --filter=@hobo/hobo...
+          --output-logs=new-only --concurrency=${HOBO_TURBO_CONCURRENCY:-100%}
       - name: HoBo slow integration suites
         if: steps.scope.outputs.run == 'true'
         timeout-minutes: 6
