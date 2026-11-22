@@ -24,13 +24,6 @@
 // (`<HOBO_HOME>/cd`, or the store HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL
 // names), the one `hobo deploy` reads.
 //
-// The target is chosen HERE, where the deploy is run, not in the Bindle; and
-// it is PREVIEW unless `--target production` says otherwise. Production needs
-// `--sha`: it takes exactly the commit preview verified. The deploy workflow
-// on `main` (`.github/workflows/relay-deploy.yml`) holds no Vercel token and
-// runs `--adopt` instead (`ci-relay-adopt.ts`): the deployment Vercel's Git
-// integration made, observed, recorded and promoted preview then production.
-//
 // `--provision` first attaches the chosen Marketplace bindings (the cache)
 // with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
 //

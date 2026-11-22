@@ -569,6 +569,10 @@ export function relayRealizer(
 				return observation({
 					...base,
 					status: ReconcileStatus.BLOCKED,
+					handover: {
+						...done.outputs,
+						readRefusalStatus: String(error.status),
+					},
 					reasons: [
 						reason(
 							RELAY_DELIVERY_REFUSAL.verificationFailed,
@@ -1053,7 +1057,10 @@ async function deliverWith(
 				readyState !== undefined &&
 				VERCEL_GIT_BLOCKED_STATES.has(readyState)
 					? `The deployment ended ${readyState}, not READY.`
-					: undefined;
+					: blocked?.code === RELAY_DELIVERY_REFUSAL.verificationFailed &&
+							handover.readRefusalStatus !== undefined
+						? `Reading deployment ${handover.deploymentId ?? "the deployment"} failed (HTTP ${handover.readRefusalStatus}).`
+						: undefined;
 			return {
 				ok: false,
 				code: blocked?.code ?? RELAY_DELIVERY_REFUSAL.incomplete,

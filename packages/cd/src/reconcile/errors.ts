@@ -139,6 +139,7 @@ const SAFE_REALIZER_REMEDIATIONS: ReadonlyMap<string, string> = new Map([
 		"HOBO_CI_DEPLOY_SETTING_REFUSED",
 		"HOBO_CI_DEPLOY_SOURCE_UNPINNED",
 		"HOBO_CI_DEPLOY_VERCEL_REFUSED",
+		"HOBO_CI_DEPLOY_VERIFICATION_FAILED",
 		"relay-not-deployed",
 		"relay-readiness-unobserved",
 	].map(
