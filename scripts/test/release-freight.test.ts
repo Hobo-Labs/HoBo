@@ -196,9 +196,14 @@ describe("release topology names", () => {
 	});
 
 	it("probes the latest Pages build for every promotion node", () => {
-		const pagesRepository = camps.find(
+		const pagesCamp = camps.find(
 			(camp) => camp.logicalId === "hobo-release/pages-candidate",
-		)?.labels["hobo.cd/github.repository"];
+		);
+		expect(pagesCamp).toBeDefined();
+		const pagesRepository =
+			pagesCamp && "hobo.cd/github.repository" in pagesCamp.labels
+				? pagesCamp.labels["hobo.cd/github.repository"]
+				: undefined;
 		expect(pagesRepository).toBeDefined();
 		const pagesBuildProbe = `https://api.github.com/repos/${pagesRepository}/pages/builds/latest`;
 		const pages = pipelines.find(
