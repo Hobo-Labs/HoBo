@@ -228,12 +228,16 @@ describe("main full gate workspace sharding", () => {
 			workflow,
 			/^  workflow_dispatch:\n    inputs:\n      route:\n/mu,
 		);
-		assert.match(job("route"), /route: \$\{\{ inputs\.route \|\| 'auto' \}\}/u);
+		assert.match(
+			job("route"),
+			/route: \$\{\{ \(inputs\.route \|\| 'auto'\) \}\}/u,
+		);
 		assert.doesNotMatch(workflow, /vars\.HOBO_CI_/u);
 	});
 });
 
-const ROUTED = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const ROUTED =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 const SHARD =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 

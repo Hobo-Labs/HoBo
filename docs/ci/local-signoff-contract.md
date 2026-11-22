@@ -40,13 +40,11 @@ Unsupported inventory stays unknown. An Actions workflow continues
 to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
 
-Automatically routed `merge_group` batches in `hobo-ci.yml` use the normal slip
-and queue decision with the `hobo-trunk` label. Admission is queue-observed
-trunk pickup, not a Broker PR-batch claim. A recent timely trunk pickup keeps
-the batch on the fleet only after trunk pickup confirmation that polls the queue
-for up to 90 seconds; an immediate refusal, a timed-out confirmation, or a
-persistently unhealthy trunk selects the configured GitHub-hosted fallback. The
-general `hobo` fleet label is never used for merge-queue Fabric. For automatically routed `merge_group`
+Automatically routed `merge_group` batches in `hobo-ci.yml` pin the **Route
+runners** job on `hobo-trunk`, then the `mergeGroupFabric` path defaults routed
+work to `hobo-trunk` and the `hobo` pool unless a live GitHub-hosted queue probe
+shows zero queued jobs on `ubuntu-24.04`. The general `hobo` fleet label is used
+only as trunk-overflow saturation routing, not as the merge-queue default. For automatically routed `merge_group`
 batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
 verifying the public repository and committed routing policy. It does not
 dispatch the optional box job: a one-time fleet observation cannot reserve
