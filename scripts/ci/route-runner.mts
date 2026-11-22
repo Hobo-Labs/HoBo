@@ -1060,10 +1060,7 @@ export async function divertSaturatedPrBatch(input: {
 				limits: input.limits,
 				slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
 			});
-			if (
-				confirmed.tier === "fleet" &&
-				confirmed.runner === input.labels.trunk
-			)
+			if (confirmed.tier === "fleet" && confirmed.runner === input.labels.trunk)
 				return confirmed;
 		}
 	} catch {
@@ -1078,9 +1075,7 @@ export async function divertSaturatedPrBatch(input: {
 				label: fleet,
 			});
 			if (!observation.saturation.saturated) {
-				if (
-					idleRunnerUnavailable(observation.poolRunners, fleet) === undefined
-				)
+				if (idleRunnerUnavailable(observation.poolRunners, fleet) === undefined)
 					return {
 						tier: "fleet",
 						runner: fleet,

@@ -246,10 +246,7 @@ describe("PR batch routing", () => {
 			eventPayload: sameRepositoryPayload,
 			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup]),
 		});
-		assert.deepEqual(
-			[decision.tier, decision.runner],
-			["fleet", "hobo-trunk"],
-		);
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
 		assert.match(decision.reason, /no idle capacity/u);
 	});
 
@@ -315,7 +312,10 @@ describe("PR batch routing", () => {
 			["github", "ubuntu-24.04", "queue"],
 		);
 		assert.match(decision.reason, /no idle capacity/u);
-		assert.match(decision.reason, /same-repository batch stays on ubuntu-24\.04/u);
+		assert.match(
+			decision.reason,
+			/same-repository batch stays on ubuntu-24\.04/u,
+		);
 		assert.ok(
 			lines.some(
 				(line) =>
