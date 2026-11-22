@@ -189,6 +189,11 @@ export async function discoverHoboOwnedSkillNames(
 	const vendored = await loadVendoredSkillNames(repoRoot);
 	const names: string[] = [];
 	for (const dirent of await readdir(skillsRoot, { withFileTypes: true })) {
+		if (dirent.isSymbolicLink()) {
+			throw new SkillParseError(
+				`${dirent.name} must be a real skill directory, not a symbolic link`,
+			);
+		}
 		if (!dirent.isDirectory()) continue;
 		if (
 			vendored.has(dirent.name) &&
@@ -570,6 +575,11 @@ export async function loadSkillsManifest(
 ): Promise<SkillsManifest> {
 	const skills: SkillManifestEntry[] = [];
 	for (const dirent of await readdir(root, { withFileTypes: true })) {
+		if (dirent.isSymbolicLink()) {
+			throw new SkillParseError(
+				`${dirent.name} must be a real skill directory, not a symbolic link`,
+			);
+		}
 		if (!dirent.isDirectory()) continue;
 		const entry = join(dirent.name, "SKILL.md");
 		const markdown = await readFile(join(root, entry), "utf8");
@@ -605,6 +615,14 @@ export async function checkSkillsConformance(
 	const issues: SkillConformanceIssue[] = [];
 	const seen = new Map<string, string>();
 	for (const dirent of await readdir(root, { withFileTypes: true })) {
+		if (dirent.isSymbolicLink()) {
+			issues.push({
+				skill: dirent.name,
+				code: "missing-skill-md",
+				message: `${dirent.name} must be a real skill directory, not a symbolic link`,
+			});
+			continue;
+		}
 		if (!dirent.isDirectory()) continue;
 		const skillMd = join(root, dirent.name, "SKILL.md");
 		let markdown: string;

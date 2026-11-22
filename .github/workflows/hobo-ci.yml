@@ -1637,7 +1637,6 @@ jobs:
           HOBO_RELEVANT_CHECK_CONCURRENCY: "3"
           SCOPE: ${{ steps.main-base.outputs.scope }}
           BASE: ${{ steps.main-base.outputs.base }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node --experimental-strip-types --no-warnings scripts/ci/prune-stray-workspace-packages.mts

@@ -172,6 +172,8 @@ export async function verifyAgentPluginAttestation(
 		throw new Error("GitHub repository identity is unavailable");
 	}
 	const signerWorkflow = `${repository}/.github/workflows/hobo-ci.yml`;
+	const normalizedServerUrl = serverUrl.replace(/\/$/u, "");
+	const signerUri = `${normalizedServerUrl}/${signerWorkflow}@refs/heads/main`;
 	const verified = run("gh", [
 		"attestation",
 		"verify",
@@ -180,10 +182,12 @@ export async function verifyAgentPluginAttestation(
 		repository,
 		"--signer-workflow",
 		signerWorkflow,
-		"--source-digest",
-		expected.commitSha,
+		"--cert-identity",
+		signerUri,
 		"--cert-oidc-issuer",
 		"https://token.actions.githubusercontent.com",
+		"--source-digest",
+		expected.commitSha,
 		"--format",
 		"json",
 	]);
@@ -193,9 +197,7 @@ export async function verifyAgentPluginAttestation(
 	const attestations = VerifiedArtifactAttestations.parse(
 		JSON.parse(verified.stdout),
 	);
-	const normalizedServerUrl = serverUrl.replace(/\/$/u, "");
 	const invocationId = `${normalizedServerUrl}/${repository}/actions/runs/${expected.runId}/attempts/${expected.runAttempt}`;
-	const signerUri = `${normalizedServerUrl}/${signerWorkflow}@refs/heads/main`;
 	const fromCurrentRun = (
 		attestation: z.infer<typeof VerifiedArtifactAttestations>[number],
 	) => {
@@ -565,6 +567,12 @@ export function mcpSemanticIssues(config: McpConfig): AgentPluginIssue[] {
 				issues.push(...checkPluginScopedPath(where, server.cwd));
 			}
 			for (const [key, value] of Object.entries(server.env ?? {})) {
+				if (/\$\{[^}]+\}/u.test(value)) {
+					issues.push({
+						file: where,
+						message: `env value for "${key}" must not contain environment expansion`,
+					});
+				}
 				issues.push(...scanTextForSecrets(`${where} env.${key}`, value));
 				if (
 					FORBIDDEN_ENV_KEYS.some(
@@ -590,6 +598,12 @@ export function mcpSemanticIssues(config: McpConfig): AgentPluginIssue[] {
 		}
 		issues.push(...checkMcpEndpointUrl(where, server.url));
 		for (const [key, value] of Object.entries(server.headers ?? {})) {
+			if (/\$\{[^}]+\}/u.test(value)) {
+				issues.push({
+					file: where,
+					message: `header value for "${key}" must not contain environment expansion`,
+				});
+			}
 			issues.push(...scanTextForSecrets(`${where} headers.${key}`, value));
 		}
 	}
@@ -602,6 +616,13 @@ export function checkPluginScopedPath(
 ): AgentPluginIssue[] {
 	const issues: AgentPluginIssue[] = [];
 	const rooted = value.replace(/\$\{PLUGIN_(?:ROOT|DATA)\}/gu, "<root>");
+	if (/\$\{[^}]+\}/u.test(rooted)) {
+		issues.push({
+			file: where,
+			message:
+				"plugin-scoped path may only use ${PLUGIN_ROOT} or ${PLUGIN_DATA} expansion",
+		});
+	}
 	if (SECRET_VALUE_PATTERN.test(rooted)) {
 		issues.push({
 			file: where,

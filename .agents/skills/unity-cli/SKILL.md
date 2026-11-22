@@ -69,13 +69,13 @@ if [ "$unity_version" != "1.0.0-beta.2" ]; then
 fi
 unity --help
 unity doctor --format json
-unity auth status --format json >/dev/null   # exit-status check only; never capture this output
+unity auth status --format json | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{let j;try{j=JSON.parse(s)}catch{process.exit(1)};if(j?.authenticated!==true&&j?.loggedIn!==true&&j?.status!=="authenticated"){process.stderr.write("unity auth: not authenticated\n");process.exit(1)}})'
 unity editors -i --format json
 ```
 
 Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Automation hosts use a preinstalled, version-pinned CLI from a controlled image.
 
-**Trust boundary**: a version string is not authenticity. Before running Unity, CI must verify the image signature and digest and compare the CLI binary hash against an approved pin; missing, unverifiable, or mismatched evidence is a stop condition. Recording a digest or reading `unity --version` is not attestation. This skill never downloads or runs an installer. A missing CLI or a drifted version is a stop condition requiring human provisioning. Re-verify flags against live `--help` before trusting this skill's command catalog.
+**Trust boundary**: a version string is not authenticity. Before running Unity, CI must verify the image signature and digest and compare the CLI binary hash against an approved pin; missing, unverifiable, or mismatched evidence is a stop condition. For protected CI, also verify artifact attestation/provenance bound to repository, workflow, ref, and OIDC issuer before credentialed execution; stop if that verification is unavailable or fails. Recording a digest or reading `unity --version` is not attestation. This skill never downloads or runs an installer. A missing CLI or a drifted version is a stop condition requiring human provisioning. Re-verify flags against live `--help` before trusting this skill's command catalog.
 
 **Global flags worth muscle memory**:
 - `--format json|tsv|human|ndjson` / env `UNITY_FORMAT`
@@ -125,7 +125,7 @@ unity editors add /Applications/Unity/Hub/Editor/6000.5.4f1/Unity.app
 ```bash
 unity open ./MyProject                  # or: unity ./MyProject
 unity auth login
-unity auth status --format json >/dev/null   # exit-status check only; never capture this output
+unity auth status --format json | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{let j;try{j=JSON.parse(s)}catch{process.exit(1)};if(j?.authenticated!==true&&j?.loggedIn!==true&&j?.status!=="authenticated"){process.stderr.write("unity auth: not authenticated\n");process.exit(1)}})'
 unity auth logout
 ```
 

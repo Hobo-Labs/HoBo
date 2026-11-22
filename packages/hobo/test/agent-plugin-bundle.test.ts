@@ -23,14 +23,62 @@ afterEach(() => {
 	for (const child of started.splice(0)) child.kill();
 });
 
+function agentPluginCiActive(env: NodeJS.ProcessEnv = process.env): boolean {
+	for (const value of [
+		env.CI,
+		env.GITHUB_ACTIONS,
+		env.TF_BUILD,
+		env.TEAMCITY_VERSION,
+		env.GITLAB_CI,
+		env.CIRCLECI,
+		env.BUILDKITE,
+		env.CODEBUILD_BUILD_ID,
+	]) {
+		const normalized = (value ?? "").trim().toLowerCase();
+		if (normalized !== "" && normalized !== "0" && normalized !== "false") {
+			return true;
+		}
+	}
+	return false;
+}
+
 function ensureBundle(): void {
+	if (existsSync(bundle)) return;
+	if (agentPluginCiActive()) {
+		throw new Error(
+			`The agent-plugin bundle is missing in CI: ${bundle}. Build it in the dedicated agent-plugin workflow step before running this test.`,
+		);
+	}
+	const buildEnv = { ...process.env, HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" };
+	for (const key of [
+		"CI",
+		"GITHUB_ACTIONS",
+		"GITHUB_EVENT_NAME",
+		"GITHUB_REF",
+		"GITHUB_REPOSITORY",
+		"GITHUB_RUN_ID",
+		"GITHUB_RUN_ATTEMPT",
+		"GITHUB_SHA",
+		"GITHUB_SERVER_URL",
+		"GITHUB_JOB",
+		"ACTIONS_ID_TOKEN_REQUEST_URL",
+		"ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+		"TF_BUILD",
+		"TEAMCITY_VERSION",
+		"GITLAB_CI",
+		"CIRCLECI",
+		"BUILDKITE",
+		"CODEBUILD_BUILD_ID",
+	]) {
+		delete buildEnv[key];
+	}
 	const build = spawnSync(
 		process.execPath,
 		["--import", "tsx", "scripts/build-agent-plugin.mts"],
 		{
 			cwd: repoRoot,
 			encoding: "utf8",
-			env: { ...process.env, HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" },
+			env: buildEnv,
 			timeout: 300_000,
 		},
 	);
@@ -134,5 +182,17 @@ describe("agent plugin bundle", { timeout: 300_000 }, () => {
 		expect(beforeAuth.secrets()).toEqual(
 			expect.objectContaining({ list: expect.any(Function) }),
 		);
+	});
+
+	it("detects secret-shaped values anywhere in a large plugin file", async () => {
+		const { scanTextForSecrets } = await import(
+			"../../../scripts/check-agent-plugin.ts"
+		);
+		const secret = ["sk", "-ant-", "api03-secret-shaped-boundary-value"].join("");
+		const largeText = `${"x".repeat(1024 * 1024)}\n${secret}\n${"y".repeat(1024 * 1024)}`;
+		expect(
+			scanTextForSecrets("large.txt", largeText).map((issue) => issue.message),
+		).toContain("contains a secret-shaped value; never commit credentials");
+		expect(scanTextForSecrets("clean.txt", "ordinary plugin text")).toEqual([]);
 	});
 });

@@ -21,7 +21,7 @@ if [ "$unity_version" != "1.0.0-beta.2" ]; then
 fi
 
 unity doctor
-unity auth status >/dev/null   # exit-status check only; never capture this output
+unity auth status --format json | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{let j;try{j=JSON.parse(s)}catch{process.exit(1)};if(j?.authenticated!==true&&j?.loggedIn!==true&&j?.status!=="authenticated"){process.stderr.write("unity auth: not authenticated\n");process.exit(1)}})'
 # Interactive machines: unity auth login
 ```
 
@@ -32,6 +32,14 @@ defense-in-depth, not authorization: grant credentials only from a protected
 platform environment with approvals and branch protection, and allowlist the
 trusted events, repository, and ref there. Prefer short-lived, least-privilege
 federated credentials where supported, and never commit credentials.
+
+Before running a credentialed Unity job, CI must also verify artifact
+attestation/provenance for the checked commit and bound workflow identity
+(repository, workflow, ref, and OIDC issuer) using `gh attestation verify` or an
+equivalent platform control. A version string, digest note, or local file
+presence is not attestation. If verification is unavailable, incomplete, or
+fails, stop before any credentialed step; environment, ref, and branch-protection
+flags alone never substitute for it.
 
 A missing or unexpected CLI is a stop condition, never an install or help-retry
 step. Credentialed or reused CI runners must stop before this bootstrap unless

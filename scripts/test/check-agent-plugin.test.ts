@@ -492,7 +492,7 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 		expect(messages).toMatch(/"api_token" names a secret/u);
 	});
 
-	it("scans benign env keys for secret-shaped values", () => {
+	it("scans benign env keys for secret-shaped values and rejects env expansion", () => {
 		const secret = "ghp_abcdefghijklmnopqrst";
 		const parsed = parseMcpConfig(
 			JSON.stringify({
@@ -502,7 +502,10 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 						type: "stdio",
 						command: "node",
 						args: ["${PLUGIN_ROOT}/bin/hobo-mcp.mjs"],
-						env: { BUILD_TOKEN: secret },
+						env: {
+							BUILD_TOKEN: secret,
+							LEAK: "${GITHUB_TOKEN}",
+						},
 					},
 				},
 			}),
@@ -514,6 +517,7 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 			.map((issue) => issue.message)
 			.join("\n");
 		expect(messages).toMatch(/secret-shaped value/u);
+		expect(messages).toMatch(/environment expansion/u);
 		expect(messages).not.toContain(secret);
 	});
 
@@ -1201,10 +1205,12 @@ describe("checkAgentPlugin (integration)", () => {
 					"Hobo-Labs/HoBo",
 					"--signer-workflow",
 					"Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml",
-					"--source-digest",
-					"commit-current",
+					"--cert-identity",
+					"https://github.com/Hobo-Labs/HoBo/.github/workflows/hobo-ci.yml@refs/heads/main",
 					"--cert-oidc-issuer",
 					"https://token.actions.githubusercontent.com",
+					"--source-digest",
+					"commit-current",
 					"--format",
 					"json",
 				],
@@ -1738,18 +1744,24 @@ describe("agent-tooling extract drift gate", () => {
 			path.join(repoRoot, "docs/agent-tooling.md"),
 			"utf8",
 		);
-		const referenceMarkdown = (
-			await readFile(
-				path.join(
-					realPluginRoot,
-					"skills/hobo-setup/references/agent-tooling.md",
-				),
-				"utf8",
-			)
-		).replace("(repo-only: it lives in the HoBo repository)", "(repo only)");
+		const referenceMarkdown = await readFile(
+			path.join(
+				realPluginRoot,
+				"skills/hobo-setup/references/agent-tooling.md",
+			),
+			"utf8",
+		);
+		const marker =
+			"Commands marked **repo-only** need the HoBo repository checkout.";
+		const mutated = referenceMarkdown.includes(marker)
+			? referenceMarkdown.replace(
+					marker,
+					"Commands marked **repo only** need the HoBo repository checkout.",
+				)
+			: `${referenceMarkdown}\n<!-- drift -->\n`;
 		const issues = agentToolingReferenceDriftIssues({
 			docsMarkdown,
-			referenceMarkdown,
+			referenceMarkdown: mutated,
 		});
 		expect(issues).toHaveLength(1);
 		expect(issues[0]?.message).toMatch(/drifted from docs\/agent-tooling\.md/u);

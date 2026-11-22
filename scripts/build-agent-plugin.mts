@@ -163,10 +163,29 @@ export function agentPluginBuildAttestationIssue(
 	}
 	if (nonPublishing) return undefined;
 	if (env.GITHUB_JOB === "main-gate") return undefined;
+	const requestUrl = env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "";
+	const requestToken = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "";
+	let oidcRequestUrlValid = false;
+	if (requestUrl.length > 0) {
+		try {
+			const parsed = new URL(requestUrl);
+			const hostname = parsed.hostname.toLowerCase();
+			oidcRequestUrlValid =
+				parsed.protocol === "https:" &&
+				parsed.username === "" &&
+				parsed.password === "" &&
+				(hostname === "token.actions.githubusercontent.com" ||
+					hostname.endsWith(".actions.githubusercontent.com"));
+		} catch {
+			oidcRequestUrlValid = false;
+		}
+	}
+	const oidcRequestTokenValid =
+		/^[A-Za-z0-9._-]{20,}$/u.test(requestToken) && !/\s/u.test(requestToken);
 	const publishesProvenance =
 		env.GITHUB_JOB === "agent-plugin-provenance" &&
-		(env.ACTIONS_ID_TOKEN_REQUEST_URL?.trim() ?? "").length > 0 &&
-		(env.ACTIONS_ID_TOKEN_REQUEST_TOKEN?.trim() ?? "").length > 0;
+		oidcRequestUrlValid &&
+		oidcRequestTokenValid;
 	if (!publishesProvenance) {
 		return "trusted main bundle builds require the main-gate verification job or the isolated provenance job's OIDC capability";
 	}

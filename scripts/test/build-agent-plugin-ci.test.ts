@@ -68,8 +68,10 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 				{
 					...trustedMain,
 					GITHUB_JOB: "agent-plugin-provenance",
-					ACTIONS_ID_TOKEN_REQUEST_URL: "https://actions.example/oidc",
-					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-capability",
+					ACTIONS_ID_TOKEN_REQUEST_URL:
+						"https://token.actions.githubusercontent.com/.well-known/openid-configuration",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN:
+						"request-capability.request-capability.request-capability",
 				},
 				head,
 			),
@@ -86,6 +88,35 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 				head,
 			),
 		).toMatch(/OIDC capability/u);
+		for (const oidc of [
+			{
+				ACTIONS_ID_TOKEN_REQUEST_URL: "https://evil.example/oidc",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN:
+					"request-capability.request-capability.request-capability",
+			},
+			{
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.githubusercontent.com.evil/oidc",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN:
+					"request-capability.request-capability.request-capability",
+			},
+			{
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.githubusercontent.com/oidc",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "short",
+			},
+		]) {
+			expect(
+				agentPluginBuildAttestationIssue(
+					{
+						...trustedMain,
+						GITHUB_JOB: "agent-plugin-provenance",
+						...oidc,
+					},
+					head,
+				),
+			).toMatch(/OIDC capability/u);
+		}
 		const pullRequest = {
 			...githubRun,
 			GITHUB_EVENT_NAME: "pull_request",
@@ -183,6 +214,20 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 				"a".repeat(40),
 			),
 		).toMatch(/main-gate verification job/u);
+	});
+
+	it("fails closed for CI signals that are not GitHub Actions", () => {
+		for (const env of [
+			{ TEAMCITY_VERSION: "2024.1" },
+			{ GITLAB_CI: "true" },
+			{ CIRCLECI: "true" },
+			{ BUILDKITE: "true" },
+			{ CODEBUILD_BUILD_ID: "codebuild:1" },
+		]) {
+			expect(agentPluginBuildAttestationIssue(env, undefined)).toMatch(
+				/GitHub Actions|trusted CI|explicitly local build/u,
+			);
+		}
 	});
 
 	it("does not request or persist an OIDC bearer token", () => {
