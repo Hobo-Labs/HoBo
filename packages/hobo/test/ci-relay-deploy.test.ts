@@ -59,6 +59,7 @@ cpSync(RELAY_DIR, relayFixtureDir, {
 	recursive: true,
 	filter: (source) => !source.includes("node_modules"),
 });
+rmSync(join(relayFixtureDir, "package.json"), { force: true });
 symlinkSync(
 	join(RELAY_DIR, "node_modules"),
 	join(relayFixtureDir, "node_modules"),
@@ -89,6 +90,7 @@ cpSync(RELAY_DIR, legacyFixtureDir, {
 	recursive: true,
 	filter: (source) => !source.includes("node_modules"),
 });
+rmSync(join(legacyFixtureDir, "package.json"), { force: true });
 symlinkSync(
 	join(RELAY_DIR, "node_modules"),
 	join(legacyFixtureDir, "node_modules"),
