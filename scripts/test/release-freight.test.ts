@@ -8,7 +8,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { pipelines } from "../../release/hobo-release.delivery.ts";
+import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
 import {
 	announceVerdict,
 	awaitReleasePagesWall,
@@ -196,6 +196,11 @@ describe("release topology names", () => {
 	});
 
 	it("probes the latest Pages build for every promotion node", () => {
+		const pagesRepository = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		)?.labels["hobo.cd/github.repository"];
+		expect(pagesRepository).toBeDefined();
+		const pagesBuildProbe = `https://api.github.com/repos/${pagesRepository}/pages/builds/latest`;
 		const pages = pipelines.find(
 			(pipeline) => pipeline.name === "hobo-release-pages",
 		);
@@ -206,8 +211,7 @@ describe("release topology names", () => {
 				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
 			});
 			expect(node.verification.probes[0]).toMatchObject({
-				urlRef:
-					"https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+				urlRef: pagesBuildProbe,
 				expectStatus: 200,
 			});
 		}

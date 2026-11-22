@@ -183,12 +183,6 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-/**
- * What a routed job asks for: the label the `route` job chose only when it
- * succeeded, and GitHub-hosted when that job failed or did not run, the one
- * tier known to be up. Outputs written before a failed route cannot select a
- * self-hosted runner.
- */
 const ROUTED_RUNS_ON =
 	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
