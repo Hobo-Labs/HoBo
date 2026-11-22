@@ -78,17 +78,10 @@ describe("pins wiring", () => {
 				continue;
 			}
 			assert.ok(install > status, `${name}: status precedes pnpm install`);
-			if (name === "workspace_tests") {
-				assert.match(
-					job,
-					/runs-on:\s*\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
-				);
-			} else {
-				assert.match(
-					job,
-					/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
-				);
-			}
+			assert.match(
+				job,
+				/runs-on:\s*\$\{\{ needs\.route\.result == 'success' && \(needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'\) \|\| 'ubuntu-24\.04' \}\}/u,
+			);
 		}
 	});
 

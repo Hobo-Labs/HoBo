@@ -98,10 +98,6 @@ export type AppCreateOptions = Readonly<{
 	configService?:
 		| Readonly<{ client: InfisicalClient; port: SecretsPort }>
 		| undefined;
-	/**
-	 * Hand GitHub's one-time code to the relay deploy workflow instead of
-	 * converting here (secretless: no credential on this machine).
-	 */
 	viaWorkflow?: boolean | undefined;
 	/**
 	 * The owner's outbound-only tunnel (HOBO_REDIRECT_RECEIVER), so GitHub's
@@ -129,7 +125,7 @@ export type AppCreateOptions = Readonly<{
 }>;
 
 // public-contract: the workflow whose App-credentials job converts the manifest code.
-export const APP_CREDENTIALS_WORKFLOW = "relay-deploy.yml";
+export const APP_CREDENTIALS_WORKFLOW = "app-credentials.yml";
 
 /** `gh workflow run <workflow> --ref main --json`, the inputs on stdin, never in argv. */
 function ghWorkflowRun(

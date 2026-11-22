@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	expandShardUnits,
+	MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
 	maxShardLoadSeconds,
 	partitionUnitsByWeight,
 	planDependentTests,
 	planShardCountBalanced,
 	planUnitLoadSeconds,
-	MAIN_WORKSPACE_SHARD_MAX_SPREAD_SECONDS,
 	readRepo,
 	shardLoadSpreadSeconds,
 	shardUnitSeconds,

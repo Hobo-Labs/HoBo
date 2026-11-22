@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,12 +20,21 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadDeliveryFile } from "../src/cd-delivery-module.js";
 import { createCiCommand } from "../src/ci-command.js";
 import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
+import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	readRelayDeployToken,
+} from "../src/ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
 import {
 	RELAY_VERIFY_REFUSAL,
 	recordVerifiedPreviewRecords,
 } from "../src/ci-relay-verify.js";
-import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+	parseJsonObject,
+} from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
 // `hobo ci deploy` against the REAL relay declaration
@@ -35,6 +51,50 @@ const TOKEN = "synthetic-token-0123";
 /** Pact corpus uses `team_hobo`; override the committed binding team in tests. */
 const TEAM = "team_hobo";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+const relayFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-fixture-"),
+);
+cpSync(RELAY_DIR, relayFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+rmSync(join(relayFixtureDir, "package.json"), { force: true });
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(relayFixtureDir, "node_modules"),
+);
+{
+	const file = join(relayFixtureDir, "deploy", "secret-store.binding.json");
+	const binding: Record<string, JsonValue> = Object.fromEntries(
+		Object.entries(
+			parseJsonObject(
+				readFileSync(
+					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+					"utf8",
+				),
+			),
+		),
+	);
+	binding.deployProjectId = "ci-deploy-project";
+	binding.deployCredentialIdentityId = "ci-deploy-reader-identity";
+	binding.deployOidcSubject =
+		"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
+	writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
+}
+
+const legacyFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-legacy-fixture-"),
+);
+cpSync(RELAY_DIR, legacyFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+rmSync(join(legacyFixtureDir, "package.json"), { force: true });
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(legacyFixtureDir, "node_modules"),
+);
 
 const fixture = (name: string) =>
 	parseJsonObject(
@@ -90,6 +150,7 @@ interface Ran {
 	readonly stderr: string;
 	readonly envelope: JsonObject;
 	readonly data: JsonObject;
+	readonly credentialReads: number;
 }
 
 async function deploy(
@@ -104,19 +165,37 @@ async function deploy(
 		readonly now?: () => number;
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
+		readonly oidc?: boolean;
 	},
 ): Promise<Ran> {
-	// The deploy token is never read from the environment: a test that means
-	// "the owner holds a token" puts it in the run's vault, as the store would.
 	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
+	const oidc = storeToken !== undefined && options.oidc !== false;
 	const deployCredentials = createTrustedVault();
+	let credentialReads = 0;
+	const readDeployCredential: typeof readRelayDeployToken = async (request) => {
+		credentialReads += 1;
+		if (storeToken === undefined) return readRelayDeployToken(request);
+		return {
+			token: storeToken,
+			secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+			identityId: "ci-deploy-reader-identity",
+			audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+		};
+	};
 	if (storeToken !== undefined)
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
+	const env = { ...plainEnv };
+	if (oidc) {
+		env.ACTIONS_ID_TOKEN_REQUEST_URL =
+			"https://token.actions.example.test/token?api-version=2.0";
+		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "synthetic-request-token";
+	}
 	const cli = createHoboCli({
 		commands: {
 			ci: createCiCommand({
-				env: plainEnv,
+				env,
 				deployCredentials,
+				readDeployCredential,
 				vercelFetch: options.fetch,
 				...(options.vercelCli !== undefined
 					? { vercelCli: options.vercelCli }
@@ -137,7 +216,7 @@ async function deploy(
 		...args,
 		...teamOverride,
 		"--cwd",
-		options.cwd ?? RELAY_DIR,
+		options.cwd ?? relayFixtureDir,
 		...(options.json === false ? [] : ["--json"]),
 	]);
 	const envelope = options.json === false ? {} : parseJsonObject(result.stdout);
@@ -149,6 +228,7 @@ async function deploy(
 			data !== undefined && !Array.isArray(data) && data !== null
 				? parseJsonObject(JSON.stringify(data))
 				: {},
+		credentialReads,
 	};
 }
 
@@ -162,6 +242,8 @@ function freshHome(): string {
 }
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	rmSync(relayFixtureDir, { recursive: true, force: true });
+	rmSync(legacyFixtureDir, { recursive: true, force: true });
 });
 
 // The relay answering its probes, and the URLs it was asked for. Its
@@ -227,11 +309,11 @@ const INPUTS = [
 ];
 
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
-	it("plans a preview deployment by default, with no token and no request", async () => {
+	it("plans a preview deployment with OIDC available but no credential read or request", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[...RELAY, "--team", TEAM, ...SETTING, "--dry-run"],
-			{ fetch },
+			{ fetch, env: { VERCEL_TOKEN: TOKEN } },
 		);
 
 		expect(ran.exitCode).toBe(0);
@@ -246,6 +328,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			target: "preview",
 			scope: TEAM,
 		});
+		expect(ran.credentialReads).toBe(0);
 		expect(sent).toEqual([]);
 	});
 
@@ -386,6 +469,40 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 				}),
 			]),
 		);
+		expect(sent).toEqual([]);
+	});
+
+	it("plans the committed declaration without requiring owner-provisioned ids for a dry run", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
+			fetch,
+			cwd: RELAY_DIR,
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.envelope).toMatchObject({
+			ok: true,
+			code: "HOBO_CI_DEPLOY_PLANNED",
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("rejects a credential-free legacy binding before any OIDC or deploy request", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			cwd: legacyFixtureDir,
+			env: {
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token?api-version=2.0",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+			message: expect.stringContaining("no deploy credential identity"),
+		});
 		expect(sent).toEqual([]);
 	});
 
@@ -642,6 +759,23 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		expect(sent).toEqual([]);
 	});
 
+	it("refuses a preloaded deploy token when the dedicated reader is unavailable", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			env,
+			oidc: false,
+		});
+
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+			status: "authentication-required",
+		});
+		expect(ran.credentialReads).toBe(0);
+		expect(sent).toEqual([]);
+	});
+
 	it("sets the setting, deploys once for the whole Bindle, and prints the outputs", async () => {
 		const vercel = pactBackedTransport(pact, { lifecycle: LIFECYCLE });
 		const ran = await deploy([...RELAY, ...SETTING], {
@@ -663,6 +797,12 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		});
 		expect(vercel.fidelityViolations()).toEqual([]);
 		expect(ran.envelope).toMatchObject({ ok: true, code: "HOBO_CI_DEPLOYED" });
+		expect(ran.credentialReads).toBe(1);
+		expect(ran.data).toMatchObject({
+			deployTokenRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+			deployCredentialIdentityId: "ci-deploy-reader-identity",
+			deployCredentialAudience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+		});
 		expect(ran.data.outputs).toEqual({
 			url: "https://hobo-ci-git-main.example.vercel.app",
 			deploymentId: "dpl_preview",

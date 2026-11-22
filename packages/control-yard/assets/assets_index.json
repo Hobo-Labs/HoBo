@@ -10,10 +10,10 @@
       "Reuse site parallax Bo sheets only \u2014 idle + walk-east are good plates.",
       "West is site bo-walk-left with feet re-registered to east baseline row 153 (no redraw, no mirror).",
       "Environment: site ink-on-paper plates (trail, poles, clouds) \u2014 never generative color plates.",
-      "DESIGN.md rubberhose: ink #101010 / paper #ffffff / spark / go accents only.",
+      "Rubberhose: ink #101010 / paper #ffffff / spark / go accents only.",
       "Stable animation ids under animationIds \u2014 never hard-code clip names."
     ],
-    "designSystem": "site/DESIGN.md (packages/control-yard/DESIGN.md)"
+    "designSystem": "site/src/styles/global.css and packages/control-yard/public/yard.css"
   },
   "backgrounds": {
     "sky-cloud": {

@@ -29,6 +29,8 @@ const {
 	codeBg,
 	nightBg,
 	nightRaised,
+	nightSpark,
+	nightGo,
 } = STATUS_PAGE_TOKENS;
 
 const GRAIN =
@@ -103,8 +105,8 @@ body::after{content:"";position:fixed;inset:0;z-index:2147483646;pointer-events:
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important;transition-delay:0s!important;scroll-behavior:auto!important}h1{transform:none}button:active,.action:active{transform:none}body::after{opacity:0}}
 html{color-scheme:light dark}
 :root,:root[data-theme="light"]{color-scheme:light}
-:root[data-theme="dark"]{--ink:${cream};--paper:${nightRaised};--cream:${nightBg};--mute:${borderStrong};--faint:${border};--border:${mute};--border-strong:${mute};--inset:${nightRaised};--code-bg:${nightRaised}}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--ink:${cream};--paper:${nightRaised};--cream:${nightBg};--mute:${borderStrong};--faint:${border};--border:${mute};--border-strong:${mute};--inset:${nightRaised};--code-bg:${nightRaised}}}
+:root[data-theme="dark"]{--ink:${cream};--paper:${nightRaised};--cream:${nightBg};--mute:${borderStrong};--faint:${border};--spark:${nightSpark};--go:${nightGo};--border:${mute};--border-strong:${mute};--inset:${nightRaised};--code-bg:${nightRaised}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--ink:${cream};--paper:${nightRaised};--cream:${nightBg};--mute:${borderStrong};--faint:${border};--spark:${nightSpark};--go:${nightGo};--border:${mute};--border-strong:${mute};--inset:${nightRaised};--code-bg:${nightRaised}}}
 :root[data-theme="dark"] body::after{mix-blend-mode:screen;opacity:.08}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) body::after{mix-blend-mode:screen;opacity:.08}}
 .theme-toggle{flex:0 0 auto}

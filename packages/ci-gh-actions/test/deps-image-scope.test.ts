@@ -129,7 +129,7 @@ describe("CI deps image push scope", () => {
 		expect(depsJob["runs-on"]).toContain("'ubuntu-24.04'");
 		expect(job["runs-on"]).not.toContain("needs.route.outputs.runner");
 		expect(mainPlan["runs-on"]).toBe(
-			"${{ needs.route.outputs.runner || 'ubuntu-24.04' }}",
+			"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}",
 		);
 		expect(JSON.stringify(mainPlan.steps)).toContain(
 			'\\"${HOBO_CI_PNPM_STORE_MOUNTED:-}\\" != \\"1\\"',
@@ -227,6 +227,7 @@ describe("CI deps image push scope", () => {
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
+			"scripts-tests-build",
 			"scripts-tests",
 			"state-machine-verification",
 		]);
