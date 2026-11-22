@@ -1256,7 +1256,8 @@ export async function runCiRelayDeploy(
 			wait &&
 			sha !== undefined &&
 			HTTPS_ORIGIN.test(originGiven) &&
-			!recordVerifiedPreview);
+			!recordVerifiedPreview &&
+			protectedPreview);
 	if (
 		stagedProduction &&
 		sha !== undefined &&
@@ -1498,10 +1499,7 @@ export async function runCiRelayDeploy(
 							} catch (error) {
 								if (promotionError !== undefined)
 									return realizationFailure(promotionError, withoutToken);
-								if (
-									error instanceof VercelProductionDeploymentMissingError ||
-									error instanceof VercelPromotionUnconfirmedError
-								)
+								if (error instanceof VercelPromotionUnconfirmedError)
 									return {
 										ok: false as const,
 										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",

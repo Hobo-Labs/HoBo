@@ -329,10 +329,11 @@ Delivering through HoBo CD changed the verb for anyone who runs it by hand:
 **Migrating existing preview `--wait` CI jobs:** the verify step now requires
 both `--sha <commit>` and `permissions: id-token: write` on the job (the
 GitHub OIDC mint the protected probe attests the deployment with). A job that
-runs `--target preview --wait` without either refuses before creation with
-`HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED` instead of verifying a shared
-origin it cannot attest; add the two inputs, or drop `--wait` and accept that
-nothing is verified or qualified.
+runs `--target preview --wait` without either, or with an HTTPS preview origin
+but without protected deployment OIDC probing and without record verification,
+refuses before creation with `HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED`
+instead of verifying a shared origin it cannot attest; add the two inputs, or
+drop `--wait` and accept that nothing is verified or qualified.
 
 **Merge cutover (relay CD delivery):** this change lands with no deploy
 credential in `deploy/secret-store.binding.json` (a credential-free binding).

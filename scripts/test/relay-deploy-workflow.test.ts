@@ -533,6 +533,10 @@ describe("the relay deploy workflow", () => {
 		assert.match(build, /release-freight-cli\.mts pack/u);
 		assert.match(
 			build,
+			/--include scripts\/ci\/relay-deploy-result-report\.mts/u,
+		);
+		assert.match(
+			build,
 			/actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/u,
 		);
 		const deploy = workflow
