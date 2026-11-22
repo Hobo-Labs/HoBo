@@ -60,12 +60,15 @@ describe("EVAL hobo-deploy skill: remote hand-off", () => {
 	});
 
 	it("requires a private owner session before invoking the store chooser", () => {
-		expect(SKILL).toMatch(/Before opening any owner form/iu);
+		expect(SKILL).toMatch(/Before any MCP call, verify/iu);
 		expect(SKILL).toMatch(
-			/store selection, capture, and\s+the lifecycle itself/u,
+			/Do not call any tool that can render an owner form\s+before that check/iu,
 		);
 		expect(SKILL).toMatch(
-			/do not open the form;\s+report\s+the missing secure hand-off/u,
+			/`choose_secret_store` must be the first MCP call in every\s+store workflow/iu,
+		);
+		expect(SKILL).toMatch(
+			/report the missing\s+secure hand-off and do not collect store identifiers in chat/iu,
 		);
 		expect(SKILL).toMatch(
 			/agent-visible tool calls,\s+results, traces, and diagnostics/u,

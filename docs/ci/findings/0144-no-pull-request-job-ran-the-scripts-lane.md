@@ -64,3 +64,5 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 - Hosted run 44939705675 proved that restoring the build job's Turbo archive does not materialize `dist/`: three scripts-test files failed on missing `@hobo/core`, `@hobo/ci`, and `@hobo/provider-vercel` outputs. The replacement artifact handoff still needs a production observation on its next run. The original lane took 4m37s on a GitHub-hosted runner (build 2m14s, whole job about 7.5 minutes); that is not a measurement of the new split.
 
 Both jobs retain a 20-minute ceiling. The build's 6-minute step and each shard's 12-minute lane fail independently instead of being cancelled without a named step.
+
+Shadow attestation workflow and plan pins in `scripts/ci/attestation.mts` are refreshed when the reviewed workflow or plan content changes.
