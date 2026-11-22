@@ -27,16 +27,18 @@
 		"@alchemy.run/rivet": "2.0.0-beta.87",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "^4.1.4",
-		"rivetkit": "3.0.0"
+		"rivetkit": "3.0.0",
+		"ws": "^8.21.0"
 	},
 	"devDependencies": {
 		"@alchemy.run/rivet": "2.0.0-beta.87",
-		"@types/node": "^22.15.29",
+		"@types/node": "^24.13.2",
 		"alchemy": "2.0.0-beta.87",
 		"effect": "4.1.4",
 		"rivetkit": "3.0.0",
 		"tsx": "^4.20.3",
-		"vitest": "^4.1.9"
+		"vitest": "^4.1.9",
+		"ws": "8.21.0"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",

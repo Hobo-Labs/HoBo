@@ -13,8 +13,8 @@ import { assertTlcExited, runBoundedTlc } from "./lib/bounded-tlc.ts";
 
 const configuredJar = process.env.HOBO_TLA_TOOLS;
 const expected =
-	"7e53aa636dac8a3cb0533f343115c0548e03fc0ce5edc7739becf58d3d0fb84f";
-if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.8.0");
+	"936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
+if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.7.4");
 const jar = resolve(configuredJar);
 if (createHash("sha256").update(readFileSync(jar)).digest("hex") !== expected)
 	throw new Error("TLA+ tool digest does not match the pinned release");
