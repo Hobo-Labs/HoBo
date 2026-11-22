@@ -18,7 +18,7 @@ offline probes (`pnpm run doctor`, setup `--help`, skill mirrors, local MCP laun
 
 | Section | File | Audit when… |
 |---|---|---|
-| **Specs & standing contracts** | [specs.md](specs.md) | AGENTS.md, **WorkOS AUTH.md/auth.md**, DESIGN.md, llms.txt, .env.example |
+| **Specs & standing contracts** | [specs.md](specs.md) | AGENTS.md, **WorkOS AUTH.md/auth.md**, UI tokens, llms.txt, .env.example |
 | **MCP** | [mcp.md](mcp.md) | Tool discovery, shared launchers, fail-closed missing binary/key |
 | **Agent skills** | [agent-skills.md](agent-skills.md) | Skill trees, progressive disclosure, dual mirrors |
 | **Harness CLIs** | [harness-clis.md](harness-clis.md) | Host CLIs, setup script, doctor, agent:check, sdlc --finish |
@@ -48,7 +48,7 @@ offline probes (`pnpm run doctor`, setup `--help`, skill mirrors, local MCP laun
 | Doctor (incl. agent-tooling) | `pnpm run doctor` |
 | MCP launchers | `scripts/agent-mcp-{serena,headroom,gbrain}.sh` |
 | Skill mirrors | `pnpm run skills:mirror-check` |
-| Design tokens / UI | `site/DESIGN.md`, `pnpm run design:lint` |
+| Design tokens / UI | `site/src/styles/global.css`, `pnpm run design:lint` |
 | Experience proofs (ax) | `src/draft/exp-proofs/ax/`, `_classification.md` |
 
 ## Metrics mapping (AX-specific)
