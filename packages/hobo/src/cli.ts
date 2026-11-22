@@ -13,7 +13,6 @@ import {
 	type YardRuntime,
 } from "@hobo/cli";
 import type { SharedHostingBudgetAuthority } from "@hobo/cloud";
-import { createInProcessExecutor } from "@hobo/cloud";
 import { type DeviceClock, prepareVercelConnection } from "@hobo/hobo-cd";
 import {
 	machineRunner,
@@ -46,8 +45,9 @@ import { createCanDeployCommand } from "./can-deploy-command.js";
 import { defaultJournalProvisioners } from "./cd-journal-provisioners.js";
 import {
 	cdPlacementRuntime,
+	createCdPlanCommand,
+	createCdVercelUpCommand,
 	retainPreparedOnDown,
-	routePreparedPlacements,
 } from "./cd-placement.js";
 import { createCiCommand } from "./ci-command.js";
 import { secretStoreOwnershipVerifier } from "./ci-secret-store.js";
@@ -100,7 +100,6 @@ import { createSecretStoreProvider } from "./secret-store-providers.js";
 import { createServeControlCommand } from "./serve-control-command.js";
 import { createStationCommand } from "./station-command.js";
 import { createTrailsCommand } from "./trails-command.js";
-import { createVercelDeployProvider } from "./vercel-deploy-provider.js";
 import { createVerifyCommand } from "./verify-command.js";
 import { serveProjectOnLocalYard } from "./wasm-host.js";
 import { createYardCommand } from "./yard-command.js";
@@ -332,9 +331,12 @@ export function createComposedHoboCli(
 				down: cdDown,
 				// The journal and config are placed on the Yards cd up makes for
 				// them (the journal's fleet, the owner's config service).
-				plan: createProviderCeremonyUp(
-					createPlanCommand({ runtime: cdPlacementRuntime(runtime) }),
-					{ add, candidates: installableProvidersFor, interactive: false },
+				plan: createCdPlanCommand(runtime, (placed) =>
+					createProviderCeremonyUp(createPlanCommand({ runtime: placed }), {
+						add,
+						candidates: installableProvidersFor,
+						interactive: false,
+					}),
 				),
 				// Vercel first, then converge through the Vercel provider junction:
 				// the same journal, registry and actor host (one writer), with an
@@ -361,24 +363,15 @@ export function createComposedHoboCli(
 				upWith: (credentials) =>
 					runtime.delivery || runtime.hostingExecution
 						? cdUnavailable("up")
-						: createBrokerAwareUpCommand({
-								runtime: {
-									...cdPlacementRuntime(runtime),
-									executor: createInProcessExecutor({
-										iac: routePreparedPlacements(
-											createVercelDeployProvider({
-												token: credentials.reveal("VERCEL_TOKEN") ?? "",
-												...((team) =>
-													team !== undefined ? { teamId: team } : undefined)(
-													credentials.reveal("VERCEL_TEAM_ID"),
-												),
-												projectName: "hobo-cd",
-											}),
-										),
+						: createCdVercelUpCommand({
+								credentials,
+								runtime,
+								upWith: (placed) =>
+									createBrokerAwareUpCommand({
+										runtime: placed,
+										persistentLocal: !explicitFixture,
+										authMdFetch: options.authMdFetch ?? fetch,
 									}),
-								},
-								persistentLocal: !explicitFixture,
-								authMdFetch: options.authMdFetch ?? fetch,
 							}),
 				fallback: deploy,
 			}),

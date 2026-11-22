@@ -1,4 +1,11 @@
+import { clone, create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
+import {
+	ChargeComponentSchema,
+	ProviderAgreementSchema,
+	ProviderProductSchema,
+	RateCardSchema,
+} from "../src/_generated/pricing_pb.js";
 import {
 	assessTargetPricing,
 	createTargetPricingInventory,
@@ -150,6 +157,7 @@ describe("whole-target pricing contract", () => {
 			throw new Error("fixture missing");
 		fixed.base.selectors.region = "west";
 		candidate.attributes.region = "east";
+		metered.baseline.push(structuredClone(candidate));
 		rateCard.charges.push(fixed);
 		rehashScenario(metered);
 		expect(
@@ -199,8 +207,10 @@ describe("whole-target pricing contract", () => {
 
 	it("discloses unknown pricing for each provider without fabricating costs", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -245,8 +255,10 @@ describe("whole-target pricing contract", () => {
 
 	it("identifies missing and ambiguous bindings without claiming a partial provider quote", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -317,8 +329,10 @@ describe("whole-target pricing contract", () => {
 			candidateIndex: 1,
 		});
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/database",
 			providerId: "database",
 			providerAccountRef: "account-b",
@@ -382,8 +396,10 @@ describe("whole-target pricing contract", () => {
 
 	it("exhausts two-resource binding choices without reporting a partial quote", () => {
 		const target = inventory();
+		const baseResource = target.resources[0];
+		if (!baseResource) throw new Error("missing resource fixture");
 		target.resources.push({
-			...target.resources[0]!,
+			...baseResource,
 			resourceId: "stack/worker",
 		});
 		const joint = makeScenario({
@@ -589,6 +605,113 @@ describe("whole-target pricing contract", () => {
 		expect(quoteTargetPricing(target, model)).toMatchObject({
 			ok: true,
 			quote: { incremental: { billed: { decimal: "2", currency: "USD" } } },
+		});
+	});
+
+	it("rejects an active agreement outside the inventory when its fixed quantity is missing", () => {
+		const model = modeled();
+		if (
+			model.state.case !== "model" ||
+			model.state.value.scenario === undefined
+		) {
+			throw new Error("fixture model missing");
+		}
+		const joint = model.state.value.scenario;
+		const catalog = joint.catalog;
+		const state = joint.state;
+		const sourceCard = catalog?.rateCards[0];
+		const sourceAgreement = state?.agreements[0];
+		const sandboxProduct = catalog?.products[0];
+		if (
+			catalog === undefined ||
+			state === undefined ||
+			sourceCard === undefined ||
+			sourceAgreement === undefined ||
+			sandboxProduct === undefined
+		) {
+			throw new Error("fixture scenario incomplete");
+		}
+		const support = clone(ProviderProductSchema, sandboxProduct);
+		support.id = "support";
+		support.meters = [];
+		catalog.products.push(support);
+		const supportCard = clone(RateCardSchema, sourceCard);
+		supportCard.id = "card-support";
+		supportCard.charges = [
+			create(ChargeComponentSchema, {
+				base: {
+					id: "seat",
+					selectors: {},
+					fallback: false,
+					invoiceBehavior: "itemized",
+				},
+				variant: {
+					case: "fixed",
+					value: {
+						cadence: "monthly",
+						timing: "advance",
+						amount: { decimal: "10", currency: "USD" },
+						quantityDimension: "seat",
+						proration: "none",
+					},
+				},
+			}),
+		];
+		catalog.rateCards.push(supportCard);
+		const supportAgreement = clone(ProviderAgreementSchema, sourceAgreement);
+		supportAgreement.id = "agreement-support";
+		supportAgreement.productId = "support";
+		for (const entry of supportAgreement.rateSchedule)
+			entry.rateCardId = "card-support";
+		state.agreements.push(supportAgreement);
+		rehashScenario(joint);
+		expect(quoteTargetPricing(inventory(), model)).toMatchObject({
+			ok: false,
+			code: "TARGET_PRICING_INCOMPLETE",
+		});
+		supportAgreement.quantities.seat = "2";
+		rehashScenario(joint);
+		expect(quoteTargetPricing(inventory(), model)).toMatchObject({ ok: true });
+	});
+
+	it("accepts baseline usage for the target provider account", () => {
+		const proposed = scenario();
+		const candidate = proposed.candidate[0];
+		if (candidate === undefined) throw new Error("fixture missing");
+		proposed.baseline.push({ ...candidate });
+		rehashScenario(proposed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(proposed)),
+		).toMatchObject({
+			ok: true,
+		});
+	});
+
+	it("rejects baseline usage for a different provider account", () => {
+		const proposed = scenario();
+		const agreement = proposed.state?.agreements[0];
+		const candidate = proposed.candidate[0];
+		if (
+			proposed.state === undefined ||
+			agreement === undefined ||
+			candidate === undefined
+		)
+			throw new Error("fixture missing");
+		proposed.state.agreements.push({
+			...agreement,
+			id: "agreement-other-account",
+			providerAccountRef: "account-other",
+		});
+		proposed.baseline.push({
+			...candidate,
+			agreementRef: "agreement-other-account",
+		});
+		rehashScenario(proposed);
+		expect(
+			quoteTargetPricing(inventory(), fixedTargetModel(proposed)),
+		).toMatchObject({
+			ok: false,
+			code: "PRICING_MODEL_SCOPE_MISMATCH",
 		});
 	});
 

@@ -56,6 +56,7 @@ describe("pins wiring", () => {
 	it("PR validation jobs check the pins after checkout and before installing", () => {
 		const workflow = read(".github/workflows/hobo-ci.yml");
 		for (const name of [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
@@ -68,20 +69,19 @@ describe("pins wiring", () => {
 				checkout >= 0 && status > checkout,
 				`${name}: status follows checkout`,
 			);
-			assert.ok(install > status, `${name}: status precedes pnpm install`);
-			// Only workspace shards may use the batch route, which falls back to
-			// the run's route and then to GitHub-hosted when no route is available.
-			if (name === "workspace_tests") {
-				assert.match(
-					job,
-					/runs-on:\s*\$\{\{ needs\.pr_gate_validation\.outputs\.shard_runner \|\| needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\}/u,
+			if (name === "pr_gate_plan") {
+				assert.equal(
+					install,
+					-1,
+					`${name}: node-builtin planning needs no dependency store or install`,
 				);
-			} else {
-				assert.match(
-					job,
-					/runs-on:\s*(?:hobo|.*'hobo-trunk' \|\| 'hobo'|\$\{\{ needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04' \}\})/u,
-				);
+				continue;
 			}
+			assert.ok(install > status, `${name}: status precedes pnpm install`);
+			assert.match(
+				job,
+				/runs-on:\s*\$\{\{ needs\.route\.result == 'success' && \(needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'\) \|\| 'ubuntu-24\.04' \}\}/u,
+			);
 		}
 	});
 

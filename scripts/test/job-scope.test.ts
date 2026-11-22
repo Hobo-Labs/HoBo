@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { describe, it } from "node:test";
 import {
 	jobScope,
 	reach,
 	readWorkspaces,
 	type Tree,
 } from "../ci/job-scope.mts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 function memoryTree(files: Record<string, string>): Tree {
 	const contents = new Map(Object.entries(files));
@@ -175,6 +177,11 @@ describe("job-scope", () => {
 		);
 		assert.deepEqual(jobs, [
 			[
+				".github/workflows/release-hobo-pr.yml",
+				"packages/hobo/vitest.release-integration.config.ts",
+				"packages/hobo/test/support/release-integration-test-files.ts",
+			],
+			[
 				"vitest.config.ts",
 				"src/draft/technical-proofs/componentize-artifact-trust-contract/test/publish-verify.test.ts",
 			],
@@ -196,12 +203,13 @@ describe("job-scope", () => {
 			],
 		]);
 		const own = [
+			"packages/hobo/src/index.ts",
 			"src/draft/technical-proofs/componentize-artifact-trust-contract/src/index.ts",
 			"packages/cli/src/index.ts",
 			"packages/data-mongodb/src/index.ts",
 		];
 		// The jobs that run vitest from the root config load its setup files.
-		const vitestJobs = [0, 2];
+		const vitestJobs = [0, 1, 3];
 		for (const [index, entries] of jobs.entries()) {
 			const skip = jobScope(["docs/a.md"], entries, fs);
 			assert.equal(skip.run, false, skip.reason);

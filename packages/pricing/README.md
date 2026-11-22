@@ -39,10 +39,13 @@ For a target containing several resources, `createTargetPricingInventory`
 describes each resource's provider, account and product, and
 `targetPricingModel` binds every resource to one candidate workload in a joint
 scenario. `quoteTargetPricing` rejects incomplete inventories, missing meters,
-scope mismatches and oversized inputs. It rates the resources together so
-shared credits and commitments are counted once. An unavailable model remains
-explicit through `targetPricingUnavailable`. Inventory completeness and
-developer-supplied usage still need independent verification at admission.
+scope mismatches and oversized inputs. Every baseline workload must match a
+provider, account and product in the target inventory. The joint quote rates
+resources together so shared credits and commitments are counted once. For
+other active agreements it also requires explicit quantities for any selected
+fixed charges. An unavailable model remains explicit through
+`targetPricingUnavailable`. Inventory completeness and developer-supplied
+usage still need independent verification at admission.
 
 Developer-supplied single-offering and whole-target models use
 `pricing-rating/v2`, which orders identifiers by UTF-16 code units instead of
@@ -59,6 +62,26 @@ schedules, grant expiries and latest measurements by instant. It rejects invalid
 calendar dates, finer precision, and conflicting latest measurements at the same
 instant. If different rate cards start at the same selected instant, it rejects
 that ambiguity as well; input order cannot silently select a cheaper value.
+V2 rejects a baseline or candidate that references a suspended or cancelled
+provider agreement with `PRICING_AGREEMENT_UNAVAILABLE`. It also rejects any
+agreement with an unknown status and an unreferenced trial agreement, because
+their baseline liability cannot be determined. Active and past-due agreements
+remain quotable; referenced trial agreements still require the applicable
+new-agreement permission. An unrelated suspended or cancelled agreement does
+not by itself prevent a quote. The legacy V1 behavior is unchanged.
+`model/IacAgreementStatus.tla` checks this decision over one agreement and six
+abstract statuses; it does not prove the TypeScript implementation or the
+provider's reported agreement state.
+V2 includes existing active and past-due agreements in the baseline, including
+their effect on shared credits. Every selected fixed charge with a quantity
+dimension requires an explicit agreement quantity and an explicit quantity on
+each workload for that agreement, even when the value is zero. A missing value
+returns `PRICING_FIXED_QUANTITY_UNAVAILABLE`; the developer-pricing helpers
+report an incomplete model. A selected rate card with conditional fixed charges
+requires a baseline workload with their selector values; otherwise V2 returns
+`PRICING_FIXED_SELECTOR_UNAVAILABLE` instead of assuming no charge applies.
+`model/IacSharedFixedQuantity.tla` checks a bounded
+two-agreement shared-credit decision; it is not a proof of the implementation.
 V2 also requires distinct, bounded IDs across financial-state allowances,
 credits and commitments. Those IDs identify reservation buckets, so a model
 cannot count the same bucket twice or alias different types of entitlement.
