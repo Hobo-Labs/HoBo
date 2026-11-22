@@ -30,7 +30,7 @@ const counter = {
 describe("Rivet durable actor state", () => {
 	it("shares events between state handles and rebuilds them after reopening", () => {
 		const path = journalPath();
-		let now = 1_000;
+		const now = 1_000;
 		const first = createActorLocalJournal(path);
 		const host = createRivetActorHost({ journal: first, nowMs: () => now });
 		const firstHandle = host.state("counter", counter);
@@ -100,6 +100,65 @@ describe("Rivet durable actor state", () => {
 			replacement.release();
 		} finally {
 			reopened.close();
+		}
+	});
+
+	it("keeps the acquired holder when the caller changes its request", () => {
+		const journal = createActorLocalJournal(journalPath());
+		try {
+			const host = createRivetActorHost({ journal, nowMs: () => 1_000 });
+			const request = { holderId: "worker-a" };
+			const lease = host.acquire("counter", request);
+			request.holderId = "worker-b";
+			lease.release();
+			const next = host.acquire("counter", { holderId: "worker-c" });
+			expect(next.fenceToken).toBeGreaterThan(lease.fenceToken);
+			next.release();
+		} finally {
+			journal.close();
+		}
+	});
+
+	it("keeps stale lease metadata from adopting another holder", () => {
+		const path = journalPath();
+		let now = 1_000;
+		const first = createActorLocalJournal(path);
+		const second = createActorLocalJournal(path);
+		try {
+			const a = createRivetActorHost({
+				journal: first,
+				nowMs: () => now,
+				leaseTtlMs: 100,
+			});
+			const b = createRivetActorHost({
+				journal: second,
+				nowMs: () => now,
+				leaseTtlMs: 100,
+			});
+			const stale = a.acquire("counter", { holderId: "worker-a" });
+			now += 100;
+			const current = b.acquire("counter", { holderId: "worker-b" });
+			expect(Reflect.set(stale, "holderId", current.holderId)).toBe(false);
+			expect(Reflect.set(stale, "fenceToken", current.fenceToken)).toBe(false);
+			expect(() =>
+				a.state("counter", counter).append(stale, {
+					type: "counter.Added",
+					amount: 99,
+				}),
+			).toThrow(/stale rivet lease/);
+			b.state("counter", counter).append(current, {
+				type: "counter.Added",
+				amount: 2,
+			});
+			expect(b.state("counter", counter).read()).toMatchObject({
+				seq: 1,
+				state: 2,
+			});
+			stale.release();
+			current.release();
+		} finally {
+			first.close();
+			second.close();
 		}
 	});
 
