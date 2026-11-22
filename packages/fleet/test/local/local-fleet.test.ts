@@ -1,7 +1,3 @@
-// O41: local mode needs nothing else. The members and fleet a configuration
-// declares are ACTIVE; a second start from the same configuration yields the
-// same member ids; nothing is signed; and the test fails any socket, fetch or
-// file write outside its temporary directory (§6.2 "Local mode", D6, D39).
 import dgram from "node:dgram";
 import fs, { mkdtempSync, rmSync } from "node:fs";
 import net from "node:net";
@@ -75,14 +71,11 @@ function configuration(
 	};
 }
 
-// ── The guard: no socket, no fetch, no file write outside the temporary directory ──
-
 type Restore = () => void;
 const restores: Restore[] = [];
 const violations: string[] = [];
 let tempDir = "";
 
-/** Replaces a property for the duration of one test; defineProperty, because the replacement need not match the original's overloads. */
 function patch<T extends object>(
 	target: T,
 	key: keyof T & string,
@@ -113,7 +106,6 @@ function insideTemp(path: fs.PathLike): boolean {
 	return absolute === tempDir || absolute.startsWith(`${tempDir}${sep}`);
 }
 
-/** Every file-system write takes the path first. */
 type WriteFn = (path: fs.PathLike, ...rest: never[]) => void;
 
 function guardWrite<T extends object>(
@@ -218,7 +210,6 @@ describe("createLocalFleet (O41)", () => {
 			expect(member.acceptedBy).toBe("service:hosted-relay");
 		}
 
-		// The in-process registry holds the same records.
 		expect(await registry.fleet(FLEET)).toEqual(fleet);
 		expect(await registry.fleets()).toEqual([fleet]);
 		for (const member of members) {
@@ -226,7 +217,6 @@ describe("createLocalFleet (O41)", () => {
 				member,
 			);
 		}
-		// One-active: the registry lists the configured members as candidates.
 		expect(
 			(await registry.membersOf(FLEET)).map((member) => member.memberId),
 		).toEqual(members.map((member) => member.memberId));
@@ -235,7 +225,6 @@ describe("createLocalFleet (O41)", () => {
 		expect(await registry.membersOf(parseFleetId("other"))).toEqual([]);
 		await registry.caughtUp();
 
-		// The same state machine ran: declared, approved, accepted, activated.
 		expect(logged.map((entry) => entry.event)).toContain(
 			"hobo_fleet_member_activated",
 		);

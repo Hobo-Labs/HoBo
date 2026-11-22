@@ -8,7 +8,7 @@
 | `darwin` | launchd agent `~/Library/LaunchAgents/dev.hobo.fleet.plist` | `launchctl bootstrap gui/$(id -u) <path>` |
 | `win32` | Task Scheduler XML at `%USERPROFILE%\AppData\Local\hobo\hobo-fleet.xml` | `Register-ScheduledTask -TaskName hobo-fleet -Xml (Get-Content -Raw <path>)` |
 
-Each definition restarts the agent when it fails and gives it 120 seconds to drain when it stops. The systemd and launchd definitions record the agent's `HOBO_FLEET_*` variables of [surfaces](../../../../docs/design/fleet.md#surfaces) that are set at install time. They never record `HOBO_FLEET_NATS_SERVER_BIN`, which is for tests only. A Windows task runs with the user's own environment.
+Each definition restarts the agent when it fails and gives it 120 seconds to drain when it stops. The systemd and launchd definitions record the agent's `HOBO_FLEET_*` variables of surfaces that are set at install time. They never record `HOBO_FLEET_NATS_SERVER_BIN`, which is for tests only. A Windows task runs with the user's own environment.
 
 **Windows is a scheduled task, not a service.** Node cannot answer the Service Control Manager without a native wrapper. The task starts when the user logs on and runs with least privilege.
 

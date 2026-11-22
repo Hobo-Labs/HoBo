@@ -1,11 +1,3 @@
-/**
- * One GitHub job through the fleet on the in-memory bus (design §6.9, the
- * isolated check of L16): the work source reads a fake GitHub, the dispatcher
- * offers the job, the executor claims it, the order carries the sealed
- * registration, the hook's facts pass the start fence and the receipt says
- * `SUCCEEDED`. A fork job that GitHub hands the same runner is stopped by the
- * fence from the facts the hook posts, before any step runs.
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type ObservedAssignment,
@@ -137,7 +129,6 @@ async function world(assigned: () => ObservedAssignment) {
 	};
 }
 
-/** What the hook posts; its work key has the offer's form, `<repo>#<jobId>@<runAttempt>`. */
 const facts = (origin: WorkOrigin, jobId: number): ObservedAssignment => ({
 	workKey: `acme/app#${jobId}@1`,
 	repository: "acme/app",
@@ -152,7 +143,6 @@ describe("a github-actions-job through the fleet on the memory bus", () => {
 		await w.run();
 		expect(w.offers).toEqual([`acme/app#${w.job.id}@1`]);
 		expect(w.minted).toHaveLength(1);
-		// The registration reached the sandbox sealed, and only through writeSecret.
 		const registration = [...w.driver.secrets.values()];
 		expect(registration).toEqual([`jit-for-${w.minted[0]}`]);
 		expect(w.driver.images).toEqual([GITHUB_RUNNER_IMAGE]);
@@ -163,14 +153,11 @@ describe("a github-actions-job through the fleet on the memory bus", () => {
 			ReceiptStatus.STARTED,
 			ReceiptStatus.SUCCEEDED,
 		]);
-		// The hook's key has the offer's form, so the job the offer named leaves
-		// observedWorkKey empty ("what actually ran, when it differs").
 		expect(facts(WorkOrigin.INTERNAL, w.job.id).workKey).toBe(w.offers[0]);
 		expect(w.receipts[1]?.observedWorkKey).toBe("");
 	});
 
 	it("a fork job GitHub hands the runner is stopped by the fence before its first step", async () => {
-		// GitHub may hand the runner another job of its label than the one offered.
 		const w = await world(() => facts(WorkOrigin.FORK, 9001));
 		await w.run();
 		expect(w.offers).toHaveLength(1);

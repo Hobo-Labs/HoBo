@@ -1,13 +1,3 @@
-/**
- * The slice of the NATS client this directory uses, as ports: a connection
- * (`BusConnection`), JetStream (`JetStreamPort`), its manager
- * (`JetStreamManagerPort`), and the three functions that make them
- * (`NatsClients`). The real `@nats-io` client satisfies each port as it is;
- * `NATS` is that client. `nats-wire.ts`, `resolver.ts` and the entry points of
- * `index.ts` take a `NatsClients`, so their unit tests run them over a fake
- * server (`test/support/fake-nats.ts`) and the integration tests over
- * `nats-server`.
- */
 import {
 	type ConsumerConfig,
 	type JetStreamPublishOptions,
@@ -18,7 +8,6 @@ import {
 } from "@nats-io/jetstream";
 import { type OpenOptions, open } from "./connection.js";
 
-/** A message on a core subscription. */
 export interface BusMessage {
 	readonly subject: string;
 	readonly data: Uint8Array;
@@ -45,7 +34,6 @@ export interface BusConnection {
 	close(): Promise<void>;
 }
 
-/** A message a pull consumer delivered. */
 export interface StreamDelivery {
 	readonly subject: string;
 	readonly data: Uint8Array;
@@ -76,7 +64,6 @@ export interface JetStreamPort {
 	};
 }
 
-/** What the server answers about a stream: its configuration. */
 export type StreamDescription = Readonly<{
 	config: Readonly<{ name: string }>;
 }>;
@@ -125,5 +112,4 @@ export interface NatsClients {
 	): Promise<JetStreamManagerPort>;
 }
 
-/** The real client. */
 export const NATS: NatsClients = { open, jetstream, jetstreamManager };

@@ -1,8 +1,3 @@
-/**
- * Reliability, moved from `packages/ci/test/mesh-reliability.test.ts` (design
- * §6.8 "Reliability is measured, not asserted"), and the ledger the authority
- * keeps from signed receipts (§6.9).
- */
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -206,7 +201,6 @@ describe("createReliabilityLedger", () => {
 				ledger.samples().get(DEVICE) ?? { delivered: 0, dropped: 0 },
 			),
 		).toBeCloseTo(4 / 14, 10);
-		// Another device works on for an hour: the drops count for a quarter.
 		ledger.record(
 			receipt("x", ReceiptStatus.SUCCEEDED, NOW + 60 * MINUTE, OTHER),
 		);

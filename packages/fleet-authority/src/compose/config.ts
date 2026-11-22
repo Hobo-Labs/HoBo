@@ -1,10 +1,3 @@
-/**
- * The authority's configuration file: one JSON object, the protobuf JSON of
- * `FleetAuthorityConfig` (data-models), shared with the operations (src/ops
- * reads `tenant`, `profile`, `dataDir`, `secretPrefix`, `natsUrls` and
- * `natsCredentialsSecret` from the same file), so keys of either are ignored
- * by the other. Parsed once; defaults resolved here.
- */
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fromJsonString } from "@bufbuild/protobuf";

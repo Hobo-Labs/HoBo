@@ -1,9 +1,3 @@
-/**
- * Steps for features/fleet/one-active.feature (§6.10, local mode): a
- * one-active fleet over per-member assignment-log replicas fails over from an
- * unhealthy active member, and admits a newly configured member through a
- * decided membership epoch.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { createOneActiveWorld, Health, type OneActiveWorld } from "../../../packages/fleet-authority/acceptance/index.js";

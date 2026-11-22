@@ -1,9 +1,3 @@
-// The fleet side of the agent and feed tests (L19): `createTestAuthority`
-// with the Yard's fleet defined by the Station, the in-process
-// `DeliveryFleet`, and devices that enroll and fetch member SVIDs the way the
-// fleet agent does (identity key, SIGN key, key bundle, DPoP proofs). The
-// device keys are generated here, so a test can hand the SIGN key to the
-// feed transport as the private JWK it reads from its key file.
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { type JsonObject, parseTenantId } from "@hobo/core";
@@ -43,12 +37,9 @@ const STATION_PRINCIPAL = { kind: "service", id: "cd-station" } as const;
 
 export type FleetDevice = Readonly<{
 	memberId: MemberId;
-	/** The SIGN key (Ed25519) as the private JWK the feed transport reads from its key file. */
 	signPrivateJwk: JsonObject;
 	sign: AgentKey;
-	/** The agent's EnrollmentRequest for a bootstrap token (name from the token). */
 	request(token: string, fleet?: FleetId): EnrollmentRequest;
-	/** A DPoP proof by the SIGN key for a URL (`ath` when a token is given). */
 	proof(method: string, url: string, accessToken?: string): Promise<string>;
 }>;
 
@@ -64,7 +55,6 @@ function privateJwkOf(
 	return out;
 }
 
-/** A fresh Ed25519 private JWK, for a transport that never reaches the fleet. */
 export function freshSignJwk(): JsonObject {
 	return privateJwkOf(generateKeyPairSync("ed25519").privateKey);
 }
@@ -174,7 +164,6 @@ export async function fleetFixture(
 		};
 	}
 
-	/** The member SVID a device fetches from the fleet with its SIGN key (generation from 0). */
 	async function credentials(
 		subject: FleetDevice,
 		memberId: MemberId = subject.memberId,

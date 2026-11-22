@@ -318,7 +318,6 @@ export class HostedRelay {
 			headroomTrunkOverflow?: ReturnType<typeof createHeadroomTrunkOverflow>;
 			/** Trunk headroom/storage waits before cooperative fleet defer (default 45s). */
 			headroomFleetDeferMs?: number;
-			/** This box's free slots against its fleet's `FleetCapacity` (peer-capacity.ts). */
 			fleetCapacity?: Readonly<{
 				snapshot: () => Promise<
 					PeerCapacityWitness & { hoboFreeSlots: number }

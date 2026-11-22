@@ -1,11 +1,3 @@
-/**
- * Ranking and claim turns, moved from `packages/ci/test/mesh-rendezvous.test.ts`
- * and the ranking half of `mesh-reliability.test.ts` (design §6.8 "Ranking").
- * Every numeric property listed in `docs/design/ci-relay-mesh.md` "What the
- * tests establish" for the ranking holds here over 6,000 work digests (8,000
- * for the reliability shares, as there). The hash input is now
- * `(WorkDigest, MemberId)`; a candidate's copies come from `fitWork`.
- */
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -64,7 +56,6 @@ function firstShares(
 	return new Map([...first].map(([id, count]) => [id, count / digests.length]));
 }
 
-/** `claimTurn` for `self` over the members it knows (itself included). */
 function turn(
 	self: MemberId,
 	each: WorkDigest,
@@ -150,7 +141,6 @@ describe("rankMembers", () => {
 	});
 
 	it("depends on the work digest and the member id only", () => {
-		// Renaming a member reshuffles its work; another digest gives another order.
 		const orders = new Set(
 			DIGESTS.slice(0, 200).map((each) => rankMembers(each, mesh).join(",")),
 		);
@@ -264,7 +254,6 @@ describe("ranking by what fits", () => {
 		fit.fits ? fit.copies : 0;
 
 	it("shares work by how many copies of it each member could start", () => {
-		// Eight slots with memory for one heavy job, against two slots with memory for two.
 		const wide = copies(fitWork(observed(8, 7_000), needs(6_144)));
 		const deep = copies(fitWork(observed(2, 16_000), needs(6_144)));
 		expect([wide, deep]).toEqual([1, 2]);

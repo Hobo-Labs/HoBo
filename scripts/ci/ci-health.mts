@@ -71,7 +71,6 @@ export const PAID_EXCLUDED_JOBS: ReadonlySet<string> = new Set([
 	"HoBo release PR gate (required)",
 	"CI health",
 ]);
-/** The self-hosted runner labels a routed job asks for; "fleet" names one thing (design §8.5). */
 export const RUNNER_LABELS: ReadonlySet<string> = new Set([
 	"hobo",
 	"hobo-trunk",

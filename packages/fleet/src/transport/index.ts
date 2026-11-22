@@ -1,10 +1,3 @@
-/**
- * `@hobo/fleet/transport` (L28): session authorisation, AEAD framing,
- * transport selection, the session server and blob fetch (§6.12).
- *
- * These are the frozen entry points of design §7.3; the modules beside this
- * file are private to the lane.
- */
 import type { SessionGrant, SignedEnvelope } from "../_generated/fleet_pb.js";
 import type { MemberId } from "../ids.js";
 import type {
@@ -37,7 +30,6 @@ export function authoriseSession(
 	return authorise(peer, grant, context);
 }
 
-/** AEAD frames, counter nonce. */
 export function frameStream(
 	raw: FleetStream,
 	keys: Readonly<{ send: Uint8Array; receive: Uint8Array }>,
@@ -68,7 +60,6 @@ export function serveSessions(
 	return serve(deps);
 }
 
-/** Verifies the digest before completing. */
 export function fetchBlob(
 	stream: FleetStream,
 	digest: string,

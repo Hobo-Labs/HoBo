@@ -1,11 +1,3 @@
-/**
- * The `atproto` sign-in provider (§6.5): AT Protocol OAuth against one
- * configured authorization server (a PDS entryway). As that profile requires:
- * pushed authorization requests, PKCE (S256), and DPoP-bound token requests
- * that retry once with the server's `DPoP-Nonce`. The client id is the URL of
- * the authority's published client metadata. The principal is the `user`
- * named by the account's DID (`sub` of the token response); no token is kept.
- */
 import {
 	generateKeyPairSync,
 	type KeyObject,
@@ -22,9 +14,7 @@ import {
 } from "./http.js";
 
 export type AtprotoProviderOptions = Readonly<{
-	/** The authorization server's issuer, e.g. https://bsky.social. */
 	authorizationServer: string;
-	/** The URL of the client metadata document; it is also the client id. */
 	clientId: string;
 	fetch: typeof fetch;
 	now: Clock;
@@ -37,7 +27,6 @@ type Metadata = Readonly<{
 	token: string;
 }>;
 
-/** A DPoP proof (RFC 9449) with an optional server nonce, ES256 over a key held for this provider. */
 function proof(
 	key: KeyObject,
 	jwk: Readonly<Record<string, string>>,
@@ -104,7 +93,6 @@ export function createAtprotoSignInProvider(
 		return metadata;
 	};
 
-	/** A DPoP-bound POST that retries once with the server's nonce. */
 	const post = async (
 		url: string,
 		form: Readonly<Record<string, string>>,

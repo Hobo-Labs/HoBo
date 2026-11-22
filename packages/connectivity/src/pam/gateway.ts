@@ -46,11 +46,6 @@ export type CreatePrivilegedAccessGatewayOptions = Readonly<{
 	keys?: SessionBrokerKeys;
 	/** Optional remote PAM control plane. */
 	transport?: PamTransportConfig;
-	/**
-	 * Whose elevated access capabilities this gateway accepts and how they are
-	 * verified (`@hobo/identity` `verifyJwtWithJwks` over the issuer's key set).
-	 * Without it every session that needs an elevated capability is refused.
-	 */
 	elevatedTrust?: ElevatedCapabilityTrust;
 	/** Classes that always require elevated capability (default from pack). */
 	capabilityRequiredClasses?: readonly IsolationClass[];

@@ -1,6 +1,3 @@
-// JSON guards for the operations' own stored values, without runtime `typeof`
-// (the same tag check as `@hobo/core`'s json.ts, which the core barrel does
-// not export). Private to L27.
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 const tagOf = Object.prototype.toString;
@@ -26,7 +23,6 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	);
 }
 
-/** Parses JSON text; undefined when it is not JSON. */
 export function parseJson(text: string): JsonValue | undefined {
 	try {
 		const value: JsonValue = JSON.parse(text);

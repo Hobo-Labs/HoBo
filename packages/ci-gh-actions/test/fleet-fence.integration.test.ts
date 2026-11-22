@@ -1,29 +1,3 @@
-/**
- * O24, the start fence in a real sandbox (design §6.9 step 7, §10.1, D49):
- * an `S1_CONTAINER` sandbox from `sandboxDrivers()` (gVisor `runsc`, which
- * the agent provisions itself, D58), the pre-job hook written into it exactly
- * as `createGithubActionsWorkRunner` writes it, and the hook run the way
- * GitHub's runner runs it before a job's first step, against the sandbox's
- * own `controlUrl`. The fence on the far side is the device's real check,
- * `checkAssignment`, for an `EPHEMERAL` device running an `S1` sandbox.
- *
- * - A fork job context is refused (exit 41), and the command after the hook
- *   (the job's steps) never starts. The work key posted is
- *   `<repo>#<jobId>@<runAttempt>`, the form the work source offers.
- * - An internal job context is allowed, and that command runs; a second job
- *   in the same single-use sandbox is a conflict (exit 42), and an agent the
- *   hook cannot reach fails closed (exit 43).
- * - The hook reads the head repository from the event file and fails closed:
- *   a pull request from a branch is internal; one whose head repository is
- *   gone is unknown; text in the pull request's title cannot pass for its
- *   head repository.
- *
- * An `S1` driver must be present, with or without `CI`: none fails the
- * outcome (L16 may not skip). Needs a Linux kernel that permits root or user
- * namespaces and network access to the image registry; the runtime cache is
- * `HOBO_FLEET_SANDBOX_CACHE` when set. The image (`HOBO_FLEET_PROBE_IMAGE`)
- * is busybox pinned by digest, as O10 uses.
- */
 import { randomBytes } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -78,7 +52,6 @@ const policy = create(FleetPolicySchema, {
 		},
 	],
 });
-/** What the dispatcher offered: an internal job of `acme/app` (its class is only a ceiling). */
 const order = create(WorkOrderSchema, {
 	orderId: randomBytes(16).toString("hex"),
 	offer: {
@@ -130,7 +103,6 @@ async function run(
 	return { exitCode, output };
 }
 
-/** A fresh S1 sandbox for one order, with the registration and the hook written as the runner writes them. */
 async function orderSandbox() {
 	const driver = drivers.find(
 		(candidate) => candidate.tier === SandboxTier.S1_CONTAINER,
@@ -169,7 +141,6 @@ async function orderSandbox() {
 		stdin: preJobHookScript(sandbox.controlUrl),
 	});
 	expect(installed.exitCode).toBe(0);
-	/** Runs the hook as GitHub's runner does before the job's first step, then the "steps". */
 	const job = async (
 		context: Readonly<Record<string, string>>,
 		event: string,
@@ -213,7 +184,6 @@ async function orderSandbox() {
 	};
 }
 
-/** A pull_request event as GitHub writes it: pretty-printed, title before head, head before base. */
 function pullRequestEvent(
 	head: string | null,
 	title = "Fix the thing",
@@ -296,7 +266,6 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 		expect(answers).toEqual([true]);
 		expect(result.exitCode).toBe(0);
 		expect(result.output).toContain(STARTED);
-		// The runner is single-use: a second job in this sandbox is a conflict, asked of no one.
 		const again = await job(
 			{ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/heads/main" },
 			JSON.stringify({ ref: "refs/heads/main" }),
@@ -368,7 +337,6 @@ describe("O24: the start fence in a real S1 sandbox", () => {
 			"{}",
 		);
 		expect(other.output).not.toContain(STARTED);
-		// Last, since a sandbox that allowed a job takes no second one.
 		const branch = await job(pull, pullRequestEvent("acme/app"));
 		expect(branch.output).toContain(STARTED);
 		expect(asked.map((observed) => observed.origin)).toEqual([

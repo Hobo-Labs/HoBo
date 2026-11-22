@@ -1,9 +1,3 @@
-/**
- * An in-memory `EphemeralStatePort` (`@hobo/core`): one per one-active
- * member, holding that member's replica of the assignment log, for the
- * one-active scenarios of the behaviour suite. Versions are a revision
- * counter; expiry follows the world's clock.
- */
 import {
 	type EphemeralEntry,
 	type EphemeralKey,

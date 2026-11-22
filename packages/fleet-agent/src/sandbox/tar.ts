@@ -1,11 +1,3 @@
-/**
- * A tar reader for the pinned gVisor release (`runtime-provision.ts`, D58),
- * so unpacking needs no host `tar`. It reads ustar and GNU headers (with GNU
- * long names and PAX `path` records), writes the regular files and
- * directories whose names `allow` accepts, mode 0755, and skips everything
- * else, links included. The input arrives as chunks (from `bunzip2`), so the
- * archive is never held whole in memory.
- */
 import {
 	chmodSync,
 	closeSync,
@@ -19,7 +11,6 @@ import { dirname, join } from "node:path";
 const BLOCK = 512;
 const NAME = /^[A-Za-z0-9._-]+$/u;
 
-/** The members of a gVisor release the agent keeps: `runsc`, and `gvisor-bin/` with its direct files. */
 export function tarEntryAllowed(name: string): boolean {
 	const path = name.startsWith("./") ? name.slice(2) : name;
 	if (path === "runsc" || path === "gvisor-bin/" || path === "gvisor-bin")
@@ -41,7 +32,6 @@ const text = (bytes: Uint8Array, start: number, length: number): string => {
 };
 
 function octal(bytes: Uint8Array, start: number, length: number): number {
-	// GNU base-256 for sizes past 8 GiB: high bit set on the first byte.
 	if (((bytes[start] ?? 0) & 0x80) !== 0) {
 		let value = (bytes[start] ?? 0) & 0x7f;
 		for (let i = 1; i < length; i += 1)
@@ -53,7 +43,6 @@ function octal(bytes: Uint8Array, start: number, length: number): number {
 	return field === "" ? 0 : Number.parseInt(field, 8);
 }
 
-/** The `path` record of a PAX extended header, if any. */
 function paxPath(data: Uint8Array): string | undefined {
 	const records = Buffer.from(data).toString("utf8");
 	let at = 0;
@@ -72,18 +61,12 @@ type Member = {
 	name: string;
 	type: string;
 	size: number;
-	/** Bytes of data still to read, then padding up to the next block. */
 	left: number;
 	padding: number;
-	/** The open output file, the collected long name or PAX data, or nothing (skipped). */
 	fd: number | undefined;
 	collect: Uint8Array[] | undefined;
 };
 
-/**
- * Writes the accepted members of the tar archive in `chunks` under `into`
- * (which exists) and answers their names, without a leading `./`.
- */
 export function extractTarEntries(
 	chunks: Iterable<Uint8Array>,
 	into: string,
@@ -129,7 +112,6 @@ export function extractTarEntries(
 			const target = join(into, path);
 			mkdirSync(dirname(target), { recursive: true, mode: 0o755 });
 			next.fd = openSync(target, "wx", 0o755);
-			// The mode is exact, whatever the umask.
 			fchmodSync(next.fd, 0o755);
 			written.push(path);
 		} else if (type === "5" && allow(name)) {

@@ -1,25 +1,3 @@
-/**
- * The bus-relay `FleetTransport` (design §6.12 item 3, L37): sessions carried
- * as messages on `fleet.relay.<toMemberId>.<relaySessionId>` through the
- * agent's live bus, end-to-end encrypted so the bus sees only ciphertext.
- *
- * Every dial is its own relay session: a fresh random 128-bit id on the
- * subject, and keys from `sessionKeys` over the X25519 agreement of the two
- * `SEAL` keys the grant names, salted with that id and the grant's session
- * id, so no two dials ever share a key and nonce. The bytes are framed by
- * `frameStream` (L28).
- *
- * The handshake:
- * 1. The dialler sends `OPEN` (its member id and the grant) and, through the
- *    framing, a proof message. Only the holder of the initiator's SEAL key can
- *    produce a proof that authenticates, so the proven peer is
- *    `relayIdentity(grant.initiator.seal_public_key)`.
- * 2. The acceptor checks the grant names it (member id and SEAL key), checks
- *    the proof, then asks `authorise` with the proven peer and the presented
- *    grant. Nothing reaches the handler before `authorise` answers true.
- * 3. The acceptor answers an accept message through the framing, which proves
- *    its own SEAL key to the dialler, or `RESET`.
- */
 import { randomBytes } from "node:crypto";
 import { fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
@@ -53,13 +31,10 @@ import {
 } from "./wire.js";
 
 export type RelayTransportOptions = Readonly<{
-	/** How long a dial waits for the acceptor's answer, and an acceptor for the proof. */
 	handshakeTimeoutMs?: number;
 	windowBytes?: number;
 	creditTimeoutMs?: number;
-	/** How often an acceptor looks for a new bus connection. */
 	rebindIntervalMs?: number;
-	/** The most relay sessions open at once; further OPENs are reset. */
 	maxSessions?: number;
 }>;
 
@@ -76,7 +51,6 @@ type Acceptor = Readonly<{
 	handler: (stream: FleetStream, grant: SessionGrant) => Promise<void>;
 }>;
 
-/** A route: this device's relay subscription on one bus connection. */
 type Route = Readonly<{
 	bus: FleetBus;
 	self: MemberId;
@@ -91,7 +65,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 	return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }
 
-/** Resolves `"late"` after `ms` or when `signal` aborts; never rejects. */
 function deadline(ms: number, signal: AbortSignal | undefined) {
 	let clear = () => {};
 	const reached = new Promise<"late">((resolve) => {
@@ -114,10 +87,6 @@ function decodeGrant(envelope: SignedEnvelope): SessionGrant | undefined {
 	}
 }
 
-/**
- * The framed stream over a channel after the handshake: its first message
- * each way has been taken already, and is left out of the byte counts.
- */
 function sessionStream(
 	framed: FleetStream,
 	messages: AsyncIterator<Uint8Array>,
@@ -179,7 +148,6 @@ export function createRelayTransport(
 			.send(to, id, encodeRelayMessage({ type: RELAY_MESSAGE.RESET }))
 			.catch(() => undefined);
 
-	/** The acceptor side of one relay session, from `OPEN` to the handler's end. */
 	const serve = async (
 		on: FleetBus,
 		self: DeviceKeys,
@@ -201,7 +169,6 @@ export function createRelayTransport(
 			if (!channels.has(id)) await resetTo(on, from, id);
 			return;
 		}
-		// Registered before any await, so DATA that follows OPEN is kept.
 		const channel = open(id, from, on);
 		const refuse = (reason: string) => channel.reset(reason);
 		let envelope: SignedEnvelope;
@@ -270,7 +237,6 @@ export function createRelayTransport(
 		try {
 			await current.handler(stream, grant);
 		} catch {
-			// The handler's failure ends its session; the transport keeps accepting.
 		} finally {
 			await stream.close().catch(() => undefined);
 		}
@@ -289,7 +255,6 @@ export function createRelayTransport(
 			channels.get(id)?.receive(message);
 		};
 
-	/** This device's relay subscription on the agent's current bus, made or remade as needed. */
 	const ensureRoute = (): Route | undefined => {
 		const self = keys;
 		const live = bus();
@@ -334,7 +299,6 @@ export function createRelayTransport(
 				send: derived.initiatorToAcceptor,
 				receive: derived.acceptorToInitiator,
 			});
-			// A refusal may arrive before the proof is out; the answer read below reports it.
 			const proofSent = await framed.write(PROOF).then(
 				() => true,
 				() => false,

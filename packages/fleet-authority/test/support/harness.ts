@@ -1,9 +1,3 @@
-/**
- * The service under test: the authority composed by `assembleAuthority` over
- * `createTestAuthority`'s bus and event store, served by
- * `createAuthorityHandler` with no network. Credentials for every caller kind
- * of O28 are minted here.
- */
 import { createHash, randomBytes } from "node:crypto";
 import { create, toBinary, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
@@ -52,7 +46,6 @@ import { createPolicyDecisionRecorder } from "../../src/identity/decisions.js";
 import { createStaticPrincipalDirectory } from "../../src/identity/directory.js";
 import { createAuthorityHandler } from "../../src/service/http.js";
 
-// SAFETY-free: the test authority's issuer (createTestAuthority's trust record names it).
 export const ISSUER = "https://authority.fleet.test";
 export const START_MS = Date.parse("2026-11-13T10:00:00.000Z");
 export const ACCOUNT_CREDENTIAL = "account-credential-of-the-relay";
@@ -70,14 +63,12 @@ function clock(): Clock {
 	};
 }
 
-/** Allow when the subject carries `fleet-admin` or a tag equal to the action (createTestAuthority's rule). */
 function allowByTag(): PolicyEngine {
 	const engineId = "fleet-authority-test";
 	return {
 		engineId,
 		async evaluate(request) {
 			const tags = request.subject.tags;
-			// A device sponsors backends when it holds a role in the fleet (§6.5 "Sponsors").
 			const sponsor =
 				request.action === "fleet.member.declare" &&
 				tags.some((tag) => tag.startsWith("role:"));
@@ -122,9 +113,7 @@ export type Caller = Readonly<{
 
 export async function createHarness(
 	options: Readonly<{
-		/** Overlay minters for enrollment (none by default). */
 		overlayMinters?: AuthorityDeps["overlayMinters"];
-		/** Bus and relay URLs for discovery (none by default). */
 		natsUrls?: readonly string[];
 		relayUrls?: readonly string[];
 	}> = {},
@@ -229,7 +218,6 @@ export async function createHarness(
 		body?: string | undefined;
 		headers?: Readonly<Record<string, string>>;
 		dpop?: Readonly<{ signer: Signer; publicJwk: PublicJwk }> | undefined;
-		/** Sees each request exactly as the handler receives it (the PACT replay checks its headers). */
 		onRequest?: (request: Request) => void;
 	}>;
 	type Proof = Parameters<typeof mintDpopProof>[2];
@@ -289,7 +277,6 @@ export async function createHarness(
 		};
 	};
 
-	/** One sign-in through the routes up to the person's decision; `complete` or `poll` finishes it. */
 	const startSignIn = async (
 		code: string,
 		deviceFlow = false,
@@ -364,7 +351,6 @@ export async function createHarness(
 		};
 	};
 
-	/** A person signed in through the browser flow, as a caller. */
 	const signedIn = async (code: string): Promise<Caller> => {
 		const flow = await startSignIn(code);
 		const { cookie } = await flow.callback();

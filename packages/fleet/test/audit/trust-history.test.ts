@@ -1,9 +1,3 @@
-// Audit verification across trust rotations (L41): each checkpoint verifies
-// against the trust record in force at that checkpoint, taken from the
-// journalled `fleet.TrustRotated` records that are in the chain. A checkpoint
-// signed before the record-signing and witness keys rotated still verifies
-// after the old keys are removed; a removed key verifies nothing signed after
-// its removal; the history must be unambiguous and end at the pinned record.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -79,11 +73,6 @@ const rotated = (trust: TrustRecord) => ({
 	},
 });
 
-/**
- * A chain under T1 (genesis, not journalled), then T2 (both keys) journalled,
- * the switch to the new keys, then T3 (new keys only) journalled. One
- * checkpoint per phase, each co-signed by the witness key active then.
- */
 async function rotatedChain(duplicate?: TrustRecord) {
 	let clock = 1_000_000;
 	const store = createMemoryEventStore();
@@ -155,7 +144,6 @@ describe("verifyChainAcrossTrust", () => {
 	it("verifies every checkpoint against the record in force at it, after the old keys are removed", async () => {
 		const { entries, checkpoints, journal } = await rotatedChain();
 		expect(checkpoints.length).toBeGreaterThanOrEqual(4);
-		// The pinned record alone no longer verifies the early checkpoints.
 		const single = verifyAuditChain(entries, checkpoints, T3);
 		expect(single.ok).toBe(false);
 		if (!single.ok)
@@ -225,14 +213,12 @@ describe("verifyChainAcrossTrust", () => {
 			type: "fleet.TrustRotated",
 			data: rotated(trust).data,
 		});
-		// Beyond the pinned record: never in force.
 		expect(
 			verifyChainAcrossTrust(entries, checkpoints, T3, [
 				...journal,
 				extra(record(4, [old], [old]), "beyond"),
 			]).ok,
 		).toBe(true);
-		// Journalled but never chained: no entry carries its digest.
 		expect(
 			verifyChainAcrossTrust(entries, checkpoints, T3, [
 				...journal,
@@ -263,7 +249,6 @@ describe("verifyChainAcrossTrust", () => {
 		expect(tenant.ok).toBe(false);
 		if (!tenant.ok) expect(tenant.error.detail?.rule).toBe("trust-history");
 
-		// Two chained records with one sequence: which was in force is unknown.
 		const twice = await rotatedChain(record(2, [old], [old]));
 		const ambiguous = verifyChainAcrossTrust(
 			twice.entries,

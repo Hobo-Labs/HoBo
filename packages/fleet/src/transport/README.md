@@ -1,7 +1,7 @@
 # `@hobo/fleet/transport`
 
 Session authorisation, AEAD framing, transport selection, the session server
-and verified blob fetch ([transport](../../../../docs/design/fleet.md#transport)). Adapters live elsewhere: `p2p` in
+and verified blob fetch (transport). Adapters live elsewhere: `p2p` in
 `@hobo/fleet-p2p`, `overlay` in `@hobo/connectivity`, `bus-relay` in
 `@hobo/fleet-nats`.
 

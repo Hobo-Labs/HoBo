@@ -1,6 +1,6 @@
 # `@hobo/fleet/audit`
 
-The tamper-evident audit log of [audit, metering and observability](../../../../docs/design/fleet.md#audit-metering-and-observability): the authority's hash chain, its verification, and the witness that co-signs checkpoints and trust records.
+The tamper-evident audit log of audit, metering and observability: the authority's hash chain, its verification, and the witness that co-signs checkpoints and trust records.
 
 ## Entry points
 

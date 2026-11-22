@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-/**
- * `hobo-fleet-authority --config <file>`: the authority service of §6.15 in
- * either profile of §6.16. Reads the configuration and its secret store,
- * composes the authority, serves HTTP on `listen`, answers NATS auth callouts,
- * and drives its loops until SIGTERM.
- */
 import {
 	connectAuthorityBus,
 	createJournalEventStore,

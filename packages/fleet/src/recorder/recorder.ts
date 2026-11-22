@@ -1,24 +1,3 @@
-/**
- * The recorder (design §6.9 "recording catches up", §6.14 "Recording",
- * §7.5): reads offers, claims, the signed part of orders, receipts, log
- * chunks and session-close facts from the bus, verifies every envelope, and
- * appends `fleet-work-<WorkDigest>` and `fleet-session-<sessionId>` events.
- *
- * - Idempotent: each event's `meta.idempotencyKey` is its type and the
- *   SHA-256 of the signed payload, so the same fact arriving twice (a replay,
- *   a republish, a second replica) is recorded once.
- * - Resumable: each event's `meta` carries the bus stream and sequence it
- *   came from (`busStream`, `busSequence`); `start` resumes every
- *   subscription from `{ after: <highest recorded> }`. Log chunks are not
- *   journalled: their read store is `FLEET_EVENTS` itself (§7.5), so that
- *   subscription always reads every retained chunk.
- * - Usage (D40): `fleet.work.sandbox` per receipt carrying sandbox seconds,
- *   and `fleet.transport.relay` or `fleet.transport.direct` per session from
- *   the acceptor's close, each emitted only by the append that first recorded
- *   the fact, so a replay never bills twice.
- * - Everything it answers (work status, logs' order owner, reliability) is a
- *   fold of the journal, rebuilt by replay from `readAll`.
- */
 import { createHash } from "node:crypto";
 import {
 	create,
@@ -94,9 +73,7 @@ export type RecorderDeps = Pick<
 const WORK_STREAM = "fleet-work-";
 const SESSION_STREAM = "fleet-session-";
 const ACTOR: PrincipalRef = { kind: "service", id: "hobo-fleet-recorder" };
-/** Up to 8 compare-and-set attempts per append (§7.5). */
 const MAX_ATTEMPTS = 8;
-/** How often the recorder looks for fleets defined since it started. */
 const FLEET_SCAN_MS = 5_000;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/u;
 
@@ -125,7 +102,7 @@ type WorkState = {
 	outputDigest: string;
 	updatedAt: string;
 	latestOrder: string;
-	readonly orders: Map<string, string>; // order id → executor
+	readonly orders: Map<string, string>;
 };
 
 type SessionState = {
@@ -145,7 +122,6 @@ function json<T extends Message>(schema: GenMessage<T>, message: T) {
 	return pbJson(toJson(schema, message));
 }
 
-/** `fleet.WorkStarted` → `hobo_fleet_work_started` (§7.5). */
 function logNameOf(type: string): FleetLogEvent | undefined {
 	const name = `hobo_fleet_${type
 		.replace(/^fleet\./u, "")
@@ -154,7 +130,6 @@ function logNameOf(type: string): FleetLogEvent | undefined {
 	return FLEET_LOG_EVENTS.find((candidate) => candidate === name);
 }
 
-/** A grant's party as the grant command journalled it: a member id string, `{ memberId }`, or a `SessionParty` JSON. */
 function partyOf(data: JsonObject, field: string): string {
 	const value = data[field];
 	if (isJsonObject(value)) return textOf(value, "memberId");
@@ -180,8 +155,6 @@ export function recorder(deps: RecorderDeps) {
 	const fleetsWatched = new Set<FleetId>();
 	let scan: ReturnType<typeof setInterval> | undefined;
 	let running = false;
-
-	// ── The fold ───────────────────────────────────────────────────────────
 
 	function work(digest: WorkDigest): WorkState {
 		const existing = works.get(digest);
@@ -298,7 +271,6 @@ export function recorder(deps: RecorderDeps) {
 			resume.set(key, sequence);
 	}
 
-	/** Folds every event appended since the last read; one reader at a time. */
 	function catchUp(): Promise<void> {
 		const run = reading.then(async () => {
 			const options = position === undefined ? {} : { after: position };
@@ -311,9 +283,6 @@ export function recorder(deps: RecorderDeps) {
 		return run;
 	}
 
-	// ── Appending ──────────────────────────────────────────────────────────
-
-	/** Appends one event idempotently; true when this call recorded it first. */
 	async function record(
 		stream: string,
 		input: EventInput<JsonObject>,
@@ -395,7 +364,6 @@ export function recorder(deps: RecorderDeps) {
 		}
 	}
 
-	/** The submission id of an offer's authority-signed submission, when it verifies. */
 	function submissionOf(offer: WorkOffer): string {
 		const envelope = offer.submission;
 		if (envelope === undefined) return "";
@@ -413,8 +381,6 @@ export function recorder(deps: RecorderDeps) {
 			return "";
 		}
 	}
-
-	// ── Handlers, one per bus feed ─────────────────────────────────────────
 
 	async function onOffer(
 		envelope: SignedEnvelope,
@@ -518,7 +484,6 @@ export function recorder(deps: RecorderDeps) {
 		if (order.memberId !== to || digest === undefined)
 			return refuse("order", "payload", sequence);
 		watch(fleet);
-		// The signed part only: the sealed secret is never journalled (§11.3 rule 11).
 		await record(
 			`${WORK_STREAM}${digest}`,
 			{
@@ -624,7 +589,6 @@ export function recorder(deps: RecorderDeps) {
 			return refuse("session-close", "payload", sequence);
 		await catchUp();
 		const state = sessions.get(close.sessionId);
-		// The acceptor's fact bills; with no grant on record, the first close does.
 		const acceptor = state?.acceptor ?? "";
 		const bills =
 			state?.billed !== true &&
@@ -659,7 +623,6 @@ export function recorder(deps: RecorderDeps) {
 			transport: close.transport,
 			memberId: close.memberId,
 			crossChecked,
-			// The initiator's figures disagree with the acceptor's: billed as the acceptor says, flagged.
 			mismatch: other !== undefined && !crossChecked,
 		});
 	}
@@ -685,9 +648,6 @@ export function recorder(deps: RecorderDeps) {
 		logs.set(chunk.orderId, chunks);
 	}
 
-	// ── Subscriptions ──────────────────────────────────────────────────────
-
-	/** Serialises every recording step, so stream heads stay in order. */
 	function serial(task: () => Promise<void>): Promise<void> {
 		const run = chain.then(task).catch((error: Error) => {
 			deps.log("hobo_fleet_bus_status", {

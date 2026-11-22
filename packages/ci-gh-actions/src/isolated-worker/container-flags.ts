@@ -1,24 +1,11 @@
-/**
- * Launch flags of the `S1_CONTAINER` tier (design §6.11) for every container
- * the box worker starts: all capabilities dropped, Docker's default seccomp
- * profile (never `unconfined`), `no-new-privileges`, a pids limit, a read-only
- * root, and writable scratch that the container owns (a tmpfs `/tmp` and
- * anonymous volumes seeded from the image, removed with the container).
- *
- * The flags are the Docker engine's own: nothing here needs a host `crun`,
- * `runc`, `podman` or `nsenter` (D58).
- */
 import { DeviceClass, type FleetRecord } from "@hobo/fleet";
 
-/** Default per-container process limit. */
 export const DEFAULT_PIDS_LIMIT = 4096;
 
-/** Paths the GitHub runner writes inside its image; each becomes an anonymous volume. */
 const RUNNER_WRITABLE = ["/opt/actions-runner", "/home/runner"] as const;
 
 export type ContainerHardening = Readonly<{
 	pidsLimit?: number;
-	/** CPU cap (`--cpus`); absent leaves CPU to the scheduler's shares. */
 	cpus?: number;
 }>;
 
@@ -44,10 +31,6 @@ export function hardenedContainerFlags(
 	return flags;
 }
 
-/**
- * The host Docker socket is exposed only on a `DEDICATED` device of a fleet
- * whose policy sets `allow_host_docker` (§6.11, `S1_CONTAINER` "Docker inside").
- */
 export function hostDockerAllowed(
 	fleet: FleetRecord | undefined,
 	deviceClass: DeviceClass,

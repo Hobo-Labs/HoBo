@@ -1,20 +1,3 @@
-/**
- * The box worker as a HoBo Fleet member (design §8.1, L34; O42). The worker
- * daemon composes `createFleetAgent` (`@hobo/fleet/agent`) with:
- *
- * - roles `DISPATCHER` and `EXECUTOR`, asked for at enrollment as a
- *   `DEDICATED` device (`boxEnrollment`);
- * - the worker's memory, storage and host-health admission as its
- *   `CapacitySource` (`capacityFromAdmission`), carrying the free inodes and
- *   memory PSI of `@hobo/fleet-agent`'s `createHostCapacity` as `hostSignals`;
- * - the `github-actions-job` work kind (L16's source and runner);
- * - the sandbox drivers and egress proxy factory of `@hobo/fleet-agent`
- *   (`sandboxDrivers`, `createEgressProxyFactory`), which the caller resolves;
- * - the fleet's `allow_host_docker`, read from the registry, for the host
- *   Docker socket of the worker's own containers (`hostDocker`).
- *
- * It replaces the relay mesh (`mesh-*.ts`) and the published fleet variables.
- */
 import { create } from "@bufbuild/protobuf";
 import type { TenantId } from "@hobo/core";
 import {
@@ -36,6 +19,7 @@ import {
 	type MemberId,
 	type Outcome,
 	parseFleetId,
+	parseMemberId,
 	Role,
 	type SandboxDriver,
 	type WorkRunner,
@@ -50,18 +34,13 @@ import type { HostHealthState } from "./isolated-worker/host-health.js";
 /** public-contract: the work kind of L16 (`createGithubActionsWorkSource`). */
 export const GITHUB_ACTIONS_JOB = "github-actions-job";
 
-/** The roles a box worker holds in its fleet. */
 export const BOX_ROLES: readonly Role[] = [Role.DISPATCHER, Role.EXECUTOR];
 
-/** What the worker's admission says right now. An unknown measure is undefined, never zero. */
 export type WorkerAdmissionSample = Readonly<{
-	/** Launch slots the worker's own leases hold. */
 	usedSlots: number;
 	hostHealth: HostHealthState;
 	draining: boolean;
-	/** Memory admission (with host pressure) admits one more job of the standard class. */
 	memoryAdmits: boolean;
-	/** Storage admission admits one more job. */
 	storageAdmits: boolean;
 	freeMemoryMb: number | undefined;
 	freeDiskMb: number | undefined;
@@ -76,7 +55,6 @@ export type WorkerAdmission = Readonly<{
 const whole = (value: number | undefined) =>
 	value === undefined ? undefined : Math.max(0, Math.floor(value));
 
-/** The worker's admission as the agent's capacity: no free slot unless every admission admits. */
 export function capacityFromAdmission(
 	worker: Readonly<{ slots: number; labels: readonly string[] }>,
 	sample: WorkerAdmissionSample,
@@ -103,12 +81,6 @@ export function capacityFromAdmission(
 	return { capacity, health, labels: [...worker.labels] };
 }
 
-/**
- * The admission as a `CapacitySource`. With `host` (`createHostCapacity` of
- * `@hobo/fleet-agent`), each reading also carries the host's free inodes and
- * memory PSI as `hostSignals` (contract amendment 6), from which the agent
- * derives the observation's refusal; a host read that fails leaves them out.
- */
 export function admissionCapacitySource(
 	admission: WorkerAdmission,
 	host?: CapacitySource,
@@ -130,7 +102,6 @@ export function admissionCapacitySource(
 	};
 }
 
-/** A box's enrollment: a `DEDICATED` device asking for `DISPATCHER` and `EXECUTOR` with its bootstrap token. */
 export function boxEnrollment(
 	input: Readonly<{
 		tenant: TenantId;
@@ -156,12 +127,6 @@ export function boxEnrollment(
 
 const jitConfig = z.object({ encoded_jit_config: z.string().min(1) });
 
-/**
- * `mintRegistration` for L16's `createGithubActionsWorkSource`: one
- * single-use just-in-time runner registration from GitHub, for a repository
- * this worker is connected to. The registration is the order's sealed secret;
- * it is never logged and never put in an error message (§11.3 rule 11).
- */
 export function createJitRegistrationMinter(
 	options: Readonly<{
 		github: GithubTransport;
@@ -223,17 +188,12 @@ export type BoxMemberOptions = Readonly<{
 	keys: KeyStore;
 	authorityUrl: string;
 	tenant: TenantId;
-	/** The fleet whose `allow_host_docker` and egress allowlist the worker follows. */
 	fleet: string;
 	connector: FleetBusConnector;
 	admission: WorkerAdmission;
-	/** `createHostCapacity` of `@hobo/fleet-agent`: its `hostSignals` (inodes, memory PSI) ride on each reading. */
 	host?: CapacitySource;
-	/** L16's `createGithubActionsWorkSource` and `createGithubActionsWorkRunner`. */
 	work: Readonly<{ source: WorkSource; runner: WorkRunner }>;
-	/** `sandboxDrivers` of `@hobo/fleet-agent`, resolved by the caller. */
 	sandboxes: readonly SandboxDriver[];
-	/** `createEgressProxyFactory` of `@hobo/fleet-agent`, given `fleetAllow`. */
 	egress: EgressProxyFactory;
 	transports?: readonly FleetTransport[];
 	agentVersion: string;
@@ -264,7 +224,6 @@ export function composeFleetDaemon(options: BoxMemberOptions) {
 	let allowed = false;
 	return {
 		agent,
-		/** Reads the fleet record and this member from the registry; call it on the agent's beat. */
 		async refreshFleet(): Promise<void> {
 			const registry = agent.bus()?.registry;
 			if (registry === undefined) return;
@@ -275,25 +234,19 @@ export function composeFleetDaemon(options: BoxMemberOptions) {
 				member?.deviceClass ?? DeviceClass.UNSPECIFIED,
 			);
 		},
-		/** Whether the worker's containers may mount the host Docker socket now. */
 		hostDocker: (): boolean => allowed,
-		/** The fleet's egress allowlist, for `createEgressProxyFactory`'s `fleetAllow`. */
 		fleetAllow: (): readonly string[] => fleet?.policy?.egressAllow ?? [],
-		/** The fleet's capacity from the authority's signed fleet view; undefined while unknown. */
 		async fleetCapacity(): Promise<FleetCapacity | undefined> {
 			return (await this.fleetView())?.capacity;
 		},
-		/** The authority's signed fleet view (peers for the routing slip); undefined while unknown. */
 		async fleetView(): Promise<FleetView | undefined> {
 			const registry = agent.bus()?.registry;
 			if (registry === undefined) return undefined;
 			return registry.view(fleetId);
 		},
-		/** This box's member id once enrolled. */
 		memberId(): MemberId | undefined {
 			const id = agent.status().member?.memberId;
-			// SAFETY: the agent's member record is one the registry verified.
-			return id === undefined || id === "" ? undefined : (id as MemberId);
+			return id === undefined || id === "" ? undefined : parseMemberId(id);
 		},
 	};
 }

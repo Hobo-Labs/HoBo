@@ -1,15 +1,3 @@
-/**
- * The stored form of one member's assignment log: an `AssignmentLog`
- * (`data-models/fleet.proto`) as protobuf JSON, newest entries ascending.
- *
- * Two formats, readable both ways (§6.10). Format 1 is today's bytes: no entry
- * carries `members`, and the JSON is byte for byte what
- * `packages/backend-fleet/src/ephemeral-replica.ts` wrote, so the previous
- * relay reads every log a fleet writes until it turns membership epochs on.
- * Format 2 is written once any entry carries a member set; today's decoder
- * refuses it (its `format` check), which is the point: an old reader never
- * counts a majority over the wrong set.
- */
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import {
 	type Assignment,
@@ -44,7 +32,6 @@ function toWire(entry: AssignmentEntry): Assignment {
 	});
 }
 
-/** A uint64 off the wire as a safe integer, or a record error. */
 function safeNumber(value: bigint): number {
 	if (value > BigInt(Number.MAX_SAFE_INTEGER))
 		recordError("stored assignment log carries a number out of range");
@@ -80,10 +67,6 @@ function fromWire(entry: Assignment, format: number): AssignmentEntry {
 	});
 }
 
-/**
- * Encode a log for storage. Entries must already be parsed and ascending.
- * Format 1 (today's bytes) while no entry has members; format 2 otherwise.
- */
 export function encodeAssignmentLog(
 	entries: readonly AssignmentEntry[],
 ): string {
@@ -97,12 +80,6 @@ export function encodeAssignmentLog(
 	);
 }
 
-/**
- * Parse a stored log into entries, ascending with no gap. Reads formats 1 and
- * 2; refuses members under format 1. Anything else is a record error: a log
- * that does not parse is never read as empty, because empty is a vote ("holds
- * nothing") and a corrupt log is not.
- */
 export function decodeAssignmentLog(value: string): AssignmentEntry[] {
 	let log: AssignmentLog;
 	try {

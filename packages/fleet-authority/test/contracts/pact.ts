@@ -1,23 +1,3 @@
-/**
- * Provider-side replay of a PACT v3 file (L42): the interaction shapes the
- * consumer pact holds, and the matching rules it uses (`$.body` by `type`,
- * `$.headers.<name>` by `regex`), applied as PACT v3 applies them.
- *
- * - `type`: a value matches when it has the expected JSON type; an object
- *   must hold every expected key (extra keys allowed), each matched by type;
- *   an array matches element by element against the expected element at that
- *   index, else the first. An empty actual array never matches an expected
- *   non-empty one, so an example list is never satisfied vacuously.
- * - `regex`: the whole value matches the pattern.
- * - A value with no rule matches only when equal.
- * - Header values compare as media types: the same type, and every parameter
- *   the pact names present with the same value (`application/json` matches
- *   `application/json; charset=utf-8`).
- *
- * `@hobo/contract-harness`'s `verifyPact` compares bodies as value subsets
- * and ignores matching rules, so it cannot verify this pact: its examples are
- * matched by type, not value.
- */
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
 	isJsonArray,
@@ -70,7 +50,6 @@ export type PactDocument = Readonly<{
 	interactions: readonly PactInteraction[];
 }>;
 
-/** A media type and its parameters, for comparing header values. */
 type MediaType = Readonly<{
 	type: string;
 	parameters: ReadonlyMap<string, string>;
@@ -112,7 +91,6 @@ function objectField(object: JsonObject, key: string): JsonObject {
 	return value;
 }
 
-/** Parses a PACT v3 document's interactions; throws on anything this replay does not support. */
 export function parsePact(text: string): PactDocument {
 	const document: JsonValue = JSON.parse(text);
 	if (!isJsonObject(document)) throw new Error("the pact is not an object");
@@ -164,7 +142,6 @@ function kindOf(value: JsonValue): string {
 	return isJsonBoolean(value) ? "boolean" : "unknown";
 }
 
-/** Where `actual` fails to match `expected` by type, or undefined when it matches. */
 export function typeMismatch(
 	expected: JsonValue,
 	actual: JsonValue | undefined,
@@ -192,7 +169,6 @@ export function typeMismatch(
 	return undefined;
 }
 
-/** A body checked against the pact's `$.body` rule: by type, else by equality. */
 export function bodyMismatch(
 	expected: JsonValue | undefined,
 	actual: JsonValue | undefined,
@@ -221,7 +197,6 @@ function mediaType(value: string): MediaType {
 	};
 }
 
-/** A header the pact names, checked against the value sent or answered. */
 export function headerMismatch(
 	name: string,
 	expected: string,

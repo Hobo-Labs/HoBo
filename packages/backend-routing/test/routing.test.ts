@@ -112,7 +112,6 @@ function blob(capMicros: number | undefined): FleetOffer {
 	});
 }
 
-/** One member as a tick saw it: reachable unless `overrides` says otherwise. */
 function seen(
 	backend: string,
 	usage: FleetUsageMeasurement[] = [],

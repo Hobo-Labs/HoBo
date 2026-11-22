@@ -1,12 +1,3 @@
-// The `fleet-signin-<state>` stream (design §7.5) and its fold. Every replica
-// reads the same stream, so the step a sign-in is at is whatever its events
-// say, and each step is one append at the stream head: two replicas racing
-// the same step meet at the compare-and-set and exactly one wins.
-//
-// What is stored: the request as shown on the approval page, the authority's
-// own PKCE verifier for the provider (it never leaves the authority), the
-// principal and tags, and SHA-256 digests of the one-time authority code.
-// Never a token, the CLI's verifier or the code itself (§11.3 rule 11).
 import {
 	type EventEnvelope,
 	type JsonObject,
@@ -43,7 +34,6 @@ export type Authenticated = Readonly<{
 
 export type Decided = Readonly<{ approved: boolean; codeDigest: string }>;
 
-/** The step a sign-in has reached: each later step carries the earlier ones. */
 export type SignInStep = Readonly<
 	| { step: "started"; started: Started }
 	| { step: "authenticated"; started: Started; person: Authenticated }
@@ -142,7 +132,6 @@ export type AppendStep =
 	| Readonly<{ ok: true }>
 	| Readonly<{ ok: false; conflict: boolean; message: string }>;
 
-/** Appends one event at `expectedSeq`; a lost compare-and-set is reported, never retried. */
 export async function appendAt(
 	store: FleetEventStore,
 	streamId: string,
@@ -169,7 +158,6 @@ export async function appendAt(
 	}
 }
 
-/** Appends at the current head, retrying a lost compare-and-set up to 8 times (§7.5). */
 export async function appendAtHead(
 	store: FleetEventStore,
 	streamId: string,
@@ -296,11 +284,16 @@ export function principalRef(
 
 const tagOf = Object.prototype.toString;
 
+function isObject<T>(value: T): value is T & JsonObject {
+	return (
+		value !== null &&
+		!Array.isArray(value) &&
+		tagOf.call(value) === "[object Object]"
+	);
+}
+
 function objectOf<T>(value: T): JsonObject | undefined {
-	if (value === null || Array.isArray(value)) return undefined;
-	if (tagOf.call(value) !== "[object Object]") return undefined;
-	// SAFETY: event data is JSON (the store's contract); a plain object of it is a JsonObject.
-	return value as JsonObject;
+	return isObject(value) ? value : undefined;
 }
 
 function isString(value: JsonValue | undefined): value is string {

@@ -1,9 +1,3 @@
-/**
- * Provisioning the pinned gVisor runtime (D58, A10): every branch of
- * `resolveSandboxRuntime` with a fake fetch, over the embedded fixture
- * tarball (a real SHA-512 check and the real in-process unpacker) or a fake
- * extractor.
- */
 import {
 	chmodSync,
 	existsSync,
@@ -33,7 +27,6 @@ const root = mkdtempSync(join(tmpdir(), "hobo-l40-provision-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const fixture = Buffer.from(FIXTURE_TARBALL, "base64");
-/** The pinned release, with the fixture's digest in place of the real ones. */
 const FIXTURE_PIN: GvisorPin = {
 	release: GVISOR_PIN.release,
 	sha512: { x86_64: FIXTURE_SHA512, aarch64: FIXTURE_SHA512 },
@@ -46,17 +39,15 @@ function fakeFetch(
 		new Response(new Uint8Array(fixture)),
 ): FakeFetch {
 	const urls: string[] = [];
-	const fake = async (input: string | URL | Request) => {
+	const fake: typeof fetch = async (input) => {
 		urls.push(String(input));
 		return answer();
 	};
-	// SAFETY: the fake answers every call a Response, which is all resolveSandboxRuntime uses of fetch.
-	return Object.assign(fake, { urls }) as FakeFetch;
+	return Object.assign(fake, { urls });
 }
 
 const cache = () => mkdtempSync(join(root, "cache-"));
 
-/** Every entry under `<cache>/runsc/<release>`, so leftovers show. */
 const entries = (cacheDir: string): string[] => {
 	const dir = join(cacheDir, "runsc", GVISOR_PIN.release);
 	return existsSync(dir) ? readdirSync(dir).sort() : [];

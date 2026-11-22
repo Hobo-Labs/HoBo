@@ -1,12 +1,3 @@
-/**
- * High-integrity control-plane env membership.
- * Isolation-critical env: tags cannot be self-assigned by clients.
- *
- * A membership bound to a device (`nodeId`) is a HoBo Fleet member
- * (ADR-0183): it counts only while that member is `ACTIVE` in the fleet
- * registry, as last read by `refresh()`. A suspended, revoked or unknown
- * member, or any device membership when no registry is given, is absent.
- */
 import { type MemberId, MemberState, type RegistryView } from "@hobo/fleet";
 import {
 	ACCESS_EVENTS,
@@ -27,7 +18,6 @@ export type EnvMembership = Readonly<{
 	schemaVersion: typeof ENV_MEMBERSHIP_SCHEMA;
 	id: string;
 	principalId: string;
-	/** The fleet member (device) this membership is bound to. */
 	nodeId?: MemberId;
 	isolationClass: IsolationClass;
 	assignedAt: string;
@@ -53,7 +43,6 @@ export type AssignMembershipInput = Readonly<{
 
 export class EnvMembershipService {
 	private readonly members = new Map<string, EnvMembership>();
-	/** Device members last read ACTIVE from the registry. */
 	private readonly activeNodes = new Set<MemberId>();
 	readonly events: AccessEvent[] = [];
 	private readonly now: () => string;
@@ -64,7 +53,6 @@ export class EnvMembershipService {
 	constructor(options: {
 		readonly tenant: string;
 		readonly now?: () => string;
-		/** The fleet registry device memberships are checked against. */
 		readonly registry?: RegistryView;
 	}) {
 		this.tenant = options.tenant;
@@ -72,11 +60,6 @@ export class EnvMembershipService {
 		this.registry = options.registry;
 	}
 
-	/**
-	 * Re-reads, from the fleet registry, the state of every device a
-	 * membership is bound to. A member the registry cannot answer for is not
-	 * ACTIVE.
-	 */
 	async refresh(): Promise<void> {
 		const nodes = new Set<MemberId>();
 		for (const record of this.members.values())
@@ -191,11 +174,6 @@ export class EnvMembershipService {
 		);
 	}
 
-	/**
-	 * Lookup active membership. Expired, or bound to a device that was not
-	 * ACTIVE at the last `refresh()` → absent (fail-closed).
-	 * Client-supplied env:production without a record does not authorize.
-	 */
 	getActive(
 		principalId: string,
 		isolationClass: IsolationClass,

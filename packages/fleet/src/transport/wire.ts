@@ -1,14 +1,3 @@
-/**
- * The session protocol spoken over an accepted stream (private to this lane):
- * messages of a 1-byte tag, a 4-byte big-endian length and a payload.
- *
- * - Shell and forward: the initiator sends `INPUT` chunks and `END`; the
- *   acceptor runs the command in the order's sandbox with that input, sends
- *   its output as `OUTPUT` chunks and then `EXIT` (a 4-byte signed exit code),
- *   or `ERROR` (UTF-8 reason).
- * - Blob: the initiator sends one `REQUEST` with the digest (`sha256:<hex>`);
- *   the acceptor answers `OUTPUT` chunks and `END`, or `ERROR`.
- */
 import type { FleetStream } from "../ports.js";
 
 export const SESSION_TAG = {
@@ -23,7 +12,6 @@ export type SessionTag = (typeof SESSION_TAG)[keyof typeof SESSION_TAG];
 
 const TAGS: ReadonlySet<number> = new Set(Object.values(SESSION_TAG));
 const HEADER_BYTES = 5;
-/** The largest payload of one message; longer `INPUT` and `OUTPUT` are split. */
 export const MAX_MESSAGE_PAYLOAD = 1024 * 1024;
 
 export type SessionMessage = Readonly<{ tag: SessionTag; payload: Uint8Array }>;
@@ -51,7 +39,6 @@ export async function writeMessage(
 	} while (offset < payload.length);
 }
 
-/** Every message on the stream, in order; fails on an unknown tag, an oversized or a truncated message. */
 export async function* readMessages(
 	stream: FleetStream,
 ): AsyncGenerator<SessionMessage> {

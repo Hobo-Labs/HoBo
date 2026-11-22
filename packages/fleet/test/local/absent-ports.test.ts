@@ -1,7 +1,3 @@
-// Local mode has no bus, sign-in, recorder, projection, audit chain or
-// credential issuer (§6.2, D6). The ports and parts it hands the enrollment
-// state machine for those refuse, and the in-process registry keeps the
-// newest record it is given.
 import { create, toBinary } from "@bufbuild/protobuf";
 import { parseTenantId } from "@hobo/core";
 import { describe, expect, it } from "vitest";

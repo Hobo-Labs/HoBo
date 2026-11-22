@@ -1,58 +1,3 @@
-/**
- * The runner-host realizer: HoBo CD moving one self-hosted runner host (the
- * box worker, an enrolled fleet device or a developer device) to a runner
- * controller image
- * digest (`deploy/runner-fleet/README.md`).
- *
- * It is a typed `ResourceResolver` from `@hobo/core`, run by `hobo deploy
- * agent run` on the host itself. The resource is the runner controller at an
- * image digest plus its declared, non-secret config. There is no shell script
- * and no new exec: every host effect goes through two typed ports the package
- * already has the shape of.
- *
- * - **Containers** are the isolated worker's `DockerDriver` methods
- *   (`listWorkerContainers`, `inspectImage`, `create`, `start`, `stop`,
- *   `remove`, `isRunning`) plus the deps-image `pull`. The controller
- *   container is named `hoboci-runner-controller-<sha256 hex>`, so the digest
- *   a host runs is read back from the host, never remembered.
- * - **Process**, in place of containers on a host whose controller is a
- *   process its worker daemon supervises (`runner-controller-process.ts`):
- *   `stage` a release fetched and verified by digest, `run` it (or none)
- *   by a request generation, read the supervisor's `status`. The digest the
- *   host runs is the status's, and verification also requires the host's own
- *   fleet observation to name it.
- * - **Jobs** are what the host already knows about its work: its leases
- *   (`ACTIVE_STATES` and `runnerCustody`), its registered runners'
- *   presence, its own signed fleet `Observation` (it is a `DEVICE` member of
- *   fleet `hobo`), and the admission gate the
- *   worker's drain mode closes.
- *
- * `reconcile` (converge): pull the target by digest, close admission, wait for
- * in-flight jobs to finish up to a deadline, swap the controller, reopen
- * admission and verify by observation (controller running, runner presence,
- * a fresh healthy self-observation from after the swap). It never picks up, stops
- * or cancels a running job: a drain that runs out of time reopens admission
- * and refuses without touching the controller, and a rollback that would
- * stop a controller holding a job leaves it serving and refuses instead. On a
- * failed verification it restores the previous digest; the rollback itself is
- * a Delta CD records, this only leaves the host serving. Admission is closed
- * only inside `withAdmissionClosed`, which reopens it on every exit, so no
- * port error or failed swap leaves the host refusing work.
- *
- * A rollback relaunches the previous digest with the spec this agent last
- * launched it with. When this agent never launched it (a restarted agent, a
- * hand-started controller) the container driver cannot read a spec back, so
- * the rollback uses this release's repository and config and says so.
- *
- * `read` (observe): the controller digest, in-flight jobs and runner
- * presence (retained fields: they change with load, never drift), and the
- * observation's platform and capacity (claims: observed facts that only narrow).
- *
- * Idempotent by digest: a host already serving the target, observed, is a
- * `noop`. Nothing is reported converged that was not observed (I5). The
- * request's `credentialRef` names the registry read credential the host's
- * container engine already holds; this module never resolves or sees it (I9).
- */
 import { ACTIVE_STATES, type Lease } from "@hobo/ci";
 import {
 	createResolverRegistry,
@@ -181,10 +126,6 @@ export const CONTROLLER_DIGEST_LABEL = "hobo.ci/controller-digest";
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 
-/**
- * The controller digest a host's observation reports: its `agent_version`
- * when that is a digest, else its `hobo.ci/controller-digest=<digest>` label.
- */
 export function observedControllerDigest(
 	observation: Observation,
 ): string | undefined {
@@ -197,7 +138,6 @@ export function observedControllerDigest(
 
 // domain-view: what the realizer reads from the host's own fleet Observation (times as epoch ms).
 type HostSelf = Readonly<{
-	/** `observer_id` equals `member_id`: the host observed itself. */
 	self: boolean;
 	healthy: boolean;
 	validUntilMs: number;
@@ -234,11 +174,6 @@ function selfOf(observation: Observation | undefined): HostSelf | undefined {
 	};
 }
 
-/**
- * @deprecated What the host reported about itself before it was a fleet
- * member; it is now its own fleet `Observation`. Kept as an alias so the
- * package barrel compiles until the coordinator drops it at the wave-5 merge.
- */
 export type RunnerHostAdvert = Observation;
 
 /** One runner this host registered with GitHub, and its presence. */
@@ -253,7 +188,6 @@ export interface RunnerHostJobs {
 	leases(): Promise<readonly Lease[]>;
 	/** Runners the host registered, with GitHub presence. */
 	runners(): Promise<readonly RunnerHostRegistration[]>;
-	/** The host's own fleet Observation, as it last signed and published it. */
 	observation(): Promise<Observation | undefined>;
 	/** Stop admitting new jobs (the worker's drain mode). Running jobs are untouched. */
 	pauseAdmission(): Promise<void>;
@@ -392,7 +326,6 @@ function wired(host: RunnerHostPorts): WiredHost {
 // ── Options and desired state ───────────────────────────────────────────────
 
 export type RunnerHostRealizerOptions = Readonly<{
-	/** The host this agent runs on: its device name in fleet `hobo`, the Camp's last segment. */
 	hostId: string;
 	/** A local runner keeps a registered runner; JIT hosts register per job. */
 	hostKind: RunnerHostKind;
@@ -1310,9 +1243,7 @@ export type RunnerHostCampReport = Readonly<{
 
 // public-contract: the claims a runner host's CD agent reports about its own health.
 export const RUNNER_HOST_HEALTH_CLAIMS = Object.freeze({
-	/** `fresh`, `expired` or `missing`: the host's own fleet observation. */
 	advert: "hobo.ci/observation",
-	/** ISO time the observation is valid until (absent when missing). */
 	validUntil: "hobo.ci/observation-valid-until",
 	/** `true` only when the controller is observed serving and the advert is fresh and healthy. */
 	ready: "hobo.ci/runner-host-ready",
@@ -1495,14 +1426,6 @@ function healthCondition(
 	});
 }
 
-/**
- * The Station's reading of a runner host's health claims, as the same
- * REACHABLE / LEASED / READY table `runnerFleetCampObservations` applies to
- * the fleet view (deploy/runner-fleet/README.md): fresh and healthy is all
- * TRUE; fresh but draining or pressured is READY false; an observation that
- * has lapsed at `nowMs` (the Station's clock, not the agent's) is all FALSE;
- * no evidence is all UNKNOWN, never assumed healthy.
- */
 export function runnerHostHealthConditions(
 	claims: readonly ClaimJson[],
 	nowMs: number,

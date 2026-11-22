@@ -71,7 +71,6 @@ describe("the callout's seven checks (§6.7)", () => {
 			memberId: keys.memberId,
 			template: "dispatcher",
 		});
-		// A nonce-bound proof may reconnect with the same ticket on a new nonce only by a new proof.
 		expect(
 			await checkConnect(inputOf(tenant, token, { serverNonce: "other" })),
 		).toMatchObject({

@@ -1,12 +1,3 @@
-/**
- * The stored log stays readable both ways (design §6.10, O15).
- *
- * With membership epochs off, a log written by today's encoder decodes and
- * re-encodes to the same bytes, and today's decoder (copied as a fixture)
- * reads every log the new code writes. Once an entry carries a member set the
- * log is format 2, which today's decoder refuses, and the new decoder refuses
- * a member set under format 1.
- */
 import { parseEphemeralKey } from "@hobo/core";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -35,7 +26,6 @@ const reason = fc.stringMatching(/^[a-z0-9][a-z0-9:._ -]{0,30}$/u);
 const author = fc.stringMatching(/^[A-Za-z0-9][A-Za-z0-9:._-]{0,20}$/u);
 const ms = fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER });
 
-/** One entry's value, without its epoch; always a valid entry. */
 const value = fc
 	.record({
 		active: fc.option(name, { nil: undefined }),
@@ -52,7 +42,6 @@ const value = fc
 		target: entry.sealed ? entry.target : undefined,
 	}));
 
-/** A contiguous log of entries without member sets, as today writes them. */
 const todayLog = fc
 	.tuple(
 		fc.integer({ min: 1, max: 1_000_000 }),
@@ -178,7 +167,6 @@ describe("format 2: member sets", () => {
 	});
 
 	it("is refused by today's decoder, so an old reader never counts the wrong set", () => {
-		// Refused on the unknown `members` field before its format check is reached.
 		expect(() => decodeTodayLog(encodeAssignmentLog([before, pin]))).toThrow(
 			/does not parse/u,
 		);

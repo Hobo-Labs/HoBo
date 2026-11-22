@@ -1,5 +1,3 @@
-// Test keys for the envelope and trust tests: an in-memory Signer and the
-// PublicKeyRef a trust record or registry would list for it.
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
 	KeyAlgorithm,
@@ -85,7 +83,6 @@ export function trustRecord(
 	});
 }
 
-/** Signs `record` with the given authority and witness signers. */
 export async function witnessed(
 	record: TrustRecord,
 	authority: Signer,

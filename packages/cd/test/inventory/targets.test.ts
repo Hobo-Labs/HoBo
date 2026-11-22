@@ -1,6 +1,3 @@
-// L19 TARGET declaration: the Station declares each agentless Camp of a mapped
-// Yard as a TARGET member of the fleet named after the Yard, through
-// `members:declare`; a Camp a reconciler DEVICE already backs is left alone.
 import { create } from "@bufbuild/protobuf";
 import { parseTenantId } from "@hobo/core";
 import {

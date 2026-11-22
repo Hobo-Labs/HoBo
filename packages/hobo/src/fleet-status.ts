@@ -1,10 +1,3 @@
-/**
- * The table `hobo fleet status` prints, and `hobo ci status` under it (design
- * §6.15; it replaces the mesh table `ci-mesh-status.ts` printed): per fleet,
- * its members with state, availability and health, free/total slots, free
- * memory and disk, reliability and the sandbox tiers they offer, then what the
- * fleet adds up to.
- */
 import {
 	Availability,
 	type FleetMemberView,
@@ -20,7 +13,6 @@ export type NamedFleetView = Readonly<{
 	view: FleetView | undefined;
 }>;
 
-/** A size in MiB as a person reads it; an unknown one is a dash. */
 function size(megabytes: number | undefined): string {
 	if (megabytes === undefined) return "-";
 	if (megabytes < 1024) return `${megabytes} MB`;
@@ -68,7 +60,6 @@ function reliability(member: FleetMemberView): string {
 }
 
 function row(member: FleetMemberView): string[] {
-	// A member that is lost has no capacity to offer; its last figures would mislead.
 	const lost = member.availability === Availability.LOST;
 	const capacity = member.capacity;
 	return [
@@ -130,7 +121,6 @@ function fleetSection(entry: NamedFleetView): string[] {
 	return lines;
 }
 
-/** Every fleet's section, separated by a blank line. */
 export function renderFleetStatus(views: readonly NamedFleetView[]): string {
 	if (views.length === 0) return "No fleets.";
 	return views.map((entry) => fleetSection(entry).join("\n")).join("\n\n");

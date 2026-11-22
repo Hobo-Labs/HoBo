@@ -1,25 +1,3 @@
-/**
- * Importing envelopes into `FLEET_JOURNAL` for a high-availability restore
- * (L41). The store's `append` mints fresh envelope ids, and the audit log
- * names envelopes by id, so a restore writes the archived envelopes
- * themselves, unchanged, in the archive's `readAll` order.
- *
- * - **Batches.** Consecutive items of one stream whose positions fall in one
- *   stream sequence were one append and become one message again, so a
- *   journal archived with `readAll` comes back with the same positions. An
- *   item without a position is a message of its own.
- * - **Checked first.** Every envelope parses; ids are unique; each stream's
- *   `seq` runs 1, 2, 3, … Nothing is written unless all of it holds.
- * - **Conflict.** The journal must hold nothing, or exactly the first
- *   envelopes of this import (same ids, same order): that is a partial import,
- *   and the import resumes after it. Anything else is `conflict`.
- * - **Compare-and-set.** Each message is published with the subject's last
- *   sequence as read, so a concurrent writer fails the import instead of
- *   interleaving with it.
- *
- * Owner epochs (fencing) are not part of an envelope, so every imported
- * stream starts unfenced (epoch 0); its next fenced append sets the epoch.
- */
 import {
 	type EventEnvelope,
 	type EventPosition,
@@ -37,13 +15,11 @@ import {
 } from "./codec.js";
 import type { JournalTransport } from "./transport.js";
 
-/** One archived envelope, with its `readAll` position when the archive kept it. */
 export type JournalImportItem = Readonly<{
 	event: EventEnvelope;
 	position?: EventPosition;
 }>;
 
-/** `imported`: envelopes written by this run; `present`: envelopes a previous run had already written. */
 export type JournalImportResult = Readonly<{
 	imported: number;
 	present: number;
@@ -57,7 +33,6 @@ const failure = (
 	error: { code, message: `journal import: ${message}` },
 });
 
-/** The items, parsed and checked; a message on failure. */
 function checked(
 	items: readonly JournalImportItem[],
 ): EventEnvelope[] | string {
@@ -82,7 +57,6 @@ function checked(
 	return events;
 }
 
-/** The import's messages: runs of one stream within one archived stream sequence. */
 function batchesOf(
 	items: readonly JournalImportItem[],
 	events: readonly EventEnvelope[],
@@ -110,13 +84,6 @@ function batchesOf(
 	return batches;
 }
 
-/**
- * Writes `items` (in `readAll` order) into the journal behind `transport`,
- * keeping every envelope as it is. Resumes a partial import of the same
- * items; refuses a journal holding anything else with `conflict`. Throws
- * only what the transport throws (the journal then holds a prefix, and a
- * second call finishes it).
- */
 export async function importJournal(
 	transport: JournalTransport,
 	items: readonly JournalImportItem[],

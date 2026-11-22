@@ -1,8 +1,3 @@
-/**
- * Steps for features/fleet/sign-in.feature: a person signs in through the
- * authority's HTTP routes (browser on a loopback redirect, or the device-code
- * flow), and the person credential is bound to the sign-in key.
- */
 import assert from "node:assert/strict";
 import { Then, When } from "@cucumber/cucumber";
 import {

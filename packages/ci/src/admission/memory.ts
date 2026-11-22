@@ -1,9 +1,3 @@
-/**
- * Memory admission: whether a job of a given size fits on a host now, keeping
- * a reserve for the host and a margin for allocation volatility. Pure; the
- * caller samples the host's available memory.
- */
-
 export function memoryAdmitHeadroom(
 	availableMb: number | undefined,
 	requiredMb: number,

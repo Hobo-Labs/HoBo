@@ -1,7 +1,3 @@
-// The key ceremony (design §6.16): generates the NATS operator identity key
-// offline, uses it once to sign the operator JWT naming the operator signing
-// key, and hands it back only as two shares. The keys the deployment runs on
-// are stored, one secret per key, behind `SecretsPort`. Private to L27.
 import type { Clock, FleetLog, Outcome } from "@hobo/fleet";
 import type { SecretsPort } from "@hobo/identity";
 import { loadSecretStoreKms } from "@hobo/identity";
@@ -13,7 +9,6 @@ import { freshKey, readSlot, slotName, writeSlot } from "./slots.js";
 export type CeremonyDeps = Readonly<{
 	secrets: SecretsPort;
 	prefix: string;
-	/** The operator's name in its JWT. */
 	operatorName: string;
 	now: Clock;
 	log: FleetLog;
@@ -24,12 +19,10 @@ export type CeremonyResult = Readonly<{
 	shares: readonly [string, string];
 }>;
 
-/** The secret holding the operator JWT the ceremony signed (public; the NATS server configuration reads it). */
 export function operatorJwtName(prefix: string): string {
 	return `${prefix}/operator-jwt`;
 }
 
-/** Ed25519 keys the ceremony creates when absent, besides the operator signing key. */
 const AUTHORITY_KEYS: readonly RotatableKey[] = ["record-signing", "witness"];
 
 export async function ceremony(
@@ -78,7 +71,6 @@ export async function ceremony(
 				});
 			}
 		}
-		// The token-signing ring is @hobo/identity's; loading it creates it once.
 		await loadSecretStoreKms(deps.secrets, {
 			prefix: slotName(deps.prefix, "token-signing"),
 		});

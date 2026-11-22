@@ -1,7 +1,3 @@
-// Building `DeviceKeys` (design §6.4, §7.3) from an identity signer and the
-// operational keys: SIGN (Ed25519) and SEAL (X25519), generated with
-// node:crypto. Private keys stay in this module's closures and in the key
-// directory; nothing returned carries them.
 import {
 	createPrivateKey,
 	createPublicKey,
@@ -28,7 +24,6 @@ import {
 } from "@hobo/fleet/keys";
 import { isJsonObject, isJsonString, parseJsonText } from "./json.js";
 
-/** The private operational keys of a device, as PKCS#8 PEM in the key directory. */
 export type OperationalKeys = Readonly<{ sign: KeyObject; seal: KeyObject }>;
 
 export function generateOperationalKeys(): OperationalKeys {
@@ -68,14 +63,12 @@ export function decodeOperationalKeys(text: string): OperationalKeys {
 	});
 }
 
-/** The public JWK members of a key, in the order RFC 7638 lists them. */
 export function publicJwkJson(jwk: PublicJwk): JsonObject {
 	return jwk.kty === "EC"
 		? { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }
 		: { kty: jwk.kty, crv: jwk.crv, x: jwk.x };
 }
 
-/** The public JWK of a node key, through `parsePublicJwk` so that private members can never pass. */
 export function publicJwkOf(key: KeyObject): PublicJwk {
 	const exported = (key.type === "public" ? key : createPublicKey(key)).export({
 		format: "jwk",
@@ -96,7 +89,6 @@ export function algorithmOf(jwk: PublicJwk): KeyAlgorithm {
 	return jwk.kty === "EC" ? KeyAlgorithm.ES256 : KeyAlgorithm.EDDSA;
 }
 
-/** Signs with a private key: ES256 signatures in IEEE P1363 form (r ‖ s), EdDSA over Ed25519. */
 export function signingWith(
 	privateKey: KeyObject,
 ): (bytes: Uint8Array) => Promise<Uint8Array> {
@@ -120,7 +112,6 @@ export function localSigner(keyId: string, privateKey: KeyObject): Signer {
 	} satisfies Signer);
 }
 
-/** The identity of a device: its public JWK and something that signs with it. */
 export type Identity = Readonly<{
 	jwk: PublicJwk;
 	sign(bytes: Uint8Array): Promise<Uint8Array>;
@@ -186,7 +177,6 @@ export function deviceKeysOf(
 	} satisfies DeviceKeys);
 }
 
-/** The raw X25519 public key, base64url without padding. */
 function rawSealKey(key: KeyObject): string {
 	const jwk = createPublicKey(key).export({ format: "jwk" });
 	if (jwk.crv !== "X25519" || jwk.x === undefined)

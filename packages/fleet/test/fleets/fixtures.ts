@@ -1,7 +1,3 @@
-// Test harness for the fleet commands (L32): a memory bus and event store, an
-// allow-by-tag policy engine, an Ed25519 record signer, and helpers that put
-// member records straight into the registry (the enrollment lane's job, which
-// these tests do not exercise).
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import {
 	create,
@@ -62,12 +58,10 @@ export const OTHER_TENANT = parseTenantId("other");
 export const START_MS = Date.parse("2026-11-01T10:00:00.000Z");
 const HOUR_MS = 3_600_000;
 
-/** What `create` accepts for a message. */
 export type InitOf<S extends DescMessage> = NonNullable<
 	Parameters<typeof create<S>>[1]
 >;
 
-/** What a test may set on a fleet policy. */
 export type PolicyInit = InitOf<typeof FleetPolicySchema>;
 
 export type TestClock = Readonly<{
@@ -80,7 +74,6 @@ export function testClock(start = START_MS): TestClock {
 	return { now: () => at, advance: (ms) => (at += ms) };
 }
 
-/** Allow when the subject carries `fleet-admin` or the action itself as a tag; a device with any role may ask for a session grant. */
 export function allowByTag(): PolicyEngine {
 	const engineId = "l32-test-allow-by-tag";
 	return {
@@ -143,7 +136,6 @@ export type Harness = Readonly<{
 	store: FleetEventStore;
 	authorityKey: RawKey;
 	logged: Logged[];
-	/** A second instance of the commands on the same store and bus. */
 	commands: FleetCommands;
 	another(): FleetCommands;
 	admin: VerifiedToken;
@@ -151,13 +143,11 @@ export type Harness = Readonly<{
 	device(memberId: MemberId, tenant?: TenantId): VerifiedToken;
 	account(scopes?: readonly string[]): VerifiedToken;
 	workload(repository: string, tenant?: TenantId): VerifiedToken;
-	/** Defines a fleet through the commands, as the admin, and returns its record. */
 	fleet(
 		id: string,
 		policy?: PolicyInit,
 		coordination?: CoordinationMode,
 	): Promise<FleetRecord>;
-	/** Puts a member record straight into the registry. */
 	member(input: MemberInput): Promise<MemberRecord>;
 }>;
 
@@ -270,7 +260,6 @@ export function fleetRecord(
 	});
 }
 
-/** A one-active fleet record that satisfies every §7.2 constraint. */
 export function oneActiveRecord(id: string): FleetRecord {
 	return fleetRecord(
 		id,
@@ -298,7 +287,6 @@ export type MemberInput = Readonly<{
 	owner?: PrincipalRef;
 }>;
 
-/** A member record whose key bundle carries SIGN, SEAL and (unless empty) TRANSPORT keys. */
 function memberRecord(input: MemberInput, nowMs: number): MemberRecord {
 	const kind = input.kind ?? MemberKind.DEVICE;
 	const id = input.memberId;

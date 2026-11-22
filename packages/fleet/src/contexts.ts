@@ -1,11 +1,3 @@
-/**
- * The signing and sealing contexts of the signed envelope (design §7.4).
- *
- * `signature = Sign(key, utf8(context) || 0x00 || payload)`. A verifier accepts
- * a record only under the one context listed for it; a change to what a record
- * means needs a new version suffix, never an edit to one of these strings.
- */
-
 // public-contract: TrustRecord, signed by the authority and the witness.
 export const TRUST_RECORD_CONTEXT = "hobo-fleet/trust-record/v1";
 // public-contract: KeyBundle, signed by the device identity key.
@@ -51,7 +43,6 @@ export const ORDER_SECRET_CONTEXT = "hobo-fleet/order-secret/v1";
 // public-contract: HKDF info deriving the iroh endpoint secret from the TRANSPORT key (amendment 2).
 export const P2P_ENDPOINT_KEY_CONTEXT = "hobo-fleet/p2p-endpoint-key/v1";
 
-/** Exactly the context strings of the §7.4 table plus the order-secret sealing context. */
 export const FLEET_CONTEXTS = [
 	TRUST_RECORD_CONTEXT,
 	KEY_BUNDLE_CONTEXT,

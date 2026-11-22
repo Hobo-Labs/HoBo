@@ -1,20 +1,3 @@
-/**
- * `runKeyStoreConformance` (design §7.3, O36): what every device `KeyStore`
- * must do (§6.4).
- *
- * - `open` creates the identity and operational keys once and returns the
- *   same keys after; it never returns private material.
- * - The identity key signs what its JWK verifies; key ids are
- *   `<MemberId>#identity` and `<MemberId>#sign`.
- * - The SEAL key opens a box sealed to it under §7.4, and only with the
- *   context and associated data it was sealed with; `agree` gives both sides
- *   the same secret.
- * - Agent state starts empty, and `writeState` replaces it whole.
- * - `rotateOperational` replaces the operational keys and keeps the identity;
- *   `destroy` removes every key.
- *
- * Each call of `make` returns a fresh store with no keys.
- */
 import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -37,7 +20,6 @@ export type KeyStoreMake = () => KeyStore;
 const encoder = new TextEncoder();
 const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
-/** What identifies a set of device keys, without anything private. */
 const fingerprint = (keys: DeviceKeys) =>
 	JSON.stringify({
 		memberId: keys.memberId,
@@ -76,7 +58,6 @@ const envelope = (context: string) =>
 		signature: randomBytes(64),
 	});
 
-/** The key-store assertions, in the order they are registered. */
 export const KEYSTORE_ASSERTIONS: readonly ConformanceAssertion<KeyStoreMake>[] =
 	[
 		{

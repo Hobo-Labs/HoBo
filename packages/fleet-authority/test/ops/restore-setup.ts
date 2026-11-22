@@ -1,6 +1,3 @@
-// A standalone deployment (SQLite journal through @hobo/runtime-local) with
-// ACTIVE members, witnessed checkpoints and credentials, and a fresh one to
-// restore into, for the backup and restore tests.
 import { join } from "node:path";
 import type { FleetEventStore } from "@hobo/fleet";
 import {
@@ -58,7 +55,6 @@ export function archiveDeps(
 	};
 }
 
-/** The deployment that is backed up: `count` ACTIVE members, each with a session ticket, and at least one witnessed checkpoint. */
 export async function liveDeployment(count = 3) {
 	const fixture = await opsFixture({}, Date.now());
 	const ran = await runCeremony(fixture.context);
@@ -77,11 +73,9 @@ export async function liveDeployment(count = 3) {
 	const members: EnrolledMember[] = [];
 	for (let i = 0; i < count; i += 1)
 		members.push(await enrollActive(dep, composed, now, `device-${i}`));
-	// The chain checkpoints at a tick 60 s or more after its first.
 	await dep.tickAudit();
 	fixture.clock.advance(61_000);
 	await dep.tickAudit();
-	// The witness learns of a checkpoint from its fleet.AuditCheckpointed entry, made at the next tick.
 	await dep.tickAudit();
 	await waitFor(() => dep.audit.witnessed.length >= 1).catch(async () => {
 		let events = 0;
@@ -93,7 +87,6 @@ export async function liveDeployment(count = 3) {
 	return { fixture, now, dataDir, store, dep, members, composed };
 }
 
-/** A fresh deployment of the same operator (same secret store) on an empty data directory and an empty bus. */
 export async function freshDeployment(
 	live: Awaited<ReturnType<typeof liveDeployment>>,
 	name = "restored",
@@ -104,7 +97,6 @@ export async function freshDeployment(
 		opened ??= sqliteStore(dataDir, live.now);
 		return opened;
 	};
-	// The witness and chain need a store to exist; they read the restored one once it is loaded.
 	const lazy: FleetEventStore = {
 		append: async (...args) => (await open()).append(...args),
 		read: (streamId, fromSeq) => readThrough(open, streamId, fromSeq),

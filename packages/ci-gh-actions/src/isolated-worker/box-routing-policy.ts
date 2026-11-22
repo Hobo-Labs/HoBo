@@ -34,8 +34,6 @@ import {
 	DEFAULT_WORKER_SLOTS,
 } from "./worker-slots.js";
 
-// Retired variable names are joined from parts, so the repository-wide
-// retired-variable grep and fleet:vocabulary rule 6 do not find this file.
 const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
 
 /** Headroom admission keeps above the heavy class before it admits. */

@@ -1,10 +1,3 @@
-// TARGET declaration (L19). Every Camp of a Yard with a fleet is backed by a
-// fleet member. A Camp a reconciler agent serves is backed by that agent's
-// DEVICE; every other (agentless) Camp is a TARGET the Station declares as
-// sponsor through `members:declare`, authenticated by its workload identity
-// (an `oidc_trust` rule with `sponsor`). The member is named
-// `campMemberName(campId)` in the fleet the Yard maps to, so the Camp mapper
-// finds it again.
 import { create } from "@bufbuild/protobuf";
 import type { TenantId } from "@hobo/core";
 import {
@@ -25,13 +18,10 @@ export type CampTargetInput = Readonly<{
 	fleet: string;
 	campId: CampId;
 	displayName: string;
-	/** A reference to the credential the Station uses for the target (never the secret). */
 	credentialRef: string;
-	/** A digest of the target's endpoint, when it has one. */
 	endpointDigest: string;
 }>;
 
-/** Declare one Camp as a TARGET member; answers its sponsored member id. */
 export async function declareCampTarget(
 	client: Pick<FleetClient, "declare">,
 	input: CampTargetInput,
@@ -70,7 +60,6 @@ export async function declareCampTarget(
 }
 
 export interface CampTargetDeclarer {
-	/** Declare every agentless Camp of a mapped Yard that no member backs yet. */
 	declare(): Promise<readonly Outcome<MemberId>[]>;
 }
 

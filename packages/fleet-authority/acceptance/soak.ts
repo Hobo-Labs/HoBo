@@ -1,27 +1,3 @@
-/**
- * The O20 soak (design §10.1 "Soak output"), driven by `scripts/fleet-soak.mts`.
- *
- * It brings up `deploy/fleet/compose.ha.yml` (three NATS servers, two
- * authority replicas journalling to `FLEET_JOURNAL`, the witness, the relays)
- * from a scratch copy of `deploy/fleet`, with an override adding what a
- * deployment brings itself: an OpenBao dev server (JWT auth, one role per
- * workload, as `deploy/fleet/README.md` asks) and the soak's own OpenID
- * Connect issuer as the sign-in provider, so the soak's operator can sign in
- * and enroll devices. Then, in order:
- *
- * 1. the key ceremony (`runCeremony`) into OpenBao, and `operator.conf` from it;
- * 2. NATS, the provisioning job, the authorities, the witness and the relays;
- * 3. the operator's sign-in (device-code flow through the authority and the
- *    soak's issuer), one many-active fleet, three agents enrolled with
- *    bootstrap tokens, and a fourth member used only to open fresh connections;
- * 4. `oci-command` work for `durationS` seconds, killing one NATS server at
- *    `killNatsAtS` and one authority at `killAuthorityAtS`;
- * 5. the figures, written to `fleet-soak.json`.
- *
- * Docker Compose is required: without it the soak fails (it never skips).
- * Every figure is measured; a figure the deployment cannot supply fails the
- * soak with the reason instead of being assumed.
- */
 import { spawnSync } from "node:child_process";
 import {
 	createHash,
@@ -89,6 +65,20 @@ import { activeKey, readSlot } from "../src/ops/slots.js";
 import { liveBus } from "./live-bus.js";
 import { operatorConf } from "./nats.js";
 
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
+
 export type SoakOptions = Readonly<{
 	repoRoot: string;
 	out: string;
@@ -98,7 +88,7 @@ export type SoakOptions = Readonly<{
 	say: (line: string) => void;
 }>;
 
-/** domain-view: the fields of `fleet-soak.json` (design §10.1 "Soak output"), snake_case as the file is read. */
+/** domain-view: the fields of `fleet-soak.json`, snake_case as the file is read. */
 export type SoakReport = {
 	duration_s: number;
 	callout_p99_ms: number;
@@ -162,7 +152,6 @@ async function until(
 	}
 }
 
-/** Docker Compose and a running daemon must be present: the soak fails, never skips, without them. */
 export function requireDocker(): void {
 	const version = spawnSync("docker", ["compose", "version"], {
 		encoding: "utf8",
@@ -178,7 +167,6 @@ export function requireDocker(): void {
 		);
 }
 
-/** `docker compose` over the scratch deployment and the soak's override. */
 function compose(
 	dir: string,
 	args: readonly string[],
@@ -202,8 +190,6 @@ function compose(
 		);
 	return `${result.stdout ?? ""}${result.stderr ?? ""}`;
 }
-
-// ── Signing keys: OpenBao workload identities and the soak's issuer ───────
 
 type JwtClaims = Readonly<Record<string, string | number>>;
 
@@ -255,7 +241,6 @@ async function openbao(
 		);
 }
 
-/** JWT auth with the soak's key, one role per workload, read-write on the KV mount. */
 async function configureOpenBao(signer: JwtSigner): Promise<void> {
 	await until(
 		async () =>
@@ -282,7 +267,6 @@ async function configureOpenBao(signer: JwtSigner): Promise<void> {
 		});
 }
 
-/** An OpenID Connect issuer that signs in one operator, `soak-admin`, without asking. */
 async function startIssuer() {
 	const signer = rsaJwtSigner();
 	const codes = new Map<
@@ -349,16 +333,13 @@ async function startIssuer() {
 	await new Promise<void>((resolve) =>
 		server.listen(0, "0.0.0.0", () => resolve()),
 	);
-	// SAFETY: an HTTP server listening on a port reports an AddressInfo.
-	const { port } = server.address() as AddressInfo;
+	const port = portOf(server.address());
 	issuer = `http://host.docker.internal:${port}`;
 	return {
 		issuer,
 		close: () => new Promise<void>((resolve) => server.close(() => resolve())),
 	};
 }
-
-// ── The scratch deployment ────────────────────────────────────────────────
 
 /** domain-view: the keys of `deploy/fleet/config/*.json` the soak changes. */
 type DeployConfig = {
@@ -426,7 +407,6 @@ function prepareDeployment(
 			},
 		];
 	});
-	// The host's view of the same deployment: OpenBao on loopback, the soak's own workload token.
 	const hostConfig = join(dir, "config", "soak-host.json");
 	cpSync(join(dir, "config", "authority.ha.json"), hostConfig);
 	patchConfig(hostConfig, (config) => {
@@ -463,9 +443,6 @@ function prepareDeployment(
 	return { dir, hostConfig };
 }
 
-// ── Talking to the authority ──────────────────────────────────────────────
-
-/** A request addressed to the issuer origin goes to the first replica that answers. */
 function authorityFetch(): typeof fetch {
 	return async (input, init) => {
 		const original = new Request(input, init);
@@ -548,7 +525,6 @@ async function signInOperator(call: typeof fetch): Promise<Operator> {
 		}),
 		"sign-in device",
 	);
-	// The issuer answers on this host's loopback too; it redirects straight back to the authority's callback.
 	const idp = await fetch(
 		(entered.authorizeUrl ?? "").replace("host.docker.internal", "127.0.0.1"),
 		{ redirect: "manual" },
@@ -592,9 +568,6 @@ async function signInOperator(call: typeof fetch): Promise<Operator> {
 	};
 }
 
-// ── The devices ───────────────────────────────────────────────────────────
-
-/** What the soak's own agents published, counted by the driver, with the first offer and the accepted claim per digest. */
 type Published = {
 	offers: Map<string, number>;
 	claims: Map<string, number>;
@@ -640,7 +613,6 @@ function counted(bus: FleetBus, published: Published): FleetBus {
 	};
 }
 
-/** Discovery names the NATS servers by their public names; on this host they are loopback ports. */
 function hostConnector(published: Published): FleetBusConnector {
 	const inner = createNatsBusConnector();
 	return {
@@ -673,8 +645,6 @@ function slots(count: number): CapacitySource {
 		},
 	};
 }
-
-// ── The run ───────────────────────────────────────────────────────────────
 
 export async function runSoak(options: SoakOptions): Promise<SoakReport> {
 	const say = options.say;
@@ -879,7 +849,6 @@ export async function runSoak(options: SoakOptions): Promise<SoakReport> {
 		}
 		const probe = await enroll("soak-probe", [Role.OBSERVER], false);
 
-		// While one authority is down: a fresh connection every 5 s, each retried once with a new ticket (F2).
 		let probing = false;
 		let finished = false;
 		let newConnectionFailures = 0;
@@ -943,7 +912,6 @@ export async function runSoak(options: SoakOptions): Promise<SoakReport> {
 		await prober;
 		for (const agent of running) await agent.drain().catch(() => undefined);
 
-		// The journal, read with the authority's own credentials.
 		const credentials = await readSecretText(
 			secrets.value,
 			`${PREFIX}/nats-authority`,
@@ -961,7 +929,6 @@ export async function runSoak(options: SoakOptions): Promise<SoakReport> {
 					count += 1;
 			return count;
 		};
-		// The recorder reports no lag of its own (the cascade delta asks for one): zero lag is the count holding still for 15 s.
 		let eventsRecorded = await recorded();
 		let settledAt = Date.now();
 		for (let still = 0; still < 3 && Date.now() - settledAt < 180_000; ) {
@@ -995,7 +962,6 @@ export async function runSoak(options: SoakOptions): Promise<SoakReport> {
 			if (claimedAt !== undefined) firstClaims.push(claimedAt - offeredAt);
 		}
 
-		// Callout decision times, from both responders' logs (one JSON object per line on stderr).
 		const decisions: number[] = [];
 		for (const line of compose(
 			dir,
@@ -1014,16 +980,13 @@ export async function runSoak(options: SoakOptions): Promise<SoakReport> {
 						entry.component === "callout");
 				const ms = Number(entry.decision_ms ?? Number.NaN);
 				if (callout && Number.isFinite(ms)) decisions.push(ms);
-			} catch {
-				// Not a log event.
-			}
+			} catch {}
 		}
 		if (decisions.length === 0)
 			throw new SoakFailure(
 				"the callout responders logged no decision time (decision_ms): callout_p99_ms cannot be measured",
 			);
 
-		// Availability: one slo.Measured per finished minute and component since the feed started.
 		const measured = new Set<string>();
 		for (const component of SLO_COMPONENTS)
 			for await (const event of journal.read(`slo-${component}`, 1)) {

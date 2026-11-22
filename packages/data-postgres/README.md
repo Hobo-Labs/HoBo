@@ -587,7 +587,7 @@ is a `PostgresBackend` (its name in the fleet and its executor).
 The package barrel exports this module's `Fleet*` and `FLEET_*` names with a
 `Postgres` / `POSTGRES_` prefix (`PostgresFleetLayout`, `PostgresFleetEvent`,
 `POSTGRES_FLEET_USAGE_UNITS` and the rest), so `fleet` names stay with the
-fleet packages (ADR-0183, `fleet:vocabulary` rule 9).
+fleet packages (`fleet:vocabulary` rule 9).
 
 Every statement the fleet sends casts its result columns to `text`, so the port
 does not depend on how a driver decodes a `bigint` or a `timestamptz`.
@@ -614,7 +614,7 @@ Each backend keeps a small append-only log table (the name comes from
 `(epoch, active, sealed, target, reason, loss_window_ms, decided_at, decided_by, members)`
 
 `members` is a nullable `text[]`: the sorted member set an entry carries once
-the fleet runs with `membershipEpochs` (ADR-0183), so that adding or
+the fleet runs with `membershipEpochs`, so that adding or
 removing a backend is itself a decided epoch. It is null on every entry
 written without them, which the configured backends decide, as before;
 `ensureFleetControlTables` adds the column to a log created before it existed.

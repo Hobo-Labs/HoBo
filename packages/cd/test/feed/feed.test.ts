@@ -130,7 +130,6 @@ describe("Station-only egress (I3)", () => {
 		const station = await createStation();
 		await station.desired.publish("eu-1", resolvedFor("eu-1"));
 		const { device, reconcilerId, svid } = await provisionAgent(station);
-		// The fleet agent rotates the SVID (generation 1); the transport reads it per request.
 		const rotated = await station.fleet.credentials(
 			device,
 			parseMemberId(reconcilerId),
@@ -158,7 +157,6 @@ describe("Station-only egress (I3)", () => {
 		expect(station.exchanges.at(-1)?.request.headers.authorization).toBe(
 			`DPoP ${rotated}`,
 		);
-		// An agent that reaches only the Station refreshes through the feed.
 		const url = `${FLEET_ORIGIN}/v1/fleet/members/${reconcilerId}/credentials`;
 		const refreshed = await station.http({
 			method: "POST",
@@ -599,7 +597,6 @@ describe("enrollment gating at the feed (I24)", () => {
 			),
 		).toBe("svid-required");
 		expect(station.exchanges.at(-1)?.status).toBe(401);
-		// The fleet member stays PENDING until both grants: the fleet issues no SVID.
 		await expect(station.fleet.credentials(device)).rejects.toThrow();
 	});
 

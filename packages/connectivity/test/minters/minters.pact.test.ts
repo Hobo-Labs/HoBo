@@ -1,13 +1,3 @@
-/**
- * L39 / O45: PACT tests of the overlay credential minters.
- *
- * `pacts/` holds the consumer contracts, written from the providers' API
- * reference: they pin what the minters send (single use, the expiry, exactly
- * the tags) and what they read back. `recorded/` holds interactions recorded
- * against a real Tailscale tailnet and a real NetBird account; the `[A13] …`
- * cases replay them and are the only cases that may skip, when no recording
- * has been committed (assumption A13 not tested, fallback taken).
- */
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,7 +71,6 @@ describe("TailscaleAuthKeysApi consumer contract", () => {
 			credential: async () => "tskey-api-pact",
 			fetch: createPactFetch(pact),
 		});
-		// A different expiry is a different request: the pact stub answers 404, the minter `unavailable`.
 		const outcome = await minter.mint({
 			tenant,
 			memberId,

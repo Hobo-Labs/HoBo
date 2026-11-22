@@ -1,12 +1,3 @@
-/**
- * O8: a claim cannot be used against an innocent device. The four rules of
- * §6.9 step 4 one by one (`checkClaim`), the verdicts the authority's
- * `report` needs when it re-checks with no ranking of its own, and the
- * dispatcher on the memory bus: forged, replayed and cross-fleet claims
- * naming a victim are deleted and the victim is never reported; a
- * signature-valid out-of-fleet claim is deleted and its signer reported once;
- * three early claims inside an hour are reported together.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -254,7 +245,6 @@ describe("checkClaim rule 2: what the claimant's own signature proves it may not
 		expect(await verdict(usDevice, plain)).toBe("not-entitled");
 		expect(await verdict(noRegion, plain)).toBe("not-entitled");
 		expect(await verdict(euDevice, plain)).toBe("valid");
-		// ORG work on a personal device needs S3; UNTRUSTED work never runs there.
 		expect(await verdict(personal, plain, SandboxTier.S1_CONTAINER)).toBe(
 			"not-entitled",
 		);
@@ -273,7 +263,6 @@ describe("checkClaim rule 3: early by more than one rank", () => {
 			...others.map((other) => other.keys.memberId),
 			victim.keys.memberId,
 		];
-		// Rank 3 is due at queued + 60 s.
 		const at = (ms: number) =>
 			claimFor(victim.keys, work, { claimedAt: iso(NOW + ms) });
 		expect(
@@ -300,7 +289,6 @@ describe("checkClaim rule 3: early by more than one rank", () => {
 				context(view, ranked, NOW + 40_000),
 			),
 		).toBe("valid");
-		// A claimed time in the reader's future does not buy a later turn.
 		expect(
 			await checkClaim(
 				await at(60_000),
@@ -317,7 +305,6 @@ describe("checkClaim rule 3: early by more than one rank", () => {
 			rank: 3,
 			claimedAt: iso(NOW + 1_000),
 		});
-		// The authority checks later; the signed time is what counts.
 		expect(
 			await checkClaim(
 				early,
@@ -338,7 +325,6 @@ describe("checkClaim rule 3: early by more than one rank", () => {
 				context(view, [], NOW + 3_600_000),
 			),
 		).toBe("valid");
-		// Ranks are capped at 4: rank 9 waits no longer than rank 4.
 		const capped = await claimFor(victim.keys, work, {
 			rank: 9,
 			claimedAt: iso(NOW + 60_000),
@@ -416,7 +402,6 @@ describe("the dispatcher on the bus", () => {
 				target === undefined ? digest : parseWorkDigest(target.workDigest);
 			expect(await bus.claims.claim(claim, fleet, subject)).toBe("claimed");
 			await vi.advanceTimersByTimeAsync(100);
-			// Every one of these is deleted, so the ledger is free again.
 			expect(await bus.claims.holder(fleet, subject)).toBeUndefined();
 		};
 		return { ...parts, extra, bus, loop, offers, sent, logs, publish };
@@ -433,11 +418,9 @@ describe("the dispatcher on the bus", () => {
 		const [first, second] = w.offers.map((entry) => entry.offer);
 		if (first === undefined || second === undefined)
 			throw new Error("no offers");
-		// Forged: the outsider signs a claim naming the victim.
 		await w.publish(
 			await claimFor(w.victim.keys, first, {}, w.outsider.keys.sign),
 		);
-		// Forged under the victim's key id.
 		const forged = await claimFor(
 			w.victim.keys,
 			first,
@@ -450,9 +433,7 @@ describe("the dispatcher on the bus", () => {
 				keyId: `${w.victim.keys.memberId}#sign`,
 			}),
 		);
-		// Replayed: the victim's genuine claim on the other offer, on this offer's subject.
 		await w.publish(await claimFor(w.victim.keys, second, { rank: 0 }));
-		// Cross-fleet: the victim's genuine claim moved to the other fleet's payload.
 		await w.publish(
 			await claimFor(w.victim.keys, first, { fleet: OTHER_FLEET }),
 		);

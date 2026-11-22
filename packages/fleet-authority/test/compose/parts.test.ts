@@ -35,6 +35,22 @@ import {
 import { createTagPolicyEngine } from "../../src/identity/policy.js";
 import { createHarness } from "../support/harness.js";
 
+function unused(): never {
+	throw new Error("the test registry does not serve this read");
+}
+
+const unusedRegistry: RegistryView = {
+	member: unused,
+	fleet: unused,
+	membersOf: unused,
+	fleets: unused,
+	members: unused,
+	view: unused,
+	trust: unused,
+	trustEnvelope: unused,
+	caughtUp: unused,
+};
+
 const tenant = parseTenantId("acme");
 const request = (action: string, tags: readonly string[]): PolicyRequest => ({
 	subject: { identity: "user:alice", tenantId: tenant, tags },
@@ -194,20 +210,21 @@ describe("the projection's ranking for reports (D59)", () => {
 
 	it("substitutes the ranking only when the caller passed none", async () => {
 		const seen: (readonly string[])[] = [];
-		const registry: Pick<RegistryView, "view"> = { view: async () => view };
+		const registry: RegistryView = {
+			...unusedRegistry,
+			view: async () => view,
+		};
 		const check = withProjectionRanking(
 			async (_claim, _subject, _offer, context) => {
 				seen.push(context.ranked);
 				return "valid";
 			},
-			// SAFETY: the ranking reads only `view`; the rest of the registry is never called.
-			() => registry as RegistryView,
+			() => registry,
 		);
 		const digest = workDigest("oci-command", "job-1");
 		const subject = { fleet: parseFleetId("build"), digest };
 		const context = {
-			// SAFETY: the double's checker reads no registry.
-			registry: registry as RegistryView,
+			registry,
 			nowMs: 0,
 			stepMs: 20_000,
 		};
@@ -226,7 +243,8 @@ describe("the projection's ranking for reports (D59)", () => {
 describe("the witness's registry changes", () => {
 	it("reports each key once per new record sequence and ignores re-signs", async () => {
 		let revision = 1;
-		const registry: Pick<RegistryView, "trust" | "fleets" | "members"> = {
+		const registry: RegistryView = {
+			...unusedRegistry,
 			trust: () => create(TrustRecordSchema, { sequence: 2 }),
 			fleets: async () => [
 				create(FleetRecordSchema, { fleetId: "build", revision }),
@@ -239,8 +257,7 @@ describe("the witness's registry changes", () => {
 			],
 		};
 		const seen: string[] = [];
-		// SAFETY: the source reads only trust, fleets and members.
-		const subscribe = pollRegistryChanges(registry as RegistryView, 5);
+		const subscribe = pollRegistryChanges(registry, 5);
 		const subscription = subscribe(async (key, sequence) => {
 			seen.push(`${key}@${sequence}`);
 		});

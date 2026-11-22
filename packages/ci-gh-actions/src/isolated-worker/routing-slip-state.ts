@@ -1,17 +1,3 @@
-/**
- * What the routing slip issuer keeps between samples (ADR-0181): the
- * hysteresis that turns refused samples into a held refusal, and the jobs
- * runners took lately.
- *
- * | Rule           | Value                                 |
- * | -------------- | ------------------------------------- |
- * | Sample         | every 10 s                            |
- * | Enter refused  | every sample in the last 60 s refused |
- * | Leave refused  | every sample in the last 30 s clear   |
- *
- * The reporter's send schedule and report sequence went with the hosted
- * verdict (ADR-0180): the slip is written by the issuer's own budget.
- */
 import type { RunnerJobsSeen } from "./github-job-poller.js";
 import {
 	ROUTING_UNACCOUNTED_WINDOW_MS,
@@ -21,21 +7,14 @@ import {
 export const ROUTING_HOLD_ENTER_MS = 60_000;
 export const ROUTING_HOLD_EXIT_MS = 30_000;
 
-/**
- * Per label, whether the issuer holds it refused. A label flips only once
- * every sample over the hold disagrees with what is held: one dip or one
- * spike never reaches a slip.
- */
 export function createRoutingHolds(options: {
 	labels: readonly string[];
 	enterMs: number;
 	exitMs: number;
 }) {
 	const held = new Set<string>();
-	/** Per label, since when every sample has disagreed with what is held. */
 	const disagreeingSince = new Map<string, number>();
 	return {
-		/** Takes one sample; true when a label flipped. */
 		observe(nowMs: number, sampled: ReadonlySet<string>): boolean {
 			let changed = false;
 			for (const label of options.labels) {
@@ -61,7 +40,6 @@ export function createRoutingHolds(options: {
 	};
 }
 
-/** Jobs runners took on routed labels, remembered for the unaccounted-runner window. */
 export function createRunnerPickupMemory(
 	windowMs = ROUTING_UNACCOUNTED_WINDOW_MS,
 ) {

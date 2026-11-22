@@ -1,8 +1,3 @@
-/**
- * `src/cli/sandbox-provision.ts` (D58): the one code path CI and devices use
- * to provision the pinned runtime and probe the host. Its JSON report and
- * exit code, with the host probes and the self-test replaced by answers.
- */
 import { describe, expect, it } from "vitest";
 import {
 	type ProvisionDeps,

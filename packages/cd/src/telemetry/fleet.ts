@@ -215,7 +215,6 @@ export function campInventoryPoints(
 	return points;
 }
 
-/** The read ports the Camp metrics collector uses (all optional; composed by WP18). */
 export type CampMetricSources = Readonly<{
 	fanout?: Pick<FanoutController, "list">;
 	failover?: Pick<FailoverController, "list">;

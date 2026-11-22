@@ -1,12 +1,3 @@
-/**
- * Key material the conformance suites make for themselves with `node:crypto`:
- * an Ed25519 signer for authority-signed records and grants, device keys for
- * transports, and the sealing of §7.4 to check a key store's `openSealed`.
- *
- * Nothing here is the fleet's key code (`@hobo/fleet/keys` is another lane's);
- * these are the suites' own fixtures, written from §7.4 directly, so a suite
- * never depends on the code it may be used to check.
- */
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -32,7 +23,6 @@ import type { DeviceKeys, Signer } from "../../ports.js";
 
 const encoder = new TextEncoder();
 
-/** An Ed25519 key the suite signs with, and its public half as JWK JSON. */
 export type SuiteKey = Readonly<{
 	signer: Signer;
 	publicJwk: string;
@@ -56,7 +46,6 @@ export function createSuiteKey(keyId: string): SuiteKey {
 	};
 }
 
-/** The bytes a signature covers (§7.4): `utf8(context) || 0x00 || payload`. */
 export function signedBytes(context: string, payload: Uint8Array): Uint8Array {
 	const prefix = encoder.encode(context);
 	const out = new Uint8Array(prefix.length + 1 + payload.length);
@@ -79,7 +68,6 @@ export async function signEnvelope(
 	});
 }
 
-/** A random device member id (`dev_` and 32 hex digits). */
 export function randomMemberId(): MemberId {
 	return parseMemberId(`dev_${randomBytes(16).toString("hex")}`);
 }
@@ -115,7 +103,6 @@ const sealKey = (
 const sealAad = (context: string, associatedData: Uint8Array): Buffer =>
 	Buffer.concat([encoder.encode(context), Buffer.from([0]), associatedData]);
 
-/** §7.4 `seal(recipient, plaintext, context, associatedData)`; `recipient` is a raw X25519 public key, base64url. */
 export function sealTo(
 	recipient: string,
 	recipientKeyId: string,
@@ -183,7 +170,6 @@ function openWith(
 	);
 }
 
-/** An X25519 SEAL key: its raw public half (base64url), and the two private operations of `DeviceKeys`. */
 export type SuiteSealKey = Readonly<{
 	publicKey: string;
 	openSealed: DeviceKeys["openSealed"];
@@ -214,14 +200,12 @@ export function createSuiteSealKey(): SuiteSealKey {
 	};
 }
 
-/** The raw Ed25519 public key (base64url) of a public JWK made by `createSuiteKey`. */
 export function ed25519RawOf(publicJwk: string): string {
 	const parsed: { x?: string } = JSON.parse(publicJwk);
 	if (parsed.x === undefined) throw new Error("not an OKP public JWK");
 	return parsed.x;
 }
 
-/** Device keys made in memory for a transport under test: Ed25519 identity and SIGN keys, an X25519 SEAL key. */
 export function createSuiteDeviceKeys(): DeviceKeys {
 	const memberId = randomMemberId();
 	const identity = createSuiteKey(`${memberId}#identity`);
@@ -240,7 +224,6 @@ export function createSuiteDeviceKeys(): DeviceKeys {
 	};
 }
 
-/** Verifies an identity signature against a public JWK (ES256 in IEEE P1363 form, or EdDSA). */
 export function verifyWithJwk(
 	jwk: string,
 	algorithm: KeyAlgorithm,

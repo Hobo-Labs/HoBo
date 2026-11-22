@@ -1,12 +1,3 @@
-// Minimal JOSE for fleet keys, ported from the delivery stack's
-// `packages/cd/src/agent/jose.ts` (design §8.2): parse a public JWK into a
-// derived type (parse, don't validate), compute its RFC 7638 thumbprint, and
-// sign/verify compact JWS with ES256 (P-256, IEEE P1363) or EdDSA (Ed25519).
-// node:crypto only; no JOSE dependency. RSA keys are refused.
-//
-// Adapted: signing goes through the `Signer` port (the private key never
-// reaches this module), JSON checks use `@hobo/core`'s JSON guards, and
-// refusals are `Outcome` failures with the fleet error codes of §7.6.
 import {
 	createHash,
 	createPublicKey,
@@ -29,17 +20,14 @@ export function refuse<T>(
 	return { ok: false, error: { code, message } };
 }
 
-/** Parses JSON text without throwing; undefined when it is not JSON. */
 export function jsonOf(text: string): JsonValue | undefined {
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this document boundary.
-		return JSON.parse(text) as JsonValue;
+		return JSON.parse(text);
 	} catch {
 		return undefined;
 	}
 }
 
-/** The JWK object form of a parsed key: EC P-256 or OKP Ed25519, public members only. */
 export function parsePublicJwkObject(json: JsonObject): Outcome<PublicJwk> {
 	for (const member of PRIVATE_MEMBERS)
 		if (json[member] !== undefined)
@@ -88,7 +76,6 @@ export function parsePublicJwkText(text: string): Outcome<PublicJwk> {
 	return parsePublicJwkObject(json);
 }
 
-/** RFC 7638 §3.2: the required members only, in lexicographic order, no whitespace. */
 export function thumbprintOfMembers(
 	members: ReadonlyArray<readonly [string, string]>,
 ): string {
@@ -131,7 +118,6 @@ export function publicKeyOf(jwk: PublicJwk): KeyObject {
 	return createPublicKey({ key, format: "jwk" });
 }
 
-/** The public JWK of a node KeyObject (public or private); private members are dropped. */
 export function publicJwkOfKey(key: KeyObject): PublicJwk {
 	const exported = (key.type === "public" ? key : createPublicKey(key)).export({
 		format: "jwk",
@@ -148,7 +134,6 @@ export function publicJwkOfKey(key: KeyObject): PublicJwk {
 	return parsed.value;
 }
 
-/** Verifies a raw signature over `data` with ES256 (P1363) or EdDSA, by the key's own algorithm. */
 export function verifyRaw(
 	jwk: PublicJwk,
 	data: Uint8Array,
@@ -168,7 +153,6 @@ function b64urlJson(value: JsonObject): string {
 	return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
-/** Compact JWS over the `Signer` port; `header.alg` must name the signer's algorithm. */
 export async function signCompactJws(
 	header: JsonObject,
 	payload: JsonObject,

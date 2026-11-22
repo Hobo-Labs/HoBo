@@ -1,4 +1,3 @@
-// Barrel of @hobo/fleet-nats (coordinator-owned): re-exports only.
 export {
 	connectAuthorityBus,
 	createNatsBusConnector,

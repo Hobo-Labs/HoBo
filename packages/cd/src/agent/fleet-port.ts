@@ -1,10 +1,3 @@
-// The fleet authority as the delivery Station uses it (L19): the
-// `DeliveryFleet` port of `createAgentEnrollment`, over `@hobo/fleet/client`
-// (`remoteDeliveryFleet`) or over an authority composed in the same process
-// (`inProcessDeliveryFleet`), plus the agent-side signer of feed proofs.
-//
-// Forwarded calls (enroll, credentials) carry the agent's own DPoP proof,
-// made by the agent for the authority URL; the Station never re-signs them.
 import { createPrivateKey, type KeyObject, sign } from "node:crypto";
 import type { JsonObject, TenantId } from "@hobo/core";
 import {
@@ -22,14 +15,12 @@ import type { DeliveryFleet } from "../ports.js";
 
 const MEMBERS = "/v1/fleet/members";
 
-/** The fleet authority over HTTP (`createFleetClient`); `authenticate` verifies member SVIDs for the feed. */
 export function remoteDeliveryFleet(
 	options: Readonly<{
 		tenant: TenantId;
 		fleet: FleetId;
 		origin: string;
 		fetch: typeof fetch;
-		/** The Station's own credential at the authority (its token, DPoP signer and key). */
 		auth: Readonly<{
 			token(): Promise<string>;
 			signer: Signer;
@@ -64,7 +55,6 @@ export function remoteDeliveryFleet(
 	});
 }
 
-/** An authority composed in this process; `station` is the Station's verified principal there. */
 export function inProcessDeliveryFleet(
 	options: Readonly<{
 		authority: EnrollmentAuthority;
@@ -87,7 +77,6 @@ export function inProcessDeliveryFleet(
 		},
 		forward(dpopProof: string) {
 			return {
-				// Enrollment proves possession by the key bundle's signature; the route carries no caller.
 				enroll: (request) => authority.enroll(request, undefined),
 				async credentials(request) {
 					const caller = await authority.authenticate({
@@ -105,11 +94,9 @@ export function inProcessDeliveryFleet(
 	});
 }
 
-/** The agent's signing key from its private JWK file: a DPoP `Signer` and its public JWK. */
 export type AgentKey = Readonly<{ signer: Signer; publicJwk: PublicJwk }>;
 
 export function agentKeyFromJwk(privateJwk: JsonObject): AgentKey {
-	// Node validates the JWK members; a malformed key throws here.
 	const privateKey: KeyObject = createPrivateKey({
 		key: privateJwk,
 		format: "jwk",

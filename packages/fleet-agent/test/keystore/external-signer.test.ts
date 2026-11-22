@@ -1,8 +1,3 @@
-/**
- * The external-signer key store (design §6.4, O36): the identity key sits
- * behind a command that speaks line-delimited JSON on standard input and
- * output; the operational keys and the state follow the file store's rules.
- */
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -46,7 +41,6 @@ describe("createExternalSignerKeyStore", () => {
 		expect(keys.identity.keyId).toBe(`${keys.memberId}#identity`);
 		const signature = await keys.identity.sign(new TextEncoder().encode("x"));
 		expect(signature).toHaveLength(64);
-		// The helper keeps the identity key; the store never sees it.
 		expect(await readdir(keyDir)).toEqual(["identity.pem"]);
 	});
 

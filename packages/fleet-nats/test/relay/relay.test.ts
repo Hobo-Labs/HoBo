@@ -1,10 +1,3 @@
-/**
- * The bus-relay transport (L37 isolated checks): `runTransportConformance`
- * over two transports sharing one in-memory bus, and the transport's own
- * rules: dialling fails `unavailable` without a bus, the bus only ever sees
- * ciphertext, a forged frame fails authentication, every dial gets its own
- * relay session and keys, and a refused or stopped acceptor delivers nothing.
- */
 import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -38,7 +31,6 @@ runTransportConformance(async () => {
 	] as const;
 });
 
-/** A bus whose relay port records every frame it carries, and can inject frames. */
 type SentFrame = { to: MemberId; sessionId: string; frame: Uint8Array };
 
 function recordingBus() {
@@ -61,7 +53,6 @@ async function deviceKeys(): Promise<DeviceKeys> {
 	return createMemoryKeyStore().open();
 }
 
-/** A grant between two started devices, signed by a throwaway key (the acceptor's `authorise` decides). */
 async function grantBetween(
 	initiator: Readonly<{ keys: DeviceKeys; identity: string }>,
 	acceptor: Readonly<{ keys: DeviceKeys; identity: string }>,
@@ -142,7 +133,6 @@ describe("the bus-relay transport", () => {
 		});
 		expect(outcome.ok).toBe(false);
 		if (!outcome.ok) expect(outcome.error.code).toBe("unavailable");
-		// Once the bus is there, the same transports carry a session.
 		current = createMemoryBus(Date.now);
 		acceptor.transport.accept(
 			async () => true,
@@ -228,7 +218,6 @@ describe("the bus-relay transport", () => {
 		expect(outcome.ok).toBe(true);
 		if (!outcome.ok) return;
 		const session = sent[0]?.sessionId ?? "";
-		// A forged frame: well-formed length, random ciphertext.
 		const forged = Buffer.alloc(4 + 32);
 		forged.writeUInt32BE(32, 0);
 		randomBytes(32).copy(forged, 4);
@@ -261,7 +250,6 @@ describe("the bus-relay transport", () => {
 				handled += 1;
 			},
 		);
-		// Addressed to the acceptor's member id, but naming another device's SEAL key.
 		const grant = await grantBetween(initiator, {
 			keys: { ...acceptor.keys, sealPublicKey: stranger.sealPublicKey },
 			identity: acceptor.identity,
@@ -292,7 +280,6 @@ describe("the bus-relay transport", () => {
 		});
 		expect(nobody.ok).toBe(false);
 		if (!nobody.ok) expect(nobody.error.code).toBe("unavailable");
-		// A started transport that accepts nothing refuses at once.
 		const idle = await initiator.transport.dial({
 			grant,
 			signal: new AbortController().signal,

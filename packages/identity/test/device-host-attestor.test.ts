@@ -105,7 +105,6 @@ describe("createDeviceHostAttestor", () => {
 		).toEqual(document.launchMeasurement);
 		expect(Buffer.from(signature ?? "", "base64url").length).toBe(64);
 
-		// The same key signing the same bytes under another context does not verify.
 		const forged = await keys.sign.sign(
 			Buffer.concat([
 				Buffer.from("hobo-fleet/claim/v1\u0000"),
@@ -222,7 +221,6 @@ describe("createDeviceHostAttestor", () => {
 	it("takes only a SIGN key and publishes no key of its own", async () => {
 		const { keys, attestor } = await device();
 		expect(() => createDeviceHostAttestor(keys.identity)).toThrow(/SIGN key/);
-		// The verification key is the SIGN key in the member's key bundle, read from the registry.
 		expect(attestor.publicKeys()).toEqual([]);
 	});
 

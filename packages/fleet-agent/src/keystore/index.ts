@@ -1,12 +1,3 @@
-/**
- * Device key stores (L10, design §6.4 and §7.3). Signatures frozen by the
- * fleet contract commit (ADR-0183).
- *
- * Both stores keep their files in one key directory (`HOBO_FLEET_HOME`):
- * `operational.json` (the SIGN and SEAL private keys), `state.json` (the
- * `AgentState`, including `pendingReceipts`) and, for the file store only,
- * `identity.pem`. The directory rules are in `directory.ts`.
- */
 import { createPrivateKey, generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
 import type { AgentState, DeviceKeys, KeyStore } from "@hobo/fleet";
@@ -40,7 +31,6 @@ const IDENTITY_FILE = "identity.pem";
 const OPERATIONAL_FILE = "operational.json";
 const STATE_FILE = "state.json";
 
-/** Where the identity key lives and how it is created and removed. */
 type IdentitySource = Readonly<{
 	held: boolean;
 	load(directory: string): Promise<Identity>;
@@ -133,7 +123,6 @@ function fileIdentity(): IdentitySource {
 			const path = join(directory, IDENTITY_FILE);
 			let text = await readPrivateFile(path);
 			if (text === undefined) {
-				// EC P-256, the one curve hardware keystores also offer (§6.4, E18).
 				const created = generateKeyPairSync("ec", { namedCurve: "P-256" });
 				text = String(
 					created.privateKey.export({ type: "pkcs8", format: "pem" }),
@@ -170,12 +159,10 @@ function externalSignerIdentity(command: readonly string[]): IdentitySource {
 	});
 }
 
-/** Keys and agent state in a private directory under `home`. */
 export function createFileKeyStore(home: string): KeyStore {
 	return directoryKeyStore(home, fileIdentity());
 }
 
-/** Keys held behind an external signer `command`; agent state under `home`. */
 export function createExternalSignerKeyStore(
 	home: string,
 	command: readonly string[],

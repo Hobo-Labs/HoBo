@@ -1,11 +1,3 @@
-/**
- * The dispatcher and executor loops on the memory bus (design §6.9, §9 F4):
- * 400 offers across executors with 1, 2 and 5 slots each run once, in that
- * proportion; the largest dying costs one step; several dispatchers offer each
- * unit once and another takes over one step later; receipts survive a bus
- * outage and a restart; an executor with the bus down claims nothing; and the
- * executor's refusals, failures, cancellation, drain and `sandboxOf`.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -175,7 +167,6 @@ describe("many executors", () => {
 		expect(all).toHaveLength(total);
 		expect(new Set(all).size).toBe(total);
 		const [one, two, five] = ran.map((list) => list.length);
-		// Expected 50, 100 and 250; a binomial spread of about 3.5 standard deviations.
 		expect(one).toBeGreaterThan(25);
 		expect(one).toBeLessThan(80);
 		expect(two).toBeGreaterThan(65);
@@ -199,7 +190,6 @@ describe("many executors", () => {
 				runner: runners[index] ?? testRunner(),
 			}),
 		);
-		// The five-slot executor is gone, but its last observation still stands on the board.
 		await w.observe(slots);
 		executors[0]?.start();
 		executors[1]?.start();
@@ -232,7 +222,6 @@ describe("many executors", () => {
 			(claim) => claim.claimedAtMs - (queued.get(claim.workDigest) ?? 0),
 		);
 		expect(delays).toHaveLength(total);
-		// Work the dead executor was first for waits one step of 20 s; none waits two.
 		expect(Math.max(...delays)).toBeGreaterThanOrEqual(20_000);
 		expect(Math.max(...delays)).toBeLessThan(40_000);
 		expect(delays.filter((delay) => delay < 20_000).length).toBeGreaterThan(0);
@@ -272,7 +261,6 @@ describe("several dispatchers", () => {
 		expect(offers).toHaveLength(1);
 		for (const dispatcher of both) await dispatcher.stop();
 
-		// Only the second-ranked dispatcher runs: it offers at its turn, one step later.
 		const digest = workDigest("github-actions-job", "job-2");
 		const ranked = rankMembers(
 			digest,
@@ -431,7 +419,6 @@ describe("the executor", () => {
 		expect(s.receipts).toHaveLength(1);
 		await s.executor.stop();
 		await s.dispatcher.stop();
-		// A restarted executor on the same state publishes what was queued.
 		s.bus.down(false);
 		const again = createExecutor({
 			self: s.member.keys,
@@ -513,7 +500,6 @@ describe("the executor", () => {
 		const dispatcher = s.dispatchers[0];
 		if (dispatcher === undefined) throw new Error("no dispatcher");
 		await vi.advanceTimersByTimeAsync(10);
-		// No claim is held for this work.
 		const unclaimed = await orderFor(
 			dispatcher.keys,
 			s.member,
@@ -524,7 +510,6 @@ describe("the executor", () => {
 		expect(
 			s.receipts.map((receipt) => [receipt.status, receipt.reason]),
 		).toEqual([[ReceiptStatus.REFUSED, "order-invalid"]]);
-		// The same order again is a replay and gets nothing more.
 		await s.bus.orders.deliver(unclaimed, s.member.keys.memberId);
 		const bytes = unclaimed.signature.slice();
 		bytes[0] = (bytes[0] ?? 0) ^ 1;
@@ -693,7 +678,6 @@ describe("the oci-command work kind", () => {
 		const receipts = receiptsOn(w.bus);
 		executor.start();
 		await vi.advanceTimersByTimeAsync(10);
-		// The submitter is the device's owner: OWN work runs in S1.
 		await w.bus.submissions.publish(
 			await submission(w.authority, {
 				submissionId: "sub-1",
@@ -701,7 +685,6 @@ describe("the oci-command work kind", () => {
 			}),
 			FLEET,
 		);
-		// One the authority did not sign is never offered.
 		await w.bus.submissions.publish(
 			await submission(authorityKey(), { submissionId: "sub-2" }),
 			FLEET,
@@ -724,7 +707,6 @@ describe("the oci-command work kind", () => {
 			ReceiptStatus.SUCCEEDED,
 		]);
 		expect(receipts[1]?.outputDigest).toMatch(/^sha256:[0-9a-f]{64}$/u);
-		// Once ordered it is not offered again.
 		await vi.advanceTimersByTimeAsync(30_000);
 		expect(driver.runs).toHaveLength(1);
 		await dispatcher.stop();
@@ -808,7 +790,6 @@ describe("the oci-command work kind", () => {
 });
 
 describe("standing offers when an executor starts (L42)", () => {
-	/** A dispatcher whose offer is made before any executor listens. */
 	async function offeredBeforeStart() {
 		const w = await world(1);
 		const member = w.members[0];
@@ -836,7 +817,6 @@ describe("standing offers when an executor starts (L42)", () => {
 
 	it("a new executor claims and runs an offer made before it started", async () => {
 		const w = await offeredBeforeStart();
-		// Two minutes later, well inside the offer's ten.
 		await vi.advanceTimersByTimeAsync(120_000);
 		await w.observe([1]);
 		const runner = testRunner();
@@ -870,7 +850,6 @@ describe("standing offers when an executor starts (L42)", () => {
 		await w.dispatcher.stop();
 		const [standing] = w.offers;
 		if (standing === undefined) throw new Error("no offer");
-		// No sandbox tier at all: every offer this executor handles is logged unfit.
 		const executor = w.executor({ member: w.member, slots: 1, drivers: [] });
 		executor.start();
 		await vi.advanceTimersByTimeAsync(1_000);

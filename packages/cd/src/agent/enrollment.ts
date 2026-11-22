@@ -1,25 +1,5 @@
-// Agent enrollment over the fleet (L19; D5, D19, I3, I24). A reconciler is a
-// fleet DEVICE with role RECONCILER in the fleet named after its Yard: the
-// fleet holds its identity (the `hft_` bootstrap token, the key, the member
-// SVID, DPoP and replay, revocation). This adapter keeps what is delivery
-// policy: the Camp-set scope of a token, the two grants with Rail rules
-// (separate approvers, auto-accept scopes), governance through the delivery
-// authorizer, and the accepted Camps. Its journal is an actor per reconciler
-// on `cd-reconciler-<memberId>` and a token scope on `cd-bootstrap-<sha256>`;
-// every command catches up from the journal and appends with expectedSeq.
 //
-//   issueToken  governed `reconciler.enroll`; a fleet token (TokenCreateRequest,
-//               role RECONCILER) and its Camp scope (hash only).
-//   enroll      the agent's EnrollmentRequest and DPoP proof, forwarded to the
-//               fleet; PENDING unless every governing Rail auto-accepts.
 //   approveKey  grant 1, governed `reconciler.approve-key`.
-//   accept      grant 2, governed `reconciler.accept`; once both grants are
-//               held the Station approves and accepts the fleet member.
-//   refresh     the fleet `credentials` call with the agent's proof.
-//   revoke      governed `reconciler.revoke`; the fleet member is revoked, so
-//               the next request is refused by the fleet's `authenticate`.
-//   verify      the fleet's `authenticate` (member SVID and DPoP proof), then
-//               the delivery grants.
 import { createHash, randomBytes } from "node:crypto";
 import {
 	create,
@@ -97,10 +77,8 @@ export type AgentEnrollmentDeps = CdBase & {
 	readonly authorizer: CdAuthorizer;
 	readonly rails: RailDeliveryReader;
 	readonly inventory: CampInventory;
-	/** The fleet the reconcilers join; absent: every identity step refuses (`fleet-unavailable`). */
 	readonly fleet?: DeliveryFleet | undefined;
 	readonly telemetry?: TelemetrySink;
-	/** The Station's public origin (`https://station.example`); the `htu` of feed proofs. */
 	readonly publicOrigin?: string;
 };
 
@@ -147,7 +125,6 @@ function bodyOf<T>(data: T): WireObject {
 	return isWireObject(data) ? data : {};
 }
 
-/** The delivery refusal code of the fleet failures that have one. */
 const FLEET_CODES: ReadonlyMap<string, AgentFailureCode> = new Map([
 	["token-invalid", "token-invalid"],
 	["token-used", "token-used"],
@@ -158,7 +135,6 @@ const FLEET_CODES: ReadonlyMap<string, AgentFailureCode> = new Map([
 	["member-revoked", "reconciler-revoked"],
 ]);
 
-/** A fleet failure as a delivery refusal: the fleet's code and message are kept in the message. */
 function fleetRefusal(
 	fallback: AgentFailureCode,
 	failure: FleetFailure,
@@ -358,11 +334,6 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		}
 	}
 
-	/**
-	 * Once both delivery grants are held, the Station approves the member's
-	 * key and accepts it into the Yard's fleet (approve-key before accept, as
-	 * the fleet requires). Both calls are idempotent at the fleet.
-	 */
 	async function activateMember(
 		fleet: DeliveryFleet,
 		memberId: string,
@@ -429,7 +400,6 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 		);
 	}
 
-	/** The completing event when both grants are held; the fleet member is activated first. */
 	async function completion(
 		view: View,
 		keyApprovedBy: string,
@@ -541,13 +511,10 @@ export function createAgentEnrollment(d: AgentEnrollmentDeps): AgentEnrollment {
 				ctx,
 			);
 			if (!decision.ok) return decision;
-			// The fleet bounds a bootstrap token to 10..30 minutes (TokenCreateRequest).
 			const ttlSeconds = Math.min(
 				FLEET_TOKEN_MAX_S,
 				Math.max(FLEET_TOKEN_MIN_S, Math.ceil(ttlMs / 1000)),
 			);
-			// A reconciler of one Camp is named after it, so the Camp mapper finds
-			// the DEVICE backing that Camp; any other is named after its Camp set.
 			const only = campIds.length === 1 ? campIds[0] : undefined;
 			const token = (name: string) =>
 				fleet.value.station.issueToken(

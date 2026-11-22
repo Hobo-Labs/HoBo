@@ -91,16 +91,10 @@ function usage(message: string): CommandResult {
 	return { ok: false, status: "usage", code: "HOBO_CLI_USAGE", message };
 }
 
-/** Where `hobo ci status` reads the fleet table from (`hobo fleet status`). */
 export type CiFleetStatus = () => Promise<
 	Outcome<readonly NamedFleetView[]> | undefined
 >;
 
-/**
- * `hobo fleet status` for `hobo ci status`: every fleet the signed-in person
- * can read, when a fleet authority is configured (HOBO_FLEET_AUTHORITY_URL).
- * Undefined when none is, so the CI answer stands alone.
- */
 function defaultFleetStatus(env: NodeJS.ProcessEnv): CiFleetStatus {
 	return async () => {
 		if (!env.HOBO_FLEET_AUTHORITY_URL) return undefined;
@@ -112,7 +106,6 @@ function defaultFleetStatus(env: NodeJS.ProcessEnv): CiFleetStatus {
 	};
 }
 
-/** The fleet section of `hobo ci status`: the table, or why there is none; undefined with no authority. */
 async function fleetSection(
 	status: CiFleetStatus,
 ): Promise<Readonly<{ message: string; data: JsonValue }> | undefined> {
@@ -134,11 +127,6 @@ async function fleetSection(
 	};
 }
 
-/**
- * `hobo ci status` with no relay to ask: the fleet status, when a fleet
- * authority is configured. Nothing when it is not, so the caller gives its
- * usual answer.
- */
 async function offlineStatus(
 	status: CiFleetStatus,
 	why: string,
@@ -478,7 +466,6 @@ export function createCiCommand(
 		probeHttp?: HttpTransport;
 		/** The Yard runtime `hobo ci secret-store provision` records its claim in. */
 		runtime?: YardRuntime;
-		/** The fleet table under `hobo ci status`; `hobo fleet status` against HOBO_FLEET_AUTHORITY_URL when absent. */
 		fleetStatus?: CiFleetStatus;
 	} = {},
 ): CommandModule {
@@ -1230,9 +1217,6 @@ export function createCiCommand(
 						connection.repository.toLowerCase() === repository.toLowerCase(),
 				);
 				if (command === "status") {
-					// The fleets behind the relay, as `hobo fleet status` shows
-					// them. Without a fleet authority the connection status is
-					// the answer.
 					const fleet = await fleetSection(fleetStatus);
 					const connection = existing
 						? `CI connected for ${repository} at ${origin}.`

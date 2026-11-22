@@ -1,13 +1,3 @@
-/**
- * The `oidc` sign-in provider (§6.5): an organisation's OpenID Connect
- * identity provider, authorization code flow with PKCE (S256). The nonce is
- * derived from the sign-in state, so `complete` can check it without storing
- * anything; the ID token is verified against the issuer's own keys through
- * `createIdentityAssertionVerifier`, pinned to this one issuer, with the
- * client id as audience. The principal is a `user` named by the configured
- * claim (`sub` by default), prefixed with the issuer's host so two issuers
- * never name the same person.
- */
 import { createHash } from "node:crypto";
 import type { Clock, SignInProvider } from "@hobo/fleet";
 import { createIdentityAssertionVerifier } from "../identity/assertions.js";
@@ -16,10 +6,8 @@ import { failed, isRecord, isText, requestJson } from "./http.js";
 export type OidcProviderOptions = Readonly<{
 	issuer: string;
 	clientId: string;
-	/** Absent for a public client; otherwise read from the secret store when needed. */
 	clientSecret?: (() => Promise<string>) | undefined;
 	scopes?: readonly string[] | undefined;
-	/** The ID token claim naming the person; default `sub`. */
 	principalClaim?: string | undefined;
 	fetch: typeof fetch;
 	now: Clock;

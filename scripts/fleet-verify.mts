@@ -1,17 +1,4 @@
 #!/usr/bin/env node
-/**
- * `pnpm run fleet:verify` (ADR-0183): runs every outcome of the fleet design
- * through `scripts/fleet-outcome.mts`, one process per outcome, and writes
- * `fleet-verification.json` at the root: one `{ id, pass, command, evidence,
- * measured, fallbacks }` object per outcome, in table order.
- *
- *   node --import tsx scripts/fleet-verify.mts [--root=<dir>] [--ids=O1,O2]
- *     [--include-deferred] [--out=<file>]
- *
- * O21 (checked at cutover) and O23 (checked when the deferred lane runs) are
- * left out unless `--include-deferred` is given. Exits 1 when any outcome it
- * ran did not pass.
- */
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -21,10 +8,8 @@ import { OUTCOMES, type VerificationRecord } from "./fleet-outcome.mts";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 
-/** Runs one outcome; `undefined` when it printed no verification object. */
 export type OutcomeRunner = (id: string) => VerificationRecord | undefined;
 
-/** The outcome ids a run covers: all, less the deferred ones unless asked. */
 export function outcomeIds(
 	options: Readonly<{
 		ids?: readonly string[] | undefined;
@@ -45,7 +30,6 @@ export function outcomeIds(
 	).map((outcome) => outcome.id);
 }
 
-/** Runs each outcome in order; one that printed nothing is recorded as failed. */
 export function verifyOutcomes(
 	ids: readonly string[],
 	runOne: OutcomeRunner,
@@ -65,7 +49,6 @@ export function verifyOutcomes(
 	});
 }
 
-/** Runs `fleet-outcome.mts <id>` against `root` and reads the object it prints. */
 export function outcomeProcess(root: string): OutcomeRunner {
 	return (id) => {
 		const result = spawnSync(
@@ -91,8 +74,8 @@ export function outcomeProcess(root: string): OutcomeRunner {
 			.at(-1);
 		if (line === undefined) return undefined;
 		try {
-			// SAFETY: fleet-outcome.mts's own single-line verification object.
-			return JSON.parse(line) as VerificationRecord;
+			const record: VerificationRecord = JSON.parse(line);
+			return record;
 		} catch {
 			return undefined;
 		}

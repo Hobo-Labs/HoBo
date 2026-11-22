@@ -1,24 +1,3 @@
-/**
- * Pure runner routing: which provider should take a job, and why not the rest.
- *
- * Three questions, asked in this order and never merged:
- *
- *   1. Can this member run the job at all? Visibility, ownership, Docker,
- *      forks, health, free slots, and whether the job's label can still reach
- *      it. These are facts about the provider, not about money.
- *   2. What does the job cost there? The pricing engine answers, through
- *      dispatcher v2, as the incremental billed amount for this account in
- *      this month. No rate is multiplied here.
- *   3. Does the budget policy allow that cost? `evaluateBudgetPolicy` answers
- *      for every candidate, with the same measurements CI admission supplies.
- *
- * Roles order the tiers: capacity already paid for, then rented capacity by
- * price, then the last resort. A cheaper member in a later tier never jumps
- * the queue, and a member the policy refuses is skipped, not retried.
- *
- * No I/O, no clock. Callers pass resolved member state and the current time.
- */
-
 import {
 	type BudgetPolicy,
 	type BudgetPolicyEvaluationContext,
@@ -123,13 +102,6 @@ export type RunnerChoice = Readonly<{
 	quoteHash: string;
 }>;
 
-/**
- * The codes runner routing's own gates refuse a provider with: what each means, and
- * whether asking again can help.
- * One list: the gates below can only use a code that is in it, and the docs
- * site's error reference is generated from it. Pricing and budget refusals
- * carry their own engines' codes behind a `pricing.` or `budget.` prefix.
- */
 // public-contract: stable refusal codes callers and the docs site rely on.
 export const RUNNER_REFUSAL_CODES = {
 	"fleet.disabled": {

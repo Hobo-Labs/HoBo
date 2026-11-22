@@ -1,9 +1,3 @@
-/**
- * `parseFleetVerdict` (design §6.8, R14): the route job's parser for the
- * verdict route's protobuf JSON. A missing, stale or unreadable verdict is
- * `undefined`, which changes nothing about routing. The file has no imports,
- * so it loads with nothing installed.
- */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -52,7 +46,6 @@ describe("parseFleetVerdict", () => {
 		expect(parseFleetVerdict(wire({ state: 3 }), NOW)?.state).toBe(
 			"NO_CAPACITY",
 		);
-		// Amendment 4 (D60): VERDICT_STATE_BUSY = 4.
 		expect(parseFleetVerdict(wire({ state: 4 }), NOW)?.state).toBe("BUSY");
 		expect(
 			parseFleetVerdict(

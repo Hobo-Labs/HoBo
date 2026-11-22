@@ -1,13 +1,3 @@
-/**
- * The authority's own ranking for `report` (D59). `createEnrollmentAuthority`
- * re-checks a violation report's claims with `parts.checkClaim` and an empty
- * `ranked`, which lets a claimant that signed rank 0 into its claim escape an
- * early report. Composed here, the claim rules receive the ranking of the
- * fleet's executors from the view the registry projection (L31) publishes:
- * every ACTIVE device holding the EXECUTOR role, weighted as the dispatcher
- * weights them (free slots times measured reliability), ordered by L03's
- * `rankMembers`. A caller that passes its own ranking keeps it.
- */
 import {
 	type FleetView,
 	type MemberId,
@@ -43,7 +33,6 @@ export function rankedFromView(
 	return rankMembers(digest, candidates);
 }
 
-/** `checkClaim` with the projection's ranking substituted for an empty one. */
 export function withProjectionRanking(
 	check: CheckClaim,
 	registry: () => RegistryView,

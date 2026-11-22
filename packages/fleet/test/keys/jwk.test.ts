@@ -17,18 +17,13 @@ import {
 	verifyCompactJws,
 } from "../../src/keys/jose.js";
 
-// RFC 8037 Appendix A: the Ed25519 example key, its RFC 7638 thumbprint (A.3)
-// and its JWS over "Example of Ed25519 signing" (A.4).
 const RFC8037_X = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo";
 const RFC8037_THUMBPRINT = "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k";
 const RFC8037_JWS =
 	"eyJhbGciOiJFZERTQSJ9.RXhhbXBsZSBvZiBFZDI1NTE5IHNpZ25pbmc.hgyY0il_MGCjP0JzlnLWG1PPOt7-09PGcvMg3AIbQR6dWbhijcNR4ki4iylGjg5BhVsPt9g7sVvpAr_MuM0KAg";
-// RFC 7638 §3.1: the RSA example key and its thumbprint (canonicalisation only;
-// RSA keys are refused by parsePublicJwk).
 const RFC7638_N =
 	"0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw";
 const RFC7638_THUMBPRINT = "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs";
-// RFC 9449 §4.1 / §6.1: the example DPoP key and its `jkt`.
 const RFC9449_JWK = {
 	kty: "EC",
 	x: "l8tFrhx-34tV3hRICRDY9zCkDlpBhF42UQUfWVAWBFs",
@@ -131,7 +126,6 @@ describe("compact JWS verification", () => {
 		const jwk = parsed(
 			JSON.stringify({ kty: "OKP", crv: "Ed25519", x: RFC8037_X }),
 		);
-		// The A.4 payload is not JSON, so decoding refuses it; verify the raw signing input directly.
 		expect(decodeCompactJws(RFC8037_JWS)).toBeUndefined();
 		const [h, p, s] = RFC8037_JWS.split(".");
 		expect(

@@ -11,25 +11,20 @@ const workflowDir = join(root, ".github", "workflows");
 /** Only main-gate may branch above 20 minutes for the weekly schedule sweep. */
 const SCHEDULE_JOB_TIMEOUT = /^hobo-ci\.yml:main-gate$/;
 
-/**
- * Jobs that may run longer than 20 minutes, each with its ceiling and why.
- * Keep this list short: a job here is one whose work cannot be split below
- * the limit without losing what it proves.
- */
 type LongJob = Readonly<{ minutes: number; why: string }>;
 const LONG_JOB_TIMEOUTS = new Map<string, LongJob>([
 	[
 		"fleet-integration.yml:fleet-verify",
 		{
 			minutes: 60,
-			why: "HoBo Fleet (ADR-0183): one job provisions nats-server, the pinned iroh relay and the gVisor sandbox runtime (D58) on the self-hosted runner, then runs every fleet:verify outcome against them; the outcomes share that provisioning and only run on fleet/** pushes and on demand",
+			why: "HoBo Fleet: one job provisions nats-server, the pinned iroh relay and the gVisor sandbox runtime (D58) on the self-hosted runner, then runs every fleet:verify outcome against them; the outcomes share that provisioning and only run on fleet/** pushes and on demand",
 		},
 	],
 	[
 		"fleet-integration.yml:fleet-integration-tests",
 		{
 			minutes: 45,
-			why: "HoBo Fleet (ADR-0183): the same sandbox, NATS and relay provisioning as fleet-verify, then every fleet *.integration.test.ts; splitting it would provision the sandbox runtime once per shard",
+			why: "HoBo Fleet: the same sandbox, NATS and relay provisioning as fleet-verify, then every fleet *.integration.test.ts; splitting it would provision the sandbox runtime once per shard",
 		},
 	],
 ]);

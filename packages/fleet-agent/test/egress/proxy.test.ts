@@ -1,11 +1,11 @@
-/**
- * The per-order egress proxy (design §6.11 "Egress", §7.3 EgressProxyFactory):
- * exact hosts only, link-local and metadata addresses always refused, one
- * instance per `open`.
- */
 import { once } from "node:events";
 import { request as httpRequest } from "node:http";
-import { createServer, type Server, connect as tcpConnect } from "node:net";
+import {
+	type AddressInfo,
+	createServer,
+	type Server,
+	connect as tcpConnect,
+} from "node:net";
 import type { FleetLog } from "@hobo/fleet";
 import { afterEach, describe, expect, it } from "vitest";
 import { normaliseHost, refusedAddress } from "../../src/egress/addresses.js";
@@ -14,6 +14,15 @@ import {
 	createEgressProxyFactoryWith,
 	type EgressDeps,
 } from "../../src/egress/proxy.js";
+
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) !== "[object String]"
+	);
+}
 
 type Logged = Readonly<{
 	event: string;
@@ -32,7 +41,6 @@ afterEach(async () => {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-/** An upstream that answers every HTTP request with 200 "upstream <path>". */
 async function upstream(): Promise<number> {
 	const server = createServer((socket) => {
 		socket.once("data", (chunk) => {
@@ -47,16 +55,10 @@ async function upstream(): Promise<number> {
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
 	const address = server.address();
-	if (
-		address === null ||
-		Object.prototype.toString.call(address) === "[object String]"
-	)
-		throw new Error("no port");
-	// SAFETY: a TCP server listening on a port answers an AddressInfo.
-	return (address as { port: number }).port;
+	if (!isTcpAddress(address)) throw new Error("no port");
+	return address.port;
 }
 
-/** Deps that resolve names from `table` and connect every vetted address to the local upstream. */
 function deps(
 	table: Readonly<Record<string, readonly string[]>>,
 	upstreamPort: number,
@@ -75,7 +77,6 @@ function deps(
 	};
 }
 
-/** Sends CONNECT through the proxy; answers the status line. */
 async function connectThrough(
 	proxyUrl: string,
 	target: string,
@@ -89,7 +90,6 @@ async function connectThrough(
 	return String(chunk).split("\r\n")[0] ?? "";
 }
 
-/** An absolute-form GET through the proxy; answers status and body. */
 function getThrough(
 	proxyUrl: string,
 	target: string,

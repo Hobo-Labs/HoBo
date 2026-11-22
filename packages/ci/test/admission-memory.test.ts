@@ -28,8 +28,6 @@ describe("memory admission", () => {
 	});
 });
 
-// ADR-0180, "Retirement": the published capacity repository variable is
-// retired; whether the fleet can take a run is its verdict (ADR-0183).
 describe("the retired capacity record", () => {
 	it("is no longer exported or defined", () => {
 		const exported = Object.keys(root);

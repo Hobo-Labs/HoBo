@@ -372,7 +372,6 @@ export function route(
 		}
 		return [{ offer, free, reservedFree, paid, sandboxReservedAllowance }];
 	});
-	// Legacy runner-tier routing prefers the box, then ARC, then GitHub overflow.
 	// An authored shared policy ranks every admitted offer by its objective.
 	const preferred = common
 		? candidates
@@ -435,11 +434,6 @@ export function route(
 	};
 }
 
-/**
- * 0 isolated box, 1 kubernetes gh-actions (ARC), 2 GitHub-hosted.
- * For legacy accounts, unranked providers are kept and a worse runner tier is
- * dropped when a better one remains.
- */
 function runnerTierCandidateRank(offer: Offer): number | undefined {
 	if (
 		offer.provider === "hobo-box-worker" ||

@@ -123,7 +123,7 @@ describe("parseRelayRuntimeConfig", () => {
 		expect(error.message).not.toContain("valkey-password");
 	});
 
-	it("holds no fleet verdict settings: the device fleet replaced them (ADR-0183)", () => {
+	it("holds no fleet verdict settings: the device fleet replaced them", () => {
 		for (const key of [
 			"HOBO_CI_FLEET_REPORTERS_JSON",
 			"HOBO_CI_FLEET_VERDICT_SERVING",

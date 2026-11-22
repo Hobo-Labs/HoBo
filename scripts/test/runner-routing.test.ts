@@ -44,8 +44,6 @@ import {
 	routingLabels,
 } from "../ci/runner-routing.mts";
 
-// Retired variable names are joined from parts, so the repository-wide
-// retired-variable grep and fleet:vocabulary rule 6 do not find this file.
 const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
 
 const repoFile = (path: string) =>
@@ -377,7 +375,7 @@ describe("committed runnerRouting equals the code's defaults (M8)", () => {
 		);
 	});
 
-	it("retires the routing variables and two the relay published (the fleet-state one is deleted at cutover, design §8.1)", () => {
+	it("retires the routing variables and two the relay published (the fleet-state one is deleted at cutover)", () => {
 		assert.ok(committed);
 		assert.deepEqual([...committed.retiredVariables].sort(), [
 			"HOBO_CI_BOX_RUNNER",

@@ -1,14 +1,10 @@
-/**
- * The overlay transport (L14, O12): `runTransportConformance` over a fake
- * `OverlayNetwork` whose overlay address is loopback, and the transport's own
- * rules: it starts only on a joined overlay, it dials only an overlay
- * identity, a dialler must prove the grant's SEAL key and come from the
- * grant's overlay address before `authorise` sees its identity, and a
- * stranger on the port is closed without being heard.
- */
 import { randomBytes } from "node:crypto";
 import { connect, createServer, type Server } from "node:net";
-import type { OverlayIdentity, OverlayNetwork, TenantId } from "@hobo/core";
+import {
+	type OverlayIdentity,
+	type OverlayNetwork,
+	parseTenantId,
+} from "@hobo/core";
 import {
 	type DeviceKeys,
 	type FleetStream,
@@ -36,10 +32,8 @@ import {
 	encodeSignedEnvelope,
 } from "../src/overlay-transport/wire.js";
 
-// SAFETY: a test tenant id; the fake overlay never checks it.
-const TENANT = "acme" as TenantId;
+const TENANT = parseTenantId("acme");
 
-/** An overlay this device has joined, at `ips`; `null` status when not joined. */
 function fakeOverlay(
 	ips: readonly string[] | null = ["127.0.0.1"],
 ): OverlayNetwork {
@@ -137,7 +131,6 @@ function envelopeOf(
 
 type Seen = { peer: string; grant: SignedEnvelope }[];
 
-/** Accepts on `acceptor`, answering `answer` and echoing one byte back on every accepted stream. */
 function acceptOn(acceptor: Device, answer: (peer: string) => boolean) {
 	const seen: Seen = [];
 	const handled: SessionGrant[] = [];
@@ -651,7 +644,6 @@ describe("overlay wire codec", () => {
 	});
 
 	it("decodes absent fields to their defaults and skips unknown fields", () => {
-		// field 15 varint 1, field 14 fixed64, field 13 fixed32, field 2 = "acme"
 		const bytes = new Uint8Array([
 			0x78, 0x01, 0x71, 1, 2, 3, 4, 5, 6, 7, 8, 0x6d, 1, 2, 3, 4, 0x12, 4, 97,
 			99, 109, 101,

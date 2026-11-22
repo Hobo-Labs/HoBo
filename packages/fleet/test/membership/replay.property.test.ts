@@ -1,6 +1,3 @@
-// Replay equals live state for every stream; two authority instances on one
-// store, interleaved at random, never disagree; every registry-changing event
-// carries the record's new sequence for its audit entry (§6.14, §7.5).
 import { create } from "@bufbuild/protobuf";
 import type { JsonObject } from "@hobo/core";
 import fc from "fast-check";
@@ -44,7 +41,6 @@ const OPS = [
 
 type Step = Readonly<{ op: number; target: number; replica: number }>;
 
-/** Everything a reader can see, signing times stripped (they come from one clock anyway). */
 async function snapshot(authority: EnrollmentAuthority, caller: VerifiedToken) {
 	const members = value(await authority.listMembers({}, caller)).members.map(
 		(envelope) =>
@@ -63,7 +59,6 @@ async function run(h: Harness, steps: readonly Step[], admin: VerifiedToken) {
 	const tokens: string[] = [];
 	const devices: TestDevice[] = [];
 	let names = 0;
-	// Two devices taken to ACTIVE first, on alternating replicas, so the random tail has live members to act on.
 	const seed: Step[] = [0, 1, 3].flatMap((op) => [
 		{ op, target: 0, replica: 0 },
 	]);
@@ -92,7 +87,6 @@ async function run(h: Harness, steps: readonly Step[], admin: VerifiedToken) {
 				break;
 			}
 			case "enroll": {
-				// Mostly the newest token; sometimes an older, maybe used one.
 				const token =
 					step.target < 6
 						? tokens.at(-1)
@@ -181,7 +175,6 @@ describe("replay and replicas", () => {
 					(m) => m.state === MemberState.ACTIVE,
 				).length;
 				expect(await snapshot(b, admin)).toEqual(live);
-				// A fresh instance has nothing but the journal.
 				expect(await snapshot(h.another(), admin)).toEqual(live);
 			}),
 			{ numRuns: 30, seed: 20_261_113 },
@@ -212,7 +205,6 @@ describe("replay and replicas", () => {
 					expect(data.subjectSequence).toBe(sequence);
 					last.set(memberId, sequence);
 				}
-				// The live record's sequence is the last event's.
 				const members = value(
 					await h.authority.listMembers({}, admin),
 				).members.map(decoded);

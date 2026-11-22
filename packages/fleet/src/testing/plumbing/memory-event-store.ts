@@ -1,15 +1,3 @@
-/**
- * `createMemoryEventStore`: the in-memory `FleetEventStore` every lane tests
- * against (design §11.2 step 5, §7.3). Plumbing of the contract commit.
- *
- * It follows the append rules of the durable SQLite journal
- * (`@hobo/storage-sqlite`): per-stream `expectedSeq` compare-and-set, applied
- * only when the batch has new events; `meta.idempotencyKey` deduplication
- * scoped per stream (an already-committed key is returned in `deduped`, also
- * on a retry with a stale `expectedSeq`); single-writer fencing through
- * `fenceToken`; and `readAll` over every stream in append order, with global
- * positions starting at 1.
- */
 import { randomUUID } from "node:crypto";
 import {
 	type AppendOptions,
@@ -22,6 +10,7 @@ import {
 	MissingFenceError,
 	OptimisticSequenceConflictError,
 	type PositionedEvent,
+	parseEventPosition,
 	type SnapshotRecord,
 	StaleFenceError,
 	type StreamFilter,
@@ -36,7 +25,6 @@ type StreamState = {
 	ownerEpoch: bigint;
 };
 
-/** In-memory `FleetEventStore`: per-stream `expectedSeq`, `meta.idempotencyKey`, `readAll` in append order. */
 export function createMemoryEventStore(): FleetEventStore {
 	const streams = new Map<string, StreamState>();
 	const log: PositionedEvent[] = [];
@@ -117,7 +105,6 @@ export function createMemoryEventStore(): FleetEventStore {
 					head,
 				);
 
-			// Build every envelope before storing any, so a bad input appends nothing.
 			const ts = new Date().toISOString();
 			const built = toWrite.map((input, index) =>
 				createEventEnvelope({
@@ -231,8 +218,7 @@ export function createMemoryEventStore(): FleetEventStore {
 }
 
 function positionOf(value: number): EventPosition {
-	// SAFETY: positions are 1-based counts of appended events, so always a non-negative integer.
-	return BigInt(value) as EventPosition;
+	return parseEventPosition(value);
 }
 
 function idempotencyKeyOf(input: EventInput | undefined): string | undefined {

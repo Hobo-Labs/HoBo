@@ -1,14 +1,3 @@
-/**
- * What a fleet can do right now, and the moments that changes (design §6.8),
- * moved from `packages/ci/src/mesh/monitor.ts`.
- *
- * `fleetCapacity` adds up the accepted, unexpired observations of a fleet's
- * active members. The `@hobo/ci` local-runner label test that decided which
- * mesh nodes counted is now the `counts` predicate. `createCapacityMonitor`
- * turns successive capacity readings into `hobo_fleet_capacity_exhausted`,
- * `hobo_fleet_capacity_restored` and a periodic `hobo_fleet_capacity`
- * summary. Membership changes are events of the registry, not of this file.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type FleetCapacity,
@@ -25,11 +14,6 @@ function sumOf(values: readonly (number | undefined)[]): number | undefined {
 		: known.reduce((sum, value) => sum + value, 0);
 }
 
-/**
- * Capacity over `live` observations (unexpired, of active members): how many
- * are live and healthy, and the slots, memory and disk of the healthy ones.
- * Memory and disk stay unknown when no healthy member reports them.
- */
 export function fleetCapacity(
 	live: readonly Observation[],
 	counts: (observation: Observation) => boolean = () => true,
@@ -58,7 +42,6 @@ export function fleetCapacity(
 	});
 }
 
-/** The log fields of a capacity reading; -1 where a figure is unknown. */
 function fieldsOf(capacity: FleetCapacity) {
 	return {
 		live: capacity.live,
@@ -71,10 +54,6 @@ function fieldsOf(capacity: FleetCapacity) {
 	};
 }
 
-/**
- * "Exhausted" is a fleet with live members and no free slot: work queued now
- * waits for a slot, not for a turn. An empty fleet is not exhausted.
- */
 export type CapacityMonitor = Readonly<{
 	observe(capacity: FleetCapacity, nowMs: number): void;
 }>;

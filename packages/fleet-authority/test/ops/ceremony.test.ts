@@ -1,5 +1,3 @@
-// O19 (ceremony half): the ceremony's two shares together reconstruct the
-// operator key, either alone does not, and nothing else it writes holds the key.
 import { createPublicKey, randomBytes, verify } from "node:crypto";
 import type { createMemorySecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
@@ -33,7 +31,6 @@ function verifyJwt(jwt: string, publicNkey: string): boolean {
 	);
 }
 
-/** Every value of every version the store holds. */
 async function everything(
 	secrets: ReturnType<typeof createMemorySecretsPort>,
 ): Promise<string[]> {
@@ -75,7 +72,6 @@ describe("runCeremony", () => {
 
 		expect(combineShares(first, first).ok).toBe(false);
 		expect(combineShares(second, second).ok).toBe(false);
-		// A guessed partner share yields some other key, which the share's own public key exposes.
 		for (const share of [first, second]) {
 			const parts = share.split(":");
 			const guess = [
@@ -86,7 +82,6 @@ describe("runCeremony", () => {
 			].join(":");
 			expect(combineShares(share, guess).ok).toBe(false);
 		}
-		// Neither share carries the key's bytes.
 		const combined = combineShares(first, second);
 		if (!combined.ok) throw new Error(combined.error.message);
 		const seed = decodeNkeySeed(combined.value.operatorSeed)?.seed;
@@ -116,7 +111,6 @@ describe("runCeremony", () => {
 		for (const line of fixture.logged)
 			for (const form of forms) expect(line).not.toContain(form);
 
-		// The key's one use: the operator JWT naming the operator signing key.
 		const jwtRead = await fixture.secrets.access(
 			operatorJwtName(fixture.prefix),
 		);

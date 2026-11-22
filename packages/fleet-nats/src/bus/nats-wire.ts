@@ -1,16 +1,3 @@
-/**
- * `BusWire` over a NATS connection and JetStream. Every operation uses only
- * subjects the §6.7 templates grant a device of the right template:
- *
- * - key-value reads are direct gets (`$JS.API.DIRECT.GET.<stream>.>`); writes
- *   are plain publishes on `$KV.<bucket>.<key>`, a create with
- *   `Nats-Expected-Last-Subject-Sequence: 0` and a per-message TTL;
- * - every consumer is a pull consumer with `ack_policy: none`, named by the
- *   connection's consumer name (a device's `MemberId`) and created with a
- *   single filter subject, so the create subject carries the name and filter;
- *   the consumer is deleted when the subscription stops.
- */
-
 import type { BusStart, Subscription } from "@hobo/fleet";
 import {
 	AckPolicy,
@@ -33,17 +20,13 @@ import {
 import type { BusWire, PublishResult, WireMessage } from "./wire.js";
 
 const NANOS_PER_MS = 1_000_000;
-/** How long one fetch of a snapshot read waits for the next message. */
 const FETCH_WAIT_MS = 2_000;
-/** A consumer left behind by a crashed process expires after this long. */
 const INACTIVE_MS = 5 * 60_000;
 
-/** JetStream refuses a publish to a subject that already holds its one message (`discard_new_per_subject`). */
 function isSubjectFull(error: Error): boolean {
 	return /maximum messages per subject/iu.test(error.message);
 }
 
-/** JetStream refuses a create whose expected last subject sequence does not match. */
 function isWrongLastSequence(error: Error): boolean {
 	return (
 		error instanceof JetStreamApiError &&
@@ -52,7 +35,6 @@ function isWrongLastSequence(error: Error): boolean {
 }
 
 export type NatsWireOptions = Readonly<{
-	/** The name every consumer of this connection gets: a device's MemberId, or a unique name for the authority. */
 	consumerName: () => string;
 	onStatus?: (status: "connected" | "disconnected" | "closed") => void;
 }>;
@@ -94,7 +76,6 @@ export function natsWire(
 			: { subject: stored.subject, data: stored.data, sequence: stored.seq };
 	};
 
-	/** A consumer on `filter` named for this connection; `deliver` picks where it starts. */
 	const createConsumer = async (
 		stream: string,
 		filter: string,
@@ -127,7 +108,6 @@ export function natsWire(
 		};
 	};
 
-	/** Every message on `filter` up to the stream's end at the time of the read. */
 	const snapshot = async (
 		stream: string,
 		filter: string,

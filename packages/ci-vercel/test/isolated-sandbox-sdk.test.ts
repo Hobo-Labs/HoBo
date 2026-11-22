@@ -1,8 +1,3 @@
-/**
- * The isolated Sandbox's lifecycle against a stand-in Vercel Sandbox: every
- * call names the expected Session, never resumes a stopped VM, and refuses to
- * release a reservation without authoritative final usage.
- */
 import { Sandbox } from "@vercel/sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -26,7 +21,6 @@ const config = {
 	allowedDomains: ["github.com"],
 };
 
-/** A finished session as `listSessions` and `Session.stop` report it. */
 type SessionRecord = {
 	id: string;
 	status: string;
@@ -39,7 +33,6 @@ type SessionRecord = {
 	networkTransfer?: { egress: number; ingress: number };
 };
 
-/** The running Session the stand-in VM hands out. */
 type StandInSession = {
 	sessionId: string;
 	status: string;
@@ -105,15 +98,15 @@ beforeEach(() => {
 	get.mockClear();
 	prepare.mockClear();
 	start.mockClear();
-	vi.spyOn(Sandbox, "create").mockImplementation(async () => {
-		// SAFETY: a stand-in carrying every member isolated-sandbox.ts reads.
-		return made as never;
-	});
-	vi.spyOn(Sandbox, "get").mockImplementation(async (params) => {
-		get(params);
-		// SAFETY: a stand-in carrying every member isolated-sandbox.ts reads.
-		return found as never;
-	});
+	vi.spyOn(Sandbox, "create").mockImplementation(
+		vi.fn().mockImplementation(async () => made),
+	);
+	vi.spyOn(Sandbox, "get").mockImplementation(
+		vi.fn().mockImplementation(async (params) => {
+			get(params);
+			return found;
+		}),
+	);
 	vi.spyOn(bootstrap, "prepareSandboxRunner").mockImplementation(prepare);
 	vi.spyOn(bootstrap, "startSandboxRunner").mockImplementation(start);
 });
@@ -177,7 +170,6 @@ describe("isolated Sandbox lifecycle", () => {
 			[box(running({ startedAt: undefined })), /deadline/u],
 		];
 		for (const [vm, message] of cases) {
-			// A failed stop never hides why the VM was refused.
 			vm.stop.mockRejectedValueOnce(new Error("already gone"));
 			made = vm;
 			await expect(createIsolatedSandbox(config)).rejects.toThrow(message);

@@ -1,8 +1,3 @@
-/**
- * Elevated capabilities are JWT-SVIDs minted and verified through the one
- * SVID implementation (`@hobo/identity`, here its test double): no shared
- * secret, no development default, nothing accepted without a verifier.
- */
 import { describe, expect, it } from "vitest";
 import {
 	ELEVATED_ACCESS_SCOPE_PORT,

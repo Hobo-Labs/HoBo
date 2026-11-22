@@ -1,10 +1,3 @@
-// incarnation-stale (L41): after a restore raises the authority incarnation,
-// `authenticate` and `credentials` refuse an SVID or person token minted
-// before the new incarnation began. The incarnation began at the `issued_at`
-// of the journalled `fleet.TrustRotated` record that raised it; a token's
-// `iat` before that is stale. A rotation within one incarnation stales
-// nothing, and a device refreshes by its SIGN-key proof after the restore.
-
 import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
@@ -29,7 +22,6 @@ import {
 } from "./fixtures.js";
 import { active, code, value } from "./scenario.js";
 
-/** Journals a trust record of `incarnation`, issued now, as `fleet.TrustRotated`. */
 async function rotateTrust(
 	h: Harness,
 	incarnation: number,
@@ -65,7 +57,6 @@ async function rotateTrust(
 	);
 }
 
-/** The authority after a restore: the same store and bus, the next incarnation. */
 function restored(h: Harness, incarnation: number): EnrollmentAuthority {
 	return createEnrollmentAuthority({ ...h.deps, incarnation }, h.parts);
 }
@@ -96,11 +87,6 @@ async function svidRequest(h: Harness, laptop: TestDevice, svid: string) {
 	};
 }
 
-/**
- * An issuer standing in for L09's: it verifies the tokens it was told about
- * (their claims are only read, after verification, by `authenticate`) and
- * answers `refusal` for every other token.
- */
 function claimIssuer(
 	h: Harness,
 	refusal?: Outcome<VerifiedToken>,
@@ -117,7 +103,6 @@ function claimIssuer(
 		...h.deps.issuer,
 		verify(token, audience, nowMs) {
 			const verified = known.get(token);
-			// A fresh value per verification, as a real issuer decodes one.
 			if (verified !== undefined) return { ok: true, value: { ...verified } };
 			return refusal ?? h.deps.issuer.verify(token, audience, nowMs);
 		},
@@ -199,7 +184,6 @@ describe("incarnation-stale", () => {
 			),
 		).toBe("incarnation-stale");
 
-		// The device refreshes by its SIGN-key proof and gets a current SVID.
 		const renewed = value(
 			await after.credentials(
 				{ memberId, request: refresh(issued.generation) },
@@ -235,7 +219,6 @@ describe("incarnation-stale", () => {
 				),
 			),
 		).toBe("incarnation-stale");
-		// Any other failure to verify stays unauthenticated.
 		const other = createEnrollmentAuthority(
 			{
 				...h.deps,
@@ -258,14 +241,12 @@ describe("incarnation-stale", () => {
 		const issuer = claimIssuer(h);
 		const as = { ...laptop.caller, expiresAtMs: h.clock.now() + 3_600_000 };
 		const seconds = (ms: number) => Math.floor(ms / 1_000);
-		// Minted under incarnation 1, after the moment the restore will begin (by iat it would pass).
 		h.clock.advance(5_000);
 		const restoreAt = h.clock.now();
 		const late = issuer.mint(
 			{ iat: seconds(restoreAt) + 2, incarnation: 1 },
 			as,
 		);
-		// Minted under incarnation 2, with an iat before the restore began (by iat it would be stale).
 		const early = issuer.mint(
 			{ iat: seconds(restoreAt) - 60, incarnation: 2 },
 			as,
@@ -288,7 +269,6 @@ describe("incarnation-stale", () => {
 			await after.authenticate(await svidRequest(h, laptop, early)),
 		);
 		expect(current.kind).toBe("member");
-		// credentials applies the same rule to the caller it is handed.
 		expect(
 			code(
 				await after.credentials(

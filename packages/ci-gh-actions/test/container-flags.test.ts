@@ -1,10 +1,3 @@
-/**
- * O42 (design §6.11 `S1_CONTAINER`): every container the box worker starts
- * has all capabilities dropped, `no-new-privileges`, a pids limit, a
- * read-only root with writable scratch only, and the host Docker socket only
- * when the fleet sets `allow_host_docker` on a `DEDICATED` device. Nothing here
- * names a host OCI runtime (`crun`, `runc`, `podman`) or `nsenter`.
- */
 import {
 	chmodSync,
 	mkdtempSync,
@@ -33,7 +26,6 @@ afterEach(() => {
 		rmSync(directory, { recursive: true, force: true });
 });
 
-/** A `docker` that records each invocation's argv, one per line, and prints a container id. */
 function fakeDocker() {
 	const directory = mkdtempSync(join(tmpdir(), "hobo-container-flags-"));
 	directories.push(directory);
@@ -82,7 +74,6 @@ describe("hardenedContainerFlags", () => {
 	it("drops every capability, forbids new privileges, limits pids and keeps the root read-only", () => {
 		const flags = hardenedContainerFlags({});
 		expectHardened(flags);
-		// Writable state is scratch the container owns, never a host path.
 		expect(flags).toContain("--mount=type=volume,target=/opt/actions-runner");
 		expect(flags).toContain("--mount=type=volume,target=/home/runner");
 	});
@@ -170,7 +161,6 @@ describe("every container the worker starts", () => {
 			env: {},
 			socketGid: () => 998,
 		});
-		// runner-host-realizer.ts names it `hoboci-runner-controller-<sha256 hex>`.
 		await driver.create({
 			...spec,
 			name: `hoboci-runner-controller-${"a".repeat(64)}`,
@@ -182,7 +172,6 @@ describe("every container the worker starts", () => {
 		expect(argv?.[0]).toBe("create");
 		expectHardened(argv ?? []);
 		expect(argv).not.toContain(SOCKET);
-		// A pull starts no container, so it takes no container flags.
 		expect(pull?.[0]).toBe("pull");
 		expect(pull).not.toContain("--cap-drop=ALL");
 	});

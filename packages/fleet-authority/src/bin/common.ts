@@ -1,6 +1,3 @@
-// What both binaries share: the `--config` argument, the configuration, the
-// secret store it names, and structured logs on stderr (no secret is ever a
-// log field: the callers log names, codes and ids only).
 import { readFile } from "node:fs/promises";
 import { createOpenBaoSecretsPort } from "@hobo/adapter-openbao";
 import type { FleetLog, Outcome } from "@hobo/fleet";
@@ -53,7 +50,6 @@ export async function openSecrets(
 			openbaoAddr: store.address,
 			role: store.role,
 			svidJwt: token,
-			// An empty namespace is no namespace to the adapter; the default mount is "secret".
 			mountPath: store.mountPath.length > 0 ? store.mountPath : "secret",
 			namespace: store.namespace,
 			fetch: (url, init) => fetch(url, init),
@@ -62,7 +58,6 @@ export async function openSecrets(
 	};
 }
 
-/** Reads the configuration and the secret store, or exits with the reason. */
 export async function boot(
 	argv: readonly string[],
 	usage: string,
@@ -81,7 +76,6 @@ export function fail(message: string): never {
 	process.exit(2);
 }
 
-/** Stops cleanly on SIGTERM and SIGINT. */
 export function onShutdown(stop: () => Promise<void>): void {
 	let stopping = false;
 	const handler = () => {

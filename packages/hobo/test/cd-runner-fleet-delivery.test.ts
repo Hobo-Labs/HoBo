@@ -94,7 +94,6 @@ import {
 	CoordinationMode,
 	CredentialRequestSchema,
 	FleetRecordSchema,
-	type MemberId,
 	parseFleetId,
 	type VerifiedToken,
 } from "@hobo/fleet";
@@ -208,8 +207,6 @@ function agentKeys(): AgentKeys {
 	return { privateJwk, publicJwk };
 }
 
-// The runner hosts are DEVICE members of fleet `hobo` (L19): the Station's
-// reconcilers enroll there, in an authority composed in this process.
 const FLEET_ORIGIN = "https://authority.fleet.test";
 const RUNNER_FLEET = parseFleetId("hobo");
 const FLEET_TENANT = parseTenantId("test");
@@ -246,7 +243,6 @@ async function runnerFleetAuthority(now: () => number) {
 
 type RunnerFleet = Awaited<ReturnType<typeof runnerFleetAuthority>>;
 
-/** What `hobo deploy agent enroll --token-file` builds on the host: its own keys and EnrollmentRequest. */
 async function agentEnrollment(token: string, nowMs: number) {
 	const keys = generateReconcilerKeys();
 	const built = await reconcilerEnrollment({
@@ -261,11 +257,6 @@ async function agentEnrollment(token: string, nowMs: number) {
 	return { keys, built };
 }
 
-/**
- * The member SVID as the accepted host's fleet agent keeps it: fetched with
- * its SIGN key (`credentials`, generation from 0) and refreshed five minutes
- * before it expires, the way `hobo fleet run` refreshes it.
- */
 function memberCredential(
 	fleet: RunnerFleet,
 	signJwk: JsonObject,
@@ -285,8 +276,7 @@ function memberCredential(
 			nowMs: now(),
 		});
 		const issued = await fleet.forward(proof).credentials({
-			// SAFETY: the member id the fleet just enrolled.
-			memberId: memberId as MemberId,
+			memberId,
 			request: create(CredentialRequestSchema, {
 				generation,
 				refreshNonce: randomBytes(16),
@@ -440,12 +430,6 @@ describe.skipIf(!existsSync(BIN))(
 			]);
 			expect(applied.ok, applied.message).toBe(true);
 
-			// Enrollment is the fleet's (L19): a Station composed without a fleet
-			// authority refuses to mint a bootstrap token instead of inventing
-			// one (a token on the command line is refused: cd-agent-aliases.test.ts).
-			// The double opt-in itself runs against an
-			// authority in process (below, "the runner fleet delivered in
-			// process").
 			const token = await deploy(home, [
 				"agent",
 				"token",

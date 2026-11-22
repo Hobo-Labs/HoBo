@@ -498,7 +498,6 @@ describe("createMemoryBus audit log", () => {
 			"checkpoint",
 		);
 		const trust = opaque(TRUST_RECORD_CONTEXT, 9);
-		// A co-signature that arrives first waits for its record.
 		await publishWitnessCosignature(
 			bus,
 			create(SignedEnvelopeSchema, {

@@ -1,6 +1,3 @@
-// O13 (chain half): every journal event becomes a hash-chained audit entry,
-// checkpoints are signed every 60 s or 1,000 entries, and altering, removing or
-// reordering any entry fails verification (design §6.14).
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -131,7 +128,6 @@ describe("createAuditChain", () => {
 				entryHash(previous.previousHash, previous),
 			);
 		}
-		// data_digest is over the canonical (key-sorted) JSON of the data.
 		expect(log.all[0]?.dataDigest).toBe(
 			sha256Hex('{\n  "a": 2,\n  "b": 1\n}\n'),
 		);
@@ -196,7 +192,6 @@ describe("createAuditChain", () => {
 			authorityIncarnation: 3,
 		});
 
-		// The checkpoint event itself becomes the next entry; nothing else is due until 60 s pass again.
 		await chain.tick();
 		expect(log.all.at(-1)?.eventType).toBe("fleet.AuditCheckpointed");
 		expect(log.checkpoints).toHaveLength(1);

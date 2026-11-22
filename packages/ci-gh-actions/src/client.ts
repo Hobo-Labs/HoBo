@@ -139,8 +139,6 @@ export function createCiRelayClient(
 		body?: string,
 		match?: string,
 		version: "v1" | "v2" = "v1",
-		// The account's own routes, or the relay's (the fleet it reads), which
-		// no account owns.
 		root: "accounts/self" | "fleet" = "accounts/self",
 		/** Read past fields a newer relay adds, for an answer that is a report, not an instruction. */
 		lenient = false,
@@ -346,11 +344,6 @@ export function createCiRelayClient(
 		getLeases() {
 			return request("leases", "GET", SnapshotSchema);
 		},
-		/**
-		 * The members of the fleet the relay reads, as its authority signed
-		 * them (ADR-0183): each a `SignedEnvelope` of a `MemberRecord`. A relay
-		 * that reads no fleet answers 503. Needs the `policy:read` scope.
-		 */
 		getFleetMembers() {
 			return request(
 				"members",
@@ -360,7 +353,6 @@ export function createCiRelayClient(
 				undefined,
 				"v1",
 				"fleet",
-				// A newer authority may add fields; the members are still shown.
 				true,
 			);
 		},

@@ -1,22 +1,3 @@
-// `verifyAuditChain` (design §6.14): recompute the chain from entry 1 and check
-// every checkpoint's two signatures and its hash against the recomputation.
-//
-// Across trust rotations (L41, `verifyChainAcrossTrust`): each checkpoint is
-// checked against the trust record in force at it. The history is the
-// journalled `fleet.TrustRotated` records (`data.record`, the record's bytes
-// in base64) whose digest a `fleet.TrustRotated` entry of the chain carries;
-// a record is in force from its entry on. Records with a sequence above the
-// pinned record's were never witnessed into force and are ignored, as are
-// records no entry carries. The history must be unambiguous (one record per
-// sequence, sequences rising along the chain, one tenant) and end at the
-// pinned record (`trust-history`).
-//
-// A checkpoint verifies against the record in force at its sequence, or the
-// next one (the witness may co-sign a checkpoint just after a rotation, with
-// its new key); a checkpoint before the first journalled record verifies
-// against that record, which still lists the keys it rotates away from (add
-// and publish keep the old key). A removed key therefore verifies nothing
-// signed after the record that removed it, plus one rotation.
 import { equals, fromBinary } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import {
@@ -66,10 +47,8 @@ function decode(payload: Uint8Array): AuditCheckpoint | undefined {
 	}
 }
 
-/** A trust record and the chain entry (1-based) from which it is in force; 0 for the pinned record with no entry. */
 type InForce = Readonly<{ record: TrustRecord; from: number }>;
 
-/** The trust records in force along the chain, oldest first; a failure message when the history is not usable. */
 function historyOf(
 	entries: readonly AuditEntry[],
 	pinned: TrustRecord,
@@ -120,7 +99,6 @@ function historyOf(
 		: `the journalled trust record ${pinned.sequence} is not the pinned one`;
 }
 
-/** The records a checkpoint over entry `sequence` may verify against. */
 function candidatesAt(
 	history: readonly InForce[],
 	sequence: number,
@@ -133,11 +111,6 @@ function candidatesAt(
 	);
 }
 
-/**
- * Entries must be the whole chain from sequence 1, in order; every checkpoint
- * must be witnessed against the trust record in force at it, from `journal`'s
- * `fleet.TrustRotated` records and the pinned `trust`, and match the chain.
- */
 export function verifyChainAcrossTrust(
 	entries: readonly AuditEntry[],
 	checkpoints: readonly WitnessedEnvelope[],
@@ -197,7 +170,6 @@ export function verifyChainAcrossTrust(
 	return { ok: true, value: { entries: entries.length, finalThrough } };
 }
 
-/** Entries must be the whole chain from sequence 1, in order; every checkpoint must be witnessed, against `trust`, and match it. */
 export function verifyChain(
 	entries: readonly AuditEntry[],
 	checkpoints: readonly WitnessedEnvelope[],

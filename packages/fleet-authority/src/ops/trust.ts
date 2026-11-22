@@ -1,8 +1,3 @@
-// A change of the trust record (design §6.14, §7.4): journal
-// `fleet.TrustRotated` first, so the witness finds its audit entry; then
-// publish the authority-signed record on `fleet.audit.trust`, wait for the
-// witness's co-signature, and put the witnessed record in the registry.
-// Only key rotation and restore change the trust record. Private to L27.
 import { createHash } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { OptimisticSequenceConflictError } from "@hobo/core";
@@ -28,13 +23,7 @@ const APPEND_RETRIES = 8;
 export type TrustDeps = Readonly<{
 	store: FleetEventStore;
 	bus: Pick<AuthorityBus, "registry" | "publisher" | "audit">;
-	/** The tenant every appended event is filed under. */
 	tenant: string;
-	/**
-	 * Runs the audit chain once, so the journalled event becomes an entry. Only
-	 * when no authority is running to do it (a restore); otherwise the running
-	 * authority's tick does it and the witness, which polls, finds it.
-	 */
 	tickAudit?: () => Promise<void>;
 	witnessTimeoutMs: number;
 	now: Clock;
@@ -42,14 +31,11 @@ export type TrustDeps = Readonly<{
 }>;
 
 export type TrustChange = Readonly<{
-	/** The proposed record's protobuf bytes, exactly as journalled and signed. */
 	payload: Uint8Array;
 	signer: Signer;
-	/** Why the record changes: `rotate:<which>:<step>` or `restore`. */
 	reason: string;
 }>;
 
-/** The record after `pinned` with `change` applied: the next sequence, issued now. */
 export function nextTrustRecord(
 	pinned: TrustRecord,
 	nowMs: number,
@@ -81,7 +67,6 @@ function sameBytes(a: Uint8Array | undefined, b: Uint8Array): boolean {
 	return a !== undefined && Buffer.from(a).equals(Buffer.from(b));
 }
 
-/** Appends `fleet.TrustRotated` for `payload` once (idempotent on its digest). */
 async function journal(
 	deps: TrustDeps,
 	payload: Uint8Array,
@@ -128,11 +113,6 @@ async function journal(
 	}
 }
 
-/**
- * Journals, proposes and waits for the witness. Resumable: proposing the same
- * bytes again journals nothing new, and a record the registry already pins is
- * returned as it is.
- */
 export async function changeTrust(
 	deps: TrustDeps,
 	change: TrustChange,

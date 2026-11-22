@@ -1,21 +1,3 @@
-/**
- * Provider verification of `packages/fleet/contracts/fleet-authority.pact.json`
- * (the consumer pact `createFleetClient` writes, L07) against the real
- * service: `assembleAuthority` behind `createAuthorityHandler`, reached
- * through the harness's `send()`. Every interaction is replayed, none
- * skipped.
- *
- * For each interaction a fresh service is brought to the interaction's
- * provider state. The state answers what the request carries: the caller (a
- * DPoP-bound token, or a bare DPoP proof key), a request body where the
- * pact's example cannot pass the service's checks (keys and signatures must
- * verify), and the ids the service generated for the example ids in the path
- * and body (the pact's example member id, token hash and submission id).
- * The request actually sent must still match the pact: its body by the
- * pact's rule, its `DPoP` and `Authorization` headers by their regexes, and
- * no credential the pact does not carry. The response must match the pact's
- * status, headers and body rule (see `pact.ts`).
- */
 import { readFileSync } from "node:fs";
 import { create, toBinary, toJson } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
@@ -78,7 +60,6 @@ const PACT = parsePact(
 	),
 );
 
-/** The pact's example ids, replaced by the ids the service generated. */
 const EXAMPLE = {
 	member: "dev_0123456789abcdef0123456789abcdef",
 	tokenHash: "a".repeat(64),
@@ -89,19 +70,14 @@ const TRUNK = "hobo-trunk";
 
 type Key = Readonly<{ signer: Signer; publicJwk: PublicJwk }>;
 
-/** What a provider state hands the replay. */
 type Prepared = Readonly<{
 	h: Harness;
 	caller?: Caller;
-	/** A bare DPoP proof key, for a request that carries no token. */
 	dpop?: Key;
-	/** The body to send instead of the pact's example (it must still match the example by the pact's rule). */
 	body?: JsonValue;
-	/** Example id → the id the service generated. */
 	ids?: Readonly<Record<string, string>>;
 }>;
 
-/** An overlay minter, so an enrolled device is answered with a join (§6.12). */
 const tailscale: OverlayCredentialMinter = {
 	provider: "tailscale",
 	async mint(input) {
@@ -127,15 +103,12 @@ const asJson = (text: string): JsonValue => {
 	return parsed;
 };
 
-// ── The service in its states ───────────────────────────────────────────────
-
 type World = Readonly<{ h: Harness; admin: Caller }>;
 
 async function world(
 	options: Readonly<{
 		approval?: ApprovalMode;
 		overlay?: boolean;
-		/** Discovery names a bus and a relay. */
 		discovery?: boolean;
 		fleets?: readonly string[];
 	}> = {},
@@ -215,7 +188,6 @@ async function enroll(w: World, name: string): Promise<Device> {
 	return device;
 }
 
-/** Refreshes `device` from `generation`, returning its SVID caller and the next generation. */
 async function refresh(
 	w: World,
 	device: Device,
@@ -251,13 +223,11 @@ const memberIds = (device: Device) => ({
 	[EXAMPLE.member]: device.keys.memberId,
 });
 
-/** A pending enrollment in a fleet that needs a person's approval. */
 async function pending(): Promise<Readonly<{ w: World; device: Device }>> {
 	const w = await world({ approval: ApprovalMode.SINGLE });
 	return { w, device: await enroll(w, "laptop") };
 }
 
-/** An active device, enrolled in a fleet that approves its owner's devices. */
 async function active(
 	options: Parameters<typeof world>[0] = {},
 ): Promise<Readonly<{ w: World; device: Device }>> {
@@ -311,7 +281,6 @@ async function rotatedBundle(device: Device, nowMs: number) {
 	);
 }
 
-/** Three claims of one offer by `victim`, each three ranks ahead of its turn (§6.9 rule 3). */
 async function earlyReport(
 	w: World,
 	dispatcher: Device,
@@ -369,7 +338,6 @@ async function earlyReport(
 	);
 }
 
-/** Each provider state of the pact, by its name. */
 type ProviderStates = Readonly<Record<string, () => Promise<Prepared>>>;
 
 const STATES = new Map<string, () => Promise<Prepared>>(
@@ -381,7 +349,6 @@ const STATES = new Map<string, () => Promise<Prepared>>(
 		"sign-in provider github is configured": async () => {
 			const w = await world();
 			const key = (await newDevice(w.h.now())).signKey;
-			// The harness's sign-in provider is named "test".
 			return {
 				h: w.h,
 				body: {
@@ -470,7 +437,6 @@ const STATES = new Map<string, () => Promise<Prepared>>(
 		},
 		[`member ${EXAMPLE.member} exists and user:alice may unlock`]: async () => {
 			const { w, device } = await active();
-			// A refresh at a generation the authority never answered locks the device (clone detection).
 			const answer = await w.h.send(
 				"POST",
 				`/v1/fleet/members/${device.keys.memberId}/credentials`,
@@ -520,7 +486,6 @@ const STATES = new Map<string, () => Promise<Prepared>>(
 				h: w.h,
 				caller,
 				ids: memberIds(device),
-				// Used by the key rotation (its body); leave carries none.
 				body: {
 					keyBundle: toJson(
 						SignedEnvelopeSchema,
@@ -543,7 +508,6 @@ const STATES = new Map<string, () => Promise<Prepared>>(
 		},
 		"user:alice may define fleets": async () => {
 			const w = await world({ fleets: [] });
-			// The pact's example names no coordination or approval mode, which the service requires.
 			return {
 				h: w.h,
 				caller: w.admin,
@@ -566,7 +530,6 @@ const STATES = new Map<string, () => Promise<Prepared>>(
 		},
 		"fleet hobo has one live executor with a free slot": async () => {
 			const { w, device } = await active();
-			// The projection publishes views every 30 s.
 			w.h.time.advance(31_000);
 			const nowMs = w.h.now();
 			const observation = create(ObservationSchema, {
@@ -642,8 +605,6 @@ const STATES = new Map<string, () => Promise<Prepared>>(
 	} satisfies ProviderStates),
 );
 
-// ── The replay ─────────────────────────────────────────────────────────────
-
 function substitute(text: string, ids: Readonly<Record<string, string>>) {
 	let out = text;
 	for (const [example, real] of Object.entries(ids))
@@ -674,7 +635,6 @@ async function replay(
 			: request.path,
 		ids,
 	);
-	// The credentials are the state's; every other header is sent as the pact names it.
 	const headers = Object.fromEntries(
 		Object.entries(request.headers).filter(
 			([name]) => name !== "DPoP" && name !== "Authorization",

@@ -1,14 +1,3 @@
-/**
- * Overlay credential minters (L39). Signatures frozen by the fleet contract
- * commit (ADR-0183). The authority composes them and enrollment calls them;
- * they make their own provider API calls through `fetch` and do not use or
- * change the existing overlay API clients.
- *
- * Each `mint` asks the provider for exactly one single-use join credential
- * with the requested expiry and tags and returns it as an `OverlayJoin`. A
- * provider error is an `unavailable` outcome. Nothing here logs, and no
- * failure carries the credential or the operator's API token.
- */
 import type {
 	FleetFailure,
 	Outcome,
@@ -22,7 +11,6 @@ import {
 	type JsonValue,
 } from "../json.js";
 
-/** `organisation` is the tailnet for Tailscale and unused by NetBird; `credential` returns the operator's API token from the secret store. */
 export type OverlayMinterOptions = Readonly<{
 	apiBase: string;
 	organisation: string;
@@ -33,12 +21,10 @@ export type OverlayMinterOptions = Readonly<{
 type MintInput = Parameters<OverlayCredentialMinter["mint"]>[0];
 
 const REQUEST_TIMEOUT_MS = 10_000;
-/** NetBird refuses a setup key that expires in under a day (A13). */
 const NETBIRD_MIN_EXPIRY_SECONDS = 86_400;
 const TAILSCALE_TAG = /^tag:[a-z0-9][a-z0-9-]*$/iu;
 const NETBIRD_GROUP = /^[A-Za-z0-9][A-Za-z0-9 _.:-]{0,127}$/u;
 
-/** Mints a single-use, pre-authorised Tailscale auth key that expires after `ttlMs` and carries exactly the given tags. */
 export function createTailscaleCredentialMinter(
 	options: OverlayMinterOptions,
 ): OverlayCredentialMinter {
@@ -79,7 +65,6 @@ export function createTailscaleCredentialMinter(
 	};
 }
 
-/** Mints a one-off NetBird setup key (usage limit 1) whose auto-groups are the groups named by the given tags. */
 export function createNetbirdCredentialMinter(
 	options: OverlayMinterOptions,
 ): OverlayCredentialMinter {
@@ -209,7 +194,6 @@ async function apiToken(
 	}
 }
 
-/** The failing arm of `Outcome`, whatever the success type. */
 type Failed = Readonly<{ ok: false; error: FleetFailure }>;
 
 type Call = Readonly<{
@@ -264,8 +248,7 @@ async function call(
 	}
 	let parsed: JsonValue;
 	try {
-		// SAFETY: JSON.parse yields a JSON value at this provider boundary.
-		parsed = JSON.parse(text) as JsonValue;
+		parsed = JSON.parse(text);
 	} catch {
 		return unavailable(provider, "reply is not JSON");
 	}

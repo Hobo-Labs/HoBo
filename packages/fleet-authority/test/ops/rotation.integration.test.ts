@@ -1,6 +1,3 @@
-// O19 (rotation half): during the rotation of each key, a device that
-// refreshes every second sees zero refused requests, and when the rotation
-// ends only the new key is published.
 import { KeyPurpose } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import { type Reached, rotate } from "../../src/ops/rotation.js";

@@ -123,11 +123,6 @@ export type RelayMcpServices = Readonly<{
 	/** The relay over the current configuration, for a reconciliation. */
 	relay: () => Promise<Pick<HostedRelay, "reconcile">>;
 	ready: () => Promise<boolean>;
-	/**
-	 * The device fleet this host shows, read from its authority. Absent on a
-	 * host with none: `list_fleet_members` then answers `configured: false`,
-	 * and the view and verdict tools refuse.
-	 */
 	fleet?: RelayFleet | undefined;
 	engineId: string;
 	waitDefaultMs: number;
@@ -230,14 +225,12 @@ function resource<Desc extends DescMessage>(
 	};
 }
 
-/** `list_fleet_members`: the records as protobuf JSON, in a plain answer. */
 type FleetMembersAnswer = Readonly<{
 	configured: boolean;
 	fleet: string;
 	members: JsonValue[];
 }>;
 
-/** A tool result that is not one generated message. */
 function json(answer: FleetMembersAnswer): CallToolResult {
 	const text = JSON.stringify(answer);
 	return {
@@ -584,8 +577,6 @@ const INSTRUCTIONS = [
  */
 export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 	const { store } = services;
-	// The fleet's members as plain records, the same list the HTTP route
-	// answers signed.
 	const fleetMembers = async (): Promise<FleetMembersAnswer> => {
 		if (!services.fleet) return { configured: false, fleet: "", members: [] };
 		return {
@@ -820,7 +811,6 @@ export function createRelayMcpServer(services: RelayMcpServices): McpServer {
 						accountCalls: services.accountCalls,
 						accountWaits: services.accountWaits,
 						requestMessages: services.requestMessages,
-						// Named `mesh` in `RelayMcpStatus` until its proto renames it.
 						mesh:
 							services.fleet === undefined ? "not-configured" : "configured",
 					}),

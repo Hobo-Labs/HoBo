@@ -1,17 +1,3 @@
-/**
- * `runSandboxConformance` (design §7.3, §6.11): the logic of the
- * `SandboxDriver` contract, which the fake driver passes. It proves nothing
- * about isolation; `runSandboxIsolationProbe` does that, in real sandboxes.
- *
- * - The driver's self-test answers; each sandbox carries the driver's tier, its
- *   own id and its own `controlUrl`.
- * - A sandbox is single use: one `create` per order id, nothing runs after
- *   `destroy`, and `destroy` is idempotent.
- * - A secret written with `writeSecret` never reaches argv or the environment.
- * - `POST <controlUrl>/fence` with an `ObservedAssignment` answers
- *   `{"allow":true|false}` from the `fence` callback given to `create`.
- * - An exec whose signal is already aborted does not report success.
- */
 import { randomBytes } from "node:crypto";
 import { WorkOrigin } from "../../_generated/fleet_pb.js";
 import type {
@@ -28,7 +14,6 @@ type CreateInput = Parameters<SandboxDriver["create"]>[0];
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();
 
-/** The image and limits the logic suite asks for; a real driver may pull the image. */
 // public-contract: the image a driver under runSandboxConformance is asked to create sandboxes from.
 export const LOGIC_IMAGE = "docker.io/library/busybox:1.37";
 
@@ -56,7 +41,6 @@ export const createInput = (
 const orderId = () => `conformance-${randomBytes(8).toString("hex")}`;
 const allowAll = async () => true;
 
-/** Runs `argv` in `sandbox` and answers its exit code and everything it wrote. */
 export async function run(
 	sandbox: Sandbox,
 	argv: readonly string[],
@@ -86,7 +70,6 @@ export async function run(
 	};
 }
 
-/** `POST <controlUrl>/fence` from inside a sandbox, with busybox `wget`. */
 export const fenceArgv = (controlUrl: string): readonly string[] => [
 	"wget",
 	"-q",
@@ -124,7 +107,6 @@ async function withSandbox(
 	}
 }
 
-/** The sandbox logic assertions, in the order they are registered. */
 export const SANDBOX_ASSERTIONS: readonly ConformanceAssertion<SandboxMake>[] =
 	[
 		{

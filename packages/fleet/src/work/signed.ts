@@ -1,9 +1,3 @@
-/**
- * Verifying the device-signed records of many-active work (design §7.4):
- * offers, orders and claims are signed by a device's `SIGN` key, verified
- * against the key bundle in its member record; submissions are signed by the
- * authority, verified against the pinned trust record. Private to L04.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	type KeyBundle,
@@ -28,7 +22,6 @@ import { type MemberId, parseMemberId } from "../ids.js";
 import { parsePublicJwk, signEnvelope, verifyEnvelope } from "../keys/index.js";
 import type { FleetContext, RegistryView, Signer } from "../ports.js";
 
-/** The member a `<MemberId>#sign` key id names, or undefined. */
 export function signerOf(keyId: string): MemberId | undefined {
 	const [member, purpose] = keyId.split("#");
 	if (purpose !== "sign" || member === undefined) return undefined;
@@ -39,7 +32,6 @@ export function signerOf(keyId: string): MemberId | undefined {
 	}
 }
 
-/** The record's key bundle, verified against its identity key; expiry is the caller's business. */
 export function bundleOf(record: MemberRecord): KeyBundle | undefined {
 	const envelope = record.keyBundle;
 	if (envelope === undefined) return undefined;
@@ -64,10 +56,6 @@ export function keyOf(
 	return bundleOf(record)?.keys.find((key) => key.purpose === purpose);
 }
 
-/**
- * The registry record of the device whose `SIGN` key signed `envelope` under
- * `context`, or undefined when the context, key or signature is wrong.
- */
 export async function deviceSigner(
 	registry: RegistryView,
 	envelope: SignedEnvelope,
@@ -83,7 +71,6 @@ export async function deviceSigner(
 	return verifyEnvelope(envelope, context, key) ? record : undefined;
 }
 
-/** A submission envelope signed by a key of the pinned record's `authority_keys`. */
 export function authoritySigned(
 	envelope: SignedEnvelope,
 	trust: TrustRecord,

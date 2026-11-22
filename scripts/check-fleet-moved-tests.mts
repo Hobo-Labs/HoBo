@@ -1,36 +1,4 @@
 #!/usr/bin/env node
-/**
- * `pnpm run fleet:moved-tests -- <outcome> [--lane <id>]` (O15, O16, O17,
- * ADR-0183): every moved test differs from its base file at tag
- * `fleet-wave-0` only as the moved-test rules allow.
- *
- * Both sides are parsed with the TypeScript compiler API and reduced to a
- * token stream (kinds, identifier names and literal values), so formatting,
- * comments, quotes, commas and semicolons never count. Before comparing:
- *
- * - the base side goes through the rename map (identifiers and import
- *   specifiers) and the value map (a `failure` or `health` property whose
- *   value is one of today's failure strings becomes `Health.<MEMBER>`);
- * - the new side is unwrapped: `parseMemberName(<string literal>)` becomes
- *   its argument, and `members: undefined` is dropped from an object literal
- *   passed to `parseAssignmentEntry`.
- *
- * A relative path in `new URL(<path>, import.meta.url)` is compared without
- * its leading `./` and `../` segments, because a moved file sits elsewhere.
- *
- * Mode `exact` then drops import declarations and the row's named helpers
- * (the whole declaration: signature and body) from both sides and refuses
- * any other difference. Mode `assertions` reduces each side to the ordered
- * test titles (first argument of every `describe`, `it` and `test`) and, under
- * each, the ordered `expect(…)` statements of the test bodies, and refuses
- * any difference between the two lists.
- *
- *   node --import tsx scripts/check-fleet-moved-tests.mts <outcome>
- *     [--lane <id>] [--root=<dir>] [--base=<ref>]
- *
- * Exits 0 when every selected row differs only as allowed, 1 when one does
- * not, 2 on a usage error.
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -44,20 +12,16 @@ export interface MovedTestRow {
 	readonly base: string;
 	readonly next: string;
 	readonly mode: MovedTestMode;
-	/** Helpers that may change in `exact` mode; `any` in `assertions` mode. */
 	readonly helpers: readonly string[] | "any";
 	readonly lane: string;
 }
 
 export interface MovedTestResult extends MovedTestRow {
-	/** Empty when the row differs only as allowed. */
 	readonly differences: readonly string[];
 }
 
-/** The base ref every moved test is compared against: the contract commit. */
 export const BASE_REF = "fleet-wave-0";
 
-/** The moved-test table of the design's §10.1, one row per file pair. */
 export const MOVED_TESTS: readonly MovedTestRow[] = [
 	{
 		outcome: "O15",
@@ -141,7 +105,6 @@ export const MOVED_TESTS: readonly MovedTestRow[] = [
 	},
 ];
 
-/** Identifiers and import specifiers renamed on the base side. */
 export const RENAME_MAP = {
 	PostgresFleetAssignment: "AssignmentEntry",
 	FleetAssignment: "AssignmentEntry",
@@ -155,13 +118,11 @@ export const RENAME_MAP = {
 	FleetBackendHealth: "Health",
 	FleetFailureClassifier: "FailureClassifier",
 	CacheFleetTick: "OneActiveTick",
-	// Built from parts so the retired specifier appears in no source text (L21 grep).
 	[`@hobo/backend-${"fleet"}`]: "@hobo/backend-routing",
 } as const satisfies Readonly<Record<string, string>>;
 
 const renames = new Map<string, string>(Object.entries(RENAME_MAP));
 
-/** String values of a `failure` or `health` property, mapped on the base side. */
 export const VALUE_MAP = {
 	reachable: "Health.REACHABLE",
 	unreachable: "Health.UNREACHABLE",
@@ -185,7 +146,6 @@ interface Token {
 
 interface Options {
 	readonly side: Side;
-	/** `exact` mode: drop imports and these helpers. Undefined keeps both. */
 	readonly helpers?: ReadonlySet<string>;
 }
 
@@ -222,12 +182,6 @@ function isStringish(
 	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
 
-/**
- * A relative path literal in `new URL(<path>, import.meta.url)`. Like an
- * import specifier it names a file relative to the test's own directory, so a
- * moved file may change its leading `./` and `../` segments; the rest of the
- * path still counts.
- */
 function isModuleRelativeUrl(
 	node: ts.StringLiteral | ts.NoSubstitutionTemplateLiteral,
 ): boolean {
@@ -256,7 +210,6 @@ function calleeName(call: ts.CallExpression): string | undefined {
 
 const snippetTokens = new Map<string, readonly string[]>();
 
-/** The tokens of an expression snippet as the new side would write it. */
 function snippet(expression: string): readonly string[] {
 	let tokens = snippetTokens.get(expression);
 	if (tokens === undefined) {
@@ -367,7 +320,6 @@ function walk(
 		return;
 	}
 
-	// Value map (base side).
 	if (
 		options.side === "base" &&
 		ts.isPropertyAssignment(node) &&
@@ -384,7 +336,6 @@ function walk(
 		return;
 	}
 
-	// Unwrapping (new side).
 	if (options.side === "new" && ts.isCallExpression(node)) {
 		const [argument] = node.arguments;
 		if (
@@ -436,11 +387,6 @@ function describeEnd(text: string, token: Token | undefined): string {
 		: `line ${token.line} \`${sourceLine(text, token.line)}\``;
 }
 
-/**
- * `exact` mode: the differences between a base file and its moved file,
- * after the maps, with imports and the named helpers dropped. At most one
- * difference is reported, at the first token where the two sides diverge.
- */
 export function compareExact(
 	base: string,
 	next: string,
@@ -484,7 +430,6 @@ function rootIdentifier(expression: ts.Expression): string | undefined {
 	}
 }
 
-/** The test function a call names (`describe`, `it`, `test`), if it is one. */
 function testCall(call: ts.CallExpression): string | undefined {
 	const callee = call.expression;
 	if (
@@ -546,11 +491,6 @@ function assertions(name: string, text: string, side: Side): Assertion[] {
 	return found;
 }
 
-/**
- * `assertions` mode: the differences between the ordered test titles and
- * `expect` statements of a base file and its moved file, after the maps. At
- * most one difference is reported, at the first entry that does not match.
- */
 export function compareAssertions(base: string, next: string): string[] {
 	const left = assertions("base.ts", base, "base");
 	const right = assertions("new.ts", next, "new");
@@ -570,7 +510,6 @@ export function compareAssertions(base: string, next: string): string[] {
 	return [];
 }
 
-/** Reads a file at a git ref in `root`; undefined when it is not there. */
 export function gitBaseReader(
 	root: string,
 	ref: string = BASE_REF,
@@ -589,11 +528,9 @@ export interface CheckMovedTestsOptions {
 	readonly root: string;
 	readonly outcome: string;
 	readonly lane?: string | undefined;
-	/** Reads a base file; defaults to `git show fleet-wave-0:<path>` in `root`. */
 	readonly readBase?: (path: string) => string | undefined;
 }
 
-/** Compares every moved-test row of an outcome (and lane, when given). */
 export function checkMovedTests(
 	options: CheckMovedTestsOptions,
 ): MovedTestResult[] {

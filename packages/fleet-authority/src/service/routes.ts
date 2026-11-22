@@ -1,12 +1,7 @@
-/**
- * The route table of design §6.15: every route is exactly one `FleetApi`
- * method, with the auth modes its Auth column allows, how its request is
- * built from the path, query and protobuf JSON body, and how its response is
- * written. The service (`http.ts`) maps routes to methods and nothing else.
- */
 import {
 	type DescMessage,
 	fromJsonString,
+	isMessage,
 	type JsonValue,
 	toJson,
 } from "@bufbuild/protobuf";
@@ -56,20 +51,10 @@ import {
 } from "@hobo/fleet";
 import type { AuthorityRuntime } from "../compose/assemble.js";
 
-/** The record a schema describes. */
 type RecordOf<D extends DescMessage> = ReturnType<typeof fromJsonString<D>>;
 
 export type CallerKind = VerifiedToken["kind"];
 
-/**
- * How a route admits its caller (§6.15 Auth column):
- * - `none`: anyone; credentials are not read.
- * - `browser`: the browser session the sign-in callback set (a cookie).
- * - `signin-key`: a DPoP proof with the CLI's sign-in key, checked by sign-in.
- * - `identity-key`: a DPoP proof with the request's identity key; the proof
- *   in the body (token, person token, assertion) is checked by enrollment.
- * - a list: an authenticated caller of one of these kinds.
- */
 export type RouteAuth =
 	| "none"
 	| "browser"
@@ -80,9 +65,7 @@ export type RouteAuth =
 export type RouteInput = Readonly<{
 	params: Readonly<Record<string, string>>;
 	query: URLSearchParams;
-	/** The body as text; empty for GET and DELETE. */
 	body: string;
-	/** True when the body is an HTML form rather than protobuf JSON. */
 	form: boolean;
 }>;
 
@@ -94,11 +77,9 @@ export type CallContext = Readonly<{
 
 export type Route = Readonly<{
 	method: "GET" | "POST" | "PUT" | "DELETE";
-	/** Segments; `{name}` captures one segment. */
 	path: string;
 	api: keyof FleetApi;
 	auth: RouteAuth;
-	/** Builds the request and calls the method; the response as JSON. */
 	run(context: CallContext, input: RouteInput): Promise<Outcome<JsonValue>>;
 }>;
 
@@ -107,7 +88,6 @@ function invalid<T>(message: string): Outcome<T> {
 	return { ok: false, error };
 }
 
-/** Protobuf JSON into a record; unknown fields refused. */
 function parseBody<D extends DescMessage>(
 	schema: D,
 	text: string,
@@ -124,33 +104,33 @@ function parseBody<D extends DescMessage>(
 	}
 }
 
-function encoded<D extends DescMessage>(
+function encoded<D extends DescMessage, T>(
 	schema: D,
-	outcome: Outcome<RecordOf<D>>,
+	outcome: Outcome<T>,
 ): Outcome<JsonValue> {
-	return outcome.ok
-		? { ok: true, value: toJson(schema, outcome.value) }
-		: outcome;
+	if (!outcome.ok) return outcome;
+	if (!isMessage(outcome.value, schema))
+		throw new TypeError(`the response is not a ${schema.typeName}`);
+	return { ok: true, value: toJson(schema, outcome.value) };
 }
 
 type Request<M extends keyof FleetApi> = FleetApi[M][0];
 type Response<M extends keyof FleetApi> = FleetApi[M][1];
 
-/** The one method of the route, as `EnrollmentAuthority` types it. */
 function callMethod<M extends keyof FleetApi>(
 	context: CallContext,
 	api: M,
 	request: Request<M>,
 ): Promise<Outcome<Response<M>>> {
-	// SAFETY: EnrollmentAuthority maps every FleetApi key M to (FleetApi[M][0], caller) => Outcome<FleetApi[M][1]>; TypeScript cannot correlate M across the union.
-	const method = context.runtime.authority[api] as (
-		request: Request<M>,
-		caller: VerifiedToken | undefined,
-	) => Promise<Outcome<Response<M>>>;
-	return method(request, context.caller);
+	const methods: {
+		readonly [K in keyof FleetApi]: (
+			request: Request<K>,
+			caller: VerifiedToken | undefined,
+		) => Promise<Outcome<Response<K>>>;
+	} = context.runtime.authority;
+	return methods[api](request, context.caller);
 }
 
-/** A route whose request comes from `build` and whose method is called as is. */
 function route<M extends keyof FleetApi, D extends DescMessage>(
 	method: Route["method"],
 	path: string,
@@ -175,8 +155,7 @@ function route<M extends keyof FleetApi, D extends DescMessage>(
 				call === undefined
 					? await callMethod(context, api, request.value)
 					: await call(context, request.value);
-			// SAFETY: FleetApi[M][1] is the record `response` describes, as the table below pairs them.
-			return encoded(response, outcome as Outcome<RecordOf<D>>);
+			return encoded(response, outcome);
 		},
 	};
 }
@@ -193,6 +172,13 @@ function param(input: RouteInput, name: string): Outcome<string> {
 		: { ok: true, value };
 }
 
+function hasKey<K extends string>(
+	value: Readonly<Record<string, string>>,
+	name: K,
+): value is Readonly<Record<K, string>> {
+	return Object.hasOwn(value, name);
+}
+
 function byId<K extends string>(
 	name: K,
 	input: RouteInput,
@@ -201,8 +187,8 @@ function byId<K extends string>(
 	const id = param(input, from);
 	if (!id.ok) return id;
 	const value = Object.fromEntries([[name, id.value]]);
-	// SAFETY: a one-key record built from the key it is typed by.
-	return { ok: true, value: value as Readonly<Record<K, string>> };
+	if (!hasKey(value, name)) return invalid(`the path ${name} is missing`);
+	return { ok: true, value };
 }
 
 function withBody<K extends string, D extends DescMessage>(
@@ -227,7 +213,6 @@ function integer(
 	return { ok: true, value: Number(text) };
 }
 
-/** Lifecycle routes: `POST /v1/fleet/members/{id}/<verb>` with a `LifecycleRequest`. */
 function lifecycle(
 	verb: string,
 	api:
@@ -251,7 +236,7 @@ function lifecycle(
 
 const READ: readonly CallerKind[] = ["person", "member", "account"];
 
-// public-contract: the HTTP routes of design §6.15; clients (L07) and the deployment (L23) address them.
+// public-contract: the HTTP routes; clients (L07) and the deployment (L23) address them.
 export const ROUTES: readonly Route[] = [
 	route(
 		"GET",
@@ -360,7 +345,6 @@ export const ROUTES: readonly Route[] = [
 		"signin-key",
 		PersonCredentialSchema,
 		(input) => parseBody(SignInCompleteSchema, input.body),
-		// D56: the proof is not in the method signature; sign-in checks it against the started key.
 		(context, request) =>
 			context.runtime.signIn.complete(request, context.dpop),
 	),
@@ -380,7 +364,6 @@ export const ROUTES: readonly Route[] = [
 		["person"],
 		PersonCredentialSchema,
 		(input) => parseBody(SignInRefreshSchema, input.body),
-		// D56: refresh is bound to the DPoP header here, at the transport.
 		async (context) =>
 			context.caller === undefined
 				? {
@@ -616,7 +599,6 @@ export const ROUTES: readonly Route[] = [
 	),
 ];
 
-/** Finds the route for a method and path; `params` holds the decoded captures. */
 export function matchRoute(
 	method: string,
 	pathname: string,

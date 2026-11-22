@@ -1,6 +1,3 @@
-// Test fixtures for the observation lane: device keys from the in-memory key
-// store, their signed key bundles, member records, and a registry double
-// built against the frozen `RegistryView` port (rule 6).
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
 	type FleetRecord,
@@ -27,12 +24,10 @@ import { type FleetId, type MemberId, parseFleetId } from "../../src/ids.js";
 import { createMemoryKeyStore, signEnvelope } from "../../src/keys/index.js";
 import type { DeviceKeys, RegistryView } from "../../src/ports.js";
 
-/** An observation's init fields (not a built message), for overrides. */
 export type ObservationInit = Exclude<
 	Parameters<typeof create<typeof ObservationSchema>>[1],
 	Observation | undefined
 >;
-/** A member record's init fields, for overrides. */
 export type MemberRecordInit = Exclude<
 	Parameters<typeof create<typeof MemberRecordSchema>>[1],
 	MemberRecord | undefined
@@ -47,7 +42,6 @@ export async function deviceKeys(): Promise<DeviceKeys> {
 	return createMemoryKeyStore().open();
 }
 
-/** The key bundle a device signs with its identity key (§6.4). */
 export async function keyBundle(
 	keys: DeviceKeys,
 	notAfterMs = NOW + 24 * 3_600_000,
@@ -139,7 +133,6 @@ export function fleetRecord(fleet: string = FLEET): FleetRecord {
 	return create(FleetRecordSchema, { fleetId: fleet, tenant: "acme" });
 }
 
-/** A `RegistryView` over a fixed set of records (verification is the real view's job). */
 export function registry(records: readonly MemberRecord[]): RegistryView {
 	const byId = new Map(records.map((record) => [record.memberId, record]));
 	const none = async (): Promise<undefined> => undefined;

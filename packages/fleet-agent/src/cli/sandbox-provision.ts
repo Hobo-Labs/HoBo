@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * `fleet-agent sandbox provision` (D58): provisions the pinned gVisor runtime
- * and probes this host with the same code the agent's `sandboxDrivers` runs,
- * so CI and devices share one path.
- *
- *   node --import tsx packages/fleet-agent/src/cli/sandbox-provision.ts [--cache <dir>] [--probe]
- *
- * Prints one JSON object: `{runtime, version, arch, digest, mode, cgroups,
- * reason?}`, `mode` being `rootful`, `rootless` or `unavailable` and
- * `cgroups` `delegated` or `sentry`. With `--probe` it also starts a trial
- * sandbox (each candidate's self-test) and reports where the limits ended up.
- * Exits 0 when a mode is available, 3 when not, 2 on bad arguments.
- * `HOBO_FLEET_SANDBOX_RUNTIME` and `HOBO_FLEET_SANDBOX_DOWNLOAD` apply as
- * they do for the agent.
- */
 import { pathToFileURL } from "node:url";
 import { type FleetLog, SandboxTier } from "@hobo/fleet";
 import {
@@ -71,7 +56,6 @@ function parse(argv: readonly string[]): Parsed | undefined {
 	return { cache, probe };
 }
 
-/** Runs the command; answers its exit code and what it prints on standard output. */
 export async function runSandboxProvision(
 	argv: readonly string[],
 	deps: ProvisionDeps,
@@ -130,7 +114,6 @@ export async function runSandboxProvision(
 	});
 }
 
-/** The real self-test: the agent's own Linux candidates, an `S1_CONTAINER` driver required. */
 async function selfTest(setup: HostSetup): Promise<SelfTestAnswer> {
 	const reasons: string[] = [];
 	const log: FleetLog = (event, fields) => {
@@ -145,7 +128,6 @@ async function selfTest(setup: HostSetup): Promise<SelfTestAnswer> {
 			ok: false,
 			reason: `no S1 sandbox passed its self-test: ${reasons.join("; ")}`,
 		};
-	// With delegated cgroups the first candidate uses them; the sentry-limited one follows.
 	const delegated = setup.cgroups.mode === "delegated" && candidates[0] === s1;
 	return { ok: true, cgroups: delegated ? "delegated" : "sentry" };
 }

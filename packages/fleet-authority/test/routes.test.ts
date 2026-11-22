@@ -1,14 +1,3 @@
-/**
- * O28: every route of §6.15 admits exactly its auth modes. For every route
- * and every caller kind (none, person, device, account credential, workload
- * OIDC token, self-minted token, DPoP key mismatch) the cell answers as the
- * Auth column allows; every other cell is refused `unauthenticated`
- * (or another 401 proof failure) or `forbidden`. The routes whose credential
- * is not a caller kind (the browser session, the sign-in key, the identity
- * key) refuse every kind and admit only their own credential. The device-code
- * flow is refused for a `DUAL` fleet, and the approval page renders every
- * field of `ApprovalView`.
- */
 import { create, fromBinary, toJsonString } from "@bufbuild/protobuf";
 import {
 	ApprovalMode,
@@ -53,7 +42,6 @@ const KINDS = [
 	"dpop-mismatch",
 ] as const;
 type Kind = (typeof KINDS)[number];
-/** What the Auth column names, as caller kinds. */
 const KIND_OF = {
 	none: undefined,
 	person: "person",
@@ -139,7 +127,6 @@ async function deviceCaller(subject: Device, gen: number): Promise<Caller> {
 	};
 }
 
-/** A request for each route that passes every check but authentication when the caller is admitted. */
 async function requestFor(route: Route, kind: Kind): Promise<Request> {
 	const member = device.keys.memberId;
 	switch (route.api) {
@@ -322,7 +309,6 @@ async function requestFor(route: Route, kind: Kind): Promise<Request> {
 	}
 }
 
-/** Routes that change the device itself get a disposable one, so later cells keep theirs. */
 async function callerFor(
 	route: Route,
 	kind: Kind,
@@ -377,7 +363,6 @@ beforeAll(async () => {
 	if (defined.status !== 200) throw new Error(defined.text);
 	await h.runtime.tickOnce();
 
-	// The person is signed in through the routes, so refresh has a sign-in to extend.
 	person = await h.signedIn("user:alice");
 	device = await enrollDevice("build", "box1");
 	const deviceToken = await deviceCaller(device, 0);
@@ -438,7 +423,6 @@ beforeAll(async () => {
 
 describe("O28: every route admits exactly its auth modes", () => {
 	it("covers every route of §6.15 once", () => {
-		// One route per FleetApi method (41); /healthz and /readyz are not FleetApi methods.
 		expect(ROUTES).toHaveLength(41);
 		expect(new Set(ROUTES.map((route) => route.api)).size).toBe(41);
 	});
@@ -616,7 +600,6 @@ describe("dual control", () => {
 		expect(defined.status, defined.text).toBe(200);
 		await h.runtime.tickOnce();
 
-		// The device signs its person in with its identity key, by device code.
 		const fresh = await newDevice(h.now());
 		const flow = await h.startSignIn("user:alice", true, fresh.identityKey);
 		const verify = await h.send("POST", "/v1/fleet/signin/device", {
@@ -642,7 +625,6 @@ describe("dual control", () => {
 			detail: { rule: "dual-control-device-code" },
 		});
 
-		// A device whose person signed in by the browser flow is admitted (and waits for two approvers).
 		const second = await newDevice(h.now());
 		const browser = await h.startSignIn(
 			"user:alice",

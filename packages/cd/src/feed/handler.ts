@@ -64,6 +64,7 @@ import type {
 	TelemetrySink,
 	TopologyReader,
 } from "../ports.js";
+import { asCamp } from "../rollout/journal.js";
 import { feedRefusal, statusFor } from "./errors.js";
 import { buildFrame, frameJson, verifiedBlob } from "./frames.js";
 import { createFeedJournal } from "./journal.js";
@@ -203,8 +204,7 @@ export function createDeliveryFeedHandler(
 					.reasons,
 			);
 		}
-		// SAFETY: Camp ids from the wire; the enrollment checks them against the token's scope.
-		const campIds = texts(body.campIds) as CampId[];
+		const campIds = texts(body.campIds).map(asCamp);
 		const result = await d.enrollment.enroll(
 			{ request: enrollment, dpopProof: proof, campIds },
 			ctxFor({ kind: "agent", id: "bootstrap" }),

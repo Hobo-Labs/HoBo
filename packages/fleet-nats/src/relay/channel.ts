@@ -1,38 +1,21 @@
-/**
- * One relay session as a raw `FleetStream`: `DATA` messages in publish order,
- * with credit-based flow control so a fast writer never outruns a slow reader
- * through a bus that does not push back. Each side may have at most `window`
- * bytes unread at the other; the reader returns credit as its consumer takes
- * bytes, half a window at a time. A sender that exceeds its credit is reset.
- *
- * The bytes here are what `frameStream` wrote, so they are already ciphertext;
- * this layer neither encrypts nor authenticates.
- */
 import type { FleetStream, MemberId } from "@hobo/fleet";
 import { RELAY_MESSAGE, type RelayMessage } from "./wire.js";
 
-/** The largest `DATA` payload; a framed write is at most 64 KiB and 20 bytes. */
 export const MAX_DATA_BYTES = 128 * 1024;
 export const DEFAULT_WINDOW_BYTES = 1024 * 1024;
 
 export type ChannelDeps = Readonly<{
-	/** The relay session id on the subject. */
 	id: string;
-	/** Who the other end is on the bus. */
 	to: MemberId;
 	send(message: RelayMessage): Promise<void>;
-	/** Called once, when the channel is finished either way. */
 	release(): void;
 	windowBytes: number;
-	/** How long a write waits for credit before the session is abandoned. */
 	creditTimeoutMs: number;
 }>;
 
 export type Channel = Readonly<{
 	stream(peer: string): FleetStream;
-	/** Hands an incoming message of this session to the channel. */
 	receive(message: RelayMessage): void;
-	/** Ends the session locally, telling the other end (`RESET`) unless `quiet`. */
 	reset(reason: string, quiet?: boolean): void;
 }>;
 
@@ -41,9 +24,7 @@ type Waiter = Readonly<{ wake(): void }>;
 export function createChannel(deps: ChannelDeps): Channel {
 	const inbox: Uint8Array[] = [];
 	let credit = deps.windowBytes;
-	/** Bytes received beyond what has been credited back, as the sender sees it. */
 	let outstanding = 0;
-	/** Bytes the consumer has taken and not yet credited back. */
 	let consumed = 0;
 	let remoteEnded = false;
 	let failure: Error | undefined;
@@ -71,7 +52,6 @@ export function createChannel(deps: ChannelDeps): Channel {
 
 	const finished = () => failure !== undefined || localClosed || remoteEnded;
 
-	/** Resolves when `ready` holds or the channel fails; rejects on timeout. */
 	const until = (ready: () => boolean, timeoutMs: number | undefined) =>
 		new Promise<void>((resolve, reject) => {
 			let timer: ReturnType<typeof setTimeout> | undefined;
@@ -161,7 +141,6 @@ export function createChannel(deps: ChannelDeps): Channel {
 				await until(() => credit >= piece.length, deps.creditTimeoutMs);
 				if (failure !== undefined) throw failure;
 				if (localClosed) throw new Error("the relay session is closed");
-				// The peer has closed and reads no more: what it would not read is dropped.
 				if (remoteEnded) return;
 				credit -= piece.length;
 				bytesSent += piece.length;

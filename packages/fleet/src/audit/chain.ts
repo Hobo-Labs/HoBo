@@ -1,11 +1,9 @@
-// The authority's audit chain (design §6.14): every journal event, in
-// `readAll` order, becomes one `AuditEntry`; a checkpoint is signed every 60 s
-// or 1,000 entries and journaled as `fleet.AuditCheckpointed`.
 import {
 	type EventPosition,
 	type JsonValue,
 	OptimisticSequenceConflictError,
 	type PositionedEvent,
+	parseEventPosition,
 } from "@hobo/core";
 import type { AuditEntry } from "../_generated/fleet_pb.js";
 import { AUDIT_CHECKPOINT_CONTEXT } from "../contexts.js";
@@ -20,6 +18,7 @@ import {
 	entryHash,
 	entryOf,
 	GENESIS_HASH,
+	isObject,
 	jsonOf,
 } from "./hash.js";
 
@@ -53,22 +52,13 @@ function field(
 	meta: JsonValue | undefined,
 	key: string,
 ): JsonValue | undefined {
-	if (
-		meta === undefined ||
-		meta === null ||
-		tagOf.call(meta) !== "[object Object]" ||
-		Array.isArray(meta)
-	)
-		return undefined;
-	// SAFETY: checked above to be a plain JSON object.
-	return (meta as { readonly [k: string]: JsonValue })[key];
+	return isObject(meta) ? meta[key] : undefined;
 }
 
 function positionOf(text: JsonValue | undefined): EventPosition | undefined {
 	if (tagOf.call(text) !== "[object String]") return undefined;
 	try {
-		// SAFETY: EventPosition is a branded bigint; the text was written from one by this chain.
-		return BigInt(String(text)) as EventPosition;
+		return parseEventPosition(BigInt(String(text)));
 	} catch {
 		return undefined;
 	}
@@ -83,7 +73,6 @@ async function pageAll(log: AuditLog, from: number): Promise<AuditEntry[]> {
 	}
 }
 
-/** Recovers the head of the chain from the journal's last checkpoint and the log. */
 async function recover(deps: AuditChainDeps): Promise<Head> {
 	let last:
 		| Readonly<{
@@ -124,7 +113,6 @@ async function recover(deps: AuditChainDeps): Promise<Head> {
 		sequence = entry.sequence;
 		at = entry.at;
 	}
-	// Skip the journal events the log already holds after the checkpoint, checking they are the same events.
 	let position = last?.position;
 	let tenant = "";
 	let skipped = 0;
@@ -250,7 +238,6 @@ export function auditChain(deps: AuditChainDeps): AuditChain {
 		tick() {
 			const next = running.then(tickOnce);
 			running = next.catch(() => {
-				// A failed tick leaves the head to be recovered from the log and journal on the next one.
 				head = undefined;
 			});
 			return next;

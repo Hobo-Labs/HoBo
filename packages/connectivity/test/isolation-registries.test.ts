@@ -1,9 +1,3 @@
-/**
- * The tenant and environment isolation registries take their overlays as
- * parameters (L14, ledger §8.3): they never construct a Tailscale or NetBird
- * adapter themselves, so the host decides which overlay, joined with which
- * enrollment credential, each plane uses.
- */
 import type { OverlayNetwork } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {

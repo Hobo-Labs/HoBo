@@ -1,7 +1,3 @@
-/**
- * Sandbox drivers broken in exactly one way each, keyed by the sandbox logic
- * assertion that must catch the break. Each wraps the fake sandbox driver.
- */
 import { randomBytes } from "node:crypto";
 import { SandboxTier } from "../../../src/_generated/fleet_pb.js";
 import type { Sandbox, SandboxDriver } from "../../../src/ports.js";
@@ -87,7 +83,6 @@ export const BROKEN_SANDBOXES: ReadonlyMap<string, SandboxMake> = new Map([
 				const env = new Map<string, string>();
 				return {
 					async writeSecret(path, bytes) {
-						// Broken: hands the secret over through the environment.
 						env.set("HOBO_SECRET", decoder.decode(bytes));
 						await base.writeSecret(path, bytes);
 					},

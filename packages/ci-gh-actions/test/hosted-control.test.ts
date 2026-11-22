@@ -1927,7 +1927,6 @@ describe("the relay's fleet route", () => {
 			}),
 		],
 	});
-	/** A recording fake of the client's reads: the only methods the relay holds. */
 	function recording(failure?: FleetFailure) {
 		const calls: string[] = [];
 		const reads: RelayFleetReads = {
@@ -2023,7 +2022,6 @@ describe("the relay's fleet reads", () => {
 			},
 		};
 	}
-	/** The read is refused with a ControlError of this status and message. */
 	async function refusedWith<T>(
 		work: Promise<T>,
 		status: number,
@@ -2191,7 +2189,6 @@ describe("the control plane's request preconditions", () => {
 describe("the relay client", () => {
 	const ID = "0123abcd-0123-4abc-8def-0123456789ab";
 	type Sent = { url: string; method: string; headers: Headers; body: string };
-	/** A relay that answers every request with an empty protobuf message. */
 	function recording(answer: () => Response = () => new Response("{}")) {
 		const sent: Sent[] = [];
 		const send: typeof globalThis.fetch = async (url, init) => {
@@ -2215,7 +2212,6 @@ describe("the relay client", () => {
 			fetch: send,
 		});
 	}
-	/** The call's refusal: the client's own error, as status and message. */
 	async function refusal<T>(
 		work: () => Promise<T>,
 	): Promise<{ status: number; message: string }> {

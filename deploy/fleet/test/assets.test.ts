@@ -1,19 +1,3 @@
-/**
- * O33 (ADR-0183): the deployment assets are safe as written.
- *
- * Parses both NATS server templates, both Compose files, every Kubernetes
- * manifest and the three service definitions, and asserts:
- * - every NATS listener requires TLS; leaf-node, MQTT and gateway listeners
- *   are absent; monitoring binds to localhost; operator mode with the full
- *   resolver; JetStream on; a control line long enough for a provisioner JWT;
- * - every Compose service drops every capability, sets no-new-privileges and
- *   keeps a read-only root; no monitoring or cluster port is published;
- * - every Kubernetes workload is non-root with a read-only root, all
- *   capabilities dropped and privilege escalation off, and the authority has
- *   a disruption budget;
- * - the systemd, launchd and Windows definitions run `hobo fleet run`;
- * - the three release images run as a non-root user.
- */
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -35,8 +19,6 @@ const root = join(import.meta.dirname, "..");
 const repo = join(root, "..", "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 
-// The root workspace has no YAML dependency; scripts/lint-actions.ts resolves
-// the one @hobo/ci-gh-actions carries, and so does this test.
 const yamlPath = createRequire(import.meta.url).resolve("yaml", {
 	paths: [join(repo, "packages/ci-gh-actions")],
 });
@@ -45,11 +27,9 @@ const yaml: {
 	parseAllDocuments(source: string): { toJS(): Plain }[];
 } = await import(yamlPath);
 
-/** Compose files share settings through YAML merge keys (`<<: *hardening`). */
 const parseYaml = (source: string): Tree =>
 	fromPlain(yaml.parse(source, { merge: true }));
 
-// ---------------------------------------------------------------- NATS
 
 const NATS_TEMPLATES = ["nats/standalone.conf", "nats/ha.conf"] as const;
 const CONTROL_LINE_FLOOR = 8 * 1024;
@@ -135,14 +115,12 @@ describe("NATS server templates", () => {
 		const cluster = at(ha, "cluster");
 		expectTls(cluster, "cluster");
 		expect(text(cluster, "tls", "verify")).toBe("true");
-		// The route listener binds the private address the deployment names, never every interface.
 		expect(text(cluster, "host")).toBe("$HOBO_FLEET_NATS_CLUSTER_HOST");
 		expect(items(cluster, "routes").length).toBeGreaterThanOrEqual(3);
 		expect(text(ha, "server_name")).toBeTruthy();
 	});
 });
 
-// ---------------------------------------------------------------- Compose
 
 const COMPOSE_FILES = ["compose.standalone.yml", "compose.ha.yml"] as const;
 const HOBO_IMAGES = [
@@ -153,7 +131,6 @@ const HOBO_IMAGES = [
 ];
 const imageOf = (service: Tree) => text(service, "image") ?? "";
 
-/** The container port of each published port. */
 function publishedTargets(service: Tree): number[] {
 	return items(service, "ports").map((port) => {
 		if (port.kind === "scalar")
@@ -260,7 +237,6 @@ describe("Compose files", () => {
 	}
 });
 
-// ---------------------------------------------------------------- Kubernetes
 
 const WORKLOAD_KINDS = new Set([
 	"Deployment",
@@ -411,9 +387,7 @@ describe("Kubernetes manifests", () => {
 	});
 });
 
-// ---------------------------------------------------------------- service configuration
 
-/** The protobuf JSON names of a message's fields in the authority's data model. */
 function jsonFieldNames(message: string): Set<string> {
 	const proto = readFileSync(
 		join(repo, "packages/fleet-authority/data-models/fleet_authority.proto"),
@@ -484,7 +458,6 @@ describe("service configuration", () => {
 	});
 });
 
-// ---------------------------------------------------------------- service definitions
 
 const ARGUMENT = /"([^"]*)"|(\S+)/gu;
 const splitArguments = (line: string) =>
@@ -513,7 +486,6 @@ function windowsCommandLine(task: string): string[] {
 	return [command, ...splitArguments(args)];
 }
 
-/** `hobo fleet run`, whether `hobo` is the executable or the script node runs. */
 function runsHoboFleetRun(argv: readonly string[]): boolean {
 	const hobo = argv.findIndex((arg) =>
 		/(^|[\\/])hobo(\.exe|\.js|\.cmd)?$/u.test(arg),
@@ -546,7 +518,6 @@ describe("service definitions", () => {
 	});
 });
 
-// ---------------------------------------------------------------- release images
 
 const dockerfile = (image: string) =>
 	readFileSync(

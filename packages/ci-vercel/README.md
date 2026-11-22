@@ -832,7 +832,7 @@ table is in [`@hobo/ci-gh-actions`](../ci-gh-actions/README.md#keys-values-and-t
 - **No fleet verdicts.** The relay keeps no verdict, reporter state or
   allowance: a runner's health is its own `Observation` as a member of fleet
   `hobo`, read through `@hobo/fleet/client`
-  ([ADR-0183](../../docs/design/adr/index.md)). The keys
+ . The keys
   `HOBO_CI_FLEET_REPORTERS_JSON`, `HOBO_CI_FLEET_VERDICT_SERVING` and
   `HOBO_CI_FLEET_VERDICT_DAILY_BLOCK_MINUTES` are not settings: remove them
   from the config service before deploying this relay, because the strict
@@ -1130,3 +1130,12 @@ counts the ones held back since the last line. No request body, header or creden
 a failing logger never changes the response. When the
 error or its cause is a database refusal, the line also carries its five-character SQLSTATE as
 `sqlstate` (for example `28P01` for a rejected password).
+
+## Fleet verdict operations
+
+The fleet verdict channel is retired. This relay serves no
+`GET /v1/fleet/verdicts/{owner}/{repo}` and keeps no reporter state: routing
+reads each runner's own `Observation` as a member of fleet `hobo`, through
+`@hobo/fleet/client` (see [No fleet verdicts](#the-stateless-relay) above).
+Operating the fleet itself is covered by the
+[fleet runbooks](../../docs/maintenance/fleet/index.md).

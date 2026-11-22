@@ -1,20 +1,3 @@
-/**
- * Both deployment profiles of §6.16 from one configuration record. The
- * profiles differ only in the event store: standalone journals to SQLite
- * through @hobo/runtime-local (ADR-0135, one writer), high availability to
- * `FLEET_JOURNAL` through @hobo/fleet-nats; every replica of either is a
- * callout responder in one queue group. Everything else is the same:
- *
- * - keys from the secret store (record-signing slot, token ring, NATS
- *   credentials, the callout's xkey and scoped seeds, the browser-session key);
- * - the incarnation from the pinned trust record's `authority_incarnation`,
- *   which a restore raises (carry-forward 1 of L27);
- * - the record signer and the token ring re-read after a rotation (2);
- * - the person directory, account credentials, sign-in providers, pinned OIDC
- *   issuers and overlay minters from the configuration (none when absent).
- *
- * The network clients are parameters, so tests compose with doubles.
- */
 import { randomBytes } from "node:crypto";
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
@@ -68,7 +51,6 @@ import {
 	slotSigner,
 } from "./keys.js";
 
-/** How often the token ring and the record-signing slot are re-read. */
 const KEY_REFRESH_MS = 60_000;
 
 export type ProfileAdapters = Readonly<{
@@ -208,7 +190,6 @@ export async function composeAuthority(
 
 	let sessionKey = await secretOrEmpty(secrets, config.sessionKeySecret);
 	if (sessionKey.length === 0) {
-		// The first replica creates it; replicas that start together converge on the store's latest.
 		await secrets.put(
 			config.sessionKeySecret,
 			randomBytes(32).toString("base64url"),
@@ -350,7 +331,6 @@ export async function composeAuthority(
 // public-contract: the `status` @hobo/fleet-nats logs (`hobo_fleet_bus_status`, component "callout") for each allowed callout decision.
 const CALLOUT_AUTHORISED = "authorised";
 
-/** Every replica answers NATS auth callouts; `nats-callout` availability is recorded per decision it can observe. */
 async function startCallout(
 	config: AuthorityConfig,
 	adapters: ProfileAdapters,
@@ -410,7 +390,6 @@ async function startCallout(
 		incarnation,
 		now: adapters.now,
 		log: (event, fields) => {
-			// An allowed decision and a refusal are answers; a request the responder cannot open is a failed one.
 			if (event === "hobo_fleet_callout_refused")
 				runtime.status.record(
 					"nats-callout",

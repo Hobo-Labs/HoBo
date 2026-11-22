@@ -1,18 +1,3 @@
-/**
- * The p2p `FleetTransport` over an `EndpointBinding` (design §6.12 item 1, L11).
- *
- * `start` binds one endpoint with the secret derived from the device's SIGN
- * key, the ALPN `hobo/fleet/1` and only the configured relays, and answers the
- * endpoint id as the transport identity. `dial` reaches the acceptor the grant
- * names by its endpoint id and presents the grant as the first frame; `accept`
- * hands each incoming connection's proven endpoint id and presented grant to
- * `authorise` before a payload byte is delivered either way (session.ts).
- *
- * When the platform has no prebuilt binding, the transport reports itself
- * unavailable: `start` answers an empty transport identity (the device then
- * publishes no `TRANSPORT` key), `dial` fails `unavailable`, and `accept`
- * takes nothing. Selection then moves on to `overlay` and `bus-relay` (A8).
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type DeviceKeys,
@@ -39,7 +24,6 @@ import {
 	readGrantFrame,
 } from "./session.js";
 
-/** The one ALPN the p2p transport serves and dials. */
 export const P2P_ALPN: Uint8Array = new TextEncoder().encode("hobo/fleet/1");
 
 const HANDSHAKE_MS = 15_000;
@@ -54,10 +38,8 @@ function fail<T>(code: FleetErrorCode, message: string): Outcome<T> {
 	return { ok: false, error: { code, message } };
 }
 
-/** A timer that `clear` cancels. */
 type Deadline = Readonly<{ reached: Promise<"late">; clear(): void }>;
 
-/** Resolves `"late"` after `ms`, or when `signal` aborts; never rejects. */
 function deadline(ms: number, signal: AbortSignal | undefined): Deadline {
 	let clear = () => {};
 	const reached = new Promise<"late">((resolve) => {
@@ -75,7 +57,6 @@ function deadline(ms: number, signal: AbortSignal | undefined): Deadline {
 export function createEndpointTransport(
 	deps: Readonly<{
 		relayUrls: readonly string[];
-		/** Answers the binding, or undefined when this platform has none. */
 		binding: () => EndpointBinding | undefined;
 		handshakeTimeoutMs?: number;
 	}>,
@@ -148,7 +129,6 @@ export function createEndpointTransport(
 		try {
 			await current.handler(session, grant);
 		} catch {
-			// The handler's failure ends its session; the transport keeps accepting.
 		} finally {
 			await session.close();
 		}
@@ -203,7 +183,6 @@ export function createEndpointTransport(
 				connection.close();
 				return fail("unavailable", "p2p: the dial was abandoned");
 			}
-			// The peer was reached: from here, anything but its ACCEPTED byte is a refusal.
 			const opened = await (async () => {
 				const stream = await connection.openStream();
 				await stream.write(frame);

@@ -1,13 +1,3 @@
-/**
- * Bootstrap tokens, device enrollment and sponsored declaration (§6.5; L02
- * private). Enrollment accepts exactly three proofs: a bootstrap token, a
- * person token whose DPoP binding is the request's identity key, or a
- * platform OIDC assertion. Proof of possession of the identity key is its
- * signature on the key bundle. Every path ends in the same state machine.
- *
- * Order of appends, each a compare-and-set, so a retry after any crash is
- * idempotent: bind the thumbprint, consume the token, open the member stream.
- */
 import { randomBytes } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import type { EventInput, JsonObject, PrincipalRef } from "@hobo/core";
@@ -84,15 +74,12 @@ const TOKEN_BYTES = 32;
 const TOKEN_TTL_MIN_S = 600;
 const TOKEN_TTL_MAX_S = 1_800;
 const TOKEN_TTL_DEFAULT_S = 900;
-/** How long an enrollment OIDC assertion's id is remembered. */
 const ASSERTION_MEMORY_MS = 24 * 60 * 60 * 1_000;
 
-/** Members that no longer hold their name or count against a quota. */
 function terminal(state: MemberState): boolean {
 	return state === MemberState.REVOKED || state === MemberState.REJECTED;
 }
 
-/** `name-taken` when another live member already has this name in the fleet (§6.2). */
 export function nameTaken(
 	index: MembershipIndex,
 	fleet: string,
@@ -133,13 +120,11 @@ function quotaReached(
 	return held >= quota;
 }
 
-/** The events that open a member stream, and the record after them. */
 type Opening = Readonly<{
 	events: EventInput<JsonObject>[];
 	record: MemberRecord;
 }>;
 
-/** The events that open a member stream: requested, then, when approval is automatic, approved, accepted and activated. */
 function openingEvents(
 	ctx: Ctx,
 	first: MemberRecord,
@@ -178,8 +163,6 @@ async function aliasesOf(
 		return [];
 	}
 }
-
-// ── Tokens ─────────────────────────────────────────────────────────────────
 
 export async function issueToken(
 	ctx: Ctx,
@@ -307,9 +290,6 @@ export async function revokeToken(
 	});
 }
 
-// ── Enrollment ─────────────────────────────────────────────────────────────
-
-/** What a proof establishes about the enrollment. */
 type Admission = Readonly<{
 	owner: PrincipalRef;
 	ownerAliases: readonly string[];
@@ -318,12 +298,10 @@ type Admission = Readonly<{
 	deviceClass: DeviceClass;
 	fleet: string;
 	name: string;
-	/** Set when policy approves at once; who counts as approver. */
 	approver: string | undefined;
 	tier: AttestationTier | undefined;
 	digest: string;
 	token: Readonly<{ hash: string; seq: number; expiresAt: string }> | undefined;
-	/** Runs once every other check has passed (single-use assertions, governed decisions). */
 	finally: (() => Promise<Outcome<true>>) | undefined;
 }>;
 
@@ -351,7 +329,6 @@ export async function enroll(
 		memberId: memberIdFromJwk(jwk.value),
 	};
 
-	// A single-use check (an OIDC assertion id, a governed decision) runs once per call, not once per retry.
 	let checked: Outcome<true> | undefined;
 	return withRetry(ctx, async (index) => {
 		const existing = index.members.get(subject.memberId);
@@ -361,7 +338,6 @@ export async function enroll(
 		if (existing !== undefined) {
 			if (terminal(existing.record.state))
 				return refuse("key-known", "this identity key was revoked or rejected");
-			// The same key enrolling again: idempotent, whatever proof it carries.
 			if (
 				existing.record.memberships.some(
 					(m) => m.fleet === request.fleet || request.fleet === "",
@@ -497,7 +473,6 @@ async function admitPerson(
 	const person: Person = verified.value;
 	if (person.tenant !== ctx.deps.tenant)
 		return refuse("forbidden", "the person token is for another tenant");
-	// The token, the fingerprint the person approved and the proof name one key (§6.5).
 	if (
 		person.jkt !== subject.thumbprint ||
 		(caller !== undefined &&
@@ -767,9 +742,6 @@ async function openDevice(
 	return { ok: true, value: await enrollmentResponse(ctx, opened.record) };
 }
 
-// ── Declaration ────────────────────────────────────────────────────────────
-
-/** Who is declaring, and whether its declaration is approved at once. */
 type Sponsor = Readonly<{
 	actor: PrincipalRef;
 	sponsor: string;

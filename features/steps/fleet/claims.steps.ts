@@ -1,10 +1,3 @@
-/**
- * Steps for features/fleet/claims.feature (O8 behaviour): a forged claim is
- * discarded and attributes nothing; a signature-valid claim from outside the
- * fleet is not entitled, and the authority suspends its signer on the
- * dispatcher's report. Also the multi-device enrollment steps other features
- * share.
- */
 import assert from "node:assert/strict";
 import { Before, Given, Then, When } from "@cucumber/cucumber";
 import {

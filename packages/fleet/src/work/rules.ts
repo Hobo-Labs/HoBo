@@ -1,9 +1,3 @@
-/**
- * The pure rules of many-active work (design §6.9, §6.11, §6.13): the work
- * digest, the trust class a device derives for itself, the sandbox tier that
- * class needs, what fleet policy allows, residency and the agent version
- * floor. Private to L04; the entry points in `index.ts` wrap them.
- */
 import { createHash } from "node:crypto";
 import { fromBinary } from "@bufbuild/protobuf";
 import {
@@ -25,7 +19,6 @@ import {
 } from "../_generated/fleet_pb.js";
 import { parseWorkDigest, type WorkDigest } from "../ids.js";
 
-/** First 32 hex of `sha256(kind ‖ 0x00 ‖ work_key)` (§7.1 `WorkOffer.work_digest`). */
 export function digestOf(kind: string, workKey: string): WorkDigest {
 	const hex = createHash("sha256")
 		.update(kind)
@@ -35,7 +28,6 @@ export function digestOf(kind: string, workKey: string): WorkDigest {
 	return parseWorkDigest(hex.slice(0, 32));
 }
 
-/** The authority-signed submission an offer carries, decoded (not verified; `checkOrder` verifies). */
 export function submissionOf(offer: WorkOffer): WorkSubmission | undefined {
 	if (offer.submission === undefined) return undefined;
 	try {
@@ -45,13 +37,6 @@ export function submissionOf(offer: WorkOffer): WorkSubmission | undefined {
 	}
 }
 
-/**
- * §6.11: `UNTRUSTED` if the offer says so or its origin is not `INTERNAL`;
- * otherwise `OWN` if the author is one of the owner's linked identities in
- * this device's own record; otherwise `ORG`. A dispatcher's `OWN` is ignored:
- * the offer's class is only ever a ceiling. For submitted work the author is
- * the one inside the authority's submission.
- */
 export function trustClassOf(offer: WorkOffer, self: MemberRecord): TrustClass {
 	if (offer.trustClass === TrustClass.UNTRUSTED) return TrustClass.UNTRUSTED;
 	if (offer.origin !== WorkOrigin.INTERNAL) return TrustClass.UNTRUSTED;
@@ -68,7 +53,6 @@ export function trustClassOf(offer: WorkOffer, self: MemberRecord): TrustClass {
 	return TrustClass.ORG;
 }
 
-/** Whether the fleet's policy names `repository` in its repository rules. */
 function namesRepository(policy: FleetPolicy, repository: string): boolean {
 	return (
 		repository.length > 0 &&
@@ -76,10 +60,6 @@ function namesRepository(policy: FleetPolicy, repository: string): boolean {
 	);
 }
 
-/**
- * The table of §6.11. Device class `UNSPECIFIED` (a sponsored member, or a
- * record without a class) is treated as `PERSONAL`, the strictest column.
- */
 export function sandboxFor(
 	trust: TrustClass,
 	deviceClass: DeviceClass,
@@ -98,13 +78,11 @@ export function sandboxFor(
 			return policy.orgMinSandbox;
 		return SandboxTier.S3_MICROVM;
 	}
-	// UNTRUSTED, or a class nobody derived: only an ephemeral micro-VM.
 	return deviceClass === DeviceClass.EPHEMERAL
 		? SandboxTier.S3_MICROVM
 		: "never";
 }
 
-/** The tier a device needs for this offer: the §6.11 minimum, raised to the work's own minimum. */
 export function neededTier(
 	offer: WorkOffer,
 	self: MemberRecord,
@@ -118,7 +96,6 @@ export function neededTier(
 	return { trust, tier: needed };
 }
 
-/** A ref glob of `RepositoryRule.refs`: `*` is anything but `/`, `**` is anything. */
 export function refMatches(glob: string, ref: string): boolean {
 	let pattern = "";
 	for (let index = 0; index < glob.length; index += 1) {
@@ -135,13 +112,6 @@ export function refMatches(glob: string, ref: string): boolean {
 
 export type PolicyRefusal = "kind" | "repository" | "ref" | "workflow";
 
-/**
- * §6.9 step 6, the policy part: the kind is allowed (an empty `work_kinds`
- * places no restriction, as for the other lists of a fresh policy), and work
- * that names a repository needs a rule for it, a ref one of the rule's globs
- * matches (empty `refs` means none), and a workflow digest the rule lists
- * (empty means any). Work without a repository (submitted work) skips those.
- */
 export function policyRefusal(
 	policy: FleetPolicy,
 	work: Readonly<{
@@ -176,11 +146,6 @@ function hasRule(rule: ResidencyRule | undefined): rule is ResidencyRule {
 	);
 }
 
-/**
- * §6.13: where the fleet or the offer carries a residency rule, the member's
- * region must evaluate `ok` under each (ADR-0146, fail closed). An undeclared
- * or unmapped region, or a rule that does not parse, excludes.
- */
 export function residencyAllows(
 	region: string,
 	rules: readonly (ResidencyRule | undefined)[],
@@ -219,7 +184,6 @@ function versionParts(version: string): number[] | undefined {
 		: undefined;
 }
 
-/** Dotted numeric versions; a missing part is 0; an unreadable floor places none; an unreadable version fails. */
 export function versionAtLeast(version: string, floor: string): boolean {
 	if (floor.trim().length === 0) return true;
 	const need = versionParts(floor);

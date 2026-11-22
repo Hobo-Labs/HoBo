@@ -1,11 +1,3 @@
-/**
- * `fleet:moved-tests` (O15, O16, O17): a moved test differs from its base at
- * `fleet-wave-0` only as the moved-test rules allow. Both sides are parsed
- * with the TypeScript compiler API, so formatting and comments never count;
- * the rename and value maps rewrite the base side and the unwrapping rewrites
- * the new side. `exact` mode drops imports and the named helpers; `assertions`
- * mode compares only test titles and `expect` statements, in order.
- */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,7 +13,6 @@ import {
 } from "../check-fleet-moved-tests.mts";
 
 const repoRoot = join(import.meta.dirname, "..", "..");
-/** The retired package specifier, built from parts so no source text names it. */
 const OLD_PACKAGE = `@hobo/backend-${"fleet"}`;
 
 const BASE = `import { describe, expect, it } from "vitest";
@@ -45,7 +36,6 @@ describe("assignment register", () => {
 });
 `;
 
-/** BASE after the rename and value maps: what a faithful move writes. */
 const MOVED = BASE.replaceAll("parseFleetAssignment", "parseAssignmentEntry")
 	.replaceAll(OLD_PACKAGE, "@hobo/backend-routing")
 	.replaceAll("FleetAssignment", "AssignmentEntry")

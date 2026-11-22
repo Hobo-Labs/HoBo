@@ -1,16 +1,3 @@
-/**
- * Runner financial models, compiled for the `@hobo/pricing` quote engine.
- *
- * Runner routing never multiplies a rate by a duration itself. A model becomes a
- * catalog product with a rate card (usage per runner minute, the plan fee as
- * a fixed monthly charge) and an allowance grant for the included minutes;
- * the member's commercial state says whether the account exists and how much
- * of the allowance is left. The engine rates the month with and without the
- * job, and the difference is what the job really costs: nothing while free
- * minutes remain, the whole plan fee if taking the job means opening the
- * account.
- */
-
 import {
 	catalogHashOf,
 	parseDecimal,

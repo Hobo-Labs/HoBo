@@ -1,11 +1,3 @@
-/**
- * `@hobo/fleet/membership` enrollment authority (L02): composes the parts the
- * other authority lanes build (sign-in, recorder, projection, fleet commands,
- * audit) and implements the member and token methods of `FleetApi` itself
- * (§6.5, §6.13, §7.5). State lives only in the `FleetEventStore`; every
- * command reads its stream, decides, and appends with `expectedSeq`, so any
- * number of instances on one store agree.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	AuditCheckpointSchema,
@@ -73,7 +65,6 @@ export function createEnrollmentAuthority(
 	};
 
 	return {
-		// ── Discovery ──────────────────────────────────────────────────────
 		async authorityDiscovery() {
 			return {
 				ok: true,
@@ -99,13 +90,11 @@ export function createEnrollmentAuthority(
 			return { ok: true, value: { jwks: deps.issuer.jwks() } };
 		},
 
-		// ── Sign-in (parts.signIn) ─────────────────────────────────────────
 		signInStart: (request) => parts.signIn.start(request),
 		signInCallback: (request) => parts.signIn.callback(request),
 		signInDevice: (request) => parts.signIn.device(request),
 		approval: (request) => parts.signIn.approval(request.state),
 		approve: (request) => parts.signIn.approve(request),
-		// The DPoP proof of these three is not in the method's signature (see the lane README).
 		signInComplete: (request) => parts.signIn.complete(request, ""),
 		signInPoll: (request) => parts.signIn.poll(request, ""),
 		async signInRefresh(_request, caller) {
@@ -114,7 +103,6 @@ export function createEnrollmentAuthority(
 			return parts.signIn.refresh(caller, "");
 		},
 
-		// ── Tokens and enrollment ──────────────────────────────────────────
 		issueToken: (request, caller) => issueToken(ctx, request, caller),
 		listTokens: (_request, caller) => listTokens(ctx, caller),
 		revokeToken: (request, caller) =>
@@ -122,7 +110,6 @@ export function createEnrollmentAuthority(
 		enroll: (request, caller) => enroll(ctx, request, caller),
 		declare: (request, caller) => declare(ctx, request, caller),
 
-		// ── Lifecycle ──────────────────────────────────────────────────────
 		async approveKey(request, caller) {
 			const live = await refuseIfExpired(ctx, request.memberId);
 			if (!live.ok) return live;
@@ -152,7 +139,6 @@ export function createEnrollmentAuthority(
 		leave: (request, caller) => leave(ctx, request.memberId, caller),
 		report: (request, caller) => report(ctx, request, caller),
 
-		// ── Member reads ───────────────────────────────────────────────────
 		async listMembers(request, caller) {
 			const read = reader(caller);
 			if (!read.ok) return read;
@@ -178,7 +164,6 @@ export function createEnrollmentAuthority(
 			return memberRead(ctx, request.memberId);
 		},
 
-		// ── Fleets, sessions, work (parts.fleets, parts.recorder) ──────────
 		listFleets: (request, caller) => parts.fleets.listFleets(request, caller),
 		getFleet: (request, caller) => parts.fleets.getFleet(request, caller),
 		defineFleet: (request, caller) => parts.fleets.defineFleet(request, caller),
@@ -199,7 +184,6 @@ export function createEnrollmentAuthority(
 			return parts.recorder.workLogs(request.submissionId);
 		},
 
-		// ── Audit reads ────────────────────────────────────────────────────
 		async auditCheckpoints(request, caller) {
 			const allowed = auditor(caller);
 			if (!allowed.ok) return allowed;

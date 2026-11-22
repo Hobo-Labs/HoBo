@@ -1,10 +1,3 @@
-/**
- * A test double for the JWT-SVID issuer elevated capabilities are minted
- * through (`ElevatedCapabilityIssuer`, satisfied in production by
- * `@hobo/identity`'s `JwtSvidIssuer`) and for the verifier that checks them
- * over the issuer's key (ADR-0183). An in-memory Ed25519 key, never a shared
- * secret: a token from another issuer double fails verification.
- */
 import {
 	createPublicKey,
 	generateKeyPairSync,
@@ -57,10 +50,9 @@ export function createTestElevatedIssuer(
 					)
 				)
 					throw new Error("JWT signature verification failed");
-				// SAFETY: the payload was signed by this double's own key, as a JSON object.
-				const claims = JSON.parse(
+				const claims: VerifiedClaims = JSON.parse(
 					Buffer.from(body, "base64url").toString("utf8"),
-				) as VerifiedClaims;
+				);
 				if (claims.iss !== options.issuer) throw new Error("issuer mismatch");
 				const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
 				if (!audiences.includes(options.audience))

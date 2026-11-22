@@ -1,5 +1,3 @@
-// JSON guards for JOSE headers and claims, without runtime `typeof` (the same
-// tag check as `@hobo/core`'s json.ts, which the core barrel does not export).
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 const tagOf = Object.prototype.toString;

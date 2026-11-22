@@ -1,13 +1,3 @@
-/**
- * An in-memory fleet for interleaving tests.
- *
- * Every replica operation is two scheduler steps: one before it takes effect
- * and one before its answer is delivered. A seeded scheduler releases one
- * waiting step at a time, so a run explores one interleaving of concurrent
- * proposers, and the same seed explores the same one again. A replica that
- * goes down between the two steps has applied the write and lost the answer,
- * which is the case a real network produces.
- */
 import { assignmentKey, fleetMajority } from "../../src/assignment/index.js";
 import type {
 	AssignmentAcceptOutcome,
@@ -45,7 +35,6 @@ export class Scheduler {
 		});
 	}
 
-	/** Release waiting steps in seeded order until every task has settled. */
 	async drive(
 		tasks: readonly Promise<void>[],
 		afterStep: () => void,
@@ -90,7 +79,6 @@ export class MemoryReplica implements AssignmentReplica {
 		return limit === undefined ? snapshot : snapshot.slice(-limit);
 	}
 
-	/** The single-statement rule of the SQL replica, applied atomically. */
 	apply(assignment: AssignmentEntry): AssignmentAcceptOutcome {
 		if (this.busy) return "busy";
 		const top = this.rows.at(-1)?.epoch ?? 0;
@@ -115,7 +103,6 @@ export class MemoryReplica implements AssignmentReplica {
 	}
 }
 
-/** What is decided, seen from outside: every replica, up or down. */
 export function decidedEntries(
 	replicas: readonly MemoryReplica[],
 ): Map<number, AssignmentEntry> {

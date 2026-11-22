@@ -1182,8 +1182,8 @@ jobs:
 
   release-service-images:
     name: Fleet service images (build, provenance, bill of materials)
-    # The fleet authority, its witness and the peer-to-peer relay (design
-    # §6.16, ADR-0183): built from deploy/release-images/hobo-fleet-*/,
+    # The fleet authority, its witness and the peer-to-peer relay:
+    # built from deploy/release-images/hobo-fleet-*/,
     # exported as OCI layouts and published as release Freight through
     # hobo deploy like every other release image (the realizer is the only
     # thing that pushes), then attested with build provenance and a CycloneDX

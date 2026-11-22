@@ -1,20 +1,3 @@
-/**
- * The messages the bus-relay transport publishes on
- * `fleet.relay.<toMemberId>.<relaySessionId>` (design §6.12 item 3). A
- * message is one type byte and a body:
- *
- * - `OPEN` 1: a one-byte length and the dialler's member id (where answers
- *   go), then the presented grant envelope in protobuf binary.
- * - `DATA` 2: raw bytes of the session; the AEAD framing (`frameStream`)
- *   above this layer makes them ciphertext.
- * - `CREDIT` 3: a 32-bit big-endian count of bytes the sender may send more.
- * - `END` 4: the sender closed the session.
- * - `RESET` 5: the session is refused or abandoned.
- *
- * Nothing here is secret or authenticated: a forged `DATA` fails the framing's
- * authentication, and a forged `CREDIT`, `END` or `RESET` can only end a
- * session early, as dropping its messages could.
- */
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
@@ -39,7 +22,6 @@ export type RelayMessage =
 
 const MAX_FROM_BYTES = 255;
 
-/** The transport identity a bus-relay transport proves: possession of this SEAL key. */
 export function relayIdentity(sealPublicKey: string): string {
 	return `relay:${sealPublicKey}`;
 }
@@ -75,7 +57,6 @@ export function encodeRelayMessage(message: RelayMessage): Uint8Array {
 	}
 }
 
-/** The message `bytes` holds, or undefined when it is malformed. */
 export function decodeRelayMessage(
 	bytes: Uint8Array,
 ): RelayMessage | undefined {

@@ -1,10 +1,3 @@
-/**
- * The `AuthorityBus` shape local mode hands the enrollment state machine and
- * the fleet commands (L33, private). Local mode has no bus (§6.2, D6): only
- * the in-process registry and its publisher are real. Every other port is
- * absent: a publish or read rejects with an error naming the port, and a subscription delivers nothing. The one-active register keeps
- * its log in the members' own stores, not here (§6.10).
- */
 import type { AuthorityBus, Subscription } from "../ports.js";
 import type { LocalRegistry } from "./registry.js";
 

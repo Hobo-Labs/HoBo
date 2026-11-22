@@ -1,9 +1,3 @@
-/**
- * `buildObservation` and `acceptObservation` (design §6.8 "In authority mode
- * a reader accepts an observation only if all of these hold"). Every rule has
- * a refusing case, each naming its reason, and the observation that satisfies
- * all of them is accepted.
- */
 import { create, fromBinary, isMessage, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -123,7 +117,6 @@ describe("acceptObservation", () => {
 		expect(
 			reason(await accept(view, envelope, keys.memberId, other.memberId)),
 		).toBe("key-mismatch");
-		// Signed as someone else's statement, filed under the signer's key.
 		const claimed = await signed(
 			keys,
 			observation(other.memberId, { observerId: other.memberId }),
@@ -160,7 +153,6 @@ describe("acceptObservation", () => {
 		expect(reason(await accept(view, altered, keys.memberId))).toBe(
 			"signature",
 		);
-		// Another device's SIGN key under this device's key id.
 		const thief = await deviceKeys();
 		const forged = create(SignedEnvelopeSchema, {
 			...(await signed(thief, observation(keys.memberId))),
@@ -195,7 +187,6 @@ describe("acceptObservation", () => {
 	it("refuses a key bundle not signed by the observer's identity key", async () => {
 		const keys = await deviceKeys();
 		const other = await deviceKeys();
-		// The other device's bundle names this device but is signed by the other identity.
 		const bundle = await keyBundle(other);
 		const view = registry([await deviceRecord(keys, { keyBundle: bundle })]);
 		const envelope = await signed(keys, observation(keys.memberId));
@@ -236,7 +227,6 @@ describe("acceptObservation", () => {
 
 	it("refuses an observation of a sponsored member signed by a sponsor that is not a DEVICE", async () => {
 		const keys = await deviceKeys();
-		// The sponsor's record exists but is a backend: it has no SIGN key in a bundle.
 		const sponsor = await deviceRecord(keys, { kind: MemberKind.BACKEND });
 		const view = registry([sponsor, sponsoredRecord(BACKEND, keys.memberId)]);
 		const envelope = await signed(
@@ -246,7 +236,6 @@ describe("acceptObservation", () => {
 		expect(reason(await accept(view, envelope, keys.memberId, BACKEND))).toBe(
 			"observer-not-device",
 		);
-		// A service principal sponsor: no member record at all.
 		const principal = registry([sponsoredRecord(BACKEND, "service:ops")]);
 		expect(
 			reason(await accept(principal, envelope, keys.memberId, BACKEND)),

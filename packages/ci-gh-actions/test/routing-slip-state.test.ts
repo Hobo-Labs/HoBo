@@ -6,7 +6,6 @@ import {
 	ROUTING_HOLD_EXIT_MS,
 } from "../src/isolated-worker/routing-slip-state.js";
 
-/** The issuer's state (ADR-0181): the holds and the pickup memory. */
 const T0 = Date.parse("2026-11-12T11:14:00.000Z");
 const SAMPLE = 10_000;
 
@@ -18,7 +17,6 @@ function holds() {
 	});
 }
 
-/** Feeds one sample per 10 s from `from`, `blocked` deciding each; returns when it changed. */
 function feed(
 	state: ReturnType<typeof holds>,
 	from: number,
@@ -44,7 +42,6 @@ describe("the routing holds", () => {
 
 	it("does not enter on a dip", () => {
 		const state = holds();
-		// Fifty seconds blocked, one clear sample, fifty more: never a full minute.
 		const samples = [
 			...Array(6).fill(true),
 			false,
@@ -58,7 +55,6 @@ describe("the routing holds", () => {
 	it("does not leave on a spike", () => {
 		const state = holds();
 		feed(state, T0, Array(7).fill(true));
-		// Twenty seconds clear, then blocked again: still blocked.
 		expect(
 			feed(state, T0 + 70_000, [
 				false,
@@ -95,11 +91,9 @@ describe("the pickup memory", () => {
 					runnerName: "hobo-runner-a",
 					startedAt: new Date(T0 - 60_000).toISOString(),
 				},
-				// No start time: the poll that saw it stands in.
 				{ label: "hobo-trunk", runnerName: "hobo-runner-b" },
 			],
 		});
-		// The next poll no longer sees them: they finished.
 		memory.remember({
 			completedAt: new Date(T0 + 10_000).toISOString(),
 			inProgress: [],

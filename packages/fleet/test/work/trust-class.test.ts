@@ -1,10 +1,3 @@
-/**
- * O9: the trust class cannot be raised by a dispatcher. Every cell of the
- * table of §6.11 for every device class; the class a device derives from the
- * facts it can check (a dispatcher's `OWN` is ignored); the start fence; and a
- * mislabelled fork job stopped by the fence before any step runs (fake
- * sandbox, real executor and dispatcher on the memory bus).
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -203,7 +196,6 @@ describe("checkAssignment: the start fence", () => {
 		expect(checkAssignment(order(), facts(), record, openPolicy(), S1)).toBe(
 			true,
 		);
-		// A different job of the same label is allowed when it passes the same checks.
 		expect(
 			checkAssignment(
 				order(),
@@ -349,7 +341,6 @@ describe("a mislabelled fork job is stopped by the fence before a step runs", ()
 					`${input.sandbox.controlUrl}/fence`,
 				],
 				env: {},
-				// What GitHub's job context says: a fork pull request, not the internal job offered.
 				stdin: new TextEncoder().encode(
 					JSON.stringify({
 						workKey: "job-1",

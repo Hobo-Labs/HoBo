@@ -1,20 +1,3 @@
-/**
- * Financial models for the runner providers HoBo CI runner routing can draw on.
- *
- * One model is one machine class at one provider: what a minute costs, how the
- * provider rounds it, what it gives away each month, what it charges to have
- * an account at all, how much of it can run at once, and which repositories
- * it will serve. Nothing here decides anything. `./pricing.ts` compiles a
- * model into an `@hobo/pricing` catalog the quote engine rates, and
- * `./balance.ts` puts those quotes through the shared budget policy.
- *
- * Every number carries the page it was read from and the day it was read.
- * `derived: true` marks a figure the vendor does not print for this machine
- * class and that was computed from one it does print; the arithmetic is in the
- * note. A model past `validUntil` is refused by the quote engine, so a stale
- * price takes its provider out of rotation instead of being trusted.
- */
-
 /** How a job reaches the capacity. */
 export type RunnerBinding =
 	/** The relay starts a one-shot runner labelled for the job on this compute. */
@@ -84,7 +67,6 @@ export type RunnerCapabilities = Readonly<{
 }>;
 
 export type RunnerFinancialModel = Readonly<{
-	/** Runner provider id and pricing product id. */
 	id: string;
 	/** `DesiredCiPolicy` provider kind this model prices. */
 	provider: string;
@@ -165,10 +147,6 @@ const HOSTED_VM = {
 	isolated: true,
 } as const;
 
-/**
- * The providers, in the order the page reads: capacity that is already paid for,
- * then rented capacity, then GitHub's own runners.
- */
 export const RUNNER_FINANCIAL_MODELS = [
 	{
 		id: "hobo-box",
@@ -852,7 +830,6 @@ export function runnerFinancialModel(
 	return RUNNER_FINANCIAL_MODELS.find((model) => model.id === id);
 }
 
-/** Provider kinds runner routing has a financial model for. */
 export const RUNNER_PROVIDER_KINDS: readonly string[] = [
 	...new Set(RUNNER_FINANCIAL_MODELS.map((model) => model.provider)),
 ].sort();

@@ -1,24 +1,3 @@
-/**
- * `runTransportConformance` (design §7.3, §6.12, O12): what every
- * `FleetTransport` must do. `make` answers two transports that can reach one
- * another; the suite starts each with its own device keys, accepts on the
- * second and dials from the first.
- *
- * The grant check itself is the accepting device's (`authoriseSession`); the
- * suite passes its own `authorise`, which verifies the grant's signature
- * against a suite authority key, its expiry, and that the peer the transport
- * proved is the initiator the grant names. What the suite checks is that the
- * transport gives `authorise` the proven peer and the presented grant, asks it
- * for every dial, and delivers nothing to the acceptor unless it answers true.
- *
- * - A granted dial carries 64 MiB with a matching SHA-256 digest, and an
- *   answer back.
- * - An ungranted dial is refused before any byte is delivered; an expired
- *   grant is refused even after the same peer was granted before; a grant
- *   naming another initiator is refused.
- * - `close` reports the bytes each side sent and received; an aborted dial
- *   fails; after `stop` the acceptor takes no dial.
- */
 import { createHash, randomBytes } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
@@ -57,7 +36,6 @@ export type TransportMake = () => Promise<
 const MIB = 1024 * 1024;
 const BULK_BYTES = 64 * MIB;
 const WAIT_MS = 10_000;
-/** How long a refusal check waits for a handler that must not be called. */
 const QUIET_MS = 200;
 const MINUTE = 60_000;
 const GREETING = new Uint8Array([0x2a]);
@@ -70,7 +48,6 @@ type Party = Readonly<{
 
 type Authorisation = Readonly<{ peer: string; grant: SignedEnvelope }>;
 
-/** Two started transports, the suite authority, and what the acceptor has seen. */
 type Pair = Readonly<{
 	initiator: Party;
 	acceptor: Party;
@@ -78,7 +55,6 @@ type Pair = Readonly<{
 	authorisations: Authorisation[];
 	accepted: { stream: FleetStream; grant: SessionGrant }[];
 	acceptance: { subscription: Subscription | undefined };
-	/** What the acceptor's handler does with each accepted stream. */
 	serve: { handler: (stream: FleetStream) => Promise<void> };
 }>;
 
@@ -98,8 +74,6 @@ async function startPair(make: TransportMake): Promise<Pair> {
 		authorisations: [],
 		accepted: [],
 		acceptance: { subscription: undefined },
-		// By default the acceptor greets each accepted stream with one byte, so a
-		// dial that should have been refused shows up on the dialler's side.
 		serve: {
 			handler: async (stream) => {
 				await stream.write(GREETING);
@@ -119,7 +93,6 @@ async function startPair(make: TransportMake): Promise<Pair> {
 	return pair;
 }
 
-/** The suite's stand-in for `authoriseSession`: signature, expiry, both parties. */
 function authorise(
 	pair: Pair,
 	peer: string,
@@ -211,12 +184,10 @@ async function dial(
 	}
 }
 
-/** Reads a stream through one iterator, a byte count at a time. */
 function reader(stream: FleetStream) {
 	const iterator = stream.read()[Symbol.asyncIterator]();
 	let leftover: Uint8Array = new Uint8Array(0);
 	return {
-		/** Feeds up to `count` bytes to `take`; answers how many arrived before the stream ended. */
 		async pull(
 			count: number,
 			take: (chunk: Uint8Array) => void,
@@ -249,7 +220,6 @@ async function readAll(
 	return new Uint8Array(Buffer.concat(parts));
 }
 
-/** A refused dial: the dial fails, or its stream ends without a byte. */
 async function refused(outcome: Outcome<FleetStream>): Promise<boolean> {
 	if (!outcome.ok) return true;
 	const got = await Promise.race([
@@ -274,7 +244,6 @@ async function withPair(
 	}
 }
 
-/** The transport assertions, in the order they are registered. */
 export const TRANSPORT_ASSERTIONS: readonly ConformanceAssertion<TransportMake>[] =
 	[
 		{

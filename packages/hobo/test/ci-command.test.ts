@@ -18,7 +18,6 @@ import {
 	createCiCommand,
 } from "../src/ci-command.js";
 
-/** What `hobo fleet status` shows under `hobo ci status`: one fleet, one live member. */
 const FLEET_VIEWS: CiFleetStatus = async () => ({
 	ok: true,
 	value: [
@@ -420,7 +419,6 @@ describe("hobo ci setup", () => {
 		);
 		expect(unauthenticated.exitCode).not.toBe(0);
 		expect(unauthenticated.stdout).toContain("HOBO_CI_AUTH_REQUIRED");
-		// A fleet status never stands in for a command that changes something.
 		const enabling = await fixture({ fleetStatus: FLEET_VIEWS });
 		const enable = await enabling.cli.run(["ci", "enable", ...consent], {
 			cwd: enabling.home,

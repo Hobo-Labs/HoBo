@@ -19,10 +19,6 @@ import {
 	type TenantId,
 } from "@hobo/core";
 
-/**
- * Runs `use` with `secret` in a file only this user can read, in a fresh
- * private directory that is removed afterwards, whatever `use` does.
- */
 function withSecretFile<T>(secret: string, use: (path: string) => T): T {
 	const dir = mkdtempSync(joinPath(tmpdir(), "hobo-overlay-"));
 	try {
@@ -159,7 +155,6 @@ export function createTailscaleOverlay(options?: {
 			}
 
 			if (join.authKey) {
-				// Never on argv: tailscale reads the credential from a private file.
 				const up = withSecretFile(join.authKey, (path) =>
 					run([
 						"up",

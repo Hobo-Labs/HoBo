@@ -19,7 +19,6 @@ import { PostgresDataError } from "../errors.js";
 import type { FleetLayout } from "./layout.js";
 import { column, type PostgresBackend, parseCount } from "./sql.js";
 
-// The billing period and the units are engine-neutral (`@hobo/backend-routing`).
 export {
 	type BillingPeriod,
 	billingPeriod,

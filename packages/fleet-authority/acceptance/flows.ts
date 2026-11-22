@@ -1,11 +1,3 @@
-/**
- * The acceptance flows of O2 (design §10.1), over any bus the world was built
- * on: a device enrolls (bootstrap token, the person's browser approval, or a
- * workload identity), starts as dispatcher and executor of its fleet, and the
- * developer's own `oci-command` job reaches a `SUCCEEDED` receipt. The
- * cucumber steps (`features/steps/fleet/`) and
- * `enroll-and-run.integration.test.ts` both run these.
- */
 import { createHash, randomBytes } from "node:crypto";
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
@@ -63,7 +55,6 @@ export function decodeMember(
 	return fromBinary(MemberRecordSchema, response.value.memberRecord.payload);
 }
 
-/** A device agent that dispatches and executes `oci-command` work, enrolled with `proof`. */
 export async function enrollDevice(
 	world: FleetWorld,
 	input: Readonly<{
@@ -107,7 +98,6 @@ export async function enrollDevice(
 	return { ...built, response, record: decodeMember(response) };
 }
 
-/** A sign-in through the authority's routes, with `key` as the DPoP key: browser on a loopback redirect, or the device-code flow. */
 export async function signIn(
 	world: FleetWorld,
 	who: PersonName,
@@ -164,7 +154,6 @@ export async function signIn(
 		started.text,
 	);
 	const state = challenge.state;
-	/** Each poll's answer: "ok", or the FleetError code. */
 	const polls: string[] = [];
 	const poll = async () => {
 		const answer = await send(
@@ -239,7 +228,6 @@ export async function signIn(
 	};
 }
 
-/** The person's browser approval of a device: a sign-in whose DPoP key is the device's identity key. */
 export async function browserApproval(
 	world: FleetWorld,
 	who: PersonName,
@@ -257,14 +245,12 @@ export async function browserApproval(
 	return { case: "personToken", value: signed.token };
 }
 
-/** The image the jobs run in: busybox, pinned by digest (the sandbox suite's probe image). */
 export const PROBE_IMAGE = {
 	image: "docker.io/library/busybox:1.37.0",
 	digest:
 		"sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
 } as const;
 
-/** The developer submits an `oci-command` job to the fleet through the authority. */
 export async function submitJob(
 	world: FleetWorld,
 	who: PersonName,
@@ -290,7 +276,6 @@ export async function submitJob(
 	return submitted.value;
 }
 
-/** Every receipt published on the bus, as they arrive. */
 export function watchReceipts(world: FleetWorld): WorkReceipt[] {
 	const seen: WorkReceipt[] = [];
 	world.bus.events.subscribe(["receipt"], "start", async (event) => {
@@ -311,7 +296,6 @@ export async function until(
 	}
 }
 
-/** The final receipt of a submitted job, once one arrives. */
 export async function finalReceipt(
 	receipts: readonly WorkReceipt[],
 	submission: WorkStatus,
@@ -337,7 +321,6 @@ export async function finalReceipt(
 	return found;
 }
 
-/** An `oci-command` runner that records the argv it ran and, while held, waits to be released before it succeeds. */
 export function heldRunner() {
 	const ran: string[] = [];
 	let release: (() => void) | undefined;

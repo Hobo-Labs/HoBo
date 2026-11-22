@@ -1,8 +1,3 @@
-/**
- * `pnpm ci:local` argument handling, in process, with Turbo stood in. The
- * spawned end-to-end run is `turbo-ci-cli.test.ts`; this pins every flag and
- * every refusal without running Turbo.
- */
 import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -32,7 +27,6 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-/** Run the CLI with `args`, as a fresh process would, until it has written or exited. */
 async function cli(...args: string[]) {
 	process.argv = ["node", "turbo-ci-cli.ts", ...args];
 	vi.resetModules();
@@ -101,7 +95,6 @@ describe("pnpm ci:local", () => {
 		const listeners = process.listenerCount("SIGINT");
 		await cli();
 		await vi.waitFor(() => expect(process.exitCode).toBe(3));
-		// Its cancellation handlers are removed once the run ends.
 		expect(process.listenerCount("SIGINT")).toBe(listeners);
 	});
 

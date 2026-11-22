@@ -1,25 +1,5 @@
-/**
- * The start fence's half inside the sandbox (design §6.9 step 7): a pre-job
- * hook the GitHub runner runs (`ACTIONS_RUNNER_HOOK_JOB_STARTED`) after it
- * has been assigned a job and before the job's first step. It reads what
- * GitHub's own job context says (repository, ref, actor id, event, whether
- * the head repository is another repository, the job), posts it to the
- * order's control endpoint as an `ObservedAssignment`, and fails, which fails
- * the job before any step runs, unless the agent answers `{"allow":true}`.
- * Its exit codes are #1688's (`HOOK_EXIT`): 41 refused, 42 conflict (this
- * single-use sandbox already allowed a job), 43 the agent unreachable or its
- * answer unreadable (fail closed). The work key it posts is
- * `<repo>#<jobId>@<runAttempt>`, the form the work source offers.
- *
- * POSIX `sh` with `tr`, `sed`, `grep` and `wget` or `curl` only: busybox
- * images and GitHub's runner image both carry them. The rules of `origin.ts`
- * are applied in shell; the event file is read without a JSON parser, and
- * anything it cannot read for certain counts as `WORK_ORIGIN_UNKNOWN`
- * (`UNTRUSTED`). Private to L16.
- */
 import { INTERNAL_EVENTS, PULL_REQUEST_EVENTS } from "./origin.js";
 
-/** Where the runner's files live inside the sandbox: `/work` and `/run` are its writable tmpfs. */
 // public-contract: in-sandbox path of the pre-job hook the runner installs.
 export const HOOK_PATH = "/work/hobo-fleet/pre-job.sh";
 // public-contract: in-sandbox directory the hook leaves its verdict and the facts it posted in.
@@ -29,7 +9,6 @@ export const REGISTRATION_PATH = "/run/hobo-fleet/registration";
 // public-contract: prefix of the lines the start script prints after the runner exits.
 export const MARKER = "@@hobo-fleet";
 
-/** The hook's exit codes, as #1688's start fence (`START_FENCE_EXIT`) numbered them. */
 // public-contract: the pre-job hook's exit codes; GitHub shows them on the failed job.
 export const HOOK_EXIT = {
 	allowed: 0,
@@ -42,17 +21,12 @@ function quote(value: string): string {
 	return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-/**
- * The hook script for one sandbox; `controlUrl` is that sandbox's
- * `Sandbox.controlUrl`. `stateDir` is where it leaves its verdict and the
- * facts it posted (`STATE_DIR`, which the start script reads back).
- */
 export function preJobHookScript(
 	controlUrl: string,
 	options: Readonly<{ stateDir?: string }> = {},
 ): string {
 	return `#!/bin/sh
-# HoBo fleet start fence (ADR-0183; fleet design 6.9 step 7). Installed by the
+# HoBo fleet start fence (fleet design 6.9 step 7). Installed by the
 # github-actions-job runner as ACTIONS_RUNNER_HOOK_JOB_STARTED. Exits
 # ${HOOK_EXIT.refused} refused, ${HOOK_EXIT.conflict} conflict, ${HOOK_EXIT.unreachable} agent unreachable (fail closed).
 set -u
@@ -146,7 +120,6 @@ exit ${HOOK_EXIT.unreachable}
 `;
 }
 
-/** Writes the hook from standard input, readable and executable by the job's user. */
 export const INSTALL_HOOK_ARGV: readonly string[] = [
 	"sh",
 	"-c",
@@ -155,13 +128,6 @@ export const INSTALL_HOOK_ARGV: readonly string[] = [
 	HOOK_PATH,
 ];
 
-/**
- * Starts one just-in-time runner: copies the runner out of the image's
- * read-only root into `/work`, hands it the registration through its
- * environment (read from the secret file, which is then removed; never
- * argv), runs it for its one job and prints the hook's verdict, the facts it
- * posted and the runner's exit code as `@@hobo-fleet` lines.
- */
 // public-contract: the in-sandbox start script; its `@@hobo-fleet` lines are what the runner reads back.
 export const START_SCRIPT = `set -u
 state=${quote(STATE_DIR)}
@@ -196,7 +162,6 @@ export const START_ARGV: readonly string[] = [
 	"hobo-fleet-runner",
 ];
 
-/** The runner's environment: the hook, and permission to run as the sandbox's root. */
 export const START_ENV = {
 	ACTIONS_RUNNER_HOOK_JOB_STARTED: HOOK_PATH,
 	RUNNER_ALLOW_RUNASROOT: "1",

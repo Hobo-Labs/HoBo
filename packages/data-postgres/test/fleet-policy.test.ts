@@ -89,7 +89,6 @@ function unverified(backend: string) {
 	});
 }
 
-/** What a tick saw of a backend; `overrides` uses the `Observation` field names. */
 type Seen = Readonly<{
 	health?: Health;
 	failingForMs?: number;

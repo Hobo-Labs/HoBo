@@ -13,10 +13,6 @@ export interface OverlayIdentity {
 	readonly overlayIps: readonly string[];
 	readonly tags: readonly string[];
 	readonly tenantId: TenantId;
-	/**
-	 * The fleet member this overlay node belongs to (`dev_…`), when the node is
-	 * a HoBo Fleet device (ADR-0183). Absent for nodes joined outside a fleet.
-	 */
 	readonly memberId?: string;
 }
 
@@ -24,13 +20,6 @@ export interface OverlayJoinOptions {
 	readonly tenantId: TenantId;
 	readonly hostname: string;
 	readonly tags: readonly string[];
-	/**
-	 * Auth key / enrollment token — never logged, stored, or passed on a command
-	 * line. Only ever the `credential` of an `OverlayJoin` that the HoBo Fleet
-	 * authority minted for this member at enrollment (ADR-0183): short-lived,
-	 * single-use and tagged to the member. It is never read from the
-	 * environment or a configuration file.
-	 */
 	readonly authKey?: string;
 	readonly emitProgress?: (message: string) => void;
 }

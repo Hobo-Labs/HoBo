@@ -17,7 +17,7 @@ because this step is running there.
    as before slips, and a `hobo-ci-route-fallback` warning says why.
 
 The box's issuer computes each class's reason from `fleetVerdict` on its
-local fleet view (ADR-0183):
+local fleet view:
 
 | Verdict | Slip reason | Route |
 |---|---|---|

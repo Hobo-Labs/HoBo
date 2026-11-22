@@ -87,7 +87,6 @@ export type UnlaunchedReleaseContext = Readonly<{
 	liveContainerCount: number;
 	/** Fleet witness: immediate backlog release is enabled. */
 	backlogImmediate: boolean;
-	/** Fleet witness; release fail-closed when no peer absorb capacity. */
 	fleetWitness?: PeerCapacityWitness;
 	/** @deprecated use fleetWitness */
 	nonLocalFreeSlots?: number;

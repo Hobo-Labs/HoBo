@@ -1,8 +1,8 @@
 # HoBo Fleet deployment assets
 
 Everything needed to run a HoBo fleet's server side in either profile of
-HoBo Fleet (ADR-0183; [design index](../../docs/design/index.md),
-[deployment, availability and operations](../../docs/design/fleet.md#deployment-availability-and-operations)): NATS server templates, Compose files, Kubernetes manifests, the
+HoBo Fleet ([design index](../../docs/design/index.md),
+deployment, availability and operations): NATS server templates, Compose files, Kubernetes manifests, the
 peer-to-peer relay, the provisioning job, and the systemd, launchd and Windows
 definitions that run `hobo fleet run` on a device. `test/assets.test.ts`
 holds every file here to the properties below.
@@ -22,7 +22,7 @@ holds every file here to the properties below.
 The witness connects with its own NATS user and writes each co-signature to
 `fleet.audit.witness`; the authority pairs it with the checkpoint or trust
 record it signed. No service needs a container or sandbox runtime on the host:
-fleet agents provision their own (ADR-0183 D58).
+fleet agents provision their own.
 
 The release images are defined beside the others:
 `deploy/release-images/hobo-fleet-authority`, `hobo-fleet-witness` and

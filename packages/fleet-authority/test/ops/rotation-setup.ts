@@ -1,5 +1,3 @@
-// A deployment after the ceremony and provisioning, a device refreshing every
-// simulated second, and the rotation's dependencies, for the rotation tests.
 import { setImmediate as yieldToTimers } from "node:timers/promises";
 import { createMemoryEventStore } from "@hobo/fleet/testing";
 import type { SecretsPort } from "@hobo/identity";
@@ -24,7 +22,6 @@ export const ALL_KEYS: readonly RotatableKey[] = [
 export async function rotationSetup(
 	options: Readonly<{ secrets?: (inner: SecretsPort) => SecretsPort }> = {},
 ) {
-	// Real time: @hobo/identity's ring judges a retired key's lifetime by Date.now().
 	const fixture = await opsFixture({}, Date.now());
 	const ran = await runCeremony(fixture.context);
 	if (!ran.ok) throw new Error(ran.error.message);
@@ -58,11 +55,6 @@ export async function rotationSetup(
 
 export type RotationSetup = Awaited<ReturnType<typeof rotationSetup>>;
 
-/**
- * Runs `rotate` to "done" while the device refreshes once per simulated
- * second; between calls that stop early (waiting out the grace period), 60
- * simulated seconds pass. Returns every `reached` the calls answered.
- */
 export async function rotateWhileRefreshing(
 	setup: RotationSetup,
 	which: RotatableKey,
@@ -89,7 +81,6 @@ export async function rotateWhileRefreshing(
 	})();
 	while (!finished) {
 		setup.fixture.clock.advance(1_000);
-		// The witness process signs with its slot's active key, as after a restart.
 		await setup.dep.witnessKey.refresh();
 		await setup.dev.refresh(which);
 		await setup.dep.tickAudit();
@@ -103,7 +94,6 @@ export async function rotateWhileRefreshing(
 	await rotation;
 	await setup.dep.witnessKey.refresh();
 	await setup.dep.record.refresh();
-	// The system still works: one more trust change, then a minute of refreshes.
 	const pinned = setup.dep.bus.registry.trust();
 	const changed = await changeTrust(setup.dep.trustDeps(), {
 		payload: nextTrustRecord(pinned, setup.fixture.clock.now(), {}),

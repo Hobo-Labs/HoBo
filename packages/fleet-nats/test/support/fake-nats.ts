@@ -1,17 +1,3 @@
-/**
- * A fake NATS server for unit tests of the code that talks to a connection
- * (`nats-wire.ts`, `resolver.ts` and the entry points of `index.ts`), through
- * the `NatsClients` port of `src/bus/nats-client.ts`: core publish and
- * subscribe, request and reply, connection status, and the slice of
- * JetStream those modules call (publish with expectations and per-message
- * TTL, direct get, named pull consumers with a deliver policy, message
- * delete, stream add, info and update).
- *
- * The server-side rules follow the real server where the bus depends on them
- * (`discard_new_per_subject`, a create with an expected last subject sequence
- * of 0, the API errors' codes); the `*.integration.test.ts` files prove the
- * same paths against `nats-server`. Tests only.
- */
 import {
 	type ConsumerConfig,
 	DeliverPolicy,
@@ -52,7 +38,6 @@ type Stream = {
 
 type ConsumerState = {
 	filter: string;
-	/** Messages owed before the cursor applies (last-per-subject). */
 	initial: Stored[];
 	cursor: number;
 	stream: Stream;
@@ -60,7 +45,6 @@ type ConsumerState = {
 
 type Wake = () => void;
 
-/** An async queue: `push` feeds it, iteration waits for the next item until `end`. */
 class Queue<T> implements AsyncIterable<T> {
 	readonly #items: T[] = [];
 	#done = false;
@@ -98,7 +82,6 @@ type Headers = Readonly<Record<string, string>>;
 
 type Subscriber = { filter: string; queue: Queue<BusMessage>; closed: boolean };
 
-/** What one `open` was asked for: the connection name and the auth token each authenticator gave. */
 export type OpenRecord = Readonly<{
 	name: string;
 	authTokens: readonly (string | undefined)[];
@@ -108,28 +91,23 @@ export type FakeConnection = BusConnection &
 	Readonly<{
 		name: string;
 		isClosed(): boolean;
-		/** A request carrying headers, as the server sends an auth callout (`Nats-Server-Xkey`); rejects when nobody answers within a second. */
 		ask(
 			subject: string,
 			data: Uint8Array,
 			headers: Headers,
 		): Promise<BusMessage>;
-		/** Emits a status event to every `status()` iterator. */
 		emit(type: string): void;
 	}>;
 
 export type FakeServer = Readonly<{
-	/** The client port bound to this server, as the code under test takes it. */
 	clients: NatsClients;
 	connect(name?: string): FakeConnection;
 	addStream(config: StreamSpec): void;
 	streamNames(): string[];
-	/** Answers requests on `subject` (which may hold wildcards); `undefined` means no responder. */
 	reply(
 		subject: string,
 		answer: (data: Uint8Array, subject: string) => Uint8Array | undefined,
 	): void;
-	/** Moves the fake clock on. */
 	advance(ms: number): void;
 	connections: readonly FakeConnection[];
 	opened: readonly OpenRecord[];
@@ -142,7 +120,6 @@ function apiError(code: number, err_code: number, description: string) {
 	return new JetStreamApiError({ code, err_code, description });
 }
 
-/** The token an authenticator gave, when it gave one. */
 function tokenOf(auth: ReturnType<Authenticator>): string | undefined {
 	if (!auth) return undefined;
 	return "auth_token" in auth ? auth.auth_token : undefined;
@@ -176,8 +153,7 @@ export function createFakeServer(): FakeServer {
 			return true;
 		},
 		json<T>(): T {
-			// SAFETY: a test reads JSON it wrote itself with a known shape.
-			return JSON.parse(decoder.decode(data)) as T;
+			return JSON.parse(decoder.decode(data));
 		},
 	});
 	const deliver = (
@@ -518,11 +494,6 @@ export function createFakeServer(): FakeServer {
 	};
 }
 
-/**
- * A resolver that accepts every account JWT, as `$SYS.REQ.CLAIMS.UPDATE`
- * answers, and answers `$SYS.REQ.ACCOUNT.<account>.CLAIMS.LOOKUP` with the
- * account's last pushed JWT, or nothing at all for one it does not hold.
- */
 export function acceptAccounts(server: FakeServer): string[] {
 	const pushed: string[] = [];
 	const held = new Map<string, string>();

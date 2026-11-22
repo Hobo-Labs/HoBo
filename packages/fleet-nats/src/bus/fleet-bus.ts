@@ -1,11 +1,3 @@
-/**
- * The ports of `FleetBus` and `AuthorityBus` (§7.3) over a `BusWire`.
- *
- * Envelopes travel as their protobuf binary form, exactly as signed; this
- * module never re-serialises a payload. Ids read back from a subject or a key
- * are parsed with the `@hobo/fleet` constructors, and a message whose subject
- * does not parse is dropped rather than handed on.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	AUDIT_CHECKPOINT_CONTEXT,
@@ -92,7 +84,6 @@ async function store(
 		throw new Error(`${stream} refused a message on ${subject}`);
 }
 
-/** Consumes `filter` on `stream`, decoding each message and passing on those `pick` accepts. */
 function envelopes<T>(
 	wire: BusWire,
 	stream: StreamName,
@@ -162,7 +153,6 @@ function claimLedger(wire: BusWire): ClaimLedger {
 	};
 }
 
-/** A stream keyed by fleet: offers and submissions. */
 function fleetFeed(
 	wire: BusWire,
 	stream: StreamName,
@@ -310,7 +300,6 @@ function observationBoard(wire: BusWire): ObservationBoard {
 	};
 }
 
-/** What a device holds, over `wire`, reading the registry through `registry`. */
 export function busOverWire(wire: BusWire, registry: RegistryView): FleetBus {
 	const feeds = {
 		offers: fleetFeed(wire, STREAMS.offers, subjects.offer, subjects.offers),
@@ -370,18 +359,9 @@ function replayStore(wire: BusWire, now: Clock): ReplayStore {
 	};
 }
 
-/**
- * Who holds an `AuditLog`. The authority appends entries and checkpoints and
- * proposes trust records; the witness appends co-signatures. §7.3 gives the
- * witness no method of its own to publish one, so on a witness connection
- * `appendCheckpoint` and `proposeTrust` write the co-signature of a
- * checkpoint or of a proposed trust record to `fleet.audit.witness`, the one
- * subject the witness user may publish (§6.7), and `append` is refused.
- */
 export type AuditRole = "authority" | "witness";
 
 function auditLog(wire: BusWire, role: AuditRole): AuditLog {
-	/** Pairs each witness co-signature under `context` with the authority envelope on `subject` carrying the same payload. */
 	const witnessed = (
 		context: string,
 		subject: string,
@@ -475,7 +455,6 @@ function auditLog(wire: BusWire, role: AuditRole): AuditLog {
 	};
 }
 
-/** What the authority (or, with `role` "witness", the witness) holds: the device ports plus the registry publisher, the audit log and the replay store. */
 export function authorityBusOverWire(
 	wire: BusWire,
 	registry: RegistryView,

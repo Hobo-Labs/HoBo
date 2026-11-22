@@ -1,22 +1,3 @@
-/**
- * `createMemoryBus`: the in-memory `AuthorityBus` every lane tests against
- * (design §11.2 step 5, §7.3). Plumbing of the contract commit: maps over an
- * injected clock, holding no decision of its own.
- *
- * - Streams keep order and sequence numbers; every `subscribe` honours its
- *   `BusStart`. Maximum ages are those of the §6.7 table: submissions 24 h,
- *   offers 15 min, claims 120 s, orders 15 min, events 30 days, control 1 h.
- * - The claim ledger refuses a second writer for one `(fleet, digest)` until
- *   the first claim ages out (120 s) or a dispatcher removes it (E5).
- * - Observations are kept per `<observer>.<member>` key, latest only, for 60 s.
- * - The replay store answers `firstUse` until each id's own expiry.
- * - Its `RegistryView` DECODES ENVELOPES WITHOUT VERIFYING THEIR SIGNATURES:
- *   it is for tests only. It still refuses a record whose context or key does
- *   not match, a record past its `not_after` (against the injected clock), and
- *   one whose `record_sequence` (member), `revision` (fleet) or `sequence`
- *   (trust) is lower than the highest it has returned for that key: the two
- *   freshness assertions of `runBusConformance`.
- */
 import { clone, create, fromBinary, type Message } from "@bufbuild/protobuf";
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import {
@@ -61,7 +42,6 @@ const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 
-/** The limits of the §6.7 streams and buckets. */
 const LIMITS = {
 	observationTtlMs: 60 * SECOND,
 	submissionsMaxAgeMs: 24 * HOUR,
@@ -89,19 +69,11 @@ type CoSignature = Readonly<{
 	of: "checkpoint" | "trust";
 }>;
 
-/** The witness's publish path of the memory bus, keyed by bus. Private to the plumbing. */
 const WITNESS_PATHS = new WeakMap<
 	AuthorityBus,
 	(cosignature: SignedEnvelope, of: "checkpoint" | "trust") => Promise<void>
 >();
 
-/**
- * Plumbing-private: publish a witness co-signature on the memory bus's
- * `fleet.audit.witness` subject. The bus pairs it with the checkpoint or
- * proposed trust record carrying the same payload bytes and hands the
- * resulting `WitnessedEnvelope` to `onWitnessed` or `onTrustWitnessed`.
- * Not re-exported: `AuthorityBus` has no witness publish path (§7.3).
- */
 export async function publishWitnessCosignature(
 	bus: AuthorityBus,
 	cosignature: SignedEnvelope,
@@ -113,7 +85,6 @@ export async function publishWitnessCosignature(
 	await path(cosignature, of);
 }
 
-/** In-memory `AuthorityBus` over an injected clock; its `RegistryView` skips signatures but checks `not_after` and record sequences. Tests only. */
 export function createMemoryBus(now: Clock): AuthorityBus {
 	let state: "connected" | "closed" = "connected";
 	const closers: (() => void)[] = [];
@@ -125,7 +96,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		if (state === "closed") throw new Error("the memory bus is closed");
 	};
 
-	// ── Registry ───────────────────────────────────────────────────────────
 	const memberValues = new Map<string, SignedEnvelope>();
 	const fleetValues = new Map<string, SignedEnvelope>();
 	const viewValues = new Map<string, SignedEnvelope>();
@@ -239,7 +209,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		},
 		trust() {
 			const trust = currentTrust();
-			// No trust published yet: an empty record names no key, so every verification against it fails closed.
 			return trust === undefined
 				? fromBinary(TrustRecordSchema, new Uint8Array())
 				: clone(TrustRecordSchema, trust.record);
@@ -253,7 +222,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		async caughtUp() {},
 	};
 
-	// ── Observations ───────────────────────────────────────────────────────
 	const observations = new Map<
 		string,
 		KeyedEnvelope & Readonly<{ at: number }>
@@ -266,7 +234,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		return [...observations.values()];
 	};
 
-	// ── Claims ─────────────────────────────────────────────────────────────
 	const claimStream = track(
 		createMemoryStream<ClaimMessage>(now, LIMITS.claimsMaxAgeMs),
 	);
@@ -280,7 +247,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 					claimKey(fleet, digest),
 			);
 
-	// ── Streams ────────────────────────────────────────────────────────────
 	const offerStream = track(
 		createMemoryStream<FleetMessage>(now, LIMITS.offersMaxAgeMs),
 	);
@@ -321,7 +287,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		},
 	});
 
-	// ── Relay (plain publish-subscribe, no stream) ────────────────────────
 	const relaySubscribers = new Set<
 		Readonly<{
 			self: MemberId;
@@ -330,7 +295,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		}>
 	>();
 
-	// ── Audit ──────────────────────────────────────────────────────────────
 	const auditEntries: AuditEntry[] = [];
 	const checkpoints: SignedEnvelope[] = [];
 	const proposedTrust = track(
@@ -419,7 +383,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 		},
 	};
 
-	// ── Replay ─────────────────────────────────────────────────────────────
 	const seen = new Map<string, number>();
 
 	const bus: AuthorityBus = {
@@ -633,7 +596,6 @@ export function createMemoryBus(now: Clock): AuthorityBus {
 	return bus;
 }
 
-/** Decodes an envelope's payload under its expected context, without verifying the signature. */
 function decodeUnder<T extends Message>(
 	envelope: SignedEnvelope | undefined,
 	context: string,

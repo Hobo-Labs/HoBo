@@ -1,12 +1,3 @@
-/**
- * The dispatcher loop (design §6.9 steps 1, 4 and 5): on a 10-second beat it
- * polls each work source for each fleet it dispatches in, ranks itself among
- * the fleet's dispatchers and offers what is its turn; it checks every claim
- * on its offers by the four rules, deletes and reports what the claimant's own
- * signature proves, and orders the claim that stands: `stillWanted`, prepare,
- * seal the secret to the claimant's `SEAL` key, sign, deliver. It writes
- * nothing to the journal (the authority records from the bus). Private to L04.
- */
 import { randomBytes } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
@@ -58,16 +49,11 @@ import {
 import { digestOf, policyRefusal } from "./rules.js";
 import { keyOf } from "./signed.js";
 
-/** §6.9: the dispatcher's poll beat. */
 export const DISPATCH_BEAT_MS = 10_000;
-/** §6.9 step 2: one rank is 20 seconds. */
 export const STEP_MS = 20_000;
-/** How long an offer stands; inside the offer stream's 15-minute maximum age. */
 const OFFER_TTL_MS = 10 * 60_000;
-/** §6.9 step 4: three early claims from one device inside an hour are reported. */
 const EARLY_CLAIMS = 3;
 const EARLY_WINDOW_MS = 60 * 60_000;
-/** How long a handled digest is remembered, so a source that still lists it is not offered again. */
 const HANDLED_MS = 30 * 60_000;
 
 type OpenOffer = {
@@ -100,7 +86,6 @@ export function dispatcher(
 ) {
 	const { self, bus, log } = deps;
 	const open = new Map<WorkDigest, OpenOffer>();
-	/** Digests this dispatcher ordered, refused or saw offered by another, until when. */
 	const handled = new Map<WorkDigest, number>();
 	const early = new Map<string, SignedEnvelope[]>();
 	const reported = new Set<string>();
@@ -148,7 +133,6 @@ export function dispatcher(
 		subscribedFleets = key;
 		subscriptions.push(
 			bus.offers.subscribe(fleets, "new", async (envelope) => {
-				// Another dispatcher's offer: it is that dispatcher's to see through.
 				if (envelope.keyId === self.sign.keyId) return;
 				try {
 					const offer = fromBinary(WorkOfferSchema, envelope.payload);
@@ -156,9 +140,7 @@ export function dispatcher(
 						parseWorkDigest(offer.workDigest),
 						deps.now() + HANDLED_MS,
 					);
-				} catch {
-					// Garbage on the offer subject is not this dispatcher's business.
-				}
+				} catch {}
 			}),
 			bus.claims.subscribe(fleets, "new", (claim, fleet, digest) =>
 				onClaim(claim, fleet, digest),
@@ -205,7 +187,6 @@ export function dispatcher(
 			fleet: fleetId,
 			label: work.label,
 			needs: work.needs,
-			// The dispatcher's ceiling: never OWN (§6.9).
 			trustClass:
 				work.origin === WorkOrigin.INTERNAL
 					? TrustClass.ORG
@@ -240,7 +221,6 @@ export function dispatcher(
 		for (const [digest, entry] of open)
 			if (entry.state === "open" && Date.parse(entry.offer.expiresAt) <= nowMs)
 				open.delete(digest);
-		// With the bus down nothing is offered; the work stays upstream (§6.9, F4).
 		if (!busStatus()) return;
 		const fleets = await myFleets();
 		await subscribe(fleets.map((fleet) => parseFleetId(fleet.fleetId)));
@@ -266,9 +246,7 @@ export function dispatcher(
 	): Promise<void> {
 		try {
 			await deps.report(report);
-		} catch {
-			// The authority is down: the claim is deleted all the same; the report is lost.
-		}
+		} catch {}
 		log("hobo_fleet_violation_reported", {
 			kind: report.kind,
 			member: claimant,

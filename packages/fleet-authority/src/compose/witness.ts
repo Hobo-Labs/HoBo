@@ -1,11 +1,3 @@
-/**
- * The witness (§6.14, §6.16): `createWitness` over its own bus connection
- * (the witness's static-user credentials), its key from the `witness` slot
- * (re-read after a rotation switch), and the registry changes it sees itself
- * (`pollRegistryChanges`). In the standalone profile it runs on the same host
- * under another operating-system account; in high availability on another
- * host. It holds no event store.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	type AuthorityBus,
@@ -28,7 +20,6 @@ export type WitnessAdapters = Readonly<{
 	now: Clock;
 	log: FleetLog;
 	connectBus: typeof connectAuthorityBus;
-	/** Writes a co-signature to `fleet.audit.witness`; `publishOverAuditLog` unless given. */
 	publish?(
 		bus: AuthorityBus,
 		cosignature: SignedEnvelope,
@@ -36,13 +27,6 @@ export type WitnessAdapters = Readonly<{
 	): Promise<void>;
 }>;
 
-/**
- * The witness's publish path over its own bus connection: a connection opened
- * with the witness user's credentials appends co-signatures, so
- * `appendCheckpoint` and `proposeTrust` write the co-signature of a
- * checkpoint or of a trust record to `fleet.audit.witness` (@hobo/fleet-nats,
- * `connectAuthorityBus`), the one subject the witness user may publish.
- */
 export function publishOverAuditLog(
 	bus: AuthorityBus,
 	cosignature: SignedEnvelope,

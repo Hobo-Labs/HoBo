@@ -109,7 +109,6 @@ export {
 	createInMemoryMeteringSink,
 	createLogMeteringSink,
 } from "./metering/sinks.js";
-// HoBo Fleet (ADR-0183): the overlay credential minters (L39); the overlay transport is below.
 export {
 	createNetbirdCredentialMinter,
 	createTailscaleCredentialMinter,

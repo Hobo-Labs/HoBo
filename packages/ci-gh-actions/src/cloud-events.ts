@@ -1,29 +1,7 @@
-/**
- * Infrastructure events from the relay and the box worker as CloudEvents.
- *
- * A log line is for a person reading it later. These are for a program
- * reacting now: page on a relay that cannot start, open an incident when the
- * worker force-cancels a run, count jobs taken per node. They follow the
- * platform's boundary rule (ADR-0046): a native event envelope inside,
- * CloudEvents 1.0 at the edge, mapped by `@hobo/core`.
- *
- * Only named facts are emitted. Each has a past-tense `ci.*` type below, or,
- * for the fleet's own log events (`hobo_fleet_*`, ADR-0183), its `fleet.*`
- * type; a log event with no entry stays a log line. Events are delivered over the
- * CloudEvents HTTP binding in batched structured mode
- * (`application/cloudevents-batch+json`), which any CloudEvents receiver
- * accepts. Delivery is best effort: a bounded queue, no retry, and never a
- * reason for the relay to slow down.
- */
 import { randomUUID } from "node:crypto";
 import { type CloudEvent, toCloudEvent } from "@hobo/core";
 import { FLEET_EVENT_TYPES, FLEET_LOG_EVENTS } from "@hobo/fleet";
 
-/**
- * The fleet's operational log events, which have no stream of their own, as
- * past-tense facts. The rest of `FLEET_LOG_EVENTS` keep their stored type:
- * `hobo_fleet_member_revoked` is `fleet.MemberRevoked` (design §7.5).
- */
 const FLEET_OPERATIONAL_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_fleet_bus_status", "fleet.BusStatusChanged"],
 	["hobo_fleet_observation_rejected", "fleet.ObservationRejected"],
@@ -45,7 +23,6 @@ const FLEET_OPERATIONAL_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_fleet_egress_refused", "fleet.EgressRefused"],
 ]);
 
-/** `fleet.SignInStarted` to `hobo_fleet_sign_in_started`. */
 function fleetLogName(type: string): string {
 	return `hobo_fleet_${type
 		.slice("fleet.".length)
@@ -53,7 +30,6 @@ function fleetLogName(type: string): string {
 		.toLowerCase()}`;
 }
 
-/** Each fleet log event, in `FLEET_LOG_EVENTS` order, with its `fleet.*` type. */
 function fleetEventTypes(): readonly (readonly [string, string])[] {
 	const stored = new Map<string, string>(
 		FLEET_EVENT_TYPES.map((type) => [fleetLogName(type), type]),
@@ -112,7 +88,6 @@ export const CI_INFRA_EVENT_TYPES: ReadonlyMap<string, string> = new Map([
 	["hobo_ci_storage_admission_wait", "ci.StorageAdmissionDelayed"],
 	// Telemetry about telemetry
 	["hobo_ci_trace_export_problem", "ci.TraceExportDegraded"],
-	// The fleet (ADR-0183): every member, work and capacity fact
 	...fleetEventTypes(),
 ]);
 

@@ -1,12 +1,3 @@
-/**
- * The witness over the real bus (§6.14, §6.7): on `nats-server`, the authority
- * appends a checkpoint with its audit chain, the witness (`createWitness` on
- * its own connection, opened with the static `witness` user's credentials)
- * reads the entries itself and co-signs on `fleet.audit.witness`, and the
- * authority's `onWitnessed` hands back the witnessed checkpoint. The same for
- * a proposed trust record and `onTrustWitnessed`. The witness user may
- * publish nothing but its one subject, and no other user may publish there.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	AUDIT_CHECKPOINT_CONTEXT,
@@ -47,7 +38,6 @@ function pinnedOf(it: Integration): TrustRecord {
 	return fromBinary(TrustRecordSchema, payload);
 }
 
-/** What `hobo-fleet-witness` does with a co-signature: append it to its own audit log. */
 function publishOn(bus: AuthorityBus) {
 	return (cosignature: SignedEnvelope, of: "checkpoint" | "trust") =>
 		of === "checkpoint"
@@ -118,7 +108,6 @@ describe.skipIf(SKIP_INTEGRATION)("the witness on nats-server", () => {
 		});
 		witness.start();
 		try {
-			// The authority journals two events, then a checkpoint a minute later.
 			await store.append(
 				"fleet-work-a",
 				[{ type: "fleet.WorkOffered" }, { type: "fleet.WorkClaimed" }],
@@ -138,7 +127,6 @@ describe.skipIf(SKIP_INTEGRATION)("the witness on nats-server", () => {
 			).toBe(true);
 			expect(checkpoint?.witness?.keyId).toBe(tenant.witness.keyId);
 
-			// A trust rotation: journaled as fleet.TrustRotated, then proposed.
 			const next = toBinary(
 				TrustRecordSchema,
 				create(TrustRecordSchema, { ...pinned, sequence: pinned.sequence + 1 }),

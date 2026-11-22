@@ -1,9 +1,3 @@
-/**
- * `natsWire` over the fake server of `support/fake-nats.ts`: the bus
- * conformance suite on the authority's ports, then the paths the suite does
- * not reach (status changes, capped reads, refusals the wire passes on).
- * `bus.integration.test.ts` runs the same suite against `nats-server`.
- */
 import { runBusConformance } from "@hobo/fleet/testing";
 import { describe, expect, it } from "vitest";
 import { authorityBusOverWire } from "../src/bus/fleet-bus.js";
@@ -36,11 +30,9 @@ const consumerName = () => {
 type Probe = Readonly<{
 	wire: BusWire;
 	connection: FakeConnection;
-	/** The statuses `onStatus` reported. */
 	seen: readonly string[];
 }>;
 
-/** A wire on a new connection to `server`, recording what it reports. */
 function wireOn(server: FakeServer): Probe {
 	const connection = server.connect();
 	const seen: string[] = [];

@@ -34,7 +34,6 @@ export type RelayMcpOptions = Readonly<{
 	authenticate: ControlAuthenticator;
 	/** The relay's readiness, as `/readyz` reports it. */
 	ready: () => Promise<boolean>;
-	/** The device fleet this host shows, read from its authority; absent when it has none. */
 	fleet?: RelayFleet | undefined;
 	/** The relay's public origin: the only `Origin` a browser may send. */
 	publicOrigin: string;
@@ -97,18 +96,12 @@ const PUMP_PAGE = 500;
 /** The longest the subscription pump waits between tries while the store fails. */
 const PUMP_BACKOFF_MAX_MS = 60_000;
 const Json = z.json();
-/**
- * How deep a posted value may nest. A JSON-RPC message is a few levels; the
- * bound is checked without recursion, so whether a body is refused does not
- * depend on how much stack the host's thread has.
- */
 const MAX_JSON_DEPTH = 100;
 
 function deeperThan(value: JsonValue, limit: number): boolean {
 	const pending: Array<readonly [JsonValue, number]> = [[value, 1]];
 	for (let next = pending.pop(); next; next = pending.pop()) {
 		const [node, depth] = next;
-		// A string, number, boolean or null nests nothing.
 		if (!(node instanceof Object)) continue;
 		if (depth > limit) return true;
 		for (const child of Array.isArray(node) ? node : Object.values(node))
@@ -214,8 +207,6 @@ function parsePosted(
 				messages: batch.data.length,
 				opensSession: false,
 			};
-		// Nesting past the bound is a body this parse does not accept, not a
-		// relay failure; the walk below never sees it.
 		if (deeperThan(parsed, MAX_JSON_DEPTH)) return undefined;
 		const message = Json.safeParse(parsed);
 		if (!message.success) return undefined;

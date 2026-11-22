@@ -1,5 +1,3 @@
-// Shared HTTP helpers of the sign-in providers: bounded JSON requests, no
-// redirects, https only. Private to this directory.
 import type { JsonObject, JsonValue } from "@hobo/core";
 import type { FleetFailure, Outcome } from "@hobo/fleet";
 
@@ -27,7 +25,6 @@ export type JsonAnswer = Readonly<{
 	headers: Headers;
 }>;
 
-/** One request; the body is read up to 256 KiB and parsed as JSON when it is. */
 export async function requestJson(
 	fetcher: typeof fetch,
 	url: string,

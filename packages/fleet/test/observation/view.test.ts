@@ -1,10 +1,3 @@
-/**
- * `fleetView` and `fleetVerdict` (design §6.8 "Fleet view and verdict"),
- * moved from `packages/ci/test/mesh-report.test.ts` and `mesh-monitor.test.ts`:
- * one entry per member with its state since when, capacity that counts only
- * live, healthy, active members, and the per-label answer runner routing
- * needs. The capacity monitor's transitions are logged as `hobo_fleet_*`.
- */
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -106,14 +99,12 @@ describe("fleetView", () => {
 			since: iso(NOW - 5_000),
 		});
 		expect(two?.reliability).toBeUndefined();
-		// Its last observation expired: lost since then, health no longer known.
 		expect(three).toMatchObject({
 			availability: Availability.LOST,
 			health: Health.UNKNOWN,
 			since: iso(NOW - 10_000),
 			lastSeen: iso(NOW),
 		});
-		// Never observed: lost, with nothing to say since when.
 		expect(four).toMatchObject({
 			availability: Availability.LOST,
 			health: Health.UNKNOWN,
@@ -148,7 +139,6 @@ describe("fleetView", () => {
 					capacity: { freeSlots: 9 },
 				}),
 				observation(id(4), { capacity: { freeSlots: 9 } }),
-				// Another fleet's observation says nothing about this one.
 				observation(id(5), { fleets: ["other"], capacity: { freeSlots: 9 } }),
 			],
 			new Map(),
@@ -272,8 +262,6 @@ describe("fleetVerdict", () => {
 		).toBe(VerdictState.NO_MEMBER);
 	});
 
-	// Amendment 4 (D60, ADR-0181 R4): a box that is only busy with its own
-	// jobs is never refused.
 	it("is BUSY, never NO_CAPACITY, when full members refuse only for their own work or say nothing", () => {
 		for (const refusal of [Refusal.UNSPECIFIED, Refusal.NONE, Refusal.OWN_WORK])
 			expect(
@@ -329,9 +317,6 @@ describe("fleetVerdict", () => {
 		).toBe(VerdictState.BUSY);
 	});
 
-	// L43: an agent that refuses for the host or for draining publishes
-	// `PRESSURED` or `DRAINING` health beside its refusal; it still serves
-	// the label, so the fleet has no capacity rather than no member.
 	it("counts a pressured or draining member that says why as serving and refusing, never its slots", () => {
 		expect(
 			fleetVerdict(
@@ -369,7 +354,6 @@ describe("fleetVerdict", () => {
 				NOW,
 			),
 		).toMatchObject({ state: VerdictState.BUSY, members: 2 });
-		// An unhealthy member that says nothing (an older agent) still does not serve.
 		expect(
 			fleetVerdict(view({ health: Health.PRESSURED }), "hobo", NOW).state,
 		).toBe(VerdictState.NO_MEMBER);
@@ -407,7 +391,6 @@ describe("fleetVerdict", () => {
 			notAfter: iso(NOW + 3_600_000),
 		});
 		expect(fleetVerdict(long, "hobo", NOW).expiresAt).toBe(iso(NOW + 300_000));
-		// A stale view gives a verdict that has already expired.
 		const stale = fleetVerdict(view({}), "hobo", NOW + 200_000);
 		expect(stale.expiresAt).toBe(stale.asOf);
 	});
@@ -423,7 +406,6 @@ describe("fleetVerdict", () => {
 			members: 40,
 			freeSlots: 12,
 		});
-		// The summary says no member's reason, so a full fleet is BUSY, not refused.
 		const full = create(FleetViewSchema, {
 			...partial,
 			capacity: create(FleetCapacitySchema, { healthy: 40, freeSlots: 0 }),
@@ -469,7 +451,6 @@ describe("createCapacityMonitor", () => {
 		monitor.observe(capacity(2, 0), NOW + 3_000);
 		monitor.observe(capacity(2, 1), NOW + 4_000);
 		monitor.observe(capacity(2, 1), NOW + 70_000);
-		// An empty fleet is not "exhausted": there is nobody to wait for.
 		monitor.observe(capacity(0, 0), NOW + 71_000);
 		expect(logged).toEqual([
 			"hobo_fleet_capacity",

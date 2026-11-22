@@ -1,7 +1,3 @@
-/**
- * The `hobo fleet status` table in its less common states, and the live bus
- * the oci-command source reads through while the agent reconnects.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	Availability,

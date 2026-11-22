@@ -1,13 +1,3 @@
-/**
- * Person sign-in (L30, design §6.5 "People sign in"): browser and device-code
- * flows, the person's confirmation, and DPoP-bound person credentials.
- * Re-exported by `@hobo/fleet/membership`; `createEnrollmentAuthority` takes
- * it as a part.
- *
- * Every step is one event on `fleet-signin-<state>`, appended at the head the
- * step expects, so replicas sharing a store share the sign-in and each step
- * (callback, decision, code or poll exchange) is taken exactly once.
- */
 import { randomBytes } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import type { PrincipalRef } from "@hobo/core";
@@ -65,9 +55,7 @@ import {
 	startedData,
 } from "./stream.js";
 
-/** A sign-in must reach its last step within this long of starting. */
 const SIGN_IN_TTL_MS = 10 * 60_000;
-/** Person tokens: 15 minutes, refreshable for 12 hours (§6.6). */
 const PERSON_TOKEN_TTL_MS = 15 * 60_000;
 const REFRESH_WINDOW_MS = 12 * 3_600_000;
 const POLL_INTERVAL_SECONDS = 5;
@@ -123,7 +111,6 @@ export function createSignIn(
 		request: SignInComplete,
 		dpop: string,
 	): Promise<Outcome<PersonCredential>>;
-	/** `sign-in-pending` until the person has confirmed; then the credential, once. */
 	poll(request: SignInPoll, dpop: string): Promise<Outcome<PersonCredential>>;
 	refresh(
 		caller: VerifiedToken,
@@ -132,7 +119,6 @@ export function createSignIn(
 }> {
 	const { store, tenant, now, log } = deps;
 
-	/** The authority's base URL is the issuer of the pinned trust record. */
 	const issuerUrl = (): Outcome<string> => {
 		const issuer = deps.bus.registry.trust().issuer.replace(/\/+$/u, "");
 		return issuer.length === 0
@@ -143,7 +129,6 @@ export function createSignIn(
 	const providerOf = (id: string): SignInProvider | undefined =>
 		deps.signIn.find((provider) => provider.id === id);
 
-	/** DPoP replay scoped to sign-in, so a route that also authenticates the caller does not see its own proof as a replay. */
 	const replay: ReplayStore = {
 		firstUse: (scope, id, expiresAtMs) =>
 			deps.bus.replay.firstUse(`fleet-signin:${scope}`, id, expiresAtMs),
@@ -172,7 +157,6 @@ export function createSignIn(
 				);
 	};
 
-	/** Reads a live sign-in: unknown and expired ones are refused alike. */
 	const live = async (state: string): Promise<Outcome<SignInStep>> => {
 		if (state.length === 0 || state.length > 128)
 			return fail("invalid-request", "state is missing or too long");
@@ -241,7 +225,6 @@ export function createSignIn(
 		}
 	};
 
-	/** Completes a confirmed sign-in once: the CAS on `SignInCompleted`, then the token. */
 	const issue = async (
 		state: string,
 		step: SignInStep,
@@ -383,7 +366,6 @@ export function createSignIn(
 					type: "fleet.SignInStarted",
 					data: startedData(started),
 				});
-				// A taken state is a user code already handed out: draw another.
 				if (!appended.ok && appended.conflict) continue;
 				if (!appended.ok) return fail("unavailable", appended.message);
 				log("hobo_fleet_sign_in_started", {

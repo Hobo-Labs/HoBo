@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Session } from "@vercel/sandbox";
 import { describe, expect, it, vi } from "vitest";
 import * as archive from "../src/sandbox-runner-archive.js";
 import {
@@ -362,9 +363,10 @@ printf 'home\\n' > "$HOME/probe"
 
 describe("the bootstrap port", () => {
 	it("is the specific Session itself, never a Sandbox handle that could resume", () => {
-		const session = { sessionId: "sbx_1" };
-		// SAFETY: the port only hands the Session back; no member of it is read.
-		const port = sandboxRunnerBootstrapPort(session as never);
+		const session: Session = Object.create(Session.prototype, {
+			sessionId: { value: "sbx_1" },
+		});
+		const port = sandboxRunnerBootstrapPort(session);
 		expect(port).toBe(session);
 	});
 });

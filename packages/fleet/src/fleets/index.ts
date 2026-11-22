@@ -1,16 +1,3 @@
-/**
- * Fleet commands (L32): fleets and policy, sessions, work submission, views
- * and verdicts (§6.2, §6.9, §6.12, §6.13, §7.5). Re-exported by
- * `@hobo/fleet/membership`.
- *
- * State lives only in the `FleetEventStore`: `defineFleet` reads its
- * `fleet-fleet-<FleetId>` stream, decides, and appends with `expectedSeq`,
- * retrying on conflict up to 8 times, so any number of instances on one store
- * agree. Every governed action goes through `decideGoverned`. A defined or
- * changed fleet record is published to the registry at once, so the
- * enrollment commands (which read fleets from the registry) see it before the
- * first enrollment into it.
- */
 import { create, equals, toBinary } from "@bufbuild/protobuf";
 import {
 	FleetListSchema,
@@ -22,7 +9,7 @@ import {
 	type SignedEnvelope,
 } from "../_generated/fleet_pb.js";
 import { FLEET_RECORD_CONTEXT, FLEET_VIEW_CONTEXT } from "../contexts.js";
-import type { FleetId } from "../ids.js";
+import { parseFleetId } from "../ids.js";
 import { signEnvelope } from "../keys/index.js";
 import {
 	fleetVerdict as buildFleetVerdict,
@@ -57,12 +44,9 @@ import {
 	refuse,
 } from "./support.js";
 
-/** A fleet record is valid for at most 30 minutes after it is signed (§7.1). */
 const RECORD_TTL_MS = 30 * 60 * 1_000;
-/** §7.2 labels: at most 80 characters. */
 const MAX_LABEL_LENGTH = 80;
 
-/** `mode` "authority" refuses ONE_ACTIVE in defineFleet (`fleet-policy`, rule `one-active-authority`, D39); "local" accepts it. The authority and createTestAuthority pass "authority"; createLocalFleet passes "local". */
 export function createFleetCommands(
 	deps: Pick<
 		AuthorityDeps,
@@ -96,7 +80,6 @@ export function createFleetCommands(
 		);
 	};
 
-	/** The fleet's journal state, or `fleet-unknown` (a malformed id is unknown too). */
 	const known = async (value: string): Promise<Outcome<FleetState>> => {
 		const id = fleetIdOf(value);
 		const state = id.ok ? (await journal.catchUp()).get(id.value) : undefined;
@@ -105,10 +88,8 @@ export function createFleetCommands(
 			: ok(state);
 	};
 
-	/** The registry's view, or, before the projection has published one, a view built from the registry's members. */
 	const viewOf = async (record: FleetRecord): Promise<FleetView> => {
-		// SAFETY: every record in the journal index came from a parsed fleet id.
-		const id = record.fleetId as FleetId;
+		const id = parseFleetId(record.fleetId);
 		const published = await deps.bus.registry.view(id);
 		if (published !== undefined) return published;
 		return buildFleetView(
@@ -120,14 +101,12 @@ export function createFleetCommands(
 		);
 	};
 
-	/** Publishes the signed record to the registry; `unavailable` when the bus refuses. */
 	const publish = async (
 		record: FleetRecord,
 	): Promise<Outcome<SignedEnvelope>> => {
 		const signed = await sign(record);
 		try {
-			// SAFETY: validateFleet parsed this id.
-			await deps.bus.publisher.putFleet(signed, record.fleetId as FleetId);
+			await deps.bus.publisher.putFleet(signed, parseFleetId(record.fleetId));
 		} catch {
 			return refuse(
 				"unavailable",
@@ -145,8 +124,7 @@ export function createFleetCommands(
 		if (!person.ok) return person;
 		const valid = validateFleet(request, deps.tenant, deps.mode);
 		if (!valid.ok) return valid;
-		// SAFETY: validateFleet parsed the fleet id.
-		const id = valid.value.fleetId as FleetId;
+		const id = parseFleetId(valid.value.fleetId);
 		const before = (await journal.catchUp()).get(id);
 		if (
 			before !== undefined &&
@@ -257,7 +235,6 @@ export function createFleetCommands(
 			);
 		},
 		async fleetVerdict(request, caller) {
-			// "As read, or a GitHub Actions OIDC token for a repository the fleet lists" (§6.15).
 			const workload = caller?.kind === "workload" ? caller : undefined;
 			if (workload === undefined) {
 				const reader = asReader(deps, caller);

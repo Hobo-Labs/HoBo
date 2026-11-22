@@ -1,8 +1,3 @@
-// A device that refreshes every second against a deployment while a key
-// rotates (O19): it follows the trust record with `acceptTrust` from its pin,
-// verifies a fresh session ticket and the previous one, a fresh token and the
-// previous one, and has the NATS double accept a credential signed with the
-// active signing key. Every refusal is counted.
 import { createPublicKey, createVerify, verify } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
@@ -39,7 +34,6 @@ export const NATS_KEYS: readonly NatsKey[] = [
 	"scoped-dispatcher",
 ];
 
-/** The NATS server's view of each signing-key set: what the operator and account JWTs list. */
 export async function natsDouble(secrets: SecretsPort, prefix: string) {
 	const published = new Map<NatsKey, readonly string[]>();
 	for (const which of NATS_KEYS) {
@@ -68,7 +62,6 @@ export async function natsDouble(secrets: SecretsPort, prefix: string) {
 		setDown(value: boolean) {
 			down = value;
 		},
-		/** True when the server accepts `signature` over `bytes` by `publicKey` for `which`. */
 		accepts(
 			which: NatsKey,
 			publicKey: string,
@@ -161,7 +154,6 @@ export function device(
 			refusals.push("token: no signing key");
 			return;
 		}
-		// The authority reloads its ring and signs; a verifier fetches the JWKS (reloads too).
 		const signerRing = await loadSecretStoreKms(secrets, {
 			prefix: slotName(prefix, "token-signing"),
 		});
@@ -210,7 +202,6 @@ export function device(
 		refusals,
 		pinned: () => pinned,
 		refreshes: () => refreshes,
-		/** One refresh, exercising the path of `which`. */
 		async refresh(which: RotatableKey) {
 			refreshes += 1;
 			followTrust();

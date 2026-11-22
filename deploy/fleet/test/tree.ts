@@ -1,8 +1,3 @@
-/**
- * One tree for every configuration format the deployment assets use (NATS
- * server configuration, Compose, Kubernetes): scalars as text, lists and
- * maps. The assertions in assets.test.ts walk it by key.
- */
 
 // domain-view: a parsed configuration file; the formats have no schema of their own here.
 export type Tree =
@@ -14,7 +9,6 @@ export function scalar(text: string): Tree {
 	return { kind: "scalar", text };
 }
 
-/** The child at `path`, or undefined when any step is missing. */
 export function at(
 	tree: Tree | undefined,
 	...path: string[]
@@ -27,7 +21,6 @@ export function at(
 	return node;
 }
 
-/** The scalar text at `path`, or undefined. */
 export function text(
 	tree: Tree | undefined,
 	...path: string[]
@@ -36,7 +29,6 @@ export function text(
 	return node?.kind === "scalar" ? node.text : undefined;
 }
 
-/** The list items at `path` (a scalar counts as a list of one); empty when missing. */
 export function items(
 	tree: Tree | undefined,
 	...path: string[]
@@ -47,14 +39,12 @@ export function items(
 	return node.kind === "scalar" ? [node] : [];
 }
 
-/** The scalar texts of the list at `path`. */
 export function texts(tree: Tree | undefined, ...path: string[]): string[] {
 	return items(tree, ...path).flatMap((item) =>
 		item.kind === "scalar" ? [item.text] : [],
 	);
 }
 
-/** The entries of the map at `path`; empty when missing. */
 export function entries(
 	tree: Tree | undefined,
 	...path: string[]
@@ -76,7 +66,6 @@ export type Plain =
 	| Plain[]
 	| { [key: string]: Plain };
 
-/** A YAML document's plain value as a tree. */
 export function fromPlain(value: Plain): Tree {
 	if (value === null) return scalar("");
 	if (Array.isArray(value))

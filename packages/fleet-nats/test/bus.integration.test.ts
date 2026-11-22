@@ -1,9 +1,3 @@
-/**
- * `runBusConformance` on the real bus: the authority's connection to a
- * provisioned tenant on `nats-server` (TLS, operator mode, full resolver).
- * Also the journal store on the `FLEET_JOURNAL` stream `provisionTopology`
- * created, as the authority user, and the journal import against it.
- */
 import type { PositionedEvent } from "@hobo/core";
 import { runBusConformance } from "@hobo/fleet/testing";
 import { credsAuthenticator } from "@nats-io/transport-node";
@@ -83,12 +77,10 @@ describe.skipIf(SKIP_INTEGRATION)("the bus on nats-server", () => {
 
 		const importer = await journal();
 		try {
-			// The journal holds exactly this import: nothing to write.
 			expect(await importJournal(importer, all)).toEqual({
 				ok: true,
 				value: { imported: 0, present: 3 },
 			});
-			// It holds more than this import: not a prefix, so a conflict.
 			const shorter = await importJournal(importer, all.slice(0, 1));
 			expect(shorter.ok).toBe(false);
 			if (!shorter.ok) expect(shorter.error.code).toBe("conflict");

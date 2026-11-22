@@ -32,10 +32,6 @@ export type UsageEventType =
 	| "messaging.consume"
 	| "messaging.actor.activate"
 	| "messaging.dapr.sidecar_lifetime"
-	// HoBo Fleet (ADR-0183). Emitted only by the authority, so nothing bills
-	// itself: member-hours from registry state, sandbox-seconds by tier from
-	// receipts, and relayed or direct transport bytes from the acceptor's
-	// session-close fact.
 	| "fleet.member.active"
 	| "fleet.work.sandbox"
 	| "fleet.transport.relay"

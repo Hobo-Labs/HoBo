@@ -437,7 +437,6 @@ describe("runner provider eligibility", () => {
 		expect(
 			refusal(isolatedJob(90, false), "lizard-sandbox-4vcpu"),
 		).toBeUndefined();
-		// None of them has a 16 GB machine in the class runner routing prices.
 		const large = balance(all, {
 			demand: { ...PUBLIC_ORG_PR, machine: { memoryGb: 16 } },
 		});

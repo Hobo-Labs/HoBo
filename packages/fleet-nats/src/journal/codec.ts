@@ -1,23 +1,9 @@
-/**
- * How the journal lays events out on `FLEET_JOURNAL` (L36, design §6.16):
- * one message per append on `fleet.journal.<streamId>`, holding the batch.
- *
- * - **Subject.** A stream id becomes one subject token: every character
- *   outside `[A-Za-z0-9_:-]` (including `%` itself, `.`, `*`, `>` and
- *   whitespace) is written as `%XX` per UTF-8 byte, so the mapping is
- *   injective and reversible and never adds a token or a wildcard.
- * - **Payload.** `{ v: 1, ownerEpoch, events }`: the stream's fencing epoch
- *   after this append (a decimal string, 64-bit safe) and the batch's full
- *   envelopes, numbered with their stream seq. Reads parse every envelope.
- * - **Position.** `readAll` positions are the message's stream sequence
- *   shifted left 20 bits plus the event's place in the batch plus one, so they
- *   increase in stream order and a resume point names one event exactly.
- */
 import {
 	type EventEnvelope,
 	type EventPosition,
 	type JsonValue,
 	parseEventEnvelope,
+	parseEventPosition,
 } from "@hobo/core";
 import {
 	DiscardPolicy,
@@ -26,18 +12,12 @@ import {
 	type StreamConfig,
 } from "@nats-io/jetstream";
 
-// public-contract: the stream and subject names of the topology table (design §6.7).
+// public-contract: the stream and subject names of the topology table.
 export const JOURNAL_STREAM = "FLEET_JOURNAL";
 // public-contract: every journal subject; one token per stream id follows the prefix.
 export const JOURNAL_SUBJECTS = "fleet.journal.>";
 const SUBJECT_PREFIX = "fleet.journal.";
 
-/**
- * `FLEET_JOURNAL` as the journal needs it, whoever creates it: no expiry,
- * append-only, new messages refused rather than old ones dropped. The store
- * creates it with one replica when missing; `provisionTopology` creates it
- * with the deployment's replica count from this same configuration.
- */
 export const JOURNAL_STREAM_CONFIG = {
 	name: JOURNAL_STREAM,
 	subjects: [JOURNAL_SUBJECTS],
@@ -49,7 +29,6 @@ export const JOURNAL_STREAM_CONFIG = {
 	deny_purge: true,
 } as const satisfies Partial<StreamConfig>;
 
-/** At most this many events in one append (the position's batch field). */
 export const MAX_BATCH_EVENTS = (1 << 20) - 2;
 const POSITION_SHIFT = 20n;
 
@@ -82,12 +61,11 @@ export function positionOf(
 	streamSequence: number,
 	index: number,
 ): EventPosition {
-	// SAFETY: a stream sequence and a batch index are non-negative integers; the shift keeps batch places apart.
-	return ((BigInt(streamSequence) << POSITION_SHIFT) +
-		BigInt(index + 1)) as EventPosition;
+	return parseEventPosition(
+		(BigInt(streamSequence) << POSITION_SHIFT) + BigInt(index + 1),
+	);
 }
 
-/** The stream sequence a position falls in. */
 export function streamSequenceOf(position: EventPosition): number {
 	return Number(position >> POSITION_SHIFT);
 }
@@ -97,7 +75,6 @@ export type JournalBatch = Readonly<{
 	events: readonly EventEnvelope[];
 }>;
 
-/** A journal message that is not a batch of the stream it is filed under. */
 export class JournalCorrupt extends Error {
 	constructor(message: string) {
 		super(`journal: ${message}`);
@@ -115,7 +92,6 @@ export function encodeBatch(batch: JournalBatch): Uint8Array {
 	);
 }
 
-/** Parses a journal message filed under `streamId`; throws `JournalCorrupt` unless every event is that stream's. */
 export function decodeBatch(data: Uint8Array, streamId: string): JournalBatch {
 	let parsed: JsonValue;
 	try {

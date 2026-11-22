@@ -1,11 +1,4 @@
-/**
- * The NATS transport of the journal against a fake JetStream context: the
- * whole store passes `runJournalConformance` through it, and each JetStream
- * answer it handles (stream missing, no message, wrong last sequence, an
- * empty fetch) maps as `nats.ts` says.
- */
-
-import { type AddressInfo, createServer } from "node:net";
+import { createServer } from "node:net";
 import { OptimisticSequenceConflictError } from "@hobo/core";
 import { runJournalConformance } from "@hobo/fleet/testing";
 import { describe, expect, it } from "vitest";
@@ -18,6 +11,7 @@ import {
 } from "../../src/journal/nats.js";
 import { openJournalStore } from "../../src/journal/store.js";
 import { JournalWrongLastSequence } from "../../src/journal/transport.js";
+import { portOf } from "../support/nats-server.js";
 import { createFakeJournalStream } from "./fake-jetstream.js";
 import {
 	apiError,
@@ -253,8 +247,7 @@ describe("connecting", () => {
 			const server = createServer();
 			server.once("error", reject);
 			server.listen(0, "127.0.0.1", () => {
-				// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-				const { port: found } = server.address() as AddressInfo;
+				const found = portOf(server.address());
 				server.close(() => resolve(found));
 			});
 		});

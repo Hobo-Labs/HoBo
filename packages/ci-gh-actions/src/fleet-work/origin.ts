@@ -1,15 +1,3 @@
-/**
- * Where a GitHub run came from, by the same rule on both sides of the start
- * fence: the work source applies it to the run GitHub's REST API describes,
- * and the pre-job hook (`hook.ts`) applies it, in shell, to the job context
- * GitHub hands the runner. Private to L16.
- *
- * - Events only a repository's own writers can cause are `INTERNAL`.
- * - Pull-request events are `INTERNAL` when the head repository is the
- *   repository itself, `FORK` when it is another, and `UNKNOWN` when GitHub
- *   names none (a deleted fork).
- * - Every other event is `UNKNOWN`, which derives `UNTRUSTED` (§6.11).
- */
 import { WorkOrigin } from "@hobo/fleet";
 
 // public-contract: events whose runs only the repository's writers start (shared with the pre-job hook).

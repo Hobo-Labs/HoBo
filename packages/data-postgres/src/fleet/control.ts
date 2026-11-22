@@ -1,13 +1,3 @@
-/**
- * The fleet's own tables, created on every backend.
- *
- * Three small tables, all under the layout's control prefix so replication
- * never copies them: the assignment log (with the nullable `members` column of
- * membership epochs), the standby's watermark, and the per-period usage
- * counters. Creation is serialised by an advisory lock
- * because concurrent `CREATE TABLE IF NOT EXISTS` statements can still collide
- * in the catalog.
- */
 import { FLEET_LOCK_CLASS, type FleetLayout } from "./layout.js";
 import { inTransaction, type PostgresBackend, quoteIdentifier } from "./sql.js";
 
@@ -34,8 +24,6 @@ export async function ensureFleetControlTables(
 			CHECK (sealed = (target IS NOT NULL)),
 			CHECK (NOT sealed OR target IS DISTINCT FROM active)
 		)`);
-		// A log created before member sets existed gains the column; every row
-		// it already holds keeps a null set, which the configured members decide.
 		await session.query(
 			`ALTER TABLE ${layout.assignmentTable} ADD COLUMN IF NOT EXISTS members text[]`,
 		);

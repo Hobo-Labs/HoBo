@@ -1,10 +1,3 @@
-/**
- * The dispatcher half of `github-actions-job` (design §6.9 table, §7.3
- * `GithubWorkOptions`): the existing poller reads GitHub's queue through a
- * fake transport; each queued job becomes upstream work with its author,
- * origin, ref, workflow digest and size; `prepare` mints one registration
- * per claimant and returns it as the secret; `stillWanted` asks GitHub.
- */
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -127,12 +120,10 @@ describe("createGithubActionsWorkSource", () => {
 			`sha256:${createHash("sha256").update("name: ci\n").digest("hex")}`,
 		);
 		expect(first?.queuedAtMs).toBe(Date.parse(job.createdAt));
-		// "Main full gate" is a heavy job: 6 GiB by the worker's default classes.
 		expect(first?.needs?.memoryMb).toBeGreaterThanOrEqual(4096);
 		expect(first?.needs?.diskMb).toBe(12 * 1024);
 		expect(first?.needs?.labels).toEqual(["hobo"]);
 		expect(first?.needs?.platform?.os).toBe("linux");
-		// The poller is the existing one: its intake still sees the job.
 		expect(ingested).toHaveLength(1);
 	});
 
@@ -227,15 +218,12 @@ describe("createGithubActionsWorkSource", () => {
 		);
 		expect(minted).toHaveLength(1);
 		expect(minted[0]?.repository).toBe("acme/app");
-		// A trunk runner never joins the shared label (runner-labels.ts).
 		expect(minted[0]?.labels).toEqual(["hobo-trunk"]);
 		expect(minted[0]?.runnerName).toMatch(/^hobo-fleet-[A-Za-z0-9._-]+$/u);
 		expect(minted[0]?.runnerName.length).toBeLessThanOrEqual(64);
-		// The secret never appears among the non-secret parameters.
 		expect(JSON.stringify(prepared.value.parameters)).not.toContain(
 			"jit-config",
 		);
-		// Prepared work is not offered again while GitHub still lists it queued.
 		expect(await work.poll(fleet())).toHaveLength(0);
 		expect(job.status).toBe("queued");
 	});
@@ -264,7 +252,6 @@ describe("createGithubActionsWorkSource", () => {
 		const offer = offerOf(first?.workKey ?? "");
 		expect(await work.stillWanted(offer)).toBe(true);
 		github.failing.set(`/repos/acme/app/actions/jobs/${job.id}`, 502);
-		// A GitHub error does not strand the queue.
 		expect(await work.stillWanted(offer)).toBe(true);
 		github.failing.clear();
 		job.status = "in_progress";

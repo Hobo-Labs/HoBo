@@ -1,7 +1,3 @@
-/**
- * Host capacity (L10, design §6.8). Signature frozen by the fleet contract
- * commit (ADR-0183). How each figure is measured is in `measure.ts`.
- */
 import type { CapacitySource } from "@hobo/fleet";
 import {
 	HOST_PROBES,
@@ -9,7 +5,6 @@ import {
 	readHostCapacity,
 } from "./measure.js";
 
-/** This host's slots, free memory and disk under `workRoot`, and labels. */
 export function createHostCapacity(
 	options: Readonly<{
 		slots: number;

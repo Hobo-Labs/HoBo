@@ -1,4 +1,3 @@
-// Scenario helpers over the harness: invite, enroll, activate, refresh.
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	DeviceClass,
@@ -57,7 +56,6 @@ export async function token(
 	).token;
 }
 
-/** A PENDING device in `fleet` invited by `caller`. */
 export async function pending(
 	h: Harness,
 	caller: VerifiedToken,
@@ -83,7 +81,6 @@ export async function pending(
 	return subject;
 }
 
-/** An ACTIVE device: invited, approved and accepted by `caller`. */
 export async function active(
 	h: Harness,
 	caller: VerifiedToken,
@@ -113,17 +110,10 @@ export async function stateOf(
 	);
 }
 
-/** The by-id routes whose request is only ids. */
 type IdOnly = "getMember" | "leave" | "revokeToken" | "workStatus" | "workLogs";
 
-/**
- * A by-id request. `ById<K>`'s default `Empty` (`Record<string, never>`) makes
- * every field `never`, so no object literal satisfies it; the contract defect
- * is reported in the lane's requirementChanges, and tests build the request here.
- */
 export function ids<M extends IdOnly>(
-	fields: Readonly<Record<string, string>>,
+	fields: Parameters<EnrollmentAuthority[M]>[0],
 ): Parameters<EnrollmentAuthority[M]>[0] {
-	// SAFETY: these methods read only the named id fields, which `fields` carries.
-	return fields as Parameters<EnrollmentAuthority[M]>[0];
+	return fields;
 }

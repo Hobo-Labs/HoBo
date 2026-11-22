@@ -1,9 +1,3 @@
-/**
- * Edges of the work lane that the outcome suites do not reach: the pure
- * rules (digest, ref globs, policy, residency, version floors), envelope
- * helpers, offers an executor must ignore or cannot fit, orders it must
- * refuse after holding the claim, and the dispatcher's failure paths.
- */
 import { createHash } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -325,7 +319,6 @@ describe("loops at the edges", () => {
 				await signOffer(signer.keys, offer(signer.keys.memberId, init)),
 				FLEET,
 			);
-		// Signed by an executor, not a dispatcher; garbage; a lying digest; expired.
 		await publish(w.bystander, {});
 		await w.bus.offers.publish(
 			await signEnvelope(
@@ -343,7 +336,6 @@ describe("loops at the edges", () => {
 		});
 		await vi.advanceTimersByTimeAsync(100);
 		expect(reasons(w)).toEqual([]);
-		// No runner for the kind; a policy refusal; outdated agent.
 		await publish(w.dispatcher, { kind: "shell", workKey: "a" });
 		await publish(w.dispatcher, { repository: "evil/app", workKey: "b" });
 		await vi.advanceTimersByTimeAsync(100);
@@ -393,7 +385,6 @@ describe("loops at the edges", () => {
 
 	it("an executor not ranked for the offer never claims it", async () => {
 		const w = await world();
-		// The board says this executor is full; the bystander has room and is ranked alone.
 		await publishObservation(w.bus, w.self, NOW, {
 			capacity: { freeSlots: 0 },
 		});
@@ -438,7 +429,6 @@ describe("loops at the edges", () => {
 		expect(
 			w.logs.lines.filter((line) => line.event === "hobo_fleet_work_claimed"),
 		).toHaveLength(4);
-		// The dispatcher no longer wants them; this test orders by hand while the executor still holds the claims.
 		const work = (key: string) =>
 			offer(w.dispatcher.keys.memberId, { workKey: key });
 		const orders = [
@@ -451,7 +441,6 @@ describe("loops at the edges", () => {
 				sandboxTier: SandboxTier.S1_CONTAINER,
 				secret: undefined,
 			}),
-			// Sealed to another device's key.
 			await orderFor(w.dispatcher.keys, w.bystander, work("badsecret"), {
 				orderId: "3".repeat(32),
 				memberId: w.self.keys.memberId,
@@ -523,7 +512,6 @@ describe("loops at the edges", () => {
 		await dispatcher.stop();
 		await executor.stop();
 
-		// A dispatcher the registry does not know, or whose fleet is one-active, offers nothing.
 		const stranger = await device({ roles: [Role.DISPATCHER] });
 		const offers: string[] = [];
 		w.bus.offers.subscribe([FLEET], "new", async (envelope) => {

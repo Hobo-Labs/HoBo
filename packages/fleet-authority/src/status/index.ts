@@ -1,12 +1,3 @@
-/**
- * The status feed for the availability objectives (L27, design §6.14).
- * Signature frozen by the fleet contract commit (ADR-0183).
- *
- * The authority records one sample per enrollment API request and per NATS
- * callout decision; `tick` turns every finished minute into one `slo.Measured`
- * event per component (`SloMeasuredData` of @hobo/status-page) on the event
- * store, where the status page folds them. See README.md here.
- */
 import {
 	type AppendOptions,
 	type EventInput,
@@ -56,12 +47,10 @@ function minuteOf(ms: number): number {
 	return Math.floor(ms / MINUTE_MS) * MINUTE_MS;
 }
 
-/** The stream each component's availability events go to. */
 export function statusStream(component: Component): string {
 	return `slo-${OBJECTIVES[component].componentId}`;
 }
 
-/** Emits `slo.Measured` events (`SloMeasuredData` of @hobo/status-page) for the enrollment API and the NATS callout. */
 export function createStatusFeed(
 	options: Readonly<{ store: FleetEventStore; now: Clock; log: FleetLog }>,
 ): Readonly<{
@@ -111,7 +100,6 @@ function statusFeed(options: StatusFeedOptions): StatusFeed {
 			componentId: objective.componentId,
 			componentLabel: objective.componentLabel,
 			sloName: SLO_NAME,
-			// A minute with no request had no failed one.
 			attainment:
 				window === undefined || window.total === 0
 					? 1
@@ -123,7 +111,6 @@ function statusFeed(options: StatusFeedOptions): StatusFeed {
 		const event: EventInput = {
 			type: STATUS_SIGNAL_EVENTS.SloMeasured,
 			data,
-			// Replicas emit each minute once: the first append wins, the others are deduplicated.
 			meta: {
 				idempotencyKey: `${objective.componentId}/${measuredAt}`,
 			},

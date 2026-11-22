@@ -1,5 +1,3 @@
-// Shared fixture of the operations tests: a configuration file in a fresh
-// directory, an in-memory secret store, a manual clock and a captured log.
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -1,31 +1,4 @@
 #!/usr/bin/env node
-/**
- * `pnpm run fleet:vocabulary` (O1, ADR-0183): one implementation of each fleet
- * idea. Nine rules, each over its own pathspecs and less its allowlist
- * (`scripts/fleet-vocabulary-allow.json`, entries `{ rule, path, reason }`;
- * adding one is a coordinator amendment):
- *
- * 1. an import of, or a dependency on, `@nats-io/*`;
- * 2. an import of, or a dependency on, `@number0/iroh`;
- * 3. a declaration named after a fleet-owned function (names only: a renamed
- *    copy is a review finding, not a rule finding);
- * 4. a protobuf `message` named after a fleet record;
- * 5. an identifier containing `InternalMesh`, `INTERNAL_MESH` or `internalMesh`;
- * 6. a removed environment variable name;
- * 7. a path a lane deletes that still exists;
- * 8. an import specifier `@hobo/backend-fleet` or `@hobo/ci/mesh`;
- * 9. an exported name starting with `Fleet`, `fleet` or `FLEET_` outside the
- *    fleet packages.
- *
- * The guard, its allowlist, its test and its fixtures are never scanned, nor
- * is anything under `docs/` or `site/`.
- *
- *   node --import tsx scripts/check-fleet-vocabulary.mts [--root=<dir>] [--json] [--under=<prefix>]...
- *
- * `--root` points the guard at another tree, which is how its tests show it a
- * tree that breaks each rule (the pattern of `check-package-boundaries.mts`).
- * Exits 1 when any rule finds something.
- */
 import {
 	type Dirent,
 	existsSync,
@@ -43,10 +16,8 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url));
 
 export interface VocabularyFinding {
 	readonly rule: number;
-	/** Repository-relative path, `/`-separated. */
 	readonly path: string;
 	readonly line: number;
-	/** The offending name, specifier or path. */
 	readonly name: string;
 	readonly detail: string;
 }
@@ -57,7 +28,6 @@ interface AllowEntry {
 	readonly reason: string;
 }
 
-/** Never scanned by any rule. */
 const NEVER_SCANNED = [
 	"scripts/check-fleet-vocabulary.mts",
 	"scripts/fleet-vocabulary-allow.json",
@@ -67,7 +37,6 @@ const NEVER_SCANNED = [
 	"site/**",
 ] as const;
 
-/** Directories no rule looks inside. */
 const SKIPPED_DIRECTORIES = new Set([
 	"node_modules",
 	".git",
@@ -104,16 +73,12 @@ const RULE_4_MESSAGES = new Set([
 
 const RULE_5 = /InternalMesh|INTERNAL_MESH|internalMesh/u;
 
-/** The removed environment variables of the surfaces section (§6.15). */
-// The `HOBO_CI_` prefix is joined here, not written, so the repository-wide
-// retired-variable grep does not find this guard itself.
 const CI = ["HOBO", "CI"].join("_");
 const RULE_6 = new RegExp(
 	String.raw`\b(?:${CI}_MESH_[A-Z0-9_]*|${CI}_NATS_[A-Z0-9_]*|${CI}_FLEET_CAPACITY[A-Z0-9_]*|${CI}_FLEET_STATE|${CI}_FLEET_ROUTES|${CI}_LOCAL_RUNNER|${CI}_LOCAL_REPOSITORY|${CI}_LOCAL_TRUSTED|HOBO_TAILSCALE_AUTHKEY)\b`,
 	"gu",
 );
 
-/** Every `deletes` path of the workflow manifest (§11.5), held as data. */
 const RULE_7_DELETES = [
 	"packages/connectivity/src/crypto/dpop.ts",
 	"packages/connectivity/src/crypto/jwt-svid.ts",
@@ -198,7 +163,6 @@ const RULES: readonly Rule[] = [
 
 const globCache = new Map<string, RegExp>();
 
-/** Whether a `/`-separated relative path matches a pathspec glob (`*` one segment, `**` any depth). */
 export function matchesGlob(path: string, glob: string): boolean {
 	let pattern = globCache.get(glob);
 	if (pattern === undefined) {
@@ -241,8 +205,7 @@ function walk(root: string, relative: string, out: string[]): void {
 }
 
 function loadAllowlist(file: string): readonly AllowEntry[] {
-	// SAFETY: the guard's own allowlist file, a JSON array of { rule, path, reason }.
-	return JSON.parse(readFileSync(file, "utf8")) as AllowEntry[];
+	return JSON.parse(readFileSync(file, "utf8"));
 }
 
 function lineOf(text: string, offset: number): number {
@@ -293,10 +256,8 @@ type DependencyMap = Readonly<Record<string, string>>;
 
 function dependenciesOf(text: string): string[] {
 	try {
-		// SAFETY: a package.json read at this I/O boundary; only its dependency maps are read.
-		const manifest = JSON.parse(text) as Readonly<
-			Record<string, DependencyMap | undefined>
-		>;
+		const manifest: Readonly<Record<string, DependencyMap | undefined>> =
+			JSON.parse(text);
 		return [
 			"dependencies",
 			"devDependencies",
@@ -398,7 +359,6 @@ function identifiers(
 	return found;
 }
 
-/** Every finding of the nine rules over the tree at `root`, less the allowlist. */
 export function scanVocabulary(
 	root: string,
 	allowlistFile: string = join(scriptsDir, "fleet-vocabulary-allow.json"),
@@ -457,7 +417,6 @@ export function scanVocabulary(
 			addAt(rule, start, name, detail);
 		};
 
-		// Rules 1, 2, 8: imports and dependencies.
 		const specifierRules: Array<[number, (s: string) => boolean, string]> = [
 			[1, isNatsSpecifier, "@nats-io/"],
 			[2, isIrohSpecifier, "@number0/iroh"],
@@ -489,7 +448,6 @@ export function scanVocabulary(
 			}
 		}
 
-		// Rule 3: declarations named after a fleet-owned function.
 		if (
 			scopes.has(3) &&
 			code &&
@@ -504,7 +462,6 @@ export function scanVocabulary(
 						`declares ${name}, which only @hobo/fleet may implement`,
 					);
 
-		// Rule 4: protobuf messages named after a fleet record.
 		if (scopes.has(4) && path.endsWith(".proto")) {
 			const stripped = text.replace(/\/\/[^\n]*/gu, (comment) =>
 				" ".repeat(comment.length),
@@ -521,7 +478,6 @@ export function scanVocabulary(
 			}
 		}
 
-		// Rule 5: identifiers naming the internal mesh.
 		if (scopes.has(5) && RULE_5.test(text)) {
 			if (code) {
 				for (const { name, node } of identifiers(source()))
@@ -533,7 +489,6 @@ export function scanVocabulary(
 			}
 		}
 
-		// Rule 6: removed environment variables.
 		if (scopes.has(6))
 			for (const match of text.matchAll(RULE_6))
 				addAt(
@@ -543,14 +498,12 @@ export function scanVocabulary(
 					`names removed variable ${match[0]}`,
 				);
 
-		// Rule 9: exported fleet-prefixed names outside the fleet packages.
 		if (scopes.has(9) && code && /\b(?:Fleet|fleet|FLEET_)/u.test(text))
 			for (const { name, node } of exportedNames(source()))
 				if (RULE_9.test(name))
 					addNode(9, node, name, `exports ${name} outside the fleet packages`);
 	}
 
-	// Rule 7: a deleted path that still exists.
 	for (const entry of RULE_7_DELETES) {
 		const path = entry.replace(/\/\*\*$/u, "");
 		if (allowed(7, path)) continue;
@@ -579,8 +532,6 @@ if (
 		.find((arg) => arg.startsWith("--root="))
 		?.slice("--root=".length);
 	const root = rootArg ? resolve(rootArg) : resolve(scriptsDir, "..");
-	// `--under=<prefix>` (repeatable) reports only findings whose path starts
-	// with one of the prefixes: how an outcome checks one lane's paths.
 	const under = args
 		.filter((arg) => arg.startsWith("--under="))
 		.map((arg) => arg.slice("--under=".length));

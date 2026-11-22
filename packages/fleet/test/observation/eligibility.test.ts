@@ -1,13 +1,3 @@
-/**
- * `eligibleForActive` (design §6.8, §6.10 item 4) gives exactly the
- * eligibility and reasons today's `decideFleet` (`packages/backend-routing/
- * src/policy.ts:398-407`) and `routeFleetByBudget` (`routing.ts:308-309`)
- * compute, for every observation their existing tests build, in both modes.
- *
- * Today's health tests are transcribed below as the oracle, over today's
- * observation shape; each case is then converted to a `NamedObservation`.
- * `decideFleet` reports `not-ready` as its existing `schema-not-current`.
- */
 import { create } from "@bufbuild/protobuf";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -23,7 +13,6 @@ import {
 } from "../../src/observation/index.js";
 import type { NamedObservation } from "../../src/ports.js";
 
-/** Today's `FleetBackendHealth`. */
 type TodayHealth =
 	| "reachable"
 	| "unreachable"
@@ -31,7 +20,6 @@ type TodayHealth =
 	| "auth"
 	| "unknown";
 
-/** Today's `FleetObservation`, the fields its health tests read. */
 type TodayObservation = Readonly<{
 	backend: string;
 	health: TodayHealth;
@@ -42,17 +30,14 @@ type TodayObservation = Readonly<{
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
-/** `DEFAULT_FLEET_POLICY.rpoMs`. */
 const RPO = 20 * MINUTE;
 
-/** `span` of policy.ts:360. */
 function span(ms: number): string {
 	return ms < 120_000
 		? `${Math.round(ms / 1000)}s`
 		: `${Math.round(ms / 60_000)}m`;
 }
 
-/** policy.ts:398-407, verbatim apart from the names. */
 function decideFleetReasons(
 	entry: TodayObservation,
 	failing: boolean,
@@ -71,7 +56,6 @@ function decideFleetReasons(
 	return reasons;
 }
 
-/** routing.ts:308-309 for an observed member: health alone. */
 function routeFleetReasons(entry: TodayObservation): string[] {
 	return entry.health !== "reachable" ? [entry.health] : [];
 }
@@ -84,7 +68,6 @@ const HEALTH = {
 	unknown: Health.UNKNOWN,
 } as const satisfies Readonly<Record<TodayHealth, Health>>;
 
-/** §6.10 item 4: today's shape as a NamedObservation. */
 function named(
 	entry: TodayObservation,
 	readyWhenCurrent: true | undefined,
@@ -123,10 +106,6 @@ const routed = (
 	...overrides,
 });
 
-/**
- * Every observation `packages/data-postgres/test/fleet-policy.test.ts` (seen,
- * down) and `packages/backend-routing/test/routing.test.ts` (seen) build.
- */
 const TODAY: readonly TodayObservation[] = [
 	seen("a"),
 	seen("b"),
@@ -288,7 +267,6 @@ describe("failingLongerThan", () => {
 		create(ObservationSchema, { health, failingForMs });
 
 	it("is today's failover threshold: failing for at least that long", () => {
-		// decideFleet holds while failingForMs < failoverAfterMs (policy.ts:460).
 		expect(failingLongerThan(at(Health.UNREACHABLE, 59_999), 60_000)).toBe(
 			false,
 		);

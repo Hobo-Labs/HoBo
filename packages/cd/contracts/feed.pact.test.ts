@@ -71,7 +71,6 @@ async function claimed(station: Station) {
 	return { ...agent, lease: lease.value };
 }
 
-/** The SVID refresh route: the agent's fleet CredentialRequest and a SIGN-key proof for the authority URL. */
 async function refreshThroughFeed(
 	station: Station,
 	device: FleetDevice,

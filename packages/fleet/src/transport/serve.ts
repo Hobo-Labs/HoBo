@@ -1,9 +1,3 @@
-/**
- * The session server (design §6.12): accepts on every transport, asks
- * `authoriseSession` before any byte is delivered, serves shell, forward and
- * blob sessions inside the order's sandbox (never on the host), and publishes
- * a signed session-close fact with byte counts when each session ends.
- */
 import { createHash } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -35,7 +29,6 @@ import {
 	writeMessage,
 } from "./wire.js";
 
-/** The most input a shell or forward session buffers for its command. */
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 // public-contract: the event kind of a session-close fact on FLEET_EVENTS (§7.3 EventChannel).
 const SESSION_CLOSE_KIND = "session-close";
@@ -81,7 +74,6 @@ function commandFor(grant: SessionGrant): readonly string[] {
 		: ["nc", "127.0.0.1", String(grant.port)];
 }
 
-/** Shell and forward: the input until `END`, run once in the order's sandbox, output streamed back, then the exit code. */
 async function serveCommand(session: Session): Promise<void> {
 	const sandbox = sandboxFor(session);
 	if (sandbox === undefined) {
@@ -136,7 +128,6 @@ async function serveCommand(session: Session): Promise<void> {
 	);
 }
 
-/** Blob: one `REQUEST` for a digest the grant names, read from the order's sandbox and verified before `END`. */
 async function serveBlob(session: Session): Promise<void> {
 	const next = await session.messages.next();
 	if (next.done === true) return;
@@ -225,7 +216,6 @@ async function publishClose(
 }
 
 export function serve(deps: ServeDeps): Subscription {
-	/** Grants `authorise` accepted, by session id, until their handler takes them. */
 	const authorised = new Map<string, SessionGrant>();
 	const running = new Set<AbortController>();
 	let stopped = false;
@@ -260,7 +250,6 @@ export function serve(deps: ServeDeps): Subscription {
 			if (grant.purpose === SessionPurpose.BLOB) await serveBlob(session);
 			else await serveCommand(session);
 		} catch {
-			// A session that breaks off ends here; the close fact still records it.
 		} finally {
 			running.delete(controller);
 			await messages.return(undefined).catch(() => undefined);

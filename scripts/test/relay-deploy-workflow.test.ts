@@ -756,7 +756,7 @@ describe("the relay deploy workflow", () => {
 		);
 	});
 
-	it("probes no hosted fleet verdict: the relay serves none (ADR-0183)", () => {
+	it("probes no hosted fleet verdict: the relay serves none", () => {
 		assert.doesNotMatch(workflow, /Probe the fleet verdict/u);
 		assert.doesNotMatch(workflow, /\/v1\/fleet\/verdicts\//u);
 	});

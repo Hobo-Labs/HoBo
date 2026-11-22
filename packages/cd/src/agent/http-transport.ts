@@ -74,7 +74,6 @@ export type HttpTransportDeps = Readonly<{
 	reconcilerId: ReconcilerId;
 	privateJwk: JsonObject;
 	svid: string;
-	/** The current member SVID, kept fresh by the fleet agent (`hobo fleet run`); read before each request when set. */
 	credential?: (() => Promise<string>) | undefined;
 	now: () => number;
 }>;
@@ -166,11 +165,6 @@ export function createHttpTransport(d: HttpTransportDeps): ReconcilerTransport {
 		}
 	}
 
-	/**
-	 * The member SVID comes from the fleet: the fleet agent refreshes it
-	 * (`credentials`) and `credential` reads the current one. Without a
-	 * source, an SVID past its expiry is refused here instead of being sent.
-	 */
 	async function ensureSvid(): Promise<Outcome<true>> {
 		if (d.credential !== undefined) {
 			try {

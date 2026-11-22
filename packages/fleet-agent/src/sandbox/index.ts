@@ -1,33 +1,3 @@
-/**
- * Sandbox drivers (L38, L40; design §6.11, §7.3, D58). `sandboxDrivers`
- * builds this platform's candidates, runs each one's self-test, and answers
- * one driver per tier (the first candidate of that tier whose self-test
- * passed), up to `cap`.
- *
- * - Linux: the sandbox runtime is not a host prerequisite. The agent
- *   provisions gVisor's `runsc` itself (`runtime-provision.ts`: a pinned,
- *   SHA-512-verified release in its cache) and serves `S1_CONTAINER` and
- *   `S2_USER_KERNEL` from it. A host `crun` or `runc` is used only when an
- *   operator configures its path (`HOBO_FLEET_SANDBOX_RUNTIME`), and then for
- *   `S1_CONTAINER` only; nothing is taken from `PATH`. The mode is probed
- *   (`privilege.ts`): rootful when the agent is root (each sandbox in a user
- *   namespace mapped to a reserved high id range, A10's fallback), rootless
- *   when unprivileged user namespaces work, otherwise nothing is advertised.
- *   Limits go through cgroups when they are delegated, else (runsc only)
- *   through the sentry with `--ignore-cgroups`. `S3_MICROVM` over Kata fails
- *   closed (A11).
- * - macOS: `S3_MICROVM` over Apple's `container` (fails closed, A12).
- * - Anything else: none.
- *
- * When no Linux runtime qualifies, `hobo_fleet_sandbox_unavailable` is logged
- * with the reason (`not-provisioned`, `checksum-mismatch`,
- * `no-root-or-userns`, …); a candidate whose self-test fails logs it too.
- *
- * Settings, from the environment: `HOBO_FLEET_SANDBOX_CACHE` (the runtime
- * cache; `~/.cache/hobo-fleet`, or `/var/lib/hobo-fleet` as root),
- * `HOBO_FLEET_SANDBOX_DOWNLOAD=0` (use only the cache), and
- * `HOBO_FLEET_SANDBOX_RUNTIME` (an operator's host runtime).
- */
 import { chmodSync, mkdirSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -54,7 +24,6 @@ import {
 	resolveSandboxRuntime,
 } from "./runtime-provision.js";
 
-/** The drivers whose self-test passed, up to `cap`. */
 export async function sandboxDrivers(
 	options: Readonly<{ cap?: SandboxTier; log: FleetLog }>,
 ): Promise<readonly SandboxDriver[]> {
@@ -64,7 +33,6 @@ export async function sandboxDrivers(
 	});
 }
 
-/** `sandboxDrivers` with explicit settings (the O10 test passes the CI cache). */
 export async function configuredSandboxDrivers(
 	options: Readonly<{
 		cap?: SandboxTier | undefined;
@@ -78,7 +46,6 @@ export async function configuredSandboxDrivers(
 	);
 }
 
-/** One driver per tier, the first candidate of it whose self-test passes, none above `cap`; ordered by tier. */
 export async function selectSandboxDrivers(
 	candidates: readonly SandboxDriver[],
 	cap: SandboxTier | undefined,
@@ -95,13 +62,11 @@ export async function selectSandboxDrivers(
 }
 
 export type SandboxSettings = Readonly<{
-	/** An operator-configured host runtime; the only way a host binary is used. */
 	hostRuntime: string | undefined;
 	cacheDir: string;
 	allowDownload: boolean;
 }>;
 
-/** Reads the settings in this file's comment; no runtime is ever looked up on PATH. */
 export function sandboxSettings(
 	env: Readonly<Record<string, string | undefined>>,
 	euid: number,
@@ -124,14 +89,12 @@ export function sandboxSettings(
 	};
 }
 
-/** What the Linux probes found: the runtime, the privilege mode and where limits go. */
 export type HostSetup = Readonly<{
 	runtime: RuntimeResolution;
 	privilege: Privilege;
 	cgroups: Cgroups;
 }>;
 
-/** Resolves (provisioning when allowed) the runtime, then probes privilege with it and cgroups. */
 export async function probeLinuxHost(
 	settings: SandboxSettings,
 ): Promise<HostSetup> {
@@ -153,21 +116,12 @@ export async function probeLinuxHost(
 	return { runtime, privilege, cgroups: probeCgroups(euid, REAL_HOST) };
 }
 
-/**
- * runsc's global flags: a loopback-only network stack (the forwarder
- * container brings the proxy and control ports into it), connects to host
- * Unix sockets (the forwarder's, to the agent's relay and control sockets;
- * runsc `--host-uds=open`), the sandbox's OCI seccomp profile loaded inside
- * the sentry, and, without delegated cgroups, `--ignore-cgroups` so the
- * sentry's own limits (`oci-config.ts`) are the ones that hold.
- */
 export function runscFlags(cgroups: CgroupPlacement): readonly string[] {
 	const flags = ["--network=none", "--host-uds=open", "--oci-seccomp"];
 	if (cgroups.mode === "sentry") flags.push("--ignore-cgroups");
 	return flags;
 }
 
-/** Creates `dir` (and missing parents) and leaves it traversable but not listable by others. */
 function traversable(dir: string): string {
 	mkdirSync(dir, { recursive: true, mode: 0o711 });
 	chmodSync(dir, 0o711);
@@ -176,15 +130,10 @@ function traversable(dir: string): string {
 
 const BOTH_TIERS = "S1_CONTAINER,S2_USER_KERNEL";
 
-/**
- * The Linux OCI candidates for a probed host, in preference order, then
- * Kata. Logs `hobo_fleet_sandbox_unavailable` when no OCI runtime qualifies.
- */
 export function linuxCandidates(
 	setup: HostSetup,
 	input: Readonly<{
 		log: FleetLog;
-		/** The agent's run directory (sandboxes, runtime state). */
 		run: string;
 		images: ImageStore;
 		makeCalls?: (
@@ -252,7 +201,6 @@ export function linuxCandidates(
 	];
 }
 
-/** This platform's driver candidates, in preference order. */
 export async function platformCandidates(
 	platform: NodeJS.Platform,
 	log: FleetLog,
@@ -264,7 +212,6 @@ export async function platformCandidates(
 	return linuxDriversFor(await probeLinuxHost(settings), log);
 }
 
-/** The Linux candidates for a probed host, over the agent's own run and image directories. */
 export function linuxDriversFor(
 	setup: HostSetup,
 	log: FleetLog,
@@ -285,7 +232,6 @@ export function linuxDriversFor(
 			? traversable(join(home, "images"))
 			: join(home, "images"),
 		fetch,
-		// Only a rootful host runtime maps sandbox ids to the reserved range; rootful runsc has no user namespace.
 		idShift:
 			rootful && setup.runtime.ok && setup.runtime.runtime.name !== "runsc"
 				? ROOTFUL_ID_BASE

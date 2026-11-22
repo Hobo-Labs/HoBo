@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * `pnpm run fleet:contracts` (O26, ADR-0183): the frozen contracts did not
- * drift. Two checks, both must pass:
- *
- * 1. `scripts/emit-fleet-contracts.mts --check` (the coordinator's emitter):
- *    the declarations of every contract entry point equal each package's
- *    `contracts/api.snapshot.d.ts`;
- * 2. provenance: `git diff --exit-code <newest Fleet-Contract commit> --
- *    'packages/*\/contracts/api.snapshot.d.ts' packages/fleet/data-models`, so
- *    no snapshot or record changed outside a contract or amendment commit.
- *
- *   node --import tsx scripts/check-fleet-contracts.mts [--root=<dir>] [--no-build]
- *
- * The emitter reads workspace dependencies through their built declarations,
- * so the command first builds the contract packages with turbo (cached when
- * nothing changed); `--no-build` skips that step.
- */
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,10 +12,8 @@ export interface ContractsReport {
 	}>;
 	readonly provenance: Readonly<{
 		command: string;
-		/** The newest commit with a `Fleet-Contract:` trailer, when there is one. */
 		base: string | undefined;
 		exitCode: number;
-		/** Snapshot and record paths that differ from `base`. */
 		changed: readonly string[];
 	}>;
 }
@@ -42,7 +23,6 @@ const PROTECTED = [
 	"packages/fleet/data-models",
 ] as const;
 
-/** One finished command: its exit code and everything it printed. */
 interface CommandResult {
 	readonly exitCode: number;
 	readonly output: string;
@@ -64,7 +44,6 @@ function run(
 	};
 }
 
-/** The packages `emit-fleet-contracts.mts` reads, which must be built first. */
 const CONTRACT_PACKAGES = [
 	"@hobo/fleet",
 	"@hobo/fleet-nats",
@@ -76,7 +55,6 @@ const CONTRACT_PACKAGES = [
 	"@hobo/ci-gh-actions",
 ] as const;
 
-/** Runs both checks of O26 against the repository at `root`; `build` first builds the contract packages. */
 export function checkFleetContracts(
 	root: string,
 	options: Readonly<{ build?: boolean }> = {},

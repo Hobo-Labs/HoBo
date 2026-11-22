@@ -233,7 +233,6 @@ describe("clusterProfileInventory", () => {
 				"fleet-system/edge-paris-01",
 			],
 		]);
-		// Secret-free: a reference to the access provider, never its token.
 		for (const request of declared) {
 			expect(
 				JSON.stringify(toJson(DeclareRequestSchema, request)),

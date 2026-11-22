@@ -1,26 +1,3 @@
-/**
- * Test doubles for the runner-host agent (`cd-agent-runner-host.ts`), used by
- * this package's `cd-*` tests only and never by the CLI: a runner host as the
- * runner-host realizer sees it, offline, reporting itself as a `DEVICE`
- * member of fleet `hobo` through its own fleet `Observation`.
- *
- * - `FakeRunnerHost`: the container engine (`--rm` semantics: a stopped
- *   controller is gone), the worker's leases, GitHub runner presence and the
- *   host's own observation, derived from whichever controller is running.
- *   Images listed in `unhealthy` start but never report healthy, which is how
- *   a failed verify is reproduced. With `worker` set it plays the box worker
- *   across the process boundary instead: it hands out only the container
- *   port, writes the observation the host's fleet agent would write into the
- *   worker's data directory, and honours the admission marker the agent
- *   places there. The agent's own job ports (`createWorkerHostJobs`) then
- *   read the host.
- * - `SupervisedRunnerHost`: a host whose controller is a process its worker
- *   daemon supervises, played through the worker's data directory: the real
- *   supervisor (`createControllerSupervisor`) with fake children, a fleet
- *   agent that rewrites its observation (naming its controller digest) on
- *   every beat, and, for a developer device, the GitHub presence its
- *   controller reports. `tick` is one pass of the host.
- */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -42,10 +19,6 @@ import {
 } from "@hobo/ci-gh-actions/runner-host";
 import { Health, type Observation, ObservationSchema } from "@hobo/fleet";
 
-/**
- * A host's own fleet observation (observer = member), as its fleet agent
- * signs and publishes it every beat; `controllerDigest` rides as a label.
- */
 export function selfObservation(
 	input: Readonly<{
 		memberId: string;
@@ -104,7 +77,6 @@ export class FakeRunnerHost {
 			unhealthy?: readonly string[];
 			labels?: readonly string[];
 			startMs?: number;
-			/** Play the worker through its data directory (see the file comment). */
 			worker?: WorkerHostFiles;
 		}> = {},
 	) {
@@ -128,7 +100,6 @@ export class FakeRunnerHost {
 		)?.image;
 	}
 
-	/** Whether the worker admits jobs: the agent's marker when `worker` is set. */
 	get admission(): boolean {
 		const worker = this.options.worker;
 		return worker ? !existsSync(worker.admissionPaused) : this.#admission;
@@ -138,7 +109,6 @@ export class FakeRunnerHost {
 		this.#admission = open;
 	}
 
-	/** The host's own fleet observation, as its fleet agent makes it while a controller runs. */
 	advert(): Observation | undefined {
 		const live = [...this.containers.values()].find(
 			(c) => c.state === "running" && c.name.startsWith(CONTROLLER),
@@ -155,7 +125,6 @@ export class FakeRunnerHost {
 		});
 	}
 
-	/** The fleet agent's beat: rewrite (or, with no controller, remove) the observation file. */
 	async beat(): Promise<void> {
 		const worker = this.options.worker;
 		if (!worker) return;
@@ -170,7 +139,6 @@ export class FakeRunnerHost {
 	}
 }
 
-/** The ports a FakeRunnerHost hands the realizer. */
 function portsOf(host: FakeRunnerHost): RunnerHostPorts {
 	return {
 		containers: {
@@ -257,7 +225,6 @@ export class SupervisedRunnerHost {
 			dataDirectory: string;
 			hostKind?: "box-worker" | "developer-device";
 			unhealthy?: readonly string[];
-			/** A local runner whose runner never comes online. */
 			offline?: boolean;
 		}>,
 	) {
@@ -285,12 +252,10 @@ export class SupervisedRunnerHost {
 		});
 	}
 
-	/** Digests of the live children. */
 	running(): string[] {
 		return [...this.#live.values()].map((child) => child.digest);
 	}
 
-	/** One supervisor pass, then the live worker's beat. */
 	async tick(): Promise<void> {
 		await this.#supervisor.tick();
 		const [pid, child] = [...this.#live.entries()][0] ?? [];
@@ -321,7 +286,6 @@ export class SupervisedRunnerHost {
 		if (local)
 			await writeWorkerRunnerPresence(this.files, {
 				observedAtMs: this.nowMs,
-				// Closed admission: the controller gave up its waiting runner.
 				runners:
 					open && !this.options.offline
 						? [{ name: `hobo-local-${pid}`, status: "online", busy: false }]
@@ -330,14 +294,6 @@ export class SupervisedRunnerHost {
 	}
 }
 
-/**
- * Release bodies written as `<hex>.mjs` in `source`, as the release build
- * publishes them. Each comes back as the Freight a promotion would carry for
- * one version: the worker image, pinned by an OCI manifest digest that is not
- * the release's (as GHCR's never is), and the release under `artifact`,
- * pinned by its bytes' sha256 (`runnerFleetDelivery({releaseIndexBase})`).
- * `parameters` is the runner-host row that Freight resolves to.
- */
 export async function writeReleases(
 	source: string,
 	bodies: readonly string[],

@@ -1,14 +1,8 @@
-/**
- * JSON guards for journal data, without runtime `typeof` (the same tag check
- * as `@hobo/core`'s json.ts, which the core barrel does not export). Private
- * to the enrollment lane.
- */
 import type { JsonValue as PbJsonValue } from "@bufbuild/protobuf";
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 const tagOf = Object.prototype.toString;
 
-/** A value the lane writes into event data. */
 export type FieldValue = JsonValue;
 
 export function isJsonString<T>(value: T): value is T & string {
@@ -32,8 +26,6 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	);
 }
 
-/** Protobuf JSON as core JSON: the protobuf JSON value space (no bigint) is a subset of core's. */
 export function pbJson(value: PbJsonValue): JsonValue {
-	// SAFETY: @bufbuild/protobuf's JsonValue (null, boolean, number, string, arrays and objects of those) is assignable in kind to core's JsonValue; only the readonly modifiers differ.
-	return value as JsonValue;
+	return value;
 }

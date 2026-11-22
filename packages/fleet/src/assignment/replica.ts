@@ -1,42 +1,3 @@
-/**
- * An assignment replica kept in one key of an `EphemeralStatePort`.
- *
- * Moved from `packages/backend-fleet/src/ephemeral-replica.ts` (62dbc5d4c).
- * The whole log of one member is one value (`log.ts`) holding the newest
- * entries in ascending order. `accept` reads the key, checks the register's
- * rules on what it read, and writes the longer log back conditionally:
- *
- * - **One entry per epoch.** An epoch the log holds answers `duplicate` (the
- *   same entry) or `conflict` (another one). An epoch below the oldest entry
- *   kept answers `conflict`: the log held one, and which is no longer known.
- * - **Only `top + 1`.** Any other epoch answers `gap`. An empty log takes
- *   epoch 1 only.
- * - **Atomic per member.** The write is `putIfAbsent` for an empty log and
- *   `compareAndSet` on the version read otherwise, so two writers racing on
- *   one member cannot both extend the same log: the loser re-reads and
- *   re-checks. A replica that keeps losing races answers `busy`.
- *
- * Every write sets the key's TTL to the port's 30-day cap, and `refresh`
- * resets it without writing (the repair tick calls it on every member).
- *
- * **When a log is lost.** A cache may lose the key: it expires, the store is
- * flushed, or the store evicts it. A lost log reads as empty, so the member
- * simply stops counting as a holder of anything. Safety needs one thing from
- * that: every decided entry stays held by a majority of the members. The
- * repair tick copies the current entry onto every member that answers (see
- * `completeAssignment`), so once it has run, a decided entry is held by all of
- * them, and losing the log of any minority leaves a majority holding it. What
- * it does not survive is losing a log that was part of a *bare* majority
- * before repair copied the entry further, while another holder is silent:
- * then nobody can prove the entry was decided. `ephemeral-replica.test.ts`
- * checks both.
- *
- * An emptied member is brought back by `rejoinAssignmentReplicas`: it is
- * seeded with the current entry only when a majority *other than itself*
- * hold that entry as their newest, which proves it decided and proves no
- * newer entry is decided. The same move admits a member a membership epoch
- * has just added, whose log starts empty.
- */
 import {
 	EPHEMERAL_STATE_MAX_TTL_MS,
 	type EphemeralStatePort,
@@ -65,7 +26,6 @@ import {
 	resolveAssignment,
 } from "./register.js";
 
-/** Entries kept per log. Older ones are dropped; the register needs only the newest. */
 export const ASSIGNMENT_LOG_MAX_ENTRIES = 32;
 // public-contract: unchanged stored key every replica of an unnamed register shares.
 export const DEFAULT_ASSIGNMENT_LOG_KEY = "hobo:fleet:assignment";
@@ -86,7 +46,6 @@ function judge(
 	return entry.epoch === top + 1 ? undefined : "gap";
 }
 
-/** The log of one member, in one key of its ephemeral-state port. */
 export function ephemeralAssignmentReplica(
 	state: EphemeralStatePort,
 	id: MemberName,
@@ -127,7 +86,6 @@ export function ephemeralAssignmentReplica(
 					? await state.putIfAbsent(key, value, ttl)
 					: await state.compareAndSet(key, stored.version, value, ttl);
 			if (write.applied) return "accepted";
-			// Another writer changed the log between the read and the write.
 		}
 		return "busy";
 	}
@@ -150,7 +108,6 @@ export function ephemeralAssignmentReplica(
 	});
 }
 
-/** A register over cache replicas, in configured order. */
 export function ephemeralAssignmentRegister(
 	replicas: readonly EphemeralAssignmentReplica[],
 	options: Readonly<{ classify?: FailureClassifier }> = {},
@@ -160,13 +117,6 @@ export function ephemeralAssignmentRegister(
 	return Object.freeze({ ...register, replicas: Object.freeze([...replicas]) });
 }
 
-/**
- * Seed every member whose log is empty with the current entry, where that is
- * provable without the member: a majority, not counting it, hold the entry as
- * their newest. A member that answered with entries, did not answer, or has
- * no `seed` (a log that cannot be lost) is left alone. Replies may be passed
- * in to save a read.
- */
 export async function rejoinAssignmentReplicas(
 	register: AssignmentRegister,
 	replies?: readonly AssignmentReply[],

@@ -1,46 +1,18 @@
 #!/usr/bin/env node
-/**
- * `pnpm run fleet:outcome <id>` (ADR-0183): runs one system outcome of the
- * fleet design and prints its `fleet-verification.json` object,
- * `{ id, pass, command, evidence, measured, fallbacks }`.
- *
- * The outcome table (`OUTCOMES`) holds each outcome's Check commands, its
- * Threshold, its "Threshold if a fallback is taken" and the assumptions that
- * fallback names, as data. One outcome:
- *
- * 1. fails at once when a file its Check names does not exist;
- * 2. runs the Check commands in order (stopping at the first that fails), each
- *    `vitest run` with its JSON reporter so skipped and todo tests are counted;
- * 3. evaluates its threshold (the soak figures for O20);
- * 4. passes only when every command exited zero, no test was skipped, and the
- *    threshold holds.
- *
- * Fallbacks: `fleet-fallbacks.json` at the root lists the assumption ids whose
- * fallback was taken. An outcome that names one of them is judged against its
- * fallback threshold: a test whose title starts with that id in brackets
- * (`[A13] …`) may skip. For every other outcome no test may skip.
- *
- *   node --import tsx scripts/fleet-outcome.mts <id> [--root=<dir>]
- *
- * Exits 0 when the outcome passes, 1 when it does not, 2 on an unknown id.
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The figures a threshold was evaluated on. */
 export type Measured = Record<string, number | string | boolean>;
 
 export interface VerificationRecord {
 	readonly id: string;
 	readonly pass: boolean;
-	/** The Check commands, joined with `; `. */
 	readonly command: string;
 	readonly evidence: readonly string[];
 	readonly measured: Measured;
-	/** Assumption ids whose fallback was applied to this outcome. */
 	readonly fallbacks: readonly string[];
 }
 
@@ -55,23 +27,17 @@ export interface OutcomeSpec {
 	readonly outcome: string;
 	readonly checks: readonly string[];
 	readonly threshold: string;
-	/** "Threshold if a fallback is taken"; absent where no fallback applies. */
 	readonly fallbackThreshold?: string;
-	/** The assumptions whose fallback changes this outcome. */
 	readonly assumptions: readonly string[];
 	readonly owner: string;
-	/** Checked outside `fleet:verify`'s default run: at cutover. */
 	readonly deferred?: "cutover";
-	/** A threshold beyond the commands passing, evaluated after they ran. */
 	readonly measure?: (root: string) => ThresholdResult;
 }
 
-/** Runs one shell command in `cwd`; returns its exit code. */
 export type CommandRunner = (command: string, cwd: string) => number;
 
 const SOAK_FILE = "fleet-soak.json";
 
-/** O20's threshold over `fleet-soak.json` (written by `fleet:soak`). */
 export function soakThreshold(root: string): ThresholdResult {
 	const path = join(root, SOAK_FILE);
 	if (!existsSync(path))
@@ -82,8 +48,7 @@ export function soakThreshold(root: string): ThresholdResult {
 		};
 	let figures: Readonly<Record<string, number>>;
 	try {
-		// SAFETY: fleet:soak's own output file; every field read below is checked against a number.
-		figures = JSON.parse(readFileSync(path, "utf8")) as Record<string, number>;
+		figures = JSON.parse(readFileSync(path, "utf8"));
 	} catch {
 		return {
 			holds: false,
@@ -134,7 +99,6 @@ export function soakThreshold(root: string): ThresholdResult {
 const vitest = (...files: string[]): string =>
 	`pnpm exec vitest run ${files.join(" ")}`;
 
-/** The outcomes of the fleet design's §10.1, as data. */
 export const OUTCOMES: readonly OutcomeSpec[] = [
 	{
 		id: "O1",
@@ -692,7 +656,6 @@ const NAMING_COMMANDS = [
 	/^docker compose\s/u,
 ];
 
-/** The files and directories a Check command names, which must exist. */
 export function namedFiles(command: string): string[] {
 	if (!NAMING_COMMANDS.some((pattern) => pattern.test(command))) return [];
 	return command
@@ -708,12 +671,10 @@ export function namedFiles(command: string): string[] {
 		);
 }
 
-/** Reads `fleet-fallbacks.json` at `root`: the assumption ids whose fallback was taken. */
 export function readFallbacks(root: string): string[] {
 	const path = join(root, "fleet-fallbacks.json");
 	if (!existsSync(path)) return [];
-	// SAFETY: the coordinator's fallback record, a JSON array of assumption ids; anything else reads as none.
-	const parsed = JSON.parse(readFileSync(path, "utf8")) as readonly string[];
+	const parsed: readonly string[] = JSON.parse(readFileSync(path, "utf8"));
 	return Array.isArray(parsed)
 		? parsed.filter((id) => /^A\d+$/u.test(String(id))).map(String)
 		: [];
@@ -743,8 +704,7 @@ const SKIPPED = new Set(["skipped", "pending", "todo", "disabled"]);
 /** Tallies a vitest JSON report: totals and the titles of skipped and todo tests. */
 export function tallyVitest(path: string): VitestTally {
 	if (!existsSync(path)) return { tests: 0, failed: 0, skipped: [] };
-	// SAFETY: vitest's own JSON reporter output; only assertion titles and statuses are read.
-	const report = JSON.parse(readFileSync(path, "utf8")) as VitestReport;
+	const report: VitestReport = JSON.parse(readFileSync(path, "utf8"));
 	let tests = 0;
 	let failed = 0;
 	const skipped: string[] = [];
@@ -758,7 +718,6 @@ export function tallyVitest(path: string): VitestTally {
 	return { tests, failed, skipped };
 }
 
-/** Runs a command through bash in `cwd`, streaming its output to stderr. */
 export const runInShell: CommandRunner = (command, cwd) => {
 	const result = spawnSync("bash", ["-c", command], {
 		cwd,
@@ -767,7 +726,6 @@ export const runInShell: CommandRunner = (command, cwd) => {
 	return result.status ?? 1;
 };
 
-/** Runs one outcome against the repository at `root`. */
 export function runOutcome(
 	spec: OutcomeSpec,
 	options: Readonly<{

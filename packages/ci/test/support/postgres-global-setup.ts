@@ -1,12 +1,3 @@
-/**
- * Vitest global setup: give the PostgreSQL budget-authority tests a real server.
- *
- * When `HOBO_TEST_POSTGRES_URL` is already set it is used as is. Otherwise,
- * when PostgreSQL >= 16 server binaries (`initdb`, `pg_ctl`) are on PATH or
- * under /usr/lib/postgresql/<major>/bin, an ephemeral local cluster is started
- * on a private Unix socket for the run and removed afterwards. As root the
- * cluster runs as the `postgres` user. With neither, the variable stays unset.
- */
 import { spawnSync } from "node:child_process";
 import {
 	chownSync,
@@ -103,7 +94,6 @@ export default async function setup(): Promise<(() => void) | undefined> {
 				asPostgres,
 			);
 		} catch {
-			// already stopped or never started
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

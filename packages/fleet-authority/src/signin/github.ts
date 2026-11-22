@@ -1,19 +1,9 @@
-/**
- * The `github` sign-in provider (§6.5): a GitHub OAuth app, authorization
- * code flow with PKCE (S256). The access token is used once, to read the
- * signed-in user and their organisations, and then dropped; it is never
- * stored or logged. The principal is the `user` `github.com/<login>`; the
- * claims carry `login`, `id` and `org` (the organisation logins, comma
- * separated) so a claim rule in the principal directory can map an
- * organisation to tags.
- */
 import type { SignInProvider } from "@hobo/fleet";
 import { failed, isRecord, isText, requestJson } from "./http.js";
 
 export type GithubProviderOptions = Readonly<{
 	clientId: string;
 	clientSecret: () => Promise<string>;
-	/** Default https://github.com and https://api.github.com (GitHub Enterprise Server sets both). */
 	webBase?: string | undefined;
 	apiBase?: string | undefined;
 	fetch: typeof fetch;

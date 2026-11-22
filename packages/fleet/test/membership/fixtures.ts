@@ -1,7 +1,3 @@
-// Test harness for the enrollment authority (L02): a memory bus and event
-// store, the memory credential issuer, an allow-by-tag policy engine, and a
-// double for every member of `AuthorityParts` (§11.3 rule 6). Devices are
-// built from `createMemoryKeyStore`, people from issuer-minted person tokens.
 import {
 	generateKeyPairSync,
 	randomBytes,
@@ -47,7 +43,7 @@ import {
 	TRUST_RECORD_CONTEXT,
 } from "../../src/contexts.js";
 import { POLICY_DECIDED_EVENT } from "../../src/events.js";
-import { parseKeyId } from "../../src/ids.js";
+import { parseFleetId, parseKeyId } from "../../src/ids.js";
 import {
 	createMemoryCredentialIssuer,
 	createMemoryKeyStore,
@@ -111,7 +107,6 @@ function ed25519(keyId: string): RawKey {
 	};
 }
 
-/** What the parts doubles saw. */
 export type PartCalls = {
 	ticks: string[];
 	fleets: string[];
@@ -126,7 +121,6 @@ export type Options = Partial<{
 	policy: PolicyEngine;
 }>;
 
-/** Allow when the subject carries `fleet-admin` or the action itself as a tag. */
 export function allowByTag(): PolicyEngine {
 	const engineId = "l02-test-allow-by-tag";
 	return {
@@ -318,11 +312,9 @@ export async function harness(options: Options = {}) {
 		authority,
 		recordSigner: authorityKey.signer,
 		recordKey: authorityKey.raw,
-		/** Another authority instance on the same store and bus. */
 		another(): EnrollmentAuthority {
 			return createEnrollmentAuthority(deps, parts);
 		},
-		/** Publishes a fleet record to the registry, as the projection would. */
 		async fleet(
 			fleetId: string,
 			policy: Partial<Omit<FleetPolicy, "$typeName">> = {},
@@ -349,11 +341,9 @@ export async function harness(options: Options = {}) {
 					FLEET_RECORD_CONTEXT,
 					toBinary(FleetRecordSchema, record),
 				),
-				// SAFETY: test fleet ids are short tokens.
-				fleetId as Parameters<typeof bus.publisher.putFleet>[1],
+				parseFleetId(fleetId),
 			);
 		},
-		/** A signed-in person: the token, its DPoP key, and the verified caller. */
 		async person(
 			principal: PrincipalRef,
 			tags: readonly string[] = ["fleet-admin"],
@@ -379,7 +369,6 @@ export type TestDevice = Readonly<{
 	thumbprint: string;
 	signJwk: PublicJwk;
 	bundle: SignedEnvelope;
-	/** The caller `authenticate` yields for a proof with the SIGN key. */
 	caller: Extract<VerifiedToken, { kind: "member" }>;
 }>;
 

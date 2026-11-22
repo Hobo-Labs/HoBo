@@ -1,13 +1,3 @@
-/**
- * What the agent publishes about its own capacity beyond `deps.capacity` (L43,
- * amendments 4 and 6, D60): the refusal and health of its self-observation.
- *
- * - The agent subtracts its executor's own work (`inUse()`: claims held for
- *   an order plus orders running) from the source's free slots.
- * - The executor fits work against `deps.capacity`; the agent hands it a
- *   source whose health is `PRESSURED` while the host refuses for storage or
- *   pressure, so it claims nothing the observation says it refuses.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type Capacity,
@@ -23,7 +13,6 @@ import {
 } from "../observation/refusal.js";
 import type { CapacitySource } from "../ports.js";
 
-/** The source the executor reads: the host's refusal for storage or pressure shows as `PRESSURED`. */
 export function refusingCapacity(source: CapacitySource): CapacitySource {
 	return Object.freeze({
 		async read() {
@@ -49,7 +38,6 @@ export type SelfCapacity = Readonly<{
 	refusal: Refusal;
 }>;
 
-/** The capacity, health and refusal of the agent's self-observation. */
 export function selfCapacity(
 	reading: CapacityReading | undefined,
 	running: number,

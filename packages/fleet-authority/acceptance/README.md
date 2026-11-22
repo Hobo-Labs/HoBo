@@ -1,6 +1,6 @@
 # Acceptance
 
-Behaviour and acceptance for HoBo Fleet (ADR-0183): the cucumber features
+Behaviour and acceptance for HoBo Fleet: the cucumber features
 under `features/fleet/`, their steps under `features/steps/fleet/`, the O2
 integration test, and the O20 soak (`pnpm run fleet:soak`). Nothing here is
 exported by the package; the modules are test support.

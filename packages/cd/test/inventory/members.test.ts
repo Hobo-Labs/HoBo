@@ -1,7 +1,3 @@
-// L19 Camp mapper: every Camp of a mapped Yard is backed by a fleet member
-// (a DEVICE when a reconciler serves it, else a TARGET the Station declared).
-// The member's lifecycle reaches the inventory as the automatic NO_PLACE taint
-// `hobo.cd/member-inactive`; reachability stays with the signal sources (D11).
 import { create } from "@bufbuild/protobuf";
 import {
 	Availability,
@@ -182,7 +178,6 @@ describe("Camp mapper: fleet member lifecycle (L19)", () => {
 	});
 
 	it("an agentless TARGET's reachability still comes from the signal sources", async () => {
-		// A TARGET has no device observing it: a LOST view entry is not evidence.
 		const h = harness(
 			registry([member(ACTIVE_ID, "eu-1", MemberState.ACTIVE)], [ACTIVE_ID]),
 		);

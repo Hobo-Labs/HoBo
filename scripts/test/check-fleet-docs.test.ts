@@ -1,8 +1,3 @@
-/**
- * `fleet:docs` (O27): the fleet's event names, ADR mentions and runbooks agree
- * with the documents. Each test builds a small tree that is complete except
- * for one gap and checks that exactly that gap is refused.
- */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,13 +22,8 @@ function complete(): Tree {
 	const tree: Tree = new Map(
 		Object.entries({
 			"packages/fleet/src/events.ts": EVENTS,
-			"docs/design/fleet.md":
-				"# Fleet\n\nSee ADR-0183. Events: `fleet.TokenIssued`, `fleet.TokenRevoked`.\n",
-			"docs/design/adr/fleet.md": "# ADR-0183 and ADR-0122\n",
-			"docs/design/adr/index.md":
-				"| # | Decision | File |\n|---|---|---|\n| 0122 | Old | x |\n| 0182 | Fleet | fleet |\n",
-			"docs/design/event-families.md":
-				"| Family | Events |\n|---|---|\n| `fleet.*` | `fleet.TokenIssued`, `fleet.TokenRevoked` — fleet |\n",
+			"packages/fleet/README.md":
+				"# Fleet\n\nEvents: `fleet.TokenIssued`, `fleet.TokenRevoked`.\n",
 		}),
 	);
 	for (const runbook of RUNBOOK_FILES)
@@ -63,59 +53,17 @@ describe("checkFleetDocs", () => {
 		expect(checkFleetDocs(write(complete()))).toEqual([]);
 	});
 
-	it("refuses an event missing from the design document", () => {
+	it("refuses an event missing from the fleet README", () => {
 		const tree = complete();
 		tree.set(
-			"docs/design/fleet.md",
-			"# Fleet\n\nSee ADR-0183. Events: `fleet.TokenIssued`, `fleet.TokenRevokedLater`.\n",
+			"packages/fleet/README.md",
+			"# Fleet\n\nEvents: `fleet.TokenIssued`, `fleet.TokenRevokedLater`.\n",
 		);
 		expect(checkFleetDocs(write(tree))).toEqual([
 			{
 				kind: "event",
 				subject: "fleet.TokenRevoked",
-				detail: "fleet.TokenRevoked is not in docs/design/fleet.md",
-			},
-		]);
-	});
-
-	it("refuses an event the fleet.* family row does not cover", () => {
-		const tree = complete();
-		tree.set(
-			"docs/design/event-families.md",
-			"| Family | Events |\n|---|---|\n| `fleet.*` | `fleet.TokenIssued` — fleet |\n| `other.*` | `fleet.TokenRevoked` |\n",
-		);
-		expect(checkFleetDocs(write(tree)).map((gap) => gap.kind)).toEqual([
-			"event-family",
-		]);
-	});
-
-	it("refuses a missing fleet.* family row", () => {
-		const tree = complete();
-		tree.set(
-			"docs/design/event-families.md",
-			"| Family | Events |\n|---|---|\n",
-		);
-		expect(checkFleetDocs(write(tree))).toEqual([
-			{
-				kind: "event-family",
-				subject: "fleet.*",
-				detail: "docs/design/event-families.md has no `fleet.*` row",
-			},
-		]);
-	});
-
-	it("refuses an ADR mention with no row in the ADR index", () => {
-		const tree = complete();
-		tree.set(
-			"docs/design/adr/index.md",
-			"| # | Decision | File |\n|---|---|---|\n| 0182 | Fleet | fleet |\n",
-		);
-		expect(checkFleetDocs(write(tree))).toEqual([
-			{
-				kind: "adr",
-				subject: "ADR-0122",
-				detail:
-					"ADR-0122 (docs/design/adr/fleet.md) is not a row of docs/design/adr/index.md",
+				detail: "fleet.TokenRevoked is not in packages/fleet/README.md",
 			},
 		]);
 	});
@@ -133,9 +81,9 @@ describe("checkFleetDocs", () => {
 		]);
 	});
 
-	it("refuses a missing design document as a gap, not a crash", () => {
+	it("refuses a missing fleet README as a gap, not a crash", () => {
 		const tree = complete();
-		tree.delete("docs/design/fleet.md");
+		tree.delete("packages/fleet/README.md");
 		const kinds = checkFleetDocs(write(tree)).map((gap) => gap.kind);
 		expect(kinds).toContain("document");
 		expect(kinds).toContain("event");

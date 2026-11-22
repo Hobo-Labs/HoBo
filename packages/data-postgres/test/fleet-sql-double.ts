@@ -1,14 +1,3 @@
-/**
- * An `SqlExecutor` double for one Postgres backend of a fleet.
- *
- * It answers the statements the fleet's control path sends (the assignment
- * log's read, its one-statement `accept` and the held-entry read, the probe,
- * the watermark and usage reads, the storage size) from in-memory rows kept
- * exactly as Postgres would return them: every column as text, a `text[]` as
- * `{a,b}`, a null as null. Statements it does not model (DDL, transaction
- * control, locks, copies) are recorded and answer no rows. With `up` false
- * every statement fails the way a refused connection does.
- */
 import type {
 	SqlExecutor,
 	SqlParameter,
@@ -29,7 +18,6 @@ type Stored = {
 	members: string | null;
 };
 
-/** A refused connection, as the `pg` driver reports one. */
 class ConnectionRefused extends Error {
 	readonly code = "ECONNREFUSED";
 	constructor() {
@@ -49,9 +37,7 @@ export class FleetSqlDouble implements SqlExecutor {
 	readonly log: Stored[] = [];
 	readonly statements: string[] = [];
 	up = true;
-	/** When true, `accept` finds the fleet's lock held by a copy. */
 	locked = false;
-	/** The standby's snapshot time, when it holds a watermark. */
 	snapshotAtMs: number | undefined;
 
 	private row(entry: Stored): SqlRow {

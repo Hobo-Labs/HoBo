@@ -1,11 +1,3 @@
-/**
- * `@hobo/fleet/observation` (L03): signed observations, fit, one-active
- * eligibility, ranking and claim turns, fleet views and verdicts, and the
- * reliability ledger (design §6.8).
- *
- * These are the frozen entry points of §7.3; the modules beside this file are
- * private to the lane.
- */
 import type {
 	FleetRecord,
 	FleetVerdict,
@@ -32,7 +24,6 @@ import { reliabilityLedger } from "./reliability.js";
 import { leader, rank, turn } from "./rendezvous.js";
 import { buildFleetVerdict, buildFleetView } from "./view.js";
 
-/** Local mode (no signer) returns the observation; otherwise it is signed with the observer's SIGN key. */
 export function buildObservation(
 	input: Observation,
 	signer: Signer | undefined,
@@ -40,7 +31,6 @@ export function buildObservation(
 	return build(input, signer);
 }
 
-/** §6.8: every acceptance rule; a refusal names its rule in `detail.reason`. */
 export function acceptObservation(
 	keyed: KeyedEnvelope,
 	registry: RegistryView,
@@ -77,7 +67,6 @@ export function failingLongerThan(
 	return failing(observation, ms);
 }
 
-/** One answer per observation, in input order; the rules of §6.8. */
 export function eligibleForActive(
 	observations: readonly NamedObservation[],
 	options: Readonly<{
@@ -99,11 +88,6 @@ export function rankMembers(
 	return rank(digest, candidates);
 }
 
-/**
- * Amendment 4: the dispatcher that leads (writes the routing slip, reports
- * for the fleet) is rank 0 of `rankMembers` over the fleet's live
- * `DISPATCHER` members; with none ranked, `self` leads.
- */
 export function leaderOf(
 	ranked: readonly MemberId[],
 	self: MemberId,
@@ -111,7 +95,6 @@ export function leaderOf(
 	return leader(ranked, self);
 }
 
-/** `waitMs` 0 means claim now; a member not in `ranked` gets rank -1 and an infinite wait. */
 export function claimTurn(
 	input: Readonly<{
 		digest: WorkDigest;

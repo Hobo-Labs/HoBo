@@ -1,19 +1,3 @@
-/**
- * The fleet view and the fleet verdict (design §6.8 "Fleet view and
- * verdict"), moved from `packages/ci/src/mesh/report.ts`.
- *
- * A view lists a fleet's members, each with its state, availability since
- * when, health, capacity, tier and measured reliability. A member whose last
- * observation expired, or that was never observed, stays listed as `LOST`
- * while it is a member, so "it is gone" is something the view says. Every
- * surface that shows a fleet is built from this one function.
- *
- * The verdict is the one answer runner routing needs for a label: `OPEN`,
- * `BUSY`, `NO_MEMBER` or `NO_CAPACITY`. `BUSY` (amendment 4, D60) is a fleet
- * with no free slot only because its members run their own work; routing
- * treats it as `OPEN`, since a box busy only with its own jobs is never
- * refused (ADR-0181 R4).
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	Availability,
@@ -36,11 +20,8 @@ import type { MemberId } from "../ids.js";
 import { fleetCapacity } from "./monitor.js";
 import { scoreOfSamples } from "./reliability.js";
 
-/** At most this many members are listed (§7.1 `FleetView.members`). */
 export const VIEW_MEMBER_LIMIT = 256;
-/** A view says nothing past this long after `as_of` (§7.1). */
 export const VIEW_TTL_MS = 120_000;
-/** A verdict says nothing past this long after `as_of` (§7.1). */
 export const VERDICT_TTL_MS = 300_000;
 
 const iso = (ms: number): string => new Date(ms).toISOString();
@@ -50,7 +31,6 @@ function msOf(text: string): number {
 	return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
 }
 
-/** Each member's newest observation that names this fleet. */
 function newestByMember(
 	fleet: string,
 	observations: readonly Observation[],
@@ -97,7 +77,6 @@ function memberView(
 		sandboxTiers: observation?.sandboxTiers ?? [],
 		reliability: samples === undefined ? undefined : scoreOfSamples(samples),
 		samples,
-		// Lost: since its last observation expired.
 		since: current ? observation.since : (observation?.validUntil ?? ""),
 		lastSeen: observation?.issuedAt ?? "",
 		agentVersion: observation?.agentVersion || member.agentVersion,
@@ -138,7 +117,6 @@ export function buildFleetView(
 			? [observation]
 			: [];
 	});
-	// Active members first, so a truncated list still shows the ones that work.
 	const listed = views
 		.sort(
 			(a, b) =>
@@ -158,26 +136,12 @@ export function buildFleetView(
 	});
 }
 
-/** Refusals that are not the member's own running work (amendment 4, D60). */
 const REFUSING: ReadonlySet<Refusal> = new Set([
 	Refusal.PRESSURE,
 	Refusal.STORAGE,
 	Refusal.DRAINING,
 ]);
 
-/**
- * Live, active members serving `label` (any label when empty) and their free
- * slots. A member that refuses for pressure, storage or draining also serves
- * while its observation is current, though its health is not `REACHABLE`
- * (the agent publishes `PRESSURED` or `DRAINING` beside that refusal, L43),
- * and its slots never count. With no free slot the fleet is `NO_CAPACITY` only when every serving
- * member refuses for pressure, storage or draining; if any is full only with
- * its own work, or says nothing (`UNSPECIFIED`, an older agent), the fleet is
- * `BUSY` (ADR-0181 R4). When a truncated list shows nobody for the label, the fleet's
- * capacity, which covers every member, answers instead: a partial list is not
- * evidence that nobody serves the label, and a wrong `NO_MEMBER` would send
- * runs away.
- */
 export function buildFleetVerdict(
 	view: FleetView,
 	label: string,
@@ -192,7 +156,6 @@ export function buildFleetVerdict(
 			(label === "" || member.labels.includes(label)),
 	);
 	let members = serving.length;
-	// A refusing member admits no new work, whatever slots it reports.
 	let freeSlots = serving.reduce(
 		(sum, member) =>
 			sum +
@@ -205,7 +168,6 @@ export function buildFleetVerdict(
 	if (view.truncated && members === 0 && view.capacity !== undefined) {
 		members = view.capacity.healthy;
 		freeSlots = view.capacity.freeSlots;
-		// The summary carries no member's refusal, so it never refuses.
 		refused = false;
 	}
 	const expiresAtMs = Math.max(

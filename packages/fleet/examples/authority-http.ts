@@ -1,13 +1,3 @@
-/**
- * An in-process stand-in for the authority's HTTP surface, for the demo and
- * the agent tests (rule 6: L09 builds the real service in the same wave). It maps each route of §6.15 to the one
- * `EnrollmentAuthority` method §7.3 names, authenticates exactly as the
- * service must (`authenticate` over method, URL, `Authorization` and `DPoP`),
- * answers protobuf JSON, and turns a `FleetFailure` into its §7.6 status and a
- * `FleetError` body. It also stamps a `Date` header from the authority clock,
- * and lets a test drop or rewrite answers to stage F19 and F7.
- */
-
 import type { Message } from "@bufbuild/protobuf";
 import { create, fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
@@ -69,12 +59,10 @@ type Route = Readonly<{
 	method: string;
 	pattern: RegExp;
 	name: string;
-	/** "open": no credential needed, a failed one is ignored; "required": a failed one is the answer. */
 	auth: "open" | "required";
 	handle: Handler;
 }>;
 
-/** What a test may do to one exchange after the authority has answered. */
 export type Tap = (
 	exchange: Readonly<{ route: string; status: number; body: string }>,
 ) => "deliver" | "drop" | Readonly<{ body: string }>;
@@ -521,11 +509,8 @@ function routes(authority: EnrollmentAuthority): readonly Route[] {
 
 export type HttpAuthority = Readonly<{
 	fetch: typeof fetch;
-	/** Route names in call order. */
 	calls: readonly string[];
-	/** Replace how answers are delivered; the authority has already decided by then. */
 	tap(next: Tap | undefined): void;
-	/** While false, every request fails before it reaches the authority. */
 	reachable(value: boolean): void;
 }>;
 

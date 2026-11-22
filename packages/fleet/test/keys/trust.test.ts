@@ -1,6 +1,3 @@
-// O14: the trust anchor cannot be replaced with one key. A record signed only
-// by a pinned authority key, or only by a pinned witness key, or with a lower
-// sequence, is rejected (design §7.4).
 import { create, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

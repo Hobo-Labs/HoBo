@@ -421,8 +421,6 @@ async function supervisedHost(
 			return;
 		}
 		if (!started.has(child.pid)) started.set(child.pid, nowMs);
-		// The host's fleet agent observes itself; a supervised controller's
-		// digest is its agent version.
 		await writeWorkerObservation(
 			files,
 			create(ObservationSchema, {

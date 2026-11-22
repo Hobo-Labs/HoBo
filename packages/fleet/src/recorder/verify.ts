@@ -1,14 +1,3 @@
-/**
- * Envelope verification for the recorder (L31, private): a bus envelope is
- * recorded only when its signature verifies against the `SIGN` key the
- * signer's current registry record carries in its identity-signed key bundle
- * (§7.4 table). Offers and orders must also come from a member whose
- * membership in that fleet has the role `DISPATCHER`.
- *
- * Bundle expiry is deliberately not checked here: the recorder may be
- * catching up on facts signed while the bundle was current (§6.9 "recording
- * catches up"). A rotated key is a different key id and fails `key-unknown`.
- */
 import { fromBinary, type Message } from "@bufbuild/protobuf";
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
 import {
@@ -41,7 +30,6 @@ export type Checked<T> = Readonly<
 	| { ok: false; reason: Unverifiable }
 >;
 
-/** The member a `<MemberId>#sign` key id names, or undefined. */
 function signerOf(keyId: string): MemberId | undefined {
 	const [id, purpose, ...rest] = keyId.split("#");
 	if (purpose !== "sign" || rest.length > 0 || id === undefined)
@@ -70,10 +58,6 @@ function bundleOf(record: MemberRecord): KeyBundle | undefined {
 	}
 }
 
-/**
- * Verifies `envelope` under `context` against its signer's SIGN key, then
- * decodes the verified bytes. Nothing is decoded before the signature holds.
- */
 export async function verifySigned<T extends Message>(
 	registry: RegistryView,
 	envelope: SignedEnvelope,
@@ -102,7 +86,6 @@ export async function verifySigned<T extends Message>(
 	}
 }
 
-/** True when `record` is a dispatcher of `fleet`. */
 export function dispatches(record: MemberRecord, fleet: string): boolean {
 	return record.memberships.some(
 		(membership) =>

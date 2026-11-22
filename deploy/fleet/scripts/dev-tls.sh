@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Writes throwaway TLS material for trying the Compose profiles on one host:
-# a private CA, a NATS server certificate naming every server of both
-# profiles, and a relay certificate. Never use it for a real deployment: the
-# CA key stays beside the certificates.
-#
-#   deploy/fleet/scripts/dev-tls.sh [output directory, default deploy/fleet/secrets]
-#
-# Writes <out>/nats/tls/{ca.pem,server.pem,server.key} and
-# <out>/relay/tls/{relay.pem,relay.key}. Needs openssl.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,8 +35,6 @@ cp "${out}/ca/ca.pem" "${out}/nats/tls/ca.pem"
 issue relay "DNS:relay.fleet.example.com,DNS:relay-1.fleet.example.com,DNS:relay-2.fleet.example.com,DNS:localhost,IP:127.0.0.1" \
   "${out}/relay/tls/relay.key" "${out}/relay/tls/relay.pem"
 
-# The containers run as uid 1000 (and the NATS server as a capability-less
-# root); the keys must be readable inside them. The CA key stays private.
 chmod 0755 "${out}" "${out}/nats" "${out}/nats/tls" "${out}/relay" "${out}/relay/tls"
 chmod 0644 "${out}/nats/tls/"*.pem "${out}/relay/tls/relay.pem"
 chmod 0644 "${out}/nats/tls/server.key" "${out}/relay/tls/relay.key"

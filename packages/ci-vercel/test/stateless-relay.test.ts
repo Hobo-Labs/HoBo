@@ -392,7 +392,7 @@ describe("the stateless relay's configuration is read-only", () => {
 		expect(body.error).toMatch(/read-only.*hobo ci.*config service/u);
 	});
 
-	it("keeps no fleet verdicts on the cache: the device fleet replaced them (ADR-0183)", async () => {
+	it("keeps no fleet verdicts on the cache: the device fleet replaced them", async () => {
 		const h = await openStatelessRelay();
 		const before = h.cache.meter.usage().total;
 		const put = await h.relay.handle(

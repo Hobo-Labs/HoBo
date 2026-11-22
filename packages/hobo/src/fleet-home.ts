@@ -1,17 +1,3 @@
-/**
- * What `hobo fleet` keeps under `HOBO_FLEET_HOME` (default `~/.hobo/fleet`),
- * besides the device key store:
- *
- * - `person.json` (0600): the signed-in person's DPoP-bound token and the
- *   ES256 sign-in key it is bound to (PKCS#8, base64url). Without the key the
- *   token is useless, so they live and die together; `logout` deletes both.
- * - `enrollment.json` (0644): the discovery document and member id from the
- *   last enrollment, which `run` needs to find relays before the agent has
- *   connected. It holds no secret: overlay join credentials are used at
- *   enrollment and never written.
- *
- * Nothing here logs a token or a key (rule 11).
- */
 import {
 	createPrivateKey,
 	generateKeyPairSync,
@@ -46,7 +32,6 @@ export function hoboFleetHome(
 		: join(homedir(), ".hobo", "fleet");
 }
 
-/** Atomic replace with the given mode. */
 export async function writeAtomic(
 	path: string,
 	text: string,
@@ -99,7 +84,6 @@ type HeldSignInKey = SignInKey & Readonly<{ pkcs8: string }>;
 
 const heldKeys = new WeakMap<SignInKey, string>();
 
-/** A fresh ES256 sign-in key; its private half is kept for `savePerson` only. */
 export function newSignInKey(): SignInKey {
 	const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
 	const key = signInKeyOf(privateKey);

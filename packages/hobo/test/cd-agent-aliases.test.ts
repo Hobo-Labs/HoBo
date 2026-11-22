@@ -1,10 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-unknown-parameters -- SAFETY: tests read recorded call arguments of a fake facade; casts select the member under test. */
-// `hobo deploy agent …` are aliases of the `hobo fleet` commands of the same
-// meaning (L19, design §8.2): a reconciler is a fleet DEVICE with role
-// RECONCILER. `agent enroll --token-file` generates the device keys locally
-// and enrolls through the Station's AgentEnrollment, the way
-// `hobo fleet enroll --token-file` does; a token on the command line is
-// refused (rule 11).
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -118,14 +112,14 @@ describe("hobo deploy agent aliases of hobo fleet", () => {
 	});
 
 	it("each agent subcommand names the hobo fleet command it aliases", () => {
-		const aliases: Record<string, string> = {
+		const aliases = {
 			"agent token": "hobo fleet token create",
 			"agent enroll": "hobo fleet enroll --token-file",
 			"agent approve-key": "hobo fleet member approve",
 			"agent accept": "hobo fleet member accept",
 			"agent run": "hobo fleet run",
 			"agent revoke": "hobo fleet member revoke",
-		};
+		} satisfies Record<string, string>;
 		for (const [sub, fleet] of Object.entries(aliases))
 			expect(CD_DEPLOY_SUBCOMMANDS[sub]?.summary).toContain(
 				`alias of \`${fleet}\``,

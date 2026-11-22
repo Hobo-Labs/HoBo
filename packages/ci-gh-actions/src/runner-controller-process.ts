@@ -1,33 +1,3 @@
-/**
- * The runner controller as a process the worker daemon supervises, and the
- * typed control port the host's CD agent drives it through
- * (`deploy/runner-fleet/README.md`).
- *
- * Today's box worker and local runner run as processes, not containers. The
- * runner-host realizer moves them between versions without a shell script,
- * through files in the worker's data directory, the same pattern as the
- * `admission-paused` marker:
- *
- * - **Releases** are single-file Node entries staged by digest in
- *   `controller-releases/<hex>.mjs`. The agent fetches a release (from a
- *   directory or an HTTPS base URL, `releaseFetchFrom`) and keeps it only when
- *   its bytes hash to the digest it was asked for. The supervisor hashes it
- *   again before every launch, so a file changed on disk is never run.
- * - **`controller-desired.json`** is the agent's request: a generation (one
- *   more than any before it) and the digest to run, or none. Only the agent
- *   writes it.
- * - **`controller-status.json`** is the supervisor's answer: the generation
- *   it last acted on, the digest it runs, the process state and pid. Only
- *   the supervisor writes it.
- *
- * The supervisor (`createControllerSupervisor`) stops the old child
- * (SIGTERM, then SIGKILL after a deadline), verifies and starts the new one
- * with `HOBO_CI_CONTROLLER_DIGEST` set, so the worker's advert names its
- * version, and restarts a child that exits on its own, up to a crash limit,
- * after which it reports `failed`. Whether the new version serves is the
- * realizer's call, by observation (status, presence and the fleet observation at
- * the new digest); the supervisor only says what it started.
- */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";

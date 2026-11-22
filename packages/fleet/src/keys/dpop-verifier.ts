@@ -1,11 +1,3 @@
-// DPoP verification bound to the replay store, ported from the delivery
-// stack's `packages/cd/src/agent/dpop-verifier.ts`: signature and claims first
-// (./dpop.ts), then the `jti` is claimed once per key through `ReplayStore`.
-//
-// Adapted: the replay scope is the proof key's thumbprint (the delivery stack
-// scoped by reconciler id, which a fleet verifier does not know before the
-// proof is checked), and a jti is remembered until the proof can no longer
-// pass the ±60 s `iat` window.
 import type { Outcome, ReplayStore } from "../ports.js";
 import {
 	DPOP_SKEW_MS,
@@ -15,7 +7,6 @@ import {
 } from "./dpop.js";
 import { refuse } from "./jose.js";
 
-/** The `ReplayStore` scope of a DPoP `jti`: one per proof key. */
 export function dpopReplayScope(jkt: string): string {
 	return `dpop:${jkt}`;
 }

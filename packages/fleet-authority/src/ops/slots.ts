@@ -1,10 +1,3 @@
-// Where the operations keep keys: one secret per key behind `SecretsPort`
-// (design §6.16), named `<prefix>/<which>`. A slot holds every version of the
-// key that verifiers may still need and names the active one; rotation
-// progress (no key material) is a second secret, `<prefix>/rotation/<which>`.
-// The token-signing key is the exception: it lives in @hobo/identity's key
-// ring under `<prefix>/token-signing`, which `loadSecretStoreKms` reads.
-// Private to L27.
 import { create } from "@bufbuild/protobuf";
 import type { JsonObject } from "@hobo/core";
 import {
@@ -79,7 +72,6 @@ export type SecretsLike = Readonly<{
 	>;
 }>;
 
-/** The latest value of a secret; undefined when it does not exist. */
 export async function readSecret(
 	secrets: SecretsLike,
 	name: string,
@@ -164,7 +156,6 @@ export async function writeSlot(
 	await secrets.put(slotName(prefix, which), slotText(slot));
 }
 
-/** The next key id of a slot: `<stem>#<n+1>` after the highest held. */
 export function nextKid(
 	which: RotatableKey,
 	slot: KeySlot | undefined,
@@ -178,7 +169,6 @@ export function nextKid(
 	return `${stem}#${highest + 1}`;
 }
 
-/** A fresh key of the slot's family. The RSA token-signing key is not made here. */
 export function freshKey(which: RotatableKey, kid: string): HeldKey {
 	const seed = freshSeed();
 	const family = KEY_KINDS[which].family;
@@ -199,12 +189,10 @@ export function freshKey(which: RotatableKey, kid: string): HeldKey {
 
 export function activeKey(slot: KeySlot): HeldKey {
 	const key = slot.keys.find((candidate) => candidate.kid === slot.active);
-	// parseSlot and every writer keep the active kid among the keys.
 	if (key === undefined) throw new Error(`slot names no key ${slot.active}`);
 	return key;
 }
 
-/** An Ed25519 `Signer` over one held key of an ed25519 slot. */
 export function signerOf(key: HeldKey): Signer {
 	const seed = new Uint8Array(Buffer.from(key.seed, "base64url"));
 	return {
@@ -214,7 +202,6 @@ export function signerOf(key: HeldKey): Signer {
 	};
 }
 
-/** The trust record's `PublicKeyRef` of an ed25519 key. */
 export function keyRefOf(key: HeldKey, purpose: KeyPurpose): PublicKeyRef {
 	return create(PublicKeyRefSchema, {
 		purpose,

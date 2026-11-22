@@ -1,8 +1,4 @@
 /* oxlint-disable anti-slop/require-safety-comment-for-type-assertion, anti-slop/no-known-value-widening -- SAFETY: test fixtures brand ids they mint and read controlled JSON at the test boundary. */
-// Agent enrollment over the fleet (L19; D19, I24): a reconciler is a fleet
-// DEVICE with role RECONCILER. The fleet's createTestAuthority holds identity
-// (hft_ tokens, keys, member SVIDs, DPoP, revocation); the adapter keeps the
-// Camp scope, double opt-in with Rail rules, governance and the accepted Camps.
 import { ApprovalMode, MemberState, parseMemberId } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
 import {

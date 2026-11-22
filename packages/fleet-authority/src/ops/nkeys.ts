@@ -1,7 +1,3 @@
-// Ed25519 keys as raw seeds, and their NATS nkey text form (seed `S…`,
-// public `O…` for operators, `A…` for accounts): base32 without padding over
-// the role prefix, the 32 key bytes and a CRC-16/XMODEM, little endian.
-// Private to L27; the ceremony and rotation create keys only through here.
 import {
 	createHash,
 	createPrivateKey,
@@ -75,7 +71,6 @@ function withCrc(body: Uint8Array): Uint8Array {
 	return full;
 }
 
-/** A fresh raw Ed25519 seed. */
 export function freshSeed(): Uint8Array {
 	return new Uint8Array(randomBytes(32));
 }
@@ -88,7 +83,6 @@ export function privateKeyOf(seed: Uint8Array): KeyObject {
 	});
 }
 
-/** The raw 32-byte public key of a seed. */
 export function rawPublicKey(seed: Uint8Array): Uint8Array {
 	return new Uint8Array(
 		createPublicKey(privateKeyOf(seed))
@@ -117,7 +111,6 @@ export function encodeNkeyPublic(role: NkeyRole, seed: Uint8Array): string {
 	return base32(withCrc(body));
 }
 
-/** The role and raw seed of an nkey seed text; undefined when the text is not one, or its checksum fails. */
 export function decodeNkeySeed(
 	text: string,
 ): Readonly<{ role: NkeyRole; seed: Uint8Array }> | undefined {
@@ -139,10 +132,6 @@ export function decodeNkeySeed(
 	return { role, seed: new Uint8Array(body.subarray(2)) };
 }
 
-/**
- * A NATS operator JWT (v2) naming `signingKeys`, signed by the operator key.
- * The ceremony is the only place the operator key exists; this is its one use.
- */
 export function operatorJwt(
 	operatorSeed: Uint8Array,
 	name: string,

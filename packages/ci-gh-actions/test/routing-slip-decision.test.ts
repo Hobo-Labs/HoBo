@@ -23,12 +23,6 @@ import {
 	runnerNamePrefixOf,
 } from "../src/isolated-worker/routing-slip-decision.js";
 
-/**
- * The routing slip's rule (ADR-0181, decision 5), an adapter over
- * `fleetVerdict`: a label is refused only while the box is idle and admission
- * would still refuse a job, and nothing else can take it. A peer that is only
- * busy with its own work keeps the label open (`BUSY`, R4, D60).
- */
 const NOW = Date.parse("2026-11-12T11:14:00.000Z");
 const OWN_LEASE = "0b6f2a2e-7c1d-4b8e-9a51-2f6c1d9e8a10";
 const PEER_LEASE = "5d3c1b2a-9e8f-4a7b-8c6d-1e2f3a4b5c6d";
@@ -44,7 +38,6 @@ type Peer = Readonly<{
 	dispatcher?: boolean;
 }>;
 
-/** The authority's signed view with these peers and this box, fresh. */
 function fleet(peers: readonly Peer[], notAfterMs = NOW + 60_000) {
 	return {
 		self: SELF,

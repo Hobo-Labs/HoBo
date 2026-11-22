@@ -1,8 +1,3 @@
-/**
- * What every enrollment command shares (L02, private): the folded index and
- * its catch-up from `readAll`, compare-and-set appends with retry, signing of
- * member records, refusals, logging, and the caller checks.
- */
 import { createHash } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -24,7 +19,7 @@ import { MEMBER_RECORD_CONTEXT } from "../contexts.js";
 import type { FleetErrorCode } from "../errors.js";
 import { FLEET_LOG_EVENTS, type FleetEventType } from "../events.js";
 import { decideGoverned } from "../governed.js";
-import { type FleetId, type MemberId, parseFleetId } from "../ids.js";
+import { type FleetId, parseFleetId, parseMemberId } from "../ids.js";
 import { signEnvelope } from "../keys/index.js";
 import type {
 	AuthorityDeps,
@@ -36,9 +31,7 @@ import type {
 } from "../ports.js";
 import { applyEvent, emptyIndex, type MembershipIndex } from "./journal.js";
 
-/** Up to 8 compare-and-set attempts per command (§7.5). */
 const MAX_ATTEMPTS = 8;
-/** A member record is valid for at most 30 minutes after it is signed (§7.1). */
 const RECORD_TTL_MS = 30 * 60 * 1_000;
 const AUTHORITY_ACTOR: PrincipalRef = {
 	kind: "service",
@@ -58,7 +51,6 @@ export type Ctx = Readonly<{
 	parts: AuthorityParts;
 	index: MembershipIndex;
 	catchUp(): Promise<MembershipIndex>;
-	/** Appends at `expectedSeq`; "conflict" when another writer got there first. */
 	append(
 		stream: string,
 		expectedSeq: number,
@@ -67,7 +59,6 @@ export type Ctx = Readonly<{
 	): Promise<"appended" | "conflict">;
 	nowIso(): string;
 	signRecord(record: MemberRecord): Promise<SignedEnvelope>;
-	/** Publishes the signed record to the registry at once (revocation and locks take effect on live readers). */
 	publish(record: MemberRecord): Promise<void>;
 	logEvents(events: readonly EventInput<JsonObject>[], id: string): void;
 	governed(
@@ -97,7 +88,6 @@ export function createCtx(deps: AuthorityDeps, parts: AuthorityParts): Ctx {
 		parts,
 		index,
 		catchUp() {
-			// One reader at a time; a caller arriving mid-read waits for it and reads again.
 			const run = (catching ?? Promise.resolve(index)).then(catchUpOnce);
 			catching = run.catch(() => index);
 			return run;
@@ -140,12 +130,9 @@ export function createCtx(deps: AuthorityDeps, parts: AuthorityParts): Ctx {
 			try {
 				await deps.bus.publisher.putMember(
 					await ctx.signRecord(record),
-					// SAFETY: every record in the index came from a parsed member id.
-					record.memberId as MemberId,
+					parseMemberId(record.memberId),
 				);
-			} catch {
-				// The projection re-publishes on its next tick; the journal is the truth.
-			}
+			} catch {}
 		},
 		logEvents(events, id) {
 			for (const event of events) {
@@ -186,7 +173,6 @@ export function createCtx(deps: AuthorityDeps, parts: AuthorityParts): Ctx {
 	return ctx;
 }
 
-/** Runs `attempt` until its append lands, at most 8 times (§7.5). */
 export async function withRetry<T>(
 	ctx: Ctx,
 	attempt: (index: MembershipIndex) => Promise<Outcome<T> | "conflict">,
@@ -212,7 +198,6 @@ export function principalKey(principal: PrincipalRef): string {
 	return `${principal.kind}:${principal.id}`;
 }
 
-/** The policy subject of a signed-in person. */
 export function personSubject(person: Person): PolicyActor {
 	return { identity: principalKey(person.principal), tags: person.tags };
 }
@@ -229,7 +214,6 @@ export function actorOf(caller: VerifiedToken | undefined): PrincipalRef {
 	return { kind: "service", id: `${caller.issuer}#${caller.subject}` };
 }
 
-/** A person of this tenant, or the refusal. */
 export function asPerson(
 	deps: AuthorityDeps,
 	caller: VerifiedToken | undefined,
@@ -241,7 +225,6 @@ export function asPerson(
 	return { ok: true, value: caller };
 }
 
-/** A member of this tenant, or the refusal. */
 export function asDevice(
 	deps: AuthorityDeps,
 	caller: VerifiedToken | undefined,
@@ -253,7 +236,6 @@ export function asDevice(
 	return { ok: true, value: caller };
 }
 
-/** Readers: a person, a device or an account credential of this tenant. */
 export function asReader(
 	deps: AuthorityDeps,
 	caller: VerifiedToken | undefined,
@@ -270,7 +252,6 @@ export function asReader(
 	return { ok: true, value: caller };
 }
 
-/** The refusal a member's state means for a route that needs it ACTIVE. */
 export function stateRefusal<T>(record: MemberRecord): Outcome<T> | undefined {
 	switch (record.state) {
 		case MemberState.ACTIVE:
@@ -290,7 +271,6 @@ export function stateRefusal<T>(record: MemberRecord): Outcome<T> | undefined {
 
 const LOG_NAMES: ReadonlySet<string> = new Set(FLEET_LOG_EVENTS);
 
-/** `fleet.MemberRevoked` → `hobo_fleet_member_revoked` (§7.5). */
 function logNameOf(type: string): FleetLogEvent | undefined {
 	const name = `hobo_fleet_${type
 		.replace(/^fleet\./u, "")

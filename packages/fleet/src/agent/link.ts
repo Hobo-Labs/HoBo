@@ -1,14 +1,3 @@
-/**
- * The agent's bus link (L07 private): one stable `FleetBus` that the
- * executor, dispatcher, session server and bus-relay transport hold for the
- * agent's whole life, over whichever connection is current.
- *
- * Calls go to the current connection; with none, publishes and reads reject
- * and `status()` answers "disconnected". Subscriptions outlive a connection:
- * each remembers the last sequence its handler took and, when the next
- * connection is attached, subscribes again after it, so nothing is missed or
- * handed twice across a reconnect.
- */
 import type { SignedEnvelope } from "../_generated/fleet_pb.js";
 import type { FleetId, MemberId, WorkDigest } from "../ids.js";
 import type {
@@ -31,7 +20,6 @@ export type BusLink = Readonly<{
 	bus: FleetBus;
 	current(): FleetBus | undefined;
 	attach(bus: FleetBus): void;
-	/** Drops the current connection (closing it); subscriptions wait for the next. */
 	detach(): Promise<void>;
 	close(): Promise<void>;
 }>;
@@ -55,7 +43,6 @@ export function createBusLink(): BusLink {
 	const resumeFrom = (durable: Durable): BusStart =>
 		durable.last === undefined ? durable.from : { after: durable.last };
 
-	/** `track` records how far a handler got; `bind` subscribes on a given connection from a start. */
 	const durable = (
 		from: BusStart,
 		make: (track: (sequence: number) => void) => Bind,

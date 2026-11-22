@@ -119,7 +119,6 @@ function componentDescriptor(
 				// interface has its own argument shape, and `ComponentExport`
 				// describes the table, not this entry. The host reads it back through
 				// the matching handler type (`HttpIncomingHandler` in runtime-local),
-				// so this cast is where that agreement is recorded rather
 				// than a claim that the signatures line up.
 				handle: (async (httpReq: HttpRequest): Promise<HttpResponse> => {
 					const req = httpReq;

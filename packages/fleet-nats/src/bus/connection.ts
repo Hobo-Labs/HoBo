@@ -1,9 +1,3 @@
-/**
- * Opening a NATS connection the way every fleet client does: TLS always
- * (§6.7, every listener requires it), the URLs checked, and the CA file named
- * by `HOBO_FLEET_NATS_CA` trusted besides the system roots, for deployments on
- * a private certificate authority.
- */
 import {
 	type Authenticator,
 	connect,
@@ -13,7 +7,6 @@ import {
 
 const SCHEMES = /^(tls|nats):\/\/[^\s/]+(:\d+)?\/?$/u;
 
-/** Parses the server list: `tls://` or `nats://` host URLs only; TLS is required either way. */
 export function parseServers(servers: readonly string[]): string[] {
 	if (servers.length === 0) throw new Error("no NATS servers");
 	for (const server of servers)
@@ -26,11 +19,9 @@ export function parseServers(servers: readonly string[]): string[] {
 
 export type OpenOptions = Readonly<{
 	servers: readonly string[];
-	/** None for a server without authentication (the journal's tests). */
 	authenticator?: Authenticator | Authenticator[];
 	name: string;
 	inboxPrefix?: string;
-	/** Keep reconnecting for the life of the process (devices); else fail fast (provisioning). */
 	persistent: boolean;
 }>;
 

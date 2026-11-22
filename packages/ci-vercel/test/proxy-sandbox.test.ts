@@ -1,8 +1,3 @@
-/**
- * The trusted proxy VM's lifecycle against a stand-in Vercel Sandbox: the
- * create checks, the launch and readiness probe on the expected session, the
- * guest binding and the meter read over the proxy's own HTTPS origin.
- */
 import { Sandbox } from "@vercel/sandbox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -46,7 +41,6 @@ const vmConfig = {
 };
 
 type Probe = { exitCode: number; stdout: string };
-/** What a case changes about the proxy's running Session. */
 type SessionChange = {
 	sessionId?: string;
 	vcpus?: number;
@@ -182,7 +176,6 @@ describe("starting the proxy VM", () => {
 		await expect(
 			startProxySandbox(NAME, "sbx_proxy", vmConfig),
 		).rejects.toMatchObject({ reason: "process_exit" });
-		// Unreadable output and missing process metadata prove nothing: a timeout.
 		sdk.get.mockResolvedValue(
 			box(
 				session(

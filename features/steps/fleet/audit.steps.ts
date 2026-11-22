@@ -1,9 +1,3 @@
-/**
- * Steps for features/fleet/audit.feature (§6.14): the authority checkpoints
- * its audit chain, the witness co-signs, and an auditor reads entries and
- * witnessed checkpoints through the authority and verifies them against the
- * pinned trust record; one altered entry breaks verification.
- */
 import assert from "node:assert/strict";
 import { Then, When } from "@cucumber/cucumber";
 import {
@@ -30,8 +24,6 @@ When("the authority checkpoints its audit chain and the witness co-signs it", as
 	const w = world();
 	await w.runtime.tickOnce();
 	w.clock.advance(61_000);
-	// This tick signs the checkpoint and journals it; the next one appends that journal event as the
-	// entry the witness recomputes the chain through before it co-signs.
 	await w.runtime.tickOnce();
 	await w.runtime.tickOnce();
 	await until(async () => (await witnessedCount()) > 0, 20_000, "a witnessed checkpoint");

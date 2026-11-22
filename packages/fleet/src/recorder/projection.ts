@@ -1,24 +1,3 @@
-/**
- * The registry projection (design §6.14, §7.5): rebuilds member and fleet
- * records from the journal (`readAll`), signs them with `issued_at` and a
- * `not_after` 30 minutes later, publishes them to `fleet-registry`, re-signs
- * every 10 minutes (and always before `not_after`) with `record_sequence` and
- * `revision` unchanged, so the witness ignores a re-sign (D45); builds, signs
- * and publishes each fleet's view every 30 seconds; and emits
- * `fleet.member.active` member-hours (D40).
- *
- * Records come from the events' `data.record` (protobuf JSON of the record
- * without its signing-time fields) and their sequence from the record itself
- * (D57): `record_sequence` for a member, `revision` for a fleet, falling back
- * to `data.subjectSequence` and `meta.subjectSequence` when the record does
- * not carry it. Every value is rebuilt by replay; nothing is read back from
- * the buckets, so deleting them and rebuilding gives the same records and
- * sequences.
- *
- * The projection wakes on every journal append, so a fleet record is on the
- * bus before the first enrollment into it, and `caughtUp()` resolves once
- * every change journalled so far is published.
- */
 import { createHash } from "node:crypto";
 import { create, fromJson, toBinary } from "@bufbuild/protobuf";
 import {
@@ -71,15 +50,10 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const MEMBER_STREAM = "fleet-member-";
 const FLEET_STREAM = "fleet-fleet-";
-/** A record is valid for at most 30 minutes after it is signed (§7.1). */
 const RECORD_TTL_MS = 30 * MINUTE;
-/** Records are re-signed every 10 minutes (§6.14). */
 const RESIGN_EVERY_MS = 10 * MINUTE;
-/** A record is re-signed at the latest this long before its not_after. */
 const RESIGN_MARGIN_MS = 2 * MINUTE;
-/** Fleet views are built and published every 30 seconds (§6.8). */
 const VIEW_EVERY_MS = 30_000;
-/** At most this many observations are read for one round of views. */
 const OBSERVATION_LIMIT = 16_384;
 
 type Published = Readonly<{
@@ -108,7 +82,6 @@ function positive(value: JsonObject[string] | undefined): number {
 		: 0;
 }
 
-/** The record's sequence after the event: the record's own, else the event's subject sequence. */
 function sequenceOf(own: number, data: JsonObject, event: EventEnvelope) {
 	return (
 		own ||
@@ -132,8 +105,6 @@ export function projection(deps: ProjectionDeps) {
 	let lastTickMs: number | undefined;
 	let activeAtLastTick: readonly MemberId[] = [];
 	const hours = new Map<number, Map<MemberId, number>>();
-
-	// ── The fold ───────────────────────────────────────────────────────────
 
 	function applyMember(event: EventEnvelope, data: JsonObject): void {
 		const json = recordJson(data);
@@ -169,7 +140,6 @@ export function projection(deps: ProjectionDeps) {
 		});
 		if (record.fleetId !== id) return;
 		const before = fleets.get(id);
-		// A writer that names no revision still advances it once per content change.
 		const sequence =
 			sequenceOf(record.revision, data, event) || (before?.sequence ?? 0) + 1;
 		if (before !== undefined && sequence < before.sequence) return;
@@ -190,8 +160,6 @@ export function projection(deps: ProjectionDeps) {
 			position = positioned.position;
 		}
 	}
-
-	// ── Publishing ─────────────────────────────────────────────────────────
 
 	function due(
 		entry: Entry<MemberRecord> | Entry<FleetRecord>,
@@ -214,7 +182,6 @@ export function projection(deps: ProjectionDeps) {
 			await write();
 			return true;
 		} catch (error) {
-			// The next tick tries again; the journal is the truth.
 			deps.log("hobo_fleet_bus_status", {
 				projection: "publish-failed",
 				kind,
@@ -230,7 +197,6 @@ export function projection(deps: ProjectionDeps) {
 		const issuedAt = new Date(nowMs).toISOString();
 		const notAfterMs = nowMs + RECORD_TTL_MS;
 		const notAfter = new Date(notAfterMs).toISOString();
-		// Fleets first: an enrollment into a fleet reads its record.
 		for (const [id, entry] of fleets) {
 			if (!due(entry, nowMs, resign)) continue;
 			const signed = create(FleetRecordSchema, {
@@ -278,9 +244,6 @@ export function projection(deps: ProjectionDeps) {
 		}
 	}
 
-	// ── Views ──────────────────────────────────────────────────────────────
-
-	/** The verified observations on the board; each new value is accepted (or refused) once. */
 	async function observations(nowMs: number): Promise<Observation[]> {
 		const board = await deps.bus.observations.read(OBSERVATION_LIMIT);
 		const out: Observation[] = [];
@@ -347,8 +310,6 @@ export function projection(deps: ProjectionDeps) {
 		}
 	}
 
-	// ── Member-hours ───────────────────────────────────────────────────────
-
 	function addActive(member: MemberId, fromMs: number, toMs: number): void {
 		for (
 			let hourStart = Math.floor(fromMs / HOUR) * HOUR;
@@ -364,13 +325,6 @@ export function projection(deps: ProjectionDeps) {
 		}
 	}
 
-	/**
-	 * Member-hours: the time each member was ACTIVE, as seen at each tick,
-	 * emitted once per member when its hour has passed. Hours that passed
-	 * before this projection's first tick are not emitted again: the instance
-	 * that saw them emitted them. `usageKey` names the (tenant, member, hour)
-	 * so a sink can drop the copy a second replica would send.
-	 */
 	async function meterMembers(nowMs: number): Promise<void> {
 		if (lastTickMs !== undefined && nowMs > lastTickMs)
 			for (const member of activeAtLastTick)
@@ -407,8 +361,6 @@ export function projection(deps: ProjectionDeps) {
 			.map(([id]) => id);
 	}
 
-	// ── Scheduling ─────────────────────────────────────────────────────────
-
 	function serial(task: () => Promise<void>): Promise<void> {
 		const run = chain.then(task);
 		chain = run.catch(() => {});
@@ -422,7 +374,6 @@ export function projection(deps: ProjectionDeps) {
 		});
 	}
 
-	// Wake on every append, so a new fleet or member is published at once.
 	deps.store.subscribe({}, () => {
 		void caughtUp().catch(() => {});
 	});

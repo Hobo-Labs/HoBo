@@ -1,13 +1,3 @@
-/**
- * `createOneActiveFleet` (design §6.10 "A tick, for any one-active fleet").
- *
- * With membership epochs off, every tick reports what today's cache fleet
- * reported for the same inputs (`CacheFleetTick` of
- * `packages/ci-vercel/src/cache-fleet.ts`), and nothing writes a member set.
- * With them on, the loop pins the configured set, then admits and removes one
- * name per tick. A fleet left sealed longer than twice `sealWaitMs` logs
- * `hobo_fleet_assignment_sealed_too_long` (F24).
- */
 import { create } from "@bufbuild/protobuf";
 import { parseEphemeralKey } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -64,7 +54,6 @@ function memberRecord(name: string, state = MemberState.ACTIVE): MemberRecord {
 	});
 }
 
-/** The registry rebuilt from configuration: only `membersOf` is used. */
 function registry(records: () => readonly MemberRecord[]): RegistryView {
 	const unused = () => Promise.reject(new Error("not used by the loop"));
 	return {
@@ -84,7 +73,6 @@ function registry(records: () => readonly MemberRecord[]): RegistryView {
 
 type Asked = Parameters<OneActiveDeps["chooseAction"]>[0];
 
-/** A world: members, their health, a clock, and what the loop said and asked. */
 function world(
 	options: Readonly<{
 		register: AssignmentRegister;
@@ -268,7 +256,6 @@ describe("ticks with membership epochs off: today's values", () => {
 			members: undefined,
 		});
 		expect(state.scheduled).toEqual([[2, SEAL_WAIT_MS]]);
-		// The view was dropped: a sealed fleet refuses.
 		expect(await fleet.active()).toMatchObject({
 			ok: false,
 			error: { code: "unavailable", detail: { reason: "sealed" } },
@@ -290,7 +277,6 @@ describe("ticks with membership epochs off: today's values", () => {
 			sealed: false,
 			reason: "activate",
 		});
-		// A stale activation message does nothing.
 		await fleet.activate(2);
 		expect((await newest(cache.register)).epoch).toBe(3);
 		state.nowMs += 60_000;
@@ -345,7 +331,6 @@ describe("ticks with membership epochs off: today's values", () => {
 			reason: "failover:quota-exhausted",
 			active: undefined,
 		});
-		// With a recovery point, a standby that reports no lag was never copied.
 		expect(state.asked.at(-1)?.eligibility).toEqual([
 			{
 				name: "c0",
@@ -419,7 +404,6 @@ describe("ticks with membership epochs off: today's values", () => {
 			ok: false,
 			error: { code: "no-majority" },
 		});
-		// A refusal is reused for refusedTtlMs, then read again.
 		cache.backend("c1").down = false;
 		expect(await fleet.active()).toMatchObject({ ok: false });
 		state.nowMs += 5_000;
@@ -436,7 +420,6 @@ describe("ticks with membership epochs off: today's values", () => {
 		const [c0] = cache.replicas;
 		const top = await newest(cache.register);
 		await c0?.accept({ ...top, epoch: 2, reason: "interrupted" });
-		// Reused within viewTtlMs: no read.
 		cache.backend("c0").down = true;
 		expect(await fleet.active()).toEqual({ ok: true, value: "c0" });
 		cache.backend("c0").down = false;
@@ -539,7 +522,6 @@ describe("ticks with membership epochs on", () => {
 		expect((await newest(three)).members).toEqual(["c0", "c1", "c2"]);
 		expect(await before.fleet.tick()).toMatchObject({ action: "keep" });
 
-		// A new deploy configures c3.
 		const after = world({
 			register: cache.register,
 			names: ["c0", "c1", "c2", "c3"],
@@ -556,7 +538,6 @@ describe("ticks with membership epochs on", () => {
 			reason: "admit:c3",
 			members: ["c0", "c1", "c2", "c3"],
 		});
-		// c2 is no longer a candidate.
 		after.state.records.set("c2", memberRecord("c2", MemberState.SUSPENDED));
 		expect(await after.fleet.tick()).toMatchObject({
 			action: "membership",
@@ -564,7 +545,6 @@ describe("ticks with membership epochs on", () => {
 			reasons: ["remove:c2", "proposal-decided"],
 		});
 		expect(await after.fleet.tick()).toMatchObject({ action: "keep" });
-		// The active member is never removed.
 		after.state.records.set("c0", memberRecord("c0", MemberState.SUSPENDED));
 		expect(await after.fleet.tick()).toMatchObject({ action: "keep" });
 	});

@@ -1,10 +1,3 @@
-/**
- * The journal event store against a fake JetStream context (L36 isolated
- * checks): `runJournalConformance`, the A15 harness of
- * `runEventStoreConformance`, and the journal's own rules — one message per
- * append holding the batch, the expected-last-subject-sequence compare-and-set,
- * idempotency keys that survive a reopen, fencing, and parsed reads.
- */
 import {
 	type AppendOptions,
 	type EventEnvelope,
@@ -59,7 +52,6 @@ describe("journal store on a fake JetStream context", () => {
 describe("journal store shared by two replicas", () => {
 	const shared = createFakeJournalStream();
 	let turn = 0;
-	// Alternate replicas: each assertion's store is a different instance on one stream.
 	runJournalConformance(async () => {
 		turn += 1;
 		return openOn(shared);

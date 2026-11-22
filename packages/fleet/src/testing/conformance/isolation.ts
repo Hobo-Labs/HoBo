@@ -1,26 +1,3 @@
-/**
- * `runSandboxIsolationProbe` (design §7.3, §6.11, O10): creates real
- * sandboxes from `make` and runs probe programs inside them with
- * `Sandbox.exec`, from `probeImage` (a busybox image: `sh`, `grep`, `find`,
- * `wget`, `touch`, `sleep`). No fake passes it; the fake driver fails it.
- *
- * Each probe is a shell script that prints raw facts as lines starting with
- * `@@`, ending with `@@done`; the suite judges the facts, so a probe that
- * printed nothing proves nothing and fails. The probe's name travels in the
- * `HOBO_PROBE` environment variable.
- *
- * Network probes classify each `wget` attempt: `direct` attempts bypass the
- * proxy (`-Y off`) and must get no HTTP answer at all; `proxy` attempts go
- * through the proxy the driver configures inside the sandbox, which must
- * refuse with 403 (or 407) or by closing the connection. The allowed host
- * must answer through the proxy (any status but 403 and 407) and not directly.
- *
- * Assumptions an adapter must meet, recorded with L29: the driver sets the
- * proxy environment (`http_proxy`, `https_proxy`) inside the sandbox from
- * `egressProxyUrl`; declared mounts appear at their `target`; and the host's
- * `/proc` shows a container's processes (for the destroy check; on a host
- * without `/proc` that check finds nothing left by construction).
- */
 import { randomBytes } from "node:crypto";
 import {
 	mkdtempSync,
@@ -54,15 +31,12 @@ export type IsolationProbe = Readonly<{
 	}>;
 }>;
 
-/** Where the probe mounts its one declared, read-only directory. */
 // public-contract: the target a driver under runSandboxIsolationProbe must mount the declared directory at.
 export const PROBE_MOUNT = "/hobo-probe-ro";
-/** The pids limit the probe asks for; the fork probe must stop below it. */
 export const PROBE_PIDS = 64;
 const MARKER_FILE = "marker";
 const PROBE_TIMEOUT_MS = 60_000;
 
-/** Pseudo and memory file systems a sandbox may mount anywhere. */
 const PSEUDO_FILESYSTEMS = new Set([
 	"proc",
 	"sysfs",
@@ -76,7 +50,6 @@ const PSEUDO_FILESYSTEMS = new Set([
 	"shm",
 	"none",
 ]);
-/** Files every OCI runtime bind-mounts from the host, read-only or not. */
 const RUNTIME_FILES = new Set([
 	"/etc/hosts",
 	"/etc/hostname",
@@ -86,7 +59,6 @@ const RUNTIME_FILES = new Set([
 type Facts = Readonly<{
 	output: string;
 	exitCode: number;
-	/** `@@<name> <rest>` lines, by name. */
 	facts: ReadonlyMap<string, string>;
 	done: boolean;
 }>;
@@ -131,7 +103,6 @@ type Session = Readonly<{
 	) => Promise<Sandbox>;
 }>;
 
-/** Makes a driver, an egress proxy allowing only `allowedHost`, a declared read-only mount, and one sandbox. */
 async function withSandbox(
 	subject: IsolationProbe,
 	use: (session: Session) => Promise<void>,
@@ -173,7 +144,6 @@ async function withSandbox(
 	}
 }
 
-/** One `wget` attempt per line: `@@<name> <exit code> <HTTP status or empty>`. */
 const ATTEMPT = `attempt() {
   out=$(wget $3 -q -T 8 -O /dev/null "$2" 2>&1)
   code=$?
@@ -193,7 +163,6 @@ function attemptOf(facts: Facts, name: string): Attempt {
 	return status === "403" || status === "407" ? "refused-by-proxy" : "answered";
 }
 
-/** The probe of one address: refused directly and through the proxy. */
 async function refusedEverywhere(
 	subject: IsolationProbe,
 	name: string,
@@ -236,7 +205,6 @@ const mountsOf = (output: string): Mount[] =>
 			options: (fields[3] ?? "").split(","),
 		}));
 
-/** Host processes whose argv is `sleep <marker>`; none when the host has no `/proc`. */
 function hostProcessesRunning(marker: string): number {
 	let entries: string[];
 	try {
@@ -252,14 +220,11 @@ function hostProcessesRunning(marker: string): number {
 			);
 			if (argv.includes(marker) && argv.some((arg) => arg.endsWith("sleep")))
 				count += 1;
-		} catch {
-			// The process ended between listing and reading.
-		}
+		} catch {}
 	}
 	return count;
 }
 
-/** The isolation assertions, in the order they are registered. */
 export const ISOLATION_ASSERTIONS: readonly ConformanceAssertion<IsolationProbe>[] =
 	[
 		{
@@ -328,7 +293,6 @@ export const ISOLATION_ASSERTIONS: readonly ConformanceAssertion<IsolationProbe>
 							mount.target !== PROBE_MOUNT &&
 							!RUNTIME_FILES.has(mount.target) &&
 							!PSEUDO_FILESYSTEMS.has(mount.fstype) &&
-							// gVisor's sentry always mounts its own internal `dev` file system at /dev (D58); it is not a host mount.
 							!(mount.target === "/dev" && mount.fstype === "dev"),
 					);
 					ensure(

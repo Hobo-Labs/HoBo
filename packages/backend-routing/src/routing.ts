@@ -142,7 +142,6 @@ export type FleetRoutingInput = {
 	readonly assignment: AssignmentEntry;
 	/** Every member, in configured order (the last tie-break). */
 	readonly members: readonly string[];
-	/** What one tick saw of each member; `usage` is what it has spent this period. */
 	readonly observations: readonly NamedObservation[];
 	/** The fleet's whole workload this period, in every unit any offer bills. */
 	readonly workload: readonly FleetUsageMeasurement[];
@@ -301,8 +300,6 @@ export function routeFleetByBudget(input: FleetRoutingInput): FleetRoute {
 		return index < 0 ? Number.MAX_SAFE_INTEGER : index;
 	};
 	const failing = activeSeen.observation.health !== Health.REACHABLE;
-	// Health is decided in one place (`eligibleForActive`); a cache member holds
-	// no replicated state, so lag is never considered.
 	const health = eligibleForActive(input.observations, {
 		mode: failing ? "failover" : "switch",
 		recoveryPointMs: undefined,

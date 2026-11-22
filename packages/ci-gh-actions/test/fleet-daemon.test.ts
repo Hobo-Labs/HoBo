@@ -1,12 +1,3 @@
-/**
- * O42: the box worker runs as a fleet member. Its daemon composes
- * `createFleetAgent` against `createTestAuthority` with roles `DISPATCHER`
- * and `EXECUTOR`; the worker's memory, storage and host-health admission is
- * its `CapacitySource`; the `github-actions-job` source and runner (L16) are
- * its work kind; its sandboxes come from the drivers it is handed and its
- * egress from the proxy factory; the host Docker socket follows the fleet's
- * `allow_host_docker` on this `DEDICATED` device.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	type EgressProxyFactory,
@@ -70,7 +61,6 @@ const idle: WorkerAdmissionSample = {
 	freeDiskMb: 80_000,
 };
 
-/** The L16 source as a double of its frozen `WorkSource` shape: one queue, an empty registration. */
 function githubJobs() {
 	const queue: UpstreamWork[] = [];
 	const source: WorkSource = {
@@ -105,7 +95,6 @@ function githubJobs() {
 	return { source, add };
 }
 
-/** The L16 runner as a double: records the work and the sandbox tier it was handed. */
 function githubRunner() {
 	const ran: { workKey: string; tier: SandboxTier }[] = [];
 	const runner: WorkRunner = {
@@ -137,7 +126,6 @@ function egressRecorder() {
 	return { egress, opened: () => opened };
 }
 
-/** A fake driver that also records the egress proxy each sandbox was created behind. */
 function recordingDriver(tier: SandboxTier) {
 	const fake = createFakeSandboxDriver(tier);
 	const egressUrls: string[] = [];
@@ -286,7 +274,6 @@ describe("the box worker's fleet daemon", () => {
 		await expect(daemon.fleetCapacity()).resolves.toBeUndefined();
 		expect(daemon.memberId()).toBe(daemon.agent.status().member?.memberId);
 		expect(daemon.memberId()).toMatch(/^dev_[0-9a-f]{32}$/u);
-		// The authority's projection signs a view; the memory registry decodes it without verifying.
 		await world.bus.publisher.putView(
 			create(SignedEnvelopeSchema, {
 				context: FLEET_VIEW_CONTEXT,
@@ -306,7 +293,6 @@ describe("the box worker's fleet daemon", () => {
 			totalSlots: 9,
 			freeSlots: 5,
 		});
-		// The routing slip reads the same signed view for its peers and leader.
 		expect((await daemon.fleetView())?.fleet).toBe(FLEET);
 		await daemon.agent.stop();
 	});

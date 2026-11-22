@@ -1,8 +1,3 @@
-// The in-memory `KeyStore` (design §6.4, §7.3): an ES256 identity key, an
-// Ed25519 SIGN key and an X25519 SEAL key, held in this closure and never
-// returned. For tests, local development and `createTestAuthority`; the file
-// and external-signer stores are in `@hobo/fleet-agent` (L10).
-
 import {
 	diffieHellman,
 	generateKeyPairSync,
@@ -27,7 +22,6 @@ import { generateSigningKey, memorySigner } from "./signers.js";
 
 const signRefs = new WeakMap<DeviceKeys, PublicKeyRef>();
 
-/** The SIGN public key of keys opened from a memory store (DeviceKeys does not carry it; see the lane report). */
 export function memorySignKeyRef(keys: DeviceKeys): PublicKeyRef | undefined {
 	return signRefs.get(keys);
 }

@@ -1,13 +1,3 @@
-/**
- * A one-active fleet in local mode (design §6.10; D39), for the behaviour
- * suite: the registry from `createLocalFleet`, one assignment-log replica per
- * member (`ephemeralAssignmentReplica` over an in-memory ephemeral state), the
- * register over them, and `createOneActiveFleet` ticking against observed
- * health. The choosing policy here is the plainest one: keep a healthy active
- * member, otherwise fail over to the first eligible member in configured
- * order. A reconfiguration (a new deploy naming more members) builds a new
- * loop over the same replicas.
- */
 import { create } from "@bufbuild/protobuf";
 import { parseTenantId } from "@hobo/core";
 import {
@@ -155,7 +145,6 @@ export async function createOneActiveWorld(
 				throw new Error(`the register is ${resolution.status}`);
 			return resolution.assignment;
 		},
-		/** A new deploy configures these members; the loop is rebuilt over the same replicas. */
 		async reconfigure(names: readonly string[]) {
 			current = await loop(names);
 		},

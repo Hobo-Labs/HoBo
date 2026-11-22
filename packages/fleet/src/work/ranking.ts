@@ -1,12 +1,3 @@
-/**
- * Who could take one offer, best first (design §6.9 step 2): every executor
- * of the fleet with an accepted, unexpired observation of itself that the
- * offer fits, at or above the fleet's `min_agent_version`, inside the
- * residency rules, and able to provide the tier §6.11 requires for the class
- * it would derive. Weights are its copies times the reliability in the
- * authority's fleet view (1 with no fresh view). The order itself is L03's
- * `rankMembers`; nothing here re-implements it. Private to L04.
- */
 import { clone, create } from "@bufbuild/protobuf";
 import {
 	type FleetRecord,
@@ -35,7 +26,6 @@ import type { FleetBus, KeyedEnvelope, RegistryView } from "../ports.js";
 import { policyOf } from "./checks.js";
 import { neededTier, residencyAllows, versionAtLeast } from "./rules.js";
 
-/** How many observations one read takes from the board. */
 const BOARD_LIMIT = 4_096;
 
 export type Candidate = Readonly<{
@@ -49,12 +39,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 	return a.length === b.length && a.every((byte, index) => byte === b[index]);
 }
 
-/**
- * The accepted observations of devices about themselves, kept across reads:
- * an envelope already accepted is reused (acceptance refuses a second sight of
- * the same `issued_at` as a replay), and an expired one is dropped before
- * anything is ranked on it.
- */
 export function createObservationCache(registry: RegistryView) {
 	const accepted = new Map<
 		string,
@@ -88,7 +72,6 @@ export function createObservationCache(registry: RegistryView) {
 	}
 
 	return {
-		/** Reads the board and returns the live self-observations by member. */
 		async read(
 			board: FleetBus["observations"],
 			nowMs: number,
@@ -97,9 +80,7 @@ export function createObservationCache(registry: RegistryView) {
 				const { observations } = await board.read(BOARD_LIMIT);
 				for (const keyed of observations)
 					if (keyed.observerId === keyed.memberId) await admit(keyed, nowMs);
-			} catch {
-				// The board is down: rank on what was accepted before, while it lasts.
-			}
+			} catch {}
 			const live = new Map<MemberId, Observation>();
 			for (const [key, entry] of accepted) {
 				if (Date.parse(entry.observation.validUntil) <= nowMs) {
@@ -113,7 +94,6 @@ export function createObservationCache(registry: RegistryView) {
 	};
 }
 
-/** The copies of this offer one device could run, or 0 when it may not or cannot take it. */
 export function copiesFor(
 	offer: WorkOffer,
 	record: MemberRecord,
@@ -145,7 +125,6 @@ export function copiesFor(
 	return fit.fits ? fit.copies : 0;
 }
 
-/** The fleet's executors for this offer, best first, and why each is there. */
 export async function rankExecutors(
 	input: Readonly<{
 		registry: RegistryView;
@@ -153,7 +132,6 @@ export async function rankExecutors(
 		offer: WorkOffer;
 		digest: WorkDigest;
 		observations: ReadonlyMap<MemberId, Observation>;
-		/** The caller's own figures, used when it has no observation of itself on the board. */
 		self?: Readonly<{ memberId: MemberId; observation: Observation }>;
 	}>,
 ): Promise<
@@ -187,7 +165,6 @@ export async function rankExecutors(
 	return { ranked, candidates };
 }
 
-/** The fleet's active dispatchers, ranked the same way by every one of them (§6.9 "No single point of failure"). */
 export async function rankDispatchers(
 	registry: RegistryView,
 	fleet: FleetId,

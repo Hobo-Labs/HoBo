@@ -27,11 +27,6 @@ export interface AccessCommandDeps {
 	readonly membership?: EnvMembershipService;
 	readonly crossEnv?: CrossEnvGrantStore;
 	readonly breakGlass?: BreakGlassService;
-	/**
-	 * Mints elevated capabilities: `@hobo/identity`'s `JwtSvidIssuer` (ADR-0183,
-	 * no shared secret). Defaults to an in-memory RS256 issuer for offline
-	 * development, named by HOBO_SVID_ISSUER.
-	 */
 	readonly elevatedIssuer?: ElevatedCapabilityIssuer;
 	readonly now?: () => string;
 }

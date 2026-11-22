@@ -1,15 +1,3 @@
-/**
- * Image store for the OCI sandbox drivers: turns an image reference
- * (`docker.io/library/busybox:1.37`, `busybox@sha256:…`) into an unpacked root
- * file system, pulled from its registry over the distribution API and cached
- * by manifest digest. The root file system is mounted read-only into every
- * sandbox made from it, so one copy serves them all.
- *
- * Every manifest and blob is checked against its sha256 digest before use; a
- * pinned reference (`@sha256:…`) is checked against the manifest it fetched.
- * Layers are unpacked in order with the host's `tar`, applying OCI whiteouts.
- */
-
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -25,7 +13,6 @@ import {
 import { join } from "node:path";
 
 export type ImageStore = Readonly<{
-	/** The directory holding the unpacked root file system of `image`. */
 	rootfs(image: string): Promise<string>;
 }>;
 
@@ -36,7 +23,6 @@ export type ImageReference = Readonly<{
 	digest: string | undefined;
 }>;
 
-/** Parses `[registry/]repository[:tag][@sha256:hex]`, with Docker Hub's defaults. */
 export function parseImageReference(image: string): ImageReference | undefined {
 	const match =
 		/^(?:([a-z0-9.-]+(?::\d+)?|localhost(?::\d+)?)\/)?([a-z0-9]+(?:[._/-][a-z0-9]+)*)(?::([\w][\w.-]{0,127}))?(?:@(sha256:[a-f0-9]{64}))?$/u.exec(
@@ -45,7 +31,6 @@ export function parseImageReference(image: string): ImageReference | undefined {
 	if (match === null) return undefined;
 	let registry = match[1];
 	let repository = match[2] ?? "";
-	// A first component without a dot, a port or "localhost" is a Hub namespace.
 	if (
 		registry !== undefined &&
 		!registry.includes(".") &&
@@ -90,12 +75,10 @@ type ManifestDocument = Readonly<{
 const sha256 = (bytes: Uint8Array) =>
 	`sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
-/** OCI architecture name of this host. */
 export function hostArchitecture(): string {
 	return process.arch === "x64" ? "amd64" : process.arch;
 }
 
-/** Unpacks `archive` into `dir` with the host's tar (compression detected by tar). */
 export function untar(archive: string, dir: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(
@@ -118,7 +101,6 @@ export function untar(archive: string, dir: string): Promise<void> {
 	});
 }
 
-/** Applies and removes the OCI whiteout entries a layer left in `dir`. */
 export function applyWhiteouts(dir: string): void {
 	for (const name of readdirSync(dir)) {
 		if (name === ".wh..wh..opq") rmSync(join(dir, name), { force: true });
@@ -131,14 +113,12 @@ export function applyWhiteouts(dir: string): void {
 		if (entry.isDirectory()) applyWhiteouts(join(dir, entry.name));
 }
 
-/** Adds `shift` to the owner and group of `path` and everything under it, without following links. */
 export function shiftOwners(
 	path: string,
 	shift: number,
 	seen: Set<string> = new Set(),
 ): void {
 	const stat = lstatSync(path);
-	// Hard links share an inode: shift each inode once.
 	const inode = `${stat.dev}:${stat.ino}`;
 	if (!seen.has(inode)) {
 		seen.add(inode);
@@ -149,7 +129,6 @@ export function shiftOwners(
 			shiftOwners(join(path, entry), shift, seen);
 }
 
-/** Removes everything in `dir` that an opaque whiteout in a layer hides, before unpacking it. */
 async function opaqueDirectories(archive: string): Promise<readonly string[]> {
 	const listing = await new Promise<string>((resolve, reject) => {
 		const child = spawn("tar", ["-t", "-f", archive], {
@@ -173,7 +152,6 @@ export function createRegistryImageStore(
 		cacheDir: string;
 		fetch: typeof fetch;
 		architecture?: string;
-		/** Added to every owner id after unpacking: the rootful agent's id remapping base, so a sandbox's root owns its root file system. */
 		idShift?: number;
 		extract?: (archive: string, dir: string) => Promise<void>;
 	}>,
@@ -271,7 +249,6 @@ export function createRegistryImageStore(
 		if (layers === undefined) throw new Error(`${image} has no layers`);
 		const root = join(rootfsDir, top.digest.slice(7));
 		if (existsSync(root)) return root;
-		// 0711: a sandbox's remapped root must traverse to its root file system.
 		mkdirSync(rootfsDir, { recursive: true, mode: 0o711 });
 		const work = `${root}.partial-${randomBytes(4).toString("hex")}`;
 		const unpacked = join(work, "rootfs");

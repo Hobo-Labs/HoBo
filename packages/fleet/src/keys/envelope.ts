@@ -1,10 +1,3 @@
-// The signed and witnessed envelope of design §7.4 and the trust-anchor rule.
-//
-//   signature = Sign(key, utf8(context) || 0x00 || payload)
-//
-// `payload` is the record's protobuf binary exactly as transmitted; a
-// verifier checks the signature over the received bytes and only then decodes
-// them. A verifier accepts a record only under the one context it expects.
 import { ECDH } from "node:crypto";
 import { create, fromBinary, isMessage } from "@bufbuild/protobuf";
 import {
@@ -32,7 +25,6 @@ const ED25519_RAW_BYTES = 32;
 const P256_UNCOMPRESSED_BYTES = 65;
 const P256_COMPRESSED_BYTES = 33;
 
-/** `utf8(context) || 0x00 || payload`. */
 export function signingInput(context: string, payload: Uint8Array): Uint8Array {
 	const prefix = Buffer.from(context, "utf8");
 	const out = new Uint8Array(prefix.length + 1 + payload.length);
@@ -57,12 +49,6 @@ export async function signEnvelopeWith(
 	});
 }
 
-/**
- * The public JWK of a signing `PublicKeyRef` (§7.1 encoding): IDENTITY is RFC
- * 7517 JSON; SIGN, AUTHORITY and WITNESS are the raw key, base64url (Ed25519:
- * 32 bytes; P-256: the SEC1 point, uncompressed or compressed). SEAL and
- * TRANSPORT keys never verify a signature.
- */
 export function signingJwkOfRef(ref: PublicKeyRef): PublicJwk | undefined {
 	if (ref.purpose === KeyPurpose.IDENTITY) {
 		const parsed = parsePublicJwkText(ref.value);
@@ -112,7 +98,6 @@ function uncompressedPoint(raw: Buffer): Buffer | undefined {
 	}
 }
 
-/** The raw public key of a JWK for a `PublicKeyRef.value` (SIGN, AUTHORITY, WITNESS). */
 export function rawValueOfJwk(jwk: PublicJwk): string {
 	if (jwk.kty === "OKP") return jwk.x;
 	return Buffer.concat([
@@ -179,7 +164,6 @@ function checkWitnessed(
 	return "ok";
 }
 
-/** Both signatures, over the same payload, by a listed authority key and a listed witness key of `trust`. */
 export function verifyWitnessedWith(
 	envelope: WitnessedEnvelope,
 	expected: FleetContext,
@@ -196,13 +180,6 @@ function refused(
 	return { ok: false, error: { code, message, detail: { rule } } };
 }
 
-/**
- * §7.4: a new trust record is accepted only if its sequence is higher, its
- * authority signature verifies against a key in the PINNED record's
- * `authority_keys` and its witness signature against a key in the PINNED
- * record's `witness_keys`. With nothing pinned yet (enrollment, over TLS from
- * the configured origin) the record must be consistent with its own keys.
- */
 export function acceptTrustRecord(
 	pinned: TrustRecord | undefined,
 	next: WitnessedEnvelope,

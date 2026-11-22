@@ -266,8 +266,6 @@ describe("agent lane", () => {
 	});
 
 	it("signs the SVID with RS256 through the identity issuer, never an HMAC secret", async () => {
-		// A shared HMAC secret would let anything that verifies an SVID also mint
-		// one. The issuer's key signs; its JWKS verifies.
 		const issuer = createLocalSvidIssuer("spiffe://prod.example");
 		const credential = await present(
 			home(),
@@ -306,8 +304,6 @@ describe("agent lane", () => {
 
 describe("fleet authority lane", () => {
 	it("presents the person token hobo fleet login stored, DPoP-bound to its key", async () => {
-		// With an authority configured, the person's authority-issued token is
-		// the human credential; the proof is made with the key it is bound to.
 		const fleet = home();
 		const key = newSignInKey();
 		await savePerson(

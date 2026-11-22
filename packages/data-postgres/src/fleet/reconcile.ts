@@ -1,35 +1,3 @@
-/**
- * One tick of a Postgres fleet: settle, look, copy, decide, act.
- *
- * `reconcileFleet` is the only thing that changes who the writer is. A host
- * calls it on a schedule. The loop is the one every one-active fleet shares
- * (`createOneActiveFleet` of `@hobo/fleet/assignment`, ADR-0183); this
- * module supplies what is Postgres about it:
- *
- * 1. **Settle** the register before the loop runs: complete an interrupted
- *    entry, write the first entry of an empty fleet, and finish a sealed move
- *    an earlier tick left. A planned switch is finished here and not by the
- *    loop, because a Postgres move needs one more copy after the writers have
- *    stopped; a sealed failover (no writer) is activated when its target
- *    answers, and otherwise left to the loop, which reseals it elsewhere.
- * 2. **One tick of the loop.** It repairs the register, pins or changes the
- *    member set when `membershipEpochs` is on, and observes every backend
- *    through the Postgres observer below: probe (a failing writer is probed
- *    again until it has been failing for the failover threshold, so one tick
- *    can tell a blip from an outage), copy the writer to every reachable
- *    standby, and measure lag, readiness (`ready` is "the standby has the
- *    writer's schema") and usage. It then asks `decideFleet` of
- *    `@hobo/backend-routing` as its `chooseAction` and, on a switch or a
- *    failover, seals the fleet.
- * 3. **Act** on a seal the loop decided: a switch waits out every lease, copies
- *    once more and activates the target (or unseals onto the old writer when
- *    the copy cannot succeed); a failover activates the target at once, with
- *    the decision's loss window.
- *
- * It reads no clock and opens no connection of its own: `now`, `sleep` and the
- * executors are the host's. It is safe to run two at once. Every change is a
- * compare-and-set on the assignment epoch, so the second one loses and stops.
- */
 import {
 	decideFleet,
 	type FleetBudgetCheck,
@@ -151,10 +119,6 @@ export type FleetReconcileOptions = {
 	readonly witnesses?: readonly PostgresBackend[];
 	readonly layout: FleetLayout;
 	readonly models: readonly FleetFinancialModel[];
-	/**
-	 * The routing policy. `rpoMs` and `failoverAfterMs` are also the fleet's
-	 * `recovery_point_ms` and `failover_after_ms`.
-	 */
 	readonly policy: FleetPolicy;
 	/** How long an application instance may trust an assignment it confirmed. */
 	readonly leaseMs: number;
@@ -180,13 +144,7 @@ export type FleetReconcileOptions = {
 	readonly now: () => number;
 	readonly sleep: (ms: number) => Promise<void>;
 	readonly log: (event: FleetEvent) => void;
-	/** The fleet's id; `postgres` when absent. */
 	readonly fleet?: string;
-	/**
-	 * Entries carry member sets and adding or removing a backend is itself a
-	 * decided epoch (ADR-0183). Off when absent; turn it on only once every
-	 * reconciler of the fleet runs code that reads member sets.
-	 */
 	readonly membershipEpochs?: boolean;
 };
 
@@ -196,7 +154,6 @@ export type FleetReconcileReport = {
 	/** The current assignment when the tick ended, if it is known. */
 	readonly assignment: AssignmentEntry | undefined;
 	readonly decision: FleetDecision | undefined;
-	/** What the shared one-active loop did, when it ran. */
 	readonly tick: OneActiveTick | undefined;
 	readonly observations: readonly NamedObservation[];
 	readonly replications: readonly FleetReplicationResult[];
@@ -279,7 +236,6 @@ function transition(
 	};
 }
 
-/** The loop's answer from `decideFleet`'s decision. */
 function actionOf(decision: FleetDecision): OneActiveAction {
 	if (
 		(decision.action === "switch" || decision.action === "failover") &&
@@ -305,7 +261,6 @@ const PROPOSAL_STATUSES = [
 	"refused",
 ] as const;
 
-/** The proposal status a membership tick reports as `proposal-<status>`. */
 function proposalStatus(
 	tick: OneActiveTick,
 ): AssignmentProposalOutcome["status"] {
@@ -469,15 +424,6 @@ export async function reconcileFleet(
 		);
 	let assignment = resolution.assignment;
 
-	/**
-	 * Finish a sealed switch: wait until no instance can still hold a lease from
-	 * before the seal, copy once more, and hand over.
-	 *
-	 * If the copy cannot succeed (the target is unreachable, its schema differs,
-	 * the database is oversized) the fleet is unsealed on the old writer. If the
-	 * copy was only beaten by another reconciler doing the same thing, nothing
-	 * is undone: that reconciler finishes, or the next tick does.
-	 */
 	const finishSwitch = async (
 		sealed: AssignmentEntry,
 	): Promise<AssignmentEntry | undefined> => {
@@ -531,12 +477,6 @@ export async function reconcileFleet(
 		return outcome.status === "decided" ? outcome.assignment : undefined;
 	};
 
-	/**
-	 * Activate the target of a sealed failover. There is no writer to wait for
-	 * or copy from; what the target had not received is lost, bounded by its
-	 * lag. A target that does not answer is left sealed for the loop, which
-	 * chooses again as a failover from it.
-	 */
 	const finishFailover = async (
 		sealed: AssignmentEntry,
 		lossWindowMs: number | undefined,
@@ -574,7 +514,6 @@ export async function reconcileFleet(
 		}
 	}
 
-	// 2. One tick of the shared loop, with the Postgres observer.
 	const writerAt = assignment;
 	const period = billingPeriod(now());
 	const copied = new Map<string, FleetReplicationResult>();
@@ -595,13 +534,11 @@ export async function reconcileFleet(
 		);
 		const healthy = (backend: PostgresBackend) =>
 			probes.get(backend.id)?.health === Health.REACHABLE;
-		// Copy the writer to every reachable standby.
 		if (writer !== undefined && healthy(writer) && !writerAt.sealed)
 			for (const backend of backends) {
 				if (backend === writer || !healthy(backend)) continue;
 				copied.set(backend.id, await copy(writerAt, writer, backend));
 			}
-		// Measure.
 		const seen = await Promise.all(
 			backends.map(async (backend): Promise<readonly [string, Observation]> => {
 				const probed = probes.get(backend.id);
@@ -639,8 +576,6 @@ export async function reconcileFleet(
 						health: probed?.health ?? Health.UNKNOWN,
 						probeLatencyMs: probed?.latencyMs,
 						failingForMs: probed?.failingForMs ?? 0,
-						// With the writer down there is nothing to compare with; a
-						// standby that was copied before had the writer's schema then.
 						ready:
 							backend === writer ||
 							(result === undefined
@@ -702,8 +637,6 @@ export async function reconcileFleet(
 	options.log({ kind: "tick", tick });
 	if (tick.action === "no-majority" || tick.action === "undecided")
 		return stop(tick.action, [], tick);
-	// A tick that returned before observing (one member, a bootstrap, a
-	// membership change) still copies, measures and flushes, as every tick did.
 	observed ??= observeAll();
 	const byName = await observed;
 	const observations = backends.map(
@@ -713,7 +646,6 @@ export async function reconcileFleet(
 		}),
 	);
 
-	// 3. Act on what the loop decided.
 	if (tick.action === "membership")
 		record({
 			step: "membership",

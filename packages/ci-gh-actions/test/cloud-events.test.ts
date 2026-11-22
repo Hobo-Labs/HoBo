@@ -88,13 +88,10 @@ describe("toCiCloudEvent", () => {
 	});
 
 	it("types every fleet log event in the fleet.* family and keeps no mesh type", () => {
-		// The mesh is gone (ADR-0183): its log names and its ci.Mesh* types with it.
 		for (const [name, type] of CI_INFRA_EVENT_TYPES) {
 			expect(name).not.toMatch(/^hobo_ci_(mesh|fleet)_/u);
 			expect(type).not.toMatch(/^ci\.(Mesh|Fleet)/u);
 		}
-		// Every log event of the fleet family is a fleet.* fact, and one with a
-		// stream keeps its stored event type.
 		for (const name of FLEET_LOG_EVENTS)
 			expect(CI_INFRA_EVENT_TYPES.get(name)).toMatch(/^fleet\.[A-Z]/u);
 		for (const type of FLEET_EVENT_TYPES)

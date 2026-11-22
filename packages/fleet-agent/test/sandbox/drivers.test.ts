@@ -1,9 +1,3 @@
-/**
- * The sandbox drivers' logic (L38 isolated checks): `runSandboxConformance`
- * for each OCI driver with its runtime calls replaced by a recording double,
- * the driver's own guarantees on top of it, and the selection that
- * `sandboxDrivers` makes.
- */
 import { once } from "node:events";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { type AddressInfo, createServer, type Server } from "node:net";
@@ -39,6 +33,20 @@ import {
 	STDIN_RELAY,
 } from "../../src/sandbox/oci-driver.js";
 import { createRecordingOci, type RecordingOci } from "./recording-oci.js";
+
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
 
 const root = mkdtempSync(join(tmpdir(), "hobo-l38-drivers-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -95,7 +103,6 @@ afterEach(async () => {
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-/** A stand-in egress proxy that records each request line and refuses it with 403. */
 async function refusingProxy(lines: string[]): Promise<string> {
 	const server = createServer((socket) => {
 		socket.once("data", (chunk) => {
@@ -108,8 +115,7 @@ async function refusingProxy(lines: string[]): Promise<string> {
 	servers.push(server);
 	server.listen(0, "127.0.0.1");
 	await once(server, "listening");
-	// SAFETY: a TCP server listening on a port answers an AddressInfo.
-	const { port } = server.address() as AddressInfo;
+	const port = portOf(server.address());
 	return `http://127.0.0.1:${port}`;
 }
 
@@ -168,7 +174,6 @@ describe("createOciSandboxDriver", () => {
 			expect(config?.process.capabilities.bounding).toEqual([]);
 			expect(config?.process.noNewPrivileges).toBe(true);
 			expect(config?.root.readonly).toBe(true);
-			// runsc: the pids limit holds in the sentry; the host cgroup only backstops it.
 			expect(config?.process.rlimits).toContainEqual({
 				type: "RLIMIT_NPROC",
 				hard: 32,
@@ -438,7 +443,6 @@ describe("the forwarder container (D58)", () => {
 				[POD_CONTAINER_TYPE]: "sandbox",
 				[POD_SANDBOX_ID]: pod,
 			});
-			// Rootless: the agent's id, in a pid namespace above the workload's.
 			expect(container?.forwarder?.process.user.uid).toBe(
 				forwarderUid({ uid: 1000, gid: 1000 }),
 			);

@@ -1,21 +1,3 @@
-/**
- * `@hobo/fleet/agent` (L07): the device agent core (design §6.5, §6.7–§6.9,
- * §6.12, §9 F1/F4/F7/F16/F18/F19).
- *
- * - `enroll` generates nothing itself: it opens the key store, builds and
- *   signs the key bundle, enrolls through the typed client with a bare proof
- *   made by the identity key, pins the trust record the authority answered
- *   with, and returns the whole `EnrollmentResponse`.
- * - `start` refreshes credentials (the nonce is on disk before the request
- *   leaves; a lost answer is retried with the same generation and nonce),
- *   renews the bundle at three quarters of its life, accepts a changed trust
- *   record only through `acceptTrust`, connects to the bus with the session
- *   ticket and resumes after a lost connection, publishes its own and its
- *   sponsored members' observations every 10 s, follows control messages, and
- *   composes the dispatcher, the executor and the session server by role.
- * - The executor queues receipts in `AgentState.pendingReceipts` and flushes
- *   them on start and every 10 s, so a bus outage loses none (F4).
- */
 import { clone, create, fromBinary } from "@bufbuild/protobuf";
 import {
 	ControlKind,
@@ -70,17 +52,12 @@ import { refusingCapacity, selfCapacity } from "./capacity.js";
 import { createBusLink } from "./link.js";
 import { createStateGate } from "./state.js";
 
-/** §6.8: the observation beat. */
 export const BEAT_MS = 10_000;
-/** How long an observation asks to be believed. */
 const OBSERVATION_TTL_MS = 60_000;
-/** §6.5: refresh five minutes before the SVID expires. */
 const REFRESH_LEAD_MS = 5 * 60_000;
 const RETRY_MIN_MS = 5_000;
 const RETRY_MAX_MS = 60_000;
-/** A session ticket this close to expiry is refreshed before it is presented. */
 const TICKET_MARGIN_MS = 60_000;
-/** F16: skew against the authority's `Date` header worth reporting. */
 const SKEW_REPORT_MS = 5_000;
 const NONCE_BYTES = 16;
 
@@ -107,7 +84,6 @@ function decodeMember(
 	}
 }
 
-/** The record verifies against the pinned trust's authority keys. */
 function signedByAuthority(
 	envelope: SignedEnvelope | undefined,
 	context: typeof MEMBER_RECORD_CONTEXT | typeof CONTROL_CONTEXT,
@@ -118,7 +94,6 @@ function signedByAuthority(
 	return key !== undefined && verifyEnvelope(envelope, context, key);
 }
 
-/** Fleet and roles, in a stable order: the executor restarts when this changes. */
 function membershipKey(record: MemberRecord | undefined): string {
 	return JSON.stringify(
 		(record?.memberships ?? [])
@@ -137,12 +112,10 @@ function randomNonce(): Uint8Array {
 	return crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
 }
 
-/** The agent behind createFleetAgent (index.ts). */
 export function fleetAgent(deps: AgentDeps) {
 	const { log } = deps;
 	const gate = createStateGate(deps.keys);
 	const link = createBusLink();
-	// L43: the source the executor fits against refuses while the host does.
 	const executorCapacity = refusingCapacity(deps.capacity);
 
 	let keys: DeviceKeys | undefined;
@@ -170,7 +143,6 @@ export function fleetAgent(deps: AgentDeps) {
 	let composedFor: string | undefined;
 	let composing: Promise<void> = Promise.resolve();
 
-	// ── HTTP: the measured fetch and the two clients ─────────────────────────
 	const measuredFetch: typeof fetch = async (input, init) => {
 		const response = await deps.fetch(input, init);
 		const date = response.headers.get("date");
@@ -211,8 +183,6 @@ export function fleetAgent(deps: AgentDeps) {
 		return keys;
 	};
 
-	// ── Trust ───────────────────────────────────────────────────────────────
-	/** Pins `next` when acceptTrust takes it over the current pin; anything else leaves the pin alone. */
 	async function considerTrust(
 		next: WitnessedEnvelope | undefined,
 	): Promise<void> {
@@ -243,7 +213,6 @@ export function fleetAgent(deps: AgentDeps) {
 		});
 	}
 
-	// ── Enrollment ──────────────────────────────────────────────────────────
 	async function enroll(
 		request: Omit<EnrollmentRequest, "identityJwk" | "keyBundle">,
 	): Promise<Outcome<EnrollmentResponse>> {
@@ -323,7 +292,6 @@ export function fleetAgent(deps: AgentDeps) {
 		return outcome;
 	}
 
-	/** The peer-to-peer endpoint id, or "" when there is no such transport or it reports none. */
 	async function probeTransportIdentity(device: DeviceKeys): Promise<string> {
 		const p2p = deps.transports.find((transport) => transport.kind === "p2p");
 		if (p2p === undefined) return "";
@@ -336,7 +304,6 @@ export function fleetAgent(deps: AgentDeps) {
 		}
 	}
 
-	// ── Credentials ─────────────────────────────────────────────────────────
 	function refresh(): Promise<boolean> {
 		if (refreshing === undefined)
 			refreshing = refreshOnce().finally(() => {
@@ -347,7 +314,6 @@ export function fleetAgent(deps: AgentDeps) {
 
 	async function refreshOnce(): Promise<boolean> {
 		const device = await openKeys();
-		// The nonce is on disk before the request leaves; a retry reuses it (F19).
 		const state = await gate.update((current) => ({
 			pendingRefreshNonce: current.pendingRefreshNonce ?? randomNonce(),
 		}));
@@ -409,9 +375,7 @@ export function fleetAgent(deps: AgentDeps) {
 					response.sessionTicket?.payload ?? new Uint8Array(),
 				).expiresAt,
 			);
-		} catch {
-			// An unreadable ticket expires with the SVID.
-		}
+		} catch {}
 		if (response.sessionTicket !== undefined)
 			credentials = {
 				svid: response.svid,
@@ -461,7 +425,6 @@ export function fleetAgent(deps: AgentDeps) {
 		timers.add(timer);
 	}
 
-	// ── The bus ─────────────────────────────────────────────────────────────
 	async function ticket(): Promise<SignedEnvelope> {
 		if (
 			credentials === undefined ||
@@ -583,7 +546,6 @@ export function fleetAgent(deps: AgentDeps) {
 		}
 	}
 
-	// ── Roles ───────────────────────────────────────────────────────────────
 	function sandboxOf(orderId: string): Sandbox | undefined {
 		for (const executor of executors) {
 			const sandbox = executor.sandboxOf(orderId);
@@ -592,7 +554,6 @@ export function fleetAgent(deps: AgentDeps) {
 		return undefined;
 	}
 
-	/** Starts, restarts or stops the dispatcher and executor to match the member's memberships. */
 	function recompose(): void {
 		if (
 			!started ||
@@ -656,7 +617,6 @@ export function fleetAgent(deps: AgentDeps) {
 		}
 	}
 
-	// ── Observations ────────────────────────────────────────────────────────
 	function issuedNow(): number {
 		lastIssuedMs = Math.max(deps.now(), lastIssuedMs + 1);
 		return lastIssuedMs;
@@ -670,7 +630,6 @@ export function fleetAgent(deps: AgentDeps) {
 		const read = await deps.capacity.read().catch(() => undefined);
 		const { capacity, health, refusal } = selfCapacity(
 			read,
-			// The executor's own work (amendment 6): claims held plus orders running.
 			executors.reduce((sum, executor) => sum + executor.inUse(), 0),
 			draining,
 		);
@@ -758,7 +717,6 @@ export function fleetAgent(deps: AgentDeps) {
 		await observe();
 	}
 
-	// ── Lifecycle ───────────────────────────────────────────────────────────
 	async function stopWork(): Promise<void> {
 		const stopping = dispatcher;
 		dispatcher = undefined;

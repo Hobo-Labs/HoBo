@@ -26,7 +26,6 @@ const recorded = JSON.parse(
 		"utf8",
 	),
 );
-// The recorded host's own health facts (its self-observation's validity, start and labels).
 const recordedSelf = JSON.parse(recorded.meshAdvert);
 const advert = {
 	validUntilMs: Number(recordedSelf.validUntilMs),

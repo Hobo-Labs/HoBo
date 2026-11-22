@@ -1,6 +1,3 @@
-// The operations' composition from the configuration (both profiles): the
-// event store (SQLite through @hobo/runtime-local, or the FLEET_JOURNAL store),
-// the authority bus, and the journal archiver. Private to L27.
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -32,7 +29,6 @@ export type Composed = Readonly<{
 	close(): Promise<void>;
 }>;
 
-/** The standalone profile's archiver: a consistent snapshot of the SQLite journal (`VACUUM INTO`). */
 export function sqliteArchiver(dbPath: string): JournalArchiver {
 	const marker = `${dbPath}.restored`;
 	return {
@@ -75,7 +71,6 @@ export function sqliteArchiver(dbPath: string): JournalArchiver {
 	};
 }
 
-/** The high-availability profile's archiver: every envelope of FLEET_JOURNAL in `readAll` order. */
 export function jsonlArchiver(
 	store: () => Promise<FleetEventStore>,
 ): JournalArchiver {
@@ -88,8 +83,6 @@ export function jsonlArchiver(
 			return new TextEncoder().encode(lines.join("\n"));
 		},
 		async load(): Promise<Outcome<void>> {
-			// A JetStream stream restore keeps every envelope as written; the journal
-			// store's port can only append new envelopes (cascade delta to L36).
 			return {
 				ok: false,
 				error: {
@@ -102,7 +95,6 @@ export function jsonlArchiver(
 	};
 }
 
-/** NATS signing-key publication needs the account JWT, which @hobo/fleet-nats derives from the operator signing seed (cascade delta to L08). */
 const NATS_UNPUBLISHED: NatsSigningKeys = {
 	async publish(which) {
 		return {

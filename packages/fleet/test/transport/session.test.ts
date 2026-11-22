@@ -1,10 +1,3 @@
-/**
- * O31 (session half): `authoriseSession` refuses each way a grant can be
- * wrong; `serveSessions` refuses before any byte; AEAD framing with a counter
- * nonce carries 64 MiB with a matching digest and refuses tampering;
- * shell and blob sessions run inside the order's sandbox; the acceptor
- * publishes a signed session-close fact; `fetchBlob` verifies the digest.
- */
 import { createHash, randomBytes } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
@@ -187,7 +180,6 @@ describe("frameStream", () => {
 		await expect(receive(wire, keys.acceptorToInitiator)).rejects.toThrow(
 			/authenticat/,
 		);
-		// Each data frame is 4 + 3 + 16 = 23 bytes; swap the first two.
 		const first = wire.subarray(0, 23);
 		const second = wire.subarray(23, 46);
 		const rest = wire.subarray(46);
@@ -449,7 +441,6 @@ describe("authoriseSession", () => {
 });
 
 describe("authoriseSession, bus-relay parties (D59)", () => {
-	/** The member record with a key bundle naming `seal` as its SEAL key. */
 	function withSeal(memberId: MemberId, seal: string) {
 		const record = memberRecord(memberId);
 		record.keyBundle = create(SignedEnvelopeSchema, {
@@ -842,7 +833,6 @@ describe("serveSessions", () => {
 		if (!outcome.ok) return;
 		const fetching = async () => {
 			for await (const _ of fetchBlob(outcome.value, BLOB_DIGEST)) {
-				// drain
 			}
 		};
 		await expect(fetching()).rejects.toThrow(/not named/);
@@ -862,7 +852,6 @@ describe("serveSessions", () => {
 		})();
 		const fetching = async () => {
 			for await (const _ of fetchBlob(client, BLOB_DIGEST)) {
-				// drain
 			}
 		};
 		await expect(fetching()).rejects.toThrow(/digest/);

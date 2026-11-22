@@ -1,11 +1,3 @@
-/**
- * A `FleetBusConnector` over the in-memory bus, for the behaviour suite
- * (design §11.4 L26; the NATS connector is `@hobo/fleet-nats`). Each
- * connection is a view of the one memory bus that asks for a session ticket
- * as a real connection does, so a device whose credentials the authority
- * refuses never gets a connection. The suite can take the bus down: connects
- * fail, publishes reject, and the status reads "disconnected".
- */
 import type {
 	AuthorityBus,
 	FleetBus,

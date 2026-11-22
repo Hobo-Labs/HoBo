@@ -1,9 +1,3 @@
-/**
- * What `sandboxDrivers` builds on Linux (D58): the provisioned runsc for
- * `S1` and `S2` by default, a host runc or crun only when an operator
- * configures one, and `hobo_fleet_sandbox_unavailable` with the reason when
- * nothing qualifies. Probing is replaced by its answers; no runtime runs.
- */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +13,6 @@ import type { OciCalls } from "../../src/sandbox/oci-runtime.js";
 
 type Made = { binary: string; flags: readonly string[] };
 
-// No runtime runs here; the rootfs is a throwaway directory that nothing reads.
 const rootfs = mkdtempSync(join(tmpdir(), "hobo-platform-rootfs-"));
 afterAll(() => rmSync(rootfs, { recursive: true, force: true }));
 

@@ -1,32 +1,3 @@
-/**
- * The OCI sandbox driver (design §6.11, D58): `S1_CONTAINER` and
- * `S2_USER_KERNEL` over the provisioned gVisor `runsc` (one runtime, both
- * tiers, one self-test), or `S1_CONTAINER` over an operator's host `crun` or
- * `runc`. One sandbox is one container made from the order's image and the
- * configuration of `oci-config.ts`, used for one order and destroyed after
- * it, plus its forwarder container.
- *
- * Networking. The workload's network holds only loopback (runsc
- * `--network=none`, or a fresh network namespace). The driver serves two Unix
- * sockets on the host, in a per-sandbox socket directory no other user can
- * open: a relay to the order's egress proxy (`egressProxyUrl`, on the host's
- * loopback) and the control endpoint, an HTTP server answering
- * `POST /fence` from the order's `fence` callback. The relay hands a proxied
- * request for the sandbox's own `controlUrl` to the control endpoint, since
- * clients that honour `http_proxy` send it there. The forwarder
- * (`forwarder.ts`), a second container in the same sandbox, listens on two
- * loopback ports in the workload's network and pipes them to those sockets.
- * Inside the sandbox `http_proxy` and `https_proxy` name the first port, and
- * `controlUrl` is `http://127.0.0.1:<second port>`; ports are distinct across
- * this agent's live sandboxes, so no sandbox has a listener on another's
- * control port.
- *
- * Self-test (`available`): the runtime answers its version, then a trial
- * sandbox over the host's own read-only `/usr` (no image pull) starts with
- * the full configuration (user namespace, limits, seccomp, network,
- * forwarder), runs `true`, and is destroyed. A runtime that cannot apply any
- * part of it fails the self-test and is not advertised.
- */
 import { randomBytes } from "node:crypto";
 import {
 	chmodSync,
@@ -70,19 +41,13 @@ import type { ExecIo, OciCalls } from "./oci-runtime.js";
 
 export type OciDriverOptions = Readonly<{
 	tier: SandboxTier;
-	/** The runtime's name, for log lines (`crun`, `runc`, `runsc`). */
 	runtime: string;
-	/** `runsc` (pods, sentry limits possible) or `oci` (a host runc or crun). */
 	flavor: RuntimeFlavor;
-	/** Where limits are enforced (privilege.ts `probeCgroups`). */
 	cgroups: CgroupPlacement;
 	calls: OciCalls;
 	images: ImageStore;
-	/** Directory for bundles and sockets (0711; each sandbox's own directory is 0711 rootful, 0700 rootless). */
 	workRoot: string;
-	/** The agent's uid and gid when it is not root; undefined when it is. */
 	rootless: Readonly<{ uid: number; gid: number }> | undefined;
-	/** The host's node, which the forwarder container runs; this process's own by default. */
 	node?: string;
 	log: FleetLog;
 }>;
@@ -95,12 +60,10 @@ const PROXY_VARIABLES = [
 	"HTTPS_PROXY",
 ];
 const INIT_ARGS: readonly string[] = ["sleep", "2147483647"];
-/** The shell program that relays an exec's standard input through a pipe inside a runsc sandbox. */
 // public-contract: the stdin relay a runsc exec with standard input runs as `sh -c STDIN_RELAY hobo-stdin <argv…>`.
 export const STDIN_RELAY = 'cat | "$@"';
 const FENCE_BODY_LIMIT = 64 * 1024;
 const SECRET_PATH = /^\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/u;
-/** Host directories the self-test's trial sandbox mounts read-only in place of an image. */
 const TRIAL_HOST_DIRS: readonly string[] = [
 	"/usr",
 	"/bin",
@@ -116,7 +79,6 @@ const TRIAL_LIMITS: SandboxLimits = {
 	diskMb: 16,
 };
 
-/** Loopback ports held by this agent's live sandboxes, across drivers. */
 const portsInUse = new Set<number>();
 
 function allocatePort(): number {
@@ -148,13 +110,10 @@ function closeServer(
 	return new Promise((resolve) => server.close(() => resolve()));
 }
 
-/** The HTTP control endpoint of one sandbox: `POST /fence` answers from `fence`. */
 function controlServer(
 	fence: (observed: ObservedAssignment) => Promise<boolean>,
 ): Server {
 	const server = createHttpServer((req, res) => {
-		// busybox wget sends its --post-file body with GET when it goes through a
-		// proxy, so a GET carrying a body counts as the POST it meant.
 		const posted =
 			req.method === "POST" ||
 			(req.method === "GET" && Number(req.headers["content-length"] ?? 0) > 0);
@@ -190,23 +149,12 @@ function controlServer(
 			);
 		});
 	});
-	// busybox wget shuts down its write side after the request.
 	Object.assign(server, { httpAllowHalfOpen: true });
 	return server;
 }
 
-/** The longest request line the relay reads before choosing where a connection goes. */
 const REQUEST_LINE_LIMIT = 8 * 1024;
 
-/**
- * The relay behind a sandbox's proxy port. Every connection goes to the
- * order's egress proxy on the host's loopback, except a request whose
- * absolute-form target is this sandbox's own `controlUrl`: proxy-aware clients
- * (busybox wget ignores `no_proxy`) send those to the proxy port too, so the
- * relay rewrites the request line to origin form and pipes the connection to
- * the control endpoint. Another sandbox's `controlUrl` is not matched and
- * reaches the egress proxy, which refuses loopback.
- */
 function sandboxRelay(
 	egressProxyUrl: string,
 	controlPort: number,
@@ -249,7 +197,6 @@ function sandboxRelay(
 	});
 }
 
-/** The self-test's root file system and the host directories it binds. */
 type TrialRoot = Readonly<{
 	rootfs: string;
 	mounts: readonly Readonly<{ source: string; target: string }>[];
@@ -275,16 +222,11 @@ export function createOciSandboxDriver(
 	return driver;
 }
 
-/**
- * One driver per tier over the same runtime: one self-test decides them all,
- * and an order id is used once across them (runsc serves `S1` and `S2`).
- */
 export function createOciSandboxDrivers(
 	options: Omit<OciDriverOptions, "tier"> &
 		Readonly<{ tiers: readonly SandboxTier[] }>,
 ): readonly SandboxDriver[] {
 	const orders = new Set<string>();
-	// The host uid the forwarder connects to its sockets as (rootful); undefined when that is the agent.
 	const owner = forwarderHostUid(options.rootless);
 	const node = options.node ?? process.execPath;
 	const tierNames = options.tiers
@@ -292,7 +234,6 @@ export function createOciSandboxDrivers(
 		.join(",");
 
 	function prepareRoot(): void {
-		// 0711: the self-test's trial root file system lives here and a remapped root must reach it.
 		mkdirSync(options.workRoot, { recursive: true, mode: 0o711 });
 		chmodSync(options.workRoot, 0o711);
 	}
@@ -302,14 +243,12 @@ export function createOciSandboxDrivers(
 		const tag = randomBytes(10).toString("hex");
 		const id = `hobo-${tag}`;
 		const dir = join(options.workRoot, id);
-		// Rootful: the forwarder's host identity (owner) must traverse to its sockets; the bundle files are 0600.
 		mkdirSync(dir, { mode: owner === undefined ? 0o700 : 0o711 });
 		chmodSync(dir, owner === undefined ? 0o700 : 0o711);
 		const socketDir = join(dir, "sock");
 		mkdirSync(socketDir, { mode: 0o700 });
 		const controlSocket = join(socketDir, "control.sock");
 		const egressSocket = join(socketDir, "egress.sock");
-		// Not `${id}-…`: runsc resolves a container id by prefix, and the workload's id would become ambiguous.
 		const forwarderId = `hobofwd-${tag}`;
 		const forwarderDir = join(dir, "forwarder");
 		const rlimits = sandboxRlimits(
@@ -388,9 +327,6 @@ export function createOciSandboxDrivers(
 				);
 				forwarder = await options.calls.forward(forwarderId, forwarderDir);
 			};
-			// runsc: the forwarder is the pod, so it starts first and the
-			// workload joins it. A host runtime: the forwarder joins the
-			// running workload's namespaces.
 			if (runsc) await startForwarder(0);
 			const config = ociConfig({
 				id,
@@ -430,12 +366,8 @@ export function createOciSandboxDrivers(
 				if (command.signal.aborted) return { exitCode: 130 };
 				execs += 1;
 				const processFile = join(dir, `exec-${execs}.json`);
-				// The proxy variables always name this sandbox's forwarder.
 				const env = new Map(Object.entries({ ...baseEnv, ...command.env }));
 				for (const name of PROXY_VARIABLES) env.set(name, proxyUrl);
-				// runsc hands an exec its standard input as a host pipe, which a
-				// program inside cannot reopen as /dev/stdin; a pipe from `cat`
-				// inside the sentry can be.
 				const argv =
 					options.flavor === "runsc" && command.stdin !== undefined
 						? ["sh", "-c", STDIN_RELAY, "hobo-stdin", ...command.argv]
@@ -497,7 +429,6 @@ export function createOciSandboxDrivers(
 		return sandbox;
 	}
 
-	/** A root file system of empty mount points, binding the host's own read-only system directories. */
 	function trialRootfs(): TrialRoot {
 		prepareRoot();
 		const rootfs = join(

@@ -1,23 +1,6 @@
-/**
- * `IdentityAssertionVerifier` (§6.5 "Devices enroll themselves"):
- *
- * - OIDC: only pinned issuers. Each issuer's JWKS URL is configured or read
- *   once from its discovery document; keys are cached for `cacheMs` and
- *   re-read at most once a minute when a token names an unknown `kid`.
- *   RS256 and ES256 only; `iss`, `aud`, `exp`, `nbf` and `iat` are checked
- *   with 60 s of skew. Claims come back as strings (lists joined by commas).
- * - X.509: the chain (leaf first) is checked with `node:crypto`: every
- *   certificate is in its validity window, each is issued and signed by the
- *   next, every issuer is a CA, the last is issued by one of the roots, and
- *   the leaf's public key is the device's identity key. The digest is the
- *   SHA-256 of the leaf's DER.
- *
- * The assertion's single use is the enrollment's job (`tokenId`).
- */
 import {
 	createHash,
 	createPublicKey,
-	type JsonWebKey,
 	type KeyObject,
 	verify as verifySignature,
 	X509Certificate,
@@ -39,7 +22,6 @@ const MAX_ASSERTION_BYTES = 16 * 1024;
 // domain-view: one configured OIDC issuer.
 export type PinnedIssuer = Readonly<{
 	issuer: string;
-	/** Default: `jwks_uri` from `<issuer>/.well-known/openid-configuration`. */
 	jwksUri?: string | undefined;
 }>;
 
@@ -133,16 +115,10 @@ export function createIdentityAssertionVerifier(
 		const keys = new Map<string, KeyObject>();
 		for (const key of document.keys) {
 			if (!isRecord(key) || !isText(key.kid)) continue;
-			if (key.d !== undefined) continue; // never a private key
+			if (key.d !== undefined) continue;
 			try {
-				// SAFETY: a JWK object from a JWKS document; createPublicKey validates it.
-				keys.set(
-					key.kid,
-					createPublicKey({ key: key as JsonWebKey, format: "jwk" }),
-				);
-			} catch {
-				// An unusable key is left out.
-			}
+				keys.set(key.kid, createPublicKey({ key, format: "jwk" }));
+			} catch {}
 		}
 		const loaded = { keys, fetchedAtMs: options.now() };
 		cache.set(issuer, loaded);

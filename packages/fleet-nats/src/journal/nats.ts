@@ -1,24 +1,3 @@
-/**
- * `JournalTransport` on `@nats-io/jetstream` (L36): the `FLEET_JOURNAL`
- * stream of the topology (design §6.7, §6.16).
- *
- * - `last`: the stream's message-get by `last_by_subj` (works without
- *   `allow_direct`); API error 10037 means the subject has none.
- * - `publish`: a JetStream publish with `Nats-Expected-Last-Subject-Sequence`;
- *   API error 10071 becomes `JournalWrongLastSequence`.
- * - `messages`: an ephemeral pull consumer (`ack_policy: none`) from a start
- *   sequence, read for as many messages as it had pending when created, then
- *   deleted.
- * - `watch`: an ordered consumer from a start sequence.
- *
- * When the stream does not exist the store creates it with the topology's
- * settings (no expiry, `deny_delete`, `deny_purge`) and one replica; a
- * deployment provisions it beforehand (`provisionTopology`) with its own
- * replica count, which this never changes.
- *
- * `JournalJetStream` is the part of the client this uses, so the unit tests
- * run all of the logic here against a fake JetStream context.
- */
 import {
 	AckPolicy,
 	type ConsumerConfig,
@@ -55,7 +34,6 @@ const FETCH_BATCH = 256;
 const FETCH_EXPIRES_MS = 5_000;
 const CONSUMER_INACTIVE_MS = 60_000;
 
-/** A message as JetStream hands it back; `pending` is what a consumer still has after it. */
 type JetStreamMessage = Readonly<{
 	seq: number;
 	subject: string;
@@ -64,7 +42,6 @@ type JetStreamMessage = Readonly<{
 type ConsumedMessage = JetStreamMessage &
 	Readonly<{ info: Readonly<{ pending: number }> }>;
 
-/** The part of `@nats-io/jetstream` the journal uses (its manager, client and connection). */
 export type JournalJetStream = Readonly<{
 	streams: Readonly<{
 		info(name: string): Promise<
@@ -113,16 +90,9 @@ export type JournalJetStream = Readonly<{
 
 export type JournalConnectInput = Readonly<{
 	servers: readonly string[];
-	/** A NATS credentials file's text (user JWT and seed); empty for a server without authentication. */
 	credentials: string;
 }>;
 
-/**
- * The journal's connection options: the bus's (`connectionOptions`), so TLS
- * is required and the CA named by `HOBO_FLEET_NATS_CA` is trusted exactly as
- * on the bus. `persistent` keeps reconnecting for the life of the process
- * (the store); an import fails fast.
- */
 export function journalConnectionOptions(
 	input: JournalConnectInput,
 	persistent = true,
@@ -150,7 +120,6 @@ export async function connectJournalTransport(
 	);
 }
 
-/** The journal transport on an open connection, which it owns from here on (closing it closes the connection). */
 export async function journalTransportOver(
 	nc: NatsConnection,
 ): Promise<JournalTransport> {
@@ -202,7 +171,6 @@ function toMessage(stored: JetStreamMessage): JournalMessage {
 	return { seq: stored.seq, subject: stored.subject, data: stored.data };
 }
 
-/** The journal transport over `jet`, after making sure `FLEET_JOURNAL` exists. */
 export async function journalTransportOn(
 	jet: JournalJetStream,
 ): Promise<JournalTransport> {

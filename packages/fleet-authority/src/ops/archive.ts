@@ -1,8 +1,3 @@
-// Backup and restore (design §6.16, F6): the event store and `FLEET_AUDIT` in
-// one archive with a manifest of digests; a restore loads it into a fresh
-// deployment, rebuilds the registry, and increments the authority
-// incarnation through a witnessed trust record, so every credential issued
-// before the restore is refused (`incarnation-stale`). Private to L27.
 import { createHash } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
@@ -38,14 +33,11 @@ import { changeTrust, nextTrustRecord } from "./trust.js";
 // public-contract: the archive format `hobo fleet ops backup` writes and `restore` reads.
 export const ARCHIVE_FORMAT = "hobo-fleet-backup/v1";
 const AUDIT_PAGE = 1_000;
-/** How long the archive waits for the retained witnessed checkpoints to stop arriving. */
 const SETTLE_MS = 100;
 
-/** How the deployment's journal is copied: `sqlite`, a consistent SQLite snapshot; `jsonl`, every envelope in `readAll` order. */
 export type JournalArchiver = Readonly<{
 	format: "sqlite" | "jsonl";
 	dump(): Promise<Uint8Array>;
-	/** Loads the copy into a fresh deployment; `conflict` when the store is not fresh, nothing to do when it already holds this copy. */
 	load(bytes: Uint8Array, manifestDigest: string): Promise<Outcome<void>>;
 }>;
 
@@ -53,7 +45,6 @@ export type ArchiveDeps = Readonly<{
 	tenant: string;
 	profile: Profile;
 	journal: JournalArchiver;
-	/** The deployment's event store; for a restore, opened after the journal is loaded. */
 	store(): Promise<FleetEventStore>;
 	bus: Pick<AuthorityBus, "registry" | "publisher" | "audit">;
 	secrets: SecretsPort;
@@ -118,7 +109,6 @@ function invalid<T>(
 		: { ok: false, error: { code: "invalid-request", message, detail } };
 }
 
-/** Every audit entry from 1, in order. */
 async function allEntries(deps: ArchiveDeps): Promise<AuditEntry[]> {
 	const out: AuditEntry[] = [];
 	for (let from = 1; ; from += AUDIT_PAGE) {
@@ -128,7 +118,6 @@ async function allEntries(deps: ArchiveDeps): Promise<AuditEntry[]> {
 	}
 }
 
-/** The witnessed checkpoints the audit log retains, collected until they stop arriving. */
 async function witnessedCheckpoints(
 	deps: Pick<ArchiveDeps, "bus">,
 	atLeast = 0,
@@ -170,7 +159,6 @@ export async function backupArchive(
 			},
 		};
 	const record = fromBinary(TrustRecordSchema, trust.authority.payload);
-	// Audit first, journal last: the journal then holds every event the audit log has an entry for.
 	const checkpoints = await witnessedCheckpoints(deps);
 	const entries = await allEntries(deps);
 	const journal = await deps.journal.dump();
@@ -309,11 +297,9 @@ export async function readArchive(
 }
 
 function part(archive: Archive, name: string): Uint8Array {
-	// readArchive checked every part of PART is present.
 	return archive.parts.get(name) ?? new Uint8Array();
 }
 
-/** Puts the restored audit log back: its entries, then the authority half of each checkpoint, which the witness co-signs again. */
 async function restoreAudit(
 	deps: ArchiveDeps,
 	entries: readonly AuditEntry[],
@@ -384,7 +370,6 @@ export async function restoreArchive(
 	);
 	if (!loaded.ok) return loaded;
 	const store = await deps.store();
-	// The archived trust first: the witness judges the restored checkpoints against it.
 	if (deps.bus.registry.trust().sequence < archivedRecord.sequence)
 		await deps.bus.publisher.putTrust(archivedTrust);
 	const audit = await restoreAudit(deps, entries, checkpoints);
@@ -404,7 +389,6 @@ export async function restoreArchive(
 
 	let pinned = deps.bus.registry.trust();
 	if (pinned.sequence === archivedRecord.sequence) {
-		// The witness co-signs the restored checkpoints under the archived incarnation, before it changes.
 		const recosigned = await witnessedCheckpoints(
 			deps,
 			checkpoints.length,

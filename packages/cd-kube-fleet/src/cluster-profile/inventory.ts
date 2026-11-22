@@ -99,19 +99,12 @@ export type ClusterProfileInventoryDeps = Readonly<{
 	telemetry?: TelemetrySink;
 	/** Wait between watch retries after a transport failure (default: setTimeout). */
 	delay?: (ms: number, signal: AbortSignal) => Promise<void>;
-	/**
-	 * Fleet membership of the imported clusters (L19): `publish` also declares
-	 * each one as a `TARGET` member of the fleet its Yard maps to. Absent: no
-	 * declaration.
-	 */
 	members?: ClusterProfileMembers;
 }>;
 
-/** Where `publish` declares imported clusters as `TARGET` members. */
 export type ClusterProfileMembers = Readonly<{
 	tenant: TenantId;
 	client: Pick<FleetClient, "declare">;
-	/** The fleet a Yard's Camps are members of; undefined when the Yard has none. */
 	fleetOf(yardId: string): string | undefined;
 }>;
 
@@ -320,12 +313,6 @@ export function clusterProfileInventory(
 		}
 	}
 
-	/**
-	 * Declare one imported cluster as a TARGET (secret-free: a reference to
-	 * the profile and a digest of its API endpoints). A refusal is counted and
-	 * the Camp is still observed: until the member exists the Camp mapper
-	 * reads it as `member-missing`, which fails closed (NO_PLACE).
-	 */
 	async function declareTarget(camp: ImportedCamp): Promise<void> {
 		const members = deps.members;
 		if (members === undefined) return;

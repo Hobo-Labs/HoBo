@@ -1,12 +1,3 @@
-/**
- * What local mode composes around the enrollment state machine (L33,
- * private). Local mode has no sign-in, no recorder, no projection, no audit
- * chain, no credential issuer and no overlay (§6.2, D6): those parts and
- * dependencies are present only to satisfy `createEnrollmentAuthority`, and
- * each refuses with `unavailable`. The policy engine allows the configured
- * owner and nobody else; every decision is still recorded as `policy.Decided`
- * in the in-memory store through `decideGoverned`.
- */
 import {
 	allowDecision,
 	denyDecision,
@@ -36,7 +27,6 @@ function unavailable(what: string): Outcome<never> {
 	};
 }
 
-/** Allows the owner every action and refuses everyone else. */
 export function ownerOnlyPolicy(owner: PrincipalRef): PolicyEngine {
 	const key = principalKey(owner);
 	return {
@@ -68,7 +58,6 @@ const decisions: PolicyDecisionRecorder = {
 	},
 };
 
-/** The dependencies local mode does not have, each refusing. */
 export function refusingDeps(): Pick<
 	AuthorityDeps,
 	| "decisions"
@@ -109,7 +98,6 @@ export function refusingDeps(): Pick<
 	};
 }
 
-/** `AuthorityParts` with the real fleet commands and everything else absent. */
 export function localParts(fleets: FleetCommands): AuthorityParts {
 	const signIn = async () => unavailable("sign-in");
 	return {

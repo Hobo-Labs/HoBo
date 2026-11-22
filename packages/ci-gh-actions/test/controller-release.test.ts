@@ -1,6 +1,3 @@
-// Controller releases, built for real: the box worker daemon bundled into a
-// single-file `.mjs` release (`scripts/controller-release.mts`), named by its
-// digest. The local runner release is gone with the local runner.
 import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";

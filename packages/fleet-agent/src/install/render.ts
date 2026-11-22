@@ -1,14 +1,8 @@
-// The service definitions `hobo fleet service install` writes (design §6.15):
-// a systemd user unit, a launchd agent and a Windows scheduled task. Pure
-// text; `index.ts` decides where each goes. Each restarts the agent when it
-// fails and gives it two minutes to drain on stop.
-
 // public-contract: the launchd label, also the plist's file name.
 export const LAUNCHD_LABEL = "dev.hobo.fleet";
 // public-contract: the systemd unit name and the scheduled task's name.
 export const SERVICE_NAME = "hobo-fleet";
 
-/** The variables of §6.15 the agent reads; `HOBO_FLEET_NATS_SERVER_BIN` is test-only and never passed on. */
 const AGENT_VARIABLES = [
 	"HOBO_FLEET_AUTHORITY_URL",
 	"HOBO_FLEET_TENANT",
@@ -21,7 +15,6 @@ const AGENT_VARIABLES = [
 
 export type ServiceEnvironment = Readonly<Partial<Record<string, string>>>;
 
-/** The agent's variables set in `environment`, by name; nothing else. */
 export function serviceEnvironment(
 	environment: ServiceEnvironment,
 ): ServiceEnvironment {
@@ -38,7 +31,6 @@ const sortedEntries = (environment: ServiceEnvironment) =>
 		.filter((entry): entry is [string, string] => entry[1] !== undefined)
 		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 
-/** One systemd word: double-quoted, with `\`, `"`, `%` and `$` escaped. */
 function systemdWord(value: string): string {
 	const escaped = value
 		.replaceAll("\\", "\\\\")
@@ -77,7 +69,6 @@ export function renderSystemdUnit(
 	return `${lines.join("\n")}\n`;
 }
 
-/** Escapes element text (never used inside an attribute). */
 function xml(value: string): string {
 	return value
 		.replaceAll("&", "&amp;")
@@ -132,7 +123,6 @@ export function renderLaunchdPlist(
 	return `${lines.join("\n")}\n`;
 }
 
-/** One argument as CommandLineToArgvW reads it back. */
 function windowsArgument(value: string): string {
 	if (value !== "" && !/[\s"]/u.test(value)) return value;
 	let quoted = '"';
@@ -152,11 +142,6 @@ function windowsArgument(value: string): string {
 	return `${quoted}${"\\".repeat(backslashes * 2)}"`;
 }
 
-/**
- * A Task Scheduler task, not a service: node cannot answer the Service Control
- * Manager without a native wrapper. It starts at the user's logon with the
- * user's environment, restarts on failure and never times out.
- */
 export function renderWindowsTask(argv: readonly string[]): string {
 	const [program = "", ...args] = argv;
 	const lines = [

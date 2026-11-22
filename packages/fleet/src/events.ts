@@ -1,25 +1,12 @@
-/**
- * The `fleet.*` event family (design §7.5): event type names, the two fixed
- * stream ids, and the log event names (`FleetLogEvent`). The per-entity stream
- * ids (`fleet-member-<MemberId>` and the rest) are the patterns of the §7.5
- * table; the lanes that write each stream build them.
- *
- * Streams are on the core `EventStore` port. Every name here is a stored or
- * logged contract: projections replay by these strings, so a meaning change is
- * a new event type, never an edit.
- */
 // public-contract: every array below is the stored and logged vocabulary of §7.5.
-/** Events of the `token` streams. */
 export const FLEET_TOKEN_EVENTS = [
 	"fleet.TokenIssued",
 	"fleet.TokenConsumed",
 	"fleet.TokenRevoked",
 ] as const;
 
-/** Events of the `thumbprint` streams. */
 export const FLEET_THUMBPRINT_EVENTS = ["fleet.ThumbprintBound"] as const;
 
-/** Events of the `member` streams. */
 export const FLEET_MEMBER_EVENTS = [
 	"fleet.EnrollmentRequested",
 	"fleet.MemberDeclared",
@@ -39,13 +26,11 @@ export const FLEET_MEMBER_EVENTS = [
 	"fleet.ViolationReported",
 ] as const;
 
-/** Events of the `fleet` streams. */
 export const FLEET_FLEET_EVENTS = [
 	"fleet.FleetDefined",
 	"fleet.FleetPolicyChanged",
 ] as const;
 
-/** Events of the `signin` streams. */
 export const FLEET_SIGN_IN_EVENTS = [
 	"fleet.SignInStarted",
 	"fleet.SignInAuthenticated",
@@ -53,16 +38,13 @@ export const FLEET_SIGN_IN_EVENTS = [
 	"fleet.SignInCompleted",
 ] as const;
 
-/** Events of the `person` streams. */
 export const FLEET_PERSON_EVENTS = ["fleet.PersonSignedIn"] as const;
 
-/** Events of the `session` streams. */
 export const FLEET_SESSION_EVENTS = [
 	"fleet.SessionGranted",
 	"fleet.SessionClosed",
 ] as const;
 
-/** Events of the `work` streams. */
 export const FLEET_WORK_EVENTS = [
 	"fleet.WorkSubmitted",
 	"fleet.WorkOffered",
@@ -76,13 +58,10 @@ export const FLEET_WORK_EVENTS = [
 	"fleet.WorkRefused",
 ] as const;
 
-/** Events of the `trust` streams. */
 export const FLEET_TRUST_EVENTS = ["fleet.TrustRotated"] as const;
 
-/** Events of the `audit` streams. */
 export const FLEET_AUDIT_EVENTS = ["fleet.AuditCheckpointed"] as const;
 
-/** Every `fleet.*` event type of §7.5, in table order. */
 export const FLEET_EVENT_TYPES = [
 	...FLEET_TOKEN_EVENTS,
 	...FLEET_THUMBPRINT_EVENTS,
@@ -96,10 +75,6 @@ export const FLEET_EVENT_TYPES = [
 	...FLEET_AUDIT_EVENTS,
 ] as const;
 
-/**
- * The log event names of §7.5: `hobo_fleet_<snake_case>` for each `fleet.<PascalCase>`
- * event above, then the operational names that have no stream.
- */
 export const FLEET_LOG_EVENTS = [
 	"hobo_fleet_token_issued",
 	"hobo_fleet_token_consumed",

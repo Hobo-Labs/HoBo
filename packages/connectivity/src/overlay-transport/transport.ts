@@ -1,28 +1,3 @@
-/**
- * The `overlay` `FleetTransport` (design §6.12 item 2, L14): a TCP stream
- * between two devices' overlay addresses (Tailscale, NetBird, WireGuard),
- * where a tenant already runs one. The host has joined the overlay with the
- * `OverlayJoin` the authority minted at enrollment before this starts.
- *
- * The overlay authenticates source addresses but not fleet devices, so the
- * session is also end-to-end: keys from `sessionKeys` over the X25519
- * agreement of the two `SEAL` keys the grant names, salted with a nonce from
- * each side and the grant's session id, framed by `frameStream` (L28).
- *
- * The handshake:
- * 1. The acceptor sends `HELLO`: the magic and its 16-byte nonce.
- * 2. The dialler sends `OPEN`: the magic, its nonce and the grant, then,
- *    through the framing, a proof only the holder of the initiator's SEAL key
- *    can make authenticate.
- * 3. The acceptor checks the grant names it, checks the proof, and asks
- *    `authorise` with the proven peer and the presented grant. The proven
- *    peer is the grant's initiator identity when its SEAL key is the one
- *    proven and its host is the connection's source address; otherwise it is
- *    the identity the connection actually proves, which no grant names.
- *    Nothing reaches the handler before `authorise` answers true.
- * 4. The acceptor answers an accept message through the framing, which
- *    proves its own SEAL key to the dialler, or closes the connection.
- */
 import { randomBytes } from "node:crypto";
 import {
 	connect,
@@ -59,9 +34,7 @@ import {
 } from "./wire.js";
 
 export type OverlayTransportOptions = Readonly<{
-	/** How long a dial waits for the acceptor's answer, and an acceptor for the dialler's proof. */
 	handshakeTimeoutMs?: number;
-	/** The most connections in their handshake or session at once; further ones are closed. */
 	maxConnections?: number;
 }>;
 
@@ -70,7 +43,6 @@ const MAX_CONNECTIONS = 256;
 const MAGIC = new TextEncoder().encode("HOBOOVL1");
 const NONCE_BYTES = 16;
 const LENGTH_BYTES = 4;
-/** A session grant envelope is small; anything larger is refused unread. */
 const MAX_GRANT_BYTES = 64 * 1024;
 const PROOF = new TextEncoder().encode("hobo-fleet/overlay/v1 open");
 const ACCEPTED = new Uint8Array([1]);
@@ -97,7 +69,6 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
 
-/** Resolves `"late"` after `ms` or when `signal` aborts; never rejects. */
 function deadline(ms: number, signal: AbortSignal | undefined) {
 	let clear = () => {};
 	const reached = new Promise<"late">((resolve) => {
@@ -126,7 +97,6 @@ function lengthPrefix(length: number): Uint8Array {
 	return prefix;
 }
 
-/** The salt both sides derive the session keys under: both nonces and the grant's session id. */
 function salt(
 	acceptorNonce: Uint8Array,
 	diallerNonce: Uint8Array,
@@ -135,10 +105,6 @@ function salt(
 	return `${hex(acceptorNonce)}${hex(diallerNonce)}:${sessionId}`;
 }
 
-/**
- * The framed stream after the handshake: its first message each way has been
- * taken already, and is left out of the byte counts.
- */
 function sessionStream(
 	framed: FleetStream,
 	messages: AsyncIterator<Uint8Array>,
@@ -165,7 +131,6 @@ function sessionStream(
 	};
 }
 
-/** Opens a TCP connection, or fails when it cannot, the signal aborts or time runs out. */
 function open(
 	to: OverlayAddress,
 	from: string,
@@ -179,7 +144,6 @@ function open(
 			allowHalfOpen: true,
 			noDelay: true,
 		};
-		// Leave from this device's own overlay address, so the acceptor sees the source the grant names.
 		if (isIPv4(from) === isIPv4(to.host)) options.localAddress = from;
 		const socket = connect(options);
 		const limit = deadline(timeoutMs, signal);
@@ -226,7 +190,6 @@ export function createOverlayTransportWith(
 		socket.once("close", () => sockets.delete(socket));
 	};
 
-	/** What the connection proves about the dialler: see step 3 above. */
 	const provenPeer = (
 		grant: SessionGrant,
 		initiatorSeal: string,
@@ -249,7 +212,6 @@ export function createOverlayTransportWith(
 		});
 	};
 
-	/** The acceptor side of one connection, from `HELLO` to the handler's end. */
 	const serve = async (socket: Socket, self: Started): Promise<void> => {
 		const current = acceptor;
 		if (current === undefined || sockets.size > maxConnections) {
@@ -324,7 +286,6 @@ export function createOverlayTransportWith(
 		try {
 			await current.handler(stream, opened.grant);
 		} catch {
-			// The handler's failure ends its session; the transport keeps accepting.
 		} finally {
 			await stream.close().catch(() => undefined);
 		}
@@ -373,7 +334,6 @@ export function createOverlayTransportWith(
 				send: derived.initiatorToAcceptor,
 				receive: derived.acceptorToInitiator,
 			});
-			// A refusal may arrive before the proof is out; the answer read below reports it.
 			const proofSent = await framed.write(PROOF).then(
 				() => true,
 				() => false,
@@ -500,7 +460,6 @@ function stopServer(self: Started): Promise<void> {
 	});
 }
 
-/** The dialler's `OPEN`: the magic, its nonce and the grant envelope. */
 async function readOpen(
 	reader: SocketReader,
 ): Promise<

@@ -80,11 +80,6 @@ export type AttestationVerdict =
 			reason: string;
 	  }>;
 
-/**
- * A host that signs launch measurements into attestation documents. The fixture
- * below signs with an HMAC for tests; `createDeviceHostAttestor` signs with a
- * fleet device's `SIGN` key, with the member id as `hostId`.
- */
 export type HostAttestor = Readonly<{
 	createDocument(
 		input: Readonly<{
@@ -253,13 +248,6 @@ function verifyHostSignature(
 	return timingSafeEqual(actual, expectedBuffer);
 }
 
-/**
- * A device-signed document: `value` is `base64url(payload).base64url(signature)`,
- * the payload the launch measurement's JSON bytes as signed, and the signature a
- * fleet envelope signature under `hobo-fleet/host-attestation/v1` by the host's
- * SIGN key (`<member id>#sign`). The signature is checked over the received
- * bytes, and only then is the payload decoded and compared with the document.
- */
 function verifyFleetEnvelopeSignature(
 	measurement: LaunchMeasurement,
 	signature: AttestationDocument["hostSignature"],

@@ -1,16 +1,10 @@
-/**
- * The four entry points of `src/bus/index.ts` and the resolver push. Each
- * runs over the fake server of `support/fake-nats.ts` through its `…Over`
- * twin, which takes the client as a port; the frozen entry points themselves
- * run on the real client against a port nothing listens on. The integration
- * tests run the same entry points against `nats-server`.
- */
-import { type AddressInfo, createServer as listen } from "node:net";
+import { createServer as listen } from "node:net";
 import { create } from "@bufbuild/protobuf";
-import type { TenantId } from "@hobo/core";
+import { parseTenantId } from "@hobo/core";
 import { DiscoverySchema, type FleetLog, Role } from "@hobo/fleet";
 import {
 	type Account,
+	Algorithms,
 	type ClaimsData,
 	createAccount,
 	createCurve,
@@ -44,11 +38,11 @@ import {
 	type FakeServer,
 } from "./support/fake-nats.js";
 import { createTenant } from "./support/fixture.js";
+import { portOf } from "./support/nats-server.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-// SAFETY: a literal tenant id for the tests.
-const TENANT = "acme" as TenantId;
+const TENANT = parseTenantId("acme");
 const SERVERS = ["tls://127.0.0.1:4222"];
 
 let server: FakeServer = createFakeServer();
@@ -59,12 +53,10 @@ beforeEach(() => {
 	operatorSigningSeed = decoder.decode(createOperator().getSeed());
 });
 
-/** A local URL nothing listens on: a port the OS handed out and took back. */
 async function closedServer(): Promise<string> {
 	const probe = listen();
 	await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
-	// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-	const { port } = probe.address() as AddressInfo;
+	const port = portOf(probe.address());
 	await new Promise((resolve) => probe.close(resolve));
 	return `tls://127.0.0.1:${port}`;
 }
@@ -231,7 +223,6 @@ describe("publishAccountSigningKeys (L41: account-signing and scoped-* rotation)
 				tenant: TENANT,
 				signingKeys: { account, scoped },
 			});
-		// Publish: old and new side by side.
 		expect(
 			await publish([oldSigning, newSigning], {
 				...derived,
@@ -241,7 +232,6 @@ describe("publishAccountSigningKeys (L41: account-signing and scoped-* rotation)
 			ok: true,
 			value: { accountPublicKey: keys.account.getPublicKey() },
 		});
-		// Remove: only the new ones.
 		await publish([newSigning], { ...derived, executor: [newExecutor] });
 		expect(pushed).toHaveLength(2);
 		expect(signingOf(pushed[0])).toEqual([
@@ -421,8 +411,7 @@ describe("startCalloutResponder", () => {
 	) {
 		const identity = createServer();
 		const jwt = await encode(
-			// SAFETY: the jwt package's algorithm enum value for v2 JWTs.
-			"ed25519-nkey" as Parameters<typeof encode>[0],
+			Algorithms.v2,
 			{
 				aud: "nats-authorization-request",
 				jti: "r1",

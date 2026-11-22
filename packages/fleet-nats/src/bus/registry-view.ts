@@ -1,11 +1,3 @@
-/**
- * The verifying `RegistryView` over the `fleet-registry` and `fleet-views`
- * buckets (§7.4). Every record is verified against the pinned trust record
- * before it is decoded; one past its `not_after`, for another tenant, stored
- * under another member's or fleet's key, or with a lower `record_sequence`
- * (`revision` for fleets) than this view has returned for that key is
- * refused. Reads are live: there is no cache to catch up.
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type Clock,
@@ -36,18 +28,14 @@ import { acceptTrust, parsePublicJwk, verifyEnvelope } from "@hobo/fleet/keys";
 import { BUCKETS, keys } from "./names.js";
 import type { BusWire } from "./wire.js";
 
-/** Most records one list read takes in. */
 export const REGISTRY_LIST_LIMIT = 100_000;
 
-/** Holds the trust record every registry read is verified against. */
 export interface TrustPin {
 	record(): TrustRecord;
 	envelope(): WitnessedEnvelope | undefined;
-	/** A trust envelope read from the bus (`bus`) or published by this process (`own`); the pin decides whether to move. */
 	offer(next: WitnessedEnvelope, source: "bus" | "own"): void;
 }
 
-/** A device's pin: moves only by the §7.4 rule (`acceptTrust`). */
 export function devicePin(pinned: WitnessedEnvelope, log: FleetLog): TrustPin {
 	const first = acceptTrust(undefined, pinned);
 	if (!first.ok)
@@ -73,12 +61,6 @@ export function devicePin(pinned: WitnessedEnvelope, log: FleetLog): TrustPin {
 	};
 }
 
-/**
- * The authority's pin: the trust record the authority itself last published
- * with `putTrust` in this process (its own write, so taken as written), else
- * the one its `trust` callback answers. A record read from the bus only fills
- * `trustEnvelope()` until the authority publishes one.
- */
 export function authorityPin(trust: () => TrustRecord): TrustPin {
 	let published:
 		| { record: TrustRecord; envelope: WitnessedEnvelope }
@@ -120,7 +102,6 @@ export function decodeWitnessed(
 	}
 }
 
-/** The payload of `bytes` if it is an envelope under `context` signed by an authority key of `trust`. */
 export function authorityPayload(
 	bytes: Uint8Array,
 	context: FleetContext,
@@ -132,7 +113,6 @@ export function authorityPayload(
 		: authoritySigned(envelope, context, trust);
 }
 
-/** The envelope's payload if it is under `context` and signed by an authority key of `trust`. */
 export function authoritySigned(
 	envelope: SignedEnvelope,
 	context: FleetContext,
@@ -148,11 +128,6 @@ export function authoritySigned(
 		: undefined;
 }
 
-/**
- * §7.1 encodes an AUTHORITY key's value as the raw key, base64url. A value
- * written as RFC 7517 JSON (as `runBusConformance` writes it) names the same
- * key, so it is accepted too; the signature is checked either way.
- */
 function verifiedBy(
 	envelope: SignedEnvelope,
 	context: FleetContext,
@@ -187,7 +162,6 @@ export function createRegistryView(
 	const { wire, pin, now } = input;
 	const highest = new Map<string, number>();
 
-	/** Refuses a sequence lower than the highest returned for `key`; remembers the new highest. */
 	const fresh = (key: string, sequence: number): boolean => {
 		const seen = highest.get(key) ?? 0;
 		if (sequence < seen) return false;

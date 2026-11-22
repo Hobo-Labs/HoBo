@@ -1,8 +1,3 @@
-/**
- * The device side of the `hobo fleet` runtime against a scripted authority
- * (`fetch`): enrollment through the agent, device credentials before a device
- * call, key rotation, and the refusals before anything is composed.
- */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,7 +69,6 @@ function memberEnvelope(memberId: string, sequence: number) {
 	});
 }
 
-/** An authority that answers credentials for whichever member asks, and records every request. */
 function authority(requests: string[], options: { refuse?: boolean } = {}) {
 	return async (input: string | URL | Request, init?: RequestInit) => {
 		const url = new URL(String(input));
@@ -296,7 +290,6 @@ describe("the device runtime", () => {
 			ok: true,
 			value: { entries: 0, finalThrough: 0 },
 		});
-		// An enrolled device with no pinned trust record still needs --trust.
 		await runtime.local.generateKeys();
 		const unpinned = await runtime.local.verifyAuditChain([], [], {});
 		expect(unpinned.ok).toBe(false);
@@ -433,7 +426,6 @@ describe("the device runtime", () => {
 	});
 });
 
-/** An initiator with one transport of `kind` whose stream closes with `counts`. */
 function initiatorOver(
 	kind: FleetTransport["kind"],
 	counts: Readonly<{ bytesSent: number; bytesReceived: number }>,

@@ -1,6 +1,7 @@
-import type { TenantId } from "@hobo/core";
+import { parseTenantId } from "@hobo/core";
 import {
 	type Account,
+	Algorithms,
 	type ClaimsData,
 	createAccount,
 	createOperator,
@@ -29,8 +30,7 @@ import {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-// SAFETY: a literal tenant id for the test, matching the TenantId pattern.
-const TENANT = "acme" as TenantId;
+const TENANT = parseTenantId("acme");
 const operatorSeed = () => decoder.decode(createOperator().getSeed());
 
 describe("tenant keys (A7)", () => {
@@ -38,8 +38,7 @@ describe("tenant keys (A7)", () => {
 		const seed = operatorSeed();
 		const once = tenantKeys(seed, TENANT);
 		const again = tenantKeys(seed, TENANT);
-		// SAFETY: a second literal tenant id.
-		const other = tenantKeys(seed, "beta" as TenantId);
+		const other = tenantKeys(seed, parseTenantId("beta"));
 		expect(once.account.getPublicKey()).toBe(again.account.getPublicKey());
 		expect(once.account.getPublicKey()).toMatch(/^A/u);
 		expect(once.users.authority.getPublicKey()).toMatch(/^U/u);
@@ -150,7 +149,6 @@ describe("account signing keys from a supplied list (L41)", () => {
 			expect(key.template.sub?.allow).toContain("_INBOX.{{name()}}.>");
 		}
 		expect(scoped[1]?.template).toEqual(scoped[0]?.template);
-		// The callout settings stay as provisioned.
 		expect(claims.nats.authorization?.auth_users).toEqual([
 			keys.users.authority.getPublicKey(),
 			keys.users.witness.getPublicKey(),
@@ -194,7 +192,6 @@ describe("account signing keys from a supplied list (L41)", () => {
 			scoped: none,
 		}).catch((cause: Error) => cause.message);
 		expect(refusal).toMatch(/not an account public key/);
-		// A seed passed by mistake is never echoed.
 		expect(refusal).not.toContain(mistaken);
 		const twice = keys.scoped.observer.getPublicKey();
 		await expect(
@@ -276,8 +273,7 @@ describe("callout request verification", () => {
 		aud = "nats-authorization-request",
 	) =>
 		encode(
-			// SAFETY: the jwt package's algorithm enum value for v2 JWTs.
-			"ed25519-nkey" as Parameters<typeof encode>[0],
+			Algorithms.v2,
 			{
 				aud,
 				jti: "x",

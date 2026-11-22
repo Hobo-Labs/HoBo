@@ -1,8 +1,3 @@
-/**
- * An in-memory assignment replica that keeps the register's rules (the
- * conformance suite's reference), and replicas broken in exactly one way each,
- * keyed by the replica assertion that must catch the break.
- */
 import { type MemberName, parseMemberName } from "../../../src/ids.js";
 import type {
 	AssignmentAcceptOutcome,
@@ -74,7 +69,6 @@ function replicaWith(rules: Rules): ReplicaMake {
 	};
 }
 
-/** The reference replica: passes `runReplicaConformance`. */
 export const memoryReplica: ReplicaMake = replicaWith(RULES);
 
 const broken = (change: Partial<Rules>): ReplicaMake =>

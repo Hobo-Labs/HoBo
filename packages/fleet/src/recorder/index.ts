@@ -1,10 +1,3 @@
-/**
- * The recorder and the registry projection (L31): bus envelopes into
- * `fleet-work-*` and `fleet-session-*` events, work status and logs,
- * reliability, and the signed registry and views. Re-exported by
- * `@hobo/fleet/membership`. These two are the only emitters of the four
- * fleet usage types (D40).
- */
 import type {
 	ReliabilitySamples,
 	WorkLogs,

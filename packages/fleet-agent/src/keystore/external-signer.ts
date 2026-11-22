@@ -1,17 +1,3 @@
-// The external-signer protocol of design §6.4: a configured command reads one
-// JSON request line on standard input and writes one JSON answer line on
-// standard output. It is started once per request with no shell; the payload
-// travels on standard input, never in its arguments or environment.
-//
-//   {"op":"public"}                     -> {"jwk":{"kty":…,"crv":…,"x":…[,"y":…]}}
-//   {"op":"sign","payloadB64":"<b64>"}  -> {"signatureB64":"<b64>"}  (ES256 as P1363 r‖s; EdDSA raw)
-//   {"op":"destroy"}                    -> {"ok":true}
-//   any failure                         -> {"error":"<reason>"}
-//
-// `destroy` is this repository's addition to the two operations the design
-// names: KeyStore.destroy must remove the identity key, and only the helper
-// holds it. Every signature is verified against the helper's public key
-// before it is returned.
 import { spawn } from "node:child_process";
 import { verify } from "node:crypto";
 import type { JsonObject, JsonValue } from "@hobo/core";
@@ -21,7 +7,6 @@ import { algorithmOf, type Identity, publicJwkJson } from "./device-keys.js";
 import { isJsonObject, isJsonString, parseJsonText } from "./json.js";
 
 const ANSWER_LIMIT_BYTES = 64 * 1024;
-/** Long enough for a person to touch a hardware token. */
 const REQUEST_TIMEOUT_MS = 120_000;
 
 function failure(reason: string): Error {
@@ -92,14 +77,11 @@ function ask(
 				resolve(answer);
 			}),
 		);
-		child.stdin.on("error", () => {
-			// The close handler reports a command that exits before reading.
-		});
+		child.stdin.on("error", () => {});
 		child.stdin.end(`${JSON.stringify(request)}\n`);
 	});
 }
 
-/** Only the public members of RFC 7517; a key carrying anything else (a private `d`) is refused. */
 function publicKeyOf(value: JsonValue | undefined): PublicJwk {
 	if (!isJsonObject(value)) throw failure("answered no public key");
 	const extra = Object.keys(value).filter(
@@ -135,7 +117,6 @@ function verifies(
 	}
 }
 
-/** The identity key behind `command`. */
 export async function externalIdentity(
 	command: readonly string[],
 ): Promise<Identity> {

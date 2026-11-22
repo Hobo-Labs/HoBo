@@ -1,10 +1,3 @@
-/**
- * Assumptions A8 and A9 (design §13) against the pinned `@number0/iroh`
- * binding, two endpoints on this host talking over loopback with their direct
- * addresses (no relay, no discovery), and the transport conformance suite over
- * the real binding. Every test here may skip only when the binding has no
- * prebuilt for this platform, which is A8's fallback.
- */
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import { runTransportConformance } from "@hobo/fleet/testing";
 import { describe, expect, it } from "vitest";
@@ -14,7 +7,6 @@ import { createEndpointTransport, P2P_ALPN } from "../src/transport.js";
 const iroh = loadIroh();
 const unavailable = iroh === undefined;
 
-/** The Ed25519 public key of a 32-byte seed, by node:crypto, as lowercase hex. */
 function publicKeyOf(seed: Uint8Array): string {
 	const pkcs8 = Buffer.concat([
 		Buffer.from("302e020100300506032b657004220420", "hex"),
@@ -80,7 +72,6 @@ describe.skipIf(unavailable)("[A8] @number0/iroh two-endpoint test", () => {
 			const served = await incoming?.acceptStream();
 			expect([...((await served?.read(16)) ?? [])]).toEqual([7, 8, 9]);
 			dialled.close();
-			// An endpoint that serves another ALPN is not reached.
 			await expect(otherAlpn.connect(server.id)).rejects.toThrow();
 		} finally {
 			await Promise.all([server.close(), client.close(), otherAlpn.close()]);

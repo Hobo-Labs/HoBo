@@ -9,11 +9,11 @@ the lane.
 
 | Module | Holds |
 |---|---|
-| `names.ts` | Stream, bucket, subject and key names of [NATS topology](../../../../docs/design/fleet.md#nats-topology) |
-| `templates.ts` | The observer, executor and dispatcher permission templates and the static users, verbatim from [NATS topology](../../../../docs/design/fleet.md#nats-topology) |
+| `names.ts` | Stream, bucket, subject and key names of NATS topology |
+| `templates.ts` | The observer, executor and dispatcher permission templates and the static users, verbatim from NATS topology |
 | `wire.ts` | `BusWire`, the narrow seam between the ports and a NATS connection |
 | `fleet-bus.ts` | Every port of `FleetBus` and `AuthorityBus` over a `BusWire` |
-| `registry-view.ts` | The verifying `RegistryView` and the device and authority trust pins ([signed envelope](../../../../docs/design/fleet.md#signed-envelope)) |
+| `registry-view.ts` | The verifying `RegistryView` and the device and authority trust pins (signed envelope) |
 | `connect-token.ts` | The `ConnectToken` codec and minting |
 | `callout-checks.ts` | The seven checks of the connect sequence |
 | `callout.ts` | One sealed callout exchange: open, verify, check, answer |

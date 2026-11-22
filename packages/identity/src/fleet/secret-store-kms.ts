@@ -1,18 +1,3 @@
-// The authority's token-signing key ring, held in the secret store (design
-// §6.6, D32). `KmsLike` is synchronous (R7), so the ring is read once at start
-// and held in memory; a rotation is written back to the store in the
-// background.
-//
-// Layout: one secret, named by `prefix`, whose value is JSON
-//   { "keys": [ { "kid": "...", "privateKey": "<PKCS#8 PEM>", "retiredAt": <epoch ms>? } ] }
-// The first key is created with kid `<prefix>#1`; callers rotate with
-// `<prefix>#<n+1>`. The active key (`activeKeyId`) is the lowest-numbered key
-// that is not retired, which follows the rotation order add, publish, switch,
-// remove: an added and published key waits beside the one that still signs
-// until the switch retires that one. `generateRsaKey` adds and switches in
-// one step: it retires every older key. A retired key stops signing at once
-// and stays in the key set (`keyIds`) until every token it can have signed
-// has expired (TOKEN_LIFETIME_MS after its retirement), then it is dropped.
 import {
 	createPrivateKey,
 	createPublicKey,
@@ -31,7 +16,6 @@ import {
 } from "../json.js";
 import type { SecretsPort } from "../secrets-port.js";
 
-/** The longest lifetime of any token the authority signs: person tokens and JWT-SVIDs are 15 minutes (§6.6). */
 export const TOKEN_LIFETIME_MS = 15 * 60 * 1000;
 
 const NOT_FOUND = "secret-not-found";
@@ -62,11 +46,6 @@ export async function loadKeyRing(
 	return heldRing(secrets, prefix, await createOnce(secrets, prefix));
 }
 
-/**
- * Writes a one-key ring and then adopts whichever ring was written first, so
- * replicas that start together converge on one key; a loser writes the
- * winner back so the latest version is the winner's.
- */
 async function createOnce(
 	secrets: SecretsPort,
 	prefix: string,
@@ -97,10 +76,7 @@ function heldRing(
 	let writing: Promise<void> = Promise.resolve();
 	const persist = (): void => {
 		writing = writing.then(() =>
-			writeBack(secrets, prefix, keys).catch(() => {
-				// The ring is written whole and merged on every write, so the next
-				// rotation retries this one. Nothing here may log key material.
-			}),
+			writeBack(secrets, prefix, keys).catch(() => {}),
 		);
 	};
 
@@ -163,7 +139,6 @@ function heldRing(
 	};
 }
 
-/** Merges this process's keys into the stored ring (ours win on retirement), drops expired keys, writes it whole. */
 async function writeBack(
 	secrets: SecretsPort,
 	prefix: string,
@@ -205,7 +180,6 @@ async function readSecret(
 	return result.material;
 }
 
-/** The `n` of a `<prefix>#<n>` key id; ids without one sort after every numbered id. */
 function keyNumber(kid: string): number {
 	const n = Number(kid.slice(kid.lastIndexOf("#") + 1));
 	return kid.includes("#") && Number.isSafeInteger(n) && n >= 0

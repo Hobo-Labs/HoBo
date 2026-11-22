@@ -1,17 +1,3 @@
-/**
- * `hobo fleet …` (design §6.15, lane L18): every command of the fleet CLI.
- *
- * Each command parses its own arguments strictly (`parseArgs`, a subcommand
- * allowlist), then calls exactly the `FleetClient` methods and local
- * functions the "Calls" column of §6.15 names, in that order. Everything else
- * a command needs (the person token on disk, the browser, the loopback
- * listener, files) comes through `FleetIo`, which names no table entry.
- *
- * Tokens never travel on the command line (rule 11): `--token` is refused
- * with a pointer to `--token-file`, and any argument that looks like a
- * bootstrap token (`hft_…`) is refused too. Token files may be `-` (standard
- * input).
- */
 import { createHash, randomBytes } from "node:crypto";
 import { hostname as osHostname } from "node:os";
 import { parseArgs } from "node:util";
@@ -78,9 +64,6 @@ import {
 import type { RotatableKey } from "@hobo/fleet-authority";
 import { type NamedFleetView, renderFleetStatus } from "./fleet-status.js";
 
-// ── Dependencies ───────────────────────────────────────────────────────────
-
-/** How a client authenticates: nothing, a fresh sign-in key, the stored person token, or this device's SVID. */
 export type FleetClientAuth =
 	| Readonly<{ kind: "none" }>
 	| Readonly<{ kind: "sign-in"; signer: Signer; publicJwk: PublicJwk }>
@@ -91,7 +74,6 @@ export type FleetClientAuth =
 export type SignInKey = Readonly<{
 	signer: Signer;
 	publicJwk: PublicJwk;
-	/** RFC 7638 thumbprint of `publicJwk`. */
 	thumbprint: string;
 }>;
 
@@ -106,59 +88,39 @@ export type SessionInitiator = Readonly<{
 	stop(): Promise<void>;
 }>;
 
-/** The fields of `EnrollmentRequest` the CLI sets; the agent adds the identity key and key bundle. */
 export type AgentEnrollRequest = Omit<
 	EnrollmentRequest,
 	"identityJwk" | "keyBundle"
 >;
 
-/** What the provisioning step needs besides the configuration file. */
 export type ProvisionInput = Readonly<{ configPath: string; replicas: 1 | 3 }>;
 
-/**
- * The local functions the "Calls" column of §6.15 names. The contract test
- * records each call by its property name.
- */
 export type FleetLocal = Readonly<{
-	/** logout */
 	deletePersonToken(): Promise<void>;
-	/** enroll: opens (creating when absent) this device's key store. */
 	generateKeys(): Promise<Outcome<EnrollingDevice>>;
-	/** run: `createFleetAgent(...).start()`, until the process is asked to stop. */
 	startAgent(
 		options: Readonly<{ fleets: readonly string[] }>,
 	): Promise<Outcome<string>>;
-	/** service install|uninstall|status */
 	installService(
 		action: "install" | "uninstall" | "status",
 	): Promise<Outcome<string>>;
-	/** doctor: the key store loads. */
 	loadKeyStore(): Promise<Outcome<string>>;
-	/** doctor: the sandbox tiers whose driver self-test passed. */
 	sandboxDrivers(): Promise<readonly SandboxTier[]>;
-	/** doctor: a bus connect to the discovered servers. */
 	busConnect(discovery: Discovery): Promise<Outcome<string>>;
-	/** doctor: a transport starts and dials itself. */
 	transportSelfDial(): Promise<Outcome<string>>;
-	/** connect, cp: `FleetTransport.dial` over the initiator's transports (selectTransport). */
 	dial(
 		initiator: SessionInitiator,
 		grant: SignedEnvelope,
 		signal: AbortSignal,
 	): Promise<Outcome<FleetStream>>;
-	/** cp: the verified blob fetch. */
 	fetchBlob(stream: FleetStream, digest: string): AsyncIterable<Uint8Array>;
-	/** audit verify */
 	verifyAuditChain(
 		entries: readonly AuditEntry[],
 		checkpoints: readonly WitnessedEnvelope[],
 		options: Readonly<{ trustFile?: string; journalFile?: string }>,
 	): Promise<Outcome<Readonly<{ entries: number; finalThrough: number }>>>;
-	/** leave */
 	deleteKeys(): Promise<void>;
-	/** ops provision: `provisionTopology`, storing the seeds in their slots. */
 	provisionTopology(input: ProvisionInput): Promise<Outcome<string>>;
-	/** ops ceremony: the two shares are returned and written nowhere. */
 	runCeremony(
 		configPath: string,
 	): Promise<
@@ -180,27 +142,21 @@ export type FleetLocal = Readonly<{
 	): Promise<Outcome<Readonly<{ incarnation: number }>>>;
 }>;
 
-/** What a command needs that the "Calls" column does not name. */
 export type FleetIo = Readonly<{
 	env: Readonly<Record<string, string | undefined>>;
-	/** HOBO_FLEET_TENANT, else the tenant of the stored sign-in or enrollment. */
 	tenant(): string | undefined;
 	now(): number;
 	sleep(ms: number): Promise<void>;
-	/** Reads a secret file; `-` is standard input. Trailing whitespace is removed. */
 	readSecret(path: string): Promise<string>;
 	readText(path: string): Promise<string>;
 	writeText(path: string, text: string): Promise<void>;
-	/** Standard input, whole (shell sessions are line-batched, D56). */
 	readStdin(): Promise<Uint8Array>;
 	writeStdout(bytes: Uint8Array): Promise<void>;
 	newSignInKey(): SignInKey;
 	savePerson(credential: PersonCredential, key: SignInKey): Promise<void>;
-	/** `createFleetAgent(...).enroll(request)`: the agent adds the identity key and key bundle and calls the client's `enroll`. */
 	agentEnroll(
 		request: AgentEnrollRequest,
 	): Promise<Outcome<EnrollmentResponse>>;
-	/** Saves the enrollment answer (discovery and overlay joins handled by the caller). */
 	saveEnrollment(response: EnrollmentResponse): Promise<Outcome<string>>;
 	openUrl(url: string): void;
 	loopback(): Promise<
@@ -211,13 +167,10 @@ export type FleetIo = Readonly<{
 		}>
 	>;
 	prepareInitiator(): Promise<Outcome<SessionInitiator>>;
-	/** This device's member id, from its key store. */
 	deviceMemberId(): Promise<Outcome<string>>;
-	/** Rotates this device's operational keys and signs the new key bundle for `rotateKeys`. */
 	rotationRequest(): Promise<
 		Outcome<Readonly<{ memberId: string; request: KeyRotationRequest }>>
 	>;
-	/** Accepts local TCP connections on `port`; each one's bytes, whole, are answered by `serve`. */
 	forward(
 		port: number,
 		serve: (input: Uint8Array) => Promise<Uint8Array>,
@@ -243,9 +196,6 @@ export type FleetResult = Readonly<{
 	data?: Readonly<Record<string, JsonValue>>;
 }>;
 
-// ── The command table ──────────────────────────────────────────────────────
-
-/** Every command of §6.15 and its one-line help; `hobo fleet <command> --help` prints the usage. */
 export const FLEET_COMMANDS = [
 	{
 		command: "login",
@@ -390,8 +340,6 @@ const CLASSES = new Map<string, DeviceClass>([
 	["ephemeral", DeviceClass.EPHEMERAL],
 ]);
 
-// ── Results ────────────────────────────────────────────────────────────────
-
 class FleetUsage extends Error {}
 
 function usage(message: string): FleetResult {
@@ -414,14 +362,11 @@ function helpFor(command: string): string | undefined {
 	return FLEET_COMMANDS.find((entry) => entry.command === command)?.usage;
 }
 
-// ── Parsing ────────────────────────────────────────────────────────────────
-
 type OptionSpec = Readonly<
 	Record<string, Readonly<{ type: "string" | "boolean"; multiple?: boolean }>>
 >;
 type Values = Readonly<Record<string, string | boolean | string[] | undefined>>;
 type Parsed = Readonly<{ values: Values; positionals: readonly string[] }>;
-/** The files `audit verify` reads the trust record and journal from. */
 export type AuditFiles = { trustFile?: string; journalFile?: string };
 
 function parse(argv: readonly string[], options: OptionSpec): Parsed {
@@ -506,7 +451,6 @@ function seconds(value: string | undefined, fallback: number): number {
 	return Number(value);
 }
 
-/** A token on the command line is refused before anything else runs (rule 11). */
 export function tokenOnCommandLine(
 	argv: readonly string[],
 ): string | undefined {
@@ -518,8 +462,6 @@ export function tokenOnCommandLine(
 	}
 	return undefined;
 }
-
-// ── Helpers ────────────────────────────────────────────────────────────────
 
 function pkce() {
 	const verifier = randomBytes(32).toString("base64url");
@@ -581,7 +523,6 @@ function fleetJson(record: FleetRecord): JsonValue {
 	return toJson(FleetRecordSchema, record);
 }
 
-/** Polls `poll` every `intervalMs` while the authority answers `sign-in-pending`. */
 async function pollSignIn(
 	io: FleetIo,
 	poll: () => Promise<Outcome<PersonCredential>>,
@@ -600,10 +541,6 @@ async function pollSignIn(
 	}
 }
 
-/**
- * A person signs in: `signInStart`, then `signInComplete` after the browser
- * redirect, or `signInPoll` until the device code is approved.
- */
 async function signIn(
 	deps: FleetCommandDeps,
 	key: SignInKey,
@@ -688,8 +625,6 @@ async function personClient(
 	return deps.client({ kind: "person" });
 }
 
-// ── Commands ───────────────────────────────────────────────────────────────
-
 type Handler = (
 	deps: FleetCommandDeps,
 	argv: readonly string[],
@@ -748,7 +683,6 @@ const enroll: Handler = async (deps, argv) => {
 		throw new FleetUsage("pass one of --token-file and --oidc");
 	if (tokenFile === undefined && oidcFile === undefined && fleet === undefined)
 		throw new FleetUsage("pass --token-file, --oidc or --fleet");
-	// Read the proof first: a missing file must not leave keys or a sign-in behind.
 	const token =
 		tokenFile === undefined ? undefined : await deps.io.readSecret(tokenFile);
 	const assertion =
@@ -839,7 +773,6 @@ const status: Handler = async (deps, argv) => {
 	});
 };
 
-/** `listFleets` (when no fleet is named), then `fleetView` per fleet. Shared with `hobo ci status`. */
 export async function fleetViews(
 	client: FleetClient,
 	fleet: string | undefined,
@@ -1004,7 +937,6 @@ const token: Handler = async (deps, argv) => {
 	throw new FleetUsage("token takes create, list or revoke");
 };
 
-/** The new token is shown once, on its own line, and never put in `data`. */
 function tokenCreated(response: TokenCreateResponse): FleetResult {
 	const shown: TokenCreateResponse = { ...response, token: "" };
 	return ok(
@@ -1242,7 +1174,6 @@ function verdictResult(verdict: FleetVerdict): FleetResult {
 	);
 }
 
-/** The session messages a shell or forward initiator speaks (the acceptor's protocol, §6.12). */
 const TAG = { INPUT: 2, END: 3, OUTPUT: 4, EXIT: 5, ERROR: 6 } as const;
 const MAX_PAYLOAD = 1024 * 1024;
 
@@ -1253,7 +1184,6 @@ function frame(tag: number, payload: Uint8Array): Uint8Array {
 	return new Uint8Array(Buffer.concat([header, payload]));
 }
 
-/** Sends `input` as INPUT messages and END; collects OUTPUT until EXIT or ERROR. */
 export async function exchange(
 	stream: FleetStream,
 	input: Uint8Array,
@@ -1510,7 +1440,6 @@ async function auditChain(
 	if (!checkpoints.ok) return checkpoints;
 	const through = checkpoints.value.checkpoints.reduce((highest, witnessed) => {
 		const payload = witnessed.authority?.payload;
-		// A checkpoint's sequence is its first field (varint, tag 1).
 		return Math.max(highest, payload === undefined ? 0 : firstVarint(payload));
 	}, 0);
 	const entries = await client.auditEntries({
@@ -1524,7 +1453,6 @@ async function auditChain(
 	};
 }
 
-/** Field 1 of a protobuf message when it is a varint; 0 otherwise. */
 function firstVarint(bytes: Uint8Array): number {
 	if (bytes[0] !== 0x08) return 0;
 	let value = 0;
@@ -1628,7 +1556,6 @@ const ops: Handler = async (deps, argv) => {
 		noArgs(positionals);
 		const result = await deps.local.runCeremony(configPath);
 		if (!result.ok) return failed(result.error, "ops ceremony");
-		// The shares are printed for the two custodians and written nowhere.
 		return ok(
 			[
 				`Operator public key: ${result.value.operatorPublicKey}`,
@@ -1700,7 +1627,6 @@ function isCommand(name: string): name is FleetCommandName {
 	return FLEET_COMMANDS.some((entry) => entry.command === name);
 }
 
-/** Runs one `hobo fleet` command line (the words after `fleet`). */
 export async function runFleetCommand(
 	argv: readonly string[],
 	deps: FleetCommandDeps,
@@ -1723,7 +1649,6 @@ export async function runFleetCommand(
 	}
 }
 
-/** The `fleet` verb for the composed CLI. `deps` is built once per run. */
 export function createFleetCommand(
 	deps: (progress: (message: string) => void) => FleetCommandDeps,
 ): CommandModule {
@@ -1735,7 +1660,6 @@ export function createFleetCommand(
 	};
 }
 
-/** The hostname shown on approval pages. */
 export function defaultHostName(): string {
 	return osHostname();
 }

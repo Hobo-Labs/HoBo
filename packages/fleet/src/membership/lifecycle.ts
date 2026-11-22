@@ -1,15 +1,3 @@
-/**
- * The member state machine after enrollment (§6.5; L02 private):
- *
- *   PENDING ─approve-key, accept─▶ ACTIVE ⇄ SUSPENDED (suspend, resume)
- *   PENDING ─reject or token expiry─▶ REJECTED
- *   ACTIVE ─clone detected─▶ LOCKED ─unlock (governed)─▶ ACTIVE
- *   any state ─revoke, leave─▶ REVOKED (terminal)
- *
- * Every person transition is governed (§6.13) and decided once, before the
- * compare-and-set loop; `DUAL` needs approve-key and accept from two
- * principals. A transition already done is answered with the current record.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import type { EventInput, JsonObject } from "@hobo/core";
 import {
@@ -78,7 +66,6 @@ const STEP_MS = 20_000;
 const EARLY_WINDOW_MS = 60 * 60 * 1_000;
 const EARLY_CLAIMS = 3;
 
-/** One planned change: the events to append (none when the change is already done), and the record after them. */
 type Plan = Readonly<{
 	events: readonly EventInput<JsonObject>[];
 	record: MemberRecord;
@@ -116,7 +103,6 @@ function wrongState<T>(record: MemberRecord, action: string): Outcome<T> {
 	);
 }
 
-/** Appends a plan at the member's stream head; publishes the record and logs the events. */
 async function commit(
 	ctx: Ctx,
 	state: Folded,
@@ -137,7 +123,6 @@ async function commit(
 	return "appended";
 }
 
-/** A governed person transition on one member. */
 async function transition(
 	ctx: Ctx,
 	memberId: string,
@@ -174,7 +159,6 @@ async function transition(
 	});
 }
 
-/** The approval mode of the fleet the member first joined; UNSPECIFIED counts as SINGLE. */
 async function approvalOf(
 	ctx: Ctx,
 	record: MemberRecord,
@@ -185,7 +169,6 @@ async function approvalOf(
 		: ApprovalMode.SINGLE;
 }
 
-/** A PENDING enrollment whose bootstrap token has expired is rejected (§6.5). */
 function expired(ctx: Ctx, state: Folded): boolean {
 	return (
 		state.record.state === MemberState.PENDING &&
@@ -321,7 +304,6 @@ export function reject(
 	});
 }
 
-/** A move between two states, idempotent once in `to`. */
 function simple(
 	ctx: Ctx,
 	action: string,
@@ -374,7 +356,6 @@ export function lifecycle(ctx: Ctx) {
 	};
 }
 
-/** Revocation: terminal from any state; tells the device at once through the control channel. */
 function revocation(ctx: Ctx, record: MemberRecord, reason: string): Plan {
 	if (record.state === MemberState.REVOKED) return unchanged(record);
 	return step(ctx, record, "fleet.MemberRevoked", {
@@ -404,9 +385,7 @@ async function sendControl(
 			),
 			memberId,
 		);
-	} catch {
-		// The record change is what revokes; the control message only makes it faster.
-	}
+	} catch {}
 }
 
 export async function revoke(
@@ -436,7 +415,6 @@ export async function revoke(
 	return result;
 }
 
-/** `hobo fleet leave`: a device revokes itself with its own credential. */
 export async function leave(
 	ctx: Ctx,
 	memberId: string,
@@ -458,7 +436,6 @@ export async function leave(
 	});
 }
 
-/** `hobo fleet member assign`: a membership in another fleet, under that fleet's policy. */
 export async function assign(
 	ctx: Ctx,
 	memberId: string,
@@ -542,8 +519,6 @@ export async function assign(
 	});
 }
 
-// ── Violation reports ──────────────────────────────────────────────────────
-
 function verifiedBy(
 	index: MembershipIndex,
 	envelope: SignedEnvelope | undefined,
@@ -568,13 +543,6 @@ function decodeClaim(envelope: SignedEnvelope): Claim | undefined {
 	}
 }
 
-/**
- * `POST /v1/fleet/reports`: a dispatcher's evidence that a device claimed out
- * of turn or out of fleet. The authority checks the evidence itself: the
- * offer is the reporter's own, each claim is signed by the claimant's SIGN
- * key and answers that offer, and `checkClaim` (L04's rules) gives the
- * verdict the report names. Then the claimant is suspended.
- */
 export async function report(
 	ctx: Ctx,
 	request: ViolationReport,
@@ -590,15 +558,15 @@ export async function report(
 	if (refusal !== undefined) return refusal;
 	const evidence = (message: string): Outcome<SignedEnvelope> =>
 		refuse("evidence-invalid", message);
-	if (!verifiedBy(index, request.offer, OFFER_CONTEXT, device.value.memberId))
+	const signedOffer = request.offer;
+	if (
+		signedOffer === undefined ||
+		!verifiedBy(index, signedOffer, OFFER_CONTEXT, device.value.memberId)
+	)
 		return evidence("the offer is not signed by the reporting dispatcher");
 	let offer: WorkOffer;
 	try {
-		// SAFETY: verifiedBy returned true, so the envelope is present.
-		offer = fromBinary(
-			WorkOfferSchema,
-			(request.offer as SignedEnvelope).payload,
-		);
+		offer = fromBinary(WorkOfferSchema, signedOffer.payload);
 	} catch {
 		return evidence("the offer does not decode");
 	}
@@ -701,7 +669,6 @@ export async function report(
 	});
 }
 
-/** `tick`: PENDING enrollments whose token has expired become REJECTED. */
 export async function expirePending(ctx: Ctx): Promise<void> {
 	const index = await ctx.catchUp();
 	for (const [id, state] of index.members) {
@@ -718,7 +685,6 @@ export async function expirePending(ctx: Ctx): Promise<void> {
 	}
 }
 
-/** Refuses approve-key and accept on an enrollment whose token has expired, rejecting it. */
 export async function refuseIfExpired(
 	ctx: Ctx,
 	memberId: string,

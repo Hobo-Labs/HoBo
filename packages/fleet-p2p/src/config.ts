@@ -1,10 +1,3 @@
-/**
- * The transport's one setting, parsed (data-models/fleet_p2p.cue): the relays
- * HoBo runs. A relay is `https://`, or plain `http://` on a loopback address,
- * which is how a relay in development mode (and the integration lane's) is
- * served. No credentials in the URL, no duplicates. The public relays are
- * never added: an empty list means no relaying at all.
- */
 import { FleetParseError } from "@hobo/fleet";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -28,7 +21,6 @@ function parseRelayUrl(value: string, field: string): string {
 	return url.href;
 }
 
-/** Relay URLs, each normalised by the URL parser; throws `FleetParseError` on the first bad one. */
 export function parseRelayUrls(values: readonly string[]): readonly string[] {
 	const parsed: string[] = [];
 	values.forEach((value, index) => {

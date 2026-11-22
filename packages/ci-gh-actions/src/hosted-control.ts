@@ -195,23 +195,16 @@ function policyState(state: ConfigurationState, accountId: string): string {
 // public-contract: the relay route that lists the members of the fleet it reads.
 export const RELAY_FLEET_MEMBERS_PATH = "/v1/fleet/members";
 
-/**
- * The authority's methods the relay calls: reads only. The relay holds no
- * method that writes, so no route, tool or resource of it can enroll,
- * approve, revoke or submit (design §6.15, O43).
- */
 export type RelayFleetReads = Pick<
 	FleetClient,
 	"listMembers" | "fleetView" | "fleetVerdict"
 >;
 
-/** The device fleet a relay shows, read from its authority. */
 export type RelayFleet = Readonly<{
 	reads: RelayFleetReads;
 	fleetId: FleetId;
 }>;
 
-/** The reads of a `@hobo/fleet/client` `createFleetClient`, and nothing else of it. */
 export function relayFleetReads(client: FleetClient): RelayFleetReads {
 	return {
 		listMembers: (request) => client.listMembers(request),
@@ -223,7 +216,6 @@ export function relayFleetReads(client: FleetClient): RelayFleetReads {
 // public-contract: the refusal of a relay composed without a fleet.
 export const RELAY_READS_NO_FLEET = "this relay reads no fleet";
 
-/** The authority's refusal as the relay's: its code, never its own words. */
 function authorityRefusal(error: FleetFailure): ControlError {
 	const status =
 		error.code === "fleet-unknown" || error.code === "member-unknown"
@@ -242,7 +234,6 @@ function configured(fleet: RelayFleet | undefined): RelayFleet {
 	return fleet;
 }
 
-/** The fleet's members as the authority signed them. */
 export async function relayFleetMemberList(
 	fleet: RelayFleet | undefined,
 ): Promise<MemberList> {
@@ -252,19 +243,12 @@ export async function relayFleetMemberList(
 	return answer.value;
 }
 
-/**
- * The member records inside a list, for a reader that cannot open envelopes.
- * The relay reads them from the authority it was composed with and does not
- * check the signatures again; the signed list is what `GET /v1/fleet/members`
- * answers, for a caller that does.
- */
 export function relayMemberRecords(list: MemberList): MemberRecord[] {
 	return list.members
 		.filter((envelope) => envelope.context === MEMBER_RECORD_CONTEXT)
 		.map((envelope) => fromBinary(MemberRecordSchema, envelope.payload));
 }
 
-/** The fleet's view, opened from the authority's envelope. */
 export async function relayFleetView(
 	fleet: RelayFleet | undefined,
 ): Promise<FleetView> {
@@ -276,7 +260,6 @@ export async function relayFleetView(
 	return fromBinary(FleetViewSchema, answer.value.payload);
 }
 
-/** Whether new work for one label should go to the fleet now. */
 export async function relayFleetVerdict(
 	fleet: RelayFleet | undefined,
 	label: string,
@@ -332,11 +315,6 @@ export function createHostedControlPlane(options: {
 		allowedDomains: readonly string[];
 		deploymentId: string | null;
 	};
-	/**
-	 * The device fleet this relay shows, for `GET /v1/fleet/members`: reads
-	 * of its authority through `@hobo/fleet/client` (`relayFleetReads`). A
-	 * host with none leaves it out, and the route answers 503.
-	 */
 	fleet?: RelayFleet | undefined;
 	/**
 	 * The relay reads its configuration from a config service and never
@@ -428,9 +406,7 @@ export function createHostedControlPlane(options: {
 								: "policy:write";
 			if (!principal.scopes.includes(required))
 				throw new ControlError(403, "account scope required");
-			// The fleet is the relay's own infrastructure, not one account's: any
 			// account credential that may read (`policy:read`) may see it. The
-			// answer names members and public keys, never a secret.
 			if (path === RELAY_FLEET_MEMBERS_PATH) {
 				if (request.method !== "GET")
 					throw new ControlError(405, "method not allowed");

@@ -1,9 +1,3 @@
-/**
- * What every fleet command shares (L32, private to the lane): the deps type,
- * refusals, caller checks, compare-and-set appends, governed decisions and
- * log names. Nothing here is exported beyond `src/fleets/`.
- */
-
 import type { JsonValue as PbJsonValue } from "@bufbuild/protobuf";
 import {
 	type EventInput,
@@ -24,7 +18,6 @@ import type {
 	VerifiedToken,
 } from "../ports.js";
 
-/** What `createFleetCommands` receives (§7.3). */
 export type FleetDeps = Pick<
 	AuthorityDeps,
 	| "tenant"
@@ -38,7 +31,6 @@ export type FleetDeps = Pick<
 > &
 	Readonly<{ mode: "authority" | "local" }>;
 
-/** Up to 8 compare-and-set attempts per command (§7.5). */
 export const MAX_ATTEMPTS = 8;
 
 export type Person = Extract<VerifiedToken, { kind: "person" }>;
@@ -70,7 +62,6 @@ export function principalKey(principal: PrincipalRef): string {
 	return `${principal.kind}:${principal.id}`;
 }
 
-/** The journal actor of a caller. */
 export function actorOf(caller: VerifiedToken): PrincipalRef {
 	switch (caller.kind) {
 		case "person":
@@ -92,7 +83,6 @@ function sameTenant<T extends VerifiedToken>(
 		: refuse("forbidden", "the credential is for another tenant");
 }
 
-/** A person of this tenant. */
 export function asPerson(
 	deps: FleetDeps,
 	caller: VerifiedToken | undefined,
@@ -102,7 +92,6 @@ export function asPerson(
 	return sameTenant(deps, caller);
 }
 
-/** Readers (§6.15 "as read"): a person, a device or an account credential of this tenant. */
 export function asReader(
 	deps: FleetDeps,
 	caller: VerifiedToken | undefined,
@@ -112,7 +101,6 @@ export function asReader(
 	return sameTenant(deps, caller);
 }
 
-/** The policy subject of a caller: people by principal and tags, accounts by principal and scopes. */
 export function subjectOf(caller: Person | Account): PolicyActor {
 	return caller.kind === "person"
 		? { identity: principalKey(caller.principal), tags: caller.tags }
@@ -141,7 +129,6 @@ export function governed(
 	});
 }
 
-/** Appends at `expectedSeq`; "conflict" when another writer got there first. */
 export async function append(
 	deps: FleetDeps,
 	stream: string,
@@ -172,7 +159,6 @@ export function iso(ms: number): string {
 
 const LOG_NAMES: ReadonlySet<string> = new Set(FLEET_LOG_EVENTS);
 
-/** `fleet.FleetDefined` → `hobo_fleet_fleet_defined` (§7.5). */
 export function logNameOf(type: string): FleetLogEvent | undefined {
 	const name = `hobo_fleet_${type
 		.replace(/^fleet\./u, "")
@@ -188,7 +174,6 @@ export function logEvent(deps: FleetDeps, type: string, subject: string): void {
 	if (name !== undefined) deps.log(name, { subject, tenant: deps.tenant });
 }
 
-// ── JSON guards for journal data, without runtime `typeof` ────────────────
 const tagOf = Object.prototype.toString;
 
 export function isJsonString<T>(value: T): value is T & string {
@@ -208,10 +193,8 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	);
 }
 
-/** Protobuf JSON as core JSON: the protobuf JSON value space (no bigint) is a subset of core's. */
 export function pbJson(value: PbJsonValue): JsonValue {
-	// SAFETY: @bufbuild/protobuf's JsonValue (null, boolean, number, string, arrays and objects of those) is core's JsonValue up to readonly modifiers.
-	return value as JsonValue;
+	return value;
 }
 
 export function textOf(data: JsonObject, field: string): string {

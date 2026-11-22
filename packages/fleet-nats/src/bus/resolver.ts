@@ -1,9 +1,3 @@
-/**
- * The full resolver, as the system-account user derived from the operator
- * signing seed: pushing an account JWT (`$SYS.REQ.CLAIMS.UPDATE`) and reading
- * the one it holds (`$SYS.REQ.ACCOUNT.<account>.CLAIMS.LOOKUP`, which answers
- * the JWT, or nothing for an account it does not hold).
- */
 import { credsAuthenticator } from "@nats-io/transport-node";
 import { type BusConnection, NATS, type NatsClients } from "./nats-client.js";
 import { systemCredentials } from "./nats-jwt.js";
@@ -59,12 +53,6 @@ export function pushAccount(
 	);
 }
 
-/**
- * Reads the account JWT the resolver holds for `account` (undefined when it
- * holds none), mints the JWT to push from it, and pushes that, on one
- * connection. A lookup the resolver does not answer fails the whole call, so
- * nothing is pushed on a guess.
- */
 export function pushAccountOver(
 	servers: readonly string[],
 	operatorSigningSeed: string,

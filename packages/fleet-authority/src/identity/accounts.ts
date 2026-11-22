@@ -1,8 +1,3 @@
-/**
- * `AccountCredentialVerifier` (§6.15): the CI relay's account credential, a
- * bearer secret held in the secret store. Only SHA-256 digests are kept in
- * memory; a presented credential is hashed and compared in constant time.
- */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { PrincipalRef, TenantId } from "@hobo/core";
 import type { AccountCredentialVerifier } from "@hobo/fleet";
@@ -47,7 +42,6 @@ export function createAccountVerifier(
 	};
 }
 
-/** `<kind>:<id>` into a principal; undefined for another kind. */
 export function parsePrincipal(text: string): PrincipalRef | undefined {
 	const colon = text.indexOf(":");
 	const kind = text.slice(0, colon);

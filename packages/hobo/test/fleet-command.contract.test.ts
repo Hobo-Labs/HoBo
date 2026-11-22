@@ -1,15 +1,7 @@
-/**
- * O25: the command line is complete (design §6.15, §10.1). Every command of
- * the CLI table parses, calls exactly the `FleetClient` methods and local
- * functions its "Calls" cell names, in that order (asserted with a recording
- * fake client and recording local functions against the copy of the table
- * below), and has help text; a token on the command line is refused.
- */
 import { describe, expect, it } from "vitest";
 import { FLEET_COMMANDS, runFleetCommand } from "../src/fleet-command.js";
 import { fakeDeps, TOKEN_TEXT } from "./support/fleet-fakes.js";
 
-/** A copy of the "Command" and "Calls" columns of the CLI table of §6.15. */
 const CALLS_TABLE = [
 	[
 		"login",
@@ -83,7 +75,6 @@ type Case = Readonly<{
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
 
-/** Each row's commands, run, with the calls its cell names, in order. */
 const CASES: readonly Case[] = [
 	{
 		row: "login",

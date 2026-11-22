@@ -1,21 +1,4 @@
-/**
- * The protobuf wire form of the two fleet records the overlay transport
- * moves (design §7.1): `SignedEnvelope`, which the dialler presents, and
- * `SessionGrant`, which the acceptor reads from the envelope's payload.
- *
- * `@hobo/connectivity` takes only `@hobo/fleet` and `@hobo/core` (design
- * §11.2 step 6), so the protobuf runtime is not available here. This is the
- * proto3 binary encoding for exactly these messages: varint and
- * length-delimited fields, unknown fields skipped, a malformed message
- * refused. Field numbers follow `packages/fleet/data-models/fleet.proto`.
- */
-import type {
-	KeyAlgorithm,
-	SessionGrant,
-	SessionParty,
-	SessionPurpose,
-	SignedEnvelope,
-} from "@hobo/fleet";
+import type { SessionGrant, SessionParty, SignedEnvelope } from "@hobo/fleet";
 
 const VARINT = 0;
 const FIXED64 = 1;
@@ -44,7 +27,6 @@ class Writer {
 		for (const byte of value) this.#parts.push(byte);
 	}
 
-	/** A length-delimited field written even when empty (a set sub-message, a repeated string). */
 	message(field: number, value: Uint8Array): void {
 		this.varint((field << 3) | LENGTH);
 		this.varint(value.length);
@@ -71,7 +53,6 @@ type Field = Readonly<
 	| { number: number; kind: "bytes"; value: Uint8Array }
 >;
 
-/** Every field of one message, in order; throws on a malformed message. */
 function fieldsOf(bytes: Uint8Array): readonly Field[] {
 	const fields: Field[] = [];
 	let offset = 0;
@@ -113,7 +94,6 @@ function fieldsOf(bytes: Uint8Array): readonly Field[] {
 	return fields;
 }
 
-/** Proto3 semantics: the last occurrence of a singular field wins. */
 function last(
 	fields: readonly Field[],
 	number: number,
@@ -197,8 +177,7 @@ export function decodeSignedEnvelope(bytes: Uint8Array): SignedEnvelope {
 		$typeName: "hobo.fleet.v1.SignedEnvelope",
 		context: stringField(fields, 1),
 		keyId: stringField(fields, 2),
-		// SAFETY: a proto3 enum field is an open enum; an unknown value stays its number, as the protobuf runtime keeps it.
-		algorithm: numberField(fields, 3) as KeyAlgorithm,
+		algorithm: numberField(fields, 3),
 		payload: bytesField(fields, 4),
 		signature: bytesField(fields, 5),
 	};
@@ -231,8 +210,7 @@ export function decodeSessionGrant(bytes: Uint8Array): SessionGrant {
 		tenant: stringField(fields, 2),
 		initiator: messageField(fields, 3, decodeSessionParty),
 		acceptor: messageField(fields, 4, decodeSessionParty),
-		// SAFETY: a proto3 enum field is an open enum; an unknown value stays its number, as the protobuf runtime keeps it.
-		purpose: numberField(fields, 5) as SessionPurpose,
+		purpose: numberField(fields, 5),
 		orderId: stringField(fields, 6),
 		port: numberField(fields, 7),
 		blobDigests,

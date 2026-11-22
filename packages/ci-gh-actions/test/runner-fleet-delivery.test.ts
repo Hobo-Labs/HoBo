@@ -469,7 +469,6 @@ describe("the delivery module for the runner fleet", () => {
 
 describe("fleet health and membership signals feed Camp inventory conditions", () => {
 	const now = Date.parse("2026-11-12T10:00:00.000Z");
-	// The box as fleet `hobo` sees it: a DEVICE member named after the host.
 	const member = (over: Partial<FleetMemberView> = {}): FleetMemberView =>
 		create(FleetMemberViewSchema, {
 			memberId: "member-box",
@@ -565,7 +564,6 @@ describe("fleet health and membership signals feed Camp inventory conditions", (
 			],
 			CAMP_CONDITION_TYPE_READY: ["CONDITION_STATUS_UNKNOWN", "member-missing"],
 		});
-		// A TARGET of the same name is not the host: only DEVICE members count.
 		const target = runnerFleetCampObservations(
 			hosts(),
 			[member({ kind: MemberKind.TARGET })],

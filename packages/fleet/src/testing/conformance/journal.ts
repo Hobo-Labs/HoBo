@@ -1,13 +1,3 @@
-/**
- * `runJournalConformance` (design §7.3, O11): what every `FleetEventStore`
- * must do for the authority — per-stream compare-and-set on `expectedSeq`,
- * `meta.idempotencyKey` deduplication, ordered reads of one stream, and
- * `readAll` over every stream in append order.
- *
- * Every assertion writes to streams named with a fresh random id, so the suite
- * also runs against a store shared with other writers (a journal on a live
- * server): `readAll` results are filtered to the assertion's own streams.
- */
 import { randomUUID } from "node:crypto";
 import type {
 	AppendOptions,
@@ -70,7 +60,6 @@ async function readAllOf(
 const label = (entry: PositionedEvent) =>
 	`${entry.event.streamId}#${entry.event.seq}`;
 
-/** The journal assertions, in the order they are registered. */
 export const JOURNAL_ASSERTIONS: readonly ConformanceAssertion<JournalMake>[] =
 	[
 		{

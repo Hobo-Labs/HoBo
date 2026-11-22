@@ -1,10 +1,3 @@
-/**
- * The executor half of `github-actions-job` (design §6.9 step 7): the
- * registration goes in with `Sandbox.writeSecret` and nowhere else, the
- * pre-job hook is installed pointing at the sandbox's own control endpoint,
- * one runner runs, and the receipt status follows the runner's result line
- * and the hook's verdict.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type ObservedAssignment,

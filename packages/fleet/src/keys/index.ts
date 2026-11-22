@@ -1,11 +1,3 @@
-/**
- * `@hobo/fleet/keys` (L01): JWKs and thumbprints, member ids, the signed and
- * witnessed envelope, the trust rule, DPoP, sealing, session keys,
- * fingerprint words, the in-memory key store and credential issuer.
- *
- * These are the frozen entry points of design §7.3; the modules beside this
- * file are private to the lane.
- */
 import type { KeyObject } from "node:crypto";
 import type { TenantId } from "@hobo/core";
 import type {
@@ -43,12 +35,10 @@ import { memoryKeyStore } from "./memory-key-store.js";
 import { deriveSessionKeys, openSealedBox, sealTo } from "./seal.js";
 import { freshDpopKey } from "./signers.js";
 
-/** EC P-256 or OKP Ed25519; rejects private members. */
 export function parsePublicJwk(json: string): Outcome<PublicJwk> {
 	return parsePublicJwkText(json);
 }
 
-/** RFC 7638, base64url. */
 export function jwkThumbprint(jwk: PublicJwk): string {
 	return thumbprintOf(jwk);
 }
@@ -57,7 +47,6 @@ export function memberIdFromJwk(jwk: PublicJwk): MemberId {
 	return deviceMemberId(thumbprintOf(jwk));
 }
 
-/** §6.2 */
 export function sponsoredMemberId(
 	tenant: TenantId,
 	kind: MemberKind,
@@ -91,7 +80,6 @@ export function verifyWitnessed(
 	return verifyWitnessedWith(envelope, expected, trust);
 }
 
-/** §7.4 rule */
 export function acceptTrust(
 	pinned: TrustRecord | undefined,
 	next: WitnessedEnvelope,
@@ -191,7 +179,6 @@ export function createMemoryKeyStore(): KeyStore {
 	return memoryKeyStore();
 }
 
-/** ES256 over an in-memory key, through the same JOSE code; for tests, createTestAuthority and offline development. */
 export function createMemoryCredentialIssuer(now: Clock): CredentialIssuer {
 	return memoryCredentialIssuer(now);
 }

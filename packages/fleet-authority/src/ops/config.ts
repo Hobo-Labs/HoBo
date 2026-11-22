@@ -1,6 +1,3 @@
-// The operations' settings, read from the file `OpsContext.configPath` names.
-// Unknown keys are ignored, so the authority's own configuration file (its
-// `FleetAuthorityConfig` keys plus these) serves both. Private to L27.
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseTenantId, type TenantId } from "@hobo/core";
@@ -20,15 +17,11 @@ export type Profile = "standalone" | "high-availability";
 export type OpsConfig = Readonly<{
 	tenant: TenantId;
 	profile: Profile;
-	/** Every key's secret is `<secretPrefix>/<which>`. */
 	secretPrefix: string;
 	operatorName: string;
-	/** Standalone: the directory holding the SQLite journal `fleet.db`. */
 	dataDir: string;
 	natsUrls: readonly string[];
-	/** The secret holding the authority's static-user NATS credentials. */
 	natsCredentialsSecret: string;
-	/** How long a trust-record change waits for the witness's co-signature. */
 	witnessTimeoutMs: number;
 }>;
 

@@ -108,7 +108,6 @@ export type CampInventoryDeps = CdBase & {
 	readonly desired: DesiredStateReader;
 	readonly authorizer: CdAuthorizer;
 	readonly telemetry: TelemetrySink;
-	/** The Camp mapper's fleet registry (L19); absent: no Camp is backed by a member. */
 	readonly members?: CampMembers | undefined;
 };
 
@@ -116,7 +115,6 @@ export type { CampMembers };
 
 const MEMBER_NAME_MAX = 63;
 
-/** The fleet member name of a Camp: its id's last segment as a short lower-case token. */
 export function campMemberName(campId: string): string {
 	const last = campId.slice(campId.lastIndexOf("/") + 1).toLowerCase();
 	const token = last
@@ -505,12 +503,6 @@ export function createCampInventory(d: CampInventoryDeps): CampInventory {
 		return (await d.rails.forCamp(campId))?.failover;
 	}
 
-	/**
-	 * The backing member's lifecycle, read by the Camp mapper. Only a
-	 * reconciler DEVICE has an observer, so only its fleet view entry is read
-	 * (LOST is `observedLost`); an agentless TARGET's reachability stays with
-	 * the signal sources (D11).
-	 */
 	async function memberOf(
 		campId: CampId,
 		topology: CampTopology | undefined,

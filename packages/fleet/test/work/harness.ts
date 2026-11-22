@@ -1,9 +1,3 @@
-/**
- * A small world for the loop tests: the memory bus with records seeded, test
- * work sources and runners, a fake capacity source and egress proxy, and the
- * fake sandbox driver from `@hobo/fleet/testing`. Used under vitest's fake
- * timers with `now: () => Date.now()`.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	CapacitySchema,
@@ -60,7 +54,6 @@ export function upstream(
 	};
 }
 
-/** A work source whose queue the test fills; it prepares a fixed secret. */
 export function testSource(kind = "github-actions-job") {
 	const queue: UpstreamWork[] = [];
 	const prepared: string[] = [];
@@ -99,7 +92,6 @@ export function testSource(kind = "github-actions-job") {
 	return source;
 }
 
-/** A runner that records what it ran and succeeds unless told otherwise. */
 export function testRunner(
 	kind = "github-actions-job",
 	body?: WorkRunner["run"],
@@ -165,7 +157,6 @@ export function fakeDriver(tier: SandboxTier) {
 	return createFakeSandboxDriver(tier);
 }
 
-/** A bus whose status the test switches; while "down" every publish rejects. */
 export function switchableBus(
 	bus: AuthorityBus,
 ): AuthorityBus & { down(value: boolean): void } {

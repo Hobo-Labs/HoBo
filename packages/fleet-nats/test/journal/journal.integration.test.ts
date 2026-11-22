@@ -1,19 +1,6 @@
-/**
- * O11: the journal store against a real `nats-server` with JetStream.
- *
- * Runs `runJournalConformance` and the A15 adapter harness of
- * `runEventStoreConformance` on `FLEET_JOURNAL`, plus two replicas racing for
- * one stream through the server's compare-and-set. The server requires TLS
- * and the store connects with the bus's settings (`HOBO_FLEET_NATS_CA`).
- *
- * The binary is `HOBO_FLEET_NATS_SERVER_BIN`, or `nats-server` on `PATH`. The
- * integration lane provisions it, so with `CI` set a missing binary fails;
- * elsewhere the suite is reported skipped under A15, the assumption this file
- * tests.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { type AddressInfo, createServer } from "node:net";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OptimisticSequenceConflictError } from "@hobo/core";
@@ -26,7 +13,7 @@ import {
 	type JournalEventStore,
 	openJournalStore,
 } from "../../src/journal/store.js";
-import { certificates } from "../support/nats-server.js";
+import { certificates, portOf } from "../support/nats-server.js";
 import { journalCrashProbe, journalStoreFactory } from "./harness.js";
 
 const binary =
@@ -44,8 +31,7 @@ async function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-			const { port } = server.address() as AddressInfo;
+			const port = portOf(server.address());
 			server.close(() => resolve(port));
 		});
 	});
@@ -53,12 +39,10 @@ async function freePort(): Promise<number> {
 
 type RunningServer = Readonly<{
 	url: string;
-	/** The private CA the server's certificate is signed by. */
 	ca: string;
 	stop(): Promise<void>;
 }>;
 
-/** A JetStream server that requires TLS, its CA trusted through HOBO_FLEET_NATS_CA, as on the bus. */
 async function startServer(): Promise<RunningServer> {
 	const port = await freePort();
 	const store = mkdtempSync(join(tmpdir(), "hobo-fleet-journal-"));
@@ -210,7 +194,6 @@ if (binary === "") {
 			} finally {
 				process.env.HOBO_FLEET_NATS_CA = ca;
 			}
-			// With it, the same connection settings reach the server.
 			await open();
 		}, 30_000);
 

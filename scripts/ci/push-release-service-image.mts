@@ -1,30 +1,4 @@
 #!/usr/bin/env node
-/**
- * Builds one release image of the fleet's services (design §6.16): the
- * authority, the witness and the peer-to-peer relay, whose Dockerfiles live
- * under `deploy/release-images/<id>/` (L23). The image is exported as an OCI
- * image layout and promoted as release Freight into
- * hobo-release/oci-candidate through `hobo deploy`, exactly as
- * `push-release-ghcr-images.mts` publishes the train's other images: the
- * realizer is the only thing that pushes. Writes the published
- * `ghcr.io/...@sha256:...` reference to the digest list the release
- * workflow's attest step (`.github/actions/release-oci-attest`: build
- * provenance and a CycloneDX bill of materials, R18) reads.
- *
- * Only the full release train ships them; on an sdk-v or cli-v ref the digest
- * list is written empty and nothing is built.
- *
- * Build context: the authority and the witness get a staged `app/`
- * (`pnpm deploy` of `@hobo/fleet-authority`, with `bin/<name>` wrappers), as
- * `hobo-ci-serve` does; the relay gets an empty context, its Dockerfile
- * fetching its pinned, checksum-verified binary itself. Every Dockerfile
- * takes `HOBO_TOOLCHAIN_IMAGE`, `HOBO_RELEASE_VERSION` and
- * `HOBO_RELEASE_REVISION`.
- *
- * usage: HOBO_RELEASE_VERSION=<ref> GITHUB_REPOSITORY=<owner/repo>
- *   HOBO_RELEASE_CD_HOME=<release Freight journal>
- *   push-release-service-image.mts <image-id> <digest-list-path>
- */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,7 +21,6 @@ const root = join(import.meta.dirname, "..", "..");
 type ServiceImage = Readonly<{
 	title: string;
 	description: string;
-	/** What the build context holds; `undefined` is an empty context. */
 	stage: DeployStage | undefined;
 }>;
 
@@ -58,7 +31,6 @@ const AUTHORITY_PACKAGE = {
 	appPath: "app",
 } as const;
 
-/** The release images of the fleet's services, in release order. */
 export const SERVICE_IMAGES = {
 	"hobo-fleet-authority": {
 		title: "HoBo Fleet authority",
@@ -111,17 +83,14 @@ export function parseServiceImageId(value: string): ServiceImageId {
 	return id;
 }
 
-/** The Dockerfile L23 writes for an image. */
 export function serviceImageDockerfile(id: ServiceImageId): string {
 	return `deploy/release-images/${id}/Dockerfile`;
 }
 
-/** The local tag a build leaves for the layout export, removed after. */
 export function serviceImageCandidateTag(id: ServiceImageId): string {
 	return `${id}:candidate`;
 }
 
-/** The `docker build` arguments for one image. */
 export function serviceImageBuildArgs(input: {
 	id: ServiceImageId;
 	toolchain: string;
@@ -156,7 +125,6 @@ export function serviceImageBuildArgs(input: {
 	];
 }
 
-/** Whether a release ref's train ships the service images: only the full one does. */
 export function shipsServiceImages(releaseRef: string): boolean {
 	return parseReleaseRef(releaseRef).train === "full";
 }
@@ -172,7 +140,6 @@ function run(command: string, args: readonly string[]): void {
 		throw new Error(`${command} ${args.join(" ")} failed (${result.status})`);
 }
 
-/** Builds one image and exports it as an OCI layout; nothing is pushed here. */
 export function buildServiceImage(input: {
 	id: ServiceImageId;
 	releaseRef: string;
@@ -277,7 +244,6 @@ async function main(): Promise<void> {
 		if (image.layoutDir)
 			rmSync(image.layoutDir, { recursive: true, force: true });
 	}
-	// Written only once the Camp qualified: the digest GHCR serves.
 	writeFileSync(digestListPath, `${image.line}\n`, "utf8");
 	console.log(image.line);
 }

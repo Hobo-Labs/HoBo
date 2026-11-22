@@ -1,19 +1,3 @@
-/**
- * `runReplicaConformance` (design §7.3, O15): what every one-active
- * `AssignmentReplica` must do, as today's register expects of a replica
- * (`backend-fleet/src/assignment.ts:148-163`).
- *
- * - One entry per epoch: the identical entry again answers `duplicate`, a
- *   different one `conflict`.
- * - Only `top + 1` is taken; any other epoch answers `gap`, and an empty log
- *   takes epoch 1 only.
- * - `read` answers ascending epochs, `limit` keeping the highest; an entry
- *   reads back exactly as accepted, membership included.
- * - `refresh` and `seed`, on replicas that have them: `refresh` answers
- *   whether the log exists, `seed` starts only an empty log.
- *
- * `make(id)` returns a replica over a fresh, empty log each time it is called.
- */
 import { type MemberName, parseMemberName } from "../../ids.js";
 import type { AssignmentEntry, AssignmentReplica } from "../../ports.js";
 import { type ConformanceAssertion, ensure } from "./assertion.js";
@@ -24,7 +8,6 @@ const REPLICA = parseMemberName("conformance-replica");
 const LAPTOP = parseMemberName("laptop");
 const SERVER = parseMemberName("server");
 
-/** An entry at `epoch`, active on the laptop with both members, unless `active` says otherwise. */
 const entry = (
 	epoch: number,
 	active: MemberName = LAPTOP,
@@ -69,7 +52,6 @@ async function acceptAll(
 	}
 }
 
-/** The replica assertions, in the order they are registered. */
 export const REPLICA_ASSERTIONS: readonly ConformanceAssertion<ReplicaMake>[] =
 	[
 		{

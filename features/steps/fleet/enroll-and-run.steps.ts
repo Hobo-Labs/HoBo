@@ -1,9 +1,3 @@
-/**
- * Steps for features/fleet/enroll-and-run.feature (O2, in-memory bus):
- * enrollment by bootstrap token, by the person's browser approval, by a
- * workload identity, dual-control approval, a declared backend, and the
- * developer's own `oci-command` job reaching a SUCCEEDED receipt.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import {

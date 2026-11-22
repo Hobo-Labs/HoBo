@@ -1,6 +1,3 @@
-// The in-memory KeyStore against the KeyStore contract of §7.3 and §6.4. The
-// shared conformance suite (`runKeyStoreConformance`, L29) lands in the same
-// wave; once it has merged this store is run through it as well.
 import { generateKeyPairSync } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";

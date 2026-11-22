@@ -1,9 +1,3 @@
-/**
- * Parses the body of `POST <controlUrl>/fence` (design §7.3 `Sandbox`): an
- * `ObservedAssignment` as JSON, `origin` as the enum number or its name
- * (`WORK_ORIGIN_FORK`). Anything missing or malformed is undefined, which the
- * control endpoint answers with `{"allow":false}` without asking the fence.
- */
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
 	type ObservedAssignment,

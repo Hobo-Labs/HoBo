@@ -1,8 +1,3 @@
-/**
- * An in-memory key store that keeps the contract (the suite's reference), and
- * stores broken in exactly one way each, keyed by the key-store assertion that
- * must catch the break.
- */
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { KeyAlgorithm } from "../../../src/_generated/fleet_pb.js";
 import { parseKeyId } from "../../../src/ids.js";
@@ -131,7 +126,6 @@ function storeWith(faults: Faults): KeyStoreMake {
 	};
 }
 
-/** The reference store: passes `runKeyStoreConformance`. */
 export const memoryKeyStore: KeyStoreMake = storeWith({});
 
 export const BROKEN_KEYSTORES: ReadonlyMap<string, KeyStoreMake> = new Map([

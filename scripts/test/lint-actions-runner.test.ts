@@ -15,8 +15,6 @@ import { testRunner } from "./support/test-runner.ts";
 
 const { describe, it } = await testRunner();
 
-// Retired variable names are joined from parts, so the repository-wide
-// retired-variable grep and fleet:vocabulary rule 6 do not find this file.
 const ci = (...parts: string[]): string => ["HOBO", "CI", ...parts].join("_");
 
 // Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These

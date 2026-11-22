@@ -1,9 +1,3 @@
-/**
- * `fitWork` (design §6.8), moved from `fitJob` in
- * `packages/ci/test/mesh-rendezvous.test.ts`: how many copies of this work a
- * device could start, or the first thing it lacks. An absent figure is
- * unknown and constrains nothing; an absent sandbox tier is not assumed.
- */
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -94,29 +88,24 @@ describe("fitWork", () => {
 				fits: false,
 				lacking,
 			});
-		// No capacity reported at all: no slot to give.
 		const silent = device();
 		delete silent.capacity;
 		expect(fitWork(silent, needs())).toEqual({ fits: false, lacking: "slot" });
 	});
 
 	it("treats what is not reported as unknown, not as zero", () => {
-		// No memory reported: slots alone decide.
 		expect(fitWork(device(), needs({ memoryMb: 6_144 }))).toEqual({
 			fits: true,
 			copies: 2,
 		});
-		// No needs stated: any device with a slot and the label.
 		expect(
 			fitWork(device({ capacity: { freeSlots: 2, freeMemoryMb: 1 } }), needs()),
 		).toEqual({ fits: true, copies: 2 });
-		// A device that does not say its platform is not ruled out by it.
 		const unsaid = device();
 		delete unsaid.platform;
 		expect(
 			fitWork(unsaid, needs({ platform: { os: "linux", arch: "x64" } })),
 		).toEqual({ fits: true, copies: 2 });
-		// Work that names no label fits whatever the device serves.
 		expect(fitWork(device({ labels: [] }), needs({ labels: [] }))).toEqual({
 			fits: true,
 			copies: 2,

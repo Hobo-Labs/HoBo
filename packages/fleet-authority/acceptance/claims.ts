@@ -1,9 +1,3 @@
-/**
- * Signed evidence for the behaviour suite: a dispatcher's offer and a
- * device's claim on it (design §6.9 steps 3 and 4), built with the device's
- * own SIGN key or, for a forgery, another key; key-bundle rotation; a copied
- * key store (F7); and an in-memory stream pair for a granted session.
- */
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
 	type AgentState,
@@ -31,7 +25,6 @@ import { workDigest } from "@hobo/fleet/work";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-/** An `oci-command` offer by `dispatcher` in `fleet`, authored by `author`. */
 export function offerOf(
 	dispatcher: DeviceKeys,
 	fleet: string,
@@ -74,7 +67,6 @@ export function signOffer(
 	);
 }
 
-/** A claim naming `claimant` on `offer`, signed by `signer` (the claimant's own SIGN key unless forged). */
 export function claimOf(
 	claimant: DeviceKeys,
 	offer: WorkOffer,
@@ -100,7 +92,6 @@ export function claimOf(
 	);
 }
 
-/** Key bundle `sequence` for the device's current SIGN and SEAL keys, signed by its identity key. */
 export function keyBundle(
 	keys: DeviceKeys,
 	sequence: number,
@@ -135,7 +126,6 @@ export function keyBundle(
 	);
 }
 
-/** A second key store holding the same keys with its own copy of the state: a cloned device (F7). */
 export function copiedKeyStore(
 	original: KeyStore,
 	state: AgentState,
@@ -152,7 +142,6 @@ export function copiedKeyStore(
 	};
 }
 
-/** Two ends of an in-memory byte stream, as a transport would hand them over; closing either end ends both. */
 export function streamPair(
 	initiator: string,
 	acceptor: string,

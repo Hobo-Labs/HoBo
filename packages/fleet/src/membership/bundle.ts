@@ -1,9 +1,3 @@
-/**
- * Key bundles as the authority checks them (§6.4, §7.4; L02 private): signed
- * by the identity key under `hobo-fleet/key-bundle/v1`, naming the member,
- * exactly one SIGN (Ed25519) and one SEAL key, at most one TRANSPORT key, a
- * strictly increasing sequence, and a lifetime fleet policy allows.
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type FleetPolicy,
@@ -84,7 +78,6 @@ export function signRefOf(
 	return bundle?.keys.find((key) => key.purpose === KeyPurpose.SIGN);
 }
 
-/** The RFC 7638 thumbprint of the bundle's SIGN key, which DPoP proofs after enrollment carry as `jkt`. */
 export function signThumbprint(bundle: KeyBundle | undefined): string {
 	const ref = signRefOf(bundle);
 	if (ref === undefined) return "";

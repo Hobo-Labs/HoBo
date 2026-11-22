@@ -2769,8 +2769,6 @@ describe("the script reading the slip", () => {
 
 	it("takes nothing about routing from the environment", async () => {
 		await withGithub(fleetUpPages, async (apiUrl) => {
-			// Every variable `runnerRouting.retiredVariables` names, each set to
-			// a value that would once have left the fleet, and the run's choices.
 			const retired: readonly string[] =
 				JSON.parse(COMMITTED).runnerRouting.retiredVariables;
 			assert.ok(retired.length > 0);
@@ -3923,13 +3921,6 @@ describe("the routing step without a decision", () => {
 });
 
 describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
-	/**
-	 * The box's slip issuer computes each class's reason from `fleetVerdict`
-	 * on its local fleet view (design §6.8, ADR-0181): `OPEN` and `BUSY` keep
-	 * the fleet (a box that is only busy is never refused, R4); `NO_MEMBER`
-	 * and `NO_CAPACITY` refuse it, and the class goes to the next tier, here
-	 * GitHub-hosted because the committed policy enrols no local box.
-	 */
 	const REASON_OF_VERDICT = {
 		OPEN: { tier: "fleet", reason: "fleet-open" },
 		BUSY: { tier: "fleet", reason: "fleet-busy" },
@@ -3938,7 +3929,6 @@ describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
 	} as const;
 	type VerdictState = keyof typeof REASON_OF_VERDICT;
 	const labels = DEFAULT_RUNNER_LABELS;
-	/** A `FleetVerdict` in protobuf JSON, as the authority's verdict route answers. */
 	const verdictJson = (state: VerdictState) =>
 		JSON.stringify({
 			fleetId: "flt_hobo",
@@ -3948,7 +3938,6 @@ describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
 			asOf: new Date(SLIP_NOW - 30_000).toISOString(),
 			expiresAt: new Date(SLIP_NOW + 240_000).toISOString(),
 		});
-	/** The slip an issuer writes when every class's label has this verdict. */
 	const slipFrom = (state: VerdictState) => {
 		const verdict = parseFleetVerdict(verdictJson(state), SLIP_NOW);
 		assert.ok(verdict, `the ${state} verdict parses`);
@@ -4097,7 +4086,6 @@ describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
 					),
 				);
 			const { decision, lines } = await run(slipApi(undefined));
-			// The queue alone, as before slips: nobody seen on the fleet.
 			const queue = routeRunner({
 				mode: "auto",
 				fleetLabel: labels.fleet,
@@ -4133,7 +4121,6 @@ describe("a slip whose reasons came from the fleet's verdict (O32)", () => {
 			writeFileSync(outputs, "");
 			const run = spawnSync(
 				process.execPath,
-				// Exactly as the action runs it: Node 22.18 or later strips types.
 				["--no-warnings", "scripts/ci/route-runner.mts", "--route", "github"],
 				{
 					cwd: tree,
@@ -4195,7 +4182,6 @@ describe("the workflows that route", () => {
 	// script before it decides, and the step then falls back to GitHub-hosted.
 	it("check out every file the routing script loads", () => {
 		const needed = loadedBy("scripts/ci/route-runner.mts");
-		// No package source: a package's renames cannot stop the route job.
 		assert.deepEqual([...needed].sort(), [
 			"scripts/ci/route-runner.mts",
 			"scripts/ci/runner-routing.mts",
@@ -4209,7 +4195,6 @@ describe("the workflows that route", () => {
 			);
 			for (const file of needed)
 				assert.ok(lines.has(file), `${path} does not sparse-checkout ${file}`);
-			// Nor package source it no longer loads (design §8.5 moves it).
 			for (const line of lines)
 				assert.doesNotMatch(
 					line,

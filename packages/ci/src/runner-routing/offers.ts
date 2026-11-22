@@ -1,13 +1,3 @@
-/**
- * Where runner routing's financial models meet the relay's runtime offers.
- *
- * An offer is what an operator connected: a provider account, a label, a
- * ceiling. A model is what that provider charges. These functions read one in
- * terms of the other, so the balancer can rank the offers an account really
- * has and an operator can seed an offer's rate from the model instead of
- * typing it.
- */
-
 import { type BudgetPolicy, parseBudgetPolicy } from "@hobo/core";
 import type { FleetCapacity } from "@hobo/fleet";
 import type { Account, Lease } from "../_generated/ci_pb.js";
@@ -100,21 +90,14 @@ export type RunnerAccountFacts = Readonly<{
 	unhealthyOfferIds?: ReadonlySet<string>;
 	/** Opt-in providers where the owner has turned public repositories on. */
 	publicRepositoryOfferIds?: ReadonlySet<string>;
-	/**
-	 * The hobo fleet's capacity from its verdict. When present, the hobo
-	 * provider's health and active jobs are read from it instead of from the
-	 * relay's own leases, because the fleet runs work the relay never leased.
-	 */
 	hoboCapacity?: FleetCapacity;
 }>;
 
-/** How busy and how healthy one provider is, and its ceiling on jobs at once. */
 type ProviderOccupancy = Pick<
 	RunnerProviderState,
 	"activeJobs" | "concurrency" | "healthy"
 >;
 
-/** What the fleet says about the hobo provider, where the caller has it. */
 function hoboFromFleet(
 	capacity: FleetCapacity,
 	ceiling: number,
@@ -126,16 +109,6 @@ function hoboFromFleet(
 	};
 }
 
-/**
- * The providers as this account really has them: one per connected offer the
- * catalog can price. The provider's model supplies what does not vary by
- * account (rounding, plan fee, eligibility, tier); the offer supplies what
- * the operator observed for this account (label, rate, included minutes,
- * ceiling, evidence dates), and the leases supply what is in use.
- *
- * An offer no model prices (a Vercel Sandbox, a Dagger engine) is left out:
- * it is not a runner host this balancer can compare.
- */
 export function runnerProvidersFromAccount(
 	account: Account,
 	leases: readonly Lease[],
@@ -225,8 +198,6 @@ export function runnerProvidersFromAccount(
 				? hoboFromFleet(facts.hoboCapacity, offer.concurrency)
 				: {
 						concurrency: offer.concurrency,
-						// Admission holds an offer's ceiling against every lease on its
-						// provider account, not only its own.
 						activeJobs: payerLeases.filter((lease) =>
 							ACTIVE_STATES.has(lease.state),
 						).length,

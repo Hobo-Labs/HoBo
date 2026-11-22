@@ -1,11 +1,3 @@
-/**
- * Reading the authority's keys from the secret store (§6.16): one secret per
- * key, `<secretPrefix>/<which>`, in the slot layout the operations write
- * (`{ "v": 1, "active": "<kid>", "keys": [{ "kid", "seed", "publicKey" }] }`,
- * Ed25519 seeds as raw base64url, NATS keys as nkey text). The record-signing
- * and witness signers are re-read from their slots after a rotation switches
- * the active key (carry-forward rule 2 of L27). Nothing here logs a seed.
- */
 import { createPrivateKey, sign } from "node:crypto";
 import {
 	KeyAlgorithm,
@@ -26,7 +18,6 @@ function unavailable<T>(message: string): Outcome<T> {
 	return { ok: false, error: { code: "unavailable", message } };
 }
 
-/** The latest value of a secret; undefined when there is none. */
 export async function readSecretText(
 	secrets: SecretsPort,
 	name: string,
@@ -63,7 +54,6 @@ export type ActiveKey = Readonly<{
 	publicKey: string;
 }>;
 
-/** The active key of the slot `<prefix>/<which>`. */
 export async function readActiveKey(
 	secrets: SecretsPort,
 	prefix: string,
@@ -117,7 +107,6 @@ export async function readActiveKey(
 	};
 }
 
-/** An Ed25519 signer from a raw 32-byte seed (base64url). */
 export function ed25519Signer(kid: string, seed: string): Signer {
 	const raw = Buffer.from(seed, "base64url");
 	if (raw.length !== 32)
@@ -134,11 +123,6 @@ export function ed25519Signer(kid: string, seed: string): Signer {
 	};
 }
 
-/**
- * A signer that always signs with the slot's active key: it re-reads the slot
- * at most once per `refreshMs`, so a rotation's switch takes effect without a
- * restart. Its `keyId` is the key id at the time of each read.
- */
 export async function slotSigner(
 	secrets: SecretsPort,
 	prefix: string,
@@ -168,7 +152,6 @@ export async function slotSigner(
 	};
 }
 
-/** A `Signer` whose key follows `current()` at every signature. */
 export function followingSigner(
 	source: Readonly<{ current(): Signer }>,
 ): Signer {

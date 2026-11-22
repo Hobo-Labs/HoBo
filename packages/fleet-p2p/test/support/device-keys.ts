@@ -1,7 +1,3 @@
-/**
- * `DeviceKeys` for the unit tests: an Ed25519 SIGN key held in the closure.
- * Sealing is not used by the transport and fails if called.
- */
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import {
 	type DeviceKeys,

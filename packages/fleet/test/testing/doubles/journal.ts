@@ -1,7 +1,3 @@
-/**
- * Event stores broken in exactly one way each, keyed by the journal assertion
- * that must catch the break. Each wraps the in-memory event store.
- */
 import type { EventEnvelope, PositionedEvent } from "@hobo/core";
 import type { FleetEventStore } from "../../../src/ports.js";
 import type { JournalMake } from "../../../src/testing/conformance/journal.js";
@@ -102,7 +98,6 @@ export const BROKEN_JOURNALS: ReadonlyMap<string, JournalMake> = new Map([
 		broken((base) => ({
 			async *readAll(options) {
 				const all = await collect(base.readAll(options));
-				// Keep positions but swap the first two events' bodies: order is wrong.
 				const swapped = all.map((entry, index): PositionedEvent => {
 					const other = index === 0 ? all[1] : index === 1 ? all[0] : entry;
 					return { position: entry.position, event: (other ?? entry).event };

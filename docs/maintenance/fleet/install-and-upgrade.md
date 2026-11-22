@@ -10,7 +10,7 @@ tags: [hobo, fleet, runbook, maintenance, deploy]
 The assets are in [`deploy/fleet/`](../../../deploy/fleet/README.md); its
 "Before the first start" section is the authoritative list of secrets and
 files. Profiles are described in
-[HoBo Fleet](../../design/fleet.md#deployment-availability-and-operations).
+HoBo Fleet.
 
 ## Install
 

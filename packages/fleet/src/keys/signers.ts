@@ -1,6 +1,3 @@
-// In-memory `Signer`s over node KeyObjects: ES256 signatures in IEEE P1363
-// form (r ‖ s, 64 bytes), EdDSA over Ed25519. The private key stays in the
-// closure; nothing here exports it.
 import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 import { KeyAlgorithm } from "../_generated/fleet_pb.js";
 import { type KeyId, parseKeyId } from "../ids.js";
@@ -33,7 +30,6 @@ export function memorySigner(keyId: KeyId, privateKey: KeyObject): Signer {
 	} satisfies Signer);
 }
 
-/** A freshly generated signing key: the private half stays with its holder. */
 export type SigningKey = Readonly<{
 	privateKey: KeyObject;
 	publicJwk: PublicJwk;
@@ -52,7 +48,6 @@ export function generateSigningKey(
 	};
 }
 
-/** A fresh ES256 key whose signer is named as the identity key of the device it would enroll. */
 export function freshDpopKey(): Readonly<{
 	signer: Signer;
 	publicJwk: PublicJwk;

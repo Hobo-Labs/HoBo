@@ -1,8 +1,3 @@
-/**
- * Operations: key ceremony, rotation, backup and restore (L27).
- * Signatures frozen by the fleet contract commit (ADR-0183). Called by
- * `hobo fleet ops …` and by the authority service.
- */
 import type { Clock, FleetLog, Outcome } from "@hobo/fleet";
 import type { SecretsPort } from "@hobo/identity";
 import { backupArchive, restoreArchive } from "./archive.js";
@@ -28,7 +23,6 @@ export type RotatableKey =
 	| "record-signing"
 	| "witness";
 
-/** Generates the NATS operator identity key offline and returns it as two shares. */
 export function runCeremony(
 	context: OpsContext,
 ): Promise<
@@ -49,7 +43,6 @@ export function runCeremony(
 	);
 }
 
-/** Add, publish, switch, remove. Resumable: a second call continues from the step the first reached. */
 export function rotateKey(
 	context: OpsContext,
 	which: RotatableKey,
@@ -80,7 +73,6 @@ export function rotateKey(
 	);
 }
 
-/** Writes the event store and the audit stream to an archive with a manifest of digests. */
 export function backup(
 	context: OpsContext,
 	archivePath: string,
@@ -90,7 +82,6 @@ export function backup(
 	);
 }
 
-/** Loads the archive into a fresh deployment, rebuilds the buckets, increments the incarnation. */
 export function restore(
 	context: OpsContext,
 	archivePath: string,
@@ -115,7 +106,6 @@ function archiveDeps(context: OpsContext, config: OpsConfig, parts: Composed) {
 	};
 }
 
-/** Reads the configuration, composes the deployment, runs `operation`, and closes what it opened. */
 async function composed<T>(
 	context: OpsContext,
 	operation: (config: OpsConfig, parts: Composed) => Promise<Outcome<T>>,

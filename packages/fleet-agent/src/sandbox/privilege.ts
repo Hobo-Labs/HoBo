@@ -1,23 +1,3 @@
-/**
- * Privilege and cgroup probes (D58, A10). A sandbox's mode is probed, never
- * assumed:
- *
- * - **rootful** when the agent's effective uid is 0 (each sandbox still runs
- *   in a user namespace mapped to a reserved high id range);
- * - **rootless** when an unprivileged user namespace can be created: the
- *   kernel switches that would refuse it are read first, then a trial runs
- *   (the provisioned `runsc do true` with a one-id mapping, else `unshare -U
- *   true` if the host happens to have it); with neither, the runtime's own
- *   self-test decides;
- * - otherwise **unavailable**, reason `no-root-or-userns`, with the kernel
- *   setting that refused it when one did.
- *
- * Limits: **delegated** when the agent can create cgroups with the memory and
- * pids controllers (root on a writable hierarchy, or a user whose cgroup's
- * parent is writable and enables both for its children); otherwise
- * **sentry**: the runtime runs with `--ignore-cgroups` and the limits are
- * enforced inside gVisor (`oci-config.ts`).
- */
 import { spawn } from "node:child_process";
 import {
 	accessSync,
@@ -30,7 +10,6 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
-/** The few host facts the probes read, behind a port so tests substitute them. */
 export type HostFacts = Readonly<{
 	readFile(path: string): string | undefined;
 	exists(path: string): boolean;
@@ -66,7 +45,6 @@ export type Privilege =
 
 export type TrialAnswer = Readonly<{ ok: boolean; detail: string }>;
 
-/** Kernel settings that refuse unprivileged user namespaces, with the value that refuses. */
 const USERNS_SWITCHES: readonly Readonly<{
 	path: string;
 	sysctl: string;
@@ -95,7 +73,6 @@ export async function probePrivilege(
 	input: Readonly<{
 		euid: number;
 		host: HostFacts;
-		/** Creates an unprivileged user namespace; undefined when nothing on this host can try. */
 		trial: (() => Promise<TrialAnswer>) | undefined;
 	}>,
 ): Promise<Privilege> {
@@ -128,7 +105,6 @@ export async function probePrivilege(
 export type Cgroups =
 	| Readonly<{
 			mode: "delegated";
-			/** The cgroup each sandbox's cgroup is made under. */
 			parent: string;
 			detail: string;
 	  }>
@@ -221,7 +197,6 @@ function run(
 	});
 }
 
-/** An executable named `name` on PATH, if any; used only for the optional `unshare` trial. */
 function onPath(name: string): string | undefined {
 	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
 		if (dir === "") continue;
@@ -229,18 +204,11 @@ function onPath(name: string): string | undefined {
 		try {
 			accessSync(candidate, constants.X_OK);
 			return candidate;
-		} catch {
-			// Not here.
-		}
+		} catch {}
 	}
 	return undefined;
 }
 
-/**
- * The real user-namespace trial: the provisioned `runsc` running `true` in a
- * sandbox whose root is this user (no `newuidmap` needed), else `unshare -U`
- * when the host has it, else undefined.
- */
 export function userNamespaceTrial(
 	runsc: string | undefined,
 ): (() => Promise<TrialAnswer>) | undefined {

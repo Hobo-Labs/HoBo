@@ -1,22 +1,3 @@
-/**
- * O24, a GitHub job through the fleet end to end (design §6.9, §10.1): a
- * real `nats-server` (operator mode, JetStream, TLS, the auth callout), the
- * box's dispatcher and an executor device each connected as themselves with
- * `createNatsBusConnector`, the `github-actions-job` work source reading a
- * fake GitHub transport, and the runner in a fake sandbox whose GitHub
- * runner is played by the test (`fleet-work/support/runner-double.ts`).
- *
- * - An internal job: offer, claim, an order whose registration arrives sealed
- *   and reaches the sandbox only through `writeSecret`, the fence allowing
- *   the facts the hook posts, and `STARTED` then `SUCCEEDED` receipts.
- * - A fork job GitHub hands the runner instead: the fence refuses the facts
- *   the hook posts, no step runs, and the receipt is `REFUSED`.
- *
- * The fence in a real sandbox with the real hook is
- * `fleet-fence.integration.test.ts`. `nats-server` is
- * `HOBO_FLEET_NATS_SERVER_BIN` or on PATH; absent, the suite skips outside
- * CI and fails in CI (rule 10 of the design's §11.3).
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type FleetBus,
@@ -123,7 +104,6 @@ async function oneJob(assigned: ObservedAssignment) {
 			"new",
 			async (envelope) => {
 				const order = fromBinary(WorkOrderSchema, envelope.payload);
-				// The registration is in the order only as sealed bytes.
 				sealed.push(
 					order.secret !== undefined &&
 						!new TextDecoder().decode(envelope.payload).includes("jit-for-"),
@@ -205,7 +185,6 @@ describe.skipIf(SKIP_NATS)(
 				ReceiptStatus.STARTED,
 				ReceiptStatus.SUCCEEDED,
 			]);
-			// The hook's key has the offer's form: the offered job leaves observedWorkKey empty.
 			expect(run.receipts.at(-1)?.observedWorkKey).toBe("");
 		}, 90_000);
 

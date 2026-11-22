@@ -1,18 +1,3 @@
-/**
- * `EndpointBinding` over the pinned `@number0/iroh` binding (L11, A8, A9).
- *
- * Each endpoint is built from the minimal preset (a crypto provider and
- * nothing else: no n0 relays, no DNS or pkarr discovery), then given the
- * caller's secret key, the one ALPN, and a relay map of exactly the configured
- * relays (or none). With no discovery, a peer is dialled by its endpoint id at
- * each configured relay, and iroh upgrades to a direct path by hole punching
- * where it can. The id of an accepted connection is the one its QUIC handshake
- * proved.
- *
- * The binding is a native addon with prebuilds for a fixed set of platforms;
- * `loadIroh` answers undefined where none loads, which the transport reports
- * as unavailable.
- */
 import { createRequire } from "node:module";
 import type * as Iroh from "@number0/iroh";
 import type {
@@ -25,11 +10,9 @@ import type {
 export type IrohModule = typeof Iroh;
 
 function requireIroh(): IrohModule {
-	// SAFETY: the binding's own declaration file (index.d.ts) describes what its CommonJS entry exports.
-	return createRequire(import.meta.url)("@number0/iroh") as IrohModule;
+	return createRequire(import.meta.url)("@number0/iroh");
 }
 
-/** The binding, or undefined when this platform has no prebuilt one. */
 export function loadIroh(
 	load: () => IrohModule = requireIroh,
 ): IrohModule | undefined {
@@ -40,7 +23,6 @@ export function loadIroh(
 	}
 }
 
-/** Exactly the configured relays; none disables relaying. The n0 relays are never used. */
 export function irohRelayMode(
 	iroh: IrohModule,
 	relayUrls: readonly string[],
@@ -84,9 +66,7 @@ function wrapConnection(connection: Iroh.Connection): EndpointConnection {
 		close() {
 			try {
 				connection.close(0n, []);
-			} catch {
-				// Already closed.
-			}
+			} catch {}
 		},
 		closed: () =>
 			connection.closed().then(
@@ -103,11 +83,6 @@ function sameBytes(a: readonly number[], b: Uint8Array): boolean {
 export function createIrohBinding(
 	iroh: IrohModule,
 	options: Readonly<{
-		/**
-		 * Same-host tests only: endpoints bind to 127.0.0.1, record their sockets
-		 * here, and dial a peer found here at its direct addresses. Production
-		 * passes none and reaches peers through the configured relays.
-		 */
 		addressBook?: Map<string, readonly string[]>;
 	}>,
 ): EndpointBinding {
@@ -125,7 +100,6 @@ export function createIrohBinding(
 			const id = endpoint.id().toString();
 			book?.set(id, endpoint.boundSockets());
 
-			// Handshakes run concurrently, so a slow peer cannot hold up the next one.
 			const ready: EndpointConnection[] = [];
 			const waiting: ((connection: EndpointConnection | undefined) => void)[] =
 				[];
@@ -144,9 +118,7 @@ export function createIrohBinding(
 					}
 					if (ended) connection.close(0n, []);
 					else deliver(wrapConnection(connection));
-				} catch {
-					// A failed handshake is the peer's problem; keep accepting.
-				}
+				} catch {}
 			};
 			void (async () => {
 				for (;;) {
@@ -179,7 +151,6 @@ export function createIrohBinding(
 						endpoint.connect(address, alpnBytes),
 					);
 					const winner = await Promise.any(attempts);
-					// Close any other attempt that also connects.
 					for (const attempt of attempts)
 						void attempt.then(
 							(other) => {

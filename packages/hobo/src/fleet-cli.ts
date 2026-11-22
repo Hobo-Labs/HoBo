@@ -1,9 +1,3 @@
-/**
- * The `hobo fleet` entry of the composed binary. `hobo fleet` parses its own
- * words strictly, so the binary hands them over before the shell's global
- * option parser (which knows no fleet option) sees them. `--json` as the first
- * word prints the result as JSON.
- */
 import type { FleetCommandDeps, FleetResult } from "./fleet-command.js";
 import { runFleetCommand } from "./fleet-command.js";
 import { createFleetRuntime } from "./fleet-runtime.js";
@@ -18,7 +12,6 @@ const PROCESS_OUTPUT: FleetCliOutput = {
 	stderr: (text) => process.stderr.write(text),
 };
 
-/** The exit code of a result: 0 ok, 2 a usage error, 1 anything else. */
 export function exitCodeOf(result: FleetResult): number {
 	if (result.ok !== false) return 0;
 	return result.status === "usage" ? 2 : 1;

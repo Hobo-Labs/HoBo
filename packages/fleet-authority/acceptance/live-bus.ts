@@ -1,9 +1,3 @@
-/**
- * A `FleetBus` that is always whichever connection the agent holds now, so a
- * work source built before the agent connects (the `oci-command` source reads
- * `FLEET_SUBMISSIONS` through it) follows reconnects, as `hobo fleet run`
- * composes it.
- */
 import type { FleetBus } from "@hobo/fleet";
 
 export function liveBus(current: () => FleetBus | undefined): FleetBus {

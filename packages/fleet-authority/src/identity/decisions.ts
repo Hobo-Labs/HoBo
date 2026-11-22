@@ -1,9 +1,3 @@
-/**
- * `PolicyDecisionRecorder` over @hobo/policy (§6.13): every governed decision
- * becomes one `policy.Decided` event, the type @hobo/policy's IR names, with
- * the request's canonical hash so an auditor can match a decision to the
- * exact input it was made on. Never retried or rewritten (ADR-0136).
- */
 import { createHash } from "node:crypto";
 import type { JsonObject, PolicyDecision, PolicyRequest } from "@hobo/core";
 import type { PolicyDecisionRecorder } from "@hobo/fleet";

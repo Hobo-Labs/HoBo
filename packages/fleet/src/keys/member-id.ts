@@ -1,10 +1,3 @@
-// Member ids (design §6.2).
-//
-// A device: `dev_` and the first 32 hex characters of SHA-256(utf8 of its
-// identity key's RFC 7638 thumbprint, base64url).
-// A sponsored member: `bkd_` or `tgt_` and the first 32 hex characters of
-// SHA-256(tenant ‖ 0x00 ‖ kind ‖ 0x00 ‖ fleet ‖ 0x00 ‖ name), where kind is
-// the §6.2 kind name, `BACKEND` or `TARGET`.
 import { createHash } from "node:crypto";
 import type { TenantId } from "@hobo/core";
 import { MemberKind } from "../_generated/fleet_pb.js";

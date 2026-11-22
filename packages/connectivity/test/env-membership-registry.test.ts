@@ -1,12 +1,9 @@
-/**
- * Environment memberships bound to a device are fleet memberships (L14,
- * ledger §8.3): `EnvMembershipService` takes the fleet `RegistryView`, and a
- * membership whose member is not `ACTIVE` there is absent, so a suspended or
- * revoked device loses its environment at the next decision.
- */
 import { parseTenantId } from "@hobo/core";
 import {
+	AttestationTier,
+	DeviceClass,
 	type MemberId,
+	MemberKind,
 	type MemberRecord,
 	MemberState,
 	parseMemberId,
@@ -21,7 +18,41 @@ import {
 const DEVICE = parseMemberId(`dev_${"a".repeat(32)}`);
 const OTHER = parseMemberId(`dev_${"b".repeat(32)}`);
 
-/** A registry double answering only `member`, from a mutable state table. */
+function memberRecord(memberId: MemberId, state: MemberState): MemberRecord {
+	return {
+		$typeName: "hobo.fleet.v1.MemberRecord",
+		memberId,
+		tenant: "",
+		kind: MemberKind.UNSPECIFIED,
+		displayName: "",
+		state,
+		memberships: [],
+		deviceClass: DeviceClass.UNSPECIFIED,
+		attestationTier: AttestationTier.UNSPECIFIED,
+		attestationDigest: "",
+		identityJwk: "",
+		identityThumbprint: "",
+		retiredThumbprints: [],
+		region: "",
+		agentVersion: "",
+		owner: "",
+		ownerAliases: [],
+		sponsor: "",
+		credentialRef: "",
+		endpointDigest: "",
+		invitedBy: "",
+		keyApprovedBy: "",
+		acceptedBy: "",
+		enrolledAt: "",
+		stateChangedAt: "",
+		stateReason: "",
+		recordSequence: 0,
+		authorityIncarnation: 0,
+		issuedAt: "",
+		notAfter: "",
+	};
+}
+
 function registry(states: Map<MemberId, MemberState>): RegistryView {
 	const refuse = () => Promise.reject(new Error("not used by the service"));
 	return {
@@ -30,12 +61,7 @@ function registry(states: Map<MemberId, MemberState>): RegistryView {
 			if (state === undefined) return undefined;
 			if (state === MemberState.UNSPECIFIED)
 				throw new Error("registry unavailable");
-			// SAFETY: EnvMembershipService reads only `state` of a member record.
-			return {
-				$typeName: "hobo.fleet.v1.MemberRecord",
-				memberId: id,
-				state,
-			} as MemberRecord;
+			return memberRecord(id, state);
 		},
 		fleet: refuse,
 		membersOf: refuse,

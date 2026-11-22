@@ -1,6 +1,3 @@
-// The status feed (L27, O20 availability half): one `slo.Measured` event per
-// minute and component, with the attainment of that minute's samples, in the
-// `SloMeasuredData` shape of @hobo/status-page.
 import type { EventEnvelope, JsonObject } from "@hobo/core";
 import type { FleetEventStore } from "@hobo/fleet";
 import { createMemoryEventStore } from "@hobo/fleet/testing";
@@ -28,12 +25,20 @@ async function measured(store: FleetEventStore): Promise<EventEnvelope[]> {
 	return out;
 }
 
-function dataOf(event: EventEnvelope): SloMeasuredData & JsonObject {
+function isObject<T>(value: T): value is T & JsonObject {
+	return Object.prototype.toString.call(value) === "[object Object]";
+}
+
+function dataOf(event: EventEnvelope): SloMeasuredData {
 	const data = event.data;
-	if (data === null || data === undefined || Array.isArray(data))
-		throw new Error("no data");
-	// SAFETY: the test reads back what the feed wrote; the fields are checked by the assertions below.
-	return data as SloMeasuredData & JsonObject;
+	if (!isObject(data)) throw new Error("no data");
+	return {
+		componentId: String(data.componentId),
+		sloName: String(data.sloName),
+		attainment: Number(data.attainment),
+		target: Number(data.target),
+		measuredAt: String(data.measuredAt),
+	};
 }
 
 function byComponent(events: readonly EventEnvelope[], componentId: string) {
@@ -79,7 +84,6 @@ describe("createStatusFeed", () => {
 		const events = await measured(store);
 		expect(byComponent(events, "fleet-enrollment-api")).toHaveLength(10);
 		expect(byComponent(events, "fleet-nats-callout")).toHaveLength(10);
-		// An idle minute has no failed request: its attainment is 1.
 		expect(
 			byComponent(events, "fleet-nats-callout").every(
 				(d) => d.attainment === 1,

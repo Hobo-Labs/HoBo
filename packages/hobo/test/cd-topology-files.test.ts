@@ -399,8 +399,6 @@ describe.skipIf(!existsSync(BIN))(
 				],
 				env,
 			);
-			// The Camp set resolved: the refusal is the missing fleet authority
-			// (enrollment is the fleet's, L19), not the scope.
 			expect(token.ok).toBe(false);
 			expect(token.code).toBe("fleet-unavailable");
 			const unscoped = await deploy(home, [

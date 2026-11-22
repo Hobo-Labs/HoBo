@@ -1,11 +1,3 @@
-/**
- * Signing an observation, and the reader's acceptance rule in authority mode
- * (design §6.8 "In authority mode a reader accepts an observation only if all
- * of these hold"). The old mesh's three trust levels and its `requireTrusted`
- * switch are gone: an observation is verified or it is not used. A refusal
- * names its reason in `detail.reason`, which the caller counts once as
- * `hobo_fleet_observation_rejected`.
- */
 import { fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	type KeyBundle,
@@ -24,9 +16,7 @@ import type { FleetErrorCode } from "../errors.js";
 import { parsePublicJwk, signEnvelope, verifyEnvelope } from "../keys/index.js";
 import type { KeyedEnvelope, Outcome, RegistryView, Signer } from "../ports.js";
 
-/** An observation may ask to be believed at most this far ahead (§6.8). */
 export const MAX_OBSERVATION_TTL_MS = 5 * 60_000;
-/** How far an observer's clock may run ahead of the reader's. */
 export const MAX_CLOCK_SKEW_MS = 60_000;
 
 export type ObservationRejection =
@@ -63,7 +53,6 @@ function refused(
 	};
 }
 
-/** Local mode returns the observation itself; authority mode signs its binary with the observer's SIGN key. */
 export async function build(
 	input: Observation,
 	signer: Signer | undefined,
@@ -76,7 +65,6 @@ export async function build(
 	);
 }
 
-/** The observer's verified, unexpired key bundle, or why there is none. */
 function bundleOf(
 	observer: MemberRecord,
 	nowMs: number,
@@ -120,7 +108,6 @@ export async function accept(
 	if (envelope.context !== OBSERVATION_CONTEXT)
 		return refused("proof-invalid", "context");
 
-	// The observer: an ACTIVE DEVICE with a SIGN key in an unexpired bundle.
 	const observer = await registry.member(observerId);
 	if (observer === undefined)
 		return refused("member-unknown", "observer-unknown");
@@ -138,7 +125,6 @@ export async function accept(
 	if (!verifyEnvelope(envelope, OBSERVATION_CONTEXT, signKey))
 		return refused("proof-invalid", "signature");
 
-	// Only now are the verified bytes decoded.
 	const observation = decode(envelope.payload);
 	if (observation === undefined) return refused("invalid-request", "payload");
 	if (
@@ -147,7 +133,6 @@ export async function accept(
 	)
 		return refused("proof-invalid", "key-mismatch");
 
-	// The member: the observer itself, or one the registry says it sponsors.
 	let member: MemberRecord = observer;
 	if (memberId !== observerId) {
 		const sponsored = await registry.member(memberId);
@@ -166,7 +151,6 @@ export async function accept(
 	)
 		return refused("forbidden", "not-in-fleet");
 
-	// Freshness: later than the last accepted, and not believed for too long.
 	const issuedAtMs = Date.parse(observation.issuedAt);
 	const validUntilMs = Date.parse(observation.validUntil);
 	if (!Number.isFinite(issuedAtMs) || !Number.isFinite(validUntilMs))

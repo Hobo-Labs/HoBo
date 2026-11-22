@@ -1,8 +1,3 @@
-// The reconciler device keys and enrollment request (L19): what
-// `hobo deploy agent enroll --token-file` builds on the agent's host, the
-// same way `hobo fleet enroll --token-file` does (local key generation, then
-// `enroll`). The private keys never leave the host; the request carries only
-// public keys and the signed key bundle.
 import { describe, expect, it } from "vitest";
 import { EnrollmentState, ReconcilerMode } from "../../src/_generated/cd_pb.js";
 import {

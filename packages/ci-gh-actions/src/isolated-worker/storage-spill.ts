@@ -1,11 +1,3 @@
-/**
- * Storage spill is runner provider routing (design §8.5), not fleet state.
- * Not wired into the relay yet: nothing outside this module's tests calls it.
- * A caller would be `HostedRelay`'s reserve pass, when box storage admission
- * refuses a job whose connection is not isolated-only: pick an ARC or
- * GitHub-hosted offer here and reserve the job on it. Today a job the box
- * cannot start waits or is deferred to the rest of the fleet (finding 152).
- */
 import type { Account, Job, Lease } from "@hobo/ci";
 import {
 	isOverflowRunnerLabel,
@@ -21,7 +13,6 @@ export type StorageSpillSelection = Readonly<{
 	backend: RunnerTierState["backend"];
 }>;
 
-/** Map configured offers to runner tiers for pure overflow selection. */
 export function runnerTiersFromAccount(
 	account: Account,
 	input: Readonly<{

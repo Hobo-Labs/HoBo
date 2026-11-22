@@ -1,13 +1,3 @@
-/**
- * The device agent against `createTestAuthority` (design §6.5, §9 F4, F7,
- * F19; O35): enrollment pins the trust record and returns the whole
- * response; a lost refresh answer does not lock, while a copied key does; a
- * changed trust record is pinned only through `acceptTrust`; through a bus
- * outage every receipt waits in `AgentState.pendingReceipts` and is
- * published once afterwards; the agent reconnects after its connection
- * closes, observes itself and its sponsored members, restarts its executor
- * when its memberships change, and follows control messages.
- */
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import {
 	create,
@@ -144,7 +134,6 @@ function receiptsOn(world: World): WorkReceipt[] {
 	return seen;
 }
 
-/** An Ed25519 key in memory, as a signer and as a trust record's key reference. */
 function testKey(keyId: string, purpose: KeyPurpose) {
 	const { privateKey, publicKey } = generateKeyPairSync("ed25519");
 	const signer: Signer = {
@@ -197,7 +186,6 @@ async function trustRecord(
 	});
 }
 
-/** The same payload, signed again by `key` (a stand-in authority the test controls). */
 async function resign(envelope: SignedEnvelope | undefined, key: TestKey) {
 	if (envelope === undefined) return undefined;
 	return signEnvelope(key.signer, MEMBER_RECORD_CONTEXT, envelope.payload);
@@ -267,7 +255,6 @@ describe("enrollment", () => {
 	});
 });
 
-/** A second key store holding the same keys with its own state: a copied device (F7). */
 function copyOf(original: KeyStore, state: AgentState): KeyStore {
 	let held = state;
 	return {
@@ -322,7 +309,7 @@ describe("credentials", () => {
 	it("survives a lost refresh answer: the same generation and nonce get the same answer, even across a restart (F19)", async () => {
 		const world = await createWorld(now);
 		const { agent, keys } = await enrolled(world, "box", [Role.EXECUTOR]);
-		let drops = 2; // the refresh at start and the one the bus connect asks for
+		let drops = 2;
 		world.http.tap((exchange) => {
 			if (exchange.route !== "credentials" || drops === 0) return "deliver";
 			drops -= 1;
@@ -332,7 +319,6 @@ describe("credentials", () => {
 		const lost = await keys.readState();
 		expect(lost.generation).toBe(0);
 		expect(lost.pendingRefreshNonce).toHaveLength(16);
-		// The authority answered and advanced; the device never heard it. Stopping now must not lock it.
 		await agent.stop();
 		const again = agentIn(world, { now, keys });
 		await again.agent.start();
@@ -386,7 +372,6 @@ describe("credentials", () => {
 	});
 });
 
-/** An HTTP stand-in whose answers pass through `rewrite` (async: signing takes a promise). */
 function rewritingFetch(
 	world: World,
 	rewrite: (route: string, body: string) => Promise<string>,
@@ -449,7 +434,6 @@ describe("trust", () => {
 		};
 		const pinned = await trustRecord(1, first);
 		const rotated = await trustRecord(2, second, first);
-		// Signed by the retired keys after the rotation: not acceptable under the new pin.
 		const stale = await trustRecord(3, first);
 		let offered: WitnessedEnvelope = rotated;
 		const fetchThrough = rewritingFetch(world, async (route, body) => {
@@ -498,7 +482,6 @@ describe("trust", () => {
 	});
 });
 
-/** Advances fake time a second at a time until `done` holds, or fails after `limitMs`. */
 async function until(done: () => boolean, limitMs = 180_000): Promise<void> {
 	for (let waited = 0; !done(); waited += 1_000) {
 		if (waited >= limitMs) throw new Error("timed out waiting");
@@ -509,7 +492,6 @@ async function until(done: () => boolean, limitMs = 180_000): Promise<void> {
 const succeeded = (receipts: readonly WorkReceipt[]) =>
 	receipts.filter((receipt) => receipt.status === ReceiptStatus.SUCCEEDED);
 
-/** A dispatcher agent and an executor agent of fleet `hobo`, both started. */
 async function workingPair(world: World) {
 	const work = queueSource(now);
 	const run = heldRunner();
@@ -639,13 +621,11 @@ describe("work through a bus outage (F4)", () => {
 		expect(succeeded(receipts)).toHaveLength(0);
 
 		await assign(executor.keys, "runner", [Role.EXECUTOR]);
-		// The next beat reads the new record and restarts the executor in both fleets.
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(
 			executor.agent.status().member?.memberships.map((m) => m.fleet),
 		).toEqual([FLEET, trunk]);
 		work.add("trunk-job-2", trunk);
-		// The offer made before it joined still stands, so it runs too (L42).
 		await until(() => succeeded(receipts).length === 2);
 		expect(run.ran).toEqual(["trunk-job", "trunk-job-2"]);
 		await dispatcher.agent.stop();

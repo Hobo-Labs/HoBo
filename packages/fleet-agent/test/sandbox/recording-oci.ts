@@ -1,21 +1,3 @@
-/**
- * A recording double of the OCI runtime calls (`OciCalls`), so the driver's
- * logic runs under `runSandboxConformance` without a runtime binary (L38
- * isolated checks). It records every call and every process it is asked to
- * run, and emulates the few programs the logic suite and these tests run:
- *
- * - `true`, and anything unknown: exit 0;
- * - `env`: prints the process's environment;
- * - `sh -c '…cmdline…'`: prints the argv of every process run so far, as a
- *   container's `/proc/<pid>/cmdline` would show them;
- * - the driver's `writeSecret` program: keeps standard input as the file;
- * - `wget … URL`: sends the request over the forwarder routes the driver
- *   registered, as busybox wget does: through the proxy port named by
- *   `http_proxy` in absolute form (a `--post-file` body sent with GET, as
- *   busybox does through a proxy), or straight to the URL's port with
- *   `-Y off`; prints the answer's body and exits 0 on a 2xx, 1 otherwise.
- *   A port with no route is a refused connection (exit 1, no output).
- */
 import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
@@ -33,7 +15,6 @@ export type RecordedContainer = {
 	readonly id: string;
 	readonly pid: number;
 	readonly config: OciConfig;
-	/** The forwarder container's configuration, once started. */
 	forwarder: OciConfig | undefined;
 	routes: readonly ForwardRoute[];
 	readonly files: Map<string, Uint8Array>;
@@ -167,7 +148,6 @@ export function createRecordingOci(
 				removed: false,
 				forwarderStopped: false,
 			};
-			// A runsc workload joins the pod its forwarder started.
 			const pod = pods.get(config.annotations[POD_SANDBOX_ID] ?? "");
 			if (pod !== undefined) {
 				container.forwarder = pod.config;
@@ -186,7 +166,6 @@ export function createRecordingOci(
 				config.process.args[3] ?? "[]",
 			);
 			if (config.annotations[POD_CONTAINER_TYPE] === "sandbox") {
-				// runsc: the forwarder is the pod; the workload joins it later.
 				const members: RecordedContainer[] = [];
 				const pod = { config, routes, members };
 				pods.set(id, pod);
@@ -196,7 +175,6 @@ export function createRecordingOci(
 					},
 				};
 			}
-			// A host runtime: the forwarder joins the running workload's network namespace.
 			const netns = config.linux.namespaces.find(
 				(entry) => entry.type === "network",
 			)?.path;
@@ -222,7 +200,6 @@ export function createRecordingOci(
 				readFileSync(processFile, "utf8"),
 			);
 			processes.push(recorded);
-			// The driver's standard-input relay runs the command itself after `cat |`.
 			const relayed =
 				recorded.args[2] === STDIN_RELAY && recorded.args[3] === "hobo-stdin";
 			const process: OciProcess = relayed

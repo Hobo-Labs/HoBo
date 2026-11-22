@@ -1,6 +1,3 @@
-// Request checks of sign-in (design §7.2): the loopback redirect, PKCE, the
-// user code and the shapes the approval page shows. Parse, don't validate:
-// each check answers the normalised value or a reason.
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 
 // public-contract: the device-code alphabet of §7.2 (no vowels, no look-alikes).
@@ -17,11 +14,6 @@ export type Checked<T> = Readonly<
 	{ ok: true; value: T } | { ok: false; reason: string }
 >;
 
-/**
- * `http://127.0.0.1:<port>/…` or `http://[::1]:<port>/…` and nothing else: no
- * `localhost` (it can resolve elsewhere), no user info, no fragment, an
- * explicit port in range.
- */
 export function checkLoopbackUri(raw: string): Checked<string> {
 	if (!LOOPBACK_PREFIX.test(raw))
 		return {
@@ -65,7 +57,6 @@ export function isCodeVerifier(value: string): boolean {
 	return CODE_VERIFIER.test(value);
 }
 
-/** RFC 7636 S256: BASE64URL(SHA-256(ASCII(code_verifier))). */
 export function pkceChallenge(verifier: string): string {
 	return createHash("sha256").update(verifier, "ascii").digest("base64url");
 }
@@ -87,7 +78,6 @@ export function newUserCode(): string {
 	return out;
 }
 
-/** What a person types: any case, with spaces or dashes between groups. */
 export function parseUserCode(raw: string): Checked<string> {
 	const code = raw.replace(/[\s-]/gu, "").toUpperCase();
 	if (code.length !== USER_CODE_LENGTH)
@@ -101,11 +91,6 @@ export function parseUserCode(raw: string): Checked<string> {
 	return { ok: true, value: code };
 }
 
-/**
- * The state of a device-code sign-in, derived from its user code so that the
- * verification page on any replica finds the same `fleet-signin-<state>`
- * stream without a second index stream.
- */
 export function deviceState(userCode: string): string {
 	return createHash("sha256")
 		.update("hobo-fleet/signin-user-code/v1\u0000", "utf8")

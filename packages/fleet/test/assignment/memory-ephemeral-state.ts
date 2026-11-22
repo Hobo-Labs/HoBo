@@ -1,14 +1,3 @@
-/**
- * An in-memory `EphemeralStatePort` for the assignment tests.
- *
- * `@hobo/fleet` depends only on `@hobo/core`, so the moved replica tests
- * cannot reach `@hobo/kv-redis-compatible`'s in-memory binding. This double
- * keeps that binding's observable semantics, which is all the replica relies
- * on: a per-key version `<incarnation>:<revision>` (a new incarnation each time
- * a key is created, the revision counting writes to it), a TTL on every
- * write, an expired key reading as absent, and conditional writes that fail
- * as lost races rather than errors.
- */
 import {
 	type EphemeralEntry,
 	type EphemeralKey,

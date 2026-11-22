@@ -1,12 +1,3 @@
-// DPoP proofs (RFC 9449), ported from the delivery stack's
-// `packages/cd/src/agent/dpop.ts`. A member signs one proof per request; the
-// verifier checks `typ`, `alg`, the embedded public `jwk`, `htm`, `htu` (no
-// query or fragment), `iat` within ±60 s, `jti`, and — when an access token
-// accompanies the request — `ath`. Replay of `jti` is the replay store's job
-// (./dpop-verifier.ts); key binding (`cnf.jkt`) is the caller's.
-//
-// Adapted: proofs are signed through the `Signer` port, refusals carry the
-// fleet error codes (`proof-invalid`), and the skew is fixed by the design.
 import { createHash, randomBytes } from "node:crypto";
 import type { JsonObject } from "@hobo/core";
 import type { Outcome, PublicJwk, Signer } from "../ports.js";
@@ -25,7 +16,6 @@ import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
 
 // public-contract: the DPoP proof JWT type (RFC 9449 §4.2).
 export const DPOP_JWT_TYPE = "dpop+jwt";
-/** `iat` must be within this much of the verifier's clock (design §11.4 L01). */
 export const DPOP_SKEW_MS = 60_000;
 
 export type VerifiedDpop = Readonly<{
@@ -37,12 +27,10 @@ export type VerifiedDpop = Readonly<{
 	htu: string;
 }>;
 
-/** base64url(SHA-256(access token)), the `ath` claim. */
 export function accessTokenHash(accessToken: string): string {
 	return createHash("sha256").update(accessToken).digest("base64url");
 }
 
-/** `htu` normal form: scheme, host and path; query and fragment removed. */
 export function normalizeHtu(url: string): string {
 	const parsed = new URL(url);
 	return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
@@ -82,7 +70,6 @@ export async function createDpopProof(
 
 export type DpopExpectation = Readonly<{
 	htm: string;
-	/** Full URL, or a path when the verifier does not know its public origin. */
 	htu: string;
 	nowMs: number;
 	accessToken?: string;
@@ -104,7 +91,6 @@ function hostOf(url: string): string | undefined {
 	}
 }
 
-/** Signature and claims; not replay. */
 export function verifyDpopClaims(
 	proof: string,
 	expect: DpopExpectation,

@@ -1,9 +1,3 @@
-/**
- * O5 (registry part): a device's registry view over the real bus verifies
- * every record against its pinned trust; a view refuses a record with a lower
- * `record_sequence` than it has seen, even when whoever controls the bus
- * writes it back, and a restarted view refuses a record past its `not_after`.
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type MemberId,
@@ -27,7 +21,6 @@ import {
 
 const MINUTE = 60_000;
 
-/** The envelope stored for `memberId` right now, read with the authority's credentials. */
 async function stored(
 	fleet: Integration,
 	memberId: MemberId,
@@ -90,7 +83,6 @@ describe.skipIf(SKIP_INTEGRATION)(
 			expect(
 				(await first.registry.member(target.memberId))?.recordSequence,
 			).toBe(2);
-			// Written back as anyone able to write the bucket could.
 			await fleet.authority.publisher.putMember(stale, target.memberId);
 			expect(await first.registry.member(target.memberId)).toBeUndefined();
 

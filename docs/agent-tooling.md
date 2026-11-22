@@ -58,8 +58,7 @@ The [default dev container](../.devcontainer/devcontainer.json) installs **mise*
 [`.devcontainer/Dockerfile`](../.devcontainer/Dockerfile)), plus GitHub CLI, Docker in Docker, native Actions runner dependencies and pinned act. Personal dotfiles install via [`../scripts/bootstrap-dev.sh`](../scripts/bootstrap-dev.sh) (see [`dev-env/mise.md`](dev-env/mise.md)).
 The local CI runner controller and its `HOBO_CI_LOCAL_*` settings are gone. To
 run CI work on a development machine, enroll it as a `PERSONAL` fleet device
-and run `hobo fleet run` (the [fleet quick start](maintenance/fleet/quick-start.md),
-[ADR-0183](design/adr/fleet.md#adr-0183)); only HoBo's reserved JIT runners use
+and run `hobo fleet run` (the [fleet quick start](maintenance/fleet/quick-start.md)); only HoBo's reserved JIT runners use
 `hobo`.
 
 ## Completion review

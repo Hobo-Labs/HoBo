@@ -1,20 +1,3 @@
-/**
- * `createFakeSandboxDriver`: a sandbox driver that isolates nothing, for logic
- * tests (design §11.2 step 5, §7.3). Plumbing of the contract commit.
- *
- * - It records every command it is asked to run, as `argv.join(" ")`, in `runs`.
- *   Secrets written with `writeSecret` are kept in memory and never recorded.
- * - It answers the start fence through the `fence` callback given to `create`:
- *   an `exec` whose argv contains `<controlUrl>/fence` stands for
- *   `POST <controlUrl>/fence` with the `ObservedAssignment` JSON on standard
- *   input; it writes `{"allow":true|false}` to the output and exits 0 when
- *   allowed, 1 when refused. Unreadable facts are refused without asking.
- * - Each sandbox is single use: one `create` per order id, nothing runs after
- *   `destroy`, and `destroy` is idempotent.
- * - Every other command "succeeds" with exit code 0 and no output.
- *
- * It proves nothing about isolation; `runSandboxIsolationProbe` fails it.
- */
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
 	type SandboxTier,
@@ -30,7 +13,6 @@ import type {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** A sandbox driver of the given tier that records what it runs and answers the fence through its callback. Tests only. */
 export function createFakeSandboxDriver(
 	tier: SandboxTier,
 ): SandboxDriver & Readonly<{ runs: readonly string[] }> {
@@ -94,7 +76,6 @@ export function createFakeSandboxDriver(
 	};
 }
 
-/** Parses the fence body; `origin` is the enum number or its name (`WORK_ORIGIN_FORK`). Undefined when anything is missing. */
 function parseObservedAssignment(text: string): ObservedAssignment | undefined {
 	let value: JsonValue;
 	try {

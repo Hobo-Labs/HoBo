@@ -13,7 +13,6 @@ import { describe, expect, it } from "vitest";
 import { createRegistryView, devicePin } from "../src/bus/registry-view.js";
 import { createTenant, TENANT } from "./support/fixture.js";
 
-/** A copy of `record` with `change` applied. */
 function changed(
 	record: MemberRecord | undefined,
 	change: (next: MemberRecord) => void,
@@ -45,7 +44,6 @@ describe("the device's registry view", () => {
 			await view.membersOf(parseFleetId(record?.memberships[0]?.fleet ?? "")),
 		).toHaveLength(1);
 
-		// A record signed by a key the trust record does not list.
 		const other = await tenant.device();
 		const forged = await signEnvelope(
 			keys.sign,
@@ -65,7 +63,6 @@ describe("the device's registry view", () => {
 		);
 		expect(await view.member(other.memberId)).toBeUndefined();
 
-		// A genuine record stored under another member's key.
 		const genuine = await wire.kvGet(
 			"fleet-registry",
 			`member.${keys.memberId}`,

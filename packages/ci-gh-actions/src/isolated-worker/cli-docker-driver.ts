@@ -48,11 +48,6 @@ const dockerContainer = z.object({
 	Labels: z.string().optional(),
 });
 
-/**
- * `docker create` flags for the host engine socket (gid matches the socket's
- * group inside the container). Only when the fleet allows host Docker
- * (`hostDockerAllowed`); no environment variable turns it on.
- */
 export function dockerSocketMountCreateArgs(
 	allowed: boolean,
 	gid: () => number = () => statSync("/var/run/docker.sock").gid,
@@ -153,11 +148,8 @@ function parseDockerPsJson(stdout: string): DockerContainer[] {
 export function createCliDockerDriver(options: {
 	env?: NodeJS.ProcessEnv;
 	binary?: string;
-	/** S1 limits for every container this driver starts (container-flags.ts). */
 	hardening?: ContainerHardening;
-	/** Whether the host Docker socket may be mounted now (`hostDockerAllowed`); default never. */
 	hostDocker?: () => boolean;
-	/** The host socket's group id; read from the socket by default. */
 	socketGid?: () => number;
 	log?: (
 		event: "hobo_ci_blkio_weight_unsupported",

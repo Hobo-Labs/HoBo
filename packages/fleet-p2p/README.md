@@ -1,13 +1,11 @@
 # `@hobo/fleet-p2p`
 
-The peer-to-peer transport of HoBo Fleet (ADR-0183): direct, authenticated
+The peer-to-peer transport of HoBo Fleet: direct, authenticated
 device-to-device streams dialled by Ed25519 key over QUIC (iroh), with relay
 fallback, for shells, port forwards and bulk transfer. The only package with the
 native binding.
 
-Design: [HoBo Fleet](../../docs/design/fleet.md) and
-[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
-[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+Operating it: [the fleet runbooks](../../docs/maintenance/fleet/index.md).
 
 ## Entry points
 

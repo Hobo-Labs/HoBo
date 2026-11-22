@@ -168,7 +168,6 @@ export function createHostedRelayRuntime(options: {
 	headroomFleetDeferMs?: ConstructorParameters<
 		typeof HostedRelay
 	>[0]["headroomFleetDeferMs"];
-	/** See `HostedRelay`: this box's free slots against its fleet's capacity. */
 	fleetCapacity?: Readonly<{
 		snapshot: () => Promise<PeerCapacityWitness & { hoboFreeSlots: number }>;
 	}>;

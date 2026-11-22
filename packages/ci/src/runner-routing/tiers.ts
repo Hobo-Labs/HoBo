@@ -1,9 +1,3 @@
-/**
- * Pure runner tier selection: prefer the hobo fleet, spill to ARC, then a local box,
- * then GitHub-hosted, only when those overflow members are enabled and have
- * free slots. No I/O. Callers pass already-resolved member capacity.
- */
-
 export type RunnerTier = "hobo" | "arc" | "local" | "github";
 
 export type RunnerTierState = Readonly<{
@@ -230,11 +224,6 @@ export function shouldAbortIsolatedLease(
 	return isIsolatedProvider(provider, offer.backend, offer.runsOn);
 }
 
-/**
- * Isolated hosts are the box worker and the kubernetes isolated-container
- * offer pinned to hobo-isolated-worker. Kubernetes + gh-actions (ARC) is shared
- * overflow capacity and must not be treated as isolated.
- */
 export function isIsolatedProvider(
 	provider: string,
 	backend: string,

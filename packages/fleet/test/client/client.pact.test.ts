@@ -1,13 +1,3 @@
-/**
- * PACT consumer tests of `createFleetClient` against the authority's HTTP API
- * (design §6.15, §7.3 `FleetClient`, O35). Each interaction is one route: the
- * mock provider below answers only a request that matches it exactly (method,
- * path and query, protobuf JSON body, and the authentication the route
- * takes, with the DPoP proof verified over that method and URL), and the
- * client must read the canned answer back. When every interaction has run,
- * the pact is written to `contracts/fleet-authority.pact.json`, which L09
- * replays on the provider side.
- */
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -118,7 +108,6 @@ const recorded: Interaction[] = [];
 let expected: Interaction | undefined;
 const mismatches: string[] = [];
 
-/** The mock provider: answers only the interaction under test, and only when the request matches it. */
 const provider: typeof fetch = async (input, init) => {
 	const interaction = expected;
 	if (interaction === undefined) throw new TypeError("no interaction is set");
@@ -201,7 +190,6 @@ function ok<T>(outcome: Outcome<T>): T {
 
 const DPOP_PATTERN = "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$";
 
-/** One interaction in pact form: headers and matching rules follow what the route carries. */
 function pactInteraction(interaction: Interaction) {
 	const [path = "", search] = interaction.path.split("?");
 	const headers = new Map<string, string>([["Accept", "application/json"]]);
@@ -328,9 +316,6 @@ describe("createFleetClient against the authority's HTTP API (PACT consumer)", (
 					auth: "none",
 					status: 200,
 					response: JSON.stringify({
-						// Only the fields every signing key carries, matched by type:
-						// the authority signs RS256 (JwtSvidIssuer), the in-memory
-						// issuer ES256, and both answer this interaction.
 						keys: [{ kty: "EC", alg: "ES256", use: "sig", kid: "k1" }],
 					}),
 				},
@@ -591,7 +576,6 @@ describe("createFleetClient against the authority's HTTP API (PACT consumer)", (
 			credentialRef: "secret://hobo/cache-a",
 			endpointDigest: `sha256:${"b".repeat(64)}`,
 		});
-		// A declared backend runs no agent, so it is answered with no overlay join (D54).
 		const declared = toJsonString(
 			EnrollmentResponseSchema,
 			create(EnrollmentResponseSchema, {

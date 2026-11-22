@@ -1,25 +1,23 @@
-/**
- * The Node egress transport over a stand-in HTTPS client: the verified
- * address is pinned through the handshake, the upload is streamed with
- * backpressure, a response with no body allowed carries none, and a stalled
- * upstream is torn down.
- */
 import { EventEmitter } from "node:events";
-import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
+import type { IncomingHttpHeaders } from "node:http";
 import https, { type RequestOptions } from "node:https";
 import { syncBuiltinESMExports } from "node:module";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nodeSandboxEgressTransport } from "../src/sandbox-egress-proxy.js";
 
-/** One outbound request as the stand-in client records it. */
+type StandInIncoming = PassThrough & {
+	statusCode: number | undefined;
+	headers: IncomingHttpHeaders;
+};
+
 class StandInRequest extends EventEmitter {
 	readonly written: Uint8Array[] = [];
 	ended = false;
 	destroyed: Error | undefined;
 	constructor(
 		readonly options: RequestOptions,
-		private readonly onResponse: (incoming: IncomingMessage) => void,
+		private readonly onResponse: (incoming: StandInIncoming) => void,
 		private readonly backpressure: boolean,
 	) {
 		super();
@@ -46,9 +44,7 @@ class StandInRequest extends EventEmitter {
 			statusCode: status,
 			headers,
 		});
-		// SAFETY: the transport reads only statusCode, headers, resume() and the
-		// readable stream, all of which the PassThrough carries.
-		this.onResponse(incoming as never);
+		this.onResponse(incoming);
 		incoming.end(body);
 	}
 }
@@ -59,16 +55,18 @@ beforeEach(() => {
 	requests.length = 0;
 	backpressure = false;
 	vi.spyOn(https, "request").mockImplementation(
-		// SAFETY: the transport calls request(options, onResponse) only, and uses
-		// on/write/end/destroy of what it returns, which StandInRequest provides.
-		((
-			options: RequestOptions,
-			onResponse: (incoming: IncomingMessage) => void,
-		) => {
-			const request = new StandInRequest(options, onResponse, backpressure);
-			requests.push(request);
-			return request;
-		}) as never,
+		vi
+			.fn()
+			.mockImplementation(
+				(
+					options: RequestOptions,
+					onResponse: (incoming: StandInIncoming) => void,
+				) => {
+					const request = new StandInRequest(options, onResponse, backpressure);
+					requests.push(request);
+					return request;
+				},
+			),
 	);
 	syncBuiltinESMExports();
 });

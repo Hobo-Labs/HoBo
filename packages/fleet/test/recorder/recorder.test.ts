@@ -1,6 +1,3 @@
-// O30 (recorder half): bus envelopes into fleet-work-* and fleet-session-*
-// events, idempotently and only when verified; usage emitted once per fact;
-// work status, logs and reliability answered from the record.
 import { describe, expect, it } from "vitest";
 import { ReceiptStatus } from "../../src/_generated/fleet_pb.js";
 import { createRecorder } from "../../src/recorder/index.js";
@@ -89,7 +86,6 @@ describe("createRecorder", () => {
 			expect(event.meta?.busStream).toEqual(expect.any(String));
 			expect(event.meta?.busSequence).toBeGreaterThan(0);
 		}
-		// The sealed secret is never journalled (§11.3 rule 11).
 		expect(JSON.stringify(events)).not.toContain("secret-material");
 		await recorder.stop();
 	});
@@ -121,13 +117,11 @@ describe("createRecorder", () => {
 		const once = await types(at);
 		expect(once).toHaveLength(4);
 
-		// The same facts arrive again on the bus: nothing new is recorded.
 		await publishAll();
 		await settle(at.store);
 		expect(await types(at)).toEqual(once);
 		await first.stop();
 
-		// A second recorder on the same store resumes after what is recorded.
 		const second = recorderOf(at);
 		second.start();
 		await settle(at.store);
@@ -141,7 +135,6 @@ describe("createRecorder", () => {
 		);
 		await settle(at.store);
 		expect(await types(at)).toEqual([...once, "fleet.WorkStarted"]);
-		// One sandbox usage event for the one receipt that carried seconds.
 		expect(
 			at.usage.filter((event) => event.eventType === "fleet.work.sandbox"),
 		).toHaveLength(1);
@@ -150,24 +143,20 @@ describe("createRecorder", () => {
 
 	it("counts an unverifiable envelope and never records it", async () => {
 		const { at, dispatcher, executor } = await scene();
-		const stranger = await device([Role.EXECUTOR], "stranger"); // not in the registry
+		const stranger = await device([Role.EXECUTOR], "stranger");
 		const recorder = recorderOf(at);
 		recorder.start();
-		// An executor is not a dispatcher: its offer is refused.
 		await at.bus.offers.publish(await offer(executor), FLEET);
-		// An unknown signer.
 		await at.bus.events.publish(
 			await receipt(stranger, ReceiptStatus.STARTED),
 			stranger.keys.memberId,
 			"receipt",
 		);
-		// A tampered payload.
 		const tampered = await receipt(executor, ReceiptStatus.SUCCEEDED);
 		const bytes = tampered.payload.slice();
 		bytes.set([(bytes.at(-1) ?? 0) ^ 1], bytes.length - 1);
 		tampered.payload = bytes;
 		await at.bus.events.publish(tampered, executor.keys.memberId, "receipt");
-		// Signed by the dispatcher, published under the executor's subject.
 		await at.bus.events.publish(
 			await receipt(dispatcher, ReceiptStatus.STARTED),
 			executor.keys.memberId,
@@ -259,7 +248,7 @@ describe("createRecorder", () => {
 			"session-close",
 		);
 		await settle(at.store);
-		expect(at.usage).toEqual([]); // the initiator's fact alone bills nothing
+		expect(at.usage).toEqual([]);
 		await at.bus.events.publish(
 			acceptorClose,
 			executor.keys.memberId,
@@ -270,7 +259,6 @@ describe("createRecorder", () => {
 			executor.keys.memberId,
 			"session-close",
 		);
-		// A direct session with no grant on record bills its first close.
 		await at.bus.events.publish(
 			await sessionClose(executor, "s2", "p2p", 10, 20),
 			executor.keys.memberId,
@@ -385,7 +373,6 @@ describe("createRecorder", () => {
 			executor.keys.memberId,
 			"log",
 		);
-		// A chunk for this order signed by someone else is not the executor's log.
 		await at.bus.events.publish(
 			await logChunk(dispatcher, 2, "forged"),
 			dispatcher.keys.memberId,
@@ -422,7 +409,7 @@ describe("createRecorder", () => {
 		await recorder.stop();
 
 		const rebuilt = recorderOf(at);
-		await rebuilt.workStatus("warm-up"); // any read catches up from the store
+		await rebuilt.workStatus("warm-up");
 		expect(rebuilt.reliability().get(executor.keys.memberId)).toEqual(samples);
 	});
 });

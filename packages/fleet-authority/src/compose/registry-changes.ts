@@ -1,11 +1,3 @@
-/**
- * The witness's `registryChanges` source (carry-forward from L31): the
- * registry as the witness's own bus connection sees it, read every
- * `intervalMs`. Each key (`member.<id>`, `fleet.<id>`, `trust`) is reported
- * once per new record sequence (`record_sequence`, `revision`, the trust
- * record's `sequence`); a re-sign keeps the sequence and is not reported, as
- * `createWitness` requires.
- */
 import type { RegistryView, Subscription } from "@hobo/fleet";
 
 export function pollRegistryChanges(
@@ -34,9 +26,7 @@ export function pollRegistryChanges(
 						`member.${member.memberId}`,
 						Number(member.recordSequence),
 					);
-			} catch {
-				// The next round reads again; a change is never lost, only reported late.
-			}
+			} catch {}
 		};
 		const tick = () => {
 			if (stopped || running !== undefined) return;

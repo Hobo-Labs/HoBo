@@ -1,5 +1,3 @@
-// O7: nothing unsigned or altered is trusted. Any single-bit change, wrong
-// context or unlisted key is rejected, 10,000 cases per envelope kind.
 import { create, equals, fromBinary, toBinary } from "@bufbuild/protobuf";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -49,7 +47,6 @@ const SIGNED_FIELDS = [
 	"signature",
 ] as const;
 
-/** The envelope with one bit of one field flipped; undefined when the field is empty. */
 function flipField(
 	envelope: SignedEnvelope,
 	field: (typeof SIGNED_FIELDS)[number],
@@ -131,13 +128,11 @@ describe.each([
 							payload,
 						);
 						expect(verifyEnvelope(envelope, CLAIM_CONTEXT, key.ref)).toBe(true);
-						// Every bit of every field the envelope carries.
 						const changed = flipField(envelope, field, bit);
 						if (changed !== undefined)
 							expect(verifyEnvelope(changed, CLAIM_CONTEXT, key.ref)).toBe(
 								false,
 							);
-						// Every bit of the wire encoding that decodes to a different envelope.
 						const altered = decodeSigned(
 							flipBit(toBinary(SignedEnvelopeSchema, envelope), bit),
 						);

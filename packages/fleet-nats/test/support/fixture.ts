@@ -1,8 +1,3 @@
-/**
- * A tenant for unit tests: an authority and a witness key, the witnessed
- * trust record, and helpers that sign member records and session tickets
- * the way the authority does, published on an in-memory wire.
- */
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { clone, create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -67,7 +62,6 @@ export type Tenant = Readonly<{
 	now: () => number;
 	setNow(ms: number): void;
 	authority: Signer;
-	/** The witness key the trust record pins. */
 	witness: Signer;
 	device(
 		options?: Readonly<{
@@ -76,7 +70,6 @@ export type Tenant = Readonly<{
 			tenant?: string;
 		}>,
 	): Promise<DeviceKeys>;
-	/** Re-signs a device's record with `change` applied and `record_sequence` one higher, and publishes it. */
 	update(
 		memberId: MemberId,
 		change: (record: MemberRecord) => void,
@@ -94,7 +87,6 @@ export type Tenant = Readonly<{
 
 export type MemoryTenant = Tenant & Readonly<{ nats: MemoryNats }>;
 
-/** A tenant on an in-memory bus. */
 export async function createTenant(): Promise<MemoryTenant> {
 	let clock = Date.now();
 	const now = () => clock;
@@ -115,7 +107,6 @@ export async function createTenant(): Promise<MemoryTenant> {
 	return { ...tenant, nats };
 }
 
-/** A tenant whose authority publishes on `bus`: its trust record is published first. */
 export async function createTenantOn(
 	bus: AuthorityBus,
 	now: () => number,

@@ -1,12 +1,3 @@
-/**
- * `@hobo/fleet/client` (L07): the typed HTTP client of the authority's API,
- * one method per non-browser route of `FleetApi` (design §6.15, §7.3).
- *
- * Bodies are protobuf JSON of the named record; errors come back as the §7.6
- * `FleetFailure`; every authenticated call carries a DPoP proof made with
- * `auth.signer` (see ./http.ts for which routes take a token, a bare proof or
- * nothing). Nothing here throws across the port.
- */
 import {
 	AuditCheckpointsSchema,
 	AuditEntriesSchema,
@@ -73,7 +64,6 @@ type LifecycleMethod =
 	| "unlock"
 	| "revoke";
 
-/** The path suffix of each lifecycle route (§6.15). */
 const LIFECYCLE_PATHS = {
 	approveKey: "approve-key",
 	accept: "accept",

@@ -1,5 +1,3 @@
-// The operations' configuration, and the frozen entry points' answers when
-// the configuration or the deployment is not usable.
 import { describe, expect, it } from "vitest";
 import { parseOpsConfig } from "../../src/ops/config.js";
 import {

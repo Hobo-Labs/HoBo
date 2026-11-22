@@ -10,7 +10,7 @@ tags: [hobo, fleet, runbook, maintenance, identity]
 Every action here is governed: it is a policy decision recorded as
 `policy.Decided`, needs a signed-in person (`hobo fleet login`) with the
 right tag, and lands in the audit chain. States are described in
-[HoBo Fleet](../../design/fleet.md#enrollment).
+HoBo Fleet.
 
 ## Enroll a device
 

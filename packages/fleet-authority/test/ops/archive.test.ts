@@ -1,6 +1,3 @@
-// Backup and restore, the edges: a tampered archive, a deployment that is not
-// fresh, another tenant, a witness that is down, a restore run twice, and the
-// high-availability profile's journal copy.
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseTenantId } from "@hobo/core";

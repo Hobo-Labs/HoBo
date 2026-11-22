@@ -8,12 +8,6 @@ import {
 } from "../src/isolated-worker/box-member-settings.js";
 import { CiProjectDocumentSchema } from "../src/project-schema.js";
 
-/**
- * D61: a box's fleet settings are committed configuration (the `fleet` block
- * of `.hobo/ci.json`, beside `runnerRouting`), never environment variables.
- * Only a file path to the agent's state or its bootstrap token comes from the
- * process.
- */
 /** domain-view: the part of `.hobo/ci.json` these tests write, valid or not. */
 type ProjectDocument = Readonly<{
 	defaultEnvironment?: string;

@@ -66,7 +66,6 @@ export function unitTestCoverageProblems(): string[] {
 		encoding: "utf8",
 		shell: false,
 		env: sanitizeNodeOptions(),
-		// The dry-run plan of every unit task is over 120 MiB on the merged workspace.
 		maxBuffer: 512 * 1024 * 1024,
 	});
 	if (result.status !== 0) {

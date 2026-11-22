@@ -1,21 +1,3 @@
-/**
- * Retires the repository variables that used to carry routing
- * (ADR-0181, decision 6).
- *
- * Routing travels as a routing slip (`routing-slip.ts`) and committed policy
- * (`runnerRouting` in `.hobo/ci.json`); no repository variable carries it. The
- * route-table publisher that lived beside this is gone. What is left is
- * the delete: at each daemon start the slip leader sends one
- * `DELETE /repos/{r}/actions/variables/{name}` per committed
- * `runnerRouting.retiredVariables` entry.
- *
- * - 204 (deleted) and 404 (not there) are success.
- * - 403 means the App lacks "Variables: write". It is logged once for that
- *   start, naming the variables, and never retried in that process: nothing
- *   reads these variables any more, so their presence changes nothing.
- * - Anything else (a 5xx, a network failure) is logged and left for the next
- *   start. Nothing here throws.
- */
 import type { GithubTransport } from "./github.js";
 
 export type VariableRetireEvent =
@@ -37,12 +19,6 @@ export type VariableRetireOutcome = Readonly<{
 
 const NAME = /^[A-Z][A-Z0-9_]{0,99}$/u;
 
-/**
- * Variables retired whatever the committed list says. The relay-mesh fleet
- * state variable was replaced by `@hobo/fleet` membership (ADR-0183); it is
- * no longer in the committed `retiredVariables`, so the delete lives here.
- * The name is built from parts so the retired-variable guard stays green.
- */
 export const ALWAYS_RETIRED_VARIABLES: readonly string[] = [
 	["HOBO", "CI", "FLEET", "STATE"].join("_"),
 ];

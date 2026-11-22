@@ -87,12 +87,7 @@ const CONTRACT_PACKAGE_PATHS = new Set([
 	"packages/bindings",
 	"packages/claims",
 	"packages/trust",
-	// `@hobo/fleet` (ADR-0183): every fleet's records, ports and domain logic.
-	// A contract so that `@hobo/data-postgres`, `@hobo/backend-routing`,
-	// runtimes and adapters may import it; it imports only `@hobo/core`.
 	"packages/fleet",
-	// Cost-based choosing among storage backends, renamed from
-	// `packages/backend-fleet`; it imports `@hobo/fleet` and `@hobo/core`.
 	"packages/backend-routing",
 	"packages/data-postgres",
 	"packages/kv-redis-compatible",
@@ -295,10 +290,6 @@ const KNOWN_PACKAGE_PATHS = new Set([
 	"packages/data-core",
 	"packages/data-sqlite",
 	"packages/data-mongodb",
-	// HoBo Fleet (ADR-0183). `packages/fleet` is a contract (decided in
-	// `CONTRACT_PACKAGE_PATHS`); the other four are ordinary layer-3 packages:
-	// the NATS adapter, the peer-to-peer transport, the device library and the
-	// authority service.
 	"packages/fleet",
 	"packages/fleet-nats",
 	"packages/fleet-p2p",

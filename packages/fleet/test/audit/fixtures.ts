@@ -1,4 +1,3 @@
-// Test keys, a trust record and an in-memory AuditLog for the audit tests.
 import { generateKeyPairSync, sign } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -86,14 +85,12 @@ export function witnessedOf(
 	return create(WitnessedEnvelopeSchema, { authority, witness });
 }
 
-/** An AuditLog in memory: holds what it is given and hands out what it holds, unchanged. */
 export type MemoryAuditLog = AuditLog &
 	Readonly<{
 		all: AuditEntry[];
 		checkpoints: SignedEnvelope[];
 		proposeHandlers: ((record: SignedEnvelope) => Promise<void>)[];
 		witnessedHandlers: ((checkpoint: WitnessedEnvelope) => Promise<void>)[];
-		/** Entries returned by `entries`: all of them unless a test hides some. */
 		visible: (entry: AuditEntry) => boolean;
 		hide(predicate: (entry: AuditEntry) => boolean): void;
 	}>;
@@ -153,7 +150,6 @@ export type EntrySpec = Readonly<{
 	digest?: string;
 }>;
 
-/** Appends chained entries to `log`, as the authority's chain would. */
 export async function appendEntries(
 	log: MemoryAuditLog,
 	specs: readonly EntrySpec[],
@@ -182,14 +178,12 @@ export async function appendEntries(
 
 export type EntryHead = Readonly<{ hash: string; at: string }>;
 
-/** Hash and `at` of the entry at `sequence` (1-based). */
 export function headOf(log: MemoryAuditLog, sequence: number): EntryHead {
 	const entry = log.all[sequence - 1];
 	if (entry === undefined) throw new Error(`no entry ${sequence}`);
 	return { hash: entryHash(entry.previousHash, entry), at: entry.at };
 }
 
-/** Appends the `fleet.AuditCheckpointed` entry the authority's chain would write for a checkpoint over `sequence`. */
 export async function appendCheckpointEntry(
 	log: MemoryAuditLog,
 	sequence: number,

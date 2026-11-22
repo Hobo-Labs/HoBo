@@ -30,7 +30,6 @@ export type EnvIsolationEvalContext = Readonly<{
 	policyPack?: EnvNetworkIsolationPolicyPack;
 	/** Elevated capability JWT if presented. */
 	elevatedToken?: string;
-	/** Whose elevated capabilities are accepted, and how they are verified. Absent: none is. */
 	elevatedTrust?: ElevatedCapabilityTrust;
 	/** Cross-env grant id if presented. */
 	crossEnvGrantId?: string;

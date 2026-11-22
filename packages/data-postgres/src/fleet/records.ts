@@ -1,15 +1,3 @@
-/**
- * The `@hobo/fleet` records a Postgres fleet hands its one-active loop.
- *
- * A Postgres fleet runs in local mode (ADR-0183): the process that writes
- * the backends' stores runs the loop, and its registry is its configuration.
- * The registry here lists every configured backend as an `ACTIVE` `BACKEND`
- * member of one `ONE_ACTIVE` fleet, under its configured name; which of them
- * decide an epoch is the assignment log's business, never this registry's.
- *
- * Records are written as plain protobuf-es values (with their `$typeName`):
- * nothing here is signed or sent, so no envelope or encoder is involved.
- */
 import {
 	ApprovalMode,
 	AttestationTier,
@@ -31,10 +19,8 @@ import {
 } from "@hobo/fleet";
 import { PostgresDataError } from "../errors.js";
 
-/** The largest `failing_for_ms` an observation carries (uint32). */
 const MAX_FAILING_FOR_MS = 4_294_967_295;
 
-/** A Postgres fleet's health thresholds, from the reconcile's routing policy. */
 export type PostgresFleetThresholds = Readonly<{
 	failoverAfterMs: number;
 	recoveryPointMs: number;
@@ -114,7 +100,6 @@ function memberRecord(
 	};
 }
 
-/** The member's name in `fleet`, or undefined for a record of another fleet. */
 export function memberNameIn(
 	record: MemberRecord,
 	fleet: FleetId,
@@ -123,10 +108,6 @@ export function memberNameIn(
 		?.name;
 }
 
-/**
- * The fleet record and the configuration-built registry of a Postgres fleet:
- * one `ACTIVE` `BACKEND` member per configured name, in configured order.
- */
 export function postgresFleetRegistry(
 	fleet: FleetId,
 	names: readonly MemberName[],
@@ -166,7 +147,6 @@ export function postgresFleetRegistry(
 	return { fleet: record, registry };
 }
 
-/** What one tick saw of one backend, as the fleet's `Observation`. */
 export function postgresObservation(
 	input: Readonly<{
 		health: Health;
@@ -197,8 +177,6 @@ export function postgresObservation(
 				used: entry.used,
 			}),
 		),
-		// A storage backend admits no work, so it states no refusal (the
-		// proto3 default; amendment 4, D60).
 		refusal: Refusal.UNSPECIFIED,
 		labels: [],
 		sandboxTiers: [],
@@ -212,7 +190,6 @@ export function postgresObservation(
 	};
 }
 
-/** An observation of a backend nothing is known about. */
 export function unknownObservation(): Observation {
 	return postgresObservation({
 		health: Health.UNKNOWN,

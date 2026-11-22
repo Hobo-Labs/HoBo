@@ -82,7 +82,9 @@ describe("enrollment with a bootstrap token", () => {
 				undefined,
 			),
 		);
-		const record = decoded(response.memberRecord);
+		const signed = response.memberRecord;
+		if (signed === undefined) throw new Error("no record");
+		const record = decoded(signed);
 		expect(record.memberId).toBe(laptop.keys.memberId);
 		expect(record.state).toBe(MemberState.PENDING);
 		expect(record.memberships[0]?.roles).toEqual([Role.EXECUTOR]);
@@ -91,16 +93,11 @@ describe("enrollment with a bootstrap token", () => {
 		expect(record.attestationTier).toBe(AttestationTier.T0_SOFTWARE_KEY);
 		expect(record.recordSequence).toBe(1);
 		expect(
-			// SAFETY: decoded() above threw unless the record is present.
-			verifyEnvelope(
-				response.memberRecord as SignedEnvelope,
-				MEMBER_RECORD_CONTEXT,
-				{
-					kty: "OKP",
-					crv: "Ed25519",
-					x: h.recordKey,
-				},
-			),
+			verifyEnvelope(signed, MEMBER_RECORD_CONTEXT, {
+				kty: "OKP",
+				crv: "Ed25519",
+				x: h.recordKey,
+			}),
 		).toBe(true);
 		expect(response.discovery?.issuer).toBe("https://authority.fleet.test");
 		expect(response.discovery?.trust).toBeDefined();

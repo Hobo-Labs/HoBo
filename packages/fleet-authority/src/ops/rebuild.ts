@@ -1,8 +1,3 @@
-// After a restore, the registry bucket is rebuilt from the journal before
-// any authority starts (design §6.16 "rebuilds the buckets"): each member or
-// fleet stream's last journalled `record` (the shape L02 appends, D57) is
-// signed again under the new incarnation and published. The authority's own
-// projection takes over once it runs. Private to L27.
 import { create, fromJson, toBinary } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
 import {
@@ -19,7 +14,6 @@ import {
 import { signEnvelope } from "@hobo/fleet/keys";
 import { isJsonObject } from "./json.js";
 
-/** A registry record is valid for at most 30 minutes after it is signed (§6.14). */
 export const RECORD_LIFETIME_MS = 30 * 60 * 1_000;
 const MEMBER_PREFIX = "fleet-member-";
 const FLEET_PREFIX = "fleet-fleet-";
@@ -32,7 +26,6 @@ export type RebuildDeps = Readonly<{
 	now: () => number;
 }>;
 
-/** Each stream's last journalled record, by stream id. */
 async function lastRecords(
 	store: FleetEventStore,
 ): Promise<ReadonlyMap<string, JsonValue>> {
@@ -53,7 +46,6 @@ async function lastRecords(
 	return last;
 }
 
-/** Signs and publishes every member and fleet record; the count of each. */
 export async function rebuildRegistry(
 	deps: RebuildDeps,
 ): Promise<Readonly<{ members: number; fleets: number }>> {

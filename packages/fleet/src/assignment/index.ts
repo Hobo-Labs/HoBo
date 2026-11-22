@@ -1,15 +1,3 @@
-/**
- * `@hobo/fleet/assignment` (L05): the one-active assignment register, moved
- * from `packages/backend-fleet/src/{assignment,ephemeral-replica}.ts` at
- * 62dbc5d4c with the names of §7.3, plus membership epochs and the one-active
- * loop (§6.10). Exactly the entry points of §7.3; everything else in this
- * directory is private.
- *
- * The re-exports below keep the fleet-wave-0 order on purpose (functions in
- * declaration order, then the constants, as TypeScript bound the stubs):
- * `scripts/emit-fleet-contracts.mts` emits names in barrel order, so the
- * committed `contracts/api.snapshot.d.ts` depends on it. Do not sort them.
- */
 // biome-ignore-all assist/source/organizeImports: export order is the fleet-wave-0 snapshot order (see above).
 export { parseAssignmentEntry } from "./register.js";
 export { assignmentKey } from "./register.js";

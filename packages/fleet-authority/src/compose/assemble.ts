@@ -1,12 +1,3 @@
-/**
- * The authority composed from its deps (L09): `createEnrollmentAuthority` with
- * its real `AuthorityParts` (sign-in, recorder, registry projection, fleet
- * commands in `mode: "authority"`, the audit chain, and the claim rules with
- * the projection's ranking), the status feed, and the loops that drive them.
- *
- * Both profiles compose through here; they differ only in the deps
- * (`profile.ts`). Nothing here decides anything itself.
- */
 import type {
 	AuthorityDeps,
 	EnrollmentAuthority,
@@ -24,7 +15,6 @@ import { checkClaim } from "@hobo/fleet/work";
 import { createStatusFeed } from "../status/index.js";
 import { withProjectionRanking } from "./ranking.js";
 
-/** The projection asks to be ticked about once a second (L31); the status feed once a minute (L27). */
 const TICK_MS = 1_000;
 const STATUS_TICK_MS = 60_000;
 
@@ -33,22 +23,16 @@ export type StatusFeed = ReturnType<typeof createStatusFeed>;
 
 export type AuthorityRuntime = Readonly<{
 	authority: EnrollmentAuthority;
-	/** The sign-in part, for the three routes whose DPoP proof is not in the method signature (D56). */
 	signIn: SignInPart;
 	status: StatusFeed;
-	/** True once the registry projection has published everything journalled when it started. */
 	ready(): boolean;
-	/** Starts the recorder and the tick loops; resolves once the first catch-up has begun. */
 	start(): void;
-	/** One round of every loop, for tests and for a caller that drives time itself. */
 	tickOnce(): Promise<void>;
 	stop(): Promise<void>;
 }>;
 
 export type AssembleOptions = Readonly<{
-	/** Default: `createStatusFeed` over `deps.store`. */
 	status?: StatusFeed;
-	/** Default true. Tests drive `tickOnce` themselves. */
 	timers?: boolean;
 	statusStore?: FleetEventStore;
 }>;
@@ -105,7 +89,6 @@ export function assembleAuthority(
 	};
 
 	const tickOnce = async (): Promise<void> => {
-		// One tick at a time: a slow tick is never overlapped by the next.
 		if (ticking !== undefined) return ticking;
 		ticking = (async () => {
 			try {

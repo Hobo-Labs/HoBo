@@ -1,4 +1,3 @@
-// O29: sign-in is single use, loopback only and key-bound (design §6.5, §10.1).
 import { createHash, randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { type PrincipalRef, parseTenantId } from "@hobo/core";
@@ -203,7 +202,6 @@ function code<T>(outcome: Outcome<T>): string {
 	return outcome.ok ? "ok" : outcome.error.code;
 }
 
-/** Runs the browser flow up to the person's confirmation; returns the loopback code. */
 async function browserToApproval(
 	w: World,
 	key: Key,
@@ -271,7 +269,6 @@ describe("createSignIn: the browser flow", () => {
 				redirectUri: `${ISSUER}/v1/fleet/signin/callback`,
 			},
 		]);
-		// The authority runs its own PKCE with the provider; the CLI's challenge never leaves it.
 		expect(started.authorizeUrl).not.toContain(challenge);
 	});
 
@@ -335,7 +332,6 @@ describe("createSignIn: the browser flow", () => {
 				await proof(w, other, COMPLETE_URL),
 			);
 		expect(code(outcome)).toBe("proof-invalid");
-		// The refusal does not consume the code: the right key still completes.
 		const retried = await w
 			.signIn()
 			.complete(

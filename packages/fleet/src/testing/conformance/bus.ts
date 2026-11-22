@@ -1,21 +1,3 @@
-/**
- * `runBusConformance` (design §7.3, O3–O5): what every `AuthorityBus` must do.
- *
- * - The registry serves what the publisher put, and refuses a record past its
- *   `not_after` and one whose `record_sequence` (member) or `revision` (fleet)
- *   is lower than the highest it has returned for that key (§7.4).
- * - The claim ledger lets the first writer win until a dispatcher removes it.
- * - Streams keep order and sequence numbers, filter by fleet, addressee or
- *   kind, and honour `BusStart`; a stopped subscription receives nothing.
- * - Observations keep the latest per observer and member; the replay store
- *   answers `firstUse` once; `close` reports the bus closed.
- *
- * Registry records are signed by an Ed25519 authority key the suite makes for
- * each bus, and a trust record naming it (co-signed by a suite witness key) is
- * published with `publisher.putTrust` before any record. An adapter whose view
- * verifies against a pinned trust record pins the one `putTrust` published.
- * Every id is random, so the suite runs against a server shared between runs.
- */
 import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -67,7 +49,6 @@ export type BusMake = () => Promise<AuthorityBus>;
 
 const MINUTE = 60_000;
 const WAIT_MS = 5_000;
-/** How long a negative check waits for a message that must not come. */
 const QUIET_MS = 100;
 const TENANT = "conformance";
 const encoder = new TextEncoder();
@@ -78,7 +59,6 @@ const randomFleet = (): FleetId =>
 const iso = (ms: number) => new Date(ms).toISOString();
 const textOf = (envelope: SignedEnvelope) => decoder.decode(envelope.payload);
 
-/** An opaque envelope whose payload is `marker`: streams carry envelopes without reading them. */
 const marked = (context: string, marker: string): SignedEnvelope =>
 	create(SignedEnvelopeSchema, {
 		context,
@@ -90,7 +70,6 @@ const marked = (context: string, marker: string): SignedEnvelope =>
 
 type Authority = Readonly<{ bus: AuthorityBus; key: SuiteKey }>;
 
-/** Makes a bus and publishes a trust record naming a fresh suite authority key. */
 async function withAuthority(make: BusMake): Promise<Authority> {
 	const bus = await make();
 	const key = createSuiteKey("authority#1");
@@ -201,10 +180,8 @@ async function putFleet(
 }
 
 type Received = { markers: string[]; sequences: number[] };
-/** What one offer subscription has delivered so far, and how to stop it. */
 type Collected = Readonly<{ received: Received; subscription: Subscription }>;
 
-/** Subscribes the offer feed and collects what arrives. */
 function collectOffers(
 	bus: AuthorityBus,
 	fleets: readonly FleetId[],
@@ -233,7 +210,6 @@ async function within<T>(
 	}
 }
 
-/** The bus assertions, in the order they are registered. */
 export const BUS_ASSERTIONS: readonly ConformanceAssertion<BusMake>[] = [
 	{
 		name: "the registry serves a published member record",

@@ -1,11 +1,3 @@
-/**
- * An in-memory `AuditLog` with the witness's publish path, for the acceptance
- * world on the memory bus (whose own witness path is private to the
- * plumbing, §11.3 rule 6). A co-signature is paired with the checkpoint or
- * trust record whose payload bytes it signed, and the pair is delivered to
- * `onWitnessed` or `onTrustWitnessed`. The real chain and witness of
- * `@hobo/fleet/audit` run on top of it.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type AuditEntry,

@@ -1,9 +1,3 @@
-/**
- * A fake GitHub REST transport for the `github-actions-job` work kind: one
- * installation, repositories with runs and jobs the test sets, the run
- * detail and workflow file the work source reads, and the job lookup
- * `stillWanted` makes. Every request is recorded. Unknown paths answer 404.
- */
 import type { JsonValue } from "@hobo/core";
 import type { GithubTransport } from "../../../src/github.js";
 
@@ -38,7 +32,6 @@ export type FakeGithub = GithubTransport & {
 	readonly runs: FakeRun[];
 	readonly jobs: FakeJob[];
 	readonly requests: string[];
-	/** Paths answered with this status instead. */
 	readonly failing: Map<string, number>;
 };
 
@@ -153,7 +146,6 @@ export function createFakeGithub(repository = "acme/app"): FakeGithub {
 	};
 }
 
-/** An internal push run with one queued `hobo` job. */
 export function queueJob(
 	github: FakeGithub,
 	init: Partial<FakeRun> &

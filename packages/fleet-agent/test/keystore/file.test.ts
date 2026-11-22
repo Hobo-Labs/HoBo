@@ -1,8 +1,3 @@
-/**
- * The file key store (design §6.4, O36): the shared conformance suite, the
- * key directory rules (outside any git checkout, `0700`, never writable by
- * group or others) and the file modes (`0600`).
- */
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { chmod, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,7 +18,6 @@ function scratch(): string {
 	return mkdtempSync(join(tmpdir(), "hobo-fleet-keystore-"));
 }
 
-/** A key directory that does not exist yet, outside any git checkout. */
 function freshHome(): string {
 	return join(scratch(), "fleet");
 }

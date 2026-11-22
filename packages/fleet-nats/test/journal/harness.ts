@@ -1,17 +1,3 @@
-/**
- * The A15 adapter harness: hosts the journal store in `@hobo/conformance`'s
- * `runEventStoreConformance` (R6), whose factory is synchronous, reopens a
- * data directory, and needs `close()` and `fold()`.
- *
- * - The factory returns at once; every method awaits the store being opened.
- * - A "data directory" names one journal stream: reopening it opens a new
- *   connection (a new store instance with an empty cache) on the same stream.
- * - `fold` follows `@hobo/runtime-local`: a handler that throws quarantines its
- *   event by appending one `<family>.Quarantined` event, once per event.
- * - The crash probe starts batches of three events and closes the connection
- *   while they are in flight; after reopening, every acknowledged batch is
- *   present and every batch is present whole or not at all.
- */
 import type {
 	AppendOptions,
 	EventEnvelope,
@@ -144,7 +130,6 @@ function alreadyQuarantined(events: readonly EventEnvelope[], seq: number) {
 	);
 }
 
-/** The crash probe: batches of three in flight when the connection is closed. */
 export function journalCrashProbe(): (
 	createStore: CreateRuntimeLocalEventStore,
 	dataDir: string,

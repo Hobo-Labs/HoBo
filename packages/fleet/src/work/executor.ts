@@ -1,13 +1,3 @@
-/**
- * The executor loop (design §6.9 steps 2, 3, 6 to 8; §6.11): for each offer
- * in a fleet it executes in, fit it, wait its turn, and claim; wait up to 30
- * seconds for the order, check it, open an egress proxy for it, start a fresh
- * sandbox with the start fence, run the work kind, publish log chunks and
- * receipts, destroy the sandbox. Receipts go to `AgentState.pendingReceipts`
- * before they are published and leave it once published, so they survive a
- * bus outage (F4); order ids it has seen are persisted. With the bus down it
- * claims nothing and keeps running what it has. Private to L04.
- */
 import { clone, create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	ClaimSchema,
@@ -73,32 +63,19 @@ import {
 } from "./rules.js";
 import { deviceSigner, signLogChunk, signReceipt } from "./signed.js";
 
-/** §6.9: how long a claimant waits for its order. */
 export const ORDER_WAIT_MS = 30_000;
-/** How often queued receipts are retried while the bus is down. */
 const FLUSH_MS = 10_000;
-/** §7.1 `WorkLogChunk.data`: at most 64 KiB. */
 const LOG_CHUNK_BYTES = 64 * 1024;
-/** Order ids kept; the order stream keeps 15 minutes, far fewer than this. */
 const SEEN_LIMIT = 10_000;
 const ORDERS = "orders";
 const OFFERS = "offers";
 
 type Held = { offer: WorkOffer; timer: ReturnType<typeof setTimeout> };
-/**
- * Where the offer subscription starts: the start of `FLEET_OFFERS`, whose
- * 15-minute maximum age (§6.7) holds every offer still standing (an offer
- * stands 10 minutes), so an executor that has just started, restarted or
- * joined a fleet sees the offers made before it listened. Offers past their
- * `expires_at` are skipped, and each digest is handled once while its offer
- * stands.
- */
 const OFFERS_FROM = "start";
 type Live = { sandbox: Sandbox; abort: AbortController };
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-/** The log event of each receipt status (§7.5). */
 const RECEIPT_EVENTS = {
 	[ReceiptStatus.UNSPECIFIED]: "hobo_fleet_work_abandoned",
 	[ReceiptStatus.STARTED]: "hobo_fleet_work_started",
@@ -132,7 +109,6 @@ export function executor(
 ) {
 	const { self, bus, log } = deps;
 	const held = new Map<WorkDigest, Held>();
-	/** Digests already handled, until their offer's `expires_at` (epoch ms). */
 	const handled = new Map<WorkDigest, number>();
 	const live = new Map<string, Live>();
 	const runs = new Set<Promise<void>>();
@@ -152,7 +128,6 @@ export function executor(
 	let accepting = false;
 	let started = false;
 
-	// ── State ───────────────────────────────────────────────────────────────
 	const persist = (): Promise<void> => {
 		writes = writes
 			.then(async () => {
@@ -175,7 +150,6 @@ export function executor(
 		seenSet = new Set(seen);
 	};
 
-	// ── Receipts (F4) ─────────────────────────────────────────────────────────
 	const flush = (): Promise<void> => {
 		flushing = flushing
 			.then(async () => {
@@ -232,7 +206,6 @@ export function executor(
 		await flush();
 	}
 
-	// ── Offers: fit, turn, claim ─────────────────────────────────────────────
 	async function selfRecord(): Promise<MemberRecord | undefined> {
 		return bus.registry.member(self.memberId);
 	}
@@ -279,7 +252,6 @@ export function executor(
 		tier: SandboxTier;
 	}>;
 
-	/** Whether this device could run the offer now, and in which tier; logs why not. */
 	async function plan(
 		offer: WorkOffer,
 		digest: WorkDigest,
@@ -394,7 +366,6 @@ export function executor(
 		const fleet = parseFleetId(offer.fleet);
 		if (!accepting || held.has(digest)) return;
 		if (Date.parse(offer.expiresAt) <= deps.now()) return;
-		// An executor that cannot reach the bus does not claim (§6.9 step 3).
 		if (bus.status() !== "connected") {
 			log("hobo_fleet_claims_unreachable", {
 				digest,
@@ -441,7 +412,6 @@ export function executor(
 		}
 	}
 
-	// ── Orders: check, sandbox, run ──────────────────────────────────────────
 	async function onOrder(
 		envelope: SignedEnvelope,
 		sequence: number,
@@ -626,7 +596,6 @@ export function executor(
 		}
 	}
 
-	// ── Lifecycle ────────────────────────────────────────────────────────────
 	async function init(): Promise<void> {
 		const state = await deps.state.readState();
 		seen = [...state.seenOrderIds].slice(-SEEN_LIMIT);
@@ -674,7 +643,6 @@ export function executor(
 			accepting = false;
 			await offerSubscription?.stop();
 			offerSubscription = undefined;
-			// Claims already held may still receive their orders; then everything runs out.
 			while (held.size > 0 || runs.size > 0) {
 				await settle();
 				if (held.size > 0)

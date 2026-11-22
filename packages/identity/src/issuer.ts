@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 import { isJsonNumber, isJsonString, type JsonObject } from "./json.js";
 
+// public-contract: the JWS algorithm every issued JWT-SVID names; verifiers pin it.
 export const JWT_ALGORITHM = "RS256";
 
 export type KmsLike = Readonly<{
@@ -14,9 +15,7 @@ export type KmsLike = Readonly<{
 	generateRsaKey(kid: string): void;
 	sign(kid: string, payload: string): Buffer;
 	publicJwk(kid: string): JsonObject;
-	/** Amendment 2 (optional): every key id held, for JWKS publication across rotation. */
 	keyIds?(): readonly string[];
-	/** Amendment 2 (optional): the key id new tokens are signed with. */
 	activeKeyId?(): string;
 }>;
 
@@ -121,7 +120,6 @@ export class JwtSvidIssuer {
 		};
 	}
 
-	/** The published keys: those of `jwksKeyIds` the KMS still holds (a retired key leaves once its tokens have expired). */
 	jwks(): JsonWebKeySet {
 		return {
 			keys: this.jwksKeyIds

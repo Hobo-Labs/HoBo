@@ -177,9 +177,7 @@ export type CdComposeInput = Readonly<{
 	telemetry?: TelemetrySink;
 	telemetryEndpoint?: string;
 	telemetryHeaders?: Readonly<Record<string, string>>;
-	/** The Camp mapper's fleet registry and Yard-to-fleet map (L19); absent: Camps carry no member lifecycle. */
 	members?: CampMembers;
-	/** The fleet the reconcilers enroll in (L19); absent: enrollment refuses with `fleet-unavailable`. */
 	fleet?: DeliveryFleet;
 }>;
 

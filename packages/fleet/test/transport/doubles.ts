@@ -1,9 +1,3 @@
-/**
- * Test doubles for the transport lane (design §11.3 rule 6): an in-memory
- * stream pair, an in-memory `FleetTransport` network, a registry view over
- * maps, an Ed25519 authority key, a scripted sandbox and grant builders.
- * Only frozen entry points and the generated types are imported.
- */
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
@@ -42,7 +36,6 @@ import type {
 	TransportKind,
 } from "../../src/ports.js";
 
-/** A one-way byte pipe: writes queue up until read; `end` finishes the reader. */
 function pipe() {
 	const chunks: Uint8Array[] = [];
 	let ended = false;
@@ -77,7 +70,6 @@ function pipe() {
 	};
 }
 
-/** Two connected in-memory streams: `[initiatorEnd, acceptorEnd]`. Each end's `peer` is the other's identity. */
 export function memoryStreamPair(
 	initiator = "initiator",
 	acceptor = "acceptor",
@@ -118,14 +110,11 @@ type Acceptor = Readonly<{
 	handler: (stream: FleetStream, grant: SessionGrant) => Promise<void>;
 }>;
 
-/** What a `memoryTransport` does when dialled. */
 export type DialMode = "carry" | "fail" | "throw";
 
 export type MemoryNetwork = Readonly<{
 	acceptors: Map<string, Acceptor>;
-	/** Every dial attempt, as the kind of the transport asked, in order. */
 	dials: TransportKind[];
-	/** Handler calls, by accepting transport kind. */
 	handed: TransportKind[];
 }>;
 
@@ -133,11 +122,6 @@ export function memoryNetwork(): MemoryNetwork {
 	return { acceptors: new Map(), dials: [], handed: [] };
 }
 
-/**
- * An in-memory transport: the identity is `<kind>:<memberId>`; dialling
- * finds the grant's acceptor identity on the network, asks its `authorise`
- * with the dialler's identity, and only then hands the stream over.
- */
 export function memoryTransport(
 	network: MemoryNetwork,
 	kind: TransportKind,
@@ -211,7 +195,6 @@ export function memoryTransport(
 	};
 }
 
-/** An Ed25519 authority key and the `PublicKeyRef` a trust record lists for it. */
 export type AuthorityKey = Readonly<{ signer: Signer; ref: PublicKeyRef }>;
 
 export function authorityKey(index = 1): AuthorityKey {
@@ -238,7 +221,6 @@ export function authorityKey(index = 1): AuthorityKey {
 export const TENANT = "acme";
 export const FLEET: FleetId = parseFleetId("builders");
 
-/** A registry view over maps: no signatures, the trust record lists `authority`. */
 export function memoryRegistry(authority: AuthorityKey): RegistryView &
 	Readonly<{
 		putMember(record: MemberRecord): void;
@@ -364,7 +346,6 @@ export function signGrant(
 	return signEnvelope(signer, context, toBinary(SessionGrantSchema, grant));
 }
 
-/** A sandbox whose `exec` is a script over argv and stdin; records every argv. */
 export function scriptedSandbox(
 	script: (
 		argv: readonly string[],

@@ -1,16 +1,3 @@
-/**
- * The seccomp profile of every OCI sandbox (design §6.11 `S1`, "default
- * seccomp profile"). It allows by default and refuses, with `EPERM`, the
- * system calls Docker's and Podman's default profiles leave out for an
- * unprivileged container: mounting and namespace changes, kernel modules and
- * keyrings, tracing other processes, BPF and perf, clock and reboot control,
- * swap, and `open_by_handle_at`. `clone3` answers `ENOSYS`, as in those
- * profiles, so that C libraries fall back to `clone`, whose namespace flags
- * the profile refuses. Without capabilities most of these fail anyway; the
- * profile closes the kernel attack surface a capability check comes too late
- * for.
- */
-
 // domain-view: the subset of the OCI runtime spec's `linux.seccomp` this driver writes.
 export type SeccompProfile = Readonly<{
 	defaultAction: "SCMP_ACT_ALLOW";
@@ -31,7 +18,6 @@ export type SeccompProfile = Readonly<{
 const EPERM = 1;
 const ENOSYS = 38;
 
-/** System calls refused outright. */
 export const REFUSED_SYSCALLS: readonly string[] = [
 	"acct",
 	"add_key",
@@ -87,7 +73,6 @@ export const REFUSED_SYSCALLS: readonly string[] = [
 	"vm86old",
 ];
 
-/** The namespace flags of clone(2): NEWNS, NEWCGROUP, NEWUTS, NEWIPC, NEWUSER, NEWPID, NEWNET, NEWTIME. */
 const CLONE_NAMESPACE_FLAGS: readonly number[] = [
 	0x00020000, 0x02000000, 0x04000000, 0x08000000, 0x10000000, 0x20000000,
 	0x40000000, 0x00000080,

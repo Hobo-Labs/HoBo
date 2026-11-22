@@ -145,7 +145,6 @@ describe("static users (§6.7)", () => {
 		expect(
 			allowed(staticUserPermissions("witness").publish, "fleet.audit.entry"),
 		).toBe(false);
-		// Only the witness co-signs: fleet.audit.witness is denied to every other user.
 		for (const user of STATIC_USERS) {
 			const permissions = staticUserPermissions(user);
 			const denied =

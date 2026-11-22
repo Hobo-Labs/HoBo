@@ -1,24 +1,3 @@
-/**
- * A real `nats-server` with one fleet tenant on it, for O24's
- * `fleet-job.integration.test.ts`: operator mode with the full resolver,
- * JetStream, TLS from a throwaway `openssl` CA (trusted through
- * `HOBO_FLEET_NATS_CA`), the tenant provisioned with `provisionTopology`, the
- * authority's bus from `connectAuthorityBus`, the callout responder from
- * `startCalloutResponder`, and devices connected with
- * `createNatsBusConnector`. Only `@hobo/fleet-nats`'s public entry points are
- * used.
- *
- * Starting a server needs an operator JWT naming the system account that
- * `provisionTopology` pushes account JWTs through, and the callout needs the
- * tenant's callout xkey seed. `@hobo/fleet-nats` derives both from the
- * operator signing seed (HKDF-SHA-256, `hobo-fleet/nats/<scope>`, its
- * `nats-jwt.ts`) and exports no helper for a test server, so this file
- * derives them the same way and writes the two JWTs with `node:crypto`
- * (nkeys encoding, `ed25519-nkey` JWTs). A public `@hobo/fleet-nats` test
- * server would replace it (L16's cascade delta).
- *
- * The binary is `HOBO_FLEET_NATS_SERVER_BIN`, else `nats-server` on PATH.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
 	createHash,
@@ -61,19 +40,30 @@ import {
 } from "@hobo/fleet-nats";
 import { type AuthorityKey, authorityKey } from "./world.js";
 
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
+
 export const NATS_BINARY =
 	process.env.HOBO_FLEET_NATS_SERVER_BIN ??
 	(spawnSync("nats-server", ["--version"]).status === 0 ? "nats-server" : "");
 
-/** Rule 10 of the design's §11.3: absent outside CI skips; absent in CI fails. */
 export const SKIP_NATS = NATS_BINARY === "" && !process.env.CI;
 
 export const TENANT = "acme";
 const INCARNATION = 1;
 const MINUTE = 60_000;
 const encoder = new TextEncoder();
-
-// ── nkeys ──────────────────────────────────────────────────────────────────
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const ROLE = { seed: 18 << 3, operator: 14 << 3, account: 0, curve: 23 << 3 };
@@ -142,7 +132,6 @@ function nkey(role: number, raw: Uint8Array): Nkey {
 	};
 }
 
-/** As `@hobo/fleet-nats` derives a key from the operator signing seed. */
 function derived(seed: string, scope: string, purpose: string): Uint8Array {
 	return new Uint8Array(
 		hkdfSync(
@@ -183,15 +172,12 @@ type JsonClaim =
 	| readonly JsonClaim[]
 	| Readonly<{ [key: string]: JsonClaim }>;
 
-// ── Server ─────────────────────────────────────────────────────────────────
-
 async function freePort(): Promise<number> {
 	return new Promise((resolve, reject) => {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-			const { port } = server.address() as AddressInfo;
+			const port = portOf(server.address());
 			server.close(() => resolve(port));
 		});
 	});
@@ -272,7 +258,6 @@ export type NatsTenant = Readonly<{
 	stop(): Promise<void>;
 }>;
 
-/** Starts a server, provisions the tenant, publishes its trust record and answers the callout. */
 export async function startNatsTenant(): Promise<NatsTenant> {
 	if (NATS_BINARY === "")
 		throw new Error(

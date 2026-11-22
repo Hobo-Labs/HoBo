@@ -1,14 +1,8 @@
-/**
- * The journal import for a high-availability restore (L41): envelopes keep
- * their ids and their order, an import refuses a journal that holds anything
- * but a prefix of it (`conflict`), and a second run after a partial import
- * finishes it. Against the fake JetStream context.
- */
-import type {
-	AppendOptions,
-	EventEnvelope,
-	EventPosition,
-	PositionedEvent,
+import {
+	type AppendOptions,
+	type EventEnvelope,
+	type PositionedEvent,
+	parseEventPosition,
 } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import { importJournal } from "../../src/journal/import.js";
@@ -31,7 +25,6 @@ async function collect<T>(items: AsyncIterable<T>): Promise<T[]> {
 	return out;
 }
 
-/** A journal with three streams, batches of one and two events, interleaved. */
 async function sourceJournal(): Promise<PositionedEvent[]> {
 	const store = openJournalStore(
 		createFakeJournalTransport(createFakeJournalStream()),
@@ -79,7 +72,6 @@ describe("importJournal", () => {
 		expect(outcome).toEqual({ ok: true, value: { imported: 6, present: 0 } });
 		const restored = await readAllOf(target);
 		expect(restored).toEqual(source);
-		// One message per original batch.
 		expect(target.messages).toHaveLength(4);
 	});
 
@@ -160,7 +152,6 @@ describe("importJournal", () => {
 		if (!outcome.ok) expect(outcome.error.code).toBe("conflict");
 		expect(target.messages).toHaveLength(1);
 
-		// A journal longer than the import is not a prefix of it either.
 		const longer = createFakeJournalStream();
 		await importJournal(createFakeJournalTransport(longer), source);
 		const short = await importJournal(
@@ -188,8 +179,7 @@ describe("importJournal", () => {
 			...source,
 			{
 				event: { ...first.event, seq: 4 },
-				// SAFETY: a later position for the repeated envelope; positions are bigints.
-				position: (first.position + 1_000_000_000n) as EventPosition,
+				position: parseEventPosition(first.position + 1_000_000_000n),
 			},
 		];
 		const duplicate = await importJournal(

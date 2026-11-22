@@ -1,22 +1,3 @@
-/**
- * `submitWork` (L32, private): `POST /v1/fleet/work` for the `oci-command`
- * kind (§6.9). It authorises `fleet.work.submit`, signs a `WorkSubmission`
- * under `hobo-fleet/work-submission/v1`, appends `fleet.WorkSubmitted` to
- * `fleet-work-<WorkDigest>` and publishes the envelope to `FLEET_SUBMISSIONS`.
- *
- * Idempotent on its natural key: the submission id is derived from the
- * tenant, the author and the canonical request, so a retried request lands on
- * the same work stream, finds its `fleet.WorkSubmitted`, and is answered
- * without a second publish. Once that submission has expired the same request
- * is new work and takes the next id. A submission journalled by this instance
- * whose publish failed is published by the next retry.
- *
- * `fleet.WorkSubmitted` data: `subject` (the stream id), `subjectSequence`
- * (0), `submissionId`, `workDigest`, `fleet`, `kind` ("oci-command"),
- * `workKey` (the submission id), `author`, `submittedAt`, `expiresAt`,
- * `submission` (protobuf JSON of the `WorkSubmission`) and `envelope`
- * (protobuf JSON of its signed envelope).
- */
 import { createHash } from "node:crypto";
 import { create, fromJson, toBinary, toJson } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
@@ -56,12 +37,10 @@ import {
 	textOf,
 } from "./support.js";
 
-/** The work kind of submitted work (§6.9). */
 const OCI_COMMAND_KIND = "oci-command";
 const WORK_STREAM = "fleet-work-";
 const DEFAULT_TTL_SECONDS = 3_600;
 const MAX_TTL_SECONDS = 86_400;
-/** Compare-and-set losses and expired earlier submissions, together. */
 const MAX_ROUNDS = 16;
 
 function invalid<T>(message: string): Outcome<T> {
@@ -72,7 +51,6 @@ function sha256Hex(...parts: readonly string[]): string {
 	return createHash("sha256").update(parts.join("\u0000")).digest("hex");
 }
 
-/** §7.1 `WorkOffer.work_digest`: the first 32 hex of sha256(kind ‖ 0x00 ‖ work_key). */
 function digestOf(workKey: string): string {
 	return sha256Hex(OCI_COMMAND_KIND, workKey).slice(0, 32);
 }
@@ -113,7 +91,6 @@ function checkRequest(request: WorkSubmissionRequest): Outcome<number> {
 	);
 }
 
-/** The request with its map in key order, so equal requests encode equally. */
 function canonical(request: WorkSubmissionRequest): Uint8Array {
 	const env: Record<string, string> = {};
 	for (const name of Object.keys(request.env).sort())
@@ -178,7 +155,6 @@ export function createSubmitter(
 	request: WorkSubmissionRequest,
 	caller: VerifiedToken | undefined,
 ) => Promise<Outcome<WorkStatus>> {
-	/** Submissions this instance journalled but could not publish. */
 	const unpublished = new Set<string>();
 
 	const publish = async (
@@ -260,7 +236,6 @@ export function createSubmitter(
 				return ok(statusOf(submissionId, digest, earlier.found.submittedAt));
 			}
 			if (earlier.seq > 0) {
-				// A work stream without a submission is not ours to reuse.
 				generation += 1;
 				continue;
 			}
@@ -308,7 +283,6 @@ export function createSubmitter(
 				],
 				actorOf(caller.value),
 			);
-			// Another writer journalled it first: read what it wrote and answer that.
 			if (appended === "conflict") continue;
 			logEvent(deps, "fleet.WorkSubmitted", stream);
 			if (!(await publish(envelope, id.value, submissionId)))

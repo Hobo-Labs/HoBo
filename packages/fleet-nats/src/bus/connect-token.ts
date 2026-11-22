@@ -1,9 +1,3 @@
-/**
- * The NATS connect `auth_token` (§6.7 step 1, §7.1 `ConnectToken`): the
- * device's session ticket envelope and a `ConnectProof` naming that ticket,
- * signed by its `SIGN` key under `hobo-fleet/nats-connect/v1`, as base64url
- * of the message's binary form.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	ConnectProofSchema,
@@ -31,11 +25,6 @@ export function decodeConnectToken(text: string): ConnectToken | undefined {
 	}
 }
 
-/**
- * A connect token for `ticket`. `nonce` is the server's nonce for this
- * connection when the caller can bind it; empty, the ticket is single use
- * (assumption A2's fallback, enforced by the callout through the replay bucket).
- */
 export async function mintConnectToken(
 	keys: DeviceKeys,
 	ticket: SignedEnvelope,

@@ -1,7 +1,7 @@
 # Status feed
 
 `createStatusFeed({ store, now, log })` publishes the authority's two
-availability objectives ([audit, metering and observability](../../../../docs/design/fleet.md#audit-metering-and-observability)) to `@hobo/status-page`. They are
+availability objectives (audit, metering and observability) to `@hobo/status-page`. They are
 measured in production from the status page; before cutover only their
 emission is checked (O20).
 

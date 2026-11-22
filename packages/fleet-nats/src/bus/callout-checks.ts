@@ -1,19 +1,3 @@
-/**
- * The seven checks the callout responder makes before it mints a credential
- * (§6.7, the connect sequence step 3), in order:
- *
- * 1. `request-signature`: the server's signature on the request (checked by
- *    the wire, which passes the result in);
- * 2. `ticket`: the ticket's authority signature, expiry and incarnation;
- * 3. `proof-ticket`: the proof names that ticket;
- * 4. `proof-signature`: the proof verifies against the `SIGN` key in the
- *    device's current registry record;
- * 5. `nonce`: the proof's nonce is the one the server reports for this
- *    connection; a proof without one (assumption A2's fallback) makes the
- *    ticket single use, recorded in the replay bucket;
- * 6. `not-active`: the device is `ACTIVE` and holds a role;
- * 7. `tenant`: the ticket and the record are this account's tenant.
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type Clock,
@@ -57,7 +41,6 @@ export const CALLOUT_CHECKS: readonly CalloutCheck[] = [
 	"tenant",
 ];
 
-/** The replay scope of single-use connect tickets. */
 // public-contract: the key scope in the fleet-replay bucket, shared by every responder replica.
 export const TICKET_REPLAY_SCOPE = "nats-ticket";
 
@@ -73,9 +56,7 @@ export type CalloutVerdict = Readonly<
 
 export type CalloutInput = Readonly<{
 	requestVerified: boolean;
-	/** The connect options' `auth_token`. */
 	token: string | undefined;
-	/** The nonce the server sent this connection, as the request reports it. */
 	serverNonce: string | undefined;
 	registry: RegistryView;
 	replay: ReplayStore;
@@ -113,7 +94,6 @@ export async function checkConnect(
 			"the server's signature on the request does not verify",
 		);
 
-	// 2. The ticket.
 	const token =
 		input.token === undefined ? undefined : decodeConnectToken(input.token);
 	if (token?.ticket === undefined || token.proof === undefined)
@@ -139,7 +119,6 @@ export async function checkConnect(
 	if (memberId === undefined)
 		return refuse("ticket", "the ticket names no member");
 
-	// 3. The proof names the ticket.
 	const proof = attempt(() =>
 		fromBinary(ConnectProofSchema, token.proof?.payload ?? new Uint8Array()),
 	);
@@ -150,7 +129,6 @@ export async function checkConnect(
 	)
 		return refuse("proof-ticket", "the proof names another ticket");
 
-	// 4. The proof's signature against the SIGN key in the current registry record.
 	const record = await registry.member(memberId);
 	if (record === undefined || record.kind !== MemberKind.DEVICE)
 		return refuse(
@@ -182,7 +160,6 @@ export async function checkConnect(
 			"the proof is not signed by the device's SIGN key",
 		);
 
-	// 5. The nonce.
 	if (proof.nonce.length > 0) {
 		if (
 			input.serverNonce === undefined ||
@@ -191,16 +168,13 @@ export async function checkConnect(
 			return refuse("nonce", "the proof's nonce is not this connection's");
 	}
 
-	// 6. Active, with a role.
 	const template = templateFor(record);
 	if (record.state !== MemberState.ACTIVE || template === undefined)
 		return refuse("not-active", "the device is not active or holds no role");
 
-	// 7. This account's tenant.
 	if (ticket.tenant !== trust.tenant || record.tenant !== trust.tenant)
 		return refuse("tenant", "the ticket is for another tenant");
 
-	// A ticket whose proof carries no nonce connects once (A2 fallback).
 	if (
 		proof.nonce.length === 0 &&
 		!(await input.replay.firstUse(

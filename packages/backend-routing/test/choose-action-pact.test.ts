@@ -1,13 +1,3 @@
-/**
- * The `chooseAction` boundary, replayed.
- *
- * `contracts/one-active-choose-action.pact.json` states what the shared
- * one-active loop (`createOneActiveFleet`, the consumer) may expect when it
- * asks this package (the provider) to choose: given the current assignment and
- * one `NamedObservation` per member, `routeFleetByBudget` answers a
- * loss-tolerant fleet and `decideFleet` a database fleet. Each interaction is
- * run here against the same functions the hosts pass as `chooseAction`.
- */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { create } from "@bufbuild/protobuf";
@@ -68,8 +58,7 @@ type Pact = {
 	readonly interactions: readonly Interaction[];
 };
 
-// SAFETY: the pact is this package's own checked-in contract with this shape.
-const pact = JSON.parse(
+const pact: Pact = JSON.parse(
 	readFileSync(
 		fileURLToPath(
 			new URL(
@@ -79,7 +68,7 @@ const pact = JSON.parse(
 		),
 		"utf8",
 	),
-) as Pact;
+);
 
 const NOW = Date.UTC(2026, 10, 11);
 const DAY = 24 * 3_600_000;

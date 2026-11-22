@@ -1,16 +1,3 @@
-/**
- * The wire half of the typed client (design §6.15; L07 private): one HTTP
- * request per call, protobuf JSON bodies, DPoP on every authenticated call,
- * and §7.6 errors read back into a `FleetFailure`.
- *
- * Three kinds of authentication, by route:
- * - `none`: discovery, the JWKS and the start of a sign-in;
- * - `proof`: a DPoP proof alone, made with the caller's key (sign-in
- *   completion and polling with the sign-in key, enrollment with the identity
- *   key, credentials with the SIGN key);
- * - `token`: `Authorization: DPoP <token>` and a proof carrying `ath`. When
- *   `token()` answers an empty string the call falls back to a bare proof.
- */
 import type { Message } from "@bufbuild/protobuf";
 import { fromJsonString, toJsonString } from "@bufbuild/protobuf";
 import type { GenMessage } from "@bufbuild/protobuf/codegenv2";
@@ -47,12 +34,10 @@ function failure(
 	return { ok: false, error };
 }
 
-/** A path segment, escaped. */
 export function segment(value: string): string {
 	return encodeURIComponent(value);
 }
 
-/** `?a=1&b=2` for the defined entries, or "". */
 export function query(
 	entries: readonly Readonly<[string, string | number | undefined]>[],
 ): string {
@@ -63,7 +48,6 @@ export function query(
 	return text.length === 0 ? "" : `?${text}`;
 }
 
-/** Protobuf JSON of a record, for a request body. */
 export function body<T extends Message>(
 	schema: GenMessage<T>,
 	message: T,
@@ -71,7 +55,6 @@ export function body<T extends Message>(
 	return toJsonString(schema, message);
 }
 
-/** Reads a response body as the named record; unknown fields are ignored so a newer authority stays readable. */
 export function record<T extends Message>(
 	schema: GenMessage<T>,
 ): (text: string) => T {
@@ -81,7 +64,6 @@ export function record<T extends Message>(
 		});
 }
 
-/** The code a status implies when the body is not a `FleetError`. */
 function codeOfStatus(status: number): FleetErrorCode {
 	if (status >= 500) return "unavailable";
 	if (status === 401) return "unauthenticated";
@@ -111,9 +93,7 @@ function readError(status: number, text: string): Outcome<never> {
 						: { ...error.detail },
 				);
 		}
-	} catch {
-		// Not a FleetError body: fall through to the status.
-	}
+	} catch {}
 	return failure(codeOfStatus(status), `HTTP ${status}`);
 }
 
@@ -141,7 +121,6 @@ async function headersFor(
 	return headers;
 }
 
-/** One call: build the URL and headers, send, and read the answer or the §7.6 error. */
 export async function send<T>(
 	wire: Wire,
 	request: Readonly<{

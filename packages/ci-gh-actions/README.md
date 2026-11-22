@@ -170,7 +170,7 @@ Every host of the relay serves the same Fetch handler, `createRelayHandler`
 | `/engines/gh-actions/…` | The same routes as the root |
 | `POST /github/webhooks` | Signed delivery intake; the delivery is committed before it is acknowledged |
 | `POST /v1/leases/{id}/jit` | Runner claim with a GitHub OIDC bearer |
-| `GET /v1/fleet/members` | The members of the fleet behind the relay (ADR-0183), as its fleet authority signed them, for an account credential holding `policy:read`; 503 on a relay that reads no fleet. Handed to the host's control plane |
+| `GET /v1/fleet/members` | The members of the fleet behind the relay, as its fleet authority signed them, for an account credential holding `policy:read`; 503 on a relay that reads no fleet. Handed to the host's control plane |
 | `/v1/accounts/self/…`, `/v2/accounts/self/…`, `/v1/app-registration/…` | Handed to the host's control plane |
 | `/mcp` | The relay's [MCP server](#mcp-server) (Streamable HTTP), when the host mounts one |
 
@@ -236,7 +236,7 @@ Node adapter already resolves every request against the configured origin.
 | `list_events` | `policy:read` | Events after `cursor`, oldest first; without a cursor, the newest. Filters: `leaseId`, `repository`, `types`. Returns `{events, cursor, more, truncated}` |
 | `wait_for_events` | `policy:read` | Blocks until an event after `cursor` matches the filters, or `timeoutSeconds` passes. Returns `{events, cursor, timedOut, more}` |
 | `get_relay_status` | `policy:read` | Readiness, engines, whether this host pushes resource updates, the wait default and ceiling, the per-account and per-request limits, and whether this host reads a fleet (the field is still named `mesh` in `RelayMcpStatus`) |
-| `list_fleet_members` | `policy:read` | The members of the fleet behind the relay (ADR-0183), as its authority recorded them: id, kind, name, state, memberships and roles, platform, attestation tier and agent version. The relay's own, not one account's. `configured: false` on a host with no fleet |
+| `list_fleet_members` | `policy:read` | The members of the fleet behind the relay, as its authority recorded them: id, kind, name, state, memberships and roles, platform, attestation tier and agent version. The relay's own, not one account's. `configured: false` on a host with no fleet |
 | `get_fleet_view` | `policy:read` | The fleet's live view: each member's availability, health, slots, memory, disk, labels, sandbox tiers and reliability |
 | `get_fleet_verdict` | `policy:read` | Whether new work for one `label` should go to the fleet now: `OPEN`, `BUSY` (routing treats it as open), `NO_CAPACITY` or `NO_MEMBER` |
 | `reconcile_lease` | `operations:write` | `POST /v1/accounts/self/leases/{id}/reconcile`: settle a lease against a verified `hostRunId` |
@@ -960,7 +960,7 @@ Admission budgets do not migrate or terminate a running GitHub job mid-step.
 
 ## The relay's fleet
 
-The relay mesh is gone (ADR-0183). Box workers are enrolled `DEVICE` members
+The relay mesh is gone. Box workers are enrolled `DEVICE` members
 of the fleet `hobo` in [`@hobo/fleet`](../fleet/README.md): each composes the
 fleet agent (`@hobo/fleet-agent`) with roles `DISPATCHER` and `EXECUTOR`, its
 memory, storage and host-health admission are its `CapacitySource`, and the

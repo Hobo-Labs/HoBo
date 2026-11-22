@@ -1,8 +1,3 @@
-/**
- * `hobo fleet` parsing and output against the recording fake client: what
- * each command prints, how it refuses bad arguments, and that failures from
- * the authority come back as `HOBO_FLEET_<CODE>` results.
- */
 import { describe, expect, it } from "vitest";
 import { exitCodeOf, runFleetCli } from "../src/fleet-cli.js";
 import {

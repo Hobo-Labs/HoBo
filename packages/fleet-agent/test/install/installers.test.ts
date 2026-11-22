@@ -1,8 +1,3 @@
-/**
- * Service installers (design §6.15 `hobo fleet service install`, O36): the
- * systemd user unit, the launchd agent and the Windows scheduled task each
- * equal their fixture, and an unsafe command line is refused.
- */
 import { mkdtempSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";

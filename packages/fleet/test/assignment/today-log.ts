@@ -1,15 +1,3 @@
-/**
- * Today's stored-log codec, copied as a test fixture (design §10.1, O15).
- *
- * `encodeTodayLog` and `decodeTodayLog` are `encodeAssignmentLog` and
- * `decodeAssignmentLog` of `packages/backend-routing/src/ephemeral-replica.ts`
- * as of the fleet contract commit, over the descriptor of today's
- * `hobo.backend_fleet.v1.FleetAssignmentLog` (copied from its generated file,
- * so this fixture keeps reading as the previous relay reads even after that
- * package is trimmed). They return plain records: the format tests compare
- * what each side wrote and read, not the parsing rules, which the register
- * tests cover.
- */
 import {
 	create,
 	fromJsonString,
@@ -58,7 +46,6 @@ export type TodayEntry = Readonly<{
 
 const LOG_FORMAT = 1;
 
-/** Today's encodeAssignmentLog. */
 export function encodeTodayLog(entries: readonly TodayEntry[]): string {
 	return toJsonString(
 		TodayLogSchema,
@@ -83,7 +70,6 @@ export function encodeTodayLog(entries: readonly TodayEntry[]): string {
 	);
 }
 
-/** Today's decodeAssignmentLog: refuses a format other than 1 and any unknown field. */
 export function decodeTodayLog(value: string): TodayEntry[] {
 	let log: TodayWireLog;
 	try {

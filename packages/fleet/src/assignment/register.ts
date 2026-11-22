@@ -1,45 +1,3 @@
-/**
- * The assignment register: which member of a one-active fleet is active.
- *
- * Moved from `packages/backend-fleet/src/assignment.ts` (62dbc5d4c) with the
- * names of design §7.3, plus membership epochs (§6.10).
- *
- * Every member keeps a small append-only log. A log entry names the active
- * member (the writer) for one **epoch**. An epoch is **decided** when a
- * majority of its **deciding set** hold the same entry for it, and the
- * **current assignment** is the highest decided epoch. Three local rules are
- * all the safety there is:
- *
- * 1. A member holds at most one entry per epoch.
- * 2. A member takes an entry for epoch `e` only when its highest entry is
- *    `e - 1`, checked and written atomically on that member.
- * 3. An entry that names a member as the writer is written to that member
- *    first, and to no other member if it does not take it.
- *
- * From 1 and 2, two different entries can never both reach a majority for one
- * epoch, and a proposal made on a stale view lands only on members that were
- * behind, which are a minority. From 3, a member's own log always contains
- * every decided entry that makes it the writer, so a check made on one member
- * alone is enough to refuse overwriting it.
- *
- * **The deciding set.** An entry without `members` (every entry written before
- * a fleet turns membership epochs on) is decided by the configured members, as
- * before. Once a fleet has decided a member set (the `pin-members` entry), the
- * set that decides epoch `e` is the `members` of decided epoch `e - 1`, which a
- * reader derives from entry `e` alone (`decidingSet`). A membership entry
- * changes exactly one name, so two consecutive deciding sets differ by at most
- * one name and any two of their majorities intersect: the argument above still
- * holds across a membership change.
- *
- * A reader needs answers from a majority. With fewer, or when the highest
- * epoch it can see is not decided, the answer is not a guess at the previous
- * writer: it is `no-majority` or `undecided`, and a caller stops.
- *
- * Nothing here knows an engine. A replica is anything that can `read` its log
- * and `accept` one entry under rules 1 and 2: a SQL table
- * (`sqlAssignmentReplica` in `@hobo/data-postgres`) or one key of a cache
- * (`ephemeralAssignmentReplica`, `replica.ts`).
- */
 import { Health } from "../_generated/fleet_pb.js";
 import { FleetParseError } from "../errors.js";
 import { type MemberName, parseMemberName } from "../ids.js";
@@ -58,7 +16,6 @@ import type {
 	FailureClassifier,
 } from "../ports.js";
 
-/** The first epoch. An empty log takes this epoch and no other. */
 export const FIRST_ASSIGNMENT_EPOCH = 1;
 export const ASSIGNMENT_ACCEPT_OUTCOMES = [
 	"accepted",
@@ -68,7 +25,6 @@ export const ASSIGNMENT_ACCEPT_OUTCOMES = [
 	"busy",
 ] as const;
 
-/** The reason a pin entry carries (§6.10 item 2). */
 const PIN_REASON = "pin-members";
 const ADMIT = "admit:";
 const REMOVE = "remove:";
@@ -79,10 +35,8 @@ function invalid(message: string, field: string): never {
 	throw new FleetParseError(field, message);
 }
 
-/** The classifier a register uses when its host gives none. */
 const unclassifiedFailure: FailureClassifier = () => Health.UNKNOWN;
 
-/** Sorted, without repeats. */
 function sortedSet(names: Iterable<MemberName>): MemberName[] {
 	return [...new Set(names)].sort();
 }
@@ -105,7 +59,6 @@ function parseMembers(
 	return Object.freeze(members);
 }
 
-/** `admit:<name>` or `remove:<name>`, or undefined for any other reason. */
 function membershipChange(
 	reason: string,
 ): Readonly<{ kind: "admit" | "remove"; name: MemberName }> | undefined {
@@ -122,12 +75,6 @@ function membershipChange(
 	return undefined;
 }
 
-/**
- * Parse an assignment entry. After this, a sealed entry always has a target
- * other than its writer, an unsealed entry never has one, every number is a
- * non-negative safe integer, and a member set is sorted, non-empty and
- * consistent with a membership reason.
- */
 export function parseAssignmentEntry(input: AssignmentEntry): AssignmentEntry {
 	if (
 		!Number.isSafeInteger(input.epoch) ||
@@ -170,7 +117,6 @@ export function parseAssignmentEntry(input: AssignmentEntry): AssignmentEntry {
 	});
 }
 
-/** Identity of an entry. Two entries are the same decision when keys match. */
 export function assignmentKey(entry: AssignmentEntry): string {
 	const key: (string | number | boolean | null | readonly string[])[] = [
 		entry.epoch,
@@ -182,23 +128,16 @@ export function assignmentKey(entry: AssignmentEntry): string {
 		entry.decidedAtMs,
 		entry.decidedBy,
 	];
-	// An entry without members keeps today's key, so stored logs compare as before.
 	if (entry.members !== undefined) key.push(entry.members);
 	return JSON.stringify(key);
 }
 
-/** How many members make a majority of `count`. */
 export function fleetMajority(count: number): number {
 	if (!Number.isSafeInteger(count) || count < 1)
 		invalid("a fleet needs at least one member", "members");
 	return Math.floor(count / 2) + 1;
 }
 
-/**
- * The set that decides `entry`: its `members`, without the name it admits or
- * with the name it removes. Undefined for an entry without members, which the
- * configured members decide.
- */
 export function decidingSet(
 	entry: AssignmentEntry,
 ): readonly MemberName[] | undefined {
@@ -210,7 +149,6 @@ export function decidingSet(
 		: sortedSet([...entry.members, changed.name]);
 }
 
-/** Who decides `entry`, given who is configured. */
 function decidersOf(
 	entry: AssignmentEntry,
 	configured: readonly MemberName[],
@@ -263,7 +201,6 @@ function highestEpoch(replies: readonly AssignmentReply[]): number {
 	return top;
 }
 
-/** Holders of `contender` that count towards deciding it. */
 function decidingHolders(
 	contender: AssignmentContender,
 	configured: readonly MemberName[],
@@ -272,17 +209,6 @@ function decidingHolders(
 	return contender.holders.filter((holder) => deciders.includes(holder)).length;
 }
 
-/**
- * Decide what a set of replies proves. Pure: no clock, no I/O.
- *
- * `members` is who was asked; a reply from anyone else is ignored. The
- * majority is counted over the deciding set of the newest entry seen, or over
- * `members` for an entry without one; a member of the deciding set that was
- * not asked counts as silent. `current` is returned only for the highest epoch
- * seen, and only when a majority of its deciding set hold the same entry for
- * it. An entry held by fewer is never treated as the answer, and neither is the
- * decided epoch below it: something newer may already be decided out of sight.
- */
 export function resolveAssignment(
 	members: readonly MemberName[],
 	replies: readonly AssignmentReply[],
@@ -351,7 +277,6 @@ export function parseAssignmentRegister(
 	return Object.freeze(register);
 }
 
-/** Ask every member for its log. A member that fails is a classified absence. */
 export async function readAssignmentReplies(
 	register: AssignmentRegister,
 	limit?: number,
@@ -397,14 +322,6 @@ export async function readAssignmentReplies(
 	});
 }
 
-/**
- * Majority read of the current assignment. Reads only the newest entry.
- *
- * It answers as soon as the replies in hand prove a current assignment, without
- * waiting for a member that is slow or gone: a newest entry held by a majority
- * of its deciding set is decided whatever the rest would say, and no decided
- * epoch above it can exist without one of those members holding it.
- */
 export function readCurrentAssignment(
 	register: AssignmentRegister,
 ): Promise<AssignmentResolution> {
@@ -441,11 +358,6 @@ async function offer(
 	}
 }
 
-/**
- * Copy entries that already exist onto members whose logs are shorter, up to
- * `upTo`. Nothing is invented: each copied entry is one a member holds, and
- * for an epoch with more than one entry the most widely held one is copied.
- */
 async function repairLogs(
 	register: AssignmentRegister,
 	replies: readonly AssignmentReply[],
@@ -469,15 +381,6 @@ async function repairLogs(
 	}
 }
 
-/**
- * Write one entry: to the member it names as writer first, then to the rest
- * in configured order.
- *
- * A proposer stops at the first member that holds a different entry for the
- * epoch, because somebody else's proposal got there first; stopping leaves the
- * remaining members free, so a contested epoch can still be settled. Completion
- * does not stop: it offers the entry it chose to every member that can take it.
- */
 function answeredOf(replies: readonly AssignmentReply[]): MemberName[] {
 	return replies.flatMap((reply) => ("rows" in reply ? [reply.replica] : []));
 }
@@ -544,7 +447,6 @@ type Prepared = Readonly<
 	| { ok: false; outcome: AssignmentProposalOutcome }
 >;
 
-/** Read, and check the caller's expected epoch against the current one. */
 async function prepare(
 	register: AssignmentRegister,
 	expectedEpoch: number,
@@ -560,7 +462,6 @@ async function prepare(
 	return { ok: true, current, replies, resolution };
 }
 
-/** The entry after `current`, carrying `members` and stamped by the register. */
 function nextEntry(
 	current: AssignmentEntry | undefined,
 	value: AssignmentValue,
@@ -577,15 +478,6 @@ function nextEntry(
 	});
 }
 
-/**
- * Propose the next assignment, as a compare-and-set on the current epoch.
- *
- * The proposer never decides on older information: if the newest epoch it can
- * see is not decided it returns `unavailable` and writes nothing. Only
- * `decided` means the entry is the current assignment. Any other outcome means
- * "read again"; an `undecided` entry may still be completed by someone else.
- * The entry carries the current entry's member set, if it has one.
- */
 export async function proposeAssignment(
 	register: AssignmentRegister,
 	proposal: AssignmentProposal,
@@ -603,12 +495,6 @@ export async function proposeAssignment(
 	return place(register, entry, "propose", answeredOf(prepared.replies));
 }
 
-/**
- * The first assignment of a fleet with empty logs.
- *
- * The entry is the same bytes no matter who writes it, so any number of
- * instances starting at once agree instead of splitting the first epoch.
- */
 export async function bootstrapAssignment(
 	register: AssignmentRegister,
 	active: MemberName,
@@ -627,13 +513,6 @@ export async function bootstrapAssignment(
 	});
 }
 
-/**
- * Finish what an interrupted proposer started.
- *
- * When the newest epoch is held by fewer than a majority, copy that same entry
- * (same epoch, same value) onto more members. No new value is chosen. Members
- * that are behind are first brought up to the epoch before it.
- */
 export async function completeAssignment(
 	register: AssignmentRegister,
 ): Promise<AssignmentResolution> {
@@ -659,16 +538,6 @@ export async function completeAssignment(
 	return resolveAssignment(members, await readAssignmentReplies(register));
 }
 
-/**
- * Operator override. Writes a new epoch above everything visible, whatever the
- * current epoch is or whether it is decided.
- *
- * This is the only way to break a split epoch and the only way to promote a
- * standby beyond the recovery point objective. It skips the compare-and-set on
- * purpose, so it belongs to a person, never to a scheduled job. It still needs
- * a majority to answer and still writes to the named writer first. It carries
- * the member set of the most widely held newest entry.
- */
 export async function overrideAssignment(
 	register: AssignmentRegister,
 	override: AssignmentOverride,
@@ -694,20 +563,6 @@ export async function overrideAssignment(
 	);
 }
 
-/**
- * Change the member set by one decided epoch (§6.10 item 2). Exactly one of
- * `pin`, `add`, `remove`.
- *
- * - `pin` writes the sorted configured set after a decided entry that has none.
- * - `add` admits one name to the decided entry's set; `remove` removes one.
- *   Both refuse (`stale`) when that entry has no set, when the change is a
- *   no-op, or when it would remove the active member, a sealed fleet's
- *   target or the last member.
- *
- * The entry copies the active, sealed and target values of its predecessor
- * and is decided by the predecessor's set (or, for the pin, the configured
- * one). The same compare-and-set on `expectedEpoch` as `proposeAssignment`.
- */
 export async function proposeMembership(
 	register: AssignmentRegister,
 	change: Readonly<{

@@ -1,8 +1,3 @@
-// A deployment for the operations tests: the memory bus with an audit log
-// double that the witness can publish to (§11.3 rule 6: the memory bus keeps
-// its witness path private), the real audit chain and witness of @hobo/fleet,
-// keys from the secret store (as the ceremony left them), and signers that
-// follow the active key of their slot the way a restarted process would.
 import { create, toBinary } from "@bufbuild/protobuf";
 import type { TenantId } from "@hobo/core";
 import { parseTenantId } from "@hobo/core";
@@ -82,7 +77,6 @@ function topic<T>() {
 	};
 }
 
-/** An in-memory `AuditLog` plus the witness's publish path, pairing co-signatures by payload bytes. */
 export function memoryAuditLog() {
 	const entries: AuditEntry[] = [];
 	const checkpoints = topic<SignedEnvelope>();
@@ -144,7 +138,6 @@ export function memoryAuditLog() {
 	};
 }
 
-/** A `Signer` that signs with whichever key its slot names active, as of the last `refresh`. */
 export function followingSigner(
 	secrets: SecretsPort,
 	prefix: string,
@@ -179,7 +172,6 @@ export function followingSigner(
 	};
 }
 
-/** Slots the ceremony does not create (provisioning stores the NATS account keys). */
 export async function provisionNatsSlots(
 	secrets: SecretsPort,
 	prefix: string,
@@ -197,11 +189,6 @@ export async function provisionNatsSlots(
 
 export type Deployment = Awaited<ReturnType<typeof deployment>>;
 
-/**
- * A running deployment over `store`: genesis trust (sequence 1, incarnation 1)
- * from the slots unless `trust` is false, the authority's audit chain, and the
- * witness, started.
- */
 export async function deployment(
 	options: Readonly<{
 		secrets: SecretsPort;
@@ -299,9 +286,7 @@ export async function deployment(
 		witness,
 		witnessLog,
 		trustDeps,
-		/** The authority's audit chain, as its tick runs it. */
 		tickAudit: () => chain.tick(),
-		/** After a restart under a new incarnation. */
 		restartChain(incarnation: number) {
 			chain = createAuditChain({
 				store: options.store,

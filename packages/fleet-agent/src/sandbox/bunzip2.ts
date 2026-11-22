@@ -1,17 +1,3 @@
-/**
- * A bzip2 decoder, so the agent unpacks the pinned gVisor release
- * (`runtime-provision.ts`, D58) without a host `bzip2` (which `tar -j` runs,
- * and which a minimal image does not carry). It decodes one or more
- * concatenated streams, checks every block's CRC and each stream's combined
- * CRC, and yields one chunk per block. Randomised blocks (written only by
- * bzip2 before 0.9.5) are refused.
- *
- * The format: a `BZh1`..`BZh9` header, blocks of Huffman-coded MTF/RLE
- * symbols over a Burrows-Wheeler transform, an end-of-stream marker. The
- * input is already SHA-512 verified when this runs; the checks here guard
- * against a decoder bug, not an attacker.
- */
-
 const BLOCK_MAGIC_HI = 0x314159;
 const BLOCK_MAGIC_LO = 0x265359;
 const END_MAGIC_HI = 0x177245;
@@ -34,7 +20,6 @@ function fail(message: string): never {
 	throw new Error(`bzip2: ${message}`);
 }
 
-/** MSB-first bit reader; at most 24 bits per read keeps the buffer under 2^31. */
 class Bits {
 	private buffer = 0;
 	private count = 0;
@@ -62,7 +47,6 @@ class Bits {
 		return ((this.read(16) << 16) | this.read(16)) >>> 0;
 	}
 
-	/** Drops the bits left in the current byte (streams end on a byte boundary). */
 	align(): void {
 		this.count -= this.count % 8;
 		this.buffer &= (1 << this.count) - 1;
@@ -73,7 +57,6 @@ class Bits {
 	}
 }
 
-/** Canonical Huffman decoding table of one coding group. */
 type Table = Readonly<{
 	minLength: number;
 	maxLength: number;
@@ -101,7 +84,6 @@ function huffmanTable(lengths: Uint8Array): Table {
 				symbols[next] = symbol;
 				next += 1;
 			}
-		// symbols[first + (c - code)] is the symbol of code c at this length.
 		base[length] = first - code;
 		code += next - first;
 		limit[length] = code - 1;
@@ -132,8 +114,6 @@ function blockCrc(bytes: Uint8Array, length: number): number {
 	return ~crc >>> 0;
 }
 
-/** Decodes one block's symbols into `tt` (the BWT output) and answers its byte count and origin pointer. */
-/** One decoded block: `tt` holds its BWT links, `length` bytes from `origin`. */
 type DecodedBlock = Readonly<{ length: number; origin: number }>;
 
 function readBlock(bits: Bits, tt: Uint32Array): DecodedBlock {
@@ -230,7 +210,6 @@ function readBlock(bits: Bits, tt: Uint32Array): DecodedBlock {
 		length += 1;
 	}
 	if (origin >= length && length > 0) fail("bad origin pointer");
-	// Inverse BWT: link each position to the next one in the original order.
 	let sum = 0;
 	for (let b = 0; b < 256; b += 1) {
 		const count = counts[b] ?? 0;
@@ -246,7 +225,6 @@ function readBlock(bits: Bits, tt: Uint32Array): DecodedBlock {
 	return { length, origin };
 }
 
-/** Undoes the BWT and the initial run-length coding (four equal bytes, then a repeat count). */
 function writeBlock(
 	tt: Uint32Array,
 	length: number,
@@ -263,7 +241,6 @@ function writeBlock(
 		out[size] = byte;
 		size += 1;
 	};
-	// tt[p] >>> 8 is the position of the byte after the one at p; tt[p] & 0xff is that byte.
 	let position = length === 0 ? 0 : (tt[origin] ?? 0) >>> 8;
 	let last = -1;
 	let same = 0;
@@ -286,7 +263,6 @@ function writeBlock(
 	return out.subarray(0, size);
 }
 
-/** Decodes the bzip2 data in `input`, one chunk per block. */
 export function* bunzip2(input: Uint8Array): Generator<Uint8Array> {
 	const bits = new Bits(input);
 	let streams = 0;

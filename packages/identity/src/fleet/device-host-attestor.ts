@@ -1,8 +1,3 @@
-// A fleet device as the host of a workload attestation (design §8.3): the
-// launch measurement's JSON bytes are signed as a fleet envelope under
-// `hobo-fleet/host-attestation/v1` with the device's SIGN key, and the host id
-// is the member id. `verifyWorkloadAttestation` checks such a document against
-// the SIGN key published in the member's key bundle.
 import { HOST_ATTESTATION_CONTEXT, type Signer } from "@hobo/fleet";
 import { signEnvelope } from "@hobo/fleet/keys";
 import {
@@ -47,7 +42,6 @@ export function deviceHostAttestor(signer: Signer): HostAttestor {
 				},
 			};
 		},
-		/** None: the verification key is the SIGN key in the member's key bundle, which the verifier reads from the registry. */
 		publicKeys() {
 			return [];
 		},

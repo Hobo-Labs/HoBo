@@ -1,9 +1,3 @@
-/**
- * The agent's bus link: one `FleetBus` over whichever connection is current.
- * With none, calls reject and status reads "disconnected"; a subscription
- * outlives its connection and, on the next one, resumes after the last
- * sequence its handler took, so nothing is handed twice or missed.
- */
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import { createMemoryConnector } from "../../examples/memory-connector.js";
@@ -133,7 +127,6 @@ describe("createBusLink", () => {
 				kind,
 				sequences: [1, 2, 3],
 			});
-		// Relay frames have no stream: only those sent while attached arrive.
 		expect(frames).toEqual(["s2"]);
 		await link.close();
 		expect(link.bus.status()).toBe("closed");

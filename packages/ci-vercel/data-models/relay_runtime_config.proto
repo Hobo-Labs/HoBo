@@ -43,7 +43,7 @@ message RelayRuntimeConfig {
   // backend costs and allows, its budget cap, and the switch marks.
   optional string hobo_ci_cache_offers_json = 26 [json_name = "HOBO_CI_CACHE_OFFERS_JSON"];
   // 27-29 held the fleet verdict settings of ADR-0180, which the device
-  // fleet replaced (ADR-0183).
+  // fleet replaced.
   reserved 27, 28, 29;
   reserved "hobo_ci_fleet_reporters_json", "hobo_ci_fleet_verdict_serving", "hobo_ci_fleet_verdict_daily_block_minutes";
 }

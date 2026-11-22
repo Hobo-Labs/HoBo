@@ -123,7 +123,6 @@ describe("typed account control-plane client consumer", () => {
 	});
 	it("matches all 13 SDK-reachable Pact requests and parses responses or sanitized errors", async () => {
 		// Seven malformed wire cases have no SDK method: missing auth (on the policy
-		// and on the fleet's member list), missing CAS, account query override, unknown
 		// policy/setup fields and a client-authored apply body. Their real HTTP
 		// rejection is independently verified by the provider Pact suite.
 		const reachable = new Set([1, 3, 4, 5, 8, 9, 10, 11, 14, 15, 16, 17, 19]);

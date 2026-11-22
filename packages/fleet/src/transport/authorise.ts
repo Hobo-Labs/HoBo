@@ -1,16 +1,3 @@
-/**
- * The accepting device's grant check (design §6.12 "Authorisation is the
- * same for all three"): the authority's signature against the pinned trust
- * record, the record's constraints (§7.2), the tenant, the time window, that
- * the grant names this device as acceptor and the proven peer as initiator,
- * that both members are `ACTIVE`, and that fleet policy allows the purpose.
- * Every refusal is `session-denied` with `detail.check` naming the check.
- *
- * A bus-relay initiator (D59) proves possession of its SEAL key, so its
- * transport identity is `relay:<SEAL key>` (raw X25519, base64url). That form
- * is accepted only when the key is the grant's `seal_public_key` and the SEAL
- * key of the initiator's member record (`check: "relay"`).
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	KeyBundleSchema,
@@ -32,14 +19,10 @@ import {
 import { verifyEnvelope } from "../keys/index.js";
 import type { Outcome, RegistryView } from "../ports.js";
 
-/** How far ahead of this device's clock a grant's `issued_at` may be. */
 const ISSUED_SKEW_MS = 60_000;
-/** `SessionRequest.ttl_seconds` is at most 3600. */
 const MAX_LIFETIME_MS = 3_600_000;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-/** The transport identity prefix of a bus-relay party (D59). */
 const RELAY_PREFIX = "relay:";
-/** A raw 32-byte X25519 key, base64url without padding. */
 const RAW_X25519 = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 
 const denied = (check: string, message: string): Outcome<SessionGrant> => ({
@@ -90,7 +73,6 @@ async function activeMember(
 	return record?.state === MemberState.ACTIVE ? record : undefined;
 }
 
-/** The SEAL key of the member record's key bundle, or "" when it has none. */
 function sealKeyOf(record: MemberRecord): string {
 	const payload = record.keyBundle?.payload;
 	if (payload === undefined || payload.length === 0) return "";
@@ -105,7 +87,6 @@ function sealKeyOf(record: MemberRecord): string {
 	}
 }
 
-/** True when a `relay:<SEAL key>` identity names the initiator's SEAL key, in the grant and in its member record. */
 function relayPartyHolds(
 	identity: string,
 	grantSeal: string,

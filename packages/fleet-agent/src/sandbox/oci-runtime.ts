@@ -1,13 +1,3 @@
-/**
- * The runtime calls of the OCI sandbox drivers, behind one port so that the
- * driver's logic runs against a recording double in unit tests (L38 isolated
- * checks) and against the real runtime binary here: the provisioned `runsc`
- * (D58), or an operator's host `crun` or `runc`. Every call is a child
- * process of that one binary; no other host tool is run. No secret is ever on
- * its argv or environment: an exec's process (argv and environment) is
- * written to a private file and passed with `--process`, and its standard
- * input is piped.
- */
 import { spawn } from "node:child_process";
 import { closeSync, openSync, readFileSync } from "node:fs";
 import { FORWARDER_READY } from "./forwarder.js";
@@ -19,24 +9,13 @@ export type ExecIo = Readonly<{
 }>;
 
 export type OciCalls = Readonly<{
-	/** The runtime's version line; fails when the binary is missing. */
 	version(): Promise<string>;
-	/** Creates and starts the container of `bundle` detached; answers its init pid. */
 	start(id: string, bundle: string): Promise<number>;
-	/** Runs the process described by `processFile` in the container; answers its exit code. */
 	exec(id: string, processFile: string, io: ExecIo): Promise<number>;
-	/**
-	 * Starts the forwarder container of `bundle` (written by the driver: a
-	 * second container in the workload's runsc pod, or one joining the
-	 * workload's namespaces by path), its runtime attached and this process
-	 * holding its standard streams; resolves once it prints its ready line. `stop` closes
-	 * its standard input (it exits on that) and deletes the container.
-	 */
 	forward(
 		id: string,
 		bundle: string,
 	): Promise<Readonly<{ stop(): Promise<void> }>>;
-	/** Kills and deletes the container; succeeds when it is already gone. */
 	remove(id: string): Promise<void>;
 }>;
 
@@ -67,12 +46,10 @@ function collect(command: string, args: readonly string[]): Promise<Collected> {
 	});
 }
 
-/** Real calls to an OCI runtime binary, with its state under `stateRoot`. */
 export function createOciCalls(
 	options: Readonly<{
 		binary: string;
 		stateRoot: string;
-		/** Runtime flags placed before the subcommand (for runsc: `runscFlags` in index.ts). */
 		globalFlags: readonly string[];
 	}>,
 ): OciCalls {
@@ -104,8 +81,6 @@ export function createOciCalls(
 		async start(id, bundle) {
 			const pidFile = `${bundle}/init.pid`;
 			const logFile = `${bundle}/runtime.log`;
-			// A detached container inherits the runtime's stdio, so the runtime's
-			// output goes to a file, never to a pipe the container would hold open.
 			const log = openSync(logFile, "w", 0o600);
 			let code: number;
 			try {
@@ -172,9 +147,6 @@ export function createOciCalls(
 		},
 		forward(id, bundle) {
 			return new Promise((resolve, reject) => {
-				// Attached, not detached: runsc gives a detached sub-container an
-				// already-closed standard input, and the forwarder exits on that.
-				// Attached, the runtime relays these pipes for the container's life.
 				const child = spawn(
 					options.binary,
 					[...base, "run", "--bundle", bundle, id],

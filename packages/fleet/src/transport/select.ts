@@ -1,8 +1,3 @@
-/**
- * Transport selection (design §6.12, F14): `p2p`, then `overlay`, then
- * `bus-relay`, whatever order the transports were given in. A dial that fails
- * or throws falls through to the next; the first that carries wins.
- */
 import type { SignedEnvelope } from "../_generated/fleet_pb.js";
 import type { FleetErrorCode } from "../errors.js";
 import type {

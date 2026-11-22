@@ -7,14 +7,14 @@ tags: [hobo, ci, routing, fleet, relay, verdict, monitoring, operations]
 
 # Finding 145: fleet verdict channel operating record
 
-**Status:** superseded by the fleet ADR ([ADR-0183](../../design/adr/index.md)): the hosted relay keeps no fleet
+**Status:** superseded by the fleet ADR: the hosted relay keeps no fleet
 verdict ([No fleet verdicts](../../../packages/ci-vercel/README.md)). Kept as the record of the channel it replaced.
 It was built in the stack `sdlc/routing-01` to `sdlc/routing-07`; no gate of the operating checklist was passed.
 
 Design and authority:
 [ADR-0180](../../design/adr/fleet-verdict.md#adr-0180-amendment) and its
 [routing rules amendment](../../design/adr/fleet-verdict.md#adr-0180-rules). The hosted
-verdict runbooks were removed with the verdict store (ADR-0183). Monitor: the CI health
+verdict runbooks were removed with the verdict store. Monitor: the CI health
 monitor, [`docs/ci/health-monitor.md`](../health-monitor.md).
 
 ## Evidence

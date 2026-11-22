@@ -10,7 +10,7 @@ tags: [hobo, fleet, runbook, maintenance]
 Enroll one device and run work on it. You need an authority URL (an
 operator runs one: [install and upgrade](./install-and-upgrade.md)) and a
 person allowed to invite into the fleet. Background:
-[HoBo Fleet](../../design/fleet.md).
+HoBo Fleet.
 
 ## 1. Point the CLI at the authority
 

@@ -1,11 +1,3 @@
-/**
- * The device's key bundle as the agent builds and renews it (design §6.4;
- * L07 private): its SIGN and SEAL keys, and a TRANSPORT key only when the
- * peer-to-peer adapter reports an endpoint id (an empty identity means the
- * device has none), signed by the identity key under
- * `hobo-fleet/key-bundle/v1`. A bundle is renewed once three quarters of its
- * life has passed, with the next sequence and the same lifetime.
- */
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	KeyAlgorithm,
@@ -20,9 +12,7 @@ import { signEnvelope } from "../keys/index.js";
 import type { DeviceKeys } from "../ports.js";
 
 export const HOUR_MS = 3_600_000;
-/** §6.4: a bundle lives `key_bundle_hours`, 24 when the policy says nothing. */
 export const DEFAULT_BUNDLE_HOURS = 24;
-/** The shortest bundle the agent asks for, when policy refuses the default. */
 export const SHORT_BUNDLE_HOURS = 1;
 
 export async function buildBundle(
@@ -82,7 +72,6 @@ export function decodeBundle(
 	}
 }
 
-/** The bundle's lifetime in milliseconds, or the default when its times do not parse. */
 export function lifetimeOf(bundle: KeyBundle): number {
 	const from = Date.parse(bundle.issuedAt);
 	const until = Date.parse(bundle.notAfter);
@@ -91,14 +80,12 @@ export function lifetimeOf(bundle: KeyBundle): number {
 		: DEFAULT_BUNDLE_HOURS * HOUR_MS;
 }
 
-/** Three quarters of the bundle's life have passed. */
 export function renewalDue(bundle: KeyBundle, nowMs: number): boolean {
 	const from = Date.parse(bundle.issuedAt);
 	if (!Number.isFinite(from)) return true;
 	return nowMs >= from + (lifetimeOf(bundle) * 3) / 4;
 }
 
-/** The TRANSPORT endpoint id the bundle carries, or "". */
 export function transportOf(bundle: KeyBundle | undefined): string {
 	return (
 		bundle?.keys.find((key) => key.purpose === KeyPurpose.TRANSPORT)?.value ??

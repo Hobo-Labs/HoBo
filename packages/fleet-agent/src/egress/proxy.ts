@@ -1,19 +1,3 @@
-/**
- * The egress proxy (design §6.11 "Egress"): an HTTP proxy on the host's
- * loopback that a sandbox reaches as its only network path. It serves
- * `CONNECT host:port` tunnels and absolute-form requests (`GET http://host/…`,
- * `GET https://host/…`), and connects only when:
- *
- * - the host is exactly one of the order's hosts or the fleet's allowlist
- *   (read again on every request, so a host the fleet drops stops at once);
- *   no wildcard, no suffix match;
- * - neither the name nor any address it resolves to is a metadata,
- *   link-local, loopback, unspecified or multicast address (`addresses.ts`).
- *
- * It then connects to the address it vetted, never to a second lookup. A
- * refusal is `403` and a log line naming the host and the reason; request
- * paths, headers and bodies are never logged.
- */
 import { once } from "node:events";
 import {
 	createServer,
@@ -23,7 +7,7 @@ import {
 	type ServerResponse,
 } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { isIPv4, isIPv6, type Socket } from "node:net";
+import { type AddressInfo, isIPv4, isIPv6, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { connect as tlsConnect } from "node:tls";
 import type { EgressProxyFactory, FleetLog } from "@hobo/fleet";
@@ -34,7 +18,15 @@ import {
 	refusedName,
 } from "./addresses.js";
 
-/** How the proxy resolves names and opens upstream connections. */
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) !== "[object String]"
+	);
+}
+
 export type EgressDeps = Readonly<{
 	lookup(host: string): Promise<readonly string[]>;
 	connect(address: string, port: number): Socket;
@@ -45,7 +37,6 @@ type Verdict = Readonly<
 	| { ok: false; reason: RefusalReason | "not-allowed" | "unresolved" }
 >;
 
-/** Hop-by-hop and proxy headers that are not forwarded upstream. */
 const HOP_HEADERS = new Set([
 	"connection",
 	"keep-alive",
@@ -58,7 +49,6 @@ const HOP_HEADERS = new Set([
 	"upgrade",
 ]);
 
-/** The egress proxy factory over `deps`; `createEgressProxyFactory` passes the host's resolver and sockets. */
 export function createEgressProxyFactoryWith(
 	options: Readonly<{
 		fleetAllow: () => readonly string[];
@@ -110,8 +100,6 @@ export function createEgressProxyFactoryWith(
 				track(req.socket);
 				void forward(req, res, vet, refuse, options.deps, track);
 			});
-			// Clients such as busybox wget shut down their write side after the
-			// request; the answer must still reach them.
 			Object.assign(server, { httpAllowHalfOpen: true });
 			server.on("connection", track);
 			server.on(
@@ -127,12 +115,7 @@ export function createEgressProxyFactoryWith(
 			server.listen(0, "127.0.0.1");
 			await once(server, "listening");
 			const address = server.address();
-			const port =
-				address === null ||
-				Object.prototype.toString.call(address) === "[object String]"
-					? 0
-					: // SAFETY: a TCP server listening on a port answers an AddressInfo, not a pipe name.
-						(address as Readonly<{ port: number }>).port;
+			const port = isTcpAddress(address) ? address.port : 0;
 			let closed: Promise<void> | undefined;
 			return {
 				url: `http://127.0.0.1:${port}`,
@@ -148,7 +131,6 @@ export function createEgressProxyFactoryWith(
 	};
 }
 
-/** Splits a CONNECT target `host:port` or `[v6]:port`. */
 function parseAuthority(
 	target: string,
 ): Readonly<{ host: string; port: number }> | undefined {

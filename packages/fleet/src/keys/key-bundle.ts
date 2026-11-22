@@ -1,7 +1,3 @@
-// Key bundles (design §6.4): the device's operational keys, signed by its
-// identity key under `hobo-fleet/key-bundle/v1`. A bundle holds exactly one
-// SIGN and one SEAL key and at most one TRANSPORT key, each named
-// `<MemberId>#<purpose>`, and is valid from `issued_at` to `not_after`.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	KeyAlgorithm,
@@ -19,7 +15,6 @@ import { refuse, thumbprintOf } from "./jose.js";
 import { deviceMemberId } from "./member-id.js";
 
 const HOUR_MS = 3_600_000;
-/** §6.4: `key_bundle_hours` defaults to 24 and is at most 720. */
 export const MAX_KEY_BUNDLE_HOURS = 720;
 
 export type KeyBundleInput = Readonly<{

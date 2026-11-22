@@ -1,18 +1,3 @@
-/**
- * The authority's `CredentialIssuer` (§6.6) over @hobo/identity: RS256 JWTs
- * signed through `JwtSvidIssuer` with the token-signing ring that
- * `loadSecretStoreKms` holds. Member tokens (JWT-SVIDs) and person tokens are
- * bound to a key by `cnf.jkt` and carry the authority incarnation; `verify`
- * accepts only tokens signed by a key of this ring, for this issuer, of the
- * current incarnation or later (a token from before a restore is refused).
- *
- * The signing key is the ring's active key: `activeKeyId()` when the ring
- * offers it (amendment 2), else the lowest-numbered `<prefix>#<n>` key that
- * still signs (a retired key refuses to sign). The JWKS lists every key the
- * ring still holds, so tokens signed before a rotation verify until they
- * expire. The ring is read through `kms()`, so a reloaded ring takes effect
- * at once.
- */
 import { createPublicKey, createVerify, randomBytes } from "node:crypto";
 import {
 	type JsonObject,
@@ -34,13 +19,11 @@ import { JwtSvidIssuer, type KmsLike } from "@hobo/identity";
 const MEMBER_KIND = "member";
 const PERSON_KIND = "person";
 const ALLOWED_SKEW_S = 60;
-/** How many `<prefix>#<n>` key ids are probed when the ring cannot list them. */
 const MAX_RING_PROBE = 64;
 const ALGORITHM = "RS256";
 
 export type IssuerOptions = Readonly<{
 	issuerUrl: string;
-	/** The ring's secret name, `<secretPrefix>/token-signing`: key ids are `<prefix>#<n>`. */
 	prefix: string;
 	kms: () => KmsLike;
 	incarnation: () => number;
@@ -101,7 +84,6 @@ function tenantOf(value: JsonValue | undefined): TenantId | undefined {
 	}
 }
 
-/** Every key id the ring holds, lowest number first. */
 export function ringKeyIds(kms: KmsLike, prefix: string): readonly string[] {
 	const listed = kms.keyIds?.();
 	if (listed !== undefined) return [...listed].filter((kid) => kms.hasKey(kid));
@@ -113,7 +95,6 @@ export function ringKeyIds(kms: KmsLike, prefix: string): readonly string[] {
 	return held;
 }
 
-/** The key new tokens are signed with (carry-forward rule 3 of L27). */
 export function activeKeyId(kms: KmsLike, prefix: string): string | undefined {
 	const active = kms.activeKeyId?.();
 	if (active !== undefined && kms.hasKey(active)) return active;
@@ -121,9 +102,7 @@ export function activeKeyId(kms: KmsLike, prefix: string): string | undefined {
 		try {
 			kms.sign(kid, "");
 			return kid;
-		} catch {
-			// Retired: verifies, no longer signs.
-		}
+		} catch {}
 	}
 	return undefined;
 }

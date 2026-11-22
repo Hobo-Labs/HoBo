@@ -1,40 +1,3 @@
-/**
- * The relay's cache fleet (ADR-0179 phase 4c; HoBo Fleet design §8.4): every
- * bound cache backend is a member, exactly one is active, and every port call
- * goes to it.
- *
- * - **A local-mode fleet.** `createLocalFleet` (`@hobo/fleet/membership`)
- *   declares one `BACKEND` member per bound cache, in configured order, under
- *   the owner's `AUTO_OWNER` approval, in a `ONE_ACTIVE` fleet whose policy
- *   carries `failover_after_ms` from the marks and `membership_epochs` from
- *   `HOBO_CI_CACHE_OFFERS_JSON` (false until the last cutover step). Nothing
- *   else is needed: no authority, no bus, no network.
- * - **Which one is active** is read by `createOneActiveFleet`
- *   (`@hobo/fleet/assignment`) from the fleet's assignment register, whose
- *   log is kept on every member in one key (`hobo-ci:<env>:fleet:assignment`)
- *   and decided by majority. A resolution is cached in memory for
- *   `assignmentTtlMs` (a minute), measured from when the read *started*. With
- *   a single member there is no register: it is active, and nothing is read.
- * - **Fail closed.** No majority, an undecided epoch that completion cannot
- *   settle, or a sealed fleet: every call is refused with a retryable
- *   `CacheFleetUnavailableError`. A queue message that hits it is redelivered;
- *   the relay never guesses a backend.
- * - **A move seals first.** The repair tick that decides a move writes a
- *   sealed entry (nobody writes), waits `sealWaitMs` (2.5 minutes, longer
- *   than twice the assignment cache, so every instance has dropped its old
- *   answer and any call it had in flight has ended), then activates the
- *   target. No two instances write to different backends. The wait is a
- *   delayed repair message, not a sleep in the function; the 15-minute tick is
- *   the backstop. The new backend starts cold, and the relay rebuilds leases
- *   by name as after any cache loss.
- * - **Budget routing.** Each tick reads what every member has spent this
- *   month (counters kept on the member itself, in the units it bills), turns
- *   the month's workload into every member's units with the bindings' cost
- *   tables, and asks `routeFleetByBudget` what to do: it is the loop's
- *   `chooseAction`. The tick is reported as a `OneActiveTick`, and the
- *   decision is logged as one structured line: names, ids and numbers, never
- *   a value.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	billingPeriod,
@@ -224,7 +187,6 @@ export type CacheFleetOptions = Readonly<{
 	backends: readonly OpenedCacheBackend[];
 	/** Cache namespace: production, preview and local never share keys. */
 	environment: string;
-	/** Offers, marks and `membershipEpochs` (the fleet policy's `membership_epochs`). */
 	offers: CacheOffers;
 	now?: () => number;
 	log?: (line: CacheFleetLogLine) => void;
@@ -239,7 +201,6 @@ export type CacheFleetOptions = Readonly<{
 	sleep?: (ms: number) => Promise<void>;
 }>;
 
-/** The local-mode fleet the cache backends are members of (`createLocalFleet`). */
 export type CacheLocalFleet = Readonly<{
 	registry: RegistryView;
 	fleet: FleetRecord;
@@ -256,20 +217,13 @@ export type CacheFleet = Readonly<{
 	tick(): Promise<OneActiveTick>;
 	/** Write usage now (a tick does) or when the interval has passed. */
 	flushUsage(force?: boolean): Promise<void>;
-	/** The fleet and member records, declared once per instance on first use. */
 	localFleet(): Promise<CacheLocalFleet>;
 	close(): Promise<void>;
 }>;
 
-/** The tenant and fleet of the relay's cache fleet: one per process, never shared. */
 const CACHE_TENANT = "relay"; // public-contract: the local-mode tenant named in the cache fleet's records
 const CACHE_FLEET_ID = "cache"; // public-contract: the local-mode fleet id named in the cache fleet's records
 
-/**
- * The routing input's per-member health strings. `routeFleetByBudget` reads
- * `NamedObservation`s once L21 has merged and the flat fields before; the
- * observations it is given carry both, so either reads the same values.
- */
 type RoutingHealth =
 	| "reachable"
 	| "unreachable"
@@ -285,7 +239,6 @@ type RoutedObservation = NamedObservation &
 		usage: readonly FleetUsageMeasurement[];
 	}>;
 
-/** `QUOTA_EXHAUSTED` → `quota-exhausted`: the failure-class strings of the log lines. */
 function healthToken(health: Health): RoutingHealth {
 	switch (health) {
 		case Health.REACHABLE:
@@ -301,7 +254,6 @@ function healthToken(health: Health): RoutingHealth {
 	}
 }
 
-/** Today's reason for an unavailable fleet, from the loop's refusal. */
 function refusalReason(reason: string | undefined): string {
 	if (reason === "no-active-member") return "no-active-backend";
 	return reason ?? "unavailable";
@@ -310,7 +262,6 @@ function refusalReason(reason: string | undefined): string {
 type OneActiveFleet = ReturnType<typeof createOneActiveFleet>;
 type ChooseInput = Parameters<OneActiveDeps["chooseAction"]>[0];
 
-/** Actions after which the last answer may no longer hold. */
 const MOVED: ReadonlySet<OneActiveTick["action"]> = new Set([
 	"bootstrap",
 	"activate",
@@ -344,10 +295,7 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 	const logKey = `hobo-ci:${options.environment}:fleet:assignment`;
 	const failingSince = new Map<string, number>();
 
-	// --- the register, noting what this tick's reads saw ----------------------
-	/** Each replica's last read in this tick: reachable, or its failure class. */
 	const seen = new Map<string, Health>();
-	/** The newest entry a read in this tick returned: whose health matters most. */
 	let newest: AssignmentEntry | undefined;
 	const replicas: EphemeralAssignmentReplica[] = backends.map((backend) => {
 		const replica = ephemeralAssignmentReplica(
@@ -379,7 +327,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		classify: classifyCacheFailure,
 	});
 
-	// --- the local-mode fleet --------------------------------------------------
 	const fleetLog: FleetLog = (event, fields) => log({ event, ...fields });
 	let declared: Promise<CacheLocalFleet> | undefined;
 	function localFleet(): Promise<CacheLocalFleet> {
@@ -412,7 +359,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		return declared;
 	}
 
-	// --- usage, per member, in the units it bills ----------------------------
 	const tally: PortTally = {
 		get: 0,
 		getMany: 0,
@@ -547,7 +493,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		}));
 	}
 
-	// --- observing a member (the loop's `observe`) -------------------------------
 	async function probe(name: string): Promise<Health> {
 		const replica = replicas.find((each) => each.id === name);
 		let health: Health = Health.UNKNOWN;
@@ -568,14 +513,12 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		return health;
 	}
 
-	/** A member's health from this tick's register reads, and its spend when reachable. */
 	async function observe(record: MemberRecord): Promise<Observation> {
 		const name =
 			record.memberships.find(
 				(membership) => membership.fleet === CACHE_FLEET_ID,
 			)?.name ?? "";
 		let health = seen.get(name) ?? Health.UNKNOWN;
-		// The member that matters most gets more than one chance.
 		if (
 			health !== Health.REACHABLE &&
 			(name === newest?.active || name === newest?.target)
@@ -600,7 +543,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		});
 	}
 
-	// --- choosing (the loop's `chooseAction`): routeFleetByBudget --------------
 	let lastRoute: FleetRoute | undefined;
 	async function chooseAction(input: ChooseInput): Promise<OneActiveAction> {
 		const spends = new Map<string, readonly FleetUsageMeasurement[]>();
@@ -651,7 +593,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		};
 	}
 
-	// --- the one-active loop ------------------------------------------------------
 	let loop: Promise<OneActiveFleet> | undefined;
 	function oneActive(): Promise<OneActiveFleet> {
 		loop ??= localFleet().then(({ registry, fleet }) =>
@@ -678,7 +619,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		return loop;
 	}
 
-	// --- which backend is active ---------------------------------------------
 	let lastActive: string | undefined;
 	async function active(): Promise<OpenedCacheBackend> {
 		if (single) return single;
@@ -696,7 +636,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		return backend;
 	}
 
-	// --- the routed port --------------------------------------------------------
 	async function routed<T>(
 		operation: PortOperation,
 		call: (port: EphemeralStatePort) => Promise<T>,
@@ -732,8 +671,6 @@ export function createCacheFleet(options: CacheFleetOptions): CacheFleet {
 		expire: (key, ttl) => routed("expire", (port) => port.expire(key, ttl)),
 	};
 
-	// --- the tick ------------------------------------------------------------
-	/** The relay's decision line: names, ids and numbers, never a value. */
 	function report(tick: OneActiveTick, route: FleetRoute | undefined): void {
 		const percent: Record<string, number> = {};
 		const cost: Record<string, number> = {};

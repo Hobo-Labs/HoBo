@@ -1,13 +1,3 @@
-/**
- * A simulated sandbox driver for the isolation probe's own tests: it answers
- * each probe (named by `HOBO_PROBE`) with the facts a well-isolated sandbox
- * would print, routes `controlUrl` requests only within one sandbox, and runs
- * the destroy check's `sleep` as a real host process that `destroy` kills.
- *
- * It exists to prove that the probe judges facts correctly: the simulated
- * driver passes, and a driver broken in exactly one way fails exactly the
- * assertion for that way. Real drivers are probed in `@hobo/fleet-agent`.
- */
 import { type ChildProcess, spawn } from "node:child_process";
 import { SandboxTier, WorkOrigin } from "../../../src/_generated/fleet_pb.js";
 import type {
@@ -21,7 +11,6 @@ import type { IsolationProbe } from "../../../src/testing/conformance/isolation.
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** What a well-isolated sandbox prints for each probe. */
 const ISOLATED = {
 	capabilities: "@@capeff 0000000000000000\n@@done\n",
 	"docker-socket": "@@socket /run/hobo/agent.sock\n@@docker-host \n@@done\n",
@@ -48,15 +37,11 @@ const ISOLATED_FACTS: ReadonlyMap<string, string> = new Map(
 	Object.entries(ISOLATED),
 );
 
-/** Host processes the broken "leaves processes" driver left behind; the test kills them. */
 export const LEFT_BEHIND = new Set<ChildProcess>();
 
 type Faults = Readonly<{
-	/** Replaces the facts printed for one probe. */
 	facts?: Readonly<Record<string, string>>;
-	/** Routes a controlUrl request to whichever sandbox owns that URL. */
 	sharedControl?: boolean;
-	/** `destroy` leaves the sandbox's processes running. */
 	leaveProcesses?: boolean;
 }>;
 
@@ -164,7 +149,6 @@ const subjectWith = (faults: Faults): IsolationProbe => ({
 	},
 });
 
-/** The simulated, well-isolated driver: passes `runSandboxIsolationProbe`. */
 export const isolatedSubject: IsolationProbe = subjectWith({});
 
 export const BROKEN_ISOLATION: ReadonlyMap<string, IsolationProbe> = new Map([

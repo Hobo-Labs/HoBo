@@ -1,4 +1,3 @@
-// Barrel of @hobo/fleet-authority (coordinator-owned): re-exports only.
 export {
 	backup,
 	type OpsContext,

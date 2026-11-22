@@ -1,9 +1,3 @@
-/**
- * `deriveRefusal` (amendment 4, D60; ADR-0181 R4): why a member admits no new
- * work, in the order draining, storage, pressure, its own work. Thresholds are
- * main's box worker's (`isolated-worker/host-capacity.ts`,
- * `storage-admission.ts`) and L10's memory reserve.
- */
 import { create } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {

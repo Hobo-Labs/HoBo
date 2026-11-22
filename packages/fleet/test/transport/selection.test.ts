@@ -1,8 +1,3 @@
-/**
- * O31 (selection half), F14: `selectTransport` tries `p2p`, then `overlay`,
- * then `bus-relay`, whatever order it is given them in, and opens the session
- * over the first that carries it.
- */
 import { describe, expect, it } from "vitest";
 import type { SignedEnvelope } from "../../src/_generated/fleet_pb.js";
 import { createMemoryKeyStore } from "../../src/keys/index.js";
@@ -28,10 +23,6 @@ type Logged = Readonly<{
 	fields: Readonly<Record<string, string | number | boolean>>;
 }>;
 
-/**
- * Initiator and acceptor transports of each kind on one network. Every kind
- * gives both devices the same identity, so one grant fits every transport.
- */
 async function setup(
 	modes: Readonly<Partial<Record<TransportKind, DialMode>>>,
 	order: readonly TransportKind[] = KINDS,

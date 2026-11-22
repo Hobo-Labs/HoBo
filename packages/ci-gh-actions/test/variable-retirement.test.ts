@@ -13,7 +13,6 @@ const NAMES = [
 	"HOBO_CI_BOX_RUNNER",
 	"HOBO_CI_ROUTE",
 ];
-/** What the module deletes: the committed names, then the always-retired ones. */
 const SENT = [...NAMES, ...ALWAYS_RETIRED_VARIABLES];
 
 function github(statusFor: (name: string) => number | Error) {
@@ -142,8 +141,6 @@ describe("retireRepositoryVariables", () => {
 		expect(api.calls).toHaveLength(1 + ALWAYS_RETIRED_VARIABLES.length);
 	});
 
-	// ADR-0183: the relay-mesh fleet-state variable is deleted even though the
-	// committed list no longer names it.
 	it("always retires the relay-mesh fleet-state variable", async () => {
 		const api = github(() => 204);
 		const outcome = await retireRepositoryVariables(api.transport, {

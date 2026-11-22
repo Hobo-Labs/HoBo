@@ -1,11 +1,3 @@
-/**
- * Topology, credentials, auth callout and the bus ports over NATS (L08).
- * Signatures frozen by the fleet contract commit (ADR-0183).
- *
- * Each frozen entry point runs its `…Over` twin on the real client (`NATS`);
- * the twins take the client as a `NatsClients` port, which is how the unit
- * tests run them over a fake server.
- */
 import { randomBytes } from "node:crypto";
 import type { TenantId } from "@hobo/core";
 import type {
@@ -85,7 +77,6 @@ type CalloutInput = Readonly<{
 	log: FleetLog;
 }>;
 
-/** Creates the tenant account, its static users and scoped signing keys, and its streams and buckets. */
 export function provisionTopology(
 	input: Readonly<{
 		servers: readonly string[];
@@ -107,24 +98,10 @@ export function provisionTopology(
 	return provisionTopologyOver(NATS, input);
 }
 
-/** Internal options of `provisionTopologyOver`. */
 export type ProvisionOptions = Readonly<{
-	/**
-	 * The signing keys the account lists (the secret-store slots, after a
-	 * rotation). Without them the account keeps the signing keys the resolver
-	 * already holds for it, or, for an account it does not hold yet, lists the
-	 * derived scoped keys.
-	 */
 	signingKeys?: AccountSigningKeys;
 }>;
 
-/**
- * `provisionTopology` over `clients`. Re-running it never undoes a rotation
- * of the account-signing or scoped keys: the account is re-issued with the
- * signing keys `options` supplies, else with those the resolver holds for it
- * (`publishAccountSigningKeys` published them), and only a new account gets
- * the derived scoped keys. `scopedSeeds` are always the derived seeds.
- */
 export async function provisionTopologyOver(
 	clients: NatsClients,
 	input: ProvisionInput,
@@ -199,26 +176,12 @@ type SigningKeysInput = Readonly<{
 	signingKeys: AccountSigningKeys;
 }>;
 
-/**
- * Internal (L41; composed by the authority service and `hobo fleet ops` as
- * the `NatsSigningKeys` of `rotateKey`): re-issues the tenant account JWT
- * listing exactly `signingKeys` and pushes it to the resolver. The caller
- * reads the lists from the secret-store slots `<prefix>/account-signing` and
- * `<prefix>/scoped-<template>`; each step of add, publish, switch, remove is
- * one call with the slots as they then are. `invalid-request` for a key that
- * is not an account public key or is listed twice (nothing is pushed);
- * `unavailable` when the resolver cannot be reached or refuses the account.
- *
- * `provisionTopology` keeps the signing keys the resolver holds, so re-running
- * it after a rotation leaves the rotation in place.
- */
 export function publishAccountSigningKeys(
 	input: SigningKeysInput,
 ): Promise<Outcome<Readonly<{ accountPublicKey: string }>>> {
 	return publishAccountSigningKeysOver(NATS, input);
 }
 
-/** `publishAccountSigningKeys` over `clients`. */
 export async function publishAccountSigningKeysOver(
 	clients: NatsClients,
 	input: SigningKeysInput,
@@ -255,18 +218,10 @@ export async function publishAccountSigningKeysOver(
 	return { ok: true, value: { accountPublicKey: keys.account.getPublicKey() } };
 }
 
-/**
- * A device's connection to its tenant's bus. The device presents the public
- * sentinel credentials and a connect token; the token is minted before each
- * connection attempt from a fresh ticket, because the client's authenticator
- * is synchronous and the device's SIGN key signs asynchronously, so the proof
- * cannot carry the server's nonce: each ticket connects once (A2 fallback).
- */
 export function createNatsBusConnector(): FleetBusConnector {
 	return natsBusConnectorOver(NATS);
 }
 
-/** `createNatsBusConnector` over `clients`. */
 export function natsBusConnectorOver(clients: NatsClients): FleetBusConnector {
 	return {
 		async connect(input) {
@@ -319,11 +274,6 @@ export function natsBusConnectorOver(clients: NatsClients): FleetBusConnector {
 	};
 }
 
-/**
- * The authority's connection; positions are per subscription (`BusStart`).
- * Opened with the witness user's credentials it is the witness's: its audit
- * log writes co-signatures to `fleet.audit.witness` (see `AuditRole`).
- */
 export function connectAuthorityBus(
 	input: Readonly<{
 		servers: readonly string[];
@@ -335,7 +285,6 @@ export function connectAuthorityBus(
 	return authorityBusOver(NATS, input);
 }
 
-/** `connectAuthorityBus` over `clients`. */
 export async function authorityBusOver(
 	clients: NatsClients,
 	input: AuthorityInput,
@@ -361,7 +310,6 @@ export async function authorityBusOver(
 	return authorityBusOverWire(wire, registry, pin, Date.now, role);
 }
 
-/** Answers NATS auth callouts with user credentials scoped to the member. */
 export function startCalloutResponder(
 	input: Readonly<{
 		servers: readonly string[];
@@ -380,7 +328,6 @@ export function startCalloutResponder(
 	return calloutResponderOver(NATS, input);
 }
 
-/** `startCalloutResponder` over `clients`. */
 export async function calloutResponderOver(
 	clients: NatsClients,
 	input: CalloutInput,

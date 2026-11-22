@@ -1,11 +1,3 @@
-/**
- * Steps for features/fleet/sessions.feature (§6.12): the authority grants a
- * shell session to a member of a fleet the person may reach; the acceptor
- * authorises the grant against the registry; both ends derive the session
- * keys from their SEAL keys and frame the stream. A purpose the fleet does
- * not allow, a grant the trust record's keys did not sign, and a genuine
- * grant presented by another peer are refused.
- */
 import assert from "node:assert/strict";
 import { Then, When } from "@cucumber/cucumber";
 import {
@@ -86,7 +78,6 @@ Then("a shell command and its output cross the session encrypted end to end", as
 	assert.ok(grant !== undefined && cli !== undefined);
 	const self = await device().keys.open();
 	const session = fromBinary(SessionGrantSchema, grant.payload);
-	// Each end agrees with the other's SEAL key as the grant names it.
 	const acceptorSecret = await self.agree(session.initiator?.sealPublicKey ?? "");
 	const initiatorSecret = await cli.agree(session.acceptor?.sealPublicKey ?? "");
 	assert.deepEqual(acceptorSecret, initiatorSecret);

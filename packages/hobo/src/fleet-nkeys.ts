@@ -1,10 +1,3 @@
-/**
- * The NATS nkey text forms `hobo fleet ops provision` writes into the
- * operations' key slots (design §6.16; the slot layout of
- * @hobo/fleet-authority's operations): seeds `S…` and public keys (`A…`
- * accounts, `X…` curve keys) are base32 without padding over the role
- * prefix, the 32 key bytes and a CRC-16/XMODEM, little endian.
- */
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -97,7 +90,6 @@ export function encodePublic(role: NkeyRole, seed: Uint8Array): string {
 	return base32(withCrc(body));
 }
 
-/** The role and raw seed of a seed text; undefined when it is not one of these roles or its checksum fails. */
 export function decodeSeed(
 	text: string,
 ): Readonly<{ role: NkeyRole; seed: Uint8Array }> | undefined {
@@ -120,7 +112,6 @@ export function decodeSeed(
 		: { role, seed: new Uint8Array(body.subarray(2)) };
 }
 
-/** The public key text of an account or curve seed text. */
 export function publicOfSeed(text: string): string | undefined {
 	const decoded = decodeSeed(text);
 	return decoded === undefined
@@ -128,7 +119,6 @@ export function publicOfSeed(text: string): string | undefined {
 		: encodePublic(decoded.role, decoded.seed);
 }
 
-/** A fresh curve (xkey) seed text, for the callout responder. */
 export function freshCurveSeed(): string {
 	return encodeSeed("curve", new Uint8Array(randomBytes(32)));
 }

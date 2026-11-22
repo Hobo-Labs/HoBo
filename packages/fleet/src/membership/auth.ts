@@ -1,22 +1,3 @@
-/**
- * `authenticate` (L02 private): the four `VerifiedToken` kinds.
- *
- * - `Authorization: DPoP <jwt>`: a member SVID or a person token, verified by
- *   the authority's own `CredentialIssuer` (a self-minted token never
- *   verifies), with a DPoP proof over this method and URL, `ath` of the token,
- *   a fresh `jti`, and the proof key equal to the token's `cnf.jkt`. A member
- *   token is refused at once when the member is no longer ACTIVE. A token
- *   minted under an earlier authority incarnation is `incarnation-stale`: by
- *   its `incarnation` claim when it carries one (L09's tokens do), else by
- *   its `iat` against when the current incarnation began (L41). The
- *   issuer's own `incarnation-stale` is passed through as it is (L42).
- * - `Authorization: Bearer <credential>`: the relay's account credential, else
- *   a workload OIDC token (audience: the authority's issuer).
- * - No `Authorization`, only a DPoP proof made with an enrolled device's SIGN
- *   key: the device itself (`credentials` before it holds an SVID). The token
- *   lives as long as the proof's window.
- */
-
 import type { JsonValue } from "@hobo/core";
 import { verifyDpopProof } from "../keys/index.js";
 import type { Outcome, VerifiedToken } from "../ports.js";
@@ -24,26 +5,16 @@ import { decodeBundle, signThumbprint } from "./bundle.js";
 import { type Ctx, refuse, stateRefusal } from "./context.js";
 import { isJsonNumber, isJsonObject } from "./json.js";
 
-/** When and under which incarnation a token was minted, as far as its claims say. */
 type Minted = Readonly<{
-	/** `iat`, epoch ms. */
 	atMs: number | undefined;
-	/** The `incarnation` claim, when the token carries one. */
 	incarnation: number | undefined;
 }>;
 
-/**
- * What `authenticate` read from each token it verified, keyed by the
- * `VerifiedToken` it answered, so `credentials` can apply the incarnation
- * rule again to the caller it is handed (`VerifiedToken` has no issue time
- * or incarnation of its own, and widening it would change a frozen contract).
- */
 const mintedOf = new WeakMap<VerifiedToken, Minted>();
 
 const finite = (value: JsonValue | undefined): number | undefined =>
 	isJsonNumber(value) && Number.isFinite(value) ? value : undefined;
 
-/** The `iat` and `incarnation` claims of a compact JWT the issuer has already verified. */
 function mintedClaims(jwt: string): Minted {
 	const payload = jwt.split(".")[1];
 	if (payload === undefined) return { atMs: undefined, incarnation: undefined };
@@ -69,11 +40,6 @@ const stale = <T>(ctx: Ctx): Outcome<T> =>
 		`the token was minted before authority incarnation ${ctx.deps.incarnation} began`,
 	);
 
-/**
- * `incarnation-stale` for a token minted under an earlier incarnation, else
- * undefined. A token's `incarnation` claim decides when it carries one;
- * otherwise `incarnationRefusal` applies the `iat` rule.
- */
 async function mintedRefusal<T>(
 	ctx: Ctx,
 	minted: Minted,
@@ -85,13 +51,6 @@ async function mintedRefusal<T>(
 	return incarnationRefusal<T>(ctx, minted.atMs);
 }
 
-/**
- * `incarnation-stale` for a token minted before the authority's current
- * incarnation began (the restore that raised it, as journalled), else
- * undefined. `iat` has one-second precision, so a token minted in the same
- * second as the restore is accepted. A token with no `iat` is stale once an
- * incarnation has begun. Before any restore nothing is stale.
- */
 export async function incarnationRefusal<T>(
 	ctx: Ctx,
 	minted: number | undefined,
@@ -103,7 +62,6 @@ export async function incarnationRefusal<T>(
 	return stale<T>(ctx);
 }
 
-/** The incarnation rule for a caller `authenticate` answered from a token; a proof-only caller holds no minted token. */
 export function callerIncarnationRefusal<T>(
 	ctx: Ctx,
 	caller: VerifiedToken | undefined,

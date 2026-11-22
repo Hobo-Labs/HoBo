@@ -1,13 +1,3 @@
-/**
- * The pre-job hook run as GitHub's runner runs it (`sh`), against a local
- * HTTP stand-in for the sandbox's control endpoint (design §6.9 step 7):
- *
- * - The work key it posts is `<repo>#<jobId>@<runAttempt>`, the same form the
- *   work source offers, so a receipt's `observedWorkKey` joins its offer.
- * - Exit codes follow #1688's start fence: 0 allowed, 41 refused, 42 conflict
- *   (this single-use sandbox already allowed a job), 43 agent unreachable or
- *   an answer it cannot read (fail closed).
- */
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -16,6 +6,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HOOK_EXIT, preJobHookScript } from "../../src/fleet-work/hook.js";
+
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
 
 type Stand = Readonly<{
 	url: string;
@@ -43,8 +47,7 @@ async function controlEndpoint(
 		});
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	// SAFETY: a server listening on a TCP port reports an AddressInfo, never a pipe name.
-	const { port } = server.address() as AddressInfo;
+	const port = portOf(server.address());
 	return {
 		url: `http://127.0.0.1:${port}`,
 		posted,

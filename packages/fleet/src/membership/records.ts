@@ -1,8 +1,3 @@
-/**
- * Member-record transitions and responses (L02 private). A record's
- * `record_sequence` increases by exactly one with every content change
- * (§6.14), so the witness can match each registry change to its audit entry.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type Discovery,
@@ -19,7 +14,6 @@ import { parseMemberId } from "../ids.js";
 import type { AuthorityDeps } from "../ports.js";
 import type { Ctx } from "./context.js";
 
-/** Overlay join credentials live 10 minutes (D54). */
 const OVERLAY_TTL_MS = 10 * 60 * 1_000;
 
 /** domain-view: the fields of a MemberRecord one transition sets; the rest carry over. */
@@ -27,7 +21,6 @@ export type RecordChange = Partial<
 	Omit<MemberRecord, "$typeName" | "$unknown">
 >;
 
-/** The record after one change: sequence + 1, and the state's time and reason when the state changes. */
 export function nextRecord(
 	record: MemberRecord,
 	change: RecordChange,
@@ -56,12 +49,6 @@ export function discoveryOf(deps: AuthorityDeps): Discovery {
 	});
 }
 
-/**
- * The response to `enroll` and `declare`. An ACTIVE device gets one overlay
- * join per configured minter (§6.12 item 2, D54); a minter that fails or
- * throws is left out and never fails the enrollment. Join credentials are
- * never logged or journalled (§11.3 rule 11).
- */
 export async function enrollmentResponse(
 	ctx: Ctx,
 	record: MemberRecord,

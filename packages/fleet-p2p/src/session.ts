@@ -1,19 +1,3 @@
-/**
- * The bytes of one p2p session on one QUIC stream (L11).
- *
- * The dialler opens one bidirectional stream and writes the grant frame: a
- * 4-byte big-endian length and the `SignedEnvelope` of the `SessionGrant`. The
- * acceptor reads that frame, asks `authorise` with the peer's proven endpoint
- * id, and writes one byte, `ACCEPTED`, only when the session is allowed;
- * anything else ends the connection. Payload flows after that byte, and
- * neither side hands a payload byte on before it.
- *
- * `openSession` wraps the stream as a `FleetStream` that counts payload bytes
- * only. `close` ends the send side, waits briefly for it to be acknowledged,
- * and answers the counts at once; the connection itself is closed once the
- * peer has ended its side too (or after a linger bound), so an answer written
- * just before `close` is not lost with the connection.
- */
 import { fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
 	type FleetStream,
@@ -23,13 +7,11 @@ import {
 import type { DuplexStream, EndpointConnection } from "./endpoint.js";
 
 export const ACCEPTED = 0x01;
-/** The largest grant frame either side writes or reads. */
 export const MAX_GRANT_BYTES = 64 * 1024;
 const READ_BYTES = 1024 * 1024;
 const FLUSH_MS = 2_000;
 const LINGER_MS = 30_000;
 
-/** Encodes `grant` as the session's first frame; undefined when it is too large. */
 export function encodeGrantFrame(
 	grant: SignedEnvelope,
 ): Uint8Array | undefined {
@@ -41,7 +23,6 @@ export function encodeGrantFrame(
 	return frame;
 }
 
-/** Serialised reads over a stream, with exact-length reads for the handshake. A read error is end-of-stream. */
 export type Receiver = Readonly<{
 	next(): Promise<Uint8Array | undefined>;
 	exact(count: number): Promise<Uint8Array | undefined>;
@@ -61,9 +42,7 @@ export function createReceiver(stream: DuplexStream): Receiver {
 		try {
 			const chunk = await stream.read(READ_BYTES);
 			if (chunk.length > 0) return chunk;
-		} catch {
-			// A lost connection ends the stream as an orderly end would.
-		}
+		} catch {}
 		ended = true;
 		return undefined;
 	};
@@ -91,7 +70,6 @@ export function createReceiver(stream: DuplexStream): Receiver {
 	};
 }
 
-/** Reads the grant frame; undefined when it is malformed, oversized or cut short. */
 export async function readGrantFrame(
 	receiver: Receiver,
 ): Promise<SignedEnvelope | undefined> {
@@ -127,7 +105,6 @@ export function openSession(
 		| Promise<Readonly<{ bytesSent: number; bytesReceived: number }>>
 		| undefined;
 
-	/** Once this side has closed: read the peer's remaining bytes away, then end the connection. */
 	const linger = async () => {
 		const deadline = pause(LINGER_MS).then(() => "late" as const);
 		for (;;) {
@@ -158,9 +135,7 @@ export function openSession(
 				try {
 					await stream.finish();
 					await stream.flushed(FLUSH_MS);
-				} catch {
-					// The connection is already gone; the counts stand.
-				}
+				} catch {}
 				void linger();
 				return counts;
 			})();

@@ -1,9 +1,3 @@
-/**
- * One provisioned tenant on a real `nats-server`, as the integration tests
- * use it: the authority's bus, a test authority that signs the trust record,
- * member records and tickets, the callout responder, and devices connected
- * through `createNatsBusConnector` (or as raw connections, for probes).
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type AuthorityBus,
@@ -36,10 +30,8 @@ export type Integration = Readonly<{
 	tenant: Tenant;
 	authority: AuthorityBus;
 	refusals: readonly string[];
-	/** An enrolled device with the given roles (executor by default). */
 	device(roles?: Role[], state?: MemberState): Promise<DeviceKeys>;
 	connect(keys: DeviceKeys): Promise<FleetBus>;
-	/** A plain NATS connection authorised as the device, for permission probes. */
 	raw(keys: DeviceKeys): Promise<NatsConnection>;
 	close(): Promise<void>;
 }>;
@@ -122,7 +114,6 @@ export async function startIntegration(nats: TestNats): Promise<Integration> {
 	};
 }
 
-/** True when the server refuses a request on `subject` with a permissions violation. */
 export async function refused(
 	connection: NatsConnection,
 	subject: string,
@@ -139,7 +130,6 @@ export async function refused(
 	}
 }
 
-/** True when the server closes a subscription on `subject` for a permissions violation. */
 export async function subscribeRefused(
 	connection: NatsConnection,
 	subject: string,

@@ -1,19 +1,10 @@
-/**
- * The device-code variant of sign-in is refused for any fleet whose policy
- * requires dual control (§6.5, E17). The enrollment request does not say
- * which flow minted its person token, so the service reads it from the
- * journal (§7.5): the person's `fleet.PersonSignedIn` events on
- * `fleet-person-<sha256(principal)>` name the sign-in state and key, and that
- * sign-in's `fleet.SignInStarted` says whether it was a device-code flow.
- * A token is from the device flow when any live sign-in of its key was.
- */
 import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue, PrincipalRef } from "@hobo/core";
 import type { FleetEventStore } from "@hobo/fleet";
 
-// public-contract: the stream prefixes of design §7.5.
+// public-contract: the stream prefixes
 const PERSON_STREAM_PREFIX = "fleet-person-";
-// public-contract: the stream prefixes of design §7.5.
+// public-contract: the stream prefixes
 const SIGN_IN_STREAM_PREFIX = "fleet-signin-";
 
 function personStream(principal: PrincipalRef): string {
@@ -25,18 +16,22 @@ function personStream(principal: PrincipalRef): string {
 
 const tagOf = Object.prototype.toString;
 
+function isObject<T>(data: T): data is T & JsonObject {
+	return (
+		data !== null &&
+		!Array.isArray(data) &&
+		tagOf.call(data) === "[object Object]"
+	);
+}
+
 function field<T>(data: T, name: string): JsonValue | undefined {
-	if (data === null || Array.isArray(data)) return undefined;
-	if (tagOf.call(data) !== "[object Object]") return undefined;
-	// SAFETY: event data is JSON (the store's contract); a plain object of it is a JsonObject.
-	return (data as JsonObject)[name];
+	return isObject(data) ? data[name] : undefined;
 }
 
 function isText(value: JsonValue | undefined): value is string {
 	return tagOf.call(value) === "[object String]";
 }
 
-/** True when the person token bound to `jkt` came from a device-code sign-in. */
 export async function signedInByDeviceFlow(
 	store: FleetEventStore,
 	principal: PrincipalRef,

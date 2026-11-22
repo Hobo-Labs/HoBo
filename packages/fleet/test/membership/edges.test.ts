@@ -1,5 +1,3 @@
-// The narrower refusals and branches of enrollment, declaration, lifecycle,
-// credentials and rotation, each in one line of setup.
 import { create, toBinary } from "@bufbuild/protobuf";
 import { parseTenantId } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -395,7 +393,6 @@ describe("declaration edges", () => {
 		});
 		const owner = (await h.person(OWNER)).caller;
 		const relay = await active(h, owner, "cache", "relay", [Role.OBSERVER]);
-		// The test engine allows by tag: the device's tags are its roles, so it is denied here.
 		expect(
 			code(
 				await h.authority.declare(
@@ -1109,7 +1106,6 @@ describe("credentials and rotation edges", () => {
 				rotation: await statement({ newIdentityJwk: "{}" }),
 			}),
 		).toBe("invalid-request");
-		// A new identity key that another member already holds.
 		const other = await active(h, admin, "build", "other");
 		const stolen = await rotate({
 			keyBundle: await bundleFor(subject.keys, h.clock.now(), {

@@ -1,11 +1,3 @@
-/**
- * O44: an order runs only when every acceptance rule of §6.9 step 6 holds.
- * One refusing case per rule, each naming its rule in `detail.check`,
- * including a repository, ref or workflow digest the fleet policy does not
- * allow; and residency (§6.13): an undeclared, unmapped or disallowed region
- * is excluded by the dispatcher (its claim is not entitled, and the device
- * itself does not claim) and refused by the device.
- */
 import { create, toBinary } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -156,7 +148,6 @@ describe("checkOrder: every rule of §6.9 step 6", () => {
 				context,
 			),
 		).toBe("order-invalid/signer");
-		// An executor of the fleet is not a dispatcher of it.
 		expect(
 			await refusal(
 				await orderFor(
@@ -167,7 +158,6 @@ describe("checkOrder: every rule of §6.9 step 6", () => {
 				{ ...context, held: [digestOf(offer(w.bystander.keys.memberId))] },
 			),
 		).toBe("order-invalid/dispatcher");
-		// A dispatcher signing an offer another dispatcher made.
 		expect(
 			await refusal(
 				await orderFor(
@@ -338,7 +328,6 @@ describe("checkOrder: every rule of §6.9 step 6", () => {
 				}),
 			).toBe(rule === "" ? "accepted" : `order-invalid/${rule}`);
 		}
-		// Work that names a repository needs a rule for it: an empty list allows none.
 		const bare = await world(openPolicy({ repositories: [] }));
 		const work = offer(bare.dispatcher.keys.memberId);
 		expect(
@@ -356,7 +345,6 @@ describe("checkOrder: every rule of §6.9 step 6", () => {
 			offer(w.dispatcher.keys.memberId, {
 				kind: "oci-command",
 				workKey: "sub-1",
-				// The dispatcher copies the submitter into the offer.
 				author: "github:1",
 				repository: "",
 				ref: "",
@@ -406,7 +394,6 @@ describe("checkOrder: every rule of §6.9 step 6", () => {
 			sandboxTier: SandboxTier.S3_MICROVM,
 		});
 		expect(await refusal(s3, { self: personal, view, held })).toBe("accepted");
-		// A dispatcher cannot raise the class: OWN asserted for a stranger's work stays ORG.
 		const asserted = offer(w.dispatcher.keys.memberId, {
 			trustClass: TrustClass.OWN,
 			author: "github:2",
@@ -529,7 +516,6 @@ describe("residency (§6.13)", () => {
 				[dispatcher.record, outside.record, inside.record],
 				[fleetRecord(fleetPolicy)],
 			);
-			// The outside device would be first for this work if residency were ignored.
 			await publishObservation(bus, outside, NOW, {
 				capacity: { freeSlots: 64 },
 			});

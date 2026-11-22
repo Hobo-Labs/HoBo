@@ -1,17 +1,3 @@
-/**
- * The assignment register's SQL replica: one backend's log in a table.
- *
- * The register itself (entries, majority, resolve, propose, bootstrap,
- * complete, override, membership epochs) is engine-neutral and lives in
- * `@hobo/fleet/assignment`. What stays here is how a PostgreSQL backend holds
- * its log: `readAssignmentRows`, `sqlAssignmentReplica`, whose `accept` is one
- * statement, and `sqlAssignmentRegister`.
- *
- * An entry's member set (written only once the fleet's policy sets
- * `membership_epochs`) is kept in the nullable `members` column, a sorted
- * `text[]`; an entry without one leaves it null, so the rows, and the
- * `assignmentKey` of each, are what they were before member sets existed.
- */
 import {
 	type AssignmentEntry,
 	type AssignmentRegister,
@@ -38,7 +24,6 @@ import {
 	sqlState,
 } from "./sql.js";
 
-/** A `text[]` read back as text: `{a,b}`. Member names never need quoting. */
 const MEMBER_ARRAY = /^\{[a-z0-9_-]+(?:,[a-z0-9_-]+)*\}$/u;
 
 function membersFromColumn(
@@ -57,7 +42,6 @@ function membersFromColumn(
 		.map((name) => parseMemberName(name, "members"));
 }
 
-/** The `text[]` literal a member set is written as, or null for none. */
 function membersToParameter(
 	members: readonly MemberName[] | undefined,
 ): string | null {

@@ -41,7 +41,6 @@ const recorded = JSON.parse(
 const PREVIOUS: string = recorded.previousImage;
 const TARGET: string = recorded.targetImage;
 const digestOf = (image: string) => image.slice(image.indexOf("@") + 1);
-// The recorded box host's own health facts, as its fleet agent would observe itself.
 const recordedSelf = JSON.parse(recorded.meshAdvert);
 const recordedAdvert = {
 	freeSlots: Number(recordedSelf.freeSlots),
@@ -75,12 +74,6 @@ type FakeOptions = Readonly<{
 	startMs?: number;
 }>;
 
-/**
- * A runner host as the realizer sees it: the Docker driver's container
- * semantics (`--rm`, so a stopped controller is gone), the worker's leases,
- * GitHub runner presence, and the host's own fleet observation, derived
- * from the recorded host and whichever controller is running.
- */
 class FakeHost {
 	nowMs: number;
 	readonly calls: string[] = [];

@@ -1,26 +1,3 @@
-/**
- * HoBo CD views for the yard world. Pure, zero-dependency.
- *
- * CD spans follow the OTel CI/CD semantic conventions and carry HoBo topology
- * as SPAN attributes (one CD service delivers to many Camps), so:
- *   - `mapTracePayload` lifts span-level `hobo.camp.id` into a per-Camp
- *     resource (`liftCdTopology` in otel-mapper.ts), so each delivery task
- *     lands in its Camp room as an `actor` character `<service>@<camp>`.
- *   - `parseCdSpans` is the parse boundary for CD spans (parse, don't
- *     validate): only spans with `cicd.pipeline.run.id` become `CdSpan`.
- *   - `freightTimeline` and `pipelineGraph` are model views (projections) over
- *     parsed CD spans: where each Freight went, when, with what result; and
- *     which pipeline nodes Freight flows between.
- *   - `deliveryCampsView` and `complianceHeatmap` are projections over the
- *     `hobo.cd.camp.*` and `hobo.cd.compliance.noncompliant_ratio` gauges:
- *     Camps by condition and taint, and noncompliance by Rail and control.
- *   - `renderPromotionTrace` runs a CD trace through the mapper and reducer
- *     and returns the world plus both views — the yard-world rendering of a
- *     promotion.
- *
- * Attribute keys mirror `@hobo/cd/telemetry` (`semconv.ts`); they are copied,
- * not imported, because this package depends on nothing.
- */
 import {
 	type AgentEvent,
 	applyEvent,
@@ -51,7 +28,6 @@ export const CD_SPAN_ATTR = Object.freeze({
 	node: "hobo.cd.pipeline.node",
 } as const);
 
-/** CD metric names consumed by the Camp views. */
 export const CD_FLEET_METRICS = Object.freeze({
 	campCondition: "hobo.cd.camp.condition",
 	campTaint: "hobo.cd.camp.taint",

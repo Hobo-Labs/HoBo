@@ -1,11 +1,3 @@
-/**
- * A fake JetStream context for the journal store's unit tests: one in-memory
- * stream that keeps every message with its stream sequence, honours the
- * expected-last-subject-sequence compare-and-set, matches subjects the way
- * NATS does (`*` one token, `>` the rest), and delivers to watchers in stream
- * order. Several transports can share one stream, as several authority
- * replicas share `FLEET_JOURNAL`.
- */
 import {
 	type JournalMessage,
 	type JournalTransport,
@@ -16,7 +8,6 @@ import {
 export type FakeJournalStream = Readonly<{
 	messages: JournalMessage[];
 	watchers: Set<(message: JournalMessage) => void>;
-	/** Counts every publish attempt with the expected sequence it carried. */
 	publishes: { subject: string; expected: number; accepted: boolean }[];
 }>;
 
@@ -36,7 +27,6 @@ export function subjectMatches(filter: string, subject: string): boolean {
 }
 
 export type FakeTransportOptions = Readonly<{
-	/** Runs just before a publish is checked, to let a test slip another writer in. */
 	beforePublish?: () => Promise<void>;
 }>;
 

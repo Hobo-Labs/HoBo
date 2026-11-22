@@ -1,9 +1,3 @@
-/**
- * A test double of the fleet device agent (`createFleetAgent` of
- * `@hobo/fleet/agent`, frozen in design §7.3) for the junction agent's tests:
- * it records what the junction asked of it, in order, and answers enrollment
- * with the overlay joins it is given.
- */
 import {
 	type EnrollmentRequest,
 	type FleetTransport,
@@ -53,7 +47,6 @@ export function enrollmentRequest(
 	};
 }
 
-/** The junction's fleet, and what was asked of it. */
 export type FleetDouble = { fleet: JunctionFleet; calls: FleetCall[] };
 
 export function fleetDouble(

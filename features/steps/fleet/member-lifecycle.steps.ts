@@ -1,8 +1,3 @@
-/**
- * Steps for features/fleet/member-lifecycle.feature: clone detection and
- * unlock (F7), a lost refresh answer (F19), revocation, and key-bundle
- * rotation, each against the real authority and agent.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import {

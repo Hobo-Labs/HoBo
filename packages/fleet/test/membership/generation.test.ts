@@ -1,11 +1,3 @@
-// O6: clone detection without false locks (§6.5, F7, F19).
-//
-// An agent keeps its generation and pending refresh nonce on disk: it writes
-// a fresh nonce before sending, and stores the new generation only when the
-// response arrives. Two agents running from one copied key directory diverge
-// on their first refreshes and are locked on the second; an honest agent whose
-// responses are lost and who retries with the same generation and nonce is
-// never locked.
 import { randomBytes } from "node:crypto";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -14,13 +6,11 @@ import type { EnrollmentAuthority } from "../../src/ports.js";
 import { harness, refresh, type TestDevice } from "./fixtures.js";
 import { active, code, stateOf, value } from "./scenario.js";
 
-/** What an agent keeps in its key directory between refreshes. */
 type Disk = { generation: number; pending: Uint8Array | undefined };
 
 function agent(subject: TestDevice, disk: Disk) {
 	return {
 		disk,
-		/** One refresh; `lose` drops the response on the way back (the authority still answered). */
 		async refresh(authority: EnrollmentAuthority, lose: boolean) {
 			disk.pending ??= new Uint8Array(randomBytes(16));
 			const answer = await authority.credentials(
@@ -49,12 +39,10 @@ describe("O6 clone detection", () => {
 		expect(await original.refresh(h.authority, false)).toBe("ok");
 		expect(original.disk.generation).toBe(1);
 
-		// The key directory is copied now; both copies refresh from here.
 		const copy = agent(subject, { ...original.disk });
 		expect(await original.refresh(h.authority, false)).toBe("ok");
 		expect(await copy.refresh(h.authority, false)).toBe("generation-mismatch");
 		expect((await stateOf(h, subject, admin)).state).toBe(MemberState.LOCKED);
-		// Both are refused from then on.
 		expect(await original.refresh(h.authority, false)).toBe("member-locked");
 		expect(await copy.refresh(h.authority, false)).toBe("member-locked");
 		expect(h.logged).toContain("hobo_fleet_member_locked");

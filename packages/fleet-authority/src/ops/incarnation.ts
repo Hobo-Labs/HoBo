@@ -1,7 +1,3 @@
-// The incarnation rule (design §6.16, §7.6 `incarnation-stale`): a session
-// ticket or registry record signed before the last restore names an older
-// authority incarnation than the pinned trust record, and is refused. Private
-// to L27; the authority and the callout apply the same rule.
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	KeyPurpose,
@@ -15,7 +11,6 @@ import {
 } from "@hobo/fleet";
 import { verifyEnvelope } from "@hobo/fleet/keys";
 
-/** Verifies a session ticket or member record against `trust` and refuses one from an earlier incarnation. */
 export function checkIncarnation(
 	envelope: SignedEnvelope,
 	trust: TrustRecord,

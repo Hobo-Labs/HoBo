@@ -39,10 +39,6 @@ export type SqlExecutor = SqlSession & {
 	session<T>(run: (session: SqlSession) => Promise<T>): Promise<T>;
 };
 
-/**
- * One member of a Postgres fleet: its name in the fleet (`parseMemberName` of
- * `@hobo/fleet`) and the way to reach it.
- */
 export type PostgresBackend = {
 	readonly id: string;
 	readonly executor: SqlExecutor;
@@ -159,13 +155,6 @@ const NETWORK_CODES = new Set([
 const NETWORK_MESSAGE =
 	/timeout|timed out|connection terminated|connection refused|connection reset|could not connect|server closed the connection|the database system is (?:starting up|shutting down)/iu;
 
-/**
- * Classify a failed statement from its SQLSTATE or driver code and its text,
- * as the fleet's `Health` (a `FailureClassifier` of `@hobo/fleet`).
- *
- * Only the class leaves this function. The message is read and never returned,
- * because a driver's message can carry a host name or a connection string.
- */
 export function classifyFleetFailure(error: Error | undefined): Health {
 	if (error === undefined) return Health.UNKNOWN;
 	const code = "code" in error ? String(error.code) : "";

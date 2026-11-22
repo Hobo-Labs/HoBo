@@ -1,16 +1,3 @@
-/**
- * A sandbox driver for the runner's logic tests: `createFakeSandboxDriver`
- * from `@hobo/fleet/testing` (it isolates nothing and answers the fence
- * through its callback), with GitHub's runner played by the test.
- *
- * When the runner's start command runs (the exec whose environment names
- * `ACTIONS_RUNNER_HOOK_JOB_STARTED`), the double stands for GitHub assigning
- * the runner a job: if the hook was installed and a registration written, it
- * posts the job context the test chose to `<controlUrl>/fence` the way the
- * fake driver answers it, runs the job's "steps" only when the fence allows,
- * and prints what run.sh and the start script print. With no job, it prints
- * nothing, as a runner GitHub never assigns.
- */
 import type {
 	ObservedAssignment,
 	Sandbox,
@@ -37,9 +24,7 @@ export type GithubRunnerDouble = SandboxDriver &
 	Readonly<{
 		execs: RecordedExec[];
 		secrets: Map<string, string>;
-		/** Job names whose steps ran (the fence allowed them). */
 		stepsRan: string[];
-		/** Hook verdicts, in order. */
 		fenced: boolean[];
 		images: string[];
 	}>;

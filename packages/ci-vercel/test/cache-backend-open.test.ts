@@ -1,8 +1,3 @@
-/**
- * Opening each kind of cache member, offline: the Upstash REST client over a
- * stand-in `fetch`, the libSQL client before it has made a call, and every
- * refusal naming the variable rather than its value.
- */
 import { parseEphemeralKey } from "@hobo/core";
 import { createMemoryBlobSdk } from "@hobo/provider-vercel-blob";
 import { describe, expect, it, vi } from "vitest";

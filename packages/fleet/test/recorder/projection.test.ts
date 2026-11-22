@@ -1,7 +1,3 @@
-// O30 (projection half): the registry rebuilt from the journal, signed with
-// a bounded lifetime, re-signed before expiry with its sequence unchanged,
-// fleet views every 30 s, member-hours once per hour, and a rebuild from an
-// empty bus gives back the same records and sequences.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -88,14 +84,12 @@ async function journal(at: World): Promise<Device> {
 	return box;
 }
 
-/** What the registry serves for the device and the fleet. */
 async function served(bus: AuthorityBus, box: Device) {
 	const member = await bus.registry.member(parseMemberId(box.keys.memberId));
 	const fleet = await bus.registry.fleet(FLEET);
 	return { member, fleet };
 }
 
-/** A record without its signing-time fields: what must survive a rebuild. */
 function content<T extends { issuedAt: string; notAfter: string }>(
 	record: T | undefined,
 ) {
@@ -133,7 +127,6 @@ describe("createRegistryProjection", () => {
 		]);
 		await settle(at.store);
 		expect((await at.bus.registry.fleet(FLEET))?.revision).toBe(1);
-		// caughtUp also answers only once the change is on the bus.
 		await appendAs(at.store, `fleet-fleet-${FLEET}`, [
 			fleetEvent("fleet.FleetPolicyChanged", fleetRecord(2, ["hobo", "gpu"])),
 		]);
@@ -165,7 +158,6 @@ describe("createRegistryProjection", () => {
 			issued.add(member?.issuedAt ?? "");
 			at.clock.advance(MINUTE);
 		}
-		// Re-signed every 10 minutes: 13 signings in two hours.
 		expect(issued.size).toBe(13);
 	});
 
@@ -262,7 +254,6 @@ describe("createRegistryProjection", () => {
 		const projection = projectionOf(at, bus, reliability);
 		await projection.tick();
 		const report = async () => {
-			// The device reports itself; the view uses the verified observation.
 			await at.bus.observations.publish(
 				await signEnvelope(
 					box.keys.sign,
@@ -287,7 +278,6 @@ describe("createRegistryProjection", () => {
 		};
 		for (let second = 1; second <= 60; second += 1) {
 			at.clock.advance(1_000);
-			// The device reports itself; the view uses the verified observation.
 			if (second === 10) await report();
 			await projection.tick();
 		}
@@ -321,7 +311,6 @@ describe("createRegistryProjection", () => {
 			),
 		]);
 		const projection = projectionOf(at);
-		// Start half an hour before the boundary; tick each minute for 2.5 hours.
 		at.clock.ms = START - 30 * MINUTE;
 		for (let minute = 0; minute <= 150; minute += 1) {
 			await projection.tick();

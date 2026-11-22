@@ -1,17 +1,3 @@
-/**
- * The junction agent, rebuilt on the HoBo Fleet device agent (ADR-0183,
- * ledger §8.3): a junction is a fleet device with role `JUNCTION`.
- * Enrollment, credentials, observation and health come from
- * `createFleetAgent`; joining the overlay, metering and dynamic DNS stay here
- * as its extensions.
- *
- * Start order: policy and environment checks, then enrollment (when an
- * enrollment request is given), then the overlay join with the single-use
- * `OverlayJoin` credential the authority returned, and only then the running
- * device agent, created with the overlay `FleetTransport` over the overlay
- * it has just joined. No overlay credential is read from configuration or
- * the environment.
- */
 import {
 	createUsageEvent,
 	type MeteringBus,
@@ -62,19 +48,10 @@ export interface JunctionAgentConfig {
 	readonly federationPeerEnv?: string;
 }
 
-/** The fleet device agent: what `createFleetAgent` of `@hobo/fleet/agent` returns. */
 export type JunctionFleetAgent = ReturnType<typeof createFleetAgent>;
 
-/**
- * The junction's fleet device. `agent(transports)` is the host's
- * `createFleetAgent` over its own deps, with `transports` added to the ones
- * it already has: `(extra) => createFleetAgent({ ...deps, transports:
- * [...deps.transports, ...extra] })`. The junction asks for one agent to
- * enroll, with no extra transport, and one to run, with the overlay transport.
- */
 export type JunctionFleet = Readonly<{
 	agent: (transports: readonly FleetTransport[]) => JunctionFleetAgent;
-	/** Enroll on start with this request; role `JUNCTION` is added when absent. Omitted: the device is already enrolled. */
 	enrollment?: Omit<EnrollmentRequest, "identityJwk" | "keyBundle">;
 }>;
 
@@ -98,12 +75,10 @@ export interface JunctionAgent {
 	status(): Promise<{
 		readonly running: boolean;
 		readonly overlayIps: readonly string[];
-		/** This junction's fleet member record, once the device agent has one. */
 		readonly member: MemberRecord | undefined;
 	}>;
 }
 
-/** The authority's join credential for this overlay's provider, if one is still valid. */
 function joinFor(
 	joins: readonly OverlayJoin[],
 	provider: string,
@@ -136,12 +111,6 @@ const notReady = (notes: readonly string[]): JunctionAgentStart => ({
 	overlayIps: [],
 });
 
-/**
- * Junction agent: a fleet device with role `JUNCTION` that joins the overlay
- * outbound-only, emits metering, routes authorization through PolicyEngine,
- * and optionally registers hierarchical public DNS on heartbeats (Funnel
- * gateway → CNAME).
- */
 export function createJunctionAgent(options: {
 	readonly config: JunctionAgentConfig;
 	readonly overlay: OverlayNetwork;
@@ -183,7 +152,6 @@ export function createJunctionAgent(options: {
 		dynamicDns.setTargets(options.config.dnsTargets);
 	}
 
-	/** Enrolls when asked to; answers the overlay joins the authority returned. */
 	const enroll = async (): Promise<
 		Readonly<{ ok: true; joins: readonly OverlayJoin[] }> | JunctionAgentStart
 	> => {
@@ -279,7 +247,6 @@ export function createJunctionAgent(options: {
 			overlayIps = [...join.identity.overlayIps];
 			const notes = [...join.notes];
 
-			// The overlay is joined: only now the device agent and its overlay transport.
 			if (join.ready) {
 				device = options.fleet.agent([createOverlayTransport(options.overlay)]);
 				try {

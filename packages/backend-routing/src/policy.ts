@@ -79,11 +79,6 @@ function refuse(message: string, field: string): never {
 	});
 }
 
-/**
- * A member's name in its fleet (`parseMemberName`, which replaced
- * `parseFleetBackendId`), refused with this package's configuration error so
- * a caller that matches on `code` keeps working.
- */
 export function memberName(value: string, field = "backend"): string {
 	try {
 		return parseMemberName(value, field);
@@ -253,7 +248,6 @@ export type FleetDecision = {
 
 export type FleetDecisionInput = {
 	readonly assignment: AssignmentEntry;
-	/** Every backend as this tick saw it, by its name in the fleet. */
 	readonly observations: readonly NamedObservation[];
 	readonly models: readonly FleetFinancialModel[];
 	readonly policy: FleetPolicy;
@@ -277,11 +271,6 @@ function measured(
 	return seen?.observation.usage.find((entry) => entry.unit === unit)?.used;
 }
 
-/**
- * `eligibleForActive` reports a member that is not prepared to become active
- * as `not-ready`; for a database standby that is its schema, so the reason
- * keeps the name this policy always gave it.
- */
 function standbyReason(reason: string): string {
 	return reason === "not-ready" ? "schema-not-current" : reason;
 }
@@ -375,7 +364,6 @@ function span(ms: number): string {
 		: `${Math.round(ms / 60_000)}m`;
 }
 
-/** The health token `eligibleForActive` gives a failing member (`unreachable`, `quota-exhausted`, …). */
 export function healthReason(seen: NamedObservation): string {
 	const [verdict] = eligibleForActive([seen], {
 		mode: "switch",
@@ -415,8 +403,6 @@ export function decideFleet(input: FleetDecisionInput): FleetDecision {
 	const standbys = input.observations.filter(
 		(entry) => entry.name !== assignment.active,
 	);
-	// Health is decided in one place (`eligibleForActive`); lag is judged
-	// against the recovery point only for a failover, as it always was.
 	const health = eligibleForActive(standbys, {
 		mode: failing ? "failover" : "switch",
 		recoveryPointMs: policy.rpoMs,

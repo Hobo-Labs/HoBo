@@ -1,9 +1,3 @@
-/**
- * A recording fake `FleetClient`, recording local functions and a scripted
- * `FleetIo` for the `hobo fleet` command tests. Every client method and every
- * `FleetLocal` function appends its name to `calls`; `FleetIo` does not, since
- * the "Calls" column of §6.15 names none of it.
- */
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
 	AuditCheckpointSchema,
@@ -351,7 +345,6 @@ export function recordingClient(
 	};
 }
 
-/** A stream that answers a shell or forward exchange with OUTPUT "ok" and EXIT 0, or one blob. */
 export function scriptedStream(): FleetStream {
 	const output = Buffer.from("ok\n");
 	const header = Buffer.alloc(5);

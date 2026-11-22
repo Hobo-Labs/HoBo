@@ -1,9 +1,3 @@
-/**
- * The streams and buckets of §6.7, as JetStream stream configurations, and
- * their idempotent creation. Buckets are created as the key-value streams
- * the KV clients read (`KV_<bucket>`, subjects `$KV.<bucket>.>`), so their
- * limits are stated here once, beside the streams'.
- */
 import {
 	DiscardPolicy,
 	RetentionPolicy,
@@ -42,7 +36,6 @@ function bucket(
 	};
 }
 
-/** Every stream and bucket of one tenant account, with `replicas` copies each. */
 export function topologySpecs(replicas: 1 | 3): readonly StreamSpec[] {
 	const specs: StreamSpec[] = [
 		bucket(BUCKETS.registry, 5, 0),
@@ -108,7 +101,6 @@ export function topologySpecs(replicas: 1 | 3): readonly StreamSpec[] {
 	}));
 }
 
-/** Creates each stream, or brings an existing one to its configuration. */
 export async function applyTopology(
 	manager: JetStreamManagerPort,
 	replicas: 1 | 3,

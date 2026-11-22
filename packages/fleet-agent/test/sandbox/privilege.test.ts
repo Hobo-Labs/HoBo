@@ -1,7 +1,3 @@
-/**
- * The privilege and cgroup probes (D58, A10): which mode a sandbox runs in
- * on this host, decided from facts the probes read, never assumed.
- */
 import { describe, expect, it } from "vitest";
 import {
 	type HostFacts,
@@ -157,16 +153,13 @@ describe("probeCgroups", () => {
 	it("falls back to the sentry when delegation is absent", () => {
 		const own = "/user.slice/user-1000.slice/session-1.scope";
 		for (const facts of [
-			// No cgroup v2 at all, not root.
 			host({ "/proc/self/cgroup": "4:memory:/x\n" }),
-			// v2, parent not writable.
 			host(
 				v2(own, {
 					"/sys/fs/cgroup/user.slice/user-1000.slice/cgroup.subtree_control":
 						"memory pids\n",
 				}),
 			),
-			// v2, parent writable but memory not enabled for children.
 			host(
 				v2(own, {
 					"/sys/fs/cgroup/user.slice/user-1000.slice/cgroup.subtree_control":
@@ -176,7 +169,6 @@ describe("probeCgroups", () => {
 			),
 		])
 			expect(probeCgroups(1000, facts).mode).toBe("sentry");
-		// Root, but a read-only cgroup file system.
 		expect(probeCgroups(0, host(v2("/"))).mode).toBe("sentry");
 	});
 });

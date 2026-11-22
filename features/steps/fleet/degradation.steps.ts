@@ -1,9 +1,3 @@
-/**
- * Steps for features/fleet/degradation.feature (F4): with the bus down, a
- * device finishes the order it holds, keeps the receipt in
- * `AgentState.pendingReceipts`, takes no new work, and publishes the receipt
- * exactly once when the bus is back.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import {

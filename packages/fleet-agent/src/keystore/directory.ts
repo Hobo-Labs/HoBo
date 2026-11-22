@@ -1,8 +1,3 @@
-// The key directory rules of design §6.4: never inside a git checkout, mode
-// 0700, never writable by group or others, owned by the user running the agent;
-// every file in it 0600 and replaced atomically. On Windows, POSIX modes do not
-// exist and only the git-checkout rule applies (the directory inherits the
-// user profile's ACL).
 import { randomBytes } from "node:crypto";
 import {
 	chmod,
@@ -34,7 +29,6 @@ async function exists(path: string): Promise<boolean> {
 	}
 }
 
-/** The nearest directory at or above `path` holding a `.git` entry (a directory, or a worktree's file). */
 async function gitCheckoutAbove(path: string): Promise<string | undefined> {
 	let current = path;
 	for (;;) {
@@ -45,12 +39,6 @@ async function gitCheckoutAbove(path: string): Promise<string | undefined> {
 	}
 }
 
-/**
- * Makes `home` usable as a key directory, creating it `0700` when absent, and
- * answers its absolute path. Refuses a directory inside a git checkout, one
- * group or others can write, and one another user owns. An existing directory
- * nobody else can write is tightened to `0700`.
- */
 export async function prepareKeyDirectory(home: string): Promise<string> {
 	const absolute = resolve(home);
 	const checkout = await gitCheckoutAbove(absolute);
@@ -76,10 +64,6 @@ export async function prepareKeyDirectory(home: string): Promise<string> {
 	return absolute;
 }
 
-/**
- * Reads a private file of the key directory, or answers undefined when it is
- * absent. Refuses a file group or others can read or write.
- */
 export async function readPrivateFile(
 	path: string,
 ): Promise<string | undefined> {
@@ -102,7 +86,6 @@ export async function readPrivateFile(
 	return text;
 }
 
-/** Atomic replace: a `0600` temporary file beside `path`, flushed, then renamed over it. */
 export async function writePrivateFile(
 	path: string,
 	text: string,

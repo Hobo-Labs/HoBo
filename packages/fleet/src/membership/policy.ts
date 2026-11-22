@@ -1,13 +1,3 @@
-/**
- * Fleet-policy checks of enrollment and declaration (§6.13, L02 private).
- * Each failure is `fleet-policy` with `detail.rule` naming the rule, except
- * the three that have their own code (§7.6): `attestation-insufficient`,
- * `agent-outdated`, `residency-denied`.
- *
- * An empty list in the policy (`allowed_kinds`, `allowed_roles`,
- * `allowed_classes`) places no restriction: the protobuf default of a fresh
- * policy must not make every fleet unusable.
- */
 import {
 	evaluateResidency,
 	parseDataClassification,
@@ -27,7 +17,6 @@ import { refuse } from "./context.js";
 const DEFAULT_BUNDLE_HOURS = 24;
 const MAX_BUNDLE_HOURS = 720;
 const HOUR_MS = 60 * 60 * 1_000;
-/** A bundle may be issued a little before it reaches the authority. */
 const BUNDLE_SLACK_MS = 5 * 60 * 1_000;
 
 function rule<T>(name: string, message: string): Outcome<T> {
@@ -80,7 +69,6 @@ export function checkTier(
 	return { ok: true, value: true };
 }
 
-/** Dotted numeric versions; a missing part counts as 0, a non-numeric one fails closed. */
 export function checkAgentVersion(
 	policy: FleetPolicy,
 	minimum: string,
@@ -120,7 +108,6 @@ function atLeast(version: string, floor: string): boolean {
 	return true;
 }
 
-/** When the fleet carries a residency rule, the member's region must satisfy it (ADR-0146, fail closed). */
 export function checkResidency(
 	policy: FleetPolicy,
 	region: string,
@@ -156,7 +143,6 @@ export function checkResidency(
 	}
 }
 
-/** A key bundle may live at most `key_bundle_hours` (24 when zero, at most 720). */
 export function checkBundleLifetime(
 	policy: FleetPolicy,
 	issuedAt: string,
@@ -178,7 +164,6 @@ export function checkBundleLifetime(
 	return { ok: true, value: true };
 }
 
-/** The first `oidc_trust` rule an assertion matches, if any. */
 export function matchOidcRule(
 	policy: FleetPolicy,
 	assertion: Readonly<{

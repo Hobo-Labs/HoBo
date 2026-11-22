@@ -1,13 +1,3 @@
-// Sealing and session keys with the exact parameters of design §7.4.
-//
-// seal: an ephemeral X25519 key;
-//   key = HKDF-SHA-256(ikm = X25519(ephemeral, recipient),
-//                      salt = ephemeral_public ‖ recipient_public,
-//                      info = utf8(context), 32 bytes);
-//   ChaCha20-Poly1305, a random 12-byte nonce, additional data
-//   utf8(context) ‖ 0x00 ‖ associatedData.
-// sessionKeys: HKDF-SHA-256(ikm = shared secret, salt = utf8(session_id),
-//   info = "hobo-fleet/session/v1/i2a" or ".../a2i", 32 bytes).
 import {
 	createCipheriv,
 	createDecipheriv,
@@ -39,7 +29,6 @@ export const SESSION_INFO_I2A = "hobo-fleet/session/v1/i2a";
 // public-contract: HKDF info of the acceptor-to-initiator session key (§7.4).
 export const SESSION_INFO_A2I = "hobo-fleet/session/v1/a2i";
 
-/** An X25519 public key from its raw 32 bytes, base64url; undefined when it is not one. */
 export function x25519PublicKey(raw: string): KeyObject | undefined {
 	const bytes = Buffer.from(raw, "base64url");
 	if (bytes.length !== X25519_BYTES || bytes.toString("base64url") !== raw)
@@ -54,7 +43,6 @@ export function x25519PublicKey(raw: string): KeyObject | undefined {
 	}
 }
 
-/** The raw X25519 public key (base64url) of an X25519 key object, public or private. */
 export function rawX25519(key: KeyObject): string {
 	const publicKey = key.type === "public" ? key : createPublicKey(key);
 	const jwk = publicKey.export({ format: "jwk" });

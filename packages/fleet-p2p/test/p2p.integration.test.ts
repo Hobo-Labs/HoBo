@@ -1,15 +1,3 @@
-/**
- * O12 for `p2p` (design §10.1): `runTransportConformance` between two
- * transports from `createP2pTransport`, reaching each other only through the
- * iroh relay the integration lane provisions (`iroh-relay` on PATH, or
- * `HOBO_FLEET_IROH_RELAY_BIN`), run in its plain-HTTP development mode on a
- * loopback port. The transports have no direct address book and no discovery:
- * they find each other by endpoint id at the relay, as devices do.
- *
- * Rule 10 (§11.3): with `CI` set, a missing relay binary fails; otherwise the
- * suite skips. Where the platform has no prebuilt binding (A8 failed), the
- * file asserts instead that the adapter reports itself unavailable.
- */
 import { type ChildProcess, spawn } from "node:child_process";
 import {
 	accessSync,
@@ -28,6 +16,20 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createP2pTransport } from "../src/index.js";
 import { loadIroh } from "../src/iroh.js";
 import { createTestDeviceKeys } from "./support/device-keys.js";
+
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
 
 const STARTUP_MS = 20_000;
 
@@ -55,8 +57,7 @@ function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port answers an AddressInfo.
-			const port = (server.address() as AddressInfo).port;
+			const port = portOf(server.address());
 			server.close(() => resolve(port));
 		});
 	});
@@ -74,7 +75,6 @@ function reachable(port: number): Promise<boolean> {
 	});
 }
 
-/** Starts the relay in development mode on a loopback port; answers its URL. */
 async function startRelay(
 	binary: string,
 	directory: string,

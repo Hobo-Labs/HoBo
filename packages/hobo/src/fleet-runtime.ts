@@ -1,18 +1,3 @@
-/**
- * The production dependencies of `hobo fleet` (design §6.1, §6.15): the
- * typed authority client, the device composition root `hobo fleet run`, the
- * operator tasks, and the person's sign-in state on disk.
- *
- * `hobo fleet run` composes `createFleetAgent` with the key store
- * (`createFileKeyStore`, or `createExternalSignerKeyStore` for
- * `HOBO_FLEET_KEYSTORE=external-signer:<command>`), `sandboxDrivers`,
- * `createEgressProxyFactory`, `createHostCapacity`, the bus connector and the
- * transports in `HOBO_FLEET_TRANSPORTS` order: `createP2pTransport`,
- * `createOverlayTransport` (over the overlay `enroll` joined with the
- * `OverlayJoin` the authority returned) and
- * `createBusRelayTransport(() => agent.bus())`.
- */
-
 import { spawn } from "node:child_process";
 import { readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -146,7 +131,6 @@ function refused<T>(
 	return { ok: false, error: { code, message } };
 }
 
-/** `HOBO_FLEET_KEYSTORE`: `file` (default) or `external-signer:<command>`. */
 export function keyStoreFor(env: Env): Outcome<KeyStore> {
 	const home = hoboFleetHome(env);
 	const setting = env.HOBO_FLEET_KEYSTORE ?? "file";
@@ -169,7 +153,6 @@ export function keyStoreFor(env: Env): Outcome<KeyStore> {
 	);
 }
 
-/** `HOBO_FLEET_SANDBOX`: S1, S2 or S3 caps the tier offered. */
 export function sandboxCap(env: Env): SandboxTier | undefined {
 	const value = (env.HOBO_FLEET_SANDBOX ?? "").toUpperCase();
 	return value === "S1"
@@ -181,7 +164,6 @@ export function sandboxCap(env: Env): SandboxTier | undefined {
 				: undefined;
 }
 
-/** `HOBO_FLEET_TRANSPORTS`: the order transports are offered and dialled in. */
 export function transportOrder(
 	env: Env,
 ): readonly ("p2p" | "overlay" | "bus-relay")[] {
@@ -207,13 +189,6 @@ function signJwk(keys: DeviceKeys) {
 	};
 }
 
-/**
- * This device's SVID, through the credentials protocol the agent follows
- * (design §6.5): the refresh nonce is on disk before the request leaves, and
- * the answer's generation is written back, so the next `hobo fleet run`
- * continues from it. Run it only while the agent is stopped: two processes
- * refreshing one key store lock the device (F7).
- */
 export async function deviceCredentials(
 	keyStore: KeyStore,
 	client: (keys: DeviceKeys) => FleetClient,
@@ -259,7 +234,6 @@ export async function deviceCredentials(
 	};
 }
 
-/** The next key bundle for `member rotate`: the rotated SIGN and SEAL keys, signed by the identity key. */
 export async function rotationBundle(
 	keys: DeviceKeys,
 	sequence: number,
@@ -301,7 +275,6 @@ function overlayFor(provider: string): OverlayNetwork | undefined {
 			: undefined;
 }
 
-/** A `FleetBus` that is the agent's live connection whenever one exists (for the oci-command source). */
 export function liveBus(current: () => FleetBus | undefined): FleetBus {
 	const bus = () => {
 		const connected = current();
@@ -342,7 +315,6 @@ export function liveBus(current: () => FleetBus | undefined): FleetBus {
 	};
 }
 
-/** Waits for SIGINT or SIGTERM. */
 function untilStopped(): Promise<void> {
 	return new Promise((resolve) => {
 		process.once("SIGINT", () => resolve());
@@ -350,7 +322,6 @@ function untilStopped(): Promise<void> {
 	});
 }
 
-/** The service definition paths installService writes (fleet-agent src/install). */
 export function serviceDefinitionPath(
 	platform: NodeJS.Platform,
 	env: Env,
@@ -419,7 +390,6 @@ async function secretText(
 			);
 }
 
-/** The active seed of a key slot `{ v: 1, active, keys: [{ kid, seed, publicKey }] }`. */
 export function activeSeed(slotText: string): string | undefined {
 	try {
 		const slot = parseJsonObject(slotText);
@@ -434,14 +404,6 @@ export function activeSeed(slotText: string): string | undefined {
 	return undefined;
 }
 
-/**
- * `ops provision`: creates the tenant account, users, signing keys, streams
- * and buckets (`provisionTopology`) with the operator signing key the
- * ceremony stored, then stores what it returns where the authority reads it:
- * the static users' credentials at `<prefix>/nats-<user>`, each scoped
- * signing seed as the slot `<prefix>/scoped-<role>` (kid `scoped-<role>#1`)
- * and, when absent, a fresh callout xkey at `<prefix>/callout-xkey`.
- */
 export async function provisionWith(
 	input: Readonly<{
 		configText: string;
@@ -506,7 +468,6 @@ export async function provisionWith(
 	};
 }
 
-/** The public keys of every key in a slot `{ v: 1, active, keys: [{ kid, seed, publicKey }] }`. */
 function slotPublicKeys(slotText: string): readonly string[] | undefined {
 	try {
 		const { keys } = parseJsonObject(slotText);
@@ -526,18 +487,6 @@ const ACCOUNT_KEYS: ReadonlySet<RotatableKey> = new Set<RotatableKey>([
 	"scoped-dispatcher",
 ]);
 
-/**
- * `ops rotate-key`: `rotateKey` of @hobo/fleet-authority, with the tenant
- * account's signing keys published through `publishAccountSigningKeys` of
- * @hobo/fleet-nats. `rotateKey` takes no publisher (its `OpsContext` is
- * frozen) and answers `unavailable` at the publish step of an account or
- * scoped key; the CLI then re-issues the account listing exactly the slots'
- * public keys (`<prefix>/account-signing`, none when that slot is absent, and
- * `<prefix>/scoped-<template>`) with the ceremony's operator signing key. The
- * answer stays a refusal, naming what was published, because the rotation
- * record has not advanced; `operator-signing` needs the ceremony's shares and
- * is not published here.
- */
 export async function rotateKeyWith(
 	input: Readonly<{
 		configText: string;
@@ -611,7 +560,6 @@ export async function rotateKeyWith(
 	);
 }
 
-/** The trust record a `WitnessedEnvelope` carries. */
 function trustOf(
 	witnessed: WitnessedEnvelope | undefined,
 ): TrustRecord | undefined {
@@ -624,7 +572,6 @@ function trustOf(
 	}
 }
 
-/** Journal events (a JSON array of event envelopes, as an export holds them). */
 export function journalEvents(text: string): readonly EventEnvelope[] {
 	const parsed:
 		| ReturnType<typeof parseJsonObject>
@@ -638,20 +585,11 @@ export type RuntimeOptions = Readonly<{
 	env: Env;
 	progress: (message: string) => void;
 	fetch?: typeof fetch;
-	/** The secret store the operations use, from the configuration file. */
 	openSecrets?: (configPath: string) => Promise<Outcome<SecretsPort>>;
 	log?: FleetLog;
-	/** The bus connector the initiator's session-close fact goes through; NATS by default. */
 	connector?: FleetBusConnector;
 }>;
 
-/**
- * Both sides of a session publish a signed session-close fact with byte
- * counts (design §6.12). The acceptor's comes from `serveSessions`; this is
- * the initiator's, signed with this device's SIGN key and published on its
- * own events subjects. A person's CLI on a device that is not enrolled has no
- * member record or bus (D59), so it publishes nothing.
- */
 export async function publishInitiatorClose(
 	bus: Pick<FleetBus, "events">,
 	keys: DeviceKeys,
@@ -679,12 +617,6 @@ export async function publishInitiatorClose(
 	await bus.events.publish(envelope, keys.memberId, SESSION_CLOSE_KIND);
 }
 
-/**
- * The secret store `hobo fleet ops` opens. The authority's configuration
- * names an OpenBao store, and `@hobo/adapter-openbao` is not a dependency of
- * this package yet, so the default answers `unavailable` and names the gap;
- * a composition root with the adapter passes `openSecrets`.
- */
 async function noSecretStore(
 	configPath: string,
 ): Promise<Outcome<SecretsPort>> {
@@ -739,7 +671,6 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 			publicJwk: signJwk(keys),
 		});
 
-	/** The initiator's session-close fact, when this CLI runs on an enrolled device whose bus it reaches; best effort. */
 	async function initiatorClose(
 		grant: SignedEnvelope,
 		transport: TransportKind,
@@ -895,7 +826,6 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 			}),
 			runners,
 			sources: [createOciCommandSource(liveBus(() => agent?.bus()))],
-			// Enrollment needs no sandbox; the self-tests (and runtime provisioning) run only for `run`.
 			sandboxes:
 				purpose.enrollTenant === undefined
 					? await sandboxDrivers(driverOptions())
@@ -1239,9 +1169,7 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 				spawn(opener, [url], { stdio: "ignore", detached: true })
 					.on("error", () => undefined)
 					.unref();
-			} catch {
-				// The URL is also printed; a missing opener is not an error.
-			}
+			} catch {}
 		},
 		async loopback() {
 			let settle: (value: Readonly<{ state: string; code: string }>) => void =
@@ -1279,7 +1207,6 @@ export function createFleetRuntime(options: RuntimeOptions): FleetCommandDeps {
 		async prepareInitiator(): Promise<Outcome<SessionInitiator>> {
 			const enrollment = await readEnrollment(home);
 			const person = await readPerson(home);
-			// A person's CLI has no member record (D59): it initiates with ephemeral keys over p2p and overlay.
 			const keys = await createMemoryKeyStore().open();
 			const transports: FleetTransport[] = [];
 			let transportIdentity = "";

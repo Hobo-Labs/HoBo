@@ -1,9 +1,3 @@
-/**
- * The overlay join credential (L14, ADR-0183): it is only ever the
- * `OverlayJoin.credential` the fleet authority minted at enrollment, handed
- * to `join` by the host. No adapter reads one from the environment or holds
- * a static one, and none passes it on a command line.
- */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { type OverlayJoinOptions, parseTenantId } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -101,7 +95,6 @@ describe("tailscale join credential", () => {
 });
 
 describe("netbird join credential", () => {
-	/** A management API that records every request body and authorization header. */
 	function recordingFetch(seen: string[]): typeof fetch {
 		return async (input, init) => {
 			seen.push(

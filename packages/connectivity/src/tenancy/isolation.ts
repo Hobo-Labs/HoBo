@@ -42,11 +42,6 @@ export interface TenantIsolationRegistry {
 	};
 }
 
-/**
- * The overlays the registry hands out; it never constructs one. `shared`
- * serves every soft tenant; `forTenant` gives a hard-isolated tenant its own
- * (a separate tailnet or NetBird account the host has joined).
- */
 export interface TenantOverlays {
 	readonly shared: OverlayNetwork;
 	readonly forTenant?: (tenant: Tenant) => OverlayNetwork;

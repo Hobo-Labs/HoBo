@@ -1,21 +1,9 @@
-/**
- * The authority's HTTP service (§6.15) as a fetch-style handler: a WHATWG
- * `Request` in, a `Response` out, so tests run it with no network and
- * `node.ts` serves it. It authenticates the caller by each route's Auth
- * column, calls exactly that route's `FleetApi` method, and writes protobuf
- * JSON, or a `FleetError` with the status of §7.6.
- *
- * Bounds: the URL, the body and the time a call may take. Redirects: only the
- * two of the sign-in path (provider callback to the approval page; the
- * approval to the CLI's loopback address). Credentials are never logged.
- */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { fromJsonString, type JsonValue } from "@bufbuild/protobuf";
 import {
 	ApprovalMode,
 	type ApprovalResult,
 	ApprovalResultSchema,
-	type ApprovalView,
 	ApprovalViewSchema,
 	type Clock,
 	type CredentialIssuer,
@@ -42,10 +30,8 @@ import { approvalPage, donePage, errorPage } from "./page.js";
 import { matchRoute, type Route, type RouteInput } from "./routes.js";
 
 export const DEFAULT_LIMITS = {
-	/** Enough for an enrollment with a certificate chain or a work submission. */
 	maxBodyBytes: 256 * 1024,
 	maxUrlLength: 8 * 1024,
-	/** A call that has not answered by then answers `unavailable`. */
 	deadlineMs: 30_000,
 } as const;
 
@@ -56,11 +42,8 @@ const SESSION_MAX_AGE_S = 600;
 
 export type AuthorityHttpOptions = Readonly<{
 	runtime: AuthorityRuntime;
-	/** The authority origin (`https://…`, no trailing slash): DPoP `htu` and redirects are built on it. */
 	issuer: string;
-	/** HMAC key binding a browser to the sign-in its callback started. Replicas share it. */
 	sessionKey: Uint8Array;
-	/** The issuer `authenticate` trusts, to read a person token in an enrollment body. */
 	credentials: CredentialIssuer;
 	store: FleetEventStore;
 	registry: () => RegistryView;
@@ -143,7 +126,6 @@ function redirect(
 	});
 }
 
-/** A browser asks for HTML; the CLI and agents ask for JSON. */
 function wantsHtml(request: Request): boolean {
 	const accept = request.headers.get("accept") ?? "";
 	return accept.includes("text/html") && !accept.includes("application/json");
@@ -155,7 +137,6 @@ function isForm(request: Request): boolean {
 	);
 }
 
-/** A form's fields as protobuf JSON: `approve` is a boolean, the rest strings. */
 function formJson(text: string): string {
 	const fields: Record<string, JsonValue> = {};
 	for (const [name, value] of new URLSearchParams(text)) {
@@ -241,7 +222,6 @@ export function createAuthorityHandler(
 		);
 	};
 
-	/** Scoped so a proof `authenticate` already claimed is not seen as a replay here. */
 	const enrollReplay: ReplayStore = {
 		firstUse: (scope, id, expiresAtMs) =>
 			options.replay.firstUse(`fleet-enroll:${scope}`, id, expiresAtMs),
@@ -270,7 +250,6 @@ export function createAuthorityHandler(
 		}
 	};
 
-	/** POST /members: the DPoP proof is made with the request's identity key (§6.5). */
 	const admitEnrollment = async (
 		request: Request,
 		pathname: string,
@@ -325,7 +304,6 @@ export function createAuthorityHandler(
 					"the DPoP proof is not made with the identity key",
 				),
 			};
-		// The device-code flow is refused for fleets that require dual control (§6.5, E17).
 		if (enrollment.proof.case === "personToken") {
 			const person = options.credentials.verify(
 				enrollment.proof.value,
@@ -441,7 +419,6 @@ export function createAuthorityHandler(
 		}
 	};
 
-	/** The browser-facing answers of the sign-in path. */
 	const browser = (
 		route: Route,
 		request: Request,
@@ -457,11 +434,10 @@ export function createAuthorityHandler(
 					)
 				: undefined;
 		if (route.api === "signInCallback") {
-			// SAFETY: the callback route answers an ApprovalView (routes.ts).
 			const view = fromJsonString(
 				ApprovalViewSchema,
 				JSON.stringify(outcome.value),
-			) as ApprovalView;
+			);
 			return redirect(
 				`${issuer}/v1/fleet/approve/${encodeURIComponent(view.state)}`,
 				{
@@ -573,7 +549,6 @@ export function createAuthorityHandler(
 	};
 }
 
-/** A fresh session key for a single replica; replicas behind one load balancer are configured with a shared one. */
 export function randomSessionKey(): Uint8Array {
 	return new Uint8Array(randomBytes(32));
 }

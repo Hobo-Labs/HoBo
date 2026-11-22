@@ -1,9 +1,3 @@
-/**
- * A fake of the `@nats-io/jetstream` client surface `JournalJetStream` names,
- * on a `FakeJournalStream`. Its API errors are the real `JetStreamApiError`
- * with the server's codes: 10059 stream not found, 10037 no message found,
- * 10071 wrong last sequence.
- */
 import {
 	JetStreamApiError,
 	type OrderedConsumerOptions,
@@ -28,15 +22,10 @@ export type FakeJetStreamState = {
 	readonly ackPolicies: string[];
 	readonly deletedConsumers: string[];
 	consumers: number;
-	/** Thrown once by `streams.info` instead of answering. */
 	infoFailure?: Error | undefined;
-	/** Thrown once by `getMessage` instead of answering. */
 	getFailure?: Error | undefined;
-	/** Thrown once by `publish` instead of answering. */
 	publishFailure?: Error | undefined;
-	/** `getMessage` answers null, not the "no message" API error, for a subject with none. */
 	nullForMissing: boolean;
-	/** `fetch` answers one empty batch. */
 	emptyFetch: boolean;
 };
 

@@ -1,7 +1,3 @@
-/**
- * Authority buses broken in exactly one way each, keyed by the bus assertion
- * that must catch the break. Each wraps the in-memory bus.
- */
 import { fromBinary } from "@bufbuild/protobuf";
 import {
 	type FleetRecord,
@@ -37,10 +33,6 @@ const all = (subscriptions: readonly Subscription[]): Subscription => ({
 
 type Checks = Readonly<{ expiry: boolean; sequence: boolean }>;
 
-/**
- * A registry over the raw envelopes the publisher was given, checking only
- * what `checks` says; everything not overridden comes from the base view.
- */
 function rawRegistry(
 	base: AuthorityBus,
 	member: Checks,
@@ -121,7 +113,6 @@ export const BROKEN_BUSES: ReadonlyMap<string, BusMake> = new Map([
 				...base.registry,
 				async member(id) {
 					const record = await base.registry.member(id);
-					// Off by one: a record at sequence 1 is never served.
 					return record !== undefined && record.recordSequence > 1
 						? record
 						: undefined;

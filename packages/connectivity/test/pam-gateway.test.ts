@@ -99,19 +99,16 @@ function sessionRequest(
 	};
 }
 
-/** The `code` an error carries, if it carries a string one. */
 function errorCode(error: Error): string | undefined {
 	return "code" in error && isJsonString(error.code) ? error.code : undefined;
 }
 
-/** A request the type system would refuse, as an unchecked caller would send it. */
 function uncheckedRequest(
 	request: Omit<SessionRequest, "preferSecretless"> & {
 		preferSecretless?: boolean;
 	},
 ): SessionRequest {
-	// SAFETY: deliberately not a valid SessionRequest; the gateway's own runtime check is under test.
-	return request as SessionRequest;
+	return JSON.parse(JSON.stringify(request));
 }
 
 /**
@@ -426,7 +423,6 @@ describe("elevated capability for production", () => {
 
 	test("a token minted by a different issuer is refused", async () => {
 		// Signature verification actually happening, rather than the token being
-		// parsed and trusted: same issuer URL, another key.
 		const foreign = await elevatedToken("production", {
 			issuer: createTestElevatedIssuer(ISSUER.issuerUrl),
 		});

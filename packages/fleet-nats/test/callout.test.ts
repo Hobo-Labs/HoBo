@@ -1,6 +1,7 @@
-import type { TenantId } from "@hobo/core";
+import { parseTenantId } from "@hobo/core";
 import { MemberState, Role } from "@hobo/fleet";
 import {
+	Algorithms,
 	type ClaimsData,
 	createCurve,
 	createOperator,
@@ -37,8 +38,7 @@ function serverOf() {
 		xkey,
 		async request(token: string | undefined, nonce = "n-1", signer = identity) {
 			const jwt = await encode(
-				// SAFETY: the jwt package's algorithm enum value for v2 JWTs.
-				"ed25519-nkey" as Parameters<typeof encode>[0],
+				Algorithms.v2,
 				{
 					aud: "nats-authorization-request",
 					jti: "r1",
@@ -65,8 +65,7 @@ function serverOf() {
 type TestDeps = CalloutDeps &
 	Readonly<{ account: string; executorKey: string }>;
 
-// SAFETY: a literal tenant id for the test, matching the TenantId pattern.
-const TENANT = "acme" as TenantId;
+const TENANT = parseTenantId("acme");
 
 function depsOf(tenant: Tenant, logged: string[]): TestDeps {
 	const keys = tenantKeys(decoder.decode(createOperator().getSeed()), TENANT);
@@ -128,7 +127,6 @@ describe("the auth callout exchange", () => {
 		const user: ClaimsData<User> = decode(answer?.nats.jwt ?? "");
 		expect(user.name).toBe(keys.memberId);
 		expect(user.iss).toBe(deps.executorKey);
-		// The allowed decision is reported once, for the status feed (L27).
 		expect(logged).toEqual([
 			`hobo_fleet_bus_status callout authorised ${keys.memberId} executor`,
 		]);

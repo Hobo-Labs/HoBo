@@ -1,11 +1,3 @@
-/**
- * The frozen ports of HoBo Fleet (ADR-0183, design §7.3), verbatim.
- *
- * Record types are the generated ones from `./_generated/fleet_pb.js`; the
- * branded ids come from `./ids.js`. Only the coordinator edits this file; a
- * lane that finds a contract wrong reports it under `requirementChanges`.
- */
-
 import type {
 	EphemeralKey,
 	EventInput,
@@ -104,38 +96,28 @@ export type FleetFailure = Readonly<{
 	message: string;
 	detail?: Readonly<Record<string, string>>;
 }>;
-/** `FLEET_LOG_EVENTS` in events.ts holds exactly the names listed at the end of §7.5. */
 export type FleetLogEvent = (typeof FLEET_LOG_EVENTS)[number];
 export type FleetLog = (
 	event: FleetLogEvent,
 	fields: Readonly<Record<string, string | number | boolean>>,
 ) => void;
-/** `FLEET_CONTEXTS` in contexts.ts holds exactly the context strings of the §7.4 table plus "hobo-fleet/order-secret/v1". */
 export type FleetContext = (typeof FLEET_CONTEXTS)[number];
-/** A public key as RFC 7517 JSON, after parsePublicJwk. Never carries private members. */
 export type PublicJwk = Readonly<
 	| { kty: "EC"; crv: "P-256"; x: string; y: string }
 	| { kty: "OKP"; crv: "Ed25519"; x: string }
 >;
-export type Clock = () => number; // epoch milliseconds
+export type Clock = () => number;
 export interface Subscription {
 	stop(): Promise<void>;
 }
-/**
- * The event store every authority-side component uses: the core port plus an ordered read of
- * every stream, which the audit chain, projection rebuild and recorder catch-up need.
- * `@hobo/runtime-local`'s `DurableEventStore` satisfies it as it is; the journal store implements it.
- */
 export type FleetEventStore = EventStore &
 	Readonly<{
 		readAll(
 			options?: Readonly<{ after?: EventPosition; limit?: number }>,
 		): AsyncIterable<PositionedEvent>;
 	}>;
-/** Where an authority-side bus subscription starts: every retained message, only new ones, or after a stream sequence. */
 export type BusStart = "start" | "new" | Readonly<{ after: number }>;
 
-// ── Keys (devices) ─────────────────────────────────────────────────────────
 export interface Signer {
 	readonly keyId: KeyId;
 	readonly algorithm: KeyAlgorithm;
@@ -146,7 +128,6 @@ export type DeviceKeys = Readonly<{
 	identityJwk: string;
 	identity: Signer;
 	sign: Signer;
-	/** The SIGN key's public half: raw Ed25519, base64url, no padding. A device builds its key bundle from it. */
 	signPublicKey: string;
 	sealPublicKey: string;
 	openSealed(
@@ -154,45 +135,33 @@ export type DeviceKeys = Readonly<{
 		context: string,
 		associatedData: Uint8Array,
 	): Promise<Uint8Array>;
-	agree(peerSealPublicKey: string): Promise<Uint8Array>; // raw X25519 shared secret
+	agree(peerSealPublicKey: string): Promise<Uint8Array>;
 	heldKey: boolean;
 }>;
 export type AgentState = Readonly<{
 	generation: number;
 	pendingRefreshNonce: Uint8Array | undefined;
-	trust: WitnessedEnvelope | undefined; // the pinned trust record
-	lastSequence: Readonly<Record<string, number>>; // per stream, for resuming consumers
-	seenOrderIds: readonly string[]; // bounded to the order stream's max age
-	pendingReceipts: readonly SignedEnvelope[]; // signed receipts not yet published, oldest first (F4)
+	trust: WitnessedEnvelope | undefined;
+	lastSequence: Readonly<Record<string, number>>;
+	seenOrderIds: readonly string[];
+	pendingReceipts: readonly SignedEnvelope[];
 }>;
 export interface KeyStore {
-	/** Creates the identity and operational keys if absent. Never returns private material. */
 	open(): Promise<DeviceKeys>;
 	readState(): Promise<AgentState>;
-	writeState(next: AgentState): Promise<void>; // atomic replace
+	writeState(next: AgentState): Promise<void>;
 	rotateOperational(): Promise<DeviceKeys>;
 	destroy(): Promise<void>;
 }
 
-// ── Registry ───────────────────────────────────────────────────────────────
-/**
- * Every implementation verifies envelopes, expiry and record sequence against the pinned trust record
- * before returning; callers receive only verified records. Two exceptions to signature checking, both
- * unsigned by design: the in-memory view of `createMemoryBus` (tests only) decodes without verifying
- * signatures, and the local-mode view of `createLocalFleet` holds records it built itself. The in-memory
- * view still refuses a record past its `not_after` (against its injected clock) and one whose
- * `record_sequence` is lower than the highest it has returned for that key, so it passes runBusConformance.
- */
 export interface RegistryView {
 	member(id: MemberId): Promise<MemberRecord | undefined>;
 	fleet(id: FleetId): Promise<FleetRecord | undefined>;
 	membersOf(id: FleetId): Promise<readonly MemberRecord[]>;
-	/** Every fleet and every member of this tenant; for list routes, the recorder and the projection. */
 	fleets(): Promise<readonly FleetRecord[]>;
 	members(): Promise<readonly MemberRecord[]>;
 	view(id: FleetId): Promise<FleetView | undefined>;
 	trust(): TrustRecord;
-	/** The pinned record as it was received, for Discovery and CredentialResponse. Undefined in local mode. */
 	trustEnvelope(): WitnessedEnvelope | undefined;
 	caughtUp(): Promise<void>;
 }
@@ -203,7 +172,6 @@ export interface RegistryPublisher {
 	putTrust(trust: WitnessedEnvelope): Promise<void>;
 }
 
-// ── Authority-side issuers and verifiers ───────────────────────────────────
 export type VerifiedToken = Readonly<
 	| {
 			kind: "member";
@@ -220,14 +188,12 @@ export type VerifiedToken = Readonly<
 			jkt: string;
 			expiresAtMs: number;
 	  }
-	/** The relay's account credential, through AccountCredentialVerifier: read routes and POST /work only. */
 	| {
 			kind: "account";
 			principal: PrincipalRef;
 			tenant: TenantId;
 			scopes: readonly string[];
 	  }
-	/** A workload OIDC token, through IdentityAssertionVerifier.verifyOidc: the verdict route (a GitHub Actions token), and members:declare when an oidc_trust rule with `sponsor` matches. */
 	| {
 			kind: "workload";
 			issuer: string;
@@ -255,7 +221,6 @@ export interface CredentialIssuer {
 			ttlMs: number;
 		}>,
 	): Promise<Readonly<{ token: string; expiresAtMs: number }>>;
-	/** Accepts only tokens signed by this issuer's own keys. */
 	verify(
 		token: string,
 		audience: string,
@@ -287,7 +252,7 @@ export interface AccountCredentialVerifier {
 	>;
 }
 export interface SignInProvider {
-	readonly id: string; // "oidc" | "github" | "atproto"
+	readonly id: string;
 	begin(
 		input: Readonly<{
 			state: string;
@@ -346,10 +311,8 @@ export interface OverlayCredentialMinter {
 	): Promise<Outcome<OverlayJoin>>;
 }
 export interface ReplayStore {
-	/** True the first time a (scope, id) pair is seen before `expiresAtMs`. */
 	firstUse(scope: string, id: string, expiresAtMs: number): Promise<boolean>;
 }
-/** Builds the `policy.Decided` event. Implemented in @hobo/fleet-authority with @hobo/policy, which this package may not import. */
 export interface PolicyDecisionRecorder {
 	toEvent(request: PolicyRequest, decision: PolicyDecision): EventInput;
 }
@@ -363,26 +326,18 @@ export interface AuditLog {
 	onWitnessed(
 		handler: (checkpoint: WitnessedEnvelope) => Promise<void>,
 	): Subscription;
-	/** Witness (optional, amendment 2): authority-signed checkpoints as appended, before co-signature. */
 	onCheckpoint?(
 		handler: (checkpoint: SignedEnvelope) => Promise<void>,
 	): Subscription;
-	/** Authority: publish a new authority-signed trust record on fleet.audit.trust for co-signature. */
 	proposeTrust(record: SignedEnvelope): Promise<void>;
-	/** Witness: proposed trust records, in stream order. */
 	onTrustProposed(
 		handler: (record: SignedEnvelope) => Promise<void>,
 	): Subscription;
-	/** Authority: trust records the witness has co-signed. */
 	onTrustWitnessed(
 		handler: (trust: WitnessedEnvelope) => Promise<void>,
 	): Subscription;
 }
 
-// ── The bus (in memory in @hobo/fleet, over NATS in @hobo/fleet-nats) ──────
-// Every `subscribe` takes `from` and hands its handler the stream sequence of each message, so the
-// authority's recorder can resume after an outage ("recording catches up", §6.9). Devices pass "new"
-// or { after } from AgentState.lastSequence.
 export type KeyedEnvelope = Readonly<{
 	observerId: MemberId;
 	memberId: MemberId;
@@ -401,7 +356,6 @@ export interface ObservationBoard {
 	>;
 }
 export interface ClaimLedger {
-	/** First writer wins, enforced by the store. */
 	claim(
 		claim: SignedEnvelope,
 		fleet: FleetId,
@@ -421,7 +375,6 @@ export interface ClaimLedger {
 			sequence: number,
 		) => Promise<void>,
 	): Subscription;
-	/** Dispatcher only. */
 	remove(fleet: FleetId, digest: WorkDigest): Promise<void>;
 }
 export interface OfferFeed {
@@ -447,7 +400,6 @@ export interface OrderChannel {
 		from: BusStart,
 		handler: (order: SignedEnvelope, sequence: number) => Promise<void>,
 	): Subscription;
-	/** Authority recorder only: every order's envelope, in stream order. */
 	observeAll(
 		from: BusStart,
 		handler: (
@@ -457,7 +409,6 @@ export interface OrderChannel {
 		) => Promise<void>,
 	): Subscription;
 }
-/** Event kinds: "receipt" | "log" | "session-close". */
 export interface EventChannel {
 	publish(event: SignedEnvelope, from: MemberId, kind: string): Promise<void>;
 	subscribe(
@@ -479,7 +430,6 @@ export interface ControlChannel {
 		handler: (control: SignedEnvelope, sequence: number) => Promise<void>,
 	): Subscription;
 }
-/** Plain publish-subscribe on fleet.relay.<to>.<sessionId>; no stream, no sequence. Frames are already encrypted by the bus-relay transport. */
 export interface RelayChannel {
 	send(to: MemberId, sessionId: string, frame: Uint8Array): Promise<void>;
 	subscribe(
@@ -487,7 +437,6 @@ export interface RelayChannel {
 		handler: (sessionId: string, frame: Uint8Array) => Promise<void>,
 	): Subscription;
 }
-/** What a device holds. */
 export type FleetBus = Readonly<{
 	registry: RegistryView;
 	observations: ObservationBoard;
@@ -501,7 +450,6 @@ export type FleetBus = Readonly<{
 	status(): "connected" | "disconnected" | "closed";
 	close(): Promise<void>;
 }>;
-/** What the authority holds: the same ports plus the writers only it has. */
 export type AuthorityBus = FleetBus &
 	Readonly<{
 		publisher: RegistryPublisher;
@@ -509,7 +457,6 @@ export type AuthorityBus = FleetBus &
 		replay: ReplayStore;
 	}>;
 export interface FleetBusConnector {
-	/** Connects as this device. `trust` is the pinned record every registry read is verified against; `ticket` is called for each connection attempt. */
 	connect(
 		input: Readonly<{
 			discovery: Discovery;
@@ -522,7 +469,6 @@ export interface FleetBusConnector {
 	): Promise<FleetBus>;
 }
 
-// ── Many-active work ───────────────────────────────────────────────────────
 export type UpstreamWork = Readonly<{
 	workKey: string;
 	label: string;
@@ -538,7 +484,6 @@ export type UpstreamWork = Readonly<{
 export interface WorkSource {
 	readonly kind: string;
 	poll(fleet: FleetRecord): Promise<readonly UpstreamWork[]>;
-	/** Builds the non-secret parameters and the bootstrap secret for one claimant. */
 	prepare(
 		offer: WorkOffer,
 		claimant: MemberRecord,
@@ -553,7 +498,6 @@ export interface WorkSource {
 	>;
 	stillWanted(offer: WorkOffer): Promise<boolean>;
 }
-/** Facts read from the upstream platform's own job context inside the sandbox. */
 export type ObservedAssignment = Readonly<{
 	workKey: string;
 	repository: string;
@@ -583,7 +527,6 @@ export interface WorkRunner {
 }
 export interface SandboxDriver {
 	readonly tier: SandboxTier;
-	/** Self-test run at agent start; a failing driver is not advertised. */
 	available(): Promise<Outcome<Readonly<{ providesDocker: boolean }>>>;
 	create(
 		input: Readonly<{
@@ -605,7 +548,6 @@ export interface SandboxDriver {
 export interface Sandbox {
 	readonly id: string;
 	readonly tier: SandboxTier;
-	/** A URL reachable only from inside this sandbox. `POST <controlUrl>/fence` with an `ObservedAssignment` as JSON answers `{"allow":true|false}` from the `fence` callback. */
 	readonly controlUrl: string;
 	exec(
 		input: Readonly<{
@@ -616,16 +558,14 @@ export interface Sandbox {
 			onOutput(chunk: Uint8Array): void;
 		}>,
 	): Promise<Readonly<{ exitCode: number }>>;
-	writeSecret(path: string, bytes: Uint8Array): Promise<void>; // never through argv or env
+	writeSecret(path: string, bytes: Uint8Array): Promise<void>;
 	destroy(): Promise<void>;
 }
-/** One proxy per order (§6.11 "Egress"): exact hosts in `allow` only; link-local and metadata addresses always refused. Its `url` is what SandboxDriver.create receives as `egressProxyUrl`. */
 export interface EgressProxyFactory {
 	open(
 		allow: readonly string[],
 	): Promise<Readonly<{ url: string; close(): Promise<void> }>>;
 }
-/** Host figures a capacity reading may carry beside its capacity (amendment 6, L43): free inodes on the work volume and memory PSI avg10 ("some", "full"). Absent means unknown. */
 export type HostSignals = Readonly<{
 	freeInodes?: number;
 	psiMemorySome?: number;
@@ -637,14 +577,12 @@ export interface CapacitySource {
 			capacity: Capacity;
 			health: Health;
 			labels: readonly string[];
-			/** Optional (amendment 6): the agent derives the observation's `refusal` from them. */
 			hostSignals?: HostSignals;
 		}>
 	>;
 }
 
-// ── One-active assignment (moved from the former backend-fleet package, names kept) ─────
-export type FailureClassifier = (error: Error | undefined) => Health; // one of UNREACHABLE, QUOTA_EXHAUSTED, AUTH, UNKNOWN
+export type FailureClassifier = (error: Error | undefined) => Health;
 /** domain-view: today's FleetAssignment (backend-fleet/src/assignment.ts:45) plus `members` (undefined for every entry written without membership epochs); plain numbers and undefined, not the wire's types. Built only by parseAssignmentEntry. */
 export type AssignmentEntry = Readonly<{
 	epoch: number;
@@ -657,7 +595,6 @@ export type AssignmentEntry = Readonly<{
 	decidedBy: string;
 	members: readonly MemberName[] | undefined;
 }>;
-/** What a proposer chooses; the register supplies epoch, time and author (today's FleetAssignmentValue). */
 export type AssignmentValue = Readonly<{
 	active: MemberName | undefined;
 	sealed: boolean;
@@ -665,7 +602,6 @@ export type AssignmentValue = Readonly<{
 	reason: string;
 	lossWindowMs: number | undefined;
 }>;
-/** As today (assignment.ts:148-163): `gap` = the log is too short to take it; `busy` = a copy into that member is in progress. */
 export type AssignmentAcceptOutcome =
 	| "accepted"
 	| "duplicate"
@@ -674,15 +610,11 @@ export type AssignmentAcceptOutcome =
 	| "busy";
 export type AssignmentReplica = Readonly<{
 	id: MemberName;
-	/** Entries in ascending epoch order; `limit` keeps only the highest ones. */
 	read(limit?: number): Promise<readonly AssignmentEntry[]>;
 	accept(entry: AssignmentEntry): Promise<AssignmentAcceptOutcome>;
-	/** Present on replicas whose log can expire (the cache-key replica): reset its lifetime; false when the log is absent. */
 	refresh?(): Promise<boolean>;
-	/** Present on replicas whose log can be lost: start an empty log at `entry`. Only rejoinAssignmentReplicas calls it. */
 	seed?(entry: AssignmentEntry): Promise<"seeded" | "not-empty">;
 }>;
-/** The members of one fleet's register, in configured order. Built by parseAssignmentRegister. */
 export type AssignmentRegister = Readonly<{
 	replicas: readonly AssignmentReplica[];
 	classify?: FailureClassifier;
@@ -700,7 +632,6 @@ export type AssignmentContender = Readonly<{
 	assignment: AssignmentEntry;
 	holders: readonly MemberName[];
 }>;
-/** As today (assignment.ts:185-206). */
 export type AssignmentResolution = Readonly<
 	| {
 			status: "current";
@@ -723,7 +654,6 @@ export type AssignmentResolution = Readonly<
 			silent: readonly MemberName[];
 	  }
 >;
-/** As today (assignment.ts:407-431). */
 export type AssignmentProposalOutcome = Readonly<
 	| {
 			status: "decided" | "undecided";
@@ -763,12 +693,10 @@ export type EphemeralAssignmentReplicaOptions = Readonly<{
 	ttlMs?: number;
 	maxEntries?: number;
 }>;
-/** An observation with the member's name in the fleet being decided (names are per fleet; an Observation carries only member_id). */
 export type NamedObservation = Readonly<{
 	name: MemberName;
 	observation: Observation;
 }>;
-/** eligibleForActive's answer for one member: the health verdict only, with today's reason strings. */
 export type EligibleMember = Readonly<{
 	name: MemberName;
 	eligible: boolean;
@@ -783,7 +711,6 @@ export type OneActiveAction = Readonly<
 			reasons: readonly string[];
 	  }
 >;
-/** What one tick did (today's CacheFleetTick, cache-fleet.ts:201-215, plus `membership`). `route` is chooseAction's answer when it was asked. */
 export type OneActiveTick = Readonly<{
 	action:
 		| "single"
@@ -808,9 +735,7 @@ export type OneActiveDeps = Readonly<{
 	fleet: FleetRecord;
 	registry: RegistryView;
 	register: AssignmentRegister;
-	/** The loop pairs each answer with the member's name in this fleet. */
 	observe(member: MemberRecord): Promise<Observation>;
-	/** Cost-based choosing, from @hobo/backend-routing or any other policy. `members` is the configured order (the last tie-break); the callback derives the period's workload from the observations' usage itself. For a reseal it is asked as a failover from the sealed target. */
 	chooseAction(
 		input: Readonly<{
 			assignment: AssignmentEntry;
@@ -823,17 +748,15 @@ export type OneActiveDeps = Readonly<{
 	scheduleActivation(epoch: number, afterMs: number): Promise<void>;
 	decidedBy: string;
 	sealWaitMs: number;
-	/** How long `active()` reuses its last answer: when decided, and when refused. */
 	viewTtlMs: number;
 	refusedTtlMs: number;
 	now: Clock;
 	log: FleetLog;
 }>;
 
-// ── Transport ──────────────────────────────────────────────────────────────
 export type TransportKind = "p2p" | "overlay" | "bus-relay";
 export interface FleetStream {
-	readonly peer: string; // the authenticated transport identity
+	readonly peer: string;
 	read(): AsyncIterable<Uint8Array>;
 	write(chunk: Uint8Array): Promise<void>;
 	close(): Promise<Readonly<{ bytesSent: number; bytesReceived: number }>>;
@@ -844,7 +767,6 @@ export interface FleetTransport {
 	dial(
 		input: Readonly<{ grant: SignedEnvelope; signal: AbortSignal }>,
 	): Promise<Outcome<FleetStream>>;
-	/** `authorise` is called with the peer's proven identity and its presented grant before any byte is delivered. */
 	accept(
 		authorise: (peer: string, grant: SignedEnvelope) => Promise<boolean>,
 		handler: (stream: FleetStream, grant: SessionGrant) => Promise<void>,
@@ -852,7 +774,6 @@ export interface FleetTransport {
 	stop(): Promise<void>;
 }
 
-// ── Composition ────────────────────────────────────────────────────────────
 export type AuthorityDeps = Readonly<{
 	tenant: TenantId;
 	store: FleetEventStore;
@@ -870,7 +791,6 @@ export type AuthorityDeps = Readonly<{
 	incarnation: number;
 	now: Clock;
 	log: FleetLog;
-	/** What Discovery publishes besides the trust envelope (which comes from bus.registry.trustEnvelope()). */
 	discovery: Readonly<{
 		issuer: string;
 		natsUrls: readonly string[];
@@ -894,71 +814,66 @@ export type AgentDeps = Readonly<{
 	now: Clock;
 	log: FleetLog;
 	fetch: typeof fetch;
-	/** Members this device sponsors and observes (a relay host and its backends). The agent signs and publishes each observation with its SIGN key. */
 	sponsored?: readonly Readonly<{
 		memberId: MemberId;
 		observe(): Promise<Observation>;
 	}>[];
 }>;
 
-// ── The authority's API: one method per route of §6.15 ────────────────────
 type Empty = Readonly<Record<string, never>>;
-// Amendment 2: the default was `Empty` (Record<string, never>), which collapsed every id field to `never`.
 type ById<
 	K extends string,
 	T extends object = Readonly<Record<never, never>>,
 > = Readonly<Record<K, string>> & T;
-/** Method name: [request, response]. The comment is the route. Responses typed SignedEnvelope carry the record named. */
 export type FleetApi = {
-	authorityDiscovery: [Empty, AuthorityDiscovery]; // GET  /.well-known/hobo-fleet
-	discovery: [Readonly<{ tenant: TenantId }>, Discovery]; // GET  /v1/fleet/tenants/{tenant}/discovery
-	jwks: [Empty, Readonly<{ jwks: string }>]; // GET  /v1/fleet/jwks
-	signInStart: [SignInStart, SignInChallenge]; // POST /v1/fleet/signin/start
-	signInCallback: [SignInCallback, ApprovalView]; // GET  /v1/fleet/signin/callback (browser)
-	signInDevice: [SignInDeviceCode, SignInChallenge]; // POST /v1/fleet/signin/device (browser)
-	approval: [ById<"state">, ApprovalView]; // GET  /v1/fleet/approve/{state} (browser)
-	approve: [ApprovalDecision, ApprovalResult]; // POST /v1/fleet/approve/{state} (browser)
-	signInComplete: [SignInComplete, PersonCredential]; // POST /v1/fleet/signin/complete
-	signInPoll: [SignInPoll, PersonCredential]; // POST /v1/fleet/signin/device/poll
-	signInRefresh: [SignInRefresh, PersonCredential]; // POST /v1/fleet/signin/refresh
-	issueToken: [TokenCreateRequest, TokenCreateResponse]; // POST /v1/fleet/tokens
-	listTokens: [Empty, TokenList]; // GET  /v1/fleet/tokens
-	revokeToken: [ById<"tokenHash">, TokenList]; // DELETE /v1/fleet/tokens/{hash}
-	enroll: [EnrollmentRequest, EnrollmentResponse]; // POST /v1/fleet/members
-	declare: [DeclareRequest, EnrollmentResponse]; // POST /v1/fleet/members:declare
-	approveKey: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST /v1/fleet/members/{id}/approve-key
-	accept: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST …/accept
-	reject: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST …/reject
-	suspend: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST …/suspend
-	resume: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST …/resume
-	unlock: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST …/unlock
-	revoke: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope]; // POST …/revoke
-	assign: [ById<"memberId", { request: MembershipRequest }>, SignedEnvelope]; // POST /v1/fleet/members/{id}/memberships
+	authorityDiscovery: [Empty, AuthorityDiscovery];
+	discovery: [Readonly<{ tenant: TenantId }>, Discovery];
+	jwks: [Empty, Readonly<{ jwks: string }>];
+	signInStart: [SignInStart, SignInChallenge];
+	signInCallback: [SignInCallback, ApprovalView];
+	signInDevice: [SignInDeviceCode, SignInChallenge];
+	approval: [ById<"state">, ApprovalView];
+	approve: [ApprovalDecision, ApprovalResult];
+	signInComplete: [SignInComplete, PersonCredential];
+	signInPoll: [SignInPoll, PersonCredential];
+	signInRefresh: [SignInRefresh, PersonCredential];
+	issueToken: [TokenCreateRequest, TokenCreateResponse];
+	listTokens: [Empty, TokenList];
+	revokeToken: [ById<"tokenHash">, TokenList];
+	enroll: [EnrollmentRequest, EnrollmentResponse];
+	declare: [DeclareRequest, EnrollmentResponse];
+	approveKey: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	accept: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	reject: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	suspend: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	resume: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	unlock: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	revoke: [ById<"memberId", { request: LifecycleRequest }>, SignedEnvelope];
+	assign: [ById<"memberId", { request: MembershipRequest }>, SignedEnvelope];
 	credentials: [
 		ById<"memberId", { request: CredentialRequest }>,
 		CredentialResponse,
-	]; // POST /v1/fleet/members/{id}/credentials
+	];
 	rotateKeys: [
 		ById<"memberId", { request: KeyRotationRequest }>,
 		SignedEnvelope,
-	]; // POST /v1/fleet/members/{id}/keys
-	leave: [ById<"memberId">, SignedEnvelope]; // POST /v1/fleet/members/{id}/leave
-	listMembers: [Readonly<{ fleet?: FleetId }>, MemberList]; // GET  /v1/fleet/members
-	getMember: [ById<"memberId">, SignedEnvelope]; // GET  /v1/fleet/members/{id}
-	listFleets: [Empty, FleetList]; // GET  /v1/fleet/fleets
-	getFleet: [ById<"fleetId">, SignedEnvelope]; // GET  /v1/fleet/fleets/{id}
-	defineFleet: [FleetRecord, SignedEnvelope]; // PUT  /v1/fleet/fleets/{id}
-	fleetView: [ById<"fleetId">, SignedEnvelope]; // GET  /v1/fleet/fleets/{id}/view
-	fleetVerdict: [ById<"fleetId", { label: string }>, FleetVerdict]; // GET  /v1/fleet/fleets/{id}/verdict
-	grantSession: [SessionRequest, SignedEnvelope]; // POST /v1/fleet/sessions
-	submitWork: [WorkSubmissionRequest, WorkStatus]; // POST /v1/fleet/work
-	workStatus: [ById<"submissionId">, WorkStatus]; // GET  /v1/fleet/work/{id}
-	workLogs: [ById<"submissionId">, WorkLogs]; // GET  /v1/fleet/work/{id}/logs
-	report: [ViolationReport, SignedEnvelope]; // POST /v1/fleet/reports
-	auditCheckpoints: [Readonly<{ fromSequence?: number }>, AuditCheckpoints]; // GET  /v1/fleet/audit/checkpoints
-	auditEntries: [Readonly<{ from: number; to: number }>, AuditEntries]; // GET  /v1/fleet/audit/entries
+	];
+	leave: [ById<"memberId">, SignedEnvelope];
+	listMembers: [Readonly<{ fleet?: FleetId }>, MemberList];
+	getMember: [ById<"memberId">, SignedEnvelope];
+	listFleets: [Empty, FleetList];
+	getFleet: [ById<"fleetId">, SignedEnvelope];
+	defineFleet: [FleetRecord, SignedEnvelope];
+	fleetView: [ById<"fleetId">, SignedEnvelope];
+	fleetVerdict: [ById<"fleetId", { label: string }>, FleetVerdict];
+	grantSession: [SessionRequest, SignedEnvelope];
+	submitWork: [WorkSubmissionRequest, WorkStatus];
+	workStatus: [ById<"submissionId">, WorkStatus];
+	workLogs: [ById<"submissionId">, WorkLogs];
+	report: [ViolationReport, SignedEnvelope];
+	auditCheckpoints: [Readonly<{ fromSequence?: number }>, AuditCheckpoints];
+	auditEntries: [Readonly<{ from: number; to: number }>, AuditEntries];
 };
-/** The authority's commands. `caller` is the result of `authenticate`, or undefined on routes with no auth. */
 export type EnrollmentAuthority = {
 	readonly [M in keyof FleetApi]: (
 		request: FleetApi[M][0],
@@ -973,17 +888,14 @@ export type EnrollmentAuthority = {
 			dpop: string;
 		}>,
 	): Promise<Outcome<VerifiedToken>>;
-	/** Re-sign expiring records, publish views, checkpoint the audit chain. */
 	tick(): Promise<void>;
 }>;
-/** The four browser-only methods are not on the client: a browser calls them, not a CLI or an agent. */
 type BrowserOnly = "signInCallback" | "signInDevice" | "approval" | "approve";
 export type FleetClient = {
 	readonly [M in Exclude<keyof FleetApi, BrowserOnly>]: (
 		request: FleetApi[M][0],
 	) => Promise<Outcome<FleetApi[M][1]>>;
 };
-/** The commands of fleets, policy, sessions, work submission, views and verdicts (L32). */
 export type FleetCommands = Pick<
 	EnrollmentAuthority,
 	| "listFleets"
@@ -994,14 +906,12 @@ export type FleetCommands = Pick<
 	| "grantSession"
 	| "submitWork"
 >;
-/** What createEnrollmentAuthority composes. Passed in, so that the lanes building each part merge independently. */
 export type AuthorityParts = Readonly<{
 	signIn: ReturnType<typeof createSignIn>;
 	recorder: ReturnType<typeof createRecorder>;
 	projection: ReturnType<typeof createRegistryProjection>;
 	fleets: FleetCommands;
 	audit: ReturnType<typeof createAuditChain>;
-	/** For `report`: the dispatcher's own claim rules (L04). */
 	checkClaim: typeof checkClaim;
 }>;
 export type LocalFleetInit = Readonly<{

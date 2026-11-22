@@ -1,8 +1,3 @@
-// The agent state file of design §6.4 and §7.3 (`AgentState`): generation,
-// pending refresh nonce, pinned trust record, last processed stream sequences,
-// seen order ids and the signed receipts not yet published (F4). Records are
-// stored as their protobuf binary, base64; nothing private is ever in it.
-
 import { fromBinary, toBinary } from "@bufbuild/protobuf";
 import type { JsonObject, JsonValue } from "@hobo/core";
 import {
@@ -85,7 +80,6 @@ function decodeRecord<T>(decode: () => T, field: string): T {
 	}
 }
 
-/** Parses the state file's text; throws, naming the field, when it is not one. */
 export function decodeAgentState(text: string): AgentState {
 	let document: JsonValue;
 	try {

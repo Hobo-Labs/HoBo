@@ -1,8 +1,3 @@
-// O40: the fleet commands refuse what they must. One case per refusal of
-// defineFleet, grantSession, submitWork and fleetVerdict (§6.12, §6.13,
-// §7.2, §7.6), ONE_ACTIVE refused in authority mode and accepted in local
-// mode (D39), a workload token for an unlisted repository refused on the
-// verdict route, and a submission published once under retry.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import type { EventEnvelope } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -56,7 +51,6 @@ import {
 	unwrap,
 } from "./fixtures.js";
 
-/** A number no SandboxTier has. */
 const NOT_A_TIER: number = 9;
 
 async function events(
@@ -87,7 +81,6 @@ function verifiesAs(
 	);
 }
 
-// ── defineFleet ────────────────────────────────────────────────────────────
 describe("defineFleet", () => {
 	it("defines a fleet, journals fleet.FleetDefined with its revision, and publishes the record before anyone enrolls", async () => {
 		const h = harness();
@@ -105,7 +98,6 @@ describe("defineFleet", () => {
 			coordination: CoordinationMode.MANY_ACTIVE,
 		});
 		expect(record.notAfter > record.issuedAt).toBe(true);
-		// Published at once: the enrollment commands read fleets from the registry.
 		const published = await h.bus.registry.fleet(parseFleetId("build"));
 		expect(published?.revision).toBe(1);
 		const journal = await events(h.store, "fleet-fleet-");
@@ -494,7 +486,6 @@ describe("defineFleet", () => {
 	});
 });
 
-// ── Reads ──────────────────────────────────────────────────────────────────
 describe("listFleets and getFleet", () => {
 	it("serve signed records to readers, from the journal", async () => {
 		const h = harness();
@@ -538,7 +529,6 @@ describe("listFleets and getFleet", () => {
 	});
 });
 
-// ── fleetView and fleetVerdict ─────────────────────────────────────────────
 describe("fleetView", () => {
 	it("serves the registry's view, signed by the authority", async () => {
 		const h = harness();
@@ -699,7 +689,6 @@ describe("fleetVerdict", () => {
 		});
 });
 
-// ── grantSession ───────────────────────────────────────────────────────────
 describe("grantSession", () => {
 	const PEER = dev(1);
 	const SELF = dev(2);
@@ -1060,7 +1049,6 @@ describe("grantSession", () => {
 		});
 });
 
-// ── submitWork ─────────────────────────────────────────────────────────────
 describe("submitWork", () => {
 	const DIGEST = `sha256:${"ab".repeat(32)}`;
 

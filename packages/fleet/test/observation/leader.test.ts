@@ -1,13 +1,3 @@
-/**
- * `leaderOf` (design §8.1, amendment 4): the rank-0 dispatcher, ported by
- * hand from main's `meshLeaderId` tests in `packages/ci/test/mesh-monitor.test.ts`
- * (the moved-test rule compares against `fleet-wave-0` and does not see them).
- *
- * Main chose the live node with the lowest id. A fleet chooses rank 0 of
- * `rankMembers` over its live dispatchers, so every member that knows the same
- * candidates names the same leader. Expired or refused observations never
- * become candidates (`acceptObservation`), so they can never lead.
- */
 import { describe, expect, it } from "vitest";
 import {
 	type MemberId,
@@ -31,7 +21,6 @@ describe("leaderOf", () => {
 		const ranked = rankMembers(DIGEST, live);
 		expect(leaderOf(ranked, id(3))).toBe(ranked[0]);
 		expect(leaderOf(ranked, id(2))).toBe(ranked[0]);
-		// Order of discovery does not change the leader.
 		expect(leaderOf(rankMembers(DIGEST, [...live].reverse()), id(3))).toBe(
 			ranked[0],
 		);

@@ -1,14 +1,3 @@
-/**
- * AEAD framing over a raw `FleetStream` (design §6.12, §7.4): each frame is a
- * 4-byte big-endian length and a ChaCha20-Poly1305 ciphertext with its
- * 16-byte tag. The 12-byte nonce is four zero bytes and a 64-bit big-endian
- * counter, one counter per direction, so every frame's position is
- * authenticated: a reordered, replayed or dropped frame fails. Each direction
- * has its own key (`sessionKeys`), so the two counters never share a key.
- *
- * An empty frame marks the end of the stream; a raw stream that ends without
- * it was truncated, and reading fails. Empty writes are therefore no-ops.
- */
 import { createCipheriv, createDecipheriv } from "node:crypto";
 import type { FleetStream } from "../ports.js";
 
@@ -17,7 +6,6 @@ const TAG_BYTES = 16;
 const HEADER_BYTES = 4;
 const NONCE_BYTES = 12;
 const KEY_BYTES = 32;
-/** The largest plaintext in one frame; longer writes are split. */
 export const MAX_FRAME_PLAINTEXT = 64 * 1024;
 
 function nonceFor(counter: bigint): Buffer {
@@ -84,7 +72,6 @@ export function framedStream(
 	let source: AsyncIterator<Uint8Array> | undefined;
 	let pending: Buffer = Buffer.alloc(0);
 
-	/** The next complete frame body from the raw stream, or undefined when it ended. */
 	const nextBody = async (): Promise<Uint8Array | undefined> => {
 		source ??= raw.read()[Symbol.asyncIterator]();
 		for (;;) {

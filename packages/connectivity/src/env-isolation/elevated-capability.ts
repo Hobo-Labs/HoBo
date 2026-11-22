@@ -1,15 +1,3 @@
-/**
- * Short-lived elevated access capabilities (audience-bound JWT-SVIDs).
- * Mint only after lower-env authn, step-up, dual approval, or break-glass.
- * Network membership alone is never sufficient.
- *
- * One SVID implementation (ADR-0183, fleet ledger §8.3): a capability is
- * minted through `@hobo/identity`'s `JwtSvidIssuer` and verified with its
- * `verifyJwtWithJwks` over the issuer's key set, both passed in as the
- * ports below. There is no shared secret and no development default: without
- * a verifier no elevated token is accepted. For offline development the
- * issuer runs over `@hobo/identity`'s in-memory KMS.
- */
 import { createHash, randomBytes } from "node:crypto";
 import {
 	isJsonNumber,
@@ -35,8 +23,7 @@ import {
 // public-contract: the SVID scope port that marks a JWT-SVID as an elevated access capability.
 export const ELEVATED_ACCESS_SCOPE_PORT = "elevated-access";
 
-/** The claims `@hobo/identity`'s `JwtSvidIssuer.signJwtSvid` takes. */
-// domain-view: structurally JwtSvidClaims of @hobo/identity, which @hobo/connectivity does not import (design §11.2 step 6).
+// domain-view: structurally JwtSvidClaims of @hobo/identity, which @hobo/connectivity does not import.
 export type ElevatedSvidClaims = Readonly<{
 	sub: string;
 	aud: string | readonly string[];
@@ -54,23 +41,16 @@ export type ElevatedSvidClaims = Readonly<{
 	iss?: string;
 }>;
 
-/** Mints elevated capabilities: `@hobo/identity`'s `JwtSvidIssuer`. */
 export type ElevatedCapabilityIssuer = Readonly<{
 	issuerUrl: string;
 	signJwtSvid(claims: ElevatedSvidClaims): Promise<string>;
 }>;
 
-/**
- * Verifies a JWT-SVID's signature, issuer, audience and time window and
- * answers its claims, or throws: `(token, options) =>
- * verifyJwtWithJwks(token, issuer.jwks(), options)` of `@hobo/identity`.
- */
 export type ElevatedCapabilityVerifier = (
 	token: string,
 	options: { issuer: string; audience: string; now: number },
 ) => Promise<Readonly<{ claims: JsonObject }>>;
 
-/** What a check needs to accept an elevated token: whose tokens, and how to verify them. */
 export type ElevatedCapabilityTrust = Readonly<{
 	issuer: string;
 	verify: ElevatedCapabilityVerifier;
@@ -106,9 +86,6 @@ export type ElevatedAccessRefusal = Readonly<{
 	reason: string;
 }>;
 
-/**
- * Mint an elevated-access capability as an audience-bound short-lived JWT-SVID.
- */
 export async function mintElevatedAccessCapability(
 	input: MintElevatedInput,
 	options?: {
@@ -201,7 +178,6 @@ const refusal = (code: string, reason: string): ElevatedAccessRefusal => ({
 	reason,
 });
 
-/** The elevated-access scope entry of verified claims: its capability id and obligations. */
 function elevatedScope(
 	claims: JsonObject,
 ): Readonly<{ id: string; obligations: readonly string[] }> | undefined {
@@ -222,10 +198,6 @@ function elevatedScope(
 	return undefined;
 }
 
-/**
- * Verify an elevated capability token. Fail-closed on a missing verifier,
- * signature, issuer, expiry, audience, or env mismatch.
- */
 export async function verifyElevatedAccessCapability(input: {
 	readonly token: string;
 	readonly expectedAudience: string;

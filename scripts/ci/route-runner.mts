@@ -60,13 +60,6 @@ import {
 	routingLabels,
 } from "./runner-routing.mts";
 
-/**
- * The GitHub-hosted machine type and the local box's label when
- * `runnerRouting.labels` names none. The same values as `@hobo/ci`'s runner
- * tiers; this script imports no package source, so a rename there cannot
- * stop the route job (R14). `route-runner.test.ts` holds them equal to the
- * committed `runnerRouting.labels`.
- */
 // public-contract: GitHub's machine type the route job falls back to.
 export const DEFAULT_GITHUB_MACHINE_TYPE = "ubuntu-24.04";
 // public-contract: the runs-on label a registered local box serves.
@@ -323,8 +316,6 @@ export function routeRunner(input: {
 	// Its jobs are not in the queue to be counted, and runs that start together
 	// would otherwise all read the same empty queue and all choose the fleet.
 	const first = input.trunkPriority === true || input.undecidedAhead === 0;
-	// Nearest first: the fleet, then an enrolled local box, then GitHub's own
-	// machines, which always take a job.
 	const selected: RouteTier =
 		first && takingJobs(input.fleet, limits)
 			? "fleet"

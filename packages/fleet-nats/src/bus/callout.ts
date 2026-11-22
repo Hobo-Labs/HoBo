@@ -1,10 +1,3 @@
-/**
- * One auth-callout exchange (§6.7, the connect sequence steps 2 to 4): open
- * the request sealed to the account's xkey, verify it, run the seven checks
- * and answer with a sealed authorization response holding either the device's
- * user JWT or the refusal. Answering nothing denies the connection too, which
- * is what happens to a request that cannot be opened.
- */
 import type { Clock, FleetLog, RegistryView, ReplayStore } from "@hobo/fleet";
 import type { KeyPair } from "@nats-io/jwt";
 import { checkConnect } from "./callout-checks.js";
@@ -32,7 +25,6 @@ export const CALLOUT_AUTHORISED = "authorised";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** The sealed response to one sealed request, or undefined when the request cannot be opened. */
 export async function answerCallout(
 	sealed: Uint8Array,
 	serverXkey: string | undefined,
@@ -102,7 +94,6 @@ export async function answerCallout(
 			answer: { jwt },
 			nowMs,
 		});
-		// The hook for an allowed decision: the status feed counts it as an answered callout.
 		deps.log("hobo_fleet_bus_status", {
 			component: "callout",
 			status: CALLOUT_AUTHORISED,

@@ -1,9 +1,3 @@
-/**
- * The production pieces of `hobo fleet`: settings from the environment, the
- * person and enrollment files, the device credentials protocol, key rotation
- * bundles, `ops provision`'s slots, and the runtime's own I/O (no network
- * beyond loopback; no authority).
- */
 import {
 	mkdir,
 	mkdtemp,
@@ -155,7 +149,6 @@ describe("the person and enrollment files", () => {
 		const person = await readPerson(home);
 		expect(person?.token).toBe("tok");
 		expect(person?.key.thumbprint).toBe(key.thumbprint);
-		// The stored key signs as the one that was saved.
 		const signature = await person?.key.signer.sign(new Uint8Array([1]));
 		expect(signature?.length).toBe(64);
 		await deletePerson(home);
@@ -360,8 +353,6 @@ describe("ops provision", () => {
 		expect(!result.ok && result.error.message).toContain(
 			"published through publishAccountSigningKeys",
 		);
-		// A rotation that completes, a refusal of another kind, and a key NATS
-		// does not hold never publish here.
 		const done = await rotateKeyWith({
 			configText: config,
 			secrets,

@@ -15,13 +15,6 @@ import {
 	type NetbirdApiClient,
 } from "./netbird-api.js";
 
-/**
- * Netbird overlay adapter — management API for enrollment, peers, and DNS.
- * Ready when management URL + the join's setup key and/or access token (DNS
- * admin). The setup key is only ever `OverlayJoinOptions.authKey`: the
- * one-off key the HoBo Fleet authority minted at enrollment (ADR-0183). There
- * is no static setup key and none is read from the environment.
- */
 export function createNetbirdOverlay(options?: {
 	readonly metering?: MeteringBus;
 	readonly managementUrl?: string;

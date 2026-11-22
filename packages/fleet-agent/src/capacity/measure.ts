@@ -1,14 +1,3 @@
-// Host capacity as the box worker measures it today (design §6.8; the worker's
-// `free()` in isolated-worker-daemon-main.mts): memory is `MemAvailable` from
-// /proc/meminfo less the worker's default 2 GiB host reserve, falling back to
-// `os.freemem()` off Linux; disk is the space an unprivileged process may
-// still take on the filesystem holding the work root (`statfs` bavail ×
-// bsize). L43 adds the two signals main's `isolated-worker/host-capacity.ts`
-// tracked: free inodes on that filesystem (`statfs` ffree) and memory PSI
-// (`/proc/pressure/memory`, avg10 of "some" and "full"). They fill the
-// reading's optional `hostSignals` (contract amendment 6), which the agent (`@hobo/fleet` observation `refusal.ts`)
-// turns into the observation's `refusal`. A figure that cannot be read is
-// absent (unknown), never zero.
 import { readFile, statfs } from "node:fs/promises";
 import { freemem } from "node:os";
 import { create } from "@bufbuild/protobuf";
@@ -19,7 +8,6 @@ import {
 	type HostSignals,
 } from "@hobo/fleet";
 
-/** The worker's default `HOBO_CI_WORKER_MEMORY_RESERVE_MB`: memory never offered to work. */
 export const MEMORY_RESERVE_MB = 2_048;
 const UINT32_MAX = 0xffff_ffff;
 const MAX_SLOTS = 1_024;
@@ -32,23 +20,19 @@ export type HostCapacityOptions = Readonly<{
 	labels: readonly string[];
 }>;
 
-/** What one `statfs` of the work volume answers; absent figures are unknown. */
 export type VolumeFigures = Readonly<{
 	freeDiskMb?: number;
 	freeInodes?: number;
 }>;
 
-/** Memory PSI avg10, in percent; a kernel without "full" leaves it absent. */
 export type MemoryPressure = Readonly<{ some?: number; full?: number }>;
 
-/** How a figure is read from the host; tests pass their own. */
 export type HostProbes = Readonly<{
 	availableMemoryMb(): Promise<number | undefined>;
 	volume(path: string): Promise<VolumeFigures>;
 	memoryPressure(): Promise<MemoryPressure>;
 }>;
 
-/** The fs and os calls the probes make; tests pass their own, so no real /proc is needed. */
 export type HostReaders = Readonly<{
 	platform: NodeJS.Platform;
 	readFile(path: string): Promise<string>;
@@ -58,7 +42,6 @@ export type HostReaders = Readonly<{
 	freemem(): number;
 }>;
 
-/** `HostSignals` while it is being filled in. */
 type HostSignalFigures = { -readonly [K in keyof HostSignals]: HostSignals[K] };
 
 export type HostReading = Readonly<{
@@ -87,7 +70,6 @@ function avg10(text: string, kind: "some" | "full"): number | undefined {
 	return Number.isFinite(value) ? value : undefined;
 }
 
-/** avg10 of the "some" and "full" lines of `/proc/pressure/memory`; a missing line is unknown. */
 export function parseMemoryPressure(text: string): MemoryPressure {
 	const some = avg10(text, "some");
 	const full = avg10(text, "full");
@@ -155,7 +137,6 @@ export const HOST_PROBES: HostProbes = createHostProbes(NODE_READERS);
 
 const uint32 = (value: number) => Math.min(Math.max(0, value), UINT32_MAX);
 
-/** Parses the options of createHostCapacity; throws, naming the field, when they are not usable. */
 export function parseHostCapacityOptions(
 	options: HostCapacityOptions,
 ): HostCapacityOptions {

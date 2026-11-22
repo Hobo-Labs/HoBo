@@ -1,20 +1,9 @@
-/**
- * A real `nats-server` for the integration tests: operator mode with the full
- * resolver, the system account derived from a fresh operator signing seed,
- * JetStream on and TLS required on the client listener (a throwaway CA from
- * `openssl`, trusted through `HOBO_FLEET_NATS_CA`).
- *
- * The binary is `HOBO_FLEET_NATS_SERVER_BIN`, else `nats-server` on PATH.
- * Without it, `natsServerAvailable()` is false: a suite then skips, unless
- * `CI` is set, where the integration lane provisions the binary and its
- * absence fails the suite (rule 10 of §11.3).
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { TenantId } from "@hobo/core";
+import { parseTenantId, type TenantId } from "@hobo/core";
 import { createOperator, encodeOperator } from "@nats-io/jwt";
 import { provisionTopology } from "../../src/bus/index.js";
 import {
@@ -25,11 +14,24 @@ import {
 
 const decoder = new TextDecoder();
 
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+export function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
+
 export const NATS_BINARY =
 	process.env.HOBO_FLEET_NATS_SERVER_BIN ??
 	(spawnSync("nats-server", ["--version"]).status === 0 ? "nats-server" : "");
 
-/** Skip only outside CI; in CI a missing binary fails the suite. */
 export const SKIP_INTEGRATION = NATS_BINARY === "" && !process.env.CI;
 
 export function requireBinary(): void {
@@ -44,8 +46,7 @@ async function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-			const { port } = server.address() as AddressInfo;
+			const port = portOf(server.address());
 			server.close(() => resolve(port));
 		});
 	});
@@ -56,10 +57,8 @@ function openssl(args: readonly string[], cwd: string): void {
 	if (result.status !== 0) throw new Error(`openssl ${args[0]} failed`);
 }
 
-/** A CA and a server certificate for 127.0.0.1 and localhost. */
 export type Certificates = Readonly<{ ca: string; cert: string; key: string }>;
 
-/** Writes a throwaway CA and a server certificate signed by it into `dir`. */
 export function certificates(dir: string): Certificates {
 	writeFileSync(
 		join(dir, "san.cnf"),
@@ -135,7 +134,6 @@ export type TestNats = Readonly<{
 	stop(): Promise<void>;
 }>;
 
-/** Starts a server and provisions one tenant on it. */
 export async function startNats(tenant = "acme"): Promise<TestNats> {
 	requireBinary();
 	const dir = mkdtempSync(join(tmpdir(), "hobo-fleet-nats-"));
@@ -182,8 +180,7 @@ export async function startNats(tenant = "acme"): Promise<TestNats> {
 		});
 		server.once("exit", () => reject(new Error("nats-server exited")));
 	});
-	// SAFETY: a literal tenant id for the tests.
-	const tenantId = tenant as TenantId;
+	const tenantId = parseTenantId(tenant);
 	const url = `tls://127.0.0.1:${port}`;
 	const provisioned = await provisionTopology({
 		servers: [url],

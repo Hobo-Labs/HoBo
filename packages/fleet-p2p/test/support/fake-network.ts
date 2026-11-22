@@ -1,9 +1,3 @@
-/**
- * An in-memory `EndpointBinding` for the unit tests: endpoints on one fake
- * network reach one another by id, connections carry ordered byte streams,
- * and closing a connection fails the reads and writes still pending on it, as
- * a lost QUIC connection does.
- */
 import { createHash } from "node:crypto";
 import type {
 	BoundEndpoint,
@@ -13,7 +7,6 @@ import type {
 	EndpointOptions,
 } from "../../src/endpoint.js";
 
-/** A queue whose `take` waits for the next `put`; `end` makes every taker answer undefined. */
 function createQueue<T>() {
 	const items: T[] = [];
 	const takers: ((item: T | undefined) => void)[] = [];
@@ -44,7 +37,6 @@ class ConnectionLost extends Error {
 	}
 }
 
-/** One direction of a stream: bytes in order, then end-of-stream. */
 function createPipe(lost: () => boolean) {
 	const chunks: Uint8Array[] = [];
 	let finished = false;
@@ -150,9 +142,7 @@ function createConnectionPair(
 
 export type FakeNetwork = EndpointBinding &
 	Readonly<{
-		/** The options of every bind, in order. */
 		bound: EndpointOptions[];
-		/** Every connection either side has opened and not yet closed. */
 		open(): number;
 	}>;
 

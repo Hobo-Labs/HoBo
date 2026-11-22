@@ -1,8 +1,3 @@
-/**
- * An in-memory transport pair that keeps the transport contract (the suite's
- * reference), and pairs broken in exactly one way each, keyed by the transport
- * assertion that must catch the break.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	type SessionGrant,
@@ -27,7 +22,6 @@ type Faults = Readonly<{
 	stopKeepsAccepting?: boolean;
 }>;
 
-/** A one-way byte pipe: writes queue up until read; `end` finishes the reader. */
 function pipe() {
 	const chunks: Uint8Array[] = [];
 	let ended = false;
@@ -192,7 +186,6 @@ const pairWith =
 		return [transportOn(network, faults), transportOn(network, faults)];
 	};
 
-/** The reference pair: passes `runTransportConformance`. */
 export const memoryTransports: TransportMake = pairWith({});
 
 export const BROKEN_TRANSPORTS: ReadonlyMap<string, TransportMake> = new Map([

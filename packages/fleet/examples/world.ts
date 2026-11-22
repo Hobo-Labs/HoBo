@@ -1,11 +1,3 @@
-/**
- * A small fleet in one process, for the demo and the agent tests: the test
- * authority (`createTestAuthority`) behind the in-process HTTP stand-in, the
- * memory bus behind a memory connector, one many-active fleet whose owner
- * auto-approves, bootstrap tokens, and agents built from the in-memory key
- * store, the fake sandbox driver and a work kind whose source and runner the
- * caller fills.
- */
 import { create } from "@bufbuild/protobuf";
 import { type PrincipalRef, parseTenantId, type TenantId } from "@hobo/core";
 import {
@@ -55,7 +47,6 @@ const DAY_MS = 24 * 3_600_000;
 
 export type World = Awaited<ReturnType<typeof createWorld>>;
 
-/** The test authority, its HTTP stand-in and bus connector, and fleet `hobo` defined by its owner. */
 export async function createWorld(now: Clock) {
 	const composed = await createTestAuthority(now);
 	const http = httpAuthority(composed.authority, now);
@@ -104,7 +95,6 @@ export async function createWorld(now: Clock) {
 		return issued.value.token;
 	}
 
-	/** Another many-active fleet with the same owner; `keyBundleHours` 0 is the policy default. */
 	async function defineFleet(
 		fleet: FleetId,
 		keyBundleHours = 0,
@@ -125,7 +115,6 @@ export async function createWorld(now: Clock) {
 	return { ...composed, http, connector, admin, token, defineFleet };
 }
 
-/** A work source the caller fills; it prepares an empty secret and remembers what it prepared. */
 export function queueSource(now: Clock) {
 	const queue: (UpstreamWork & Readonly<{ fleet: string }>)[] = [];
 	const prepared: string[] = [];
@@ -163,7 +152,6 @@ export function queueSource(now: Clock) {
 	return { source, add, prepared };
 }
 
-/** A runner that succeeds, or waits for `hold` to be released first. */
 export function heldRunner() {
 	const ran: string[] = [];
 	let release: (() => void) | undefined;
@@ -218,7 +206,6 @@ export const openEgress: EgressProxyFactory = {
 	},
 };
 
-/** An agent of this world. Every dependency can be replaced. */
 export function agentIn(
 	world: World,
 	options: Readonly<{

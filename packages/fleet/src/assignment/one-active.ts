@@ -1,26 +1,3 @@
-/**
- * The loop of a one-active fleet (design §6.10 "A tick, for any one-active
- * fleet"): which member is active, and the repair tick that keeps the register
- * healthy and moves the fleet when `chooseAction` says so.
- *
- * Moved from the cache fleet of `packages/ci-vercel/src/cache-fleet.ts` with
- * its tick values unchanged (`OneActiveTick` is today's `CacheFleetTick` plus
- * `membership`). Cost-based choosing stays with the host (`chooseAction`);
- * this loop only reads and writes the register:
- *
- * - **Fail closed.** No majority, an undecided epoch completion cannot settle,
- *   an empty register or a sealed fleet: `active()` refuses. An answer is
- *   reused for `viewTtlMs` when it names a member and `refusedTtlMs` when it
- *   refuses, measured from when its read started.
- * - **A move seals first.** A switch or failover writes a sealed entry (a
- *   switch keeps the writer until activation, a failover has none), schedules
- *   the activation after `sealWaitMs`, and a later tick activates the target.
- *   A fleet still sealed after twice `sealWaitMs` logs
- *   `hobo_fleet_assignment_sealed_too_long` on every tick (F24).
- * - **Membership epochs** (when the fleet's policy sets them): the first tick
- *   pins the configured set, and later ticks admit or remove one name each,
- *   never the active member or a sealed fleet's target, and never while sealed.
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	Health,
@@ -51,7 +28,6 @@ import {
 } from "./register.js";
 import { rejoinAssignmentReplicas } from "./replica.js";
 
-/** An observation's `failing_for_ms` for a sealed target that went away (uint32 max). */
 const FAILING_FOREVER_MS = 4_294_967_295;
 
 type View = Readonly<
@@ -72,7 +48,6 @@ function viewOf(resolution: AssignmentResolution): View {
 	return { ok: true, name: entry.active };
 }
 
-/** A reason token an assignment entry can carry: lower-case, no punctuation. */
 function reasonToken(text: string): string {
 	return (
 		text
@@ -84,7 +59,6 @@ function reasonToken(text: string): string {
 	);
 }
 
-/** `QUOTA_EXHAUSTED` → `quota-exhausted`: today's failure-class strings. */
 function healthToken(health: Health): string {
 	return (Health[health] ?? "UNKNOWN").toLowerCase().replaceAll("_", "-");
 }
@@ -100,7 +74,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 	const members = register.replicas.map((replica) => replica.id);
 	const single = members.length === 1 ? members[0] : undefined;
 
-	// --- which member is active ------------------------------------------------
 	let cached: Readonly<{ view: View; readStartedAt: number }> | undefined;
 	let pending: Promise<View> | undefined;
 
@@ -113,7 +86,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 			const startedAt = now();
 			let resolution = await readCurrentAssignment(register);
 			if (resolution.status === "empty" && members[0] !== undefined) {
-				// The first entry is the same bytes from every instance.
 				await bootstrapAssignment(register, members[0]);
 				resolution = await readCurrentAssignment(register);
 			} else if (resolution.status === "undecided")
@@ -144,7 +116,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 		};
 	}
 
-	// --- the tick ------------------------------------------------------------
 	function report(tick: OneActiveTick): OneActiveTick {
 		log("hobo_fleet_assignment_tick", {
 			fleet: fleetId,
@@ -161,7 +132,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 		try {
 			await deps.scheduleActivation(epoch, afterMs);
 		} catch {
-			// The next scheduled tick is the backstop (F24).
 			log("hobo_fleet_assignment_tick", {
 				fleet: fleetId,
 				action: "activation-unscheduled",
@@ -194,7 +164,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 		return outcome.assignment;
 	}
 
-	/** This fleet's registry records by member name. */
 	async function recordsByName(): Promise<Map<MemberName, MemberRecord>> {
 		const byName = new Map<MemberName, MemberRecord>();
 		for (const record of await deps.registry.membersOf(fleetId)) {
@@ -207,7 +176,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 		return byName;
 	}
 
-	/** Pin, or admit or remove one name; undefined when nothing is to change. */
 	async function changeMembership(
 		current: AssignmentEntry,
 		records: ReadonlyMap<MemberName, MemberRecord>,
@@ -317,7 +285,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 			observations.find((entry) => entry.name === target)?.observation.health ??
 			Health.UNKNOWN;
 		if (targetHealth !== Health.REACHABLE) {
-			// The target went away while sealed: choose again, as a failover from it.
 			const seen = healthToken(targetHealth);
 			const route = await choose(
 				{ ...current, active: target, sealed: false, target: undefined },
@@ -489,7 +456,6 @@ export function createOneActiveFleet(deps: OneActiveDeps): Readonly<{
 		});
 	}
 
-	/** The delayed activation of a sealed move: a tick, if that epoch is still the sealed one. */
 	async function activate(epoch: number): Promise<void> {
 		if (single !== undefined) return;
 		const resolution = await readCurrentAssignment(register);

@@ -1,16 +1,3 @@
-/**
- * The acceptance world (design §11.4 L26): the real authority, composed by
- * `assembleAuthority` and served by `createAuthorityHandler` with no network,
- * over a bus the caller chooses (the memory bus for `pnpm run test:behavior`,
- * `nats-server` for the acceptance integration test), with the real audit
- * chain and witness, and device agents built by `createFleetAgent`.
- *
- * The world holds the trust anchor itself (one authority key, one witness
- * key), so the authority signs records with a key the pinned trust record
- * names and every agent verifies what it is answered. Time is the wall clock
- * plus an offset the suite can advance, so agent loops run on real timers
- * while the authority's audit and expiry ticks can be moved forward.
- */
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -73,8 +60,6 @@ import {
 	jwkThumbprint,
 	signEnvelope,
 } from "@hobo/fleet/keys";
-// The plumbing of `@hobo/fleet/testing`, by path: that barrel also loads the conformance suites, which
-// import vitest, and the behaviour suite runs under cucumber.
 import {
 	createFakeSandboxDriver,
 	createMemoryBus,
@@ -92,12 +77,10 @@ import {
 
 export const ISSUER = "https://authority.fleet.test";
 export const TENANT: TenantId = parseTenantId("test");
-/** The workload OIDC token the world's assertion verifier accepts, and what it says. */
 export const WORKLOAD_TOKEN = "workload-oidc-token-of-a-ci-job";
 export const WORKLOAD_ISSUER = "https://token.actions.githubusercontent.com";
 export const WORKLOAD_SUBJECT = "repo:acme/app:ref:refs/heads/main";
 
-/** The people the directory knows: the developer, two administrators, and an auditor. */
 export const PEOPLE = {
 	dev: { kind: "user", id: "dev" },
 	alice: { kind: "user", id: "alice" },
@@ -113,7 +96,6 @@ const TAGS = {
 	auditor: ["auditor"],
 } as const satisfies Readonly<Record<PersonName, readonly string[]>>;
 
-/** A wall clock the suite can move forward. */
 export type WorldClock = Readonly<{ now: Clock; advance(ms: number): void }>;
 
 function worldClock(): WorldClock {
@@ -126,7 +108,6 @@ function worldClock(): WorldClock {
 	};
 }
 
-/** An Ed25519 key held in memory, as a `Signer` and as a trust record's key reference. */
 export type HeldKey = Readonly<{
 	signer: Signer;
 	ref(purpose: KeyPurpose): PublicKeyRef;
@@ -155,13 +136,11 @@ export function heldKey(keyId: string): HeldKey {
 	};
 }
 
-/** What a bus provider hands the world: the authority's bus, how devices connect, and what discovery publishes. */
 export type OpenedBus = Readonly<{
 	bus: AuthorityBus;
 	connector: FleetBusConnector;
 	natsUrls: readonly string[];
 	natsSentinelCredentials: string;
-	/** Present only on the memory bus: the outage switch and the audit log double the witness answers through. */
 	memory?: Readonly<{ connector: MemoryConnector; audit: AuditLogDouble }>;
 	close(): Promise<void>;
 }>;
@@ -174,7 +153,6 @@ export type BusProvider = (
 	}>,
 ) => Promise<OpenedBus>;
 
-/** The memory bus, with an audit log the world's witness can co-sign through. */
 export const memoryBusProvider: BusProvider = async ({ envelope, now }) => {
 	const memory = createMemoryBus(now);
 	await memory.publisher.putTrust(envelope);
@@ -191,7 +169,6 @@ export const memoryBusProvider: BusProvider = async ({ envelope, now }) => {
 	};
 };
 
-/** Allow when the subject carries `fleet-admin` or a tag equal to the action; a device holding a role may declare (§6.5 "Sponsors"). */
 function allowByTag(): PolicyEngine {
 	const engineId = "fleet-acceptance";
 	return {
@@ -210,7 +187,6 @@ function allowByTag(): PolicyEngine {
 	};
 }
 
-/** The identity provider of the world: the code is `<kind>:<id>` of a person in the directory. */
 function testProvider(): SignInProvider {
 	return {
 		id: "test",
@@ -231,7 +207,6 @@ function testProvider(): SignInProvider {
 	};
 }
 
-/** Accepts exactly one workload token (a fixed token id), for whatever audience the authority asks with. */
 function workloadAssertions(now: Clock): IdentityAssertionVerifier {
 	return {
 		async verifyOidc(assertion) {
@@ -240,7 +215,6 @@ function workloadAssertions(now: Clock): IdentityAssertionVerifier {
 					ok: false,
 					error: { code: "unauthenticated", message: "not a workload token" },
 				};
-			// One token: its id is the same however often it is presented.
 			const tokenId = "jti-1";
 			return {
 				ok: true,
@@ -262,7 +236,6 @@ function workloadAssertions(now: Clock): IdentityAssertionVerifier {
 	};
 }
 
-/** One HTTP exchange as the agent's fetch saw it, after the authority answered. */
 export type Exchange = Readonly<{
 	method: string;
 	path: string;
@@ -369,7 +342,6 @@ export async function createFleetWorld(
 		log,
 	});
 
-	// The witness, co-signing checkpoints through the memory bus's audit log double.
 	const witness =
 		opened.memory === undefined
 			? undefined
@@ -384,7 +356,6 @@ export async function createFleetWorld(
 				});
 	witness?.start();
 
-	// The agents' fetch: every request through the real handler; the suite may drop an answer after the authority decided.
 	const exchanges: Exchange[] = [];
 	let drop: ((exchange: Exchange) => boolean) | undefined;
 	let reachable = true;
@@ -535,7 +506,6 @@ export async function createFleetWorld(
 		token,
 		agent,
 		fleetId: parseFleetId,
-		/** Drop the answers this predicate selects (the authority has already decided). */
 		dropAnswers(next: ((exchange: Exchange) => boolean) | undefined) {
 			drop = next;
 		},
@@ -552,7 +522,6 @@ export async function createFleetWorld(
 	};
 }
 
-/** The caller a member's SIGN key proves, as `authenticate` yields it. */
 export function memberCaller(
 	memberId: MemberId,
 	signPublicKey: string,
@@ -582,12 +551,10 @@ export function slots(count: number): CapacitySource {
 	};
 }
 
-/** An egress proxy that allows nothing: the in-memory work needs no network. */
 export const closedEgress: EgressProxyFactory = {
 	async open() {
 		return { url: "http://egress.invalid:3128", async close() {} };
 	},
 };
 
-/** A live view of whichever bus the agent holds now, for a work source built before the agent connects. */
 export { liveBus } from "./live-bus.js";

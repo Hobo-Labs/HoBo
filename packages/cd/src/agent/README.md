@@ -7,7 +7,7 @@ run`), dials its Station's delivery feed (`../feed`) over outbound HTTPS only,
 and keeps target credentials local. Nothing listens on the agent and the
 Station never connects to it.
 
-Since L19 (ADR-0183) a reconciler is a **fleet `DEVICE` with role
+Since L19 a reconciler is a **fleet `DEVICE` with role
 `RECONCILER`** in the fleet named after its Yard. `@hobo/fleet` holds its
 identity: the single-use `hft_` bootstrap token, the identity and SIGN keys,
 the key bundle, the member SVID, DPoP proofs and their replay store, and

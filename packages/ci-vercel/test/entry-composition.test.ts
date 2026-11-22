@@ -1,9 +1,3 @@
-/**
- * The Vercel entry's own wiring, with the composed relay and the config
- * service stood in: one config loader per instance, a failed start answered
- * 503 and retried, a queue message run here off production and handed to the
- * production relay in production.
- */
 import { createServer } from "node:http";
 import type { JsonValue } from "@bufbuild/protobuf";
 import { type MessageMetadata, QueueClient } from "@vercel/queue";
@@ -24,7 +18,6 @@ import type { RelayQueueSend } from "../src/relay-queue.js";
 import * as runtimeConfig from "../src/relay-runtime-config.js";
 import * as composition from "../src/stateless-composition.js";
 
-/** The config service the entry reads. */
 let refreshFailed: ((error: Error) => void) | undefined;
 const config = { reads: 0 };
 vi.spyOn(runtimeConfig, "relayConfigSourceFromEnv").mockImplementation(() => ({
@@ -38,20 +31,18 @@ vi.spyOn(runtimeConfig, "createRelayRuntimeConfigLoader").mockImplementation(
 	(options) => {
 		refreshFailed = options.onRefreshFailed;
 		return {
-			load: async () => {
+			load: vi.fn().mockImplementation(async () => {
 				await options.source.read();
-				// SAFETY: the entry reads only these two keys of the configuration.
 				return {
 					HOBO_CI_PUBLIC_URL: "https://relay.example.test",
 					CRON_SECRET: "cron-secret",
-				} as never;
-			},
+				};
+			}),
 			invalidate: () => undefined,
 		};
 	},
 );
 
-/** The relay the entry composes; it refuses to start until told otherwise. */
 type ComposedRelay = {
 	send: RelayQueueSend;
 	configStaleSince: () => number | undefined;
@@ -63,24 +54,24 @@ const relay = {
 	run: vi.fn(async () => undefined),
 };
 vi.spyOn(composition, "composeStatelessRelay").mockImplementation(
-	async (options) => {
-		await options.config.load();
-		if (relay.fail) throw new Error("cache binding refused");
-		relay.composed.push({
-			send: options.send,
-			configStaleSince: () => options.configStaleSince?.(),
-		});
-		// SAFETY: the entry uses only origin, handle and run of the relay.
-		return {
-			origin: "https://relay.example.test",
-			handle: async (request: Request) =>
-				new Response(`relay ${new URL(request.url).pathname}`),
-			run: relay.run,
-		} as never;
-	},
+	vi
+		.fn()
+		.mockImplementation(async (options: composition.StatelessRelayOptions) => {
+			await options.config.load();
+			if (relay.fail) throw new Error("cache binding refused");
+			relay.composed.push({
+				send: options.send,
+				configStaleSince: () => options.configStaleSince?.(),
+			});
+			return {
+				origin: "https://relay.example.test",
+				handle: async (request: Request) =>
+					new Response(`relay ${new URL(request.url).pathname}`),
+				run: relay.run,
+			};
+		}),
 );
 
-/** What the entry handed to the production relay. */
 const forwarded: Parameters<typeof forwarding.forwardQueueHandoff>[0][] = [];
 vi.spyOn(forwarding, "forwardQueueHandoff").mockImplementation(
 	async (options) => {
@@ -115,7 +106,6 @@ const metadata: MessageMetadata = {
 	region: "iad1",
 };
 
-/** The queue callback the entry registers. */
 function callback() {
 	let registered:
 		| ((message: JsonValue, metadata: MessageMetadata) => Promise<void>)
@@ -135,7 +125,6 @@ function callback() {
 	return registered;
 }
 
-/** Run `body` with the relay's failure log silenced. */
 async function quietly(body: () => Promise<void> | void) {
 	const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
 	try {
@@ -166,8 +155,6 @@ describe("the relay entry", () => {
 		const response = await fetch(`${base}/v1/anything`);
 		expect(await response.text()).toBe("relay /v1/anything");
 		expect(config.reads).toBe(reads + 1);
-		// The composed relay's queue sender is the Vercel queue client, which
-		// refuses to send outside a deployment that holds its OIDC token.
 		const send = relay.composed[0]?.send;
 		if (!send) throw new Error("the relay was not composed");
 		await expect(

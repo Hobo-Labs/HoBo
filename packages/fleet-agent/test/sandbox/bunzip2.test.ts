@@ -1,15 +1,3 @@
-/**
- * The in-process bzip2 decoder and tar reader that unpack the pinned gVisor
- * release (D58: no host `tar` or `bzip2`). The fixtures were made once with
- * the reference tools and are embedded as base64:
- *
- * - MULTI: `bzip2 -1` of the 250 000-byte text `multiText()` builds (three
- *   100 000-byte blocks).
- * - RUNS: `bzip2 -9` of 268 `a` then one `b` (run-length coding past 4).
- * - EMPTY: `bzip2` of nothing.
- * - FIXTURE_TARBALL (see runtime-provision.test.ts): a GNU tar of
- *   `containerd-shim-runsc-v1`, `runsc`, `gvisor-bin/gvisor_sentry`.
- */
 import { createHash } from "node:crypto";
 import {
 	mkdtempSync,
@@ -67,7 +55,6 @@ describe("bunzip2", () => {
 			decode(bytes.subarray(0, bytes.length - 40).toString("base64")),
 		).toThrow(/bzip2/u);
 		const corrupt = Buffer.from(bytes);
-		// A byte inside the first block's stored CRC.
 		corrupt[11] = (corrupt[11] ?? 0) ^ 0xff;
 		expect(() => decode(corrupt.toString("base64"))).toThrow(/CRC/u);
 	});

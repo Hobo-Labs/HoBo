@@ -1,12 +1,3 @@
-/**
- * A small reader for the nats-server configuration format, enough for the
- * templates under deploy/fleet/nats: `key: value`, `key = value`, `key value`,
- * `key { … }` blocks, `[ … ]` arrays, quoted and bare strings, `$VARIABLE`
- * references (kept as text), `include "file"` (kept, in order, as the list
- * under the key `include`) and `#` or `//` comments.
- *
- * It parses; it does not validate. The tests assert on the tree it answers.
- */
 import { scalar, type Tree } from "./tree.js";
 
 type Punct = "{" | "}" | "[" | "]" | ":" | "=" | ",";
@@ -47,7 +38,6 @@ function tokenize(source: string): Token[] {
 				end += 1;
 			const text = source.slice(at, end);
 			at = end;
-			// `key:` ends a bare key; a colon inside a word (host:port) is kept.
 			if (text.endsWith(":")) {
 				tokens.push({ kind: "word", text: text.slice(0, -1) });
 				tokens.push({ kind: "punct", text: ":" });

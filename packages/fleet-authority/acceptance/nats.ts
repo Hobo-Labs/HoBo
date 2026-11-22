@@ -1,22 +1,3 @@
-/**
- * The acceptance world's bus on a real `nats-server` (O2's integration half,
- * design §10.1): operator mode with the full resolver, JetStream and TLS from
- * a throwaway `openssl` CA (trusted through `HOBO_FLEET_NATS_CA`); the tenant
- * provisioned with `provisionTopology`; the authority's bus from
- * `connectAuthorityBus`; the auth callout from `startCalloutResponder`; and
- * devices connecting as themselves with `createNatsBusConnector`, presenting
- * the session tickets the authority's credential route signs.
- *
- * Starting a server needs an operator JWT naming the system account that
- * `provisionTopology` pushes account JWTs through, and the callout needs the
- * tenant's callout xkey seed. `@hobo/fleet-nats` derives both from the
- * operator signing seed (HKDF-SHA-256, `hobo-fleet/nats/<scope>`) and exports
- * no helper for a test server, so this file derives them the same way and
- * writes the two JWTs with `node:crypto` (as `@hobo/ci-gh-actions`'s O24 test
- * support does; a public `@hobo/fleet-nats` test server would replace both).
- *
- * The binary is `HOBO_FLEET_NATS_SERVER_BIN`, else `nats-server` on PATH.
- */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
 	createHash,
@@ -38,6 +19,20 @@ import {
 	startCalloutResponder,
 } from "@hobo/fleet-nats";
 import type { BusProvider } from "./world.js";
+
+function isTcpAddress(
+	address: AddressInfo | string | null,
+): address is AddressInfo {
+	return (
+		address !== null &&
+		Object.prototype.toString.call(address) === "[object Object]"
+	);
+}
+
+function portOf(address: AddressInfo | string | null): number {
+	if (!isTcpAddress(address)) throw new Error("the server has no TCP port");
+	return address.port;
+}
 
 export const NATS_BINARY =
 	process.env.HOBO_FLEET_NATS_SERVER_BIN ??
@@ -111,7 +106,6 @@ function nkey(role: number, raw: Uint8Array): Nkey {
 	};
 }
 
-/** As `@hobo/fleet-nats` derives a key from the operator signing seed. */
 function derived(seed: string, scope: string, purpose: string): Uint8Array {
 	return new Uint8Array(
 		hkdfSync(
@@ -169,12 +163,6 @@ function unbase32(text: string): Uint8Array {
 	return new Uint8Array(out);
 }
 
-/**
- * What a server deployed from the ceremony's operator signing seed needs in
- * `operator.conf` (deploy/fleet/nats/operator.conf.example): the operator JWT
- * the ceremony stored, the system account `@hobo/fleet-nats` derives from the
- * seed, and that account's JWT signed with the seed.
- */
 export function operatorConf(
 	operatorJwt: string,
 	operatorSigningSeed: string,
@@ -216,8 +204,7 @@ async function freePort(): Promise<number> {
 		const server = createServer();
 		server.once("error", reject);
 		server.listen(0, "127.0.0.1", () => {
-			// SAFETY: a TCP server listening on a host and port reports an AddressInfo.
-			const { port } = server.address() as AddressInfo;
+			const port = portOf(server.address());
 			server.close(() => resolve(port));
 		});
 	});
@@ -290,7 +277,6 @@ function certificates(dir: string) {
 	};
 }
 
-/** A bus provider that starts its own `nats-server` and stops it on `close`. */
 export const natsBusProvider: BusProvider = async ({
 	trust,
 	envelope,

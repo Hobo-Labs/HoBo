@@ -1,12 +1,3 @@
-// `createMemoryCredentialIssuer`: ES256 JWTs over an in-memory key, through
-// the same JOSE code as DPoP (./jose.ts). For tests, `createTestAuthority` and
-// offline development; the authority's issuer is `@hobo/identity`'s.
-//
-// Member tokens (JWT-SVIDs) carry `aud` and are verified against it. Person
-// tokens are only presented to the authority that issued them, so they carry
-// no `aud` and `verify` checks the issuer, key, expiry and kind instead. Both
-// are bound to a key by `cnf.jkt` (RFC 9449 §6); checking the DPoP proof
-// against that thumbprint is the caller's job.
 import { randomBytes } from "node:crypto";
 import {
 	type JsonObject,
@@ -79,7 +70,6 @@ function tenantOf(value: JsonObject[string] | undefined): TenantId | undefined {
 export function memoryCredentialIssuer(now: Clock): CredentialIssuer {
 	const { privateKey, publicJwk } = generateSigningKey(KeyAlgorithm.ES256);
 	const kid = thumbprintOf(publicJwk);
-	// The key id of a Signer names a fleet key; this one is never published as such (the JWT `kid` is the thumbprint).
 	const signer = memorySigner(parseKeyId("authority#0"), privateKey);
 	const header: JsonObject = { alg: "ES256", typ: "JWT", kid };
 

@@ -1,10 +1,3 @@
-// A stand-in hardware signer for the external-signer key store tests. It
-// speaks the line-delimited JSON protocol of design §6.4 on stdin and stdout:
-//   {"op":"public"}                 -> {"jwk":{...}}
-//   {"op":"sign","payloadB64":"…"}  -> {"signatureB64":"…"}
-//   {"op":"destroy"}                -> {"ok":true}
-// The key lives in the directory named by its first argument and is created on
-// first use. The second argument picks a misbehaviour for the refusal tests.
 import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
 import {
 	existsSync,

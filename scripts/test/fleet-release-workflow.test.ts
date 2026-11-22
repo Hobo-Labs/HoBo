@@ -1,11 +1,3 @@
-/**
- * O32 (design §10.1), second half: the release workflow builds, attests and
- * adds a bill of materials for each of the three images L23 defines (the
- * fleet authority, the witness and the peer-to-peer relay; R18). The images
- * are published the way every other release image is: built, exported as an
- * OCI image layout, and promoted as release Freight through `hobo deploy`,
- * whose realizer is the only thing that pushes.
- */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -27,7 +19,6 @@ const read = (path: string) => readFileSync(join(REPO_ROOT, path), "utf8");
 const workflow = read(".github/workflows/release-hobo.yml");
 const attestAction = read(".github/actions/release-oci-attest/action.yml");
 
-/** The text of one top-level job, up to the next job. */
 function job(id: string): string {
 	const start = workflow.indexOf(`\n  ${id}:\n`);
 	assert.notEqual(start, -1, `release-hobo.yml has no ${id} job`);
@@ -60,7 +51,6 @@ describe("the release workflow's fleet service images", () => {
 			block,
 			/run: node --no-warnings scripts\/ci\/push-release-service-image\.mts \$\{\{ matrix\.image_id \}\} "\$\{RUNNER_TEMP\}\/hobo-service-digest\.txt"/u,
 		);
-		// Through hobo deploy, like release-publish: the restored hobo CLI and a Freight home.
 		assert.match(block, /HOBO_RELEASE_CD_HOME: /u);
 		assert.match(
 			block,
@@ -112,10 +102,8 @@ describe("the release workflow's fleet service images", () => {
 		);
 		assert.match(attest, /image-id: \$\{\{ matrix\.image_id \}\}/u);
 		assert.match(attest, /ghcr-token: \$\{\{ secrets\.GITHUB_TOKEN \}\}/u);
-		// The attestation runs only once a digest was recorded, and a missing one fails the leg.
 		assert.match(block, /if: steps\.digest\.outputs\.present == 'true'/u);
 		assert.match(block, /if \[ ! -s "\$\{DIGEST_FILE\}" \]; then/u);
-		// The shared action: provenance first, then a CycloneDX SBOM attested as such.
 		assert.ok(
 			attestAction.indexOf("actions/attest-build-provenance@") <
 				attestAction.indexOf("cyclonedx-json="),
@@ -166,8 +154,6 @@ describe("the release workflow's fleet service images", () => {
 	});
 
 	it("keeps its Freight journal out of the train's release tag and GitHub Release", () => {
-		// release-tag and release-github read every `hobo-release-freight-oci-*`
-		// journal as one of the train's images; these images are not in the train.
 		assert.doesNotMatch(block, /hobo-release-freight-oci-/u);
 		assert.doesNotMatch(block, /name: hobo-release-digest-/u);
 	});

@@ -1,6 +1,3 @@
-// The fleet-envelope form of a workload attestation's host signature (design
-// §7.4, context `hobo-fleet/host-attestation/v1`), shared by the device
-// attestor and `verifyWorkloadAttestation`. Private to @hobo/identity.
 import { KeyAlgorithm } from "@hobo/fleet";
 import type { LaunchMeasurement } from "../attestation.js";
 import type { JsonObject } from "../json.js";
@@ -25,7 +22,6 @@ export function envelopeAlgorithmName(algorithm: KeyAlgorithm): string {
 	throw new Error("a SIGN key is ES256 or EdDSA");
 }
 
-/** The launch measurement's JSON bytes, in one field order: what a device signs. */
 export function launchMeasurementBytes(
 	measurement: LaunchMeasurement | JsonObject,
 ): string {

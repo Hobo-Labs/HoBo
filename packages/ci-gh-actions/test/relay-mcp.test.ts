@@ -504,7 +504,6 @@ describe("relay MCP tools and resources", () => {
 			accountCalls: 8,
 			accountWaits: 8,
 			requestMessages: 8,
-			// This host reads no fleet, and says so (the field keeps its proto name).
 			mesh: "not-configured",
 		});
 

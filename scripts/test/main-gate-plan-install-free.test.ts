@@ -98,8 +98,6 @@ describe("main-gate-plan install-free", () => {
 		const modules = collectRelativeCiModules(entry);
 		for (const path of modules) {
 			const source = readFileSync(path, "utf8");
-			// No fleet variable and no slot count: the routing slip carries no
-			// figures, so shard planning reads none (ADR-0181, design §8.5).
 			assert.doesNotMatch(source, /HOBO_CI_FLEET_|free_?slots/iu, path);
 			for (const match of source.matchAll(IMPORT_PATTERN)) {
 				const specifier = match[1];
@@ -117,8 +115,6 @@ describe("main-gate-plan install-free", () => {
 		const capped = plan({ MAIN_WORKSPACE_PARALLEL_CAP: "2" });
 		assert.equal(capped.status, 0, `${capped.stdout}\n${capped.stderr}`);
 		assert.match(capped.stderr, /parallelCap=4/u);
-		// Every retired routing variable, set to a capacity record that once
-		// lowered the cap, changes nothing either.
 		const retired: readonly string[] = JSON.parse(
 			readFileSync(join(REPO_ROOT, ".hobo", "ci.json"), "utf8"),
 		).runnerRouting.retiredVariables;

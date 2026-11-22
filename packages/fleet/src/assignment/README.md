@@ -1,6 +1,6 @@
 # `@hobo/fleet/assignment`
 
-The one-active assignment register ([one-active fleets](../../../../docs/design/fleet.md#one-active-fleets-the-assignment-register)), moved from
+The one-active assignment register (one-active fleets), moved from
 `@hobo/backend-routing` (`assignment.ts`, `ephemeral-replica.ts`, `backend.ts`)
 with the names of [the ports](../ports.ts): `AssignmentEntry`, `AssignmentValue`, `MemberName`,
 `Health`, `FailureClassifier`. The algorithm is unchanged: every member keeps

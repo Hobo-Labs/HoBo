@@ -1,14 +1,3 @@
-/**
- * `grantSession` (L32, private): the authority's half of §6.12. A grant names
- * both parties with their transport identity and seal key, the purpose, the
- * optional target and an expiry, and is signed under
- * `hobo-fleet/session-grant/v1`. The peer must be an `ACTIVE` device; a
- * device initiator must be `ACTIVE`, present its own registered keys, and
- * share a fleet with the peer; some fleet of the peer (shared with a device
- * initiator) must list the purpose; and `fleet.session.grant` is governed.
- * Each grant is journalled as `fleet.SessionGranted` on
- * `fleet-session-<sessionId>`.
- */
 import { randomBytes } from "node:crypto";
 import { create, fromBinary, toBinary, toJson } from "@bufbuild/protobuf";
 import {
@@ -50,9 +39,7 @@ import {
 } from "./support.js";
 
 const SESSION_STREAM = "fleet-session-";
-/** §7.1: a grant lives at most an hour. */
 const MAX_TTL_SECONDS = 3_600;
-/** What a request that names no ttl gets. */
 const DEFAULT_TTL_SECONDS = 600;
 const MAX_PORT = 65_535;
 
@@ -60,7 +47,6 @@ function invalid<T>(message: string): Outcome<T> {
 	return refuse("invalid-request", message);
 }
 
-/** The refusal a member's state means for a party that must be ACTIVE. */
 function stateRefusal<T>(record: MemberRecord): Outcome<T> | undefined {
 	switch (record.state) {
 		case MemberState.ACTIVE:
@@ -92,7 +78,6 @@ function keyOf(bundle: KeyBundle | undefined, purpose: KeyPurpose): string {
 	return bundle?.keys.find((key) => key.purpose === purpose)?.value ?? "";
 }
 
-/** The request's own constraints (§7.2 `SessionRequest`), and its ttl. */
 function checkRequest(request: SessionRequest): Outcome<number> {
 	if (
 		request.purpose !== SessionPurpose.SHELL &&
@@ -128,7 +113,6 @@ function checkRequest(request: SessionRequest): Outcome<number> {
 type Initiator = Readonly<{
 	party: SessionParty;
 	subject: PolicyActor;
-	/** The device initiator's fleets; undefined for a person. */
 	fleets: ReadonlySet<string> | undefined;
 	record: MemberRecord | undefined;
 }>;
@@ -184,7 +168,6 @@ function personInitiator(person: Person, request: SessionRequest): Initiator {
 	};
 }
 
-/** Who may ask: a person or a device of this tenant. */
 function callerOf(
 	deps: FleetDeps,
 	caller: VerifiedToken | undefined,
@@ -232,7 +215,6 @@ export async function grantSession(
 			: ok(personInitiator(caller.value, request));
 	if (!initiator.ok) return initiator;
 
-	// A fleet of the peer (shared with a device initiator) whose policy allows the purpose.
 	const index = await fleets();
 	const candidates = peer.memberships
 		.map((membership) => membership.fleet)

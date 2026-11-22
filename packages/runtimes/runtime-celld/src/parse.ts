@@ -12,7 +12,6 @@ import {
 	type JsonValue,
 } from "./json.js";
 
-/** The overlay providers celld accepts: exactly `OVERLAY_PROVIDERS` of `@hobo/fleet`, so there is one list. */
 export type CelldOverlay = OverlayProvider;
 export const CELLD_OVERLAYS: readonly CelldOverlay[] = OVERLAY_PROVIDERS;
 

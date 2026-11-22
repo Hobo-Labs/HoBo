@@ -1,10 +1,3 @@
-/**
- * The approval page (§6.5, §6.15): every field of `ApprovalView`, so the
- * person sees who signed in, the host, device and platform, the four
- * fingerprint words of the sign-in key, whether this is a device-code
- * sign-in, and when the request expires, then confirms or declines. Plain
- * server-rendered HTML with no script, every value escaped.
- */
 import type { ApprovalView, FleetFailure } from "@hobo/fleet";
 
 const ESCAPES = {
@@ -55,7 +48,6 @@ function page(title: string, body: string): string {
 </html>`;
 }
 
-/** The page for `GET /v1/fleet/approve/{state}`. */
 export function approvalPage(view: ApprovalView): string {
 	const platform =
 		view.platform === undefined
@@ -96,7 +88,6 @@ ${list}
 	);
 }
 
-/** After a device-code approval: nothing to redirect to. */
 export function donePage(approved: boolean): string {
 	return page(
 		approved ? "Sign-in approved" : "Sign-in declined",

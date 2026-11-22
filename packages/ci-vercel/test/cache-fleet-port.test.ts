@@ -1,8 +1,3 @@
-/**
- * The cache fleet's port and close over two in-memory members: `expire` is
- * routed to the active member like every other call, and closing the fleet
- * closes every member even when one of them fails to close.
- */
 import { parseEphemeralKey, parseEphemeralTtlMs } from "@hobo/core";
 import {
 	createMemoryRedisExecutor,

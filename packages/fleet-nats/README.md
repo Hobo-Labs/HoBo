@@ -1,15 +1,13 @@
 # `@hobo/fleet-nats`
 
-Every NATS interaction of HoBo Fleet (ADR-0183), and the only package that
+Every NATS interaction of HoBo Fleet, and the only package that
 imports a NATS client. NATS runs in operator mode with an account per tenant;
 devices get per-connection user credentials minted by the authority's auth
 callout from scoped signing keys whose permission templates are fixed to the
 member id; every listener uses TLS. The bus is never trusted: anything that
 grants trust is a signed envelope verified against the pinned trust record.
 
-Design: [HoBo Fleet](../../docs/design/fleet.md) and
-[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
-[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+Operating it: [the fleet runbooks](../../docs/maintenance/fleet/index.md).
 
 ## Entry points
 

@@ -1,7 +1,3 @@
-/**
- * The `S1` flag set of design §6.11 in the OCI configuration every OCI
- * sandbox starts from.
- */
 import { describe, expect, it } from "vitest";
 import {
 	DOCKER_SOCKET,
@@ -158,7 +154,6 @@ describe("ociConfig under runsc (D58)", () => {
 			hard: 128,
 			soft: 128,
 		});
-		// A host runtime counts RLIMIT_NPROC per host uid, which every rootful sandbox shares.
 		expect(
 			ociConfig(base).process.rlimits.map((limit) => limit.type),
 		).not.toContain("RLIMIT_NPROC");
@@ -244,9 +239,7 @@ describe("forwarderConfig (D58: the forwarder is a second container, no host nam
 			[POD_CONTAINER_TYPE]: "sandbox",
 			[POD_SANDBOX_ID]: "hobofwd-test",
 		});
-		// The pod's cgroup, when delegated, holds the workload and the forwarder.
 		expect(config.linux.resources.memory.limit).toBe((512 + 256) * 1024 * 1024);
-		// The pids limit holds in the sentry (RLIMIT_NPROC); the host cgroup only backstops it.
 		expect(config.linux.resources.pids.limit).toBe(hostPidsBackstop(128 + 64));
 		expect(hostPidsBackstop(128)).toBeGreaterThan(2 * 128);
 		const caps = config.process.capabilities;
@@ -267,7 +260,6 @@ describe("forwarderConfig (D58: the forwarder is a second container, no host nam
 	});
 
 	it("runs as a uid the workload cannot signal, owning its sockets on the host", () => {
-		// Rootful: a host uid of its own (runsc's gofer connects to a host socket as the caller's uid).
 		const rootful = forwarderConfig({
 			...input,
 			flavor: "runsc",
@@ -280,7 +272,6 @@ describe("forwarderConfig (D58: the forwarder is a second container, no host nam
 		expect(forwarderHostUid(undefined)).toBe(FORWARDER_HOST_UID);
 		expect(FORWARDER_HOST_UID).toBeLessThan(ROOTFUL_ID_BASE);
 		expect(FORWARDER_HOST_UID).toBeGreaterThan(65_535);
-		// Rootless: only the agent's id is mapped; a pid namespace the workload cannot see keeps it out of reach.
 		expect(forwarderUid(input.rootless)).toBe(0);
 		expect(forwarderHostUid(input.rootless)).toBeUndefined();
 	});
@@ -330,7 +321,6 @@ describe("forwarderConfig (D58: the forwarder is a second container, no host nam
 		expect(rootful.linux.namespaces.map((entry) => entry.type)).not.toContain(
 			"user",
 		);
-		// A host uid outside the range the workload's ids map to.
 		expect(rootful.process.user).toEqual({
 			uid: FORWARDER_HOST_UID,
 			gid: FORWARDER_HOST_UID,

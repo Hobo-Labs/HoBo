@@ -1,11 +1,3 @@
-/**
- * O16: the cache fleet behaves as before with no other service. It is a
- * local-mode fleet (`createLocalFleet`, one `BACKEND` member per bound cache,
- * declared under the owner's `AUTO_OWNER` approval) run by the one-active
- * loop of `@hobo/fleet/assignment`, and every call it makes goes to the
- * in-memory cache backends: this file fails any `fetch`, socket, TLS, HTTP or
- * UDP call.
- */
 import dgram from "node:dgram";
 import http from "node:http";
 import https from "node:https";
@@ -36,8 +28,6 @@ const START = Date.UTC(2026, 10, 11);
 const key = parseEphemeralKey("hobo-ci:test:lease:one");
 const ttl = parseEphemeralTtlMs(3_600_000);
 
-// ── The guard: nothing leaves the process ──────────────────────────────────
-
 const violations: string[] = [];
 const restores: (() => void)[] = [];
 
@@ -46,7 +36,6 @@ function refuse(what: string): never {
 	throw new Error(`the cache fleet reached for the network: ${what}`);
 }
 
-/** Replaces a property for one test; defineProperty, because the replacement need not match the original's overloads. */
 function patch<T extends object>(target: T, name: keyof T & string): void {
 	const original = target[name];
 	Object.defineProperty(target, name, {
@@ -81,8 +70,6 @@ afterEach(() => {
 	for (const restore of restores.splice(0).reverse()) restore();
 	expect(violations).toEqual([]);
 });
-
-// ── In-memory cache backends ────────────────────────────────────────────────
 
 type Member = OpenedCacheBackend & { down: boolean };
 
@@ -184,7 +171,6 @@ describe("the cache fleet as a local-mode fleet", () => {
 			active: undefined,
 			target: "turso",
 		});
-		// The loop logs its own tick line, and the relay its decision line.
 		expect(w.lines.map((line) => line.event)).toEqual(
 			expect.arrayContaining([
 				"hobo_fleet_assignment_tick",

@@ -1,5 +1,3 @@
-// One table case per transition of the member state machine (§6.5) and one
-// per refusal code of §7.6 that the enrollment authority answers.
 import { create, toBinary } from "@bufbuild/protobuf";
 import { OptimisticSequenceConflictError } from "@hobo/core";
 import { describe, expect, it } from "vitest";
@@ -400,7 +398,6 @@ describe("member state machine transitions", () => {
 	});
 });
 
-/** A store whose every append loses the compare-and-set. */
 function alwaysConflicting(): FleetEventStore {
 	const inner = createMemoryEventStore();
 	return {
@@ -845,7 +842,6 @@ const refusals: readonly Refusal[] = [
 	},
 ];
 
-/** Codes the enrollment authority never answers: other lanes', device-side, or not reachable from these routes. */
 const NOT_THIS_LANE: readonly FleetErrorCode[] = [
 	"work-unknown",
 	"incarnation-stale",

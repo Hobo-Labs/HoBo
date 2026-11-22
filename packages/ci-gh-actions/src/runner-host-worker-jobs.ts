@@ -1,38 +1,3 @@
-/**
- * The runner-host realizer's job ports, read from the box worker across a
- * process boundary (`deploy/runner-fleet/README.md`).
- *
- * The CD agent (`hobo deploy agent run`) and the worker daemon are separate
- * processes on one host. They share the worker's data directory (the
- * directory of `HOBO_CI_WORKER_DB`, bind-mounted into the controller
- * container), and that is the whole interface:
- *
- * - **Leases** are read from the worker's SQLite journal, opened read-only.
- *   The worker stays its only writer (one partition, one writer).
- * - **The observation** is the file the host's fleet agent rewrites after
- *   every beat (`fleet-observation.json`, the device's own `Observation` of
- *   `@hobo/fleet` as protobuf JSON): what the host last signed and published
- *   about itself as a `DEVICE` member of fleet `hobo` (design §6.8). The
- *   controller digest it runs is its `agent_version` when that is a digest,
- *   or its `hobo.ci/controller-digest=<digest>` label.
- * - **The admission gate** is the `admission-paused` marker file. While it
- *   exists the worker admits no new job (its tick runs with `admit: false`)
- *   and advertises itself unhealthy; running jobs are untouched. Removing it
- *   reopens admission on the next tick.
- * - **Runners**: JIT hosts (`box-worker`, `fleet-device`) register a runner
- *   per job, and those jobs are already counted through their leases, so the
- *   port answers no standing registrations. A `developer-device` keeps a
- *   registered runner, and its controller (which holds the GitHub
- *   credential) reads that runner's GitHub presence and writes it to
- *   `runner-presence.json` with the time it read it. The port reads that
- *   file; a missing, corrupt or stale one answers no runner at all, so an
- *   unknown presence is never read as online.
- * - **The controller process**: on a host whose controller runs as a
- *   process, the daemon's supervisor owns `controller-desired.json` (what
- *   the agent asks it to run), `controller-status.json` (what it runs) and
- *   `controller-releases/` (releases staged by digest); see
- *   `runner-controller-process.ts`.
- */
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -113,11 +78,6 @@ export function workerAdmissionPaused(files: WorkerHostFiles): boolean {
 	return existsSync(files.admissionPaused);
 }
 
-/**
- * Write the host's own fleet observation for its CD agent; atomic (write,
- * then rename). Only a self-observation (`observer_id` equal to
- * `member_id`) is written.
- */
 export async function writeWorkerObservation(
 	files: WorkerHostFiles,
 	observation: Observation,
@@ -205,19 +165,9 @@ export function readWorkerLeases(database: string): readonly Lease[] {
 	}
 }
 
-/**
- * The job ports a runner host's agent reads from its worker. A `developer-device`
- * answers its runners from the presence report its controller writes (see
- * the module comment); JIT hosts answer none.
- */
 export function createWorkerHostJobs(
 	input: Readonly<{
 		files: WorkerHostFiles;
-		/**
-		 * `"local-runner"` is the pre-fleet name of `developer-device`, still
-		 * passed by `local-runner.ts`'s callers until L34 removes them in this
-		 * wave (deprecated; the coordinator drops it at the wave-5 merge).
-		 */
 		hostKind: RunnerHostKind | "local-runner";
 		now?: (() => number) | undefined;
 	}>,
@@ -236,7 +186,6 @@ export function createWorkerHostJobs(
 					await readFile(files.observation, "utf8"),
 				);
 			} catch {
-				// Missing or corrupt: no observation, never a healthy one.
 				return undefined;
 			}
 		},

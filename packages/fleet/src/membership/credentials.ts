@@ -1,14 +1,3 @@
-/**
- * Credentials with clone detection, and key rotation (§6.5 "Activation,
- * refresh and clone detection", §6.6; L02 private).
- *
- * The authority remembers the last `(generation, nonce digest)` it answered:
- * a request at the current generation is answered and the generation
- * advances; a request that repeats the previous generation with the same
- * nonce is a retry after a lost response and gets the same new generation
- * again; anything else means two agents hold one key, and the device is
- * LOCKED. Only the nonce's SHA-256 and the ticket id are journalled.
- */
 import { randomBytes } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import type { EventInput, JsonObject } from "@hobo/core";
@@ -62,7 +51,6 @@ const SVID_TTL_MS = 15 * 60 * 1_000;
 const TICKET_TTL_MS = 15 * 60 * 1_000;
 const NONCE_BYTES = 16;
 
-/** The device itself, active, proving its current SIGN key. */
 async function self(
 	ctx: Ctx,
 	memberId: string,
@@ -218,7 +206,6 @@ async function renewBundle(
 	};
 }
 
-/** Two agents hold one key: lock the device, refuse both (E16). */
 async function lock(
 	ctx: Ctx,
 	state: Folded,
@@ -240,7 +227,6 @@ async function lock(
 	if (appended === "conflict") return "conflict";
 	ctx.logEvents([event], id);
 	await ctx.publish(record);
-	// The generation the authority holds, as the client's contract names it (fleet-authority.pact.json).
 	return refuse(
 		"generation-mismatch",
 		"the refresh generation does not match: the device is locked",
@@ -288,12 +274,6 @@ async function respond(
 	});
 }
 
-/**
- * `POST /v1/fleet/members/{id}/keys`: a new key bundle at any time; a new
- * identity key only with a rotation statement signed by the old one. The
- * member id never changes, and every thumbprint the member has had stays
- * bound to it, so a retired key can never enroll as a new device.
- */
 export async function rotateKeys(
 	ctx: Ctx,
 	memberId: string,

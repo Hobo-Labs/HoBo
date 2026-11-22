@@ -1,10 +1,3 @@
-/**
- * Fixtures for the work lane: devices from the in-memory key store with their
- * signed key bundles and member records, fleet records, an Ed25519 authority
- * key for submissions, a registry double over maps (rule 6), signed offers,
- * claims, orders and submissions, and helpers that put records on the memory
- * bus. Only frozen entry points and the generated types are imported.
- */
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -75,7 +68,6 @@ import type {
 } from "../../src/ports.js";
 import { workDigest } from "../../src/work/index.js";
 
-/** The init fields of a generated message (not a built message), for overrides. */
 type InitOf<S extends Parameters<typeof create>[0]> = Exclude<
 	Parameters<typeof create<S>>[1],
 	undefined | Readonly<{ $typeName: string }>
@@ -104,7 +96,6 @@ export type DeviceOptions = Readonly<{
 	agentVersion?: string;
 	os?: string;
 	kind?: MemberKind;
-	/** Extra memberships, e.g. executor in another fleet. */
 	also?: readonly Readonly<{ fleet: string; roles: readonly Role[] }>[];
 }>;
 
@@ -180,7 +171,6 @@ export function policy(
 	return create(FleetPolicySchema, init);
 }
 
-/** A policy that allows the test repository on main and every kind. */
 export function openPolicy(
 	init: InitOf<typeof FleetPolicySchema> = {},
 ): FleetPolicy {
@@ -241,7 +231,6 @@ export function trustRecord(authority: AuthorityKey): TrustRecord {
 	});
 }
 
-/** A `RegistryView` over maps (verification is the real view's job). */
 export function registry(
 	members: readonly MemberRecord[],
 	fleets: readonly FleetRecord[],
@@ -429,7 +418,6 @@ export async function publishObservation(
 	await bus.observations.publish(envelope, of.keys.memberId, of.keys.memberId);
 }
 
-/** Puts member, fleet and trust records on the memory bus (its view does not verify signatures). */
 export async function seedBus(
 	bus: AuthorityBus,
 	authority: AuthorityKey,

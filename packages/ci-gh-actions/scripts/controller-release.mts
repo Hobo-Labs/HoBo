@@ -19,11 +19,6 @@ export type ControllerReleaseEntry = Readonly<{
 	entry: string;
 }>;
 
-/**
- * The controllers a host can run as a supervised process. The local runner is
- * gone: a developer machine is an enrolled `PERSONAL` fleet executor running
- * `hobo fleet run`.
- */
 export const CONTROLLER_RELEASE_ENTRIES: readonly ControllerReleaseEntry[] =
 	Object.freeze([
 		{

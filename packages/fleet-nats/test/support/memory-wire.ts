@@ -1,8 +1,3 @@
-/**
- * A fake NATS connection: an in-memory `BusWire` with the stream and bucket
- * semantics the ports rely on (one message per claim subject, per-key expiry,
- * ordered consumers honouring `BusStart`). Tests only.
- */
 import type { BusStart, Subscription } from "@hobo/fleet";
 import {
 	type BucketName,
@@ -17,7 +12,6 @@ import type {
 
 type Stored = WireMessage & Readonly<{ expiresAt: number }>;
 
-/** Subject match with NATS wildcards `*` and a trailing `>`. */
 export function matches(filter: string, subject: string): boolean {
 	const want = filter.split(".");
 	const have = subject.split(".");
@@ -31,15 +25,11 @@ export function matches(filter: string, subject: string): boolean {
 }
 
 export type MemoryNats = Readonly<{
-	/** A connection to the shared server. */
 	connect(): BusWire;
-	/** Messages per stream, for assertions. */
 	stored(stream: StreamName): readonly WireMessage[];
-	/** Every operation any connection asked for, as `<operation> <name> <subject>`. */
 	operations: readonly string[];
 }>;
 
-/** One fake server shared by any number of connections. */
 export function createMemoryNats(now: () => number = Date.now): MemoryNats {
 	const streams = new Map<string, Stored[]>();
 	const sequences = new Map<string, number>();

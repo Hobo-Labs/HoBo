@@ -1,19 +1,3 @@
-/**
- * O12 (`bus-relay`): the bus-relay transport on a real `nats-server`
- * (operator mode, TLS, a provisioned tenant).
- *
- * - `runTransportConformance` with each transport on its own authority
- *   connection, so the suite's own device keys can use any member's relay
- *   subjects: 64 MiB with a matching digest, and every refusal before a byte.
- * - Two enrolled executors, each on its own device connection with its own
- *   credentials, carry a session both ways through `fleet.relay.<member>.>`,
- *   which is all their permission templates allow.
- * - An observer, whose template does not allow publishing relay subjects,
- *   cannot open a session.
- *
- * The binary is `HOBO_FLEET_NATS_SERVER_BIN`, else `nats-server` on PATH. This
- * lane takes no skips: without the binary the suite fails.
- */
 import { createHash, randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {

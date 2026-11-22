@@ -1,16 +1,3 @@
-/**
- * `PrincipalDirectory` implementations (§6.5 "People sign in", §6.13): which
- * tenants a signed-in principal belongs to and with which tags. Two sources,
- * both from configuration:
- *
- * - static entries naming a principal (`<kind>:<id>`), its tenant, tags and
- *   aliases (other names the same person signs in under);
- * - claim rules: a provider claim (for example an OIDC `groups` claim or a
- *   GitHub `org` claim) whose value, as a comma- or space-separated list,
- *   contains `equals`, grants the rule's tags in its tenant.
- *
- * `combineDirectories` merges answers per tenant (tags and aliases unioned).
- */
 import { type PrincipalRef, parseTenantId, type TenantId } from "@hobo/core";
 import type { PrincipalDirectory } from "@hobo/fleet";
 
@@ -25,7 +12,6 @@ export type DirectoryEntry = Readonly<{
 // domain-view: one configured claim rule.
 export type ClaimRule = Readonly<{
 	tenant: string;
-	/** Only principals signed in through this provider's claims; any when absent. */
 	issuer?: string | undefined;
 	claim: string;
 	equals: string;

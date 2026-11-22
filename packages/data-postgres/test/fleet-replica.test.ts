@@ -1,14 +1,3 @@
-/**
- * The SQL replica of the one-active assignment register (O15, replica half).
- *
- * `runReplicaConformance` of `@hobo/fleet/testing` holds the SQL replica to
- * what every replica must do, over the `SqlExecutor` double of
- * `fleet-sql-double.ts`, which answers the replica's statements the way
- * Postgres would (every column as text, `members` as a `text[]`). The cases
- * below pin what is Postgres about it: member sets round-trip through the
- * nullable `members` column, a row without one reads back as before, and the
- * control tables gain the column on a log created before it existed.
- */
 import { type AssignmentEntry, Health, parseMemberName } from "@hobo/fleet";
 import { assignmentKey, readAssignmentReplies } from "@hobo/fleet/assignment";
 import { runReplicaConformance } from "@hobo/fleet/testing";

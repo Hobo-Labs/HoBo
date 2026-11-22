@@ -1,40 +1,8 @@
-/**
- * The OCI runtime configuration (`config.json`) of one sandbox, as design
- * §6.11 sets `S1` out: every capability dropped, the seccomp profile of
- * `seccomp.ts`, `no-new-privileges`, pids, memory and CPU limits, a read-only
- * root with tmpfs work directories, no host mounts except the declared
- * read-only ones, no host Docker socket unless asked for, and a network
- * namespace of its own holding only loopback: the egress proxy and the
- * control endpoint are forwarded into it by the forwarder container, and
- * nothing else is reachable. A user namespace maps the sandbox's root to an
- * unprivileged host id: the invoking user when rootless, a reserved high
- * range when the agent runs as root (assumption A10's fallback, "rootful with
- * user-namespace remapping").
- *
- * Under gVisor's `runsc` (D58, the default) each sandbox is a pod of its
- * own: the forwarder (`forwarderConfig`) is the pod's sandbox container and
- * the workload a second container in it (CRI annotations), sharing the
- * sentry's loopback-only network stack. The workload's pid namespace is a
- * child of the forwarder's, so the workload cannot see the forwarder, let
- * alone signal it. The sentry enforces the pids limit as `RLIMIT_NPROC` (counted per
- * uid inside that one sentry), and, when cgroups are not delegated
- * (`runsc --ignore-cgroups`), the memory limit as each process's
- * `RLIMIT_AS`. In that mode runsc 20261026.0 offers no CPU cap: its sentry
- * CPU count and total memory (`runsc boot --cpu-num`, `--total-memory`) are
- * derived from the sandbox cgroup only and cannot be set otherwise, so the
- * CPU limit is not enforced there.
- *
- * Under an operator's host `runc` or `crun` the forwarder joins the
- * workload's network namespace (and, rootless, its user namespace) by
- * `/proc/<pid>/ns/...` path.
- */
 import { type SeccompProfile, seccompProfile } from "./seccomp.js";
 
-/** Host ids a rootful agent maps a sandbox's ids to: far above any login user. */
 export const ROOTFUL_ID_BASE = 2_147_418_112;
 export const ID_RANGE = 65_536;
 
-/** The forwarder's uid when the agent is root: a host uid no sandbox id maps to (it is below the range a rootful host runtime maps sandboxes to, and a rootful runsc pod maps none). */
 // public-contract: the uid of the forwarder container when the agent runs as root.
 export const FORWARDER_HOST_UID = ROOTFUL_ID_BASE - 1;
 
@@ -43,16 +11,12 @@ export const POD_CONTAINER_TYPE = "io.kubernetes.cri.container-type";
 // public-contract: the CRI annotation naming the pod (its sandbox container's id) a runsc container joins.
 export const POD_SANDBOX_ID = "io.kubernetes.cri.sandbox-id";
 
-/** Writable tmpfs directories inside every sandbox. */
 export const WORK_DIRS: readonly string[] = ["/tmp", "/run", "/work"];
-/** Where the host Docker socket appears when `hostDocker` is set. */
 // public-contract: the in-sandbox path of the host Docker socket for a DEDICATED device's `allow_host_docker` fleets.
 export const DOCKER_SOCKET = "/var/run/docker.sock";
 
-/** `runsc`: a pod in a gVisor sentry. `oci`: an operator's host `runc` or `crun`. */
 export type RuntimeFlavor = "runsc" | "oci";
 
-/** Where limits are enforced: cgroups under `parent`, or (runsc only) the sentry. */
 export type CgroupPlacement =
 	| Readonly<{ mode: "delegated"; parent: string }>
 	| Readonly<{ mode: "sentry" }>;
@@ -135,15 +99,11 @@ export type ConfigInput = Readonly<{
 	limits: SandboxLimits;
 	readOnlyMounts: readonly Readonly<{ source: string; target: string }>[];
 	hostDocker: boolean;
-	/** The invoking user's uid and gid when rootless; undefined when the agent runs as root. */
 	rootless: Rootless;
 	args: readonly string[];
 	env: readonly string[];
-	/** `oci` (a host runc or crun) when absent. */
 	flavor?: RuntimeFlavor;
-	/** Delegated under `/hobo-fleet` when absent. */
 	cgroups?: CgroupPlacement;
-	/** runsc: the id of the pod (its forwarder container) the workload joins. */
 	pod?: string | undefined;
 }>;
 
@@ -156,12 +116,6 @@ const NO_CAPABILITIES = {
 	ambient: [],
 } as const;
 
-/**
- * Every sandbox process's rlimits: open files always; under runsc the pids
- * limit as `RLIMIT_NPROC` (the sentry counts it per uid in that sandbox
- * alone; a host kernel would count it across every sandbox sharing a host
- * uid), and in sentry mode the memory limit as `RLIMIT_AS`.
- */
 export function sandboxRlimits(
 	limits: SandboxLimits,
 	flavor: RuntimeFlavor,
@@ -223,13 +177,6 @@ const READONLY_PATHS: readonly string[] = [
 	"/proc/sysrq-trigger",
 ];
 
-/**
- * Whether the container gets a user namespace of its own. Always, except
- * rootful runsc: there gVisor's sentry is the boundary (runsc runs it with no
- * host capabilities to speak of, in a minimal chroot), and the gofer serves
- * host files as their real owners, so a private declared mount stays
- * readable without idmapped mounts, which gVisor does not offer.
- */
 function userNamespaced(flavor: RuntimeFlavor, rootless: Rootless): boolean {
 	return !(flavor === "runsc" && rootless === undefined);
 }
@@ -245,12 +192,6 @@ function idMappings(
 		: [{ containerID: 0, hostID: id, size: 1 }];
 }
 
-/**
- * The container's cgroup path: under the delegated parent; none for runsc in
- * sentry mode, since runsc still writes a sub-container's cgroup files under
- * `--ignore-cgroups` (runsc/container `setupCgroupForSubcontainer`) and fails
- * where it may not; `/hobo-fleet/<id>` otherwise.
- */
 export function cgroupsPath(
 	flavor: RuntimeFlavor,
 	cgroups: CgroupPlacement,
@@ -260,13 +201,6 @@ export function cgroupsPath(
 	return flavor === "runsc" ? "" : `/hobo-fleet/${id}`;
 }
 
-/**
- * The host cgroup's pids limit for a runsc sandbox. Inside it the sentry
- * counts the sandbox's processes itself (`RLIMIT_NPROC`); on the host, gVisor
- * backs each of them with a stub process and runs its own threads, so a host
- * limit equal to the sandbox's would starve the sentry before the sandbox saw
- * `EAGAIN`. This is a backstop above it.
- */
 export function hostPidsBackstop(pids: number): number {
 	return 4 * pids + 1024;
 }
@@ -290,10 +224,6 @@ export function ociConfig(input: ConfigInput): OciConfig {
 		source: "tmpfs",
 		options: ["nosuid", "nodev", "mode=1777", `size=${sizeMb}m`],
 	});
-	// Rootful host runtime: host files keep their owners inside the sandbox
-	// (an idmapped mount), so a private 0700 source stays readable by the
-	// sandbox's root. Rootless sources already belong to the sandbox's root;
-	// rootful runsc has no user namespace (userNamespaced).
 	const idmap: readonly string[] =
 		input.rootless === undefined && flavor === "oci" ? ["idmap"] : [];
 	const mounts: OciMount[] = [
@@ -406,51 +336,29 @@ export function ociConfig(input: ConfigInput): OciConfig {
 }
 
 export type ForwarderInput = Readonly<{
-	/** The forwarder container's id (under runsc, also its pod's). */
 	id: string;
-	/** The workload's limits: under runsc the pod's cgroup holds the workload and the forwarder. */
 	limits: SandboxLimits;
 	flavor: RuntimeFlavor;
-	/** The per-sandbox host directory holding the relay and control sockets; bound read-only at the same path. */
 	socketDir: string;
 	routes: readonly Readonly<{ port: number; socket: string }>[];
-	/** The host's node binary, run from the host root. */
 	node: string;
 	script: string;
-	/** The workload's init pid on the host, whose namespaces a host runtime joins (unused under runsc, where the forwarder starts first). */
 	workloadPid: number;
 	rootless: Rootless;
 	cgroups?: CgroupPlacement;
 }>;
 
-/** What the forwarder itself may use, on top of the workload's limits in a runsc pod. */
 const FORWARDER_MEMORY_MB = 256;
 const FORWARDER_PIDS = 64;
 
-/**
- * The forwarder's uid in its container. Rootful, `FORWARDER_HOST_UID`, a host
- * uid no sandbox id maps to (runsc's gofer connects to a host socket as the
- * caller's uid, so this is also the uid the sockets must belong to).
- * Rootless the only mapped id is the agent's, so it is 0 there. Either way
- * the workload cannot signal it: it holds no capability, and the forwarder
- * lives in a pid namespace the workload cannot see (the workload's is a child
- * of it under runsc, a sibling under a host runtime).
- */
 export function forwarderUid(rootless: Rootless): number {
 	return rootless === undefined ? FORWARDER_HOST_UID : 0;
 }
 
-/** The host uid that must own the socket directory and sockets, so the forwarder can connect; undefined when that is the agent itself. */
 export function forwarderHostUid(rootless: Rootless): number | undefined {
 	return rootless === undefined ? FORWARDER_HOST_UID : undefined;
 }
 
-/**
- * The forwarder container: the host's root file system read-only (so the
- * host's node and its C library run unchanged), the socket directory bound
- * read-only, no other host path, no capability. Under runsc it is the pod's
- * sandbox container, and its resources are the pod's.
- */
 export function forwarderConfig(input: ForwarderInput): OciConfig {
 	const runsc = input.flavor === "runsc";
 	const cgroups = input.cgroups ?? DEFAULT_CGROUPS;

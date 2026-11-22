@@ -1,9 +1,3 @@
-/**
- * The stateless relay's own routes and queue kinds, over the in-memory
- * harness: the authenticated queue handoff and cron tick, the MCP status
- * tool, the onboarding fallthrough, and the queue kinds a preview or an older
- * relay sends.
- */
 import { describe, expect, it } from "vitest";
 import {
 	encodeRelayQueueMessage,
@@ -11,7 +5,6 @@ import {
 } from "../src/relay-queue.js";
 import { ORIGIN, openStatelessRelay } from "./stateless-harness.js";
 
-/** One JSON-RPC tool call to the relay's MCP endpoint. */
 type ToolCall = {
 	jsonrpc: "2.0";
 	id: number;

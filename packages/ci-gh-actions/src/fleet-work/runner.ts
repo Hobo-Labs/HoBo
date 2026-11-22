@@ -1,11 +1,3 @@
-/**
- * The executor half of `github-actions-job` (design §6.9 table and step 7):
- * in the order's fresh sandbox, writes the runner registration with
- * `Sandbox.writeSecret`, installs the pre-job hook that posts GitHub's job
- * context to the sandbox's control endpoint, and runs one just-in-time
- * runner for one job. The receipt status comes from the runner's own result
- * line and the hook's verdict. Private to L16.
- */
 import { createHash } from "node:crypto";
 import type { JsonValue } from "@hobo/core";
 import { ReceiptStatus, type WorkRunner } from "@hobo/fleet";
@@ -21,15 +13,9 @@ import {
 } from "./hook.js";
 import { GITHUB_ACTIONS_JOB } from "./kind.js";
 
-/** GitHub's own runner image at the pinned runner version (`bootstrap.ts`). */
 // public-contract: the image every github-actions-job order names in parameters.image.
 export const GITHUB_RUNNER_IMAGE = `ghcr.io/actions/actions-runner:${RUNNER_VERSION}`;
 
-/**
- * The hosts a just-in-time runner talks to (GitHub's documented self-hosted
- * runner communication list, exact names only); the fleet's own allowlist is
- * added by the egress proxy.
- */
 // public-contract: exact egress hosts every github-actions-job order allows.
 export const GITHUB_EGRESS: readonly string[] = [
 	"github.com",
@@ -49,7 +35,6 @@ export const GITHUB_EGRESS: readonly string[] = [
 	),
 ];
 
-/** How much of the runner's console is kept to read its result line and the markers. */
 const TAIL_BYTES = 64 * 1024;
 
 // domain-view: what the start script's marker lines say about one run.
@@ -79,7 +64,6 @@ function workKeyOf(json: string | undefined): string {
 	}
 }
 
-/** Reads the start script's `@@hobo-fleet` lines and the runner's "Job … completed with result: …" line. */
 export function readVerdict(output: string): Verdict {
 	const exit = lastMatch(output, new RegExp(`^${MARKER} exit (\\d+)$`, "gmu"));
 	return {
@@ -98,12 +82,6 @@ export function readVerdict(output: string): Verdict {
 /** domain-view: the two receipt fields a run's outcome decides. */
 type Settled = Readonly<{ status: ReceiptStatus; reason: string }>;
 
-/**
- * The receipt for one run. The hook's verdict decides first: `refuse` (exit
- * 41) is `REFUSED`/`assignment-mismatch`, `conflict` (42, a second job in a
- * single-use sandbox) `REFUSED`/`conflict`, `unreachable` (43, fail closed)
- * `ABANDONED`/`unavailable`; then the runner's own result line.
- */
 export function settleVerdict(verdict: Verdict, aborted: boolean): Settled {
 	if (aborted) return { status: ReceiptStatus.CANCELLED, reason: "" };
 	switch (verdict.fence) {
@@ -123,7 +101,6 @@ export function settleVerdict(verdict: Verdict, aborted: boolean): Settled {
 		case "cancelled":
 			return { status: ReceiptStatus.CANCELLED, reason: "" };
 		default:
-			// No job ran: the runner never started, or GitHub gave it nothing.
 			return { status: ReceiptStatus.ABANDONED, reason: "unavailable" };
 	}
 }

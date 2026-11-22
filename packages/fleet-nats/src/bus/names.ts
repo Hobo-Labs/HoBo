@@ -1,12 +1,7 @@
-/**
- * The names of §6.7: streams, buckets, subjects and keys. Pure; every other
- * module of the bus builds its subjects here so that the permission templates
- * and the adapters cannot drift apart.
- */
 import { createHash } from "node:crypto";
 import type { FleetId, MemberId, WorkDigest } from "@hobo/fleet";
 
-// public-contract: bucket and stream names of design §6.7, read by operators and the probe suite.
+// public-contract: bucket and stream names, read by operators and the probe suite.
 export const BUCKETS = {
 	registry: "fleet-registry",
 	views: "fleet-views",
@@ -14,7 +9,7 @@ export const BUCKETS = {
 	replay: "fleet-replay",
 } as const;
 
-// public-contract: stream names of design §6.7.
+// public-contract: stream names
 export const STREAMS = {
 	submissions: "FLEET_SUBMISSIONS",
 	offers: "FLEET_OFFERS",
@@ -29,17 +24,15 @@ export const STREAMS = {
 export type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
 export type StreamName = (typeof STREAMS)[keyof typeof STREAMS];
 
-/** The JetStream stream behind a key-value bucket. */
 export function bucketStream(bucket: BucketName): string {
 	return `KV_${bucket}`;
 }
 
-/** The subject a key-value entry is stored on. */
 export function bucketSubject(bucket: BucketName, key: string): string {
 	return `$KV.${bucket}.${key}`;
 }
 
-// public-contract: audit subjects of design §6.7.
+// public-contract: audit subjects
 export const AUDIT_SUBJECTS = {
 	entry: "fleet.audit.entry",
 	checkpoint: "fleet.audit.checkpoint",
@@ -70,18 +63,15 @@ export const keys = {
 	trust: "trust",
 	observation: (observer: MemberId, member: MemberId) =>
 		`${observer}.${member}`,
-	/** Replay ids are arbitrary strings; the key holds a digest of each part so it is always a valid key. */
 	replay: (scope: string, id: string) => `${digest(scope)}.${digest(id)}`,
 } as const;
 
-/** One subject token: what a stream or key part may hold without changing the subject's shape. */
 const TOKEN = /^[A-Za-z0-9_-]{1,128}$/u;
 
 export function isToken(value: string): boolean {
 	return TOKEN.test(value);
 }
 
-/** The tokens of a subject after a fixed prefix of `skip` tokens, or undefined when the shape differs. */
 export function tokensAfter(
 	subject: string,
 	skip: number,

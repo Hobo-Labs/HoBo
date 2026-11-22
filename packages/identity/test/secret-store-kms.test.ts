@@ -9,7 +9,6 @@ import {
 	verifyJwtWithJwks,
 } from "../src/index.js";
 
-// O37: the authority's token key is shared and rotates.
 const PREFIX = "fleet/token-signing";
 const FIRST_KID = `${PREFIX}#1`;
 const NEXT_KID = `${PREFIX}#2`;
@@ -119,12 +118,10 @@ describe("loadSecretStoreKms (O37)", () => {
 		]);
 		await expect(verify(oldToken, rotated, Date.now())).resolves.toBeDefined();
 		await expect(verify(newToken, rotated, Date.now())).resolves.toBeDefined();
-		// The previous key no longer signs.
 		await expect(first.signJwtSvid(claimsAt(Date.now()))).rejects.toThrow(
 			/retired/,
 		);
 
-		// The rotation reaches the secret store; a replica that loads now holds both keys.
 		const replica = await settled(secrets, (kms) => kms.hasKey(NEXT_KID));
 		expect(replica.hasKey(FIRST_KID)).toBe(true);
 		expect(replica.publicJwk(NEXT_KID)).toEqual(
@@ -140,12 +137,10 @@ describe("loadSecretStoreKms (O37)", () => {
 			verify(oldToken, replicaIssuer, Date.now()),
 		).resolves.toBeDefined();
 
-		// Just before the old key's last token expires, it is still published.
 		vi.setSystemTime(T0 + TOKEN_LIFETIME_S * 1000 - 1000);
 		expect(rotated.jwks().keys.map((key) => key.kid)).toContain(FIRST_KID);
 		await expect(verify(oldToken, rotated, Date.now())).resolves.toBeDefined();
 
-		// Once every token it signed has expired, it leaves the key set everywhere.
 		vi.setSystemTime(T0 + TOKEN_LIFETIME_S * 1000 + 1000);
 		expect(rotated.jwks().keys.map((key) => key.kid)).toEqual([NEXT_KID]);
 		expect(rotated.kms.hasKey(FIRST_KID)).toBe(false);
@@ -217,7 +212,6 @@ describe("loadSecretStoreKms (O37)", () => {
 describe("loadSecretStoreKms active key (amendment 2)", () => {
 	type Entry = Readonly<{ kid: string; retiredAt?: number }>;
 
-	/** A ring holding `entries`, each with one valid private key, loaded fresh. */
 	async function seeded(entries: readonly Entry[]): Promise<KmsLike> {
 		const secrets = createMemorySecretsPort();
 		await loadSecretStoreKms(secrets, { prefix: PREFIX });
@@ -244,18 +238,15 @@ describe("loadSecretStoreKms active key (amendment 2)", () => {
 	});
 
 	it("keeps the lowest-numbered unretired key active after add and publish, until the switch retires it", async () => {
-		// Add + publish: #2 joins the ring unretired; #1 still signs.
 		const published = await seeded([{ kid: NEXT_KID }, { kid: FIRST_KID }]);
 		expect(published.activeKeyId?.()).toBe(FIRST_KID);
 		expect(published.keyIds?.()).toEqual([FIRST_KID, NEXT_KID]);
-		// Switch: #1 retires and verifies for 15 minutes more; #2 signs.
 		const switched = await seeded([
 			{ kid: FIRST_KID, retiredAt: Date.now() },
 			{ kid: NEXT_KID },
 		]);
 		expect(switched.activeKeyId?.()).toBe(NEXT_KID);
 		expect(switched.keyIds?.()).toEqual([FIRST_KID, NEXT_KID]);
-		// Key numbers compare as numbers: #9 is below #10.
 		const tens = await seeded([
 			{ kid: `${PREFIX}#10` },
 			{ kid: `${PREFIX}#9` },

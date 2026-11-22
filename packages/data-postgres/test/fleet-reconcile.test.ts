@@ -1,9 +1,3 @@
-/**
- * `reconcileFleet` as a caller of the shared one-active loop
- * (`createOneActiveFleet`), over the `SqlExecutor` double: the Postgres
- * observer feeds the loop, `decideFleet` chooses, and the reconcile finishes
- * what the loop sealed.
- */
 import { DEFAULT_FLEET_POLICY } from "@hobo/backend-routing";
 import { Health } from "@hobo/fleet";
 import { describe, expect, it } from "vitest";
@@ -105,8 +99,6 @@ describe("reconcileFleet on the one-active loop", () => {
 			active: "b",
 			sealed: false,
 			reason: "failover-complete",
-			// The standby's lag when it was measured: its snapshot was a minute
-			// old, and the writer was probed for the minute of the threshold.
 			lossWindowMs: 120_000,
 		});
 		expect(at("c").log.map((row) => row.reason)).toEqual([
@@ -122,7 +114,6 @@ describe("reconcileFleet on the one-active loop", () => {
 		at("a").up = false;
 		at("b").snapshotAtMs = now() - 60_000;
 		at("c").snapshotAtMs = now() - 5 * 60_000;
-		// Seal by hand, as a reconciler that stopped after the seal left it.
 		for (const name of ["b", "c"])
 			at(name).log.push({
 				epoch: 2,
@@ -174,7 +165,6 @@ describe("reconcileFleet on the one-active loop", () => {
 		});
 		expect(report.assignment?.members).toEqual(["a", "b", "c"]);
 		expect(at("a").log.map((row) => row.members)).toEqual([null, "{a,b,c}"]);
-		// A second tick has nothing to change and goes on to decide.
 		const next = await reconcileFleet(options({ membershipEpochs: true }));
 		expect(next.tick?.action).toBe("keep");
 	});

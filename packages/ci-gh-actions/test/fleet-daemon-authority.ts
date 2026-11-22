@@ -1,11 +1,3 @@
-/**
- * Test doubles for the box worker's fleet daemon (design §11.3 rules 6 and 9:
- * doubles against frozen interfaces, no module mocking). `createTestAuthority`
- * is the real authority composition; this file adds only what a device needs
- * to reach it in-process: the three routes the agent calls (discovery,
- * enrollment, credentials), answered as protobuf JSON with a `Date` header,
- * and a `FleetBusConnector` whose connections are views of the memory bus.
- */
 import {
 	create,
 	fromJsonString,
@@ -65,7 +57,6 @@ function answer<T extends Message>(
 		: failure(outcome.error);
 }
 
-/** The authority's HTTP surface for a device, in-process: discovery, enrollment and credentials. */
 function deviceRoutes(authority: EnrollmentAuthority, now: Clock) {
 	const route = async (
 		method: string,
@@ -145,7 +136,6 @@ function deviceRoutes(authority: EnrollmentAuthority, now: Clock) {
 	return fetchDouble;
 }
 
-/** Each connection is the memory bus itself; closing one stops nothing shared. */
 function memoryConnector(bus: AuthorityBus): FleetBusConnector {
 	return {
 		async connect(input) {
@@ -171,7 +161,6 @@ function memoryConnector(bus: AuthorityBus): FleetBusConnector {
 	};
 }
 
-/** `createTestAuthority`, fleet `hobo` (many-active, owner auto-approves) and a bootstrap token for given roles. */
 export async function boxWorld(
 	now: Clock,
 	options: Readonly<{ allowHostDocker: boolean }> = { allowHostDocker: false },
@@ -195,7 +184,6 @@ export async function boxWorld(
 			policy: {
 				approval: ApprovalMode.AUTO_OWNER,
 				allowHostDocker: options.allowHostDocker,
-				// The authority accepts host Docker only for a DEDICATED-only fleet.
 				allowedClasses: options.allowHostDocker ? [DeviceClass.DEDICATED] : [],
 			},
 		}),

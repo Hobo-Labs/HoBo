@@ -92,7 +92,7 @@ describe("OIDC assertions", () => {
 			AUDIENCE,
 		);
 		expect(es.ok).toBe(true);
-		expect(p.fetched).toHaveLength(2); // discovery and JWKS once
+		expect(p.fetched).toHaveLength(2);
 	});
 
 	it("refuses an unpinned issuer, another audience, an expired token, a forged signature and alg none", async () => {

@@ -228,7 +228,7 @@ The broker returns a deterministic fixture-scoped token derived inside the
 vault. The real keyless OIDC-federation / provider-STS token exchange is a later
 item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
 
-## HoBo Fleet additions (ADR-0183)
+## HoBo Fleet additions
 
 - **`loadSecretStoreKms(secrets, { prefix })`** — the fleet authority's
   token-signing key, shared by every replica and kept across restarts. One
@@ -238,7 +238,7 @@ item (S3-03); see the `ponytail:` note in `src/token-broker.ts`.
   together adopt the first version written) and held in memory behind the
   synchronous `KmsLike`. Rotate with `JwtSvidIssuer.rotateSigningKey("<prefix>#<n+1>")`:
   the previous key stops signing at once, stays in the key set for 15 minutes
-  (the longest token lifetime of design §6.6) so its tokens still verify, and
+  (the longest token lifetime) so its tokens still verify, and
   then leaves `jwks()` everywhere. The rotation is written back to the store in
   the background, merged with what is there; another replica sees it when it
   next loads. The active key is the highest `n` for which `hasKey` is true. A

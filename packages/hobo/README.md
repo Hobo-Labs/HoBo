@@ -45,8 +45,7 @@ Canonical verb list: **42** verbs in `@hobo/cli` (`packages/cli/src/shell/verbs.
 
 ## HoBo Fleet: `hobo fleet …`
 
-`src/fleet-command.ts` holds every command of the fleet CLI (design §6.15,
-ADR-0183); `src/fleet-runtime.ts` is the production composition and
+`src/fleet-command.ts` holds every command of the fleet CLI ; `src/fleet-runtime.ts` is the production composition and
 `src/fleet-cli.ts` the binary's entry (the composed `hobo` hands `fleet` words
 over before the shell's global option parser). Each command parses strictly
 (`parseArgs`, a subcommand allowlist) and calls exactly the `FleetClient`
@@ -85,7 +84,7 @@ that table with a recording fake client.
   joined with the authority's `OverlayJoin`, and
   `createBusRelayTransport(() => agent.bus())`.
 - **Session-close facts.** Both sides of a `connect` or `cp` session publish
-  a signed `SessionClose` with byte counts (design §6.12). The acceptor's
+  a signed `SessionClose` with byte counts. The acceptor's
   comes from `serveSessions`; the CLI publishes its own initiator fact,
   signed with this device's SIGN key on its own events subjects, when it
   runs on an enrolled device whose bus it reaches. A person's CLI on a device

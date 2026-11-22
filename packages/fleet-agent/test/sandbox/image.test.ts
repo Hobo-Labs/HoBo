@@ -1,7 +1,3 @@
-/**
- * The image store: pulls over the registry API from a fake registry, checks
- * every digest, unpacks layers in order with whiteouts, caches by manifest.
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -26,7 +22,6 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const digest = (bytes: Uint8Array) =>
 	`sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
-/** A gzipped tar of `files` (path → content; content undefined makes a directory). */
 function layer(
 	name: string,
 	files: Readonly<Record<string, string | undefined>>,

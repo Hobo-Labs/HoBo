@@ -1,6 +1,3 @@
-// Rotation is safe to interrupt at any step (§6.16): a crash at any secret
-// write, the witness down, or NATS down, then a second call, finishes the
-// rotation with no refused request and a working system.
 import type { SecretsPort } from "@hobo/identity";
 import { describe, expect, it } from "vitest";
 import { rotateKey } from "../../src/ops/index.js";
@@ -16,7 +13,6 @@ import { opsFixture } from "./support.js";
 
 const GRACE_MS = 2 * 60_000;
 
-/** A secret store whose `put` number `failAt` (counting from 1) throws, as a crash mid-step would. */
 function interrupting(failAt: number) {
 	let puts = 0;
 	return {

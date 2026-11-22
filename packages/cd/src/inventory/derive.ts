@@ -28,7 +28,6 @@ export const AUTO_TAINTS = Object.freeze({
 	leaseLost: "hobo.cd/lease-lost",
 	credentialInvalid: "hobo.cd/credential-invalid",
 	claimsInconsistent: "hobo.cd/claims-inconsistent",
-	/** The Camp's backing fleet member is SUSPENDED, REVOKED or missing (L19). */
 	memberInactive: "hobo.cd/member-inactive",
 	/** NO_RUN added by a Rail-permitted rule; cleared only by an operator. */
 	failed: "hobo.cd/failed",
@@ -79,15 +78,9 @@ export type ContactState = Readonly<{
 	credentialReportedMs?: number | undefined;
 }>;
 
-/**
- * The lifecycle of the fleet member backing a Camp, as the Camp mapper read
- * it: `active` is false when the member is SUSPENDED, REVOKED or missing, and
- * `reason` goes on the taint. Absent when the Camp's Yard has no fleet.
- */
 export type MemberLifecycle = Readonly<{
 	active: boolean;
 	reason: string;
-	/** A reconciler DEVICE the fleet observes as LOST: no contact now. */
 	observedLost?: boolean | undefined;
 }>;
 

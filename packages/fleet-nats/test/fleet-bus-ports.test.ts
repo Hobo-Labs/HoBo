@@ -1,9 +1,3 @@
-/**
- * The ports of `fleet-bus.ts` that the bus conformance suite does not reach:
- * the claim and order feeds read whole, the audit log, the fleet views, and
- * what each port does with a message whose subject, key or bytes do not
- * parse (dropped, never handed on). Over the in-memory wire.
- */
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
 	AUDIT_CHECKPOINT_CONTEXT,
@@ -69,7 +63,6 @@ function authorityOn(
 	);
 }
 
-/** Collects what `subscribe` hands on until `count` items arrive. */
 function collector<T>() {
 	const seen: T[] = [];
 	return {
@@ -341,7 +334,6 @@ describe("the witness side of the audit log", () => {
 		expect(proposed.seen.map((record) => record.payload)).toEqual([
 			encoder.encode("t1"),
 		]);
-		// The witness appends its co-signatures: never to the authority's subjects.
 		await witness.audit.appendCheckpoint(
 			envelope(AUDIT_CHECKPOINT_CONTEXT, "cp1"),
 		);

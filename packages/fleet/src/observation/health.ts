@@ -1,8 +1,3 @@
-/**
- * The shared health functions of design §6.8: pure, used by `MANY_ACTIVE`
- * ranking, by the assignment register's callers and by
- * `@hobo/backend-routing`. An absent figure is unknown, never zero.
- */
 import {
 	Health,
 	type Observation,
@@ -26,7 +21,6 @@ export type WorkFit = Readonly<
 	  }
 >;
 
-/** How many copies fit in `free` when each needs `need`; unknown on either side constrains nothing. */
 function copiesWithin(
 	free: number | undefined,
 	need: number | undefined,
@@ -36,7 +30,6 @@ function copiesWithin(
 	return Math.floor(Math.max(0, free) / need);
 }
 
-/** A platform field the work names and the device reports, and they differ. */
 function differs(wanted: string | undefined, has: string | undefined): boolean {
 	return (
 		wanted !== undefined &&
@@ -47,11 +40,6 @@ function differs(wanted: string | undefined, has: string | undefined): boolean {
 	);
 }
 
-/**
- * Fit work to a device. The checks are ordered so the reason names the first
- * thing that would have to change. A device that is not `REACHABLE` (draining,
- * pressured, failing) has no slot to give.
- */
 export function fitObservation(
 	observation: Observation,
 	needs: WorkNeeds,
@@ -65,13 +53,11 @@ export function fitObservation(
 		differs(needs.platform?.arch, observation.platform?.arch)
 	)
 		return { fits: false, lacking: "platform" };
-	// Tiers are ordered S1 < S2 < S3; a stronger tier satisfies a weaker minimum.
 	if (
 		needs.minSandbox !== SandboxTier.UNSPECIFIED &&
 		!observation.sandboxTiers.some((tier) => tier >= needs.minSandbox)
 	)
 		return { fits: false, lacking: "sandbox" };
-	// Only a micro-VM has its own Docker daemon inside (§6.11).
 	if (
 		needs.docker &&
 		!observation.sandboxTiers.includes(SandboxTier.S3_MICROVM)
@@ -89,36 +75,22 @@ export function fitObservation(
 	return { fits: true, copies: Math.min(slots, byMemory, byDisk) };
 }
 
-/**
- * Failing for at least `ms`: today's failover threshold, which holds while
- * `failingForMs < failoverAfterMs` (`decideFleet`, `routeFleetByBudget`).
- */
 export function failing(observation: Observation, ms: number): boolean {
 	return (
 		observation.health !== Health.REACHABLE && observation.failingForMs >= ms
 	);
 }
 
-/** `QUOTA_EXHAUSTED` → `quota-exhausted`: today's failure-class strings. */
 function healthToken(health: Health): string {
 	return (Health[health] ?? "UNKNOWN").toLowerCase().replaceAll("_", "-");
 }
 
-/** Today's duration format in reasons (`policy.ts` `span`). */
 function span(ms: number): string {
 	return ms < 120_000
 		? `${Math.round(ms / 1000)}s`
 		: `${Math.round(ms / 60_000)}m`;
 }
 
-/**
- * Whether each observed member could be made active now on health grounds
- * alone, with today's reasons (`decideFleet`, `policy.ts:398-407`): health
- * must be `REACHABLE`; `ready` must not be `false` (absent means ready, as
- * cache backends report neither readiness nor lag); in `failover` mode with a
- * recovery point set, no `lag_ms` is `never-copied` and more lag than the
- * recovery point is refused. Otherwise lag is not considered.
- */
 export function eligibility(
 	observations: readonly NamedObservation[],
 	mode: "failover" | "switch",

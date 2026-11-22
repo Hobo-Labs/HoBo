@@ -1,8 +1,3 @@
-// O13 (witness half), F12, F13: the witness recomputes the chain itself,
-// co-signs a checkpoint only when no entry is withheld and every registry
-// change it saw has its audit entry, co-signs a proposed trust record only by
-// the three rules of §6.14, logs every refusal and alarms after three
-// unfinal checkpoints in a row (design §6.14).
 import { create, fromBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 import {
@@ -80,7 +75,7 @@ async function setup() {
 		log2: (event, fields) => logged.push({ event, fields }),
 	});
 	w.start();
-	await w.poll(); // the poll start() begins, on an empty log
+	await w.poll();
 	return {
 		log,
 		logged,
@@ -190,7 +185,6 @@ describe("createWitness: checkpoints", () => {
 		]);
 		await t.change("member.dev_a", 3);
 		await t.change("member.dev_a", 4);
-		// An entry for another key, and one for this key at another sequence, do not match.
 		await appendEntries(t.log, [
 			{ at: iso(T0 + 2), subject: "member.dev_b", subjectSequence: 4 },
 			{ at: iso(T0 + 3), subject: "member.dev_a", subjectSequence: 5 },
@@ -245,7 +239,6 @@ describe("createWitness: checkpoints", () => {
 		await t.change("member.dev_a", 7);
 		for (let i = 1; i <= 5; i += 1) {
 			t.at(i * 600_000);
-			// A re-sign every 10 minutes keeps the record sequence: not a change.
 			await t.change("member.dev_a", 7);
 			await appendCheckpointEntry(
 				t.log,
@@ -384,7 +377,6 @@ describe("createWitness: trust records", () => {
 			{ of: "trust", reason: "trust-rotation-unrecorded", sequence: 5 },
 		]);
 
-		// An entry with a different digest does not match.
 		await appendEntries(t.log, [
 			{
 				type: "fleet.TrustRotated",

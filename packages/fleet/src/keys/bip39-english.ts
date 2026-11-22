@@ -1,9 +1,3 @@
-/**
- * The BIP-39 English word list, vendored verbatim as data (2048 words), from
- * https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
- * (SHA-256 of that file: 2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda).
- * Used only for the four fingerprint words of a key (design §6.5).
- */
 // public-contract: the BIP-39 English list; fingerprint words are indexes into it.
 export const BIP39_ENGLISH: readonly string[] = Object.freeze([
 	"abandon",

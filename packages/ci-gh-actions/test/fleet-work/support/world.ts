@@ -1,9 +1,3 @@
-/**
- * Records for the work kind's tests, built only from `@hobo/fleet`'s public
- * entry points: devices from the in-memory key store with signed key bundles
- * and member records, a many-active fleet whose policy admits `acme/app`, an
- * authority key, observations, and a helper that puts them on a bus.
- */
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -111,7 +105,6 @@ export async function device(
 	return { keys, store, record };
 }
 
-/** Admits `acme/app` on main and on pull-request merge refs. */
 export function policy(): FleetPolicy {
 	return create(FleetPolicySchema, {
 		repositories: [
@@ -157,7 +150,6 @@ export function authorityKey(id = "authority#1"): AuthorityKey {
 	};
 }
 
-/** Puts the trust, member and fleet records on the memory bus. */
 export async function seed(
 	bus: AuthorityBus,
 	authority: AuthorityKey,
@@ -189,7 +181,6 @@ export async function seed(
 	await publishRecords(bus, authority, members, fleet);
 }
 
-/** Puts the member and fleet records, signed by the authority. */
 export async function publishRecords(
 	bus: Pick<AuthorityBus, "publisher">,
 	authority: AuthorityKey,
@@ -215,7 +206,6 @@ export async function publishRecords(
 	);
 }
 
-/** The executor's own signed observation of itself: reachable, one slot, S1. */
 export async function observe(
 	bus: Pick<AuthorityBus, "observations">,
 	of: Device,

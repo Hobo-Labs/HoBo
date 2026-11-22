@@ -1,23 +1,3 @@
-/**
- * The sandbox runtime is provisioned by the agent, never assumed on the host
- * (D58). `resolveSandboxRuntime` answers, in this order:
- *
- * 1. an operator-configured host runtime (`runsc`, `crun` or `runc` at an
- *    absolute path): the only way a host binary is ever used, and opt-in;
- * 2. the verified cache: `<cacheDir>/runsc/<release>/<arch>/`, whose stamp
- *    records the pinned tarball digest and the SHA-512 of every unpacked file,
- *    re-checked on every resolution (a stale or corrupt copy is removed);
- * 3. a download, when allowed: the pinned gVisor release tarball, its
- *    SHA-512 checked against the pin before anything is unpacked, `runsc` and
- *    `gvisor-bin/` (which newer runsc needs beside it) unpacked into a
- *    temporary sibling directory, mode 0755, then renamed into place, so a
- *    reader sees a whole verified copy or none, and two provisioners racing
- *    end with the first one's copy;
- * 4. unavailable, with a reason.
- *
- * Unpacking is in-process (`bunzip2.ts`, `tar.ts`): `tar -xjf` would also need
- * a host `bzip2`, which minimal images lack.
- */
 import { createHash, randomBytes } from "node:crypto";
 import {
 	accessSync,
@@ -62,7 +42,6 @@ const STAMP = ".hobo-verified.json";
 const HOST_RUNTIMES = ["runsc", "crun", "runc"] as const;
 export type RuntimeName = (typeof HOST_RUNTIMES)[number];
 
-/** gVisor's name for Node's `process.arch`; undefined where gVisor publishes no release. */
 export function gvisorArch(nodeArch: string): GvisorArch | undefined {
 	if (nodeArch === "x64" || nodeArch === "x86_64") return "x86_64";
 	if (nodeArch === "arm64" || nodeArch === "aarch64") return "aarch64";
@@ -76,7 +55,6 @@ export function gvisorTarballUrl(
 	return `https://storage.googleapis.com/gvisor/releases/release/${release}/${arch}/gvisor.tar.bz2`;
 }
 
-/** Where a verified release lives in the cache. */
 export function runtimeDir(
 	cacheDir: string,
 	release: string,
@@ -85,10 +63,8 @@ export function runtimeDir(
 	return join(cacheDir, "runsc", release, arch);
 }
 
-/** Unpacks the members to keep from a verified tarball into `into`, which exists and is empty. */
 export type Extractor = (tarball: string, into: string) => Promise<void>;
 
-/** The default extractor: in-process bzip2 and tar, `runsc` and `gvisor-bin/*` only. */
 export const unpackGvisorTarball: Extractor = async (tarball, into) => {
 	extractTarEntries(
 		bunzip2(new Uint8Array(readFileSync(tarball))),
@@ -101,10 +77,8 @@ export type ResolvedRuntime = Readonly<{
 	name: RuntimeName;
 	path: string;
 	source: "host" | "cache" | "download";
-	/** The pinned release for a provisioned runtime; empty for a host one (its self-test asks it). */
 	version: string;
 	arch: GvisorArch | undefined;
-	/** `sha512:<hex>` of the verified tarball; undefined for a host runtime. */
 	digest: string | undefined;
 }>;
 
@@ -121,15 +95,12 @@ export type RuntimeResolution =
 	| Readonly<{ ok: false; reason: UnavailableReason; detail: string }>;
 
 export type ResolveOptions = Readonly<{
-	/** An operator-configured host runtime: an absolute path to `runsc`, `crun` or `runc`. */
 	hostRuntime?: string | undefined;
 	cacheDir: string;
 	allowDownload: boolean;
-	/** Node's `process.arch` by default. */
 	arch?: string | undefined;
 	fetch?: typeof fetch | undefined;
 	extract?: Extractor | undefined;
-	/** The pinned release by default; tests substitute a fixture's digest. */
 	pin?: GvisorPin | undefined;
 }>;
 
@@ -150,7 +121,6 @@ type Stamp = Readonly<{
 	files: Readonly<Record<string, string>>;
 }>;
 
-/** Every regular file under `dir` (one level of `gvisor-bin/`), relative, sorted. */
 function unpackedFiles(dir: string): string[] {
 	const files: string[] = [];
 	for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -165,7 +135,6 @@ function unpackedFiles(dir: string): string[] {
 	return files.sort();
 }
 
-/** Why the copy in `dir` is not the verified pinned release, or undefined when it is. */
 function cacheProblem(
 	dir: string,
 	pin: GvisorPin,
@@ -173,8 +142,7 @@ function cacheProblem(
 ): string | undefined {
 	let stamp: Stamp;
 	try {
-		// SAFETY: the agent's own stamp file; every field read is checked below.
-		stamp = JSON.parse(readFileSync(join(dir, STAMP), "utf8")) as Stamp;
+		stamp = JSON.parse(readFileSync(join(dir, STAMP), "utf8"));
 	} catch {
 		return "the cached copy has no readable stamp";
 	}
@@ -216,7 +184,6 @@ function provisioned(
 	};
 }
 
-/** Streams the tarball to `path`, answering its SHA-512. */
 async function download(
 	fetchImpl: typeof fetch,
 	url: string,
@@ -238,12 +205,6 @@ async function download(
 	return hash.digest("hex");
 }
 
-/**
- * Downloads, verifies and unpacks the pinned release into the cache, without
- * looking at what is there first. Concurrent provisioners each work in their
- * own temporary directory; the first rename wins, and the others adopt the
- * winner's copy once it verifies.
- */
 export async function provisionGvisor(
 	options: Readonly<{
 		cacheDir: string;
@@ -302,7 +263,6 @@ export async function provisionGvisor(
 		try {
 			renameSync(temp, dir);
 		} catch (error) {
-			// Another provisioner renamed its copy into place first.
 			const problem = existsSync(dir) ? cacheProblem(dir, pin, arch) : "absent";
 			if (problem !== undefined)
 				return unavailable(
@@ -317,7 +277,6 @@ export async function provisionGvisor(
 	}
 }
 
-/** One provisioning per cache directory at a time within this process. */
 const inFlight = new Map<string, Promise<RuntimeResolution>>();
 
 function hostRuntime(
@@ -352,7 +311,6 @@ function hostRuntime(
 	};
 }
 
-/** The sandbox runtime to use, by the order in this file's comment. */
 export async function resolveSandboxRuntime(
 	options: ResolveOptions,
 ): Promise<RuntimeResolution> {

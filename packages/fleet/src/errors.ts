@@ -1,12 +1,3 @@
-/**
- * The closed set of fleet error codes (design §7.6) and the two error classes
- * the package throws: `FleetParseError` from the `parse*` constructors, and
- * `FleetNotImplemented` from every entry point whose lane has not landed yet.
- *
- * Everything that crosses a port returns an `Outcome` carrying a
- * `FleetFailure` with one of these codes; nothing here is thrown across a port.
- */
-
 // public-contract: the wire `FleetError.code` values of §7.6; clients match on them.
 export const FLEET_ERROR_CODES = [
 	"invalid-request",
@@ -47,11 +38,6 @@ export const FLEET_ERROR_CODES = [
 
 export type FleetErrorCode = (typeof FLEET_ERROR_CODES)[number];
 
-/**
- * The HTTP status of each code (§7.6, in brackets there). Codes that never
- * leave a device (`sandbox-inadequate`, `order-invalid`, `assignment-mismatch`,
- * `session-denied`, `no-majority`, `undecided`) have none.
- */
 export const FLEET_ERROR_HTTP_STATUS = {
 	"invalid-request": 400,
 	unauthenticated: 401,
@@ -89,7 +75,6 @@ export const FLEET_ERROR_HTTP_STATUS = {
 	unavailable: 503,
 } as const satisfies Readonly<Record<FleetErrorCode, number | undefined>>;
 
-/** Thrown by the `parse*` constructors of `ids.ts`; always `invalid-request`. */
 export class FleetParseError extends Error {
 	readonly code: FleetErrorCode = "invalid-request";
 	readonly field: string;
@@ -101,11 +86,6 @@ export class FleetParseError extends Error {
 	}
 }
 
-/**
- * Thrown by an entry point whose body its lane has not written yet. The
- * contract commit ships every entry point of §7.3 with this body; each lane
- * replaces the bodies it owns.
- */
 export class FleetNotImplemented extends Error {
 	readonly entryPoint: string;
 

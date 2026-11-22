@@ -1,7 +1,3 @@
-/**
- * Host capacity (design §6.8): what this host has free, measured the way the
- * box worker measures it today. An absent figure is unknown, never zero.
- */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,7 +29,6 @@ const probes = (
 const PSI_TEXT =
 	"some avg10=31.50 avg60=12.00 avg300=3.10 total=123456\nfull avg10=6.25 avg60=2.00 avg300=0.40 total=6543\n";
 
-/** Fake fs readers: files by path, one statfs answer, and a platform. */
 function readers(
 	files: Readonly<Record<string, string>>,
 	stats: Readonly<{ bavail: number; bsize: number; ffree: number }> | undefined,
@@ -83,7 +78,6 @@ describe("readHostCapacity", () => {
 			psiMemorySome: 31.5,
 			psiMemoryFull: 6.25,
 		});
-		// The record itself is unchanged: the agent derives the refusal (L43).
 		expect(reading.health).toBe(Health.REACHABLE);
 	});
 

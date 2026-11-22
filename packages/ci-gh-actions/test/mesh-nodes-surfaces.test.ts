@@ -1,12 +1,3 @@
-/**
- * O43: the relay's fleet surfaces are read-only calls through the client.
- *
- * `GET /v1/fleet/members`, the `list_fleet_members`, `get_fleet_view` and
- * `get_fleet_verdict` tools and the `hobo-ci://fleet/members` resource answer
- * from a recording fake `FleetClient`; none of them calls a method that
- * writes; the mesh's names are gone. (The file keeps its name: O43 runs it by
- * that name.)
- */
 import { create, fromJsonString, toBinary } from "@bufbuild/protobuf";
 import { SqliteCiStore } from "@hobo/ci/sqlite";
 import {
@@ -57,7 +48,6 @@ const SCOPES = new Map([
 const HOBO = parseFleetId("hobo");
 const BOX_A = `dev_${"a".repeat(32)}`;
 const BOX_B = `dev_${"b".repeat(32)}`;
-/** The authority's methods that only read; every other method of the client writes. */
 const READS = ["listMembers", "fleetView", "fleetVerdict"];
 
 const Structured = z.object({
@@ -142,10 +132,6 @@ const REFUSED: FleetFailure = {
 	message: "this test answers no other method",
 };
 
-/**
- * A `FleetClient` that records every method called, answers the three reads
- * from the fixtures above and refuses everything else.
- */
 function recordingFleetClient(
 	answers: Readonly<{ members?: Outcome<typeof MEMBERS> }> = {},
 ) {
@@ -227,7 +213,6 @@ const authenticate: RelayMcpOptions["authenticate"] = (presented) => {
 		: undefined;
 };
 
-/** The relay's control plane and MCP server over one store, reading `fleet`. */
 async function relay(fleet?: RelayFleet) {
 	const store = new SqliteCiStore(":memory:");
 	await store.configure(config(), 0, NOW);
@@ -279,7 +264,6 @@ async function relay(fleet?: RelayFleet) {
 		await mcp.close();
 		store.close();
 	});
-	/** One request to the control plane, as the HTTP host hands it on. */
 	const get = async (path: string, authorization?: string, method = "GET") =>
 		(await control(
 			new Request(`${ORIGIN}${path}`, {
@@ -318,7 +302,6 @@ describe(`GET ${RELAY_FLEET_MEMBERS_PATH}`, () => {
 		});
 		expect((await h.get(RELAY_FLEET_MEMBERS_PATH, WRITER)).status).toBe(403);
 		expect((await h.get(RELAY_FLEET_MEMBERS_PATH, OPERATOR)).status).toBe(403);
-		// A write is never routed to the authority, whatever the credential may do.
 		expect((await h.get(RELAY_FLEET_MEMBERS_PATH, READER, "POST")).status).toBe(
 			403,
 		);
@@ -352,7 +335,6 @@ describe(`GET ${RELAY_FLEET_MEMBERS_PATH}`, () => {
 		const h = await relay({ reads: refused.client, fleetId: HOBO });
 		const answer = await h.get(RELAY_FLEET_MEMBERS_PATH, READER);
 		expect(answer.status).toBe(503);
-		// The code, never the authority's own words.
 		expect(await answer.json()).toEqual({
 			error: "the fleet authority refused the read (unavailable)",
 		});

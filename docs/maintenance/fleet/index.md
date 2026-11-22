@@ -1,7 +1,7 @@
 # HoBo Fleet runbooks
 
-> Operator procedures for [HoBo Fleet](../../design/fleet.md)
-> ([ADR-0183](../../design/adr/fleet.md#adr-0183)). The deployment assets they
+> Operator procedures for HoBo Fleet
+>. The deployment assets they
 > use are in [`deploy/fleet/`](../../../deploy/fleet/README.md). Every
 > command is `hobo fleet …`; operator tasks are `hobo fleet ops … --config
 > <path>` with the authority's own configuration file.

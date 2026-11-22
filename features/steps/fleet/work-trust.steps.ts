@@ -1,10 +1,3 @@
-/**
- * Steps for features/fleet/work-trust.feature (§6.11): own work on a personal
- * device in S1, organisation work on a dedicated device in S3, and untrusted
- * work never on a personal device. The first two run end to end and read the
- * trust class and tier off the device's own receipt; the third asks the
- * device-side derivation, the sandbox table and the dispatcher's claim rules.
- */
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import {

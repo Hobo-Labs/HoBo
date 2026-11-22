@@ -1,10 +1,5 @@
-/**
- * The proxy VM's process entry, over a stand-in filesystem and server: it
- * consumes the one-time config and nonce, refuses a second start, and leaves
- * only a fixed failure stage behind — never configuration or exception text.
- */
-import { EventEmitter } from "node:events";
 import fsp from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { syncBuiltinESMExports } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,7 +25,6 @@ const proxyConfig = JSON.stringify({
 	maxResponseBytes: 256 * 1024 * 1024,
 });
 
-/** The VM's files, as the stand-in filesystem holds them. */
 const unlinked: string[] = [];
 const disk = {
 	files: new Map<string, string>(),
@@ -40,22 +34,17 @@ const disk = {
 	failWrite: false,
 };
 
-/** The stand-in listener the entry starts. */
-class StandInServer extends EventEmitter {
-	readonly listen = vi.fn();
-}
-let server: StandInServer | undefined;
+let server: Server | undefined;
 let fatal: (() => Promise<void>) | undefined;
 
-/** Run the entry once, as a fresh process would. */
 async function start() {
 	vi.resetModules();
 	const vm = await import("../src/sandbox-proxy-vm.js");
 	vi.spyOn(vm, "createSandboxProxyVmServer").mockImplementation(() => {
-		server = new StandInServer();
-		// SAFETY: the entry calls only once("listening") and listen(port, host),
-		// which the stand-in carries.
-		return server as never;
+		const standIn = createServer();
+		vi.spyOn(standIn, "listen").mockImplementation(() => standIn);
+		server = standIn;
+		return standIn;
 	});
 	vi.spyOn(vm, "installProxyFatalErrorHandler").mockImplementation(
 		(_server, report) => {
@@ -74,12 +63,13 @@ beforeEach(() => {
 	disk.failWrite = false;
 	server = undefined;
 	fatal = undefined;
-	vi.spyOn(fsp, "open").mockImplementation(async () => {
-		if (disk.markerTaken) throw new Error("EEXIST");
-		disk.markerTaken = true;
-		// SAFETY: the entry only closes the marker handle it opened.
-		return { close: async () => undefined } as never;
-	});
+	vi.spyOn(fsp, "open").mockImplementation(
+		vi.fn().mockImplementation(async () => {
+			if (disk.markerTaken) throw new Error("EEXIST");
+			disk.markerTaken = true;
+			return { close: async () => undefined };
+		}),
+	);
 	vi.spyOn(fsp, "readFile").mockImplementation(async (path) => {
 		const value = disk.files.get(String(path));
 		if (value === undefined) throw new Error("ENOENT");
@@ -118,10 +108,9 @@ describe("the proxy VM entry", () => {
 	it("exits when the readiness marker cannot be written", async () => {
 		disk.files.set(CONFIG, proxyConfig);
 		disk.files.set(NONCE, nonce);
-		// SAFETY: process.exit never returns; the stand-in only records the call.
 		const exit = vi
 			.spyOn(process, "exit")
-			.mockImplementation(() => undefined as never);
+			.mockImplementation(vi.fn<typeof process.exit>());
 		await start();
 		disk.failWrite = true;
 		server?.emit("listening");

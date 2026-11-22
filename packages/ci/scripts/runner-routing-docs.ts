@@ -1,16 +1,3 @@
-/**
- * The generated parts of the HoBo CI pages on the docs site.
- *
- * The site demonstrates runner routing by showing what it actually decides, so the
- * tables and worked examples on those pages are not typed by hand: they are
- * rendered here from the financial models and by running `balanceRunnerProviders`, and
- * written between `<!-- generated:… -->` markers in the page source.
- * `test/runner-routing-docs.test.ts` fails when a page no longer matches this output.
- *
- *   node --import tsx packages/ci/scripts/runner-routing-docs.ts          # rewrite
- *   node --import tsx packages/ci/scripts/runner-routing-docs.ts --check  # verify
- */
-
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,7 +54,6 @@ function policy(limitMicros: number): BudgetPolicy {
 	});
 }
 
-/** The whole catalog as one set of providers: connected, healthy, plans already open. */
 function catalog(
 	overrides: Partial<Record<RunnerModelId, Partial<RunnerProviderState>>> = {},
 ): RunnerProviderState[] {
@@ -327,11 +313,6 @@ function pricing(): string {
 	);
 }
 
-/**
- * The label each class of job would ask for: the selected provider's label
- * when it is a label provider, otherwise the class's own hobo label, where a
- * waiting job can still be reached by injected capacity. Keys are sorted.
- */
 function routes(members: readonly RunnerProviderState[]): string {
 	const demand = {
 		minutes: PULL_REQUEST.minutes,
@@ -413,12 +394,6 @@ export function renderRunnerRoutingDocs() {
 const NOTICE =
 	"<!-- Generated from the runner routing code by packages/ci/scripts/runner-routing-docs.ts. Do not edit by hand. -->";
 
-/**
- * Pages whose generated blocks keep the notice they already carry. The fleet
- * work (design §8.5) gives this generator's rename only `ci/route-table.md`
- * and `ci/fleet-balancing.md`; the notice on these two pages is reworded by
- * the change that owns them, so regenerating here changes only their tables.
- */
 const KEEP_NOTICE: ReadonlySet<string> = new Set([
 	"reference/errors.md",
 	"ci/providers.md",

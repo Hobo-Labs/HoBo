@@ -76,7 +76,6 @@ export async function createStation(options: StationOptions = {}) {
 	const inventory = createFakeInventory({ fleet: camps });
 	const authorizer = createFakeAuthorizer();
 	const telemetry = createRecordingTelemetry();
-	// The Yard's fleet: createTestAuthority holds the reconcilers' identity (L19).
 	const fleet = await fleetFixture(clock.now);
 	const enrollment = createAgentEnrollment({
 		store,
@@ -158,11 +157,6 @@ export async function createStation(options: StationOptions = {}) {
 
 export type Station = Awaited<ReturnType<typeof createStation>>;
 
-/**
- * Enroll over HTTP with a fleet bootstrap token (the agent's EnrollmentRequest
- * and DPoP proof, forwarded to the fleet), grant both opt-ins as two
- * operators, fetch the member SVID from the fleet, return an agent transport.
- */
 export async function provisionAgent(
 	station: Station,
 	options: {

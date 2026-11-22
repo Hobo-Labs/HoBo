@@ -1,16 +1,3 @@
-/**
- * The journal `FleetEventStore` over a `JournalTransport` (L36).
- *
- * Every append is one message holding the batch on `fleet.journal.<streamId>`,
- * published only if the subject's last stream sequence is still the one this
- * store read: the server's `Nats-Expected-Last-Subject-Sequence` check is the
- * compare-and-set, so replicas agree without a leader. Before writing, the
- * store catches its cache of the stream up from the journal (head, owner
- * epoch, committed idempotency keys), so its rules are those of
- * `createMemoryEventStore` and the SQLite journal, across replicas: per-stream
- * `expectedSeq`, `meta.idempotencyKey` deduplication (also on a retry with a
- * stale `expectedSeq`), single-writer fencing, and `readAll` in stream order.
- */
 import { randomUUID } from "node:crypto";
 import {
 	type AppendOptions,
@@ -47,7 +34,6 @@ import {
 	JournalWrongLastSequence,
 } from "./transport.js";
 
-/** The journal store; `close` ends its connection. */
 export type JournalEventStore = FleetEventStore &
 	Readonly<{
 		getStreamHead(streamId: string): StreamHead | undefined;
@@ -55,7 +41,6 @@ export type JournalEventStore = FleetEventStore &
 	}>;
 
 type Head = {
-	/** Stream sequence of the last message of this stream this store has read (0: none). */
 	messageSeq: number;
 	revision: number;
 	ownerEpoch: bigint;
@@ -67,7 +52,6 @@ export function openJournalStore(
 ): JournalEventStore {
 	const heads = new Map<string, Head>();
 	const locks = new Map<string, Promise<void>>();
-	/** Subscriptions still being set up; an append waits for them so it is not missed. */
 	const starting = new Set<Promise<JournalWatch | undefined>>();
 
 	const headOf = (streamId: string): Head => {
@@ -95,7 +79,6 @@ export function openJournalStore(
 		head.messageSeq = message.seq;
 	};
 
-	/** Reads what other replicas appended to `streamId` since this store last looked. */
 	const catchUp = async (streamId: string): Promise<Head> => {
 		const head = headOf(streamId);
 		const subject = subjectOfStream(streamId);
@@ -111,7 +94,6 @@ export function openJournalStore(
 		return head;
 	};
 
-	/** One append per stream at a time in this store; other replicas are held off by the server. */
 	const exclusive = async <T>(
 		streamId: string,
 		work: () => Promise<T>,
@@ -197,7 +179,6 @@ export function openJournalStore(
 						head.revision,
 					);
 
-				// Build every envelope before writing, so a bad input writes nothing.
 				const ts = new Date().toISOString();
 				const built = toWrite.map((input, index) =>
 					createEventEnvelope({
@@ -269,9 +250,7 @@ export function openJournalStore(
 					if (stopped) return;
 					try {
 						await handler(event);
-					} catch {
-						// A handler's failure is the handler's business; delivery goes on.
-					}
+					} catch {}
 				});
 			};
 			const subject =
@@ -321,7 +300,6 @@ export function openJournalStore(
 			};
 		},
 
-		/** The head as this store last read or wrote it; another replica may be ahead. */
 		getStreamHead(streamId: string): StreamHead | undefined {
 			const head = heads.get(streamId);
 			if (head === undefined || head.messageSeq === 0) return undefined;

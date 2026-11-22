@@ -1,7 +1,3 @@
-/**
- * The `github-actions-job` work kind of HoBo Fleet (L16). Signatures frozen by
- * the fleet contract commit (ADR-0183).
- */
 import type {
 	Clock,
 	FleetLog,
@@ -14,9 +10,7 @@ import { githubActionsRunner } from "./runner.js";
 import { githubActionsSource } from "./source.js";
 
 export type GithubWorkOptions = Readonly<{
-	/** The existing poller's options, unchanged. */
 	poller: GithubJobPollerOptions;
-	/** Mints one single-use just-in-time runner registration; the result is the order's sealed secret. */
 	mintRegistration(
 		input: Readonly<{
 			repository: string;
@@ -28,14 +22,12 @@ export type GithubWorkOptions = Readonly<{
 	log: FleetLog;
 }>;
 
-/** Polls queued jobs for a fleet's repositories and prepares one registration per claimant. */
 export function createGithubActionsWorkSource(
 	options: GithubWorkOptions,
 ): WorkSource {
 	return githubActionsSource(options);
 }
 
-/** Runs one just-in-time runner inside the order's sandbox and fences the job it is handed. */
 export function createGithubActionsWorkRunner(): WorkRunner {
 	return githubActionsRunner();
 }

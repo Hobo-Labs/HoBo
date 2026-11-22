@@ -1,6 +1,3 @@
-// ACTIVE members and their credentials, made by the real enrollment
-// authority (L02) over a deployment of the harness, for the backup and
-// restore tests. The parts L02 routes elsewhere are doubles (§11.3 rule 6).
 import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {
@@ -53,7 +50,6 @@ function refused<T>(message: string): Outcome<T> {
 	return { ok: false, error: { code: "unavailable", message } };
 }
 
-/** The enrollment authority and the credential issuer whose person tokens it accepts. */
 export type ComposedAuthority = Readonly<{
 	authority: EnrollmentAuthority;
 	issuer: CredentialIssuer;
@@ -145,7 +141,6 @@ export function enrollmentAuthority(
 	return { authority: createEnrollmentAuthority(deps, parts), issuer };
 }
 
-/** Publishes the fleet record the projection would, with AUTO_OWNER approval. */
 export async function publishFleet(dep: Deployment, now: () => number) {
 	const record = create(FleetRecordSchema, {
 		fleetId: FLEET,
@@ -181,7 +176,6 @@ export type EnrolledMember = Readonly<{
 	generation: number;
 }>;
 
-/** Enrolls `name` with a person token bound to its identity key and refreshes its credentials once. */
 export async function enrollActive(
 	dep: Deployment,
 	composed: ComposedAuthority,
@@ -219,7 +213,6 @@ export async function enrollActive(
 			}),
 		),
 	);
-	// The owner, signed in with the device's identity key as the DPoP key (D44).
 	const issued = await issuer.issuePerson({
 		principal: OWNER,
 		tenant: dep.tenant,

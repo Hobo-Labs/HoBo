@@ -1,9 +1,3 @@
-/**
- * The permission templates of §6.7, exactly as listed there: the three scoped
- * signing-key templates a device's credentials come from, and the static
- * users of each tenant account. `{{name()}}` expands to the user JWT's name,
- * which the callout sets to the `MemberId`.
- */
 import { type MemberRecord, MemberState, Role } from "@hobo/fleet";
 import { AUDIT_SUBJECTS, BUCKETS, bucketStream, STREAMS } from "./names.js";
 
@@ -77,7 +71,6 @@ export const TEMPLATES = {
 	dispatcher,
 } satisfies Readonly<Record<DeviceTemplate, SubjectPermissions>>;
 
-/** The template's subjects with `{{name()}}` expanded, as the server applies them to one connection. */
 export function expandTemplate(
 	template: DeviceTemplate,
 	name: string,
@@ -89,11 +82,6 @@ export function expandTemplate(
 	};
 }
 
-/**
- * The highest template any of the member's fleet memberships grants
- * (dispatcher, then executor, then observer; reconcilers and junctions are
- * observers), or undefined for a member that holds no role or is not active.
- */
 export function templateFor(record: MemberRecord): DeviceTemplate | undefined {
 	if (record.state !== MemberState.ACTIVE) return undefined;
 	const roles = new Set(record.memberships.flatMap((m) => m.roles));
@@ -121,15 +109,9 @@ const FLEET_STREAMS = Object.values(STREAMS);
 const FLEET_BUCKET_STREAMS = Object.values(BUCKETS).map(bucketStream);
 const ALL_FLEET_STREAMS = [...FLEET_STREAMS, ...FLEET_BUCKET_STREAMS];
 
-/**
- * The static users' permissions. The authority may manage consumers and read
- * and write every fleet subject and bucket, but never create, update, delete
- * or purge a stream; only the provisioner administers streams.
- */
 export type StaticPermissions = SubjectPermissions &
 	Readonly<{
 		denyPublish: readonly string[];
-		/** May answer requests sent to it (the callout responder answers the server). */
 		allowResponses: boolean;
 	}>;
 
@@ -141,9 +123,6 @@ export function staticUserPermissions(user: StaticUser): StaticPermissions {
 					"fleet.>",
 					"$JS.API.INFO",
 					...Object.values(BUCKETS).map((bucket) => `$KV.${bucket}.>`),
-					// One token per stream: the tenant account holds only fleet
-					// streams, and naming each of them overflows the server's 4 KiB
-					// control line once the user JWT is in the CONNECT.
 					"$JS.API.STREAM.INFO.*",
 					"$JS.API.STREAM.MSG.GET.*",
 					"$JS.API.STREAM.MSG.DELETE.*",
@@ -154,7 +133,6 @@ export function staticUserPermissions(user: StaticUser): StaticPermissions {
 				],
 				subscribe: ["fleet.>", "_INBOX.>", "$SYS.REQ.USER.AUTH"],
 				denyPublish: [
-					// Only the witness co-signs (§6.7: "the witness on its one subject").
 					AUDIT_SUBJECTS.witness,
 					"$JS.API.STREAM.CREATE.>",
 					"$JS.API.STREAM.UPDATE.>",

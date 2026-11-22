@@ -1,8 +1,3 @@
-/**
- * Pure cryptographic unit tests (no HTTP / no PACT boundaries).
- * AWS SigV4 math. (DPoP lives in @hobo/fleet/keys and JWT-SVIDs in
- * @hobo/identity, each with its own tests.)
- */
 import { describe, expect, it } from "vitest";
 
 import { signAwsRequest } from "../../src/dns/aws-sigv4.js";

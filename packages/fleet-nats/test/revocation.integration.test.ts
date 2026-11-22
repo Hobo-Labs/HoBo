@@ -1,11 +1,3 @@
-/**
- * O5, revocation meets its service level, in the form that holds without
- * assumptions A3 and A4 (neither verified in this lane; see the README):
- * live readers see a revoked device within 5 s; the revoked device's next
- * connection is refused; and once the executor scoped signing key is removed
- * from the tenant account and the account pushed (§6.16), no new executor
- * connection is authorised. No bound is asserted for a live connection.
- */
 import { MemberState, Role } from "@hobo/fleet";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mintAccount, tenantKeys } from "../src/bus/nats-jwt.js";

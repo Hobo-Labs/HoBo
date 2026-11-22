@@ -1,7 +1,7 @@
 # Fleet commands
 
 `createFleetCommands(deps)` implements the `FleetCommands` part of the
-authority API ([fleets, members and roles](../../../../docs/design/fleet.md#fleets-members-and-roles), [many-active fleets](../../../../docs/design/fleet.md#many-active-fleets-offers-claims-orders-and-receipts), [transport](../../../../docs/design/fleet.md#transport), [policy, tenancy and residency](../../../../docs/design/fleet.md#policy-tenancy-and-residency), [event family](../../../../docs/design/fleet.md#event-family)): `listFleets`,
+authority API (fleets, members and roles, many-active fleets, transport, policy, tenancy and residency, event family): `listFleets`,
 `getFleet`, `defineFleet`, `fleetView`, `fleetVerdict`, `grantSession` and
 `submitWork`. `createEnrollmentAuthority` routes those routes here through
 `AuthorityParts.fleets`; local mode calls it with `mode: "local"`.

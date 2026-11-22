@@ -2,9 +2,6 @@ import { CANONICAL_VERBS } from "@hobo/cli";
 import { describe, expect, it } from "vitest";
 import { createComposedHoboCli } from "../src/cli.js";
 
-// Canonical verbs whose composition lands in a later lane; their help must
-// say, truthfully, that they are not wired. `fleet` left this list when
-// `src/fleet-command.ts` wired it (HoBo Fleet, ADR-0183).
 const PENDING_VERBS: ReadonlySet<string> = new Set<string>();
 
 describe("composed CLI command inventory", () => {
@@ -19,7 +16,6 @@ describe("composed CLI command inventory", () => {
 		expect(result.stdout).toContain("Status: implemented in this composition");
 	});
 
-	// No case is registered while nothing is pending, so nothing is skipped.
 	if (pending.length > 0)
 		it.each(
 			pending,

@@ -15,7 +15,7 @@ reads the routing slip at `refs/hobo/routing-slip` with `contents: read`
 ## Fleet service release images
 
 `push-release-service-image.mts` publishes the HoBo Fleet service images
-(ADR-0183): `hobo-fleet-authority`, `hobo-fleet-witness` and
+: `hobo-fleet-authority`, `hobo-fleet-witness` and
 `hobo-fleet-relay`, built from `deploy/release-images/<id>/Dockerfile`.
 
 - The `release-service-images` job of `release-hobo.yml` runs one image per leg,

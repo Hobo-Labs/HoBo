@@ -1,5 +1,4 @@
 // The runner-host realizer's job ports read from the box worker's data
-// directory: the journal read-only, the observation the host's fleet agent writes, and the
 // admission marker it honours. A second process (the CD agent) reads them;
 // the worker stays the journal's only writer.
 
@@ -65,7 +64,6 @@ function journal(path: string, leases: readonly [string, string][]): void {
 	db.close();
 }
 
-// The box's own observation as its fleet agent signs and publishes it.
 const advert = create(ObservationSchema, {
 	memberId: "member-box",
 	observerId: "member-box",
@@ -177,7 +175,6 @@ describe("the worker's data directory as the runner-host job ports", () => {
 				labels: [...advert.labels, `${CONTROLLER_DIGEST_LABEL}=${digest}`],
 			}),
 		).toBe(digest);
-		// An invalid digest is never read as one.
 		expect(
 			observedControllerDigest({
 				...advert,

@@ -1,21 +1,3 @@
-/**
- * Local mode (L33): a process that owns its whole fleet holds the registry
- * in-process, with no authority and no bus (§6.2 "Local mode", D6). Re-exported
- * by `@hobo/fleet/membership`.
- *
- * `createLocalFleet` runs the same enrollment state machine (L02) and fleet
- * commands (L32, `mode: "local"`, so `ONE_ACTIVE` is accepted, D39) on
- * `createMemoryEventStore`: it defines the configured fleet as its owner, then
- * declares each configured member under the owner's `AUTO_OWNER` approval, so
- * every member is ACTIVE at once. The registry is rebuilt from configuration
- * at every cold start; member ids are `sponsoredMemberId` of the tenant, kind,
- * fleet and name, so a second start yields the same ids. Nothing is signed:
- * the record signer writes an empty signature with no key, the trust record
- * holds no keys, and the registry keeps records without their signing-time
- * fields. For a one-active fleet the registry lists the configured members as
- * candidates; which of them decide is the assignment log's business (§6.10
- * item 1).
- */
 import { create } from "@bufbuild/protobuf";
 import { createMeteringBus } from "@hobo/core";
 import {
@@ -50,7 +32,6 @@ import {
 } from "./parts.js";
 import { createLocalRegistry } from "./registry.js";
 
-/** No key and no signature: local mode would only be signing to itself (§3.3 rule 6). */
 const UNSIGNED: Signer = {
 	keyId: parseKeyId("authority#0"),
 	algorithm: KeyAlgorithm.UNSPECIFIED,
@@ -155,11 +136,6 @@ export async function createLocalFleet(init: LocalFleetInit): Promise<
 	return { registry: registry.view, fleet, members };
 }
 
-/**
- * The configured policy with an unset approval mode read as `AUTO_OWNER`. A
- * mode that needs another principal (`SINGLE`, `DUAL`) cannot be met by one
- * process and is refused (`fleet-policy`, rule `local-approval`).
- */
 function localPolicy(init: LocalFleetInit): FleetPolicy {
 	if (init.policy.approval === ApprovalMode.UNSPECIFIED)
 		return create(FleetPolicySchema, {

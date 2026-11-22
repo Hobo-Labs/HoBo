@@ -1,8 +1,3 @@
-/**
- * L39 / O45: overlay join credentials are single use, short-lived and
- * tag-scoped. Each minter runs against a recording fake `fetch`.
- */
-
 import { parseTenantId } from "@hobo/core";
 import { type MemberId, parseMemberId } from "@hobo/fleet";
 import { describe, expect, it, vi } from "vitest";
@@ -32,7 +27,6 @@ type Recorded = Readonly<{
 
 type Reply = Readonly<{ status: number; body: string }>;
 
-/** A fake `fetch` and the requests it was given, in order. */
 type RecordingFetch = Readonly<{ fetch: typeof fetch; calls: Recorded[] }>;
 
 function recordingFetch(
@@ -83,7 +77,6 @@ function bodyOf(call: Recorded | undefined): JsonObject {
 	return parseJsonObject(call?.body ?? "{}");
 }
 
-/** Everything written to the console or to stdout/stderr while `run` executes. */
 async function captureOutput<T>(
 	run: () => Promise<T>,
 ): Promise<{ value: T; lines: string[] }> {
@@ -338,7 +331,6 @@ describe("createNetbirdCredentialMinter", () => {
 		expect(body.usage_limit).toBe(1);
 		expect(body.ephemeral).toBe(false);
 		expect(body.auto_groups).toEqual(["grp-ci-0001", "grp-gpu-0002"]);
-		// NetBird refuses an expiry under one day (A13): the shortest it allows is asked for.
 		expect(body.expires_in).toBe(86_400);
 		expect(String(body.name)).toContain("hobo-fleet");
 
@@ -355,7 +347,6 @@ describe("createNetbirdCredentialMinter", () => {
 		const { fetch, calls } = recordingFetch(netbirdReply);
 		const minter = createNetbirdCredentialMinter(options(fetch));
 		await minter.mint({ tenant, memberId, tags: [], ttlMs: 2 * 86_400_000 });
-		// No tags: no group lookup, and the key joins no group.
 		expect(calls).toHaveLength(1);
 		expect(bodyOf(calls[0]).expires_in).toBe(172_800);
 		expect(bodyOf(calls[0]).auto_groups).toEqual([]);

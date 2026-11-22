@@ -1,12 +1,3 @@
-/**
- * O3, per-device isolation on the bus: for each template, every probed
- * subject outside it is refused, including another member's observation key,
- * orders and consumers, the registry and every stream administration
- * subject; a connection without TLS is refused. Also the assumptions A1
- * (`{{name()}}` expands for publish, subscribe and consumer names), A2 (the
- * callout runs for sentinel credentials) and A6 (a named `ack_policy: none`
- * pull consumer works with only the template's subjects).
- */
 import { create } from "@bufbuild/protobuf";
 import {
 	type DeviceKeys,
@@ -37,7 +28,6 @@ const ROLES = {
 	dispatcher: Role.DISPATCHER,
 } satisfies Readonly<Record<DeviceTemplate, Role>>;
 
-/** Subjects no device may publish to, whatever its template; `other` is another member. */
 function forbiddenPublish(self: string, other: string): readonly string[] {
 	return [
 		`$KV.fleet-observations.${other}.${self}`,
@@ -78,7 +68,6 @@ function forbiddenPublish(self: string, other: string): readonly string[] {
 	];
 }
 
-/** Subjects the template withholds that a higher template grants. */
 const WITHHELD = {
 	observer: (self) => [
 		"fleet.claim.builders.0123456789abcdef0123456789abcdef",

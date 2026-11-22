@@ -168,10 +168,7 @@ describe("runner provider offers", () => {
 			poolLabel: "hobo",
 			hoboCapacity: capacity,
 		});
-		// Busy slots across the fleet, not the relay's own leases; the ceiling is
-		// the lower of the offer's and the fleet's slots.
 		expect(box).toMatchObject({ activeJobs: 4, concurrency: 3, healthy: true });
-		// Only the hobo provider reads the fleet.
 		expect(arc).toMatchObject({ activeJobs: 1, healthy: true });
 
 		const [sick] = runnerProvidersFromAccount(account(), [], {
@@ -193,7 +190,6 @@ describe("runner provider offers", () => {
 			poolLabel: "hobo",
 			hoboCapacity: create(FleetCapacitySchema, {}),
 		});
-		// A fleet with no live member has no slot to give.
 		expect(quiet).toMatchObject({
 			activeJobs: 0,
 			concurrency: 0,

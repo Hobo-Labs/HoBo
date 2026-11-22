@@ -49,7 +49,6 @@ const CONFIG = {
 			credentialSecret: "ts-token",
 		},
 	],
-	// An operations key the authority does not know: ignored.
 	witnessTimeoutMs: 120000,
 };
 
@@ -63,7 +62,6 @@ function slot(kid: string): string {
 	});
 }
 
-/** What the network doubles were handed. */
 type Seen = {
 	servers?: readonly string[];
 	credentials?: string;
@@ -274,7 +272,6 @@ describe("composing the authority from one configuration", () => {
 				member,
 				template: "executor",
 			});
-		// Not a decision: a responder's connection status is not counted.
 		log?.("hobo_fleet_bus_status", { status: "reconnecting" });
 		log?.("hobo_fleet_callout_refused", {
 			check: "request-signature",

@@ -1,6 +1,6 @@
 # `@hobo/fleet/client`
 
-The typed HTTP client of the authority's API ([surfaces](../../../../docs/design/fleet.md#surfaces), [the ports](../ports.ts)).
+The typed HTTP client of the authority's API (surfaces, [the ports](../ports.ts)).
 
 | Entry point | What it does |
 |---|---|

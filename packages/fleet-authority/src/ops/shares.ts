@@ -1,8 +1,3 @@
-// Two-of-two shares of the operator key (design §6.16 "Key ceremony"): the
-// first share is 32 random bytes, the second the seed XOR the first, so each
-// share alone is uniformly random and says nothing about the key. Each share
-// names its index and the operator's public key, so a wrong pairing is
-// detected when they are combined. Private to L27.
 import { randomBytes } from "node:crypto";
 import type { Outcome } from "@hobo/fleet";
 import { encodeNkeyPublic, encodeNkeySeed } from "./nkeys.js";
@@ -42,7 +37,6 @@ function parseShare(text: string): Share | undefined {
 	return { index, operator, bytes };
 }
 
-/** The operator key's nkey seed from its two shares, in either order. */
 export function combineShares(
 	a: string,
 	b: string,

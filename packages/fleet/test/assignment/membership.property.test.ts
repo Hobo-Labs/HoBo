@@ -1,14 +1,3 @@
-/**
- * Membership epochs (design §6.10 item 2, O15): the deciding set, the pin and
- * one-name changes, and the safety property over randomised interleavings.
- *
- * The property runs concurrent proposers, a completer and one membership actor
- * (pin, then admit or remove one name) against in-memory replicas under a
- * seeded scheduler, starting from a log with no member sets, with replicas
- * going down and coming back. After every step it checks, from outside, that
- * no two different entries are decided for one epoch, where an entry is
- * decided when a majority of its deciding set holds it.
- */
 import { describe, expect, it } from "vitest";
 import { Health } from "../../src/_generated/fleet_pb.js";
 import {
@@ -127,7 +116,6 @@ describe("resolving over the deciding set", () => {
 	});
 
 	it("counts a decider with no replica as silent", () => {
-		// b2 was removed from configuration before its removal was decided.
 		const pinned = entry(1, {
 			reason: "pin-members",
 			members: names("b0", "b1", "b2"),
@@ -147,7 +135,6 @@ describe("resolving over the deciding set", () => {
 			reason: "pin-members",
 			members: names("b0", "b1", "b2"),
 		});
-		// b3 is configured but not admitted: its copy does not decide.
 		const resolution = resolveAssignment(names("b0", "b1", "b2", "b3"), [
 			rows("b0", pinned),
 			rows("b1"),
@@ -177,7 +164,6 @@ describe("proposeMembership", () => {
 				members: ["b0", "b1", "b2"],
 			},
 		});
-		// Ordinary entries copy the set.
 		const next = await proposeAssignment(register, {
 			expectedEpoch: 2,
 			value: {
@@ -218,9 +204,7 @@ describe("proposeMembership", () => {
 			holders: ["b0", "b1", "b2", "b3"],
 			assignment: { reason: "admit:b3", members: ["b0", "b1", "b2", "b3"] },
 		});
-		// The proposer first copied the log onto the newcomer, which then took it.
 		expect(newcomer.rows.map((row) => row.epoch)).toEqual([1, 2, 3]);
-		// A replica without `seed` is left alone; its next proposal repairs it.
 		expect(await rejoinAssignmentReplicas(register)).toEqual([]);
 	});
 
@@ -339,7 +323,6 @@ describe("proposeMembership", () => {
 	});
 });
 
-/** Decided entries from outside: a majority of each entry's deciding set holds it. */
 function decidedFromOutside(
 	replicas: readonly MemoryReplica[],
 	configured: readonly MemberName[],
@@ -382,8 +365,6 @@ async function explore(seed: number) {
 	const replicas = admit ? [...base, newcomer] : base;
 	const removed = configured[1 + scheduler.pick(size - 1)] ?? n("b1");
 	const before = parseAssignmentRegister(base);
-	// After the pin is decided, the fleet is reconfigured: the newcomer joins, or
-	// the removed member may be dropped from configuration before its removal.
 	const after = admit
 		? parseAssignmentRegister(replicas)
 		: scheduler.random() < 0.5
@@ -391,7 +372,6 @@ async function explore(seed: number) {
 					base.filter((replica) => replica.id !== removed),
 				)
 			: before;
-	// A log with no member sets: a few epochs decided by every member.
 	await bootstrapAssignment(before, n("b0"));
 	const warmUp = scheduler.pick(3);
 	for (let epoch = 1; epoch <= warmUp; epoch += 1)
@@ -434,7 +414,6 @@ async function explore(seed: number) {
 			}
 		}
 	};
-	/** A reader may only ever answer with an entry that was decided. */
 	const read = async (register: AssignmentRegister) => {
 		const view = await readCurrentAssignment(register);
 		check();
@@ -534,7 +513,6 @@ describe("randomised interleavings with a pin and one membership change", () => 
 			outages += run.outages;
 			steps += run.steps;
 		}
-		// The runs must have exercised what they claim to check.
 		expect(pins).toBeGreaterThan(3_500);
 		expect(changes).toBeGreaterThan(2_000);
 		expect(outages).toBeGreaterThan(10_000);

@@ -1,20 +1,12 @@
-/**
- * A TCP socket as a raw `FleetStream`: exact reads for the handshake, then
- * the rest of the bytes, starting with whatever the handshake read too far.
- * Writes wait for the socket to drain, so a bulk transfer is paced by TCP.
- */
 import type { Socket } from "node:net";
 import type { FleetStream } from "@hobo/fleet";
 
 export type SocketReader = Readonly<{
-	/** Exactly `count` bytes, or undefined when the socket ended first. */
 	exact(count: number): Promise<Uint8Array | undefined>;
-	/** The socket as a raw stream; its reads start after the bytes `exact` took. */
 	stream(peer: string): FleetStream;
 }>;
 
 export function socketReader(socket: Socket): SocketReader {
-	// Never `return()`ed: that would destroy the socket under the reader.
 	const source: AsyncIterator<Buffer> = socket[Symbol.asyncIterator]();
 	let pending: Buffer = Buffer.alloc(0);
 	let bytesSent = 0;

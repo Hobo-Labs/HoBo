@@ -1,6 +1,3 @@
-// O18: backup and restore work. After a restore into a fresh deployment,
-// every pre-backup member is ACTIVE, every pre-restore credential is refused
-// with `incarnation-stale`, and the audit chain verifies.
 import { join } from "node:path";
 import { fromBinary } from "@bufbuild/protobuf";
 import { MemberRecordSchema, MemberState } from "@hobo/fleet";
@@ -38,14 +35,12 @@ describe("O18 backup and restore", () => {
 			const trust = fresh.dep.bus.registry.trust();
 			expect(trust.authorityIncarnation).toBe(2);
 
-			// Every pre-backup member is ACTIVE in the rebuilt registry, under the new incarnation.
 			for (const member of live.members) {
 				const record = await fresh.dep.bus.registry.member(member.memberId);
 				expect(record?.state).toBe(MemberState.ACTIVE);
 				expect(record?.authorityIncarnation).toBe(2);
 			}
 
-			// Every pre-restore credential is refused with incarnation-stale.
 			for (const member of live.members) {
 				for (const credential of [member.ticket, member.record]) {
 					const checked = checkIncarnation(credential, trust);
@@ -59,7 +54,6 @@ describe("O18 backup and restore", () => {
 				).toBe(1);
 			}
 
-			// Every device refreshes: the restored journal still knows its generation.
 			const store = await fresh.store();
 			const authority = enrollmentAuthority(fresh.dep, store, live.now, 2);
 			for (const member of live.members) {
@@ -75,8 +69,6 @@ describe("O18 backup and restore", () => {
 				expect(checkIncarnation(ticket, trust).ok).toBe(true);
 			}
 
-			// The audit chain verifies: the restored entries, the checkpoints the
-			// witness co-signed again, and a new checkpoint in the new incarnation.
 			await fresh.dep.tickAudit();
 			live.fixture.clock.advance(61_000);
 			await fresh.dep.tickAudit();
@@ -90,7 +82,6 @@ describe("O18 backup and restore", () => {
 				fresh.dep.bus.registry.trust(),
 			);
 			if (!verified.ok) throw new Error(verified.error.message);
-			// Final through the last entry but the one recording the last checkpoint itself.
 			expect(verified.value.finalThrough).toBe(entries.length - 1);
 			expect(verified.value.finalThrough).toBeGreaterThan(restoredEntries);
 		} finally {

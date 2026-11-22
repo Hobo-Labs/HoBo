@@ -1,6 +1,3 @@
-// Fixtures for the recorder and projection tests: an authority key and trust
-// record on the memory bus, devices with identity-signed key bundles, signed
-// work envelopes, a recording metering sink and a settle helper.
 import { generateKeyPairSync, sign } from "node:crypto";
 import { create, toBinary, toJson } from "@bufbuild/protobuf";
 import {
@@ -55,9 +52,9 @@ import {
 } from "../../src/contexts.js";
 import {
 	type FleetId,
-	type MemberId,
 	parseFleetId,
 	parseKeyId,
+	parseMemberId,
 	parseWorkDigest,
 	type WorkDigest,
 } from "../../src/ids.js";
@@ -82,15 +79,14 @@ export const DIGEST: WorkDigest = parseWorkDigest(
 );
 export const iso = (ms: number): string => new Date(ms).toISOString();
 
-/** A clock the test moves by hand. */
 export type TestClock = { (): number; ms: number; advance(ms: number): void };
 export function testClock(start = START): TestClock {
-	// SAFETY: `ms` and `advance` are assigned on the next lines, before the clock is returned.
-	const clock = (() => clock.ms) as TestClock;
-	clock.ms = start;
-	clock.advance = (ms) => {
-		clock.ms += ms;
-	};
+	const clock: TestClock = Object.assign(() => clock.ms, {
+		ms: start,
+		advance(ms: number) {
+			clock.ms += ms;
+		},
+	});
 	return clock;
 }
 
@@ -175,7 +171,6 @@ export async function world(): Promise<World> {
 	};
 }
 
-/** A second bus over the same clock and trust: the buckets deleted. */
 export async function freshBus(of: World): Promise<AuthorityBus> {
 	const bus = createMemoryBus(of.clock);
 	const trust = of.bus.registry.trustEnvelope();
@@ -230,7 +225,6 @@ export async function device(
 	return { keys, record };
 }
 
-/** Puts a member record on the bus, signed and valid for 30 minutes from now. */
 export async function publishMember(
 	at: World,
 	record: MemberRecord,
@@ -247,8 +241,7 @@ export async function publishMember(
 			MEMBER_RECORD_CONTEXT,
 			toBinary(MemberRecordSchema, signed),
 		),
-		// SAFETY: fixtures build member ids from the key store.
-		record.memberId as MemberId,
+		parseMemberId(record.memberId),
 	);
 }
 
@@ -463,14 +456,12 @@ export async function sessionClose(
 	);
 }
 
-/** Every event in the store, in append order. */
 export async function allEvents(store: FleetEventStore) {
 	const out = [];
 	for await (const positioned of store.readAll()) out.push(positioned.event);
 	return out;
 }
 
-/** Lets queued deliveries and the recorder's chain run until the store stops growing. */
 export async function settle(store: FleetEventStore): Promise<void> {
 	let last = -1;
 	let stable = 0;
@@ -485,7 +476,6 @@ export async function settle(store: FleetEventStore): Promise<void> {
 
 export const SERVICE = { kind: "service", id: "test" } as const;
 
-/** Appends events as another lane would (L02 members, L32 fleets and submissions, grants). */
 export async function appendAs(
 	store: FleetEventStore,
 	stream: string,
@@ -500,7 +490,6 @@ export async function appendAs(
 	});
 }
 
-/** A record-changing member event in L02's shape (journal.ts). */
 export function memberEvent(
 	type: string,
 	record: MemberRecord,
@@ -510,13 +499,11 @@ export function memberEvent(
 		data: {
 			subject: `member.${record.memberId}`,
 			subjectSequence: record.recordSequence,
-			// SAFETY: protobuf JSON of a message is a JSON object.
-			record: toJson(MemberRecordSchema, record) as JsonObject,
+			record: toJson(MemberRecordSchema, record),
 		},
 	};
 }
 
-/** A fleet event in the shape this lane reads (data.record, as L02 does for members). */
 export function fleetEvent(
 	type: string,
 	record: FleetRecord,
@@ -526,8 +513,7 @@ export function fleetEvent(
 		data: {
 			subject: `fleet.${record.fleetId}`,
 			subjectSequence: record.revision,
-			// SAFETY: protobuf JSON of a message is a JSON object.
-			record: toJson(FleetRecordSchema, record) as JsonObject,
+			record: toJson(FleetRecordSchema, record),
 		},
 	};
 }

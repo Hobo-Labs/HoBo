@@ -1,6 +1,6 @@
 # Fleet guard scripts and their fixtures
 
-The HoBo Fleet work (ADR-0183) is verified by a small set of root scripts. Each
+The HoBo Fleet work is verified by a small set of root scripts. Each
 is wired to a root `package.json` command and each has a test under
 `scripts/test/`.
 
@@ -41,11 +41,8 @@ scanned, nor is anything under `docs/` or `site/`. An allowlist entry is
 `node --import tsx scripts/check-fleet-docs.mts [--root=<dir>]` exits 1 and
 prints one line per gap when:
 
-- an event type in `packages/fleet/src/events.ts` is missing from
-  `docs/design/fleet.md`, or from the `fleet.*` row of
-  `docs/design/event-families.md`;
-- an `ADR-NNNN` named in `docs/design/fleet.md` or `docs/design/adr/fleet.md`
-  is not a row of `docs/design/adr/index.md`;
+- an event type in `packages/fleet/src/events.ts` is missing from the
+  `## Events` section of `packages/fleet/README.md`;
 - a runbook file is missing under `docs/maintenance/fleet/`. The eleven names
   are `RUNBOOK_FILES` in the script (named so that rule 9 does not find
   the guard scripts themselves): `install-and-upgrade.md`,

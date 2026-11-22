@@ -1,9 +1,3 @@
-/**
- * The junction agent on the fleet device agent (L14, ledger §8.3): it
- * enrolls with role `JUNCTION`, joins the overlay with the single-use
- * `OverlayJoin` the authority returned (never a configured key), and only
- * then runs the device agent with the overlay transport.
- */
 import {
 	type OverlayJoinOptions,
 	type OverlayJoinResult,

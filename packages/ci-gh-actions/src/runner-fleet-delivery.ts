@@ -1,27 +1,3 @@
-/**
- * HoBo's own runner fleet, delivered by HoBo CD (ADR-0182).
- *
- * The hosts that run HoBo's self-hosted GitHub Actions runners (the box
- * worker, enrolled fleet devices and developer devices serving `hobo`, `hobo-trunk` and
- * `hobo-local-host`) are Camps of one Yard. This module turns a declared host
- * list into what `@hobo/cd` reads, as plain records in protobuf JSON form
- * (`packages/cd/data-models/cd.proto`), so `hobo deploy pipeline apply --file
- * packages/ci-gh-actions/deploy/runner-fleet/hobo.delivery.json` applies them:
- *
- * - a Camp set for the `hobo-ci-runner-fleet` Bindle, selected by label;
- * - an OCI Freight source that polls GHCR for the worker image's release tags
- *   (`scripts/ci/push-ci-runner-image-ghcr.mts` publishes them);
- * - a Placement with a pilot group, and a pipeline node that fans out
- *   PROGRESSIVE_PER_GROUP: the pilot first and mandatory, a failure budget of
- *   one host, a quorum, and departing hosts left running (ORPHAN).
- *
- * It also maps what the fleet already reports about each host (a `DEVICE`
- * member of fleet `hobo`: its `FleetMemberView` availability, health, state
- * and served labels) to Camp inventory conditions and claims, from the health
- * source. Nothing here changes job routing.
- *
- * It holds data and pure functions only: no I/O, no clock but the one given.
- */
 import {
 	Availability,
 	type FleetMemberView,
@@ -55,13 +31,6 @@ export const RUNNER_FLEET_RAIL = "hobo-ci-runner-fleet";
 export const RUNNER_IMAGE_CREDENTIAL_REF = "env://HOBO_CI_GHCR_READ_TOKEN";
 // public-contract: the Freight artifact a container-mode controller runs (the worker image).
 export const RUNNER_IMAGE_ARTIFACT = "hobo-ci-worker";
-/**
- * The single-file releases a process-mode controller runs, one per program:
- * the box worker daemon (box workers and fleet devices) and the local runner
- * (developer devices).
- * `scripts/build-controller-release.mts` builds them under these names and
- * writes `index.<artifact>.json` for each.
- */
 // public-contract: Freight artifact names and runner-host realization parameter keys of the controller releases.
 export const RUNNER_RELEASE_ARTIFACTS = Object.freeze({
 	workerRelease: "hobo-ci-worker-release",
@@ -104,12 +73,6 @@ export function servedLabelClaims(
 }
 const DEFINED_BY = "packages/ci-gh-actions/deploy/runner-fleet";
 const HOST_ID = /^[a-z0-9][a-z0-9-]{0,62}$/u;
-/**
- * Every runner host is a `DEVICE` member of fleet `hobo`. `box-worker` is the
- * box; `fleet-device` an enrolled host running the worker daemon;
- * `developer-device` a developer's enrolled machine whose controller is the
- * local runner (it keeps a registered runner and serves `hobo-local-host`).
- */
 const HOST_KINDS = ["box-worker", "fleet-device", "developer-device"] as const;
 const RINGS = ["pilot", "fleet"] as const;
 
@@ -126,7 +89,6 @@ export type ServedRunnerLabel = (typeof SERVED_LABELS)[number];
 
 // domain-view: one parsed runner host (the derived type every builder takes).
 export type RunnerHost = Readonly<{
-	/** The host's device name in fleet `hobo`; the Camp is `hobo-ci-runners/<id>`. */
 	id: string;
 	kind: RunnerHostKind;
 	runnerLabels: readonly ServedRunnerLabel[];
@@ -590,14 +552,6 @@ export type RunnerFreightArtifact = Readonly<{
 	coordinate: string;
 }>;
 
-/**
- * The runner-host row's realization parameters for one Freight: `image`, the
- * worker image pinned by its manifest digest (what a container-mode host
- * pulls), and, when the Freight carries them, each controller release as
- * `<artifact>@sha256:<sha256 of its bytes>` (what a process-mode host
- * stages: `workerRelease` on a box worker or fleet device, `localRunnerRelease`
- * on a local runner). Undefined when the Freight has no digest-pinned image.
- */
 export function runnerHostRealizationParameters(
 	artifacts: readonly RunnerFreightArtifact[],
 ):
@@ -661,16 +615,6 @@ export type RunnerCampObservation = Readonly<{
 	}>[];
 }>;
 
-/**
- * What the fleet reports about each declared host, as Camp inventory
- * observations from the health source. Each host is the `DEVICE` member of
- * fleet `hobo` named by its id. A `LIVE` member is contact (REACHABLE); an
- * `ACTIVE` one holds its membership (LEASED); a reachable one (not draining
- * or pressured) is READY. A `LOST` member is all FALSE; a host with no member
- * is UNKNOWN, never assumed healthy. The served labels are claims: they
- * narrow (a host that stopped serving a declared label reads as
- * inconsistent) and never grant.
- */
 export function runnerFleetCampObservations(
 	hosts: readonly RunnerHost[],
 	members: readonly FleetMemberView[],

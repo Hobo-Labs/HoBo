@@ -6,8 +6,6 @@ import { FleetNotImplemented } from "../../../src/errors.js";
 import { createTestAuthority } from "../../../src/testing/plumbing/test-authority.js";
 
 describe("createTestAuthority", () => {
-	// Composition only: until the parts it composes have merged (end of wave 3)
-	// it rejects with FleetNotImplemented; afterwards it publishes its trust record.
 	it("publishes a sequence-1 trust record on its bus, or reports the missing part", async () => {
 		const now = () => Date.parse("2026-11-12T10:00:00Z");
 		let composed: Awaited<ReturnType<typeof createTestAuthority>> | undefined;

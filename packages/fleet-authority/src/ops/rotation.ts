@@ -1,7 +1,3 @@
-// Key rotation (design §6.16): add, publish, switch, remove, in that order,
-// safe to interrupt at any step. Progress is kept in its own secret
-// (`<prefix>/rotation/<which>`, no key material) and every step is idempotent,
-// so a second call continues from the step the first reached. Private to L27.
 import { generateKeyPairSync } from "node:crypto";
 import { fromBinary } from "@bufbuild/protobuf";
 import type { JsonObject } from "@hobo/core";
@@ -41,13 +37,7 @@ import { changeTrust, nextTrustRecord, type TrustDeps } from "./trust.js";
 export type RotationStep = "add" | "publish" | "switch" | "remove";
 export type Reached = RotationStep | "done";
 
-/**
- * How long after the switch the old key stays published: the longest a
- * credential or registry record it signed stays valid (records 30 minutes,
- * tickets and tokens 15).
- */
 export const ROTATION_GRACE_MS = 30 * 60 * 1_000;
-/** The token ring's own rule (@hobo/identity): a retired key verifies for 15 minutes. */
 export const TOKEN_GRACE_MS = 15 * 60 * 1_000;
 
 export type NatsKey = Exclude<
@@ -55,7 +45,6 @@ export type NatsKey = Exclude<
 	"token-signing" | "record-signing" | "witness"
 >;
 
-/** Publishes the signing keys NATS accepts: the operator JWT's for `operator-signing`, the tenant account JWT's for the others. */
 export type NatsSigningKeys = Readonly<{
 	publish(
 		which: NatsKey,
@@ -79,11 +68,9 @@ type Progress = Readonly<{
 	newKid: string;
 	oldKid: string;
 	switchedAtMs?: number;
-	/** The proposed trust record of the current step, base64, so a resumed step proposes the same bytes. */
 	proposal?: string;
 }>;
 
-/** A `Progress` while it is parsed. */
 type ProgressDraft = { -readonly [K in keyof Progress]: Progress[K] };
 
 const DONE: Progress = { reached: "done", newKid: "", oldKid: "" };
@@ -134,8 +121,6 @@ function failure<T>(
 ): Outcome<T> {
 	return { ok: false, error: { code, message } };
 }
-
-// ── The token ring (@hobo/identity's layout) ───────────────────────────────
 
 // domain-view: one entry of @hobo/identity's token-signing ring secret.
 type RingEntry = Readonly<{
@@ -197,7 +182,6 @@ function ringNumber(kid: string): number {
 	return Number.isSafeInteger(n) ? n : 0;
 }
 
-/** The ring's signing key under the rotation order: the oldest key not retired. */
 export function activeRingKid(
 	entries: readonly RingEntry[],
 ): string | undefined {
@@ -234,7 +218,6 @@ async function rotateRing(
 		await writeProgress(deps, which, state);
 	}
 	if (state.reached === "add") {
-		// Publish: the new key joins the ring, so JWKS serves it; the old key still signs.
 		if (!entries.some((entry) => entry.kid === state.newKid)) {
 			const { privateKey } = generateKeyPairSync("rsa", {
 				modulusLength: 2048,
@@ -254,7 +237,6 @@ async function rotateRing(
 		await writeProgress(deps, which, state);
 	}
 	if (state.reached === "publish") {
-		// Switch: the old key retires; it verifies for 15 minutes more and signs no longer.
 		const at = deps.now();
 		entries = entries.map((entry) =>
 			entry.kid === state.oldKid && entry.retiredAt === undefined
@@ -277,8 +259,6 @@ async function rotateRing(
 	return { ok: true, value: "done" };
 }
 
-// ── Slot keys: trust-record keys and NATS keys ─────────────────────────────
-
 function refsOf(slot: KeySlot, purpose: KeyPurpose): PublicKeyRef[] {
 	return slot.keys.map((key) => keyRefOf(key, purpose));
 }
@@ -295,7 +275,6 @@ function sameKeys(
 	return ids(a) === ids(b);
 }
 
-/** Makes the verifiers' key set for `which` equal the slot's keys. */
 async function publishSlot(
 	deps: RotationDeps,
 	which: RotatableKey,
@@ -319,7 +298,6 @@ async function publishSlot(
 				"invalid-request",
 				"the record-signing key does not exist",
 			);
-		// A resumed step proposes the bytes it journalled before, if they are still the next record.
 		const saved =
 			progress.proposal === undefined
 				? undefined
@@ -377,7 +355,6 @@ async function rotateSlot(
 	let state = progress;
 
 	if (state.reached === "done") {
-		// Add. A key left by an interrupted add (held, newer than the active one) is reused.
 		const pending = slot.keys.find(
 			(key) => key.kid !== slot.active && key.kid === nextKidAfter(slot),
 		);
@@ -433,14 +410,12 @@ async function rotateSlot(
 	return { ok: true, value: "done" };
 }
 
-/** The key id an add of `slot` creates. */
 function nextKidAfter(slot: KeySlot): string {
 	const active = slot.active;
 	const n = Number(active.slice(active.lastIndexOf("#") + 1));
 	return `${active.slice(0, active.lastIndexOf("#") + 1)}${Number.isSafeInteger(n) ? n + 1 : 1}`;
 }
 
-/** Runs the rotation of `which` from the step it reached as far as it can go now. */
 export async function rotate(
 	deps: RotationDeps,
 	which: RotatableKey,

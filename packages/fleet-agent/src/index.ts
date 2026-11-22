@@ -1,4 +1,3 @@
-// Barrel of @hobo/fleet-agent (coordinator-owned): re-exports only.
 export { createHostCapacity } from "./capacity/index.js";
 export { createEgressProxyFactory } from "./egress/index.js";
 export { installService } from "./install/index.js";

@@ -1,11 +1,3 @@
-/**
- * Fleet record and policy validation (L32, private): the `FleetRecord` and
- * `FleetPolicy` rows of §7.2, plus the shapes the work and session rules read
- * later (repository, OIDC and label rules). A record that passes is returned
- * with the tenant filled in; one that fails is refused with `invalid-request`
- * and `detail.rule` naming the rule, except `ONE_ACTIVE` in authority mode,
- * which is `fleet-policy` with rule `one-active-authority` (D39).
- */
 import { create } from "@bufbuild/protobuf";
 import type { TenantId } from "@hobo/core";
 import {
@@ -23,7 +15,6 @@ import { type FleetId, parseFleetId } from "../ids.js";
 import type { Outcome } from "../ports.js";
 import { ok, refuse } from "./support.js";
 
-/** A lower-case DNS name, no wildcard (§7.2 `egress_allow`). */
 const DNS_NAME =
 	/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/u;
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
@@ -55,7 +46,6 @@ function known(value: number, max: number): boolean {
 	return Number.isInteger(value) && value >= 1 && value <= max;
 }
 
-/** The fleet id of a request, or `invalid-request`. */
 export function fleetIdOf(value: string, field = "fleet_id"): Outcome<FleetId> {
 	try {
 		return ok(parseFleetId(value, field));

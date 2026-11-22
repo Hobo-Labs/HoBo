@@ -269,9 +269,6 @@ export function createRelayHandler(options: {
 			(path.startsWith("/v1/app-registration/") ||
 				path.startsWith("/v1/accounts/self/") ||
 				path.startsWith("/v2/accounts/self/") ||
-				// The fleet's member list (ADR-0183, `RELAY_FLEET_MEMBERS_PATH`);
-				// the control plane authenticates it like the account API's
-				// other reads.
 				path === "/v1/fleet/members") &&
 			!/%2f|%5c/i.test(path)
 		) {

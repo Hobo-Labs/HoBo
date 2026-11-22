@@ -115,7 +115,6 @@ import { loadWorkerBudgetAdapter } from "./worker-budget-adapter.mts";
 
 const exec = promisify(execFile);
 
-/** The member name a host name gives (a §7.2 short name). */
 function memberNameOf(host: string): string {
 	const name = host
 		.toLowerCase()
@@ -125,7 +124,6 @@ function memberNameOf(host: string): string {
 	return name === "" ? "box" : name;
 }
 
-/** This package's version: the agent version the box's fleet member reports. */
 function ciGhActionsVersion(): string {
 	const manifest = z
 		.object({ version: z.string().min(1) })
@@ -154,7 +152,6 @@ function inodeReserve(name: string, fallback: number): number {
 	return reserve;
 }
 
-/** Free megabytes on the filesystem holding `path`; undefined when it cannot be read. */
 function freeDiskMbOf(path: string): number | undefined {
 	try {
 		const stats = statfsSync(path);
@@ -296,7 +293,6 @@ const privateKey =
 	(process.env.HOBO_CI_GITHUB_APP_KEY_FILE
 		? readFileSync(process.env.HOBO_CI_GITHUB_APP_KEY_FILE, "utf8")
 		: secretOrFile("HOBO_CI_GITHUB_APP_PRIVATE_KEY"));
-// A worker's configuration is its own file or variable.
 const localConfiguration = process.env.HOBO_CI_CONFIG
 	? readFileSync(process.env.HOBO_CI_CONFIG, "utf8")
 	: process.env.HOBO_CI_CONFIG_JSON;
@@ -455,14 +451,9 @@ if (
 let store: HostedInboxStore & IsolatedWorkerStore;
 let closeStore: () => Promise<void> = async () => {};
 // Where this worker meets its host's CD agent (`hobo deploy agent run`): the
-// agent closes admission with a marker file here (src/runner-host-worker-jobs.ts).
-// The mesh advert it used to read is gone; the agent reads this box's fleet
-// observation, whose agent version is the controller release below.
 const runnerHostFiles = workerHostFiles(plan.store.path);
 const admissionPausedByAgent = () => workerAdmissionPaused(runnerHostFiles);
 // The release this worker runs, when its daemon's supervisor started it at
-// one (runner-controller-process.ts): the fleet member reports it as its
-// agent version.
 const controllerDigest = controllerDigestFromEnv(process.env);
 const budgetAdapter = await loadWorkerBudgetAdapter(
 	process.env.HOBO_CI_TRUSTED_BUDGET_ADAPTER,
@@ -580,7 +571,6 @@ try {
 		throw new Error(
 			"pnpm store and work root must share a filesystem for hardlinks",
 		);
-	// The host Docker socket only while this box's fleet allows it (S1, §6.11).
 	let fleetHostDocker = () => false;
 	const docker = createCliDockerDriver({
 		env: process.env,
@@ -933,7 +923,6 @@ try {
 		!Number.isInteger(unlaunchedReReserveCooldownMs)
 	)
 		throw new Error("invalid HOBO_CI_UNLAUNCHED_RE_RESERVE_COOLDOWN_MS");
-	// Set when shutdown starts, before the fleet agent drains.
 	let fleetMemberDraining = false;
 	let fleetMember:
 		| Readonly<{
@@ -998,15 +987,6 @@ try {
 		inboxDrainBudgetMs,
 		onInboxDeliveryEvent: (event, fields) => log(event, fields),
 	});
-	// HoBo Fleet (ADR-0183): with a committed `fleet` block in .hobo/ci.json
-	// (D61) this box is a DEDICATED fleet member with roles DISPATCHER and
-	// EXECUTOR. Its memory, storage and host-health admission is its capacity;
-	// GitHub's queue reaches it as the github-actions-job work kind, and each
-	// order runs in a sandbox from @hobo/fleet-agent behind the agent's egress
-	// proxy. Without the block, or before the box is enrolled and with no
-	// bootstrap token file, the box takes GitHub's queue alone, as before. No
-	// fleet setting is read from the environment: only the state directory and
-	// the token's file path come from the process.
 	const memberSettings = readBoxMemberSettings(checkoutRoot, process.env, {
 		journalDirectory: dirname(plan.store.path),
 	});
@@ -1026,8 +1006,6 @@ try {
 		const authorityUrl = memberSettings.authorityUrl;
 		const fleetName = memberSettings.fleet;
 		const tenant = memberSettings.tenant;
-		// D58's sandbox settings come from the committed block on the box:
-		// whatever the environment says is replaced before the drivers read it.
 		for (const [name, value] of [
 			["HOBO_FLEET_SANDBOX_RUNTIME", memberSettings.sandbox.runtime],
 			["HOBO_FLEET_SANDBOX_CACHE", memberSettings.sandbox.cache],
@@ -1066,7 +1044,6 @@ try {
 			tenant: core.parseTenantId(tenant),
 			fleet: fleetName,
 			connector: fleetNats.createNatsBusConnector(),
-			// Free inodes and memory PSI on the work volume (L43), as hostSignals.
 			host: fleetAgent.createHostCapacity({
 				slots,
 				workRoot,
@@ -1127,8 +1104,6 @@ try {
 			log: fleetLog,
 			fetch,
 		});
-		// First start: enroll with the single-use bootstrap token, read from a
-		// file so it never appears on a command line or in the environment.
 		if (!memberEnrolled && memberSettings.bootstrapTokenFile !== undefined) {
 			const enrolled = await daemon.agent.enroll(
 				ciGh.boxEnrollment({
@@ -1206,8 +1181,6 @@ try {
 				})
 			: undefined;
 	const pollWorthLogging = createPollLogFilter();
-	// What the routing slip reads of GitHub: the last completed poll's jobs on
-	// routed labels, and the jobs runners took lately.
 	const runnerPickups = createRunnerPickupMemory();
 	let latestRunnerJobs: RunnerJobsSeen | undefined;
 
@@ -1487,19 +1460,10 @@ try {
 	}
 	runDepsImageEnsure();
 
-	// The routing slip (ADR-0181). Every 10 s, on its own unreferenced timer,
-	// the slip leader (rank 0 of the fleet's live DISPATCHER members; a box
-	// outside a fleet leads itself) decides each connected repository's routing
-	// and writes it to refs/hobo/routing-slip when it changes and as a
-	// heartbeat. The decision is an adapter over `fleetVerdict`
-	// (routing-slip-decision.ts), with peers from the authority's signed fleet
-	// view. Nothing in admission, dispatch or the poller awaits it.
 	const routedLabels =
 		trunkSlots > 0
 			? [routing.labels.fleet, routing.labels.trunk]
 			: [routing.labels.fleet];
-	// The fleet view and this box's member id, when it is a member; a view that
-	// cannot be read is no view, and the slip treats peers as unknown (R3).
 	const memberFleet = async () => {
 		const self = fleetMember?.daemon.memberId();
 		if (!fleetMember || self === undefined) return undefined;
@@ -1652,16 +1616,12 @@ try {
 	const hostSlipNodeId = hostname()
 		.replace(/[^A-Za-z0-9_-]/g, "-")
 		.slice(0, 64);
-	// Known once the agent is enrolled; the slip names the member that wrote it.
 	const slipNodeId = fleetMember?.daemon.memberId() ?? hostSlipNodeId;
 	const slipIssuer = daemonCommit
 		? createRoutingSlipIssuer({
 				github,
 				labels: runnerRoutingLabels(routing),
 				relay: { nodeId: slipNodeId, commit: daemonCommit },
-				// rank 0 of rankMembers over the fleet's live dispatchers
-				// (`leaderOf`, replacing main's lowest-node-id election); a box
-				// outside a fleet leads itself.
 				leader: async () => {
 					if (!fleetMember) return true;
 					const fleet = await memberFleet();
@@ -1712,7 +1672,6 @@ try {
 			if (gcTimer) clearInterval(gcTimer);
 			await worker.discardWarm().catch(() => undefined);
 			log("hobo_ci_isolated_worker_draining", { signal });
-			// Tell the fleet at once: dispatchers stop offering this box work.
 			fleetMemberDraining = true;
 			if (fleetMember) {
 				clearInterval(fleetMember.timer);

@@ -8,7 +8,6 @@ import { RUNNER_REFUSAL_CODES } from "../src/runner-routing/index.js";
 
 describe("HoBo CI docs pages", () => {
 	it("show what the runner routing code produces today", () => {
-		// Regenerate with: node --import tsx packages/ci/scripts/runner-routing-docs.ts
 		for (const page of runnerRoutingDocsPages())
 			expect(page.current, page.path).toBe(page.next);
 	});

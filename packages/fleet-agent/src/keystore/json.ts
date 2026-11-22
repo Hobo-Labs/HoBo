@@ -1,5 +1,3 @@
-// JSON guards for what the key stores read back from disk and from an external
-// signer, without runtime `typeof` (the same tag check as `@hobo/core`'s).
 import type { JsonObject, JsonValue } from "@hobo/core";
 
 const tagOf = Object.prototype.toString;
@@ -21,7 +19,6 @@ export function isJsonObject<T>(value: T): value is T & JsonObject {
 	);
 }
 
-/** Parses JSON text, or answers undefined when it is not JSON. */
 export function parseJsonText(text: string): JsonValue | undefined {
 	try {
 		const value: JsonValue = JSON.parse(text);

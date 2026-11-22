@@ -1,11 +1,3 @@
-// The reconciler as a fleet device (L19): the keys an agent host generates
-// for itself and the EnrollmentRequest it hands the Station, the way
-// `hobo fleet enroll --token-file` enrolls any device (local key generation,
-// then `enroll`). The identity key (P-256) names the member and signs key
-// bundle 1 (a SIGN key, Ed25519, for DPoP proofs and observations; a SEAL
-// key, X25519). The private JWKs stay on the host; the request carries only
-// public keys, and the enroll proof is a bare DPoP proof by the identity key
-// for the authority's members URL.
 import { generateKeyPairSync, type KeyObject } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import type { JsonObject, TenantId } from "@hobo/core";
@@ -25,7 +17,6 @@ import {
 import { memberIdFromJwk, mintDpopProof, signEnvelope } from "@hobo/fleet/keys";
 import { agentKeyFromJwk } from "./fleet-port.js";
 
-/** A reconciler host's private JWKs; written to its key directory, never sent. */
 export type ReconcilerKeys = Readonly<{
 	identity: JsonObject;
 	sign: JsonObject;
@@ -33,7 +24,6 @@ export type ReconcilerKeys = Readonly<{
 }>;
 
 const BUNDLE_LIFETIME_MS = 24 * 3_600_000;
-/** The fleet authority's members collection (enroll is POST here). */
 const MEMBERS_PATH = "/v1/fleet/members";
 
 function privateJwkOf(key: KeyObject): JsonObject {
@@ -56,14 +46,12 @@ export function generateReconcilerKeys(): ReconcilerKeys {
 	});
 }
 
-/** The enrollment a reconciler host sends for a bootstrap token: role RECONCILER, its own keys. */
 export async function reconcilerEnrollment(
 	input: Readonly<{
 		keys: ReconcilerKeys;
 		token: string;
 		tenant: TenantId;
 		fleet: FleetId;
-		/** The fleet authority's origin, for the proof's `htu`. */
 		origin: string;
 		nowMs: number;
 		agentVersion: string;

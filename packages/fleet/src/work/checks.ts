@@ -1,8 +1,3 @@
-/**
- * The three checks that stand between a dispatcher and a device (design
- * §6.9): the dispatcher's four claim rules (step 4), the device's order
- * acceptance (step 6) and the start fence (step 7). Private to L04.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	type Claim,
@@ -44,7 +39,6 @@ import {
 } from "./rules.js";
 import { authoritySigned, deviceSigner } from "./signed.js";
 
-/** §6.9 step 2: ranks are capped at 4. */
 export const MAX_RANK = 4;
 
 export type ClaimVerdict = "valid" | "discard" | "not-entitled" | "early";
@@ -79,13 +73,6 @@ function differs(wanted: string | undefined, has: string | undefined): boolean {
 	);
 }
 
-/**
- * Whether the claimant may hold this work at all, from the registry alone
- * (§6.9 step 4, second rule): `ACTIVE`, an executor in the fleet, on the
- * platform the work names, in a region the residency rules admit, and
- * claiming a tier at least what §6.11 requires for the class it derives.
- * Capacity is advice (§6.8) and is never grounds for a report.
- */
 function entitled(
 	claimant: MemberRecord,
 	claim: Claim,
@@ -106,11 +93,6 @@ function entitled(
 	return tier !== "never" && claim.sandboxTier >= tier;
 }
 
-/**
- * The claimant's rank: its place in the dispatcher's own ranking, or, where
- * the caller has no ranking (the authority re-checking a report) or the
- * ranking leaves it out, the rank the claimant signed into its claim.
- */
 function earlyBy(
 	claim: Claim,
 	digest: WorkDigest,
@@ -124,7 +106,6 @@ function earlyBy(
 ): boolean {
 	const queuedAtMs = timeOf(offer.queuedAt);
 	if (queuedAtMs === undefined) return false;
-	// The device's own signed time, unless it is in the reader's future.
 	const at = Math.min(context.nowMs, timeOf(claim.claimedAt) ?? context.nowMs);
 	if (context.ranked.includes(claimant)) {
 		const turn = claimTurn({
@@ -142,7 +123,6 @@ function earlyBy(
 	return queuedAtMs + rank * context.stepMs - at > context.stepMs;
 }
 
-/** §6.9 step 4, in order: discard, not entitled, early, or valid. */
 export async function claimVerdict(
 	envelope: SignedEnvelope,
 	subject: Readonly<{ fleet: FleetId; digest: WorkDigest }>,
@@ -154,7 +134,6 @@ export async function claimVerdict(
 		stepMs: number;
 	}>,
 ): Promise<ClaimVerdict> {
-	// Rule 1: anyone can publish garbage or replay a claim, so nothing is attributed.
 	const claimant = await deviceSigner(
 		context.registry,
 		envelope,
@@ -175,10 +154,8 @@ export async function claimVerdict(
 		return "discard";
 	const fleet = await context.registry.fleet(subject.fleet);
 	if (fleet === undefined) return "discard";
-	// Rule 2: the claimant's own signature proves it claimed what it may not hold.
 	if (!entitled(claimant, claim, offer, policyOf(fleet.policy)))
 		return "not-entitled";
-	// Rule 3: more than one rank ahead of its turn.
 	if (
 		earlyBy(
 			claim,
@@ -192,7 +169,6 @@ export async function claimVerdict(
 	return "valid";
 }
 
-/** A fleet record without a policy has the empty one. */
 export function policyOf(policy: FleetPolicy | undefined): FleetPolicy {
 	return policy ?? create(FleetPolicySchema);
 }
@@ -214,7 +190,6 @@ export type OrderCheck =
 	| "sandbox";
 type PolicyCheck = "kind" | "repository" | "ref" | "workflow";
 
-/** The checks after which the order is attributable to its dispatcher and this device answers it with a receipt. */
 export const ATTRIBUTABLE: ReadonlySet<OrderCheck> = new Set<OrderCheck>([
 	"digest",
 	"claim",
@@ -241,7 +216,6 @@ function refused<T>(
 	};
 }
 
-/** §6.9 step 6: every acceptance rule, each refusal naming its rule in `detail.check`. */
 export async function orderVerdict(
 	envelope: SignedEnvelope,
 	context: Readonly<{
@@ -397,12 +371,6 @@ export async function orderVerdict(
 // public-contract: the work kind of submitted OCI commands (§6.9 table).
 export const OCI_COMMAND = "oci-command";
 
-/**
- * §6.9 step 7: the start fence. The repository GitHub reports must be the
- * order's, the ref must be one fleet policy allows, and the tier the device is
- * running must still be adequate for the trust class re-derived from the
- * observed author and origin (the order's class is a ceiling only).
- */
 export function fenceAllows(
 	order: WorkOrder,
 	observed: ObservedAssignment,
@@ -422,7 +390,6 @@ export function fenceAllows(
 		}) !== undefined
 	)
 		return false;
-	// The facts GitHub reports replace the dispatcher's; its class stays a ceiling.
 	const facts = create(WorkOfferSchema, {
 		trustClass: offer.trustClass,
 		author: observed.author,

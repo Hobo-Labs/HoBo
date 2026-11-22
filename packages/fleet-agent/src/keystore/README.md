@@ -1,6 +1,6 @@
 # Key stores
 
-The two shipped `KeyStore`s of [member identity and keys](../../../../docs/design/fleet.md#member-identity-and-keys). Both pass `runKeyStoreConformance`.
+The two shipped `KeyStore`s of member identity and keys. Both pass `runKeyStoreConformance`.
 
 | Entry point | What it does |
 |---|---|

@@ -1,6 +1,6 @@
 # `@hobo/fleet`
 
-One package for every fleet (ADR-0183). A **fleet** is a named set of members
+One package for every fleet. A **fleet** is a named set of members
 inside one tenant, with one policy and one coordination mode; a **member** is a
 `DEVICE` (runs the agent and holds its own keys), a `BACKEND` or a `TARGET`
 (declared and observed by a sponsor). This package owns member identity,
@@ -17,9 +17,7 @@ a trust boundary, records are signed and credentials issued. In **local mode**
 with the same records and state machine and nothing signed; the hosted relay's
 cache fleet uses it.
 
-Design: [HoBo Fleet](../../docs/design/fleet.md) and
-[ADR-0183](../../docs/design/adr/fleet.md#adr-0183); operating it:
-[the fleet runbooks](../../docs/maintenance/fleet/index.md).
+Operating it: [the fleet runbooks](../../docs/maintenance/fleet/index.md).
 
 ## Entry points
 
@@ -49,7 +47,7 @@ Each part has its own README next to its code.
   thumbprints, member ids (`dev_` + 32 hex of SHA-256 of the thumbprint text;
   `bkd_`/`tgt_` from tenant, kind, fleet and name), signed and witnessed
   envelopes, trust acceptance against the pinned record, RFC 9449 DPoP with
-  `jti` claimed per `dpop:<jkt>`, sealing and session keys with the [signed envelope](../../docs/design/fleet.md#signed-envelope)
+  `jti` claimed per `dpop:<jkt>`, sealing and session keys with the signed envelope
   parameters, BIP-39 fingerprint words, and the in-memory key store and
   credential issuer. `node:crypto` only. The memory key store also runs the
   shared `runKeyStoreConformance` suite.
@@ -133,6 +131,26 @@ Each part has its own README next to its code.
   an in-memory event store and registry, nothing signed and no bus. It
   rejects `SINGLE`/`DUAL` approval (`local-approval`) and duplicate member
   names (`duplicate-name`).
+
+## Events
+
+All events are in one family, `fleet.*`. Streams are on the core `EventStore` port. In local mode the store is in memory and nothing is exported.
+
+| Stream id | Events | Written by |
+|---|---|---|
+| `fleet-token-<sha256>` | `fleet.TokenIssued`, `fleet.TokenConsumed`, `fleet.TokenRevoked` | Enrollment commands. Single use is a compare-and-set on this stream |
+| `fleet-thumbprint-<thumbprint>` | `fleet.ThumbprintBound` | Enrollment and rotation. A second bind to a different member is refused |
+| `fleet-member-<MemberId>` | `fleet.EnrollmentRequested`, `fleet.MemberDeclared`, `fleet.KeyApproved`, `fleet.EnrollmentAccepted`, `fleet.EnrollmentRejected`, `fleet.MemberActivated`, `fleet.MembershipAssigned`, `fleet.CredentialsIssued`, `fleet.KeysRotated`, `fleet.IdentityKeyRotated`, `fleet.MemberSuspended`, `fleet.MemberResumed`, `fleet.MemberLocked`, `fleet.MemberUnlocked`, `fleet.MemberRevoked`, `fleet.ViolationReported` | Enrollment commands. `fleet.CredentialsIssued` carries the ticket id, generation and nonce digest, never a token |
+| `fleet-fleet-<FleetId>` | `fleet.FleetDefined`, `fleet.FleetPolicyChanged` | Fleet commands. One-active assignments are not events: they live in the members' own logs, in local mode (One-active fleets: the assignment register) |
+| `fleet-signin-<state>` | `fleet.SignInStarted`, `fleet.SignInAuthenticated`, `fleet.SignInApproved`, `fleet.SignInCompleted` | Sign-in (start, provider callback, the person's confirmation, the code or poll exchange); shared by replicas, each step single use by compare-and-set |
+| `fleet-person-<principal digest>` | `fleet.PersonSignedIn` | Sign-in |
+| `fleet-session-<sessionId>` | `fleet.SessionGranted`, `fleet.SessionClosed` | Grant command; the recorder |
+| `fleet-work-<WorkDigest>` | `fleet.WorkSubmitted`, `fleet.WorkOffered`, `fleet.WorkClaimed`, `fleet.WorkOrdered`, `fleet.WorkStarted`, `fleet.WorkSucceeded`, `fleet.WorkFailed`, `fleet.WorkCancelled`, `fleet.WorkAbandoned`, `fleet.WorkRefused` | The submit command; the recorder, from verified envelopes on the bus. Each recorded event's `meta` carries the bus stream and sequence it came from; on start the recorder resumes each subscription from `{ after: <highest recorded> }` (`BusStart`) |
+| `fleet-trust` | `fleet.TrustRotated` | Key rotation |
+| `fleet-audit` | `fleet.AuditCheckpointed` | The audit chain |
+| policy decisions | `policy.Decided` | Through the injected recorder; never retried |
+
+Commands are the methods of `EnrollmentAuthority`. Each reads its stream, decides, and appends with `expectedSeq`, retrying on conflict up to 8 times. Each command is idempotent on its natural key (a token, a `(generation, nonce)` pair, an order id), so two authority replicas interleaving on one store agree. Projections: the registry (per member and per fleet, published to `fleet-registry`), fleet views and verdicts, reliability per device, work status, and the audit chain. Every projection is rebuilt by replay; snapshots are caches. The read stores are the `fleet-registry` and `fleet-views` buckets and, for work logs, `FLEET_EVENTS`.
 
 ## Gates
 

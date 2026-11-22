@@ -1,9 +1,3 @@
-/**
- * Serves the fetch-style handler over `node:http`. TLS ends in front of the
- * service (the deployment's load balancer or proxy), so the request URL is
- * built on the configured issuer, never on the `Host` header. Header, request
- * and keep-alive times are bounded.
- */
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { Readable } from "node:stream";
 
@@ -22,8 +16,10 @@ function toRequest(message: IncomingMessage, origin: string): Request {
 	const method = message.method ?? "GET";
 	const init: RequestInit & { duplex?: "half" } = { method, headers };
 	if (method !== "GET" && method !== "HEAD") {
-		// SAFETY: a node Readable is a web ReadableStream source of bytes; Readable.toWeb converts it.
-		init.body = Readable.toWeb(message) as ReadableStream<Uint8Array>;
+		const body = Readable.toWeb(message);
+		if (!(body instanceof ReadableStream))
+			throw new TypeError("the request body is not a web stream");
+		init.body = body;
 		init.duplex = "half";
 	}
 	return new Request(`${origin}${message.url ?? "/"}`, init);

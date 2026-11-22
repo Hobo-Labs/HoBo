@@ -1,7 +1,3 @@
-/**
- * `fleet:verify`: every outcome through `fleet:outcome`, one object each, in
- * table order, written to `fleet-verification.json`.
- */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,9 +29,9 @@ function passed(id: string): VerificationRecord {
 describe("outcomeIds", () => {
 	it("covers every outcome except the deferred ones by default", () => {
 		const ids = outcomeIds({});
-		expect(ids).toHaveLength(OUTCOMES.length - 2);
+		expect(ids).toHaveLength(OUTCOMES.length - 1);
 		expect(ids).not.toContain("O21");
-		expect(ids).not.toContain("O23");
+		expect(ids).toContain("O23");
 		expect(ids[0]).toBe("O1");
 	});
 
@@ -95,10 +91,9 @@ describe("fleet:verify command", () => {
 			{ cwd: repoRoot, encoding: "utf8" },
 		);
 		expect(result.status).toBe(1);
-		// SAFETY: the command's own report file.
-		const written = JSON.parse(
+		const written: VerificationRecord[] = JSON.parse(
 			readFileSync(join(dir, "fleet-verification.json"), "utf8"),
-		) as VerificationRecord[];
+		);
 		expect(written.map((record) => [record.id, record.pass])).toEqual([
 			["O6", false],
 			["O7", false],

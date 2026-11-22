@@ -1,20 +1,3 @@
-/**
- * `createTestAuthority`: the enrollment authority composed for tests (design
- * §11.2 step 5, §7.3). Composition only: it decides nothing itself.
- *
- * It wires the memory bus and event store, `createMemoryCredentialIssuer`, an
- * allow-by-tag `PolicyEngine` (allow when the subject carries the tag
- * `fleet-admin` or a tag equal to the action, e.g. `fleet.work.submit`), a test
- * `PolicyDecisionRecorder`, a test sign-in provider (`id` "test"; the code is
- * `<kind>:<id>` of a principal `signInAs` has registered), refusing account
- * and identity-assertion verifiers, no overlay minters, and the real parts of
- * `AuthorityParts`, with `createFleetCommands` in `mode: "authority"`.
- * The tenant is `test`; the trust record (sequence 1, Ed25519 authority and
- * witness keys held in memory) is published on the bus before composing.
- *
- * It works once L01, L02, L04, L06, L30, L31 and L32 have merged (end of
- * wave 3); before that it rejects with `FleetNotImplemented`.
- */
 import {
 	generateKeyPairSync,
 	type KeyObject,
@@ -77,8 +60,6 @@ const ISSUER = "https://authority.fleet.test";
 const PERSON_TOKEN_TTL_MS = 15 * 60 * 1_000;
 const ADMIN_TAG = "fleet-admin";
 
-/** Composition only, written in the contract commit: memory bus and store, createMemoryCredentialIssuer, an allow-by-tag PolicyEngine,
- *  a test sign-in provider, and the real parts. It works once L01, L02, L04, L06, L30, L31 and L32 have merged (end of wave 3). */
 export async function createTestAuthority(now: Clock): Promise<
 	Readonly<{
 		authority: EnrollmentAuthority;
@@ -284,7 +265,6 @@ function refused<T>(message: string): Outcome<T> {
 	return { ok: false, error };
 }
 
-/** An Ed25519 key held in memory, as a `Signer` and as the trust record's `PublicKeyRef`. */
 type TestKey = Readonly<{
 	signer: Signer;
 	ref(purpose: KeyPurpose): PublicKeyRef;
@@ -309,7 +289,6 @@ function ed25519Signer(keyId: string): TestKey {
 	};
 }
 
-/** The raw 32-byte Ed25519 public key, base64url without padding (§7.1 `PublicKeyRef.value`). */
 function rawPublicKey(publicKey: KeyObject): string {
 	return publicKey
 		.export({ format: "der", type: "spki" })

@@ -1,10 +1,3 @@
-/**
- * The `oci-command` work kind (design §6.9 table): the dispatcher half reads
- * the authority-signed submissions of its fleets from `FLEET_SUBMISSIONS` and
- * offers them; the executor half runs the submitted command in the sandbox,
- * which the executor created from the submission's image, publishing its
- * output as log chunks and its SHA-256 as the output digest. Private to L04.
- */
 import { createHash } from "node:crypto";
 import { create, fromBinary } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
@@ -56,7 +49,6 @@ function parseJson(text: string | undefined): JsonValue | undefined {
 	}
 }
 
-/** The `argv` parameter: a JSON array of strings. */
 function parseList(text: string | undefined): readonly string[] | undefined {
 	const value = parseJson(text);
 	if (!Array.isArray(value)) return undefined;
@@ -68,7 +60,6 @@ function parseList(text: string | undefined): readonly string[] | undefined {
 	return out;
 }
 
-/** The `env` parameter: a JSON object of strings; anything else is left out. */
 function parseEnv(text: string | undefined) {
 	const value = parseJson(text);
 	const pairs: [string, string][] = [];
@@ -124,7 +115,6 @@ export function ociSource(bus: FleetBus): WorkSource {
 					label: entry.submission.needs?.labels[0] ?? "",
 					needs: entry.submission.needs ?? create(WorkNeedsSchema),
 					author: entry.submission.author,
-					// The authority authenticated the submitter; it is not fork work.
 					origin: WorkOrigin.INTERNAL,
 					repository: "",
 					ref: "",
@@ -155,7 +145,6 @@ export function ociSource(bus: FleetBus): WorkSource {
 						argv: JSON.stringify(submission.argv),
 						env: JSON.stringify(submission.env),
 					},
-					// Submitted work carries no secret: its environment is non-secret (§7.1).
 					secret: new Uint8Array(),
 					egressAllow: [...submission.egressAllow],
 				},

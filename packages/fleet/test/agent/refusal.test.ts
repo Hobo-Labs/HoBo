@@ -1,9 +1,3 @@
-/**
- * The agent's refusal, end to end (L43; amendment 4, D60; ADR-0181 R4): an
- * agent publishes why it admits no new work, and the fleet verdict built from
- * those observations tells `BUSY` (full only with its own work) from
- * `NO_CAPACITY` (refusing for pressure, storage or draining).
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -84,7 +78,6 @@ async function until(done: () => boolean, limitMs = 180_000): Promise<void> {
 	}
 }
 
-/** A host that measures as given; `hostSignals` rides beside the port's fields as `@hobo/fleet-agent` sends it. */
 function host(
 	capacity: Readonly<{
 		freeSlots: number;
@@ -121,7 +114,6 @@ async function latestOf(world: World, keys: KeyStore): Promise<Observation> {
 	return fromBinary(ObservationSchema, own.envelope.payload);
 }
 
-/** The verdict a view of exactly these members gives, from their latest observations. */
 async function verdictOf(world: World, keys: readonly KeyStore[]) {
 	const fleet = await world.bus.registry.fleet(FLEET);
 	if (fleet === undefined) throw new Error("no fleet");
@@ -140,7 +132,6 @@ async function verdictOf(world: World, keys: readonly KeyStore[]) {
 	);
 }
 
-/** An executor with one slot, busy with an order of its own that it holds. */
 async function busyWithItsOwnWork(world: World) {
 	const work = queueSource(now);
 	const run = heldRunner();

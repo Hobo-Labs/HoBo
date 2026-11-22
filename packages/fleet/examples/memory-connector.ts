@@ -1,10 +1,3 @@
-/**
- * A `FleetBusConnector` over the in-memory bus, for the demo and the agent
- * tests (rule 6: the NATS connector is L08's). Each connection is a view of
- * the one memory bus: it asks for a session ticket as a real connection does,
- * and the test can take the bus down (connects fail, publishes reject, status
- * reads "disconnected") or close every live connection (status "closed").
- */
 import type { SignedEnvelope } from "../src/_generated/fleet_pb.js";
 import type {
 	AuthorityBus,
@@ -16,7 +9,6 @@ import type {
 export type MemoryConnector = FleetBusConnector &
 	Readonly<{
 		down(value: boolean): void;
-		/** Closes every live connection, as a server restart would. */
 		closeAll(): Promise<void>;
 		connects(): number;
 		tickets(): readonly SignedEnvelope[];

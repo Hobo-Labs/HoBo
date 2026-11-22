@@ -1,11 +1,3 @@
-/**
- * The dispatcher half of `github-actions-job` (design §6.9 table): GitHub's
- * queue, read by the existing poller (`github-job-poller.ts`, unchanged),
- * becomes upstream work. Each queued job is described from its run (author,
- * origin, ref, workflow digest) and sized by the worker's memory and storage
- * classes; `prepare` mints one just-in-time runner registration for the
- * claimant, which is the order's sealed secret. Private to L16.
- */
 import { createHash } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import type { JsonValue } from "@hobo/core";
@@ -37,18 +29,14 @@ import { originOf, PULL_REQUEST_EVENTS } from "./origin.js";
 import { GITHUB_EGRESS, GITHUB_RUNNER_IMAGE } from "./runner.js";
 
 const MIB = 1024 * 1024;
-/** Prepared work is not offered again for this long while GitHub still lists it queued. */
 const PREPARED_HOLD_MS = 10 * 60_000;
-/** Run descriptions kept; a run's facts do not change within one attempt. */
 const RUN_CACHE = 512;
 
-/** The worker's default memory classes (no environment, an unbounded host): the size an offer asks for. */
 const SIZING = resolveWorkerMemoryConfig(
 	{},
 	{ totalMemoryMb: 1_048_576, trunkSlots: 0 },
 );
 
-/** The body the poller hands its intake, as `github-job-poller.ts` builds it. */
 const Delivery = z.object({
 	action: z.string(),
 	installation: z.object({ id: z.number().int().positive() }),
@@ -143,7 +131,6 @@ function sizeOf(name: string, label: string) {
 	});
 }
 
-/** GitHub runner names: letters, digits, `.`, `_` and `-`, at most 64. */
 function runnerNameFor(claimant: MemberRecord, offer: WorkOffer): string {
 	const member = claimant.memberId.replace(/[^A-Za-z0-9._-]/gu, "-").slice(-16);
 	return `hobo-fleet-${member}-${offer.workDigest.slice(0, 12)}`.slice(0, 64);
@@ -227,7 +214,6 @@ export function githubActionsSource(options: GithubWorkOptions): WorkSource {
 		return run;
 	}
 
-	/** `sha256:<hex>` of the workflow file at the run's commit; empty when GitHub will not give it. */
 	async function workflowDigest(job: Seen, run: RunFacts): Promise<string> {
 		const key = `${job.repository}:${run.path}@${run.head_sha}`;
 		const cached = digests.get(key);
@@ -251,7 +237,6 @@ export function githubActionsSource(options: GithubWorkOptions): WorkSource {
 	}
 
 	let inflight: Promise<void> | undefined;
-	/** One poll at a time; a caller arriving while one runs shares it. */
 	function refresh(): Promise<void> {
 		inflight ??= pollOnce().finally(() => {
 			inflight = undefined;
@@ -264,7 +249,6 @@ export function githubActionsSource(options: GithubWorkOptions): WorkSource {
 		const summary = await poller.poll();
 		const found = seen;
 		seen = [];
-		// A poll cut short by GitHub's rate limit knows less than the last one.
 		if (summary.pausedUntil !== undefined) return;
 		const waiting = new Set(summary.waiting.map((job) => job.jobId));
 		const next = new Map<string, Queued>();
@@ -299,7 +283,6 @@ export function githubActionsSource(options: GithubWorkOptions): WorkSource {
 				},
 			});
 		}
-		// A job the poll saw but did not hand its intake (coalesced, deferred) is still queued.
 		for (const [key, entry] of queued)
 			if (!next.has(key) && waiting.has(entry.jobId)) next.set(key, entry);
 		queued.clear();
@@ -373,7 +356,6 @@ export function githubActionsSource(options: GithubWorkOptions): WorkSource {
 				`/repos/${entry.work.repository}/actions/jobs/${entry.jobId}`,
 				JobState,
 			);
-			// GitHub not answering must not strand the queue: the runner it gets is idle at worst.
 			if (state === undefined) return true;
 			return state.status === "queued" && !state.runner_name;
 		},

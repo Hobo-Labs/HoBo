@@ -1,8 +1,3 @@
-/**
- * O4, claims are first-writer-wins at the server (E5, A5): 8 connections race
- * 500 claims and each has exactly one holder; a second publish, a delete, a
- * purge and a rollup from an executor are all refused.
- */
 import { randomBytes } from "node:crypto";
 import { create, toBinary } from "@bufbuild/protobuf";
 import {

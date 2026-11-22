@@ -1,18 +1,3 @@
-/**
- * Dual-principal credential presentation for remote broker calls.
- *
- * - Agent/workload principal: a JWT-SVID minted through `@hobo/identity`'s
- *   `JwtSvidIssuer` (RS256 over an in-memory key for offline development;
- *   never an HMAC secret) + DPoP (ES256) from `@hobo/fleet/keys`
- * - Human principal, fleet authority: the authority-issued, DPoP-bound person
- *   token `hobo fleet login` stored, when an authority is configured
- *   (HOBO_FLEET_AUTHORITY_URL)
- * - Human principal: from `hobo login` / profile OIDC session
- * - Anonymous ephemeral: temporary principal + claim token material
- *
- * Every SVID and DPoP proof is verified before it leaves the presenter.
- */
-
 import {
 	createPrivateKey,
 	generateKeyPairSync,
@@ -92,7 +77,6 @@ export interface CredentialPresenter {
 	}): PresentedCredential;
 }
 
-/** An ES256 DPoP key: its id (the RFC 7638 thumbprint), signer and public JWK. */
 export type DpopKeyPair = Readonly<{
 	kid: string;
 	signer: Signer;
@@ -103,7 +87,6 @@ const SVID_KEY_ID = "presenter-svid-1";
 // public-contract: the trust domain of locally minted SVIDs when HOBO_SVID_ISSUER is unset.
 export const LOCAL_SVID_ISSUER = "spiffe://hobo.local";
 
-/** An RS256 JWT-SVID issuer over an in-memory key: offline development only. */
 export function createLocalSvidIssuer(
 	issuerUrl: string = LOCAL_SVID_ISSUER,
 ): JwtSvidIssuer {
@@ -117,7 +100,6 @@ export function createLocalSvidIssuer(
 	});
 }
 
-/** `spiffe://hobo.local/agent/<id>` for an agent id that is not already a SPIFFE id. */
 export function spiffeIdForAgent(
 	agentId: string,
 	trustDomain = "hobo.local",
@@ -127,7 +109,6 @@ export function spiffeIdForAgent(
 	return `spiffe://${trustDomain}/agent/${encodeURIComponent(id)}`;
 }
 
-/** Mints an SVID and verifies it against the issuer's own JWKS before returning it. */
 async function mintVerifiedSvid(
 	issuer: JwtSvidIssuer,
 	input: Readonly<{
@@ -154,14 +135,13 @@ async function mintVerifiedSvid(
 	await verifyJwtWithJwks(token, issuer.jwks(), {
 		issuer: issuer.issuerUrl,
 		audience: input.audience,
-		now: iat, // verifyJwtWithJwks compares seconds
+		now: iat,
 	});
 	return { token, exp };
 }
 
 const NO_REPLAY = { firstUse: async () => true };
 
-/** Mints a DPoP proof and verifies it, so a broken proof never leaves the presenter. */
 async function verifiedProof(
 	key: Readonly<{ signer: Signer; publicJwk: PublicJwk }>,
 	input: Readonly<{ htm: string; htu: string; accessToken: string }>,
@@ -189,7 +169,6 @@ export function createCredentialPresenter(options?: {
 	readonly humanPrincipal?: PrincipalRef;
 	/** Inject DPoP key pair (tests). */
 	readonly dpopKeyPair?: DpopKeyPair;
-	/** Inject the SVID issuer; an in-memory RS256 issuer per issuer URL when absent. */
 	readonly svidIssuer?: JwtSvidIssuer;
 }): CredentialPresenter {
 	const issuers = new Map<string, JwtSvidIssuer>();
@@ -257,7 +236,6 @@ export function createCredentialPresenter(options?: {
 				};
 			}
 
-			// The fleet authority's person token, DPoP-bound to the key `hobo fleet login` holds.
 			if (env.HOBO_FLEET_AUTHORITY_URL) {
 				const person = await readPerson(hoboFleetHome(env));
 				if (person !== undefined) {
@@ -418,7 +396,6 @@ function keyPairOf(privateKey: KeyObject): DpopKeyPair {
 	};
 }
 
-/** The stored private JWK of a DPoP key, when the file holds one. */
 function storedKey(path: string): KeyObject | undefined {
 	try {
 		const raw = JSON.parse(readFileSync(path, "utf8"));
@@ -492,7 +469,6 @@ export function authorizationHeaders(credential: PresentedCredential) {
 	return headers;
 }
 
-/** @deprecated use mintDpopProof from @hobo/fleet/keys. A real, verified ES256 proof over a fresh key. */
 export async function mintMockDpopProof(input: {
 	readonly htm: string;
 	readonly htu: string;

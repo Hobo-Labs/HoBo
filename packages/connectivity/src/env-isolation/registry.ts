@@ -46,10 +46,6 @@ export interface EnvNetworkIsolationRegistry {
 	hardFloorOverlayId(cls: IsolationClass): string;
 }
 
-/**
- * The overlays the registry hands out; it never constructs one. `shared`
- * serves every soft class; `forClass` gives a hard-isolated class its own.
- */
 export interface EnvOverlays {
 	readonly shared: OverlayNetwork;
 	readonly forClass?: (cls: IsolationClass) => OverlayNetwork;

@@ -1,8 +1,3 @@
-/**
- * O39: the conformance suites catch broken adapters. The in-memory adapters
- * pass their suites, and for each assertion of each suite a double broken in
- * exactly that way fails exactly that assertion.
- */
 import { afterAll, describe, expect, it } from "vitest";
 import { SandboxTier } from "../../src/_generated/fleet_pb.js";
 import { BUS_ASSERTIONS } from "../../src/testing/conformance/bus.js";

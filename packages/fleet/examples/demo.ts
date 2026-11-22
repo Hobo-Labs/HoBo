@@ -1,13 +1,3 @@
-/**
- * `node --import tsx packages/fleet/examples/demo.ts`
- *
- * Three agents on the in-memory bus (design §11.4 L07; it replaces the old
- * `mesh:demo`): one dispatcher-executor and two executors enroll with
- * bootstrap tokens against the test authority, refresh their credentials,
- * connect, observe themselves and take work. Five units of work are offered;
- * the demo prints one receipt per offer and exits 0 when every offer has
- * exactly one, or 1 after 90 seconds.
- */
 import { create, fromBinary } from "@bufbuild/protobuf";
 import {
 	DeviceClass,

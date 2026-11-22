@@ -1,16 +1,3 @@
-/**
- * `fleet:outcome <id>` runs one outcome of the fleet design: it fails an
- * outcome whose named test file is missing, one with a skipped test and one
- * whose threshold is not met, and applies the fallback threshold only for an
- * assumption listed in `fleet-fallbacks.json`. Commands are run through an
- * injected runner that writes the vitest JSON report a real run would.
- *
- * The same file holds the tests of `fleet:contracts`, the one command O26
- * runs: the emitted declarations equal the snapshots, and no snapshot or fleet
- * record changed outside a `Fleet-Contract:` commit. Each of those cases is a
- * throwaway git repository whose `emit-fleet-contracts.mts` is a stub that
- * passes or fails on demand.
- */
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -67,7 +54,6 @@ if (existsSync("emit-differs")) {
 console.log("fleet contract snapshots match");
 `;
 
-/** A repository whose last commit is the contract commit. */
 function repository(): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-fleet-contracts-"));
 	made.push(dir);
@@ -207,8 +193,6 @@ describe("fleet:contracts command", () => {
 	});
 });
 
-// ── fleet:outcome ───────────────────────────────────────────────────────────
-
 function root(files: ReadonlyMap<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), "hobo-fleet-outcome-"));
 	made.push(dir);
@@ -218,7 +202,6 @@ function root(files: ReadonlyMap<string, string>): string {
 
 type Assertion = Readonly<{ title: string; status: string }>;
 
-/** A runner that records commands and answers each vitest run with `assertions`. */
 function runner(
 	assertions: readonly Assertion[],
 	exitCodes: ReadonlyMap<string, number> = new Map(),
@@ -465,8 +448,7 @@ describe("fleet:outcome command", () => {
 	it("prints one verification object and exits 1 when a named file is missing", () => {
 		const result = cli("--", "O6", `--root=${root(new Map())}`);
 		expect(result.status).toBe(1);
-		// SAFETY: the command's own single-line JSON output.
-		const record = JSON.parse(result.stdout) as Record<string, string>;
+		const record: Record<string, string> = JSON.parse(result.stdout);
 		expect(Object.keys(record)).toEqual([
 			"id",
 			"pass",

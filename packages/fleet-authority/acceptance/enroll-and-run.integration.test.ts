@@ -1,20 +1,3 @@
-/**
- * O2, "A developer enrolls and runs their own job" (design §10.1), the
- * integration half: a real `nats-server` (operator mode, JetStream, TLS, the
- * auth callout), the authority composed by `assembleAuthority` and served by
- * `createAuthorityHandler`, a device agent connecting to the bus as itself,
- * and the real `S1` sandbox driver from `@hobo/fleet-agent` running the
- * developer's `oci-command` job in the pinned busybox image.
- *
- * Both enrollment flows end in a `SUCCEEDED` receipt from the enrolled
- * device: a single-use bootstrap token, and the developer's browser approval
- * (a sign-in whose DPoP key is the device's identity key).
- *
- * Nothing here skips: O2 takes no fallback. Without `nats-server`
- * (`HOBO_FLEET_NATS_SERVER_BIN` or on PATH), or without an `S1` driver whose
- * self-test passes (D58: the agent provisions gVisor `runsc` itself), the
- * suite fails and says which.
- */
 import {
 	DeviceClass,
 	type FleetLog,

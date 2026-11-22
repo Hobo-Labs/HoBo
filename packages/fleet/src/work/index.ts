@@ -1,11 +1,3 @@
-/**
- * `@hobo/fleet/work` (L04): many-active work (§6.9, §6.11): digests, trust
- * class and sandbox tier, order and claim checks, the start fence, the
- * dispatcher and executor loops, and the `oci-command` work kind.
- *
- * These are the frozen entry points of §7.3; the modules beside this file are
- * private to the lane.
- */
 import type {
 	DeviceClass,
 	FleetPolicy,
@@ -40,12 +32,10 @@ import { executor } from "./executor.js";
 import { ociRunner, ociSource } from "./oci.js";
 import { digestOf, sandboxFor, trustClassOf } from "./rules.js";
 
-/** First 32 hex of `sha256(kind ‖ 0x00 ‖ work_key)`. */
 export function workDigest(kind: string, workKey: string): WorkDigest {
 	return digestOf(kind, workKey);
 }
 
-/** §6.11, derived on the device from facts it can check; a dispatcher never asserts `OWN`. */
 export function deriveTrustClass(
 	offer: WorkOffer,
 	self: MemberRecord,
@@ -53,7 +43,6 @@ export function deriveTrustClass(
 	return trustClassOf(offer, self);
 }
 
-/** The table of §6.11. */
 export function requiredSandbox(
 	trust: TrustClass,
 	deviceClass: DeviceClass,
@@ -63,7 +52,6 @@ export function requiredSandbox(
 	return sandboxFor(trust, deviceClass, policy, repository);
 }
 
-/** §6.9 step 6; a refusal names its rule in `detail.check`. */
 export function checkOrder(
 	order: SignedEnvelope,
 	context: Readonly<{
@@ -79,7 +67,6 @@ export function checkOrder(
 	return orderVerdict(order, context);
 }
 
-/** The start fence. */
 export function checkAssignment(
 	order: WorkOrder,
 	observed: ObservedAssignment,
@@ -90,10 +77,6 @@ export function checkAssignment(
 	return fenceAllows(order, observed, self, policy, tier);
 }
 
-/**
- * §6.9 step 4. With an empty `ranked` (the authority re-checking a report)
- * the claimant's own signed rank is its turn.
- */
 export function checkClaim(
 	claim: SignedEnvelope,
 	subject: Readonly<{ fleet: FleetId; digest: WorkDigest }>,
@@ -138,7 +121,6 @@ export function createExecutor(
 	drain(): Promise<void>;
 	stop(): Promise<void>;
 	sandboxOf(orderId: string): Sandbox | undefined;
-	/** Claims held for an order plus orders running (amendment 6): the slots this executor's own work takes. */
 	inUse(): number;
 }> {
 	return executor(deps);

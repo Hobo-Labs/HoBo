@@ -1,9 +1,3 @@
-/**
- * `fleet:vocabulary` (O1): each of the nine rules is shown a fixture tree that
- * breaks it, and must refuse exactly the files that break it while accepting
- * the allowlisted copies of the same violation beside them. A guard only ever
- * run against a clean tree has not been seen to refuse anything.
- */
 import { spawnSync } from "node:child_process";
 import {
 	mkdirSync,
@@ -92,8 +86,6 @@ describe("fleet:vocabulary rules", () => {
 	});
 
 	it("rule 6 refuses the mesh, NATS and fleet-state variables", () => {
-		// Built from parts: the repository-wide retired-variable grep must not
-		// find them in this file or a committed fixture.
 		const name = (...parts: string[]) => ["HOBO", "CI", ...parts].join("_");
 		const dir = mkdtempSync(join(tmpdir(), "fleet-vocabulary-rule-6-"));
 		try {
@@ -173,10 +165,7 @@ describe("fleet:vocabulary command", () => {
 	it("exits 1 and reports the findings as JSON when a rule refuses", () => {
 		const result = cli("rule-5");
 		expect(result.status).toBe(1);
-		// SAFETY: the command's own --json report, parsed to read its findings.
-		const report = JSON.parse(result.stdout) as {
-			findings: VocabularyFinding[];
-		};
+		const report: { findings: VocabularyFinding[] } = JSON.parse(result.stdout);
 		expect(report.findings.map((finding) => finding.rule)).toEqual([5, 5]);
 		expect(result.stderr).toContain("rule 5");
 	});
@@ -190,13 +179,13 @@ describe("fleet:vocabulary command", () => {
 
 describe("fleet:vocabulary allowlist", () => {
 	it("starts with exactly the entries of the rules table", () => {
-		// SAFETY: the allowlist's own JSON, compared field by field below.
-		const allow = JSON.parse(
-			readFileSync(
-				join(repoRoot, "scripts/fleet-vocabulary-allow.json"),
-				"utf8",
-			),
-		) as Array<{ rule: number; path: string; reason: string }>;
+		const allow: Array<{ rule: number; path: string; reason: string }> =
+			JSON.parse(
+				readFileSync(
+					join(repoRoot, "scripts/fleet-vocabulary-allow.json"),
+					"utf8",
+				),
+			);
 		expect(allow.map(({ rule, path }) => ({ rule, path }))).toEqual([
 			{ rule: 1, path: "packages/fleet-nats/**" },
 			{ rule: 2, path: "packages/fleet-p2p/**" },
