@@ -626,9 +626,8 @@ function lintRelayJobAttestation(
 			.map((line) => line.match(/^\s*runs-on:\s*(.*?)\s*$/)?.[1])
 			.find((value) => value !== undefined);
 		const attested =
-			job === "deploy-build"
-				? attestedHostedRelayJob(file, jobLine, block, runsOn)
-				: attestedRoutedRelayJob(file, jobLine, block, runsOn);
+			attestedHostedRelayJob(file, jobLine, block, runsOn) ||
+			attestedRoutedRelayJob(file, jobLine, block, runsOn);
 		if (!attested) {
 			allAttested = false;
 			errors.push(

@@ -737,7 +737,7 @@ ${relayCheckout}      - id: pack
           ${digestEnv ?? "UNRELATED: x"}
 `;
 		const restore = `      - name: Restore
-${digestEnvOnCli ? "" : envBlock}${restoreAsComment ? `        # node bootstrap-restore.mjs "$HOBO_RELAY_CLI_DIGEST"\n` : ""}        run: ${restoreAsComment ? "echo ok" : 'node bootstrap-restore.mjs "$HOBO_RELAY_CLI_DIGEST"'}
+${digestEnvOnCli ? "" : envBlock}${restoreAsComment ? `        # node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"\n` : ""}        run: ${restoreAsComment ? "echo ok" : 'node --no-warnings scripts/ci/release-freight-cli.mts restore cli.tgz --digest "$HOBO_RELAY_CLI_DIGEST"'}
 `;
 		const cli = `      - name: Run the CLI
 ${digestEnvOnCli ? envBlock : ""}        run: node packages/hobo/dist/bin/hobo.js ci deploy
@@ -750,28 +750,19 @@ ${digestEnvOnCli ? envBlock : ""}        run: node packages/hobo/dist/bin/hobo.j
 			: restoreFirst
 				? restore + cli
 				: cli + restore;
-		const route = `  route:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - id: route
-        uses: ./.github/actions/route-runner
-`;
 		return `name: fixture
 on:
   push:
     branches: [main]
 jobs:
-${route}${build}  ${job}:
-    needs: [deploy-build, route]
-    runs-on: \${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+${build}  ${job}:
+    needs: deploy-build
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
     steps:
-${relayCredentialCheckout}${downloadAfterRestore ? "" : download}${tail}`;
+${relayCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 	};
 
 	const lintRelayFixture = (text: string) => {
@@ -889,8 +880,8 @@ ${relayCredentialCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 			"on:\n  push:\n    branches: [main]\n  workflow_call:\n",
 		);
 		const jobGate = withWorkflowCall.replace(
-			"  deploy:\n    needs: [deploy-build, route]\n",
-			"  deploy:\n    if: github.ref == 'refs/heads/main'\n    needs: [deploy-build, route]\n",
+			"  deploy:\n    needs: deploy-build\n",
+			"  deploy:\n    if: github.ref == 'refs/heads/main'\n    needs: deploy-build\n",
 		);
 		const result = lintRelayFixture(jobGate);
 		assert.equal(result.status, 0, result.stderr);
@@ -905,11 +896,15 @@ ${relayCredentialCheckout}${downloadAfterRestore ? "" : download}${tail}`;
 			"ssh-key: ${{ secrets.EVIL }}",
 			"ssh-known-hosts: evil",
 		]) {
+			const fixture = relayFixture();
+			const checkout =
+				"          clean: true\n          submodules: recursive\n          persist-credentials: false\n";
+			const at = fixture.indexOf(checkout, fixture.indexOf("  deploy:"));
 			const result = lintRelayFixture(
-				relayFixture().replace(
-					"          clean: false\n          fetch-depth: 2\n          persist-credentials: false\n",
-					`          clean: false\n          fetch-depth: 2\n          persist-credentials: false\n          ${key}\n`,
-				),
+				fixture.slice(0, at) +
+					checkout +
+					`          ${key}\n` +
+					fixture.slice(at + checkout.length),
 			);
 			assert.notEqual(result.status, 0, key);
 			assert.match(result.stderr, relayRunnerError, key);
