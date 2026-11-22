@@ -5,7 +5,7 @@ on:
     paths:
       - "packages/ci/**"
       - "packages/ci-gh-actions/**"
-      - "docs/design/fleet-enrollment*"
+      - "docs/ci/fleet-enrollment*"
       - "test/fleet-enrollment-scorecard.eval.test.ts"
       - "scripts/generate-fleet-enrollment-scorecard.mts"
       - ".github/workflows/fleet-enrollment.yml"
@@ -38,7 +38,7 @@ jobs:
       - name: Regenerate scorecard
         run: node --import tsx scripts/generate-fleet-enrollment-scorecard.mts
       - name: Scorecard must be committed current
-        run: git diff --exit-code -- docs/design/fleet-enrollment-scorecard.md
+        run: git diff --exit-code -- docs/ci/fleet-enrollment-scorecard.md
       - name: Validate scorecard evidence and unresolved status
         run: mise exec -- pnpm exec vitest run test/fleet-enrollment-scorecard.eval.test.ts
 
