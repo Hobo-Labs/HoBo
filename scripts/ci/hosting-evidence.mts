@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+/** Read only names from the committed Infisical binding using GitHub OIDC. */
+import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import {
@@ -7,7 +9,18 @@ import {
 	oidcAuth,
 	parseInfisicalBinding,
 } from "../../packages/adapters/adapter-infisical/dist/index.js";
-import { readSecretStoreBinding } from "../../packages/secret-store-claim/dist/index.js";
+import {
+	readSecretStoreBinding,
+	readSecretStoreBindingForRepair,
+} from "../../packages/secret-store-claim/dist/index.js";
+
+function readHostingBinding(text: string) {
+	try {
+		return readSecretStoreBinding(text);
+	} catch {
+		return readSecretStoreBindingForRepair(text);
+	}
+}
 
 const repository = "Hobo-Labs/HoBo";
 const workflowRef = `${repository}/.github/workflows/hosting-evidence.yml@refs/heads/main`;
@@ -285,7 +298,7 @@ export async function inspectHostingEvidence(input: {
 }): Promise<HostingEvidenceReport> {
 	if (!trustedMainContext(input.env)) return unavailable();
 	try {
-		const store = readSecretStoreBinding(input.bindingText);
+		const store = readHostingBinding(input.bindingText);
 		if (
 			store.kind !== "infisical-cloud-attach" ||
 			store.claimState !== "claimed" ||
@@ -404,9 +417,18 @@ export async function inspectHostingEvidence(input: {
 }
 
 async function main() {
-	const report = unavailable();
+	let report = unavailable();
+	try {
+		report = await inspectHostingEvidence({
+			env: process.env,
+			bindingText: await readFile(
+				"packages/ci-vercel/deploy/secret-store.binding.json",
+				"utf8",
+			),
+		});
+	} catch {}
 	process.stdout.write(`${JSON.stringify(report)}\n`);
-	process.exitCode = 1;
+	if (report.status !== "observed") process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

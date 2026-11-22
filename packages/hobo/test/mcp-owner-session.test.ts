@@ -26,7 +26,6 @@ import {
 	OWNER_HANDOFF_SPECS,
 } from "../src/mcp-owner-channel.js";
 import { composeHoboMcp } from "../src/mcp-serve.js";
-import { loadOwnerDeployCredentials } from "../src/owner-deploy-credentials.js";
 import { ownerWriteGuard } from "../src/owner-write-guard.js";
 import { supportsOwnerGuard } from "./support/owner-guard-support.js";
 
@@ -1204,72 +1203,6 @@ describe("MCP owner store session", () => {
 				/ended/u,
 			);
 			expect(() => vaultFor("cd", first)).toThrow(/closed/u);
-		} finally {
-			await mcp.close();
-			await rm(home, { force: true, recursive: true });
-		}
-	});
-
-	test("rejects an in-flight store opening if the owner changes the selection", async () => {
-		const home = await mkdtemp(join(tmpdir(), "hobo-owner-generation-"));
-		vi.stubEnv("XDG_CONFIG_HOME", home);
-		const mcp = composeHoboMcp({
-			output: new PassThrough(),
-			projectDir: home,
-			remote: true,
-		});
-		try {
-			const choose = async (id: string) => {
-				let step = 0;
-				await mcp.session.storeChoice?.callTool(
-					"choose_secret_store",
-					{ family: "cd", cwd: home },
-					{ formElicitation: true, apps: false },
-					async () => ({
-						action: "accept",
-						content:
-							step++ === 0
-								? { store: "infisical" }
-								: { INFISICAL_PROJECT_ID: id },
-					}),
-				);
-			};
-			await choose("old-project");
-			const settings = mcp.owner.storeSettingsFor?.("cd", home);
-			const session = mcp.owner.vaultFor?.("cd", home);
-			if (!settings || !session) throw new Error("No scoped owner session.");
-			session.put("INFISICAL_TOKEN", "old-sign-in");
-			const credentials = createTrustedVault();
-			const port = createMemorySecretsPort({ id: "memory" });
-			await port.put("HOBO_CD_VERCEL_TOKEN", "synthetic-deploy-token");
-			let release: (() => void) | undefined;
-			let started: (() => void) | undefined;
-			const opening = new Promise<void>((resolve) => {
-				started = resolve;
-			});
-			const gate = new Promise<void>((resolve) => {
-				release = resolve;
-			});
-			const loading = loadOwnerDeployCredentials({
-				cwd: home,
-				env: {},
-				credentials,
-				ownerSession: session,
-				ownerSettings: settings,
-				openStore: async (id) => {
-					started?.();
-					await gate;
-					return {
-						ok: true,
-						store: { id, port, reference: () => "private" },
-					};
-				},
-			});
-			await opening;
-			await choose("new-project");
-			release?.();
-			expect(await loading).toBe(false);
-			expect(credentials.has("VERCEL_TOKEN")).toBe(false);
 		} finally {
 			await mcp.close();
 			await rm(home, { force: true, recursive: true });

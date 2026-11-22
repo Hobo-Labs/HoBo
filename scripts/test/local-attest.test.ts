@@ -56,6 +56,15 @@ import {
 // tests run from pre-commit too, and every git command they start (their own
 // or a script's) must act on its own repository, never the one being committed.
 for (const name of GIT_LOCATION_VARIABLES) delete process.env[name];
+for (const name of Object.keys(process.env)) {
+	if (
+		name === "GIT_CONFIG" ||
+		name === "GIT_CONFIG_COUNT" ||
+		name === "GIT_CONFIG_PARAMETERS" ||
+		/^GIT_CONFIG_(KEY|VALUE)_[0-9]+$/u.test(name)
+	)
+		delete process.env[name];
+}
 
 const script = fileURLToPath(
 	new URL("../ci/local-attest.mts", import.meta.url),
@@ -313,6 +322,7 @@ describe("the attestor key", () => {
 
 	it("prints only the public entry from init-key, and never the private key", () => {
 		const path = join(directory("keys"), "ed25519.pem");
+		const sharedTemp = directory("init-key-temp");
 		const run = spawnSync(
 			process.execPath,
 			[
@@ -323,7 +333,10 @@ describe("the attestor key", () => {
 				"--days=7",
 				"--note=from a test",
 			],
-			{ encoding: "utf8", env: { ...process.env, HOBO_CI_ATTESTOR_KEY: path } },
+			{
+				encoding: "utf8",
+				env: { ...process.env, TMPDIR: sharedTemp, HOBO_CI_ATTESTOR_KEY: path },
+			},
 		);
 		assert.equal(run.status, 0, run.stderr);
 		assert.equal(run.stderr, "");
@@ -631,6 +644,40 @@ async function runIn(
 }
 
 describe("a local run", () => {
+	it("runs all scripts shards and refuses to sign when one fails", async () => {
+		const job = (failure: boolean) => ({
+			id: "scripts-tests",
+			matrix: "${{ fromJSON('[0,1,2,3]') }}",
+			steps: [
+				{
+					local: "run",
+					env: {
+						SHARD: "${{ strategy.job-index }}",
+						TOTAL: "${{ strategy.job-total }}",
+					},
+					run: failure
+						? 'test "$SHARD" != 2; echo "$SHARD/$TOTAL" >> "$RECORD"'
+						: 'echo "$SHARD/$TOTAL" >> "$RECORD"',
+				},
+			],
+		});
+		const passed = await runIn([job(false)], ["pull_request"]);
+		const outcome = await passed.outcome;
+		assert.deepEqual(passed.lines(), ["0/4", "1/4", "2/4", "3/4"]);
+		assert.deepEqual(outcome.envelope.statement.results[0]?.eventChecks, {
+			pull_request: 4,
+		});
+		const failed = await runIn([job(true)], ["pull_request"]);
+		await assert.rejects(failed.outcome, /scripts-tests.*failed/u);
+		assert.deepEqual(failed.lines(), ["0/4", "1/4"]);
+		assert.equal(
+			existsSync(
+				join(failed.repo, OUTPUT_DIRECTORY, `${failed.target.tree}.json`),
+			),
+			false,
+		);
+	});
+
 	it("refuses caller-supplied target commits or merge parents that differ from the signed tree", async () => {
 		const run = await runIn(
 			[{ id: "ci-guard", steps: [{ run: "true", local: "run" }] }],
@@ -679,7 +726,7 @@ describe("a local run", () => {
 		const plan = parsePlan(
 			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
 		);
-		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		const gate = plan.find((job) => job.id === "pr_gate_plan");
 		assert.ok(gate);
 		const reports = gate.steps.filter(
 			(step) => step.name === "Impact classification (shadow)",
@@ -689,7 +736,7 @@ describe("a local run", () => {
 			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
 		);
 		const oldGate = oldPlan.jobs.find(
-			(job: { id: string }) => job.id === "pr_gate_validation",
+			(job: { id: string }) => job.id === "pr_gate_plan",
 		);
 		for (const step of oldGate.steps.filter(
 			(entry: { name?: string }) =>
@@ -701,7 +748,7 @@ describe("a local run", () => {
 		const run = await runIn(
 			[
 				{
-					id: "pr_gate_validation",
+					id: "pr_gate_plan",
 					steps: [
 						reports[0],
 						{
@@ -759,7 +806,7 @@ describe("a local run", () => {
 		);
 		const { envelope, notAttested } = await run.outcome;
 		assert.match(
-			notAttested.pr_gate_validation ?? "",
+			notAttested.pr_gate_plan ?? "",
 			/policy.*differs from the base/u,
 		);
 		assert.ok(notAttested.workspace_tests);
@@ -773,7 +820,7 @@ describe("a local run", () => {
 			readFileSync("scripts/ci/attested-jobs.json", "utf8"),
 		);
 		const gate = source.jobs.find(
-			(job: { id: string }) => job.id === "pr_gate_validation",
+			(job: { id: string }) => job.id === "pr_gate_plan",
 		);
 		const headPlan = {
 			jobs: [
@@ -806,6 +853,7 @@ describe("a local run", () => {
 				mode: 0o755,
 			});
 		const key = join(directory("standalone-key"), "key.pem");
+		const sharedTemp = directory("standalone-temp");
 		const run = spawnSync(
 			process.execPath,
 			[
@@ -823,6 +871,7 @@ describe("a local run", () => {
 				env: {
 					...process.env,
 					PATH: `${bin}:${process.env.PATH ?? ""}`,
+					TMPDIR: sharedTemp,
 					HOBO_CI_ATTESTOR_KEY: key,
 				},
 			},
@@ -830,7 +879,7 @@ describe("a local run", () => {
 		assert.equal(run.status, 0, run.stderr);
 		assert.match(
 			run.stdout,
-			/local job policy for pr_gate_validation differs from the base/u,
+			/local job policy for pr_gate_plan differs from the base/u,
 		);
 		const tree = git(repo, ["rev-parse", "HEAD^{tree}"]);
 		const record = parseEnvelope(
@@ -874,9 +923,7 @@ describe("a local run", () => {
 			"symlink",
 		]) {
 			const gate = structuredClone(
-				source.jobs.find(
-					(job: { id: string }) => job.id === "pr_gate_validation",
-				),
+				source.jobs.find((job: { id: string }) => job.id === "pr_gate_plan"),
 			);
 			if (variant === "removed")
 				gate.steps = gate.steps.filter(
@@ -927,11 +974,9 @@ describe("a local run", () => {
 			);
 			const outcome = await run.outcome;
 			const rejected =
-				variant === "other-group-job"
-					? "workspace_tests"
-					: "pr_gate_validation";
+				variant === "other-group-job" ? "pr_gate_validation" : "pr_gate_plan";
 			assert.match(
-				outcome.notAttested.pr_gate_validation ?? "",
+				outcome.notAttested.pr_gate_plan ?? "",
 				variant === "symlink"
 					? /classifier dependency.*unreviewed/u
 					: new RegExp(
@@ -1837,6 +1882,7 @@ describe("local gh-signoff", () => {
 		headFiles: Readonly<Record<string, string>> = {},
 	) {
 		const jobs = [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",
@@ -1928,20 +1974,27 @@ describe("local gh-signoff", () => {
 		);
 		const executed = await run.outcome;
 		const gateResults: AttestedJobResult[] = hasEngine
-			? ["pr_gate_validation", "workspace_tests", "pr_affected"].map((id) => {
+			? [
+					"pr_gate_plan",
+					"pr_gate_validation",
+					"workspace_tests",
+					"pr_affected",
+					"scripts-tests",
+				].map((id) => {
 					const events: AttestationEvent[] =
 						id === "pr_affected"
 							? ["pull_request"]
 							: ["pull_request", "merge_group"];
+					const checks = id === "scripts-tests" ? 4 : 1;
 					return {
 						id,
 						status: "passed",
 						events,
-						commands: events.length,
+						commands: events.length * checks,
 						eventChecks:
 							id === "pr_affected"
-								? { pull_request: 1 }
-								: { pull_request: 1, merge_group: 1 },
+								? { pull_request: checks }
+								: { pull_request: checks, merge_group: checks },
 						executionMode: "each-step-v1",
 						durationMs: 1,
 						logDigest: `sha256:${"f".repeat(64)}`,
@@ -2094,8 +2147,10 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 		const apiCalls = join(directory("signoff-api-calls"), "calls");
 		const signoffCwd = join(directory("signoff-cwd"), "cwd");
 		const signoffConfig = join(directory("signoff-config"), "config");
+		const sharedTemp = directory("signoff-temp");
 		const environment = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
 			...process.env,
+			TMPDIR: sharedTemp,
 			PATH: `${bin}:${process.env.PATH ?? ""}`,
 			GH_HOST: "github.com",
 			GH_REPO: "acme/app",
@@ -2246,9 +2301,11 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"--commit",
 			run.head,
 			...[
+				"pr_gate_plan",
 				"pr_gate_validation",
 				"workspace_tests",
 				"pr_affected",
+				"scripts-tests",
 				"ci-guard",
 				"secret-scan",
 			].map((job) => `hobo-ci/local/pull_request/${job}`),
@@ -2257,7 +2314,7 @@ exit "\${HOBO_SIGNOFF_TEST_EXIT:-0}"
 			"github.com",
 			"github.com/acme/app",
 		]);
-		assert.match(result.stdout, /posted 5 local signoff/u);
+		assert.match(result.stdout, /posted 7 local signoff/u);
 	});
 
 	it("signs only an exact active merge-group commit and rechecks it around publication", async () => {
@@ -2853,6 +2910,46 @@ exec /usr/bin/git "$@"
 		assert.equal(existsSync(run.calls), false);
 	});
 
+	it("isolates fixture Git configuration inherited from a commit hook", () => {
+		const inheritedConfig = join(directory("inherited-config"), "config");
+		const inheritedContent = "[user]\n\tname = Inherited User\n";
+		writeFileSync(inheritedConfig, inheritedContent);
+		for (const injected of [
+			{
+				GIT_CONFIG_COUNT: "1",
+				GIT_CONFIG_KEY_0: "user.name",
+				GIT_CONFIG_VALUE_0: "Inherited User",
+			},
+			{ GIT_CONFIG_PARAMETERS: "'user.name'='Inherited User'" },
+			{ GIT_CONFIG: inheritedConfig },
+		]) {
+			const childEnv: NodeJS.ProcessEnv = { ...process.env, ...injected };
+			delete childEnv.NODE_TEST_CONTEXT;
+			delete childEnv.NODE_TEST_WORKER_ID;
+			const child = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"--test",
+					"--test-name-pattern=preserves Git config whitespace for the extension to validate",
+					fileURLToPath(import.meta.url),
+				],
+				{
+					encoding: "utf8",
+					env: childEnv,
+					timeout: 30_000,
+				},
+			);
+			assert.equal(child.status, 0, `${child.stdout}\n${child.stderr}`);
+			assert.match(
+				child.stdout,
+				/preserves Git config whitespace for the extension to validate/u,
+			);
+			assert.equal(readFileSync(inheritedConfig, "utf8"), inheritedContent);
+		}
+	});
+
 	it("preserves Git config whitespace for the extension to validate", async () => {
 		const run = await fixture(false);
 		git(run.repo, ["config", "user.name", "  Narrow User  "]);
@@ -3115,13 +3212,24 @@ exec /usr/bin/git "$@"
 		assert.doesNotMatch(readFileSync(run.calls, "utf8"), /release-contract/u);
 	});
 
-	it("uses separate contexts for the simulated merge-group event", async () => {
+	it("does not sign the impact gate for a simulated merge-group commit", async () => {
 		const run = await fixture();
+		const result = run.command(["--event=merge_group"]);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /attestation covers no job/u);
+		assert.equal(existsSync(run.calls), false);
+	});
+
+	it("keeps independent simulated merge-group contexts", async () => {
+		const run = await fixture(true, false, ["release-contract"]);
 		const result = run.command(["--event=merge_group"]);
 		assert.equal(result.status, 0, result.stderr);
 		const calls = readFileSync(run.calls, "utf8");
-		assert.match(calls, /hobo-ci\/local\/merge_group\/workspace_tests/u);
-		assert.doesNotMatch(calls, /pr_affected|pull_request/u);
+		assert.match(calls, /hobo-ci\/local\/merge_group\/release-contract/u);
+		assert.doesNotMatch(
+			calls,
+			/pr_gate_validation|workspace_tests|scripts-tests|pr_affected|pull_request/u,
+		);
 	});
 
 	it("refuses dirty, tampered, stale-base, and wrong-head records before calling gh", async () => {
@@ -3547,7 +3655,7 @@ console.log("changed classifier set GITHUB_ENV");
 			(files) => {
 				const base = JSON.parse(files[path] ?? "");
 				const gate = base.jobs.find(
-					(job: { id: string }) => job.id === "pr_gate_validation",
+					(job: { id: string }) => job.id === "pr_gate_plan",
 				);
 				for (const step of gate.steps.filter(
 					(entry: { name?: string }) =>
@@ -3566,7 +3674,7 @@ console.log("changed classifier set GITHUB_ENV");
 		assert.notEqual(result.status, 0);
 		assert.match(
 			result.stderr,
-			/local job policy for pr_gate_validation differs from the base/u,
+			/local job policy for pr_gate_plan differs from the base/u,
 		);
 		assert.equal(existsSync(run.calls), false);
 	});

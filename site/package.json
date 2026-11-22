@@ -24,10 +24,7 @@
     "check": "astro check",
     "test": "pnpm run codegen:check && vitest run src/lib/examples src/lib/stage",
     "typecheck": "astro check",
-    "design:lint": "designmd lint DESIGN.md",
-    "design:export:css": "designmd export --format css-tailwind DESIGN.md",
-    "design:export:dtcg": "designmd export --format dtcg DESIGN.md",
-    "design:spec": "designmd spec",
+    "design:lint": "pnpm --dir .. run design:lint",
     "design:audit": "node --import tsx scripts/design-audit.mts --dist dist",
     "generate:recipe-terms": "node --import tsx scripts/generate-recipe-terms.mts"
   },
@@ -44,7 +41,6 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@google/design.md": "^0.4.0",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-slug": "^6.0.0",
     "tsx": "^4.22.4"

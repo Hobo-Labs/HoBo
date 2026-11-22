@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -10,7 +10,6 @@ import {
 import { createGithubAppManifest } from "@hobo/ci-gh-actions";
 import { type CommandResult, createHoboCli } from "@hobo/cli";
 import { createMemorySecretsPort, type SecretsPort } from "@hobo/identity";
-import { readSecretStoreBinding } from "@hobo/secret-store-claim";
 import { describe, expect, it } from "vitest";
 import {
 	APP_CREDENTIAL_KEYS,
@@ -199,16 +198,16 @@ describe("hobo ci app create", () => {
 			"Iv23liTestClient",
 		);
 		expect(await service.value("HOBO_CI_GITHUB_APP_ID")).toBe("4242");
+		expect(result.message).toContain(
+			"https://github.com/apps/hobo-ci-test/installations/new",
+		);
 		expect(result.data).toMatchObject({
-			stored: expect.arrayContaining(["HOBO_CI_GITHUB_APP_PRIVATE_KEY"]),
+			appId: 4242,
+			refs: {
+				HOBO_CI_GITHUB_APP_PRIVATE_KEY:
+					"infisical://proj-1/prod/hobo-ci-relay/HOBO_CI_GITHUB_APP_PRIVATE_KEY",
+			},
 		});
-		for (const privateValue of [
-			"proj-1",
-			"hobo-ci-relay",
-			"4242",
-			"hobo-ci-test",
-		])
-			expect(JSON.stringify(result)).not.toContain(privateValue);
 		// The form posts the reviewed manifest to GitHub, redirecting to this machine.
 		expect(people.pages[0]).toContain(
 			'action="https://github.com/settings/apps/new?state=',
@@ -243,7 +242,9 @@ describe("hobo ci app create", () => {
 			code: "HOBO_CI_APP_DEPOSIT_FAILED",
 		});
 		expect(result.message).toContain("forbidden");
-		expect(result.message).toContain("Delete the App in GitHub settings");
+		expect(result.message).toContain(
+			"https://github.com/settings/apps/hobo-ci-test/advanced",
+		);
 		expect(result.message).toContain("cannot be repeated");
 		expect(service.memory.names()).toEqual([]);
 	});
@@ -284,7 +285,7 @@ describe("hobo ci app create", () => {
 		const service = store();
 		const { result } = await run({ configService: service }, github(999));
 		expect(result.code).toBe("HOBO_CI_APP_UNVERIFIED");
-		expect(result.message).toContain("Delete the App in GitHub settings");
+		expect(result.message).toContain("advanced");
 		expect(service.memory.names()).toEqual([]);
 	});
 
@@ -361,7 +362,7 @@ describe("hobo ci app create", () => {
 });
 
 describe("secretless first: the App's credentials go from GitHub to the store with no person holding them", () => {
-	it("refuses the legacy workflow handoff before creating or dispatching an App", async () => {
+	it("--via-workflow hands the one-time code to the app-credentials workflow and touches no credential", async () => {
 		const handed: Readonly<Record<string, string>>[] = [];
 		const githubFake = github();
 		const { result } = await run(
@@ -373,25 +374,35 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 			},
 			githubFake,
 		);
-		expect(result.code).toBe("HOBO_CI_PRIVATE_HANDOFF_REQUIRED");
-		expect(handed).toEqual([]);
+		expect(result.ok).not.toBe(false);
+		expect(handed).toEqual([
+			{ manifest_code: "one-time-code", relay: RELAY, owner_id: String(OWNER) },
+		]);
+		// No conversion here: the credentials never exist on this machine.
 		expect(githubFake.calls).toEqual([]);
+		expect(result.message).toContain("app-credentials.yml");
 	});
 
 	it("app deposit converts in the workflow and writes as the CI writer over GitHub OIDC", async () => {
 		const dir = mkdtempSync(path.join(tmpdir(), "hobo-deposit-"));
 		try {
-			const privateBinding = readSecretStoreBinding(
+			mkdirSync(path.join(dir, "deploy"));
+			writeFileSync(
+				path.join(dir, "deploy", "secret-store.binding.json"),
 				JSON.stringify({
 					kind: "infisical-cloud-attach",
 					endpoint: "https://infisical.test",
 					projectId: "proj-runtime",
+					deployProjectId: "proj-deploy",
 					environment: "prod",
 					secretPath: "/hobo-ci-relay",
 					relayIdentityId: "relay-identity",
 					deployIdentityId: "ci-writer-identity",
-					claimBundleId: "fixture-claim",
+					deployCredentialIdentityId: "ci-reader-identity",
+					claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 					claimState: "claimed",
+					deployOidcSubject:
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
 				}),
 			);
 			const githubFake = github();
@@ -434,7 +445,6 @@ describe("secretless first: the App's credentials go from GitHub to the store wi
 			const progress: string[] = [];
 			const result = await runCiAppDeposit({
 				cwd: dir,
-				privateBinding,
 				relay: RELAY,
 				ownerId: String(OWNER),
 				env: {

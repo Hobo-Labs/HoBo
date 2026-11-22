@@ -9,11 +9,11 @@ import {
 	isImagetoolsRegistryTagNotFound,
 	normalizeRepoDigestLine,
 	parseImagetoolsDefaultStdout,
+	registryInspectTag,
 	resolveRegistryDigestForTag,
 	resolveRegistryDigestForTagWithRetry,
-	stderrReferencesExactTag,
-	registryInspectTag,
 	splitRegistryTag,
+	stderrReferencesExactTag,
 } from "../lib/release-ghcr-digest.mts";
 
 const DIGEST_A =

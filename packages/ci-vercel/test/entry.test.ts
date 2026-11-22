@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { InfisicalError } from "@hobo/adapter-infisical";
 import { describe, expect, it } from "vitest";
@@ -12,8 +13,9 @@ import {
 	relayStartState,
 } from "../src/entry.js";
 import {
+	COMMITTED_STORE_BINDING_URL,
+	parseCommittedStoreCoordinates,
 	RelayRuntimeConfigError,
-	relayConfigSourceFromEnv,
 } from "../src/relay-runtime-config.js";
 
 describe("Vercel HTTP entrypoint", () => {
@@ -68,13 +70,6 @@ describe("Vercel HTTP entrypoint", () => {
 			);
 			expect(buildCommit({ VERCEL_GIT_COMMIT_SHA: "abc123" })).toBeNull();
 			expect(buildCommit({})).toBeNull();
-			expect(buildCommit({ HOBO_CI_SOURCE_SHA: COMMIT })).toBe(COMMIT);
-			expect(
-				buildCommit({
-					HOBO_CI_SOURCE_SHA: "invalid",
-					VERCEL_GIT_COMMIT_SHA: COMMIT,
-				}),
-			).toBeNull();
 			await serve(
 				createHttpEntry(
 					async () => {
@@ -155,17 +150,13 @@ describe("Vercel HTTP entrypoint", () => {
 			}
 		});
 
-		it("uses the runtime's scoped identity configuration", () => {
-			const source = relayConfigSourceFromEnv({
-				VERCEL_ENV: "production",
-				HOBO_CI_CONFIG_SERVICE: "infisical",
-				INFISICAL_SITE_URL: "https://fixture.invalid",
-				INFISICAL_PROJECT_ID: "fixture-project",
-				INFISICAL_IDENTITY_ID: "fixture-identity",
-				INFISICAL_ENVIRONMENT: "prod",
-				INFISICAL_SECRET_PATH: "/hobo-ci-relay",
-			});
-			expect(source.kind).toBe("infisical");
+		it("binds the production relay to the committed secret store (secretless first)", () => {
+			const coordinates = parseCommittedStoreCoordinates(
+				readFileSync(COMMITTED_STORE_BINDING_URL, "utf8"),
+			);
+			expect(coordinates?.binding.environment).toBe("prod");
+			expect(coordinates?.binding.secretPath).toBe("/hobo-ci-relay");
+			expect(coordinates?.identityId).toMatch(/^[0-9a-f-]{36}$/u);
 		});
 	});
 });

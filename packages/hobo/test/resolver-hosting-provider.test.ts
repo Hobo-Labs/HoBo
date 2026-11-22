@@ -383,7 +383,7 @@ async function fixture(
 										headers: {
 											"x-operation": input.request.operation.operationId,
 										},
-										timeoutMs: 15_000,
+										timeoutMs: 1000,
 										maxResponseBytes: 65_536,
 									});
 									return parseResourceLifecycleObservation(

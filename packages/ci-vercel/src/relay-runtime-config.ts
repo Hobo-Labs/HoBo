@@ -13,6 +13,7 @@
  * TTL, and a failed refresh keeps the last good copy.
  */
 
+import { readFileSync } from "node:fs";
 import {
 	createInfisicalClient,
 	type InfisicalClient,
@@ -130,6 +131,12 @@ export function infisicalRelayConfigSource(
  */
 export const vercelOidcJwtSource: JwtSource = () => getVercelOidcToken();
 
+// public-contract: the committed store coordinates the production relay reads (ids only).
+export const COMMITTED_STORE_BINDING_URL = new URL(
+	"../deploy/secret-store.binding.json",
+	import.meta.url,
+);
+
 // The fields of `SecretStoreBinding` (@hobo/secret-store-claim) the relay
 // reads; the record's own parser runs when it is written.
 const CommittedBindingSchema = z
@@ -143,11 +150,20 @@ const CommittedBindingSchema = z
 	})
 	.passthrough();
 
+/** Where the production relay signs in, from the committed binding. */
 export type CommittedStoreCoordinates = Readonly<{
 	binding: ParsedInfisicalBinding;
 	identityId: string;
 }>;
 
+/**
+ * The committed `deploy/secret-store.binding.json` (the `SecretStoreBinding`
+ * record of `@hobo/secret-store-claim`; coordinates only), as the relay needs
+ * it: the store's origin, the relay's project, environment and folder, and
+ * the relay's identity. Parsed by the adapter's own binding parser, so a
+ * malformed file is refused by name, never quoted. Undefined when the file is
+ * absent or names a store the relay cannot read.
+ */
 export function parseCommittedStoreCoordinates(
 	text: string,
 ): CommittedStoreCoordinates | undefined {
@@ -155,12 +171,12 @@ export function parseCommittedStoreCoordinates(
 	try {
 		json = JSON.parse(text);
 	} catch {
-		throw new RelayRuntimeConfigError("invalid injected store binding");
+		throw new RelayRuntimeConfigError("invalid committed store binding");
 	}
 	const record = CommittedBindingSchema.safeParse(json);
 	if (!record.success)
-		throw new RelayRuntimeConfigError("invalid injected store binding", [
-			"private runtime binding",
+		throw new RelayRuntimeConfigError("invalid committed store binding", [
+			"deploy/secret-store.binding.json",
 		]);
 	if (
 		record.data.kind !== "infisical-cloud-attach" &&
@@ -179,23 +195,49 @@ export function parseCommittedStoreCoordinates(
 		oidcAuth({ identityId, jwt: vercelOidcJwtSource });
 		return Object.freeze({ binding, identityId });
 	} catch {
-		throw new RelayRuntimeConfigError("invalid injected store binding", [
-			"private runtime binding",
+		throw new RelayRuntimeConfigError("invalid committed store binding", [
+			"deploy/secret-store.binding.json",
 		]);
 	}
 }
 
+function readCommittedStoreCoordinates():
+	| CommittedStoreCoordinates
+	| undefined {
+	let text: string;
+	try {
+		text = readFileSync(COMMITTED_STORE_BINDING_URL, "utf8");
+	} catch {
+		return undefined;
+	}
+	return parseCommittedStoreCoordinates(text);
+}
+
+/**
+ * The source a deployment declares. `HOBO_CI_CONFIG_SERVICE=infisical` reads
+ * the binding (`INFISICAL_SITE_URL`, `INFISICAL_IDENTITY_ID`,
+ * `INFISICAL_PROJECT_ID`, `INFISICAL_ENVIRONMENT`, `INFISICAL_SECRET_PATH`:
+ * plain configuration, not secrets) and signs in with `jwt`, the Vercel OIDC
+ * token by default. `env` reads the environment.
+ *
+ * Unset: a production deployment (`VERCEL_ENV=production`) reads the
+ * committed `deploy/secret-store.binding.json` bundled with the function
+ * (ADR-0179 amendment "Secretless first"), so the Vercel Git integration's
+ * build needs no environment variable set through Vercel's API; anything
+ * else reads the environment.
+ */
 export function relayConfigSourceFromEnv(
 	env: Readonly<Record<string, string | undefined>>,
 	options: Readonly<{
 		jwt?: JwtSource;
 		fetch?: typeof fetch;
+		/** The committed coordinates; read from the bundled file when absent. */
 		committed?: () => CommittedStoreCoordinates | undefined;
 	}> = {},
 ): RelayConfigSource {
 	const declared = env.HOBO_CI_CONFIG_SERVICE;
 	if (declared === undefined && env.VERCEL_ENV === "production") {
-		const committed = options.committed?.();
+		const committed = (options.committed ?? readCommittedStoreCoordinates)();
 		if (committed !== undefined) {
 			const auth = oidcAuth({
 				identityId: committed.identityId,

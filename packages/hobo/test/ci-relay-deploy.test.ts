@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,10 +17,24 @@ import { at } from "@hobo/core/total-access";
 import { type PactLifecycle, pactBackedTransport } from "@hobo/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { createCiCommand, parseCiArgs } from "../src/ci-command.js";
-import { CI_DEPLOY_OPTIONS, runCiRelayDeploy } from "../src/ci-relay-deploy.js";
+import { loadDeliveryFile } from "../src/cd-delivery-module.js";
+import { createCiCommand } from "../src/ci-command.js";
+import { RELAY_DELIVERY_FILE } from "../src/ci-relay-delivery.js";
+import {
+	RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+	readRelayDeployToken,
+} from "../src/ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
-import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
+import {
+	RELAY_VERIFY_REFUSAL,
+	recordVerifiedPreviewRecords,
+} from "../src/ci-relay-verify.js";
+import {
+	isJsonObject,
+	type JsonObject,
+	type JsonValue,
+	parseJsonObject,
+} from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
 // `hobo ci deploy` against the REAL relay declaration
@@ -30,6 +51,50 @@ const TOKEN = "synthetic-token-0123";
 /** Pact corpus uses `team_hobo`; override the committed binding team in tests. */
 const TEAM = "team_hobo";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+const relayFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-fixture-"),
+);
+cpSync(RELAY_DIR, relayFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+rmSync(join(relayFixtureDir, "package.json"), { force: true });
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(relayFixtureDir, "node_modules"),
+);
+{
+	const file = join(relayFixtureDir, "deploy", "secret-store.binding.json");
+	const binding: Record<string, JsonValue> = Object.fromEntries(
+		Object.entries(
+			parseJsonObject(
+				readFileSync(
+					join(RELAY_DIR, "deploy", "secret-store.binding.json"),
+					"utf8",
+				),
+			),
+		),
+	);
+	binding.deployProjectId = "ci-deploy-project";
+	binding.deployCredentialIdentityId = "ci-deploy-reader-identity";
+	binding.deployOidcSubject =
+		"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
+	writeFileSync(file, `${JSON.stringify(binding, null, "\t")}\n`);
+}
+
+const legacyFixtureDir = mkdtempSync(
+	join(RELAY_DIR, "..", ".ci-relay-legacy-fixture-"),
+);
+cpSync(RELAY_DIR, legacyFixtureDir, {
+	recursive: true,
+	filter: (source) => !source.includes("node_modules"),
+});
+rmSync(join(legacyFixtureDir, "package.json"), { force: true });
+symlinkSync(
+	join(RELAY_DIR, "node_modules"),
+	join(legacyFixtureDir, "node_modules"),
+);
 
 const fixture = (name: string) =>
 	parseJsonObject(
@@ -85,6 +150,7 @@ interface Ran {
 	readonly stderr: string;
 	readonly envelope: JsonObject;
 	readonly data: JsonObject;
+	readonly credentialReads: number;
 }
 
 async function deploy(
@@ -99,55 +165,46 @@ async function deploy(
 		readonly now?: () => number;
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
+		readonly oidc?: boolean;
 	},
 ): Promise<Ran> {
-	// The deploy token is never read from the environment: a test that means
-	// "the owner holds a token" puts it in the run's vault, as the store would.
 	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
+	const oidc = storeToken !== undefined && options.oidc !== false;
 	const deployCredentials = createTrustedVault();
+	let credentialReads = 0;
+	const readDeployCredential: typeof readRelayDeployToken = async (request) => {
+		credentialReads += 1;
+		if (storeToken === undefined) return readRelayDeployToken(request);
+		return {
+			token: storeToken,
+			secretRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+			identityId: "ci-deploy-reader-identity",
+			audience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+		};
+	};
 	if (storeToken !== undefined)
 		deployCredentials.put("VERCEL_TOKEN", storeToken);
+	const env = { ...plainEnv };
+	if (oidc) {
+		env.ACTIONS_ID_TOKEN_REQUEST_URL =
+			"https://token.actions.example.test/token?api-version=2.0";
+		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN = "synthetic-request-token";
+	}
 	const cli = createHoboCli({
 		commands: {
-			ci: {
-				implemented: true,
-				async run({ args: raw, flags, emitProgress }) {
-					const { values, positionals } = parseCiArgs(raw);
-					const usage = (message: string) => ({
-						ok: false,
-						status: "usage",
-						code: "HOBO_CLI_USAGE",
-						message,
-					});
-					if (positionals.length !== 1)
-						return usage("hobo ci deploy takes no positional arguments.");
-					const allowed = new Set<string>(CI_DEPLOY_OPTIONS);
-					const unsupported = Object.entries(values).find(
-						([key, value]) => value !== undefined && !allowed.has(key),
-					);
-					if (unsupported)
-						return usage(
-							`--${unsupported[0]} does not apply to hobo ci deploy.`,
-						);
-					return runCiRelayDeploy({
-						cwd: flags.cwd,
-						values,
-						env: plainEnv,
-						credentials: deployCredentials,
-						fetch: options.fetch,
-						...(options.vercelCli !== undefined
-							? { runVercelCli: options.vercelCli }
-							: undefined),
-						...(options.sleep !== undefined
-							? { sleep: options.sleep }
-							: undefined),
-						...(options.now !== undefined ? { now: options.now } : undefined),
-						home: options.hoboHome ?? freshHome(),
-						probe: options.probe ?? healthyRelay().http,
-						emitProgress,
-					});
-				},
-			},
+			ci: createCiCommand({
+				env,
+				deployCredentials,
+				readDeployCredential,
+				vercelFetch: options.fetch,
+				...(options.vercelCli !== undefined
+					? { vercelCli: options.vercelCli }
+					: undefined),
+				...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
+				...(options.now !== undefined ? { now: options.now } : undefined),
+				hoboHome: options.hoboHome ?? freshHome(),
+				probeHttp: options.probe ?? healthyRelay().http,
+			}),
 		},
 	});
 	const teamOverride = args.includes("--team")
@@ -159,7 +216,7 @@ async function deploy(
 		...args,
 		...teamOverride,
 		"--cwd",
-		options.cwd ?? RELAY_DIR,
+		options.cwd ?? relayFixtureDir,
 		...(options.json === false ? [] : ["--json"]),
 	]);
 	const envelope = options.json === false ? {} : parseJsonObject(result.stdout);
@@ -171,6 +228,7 @@ async function deploy(
 			data !== undefined && !Array.isArray(data) && data !== null
 				? parseJsonObject(JSON.stringify(data))
 				: {},
+		credentialReads,
 	};
 }
 
@@ -184,6 +242,8 @@ function freshHome(): string {
 }
 afterAll(() => {
 	for (const home of homes) rmSync(home, { recursive: true, force: true });
+	rmSync(relayFixtureDir, { recursive: true, force: true });
+	rmSync(legacyFixtureDir, { recursive: true, force: true });
 });
 
 // The relay answering its probes, and the URLs it was asked for. Its
@@ -249,11 +309,11 @@ const INPUTS = [
 ];
 
 describe("hobo ci deploy --dry-run (the real relay declaration, no network)", () => {
-	it("plans a preview deployment by default, with no token and no request", async () => {
+	it("plans a preview deployment with OIDC available but no credential read or request", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[...RELAY, "--team", TEAM, ...SETTING, "--dry-run"],
-			{ fetch },
+			{ fetch, env: { VERCEL_TOKEN: TOKEN } },
 		);
 
 		expect(ran.exitCode).toBe(0);
@@ -268,6 +328,7 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 			target: "preview",
 			scope: TEAM,
 		});
+		expect(ran.credentialReads).toBe(0);
 		expect(sent).toEqual([]);
 	});
 
@@ -373,16 +434,75 @@ describe("hobo ci deploy --dry-run (the real relay declaration, no network)", ()
 		);
 	});
 
-	it("refuses production when a private runtime connection is unavailable", async () => {
+	it("fills production Infisical coordinates from deploy/secret-store.binding.json when present", async () => {
+		const binding = parseJsonObject(
+			readFileSync(
+				new URL(
+					"../../ci-vercel/deploy/secret-store.binding.json",
+					import.meta.url,
+				),
+				"utf8",
+			),
+		);
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[...RELAY, "--target", "production", "--sha", SHA, "--dry-run"],
 			{ fetch },
 		);
-		expect(ran.exitCode).not.toBe(0);
-		expect(ran.envelope.message).toContain(
-			"private owner-selected runtime connection",
+		expect(ran.exitCode).toBe(0);
+		const plan = isJsonObject(ran.data.plan) ? ran.data.plan : {};
+		const rawSettings = plan.settings;
+		const settings = Array.isArray(rawSettings) ? rawSettings : [];
+		expect(settings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					key: "INFISICAL_PROJECT_ID",
+					value: binding.projectId,
+				}),
+				expect.objectContaining({
+					key: "INFISICAL_IDENTITY_ID",
+					value: binding.relayIdentityId,
+				}),
+				expect.objectContaining({
+					key: "INFISICAL_SITE_URL",
+					value: binding.endpoint,
+				}),
+			]),
 		);
+		expect(sent).toEqual([]);
+	});
+
+	it("plans the committed declaration without requiring owner-provisioned ids for a dry run", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING, "--dry-run"], {
+			fetch,
+			cwd: RELAY_DIR,
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.envelope).toMatchObject({
+			ok: true,
+			code: "HOBO_CI_DEPLOY_PLANNED",
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("rejects a credential-free legacy binding before any OIDC or deploy request", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			cwd: legacyFixtureDir,
+			env: {
+				ACTIONS_ID_TOKEN_REQUEST_URL:
+					"https://token.actions.example.test/token?api-version=2.0",
+				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-request-token",
+			},
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+			message: expect.stringContaining("no deploy credential identity"),
+		});
 		expect(sent).toEqual([]);
 	});
 
@@ -639,6 +759,23 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		expect(sent).toEqual([]);
 	});
 
+	it("refuses a preloaded deploy token when the dedicated reader is unavailable", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy([...RELAY, ...SETTING], {
+			fetch,
+			env,
+			oidc: false,
+		});
+
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_AUTH_REQUIRED",
+			status: "authentication-required",
+		});
+		expect(ran.credentialReads).toBe(0);
+		expect(sent).toEqual([]);
+	});
+
 	it("sets the setting, deploys once for the whole Bindle, and prints the outputs", async () => {
 		const vercel = pactBackedTransport(pact, { lifecycle: LIFECYCLE });
 		const ran = await deploy([...RELAY, ...SETTING], {
@@ -660,6 +797,12 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 		});
 		expect(vercel.fidelityViolations()).toEqual([]);
 		expect(ran.envelope).toMatchObject({ ok: true, code: "HOBO_CI_DEPLOYED" });
+		expect(ran.credentialReads).toBe(1);
+		expect(ran.data).toMatchObject({
+			deployTokenRef: "infisical://ci-deploy-project/prod/VERCEL_TOKEN",
+			deployCredentialIdentityId: "ci-deploy-reader-identity",
+			deployCredentialAudience: RELAY_DEPLOY_READER_OIDC_AUDIENCE,
+		});
 		expect(ran.data.outputs).toEqual({
 			url: "https://hobo-ci-git-main.example.vercel.app",
 			deploymentId: "dpl_preview",
@@ -754,7 +897,16 @@ describe("hobo ci deploy (pact-backed transport, no network)", () => {
 
 // A Vercel that holds no settings, answers one deployment, and reports its
 // state from `states`, one per read. Records each request as "METHOD path".
-function scriptedVercel(states: readonly string[]) {
+function scriptedVercel(
+	states: readonly string[],
+	deployment: {
+		commit?: string;
+		project?: string;
+		projectId?: string;
+		target?: string;
+		readRefusal?: number;
+	} = {},
+) {
 	const sent: string[] = [];
 	let reads = 0;
 	const answer = (status: number, body: JsonObject) => ({
@@ -777,12 +929,22 @@ function scriptedVercel(states: readonly string[]) {
 				readyState: "QUEUED",
 			});
 		if (init.method === "GET" && path.startsWith("/v13/deployments/dpl_wait")) {
+			if (deployment.readRefusal !== undefined)
+				return answer(deployment.readRefusal, {
+					error: { code: "forbidden", message: "no read" },
+				});
 			const readyState = states[Math.min(reads, states.length - 1)] ?? "READY";
 			reads += 1;
 			return answer(200, {
 				id: "dpl_wait",
+				name: deployment.project ?? "hobo-ci",
+				...(deployment.projectId !== undefined
+					? { projectId: deployment.projectId }
+					: undefined),
 				url: "hobo-ci-git-main.example.vercel.app",
 				readyState,
+				target: deployment.target ?? "preview",
+				meta: { githubCommitSha: deployment.commit ?? SHA },
 			});
 		}
 		// The project's settings: none held, and each one asked for is created.
@@ -933,6 +1095,86 @@ describe("hobo ci deploy --provision and --wait (fakes, no network)", () => {
 			},
 		});
 	});
+
+	it("refuses a --deadline that is not an ISO-8601 time with a zone", async () => {
+		const { fetch, sent } = unreachable();
+		const ran = await deploy(
+			[...RELAY, "--wait", "--deadline", "in 5 minutes"],
+			{
+				fetch,
+				env,
+			},
+		);
+		expect(ran.exitCode).toBe(2);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining("--deadline takes an ISO-8601 time"),
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("stops waiting at --deadline, before its 20-minute limit", async () => {
+		const vercel = scriptedVercel(["BUILDING"]);
+		const ran = await deploy(
+			[...RELAY, "--wait", "--deadline", "2026-11-12T12:00:30Z"],
+			{
+				fetch: vercel.fetch,
+				env,
+				...steppingClock(),
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_NOT_READY",
+			data: {
+				outputs: {
+					readyState: expect.stringMatching(/^BUILDING after \d+ minutes$/u),
+				},
+			},
+		});
+		const reads = vercel.sent.filter((line) => line.startsWith("GET ")).length;
+		expect(reads).toBeLessThan(10);
+	});
+});
+
+async function relayDeliveryRecords() {
+	const loaded = await loadDeliveryFile(RELAY_DELIVERY_FILE, {
+		cwd: RELAY_DIR,
+	});
+	if (!loaded.ok) throw new Error(loaded.message);
+	return loaded.value;
+}
+
+describe("deployment-record preview verification", () => {
+	it("refuses a preview node without verification", async () => {
+		const records = await relayDeliveryRecords();
+		const withoutVerification = {
+			...records,
+			pipelines: records.pipelines.map((pipeline) => ({
+				...pipeline,
+				nodes: pipeline.nodes.map((node) =>
+					node.name === "preview" ? { ...node, verification: undefined } : node,
+				),
+			})),
+		};
+		expect(() => recordVerifiedPreviewRecords(withoutVerification)).toThrow(
+			/preview has no verification/u,
+		);
+	});
+
+	it("refuses when no preview verification node exists", async () => {
+		const records = await relayDeliveryRecords();
+		const withoutPreview = {
+			...records,
+			pipelines: records.pipelines.map((pipeline) => ({
+				...pipeline,
+				nodes: pipeline.nodes.filter((node) => node.name !== "preview"),
+			})),
+		};
+		expect(() => recordVerifiedPreviewRecords(withoutPreview)).toThrow(
+			/no preview verification node was updated/u,
+		);
+	});
 });
 
 describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no network)", () => {
@@ -953,21 +1195,172 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses --wait before anything is sent when the target's probe origin is not set", async () => {
+	it("refuses --wait before anything is sent when the target's probe origin is not set to an https origin", async () => {
+		const { fetch, sent } = unreachable();
+		const production = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch,
+				env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+				...steppingClock(),
+			},
+		);
+		expect(production.exitCode).toBe(1);
+		expect(production.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
+			message: expect.stringContaining("HOBO_CI_RELAY_URL"),
+		});
+		const preview = await deploy([...RELAY, "--wait"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				HOBO_CI_RELAY_PREVIEW_URL: "http://relay-preview.example.test",
+			},
+		});
+		expect(preview.exitCode).toBe(1);
+		expect(preview.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
+		});
+		expect(sent).toEqual([]);
+	});
+
+	it("verifies preview by the deployment record when no preview origin is set, probing nothing", async () => {
+		const probed: string[] = [];
+		const http: HttpTransport = async (request) => {
+			probed.push(request.url);
+			return { status: 200, headers: {}, body: '{"ok":true}' };
+		};
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"]).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			probe: http,
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
+		expect(probed).toEqual([]);
+	});
+
+	it("requires a commit before using deployment-record preview verification", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy([...RELAY, "--wait"], {
 			fetch,
 			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
 		});
-		expect(ran.exitCode).toBe(1);
+		expect(ran.exitCode).toBe(2);
 		expect(ran.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
-			message: expect.stringContaining("HOBO_CI_RELAY_PREVIEW_URL"),
+			code: "HOBO_CLI_USAGE",
+			message: expect.stringContaining("needs --sha <commit>"),
 		});
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses legacy production before any provider request", async () => {
+	it.each([
+		["commit", { commit: "f".repeat(40) }],
+		["project", { project: "another-project" }],
+		[
+			"canonical project id, though the display name matches",
+			{ projectId: "prj_another" },
+		],
+		["environment", { target: "production" }],
+	])("does not qualify a READY preview with the wrong %s", async (_field, record) => {
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"], record).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			code: "HOBO_CI_DEPLOY_VERIFICATION_FAILED",
+		});
+		expect(ran.data.delivery).toMatchObject({ state: "FAILED" });
+	});
+
+	it("qualifies a READY preview bound to the intended canonical project id", async () => {
+		const ran = await deploy([...PINNED, "--project", "prj_relay", "--wait"], {
+			fetch: scriptedVercel(["READY"], { projectId: "prj_relay" }).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
+	});
+
+	it.each([
+		["unauthorized (401)", 401],
+		["refused (403)", 403],
+		["absent (404)", 404],
+	])("fails preview verification when the deployment read is %s, instead of looping on UNKNOWN", async (_what, status) => {
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch: scriptedVercel(["READY"], { readRefusal: status }).fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_VERIFICATION_FAILED",
+			message: expect.stringContaining(`HTTP ${status}`),
+		});
+		expect(ran.data.delivery).not.toMatchObject({ state: "PROMOTED" });
+	});
+
+	it("retries a deployment read that got no answer or a retryable status, and still qualifies", async () => {
+		const vercel = scriptedVercel(["READY"]);
+		let reads = 0;
+		const fetch: VercelFetch = async (url, init) => {
+			if (init.method === "GET" && url.includes("/v13/deployments/dpl_wait")) {
+				reads += 1;
+				if (reads === 1)
+					return {
+						ok: false,
+						status: 503,
+						async text() {
+							return JSON.stringify({
+								error: { code: "internal", message: "try later" },
+							});
+						},
+						async json() {
+							return {};
+						},
+					};
+				if (reads === 2) throw new Error("socket hang up");
+			}
+			return vercel.fetch(url, init);
+		};
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch,
+			env: { VERCEL_TOKEN: TOKEN, VERCEL_TEAM_ID: TEAM },
+			hoboHome: freshHome(),
+			...steppingClock(),
+		});
+		expect(ran.exitCode).toBe(0);
+		expect(ran.data.delivery).toMatchObject({
+			node: "preview",
+			state: "PROMOTED",
+		});
+	});
+
+	it("refuses production before any request when preview has not qualified the commit", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[
@@ -983,12 +1376,13 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		);
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
+			code: "HOBO_CI_DEPLOY_NOT_QUALIFIED",
+			message: expect.stringContaining("Run hobo ci deploy --target preview"),
 		});
 		expect(sent).toEqual([]);
 	});
 
-	it("does not bypass the release reservation after preview qualifies a commit", async () => {
+	it("promotes to production the commit preview verified, in the same journal", async () => {
 		const home = freshHome();
 		const relay = healthyRelay();
 		// One clock across both runs: production comes after preview.
@@ -1006,7 +1400,6 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			state: "PROMOTED",
 		});
 
-		const production = unreachable();
 		const second = await deploy(
 			[
 				...PINNED,
@@ -1018,22 +1411,33 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				"--wait",
 			],
 			{
-				fetch: production.fetch,
+				fetch: scriptedVercel(["READY"]).fetch,
 				env,
 				hoboHome: home,
 				probe: relay.http,
 				...clock,
 			},
 		);
-		expect(second.exitCode).toBe(1);
+		expect(second.exitCode, JSON.stringify(second.envelope)).toBe(0);
 		expect(second.envelope).toMatchObject({
-			ok: false,
-			code: "HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
+			ok: true,
+			code: "HOBO_CI_DEPLOYED",
 		});
-		expect(production.sent).toEqual([]);
+		const previewDelivery = first.data.delivery;
+		expect(second.data.delivery).toMatchObject({
+			node: "production",
+			campId: "hobo-ci-relay/hobo-ci-relay/production",
+			state: "PROMOTED",
+			freightId: isJsonObject(previewDelivery) ? previewDelivery.freightId : "",
+		});
+		expect(second.data.outputs).toMatchObject({
+			camp: "hobo-ci-relay/production",
+			readyState: "READY",
+		});
+		expect(relay.probed).toContain("https://relay.example.test/readyz");
 	});
 
-	it("does not observe or mutate production from the legacy delivery path", async () => {
+	it("does not qualify production while HOBO_CI_RELAY_URL serves another commit", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
 		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
@@ -1065,9 +1469,10 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		);
 		expect(second.exitCode).toBe(1);
 		expect(second.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
+			code: RELAY_VERIFY_REFUSAL.commitMismatch,
+			message: expect.stringContaining("f".repeat(40)),
 		});
-		expect(stale.probed).toEqual([]);
+		expect(stale.probed).toContain("https://relay.example.test/healthz");
 	});
 
 	it("without --wait returns once the deployment exists, unverified and unqualified", async () => {

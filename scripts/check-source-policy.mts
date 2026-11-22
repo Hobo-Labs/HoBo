@@ -285,38 +285,6 @@ export function documentViolation(
 		: undefined;
 }
 
-export function documentCleanupOnly(before: string, after: string): boolean {
-	if (before === after) return false;
-	if (after === "") return true;
-	const matches = (original: string, cleaned: string): boolean => {
-		if (original === cleaned) return true;
-		const parts = cleaned.split("[redacted]");
-		if (parts.length < 2 || !original.startsWith(parts[0] ?? "")) return false;
-		let position = parts[0]?.length ?? 0;
-		for (let index = 1; index < parts.length - 1; index++) {
-			const part = parts[index] ?? "";
-			const next = original.indexOf(part, position + 1);
-			if (next < 0) return false;
-			position = next + part.length;
-		}
-		const last = parts.at(-1) ?? "";
-		const ending = original.length - last.length;
-		return ending > position && original.endsWith(last);
-	};
-	const originalLines = before.split("\n");
-	let position = 0;
-	for (const line of after.split("\n")) {
-		while (
-			position < originalLines.length &&
-			!matches(originalLines[position] ?? "", line)
-		)
-			position++;
-		if (position >= originalLines.length) return false;
-		position++;
-	}
-	return true;
-}
-
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
@@ -334,30 +302,8 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			/\.mdx?$/iu.test(file) &&
 			parents.every((parent) => parent.files.has(file))
 		) {
-			const current = contents(mode, file);
-			const reason = documentViolation(file, current);
-			if (reason) {
-				let cleanup = !untracked.includes(file) && !renamed.has(file);
-				const baseline = mode.kind === "base" ? args[1] : "HEAD";
-				for (const ref of [
-					baseline,
-					...parents.map((parent) => parent.args.at(-1)),
-				]) {
-					if (!cleanup || ref === undefined) {
-						cleanup = false;
-						break;
-					}
-					try {
-						cleanup = documentCleanupOnly(
-							git(["show", `${ref}:${file}`]),
-							current,
-						);
-					} catch {
-						cleanup = false;
-					}
-				}
-				if (!cleanup) violations.push({ file, line: 1, message: reason });
-			}
+			const reason = documentViolation(file, contents(mode, file));
+			if (reason) violations.push({ file, line: 1, message: reason });
 		}
 		const extension = extname(file).toLowerCase();
 		if (

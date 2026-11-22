@@ -1,8 +1,11 @@
 # @hobo/secret-store-claim
 
-The `secrets.config-service/v1` package models store offers, claim handoffs,
-and workload identity bindings. The legacy CLI provisioning flow is disabled
-until HoBo setup can establish the private runtime identity and target trust.
+The `secrets.config-service/v1` capability: the config/secret store a HoBo
+deployment chooses **when it runs**, provisions, and hands to its owner **by
+claim** (ADR-0179 amendment
+[Secret store chosen at deploy, provisioned by claim](../../docs/design/adr/hosted-relay-stateless.md#amendment-secret-store-chosen-at-deploy-provisioned-by-claim)).
+No human pre-setup, nothing in Vercel environment secrets, nothing in GitHub
+secrets or variables.
 
 ## Offers, in HoBo's preference order
 
@@ -23,8 +26,8 @@ with its reason.
 
 - `offers.ts`: the offer kinds, claim mechanisms and defaults; `parseSecretStoreOffer`.
 - `select.ts`: `parseSecretStoreEvidence`, `selectSecretStore`.
-- `binding.ts`: the legacy `SecretStoreBinding` parser and formatter. Owner
-  coordinates belong in a private session, not a repository file.
+- `binding.ts`: `SecretStoreBinding`, the coordinates committed as
+  `deploy/secret-store.binding.json`; parse, read and format.
 - `claim.ts`: the claim bundle (`@hobo/claims`), one-time action sealing
   scoped the way `hobo claim open` redeems.
 - `auth-md.ts`: `probeAuthMdStore`, `provisionAuthMdStore`.
@@ -32,17 +35,24 @@ with its reason.
 - `infisical.ts`: `relayStoreLayout`, `provisionSelfHostedInfisical`,
   `verifySelfHostedInfisicalClaim`, `attachInfisicalCloud`,
   `updateDeployIdentityTrust` (a connect re-run replaces the deploy
-  identity's OIDC trust in place).
+  identity's OIDC trust in place). Provisioning grants the relay identity
+  Viewer only in the relay project; the deploy identity and dedicated deploy
+  reader are Viewer-only in the separate deploy-credential project.
 - `github-oidc.ts`: `resolveGithubOidcSubject` reads from GitHub the OIDC
   subject a repository's tokens carry (`sub_claim_prefix`, or the immutable
   `repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids) and fails
-  closed when GitHub does not say; `githubDeployTrust` binds it on a branch
-  with `repository_id` and `repository_owner_id` pinned. Pinned by
-  `contracts/pacts/github-oidc-subject.pact.json`.
+  closed when GitHub does not say. `githubDeployTrust` and
+  `githubDeployReaderTrust` use distinct protected-environment subjects and pin
+  repository ids, environment, `ref`, top-level `workflow_ref` and called
+  `job_workflow_ref`. The writer caller is `app-credentials.yml`; both
+  implementations are `relay-deploy.yml`, and no other reusable caller is
+  supported. Caller-selected audiences cannot cross the writer/reader boundary.
+  Pinned by `contracts/pacts/github-oidc-subject.pact.json`.
 
-`hobo ci secret-store plan` lists the offers. Legacy connect and provision
-refuse until private runtime setup is available; see
-[CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store).
+The CLI is `hobo ci secret-store plan|provision` in `@hobo/hobo`
+([CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store));
+agents drive it through the [`hobo-deploy`](../../.claude/skills/hobo-deploy/SKILL.md)
+skill.
 
 ## Bearer material
 

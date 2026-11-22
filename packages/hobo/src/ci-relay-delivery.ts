@@ -4,14 +4,18 @@
 // `hobo ci deploy` is a thin front over this module: the relay build is
 // recorded as Freight, promoted through the relay's pipeline (preview, then
 // production, which takes only Freight preview qualified) and the CD gate,
-
+// and realized by a conductor reconciler whose realizer is the Vercel git
+// deployment of the commit the Freight pins. Verification is the pipeline
+// node's HTTP probes of `/healthz` and `/readyz`, failing closed on no data;
+// PASS is the only qualification.
 //
 // What the Freight holds: the relay Bindle (`hobo-ci-relay`), the canonical
 // declaration stored under its own hash, and a source pin (repository, ref,
 // commit) stored in the CD artifact store, so two commits are two Freight and
 // production deploys exactly the commit preview qualified. Provenance: the CI
 // run that recorded it (`GITHUB_RUN_ID`, `GITHUB_WORKFLOW_REF`) when present;
-
+// no signed attestation is recorded (Vercel builds from git, so there is no
+// built artifact to attest yet).
 //
 // The records it applies are delivery-as-code beside the relay's Yard
 // (`packages/ci-vercel/deploy/delivery.ts`); `hobo deploy pipeline apply
@@ -20,7 +24,7 @@
 // Matching: no provider package resolves the relay's queues, schedule, cache
 // or config service yet (yard.ts says so). The planner registry here is the
 // relay Yard's own declared catalog: a provider `yard:<name>` advertising the
-
+// ports the Yard's binding rows cover, realized only by the relay's git
 // deployment (`vercel.json` declares the queues and the schedule; the
 // Marketplace attaches the cache). A Yard on any other provider is refused
 // before this module runs.
@@ -94,6 +98,7 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
+import { RelayDeploymentReadRefusal } from "./ci-relay-verify.js";
 import { loadRelayJoinedYards } from "./ci-relay-yard.js";
 import {
 	isJsonObject,
@@ -170,8 +175,10 @@ export type RelayRealizationFailure = Readonly<{
 
 /** The Vercel side of the realizer, supplied by `ci-relay-deploy.ts`. */
 export interface RelayRealization {
+	/** Create the git deployment of the pinned commit; the provider's outputs. */
 	deploy(
 		source: RelaySourcePin,
+		context: Readonly<{ freightId: string }>,
 	): Promise<
 		| Readonly<{ ok: true; outputs: Readonly<Record<string, string>> }>
 		| RelayRealizationFailure
@@ -286,6 +293,11 @@ function describeReasons(reasons: readonly ReasonRecord[]): string {
 		.join("; ");
 }
 
+/**
+ * The relay Yard's declared catalog as a planner provider: the ports its
+ * binding rows cover, in its regions, and nothing else. Realized only by the
+ * relay's git deployment.
+ */
 export function relayYardRegistryProvider(
 	yard: Yard,
 	joinedSecretProjection = false,
@@ -365,7 +377,7 @@ export function relayYardRegistryProvider(
 						productIds,
 						realizedBy: joinedSecretProjection
 							? "declared joined Yard secret projection"
-							: "relay source deployment",
+							: "relay git deployment",
 					})),
 				},
 				cost: { facts: [] },
@@ -480,6 +492,10 @@ type Realized =
 	  }>
 	| Readonly<{ kind: "failed"; failure: RelayRealizationFailure }>;
 
+/**
+ * The conductor realizer: the Vercel git deployment of the commit the desired
+ * Set's Freight pins. Converged only once Vercel reports the deployment READY.
+ */
 export function relayRealizer(
 	input: Readonly<{
 		realization: RelayRealization;
@@ -544,7 +560,24 @@ export function relayRealizer(
 					),
 				],
 			});
-		const state = await input.realization.readyState(done.deploymentId);
+		let state: string;
+		try {
+			state = await input.realization.readyState(done.deploymentId);
+		} catch (error) {
+			if (error instanceof RelayDeploymentReadRefusal)
+				return observation({
+					...base,
+					status: ReconcileStatus.BLOCKED,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.verificationFailed,
+							`reading deployment ${done.deploymentId} failed (HTTP ${error.status}): ${error.message}`,
+							"No retry fixes this: check the deploy token's scope, and the team the deployment belongs to.",
+						),
+					],
+				});
+			throw error;
+		}
 		const handover = { ...done.outputs, readyState: state };
 		if (state === "READY")
 			return observation({
@@ -596,7 +629,9 @@ export function relayRealizer(
 						},
 					});
 				} else {
-					const deployed = await input.realization.deploy(pin);
+					const deployed = await input.realization.deploy(pin, {
+						freightId: String(at.desired.freightId),
+					});
 					realized.set(
 						at.desired.setId,
 						deployed.ok

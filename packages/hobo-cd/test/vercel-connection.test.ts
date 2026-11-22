@@ -888,7 +888,10 @@ describe("prepareVercelConnection", () => {
 		expect(selected).toBe("bitwarden");
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			steps: [{ outcome: "unchanged" }],
+			steps: [
+				{ outcome: "unchanged" },
+				{ id: "cd-identity", detail: expect.stringMatching(/Infisical only/u) },
+			],
 		});
 		if (outcome.kind === "ready") {
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
@@ -1109,7 +1112,10 @@ describe("prepareVercelConnection", () => {
 		);
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			steps: [{ id: "vercel", outcome: "unchanged" }],
+			steps: [
+				{ id: "vercel", outcome: "unchanged" },
+				{ id: "cd-identity", detail: expect.stringMatching(/no team/u) },
+			],
 		});
 		if (outcome.kind === "ready")
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);
@@ -1160,6 +1166,21 @@ describe("prepareVercelConnection", () => {
 			locator: memorySettings(LOCATOR),
 			fetch: vercel.fetch,
 			openStore: opened(store),
+			workload: {
+				teamSlug: async () => "acme",
+				enableProjectOidc: async () => "absent",
+				admin: () => ({
+					createProject: async () => ({ projectId: "unused" }),
+					createFolder: async () => ({ folderId: "unused" }),
+					createProjectIdentity: async () => ({
+						identityId: "00000000-0000-4000-8000-000000000001",
+					}),
+					attachOidcAuth: async () => {},
+					updateOidcAuth: async () => {},
+					deleteIdentity: async () => {},
+					probeToken: async () => "valid",
+				}),
+			},
 			openBrowser: (url) => {
 				browsing = (async () => {
 					const post = (action: string, params: Record<string, string> = {}) =>
@@ -1198,7 +1219,10 @@ describe("prepareVercelConnection", () => {
 		]);
 		expect(outcome).toMatchObject({
 			kind: "ready",
-			steps: [{ id: "vercel", outcome: "created" }],
+			steps: [
+				{ id: "vercel", outcome: "created" },
+				{ id: "cd-identity", outcome: "created" },
+			],
 		});
 		if (outcome.kind === "ready")
 			expect(outcome.credentials?.reveal("VERCEL_TOKEN")).toBe(TOKEN);

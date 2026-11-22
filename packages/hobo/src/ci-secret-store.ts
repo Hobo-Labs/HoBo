@@ -1,3 +1,33 @@
+// `hobo ci secret-store plan|provision|connect|verify` — choose the hosted relay's
+// config/secret store when the deployment runs, provision it, and hand it to
+// the owner by claim (ADR-0179 amendment "Secret store chosen at deploy,
+// provisioned by claim"; `@hobo/secret-store-claim`).
+//
+// Nothing is pre-provisioned by hand and nothing lands in Vercel or GitHub
+// secrets or variables. The store's coordinates (ids and an origin, no
+// credential) are written to `deploy/secret-store.binding.json` in the relay's
+// project, which `hobo ci deploy` and the deploy workflow read instead of
+// repository variables. Bearer material (a claim URL, a sealed sign-in) goes
+// only into the owner-only one-time action store under HOBO_HOME, and the
+// owner reveals it in their own terminal with `hobo claim open secret-store`.
+// This command never prints it.
+//
+// Evidence, per offer, gathered here:
+// - auth-md: each `--auth-md <origin>` is probed for auth.md metadata that
+//   advertises anonymous registration;
+// - cloudflare-temporary: an interactive terminal, where the owner can accept
+//   Cloudflare's Terms of Service and Privacy Policy;
+// - infisical-self-hosted: `--fleet-host <origin>`, a fresh Infisical the
+//   Yard placed on a compute fleet host;
+// - infisical-cloud-attach: INFISICAL_TOKEN in the environment, from the
+//   owner's own `infisical login`.
+//
+// HONEST SCOPE: exercised against local stand-ins only.
+
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { create } from "@bufbuild/protobuf";
 import { parseSessionBinding } from "@hobo/auth-md";
 import type { ClaimBundle, ClaimItem } from "@hobo/claims";
@@ -13,6 +43,7 @@ import {
 	attachInfisicalCloud,
 	claimScopeFor,
 	DEFAULT_SECRET_STORE_OFFERS,
+	formatSecretStoreBinding,
 	type ParsedSecretStoreBinding,
 	type ParsedSecretStoreEvidence,
 	parseSecretStoreEvidence,
@@ -20,6 +51,7 @@ import {
 	provisionAuthMdStore,
 	provisionCloudflareTemporaryStore,
 	provisionSelfHostedInfisical,
+	readSecretStoreBinding,
 	relayStoreLayout,
 	SECRET_STORE_BINDING_FILE,
 	SECRET_STORE_CLAIM_ITEM,
@@ -50,6 +82,8 @@ export const CI_SECRET_STORE_OPTIONS = [
 	"deploy-project-id",
 	"relay-identity-id",
 	"deploy-identity-id",
+	"deploy-credential-identity-id",
+	"identity",
 	"site-url",
 	"environment",
 	"yes",
@@ -69,6 +103,8 @@ export const SECRET_STORE_ONLY_OPTIONS = [
 	"deploy-project-id",
 	"relay-identity-id",
 	"deploy-identity-id",
+	"deploy-credential-identity-id",
+	"identity",
 	"site-url",
 	"auth-md",
 	"fleet-host",
@@ -86,6 +122,11 @@ export const SECRET_STORE_DEPLOY_INPUTS = Object.freeze({
 	INFISICAL_PROJECT_ID: "projectId",
 } as const);
 
+const RUNTIME_BUILT = new Set([
+	"infisical-self-hosted",
+	"infisical-cloud-attach",
+]);
+
 export class SecretStoreBindingRefusal extends Error {
 	readonly code: string;
 	constructor(code: string, message: string) {
@@ -95,15 +136,39 @@ export class SecretStoreBindingRefusal extends Error {
 	}
 }
 
+/**
+ * The committed binding of the relay project at `cwd`, or undefined when
+ * the store has not been chosen yet. A binding the relay cannot read (a
+ * designed runtime) or a malformed file is refused, never skipped.
+ */
 export function loadSecretStoreBinding(
-	_cwd: string,
+	cwd: string,
 ): ParsedSecretStoreBinding | undefined {
-	return undefined;
+	const file = path.join(cwd, SECRET_STORE_BINDING_FILE);
+	if (!existsSync(file)) return undefined;
+	let binding: ParsedSecretStoreBinding;
+	try {
+		binding = readSecretStoreBinding(readFileSync(file, "utf8"));
+	} catch {
+		throw new SecretStoreBindingRefusal(
+			"HOBO_CI_SECRET_STORE_BINDING_INVALID",
+			`${SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). A deploy credential needs both a deploy project other than the relay's, a deployCredentialIdentityId distinct from the relay and writer identities, and deployOidcSubject; re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id to configure one.`,
+		);
+	}
+	if (!RUNTIME_BUILT.has(binding.kind))
+		throw new SecretStoreBindingRefusal(
+			"HOBO_CI_SECRET_STORE_RUNTIME_UNBUILT",
+			`${SECRET_STORE_BINDING_FILE} binds a ${binding.kind} store, which the relay cannot read yet.`,
+		);
+	return binding;
 }
 
 /** The deploy inputs a binding fills: names to non-secret values. */
 export function secretStoreDeployInputs(
-	binding: ParsedSecretStoreBinding,
+	binding: Pick<
+		ParsedSecretStoreBinding,
+		"endpoint" | "projectId" | "relayIdentityId"
+	>,
 ): ReadonlyMap<string, string> {
 	return new Map(
 		Object.entries(SECRET_STORE_DEPLOY_INPUTS).map(([name, field]) => [
@@ -213,7 +278,6 @@ export interface CiSecretStoreInput {
 	readonly interactive: boolean;
 	readonly prompt: (question: string) => Promise<string>;
 	readonly now?: () => number;
-	readonly privateBinding?: ParsedSecretStoreBinding;
 	/** Tests: accept a loopback stand-in's http origin as a fleet host. */
 	readonly allowLoopback?: boolean;
 }
@@ -298,20 +362,52 @@ async function attachBundle(
 	});
 }
 
+/** Write the binding atomically; `provision` and `connect` both use it. */
 export async function writeSecretStoreBinding(
-	_cwd: string,
-	_binding: ParsedSecretStoreBinding,
+	cwd: string,
+	binding: ParsedSecretStoreBinding,
 ): Promise<string> {
-	throw new SecretStoreBindingRefusal(
-		"HOBO_CI_SECRET_STORE_PRIVATE_SETUP_REQUIRED",
-		"The legacy store setup cannot establish a private runtime connection. Complete the HoBo setup ceremony when private runtime provisioning is available.",
-	);
+	const file = path.join(cwd, SECRET_STORE_BINDING_FILE);
+	const temporary = `${file}.${randomUUID()}.tmp`;
+	await mkdir(path.dirname(file), { recursive: true });
+	try {
+		await writeFile(temporary, formatSecretStoreBinding(binding), {
+			flag: "wx",
+		});
+		await rename(temporary, file);
+	} finally {
+		await rm(temporary, { force: true });
+	}
+	return SECRET_STORE_BINDING_FILE;
 }
 
-function claimSteps(_kind: string, _cwd: string): readonly string[] {
-	return [
-		"Complete the HoBo setup ceremony when private runtime provisioning is available.",
-	];
+function claimSteps(kind: string, cwd: string): readonly string[] {
+	const where = `--cwd ${cwd}`;
+	switch (kind) {
+		case "cloudflare-temporary":
+			return [
+				`Within 60 minutes: run \`hobo claim open ${SECRET_STORE_CLAIM_ITEM} ${where}\` in your own terminal and open the Cloudflare claim link it prints; sign in or sign up, and claim the account. Cloudflare deletes an unclaimed account.`,
+			];
+		case "auth-md":
+			return [
+				`Run \`hobo claim open ${SECRET_STORE_CLAIM_ITEM} ${where}\` in your own terminal and approve the agent on the store's claim page before its deadline.`,
+			];
+		case "infisical-self-hosted":
+			return [
+				`Run \`hobo claim open ${SECRET_STORE_CLAIM_ITEM} ${where}\` in your own terminal: it shows your Infisical sign-in once. Sign in, then change the password and turn on MFA.`,
+				`Then run \`hobo claim finalize ${SECRET_STORE_CLAIM_ITEM} ${where}\`: HoBo deletes its own bootstrap identity and checks that Infisical refuses its token.`,
+				`Commit ${SECRET_STORE_BINDING_FILE} (coordinates only) so hobo ci deploy and the deploy workflow find the store.`,
+			];
+		case "infisical-cloud-attach":
+			return [
+				"In Infisical's web app: sign up or in, create projects hobo-ci (folder /hobo-ci-relay) and hobo-ci-deploy in prod, and add three OIDC Auth machine identities: hobo-ci-relay (Vercel), hobo-ci-writer (GitHub Actions), and read-only hobo-ci-deploy-reader (GitHub Actions, in hobo-ci-deploy only). The hobo-deploy skill gives every value.",
+				`Run \`hobo ci secret-store connect ${where} --repo <owner/name> --project-id … --deploy-project-id … --relay-identity-id … --deploy-identity-id … --deploy-credential-identity-id … --team …\` with the ids (none is a secret; GH_TOKEN lets it read the OIDC subject GitHub issues for the repository), set both GitHub Actions identities' OIDC trust to the subject and claims it prints, then commit ${SECRET_STORE_BINDING_FILE}.`,
+			];
+		default:
+			return [
+				`Commit ${SECRET_STORE_BINDING_FILE} (coordinates only) so hobo ci deploy and the deploy workflow find the store.`,
+			];
+	}
 }
 
 export async function runCiSecretStore(
@@ -319,11 +415,6 @@ export async function runCiSecretStore(
 ): Promise<CommandResult> {
 	if (input.subcommand === "connect") return runCiSecretStoreConnect(input);
 	if (input.subcommand === "verify") return runCiSecretStoreVerify(input);
-	if (input.subcommand === "provision")
-		return refused(
-			"HOBO_CI_SECRET_STORE_PRIVATE_SETUP_REQUIRED",
-			"The legacy store setup cannot establish a private runtime connection. Complete the HoBo setup ceremony when private runtime provisioning is available.",
-		);
 	if (input.subcommand !== "plan" && input.subcommand !== "provision")
 		return usage(
 			"Use hobo ci secret-store plan, provision, connect or verify.",

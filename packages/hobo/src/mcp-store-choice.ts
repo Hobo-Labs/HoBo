@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
 	isOwnerStoreSetting,
 	type OwnerSettingsStore,
-	ownerLocator,
 	parseHttpsOrigin,
 	parseOnePasswordVaultId,
 	SettingParseError,
@@ -335,15 +334,41 @@ const familyArg: JsonObject = {
 export function createStoreChoiceApp(
 	options: {
 		readonly cwd?: string;
-		/** Where a project's choice is kept; the owner's HoBo settings by default. */
 		readonly locatorFor?: (
 			cwd: string,
 			family: "ci" | "cd",
 		) => OwnerSettingsStore;
 	} = {},
 ): StoreChoiceApp {
-	const locatorFor: (cwd: string, family: "ci" | "cd") => OwnerSettingsStore =
-		options.locatorFor ?? ((cwd: string) => ownerLocator({ cwd }));
+	const locatorFor = options.locatorFor;
+	const ownerSetupUnavailable = () =>
+		result(
+			"Private owner store selection is not available in this HoBo MCP session. This tool cannot establish an owner store session.",
+			{
+				status: "secure-form-unavailable",
+				reason: "owner-setup-unavailable",
+			},
+			true,
+		);
+	const verifiedLocator = (
+		cwd: string,
+		family: "ci" | "cd",
+	): OwnerSettingsStore | undefined => {
+		if (locatorFor === undefined) return undefined;
+		try {
+			const locator = locatorFor(cwd, family);
+			if (
+				locator.assertCurrent === undefined ||
+				locator.onOwnerChoice === undefined ||
+				locator.selectionRevision === undefined
+			)
+				return undefined;
+			locator.assertCurrent();
+			return locator;
+		} catch {
+			return undefined;
+		}
+	};
 	type ChoiceTicket = {
 		cwd: string;
 		family: "ci" | "cd";
@@ -408,7 +433,8 @@ export function createStoreChoiceApp(
 				);
 			return stale();
 		}
-		await locatorFor(ticket.cwd, ticket.family).write({
+		const current = locatorFor?.(ticket.cwd, ticket.family) ?? ticket.locator;
+		await current.write({
 			...Object.fromEntries(
 				Object.entries(previous).filter(([name]) => !isOwnerStoreSetting(name)),
 			),
@@ -425,19 +451,20 @@ export function createStoreChoiceApp(
 	return {
 		handles: (tool) => STORE_CHOICE_TOOL_NAMES.includes(tool),
 		tools(support) {
+			const owned = locatorFor !== undefined;
 			return [
 				{
 					name: CHOOSE_SECRET_STORE_TOOL,
 					title: "Choose your secret store",
 					description:
-						"Ask the owner which secret store HoBo uses (Infisical, 1Password or Bitwarden) when hobo ci|cd up stops with HOBO_*_STORE_CHOICE. Shows a picker (elicitation or MCP App); never asks for a secret.",
+						"Ask the owner which secret store HoBo uses (Infisical, 1Password or Bitwarden) when hobo ci|cd up stops with HOBO_*_STORE_CHOICE, through a verified private owner session (form elicitation or the HoBo MCP App). Refuses when no verified owner session or secure form is available; never asks for a secret or store coordinates in conversation.",
 					inputSchema: {
 						type: "object",
 						properties: familyArg,
 						required: ["family"],
 						additionalProperties: false,
 					},
-					...(support.apps
+					...(owned && support.apps
 						? {
 								_meta: {
 									ui: { resourceUri: STORE_CHOICE_RESOURCE_URI },
@@ -446,7 +473,7 @@ export function createStoreChoiceApp(
 							}
 						: undefined),
 				},
-				...(support.apps
+				...(owned && support.apps
 					? [
 							{
 								name: SUBMIT_STORE_CHOICE_TOOL,
@@ -474,7 +501,7 @@ export function createStoreChoiceApp(
 			];
 		},
 		resources(support) {
-			return support.apps
+			return locatorFor !== undefined && support.apps
 				? [
 						{
 							uri: STORE_CHOICE_RESOURCE_URI,
@@ -486,7 +513,8 @@ export function createStoreChoiceApp(
 				: [];
 		},
 		readResource(uri) {
-			if (uri !== STORE_CHOICE_RESOURCE_URI) return undefined;
+			if (uri !== STORE_CHOICE_RESOURCE_URI || locatorFor === undefined)
+				return undefined;
 			return {
 				contents: [
 					{
@@ -510,6 +538,8 @@ export function createStoreChoiceApp(
 					: (options.cwd ?? process.cwd());
 			const family = args.family === "ci" ? "ci" : "cd";
 			if (tool === SUBMIT_STORE_CHOICE_TOOL) {
+				if (verifiedLocator(cwd, family) === undefined)
+					return ownerSetupUnavailable();
 				if (!support.apps)
 					return result(
 						"The secure HoBo owner form is unavailable in this host.",
@@ -525,13 +555,25 @@ export function createStoreChoiceApp(
 					tickets.delete(id);
 				return outcome;
 			}
+			const locator = verifiedLocator(cwd, family);
+			if (locator === undefined) return ownerSetupUnavailable();
+			if (!(support.formElicitation && request !== undefined) && !support.apps)
+				return result(
+					"This host cannot show the secure HoBo store-selection form. Use a host with MCP elicitation or MCP Apps; do not ask for store coordinates in conversation.",
+					{
+						status: "secure-form-unavailable",
+						reason: "secure-form-unavailable",
+						options: STORE_OPTIONS.map((o) => o.label),
+					},
+					true,
+				);
 			const key = `${family}\u0000${cwd}`;
 			const ticket: ChoiceTicket = {
 				cwd,
 				family,
 				key,
 				revision: revisions.get(key) ?? 0,
-				locator: locatorFor(cwd, family),
+				locator,
 				expires: Date.now() + 10 * 60_000,
 			};
 			if (support.formElicitation && request !== undefined) {
@@ -586,12 +628,8 @@ export function createStoreChoiceApp(
 					},
 				};
 			}
-			return result(
-				"This host cannot show the secure HoBo store-selection form. Use a host with MCP elicitation or MCP Apps; do not ask for store coordinates in conversation.",
-				{
-					status: "secure-form-unavailable",
-					options: STORE_OPTIONS.map((o) => o.label),
-				},
+		},
+				true,
 			);
 		},
 	};

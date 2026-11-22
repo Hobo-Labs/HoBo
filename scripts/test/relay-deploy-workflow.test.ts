@@ -11,26 +11,30 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { verifyEnvironmentProtection } from "../ci/relay-deploy-environment.mts";
 import {
-	adoptDeadline,
 	decide,
+	deployDeadline,
 	RELAY_DEPLOY_JOB_MARGIN_MINUTES,
 	RELAY_DEPLOY_JOB_TIMEOUT_MINUTES,
 	RELAY_EXTRA_INPUTS,
+	RELAY_SECRET_STORE_BINDING,
 	relayInputDirs,
+	storeBindingState,
 	touchesRelay,
 } from "../ci/relay-deploy-gate.mts";
 import { lintActionsRepository } from "../lint-actions.ts";
 
-// The relay deploy workflow (.github/workflows/relay-deploy.yml) and its gate
-// (scripts/ci/relay-deploy-gate.mts), ADR-0179 phase 6. Nothing here reaches
-// GitHub, Infisical or Vercel.
-
 const root = join(import.meta.dirname, "..", "..");
 const workflowPath = join(root, ".github", "workflows", "relay-deploy.yml");
 const workflow = readFileSync(workflowPath, "utf8");
+const appCredentialsWorkflow = readFileSync(
+	join(root, ".github", "workflows", "app-credentials.yml"),
+	"utf8",
+);
 const lockfile = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
 const inputDirs = relayInputDirs(lockfile);
+const configured = "bound" as const;
 
 /** The block of one step, from its `- name:` line to the next step. */
 function step(name: string): string {
@@ -43,6 +47,14 @@ function step(name: string): string {
 	return lines.slice(start, end === -1 ? undefined : end).join("\n");
 }
 
+function stepBefore(first: string, second: string): void {
+	const firstIndex = workflow.indexOf(`- name: ${first}`);
+	const secondIndex = workflow.indexOf(`- name: ${second}`);
+	assert.ok(firstIndex >= 0, `no step named ${first}`);
+	assert.ok(secondIndex >= 0, `no step named ${second}`);
+	assert.ok(firstIndex < secondIndex, `${first} must run before ${second}`);
+}
+
 describe("the relay deploy gate", () => {
 	it("takes the relay and every workspace package it is built from as its inputs", () => {
 		for (const dir of [
@@ -53,11 +65,6 @@ describe("the relay deploy gate", () => {
 			"packages/adapters/adapter-infisical",
 			"packages/yards",
 			"packages/camps",
-			"packages/hobo",
-			"packages/hobo-ci",
-			"packages/hobo-cd",
-			"packages/secret-store-claim",
-			"packages/cli",
 		])
 			assert.ok(inputDirs.includes(dir), `${dir} is not a relay input`);
 		assert.ok(!inputDirs.includes("site"));
@@ -75,13 +82,8 @@ describe("the relay deploy gate", () => {
 			touchesRelay([".github/workflows/relay-deploy.yml"], inputDirs),
 			true,
 		);
-		assert.equal(touchesRelay(["pnpm-lock.yaml", ".npmrc"], inputDirs), true);
 		assert.equal(
-			touchesRelay(["packages/hobo/src/ci-relay-managed.ts"], inputDirs),
-			true,
-		);
-		assert.equal(
-			touchesRelay(["packages/secret-store-claim/src/infisical.ts"], inputDirs),
+			touchesRelay(["scripts/ci/relay-deploy-verify.mts"], inputDirs),
 			true,
 		);
 		assert.equal(
@@ -95,18 +97,272 @@ describe("the relay deploy gate", () => {
 		);
 	});
 
+	it("fails an absent or unreadable store closed", () => {
+		const missing = decide({
+			event: "push",
+			store: "absent",
+			changed: ["packages/ci-vercel/src/entry.ts"],
+			inputDirs,
+		});
+		assert.equal(missing.run, false);
+		assert.equal(missing.fatal, true);
+		assert.ok(missing.reason.includes(RELAY_SECRET_STORE_BINDING));
+		assert.match(missing.reason, /hobo ci secret-store provision/u);
+		const broken = decide({
+			event: "workflow_dispatch",
+			store: "unreadable",
+			inputDirs,
+		});
+		assert.equal(broken.run, false);
+		assert.equal(broken.fatal, true);
+	});
+
+	it("admits only a complete HTTPS binding with an exact protected writer subject", () => {
+		assert.equal(storeBindingState(undefined), "absent");
+		assert.equal(storeBindingState("not json"), "unreadable");
+		assert.equal(
+			storeBindingState(
+				JSON.stringify({ kind: "infisical-self-hosted", endpoint: "http://x" }),
+			),
+			"unreadable",
+		);
+		const complete = {
+			kind: "infisical-self-hosted",
+			endpoint: "https://secrets.example",
+			projectId: "proj-runtime",
+			deployProjectId: "proj-deploy",
+			relayIdentityId: "relay-identity",
+			deployIdentityId: "deploy-identity",
+			deployCredentialIdentityId: "deploy-credential-identity",
+			deployOidcSubject:
+				"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+		};
+		assert.equal(storeBindingState(JSON.stringify(complete)), "bound");
+		for (const deployOidcSubject of [
+			"repo:untrusted@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/untrusted@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@1/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/HoBo@1:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs/HoBo:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@*/HoBo@1274791462:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/HoBo@*:environment:hobo-ci-app-credentials",
+			"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:*",
+			"prefix:repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+		])
+			assert.equal(
+				storeBindingState(JSON.stringify({ ...complete, deployOidcSubject })),
+				"unreadable",
+			);
+	});
+
+	it("skips deployment explicitly for the committed credential-free binding without treating corruption as a skip", () => {
+		const legacy = JSON.stringify({
+			kind: "infisical-cloud-attach",
+			endpoint: "https://app.infisical.com",
+			projectId: "proj-runtime",
+			environment: "prod",
+			secretPath: "/hobo-ci-relay",
+			relayIdentityId: "relay-identity",
+			deployIdentityId: "deploy-identity",
+			vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
+			claimBundleId: "secret-store:hobo-ci-relay:connect-1",
+			claimState: "claimed",
+		});
+		assert.equal(storeBindingState(legacy), "unconfigured");
+		const committed = readFileSync(
+			join(root, RELAY_SECRET_STORE_BINDING),
+			"utf8",
+		);
+		assert.equal(storeBindingState(committed), "unconfigured");
+		const skipped = decide({
+			event: "push",
+			store: storeBindingState(legacy),
+			changed: [RELAY_SECRET_STORE_BINDING],
+			inputDirs,
+		});
+		assert.equal(skipped.run, false);
+		assert.equal(skipped.fatal, undefined);
+		assert.match(skipped.reason, /production observation.*required/u);
+		for (const halfConfigured of [
+			{ ...JSON.parse(legacy), deployProjectId: "proj-deploy" },
+			{ ...JSON.parse(legacy), deployCredentialIdentityId: "reader" },
+			{
+				...JSON.parse(legacy),
+				deployOidcSubject:
+					"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:untrusted",
+			},
+		])
+			assert.equal(
+				storeBindingState(JSON.stringify(halfConfigured)),
+				"unreadable",
+			);
+		assert.equal(
+			storeBindingState(
+				JSON.stringify({
+					...JSON.parse(legacy),
+					deployOidcSubject:
+						"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials",
+				}),
+			),
+			"unconfigured",
+		);
+	});
+
 	it("deploys a manual run, and a push whose range it cannot read", () => {
-		assert.equal(decide({ event: "workflow_dispatch", inputDirs }).run, true);
-		assert.equal(decide({ event: "push", inputDirs }).run, true);
+		assert.equal(
+			decide({ event: "workflow_dispatch", store: configured, inputDirs }).run,
+			true,
+		);
+		assert.equal(
+			decide({ event: "push", store: configured, inputDirs }).run,
+			true,
+		);
 		assert.equal(
 			decide({
 				event: "push",
+				store: configured,
 				changed: ["README.md"],
 				inputDirs,
 			}).run,
 			false,
 		);
-		assert.equal(decide({ event: "pull_request", inputDirs }).run, false);
+		assert.equal(
+			decide({ event: "pull_request", store: configured, inputDirs }).run,
+			false,
+		);
+	});
+
+	it("treats a force_bootstrap run as an emergency bootstrap, whatever the diff", () => {
+		const forced = decide({
+			event: "workflow_dispatch",
+			store: configured,
+			inputDirs,
+			forceBootstrap: true,
+		});
+		assert.equal(forced.run, true);
+		assert.match(forced.reason, /emergency bootstrap/u);
+		const plain = decide({
+			event: "workflow_dispatch",
+			store: configured,
+			inputDirs,
+			forceBootstrap: false,
+		});
+		assert.equal(plain.run, true);
+		assert.doesNotMatch(plain.reason, /bootstrap/u);
+		assert.equal(
+			decide({
+				event: "push",
+				store: configured,
+				changed: ["README.md"],
+				inputDirs,
+				forceBootstrap: true,
+			}).run,
+			false,
+		);
+	});
+});
+
+describe("relay GitHub environment protection", () => {
+	const protectedEnvironment = {
+		deployment_branch_policy: {
+			protected_branches: false,
+			custom_branch_policies: true,
+		},
+	};
+	const mainOnly = { branch_policies: [{ name: "main", type: "branch" }] };
+	type EnvironmentFixture = {
+		deployment_branch_policy: {
+			protected_branches: boolean;
+			custom_branch_policies: boolean;
+		} | null;
+	};
+	type BranchFixture = {
+		branch_policies: { name: string; type: string }[];
+	};
+
+	function github(
+		environment: EnvironmentFixture | null = protectedEnvironment,
+		branches: BranchFixture = mainOnly,
+	) {
+		const paths: string[] = [];
+		const authorizations: (string | null)[] = [];
+		const send: typeof fetch = async (request, init) => {
+			const url = new URL(String(request));
+			paths.push(url.pathname);
+			authorizations.push(new Headers(init?.headers).get("authorization"));
+			if (environment === null) return Response.json({}, { status: 404 });
+			return Response.json(
+				url.pathname.endsWith("/deployment-branch-policies")
+					? branches
+					: environment,
+			);
+		};
+		return { send, paths, authorizations };
+	}
+
+	it("requires an exact main-only deployment branch policy", async () => {
+		const fake = github();
+		const result = await verifyEnvironmentProtection(
+			"hobo-ci-deploy",
+			fake.send,
+		);
+		assert.equal(result.ok, true, result.detail);
+		assert.deepEqual(fake.paths, [
+			"/repos/Hobo-Labs/HoBo/environments/hobo-ci-deploy",
+			"/repos/Hobo-Labs/HoBo/environments/hobo-ci-deploy/deployment-branch-policies",
+		]);
+		assert.deepEqual(fake.authorizations, [null, null]);
+	});
+
+	it("uses a scoped GitHub token for both reads when supplied", async () => {
+		const fake = github();
+		const result = await verifyEnvironmentProtection(
+			"hobo-ci-app-credentials",
+			fake.send,
+			"scoped-token",
+		);
+		assert.equal(result.ok, true, result.detail);
+		assert.deepEqual(fake.authorizations, [
+			"Bearer scoped-token",
+			"Bearer scoped-token",
+		]);
+	});
+
+	it("fails closed on absent, unprotected, malformed, and unreachable environments", async () => {
+		for (const fake of [
+			github(null),
+			github({ ...protectedEnvironment, deployment_branch_policy: null }),
+			github(protectedEnvironment, {
+				branch_policies: [{ name: "release", type: "branch" }],
+			}),
+			github(protectedEnvironment, {
+				branch_policies: [
+					{ name: "main", type: "branch" },
+					{ name: "release", type: "branch" },
+				],
+			}),
+			github(protectedEnvironment, {
+				branch_policies: [{ name: "main", type: "tag" }],
+			}),
+			github(protectedEnvironment, { branch_policies: [] }),
+		]) {
+			const result = await verifyEnvironmentProtection(
+				"hobo-ci-app-credentials",
+				fake.send,
+			);
+			assert.equal(result.ok, false, result.detail);
+		}
+		const unavailable = await verifyEnvironmentProtection(
+			"hobo-ci-deploy",
+			async () => {
+				throw new Error("offline");
+			},
+		);
+		assert.equal(unavailable.ok, false);
+		assert.equal(
+			(await verifyEnvironmentProtection("other", github(null).send)).ok,
+			false,
+		);
 	});
 });
 
@@ -114,8 +370,20 @@ describe("the relay deploy workflow", () => {
 	it("runs on a push to main and by hand, and nowhere else", () => {
 		assert.match(
 			workflow,
-			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n/mu,
+			/^on:\n {2}push:\n {4}branches: \[main\]\n {2}workflow_dispatch:\n {4}inputs:\n/mu,
 		);
+		const inputs = [
+			...workflow.matchAll(/^ {6}([a-z_]+):\n {8}description:/gmu),
+		].map((match) => match[1]);
+		assert.deepEqual(inputs, ["force_bootstrap", "relay", "owner_id"]);
+		assert.match(workflow, / {2}workflow_call:\n {4}inputs:/u);
+		assert.match(
+			workflow,
+			/ {4}secrets:\n {6}manifest_code:\n {8}required: true/u,
+		);
+		const bootstrap =
+			/^ {6}force_bootstrap:\n {8}description:[^\n]*\n {8}required: false\n {8}default: false\n {8}type: boolean/mu;
+		assert.match(workflow, bootstrap);
 		assert.match(
 			workflow,
 			/if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main'/u,
@@ -123,13 +391,55 @@ describe("the relay deploy workflow", () => {
 		assert.match(workflow, /cancel-in-progress: false/u);
 	});
 
-	it("may read the repository, persist deployment checkpoints, and mint an OIDC token", () => {
+	it("runs the gate without environment protection or OIDC and admits only approved deploys to the protected job", () => {
+		const gate = /^ {2}gate:\n([\s\S]*?)(?=\n {2}deploy:)/mu.exec(
+			workflow,
+		)?.[1];
+		assert.ok(gate, "no gate job");
+		assert.doesNotMatch(gate, /environment:|id-token:/u);
+		assert.match(
+			gate,
+			/outputs:\n {6}run: \$\{\{ steps\.gate\.outputs\.run \}\}/u,
+		);
+		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
+		assert.ok(deploy, "no deploy job");
+		assert.match(deploy, /needs: \[route, gate\]/u);
+		assert.match(deploy, /environment: hobo-ci-deploy/u);
+		assert.match(
+			deploy,
+			/^ {4}if: github\.repository == 'Hobo-Labs\/HoBo' && github\.ref == 'refs\/heads\/main' && github\.event_name != 'workflow_call' && needs\.gate\.outputs\.run == 'true'$/mu,
+		);
+		assert.doesNotMatch(deploy, /id: gate/u);
+	});
+
+	it("passes force_bootstrap to the gate as FORCE_BOOTSTRAP, and only there", () => {
+		const gate = step("Evaluate the relay inputs");
+		assert.match(gate, /id: gate/u);
+		assert.match(gate, /relay-deploy-gate\.mts/u);
+		assert.match(
+			gate,
+			/FORCE_BOOTSTRAP: \$\{\{ github\.event\.inputs\.force_bootstrap \}\}/u,
+		);
+	});
+
+	it("may read the repository, mint deploy OIDC tokens, and authenticate only environment reads", () => {
 		assert.match(workflow, /^permissions:\n {2}contents: read\n/mu);
 		assert.match(
 			workflow,
-			/ {4}permissions:\n {6}contents: read\n {6}deployments: write\n {6}id-token: write\n/u,
+			/ {4}permissions:\n {6}contents: read\n {6}id-token: write\n/u,
 		);
-		assert.doesNotMatch(workflow, /write-all|secrets\.|\$\{\{\s*secrets/u);
+		assert.doesNotMatch(workflow, /deployments:/u);
+		for (const name of [
+			"Verify the protected deploy environment",
+			"Verify the protected writer environment",
+		])
+			assert.match(step(name), /GITHUB_TOKEN: \$\{\{ github\.token \}\}/u);
+		assert.equal(workflow.match(/GITHUB_TOKEN:/gu)?.length, 2);
+		assert.deepEqual(workflow.match(/\$\{\{ secrets\.[a-z_]+ \}\}/gu), [
+			"${{ secrets.manifest_code }}",
+			"${{ secrets.manifest_code }}",
+		]);
+		assert.doesNotMatch(workflow, /write-all/u);
 	});
 
 	it("reads no repository variable or secret for the relay's configuration", () => {
@@ -141,10 +451,7 @@ describe("the relay deploy workflow", () => {
 					/vars\.HOBO_CI_(ROUTE|LOCAL_RUNNER|ROUTE_MAX_WAIT_SECONDS|ROUTE_MAX_QUEUED|TRUNK_RUNNER)\b/u,
 					line,
 				);
-		assert.doesNotMatch(
-			workflow,
-			/INFISICAL_|VERCEL_TEAM_ID|HOBO_CI_RELAY_URL/u,
-		);
+		assert.doesNotMatch(workflow, /INFISICAL_|VERCEL_TEAM_ID/u);
 	});
 
 	it("routes the deploy like hobo-ci.yml, so a busy fleet does not hold it", () => {
@@ -153,25 +460,52 @@ describe("the relay deploy workflow", () => {
 		assert.match(workflow, / {4}needs: route\n/u);
 		assert.match(
 			workflow,
-			/runs-on: \$\{\{ needs\.route\.outputs\.runner \|\| /u,
+			/runs-on: \$\{\{ needs\.route\.result == 'success' && \(needs\.route\.outputs\.runner \|\| 'ubuntu-24\.04'\) \|\| 'ubuntu-24\.04' \}\}/u,
 		);
 	});
 
-	it("delivers the exact pushed commit through HoBo CD without a Git connection", () => {
-		const deploy = step("Deliver the pinned relay through HoBo CD");
-		assert.match(
-			deploy,
-			/node packages\/hobo\/dist\/bin\/hobo\.js ci deploy --managed/u,
-		);
-		assert.match(deploy, /--cwd packages\/ci-vercel/u);
-		assert.match(deploy, /--sha "\$GITHUB_SHA"/u);
-		assert.match(deploy, /--ref "\$GITHUB_REF_NAME"/u);
-		assert.match(deploy, /exit "\$status"/u);
-		assert.doesNotMatch(deploy, /--adopt|VERCEL_TOKEN|--token\b/u);
-		assert.doesNotMatch(workflow, /protection-bypass|_vercel_share/iu);
+	it("never adopts and never waits for a Git-linked deployment: HoBo builds once and promotes", () => {
+		assert.doesNotMatch(workflow, /--adopt\b/u);
+		assert.doesNotMatch(workflow, /HOBO_CI_ADOPT_/u);
+		const deploys = [...workflow.matchAll(/hobo\.js ci deploy\b/gu)];
+		assert.equal(deploys.length, 2, "expected exactly two deploy commands");
+		for (const name of [
+			"Deploy the relay (preview)",
+			"Deploy the relay (production)",
+		]) {
+			const deployStep = step(name)
+				.split("\n")
+				.map((line) => line.replace(/^ {10}/u, "").replace(/\\\n?/u, " "))
+				.join(" ");
+			assert.match(deployStep, /hobo\.js ci deploy/u);
+			assert.match(deployStep, /--cwd packages\/ci-vercel/u);
+			assert.match(deployStep, /--sha "\$GITHUB_SHA"/u);
+			assert.match(deployStep, /--ref "\$GITHUB_REF_NAME"/u);
+			assert.match(deployStep, /--build prebuilt --provision --wait/u);
+			assert.match(deployStep, /--deadline "\$DEPLOY_DEADLINE"/u);
+			assert.match(deployStep, /exit "\$status"/u);
+			assert.doesNotMatch(deployStep, /--adopt/u);
+		}
+		assert.match(step("Deploy the relay (preview)"), /--target preview/u);
+		assert.match(step("Deploy the relay (production)"), /--target production/u);
+		stepBefore("Deploy the relay (preview)", "Deploy the relay (production)");
 	});
 
-	it("reports a delivery refusal before preserving its nonzero exit status", () => {
+	it("holds no Vercel token and deploys no Vercel command itself", () => {
+		const actionable = workflow
+			.split("\n")
+			.filter((line) => !/^\s*#/u.test(line))
+			.join("\n");
+		assert.doesNotMatch(
+			actionable,
+			/VERCEL_TOKEN|relay-deploy-credential|vercel deploy|--token\b/u,
+		);
+		assert.ok(
+			!existsSync(join(root, "scripts/ci/relay-deploy-credential.mts")),
+		);
+	});
+
+	it("reports a deploy refusal before preserving its nonzero exit status", () => {
 		const work = mkdtempSync(join(tmpdir(), "relay-deploy-report-"));
 		try {
 			const bin = join(work, "packages/hobo/dist/bin");
@@ -181,9 +515,7 @@ describe("the relay deploy workflow", () => {
 				'process.stdout.write(JSON.stringify({code:"HOBO_TEST_REFUSED",message:"deployment unavailable"})); process.exitCode = 27;',
 			);
 			const summary = join(work, "summary.md");
-			const lines = step("Deliver the pinned relay through HoBo CD").split(
-				"\n",
-			);
+			const lines = step("Deploy the relay (preview)").split("\n");
 			const start = lines.findIndex((line) => line.trim() === "run: |");
 			assert.notEqual(start, -1);
 			const script = lines
@@ -213,37 +545,219 @@ describe("the relay deploy workflow", () => {
 		}
 	});
 
-	it("bounds the delivery by the gate deadline within the job timeout", () => {
+	it("fits the deploy job in 20 minutes: its admitted-job deadline bounds both deploys, the step timeouts only back it up", () => {
 		const deploy = /^ {2}deploy:\n([\s\S]*?)\n {4}steps:/mu.exec(workflow)?.[1];
-		assert.ok(deploy);
+		assert.ok(deploy, "no deploy job");
 		const jobTimeout = Number(
 			/^ {4}timeout-minutes: (\d+)$/mu.exec(deploy)?.[1],
 		);
 		assert.equal(jobTimeout, RELAY_DEPLOY_JOB_TIMEOUT_MINUTES);
-		assert.ok(jobTimeout <= 20);
+		assert.ok(jobTimeout <= 20, "every job is capped at 20 minutes");
 		assert.ok(RELAY_DEPLOY_JOB_MARGIN_MINUTES >= 2);
+		assert.match(step("Start the deploy deadline"), /id: deadline/u);
+		assert.match(
+			step("Start the deploy deadline"),
+			/deployDeadline\(Date\.now\(\)\)/u,
+		);
 		assert.equal(
-			adoptDeadline(Date.UTC(2026, 10, 13, 12)),
+			deployDeadline(Date.UTC(2026, 10, 13, 12)),
 			"2026-11-13T12:17:00.000Z",
 		);
-		const gate = step("Decide whether to deploy");
-		assert.match(gate, /relay-deploy-gate\.mts/u);
-		const delivery = step("Deliver the pinned relay through HoBo CD");
-		assert.match(
-			delivery,
-			/DEPLOY_DEADLINE: \$\{\{ steps\.gate\.outputs\.deadline \}\}/u,
+		for (const name of [
+			"Deploy the relay (preview)",
+			"Deploy the relay (production)",
+		]) {
+			const deployStep = step(name);
+			assert.match(
+				deployStep,
+				/DEPLOY_DEADLINE: \$\{\{ steps\.deadline\.outputs\.deadline \}\}/u,
+			);
+			assert.match(deployStep, /--deadline "\$DEPLOY_DEADLINE"/u);
+			const stepTimeout = Number(
+				/timeout-minutes: (\d+)/u.exec(deployStep)?.[1],
+			);
+			assert.ok(
+				stepTimeout >= jobTimeout - RELAY_DEPLOY_JOB_MARGIN_MINUTES,
+				`${name} step timeout ${stepTimeout} would cut the command short of its deadline`,
+			);
+		}
+		const steps = workflow.slice(
+			workflow.indexOf("    steps:", workflow.indexOf("\n  deploy:")),
+			workflow.indexOf("\n  app-credentials:"),
 		);
-		assert.match(delivery, /--deadline "\$DEPLOY_DEADLINE"/u);
-		const stepTimeout = Number(/timeout-minutes: (\d+)/u.exec(delivery)?.[1]);
-		assert.ok(stepTimeout >= jobTimeout - RELAY_DEPLOY_JOB_MARGIN_MINUTES);
+		for (const match of steps.matchAll(/timeout-minutes: (\d+)/gu))
+			assert.ok(Number(match[1]) <= jobTimeout, match[0]);
+		assert.match(workflow, /HOBO_CI_DEPLOY_NOT_QUALIFIED/u);
 	});
 
-	it("leaves private binding validation to managed delivery", () => {
+	it("verifies at the Yard's production domain, needing no Deployment Protection bypass", () => {
+		// The production origin comes from the committed Yard, not a variable,
+		// and is an https origin with no path.
+		const yardSource = readFileSync(
+			join(root, "packages", "ci-vercel", "deploy", "yard.ts"),
+			"utf8",
+		);
+		const origin = /productionOrigin: "(https:\/\/[^"/]+)"/u.exec(yardSource);
+		assert.ok(origin, "deploy/yard.ts declares no productionOrigin");
+		assert.match(
+			yardSource,
+			/productionOrigin: RELAY_PLACEMENT\.productionOrigin/u,
+		);
+		assert.match(workflow, /productionOrigin in deploy\/yard\.ts/u);
+		assert.ok(origin[1], "deploy/yard.ts declares an empty productionOrigin");
+		const originLiteral = origin[1].replaceAll(".", "\\.");
+		assert.match(
+			workflow,
+			new RegExp(`HOBO_CI_RELAY_URL: ${originLiteral}`, "u"),
+		);
+		// Nothing in the workflow reaches past protection or names a probe URL.
 		assert.doesNotMatch(
 			workflow,
-			/ci secret-store verify|secret-store\.binding\.json/u,
+			/protection-bypass|VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-set-bypass-cookie/iu,
 		);
-		assert.doesNotMatch(workflow, /manifest_code|owner_id|ci app deposit/u);
+		for (const name of [
+			"Deploy the relay (preview)",
+			"Deploy the relay (production)",
+		]) {
+			const deployStep = step(name);
+			assert.doesNotMatch(deployStep, /https?:\/\//u, deployStep);
+		}
+	});
+
+	it("verifies only the reader in the deploy environment before deploying", () => {
+		const verify = step("Verify the secret store connection");
+		assert.match(
+			verify,
+			/node packages\/hobo\/dist\/bin\/hobo\.js ci secret-store verify/u,
+		);
+		assert.match(verify, /--identity reader/u);
+		assert.match(verify, /relay-deploy-secret-store-verify-report\.mts/u);
+		assert.doesNotMatch(verify, /\|\| true/u);
+		stepBefore(
+			"Verify the secret store connection",
+			"Deploy the relay (preview)",
+		);
+	});
+
+	it("verifies actual protection and matching identity scopes in both environments", () => {
+		assert.match(
+			workflow,
+			/\n  deploy:\n(?:.*\n)*?    environment: hobo-ci-deploy\n/u,
+		);
+		assert.match(
+			workflow,
+			/\n  app-credentials:\n(?:.*\n)*?    environment: hobo-ci-app-credentials\n/u,
+		);
+		const readerEnvironment = step("Verify the protected deploy environment");
+		assert.match(readerEnvironment, /relay-deploy-environment\.mts/u);
+		assert.match(readerEnvironment, /--environment hobo-ci-deploy/u);
+		stepBefore(
+			"Start the deploy deadline",
+			"Verify the protected deploy environment",
+		);
+		stepBefore(
+			"Verify the protected deploy environment",
+			"Build the deploy tool and the relay's declarations",
+		);
+		const writerEnvironment = step("Verify the protected writer environment");
+		assert.match(writerEnvironment, /--environment hobo-ci-app-credentials/u);
+		for (const environment of [readerEnvironment, writerEnvironment])
+			assert.doesNotMatch(environment, /\|\| true|continue-on-error:\s*true/u);
+		const writer = step("Verify the writer connection");
+		assert.match(writer, /--identity writer/u);
+		stepBefore("Build the deposit tool", "Verify the writer connection");
+		stepBefore(
+			"Verify the writer connection",
+			"Convert the manifest code and store the credentials (GitHub OIDC)",
+		);
+	});
+
+	it("uses the Vercel CLI pinned by the repository's frozen lockfile", () => {
+		assert.doesNotMatch(workflow, /pnpm --dir|\badd vercel@/u);
+		assert.match(workflow, /pnpm install --frozen-lockfile/u);
+		assert.match(
+			workflow,
+			/HOBO_VERCEL_CLI: \$\{\{ github\.workspace \}\}\/packages\/ci-vercel\/node_modules\/\.bin\/vercel/u,
+		);
+		const manifest = readFileSync(
+			join(root, "packages", "ci-vercel", "package.json"),
+			"utf8",
+		);
+		assert.match(manifest, /"vercel": "65\.2\.0"/u);
+		assert.match(lockfile, /vercel:\n\s+specifier: 65\.2\.0/u);
+		assert.match(
+			lockfile,
+			/vercel@65\.2\.0[^\n]*:\n\s+resolution: \{integrity:/u,
+		);
+	});
+
+	it("fails the job on a relay that does not serve the deployed commit, without masking anything", () => {
+		const verify = step("Verify the relay at its production origin");
+		assert.match(verify, /set -euo pipefail/u);
+		assert.match(verify, /scripts\/ci\/relay-deploy-verify\.mts/u);
+		assert.match(verify, /--origin "\$HOBO_CI_RELAY_URL"/u);
+		assert.match(verify, /--sha "\$GITHUB_SHA"/u);
+		assert.doesNotMatch(verify, /\|\| true/u);
+		assert.match(verify, /if: needs\.gate\.outputs\.run == 'true'/u);
+		stepBefore(
+			"Deploy the relay (production)",
+			"Verify the relay at its production origin",
+		);
+		stepBefore(
+			"Verify the relay at its production origin",
+			"Probe the fleet verdict at the public origin",
+		);
+	});
+
+	it("deposits the GitHub App's credentials from a required reusable-workflow secret, masked first", () => {
+		assert.match(
+			workflow,
+			/ {2}app-credentials:\n[\s\S]*?if: [^\n]*github\.event_name == 'workflow_call'$/mu,
+		);
+		assert.match(
+			workflow,
+			/ {2}deploy:\n[\s\S]*?if: [^\n]*github\.event_name != 'workflow_call'/u,
+		);
+		assert.match(appCredentialsWorkflow, /^on:\n {2}workflow_dispatch:/mu);
+		assert.match(
+			appCredentialsWorkflow,
+			/uses: \.\/\.github\/workflows\/relay-deploy\.yml/u,
+		);
+		for (const input of ["relay", "owner_id"])
+			assert.match(
+				appCredentialsWorkflow,
+				new RegExp(`${input}: \\$\\{\\{ inputs\\.${input} \\}\\}`, "u"),
+			);
+		assert.match(
+			appCredentialsWorkflow,
+			/ {4}secrets:\n {6}manifest_code: \$\{\{ secrets\.HOBO_APP_MANIFEST_CODE \}\}/u,
+		);
+		assert.equal(appCredentialsWorkflow.match(/\$\{\{ secrets\./gu)?.length, 1);
+		assert.doesNotMatch(
+			`${workflow}\n${appCredentialsWorkflow}`,
+			/github\.event\.inputs\.manifest_code|inputs\.manifest_code/u,
+		);
+		const mask = step("Mask the one-time manifest code");
+		assert.match(
+			mask,
+			/HOBO_APP_MANIFEST_CODE: \$\{\{ secrets\.manifest_code \}\}/u,
+		);
+		assert.match(mask, /\[ -z "\$HOBO_APP_MANIFEST_CODE" \]/u);
+		assert.match(mask, /exit 1/u);
+		assert.match(mask, /::add-mask::\$HOBO_APP_MANIFEST_CODE/u);
+		const deposit = step(
+			"Convert the manifest code and store the credentials (GitHub OIDC)",
+		);
+		assert.match(deposit, /ci app deposit/u);
+		assert.match(
+			deposit,
+			/HOBO_APP_MANIFEST_CODE: \$\{\{ secrets\.manifest_code \}\}/u,
+		);
+		assert.doesNotMatch(deposit, /--code/u);
+		assert.ok(
+			workflow.indexOf("Mask the one-time manifest code") <
+				workflow.indexOf("ci app deposit"),
+		);
 	});
 
 	describe("probes the public origin", () => {
@@ -277,13 +791,14 @@ describe("the relay deploy workflow", () => {
 			assert.match(probe, /https:/u);
 			assert.doesNotMatch(probe, /DEPLOYMENT_URL/u);
 			assert.match(probe, /\/v1\/fleet\/verdicts\/\$\{?repository/u);
-			assert.match(probe, /if: steps\.gate\.outputs\.run == 'true'/u);
+			assert.match(probe, /if: needs\.gate\.outputs\.run == 'true'/u);
 		});
 
-		it("runs after managed delivery", () => {
+		it("runs after the deploy and its verification, so it reports on what this workflow shipped", () => {
+			stepBefore("Verify the relay at its production origin", name);
 			assert.ok(
-				workflow.indexOf(`- name: ${name}`) >
-					workflow.indexOf("- name: Deliver the pinned relay through HoBo CD"),
+				workflow.indexOf(`- name: ${name}`) <
+					workflow.indexOf("  app-credentials:"),
 			);
 		});
 

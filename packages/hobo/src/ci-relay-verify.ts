@@ -123,6 +123,19 @@ export const RELAY_ADOPT_VERIFICATION = Object.freeze({
 	previewProgressDeadlineMs: 25 * 60_000,
 });
 
+// public-contract: the suite that verifies a preview by its deployment record.
+export const RELAY_PREVIEW_DEPLOYMENT_SUITE = "vercel.deployment.ready";
+
+export class RelayDeploymentReadRefusal extends Error {
+	readonly status: number;
+
+	constructor(status: number, message: string) {
+		super(message);
+		this.name = "RelayDeploymentReadRefusal";
+		this.status = status;
+	}
+}
+
 /**
  * The relay's delivery records as `--adopt` verifies them: production probes
  * aimed at the production origin, preview verified by the deployment-record
@@ -169,6 +182,161 @@ export function adoptedVerificationRecords(
 			}
 			return copy;
 		}),
+	};
+}
+
+export function recordVerifiedPreviewRecords(
+	records: DeliveryModule,
+): DeliveryModule {
+	let updated = 0;
+	const pipelines = records.pipelines.map((pipeline) => {
+		const copy = clone(PipelineRecordSchema, pipeline);
+		for (const node of copy.nodes) {
+			if (node.name !== "preview") continue;
+			if (node.verification === undefined)
+				throw new Error(
+					`pipeline ${pipeline.name} preview has no verification to qualify its deployment record`,
+				);
+			const spec = node.verification;
+			spec.windowMs = BigInt(RELAY_ADOPT_VERIFICATION.windowMs);
+			spec.requiredObservations = RELAY_ADOPT_VERIFICATION.requiredObservations;
+			spec.progressDeadlineMs = BigInt(
+				RELAY_ADOPT_VERIFICATION.previewProgressDeadlineMs,
+			);
+			spec.probes = [];
+			spec.suites = [
+				create(SuiteCheckRecordSchema, {
+					suite: RELAY_PREVIEW_DEPLOYMENT_SUITE,
+				}),
+			];
+			updated += 1;
+		}
+		return copy;
+	});
+	if (updated === 0)
+		throw new Error(
+			"no preview verification node was updated, so deployment-record qualification is refused",
+		);
+	return { ...records, pipelines };
+}
+
+export function deployedPreviewSuites(
+	observe: Readonly<{
+		intended():
+			| Readonly<{
+					deploymentId: string;
+					commit: string;
+					project: string;
+					target: "preview" | "production";
+			  }>
+			| undefined;
+		deployment(
+			deploymentId: string,
+		): Promise<Readonly<{ readyState?: string; raw: JsonValue }> | undefined>;
+	}>,
+): VerifyPort {
+	const refuse = (code: string, message: string, remediation: string) =>
+		({
+			ok: false,
+			reasons: [
+				create(ReasonRecordSchema, {
+					code,
+					message,
+					remediation,
+					subject: RELAY_PREVIEW_DEPLOYMENT_SUITE,
+				}),
+			],
+		}) satisfies Outcome<never>;
+	return {
+		async run(input: Readonly<{ suite: string; freightId: FreightId }>) {
+			if (input.suite !== RELAY_PREVIEW_DEPLOYMENT_SUITE)
+				return refuse(
+					"verification-suite-unknown",
+					`no suite ${input.suite} is composed for the deployed relay preview`,
+					`Declare ${RELAY_PREVIEW_DEPLOYMENT_SUITE} or a probe.`,
+				);
+			const intended = observe.intended();
+			if (intended === undefined)
+				throw new Error(
+					`the promotion has created no commit-bound deployment for ${input.freightId} yet`,
+				);
+			let deployment:
+				| Readonly<{ readyState?: string; raw: JsonValue }>
+				| undefined;
+			try {
+				deployment = await observe.deployment(intended.deploymentId);
+			} catch (error) {
+				if (error instanceof RelayDeploymentReadRefusal)
+					return refuse(
+						"verification-deployment-read-refused",
+						`reading Vercel deployment ${intended.deploymentId} failed (HTTP ${error.status}): ${error.message}`,
+						error.status === 404
+							? "The deployment no longer exists under the deploy token's scope; deploy the Freight's commit again."
+							: "The deploy token cannot read this deployment; check its scope and the team the deployment belongs to.",
+					);
+				throw error;
+			}
+			const state = deployment?.readyState ?? "UNKNOWN";
+			if (state === "READY") {
+				const record =
+					deployment !== undefined && isJsonObject(deployment.raw)
+						? deployment.raw
+						: undefined;
+				const meta =
+					record !== undefined && isJsonObject(record.meta)
+						? record.meta
+						: undefined;
+				const project =
+					record !== undefined && isJsonObject(record.project)
+						? record.project
+						: undefined;
+				const commit = isJsonString(meta?.githubCommitSha)
+					? meta.githubCommitSha.toLowerCase()
+					: isJsonString(meta?.hoboSha)
+						? meta.hoboSha.toLowerCase()
+						: undefined;
+				const canonicalProjectId = isJsonString(record?.projectId)
+					? record.projectId
+					: project !== undefined && isJsonString(project.id)
+						? project.id
+						: undefined;
+				const projectName = isJsonString(record?.name)
+					? record.name
+					: project !== undefined && isJsonString(project.name)
+						? project.name
+						: undefined;
+				const target = isJsonString(record?.target) ? record.target : undefined;
+				if (
+					commit !== intended.commit.toLowerCase() ||
+					(canonicalProjectId !== undefined
+						? canonicalProjectId !== intended.project
+						: projectName !== intended.project) ||
+					target !== intended.target
+				)
+					return refuse(
+						"verification-deployment-mismatch",
+						`Vercel deployment ${intended.deploymentId} is READY but does not match Freight ${input.freightId}: expected commit ${intended.commit}, project ${intended.project}${canonicalProjectId !== undefined ? ` (the deployment's canonical project id is ${canonicalProjectId})` : ""}, target ${intended.target}`,
+						"Inspect the Vercel deployment record and deploy the Freight's commit to the intended preview project again: a project binds by its canonical id, not by a display name another team's project can share.",
+					);
+				return {
+					ok: true,
+					value: {
+						deploymentId: intended.deploymentId,
+						readyState: state,
+						commit: intended.commit,
+						project: intended.project,
+						target: intended.target,
+					},
+				};
+			}
+			return refuse(
+				"verification-deployment-not-ready",
+				`Vercel reports deployment ${intended.deploymentId} as ${state}, not READY`,
+				state === "ERROR"
+					? "Read the deployment's build log on Vercel; this run leaves it as it is."
+					: "The deployment is still building or was superseded; the verification window retries, and a later state fails it.",
+			);
+		},
 	};
 }
 
@@ -349,14 +517,14 @@ export function relayVerifyFailure(
 			code: RELAY_VERIFY_REFUSAL.relayNotConfigured,
 			reason: `${origin}/readyz says the relay is not configured: its config service holds no valid relay configuration yet`,
 			remediation:
-				"Complete the HoBo setup ceremony and provide the relay configuration through the owner-selected store before retrying.",
+				"Put the relay's configuration in the store deploy/secret-store.binding.json names (packages/ci-vercel/CONFIG-SERVICE.md): the GitHub App's credentials go in with hobo ci app create --via-workflow, the owner's entries as its section What the folder holds lists. Re-run this workflow once they are there.",
 		};
 	if (findings.readyzState === "config-service-denied")
 		return {
 			code: RELAY_VERIFY_REFUSAL.relayNotReady,
 			reason: `${origin}/readyz says the relay's config service refused its identity`,
 			remediation:
-				"The owner-selected relay identity must trust this project's Vercel production OIDC tokens. Complete the HoBo setup ceremony to establish that connection.",
+				"The relay identity named in deploy/secret-store.binding.json must trust this project's Vercel production OIDC tokens (OIDC Auth; packages/ci-vercel/CONFIG-SERVICE.md). hobo ci secret-store verify checks the deploy identity by name.",
 		};
 	if (findings.readyzState === "config-service-unavailable")
 		return {

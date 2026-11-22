@@ -14,7 +14,6 @@ import {
 	addedLineNumbers,
 	commentsIn,
 	commentViolations,
-	documentCleanupOnly,
 	documentViolation,
 } from "../check-source-policy.mts";
 
@@ -374,106 +373,6 @@ describe("source policy", () => {
 		unlinkSync(join(repo, "docs/design/existing.md"));
 		git(repo, "add", "--all");
 		assert.equal(guard(repo, "--staged").status, 0);
-	});
-
-	it("allows only deletion and fixed redaction in an existing design document", () => {
-		const repo = fixture();
-		const file = "docs/design/existing.md";
-		write(
-			repo,
-			file,
-			"# Existing\nOwner fixture-private-identifier\nRemove this line\n",
-		);
-		git(repo, "add", file);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"add existing document",
-		);
-		write(repo, file, "# Existing\nOwner [redacted]\n");
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 0);
-		write(repo, file, "# Existing\nOwner [redacted]\nNew plan\n");
-		assert.equal(guard(repo, "--staged").status, 0);
-		assert.equal(guard(repo, "--worktree").status, 1);
-		git(repo, "add", file);
-		assert.equal(guard(repo, "--staged").status, 1);
-		write(repo, file, "# Existing\nOwner [redacted]\n");
-		write(repo, "docs/design/new.md", "# [redacted]\n");
-		git(repo, "add", "--all");
-		const added = guard(repo, "--staged");
-		assert.equal(added.status, 1);
-		assert.match(added.stderr, /docs\/design\/new\.md/u);
-		assert.equal(documentCleanupOnly("abc", "a[redacted]c"), true);
-		assert.equal(documentCleanupOnly("abc", ""), true);
-		assert.equal(documentCleanupOnly("abc", "a[redacted]cx"), false);
-		assert.equal(documentCleanupOnly("alpha beta\n", "alphabeta\n"), false);
-		assert.equal(
-			documentCleanupOnly(
-				"first secret\nsecond public\n",
-				"second [redacted]\nfirst [redacted]\n",
-			),
-			false,
-		);
-		assert.equal(
-			documentCleanupOnly("private name\n", "name [redacted]\n"),
-			false,
-		);
-	});
-
-	it("checks privacy-only changes since a merge base against their original document", () => {
-		const repo = fixture();
-		const file = "docs/design/existing.md";
-		write(repo, file, "# Existing\nOwner fixture-private-identifier\n");
-		git(repo, "add", file);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"existing document",
-		);
-		const base = git(repo, "rev-parse", "HEAD");
-		write(repo, file, "# Existing\nOwner [redacted]\n");
-		git(repo, "add", file);
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"private redaction",
-		);
-		assert.equal(guard(repo, `--base=${base}`).status, 0);
-		write(repo, "docs/design/new.md", "# [redacted]\n");
-		git(repo, "add", "--all");
-		git(
-			repo,
-			"-c",
-			"user.name=fixture",
-			"-c",
-			"user.email=fixture@example.invalid",
-			"commit",
-			"--quiet",
-			"-m",
-			"new document",
-		);
-		const added = guard(repo, `--base=${base}`);
-		assert.equal(added.status, 1);
-		assert.match(added.stderr, /docs\/design\/new\.md/u);
 	});
 
 	it("allows tracked planning documents to be removed before staging", () => {

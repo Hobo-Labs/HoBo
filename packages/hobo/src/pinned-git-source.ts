@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { withoutSecretEnv } from "@hobo/hobo-ci";
+import { devNull } from "node:os";
 
 export interface PinnedGitFile {
 	readonly path: string;
@@ -17,19 +17,6 @@ const COMMIT = /^[0-9a-f]{40}$/u;
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_MAX_FILES = 25_000;
 const decoder = new TextDecoder("utf-8", { fatal: true });
-
-export function pinnedGitEnvironment(): NodeJS.ProcessEnv {
-	const env: NodeJS.ProcessEnv = { ...withoutSecretEnv(process.env) };
-	for (const name of Object.keys(env)) {
-		if (name.startsWith("GIT_") && name !== "GIT_CEILING_DIRECTORIES")
-			delete env[name];
-	}
-	env.GIT_NO_REPLACE_OBJECTS = "1";
-	env.GIT_NO_LAZY_FETCH = "1";
-	env.GIT_ALLOW_PROTOCOL = "";
-	env.GIT_TERMINAL_PROMPT = "0";
-	return env;
-}
 
 function safePath(path: string): boolean {
 	return (
@@ -51,7 +38,20 @@ function git(
 	maxBuffer: number,
 	input?: string,
 ): Buffer {
-	const env = pinnedGitEnvironment();
+	const env: NodeJS.ProcessEnv = {
+		LC_ALL: "C",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: devNull,
+		GIT_NO_REPLACE_OBJECTS: "1",
+		GIT_NO_LAZY_FETCH: "1",
+		GIT_ALLOW_PROTOCOL: "",
+		GIT_TERMINAL_PROMPT: "0",
+	};
+	if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+	if (process.platform === "win32" && process.env.SystemRoot !== undefined)
+		env.SystemRoot = process.env.SystemRoot;
+	if (process.env.GIT_CEILING_DIRECTORIES !== undefined)
+		env.GIT_CEILING_DIRECTORIES = process.env.GIT_CEILING_DIRECTORIES;
 	const result = spawnSync("git", args, {
 		cwd,
 		env,
@@ -68,19 +68,16 @@ export function readPinnedGitSource(input: {
 	readonly cwd: string;
 	readonly sha: string;
 	readonly paths: readonly string[];
-	readonly excludePaths?: readonly string[];
 	readonly maxBytes?: number;
 	readonly maxFiles?: number;
 }): PinnedGitSource {
 	const { cwd, sha, paths } = input;
 	const maxBytes = input.maxBytes ?? DEFAULT_MAX_BYTES;
 	const maxFiles = input.maxFiles ?? DEFAULT_MAX_FILES;
-	const excluded = new Set(input.excludePaths ?? []);
 	if (
 		!COMMIT.test(sha) ||
 		paths.length === 0 ||
 		paths.some((path) => !safePath(path)) ||
-		[...excluded].some((path) => !safePath(path)) ||
 		!Number.isSafeInteger(maxBytes) ||
 		maxBytes < 0 ||
 		maxBytes > DEFAULT_MAX_BYTES ||
@@ -130,13 +127,6 @@ export function readPinnedGitSource(input: {
 		);
 		if (metadata === null) throw new Error("Malformed Git tree metadata.");
 		const [, mode, kind, oid, sizeText] = metadata;
-		const path = decoder.decode(entry.subarray(tab + 1));
-		if (!safePath(path))
-			throw new Error("Pinned Git source contains an unsafe path.");
-		if (excluded.has(path)) {
-			offset = end + 1;
-			continue;
-		}
 		if (mode === "120000")
 			throw new Error("Pinned Git source contains a symlink.");
 		if (
@@ -148,6 +138,9 @@ export function readPinnedGitSource(input: {
 			throw new Error(
 				"Pinned Git source contains an unsupported object, such as a submodule.",
 			);
+		const path = decoder.decode(entry.subarray(tab + 1));
+		if (!safePath(path))
+			throw new Error("Pinned Git source contains an unsafe path.");
 		const size = Number(sizeText);
 		total += size;
 		if (

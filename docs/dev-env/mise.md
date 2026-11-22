@@ -17,7 +17,7 @@ mise replaces ad hoc **Corepack-only** Node/pnpm setup, **cue-lang/setup-cue**, 
 
 | Section | HoBo usage |
 | --- | --- |
-| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `betterleaks@1.10.1` (secret scan: pre-commit staged changes and the CI history scan; the gitleaks successor, same flags and config format), `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
+| `[tools]` | `node@24`, `pnpm@10.33.4` (matches `package.json#packageManager`), `cue@0.14.0` (schema lane), `shellcheck@0.10.0` (shell lint via `mise exec`), `turbo@2.11.10` (matches root devDependency), `betterleaks@1.10.1` (secret scan: pre-commit staged changes and the CI history scan; the gitleaks successor, same flags and config format), `syft@1.56.0` (release OCI CycloneDX SBOM generation for artifact attestations), `python@3.12` (state-machine verification's pinned Z3 interpreter). **`dotnet@10.0.100`** for Nerdbank.GitVersioning lives in [`release/mise.toml`](../release/mise.toml) only (not the CI runner image). |
 | `[env]` | Optional project env vars (keep secrets out; use `mise env` + `.env` locally). |
 | `[tasks]` | Thin wrappers around existing `pnpm` / Turbo scripts so `mise run build` matches `pnpm run build`. |
 | `[settings]` | `experimental = true` only when needed; prefer stable flags. |
@@ -85,7 +85,7 @@ Use the SHA-pinned action (update the pin when bumping):
     experimental: false
 ```
 
-Then run `pnpm run install:check` and Turbo tasks. **Remove** redundant `actions/setup-node`, `corepack enable`, and `cue-lang/setup-cue` when those tools are in `mise.toml`.
+Then run `pnpm run install:check` and Turbo tasks. **Remove** redundant `actions/setup-node`, `actions/setup-python`, `corepack enable`, and `cue-lang/setup-cue` when those tools are in `mise.toml`. State-machine verification resolves its pinned `python3` with `mise which python`; `ci-runner-preflight` fails closed if the lock or version drifts.
 
 HoBo’s full fabric workflow (`.github/workflows-disabled/hobo-ci.yml` and the restored `hobo` runner variant) follows this pattern. Runner availability may be blocked independently (see PR #1631).
 
@@ -104,7 +104,12 @@ bash scripts/bootstrap-dev.sh
 pnpm run install:check
 ```
 
-Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin`.
+Documented in [AGENTS.md](../../AGENTS.md) and [CLAUDE.md](../../CLAUDE.md). No sudo required; mise installs to `~/.local/bin` by default. Set `MISE_INSTALL_PATH` to an absolute executable path to install or find mise elsewhere. Bootstrap prefers that exact executable, even if its filename differs from `mise`, and adds its parent directory to `PATH`.
+
+The bootstrap and retry tests use local installer fixtures and a temporary home.
+The [development bootstrap verification skill](../../.agents/skills/verify-dev-bootstrap/SKILL.md)
+models executable selection and bounded installer retries. A failed installer
+can leave a file at its destination; inspect or remove it before retrying.
 
 ## Hermetic CI runner (`mise oci`)
 

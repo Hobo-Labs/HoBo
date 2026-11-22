@@ -407,12 +407,12 @@ describe("secretless first: the committed store coordinates", () => {
 		secretPath: "/hobo-ci-relay",
 		relayIdentityId: "relay-identity",
 		deployIdentityId: "ci-identity",
-		vercelTeamId: "team_synthetic",
+		vercelTeamId: "team_BRBUnG6uGhSsVV3EG5GFV3FM",
 		claimBundleId: "secret-store:hobo-ci-relay:connect-1",
 		claimState: "claimed",
 	};
 
-	it("reads the relay's folder and identity from an injected binding", () => {
+	it("reads the relay's folder and identity from the committed binding", () => {
 		const coordinates = parseCommittedStoreCoordinates(JSON.stringify(binding));
 		expect(coordinates?.identityId).toBe("relay-identity");
 		expect(coordinates?.binding).toMatchObject({
@@ -433,7 +433,7 @@ describe("secretless first: the committed store coordinates", () => {
 		).toThrow(RelayRuntimeConfigError);
 	});
 
-	it("signs a production deployment in from an injected binding, with no environment variable set", async () => {
+	it("signs a production deployment in from the committed binding, with no environment variable set", async () => {
 		const requests: string[] = [];
 		const source = relayConfigSourceFromEnv(
 			{ VERCEL_ENV: "production" },

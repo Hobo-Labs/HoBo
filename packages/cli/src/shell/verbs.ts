@@ -351,20 +351,27 @@ Usage:
   hobo ci connect <provider>       Add a runner integration: blacksmith, depot, jog (usejog), boat
   hobo ci github import-key        Import or rotate a self-hosted GitHub App key
   hobo ci github key-status        Check the self-hosted App key configuration
-  hobo ci app create               Create the hosted relay's GitHub App and store its credentials
-  hobo ci app deposit              Deposit App credentials through a private owner connection
+  hobo ci app create               Create the hosted relay's GitHub App; credentials go straight to the secrets manager
+                                   (--via-workflow: the deploy workflow converts the code over GitHub OIDC)
+  hobo ci app deposit              In that workflow: convert HOBO_APP_MANIFEST_CODE and store the credentials
   hobo ci list|ls                  List GitHub Actions runs
   hobo ci inspect [run]            Inspect a run
   hobo ci logs [run]               Read run logs
   hobo ci grep <text>              Search recent run logs
   hobo ci rerun [run]              Retry a completed run
+  hobo ci init                     Show which workflow jobs can move to the fleet; --apply rewrites their runs-on
+                                   (see init options)
+  hobo ci signals                  Where recent runs lost time or money: waits, flaky and short jobs, extra runs
+  hobo ci diagnose [run]           Why a run's jobs failed, and whether a re-run is likely to help
+  hobo ci route                    Answer one relay job against the runner order and show the walk
+                                   (see route options)
   hobo ci status                  Inspect the relay connection
   hobo ci serve                   Host the CI relay locally (see serve options)
-  hobo ci deploy                  Deliver the hosted relay to Vercel (see deploy options)
-  hobo ci secret-store plan       Inspect relay config/secret store offers
-  hobo ci secret-store provision  Requires private runtime setup
-  hobo ci secret-store connect    Requires private runtime setup
-  hobo ci secret-store verify     Verify a private owner-selected connection
+  hobo ci deploy                  Deploy the hosted relay to Vercel from a git ref (see deploy options)
+  hobo ci secret-store plan       Choose the relay's config/secret store for this deployment
+  hobo ci secret-store provision  Provision it and hand it to the owner by claim (hobo claim open)
+  hobo ci secret-store connect    Record an Infisical the owner connected by hand (OIDC Auth)
+  hobo ci secret-store verify     Sign in as each identity it can here; pass/fail by name
 
 Role: ${verb.role}
 ${statusLine}
@@ -426,22 +433,65 @@ Serve options (hobo ci serve):
   --home <path>               HOBO_HOME for serve state (credentials, db)
 
 Deploy options (hobo ci deploy; run in the relay's project directory, or pass --cwd):
-  --ref <branch|tag|sha>      The pinned source ref
-  --sha <commit>              Required full commit SHA
+  --repo <owner/repository>   The GitHub repository Vercel builds
+  --ref <branch|tag|sha>      The git ref to deploy
+  --sha <commit>              Pin the full commit sha the ref names
+  --project <name>            The Vercel project
   --target preview|production Deployment target (default: preview)
-  --managed                   Explicit managed delivery (defaults to production)
-  --wait                      Wait for verification (managed delivery already waits)
-  --deadline <time>           Delivery deadline (ISO-8601)
-  --budget <minutes>          Delivery budget in whole minutes
-  --dry-run                   Plan without reading credentials or contacting providers
-  HoBo CD uploads the pinned source without a Git-connected Vercel project.
-  Production requires the owner-selected private relay runtime connection.
+  --team <team_id>            Vercel team id (default: VERCEL_TEAM_ID)
+  --set <NAME=value>          Non-secret setting to apply first (repeatable); secrets are refused
+  --root-directory <dir>      Project root directory to save on the project
+  --create-project            Create the project when Vercel has none by that name
+  --dry-run                   Print what would be sent; reads no token, sends nothing
+                              A real run reads VERCEL_TOKEN from the environment, and
+                              the team and the config service's coordinates from
+                              deploy/secret-store.binding.json when it exists.
+  --adopt                     Token-free: adopt the deployment Vercel's Git integration
+                              made of --sha (takes --sha, --repo, --ref only). Reads
+                              GitHub's Deployments API with GITHUB_TOKEN, never a Vercel
+                              token; verifies preview by its deployment record (READY,
+                              that commit) and production at HOBO_CI_RELAY_URL or the
+                              Yard's productionOrigin: /healthz must name the commit,
+                              /readyz must answer 200. Creates or changes nothing on Vercel.
 
-Secret store options (hobo ci secret-store plan):
+Secret store options (hobo ci secret-store plan|provision; ADR-0179 amendment):
   --auth-md <origin>          A store that may publish auth.md (repeatable)
-  --fleet-host <origin>       A self-hosted store candidate
-  --allow-designed            Include stores without a runtime implementation
-  Legacy connect and provision refuse until private runtime setup is available.
+  --fleet-host <origin>       A fresh Infisical the Yard placed on a compute fleet host
+  --owner-email <address>     The admin a self-hosted store's claim hands over
+  --team <team_id>            Vercel team id the relay's identity trusts
+  --vercel-team-slug <slug>   Vercel team slug (the OIDC issuer's path)
+  --vercel-project-id <id>    The relay's Vercel project id (prj_...)
+  --allow-designed            Route to a store the relay cannot read yet
+  Writes deploy/secret-store.binding.json (coordinates only); never prints a claim link.
+Connect options (hobo ci secret-store connect; identifiers, none is a secret):
+  --project-id <id>           The relay's Infisical project (folder /hobo-ci-relay)
+  --deploy-project-id <id>    The deploy credential's project (VERCEL_TOKEN at /)
+  --relay-identity-id <id>    hobo-ci-relay (OIDC Auth, Vercel)
+  --deploy-identity-id <id>   hobo-ci-deploy (OIDC Auth, GitHub Actions)
+  --team <team_id>            The Vercel team the relay's identity trusts
+  --site-url <origin>         Infisical origin (default https://app.infisical.com)
+  --yes                       Replace an existing binding
+
+Init options (hobo ci init; reads and edits .github/workflows, commits nothing):
+  --plan                        Show each job: ready, already on the fleet, or skipped and why (default)
+  --apply <jobs>                Rewrite runs-on for these jobs: job, file:job or all (repeatable,
+                                comma-separated); the old label is kept as a trailing comment
+  --fleet-label <label>         The label to write (default: hobo)
+  --include-secret-jobs         Also move jobs that use secrets, an environment or an OIDC token
+
+Route options (hobo ci route; reads runnerOrder in .hobo/ci.json, contacts nothing):
+  --fleet, --machine, --github <label>   The label the job would ask that runner type for
+  --blacksmith, --depot, --namespace, --warpbuild, --ubicloud, --boat, --runs-on <label>
+                                A hosted provider's label; "auto" asks for the order's size
+                                (no runner-type flag at all: any type, at that size)
+  --public                      The repository is public (machines never take it)
+  --fork                        The run's head is a fork
+  --event <name>                The GitHub event (default: push)
+  --facts <file.json>           What is true now: fleet {enabled,taking,isolated}, machines,
+                                minutes {usedMinutes,includedMinutes,burnPerHour}, spendUsd,
+                                unhealthy, publicOptIn, first, retry. Without it the fleet
+                                and machines are absent and no limit is measured.
+  Exits non-zero with HOBO_CI_NO_RUNNER and the reason when nothing can take the job.
 
 Run options:
   --git-branch, --branch <name>  Filter list/grep by branch
@@ -456,6 +506,7 @@ Run options:
   --task <name>                 Select an exact job name for logs (repeatable)
   --grep <text>                 Filter log lines by text
   --runs <count>                Search this many recent runs with grep (1-50)
+                                For signals: read this many recent runs (1-100, default 50)
 
 --follow, --level and --next are unsupported. GitHub Actions logs are
 unstructured; use --grep for text filtering.

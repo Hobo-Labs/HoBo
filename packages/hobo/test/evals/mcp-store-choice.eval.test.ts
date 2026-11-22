@@ -4,7 +4,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 
 import { createHoboMcpServer, createSecretCaptureApp } from "@hobo/mcp";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createComposedHoboCli } from "../../src/cli.js";
@@ -78,6 +78,9 @@ function connect(capabilities: JsonObject) {
 		createStoreChoiceApp({
 			cwd: "/box/project",
 			locatorFor: () => ({
+				assertCurrent: () => {},
+				onOwnerChoice: () => {},
+				selectionRevision: () => 0,
 				read: async () => Object.fromEntries(saved),
 				write: async (values) => {
 					saved.clear();
@@ -371,5 +374,173 @@ describe("EVAL store choice over MCP: a picker the owner can answer", () => {
 			HOBO_SECRET_STORE: "bitwarden",
 		});
 		await client.close();
+	});
+});
+
+function connectUnverified() {
+	const input = new PassThrough();
+	const output = new PassThrough();
+	const saved = {
+		HOBO_SECRET_STORE: "existing",
+		INFISICAL_PROJECT_ID: "synthetic-existing",
+	};
+	const locatorFor = vi.fn(() => ({
+		read: async () => ({ ...saved }),
+		write: async (values: Record<string, string>) => {
+			Object.assign(saved, values);
+		},
+	}));
+	const session = createMcpStdioSession(
+		createSecretCaptureApp({
+			specs: RELAY_SECRET_CAPTURE_SPECS,
+			connector: createInfisicalCaptureConnector({ projectDir: "/synthetic" }),
+		}),
+		createStoreChoiceApp({ cwd: "/synthetic", locatorFor }),
+	);
+	const serving = serveMcpStdio({
+		server: createHoboMcpServer({ cli: createComposedHoboCli() }),
+		auth: localOperatorAuth({}),
+		input,
+		output,
+		session,
+		formDeadlineMs: 250,
+	});
+	let trace = "";
+	let buffer = "";
+	let nextId = 0;
+	const pending = new Map<number, (value: Message) => void>();
+	output.on("data", (chunk: Buffer) => {
+		trace += chunk.toString();
+		buffer += chunk.toString();
+		let newline = buffer.indexOf("\n");
+		while (newline !== -1) {
+			const value = message.parse(JSON.parse(buffer.slice(0, newline)));
+			buffer = buffer.slice(newline + 1);
+			const id = z.number().safeParse(value.id);
+			if (id.success && value.method === undefined) {
+				pending.get(id.data)?.(value);
+				pending.delete(id.data);
+			}
+			newline = buffer.indexOf("\n");
+		}
+	});
+	return {
+		saved,
+		locatorFor,
+		trace: () => trace,
+		send(value: Message) {
+			input.write(`${JSON.stringify(value)}\n`);
+		},
+		rpc(method: string, params: JsonObject = {}) {
+			const id = ++nextId;
+			const answer = new Promise<Message>((resolve) =>
+				pending.set(id, resolve),
+			);
+			input.write(
+				`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`,
+			);
+			return answer;
+		},
+		async close() {
+			input.end();
+			await serving;
+		},
+	};
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("owner store choice without a verified owner session", () => {
+	it.each([
+		["no advertised form", {}],
+		["advertised form", { elicitation: { form: {} } }],
+		[
+			"advertised app",
+			{
+				extensions: {
+					"io.modelcontextprotocol/ui": {
+						mimeTypes: ["text/html;profile=mcp-app"],
+					},
+				},
+			},
+		],
+		[
+			"both advertised",
+			{
+				elicitation: {},
+				extensions: {
+					"io.modelcontextprotocol/ui": {
+						mimeTypes: ["text/html;profile=mcp-app"],
+					},
+				},
+			},
+		],
+	])("refuses %s without collecting or saving a choice", async (_label, capabilities) => {
+		const stderr = vi.spyOn(process.stderr, "write");
+		stderr.mockImplementation(() => true);
+		const client = connectUnverified();
+		const marker = "synthetic-private-owner-coordinate";
+		try {
+			await client.rpc("initialize", {
+				protocolVersion: "2025-06-18",
+				capabilities: { ...capabilities, syntheticPrivateField: marker },
+			});
+			const listed = await client.rpc("tools/list");
+			const tools = z
+				.object({ tools: z.array(z.object({ name: z.string() })) })
+				.parse(listed.result).tools;
+			expect(tools.map((tool) => tool.name)).toContain(
+				CHOOSE_SECRET_STORE_TOOL,
+			);
+			const choice = await client.rpc("tools/call", {
+				name: CHOOSE_SECRET_STORE_TOOL,
+				arguments: { family: "cd", INFISICAL_PROJECT_ID: marker },
+			});
+			expect(choice.result).toMatchObject({
+				isError: true,
+				content: [
+					{
+						type: "text",
+						text: "Private owner store selection is not available in this HoBo MCP session. This tool cannot establish an owner store session.",
+					},
+				],
+				structuredContent: {
+					status: "secure-form-unavailable",
+					reason: "owner-setup-unavailable",
+				},
+			});
+			const submitted = await client.rpc("tools/call", {
+				name: SUBMIT_STORE_CHOICE_TOOL,
+				arguments: {
+					family: "ci",
+					store: "infisical",
+					INFISICAL_PROJECT_ID: marker,
+					OP_VAULT_ID: marker,
+					BITWARDEN_SERVER_URL: marker,
+				},
+			});
+			expect(submitted.result).toMatchObject({
+				isError: true,
+				structuredContent: {
+					status: "secure-form-unavailable",
+					reason: "owner-setup-unavailable",
+				},
+			});
+			client.send({
+				jsonrpc: "2.0",
+				id: "hobo-1",
+				result: { action: "accept", content: { INFISICAL_PROJECT_ID: marker } },
+			});
+			await client.rpc("ping");
+			expect(client.saved).toEqual({
+				HOBO_SECRET_STORE: "existing",
+				INFISICAL_PROJECT_ID: "synthetic-existing",
+			});
+			expect(client.trace()).not.toContain("elicitation/create");
+			expect(client.trace()).not.toContain(marker);
+			expect(JSON.stringify(stderr.mock.calls)).not.toContain(marker);
+		} finally {
+			await client.close();
+		}
 	});
 });

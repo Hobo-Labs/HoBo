@@ -139,12 +139,16 @@ export function relayStartState(error: Error): RelayStartState {
 	return RELAY_START_STATES.startFailed;
 }
 
+/**
+ * The commit this deployment was built from, as Vercel's build reports it
+ * (`VERCEL_GIT_COMMIT_SHA`, a system environment variable of every Git
+ * deployment), or null when it is not a full commit id. `/healthz` reports it
+ * so a verifier can tell which build an origin serves.
+ */
 export function buildCommit(
 	env: Readonly<Record<string, string | undefined>>,
 ): string | null {
-	const value = (env.HOBO_CI_SOURCE_SHA ?? env.VERCEL_GIT_COMMIT_SHA ?? "")
-		.trim()
-		.toLowerCase();
+	const value = env.VERCEL_GIT_COMMIT_SHA?.trim().toLowerCase() ?? "";
 	return /^[0-9a-f]{40}$/u.test(value) ? value : null;
 }
 

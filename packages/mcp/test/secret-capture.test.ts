@@ -232,7 +232,7 @@ describe("the tool and resource surface", () => {
 		}
 	});
 
-	it("serves the form as text/html;profile=mcp-app with no network allowance", () => {
+	it("serves the form as text/html;profile=mcp-app", () => {
 		const { app } = setup();
 		const read: {
 			contents: { mimeType: string; text: string; _meta: JsonValue }[];
@@ -241,16 +241,35 @@ describe("the tool and resource surface", () => {
 		);
 		const [content] = read.contents;
 		expect(content?.mimeType).toBe(MCP_APP_MIME_TYPE);
-		expect(content?._meta).toEqual({
+		expect(content?.text).toContain('"ui/initialize"');
+		expect(app.readResource("ui://hobo/other")).toBeUndefined();
+	});
+
+	it("declares empty CSP connectDomains and resourceDomains", () => {
+		const { app } = setup();
+		const read: {
+			contents: { _meta: JsonValue }[];
+		} = JSON.parse(
+			JSON.stringify(app.readResource(SECRET_CAPTURE_RESOURCE_URI)),
+		);
+		expect(read.contents[0]?._meta).toEqual({
 			ui: {
 				csp: { connectDomains: [], resourceDomains: [] },
 				prefersBorder: true,
 			},
 		});
-		// The form never puts anything in front of the model.
-		expect(content?.text).not.toMatch(/ui\/message|ui\/update-model-context/u);
-		expect(content?.text).toContain('"ui/initialize"');
-		expect(app.readResource("ui://hobo/other")).toBeUndefined();
+	});
+
+	it("never emits ui/message or ui/update-model-context", () => {
+		const { app } = setup();
+		const read: {
+			contents: { text: string }[];
+		} = JSON.parse(
+			JSON.stringify(app.readResource(SECRET_CAPTURE_RESOURCE_URI)),
+		);
+		expect(read.contents[0]?.text).not.toMatch(
+			/ui\/message|ui\/update-model-context/u,
+		);
 	});
 });
 

@@ -1,6 +1,5 @@
-import { type CampId, CampManagement } from "@hobo/cd";
-import { defaultRetention } from "@hobo/cd/compose";
-import { createCdControlApi, createCdService } from "@hobo/cd/service";
+import { randomUUID } from "node:crypto";
+import { composeCdHost } from "./cd-host.js";
 import {
 	type CdListenerAccess,
 	sanitizedCdHealth,
@@ -29,37 +28,7 @@ export async function startCdServer(
 ): Promise<CdServer> {
 	const { runtime } = input;
 	try {
-		const { cd, config } = runtime;
-		const refusals: string[] = [];
-		let managed: CampId[];
-		try {
-			managed = (await cd.topology.camps())
-				.filter((camp) => camp.management !== CampManagement.OBSERVE_ONLY)
-				.map((camp) => camp.campId);
-		} catch {
-			throw new Error("The CD service topology could not be read.");
-		}
-		const reconcilers = [];
-		if (managed.length > 0) {
-			try {
-				reconcilers.push(
-					runtime.conductor(managed, `hobo-serve-cd:${process.pid}`),
-				);
-			} catch {
-				refusals.push("conductor-unavailable");
-			}
-		}
-		const service = createCdService({
-			store: runtime.store,
-			tenant: config.tenant,
-			now: runtime.ctx.now,
-			cd,
-			reconcilers,
-			retention: [defaultRetention()],
-			tickIntervalMs: config.tickIntervalMs,
-			principal: { kind: "service", id: `hobo-serve-cd:${config.stationId}` },
-			telemetry: cd.sink,
-		});
+		const { config } = runtime;
 		const issuerReady = () => {
 			try {
 				return (
@@ -70,17 +39,18 @@ export async function startCdServer(
 				return false;
 			}
 		};
-		const api = createCdControlApi({
-			store: runtime.store,
-			tenant: config.tenant,
-			now: runtime.ctx.now,
-			cd,
-			topology: cd.topology,
-			service: {
-				health: () => {
-					const health = sanitizedCdHealth(service.health());
+		let refused: readonly string[] = [];
+		let host: Awaited<ReturnType<typeof composeCdHost>>;
+		try {
+			host = await composeCdHost({
+				runtime,
+				holderId: `hobo-serve-cd:${config.stationId}:${randomUUID()}`,
+				principalId: `hobo-serve-cd:${config.stationId}`,
+				fleetPassLease: true,
+				health: (report) => {
+					const health = sanitizedCdHealth(report);
 					const checks = [...health.checks];
-					if (refusals.length > 0)
+					if (refused.length > 0)
 						checks.push({
 							name: "conductor",
 							ok: false,
@@ -94,13 +64,16 @@ export async function startCdServer(
 							detail: "signing key unavailable",
 						});
 					return {
-						ok: health.ok && refusals.length === 0 && signingReady,
+						ok: health.ok && refused.length === 0 && signingReady,
 						checks,
 					};
 				},
-			},
-			telemetry: cd.sink,
-		});
+			});
+		} catch {
+			throw new Error("The CD service topology could not be read.");
+		}
+		const { service, refusals } = host;
+		refused = refusals;
 		const listener = await startCdListener({
 			host: input.host,
 			port: input.port,
@@ -112,13 +85,16 @@ export async function startCdServer(
 				? undefined
 				: { issuerKeyId: runtime.issuerKeyId }),
 			service: { ...service, ready: () => service.ready() && issuerReady() },
-			api,
+			api: {
+				pathPrefix: host.pathPrefix,
+				handle: (request, signal) => host.handle(request, signal),
+			},
 			simulated: config.simulate,
 			refusals,
 		});
 		try {
 			input.log(
-				`hobo serve cd: listening (store=${config.store.backend}${config.simulate ? " SIMULATED" : ""}) reconcilers=${reconcilers.length}${refusals.length > 0 ? ` refused=${refusals.length}` : ""}`,
+				`hobo serve cd: listening (store=${config.store.backend}${config.simulate ? " SIMULATED" : ""}) reconcilers=${host.reconcilers}${refusals.length > 0 ? ` refused=${refusals.length}` : ""}`,
 			);
 		} catch (error) {
 			await listener.close().catch(() => {});
@@ -128,7 +104,7 @@ export async function startCdServer(
 		return Object.freeze({
 			url: listener.url,
 			port: listener.port,
-			reconcilers: reconcilers.length,
+			reconcilers: host.reconcilers,
 			refusals,
 			close(signal?: AbortSignal) {
 				closing ??= (async () => {

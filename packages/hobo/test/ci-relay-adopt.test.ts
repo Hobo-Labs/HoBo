@@ -414,8 +414,8 @@ describe("hobo ci deploy --adopt verification without Deployment Protection", ()
 		});
 		expect(result.ok).toBe(false);
 		expect(result.code).toBe(RELAY_ADOPT_REFUSAL.relayNotConfigured);
-		expect(result.message).toContain("owner-selected");
-		expect(result.message).toContain("HoBo setup ceremony");
+		expect(result.message).toContain("deploy/secret-store.binding.json");
+		expect(result.message).toContain("hobo ci app create --via-workflow");
 	}, 120_000);
 
 	it("reports a relay that started but is not ready by the parts that are not", async () => {
@@ -687,22 +687,28 @@ describe("hobo ci deploy --adopt through the ci verb", () => {
 		commands: { ci: createCiCommand({ env: { GITHUB_TOKEN: TOKEN } }) },
 	});
 
-	it("refuses Git-linked adoption and directs delivery through the managed ceremony", async () => {
-		for (const extra of [
-			[],
-			["--set", "A=fixture-private-value"],
-			["--budget", "soon"],
-		]) {
-			const result = await cli.run(
-				["ci", "deploy", "--adopt", "--sha", SHA, ...extra, "--json"],
-				{ cwd: RELAY_DIR },
-			);
-			expect(result.exitCode).toBe(2);
-			const body = JSON.parse(result.stdout);
-			expect(body.code).toBe("HOBO_CLI_USAGE");
-			expect(body.message).toContain("HoBo managed pinned-source delivery");
-			expect(result.stdout).not.toContain("fixture-private-value");
-		}
+	it("refuses a deploy option that would configure a deployment", async () => {
+		const result = await cli.run(
+			["ci", "deploy", "--adopt", "--sha", SHA, "--set", "A=b", "--json"],
+			{ cwd: RELAY_DIR },
+		);
+		expect(result.exitCode).toBe(2);
+		const body = JSON.parse(result.stdout);
+		expect(body.code).toBe("HOBO_CLI_USAGE");
+		expect(body.message).toContain(
+			"--set does not apply to hobo ci deploy --adopt",
+		);
+	});
+
+	it("takes --deadline and --budget, and refuses a malformed one as usage", async () => {
+		const result = await cli.run(
+			["ci", "deploy", "--adopt", "--sha", SHA, "--budget", "soon", "--json"],
+			{ cwd: RELAY_DIR },
+		);
+		expect(result.exitCode).toBe(2);
+		expect(JSON.parse(result.stdout).message).toContain(
+			"--budget takes whole minutes",
+		);
 	});
 
 	it("refuses --adopt on any other ci command", async () => {

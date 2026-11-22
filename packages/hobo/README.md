@@ -53,7 +53,12 @@ supplies tenant-scoped planning evidence, independent revalidation, a trusted
 clock, and final provider-account/entitlement settlement evidence. Paid charges
 and shared credits are reserved together before deployment facts are published.
 Each charge stays with its source or destination billing account; credit scope
-and cost class remain part of the pinned plan.
+and cost class remain part of the pinned plan. Hosting free-tier snapshots,
+claims and settlement evidence use the explicit `allowance` entitlement kind;
+older hosting snapshots and settlement evidence without a kind retain that same
+meaning, including snapshots supplied by custom durable authorities.
+Legacy v1 fenced settlement evidence stays kindless for signature verification;
+the bridge does not inject a kind into that signed payload.
 
 Execution adopts the gateway's existing reservation through an atomic claim.
 Another transition cannot spend the same authorization. A lost provider response
@@ -279,6 +284,11 @@ must be refreshed before a protected write.
 Removing or rolling back the state directory also removes this protection;
 do not delete a marker to force a retry.
 
+Vercel source preparation builds a file manifest from a pinned commit without
+contacting the provider or deploying. The [CD guide](./CD.md#delivery-as-code)
+describes archive fallback, the synthetic emulator's aggregate limit, and the
+authorization still required before production dispatch.
+
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
 `selectIacProvider` never picks) deploys first, with one
@@ -437,21 +447,123 @@ with `data-models/cd_topology.proto` (`src/cd-topology.ts`); `pipeline apply
 when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `test/cd-md-examples.test.ts` runs
 every CD.md example against `dist/bin/hobo.js`.
 
-**`hobo ci deploy`: HoBo deploys its own CI relay.** HoBo CD uploads the
-pinned relay source and verifies a preview without requiring a Git-connected
-Vercel project. The default target is preview; an explicit `--managed` retains
-its production default. Both require a full commit SHA and a source ref.
+**`hobo ci deploy`: HoBo deploys its own CI relay.** The hosted relay
+(`packages/ci-vercel`) is a HoBo app: its Bindle is
+[`packages/ci-vercel/src/bindle.ts`](../ci-vercel/src/bindle.ts). `hobo ci
+deploy` (`src/ci-relay-deploy.ts`, a subcommand of the `ci` verb beside `hobo ci
+serve`) loads that Bindle from the project directory, checks it names no
+provider (`assertNoBindleProviderSelection`), places it with the relay's Yard
+(`packages/ci-vercel/deploy/yard.ts`, loaded and resolved by
+`src/ci-relay-yard.ts`: the Yard names the provider, the project and repository;
+the target names a Camp, and the binding rows that Camp requires project the
+non-secret settings), and realizes it as one git-source Vercel deployment
+through the git-artifact mode above: the non-secret settings first, then each of
+the Bindle's resources applied through the provider the Yard names, which
+deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
+otherwise). The workflow on `main` (`.github/workflows/relay-deploy.yml`)
+currently adopts and verifies a Git-sourced deployment; it does not run this
+deploy command.
+
+Delivery planning also reads declared secret projections from Yards in the
+relay's own Junction, keeping each projection under its source Yard. A declared
+Junction is not evidence that provider ownership or connectivity has been
+verified; the changed cross-Yard path still needs that evidence.
 
 ```sh
-hobo ci deploy --cwd packages/ci-vercel --ref main --sha <full-commit> --dry-run
+# From the repository root. Nothing is sent; no token is read.
+hobo ci deploy --cwd packages/ci-vercel --ref main \
+  --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
+
+# From an authorized GitHub Actions job with id-token: write and a committed
+# secret-store binding: production, with the cache attached first.
+hobo ci deploy --cwd packages/ci-vercel --ref main \
+  --sha <40-hex commit> --team team_… --target production \
+  --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
 ```
 
-Production requires the HoBo CD Vercel connection and a matching runtime identity
-in the owner's selected private store. Setup does not yet provision and verify
-that workload identity. Delivery refuses until the connection exists and matches
-the target. The legacy Git-linked deploy options and the legacy store connect
-and provision commands refuse before provider mutation. See
-[CI from the HoBo CLI](CI.md#deploying-the-hosted-relay-with-hobo).
+| Option | Meaning |
+|---|---|
+| `--ref <branch\|tag\|sha>` | the git ref Vercel builds (required) |
+| `--repo <owner/name>` | the GitHub repository; default the Yard's `repository` property |
+| `--sha <commit>` | pins the full commit sha, so a branch that moves cannot change what is deployed |
+| `--project <name>` | the Vercel project; default the Yard's `project` property |
+| `--target preview\|production` | default `preview`; production is never implied |
+| `--team <team_id>` | the Vercel team, else `VERCEL_TEAM_ID`; a canonical `team_…` id, or the token's own scope when neither is set |
+| `--set NAME=value` | a non-secret setting to apply for the target's environment first (repeatable): a `config()` `env.*` field, or an input a chosen binding asks for |
+| `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
+| `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
+| `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
+| `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--dry-run` | print the plan and send nothing |
+
+A real run reads the deploy token from the owner's secret store as the
+dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
+through the committed secret-store binding; a token preloaded in an embedding
+caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
+command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
+passes that child the token from the run's fresh vault. The target project must
+build `packages/ci-vercel` (or the chosen `--root-directory`), and Vercel's
+GitHub integration must be able to read the
+repository.
+
+A credential-free legacy binding may omit `deployOidcSubject` or carry the
+exact writer subject. Any other nonempty subject is malformed and makes the
+workflow gate fatal rather than a credential-free skip.
+
+What it deliberately does not do:
+
+- **Set a secret.** A `--set` must name a field the app's `config()` schema
+  (`relayConfig`) declares with `env.*`; a field declared `secret.*`, an
+  undeclared name, and any name or value the screen in
+  `src/vercel-env-policy.ts` refuses are all rejected before the plan is
+  formed (`HOBO_CI_DEPLOY_SETTING_REFUSED`), in a dry run too, and the refusal
+  never echoes the value. The declared secrets are listed by name as "not set
+  by this command".
+- **Provision storage unasked.** Only `--provision` attaches anything, and only
+  the Marketplace rows the Camp chooses (the relay's Upstash cache). A storage
+  integration's variables (`DATABASE_*`, `POSTGRES_*`, `REDIS_*`, `KV_*`,
+  `UPSTASH_*`, `TURSO_*`, `LIBSQL_*`, `BLOB_*`, `VALKEY_*`) are written by the
+  integration, never set here, and so is any `INFISICAL_*` name other than the
+  config service's five coordinates (`CONFIG_SERVICE_COORDINATES`).
+- **Override the Yard.** A `--set` naming a setting the chosen bindings already
+  set is refused; the Yard is changed instead.
+- **Create the project, or reach production, unasked.**
+- **Schedule anything.** The Bindle declares the repair schedule; this verb
+  does not create a platform schedule or an external trigger for it.
+
+The dry run prints the plan, and `--json` carries it as `data.plan`: a
+`VercelGitDeploymentPlan` (`data-models/vercel_git_deployment.proto`, generated
+into `src/_generated/vercel_git_deployment_pb.ts`) with its requests formed by
+the functions the client sends with. `data-models/vercel_git_deployment.cue`
+constrains the record (target is `preview` or `production` and always present;
+the placement and the Yard's binding rows always present; no setting whose name
+or value looks like a credential; request paths under the API; provisioning
+commands are `vercel integration …` with no token argument), and its `fixtures/vercel_git_deployment/valid` files are the command's own
+dry-run output for the real relay: `test/ci-relay-deploy.test.ts` compares the
+two, so the record the schema vets is the record the command prints. A real run
+prints the provider's outputs (deployment id and URL, target, scope, and which
+settings were created, updated or left unchanged). **Status: exercised against
+a fake transport only; no live deployment was made from this repository by this
+change.**
+
+```text
+Dry run: nothing was sent to Vercel, and VERCEL_TOKEN was not read.
+Deploy hobo-ci-relay (kv cache, secret config, queue hobo-ci, queue hobo-ci-intake, queue hobo-ci-lease-steps, schedule hobo-ci-repair, api relay)
+  to Vercel project hobo-ci, scope team_hobo, target preview
+  from github example/hobo@main
+  into a project that must already exist (pass --create-project to create it)
+Settings set for preview first (non-secret): HOBO_CI_PUBLIC_URL=https://ci.example.test
+Not set by this command (the operator or a storage integration holds them): CRON_SECRET, HOBO_CI_BOOTSTRAP_TOKEN_SHA256, …
+Requests to https://api.vercel.com:
+  1. GET /v10/projects/hobo-ci/env?teamId=team_hobo
+     always: read what the project holds, before any write
+  2. POST /v10/projects/hobo-ci/env?teamId=team_hobo
+     {"key":"HOBO_CI_PUBLIC_URL","value":"https://ci.example.test","type":"plain","target":["preview"]}
+     only if HOBO_CI_PUBLIC_URL is not set for preview; a plain preview-only value that differs is edited instead, and one already as asked is left alone
+  3. POST /v13/deployments?teamId=team_hobo
+     {"name":"hobo-ci","project":"hobo-ci","gitSource":{"type":"github","org":"example","repo":"hobo","ref":"main"}}
+     always: one deployment, built by Vercel from the commit
+```
 
 **Credentials from OpenSesame (`HOBO_CREDENTIALS=opensesame`, [ADR-0170](../../docs/design/adr/02-identity-security.md#adr-0170)).**
 The composed `hobo` then relaunches itself once, before composing anything, as

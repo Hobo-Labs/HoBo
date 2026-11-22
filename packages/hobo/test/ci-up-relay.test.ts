@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
 	chmodSync,
-	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -15,7 +14,6 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule, CommandRunInput } from "@hobo/cli";
 import { createTrustedVault } from "@hobo/core";
-import { createMemorySecretsPort } from "@hobo/identity";
 import type { RuntimeLocalEventStore } from "@hobo/runtime-local";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -23,6 +21,7 @@ import type { runCiRelayDeploy } from "../src/ci-relay-deploy.js";
 import {
 	createCiRelayPlanCommand,
 	createCiRelayUpCommand,
+	gitHead,
 	relayCommitPlatformDrift,
 	relayCommitSnapshot,
 	relayPlatformDrift,
@@ -166,63 +165,27 @@ describe("hobo ci up through the relay's Yards", () => {
 		expect(delivered?.values.team).toBe("team_saved");
 	});
 
-	it("uses the CD owner connection even if CI supplied an older token", async () => {
-		const credentials = createTrustedVault();
-		credentials.put("VERCEL_TOKEN", "stale-ci-token");
-		credentials.put("VERCEL_TEAM_ID", "team_old");
-		const port = createMemorySecretsPort({ id: "memory" });
-		await port.put("HOBO_CD_VERCEL_TOKEN", "selected-cd-token");
-		await port.put("HOBO_CD_VERCEL_TEAM_ID", "team_cd");
-		let delivered: Parameters<typeof runCiRelayDeploy>[0] | undefined;
-		const up = createCiRelayUpCommand(credentials, never, {
-			ownerSettings: { read: async () => ({}), write: async () => {} },
-			openOwnerStore: async () => ({
-				chosen: true,
-				opened: { id: "bitwarden", port, reference: () => "private" },
-			}),
-			head: async () => ({ ref: "feature/x", sha: "a".repeat(40) }),
-			snapshot: async () => ({ dir: RELAY, close: async () => {} }),
-			platformDrift: async () => [],
-			deploy: async (request) => {
-				delivered = request;
-				return { ok: true, code: "HOBO_OK", message: "ok" };
-			},
-		});
-		expect((await up.run(input())).ok).toBe(true);
-		expect(delivered?.credentials?.reveal("VERCEL_TOKEN")).toBe(
-			"selected-cd-token",
-		);
-		expect(delivered?.values.team).toBe("team_cd");
-	});
-
-	it("does not fall back to a CI token when the selected CD store is unavailable", async () => {
-		const credentials = createTrustedVault();
-		credentials.put("VERCEL_TOKEN", "stale-ci-token");
-		const up = createCiRelayUpCommand(credentials, never, {
-			ownerSettings: { read: async () => ({}), write: async () => {} },
-			openOwnerStore: async () => ({ chosen: false, opened: undefined }),
-		});
-		expect((await up.run(input())).code).toBe(
-			"HOBO_CI_UP_VERCEL_NOT_CONNECTED",
-		);
-		expect(credentials.has("VERCEL_TOKEN")).toBe(false);
-	});
-
 	it("checks the deployed commit even if the working tree was edited to hide drift", async () => {
 		const repo = mkdtempSync(join(RELAY, ".hobo-source-test-"));
 		const project = join(repo, "packages", "relay");
 		try {
-			const git = (...args: string[]) =>
-				execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+			const git = (...args: string[]) => {
+				const env: NodeJS.ProcessEnv = {
+					GIT_CONFIG_NOSYSTEM: "1",
+					GIT_CONFIG_GLOBAL: "/dev/null",
+				};
+				if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+				return execFileSync("git", args, {
+					cwd: repo,
+					encoding: "utf8",
+					env,
+				}).trim();
+			};
 			git("init", "-q");
 			mkdirSync(project, { recursive: true });
 			mkdirSync(join(project, "src"));
 			mkdirSync(join(project, "deploy"));
 			writeFileSync(join(project, "deploy", "yard.ts"), "committed yard");
-			writeFileSync(
-				join(project, "deploy", "secret-store.binding.json"),
-				"synthetic private data",
-			);
 			writeFileSync(join(project, "deploy", "check.sh"), "#!/bin/sh\n");
 			chmodSync(join(project, "deploy", "check.sh"), 0o755);
 			writeFileSync(
@@ -263,9 +226,6 @@ export default bindle("relay", (b) => {
 			]);
 			const snapshot = await relayCommitSnapshot(project, sha);
 			try {
-				expect(
-					existsSync(join(snapshot.dir, "deploy", "secret-store.binding.json")),
-				).toBe(false);
 				expect(
 					readFileSync(join(snapshot.dir, "deploy", "yard.ts"), "utf8"),
 				).toBe("committed yard");
@@ -362,6 +322,38 @@ export default bindle("relay", (b) => {
 			},
 		});
 		expect((await up.run(input())).code).toBe("HOBO_CI_UP_PLATFORM_DRIFT");
+	});
+
+	it("reads GITHUB_HEAD_REF when the checkout is detached", async () => {
+		const repo = mkdtempSync(join(tmpdir(), "hobo-git-head-"));
+		const work = join(repo, "cd-vercel");
+		const deployRef = "feature/git-deploy";
+		const prev = process.env.GITHUB_HEAD_REF;
+		try {
+			mkdirSync(work, { recursive: true });
+			execFileSync("git", ["init", "-b", "main"], { cwd: repo });
+			execFileSync("git", ["config", "user.email", "cd-test@hobo.local"], {
+				cwd: repo,
+			});
+			execFileSync("git", ["config", "user.name", "HoBo CD test"], {
+				cwd: repo,
+			});
+			writeFileSync(join(repo, "marker"), "x");
+			execFileSync("git", ["add", "marker"], { cwd: repo });
+			execFileSync("git", ["commit", "-m", "marker"], { cwd: repo });
+			const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+				cwd: repo,
+				encoding: "utf8",
+			}).trim();
+			execFileSync("git", ["checkout", "--detach"], { cwd: repo });
+			process.env.GITHUB_HEAD_REF = deployRef;
+			const head = await gitHead(work);
+			expect(head).toEqual({ ref: deployRef, sha });
+		} finally {
+			if (prev === undefined) delete process.env.GITHUB_HEAD_REF;
+			else process.env.GITHUB_HEAD_REF = prev;
+			rmSync(repo, { recursive: true, force: true });
+		}
 	});
 
 	it("plan falls back for a project with no relay Yard", async () => {

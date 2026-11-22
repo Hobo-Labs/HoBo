@@ -22,7 +22,6 @@ import {
 	type AppHandOffMode,
 	egressFetch,
 	egressFrom,
-	type OwnerChannel,
 	parseAppHandOffMode,
 	REDIRECT_RECEIVER_SETTING,
 	type RedirectReceiver,
@@ -35,17 +34,22 @@ import { runCiAppCreate, runCiAppDeposit } from "./ci-app-create.js";
 import { runCiConnect } from "./ci-connect.js";
 import { runGithubCeremony } from "./ci-github-connect.js";
 import { importGithubKey, storedGithubKey } from "./ci-github-keys.js";
+import { runCiInit } from "./ci-init.js";
+import { runCiInsights } from "./ci-insights.js";
 import {
 	localMeshReport,
 	meshNodesData,
 	meshNodesTable,
 } from "./ci-mesh-status.js";
-import { CI_DEPLOY_ONLY_OPTIONS } from "./ci-relay-deploy.js";
+import { CI_DEPLOY_ADOPT_OPTIONS, runCiRelayAdopt } from "./ci-relay-adopt.js";
 import {
-	CI_DEPLOY_MANAGED_OPTIONS,
-	runCiRelayManaged,
-} from "./ci-relay-managed.js";
+	CI_DEPLOY_ONLY_OPTIONS,
+	CI_DEPLOY_OPTIONS,
+	runCiRelayDeploy,
+} from "./ci-relay-deploy.js";
+import type { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
 import type { VercelCliRunner } from "./ci-relay-provision.js";
+import { runCiRoute } from "./ci-route.js";
 import { runCiRuns } from "./ci-runs.js";
 import {
 	CI_SECRET_STORE_OPTIONS,
@@ -53,12 +57,13 @@ import {
 	SECRET_STORE_ONLY_OPTIONS,
 } from "./ci-secret-store.js";
 import { type CiServeOptions, runCiServe } from "./ci-serve.js";
-import type { loadOwnerDeployCredentials } from "./owner-deploy-credentials.js";
 import type { VercelFetch } from "./vercel-client.js";
+import type { VercelBuildRunner } from "./vercel-prebuilt.js";
 
 const execute = promisify(execFile);
 type CiLink = ReturnType<typeof create<typeof CiRepositoryLinkSchema>>;
 type CiOptions = Record<string, string | boolean | string[] | undefined>;
+type CiGit = (args: readonly string[], cwd: string) => Promise<string>;
 
 import { ciRepositoryFromRemote, validRepository } from "./ci-repository.js";
 
@@ -284,6 +289,7 @@ export function parseCiArgs(args: readonly string[]) {
 			org: { type: "string" },
 			"runs-on": { type: "string", multiple: true },
 			id: { type: "string" },
+			identity: { type: "string" },
 			"dry-run": { type: "boolean" },
 			launch: { type: "boolean" },
 			ref: { type: "string" },
@@ -293,10 +299,10 @@ export function parseCiArgs(args: readonly string[]) {
 			team: { type: "string" },
 			set: { type: "string", multiple: true },
 			"root-directory": { type: "string" },
+			build: { type: "string" },
 			"create-project": { type: "boolean" },
 			provision: { type: "boolean" },
 			adopt: { type: "boolean" },
-			managed: { type: "boolean" },
 			deadline: { type: "string" },
 			budget: { type: "string" },
 			"owner-id": { type: "string" },
@@ -310,6 +316,24 @@ export function parseCiArgs(args: readonly string[]) {
 			"deploy-project-id": { type: "string" },
 			"relay-identity-id": { type: "string" },
 			"deploy-identity-id": { type: "string" },
+			"deploy-credential-identity-id": { type: "string" },
+			fleet: { type: "string" },
+			machine: { type: "string" },
+			github: { type: "string" },
+			blacksmith: { type: "string" },
+			depot: { type: "string" },
+			namespace: { type: "string" },
+			warpbuild: { type: "string" },
+			ubicloud: { type: "string" },
+			boat: { type: "string" },
+			public: { type: "boolean" },
+			fork: { type: "boolean" },
+			event: { type: "string" },
+			facts: { type: "string" },
+			plan: { type: "boolean" },
+			apply: { type: "string", multiple: true },
+			"fleet-label": { type: "string" },
+			"include-secret-jobs": { type: "boolean" },
 			"site-url": { type: "string" },
 			"via-workflow": { type: "boolean" },
 			"hand-off": { type: "boolean" },
@@ -352,6 +376,40 @@ function ciServeOptions(values: CiOptions): CiServeOptions {
 	return options;
 }
 
+async function localRepository(
+	deps: { env?: NodeJS.ProcessEnv; git?: CiGit },
+	cwd: string,
+	values: CiOptions,
+): Promise<{ root: string; repository: string | undefined }> {
+	const git: CiGit =
+		deps.git ??
+		(async (gitArgs, directory) => {
+			const result = await execute("git", [...gitArgs], {
+				cwd: directory,
+				timeout: 10000,
+				maxBuffer: 65536,
+				env: deps.env ?? process.env,
+			});
+			return result.stdout.trim();
+		});
+	let root = cwd;
+	try {
+		root = await git(["rev-parse", "--show-toplevel"], cwd);
+	} catch {}
+	if (values.repo !== undefined && validRepository(String(values.repo)))
+		return { root, repository: String(values.repo) };
+	try {
+		return {
+			root,
+			repository: ciRepositoryFromRemote(
+				await git(["remote", "get-url", "origin"], root),
+			),
+		};
+	} catch {
+		return { root, repository: undefined };
+	}
+}
+
 export function createCiCommand(
 	deps: {
 		env?: NodeJS.ProcessEnv;
@@ -364,20 +422,12 @@ export function createCiCommand(
 		now?: () => number;
 		/** The Vercel transport of `hobo ci deploy`; the global fetch when absent. */
 		vercelFetch?: VercelFetch;
-		/** A vault already holding the deploy token (`VERCEL_TOKEN`), read from the store. */
 		deployCredentials?: TrustedVault;
-		ownerSession?: TrustedVault;
-		ownerFor?: (
-			cwd: string,
-		) => Pick<OwnerChannel, "vault" | "storeSettings"> | undefined;
-		relayOwnerFor?: (
-			cwd: string,
-		) => Pick<OwnerChannel, "vault" | "storeSettings"> | undefined;
-		ownerSettings?: Parameters<
-			typeof loadOwnerDeployCredentials
-		>[0]["ownerSettings"];
+		readDeployCredential?: typeof readRelayDeployToken;
 		/** The Vercel CLI `hobo ci deploy --provision` runs; spawned when absent. */
 		vercelCli?: VercelCliRunner;
+		vercelBuild?: VercelBuildRunner;
+		checkoutHead?: (repoRoot: string) => Promise<string>;
 		/** HOBO_HOME for `hobo ci deploy`'s CD journal; the default home when absent. */
 		hoboHome?: string;
 		/** The transport `hobo ci deploy --adopt` reads GitHub's Deployments API with. */
@@ -390,7 +440,7 @@ export function createCiCommand(
 ): CommandModule {
 	return {
 		implemented: true,
-		async run({ args, flags, context, emitProgress }) {
+		async run({ args, flags, emitProgress }) {
 			if (args.length === 0) return { message: CI_HELP };
 			let parsed: ReturnType<typeof parseCiArgs>;
 			try {
@@ -401,6 +451,8 @@ export function createCiCommand(
 				);
 			}
 			const { values } = parsed;
+			if (values.repo !== undefined && !validRepository(String(values.repo)))
+				return usage("--repo <owner/name> must be a GitHub owner/name.");
 			const githubConnect =
 				parsed.positionals[0] === "connect" &&
 				parsed.positionals[1] === "github";
@@ -428,56 +480,115 @@ export function createCiCommand(
 					"deploy",
 					"app",
 					"secret-store",
+					"route",
+					"init",
+					"signals",
+					"diagnose",
 				].includes(command)
 			)
 				return usage("Unknown CI command. Run hobo ci --help.");
+			if (command === "init") {
+				const local = await localRepository(deps, flags.cwd, values);
+				return runCiInit({
+					cwd: local.root,
+					args: positionals.slice(1),
+					options: values,
+				});
+			}
+			if (command === "signals" || command === "diagnose") {
+				const local = await localRepository(deps, flags.cwd, values);
+				if (local.repository === undefined)
+					return usage(
+						"Run from a GitHub repository or pass --repo owner/name.",
+					);
+				return runCiInsights({
+					command,
+					repository: local.repository,
+					cwd: local.root,
+					args: positionals.slice(1),
+					options: values,
+					env: deps.env ?? process.env,
+				});
+			}
+			if (command === "route") {
+				if (positionals.length !== 1)
+					return usage("hobo ci route takes no positional arguments.");
+				const local = await localRepository(deps, flags.cwd, values);
+				return runCiRoute({
+					cwd: local.root,
+					repository: local.repository,
+					options: values,
+				});
+			}
 			if (command === "deploy") {
-				const owner = deps.ownerFor?.(context.cwd);
-				const relayOwner = deps.relayOwnerFor?.(context.cwd);
-				const ownerSession = owner?.vault ?? deps.ownerSession;
-				const ownerSettings = owner?.storeSettings ?? deps.ownerSettings;
 				if (positionals.length !== 1)
 					return usage("hobo ci deploy takes no positional arguments.");
-				if (values.adopt === true)
-					return usage(
-						"--adopt requires a Git-linked Vercel deployment. Use the HoBo managed pinned-source delivery ceremony.",
+				if (values.adopt === true) {
+					const adoptable = new Set<string>(CI_DEPLOY_ADOPT_OPTIONS);
+					const other = Object.entries(values).find(
+						([key, value]) => value !== undefined && !adoptable.has(key),
 					);
-				const allowed = new Set<string>([...CI_DEPLOY_MANAGED_OPTIONS, "wait"]);
+					if (other)
+						return usage(
+							`--${other[0]} does not apply to hobo ci deploy --adopt: it observes the deployment Vercel's Git integration made and configures none.`,
+						);
+					return runCiRelayAdopt({
+						cwd: flags.cwd,
+						values,
+						env: deps.env ?? process.env,
+						...(deps.githubHttp !== undefined
+							? { github: deps.githubHttp }
+							: undefined),
+						...(deps.probeHttp !== undefined
+							? { probe: deps.probeHttp }
+							: undefined),
+						...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
+						...(deps.now !== undefined ? { now: deps.now } : undefined),
+						...(deps.hoboHome !== undefined
+							? { home: deps.hoboHome }
+							: undefined),
+						emitProgress,
+					});
+				}
+				const allowed = new Set<string>(CI_DEPLOY_OPTIONS);
 				const unsupported = Object.entries(values).find(
 					([key, value]) => value !== undefined && !allowed.has(key),
 				);
 				if (unsupported)
-					return usage(
-						`--${unsupported[0]} is unavailable for HoBo managed delivery. Use the HoBo setup ceremony and pinned-source options.`,
-					);
-				return runCiRelayManaged({
+					return usage(`--${unsupported[0]} does not apply to hobo ci deploy.`);
+				return runCiRelayDeploy({
 					cwd: flags.cwd,
-					values:
-						values.managed === true
-							? values
-							: { ...values, target: values.target ?? "preview" },
+					values,
 					env: deps.env ?? process.env,
 					...(deps.deployCredentials !== undefined
 						? { credentials: deps.deployCredentials }
 						: undefined),
-					...(ownerSession !== undefined ? { ownerSession } : undefined),
-					...(ownerSettings !== undefined ? { ownerSettings } : undefined),
-					...(relayOwner?.vault
-						? { relayOwnerSession: relayOwner.vault }
+					...(deps.readDeployCredential !== undefined
+						? { readDeployCredential: deps.readDeployCredential }
 						: undefined),
-					...(relayOwner?.storeSettings
-						? { relayOwnerSettings: relayOwner.storeSettings }
+					...(deps.vercelFetch !== undefined
+						? { fetch: deps.vercelFetch }
 						: undefined),
-					...(deps.fetch !== undefined ? { fetch: deps.fetch } : undefined),
+					...(deps.vercelCli !== undefined
+						? { runVercelCli: deps.vercelCli }
+						: undefined),
+					...(deps.vercelBuild !== undefined
+						? { runVercelBuild: deps.vercelBuild }
+						: undefined),
+					...(deps.checkoutHead !== undefined
+						? { checkoutHead: deps.checkoutHead }
+						: undefined),
 					...(deps.sleep !== undefined ? { sleep: deps.sleep } : undefined),
 					...(deps.now !== undefined ? { now: deps.now } : undefined),
 					...(deps.hoboHome !== undefined
 						? { home: deps.hoboHome }
 						: undefined),
+					...(deps.probeHttp !== undefined
+						? { probe: deps.probeHttp }
+						: undefined),
 					emitProgress,
 				});
 			}
-
 			if (command === "secret-store") {
 				if (positionals.length !== 2)
 					return usage(
