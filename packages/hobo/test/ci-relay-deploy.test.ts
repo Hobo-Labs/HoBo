@@ -166,6 +166,7 @@ async function deploy(
 		readonly hoboHome?: string;
 		readonly probe?: HttpTransport;
 		readonly oidc?: boolean;
+		readonly credentialFetch?: typeof fetch;
 	},
 ): Promise<Ran> {
 	const { VERCEL_TOKEN: storeToken, ...plainEnv } = options.env ?? {};
@@ -202,6 +203,9 @@ async function deploy(
 					: undefined),
 				...(options.sleep !== undefined ? { sleep: options.sleep } : undefined),
 				...(options.now !== undefined ? { now: options.now } : undefined),
+				...(options.credentialFetch !== undefined
+					? { credentialFetch: options.credentialFetch }
+					: undefined),
 				hoboHome: options.hoboHome ?? freshHome(),
 				probeHttp: options.probe ?? healthyRelay().http,
 			}),
@@ -1486,6 +1490,214 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(ran.data.delivery).not.toMatchObject({ state: "PROMOTED" });
 		expect(ran.envelope.message).toEqual(
 			expect.stringContaining("not yet verified"),
+		);
+	});
+});
+
+describe("staged production finalizePromotion recovery", () => {
+	const PINNED = ["--repo", "example/hobo", "--ref", "main", "--sha", SHA];
+	const stagedEnv = {
+		VERCEL_TOKEN: TOKEN,
+		VERCEL_TEAM_ID: TEAM,
+		...ORIGINS,
+		HOBO_CI_RELAY_STAGED_PRODUCTION: "true",
+		HOBO_CI_RELAY_PUBLIC_URL: "https://relay.example.test",
+		HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
+	};
+	const fakeCredentialFetch: typeof fetch = async () =>
+		new Response(
+			JSON.stringify({
+				value: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ0ZXN0In0.c2ln",
+			}),
+			{ status: 200, headers: { "content-type": "application/json" } },
+		);
+
+	function stagedVercel(
+		states: readonly string[],
+		options: {
+			currentProduction?: string | "missing";
+			promoteTo?: string | "missing";
+		} = {},
+	) {
+		const base = scriptedVercel(states, {
+			projectId: "prj_relay",
+			target: "production",
+		});
+		const sent = base.sent;
+		const fetch: VercelFetch = async (url, init) => {
+			const path = url.replace("https://api.vercel.com", "");
+			if (init.method === "GET" && path.startsWith("/v9/projects/")) {
+				sent.push(`${init.method} ${path}`);
+				const currentProduction = options.currentProduction;
+				if (currentProduction === "missing")
+					return {
+						ok: true,
+						status: 200,
+						async text() {
+							return JSON.stringify({ id: "prj_relay", targets: {} });
+						},
+						async json() {
+							return { id: "prj_relay", targets: {} };
+						},
+					};
+				return {
+					ok: true,
+					status: 200,
+					async text() {
+						return JSON.stringify({
+							id: "prj_relay",
+							targets: {
+								production: {
+									id: currentProduction ?? "dpl_old",
+								},
+							},
+						});
+					},
+					async json() {
+						return {
+							id: "prj_relay",
+							targets: { production: { id: currentProduction ?? "dpl_old" } },
+						};
+					},
+				};
+			}
+			if (
+				init.method === "POST" &&
+				/^\/v10\/projects\/[^/]+\/promote\//.test(path)
+			) {
+				sent.push(`${init.method} ${path}`);
+				if (options.promoteTo === "missing") return base.fetch(url, init);
+				return {
+					ok: true,
+					status: 200,
+					async text() {
+						return "{}";
+					},
+					async json() {
+						return {};
+					},
+				};
+			}
+			return base.fetch(url, init);
+		};
+		return { fetch, sent };
+	}
+
+	it("recovers when promote succeeded but promotedFrom is missing and public is healthy", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const relay = healthyRelay();
+		const baseEnv = {
+			VERCEL_TOKEN: TOKEN,
+			VERCEL_TEAM_ID: TEAM,
+			...ORIGINS,
+		};
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env: baseEnv,
+				hoboHome: home,
+				probe: relay.http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+
+		const vercel = stagedVercel(["READY"], {
+			currentProduction: "dpl_wait",
+		});
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch: vercel.fetch,
+				env: stagedEnv,
+				hoboHome: home,
+				probe: relay.http,
+				credentialFetch: fakeCredentialFetch,
+				...clock,
+			},
+		);
+		expect(ran.exitCode, JSON.stringify(ran.envelope)).toBe(0);
+		expect(ran.envelope).toMatchObject({
+			ok: true,
+			code: "HOBO_CI_DEPLOYED",
+		});
+		expect(ran.data.delivery).toMatchObject({
+			node: "production",
+			state: "PROMOTED",
+		});
+	});
+
+	it("fails with explicit manual recovery when already promoted, promotedFrom missing, and public unhealthy", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const baseEnv = {
+			VERCEL_TOKEN: TOKEN,
+			VERCEL_TEAM_ID: TEAM,
+			...ORIGINS,
+		};
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env: baseEnv,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+
+		const vercel = stagedVercel(["READY"], {
+			currentProduction: "dpl_wait",
+		});
+		const deploymentHealthy: HttpTransport = async (request) => {
+			const live = request.url.startsWith("https://relay.example.test");
+			const status = live ? 503 : 200;
+			return {
+				status,
+				headers: { "content-type": "application/json" },
+				body: request.url.includes("/healthz")
+					? JSON.stringify({ ok: status === 200, commit: SHA })
+					: JSON.stringify({ ready: status === 200 }),
+			};
+		};
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch: vercel.fetch,
+				env: stagedEnv,
+				hoboHome: home,
+				probe: deploymentHealthy,
+				credentialFetch: fakeCredentialFetch,
+				...clock,
+			},
+		);
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_ROLLBACK_TARGET_UNKNOWN",
+		});
+		expect(String(ran.envelope.message)).toContain("manual recovery is required");
+		expect(String(ran.envelope.message)).toContain(
+			"no previous production deployment was recorded",
 		);
 	});
 });

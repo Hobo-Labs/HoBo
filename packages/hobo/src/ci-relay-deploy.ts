@@ -1385,6 +1385,55 @@ export async function runCiRelayDeploy(
 								withoutToken,
 							);
 						}
+						const pauseBeforeRetry = async (attempt: number) => {
+							const remaining =
+								deadlineAt === undefined ? WAIT_LIMIT_MS : deadlineAt - now();
+							if (attempt < 23 && remaining > 0)
+								await (
+									input.sleep ??
+									((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+								)(Math.min(5_000, remaining));
+						};
+						const publicReady = async (commit?: string) => {
+							const live =
+								commit === undefined
+									? undefined
+									: commitCheckingProbe(baseProbe, {
+											origin: liveOrigin,
+											commit: commit.toLowerCase(),
+										});
+							try {
+								const request = (path: string) =>
+									(live?.transport ?? baseProbe)({
+										method: "GET",
+										url: `${liveOrigin}${path}`,
+										headers: {},
+										timeoutMs: 10_000,
+										maxResponseBytes: 65_536,
+									});
+								const health = await request("/healthz");
+								const ready = await request("/readyz");
+								if (deadlineAt !== undefined && now() >= deadlineAt)
+									return false;
+								const findings = live?.findings();
+								const servedCommit = parseJsonObject(health.body).commit;
+								return (
+									health.status === 200 &&
+									ready.status === 200 &&
+									commit !== undefined &&
+									findings !== undefined &&
+									isJsonString(servedCommit) &&
+									servedCommit.toLowerCase() === commit.toLowerCase() &&
+									findings.servedCommit === undefined &&
+									findings.healthStatus === undefined &&
+									findings.readyStatus === undefined &&
+									findings.readyzState === undefined &&
+									findings.notReady === undefined
+								);
+							} catch {
+								return false;
+							}
+						};
 						const alreadyPromoted = currentProduction === safe.deploymentId;
 						const recordedRollback = safe.promotedFrom;
 						const previousProduction = alreadyPromoted
@@ -1392,13 +1441,33 @@ export async function runCiRelayDeploy(
 								? recordedRollback
 								: undefined
 							: currentProduction;
-						if (previousProduction === undefined)
+						if (previousProduction === undefined) {
+							if (alreadyPromoted) {
+								let liveReady = false;
+								for (
+									let attempt = 0;
+									attempt < 24 &&
+									(deadlineAt === undefined || now() < deadlineAt);
+									attempt++
+								) {
+									liveReady = await publicReady(sha);
+									if (liveReady) break;
+									await pauseBeforeRetry(attempt);
+								}
+								if (liveReady) return undefined;
+								return {
+									ok: false as const,
+									code: "HOBO_CI_DEPLOY_ROLLBACK_TARGET_UNKNOWN",
+									message: `The staged deployment is already current production, but ${liveOrigin} is not healthy for the pinned commit and no previous production deployment was recorded; manual recovery is required.`,
+								};
+							}
 							return {
 								ok: false as const,
 								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
 								message:
 									"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
 							};
+						}
 						if (!alreadyPromoted) {
 							if (deadlineAt !== undefined && now() >= deadlineAt)
 								return {
@@ -1454,55 +1523,6 @@ export async function runCiRelayDeploy(
 								};
 							}
 						}
-						const pauseBeforeRetry = async (attempt: number) => {
-							const remaining =
-								deadlineAt === undefined ? WAIT_LIMIT_MS : deadlineAt - now();
-							if (attempt < 23 && remaining > 0)
-								await (
-									input.sleep ??
-									((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
-								)(Math.min(5_000, remaining));
-						};
-						const publicReady = async (commit?: string) => {
-							const live =
-								commit === undefined
-									? undefined
-									: commitCheckingProbe(baseProbe, {
-											origin: liveOrigin,
-											commit: commit.toLowerCase(),
-										});
-							try {
-								const request = (path: string) =>
-									(live?.transport ?? baseProbe)({
-										method: "GET",
-										url: `${liveOrigin}${path}`,
-										headers: {},
-										timeoutMs: 10_000,
-										maxResponseBytes: 65_536,
-									});
-								const health = await request("/healthz");
-								const ready = await request("/readyz");
-								if (deadlineAt !== undefined && now() >= deadlineAt)
-									return false;
-								const findings = live?.findings();
-								const servedCommit = parseJsonObject(health.body).commit;
-								return (
-									health.status === 200 &&
-									ready.status === 200 &&
-									commit !== undefined &&
-									findings !== undefined &&
-									isJsonString(servedCommit) &&
-									servedCommit.toLowerCase() === commit.toLowerCase() &&
-									findings.servedCommit === undefined &&
-									findings.healthStatus === undefined &&
-									findings.readyStatus === undefined &&
-									findings.readyzState === undefined &&
-									findings.notReady === undefined
-								);
-							} catch {
-								return false;
-							}
-						};
 						let liveReady = false;
 						for (
 							let attempt = 0;
