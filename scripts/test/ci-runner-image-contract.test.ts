@@ -384,6 +384,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		expect(tools).toEqual([
 			"betterleaks",
 			"cue",
+			"nats-server",
 			"node",
 			"pnpm",
 			"python",
@@ -571,6 +572,7 @@ describe("ci-runner image contract (repo manifests)", () => {
 		const tools = [
 			"betterleaks",
 			"cue",
+			"nats-server",
 			"node",
 			"pnpm",
 			"python",
