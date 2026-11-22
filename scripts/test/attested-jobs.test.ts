@@ -30,7 +30,9 @@ const plan = loadPlan();
 
 /** The condition that skips a job the route job verified a signed local run for. */
 const skipWhenAttested = (job: string) =>
-	`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
+	`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
+const skipWhenAttestedOnGreenRoute = (job: string) =>
+	`!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
 
 describe("the description of the covered jobs", () => {
 	it("pins the workflow and plan reviewed for the shadow skips", () => {
@@ -244,8 +246,12 @@ describe("skipping a covered job in the workflows", () => {
 					);
 					continue;
 				}
+				const skipPattern =
+					id === "release-contract" && path.endsWith("release-hobo.yml")
+						? skipWhenAttestedOnGreenRoute(id)
+						: skipWhenAttested(id);
 				assert.ok(
-					condition.includes(skipWhenAttested(id)),
+					condition.includes(skipPattern),
 					`${path}: ${id} must be skipped when attested, by its own id`,
 				);
 				assert.equal(
@@ -270,6 +276,53 @@ describe("skipping a covered job in the workflows", () => {
 				"attested-jobs: ${{ steps.route.outputs.attested-jobs }}",
 			])
 				assert.ok(route.includes(needed), `${path}: route job lacks ${needed}`);
+		}
+	});
+
+	it("runs required independent jobs on route failure", () => {
+		for (const id of [
+			"pr-offpath",
+			"artifact-trust",
+			"ci-guard",
+			"secret-scan",
+		]) {
+			const condition = plan.find((job) => job.id === id)?.if ?? "";
+			assert.ok(
+				condition.includes(
+					"!cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure')",
+				),
+				id,
+			);
+			assert.ok(condition.includes(skipWhenAttested(id)), id);
+		}
+	});
+
+	it("tracks every release job the route job can skip for an attestation", () => {
+		const text = readFileSync(".github/workflows/release-hobo.yml", "utf8");
+		const skippable = Object.entries(workflowDocument(text).jobs ?? {}).filter(
+			([, job]) => {
+				const condition = asText(asObject(job)?.if) ?? "";
+				return (
+					condition.includes("needs.route.result") &&
+					condition.includes("attested-jobs")
+				);
+			},
+		);
+		assert.deepEqual(
+			skippable.map(([id]) => id),
+			["release-contract"],
+			"only release-contract is attestation-skippable; release-main-train-gate, release-realize and release-hobo-integration gate on needs.route.result but resolve a version or prove things in CI that no local attestation can stand in for",
+		);
+		const normalize = (condition: string) =>
+			condition.replaceAll(/\s+/gu, " ").trim();
+		for (const [id, job] of skippable) {
+			const planned = plan.find((entry) => entry.id === id);
+			if (!planned) continue;
+			assert.equal(
+				normalize(planned.if ?? ""),
+				normalize(asText(asObject(job)?.if) ?? ""),
+				`${id}: the plan's condition drifted from the workflow's`,
+			);
 		}
 	});
 });
@@ -386,6 +439,23 @@ describe("expressions in the description", () => {
 			assert.equal(
 				evaluateExpression(skipWhenAttested(job), context("pull_request")),
 				true,
+			);
+	});
+
+	it("does not skip a covered job for outputs from a failed route", () => {
+		const failedRoute = (path: string) =>
+			path === "needs.route.result"
+				? "failure"
+				: path === "needs.route.outputs.attested"
+					? "true"
+					: path === "needs.route.outputs.attested-jobs"
+						? JSON.stringify(COVERED_JOBS)
+						: "";
+		for (const job of COVERED_JOBS)
+			assert.equal(
+				evaluateExpression(skipWhenAttested(job), failedRoute),
+				true,
+				job,
 			);
 	});
 

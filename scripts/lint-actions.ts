@@ -185,12 +185,11 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-/**
- * What a routed job asks for: the label the `route` job chose (the routing
- * slip's answer, else the queue rule's), and GitHub-hosted when that job did
- * not run, the one tier known to be up.
- */
-const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const ROUTED_RUNS_ON =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
+
+const RELEASE_PAGES_RUNS_ON =
+	"${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
 
 /**
  * What the main gate's shards and finish job ask for: the plan job's second
@@ -225,6 +224,7 @@ export const ROUTING_NAMES: readonly string[] = [
 	"HOBO_CI_FLEET_EXTERNAL_POOLS_JSON",
 	"HOBO_CI_FLEET_REPORTERS_JSON",
 	"HOBO_CI_FLEET_CAPACITY_VOLATILITY_MB",
+	"HOBO_CI_NODE_CPU_PERCENT",
 	"HOBO_CI_TRUNK_HEADROOM_FLEET_DEFER_MS",
 	"HOBO_CI_WORKER_SLOTS",
 	"HOBO_CI_WORKER_TRUNK_SLOTS",
@@ -331,26 +331,23 @@ function isNonPromotingDepsJob(
 	);
 }
 
-/**
- * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
- * chooses the runner, so it cannot wait on one. A hosted job with no `uses:`
- * step is a gate: it runs no repository code, only adds up other jobs' results.
- * PR gates use `always()`; release train gates use `!cancelled()` so a
- * cancelled run does not keep scheduling downstream work.
- */
 function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
 	runsOn: string | undefined,
 ): boolean {
-	if (runsOn !== HOSTED_RUNS_ON) return false;
-	if (/^  route:$/.test(jobLine))
-		return block.some(
-			(line) =>
-				line.trim() === "uses: ./.github/actions/route-runner" ||
-				line.trim() === "uses: $/.github/actions/route-runner" ||
-				line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
+	if (/^  route:$/.test(jobLine)) {
+		return (
+			runsOn === HOSTED_RUNS_ON &&
+			block.some(
+				(line) =>
+					line.trim() === "uses: ./.github/actions/route-runner" ||
+					line.trim() === "uses: $/.github/actions/route-runner" ||
+					line.trim() === "uses: ./.ci-trusted/.github/actions/route-runner",
+			)
 		);
+	}
+	if (runsOn !== HOSTED_RUNS_ON) return false;
 	// The health monitor reads the fleet's record, so it cannot wait on the fleet.
 	if (/^  ci-health:$/.test(jobLine))
 		return block.some((line) =>
@@ -417,7 +414,12 @@ const ATTESTED_HELPER = [
 
 /** The one condition that skips a job for a signed local run: by that job's own id. */
 function skipWhenAttested(jobId: string): string {
-	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+	return `!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+}
+function attestationSkipPattern(jobId: string, file: string): string {
+	if (jobId === "release-contract" && file.endsWith("release-hobo.yml"))
+		return `!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+	return skipWhenAttested(jobId);
 }
 
 /**
@@ -465,14 +467,18 @@ function lintAttestedSkips(
 			errors.push(
 				`${file}:${line}: ${jobId} is not a job a signed local run covers (scripts/ci/attestation.mts), so it must not be skipped for one`,
 			);
-		else if (
-			!condition.includes(skipWhenAttested(jobId)) ||
-			condition.split("attested-jobs").length !== 2 ||
-			condition.split("needs.route.outputs.attested ").length !== 2
-		)
-			errors.push(
-				`${file}:${line}: ${jobId} must be skipped for a signed local run by exactly: ${skipWhenAttested(jobId)}`,
-			);
+		else {
+			const skipPattern = attestationSkipPattern(jobId, file);
+			const fold = (value: string) => value.replaceAll(/\s+/g, " ").trim();
+			if (
+				!fold(condition).includes(fold(skipPattern)) ||
+				condition.split("attested-jobs").length !== 2 ||
+				condition.split("needs.route.outputs.attested ").length !== 2
+			)
+				errors.push(
+					`${file}:${line}: ${jobId} must be skipped for a signed local run by exactly: ${skipPattern}`,
+				);
+		}
 		if (!needsRoute(block))
 			errors.push(
 				`${file}:${line}: a job skipped for a signed local run must need the route job`,
@@ -788,6 +794,7 @@ function lintWorkflowYaml(
 			runsOn !== "hobo" &&
 			runsOn !== TRUNK_RUNS_ON &&
 			runsOn !== ROUTED_RUNS_ON &&
+			runsOn !== RELEASE_PAGES_RUNS_ON &&
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
