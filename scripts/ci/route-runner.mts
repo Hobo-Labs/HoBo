@@ -1095,7 +1095,9 @@ export async function divertSaturatedPrBatch(input: {
 					};
 				return undefined;
 			}
-			if (agent37OverflowUnavailable(observation.overflowRunners) === undefined) {
+			if (
+				agent37OverflowUnavailable(observation.overflowRunners) === undefined
+			) {
 				console.log(
 					`::warning title=hobo-ci-route-fallback::${escapeCommand(`${observation.saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`)}`,
 				);
