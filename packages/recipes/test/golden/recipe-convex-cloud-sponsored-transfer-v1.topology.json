@@ -1,7 +1,7 @@
 {
 	"recipeId": "recipe.convex-cloud.sponsored-transfer/v1",
 	"topologyDigest": "sha256:af4f7a2e5213fab6510cf91f60d337117a7fe5932ecd24f998cab69253f64301",
-	"resolutionDigest": "sha256:c96f709ce21d1c228f32b0f91825f0b9d34b8a9840af06a2a8c1bf5d536c8ff6",
+	"resolutionDigest": "sha256:ee28428f5ce399e8134ad92210230eb8ade83ba2a90347b94f25b47d44528d3b",
 	"topology": {
 		"schemaVersion": "hobo.resolved-topology/v1",
 		"recipeId": "recipe.convex-cloud.sponsored-transfer/v1",

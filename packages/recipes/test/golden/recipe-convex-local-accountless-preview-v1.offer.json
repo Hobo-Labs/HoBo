@@ -1,12 +1,12 @@
 {
 	"schemaVersion": "hobo.deployment-offer/v1",
-	"offerId": "offer/73aef96d5c4f8afd1ee3db5f35e678d35f83e697ebb9abecf6d9e0614b3ecd69",
+	"offerId": "offer/669cba048de59320e68a95366b5889b7870af3e56e0736fd0f0d40cba09ed7c6",
 	"recipeId": "recipe.convex.local-accountless-preview/v1",
 	"deploymentRef": "junction/recipe-convex-local-accountless-preview-v1",
 	"topologyDigest": "sha256:00f3790ebe62e724c87d095a7d2cdf961eb1751e2d854f3961911ad45e24fb95",
-	"resolutionDigest": "sha256:536925e936d4a1a9942decae37a77083f88447f595d6686d3242a0bac88a1a5c",
+	"resolutionDigest": "sha256:429027313f52f1a11a4f713328b5259cbb39887ab69b70ac61fb01ed15d38e7b",
 	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
-	"profileRegistryDigest": "sha256:5c876e208189e2d5d7a0762708c5f59fe1ba2b7c0bb79665a79aa5eebbb029d4",
+	"profileRegistryDigest": "sha256:2f30771a52afed1699d73ffc559857659a6fca848c880f0bbc74d4437488682a",
 	"placements": [
 		{
 			"placementId": "backend",
@@ -67,7 +67,7 @@
 	"signature": {
 		"algorithm": "test.detached-digest/v1",
 		"keyId": "test-key-1",
-		"payloadDigest": "sha256:6b8e9637c9159a3a776c4582b6109a8a3f7e0701b9dd9d61799b2222fee741d3",
-		"signature": "sig:6b8e9637c9159a3a"
+		"payloadDigest": "sha256:eeae9502172b3c87645d5dec157ecb7ba5bd8bdd71e098c369f1a40c793bc715",
+		"signature": "sig:eeae9502172b3c87"
 	}
 }
