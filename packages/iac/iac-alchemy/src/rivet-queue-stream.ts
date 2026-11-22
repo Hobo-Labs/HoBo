@@ -1,4 +1,3 @@
-/** Maximum time to receive a queue request or its complete response. */
 export const RIVET_QUEUE_TIMEOUT_MS = 10_000;
 export const RIVET_QUEUE_CHUNK_BYTES = 65_536;
 
@@ -11,7 +10,6 @@ export class RivetQueueStreamError extends Error {
 	}
 }
 
-/** Keep an asynchronous authority decision from holding a request indefinitely. */
 export async function boundedRivetQueueDecision(
 	decide: () => boolean | Promise<boolean>,
 	signal: AbortSignal,
@@ -35,10 +33,6 @@ export async function boundedRivetQueueDecision(
 	}
 }
 
-/**
- * Read bounded bytes. Non-BYOB streams are accepted only when a trusted host
- * verifies that the entire upstream path enforces both total and chunk limits.
- */
 export async function readRivetQueueStream(
 	body: ReadableStream<Uint8Array> | null,
 	maximum: number,
@@ -84,7 +78,7 @@ export async function readRivetQueueStream(
 		}
 		while (true) {
 			const limit = Math.min(RIVET_QUEUE_CHUNK_BYTES, maximum - total + 1);
-			// SAFETY: the reader type follows the successfully selected mode.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the reader type follows the successfully selected mode.
 			const next = await Promise.race([
 				byob
 					? (reader as ReadableStreamBYOBReader).read(new Uint8Array(limit))

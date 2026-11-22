@@ -324,7 +324,7 @@ async function read(
 				row.eventJson.length > 32_768
 			)
 				throw new Error("corrupt journal event");
-			// SAFETY: the row is parsed and compared with the canonical bounded event encoding.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the row is parsed and compared with the canonical bounded event encoding.
 			const event = JSON.parse(row.eventJson) as FoldEvent;
 			if (encodeDistributedEvent(event) !== row.eventJson)
 				throw new Error("corrupt journal event");
@@ -344,7 +344,6 @@ async function read(
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-/** A RivetKit actor whose SQLite transaction owns leases, fences and facts. */
 export function createRivetSqlJournalActor(verify: RivetJournalVerifier) {
 	if (!(verify instanceof Function))
 		throw new TypeError("a Rivet capability verifier is required");

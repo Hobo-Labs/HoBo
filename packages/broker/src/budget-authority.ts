@@ -183,13 +183,6 @@ function unboundedFingerprint(input: {
 		.digest("hex");
 }
 
-/** Host-enrolled authority for exclusive financial scopes. `verify` authenticates
- * historical attestations and independently establishes globally canonical
- * account IDs across provider aliases. `isCurrent` guarantees ownership is
- * enforced across all budget authorities and billing periods, including those
- * created later, through source retirement and settlement. `settlement`
- * authenticates final usage and permanent source retirement for the exact claim.
- * These pure checks run synchronously inside the ledger transaction. */
 export interface IacUnpricedScopeTrust {
 	verify(proof: IacUnpricedScopeProof): boolean;
 	isCurrent(proof: IacUnpricedScopeProof): boolean;
@@ -200,11 +193,6 @@ export interface IacUnpricedScopeTrust {
 	}): boolean;
 }
 
-/** Independently enrolled verifier for exact priced IaC claims, final usage and
- * permanent retirement of every source that can still incur charges. It must
- * authenticate the evidence and its complete tenant, budget, account, plan,
- * execution and amount scope. This synchronous verification runs inside the
- * budget transaction and must also support historical replay. */
 export interface IacPricedSettlementTrust {
 	verify(input: {
 		reservation: BudgetReservation;
@@ -518,7 +506,6 @@ export interface BudgetAdmissionAuthority {
 		executionDigest: string;
 		/** Head used to revalidate policy and exposure immediately before execution. */
 		expectedSeq?: number;
-		/** Trusted clock. Required when the reservation has unpriced policy proof. */
 
 		now?: string;
 	}): BudgetReservation;
@@ -533,8 +520,6 @@ export interface BudgetAdmissionAuthority {
 		expectedSeq: number;
 		now: string;
 	}): BudgetReservation;
-	/** Journal unknown liability only after an explicit host policy decision.
-	 * The marker is not a monetary bound. It blocks all bounded admissions. */
 
 	reserveUnbounded(input: {
 		reservationId: string;
@@ -1984,8 +1969,6 @@ export function createBudgetAdmissionAuthority(options: {
 				throw new Error(
 					"authoritative usage and confirmed source retirement evidence required",
 				);
-			// Normalize once before verification: the exact evidence authenticated by
-			// the host must be the evidence used for booking and durable replay.
 
 			const proof = clone(
 				BudgetSettlementEvidenceSchema,
@@ -2002,8 +1985,6 @@ export function createBudgetAdmissionAuthority(options: {
 			budgetMicros(actualMicros);
 			const existing = reservations.get(id);
 			if (!existing) throw new Error("unknown budget reservation");
-			// An exact replay is checked against the already authenticated immutable
-			// terminal record; verifiers saw the original live claim when it settled.
 
 			if (
 				existing.status === "settled" &&

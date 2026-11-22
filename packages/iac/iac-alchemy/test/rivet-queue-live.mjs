@@ -120,9 +120,6 @@ try {
 	}
 	if (!ready)
 		throw new Error("Rivet engine did not become ready within 30 seconds");
-	// The host plans the same standalone main that it will bundle and execute.
-	// The test verifier pins the fixture's local source graph; a production host
-	// must independently fence the complete dependency and artifact closure.
 	const main = fileURLToPath(
 		new URL("./fixtures/rivet-queue-main.mjs", import.meta.url),
 	);
@@ -146,8 +143,6 @@ try {
 	};
 	const sourceDigest = hashSources();
 	let poolMain;
-	// This test host records the entrypoint selected by Alchemy. It does not
-	// exercise Alchemy's real PoolHost layer or a provider-deployed pool.
 	const poolHost = {
 		deployExternal: ({ main: selected }) =>
 			Effect.sync(() => {
@@ -262,8 +257,6 @@ try {
 	if (plan.changes !== 1 || poolMain !== main)
 		throw new Error("Alchemy selected the wrong pool main");
 
-	// Mirror beta.87's external PoolHost bundle options. The resulting program
-	// runs in a separate process against this isolated Rivet engine.
 	const bundleDirectory = join(process.cwd(), "pool");
 	await mkdir(bundleDirectory);
 	await symlink(

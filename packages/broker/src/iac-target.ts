@@ -769,7 +769,6 @@ export async function admitIacTarget(
 				error.message,
 				error.code === "budget.settlement-unavailable",
 			);
-		// A persistence failure may have committed despite a lost acknowledgement.
 		return uncertain(
 			requestId,
 			targetId,

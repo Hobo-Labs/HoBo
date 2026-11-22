@@ -33,7 +33,7 @@ it("runs the Alchemy-selected queue entrypoint in a standalone Rivet process", {
 						process.kill(-child.pid, "SIGKILL");
 					else child.kill("SIGKILL");
 				} catch (error) {
-					// SAFETY: process signaling errors carry Node's errno code.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: process signaling errors carry Node's errno code.
 					if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
 				}
 			};

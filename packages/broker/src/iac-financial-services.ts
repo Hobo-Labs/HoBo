@@ -60,7 +60,6 @@ export type IacAdmissionPath =
 	  }
 	| { readonly kind: "unavailable"; readonly code: string };
 
-/** Structural receipt accepted from an IaC adapter before provider execution. */
 export interface IacRevalidationReceipt {
 	readonly requestId: string;
 	readonly targetId: string;

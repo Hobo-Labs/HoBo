@@ -17,7 +17,6 @@ type NativeMetadata = {
 	readonly customMetadata?: Record<string, string>;
 };
 
-/** The app holds a service binding; this private Worker alone holds the R2 binding. */
 export interface CloudflareR2ProxyEnvironment {
 	readonly HOBO_R2_ALLOW: string;
 	readonly HOBO_R2_BUCKET: {
@@ -65,7 +64,6 @@ function cancel(body: ReadableStream<Uint8Array>): void {
 	void body.cancel().catch(() => {});
 }
 
-/** A timeout does not cancel the provider operation; callers retain an unknown outcome. */
 async function waitForNative<T>(
 	operation: Promise<T>,
 	onLateValue?: (value: T) => void,

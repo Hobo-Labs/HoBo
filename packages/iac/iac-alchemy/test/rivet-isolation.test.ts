@@ -22,8 +22,8 @@ const stack = () => ({
 });
 
 function execute<A, E, R>(effect: Effect.Effect<A, E, R>, target = stack()) {
-	// SAFETY: the test supplies the Alchemy stack and PoolHost used by these constructors.
 	return Effect.runPromise(
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test supplies the Alchemy stack and PoolHost used by these constructors.
 		effect.pipe(Effect.provideService(StackContext, target)) as Effect.Effect<
 			A,
 			E,
@@ -46,8 +46,6 @@ function mapped(name: string, kind: "api" | "service" | "web") {
 		kind,
 		actorName: "web",
 		sourceDigest,
-		// This stub tests declaration isolation only; production hosts must
-		// independently fence the exact source closure and deployed artifact.
 		sourceFence: {
 			sourceDigest,
 			environmentDigest: `sha256:${"b".repeat(64)}`,

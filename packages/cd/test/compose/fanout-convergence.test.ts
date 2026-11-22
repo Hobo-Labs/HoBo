@@ -271,7 +271,6 @@ async function station(
 	rail: Readonly<{ maxFanoutCamps: number }> = { maxFanoutCamps: 10 },
 ): Promise<Station> {
 	const c = clock(T0);
-	// An in-memory SQLite journal exercises subscription leases and stream-head CAS.
 	const store = new SqliteJournal(createMemoryNodeSqliteDriver(), {
 		clock: { now: () => new Date(c.now()).toISOString() },
 	});

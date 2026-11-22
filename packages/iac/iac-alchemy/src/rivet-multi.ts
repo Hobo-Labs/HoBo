@@ -11,19 +11,11 @@ import { verifyAlchemySourceFence } from "./source-fence.js";
 
 export interface RivetPoolSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly source: RivetHttpSource<Entrypoint>;
-	/** Digest of the canonical physical pool identity, including its account and namespace. */
 	readonly poolDigest: string;
-	/** Digest of the host's exclusive runner isolation domain; Rivet Cloud uses its cluster. */
 	readonly isolationDigest: string;
 	readonly poolHost: PoolHost["Service"];
 }
 
-/**
- * Verify that the named host uses exactly this physical pool, that the digest
- * and runner isolation domain identify them canonically, and that this external
- * program exclusively owns them. The host must perform this check independently
- * of application input.
- */
 export type RivetPoolVerifier<Entrypoint extends RivetHttpEntrypoint> = (
 	entry: RivetPoolSource<Entrypoint>,
 ) => boolean;
@@ -43,10 +35,6 @@ type BuildInput<
 	Requirements,
 > = Parameters<SingleMapper<Entrypoint, Requirements>["build"]>[0];
 
-/**
- * One external Rivet program owns a whole Alchemy pool. Map multiple apps only
- * when a host independently attests a different exclusive pool for each one.
- */
 /* oxlint-disable anti-slop/no-runtime-typeof, anti-slop/no-reflect-apply -- SAFETY: pool services cross a provider boundary, and Reflect.apply avoids mutable function.call properties. */
 export function createRivetMultiPoolPrimitiveMappers<
 	Entrypoint extends RivetHttpEntrypoint,
@@ -108,9 +96,6 @@ export function createRivetMultiPoolPrimitiveMappers<
 			isolationDigest,
 			poolHost: host,
 		});
-		// The source claim is also the plan/apply revalidation hook. Carry
-		// exclusive pool and runner ownership through every such check, not only
-		// through the initial pool selection.
 		const fencedSource = Object.freeze({
 			...source,
 			sourceFence: Object.freeze({

@@ -42,7 +42,6 @@ export interface IacUnpricedAuthorizationInput {
 	readonly now: string;
 }
 
-/** A trusted host must explicitly authorize budget bypass for this exact target. */
 export type IacUnpricedAuthorizer = (input: IacUnpricedAuthorizationInput) =>
 	| {
 			gate: GateDecision;
@@ -108,7 +107,6 @@ function uncertain(
 	return result;
 }
 
-/** Admit an explicitly selected unpriced target without claiming a financial bound. */
 /* oxlint-disable anti-slop/no-runtime-typeof -- SAFETY: external request fields are checked before access or authority work. */
 export async function admitUnpricedIacTarget(
 	input: {

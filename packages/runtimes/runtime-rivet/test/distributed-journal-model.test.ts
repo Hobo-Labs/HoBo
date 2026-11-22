@@ -6,7 +6,6 @@ import {
 	transitionDistributedJournal,
 } from "../src/distributed-journal.js";
 
-/** Exhaust the finite scenario universe, retaining only distinct reachable states. */
 function commands(): DistributedJournalCommand[] {
 	const result: DistributedJournalCommand[] = [];
 	for (const nowMs of [1_000, 2_000, 31_000, 32_000]) {

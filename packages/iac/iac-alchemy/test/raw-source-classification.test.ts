@@ -64,8 +64,8 @@ function fixture(
 		CloudflareProviders,
 		Provider.collection([Worker]),
 	).pipe(
-		// SAFETY: the real Worker resource is used only to install a no-effect test provider; its reconcile must never run during preview.
 		Layer.provide(
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the real Worker resource is used only to install a no-effect test provider; its reconcile must never run during preview.
 			Provider.succeed(Worker as never, {
 				reconcile: () =>
 					Effect.sync(() => {

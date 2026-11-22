@@ -36,8 +36,6 @@ function fixture(directory: string) {
 	const dependency = join(directory, "dependency.js");
 	writeFileSync(main, 'import "./dependency.js"; export default {};');
 	writeFileSync(dependency, "export const value = 1;");
-	// The verifier models a trusted host's fenced closure. Production hosts must
-	// hold the immutable sandbox/artifact fence; hashing at check time alone does not.
 	const digest = () =>
 		`sha256:${createHash("sha256")
 			.update(

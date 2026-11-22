@@ -45,7 +45,6 @@ export interface RivetPrimitiveSupport extends AlchemyPrimitiveSupport {
 	readonly reason: string;
 }
 
-/** Describe the selected Rivet mappings against every supplied HoBo catalog entry. */
 export function describeRivetPrimitiveSupport<
 	Entrypoint,
 	Requirements,

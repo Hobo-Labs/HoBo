@@ -35,13 +35,10 @@ export interface RivetHttpSource<Entrypoint extends RivetHttpEntrypoint> {
 	readonly resourceName: string;
 	readonly kind: "api" | "web" | "service";
 	readonly actorName: string;
-	/** Independently verified by the host and bound to the reviewed target. */
 	readonly sourceDigest: string;
-	/** Host-enforced immutable source, dependency, toolchain and artifact fence. */
 	readonly sourceFence: AlchemySourceFence;
 	readonly registry: RivetRegistry;
 	readonly binding: RivetHttpBinding<Entrypoint>;
-	/** Independently verify that the reviewed module exports and starts this exact registry. */
 	readonly verifySource: (source: {
 		readonly main: string;
 		readonly sourceDigest: string;
@@ -61,7 +58,6 @@ function name(value: string): boolean {
 	);
 }
 
-/** Bind an external RivetKit program to the actor it actually registers. */
 export function bindRivetHttpSource<Entrypoint extends RivetHttpEntrypoint>(
 	input: RivetHttpSource<Entrypoint>,
 ): RivetHttpSource<Entrypoint> {
@@ -135,7 +131,6 @@ interface ValidationInput<Entrypoint, Requirements> {
 	>;
 }
 
-/** Map one HTTP application to Alchemy's real external Rivet DurableObject. */
 export function createRivetPrimitiveMappers<
 	Entrypoint extends RivetHttpEntrypoint,
 	Requirements,
@@ -160,9 +155,7 @@ export function createRivetPrimitiveMappers<
 		let verified = false;
 		try {
 			verified = verifyAlchemySourceFence(source.sourceFence, claim);
-		} catch {
-			// The verifier is a trusted host boundary; its failure denies deployment.
-		}
+		} catch {}
 		if (verified !== true)
 			throw new AlchemyIacError(
 				"RIVET_SOURCE_UNVERIFIED",

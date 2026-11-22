@@ -265,7 +265,6 @@ export interface ResourceActorDeps {
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
-	/** Trusted host guarantees this generation cannot overlap or duplicate prior effects. */
 	verifyResume?: (input: {
 		readonly tenant: string;
 		readonly deploymentId: string;
@@ -326,7 +325,6 @@ export function iacProgramFor(
 	};
 }
 
-/** A generation cannot be reused within a deployment's durable history. */
 function newOperationGeneration(events: readonly EventEnvelope[]): string {
 	const prior = new Set<string>();
 	for (const event of events)
@@ -388,7 +386,6 @@ function latestOperation(
 	return undefined;
 }
 
-/** Return only the generation bound to this exact durable in-flight apply. */
 export function pendingApplyGeneration(
 	events: readonly EventEnvelope[],
 	resource: ResourcePlan,

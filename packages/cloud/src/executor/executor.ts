@@ -26,7 +26,6 @@ export interface IacProgram {
 	driver: string;
 	action: "preview" | "apply" | "destroy";
 	stackName: string;
-	/** Durable orchestrator-issued generation, stable across retries of one operation. */
 	operationGeneration?: string;
 	/** The declaration the provider must realize, when supplied by the orchestrator. */
 	resource?: ResourcePlan;
@@ -182,7 +181,6 @@ function hashRef(value: HashRefInput): string {
 	return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
 }
 
-/** Identify one execution generation while retaining legacy IDs for older callers. */
 export function iacExecutionId(program: IacProgram): string {
 	const digest =
 		program.operationGeneration === undefined
@@ -350,8 +348,6 @@ function readProviderFailure(error: unknown): ProviderFailure {
 			error !== null &&
 			"requiresReconciliation" in error &&
 			error.requiresReconciliation === true;
-		// The injected provider is a trusted port; its explicit not-started
-		// assertion must itself be backed by the host's no-effect authority.
 		const provesNotStarted =
 			typeof error === "object" &&
 			error !== null &&

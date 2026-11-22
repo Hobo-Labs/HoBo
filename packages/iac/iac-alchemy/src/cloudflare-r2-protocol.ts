@@ -1,4 +1,3 @@
-/** Bounded JavaScript R2 object subset; this is not the WASI blobstore interface. */
 export const CLOUDFLARE_R2_MAX_KEY_BYTES = 512;
 export const CLOUDFLARE_R2_MAX_CONTENT_TYPE_BYTES = 512;
 export const CLOUDFLARE_R2_MAX_OBJECT_BYTES = 1_048_576;
@@ -18,7 +17,6 @@ export class CloudflareR2Error extends Error {
 	}
 }
 
-/** R2 keys pass through unchanged; headers carry their canonical URI encoding. */
 export function encodeCloudflareR2Key(key: string): string {
 	if (
 		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: callers cross the application runtime boundary. */
@@ -60,7 +58,6 @@ export function decodeCloudflareR2Key(input: string | null): string {
 	}
 }
 
-/** Restrict HTTP metadata to printable ASCII: HTTP content types are not arbitrary Unicode. */
 export function encodeCloudflareR2ContentType(value: string): string {
 	if (
 		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: metadata crosses the runtime boundary. */
@@ -141,7 +138,6 @@ export async function cloudflareR2Digest(bytes: ArrayBuffer): Promise<string> {
 	}
 }
 
-/** Stop and cancel oversized, stalled, or excessive-chunk streams before buffering more. */
 export async function readCloudflareR2Bytes(
 	body: ReadableStream<Uint8Array> | null,
 ): Promise<ArrayBuffer> {
@@ -209,7 +205,6 @@ export async function readCloudflareR2Bytes(
 	return result.buffer;
 }
 
-/** Snapshot and validate the exact grant before deriving a proxy identity. */
 export function cloudflareR2Grant(
 	allow: readonly string[],
 	grantEpoch: string,
@@ -262,7 +257,6 @@ export function cloudflareR2Grant(
 	});
 }
 
-/** Target-specific selection; the provider-neutral Bindle remains unchanged. */
 export function cloudflareR2Option(grant: CloudflareR2Grant) {
 	if (
 		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: the target choice crosses an application boundary. */

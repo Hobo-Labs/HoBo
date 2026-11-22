@@ -46,13 +46,13 @@ import {
 	type IacRoutePermit,
 } from "../packages/dispatcher/src/iac-route.js";
 import { createSqliteIacRouteAuthority } from "../packages/dispatcher/src/iac-route-sqlite.js";
-import { executeUnpricedIacTarget } from "../packages/dispatcher/src/iac-unpriced-routing.js";
 import {
 	executeRankedIacTargets,
 	type IacRoutingAdmission,
 	type IacRoutingExpectation,
 	rankIacTargets,
 } from "../packages/dispatcher/src/iac-target-routing.js";
+import { executeUnpricedIacTarget } from "../packages/dispatcher/src/iac-unpriced-routing.js";
 import {
 	type AlchemyCompositeEnvironment,
 	type AlchemyCompositeObservation,
@@ -259,7 +259,6 @@ function setup(
 	const authority = createSqliteBudgetAdmissionAuthority({
 		path: join(work, "budget.sqlite"),
 		now: () => NOW,
-		// This fixture never settles: its verifier refuses all settlement claims.
 		iacPricedSettlementTrust: { verify: () => false },
 		unpricedScopeTrust: {
 			verify: (proof) => proof.signature === "scope-signature",
@@ -505,8 +504,6 @@ function setup(
 		composite: {
 			proofRef: "host:fixture-attestation",
 			environmentDigest: `sha256:${"e".repeat(64)}`,
-			// The test RunnerPool provider never reads or builds `main`. A real
-			// source-building host must independently attest and list its sources.
 			sourceRequirements: [],
 			verifyEnvironment: (input: AlchemyCompositeEnvironment) =>
 				input.tenantId === "tenant-a" &&

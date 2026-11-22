@@ -230,9 +230,9 @@ function readSnapshot(
 			if (encoded === undefined) return undefined;
 			bytes += Buffer.byteLength(encoded);
 			if (bytes > 524_288) return undefined;
-			// SAFETY: the canonical encoder accepts only a bounded valid FoldEvent.
 			result.push({
 				eventId: eventId.value,
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the canonical encoder accepts only a bounded valid FoldEvent.
 				event: JSON.parse(encoded) as FoldEvent,
 			});
 			ids.add(eventId.value);
@@ -249,7 +249,6 @@ function readSnapshot(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof */
 
-/** Shared lease and journal client. Credentials must be scoped by the host. */
 export function createRivetDistributedJournal(
 	namespace: RivetJournalNamespace,
 	scope: {
@@ -426,7 +425,7 @@ export function createRivetDistributedJournal(
 			const encoded = encodeDistributedEvent(event);
 			if (encoded === undefined)
 				throw new TypeError("invalid Rivet journal event");
-			// SAFETY: the canonical encoder validates the bounded event before copying it.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the canonical encoder validates the bounded event before copying it.
 			const snapshot = JSON.parse(encoded) as FoldEvent;
 			const remote = handle(key);
 			const proof = await authorize(key, "append", {

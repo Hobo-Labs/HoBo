@@ -51,7 +51,6 @@ const moduleWithoutWorker = join(
 	dirname(fileURLToPath(import.meta.url)),
 	"fixtures/cloudflare-app.ts",
 );
-// The integration harness stubs the trusted host fence; production hosts must enforce it.
 const sourceFence = {
 	sourceDigest: `sha256:${"a".repeat(64)}`,
 	environmentDigest: `sha256:${"b".repeat(64)}`,

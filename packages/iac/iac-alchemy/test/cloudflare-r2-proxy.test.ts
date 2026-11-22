@@ -262,7 +262,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 					cancelled = true;
 				},
 			});
-			// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 			const input = new Request(`https://hobo-r2.internal/${operation}`, {
 				method: "POST",
 				headers: { "x-hobo-r2-key": "key" },
@@ -281,7 +281,7 @@ describe("bounded private Cloudflare R2 proxy", () => {
 				cancelled = true;
 			},
 		});
-		// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 		const input = new Request("https://hobo-r2.internal/write", {
 			method: "POST",
 			headers: { "x-hobo-r2-key": "key" },

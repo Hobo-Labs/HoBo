@@ -4,7 +4,6 @@ import {
 	readCloudflareKvBytes,
 } from "./cloudflare-kv-protocol.js";
 
-/** The host Worker holds the native namespace; the application receives only a service binding. */
 export interface CloudflareKvProxyEnvironment {
 	readonly HOBO_KV_MODE: "read-only" | "write-only";
 	readonly HOBO_KV_ALLOW: "get" | "set" | "delete" | "delete,set";
@@ -91,7 +90,6 @@ export const cloudflareKvProxy = {
 		} catch (error) {
 			if (error instanceof CloudflareKvError)
 				return new Response(null, { status: 413 });
-			// A failed write response can be ambiguous; the caller must not retry blindly.
 			return new Response(null, { status: 502 });
 		}
 	},

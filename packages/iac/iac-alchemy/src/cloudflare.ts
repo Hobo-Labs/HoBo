@@ -30,17 +30,13 @@ import {
 } from "./source-fence.js";
 
 export interface CloudflareBindleMappingOptions {
-	/** Resource name to source module. The module must default-export bindleCloudflareWorker for that entrypoint. */
 	readonly workerModules: Readonly<Record<string, string>>;
-	/** Trusted source tree containing framework application roots. Defaults to the current directory. */
 	readonly projectRoot?: string;
-	/** Trusted host authority, required for every executable application source. */
 	readonly sourceFence?: AlchemySourceFence;
 }
 
 const viteEntrypoints = new WeakMap<CloudflareBindleEntrypoint, string>();
 
-/** Declare a Vite application's source as the web entrypoint of a Bindle. */
 export function cloudflareViteApp(root: string): () => never {
 	const entrypoint = (): never => {
 		throw new Error("Vite applications are served by their framework runtime");
@@ -102,7 +98,6 @@ export interface CloudflarePrimitiveSupport extends AlchemyPrimitiveSupport {
 	readonly reason: string;
 }
 
-/** Describe every supplied catalog entry, including kinds this provider cannot map. */
 export function describeCloudflarePrimitiveSupport(
 	catalog: readonly {
 		readonly factory: string;
@@ -120,7 +115,6 @@ export function describeCloudflarePrimitiveSupport(
 	}));
 }
 
-/** Map supported HoBo declarations to real Alchemy Cloudflare resources. */
 export function cloudflareBindleMappers<Requirements>(
 	options: CloudflareBindleMappingOptions,
 ) {
@@ -334,7 +328,7 @@ export function cloudflareBindleMappers<Requirements>(
 							"BINDLE_GRAPH_UNSUPPORTED",
 							`invalid native binding for ${binding.name}`,
 						);
-					// SAFETY: the dependency's Alchemy resource type was checked above.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the dependency's Alchemy resource type was checked above.
 					bindings[binding.env] = dependency as Worker;
 				}
 				const primary = yield* Worker(input.declaration.name, {

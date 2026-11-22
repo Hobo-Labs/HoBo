@@ -17,14 +17,12 @@ export interface CloudflareR2Object {
 	readonly body: Uint8Array;
 }
 
-/** Provider-specific JavaScript subset; no events, presigning, streaming or WASI guest binding. */
 export interface CloudflareR2Store {
 	read(name: string): Promise<CloudflareR2Object | undefined>;
 	write(object: CloudflareR2Object): Promise<void>;
 	delete(name: string): Promise<void>;
 }
 
-/** This client receives only the private service binding, never native R2 access. */
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-runtime-typeof, anti-slop/no-reflect-get, anti-slop/no-reflect-apply -- SAFETY: the Workers service binding and application object cross external runtime boundaries and are validated here. */
 export function createCloudflareR2Store(
 	service: unknown,

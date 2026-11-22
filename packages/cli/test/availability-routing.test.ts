@@ -248,7 +248,6 @@ describe("availability-aware up", () => {
 			executionDigest: "execute-neon",
 		});
 		expect(authority.read(now).reservedMicros).toBe(60);
-		// Independently reopen the durable budget journal before the retry.
 		const reopened = createSqliteBudgetAdmissionAuthority({
 			path: budgetPath,
 			snapshot,

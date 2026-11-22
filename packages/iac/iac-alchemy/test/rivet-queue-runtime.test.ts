@@ -37,7 +37,7 @@ function fixture(path = ":memory:") {
 		await before;
 		sql.exec("BEGIN IMMEDIATE");
 		try {
-			// SAFETY: the transaction callback uses only the SQL execute member in this fixture.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the transaction callback uses only the SQL execute member in this fixture.
 			const value = await run({ execute } as RawAccess);
 			sql.exec("COMMIT");
 			return value;
@@ -48,7 +48,7 @@ function fixture(path = ":memory:") {
 			release();
 		}
 	};
-	// SAFETY: the actor under test uses only execute and transaction from this fixture.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the actor under test uses only execute and transaction from this fixture.
 	const database = { execute, transaction } as RawAccess;
 	const binding = createRivetQueueActor({
 		actorName: "jobs",
@@ -455,7 +455,7 @@ it("refuses an unverified native request stream before any database transaction"
 			cancelled = true;
 		},
 	});
-	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 	const request = new Request("https://queue.test/enqueue", {
 		method: "POST",
 		headers: { authorization: "test" },
@@ -495,7 +495,7 @@ it("accepts a native request only after host verifies the exact ingress bounds",
 			controller.close();
 		},
 	});
-	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 	const request = new Request("https://queue.test/enqueue", {
 		method: "POST",
 		body: stream,
@@ -534,7 +534,7 @@ it("rejects a trusted-ingress violation with an oversized chunk before mutation"
 			cancelled = true;
 		},
 	});
-	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 	const request = new Request("https://queue.test/enqueue", {
 		method: "POST",
 		body: stream,
@@ -562,7 +562,7 @@ it("times out and cancels a stalled actor request before mutation", async () => 
 			cancelled = true;
 		},
 	});
-	// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 	const request = new Request("https://queue.test/enqueue", {
 		method: "POST",
 		headers: { authorization: "test" },
@@ -716,7 +716,7 @@ it("reports failed ingress verification as unavailable and never opens a transac
 				cancelled = true;
 			},
 		});
-		// SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: Node requires duplex for streaming request bodies, which the DOM RequestInit type omits.
 		const request = new Request("https://queue.test/enqueue", {
 			method: "POST",
 			body: stream,

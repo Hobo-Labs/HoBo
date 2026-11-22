@@ -1,4 +1,3 @@
-/** Bounded JavaScript subset of Cloudflare Workers KV, not a WASI guest binding. */
 export const CLOUDFLARE_KV_MAX_KEY_BYTES = 512;
 export const CLOUDFLARE_KV_MAX_VALUE_BYTES = 1_048_576;
 
@@ -6,13 +5,10 @@ export type CloudflareKvMode = "read-only" | "write-only";
 export type CloudflareKvOperation = "get" | "set" | "delete";
 export interface CloudflareKvGrant {
 	readonly mode: CloudflareKvMode;
-	/** Host-issued per-incarnation identity; never reuse after a grant is retired. */
 	readonly grantEpoch: string;
-	/** Host-issued stable identity for this namespace incarnation. */
 	readonly namespaceEpoch: string;
 }
 
-/** Normalize the exact grant used by the proxy identity and Worker environment. */
 export function cloudflareKvGrant(
 	mode: CloudflareKvMode,
 	grantEpoch: string,
@@ -78,7 +74,6 @@ export function cloudflareKvGrant(
 	});
 }
 
-/** Explicitly opt into the provider's eventual, JavaScript-only subset. */
 export function cloudflareEventualKv(grant: CloudflareKvGrant) {
 	/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: adapter options are an external input. */
 	if (typeof grant !== "object" || grant === null || Array.isArray(grant))
@@ -136,7 +131,6 @@ export class CloudflareKvError extends Error {
 	}
 }
 
-/** Preserve native keys exactly; reject invalid Unicode and native key limits. */
 export function encodeCloudflareKvKey(key: string): string {
 	if (
 		/* oxlint-disable-next-line anti-slop/no-runtime-typeof -- SAFETY: application values cross the runtime boundary. */
@@ -177,7 +171,6 @@ export function decodeCloudflareKvKey(input: string | null): string {
 	}
 }
 
-/** Stop reading an oversized or unbounded stream before buffering it. */
 export async function readCloudflareKvBytes(
 	body: ReadableStream<Uint8Array> | null,
 ): Promise<ArrayBuffer> {

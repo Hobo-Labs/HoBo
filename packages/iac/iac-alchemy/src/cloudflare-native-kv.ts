@@ -44,7 +44,6 @@ export interface CloudflareKvGrantClaim {
 	readonly allow: readonly string[];
 }
 
-/** Resolve a stable namespace identity. The host must independently authenticate ownership. */
 export function cloudflareKvNamespaceClaim(
 	bindleName: string,
 	resourceName: string,
@@ -72,7 +71,6 @@ export function cloudflareKvNamespaceClaim(
 	});
 }
 
-/** Exact private Worker identity for the host's independently authenticated source inventory. */
 export function cloudflareKvProxySource(
 	bindleName: string,
 	resourceName: string,
@@ -135,20 +133,9 @@ export function cloudflareKvProxySource(
 	});
 }
 
-/**
- * Opt in to a bounded, eventual JavaScript KV subset. The native namespace is
- * held by a private service Worker, never by the application Worker.
- */
 export function cloudflareNativeKvBindleMappers<Requirements>(
 	options: CloudflareBindleMappingOptions & {
-		/**
-		 * Trusted host authority, bound by its closure to the exact tenant,
-		 * target, stack, stage and provider account. Authenticate namespace
-		 * ownership and migration and fence them through provider completion.
-		 * The host composite guard must independently match that scope.
-		 */
 		readonly verifyNamespace: (claim: CloudflareKvNamespaceClaim) => boolean;
-		/** Authenticate grant ownership, exact permissions, epoch non-reuse and retirement. */
 		readonly verifyGrant: (claim: CloudflareKvGrantClaim) => boolean;
 	},
 ) {

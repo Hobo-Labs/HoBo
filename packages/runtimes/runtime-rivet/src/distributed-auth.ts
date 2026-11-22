@@ -7,8 +7,7 @@ export type RivetJournalAction =
 	| "append"
 	| "read";
 
-// SAFETY: action arguments and signed capabilities are untrusted Rivet RPC data.
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: action arguments and signed capabilities are untrusted Rivet RPC data. */
 export interface RivetOperation {
 	readonly actorKey: readonly string[];
 	readonly action: RivetJournalAction;
@@ -144,7 +143,6 @@ function encoded(value: unknown): string {
 
 const ACTIONS = new Set(["acquire", "check", "release", "append", "read"]);
 
-/** Digest the server-observed actor key and the exact decoded operation arguments. */
 export function computeRivetOperationDigest(operation: RivetOperation): string {
 	try {
 		if (
@@ -187,7 +185,6 @@ function signable(claims: RivetCapabilityClaims): Buffer {
 	return Buffer.from(`hobo.rivet.capability.v1\0${encoded(claims)}`);
 }
 
-/** Station-owned issuer. The private key must not be exposed to a deployed actor. */
 export function issueRivetCapability(
 	input: RivetOperation &
 		Omit<RivetCapabilityClaims, "version" | "scopeDigest">,
@@ -276,7 +273,6 @@ export interface RivetCapabilityVerifierOptions {
 	readonly publicKey: KeyObject;
 	readonly nowMs: () => number;
 	readonly maxTtlMs?: number;
-	/** Independent host policy and revocation check on the verified identity and scope. */
 	readonly authorize: (input: {
 		readonly claims: RivetCapabilityClaims;
 		readonly actorKey: readonly string[];
@@ -284,7 +280,6 @@ export interface RivetCapabilityVerifierOptions {
 	}) => boolean | Promise<boolean>;
 }
 
-/** Verify cryptography, exact actor/action/arguments, freshness and current host policy. */
 export function createRivetCapabilityVerifier(
 	options: RivetCapabilityVerifierOptions,
 ) {

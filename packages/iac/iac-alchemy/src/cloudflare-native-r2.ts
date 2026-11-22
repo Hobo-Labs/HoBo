@@ -39,7 +39,6 @@ export interface CloudflareR2BucketClaim {
 	readonly resourceName: string;
 	readonly bucketEpoch: string;
 	readonly resourceId: string;
-	/** Previous infrastructure-only mapping used this bare logical ID. */
 	readonly legacyResourceId: string;
 }
 
@@ -50,7 +49,6 @@ export interface CloudflareR2GrantClaim {
 	readonly allow: readonly string[];
 }
 
-/** Stable, scoped native bucket identity; the host authenticates ownership and migration. */
 export function cloudflareR2BucketClaim(
 	bindleName: string,
 	resourceName: string,
@@ -88,7 +86,6 @@ export function cloudflareR2BucketClaim(
 	});
 }
 
-/** Exact isolated proxy identity for the independently authenticated source inventory. */
 export function cloudflareR2ProxySource(
 	bindleName: string,
 	resourceName: string,
@@ -152,14 +149,10 @@ export function cloudflareR2ProxySource(
 	});
 }
 
-/** Map the opt-in JavaScript subset to native Alchemy R2 and a private proxy. */
 export function cloudflareNativeR2BindleMappers<Requirements>(
 	options: CloudflareBindleMappingOptions & {
-		/** Independently authenticate and fence exact bucket ownership and any migration in the host's tenant/account/stack scope. */
 		readonly verifyBucket: (claim: CloudflareR2BucketClaim) => boolean;
-		/** Independently authenticate the exact current, nonreused grant incarnation. */
 		readonly verifyGrant: (claim: CloudflareR2GrantClaim) => boolean;
-		/** Optional; include the eventual KV mapper in the same application view. */
 		readonly kv?: {
 			readonly verifyNamespace: (claim: CloudflareKvNamespaceClaim) => boolean;
 			readonly verifyGrant: (claim: CloudflareKvGrantClaim) => boolean;

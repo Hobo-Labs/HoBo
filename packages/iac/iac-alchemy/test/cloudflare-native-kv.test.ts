@@ -377,11 +377,11 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 							headers: { "x-hobo-kv-key": "key" },
 						}),
 						{
-							// SAFETY: the test deliberately sends malformed external bindings.
 							HOBO_KV_MODE:
+								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the test deliberately sends malformed external bindings.
 								mode as CloudflareKvProxyEnvironment["HOBO_KV_MODE"],
-							// SAFETY: malformed grant strings are intentional negative cases.
 							HOBO_KV_ALLOW:
+								// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: malformed grant strings are intentional negative cases.
 								grant as CloudflareKvProxyEnvironment["HOBO_KV_ALLOW"],
 							HOBO_KV_NAMESPACE: native.binding,
 						},
@@ -701,8 +701,6 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					}),
 				delete: () => Effect.void,
 			});
-			// SAFETY: beta.87's overloaded Worker constructor is the real class;
-			// its generic overload is narrower than Provider.succeed's test port.
 			/* oxlint-disable anti-slop/no-chained-type-assertions -- SAFETY: this provider is a narrowly scoped test double for beta.87's overloaded Worker class. */
 			const workerProvider = Provider.succeed(
 				Worker as unknown as ResourceClass<Worker>,
@@ -710,8 +708,7 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 					reconcile: ({ news, bindings, fqn }) =>
 						Effect.sync(() => {
 							created.push({ type: Worker.Type, news, bindings });
-							// SAFETY: this in-memory test provider only resolves the workerName
-							// consumed by the real service-binding implementation.
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this in-memory test provider only resolves the workerName
 							return {
 								...news,
 								workerName: fqn,
@@ -1027,8 +1024,6 @@ describe("Cloudflare eventual KV JavaScript subset", () => {
 			});
 			expect(await result.text()).toBe("hello");
 
-			// Regranting must create a new proxy; the old app may still hold the
-			// old service binding, which must never acquire the new write grant.
 			const writerGrant = {
 				mode: "write-only" as const,
 				grantEpoch: `sha256:${"2".repeat(64)}`,

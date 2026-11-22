@@ -320,7 +320,6 @@ export async function runCompensation(
 					pendingOperations,
 				};
 
-			// The resource actor writes the durable destroy identity under its lease.
 			const outcome = await destroyResource(
 				actorDeps,
 				{ ...resource, deploymentId },

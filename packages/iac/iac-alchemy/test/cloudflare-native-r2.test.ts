@@ -276,7 +276,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 				reconcile: ({ news, fqn }) =>
 					Effect.sync(() => {
 						created.push({ type: Bucket.Type, fqn, news });
-						// SAFETY: this in-memory provider resolves the native bucket name and jurisdiction used by Worker bindings.
+						// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this in-memory provider resolves the native bucket name and jurisdiction used by Worker bindings.
 						return {
 							...news,
 							bucketName: fqn,
@@ -321,7 +321,7 @@ describe("Cloudflare R2 Bindle mapping", () => {
 					reconcile: ({ news, bindings, fqn }) =>
 						Effect.sync(() => {
 							created.push({ type: Worker.Type, fqn, news, bindings });
-							// SAFETY: this fake resolves only the workerName consumed by the service binding.
+							// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this fake resolves only the workerName consumed by the service binding.
 							return {
 								...news,
 								workerName: fqn,

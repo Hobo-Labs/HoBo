@@ -13,8 +13,6 @@ import {
 	readRivetQueueStream,
 } from "./rivet-queue-stream.js";
 
-/** Async queue operations provided by a Rivet actor. The synchronous HoBo core
- * Queue port cannot make remote calls; this is the asynchronous WIT-shaped port. */
 export type RivetQueueOperation =
 	| "enqueue"
 	| "dequeue"
@@ -164,8 +162,6 @@ function message(row: StoredMessage, queueName: string) {
 		deliveryAttempt: row.attempt,
 	};
 }
-/** A genuine RivetKit actor with per-instance, transactionally persisted queue state.
- * Authorization is host-owned; a client-provided actor key is not authority. */
 export function createRivetQueueActor(options: {
 	readonly actorName: string;
 	readonly authorize: (input: {
@@ -174,9 +170,7 @@ export function createRivetQueueActor(options: {
 		readonly operation: RivetQueueOperation;
 		readonly headers: Headers;
 	}) => boolean | Promise<boolean>;
-	/** Trusted clock shared by actor generations; it must not jump ahead of real time. */
 	readonly now: () => number;
-	/** Independently attest the entire native ingress enforces these limits before forwarding. */
 	readonly verifyIngress?: (input: {
 		readonly actorName: string;
 		readonly actorKey: readonly string[];

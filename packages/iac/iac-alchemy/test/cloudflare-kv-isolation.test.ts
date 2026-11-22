@@ -64,7 +64,7 @@ it("keeps same-named KV resources in different Bindles isolated in one real Alch
 				reconcile: ({ news, bindings, fqn }) =>
 					Effect.sync(() => {
 						observed.push({ fqn, bindings });
-						// SAFETY: this provider double only exposes the workerName consumed by the binding.
+						// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: this provider double only exposes the workerName consumed by the binding.
 						return {
 							...news,
 							workerName: fqn,

@@ -95,8 +95,7 @@ function name(value: string): boolean {
 }
 /* oxlint-enable anti-slop/no-runtime-typeof */
 
-// SAFETY: actor action inputs cross a network boundary and must be bounded plain JSON data.
-/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
+/* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type -- SAFETY: actor action inputs cross a network boundary and must be bounded plain JSON data. */
 function plainJson(
 	value: unknown,
 	depth: number,
@@ -161,7 +160,6 @@ function plainJson(
 }
 /* oxlint-enable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof, anti-slop/no-unsafe-dictionary-type */
 
-/** Snapshot bounded plain action data before awaiting an external verifier. */
 export function snapshotDistributedData<T>(value: T): T | undefined {
 	try {
 		const encoded = JSON.stringify(
@@ -169,7 +167,7 @@ export function snapshotDistributedData<T>(value: T): T | undefined {
 		);
 		if (encoded === undefined || Buffer.byteLength(encoded) > 65_536)
 			return undefined;
-		// SAFETY: plainJson has checked the complete value and preserved its JSON shape.
+		// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: plainJson has checked the complete value and preserved its JSON shape.
 		return JSON.parse(encoded) as T;
 	} catch {
 		return undefined;
@@ -244,7 +242,7 @@ function validState(state: DistributedJournalState): boolean {
 				entry.eventJson.length > MAX_EVENT_BYTES
 			)
 				return false;
-			// SAFETY: persisted JSON is parsed and checked against the canonical event encoder.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: persisted JSON is parsed and checked against the canonical event encoder.
 			const parsed = JSON.parse(entry.eventJson) as FoldEvent;
 			if (encodeDistributedEvent(parsed) !== entry.eventJson) return false;
 			bytes += Buffer.byteLength(entry.eventJson);
@@ -256,7 +254,6 @@ function validState(state: DistributedJournalState): boolean {
 	}
 }
 
-/** Return only committed facts, never the lease capability. */
 export function readDistributedJournal(state: DistributedJournalState):
 	| { readonly status: "denied"; readonly code: string }
 	| {
@@ -273,13 +270,12 @@ export function readDistributedJournal(state: DistributedJournalState):
 		revision: state.entries.length,
 		events: state.entries.map((entry) => ({
 			eventId: entry.eventId,
-			// SAFETY: validState has parsed and checked every canonical event.
+			// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: validState has parsed and checked every canonical event.
 			event: JSON.parse(entry.eventJson) as FoldEvent,
 		})),
 	};
 }
 
-/** Pure, bounded transition used by the Rivet actor before persisting a result. */
 export function transitionDistributedJournal(
 	state: DistributedJournalState,
 	command: DistributedJournalCommand,

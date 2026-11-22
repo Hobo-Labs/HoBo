@@ -31,7 +31,7 @@ it("runs the bound application through a real Rivet 3 HTTP actor", {
 						process.kill(-child.pid, "SIGKILL");
 					else child.kill("SIGKILL");
 				} catch (error) {
-					// SAFETY: process signaling errors carry Node's errno code.
+					// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: process signaling errors carry Node's errno code.
 					if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
 				}
 			};

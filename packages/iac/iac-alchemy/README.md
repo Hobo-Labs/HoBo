@@ -129,7 +129,8 @@ The root integration test builds its HoBo host dependencies before running, so
 it can exercise the adapter from a clean checkout.
 It also checks that a cloud resource actor's durable apply and destroy
 generations reach the Rivet adapter's trusted route resolver unchanged. The
-fixture supplies explicit financial settlement trust and a host classification.
+fixture supplies a host classification and a priced settlement verifier that
+refuses every claim, so its budget holds never settle.
 Its stub RunnerPool provider does not read, build or upload `main`, so the
 fixture's empty source classification applies only to that stub. A production
 RunnerPool that builds source must list its complete source requirements and

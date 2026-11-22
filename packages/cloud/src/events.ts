@@ -222,7 +222,6 @@ export interface ResourceProvisioningData {
 	specHash?: string;
 	/** Provider that may have received the apply; absent on legacy facts. */
 	providerId?: string;
-	/** Random generation persisted before dispatch; absent on legacy facts. */
 	operationGeneration?: string;
 }
 

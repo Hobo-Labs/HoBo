@@ -31,7 +31,6 @@ export {
 	isRivetQueueBinding,
 } from "./rivet-queue-runtime.js";
 
-/** A single external program and exclusively owned Rivet pool for one queue. */
 export interface RivetAsyncQueueSource {
 	readonly main: string;
 	readonly resourceName: string;
@@ -47,12 +46,6 @@ export interface RivetAsyncQueueSource {
 		};
 	};
 	readonly binding: RivetQueueBinding;
-	/**
-	 * Independently verify the source and artifact closure, exclusive pool, and
-	 * that the deployed main starts a registry with this exact actor definition
-	 * and its authorized host policies. Inspecting the in-process registry alone
-	 * cannot prove that the separately bundled main actually starts it.
-	 */
 	readonly verifySource: (source: {
 		readonly main: string;
 		readonly sourceDigest: string;
@@ -75,7 +68,6 @@ function name(value: unknown): value is string {
 		!/[\p{Cc}]/u.test(value)
 	);
 }
-/** Validate the real actor registry and host-owned source attestation. */
 export function bindRivetAsyncQueueSource(
 	input: RivetAsyncQueueSource,
 ): RivetAsyncQueueSource {
@@ -142,9 +134,7 @@ export function bindRivetAsyncQueueSource(
 	let verified = false;
 	try {
 		verified = source.verifySource(source) === true;
-	} catch {
-		/* A failed verifier is not proof. */
-	}
+	} catch {}
 	if (!verified || !matches())
 		throw new AlchemyIacError(
 			"RIVET_SOURCE_UNVERIFIED",
@@ -152,7 +142,6 @@ export function bindRivetAsyncQueueSource(
 		);
 	return source;
 }
-/** Construct the real Alchemy Rivet DurableObject resource for this async queue. */
 export function rivetAsyncQueueResource(input: RivetAsyncQueueSource) {
 	const source = bindRivetAsyncQueueSource(input);
 	const host = source.poolHost;
@@ -264,9 +253,7 @@ export interface RivetAsyncQueueMessage {
 	readonly deliveryAttempt: number;
 }
 export interface RivetAsyncQueueTransport {
-	/** Must target the authenticated actor key and attach host-issued credentials. */
 	fetch(path: string, init: RequestInit): Promise<Response>;
-	/** Independently attest limits on the full response path before forwarding. */
 	verifyResponseBounds?(input: {
 		readonly operation: string;
 		readonly maxResponseBytes: number;
@@ -382,7 +369,6 @@ function readMessage(value: unknown): RivetAsyncQueueMessage {
 		deliveryAttempt: value.deliveryAttempt,
 	};
 }
-/** An explicitly async JSON interface; it does not claim to implement core Queue or WIT bytes/attributes. */
 export function createRivetAsyncQueueClient(
 	transport: RivetAsyncQueueTransport,
 ) {

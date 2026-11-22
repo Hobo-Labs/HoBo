@@ -79,7 +79,6 @@ function fixture(
 		Effect.gen(function* () {
 			planned++;
 			if (options.unsafeStackWrite) {
-				// Alchemy constructs and executes this program with its original State.
 				const service = yield* State;
 				const state = yield* service;
 				yield* state
@@ -208,8 +207,6 @@ describe("host-authenticated Alchemy state ownership", () => {
 		});
 		expect(blocked.rawStackWrites()).toBe(0);
 
-		// A permissive verifier is not a sandbox: Alchemy runs the original stack
-		// against its original State before HoBo can guard the compiled service.
 		const unisolated = fixture({ unsafeStackWrite: true });
 		await unisolated.provider.preview(program);
 		expect(unisolated.rawStackWrites()).toBe(1);

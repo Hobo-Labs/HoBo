@@ -55,7 +55,6 @@ type EntrypointResult =
 	| FetchHandler
 	| { readonly fetch: FetchHandler };
 
-/** The connector surface exists on HoBo contexts; connector binding is not yet supported here. */
 export interface CloudflareContextRef {
 	connector(...args: never[]): object;
 }
@@ -111,9 +110,7 @@ export interface CloudflareService {
 
 export interface CloudflareResources {
 	service(name: string): CloudflareService;
-	/** Native JavaScript subset; reads are eventually consistent and WASI guests are not wired. */
 	kv(name: string): CloudflareKvStore;
-	/** Opt-in bounded objects; not the WASI blobstore or blob-events interface. */
 	bucket(name: string): CloudflareR2Store;
 }
 
@@ -130,7 +127,6 @@ export interface CloudflareKvStore {
 const contexts = new WeakMap<object, CloudflareResources>();
 const workers = new WeakMap<object, CloudflareWorkerDescription>();
 
-/** Attach an explicit provider-specific object subset without modifying the Bindle. */
 export function withCloudflareR2<Requirements>(
 	bindle: BindleForAlchemy<CloudflareBindleEntrypoint, Requirements>,
 	grants: Readonly<Record<string, CloudflareR2Grant>>,
@@ -181,10 +177,6 @@ export function withCloudflareR2<Requirements>(
 		: Object.freeze({ ...view, connectors: bindle.connectors });
 }
 
-/**
- * Attach target-specific KV choices to an adapter view of a provider-neutral
- * Bindle. The original Bindle remains unchanged and can be routed elsewhere.
- */
 export function withCloudflareEventualKv<Requirements>(
 	bindle: BindleForAlchemy<CloudflareBindleEntrypoint, Requirements>,
 	modes: Readonly<Record<string, CloudflareKvGrant>>,
@@ -402,7 +394,6 @@ function resources(
 	};
 }
 
-/** Resolve only the resources declared as dependencies of the current HTTP entrypoint. */
 export function cloudflareBindings(
 	context?: CloudflareContextRef,
 ): CloudflareResources {
@@ -412,7 +403,6 @@ export function cloudflareBindings(
 	return result;
 }
 
-/** Validate an explicit native subset and the exact HoBo capability grant. */
 export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 	readonly mode: CloudflareKvMode;
 	readonly grantEpoch: string;
@@ -462,7 +452,6 @@ export function cloudflareKvConfiguration(declaration: PrimitiveDeclaration): {
 	);
 }
 
-/** Validate the exact JavaScript object subset and current host-issued grant. */
 export function cloudflareR2Configuration(declaration: PrimitiveDeclaration) {
 	const annotation = declaration.annotations[0];
 	if (
@@ -612,7 +601,6 @@ export function validateCloudflareHttpAnnotations(
 	}
 }
 
-/** Create the default export of the worker module from the same Bindle entrypoint. */
 export function bindleCloudflareWorker<Requirements>(
 	bindle: BindleForAlchemy<CloudflareBindleEntrypoint, Requirements>,
 	resourceName: string,
@@ -691,7 +679,6 @@ export function bindleCloudflareWorker<Requirements>(
 	return Object.freeze(worker);
 }
 
-/** The mapper checks that the module exports this worker and the same Bindle entrypoint. */
 export function inspectCloudflareWorker(
 	value: CloudflareWorker,
 ): CloudflareWorkerDescription | undefined {

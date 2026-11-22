@@ -4,22 +4,18 @@ import {
 	isStaticActorDefinition,
 } from "rivetkit";
 
-/** Bindle entrypoints are application code; the returned HTTP shape is checked at runtime. */
 /* oxlint-disable anti-slop/no-unknown-parameters, anti-slop/no-unknown-returns, anti-slop/no-runtime-typeof -- SAFETY: application entrypoints cross the adapter's runtime boundary. */
 export type RivetHttpEntrypoint = () => unknown;
 
 export interface RivetRequestContext {
 	readonly name: string;
 	readonly key: readonly string[];
-	/** RivetKit creates a fresh vars object for each actor activation. */
 	readonly vars: object;
 }
 
-/** Metadata available before the application consumes the request body. */
 export interface RivetAuthorizationRequest {
 	readonly method: string;
 	readonly url: string;
-	/** A separate copy; changing it cannot change the application's request. */
 	readonly headers: Headers;
 }
 
@@ -45,18 +41,11 @@ function name(value: string): boolean {
 	);
 }
 
-/**
- * Create an actual RivetKit actor around the exact Bindle HTTP entrypoint.
- * The handler takes ownership of the request body stream; the caller must not
- * consume it after handoff. Authorization covers the actor key, method, URL
- * and headers, not the streamed body.
- */
 export function createRivetHttpActor<
 	Entrypoint extends RivetHttpEntrypoint,
 >(options: {
 	readonly actorName: string;
 	readonly entrypoint: Entrypoint;
-	/** Host-owned authorization for the observed actor key and HTTP request. */
 	readonly authorize: (input: {
 		readonly actorName: string;
 		readonly actorKey: readonly string[];
@@ -103,8 +92,6 @@ export function createRivetHttpActor<
 		const actorKey = Object.freeze(components);
 		let applicationRequest: Request;
 		try {
-			// Constructing a Request moves its body stream; clone() would tee it and
-			// buffer an unconsumed branch as the application reads the other one.
 			applicationRequest = new Request(request);
 		} catch {
 			return new Response("Forbidden", { status: 403 });
@@ -167,7 +154,6 @@ export function createRivetHttpActor<
 	return binding;
 }
 
-/** Only accept a genuine binding constructed by this runtime module. */
 export function isRivetHttpBinding(
 	value: RivetHttpBinding<RivetHttpEntrypoint>,
 ): boolean {
