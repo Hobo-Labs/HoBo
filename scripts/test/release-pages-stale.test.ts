@@ -304,6 +304,14 @@ describe("release-hobo pages jobs", () => {
 		const end = rest.slice(1).search(/\n {2}[A-Za-z0-9_-]+:\n/);
 		return end < 0 ? rest : rest.slice(0, end + 1);
 	}
+	function jobIf(id: string): string {
+		const body = job(id);
+		const start = body.indexOf("if: >-");
+		expect(start, `${id}: job-level if`).toBeGreaterThan(-1);
+		const runsOn = body.indexOf("runs-on:", start);
+		expect(runsOn, `${id}: runs-on after the job-level if`).toBeGreaterThan(-1);
+		return body.slice(start, runsOn);
+	}
 
 	it("decides the deploy from what is published, apart from the release train", () => {
 		const gate = job("release-pages-gate");
@@ -380,12 +388,17 @@ describe("release-hobo pages jobs", () => {
 		expect(gate).toMatch(/github\.event_name == 'workflow_run'/u);
 		expect(gate).not.toMatch(/github\.event_name == 'pull_request'/u);
 		expect(gate).not.toMatch(/github\.event_name == 'merge_group'/u);
-		const pages = job("release-pages");
-		expect(
-			pages,
-			"the gate decides only for a green main push or a main dispatch; a skipped gate never reports deploy=true",
-		).toContain("needs.release-pages-gate.outputs.deploy == 'true'");
+		const pagesIf = jobIf("release-pages").replace(/^if: >-\n/u, "");
+		expect(pagesIf).toMatch(/needs\.route\.result == 'success'/u);
+		expect(pagesIf).toMatch(/needs\.release-pages-gate\.result == 'success'/u);
+		expect(pagesIf).toMatch(
+			/needs\.release-pages-gate\.outputs\.deploy == 'true'/u,
+		);
+		expect(pagesIf).toMatch(/needs\.release-hobo-cli\.result == 'success'/u);
+		expect(pagesIf).not.toMatch(/github\.event_name == 'pull_request'/u);
+		expect(pagesIf).not.toMatch(/github\.event_name == 'merge_group'/u);
 		const step = (marker: string) => {
+			const pages = job("release-pages");
 			const at = pages.indexOf(marker);
 			expect(at, marker).toBeGreaterThan(-1);
 			const from = pages.lastIndexOf("\n      - ", at);

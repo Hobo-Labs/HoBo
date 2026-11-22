@@ -317,6 +317,7 @@ export function ciProjectJsonSchema() {
 	const { $defs, ...root } = z.toJSONSchema(CiProjectDocumentSchema, {
 		target: "draft-2020-12",
 		reused: "ref",
+		io: "input",
 	});
 	const definitions = {
 		...object.parse($defs ?? {}),

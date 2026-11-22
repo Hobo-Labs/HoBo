@@ -68,7 +68,36 @@ describe("release-hobo publish and attest, one image per job", () => {
 			);
 		const publish = job("release-publish", "release-attest");
 		const attest = job("release-attest", "release-npm");
+		const resolver = job("release-toolchain-image", "release-oci-build-tag");
 		const build = job("release-oci-build-tag", "release-images");
+		expect(resolver).toContain(
+			"name: Resolve the release toolchain image once",
+		);
+		expect(resolver).toContain(
+			"image_ref: ${{ steps.resolve.outputs.image_ref }}",
+		);
+		expect(resolver).toContain(
+			"node --no-warnings scripts/ci/ensure-ci-worker-image.mts --resolve-digest",
+		);
+		expect(resolver).toMatch(/timeout-minutes: 5/u);
+		expect(resolver).toMatch(
+			/permissions:\n\s+contents: read\n\s+packages: read/u,
+		);
+		for (const block of [build, publish]) {
+			expect(block).toContain(
+				"needs.release-toolchain-image.result == 'success'",
+			);
+			expect(block).toMatch(
+				/needs: \[[^\]]*\brelease-toolchain-image\b[^\]]*\]/u,
+			);
+			expect(block).toContain(
+				"HOBO_CI_WORKER_IMAGE_REF: ${{ needs.release-toolchain-image.outputs.image_ref }}",
+			);
+			expect(block).toContain('HOBO_CI_WORKER_PULL_BUDGET_SEC: "540"');
+			expect(block).toMatch(
+				/name: Ensure digest-pinned content-keyed toolchain image\n\s+timeout-minutes: 10/u,
+			);
+		}
 		const fromTrain =
 			"image_id: ${{ fromJSON(needs.release-images.outputs.images) }}";
 		expect(build).toMatch(/max-parallel: 6/u);

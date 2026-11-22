@@ -36,6 +36,7 @@ const activeCiFiles = new Set([
 	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
+	"release-hobo-pr.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
@@ -54,6 +55,7 @@ const healthFile = "ci-health.yml";
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
 const vercelEvidenceFile = "vercel-credential-evidence.yml";
+const appCredentialsFile = "app-credentials.yml";
 /**
  * GitHub-hosted `gh actions-lock --verify` of .github/workflows/actions.lock;
  * it reads public action repositories only and runs no repository code.
@@ -61,6 +63,7 @@ const vercelEvidenceFile = "vercel-credential-evidence.yml";
 const actionsLockFile = "actions-lock.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
+	appCredentialsFile,
 	actionsLockFile,
 	probeFile,
 	healthFile,
@@ -182,12 +185,8 @@ function lintHealthWorkflow(errors: string[], text: string): void {
 const TRUNK_RUNS_ON =
 	'${{ contains(fromJSON(\'["push","workflow_dispatch","merge_group","workflow_run"]\'), github.event_name) && \'hobo-trunk\' || \'hobo\' }}';
 
-/**
- * What a routed job asks for: the label the `route` job chose (the routing
- * slip's answer, else the queue rule's), and GitHub-hosted when that job did
- * not run, the one tier known to be up.
- */
-const ROUTED_RUNS_ON = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
+const ROUTED_RUNS_ON =
+	"${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}";
 
 const RELEASE_PAGES_RUNS_ON =
 	"${{ needs.route.outputs.tier == 'github' && (needs.route.outputs.runner || 'ubuntu-24.04') || contains(fromJSON('[\"push\",\"workflow_dispatch\",\"merge_group\",\"workflow_run\"]'), github.event_name) && 'hobo-trunk' || 'hobo' }}";
@@ -332,13 +331,6 @@ function isNonPromotingDepsJob(
 	);
 }
 
-/**
- * Jobs that are GitHub-hosted whatever the fleet is doing. The `route` job
- * chooses the runner, so it cannot wait on one. A hosted job with no `uses:`
- * step is a gate: it runs no repository code, only adds up other jobs' results.
- * PR gates use `always()`; release train gates use `!cancelled()` so a
- * cancelled run does not keep scheduling downstream work.
- */
 function isAlwaysHostedJob(
 	jobLine: string,
 	block: readonly string[],
@@ -422,7 +414,7 @@ const ATTESTED_HELPER = [
 
 /** The one condition that skips a job for a signed local run: by that job's own id. */
 function skipWhenAttested(jobId: string): string {
-	return `!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
+	return `!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${jobId}"'))`;
 }
 function attestationSkipPattern(jobId: string, file: string): string {
 	if (jobId === "release-contract" && file.endsWith("release-hobo.yml"))
@@ -561,6 +553,20 @@ function isNpmOidcHostedReleaseJob(
 		file === "release-hobo.yml" &&
 		(jobId === "release-npm" || jobId === "release-hobo-cli") &&
 		runsOn === "ubuntu-24.04"
+	);
+}
+
+function isHostedReleaseIntegrationJob(
+	file: string,
+	jobLine: string,
+	runsOn: string | undefined,
+): boolean {
+	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	return (
+		runsOn === "ubuntu-24.04" &&
+		((file === "release-hobo-pr.yml" && jobId === "release-integration") ||
+			((file === "release-hobo.yml" || file === "hobo-ci.yml") &&
+				jobId === "release-hobo-integration"))
 	);
 }
 
@@ -772,6 +778,11 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		const releaseIntegrationHosted = isHostedReleaseIntegrationJob(
+			file,
+			jobLine,
+			runsOn,
+		);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
 		const depsRoute =
@@ -787,6 +798,7 @@ function lintWorkflowYaml(
 			runsOn !== SHARD_RUNS_ON &&
 			!depsRoute &&
 			!npmOidcHosted &&
+			!releaseIntegrationHosted &&
 			!alwaysHosted
 		) {
 			errors.push(
@@ -903,6 +915,7 @@ function lintWorkflowYaml(
 	}
 	if (
 		activeCiFiles.has(file) &&
+		file !== "release-hobo-pr.yml" &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&

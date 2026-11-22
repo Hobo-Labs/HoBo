@@ -133,20 +133,35 @@ function releaseTagOrDispatchCheckout(): boolean {
 	return process.env.GITHUB_EVENT_NAME === "workflow_dispatch";
 }
 
-function refExists(root: string, ref: string): boolean {
-	return (
-		spawnSync(
-			"git",
-			[
-				"rev-parse",
-				"--verify",
-				"--quiet",
-				"--end-of-options",
-				`${ref}^{commit}`,
-			],
-			{ cwd: root, stdio: "ignore" },
-		).status === 0
+function releaseTurboBaseCommit(root: string, ref: string): string | undefined {
+	const result = spawnSync(
+		"git",
+		["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`],
+		{ cwd: root, encoding: "utf8" },
 	);
+	if (result.status !== 0) return undefined;
+	const commit = result.stdout.trim();
+	return /^[0-9a-f]{40,64}$/u.test(commit) ? commit : undefined;
+}
+
+function refExists(root: string, ref: string): boolean {
+	return releaseTurboBaseCommit(root, ref) !== undefined;
+}
+
+function releaseTurboBaseFilterValue(
+	root: string,
+	ref: string,
+): string | undefined {
+	const commit = releaseTurboBaseCommit(root, ref);
+	if (!commit) {
+		warnTurboBaseFallback(`${ref} does not resolve to a commit`);
+		return undefined;
+	}
+	const kind = spawnSync("git", ["cat-file", "-t", ref], {
+		cwd: root,
+		encoding: "utf8",
+	});
+	return kind.status === 0 && kind.stdout.trim() === "tag" ? commit : ref;
 }
 
 function warnTurboBaseFallback(message: string): void {
@@ -182,7 +197,7 @@ function assertReleaseTurboRefName(
 function turboBaseReachable(root: string, base: string): boolean {
 	if (!refExists(root, base)) return false;
 	return (
-		spawnSync("git", ["merge-base", "--", base, "HEAD"], {
+		spawnSync("git", ["merge-base", "--is-ancestor", base, "HEAD"], {
 			cwd: root,
 			stdio: "ignore",
 		}).status === 0
@@ -254,24 +269,32 @@ export function resolveReleaseTurboBase(
 ): string | undefined {
 	const base = configuredBase?.trim();
 	if (!base) return undefined;
-	if (turboBaseReachable(root, base)) return base;
-	fetchReleaseTurboBase(root, base);
-	if (turboBaseReachable(root, base)) return base;
-	if (base === "origin/main") {
-		if (refExists(root, "HEAD^1") && turboBaseReachable(root, "HEAD^1"))
-			return "HEAD^1";
-		if (releaseTagOrDispatchCheckout()) {
-			warnTurboBaseFallback(`${base} unreachable on tag or dispatch checkout`);
-			return undefined;
+	if (!turboBaseReachable(root, base)) {
+		fetchReleaseTurboBase(root, base);
+		if (!turboBaseReachable(root, base)) {
+			if (base === "origin/main") {
+				if (refExists(root, "HEAD^1") && turboBaseReachable(root, "HEAD^1"))
+					return releaseTurboBaseFilterValue(root, "HEAD^1");
+				if (releaseTagOrDispatchCheckout()) {
+					warnTurboBaseFallback(
+						`${base} unreachable on tag or dispatch checkout`,
+					);
+					return undefined;
+				}
+			}
+			if (
+				releaseTagOrDispatchCheckout() ||
+				/^v0\.0\.0-alpha\.\d+$/u.test(base)
+			) {
+				warnTurboBaseFallback(`${base} unreachable after fetch`);
+				return undefined;
+			}
+			throw new Error(
+				`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
+			);
 		}
 	}
-	if (releaseTagOrDispatchCheckout() || /^v0\.0\.0-alpha\.\d+$/u.test(base)) {
-		warnTurboBaseFallback(`${base} unreachable after fetch`);
-		return undefined;
-	}
-	throw new Error(
-		`HOBO_RELEASE_TURBO_BASE=${base} does not resolve to a commit; fetch that ref or use HEAD^1 on a sparse pull-request checkout`,
-	);
+	return releaseTurboBaseFilterValue(root, base);
 }
 
 export function releaseOciTurboBuildArgs(

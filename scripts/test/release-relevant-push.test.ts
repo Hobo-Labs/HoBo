@@ -181,56 +181,82 @@ describe("as the release workflow runs it", () => {
 	});
 
 	it("queues main-train runs in one group and cancels stale pull_request or merge_group release runs", () => {
-		expect(workflow).toMatch(
-			/github\.event_name == 'merge_group' && format\('\{0\}-merge-group-\{1\}', github\.workflow, github\.event\.merge_group\.head_ref\)/u,
-		);
-		expect(workflow).toMatch(/hobo-release-train-\{0\}-\{1\}/u);
-		expect(workflow).toContain(
-			"cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}",
-		);
+		expect(workflow).toContain(`concurrency:
+  group: >-
+    \${{ github.event_name == 'merge_group' && format('{0}-merge-group-{1}', github.workflow, github.event.merge_group.head_ref) ||
+    (github.event_name == 'workflow_run' && format('hobo-release-train-{0}-{1}', github.event.workflow_run.event, github.event.workflow_run.conclusion)) ||
+    format('hobo-release-{0}-{1}', github.workflow, github.ref) }}
+  cancel-in-progress: \${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}`);
 	});
 
 	it("keeps publishing jobs out of a merge_group run the queue can cancel", () => {
-		for (const id of [
-			"release-hobo-cli",
-			"release-oci-build-tag",
-			"release-images",
-			"release-publish",
-			"release-attest",
-			"release-npm",
-			"release-tag",
-		]) {
+		const publishAllowances = {
+			"release-hobo-cli":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|needs\.release-pages-gate\.outputs\.deploy == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-oci-build-tag":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-images":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-publish":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-attest":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-npm":
+				/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\/sdk-v'\)|github\.event_name == 'workflow_dispatch'/u,
+			"release-tag": /needs\.release-main-train-gate\.outputs\.run == 'true'/u,
+			"release-github":
+				/startsWith\(github\.ref, 'refs\/tags\/(?:sdk|cli)-v'\)/u,
+		} as const;
+		for (const [id, allowance] of Object.entries(publishAllowances)) {
+			const condition = jobIf(id).replace(/^if: >-\n/u, "");
 			expect(
-				jobIf(id).match(
-					/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\//u,
-				),
-				`${id}: a superseded merge_group run is cancelled mid-run, so only the main train, a release tag, or a dispatch may publish`,
-			).not.toBeNull();
+				condition,
+				`${id}: publish jobs must be gated by route success`,
+			).toMatch(/needs\.route\.result == 'success'/u);
+			for (const event of [
+				"merge_group",
+				"pull_request",
+				"pull_request_target",
+			]) {
+				expect(
+					condition,
+					`${id}: a cancelled merge-group or untrusted pull-request run must not publish`,
+				).not.toMatch(new RegExp(`github\\.event_name == '${event}'`, "u"));
+			}
 			expect(
-				jobIf(id),
-				`${id}: the job-level if must not enable a merge_group run the queue can cancel mid-publish`,
-			).not.toMatch(/github\.event_name == 'merge_group'/u);
+				condition,
+				`${id}: an explicit trusted event alternative must be the only way past the gate`,
+			).toMatch(allowance);
 		}
-		const realize = jobIf("release-realize");
-		expect(
-			realize,
-			"the offline realize proof runs for exactly the pre-merge events",
-		).toMatch(/github\.event_name == 'pull_request'/u);
-		expect(realize).toMatch(/github\.event_name == 'merge_group'/u);
-		expect(
-			realize,
-			"an offline proof must not grow the publish train gate a cancelled merge_group run could ride",
-		).not.toMatch(
-			/needs\.release-main-train-gate\.outputs\.run == 'true'|startsWith\(github\.ref, 'refs\/tags\//u,
-		);
-		expect(
-			realize,
-			"the workflow_run publish path releases what this proof never witnessed",
-		).not.toMatch(/github\.event_name == 'workflow_run'/u);
 		expect(
 			jobIf("release-github"),
 			"an independent tag release still requires this run's publish",
 		).toContain("needs.release-publish.result == 'success'");
+		const realize = jobIf("release-realize").replace(/^if: >-\n/u, "");
+		expect(realize).toMatch(
+			/^\s*!cancelled\(\) && \(needs\.route\.result == 'success' \|\| needs\.route\.result == 'failure'\) &&\n\s*\(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\)\s*$/u,
+		);
+	});
+
+	it("fetches release tags where the Turbo base is measured and consumed", () => {
+		const gate = job("release-main-train-gate");
+		const checkout = gate.slice(
+			gate.indexOf("uses: actions/checkout@"),
+			gate.indexOf("- uses: $/.github/actions/ci-runner-preflight"),
+		);
+		expect(
+			checkout,
+			"git describe needs the tags a sparse build omits",
+		).toContain("fetch-depth: 0");
+		expect(checkout).toContain("fetch-tags: true");
+		for (const id of ["release-oci-build-tag", "release-publish"] as const) {
+			expect(
+				job(id),
+				`${id}: fetch the measured base before the scoped Turbo build`,
+			).toContain(
+				"run: node --no-warnings scripts/ci/fetch-release-turbo-base.mts",
+			);
+		}
 	});
 
 	it("gates the publish train on a route that failed, but never the Pages publish", () => {

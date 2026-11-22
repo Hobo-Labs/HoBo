@@ -11,7 +11,7 @@
 ## Primary binding
 
 - **package-script** `pnpm run design:lint` (high)
-- DESIGN.md / designmd fail-closed for web UI projects (seed); docs:design-lint is secondary design-doc lint
+- Implemented palette tokens fail-closed for web UI projects (seed); docs:design-lint is secondary design-doc lint
 
 ## Run
 

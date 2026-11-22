@@ -1,23 +1,36 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { pipelines } from "../../release/hobo-release.delivery.ts";
+import { camps, pipelines } from "../../release/hobo-release.delivery.ts";
 import {
 	announceVerdict,
+	awaitReleasePagesWall,
 	classifyRelease,
 	githubApiProbeTransport,
-	PAGES_RELEASE_BUILD_MARGIN_MS,
 	PAGES_RELEASE_VERIFICATION_PROGRESS_MS,
 	PAGES_RELEASE_VERIFICATION_WINDOW_MS,
+	promoteReleaseFreight,
 	RELEASE_DRIVE_PAGES,
+	RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
+	RELEASE_PROMOTION_TIMEOUT,
+	type ReleaseCd,
+	type ReleaseDriveState,
 	type ReleaseHttpTransport,
 	releaseCampId,
 	releaseDeclaration,
 	releaseDriveFor,
 	releaseFreightManifest,
+	releasePagesWallBudgetMs,
 	releaseSource,
 	siteTree,
+	startReleasePagesWall,
 } from "../ci/create-github-release.mts";
 
 type TransportRequest = Parameters<ReleaseHttpTransport>[0];
@@ -93,14 +106,15 @@ describe("release topology names", () => {
 		);
 	});
 
-	it("gives Pages promotion drive longer than the verification progress window", () => {
+	it("sizes the Pages drive from convergence, verification, and one poll interval", () => {
 		const drive = releaseDriveFor("pages");
 		expect(drive).toEqual(RELEASE_DRIVE_PAGES);
-		const budgetMs = drive.passes * drive.intervalMs - drive.intervalMs;
-		expect(budgetMs).toBeGreaterThanOrEqual(
+		expect(RELEASE_DRIVE_PAGES.passes).toBe(572);
+		const drivenMs = (drive.passes - 1) * drive.intervalMs;
+		expect(drivenMs).toBe(
 			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
 				PAGES_RELEASE_VERIFICATION_WINDOW_MS +
-				PAGES_RELEASE_BUILD_MARGIN_MS,
+				drive.intervalMs,
 		);
 	});
 
@@ -182,6 +196,16 @@ describe("release topology names", () => {
 	});
 
 	it("probes the latest Pages build for every promotion node", () => {
+		const pagesCamp = camps.find(
+			(camp) => camp.logicalId === "hobo-release/pages-candidate",
+		);
+		expect(pagesCamp).toBeDefined();
+		const pagesRepository =
+			pagesCamp && "hobo.cd/github.repository" in pagesCamp.labels
+				? pagesCamp.labels["hobo.cd/github.repository"]
+				: undefined;
+		expect(pagesRepository).toBeDefined();
+		const pagesBuildProbe = `https://api.github.com/repos/${pagesRepository}/pages/builds/latest`;
 		const pages = pipelines.find(
 			(pipeline) => pipeline.name === "hobo-release-pages",
 		);
@@ -192,8 +216,7 @@ describe("release topology names", () => {
 				progressDeadlineMs: String(PAGES_RELEASE_VERIFICATION_PROGRESS_MS),
 			});
 			expect(node.verification.probes[0]).toMatchObject({
-				urlRef:
-					"https://api.github.com/repos/Hobo-Labs/HoBo/pages/builds/latest",
+				urlRef: pagesBuildProbe,
 				expectStatus: 200,
 			});
 		}
@@ -277,6 +300,133 @@ describe("announceVerdict", () => {
 		} finally {
 			log.mockRestore();
 			error.mockRestore();
+		}
+	});
+});
+
+describe("Pages wall budget", () => {
+	it("defaults to 20 minutes, covers the full drive, and clamps the environment to that maximum", () => {
+		expect(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT).toBe(20 * 60_000);
+		expect(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT).toBeGreaterThan(
+			PAGES_RELEASE_VERIFICATION_PROGRESS_MS +
+				PAGES_RELEASE_VERIFICATION_WINDOW_MS,
+		);
+		expect(releasePagesWallBudgetMs({})).toBe(
+			RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT,
+		);
+		expect(
+			releasePagesWallBudgetMs({
+				HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "36000000",
+			}),
+		).toBe(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT);
+		expect(
+			releasePagesWallBudgetMs({ HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "60000" }),
+		).toBe(60_000);
+		for (const invalid of ["", "soon", "-1", "0"])
+			expect(
+				releasePagesWallBudgetMs({
+					HOBO_RELEASE_PAGES_WALL_BUDGET_MS: invalid,
+				}),
+			).toBe(RELEASE_PAGES_WALL_BUDGET_MS_DEFAULT);
+		expect(
+			startReleasePagesWall(
+				{ HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "60000" },
+				() => 1_000,
+			),
+		).toEqual({ deadlineAt: 61_000 });
+	});
+
+	it("returns finished work and passes a work failure through untouched", async () => {
+		await expect(
+			awaitReleasePagesWall("record", async () => "recorded", undefined),
+		).resolves.toBe("recorded");
+		await expect(
+			awaitReleasePagesWall(
+				"record",
+				async () => {
+					throw new Error("freight refused");
+				},
+				{ deadlineAt: Date.now() + 60_000 },
+			),
+		).rejects.toThrow("freight refused");
+	});
+
+	it("never starts work past the deadline", async () => {
+		let started = false;
+		await expect(
+			awaitReleasePagesWall(
+				"record",
+				async () => {
+					started = true;
+					return "recorded";
+				},
+				{ deadlineAt: Date.now() - 1 },
+			),
+		).rejects.toThrow(new RegExp(`${RELEASE_PROMOTION_TIMEOUT}: record`));
+		expect(started).toBe(false);
+	});
+
+	it("rejects a hung call as a typed release-promotion-timeout", async () => {
+		const wall = { deadlineAt: Date.now() + 20 };
+		const hung = () => new Promise<never>(() => {});
+		await expect(
+			awaitReleasePagesWall("drive-stable", hung, wall),
+		).rejects.toMatchObject({
+			name: "ReleasePromotionWallError",
+			phase: "drive-stable",
+		});
+		await expect(
+			awaitReleasePagesWall("drive-stable", hung, wall),
+		).rejects.toThrow(new RegExp(`${RELEASE_PROMOTION_TIMEOUT}: drive-stable`));
+	});
+
+	it("turns a hung Pages drive into a release-promotion-timeout verdict", async () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const home = mkdtempSync(join(tmpdir(), "hobo-pages-wall-"));
+		try {
+			const cd: ReleaseCd = {
+				home,
+				run: async () => ({
+					ok: true,
+					data: {
+						promotion: {
+							promotionId: "promo-pages-1",
+							state: "PROMOTION_STATE_ROLLING_OUT",
+						},
+					},
+				}),
+				drive: async () => new Promise<ReleaseDriveState>(() => {}),
+				store: async () => {
+					throw new Error("unused");
+				},
+				declaration: async () => {
+					throw new Error("unused");
+				},
+				close: async () => {},
+			};
+			const verdict = await promoteReleaseFreight(cd, {
+				family: "pages",
+				channel: "candidate",
+				freightId: "freight-pages-1",
+				drive: { passes: 5, intervalMs: 10 },
+				wall: { deadlineAt: Date.now() + 40 },
+			});
+			expect(verdict).toMatchObject({
+				outcome: "blocked",
+				codes: [RELEASE_PROMOTION_TIMEOUT],
+				promotionId: "promo-pages-1",
+			});
+			expect(verdict.message).toContain("drive-candidate");
+			expect(
+				error.mock.calls.some((call) =>
+					String(call[0]).startsWith(
+						"release-pages: promoting freight-pages-1",
+					),
+				),
+			).toBe(true);
+		} finally {
+			error.mockRestore();
+			rmSync(home, { recursive: true, force: true });
 		}
 	});
 });
@@ -387,9 +537,10 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 
 	it("builds the hobo CLI only for a run that publishes or promotes", () => {
 		const block = job("release-hobo-cli");
-		expect(block).toMatch(
-			/needs: \[release-main-train-gate, release-pages-gate\]/u,
+		expect(block).toContain(
+			"needs: [route, release-main-train-gate, release-pages-gate]",
 		);
+		expect(block).toContain("needs.route.result == 'success'");
 		expect(block).toContain(
 			"needs.release-main-train-gate.outputs.run == 'true'",
 		);
@@ -486,6 +637,12 @@ describe("release-hobo.yml publishes through the release Camps' realizers", () =
 		expect(block).toContain("deploy-site.mts --release-freight site/dist");
 		expect(block).not.toContain("peaceiris/actions-gh-pages");
 		expect(block).not.toMatch(/git push/u);
+	});
+
+	it("bounds the Pages promote step with a wall budget under its step timeout", () => {
+		const block = job("release-pages");
+		expect(block).toMatch(/\n {8}timeout-minutes: 21\n/u);
+		expect(block).toContain('HOBO_RELEASE_PAGES_WALL_BUDGET_MS: "1200000"');
 	});
 
 	it("promotes to stable before the signed tag and the GitHub Release", () => {

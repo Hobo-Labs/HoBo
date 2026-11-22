@@ -10,11 +10,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, describe, it } from "node:test";
 import {
 	TURBO_CACHE_API_PATTERN,
 	TurboCacheSchema,
 } from "../../packages/ci-gh-actions/src/project-schema.ts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { afterAll, describe, it } = await testRunner();
 
 const ACTION = readFileSync(
 	new URL("../../.github/actions/turbo-cache/action.yml", import.meta.url),
@@ -35,7 +37,7 @@ function configureScript(): string {
 }
 
 const roots: string[] = [];
-after(() => {
+afterAll(() => {
 	for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
@@ -220,11 +222,25 @@ describe("turbo-cache action on the box", () => {
 			);
 	});
 
+	it("restores hosted L1 caches even when remote Turbo caching is configured", () => {
+		const restore = ACTION.match(
+			/Restore prerequisite Turbo cache[\s\S]*?Restore Turbo local cache fallback/u,
+		)?.[0];
+		assert.ok(restore);
+		assert.doesNotMatch(restore, /env\.TURBO_TOKEN == ''/u);
+		assert.match(restore, /restore-keys:[\s\S]*inputs\.preferred-job/u);
+		const fallback =
+			/Restore Turbo local cache fallback\n\s+if: ([^\n]+)/u.exec(ACTION);
+		assert.ok(fallback);
+		assert.doesNotMatch(fallback[1] ?? "", /env\.TURBO_TOKEN/u);
+	});
+
 	it("takes no cache address from a repository variable at any call site", () => {
 		for (const name of [
 			"hobo-ci.yml",
 			"pricing-ci.yml",
 			"release-hobo.yml",
+			"release-hobo-pr.yml",
 			"release-pricing.yml",
 		]) {
 			const workflow = readFileSync(
