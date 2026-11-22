@@ -80,12 +80,33 @@ experience-review acceptance gates.
 Playable host: `public/index.html` + `public/yard-game.js`  
 Anim isolation: `public/anim-test.html` (phaser-gamedev AnimTest pattern)
 
-## Design system + art bible
+## Design requirements
 
-- **`site/src/styles/global.css` and `public/yard.css`** — rubberhose ink-on-paper contract.
+The visual authority is `scripts/visual-token-contract.json`, enforced by
+`scripts/check-visual-tokens.mts` through root `pnpm run design:lint`, together
+with the focused checks below. `public/yard.css` implements the palette; no
+retired `DESIGN.md` is an authority.
+
+- **Palette and contrast.** Use the reviewed ink/paper/faint/accent tokens and
+  pass every contract contrast pair. Enforced by `test/design-lint.test.ts` →
+  `"passes the independent repository palette and contrast contract"`.
+- **Rubberhose type and depth.** Use Chewy display type, system-ui body text,
+  ui-monospace data, thick ink outlines, and hard zero-blur sticker shadows.
+  Enforced by `"keeps the Rubberhose type, thick outlines, and zero-blur sticker
+  shadows"` in that file.
+- **Keyboard focus.** Buttons expose a 2.5px `spark` outline with a 2px offset.
+  Enforced by `"uses 2.5px spark focus rings with 2px offsets"`.
+- **Reduced CSS motion.** `prefers-reduced-motion: reduce` collapses CSS
+  animation/transition timing and delays, removes button movement, and hides
+  film grain. Enforced by `"reduces CSS motion and removes film grain when
+  requested"`; this CSS check does not claim canvas-motion parity.
+- **Supplied art only.** Scenery is limited to reviewed site `trail`, `poles`,
+  and cloud plates, never generative color scenery. Enforced by `"limits scenery
+  to the supplied reviewed site plates"`. Bo's west walk uses its own supplied
+  sheet and is never mirrored from east, enforced by `test/control-yard.test.ts`
+  → `"asset index resolves Bo idle/walk by stable id; west is not mirror flag"`.
+  Character-sheet provenance remains in `site/public/parallax/README.md`.
 - **[Chewy](https://github.com/google/fonts/tree/7af0d90b4d532ffa4b041937b560c6df4e7b1e95/apache/chewy)** is bundled locally under the Apache 2.0 license in `public/fonts/LICENSE.txt`.
-- **`site/public/parallax/README.md`** — Bo sheets; never mirror west.
-- **Plates** — reuse site `trail` / `poles` / `clouds` only. No generative color scenery.
 
 Delivery frames (site plates):
 

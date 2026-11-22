@@ -39,6 +39,13 @@ export type FakeAuth =
 	  }
 	| { readonly kind: "preminted"; readonly token: string };
 
+export type FakeUploadSessionHost =
+	| { readonly kind: "plural" }
+	| { readonly kind: "ghcr" }
+	| { readonly kind: "absolute" }
+	| { readonly kind: "foreign"; readonly host: string }
+	| { readonly kind: "raw"; readonly location: string };
+
 export interface FakeHostConfig {
 	readonly host: string;
 	readonly auth?: FakeAuth;
@@ -48,6 +55,7 @@ export interface FakeHostConfig {
 	readonly mount?: boolean;
 	readonly blobRedirectTo?: string;
 	readonly omitDigestHeader?: boolean;
+	readonly uploadSessionHost?: FakeUploadSessionHost;
 	/** Repositories whose `pull` the token endpoint never grants. */
 	readonly denyPull?: readonly string[];
 }
@@ -217,7 +225,7 @@ export class FakeRegistryWorld {
 				return this.token(auth, request, url, state.config.denyPull ?? []);
 		}
 		const state = this.state(url.hostname);
-		const uploadMatch = /^\/v2\/(.+)\/blobs\/uploads\/([^/]*)$/u.exec(
+		const uploadMatch = /^\/v2\/(.+)\/blobs\/uploads?\/([^/]*)$/u.exec(
 			url.pathname,
 		);
 		const match = /^\/v2\/(.+)\/(manifests|blobs|referrers)\/([^/]+)$/u.exec(
@@ -363,6 +371,23 @@ export class FakeRegistryWorld {
 		};
 	}
 
+	private sessionLocation(
+		state: HostState,
+		name: string,
+		id: string,
+		stateSuffix: string,
+	): string {
+		const sessionHost = state.config.uploadSessionHost;
+		if (sessionHost === undefined || sessionHost.kind === "plural")
+			return `/v2/${name}/blobs/uploads/${id}?_state=${stateSuffix}`;
+		if (sessionHost.kind === "ghcr") return `/v2/${name}/blobs/upload/${id}`;
+		if (sessionHost.kind === "absolute")
+			return `https://${state.config.host}/v2/${name}/blobs/uploads/${id}?_state=${stateSuffix}`;
+		if (sessionHost.kind === "foreign")
+			return `https://${sessionHost.host}/v2/${name}/blobs/uploads/${id}`;
+		return sessionHost.location;
+	}
+
 	private upload(
 		state: HostState,
 		name: string,
@@ -395,7 +420,7 @@ export class FakeRegistryWorld {
 			return {
 				status: 202,
 				headers: {
-					location: `/v2/${name}/blobs/uploads/${session}?_state=s0`,
+					location: this.sessionLocation(state, name, session, "s0"),
 					"docker-upload-uuid": session,
 				},
 				body: "",
@@ -413,7 +438,12 @@ export class FakeRegistryWorld {
 			return {
 				status: 202,
 				headers: {
-					location: `/v2/${name}/blobs/uploads/${id}?_state=s${session.chunks.length}`,
+					location: this.sessionLocation(
+						state,
+						name,
+						id,
+						`s${session.chunks.length}`,
+					),
 					range: `0-${total - 1}`,
 				},
 				body: "",

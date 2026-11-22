@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-	renderSecretCaptureHtml,
-	SECRET_CAPTURE_TOKEN_VALUES,
-} from "../src/index.js";
+import visualTokenContract from "../../../scripts/visual-token-contract.json" with {
+	type: "json",
+};
+import { renderSecretCaptureHtml } from "../src/index.js";
 
 const APP = renderSecretCaptureHtml({ mode: "mcp-app" });
 const PAGE = renderSecretCaptureHtml({
@@ -11,7 +11,8 @@ const PAGE = renderSecretCaptureHtml({
 	ticket: {
 		ticketId: "cap_AAAAAAAAAAAAAAAAAAAAAA",
 		name: "VERCEL_TOKEN",
-		label: "Vercel deploy token </script><script>alert(1)</script>",
+		label:
+			"Vercel deploy token </script><script>alert(1)</script>&>\u2028\u2029",
 		purpose: "The deploy workflow deploys the relay with it.",
 		charset: "printable-line",
 		maxBytes: 4096,
@@ -26,24 +27,50 @@ const PAGE = renderSecretCaptureHtml({
 });
 
 describe("secret-capture form design lint (HoBo Rubberhose)", () => {
-	it("uses only the implemented palette tokens", () => {
-		const seen = new Set<string>();
-		for (const html of [APP, PAGE])
-			for (const hex of html.match(/#[0-9a-fA-F]{6}\b/gu) ?? []) {
-				const normalized = hex.toLowerCase();
-				seen.add(normalized);
-				expect(
-					SECRET_CAPTURE_TOKEN_VALUES.has(normalized),
-					`non-token hex ${hex}`,
-				).toBe(true);
-			}
-		for (const token of SECRET_CAPTURE_TOKEN_VALUES)
-			expect(seen.has(token), `unused palette token ${token}`).toBe(true);
+	it("uses exactly the palette approved by the independent token contract", () => {
+		const approved = new Set(
+			Object.values(visualTokenContract.mcp.tokens).map((hex) =>
+				hex.toLowerCase(),
+			),
+		);
+		for (const html of [APP, PAGE]) {
+			const rendered = new Set(
+				(html.match(/#[0-9a-fA-F]{6}\b/gu) ?? []).map((hex) =>
+					hex.toLowerCase(),
+				),
+			);
+			expect(rendered).toEqual(approved);
+		}
 	});
 
 	it("loads nothing from the network: no external script, style, font or image", () => {
 		for (const html of [APP, PAGE]) {
 			expect(html).not.toMatch(/\bsrc=|<link\b|@import|url\(|https?:\/\//u);
+		}
+	});
+
+	it("renders dynamic content through textContent without HTML parsing sinks", () => {
+		for (const html of [APP, PAGE]) {
+			expect(html).not.toMatch(
+				/\b(?:innerHTML|outerHTML|insertAdjacentHTML|document\.write)\b/u,
+			);
+			for (const assignment of [
+				"function say(text) { error.textContent = text;",
+				'el("capture-label").textContent = next.label || next.name;',
+				'el("capture-purpose").textContent = next.purpose || "";',
+				'el("capture-name").textContent = next.name;',
+				'done.textContent = String(answer.ref || "")',
+			])
+				expect(html).toContain(assignment);
+		}
+	});
+
+	it("clears both fields immediately after reading the submitted value", () => {
+		for (const html of [APP, PAGE]) {
+			expect(html).toContain(
+				'function clearFields() { line.value = ""; multi.value = ""; }',
+			);
+			expect(html).toMatch(/var value = field\(\)\.value;\s*clearFields\(\);/u);
 		}
 	});
 
@@ -97,8 +124,15 @@ describe("secret-capture form design lint (HoBo Rubberhose)", () => {
 	});
 
 	it("embeds the loopback page's ticket so it cannot close its script element", () => {
+		const config =
+			/<script type="application\/json" id="hobo-capture-config">(.*?)<\/script>/su.exec(
+				PAGE,
+			)?.[1];
 		expect(PAGE).not.toContain("</script><script>alert(1)");
 		expect(PAGE).toContain("\\u003c/script\\u003e");
+		expect(config).toContain(
+			"Vercel deploy token \\u003c/script\\u003e\\u003cscript\\u003ealert(1)\\u003c/script\\u003e\\u0026\\u003e\\u2028\\u2029",
+		);
 		expect(PAGE).toContain('<script nonce="fixture-nonce">');
 		expect(PAGE).toContain('<style nonce="fixture-nonce">');
 	});

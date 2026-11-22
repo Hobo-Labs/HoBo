@@ -1,11 +1,25 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import {
+	copyFileSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { test } from "vitest";
 import {
+	checkRepositoryVisualTokens,
 	checkVisualTokens,
 	contrastRatio,
+	listWebUiProjects,
 } from "../scripts/check-visual-tokens.mts";
 import { selectRelevantChecks } from "../scripts/relevant-check-policy.js";
+import contract from "../scripts/visual-token-contract.json" with {
+	type: "json",
+};
 
 const site = {
 	path: "site.css",
@@ -16,6 +30,31 @@ const connect = {
 	css: readFileSync("packages/connect-ui/src/client/styles.css", "utf8"),
 };
 
+function fixtureRoot(): string {
+	const root = mkdtempSync(join(tmpdir(), "visual-tokens-"));
+	for (const entry of Object.values(contract)) {
+		mkdirSync(join(root, entry.project), { recursive: true });
+		writeFileSync(join(root, entry.project, "package.json"), "{}\n");
+		mkdirSync(dirname(join(root, entry.palette)), { recursive: true });
+		copyFileSync(entry.palette, join(root, entry.palette));
+	}
+	return root;
+}
+
+test("repository discovery checks the real site and every registered UI palette", () => {
+	assert.deepEqual(
+		listWebUiProjects().map((project) => project.rel),
+		[
+			"packages/connect-ui",
+			"packages/control-yard",
+			"packages/mcp",
+			"packages/status-page",
+			"site",
+		],
+	);
+	assert.deepEqual(checkRepositoryVisualTokens(), []);
+});
+
 test("the implemented palettes meet text contrast requirements", () => {
 	assert.deepEqual(checkVisualTokens(site, connect), []);
 	assert.equal(contrastRatio("#000000", "#ffffff"), 21);
@@ -23,7 +62,35 @@ test("the implemented palettes meet text contrast requirements", () => {
 	assert.throws(() => contrastRatio("red", "#ffffff"), /six-digit hex/u);
 });
 
-test("the gate reports unreadable, missing, and ambiguous tokens", () => {
+test("rendered accent text pairs are pinned and meet 4.5:1", () => {
+	assert.ok(
+		contract["connect-ui"].contrast.some(
+			(pair) => pair.foreground === "--spark" && pair.background === "--paper",
+		),
+		"connect-ui renders --spark error text on --paper",
+	);
+	const statusTokens = new Map(Object.entries(contract["status-page"].tokens));
+	for (const { foreground, background } of contract["status-page"].contrast) {
+		const foregroundValue = statusTokens.get(foreground);
+		const backgroundValue = statusTokens.get(background);
+		assert.ok(
+			foregroundValue && backgroundValue,
+			`${foreground}/${background}`,
+		);
+		assert.ok(
+			contrastRatio(foregroundValue, backgroundValue) >= 4.5,
+			`${foreground} on ${background}`,
+		);
+	}
+	assert.ok(
+		contrastRatio("#ff7a63", "#0a0a0a") >= 4.5,
+		"connect-ui dark error text",
+	);
+	assert.deepEqual(checkVisualTokens(site, connect), []);
+	assert.deepEqual(checkRepositoryVisualTokens(), []);
+});
+
+test("the gate reports unreadable, missing, and absent tokens", () => {
 	const unreadable = {
 		...site,
 		css: site.css.replace("--text: #f2f1ec;", "--text: #0a0a0a;"),
@@ -34,22 +101,11 @@ test("the gate reports unreadable, missing, and ambiguous tokens", () => {
 	);
 	const missing = {
 		...connect,
-		css: connect.css.replace("--mute: #b9b8b1;", "--removed: #b9b8b1;"),
+		css: connect.css.replace("--mute: #4a4a46;", "--removed: #4a4a46;"),
 	};
 	assert.match(
 		checkVisualTokens(site, missing).join("\n"),
 		/connect\.css.*--mute/u,
-	);
-	const duplicate = {
-		...site,
-		css: site.css.replace(
-			"--text: #f2f1ec;",
-			"--text: #f2f1ec; --text: #ffffff;",
-		),
-	};
-	assert.match(
-		checkVisualTokens(duplicate, connect).join("\n"),
-		/duplicate --text/u,
 	);
 	const missingTheme = {
 		...connect,
@@ -60,30 +116,192 @@ test("the gate reports unreadable, missing, and ambiguous tokens", () => {
 	};
 	assert.match(
 		checkVisualTokens(site, missingTheme).join("\n"),
-		/expected one :root palette/u,
+		/expected a :root palette/u,
 	);
+});
+
+test("same-selector overrides without the anchor are resolved in cascade order", () => {
+	const override = {
+		...connect,
+		css: `${connect.css}\n:root {\n\t--ink: #f2f1ec;\n}\n`,
+	};
+	assert.match(
+		checkVisualTokens(site, override).join("\n"),
+		/connect\.css.*--ink on --paper has contrast/u,
+	);
+});
+
+test("legitimate multi-rule palettes merge in source order", () => {
+	const splitDeclarations = "\t--mute: #4a4a46;\n\t--faint: #6e6d68;\n";
+	const themeStart = "}\n\n@media (prefers-color-scheme: dark)";
+	assert.ok(connect.css.includes(splitDeclarations));
+	assert.ok(connect.css.includes(themeStart));
+	const split = {
+		...connect,
+		css: connect.css
+			.replace(splitDeclarations, "")
+			.replace(
+				themeStart,
+				`}\n\n:root {\n${splitDeclarations}}\n\n@media (prefers-color-scheme: dark)`,
+			),
+	};
+	assert.deepEqual(checkVisualTokens(site, split), []);
+});
+
+test("a contract-listed project without a palette fails closed", () => {
+	const root = fixtureRoot();
+	try {
+		rmSync(join(root, contract.site.palette));
+		const errors = checkRepositoryVisualTokens(root);
+		assert.equal(errors.length, 1);
+		assert.match(errors[0] ?? "", /global\.css.*unable to read palette/u);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("every contract-listed project directory is required independently of discovery", () => {
+	for (const entry of Object.values(contract)) {
+		const root = fixtureRoot();
+		try {
+			rmSync(join(root, entry.project), { recursive: true, force: true });
+			assert.deepEqual(checkRepositoryVisualTokens(root), [
+				`${entry.project}: contract-listed project directory is missing`,
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
+});
+
+test("every contract-listed project manifest is required independently of discovery", () => {
+	for (const entry of Object.values(contract)) {
+		const root = fixtureRoot();
+		try {
+			rmSync(join(root, entry.project, "package.json"));
+			assert.deepEqual(checkRepositoryVisualTokens(root), [
+				`${entry.project}/package.json: contract-listed project manifest is missing`,
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
+});
+
+test("contract-listed projects stay required when discovery markers change", () => {
+	for (const entry of Object.values(contract)) {
+		const root = fixtureRoot();
+		try {
+			const manifest = join(root, entry.project, "package.json");
+			for (const contents of [
+				JSON.stringify({ hobo: { webUi: true } }),
+				JSON.stringify({ dependencies: { astro: "latest" } }),
+				"{}\n",
+			]) {
+				writeFileSync(manifest, contents);
+				assert.deepEqual(
+					listWebUiProjects(root).find(
+						(candidate) => candidate.rel === entry.project,
+					),
+					{ rel: entry.project, reason: "visual token contract" },
+				);
+				assert.deepEqual(checkRepositoryVisualTokens(root), []);
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
+});
+
+test("an unreadable palette fails closed", () => {
+	const root = fixtureRoot();
+	try {
+		rmSync(join(root, contract.site.palette));
+		mkdirSync(join(root, contract.site.palette), { recursive: true });
+		const errors = checkRepositoryVisualTokens(root);
+		assert.equal(errors.length, 1);
+		assert.match(errors[0] ?? "", /global\.css.*unable to read palette/u);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("an empty palette fails closed", () => {
+	const root = fixtureRoot();
+	try {
+		mkdirSync(join(root, "site/src/styles"), { recursive: true });
+		writeFileSync(join(root, "site/src/styles/global.css"), "");
+		assert.deepEqual(checkRepositoryVisualTokens(root), [
+			"site/src/styles/global.css: palette is empty",
+		]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("marked and framework-based UI projects require a reviewed contract", () => {
+	for (const manifest of [
+		{ hobo: { webUi: true } },
+		{ dependencies: { astro: "latest" } },
+	]) {
+		const root = fixtureRoot();
+		try {
+			const project = join(root, "examples/unregistered");
+			mkdirSync(project, { recursive: true });
+			writeFileSync(join(project, "package.json"), JSON.stringify(manifest));
+			assert.deepEqual(
+				listWebUiProjects(root).find(
+					(candidate) => candidate.rel === "examples/unregistered",
+				),
+				{
+					rel: "examples/unregistered",
+					reason: manifest.hobo ? "hobo.webUi" : "web framework dependency",
+				},
+			);
+			assert.deepEqual(checkRepositoryVisualTokens(root), [
+				"examples/unregistered: web UI project has no entry in scripts/visual-token-contract.json",
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	}
 });
 
 test("the relevant check selects source-based visual validation for UI changes", () => {
 	const checksFor = (file: string) =>
 		selectRelevantChecks({ files: [file], base: "origin/main" }).checks;
-	const selectsDesignLint = (file: string) =>
-		checksFor(file).some((check) => check.args.join(" ") === "run design:lint");
-	assert.ok(selectsDesignLint("site/src/styles/global.css"));
-	assert.ok(selectsDesignLint("packages/connect-ui/src/client/styles.css"));
-	assert.ok(selectsDesignLint("scripts/check-visual-tokens.mts"));
-	assert.ok(!selectsDesignLint("packages/core/src/index.ts"));
-	assert.ok(!selectsDesignLint("packages/ui/src/card.tsx"));
-});
-
-test("design:lint runs the visual token gate instead of the retired design-md checker", () => {
-	// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: the repo root package.json is a committed manifest with string-valued scripts.
-	const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
-		scripts: Record<string, string>;
-	};
-	const designLintScript =
-		packageJson.scripts["design:lint"] ??
-		assert.fail("package.json scripts must include design:lint");
-	assert.match(designLintScript, /check-visual-tokens\.mts/u);
-	assert.equal(existsSync("scripts/check-design-md.mts"), false);
+	const visualFiles = [
+		"site/src/styles/global.css",
+		"site/DESIGN.md",
+		"packages/control-yard/DESIGN.md",
+		"scripts/check-visual-tokens.mts",
+		"scripts/visual-token-contract.json",
+		"test/visual-tokens.test.ts",
+		"packages/connect-ui/src/client/styles.css",
+		"packages/connect-ui/test/connect-ui-design-lint.test.ts",
+		"packages/control-yard/public/yard.css",
+		"packages/control-yard/test/design-lint.test.ts",
+		"packages/mcp/src/secret-capture/html.ts",
+		"packages/mcp/test/secret-capture-design-lint.test.ts",
+		"packages/status-page/src/tokens.ts",
+		"packages/status-page/test/status-page-design-lint.test.ts",
+		"packages/connect-ui/package.json",
+		"packages/mcp/package.json",
+		"packages/runtimes/runtime-local/package.json",
+		"examples/custom-ui/package.json",
+		"apps/web/package.json",
+		"turbo.json",
+	];
+	for (const file of visualFiles)
+		assert.ok(
+			checksFor(file).some(
+				(check) => check.args.join(" ") === "run design:lint",
+			),
+			file,
+		);
+	assert.ok(
+		!checksFor("packages/core/src/index.ts").some(
+			(check) => check.args.join(" ") === "run design:lint",
+		),
+	);
 });

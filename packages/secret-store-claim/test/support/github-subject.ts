@@ -25,4 +25,4 @@ export const RELAY_GITHUB_SUBJECT = parseGithubOidcSubject({
 });
 
 export const RELAY_DEPLOY_SUBJECT =
-	"repo:Hobo-Labs@344805935/HoBo@1274791462:ref:refs/heads/main";
+	"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";

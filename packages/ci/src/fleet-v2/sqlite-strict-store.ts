@@ -1198,6 +1198,11 @@ export class SqliteStrictFleetStore implements StrictFleetStore {
 				if (!demand)
 					rejectFleet(FleetRejectionCode.NOT_FOUND, "actual demand not found");
 				this.verifyStart(slot, demand, input);
+				if (existing.profileId !== input.assignment.profileId)
+					rejectFleet(
+						FleetRejectionCode.ASSIGNMENT_MISMATCH,
+						"verified assignment does not match the original binding",
+					);
 				return { claim: existing, idempotent: true };
 			}
 			if (this.claimByIdInside(input.claimId))

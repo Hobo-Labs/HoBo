@@ -3,7 +3,8 @@
   "globalDependencies": [
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
-    "tsconfig.base.json"
+    "tsconfig.base.json",
+    "scripts/visual-token-contract.json"
   ],
   "envMode": "strict",
   "globalPassThroughEnv": [
@@ -160,11 +161,8 @@
         "test/doctor-agent-tooling.test.ts",
         "test/lint-slop-changed.test.ts",
         "test/visual-tokens.test.ts",
-        "scripts/check-visual-tokens.mts",
         "scripts/**",
         "!scripts/test/**",
-        "site/src/styles/global.css",
-        "packages/connect-ui/src/client/styles.css",
         "docs/**",
         "AGENTS.md",
         "AUTH.md",
@@ -176,6 +174,16 @@
         "mise.toml",
         "mise.lock",
         ".github/**",
+        "**/DESIGN.md",
+        "site/package.json",
+        "site/src/styles/global.css",
+        "packages/**/package.json",
+        "packages/connect-ui/src/client/styles.css",
+        "packages/control-yard/public/yard.css",
+        "packages/mcp/src/secret-capture/html.ts",
+        "packages/status-page/src/tokens.ts",
+        "examples/**/package.json",
+        "apps/**/package.json",
         "packages/ci-gh-actions/templates/**",
         "packages/runtimes/runtime-wasm/src/**",
         "packages/runtimes/runtime-wasm/test/wasmtime-global-setup.ts"

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { main } from "../ci/route-runner.mts";
+import { type JsonValue, main } from "../ci/route-runner.mts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const config = JSON.parse(readFileSync(join(root, ".hobo/ci.json"), "utf8"));
@@ -36,8 +36,56 @@ const publicRepo = {
 	archived: false,
 };
 const readPublic: typeof fetch = async (url) => {
-	assert.equal(String(url), "https://api.github.com/repos/Hobo-Labs/HoBo");
-	return Response.json(publicRepo);
+	const path = String(url);
+	if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
+		return Response.json(publicRepo);
+	if (path.includes("/actions/runs"))
+		return Response.json({ workflow_runs: [] });
+	throw new Error(`unexpected read ${path}`);
+};
+const hostedQueueFetch = (
+	jobs: readonly JsonValue[],
+	asked: string[] = [],
+): typeof fetch => {
+	return async (url) => {
+		const path = String(url);
+		asked.push(path);
+		if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
+			return Response.json(publicRepo);
+		if (path.includes("/actions/runs/") && path.includes("/jobs"))
+			return Response.json({ jobs });
+		if (path.includes("/actions/runs"))
+			return Response.json({
+				workflow_runs: [
+					{
+						id: 40,
+						path: ".github/workflows/hobo-ci.yml",
+						status: "in_progress",
+						created_at: new Date().toISOString(),
+						updated_at: new Date().toISOString(),
+					},
+				],
+			});
+		throw new Error(`unexpected read ${path}`);
+	};
+};
+const saturatedHostedJobs: JsonValue[] = [10, 20, 30].map((wait) => ({
+	run_id: 40,
+	status: "queued",
+	labels: ["ubuntu-24.04"],
+	created_at: new Date(Date.now() - wait * 1000).toISOString(),
+}));
+const sameRepositoryPayload: JsonValue = {
+	pull_request: {
+		base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+		head: { repo: { full_name: "Hobo-Labs/HoBo" } },
+	},
+};
+const forkPayload: JsonValue = {
+	pull_request: {
+		base: { repo: { full_name: "Hobo-Labs/HoBo" } },
+		head: { repo: { full_name: "someone/HoBo" } },
+	},
 };
 
 describe("PR batch routing", () => {
@@ -85,12 +133,24 @@ describe("PR batch routing", () => {
 		);
 	});
 
-	it("preserves an explicit merge-group fleet pin", async () => {
+	it("requires a Broker claim for an explicit merge-group fleet pin", async () => {
 		const merge = { ...env, GITHUB_EVENT_NAME: "merge_group" };
+		const fetchUnexpected = async () => {
+			throw new Error("unexpected read");
+		};
+		await assert.rejects(
+			main([], merge, {
+				routingConfig: routing("fleet"),
+				fetch: fetchUnexpected,
+			}),
+			/requires a verified capacity and Broker claim/u,
+		);
 		const decision = await main([], merge, {
 			routingConfig: routing("fleet"),
-			fetch: async () => {
-				throw new Error("unexpected read");
+			fetch: fetchUnexpected,
+			verifyPrBatchCapacity: async (scope) => {
+				assert.equal(scope.runner, "hobo-trunk");
+				return true;
 			},
 		});
 		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
@@ -138,6 +198,146 @@ describe("PR batch routing", () => {
 			["github", "ubuntu-24.04"],
 		);
 		assert.match(decision.reason, /full PR batch.*no verified fleet capacity/u);
+	});
+
+	it("fetches the GitHub-hosted queue before choosing a PR batch fallback", async () => {
+		const asked: string[] = [];
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: hostedQueueFetch([], asked),
+		});
+		assert.equal(decision.runner, "ubuntu-24.04");
+		assert.ok(
+			asked.some((path) => path.includes("/actions/runs?")),
+			asked.join("\n"),
+		);
+		assert.ok(
+			asked.some((path) => path.includes("/actions/runs/40/jobs")),
+			asked.join("\n"),
+		);
+	});
+
+	it("keeps an unclaimed same-repository PR batch hosted during saturation", async () => {
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: hostedQueueFetch(saturatedHostedJobs),
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /no idle capacity/u);
+		assert.match(decision.reason, /stays on ubuntu-24\.04/u);
+	});
+
+	it("diverts a saturated same-repository PR batch to hobo-trunk when trunk is taking jobs", async () => {
+		const trunkPickup = {
+			run_id: 40,
+			status: "completed",
+			labels: ["hobo-trunk"],
+			runner_name: "runner-1",
+			created_at: new Date(Date.now() - 65_000).toISOString(),
+			started_at: new Date(Date.now() - 60_000).toISOString(),
+		};
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup]),
+		});
+		assert.deepEqual([decision.tier, decision.runner], ["fleet", "hobo-trunk"]);
+		assert.match(decision.reason, /no idle capacity/u);
+	});
+
+	it("fails closed when PR-batch hosted queue probe has no token", async () => {
+		await assert.rejects(
+			main(
+				[],
+				{ ...env, GITHUB_TOKEN: "" },
+				{
+					routingConfig: routing("auto"),
+					eventPayload: sameRepositoryPayload,
+					fetch: readPublic,
+				},
+			),
+			/PR batch hosted-runner public compute evidence is unavailable/u,
+		);
+	});
+
+	it("falls back to GitHub-hosted when the PR-batch hosted queue probe fails", async () => {
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: async (url) => {
+				const path = String(url);
+				if (path === "https://api.github.com/repos/Hobo-Labs/HoBo")
+					return Response.json(publicRepo);
+				throw new Error("queue down");
+			},
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /hosted-runner queue probe failed/u);
+	});
+
+	it("warns and keeps a saturated same-repository PR batch hosted when the fleet ladder is unavailable", async () => {
+		const lines: string[] = [];
+		const log = console.log;
+		console.log = (...parts: unknown[]) => {
+			lines.push(parts.map(String).join(" "));
+		};
+		let decision: Awaited<ReturnType<typeof main>>;
+		try {
+			decision = await main([], env, {
+				routingConfig: routing("auto"),
+				eventPayload: sameRepositoryPayload,
+				fetch: hostedQueueFetch([
+					...saturatedHostedJobs,
+					{
+						run_id: 40,
+						status: "queued",
+						labels: ["hobo"],
+						created_at: new Date(Date.now() - 2 * 1000).toISOString(),
+					},
+				]),
+			});
+		} finally {
+			console.log = log;
+		}
+		assert.deepEqual(
+			[decision.tier, decision.runner, decision.refusedBy],
+			["github", "ubuntu-24.04", "queue"],
+		);
+		assert.match(decision.reason, /no idle capacity/u);
+		assert.match(
+			decision.reason,
+			/same-repository batch stays on ubuntu-24\.04/u,
+		);
+		assert.ok(
+			lines.some(
+				(line) =>
+					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
+					line.includes("same-repository PR batch stays on ubuntu-24.04"),
+			),
+			lines.join("\n"),
+		);
+	});
+
+	it("keeps a fork PR batch on GitHub-hosted when GitHub-hosted is saturated", async () => {
+		const asked: string[] = [];
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: forkPayload,
+			fetch: hostedQueueFetch(saturatedHostedJobs, asked),
+		});
+		assert.equal(decision.runner, "ubuntu-24.04");
+		assert.ok(
+			!asked.some((path) => path.includes("/actions/runs")),
+			asked.join("\n"),
+		);
 	});
 
 	it("routes the separate release PR fan-out before its jobs are queued", async () => {
@@ -334,6 +534,7 @@ describe("PR batch routing", () => {
 		);
 		for (const job of [
 			"ci-deps-image",
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"pr_affected",

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 /** Write HOBO_RELEASE_* to GITHUB_ENV from a tag ref or nbgv (main train). */
 import { appendFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
+	type ParsedReleaseRef,
 	parseReleaseRef,
 	tryParseReleaseRef,
-	type ParsedReleaseRef,
 } from "../lib/release-version.mts";
 
 /** Gate already computed `v0.0.0-alpha.N`; shallow publish checkouts must not re-run nbgv height. */

@@ -1,36 +1,26 @@
-@import "tailwindcss";
-
-@source "../../node_modules/@json-render/shadcn/dist";
-
-@theme inline {
-	--color-background: var(--paper);
-	--color-foreground: var(--ink);
-	--color-card: var(--paper);
-	--color-card-foreground: var(--ink);
-	--color-primary: var(--ink);
-	--color-primary-foreground: var(--paper);
-	--color-secondary: var(--cream);
-	--color-secondary-foreground: var(--ink);
-	--color-muted: var(--cream);
-	--color-muted-foreground: var(--mute);
-	--color-accent: var(--cream);
-	--color-accent-foreground: var(--ink);
-	--color-destructive: var(--spark);
-	--color-border: var(--ink);
-	--color-input: var(--ink);
-	--color-ring: var(--spark);
-	--radius-lg: 0.25rem;
-	--radius-md: 0.25rem;
-	--radius-sm: 0.125rem;
-}
-
+@layer ui-sdk;
+@import "@ui-sdk/core/web.css";
 :root {
 	--ink: #101010;
 	--paper: #ffffff;
 	--cream: #f2f1ec;
 	--mute: #4a4a46;
+	--faint: #6e6d68;
 	--spark: #c5301c;
 	--go: #14672c;
+	--ui-background: var(--paper);
+	--ui-foreground: var(--ink);
+	--ui-muted: var(--cream);
+	--ui-muted-foreground: var(--mute);
+	--ui-border: var(--ink);
+	--ui-input: var(--ink);
+	--ui-primary: var(--ink);
+	--ui-primary-foreground: var(--paper);
+	--ui-destructive: var(--spark);
+	--ui-ring: var(--spark);
+	--ui-ring-border: var(--ink);
+	--ui-radius: 0.25rem;
+	--ui-font-sans: system-ui, sans-serif;
 	color-scheme: light;
 }
 
@@ -38,8 +28,11 @@
 	:root {
 		--ink: #f2f1ec;
 		--paper: #0a0a0a;
-		--cream: #111111;
-		--mute: #b9b8b1;
+		--cream: #1c1c1a;
+		--mute: #c4c3bc;
+		--faint: #c9c8c2;
+		--spark: #ff7a63;
+		--go: #57c777;
 		color-scheme: dark;
 	}
 }
@@ -50,52 +43,127 @@ body {
 	padding: 2rem 1rem;
 	background: var(--paper);
 	color: var(--ink);
-	font-family: system-ui, sans-serif;
-	line-height: 1.65;
+	font-family: var(--ui-font-sans);
+	line-height: 1.6;
 }
 
-[data-slot="card"] {
+.hobo-card {
+	display: grid;
+	gap: 1rem;
+	max-width: 34rem;
+	margin: 0 auto;
+	padding: 1.5rem;
 	border: 3px solid var(--ink);
+	border-radius: 0.5rem;
 	box-shadow: 6px 6px 0 var(--ink);
+	background: var(--paper);
+}
+
+.hobo-card h1 {
+	margin: 0;
+	font-size: 1.4rem;
+}
+
+.hobo-card p {
+	margin: 0;
+}
+
+.hobo-card[data-tone="success"] {
+	border-color: var(--go);
+	box-shadow: 6px 6px 0 var(--go);
+}
+
+.hobo-card[data-tone="error"] {
+	border-color: var(--spark);
+	box-shadow: 6px 6px 0 var(--spark);
+}
+
+.hobo-muted {
+	color: var(--mute);
+}
+
+.hobo-fields {
+	display: grid;
+	gap: 1rem;
+}
+
+.hobo-choice {
+	display: flex;
+	gap: 0.75rem;
+	align-items: flex-start;
+	padding: 0.5rem 0;
+}
+
+.hobo-choice span {
+	display: grid;
+}
+
+.hobo-choice small {
+	color: var(--mute);
+}
+
+.hobo-actions {
+	display: flex;
+	gap: 0.75rem;
+	flex-wrap: wrap;
 }
 
 [data-slot="button"] {
 	border: 2px solid var(--ink);
 	box-shadow: 3px 3px 0 var(--ink);
+	font-weight: 600;
+	padding-inline: 1rem;
 }
 
-[data-slot="button"]:focus-visible {
-	outline: 3px solid var(--spark);
-	outline-offset: 2px;
+[data-slot="button"][data-variant="primary"] {
+	background: var(--ink);
+	color: var(--paper);
 }
 
-input[type="radio"] {
-	width: 1rem;
-	height: 1rem;
+[data-slot="button"][data-variant="secondary"] {
+	background: var(--cream);
+	color: var(--ink);
+}
+
+[data-slot="input"],
+[data-slot="password-input"] {
+	border-width: 2px;
+}
+
+.hobo-refs {
 	margin: 0;
-	accent-color: var(--ink);
+	padding: 0;
+	list-style: none;
+	display: grid;
+	gap: 0.5rem;
 }
 
-input[type="radio"]:focus-visible {
-	outline: 3px solid var(--spark);
-	outline-offset: 2px;
-}
-
-.hobo-connect-loading,
-.hobo-connect-error {
-	max-width: 32rem;
-	margin: 4rem auto;
-	text-align: center;
-}
-
-.hobo-connect-error {
-	color: var(--spark);
+.hobo-refs code {
+	display: block;
+	padding: 0.5rem;
+	background: var(--cream);
+	border-radius: 0.25rem;
+	overflow-wrap: anywhere;
 }
 
 a {
 	color: var(--ink);
 	font-weight: 600;
-	text-decoration: underline;
 	text-decoration-thickness: 2px;
 	text-underline-offset: 3px;
+}
+
+.hobo-loading,
+.hobo-error {
+	max-width: 32rem;
+	margin: 4rem auto;
+	text-align: center;
+}
+
+.hobo-loading {
+	color: var(--faint);
+}
+
+.hobo-error {
+	color: var(--spark);
 }

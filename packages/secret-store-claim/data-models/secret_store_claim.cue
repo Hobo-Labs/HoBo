@@ -55,16 +55,23 @@ package secret_store_claim
 	secretPath:  string & =~"^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$"
 	relayIdentityId:  #Id
 	deployIdentityId: #Id & !=relayIdentityId
+	deployCredentialIdentityId?: "" | (#Id & !=relayIdentityId & !=deployIdentityId)
 	vercelTeamId?:    string & =~"^team_[A-Za-z0-9]{1,64}$"
 	claimBundleId:    string & =~"^[a-z0-9][a-z0-9:._-]{0,127}$"
 	claimState:       "pending" | "claimed"
-	// Apart from the relay's project: the relay identity cannot read it.
-	// Optional: a separate project for deploy-time credentials, empty when the
-	// default path needs none (ADR-0179 amendment "Secretless first").
-	deployProjectId?: #Id & !=projectId
-	// The exact subject the deploy identity trusts: GitHub's prefix for the
-	// repository, then the branch. Never a glob (a recycled name would match).
-	deployOidcSubject?: #GithubSubjectPrefix & =~":ref:refs/heads/[A-Za-z0-9._/-]{1,200}$"
+	deployOidcSubject?: "" | (#GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$")
+	// A configured deploy credential has a project of its own, never the
+	// relay's: Infisical project roles cover the whole project (RBAC,
+	// checked 2026-11-12), so a folder inside the relay's project cannot
+	// keep the relay's identity from reading it.
+	deployProjectId?: "" | (#Id & !=projectId)
+	if deployProjectId != "" {
+		deployCredentialIdentityId: #Id & !=relayIdentityId & !=deployIdentityId
+		deployOidcSubject: #GithubSubjectPrefix & =~":environment:hobo-ci-app-credentials$"
+	}
+	if deployCredentialIdentityId != "" {
+		deployProjectId: #Id & !=projectId
+	}
 }
 
 // `repo:<owner>/<repo>` (legacy) or `repo:<owner>@<ownerId>/<repo>@<repoId>`

@@ -1,27 +1,41 @@
 ---
 name: design-md
-description: Apply implemented visual tokens for site, status-page, control-yard, and connection UI; run design lint and impeccable critique without creating design documents.
+description: Always verify visual, UI, TUI, and dashboard changes against implemented tokens with contrast, rendered-surface, and impeccable checks; never create design documents.
 ---
 
-# Visual quality (implemented tokens)
+# Visual quality
 
-Use this skill on edits under `site/`, `packages/status-page/`,
-`packages/control-yard`, `packages/connect-ui` chrome, palette or theme token
-files, and any new browser-facing package. Do not invent hex colors, SaaS-blue
-accents, glassmorphism, or pill radii; traced art only; spark (`#c5301c`) and go
-(`#14672c`) stay rare.
+## When to use
 
-The authoritative token sheet for the public site is `site/src/styles/global.css`.
-Connection UI palettes ship in `packages/connect-ui/src/client/connect.css`.
-Status page and secret-capture colors are asserted by their package tests.
+**Always, without being asked**, when changing visual behavior, UI, TUI, or
+dashboards, including CSS, themes, design tokens, components, scenes, and
+generated web UI. Do not wait for a design-lint or impeccable request.
 
-After visual edits:
+## Implemented authority
 
-1. Run `pnpm run design:lint`.
-2. Run the package rendered-surface tests that cover your files (for example
-   `packages/status-page/test/status-page-design-lint.test.ts`).
-3. Run impeccable `critique` then `audit` on the changed surface; `polish` when
-   they report P0/P1 issues.
+Use the owning surface's implemented tokens and shared components. The retired
+`DESIGN.md` gate migrated to `pnpm run design:lint`, which executes
+`scripts/check-visual-tokens.mts` against the reviewed
+`scripts/visual-token-contract.json`. The checker fails closed for every
+contract-listed UI project when its directory, manifest, palette, or required
+contrast is missing or unreadable. New web UI packages must register their
+palette and contrast pairs in the contract; do not author or restore `DESIGN.md`
+files or use `@google/design.md`.
 
-Repository rules still prohibit creating or retaining design documents. Do not
-invoke plugin commands that generate them.
+`test/visual-tokens.test.ts` proves real-site discovery, contract-wide
+fail-closed behavior, and `DESIGN.md`/contract routing to `design:lint`.
+Rendered-surface requirements live beside their owning packages and are enforced
+by `packages/mcp/test/secret-capture-design-lint.test.ts`,
+`packages/connect-ui/test/connect-ui-design-lint.test.ts`,
+`packages/status-page/test/status-page-design-lint.test.ts`, and
+`packages/control-yard/test/design-lint.test.ts`.
+
+## Required checks
+
+1. Run impeccable `critique`, then `audit`, on the changed surface; polish any
+   P0/P1 findings.
+2. Run `pnpm run design:lint`. This must execute the implemented-palette
+   contrast gate and fail closed for missing or unreadable palettes.
+3. Run the affected package's design-lint and rendered-surface tests, including
+   `status-page-design-lint` or `secret-capture-design-lint` when applicable.
+4. Follow the owning package's documentation and evidence requirements.
