@@ -9,8 +9,8 @@ export interface ReleaseProvider {
 	inspect(deploymentId: string): Promise<ReleaseCandidate>;
 	canRollback(deploymentId: string): Promise<boolean>;
 	current(): Promise<string>;
-	promote(deploymentId: string): Promise<void>;
-	rollback(deploymentId: string): Promise<void>;
+	promote(deploymentId: string): Promise<"settled" | "pending">;
+	rollback(deploymentId: string): Promise<"settled" | "pending">;
 	probe(commit: string): Promise<boolean>;
 }
 
@@ -139,6 +139,8 @@ export async function promoteVerifiedRelease(input: {
 		return fail("concurrent-change");
 	if (current !== previous && current !== deploymentId)
 		return fail("concurrent-change");
+	if (reservation.state === "reserved" && !newReservation)
+		return fail("promotion-uncertain");
 
 	const rollback = async (
 		reason: "promote-failed" | "verification-failed" | "journal-failed",
@@ -147,7 +149,8 @@ export async function promoteVerifiedRelease(input: {
 			const owner = await provider.current();
 			if (owner === previous) return fail("promotion-uncertain");
 			if (owner !== deploymentId) return fail("concurrent-change");
-			await provider.rollback(previous);
+			if ((await provider.rollback(previous)) !== "settled")
+				return fail("promotion-uncertain");
 			let confirmed = false;
 			let passes =
 				Math.ceil(Math.max(0, rollbackDeadline - now()) / interval) + 1;
@@ -173,14 +176,14 @@ export async function promoteVerifiedRelease(input: {
 		}
 	};
 
-	let promotionFailed = false;
 	if (current === previous && newReservation) {
 		try {
 			if ((await provider.current()) !== previous)
 				return fail("concurrent-change");
-			await provider.promote(deploymentId);
+			if ((await provider.promote(deploymentId)) !== "settled")
+				return fail("promotion-uncertain");
 		} catch {
-			promotionFailed = true;
+			return fail("promotion-uncertain");
 		}
 	}
 	let successes = 0;
@@ -190,17 +193,17 @@ export async function promoteVerifiedRelease(input: {
 			const owner = await provider.current();
 			if (owner !== previous && owner !== deploymentId)
 				return fail("concurrent-change");
-			if (owner === deploymentId && promotionFailed)
-				return rollback("promote-failed");
 			if (owner === deploymentId && (await provider.probe(commit))) successes++;
 			else successes = 0;
 			if (successes >= required) {
 				if ((await provider.current()) !== deploymentId)
 					return fail("concurrent-change");
-				try {
-					await journal.save({ ...reservation, state: "verified" });
-				} catch {
-					return rollback("journal-failed");
+				if (reservation.state !== "verified") {
+					try {
+						await journal.save({ ...reservation, state: "verified" });
+					} catch {
+						return fail("journal-failed");
+					}
 				}
 				return { ok: true, previousDeploymentId: previous };
 			}
@@ -210,5 +213,6 @@ export async function promoteVerifiedRelease(input: {
 		if (now() + interval >= input.deadline) break;
 		await sleep(interval);
 	}
-	return rollback(promotionFailed ? "promote-failed" : "verification-failed");
+	if (reservation.state === "verified") return fail("verification-failed");
+	return rollback("verification-failed");
 }

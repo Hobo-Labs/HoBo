@@ -237,6 +237,27 @@ their pipelines promote the relay and the fleet like any other Bindle. The
 relay's Camps come from its Yard module and the fleet's from its delivery
 module (the examples above).
 
+Managed relay production delivery requires every caller to use the same durable
+release reservation journal for the Vercel target. Its event stream must have
+atomic expected-sequence appends through one fenced writer, including during
+failover. The host does not yet supply that authority: local SQLite, GitHub
+deployment records, and a fleet that can accept writes on a former writer do
+not establish this guarantee. Stop older unfenced delivery callers before
+enabling the shared authority, and ensure all writers for the target use it.
+The legacy Git-based relay deployment path refuses production because it cannot
+participate in the reservation; its preview and dry-run modes remain available.
+
+The reservation covers production settings, staged deployment, promotion and
+rollback. A dispatched operation with an uncertain response remains reserved
+across retries and restarts; an HTTP 202 settings or staged-deployment response
+also remains reserved. Vercel promotion and rollback responses currently
+provide no request-bound terminal proof to this integration, so an accepted
+operation also remains reserved. Observing the production alias or waiting for
+a timeout does not release it. Automated production delivery needs both a
+shared authority supplied by the host and a provider operation contract that
+proves the particular request can no longer take effect. No Git repository
+connection on the Vercel project is required.
+
 ## `hobo incident`
 
 `incident status` lists failed, rolled-back and rejected promotions and open

@@ -188,6 +188,7 @@ export function createVercelReleaseProvider(input: {
 				`/v10/projects/${encodeURIComponent(input.projectId)}/promote/${deployment(id)}`,
 			);
 			await response.body?.cancel().catch(() => {});
+			return "pending";
 		},
 		async rollback(id) {
 			const response = await api(
@@ -195,6 +196,7 @@ export function createVercelReleaseProvider(input: {
 				`/v1/projects/${encodeURIComponent(input.projectId)}/rollback/${deployment(id)}`,
 			);
 			await response.body?.cancel().catch(() => {});
+			return "pending";
 		},
 		async probe(commit) {
 			try {

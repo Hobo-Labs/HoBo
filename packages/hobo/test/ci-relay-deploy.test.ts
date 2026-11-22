@@ -13,7 +13,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createCiCommand, parseCiArgs } from "../src/ci-command.js";
 import { CI_DEPLOY_OPTIONS, runCiRelayDeploy } from "../src/ci-relay-deploy.js";
 import type { VercelCliRunner } from "../src/ci-relay-provision.js";
-import { RELAY_VERIFY_REFUSAL } from "../src/ci-relay-verify.js";
 import { isJsonObject, type JsonObject, parseJsonObject } from "../src/json.js";
 import type { VercelFetch } from "../src/vercel-client.js";
 
@@ -968,7 +967,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		expect(sent).toEqual([]);
 	});
 
-	it("refuses production before any request when preview has not qualified the commit", async () => {
+	it("refuses legacy production before any provider request", async () => {
 		const { fetch, sent } = unreachable();
 		const ran = await deploy(
 			[
@@ -984,13 +983,12 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		);
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
-			code: "HOBO_CI_DEPLOY_NOT_QUALIFIED",
-			message: expect.stringContaining("Run hobo ci deploy --target preview"),
+			code: "HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
 		});
 		expect(sent).toEqual([]);
 	});
 
-	it("promotes to production the commit preview verified, in the same journal", async () => {
+	it("does not bypass the release reservation after preview qualifies a commit", async () => {
 		const home = freshHome();
 		const relay = healthyRelay();
 		// One clock across both runs: production comes after preview.
@@ -1008,6 +1006,7 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 			state: "PROMOTED",
 		});
 
+		const production = unreachable();
 		const second = await deploy(
 			[
 				...PINNED,
@@ -1019,33 +1018,22 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 				"--wait",
 			],
 			{
-				fetch: scriptedVercel(["READY"]).fetch,
+				fetch: production.fetch,
 				env,
 				hoboHome: home,
 				probe: relay.http,
 				...clock,
 			},
 		);
-		expect(second.exitCode, JSON.stringify(second.envelope)).toBe(0);
+		expect(second.exitCode).toBe(1);
 		expect(second.envelope).toMatchObject({
-			ok: true,
-			code: "HOBO_CI_DEPLOYED",
+			ok: false,
+			code: "HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
 		});
-		const previewDelivery = first.data.delivery;
-		expect(second.data.delivery).toMatchObject({
-			node: "production",
-			campId: "hobo-ci-relay/hobo-ci-relay/production",
-			state: "PROMOTED",
-			freightId: isJsonObject(previewDelivery) ? previewDelivery.freightId : "",
-		});
-		expect(second.data.outputs).toMatchObject({
-			camp: "hobo-ci-relay/production",
-			readyState: "READY",
-		});
-		expect(relay.probed).toContain("https://relay.example.test/readyz");
+		expect(production.sent).toEqual([]);
 	});
 
-	it("does not qualify production while HOBO_CI_RELAY_URL serves another commit", async () => {
+	it("does not observe or mutate production from the legacy delivery path", async () => {
 		const home = freshHome();
 		const clock = steppingClock();
 		const first = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
@@ -1077,10 +1065,9 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 		);
 		expect(second.exitCode).toBe(1);
 		expect(second.envelope).toMatchObject({
-			code: RELAY_VERIFY_REFUSAL.commitMismatch,
-			message: expect.stringContaining("f".repeat(40)),
+			code: "HOBO_CI_DEPLOY_RELEASE_AUTHORITY_REQUIRED",
 		});
-		expect(stale.probed).toContain("https://relay.example.test/healthz");
+		expect(stale.probed).toEqual([]);
 	});
 
 	it("without --wait returns once the deployment exists, unverified and unqualified", async () => {
