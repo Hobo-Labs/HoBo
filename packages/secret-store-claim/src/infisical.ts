@@ -1,44 +1,3 @@
-/**
- * The two Infisical offers: a self-hosted instance HoBo bootstraps and hands
- * over by claim (`infisical-self-hosted`), and an Infisical Cloud
- * organization the owner already has (`infisical-cloud-attach`). Both end in
- * the same layout, which is what the relay's config loader and the deploy
- * workflow already read:
- *
- * - project `hobo-ci`, environment `prod`, folder `/hobo-ci-relay`: the
- *   relay's config and secrets;
- * - identity `hobo-ci-relay` in it, role viewer, OIDC Auth trusting the
- *   Vercel team issuer for the relay's production deployments only;
- * - project `hobo-ci-deploy`, environment `prod`, folder `/`: the deploy
- *   credential, in a project of its own so the relay's identity can never
- *   read it (Infisical project roles cover the whole project);
- * - identity `hobo-ci-deploy` in it, role viewer, OIDC Auth trusting GitHub
- *   Actions on the repository's default branch, by the subject GitHub issues
- *   for the repository (`github-oidc.ts`: the immutable
- *   `repo:<owner>@<ownerId>/<repo>@<repoId>` form when the repository uses it)
- *   and its pinned `repository_id` and `repository_owner_id`.
- *
- * Self-hosted, step by step:
- *
- * 1. The Yard places Infisical (with its PostgreSQL and Redis) on a compute
- *    fleet host. Placement is the Yard's; this module starts from the
- *    instance's HTTPS origin and requires it to be fresh.
- * 2. Bootstrap with a password HoBo generates and never prints
- *    (`POST /api/v1/admin/bootstrap`): admin user, organization and the
- *    instance-admin machine identity with its Token Auth token.
- * 3. With that token, create the layout above.
- * 4. Seal the owner's sign-in (site, email, password) into a one-time action;
- *    the claim item carries its reference. Seal the instance-admin token into
- *    a second action only `verifySelfHostedInfisicalClaim` redeems.
- * 5. `hobo claim open secret-store` shows the owner the sign-in once.
- *    `hobo claim finalize secret-store` deletes HoBo's bootstrap identity
- *    and verifies, through Infisical, that its token is refused: HoBo keeps
- *    no authority over the store after the claim.
- *
- * HONEST SCOPE: exercised against the pact mock of Infisical's admin API and
- * a local stand-in. The owner changing the bootstrap password is asked for,
- * not observed: Infisical exposes no read of it to an identity HoBo keeps.
- */
 import { randomBytes } from "node:crypto";
 import { create } from "@bufbuild/protobuf";
 import {
@@ -63,7 +22,11 @@ import {
 	secretStoreClaimItem,
 } from "./claim.js";
 import { SecretStoreError, secretStoreError } from "./errors.js";
-import { type GithubOidcSubject, githubDeployTrust } from "./github-oidc.js";
+import {
+	type GithubOidcSubject,
+	githubDeployReaderTrust,
+	githubDeployTrust,
+} from "./github-oidc.js";
 
 /** What the relay's store holds, and who may sign in to it. */
 export type RelayStoreLayout = Readonly<{
@@ -77,6 +40,8 @@ export type RelayStoreLayout = Readonly<{
 	relayTrust: InfisicalOidcTrust;
 	deployIdentity: string;
 	deployTrust: InfisicalOidcTrust;
+	deployReaderIdentity: string;
+	deployReaderTrust: InfisicalOidcTrust;
 	vercelTeamId: string;
 }>;
 
@@ -128,6 +93,8 @@ export function relayStoreLayout(input: {
 		},
 		deployIdentity: "hobo-ci-deploy",
 		deployTrust: githubDeployTrust(input.github, input.branch),
+		deployReaderIdentity: "hobo-ci-deploy-reader",
+		deployReaderTrust: githubDeployReaderTrust(input.github, input.branch),
 		vercelTeamId: input.vercelTeamId,
 	});
 }
@@ -137,6 +104,7 @@ type Provisioned = Readonly<{
 	deployProjectId: string;
 	relayIdentityId: string;
 	deployIdentityId: string;
+	deployCredentialIdentityId: string;
 }>;
 
 async function provisionLayout(
@@ -166,13 +134,20 @@ async function provisionLayout(
 		name: layout.deployIdentity,
 		role: "viewer",
 	});
+	const reader = await admin.createProjectIdentity({
+		projectId: deployProjectId,
+		name: layout.deployReaderIdentity,
+		role: "viewer",
+	});
 	await admin.attachOidcAuth(relay.identityId, layout.relayTrust);
 	await admin.attachOidcAuth(deploy.identityId, layout.deployTrust);
+	await admin.attachOidcAuth(reader.identityId, layout.deployReaderTrust);
 	return {
 		projectId,
 		deployProjectId,
 		relayIdentityId: relay.identityId,
 		deployIdentityId: deploy.identityId,
+		deployCredentialIdentityId: reader.identityId,
 	};
 }
 
@@ -195,6 +170,7 @@ function bindingOf(input: {
 			secretPath: `/${input.layout.folder}`,
 			relayIdentityId: input.provisioned.relayIdentityId,
 			deployIdentityId: input.provisioned.deployIdentityId,
+			deployCredentialIdentityId: input.provisioned.deployCredentialIdentityId,
 			vercelTeamId: input.layout.vercelTeamId,
 			claimBundleId: input.claimBundleId,
 			claimState: input.claimState,

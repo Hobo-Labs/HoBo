@@ -21,6 +21,7 @@ import type {
 	BucketInspector,
 	FlagInspector,
 	KeyValuePort,
+	ScheduleDriver,
 	ServiceEmulatorFactories,
 } from "./emulators.js";
 import type { RunnerAdapter } from "./runner.js";
@@ -78,6 +79,7 @@ export interface DeployedGraph {
 	schedule(alias: string): SchedulerPort;
 	/** The schedule's controllable clock, if the implementation provides one. */
 	scheduleClock(alias: string): VirtualClock | undefined;
+	scheduleDriver(alias: string): ScheduleDriver | undefined;
 	kv(alias: string): KeyValuePort;
 	bucket(alias: string): BlobStorePort;
 	flag(alias: string): FeatureFlagPort;

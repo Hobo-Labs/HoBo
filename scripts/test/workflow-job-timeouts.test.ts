@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 const root = join(import.meta.dirname, "..", "..");
 const workflowDir = join(root, ".github", "workflows");

@@ -146,6 +146,11 @@ describe("the Infisical API (consumer contract)", () => {
 		expect(await c.listSecretNames()).toEqual([
 			{ secretKey: "HOBO_CI_PUBLIC_URL", version: 1 },
 		]);
+		expect(await c.readProjectIdentity("relay-identity")).toEqual({
+			identityId: "relay-identity",
+			projectId: "proj-1",
+			roles: ["viewer"],
+		});
 		expect(await codeOf(c.getSecret("MISSING"))).toBe("not-found");
 		expectRecorded();
 	});

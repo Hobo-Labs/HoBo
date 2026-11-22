@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Messaging, Queue, SchedulerPort, VirtualClock } from "@hobo/core";
 import type { EngineBinding } from "@hobo/data-core";
 import type {
@@ -6,15 +7,17 @@ import type {
 	FeatureFlagPort,
 	SecretsPort,
 } from "@hobo/identity";
-import type {
-	BlobStorePort,
-	BucketEmulator,
-	BucketInspector,
-	FlagEmulator,
-	FlagInspector,
-	KeyValuePort,
-	QueueEmulator,
-	ScheduleEmulator,
+import {
+	assertNotInScheduleHandler,
+	type BlobStorePort,
+	type BucketEmulator,
+	type BucketInspector,
+	type FlagEmulator,
+	type FlagInspector,
+	type KeyValuePort,
+	type QueueEmulator,
+	type ScheduleDriver,
+	type ScheduleEmulator,
 } from "./emulators.js";
 import { TestHarnessError } from "./errors.js";
 import { emptyFidelityCounts } from "./fidelity.js";
@@ -272,6 +275,9 @@ function buildGraph(
 		scheduleClock(alias: string): VirtualClock | undefined {
 			return scheduleEmulator(alias).clock;
 		},
+		scheduleDriver(alias: string): ScheduleDriver | undefined {
+			return scheduleEmulator(alias).driver;
+		},
 		kv(alias: string): KeyValuePort {
 			const handle = handles.get(alias);
 			if (handle === undefined) unknownAlias(alias, aliases);
@@ -361,6 +367,11 @@ export function createTestHarness(
 	const probe = internals.probe ?? createFetchReadinessProbe();
 	const states = new Map<unknown, Promise<HarnessState>>();
 	const destroying = new Map<unknown, Set<Promise<void>>>();
+	const deployments = new Map<unknown, Set<InProcessDeployment>>();
+	const deploying = new AsyncLocalStorage<{
+		bindle: unknown;
+		active: boolean;
+	}>();
 	let latest: HarnessState | undefined;
 
 	async function ensure(bindle: unknown): Promise<HarnessState> {
@@ -368,11 +379,18 @@ export function createTestHarness(
 		if (existing !== undefined) return existing;
 		const pending = (async (): Promise<HarnessState> => {
 			if (campTarget !== undefined) await deployEphemeralCamp(campTarget);
-			const deployment = await deployInProcess(
-				bindle,
-				stage,
-				options.emulators,
-			);
+			const frame = { bindle, active: true };
+			let deployment: InProcessDeployment;
+			try {
+				deployment = await deploying.run(frame, () =>
+					deployInProcess(bindle, stage, options.emulators),
+				);
+			} finally {
+				frame.active = false;
+			}
+			const activeDeployments = deployments.get(bindle) ?? new Set();
+			activeDeployments.add(deployment);
+			deployments.set(bindle, activeDeployments);
 			const asserted = new Set<string>();
 			const state: HarnessState = {
 				graph: buildGraph(stage, lane, deployment, asserted),
@@ -399,6 +417,13 @@ export function createTestHarness(
 		},
 		destroy(bindle: unknown): () => Promise<void> {
 			return async () => {
+				const frame = deploying.getStore();
+				if (frame?.active && frame.bindle === bindle)
+					throw new Error(
+						"A graph cannot be destroyed from its own deployment.",
+					);
+				for (const deployment of deployments.get(bindle) ?? [])
+					assertNotInScheduleHandler(deployment.schedules.values());
 				const pending = states.get(bindle);
 				if (pending !== undefined) {
 					states.delete(bindle);
@@ -407,7 +432,13 @@ export function createTestHarness(
 					const cleanup = (async () => {
 						const state = await pending;
 						if (latest === state) latest = undefined;
-						await destroyInProcess(state.deployment);
+						try {
+							await destroyInProcess(state.deployment);
+						} finally {
+							const activeDeployments = deployments.get(bindle);
+							activeDeployments?.delete(state.deployment);
+							if (activeDeployments?.size === 0) deployments.delete(bindle);
+						}
 					})();
 					cleanups.add(cleanup);
 					try {

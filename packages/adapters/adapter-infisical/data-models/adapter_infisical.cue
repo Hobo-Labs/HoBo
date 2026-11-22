@@ -156,6 +156,7 @@ package adapter_infisical
 
 #InfisicalIdentity: {
 	id: #id
+	projectId?: #id
 	...
 }
 
@@ -192,6 +193,18 @@ package adapter_infisical
 	name: string & =~"^[a-z0-9][a-z0-9-]{0,63}$"
 	// The relay and the deploy identity read, each in its own project.
 	roles: [#InfisicalProjectRole]
+}
+
+#InfisicalProjectIdentityListMembership: {
+	identityId: #id
+	roles: [...#InfisicalProjectRole]
+	identity: #InfisicalIdentity
+	...
+}
+
+#InfisicalProjectIdentityListResponse: {
+	identityMemberships: [...#InfisicalProjectIdentityListMembership]
+	...
 }
 
 #InfisicalAttachOidcAuthRequest: {

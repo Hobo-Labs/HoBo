@@ -50,7 +50,7 @@ export function gitLsFiles(patterns: string[]): string[] {
 
 export function isNodeTestFile(file: string): boolean {
 	const source = readFileSync(file, "utf8");
-	return /from\s+["']node:test["']|require\(\s*["']node:test["']\s*\)|import\s+["']node:test["']/.test(
+	return /from\s+["'](?:node:test|\.\/support\/test-runner\.ts)["']|require\(\s*["']node:test["']\s*\)|import\s+["']node:test["']/.test(
 		source,
 	);
 }

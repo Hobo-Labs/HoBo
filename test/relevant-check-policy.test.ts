@@ -81,9 +81,7 @@ function isScriptsLane(check: Check) {
 	);
 }
 
-test("external workspace coverage omits only the commands CI runs in their own jobs", () => {
-	// pr_gate_validation passes --external-workspace-tests: workspace_tests
-	// runs the workspace suites and scripts-tests runs the scripts lane.
+test("pr_gate_validation leaves workspace and scripts lanes to dedicated jobs; pr_gate_plan runs none", () => {
 	const files = ["packages/ci/src/index.ts", "scripts/example.ts"];
 	const normal = plan(files);
 	const external = plan(files, { workspaceTestsCoveredExternally: true });
@@ -191,6 +189,35 @@ test("lockfile importer-only changes do not select all-package Turbo", () => {
 		checks.some((check) => check.args.join(" ") === "run install:check"),
 		true,
 	);
+});
+
+test("Open SaaS vitest lane tracks implementation inputs only", () => {
+	const npmLane = (checks: ReturnType<typeof plan>["checks"]) =>
+		checks.some(
+			(check) =>
+				check.command === "npm" &&
+				check.args.join(" ") ===
+					"--prefix examples/wasp-opensaas/app run ci:test:unit",
+		);
+
+	const triggers = [
+		"examples/wasp-opensaas/app/src/analytics/stats.ts",
+		"examples/wasp-opensaas/app/test/color-mode.test.tsx",
+		"examples/wasp-opensaas/app/scripts/ensure-vitest-install.mts",
+		"examples/wasp-opensaas/app/package.json",
+		"examples/wasp-opensaas/app/vitest.config.ts",
+	];
+	for (const file of triggers) {
+		assert.equal(npmLane(plan([file]).checks), true, file);
+	}
+
+	const negatives = [
+		"examples/wasp-opensaas/app/README.md",
+		"examples/wasp-opensaas/app/docs/note.md",
+	];
+	for (const file of negatives) {
+		assert.equal(npmLane(plan([file]).checks), false, file);
+	}
 });
 
 test("--build still selects all-package Turbo", () => {
@@ -1123,4 +1150,20 @@ test("a change to anything that guards signed local runs runs those guards", () 
 			{ tests: false, nodeTest: false, actionsLint: false },
 			file,
 		);
+});
+
+test("UI discovery manifest changes select the visual-token gate", () => {
+	for (const file of [
+		"packages/connect-ui/package.json",
+		"packages/mcp/package.json",
+		"packages/runtimes/runtime-local/package.json",
+		"examples/custom-ui/package.json",
+		"apps/web/package.json",
+	]) {
+		const { checks } = plan([file]);
+		assert.ok(
+			checks.some((check) => check.args.join(" ") === "run design:lint"),
+			file,
+		);
+	}
 });

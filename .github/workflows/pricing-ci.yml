@@ -86,8 +86,25 @@ jobs:
       runner: ${{ steps.route.outputs.runner }}
       tier: ${{ steps.route.outputs.tier }}
     steps:
+      - id: routing-base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$PR_BASE_SHA" ;;
+            merge_group) base="$MERGE_BASE_SHA" ;;
+            *) base="$GITHUB_SHA" ;;
+          esac
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The trusted routing base is unavailable"
+            exit 1
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ steps.routing-base.outputs.sha }}
           persist-credentials: false
           fetch-depth: 1
           sparse-checkout-cone-mode: false
@@ -98,14 +115,14 @@ jobs:
             .hobo/ci.json
             packages/ci/src/fleet-overflow.ts
       - id: route
-        uses: $/.github/actions/route-runner
+        uses: ./.github/actions/route-runner
         with:
           token: ${{ github.token }}
 
   pricing-gate:
     name: "@hobo/pricing affected gate"
     needs: route
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -164,7 +181,7 @@ jobs:
   pricing-models:
     name: Check bounded IaC models
     needs: route
-    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    runs-on: ${{ needs.route.result == 'success' && (needs.route.outputs.runner || 'ubuntu-24.04') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -182,7 +199,7 @@ jobs:
         run: |
           curl --fail --location --silent --show-error --retry 3 --max-time 60 \
             --output "$RUNNER_TEMP/tla2tools.jar" \
-            https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
       - name: Test model checker process bounds
         run: node --experimental-strip-types --test scripts/test/bounded-tlc.test.ts
       - name: Verify tool digest and check models
