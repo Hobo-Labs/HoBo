@@ -134,7 +134,9 @@ describe("the description of the covered jobs", () => {
 			(step) => step.name === "Validate agent plugin without publishing",
 		);
 		assert.equal(plugin?.local, "run");
-		assert.equal(plugin?.env, undefined);
+		assert.deepEqual(plugin?.env, {
+			GITHUB_HEAD_SHA: "${{ github.event.pull_request.head.sha }}",
+		});
 		const document = workflowDocument(readFileSync(gate.workflow, "utf8"));
 		const jobs = asObject(document.jobs);
 		const job = asObject(jobs?.[gate.id]);

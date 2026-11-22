@@ -95,9 +95,9 @@ Four things make the cache both **correct** and **fast**:
 | `envMode: "strict"` + `env`/`globalPassThroughEnv` allowlists | reproducible, no accidental env leakage into the hash | HoBo |
 
 Run-scoped attestation identifiers (`GITHUB_RUN_ATTEMPT` and `GITHUB_RUN_ID`)
-belong on the `test` task's `env`, not `passThroughEnv` or the global list, so
-each run attempt participates in the task hash while unrelated required checks
-keep reusable cache entries.
+belong in `globalPassThroughEnv`, not a task's `env`: the verification step
+needs their values without invalidating every test task's hash on each run
+attempt.
 
 Do not list `turbo.json` itself in `globalDependencies`: Turbo already hashes each resolved task definition into that task's hash, while global environment settings are covered by the global hash. Self-listing only makes an unrelated task edit invalidate the whole repository.
 

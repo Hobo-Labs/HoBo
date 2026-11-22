@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
 	mkdir,
 	mkdtemp,
@@ -19,7 +19,9 @@ import {
 	agentToolingReferenceDriftIssues,
 	bodyAfterFrontmatter,
 	checkAgentPlugin,
+	checkExecutableToken,
 	checkMarkdownLinks,
+	checkMcpEndpointUrl,
 	checkPluginScopedPath,
 	compareSemverPrecedence,
 	githubHeadShaMismatchIssues,
@@ -31,7 +33,6 @@ import {
 	parsePluginManifest,
 	releaseTrainSemverForPluginCheck,
 	releaseTrainVersionForPluginGate,
-	requiresExactReleaseTrainVersion,
 	scanTextForSecrets,
 	verifyAgentPluginAttestation,
 	versionPinCommitIsh,
@@ -51,6 +52,23 @@ afterEach(async () => {
 		if (dir) await rm(dir, { recursive: true, force: true });
 	}
 });
+
+function ensureRealBundle(): void {
+	const bundle = path.join(realPluginRoot, "bin/hobo-mcp.mjs");
+	if (existsSync(bundle)) return;
+	const build = spawnSync(
+		process.execPath,
+		["--import", "tsx", "scripts/build-agent-plugin.mts"],
+		{
+			cwd: repoRoot,
+			encoding: "utf8",
+			env: { ...process.env, HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" },
+			timeout: 300_000,
+		},
+	);
+	expect(build.status).toBe(0);
+	expect(existsSync(bundle)).toBe(true);
+}
 
 function git(root: string, ...args: string[]): string {
 	const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -96,10 +114,21 @@ async function scratchMergeRepo(): Promise<{
 function stubCiEnvironment(event: string, headSha = "") {
 	vi.stubEnv("GITHUB_EVENT_NAME", event);
 	vi.stubEnv("GITHUB_HEAD_SHA", headSha);
+	vi.stubEnv("GITHUB_EVENT_PATH", undefined);
 }
 
 function stubCiOff() {
-	for (const variable of ["CI", "GITHUB_ACTIONS", "TF_BUILD"] as const) {
+	for (const variable of [
+		"CI",
+		"GITHUB_ACTIONS",
+		"TF_BUILD",
+		"BUILD_ID",
+		"TEAMCITY_VERSION",
+		"GITLAB_CI",
+		"CIRCLECI",
+		"BUILDKITE",
+		"CODEBUILD_BUILD_ID",
+	] as const) {
 		vi.stubEnv(variable, undefined);
 	}
 	vi.stubEnv("GITHUB_RUN_ID", undefined);
@@ -107,6 +136,10 @@ function stubCiOff() {
 	vi.stubEnv("GITHUB_RUN_ATTEMPT", undefined);
 	vi.stubEnv("GITHUB_EVENT_NAME", undefined);
 	vi.stubEnv("GITHUB_HEAD_SHA", undefined);
+	vi.stubEnv("GITHUB_EVENT_PATH", undefined);
+	vi.stubEnv("GITHUB_REPOSITORY", undefined);
+	vi.stubEnv("GITHUB_SERVER_URL", undefined);
+	vi.stubEnv("GH_TOKEN", undefined);
 }
 
 function recordingNbgv(height: string) {
@@ -218,7 +251,7 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 	it("flags a valid semver that lags the release train", () => {
 		const issues = manifestSemanticIssues(validManifest, "0.0.0-alpha.400");
 		expect(issues).toHaveLength(1);
-		expect(issues[0]?.message).toMatch(/is stale/u);
+		expect(issues[0]?.message).toMatch(/does not exactly match/u);
 	});
 
 	it("flags a numeric-prerelease pin that is strictly older, not lexically older", () => {
@@ -227,7 +260,7 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 			"0.0.0-alpha.400",
 		);
 		expect(issues).toHaveLength(1);
-		expect(issues[0]?.message).toMatch(/is stale/u);
+		expect(issues[0]?.message).toMatch(/does not exactly match/u);
 	});
 
 	it("rejects higher fixed-alpha heights outside PR validation", () => {
@@ -247,43 +280,35 @@ describe("parsePluginManifest + manifestSemanticIssues", () => {
 		}
 	});
 
-	it("tolerates a one-height squash merge lag on push outside exact PR pins", () => {
+	it("rejects a one-height squash merge lag on push", () => {
 		vi.stubEnv("GITHUB_EVENT_NAME", "push");
-		expect(
-			manifestSemanticIssues(
-				{ ...validManifest, version: "0.0.0-alpha.399" },
+		for (const version of ["0.0.0-alpha.399", "0.0.0-alpha.398"]) {
+			const issues = manifestSemanticIssues(
+				{ ...validManifest, version },
 				"0.0.0-alpha.400",
-			),
-		).toEqual([]);
-		expect(
-			manifestSemanticIssues(
-				{ ...validManifest, version: "0.0.0-alpha.398" },
-				"0.0.0-alpha.400",
-			),
-		).toHaveLength(1);
+			);
+			expect(issues).toHaveLength(1);
+			expect(issues[0]?.message).toMatch(/does not exactly match/u);
+		}
 		vi.unstubAllEnvs();
 	});
 
-	it("rejects a newer height when PR validation requires an exact pin", () => {
-		const issues = manifestSemanticIssues(
-			{ ...validManifest, version: "0.0.0-alpha.500" },
-			"0.0.0-alpha.400",
-			{ exactReleaseTrain: true },
-		);
-		expect(issues).toHaveLength(1);
-		expect(issues[0]?.message).toMatch(/is newer than the release train/u);
-	});
-
-	it("rejects a newer height on push outside the one-height squash lag", () => {
-		vi.stubEnv("GITHUB_EVENT_NAME", "push");
-		const issues = manifestSemanticIssues(
-			{ ...validManifest, version: "0.0.0-alpha.500" },
-			"0.0.0-alpha.400",
-		);
-		expect(issues).toHaveLength(1);
-		expect(issues[0]?.message).toMatch(
-			/ahead-of-train pins are never allowed/u,
-		);
+	it("rejects a newer height on every event path", () => {
+		for (const eventName of [
+			undefined,
+			"push",
+			"pull_request",
+			"merge_group",
+		]) {
+			if (eventName === undefined) vi.stubEnv("GITHUB_EVENT_NAME", undefined);
+			else vi.stubEnv("GITHUB_EVENT_NAME", eventName);
+			const issues = manifestSemanticIssues(
+				{ ...validManifest, version: "0.0.0-alpha.500" },
+				"0.0.0-alpha.400",
+			);
+			expect(issues).toHaveLength(1);
+			expect(issues[0]?.message).toMatch(/does not exactly match/u);
+		}
 		vi.unstubAllEnvs();
 	});
 
@@ -521,6 +546,74 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 			.join("\n");
 		expect(messages).toMatch(/NODE_OPTIONS.*reserved/u);
 	});
+
+	it("rejects unsafe MCP endpoint URLs and expansions", () => {
+		for (const url of [
+			"http://169.254.169.254/latest/meta-data",
+			"https://[::1]/mcp",
+			"https://127.0.0.1/mcp",
+			"https://metadata.google.internal/mcp",
+			"https://${ATTACKER_HOST}/mcp",
+			"https://mcp.example.com/a/../b",
+			"https://mcp.example.com/%2e%2e/b",
+			"https://user:pass@mcp.example.com/mcp",
+			"https://mcp.example.com.evil.test/mcp",
+		]) {
+			expect(
+				checkMcpEndpointUrl("mcp.json mcpServers.evil", url).map(
+					(issue) => issue.message,
+				),
+			).not.toEqual([]);
+		}
+		expect(
+			checkMcpEndpointUrl(
+				"mcp.json mcpServers.ok",
+				"https://mcp.example.com/v1/mcp",
+			),
+		).toEqual([]);
+	});
+
+	it("rejects unsafe stdio executables and redacts secret headers", () => {
+		for (const command of [
+			"/bin/sh",
+			"C:\\evil.exe",
+			"../../evil",
+			"${PLUGIN_ROOT}/../evil",
+			"${HOME}/evil",
+			"~/evil",
+		]) {
+			expect(
+				checkExecutableToken("mcp.json mcpServers.evil", command).map(
+					(issue) => issue.message,
+				),
+			).not.toEqual([]);
+		}
+		expect(checkExecutableToken("mcp.json mcpServers.ok", "node")).toEqual([]);
+		const parsed = parseMcpConfig(
+			JSON.stringify({
+				$schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+				mcpServers: {
+					remote: {
+						type: "streamable-http",
+						url: "http://169.254.169.254/latest/meta-data",
+						headers: { Authorization: "ghp_abcdefghijklmnopqrst" },
+					},
+				},
+			}),
+		);
+		expect(parsed.issues).toEqual([]);
+		const messages = mcpSemanticIssues(
+			parsed.value ?? { $schema: "", mcpServers: {} },
+		)
+			.map((issue) => issue.message)
+			.join("\n");
+		expect(messages).toMatch(/must use https/u);
+		expect(messages).toMatch(/secret-shaped value/u);
+		expect(messages).not.toContain("ghp_abcdefghijklmnopqrst");
+		expect(
+			hoboMcpServerIssues(parsed.value ?? { $schema: "", mcpServers: {} }),
+		).toMatchObject([{ message: /exactly the hobo server/u }]);
+	});
 });
 
 describe("scanTextForSecrets", () => {
@@ -617,6 +710,7 @@ describe("frontmatter helpers", () => {
 
 describe("checkAgentPlugin (integration)", () => {
 	it("validates the repository's real plugin with no issues", async () => {
+		ensureRealBundle();
 		stubCiOff();
 		const report = await checkAgentPlugin({
 			pluginRoot: realPluginRoot,
@@ -641,32 +735,7 @@ describe("checkAgentPlugin (integration)", () => {
 		});
 		expect(
 			report.issues.some((issue) =>
-				/is newer than the release train/u.test(issue.message),
-			),
-		).toBe(true);
-		expect(
-			report.notes.some((note) => note.includes("exactReleaseTrain=false")),
-		).toBe(false);
-	});
-
-	it("notes the event name and commit ish when the comparison runs without the exact pin", async () => {
-		stubCiOff();
-		stubCiEnvironment("push");
-		const train = parsePluginManifest(
-			readFileSync(path.join(realPluginRoot, "plugin.json"), "utf8"),
-		).value?.version;
-		const report = await checkAgentPlugin({
-			pluginRoot: realPluginRoot,
-			repoRoot,
-			versionFromReleaseTrain: train,
-		});
-		expect(report.issues).toEqual([]);
-		expect(
-			report.notes.some(
-				(note) =>
-					note.includes("exactReleaseTrain=false") &&
-					note.includes("GITHUB_EVENT_NAME=push") &&
-					note.includes("commitIsh=HEAD"),
+				/does not exactly match/u.test(issue.message),
 			),
 		).toBe(true);
 	});
@@ -1136,6 +1205,7 @@ describe("checkAgentPlugin (integration)", () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GH_TOKEN", "caller-controlled");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
@@ -1273,6 +1343,7 @@ describe("checkAgentPlugin (integration)", () => {
 	it("accepts only verified provenance from the current workflow attempt", async () => {
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GH_TOKEN", "caller-controlled");
 		vi.stubEnv("GITHUB_RUN_ID", "run-current");
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
@@ -1337,6 +1408,7 @@ describe("checkAgentPlugin (integration)", () => {
 	it("requires GitHub run and attempt metadata in CI", async () => {
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GH_TOKEN", "caller-controlled");
 		vi.stubEnv("GITHUB_RUN_ID", undefined);
 		vi.stubEnv("GITHUB_SHA", "commit-current");
 		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
@@ -1684,21 +1756,52 @@ describe("release-train version pin commit selection", () => {
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
 	});
 
+	it("resolves the PR branch tip from GITHUB_SHA^2 on a head-sha checkout", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		const mergeSha = git(repoRoot, "rev-parse", "HEAD");
+		git(repoRoot, "checkout", "-q", "pr");
+		stubCiEnvironment("pull_request");
+		vi.stubEnv("GITHUB_SHA", mergeSha);
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+		expect(githubHeadShaMismatchIssues(repoRoot)).toEqual([]);
+	});
+
+	it("resolves and cross-checks the PR branch tip from the event payload", async () => {
+		const { repoRoot, prHead } = await scratchMergeRepo();
+		const eventPath = path.join(repoRoot, "event.json");
+		await writeFile(
+			eventPath,
+			JSON.stringify({ pull_request: { head: { sha: prHead } } }),
+		);
+		stubCiEnvironment("pull_request");
+		vi.stubEnv("GITHUB_EVENT_PATH", eventPath);
+		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
+		expect(githubHeadShaMismatchIssues(repoRoot)).toEqual([]);
+	});
+
+	it("refuses disagreeing PR branch tip sources", async () => {
+		const { repoRoot } = await scratchMergeRepo();
+		const baseSha = git(repoRoot, "rev-parse", "HEAD^1");
+		const eventPath = path.join(repoRoot, "event.json");
+		await writeFile(
+			eventPath,
+			JSON.stringify({ pull_request: { head: { sha: baseSha } } }),
+		);
+		stubCiEnvironment("pull_request");
+		vi.stubEnv("GITHUB_EVENT_PATH", eventPath);
+		expect(
+			githubHeadShaMismatchIssues(repoRoot).some((issue) =>
+				/PR branch tip sources disagree/u.test(issue.message),
+			),
+		).toBe(true);
+	});
+
 	it("resolves the PR branch tip (HEAD^2) for pull_request and merge_group checkouts", async () => {
 		const { repoRoot, prHead } = await scratchMergeRepo();
 		stubCiEnvironment("pull_request");
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
 		stubCiEnvironment("merge_group");
 		expect(versionPinCommitIsh(repoRoot)).toBe(prHead);
-	});
-
-	it("requires exact pins for PR events and commits resolved from HEAD^2", async () => {
-		const { repoRoot, prHead } = await scratchMergeRepo();
-		stubCiEnvironment("pull_request");
-		expect(requiresExactReleaseTrainVersion(repoRoot, "HEAD")).toBe(true);
-		stubCiEnvironment("push");
-		expect(requiresExactReleaseTrainVersion(repoRoot, prHead)).toBe(true);
-		expect(requiresExactReleaseTrainVersion(repoRoot, "HEAD")).toBe(false);
 	});
 
 	it("falls back to HEAD outside PR events or on a non-merge checkout", async () => {
@@ -1721,7 +1824,7 @@ describe("release-train version pin commit selection", () => {
 		expect(githubHeadShaMismatchIssues(root)).toEqual([
 			expect.objectContaining({
 				message:
-					"cannot resolve the PR branch tip (HEAD^2) on this checkout; refuse version measurement",
+					"cannot resolve the PR branch tip from HEAD^2, GITHUB_SHA^2, the event payload, or GITHUB_HEAD_SHA; refuse version measurement",
 			}),
 		]);
 	});
@@ -1736,7 +1839,7 @@ describe("release-train version pin commit selection", () => {
 		await writeFile(path.join(root, "seed.txt"), "seed\n");
 		git(root, "add", "seed.txt");
 		git(root, "commit", "-q", "-m", "only commit");
-		stubCiEnvironment("pull_request", git(root, "rev-parse", "HEAD"));
+		stubCiEnvironment("pull_request");
 		const report = await checkAgentPlugin({
 			pluginRoot: realPluginRoot,
 			repoRoot: root,
@@ -1744,7 +1847,7 @@ describe("release-train version pin commit selection", () => {
 		});
 		expect(
 			report.issues.some((issue) =>
-				/cannot resolve the PR branch tip \(HEAD\^2\)/u.test(issue.message),
+				/cannot resolve the PR branch tip from HEAD\^2/u.test(issue.message),
 			),
 		).toBe(true);
 	});
@@ -1827,5 +1930,49 @@ describe("release-train version pin commit selection", () => {
 		).toThrow("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN is not allowed in CI");
 		vi.stubEnv("CI", undefined);
 		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", undefined);
+	});
+
+	it("rejects a shallow checkout before measuring release-train height", async () => {
+		const { repoRoot } = await scratchMergeRepo();
+		await writeFile(path.join(repoRoot, ".git/shallow"), "");
+		expect(() => releaseTrainSemverForPluginCheck(repoRoot, () => "5")).toThrow(
+			/shallow checkout refused/u,
+		);
+	});
+
+	it("validates the staged plugin.json blob, not a differing working-tree file", async () => {
+		const root = await mkdtemp(path.join(tmpdir(), "hobo-plugin-staged-"));
+		scratches.push(root);
+		git(root, "init", "-q");
+		git(root, "config", "user.email", "test@example.com");
+		git(root, "config", "user.name", "Test");
+		const stagedDir = path.join(root, "plugins/hobo");
+		await mkdir(stagedDir, { recursive: true });
+		const real = parsePluginManifest(
+			readFileSync(path.join(realPluginRoot, "plugin.json"), "utf8"),
+		).value;
+		if (real === undefined) throw new Error("real plugin.json did not parse");
+		await writeFile(
+			path.join(stagedDir, "plugin.json"),
+			`${JSON.stringify({ ...real, version: "0.0.0-alpha.1" })}\n`,
+		);
+		git(root, "add", "plugins/hobo/plugin.json");
+		await writeFile(
+			path.join(stagedDir, "plugin.json"),
+			`${JSON.stringify({ ...real, version: real.version })}\n`,
+		);
+		stubCiOff();
+		const report = await checkAgentPlugin({
+			pluginRoot: realPluginRoot,
+			repoRoot: root,
+			versionFromReleaseTrain: real.version,
+		});
+		expect(
+			report.issues.some(
+				(issue) =>
+					issue.file === "plugin.json" &&
+					/does not exactly match/u.test(issue.message),
+			),
+		).toBe(true);
 	});
 });

@@ -19,14 +19,15 @@ a listing serves (boundary fixtured in
   skill, each with a `SKILL.md`) into a `SkillsManifest`, deterministically
   sorted by name.
 - `checkSkillsConformance(root, options?)` — the bundle gate: every skill
-  directory parses, no duplicate names, entry paths exist. Skills in the
-  optional `strictSkillNames` set (`discoverHoboOwnedSkillNames` derives it
-  from every skill directory with a `SKILL.md`, excluding only the reviewed
-  vendored-name allowlist in `src/index.ts` when that name also appears in
-  `skills-lock.json`) are additionally held to the repository's own frontmatter
-  rules: only Agent Skills fields this repo controls, name equal to the folder,
-  and `metadata` as a map of decoded, non-empty string values. Unrecognized
-  non-comment top-level YAML lines fail closed instead of being ignored.
+  directory parses, no duplicate names, entry paths exist. Every skill is held
+  to the repository's own frontmatter rules by default: only Agent Skills
+  fields this repo controls, name equal to the folder, and `metadata` as a map
+  of decoded, non-empty string values. Passing `strictSkillNames` narrows the
+  strict set (`discoverHoboOwnedSkillNames` derives it from every skill
+  directory with a `SKILL.md`, excluding only the reviewed vendored-name
+  allowlist in `src/index.ts` when that name also appears in
+  `skills-lock.json`). Unrecognized non-comment top-level YAML lines fail
+  closed instead of being ignored.
   `skillsLockExemptionIssues` rejects a lock entry for any unapproved in-tree
   skill, regardless of its declared source, so lock metadata cannot re-label
   repo-owned, forked, or copied content as vendored. GitHub shorthand, HTTP(S),

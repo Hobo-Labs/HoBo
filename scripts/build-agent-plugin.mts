@@ -1,10 +1,15 @@
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	closeSync,
 	cpSync,
+	existsSync,
 	mkdirSync,
 	openSync,
+	readFileSync,
 	rmSync,
 	unlinkSync,
+	writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -21,12 +26,14 @@ const outfile = path.join(outdir, "hobo-mcp.mjs");
 const fixturesSource = path.join(repoRoot, "packages/hobo/fixtures/deploy");
 const fixturesTarget = path.join(pluginRoot, "fixtures/deploy");
 const buildLockPath = path.join(pluginRoot, ".agent-plugin-build.lock");
+const nonPublishingMarker = ".agent-plugin-nonpublishing.json";
 
 async function withBuildLock(run: () => Promise<void>): Promise<void> {
 	const deadline = Date.now() + 600_000;
 	while (Date.now() < deadline) {
 		try {
 			const fd = openSync(buildLockPath, "wx");
+			writeFileSync(fd, String(process.pid));
 			closeSync(fd);
 			try {
 				await run();
@@ -38,6 +45,18 @@ async function withBuildLock(run: () => Promise<void>): Promise<void> {
 			const lockHeld =
 				error instanceof Error && "code" in error && error.code === "EEXIST";
 			if (!lockHeld) throw error;
+			let ownerAlive = false;
+			try {
+				const owner = Number(readFileSync(buildLockPath, "utf8").trim());
+				if (Number.isInteger(owner) && owner > 0) {
+					process.kill(owner, 0);
+					ownerAlive = true;
+				}
+			} catch {}
+			if (!ownerAlive) {
+				rmSync(buildLockPath, { force: true });
+				continue;
+			}
 			await delay(100);
 		}
 	}
@@ -74,33 +93,64 @@ const requireFromHoboPackage = createRequire(
 );
 const esbuild: EsbuildModule = requireFromHoboPackage("esbuild");
 
+export function agentPluginLocalBuildAllowed(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return env.HOBO_AGENT_PLUGIN_LOCAL_BUILD === "1" && !agentPluginCiActive(env);
+}
+
+export function agentPluginBuildIsNonPublishing(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	const eventName = env.GITHUB_EVENT_NAME?.trim();
+	return eventName === "pull_request" || eventName === "merge_group";
+}
+
 export function agentPluginBuildAttestationIssue(
 	env: NodeJS.ProcessEnv = process.env,
+	headSha?: string | undefined,
 ): string | undefined {
-	if (!agentPluginCiActive(env)) return undefined;
+	if (agentPluginLocalBuildAllowed(env)) return undefined;
+	if (!agentPluginCiActive(env)) {
+		return "agent-plugin:build requires trusted CI or HOBO_AGENT_PLUGIN_LOCAL_BUILD=1 for an explicitly local build";
+	}
 	if (env.GITHUB_ACTIONS !== "true") {
 		return "CI bundle builds require GitHub Actions";
 	}
 	const eventName = env.GITHUB_EVENT_NAME?.trim();
-	if (eventName === "pull_request" || eventName === "merge_group") {
-		return undefined;
-	}
+	const nonPublishing = agentPluginBuildIsNonPublishing(env);
 	const runIdentity = [
 		"GITHUB_RUN_ID",
 		"GITHUB_RUN_ATTEMPT",
 		"GITHUB_SHA",
 		"GITHUB_SERVER_URL",
 	] as const;
+	const identityComplete = runIdentity.every(
+		(name) => (env[name]?.trim() ?? "").length > 0,
+	);
 	if (
 		env.GITHUB_REPOSITORY?.toLowerCase() !== "hobo-labs/hobo" ||
-		env.GITHUB_REF !== "refs/heads/main" ||
-		(eventName !== "push" &&
-			eventName !== "schedule" &&
-			eventName !== "workflow_dispatch") ||
-		runIdentity.some((name) => (env[name]?.trim() ?? "").length === 0)
+		env.GITHUB_SERVER_URL?.trim().replace(/\/$/u, "") !==
+			"https://github.com" ||
+		!identityComplete ||
+		(nonPublishing
+			? !/^refs\/pull\/\d+\/(?:merge|head)$/u.test(env.GITHUB_REF?.trim() ?? "")
+			: (eventName !== "push" &&
+					eventName !== "schedule" &&
+					eventName !== "workflow_dispatch") ||
+				env.GITHUB_REF !== "refs/heads/main")
 	) {
-		return "CI bundle builds require non-publishing PR validation or the HoBo repository's trusted main ref with complete run, attempt, commit, and server identity";
+		return nonPublishing
+			? "non-publishing PR bundle builds require the HoBo repository, a GitHub pull-request ref, and complete run, attempt, commit, and server identity"
+			: "CI bundle builds require non-publishing PR validation or the HoBo repository's trusted main ref with complete run, attempt, commit, and server identity";
 	}
+	if (
+		headSha !== undefined &&
+		headSha.toLowerCase() !== env.GITHUB_SHA?.trim().toLowerCase()
+	) {
+		return "GITHUB_SHA does not match the checked-out commit";
+	}
+	if (nonPublishing) return undefined;
 	if (env.GITHUB_JOB === "main-gate") return undefined;
 	const publishesProvenance =
 		env.GITHUB_JOB === "agent-plugin-provenance" &&
@@ -112,8 +162,54 @@ export function agentPluginBuildAttestationIssue(
 	return undefined;
 }
 
+function gitOutput(args: readonly string[]): string | undefined {
+	const result = spawnSync("git", args, {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	return result.status === 0 ? (result.stdout?.trim() ?? "") : undefined;
+}
+
+function trustedBuildFromDirtyTree(): boolean {
+	if (agentPluginLocalBuildAllowed()) return false;
+	const status = gitOutput(["status", "--porcelain", "--untracked-files=all"]);
+	return status === undefined || status.length > 0;
+}
+
+function removeStaleOutputs(): void {
+	for (const stale of [
+		path.join(pluginRoot, ".bundle-attestation.json"),
+		path.join(pluginRoot, nonPublishingMarker),
+		outfile,
+		fixturesTarget,
+	]) {
+		rmSync(stale, { recursive: true, force: true });
+		if (existsSync(stale)) {
+			throw new Error(
+				`agent-plugin:build: could not remove stale output ${path.relative(repoRoot, stale)}`,
+			);
+		}
+	}
+}
+
 async function buildAgentPlugin(): Promise<void> {
-	rmSync(path.join(pluginRoot, ".bundle-attestation.json"), { force: true });
+	const attestationIssue = agentPluginBuildAttestationIssue(
+		process.env,
+		gitOutput(["rev-parse", "HEAD"]),
+	);
+	if (attestationIssue !== undefined) {
+		console.error(`agent-plugin:build: ${attestationIssue}`);
+		process.exitCode = 1;
+		return;
+	}
+	if (trustedBuildFromDirtyTree()) {
+		console.error(
+			"agent-plugin:build: refuse to bundle a dirty tree in CI; commit or clean all tracked changes",
+		);
+		process.exitCode = 1;
+		return;
+	}
+	removeStaleOutputs();
 	mkdirSync(outdir, { recursive: true });
 	const result = await esbuild.build({
 		entryPoints: [entry],
@@ -142,14 +238,24 @@ async function buildAgentPlugin(): Promise<void> {
 		process.exitCode = 1;
 		return;
 	}
-	rmSync(fixturesTarget, { recursive: true, force: true });
 	cpSync(fixturesSource, fixturesTarget, { recursive: true });
-	const attestationIssue = agentPluginBuildAttestationIssue();
-	if (attestationIssue !== undefined) {
-		console.error(`agent-plugin:build: ${attestationIssue}`);
-		rmSync(outfile, { force: true });
-		rmSync(fixturesTarget, { recursive: true, force: true });
-		process.exitCode = 1;
+	if (agentPluginBuildIsNonPublishing()) {
+		const marker = {
+			publishable: false,
+			reason: process.env.GITHUB_EVENT_NAME?.trim(),
+			runId: process.env.GITHUB_RUN_ID,
+			runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+			commitSha: process.env.GITHUB_SHA,
+			digest: createHash("sha256").update(readFileSync(outfile)).digest("hex"),
+		};
+		writeFileSync(
+			path.join(pluginRoot, nonPublishingMarker),
+			`${JSON.stringify(marker, null, 2)}\n`,
+			{ flag: "wx" },
+		);
+		console.error(
+			"agent-plugin:build: untrusted PR bundle marked non-publishing; it must not be attested or shipped",
+		);
 	}
 }
 

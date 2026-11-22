@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -58,6 +59,7 @@ const FORBIDDEN_ENV_KEYS: readonly string[] = [
 ];
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const BUNDLE_ATTESTATION = ".bundle-attestation.json";
+const NON_PUBLISHING_MARKER = ".agent-plugin-nonpublishing.json";
 const SECRET_KEY_PATTERN =
 	/(?:token|secret|password|passwd|credential|api[-_]?key|private[-_]?key)/iu;
 export const SECRET_VALUE_PATTERN =
@@ -66,11 +68,27 @@ export const SECRET_VALUE_PATTERN =
 export const PLUGIN_ALLOWED_SKILL_FIELDS = HOBO_OWNED_ALLOWED_FIELDS;
 export const SYNCED_SKILLS = HOBO_PORTABLE_PLUGIN_SYNCED_SKILLS;
 
+const CI_ACTIVITY_ENV_NAMES: readonly string[] = [
+	"CI",
+	"GITHUB_ACTIONS",
+	"TF_BUILD",
+	"BUILD_ID",
+	"TEAMCITY_VERSION",
+	"GITLAB_CI",
+	"CIRCLECI",
+	"BUILDKITE",
+	"CODEBUILD_BUILD_ID",
+	"GITHUB_EVENT_NAME",
+	"GITHUB_RUN_ID",
+	"GITHUB_REPOSITORY",
+	"GITHUB_SHA",
+];
+
 export function agentPluginCiActive(
 	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-	return [env.CI, env.GITHUB_ACTIONS, env.TF_BUILD].some((value) => {
-		const set = (value ?? "").toLowerCase();
+	return CI_ACTIVITY_ENV_NAMES.some((name) => {
+		const set = (env[name] ?? "").trim().toLowerCase();
 		return set !== "" && set !== "false" && set !== "0";
 	});
 }
@@ -242,12 +260,31 @@ export const McpStdioServerSchema = z.strictObject({
 	cwd: z.string().optional(),
 });
 
+export const McpHttpServerSchema = z.strictObject({
+	type: z.union([z.literal("streamable-http"), z.literal("sse")]),
+	url: z.string().min(1),
+	headers: z.record(z.string(), z.string()).optional(),
+});
+
+export const McpServerSchema = z.discriminatedUnion("type", [
+	McpStdioServerSchema,
+	McpHttpServerSchema,
+]);
+
 export const McpConfigSchema = z.strictObject({
 	$schema: z.string(),
-	mcpServers: z.record(z.string(), McpStdioServerSchema),
+	mcpServers: z.record(z.string(), McpServerSchema),
 });
 
 export type McpConfig = z.infer<typeof McpConfigSchema>;
+
+const GithubEventPayloadSchema = z.object({
+	pull_request: z.object({
+		head: z.object({
+			sha: z.string(),
+		}),
+	}),
+});
 
 function zodIssueToMessage(issue: z.core.$ZodIssue): string {
 	const where = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
@@ -360,7 +397,6 @@ export function compareSemverPrecedence(a: string, b: string): number {
 export function manifestSemanticIssues(
 	manifest: PluginManifest,
 	versionFromReleaseTrain?: string | undefined,
-	options: { readonly exactReleaseTrain?: boolean } = {},
 ): AgentPluginIssue[] {
 	const issues: AgentPluginIssue[] = [];
 	if (manifest.$schema !== PLUGIN_SCHEMA_ID) {
@@ -380,37 +416,10 @@ export function manifestSemanticIssues(
 				manifest.version,
 				versionFromReleaseTrain,
 			);
-			if (comparison < 0) {
-				const eventName = process.env.GITHUB_EVENT_NAME?.trim();
-				const manifestHeight = FIXED_ALPHA_HEIGHT_PATTERN.exec(
-					manifest.version,
-				)?.[1];
-				const trainHeight = FIXED_ALPHA_HEIGHT_PATTERN.exec(
-					versionFromReleaseTrain,
-				)?.[1];
-				const squashMergeLag =
-					eventName === "push" &&
-					options.exactReleaseTrain !== true &&
-					manifestHeight !== undefined &&
-					trainHeight !== undefined &&
-					Number(manifestHeight) === Number(trainHeight) - 1;
-				if (!squashMergeLag) {
-					issues.push({
-						file: "plugin.json",
-						message: `version ${manifest.version} is stale: the release train for the checked commit is ${versionFromReleaseTrain}; update it (scripts/ci/compute-release-version.mts)`,
-					});
-				}
-			} else if (comparison > 0) {
-				const eventName = process.env.GITHUB_EVENT_NAME?.trim();
-				const exact =
-					options.exactReleaseTrain === true ||
-					eventName === "pull_request" ||
-					eventName === "merge_group";
+			if (comparison !== 0) {
 				issues.push({
 					file: "plugin.json",
-					message: exact
-						? `version ${manifest.version} is newer than the release train ${versionFromReleaseTrain}; PR and merge-group validation require an exact pin; update it (scripts/ci/compute-release-version.mts)`
-						: `version ${manifest.version} is newer than the release train ${versionFromReleaseTrain} for the checked commit; ahead-of-train pins are never allowed outside the explicit one-height squash lag on push`,
+					message: `version ${manifest.version} does not exactly match the release train ${versionFromReleaseTrain} for the checked commit; update it (scripts/ci/compute-release-version.mts)`,
 				});
 			}
 		}
@@ -430,6 +439,13 @@ export function hoboMcpServerIssues(config: McpConfig): AgentPluginIssue[] {
 	}
 	const hobo = config.mcpServers.hobo;
 	if (hobo === undefined) return issues;
+	if (hobo.type !== "stdio") {
+		issues.push({
+			file: "mcp.json",
+			message: "hobo MCP server command must be exactly node",
+		});
+		return issues;
+	}
 	if (hobo.command !== "node") {
 		issues.push({
 			file: "mcp.json",
@@ -446,6 +462,82 @@ export function hoboMcpServerIssues(config: McpConfig): AgentPluginIssue[] {
 	return issues;
 }
 
+export function checkExecutableToken(
+	where: string,
+	command: string,
+): AgentPluginIssue[] {
+	const issues: AgentPluginIssue[] = [];
+	const rooted = command.replace(/\$\{PLUGIN_(?:ROOT|DATA)\}/gu, "<root>");
+	if (/\$\{[^}]+\}/u.test(rooted)) {
+		issues.push({
+			file: where,
+			message: "executable must not contain environment expansion",
+		});
+	}
+	if (rooted.split(/[\\/]/u).includes("..")) {
+		issues.push({
+			file: where,
+			message: "executable must not traverse outside the plugin root",
+		});
+	}
+	if (
+		path.isAbsolute(command) ||
+		path.win32.isAbsolute(command) ||
+		/^[A-Za-z]:/u.test(command) ||
+		/^~(?:[\\/]|$)/u.test(command) ||
+		!/^[A-Za-z0-9._-]+(?:\/(?:[A-Za-z0-9._-]+|<root>))*$/u.test(rooted)
+	) {
+		issues.push({
+			file: where,
+			message:
+				"executable must be a PATH command or a plugin-rooted relative path",
+		});
+	}
+	return issues;
+}
+
+export function checkMcpEndpointUrl(
+	where: string,
+	value: string,
+): AgentPluginIssue[] {
+	const issue = (message: string): AgentPluginIssue[] => [
+		{ file: where, message },
+	];
+	if (/\$\{|[\\\s]|%2(?:e|f|5c)/iu.test(value) || value.includes("..")) {
+		return issue("MCP endpoint URL must not contain expansion or traversal");
+	}
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		return issue("MCP endpoint URL must be an absolute URL");
+	}
+	if (url.protocol !== "https:") {
+		return issue("MCP endpoint URL must use https");
+	}
+	if (url.username !== "" || url.password !== "") {
+		return issue("MCP endpoint URL must not embed credentials");
+	}
+	const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/gu, "");
+	if (net.isIP(hostname) !== 0) {
+		return issue("MCP endpoint URL must use a public DNS hostname, not an IP");
+	}
+	if (
+		!hostname.includes(".") ||
+		/(?:^|\.)(?:localhost|local|internal|test|invalid|home\.arpa)$/u.test(
+			hostname,
+		) ||
+		hostname === "metadata.google.internal" ||
+		hostname === "instance-data"
+	) {
+		return issue("MCP endpoint URL must use a public DNS hostname");
+	}
+	if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(hostname)) {
+		return issue("MCP endpoint URL has an invalid hostname");
+	}
+	return [];
+}
+
 export function mcpSemanticIssues(config: McpConfig): AgentPluginIssue[] {
 	const issues: AgentPluginIssue[] = [];
 	if (config.$schema !== MCP_SCHEMA_ID) {
@@ -456,33 +548,41 @@ export function mcpSemanticIssues(config: McpConfig): AgentPluginIssue[] {
 	}
 	for (const [serverName, server] of Object.entries(config.mcpServers)) {
 		const where = `mcp.json mcpServers.${serverName}`;
-		for (const arg of server.args ?? []) {
-			issues.push(...checkPluginScopedPath(where, arg));
-		}
-		if (server.cwd !== undefined) {
-			issues.push(...checkPluginScopedPath(where, server.cwd));
-		}
-		for (const [key, value] of Object.entries(server.env ?? {})) {
-			issues.push(...scanTextForSecrets(`${where} env.${key}`, value));
-			if (
-				FORBIDDEN_ENV_KEYS.some(
-					(forbidden) =>
-						forbidden.localeCompare(key, undefined, {
-							sensitivity: "accent",
-						}) === 0,
-				)
-			) {
-				issues.push({
-					file: where,
-					message: `env key "${key}" is reserved by the specification`,
-				});
+		if (server.type === "stdio") {
+			issues.push(...checkExecutableToken(where, server.command));
+			for (const arg of server.args ?? []) {
+				issues.push(...checkPluginScopedPath(where, arg));
 			}
-			if (SECRET_KEY_PATTERN.test(key)) {
-				issues.push({
-					file: where,
-					message: `env key "${key}" names a secret; never commit its value`,
-				});
+			if (server.cwd !== undefined) {
+				issues.push(...checkPluginScopedPath(where, server.cwd));
 			}
+			for (const [key, value] of Object.entries(server.env ?? {})) {
+				issues.push(...scanTextForSecrets(`${where} env.${key}`, value));
+				if (
+					FORBIDDEN_ENV_KEYS.some(
+						(forbidden) =>
+							forbidden.localeCompare(key, undefined, {
+								sensitivity: "accent",
+							}) === 0,
+					)
+				) {
+					issues.push({
+						file: where,
+						message: `env key "${key}" is reserved by the specification`,
+					});
+				}
+				if (SECRET_KEY_PATTERN.test(key)) {
+					issues.push({
+						file: where,
+						message: `env key "${key}" names a secret; never commit its value`,
+					});
+				}
+			}
+			continue;
+		}
+		issues.push(...checkMcpEndpointUrl(where, server.url));
+		for (const [key, value] of Object.entries(server.headers ?? {})) {
+			issues.push(...scanTextForSecrets(`${where} headers.${key}`, value));
 		}
 	}
 	return issues;
@@ -836,8 +936,8 @@ function skillIssues(
 
 	const pluginSkillDir = path.join(pluginRoot, "skills", skill);
 	const repoSkillDir = path.join(repoSkillsRoot, skill);
-	const pluginFiles = new Set(listFilesRecursive(pluginSkillDir));
-	const repoFiles = new Set(listFilesRecursive(repoSkillDir));
+	const pluginFiles = new Set(listFilesRecursive(pluginSkillDir, { issues }));
+	const repoFiles = new Set(listFilesRecursive(repoSkillDir, { issues }));
 	for (const relative of repoFiles) {
 		if (pluginFiles.has(relative)) continue;
 		issues.push({
@@ -925,7 +1025,6 @@ const PINNED_VENDORED_SCHEMA_FILES = [
 	"plugin.schema.json",
 	"mcp.schema.json",
 ] as const;
-const FIXED_ALPHA_HEIGHT_PATTERN = /^0\.0\.0-alpha\.(\d+)$/u;
 
 function sha256File(full: string): string {
 	return createHash("sha256").update(readFileSync(full)).digest("hex");
@@ -1045,11 +1144,6 @@ export async function checkAgentPlugin(input: {
 	issues.push(...githubHeadShaMismatchIssues(repoRoot));
 	issues.push(...pluginManifestStagedGitIssues(repoRoot));
 
-	const commitIsh = versionPinCommitIsh(repoRoot);
-	const exactReleaseTrain = requiresExactReleaseTrainVersion(
-		repoRoot,
-		commitIsh,
-	);
 	if (input.versionFromReleaseTrain === undefined && agentPluginCiActive()) {
 		issues.push({
 			file: "plugin.json",
@@ -1062,13 +1156,7 @@ export async function checkAgentPlugin(input: {
 			"agent-plugin:check: skipped release-train comparison outside CI (set CI plus GitHub/Azure flags or unset HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN to measure the train locally)",
 		);
 	}
-	if (input.versionFromReleaseTrain !== undefined && !exactReleaseTrain) {
-		notes.push(
-			`agent-plugin:check: release-train comparison ran with exactReleaseTrain=false (GITHUB_EVENT_NAME=${process.env.GITHUB_EVENT_NAME?.trim() || "unset"}, commitIsh=${commitIsh}); only the one-height squash lag can waive a stale pin on push`,
-		);
-	}
-
-	const manifestText = readPluginFile(pluginRoot, "plugin.json", issues);
+	const manifestText = readPluginManifestForCheck(pluginRoot, repoRoot, issues);
 	if (manifestText !== undefined) {
 		const manifest = parsePluginManifest(manifestText);
 		issues.push(...manifest.issues);
@@ -1077,7 +1165,6 @@ export async function checkAgentPlugin(input: {
 				...manifestSemanticIssues(
 					manifest.value,
 					input.versionFromReleaseTrain,
-					{ exactReleaseTrain },
 				),
 			);
 		}
@@ -1223,11 +1310,22 @@ async function bundleAttestationIssues(
 			BUNDLE_ATTESTATION,
 		);
 	}
-	if (
+	const nonPublishing =
 		process.env.GITHUB_EVENT_NAME === "pull_request" ||
-		process.env.GITHUB_EVENT_NAME === "merge_group"
-	) {
-		return [];
+		process.env.GITHUB_EVENT_NAME === "merge_group";
+	if (existsSync(path.join(pluginRoot, NON_PUBLISHING_MARKER))) {
+		return nonPublishing
+			? []
+			: failure(
+					"is an untrusted non-publishing PR bundle; rebuild in the trusted agent-plugin-provenance job before verification",
+					NON_PUBLISHING_MARKER,
+				);
+	}
+	if (nonPublishing) return [];
+	if ((process.env.GH_TOKEN ?? "").trim().length === 0) {
+		return failure(
+			"attestation verification requires GH_TOKEN with attestations:read; refusing to downgrade to an unverified bundle",
+		);
 	}
 	const runId = process.env.GITHUB_RUN_ID?.trim();
 	if (runId === undefined || runId.length === 0) {
@@ -1268,6 +1366,32 @@ function readPluginFile(
 		return undefined;
 	}
 	return readFileSync(full, "utf8");
+}
+
+function readPluginManifestForCheck(
+	pluginRoot: string,
+	repoRoot: string,
+	issues: AgentPluginIssue[],
+): string | undefined {
+	const staged = stagedPluginManifestGitResult(repoRoot);
+	if (!staged.ok) {
+		issues.push(staged.issue);
+		return undefined;
+	}
+	if (!staged.staged) return readPluginFile(pluginRoot, "plugin.json", issues);
+	const result = spawnSync("git", ["show", ":plugins/hobo/plugin.json"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	if (result.error !== undefined || result.status !== 0) {
+		issues.push({
+			file: "plugin.json",
+			message:
+				"git could not read the staged plugin.json blob; refuse version measurement",
+		});
+		return undefined;
+	}
+	return result.stdout;
 }
 
 function stagedPluginManifestGitResult(repoRoot: string):
@@ -1340,85 +1464,132 @@ function trustedGithubHeadSha(
 	return headSha.toLowerCase();
 }
 
-function mergeGroupPrBranchTip(repoRoot: string): string | undefined {
+function gitResolvedCommit(
+	repoRoot: string,
+	revision: string,
+): string | undefined {
+	const result = spawnSync(
+		"git",
+		["rev-parse", "--verify", `${revision}^{commit}`],
+		{
+			cwd: repoRoot,
+			encoding: "utf8",
+		},
+	);
+	const sha = result.stdout?.trim().toLowerCase() ?? "";
+	if (result.status !== 0 || !/^[0-9a-f]{40,64}$/iu.test(sha)) return undefined;
+	return sha;
+}
+
+function githubEventHeadSha(): string | undefined {
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
-	if (eventName !== "pull_request" && eventName !== "merge_group") {
+	if (eventName !== "pull_request") return undefined;
+	const eventPath = process.env.GITHUB_EVENT_PATH?.trim();
+	if (
+		eventPath === undefined ||
+		eventPath.length === 0 ||
+		!existsSync(eventPath)
+	) {
 		return undefined;
 	}
-	const prHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
-		cwd: repoRoot,
-		encoding: "utf8",
-	});
-	const sha = prHead.stdout?.trim().toLowerCase() ?? "";
-	if (prHead.status === 0 && sha.length > 0) return sha;
-	return undefined;
+	try {
+		const payload = GithubEventPayloadSchema.safeParse(
+			JSON.parse(readFileSync(eventPath, "utf8")),
+		);
+		return payload.success ? payload.data.pull_request.head.sha : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+type PrBranchTipSources = {
+	readonly explicit: string | undefined;
+	readonly explicitRaw: string | undefined;
+	readonly headSecondParent: string | undefined;
+	readonly githubSecondParent: string | undefined;
+	readonly eventPayload: string | undefined;
+	readonly eventRaw: string | undefined;
+};
+
+function prBranchTipSources(repoRoot: string): PrBranchTipSources {
+	const eventRaw = githubEventHeadSha();
+	const githubSha = process.env.GITHUB_SHA?.trim();
+	return {
+		explicit: trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA),
+		explicitRaw: process.env.GITHUB_HEAD_SHA?.trim(),
+		headSecondParent: gitResolvedCommit(repoRoot, "HEAD^2"),
+		githubSecondParent:
+			githubSha === undefined || githubSha.length === 0
+				? undefined
+				: gitResolvedCommit(repoRoot, `${githubSha}^2`),
+		eventPayload: trustedGithubHeadSha(repoRoot, eventRaw),
+		eventRaw,
+	};
+}
+
+function resolvedPrBranchTip(sources: PrBranchTipSources): string | undefined {
+	return (
+		sources.headSecondParent ??
+		sources.githubSecondParent ??
+		sources.eventPayload ??
+		sources.explicit
+	);
 }
 
 export function githubHeadShaMismatchIssues(
 	repoRoot: string,
 ): readonly AgentPluginIssue[] {
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
-	const expectsPrTip =
-		eventName === "pull_request" || eventName === "merge_group";
-	const mergePrHead = mergeGroupPrBranchTip(repoRoot);
-	if (expectsPrTip && mergePrHead === undefined) {
-		return [
-			{
-				file: "plugin.json",
-				message:
-					"cannot resolve the PR branch tip (HEAD^2) on this checkout; refuse version measurement",
-			},
-		];
+	if (eventName !== "pull_request" && eventName !== "merge_group") return [];
+	const sources = prBranchTipSources(repoRoot);
+	const issue = (message: string): AgentPluginIssue[] => [
+		{ file: "plugin.json", message },
+	];
+	if (sources.explicitRaw !== undefined && sources.explicitRaw.length > 0) {
+		if (sources.explicit === undefined) {
+			return issue(
+				"GITHUB_HEAD_SHA is set but is not a verifiable commit in this checkout; refuse version measurement",
+			);
+		}
+		if (
+			sources.headSecondParent !== undefined &&
+			sources.explicit !== sources.headSecondParent
+		) {
+			return issue(
+				"GITHUB_HEAD_SHA does not match the PR branch tip (HEAD^2); refuse version measurement on this checkout topology",
+			);
+		}
 	}
-	if (mergePrHead === undefined) return [];
-	const rawHeadSha = process.env.GITHUB_HEAD_SHA?.trim();
-	if (rawHeadSha !== undefined && rawHeadSha.length > 0) {
-		const envSha = trustedGithubHeadSha(repoRoot, rawHeadSha);
-		if (envSha === undefined) {
-			return [
-				{
-					file: "plugin.json",
-					message:
-						"GITHUB_HEAD_SHA is set but is not a verifiable commit in this checkout; refuse version measurement",
-				},
-			];
-		}
-		if (envSha !== mergePrHead) {
-			return [
-				{
-					file: "plugin.json",
-					message:
-						"GITHUB_HEAD_SHA does not match the PR branch tip (HEAD^2); refuse version measurement on this checkout topology",
-				},
-			];
-		}
+	if (sources.eventRaw !== undefined && sources.eventPayload === undefined) {
+		return issue(
+			"the GitHub event payload's pull request head SHA is not a verifiable commit in this checkout; refuse version measurement",
+		);
+	}
+	const candidates = [
+		sources.headSecondParent,
+		sources.githubSecondParent,
+		sources.eventPayload,
+		sources.explicit,
+	].filter((sha): sha is string => sha !== undefined);
+	const tip = resolvedPrBranchTip(sources);
+	if (tip === undefined || candidates.length === 0) {
+		return issue(
+			"cannot resolve the PR branch tip from HEAD^2, GITHUB_SHA^2, the event payload, or GITHUB_HEAD_SHA; refuse version measurement",
+		);
+	}
+	if (candidates.some((sha) => sha !== tip)) {
+		return issue(
+			"PR branch tip sources disagree; refuse version measurement on this checkout topology",
+		);
 	}
 	return [];
 }
 
 export function versionPinCommitIsh(repoRoot: string): string {
-	const mergePrHead = mergeGroupPrBranchTip(repoRoot);
-	const envSha = trustedGithubHeadSha(repoRoot, process.env.GITHUB_HEAD_SHA);
-	if (mergePrHead !== undefined) {
-		if (envSha !== undefined && envSha === mergePrHead) return envSha;
-		return mergePrHead;
-	}
-	if (envSha !== undefined) return envSha;
-	return "HEAD";
-}
-
-export function requiresExactReleaseTrainVersion(
-	repoRoot: string,
-	commitIsh = versionPinCommitIsh(repoRoot),
-): boolean {
 	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
-	if (eventName === "pull_request" || eventName === "merge_group") return true;
-	if (commitIsh === "HEAD") return false;
-	const mergeHead = spawnSync("git", ["rev-parse", "HEAD^2"], {
-		cwd: repoRoot,
-		encoding: "utf8",
-	});
-	return mergeHead.status === 0 && mergeHead.stdout?.trim() === commitIsh;
+	if (eventName !== "pull_request" && eventName !== "merge_group")
+		return "HEAD";
+	return resolvedPrBranchTip(prBranchTipSources(repoRoot)) ?? "HEAD";
 }
 
 export function releaseTrainSemverForPluginCheck(
@@ -1426,6 +1597,20 @@ export function releaseTrainSemverForPluginCheck(
 	nbgv: NbgvRunner = defaultNbgvRunner(repoRoot),
 ): string {
 	const config = loadVersionJsonHeightConfig(repoRoot);
+	const shallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+	});
+	if (shallow.status !== 0 || shallow.stdout?.trim() === "true") {
+		throw new Error(
+			"release-train version requires full git history or a pinned base; shallow checkout refused",
+		);
+	}
+	if (githubHeadShaMismatchIssues(repoRoot).length > 0) {
+		throw new Error(
+			"cannot verify the pull request branch tip for release-train version measurement",
+		);
+	}
 	const commitIsh = versionPinCommitIsh(repoRoot);
 	if (pluginManifestStagedGitIssues(repoRoot).length > 0) {
 		throw new Error(
@@ -1467,18 +1652,34 @@ export function releaseTrainVersionForPluginGate(
 	}
 }
 
-function ensureCiPluginBundle(repoRoot: string): void {
-	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
-		cwd: repoRoot,
-		stdio: "inherit",
-		env: process.env,
-	});
-	if (build.status !== 0) process.exit(build.status ?? 1);
+function agentPluginCheckPreflight(): void {
+	const verifyRequested = process.argv.includes("--verify-attestation");
+	const mainCi =
+		process.env.GITHUB_ACTIONS === "true" &&
+		process.env.GITHUB_REF === "refs/heads/main" &&
+		["push", "schedule", "workflow_dispatch"].includes(
+			process.env.GITHUB_EVENT_NAME?.trim() ?? "",
+		);
+	if (mainCi && !verifyRequested) {
+		console.error(
+			"agent-plugin:check: main CI requires --verify-attestation; a bundle without verified provenance cannot be accepted",
+		);
+		process.exit(1);
+	}
+	if (
+		!agentPluginCiActive() &&
+		process.env.HOBO_AGENT_PLUGIN_LOCAL_CHECK !== "1"
+	) {
+		console.error(
+			"agent-plugin:check: set HOBO_AGENT_PLUGIN_LOCAL_CHECK=1 to check an existing bundle locally; CI checks require a recognized CI environment",
+		);
+		process.exit(1);
+	}
 }
 
 async function main(): Promise<void> {
 	const repoRoot = path.resolve(import.meta.dirname, "..");
-	ensureCiPluginBundle(repoRoot);
+	agentPluginCheckPreflight();
 	const versionFromReleaseTrain = releaseTrainVersionForPluginGate(repoRoot);
 	if (versionFromReleaseTrain === undefined) {
 		if (agentPluginCiActive()) {
@@ -1495,6 +1696,7 @@ async function main(): Promise<void> {
 		pluginRoot: path.join(repoRoot, "plugins/hobo"),
 		repoRoot,
 		versionFromReleaseTrain,
+		verifyAttestation: verifyAgentPluginAttestation,
 	});
 	const conformance = await checkHoboRepoSkillsConformance(repoRoot);
 	const conformanceIssues: AgentPluginIssue[] = conformance.map((issue) => ({

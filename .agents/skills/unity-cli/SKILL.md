@@ -1,6 +1,6 @@
 ---
 name: unity-cli
-description: "Drive Unity from the terminal with the unity CLI: install/manage Editors and modules, open projects, auth, CI builds/tests, com.unity.pipeline automation, unity command/eval against a live Editor or Player, MCP setup, and structured JSON automation. Use when installing Unity CLI, Hub headless migration, batchmode builds, pipeline package, CliCommand, agentic Unity workflows, or unity --help/doctor/status."
+description: "Drive Unity from the terminal with the unity CLI: verify managed Editors and modules, open projects, auth, CI builds/tests, com.unity.pipeline automation, unity command/eval against a live Editor or Player, MCP setup, and structured JSON automation. Use when verifying Unity CLI provisioning, Hub headless migration, batchmode builds, pipeline package, CliCommand, agentic Unity workflows, or unity --help/doctor/status."
 metadata:
   short-description: "Unity CLI, pipeline package, and agent automation."
   version: "1.7.0"
@@ -22,7 +22,7 @@ The CLI is **experimental**. Treat `unity --help` on the installed binary as aut
 - **1.2.0** (2026-07-24) — agent scene-composition field lessons: `-automated` Editor, place→measure→assert loop, composition audits (prop AABB / pier contact / stair rise), hero frame + close-up Scene screenshots (see Workflow G in `references/agent-workflows.md`).
 - **1.3.0** (2026-07-24) — shader / render look-dev field lessons: shader errors are invisible to `get_console_logs` (use `ShaderUtil.GetShaderMessages`), `capture_game_view` is project-root scoped, Play Mode gates scene edits but not asset edits, probe package paths and API shape instead of trusting memorized ones (see Workflow H in `references/agent-workflows.md`).
 - **1.4.0** (2026-07-24) — test-isolation field lessons from a live driving session: never disable gameplay components to freeze state for a test (the disabled flags get baked into the saved scene by the agent's own save path), always read the output of a restore/cleanup step instead of piping it to `/dev/null`, and the Editor does not tick `Update`/`LateUpdate` while unfocused — invoke the frame method directly via eval for a deterministic single-frame capture (see Workflow H in `references/agent-workflows.md`).
-- **1.5.0** (2026-07-25) — asset & render gotchas from a sprite/lighting session: Unity strips `_EMISSION` when `globalIlluminationFlags` is `EmissiveIsBlack`; a depth-writing sprite clips ground decals queued after it; measuring texture art needs `isReadable` + uncompressed; crop high-res captures instead of moving the camera (normalize `WorldToScreenPoint` first); `editor_stop` is advisory; review incidental diffs before committing.
+- **1.5.0** (2026-07-25) — asset & render gotchas from a sprite/lighting session: Unity strips `_EMISSION` when `globalIlluminationFlags` is `EmissiveIsBlack`; a depth-writing sprite clips ground decals queued after it; measuring texture art needs `isReadable` + uncompressed; crop high-res captures instead of moving the camera (normalize `WorldToScreenPoint` first); `editor_stop` is advisory: re-check editor status before assuming it stopped; review incidental diffs before committing.
 
 - **1.6.0** (2026-07-25) — layout field lessons: declare each zone rect ONCE and derive mass/floor/rails from it (hand-typed insets invert their sign eventually), prove reachability with an ASCII raycast walkability map before trusting screenshots, `FloorToInt` not `RoundToInt` when tiling to a rect, and Unity's `SaveAssets()` mtime touches showing as phantom `git status` modifications (Workflow G).
 - **1.7.0** (2026-07-25) — Workflow G gains its framing and two missing measurements: placement is a measurement problem, not a coordinate problem (an asset's name records what the artist called it, not its geometry); unit forensics (two packs can share root scale 100 while one is authored in metres and the other centimetres — normalizing the root scale shrinks the second 100x into apparent non-loading); and surface-vs-bounding-box (`bounds.max.y` on a pier is the mooring poles, not the deck — histogram vertex heights and take the dense band).
@@ -32,7 +32,7 @@ Think of the Unity CLI as three stacked surfaces:
 
 | Layer | Role | Typical verbs |
 |-------|------|----------------|
-| **Manage** | Machine setup — Editors, modules, auth, projects | `install`, `editors`, `auth`, `open` |
+| **Manage** | Machine setup — Editors, modules, auth, projects | `editors`, `auth`, `open` |
 | **Drive** | Control a live Editor/Player via Pipeline | `pipeline install`, `command`, `list`, `status` |
 | **Reach** | Ad-hoc power when no registered command fits | `command eval`, `command eval_file` |
 
@@ -58,25 +58,17 @@ Think of the Unity CLI as three stacked surfaces:
 ## Quick Orientation
 
 ```bash
-# Install CLI (macOS/Linux). Interactive dev machines only — never a repo CI lane.
-# Download the installer, review it, and record its digest before running it;
-# never pipe it straight into a shell:
-curl -fsSL -o unity-cli-install.sh https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh
-sha256sum unity-cli-install.sh   # macOS: shasum -a 256 — record the digest, then read the script
-UNITY_CLI_CHANNEL=beta bash unity-cli-install.sh
-# Windows PowerShell: download install.ps1, review it, record its hash, run the
-# reviewed copy — never `irm … | iex`.
-
+# Verify a preinstalled CLI. Installation is not an agent or CI step.
 unity --version   # must report the field-tested 1.0.0-beta.2; anything else is drift
 unity --help
 unity doctor --format json
-unity auth status --format json
+unity auth status --format json   # never log or commit this output
 unity editors -i --format json
 ```
 
-Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Self-update with `unity upgrade` on dev machines only; keep automation hosts version-pinned.
+Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Automation hosts use a preinstalled, version-pinned CLI from a controlled image.
 
-**Installer trust**: the installer script is unverified input — this skill documents no Unity-published checksum or signature for it. If your distribution ships one, verify it; otherwise the review-plus-recorded-digest steps above are the accepted control, and the install stays an interactive, human-present step. Never bootstrap the CLI by piping the installer into a shell and never install it from a CI lane or unattended job: CI images must carry a pre-installed `unity` whose version is recorded in the image, and a missing CLI there is a stop condition, not an install step. After any install, `unity --version` must report the field-tested `1.0.0-beta.2`; a different version means flag drift — re-verify against live `--help` before trusting this skill's command catalog.
+**Trust boundary**: a version string is not authenticity. CI must record the image digest/signature and binary hash out of band; this skill never downloads or runs an installer. A missing CLI or a drifted version is a stop condition requiring human provisioning. Re-verify flags against live `--help` before trusting this skill's command catalog.
 
 **Global flags worth muscle memory**:
 - `--format json|tsv|human|ndjson` / env `UNITY_FORMAT`
@@ -90,12 +82,12 @@ Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Self-u
 
 ```
 Need Unity capability from terminal?
-├─ Install/list Editors or modules?     → Manage layer (install / editors / modules)
+├─ Verify/list Editors or modules?      → Manage layer (editors / modules)
 ├─ Sign-in / service identity?          → auth
 ├─ Open project in correct Editor?      → open (or unity ./Project)
 ├─ Headless tests / CI Player build?    → test / build / run (batchmode spawn)
 ├─ Live inspect or mutate open Editor?  → Drive layer
-│   ├─ Pipeline missing?                → unity pipeline install && reopen/recompile
+│   ├─ Pipeline missing?                → stop for human provisioning; do not install unattended
 │   ├─ Server not reachable?            → unity status / pipeline list; wait for domain reload
 │   ├─ Known operation?                 → unity command <name> ...
 │   └─ Ad-hoc C# / unknown API?         → unity command eval "..."
@@ -105,18 +97,13 @@ Need Unity capability from terminal?
 
 ## Manage Layer (Editors, Auth, Projects)
 
-### Install and modules
+### Verify installed Editors and modules
 ```bash
-unity install lts
-unity install 6000.5.4f1 -m webgl android --cm --accept-eula --yes
+unity editors -i --format json
 unity install-modules -e 6000.5.4f1 -l
-unity install-modules -e 6000.5.4f1 -m ios android --accept-eula
-unity uninstall 6000.3.7f1
 ```
 
-**Version aliases**: `latest`, `lts`, `default`, short streams like `6` / `6.5` / `2022`.
-
-CI uses the reviewed, version-pinned Editor and modules already present in the controlled image. A missing CLI or Editor is a stop condition, never an unattended install step.
+Installation and EULA acceptance are human provisioning steps outside this skill. CI uses the reviewed, version-pinned Editor and modules already present in the controlled image. A missing CLI or Editor is a stop condition, never an unattended install step.
 
 ### Editors registry
 ```bash
@@ -144,8 +131,7 @@ Deep flags, logs, Hub migration: see `references/cli-reference.md`.
 Requires **Unity 6.0+**, signed-in CLI (`unity auth login`), and package in the project:
 
 ```bash
-unity pipeline install --project-path .
-# optional pin: --package-version 0.3.1-exp.1
+unity pipeline install --project-path . --package-version 0.3.1-exp.1
 unity pipeline list --format json
 unity status --format json
 ```
@@ -222,9 +208,12 @@ Prefer Pipeline `run_tests` / `build` **against a warm Editor** when iterating i
 
 ```bash
 unity mcp configure --list
-unity mcp configure vscode --local --yes    # project-local where supported
 unity mcp --project-path .                  # stdio MCP server for this project
 ```
+
+MCP client configuration is an interactive, human-reviewed setup step; agents
+must not run `configure --yes` or accept generated config on the owner's behalf.
+Review the generated config before starting a new MCP server.
 
 Pipeline commands map naturally to tool calls. Agents should:
 1. `status` / `pipeline list` — is the Editor alive and reachable?
@@ -257,8 +246,8 @@ Why bad: remote control surface is for dev/QA only, off by default for a reason.
 Better: development builds only, localhost, token-gated.
 
 ❌ **Interactive prompts in CI**
-Why bad: hangs the job.
-Better: `--non-interactive --yes --accept-eula` and explicit versions.
+Why bad: hangs the job and can auto-accept terms.
+Better: preinstalled, version-pinned tools and explicit versions; stop on anything missing.
 
 ❌ **Ignoring ProjectVersion.txt**
 Why bad: wrong Editor → silent API/package mismatches.
@@ -304,7 +293,7 @@ Better: read the actual output of every restore call before declaring the scene 
 
 **IMPORTANT**: Choose the path from context — do not always open the Editor, always eval, or always batchmode.
 
-- **Greenfield machine** → install CLI → auth → install Editor+modules → open project → pipeline install
+- **Greenfield machine** → human provisions pinned CLI/Editor/modules → auth → open project → pinned pipeline install
 - **Day-to-day gameplay fix with Editor open** → `status` → discover commands → mutate → Play Mode → console/logs
 - **Agent-built scenes / kitbash vignettes** → Workflow G: rebuild recipe + composition audit + dual screenshots
 - **CI regression** → non-interactive `unity test` / `unity build` with JSON/XML artifacts

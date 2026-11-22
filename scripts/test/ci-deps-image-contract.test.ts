@@ -652,11 +652,7 @@ describe("CI deps workflow contract", () => {
 				!waitsFor(id).has("ci-deps-image"),
 				`${id} waits for the deps image`,
 			);
-		assert.deepEqual(job("main-gate").needs, [
-			"route",
-			"ci-runner-image",
-			"agent-plugin-provenance",
-		]);
+		assert.deepEqual(job("main-gate").needs, ["route", "ci-runner-image"]);
 		assert.ok(!job("main-gate").block.includes("ci-deps-image"));
 		includes(job("main-gate").block, "Check deps layer match");
 

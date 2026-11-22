@@ -214,11 +214,7 @@ describe("CI deps image push scope", () => {
 	});
 
 	it("does not make either gate wait for the deps image", () => {
-		expect(mainGate.needs).toEqual([
-			"route",
-			"ci-runner-image",
-			"agent-plugin-provenance",
-		]);
+		expect(mainGate.needs).toEqual(["route", "ci-runner-image"]);
 		expect(prPlan.needs).toEqual(["route"]);
 		expect(prValidation.needs).toEqual([
 			"route",

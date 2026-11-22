@@ -5,33 +5,14 @@ Official docs: https://docs.unity.com/en-us/unity-cli/unity-cli-reference
 
 CLI status: **experimental**.
 
-## Install the CLI
+## Verify the preinstalled CLI
 
-Interactive dev machines only — never a repo CI lane. Download the installer,
-review it, and record its digest before running it; never pipe it straight into
-a shell:
-
-```bash
-# macOS / Linux
-curl -fsSL -o unity-cli-install.sh https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh
-sha256sum unity-cli-install.sh   # macOS: shasum -a 256 — record the digest, then read the script
-UNITY_CLI_CHANNEL=beta bash unity-cli-install.sh
-
-# Windows PowerShell — same order: download, review, record hash, run
-irm https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.ps1 -OutFile unity-cli-install.ps1
-Get-FileHash unity-cli-install.ps1   # record the hash, then read the script
-. unity-cli-install.ps1
-```
-
-Unity publishes no installer checksum or signature this skill documents; if your
-distribution ships one, verify it. Otherwise the review-plus-recorded-digest
-steps above are the accepted control, and the install stays interactive. CI
-images carry a pre-installed `unity` whose version is recorded in the image.
+Agents never install or upgrade the CLI. CI images carry a preinstalled,
+version-pinned `unity` whose image digest and binary hash are recorded by human
+provisioning. A missing CLI or an unexpected version is a stop condition.
 
 - Binary (typical): `~/.unity/bin/unity`
 - Env snippet: `~/.unity/env` (adds bin to `PATH`)
-- Update: `unity upgrade` (dev machines; keep automation hosts version-pinned)
-- Uninstall CLI: `unity self-uninstall`
 
 Verify:
 
@@ -101,7 +82,7 @@ unity releases
 unity editor                               # manage a single install
 ```
 
-**install** highlights:
+**install** highlights (human provisioning only; agents and CI must not run install, uninstall, or EULA-accepting commands):
 
 | Option | Notes |
 |--------|-------|
@@ -120,9 +101,7 @@ Examples:
 
 ```bash
 unity install 6000.5.4f1
-unity install lts -m ios android webgl --cm --accept-eula --yes
 unity install-modules -e 6000.5.4f1 -l
-unity install-modules -e 6000.5.4f1 -m android --no-cm
 ```
 
 **editors** highlights:

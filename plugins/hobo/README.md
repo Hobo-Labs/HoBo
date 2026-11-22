@@ -56,8 +56,9 @@ On trusted `main` pushes, schedules, and manual runs, HoBo Fabric's isolated
 provenance with pinned `actions/attest-build-provenance`. It is the only
 `hobo-ci.yml` job with `id-token: write` and `attestations: write`. Pull-request
 and merge-group jobs have only `contents: read`, no OIDC grant, and no
-`GH_TOKEN`; they rebuild and validate the current bundle without publishing.
-The build writes no bearer token or local attestation record.
+`GH_TOKEN`; they build a bundle marked non-publishing, validate the current
+bundle, and cannot be mistaken for trusted provenance. The build writes no
+bearer token or local attestation record.
 `GITHUB_ACTIONS=true`, a caller-provided token, and custom environment switches
 cannot admit a build or substitute for verification. Trusted publication
 requires the isolated job's OIDC capability; trusted verification requires
@@ -77,16 +78,17 @@ its `buildSignerDigest` to equal the checked commit, and its run invocation to
 match `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`. Missing, forged, stale,
 wrong-workflow, wrong-ref, wrong-commit, and wrong-attempt attestations fail
 closed. A legacy `.bundle-attestation.json` is rejected rather than treated as
-provenance. `pnpm agent:check` selects `agent-plugin:check` on affected plugin,
-skill, and MCP inputs. Every check rebuilds first and verifies that rebuilt
-bundle, so caller-controlled files and retired external-attestation switches
-cannot substitute a different artifact.
+provenance, required on `main` through `--verify-attestation`. `pnpm agent:check`
+selects `agent-plugin:check` on affected plugin, skill, and MCP inputs; the check
+hashes the built bundle and does not rebuild it, so caller-controlled files and
+retired external-attestation switches cannot substitute a different artifact.
 
-Any CI signal outside GitHub Actions fails the bundle check. With no `CI`,
-`GITHUB_ACTIONS`, or `TF_BUILD` signal, the command is an explicit local-only,
-non-CI path: it always rebuilds, reports that provenance is absent, and cannot
-be reused as CI validation. The build deletes a legacy local attestation before
-bundling so an old bearer-token record cannot survive beside new output.
+Any CI signal outside GitHub Actions fails the bundle check. With no recognized
+CI signal, build and check are explicit local-only paths that require
+`HOBO_AGENT_PLUGIN_LOCAL_BUILD=1` and `HOBO_AGENT_PLUGIN_LOCAL_CHECK=1`; local
+checks report that provenance is absent and cannot be reused as CI validation.
+The build deletes a legacy local attestation before bundling so an old
+bearer-token record cannot survive beside new output.
 
 The build bundles `packages/hobo/src/bin/hobo-mcp.ts` (esbuild resolves
 through `@hobo/hobo`), copies `packages/hobo/fixtures/deploy` to

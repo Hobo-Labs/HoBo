@@ -6,16 +6,25 @@ Verbatim copies of the Agent Plugins 1.0.0 JSON Schemas that gate
 - `plugin.schema.json` — <https://agent-plugins.org/schemas/1.0.0/plugin.schema.json>
 - `mcp.schema.json` — <https://agent-plugins.org/schemas/1.0.0/mcp.schema.json>
 
-`plugin.json` `version` must stay on the fixed alpha train (`version.json` +
-nbgv): only `0.0.0-alpha.N` values at or above the expected height pass. On
-pull-request CI the gate pins to `GITHUB_HEAD_SHA` or, when that is unset,
-`git rev-parse HEAD^2` so merge ref checkouts do not inflate the expected
-height; during a staged commit the gate expects the next height when
-`plugin.json` is in the index. Version computation failures fail closed;
+`plugin.json` `version` must exactly equal the fixed alpha train value derived
+from `version.json` (`versionHeightOffset` included) and nbgv: a height that is
+stale, ahead, or otherwise differs fails on every event path. On pull-request
+CI the gate verifies the branch tip from `HEAD^2`, `GITHUB_SHA^2`, the GitHub
+event payload, and `GITHUB_HEAD_SHA`; disagreeing or unverifiable sources fail
+closed. Shallow checkouts fail closed because nbgv height needs full history.
+During a staged commit the gate validates the staged `plugin.json` blob and
+expects the next height. Version computation failures fail closed;
 `HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN=1` is an explicit local-only skip. The
-gate rejects that skip whenever `CI`, `GITHUB_ACTIONS`, or `TF_BUILD` is set,
-even when version computation would otherwise succeed; Turbo's `HOBO_*`
-passthrough does not weaken the CI requirement.
+gate rejects that skip under any recognized CI signal, including TeamCity,
+GitLab, CircleCI, Buildkite, and CodeBuild, even when version computation would
+otherwise succeed; Turbo's `HOBO_*` passthrough does not weaken the CI
+requirement.
+
+`mcp.json` is parsed against `mcp.schema.json` and then semantically validated:
+stdio executables must resolve as a PATH command or a contained
+plugin-rooted path, and HTTP/SSE endpoints must use `https` with a public DNS
+hostname (no IP, credential, expansion, or traversal). Vendored schema bytes
+are pinned by `MANIFEST.sha256` and checked before those gates run.
 
 Source: agent-plugins.org, checked 2026-11-20. If the upstream schemas
 change, re-vendor both files in the same change and update this date.

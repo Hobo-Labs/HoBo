@@ -497,11 +497,16 @@ description: d
 		);
 	});
 
-	it("does not apply the HoBo-owned allowlist unless callers pass strictSkillNames", async () => {
+	it("applies the HoBo-owned allowlist by default and only narrows it on request", async () => {
 		const root = await scratchTree({
 			draft: "---\nname: draft\ndescription: d\nlegacy: kept\n---\n",
 		});
-		expect(await checkSkillsConformance(root)).toEqual([]);
+		const issues = await checkSkillsConformance(root);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.code).toBe("disallowed-frontmatter-field");
+		expect(
+			await checkSkillsConformance(root, { strictSkillNames: [] }),
+		).toEqual([]);
 	});
 
 	it("derives HoBo-owned strict skills from the repo tree", async () => {

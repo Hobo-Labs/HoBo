@@ -29,16 +29,14 @@ Never inspect or quote a store reference. If this host cannot render the
 secure HoBo owner hand-off, report that capability gap; do not ask the owner
 to paste identifiers or values as a workaround.
 
-Before opening any owner form, call the HoBo MCP tool the step needs. For
-store selection, capture, and the lifecycle itself, verify without owner data
-that the host exposes HoBo MCP and can render a private owner ceremony (secure
-elicitation or equivalent) for that step. If that cannot be established from
-host capability alone, do not open the form; report
-the missing secure hand-off. For store selection, verify that the ceremony
-supports store choice and do not treat a later `choose_secret_store` status as
-retroactive proof.
-Then call `choose_secret_store` and proceed only when the
-result documents a private owner ceremony the host can render. Treat
+Before any MCP call, verify from host capability alone that the host exposes
+HoBo MCP and can render a private owner ceremony (secure elicitation or
+equivalent) for this step. Do not call any tool that can render an owner form
+before that check. `choose_secret_store` must be the first MCP call in every
+store workflow; do not treat a later status as retroactive proof. Call it before
+capture, lifecycle, or any form-rendering tool, and proceed only when the
+result documents a private owner ceremony the host can render and store choice
+is supported. Treat
 `status: secure-form-unavailable`, `reason: owner-setup-unavailable`, unknown
 status, tool errors, and a missing tool as stop conditions — report the missing
 secure hand-off and do not collect store identifiers in chat. After the owner

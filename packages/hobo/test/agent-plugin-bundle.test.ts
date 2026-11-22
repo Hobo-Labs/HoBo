@@ -43,7 +43,12 @@ function ensureBundle(): void {
 	const build = spawnSync(
 		process.execPath,
 		["--import", "tsx", "scripts/build-agent-plugin.mts"],
-		{ cwd: repoRoot, encoding: "utf8", timeout: 300_000 },
+		{
+			cwd: repoRoot,
+			encoding: "utf8",
+			env: { ...process.env, HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" },
+			timeout: 300_000,
+		},
 	);
 	if (build.status !== 0 || !existsSync(bundle)) {
 		throw new Error(
@@ -83,17 +88,17 @@ describe("agent plugin bundle", { timeout: 300_000 }, () => {
 				reject(new Error("The bundled MCP server could not start.")),
 			);
 		});
+		const closedFailure = closed.then((code) => {
+			throw new Error(`The bundled MCP server exited with status ${code}.`);
+		});
+		void closedFailure.catch(() => {});
 		const answerTo = async (id: number) => {
 			for (;;) {
 				const found = seen.find((message) => message.id === id);
 				if (found !== undefined) return found;
 				await Promise.race([
 					new Promise<void>((resolve) => waiters.push(resolve)),
-					closed.then((code) => {
-						throw new Error(
-							`The bundled MCP server exited with status ${code}.`,
-						);
-					}),
+					closedFailure,
 				]);
 			}
 		};

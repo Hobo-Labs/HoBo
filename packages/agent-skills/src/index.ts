@@ -9,6 +9,10 @@ import { join } from "node:path";
 // public-contract: manifest schema id Registry listings pin.
 export const AGENT_SKILLS_MANIFEST_SCHEMA = "hobo.agent-skills-manifest/v1";
 
+function isMissingFileError(error: Error): boolean {
+	return "code" in error && error.code === "ENOENT";
+}
+
 // domain-view: parse-produced manifest entry; wire form is SkillManifestEntry in data-models/agent_skills.proto.
 export interface SkillManifestEntry {
 	readonly name: string;
@@ -195,7 +199,9 @@ export async function discoverHoboOwnedSkillNames(
 		try {
 			await stat(skillMd);
 			names.push(dirent.name);
-		} catch {}
+		} catch (error) {
+			if (!(error instanceof Error && isMissingFileError(error))) throw error;
+		}
 	}
 	names.sort();
 	return Object.freeze(names);
@@ -210,9 +216,7 @@ export type SkillsLockExemptionOptions = {
 	readonly neverLockSkillNames?: readonly string[];
 };
 
-function parseGitHubPath(
-	path: string,
-): { owner: string; repo: string } | null {
+function parseGitHubPath(path: string): { owner: string; repo: string } | null {
 	const segments = path.split("/");
 	if (segments.length === 3 && segments[2] === "") segments.pop();
 	if (segments.length !== 2) return null;
@@ -316,7 +320,8 @@ export async function skillsLockExemptionIssues(
 		try {
 			await stat(join(skillsRoot, name, "SKILL.md"));
 			skillMdExists = true;
-		} catch {
+		} catch (error) {
+			if (!(error instanceof Error && isMissingFileError(error))) throw error;
 			skillMdExists = false;
 		}
 		if (!skillMdExists || HOBO_REVIEWED_VENDORED_SKILL_NAMES.has(name)) {
@@ -591,7 +596,12 @@ export async function checkSkillsConformance(
 	root: string,
 	options: SkillsConformanceOptions = {},
 ): Promise<readonly SkillConformanceIssue[]> {
-	const strictSkills = new Set(options.strictSkillNames ?? []);
+	const namedStrictSkills = options.strictSkillNames;
+	const strictSkills = new Set(namedStrictSkills ?? []);
+	const isStrict = (folder: string, name: string): boolean =>
+		namedStrictSkills === undefined ||
+		strictSkills.has(folder) ||
+		strictSkills.has(name);
 	const issues: SkillConformanceIssue[] = [];
 	const seen = new Map<string, string>();
 	for (const dirent of await readdir(root, { withFileTypes: true })) {
@@ -601,7 +611,8 @@ export async function checkSkillsConformance(
 		try {
 			await stat(skillMd);
 			markdown = await readFile(skillMd, "utf8");
-		} catch {
+		} catch (error) {
+			if (!(error instanceof Error && isMissingFileError(error))) throw error;
 			issues.push({
 				skill: dirent.name,
 				code: "missing-skill-md",
@@ -611,7 +622,7 @@ export async function checkSkillsConformance(
 		}
 		try {
 			const parsed = parseSkillFrontmatter(markdown);
-			if (strictSkills.has(dirent.name) || strictSkills.has(parsed.name)) {
+			if (isStrict(dirent.name, parsed.name)) {
 				issues.push(...strictSkillIssues(dirent.name, markdown));
 			}
 			const prior = seen.get(parsed.name);
@@ -625,15 +636,17 @@ export async function checkSkillsConformance(
 				seen.set(parsed.name, dirent.name);
 			}
 		} catch (error) {
-			if (strictSkills.has(dirent.name)) {
-				issues.push(...strictSkillIssues(dirent.name, markdown));
+			const strictIssues = isStrict(dirent.name, dirent.name)
+				? strictSkillIssues(dirent.name, markdown)
+				: [];
+			issues.push(...strictIssues);
+			if (!strictIssues.some((issue) => issue.code === "unparseable")) {
+				issues.push({
+					skill: dirent.name,
+					code: "unparseable",
+					message: error instanceof Error ? error.message : String(error),
+				});
 			}
-			// SAFETY: caught values may be non-Error, so message access is guarded by the fallback.
-			issues.push({
-				skill: dirent.name,
-				code: "unparseable",
-				message: String((error as Error).message ?? error),
-			});
 		}
 	}
 	return Object.freeze(issues);

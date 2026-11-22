@@ -12,8 +12,7 @@ export UNITY_NO_BANNER=1
 export UNITY_FORMAT=json
 
 unity --version || {
-  echo "unity CLI missing: install it per SKILL.md Quick Orientation"
-  echo "(download, review, record digest, run — interactive dev machines only)"
+  echo "unity CLI missing: stop for human provisioning; agents never install it"
   exit 1
 }
 
@@ -28,20 +27,19 @@ methods execute repository-controlled code. Prefer short-lived, least-privilege
 federated credentials where supported, and never commit credentials.
 
 A missing CLI is a stop condition, never an install step: jobs and CI lanes run
-a pre-installed `unity` binary whose version is recorded in the image, and never
-download or pipe the installer unattended. Installing follows the SKILL.md
-review-first flow on interactive dev machines only. `unity --version` should
-report the field-tested `1.0.0-beta.2`; treat any other version as drift and
-re-verify flags against live `--help`.
+a pre-installed `unity` binary whose version and image digest are recorded in
+the controlled image, and agents never download or run an installer.
+`unity --version` should report the field-tested `1.0.0-beta.2`; treat any other
+version as drift and re-verify flags against live `--help`.
 
 ## Workflow A — First-time project enablement
 
 Goal: this repo can be driven from the terminal.
 
 1. Read `ProjectSettings/ProjectVersion.txt`
-2. `unity editors -i` — install matching Editor if missing (`unity install <ver> -m …`)
+2. `unity editors -i` — verify the matching Editor is installed; stop for human provisioning if missing
 3. `unity open .` (or user already has Editor open)
-4. `unity pipeline install --project-path .`
+4. `unity pipeline install --project-path . --package-version 0.3.1-exp.1`
 5. Commit `Packages/manifest.json` + `packages-lock.json`
 6. Wait for compile; `unity pipeline list` until reachable
 7. `unity command` — snapshot available tools
@@ -60,7 +58,7 @@ Example: "player falls through floor"
 4. Hypothesize → smallest mutation (enable collider, fix component field)
 5. `unity command editor_play` → observe
 6. `unity command get_console_logs` / capture game view
-7. `unity command editor_stop`
+7. `unity command editor_stop`, then re-check `editor_status` before assuming it stopped
 8. Persist fix in project files/assets; don't leave only eval side effects
 
 ## Workflow C — Implement feature with verification
@@ -79,7 +77,11 @@ Example: "player falls through floor"
 Prefer **spawned** Editor jobs for isolation:
 
 ```bash
-set -e
+set -euo pipefail
+if [ "${GITHUB_EVENT_NAME-}" = "pull_request" ] || [ "${GITHUB_REF-}" != "refs/heads/main" ]; then
+  echo "credentialed build/test requires a protected trusted ref"
+  exit 1
+fi
 unity test "$PROJECT_PATH" --mode EditMode --output test-results.xml
 unity build "$PROJECT_PATH" --target WebGL \
   --execute-method CiBuilder.BuildWebGL \
@@ -92,12 +94,13 @@ Use Pipeline against a long-lived Editor only when the farm intentionally keeps 
 
 ```bash
 unity mcp configure --list
-unity mcp configure cursor --local --yes
-# or
 unity mcp --project-path /path/to/project   # stdio server
 ```
 
-MCP exposes the same local automation surface. Still apply confirm/dry-run discipline for mutations.
+MCP client configuration is an interactive, human-reviewed setup step; agents
+must not run `configure --yes` or accept generated config on the owner's behalf.
+MCP exposes the same local automation surface. Still apply confirm/dry-run
+discipline for mutations.
 
 ## Workflow F — Disk-level asset surgery (art/audio swaps, bulk retargets)
 
@@ -435,7 +438,7 @@ it. Layer checks:
 | Bulk art/audio swap or retarget | Disk-level YAML/GUID edit + refresh (Workflow F) |
 | Clean test report on agent | `unity test` |
 | Player binary | `unity build` + project `executeMethod` |
-| Install tooling | `install` / `install-modules` |
+| Verify installed tooling | `editors -i` / `install-modules -l` |
 | Auth broken | `auth status`, `doctor` |
 
 ## Evidence standards for agents
@@ -468,7 +471,7 @@ Review **incidental diffs** before committing — they are evidence, not noise. 
 | Command missing | Package version drift; run bare `unity command`; upgrade pipeline |
 | Timeout | Raise `--timeout`; poll async `*_status`; avoid huge eval |
 | Wrong project | Pass `--project-path`; verify with `status` |
-| Module install fails | Editor must be Hub/CLI managed; try `--accept-eula`, `--cm` |
+| Module install fails | Stop for human provisioning; agents and CI must not accept EULAs or install modules |
 | Build fails | Need real `--execute-method`; read log under `Logs/` |
 | Pipeline blocked / hangs on UI | Open Editor with `-automated`; dismiss or avoid modal dialogs |
 | Layout “looks fine” then user zooms and finds clips | Run composition audit; recapture close Scene of the junction |
