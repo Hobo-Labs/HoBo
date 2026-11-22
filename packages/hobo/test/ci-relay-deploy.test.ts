@@ -1700,6 +1700,151 @@ describe("staged production finalizePromotion recovery", () => {
 			"no previous production deployment was recorded",
 		);
 	});
+
+	it("treats ambiguous promotion read-back as possibly promoted, verifies live, and rolls back on failure", async () => {
+		const home = freshHome();
+		const clock = steppingClock();
+		const baseEnv = {
+			VERCEL_TOKEN: TOKEN,
+			VERCEL_TEAM_ID: TEAM,
+			...ORIGINS,
+		};
+		const preview = await deploy(
+			[...PINNED, "--project", "hobo-ci", "--wait"],
+			{
+				fetch: scriptedVercel(["READY"]).fetch,
+				env: baseEnv,
+				hoboHome: home,
+				probe: healthyRelay().http,
+				...clock,
+			},
+		);
+		expect(preview.exitCode).toBe(0);
+
+		const base = scriptedVercel(["READY"], {
+			projectId: "prj_relay",
+			target: "production",
+		});
+		const sent: string[] = [];
+		let projectReads = 0;
+		let promoteCalls = 0;
+		let ambiguousReturned = false;
+		const unhealthyLive: HttpTransport = async (request) => {
+			if (request.url.startsWith("https://relay.example.test"))
+				return {
+					status: 503,
+					headers: { "content-type": "application/json" },
+					body: request.url.includes("/healthz")
+						? JSON.stringify({ ok: false, commit: SHA })
+						: JSON.stringify({ ready: false }),
+				};
+			return {
+				status: 200,
+				headers: { "content-type": "application/json" },
+				body: request.url.includes("/healthz")
+					? JSON.stringify({ ok: true, commit: SHA })
+					: JSON.stringify({ ready: true }),
+			};
+		};
+		const fetch: VercelFetch = async (url, init) => {
+			const path = url.replace("https://api.vercel.com", "");
+			if (init.method === "GET" && path.startsWith("/v9/projects/")) {
+				sent.push(`${init.method} ${path}`);
+				projectReads += 1;
+				const rolledBack = sent.some((line) =>
+					line.includes("/promote/dpl_old"),
+				);
+				const promoted = sent.some((line) =>
+					line.includes("/promote/dpl_wait"),
+				);
+				if (promoted && !ambiguousReturned) {
+					ambiguousReturned = true;
+					return {
+						ok: false,
+						status: 500,
+						async text() {
+							return JSON.stringify({
+								error: { code: "internal", message: "read failed" },
+							});
+						},
+						async json() {
+							return {};
+						},
+					};
+				}
+				const current = rolledBack ? "dpl_old" : promoted ? "dpl_wait" : "dpl_old";
+				return {
+					ok: true,
+					status: 200,
+					async text() {
+						return JSON.stringify({
+							id: "prj_relay",
+							targets: { production: { id: current } },
+						});
+					},
+					async json() {
+						return {
+							id: "prj_relay",
+							targets: { production: { id: current } },
+						};
+					},
+				};
+			}
+			if (
+				init.method === "POST" &&
+				/^\/v10\/projects\/[^/]+\/promote\//.test(path)
+			) {
+				sent.push(`${init.method} ${path}`);
+				promoteCalls += 1;
+				return {
+					ok: true,
+					status: 200,
+					async text() {
+						return "{}";
+					},
+					async json() {
+						return {};
+					},
+				};
+			}
+			return base.fetch(url, init);
+		};
+
+		const ran = await deploy(
+			[
+				...PINNED,
+				"--project",
+				"hobo-ci",
+				"--target",
+				"production",
+				...INPUTS,
+				"--wait",
+			],
+			{
+				fetch,
+				env: stagedEnv,
+				hoboHome: home,
+				probe: unhealthyLive,
+				credentialFetch: fakeCredentialFetch,
+				...clock,
+			},
+		);
+
+		expect(ran.exitCode).toBe(1);
+		expect(ran.envelope).toMatchObject({
+			ok: false,
+			code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
+			data: expect.objectContaining({ rollback: "completed" }),
+		});
+		expect(sent).toContain(
+			`POST /v10/projects/prj_relay/promote/dpl_wait?teamId=${TEAM}`,
+		);
+		expect(sent).toContain(
+			`POST /v10/projects/prj_relay/promote/dpl_old?teamId=${TEAM}`,
+		);
+		expect(promoteCalls).toBe(2);
+		expect(projectReads).toBeGreaterThanOrEqual(4);
+	});
 });
 
 describe("hobo ci deploy --dry-run names its delivery through @hobo/cd", () => {

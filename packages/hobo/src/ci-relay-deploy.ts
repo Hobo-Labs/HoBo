@@ -1491,6 +1491,7 @@ export async function runCiRelayDeploy(
 										: new Error("promotion failed");
 							}
 							let afterPromotion: string | undefined;
+							let promotionReadAmbiguous = false;
 							try {
 								afterPromotion =
 									await client.getProductionDeploymentId(project);
@@ -1506,14 +1507,9 @@ export async function runCiRelayDeploy(
 										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
 										message: `Production traffic names no deployment, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
 									};
-								return realizationFailure(
-									error instanceof Error
-										? error
-										: new Error("promotion read failed"),
-									withoutToken,
-								);
+								promotionReadAmbiguous = true;
 							}
-							if (afterPromotion !== safe.deploymentId) {
+							if (!promotionReadAmbiguous && afterPromotion !== safe.deploymentId) {
 								if (promotionError !== undefined)
 									return realizationFailure(promotionError, withoutToken);
 								return {
