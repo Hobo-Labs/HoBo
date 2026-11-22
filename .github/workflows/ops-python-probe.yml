@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3, 4, 5, 6, 7, 8]
+        n: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     runs-on: hobo-trunk
     timeout-minutes: 5
     steps:
@@ -23,3 +23,4 @@ jobs:
           python3 -c 'import ssl, sqlite3, sys; print(sys.version, ssl.OPENSSL_VERSION)'
           echo "runner=$RUNNER_NAME toolcache=$RUNNER_TOOL_CACHE pythonLocation=$pythonLocation"
           . /etc/os-release; echo "$PRETTY_NAME"
+          sleep 45  # hold the slot so the fan-out is concurrent
