@@ -10,6 +10,7 @@ import {
 	pullWorkerFromGhcr,
 	releaseWorkerEnsurePath,
 	remoteWorkerTag,
+	resolveWorkerRemoteRef,
 	validatedWorkerDigestRef,
 	workerPullBudgetSec,
 } from "../ci/ensure-ci-worker-image.mts";
@@ -55,6 +56,53 @@ describe("ensure-ci-worker-image", () => {
 			`${valid}:extra`,
 		])
 			assert.equal(validatedWorkerDigestRef("Hobo-Labs/HoBo", invalid), null);
+	});
+
+	it("falls back to the version tag only when the ref variable is absent", () => {
+		const digest = `sha256:${"b".repeat(64)}`;
+		const valid = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}`;
+		assert.equal(
+			resolveWorkerRemoteRef("Hobo-Labs/HoBo", "vdeadbeef", {}),
+			"ghcr.io/hobo-labs/hobo/hobo-ci-worker:vdeadbeef",
+		);
+		assert.equal(
+			resolveWorkerRemoteRef("Hobo-Labs/HoBo", "vdeadbeef", {
+				HOBO_CI_WORKER_IMAGE_REF: valid,
+			}),
+			valid,
+		);
+	});
+
+	it("throws on a supplied ref that is empty, malformed, or for another image", () => {
+		const digest = `sha256:${"b".repeat(64)}`;
+		const valid = `ghcr.io/hobo-labs/hobo/hobo-ci-worker@${digest}`;
+		const invalid = [
+			"",
+			"   ",
+			`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"b".repeat(63)}`,
+			`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"B".repeat(64)}`,
+			"ghcr.io/hobo-labs/hobo/hobo-ci-worker:vdeadbeef",
+			`ghcr.io/other/repo/hobo-ci-worker@${digest}`,
+			`ghcr.io/hobo-labs/hobo/other-image@${digest}`,
+			`ghcr.io/Hobo-Labs/HoBo/hobo-ci-worker@${digest}`,
+			`${valid}:extra`,
+		];
+		for (const value of invalid) {
+			let thrown: unknown;
+			try {
+				resolveWorkerRemoteRef("Hobo-Labs/HoBo", "vdeadbeef", {
+					HOBO_CI_WORKER_IMAGE_REF: value,
+				});
+			} catch (error) {
+				thrown = error;
+			}
+			assert.ok(
+				thrown instanceof Error,
+				`expected ${JSON.stringify(value)} to throw`,
+			);
+			assert.match(thrown.message, /HOBO_CI_WORKER_IMAGE_REF/u);
+			assert.doesNotMatch(thrown.message, /token/iu);
+		}
 	});
 
 	it("retries a failed pull within the remaining shared budget", () => {
@@ -345,6 +393,78 @@ describe("ensure-ci-worker-image", () => {
 			},
 		);
 	}
+
+	function materializeWithStub(imageRef: string | undefined) {
+		const bin = mkdtempSync(join(tmpdir(), "hobo-ensure-worker-invalid-"));
+		const calls = join(bin, "calls");
+		writeFileSync(
+			join(bin, "docker"),
+			[
+				"#!/bin/sh",
+				`echo "docker $*" >> "${calls}"`,
+				'if [ "$1 $2" = "image inspect" ]; then exit 1; fi',
+				'if [ "$1" = login ]; then cat > /dev/null; fi',
+				"",
+			].join("\n"),
+			{ mode: 0o755 },
+		);
+		const keys = [
+			"PATH",
+			"GITHUB_REPOSITORY",
+			"GITHUB_TOKEN",
+			"GITHUB_EVENT_NAME",
+			"HOBO_CI_SKIP_GHCR_PULL",
+			"HOBO_CI_WORKER_IMAGE_REF",
+		] as const;
+		const prev = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+		try {
+			process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+			process.env.GITHUB_REPOSITORY = "Hobo-Labs/HoBo";
+			process.env.GITHUB_TOKEN = "token-for-test";
+			process.env.GITHUB_EVENT_NAME = "push";
+			delete process.env.HOBO_CI_SKIP_GHCR_PULL;
+			if (imageRef === undefined) delete process.env.HOBO_CI_WORKER_IMAGE_REF;
+			else process.env.HOBO_CI_WORKER_IMAGE_REF = imageRef;
+			let thrown: Error | undefined;
+			try {
+				materializeCiWorkerImageOnly();
+			} catch (error) {
+				if (!(error instanceof Error)) throw error;
+				thrown = error;
+			}
+			return { error: thrown, recorded: readFileSync(calls, "utf8") };
+		} finally {
+			for (const key of keys) {
+				const value = prev[key];
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			rmSync(bin, { recursive: true, force: true });
+		}
+	}
+
+	it("never pulls, tags, or falls back when a supplied ref is invalid", () => {
+		const digest = `sha256:${"e".repeat(64)}`;
+		const invalid = [
+			"",
+			"   ",
+			`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"e".repeat(63)}`,
+			`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:${"E".repeat(64)}`,
+			"ghcr.io/hobo-labs/hobo/hobo-ci-worker:vdeadbeef",
+			`ghcr.io/other/repo/hobo-ci-worker@${digest}`,
+			`ghcr.io/hobo-labs/hobo/other-image@${digest}`,
+		];
+		for (const value of invalid) {
+			const { error, recorded } = materializeWithStub(value);
+			assert.ok(error, `expected ${JSON.stringify(value)} to throw`);
+			assert.match(error?.message ?? "", /HOBO_CI_WORKER_IMAGE_REF/u);
+			assert.doesNotMatch(recorded, /docker (?:pull|tag) /u);
+			assert.doesNotMatch(
+				recorded,
+				/docker manifest inspect ghcr\.io\/hobo-labs\/hobo\/hobo-ci-worker:v/u,
+			);
+		}
+	});
 
 	// The post-green publisher asks what GHCR has for this tree (finding 113).
 	function publishedStatus(stub: { host: boolean; manifest: boolean }) {

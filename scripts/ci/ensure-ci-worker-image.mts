@@ -103,6 +103,22 @@ export function validatedWorkerDigestRef(
 	return /^sha256:[a-f0-9]{64}$/u.test(ref.slice(prefix.length)) ? ref : null;
 }
 
+export function resolveWorkerRemoteRef(
+	repo: string,
+	version: string,
+	env: NodeJS.ProcessEnv = process.env,
+): string {
+	const suppliedImageRef = env.HOBO_CI_WORKER_IMAGE_REF;
+	if (suppliedImageRef === undefined) return remoteWorkerTag(repo, version);
+	const validatedDigestRef = validatedWorkerDigestRef(repo, suppliedImageRef);
+	if (!validatedDigestRef) {
+		throw new Error(
+			`HOBO_CI_WORKER_IMAGE_REF must be ghcr.io/${repo.toLowerCase()}/hobo-ci-worker@sha256:<64 lowercase hex>; refusing to fall back to the mutable version tag`,
+		);
+	}
+	return validatedDigestRef;
+}
+
 export function pullWorkerFromGhcr(
 	remote: string,
 	options?: Readonly<{
@@ -231,10 +247,8 @@ export function materializeCiWorkerImageOnly(): string | null {
 		process.env.HOBO_CI_SKIP_GHCR_PULL !== "1";
 
 	if (mayPullFromGhcr && repo) {
+		const remote = resolveWorkerRemoteRef(repo, version);
 		dockerLoginGhcr(actor, token);
-		const remote =
-			validatedWorkerDigestRef(repo, process.env.HOBO_CI_WORKER_IMAGE_REF) ??
-			remoteWorkerTag(repo, version);
 		const manifestOk = workerManifestReachable(remote, token);
 		if (!manifestOk) {
 			console.log(`GHCR manifest absent for ${remote}`);
