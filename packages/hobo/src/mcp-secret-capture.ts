@@ -55,8 +55,7 @@ export const WRITER_IDENTITY_NAME = "hobo-secret-writer";
 /** The longest a writer session lasts, whatever the token's own lifetime. */
 export const WRITER_SESSION_MAX_MS = 15 * 60_000;
 
-// The deploy credential sits at the root of its own project (as
-// ci-relay-deploy-credential.ts reads it).
+// public-contract: the deploy credential sits at the root of its own project, apart from the relay's (CONFIG-SERVICE.md).
 const DEPLOY_SECRET_PATH = "/";
 
 const NEXT_STEP_CONNECT =
@@ -127,8 +126,7 @@ export function secretCaptureProjectDir(
 type Session = {
 	readonly clientId: string;
 	readonly runtime: InfisicalClient;
-	/** Absent when the binding names no deploy project (the default path). */
-	readonly deploy: InfisicalClient | undefined;
+	readonly deploy: InfisicalClient;
 	readonly expiresAtMs: number;
 };
 
@@ -156,12 +154,19 @@ export function createInfisicalCaptureConnector(options: {
 		| { reason: string } {
 		try {
 			const found = loadSecretStoreBinding(options.projectDir);
-			return found === undefined
-				? {
-						reason:
-							"The relay capture adapter has no configured store binding.",
-					}
-				: { binding: found };
+			if (found === undefined)
+				return {
+					reason: "The relay capture adapter has no configured store binding.",
+				};
+			if (
+				found.deployCredentialIdentityId === "" ||
+				found.deployCredentialIdentityId === found.deployIdentityId
+			)
+				return {
+					reason:
+						"The relay capture adapter needs a deploy credential identity distinct from the writer before it can authorize a capture session.",
+				};
+			return { binding: found };
 		} catch (error) {
 			if (
 				error instanceof SecretStoreBindingRefusal &&
@@ -173,7 +178,8 @@ export function createInfisicalCaptureConnector(options: {
 				error.code === "HOBO_CI_SECRET_STORE_BINDING_INVALID"
 			)
 				return {
-					reason: "The relay capture adapter's store binding is invalid.",
+					reason:
+						"The relay capture adapter's store binding predates the deploy credential project and reader: re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id, then re-capture VERCEL_TOKEN into the deploy project (CONFIG-SERVICE.md).",
 				};
 			return {
 				reason: "The relay capture adapter's store binding is unavailable.",
@@ -248,17 +254,14 @@ export function createInfisicalCaptureConnector(options: {
 						: undefined),
 				});
 				const { expiresAtMs } = await runtime.signIn();
-				const deploy =
-					store.deployProjectId === ""
-						? undefined
-						: runtime.forBinding(
-								parseInfisicalBinding({
-									siteUrl: store.endpoint,
-									projectId: store.deployProjectId,
-									environment: store.environment,
-									secretPath: DEPLOY_SECRET_PATH,
-								}),
-							);
+				const deploy = runtime.forBinding(
+					parseInfisicalBinding({
+						siteUrl: store.endpoint,
+						projectId: store.deployProjectId,
+						environment: store.environment,
+						secretPath: DEPLOY_SECRET_PATH,
+					}),
+				);
 				const until = Math.min(expiresAtMs, now() + WRITER_SESSION_MAX_MS);
 				session = { clientId, runtime, deploy, expiresAtMs: until };
 				return {
@@ -276,8 +279,6 @@ export function createInfisicalCaptureConnector(options: {
 			if (held === undefined)
 				throw new SecretStoreConnectorError("writer-session-ended");
 			const client = target === "deploy" ? held.deploy : held.runtime;
-			if (client === undefined)
-				throw new SecretStoreConnectorError("no-deploy-project");
 			try {
 				await client.putSecret(secret.name, secret.reveal());
 				return { ref: infisicalSecretRef(client.binding, secret.name) };

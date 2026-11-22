@@ -183,6 +183,26 @@ runs:
         fi
         echo "::error::sparse checkout failed after 3 attempts (partial clone / promisor fetch)"
         exit 1
+    - name: Initialize sparse cone before root files
+      shell: bash
+      env:
+        DIR_CONES: ${{ steps.sparse.outputs.dir_cones }}
+      run: |
+        set -euo pipefail
+        git rev-parse --verify HEAD > /dev/null
+        mapfile -t directory_cones <<< "$DIR_CONES"
+        cones=()
+        for path in "${directory_cones[@]}"; do
+          [ -z "$path" ] && continue
+          cones+=("$path")
+        done
+        if [ "${#cones[@]}" -gt 0 ]; then
+          git sparse-checkout set --cone --skip-checks -- "${cones[@]}"
+        fi
+        index=$(git rev-parse --git-path index)
+        if [ ! -s "$index" ]; then
+          git reset --hard HEAD
+        fi
     - name: Checkout sparse root files (non-cone)
       if: steps.sparse.outputs.root_files != ''
       shell: bash

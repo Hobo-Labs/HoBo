@@ -114,6 +114,13 @@ describe("the dependency-free routing reader", () => {
 			{ ...base, box: { ...base.box, trunkLend: true } },
 			{ ...base, box: { ...base.box, jobAdmission: "poll" } },
 			{ ...base, mainWorkspaceParallelCap: 9 },
+			{ ...base, mergeGroup: { reusePrFabric: "false" } },
+			{ ...base, mergeGroup: {} },
+			{ ...base, mergeGroup: null },
+			{
+				...base,
+				mergeGroup: { reusePrFabric: true, extra: true },
+			},
 			{
 				...base,
 				externalPools: [{ labels: [], runnerNamePrefix: "a", maxRunners: 1 }],
@@ -129,6 +136,26 @@ describe("the dependency-free routing reader", () => {
 		assert.equal(readRunnerRouting("{}"), undefined);
 		assert.equal(readRunnerRouting("not json"), undefined);
 		assert.equal(readRunnerRouting(undefined), undefined);
+	});
+
+	it("reads mergeGroup.reusePrFabric in both parsers, off when absent", () => {
+		const fixturePolicy = JSON.parse(fixture("valid", "runner-routing.json"));
+		const { mergeGroup: _committed, ...absent } = fixturePolicy;
+		assert.ok(committed);
+		assert.deepEqual(committed.mergeGroup, { reusePrFabric: false });
+		for (const source of [absent, committed]) {
+			const mine = parseRunnerRouting(source);
+			const theirs = parseWithZod(source);
+			assert.deepEqual(mine, theirs);
+			assert.deepEqual(mine?.mergeGroup, { reusePrFabric: false });
+		}
+		assert.deepEqual(
+			parseRunnerRouting({
+				...absent,
+				mergeGroup: { reusePrFabric: true },
+			})?.mergeGroup,
+			{ reusePrFabric: true },
+		);
 	});
 });
 

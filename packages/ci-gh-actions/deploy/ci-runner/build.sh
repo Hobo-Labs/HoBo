@@ -44,6 +44,7 @@ fi
 export MISE_IGNORED_CONFIG_PATHS="/etc/mise/config.toml${MISE_IGNORED_CONFIG_PATHS:+:${MISE_IGNORED_CONFIG_PATHS}}"
 mise trust ./mise.toml
 mise install --locked
+mise exec -- python --version
 mise exec -- shellcheck --version
 
 node --no-warnings scripts/ci-runner-image-version.mts >/tmp/hobo-ci-runner-version.$$

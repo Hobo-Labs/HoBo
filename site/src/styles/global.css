@@ -1,21 +1,21 @@
-/* ==========================================================================
-   HoBo site design system.
-   One stylesheet, zero frameworks. Strict black-and-white rubberhose cartoon
-   language (Steamboat Willie / Cuphead / Fleischer) starring Bo the bindlebug:
-   traced reference illustrations, thick ink outlines, hard offset "sticker"
-   shadows, Chewy title-card display type. Ink on paper by day, paper on ink
-   by night — exact inversions via custom properties.
 
-   Agent contract: site/DESIGN.md (Google DESIGN.md format). Lint with
-   `pnpm --filter hobo-site run design:lint` before shipping token changes.
-   ========================================================================== */
 
-/* ---------- Tokens ---------- */
-/* (structural tokens are consumed at the bottom of this file, under DESIGN
-   SURFACES — search there to see what a design actually changes) */
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 :root {
-	/* type: Chewy = cartoon title-card lettering; quiet sans for everything else */
+
 	--font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
 		Arial, sans-serif;
 	--font-display: "Chewy", "Comic Sans MS", cursive;
@@ -24,78 +24,78 @@
 	--font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
 		Menlo, Consolas, monospace;
 
-	/* Bo the mascot is always soot-colored with white googly eyes */
+
 	--soot: #1a1512;
 
-	/* layout */
+
 	--container: 1160px;
 	--header-h: 3.75rem;
 	--radius: 12px;
 	--radius-lg: 18px;
 
-	/* motion */
-	--ease: cubic-bezier(0.22, 1, 0.36, 1);
-	/* The sanctioned second curve, and the only one. It peaks at y≈1.098 — it
-	   genuinely overshoots and settles, which is squash-and-stretch expressed as
-	   a curve. `--ease` does not overshoot at all (it peaks at exactly 1.0), so
-	   the two are not interchangeable and the bounce cannot be spelled with the
-	   default token.
 
-	   A generic design linter flags this as "bounce easing feels dated, use
-	   exponential". For a flat SaaS surface that is right. For a Steamboat
-	   Willie / Fleischer identity it is exactly backwards: the bounce is the
-	   product, not a flourish on it, and ADR-0149 makes that identity binding.
-	   Kept deliberately — but named, so it is one reviewable decision instead of
-	   three hardcoded curves nobody could account for. */
+	--ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+
+
+
+
+
+
+
+
+
+
+
 	--ease-boing: cubic-bezier(0.34, 1.56, 0.64, 1);
-	/* Three steps and no fourth (DESIGN.md § Motion). These govern *response*
-	   motion — transitions and entrances. Ambient loops (Bo's idle, grain
-	   drift, cloud squash) run long by design and are exempt; see DESIGN.md for
-	   the named exceptions. */
+
+
+
+
 	--dur-tap: 120ms;
 	--dur-move: 220ms;
 	--dur-scene: 420ms;
 	--stagger: 60ms;
 
-	/* ---- Structural tokens: the axis a palette could not reach ----
-	   Five designs differ in TYPE, RHYTHM, SURFACE and SHAPE, not hue. The
-	   designer persona caps visualClutter and interactiveClutter at 1, so these
-	   are five ways of being quiet — none of them adds ornament, and the ones
-	   that raise density (ledger, broadsheet) pay for it by removing chrome. */
-	--measure: 1160px;        /* content width (incumbent --container) */
-	--rhythm: 1;              /* vertical spacing multiplier */
-	--rule: 2.5px;            /* incumbent card border weight */
-	--card-radius: calc(var(--radius-lg) + 6px); /* incumbent card corner */
+
+
+
+
+
+	--measure: 1160px;
+	--rhythm: 1;
+	--rule: 2.5px;
+	--card-radius: calc(var(--radius-lg) + 6px);
 	--surface-fill: var(--bg-raised);
-	--surface-shadow: 0.32rem 0.32rem 0 var(--pop-soft); /* incumbent */
+	--surface-shadow: 0.32rem 0.32rem 0 var(--pop-soft);
 	--head-pad: 0rem;
-	--display-size: 1;        /* display type multiplier */
-	/* Defaults to the ORIGINAL display tracking, not 0. With 0em here, the
-	   design-surfaces rule silently retracked ink's own hero and section heads
-	   — the audit caught it as a reflow ghost cascading down the whole
-	   homepage against the pre-axis baseline. The default of a design token
-	   must be the incumbent value, or the axis redesigns the default. */
+	--display-size: 1;
+
+
+
+
+
 	--display-track: 0.005em;
 	--display-case: none;
 	--body-size: 1rem;
 	--leading: 1.65;
-	--head-rule: 0px;         /* rule under section heads */
+	--head-rule: 0px;
 
-	/* Derived tokens — the reason a palette only has to declare 16 values.
-	   Before this, Dusk had warm paper and pure-black #101010 links; DESIGN.md
-	   promises palettes re-ink "the paper and the line", and the line was not
-	   being re-inked.
 
-	   Six of these are exact: --ink/--link/--meadow/--sky and the two -soft pairs
-	   were already written out per-theme with values byte-identical to what they
-	   now alias, so ink/day and ink/night are unchanged.
 
-	   The two color-mix ones shift by a hair, and the honest numbers are:
-	     --code-bg    day  #f7f7f5 -> #f8f8f8      night #101010 -> #111111
-	     --hero-grid  day  unchanged               night alpha .08 -> .09
-	   All at or below the perceptibility threshold, but not "identical" — the
-	   grid-line alpha is a 12.5% relative change. Kept derived because a palette
-	   with warm paper and a neutral grey code block is the worse defect. */
+
+
+
+
+
+
+
+
+
+
+
+
+
 	--ink: var(--text);
 	--link: var(--text);
 	--meadow: var(--accent);
@@ -106,8 +106,8 @@
 	--hero-grid: color-mix(in srgb, var(--text) 9%, transparent);
 }
 
-/* Night is opt-in: chosen by the toggle, a stored preference, or an OS that
-   asks for dark. Day is the default below. */
+
+
 :root[data-theme="dark"] {
 	color-scheme: dark;
 	--bg: #0a0a0a;
@@ -135,9 +135,9 @@
 	--shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 40px -12px rgba(0, 0, 0, 0.6);
 }
 
-/* Day is the default: bare :root, so the page is ink-on-paper before any
-   script runs and when JavaScript is off. `[data-theme="light"]` is kept so an
-   explicit choice of day still wins over an OS that asks for dark. */
+
+
+
 :root,
 :root[data-theme="light"] {
 	color-scheme: light;
@@ -167,44 +167,44 @@
 		0 12px 32px -12px rgba(16, 16, 16, 0.14);
 }
 
-/* ============================================================================
-   PALETTES — the second theme axis.
 
-   `data-theme` stays what it was: the day/night *mode*, an exact inversion
-   pair. `data-palette` is orthogonal — it re-inks the paper and the line
-   without touching that machinery, so the mode logic (and the day-default fix
-   it took two passes to get right) is not re-litigated for every new theme.
 
-   Absent `data-palette`, you get `ink`: the canonical Steamboat Willie
-   black-and-white. Every palette keeps the same contract — one paper, one ink,
-   two rare accents — so The One Voice Rule survives the switch. A palette that
-   needed a third accent would be a different design system, not a theme.
 
-   MA (間): each palette is defined by what it withholds. The accents exist to
-   be *absent* almost everywhere; the paper is mostly empty on purpose.
-   ============================================================================ */
 
-/* ============================================================================
-   DESIGNS — the second axis, and a real one.
 
-   Each entry re-lays the page: type scale, vertical rhythm, how a surface is
-   drawn, how sharp its corners are, how motion behaves. Colour comes along for
-   the ride rather than being the whole change.
-   ============================================================================ */
 
-/* The lever I missed the first time round: TYPEFACE.
 
-   The first attempt varied spacing, border weight and type *scale* — and every
-   design still used Chewy for display and the same sans for body, the same card
-   grid, the same header. That is one design nudged five ways, which is what the
-   owner called a reskin, correctly, twice.
 
-   A design is recognisable by its letterforms before anything else. These stay
-   on system stacks so there is no network cost and no FOUT: the rubberhose
-   identity lives in the artwork and the ink, and it survives a serif. */
 
-/* BROADSHEET — a newspaper. Serif throughout, no boxes at all, rules carry the
-   structure, narrow measure. Reads as printed matter, not as a web page. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 :root[data-design="broadsheet"] {
 	--font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 	--font-sans: "Iowan Old Style", Georgia, "Times New Roman", serif;
@@ -224,8 +224,8 @@
 	--head-pad: 0.5rem;
 }
 
-/* TITLE CARD — a cinema card. Chewy kept, but enormous, uppercase and centred,
-   with intervals wide enough to be the composition. Everything else removed. */
+
+
 :root[data-design="titlecard"] {
 	--measure: 980px;
 	--rhythm: 2.1;
@@ -234,10 +234,10 @@
 	--surface-fill: transparent;
 	--surface-shadow: none;
 	--radius: 0px;
-	/* 1.5, down from 1.75: at 1.75 the desktop headline alone filled screen
-	   one and no CTA survived inside the fold even with the hero interval
-	   tightened. 1.5 is still unmistakably a poster; it just shares the card
-	   with its billing line. */
+
+
+
+
 	--display-size: 1.5;
 	--display-track: 0.03em;
 	--display-case: uppercase;
@@ -245,15 +245,15 @@
 	--leading: 1.85;
 }
 
-/* LEDGER — a terminal. Monospace everywhere, hairline rules, square corners,
-   tight leading. The most information per screen of the five, and the least
-   decoration — which is how it stays under the clutter cap. */
+
+
+
 :root[data-design="ledger"] {
-	/* Mono is the VOICE (display, labels, tables, code) — not the reading
-	   face. All-mono body prose destroyed code findability: when everything is
-	   monospace, code stops being visually distinct, and docs reading slows.
-	   Both designer personas converged on "mono for structure, proportional
-	   for prose". */
+
+
+
+
+
 	--font-display: var(--font-mono);
 	--measure: 1240px;
 	--rhythm: 0.7;
@@ -271,13 +271,13 @@
 	--head-pad: 0.5rem;
 }
 
-/* CUTOUT — paper collage. Everything sits on a card with a hard offset shadow
-   and a whisper of rotation, spaced wide so the planes never crowd. */
+
+
 :root[data-design="cutout"] {
-	/* Full measure, not narrowed. Cutout's character is the offset planes and
-	   the space between them, not a tighter column — and at 1100px its 3px rule
-	   and 1.6rem padding squeezed the two-column hero until the code panel
-	   clipped. The screenshot caught it; the build did not. */
+
+
+
+
 	--measure: 1160px;
 	--rhythm: 1.35;
 	--rule: 3px;
@@ -290,7 +290,7 @@
 	--leading: 1.7;
 }
 
-/* --- 2 · DUSK MEADOW — Ghibli golden hour. Warm paper, sepia ink. --------- */
+
 :root[data-design="cutout"] {
 	--bg: #fbf5e9;
 	--bg-raised: #fffdf7;
@@ -299,7 +299,7 @@
 	--border-strong: #b9a97f;
 	--text: #2e2418;
 	--text-mute: #6b5a41;
-	--text-faint: #6b5a40; /* ≥4.5:1 on dusk paper (was #8d7c62 ≈3.7:1) */
+	--text-faint: #6b5a40;
 	--accent: #2e2418;
 	--accent-strong: #1a140c;
 	--accent-ink: #fbf5e9;
@@ -328,7 +328,7 @@
 	--go-soft: rgba(163, 189, 106, 0.16);
 }
 
-/* --- 3 · RAIN GLASS — Ghibli downpour. Cool paper, indigo ink. ----------- */
+
 :root[data-design="broadsheet"] {
 	--bg: #f2f5f7;
 	--bg-raised: #ffffff;
@@ -337,7 +337,7 @@
 	--border-strong: #9dafb9;
 	--text: #1b2732;
 	--text-mute: #4c5f6d;
-	--text-faint: #54666f; /* ≥4.5:1 on rain paper (was #6f8290 ≈3.6:1) */
+	--text-faint: #54666f;
 	--accent: #1b2732;
 	--accent-strong: #0d1620;
 	--accent-ink: #f2f5f7;
@@ -366,7 +366,7 @@
 	--go-soft: rgba(116, 196, 168, 0.16);
 }
 
-/* --- 4 · CEL BLOOM — Cuphead title card. Card stock, vermillion. --------- */
+
 :root[data-design="titlecard"] {
 	--bg: #f7f0e1;
 	--bg-raised: #fffaf0;
@@ -404,7 +404,7 @@
 	--go-soft: rgba(87, 199, 119, 0.16);
 }
 
-/* --- 5 · MOSS QUIET — Ghibli forest floor. The most MA of the five. ------ */
+
 :root[data-design="ledger"] {
 	--bg: #f1f4ee;
 	--bg-raised: #fbfdf9;
@@ -442,7 +442,7 @@
 	--go-soft: rgba(127, 192, 141, 0.16);
 }
 
-/* ---------- Reset-ish ---------- */
+
 
 *,
 *::before,
@@ -466,7 +466,7 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
-/* Old-reel film grain over everything (very faint, fixed, non-interactive). */
+
 body::after {
 	content: "";
 	position: fixed;
@@ -520,16 +520,16 @@ a:hover {
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
-		/* Delay has to be zeroed too, not just duration. A staggered element with
-		   `both` fill holds its *backwards* fill for the whole delay, so the Rest
-		   Rule's five palette buttons still visibly slid down over 240ms with
-		   reduced motion on — the durations were zero but the waiting was not. */
+
+
+
+
 		animation-delay: 0ms !important;
 		transition-delay: 0ms !important;
 	}
 }
 
-/* Bigger touch targets on coarse pointers. */
+
 @media (pointer: coarse) {
 	.icon-btn {
 		width: 2.75rem;
@@ -541,7 +541,7 @@ a:hover {
 	}
 }
 
-/* In-content links must not rely on color alone. */
+
 .prose a,
 .section-foot a,
 .section-head p a,
@@ -554,16 +554,16 @@ a:hover {
 	text-decoration-thickness: 1.5px;
 }
 
-/* ---------- Bo the mascot & clouds (shared SVG line-art rules) ---------- */
+
 
 .mascot .mascot-fur {
 	fill: var(--soot);
 }
 
-/* White backing that shows through the traced eye holes on any background. */
 
 
-/* At night the whole soot silhouette gets a cream rim so Bo stays visible. */
+
+
 :root[data-theme="dark"] .mascot .mascot-fur {
 	filter: drop-shadow(1.4px 0 0 var(--ink)) drop-shadow(-1.4px 0 0 var(--ink))
 		drop-shadow(0 1.4px 0 var(--ink)) drop-shadow(0 -1.4px 0 var(--ink));
@@ -571,8 +571,8 @@ a:hover {
 
 
 
-/* Support rules for the APPROVED hand-traced Logo mark (restored after an
-   unapproved retrace replaced it and rendered as a smudge at 28px). */
+
+
 .mascot .mascot-under ellipse {
 	fill: #ffffff;
 }
@@ -611,9 +611,9 @@ a:hover {
 	fill: #2a2320;
 }
 
-/* Bo blinks: soot eyelids drop over the traced eye holes on an irregular
-   cycle — one blink, a pause, then a quick double-blink, like he noticed
-   you watching. */
+
+
+
 
 
 @keyframes blink {
@@ -646,11 +646,11 @@ a:hover {
 	}
 }
 
-/* Instances blink out of phase so the page never synchronizes. */
 
 
-/* Dust kicks: the trace's own puff clusters, appearing and drifting off on
-   mismatched prime-ish cycles so the rhythm reads as random. */
+
+
+
 
 
 .skip-link {
@@ -675,7 +675,7 @@ a:hover {
 	padding-inline: clamp(1rem, 4vw, 2rem);
 }
 
-/* ---------- Header ---------- */
+
 
 .site-header {
 	position: sticky;
@@ -791,10 +791,10 @@ a:hover {
 	text-decoration: none;
 }
 
-/* The toggle shows the theme you would switch TO. Day is the default, so the
-   moon shows by default; night swaps in the sun. Keyed off `dark` rather than
-   `light` so the icon is right before the boot script sets the attribute and
-   when JavaScript is off. */
+
+
+
+
 .theme-toggle .sun,
 :root[data-theme="dark"] .theme-toggle .moon {
 	display: none;
@@ -834,12 +834,12 @@ a:hover {
 	}
 }
 
-/* ---------- Buttons as cartoon signage (not pills) ---------- */
-/*
- * Roadside / tavern sign boards: chamfered plank shape, thick ink rim,
- * painted inner rail, title-card lettering, hard sticker shadow.
- * Rubberhose vibe — Steamboat Willie / Cuphead signage, not SaaS ellipses.
- */
+
+
+
+
+
+
 
 .btn {
 	--btn-shadow: var(--pop);
@@ -848,9 +848,9 @@ a:hover {
 	align-items: center;
 	justify-content: center;
 	gap: 0.45rem;
-	/* Room for the plank silhouette + hanging rivets */
+
 	padding: 0.78rem 1.65rem 0.72rem;
-	/* Chamfered wooden-sign silhouette (not a pill / not a soft ellipse) */
+
 	border: none;
 	border-radius: 0;
 	clip-path: polygon(
@@ -863,7 +863,7 @@ a:hover {
 		0 calc(100% - 0.55rem),
 		0 0.55rem
 	);
-	/* Outer ink stroke via layered hard shadows (clip-path eats border) */
+
 	box-shadow:
 		0.28rem 0.28rem 0 var(--btn-shadow),
 		0 0 0 0.18rem var(--ink);
@@ -881,14 +881,14 @@ a:hover {
 		filter var(--dur-move) var(--ease);
 }
 
-/* Painted inner rail — double-outline “sign board” edge */
+
 .btn::before {
 	content: "";
 	position: absolute;
 	inset: 0.28rem;
 	z-index: 0;
 	pointer-events: none;
-	/* Slightly smaller chamfer so the rail tracks the plank */
+
 	clip-path: polygon(
 		0.35rem 0,
 		calc(100% - 0.35rem) 0,
@@ -904,13 +904,13 @@ a:hover {
 	opacity: 0.9;
 }
 
-/* Rivets / nail heads — classic cartoon signage hardware */
+
 .btn::after {
 	content: "";
 	position: absolute;
 	z-index: 1;
 	pointer-events: none;
-	/* two rivets along the top edge */
+
 	top: 0.42rem;
 	left: 0.85rem;
 	right: 0.85rem;
@@ -928,7 +928,7 @@ a:hover {
 
 .btn:hover {
 	text-decoration: none;
-	/* hang / bounce like a wooden sign on a nail */
+
 	transform: translate(-3px, -4px) rotate(-1.25deg) scale(1.03);
 	box-shadow:
 		0.42rem 0.48rem 0 var(--btn-shadow),
@@ -939,7 +939,7 @@ a:hover {
 .btn-primary:hover {
 	background: var(--spark);
 	color: #ffffff;
-	/* Keep rivets readable on vermillion */
+
 	--btn-shadow: color-mix(in srgb, var(--soot) 55%, transparent);
 }
 
@@ -974,7 +974,7 @@ a:hover {
 }
 
 .btn-primary {
-	/* Solid ink fill — shadow uses softer pop so it reads on dark/light */
+
 	--btn-shadow: var(--pop-soft);
 	color: var(--accent-ink);
 	background: var(--accent);
@@ -984,14 +984,14 @@ a:hover {
 	--btn-shadow: var(--pop);
 	color: var(--text);
 	background: var(--bg-raised);
-	/* ghost signs read as painted boards, not filled posts */
+
 	box-shadow:
 		0.28rem 0.28rem 0 var(--btn-shadow),
 		0 0 0 0.18rem var(--ink),
 		inset 0 0 0 0.06rem color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
-/* ---------- Copy buttons (code blocks + copy-page-as-markdown) ---------- */
+
 
 .code-block {
 	position: relative;
@@ -1084,7 +1084,7 @@ a:hover {
 	color: var(--text-mute);
 }
 
-/* ---------- Hero ---------- */
+
 
 .hero {
 	position: relative;
@@ -1155,7 +1155,7 @@ a:hover {
 	gap: 0.5rem;
 }
 
-/* ---------- Terminal window ---------- */
+
 
 .terminal-wrap {
 	position: relative;
@@ -1218,7 +1218,7 @@ a:hover {
 	overflow-x: auto;
 }
 
-/* ---------- Sections ---------- */
+
 
 .section {
 	padding: clamp(3rem, 7vw, 5.5rem) 0;
@@ -1259,7 +1259,7 @@ a:hover {
 	font-size: 0.95rem;
 }
 
-/* ---------- Cards & grids ---------- */
+
 
 .grid {
 	display: grid;
@@ -1367,7 +1367,7 @@ a.card:hover .card-cta {
 	}
 }
 
-/* problem cards */
+
 .tradeoff {
 	border-style: dashed;
 	box-shadow: none;
@@ -1387,7 +1387,7 @@ a.card:hover .card-cta {
 	letter-spacing: 0.1em;
 }
 
-/* steps */
+
 .step-num {
 	font-family: var(--font-mono);
 	font-weight: 700;
@@ -1414,7 +1414,7 @@ a.card:hover .card-cta {
 }
 
 
-/* ---------- Cartoon physics: hover boings & scroll reveals ---------- */
+
 
 @keyframes boing {
 	0% { transform: scale(1, 1); }
@@ -1458,15 +1458,15 @@ a.card:hover .card-cta {
 	transform: rotate(24deg) scale(1.1);
 }
 
-/* Scroll-linked reveals where supported; static everywhere else.
-   `translate` (not transform) so hover transforms stay free. */
+
+
 @supports (animation-timeline: view()) {
 	.card {
 		animation: rise-in linear both;
 		animation-timeline: view();
-		/* The Held Breath Rule: start at 15% into the entry, not at 0%. The gap
-		   between "it could animate" and "it does" is the MA; triggering at the
-		   boundary is what makes a page feel twitchy. */
+
+
+
 		animation-range: entry 15% entry 60%;
 	}
 }
@@ -1480,9 +1480,9 @@ a.card:hover .card-cta {
 	}
 }
 
-/* ---------- Whimsy: stickers, squiggles, rails, postcards ---------- */
 
-/* Inline labels: reading-order hints, set as quiet small caps. */
+
+
 .sticker {
 	display: inline-block;
 	padding: 0;
@@ -1498,7 +1498,7 @@ a.card:hover .card-cta {
 	white-space: nowrap;
 }
 
-/* Hand-drawn squiggle underline for the word that matters. */
+
 .squiggle {
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='7' viewBox='0 0 40 7'%3E%3Cpath d='M0 5 Q 5 1 10 5 T 20 5 T 30 5 T 40 5' fill='none' stroke='%23c5301c' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
 	background-repeat: repeat-x;
@@ -1511,7 +1511,7 @@ a.card:hover .card-cta {
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='7' viewBox='0 0 40 7'%3E%3Cpath d='M0 5 Q 5 1 10 5 T 20 5 T 30 5 T 40 5' fill='none' stroke='%23ff7a63' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
-/* Postcard: dashed border, a stamp in the corner, slightly askew. */
+
 .postcard {
 	position: relative;
 	overflow: hidden;
@@ -1523,7 +1523,7 @@ a.card:hover .card-cta {
 	text-align: center;
 }
 
-/* ---------- Comparison table ---------- */
+
 
 .table-wrap {
 	overflow-x: auto;
@@ -1586,7 +1586,7 @@ table.compare tr.hobo-row th {
 	font-weight: 750;
 }
 
-/* ---------- CTA band ---------- */
+
 
 .cta-band {
 	margin: clamp(3rem, 7vw, 5.5rem) 0;
@@ -1621,7 +1621,7 @@ table.compare tr.hobo-row th {
 	margin-bottom: 0;
 }
 
-/* ---------- Footer ---------- */
+
 
 .site-footer {
 	border-top: 1px solid var(--border);
@@ -1680,7 +1680,7 @@ table.compare tr.hobo-row th {
 	color: var(--text);
 }
 
-/* Bo idles in the footer note, standing on the baseline of the text. */
+
 .footer-bo {
 	flex: none;
 	margin-bottom: -0.35rem;
@@ -1697,14 +1697,14 @@ table.compare tr.hobo-row th {
 	justify-content: space-between;
 }
 
-/* Trademark disclaimer sits quietly on its own line under the footer note. */
+
 .footer-trademark {
 	flex-basis: 100%;
 	font-size: 0.78rem;
 	opacity: 0.75;
 }
 
-/* ---------- Docs layout ---------- */
+
 
 .docs {
 	display: grid;
@@ -1714,9 +1714,9 @@ table.compare tr.hobo-row th {
 	padding: 2rem 0 4rem;
 }
 
-/* A page in no section has no rail (see Docs.astro). Without this it would keep
-   the empty 236px column and sit the prose in the right-hand track, indented
-   past a gutter with nothing in it. */
+
+
+
 .docs.docs-no-rail {
 	grid-template-columns: minmax(0, 1fr);
 }
@@ -1835,7 +1835,7 @@ table.compare tr.hobo-row th {
 	font-size: 0.88rem;
 }
 
-/* ---------- Prose (docs content) ---------- */
+
 
 .prose {
 	max-width: 74ch;
@@ -1966,7 +1966,7 @@ table.compare tr.hobo-row th {
 	border-top: 1px solid var(--border);
 }
 
-/* ---------- Shiki dual theme ---------- */
+
 
 
 .astro-code,
@@ -1986,7 +1986,7 @@ table.compare tr.hobo-row th {
 	text-decoration: var(--shiki-dark-text-decoration);
 }
 
-/* ---------- 404 ---------- */
+
 
 .error-page {
 	min-height: 55vh;
@@ -2006,13 +2006,13 @@ table.compare tr.hobo-row th {
 	margin: 0 0 1.5rem;
 }
 
-/* --- Palette picker -------------------------------------------------------
-   A disclosure, not five buttons in the bar. The designer persona's clutter
-   thresholds are 1 (the lowest there is) and junior-frontend treats
-   choiceOverload as a hard budget that invalidates any uplift — so five
-   options may exist, but they may not *shout*. Closed, this costs one icon;
-   the palettes are there when looked for and invisible when not. That is the
-   same MA the palettes themselves are built on. */
+
+
+
+
+
+
+
 .palette-picker {
 	position: relative;
 }
@@ -2055,10 +2055,10 @@ table.compare tr.hobo-row th {
 	transition: background var(--dur-tap) var(--ease);
 }
 
-/* The Rest Rule, applied. Five palettes is exactly the rule's ceiling — past
-   five a stagger stops reading as rhythm and starts reading as lag — so the
-   delays are written out rather than generated, and the list cannot grow
-   without someone noticing this block. */
+
+
+
+
 .palette-picker[open] .palette-menu button {
 	animation: rest-in var(--dur-move) var(--ease) both;
 }
@@ -2075,9 +2075,9 @@ table.compare tr.hobo-row th {
 	animation-delay: calc(var(--stagger) * 4);
 }
 
-/* Offset only, never opacity: a menu item that animated its opacity would be
-   invisible for its delay, and under a forced `animation: none` it would be
-   invisible permanently. */
+
+
+
 @keyframes rest-in {
 	from {
 		translate: 0 -4px;
@@ -2099,16 +2099,16 @@ table.compare tr.hobo-row th {
 	}
 }
 
-/* --- Heading anchors ------------------------------------------------------
-   The `#` that appears beside a heading on hover/focus. Before rehype-slug no
-   `.prose` heading carried an id at all, so no docs page could be deep-linked
-   — and the homepage already linked into `/primitives/bindles/#greenfield-…`,
-   which resolved to nothing. `scroll-padding-top` was already set for anchors
-   that did not exist.
 
-   MA: the mark is absent until wanted. It occupies no layout when hidden, so
-   the heading's silhouette is unchanged — the affordance appears in the space
-   that was already there. */
+
+
+
+
+
+
+
+
+
 .prose .heading-anchor {
 	margin-left: 0.4ch;
 	color: var(--text-faint);
@@ -2121,26 +2121,26 @@ table.compare tr.hobo-row th {
 	opacity: 1;
 }
 
-/* Deliberately NOT focusable, and therefore deliberately without a :focus
-   style. rehype-autolink-headings ships it `aria-hidden` + `tabindex="-1"`,
-   which is the right call twice over: the link duplicates the heading text a
-   screen reader has already announced, and making it focusable would add a tab
-   stop before every heading on the page — the interactive clutter the design
-   personas cap at 1.
 
-   This block previously carried a `:focus-visible` rule and a comment claiming
-   "a keyboard user must be able to reach it". Neither was true: nothing can
-   focus a `tabindex="-1"` element by keyboard, so the rule was dead code
-   asserting an affordance that did not exist. Kept at `opacity: 0` rather than
-   `display: none` so the anchor stays in the layout and in the a11y tree. */
+
+
+
+
+
+
+
+
+
+
+
 @media (prefers-reduced-motion: reduce) {
 	.prose .heading-anchor {
 		transition: none;
 	}
 }
 
-/* Decorative marks carry no interaction. Stated here as well as in the markup
-   so the intent survives a refactor: these look clickable and are not. */
+
+
 .terminal .dots,
 .card-icon {
 	cursor: default;
@@ -2148,33 +2148,33 @@ table.compare tr.hobo-row th {
 }
 
 
-/* ============================================================================
-   DESIGN SURFACES
 
-   Where the structural tokens land — and every rule here is gated behind
-   `:root[data-design]`, which is the load-bearing decision of this file.
 
-   Two attempts tried to make this block a no-op for the default design by
-   matching token defaults to incumbent values. Both failed in the pixels:
-   first a flat 2rem/4rem replaced a clamp() and shifted every section, then
-   the global .card rule put chrome on homepage cards whose incumbent look is
-   drawn by scoped pseudo-elements — a value can't match a property the
-   incumbent never set. Gating means ink (no attribute) matches the pre-axis
-   build BY CONSTRUCTION: no rule applies at all. The audit's baseline
-   pixel-diff enforces it.
-   ============================================================================ */
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 :root[data-design] .container {
 	max-width: var(--measure);
 }
 
-/* Vertical rhythm. One multiplier SCALES each surface's incumbent spacing —
-   it never replaces it with a new constant. The first version of this block
-   set `.section` to a flat 2rem/4rem, and since the incumbent was
-   clamp(3rem, 7vw, 5.5rem), ink's own homepage shifted ~56px at every section
-   boundary while the build stayed green. The audit's baseline diff caught it.
-   The rule: at every default token value, this whole block must be a no-op —
-   a design token's default IS the incumbent value. */
+
+
+
+
+
+
+
 :root[data-design] .section {
 	padding-block: calc(clamp(3rem, 7vw, 5.5rem) * var(--rhythm));
 }
@@ -2189,8 +2189,8 @@ table.compare tr.hobo-row th {
 	box-shadow: var(--surface-shadow);
 }
 
-/* A design that removes the box must not leave the padding orphaned, or the
-   content drifts away from its own heading. */
+
+
 :root[data-design="broadsheet"] .card,
 :root[data-design="titlecard"] .card,
 :root[data-design="ledger"] .card {
@@ -2207,23 +2207,23 @@ table.compare tr.hobo-row th {
 	text-align: center;
 }
 
-/* Display type.
-   
-   NOT `font-size: calc(1em * var(--display-size))` — that was shipped and it
-   was wrong in the worst way: `1em` on a heading resolves to the INHERITED
-   size, so every h1 collapsed from clamp(2rem, 5vw, 3.6rem) to the body's
-   16px, on every design including the default. The hero headline rendered
-   smaller than the paragraph beneath it.
-   
-   The multiplier has to be applied where the size is actually declared, so the
-   clamp still does the responsive work and the design only scales it. */
-/* Display treatment applies to DISPLAY surfaces only — hero and section
-   heads. `.prose` headings were in this selector and the audit caught both
-   consequences at once: titlecard uppercased every docs content heading
-   (display treatment bleeding into Read-mode pages, 12 matrix failures), and
-   in ink the `--display-track: 0em` default silently overrode the prose
-   headings' own tracking — the only pixel drift on /guide/ vs the pre-axis
-   baseline. Content headings belong to content, not to the design's voice. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 :root[data-design] .hero h1,
 :root[data-design] .section-head h2 {
 	letter-spacing: var(--display-track);
@@ -2232,9 +2232,9 @@ table.compare tr.hobo-row th {
 
 :root[data-design] .section-head {
 	border-bottom: var(--head-rule) solid var(--border);
-	/* Incumbent has no bottom padding; a design that draws a head rule opts
-	   into the breathing room with --head-pad. The first version padded ink
-	   unconditionally — 8px of drift on every section head. */
+
+
+
 	padding-bottom: var(--head-pad);
 }
 
@@ -2243,22 +2243,22 @@ table.compare tr.hobo-row th {
 	line-height: var(--leading);
 }
 
-/* .btn is deliberately NOT design-tokened. Its identity is the clip-path
-   sticker — border: none, corners cut by polygon — so border-width/radius
-   were silent no-ops at best and drift at worst. If a design ever needs its
-   own button voice, that is a persona decision, not a token default. */
 
-/* Cutout does NOT tilt. The rotation shipped and the priority-1 designer
-   persona killed it with evidence: shadow-plate slivers peeking past rotated
-   card edges read as rendering debris, and rotated body text renders soft — a
-   legibility tax paying for a tell nobody asked for. Mobile and docs never
-   rotated and read fine, which proved it was never needed. Cutout's identity
-   is paper MATERIAL — plates, hard shadows, thick rule — not tilt. */
 
-/* Title card earns its name: the hero owns the composition — but a cinema
-   card still carries its billing line. The first cut padded the hero so far
-   that desktop screen one held zero actions and zero product (impeccable
-   critique, P1); the interval spends less so a CTA lands inside the fold. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 :root[data-design="titlecard"] .hero {
 	text-align: center;
 	padding-block: calc(2.2rem * var(--rhythm)) calc(2rem * var(--rhythm));
@@ -2267,17 +2267,17 @@ table.compare tr.hobo-row th {
 	justify-content: center;
 }
 
-/* Ledger reads as a table of contents rather than a page of cards. */
+
 :root[data-design="ledger"] .prose :is(h2, h3) {
 	font-family: var(--font-mono);
 	font-weight: 600;
 }
 
 
-/* The design menu carries a one-line description per entry, because the names
-   alone ("Ledger", "Cutout") do not tell you what changes. choiceOverload is
-   capped at 2 for the designer persona; five options only stay under it if
-   choosing is a single glance rather than five experiments. */
+
+
+
+
 .palette-menu button {
 	display: grid;
 	gap: 0.1rem;
@@ -2288,14 +2288,14 @@ table.compare tr.hobo-row th {
 	color: var(--text-faint);
 }
 
-/* A design that narrows the measure must also drop the hero to one column.
-   Broadsheet at 880px kept two columns and clipped the code panel — the
-   headline got bigger and the content got cut, which is the opposite of the
-   trade.
 
-   Note the selector: the grid lives on `.hero .container`, not `.hero`. The
-   first fix targeted `.hero`, changed nothing, and the panel stayed clipped
-   through a build and a screenshot that I read too quickly. */
+
+
+
+
+
+
+
 :root[data-design="broadsheet"] .hero .container,
 :root[data-design="titlecard"] .hero .container {
 	grid-template-columns: minmax(0, 1fr);
@@ -2304,14 +2304,14 @@ table.compare tr.hobo-row th {
 	margin-inline: auto;
 }
 
-/* ---- Layout, per design ----------------------------------------------------
-   Tokens alone could not carry this. A grid of three boxes is the same grid of
-   three boxes whatever colour or border-weight it has, which is why the first
-   attempt still read as one design: every page kept the same column count, the
-   same card shape and the same header. These re-lay it. */
 
-/* BROADSHEET — columns of text, not a row of cards. Cards collapse into
-   stacked entries separated by a rule, the way a newspaper sets a section. */
+
+
+
+
+
+
+
 :root[data-design="broadsheet"] .grid-2,
 :root[data-design="broadsheet"] .grid-3,
 :root[data-design="broadsheet"] .grid-4 {
@@ -2324,12 +2324,12 @@ table.compare tr.hobo-row th {
 :root[data-design="broadsheet"] .grid > .card:last-child {
 	border-bottom: 0;
 }
-/* Ragged-right, deliberately. Justified web prose at this measure produced
-   visible rivers (all three personas cited the same paragraph), and an earlier
-   comment here promised two columns that no rule delivered. Serif + rules +
-   measure carry the newspaper voice on their own. */
 
-/* TITLE CARD — one thing per row, centred, with the interval doing the work. */
+
+
+
+
+
 :root[data-design="titlecard"] .grid-2,
 :root[data-design="titlecard"] .grid-3,
 :root[data-design="titlecard"] .grid-4 {
@@ -2341,10 +2341,10 @@ table.compare tr.hobo-row th {
 :root[data-design="titlecard"] .card {
 	text-align: center;
 }
-/* Code NEVER centres, whatever the design's voice. The designer persona
-   caught titlecard centring every line of src/bindle.ts — indentation is the
-   one non-negotiable semantic of code, and a docs site that centres code is
-   decorating over meaning. Unconditional guard, all designs. */
+
+
+
+
 :root[data-design] :is(pre, code, .terminal) {
 	text-align: left;
 }
@@ -2352,13 +2352,13 @@ table.compare tr.hobo-row th {
 	text-align: center;
 }
 
-/* LEDGER — pack it in. More columns, no gaps beyond a hairline, everything
-   left-aligned on a single grid like a table of contents.
 
-   LOUD WARNING for future maintainers (a persona reviewer lost time to this):
-   in ledger, .grid-2 renders THREE columns and .grid-3 renders FOUR. The
-   class names state the ink layout; ledger's density promotes each by one.
-   If you are debugging "why does grid-2 have three columns" — this is why. */
+
+
+
+
+
+
 :root[data-design="ledger"] .grid-2 {
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -2379,7 +2379,7 @@ table.compare tr.hobo-row th {
 	letter-spacing: 0.08em;
 }
 
-/* CUTOUT — fewer, larger planes with room to sit apart. */
+
 :root[data-design="cutout"] .grid-3,
 :root[data-design="cutout"] .grid-4 {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2387,9 +2387,9 @@ table.compare tr.hobo-row th {
 :root[data-design="cutout"] .grid {
 	gap: 2rem;
 }
-/* A 3-card grid reflowed to 2 columns strands the last card beside a hole —
-   and the stranded card was "The HoBo way", the argument's payoff. It spans
-   the row instead: the asymmetry now favours the conclusion. */
+
+
+
 :root[data-design="cutout"] .grid-3 > .card:last-child:nth-child(odd) {
 	grid-column: 1 / -1;
 }
@@ -2397,9 +2397,9 @@ table.compare tr.hobo-row th {
 	padding: 1.6rem;
 }
 
-/* Titlecard's 1.75x display on a phone filled the entire first viewport with
-   headline — zero actions on screen (all three personas flagged it). The
-   poster survives at 1.2x; the proposition and a CTA return to the fold. */
+
+
+
 @media (max-width: 600px) {
 	:root[data-design="titlecard"] {
 		--display-size: 1.2;
@@ -2416,8 +2416,8 @@ table.compare tr.hobo-row th {
 	}
 }
 
-/* The active design in the picker: a leading ink dot, plus the state itself
-   for assistive tech. Non-colour cue, per the designer persona's a11y needs. */
+
+
 .palette-menu button[aria-current="true"] {
 	font-weight: 700;
 }
@@ -2426,10 +2426,10 @@ table.compare tr.hobo-row th {
 	color: var(--spark);
 }
 
-/* The design picker was the commissioned feature and its trigger was an
-   unlabeled glyph between two other unlabeled glyphs — discoverability zero
-   (impeccable critique, P1). A word at desktop widths; the icon carries it
-   alone on mobile where header space is real. */
+
+
+
+
 .picker-summary {
 	width: auto;
 	padding-inline: 0.55rem;

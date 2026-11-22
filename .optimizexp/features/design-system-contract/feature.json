@@ -35,7 +35,7 @@
     "@dx"
   ],
   "generatedFromSeed": true,
-  "seedDigest": "535490c46dce4f66",
+  "seedDigest": "c5c06002a6fd87bb",
   "personaResolution": "explicit --personas",
   "bindings": {
     "steps": "steps/bindings.steps.ts",

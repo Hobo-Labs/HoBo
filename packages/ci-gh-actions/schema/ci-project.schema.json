@@ -1191,17 +1191,20 @@
         "mainGate": {
           "$ref": "#/$defs/__schema117"
         },
-        "verdict": {
+        "mergeGroup": {
           "$ref": "#/$defs/__schema118"
         },
-        "box": {
+        "verdict": {
           "$ref": "#/$defs/__schema119"
         },
+        "box": {
+          "$ref": "#/$defs/__schema120"
+        },
         "externalPools": {
-          "$ref": "#/$defs/__schema128"
+          "$ref": "#/$defs/__schema129"
         },
         "retiredVariables": {
-          "$ref": "#/$defs/__schema130"
+          "$ref": "#/$defs/__schema131"
         }
       },
       "required": [
@@ -1304,6 +1307,21 @@
       "additionalProperties": false
     },
     "__schema118": {
+      "default": {
+        "reusePrFabric": false
+      },
+      "type": "object",
+      "properties": {
+        "reusePrFabric": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reusePrFabric"
+      ],
+      "additionalProperties": false
+    },
+    "__schema119": {
       "type": "object",
       "properties": {
         "minFreeRunners": {
@@ -1335,32 +1353,32 @@
       ],
       "additionalProperties": false
     },
-    "__schema119": {
+    "__schema120": {
       "type": "object",
       "properties": {
         "slots": {
-          "$ref": "#/$defs/__schema120"
-        },
-        "trunkSlots": {
           "$ref": "#/$defs/__schema121"
         },
-        "trunkLend": {
+        "trunkSlots": {
           "$ref": "#/$defs/__schema122"
         },
-        "prCapWithTrunk": {
+        "trunkLend": {
           "$ref": "#/$defs/__schema123"
         },
-        "mergeGroupLeases": {
+        "prCapWithTrunk": {
           "$ref": "#/$defs/__schema124"
         },
-        "capacityVolatilityMb": {
+        "mergeGroupLeases": {
           "$ref": "#/$defs/__schema125"
         },
-        "trunkHeadroomFleetDeferMs": {
+        "capacityVolatilityMb": {
           "$ref": "#/$defs/__schema126"
         },
-        "jobAdmission": {
+        "trunkHeadroomFleetDeferMs": {
           "$ref": "#/$defs/__schema127"
+        },
+        "jobAdmission": {
+          "$ref": "#/$defs/__schema128"
         }
       },
       "required": [
@@ -1375,17 +1393,17 @@
       ],
       "additionalProperties": false
     },
-    "__schema120": {
+    "__schema121": {
       "type": "integer",
       "minimum": 1,
       "maximum": 8
     },
-    "__schema121": {
+    "__schema122": {
       "type": "integer",
       "minimum": 0,
       "maximum": 7
     },
-    "__schema122": {
+    "__schema123": {
       "anyOf": [
         {
           "type": "number",
@@ -1397,41 +1415,41 @@
         }
       ]
     },
-    "__schema123": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 8
-    },
     "__schema124": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 8
     },
     "__schema125": {
       "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "__schema126": {
+      "type": "integer",
       "minimum": 0,
       "maximum": 1048576
     },
-    "__schema126": {
+    "__schema127": {
       "type": "integer",
       "minimum": 1000,
       "maximum": 3600000
     },
-    "__schema127": {
+    "__schema128": {
       "type": "string",
       "enum": [
         "pull",
         "push"
       ]
     },
-    "__schema128": {
+    "__schema129": {
       "maxItems": 32,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema129"
+        "$ref": "#/$defs/__schema130"
       }
     },
-    "__schema129": {
+    "__schema130": {
       "type": "object",
       "properties": {
         "labels": {
@@ -1460,14 +1478,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema130": {
+    "__schema131": {
       "maxItems": 32,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema131"
+        "$ref": "#/$defs/__schema132"
       }
     },
-    "__schema131": {
+    "__schema132": {
       "type": "string",
       "pattern": "^HOBO_CI_[A-Z0-9_]{1,60}$"
     },
@@ -1475,16 +1493,16 @@
       "type": "object",
       "properties": {
         "steps": {
-          "$ref": "#/$defs/__schema132"
+          "$ref": "#/$defs/__schema133"
         },
         "skipUnhealthy": {
-          "$ref": "#/$defs/__schema134"
-        },
-        "retry": {
           "$ref": "#/$defs/__schema135"
         },
-        "autoSizeVcpus": {
+        "retry": {
           "$ref": "#/$defs/__schema136"
+        },
+        "autoSizeVcpus": {
+          "$ref": "#/$defs/__schema137"
         }
       },
       "required": [
@@ -1492,15 +1510,15 @@
       ],
       "additionalProperties": false
     },
-    "__schema132": {
+    "__schema133": {
       "minItems": 1,
       "maxItems": 16,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema133"
+        "$ref": "#/$defs/__schema134"
       }
     },
-    "__schema133": {
+    "__schema134": {
       "type": "object",
       "properties": {
         "key": {
@@ -1534,10 +1552,10 @@
       ],
       "additionalProperties": false
     },
-    "__schema134": {
+    "__schema135": {
       "type": "boolean"
     },
-    "__schema135": {
+    "__schema136": {
       "type": "object",
       "properties": {
         "enabled": {
@@ -1570,7 +1588,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema136": {
+    "__schema137": {
       "anyOf": [
         {
           "type": "number",
@@ -1598,7 +1616,7 @@
       "type": "object",
       "properties": {
         "api": {
-          "$ref": "#/$defs/__schema137"
+          "$ref": "#/$defs/__schema138"
         }
       },
       "required": [
@@ -1606,7 +1624,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema137": {
+    "__schema138": {
       "anyOf": [
         {
           "type": "string",
