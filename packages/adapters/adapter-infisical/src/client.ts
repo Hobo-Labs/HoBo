@@ -16,9 +16,15 @@
  * reads is exactly what was written there.
  */
 
-import { create, type JsonValue, toJsonString } from "@bufbuild/protobuf";
+import {
+	create,
+	fromJson,
+	type JsonValue,
+	toJsonString,
+} from "@bufbuild/protobuf";
 import {
 	InfisicalOidcLoginRequestSchema,
+	InfisicalProjectIdentityListResponseSchema,
 	InfisicalSecretWriteRequestSchema,
 	InfisicalTokenRevokeRequestSchema,
 	InfisicalUniversalAuthLoginRequestSchema,
@@ -28,6 +34,7 @@ import { parseJwt } from "./auth.js";
 import {
 	type ParsedInfisicalBinding,
 	parseInfisicalBinding,
+	parseInfisicalIdentityId,
 	parseInfisicalSecretKey,
 } from "./binding.js";
 import { InfisicalError } from "./errors.js";
@@ -68,6 +75,13 @@ export interface InfisicalClient {
 	/** Keys and versions only (`viewSecretValue=false`). */
 	listSecretNames(): Promise<readonly ParsedSecretName[]>;
 	getSecret(name: string, version?: number): Promise<ParsedSecret>;
+	readProjectIdentity(identityId: string): Promise<
+		Readonly<{
+			identityId: string;
+			projectId: string;
+			roles: readonly string[];
+		}>
+	>;
 	/** Update the secret, or create it when it does not exist. */
 	putSecret(name: string, value: string): Promise<{ version: number }>;
 	createSecret(
@@ -515,6 +529,53 @@ function createInfisicalClientInternal(
 					secretPath(name, query.toString()),
 				);
 				return parseSecretEnvelope("read secret", ok("read secret", answer));
+			},
+			async readProjectIdentity(identityId) {
+				const parsedIdentityId = parseInfisicalIdentityId(identityId);
+				const operation = "read project identity";
+				const answer = await request(
+					operation,
+					"GET",
+					`/api/v1/projects/${encodeURIComponent(bound.projectId)}/identities`,
+				);
+				const body = ok(operation, answer);
+				let parsed: ReturnType<
+					typeof fromJson<typeof InfisicalProjectIdentityListResponseSchema>
+				>;
+				try {
+					const record = jsonRecord(body);
+					if (!Array.isArray(record.identityMemberships))
+						throw new Error("membership list missing");
+					parsed = fromJson(
+						InfisicalProjectIdentityListResponseSchema,
+						record,
+						{
+							ignoreUnknownFields: true,
+						},
+					);
+				} catch {
+					throw new InfisicalError(operation, "invalid-response");
+				}
+				const matches = parsed.identityMemberships.filter(
+					(membership) => membership.identityId === parsedIdentityId,
+				);
+				if (matches.length === 0)
+					throw new InfisicalError(operation, "not-found", { status: 404 });
+				const membership = matches.length === 1 ? matches[0] : undefined;
+				const projectId = membership?.identity?.projectId ?? "";
+				if (
+					membership === undefined ||
+					membership.identity?.id !== parsedIdentityId ||
+					projectId !== bound.projectId ||
+					membership.roles.length === 0 ||
+					membership.roles.some((role) => role.role === "")
+				)
+					throw new InfisicalError(operation, "invalid-response");
+				return Object.freeze({
+					identityId: membership.identityId,
+					projectId,
+					roles: Object.freeze(membership.roles.map((role) => role.role)),
+				});
 			},
 			async putSecret(name, value) {
 				const target = secretPath(name);

@@ -35,13 +35,19 @@ with its reason.
 - `infisical.ts`: `relayStoreLayout`, `provisionSelfHostedInfisical`,
   `verifySelfHostedInfisicalClaim`, `attachInfisicalCloud`,
   `updateDeployIdentityTrust` (a connect re-run replaces the deploy
-  identity's OIDC trust in place).
+  identity's OIDC trust in place). Provisioning grants the relay identity
+  Viewer only in the relay project; the deploy identity and dedicated deploy
+  reader are Viewer-only in the separate deploy-credential project.
 - `github-oidc.ts`: `resolveGithubOidcSubject` reads from GitHub the OIDC
   subject a repository's tokens carry (`sub_claim_prefix`, or the immutable
   `repo:<owner>@<ownerId>/<repo>@<repoId>` form from its ids) and fails
-  closed when GitHub does not say; `githubDeployTrust` binds it on a branch
-  with `repository_id` and `repository_owner_id` pinned. Pinned by
-  `contracts/pacts/github-oidc-subject.pact.json`.
+  closed when GitHub does not say. `githubDeployTrust` and
+  `githubDeployReaderTrust` use distinct protected-environment subjects and pin
+  repository ids, environment, `ref`, top-level `workflow_ref` and called
+  `job_workflow_ref`. The writer caller is `app-credentials.yml`; both
+  implementations are `relay-deploy.yml`, and no other reusable caller is
+  supported. Caller-selected audiences cannot cross the writer/reader boundary.
+  Pinned by `contracts/pacts/github-oidc-subject.pact.json`.
 
 The CLI is `hobo ci secret-store plan|provision` in `@hobo/hobo`
 ([CI.md](../hobo/CI.md#choose-the-relays-secret-store-hobo-ci-secret-store));
