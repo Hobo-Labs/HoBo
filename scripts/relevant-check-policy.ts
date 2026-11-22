@@ -23,6 +23,7 @@ export type RelevantCheckPolicyOptions = {
 	 * and the scripts lane (`workspace_tests` and `scripts-tests` in CI).
 	 */
 	workspaceTestsCoveredExternally?: boolean;
+	pluginCheckCoveredExternally?: boolean;
 	rootPackageJsonScriptsOnlyChanged?: boolean;
 	workspacePackageExists?: (workspace: string) => boolean;
 	/** Whether a changed TypeScript file under packages/ names a ts-autocode module (default: reads it). */
@@ -649,7 +650,7 @@ export function selectRelevantChecks(
 			file.startsWith(".agents/skills/hobo-setup/") ||
 			file.startsWith(".agents/skills/hobo-deploy/"),
 	);
-	if (agentPluginChanged) {
+	if (agentPluginChanged && !options.pluginCheckCoveredExternally) {
 		checks.push({
 			command: "pnpm",
 			args: ["run", "agent-plugin:check"],

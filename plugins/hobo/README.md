@@ -81,10 +81,12 @@ its `buildSignerDigest` to equal the checked commit, and its run invocation to
 match `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`. Missing, forged, stale,
 wrong-workflow, wrong-ref, wrong-commit, and wrong-attempt attestations fail
 closed. A legacy `.bundle-attestation.json` is rejected rather than treated as
-provenance, required on `main` through `--verify-attestation`. `pnpm agent:check`
-selects `agent-plugin:check` on affected plugin, skill, and MCP inputs; the check
-hashes the built bundle and does not rebuild it, so caller-controlled files and
-retired external-attestation switches cannot substitute a different artifact.
+provenance, required on `main` through `--verify-attestation`. Outside main CI,
+`pnpm agent:check` selects `agent-plugin:check` on affected plugin, skill, and
+MCP inputs; on main CI the dedicated attestation-verification step covers the
+plugin instead. The check hashes the built bundle and does not rebuild it, so
+caller-controlled files and retired external-attestation switches cannot
+substitute a different artifact.
 
 Any CI signal outside GitHub Actions fails the bundle check. With no recognized
 CI signal, build and check are explicit local-only paths that require

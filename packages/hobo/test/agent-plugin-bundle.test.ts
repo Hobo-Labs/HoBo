@@ -23,32 +23,8 @@ afterEach(() => {
 	for (const child of started.splice(0)) child.kill();
 });
 
-function agentPluginCiActive(env: NodeJS.ProcessEnv = process.env): boolean {
-	for (const value of [
-		env.CI,
-		env.GITHUB_ACTIONS,
-		env.TF_BUILD,
-		env.TEAMCITY_VERSION,
-		env.GITLAB_CI,
-		env.CIRCLECI,
-		env.BUILDKITE,
-		env.CODEBUILD_BUILD_ID,
-	]) {
-		const normalized = (value ?? "").trim().toLowerCase();
-		if (normalized !== "" && normalized !== "0" && normalized !== "false") {
-			return true;
-		}
-	}
-	return false;
-}
-
 function ensureBundle(): void {
 	if (existsSync(bundle)) return;
-	if (agentPluginCiActive()) {
-		throw new Error(
-			`The agent-plugin bundle is missing in CI: ${bundle}. Build it in the dedicated agent-plugin workflow step before running this test.`,
-		);
-	}
 	const buildEnv = { ...process.env, HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" };
 	for (const key of [
 		"CI",

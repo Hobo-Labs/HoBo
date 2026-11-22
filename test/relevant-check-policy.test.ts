@@ -918,6 +918,19 @@ test("agent-plugin changes select the Agent Plugins 1.0.0 gate", () => {
 	}
 });
 
+test("main CI skips the relevant-mode plugin check covered by the attestation step", () => {
+	const { checks } = plan(["plugins/hobo/plugin.json"], {
+		pluginCheckCoveredExternally: true,
+	});
+	assert.ok(
+		!checks.some(
+			(check) =>
+				check.command === "pnpm" &&
+				check.args.join(" ") === "run agent-plugin:check",
+		),
+	);
+});
+
 test("unrelated docs, config, or skill edits do not select the Agent Plugins gate", () => {
 	for (const file of [
 		"docs/design/index.md",
