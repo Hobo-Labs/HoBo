@@ -1258,11 +1258,7 @@ export async function runCiRelayDeploy(
 			HTTPS_ORIGIN.test(originGiven) &&
 			!recordVerifiedPreview &&
 			protectedPreview);
-	if (
-		stagedProduction &&
-		sha !== undefined &&
-		verifyOrigin === undefined
-	)
+	if (stagedProduction && sha !== undefined && verifyOrigin === undefined)
 		return refused(
 			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
 			`A staged production deploy pinned to --sha verifies exactly that commit's deployment; ${RELAY_VERIFY_ORIGIN.production} is not set to an https origin, so this deploy would verify none.`,
@@ -1507,7 +1503,10 @@ export async function runCiRelayDeploy(
 									};
 								promotionReadAmbiguous = true;
 							}
-							if (!promotionReadAmbiguous && afterPromotion !== safe.deploymentId) {
+							if (
+								!promotionReadAmbiguous &&
+								afterPromotion !== safe.deploymentId
+							) {
 								if (promotionError !== undefined)
 									return realizationFailure(promotionError, withoutToken);
 								return {

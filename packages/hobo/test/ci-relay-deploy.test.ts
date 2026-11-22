@@ -1239,19 +1239,16 @@ describe("hobo ci deploy through @hobo/cd: preview, then production (fakes, no n
 
 	it("refuses preview --wait --sha over HTTPS when protected OIDC probing is unavailable and record verification is not used", async () => {
 		const { fetch, sent } = unreachable();
-		const ran = await deploy(
-			[...PINNED, "--project", "hobo-ci", "--wait"],
-			{
-				fetch,
-				env: {
-					VERCEL_TOKEN: TOKEN,
-					VERCEL_TEAM_ID: TEAM,
-					HOBO_CI_RELAY_PREVIEW_URL: "https://relay-preview.example.test",
-					HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
-				},
-				...steppingClock(),
+		const ran = await deploy([...PINNED, "--project", "hobo-ci", "--wait"], {
+			fetch,
+			env: {
+				VERCEL_TOKEN: TOKEN,
+				VERCEL_TEAM_ID: TEAM,
+				HOBO_CI_RELAY_PREVIEW_URL: "https://relay-preview.example.test",
+				HOBO_CI_RELAY_PREVIEW_PROBE_OIDC: "false",
 			},
-		);
+			...steppingClock(),
+		});
 		expect(ran.exitCode).toBe(1);
 		expect(ran.envelope).toMatchObject({
 			ok: false,
@@ -1718,7 +1715,9 @@ describe("staged production finalizePromotion recovery", () => {
 			ok: false,
 			code: "HOBO_CI_DEPLOY_ROLLBACK_TARGET_UNKNOWN",
 		});
-		expect(String(ran.envelope.message)).toContain("manual recovery is required");
+		expect(String(ran.envelope.message)).toContain(
+			"manual recovery is required",
+		);
 		expect(String(ran.envelope.message)).toContain(
 			"no previous production deployment was recorded",
 		);
@@ -1795,7 +1794,11 @@ describe("staged production finalizePromotion recovery", () => {
 						},
 					};
 				}
-				const current = rolledBack ? "dpl_old" : promoted ? "dpl_wait" : "dpl_old";
+				const current = rolledBack
+					? "dpl_old"
+					: promoted
+						? "dpl_wait"
+						: "dpl_old";
 				return {
 					ok: true,
 					status: 200,
@@ -1935,7 +1938,11 @@ describe("staged production finalizePromotion recovery", () => {
 						},
 					};
 				}
-				const current = rolledBack ? "dpl_old" : promoted ? "dpl_wait" : "dpl_old";
+				const current = rolledBack
+					? "dpl_old"
+					: promoted
+						? "dpl_wait"
+						: "dpl_old";
 				return {
 					ok: true,
 					status: 200,
