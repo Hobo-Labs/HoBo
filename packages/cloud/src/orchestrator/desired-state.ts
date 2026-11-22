@@ -109,7 +109,12 @@ export interface RecordedResource {
 		| "Destroying"
 		| "Destroyed";
 	readonly specHash?: string;
+
+	readonly specHashRecorded?: boolean;
+
+	readonly hasProvisionedBaseline?: boolean;
 	readonly plan?: ResourcePlan;
+
 	readonly providerId?: string;
 }
 
@@ -117,6 +122,7 @@ export interface BlockedProviderMove {
 	readonly resource: string;
 	readonly from?: string;
 	readonly to: string;
+	readonly reason?: "specification-unverified";
 }
 
 export function blockedProviderMove(
@@ -126,12 +132,38 @@ export function blockedProviderMove(
 	if (previous === undefined || previous.state === "Destroyed")
 		return undefined;
 	const provider = previous.providerId;
+	if (
+		(previous.state === "Provisioned" ||
+			previous.hasProvisionedBaseline === true) &&
+		previous.specHashRecorded !== true
+	)
+		return {
+			resource: resource.name,
+			...(provider !== undefined ? { from: provider } : undefined),
+			to: resource.provider,
+			reason: "specification-unverified",
+		};
 	if (provider === resource.provider) return undefined;
 	return {
 		resource: resource.name,
 		...(provider !== undefined ? { from: provider } : undefined),
 		to: resource.provider,
 	};
+}
+
+export function hasDestroyProvenance(
+	previous: RecordedResource | undefined,
+	resource: ResourcePlan,
+): boolean {
+	return (
+		previous !== undefined &&
+		previous.state !== "Destroyed" &&
+		previous.specHashRecorded === true &&
+		previous.specHash !== undefined &&
+		previous.specHash === desiredSpecHash(resource) &&
+		(previous.providerId === undefined ||
+			previous.providerId === resource.provider)
+	);
 }
 
 function resourceIdOf(event: EventEnvelope): string | undefined {
@@ -186,8 +218,58 @@ export function recordedResources(
 	events: readonly EventEnvelope[],
 ): ReadonlyMap<string, RecordedResource> {
 	const states = new Map<string, Omit<RecordedResource, "resourceId">>();
+	const stable = new Map<string, Omit<RecordedResource, "resourceId">>();
 	const plans = new Map<string, ResourcePlan>();
+	const unresolved = new Map<string, Set<string>>();
+	function recordProvisioned(resourceId: string, event: EventEnvelope): void {
+		const previous = states.get(resourceId);
+		const eventHash = specHashOf(event);
+		const candidate = plans.get(resourceId);
+		const plan =
+			candidate &&
+			eventHash !== undefined &&
+			desiredSpecHash(candidate) === eventHash
+				? candidate
+				: undefined;
+		const specHash = eventHash;
+		const providerId = previous?.providerId ?? plan?.provider;
+		const recorded: Omit<RecordedResource, "resourceId"> = {
+			state: "Provisioned",
+			...(specHash !== undefined ? { specHash } : undefined),
+			...(eventHash !== undefined && /^sha256:[a-f0-9]{64}$/u.test(eventHash)
+				? { specHashRecorded: true }
+				: undefined),
+			...(plan !== undefined ? { plan } : undefined),
+			...(providerId !== undefined ? { providerId } : undefined),
+		};
+		states.set(resourceId, recorded);
+		stable.set(resourceId, recorded);
+	}
 	for (const event of events) {
+		if (event.type === CLOUD_EVENTS.DeploymentImported) {
+			if (
+				!isJsonObject(event.data) ||
+				!Array.isArray(event.data.resources) ||
+				event.data.resources.length > 256 ||
+				!event.data.resources.every(
+					(resource) =>
+						isJsonString(resource) &&
+						resource.length > 0 &&
+						resource.length <= 200,
+				)
+			)
+				throw new TypeError("imported resource inventory is malformed");
+			for (const resource of event.data.resources) {
+				if (!isJsonString(resource))
+					throw new TypeError("imported resource inventory is malformed");
+				const imported: Omit<RecordedResource, "resourceId"> = {
+					state: "Provisioned",
+				};
+				states.set(resource, imported);
+				stable.set(resource, imported);
+			}
+			continue;
+		}
 		if (event.type === CLOUD_EVENTS.DeploymentPlanned) {
 			for (const resource of plannedResources(event))
 				plans.set(resource.name, resource);
@@ -198,6 +280,7 @@ export function recordedResources(
 		const previous = states.get(resourceId);
 		switch (event.type) {
 			case CLOUD_EVENTS.ResourceProvisioning: {
+				if ((unresolved.get(resourceId)?.size ?? 0) > 0) break;
 				const targetHash = specHashOf(event);
 				const candidate = plans.get(resourceId);
 				const targetProvider = providerIdOf(event);
@@ -222,37 +305,75 @@ export function recordedResources(
 					...(previous?.specHash !== undefined
 						? { specHash: previous.specHash }
 						: undefined),
+					...(previous?.specHashRecorded === true
+						? { specHashRecorded: true }
+						: undefined),
 					...(plan !== undefined ? { plan } : undefined),
 					...(providerId !== undefined ? { providerId } : undefined),
 				});
 				break;
 			}
 			case CLOUD_EVENTS.ResourceProvisioned: {
-				const eventHash = specHashOf(event);
+				if ((unresolved.get(resourceId)?.size ?? 0) > 0) break;
 				if (!previous || previous.state !== "Provisioning")
 					throw new Error("resource provisioned without a provisioning fact");
-				const candidate = plans.get(resourceId);
-				const plan =
-					candidate && desiredSpecHash(candidate) === eventHash
-						? candidate
-						: undefined;
-				const providerId = previous.providerId;
-				states.set(resourceId, {
-					state: "Provisioned",
-					specHash: eventHash,
-					...(plan !== undefined ? { plan } : undefined),
-					...(providerId !== undefined ? { providerId } : undefined),
-				});
+				recordProvisioned(resourceId, event);
 				break;
 			}
-			case CLOUD_EVENTS.ResourceFailed:
+			case CLOUD_EVENTS.ResourceFailed: {
+				if (
+					isJsonObject(event.data) &&
+					event.data.requiresReconciliation === true
+				) {
+					const failures = unresolved.get(resourceId) ?? new Set<string>();
+					failures.add(event.id);
+					unresolved.set(resourceId, failures);
+				}
 				states.set(resourceId, { ...previous, state: "Failed" });
 				break;
+			}
+			case CLOUD_EVENTS.ResourceReconciled: {
+				if (
+					!isJsonObject(event.data) ||
+					!isJsonString(event.data.failureEventId) ||
+					!isJsonString(event.data.outcome) ||
+					!["applied", "destroyed", "no-effect"].includes(event.data.outcome) ||
+					(event.data.outcome === "no-effect" &&
+						(!isJsonString(event.data.restoredState) ||
+							!["provisioned", "destroyed", "failed"].includes(
+								event.data.restoredState,
+							)))
+				)
+					break;
+				const failures = unresolved.get(resourceId);
+				if (!failures?.delete(event.data.failureEventId) || failures.size > 0)
+					break;
+				unresolved.delete(resourceId);
+				if (event.data.outcome === "applied")
+					recordProvisioned(resourceId, event);
+				else if (
+					event.data.outcome === "destroyed" ||
+					event.data.restoredState === "destroyed"
+				) {
+					states.set(resourceId, { state: "Destroyed" });
+					stable.set(resourceId, { state: "Destroyed" });
+				} else if (
+					event.data.restoredState === "provisioned" &&
+					stable.get(resourceId)?.state === "Provisioned"
+				) {
+					const old = stable.get(resourceId);
+					if (old !== undefined) states.set(resourceId, old);
+				} else states.set(resourceId, { ...previous, state: "Failed" });
+				break;
+			}
 			case CLOUD_EVENTS.ResourceDestroying:
+				if ((unresolved.get(resourceId)?.size ?? 0) > 0) break;
 				states.set(resourceId, { ...previous, state: "Destroying" });
 				break;
 			case CLOUD_EVENTS.ResourceDestroyed:
+				if ((unresolved.get(resourceId)?.size ?? 0) > 0) break;
 				states.set(resourceId, { state: "Destroyed" });
+				stable.set(resourceId, { state: "Destroyed" });
 				break;
 			default:
 				break;
@@ -263,6 +384,10 @@ export function recordedResources(
 		out.set(resourceId, {
 			resourceId,
 			...recorded,
+			...((recorded.state === "Failed" || recorded.state === "Provisioning") &&
+			stable.get(resourceId)?.state === "Provisioned"
+				? { hasProvisionedBaseline: true }
+				: undefined),
 		});
 	}
 	return out;
@@ -298,6 +423,16 @@ export function classifyResource(
 	const base = { resourceId: resource.name, desiredSpecHash: desired };
 	if (recorded === undefined)
 		return { ...base, action: "create", reason: "not yet provisioned" };
+	if (
+		(recorded.state === "Provisioned" ||
+			recorded.hasProvisionedBaseline === true) &&
+		recorded.specHashRecorded !== true
+	)
+		return {
+			...base,
+			action: "retain",
+			reason: "applied specification is unverified; reconciliation is required",
+		};
 	const recordedHash =
 		recorded.specHash !== undefined
 			? { recordedSpecHash: recorded.specHash }

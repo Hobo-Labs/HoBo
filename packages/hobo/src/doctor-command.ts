@@ -14,6 +14,7 @@ import {
 } from "@hobo/trails";
 import { defaultHoboHome } from "./bare-metal-yard.js";
 import { buildBindingDeliveryDoctorSection } from "./binding-delivery-doctor.js";
+import { deployEnvironment } from "./compose.js";
 import {
 	type DeployTargetDescription,
 	describeDeployTarget,
@@ -36,16 +37,30 @@ interface StationDoctorReport {
 }
 
 export interface DoctorCommandDeps {
+	// Explicit environment snapshot for tests or an embedding host. Without one,
+	// use the same filtered process environment as the composed deploy path.
 	readonly env?: Record<string, string | undefined>;
 	readonly store?: EventStore;
 }
 
+// Plain ambient tokens are ignored by the composed deploy path; recommend an
+// approved credential source instead of claiming an environment token works.
 function remediationFor(target: DeployTargetDescription): string[] {
 	if (target.live) return [];
-	return target.activate.map(
-		(option) =>
-			`Set ${option.missing.join(" + ")} to deploy for real via ${option.backend}.`,
-	);
+	return target.activate.map((option) => {
+		if (option.backend === "vercel" && option.missing.includes("VERCEL_TOKEN"))
+			return "Configure an approved Vercel credential source; plain VERCEL_TOKEN in the process environment is ignored.";
+		if (
+			option.backend === "cloudflare" &&
+			option.missing.includes("CLOUDFLARE_API_TOKEN")
+		) {
+			const account = option.missing.includes("CLOUDFLARE_ACCOUNT_ID")
+				? " Set CLOUDFLARE_ACCOUNT_ID for cloudflare."
+				: "";
+			return `Configure an approved Cloudflare credential source; plain CLOUDFLARE_API_TOKEN in the process environment is ignored.${account}`;
+		}
+		return `Set ${option.missing.join(" + ")} to deploy for real via ${option.backend}.`;
+	});
 }
 
 export function createDoctorCommand(
@@ -53,7 +68,7 @@ export function createDoctorCommand(
 ): CommandModule {
 	return {
 		run: async ({ emitProgress }) => {
-			const env = deps.env ?? process.env;
+			const env = deployEnvironment(deps.env);
 			const target = describeDeployTarget(env);
 			emitProgress(target.summary);
 

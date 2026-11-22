@@ -1,4 +1,8 @@
 import { providerTermsFor } from "@hobo/core";
+import {
+	VERCEL_QUEUE_PRODUCT_ID,
+	VERCEL_SCHEDULE_PRODUCT_ID,
+} from "./deployment-component-resolver.js";
 import { VERCEL_STATIC_DEPLOY_PRODUCT_ID } from "./deployment-resolver.js";
 import {
 	EQUIVALENCE_CLASSES,
@@ -6,6 +10,7 @@ import {
 	type InitialCapabilityPort,
 } from "./equivalence.js";
 import { PROVIDER_TARGET } from "./options.js";
+import { VERCEL_BLOB_PRODUCT_ID, VERCEL_PROJECT_PRODUCT_ID } from "./slots.js";
 import type {
 	Capability,
 	CapabilityManifest,
@@ -48,12 +53,16 @@ function classForPort(port: string): InitialCapabilityPort | undefined {
 	switch (port) {
 		case "compute":
 			return "web/service";
+		case "project":
+			return "project";
 		case "objectStore":
 			return "objectStore";
-		case "database":
-			return "database/postgres";
 		case "kv":
 			return "kv";
+		case "queue":
+			return "queue";
+		case "schedule":
+			return "schedule";
 		default:
 			return undefined;
 	}
@@ -68,6 +77,16 @@ export function createVercelProvider(): CloudProvider {
 		regions: ["global"],
 		capabilities,
 		realize(plan: ResourcePlan) {
+			if (plan.port === "project") {
+				throw new Error(
+					"Vercel projects must be reconciled through the hosting supervisor and project resolver",
+				);
+			}
+			if (plan.port === "queue" || plan.port === "schedule") {
+				throw new Error(
+					"Vercel queues and schedules belong to a Git deployment; realize them through the hosting supervisor and deployment-component resolver",
+				);
+			}
 			const classKey = classForPort(plan.port);
 			if (!classKey) {
 				throw new Error(`${PROVIDER_TARGET} cannot realize port ${plan.port}`);
@@ -102,7 +121,37 @@ export function createVercelProvider(): CloudProvider {
 									features: ["http", "static", "managed"],
 									resourceKind: "immutable-deployment",
 								}
-							: undefined),
+							: c.port === "project"
+								? {
+										productId: VERCEL_PROJECT_PRODUCT_ID,
+										profiles: ["web.project/v1"],
+										features: [...EQUIVALENCE_CLASSES.project.features],
+										resourceKind: "project",
+									}
+								: c.port === "queue"
+									? {
+											productId: VERCEL_QUEUE_PRODUCT_ID,
+											profiles: ["queue.at-least-once/v1", "queue.delay/v1"],
+											features: [...EQUIVALENCE_CLASSES.queue.features],
+											resourceKind: "deployment-component",
+										}
+									: c.port === "schedule"
+										? {
+												productId: VERCEL_SCHEDULE_PRODUCT_ID,
+												profiles: ["service.scheduled/v1"],
+												features: [...EQUIVALENCE_CLASSES.schedule.features],
+												resourceKind: "deployment-component",
+											}
+										: c.port === "objectStore"
+											? {
+													productId: VERCEL_BLOB_PRODUCT_ID,
+													profiles: ["bucket.object/v1"],
+													features: [
+														...EQUIVALENCE_CLASSES.objectStore.features,
+													],
+													resourceKind: "object-store",
+												}
+											: undefined),
 					})),
 				},
 				auth: { exchange: "hobo:brokered-deploy-token", staticSecrets: false },

@@ -288,38 +288,38 @@ describe("completeMessage is fenced", () => {
 
 	it("completes work held at the right lease and fence", () => {
 		const { j, messageId } = leased();
-		expect(j.completeMessage(messageId, "w1", 7n)).toBe(true);
+		expect(j.completeMessage(messageId, "w1", 7n, 1)).toBe(true);
 		j.close();
 	});
 
 	it("refuses completion from a different holder", () => {
 		const { j, messageId } = leased();
-		expect(j.completeMessage(messageId, "w2", 7n)).toBe(false);
+		expect(j.completeMessage(messageId, "w2", 7n, 1)).toBe(false);
 		j.close();
 	});
 
 	it("refuses completion at a stale fence", () => {
 		const { j, messageId } = leased();
-		expect(j.completeMessage(messageId, "w1", 6n)).toBe(false);
+		expect(j.completeMessage(messageId, "w1", 6n, 1)).toBe(false);
 		j.close();
 	});
 
 	it("reports false rather than throwing for an unknown message", () => {
 		const { j } = journal();
-		expect(j.completeMessage("absent", "w1", 1n)).toBe(false);
+		expect(j.completeMessage("absent", "w1", 1n, 1)).toBe(false);
 		j.close();
 	});
 
 	it("refuses a second completion of the same message", () => {
 		const { j, messageId } = leased();
-		j.completeMessage(messageId, "w1", 7n);
-		expect(j.completeMessage(messageId, "w1", 7n)).toBe(false);
+		j.completeMessage(messageId, "w1", 7n, 1);
+		expect(j.completeMessage(messageId, "w1", 7n, 1)).toBe(false);
 		j.close();
 	});
 
 	it("does not redeliver a completed message", () => {
 		const { j, clock, messageId } = leased();
-		j.completeMessage(messageId, "w1", 7n);
+		j.completeMessage(messageId, "w1", 7n, 1);
 		clock.advance(60_000);
 		expect(
 			j.leaseMessages({

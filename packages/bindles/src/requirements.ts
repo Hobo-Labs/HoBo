@@ -16,6 +16,8 @@ export const BINDLE_PROVIDER_SELECTION_REMEDIATION =
 
 const PLATFORM_PROVIDERS = new Set(["hobo", "hobo:build"]);
 const PLATFORM_OPTIONS = new Set([
+	"cadence",
+	"continuity",
 	"endpoint",
 	"env",
 	"health",

@@ -5,6 +5,13 @@ import path from "node:path";
 import { test } from "node:test";
 import { expect } from "vitest";
 import { isNodeTestFile } from "../scripts/lib/unit-test-selection.ts";
+import { nodeTestArguments } from "../scripts/lib/node-test-arguments.ts";
+
+// scripts/run-tests.ts runs every --category lane under Vitest, which cannot
+// load node:test-style files. The script excludes files that import node:test;
+// this test pins the invariant that every such excluded file remains covered
+// by a package-level `node --test` contract lane (the turbo part of the root
+// test:contract:* commands).
 
 const categoryGlobs = [
 	"src/draft/*/*/contracts/consumer/*test.ts",
@@ -69,5 +76,11 @@ test("run-tests.ts preserves the canonical Vitest execution settings", () => {
 	expect(source).toContain("HOBO_TEST_MAX_WORKERS: String(maxWorkers)");
 	expect(source).toContain("maxWorkers:");
 	expect(source).toContain("rootNodeTestFiles");
-	expect(source).toContain('"--import", "tsx", "--test"');
+	assert.deepEqual(nodeTestArguments(["example.test.ts"], 2), [
+		"--import",
+		"tsx",
+		"--test",
+		"--test-concurrency=2",
+		"example.test.ts",
+	]);
 });

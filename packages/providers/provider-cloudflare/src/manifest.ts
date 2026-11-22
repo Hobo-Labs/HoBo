@@ -13,6 +13,12 @@ import {
 	parseJsonValue,
 } from "./json.js";
 
+/** The resolver product each published port is served by. */
+const PRODUCT_BY_PORT: ReadonlyMap<string, string> = new Map([
+	["compute", "cloudflare.workers/v1"],
+	["queue", "cloudflare.queues/v1"],
+	["schedule", "cloudflare.cron-triggers/v1"],
+]);
 // public-contract: capability-manifest bundle schema id (registry parity).
 export const MANIFEST_SCHEMA = "hobo.capability-manifest/v1";
 // public-contract: capabilities document schema id.
@@ -69,8 +75,9 @@ export function publishCapabilityManifest(
 			const mapping = EQUIVALENCE_CLASSES[port];
 			return {
 				port: mapping.port,
-				...(mapping.port === "compute"
-					? { productId: "cloudflare.workers/v1" }
+				// The product a resolver is keyed to, where one serves the port.
+				...(PRODUCT_BY_PORT.has(mapping.port)
+					? { productId: PRODUCT_BY_PORT.get(mapping.port) }
 					: undefined),
 				interface: `hobo:${mapping.port}/${mapping.resourceClass}`,
 				version: "0.1.0",
@@ -100,11 +107,15 @@ export function publishCapabilityManifest(
 			"web/service": "cloudflare.workers.request",
 			kv: "cloudflare.kv.read",
 			objectStore: "cloudflare.r2.storage.gb-month",
+			queue: "cloudflare.queues.operation",
+			schedule: "cloudflare.workers.cron-trigger",
 		}[port];
 		const unit = {
 			"web/service": "request",
 			kv: "operation",
 			objectStore: "GB-month",
+			queue: "operation",
+			schedule: "invocation",
 		}[port];
 		return {
 			port: mapping.port,

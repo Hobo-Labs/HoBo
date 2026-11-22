@@ -10,9 +10,9 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const describeDatabase = databaseUrl ? describe : describe.skip;
 
 describeDatabase("contact messages", () => {
-  const prisma = new PrismaClient(
-    databaseUrl ? { datasources: { db: { url: databaseUrl } } } : undefined,
-  );
+  const prisma = new PrismaClient({
+    datasources: { db: { url: databaseUrl } },
+  });
   const fixtureId = crypto.randomUUID();
   const fixtureEmail = `${fixtureId}@example.test`;
   let adminContext: Parameters<typeof listContactMessages>[0];
@@ -34,11 +34,14 @@ describeDatabase("contact messages", () => {
   });
 
   afterAll(async () => {
-    await prisma.contactFormMessage.deleteMany({
-      where: { user: { email: fixtureEmail } },
-    });
-    await prisma.user.deleteMany({ where: { email: fixtureEmail } });
-    await prisma.$disconnect();
+    try {
+      await prisma.contactFormMessage.deleteMany({
+        where: { user: { email: fixtureEmail } },
+      });
+      await prisma.user.deleteMany({ where: { email: fixtureEmail } });
+    } finally {
+      await prisma.$disconnect();
+    }
   });
 
   it("restricts all operations to administrators", async () => {

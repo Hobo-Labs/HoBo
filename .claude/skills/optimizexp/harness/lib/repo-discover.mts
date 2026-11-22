@@ -343,19 +343,38 @@ export function discoverProduct(
 			projects: ["site"],
 		});
 	}
-	if (hasVisualTokens) {
+	const designLint = scripts["design:lint"] ?? "";
+	const hasTrustedVisualCheck =
+		/(?:^|[\s"'])(?:\.\/)?scripts\/check-visual-tokens\.mts(?:$|[\s"'])/u.test(
+			designLint,
+		) && existsSync(path.join(root, "scripts/visual-token-contract.json"));
+	if (hasVisualTokens && hasTrustedVisualCheck) {
 		featurePlans.push({
 			id: "design-system-contract",
 			title: "Design system contract is agent-followable",
 			seed: `A designer or agent edits implemented UI tokens; visual checks fail on contrast violations with file references.`,
 			experiences: ["ux", "dx"],
 			driver: "cli",
-			surfaces: scripts["design:lint"]
-				? ["pnpm run design:lint"]
-				: visualTokens
-					? [`file:${path.relative(root, visualTokens)}`]
-					: [],
+			surfaces: ["pnpm run design:lint"],
 			source: [visualTokens || "site/src/styles/global.css"],
+			personaExperiences: ["ux", "dx"],
+			projects: hasSite ? ["site", "root"] : ["root"],
+		});
+	} else if (hasSite || hasVisualTokens) {
+		const source = visualTokens
+			? path.relative(root, visualTokens)
+			: "site/src/styles/global.css";
+		notes.push(
+			`Unresolved visual check: ${source} has no executable design:lint contrast gate.`,
+		);
+		featurePlans.push({
+			id: "design-system-contract-unresolved",
+			title: "Unresolved: executable visual-token contrast gate",
+			seed: `The discovered palette is not an executed check. Add an executable design:lint contrast gate before claiming visual validation.`,
+			experiences: ["ux", "dx"],
+			driver: "cli",
+			surfaces: [],
+			source: [source],
 			personaExperiences: ["ux", "dx"],
 			projects: hasSite ? ["site", "root"] : ["root"],
 		});

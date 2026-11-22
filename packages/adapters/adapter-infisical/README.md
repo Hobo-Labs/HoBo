@@ -22,13 +22,19 @@ take it explicitly.
     `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`, read at run time.
 - **Client** (`createInfisicalClient`): one login, the access token cached in
   memory until a tenth of its lifetime (at most a minute) before `expiresIn`,
-  one fresh login after a 401, bounded retries with exponential backoff on 429
-  (honouring `Retry-After`), 5xx and transport failures, a 1 MiB answer cap, no
-  redirects, a 10 s timeout per request.
+  one fresh login after a 401 on reads, bounded read retries with exponential
+  backoff on 429 (honouring `Retry-After`), 5xx and transport failures, a 1 MiB
+  answer cap, no redirects, and a 10 s timeout per request. Secret writes are
+  sent once; an ambiguous response or transport failure reports
+  `write-uncertain` so callers can reconcile before retrying.
+  `createSecret` issues a create request and returns `undefined` for HTTP 400
+  or 409, which can have causes other than an existing key. Do not use it as
+  an atomic claim unless the backend's uniqueness guarantee is independently
+  verified.
 - **Port** (`createInfisicalSecretsPort`): `access` / `accessVersion` read,
   `put` updates or creates (used only by `hobo ci`, the deploy workflow and
   the `hobo-mcp` secret capture; the relay's identity is read-only),
-  `listVersions` returns the current version.
+  `listVersions` returns the current version. It does not offer `createOnly`.
 - **Sessions**: `signIn()` logs in now and says when the token expires;
   `revoke()` ends a token the client obtained by logging in (never one its
   owner supplied); `forBinding(binding)` binds the same sign-in to another
@@ -63,6 +69,7 @@ take it explicitly.
 | Universal Auth login | `POST /api/v1/auth/universal-auth/login` `{clientId, clientSecret}` | <https://infisical.com/docs/api-reference/endpoints/universal-auth/login> |
 | List a folder | `GET /api/v4/secrets?projectId&environment&secretPath&viewSecretValue&recursive=false&expandSecretReferences=false&includeImports=false` | <https://infisical.com/docs/api-reference/endpoints/secrets/list> |
 | Read one | `GET /api/v4/secrets/{secretName}?projectId&environment&secretPath&type=shared[&version]` | <https://infisical.com/docs/api-reference/endpoints/secrets/read> |
+| Read a project identity's assigned roles | `GET /api/v1/projects/{projectId}/identities`, then select exactly one matching membership | <https://infisical.com/docs/api-reference/endpoints/project-identities-membership/list-identity-memberships> |
 | Create | `POST /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/create> |
 | Update | `PATCH /api/v4/secrets/{secretName}` | <https://infisical.com/docs/api-reference/endpoints/secrets/update> |
 | Revoke an access token this client obtained | `POST /api/v1/auth/token/revoke` `{accessToken}` (no Authorization header) | <https://infisical.com/docs/api-reference/endpoints/universal-auth/revoke-access-token> |
@@ -108,11 +115,10 @@ secret-protection policy turns into an approval request is reported as
 
 ## Redaction
 
-`InfisicalError` names the operation, a code, the HTTP status and Infisical's
-`reqId`, never a response body (Infisical's error bodies may echo input), a
-token, a JWT or a value. The adapter logs nothing. Tests assert that an error
-raised while the server echoes the token, the JWT and a value contains none of
-them.
+`InfisicalError` names the operation, a code, and the HTTP status. Provider
+response fields, including `reqId`, are omitted because they may echo input.
+The adapter logs nothing. Tests assert that an error raised while the server
+echoes a token, JWT, or value contains none of them.
 
 ## Gates
 

@@ -1,10 +1,11 @@
 import { createRivetActorHost, type RivetActorHost } from "./actor-host.js";
 import { type ActorLocalJournal, createActorLocalJournal } from "./journal.js";
 import { parseRivetRuntimeConfig } from "./parse.js";
-import type {
-	RivetDoctorReport,
-	RivetRuntimeConfig,
-	RivetRuntimeMode,
+import {
+	type RivetDoctorReport,
+	RivetJournalError,
+	type RivetRuntimeConfig,
+	type RivetRuntimeMode,
 } from "./types.js";
 
 export interface RivetRuntimeHostOptions {
@@ -42,6 +43,12 @@ export function createRivetRuntimeHost(
 		mode: options.mode ?? "local",
 		svidBindingRef: "svid://camp/rivet",
 	});
+	if (config.mode !== "local") {
+		throw new RivetJournalError(
+			"PARSE",
+			`Rivet runtime mode ${config.mode} is unavailable; only local-sqlite is implemented`,
+		);
+	}
 	const journal = createActorLocalJournal(options.journalPath);
 	const actors = createRivetActorHost({
 		journal,
@@ -58,7 +65,7 @@ export function createRivetRuntimeHost(
 			"Raw Rivet queue receive-loss is not command authority.",
 		],
 		remediation: [
-			"Pin a published rivetkit version before advertising fidelity=rivetkit.",
+			"Implement and verify a Rivet-backed journal before advertising fidelity=rivetkit.",
 		],
 	};
 	return {

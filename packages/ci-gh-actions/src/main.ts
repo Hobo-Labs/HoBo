@@ -27,6 +27,13 @@ function secret(env: NodeJS.ProcessEnv, name: string): string {
 	return file ? readFileSync(file, "utf8").trimEnd() : required(env, name);
 }
 
+/** Relay secrets a host hands over in memory (see `startRelayFromEnvironment`). */
+export interface RelaySecrets {
+	readonly githubAppPrivateKey: string;
+	readonly webhookSecret: string;
+	readonly ingressForwardSecret?: string;
+}
+
 export async function startRelayFromEnvironment(
 	env: NodeJS.ProcessEnv = process.env,
 	ports: {
@@ -35,6 +42,7 @@ export async function startRelayFromEnvironment(
 			store: StrictFleetStore;
 			policies: readonly StartFencePolicy[];
 		};
+		secrets?: RelaySecrets;
 		agent?: (relay: {
 			connections(): Promise<
 				readonly { installationId: number; repository: string }[]
@@ -64,19 +72,21 @@ export async function startRelayFromEnvironment(
 	const port = Number(env.HOBO_CI_PORT ?? "8787");
 	if (!Number.isInteger(port) || port < 1 || port > 65535)
 		throw new Error("invalid relay port");
-	const privateKey = readFileSync(
-		required(env, "HOBO_CI_GITHUB_APP_KEY_FILE"),
-		"utf8",
-	);
+	const privateKey =
+		ports.secrets?.githubAppPrivateKey ??
+		readFileSync(required(env, "HOBO_CI_GITHUB_APP_KEY_FILE"), "utf8");
 	if (createPrivateKey(privateKey).asymmetricKeyType !== "rsa")
 		throw new Error("GitHub App key must be RSA");
 	const authenticate = createControlAuthenticator(
 		readFileSync(required(env, "HOBO_CI_CONTROL_TOKENS_FILE"), "utf8"),
 	);
-	const webhookSecret = secret(env, "HOBO_CI_WEBHOOK_SECRET");
-	const ingressForwardSecret = env.HOBO_CI_INGRESS_FORWARD_SECRET
-		? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
-		: undefined;
+	const webhookSecret =
+		ports.secrets?.webhookSecret ?? secret(env, "HOBO_CI_WEBHOOK_SECRET");
+	const ingressForwardSecret =
+		ports.secrets?.ingressForwardSecret ??
+		(env.HOBO_CI_INGRESS_FORWARD_SECRET
+			? secret(env, "HOBO_CI_INGRESS_FORWARD_SECRET")
+			: undefined);
 	const assets = relayInstallAssets();
 	const database = required(env, "HOBO_CI_DB");
 	const lock = await acquirePartitionLock(database);

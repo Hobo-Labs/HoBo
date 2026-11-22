@@ -342,6 +342,10 @@
             "content": {
               "ok": true,
               "schema": "hobo.dispatcher/priced",
+              "budget": {
+                "evaluation": "not-evaluated",
+                "reservation": "not-created"
+              },
               "objective": "min-incremental-billed",
               "selectedProvider": "cheap",
               "dispatchEvent": {
@@ -529,6 +533,10 @@
             "content": {
               "ok": false,
               "schema": "hobo.dispatcher/priced",
+              "budget": {
+                "evaluation": "not-evaluated",
+                "reservation": "not-created"
+              },
               "reason": "no completely priced dispatch candidates",
               "rejectedCandidates": [
                 {

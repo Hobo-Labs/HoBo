@@ -9,6 +9,7 @@ tags: [hobo, ci, performance, maintenance]
 
 How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows down.
 
+- **Online overflow only.** After the queue rule or a fleet slip selects `hobo`, a saturated pool overflows to `hobo-agent37` only when the runner page fetched for that decision shows at least one online Agent37 runner. Absent, offline-only, or unreadable overflow runners keep the prior route, with the reason recorded in the fallback warning and route notice. A saturated same-repository PR batch diverts through the fleet ladder (`hobo-trunk`, `hobo`, `hobo-agent37`) before falling back to `ubuntu-24.04`; the fallback reason records why no fleet tier was verified. Merge-group Fabric never uses the general pool or Agent37 overflow. See the [runner queue guide](../../packages/ci/RUNNER-QUEUE.md#hosted-saturation-and-hobo-overflow-agent37-on-demand).
 - **Box-only Docker build.** The job that runs `deps/build-deps.sh` can ask for `runs-on: hobo-box` on
   pull requests, so fleet overflow (ARC pods under the shared `hobo` label) never builds a deps image that
   no job container reads. Trunk events keep the trunk label. It is opt-in: the job asks for the box
@@ -20,7 +21,15 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   `release-contract` resolves `hobo-ci-worker` through
   `scripts/ci/ensure-ci-worker-image.mts`, like the tag build and publish jobs: the
   runner's own content-keyed image, else a GHCR pull with the job token
-  (`packages: read`), and `build.sh` only when neither has it. The
+  (`packages: read`), and `build.sh` only when neither has it. Tag releases resolve
+  the worker tag to one immutable digest in `release-toolchain-image` before either
+  matrix starts. A supplied `HOBO_CI_WORKER_IMAGE_REF` must be this repository's
+  immutable `hobo-ci-worker` digest (`ghcr.io/hobo-labs/hobo/hobo-ci-worker@sha256:<64 lowercase hex>`);
+  an empty or invalid value fails the job instead of falling back to the version
+  tag, and only an absent variable uses the version tag. Build and publish legs pull that digest under one overall
+  `HOBO_CI_WORKER_PULL_BUDGET_SEC` deadline (540 seconds in release), with at most
+  four attempts and exponential backoff plus jitter instead of 120-second
+  per-attempt kills; their ensure steps have a 10-minute bound. The
   `release-oci-build-tag` matrix stays at `max-parallel: 1` on the trunk label:
   job containers on a box share one Docker daemon, the `hobo-cli` and `hobo-mcp`
   legs build `hobo-sdk:candidate` (and `hobo-cli:candidate`) there, and each leg
@@ -37,6 +46,8 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   idle JIT listeners release after three minutes when the fleet mesh already holds the
   job, or after ten minutes when GitHub never assigns work
   ([finding 100](../ci/findings/0100-inode-grant-idle-reconcile.md)).
+- **Scripts test shards build once.** `scripts-tests-build` restores older `scripts-tests` L1 Turbo archives, derives `--filter=<name>...` arguments through `scripts/ci/scripts-test-imports.mts` from the tests' complete relative-import graph (including nested workspace packages and `src/` or `dist/` imports), adds the `affected-lanes` filters from the `HEAD^1..HEAD` tree diff, and saves one same-run Turbo archive. It packs the built workspace and ts-autocode `dist` trees into one nonempty tarball in `$RUNNER_TEMP`; packing and upload each have a three-minute limit. The four deterministic `scripts-tests` shards need that job, restore its Turbo archive with `preferred-job: scripts-tests-build`, and download and extract the tarball before testing rather than rebuilding or saving competing archives. An empty build base, dist file list, or downloaded tarball fails closed. Neither job waits for `ci-deps-image`. The PR impact gate requires the build and all four shards.
+- **Hosted release-integration critical path.** `release-hobo-pr.yml` has unfiltered pull-request and merge-group triggers, four GitHub-hosted Vitest shards with an 8-minute job ceiling, and the `HoBo release integration PR gate`. Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the lane, fetch or object-verification failure fails the scope step, and only a successfully computed out-of-scope diff skips install and tests successfully. The protected `HoBo release PR gate (required)` no longer needs integration. Fabric and the release train carry temporary hosted PR shards until the new workflow is on `main`; the Fabric shards are not a PR-impact-gate dependency. PR sidecar jobs have no shared `pr-sidecar` cancellation group.
 - **No shared database on the box.** The worker keeps its lease journal and webhook inbox in a local
   SQLite file (`@hobo/ci/sqlite`, `${XDG_DATA_HOME:-~/.local/share}/hobo-ci/worker.sqlite`) and polls
   GitHub every `HOBO_CI_JOB_POLL_MS` (2 s by default) for queued `runs-on: hobo` jobs, so CI does not stop when a hosted
@@ -137,6 +148,20 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   only on the box worker. Set committed `runnerRouting.mainGate.reuseMergeQueue` to `false` in
   `.hobo/ci.json` to make every push run the full gate again. A reused push does not run the generated-output drift check or
   refresh the `actions/cache` seeds GitHub-hosted pull request runs restore; the daily schedule does both.
+- **Merge-group gate jobs skipped when a green PR Fabric run tested the same tree at the same base.**
+  30% of the last 50 merge groups tested a tree a green same-repo `pull_request` run of this
+  workflow had already tested with the queue's base absorbed into the PR head
+  ([finding 156](../ci/findings/0156-merge-queue-tree-reuse.md)). The route job's `pr-fabric`
+  step (`scripts/ci/pr-fabric-reuse.mts`) verifies that shape from the trusted base checkout —
+  same-repo run, bound to the entry's PR, base tip matching the branch name and the event, tree
+  SHAs from the commits API, base contained in the PR head by the compare API — and reports it
+  as the route job's `pr-fabric-green` output. On a verified match, **PR impact validation**,
+  **Workspace test shards** and **Scripts tests** are skipped and the `pr-gate` required check
+  accepts them; anything short of a verified match is `reuse=false` and the merge group runs its
+  gate jobs as before. The plan job, secret scan, merge-only required checks and the gate itself
+  are untouched. Committed policy gates it: `runnerRouting.mergeGroup.reusePrFabric` in
+  `.hobo/ci.json` (`false`, and an absent block means the same, until a merge group has produced
+  the first production observation of the route step logging a verified reuse).
 - **Separate workspace budgets.** A cold S0 validation took almost 19 minutes in run 42312939250,
   leaving too little of its 20-minute job for dependent workspace tests. PR and merge-group validation
   now delegate workspace tests to bounded shards; the PR's build, lint, schema, and contract lanes
@@ -547,9 +572,30 @@ runner. `pnpm ci:attest run` runs the covered CI jobs on the machine you are
 sitting at, signs the result, and `pnpm ci:attest publish` pushes that record
 to the `ci-attestations` branch. The **Route runners** job of the next CI run
 verifies the record and the covered jobs are skipped: they need no runner, and
-the few jobs left go to GitHub-hosted machines.
+the remaining jobs follow the ordinary fleet routing decision.
 
-Covered: `pr_gate_validation`, `workspace_tests`, `pr_affected`, `pr-offpath`,
+When even the route job has no runner, `pnpm ci:attest fleet --local-signoff` uses
+[`basecamp/gh-signoff`](https://github.com/basecamp/gh-signoff) to post
+per-job commit statuses after choosing the local fallback and running the checks.
+It first considers the committed fleet policy, routing slip, and queue; known
+runner capacity stays ahead of the opt-in local fallback, and unknown capacity
+waits. It verifies the exact
+head, live remote base, local signature and event coverage first. The statuses
+are separate from Actions job checks and do not by themselves satisfy the
+current required checks or a merge queue's generated commit. The runbook below
+documents installation, status names and the no-Docker partial result.
+`scripts/test/local-attest.test.ts` exercises the CLI-to-`gh` contract with a
+local executable and git remotes, including failed publication and stale or
+partial evidence. `scripts/test/fleet-signoff.test.ts` exercises the fleet
+selection and fallback execution. These TypeScript changes add no Protobuf or
+CUE contract. Live observation of the fleet-to-signoff decision and GitHub
+acceptance of these statuses remains separate evidence.
+
+`pr_gate_plan` uses node builtins only and resolves the base, scope, and shard matrix
+without installing dependencies. `pr_gate_validation` runs S0 and PR-only checks while
+`workspace_tests` and `pr_affected` start from that plan without waiting for validation.
+
+Covered: `pr_gate_plan`, `pr_gate_validation`, `workspace_tests`, `pr_affected`, `scripts-tests`, `pr-offpath`,
 `artifact-trust`, `ci-guard` and `secret-scan` in `hobo-ci.yml`, and
 `release-contract` in `release-hobo.yml` when no release image is affected. Not
 covered: `ci-runner-image`, `ci-deps-image`, `dev-cold-loop-gate`, the route

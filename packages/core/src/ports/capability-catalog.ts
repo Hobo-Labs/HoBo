@@ -3,6 +3,8 @@ import type { CapabilitySlot } from "./capability-slot.js";
 
 export const capability = Object.freeze({
 	web: Object.freeze({
+		/** An account-scoped provider project, distinct from a deployed surface. */
+		project: "web.project/v1",
 		static: "web.static/v1",
 		hosted: "web.hosted/v1",
 		ssr: "web.ssr/v1",
@@ -82,6 +84,11 @@ export const capability = Object.freeze({
 		channel: "realtime.channel/v1",
 		sse: "realtime.sse/v1",
 		websocket: "realtime.websocket/v1",
+	}),
+	/** Running something on a clock: a queue message or an invocation. */
+	schedule: Object.freeze({
+		/** A five-field cron expression, run at least once per tick. */
+		cron: "schedule.cron/v1",
 	}),
 } as const);
 

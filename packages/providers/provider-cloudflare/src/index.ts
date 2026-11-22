@@ -112,6 +112,7 @@ export {
 	toResourcePlans,
 } from "./realize.js";
 export {
+	CLOUDFLARE_CRON_TRIGGERS_PRODUCT_ID,
 	CLOUDFLARE_D1_PRODUCT_ID,
 	CLOUDFLARE_KV_PRODUCT_ID,
 	CLOUDFLARE_PAGES_PRODUCT_ID,
@@ -125,6 +126,8 @@ export {
 	redactCloudflareText,
 } from "./resolvers.js";
 export {
+	type CronTriggersOptions,
+	cronTriggers,
 	type D1Options,
 	d1,
 	type KvOptions,

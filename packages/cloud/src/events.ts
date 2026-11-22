@@ -34,6 +34,7 @@ export const CLOUD_EVENTS = Object.freeze({
 	ResourceProvisioned: "resource.Provisioned",
 	ResourceFailed: "resource.Failed",
 	ResourceCompensationFailed: "resource.CompensationFailed",
+	ResourceReconciled: "resource.Reconciled",
 	ResourceDestroying: "resource.Destroying",
 	ResourceDestroyed: "resource.Destroyed",
 	IncidentEscalationRequested: "incident.EscalationRequested",
@@ -42,6 +43,9 @@ export const CLOUD_EVENTS = Object.freeze({
 	DeploymentDeployed: "deployment.Deployed",
 	DeploymentRollbackStarted: "deployment.RollbackStarted",
 	DeploymentRolledBack: "deployment.RolledBack",
+	DeploymentTransitionStarted: "deployment.TransitionStarted",
+	DeploymentTransitionCompleted: "deployment.TransitionCompleted",
+	DeploymentReopened: "deployment.Reopened",
 	// Ownership rebind: an anonymous `npx hobo up` deployment is bound to an
 	// account, preserving all provisioned state (resources, outputs, URL).
 	DeploymentClaimed: "deployment.Claimed",
@@ -208,6 +212,7 @@ export interface ResourceProvisioningData {
 	programHash: string;
 	specHash: string;
 	providerId: string;
+	operationGeneration?: string;
 }
 
 export function resourceProvisioning(
@@ -228,13 +233,29 @@ export function resourceProvisioned(data: ResourceProvisionedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceProvisioned, data };
 }
 
-export interface ResourceFailedData {
+interface ResourceFailedBase {
 	deploymentId: string;
 	resourceId: string;
 	reason: string;
-	classification: "retryable" | "fatal";
-	crossedNoGoThreshold: boolean;
 }
+
+export type ResourceFailedData = ResourceFailedBase &
+	(
+		| {
+				classification: "retryable" | "fatal";
+				crossedNoGoThreshold: boolean;
+				requiresReconciliation?: false;
+				reservationId?: never;
+				reconciliationOperation?: never;
+		  }
+		| {
+				classification: "fatal";
+				crossedNoGoThreshold: false;
+				requiresReconciliation: true;
+				reservationId?: string;
+				reconciliationOperation: "apply" | "destroy";
+		  }
+	);
 
 export function resourceFailed(data: ResourceFailedData): EventInput {
 	return { type: CLOUD_EVENTS.ResourceFailed, data };
@@ -264,10 +285,35 @@ export function incidentEscalationRequested(
 	return { type: CLOUD_EVENTS.IncidentEscalationRequested, data };
 }
 
+export interface ResourceReconciledData {
+	deploymentId: string;
+	resourceId: string;
+	failureEventId: string;
+	operation: "apply" | "destroy";
+	outcome: "applied" | "destroyed" | "no-effect";
+	evidenceRef: string;
+	financialEvidenceRef: string;
+	financialDisposition: "none" | "held" | "settled" | "released";
+	reservationId?: string;
+	claimDigest: string;
+	outputs?: Record<string, string>;
+	execId?: string;
+	specHash?: string;
+	finalStateHash?: string;
+	restoredState?: "provisioned" | "destroyed" | "failed";
+}
+
+export function resourceReconciled(data: ResourceReconciledData): EventInput {
+	return { type: CLOUD_EVENTS.ResourceReconciled, data };
+}
+
 export interface ResourceDestroyingData {
 	deploymentId: string;
 	resourceId: string;
 	reason: string;
+	operationGeneration?: string;
+	programHash?: string;
+	specHash?: string;
 }
 
 export function resourceDestroying(data: ResourceDestroyingData): EventInput {
@@ -333,4 +379,35 @@ export function deploymentRolledBack(
 	data: DeploymentRolledBackData,
 ): EventInput {
 	return { type: CLOUD_EVENTS.DeploymentRolledBack, data };
+}
+
+export interface DeploymentTransitionData {
+	deploymentId: string;
+	transitionId: string;
+	kind: "rollback" | "prune";
+	planHash: string;
+	resourceIds: string[];
+	triggerResource?: string;
+	reason?: string;
+}
+
+export function deploymentTransitionStarted(
+	data: DeploymentTransitionData,
+): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentTransitionStarted, data };
+}
+
+export function deploymentTransitionCompleted(
+	data: DeploymentTransitionData,
+): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentTransitionCompleted, data };
+}
+
+export function deploymentReopened(data: {
+	deploymentId: string;
+	rollbackEventId: string;
+	planHash: string;
+	resources: { resourceId: string; specHash: string }[];
+}): EventInput {
+	return { type: CLOUD_EVENTS.DeploymentReopened, data };
 }

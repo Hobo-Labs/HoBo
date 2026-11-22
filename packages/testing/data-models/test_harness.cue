@@ -27,9 +27,7 @@
 		"camp-only": uint
 	}
 	asserted_against: [...#FidelityAssertionRecord]
-	prod_readiness_claimable: bool
-	_mockedAssertions: [for entry in asserted_against if entry.fidelity == "mocked" {entry}]
-	_claimIsDerived: true & (prod_readiness_claimable == (len(_mockedAssertions) == 0))
+	prod_readiness_claimable: false
 }
 
 #DeployedGraphRecord: {
@@ -46,6 +44,7 @@
 	"HARNESS_CAMP_DEPLOYMENT_INVALID" | "HARNESS_CAMP_DRIVER_REQUIRED" |
 	"HARNESS_CREDENTIAL_NOT_A_REF" | "HARNESS_CREDENTIALS_REQUIRED" |
 	"HARNESS_CYCLIC_DEPENDENCY" | "HARNESS_ENDPOINT_UNAVAILABLE" |
+	"HARNESS_EMULATOR_INVALID" | "HARNESS_EMULATOR_UNAVAILABLE" |
 	"HARNESS_LANE_INVALID" |
 	"HARNESS_READINESS_EXHAUSTED" | "HARNESS_READINESS_OPTIONS_INVALID" |
 	"HARNESS_READINESS_REJECTED" | "HARNESS_RUNNER_INVALID" |

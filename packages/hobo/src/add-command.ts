@@ -17,6 +17,7 @@ import {
 	runtimeInstallIdToHost,
 } from "./runtime-catalog.js";
 
+// public-contract: provider registration and planning share this stream identifier.
 export const REGISTRY_STREAM = "registry:default";
 
 const ADD_ACTOR: PrincipalRef = { kind: "system", id: "yard/registry" };
@@ -45,6 +46,28 @@ export function registerInstallable(
 
 export function installableProviders(): string[] {
 	return [...INSTALLABLE.keys()].sort();
+}
+
+/**
+ * Installable providers that advertise `port`: what `hobo up`'s ceremony
+ * offers for a resource no registered provider can serve. Each catalog entry
+ * is built once to read its capability ports.
+ */
+export function installableProvidersFor(port: string): string[] {
+	const able: string[] = [];
+	for (const [id, entry] of INSTALLABLE) {
+		try {
+			if (
+				entry
+					.factory()
+					.capabilities.some((capability) => capability.port === port)
+			)
+				able.push(id);
+		} catch {
+			// An entry that cannot be built is not offered.
+		}
+	}
+	return able.sort();
 }
 
 export interface AddCommandDeps {

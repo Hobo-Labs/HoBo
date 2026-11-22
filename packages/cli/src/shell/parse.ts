@@ -406,7 +406,7 @@ function parseOption(
 			}
 			throw unknownOption(token, verb);
 		case "--region":
-			if (verb === "verify" || verb === "up") {
+			if (verb === "verify" || verb === "up" || verb === "plan") {
 				flags.region = takeValue(argv, index, token);
 				return index + 1;
 			}

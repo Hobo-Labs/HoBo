@@ -1,5 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
+import {
+	isJsonObject,
+	isJsonString,
+	type JsonObject,
+	type JsonValue,
+} from "../json.js";
 import {
 	type SecretCaptureCode,
 	SecretCaptureError,
@@ -58,7 +63,9 @@ export const SECRET_CAPTURE_TOOL_NAMES: readonly string[] = Object.freeze([
 export type SecretCaptureChannel =
 	| "mcp-app"
 	| "url-elicitation"
-	| "loopback-page";
+	| "loopback-page"
+	/** The host's own elicitation form (a remote box whose host has no MCP Apps). */
+	| "form-elicitation";
 type TicketState =
 	| "awaiting-owner"
 	| "stored"
@@ -69,11 +76,14 @@ type TicketState =
 
 export type SecretCaptureHostSupport = Readonly<{
 	apps: boolean;
+	/** The host renders `elicitation/create` forms (MCP 2025-06-18 `{}`, or `{ form }`). */
+	formElicitation: boolean;
 	urlElicitation: boolean;
 }>;
 
 export const NO_HOST_SUPPORT: SecretCaptureHostSupport = Object.freeze({
 	apps: false,
+	formElicitation: false,
 	urlElicitation: false,
 });
 
@@ -94,10 +104,14 @@ export function negotiateSecretCaptureSupport(
 	const mimeTypes = objectAt(ui, "mimeTypes");
 	const apps =
 		Array.isArray(mimeTypes) && mimeTypes.some((m) => m === MCP_APP_MIME_TYPE);
-	const urlElicitation = isJsonObject(
-		objectAt(objectAt(capabilities, "elicitation"), "url"),
-	);
-	return Object.freeze({ apps, urlElicitation });
+	const elicitation = objectAt(capabilities, "elicitation");
+	const urlElicitation = isJsonObject(objectAt(elicitation, "url"));
+	// `{}` (2025-06-18) or `{ form: {} }` (2025-11-25) both mean form mode.
+	const formElicitation =
+		isJsonObject(elicitation) &&
+		(Object.keys(elicitation).length === 0 ||
+			isJsonObject(objectAt(elicitation, "form")));
+	return Object.freeze({ apps, formElicitation, urlElicitation });
 }
 
 export type SecretStoreStatus =
@@ -195,6 +209,35 @@ export type CreateSecretCaptureAppOptions = Readonly<{
 	maxAttempts?: number;
 	onEvent?: (event: SecretCaptureEvent) => void | Promise<void>;
 	notify?: (method: string, params: JsonValue) => void;
+	/**
+	 * Receives a `handoff` capture: the value goes to the ceremony running in
+	 * this process, in memory, and to no store. Without it, a handoff spec is
+	 * refused.
+	 */
+	handoff?: (secret: CapturedSecret) => Promise<void>;
+	/**
+	 * Whether a handed-over value is still waiting for its run. A hand-over
+	 * the run has taken is spent: asked for again, the owner gets a new form,
+	 * not the old "stored" answer. Without it, a hand-over is always spent.
+	 */
+	handoffHeld?: (name: string) => boolean;
+	/**
+	 * The owner is not at this machine (a remote dev box): a page on its
+	 * 127.0.0.1 can never reach them. Without MCP Apps the host's own
+	 * elicitation form asks instead; a host with neither is refused, never
+	 * sent to a page the owner cannot see.
+	 */
+	remote?: boolean;
+	/**
+	 * The link the waiting run gave for a value (a sign-in to complete before
+	 * there is anything to paste). The owner gets it before any form: the
+	 * host's own link prompt (URL-mode elicitation) where it has one.
+	 */
+	linkFor?: (
+		name: string,
+	) => Readonly<{ url: string; message: string }> | undefined;
+	/** Ask the host for a form (`elicitation/create`), answered by the owner. */
+	elicit?: (params: JsonObject) => Promise<JsonValue | undefined>;
 }>;
 
 type Ticket = {
@@ -215,6 +258,37 @@ type Ticket = {
 };
 
 const TICKET_ID = /^cap_[A-Za-z0-9_-]{22}$/u;
+
+type FormAnswer =
+	| Readonly<{ action: "accept"; value: string }>
+	| Readonly<{ action: "decline" | "cancel" | "unanswered" }>;
+
+/** The host's answer to `elicitation/create`, parsed where it enters. */
+/**
+ * A link as a form field of its own: prefilled with the address and marked
+ * as a link (`format: "uri"`), so the owner can open or copy it from the
+ * field, and a host can make it clickable. Never only in a form's text.
+ */
+export function linkField(url: string, title: string) {
+	return {
+		type: "string",
+		format: "uri",
+		title,
+		default: url,
+		description: "Open this link, or copy it.",
+	} as const;
+}
+
+function parseFormAnswer(answer: JsonValue | undefined): FormAnswer {
+	const action = objectAt(answer, "action");
+	const value = objectAt(objectAt(answer, "content"), "value");
+	if (action === "accept" && isJsonString(value))
+		return { action: "accept", value };
+	return action === "decline" || action === "cancel"
+		? { action }
+		: { action: "unanswered" };
+}
+
 const CLIENT_ID = /^[A-Za-z0-9-]{1,64}$/u;
 const STORE_REF =
 	/^(?:infisical|secref|hobo-writer-session):\/\/[A-Za-z0-9._~/:@-]{1,512}$/u;
@@ -229,6 +303,7 @@ type RefusalView = {
 	message: string;
 	nextStep?: string;
 	name?: string;
+	hostSupport?: SecretCaptureHostSupport;
 };
 
 type TicketView = {
@@ -246,6 +321,8 @@ type TicketView = {
 	ref?: string;
 	key?: CapturePublicKey;
 	url?: string;
+	/** What this host can show the owner, so the agent never guesses. */
+	hostSupport?: SecretCaptureHostSupport;
 };
 
 function refusalResult(
@@ -266,6 +343,25 @@ function refusalResult(
 		],
 		structuredContent: refusal,
 		isError: true,
+	};
+}
+
+/** A capture's result says what the host can show the owner, so the agent never guesses. */
+function withHostSupport(
+	tool: string,
+	outcome: SecretCaptureOutcome,
+	support: SecretCaptureHostSupport,
+): SecretCaptureOutcome {
+	if (tool !== CAPTURE_SECRET_TOOL || outcome.kind !== "result") return outcome;
+	const structured = outcome.result.structuredContent;
+	return {
+		kind: "result",
+		result: {
+			...outcome.result,
+			structuredContent: isJsonObject(structured)
+				? { ...structured, hostSupport: { ...support } }
+				: structured,
+		},
 	};
 }
 
@@ -409,6 +505,7 @@ export function createSecretCaptureApp(
 		return {
 			ticketId: ticket.id,
 			name: ticket.spec.name,
+			target: ticket.spec.target,
 			label: ticket.spec.label,
 			purpose: ticket.spec.purpose,
 			charset: ticket.spec.charset,
@@ -478,9 +575,110 @@ export function createSecretCaptureApp(
 		return page;
 	}
 
+	function refuseNoForm(spec: ParsedSecretCaptureSpec): never {
+		throw new SecretCaptureError(
+			"SECRET_CAPTURE_NO_OWNER_FORM",
+			`The owner is not at this machine, and this host shows neither HoBo's form (MCP Apps) nor its own elicitation form, so nothing can take ${spec.name} from them safely.`,
+			"Do not send the owner to a page, a preview or the chat for it. Tell them this host cannot collect it, and run the ceremony from a host that shows MCP Apps or elicitation forms (Claude Code, Claude Desktop, VS Code).",
+		);
+	}
+
+	/**
+	 * The host's own form: one field, for this value only. What the owner
+	 * types goes from the host to this process in the elicitation answer,
+	 * never through a tool result, the chat or the model. A value of the
+	 * wrong shape is asked again with the reason (never the value).
+	 */
+	async function askInForm(
+		ticket: Ticket,
+		link?: Readonly<{ url: string; message: string }>,
+	): Promise<SecretCaptureToolResult> {
+		const elicit = options.elicit;
+		let problem: string | undefined;
+		while (ticket.state === "awaiting-owner") {
+			// One line (no line breaks: a host showed forms with one line and
+			// not the ones with several); the link, when the value comes from
+			// one, as its own field, prefilled and marked as a link.
+			const said =
+				problem === undefined ? ticket.spec.purpose : `${problem} Try again.`;
+			const answer = parseFormAnswer(
+				await (
+					elicit?.({
+						message: link === undefined ? said : `${link.message} — ${said}`,
+						requestedSchema: {
+							type: "object",
+							properties: {
+								// The link as its own field, never only in the text: an
+								// address in the message showed as text the owner could
+								// neither click nor copy.
+								...(link === undefined
+									? undefined
+									: { link: linkField(link.url, "Link to open") }),
+								value: {
+									type: "string",
+									title: ticket.spec.label,
+									minLength: ticket.spec.minBytes,
+									maxLength: ticket.spec.maxBytes,
+								},
+							},
+							required: ["value"],
+						},
+					}) ?? Promise.resolve(undefined)
+				).catch(() => undefined),
+			);
+			// Withdrawn, not answered: the host cancelled the call that asked.
+			if (answer.action === "unanswered") {
+				shut(ticket, "closed");
+				emit("secret.CaptureClosed", ticketFields(ticket));
+				throw new SecretCaptureError(
+					"SECRET_CAPTURE_NOT_ANSWERED",
+					"The host closed the form before the owner answered; nothing was captured.",
+					`Once the owner is ready, call ${CAPTURE_SECRET_TOOL} again: a fresh form opens.`,
+				);
+			}
+			if (answer.action !== "accept") {
+				shut(ticket, "closed");
+				emit("secret.CaptureClosed", ticketFields(ticket));
+				throw new SecretCaptureError(
+					"SECRET_CAPTURE_DECLINED",
+					`The owner ${answer.action === "decline" ? "declined" : "closed"} the form; ${ticket.spec.name} was not captured.`,
+					`Ask again with ${CAPTURE_SECRET_TOOL} when they are ready.`,
+				);
+			}
+			let secret: CapturedSecret;
+			try {
+				secret = CapturedSecret.parse(ticket.spec, answer.value);
+			} catch (error) {
+				if (!(error instanceof SecretCaptureError)) throw error;
+				const refused = failed(
+					ticket,
+					error,
+					"secret.CaptureRejected",
+					error.code,
+				);
+				if (ticket.state !== "awaiting-owner") return refused;
+				problem = error.message;
+				continue;
+			}
+			return deliver(ticket, secret);
+		}
+		throw new SecretCaptureError(
+			"SECRET_CAPTURE_CLOSED",
+			`${ticket.spec.name}'s capture is closed.`,
+		);
+	}
+
 	async function refuseIfNotWritable(
 		spec: ParsedSecretCaptureSpec,
 	): Promise<SecretCaptureError | undefined> {
+		if (spec.target === "handoff")
+			return options.handoff === undefined
+				? new SecretCaptureError(
+						"SECRET_STORE_NOT_CONNECTED",
+						`Nothing in this process is waiting for ${spec.name}.`,
+						"Run the ceremony that asks for it through this MCP server first.",
+					)
+				: undefined;
 		const status = await options.connector.status();
 		if (status.connected === false)
 			return new SecretCaptureError(
@@ -491,7 +689,7 @@ export function createSecretCaptureApp(
 		if (spec.target !== "writer" && !status.writable)
 			return new SecretCaptureError(
 				"SECRET_STORE_WRITER_REQUIRED",
-				`The secret store ${status.storeRef} is connected, but this session may not write to it yet.`,
+				"A secret store is configured, but this session may not write to it yet.",
 				`Call ${CAPTURE_SECRET_TOOL} with name ${status.writerSpec} and writerClientId (the writer identity's Client ID) first; the owner enters its one-use client secret in the same kind of form.`,
 			);
 		return undefined;
@@ -539,7 +737,10 @@ export function createSecretCaptureApp(
 			!replace &&
 			(previous.state === "awaiting-owner" ||
 				((previous.state === "stored" || previous.state === "authorized") &&
-					now() < previous.expiresAtMs))
+					now() < previous.expiresAtMs &&
+					// A hand-over the run already took is spent: ask afresh.
+					(previous.spec.target !== "handoff" ||
+						options.handoffHeld?.(previous.spec.name) === true)))
 		)
 			return answerFor(previous, support);
 		if (previous?.state === "awaiting-owner") {
@@ -556,13 +757,18 @@ export function createSecretCaptureApp(
 				`Finish them, or call ${END_SECRET_CAPTURE_TOOL}.`,
 			);
 		const channel: SecretCaptureChannel =
-			requested === "loopback-page"
-				? "loopback-page"
-				: support.apps
-					? "mcp-app"
-					: support.urlElicitation
-						? "url-elicitation"
-						: "loopback-page";
+			support.apps && requested === "auto"
+				? "mcp-app"
+				: options.remote === true
+					? // A page on this box's 127.0.0.1 never reaches a remote owner.
+						support.formElicitation && options.elicit !== undefined
+						? "form-elicitation"
+						: refuseNoForm(spec)
+					: requested === "loopback-page"
+						? "loopback-page"
+						: support.urlElicitation
+							? "url-elicitation"
+							: "loopback-page";
 		const keys = createCaptureKeyPair();
 		const opened = now();
 		const ticket: Ticket = {
@@ -581,6 +787,27 @@ export function createSecretCaptureApp(
 			attempts: 0,
 			writeStarted: false,
 		};
+		if (channel === "form-elicitation") {
+			tickets.set(ticket.id, ticket);
+			emit("secret.CaptureOpened", ticketFields(ticket));
+			// A pending link goes in the form itself: a host may show forms and
+			// no link prompt, and the owner needs the link to have anything to
+			// paste. (`linkShown` is accepted and changes nothing.)
+			const link = options.linkFor?.(spec.name);
+			const result = await askInForm(ticket, link);
+			return {
+				kind: "result",
+				result:
+					link === undefined
+						? result
+						: {
+								...result,
+								structuredContent: isJsonObject(result.structuredContent)
+									? { ...result.structuredContent, linkShownBy: "form" }
+									: result.structuredContent,
+							},
+			};
+		}
 		if (channel !== "mcp-app") {
 			const token = randomBytes(32).toString("base64url");
 			ticket.tokenDigest = digest(token);
@@ -630,7 +857,7 @@ export function createSecretCaptureApp(
 			};
 		const text =
 			ticket.channel === "mcp-app"
-				? `The owner is entering ${ticket.spec.name} in the HoBo form shown with this result. It goes straight to the secret store; you will not see it and must not ask for it. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`
+				? `The owner is entering ${ticket.spec.name} in the HoBo form shown with this result. It goes straight to ${ticket.spec.target === "handoff" ? "the run waiting for it, in memory" : "the secret store"}; you will not see it and must not ask for it. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`
 				: `Ask the owner to open ${ticket.url ?? ""} in their own browser on this machine and enter ${ticket.spec.name} there. Do not open, fetch or submit that page yourself, and never ask for the value in the chat. When the owner says it is done, call ${SECRET_CAPTURE_STATUS_TOOL} with ticketId ${ticket.id}.`;
 		return {
 			kind: "result",
@@ -705,6 +932,14 @@ export function createSecretCaptureApp(
 						);
 			return failed(ticket, refusal, "secret.CaptureRejected", refusal.code);
 		}
+		return deliver(ticket, secret);
+	}
+
+	/** A captured value to where its spec sends it: the run, the store, or the writer session. */
+	async function deliver(
+		ticket: Ticket,
+		secret: CapturedSecret,
+	): Promise<SecretCaptureToolResult> {
 		let ref: string;
 		let state: "stored" | "authorized";
 		if (ticket.spec.target !== "writer") {
@@ -726,7 +961,14 @@ export function createSecretCaptureApp(
 				}));
 				state = "authorized";
 			} else {
-				({ ref } = await options.connector.store(ticket.spec.target, secret));
+				const refusal = await refuseIfNotWritable(ticket.spec);
+				if (refusal !== undefined)
+					return failed(ticket, refusal, "secret.CaptureRefused", refusal.code);
+				if (ticket.spec.target === "handoff") {
+					await options.handoff?.(secret);
+					ref = `handoff://${ticket.spec.name}`;
+				} else
+					({ ref } = await options.connector.store(ticket.spec.target, secret));
 				state = "stored";
 			}
 			if (!STORE_REF.test(ref) || secret.isContainedIn(ref))
@@ -960,6 +1202,11 @@ export function createSecretCaptureApp(
 							description:
 								"Open a new capture even if this name was just stored.",
 						},
+						linkShown: {
+							type: "boolean",
+							description:
+								"Not needed: a pending link is shown in the form itself. Accepted for older agents; changes nothing.",
+						},
 					},
 					required: ["name"],
 					additionalProperties: false,
@@ -1101,7 +1348,7 @@ export function createSecretCaptureApp(
 					};
 				}
 			}
-			return outcome;
+			return withHostSupport(tool, outcome, support);
 		},
 		events() {
 			return [...log];

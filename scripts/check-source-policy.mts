@@ -114,6 +114,30 @@ function diffArgs(mode: Mode): string[] {
 	return ["diff", mergeBase, "HEAD"];
 }
 
+function mergeParentDiffs(mode: Mode): string[][] {
+	if (mode.kind !== "staged") return [];
+	const path = git(["rev-parse", "--git-path", "MERGE_HEAD"]).trim();
+	let contents: string;
+	try {
+		contents = readFileSync(path, "utf8");
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT")
+			return [];
+		throw error;
+	}
+	const heads = contents.split("\n").filter(Boolean);
+	if (heads.length === 0) throw new Error("MERGE_HEAD is empty");
+	return heads.map((head) => {
+		const commit = git([
+			"rev-parse",
+			"--verify",
+			"--end-of-options",
+			`${head}^{commit}`,
+		]).trim();
+		return ["diff", "--cached", commit];
+	});
+}
+
 function names(args: string[], filter: string): string[] {
 	return git([
 		...args,
@@ -854,17 +878,17 @@ export function commentViolations(
 	file: string,
 	text: string,
 	added: Set<number>,
+	parentAdditions: readonly Set<number>[] = [],
 ): Violation[] {
 	return commentLocations(file, text).flatMap((comment) => {
 		const { first, last } = comment;
-		let intersects = false;
-		for (let line = first; line <= last; line++) {
-			if (added.has(line)) {
-				intersects = true;
-				break;
+		const intersects = (lines: Set<number>) => {
+			for (let line = first; line <= last; line++) {
+				if (lines.has(line)) return true;
 			}
-		}
-		if (!intersects) return [];
+			return false;
+		};
+		if (!intersects(added) || !parentAdditions.every(intersects)) return [];
 		const message = commentMessage(comment.text, first);
 		return message ? [{ file, line: first, message }] : [];
 	});
@@ -1277,6 +1301,12 @@ export function proofArtifactViolations(
 export function checkSourcePolicy(mode: Mode): Violation[] {
 	const args = diffArgs(mode);
 	const untracked = untrackedFiles(mode);
+	const parents = mergeParentDiffs(mode).map((parentArgs) => ({
+		args: parentArgs,
+		files: new Set(names(parentArgs, "ACMRT")),
+	}));
+	const changedFromEveryParent = (file: string) =>
+		parents.every((parent) => parent.files.has(file));
 	const files = [...new Set([...names(args, "ACMRT"), ...untracked])];
 	const violations: Violation[] = [];
 	const gitlinks = submodules(mode);
@@ -1291,7 +1321,11 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 			const text = contents(mode, file);
 			const added = changedLines(args, file, text, untracked.includes(file));
 			const reason = documentViolation(file, text);
-			if (reason && (untracked.includes(file) || added.size > 0)) {
+			if (
+				reason &&
+				changedFromEveryParent(file) &&
+				(untracked.includes(file) || added.size > 0)
+			) {
 				violations.push({ file, line: 1, message: reason });
 			}
 		}
@@ -1343,7 +1377,12 @@ export function checkSourcePolicy(mode: Mode): Violation[] {
 		)
 			continue;
 		const added = changedLines(args, file, text, untracked.includes(file));
-		violations.push(...commentViolations(file, text, added));
+		const parentAdditions = parents.map((parent) =>
+			parent.files.has(file)
+				? changedLines(parent.args, file, text, false)
+				: new Set<number>(),
+		);
+		violations.push(...commentViolations(file, text, added, parentAdditions));
 	}
 	return violations;
 }

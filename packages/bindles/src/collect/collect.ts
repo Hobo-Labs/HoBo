@@ -35,6 +35,7 @@ export interface CollectionContext {
 			env?: Readonly<Record<string, string>>;
 			connectionString?: string;
 			endpoints?: JsonObject;
+			annotations?: JsonObject;
 		},
 	): ResourceHandle;
 	cache(

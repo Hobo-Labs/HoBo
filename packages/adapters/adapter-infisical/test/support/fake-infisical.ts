@@ -39,7 +39,13 @@ export type FakeResponse = {
 type Access = "read" | "write" | "write-only";
 
 type Identity =
-	| { kind: "oidc"; identityId: string; jwt: string; access: Access }
+	| {
+			kind: "oidc";
+			identityId: string;
+			jwt: string;
+			access: Access;
+			projects?: Readonly<Record<string, string>>;
+	  }
 	| {
 			kind: "universal-auth";
 			clientId: string;
@@ -145,7 +151,7 @@ function record<T>(read: () => T): T | undefined {
 
 export function createFakeInfisical(): FakeInfisical {
 	const identities: Identity[] = [];
-	const tokens = new Map<string, Access>();
+	const tokens = new Map<string, { access: Access; identityId?: string }>();
 	const issuedTokens: string[] = [];
 	const store = new Map<string, Map<string, Stored>>();
 	const faults: { fault: Fault; remaining: number }[] = [];
@@ -162,10 +168,15 @@ export function createFakeInfisical(): FakeInfisical {
 		return entries;
 	}
 
-	function issue(access: Access, expiresIn: number): FakeResponse {
+	function issue(
+		access: Access,
+		expiresIn: number,
+		identityId?: string,
+	): FakeResponse {
 		const token =
 			fake.nextTokens.shift() ?? `fake-at-${randomBytes(12).toString("hex")}`;
-		tokens.set(token, access);
+		if (identityId === undefined) tokens.set(token, { access });
+		else tokens.set(token, { access, identityId });
 		issuedTokens.push(token);
 		return json({
 			accessToken: token,
@@ -216,7 +227,7 @@ export function createFakeInfisical(): FakeInfisical {
 			);
 			if (identity?.kind !== "oidc" || identity.jwt !== presented?.jwt)
 				return error(401, "Access denied: OIDC claims not allowed");
-			return issue(identity.access, fake.expiresIn);
+			return issue(identity.access, fake.expiresIn, identity.identityId);
 		}
 		const presented = record(() =>
 			fromJson(InfisicalUniversalAuthLoginRequestSchema, body),
@@ -309,11 +320,11 @@ export function createFakeInfisical(): FakeInfisical {
 		expiresIn: 7200,
 		nextTokens: [],
 		grant(token, access) {
-			tokens.set(token, access);
+			tokens.set(token, { access });
 		},
 		tokenFor(access) {
 			const token = `fake-at-${access}-${randomBytes(6).toString("hex")}`;
-			tokens.set(token, access);
+			tokens.set(token, { access });
 			issuedTokens.push(token);
 			return token;
 		},
@@ -369,12 +380,38 @@ export function createFakeInfisical(): FakeInfisical {
 				revokedTokens.push(presented.accessToken);
 				return json({ message: "Successfully revoked access token" });
 			}
-			if (!url.pathname.startsWith("/api/v4/secrets"))
-				return error(404, "Route not found");
 			const token = /^Bearer (.+)$/u.exec(authorization)?.[1];
 			const access = token === undefined ? undefined : tokens.get(token);
+			const memberships = /^\/api\/v1\/projects\/([^/]+)\/identities$/u.exec(
+				url.pathname,
+			);
+			if (request.method === "GET" && memberships) {
+				if (access === undefined) return error(401, "Token expired or invalid");
+				const projectId = decodeURIComponent(memberships[1] ?? "");
+				return json({
+					identityMemberships: identities.flatMap((identity) =>
+						identity.kind !== "oidc" ||
+						identity.identityId !== access.identityId ||
+						identity.projects?.[projectId] === undefined
+							? []
+							: [
+									{
+										identityId: identity.identityId,
+										roles: [{ role: identity.projects[projectId] }],
+										identity: {
+											id: identity.identityId,
+											name: identity.identityId,
+											projectId,
+										},
+									},
+								],
+					),
+				});
+			}
+			if (!url.pathname.startsWith("/api/v4/secrets"))
+				return error(404, "Route not found");
 			if (access === undefined) return error(401, "Token expired or invalid");
-			return secrets(request, url, access);
+			return secrets(request, url, access.access);
 		},
 		async listen() {
 			const server: Server = createServer((incoming, outgoing) => {

@@ -187,6 +187,7 @@ message IacProgram {
   string action = 6;
   string stack_name = 7;
   ResourcePlan resource = 8;
+  optional string operation_generation = 9;
 }
 
 message ScopedCredential {
@@ -218,6 +219,9 @@ message ExecFailedRecord {
   string exec_id = 1;
   string classification = 2;
   string reason = 3;
+  optional bool requires_reconciliation = 4;
+  optional string reservation_id = 5;
+  optional string reconciliation_operation = 6; // "preview" | "apply" | "destroy"
 }
 
 message ResourceActorSnapshot {
@@ -237,6 +241,7 @@ message ResourceProvisioningRecord {
   string program_hash = 4;
   string spec_hash = 5;
   string provider_id = 6;
+  optional string operation_generation = 7;
 }
 
 message ResourceProvisionedRecord {
@@ -253,6 +258,28 @@ message ResourceFailedRecord {
   string reason = 3;
   string classification = 4;
   bool crossed_no_go_threshold = 5;
+  optional bool requires_reconciliation = 6;
+  optional string reservation_id = 7;
+  optional string reconciliation_operation = 8; // "apply" | "destroy"
+}
+
+// A host has verified the exact provider outcome and financial disposition.
+message ResourceReconciledRecord {
+  string deployment_id = 1;
+  string resource_id = 2;
+  string failure_event_id = 3;
+  string operation = 4;             // "apply" | "destroy"
+  string outcome = 5;               // "applied" | "destroyed" | "no-effect"
+  string evidence_ref = 6;
+  string financial_evidence_ref = 7;
+  string financial_disposition = 8; // "none" | "held" | "settled" | "released"
+  optional string reservation_id = 9;
+  string claim_digest = 10;
+  map<string, string> outputs = 11;
+  optional string exec_id = 12;
+  optional string spec_hash = 13;
+  optional string final_state_hash = 14;
+  optional string restored_state = 15; // "provisioned" | "destroyed" | "failed" after no-effect
 }
 
 message ResourceCompensationFailedData {
@@ -277,6 +304,9 @@ message ResourceDestroyingRecord {
   string deployment_id = 1;
   string resource_id = 2;
   string reason = 3;
+  optional string operation_generation = 4;
+  optional string program_hash = 5;
+  optional string spec_hash = 6;
 }
 
 message ResourceDestroyedRecord {
@@ -298,6 +328,28 @@ message DeploymentRollbackStartedData {
 
 message DeploymentRolledBackRecord {
   string deployment_id = 1;
+}
+
+message DeploymentTransitionRecord {
+  string deployment_id = 1;
+  string transition_id = 2;
+  string kind = 3;
+  string plan_hash = 4;
+  repeated string resource_ids = 5;
+  optional string trigger_resource = 6;
+  optional string reason = 7;
+}
+
+message ReopenedResource {
+  string resource_id = 1;
+  string spec_hash = 2;
+}
+
+message DeploymentReopenedRecord {
+  string deployment_id = 1;
+  string rollback_event_id = 2;
+  string plan_hash = 3;
+  repeated ReopenedResource resources = 4;
 }
 
 
@@ -422,6 +474,8 @@ message TopologyNode {
   string provider_id = 5;
   string region = 6;
   string lifecycle = 7;
+  optional string reconciliation_event_id = 8;
+  repeated string other_reconciliation_event_ids = 9;
 }
 
 message TopologyEdge {

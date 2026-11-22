@@ -1,28 +1,46 @@
 # `@hobo/runtime-rivet`
 
-Optional **Camp runtime** realizing HoBo `actor()` / `agent()` grains on a
-HoBo-owned **actor-local journal**. Rivet is a resolver, not a topology noun
-and not an authoring model.
+Optional **Camp runtime** with a HoBo-owned local journal and Rivet-compatible
+actor keys. The current host is a local oracle; it does not place actors in a
+Rivet engine.
 
 | HoBo contract | Realization |
 |---|---|
-| `ActorHost` / `defineActor` | Rivet placement + compound key |
-| Event facts | `hobo_events` + stream-head CAS in actor SQLite |
+| `ActorHost` / `defineActor` | Local host + Rivet-compatible compound key |
+| Event facts | `hobo_events` + stream-head CAS in local SQLite |
 | Durable mailbox | action-first `hobo_inbox` (not raw Rivet queue) |
 | Effects | `hobo_outbox` staged with facts; dispatch after commit |
 
-In-process wasm and native local remain the fallback. Rivet is the preferred
-resolver when matching evidence is current.
-
-Published `rivetkit` 2.3.10 `.cjs` uses `import.meta`, so `require("rivetkit")`
-throws. Adapters and CJS hosts must `await import("rivetkit")` via
-`loadRivetkit()`. Live tests fail closed: missing package, CJS load error,
-engine start failure, or a non-`pong` action is a test failure — never a skip.
+RivetKit, its WASM package, and the Rivet Engine image are pinned to 3.0.0.
+`loadRivetkit()` uses dynamic import for ESM and CommonJS hosts. The live tests
+exercise the pinned upstream engine separately from the HoBo local host, verify
+actor state across an engine restart, and fail if the engine or an actor action
+fails. Journal reopen tests cover persisted-state replay and in-flight commands.
 
 ## Fidelity
 
-- Default `local-sqlite`: `node:sqlite` behind the same journal schema Rivet `c.db` will host.
-- `rivetkit` is advertised only after a pinned package + conformance digest exist.
+- `local-sqlite` uses `node:sqlite` for the local HoBo journal.
+- `runner`, `serverless`, and `managed` modes are rejected until a Rivet-backed
+  HoBo host is implemented and verified. A local journal cannot be labeled
+  `rivetkit`.
+- The 3.0.0 pin does not migrate data from an existing Rivet 2 engine. An
+  operator must establish and verify an upstream migration before upgrading
+  an existing deployment.
+- Rivet 3 drops Rivet 2's `@secure-exec` isolate family. The local journal
+  host runs no Rivet actor code. The live fixture registers its actor action in
+  the fixture process and spawns only the engine binary separately (guard bound
+  to 127.0.0.1, admin-token auth); that process boundary is not a security
+  sandbox. Untrusted actor code requires a real sandbox before executing with
+  credentials.
+- The live fixture reserves its engine, peer, metrics and HTTP ports, then
+  re-reserves a fresh set (up to three attempts) when a reserved port is
+  stolen between reservation and bind; any other failure fails the test with
+  the captured engine log.
+- The Rivet 3.0.0 engine CLI ships platform packages for darwin (arm64, x64)
+  and linux (arm64, x64 — static musl binaries that also run on glibc hosts);
+  Rivet 2's win32 package has no 3.0.0 successor. `loadRivetkit()` and the
+  local-engine live test reject win32 before native-module loading; Windows
+  local-engine paths remain unsupported until upstream ships a binary.
 - Raw Rivet queue **receive-loss** is not HoBo at-least-once. Inbox rows are authority.
 
 ```ts

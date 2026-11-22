@@ -1,12 +1,12 @@
 {
 	"schemaVersion": "hobo.deployment-offer/v1",
-	"offerId": "offer/a15b2a84a3182c3eaf463614603bcb9750e4f567d1f972d7e883d2dd582a18ae",
+	"offerId": "offer/b49719d325bc013fd43659670bf4a6fbe6765b1061463608e5b3fe65840a41f2",
 	"recipeId": "recipe.neon.claimable-sql-sandbox/v1",
 	"deploymentRef": "junction/recipe-neon-claimable-sql-sandbox-v1",
 	"topologyDigest": "sha256:fd40788bcc973418fcfb33c4383396b5089a96b9305973e2d9f0ee8ad909e04c",
-	"resolutionDigest": "sha256:16f13739afbcc0c5ae947bca296424022626562020e2cde72516b29e9afcbb08",
+	"resolutionDigest": "sha256:2bdf99e2693e4b4a734d715e75ccdfd2ce3dd657a2670ac34fad7d5fadc335aa",
 	"catalogDigest": "sha256:891553d43ffb3f1d80a58f35c14df4500216e82df0e5f0ce617008df67f3caec",
-	"profileRegistryDigest": "sha256:69afc5e32b8e616647925b138275fe37ca310b8a3df71ba60bba85eb6bc2882e",
+	"profileRegistryDigest": "sha256:5c876e208189e2d5d7a0762708c5f59fe1ba2b7c0bb79665a79aa5eebbb029d4",
 	"placements": [
 		{
 			"placementId": "sandbox",
@@ -82,7 +82,7 @@
 	"signature": {
 		"algorithm": "test.detached-digest/v1",
 		"keyId": "test-key-1",
-		"payloadDigest": "sha256:e77583ab8cf30b1099e2e511118c62c914cd1e36e444eea81151d875d3a45e68",
-		"signature": "sig:e77583ab8cf30b10"
+		"payloadDigest": "sha256:33427ced3e577070b27b1afe6b3316507083f583ee14fee29c2d9b2c1958675c",
+		"signature": "sig:33427ced3e577070"
 	}
 }

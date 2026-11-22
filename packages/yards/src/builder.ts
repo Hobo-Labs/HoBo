@@ -327,6 +327,10 @@ class YardDraft implements YardBuilder {
 		return this.slot("webhook", ...bindings);
 	}
 
+	schedule(...bindings: SlotBinding[]): this {
+		return this.slot("schedule", ...bindings);
+	}
+
 	standardCamps(envType: EnvType, tiers?: readonly CampTier[]): this {
 		for (const built of standardCamps(
 			envType,

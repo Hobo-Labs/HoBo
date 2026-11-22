@@ -1,13 +1,16 @@
 import {
 	addDecimal,
+	type BudgetRoutingDisclosure,
 	compareDecimal,
 	DECIMAL_ZERO,
 	isQuoteVector,
 	type Money,
+	type PricingAvailability,
 	parseDecimal,
 	QuoteEngine,
 	type QuoteScenario,
 	type QuoteVector,
+	quoteAvailablePricing,
 } from "@hobo/pricing";
 
 export const PRICED_DISPATCH_SCHEMA = "hobo.dispatcher/priced";
@@ -18,11 +21,22 @@ export type PricedDispatchCategory =
 	| "build-machine"
 	| "traffic-backend";
 export type DispatchCostQuote = Omit<QuoteVector, "allocatedEffective">;
+export type DispatchBudgetDisclosure = Readonly<
+	Omit<BudgetRoutingDisclosure, "$typeName" | "evaluation" | "reservation"> & {
+		evaluation: "not-evaluated";
+		reservation: "not-created";
+	}
+>;
 
-export interface PricedDispatchCandidate {
-	providerId: string;
-	scenario: QuoteScenario;
-}
+const BUDGET_DISCLOSURE: DispatchBudgetDisclosure = Object.freeze({
+	evaluation: "not-evaluated",
+	reservation: "not-created",
+});
+
+export type PricedDispatchCandidate = { providerId: string } & (
+	| { scenario: QuoteScenario; pricing?: never }
+	| { pricing: PricingAvailability; scenario?: never }
+);
 
 export interface PricedDispatchRequest {
 	dispatchId: string;
@@ -42,6 +56,11 @@ export interface PricedDispatchRanking {
 	rank: number;
 	incrementalBilled: Money;
 	quote: DispatchCostQuote;
+	pricingModel?: {
+		source: "developer-supplied";
+		modelId: string;
+		revision: string;
+	};
 }
 
 export interface PricedDispatchEventRanking {
@@ -56,6 +75,7 @@ export type PricedDispatchDecision =
 			ok: true;
 			schema: typeof PRICED_DISPATCH_SCHEMA;
 			objective: typeof PRICED_DISPATCH_OBJECTIVE;
+			budget: DispatchBudgetDisclosure;
 			selectedProvider: string;
 			ranking: PricedDispatchRanking[];
 			rejectedCandidates: PricedDispatchRejection[];
@@ -66,6 +86,7 @@ export type PricedDispatchDecision =
 					category: PricedDispatchCategory;
 					schema: typeof PRICED_DISPATCH_SCHEMA;
 					objective: typeof PRICED_DISPATCH_OBJECTIVE;
+					budget: DispatchBudgetDisclosure;
 					selectedProvider: string;
 					ranking: PricedDispatchEventRanking[];
 					rejectedCandidates: PricedDispatchRejection[];
@@ -76,6 +97,7 @@ export type PricedDispatchDecision =
 			ok: false;
 			schema: typeof PRICED_DISPATCH_SCHEMA;
 			objective: typeof PRICED_DISPATCH_OBJECTIVE;
+			budget: DispatchBudgetDisclosure;
 			reason: string;
 			ranking: [];
 			rejectedCandidates: PricedDispatchRejection[];
@@ -148,9 +170,63 @@ export function decidePricedDispatch(
 		candidate: PricedDispatchCandidate;
 		quote: QuoteVector;
 		incrementalBilled: Money;
+		pricingModel?: PricedDispatchRanking["pricingModel"];
 	}[] = [];
 	for (const candidate of candidates) {
-		const result = QuoteEngine.quote(candidate.scenario);
+		if (candidate.pricing !== undefined && candidate.scenario !== undefined) {
+			rejectedCandidates.push(
+				reject(
+					candidate,
+					"PRICING_MODEL_INVALID",
+					"declare one pricing source",
+				),
+			);
+			continue;
+		}
+		let result: ReturnType<typeof QuoteEngine.quote>;
+		let pricingModel: PricedDispatchRanking["pricingModel"];
+		if (candidate.pricing !== undefined) {
+			const available = quoteAvailablePricing(
+				candidate.providerId,
+				candidate.pricing,
+			);
+			if (available.ok === false) {
+				rejectedCandidates.push(
+					reject(candidate, available.code, available.reason),
+				);
+				continue;
+			}
+			result = available.quote;
+			pricingModel = {
+				source: available.source,
+				modelId: available.modelId,
+				revision: available.revision,
+			};
+		} else if (candidate.scenario !== undefined) {
+			if (
+				candidate.scenario.state?.completeness !== "complete" ||
+				candidate.scenario.options?.allowPartialFinancialState
+			) {
+				rejectedCandidates.push(
+					reject(
+						candidate,
+						"INCOMPLETE_FINANCIAL_STATE",
+						"a complete financial state is required for routing",
+					),
+				);
+				continue;
+			}
+			result = QuoteEngine.quote(candidate.scenario);
+		} else {
+			rejectedCandidates.push(
+				reject(
+					candidate,
+					"PRICING_MODEL_UNAVAILABLE",
+					"pricing availability was not declared",
+				),
+			);
+			continue;
+		}
 		if (!isQuoteVector(result)) {
 			rejectedCandidates.push(reject(candidate, result.code, result.message));
 			continue;
@@ -173,7 +249,13 @@ export function decidePricedDispatch(
 			);
 			continue;
 		}
-		priced.push({ candidate, quote: result, incrementalBilled: billed });
+		const entry: (typeof priced)[number] = {
+			candidate,
+			quote: result,
+			incrementalBilled: billed,
+		};
+		if (pricingModel !== undefined) entry.pricingModel = pricingModel;
+		priced.push(entry);
 	}
 
 	const currency = priced[0]?.incrementalBilled.currency;
@@ -205,12 +287,17 @@ export function decidePricedDispatch(
 		if (leftExpiry !== rightExpiry) return leftExpiry - rightExpiry;
 		return left.candidate.providerId.localeCompare(right.candidate.providerId);
 	});
-	const ranking = comparable.map((entry, index) => ({
-		providerId: entry.candidate.providerId,
-		rank: index + 1,
-		incrementalBilled: entry.incrementalBilled,
-		quote: withoutAllocatedEffective(entry.quote),
-	}));
+	const ranking = comparable.map((entry, index) => {
+		const ranked: PricedDispatchRanking = {
+			providerId: entry.candidate.providerId,
+			rank: index + 1,
+			incrementalBilled: entry.incrementalBilled,
+			quote: withoutAllocatedEffective(entry.quote),
+		};
+		if (entry.pricingModel !== undefined)
+			ranked.pricingModel = entry.pricingModel;
+		return ranked;
+	});
 	rejectedCandidates.sort((left, right) =>
 		left.providerId.localeCompare(right.providerId),
 	);
@@ -220,6 +307,7 @@ export function decidePricedDispatch(
 			ok: false,
 			schema: PRICED_DISPATCH_SCHEMA,
 			objective,
+			budget: BUDGET_DISCLOSURE,
 			reason:
 				candidates.length === 0
 					? "no dispatch candidates"
@@ -232,6 +320,7 @@ export function decidePricedDispatch(
 		ok: true,
 		schema: PRICED_DISPATCH_SCHEMA,
 		objective,
+		budget: BUDGET_DISCLOSURE,
 		selectedProvider: winner.providerId,
 		ranking,
 		rejectedCandidates,
@@ -242,6 +331,7 @@ export function decidePricedDispatch(
 				category: request.category,
 				schema: PRICED_DISPATCH_SCHEMA,
 				objective,
+				budget: BUDGET_DISCLOSURE,
 				selectedProvider: winner.providerId,
 				ranking: ranking.map((entry) => ({
 					providerId: entry.providerId,

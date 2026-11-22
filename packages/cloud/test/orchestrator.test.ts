@@ -16,6 +16,7 @@ import {
 	credentialAuditProjection,
 	type DeploymentPlan,
 	deploymentViewProjection,
+	destroyResource,
 	type Executor,
 	foldResourceActor,
 	type IacProgram,
@@ -24,7 +25,9 @@ import {
 	type ResourcePlan,
 	reconcileResource,
 	resourceActorKey,
+	runCompensation,
 	runOrchestrator,
+	topologyViewProjection,
 } from "../src/index.js";
 import { isJsonObject, isJsonString } from "../src/json.js";
 
@@ -67,7 +70,10 @@ function mockIac(opts: { failApply?: string[] } = {}): IacProvider {
 		},
 		async apply(program) {
 			if (fail.has(program.resourceId))
-				throw new Error(`apply failed for ${program.resourceId}`);
+				throw Object.assign(
+					new Error(`apply failed for ${program.resourceId}`),
+					{ requiresReconciliation: false, executionOutcome: "not-started" },
+				);
 			return { endpoint: `${program.resourceId}.local` };
 		},
 		async destroy() {
@@ -307,6 +313,7 @@ describe("Orchestrator crash-resume: replay the durable log to Deployed", () => 
 			actorHost: createInMemoryActorHost(),
 			executor: createInProcessExecutor({ iac: mockIac() }),
 			broker: createInProcessCredentialBroker(),
+			verifyResume: async () => true,
 		};
 		const resumed = await runOrchestrator(deps2, plan, "shop-crash", {
 			tenant,
@@ -333,6 +340,274 @@ describe("Orchestrator crash-resume: replay the durable log to Deployed", () => 
 });
 
 describe("Orchestrator compensation: choreographed reverse-dependency rollback", () => {
+	it("durably pauses an uncertain apply without retry or compensation", async () => {
+		const iac = mockIac();
+		const apply = iac.apply.bind(iac);
+		let uncertainCalls = 0;
+		let destroys = 0;
+		iac.apply = async (program) => {
+			if (program.resourceId === "web") {
+				uncertainCalls++;
+				throw Object.assign(new Error("reconciliation required"), {
+					requiresReconciliation: true,
+					reservationId: "iac:reservation-1",
+				});
+			}
+			return apply(program);
+		};
+		iac.destroy = async () => {
+			destroys++;
+		};
+		const deps = makeDeps(createInProcessExecutor({ iac }));
+		const plan = loadPlan();
+		const context = { tenant, actor, noGoThresholdResources: new Set(["web"]) };
+		const first = await runOrchestrator(deps, plan, "shop-uncertain", context);
+		expect(first.status).toBe("needs-human");
+		expect(
+			first.events.find((event) => event.type === "resource.Failed")?.data,
+		).toMatchObject({
+			resourceId: "web",
+			requiresReconciliation: true,
+			reservationId: "iac:reservation-1",
+			reconciliationOperation: "apply",
+			crossedNoGoThreshold: false,
+		});
+		expect(first.events.map((event) => event.type)).not.toContain(
+			"deployment.RolledBack",
+		);
+		const projection = await deploymentViewProjection.rebuildFromZero(
+			deps.store,
+			"deployment:shop-uncertain",
+		);
+		expect(
+			deploymentViewProjection.get(projection, "shop-uncertain"),
+		).toMatchObject({
+			status: "needs-human",
+			resources: { web: "reconciliation-required" },
+			reconciliations: {
+				web: {
+					reason: expect.stringContaining("reconciliation required"),
+					reservationId: "iac:reservation-1",
+					operation: "apply",
+				},
+			},
+		});
+		const topology = await topologyViewProjection.rebuildFromZero(
+			deps.store,
+			"deployment:shop-uncertain",
+		);
+		expect(
+			topologyViewProjection.get(topology, "shop-uncertain")?.nodes,
+		).toContainEqual(
+			expect.objectContaining({
+				id: "resource:web",
+				lifecycle: "reconciliation-required",
+			}),
+		);
+		expect(destroys).toBe(0);
+		const repeated = await runOrchestrator(
+			deps,
+			plan,
+			"shop-uncertain",
+			context,
+		);
+		expect(repeated.status).toBe("needs-human");
+		expect(repeated.events).toHaveLength(first.events.length);
+		expect(uncertainCalls).toBe(1);
+		expect(destroys).toBe(0);
+		const web = plan.resources.find((resource) => resource.name === "web");
+		if (web === undefined) throw new Error("web resource missing");
+		const lastEvent = first.events.at(-1);
+		if (lastEvent === undefined) throw new Error("events missing");
+		for (const type of [
+			"resource.Provisioning",
+			"resource.Destroying",
+			"resource.Failed",
+		]) {
+			const later = {
+				...lastEvent,
+				seq: lastEvent.seq + 1,
+				type,
+				data: { deploymentId: "shop-uncertain", resourceId: "web" },
+			};
+			const history = [...first.events, later];
+			expect(
+				foldResourceActor(history, {
+					...web,
+					deploymentId: "shop-uncertain",
+				}).state,
+			).toBe("ReconciliationRequired");
+			expect(
+				deploymentViewProjection.get(
+					deploymentViewProjection.fold(history),
+					"shop-uncertain",
+				),
+			).toMatchObject({
+				status: "needs-human",
+				resources: { web: "reconciliation-required" },
+			});
+			expect(
+				topologyViewProjection.get(
+					topologyViewProjection.fold(history),
+					"shop-uncertain",
+				)?.nodes,
+			).toContainEqual(
+				expect.objectContaining({
+					id: "resource:web",
+					lifecycle: "reconciliation-required",
+				}),
+			);
+		}
+		const deploymentFacts = [
+			{
+				type: "deployment.Requested",
+				data: { deploymentId: "shop-uncertain", bindleHash: "new" },
+			},
+			{
+				type: "deployment.Imported",
+				data: {
+					deploymentId: "shop-uncertain",
+					bindleHash: "new",
+					resources: ["web"],
+				},
+			},
+			{
+				type: "deployment.Planned",
+				data: { deploymentId: "shop-uncertain", planHash: "new", plan },
+			},
+			{
+				type: "deployment.PlanRejected",
+				data: {
+					deploymentId: "shop-uncertain",
+					reason: "rejected",
+					remediations: [],
+				},
+			},
+		];
+		for (const fact of deploymentFacts) {
+			const history = [
+				...first.events,
+				{ ...lastEvent, ...fact, seq: lastEvent.seq + 1 },
+			];
+			expect(
+				deploymentViewProjection.get(
+					deploymentViewProjection.fold(history),
+					"shop-uncertain",
+				),
+			).toMatchObject({
+				status: "needs-human",
+				resources: { web: "reconciliation-required" },
+			});
+			expect(
+				topologyViewProjection.get(
+					topologyViewProjection.fold(history),
+					"shop-uncertain",
+				)?.nodes,
+			).toContainEqual(
+				expect.objectContaining({
+					id: "resource:web",
+					lifecycle: "reconciliation-required",
+				}),
+			);
+		}
+		const direct = await reconcileResource(deps, web, {
+			deploymentId: "shop-uncertain",
+			tenant,
+			actor,
+		});
+		expect(direct).toMatchObject({
+			kind: "reconciliation-required",
+			snapshot: { state: "ReconciliationRequired" },
+		});
+		expect(uncertainCalls).toBe(1);
+		const destroy = await destroyResource(deps, web, {
+			deploymentId: "shop-uncertain",
+			tenant,
+			actor,
+		});
+		expect(destroy).toMatchObject({
+			kind: "failed",
+			snapshot: { state: "ReconciliationRequired" },
+		});
+		const compensation = await runCompensation(
+			deps,
+			plan,
+			"shop-uncertain",
+			{ resourceId: "web", reason: "manual" },
+			{ tenant, actor },
+		);
+		expect(compensation.status).toBe("needs-human");
+		expect(compensation.events.map((event) => event.type)).not.toContain(
+			"deployment.RolledBack",
+		);
+		const revisedPlan = {
+			...plan,
+			resources: plan.resources.filter((resource) => resource.name !== "web"),
+			dependencyOrder: plan.dependencyOrder.filter((name) => name !== "web"),
+		};
+		const revised = await runOrchestrator(
+			deps,
+			revisedPlan,
+			"shop-uncertain",
+			context,
+		);
+		expect(revised.status).toBe("needs-human");
+		expect(revised.events).toHaveLength(first.events.length);
+		const revisedCompensation = await runCompensation(
+			deps,
+			revisedPlan,
+			"shop-uncertain",
+			{ resourceId: "web", reason: "manual" },
+			{ tenant, actor },
+		);
+		expect(revisedCompensation.status).toBe("needs-human");
+		expect(revisedCompensation.events.map((event) => event.type)).not.toContain(
+			"deployment.RolledBack",
+		);
+		expect(destroys).toBe(0);
+	});
+
+	it("durably blocks another destroy after its outcome becomes unknown", async () => {
+		const iac = mockIac();
+		let destroys = 0;
+		iac.destroy = async () => {
+			destroys++;
+			throw Object.assign(new Error("destroy outcome unknown"), {
+				requiresReconciliation: true,
+				reservationId: "iac:destroy-1",
+			});
+		};
+		const deps = makeDeps(createInProcessExecutor({ iac }));
+		const resource: ResourcePlan = {
+			name: "network",
+			port: "network",
+			provider: "local",
+			deps: [],
+		};
+		const context = { deploymentId: "unknown-destroy", tenant, actor };
+		expect((await reconcileResource(deps, resource, context)).kind).toBe(
+			"provisioned",
+		);
+		const first = await destroyResource(deps, resource, context);
+		expect(first).toMatchObject({
+			kind: "failed",
+			snapshot: { state: "ReconciliationRequired" },
+		});
+		const events = await drain(deps.store, "deployment:unknown-destroy");
+		expect(
+			events.find((event) => event.type === "resource.Failed")?.data,
+		).toMatchObject({
+			requiresReconciliation: true,
+			reservationId: "iac:destroy-1",
+			crossedNoGoThreshold: false,
+			reconciliationOperation: "destroy",
+		});
+		expect((await destroyResource(deps, resource, context)).kind).toBe(
+			"failed",
+		);
+		expect(destroys).toBe(1);
+	});
+
 	it("rolls back and destroys provisioned actors in reverse-dependency order", async () => {
 		const deps = makeDeps(
 			createInProcessExecutor({ iac: mockIac({ failApply: ["web"] }) }),
@@ -364,6 +639,9 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(rolledBackIdx).toBeGreaterThan(
 			types.lastIndexOf("resource.Destroyed"),
 		);
+		expect(types.indexOf("deployment.TransitionStarted")).toBeLessThan(
+			firstDestroyIdx,
+		);
 
 		const destroyed = events
 			.filter((e) => e.type === "resource.Destroyed")
@@ -382,5 +660,42 @@ describe("Orchestrator compensation: choreographed reverse-dependency rollback",
 		expect(row?.status).toBe("rolled-back");
 		expect(row?.resources.web).toBe("failed");
 		expect(row?.resources.network).toBe("destroyed");
+	});
+
+	it("resumes a destroy interrupted during compensation with the same generation", async () => {
+		const plan = loadPlan();
+		const resource = plan.resources.find((item) => item.name === "network");
+		if (!resource) throw new Error("network resource missing");
+		const inner = createInProcessExecutor({ iac: mockIac() });
+		const observed: (string | undefined)[] = [];
+		let crash = true;
+		const executor: Executor = {
+			async run(program, credential, options) {
+				if (program.action === "destroy") {
+					observed.push(program.operationGeneration);
+					if (crash) {
+						crash = false;
+						throw new Error("destroy interrupted");
+					}
+				}
+				return inner.run(program, credential, options);
+			},
+		};
+		const deps = { ...makeDeps(executor), verifyResume: async () => true };
+		const context = { deploymentId: "compensation-resume", tenant, actor };
+		await reconcileResource(deps, resource, context);
+		const compensate = () =>
+			runCompensation(
+				deps,
+				plan,
+				context.deploymentId,
+				{ resourceId: "web", reason: "failure" },
+				{ tenant, actor },
+			);
+		await expect(compensate()).rejects.toThrow("destroy interrupted");
+		expect((await compensate()).destroyedOrder).toContain("network");
+		expect(observed).toHaveLength(2);
+		expect(observed[0]).toEqual(expect.any(String));
+		expect(observed[1]).toBe(observed[0]);
 	});
 });

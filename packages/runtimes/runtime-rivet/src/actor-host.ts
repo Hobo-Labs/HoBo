@@ -20,6 +20,7 @@ import {
 	parseJsonValue,
 } from "./json.js";
 import type { RivetOutboxEffectInput } from "./outbox.js";
+import { parseRivetActorFidelity } from "./parse.js";
 import {
 	type AcceptCommandResult,
 	type InboxCommand,
@@ -34,7 +35,7 @@ export type RivetActorStateHandle<S> = ActorStateHandle<S>;
 
 export interface RivetActorHost extends ActorHost {
 	readonly placementMode: "rivet";
-	readonly fidelity: "local-sqlite" | "rivetkit";
+	readonly fidelity: "local-sqlite";
 	acquire(key: string, request: { holderId: string }): RivetActorLease;
 	accept(input: {
 		identity: JsonValue;
@@ -154,11 +155,12 @@ function rejectStaleCommand(
 
 export function createRivetActorHost(options: {
 	journal: ActorLocalJournal;
-	fidelity?: "local-sqlite" | "rivetkit";
+	fidelity?: "local-sqlite";
 	tenantId?: string;
 	nowMs?: () => number;
 	leaseTtlMs?: number;
 }): RivetActorHost {
+	parseRivetActorFidelity(options.fidelity);
 	const leases = new Map<
 		string,
 		{ lease: RivetActorLease; holderId: string; fenceToken: bigint }
@@ -180,7 +182,7 @@ export function createRivetActorHost(options: {
 
 	return {
 		placementMode: "rivet",
-		fidelity: options.fidelity ?? "local-sqlite",
+		fidelity: "local-sqlite",
 		acquire(key, request) {
 			const streamId = stateStreamId(key);
 			const holderId = request.holderId;

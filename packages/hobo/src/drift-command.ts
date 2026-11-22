@@ -12,9 +12,11 @@ import {
 } from "@hobo/cloud";
 import type { CloudProvider, EventInput, PrincipalRef } from "@hobo/core";
 import { must } from "@hobo/core/total-access";
+import { PULUMI_STATE_PASSPHRASE_MISSING } from "@hobo/iac-pulumi";
 import { createCloudflareProvider } from "@hobo/provider-cloudflare";
 import type { CloudflareFetch } from "./cloudflare-client.js";
 import {
+	deployEnvironment,
 	type EstateResourceState,
 	readPulumiEstate,
 	selectIacProvider,
@@ -27,6 +29,8 @@ import type { VercelFetch } from "./vercel-client.js";
 export interface DriftCommandDeps {
 	readonly runtime?: YardRuntime;
 	readonly providers?: readonly CloudProvider[];
+	// Explicit environment snapshot for tests or an embedding host. Without one,
+	// use the same filtered process environment as the composed `hobo up`.
 	readonly env?: Record<string, string | undefined>;
 	readonly adapter?: PulumiAutomationAdapter;
 	readonly vercelFetch?: VercelFetch;
@@ -66,7 +70,7 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 				};
 			}
 
-			const env = deps.env ?? process.env;
+			const env = deployEnvironment(deps.env);
 			const target = describeDeployTarget(env);
 			const backend =
 				env.HOBO_PULUMI_LIVE === "1" ? "pulumi-live" : target.backend;
@@ -124,9 +128,14 @@ export function createDriftCommand(deps: DriftCommandDeps = {}): CommandModule {
 						status: "backend_unavailable",
 						code: "HOBO_PULUMI_UNAVAILABLE",
 						message: `hobo drift: the live Pulumi backend is unavailable — ${error.message}`,
-						remediation: [
-							"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",
-						],
+						remediation:
+							error.code === PULUMI_STATE_PASSPHRASE_MISSING
+								? [
+										"Keep the passphrase this retained workspace was made with in your secret store as HOBO_PULUMI_STATE_PASSPHRASE; hobo reads it from there (PULUMI_CONFIG_PASSPHRASE in the environment is not read).",
+									]
+								: [
+										"Install the pinned pulumi CLI (or unset HOBO_PULUMI_LIVE to use the in-memory lane).",
+									],
 						data: {
 							command: "drift",
 							backend,

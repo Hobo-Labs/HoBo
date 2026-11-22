@@ -48,6 +48,7 @@ import {
 	manifestHostingPolicy,
 	type OrchestratorDeps,
 	type OrchestratorResult,
+	type PlanBindingAuthority,
 	type PlannerRegistry,
 	type PlanRemediation,
 	type PlanResult,
@@ -75,6 +76,11 @@ export interface YardRuntime {
 	readonly hostingBudgetAuthority?: SharedHostingBudgetAuthority;
 	readonly defaultHostingBudgetId?: string;
 	readonly hostingBudgetRequired?: boolean;
+	readonly hostingPlanBinding?: (request: {
+		readonly deploymentId: string;
+		readonly bindle: ManifestV1;
+		readonly session: YardSession;
+	}) => Promise<PlanBindingAuthority>;
 	readonly delivery?: YardDelivery;
 	readonly hostingExecution?: {
 		up(request: {
@@ -87,6 +93,17 @@ export interface YardRuntime {
 			bindle: ManifestV1;
 		}): Promise<DownResult>;
 	};
+}
+
+export interface YardPreflightRuntime {
+	readonly registry: PlannerRegistry;
+	readonly hostingBudgetAuthority?: Pick<
+		SharedHostingBudgetAuthority,
+		"persistence" | "resolve"
+	>;
+	readonly defaultHostingBudgetId?: string;
+	readonly hostingBudgetRequired?: boolean;
+	readonly hostingPlanBinding?: YardRuntime["hostingPlanBinding"];
 }
 
 export interface DeployConfig {
@@ -104,6 +121,10 @@ export interface PlanRenderedSuccess {
 	readonly plan: DeploymentPlan;
 	readonly resources: DeploymentPlan["resources"];
 	readonly dependencyOrder: string[];
+	readonly resourceProviderAccounts?: readonly {
+		readonly resourceName: string;
+		readonly providerAccountId: string;
+	}[];
 }
 
 export interface PlanRenderedRejection {
@@ -119,6 +140,9 @@ export interface ProgressEvent {
 	readonly type: string;
 	readonly resourceId?: string;
 	readonly detail: string;
+	readonly reconciliation?: {
+		readonly operation: "apply" | "destroy" | "unknown";
+	};
 }
 
 export interface UpRejected {
@@ -137,6 +161,8 @@ export interface UpRealized {
 	readonly progress: ProgressEvent[];
 	readonly changes?: DeploymentChangeSet;
 	readonly pruned?: string[];
+	readonly pendingOperations?: OrchestratorResult["pendingOperations"];
+	readonly transitionBlock?: OrchestratorResult["transitionBlock"];
 }
 
 export type UpResult = UpRejected | UpRealized;
@@ -281,13 +307,36 @@ function progressFrom(events: OrchestratorResult["events"]): ProgressEvent[] {
 			resourceId?: string;
 			summary?: string;
 			reason?: string;
+			requiresReconciliation?: boolean;
+			reconciliationOperation?: string;
 		};
 		const resourceId = data.resourceId;
-		const detail = data.summary ?? data.reason ?? event.type;
+		const reconciliation: ProgressEvent["reconciliation"] =
+			data.requiresReconciliation === true
+				? {
+						operation:
+							data.reconciliationOperation === "apply" ||
+							data.reconciliationOperation === "destroy"
+								? data.reconciliationOperation
+								: ("unknown" as const),
+					}
+				: undefined;
+		const detail = reconciliation
+			? `The ${reconciliation.operation} outcome is unknown or unverified. Reconcile the provider before retrying.${data.reason ? ` ${data.reason}` : ""}`
+			: (data.summary ?? data.reason ?? event.type);
 		progress.push(
 			resourceId !== undefined
-				? { type: event.type, resourceId, detail }
-				: { type: event.type, detail },
+				? {
+						type: event.type,
+						resourceId,
+						detail,
+						...(reconciliation && { reconciliation }),
+					}
+				: {
+						type: event.type,
+						detail,
+						...(reconciliation && { reconciliation }),
+					},
 		);
 	}
 	return progress;
@@ -310,6 +359,101 @@ function planConfig(
 			: undefined),
 		...(config?.region !== undefined ? { region: config.region } : undefined),
 	};
+}
+
+// public-contract: plans with the same financial and binding authorities used for admission, without exposing the gateway, event store, broker, or provider effects.
+export async function planHostingAuthoritatively(
+	runtime: YardPreflightRuntime,
+	bindle: ManifestV1,
+	{
+		deploymentId,
+		session,
+		config,
+	}: {
+		readonly deploymentId: string;
+		readonly session: YardSession;
+		readonly config?: DeployConfig;
+	},
+): Promise<PlanRendered> {
+	const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
+	const authority = runtime.hostingBudgetAuthority;
+	if (
+		!budgetId ||
+		!authority?.resolve ||
+		authority.persistence !== "durable-cas"
+	)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "authoritative hosting budget is not configured",
+			remediations: [],
+		};
+	if (!(runtime.hostingPlanBinding instanceof Function))
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
+			remediations: [],
+		};
+	const binding = await runtime.hostingPlanBinding({
+		deploymentId,
+		bindle,
+		session,
+	});
+	if (!binding)
+		return {
+			ok: false,
+			deploymentId,
+			reason: "trusted Yard binding is not configured",
+			remediations: [],
+		};
+	const evidence = await authority.resolve({
+		budgetId,
+		tenantId: session.tenant,
+		bindle,
+		objective:
+			config?.objective ??
+			manifestHostingPolicy(bindle).budgetPolicy?.objective ??
+			"min-cost",
+	});
+	if (
+		evidence.budget.tenantId !== session.tenant ||
+		evidence.budget.budgetId !== budgetId
+	)
+		throw new Error("hosting evidence belongs to another tenant or budget");
+	const result = planDeployment(
+		bindle,
+		{
+			...planConfig(deploymentId, config),
+			hostingBudget: evidence,
+			binding,
+		},
+		runtime.registry,
+	);
+	return result.ok
+		? {
+				ok: true,
+				deploymentId,
+				planHash: result.planHash,
+				plan: result.plan,
+				resources: result.plan.resources,
+				dependencyOrder: result.plan.dependencyOrder,
+				...(result.hostingCommitment
+					? {
+							resourceProviderAccounts:
+								result.hostingCommitment.allocations.map((allocation) => ({
+									resourceName: allocation.resourceName,
+									providerAccountId: allocation.providerAccountId,
+								})),
+						}
+					: undefined),
+			}
+		: {
+				ok: false,
+				deploymentId,
+				reason: result.reason,
+				remediations: result.remediations,
+			};
 }
 
 export function createYardClient(runtime: YardRuntime): YardClient {
@@ -346,54 +490,8 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 		: undefined;
 
 	const client: YardClient = {
-		async planAuthoritatively(bindle, { deploymentId, session, config }) {
-			const budgetId = config?.budgetId ?? runtime.defaultHostingBudgetId;
-			const authority = runtime.hostingBudgetAuthority;
-			if (
-				!budgetId ||
-				!authority?.resolve ||
-				authority.persistence !== "durable-cas"
-			)
-				return {
-					ok: false,
-					deploymentId,
-					reason: "authoritative hosting budget is not configured",
-					remediations: [],
-				};
-			const evidence = await authority.resolve({
-				budgetId,
-				tenantId: session.tenant,
-				bindle,
-				objective:
-					config?.objective ??
-					manifestHostingPolicy(bindle).budgetPolicy?.objective ??
-					"min-cost",
-			});
-			if (
-				evidence.budget.tenantId !== session.tenant ||
-				evidence.budget.budgetId !== budgetId
-			)
-				throw new Error("hosting evidence belongs to another tenant or budget");
-			const result = planDeployment(
-				bindle,
-				{ ...planConfig(deploymentId, config), hostingBudget: evidence },
-				runtime.registry,
-			);
-			return result.ok
-				? {
-						ok: true,
-						deploymentId,
-						planHash: result.planHash,
-						plan: result.plan,
-						resources: result.plan.resources,
-						dependencyOrder: result.plan.dependencyOrder,
-					}
-				: {
-						ok: false,
-						deploymentId,
-						reason: result.reason,
-						remediations: result.remediations,
-					};
+		planAuthoritatively(bindle, request) {
+			return planHostingAuthoritatively(runtime, bindle, request);
 		},
 		plan(bindle, { deploymentId, config }) {
 			const result = pureplan(bindle, deploymentId, config);
@@ -539,6 +637,12 @@ export function createYardClient(runtime: YardRuntime): YardClient {
 					],
 					changes: orchestrated.changes,
 					pruned: orchestrated.pruned,
+					...(orchestrated.pendingOperations !== undefined && {
+						pendingOperations: orchestrated.pendingOperations,
+					}),
+					...(orchestrated.transitionBlock !== undefined && {
+						transitionBlock: orchestrated.transitionBlock,
+					}),
 				},
 			};
 		},

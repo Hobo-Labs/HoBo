@@ -51,7 +51,7 @@ export function gitLsFiles(patterns: string[]): string[] {
 
 export function isNodeTestSource(source: string, file = "test.ts"): boolean {
 	if (
-		!/\b(?:from\s+|require\s*\(\s*|import\s*(?:\(\s*)?)["'`]node:test["'`]/u.test(
+		!/\b(?:from\s+|require\s*\(\s*|import\s*(?:\(\s*)?)["'`](?:node:test|\.\/support\/test-runner\.ts)["'`]/u.test(
 			source,
 		)
 	)
@@ -65,7 +65,11 @@ export function isNodeTestSource(source: string, file = "test.ts"): boolean {
 		kind,
 	);
 	const namesNodeTest = (node: ts.Node | undefined) =>
-		Boolean(node && ts.isStringLiteralLike(node) && node.text === "node:test");
+		Boolean(
+			node &&
+				ts.isStringLiteralLike(node) &&
+				(node.text === "node:test" || node.text === "./support/test-runner.ts"),
+		);
 	const visit = (node: ts.Node): boolean => {
 		if (ts.isImportDeclaration(node) && namesNodeTest(node.moduleSpecifier)) {
 			const clause = node.importClause;

@@ -76,12 +76,15 @@ export function renderSuccess(input: {
 		);
 	}
 
+	const next = !envelope.ok
+		? `\n${[envelope.code, ...envelope.remediation.map((line) => `- ${line}`)].join("\n")}\n`
+		: "";
 	return okText(
 		`Command  Status
 ${input.verb.padEnd(8)} ${envelope.status}
 
 ${envelope.message}
-`,
+${next}`,
 		exitCode,
 	);
 }

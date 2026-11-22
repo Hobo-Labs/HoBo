@@ -28,6 +28,7 @@ export {
 	stableHash,
 } from "./dispatcher.js";
 export type {
+	DispatchBudgetDisclosure,
 	DispatchCostQuote,
 	PricedDispatchCandidate,
 	PricedDispatchCategory,
@@ -42,3 +43,7 @@ export {
 	PRICED_DISPATCH_OBJECTIVE,
 	PRICED_DISPATCH_SCHEMA,
 } from "./priced-dispatch.js";
+export * from "./iac-route.js";
+export * from "./iac-route-recovery.js";
+export * from "./iac-target-routing.js";
+export * from "./iac-unpriced-routing.js";

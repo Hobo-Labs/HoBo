@@ -1,3 +1,8 @@
+import type {
+	CronEffectInput,
+	DurableEffectInput,
+	OutboxEffectInput,
+} from "@hobo/core";
 import { describe, expect, it } from "vitest";
 
 import { createMemoryNodeSqliteDriver, SqliteJournal } from "../src/index.js";
@@ -36,7 +41,7 @@ function claim(j: SqliteJournal, limit = 10, leaseFence = 1n) {
 
 function commit(
 	j: SqliteJournal,
-	effects: unknown[],
+	effects: DurableEffectInput[],
 	expectedSeq = 0,
 	type = "a.A",
 ) {
@@ -45,10 +50,12 @@ function commit(
 		events: [{ type, data: {} }],
 		append: { expectedSeq, actor, tenant: "t" },
 		effects,
-	} as never);
+	});
 }
 
-function outboxEffect(overrides: Record<string, unknown> = {}) {
+function outboxEffect(
+	overrides: Partial<OutboxEffectInput> = {},
+): OutboxEffectInput {
 	return {
 		kind: "outbox",
 		destination: "webhook:acme",
@@ -58,7 +65,7 @@ function outboxEffect(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function cronEffect(overrides: Record<string, unknown> = {}) {
+function cronEffect(overrides: Partial<CronEffectInput> = {}): CronEffectInput {
 	return {
 		kind: "cron",
 		scheduleId: "nightly",
@@ -126,6 +133,7 @@ describe("outbox effects", () => {
 					row?.outboxId ?? "",
 					row?.leaseId ?? "",
 					row?.leaseFence ?? 0n,
+					row?.deliveryAttempt ?? 0,
 				),
 			).toBe(true);
 			expect(claim(j)).toEqual([]);
@@ -144,11 +152,17 @@ describe("outbox effects", () => {
 					row?.outboxId ?? "",
 					"not-the-lease",
 					row?.leaseFence ?? 0n,
+					row?.deliveryAttempt ?? 0,
 				),
 			).toBe(false);
-			expect(j.ackOutbox(row?.outboxId ?? "", row?.leaseId ?? "", 999n)).toBe(
-				false,
-			);
+			expect(
+				j.ackOutbox(
+					row?.outboxId ?? "",
+					row?.leaseId ?? "",
+					999n,
+					row?.deliveryAttempt ?? 0,
+				),
+			).toBe(false);
 		} finally {
 			j.close();
 		}

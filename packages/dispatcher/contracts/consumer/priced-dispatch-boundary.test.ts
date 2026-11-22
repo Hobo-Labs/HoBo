@@ -1,13 +1,19 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type JsonValue, parseQuoteScenario } from "@hobo/pricing";
+import {
+	developerPricing,
+	type JsonValue,
+	parseQuoteScenario,
+	pricingUnavailable,
+} from "@hobo/pricing";
 import { type MessageDescriptor, Verifier } from "@pact-foundation/pact";
 import { describe, expect, it } from "vitest";
 import {
 	decidePricedDispatch,
 	type PricedDispatchCategory,
 } from "../../src/priced-dispatch.js";
+import { dispatchQuoteScenario } from "../../test/priced-dispatch-fixtures.js";
 
 type Request = {
 	dispatchId: string;
@@ -95,4 +101,46 @@ describe("priced dispatch decision library contract", () => {
 			pact.interactions.map(({ description }) => description).sort(),
 		);
 	}, 30_000);
+
+	it("discloses supplied pricing and excludes unavailable pricing", () => {
+		const decision = decidePricedDispatch({
+			dispatchId: "pricing-availability-pact",
+			category: "runner",
+			candidates: [
+				{ providerId: "unpriced", pricing: pricingUnavailable("no model") },
+				{
+					providerId: "priced",
+					pricing: developerPricing(
+						{
+							modelId: "my-contract",
+							revision: "2",
+							tenantId: "tenant-a",
+							providerId: "priced",
+							providerAccountRef: "priced",
+							productId: "runner",
+						},
+						dispatchQuoteScenario("priced", "0.1"),
+					),
+				},
+			],
+		});
+		expect(decision).toMatchObject({
+			ok: true,
+			budget: { evaluation: "not-evaluated", reservation: "not-created" },
+			selectedProvider: "priced",
+			ranking: [
+				{
+					providerId: "priced",
+					pricingModel: {
+						source: "developer-supplied",
+						modelId: "my-contract",
+						revision: "2",
+					},
+				},
+			],
+			rejectedCandidates: [
+				{ providerId: "unpriced", code: "PRICING_MODEL_UNAVAILABLE" },
+			],
+		});
+	});
 });

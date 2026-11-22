@@ -31,6 +31,12 @@
             "command": "[ ! -f \".agents/skills/impeccable/scripts/hook.mjs\" ] || node \".agents/skills/impeccable/scripts/hook.mjs\"",
             "timeout": 30,
             "statusMessage": "Design deep pass"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/agent_completion_hook.py\"",
+            "timeout": 10,
+            "statusMessage": "Reviewing task completion"
           }
         ]
       }
@@ -43,6 +49,29 @@
             "type": "command",
             "command": "sh \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/ensure-hooks-path.sh\" >/dev/null 2>&1; exit 0",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/agent_completion_hook.py\" prompt",
+            "timeout": 10,
+            "statusMessage": "Tracking task scope"
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/agent_completion_hook.py\" interrupt",
+            "timeout": 3
           }
         ]
       }

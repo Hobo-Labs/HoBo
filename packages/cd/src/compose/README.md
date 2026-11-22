@@ -73,8 +73,24 @@ qualifies and soaks, defers a tainted host and catches it up once it recovers.
   the resource graph), enroll an agent for agent-mode Camps, or define a
   publisher. `--simulate` reaches the labelled fixture realizer only.
 - **`compose-store-multinode`** — more than one replica (`HOBO_CD_REPLICAS`) on
-  SQLite. Set `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or later); SQLite is for a
-  single conductor process (R6).
+  SQLite. Set `HOBO_CD_POSTGRES_URL` (PostgreSQL 16 or later) or a fleet
+  (below); SQLite is for a single conductor process (R6).
+- **Journal fleet** — `HOBO_CD_POSTGRES_FLEET=neon-eu:neon-claimable,supabase`
+  names a writer and standbys, each optionally with its vendor plan (the
+  member's cost model, `@hobo/hobo-cd` `CD_JOURNAL_MEMBER_PLANS`); each
+  member's URL is a secret-store entry (`HOBO_CD_POSTGRES_URL_NEON_EU`), not an
+  environment variable. `HOBO_CD_POSTGRES_WITNESSES` names register-only
+  members the same way; the first also keeps the scheduled backups. The fleet
+  runs by the journal's declared continuity policy (`@hobo/hobo-cd`
+  `CD_CONTINUITY`). Planned moves fence writes at the commit boundary; an
+  unplanned failover cannot fence a partitioned writer it cannot reach, so
+  acknowledged writes there may be absent from the new writer. Safe failover
+  and its recovery point must not be assumed. Member names do not prove
+  independent failure domains. Opening runs one tick; scheduled copies and
+  backups require a host to keep ticking. `hobo_cd_journal_continuity_short`
+  on stderr reports configured shortfalls and unverified vendor diversity;
+  it does not report ongoing replication or backup health, and the journal
+  still serves when a shortfall is reported.
 - **`compose-store-invalid` / `compose-artifacts-invalid`** — fix the named
   environment variable; the message names it.
 - **`rail-delivery-invalid` metric rising** — a Station's Rail `delivery`

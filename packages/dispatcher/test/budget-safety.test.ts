@@ -94,6 +94,55 @@ describe("hard budget admission", () => {
 });
 
 describe("reservation financial and occupancy invariants", () => {
+	it("keeps the reservation and its holds unchanged when confirmed spend overflows", () => {
+		for (const budgetCap of [Number.MAX_VALUE, undefined]) {
+			for (const running of [false, true]) {
+				const ledger = createReservationLedger(
+					snapshot([
+						account({
+							budgetCap,
+							spendToDate: Number.MAX_VALUE,
+							listUnitCost: 0,
+							concurrencyHeadroom: 1,
+						}),
+					]),
+				);
+				expect(reserve(ledger, "overflow", { unitCost: 0 }).ok).toBe(true);
+				if (running)
+					expect(ledger.start({ reservationId: "overflow" }).ok).toBe(true);
+				const before = ledger.snapshot();
+				const events = ledger.events();
+				const evidence = running
+					? {
+							usageFinalized: true,
+							usageEvidenceRef: "provider-usage:overflow",
+						}
+					: {};
+				for (let attempt = 0; attempt < 2; attempt += 1) {
+					expect(
+						ledger.confirm({
+							reservationId: "overflow",
+							actualCost: Number.MAX_VALUE,
+							...evidence,
+						}),
+					).toMatchObject({
+						ok: false,
+						status: "settlement-overflow",
+						ledgerView: before,
+					});
+					expect(ledger.snapshot()).toEqual(before);
+					expect(ledger.events()).toEqual(events);
+				}
+				expect(
+					ledger.confirm({
+						reservationId: "overflow",
+						actualCost: 0,
+						...evidence,
+					}).ok,
+				).toBe(true);
+			}
+		}
+	});
 	it("serializes paid exposure and capacity, settles actual spend and frees concurrency", () => {
 		const ledger = createReservationLedger(
 			snapshot([

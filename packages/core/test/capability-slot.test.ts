@@ -28,7 +28,7 @@ function codeOf(build: () => JsonValue): string {
 }
 
 describe("slot vocabulary", () => {
-	it("is the closed ten-slot set, frozen", () => {
+	it("is the closed eleven-slot set, frozen", () => {
 		expect([...CAPABILITY_SLOTS]).toEqual([
 			"web",
 			"api",
@@ -40,6 +40,7 @@ describe("slot vocabulary", () => {
 			"topic",
 			"secretRef",
 			"webhook",
+			"schedule",
 		]);
 		expect(Object.isFrozen(CAPABILITY_SLOTS)).toBe(true);
 	});

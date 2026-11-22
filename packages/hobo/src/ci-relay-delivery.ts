@@ -98,6 +98,7 @@ import { type DeliveryModule, loadDeliveryFile } from "./cd-delivery-module.js";
 import { cdPrincipal, envCredentials } from "./cd-runtime.js";
 import { type CdStoreOpener, openCdStore } from "./cd-store.js";
 import { campIdOf, staticTopologyReader, yardTopology } from "./cd-topology.js";
+import { RelayDeploymentReadRefusal } from "./ci-relay-verify.js";
 import { loadRelayJoinedYards } from "./ci-relay-yard.js";
 import {
 	isJsonObject,
@@ -177,6 +178,7 @@ export interface RelayRealization {
 	/** Create the git deployment of the pinned commit; the provider's outputs. */
 	deploy(
 		source: RelaySourcePin,
+		context: Readonly<{ freightId: string }>,
 	): Promise<
 		| Readonly<{ ok: true; outputs: Readonly<Record<string, string>> }>
 		| RelayRealizationFailure
@@ -312,16 +314,28 @@ export function relayYardRegistryProvider(
 				.filter((id): id is string => id !== undefined && id !== ""),
 		),
 	].sort();
-	// An HTTP compute entry only when the Yard binds the HTTP API profile.
-	const http = yard.bindings.some((row) => row.profile === capability.api.http);
-	const none: readonly string[] = [];
-	const offered: { port: string; features: readonly string[] }[] =
-		joinedSecretProjection
-			? []
-			: [
-					{ port: "compute", features: http ? ["http"] : none },
-					{ port: "data", features: none },
-				];
+	const has = (profile: string) =>
+		yard.bindings.some((row) => row.profile === profile);
+	const offered: { port: string; features: readonly string[] }[] = [];
+	if (!joinedSecretProjection) {
+		if (has(capability.api.http))
+			offered.push({ port: "compute", features: ["http"] });
+		if (
+			has(capability.kv.keyValue) ||
+			has(capability.kv.redisCompatible) ||
+			has(capability.kv.valkey)
+		)
+			offered.push({
+				port: "kv",
+				features: has(capability.kv.redisCompatible) ? ["eventual"] : [],
+			});
+		if (has(capability.queue.atLeastOnce) || has(capability.queue.fifo))
+			offered.push({ port: "queue", features: [] });
+		if (has(capability.service.scheduled))
+			offered.push({ port: "schedule", features: [] });
+		if (has(capability.data.postgres) || has(capability.data.relational))
+			offered.push({ port: "database", features: [] });
+	}
 	// A runtime projection can read secrets; it does not imply write access.
 	if (
 		yard.bindings.some(
@@ -329,27 +343,6 @@ export function relayYardRegistryProvider(
 		)
 	)
 		offered.push({ port: "secretRef", features: ["access"] });
-	// SDK data resources retain their kind during planning. Expose the new
-	// ports only when the Yard binds an implementation of that kind.
-	if (
-		!joinedSecretProjection &&
-		yard.bindings.some(
-			(row) =>
-				row.profile === capability.kv.keyValue ||
-				row.profile === capability.kv.redisCompatible ||
-				row.profile === capability.kv.valkey,
-		)
-	)
-		offered.push({ port: "kv", features: none });
-	if (
-		!joinedSecretProjection &&
-		yard.bindings.some(
-			(row) =>
-				row.profile === capability.queue.atLeastOnce ||
-				row.profile === capability.queue.fifo,
-		)
-	)
-		offered.push({ port: "queue", features: none });
 	return {
 		id: `yard:${yard.name}`,
 		regions: [...yard.regions],
@@ -567,7 +560,24 @@ export function relayRealizer(
 					),
 				],
 			});
-		const state = await input.realization.readyState(done.deploymentId);
+		let state: string;
+		try {
+			state = await input.realization.readyState(done.deploymentId);
+		} catch (error) {
+			if (error instanceof RelayDeploymentReadRefusal)
+				return observation({
+					...base,
+					status: ReconcileStatus.BLOCKED,
+					reasons: [
+						reason(
+							RELAY_DELIVERY_REFUSAL.verificationFailed,
+							`reading deployment ${done.deploymentId} failed (HTTP ${error.status}): ${error.message}`,
+							"No retry fixes this: check the deploy token's scope, and the team the deployment belongs to.",
+						),
+					],
+				});
+			throw error;
+		}
 		const handover = { ...done.outputs, readyState: state };
 		if (state === "READY")
 			return observation({
@@ -619,7 +629,9 @@ export function relayRealizer(
 						},
 					});
 				} else {
-					const deployed = await input.realization.deploy(pin);
+					const deployed = await input.realization.deploy(pin, {
+						freightId: String(at.desired.freightId),
+					});
 					realized.set(
 						at.desired.setId,
 						deployed.ok

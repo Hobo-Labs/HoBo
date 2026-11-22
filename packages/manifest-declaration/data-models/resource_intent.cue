@@ -94,4 +94,6 @@ package hobo
 	region?:    string & !=""
 	objective:  string & !=""
 	placement?: #PlacementCriteria
+	// A schedule's five-field cron expression (the Bindle's cadence trait).
+	cadence?: string & =~"^\\S+(\\s+\\S+){4}$"
 }

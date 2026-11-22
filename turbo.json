@@ -3,7 +3,8 @@
   "globalDependencies": [
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
-    "tsconfig.base.json"
+    "tsconfig.base.json",
+    "scripts/visual-token-contract.json"
   ],
   "envMode": "strict",
   "globalPassThroughEnv": [
@@ -57,6 +58,7 @@
     "typecheck": { "dependsOn": ["^build"], "outputs": [] },
     "lint": { "outputs": [] },
     "test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/iac-alchemy#test": { "dependsOn": ["build", "@hobo/broker#build", "@hobo/dispatcher#build", "@hobo/pricing#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/conformance#test": { "dependsOn": ["build", "@hobo/storage-sqlite#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/hobo#test": { "dependsOn": ["build", "@hobo/adapter-hono#build", "@hobo/provider-agentv#build", "@hobo/provider-ax#build", "@hobo/provider-browser-wasm#build", "@hobo/provider-config#build", "@hobo/provider-convex#build", "@hobo/provider-flux#build", "@hobo/provider-turso#build", "@hobo/provider-vercel-blob#build", "@hobo/provider-webernetes#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/cd#test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
@@ -64,6 +66,8 @@
     "@hobo/resolver-components#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/cd-gitops#test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/cd-kube-fleet#test": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "test:release-integration": { "dependsOn": ["build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
+    "@hobo/hobo#test:release-integration": { "dependsOn": ["build", "@hobo/adapter-hono#build", "@hobo/provider-agentv#build", "@hobo/provider-ax#build", "@hobo/provider-browser-wasm#build", "@hobo/provider-config#build", "@hobo/provider-convex#build", "@hobo/provider-flux#build", "@hobo/provider-turso#build", "@hobo/provider-vercel-blob#build", "@hobo/provider-webernetes#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo/runtime#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "@hobo-draft/s1-stage-gate#test": { "dependsOn": ["build", "@hobo/runtime-local#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
     "test:unit": { "dependsOn": ["^build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },
@@ -78,6 +82,7 @@
         "@hobo/bindles#build",
         "@hobo/ci#build",
         "@hobo/claims#build",
+        "@hobo/cloud#build",
         "@hobo/connectivity#build",
         "@hobo/core#build",
         "@hobo/dispatcher#build",
@@ -169,6 +174,16 @@
         "mise.toml",
         "mise.lock",
         ".github/**",
+        "**/DESIGN.md",
+        "site/package.json",
+        "site/src/styles/global.css",
+        "packages/**/package.json",
+        "packages/connect-ui/src/client/styles.css",
+        "packages/control-yard/public/yard.css",
+        "packages/mcp/src/secret-capture/html.ts",
+        "packages/status-page/src/tokens.ts",
+        "examples/**/package.json",
+        "apps/**/package.json",
         "packages/ci-gh-actions/templates/**",
         "packages/runtimes/runtime-wasm/src/**",
         "packages/runtimes/runtime-wasm/test/wasmtime-global-setup.ts"

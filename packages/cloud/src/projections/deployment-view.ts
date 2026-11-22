@@ -1,7 +1,7 @@
 import { defineProjection, type Projection } from "@hobo/data";
 
 import { CLOUD_EVENTS } from "../events.js";
-import type { JsonValue } from "../json.js";
+import { isJsonObject, isJsonString, type JsonValue } from "../json.js";
 import type { DeploymentPlan, PlanRemediation } from "../plan-types.js";
 
 export interface DeploymentDecisionRow {
@@ -18,8 +18,16 @@ export type ResourceLifecycle =
 	| "provisioning"
 	| "provisioned"
 	| "failed"
+	| "reconciliation-required"
 	| "destroying"
 	| "destroyed";
+
+export interface ResourceReconciliationDetail {
+	reason: string;
+	operation: "apply" | "destroy" | "unknown";
+	failureEventId: string;
+	reservationId?: string;
+}
 
 export interface DeploymentViewRow {
 	deploymentId: string;
@@ -29,8 +37,11 @@ export interface DeploymentViewRow {
 		| "rejected"
 		| "deployed"
 		| "rolling-back"
-		| "needs-human"
-		| "rolled-back";
+		| "pruning"
+		| "rolled-back"
+		| "needs-human";
+
+	statusBeforeReconciliation?: DeploymentViewRow["status"];
 	bindleHash?: string;
 	decisions: DeploymentDecisionRow[];
 	planHash?: string;
@@ -38,6 +49,15 @@ export interface DeploymentViewRow {
 	rejection?: { reason: string; remediations: PlanRemediation[] };
 	resources: Record<string, ResourceLifecycle>;
 	rollback?: { resourceId: string; reason: string };
+	reconciliations?: Record<
+		string,
+		ResourceReconciliationDetail & {
+			otherFailures?: ResourceReconciliationDetail[];
+		}
+	>;
+	// The principal that owns this deployment. Seeded from the requester on
+	// `deployment.Requested`; rebound by `deployment.Claimed` (anonymous -> account)
+	// while every provisioned fact — resources, outputs, URL — is preserved.
 	owner?: { kind: string; id: string };
 	claimed?: boolean;
 	imported?: boolean;
@@ -47,9 +67,27 @@ function base(
 	row: DeploymentViewRow | undefined,
 	deploymentId: string,
 ): DeploymentViewRow {
-	return row
-		? { ...row, decisions: [...row.decisions], resources: { ...row.resources } }
-		: { deploymentId, status: "requested", decisions: [], resources: {} };
+	if (row === undefined)
+		return { deploymentId, status: "requested", decisions: [], resources: {} };
+	const copy: DeploymentViewRow = {
+		...row,
+		decisions: [...row.decisions],
+		resources: { ...row.resources },
+	};
+	if (row.reconciliations !== undefined)
+		copy.reconciliations = { ...row.reconciliations };
+	return copy;
+}
+
+function clearReconciliation(row: DeploymentViewRow, resourceId: string): void {
+	if (row.reconciliations?.[resourceId] === undefined) return;
+	delete row.reconciliations[resourceId];
+	if (Object.keys(row.reconciliations).length === 0) {
+		delete row.reconciliations;
+		if (row.status === "needs-human")
+			row.status = row.statusBeforeReconciliation ?? "planned";
+		delete row.statusBeforeReconciliation;
+	}
 }
 
 export const deploymentViewProjection: Projection<DeploymentViewRow> =
@@ -60,7 +98,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 			[CLOUD_EVENTS.DeploymentRequested]: (row, event) => {
 				const data = event.data as { deploymentId: string; bindleHash: string };
 				const next = base(row, data.deploymentId);
-				next.status = "requested";
+				if (next.reconciliations === undefined) next.status = "requested";
 				next.bindleHash = data.bindleHash;
 				if (next.owner === undefined && event.actor) {
 					next.owner = { kind: event.actor.kind, id: event.actor.id };
@@ -74,11 +112,12 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					resources: string[];
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "deployed";
+				if (next.reconciliations === undefined) next.status = "deployed";
 				next.bindleHash = data.bindleHash;
 				next.imported = true;
 				for (const resourceId of data.resources) {
-					next.resources[resourceId] = "provisioned";
+					if (next.reconciliations?.[resourceId] === undefined)
+						next.resources[resourceId] = "provisioned";
 				}
 				if (next.owner === undefined && event.actor) {
 					next.owner = { kind: event.actor.kind, id: event.actor.id };
@@ -123,7 +162,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					plan: DeploymentPlan;
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "planned";
+				if (next.reconciliations === undefined) next.status = "planned";
 				next.planHash = data.planHash;
 				next.plan = data.plan;
 				return next;
@@ -135,7 +174,7 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					remediations: PlanRemediation[];
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "rejected";
+				if (next.reconciliations === undefined) next.status = "rejected";
 				next.rejection = {
 					reason: data.reason,
 					remediations: data.remediations,
@@ -145,37 +184,128 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 			[CLOUD_EVENTS.ResourceProvisioning]: (row, event) => {
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "provisioning";
+				if (next.reconciliations?.[data.resourceId] === undefined)
+					next.resources[data.resourceId] = "provisioning";
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceProvisioned]: (row, event) => {
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "provisioned";
+				if (next.reconciliations?.[data.resourceId] === undefined) {
+					next.resources[data.resourceId] = "provisioned";
+				}
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceFailed]: (row, event) => {
-				const data = event.data as { deploymentId: string; resourceId: string };
+				const data = event.data as {
+					deploymentId: string;
+					resourceId: string;
+					reason: string;
+					requiresReconciliation?: boolean;
+					reconciliationOperation?: string;
+					reservationId?: string;
+				};
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "failed";
+				if (data.requiresReconciliation === true) {
+					if (next.reconciliations === undefined)
+						next.statusBeforeReconciliation = next.status;
+					next.resources[data.resourceId] = "reconciliation-required";
+					next.status = "needs-human";
+					next.reconciliations ??= {};
+					const previous = next.reconciliations[data.resourceId];
+					const reconciliation: NonNullable<
+						DeploymentViewRow["reconciliations"]
+					>[string] = {
+						reason: data.reason,
+						failureEventId: event.id,
+						operation:
+							data.reconciliationOperation === "apply" ||
+							data.reconciliationOperation === "destroy"
+								? data.reconciliationOperation
+								: "unknown",
+					};
+					if (data.reservationId !== undefined)
+						reconciliation.reservationId = data.reservationId;
+					if (previous !== undefined) {
+						const { otherFailures, ...prior } = previous;
+						reconciliation.otherFailures = [...(otherFailures ?? []), prior];
+					}
+					next.reconciliations[data.resourceId] = reconciliation;
+				} else if (next.reconciliations?.[data.resourceId] === undefined) {
+					next.resources[data.resourceId] = "failed";
+				}
+				return next;
+			},
+			[CLOUD_EVENTS.ResourceReconciled]: (row, event) => {
+				// oxlint-disable-next-line anti-slop/require-safety-comment-for-type-assertion -- SAFETY: resource.Reconciled is the verified recovery fact from this package.
+				const data = event.data as {
+					deploymentId: string;
+					resourceId: string;
+					failureEventId: string;
+					outcome: string;
+					restoredState?: string;
+				};
+				const next = base(row, data.deploymentId);
+				const current = next.reconciliations?.[data.resourceId];
+				if (
+					["no-effect", "applied", "destroyed"].includes(data.outcome) &&
+					(data.outcome !== "no-effect" ||
+						(data.restoredState !== undefined &&
+							["provisioned", "destroyed", "failed"].includes(
+								data.restoredState,
+							))) &&
+					current !== undefined
+				) {
+					const { otherFailures, ...latest } = current;
+					const remaining = [...(otherFailures ?? []), latest].filter(
+						(entry) => entry.failureEventId !== data.failureEventId,
+					);
+					if (
+						remaining.length === 0 &&
+						current.failureEventId === data.failureEventId
+					) {
+						next.resources[data.resourceId] =
+							data.outcome === "applied" || data.restoredState === "provisioned"
+								? "provisioned"
+								: data.outcome === "destroyed" ||
+										data.restoredState === "destroyed"
+									? "destroyed"
+									: "failed";
+						clearReconciliation(next, data.resourceId);
+					} else if (
+						remaining.length > 0 &&
+						remaining.length < (otherFailures?.length ?? 0) + 1 &&
+						next.reconciliations !== undefined
+					) {
+						const last = remaining.at(-1);
+						if (last !== undefined)
+							next.reconciliations[data.resourceId] =
+								remaining.length === 1
+									? last
+									: { ...last, otherFailures: remaining.slice(0, -1) };
+					}
+				}
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroying]: (row, event) => {
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "destroying";
+				if (next.reconciliations?.[data.resourceId] === undefined)
+					next.resources[data.resourceId] = "destroying";
 				return next;
 			},
 			[CLOUD_EVENTS.ResourceDestroyed]: (row, event) => {
 				const data = event.data as { deploymentId: string; resourceId: string };
 				const next = base(row, data.deploymentId);
-				next.resources[data.resourceId] = "destroyed";
+				if (next.reconciliations?.[data.resourceId] === undefined) {
+					next.resources[data.resourceId] = "destroyed";
+				}
 				return next;
 			},
 			[CLOUD_EVENTS.DeploymentDeployed]: (row, event) => {
 				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
-				next.status = "deployed";
+				if (next.reconciliations === undefined) next.status = "deployed";
 				delete next.rollback;
 				return next;
 			},
@@ -186,7 +316,8 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 					reason: string;
 				};
 				const next = base(row, data.deploymentId);
-				next.status = "rolling-back";
+				if (next.reconciliations === undefined) next.status = "rolling-back";
+				else next.statusBeforeReconciliation = "rolling-back";
 				next.rollback = { resourceId: data.resourceId, reason: data.reason };
 				return next;
 			},
@@ -199,7 +330,46 @@ export const deploymentViewProjection: Projection<DeploymentViewRow> =
 			[CLOUD_EVENTS.DeploymentRolledBack]: (row, event) => {
 				const data = event.data as { deploymentId: string };
 				const next = base(row, data.deploymentId);
-				next.status = "rolled-back";
+				if (next.reconciliations === undefined) next.status = "rolled-back";
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentTransitionStarted]: (row, event) => {
+				const data = event.data;
+				if (
+					!isJsonObject(data) ||
+					!isJsonString(data.deploymentId) ||
+					(data.kind !== "rollback" && data.kind !== "prune")
+				)
+					throw new TypeError("invalid deployment transition");
+				const next = base(row, data.deploymentId);
+				const status = data.kind === "rollback" ? "rolling-back" : "pruning";
+				if (next.reconciliations === undefined) next.status = status;
+				else next.statusBeforeReconciliation = status;
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentTransitionCompleted]: (row, event) => {
+				const data = event.data;
+				if (
+					!isJsonObject(data) ||
+					!isJsonString(data.deploymentId) ||
+					(data.kind !== "rollback" && data.kind !== "prune")
+				)
+					throw new TypeError("invalid deployment transition");
+				const next = base(row, data.deploymentId);
+				if (data.kind === "prune") {
+					if (next.reconciliations === undefined) next.status = "planned";
+					else next.statusBeforeReconciliation = "planned";
+				}
+				return next;
+			},
+			[CLOUD_EVENTS.DeploymentReopened]: (row, event) => {
+				const data = event.data;
+				if (!isJsonObject(data) || !isJsonString(data.deploymentId))
+					throw new TypeError("invalid deployment reopening");
+				const next = base(row, data.deploymentId);
+				delete next.rollback;
+				if (next.reconciliations === undefined) next.status = "planned";
+				else next.statusBeforeReconciliation = "planned";
 				return next;
 			},
 		},

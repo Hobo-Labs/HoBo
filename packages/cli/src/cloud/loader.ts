@@ -14,6 +14,7 @@ import {
 	type ManifestV1,
 	type ProviderAnnotation,
 	type ResourceIdentityLedger,
+	readCadence,
 	readDependencyConfig,
 	resourceIdentityLedger,
 } from "@hobo/bindles";
@@ -292,6 +293,7 @@ export function targetFromBindleDefinition(
 				const paradigm = paradigmFor(record.kind);
 				const env = environmentFromAnnotations(record.annotations);
 				const dependency = readDependencyConfig(record.annotations);
+				const cron = readCadence(record.annotations);
 				const options = {
 					paradigm,
 					...((record.kind === "secret" || record.kind === "cache") &&
@@ -304,6 +306,9 @@ export function targetFromBindleDefinition(
 						: undefined),
 					...(dependency && isJsonObject(dependency.endpoints)
 						? { endpoints: dependency.endpoints }
+						: undefined),
+					...(cron !== undefined
+						? { annotations: { cadence: cron } }
 						: undefined),
 				};
 				backing.set(

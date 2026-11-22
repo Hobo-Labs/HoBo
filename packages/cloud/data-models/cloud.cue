@@ -176,7 +176,7 @@ package hobo
 }
 
 #ResourceActorState: "Pending" | "Planning" | "Provisioning" | "Provisioned" |
-	"Updating" | "Failed" | "Compensating" | "Destroying" | "Destroyed"
+	"Updating" | "Failed" | "ReconciliationRequired" | "Compensating" | "Destroying" | "Destroyed"
 
 #IacProgram: {
 	programId:    string & !=""
@@ -187,6 +187,7 @@ package hobo
 	action:       "preview" | "apply" | "destroy"
 	stackName:    string & !=""
 	resource?:    #ResourcePlan
+	operationGeneration?: string & !=""
 }
 
 #ScopedCredential: {
@@ -218,6 +219,19 @@ package hobo
 	execId:         string & !=""
 	classification: "retryable" | "fatal"
 	reason:         string & !=""
+	requiresReconciliation?: bool
+	reservationId?: string & !=""
+	reconciliationOperation?: "preview" | "apply" | "destroy"
+	if requiresReconciliation == true {
+		classification: "fatal"
+		reconciliationOperation: "preview" | "apply" | "destroy"
+	}
+	if reservationId != _|_ {
+		requiresReconciliation: true
+	}
+	if reconciliationOperation != _|_ {
+		requiresReconciliation: true
+	}
 }
 
 #ResourceActorSnapshot: {
@@ -238,6 +252,7 @@ package hobo
 	programHash:  string & !=""
 	specHash:     =~"^sha256:[0-9a-f]{64}$"
 	providerId:   string & !=""
+	operationGeneration?: string & !=""
 }
 
 #ResourceProvisionedRecord: {
@@ -254,6 +269,65 @@ package hobo
 	reason:               string & !=""
 	classification:       "retryable" | "fatal"
 	crossedNoGoThreshold: bool
+	requiresReconciliation?: bool
+	reservationId?: string & !=""
+	reconciliationOperation?: "apply" | "destroy"
+	if requiresReconciliation == true {
+		classification: "fatal"
+		crossedNoGoThreshold: false
+		reconciliationOperation: "apply" | "destroy"
+	}
+	if reservationId != _|_ {
+		requiresReconciliation: true
+	}
+	if reconciliationOperation != _|_ {
+		requiresReconciliation: true
+	}
+}
+
+#ResourceReconciledRecord: {
+	deploymentId: string & !=""
+	resourceId: string & !=""
+	failureEventId: string & !=""
+	operation: "apply" | "destroy"
+	outcome: "applied" | "destroyed" | "no-effect"
+	evidenceRef: string & !=""
+	financialEvidenceRef: string & !=""
+	financialDisposition: "none" | "held" | "settled" | "released"
+	reservationId?: string & !=""
+	claimDigest: =~"^sha256:[0-9a-f]{64}$"
+	outputs?: {[string]: string}
+	execId?: string & !=""
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
+	finalStateHash?: string & !=""
+	restoredState?: "provisioned" | "destroyed" | "failed"
+	if outcome == "applied" {
+		operation: "apply"
+		financialDisposition: "none" | "held"
+		outputs: {[string]: string}
+		execId: string & !=""
+		specHash: =~"^sha256:[0-9a-f]{64}$"
+		finalStateHash?: _|_
+		restoredState?: _|_
+	}
+	if outcome == "destroyed" {
+		operation: "destroy"
+		finalStateHash: string & !=""
+		outputs?: _|_
+		execId?: _|_
+		specHash?: _|_
+		restoredState?: _|_
+	}
+	if outcome == "no-effect" {
+		financialDisposition: "none" | "settled" | "released"
+		restoredState: "provisioned" | "destroyed" | "failed"
+		outputs?: _|_
+		execId?: _|_
+		specHash?: _|_
+		finalStateHash?: _|_
+	}
+	if financialDisposition != "none" {reservationId: string & !=""}
+	if financialDisposition == "none" {reservationId?: _|_}
 }
 
 #ResourceCompensationFailedData: {
@@ -280,6 +354,9 @@ package hobo
 	deploymentId: string & !=""
 	resourceId:   string & !=""
 	reason:       string & !=""
+	operationGeneration?: string & !=""
+	programHash?: string & !=""
+	specHash?: =~"^sha256:[0-9a-f]{64}$"
 }
 
 #ResourceDestroyedRecord: {
@@ -302,6 +379,30 @@ package hobo
 #DeploymentRolledBackRecord: {
 	deploymentId: string & !=""
 }
+
+#DeploymentTransitionRecord: {
+	deploymentId:     string & !=""
+	transitionId:     string & =~"^[0-9a-f-]+$"
+	kind:             "rollback" | "prune"
+	planHash:         =~"^sha256:[0-9a-f]{64}$"
+	resourceIds:      [...string & !=""]
+	triggerResource?: string & !=""
+	reason?:          string & !=""
+}
+
+#ReopenedResource: {
+	resourceId: string & !=""
+	specHash:   =~"^sha256:[0-9a-f]{64}$"
+}
+
+#DeploymentReopenedRecord: {
+	deploymentId:    string & !=""
+	rollbackEventId: string & !=""
+	planHash:        =~"^sha256:[0-9a-f]{64}$"
+	resources: [...#ReopenedResource]
+}
+
+// ---- S3-04: CredentialAudit projection constraints (one per protobuf message) ----
 
 #CredentialAuditScope: {
 	port:     string & !=""
@@ -422,7 +523,9 @@ package hobo
 	port?:       string
 	providerId?: string
 	region?:     string
-	lifecycle?:  "provisioning" | "provisioned" | "failed" | "destroying" | "destroyed"
+	lifecycle?:  "provisioning" | "provisioned" | "failed" | "reconciliation-required" | "destroying" | "destroyed"
+	reconciliationEventId?: string & !=""
+	otherReconciliationEventIds?: [...string & !=""]
 }
 
 #TopologyEdge: {

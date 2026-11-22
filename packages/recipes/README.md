@@ -89,6 +89,9 @@ consent — a new offer must be accepted.
 Each id has a golden resolved-topology fixture and a golden offer fixture under
 `test/golden/`, checked by `test/golden.test.ts` (regenerate with
 `HOBO_UPDATE_GOLDEN=1`).
+The standard registry includes `web.project/v1` for account-scoped provider
+projects; it is distinct from a hosted web artifact and changes each signed
+offer's registry and resolution digests.
 
 | Recipe | Shape |
 |---|---|

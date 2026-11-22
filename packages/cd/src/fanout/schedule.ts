@@ -25,7 +25,7 @@ function count(
 	state: SlotState,
 ): number {
 	let n = 0;
-	for (const campId of campIds) if (slots.get(campId)?.state === state) n += 1;
+	for (const campId of campIds) if (stateOf(slots, campId) === state) n += 1;
 	return n;
 }
 
@@ -92,13 +92,15 @@ export function schedule(
 		mandatoryFailed,
 		mandatoryGate,
 	};
-	if (options.halted || free === 0 || (mandatoryFailed && !options.catchUp))
+	if (options.halted || free === 0 || mandatoryFailed)
 		return { ...base, candidates: [] };
 
 	if (options.catchUp) {
 		return {
 			...base,
-			candidates: all.filter((campId) => stateOf(slots, campId) === "deferred"),
+			candidates: (mandatoryGate ? mandatoryCamps : all).filter(
+				(campId) => stateOf(slots, campId) === "deferred",
+			),
 		};
 	}
 

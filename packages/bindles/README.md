@@ -88,6 +88,52 @@ export const canary = rollout({
 Runtime evaluation and progressive composition live in `@hobo/identity`
 (`FeatureFlagStore`, `createHarness`) — see [ADR-0044](urn:hobo:decision:adr-0044)
 and [ADR-0083](urn:hobo:decision:adr-0083).
+`featureSpecsToStoreInputs` returns flag-store inputs and omits `targeting`
+when a feature does not define it.
+
+## Continuity: HA/DR, replication and migration policy
+
+A stateful resource (`data`, `kv`, `bucket`, `queue`, `topic`, `secret`)
+declares how much a failure may lose and how HoBo keeps it moving, with the
+`continuity` trait:
+
+```ts
+const journal = b.data().with(continuity({ tier: "standard" }));
+const cache = b.kv().with(continuity({ tier: "rebuildable" }));
+```
+
+| tier          | loses at most | fails over after | standbys | backups    |
+| ------------- | ------------- | ---------------- | -------- | ---------- |
+| `rebuildable` | everything    | 1 min            | 0        | none       |
+| `standard`    | 5 min         | 1 min            | 1        | daily, 7   |
+| `critical`    | 30 s          | 15 s             | 2        | hourly, 48 |
+
+Any field can be overridden: `recoveryPointMs`, `failoverAfterMs`, `standbys`,
+`migration` (`continuous` keeps moving the data to the cheapest configured
+backend that still meets the policy; `on-failure` moves only when the writer
+fails), `backupEveryMs`/`backupsKept`, and `monthlyBudgetMicros`. A policy
+that cannot keep its promise is refused (`restore` with no standby and no
+backup; a recovery point under a second with standbys). The trait names no
+provider; `continuityFleetPlan` in `@hobo/backend-fleet` turns it into the
+fleet's policy, the standbys placement asks for and the copy cadence. Schema:
+`data-models/bindles.{proto,cue}` `ContinuityPolicy`.
+
+## Cadence: when a schedule runs
+
+A schedule declares its cadence with the `cadence` trait, a five-field cron
+expression; what it runs is its one dependency (a queue gets a message, a
+service is invoked):
+
+```ts
+const repair = b.schedule().dependsOn(queue).with(cadence("*/15 * * * *"));
+```
+
+The planner carries it on the intent (`ResourceIntent.cadence`) to the plan
+node's realization parameters (`{ cron, target }`), where the provider runs it:
+a Cloudflare Cron Trigger on the Worker, or the `schedules` entry a Vercel
+deployment's `vercel.json` declares for a queue. `cadenceViolations` reports a
+cadence on anything but a schedule, or a schedule that does not run exactly one
+resource.
 
 ## Parse, don't validate
 

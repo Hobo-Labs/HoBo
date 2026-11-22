@@ -18,7 +18,9 @@ hours of inactivity. A failing committed check, including an explicit `--base`
 check, keeps its checkpoint until the fix is committed. Checkpoints live in the
 system temporary directory, or in `HOBO_AGENT_POLICY_STATE_DIR` when set. Commit checks read staged content, CI
 checks the PR diff, and the worktree check also finds ignored agent planning
-artifacts.
+artifacts. During a staged merge it compares against every parent, so content
+inherited unchanged from either side is not treated as a new merge edit, while a
+multiline comment assembled from changes on both sides is still checked.
 
 The anti-slop installer leaves its comment-required assertion rule disabled so
 the lint configuration follows the same source policy.
@@ -29,7 +31,34 @@ Run `bash scripts/setup-agent-tools.sh --help` to inspect the zero-key setup pat
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
+The mirrored subsystem verification skills pair implementation tests with TLA+
+models and, where applicable, mathematical proofs of abstractions. See the
+[state-machine verification index](state-machines.md) for covered behavior,
+the audit queue, assumptions, and `pnpm run verify:state-machines`. These checks
+do not by themselves prove implementation refinement or external effects. The
+budget-routing Z3 proof treats settled cost above the reserved hold as outside
+its inductive cap, aligned with truthful overrun recording at confirmation.
+
+The mirrored `verify-broker-budget-authority` skill's BrokerBudget model keeps unused-release evidence and final settlement evidence mutually exclusive, so a reservation cannot be claimed after unused evidence is recorded, cannot carry both evidence kinds, and cannot be released once final evidence exists.
+
+Generated command tests use the caller's environment. For pnpm scripts, select the checkout's pinned pnpm version and a writable package store.
+
+Project exploration, capture, doctor, evidence posting, and review workflows check their implicit `.optimizexp` write scopes for links and other unsafe entries. Evidence posting validates all scenario files before posting any comment, including in dry runs, and formats paths and transcripts as literal evidence. It refers to videos and larger files by their committed paths; it does not upload or compress them. When a feature ID exists in multiple projects, select one with `--project` before posting. These checks assume paths stay stable during the operation; explicitly selected output destinations and commands the operator asks the harness to run remain the operator's responsibility.
+
+Explore can opt into `--primary-bin-only` when a package has other executables that it cannot assess. Its output and doctor report identify the narrower scope. Doctor reports malformed saved records and preserves existing observations for inspection. Doctor check, repair, and snapshot all apply an explicitly supplied surface confirmation to their reports.
+
+Evidence posting reports failure if any requested comment fails, and named missing features fail validation.
+
+Capture records the command's selected working directory and respects the caller's tool path. Artifact validation compares the manifest, metadata and current file digest; pending evidence may be posted for review, but only an accepted, matching review can support scoring.
+
+CLI output is bounded to 8 MiB per stream; truncated or interrupted captures are marked degraded and cannot support a complete review. A deliberate negative review revokes acceptance, while invalid inputs and artifact mismatches leave the previous review intact. Terminal replay uses recorded event times and safely embeds captured output.
+
 > **Note:** this is *tooling* config, not part of the HoBo product design (`urn:hobo:requirement:`). It was added on request to make the agents productive in this repo.
+
+For `sdlc --finish`, run the local staged check before each commit, then follow
+GitHub's required checks and merge queue until each authorized PR is merged.
+Use the time to complete independent work when possible; a queued PR is not yet
+merged.
 
 The [default dev container](../.devcontainer/devcontainer.json) installs **mise** (pinned Node, pnpm, cue, gitleaks, turbo from [`../mise.toml`](../mise.toml)) on a **digest-pinned** Node 24 Bookworm base (see
 [`.devcontainer/Dockerfile`](../.devcontainer/Dockerfile)), plus GitHub CLI, Docker in Docker, native Actions runner dependencies and pinned act. Personal dotfiles install via [`../scripts/bootstrap-dev.sh`](../scripts/bootstrap-dev.sh) (see [`dev-env/mise.md`](dev-env/mise.md)).
@@ -38,6 +67,67 @@ credentials/configuration leave it waiting while offline checks remain usable.
 See [local CI setup, trust, lifecycle and recovery](../packages/ci-gh-actions/LOCAL-DEVELOPMENT.md)
 for the `local` provider and `HOBO_CI_LOCAL_*` settings. Persistent host runners use
 `hobo-local-host`; only HoBo's reserved JIT runners use `hobo`.
+
+## Completion review
+
+The outcome-based completion rule in [`AGENTS.md`](../AGENTS.md) applies to
+every harness, including ones without hooks. It requires continued action when
+essential work remains and a safe, authorized next step is available. It also
+preserves explicit stops and scope changes, real approval and safety boundaries,
+and honest reports of actual blockers.
+
+[`scripts/agent_completion_hook.py`](../scripts/agent_completion_hook.py)
+reviews completed responses in Claude Code, Codex, Cursor, and Copilot. During
+that review, an agent that identifies a safe, authorized next action records it
+as ready before acting. A stop with that record still present requests another
+continuation. The agent clears the record once no such action remains, the user
+explicitly stops or changes scope, or a genuine external blocker prevents
+further useful work. Status questions do not cancel an active task.
+
+A human status message resets the retry allowance without erasing ready work.
+The prompt hook recognizes common, explicit English requests to stop the whole
+task, clears the record, and allows the response without forcing a continuation.
+It handles these phrases conservatively: ambiguous wording and scope changes
+still require the agent to follow the human's instructions and clear an obsolete
+record. An interruption or Cursor abort clears pending state; a Cursor error
+preserves ready work for a later turn.
+
+A ready record can cause three additional reviews followed by one final
+continuation asking the agent to report unresolved work. After repeated stops
+without progress, the guard pauses automatic continuation and retains the
+record; a new human message resets the allowance. This circuit breaker does not
+mean the task is complete. Host-specific limits may apply, and some hosts may
+not display the final hook warning.
+
+Cursor uses native `beforeSubmitPrompt` and `stop` events and a
+per-conversation counter; its imported Claude handler is skipped to avoid
+duplicate reviews. Claude Code and Codex use `UserPromptSubmit` and `Stop`;
+Codex also handles `Interrupt`. Copilot uses `userPromptSubmitted` and
+`agentStop`. Codex requires project-hook trust and review through `/hooks`.
+
+The record is an empty, session-scoped file named by a hash under the OS
+temporary directory; it contains no task text. The hook reads the current
+prompt to recognize explicit stops but does not store it or inspect transcripts.
+Its update command carries the hook's state directory so a different shell
+temporary directory cannot silently write elsewhere. Hook events for the same
+session must share that state directory. Updates fail visibly if it is
+unavailable. If state storage is unavailable, the initial review is still
+requested when the harness identifies a first stop; later stops are allowed and
+a warning is emitted where the harness supports it. Events without a usable
+session identity fall back to one review.
+
+The guard enforces a recorded ready action, but it is not an independent proof
+of completion: an agent can fail to record an action or clear the record
+incorrectly. The review asks the agent to act on evidence and never to clear the
+record merely to end a turn. The hook does not call a model or use the network.
+It adds a continuation to reviewed responses, including simple answers.
+
+The script uses the Python standard library and requires Python 3.8 or later.
+The configured Unix hooks use `python3`; Copilot on Windows uses `python`.
+Other harnesses can pass compatible prompt and stop events as JSON on standard
+input and use the returned `decision` and `reason`, or adapt Cursor's
+`followup_message` format. A compatible harness needs a reliable continuation
+marker and session identifier.
 
 ## Product implementation guardrails
 
@@ -162,8 +252,53 @@ A **semantic-code MCP server**: it gives coding agents IDE-like symbol search, r
 ### RTK — `rtk-ai/rtk` (Apache-2.0)
 A **Rust Token Killer command proxy** that compresses noisy shell-command output before it reaches coding agents. It is local, uses no API keys, and supports direct use (`rtk git status`, `rtk pnpm test:file <file>`, `rtk gain`) plus hook initialization for Claude Code/Copilot (`rtk init -g`), Codex (`rtk init -g --codex`), and Cursor (`rtk init -g --agent cursor`). The setup script installs it in the common/devcontainer layer when possible (existing `rtk`, Homebrew, Cargo, then upstream install script) and initializes hooks only in the selected agent-specific layer.
 
+### hobo — HoBo's own MCP server (this repo)
+`.mcp.json`, `.codex/config.toml`, and `.cursor/mcp.json` register the server from source without keys. The host must start the launcher within its intended trusted HoBo checkout: the launcher cannot identify which sibling checkout the host trusted. The Codex and Cursor launchers resolve that Git worktree root and refuse an ambiguous nested Git checkout. For a HoBo checkout nested inside another repository, configure the host to run `node --import tsx packages/hobo/src/bin/hobo-mcp.ts` with its working directory set to the HoBo checkout's absolute root. Install the workspace dependencies and run `pnpm exec turbo run build --filter=@hobo/hobo...` before starting an agent session in a fresh checkout; the source launcher imports built workspace packages. Codex loads the project configuration in a trusted project when the session starts. Registration alone does not establish that the host supports a private owner form. The server exposes the CLI verbs and secret capture used by the **hobo-deploy** skill. `pnpm run eval:hand-off-transcript <transcript.jsonl>` audits an agent transcript without printing owner settings.
+
+Use the [HoBo setup skill](../.agents/skills/hobo-setup/SKILL.md) to connect the
+server and establish an owner-store session independently of a deployment.
+The initial MCP handshake describes this separation; it does not itself
+authenticate a store. For a linked worktree, Codex may check trust against the
+primary checkout; its effective-configuration diagnostics identify a disabled
+project layer and the checkout whose trust it requires.
+
+If the active host has no HoBo tools, try its supported discovery or reload,
+then diagnose the server independently. From the checkout root, the following
+isolated test initializes HoBo and lists tools using the Cursor-registered
+launcher and synthetic temporary state:
+
+```sh
+pnpm --filter @hobo/hobo exec vitest run test/mcp-cold-start.test.ts -t 'serves MCP through the registered launcher from a nested directory'
+```
+
+This checks that launcher with synthetic state; it does not verify the active
+host's registration or actual environment, or an owner session. A separate MCP
+client may also perform authorized non-sensitive work when the host cannot
+attach the server. Report which client worked and which connection or private
+session step remains unverified; do not infer the cause of a missing host tool
+without evidence.
+
+Store selection through **`choose_secret_store`** is temporarily unavailable
+until HoBo supports a verified, scoped owner session. Do not collect store
+identifiers in chat or tool arguments. Follow the **hobo-deploy** skill's
+privacy verification before using any owner form. When a verified private
+hand-off is available, use the same target project `cwd` throughout the
+ceremony; otherwise report the missing capability without collecting settings.
+The relay's existing capture adapter reads a separately configured Infisical
+binding; a generic owner-store session is not yet wired to that adapter.
+Its `connected` status indicates that the binding was read; it does not verify
+owner authentication. `writable` reflects an active writer session. The
+adapter accepts a writer identifier in tool arguments and returns store
+references, so it is not the private owner setup described by the setup skill.
+
 ### headroom — `chopratejas/headroom` (Apache-2.0)
-A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress|retrieve|stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy: `headroom proxy --port 8787` then `ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude` (optional; see `headroom mcp --help`).
+A **token-compression MCP server** (also a CLI/proxy) that shrinks the **context fed to the model** — tool outputs, logs, file dumps — reversibly (`headroom_retrieve` fetches originals). Local-first, **no API keys**. MCP tools surface as `mcp__headroom__headroom_compress`, `mcp__headroom__headroom_retrieve`, and `mcp__headroom__headroom_stats`. Repo MCP configs launch via [`../scripts/agent-mcp-headroom.sh`](../scripts/agent-mcp-headroom.sh) (fails closed with setup remediation when the binary is missing). For automatic compression of *all* traffic you can also run the proxy with `headroom proxy --port 8787`, then launch Claude with:
+
+```sh
+ANTHROPIC_BASE_URL=http://127.0.0.1:8787 claude
+```
+
+This is optional; see `headroom mcp --help`.
 
 ### gbrain — `garrytan/gbrain` (MIT)
 A **knowledge-graph memory MCP server** (+ CLI) on the **Bun** runtime: `gbrain capture` ingests notes, `gbrain search`/`query` does hybrid retrieval + synthesis. Repo MCP configs launch via the shared fail-closed wrapper [`../scripts/agent-mcp-gbrain.sh`](../scripts/agent-mcp-gbrain.sh) (not bare `gbrain serve`) so a missing binary or initialized provider prints remediation pointing at [`../AUTH.md`](../AUTH.md) instead of a host "command not found". The wrapper also reaps PGLite locks whose recorded PID resolves to a non-gbrain process in the current agent PID namespace while preserving real live gbrain holders; the agent-tooling Vitest covers this namespace-crossing case. Run `gbrain init --pglite` once; local Ollama is the zero-key/local-data path.
@@ -214,7 +349,7 @@ Drives the **hosted Spriterrific HTTP API** — text prompt or reference image t
 game-ready 2D character anchors and animation spritesheets, generated on
 Spriterrific's cloud workers rather than a local checkout. Installed to all four
 skill trees (`.claude`, `.agents`, `.cursor`, `.github`) from
-`raw.githubusercontent.com/chongdashu/spriterrific-skills`, byte-identical, at
+the `chongdashu/spriterrific-skills` repository on `raw.githubusercontent.com`, byte-identical, at
 **v1.3.2**.
 
 - **Auth:** `SPRITERRIFIC_API_KEY` (a `sk_…` bearer token, created at
@@ -241,7 +376,13 @@ outfit or a facing — use a **character variant job** (`referenceJobId` +
 style. A new facing is a variant job with a new `direction`, never a mirror.
 
 ### SkillOpt — `microsoft/SkillOpt` (MIT)
-A **skill optimization research harness**, not a runtime MCP server. SkillOpt treats a markdown skill as trainable external state for a frozen agent: it runs scored rollouts, proposes bounded add/delete/replace edits, accepts only validation-improving candidates, and exports a compact `best_skill.md`. It currently targets direct chat plus Codex CLI and Claude Code CLI harnesses. Use it offline when the repo has scored tasks or benchmark suites worth optimizing against; do not put it in always-on agent instructions. The setup script installs it directly from `git+https://github.com/microsoft/SkillOpt.git`, verifies `skillopt-train` and `skillopt-sleep`, and exposes [`../scripts/skillopt-sleep.sh`](../scripts/skillopt-sleep.sh) as the repo-local runner. Use the default mock backend for no-spend dry runs, then opt in to `--backend codex` or `--backend claude` when you want real replay on your own budget.
+A **skill optimization research harness**, not a runtime MCP server. SkillOpt treats a markdown skill as trainable external state for a frozen agent: it runs scored rollouts, proposes bounded add/delete/replace edits, accepts only validation-improving candidates, and exports a compact `best_skill.md`. It currently targets direct chat plus Codex CLI and Claude Code CLI harnesses. Use it offline when the repo has scored tasks or benchmark suites worth optimizing against; do not put it in always-on agent instructions. The setup script installs it directly from Git:
+
+```text
+git+https://github.com/microsoft/SkillOpt.git
+```
+
+It verifies `skillopt-train` and `skillopt-sleep`, and exposes [`../scripts/skillopt-sleep.sh`](../scripts/skillopt-sleep.sh) as the repo-local runner. Use the default mock backend for no-spend dry runs, then opt in to `--backend codex` or `--backend claude` when you want real replay on your own budget.
 
 ### anti-slop — `dmmulroy/anti-slop` (MIT)
 
@@ -286,14 +427,14 @@ The setup command stops if it cannot enter the checkout before making changes.
 The common layer installs agent-agnostic runtimes (`tgrep`, repo-pinned `ast-grep`, `rtk`, `serena`, `headroom`, `skillopt-train`, `skillopt-sleep`, and the **`github/gh-stack`** GitHub CLI extension for stacked PRs) and leaves per-agent plugin/skill registration alone. Agent-specific layers only install shims for the selected supported client. Devcontainers run the common layer by default through [`.devcontainer/post-create.sh`](../.devcontainer/post-create.sh), avoiding prompts, global CLI mutations, and optional gbrain setup during container creation.
 
 ## Per-agent wiring
-| | MCP servers (Serena, headroom, gbrain, Higgsfield) | Skills (mattpocock, caveman, ponytail, impeccable) | Plugin / optimizer |
+| | MCP servers (hobo, Serena, headroom, gbrain, Higgsfield) | Skills (mattpocock, caveman, ponytail, impeccable) | Plugin / optimizer |
 |---|---|---|---|
 | **Claude Code** | `.mcp.json` (auto-discovered) | `.claude/skills/` (incl. mattpocock) | `.claude/settings.json` for Superpowers; SkillOpt can run offline |
 | **Cursor** | `.cursor/mcp.json` | `.agents/skills/` + `.cursor/rules/` (caveman) | — (no plugin support) |
 | **Codex** | trusted-project `.codex/config.toml`; copy to `~/.codex/config.toml` or use `codex mcp add …` for a global fallback | `.agents/skills/` + `AGENTS.md` | `codex plugin marketplace add/install` (per-machine); SkillOpt can run offline |
 | **GitHub Copilot CLI** | — | — | `copilot plugin marketplace add/install` (per-machine) |
 
-Committed so a clone is wired up: `.mcp.json`, `.cursor/`, `.codex/config.toml`, `.claude/skills/`, `.agents/skills/`, shared MCP wrapper scripts, `AGENTS.md`, `CLAUDE.md`, `skills-lock.json`. Opening the repo in Claude Code/Cursor will prompt to start the `serena` + `headroom` + `gbrain` MCP servers — decline if unwanted.
+Committed so a clone is wired up: `.mcp.json`, `.cursor/`, `.codex/config.toml`, `.claude/skills/`, `.agents/skills/`, shared MCP wrapper scripts, `AGENTS.md`, `CLAUDE.md`, `skills-lock.json`. Opening the repo in Claude Code/Cursor will prompt to start the `hobo` + `serena` + `headroom` + `gbrain` MCP servers — decline if unwanted.
 
 ## Install
 ```bash
@@ -344,6 +485,7 @@ Use `pnpm run check:changed:build -- --base=<ref>` only when you intentionally n
 - `pnpm run test:unit:quiet` when the full unit lane is needed without heartbeat/pass spam or runner log artifacts.
 - `pnpm --prefix src/draft/<kind>/<package> test` when editing one draft proof package.
 - `pnpm run test:all` only for full-repo verification or before merging large cross-cutting changes.
+- `examples/wasp-opensaas/app` is outside the pnpm workspace. `agent:check` selects `npm --prefix examples/wasp-opensaas/app run ci:test:unit` when `src/`, `test/`, `scripts/`, `package.json`, or `vitest.config.ts` under that app changes (not README-only).
 
 The relevant-check runner forwards `--staged` to `standards:check` for staged
 validation; latest-commit and PR-base checks use its worktree/base mode.
@@ -375,6 +517,8 @@ pnpm v11 build-script security is configured in `pnpm-workspace.yaml`: only `esb
 ### Isolated test temp/log directories
 
 `scripts/run-tests.ts` creates one isolated directory per invocation under the OS temp root, scoped by workspace hash and worker id: `<os-tmp>/hobo-design-tests/<workspace-hash>/<worker-id>/run-*`. Each batch receives its own child temp directory through `TMPDIR`, `TMP`, and `TEMP`, so parallel workers do not share global temp logs or unrelated temp context. Set `HOBO_TEST_TMPDIR` only when a worker needs a different temp base; the runner still creates isolated run and batch children beneath it.
+
+Tests that create Git repositories must clear inherited `GIT_*` variables before supplying fixture-specific overrides. Variables such as `GIT_DIR`, `GIT_INDEX_FILE`, and `GIT_CONFIG` can direct `git init` or `git config` at an unrelated repository or configuration file. Git exports repository-location variables to hooks, so the merge-group test exercises these inherited values.
 
 The runner does not write batch logs for passing tests. Failed batches keep a bounded output tail in memory; normal runs persist that failure tail to the isolated batch directory, while `--quiet` or `--no-artifacts` keep it off disk and print it only on failure. Use `pnpm run test:fast` for a quiet, no-artifact root smoke lane. Use `pnpm run test:unit:quiet` for the legacy root/draft unit graph with turbo output limited to errors.
 

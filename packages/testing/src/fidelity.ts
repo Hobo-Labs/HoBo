@@ -1,3 +1,4 @@
+
 import type { Fidelity } from "./types.js";
 
 export const FIDELITIES: readonly Fidelity[] = Object.freeze([
@@ -29,6 +30,6 @@ export function inProcessFidelity(kind: string, served: boolean): Fidelity {
 	return "mocked";
 }
 
-export function emptyFidelityCounts(): Record<Fidelity, number> {
+export function emptyFidelityCounts() {
 	return { real: 0, simulated: 0, mocked: 0, "camp-only": 0 };
 }

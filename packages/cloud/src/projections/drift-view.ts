@@ -35,6 +35,9 @@ const NOT_MEASURED: ReadonlySet<DeploymentViewRow["status"]> = new Set([
 	"rolling-back",
 	"needs-human",
 	"rolled-back",
+	"rolling-back",
+	"pruning",
+	"needs-human",
 ]);
 
 const EMPTY_SUMMARY = { planned: 0, realized: 0, findings: 0 } as const;
@@ -47,7 +50,11 @@ export function computeDrift(row: DeploymentViewRow): DriftReport {
 		summary: EMPTY_SUMMARY,
 	};
 
-	if (NOT_MEASURED.has(row.status)) return unknown;
+	if (
+		NOT_MEASURED.has(row.status) ||
+		Object.values(row.resources).includes("reconciliation-required")
+	)
+		return unknown;
 	const planned = row.plan?.resources;
 	if (planned === undefined || planned.length === 0) return unknown;
 

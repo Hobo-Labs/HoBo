@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { EventEnvelope, EventStore, PrincipalRef } from "@hobo/core";
 import { type ActorHost, isOptimisticConflict } from "@hobo/data";
@@ -7,7 +7,9 @@ import {
 	CLOUD_EVENTS,
 	execDiff,
 	execSucceeded,
+	type ResourceFailedData,
 	resourceDestroyed,
+	resourceDestroying,
 	resourceFailed,
 	resourceProvisioned,
 	resourceProvisioning,
@@ -20,16 +22,24 @@ import {
 	credentialScope,
 	type Executor,
 	type IacProgram,
+	iacExecutionId,
 } from "../executor/executor.js";
+import { isJsonObject, isJsonString } from "../json.js";
 import type { ResourcePlan } from "../plan-types.js";
-import { collectStream, currentFenceToken } from "../store/index.js";
+import { currentFenceToken } from "../store/index.js";
+import {
+	requireApplyOpen,
+	requireDestroyAllowed,
+} from "./deployment-transition.js";
 import {
 	type BlockedProviderMove,
 	blockedProviderMove,
 	desiredSpecHash,
+	hasDestroyProvenance,
 	recordedResources,
 	requireResourceSpecHash,
 } from "./desired-state.js";
+import { readDeploymentHistory } from "./history-scope.js";
 
 export const RESOURCE_ACTOR_STATES = Object.freeze([
 	"Pending",
@@ -38,6 +48,7 @@ export const RESOURCE_ACTOR_STATES = Object.freeze([
 	"Provisioned",
 	"Updating",
 	"Failed",
+	"ReconciliationRequired",
 	"Compensating",
 	"Destroying",
 	"Destroyed",
@@ -62,6 +73,40 @@ export function resourceActorKey(
 	return `resource:${deploymentId}:${resourceId}`;
 }
 
+export function hasUnresolvedReconciliation(
+	events: readonly EventEnvelope[],
+): boolean {
+	const unresolved = new Map<string, Set<string>>();
+	for (const event of events) {
+		if (!isJsonObject(event.data) || !isJsonString(event.data.resourceId))
+			continue;
+		const resourceId = event.data.resourceId;
+		if (
+			event.type === CLOUD_EVENTS.ResourceFailed &&
+			event.data.requiresReconciliation === true
+		) {
+			const failures = unresolved.get(resourceId) ?? new Set<string>();
+			failures.add(event.id);
+			unresolved.set(resourceId, failures);
+		} else if (
+			event.type === CLOUD_EVENTS.ResourceReconciled &&
+			isJsonString(event.data.outcome) &&
+			["applied", "destroyed", "no-effect"].includes(event.data.outcome) &&
+			(event.data.outcome !== "no-effect" ||
+				(isJsonString(event.data.restoredState) &&
+					["provisioned", "destroyed", "failed"].includes(
+						event.data.restoredState,
+					))) &&
+			isJsonString(event.data.failureEventId)
+		) {
+			const failures = unresolved.get(resourceId);
+			failures?.delete(event.data.failureEventId);
+			if (failures?.size === 0) unresolved.delete(resourceId);
+		}
+	}
+	return unresolved.size > 0;
+}
+
 export function foldResourceActor(
 	events: Iterable<EventEnvelope>,
 	resource: ResourcePlan,
@@ -74,16 +119,25 @@ export function foldResourceActor(
 		outputs: {},
 		deps: [...resource.deps],
 	};
+	const unresolvedIds = new Set<string>();
 
 	for (const event of events) {
 		const data = event.data as {
 			resourceId?: string;
 			outputs?: Record<string, string>;
 			specHash?: string;
+			requiresReconciliation?: boolean;
+			failureEventId?: string;
+			outcome?: string;
+			restoredState?: string;
 		};
 		if (data.resourceId !== resource.name) continue;
 		switch (event.type) {
 			case CLOUD_EVENTS.ResourceProvisioning:
+				if (snapshot.state === "ReconciliationRequired") {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state =
 					snapshot.state === "Provisioned" || snapshot.state === "Updating"
 						? "Updating"
@@ -91,20 +145,81 @@ export function foldResourceActor(
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceProvisioned:
+				if (unresolvedIds.size > 0) {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state = "Provisioned";
 				snapshot.sequence += 1;
 				if (data.outputs) snapshot.outputs = { ...data.outputs };
 				snapshot.specHash = requireResourceSpecHash(data.specHash);
 				break;
 			case CLOUD_EVENTS.ResourceFailed:
-				snapshot.state = "Failed";
+				if (
+					snapshot.state === "ReconciliationRequired" &&
+					data.requiresReconciliation !== true
+				) {
+					snapshot.sequence += 1;
+					break;
+				}
+				snapshot.state =
+					data.requiresReconciliation === true
+						? "ReconciliationRequired"
+						: "Failed";
+				if (data.requiresReconciliation === true) unresolvedIds.add(event.id);
 				snapshot.sequence += 1;
 				break;
+			case CLOUD_EVENTS.ResourceReconciled:
+				if (
+					snapshot.state === "ReconciliationRequired" &&
+					data.outcome !== undefined &&
+					["applied", "destroyed", "no-effect"].includes(data.outcome) &&
+					(data.outcome !== "no-effect" ||
+						(data.restoredState !== undefined &&
+							["provisioned", "destroyed", "failed"].includes(
+								data.restoredState,
+							))) &&
+					data.failureEventId !== undefined &&
+					unresolvedIds.has(data.failureEventId)
+				) {
+					unresolvedIds.delete(data.failureEventId);
+					if (unresolvedIds.size === 0) {
+						if (data.outcome === "applied") {
+							snapshot.state = "Provisioned";
+							if (data.outputs) snapshot.outputs = { ...data.outputs };
+							if (isJsonString(data.specHash))
+								snapshot.specHash = data.specHash;
+							else delete snapshot.specHash;
+						} else if (data.outcome === "destroyed") {
+							snapshot.state = "Destroyed";
+							snapshot.outputs = {};
+							delete snapshot.specHash;
+						} else if (data.outcome === "no-effect") {
+							if (data.restoredState === "provisioned")
+								snapshot.state = "Provisioned";
+							else if (data.restoredState === "destroyed") {
+								snapshot.state = "Destroyed";
+								snapshot.outputs = {};
+								delete snapshot.specHash;
+							} else snapshot.state = "Failed";
+						}
+					}
+					snapshot.sequence += 1;
+				}
+				break;
 			case CLOUD_EVENTS.ResourceDestroying:
+				if (snapshot.state === "ReconciliationRequired") {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state = "Destroying";
 				snapshot.sequence += 1;
 				break;
 			case CLOUD_EVENTS.ResourceDestroyed:
+				if (unresolvedIds.size > 0) {
+					snapshot.sequence += 1;
+					break;
+				}
 				snapshot.state = "Destroyed";
 				snapshot.sequence += 1;
 				snapshot.outputs = {};
@@ -122,6 +237,16 @@ export interface ResourceActorDeps {
 	actorHost: ActorHost;
 	executor: Executor;
 	broker: CredentialBroker;
+
+	verifyResume?: (input: {
+		readonly tenant: string;
+		readonly deploymentId: string;
+		readonly resourceId: string;
+		readonly action: "apply" | "destroy";
+		readonly operationGeneration: string;
+		readonly programHash: string;
+		readonly specHash: string;
+	}) => boolean | Promise<boolean>;
 }
 
 export interface ReconcileContext {
@@ -129,6 +254,7 @@ export interface ReconcileContext {
 	tenant: string;
 	actor: PrincipalRef;
 	correlationId?: string;
+	destroyReason?: string;
 	noGoThresholdResources?: ReadonlySet<string>;
 }
 
@@ -141,6 +267,7 @@ export type ReconcileOutcome =
 	  }
 	| { kind: "provisioned"; snapshot: ResourceActorSnapshot; execId: string }
 	| { kind: "updated"; snapshot: ResourceActorSnapshot; execId: string }
+	| { kind: "reconciliation-required"; snapshot: ResourceActorSnapshot }
 	| {
 			kind: "failed";
 			snapshot: ResourceActorSnapshot;
@@ -169,6 +296,103 @@ export function iacProgramFor(
 	};
 }
 
+function newOperationGeneration(events: readonly EventEnvelope[]): string {
+	const prior = new Set<string>();
+	for (const event of events)
+		if (
+			isJsonObject(event.data) &&
+			isJsonString(event.data.operationGeneration)
+		)
+			prior.add(event.data.operationGeneration);
+	for (let attempt = 0; attempt < 4; attempt++) {
+		const value = randomUUID();
+		if (!prior.has(value)) return value;
+	}
+	throw new Error("operation generation could not be allocated");
+}
+
+function operationGeneration(
+	event: EventEnvelope | undefined,
+	input: {
+		type: string;
+		tenant: string;
+		deploymentId: string;
+		resourceId: string;
+		programHash: string;
+		specHash: string;
+	},
+): string | undefined {
+	if (
+		event?.type !== input.type ||
+		event.tenant !== input.tenant ||
+		!isJsonObject(event.data) ||
+		event.data.deploymentId !== input.deploymentId ||
+		event.data.resourceId !== input.resourceId ||
+		event.data.programHash !== input.programHash ||
+		event.data.specHash !== input.specHash ||
+		!isJsonString(event.data.operationGeneration) ||
+		!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+			event.data.operationGeneration,
+		)
+	)
+		return undefined;
+	return event.data.operationGeneration;
+}
+
+function latestOperation(
+	events: readonly EventEnvelope[],
+	type: string,
+	resourceId: string,
+): EventEnvelope | undefined {
+	for (let index = events.length - 1; index >= 0; index--) {
+		const event = events[index];
+		if (
+			event &&
+			event.type === type &&
+			isJsonObject(event.data) &&
+			event.data.resourceId === resourceId
+		)
+			return event;
+	}
+	return undefined;
+}
+
+export function pendingApplyGeneration(
+	events: readonly EventEnvelope[],
+	resource: ResourcePlan,
+	ctx: Pick<ReconcileContext, "tenant" | "deploymentId">,
+): string | undefined {
+	const program = iacProgramFor(
+		ctx.deploymentId,
+		resource,
+		"apply",
+		ctx.tenant,
+	);
+	const programHash = `sha256:${createHash("sha256").update(JSON.stringify(program)).digest("hex")}`;
+	const pending = latestOperation(
+		events,
+		CLOUD_EVENTS.ResourceProvisioning,
+		resource.name,
+	);
+	const generation = operationGeneration(pending, {
+		type: CLOUD_EVENTS.ResourceProvisioning,
+		tenant: ctx.tenant,
+		deploymentId: ctx.deploymentId,
+		resourceId: resource.name,
+		programHash,
+		specHash: desiredSpecHash(resource),
+	});
+	if (
+		generation === undefined ||
+		!isJsonObject(pending?.data) ||
+		pending.data.providerId !== resource.provider ||
+		pending.data.execId !==
+			iacExecutionId({ ...program, operationGeneration: generation })
+	)
+		return undefined;
+	return generation;
+}
+
 function streamId(deploymentId: string): string {
 	return `deployment:${deploymentId}`;
 }
@@ -182,9 +406,7 @@ export function isConverged(
 	resource: ResourcePlan,
 ): boolean {
 	if (snapshot.state !== "Provisioned") return false;
-	return (
-		requireResourceSpecHash(snapshot.specHash) === desiredSpecHash(resource)
-	);
+	return snapshot.specHash === desiredSpecHash(resource);
 }
 
 export async function reconcileResource(
@@ -198,7 +420,12 @@ export async function reconcileResource(
 
 	try {
 		const stream = streamId(ctx.deploymentId);
-		let events = await collectStream(deps.store, stream);
+		let events = await readDeploymentHistory(
+			deps.store,
+			ctx.deploymentId,
+			ctx.tenant,
+		);
+		requireApplyOpen(events, resource);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
@@ -215,6 +442,9 @@ export async function reconcileResource(
 		const updating =
 			snapshot.state === "Provisioned" || snapshot.state === "Updating";
 		const specHash = desiredSpecHash(resource);
+		if (snapshot.state === "ReconciliationRequired") {
+			return { kind: "reconciliation-required", snapshot };
+		}
 
 		const fenceToken = currentFenceToken(deps.store, stream);
 		const appendOpts = {
@@ -227,6 +457,34 @@ export async function reconcileResource(
 		};
 		let lastSeq =
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
+		if (snapshot.state === "Destroying") {
+			await emit(
+				deps.store,
+				stream,
+				[
+					resourceFailed({
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason: "an interrupted destroy must be reconciled before apply",
+						classification: "fatal",
+						crossedNoGoThreshold: false,
+						requiresReconciliation: true,
+						reconciliationOperation: "destroy",
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
+			snapshot = foldResourceActor(events, {
+				...resource,
+				deploymentId: ctx.deploymentId,
+			});
+			return { kind: "reconciliation-required", snapshot };
+		}
 
 		const program = iacProgramFor(
 			ctx.deploymentId,
@@ -235,6 +493,105 @@ export async function reconcileResource(
 			ctx.tenant,
 		);
 		const programHash = `sha256:${createHash("sha256").update(JSON.stringify(program)).digest("hex")}`;
+		const operationScope = {
+			type: CLOUD_EVENTS.ResourceProvisioning,
+			tenant: ctx.tenant,
+			deploymentId: ctx.deploymentId,
+			resourceId: resource.name,
+			programHash,
+			specHash,
+		};
+		let pending = latestOperation(events, operationScope.type, resource.name);
+		const resuming =
+			snapshot.state === "Provisioning" || snapshot.state === "Updating";
+		if (!resuming) {
+			const generation = newOperationGeneration(events);
+			const emitted = await emit(
+				deps.store,
+				stream,
+				[
+					resourceProvisioning({
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						execId: iacExecutionId({
+							...program,
+							operationGeneration: generation,
+						}),
+						programHash,
+						specHash,
+						providerId: resource.provider,
+						operationGeneration: generation,
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
+			const recorded = emitted.appended[0];
+			if (
+				emitted.appended.length !== 1 ||
+				recorded === undefined ||
+				recorded.seq !== lastSeq + 1
+			)
+				throw new Error("operation start acknowledgement is invalid");
+			lastSeq = emitted.seq;
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
+			pending = events.find(
+				(event) => event.id === recorded.id && event.seq === recorded.seq,
+			);
+			if (operationGeneration(pending, operationScope) !== generation)
+				throw new Error("operation start could not be confirmed");
+		}
+		const generation = pendingApplyGeneration(events, resource, ctx);
+		let replaySafe = !resuming;
+		if (resuming && generation !== undefined) {
+			try {
+				replaySafe =
+					(await deps.verifyResume?.({
+						tenant: ctx.tenant,
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						action: "apply",
+						operationGeneration: generation,
+						programHash,
+						specHash,
+					})) === true;
+			} catch {
+				replaySafe = false;
+			}
+		}
+		if (generation === undefined || !replaySafe) {
+			await emit(
+				deps.store,
+				stream,
+				[
+					resourceFailed({
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason:
+							"in-flight apply identity, specification or safe replay is unverified",
+						classification: "fatal",
+						crossedNoGoThreshold: false,
+						requiresReconciliation: true,
+						reconciliationOperation: "apply",
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
+			snapshot = foldResourceActor(events, {
+				...resource,
+				deploymentId: ctx.deploymentId,
+			});
+			return { kind: "reconciliation-required", snapshot };
+		}
+		program.operationGeneration = generation;
 		const credential = deps.broker.issue({
 			scope: credentialScope({
 				tenant: ctx.tenant,
@@ -257,54 +614,60 @@ export async function reconcileResource(
 		};
 
 		try {
-			if (snapshot.state !== "Provisioning" && snapshot.state !== "Updating") {
-				const provisioningId = `exec-apply-${resource.name}`;
-				const emitted = await emit(
-					deps.store,
-					stream,
-					[
-						resourceProvisioning({
-							deploymentId: ctx.deploymentId,
-							resourceId: resource.name,
-							execId: provisioningId,
-							programHash,
-							specHash,
-							providerId: resource.provider,
-						}),
-					],
-					{ expectedSeq: lastSeq, ...appendOpts },
-				);
-				lastSeq = emitted.seq;
-			}
-
 			const result = await deps.executor.run(program, credential);
 
 			if (result.status === "failed") {
 				const crossed =
-					ctx.noGoThresholdResources?.has(resource.name) ??
-					result.classification === "fatal";
+					result.requiresReconciliation === true
+						? false
+						: (ctx.noGoThresholdResources?.has(resource.name) ??
+							result.classification === "fatal");
+				const failureBase = {
+					deploymentId: ctx.deploymentId,
+					resourceId: resource.name,
+					reason: result.reason,
+				};
+				const failure: ResourceFailedData =
+					result.requiresReconciliation === true
+						? {
+								...failureBase,
+								classification: "fatal",
+								crossedNoGoThreshold: false,
+								requiresReconciliation: true,
+								reconciliationOperation: "apply",
+							}
+						: {
+								...failureBase,
+								classification: result.classification,
+								crossedNoGoThreshold: crossed,
+							};
+				if (
+					failure.requiresReconciliation === true &&
+					result.reservationId !== undefined
+				)
+					failure.reservationId = result.reservationId;
 				const emitted = await emit(
 					deps.store,
 					stream,
 					[
 						tokenGranted(grant),
-						resourceFailed({
-							deploymentId: ctx.deploymentId,
-							resourceId: resource.name,
-							reason: result.reason,
-							classification: result.classification,
-							crossedNoGoThreshold: crossed,
-						}),
+						resourceFailed(failure),
 						tokenRevoked({ grantId: grant.grantId, reason: "apply failed" }),
 					],
 					{ expectedSeq: lastSeq, ...appendOpts },
 				);
 				lastSeq = emitted.seq;
-				events = await collectStream(deps.store, stream);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
 				snapshot = foldResourceActor(events, {
 					...resource,
 					deploymentId: ctx.deploymentId,
 				});
+				if (result.requiresReconciliation === true)
+					return { kind: "reconciliation-required", snapshot };
 				return {
 					kind: "failed",
 					snapshot,
@@ -341,7 +704,11 @@ export async function reconcileResource(
 				{ expectedSeq: lastSeq, ...appendOpts },
 			);
 			lastSeq = emitted.seq;
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,
@@ -373,12 +740,23 @@ export async function destroyResource(
 	});
 	try {
 		const stream = streamId(ctx.deploymentId);
-		let events = await collectStream(deps.store, stream);
+		let events = await readDeploymentHistory(
+			deps.store,
+			ctx.deploymentId,
+			ctx.tenant,
+		);
+		requireDestroyAllowed(events, resource.name);
 		let snapshot = foldResourceActor(events, {
 			...resource,
 			deploymentId: ctx.deploymentId,
 		});
 		if (snapshot.state === "Destroyed") return { kind: "converged", snapshot };
+		if (snapshot.state === "ReconciliationRequired")
+			return {
+				kind: "failed",
+				snapshot,
+				reason: "reconciliation required before destroy",
+			};
 
 		const fenceToken = currentFenceToken(deps.store, stream);
 		const appendOpts = {
@@ -391,6 +769,79 @@ export async function destroyResource(
 		};
 		let lastSeq =
 			events.length > 0 ? (events[events.length - 1] as EventEnvelope).seq : 0;
+		if (snapshot.state === "Provisioning" || snapshot.state === "Updating") {
+			await emit(
+				deps.store,
+				stream,
+				[
+					resourceFailed({
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason: "an interrupted apply must be reconciled before destroy",
+						classification: "fatal",
+						crossedNoGoThreshold: false,
+						requiresReconciliation: true,
+						reconciliationOperation: "apply",
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
+			snapshot = foldResourceActor(events, {
+				...resource,
+				deploymentId: ctx.deploymentId,
+			});
+			return {
+				kind: "failed",
+				snapshot,
+				reason: "reconciliation required before destroy",
+			};
+		}
+		if (
+			!hasDestroyProvenance(
+				recordedResources(events).get(resource.name),
+				resource,
+			)
+		) {
+			if (snapshot.state === "Destroying") {
+				await emit(
+					deps.store,
+					stream,
+					[
+						resourceFailed({
+							deploymentId: ctx.deploymentId,
+							resourceId: resource.name,
+							reason:
+								"in-flight destroy provenance does not match the requested target",
+							classification: "fatal",
+							crossedNoGoThreshold: false,
+							requiresReconciliation: true,
+							reconciliationOperation: "destroy",
+						}),
+					],
+					{ expectedSeq: lastSeq, ...appendOpts },
+				);
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
+				snapshot = foldResourceActor(events, {
+					...resource,
+					deploymentId: ctx.deploymentId,
+				});
+			}
+			return {
+				kind: "failed",
+				snapshot,
+				reason:
+					"recorded resource provenance does not match the destroy target",
+			};
+		}
 
 		const program = iacProgramFor(
 			ctx.deploymentId,
@@ -398,6 +849,106 @@ export async function destroyResource(
 			"destroy",
 			ctx.tenant,
 		);
+		const programHash = `sha256:${createHash("sha256").update(JSON.stringify(program)).digest("hex")}`;
+		const specHash = desiredSpecHash(resource);
+		const operationScope = {
+			type: CLOUD_EVENTS.ResourceDestroying,
+			tenant: ctx.tenant,
+			deploymentId: ctx.deploymentId,
+			resourceId: resource.name,
+			programHash,
+			specHash,
+		};
+		let pending = latestOperation(events, operationScope.type, resource.name);
+		const resuming = snapshot.state === "Destroying";
+		if (!resuming) {
+			const generation = newOperationGeneration(events);
+			const emitted = await emit(
+				deps.store,
+				stream,
+				[
+					resourceDestroying({
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason: ctx.destroyReason ?? "destroy",
+						operationGeneration: generation,
+						programHash,
+						specHash,
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
+			const recorded = emitted.appended[0];
+			if (
+				emitted.appended.length !== 1 ||
+				recorded === undefined ||
+				recorded.seq !== lastSeq + 1
+			)
+				throw new Error("operation start acknowledgement is invalid");
+			lastSeq = emitted.seq;
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
+			pending = events.find(
+				(event) => event.id === recorded.id && event.seq === recorded.seq,
+			);
+			if (operationGeneration(pending, operationScope) !== generation)
+				throw new Error("operation start could not be confirmed");
+		}
+		const generation = operationGeneration(pending, operationScope);
+		let replaySafe = !resuming;
+		if (resuming && generation !== undefined) {
+			try {
+				replaySafe =
+					(await deps.verifyResume?.({
+						tenant: ctx.tenant,
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						action: "destroy",
+						operationGeneration: generation,
+						programHash,
+						specHash,
+					})) === true;
+			} catch {
+				replaySafe = false;
+			}
+		}
+		if (generation === undefined || !replaySafe) {
+			await emit(
+				deps.store,
+				stream,
+				[
+					resourceFailed({
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason:
+							"in-flight destroy identity, specification or safe replay is unverified",
+						classification: "fatal",
+						crossedNoGoThreshold: false,
+						requiresReconciliation: true,
+						reconciliationOperation: "destroy",
+					}),
+				],
+				{ expectedSeq: lastSeq, ...appendOpts },
+			);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
+			snapshot = foldResourceActor(events, {
+				...resource,
+				deploymentId: ctx.deploymentId,
+			});
+			return {
+				kind: "failed",
+				snapshot,
+				reason: "reconciliation required before destroy",
+			};
+		}
+		program.operationGeneration = generation;
 		const credential = deps.broker.issue({
 			scope: credentialScope({
 				tenant: ctx.tenant,
@@ -409,7 +960,31 @@ export async function destroyResource(
 		try {
 			const result = await deps.executor.run(program, credential);
 			if (result.status === "failed") {
-				events = await collectStream(deps.store, stream);
+				if (result.requiresReconciliation === true) {
+					const failure: ResourceFailedData = {
+						deploymentId: ctx.deploymentId,
+						resourceId: resource.name,
+						reason: result.reason,
+						classification: "fatal",
+						crossedNoGoThreshold: false,
+						requiresReconciliation: true,
+						reconciliationOperation: "destroy",
+					};
+					if (result.reservationId !== undefined)
+						failure.reservationId = result.reservationId;
+					const emitted = await emit(
+						deps.store,
+						stream,
+						[resourceFailed(failure)],
+						{ expectedSeq: lastSeq, ...appendOpts },
+					);
+					lastSeq = emitted.seq;
+				}
+				events = await readDeploymentHistory(
+					deps.store,
+					ctx.deploymentId,
+					ctx.tenant,
+				);
 				snapshot = foldResourceActor(events, {
 					...resource,
 					deploymentId: ctx.deploymentId,
@@ -436,7 +1011,11 @@ export async function destroyResource(
 				} catch (error) {
 					if (!(error instanceof Error) || !isOptimisticConflict(error))
 						throw error;
-					events = await collectStream(deps.store, stream);
+					events = await readDeploymentHistory(
+						deps.store,
+						ctx.deploymentId,
+						ctx.tenant,
+					);
 					snapshot = foldResourceActor(events, {
 						...resource,
 						deploymentId: ctx.deploymentId,
@@ -450,7 +1029,11 @@ export async function destroyResource(
 				throw new Error(
 					"deployment remained busy while recording resource destruction",
 				);
-			events = await collectStream(deps.store, stream);
+			events = await readDeploymentHistory(
+				deps.store,
+				ctx.deploymentId,
+				ctx.tenant,
+			);
 			snapshot = foldResourceActor(events, {
 				...resource,
 				deploymentId: ctx.deploymentId,

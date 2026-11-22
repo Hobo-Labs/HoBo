@@ -32,6 +32,7 @@ export function data(
 		allow?: readonly string[];
 		env?: Readonly<Record<string, string>>;
 		connectionString?: string;
+		annotations?: JsonObject;
 		endpoints?: JsonObject;
 	} = {},
 ): ResourceHandle {
@@ -65,6 +66,8 @@ export function data(
 			if (options.endpoints) {
 				resource = { ...resource, endpoints: { ...options.endpoints } };
 			}
+			if (options.annotations !== undefined)
+				resource = { ...resource, annotations: { ...options.annotations } };
 			return resource;
 		},
 	};

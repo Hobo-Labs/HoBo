@@ -4,10 +4,10 @@
 API key**, handed back with a live credential in a markdown document, and
 deleted a few days later unless a human claims it.
 
-Everything here is data, pure functions, and injected ports. There is no
-`fetch`, no `Date.now()`, no `process.env`, and no filesystem access anywhere in
-`src/`: the network arrives as an `UpstashTransport`, credentials leave through a
-`SecretCustodyPort`, and the clock is a `() => number` you supply.
+The temporary Redis driver uses data, pure functions, and injected ports: its
+network arrives as an `UpstashTransport`, credentials leave through a
+`SecretCustodyPort`, and the clock is supplied by its host. The private Blob
+journal voter also provides a scoped Node HTTPS transport for its storage I/O.
 
 ## Private Blob credentials and metered liability
 
@@ -21,7 +21,14 @@ cached only while their token remains current and are refreshed before expiry.
 An unavailable budget, a foreign endpoint or bucket, a public bucket, or an
 expired session fails closed. Returned errors do not include provider secrets.
 The hosting supervisor supplies the guard using its durable Broker and retains
-ambiguous request reservations until they can be settled.
+ambiguous request reservations until they can be settled. A legacy mint guard
+claims once before I/O; callers that need a post-response check provide separate
+claim and revalidation callbacks. The journal uses that two-phase form so it
+does not accept a response after its funding hold is revoked. Its claim and
+revalidation callbacks are distinct single-use phases over one admitted hold:
+claim runs exactly once before the I/O, revalidation exactly once after it, so
+every authority hold the supervisor supplies must be a repeatable idempotent
+revocation check, never a claim-once consumer.
 
 `estimateUpstashBlobLiability` computes a conservative bound from the caller's
 observed rates and bounded operations, bytes and retention. It does not establish
@@ -30,6 +37,44 @@ provider boundary; the underlying R2 account is also reported as a failure
 domain so two services backed by the same infrastructure are not mistaken for
 independent replicas. These primitives do not by themselves provision a bucket
 or establish deployment readiness.
+
+### Private Blob journal voter
+
+`createUpstashBlobImmutableJournalReplica` stores an anchored journal member in
+an Upstash-owned private bucket. Documents, assignments and the seal share one
+conditional ETag update, so a delayed document or assignment cannot cross a
+successful seal. A lost write response is reconciled by reading the exact
+stored value. `maxLogBytes` now bounds that entire object, including documents;
+the state may fill before an individual document reaches `maxDocumentBytes`.
+The voter reserves space for the seal. `initializeFresh` requires an
+independently verified fresh member and namespace, and a missing or mismatched
+existing identity is never initialized automatically.
+
+The earlier experimental format stored documents separately and did not fence
+an in-flight document write at the seal. The new format refuses to open or
+overwrite its assignment object; it does not migrate existing data. Before
+moving an existing generation, the host must independently fence and drain all
+old writers and in-flight requests, then use an authenticated rollover into a
+verified fresh incarnation. A missing assignment object is not evidence that a
+namespace with old documents or uncertain writes is fresh.
+
+The supervisor opens `createUpstashBlobJournalTransport` for the independently
+observed R2 account, bucket, namespace and object bound. It uses Node HTTPS with
+certificate verification, no redirects, a total deadline and bounded streaming
+responses. `assertUpstashBlobImmutableJournalWiring` checks the exact transport
+and callback identities supplied by the supervisor. The supervisor must verify
+the custody and funding authority independently. Each credential mint and R2
+operation needs its own admitted hold, checked once before its I/O and once
+after it.
+Provider observations, actual quota and price limits, physical egress funding,
+durable genesis and rollback protection, and external-effect fencing remain
+separate supervisor responsibilities.
+
+The journal generation is bounded and needs an authenticated rollover and
+archive before its capacity is exhausted. Upstash is the Yard owner; its Blob
+storage also depends on Cloudflare R2, so a voter using it shares a Cloudflare
+failure domain with Cloudflare D1. The adapter alone does not establish a
+deployed or failure-independent quorum.
 
 ## What the provider actually gives you
 

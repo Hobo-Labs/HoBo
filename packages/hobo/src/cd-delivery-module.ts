@@ -93,6 +93,7 @@ export function parseDeliveryModule(
 	const known = new Set<string>([
 		...Object.keys(DELIVERY_MODULE_EXPORTS),
 		...DELIVERY_MODULE_TOPOLOGY_EXPORTS,
+		"PAGES_RELEASE_BUILD_MARGIN_MS",
 		"default",
 	]);
 	const unknown = Object.keys(root).filter((key) => !known.has(key));

@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { describe, it } from "node:test";
 import {
 	ATTESTATION_EVENTS,
 	asObject,
 	asText,
 	COVERED_JOBS,
 	GATE_JOBS,
+	SHADOW_PLAN_BLOB,
+	SHADOW_PLAN_PATH,
+	SHADOW_WORKFLOW_BLOB,
+	SHADOW_WORKFLOW_PATH,
 } from "../ci/attestation.mts";
 import {
 	conditionHolds,
@@ -19,14 +23,35 @@ import {
 } from "../ci/attested-jobs.mts";
 import { localContext, type StepValues } from "../ci/local-attest.mts";
 import { workflowDocument, workflowJob } from "../lib/workflow-job-steps.mts";
+import { testRunner } from "./support/test-runner.ts";
 
+const { describe, it } = await testRunner();
 const plan = loadPlan();
 
 /** The condition that skips a job the route job verified a signed local run for. */
 const skipWhenAttested = (job: string) =>
-	`!(needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
+	`!(needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
+const skipWhenAttestedOnGreenRoute = (job: string) =>
+	`!( needs.route.result == 'success' && needs.route.outputs.attested == 'true' && contains(needs.route.outputs.attested-jobs, '"${job}"'))`;
 
 describe("the description of the covered jobs", () => {
+	it("pins the workflow and plan reviewed for the shadow skips", () => {
+		for (const [path, expected] of [
+			[SHADOW_PLAN_PATH, SHADOW_PLAN_BLOB],
+			[SHADOW_WORKFLOW_PATH, SHADOW_WORKFLOW_BLOB],
+		] as const) {
+			const bytes = readFileSync(path);
+			const oid = createHash("sha1")
+				.update(`blob ${bytes.length}\0`)
+				.update(bytes)
+				.digest("hex");
+			assert.equal(
+				oid,
+				expected,
+				`${path} changed: review the shadow skip policy before updating its pin`,
+			);
+		}
+	});
 	it("describes exactly the covered jobs, the gate's first and in order", () => {
 		assert.deepEqual(
 			plan.map((job) => job.id),
@@ -78,14 +103,15 @@ describe("the description of the covered jobs", () => {
 			}
 	});
 
-	it("only leaves out CI machine setup, hosted routing, or image pipeline steps", () => {
+	it("only leaves out CI setup, report-only classification, routing, or image pipeline steps", () => {
 		const left = plan.flatMap((job) =>
 			job.steps
 				.filter((step) => step.local === "skip" && step.run !== undefined)
 				.map((step) => `${job.id}: ${step.name}`),
 		);
 		assert.deepEqual(left, [
-			"pr_gate_validation: Route the merge-group shard batch",
+			"pr_gate_plan: Impact classification (shadow)",
+			"pr_gate_plan: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",
@@ -95,6 +121,56 @@ describe("the description of the covered jobs", () => {
 			"release-contract: Clean up OCI build artifacts",
 			"release-contract: Prune Turbo cache",
 		]);
+	});
+
+	it("builds current sources before running every scripts test shard locally", () => {
+		const scripts = plan.find((job) => job.id === "scripts-tests");
+		assert.ok(scripts);
+		assert.equal(scripts.matrix, "${{ fromJSON('[0,1,2,3]') }}");
+		const build = scripts.steps.find(
+			(step) => step.name === "Build current sources for local attestation",
+		);
+		assert.equal(build?.local, "run");
+		assert.equal(
+			build?.if,
+			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
+		);
+		assert.match(build?.run ?? "", /scripts\/ci\/scripts-test-imports\.mts/u);
+		assert.match(build?.run ?? "", /turbo run build\b/u);
+		assert.equal(
+			scripts.steps.find(
+				(step) => step.name === "Download scripts-test build outputs",
+			)?.local,
+			"skip",
+		);
+		assert.equal(
+			scripts.steps.find((step) => step.name === "Scripts tests")?.local,
+			"run",
+		);
+	});
+
+	it("omits both report-only classifiers while leaving the gate checks executable", () => {
+		const planner = plan.find((job) => job.id === "pr_gate_plan");
+		assert.ok(planner);
+		const reports = planner.steps.filter(
+			(step) => step.name === "Impact classification (shadow)",
+		);
+		assert.equal(reports.length, 2);
+		for (const step of reports) {
+			assert.equal(step.local, "skip");
+			assert.equal(step.continueOnError, true);
+			assert.equal(step.id, undefined);
+			assert.match(step.reason ?? "", /report-only/u);
+		}
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
+		for (const name of [
+			"Code format gate",
+			"Relevant checks only",
+			"S0 gate set",
+		]) {
+			assert.equal(gate.steps.find((step) => step.name === name)?.local, "run");
+		}
 	});
 
 	it("does not cover the release contract once a release image is affected", () => {
@@ -170,8 +246,12 @@ describe("skipping a covered job in the workflows", () => {
 					);
 					continue;
 				}
+				const skipPattern =
+					id === "release-contract" && path.endsWith("release-hobo.yml")
+						? skipWhenAttestedOnGreenRoute(id)
+						: skipWhenAttested(id);
 				assert.ok(
-					condition.includes(skipWhenAttested(id)),
+					condition.includes(skipPattern),
 					`${path}: ${id} must be skipped when attested, by its own id`,
 				);
 				assert.equal(
@@ -186,13 +266,9 @@ describe("skipping a covered job in the workflows", () => {
 	it("checks for an attestation in the route job of each workflow with a covered job", () => {
 		for (const path of workflows) {
 			const text = readFileSync(path, "utf8");
-			const route = text.slice(
-				text.indexOf("\n  route:\n"),
-				text.indexOf(
-					"\n  ",
-					text.indexOf("uses: $/.github/actions/route-runner"),
-				),
-			);
+			const route =
+				text.match(/\n  route:\n[\s\S]*?(?=\n  [A-Za-z0-9_-]+:\n|$)/u)?.[0] ??
+				"";
 			for (const needed of [
 				"scripts/ci/attestation.mts",
 				"scripts/ci/verify-attestation.mts",
@@ -200,6 +276,53 @@ describe("skipping a covered job in the workflows", () => {
 				"attested-jobs: ${{ steps.route.outputs.attested-jobs }}",
 			])
 				assert.ok(route.includes(needed), `${path}: route job lacks ${needed}`);
+		}
+	});
+
+	it("runs required independent jobs on route failure", () => {
+		for (const id of [
+			"pr-offpath",
+			"artifact-trust",
+			"ci-guard",
+			"secret-scan",
+		]) {
+			const condition = plan.find((job) => job.id === id)?.if ?? "";
+			assert.ok(
+				condition.includes(
+					"!cancelled() && (needs.route.result == 'success' || needs.route.result == 'failure')",
+				),
+				id,
+			);
+			assert.ok(condition.includes(skipWhenAttested(id)), id);
+		}
+	});
+
+	it("tracks every release job the route job can skip for an attestation", () => {
+		const text = readFileSync(".github/workflows/release-hobo.yml", "utf8");
+		const skippable = Object.entries(workflowDocument(text).jobs ?? {}).filter(
+			([, job]) => {
+				const condition = asText(asObject(job)?.if) ?? "";
+				return (
+					condition.includes("needs.route.result") &&
+					condition.includes("attested-jobs")
+				);
+			},
+		);
+		assert.deepEqual(
+			skippable.map(([id]) => id),
+			["release-contract"],
+			"only release-contract is attestation-skippable; release-main-train-gate, release-realize and release-hobo-integration gate on needs.route.result but resolve a version or prove things in CI that no local attestation can stand in for",
+		);
+		const normalize = (condition: string) =>
+			condition.replaceAll(/\s+/gu, " ").trim();
+		for (const [id, job] of skippable) {
+			const planned = plan.find((entry) => entry.id === id);
+			if (!planned) continue;
+			assert.equal(
+				normalize(planned.if ?? ""),
+				normalize(asText(asObject(job)?.if) ?? ""),
+				`${id}: the plan's condition drifted from the workflow's`,
+			);
 		}
 	});
 });
@@ -221,7 +344,7 @@ describe("expressions in the description", () => {
 			env: values,
 			shard: { index: 2, total: 4, value: 5 },
 			jobResults: new Map(plan.map((job) => [job.id, "success" as const])),
-			jobOutputs: new Map([["pr_gate_validation", values]]),
+			jobOutputs: new Map([["pr_gate_plan", values]]),
 		});
 
 	it("can all be given a value on a developer's machine, for both events", () => {
@@ -238,6 +361,7 @@ describe("expressions in the description", () => {
 		const runsOn = (id: string, event: (typeof ATTESTATION_EVENTS)[number]) =>
 			conditionHolds(plan.find((job) => job.id === id)?.if, context(event));
 		for (const id of [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"release-contract",
@@ -297,7 +421,7 @@ describe("expressions in the description", () => {
 		);
 		assert.equal(
 			substituteExpressions(
-				"${{ needs.pr_gate_validation.outputs.pr_base }}",
+				"${{ needs.pr_gate_plan.outputs.pr_base }}",
 				context("pull_request", { pr_base: "abc" }),
 			),
 			"abc",
@@ -315,6 +439,23 @@ describe("expressions in the description", () => {
 			assert.equal(
 				evaluateExpression(skipWhenAttested(job), context("pull_request")),
 				true,
+			);
+	});
+
+	it("does not skip a covered job for outputs from a failed route", () => {
+		const failedRoute = (path: string) =>
+			path === "needs.route.result"
+				? "failure"
+				: path === "needs.route.outputs.attested"
+					? "true"
+					: path === "needs.route.outputs.attested-jobs"
+						? JSON.stringify(COVERED_JOBS)
+						: "";
+		for (const job of COVERED_JOBS)
+			assert.equal(
+				evaluateExpression(skipWhenAttested(job), failedRoute),
+				true,
+				job,
 			);
 	});
 

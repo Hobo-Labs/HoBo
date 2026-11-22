@@ -79,6 +79,33 @@ waits out `minDwellMs`. No cap means no money. A member failing longer than
 or a cap. Unknown is never a reason to move. `decideFleet`, the database
 fleet's policy, is unchanged.
 
+## Continuity plans
+
+`continuityFleetPlan(policy)` turns a Bindle's declared `continuity` trait
+(`@hobo/bindles`) into what every fleet engine runs on:
+
+- `fleet`: the `FleetPolicy` for `decideFleet`, with RPO = the declared
+  recovery point and the declared failover delay. `continuous` keeps the cost
+  signals (switch before a hard allowance runs out, with hysteresis and a
+  one-hour dwell); `on-failure` never makes a planned switch.
+- `standbys`: what placement asks for beside the writer.
+- `copy` / `copyEveryMs`: `snapshot` standbys are copied every half recovery
+  point (never more often than 15 s, since each copy costs reads and writes);
+  `rebuildable` state is `cold` and is not copied. `decideFleet` only fails
+  over to a standby copied within the RPO, so a `cold` plan is for an engine
+  that starts its next member empty (the relay's cache fleet).
+- `continuityBudgetCheck(plan, host?)`: holds the fleet to its declared monthly
+  ceiling before the host's own budget engine decides.
+- `continuityShortfalls(plan, running)`: reports when the running fleet cannot
+  keep the promise (too few standbys, a tick slower than the copy cadence, no
+  quorum to fail over without the operator, every member on one vendor). If
+  the caller cannot verify vendor diversity, it reports that uncertainty.
+
+A copy is one transaction and a move is a sealed register entry, so the next
+tick can complete or undo interrupted control-plane work. This alone does
+not fence writes or prove data continuity. Schema:
+`data-models/backend_fleet.{proto,cue}` `ContinuityFleetPlan`.
+
 ## Gates
 
 - **TypeScript:** `pnpm --filter @hobo/backend-fleet run build`.

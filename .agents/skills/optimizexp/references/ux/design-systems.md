@@ -21,8 +21,9 @@ timestamp: 2026-07-30T00:00:00Z
 
 ## HoBo anchors
 
-- `site/src/styles/global.css` — runtime tokens
-- `design-md` skill — visual checks against implemented tokens
+- `site/src/styles/global.css` — implemented site tokens
+- `scripts/visual-token-contract.json` — independent reviewed palette contract
+- `design-md` skill — always-on visual review and executable checks
 - Exp proofs under `src/draft/exp-proofs/ux/`
 
 ## Friction / uncertainty checks
@@ -42,8 +43,13 @@ timestamp: 2026-07-30T00:00:00Z
 ## Probe commands
 
 ```bash
-pnpm --filter hobo-site run design:lint
+pnpm run design:lint
+pnpm --filter @hobo/status-page test -- test/status-page-design-lint.test.ts
+pnpm --filter @hobo/mcp test -- test/secret-capture-design-lint.test.ts
 ```
+
+Review the changed surface with impeccable `critique`, then `audit`; polish any
+P0/P1 findings. Run the affected package's other rendered-surface tests too.
 
 ## Bus expectation sketch
 

@@ -1,3 +1,4 @@
+import { parseResourceId } from "@hobo/core";
 import { describe, expect, it } from "vitest";
 import {
 	CAMP_CREDENTIAL_ENV_VAR,
@@ -7,7 +8,7 @@ import {
 	type EphemeralCampDeployRequest,
 	type EphemeralCampDriver,
 	parseEphemeralCampTarget,
-	type TestHarnessError,
+	TestHarnessError,
 } from "../src/index.js";
 import { CAMP_ENV, fakeBindle, YARD_LIKE } from "./fixtures.js";
 
@@ -21,7 +22,8 @@ describe("ephemeral-camp lane gates", () => {
 			createTestHarness({ lane: "ephemeral-camp" }, { env: CAMP_ENV });
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			const refusal = error as TestHarnessError;
+			if (!(error instanceof TestHarnessError)) throw error;
+			const refusal = error;
 			expect(refusal.code).toBe("HARNESS_YARD_REQUIRED");
 			expect(refusal.remediation).toContain("never falls back to in-process");
 		}
@@ -32,7 +34,8 @@ describe("ephemeral-camp lane gates", () => {
 			parseEphemeralCampTarget({ name: "yard:aws" }, CAMP_ENV);
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			expect((error as TestHarnessError).code).toBe("HARNESS_YARD_INVALID");
+			if (!(error instanceof TestHarnessError)) throw error;
+			expect(error.code).toBe("HARNESS_YARD_INVALID");
 		}
 	});
 
@@ -41,7 +44,8 @@ describe("ephemeral-camp lane gates", () => {
 			parseEphemeralCampTarget(YARD_LIKE, { VITEST: "true" });
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			const refusal = error as TestHarnessError;
+			if (!(error instanceof TestHarnessError)) throw error;
+			const refusal = error;
 			expect(refusal.code).toBe("HARNESS_CREDENTIALS_REQUIRED");
 			expect(refusal.remediation).toContain("never degrades to in-process");
 		}
@@ -54,9 +58,8 @@ describe("ephemeral-camp lane gates", () => {
 			});
 			expect.unreachable("expected a refusal");
 		} catch (error) {
-			expect((error as TestHarnessError).code).toBe(
-				"HARNESS_CREDENTIAL_NOT_A_REF",
-			);
+			if (!(error instanceof TestHarnessError)) throw error;
+			expect(error.code).toBe("HARNESS_CREDENTIAL_NOT_A_REF");
 		}
 	});
 
@@ -185,9 +188,9 @@ describe("in-process lane", () => {
 	it("labels resources with no engine behind them as mocked", async () => {
 		const deployment = await deployInProcess(fakeBindle(), "test");
 		try {
-			expect(deployment.handles.get("db")?.fidelity).toBe("mocked");
+			expect(deployment.handles.get("db")?.fidelity).toBe("simulated");
 			expect(deployment.handles.get("db")?.endpoint).toBeUndefined();
-			expect(deployment.handles.get("cache")?.fidelity).toBe("mocked");
+			expect(deployment.handles.get("cache")?.fidelity).toBe("simulated");
 		} finally {
 			await destroyInProcess(deployment);
 		}
@@ -216,7 +219,7 @@ describe("in-process lane", () => {
 		const deployment = await deployInProcess(fakeBindle(), "test");
 		try {
 			const resolved = await deployment.resolver.resolve(
-				"db" as never,
+				parseResourceId("db"),
 				"locator",
 			);
 			expect(resolved).toEqual({

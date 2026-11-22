@@ -175,6 +175,26 @@ describe("schedule", () => {
 		expect(result.candidates).toEqual(["c001"]);
 	});
 
+	it("keeps the mandatory pilot gate during catch-up", () => {
+		const p = plan(4, 2, {}, ["pilot"]);
+		const s = slots(p, {
+			c000: "deferred",
+			c001: "deferred",
+			c002: "deferred",
+			c003: "deferred",
+		});
+		const result = schedule(p, s, { halted: false, catchUp: true });
+		expect(result.mandatoryGate).toBe(true);
+		expect(result.candidates).toEqual(["c000", "c001"]);
+	});
+
+	it("treats absent slots as pending when checking completion", () => {
+		const p = plan(2, 1);
+		const result = schedule(p, new Map(), { halted: false, catchUp: false });
+		expect(result.candidates).toEqual(["c000"]);
+		expect(result.complete).toBe(false);
+	});
+
 	it("budget: strictly more failures than allowed, deferred never counted, baseline subtracted", () => {
 		const p = plan(10, 10, { maxFailures: 2 });
 		expect(

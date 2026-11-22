@@ -31,9 +31,9 @@ an uncaught error included (`src/owned-temp-dir.ts`). The `hobo` binary instead 
 persistent data directory under `HOBO_HOME`; `hobo-mcp` and `createComposedHoboCli()`
 use the temporary default. A `dataDir` you pass is yours and is never removed. As entry
 points, the binaries also remove owned temporary directories (and the live Pulumi lane's
-workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). Another
-entry point that composes this CLI in its own process asks for the same removal through
-that export of `src/cli.ts`.
+workspace) on SIGTERM, SIGHUP, SIGINT or SIGQUIT (`removeOwnedDirsOnSignals`). A host
+that composes this CLI in its own process can opt in to the same removal through that
+export of `src/cli.ts`.
 When nothing else in the process listens for the signal, the directories are removed and
 the signal raised again, so the process still ends by it (status 128+n). When something
 else handles the signal (`hobo serve control` stops gracefully on SIGTERM and SIGINT and
@@ -89,7 +89,12 @@ supplies tenant-scoped planning evidence, independent revalidation, a trusted
 clock, and final provider-account/entitlement settlement evidence. Paid charges
 and shared credits are reserved together before deployment facts are published.
 Each charge stays with its source or destination billing account; credit scope
-and cost class remain part of the pinned plan.
+and cost class remain part of the pinned plan. Hosting free-tier snapshots,
+claims and settlement evidence use the explicit `allowance` entitlement kind;
+older hosting snapshots and settlement evidence without a kind retain that same
+meaning, including snapshots supplied by custom durable authorities.
+Legacy v1 fenced settlement evidence stays kindless for signature verification;
+the bridge does not inject a kind into that signed payload.
 
 Execution adopts the gateway's existing reservation through an atomic claim.
 Another transition cannot spend the same authorization. A lost provider response
@@ -220,9 +225,48 @@ as a live deployment. IaC selection lives in `src/compose.ts`:
 |---|---|
 | Persistent local Yard worker | Product default with a loadable source Bindle |
 | In-memory Pulumi stand-in | Explicitly injected library/test runtime |
-| Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); its programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept, else in a `hobo-pulumi-live-*` directory removed when the process ends (one `hobo:` line on stderr names it), so set `HOBO_PULUMI_WORKDIR` to keep the state |
-| Direct-HTTP Cloudflare resolver plane | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
-| Direct-HTTP Vercel resolver plane | `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
+| Real Pulumi Automation/CLI | `HOBO_PULUMI_LIVE=1` (engine- and credential-gated); programs and `file://` state go in `HOBO_PULUMI_WORKDIR`, which is kept and encrypted under a passphrase the owner provisions once in the secret store as `HOBO_PULUMI_STATE_PASSPHRASE` (`src/owner-keys.ts` reads it into the process's trusted vault; a missing key is refused because the store has no atomic create). If the workspace already has state, provision its original passphrase. `PULUMI_CONFIG_PASSPHRASE` in the environment is not read. Without a retained workspace, a disposable `hobo-pulumi-live-*` directory is removed when the process ends (one `hobo:` line on stderr names it) |
+| Direct-HTTP Cloudflare resolver plane | A brokered or explicitly injected `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID`; production hosting configuration required |
+| Direct-HTTP Vercel resolver plane | A brokered or explicitly injected `VERCEL_TOKEN` (and `VERCEL_TEAM_ID`, or `VERCEL_ORG_ID`, for a project in a team); production hosting configuration required |
+
+Whichever lane runs, a placement on a secret store (`hobo add infisical |
+bitwarden | 1password`, port `secretRef`) is executed by
+`withSecretRefExecution` (`src/secret-ref-executor.ts`): it opens the owner's
+store without a page (found through the locator in the owner's HoBo settings), refuses a store
+that did not open (`HOBO_SECRET_REF_STORE_UNAVAILABLE`) or is not the one the
+plan chose (`HOBO_SECRET_REF_STORE_MISMATCH`), and returns the reference the
+workload reads at run time; nothing is provisioned, and destroy leaves the
+store's entries alone. The placement's outputs name the provider junctions
+needed between the store's Yard and its readers (`secretRefJunctions`). These
+declarations do not provision or verify connectivity or workload credentials.
+The binary reads the locator from the project selected by `--cwd`. Embedding
+hosts must pass an absolute `projectDir` to `createDefaultYardRuntime` (or
+provide a store opener when selecting an IaC provider); without one, secret
+references refuse rather than reading a different project's locator.
+
+The composed `hobo` never takes a real deploy token from its own process
+environment: `deployEnvironment()` in `src/compose.ts` drops a
+`VERCEL_TOKEN` or `CLOUDFLARE_API_TOKEN` that is not an OpenSesame `osr_`
+surrogate before IaC selection, so a token exported in a shell (and visible to
+every child process) selects nothing and the run falls back to the local Yard.
+The resolver plane receives a surrogate (the OpenSesame relaunch below) or a
+credential explicitly supplied by an embedding host. For relay delivery,
+`hobo ci up` passes the owner's store credential in the run's trusted vault.
+
+When a CI or CD identity or session is missing or unverified, run the relevant
+`hobo ci up --hand-off` or `hobo cd up --hand-off` setup ceremony. Use both when
+the deployment needs both families. A CI connection check does not establish
+that the CD connection is ready. Remote agents follow the
+[HoBo deployment skill](../../.agents/skills/hobo-deploy/SKILL.md): before
+opening a form, verify that its owner settings remain private; otherwise report
+the missing capability instead of collecting identifiers or values in chat.
+The transcript audit flags known private fields in nested owner-tool inputs and
+results, including API keys and numeric identifiers, without printing their values.
+
+Vercel source preparation builds a file manifest from a pinned commit without
+contacting the provider or deploying. The [CD guide](./CD.md#delivery-as-code)
+describes archive fallback, the synthetic emulator's aggregate limit, and the
+authorization still required before production dispatch.
 
 The Vercel fixture helper (`src/vercel-deploy-provider.ts`,
 `createVercelDeployProvider({ fixtureArtifact: true, token })`, which
@@ -395,8 +439,9 @@ non-secret settings), and realizes it as one git-source Vercel deployment
 through the git-artifact mode above: the non-secret settings first, then each of
 the Bindle's resources applied through the provider the Yard names, which
 deploys once. Only Vercel Yards are realized (`HOBO_CI_DEPLOY_YARD_PROVIDER`
-otherwise). Production is deployed by the workflow on `main`
-(`.github/workflows/relay-deploy.yml`), not by hand.
+otherwise). The workflow on `main` (`.github/workflows/relay-deploy.yml`)
+currently adopts and verifies a Git-sourced deployment; it does not run this
+deploy command.
 
 Delivery planning also reads declared secret projections from Yards in the
 relay's own Junction, keeping each projection under its source Yard. A declared
@@ -408,9 +453,9 @@ verified; the changed cross-Yard path still needs that evidence.
 hobo ci deploy --cwd packages/ci-vercel --ref main \
   --team team_… --set HOBO_CI_PUBLIC_URL=https://… --dry-run
 
-# What the workflow on main runs: production, the Infisical ids the production
-# Camp's config-service binding asks for, the cache attached first.
-VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref main \
+# From an authorized GitHub Actions job with id-token: write and a committed
+# secret-store binding: production, with the cache attached first.
+hobo ci deploy --cwd packages/ci-vercel --ref main \
   --sha <40-hex commit> --team team_… --target production \
   --set INFISICAL_IDENTITY_ID=… --set INFISICAL_PROJECT_ID=… --provision --wait
 ```
@@ -427,13 +472,22 @@ VERCEL_TOKEN=… hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--root-directory <dir>` | sent as `projectSettings.rootDirectory`, which Vercel saves on the project |
 | `--create-project` | create the project when Vercel has none by that name, with the Yard's `rootDirectory`; without it a missing project is a refusal |
 | `--provision` | attach the Marketplace bindings the Camp chooses first, idempotently, with the Vercel CLI (`src/ci-relay-provision.ts`); a failure is reported, not fatal |
-| `--wait` | wait up to 15 minutes for READY; ERROR, CANCELED or the timeout is `HOBO_CI_DEPLOY_NOT_READY` |
+| `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
 
-What it needs: `VERCEL_TOKEN` in the environment for a real run (never printed,
-never logged, and not read at all by a dry run), a project whose settings build
-`packages/ci-vercel` (or `--root-directory`), and Vercel's GitHub integration
-able to read the repository.
+A real run reads the deploy token from the owner's secret store as the
+dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
+through the committed secret-store binding; a token preloaded in an embedding
+caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
+command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
+passes that child the token from the run's fresh vault. The target project must
+build `packages/ci-vercel` (or the chosen `--root-directory`), and Vercel's
+GitHub integration must be able to read the
+repository.
+
+A credential-free legacy binding may omit `deployOidcSubject` or carry the
+exact writer subject. Any other nonempty subject is malformed and makes the
+workflow gate fatal rather than a credential-free skip.
 
 What it deliberately does not do:
 
@@ -667,8 +721,8 @@ become `ResolveRequest.desired`.
    lane (unchanged);
 2. no cloud credential at all → the library runtime's in-memory Pulumi backend;
    product `up` uses the persistent local source-Bindle path instead;
-3. a cloud credential → the exact-resource resolver plane (Cloudflare when
-   `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set, else Vercel).
+3. a cloud credential accepted by the composition → the exact-resource
+   resolver plane (Cloudflare with a token and account ID, else Vercel).
 
 The committed hello-bindle upload helpers require explicit `fixtureArtifact:true`
 and are never selected by environment. Their teardown performs native deletion

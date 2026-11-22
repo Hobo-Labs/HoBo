@@ -87,7 +87,12 @@ export function shouldCountLocalUsage(
 	observedAt: string,
 ): boolean {
 	const completed = Date.parse(lease.usageCompletedAt || lease.settledAt);
-	return !Number.isFinite(completed) || completed >= Date.parse(observedAt);
+	const observed = Date.parse(observedAt);
+	return (
+		!Number.isFinite(completed) ||
+		!Number.isFinite(observed) ||
+		completed >= observed
+	);
 }
 
 export function route(
@@ -179,17 +184,28 @@ export function route(
 			return [offer, { reserved, used, providerSpent }] as const;
 		}),
 	);
-	const providerExposures = new Map<string, number>();
-	const accounted = new Set<string>();
-	for (const [offer, accounting] of providerAccounting) {
+	const providerAccounts = new Map<
+		string,
+		{ target: string; spent: number; reports: number; hasAllocation: boolean }
+	>();
+	for (const offer of account.offers) {
+		const accounting = providerAccounting.get(offer);
+		if (!accounting) throw new Error("missing provider accounting");
 		const key = JSON.stringify([offer.provider, offer.providerAccountId]);
-		if (accounted.has(key)) continue;
-		accounted.add(key);
-		providerExposures.set(
-			offer.providerAccountId,
-			(providerExposures.get(offer.providerAccountId) ?? 0) +
-				accounting.providerSpent,
-		);
+		const previous = providerAccounts.get(key);
+		providerAccounts.set(key, {
+			target: offer.providerAccountId,
+			spent: Math.max(previous?.spent ?? 0, accounting.providerSpent),
+			reports: (previous?.reports ?? 0) + 1,
+			hasAllocation:
+				(previous?.hasAllocation ?? false) ||
+				offer.freeMinutes !== 0 ||
+				offer.sandboxAllowance !== undefined,
+		});
+	}
+	const providerExposures = new Map<string, number>();
+	for (const { target, spent } of providerAccounts.values()) {
+		providerExposures.set(target, (providerExposures.get(target) ?? 0) + spent);
 	}
 	const candidates = account.offers.flatMap((offer) => {
 		if (
@@ -204,7 +220,20 @@ export function route(
 			return [];
 		const accounting = providerAccounting.get(offer);
 		if (!accounting) throw new Error("missing provider accounting");
-		const { reserved, used, providerSpent } = accounting;
+		const { reserved, used } = accounting;
+		const providerAccount = providerAccounts.get(
+			JSON.stringify([offer.provider, offer.providerAccountId]),
+		);
+		if (!providerAccount) throw new Error("missing provider exposure");
+		if (providerAccount.reports > 1 && providerAccount.hasAllocation) {
+			refuse(
+				"budget.ambiguous-provider-allocation",
+				"duplicate provider account reports cannot authorize free allocation",
+				offer.id,
+			);
+			return [];
+		}
+		const providerSpent = providerAccount.spent;
 		if (reserved.length >= offer.concurrency) return [];
 		const usedFree = used
 			.filter((lease) => shouldCountLocalUsage(lease, offer.observedAt))

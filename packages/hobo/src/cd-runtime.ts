@@ -87,7 +87,11 @@ import {
 } from "./cd-declared-rails.js";
 import { defaultModuleImporter } from "./cd-delivery-module.js";
 import type { CdDeployHost } from "./cd-deploy.js";
-import { type CdStoreOpener, openCdStore } from "./cd-store.js";
+import {
+	type CdSecretReader,
+	type CdStoreOpener,
+	openCdStore,
+} from "./cd-store.js";
 import {
 	loadTopologyFiles,
 	mergeTopologyReaders,
@@ -113,6 +117,11 @@ export type CdRuntimeOptions = Readonly<{
 	principal?: PrincipalRef;
 	store?: DurableEventStore;
 	openStore?: CdStoreOpener;
+	/**
+	 * Reads the owner's secret store (a fleet member's connection string); a
+	 * journal on a fleet cannot open without it.
+	 */
+	readSecret?: CdSecretReader;
 	yards?: readonly Yard[];
 	topologyFiles?: readonly string[];
 	topology?: readonly TopologyReader[];
@@ -240,14 +249,20 @@ export async function openCdRuntime(
 	let store = options.store;
 	if (!store) {
 		try {
-			opened = await (options.openStore ?? openCdStore)(config.store, { now });
+			opened = await (options.openStore ?? openCdStore)(
+				config.store,
+				{ now },
+				options.readSecret,
+			);
 		} catch (error) {
 			return refusal(
 				"cd-store-unavailable",
 				error instanceof Error ? error.message : String(error),
-				config.store.backend === "postgres"
-					? "Check HOBO_CD_POSTGRES_URL reachability and that the server is PostgreSQL 16 or later."
-					: "Check that HOBO_HOME is writable (or set HOBO_CD_SQLITE_PATH).",
+				config.store.backend === "postgres-fleet"
+					? "Keep each member's connection string in the secret store (entry HOBO_CD_POSTGRES_URL_<ID>), give the runtime access to the store, and check that a majority of members and witnesses are reachable on PostgreSQL 16 or later."
+					: config.store.backend === "postgres"
+						? "Check HOBO_CD_POSTGRES_URL reachability and that the server is PostgreSQL 16 or later."
+						: "Check that HOBO_HOME is writable (or set HOBO_CD_SQLITE_PATH).",
 			);
 		}
 		store = opened.store;

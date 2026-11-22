@@ -44,6 +44,7 @@ const CLOUDFLARE_PROGRAM = createTrivialIacProgram({
 describe("createPulumiAutomationApiEngine", () => {
 	it("speaks the shared engine shape and pins the toolchain version", () => {
 		const engine = createPulumiAutomationApiEngine({
+			ephemeralState: true,
 			workDir: freshWorkDir(),
 		});
 		expect(engine.pulumiVersion).toBe(PINNED_PULUMI_AUTOMATION_VERSION);
@@ -67,6 +68,7 @@ describe("createPulumiAutomationApiEngine", () => {
 
 	it("snapshot() of an empty estate is empty (no engine invocation needed)", () => {
 		const engine = createPulumiAutomationApiEngine({
+			ephemeralState: true,
 			workDir: freshWorkDir(),
 		});
 		expect(engine.snapshot()).toEqual({});
@@ -75,7 +77,7 @@ describe("createPulumiAutomationApiEngine", () => {
 	it("fails closed with the typed unavailable error when the pulumi engine is missing", async () => {
 		const engine = createPulumiAutomationApiEngine({
 			workDir: freshWorkDir(),
-
+			ephemeralState: true,
 			env: { PATH: "/nonexistent", PULUMI_CONFIG_PASSPHRASE: "" },
 		});
 		await expect(engine.preview(CLOUDFLARE_PROGRAM)).rejects.toSatisfy(
@@ -87,6 +89,7 @@ describe("createPulumiAutomationApiEngine", () => {
 
 	it("maps an injected automation module's workspace failure to the typed error", async () => {
 		const engine = createPulumiAutomationApiEngine({
+			ephemeralState: true,
 			workDir: freshWorkDir(),
 			automation: {
 				LocalWorkspace: {
@@ -127,6 +130,7 @@ describe("createPulumiAutomationApiEngine", () => {
 			},
 		});
 		const engine = createPulumiAutomationApiEngine({
+			ephemeralState: true,
 			workDir: freshWorkDir(),
 			automation: {
 				LocalWorkspace: {
@@ -164,6 +168,7 @@ describe("createPulumiAutomationApiEngine", () => {
 			try {
 				const engine = createPulumiAutomationApiEngine({
 					workDir,
+					ephemeralState: true,
 					env: {
 						PATH: process.env.PATH,
 						PULUMI_HOME: join(workDir, "pulumi-home"),

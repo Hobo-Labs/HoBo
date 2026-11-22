@@ -325,6 +325,10 @@ package data_models
 	periodActuals: [...#ActualCharge]
 	completeness: "complete" | "partial"
 	observations: [...#StateObservation]
+	_agreementTenants: [for a in agreements {a.tenantId & tenantId}]
+	_allowanceTenants: [for a in allowances {a.grant.tenantId & tenantId}]
+	_creditTenants: [for c in credits {c.grant.tenantId & tenantId}]
+	_commitmentTenants: [for c in commitments {c.commitment.tenantId & tenantId}]
 }
 
 #UsageMeasurement: {
@@ -353,7 +357,7 @@ package data_models
 }
 
 #QuoteScenario: {
-	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel"
+	action:             "place" | "dispatch" | "rebalance" | "migrate" | "cancel" | "destroy"
 	at:                 #UtcTimestamp
 	horizon:            #UtcTimestamp
 	pricingCatalogHash: #Digest
@@ -363,7 +367,99 @@ package data_models
 	candidate: [...#WorkloadDelta]
 	sourceProviderAgreementIds: [...string & !=""]
 	options:            #QuoteOptions
+	destroyCancelsAgreement?: bool
+	if action == "destroy" {
+		destroyCancelsAgreement: bool
+	}
 	pricingCatalogHash: catalog.catalogHash
+}
+
+#PricingModelScope: {
+	modelId:            string & !=""
+	revision:           string & !=""
+	tenantId:           string & !=""
+	providerId:         string & !=""
+	providerAccountRef: string & !=""
+	productId:          string & !=""
+}
+
+#DeveloperPricingModel: {
+	scope:    #PricingModelScope
+	scenario: #QuoteScenario
+}
+
+#UnavailablePricingModel: {
+	reason: string & !=""
+}
+
+#PricingAvailability: {
+	unavailable?:     #UnavailablePricingModel
+	developerModel?:  #DeveloperPricingModel
+	_exactlyOneState: true & ((unavailable != _|_) != (developerModel != _|_))
+}
+
+#BudgetRoutingDisclosure: {
+	evaluation:  "not-evaluated" | "allowed" | "denied" | "not-applicable" | "unavailable"
+	reservation: "not-created" | "held" | "uncertain" | "settled" | "released"
+	if evaluation == "not-evaluated" {
+		reservation: "not-created"
+	}
+}
+
+#TargetPricingResource: {
+	resourceId:         string & !=""
+	providerId:         string & !=""
+	providerAccountRef: string & !=""
+	productId:          string & !=""
+}
+
+#TargetPricingInventory: {
+	targetId:    string & !=""
+	tenantId:    string & !=""
+	planDigest:  #Digest
+	complete:    bool
+	evidenceRef: string
+	resources: [...#TargetPricingResource] & [_, ...]
+	operation?: "deploy" | "destroy"
+	if complete {evidenceRef: string & !=""}
+	_limit: true & (len(resources) <= 256)
+	_unique: {
+		for i, left in resources
+		for j, right in resources
+		if j > i {"\(i)/\(j)": true & (left.resourceId != right.resourceId)}
+	}
+}
+
+#TargetPricingBinding: {
+	resourceId:     string & !=""
+	candidateIndex: int & >=0 & <256
+}
+
+#TargetPricingModel: {
+	modelId:    string & !=""
+	revision:   string & !=""
+	planDigest: #Digest
+	scenario:   #QuoteScenario
+	bindings: [...#TargetPricingBinding] & [_, ...]
+	_limit:          true & (len(bindings) <= 256)
+	_candidateCount: true & (len(bindings) == len(scenario.candidate))
+	_unique: {
+		for i, left in bindings
+		for j, right in bindings
+		if j > i {
+			"\(i)/\(j)/resource":  true & (left.resourceId != right.resourceId)
+			"\(i)/\(j)/candidate": true & (left.candidateIndex != right.candidateIndex)
+		}
+		for i, binding in bindings {
+			"\(i)/range": true & (binding.candidateIndex < len(scenario.candidate))
+		}
+	}
+}
+
+#TargetPricingAvailability: {
+	unavailable?:     #UnavailablePricingModel
+	model?:           #TargetPricingModel
+	_exactlyOneState: true & ((unavailable != _|_) != (model != _|_))
 }
 
 #QuoteAmounts: {
@@ -433,9 +529,9 @@ package data_models
 }
 
 #PricingRejected: {
-	schema:   "hobo.pricing.rejected/v1"
-	code:     string & =~"^[A-Z][A-Z0-9_]+$"
-	message:  string & !=""
+	schema:  "hobo.pricing.rejected/v1"
+	code:    string & =~"^[A-Z][A-Z0-9_]+$"
+	message: string & !=""
 	unpriced: [...#UnpricedItem]
 	rejectedCandidates: [...#RejectedCandidate]
 }
@@ -590,10 +686,14 @@ package data_models
 }
 
 #PricingFixture: {
-	catalog:   #PricingCatalog
-	state?:    #FinancialStateView
-	scenario?: #QuoteScenario
-	quote?:    #QuoteVector
+	catalog:             #PricingCatalog
+	state?:              #FinancialStateView
+	scenario?:           #QuoteScenario
+	availability?:       #PricingAvailability
+	routingDisclosure?:  #BudgetRoutingDisclosure
+	targetInventory?:    #TargetPricingInventory
+	targetAvailability?: #TargetPricingAvailability
+	quote?:              #QuoteVector
 	externalQuotes?: [...#ExternalProviderQuote]
 }
 

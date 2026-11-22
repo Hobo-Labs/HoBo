@@ -9,6 +9,9 @@ Production WIT toolchain package for HoBo. Vendors and pins reused `wasi:*` inte
 - `wit/deps/wasi-*` — vendored `wasi:*` WIT sources with SHA-256 pins recorded in `wit-lock.json`.
 - `wit-lock.json` — schema `hobo.wit-toolchain-lock/v1`; exact toolchain floor per ADR-0085.
 - `src/generated/` — jco-emitted `.d.ts` bindings per world (never hand-edited; regenerate with `pnpm wit:gen`).
+- A staged `local-services` world generates type-only package exports for the pinned
+  `@hobo/wit/wasi-keyvalue-store` and `@hobo/wit/wasi-blobstore` subsets used by
+  local test services. These are the vendored interfaces, not the full WASI APIs.
 - `data-models/` — protobuf + CUE records for lock, pins, surfaces, and parity reports.
 
 ## Commands

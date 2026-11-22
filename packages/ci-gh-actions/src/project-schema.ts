@@ -5,6 +5,7 @@ import {
 	CiProjectProviderSchema,
 } from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
+import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
@@ -246,6 +247,8 @@ export const CiProjectDocumentSchema = z
 			.optional(),
 		agent: z.record(z.string(), z.json()).optional(),
 		runnerRouting: RunnerRoutingSchema.optional(),
+
+		runnerOrder: RunnerOrderDocumentSchema.optional(),
 		turboCache: TurboCacheSchema.optional(),
 	})
 	.strict();
@@ -286,6 +289,7 @@ export function ciProjectJsonSchema() {
 	const { $defs, ...root } = z.toJSONSchema(CiProjectDocumentSchema, {
 		target: "draft-2020-12",
 		reused: "ref",
+		io: "input",
 	});
 	const definitions = {
 		...object.parse($defs ?? {}),
@@ -340,6 +344,7 @@ export function resolveCiProjectReferences(
 		integrations: _integrations,
 		agent: _agent,
 		runnerRouting: _runnerRouting,
+		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
 		...document
 	} = input;

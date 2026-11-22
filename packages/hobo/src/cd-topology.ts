@@ -1,4 +1,4 @@
-/* oxlint-disable anti-slop/no-unsafe-dictionary-type, anti-slop/no-unknown-parameters, anti-slop/require-safety-comment-for-type-assertion */
+/** public-contract: declared Camp topology composed from @hobo/yards and cd_topology records. */
 
 import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
@@ -88,8 +88,12 @@ export function staticTopologyReader(
 	camps: readonly CampTopology[],
 ): TopologyReader {
 	const byId = new Map<string, CampTopology>();
+	const physical = new Set<string>();
 	for (const camp of camps) {
 		if (byId.has(camp.campId)) throw new TopologyConflictError(camp.campId);
+		const physicalId = camp.physicalCampId ?? camp.campId;
+		if (physical.has(physicalId)) throw new TopologyConflictError(physicalId);
+		physical.add(physicalId);
 		byId.set(camp.campId, camp);
 	}
 	const all = Object.freeze([...byId.values()]);
@@ -104,9 +108,14 @@ export function mergeTopologyReaders(
 ): TopologyReader {
 	async function all(): Promise<readonly CampTopology[]> {
 		const seen = new Map<string, CampTopology>();
+		const physical = new Set<string>();
 		for (const reader of readers) {
 			for (const camp of await reader.camps()) {
 				if (seen.has(camp.campId)) throw new TopologyConflictError(camp.campId);
+				const physicalId = camp.physicalCampId ?? camp.campId;
+				if (physical.has(physicalId))
+					throw new TopologyConflictError(physicalId);
+				physical.add(physicalId);
 				seen.set(camp.campId, camp);
 			}
 		}
@@ -139,7 +148,7 @@ export type TopologyOutcome =
 	| TopologyRefusal;
 
 const INVALID_REMEDIATION =
-	"A topology file default-exports a @hobo/yards Yard, or exports `yards` (Yards) and/or `camps` (records with campId `<yard>/<camp>`, yardId, provider, envType, optional regions, labels, stationId, management); see packages/hobo/CD.md.";
+	"A topology file default-exports a @hobo/yards Yard, or exports `yards` (Yards) and/or `camps` (records with campId `<yard>/<camp>`, yardId, provider, envType, optional logicalId, regions, labels, stationId, management); see packages/hobo/CD.md.";
 
 function splitFiles(value: unknown): string[] {
 	return isJsonString(value)
@@ -244,9 +253,36 @@ function parseCamp(item: unknown, at: string, stationId: string): CampTopology {
 			"cd-topology-station-mismatch",
 			`${at}: Camp ${parsed.campId} is declared for Station ${parsed.stationId}, not ${stationId}`,
 		);
+	const hasLogicalId =
+		isJsonObject(item) &&
+		(Object.hasOwn(item, "logicalId") || Object.hasOwn(item, "logical_id"));
+	if (
+		hasLogicalId &&
+		(parsed.logicalId === "" ||
+			parsed.logicalId.length > 512 ||
+			parsed.logicalId !== parsed.logicalId.trim() ||
+			Array.from(parsed.logicalId).some((character) => {
+				const code = character.charCodeAt(0);
+				return code < 32 || code === 127;
+			}))
+	)
+		throw new TopologyParseError(
+			"cd-topology-invalid",
+			`${at}: logicalId must be a non-empty stable identity`,
+		);
 	const labels = { ...parsed.labels };
+	const physicalCampId = campIdOf(parsed.yardId, local);
+	const logicalCampId = parsed.logicalId
+		? campIdOf(
+				parsed.logicalId.slice(0, parsed.logicalId.indexOf("/")),
+				parsed.logicalId.slice(parsed.logicalId.indexOf("/") + 1),
+			)
+		: undefined;
 	return Object.freeze({
-		campId: campIdOf(parsed.yardId, local),
+		campId: logicalCampId ?? physicalCampId,
+		...(parsed.logicalId && parsed.logicalId !== physicalCampId
+			? { physicalCampId }
+			: undefined),
 		yardId: parsed.yardId,
 		stationId,
 		provider: parsed.provider,

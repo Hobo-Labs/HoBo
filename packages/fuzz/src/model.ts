@@ -255,8 +255,6 @@ export class ControlModel {
 			this.append(tenantId, "capability.add-refused", { capabilityId });
 			return;
 		}
-		if (!verbs.every(isVerb)) throw new TypeError("invalid capability verb");
-		const ownedVerbs = Object.freeze([...verbs]);
 		this.tick();
 		this.capabilities.set(capabilityId, {
 			id: capabilityId,

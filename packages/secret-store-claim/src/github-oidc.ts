@@ -1,26 +1,3 @@
-/**
- * The OIDC subject GitHub Actions tokens carry for one repository, and the
- * deploy trust built from it.
- *
- * GitHub issues one of two subject forms for a push to a branch:
- *
- * - legacy:    `repo:<owner>/<repo>:ref:refs/heads/<branch>`
- * - immutable: `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/<branch>`
- *
- * Which one a repository gets is GitHub's setting, not HoBo's, so the trust
- * is never formatted from the repository name: the prefix is read from the
- * repository's subject template (`sub_claim_prefix`, or
- * `use_immutable_subject` with the ids of `GET /repos/{owner}/{repo}`), and
- * when GitHub does not say, nothing is written (fail closed). A glob such as
- * `repo:o@*\/r@*` is never produced: it matches a recycled name. The ids are
- * pinned again as `repository_id` and `repository_owner_id`, claims that hold
- * whatever the subject form.
- *
- * Endpoints (GitHub REST reference, read 2026-11-13; pinned by
- * `contracts/pacts/github-oidc-subject.pact.json`):
- * - GET /repos/{owner}/{repo}
- * - GET /repos/{owner}/{repo}/actions/oidc/customization/sub
- */
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import type { InfisicalOidcTrust } from "@hobo/adapter-infisical";
 import {
@@ -130,23 +107,66 @@ export function parseGithubOidcSubject(input: {
 	}) as GithubOidcSubject;
 }
 
-/** The deploy identity's trust: GitHub Actions on one branch of the repository. */
-export function githubDeployTrust(
+// public-contract: suffix appended to the org-wide GitHub Actions audience for the deploy-token reader OIDC trust.
+export const DEPLOY_READER_AUDIENCE_SUFFIX = "/hobo-ci-deploy-reader";
+// public-contract: GitHub environment name used to scope the deploy-token writer OIDC trust for app credentials.
+export const DEPLOY_WRITER_ENVIRONMENT = "hobo-ci-app-credentials";
+// public-contract: GitHub environment name used to scope the deploy-token reader OIDC trust.
+export const DEPLOY_READER_ENVIRONMENT = "hobo-ci-deploy";
+
+function githubEnvironmentTrust(
 	subject: GithubOidcSubject,
-	branch = "main",
+	environment: string,
+	audience: string,
+	branch: string,
+	workflow = "relay-deploy.yml",
 ): InfisicalOidcTrust {
 	if (!BRANCH.test(branch))
 		return secretStoreError("SECRET_STORE_INVALID", "not a branch name");
 	return Object.freeze({
 		issuer: GITHUB_ACTIONS_ISSUER,
-		audiences: [`https://github.com/${subject.ownerLogin}`],
-		subject: `${subject.subjectPrefix}:ref:refs/heads/${branch}`,
-		// Format-independent: a renamed or recycled repository cannot match.
+		audiences: [audience],
+		subject: `${subject.subjectPrefix}:environment:${environment}`,
 		claims: {
 			repository_id: subject.repositoryId,
 			repository_owner_id: subject.repositoryOwnerId,
+			environment,
+			ref: `refs/heads/${branch}`,
+			workflow_ref: `${subject.repository}/.github/workflows/${workflow}@refs/heads/${branch}`,
+			job_workflow_ref: `${subject.repository}/.github/workflows/relay-deploy.yml@refs/heads/${branch}`,
 		},
 	});
+}
+
+export function githubDeployTrust(
+	subject: GithubOidcSubject,
+	branch = "main",
+): InfisicalOidcTrust {
+	return githubEnvironmentTrust(
+		subject,
+		DEPLOY_WRITER_ENVIRONMENT,
+		`https://github.com/${subject.ownerLogin}`,
+		branch,
+		"app-credentials.yml",
+	);
+}
+
+export function githubDeployReaderTrust(
+	subject: GithubOidcSubject,
+	branch = "main",
+): InfisicalOidcTrust {
+	return githubEnvironmentTrust(
+		subject,
+		DEPLOY_READER_ENVIRONMENT,
+		`https://github.com/${subject.ownerLogin}${DEPLOY_READER_AUDIENCE_SUFFIX}`,
+		branch,
+	);
+}
+
+export function githubReaderSubject(writerSubject: string): string | undefined {
+	const writerSuffix = `:environment:${DEPLOY_WRITER_ENVIRONMENT}`;
+	if (!writerSubject.endsWith(writerSuffix)) return undefined;
+	return `${writerSubject.slice(0, -writerSuffix.length)}:environment:${DEPLOY_READER_ENVIRONMENT}`;
 }
 
 /**
