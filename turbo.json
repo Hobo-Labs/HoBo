@@ -179,7 +179,6 @@
         "site/src/styles/global.css",
         "packages/**/package.json",
         "packages/connect-ui/src/client/styles.css",
-        "packages/control-yard/public/yard.css",
         "packages/mcp/src/secret-capture/html.ts",
         "packages/status-page/src/tokens.ts",
         "examples/**/package.json",
