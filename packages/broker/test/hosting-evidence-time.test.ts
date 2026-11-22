@@ -33,6 +33,7 @@ function snapshot() {
 		validUntil,
 		entitlements: [
 			{
+				kind: "allowance",
 				bucketId: "b",
 				unit: "request",
 				periodId: "p1",
