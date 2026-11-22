@@ -186,7 +186,7 @@ const routedRunsOn = "${{ needs.route.outputs.runner || 'ubuntu-24.04' }}";
 const shardRunsOn =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 const mergeShardRunsOn =
-	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
+	"${{ needs.pr_gate_plan.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 test("repo-local composite actions require a prior pinned actions/checkout step", async () => {
 	const disabledBad = `name: x
@@ -484,6 +484,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 		"examples-e2e.yml",
 		"dev-env-smoke.yml",
 		"release-hobo.yml",
+		"release-hobo-pr.yml",
 		"pricing-ci.yml",
 		"release-pricing.yml",
 	]) {
@@ -508,6 +509,15 @@ test("every trunk-capable CI and release job requests the trunk label by default
 				.join("\n");
 			const runsOn = block.match(/^    runs-on: (.*)$/m)?.[1];
 			assert.ok(runsOn, `${file}:${lines[start]} has no runs-on`);
+			if (
+				((file === "hobo-ci.yml" || file === "release-hobo.yml") &&
+					lines[start] === "  release-hobo-integration:") ||
+				(file === "release-hobo-pr.yml" &&
+					lines[start] === "  release-integration:")
+			) {
+				assert.equal(runsOn, "ubuntu-24.04", `${file}:${lines[start]}`);
+				continue;
+			}
 			// release-hobo-cli builds the CLI release-npm runs with its OIDC token.
 			if (
 				file === "release-hobo.yml" &&
@@ -568,7 +578,7 @@ test("every trunk-capable CI and release job requests the trunk label by default
 			if (runsOn === mergeShardRunsOn) {
 				assert.equal(file, "hobo-ci.yml", `${file}:${lines[start]}`);
 				assert.equal(lines[start], "  workspace_tests:");
-				assert.match(block, /^    needs: \[route, pr_gate_validation\]/m);
+				assert.match(block, /^    needs: \[route, [^\n]*pr_gate_plan/m);
 				continue;
 			}
 			// The deps-image route chooses the box or a hosted Docker context.

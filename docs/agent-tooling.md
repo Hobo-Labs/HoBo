@@ -24,7 +24,13 @@ Third-party AI-coding tools are wired into this repo for **Claude Code**, **Curs
 
 OptimizeXP native captures persist the replay command's exit code, mark nonzero runs degraded, and promote only media created or changed by that command; a stale or generated image/video alone is not successful evidence.
 
-The mirrored `verify-budget-policy-routing` skill checks dispatcher reservation histories against real code, a bounded TLA+ model, and an exact-arithmetic proof of an abstract budget invariant. Run it from the repository root with `bash scripts/verify-state-machine.sh .agents/skills/verify-budget-policy-routing`. The model and proof describe their bounds and assumptions; neither proves implementation refinement or external provider behavior. The Z3 script treats settled cost above the reserved hold as outside that inductive cap (aligned with truthful overrun recording at confirm).
+The mirrored subsystem verification skills pair implementation tests with TLA+
+models and, where applicable, mathematical proofs of abstractions. See the
+[state-machine verification index](state-machines.md) for covered behavior,
+the audit queue, assumptions, and `pnpm run verify:state-machines`. These checks
+do not by themselves prove implementation refinement or external effects. The
+budget-routing Z3 proof treats settled cost above the reserved hold as outside
+its inductive cap, aligned with truthful overrun recording at confirmation.
 
 The mirrored `verify-broker-budget-authority` skill's BrokerBudget model keeps unused-release evidence and final settlement evidence mutually exclusive, so a reservation cannot be claimed after unused evidence is recorded, cannot carry both evidence kinds, and cannot be released once final evidence exists.
 
@@ -147,9 +153,9 @@ A **design skill** for AI harnesses (npm `impeccable`, v3.5.0, homepage
 [impeccable.style](https://impeccable.style)). 23 commands spanning the design
 workflow — `shape`, `critique`, `audit`, `polish`, plus dials like `bolder`,
 `quieter`, `colorize`. **Standing duty on visual work** (TUI, dashboard,
-Evidence, `site/`, any package `DESIGN.md`): run `critique` then `audit`
+Evidence and `site/`): run `critique` then `audit`
 (and `polish` on P0/P1) and `pnpm run design:lint` without being asked.
-See `AGENTS.md` “Design system + lint”. **No API keys**, but it is **not**
+See `AGENTS.md` “Visual quality”. **No API keys**, but it is **not**
 offline — see egress below.
 - **Network egress (three paths, one of them automatic):**
   - `scripts/context.mjs` calls `impeccable.style/api/version` when it is run
@@ -190,13 +196,9 @@ offline — see egress below.
   harnesses and compiles **per harness** into `.claude`, `.agents`, `.cursor`
   and `.github`. `npx impeccable check` reports drift, `npx impeccable update`
   applies it. Committed, like the other skills.
-- **Init:** `/impeccable init` writes `PRODUCT.md` (product truth only). It does
-  **not** write `DESIGN.md` — [`site/DESIGN.md`](../site/DESIGN.md) remains the
-  design authority ([ADR-0149](./design/adr/07-portability-extensibility.md#adr-0149)),
-  and its context loader reads that file as incumbent authority. Do not run
-  `/impeccable document` at the repo root: a root `DESIGN.md` would auto-opt-in
-  the root to `design:lint` and introduce a fourth identity beside the three
-  that gate validates.
+- **Context:** `PRODUCT.md` records product behavior and implemented CSS and
+  components define the visual system. Do not invoke commands that create
+  design documents; repository rules apply to every plugin and skill.
 - **Mirror-gate exemption:** impeccable is listed in `VENDORED_SKILLS` in
   [`../scripts/check-skill-mirrors.ts`](../scripts/check-skill-mirrors.ts). The
   byte-identical rule fits skills this repo authors; impeccable deliberately

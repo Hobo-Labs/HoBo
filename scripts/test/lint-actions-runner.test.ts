@@ -9,9 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 // Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These
 // tests run from pre-commit too, and every git command they start (their own
@@ -48,7 +50,7 @@ function lintJobs(jobs: string): number | null {
 const shardRunner =
 	"${{ needs.main-gate-plan.outputs.shard_runner || needs.route.outputs.shard_runner || 'ubuntu-24.04' }}";
 const mergeShardRunner =
-	"${{ needs.pr_gate_validation.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
+	"${{ needs.pr_gate_plan.outputs.shard_runner || needs.route.outputs.runner || 'ubuntu-24.04' }}";
 
 /** Lints a repository holding one composite action and no workflow. */
 function lintAction(text: string): number | null {
@@ -179,6 +181,19 @@ describe("Actions runner policy", () => {
 		// The job that builds the hobo CLI release-npm runs with its OIDC token.
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
+			0,
+		);
+	});
+
+	it("allows exactly the hosted release-integration shard jobs", () => {
+		for (const [file, id] of [
+			["release-hobo-pr.yml", "release-integration"],
+			["release-hobo.yml", "release-hobo-integration"],
+			["hobo-ci.yml", "release-hobo-integration"],
+		] as const)
+			assert.equal(lintRunner(file, id, "ubuntu-24.04"), 0, `${file}:${id}`);
+		assert.notEqual(
+			lintRunner("release-hobo-pr.yml", "other", "ubuntu-24.04"),
 			0,
 		);
 	});
@@ -450,7 +465,12 @@ describe("Actions runner policy", () => {
 		`  ${id}:\n    needs: ${needs}\n    if: \${{ github.event_name == 'pull_request' && ${condition} }}\n    runs-on: ${routed}\n    steps:\n      - run: echo ok\n`;
 
 	it("lets a signed local run skip a covered job that names itself and needs the route job", () => {
-		for (const id of ["ci-guard", "secret-scan", "pr_gate_validation"])
+		for (const id of [
+			"ci-guard",
+			"secret-scan",
+			"pr_gate_plan",
+			"pr_gate_validation",
+		])
 			assert.equal(
 				lintJobs(
 					`${attestingRoute(verifierFiles)}${skippable(id, skipFor(id))}`,

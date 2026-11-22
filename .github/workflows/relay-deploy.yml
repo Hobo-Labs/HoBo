@@ -1,42 +1,56 @@
 name: HoBo relay deploy
 
-# The hosted CI relay deploys to its Vercel project `hobo-ci` through
-# Vercel's Git integration: a push to `main` builds and promotes it, exactly as
-# it has been deployed so far (ADR-0179 amendment "Secretless first";
-# docs/design/hosted-relay-stateless.md). This workflow deploys nothing and
-# holds no Vercel token: it checks, by identity name, that the relay's secret
-# store accepts this repository's GitHub OIDC token, then
-# `hobo ci deploy --adopt` finds the deployment Vercel reported for the pushed
-# commit through GitHub's Deployments API and promotes it through @hobo/cd,
-# preview then production, with fail-closed verification at the relay's
-# production domain (/healthz names the commit served, /readyz answers 200).
+# The hosted CI relay is deployed by HoBo CD itself: this workflow runs
+# `hobo ci deploy` twice — preview, then production — with the Vercel deploy
+# token read from the relay's secret store through this job's GitHub OIDC
+# token (id-token: write; ADR-0179 amendment "Secretless first";
+# docs/design/hosted-relay-stateless.md). The Vercel project `hobo-ci` is
+# deliberately NOT Git-linked (its link was removed once already), so no
+# Git-triggered deployment exists to adopt or wait for: the adopt step is
+# gone, and nothing here re-links the project.
 #
-# No secret and no repository variable configures this workflow. The store's
+# Preview is verified by the READY deployment record this command creates,
+# bound to the Freight's commit, project and preview environment (no preview
+# URL answers without Deployment Protection); production is verified
+# at the Yard's production domain (the productionOrigin in deploy/yard.ts
+# under packages/ci-vercel, mirrored below), whose /healthz must name the
+# deployed commit and whose /readyz must answer 200. Production
+# takes only Freight preview qualified in the same journal, so the two steps
+# run in the protected deploy job, in order, and fail closed. The unprotected
+# gate job decides whether that job starts. A final step probes the production
+# origin again and fails the job on anything but a serving relay.
+#
+# No secret and no repository variable configures relay deployment. The store's
 # coordinates (ids and an origin, no credential) are committed to
 # packages/ci-vercel/deploy/secret-store.binding.json, which the relay itself
-# reads in production. Until a store is bound the job ends with a notice and
-# succeeds.
+# reads in production. A missing or malformed binding fails the gate; a valid
+# binding without a deploy credential skips deployment with an explicit notice.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
     inputs:
-      # `hobo ci app create --via-workflow` hands these over (on stdin to
-      # `gh workflow run`): GitHub's one-time manifest code, spent by the
-      # app-credentials job within seconds, and two non-secret ids.
-      manifest_code:
-        description: GitHub's one-time App-manifest code (hobo ci app create --via-workflow)
+      # Emergency bootstrap: deploy even when the diff does not touch the
+      # relay (the gate treats the run as relay-touched).
+      force_bootstrap:
+        description: Emergency bootstrap (deploy whatever the diff touches)
         required: false
-        default: ""
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
       relay:
         description: The relay's public origin the App was created for
-        required: false
-        default: ""
+        required: true
+        type: string
       owner_id:
         description: The numeric GitHub id of the App's owner
-        required: false
-        default: ""
+        required: true
+        type: string
+    secrets:
+      manifest_code:
+        required: true
 
 permissions:
   contents: read
@@ -81,29 +95,26 @@ jobs:
         with:
           token: ${{ github.token }}
 
-  deploy:
-    name: Deploy the hosted CI relay (production)
+  gate:
+    name: Decide whether to deploy
     needs: route
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event.inputs.manifest_code == ''
-    # The route job picks the label; scripts/lint-actions.ts allows this expression.
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name != 'workflow_call'
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
-    # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
-    # gate hands the adopt step a deadline 3 minutes short of it, so the
-    # command ends with a typed reason before the job is killed.
-    timeout-minutes: 20
+    timeout-minutes: 5
     permissions:
       contents: read
-      deployments: read
-      id-token: write
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 2
-      - name: Decide whether to deploy
+      - name: Evaluate the relay inputs
         id: gate
         env:
           BEFORE: ${{ github.event.before }}
+          FORCE_BOOTSTRAP: ${{ github.event.inputs.force_bootstrap }}
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ -n "${BEFORE:-}" ] \
@@ -113,79 +124,139 @@ jobs:
           node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-gate.mts \
             --event "$GITHUB_EVENT_NAME" --from "${BEFORE:-}" --to "$GITHUB_SHA" \
             --github-output "$GITHUB_OUTPUT"
-      - if: steps.gate.outputs.run == 'true'
+
+  deploy:
+    name: Deploy the hosted CI relay (production)
+    needs: [route, gate]
+    environment: hobo-ci-deploy
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name != 'workflow_call' && needs.gate.outputs.run == 'true'
+    # The route job picks the label; scripts/lint-actions.ts allows this expression.
+    runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
+    # RELAY_DEPLOY_JOB_TIMEOUT_MINUTES in scripts/ci/relay-deploy-gate.mts. The
+    # gate hands both deploy steps a deadline 3 minutes short of it, so each
+    # command ends with a typed reason before the job is killed.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # The Yard's committed production origin (the productionOrigin in
+      # deploy/yard.ts under packages/ci-vercel): where production verifies
+      # and the post-deploy check probes. Standard Deployment Protection
+      # leaves it public; the protected per-deployment URLs are never probed.
+      HOBO_CI_RELAY_URL: https://hobo-ci.vercel.app
+      HOBO_VERCEL_CLI: ${{ github.workspace }}/packages/ci-vercel/node_modules/.bin/vercel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          clean: false
+          fetch-depth: 2
+      - name: Start the deploy deadline
+        id: deadline
+        run: node --input-type=module --experimental-strip-types --no-warnings -e 'import { deployDeadline } from "./scripts/ci/relay-deploy-gate.mts"; console.log(`deadline=${deployDeadline(Date.now())}`);' >> "$GITHUB_OUTPUT"
+      - name: Verify the protected deploy environment
+        if: needs.gate.outputs.run == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-environment.mts --environment hobo-ci-deploy
+      - if: needs.gate.outputs.run == 'true'
         uses: $/.github/actions/ci-runner-preflight
-      - if: steps.gate.outputs.run == 'true'
+      - if: needs.gate.outputs.run == 'true'
         uses: $/.github/actions/pnpm-store
-      - if: steps.gate.outputs.run == 'true'
+      - if: needs.gate.outputs.run == 'true'
         run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
-      - name: Build the verify tool
-        if: steps.gate.outputs.run == 'true'
+      - name: Build the deploy tool and the relay's declarations
+        if: needs.gate.outputs.run == 'true'
         timeout-minutes: 10
         run: |
           set -euo pipefail
           pnpm exec turbo run build \
-            --filter=@hobo/hobo... \
+            --filter=@hobo/hobo... --filter=@hobo/ci-vercel^... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
-      # Pass/fail by identity name: hobo-ci-writer signs in with this job's
-      # GitHub OIDC token (sign-in only, then revoke; Infisical role shape is
-      # not asserted — on Free attach, Member may read). hobo-ci-relay is
-      # not-run here; Vercel OIDC is proved by production's /readyz below.
+      # Pass/fail by identity name and id: hobo-ci-deploy-reader signs in with
+      # this job's GitHub OIDC token at its own audience, reads VERCEL_TOKEN
+      # without logging its value, proves exactly Viewer membership, and must
+      # get HTTP 403 for the relay folder. The session is revoked. The
+      # deploy-token read never signs in as the writer. hobo-ci-relay is
+      # not-run here; Vercel OIDC is proved by /readyz below.
       - name: Verify the secret store connection
-        if: steps.gate.outputs.run == 'true'
+        if: needs.gate.outputs.run == 'true'
         run: |
           set -euo pipefail
           verify_json="$RUNNER_TEMP/secret-store-verify.json"
           verify_err="$RUNNER_TEMP/secret-store-verify.err"
           node packages/hobo/dist/bin/hobo.js ci secret-store verify \
-            --cwd packages/ci-vercel --json >"$verify_json" 2>"$verify_err" || status=$?
+            --cwd packages/ci-vercel --identity reader --json >"$verify_json" 2>"$verify_err" || status=$?
           status=${status:-0}
           node --experimental-strip-types --no-warnings \
             scripts/ci/relay-deploy-secret-store-verify-report.mts \
             "$verify_json" "$verify_err" "$status"
-      # Vercel's Git integration built and promoted this commit. hobo adopts
-      # that deployment (packages/ci-vercel/README.md "Token-free relay
-      # mode"): it finds it through GitHub's Deployments API with this job's
-      # own token (deployments: read), records it as relay Freight, and
-      # promotes it through @hobo/cd preview -> production, failing closed:
-      # preview by its deployment record (READY, this commit), production at
-      # the Yard's production domain (productionOrigin in deploy/yard.ts),
-      # whose /healthz must name this commit and whose /readyz must answer
-      # 200. The protected per-deployment URL is never probed, so Deployment
-      # Protection needs no bypass. Observe-only: no Vercel token, no deployment
-      # created or changed; a failed production verification is recorded in
-      # the CD journal, never rolled back on Vercel.
-      # Bounded by the gate's deadline (the job's timeout less 3 minutes,
-      # counted from the gate), which hobo splits across the lookup, preview
-      # and production. A build still not READY when preview's share ends
-      # fails as HOBO_CI_ADOPT_NOT_READY_IN_BUDGET, any other stage that runs
-      # out as HOBO_CI_ADOPT_BUDGET_EXHAUSTED; nothing changes on Vercel and
-      # the next push or a re-run adopts it. The step timeout is a backstop
-      # that cannot end before the deadline.
-      - name: Adopt Vercel's Git deployment of this commit
-        if: steps.gate.outputs.run == 'true'
+      # `--provision` attaches the Marketplace cache binding through the
+      # Vercel CLI from the root frozen install. The root lockfile pins its
+      # graph by integrity, and the deploy steps perform no package resolution.
+      # The deploy token reaches the CLI inside the hobo command's own
+      # environment, never this workflow's.
+      # Direct HoBo CD deploy, preview first: `hobo ci deploy` reads the Vercel
+      # token from the secret store with this job's GitHub OIDC token
+      # (ci-relay-deploy.ts; no Vercel token is ever set in this workflow),
+      # records the commit
+      # as relay Freight, creates the deployment and drives the promotion:
+      # READY, then verification (preview by the deployment record it created
+      # — no HOBO_CI_RELAY_PREVIEW_URL is set, and no preview URL answers
+      # without Deployment Protection), then qualification. The command's exit
+      # status is the step's. Production (next step) is refused without this
+      # step's qualification (HOBO_CI_DEPLOY_NOT_QUALIFIED): fail closed.
+      # Bounded by the gate's deadline, which hobo caps at its 20-minute wait;
+      # whatever preview leaves of the deadline, production gets.
+      - name: Deploy the relay (preview)
+        if: needs.gate.outputs.run == 'true'
         timeout-minutes: 17
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-          ADOPT_DEADLINE: ${{ steps.gate.outputs.deadline }}
+          DEPLOY_DEADLINE: ${{ steps.deadline.outputs.deadline }}
         run: |
           set -uo pipefail
           status=0
-          node packages/hobo/dist/bin/hobo.js ci deploy --adopt \
+          node packages/hobo/dist/bin/hobo.js ci deploy \
             --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
-            --deadline "$ADOPT_DEADLINE" \
-            --json > "$RUNNER_TEMP/relay-adopt.json" || status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-adopt.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            --target preview --build prebuilt --provision --wait --deadline "$DEPLOY_DEADLINE" \
+            --json > "$RUNNER_TEMP/relay-preview.json" || status=$?
+          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-preview.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
+      - name: Deploy the relay (production)
+        if: needs.gate.outputs.run == 'true'
+        timeout-minutes: 17
+        env:
+          DEPLOY_DEADLINE: ${{ steps.deadline.outputs.deadline }}
+        run: |
+          set -uo pipefail
+          status=0
+          node packages/hobo/dist/bin/hobo.js ci deploy \
+            --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
+            --target production --build prebuilt --provision --wait --deadline "$DEPLOY_DEADLINE" \
+            --json > "$RUNNER_TEMP/relay-production.json" || status=$?
+          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-production.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
+          exit "$status"
+      # The deploy is done only when the production origin serves the relay
+      # this run built: /healthz must answer 200 naming GITHUB_SHA, /readyz
+      # must answer 200. The step fails the job — never `|| true` — with a
+      # distinct verdict for what the relay said (config service unreachable
+      # or unfilled, a start failure, a body mentioning the cache or a quota
+      # or Neon, another commit served).
+      - name: Verify the relay at its production origin
+        if: needs.gate.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/relay-deploy-verify.mts \
+            --origin "$HOBO_CI_RELAY_URL" --sha "$GITHUB_SHA"
       # The hosted relay's fleet verdict (ADR-0180) at its public origin. Route
       # jobs no longer ask it: they read the box relay's routing slip (ADR-0181),
-      # which retires this route with the verdict store. Vercel has
-      # already promoted the deploy, so this reports rather than gates: a red
-      # check is the signal to roll back in the order of "Roll back" under
-      # "Fleet verdict operations" in packages/ci-vercel/README.md. A relay
-      # that does not answer never stops a run; route jobs never ask it.
+      # which retires this route with the verdict store. This workflow has just
+      # promoted the deploy, so this reports on what it shipped: a red check is
+      # the signal to roll back in the order of "Roll back" under
+      # "Fleet verdict operations" in packages/ci-vercel/README.md.
       - name: Probe the fleet verdict at the public origin
-        if: steps.gate.outputs.run == 'true'
+        if: needs.gate.outputs.run == 'true'
         run: |
           set -uo pipefail
           origin="$(node -e '
@@ -228,7 +299,8 @@ jobs:
   app-credentials:
     name: Deposit the GitHub App's credentials
     needs: route
-    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.manifest_code != ''
+    environment: hobo-ci-app-credentials
+    if: github.repository == 'Hobo-Labs/HoBo' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_call'
     # The route job picks the label; scripts/lint-actions.ts allows this expression.
     runs-on: ${{ needs.route.outputs.runner || 'ubuntu-24.04' }}
     timeout-minutes: 15
@@ -238,12 +310,22 @@ jobs:
     steps:
       - name: Mask the one-time manifest code
         env:
-          HOBO_APP_MANIFEST_CODE: ${{ github.event.inputs.manifest_code }}
-        run: echo "::add-mask::$HOBO_APP_MANIFEST_CODE"
+          HOBO_APP_MANIFEST_CODE: ${{ secrets.manifest_code }}
+        run: |
+          set -euo pipefail
+          if [ -z "$HOBO_APP_MANIFEST_CODE" ]; then
+            echo "::error title=GitHub App credentials::HOBO_APP_MANIFEST_CODE must contain the one-time manifest code"
+            exit 1
+          fi
+          echo "::add-mask::$HOBO_APP_MANIFEST_CODE"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           clean: false
           fetch-depth: 1
+      - name: Verify the protected writer environment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node --experimental-strip-types --no-warnings scripts/ci/relay-deploy-environment.mts --environment hobo-ci-app-credentials
       - uses: $/.github/actions/ci-runner-preflight
       - uses: $/.github/actions/pnpm-store
       - run: pnpm install --frozen-lockfile --config.confirmModulesPurge=false
@@ -254,9 +336,20 @@ jobs:
           pnpm exec turbo run build \
             --filter=@hobo/hobo... \
             --output-logs=new-only --concurrency="${HOBO_TURBO_CONCURRENCY:-1}"
+      - name: Verify the writer connection
+        run: |
+          set -euo pipefail
+          verify_json="$RUNNER_TEMP/secret-store-writer-verify.json"
+          verify_err="$RUNNER_TEMP/secret-store-writer-verify.err"
+          node packages/hobo/dist/bin/hobo.js ci secret-store verify \
+            --cwd packages/ci-vercel --identity writer --json >"$verify_json" 2>"$verify_err" || status=$?
+          status=${status:-0}
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/relay-deploy-secret-store-verify-report.mts \
+            "$verify_json" "$verify_err" "$status"
       - name: Convert the manifest code and store the credentials (GitHub OIDC)
         env:
-          HOBO_APP_MANIFEST_CODE: ${{ github.event.inputs.manifest_code }}
+          HOBO_APP_MANIFEST_CODE: ${{ secrets.manifest_code }}
           RELAY_ORIGIN: ${{ github.event.inputs.relay }}
           APP_OWNER_ID: ${{ github.event.inputs.owner_id }}
         run: |

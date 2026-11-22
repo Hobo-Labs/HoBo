@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { describe, it } from "node:test";
 import {
 	ATTESTATION_EVENTS,
 	asObject,
@@ -24,7 +23,9 @@ import {
 } from "../ci/attested-jobs.mts";
 import { localContext, type StepValues } from "../ci/local-attest.mts";
 import { workflowDocument, workflowJob } from "../lib/workflow-job-steps.mts";
+import { testRunner } from "./support/test-runner.ts";
 
+const { describe, it } = await testRunner();
 const plan = loadPlan();
 
 /** The condition that skips a job the route job verified a signed local run for. */
@@ -107,12 +108,11 @@ describe("the description of the covered jobs", () => {
 				.map((step) => `${job.id}: ${step.name}`),
 		);
 		assert.deepEqual(left, [
-			"pr_gate_validation: Impact classification (shadow)",
-			"pr_gate_validation: Impact classification (shadow)",
+			"pr_gate_plan: Impact classification (shadow)",
+			"pr_gate_plan: Impact classification (shadow)",
 			"pr_gate_validation: Prune Turbo cache",
 			"workspace_tests: Prune Turbo cache",
 			"pr_affected: Prune Turbo cache",
-			"scripts-tests: Prune Turbo cache",
 			"pr-offpath: Prune Turbo cache",
 			"release-contract: Ensure worker toolchain image",
 			"release-contract: Build affected images + live OCI config contract",
@@ -121,10 +121,26 @@ describe("the description of the covered jobs", () => {
 		]);
 	});
 
-	it("runs every scripts test shard locally", () => {
+	it("builds current sources before running every scripts test shard locally", () => {
 		const scripts = plan.find((job) => job.id === "scripts-tests");
 		assert.ok(scripts);
 		assert.equal(scripts.matrix, "${{ fromJSON('[0,1,2,3]') }}");
+		const build = scripts.steps.find(
+			(step) => step.name === "Build current sources for local attestation",
+		);
+		assert.equal(build?.local, "run");
+		assert.equal(
+			build?.if,
+			"steps.scope.outputs.run == 'true' && env.GITHUB_ACTIONS != 'true'",
+		);
+		assert.match(build?.run ?? "", /scripts\/ci\/scripts-test-imports\.mts/u);
+		assert.match(build?.run ?? "", /turbo run build\b/u);
+		assert.equal(
+			scripts.steps.find(
+				(step) => step.name === "Download scripts-test build outputs",
+			)?.local,
+			"skip",
+		);
 		assert.equal(
 			scripts.steps.find((step) => step.name === "Scripts tests")?.local,
 			"run",
@@ -132,9 +148,9 @@ describe("the description of the covered jobs", () => {
 	});
 
 	it("omits both report-only classifiers while leaving the gate checks executable", () => {
-		const gate = plan.find((job) => job.id === "pr_gate_validation");
-		assert.ok(gate);
-		const reports = gate.steps.filter(
+		const planner = plan.find((job) => job.id === "pr_gate_plan");
+		assert.ok(planner);
+		const reports = planner.steps.filter(
 			(step) => step.name === "Impact classification (shadow)",
 		);
 		assert.equal(reports.length, 2);
@@ -144,6 +160,8 @@ describe("the description of the covered jobs", () => {
 			assert.equal(step.id, undefined);
 			assert.match(step.reason ?? "", /report-only/u);
 		}
+		const gate = plan.find((job) => job.id === "pr_gate_validation");
+		assert.ok(gate);
 		for (const name of [
 			"Code format gate",
 			"Relevant checks only",
@@ -273,7 +291,7 @@ describe("expressions in the description", () => {
 			env: values,
 			shard: { index: 2, total: 4, value: 5 },
 			jobResults: new Map(plan.map((job) => [job.id, "success" as const])),
-			jobOutputs: new Map([["pr_gate_validation", values]]),
+			jobOutputs: new Map([["pr_gate_plan", values]]),
 		});
 
 	it("can all be given a value on a developer's machine, for both events", () => {
@@ -290,6 +308,7 @@ describe("expressions in the description", () => {
 		const runsOn = (id: string, event: (typeof ATTESTATION_EVENTS)[number]) =>
 			conditionHolds(plan.find((job) => job.id === id)?.if, context(event));
 		for (const id of [
+			"pr_gate_plan",
 			"pr_gate_validation",
 			"workspace_tests",
 			"release-contract",
@@ -349,7 +368,7 @@ describe("expressions in the description", () => {
 		);
 		assert.equal(
 			substituteExpressions(
-				"${{ needs.pr_gate_validation.outputs.pr_base }}",
+				"${{ needs.pr_gate_plan.outputs.pr_base }}",
 				context("pull_request", { pr_base: "abc" }),
 			),
 			"abc",

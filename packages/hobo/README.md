@@ -443,14 +443,19 @@ An in-flight provider operation can outlast the wait budget. The relay path
 does not durably fence it across lease expiry, processes or restarts: inspect
 the provider and CD journal to establish its outcome before another deploy.
 
-A real run needs the deploy token in the owner's secret store. An embedding
-caller can provide it in a run-scoped vault; a GitHub Actions job with
-`id-token: write` can read it through the committed secret-store binding. A
-`VERCEL_TOKEN` supplied in the command's environment is ignored. When
-`--provision` runs the Vercel CLI, HoBo passes that child the token from the
-vault. The target project must build `packages/ci-vercel` (or the chosen
-`--root-directory`), and Vercel's GitHub integration must be able to read the
+A real run reads the deploy token from the owner's secret store as the
+dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
+through the committed secret-store binding; a token preloaded in an embedding
+caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
+command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
+passes that child the token from the run's fresh vault. The target project must
+build `packages/ci-vercel` (or the chosen `--root-directory`), and Vercel's
+GitHub integration must be able to read the
 repository.
+
+A credential-free legacy binding may omit `deployOidcSubject` or carry the
+exact writer subject. Any other nonempty subject is malformed and makes the
+workflow gate fatal rather than a credential-free skip.
 
 What it deliberately does not do:
 
