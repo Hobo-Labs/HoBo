@@ -9,9 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { GIT_LOCATION_VARIABLES } from "../ci/local-attest.mts";
+import { testRunner } from "./support/test-runner.ts";
+
+const { describe, it } = await testRunner();
 
 // Git sets GIT_DIR, GIT_INDEX_FILE and the like for the hooks it runs. These
 // tests run from pre-commit too, and every git command they start (their own
@@ -179,6 +181,19 @@ describe("Actions runner policy", () => {
 		// The job that builds the hobo CLI release-npm runs with its OIDC token.
 		assert.equal(
 			lintRunner("release-hobo.yml", "release-hobo-cli", "ubuntu-24.04"),
+			0,
+		);
+	});
+
+	it("allows exactly the hosted release-integration shard jobs", () => {
+		for (const [file, id] of [
+			["release-hobo-pr.yml", "release-integration"],
+			["release-hobo.yml", "release-hobo-integration"],
+			["hobo-ci.yml", "release-hobo-integration"],
+		] as const)
+			assert.equal(lintRunner(file, id, "ubuntu-24.04"), 0, `${file}:${id}`);
+		assert.notEqual(
+			lintRunner("release-hobo-pr.yml", "other", "ubuntu-24.04"),
 			0,
 		);
 	});
