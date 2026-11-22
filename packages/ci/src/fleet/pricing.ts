@@ -283,7 +283,7 @@ export function runnerQuoteScenario(
 				productRef: model.id,
 				agreementRef: model.id,
 				direction: "add",
-				quantities: state.subscribed ? {} : { [PLAN]: "1" },
+				quantities: { [PLAN]: state.subscribed ? "0" : "1" },
 				usage: [
 					{
 						dimension: RUNNER_MINUTE,

@@ -7,6 +7,7 @@ import {
 	AccountSchema,
 	ConfigurationSchema,
 	OfferSchema,
+	PipelineStepResultSchema,
 } from "../src/_generated/ci_pb.js";
 import {
 	BackendUnavailableError,
