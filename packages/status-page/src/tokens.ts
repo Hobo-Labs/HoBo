@@ -13,6 +13,8 @@ export const STATUS_PAGE_TOKENS = {
 	codeBg: "#f7f7f5",
 	nightBg: "#0a0a0a",
 	nightRaised: "#111111",
+	nightSpark: "#ff7a63",
+	nightGo: "#57c777",
 } as const;
 
 export type StatusPageTokenName = keyof typeof STATUS_PAGE_TOKENS;

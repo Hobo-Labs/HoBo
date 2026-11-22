@@ -343,7 +343,12 @@ export function discoverProduct(
 			projects: ["site"],
 		});
 	}
-	if (hasVisualTokens && scripts["design:lint"]) {
+	const designLint = scripts["design:lint"] ?? "";
+	const hasTrustedVisualCheck =
+		/(?:^|[\s"'])(?:\.\/)?scripts\/check-visual-tokens\.mts(?:$|[\s"'])/u.test(
+			designLint,
+		) && existsSync(path.join(root, "scripts/visual-token-contract.json"));
+	if (hasVisualTokens && hasTrustedVisualCheck) {
 		featurePlans.push({
 			id: "design-system-contract",
 			title: "Design system contract is agent-followable",

@@ -30,7 +30,9 @@
 		"contrast": [
 			{ "foreground": "--ink", "background": "--paper" },
 			{ "foreground": "--ink", "background": "--cream" },
-			{ "foreground": "--mute", "background": "--paper" }
+			{ "foreground": "--mute", "background": "--paper" },
+			{ "foreground": "--faint", "background": "--paper" },
+			{ "foreground": "--spark", "background": "--paper" }
 		],
 		"themes": [
 			{ "selector": ":root" },
@@ -101,7 +103,9 @@
 			"inset": "#f4f4f2",
 			"codeBg": "#f7f7f5",
 			"nightBg": "#0a0a0a",
-			"nightRaised": "#111111"
+			"nightRaised": "#111111",
+			"nightSpark": "#ff7a63",
+			"nightGo": "#57c777"
 		},
 		"contrast": [
 			{ "foreground": "ink", "background": "paper" },
@@ -110,7 +114,17 @@
 			{ "foreground": "faint", "background": "paper" },
 			{ "foreground": "cream", "background": "nightRaised" },
 			{ "foreground": "borderStrong", "background": "nightRaised" },
-			{ "foreground": "border", "background": "nightRaised" }
+			{ "foreground": "border", "background": "nightRaised" },
+			{ "foreground": "go", "background": "inset" },
+			{ "foreground": "go", "background": "paper" },
+			{ "foreground": "spark", "background": "inset" },
+			{ "foreground": "spark", "background": "paper" },
+			{ "foreground": "spark", "background": "cream" },
+			{ "foreground": "paper", "background": "spark" },
+			{ "foreground": "nightGo", "background": "nightRaised" },
+			{ "foreground": "nightSpark", "background": "nightRaised" },
+			{ "foreground": "nightSpark", "background": "nightBg" },
+			{ "foreground": "nightRaised", "background": "nightSpark" }
 		]
 	}
 }

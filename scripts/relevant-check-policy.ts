@@ -277,18 +277,24 @@ export function selectRelevantChecks(
 			/\.(tsx|jsx|css|astro)$/u,
 			/^scripts\/check-visual-tokens\.mts$/u,
 		]);
+	const uiDiscoveryManifestChanged = touchedAny([
+		/^(?:packages|examples|apps)\/.+\/package\.json$/u,
+	]);
 	const visualTokensChanged =
 		touchedAny([
 			/^scripts\/(?:check-visual-tokens\.mts|visual-token-contract\.json)$/u,
 			/^test\/visual-tokens\.test\.ts$/u,
 			/^turbo\.json$/u,
-			/^packages\/connect-ui\/src\/client\/styles\.css$/u,
-			/^packages\/control-yard\/public\/yard\.css$/u,
+			/^packages\/connect-ui\/(?:src\/client\/styles\.css|test\/connect-ui-design-lint\.test\.ts)$/u,
+			/^packages\/control-yard\/(?:public\/yard\.css|test\/design-lint\.test\.ts)$/u,
 			/^packages\/mcp\/(?:src\/secret-capture\/html\.ts|test\/secret-capture-design-lint\.test\.ts)$/u,
 			/^packages\/status-page\/(?:src\/tokens\.ts|test\/status-page-design-lint\.test\.ts)$/u,
 			/(?:^|\/)(?:palette|visual-tokens?|themes?)(?:\.[^/]+)?$/u,
+			/(?:^|\/)DESIGN\.md$/u,
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
-		]) || uiChanged;
+		]) ||
+		uiChanged ||
+		uiDiscoveryManifestChanged;
 	const behaviorChanged =
 		touched(["tests/behavior"]) ||
 		// Feature files and step definitions live inside proof packages

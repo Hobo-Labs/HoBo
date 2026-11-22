@@ -56,6 +56,55 @@ static site is the **read store**, rebuildable from zero. Types follow
 - **Static site writer** (`src/site.ts`): the only IO module — writes
   `index.html` + `api/v2/*.json` per page plus a portfolio directory.
 
+## Design requirements
+
+The replacement design authority is `scripts/visual-token-contract.json` and
+`scripts/check-visual-tokens.mts`, run by root `pnpm run design:lint`. The
+following rendered requirements live beside the implementation and have focused
+enforcement; no retired `DESIGN.md` is needed.
+
+- **Reviewed palette and contrast.** `STATUS_PAGE_TOKENS` must exactly match
+  the contract, meet its contrast pairs, and exclude the forbidden SaaS palette.
+  Enforced by `test/status-page-design-lint.test.ts` → `"uses exactly the
+  palette approved by the independent token contract"` and `"bans the forbidden
+  SaaS/Catppuccin palette"`, plus the repository-wide contrast checker.
+- **Rubberhose structure.** Use Chewy display type, system-ui body text,
+  ui-monospace code, day/night inversion, thick ink outlines, and hard
+  zero-blur sticker shadows on cards/pressables only. Lamps, component bands,
+  and uptime cells stay flat. Enforced by `"ships the Rubberhose typography
+  stack"`, `"ships day/night inversion"`, `"uses thick ink outlines, never 1px
+  hairlines"`, `"uses hard sticker shadows, never soft rgba elevation"`, and
+  `"keeps inert status chrome flat (pressable = raised law)"` in that file.
+- **Fail-safe delayed/unknown state.** Missing or stale signals render
+  `Delayed / unknown` with `--faint`, never `--go` or stale attainment.
+  Enforced by `test/model.test.ts` → `"forces stale components to unknown —
+  never stale operational"`, `"renders declared components with no signals as
+  unknown"`, and `"renders an empty scope as unknown, not an empty green page"`;
+  `test/status-page-design-lint.test.ts` → `"renders delayed and unknown status
+  in faint gray, never green"`.
+- **Status semantics and bounded history.** Operational days use `go`,
+  degraded/outage days use `spark`, and unknown/maintenance days use
+  `border-strong`. History is bounded to 90 cells, every cell has a `title`,
+  and the row has a day-count/component `aria-label`. Enforced by
+  `test/status-page-design-lint.test.ts` → `"maps uptime cells to go, spark,
+  and border-strong status tokens"` and `test/render.test.ts` → `"bounds history
+  to 90 titled cells with a row label"`.
+- **Mandatory output escaping.** Every interpolated value passes through
+  `escapeHtml`, including all five HTML metacharacters. Enforced by
+  `test/render.test.ts` → `"escapes hostile incident text (no markup
+  injection)"` and `"escapeHtml covers the five metacharacters"`.
+- **Reduced motion.** `prefers-reduced-motion: reduce` removes transition and
+  animation timing/delays, press transforms, heading rotation, and film grain
+  without removing status text. Enforced by
+  `test/status-page-design-lint.test.ts` → `"disables motion and film grain
+  under prefers-reduced-motion"`.
+- **Accessible focus and announcements.** Focus rings are 3px `spark` with a
+  3px offset; sections are labelled by headings and the banner is a
+  `role="status"` live region. Enforced by
+  `test/status-page-design-lint.test.ts` → `"uses 3px spark focus rings with 3px
+  offsets"` and `"labels sections by headings and announces the banner as
+  status"`.
+
 ## Default-on with opt-out (ADR-0145)
 
 The Bindle trait is **read-side default-on**: `deriveBindleStatusPlan`

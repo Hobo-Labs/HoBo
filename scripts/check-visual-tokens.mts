@@ -104,27 +104,37 @@ export function discoverPackageDirs(repoRoot = repositoryRoot): string[] {
 	return [...new Set(projects)];
 }
 
+const CONTRACT_PROJECTS = new Set(
+	Object.values(contract).map((entry) => entry.project),
+);
+
 export function listWebUiProjects(
 	repoRoot = repositoryRoot,
 ): VisualTokenProject[] {
 	const candidates = new Set<string>([
-		...WEB_UI_ROOTS.map((path) => join(repoRoot, path)),
+		...[...WEB_UI_ROOTS, ...CONTRACT_PROJECTS].map((path) =>
+			join(repoRoot, path),
+		),
 		...discoverPackageDirs(repoRoot),
 	]);
 	const projects: VisualTokenProject[] = [];
 	for (const dir of candidates) {
-		if (!isDirectory(dir)) continue;
 		const rel = relative(repoRoot, dir).replaceAll("\\", "/") || ".";
+		const contractListed = CONTRACT_PROJECTS.has(rel);
+		if (!contractListed && !isDirectory(dir)) continue;
 		const knownRoot = WEB_UI_ROOTS.some((path) => path === rel);
-		const pkg = readPackageInfo(dir);
-		if (!knownRoot && !pkg?.webUi && !pkg?.webFramework) continue;
+		const pkg = isDirectory(dir) ? readPackageInfo(dir) : null;
+		if (!contractListed && !knownRoot && !pkg?.webUi && !pkg?.webFramework)
+			continue;
 		projects.push({
 			rel,
-			reason: knownRoot
-				? "web-ui root"
-				: pkg?.webUi
-					? "hobo.webUi"
-					: "web framework dependency",
+			reason: contractListed
+				? "visual token contract"
+				: knownRoot
+					? "web-ui root"
+					: pkg?.webUi
+						? "hobo.webUi"
+						: "web framework dependency",
 		});
 	}
 	return projects.sort((first, second) => first.rel.localeCompare(second.rel));
@@ -136,7 +146,7 @@ function palette(
 	anchor: string,
 	media?: string,
 ): Map<string, string> {
-	const matches: Rule[] = [];
+	const rules: Rule[] = [];
 	postcss.parse(source.css, { from: source.path }).walkRules((rule) => {
 		const parent = rule.parent;
 		const matchingParent = media
@@ -144,26 +154,25 @@ function palette(
 				parent.name === "media" &&
 				parent.params === media
 			: parent?.type === "root";
-		if (
-			matchingParent &&
-			rule.selectors.includes(selector) &&
-			rule.nodes.some((node) => node.type === "decl" && node.prop === anchor)
-		)
-			matches.push(rule);
+		if (matchingParent && rule.selectors.includes(selector)) rules.push(rule);
 	});
-	const match = matches[0];
-	if (matches.length !== 1 || !match)
+	if (rules.length === 0)
 		throw new Error(
-			`${source.path}: expected one ${selector} palette${media ? ` in ${media}` : ""}, found ${matches.length}`,
+			`${source.path}: expected a ${selector} palette${media ? ` in ${media}` : ""}, found none`,
 		);
 	const values = new Map<string, string>();
-	match.walkDecls(/^--/u, (declaration) => {
-		if (values.has(declaration.prop))
-			throw new Error(
-				`${source.path}:${declaration.source?.start?.line}: duplicate ${declaration.prop}`,
-			);
-		values.set(declaration.prop, declaration.value);
-	});
+	let hasAnchor = false;
+	for (const rule of rules) {
+		for (const node of rule.nodes ?? []) {
+			if (node.type !== "decl" || !node.prop.startsWith("--")) continue;
+			values.set(node.prop, node.value);
+			if (node.prop === anchor) hasAnchor = true;
+		}
+	}
+	if (!hasAnchor)
+		throw new Error(
+			`${source.path}: ${selector}${media ? ` in ${media}` : ""} must define ${anchor}`,
+		);
 	return values;
 }
 
@@ -367,6 +376,15 @@ function checkStatusPage(source: Source): string[] {
 
 function checkProject(repoRoot: string, project: VisualTokenProject): string[] {
 	try {
+		if (CONTRACT_PROJECTS.has(project.rel)) {
+			const dir = join(repoRoot, project.rel);
+			if (!isDirectory(dir))
+				return [`${project.rel}: contract-listed project directory is missing`];
+			if (!readPackageInfo(dir))
+				return [
+					`${project.rel}/package.json: contract-listed project manifest is missing`,
+				];
+		}
 		switch (project.rel) {
 			case contract.site.project:
 				return checkCssThemes(

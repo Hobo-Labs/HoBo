@@ -65,29 +65,41 @@ Form-mode elicitation is never used (the MCP spec forbids it for secrets).
 
 ### Security boundaries
 
-- **No value egress to the network or model context.** The MCP App has empty
-  CSP `connectDomains` and `resourceDomains`, loads no external resources, and
-  never calls `ui/message` or `ui/update-model-context`. Only the sealed value
-  goes to the app-owned `submit_secret_value` tool or the same-origin loopback
-  POST. `test/secret-capture.test.ts` checks the CSP and model-context boundary;
-  `test/secret-capture-design-lint.test.ts` rejects external resource loads.
-- **Text-only rendering.** Ticket metadata, status, and errors render through
-  `textContent`, never an HTML parsing sink. The design-lint test rejects
-  `innerHTML`, `outerHTML`, `insertAdjacentHTML`, and `document.write`, and pins
-  the dynamic field, error, and result assignments to `textContent`.
+- **No network access.** The form loads no external script, stylesheet, font,
+  image, or other resource. Only the sealed value goes to the app-owned
+  `submit_secret_value` tool or the same-origin loopback POST. Enforced by
+  `test/secret-capture-design-lint.test.ts` → `"loads nothing from the network:
+  no external script, style, font or image"`.
+- **Empty MCP connect/resource domains.** The MCP App resource declares empty
+  CSP `connectDomains` and `resourceDomains`. Enforced by
+  `test/secret-capture.test.ts` → `"declares empty CSP connectDomains and
+  resourceDomains"`.
+- **No model-context messages.** The form never sends `ui/message` or
+  `ui/update-model-context`; nothing it holds goes in front of the model.
+  Enforced by `test/secret-capture.test.ts` → `"never emits ui/message or
+  ui/update-model-context"`.
+- **`textContent`-only rendering.** Ticket metadata, status, and errors render
+  through `textContent`, never `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
+  or `document.write`. Enforced by `test/secret-capture-design-lint.test.ts` →
+  `"renders dynamic content through textContent without HTML parsing sinks"`.
 - **Script-safe JSON embedding.** The loopback ticket is embedded in an
-  `application/json` script with `<`, `>`, `&`, U+2028, and U+2029 escaped. The
-  design-lint test supplies a hostile ticket label and checks the embedded JSON.
-- **No secret values in errors.** Results are tickets, then `{ticketId, name,
-  stored, ref, status}`; refusals carry a code and a reason, never the value.
-  `test/secret-capture.test.ts` feeds random synthetic values through every path
-  and asserts that no tool result, refusal, event, page, HTTP answer, console
-  line, or stdout/stderr write contains the value (raw, JSON-escaped, base64, or
-  a 16-character slice), and that its leak watch catches a planted leak.
-- **Immediate field clearing.** Both the input and textarea are cleared on the
+  `application/json` script with `<`, `>`, `&`, U+2028, and U+2029 escaped so
+  ticket text cannot close the element. Enforced by
+  `test/secret-capture-design-lint.test.ts` → `"embeds the loopback page's
+  ticket so it cannot close its script element"`.
+- **Errors never contain the secret.** Results contain only ticket/reference
+  fields; refusals carry a code and reason, never the submitted value.
+  `test/secret-capture.test.ts` → `"captures, seals in the form, stores, and
+  answers only name, stored and ref"`, the `"size and charset checks"` refusal
+  cases, and `"reports a store failure by its code only"` use `leakWatch` to
+  reject raw, JSON-escaped, base64, and sliced values in results, events, pages,
+  HTTP answers, consoles, and process output. `"has a leak watch that does catch
+  a leak (raw, base64, or a log line)"` proves the detector is not vacuous.
+- **Sealed fields clear immediately.** Both input and textarea clear on the
   statement immediately after reading a submission, before validation,
-  encryption, or any request. The design-lint test pins that ordering and the
-  clearing of both fields.
+  encryption, or any request. Enforced by
+  `test/secret-capture-design-lint.test.ts` → `"clears both fields immediately
+  after reading the submitted value"`.
 
 The value exists sealed in transit and as a `CapturedSecret` (prints
 `[redacted secret]`) in this process until the connector's single `reveal()`.
