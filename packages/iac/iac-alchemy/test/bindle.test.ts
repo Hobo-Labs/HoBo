@@ -248,6 +248,49 @@ describe("explicit Alchemy primitive mapping", () => {
 		).not.toThrow();
 	});
 
+	it("accepts HoBo's non-enumerable resource identity data and rejects hidden accessors", () => {
+		const withIdentity = Object.defineProperties(
+			{ ...declaration.resources.store },
+			{
+				generatedId: { value: "bucket-1", enumerable: false },
+				identityOccurrence: { value: 0, enumerable: false },
+			},
+		);
+		expect(() =>
+			mapBindleToAlchemy(
+				{
+					...declaration,
+					resources: { ...declaration.resources, store: withIdentity },
+				},
+				mappers([]),
+				supportedRequirements,
+			),
+		).not.toThrow();
+		let traps = 0;
+		const withAccessor = Object.defineProperty(
+			{ ...declaration.resources.store },
+			"generatedId",
+			{
+				enumerable: false,
+				get() {
+					traps++;
+					return "bucket-1";
+				},
+			},
+		);
+		expect(() =>
+			mapBindleToAlchemy(
+				{
+					...declaration,
+					resources: { ...declaration.resources, store: withAccessor },
+				},
+				mappers([]),
+				supportedRequirements,
+			),
+		).toThrow("BINDLE_INVALID");
+		expect(traps).toBe(0);
+	});
+
 	it("cannot hide an application entrypoint with a mutable call property", () => {
 		let traps = 0;
 		const lookup = function (this: typeof declaration, name: string) {

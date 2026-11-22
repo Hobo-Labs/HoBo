@@ -18,8 +18,8 @@ import {
 } from "./financial-boundary.js";
 import {
 	captureAlchemyOptions,
-	captureAlchemyTarget,
 	captureAlchemyTargetOption,
+	parseAlchemyTarget,
 } from "./input-boundary.js";
 import {
 	type AlchemyCompositeEnvironment,
@@ -210,7 +210,7 @@ export type AlchemyTargetInput = Omit<Target, "$typeName" | "resources"> & {
 };
 
 export function alchemyTarget(input: AlchemyTargetInput): Target {
-	return captureAlchemyTarget(input);
+	return parseAlchemyTarget(input);
 }
 
 export interface AlchemyStateOwnershipCheck {

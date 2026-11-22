@@ -29,8 +29,8 @@ competitor:
 > Research date **2026-11-16**, read for HoBo CI from the public repository at commit
 > `43b7c4c` (Apache-2.0): the product docs under `apps/site`, the routing, retry and
 > provider-health code under `apps/api`, the shared packages and the CLI. Nothing was run
-> against the hosted service. Read alongside [CI fleet balancing](../design/ci-fleet-balancing.md),
-> [routing slips](../design/adr/routing-slips.md) and the
+> against the hosted service. Read alongside [CI fleet balancing](urn:hobo:requirement:ci-fleet-balancing),
+> [routing slips](urn:hobo:decision:routing-slips) and the
 > [runner order](../../packages/ci/RUNNER-ORDER.md).
 
 ## What it is
@@ -194,7 +194,7 @@ it. Checked 2026-11-16.
   month's list-price spend to a limit.
 - **Admission knows the host** (*implemented*). Memory, disk, inodes, trunk priority, merge
   queue position and job length decide what the box takes next. RelayRunner counts slots.
-- **Routing is committed configuration** (*implemented*, [ADR-0181](../design/adr/routing-slips.md#adr-0181)).
+- **Routing is committed configuration** (*implemented*, [ADR-0181](urn:hobo:decision:adr-0181)).
   The order and the routing policy are reviewed like code; no dashboard edit changes where
   production jobs run. RelayRunner's order is edited in the dashboard on purpose.
 - **No hosted dependency in the decision** (*implemented*). The route job decides from a
@@ -254,7 +254,7 @@ it. Checked 2026-11-16.
   optimized checks, signals, telemetry
 - HoBo side: [runner order](../../packages/ci/RUNNER-ORDER.md),
   [`@hobo/ci`](../../packages/ci/README.md), [CLI](../../packages/hobo/CI.md),
-  [routing slips](../design/adr/routing-slips.md)
+  [routing slips](urn:hobo:decision:routing-slips)
 
 Pricing, customer counts, the hosted service's live behaviour and the contents of the
 separate `relayrunner/actions` repository were not verified in this pass and are not

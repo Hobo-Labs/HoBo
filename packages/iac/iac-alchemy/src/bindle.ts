@@ -412,10 +412,10 @@ function snapshotData<T>(input: T): T {
 				if (
 					!validName(key) ||
 					item === undefined ||
-					!hasOwnDescriptor(item, "value") ||
-					!item.enumerable
+					!hasOwnDescriptor(item, "value")
 				)
 					throw new Error("object contains an accessor or invalid key");
+				if (!item.enumerable) continue;
 				Object.defineProperty(result, key, {
 					value: copy(item.value, depth + 1),
 					enumerable: true,
