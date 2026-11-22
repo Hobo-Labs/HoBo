@@ -133,6 +133,8 @@ const DESIRED_KEYS = new Set([
 const MAX_TAGS = 64;
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
 const MAX_DEPTH = 2;
+const BLOB_UPLOADS_SEGMENT = "uploads";
+const GHCR_BLOB_UPLOAD_SEGMENT = "upload";
 
 interface Target {
 	readonly request: ResolveRequest;
@@ -547,17 +549,44 @@ export function createOciRegistryResolvers(
 		return bytes;
 	}
 
-	function uploadLocation(copy: Copy, response: TransportResponse): string {
+	function repositoryUploadLocation(
+		copy: Copy,
+		response: TransportResponse,
+	): string {
 		const location = header(response, "location");
 		if (location === undefined) unparseable("upload session has no Location");
-		const url = new URL(location, `https://${copy.target.host}`);
+		let url: URL;
+		try {
+			url = new URL(location, `https://${copy.target.host}`);
+		} catch {
+			unparseable("upload session Location is unparseable");
+		}
 		if (
+			url.protocol !== "https:" ||
 			url.hostname !== copy.target.host ||
-			!url.pathname.startsWith(`/v2/${copy.repository}/blobs/uploads/`)
+			url.username !== "" ||
+			url.password !== "" ||
+			(url.port !== "" && url.port !== "443") ||
+			url.hash !== ""
 		)
 			rejected(
-				"registry handed an upload session outside its own blob upload path",
+				"registry handed an upload session on a foreign host",
 				"uploads to a foreign host would carry the registry credential there",
+			);
+		const rawPath = location.split(/[?#]/u, 1)[0] ?? "";
+		const traversal =
+			rawPath.includes("/../") ||
+			rawPath.includes("/./") ||
+			/%2e/iu.test(rawPath) ||
+			/%2f/iu.test(rawPath);
+		const prefix = [
+			`/v2/${copy.repository}/blobs/${BLOB_UPLOADS_SEGMENT}/`,
+			`/v2/${copy.repository}/blobs/${GHCR_BLOB_UPLOAD_SEGMENT}/`,
+		].find((candidate) => url.pathname.startsWith(candidate));
+		const id = prefix === undefined ? "" : url.pathname.slice(prefix.length);
+		if (traversal || id === "" || id.includes("/"))
+			rejected(
+				"registry handed an upload session outside its own blob upload path",
 			);
 		return `${url.pathname}${url.search}`;
 	}
@@ -582,7 +611,7 @@ export function createOciRegistryResolvers(
 				headers: { "content-length": "0" },
 			});
 			if (started.status !== 202) unexpected(started, "start blob upload");
-			location = uploadLocation(copy, started);
+			location = repositoryUploadLocation(copy, started);
 		}
 		if (bytes.byteLength <= chunkBytes) {
 			const body = encodeBody(bytes, encoding);
@@ -627,7 +656,7 @@ export function createOciRegistryResolvers(
 			});
 			if (patched.status !== 202)
 				unexpected(patched, `upload chunk of ${blob.digest}`);
-			location = uploadLocation(copy, patched);
+			location = repositoryUploadLocation(copy, patched);
 		}
 		const closed = await copy.target.send({
 			method: "PUT",
@@ -688,7 +717,8 @@ export function createOciRegistryResolvers(
 				// 202: the registry declined the mount and opened an upload session.
 				// Anything else (the source is unknown or not readable with this
 				// credential) declines the mount too: the bytes are uploaded.
-				if (mounted?.status === 202) session = uploadLocation(copy, mounted);
+				if (mounted?.status === 202)
+					session = repositoryUploadLocation(copy, mounted);
 			}
 			if (blob.size > maxBlobBytes)
 				rejected(

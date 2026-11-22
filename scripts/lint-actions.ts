@@ -36,9 +36,11 @@ const activeCiFiles = new Set([
 	// The hosted CI relay's deploy on main (ADR-0179 phase 6).
 	"relay-deploy.yml",
 	"release-hobo.yml",
+	"release-hobo-pr.yml",
 	"release-pricing.yml",
 	"release-ts-autocode.yml",
 ]);
+const hostedReleaseCiFiles = new Set(["release-hobo-pr.yml"]);
 /**
  * The probe: one job per self-hosted label, there only to be picked up, so the
  * route job can tell which labels have a runner behind them.
@@ -54,6 +56,7 @@ const healthFile = "ci-health.yml";
 const hostingEvidenceFile = "hosting-evidence.yml";
 /** A manually dispatched, scoped Vercel credential observation. */
 const vercelEvidenceFile = "vercel-credential-evidence.yml";
+const appCredentialsFile = "app-credentials.yml";
 /**
  * GitHub-hosted `gh actions-lock --verify` of .github/workflows/actions.lock;
  * it reads public action repositories only and runs no repository code.
@@ -61,6 +64,7 @@ const vercelEvidenceFile = "vercel-credential-evidence.yml";
 const actionsLockFile = "actions-lock.yml";
 const allowedEnabled = new Set([
 	acceptanceFile,
+	appCredentialsFile,
 	actionsLockFile,
 	probeFile,
 	healthFile,
@@ -456,7 +460,11 @@ function lintHostedRelayTriggers(
 	const onBlock = /^on:\n((?: {2}[^\n]*\n)+)/mu.exec(text)?.[1] ?? "";
 	for (const trigger of onBlock.matchAll(/^ {2}([a-z_]+):/gmu)) {
 		const name = trigger[1] ?? "";
-		if (name !== "push" && name !== "workflow_dispatch")
+		if (
+			name !== "push" &&
+			name !== "workflow_dispatch" &&
+			name !== "workflow_call"
+		)
 			errors.push(
 				`${file}: the relay's OIDC jobs trust an oidc_sub pinned to main; the ${name} trigger is not a protected ref`,
 			);
@@ -468,6 +476,36 @@ function lintHostedRelayTriggers(
 	)
 		errors.push(
 			`${file}: a push that mints the relay's OIDC token must filter branches to [main]`,
+		);
+	const lines = text.split(/\r?\n/);
+	const jobsIndex = lines.findIndex((line) => line === "jobs:");
+	const jobStarts = lines.reduce<number[]>((starts, line, index) => {
+		if (index > jobsIndex && /^ {2}[A-Za-z0-9_-]+:$/u.test(line))
+			starts.push(index);
+		return starts;
+	}, []);
+	const oidcJobs = jobStarts
+		.map((start) => ({
+			block: lines.slice(
+				start,
+				jobStarts[jobStarts.indexOf(start) + 1] ?? lines.length,
+			),
+		}))
+		.filter(({ block }) =>
+			block.some((line) => line.includes("id-token: write")),
+		);
+	if (
+		/workflow_call:/u.test(onBlock) &&
+		oidcJobs.some(({ block }) =>
+			block.every(
+				(line) =>
+					!/^\s*if:/u.test(line) ||
+					!line.includes("github.ref == 'refs/heads/main'"),
+			),
+		)
+	)
+		errors.push(
+			`${file}: the relay's OIDC jobs trust an oidc_sub pinned to main; a workflow_call job must be gated to refs/heads/main`,
 		);
 }
 
@@ -485,8 +523,10 @@ function attestedHostedRelayFile(
 				blockAt[blockAt.indexOf(start) + 1] ?? lines.length,
 			),
 		}))
-		.filter(({ block }) =>
-			block.some((line) => /^\s*runs-on:\s*ubuntu-24\.04\s*$/u.test(line)),
+		.filter(
+			({ jobLine, block }) =>
+				HOSTED_RELAY_JOBS.has(jobLine.trim().replace(/:$/u, "")) &&
+				block.some((line) => /^\s*runs-on:\s*ubuntu-24\.04\s*$/u.test(line)),
 		);
 	return (
 		hosted.length > 0 &&
@@ -756,6 +796,20 @@ function isNpmOidcHostedReleaseJob(
 	);
 }
 
+function isHostedReleaseIntegrationJob(
+	file: string,
+	jobLine: string,
+	runsOn: string | undefined,
+): boolean {
+	const jobId = /^  ([a-z][a-z0-9-]+):/.exec(jobLine)?.[1];
+	return (
+		runsOn === "ubuntu-24.04" &&
+		((file === "release-hobo-pr.yml" && jobId === "release-integration") ||
+			((file === "release-hobo.yml" || file === "hobo-ci.yml") &&
+				jobId === "release-hobo-integration"))
+	);
+}
+
 const acceptanceDigest =
 	"431c63f690bf69cbed136cd784200a5a257fb3abb6a8abbe1b200274f029bb1a";
 const hostingEvidenceDigest =
@@ -964,6 +1018,11 @@ function lintWorkflowYaml(
 			.find((value) => value !== undefined);
 		const jobLine = lines[start] ?? "";
 		const npmOidcHosted = isNpmOidcHostedReleaseJob(file, jobLine, runsOn);
+		const releaseIntegrationHosted = isHostedReleaseIntegrationJob(
+			file,
+			jobLine,
+			runsOn,
+		);
 		const alwaysHosted = isAlwaysHostedJob(jobLine, block, runsOn);
 		const hostedRelayJob = attestedHostedRelayJob(file, jobLine, block, runsOn);
 		const depsImageBuild = buildsDepsImage(block);
@@ -980,7 +1039,8 @@ function lintWorkflowYaml(
 			!depsRoute &&
 			!npmOidcHosted &&
 			!alwaysHosted &&
-			!hostedRelayJob
+			!hostedRelayJob &&
+			!releaseIntegrationHosted
 		) {
 			errors.push(
 				`${file}:${start + 1}: runs-on must be hobo or the trunk label expression, or the routed or shard label expression`,
@@ -1101,6 +1161,7 @@ function lintWorkflowYaml(
 	if (
 		activeCiFiles.has(file) &&
 		!hostedRelayFileAttested &&
+		!hostedReleaseCiFiles.has(file) &&
 		!/runs-on:\s*hobo\b/m.test(text) &&
 		!text.includes(TRUNK_RUNS_ON) &&
 		!text.includes(ROUTED_RUNS_ON) &&

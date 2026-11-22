@@ -124,7 +124,7 @@
     {
       "method": "POST",
       "path": "/v13/deployments?teamId=team_hobo",
-      "body": "{\"name\":\"hobo-ci\",\"project\":\"hobo-ci\",\"gitSource\":{\"type\":\"github\",\"org\":\"Hobo-Labs\",\"repo\":\"HoBo\",\"ref\":\"main\",\"sha\":\"0123456789abcdef0123456789abcdef01234567\"},\"target\":\"production\"}",
+      "body": "{\"name\":\"hobo-ci\",\"project\":\"hobo-ci\",\"gitSource\":{\"type\":\"github\",\"org\":\"Hobo-Labs\",\"repo\":\"HoBo\",\"ref\":\"main\",\"sha\":\"0123456789abcdef0123456789abcdef01234567\"},\"target\":\"production\",\"autoAssignCustomDomains\":false}",
       "when": "always: one deployment, built by Vercel from the commit"
     }
   ],

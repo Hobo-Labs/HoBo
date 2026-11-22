@@ -20,4 +20,25 @@ describe("HoBo CI Fabric concurrency", () => {
 		);
 		expect(block?.[2]).toBe("${{ github.event_name == 'pull_request' }}");
 	});
+
+	it("does not put PR sidecars in a shared canceling group", () => {
+		expect(workflow).not.toContain("pr-sidecar");
+		for (const id of [
+			"ci-deps-image",
+			"pr-offpath",
+			"artifact-trust",
+			"dev-cold-loop-gate",
+			"data-live",
+			"ci-guard",
+			"secret-scan",
+		]) {
+			const block = new RegExp(
+				`\\n  ${id}:\\n([\\s\\S]*?)(?=\\n  [a-z][a-z0-9-]+:\\n|$)`,
+				"u",
+			).exec(workflow)?.[1];
+			expect(block, id).toBeDefined();
+			expect(block, id).not.toContain("concurrency:");
+			expect(block, id).not.toContain("cancel-in-progress:");
+		}
+	});
 });

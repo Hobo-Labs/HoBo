@@ -24,25 +24,6 @@
 // (`<HOBO_HOME>/cd`, or the store HOBO_CD_SQLITE_PATH / HOBO_CD_POSTGRES_URL
 // names), the one `hobo deploy` reads.
 //
-// CONTRACT CHANGE (from the direct-deploy verb; packages/ci-vercel/README.md
-// "Contract changes of hobo ci deploy"): `--wait` now verifies and qualifies,
-// so it needs the target's probe origin (HOBO_CI_RELAY_PREVIEW_URL or
-// HOBO_CI_RELAY_URL) and is refused without it
-// (HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET); `--target production` needs `--sha`
-// and preview's qualification of that commit in the same journal
-// (HOBO_CI_DEPLOY_NOT_QUALIFIED); the wait limit is 20 minutes, not 15; new
-// failure codes: HOBO_CI_DEPLOY_INCOMPLETE, HOBO_CI_DEPLOY_VERIFICATION_FAILED,
-// HOBO_CI_DEPLOY_NOT_QUALIFIED, HOBO_CI_DEPLOY_SOURCE_UNPINNED,
-// HOBO_CI_DEPLOY_DELIVERY_UNAVAILABLE, HOBO_CI_DEPLOY_DELIVERY_INVALID,
-// HOBO_CI_DEPLOY_FREIGHT_REFUSED, HOBO_CI_DEPLOY_PROMOTION_REFUSED.
-//
-// The target is chosen HERE, where the deploy is run, not in the Bindle; and
-// it is PREVIEW unless `--target production` says otherwise. Production needs
-// `--sha`: it takes exactly the commit preview verified. The deploy workflow
-// on `main` (`.github/workflows/relay-deploy.yml`) holds no Vercel token and
-// runs `--adopt` instead (`ci-relay-adopt.ts`): the deployment Vercel's Git
-// integration made, observed, recorded and promoted preview then production.
-//
 // `--provision` first attaches the chosen Marketplace bindings (the cache)
 // with the Vercel CLI, idempotently (`ci-relay-provision.ts`).
 //
@@ -62,11 +43,10 @@
 
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
-import { githubActionsJwtSource } from "@hobo/adapter-infisical";
 import {
 	assertNoBindleProviderSelection,
 	type BindleDefinition,
@@ -87,6 +67,8 @@ import {
 } from "@hobo/core";
 import {
 	type ParsedSecretStoreBinding,
+	type RepairSecretStoreBinding,
+	readSecretStoreBindingForRepair,
 	SECRET_STORE_BINDING_FILE,
 } from "@hobo/secret-store-claim";
 import type { Yard } from "@hobo/yards";
@@ -94,19 +76,15 @@ import {
 	type VercelGitDeploymentPlan,
 	VercelGitDeploymentPlanSchema,
 } from "./_generated/vercel_git_deployment_pb.js";
-import type { CdStoreOpener } from "./cd-store.js";
-import { relayAdoptDeadline } from "./ci-relay-adopt.js";
+import { loadDeliveryFile } from "./cd-delivery-module.js";
 import {
 	deliverRelay,
+	RELAY_DELIVERY_FILE,
 	type RelayRealization,
 	type RelayRealizationFailure,
 	relayCampId,
 } from "./ci-relay-delivery.js";
 import { readRelayDeployToken } from "./ci-relay-deploy-credential.js";
-import {
-	normalizeDeploymentUrl,
-	protectedPreviewProbe,
-} from "./ci-relay-preview-probe.js";
 import {
 	type AttachmentResult,
 	describeAttachments,
@@ -116,7 +94,9 @@ import {
 } from "./ci-relay-provision.js";
 import {
 	commitCheckingProbe,
-	type RelayProbeFindings,
+	deployedPreviewSuites,
+	RelayDeploymentReadRefusal,
+	recordVerifiedPreviewRecords,
 	relayOrigin,
 	relayVerifyFailure,
 } from "./ci-relay-verify.js";
@@ -133,22 +113,13 @@ import {
 	SecretStoreBindingRefusal,
 	secretStoreDeployInputs,
 } from "./ci-secret-store.js";
-import { RELAY_GITHUB_OIDC_AUDIENCE } from "./ci-secret-store-connect.js";
 import { defaultHoboHome } from "./hobo-home.js";
-import {
-	isJsonNumber,
-	isJsonObject,
-	isJsonString,
-	parseJsonObject,
-} from "./json.js";
+import { isJsonNumber, isJsonObject, isJsonString } from "./json.js";
 import {
 	createVercelClient,
 	VercelApiError,
-	type VercelClient,
 	VercelEnvRefusal,
 	type VercelFetch,
-	VercelProductionDeploymentMissingError,
-	VercelPromotionUnconfirmedError,
 	VercelTransportError,
 } from "./vercel-client.js";
 import {
@@ -160,10 +131,14 @@ import {
 	refusedEnvKeyReason,
 	refusedEnvValueReason,
 } from "./vercel-env-policy.js";
-
-export const RELAY_DEPLOY_REFUSAL = Object.freeze({
-	budgetExhausted: "HOBO_CI_DEPLOY_BUDGET_EXHAUSTED",
-} as const);
+import {
+	promoteStagedBuild,
+	servesProduction,
+	stageVercelBuild,
+	type VercelBuildRunner,
+	vercelBuildEnvironment,
+	vercelBuildRunnerFrom,
+} from "./vercel-prebuilt.js";
 
 // The options of `hobo ci deploy`, as `parseCiArgs` names them.
 export const CI_DEPLOY_OPTIONS = [
@@ -180,7 +155,7 @@ export const CI_DEPLOY_OPTIONS = [
 	"wait",
 	"dry-run",
 	"deadline",
-	"budget",
+	"build",
 ] as const;
 
 // The ones no other `hobo ci` command takes.
@@ -195,6 +170,7 @@ export const CI_DEPLOY_ONLY_OPTIONS = [
 	"create-project",
 	"provision",
 	"adopt",
+	"build",
 ] as const;
 
 export interface CiRelayDeployInput {
@@ -208,15 +184,15 @@ export interface CiRelayDeployInput {
 	// runner's own OIDC request variables. A `VERCEL_TOKEN` here is ignored:
 	// the token comes from the secret store, never the environment.
 	readonly env: NodeJS.ProcessEnv;
-	// The run's trusted vault, when the caller already holds the deploy token
-	// (`VERCEL_TOKEN`), read from the owner's store.
 	readonly credentials?: TrustedVault;
+	readonly readDeployCredential?: typeof readRelayDeployToken;
 	// The Vercel transport; injected in tests, the global `fetch` otherwise.
 	readonly fetch?: VercelFetch;
-	readonly credentialFetch?: typeof fetch;
 	// The Vercel CLI `--provision` runs; injected in tests. Otherwise the
 	// executable `HOBO_VERCEL_CLI` names, or `vercel` on the PATH.
 	readonly runVercelCli?: VercelCliRunner;
+	readonly runVercelBuild?: VercelBuildRunner;
+	readonly checkoutHead?: (repoRoot: string) => Promise<string>;
 	// `--wait`'s clock; injected in tests.
 	readonly sleep?: (ms: number) => Promise<void>;
 	readonly now?: () => number;
@@ -224,7 +200,6 @@ export interface CiRelayDeployInput {
 	readonly home?: string;
 	// The transport the verification probes use; injected in tests.
 	readonly probe?: HttpTransport;
-	readonly openStore?: CdStoreOpener;
 	readonly emitProgress: (message: string) => void;
 }
 
@@ -255,6 +230,9 @@ export const RELAY_VERIFY_PATHS = Object.freeze({
 } as const);
 
 const HTTPS_ORIGIN = /^https:\/\/[^/?#\s]+\/?$/u;
+
+const ISO_TIME =
+	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/u;
 
 // A directory of the repository: relative, and never above it.
 const ROOT_DIRECTORY = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/u;
@@ -470,6 +448,80 @@ function vercelCliFrom(
 		});
 }
 
+interface PrebuiltState {
+	projectId?: string;
+	promoted?: string;
+	promotedFrom?: string;
+}
+
+function prebuiltRequests(
+	git: ReturnType<typeof planVercelGitDeployment>["requests"],
+	project: string,
+	target: "preview" | "production",
+	teamId: string | undefined,
+): readonly Readonly<{
+	method: string;
+	path: string;
+	body?: unknown;
+	when: string;
+}>[] {
+	const team =
+		teamId !== undefined && teamId !== ""
+			? `teamId=${encodeURIComponent(teamId)}`
+			: "";
+	const projectRead = {
+		method: "GET",
+		path: `/v9/projects/${encodeURIComponent(project)}${team ? `?${team}` : ""}`,
+		when: "always: the project's canonical id, and the deployment production serves",
+	};
+	const staged = {
+		method: "GET",
+		path: `/v6/deployments?projectId=${encodeURIComponent(project)}&limit=100&target=production${team ? `&${team}` : ""}`,
+		when: "always: the production build staged for this Freight (meta hoboFreight)",
+	};
+	if (target === "preview")
+		return [
+			projectRead,
+			...git.filter((request) => !request.path.startsWith("/v13/deployments")),
+			staged,
+		];
+	return [
+		staged,
+		projectRead,
+		{
+			method: "POST",
+			path: `/v10/projects/<project id>/promote/<staged deployment id>${team ? `?${team}` : ""}`,
+			when: "unless production already serves the staged build: point production at it, no rebuild",
+		},
+		{
+			method: "POST",
+			path: `/v1/projects/<project id>/rollback/<previous production deployment id>${team ? `?${team}` : ""}`,
+			when: "only if production verification of the promoted build fails",
+		},
+	];
+}
+
+function repositoryRoot(cwd: string): string | undefined {
+	let dir = path.resolve(cwd);
+	for (;;) {
+		if (existsSync(path.join(dir, ".git"))) return dir;
+		const parent = path.dirname(dir);
+		if (parent === dir) return undefined;
+		dir = parent;
+	}
+}
+
+function checkoutHeadOf(repoRoot: string): Promise<string> {
+	return new Promise((resolve) => {
+		execFile(
+			"git",
+			["rev-parse", "HEAD"],
+			{ cwd: repoRoot, timeout: 30_000, encoding: "utf8" },
+			(error, stdout) => resolve(error === null ? String(stdout).trim() : ""),
+		);
+	});
+}
+
 export async function runCiRelayDeploy(
 	input: CiRelayDeployInput,
 ): Promise<CommandResult> {
@@ -489,49 +541,59 @@ export async function runCiRelayDeploy(
 		return usage(
 			"hobo ci deploy needs --ref <branch|tag|sha>: the git ref to deploy.",
 		);
+	const deadlineFlag = text("deadline");
+	const deadlineAt =
+		deadlineFlag === undefined
+			? undefined
+			: ISO_TIME.test(deadlineFlag)
+				? Date.parse(deadlineFlag)
+				: Number.NaN;
+	if (deadlineAt !== undefined && !Number.isFinite(deadlineAt))
+		return usage(
+			`--deadline takes an ISO-8601 time with a zone (e.g. 2026-11-20T16:09:00Z), not ${JSON.stringify(deadlineFlag)}.`,
+		);
 	const target = text("target") ?? "preview";
 	if (target !== "preview" && target !== "production")
 		return usage(
 			"--target is preview (the default) or production; production is never implied.",
 		);
-	const booleanEnvironment = (name: string): boolean | null | undefined => {
-		const value = env[name];
-		if (value === "true") return true;
-		if (value === "false") return false;
-		return value === undefined ? undefined : null;
-	};
-	const stagedProductionSetting = booleanEnvironment(
-		"HOBO_CI_RELAY_STAGED_PRODUCTION",
-	);
-	const previewProbeOidcSetting = booleanEnvironment(
-		"HOBO_CI_RELAY_PREVIEW_PROBE_OIDC",
-	);
-	if (stagedProductionSetting === null || previewProbeOidcSetting === null)
+	const build = text("build") ?? "git";
+	if (build !== "git" && build !== "prebuilt")
 		return usage(
-			"HOBO_CI_RELAY_STAGED_PRODUCTION and HOBO_CI_RELAY_PREVIEW_PROBE_OIDC accept only true or false.",
+			"--build is git (the default: Vercel builds from its Git integration) or prebuilt (HoBo builds once, stages, then promotes the same build).",
 		);
-	const stagedProduction =
-		target === "production" && stagedProductionSetting === true;
-	if (stagedProduction && values.wait !== true)
-		return usage("A staged production deployment requires --wait.");
-	if (
-		stagedProduction &&
-		relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL) === undefined
-	)
+	const prebuilt = build === "prebuilt";
+	if (prebuilt && text("sha") === undefined)
 		return usage(
-			"A staged production deployment requires HOBO_CI_RELAY_PUBLIC_URL to name the public HTTPS origin.",
+			"hobo ci deploy --build prebuilt needs --sha <commit>: HoBo builds only the checkout of the commit the Freight pins.",
 		);
+	const buildTarget: "preview" | "production" = prebuilt
+		? "production"
+		: target;
 	// The secret store chosen when the relay was first deployed
 	// (`hobo ci secret-store provision`): its committed coordinates fill the
 	// config-service binding's inputs and name the team, so no repository
 	// variable or Vercel secret holds them.
-	let storeBinding: ParsedSecretStoreBinding | undefined;
+	let storeBinding:
+		| ParsedSecretStoreBinding
+		| RepairSecretStoreBinding
+		| undefined;
 	try {
 		storeBinding = loadSecretStoreBinding(input.cwd);
 	} catch (error) {
-		if (error instanceof SecretStoreBindingRefusal)
+		if (!(error instanceof SecretStoreBindingRefusal)) throw error;
+		if (
+			values["dry-run"] !== true ||
+			error.code !== "HOBO_CI_SECRET_STORE_BINDING_INVALID"
+		)
 			return refused(error.code, error.message);
-		throw error;
+		try {
+			storeBinding = readSecretStoreBindingForRepair(
+				readFileSync(path.join(input.cwd, SECRET_STORE_BINDING_FILE), "utf8"),
+			);
+		} catch {
+			return refused(error.code, error.message);
+		}
 	}
 	const teamId =
 		text("team") ??
@@ -588,7 +650,7 @@ export async function runCiRelayDeploy(
 			);
 		placement = resolveRelayPlacement(
 			yard,
-			target,
+			buildTarget,
 			await loadRelayJoinedYards(input.cwd, yard),
 		);
 		relayYard = yard;
@@ -644,31 +706,6 @@ export async function runCiRelayDeploy(
 	);
 
 	const sha = text("sha");
-	if (stagedProduction && sha === undefined)
-		return usage(
-			"A staged production deployment requires --sha naming the commit preview already qualified.",
-		);
-	const clock = input.now ?? Date.now;
-	const deadlineFlag = text("deadline");
-	const budgetFlag = text("budget");
-	const deadlineRequested =
-		stagedProduction || deadlineFlag !== undefined || budgetFlag !== undefined;
-	let deadlineAt = clock() + WAIT_LIMIT_MS;
-	if (deadlineRequested) {
-		const parsedDeadline = relayAdoptDeadline(clock(), {
-			deadline: deadlineFlag,
-			budget: budgetFlag,
-		});
-		if (!parsedDeadline.ok) return usage(parsedDeadline.message);
-		deadlineAt = parsedDeadline.at;
-		if (clock() >= deadlineAt)
-			return refused(
-				RELAY_DEPLOY_REFUSAL.budgetExhausted,
-				target === "production"
-					? `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production was created.`
-					: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} started.`,
-			);
-	}
 	const createProject = values["create-project"] === true;
 	// The Yard's root directory is saved on a project this deploy creates; an
 	// existing project keeps its own unless the command names one.
@@ -722,7 +759,10 @@ export async function runCiRelayDeploy(
 				.filter((field) => field.sensitive)
 				.map((field) => field.name)
 				.sort(),
-			requests: requests.requests.map((request) => ({
+			requests: (prebuilt
+				? prebuiltRequests(requests.requests, project, target, teamId)
+				: requests.requests
+			).map((request) => ({
 				method: request.method,
 				path: request.path,
 				body: request.body !== undefined ? JSON.stringify(request.body) : "",
@@ -744,9 +784,11 @@ export async function runCiRelayDeploy(
 				provisioning: binding.provisioning,
 			})),
 			provisioning: provision
-				? planRelayProvisioning(placement.attachments, project, target).map(
-						(command) => ({ args: [...command.args], when: command.when }),
-					)
+				? planRelayProvisioning(
+						placement.attachments,
+						project,
+						buildTarget,
+					).map((command) => ({ args: [...command.args], when: command.when }))
 				: [],
 		});
 	} catch (error) {
@@ -784,54 +826,45 @@ export async function runCiRelayDeploy(
 		);
 	const wait = values.wait === true;
 	const origin = RELAY_VERIFY_ORIGIN[target];
-	const oidcMintAvailable =
-		env.ACTIONS_ID_TOKEN_REQUEST_URL !== undefined &&
-		env.ACTIONS_ID_TOKEN_REQUEST_TOKEN !== undefined;
-	const protectedPreview =
+	const originGiven = env[origin]?.trim() ?? "";
+	if (wait && !HTTPS_ORIGIN.test(originGiven)) {
+		if (target === "production" || originGiven !== "")
+			return refused(
+				"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
+				`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
+			);
+	}
+	if (target === "preview" && wait && originGiven === "" && sha === undefined)
+		return usage(
+			"hobo ci deploy --target preview --wait needs --sha <commit> when no HOBO_CI_RELAY_PREVIEW_URL is set: the deployment record must be verified against the Freight's commit.",
+		);
+	const recordVerifiedPreview =
 		target === "preview" &&
 		wait &&
-		(previewProbeOidcSetting ?? oidcMintAvailable);
-	if (target === "preview" && wait && sha === undefined)
-		return refused(
-			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
-			"Preview --wait verifies and qualifies exactly the deployment of the commit --sha pins; without --sha the shared origin cannot attest which deployment it serves. Pass --sha, or deploy without --wait (nothing is verified or qualified then).",
-		);
-	if (target === "preview" && wait && !protectedPreview)
-		return refused(
-			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
-			"Preview --wait with --sha requires GitHub OIDC verification of the deployment just created; the shared origin cannot attest its commit.",
-		);
-	if (wait && !HTTPS_ORIGIN.test(env[origin] ?? ""))
-		return refused(
-			"HOBO_CI_DEPLOY_VERIFY_ORIGIN_UNSET",
-			`--wait verifies ${target} with probes of ${RELAY_VERIFY_PATHS[target].join(" and ")} at ${origin}, which is not set to an https origin. Set it (packages/ci-vercel/CONFIG-SERVICE.md), or deploy without --wait (nothing is verified or qualified then).`,
-		);
+		(prebuilt || !HTTPS_ORIGIN.test(originGiven));
 
-	// The deploy token comes from the secret store and lives in this run's
-	// vault: handed in by the caller, or read here with a CI runner's own OIDC
-	// token through the committed binding. Never from the environment, never
-	// through a file such as $GITHUB_ENV.
-	const vault = input.credentials ?? createTrustedVault();
-	if (
-		!vault.has("VERCEL_TOKEN") &&
-		storeBinding !== undefined &&
-		env.ACTIONS_ID_TOKEN_REQUEST_URL
-	) {
+	const vault = createTrustedVault();
+	let deployTokenRef: string | undefined;
+	let deployCredentialIdentityId: string | undefined;
+	let deployCredentialAudience: string | undefined;
+	if (storeBinding !== undefined && env.ACTIONS_ID_TOKEN_REQUEST_URL) {
 		try {
-			const stored = await readRelayDeployToken({
+			const credential = await (
+				input.readDeployCredential ?? readRelayDeployToken
+			)({
 				binding: storeBinding,
-				audience: RELAY_GITHUB_OIDC_AUDIENCE,
 				env: {
 					ACTIONS_ID_TOKEN_REQUEST_URL: env.ACTIONS_ID_TOKEN_REQUEST_URL,
 					ACTIONS_ID_TOKEN_REQUEST_TOKEN: env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
 				},
-				...(input.credentialFetch !== undefined
-					? { fetch: input.credentialFetch }
-					: undefined),
 			});
-			vault.put("VERCEL_TOKEN", stored);
-			if (env.GITHUB_ACTIONS === "true")
-				process.stderr.write(`::add-mask::${stored}\n`);
+			vault.put("VERCEL_TOKEN", credential.token);
+			deployTokenRef = credential.secretRef;
+			deployCredentialIdentityId = credential.identityId;
+			deployCredentialAudience = credential.audience;
+			input.emitProgress(
+				`deploy token read from ${credential.secretRef} as deploy credential identity ${credential.identityId}, audience ${credential.audience}`,
+			);
 		} catch (error) {
 			return refused(
 				"HOBO_CI_DEPLOY_AUTH_REQUIRED",
@@ -862,12 +895,139 @@ export async function runCiRelayDeploy(
 		...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 		...(teamId !== undefined && teamId !== "" ? { teamId } : undefined),
 	});
-	let deploymentUrl: string | undefined;
 	// The conductor's Vercel side: the git deployment of the commit the
 	// Freight pins, and its readiness. Failures keep the codes and messages
 	// this command always returned.
+	interface CreatedDeployment {
+		deploymentId?: string;
+		commit?: string;
+	}
+	const created: CreatedDeployment = {};
+	const retryableRead = (status: number) => status === 429 || status >= 500;
+	const readDeployment = async (deploymentId: string) => {
+		try {
+			const deployment = await client.getDeployment(deploymentId);
+			if (deployment !== undefined) return deployment;
+			throw new RelayDeploymentReadRefusal(
+				404,
+				`Vercel answers 404 for deployment ${deploymentId}: it does not exist under this deploy token's scope`,
+			);
+		} catch (error) {
+			if (error instanceof RelayDeploymentReadRefusal) throw error;
+			if (error instanceof VercelApiError) {
+				if (retryableRead(error.status)) return undefined;
+				throw new RelayDeploymentReadRefusal(
+					error.status,
+					withoutToken(error.message),
+				);
+			}
+			if (error instanceof VercelTransportError) return undefined;
+			throw error;
+		}
+	};
+	const prebuiltState: PrebuiltState = {};
+	const realizePrebuilt = async (
+		pin: Parameters<RelayRealization["deploy"]>[0],
+		freightId: string,
+	): Promise<
+		| Readonly<{ ok: true; outputs: Readonly<Record<string, string>> }>
+		| Readonly<{ ok: false; code: string; message: string }>
+	> => {
+		const pinned = pin.sha;
+		if (pinned === undefined)
+			return {
+				ok: false,
+				code: "HOBO_CI_DEPLOY_SOURCE_UNPINNED",
+				message: `Freight ${freightId} pins no commit: a prebuilt delivery builds only a pinned commit.`,
+			};
+		if (target === "production") {
+			const promoted = await promoteStagedBuild({
+				client,
+				project,
+				freightId,
+				sha: pinned,
+				emit: input.emitProgress,
+			});
+			if (!promoted.ok) return promoted;
+			prebuiltState.projectId = promoted.projectId;
+			prebuiltState.promoted = promoted.deployment.id;
+			if (promoted.previousDeploymentId !== undefined)
+				prebuiltState.promotedFrom = promoted.previousDeploymentId;
+			created.deploymentId = promoted.deployment.id;
+			created.commit = pinned;
+			return {
+				ok: true,
+				outputs: {
+					deploymentId: promoted.deployment.id,
+					url: promoted.deployment.url,
+					target: "production",
+					build: "prebuilt",
+					...(promoted.previousDeploymentId !== undefined
+						? { promotedFrom: promoted.previousDeploymentId }
+						: undefined),
+				},
+			};
+		}
+		const repoRoot = repositoryRoot(input.cwd);
+		if (repoRoot === undefined)
+			return {
+				ok: false,
+				code: "HOBO_CI_DEPLOY_CHECKOUT_MISMATCH",
+				message: `${input.cwd} is not inside a git checkout: --build prebuilt builds the checkout of the Freight's commit.`,
+			};
+		const read = await client.readProject(project);
+		prebuiltState.projectId = read.id;
+		if (configuration.size > 0) {
+			const set = await client.setProjectEnv({
+				project: read.id,
+				target: "production",
+				variables: Object.fromEntries(configuration),
+			});
+			input.emitProgress(
+				`production settings: ${set.created.length} created, ${set.updated.length} updated, ${set.unchanged.length} unchanged`,
+			);
+		}
+		const run =
+			input.runVercelBuild ??
+			vercelBuildRunnerFrom(
+				env.HOBO_VERCEL_CLI || "vercel",
+				vercelBuildEnvironment(env, {
+					VERCEL_TOKEN: token,
+					VERCEL_PROJECT_ID: read.id,
+					...(teamId !== undefined && teamId !== ""
+						? { VERCEL_ORG_ID: teamId }
+						: undefined),
+				}),
+			);
+		const staged = await stageVercelBuild({
+			run,
+			client,
+			project: read.id,
+			cwd: repoRoot,
+			head: await (input.checkoutHead ?? checkoutHeadOf)(repoRoot),
+			freightId,
+			sha: pinned,
+			emit: input.emitProgress,
+		});
+		if (!staged.ok) return staged;
+		created.deploymentId = staged.deployment.id;
+		created.commit = pinned;
+		return {
+			ok: true,
+			outputs: {
+				deploymentId: staged.deployment.id,
+				url: staged.deployment.url,
+				target: "production",
+				build: "prebuilt",
+				staged: "true",
+				...(staged.deployment.readyState !== undefined
+					? { readyState: staged.deployment.readyState }
+					: undefined),
+			},
+		};
+	};
 	const realization: RelayRealization = {
-		async deploy(pin) {
+		async deploy(pin, context) {
 			try {
 				// Attach the Marketplace bindings first: their variables reach the
 				// build. One that cannot be attached is reported, not fatal: the
@@ -886,7 +1046,7 @@ export async function runCiRelayDeploy(
 							: await provisionRelayAttachments({
 									attachments: placement.attachments,
 									project,
-									target,
+									target: buildTarget,
 									run:
 										input.runVercelCli ??
 										vercelCliFrom(env, {
@@ -899,6 +1059,28 @@ export async function runCiRelayDeploy(
 						input.emitProgress(
 							`${result.attachment.integration} ${result.attachment.resource}: ${result.outcome}${result.reason ? ` (${result.reason})` : ""}`,
 						);
+				}
+				if (prebuilt) {
+					const realized = await realizePrebuilt(pin, context.freightId);
+					if (!realized.ok)
+						return {
+							ok: false,
+							code: realized.code,
+							message: withoutToken(realized.message),
+						};
+					return {
+						ok: true,
+						outputs: Object.fromEntries(
+							Object.entries({
+								...realized.outputs,
+								yard: placement.yard,
+								camp: placement.camp,
+								...(attached.length > 0
+									? { provisioned: describeAttachments(attached) }
+									: undefined),
+							}).map(([key, value]) => [key, withoutToken(value)]),
+						),
+					};
 				}
 				const [pinOrg = org, pinRepo = repo] = pin.repository.split("/");
 				const provider = createVercelDeployProvider({
@@ -914,34 +1096,6 @@ export async function runCiRelayDeploy(
 					...(input.fetch !== undefined ? { fetch: input.fetch } : undefined),
 				});
 				const deploymentId = `hobo-ci-deploy-${randomUUID()}`;
-				let rollbackDeploymentId: string | undefined;
-				if (stagedProduction)
-					try {
-						rollbackDeploymentId =
-							await client.getProductionDeploymentId(project);
-					} catch (error) {
-						if (error instanceof VercelProductionDeploymentMissingError)
-							return {
-								ok: false,
-								status: "rejected",
-								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-								message:
-									"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
-							};
-						return realizationFailure(
-							error instanceof Error
-								? error
-								: new Error("production read failed"),
-							withoutToken,
-						);
-					}
-				if (clock() >= deadlineAt)
-					return {
-						ok: false,
-						status: "rejected",
-						code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
-						message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} was created.`,
-					};
 				// The provider realizes the whole Bindle as one deployment: the
 				// first resource's apply deploys, and the rest answer with the
 				// same outputs.
@@ -950,21 +1104,9 @@ export async function runCiRelayDeploy(
 					outputs = await provider.apply(
 						programFor(definition, placement, resource.name, deploymentId),
 					);
-				if (protectedPreview || stagedProduction) {
-					const attested = await attestedDeploymentUrl(
-						client,
-						outputs,
-						project,
-					);
-					if (attested === undefined)
-						return {
-							ok: false,
-							status: "rejected",
-							code: "HOBO_CI_DEPLOY_ATTESTATION_UNVERIFIED",
-							message:
-								"Vercel's record of the created deployment does not attest the URL the create answer gave, so the deployment cannot be probed behind protection; it was not verified, and production traffic was not changed.",
-						};
-					deploymentUrl = attested;
+				if (isJsonString(outputs.deploymentId) && outputs.deploymentId) {
+					created.deploymentId = outputs.deploymentId;
+					if (pin.sha !== undefined) created.commit = pin.sha;
 				}
 				return {
 					ok: true,
@@ -973,9 +1115,6 @@ export async function runCiRelayDeploy(
 							...outputs,
 							yard: placement.yard,
 							camp: placement.camp,
-							...(rollbackDeploymentId !== undefined
-								? { rollbackDeploymentId }
-								: undefined),
 							...(attached.length > 0
 								? { provisioned: describeAttachments(attached) }
 								: undefined),
@@ -990,75 +1129,73 @@ export async function runCiRelayDeploy(
 			}
 		},
 		async readyState(deploymentId) {
-			try {
-				const deployment = await client.getDeployment(deploymentId);
-				return deployment?.readyState ?? "UNKNOWN";
-			} catch (error) {
-				// No answer is not a state: keep observing until the wait ends.
-				if (error instanceof VercelTransportError) return "UNKNOWN";
-				throw error;
+			if (prebuilt && target === "production") {
+				let serving = false;
+				try {
+					serving = await servesProduction(
+						client,
+						prebuiltState.projectId ?? project,
+						deploymentId,
+					);
+				} catch (error) {
+					if (!(error instanceof VercelApiError)) throw error;
+					if (!retryableRead(error.status))
+						throw new RelayDeploymentReadRefusal(
+							error.status,
+							withoutToken(error.message),
+						);
+				}
+				if (!serving) return "PROMOTING";
 			}
+			return (await readDeployment(deploymentId))?.readyState ?? "UNKNOWN";
 		},
 	};
 
-	const startedAt = clock();
+	const now = input.now ?? Date.now;
+	const startedAt = now();
 	const declaration = await compileProjectManifest(input.cwd);
 	if (declaration === null)
 		return usage(
 			`${definition.name} did not compile to a declaration, so there is nothing to record as Freight.`,
 		);
-	const verifyOrigin =
-		wait && sha !== undefined ? relayOrigin(env[origin]) : undefined;
-	const baseProbe =
-		input.probe ?? createBoundedFetchTransport({ fetchImpl: globalThis.fetch });
-	const previewProbe =
-		(protectedPreview || stagedProduction) && verifyOrigin !== undefined
-			? protectedPreviewProbe({
-					base: baseProbe,
-					placeholderOrigin: verifyOrigin,
-					project,
-					deploymentUrl: () => deploymentUrl,
-					...(stagedProduction
-						? { paths: ["/healthz", "/readyz"] as const }
-						: undefined),
-					jwt: async (audience) =>
-						githubActionsJwtSource({
-							env,
-							audience,
-							...(input.credentialFetch !== undefined
-								? { fetch: input.credentialFetch }
-								: undefined),
-						})(),
-				})
-			: baseProbe;
-	const commitVerified =
-		protectedPreview ||
-		stagedProduction ||
-		(target === "production" && wait && sha !== undefined);
-	if (verifyOrigin !== undefined && sha !== undefined && !commitVerified)
-		return refused(
-			"HOBO_CI_DEPLOY_PREVIEW_COMMIT_UNVERIFIED",
-			`A --wait deploy pinned to --sha verifies exactly that commit's deployment; this ${target} deploy would verify none. Pass --sha with GitHub OIDC verification (preview) or --target production with --sha.`,
-		);
-	const verifyProbe =
-		commitVerified && verifyOrigin !== undefined && sha !== undefined
-			? commitCheckingProbe(previewProbe, {
-					origin: verifyOrigin,
-					commit: sha.toLowerCase(),
-				})
+	// Production is verified at HOBO_CI_RELAY_URL, the production domain: its
+	// /healthz must name the commit just deployed, so an origin still serving
+	// an older deployment fails verification instead of qualifying this one.
+	const productionOrigin =
+		target === "production" && wait && sha !== undefined
+			? relayOrigin(env.HOBO_CI_RELAY_URL)
 			: undefined;
 	const verify =
-		verifyProbe !== undefined && verifyOrigin !== undefined
-			? { origin: verifyOrigin, probe: verifyProbe }
+		productionOrigin !== undefined && sha !== undefined
+			? {
+					origin: productionOrigin,
+					probe: commitCheckingProbe(
+						input.probe ??
+							createBoundedFetchTransport({ fetchImpl: globalThis.fetch }),
+						{ origin: productionOrigin, commit: sha.toLowerCase() },
+					),
+				}
 			: undefined;
-	if (deadlineRequested && clock() >= deadlineAt)
-		return refused(
-			RELAY_DEPLOY_REFUSAL.budgetExhausted,
-			`The deploy deadline ${new Date(deadlineAt).toISOString()} passed before ${target} was created.`,
+	let records: ReturnType<typeof recordVerifiedPreviewRecords> | undefined;
+	if (recordVerifiedPreview) {
+		const loaded = await loadDeliveryFile(RELAY_DELIVERY_FILE, {
+			cwd: input.cwd,
+		});
+		if (!loaded.ok)
+			return {
+				ok: false,
+				code: "HOBO_CI_DEPLOY_DELIVERY_INVALID",
+				message: `${RELAY_DELIVERY_FILE}: ${loaded.code}: ${loaded.message}. ${loaded.remediation}`,
+			};
+		records = recordVerifiedPreviewRecords(loaded.value);
+		input.emitProgress(
+			`verifying preview by the deployment record (no ${RELAY_VERIFY_ORIGIN.preview} set)`,
 		);
-	const waitLimitMs = deadlineRequested
-		? Math.min(WAIT_LIMIT_MS, Math.max(0, deadlineAt - clock()))
-		: WAIT_LIMIT_MS;
+	}
+	const waitLimitMs =
+		deadlineAt === undefined
+			? WAIT_LIMIT_MS
+			: Math.max(0, Math.min(WAIT_LIMIT_MS, deadlineAt - now()));
 	const delivered = await deliverRelay({
 		cwd: input.cwd,
 		env,
@@ -1076,260 +1213,101 @@ export async function runCiRelayDeploy(
 		wait,
 		limitMs: waitLimitMs,
 		intervalMs: WAIT_INTERVAL_MS,
-		...(verify !== undefined && commitVerified
+		...(records !== undefined ? { records } : undefined),
+		...(records !== undefined
+			? {
+					suites: deployedPreviewSuites({
+						intended: () =>
+							created.deploymentId !== undefined && created.commit !== undefined
+								? {
+										deploymentId: created.deploymentId,
+										commit: created.commit,
+										project: prebuilt
+											? (prebuiltState.projectId ?? project)
+											: project,
+										target: prebuilt ? "production" : "preview",
+									}
+								: undefined,
+						deployment: readDeployment,
+					}),
+				}
+			: undefined),
+		...(verify !== undefined
 			? { http: verify.probe.transport }
 			: input.probe !== undefined
 				? { http: input.probe }
 				: undefined),
 		...(input.sleep !== undefined ? { sleep: input.sleep } : undefined),
 		...(input.now !== undefined ? { now: input.now } : undefined),
-		...(input.openStore !== undefined
-			? { openStore: input.openStore }
-			: undefined),
-		...(stagedProduction
-			? {
-					finalizePromotion: async ({ handover }) => {
-						const safe = Object.fromEntries(
-							Object.entries({
-								...handover,
-								yard: placement.yard,
-								camp: placement.camp,
-							}).map(([key, value]) => [key, withoutToken(value)]),
-						);
-						const liveOrigin = relayOrigin(env.HOBO_CI_RELAY_PUBLIC_URL);
-						if (!safe.deploymentId || !liveOrigin || !sha)
-							return {
-								ok: false as const,
-								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-								message:
-									"The staged production deployment was not qualified; production traffic was not changed.",
-							};
-						let currentProduction: string | undefined;
-						try {
-							currentProduction =
-								await client.getProductionDeploymentId(project);
-						} catch (error) {
-							if (error instanceof VercelProductionDeploymentMissingError)
-								return {
-									ok: false as const,
-									code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-									message:
-										"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
-								};
-							return realizationFailure(
-								error instanceof Error ? error : new Error("promotion failed"),
-								withoutToken,
-							);
-						}
-						const alreadyPromoted = currentProduction === safe.deploymentId;
-						const recordedRollback = safe.rollbackDeploymentId;
-						const previousProduction = alreadyPromoted
-							? recordedRollback !== safe.deploymentId
-								? recordedRollback
-								: undefined
-							: currentProduction;
-						if (previousProduction === undefined)
-							return {
-								ok: false as const,
-								code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-								message:
-									"Production has no current deployment; staged production requires a distinct previous production deployment for rollback; production traffic was not changed.",
-							};
-						if (!alreadyPromoted) {
-							if (clock() >= deadlineAt)
-								return {
-									ok: false as const,
-									code: RELAY_DEPLOY_REFUSAL.budgetExhausted,
-									message: `The deploy deadline ${new Date(deadlineAt).toISOString()} passed before production traffic was promoted.`,
-								};
-							let promotionError: Error | undefined;
-							try {
-								await client.promoteDeployment(project, safe.deploymentId);
-							} catch (error) {
-								if (error instanceof VercelPromotionUnconfirmedError)
-									return {
-										ok: false as const,
-										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-										message: `Production traffic names ${error.observedProduction ?? "no deployment"}, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
-									};
-								promotionError =
-									error instanceof Error
-										? error
-										: new Error("promotion failed");
-							}
-							let afterPromotion: string | undefined;
-							try {
-								afterPromotion =
-									await client.getProductionDeploymentId(project);
-							} catch (error) {
-								if (
-									error instanceof VercelProductionDeploymentMissingError ||
-									error instanceof VercelPromotionUnconfirmedError
-								)
-									return {
-										ok: false as const,
-										code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-										message: `Production traffic names no deployment, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
-									};
-								return realizationFailure(
-									promotionError ??
-										(error instanceof Error
-											? error
-											: new Error("promotion read failed")),
-									withoutToken,
-								);
-							}
-							if (afterPromotion !== safe.deploymentId) {
-								if (promotionError !== undefined)
-									return realizationFailure(promotionError, withoutToken);
-								return {
-									ok: false as const,
-									code: "HOBO_CI_DEPLOY_PROMOTION_REFUSED",
-									message: `Production traffic names ${afterPromotion ?? "no deployment"}, not the staged deployment ${safe.deploymentId}; a concurrent promotion moved it, so production was not changed by this run. Re-run hobo ci deploy for the Freight being delivered.`,
-								};
-							}
-						}
-						const pauseBeforeRetry = async (attempt: number) => {
-							const remaining = deadlineAt - clock();
-							if (attempt < 23 && remaining > 0)
-								await (
-									input.sleep ??
-									((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
-								)(Math.min(5_000, remaining));
-						};
-						const publicReady = async (commit?: string) => {
-							const live =
-								commit === undefined
-									? undefined
-									: commitCheckingProbe(baseProbe, {
-											origin: liveOrigin,
-											commit: commit.toLowerCase(),
-										});
-							try {
-								const request = (path: string) =>
-									(live?.transport ?? baseProbe)({
-										method: "GET",
-										url: `${liveOrigin}${path}`,
-										headers: {},
-										timeoutMs: 10_000,
-										maxResponseBytes: 65_536,
-									});
-								const health = await request("/healthz");
-								const ready = await request("/readyz");
-								if (clock() >= deadlineAt) return false;
-								const findings = live?.findings();
-								const servedCommit = parseJsonObject(health.body).commit;
-								return (
-									health.status === 200 &&
-									ready.status === 200 &&
-									commit !== undefined &&
-									findings !== undefined &&
-									isJsonString(servedCommit) &&
-									servedCommit.toLowerCase() === commit.toLowerCase() &&
-									findings.servedCommit === undefined &&
-									findings.healthStatus === undefined &&
-									findings.readyStatus === undefined &&
-									findings.readyzState === undefined &&
-									findings.notReady === undefined
-								);
-							} catch {
-								return false;
-							}
-						};
-						let liveReady = false;
-						for (
-							let attempt = 0;
-							attempt < 24 && clock() < deadlineAt;
-							attempt++
-						) {
-							liveReady = await publicReady(sha);
-							if (liveReady) break;
-							await pauseBeforeRetry(attempt);
-						}
-						if (liveReady) return undefined;
-						const rollbackFailedPromotion = async (): Promise<{
-							status: "completed" | "failed" | "superseded" | "unknown";
-							note: string;
-						}> => {
-							if (previousProduction === undefined)
-								return {
-									status: "unknown",
-									note: " No previous production deployment was recorded; inspect production and restore a known healthy deployment by hand.",
-								};
-							let current: string | undefined;
-							try {
-								current = await client.getProductionDeploymentId(project);
-							} catch (error) {
-								if (error instanceof VercelProductionDeploymentMissingError)
-									return {
-										status: "unknown",
-										note: ` Production has no current deployment; promote the previous deployment ${previousProduction} by hand.`,
-									};
-								return {
-									status: "unknown",
-									note: ` The current production deployment could not be established; promote the previous deployment ${previousProduction} by hand.`,
-								};
-							}
-							if (current !== safe.deploymentId)
-								return current === undefined
-									? {
-											status: "unknown",
-											note: ` Production has no current deployment; promote the previous deployment ${previousProduction} by hand.`,
-										}
-									: {
-											status: "superseded",
-											note: ` Production traffic was concurrently moved to ${current}; no rollback was sent.`,
-										};
-							let rollbackError: Error | undefined;
-							try {
-								await client.promoteDeployment(project, previousProduction);
-							} catch (error) {
-								rollbackError =
-									error instanceof Error ? error : new Error("rollback failed");
-							}
-							try {
-								current = await client.getProductionDeploymentId(project);
-							} catch {
-								return {
-									status: "unknown",
-									note: ` Automatic rollback to ${previousProduction} was attempted, but its outcome could not be established; inspect production before retrying.`,
-								};
-							}
-							if (current === previousProduction)
-								return {
-									status: "completed",
-									note: ` Production traffic was restored to the previous deployment ${previousProduction}.`,
-								};
-							if (current !== undefined && current !== safe.deploymentId)
-								return {
-									status: "superseded",
-									note: ` Production traffic was concurrently moved to ${current} during rollback.`,
-								};
-							return {
-								status: current === safe.deploymentId ? "failed" : "unknown",
-								note: ` Automatic rollback to ${previousProduction} did not restore production${
-									rollbackError === undefined
-										? ""
-										: `: ${withoutToken(rollbackError.message)}`
-								}; promote it by hand.`,
-							};
-						};
-						const recovery = await rollbackFailedPromotion();
-						return {
-							ok: false as const,
-							code: "HOBO_CI_DEPLOY_LIVE_VERIFICATION_FAILED",
-							message: `Vercel accepted the promotion, but ${liveOrigin} did not become healthy for the pinned commit before the deploy deadline.${recovery.note}`,
-							data: { rollback: recovery.status },
-						};
-					},
-				}
-			: undefined),
 		emitProgress: input.emitProgress,
 	});
 	const delivery = delivered.ok
 		? delivered.report
 		: (delivered.report ?? undefined);
 	const deliveryData = delivery !== undefined ? { delivery } : undefined;
+	if (
+		prebuilt &&
+		target === "production" &&
+		!delivered.ok &&
+		prebuiltState.promoted !== undefined &&
+		prebuiltState.promotedFrom === undefined
+	)
+		return {
+			ok: false,
+			code: delivered.realization?.code ?? delivered.code,
+			message: withoutToken(
+				`${delivered.realization?.message ?? delivered.message} Production serves ${prebuiltState.promoted}, and this run recorded no earlier deployment to roll back to (it was already live, or production served none): roll back by hand with vercel rollback.`,
+			),
+			data: {
+				command: "ci deploy",
+				failedDeployment: prebuiltState.promoted,
+				...deliveryData,
+			},
+		};
+	if (
+		prebuilt &&
+		target === "production" &&
+		!delivered.ok &&
+		prebuiltState.promotedFrom !== undefined &&
+		prebuiltState.promoted !== undefined
+	) {
+		const failedWith = delivered.realization?.code ?? delivered.code;
+		const restore = prebuiltState.promotedFrom;
+		try {
+			await client.rollbackProduction(
+				prebuiltState.projectId ?? project,
+				restore,
+				`hobo ci deploy: ${prebuiltState.promoted} failed production verification (${failedWith})`,
+			);
+		} catch (error) {
+			return {
+				ok: false,
+				code: "HOBO_CI_DEPLOY_ROLLBACK_FAILED",
+				message: withoutToken(
+					`Production verification of ${prebuiltState.promoted} failed (${failedWith}), and rolling production back to ${restore} failed too: ${error instanceof Error ? error.message : "unknown error"}. Roll back by hand: vercel rollback ${restore}.`,
+				),
+				data: {
+					command: "ci deploy",
+					failedDeployment: prebuiltState.promoted,
+					rollbackTarget: restore,
+					...deliveryData,
+				},
+			};
+		}
+		return {
+			ok: false,
+			code: "HOBO_CI_DEPLOY_ROLLED_BACK",
+			message: withoutToken(
+				`Production verification of ${prebuiltState.promoted} failed (${failedWith}: ${delivered.realization?.message ?? delivered.message}); production was rolled back to ${restore}, the deployment it served before.`,
+			),
+			data: {
+				command: "ci deploy",
+				failedDeployment: prebuiltState.promoted,
+				rolledBackTo: restore,
+				...deliveryData,
+			},
+		};
+	}
 	if (delivered.ok) {
 		const safe = Object.fromEntries(
 			Object.entries({
@@ -1353,6 +1331,13 @@ export async function runCiRelayDeploy(
 				dryRun: false,
 				plan: planJson,
 				outputs: safe,
+				...(deployTokenRef !== undefined ? { deployTokenRef } : undefined),
+				...(deployCredentialIdentityId !== undefined
+					? { deployCredentialIdentityId }
+					: undefined),
+				...(deployCredentialAudience !== undefined
+					? { deployCredentialAudience }
+					: undefined),
 				...deliveryData,
 			},
 		};
@@ -1380,7 +1365,7 @@ export async function runCiRelayDeploy(
 		const state =
 			delivered.code === "HOBO_CI_DEPLOY_NOT_READY"
 				? (readyState ?? "UNKNOWN")
-				: `${readyState} after ${Math.round((clock() - startedAt) / 60_000)} minutes`;
+				: `${readyState} after ${Math.round((now() - startedAt) / 60_000)} minutes`;
 		const safe = Object.fromEntries(
 			Object.entries({
 				...handover,
@@ -1402,22 +1387,13 @@ export async function runCiRelayDeploy(
 			},
 		};
 	}
-	const findings: RelayProbeFindings | undefined = commitVerified
-		? verify?.probe.findings()
-		: undefined;
 	const why =
-		commitVerified &&
-		verify !== undefined &&
-		sha !== undefined &&
-		findings !== undefined
-			? target === "preview" && findings.servedCommit !== undefined
-				? {
-						code: "HOBO_CI_DEPLOY_COMMIT_MISMATCH",
-						reason: `${verify.origin}/healthz did not name the preview commit ${sha.toLowerCase()}.`,
-						remediation:
-							"Point the preview verification origin at the deployment of this commit and retry.",
-					}
-				: relayVerifyFailure(verify.origin, sha.toLowerCase(), findings)
+		verify !== undefined && sha !== undefined
+			? relayVerifyFailure(
+					verify.origin,
+					sha.toLowerCase(),
+					verify.probe.findings(),
+				)
 			: undefined;
 	return {
 		ok: false,
@@ -1435,28 +1411,6 @@ export async function runCiRelayDeploy(
 			...(why !== undefined ? { verification: { ...why } } : undefined),
 		},
 	};
-}
-
-async function attestedDeploymentUrl(
-	client: Pick<VercelClient, "getDeployment">,
-	outputs: Readonly<Record<string, string>>,
-	project: string,
-): Promise<string | undefined> {
-	const deploymentId = outputs.deploymentId;
-	if (!isJsonString(deploymentId) || deploymentId === "") return undefined;
-	let record: Awaited<ReturnType<VercelClient["getDeployment"]>>;
-	try {
-		record = await client.getDeployment(deploymentId);
-	} catch {
-		return undefined;
-	}
-	const created = normalizeDeploymentUrl(outputs.url, project);
-	return record !== undefined &&
-		record.id === deploymentId &&
-		created !== undefined &&
-		normalizeDeploymentUrl(record.url, project) === created
-		? created
-		: undefined;
 }
 
 // A failed realization, with the code and message this command has always

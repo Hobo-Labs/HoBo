@@ -14,6 +14,8 @@ export const RELAY_PACKAGE_DIR = "packages/ci-vercel";
 export const RELAY_EXTRA_INPUTS = [
 	".github/workflows/relay-deploy.yml",
 	"scripts/ci/relay-deploy-gate.mts",
+	"scripts/ci/relay-deploy-environment.mts",
+	"scripts/ci/relay-deploy-verify.mts",
 ] as const;
 
 /** The relay's committed secret store binding: coordinates only. */
@@ -23,14 +25,9 @@ export const RELAY_SECRET_STORE_BINDING =
 /** The deploy job's `timeout-minutes` in relay-deploy.yml (CI caps every job at 20). */
 export const RELAY_DEPLOY_JOB_TIMEOUT_MINUTES = 20;
 
-/**
- * Held back from the job's timeout: the runner's setup and checkout before
- * this step, and the adopt step's summary after the command ends.
- */
 export const RELAY_DEPLOY_JOB_MARGIN_MINUTES = 3;
 
-/** When `hobo ci deploy --adopt` must end, counted from the gate's own run. */
-export function adoptDeadline(nowMs: number): string {
+export function deployDeadline(nowMs: number): string {
 	return new Date(
 		nowMs +
 			(RELAY_DEPLOY_JOB_TIMEOUT_MINUTES - RELAY_DEPLOY_JOB_MARGIN_MINUTES) *
@@ -42,13 +39,13 @@ export function adoptDeadline(nowMs: number): string {
 export type StoreBindingState =
 	| "absent"
 	| "unreadable"
-	| "coordinates"
+	| "unconfigured"
 	| "bound";
 
 export type GateDecision = Readonly<{
 	run: boolean;
 	reason: string;
-	failure?: boolean;
+	fatal?: boolean;
 }>;
 
 /** The directories whose files are the relay's inputs, from the lockfile. */
@@ -76,27 +73,49 @@ export function touchesRelay(
 	);
 }
 
-/**
- * Whether the binding file is there, is JSON, and names a kind and an HTTPS
- * endpoint. A shape hint only: the full parse (`@hobo/secret-store-claim`'s
- * `readSecretStoreBinding`) runs in the credential step, and this gate runs
- * before anything is installed, on node builtins only.
- */
+const DEPLOY_WRITER_SUBJECT =
+	"repo:Hobo-Labs@344805935/HoBo@1274791462:environment:hobo-ci-app-credentials";
+
 export function storeBindingState(text: string | undefined): StoreBindingState {
 	if (text === undefined) return "absent";
+	let record;
 	try {
-		JSON.parse(text);
+		record = JSON.parse(text);
 	} catch {
 		return "unreadable";
 	}
+	if (record === null || Array.isArray(record)) return "unreadable";
+	const coordinates = ["projectId", "relayIdentityId", "deployIdentityId"];
 	if (
-		!/"kind"\s*:\s*"[a-z-]{1,64}"/u.test(text) ||
-		!/"endpoint"\s*:\s*"https:\/\/[A-Za-z0-9.-]+/u.test(text)
+		record.kind !== String(record.kind) ||
+		!/^[a-z-]{1,64}$/u.test(record.kind) ||
+		record.endpoint !== String(record.endpoint) ||
+		!/^https:\/\/[A-Za-z0-9.-]+/u.test(record.endpoint) ||
+		coordinates.some(
+			(key) => !record[key] || record[key] !== String(record[key]),
+		)
 	)
 		return "unreadable";
-	return /"deployProjectId"\s*:\s*"[^"]+"/u.test(text)
-		? "bound"
-		: "coordinates";
+	const deployProjectId = record.deployProjectId ?? "";
+	const deployCredentialIdentityId = record.deployCredentialIdentityId ?? "";
+	const deployOidcSubject = record.deployOidcSubject ?? "";
+	if (
+		deployProjectId !== String(deployProjectId) ||
+		deployCredentialIdentityId !== String(deployCredentialIdentityId) ||
+		deployOidcSubject !== String(deployOidcSubject) ||
+		(deployProjectId === "") !== (deployCredentialIdentityId === "")
+	)
+		return "unreadable";
+	if (deployOidcSubject !== "" && deployOidcSubject !== DEPLOY_WRITER_SUBJECT)
+		return "unreadable";
+	if (deployProjectId === "") return "unconfigured";
+	if (
+		record.projectId === deployProjectId ||
+		deployCredentialIdentityId === record.deployIdentityId ||
+		deployCredentialIdentityId === record.relayIdentityId
+	)
+		return "unreadable";
+	return "bound";
 }
 
 export function decide(input: {
@@ -105,50 +124,47 @@ export function decide(input: {
 	/** Changed paths of a push, or undefined when the range could not be read. */
 	readonly changed?: readonly string[];
 	readonly inputDirs: readonly string[];
+	readonly forceBootstrap?: boolean;
 }): GateDecision {
-	if (input.event !== "workflow_dispatch" && input.event !== "push")
-		return { run: false, reason: `the ${input.event} event does not deploy` };
-	if (
-		input.event === "push" &&
-		input.changed !== undefined &&
-		!touchesRelay(input.changed, input.inputDirs)
-	)
-		return {
-			run: false,
-			reason: "the push changes nothing the relay is built from",
-		};
 	if (input.store === "absent")
 		return {
 			run: false,
-			failure: true,
-			reason: `no secret store is bound to the relay yet: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
+			fatal: true,
+			reason: `no secret store is bound to the relay: an agent running the hobo-deploy skill chooses and provisions one (hobo ci secret-store provision) and the owner claims it; it commits ${RELAY_SECRET_STORE_BINDING} (packages/ci-vercel/CONFIG-SERVICE.md)`,
 		};
 	if (input.store === "unreadable")
 		return {
 			run: false,
-			failure: true,
-			reason: `${RELAY_SECRET_STORE_BINDING} is not a secret store binding; run hobo ci secret-store provision again`,
+			fatal: true,
+			reason: `${RELAY_SECRET_STORE_BINDING} is malformed or half-configured; run hobo ci secret-store connect with both --deploy-project-id and --deploy-credential-identity-id`,
 		};
-	if (input.store === "coordinates")
+	if (input.store === "unconfigured")
 		return {
 			run: false,
-			failure: true,
-			reason:
-				"the committed binding names no deploy project and the relay's Vercel project is intentionally not Git-linked, so nothing deploys the relay: complete the cutover (packages/ci-vercel/README.md, Merge cutover) that records the deploy project",
+			reason: `${RELAY_SECRET_STORE_BINDING} has no deploy credential project or reader, so no deployment is attempted; owner provisioning and the production observation in packages/ci-vercel/CONFIG-SERVICE.md remain required`,
 		};
-	if (input.event === "workflow_dispatch")
+	if (input.event === "workflow_dispatch") {
+		if (input.forceBootstrap === true)
+			return {
+				run: true,
+				reason:
+					"emergency bootstrap (force_bootstrap): the run deploys whether or not the diff touches the relay",
+			};
 		return { run: true, reason: "a manual run deploys" };
+	}
+	if (input.event !== "push")
+		return { run: false, reason: `the ${input.event} event does not deploy` };
 	if (input.changed === undefined)
 		return {
-			run: false,
-			failure: true,
-			reason:
-				"the pushed range could not be read, so the relay cannot prove this push changes it",
+			run: true,
+			reason: "the pushed range could not be read, so the relay deploys",
 		};
-	return {
-		run: true,
-		reason: "the push changes the relay or a package it uses",
-	};
+	return touchesRelay(input.changed, input.inputDirs)
+		? { run: true, reason: "the push changes the relay or a package it uses" }
+		: {
+				run: false,
+				reason: "the push changes nothing the relay is built from",
+			};
 }
 
 function changedPaths(from: string, to: string): string[] | undefined {
@@ -188,21 +204,19 @@ function main(argv: readonly string[]): void {
 			event === "push"
 				? relayInputDirs(readFileSync(join(root, "pnpm-lock.yaml"), "utf8"))
 				: [],
+		forceBootstrap:
+			event === "workflow_dispatch" &&
+			/^(1|true)$/iu.test(process.env.FORCE_BOOTSTRAP ?? ""),
 	});
-	const text = `run=${decision.run}\nreason=${decision.reason}\ndeadline=${adoptDeadline(Date.now())}\n`;
+	const text = `run=${decision.run}\nreason=${decision.reason}\ndeadline=${deployDeadline(Date.now())}\n`;
 	if (output) appendFileSync(output, text, "utf8");
 	else process.stdout.write(text);
-	if (decision.failure === true) {
-		process.stdout.write(
-			`::error title=Relay deploy failed::${decision.reason}.\n`,
-		);
-		process.exitCode = 1;
-	} else
-		process.stdout.write(
-			decision.run
-				? `Deploying the relay: ${decision.reason}.\n`
-				: `::notice title=Relay deploy skipped::${decision.reason}.\n`,
-		);
+	process.stdout.write(
+		decision.run
+			? `Deploying the relay: ${decision.reason}.\n`
+			: `::${decision.fatal === true ? "error title=Relay deploy blocked" : "notice title=Relay deploy skipped"}::${decision.reason}.\n`,
+	);
+	if (decision.fatal === true) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
