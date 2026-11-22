@@ -1287,7 +1287,7 @@ jobs:
         env:
           FORMAL_SHARD: ${{ matrix.shard }}
           FORMAL_MODEL_TIMEOUT_SEC: 600
-          FORMAL_SKILL_TIMEOUT_SEC: 1500
+          FORMAL_SKILL_TIMEOUT_SEC: 900
         run: pnpm run verify:state-machines -- "--shard=${FORMAL_SHARD}/4"
 
   pr-gate:

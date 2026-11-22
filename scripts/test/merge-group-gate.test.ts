@@ -75,6 +75,7 @@ describe("merge-group required gate", () => {
 			/prefetch-formal-verification-tools\.mts/u,
 		);
 		assert.match(verification, /FORMAL_MODEL_TIMEOUT_SEC/u);
+		assert.match(verification, /FORMAL_SKILL_TIMEOUT_SEC: 900/u);
 		assert.match(gate, /needs: \[[^\]]*state-machine-verification/u);
 		const script = shellForStep(
 			gate,
