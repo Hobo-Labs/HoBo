@@ -369,6 +369,50 @@ describe("MCP owner setup privacy", () => {
 		}
 	});
 
+	it.each([
+		[
+			"HOBO_CD_JOURNAL_SETTINGS_INVALID",
+			"restore-journal-settings",
+			"Restore the journal fleet",
+		],
+		[
+			"HOBO_CD_JOURNAL_NOT_PROVISIONED",
+			"reconcile-journal-provisioning",
+			"Reconcile any incomplete",
+		],
+	])("preserves %s without private details or a blind retry", async (code, action, message) => {
+		const f = fixture();
+		try {
+			f.run.mockResolvedValueOnce({
+				exitCode: 1,
+				stdout: JSON.stringify({
+					ok: false,
+					status: "needs-connection",
+					code,
+					message: "private-owner-store",
+				}),
+				stderr: "",
+			});
+			const result = await f.call("cd", ["up", "--hand-off"]);
+			expect(result.body).toMatchObject({
+				code,
+				action,
+				message: expect.stringContaining(message),
+			});
+			expect(JSON.stringify(result.response)).not.toContain(
+				"private-owner-store",
+			);
+			expect(
+				readOwnerTurn(false, [
+					String(result.body.code),
+					String(result.body.message),
+				]),
+			).toMatchObject({ kind: "blocked" });
+		} finally {
+			await f.owner.close();
+		}
+	});
+
 	it("preserves a completed CI preview and points a missing connection to CD setup", async () => {
 		const f = fixture();
 		try {

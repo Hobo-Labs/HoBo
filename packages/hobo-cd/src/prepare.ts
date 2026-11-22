@@ -44,6 +44,7 @@ import {
 } from "@hobo/hobo-ci";
 
 import {
+	JournalFleetSettingsError,
 	type JournalMemberProvisioner,
 	prepareJournalFleet,
 } from "./journal-fleet.js";
@@ -195,6 +196,10 @@ async function journalStep(
 					"An existing complete journal fleet or a durable, owner-scoped atomic claim store is required.",
 				],
 			);
+		if (error instanceof JournalFleetSettingsError)
+			return refused("HOBO_CD_JOURNAL_SETTINGS_INVALID", error.message, [
+				"Restore the journal fleet and witness settings in your secret store, then run hobo cd up again.",
+			]);
 		return refused(
 			"HOBO_CD_JOURNAL_NOT_PROVISIONED",
 			`The CD journal's fleet could not be provisioned: ${error instanceof Error ? error.message : String(error)}`,

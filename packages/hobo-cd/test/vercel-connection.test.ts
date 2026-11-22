@@ -707,6 +707,43 @@ describe("prepareVercelConnection", () => {
 		expect(JSON.stringify(result)).not.toContain("synthetic provider failure");
 	});
 
+	it("asks for the saved journal settings to be restored when the roster is incomplete", async () => {
+		const { store } = await memoryStore();
+		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);
+		await store.port.put("HOBO_CD_VERCEL_TEAM_ID", "team_test");
+		await store.port.put("HOBO_CD_VERCEL_INSTALLATION_ID", "icfg_test");
+		await store.port.put(
+			"HOBO_CD_SETTINGS",
+			JSON.stringify({ HOBO_CD_POSTGRES_FLEET: "" }),
+		);
+		let creates = 0;
+		const result = await prepareVercelConnection(prepareInput(), {
+			env: {},
+			locator: memorySettings(LOCATOR),
+			vault: signedInVault(),
+			openStore: opened(store),
+			journalProvisioners: [
+				{
+					plan: "neon-claimable",
+					async create() {
+						creates += 1;
+						throw new Error("unexpected create");
+					},
+				},
+			],
+		});
+		expect(result).toMatchObject({
+			kind: "refused",
+			result: {
+				code: "HOBO_CD_JOURNAL_SETTINGS_INVALID",
+				remediation: [
+					"Restore the journal fleet and witness settings in your secret store, then run hobo cd up again.",
+				],
+			},
+		});
+		expect(creates).toBe(0);
+	});
+
 	it("refuses a successful installation read without material", async () => {
 		const { store } = await memoryStore();
 		await store.port.put("HOBO_CD_VERCEL_TOKEN", TOKEN);

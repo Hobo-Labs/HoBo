@@ -151,6 +151,7 @@ const OWNER_SETUP_CODES = new Set([
 	"HOBO_CD_VERCEL_DEVICE_FAILED",
 	"HOBO_CD_JOURNAL_NOT_PROVISIONED",
 	"HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE",
+	"HOBO_CD_JOURNAL_SETTINGS_INVALID",
 	"HOBO_CD_PREPARED_PLACEMENT_UNAVAILABLE",
 	"MCP_SCOPE_DENIED",
 	"MCP_RATE_LIMITED",
@@ -277,19 +278,25 @@ function ownerSetupResponse(
 						? "run-cd-setup"
 						: code === "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE"
 							? "atomic-claim-store-required"
-							: code === "HOBO_CD_VERCEL_DEVICE_DENIED"
-								? "wait-for-owner-request"
-								: code.endsWith("_STORE_OPERATION_UNCERTAIN")
-									? "reconcile-store-operation"
-									: code.endsWith("_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE")
-										? "private-owner-session-required"
-										: code === "MCP_SCOPE_DENIED"
-											? "authorization-required"
-											: code === "MCP_RATE_LIMITED"
-												? "retry-after-throttle"
-												: code.endsWith("_STORE_CHOICE")
-													? "choose-secret-store"
-													: "retry-setup-when-ready",
+							: code === "HOBO_CD_JOURNAL_SETTINGS_INVALID"
+								? "restore-journal-settings"
+								: code === "HOBO_CD_JOURNAL_NOT_PROVISIONED"
+									? "reconcile-journal-provisioning"
+									: code === "HOBO_CD_VERCEL_DEVICE_DENIED"
+										? "wait-for-owner-request"
+										: code.endsWith("_STORE_OPERATION_UNCERTAIN")
+											? "reconcile-store-operation"
+											: code.endsWith(
+														"_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE",
+													)
+												? "private-owner-session-required"
+												: code === "MCP_SCOPE_DENIED"
+													? "authorization-required"
+													: code === "MCP_RATE_LIMITED"
+														? "retry-after-throttle"
+														: code.endsWith("_STORE_CHOICE")
+															? "choose-secret-store"
+															: "retry-setup-when-ready",
 		message: unavailableApproval
 			? "This owner approval cannot be completed privately in this HoBo session."
 			: missingForm
@@ -298,17 +305,21 @@ function ownerSetupResponse(
 					? "Run the HoBo CD setup ceremony before retrying CI."
 					: code === "HOBO_CD_JOURNAL_CLAIM_UNAVAILABLE"
 						? "A verified atomic claim store or an existing complete CD journal fleet is required."
-						: code === "HOBO_CD_VERCEL_DEVICE_DENIED"
-							? "The owner declined Vercel approval. Retry only if they request it."
-							: code.endsWith("_STORE_OPERATION_UNCERTAIN")
-								? "A store operation may have completed; reconcile it before retrying."
-								: code.endsWith("_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE")
-									? "This HoBo session cannot provision that connection privately."
-									: code === "HOBO_CD_VERCEL_DEVICE_EXPIRED"
-										? "Run again to request a new Vercel approval."
-										: !result.ok && OWNER_STEP_CODES.has(result.code)
-											? "Run again when the owner is ready."
-											: "HoBo returned a setup status. Owner steps use the secure form.",
+						: code === "HOBO_CD_JOURNAL_SETTINGS_INVALID"
+							? "Restore the journal fleet and witness settings in your secret store before retrying setup."
+							: code === "HOBO_CD_JOURNAL_NOT_PROVISIONED"
+								? "Reconcile any incomplete journal database creation before retrying setup."
+								: code === "HOBO_CD_VERCEL_DEVICE_DENIED"
+									? "The owner declined Vercel approval. Retry only if they request it."
+									: code.endsWith("_STORE_OPERATION_UNCERTAIN")
+										? "A store operation may have completed; reconcile it before retrying."
+										: code.endsWith("_ONEPASSWORD_PRIVATE_PROCESS_UNAVAILABLE")
+											? "This HoBo session cannot provision that connection privately."
+											: code === "HOBO_CD_VERCEL_DEVICE_EXPIRED"
+												? "Run again to request a new Vercel approval."
+												: !result.ok && OWNER_STEP_CODES.has(result.code)
+													? "Run again when the owner is ready."
+													: "HoBo returned a setup status. Owner steps use the secure form.",
 	};
 }
 
