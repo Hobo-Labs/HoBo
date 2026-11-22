@@ -819,7 +819,7 @@ export function prBatchHostedHasIdleCapacity(
 	load: LabelLoad,
 	limits: RouteLimits = MERGE_GROUP_HOSTED_LIMITS,
 ): boolean {
-	return !refusingJobs(load, limits);
+	return load.queued === 0 && !refusingJobs(load, limits);
 }
 
 // public-contract: the Agent37 on-demand overflow runs-on label, emitted on pool saturation only when its fetched runner page shows an online runner.
@@ -1003,6 +1003,108 @@ export async function applyHoboPoolSaturation(input: {
 		reason: `${input.decision.reason}; ${saturation.summary}; the run overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`,
 		refusedBy: "queue",
 	};
+}
+
+export async function divertSaturatedPrBatch(input: {
+	read: QueueReader;
+	repository: string;
+	ownRunId: number;
+	labels: RouteSettings["labels"];
+	fleetLabel: string;
+	localEnrolled: boolean;
+	limits: RouteLimits;
+	now: () => number;
+	sleep: (seconds: number) => Promise<void>;
+}): Promise<RouteDecision | undefined> {
+	const mergeGroupLimits = {
+		...input.limits,
+		maxQueued: Number.MAX_SAFE_INTEGER,
+	};
+	const observeTrunk = (nowMs: number) =>
+		observeQueue({
+			read: input.read,
+			repository: input.repository,
+			ownRunId: input.ownRunId,
+			labels: input.localEnrolled
+				? [input.labels.trunk, input.labels.local]
+				: [input.labels.trunk],
+			limits: mergeGroupLimits,
+			nowMs,
+			slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
+		});
+	try {
+		const trunkDecision = await chooseRunner({
+			observe: observeTrunk,
+			now: input.now,
+			sleep: input.sleep,
+			mode: "auto",
+			fleetLabel: input.labels.trunk,
+			localLabel: input.labels.local,
+			githubLabel: input.labels.github,
+			localEnrolled: input.localEnrolled,
+			limits: mergeGroupLimits,
+			ignoreQueuedCount: true,
+			slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
+		});
+		if (
+			trunkDecision.tier === "fleet" &&
+			trunkDecision.runner === input.labels.trunk
+		) {
+			const confirmed = await confirmMergeGroupFabricFleet({
+				fleetDecision: trunkDecision,
+				observe: observeTrunk,
+				now: input.now,
+				sleep: input.sleep,
+				fleetLabel: input.labels.trunk,
+				githubLabel: input.labels.github,
+				limits: input.limits,
+				slowPickupWindowSeconds: RECENT_PICKUP_SECONDS,
+			});
+			if (
+				confirmed.tier === "fleet" &&
+				confirmed.runner === input.labels.trunk
+			)
+				return confirmed;
+		}
+	} catch {
+		// Trunk queue unreadable; try the next fleet tier.
+	}
+	const fleet = input.labels.fleet;
+	if (fleet !== input.labels.trunk) {
+		try {
+			const observation = await observeHoboPoolSaturation({
+				read: input.read,
+				repository: input.repository,
+				label: fleet,
+			});
+			if (!observation.saturation.saturated) {
+				if (
+					idleRunnerUnavailable(observation.poolRunners, fleet) === undefined
+				)
+					return {
+						tier: "fleet",
+						runner: fleet,
+						reason: `the same-repository PR batch diverts from saturated GitHub-hosted to ${fleet} (${observation.saturation.summary})`,
+						refusedBy: "none",
+					};
+			} else if (
+				agent37OverflowUnavailable(observation.overflowRunners) === undefined
+			) {
+				console.log(
+					`::warning title=hobo-ci-route-fallback::${escapeCommand(`${observation.saturation.summary}; the same-repository PR batch overflows to ${AGENT37_OVERFLOW_RUNNER_LABEL}`)}`,
+				);
+				return {
+					tier: "fleet",
+					runner: AGENT37_OVERFLOW_RUNNER_LABEL,
+					reason: `the same-repository PR batch diverts from saturated GitHub-hosted to ${AGENT37_OVERFLOW_RUNNER_LABEL} (${observation.saturation.summary})`,
+					refusedBy: "queue",
+				};
+			}
+		} catch {
+			// Fleet saturation unreadable; no verified fleet diversion.
+		}
+	}
+	return undefined;
 }
 
 async function readNodeCpuPercent(
@@ -1631,58 +1733,31 @@ export async function main(
 				const hostedIdle = prBatchHostedHasIdleCapacity(hostedLoad);
 				const hostedSummary = describeLoad("GitHub-hosted", hostedLoad);
 				if (!hostedIdle) {
-					const fleetProbeAtMs = now();
-					const fleetView = await observeQueue({
+					const hostedSaturation = `GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}`;
+					const diversion = await divertSaturatedPrBatch({
 						read: probeRead,
 						repository,
 						ownRunId,
-						labels: [fleetLabel],
-						limits,
-						nowMs: fleetProbeAtMs,
-					}).catch(() => undefined);
-					const fleetSummary = fleetView
-						? describeLoad(
-								"the fleet",
-								labelLoad(fleetView.jobs, fleetLabel, fleetProbeAtMs),
-							)
-						: "the fleet queue could not be read";
-					const observation = await observeHoboPoolSaturation({
-						read: probeRead,
-						repository,
-						label: fleetLabel,
-					}).catch(() => ({
-						saturation: {
-							saturated: false,
-							summary: `${fleetLabel} pool saturation unknown (repository runner list unreadable; host node CPU unknown)`,
-						},
-						poolRunners: undefined,
-						overflowRunners: undefined,
-					}));
-					const { saturation } = observation;
-					const fleetUnavailable = idleRunnerUnavailable(
-						observation.poolRunners,
+						labels,
 						fleetLabel,
+						localEnrolled,
+						limits,
+						now,
+						sleep: (wait) => delay(wait * 1000),
+					});
+					if (diversion)
+						return report(
+							{
+								...diversion,
+								reason: `${hostedSaturation}; ${diversion.reason}`,
+								slip: { kind: "unasked", why: "batch" },
+							},
+							env,
+						);
+					console.log(
+						`::warning title=hobo-ci-route-fallback::${escapeCommand(`${hostedSaturation}; no verified fleet capacity was available; the same-repository PR batch stays on ${labels.github}`)}`,
 					);
-					if (
-						fleetUnavailable !== undefined &&
-						(!saturation.saturated ||
-							agent37OverflowUnavailable(observation.overflowRunners) !==
-								undefined)
-					) {
-						console.log(
-							`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository PR batch stays on ${labels.github}`)}`,
-						);
-						hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${fleetUnavailable}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
-					} else {
-						const overflowUnavailable = saturation.saturated
-							? agent37OverflowUnavailable(observation.overflowRunners)
-							: undefined;
-						const capacityEvidence = `${saturation.summary}${overflowUnavailable ? `; ${overflowUnavailable}` : ""}`;
-						console.log(
-							`::warning title=hobo-ci-route-fallback::${escapeCommand(`GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository PR batch has no Broker claim and stays on ${labels.github} (${fleetSummary})`)}`,
-						);
-						hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and GitHub-hosted runners have no idle capacity${hostedSummary ? ` (${hostedSummary})` : ""}; ${capacityEvidence}; the same-repository batch stays on ${labels.github} (${fleetSummary})`;
-					}
+					hostedFallbackReason = `the full PR batch has no verified fleet capacity and Broker claim, and ${hostedSaturation}; no verified fleet capacity was available; the same-repository batch stays on ${labels.github}`;
 				}
 			} catch (error) {
 				const detail = error instanceof Error ? error.message : "unknown error";

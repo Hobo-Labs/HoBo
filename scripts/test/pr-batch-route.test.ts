@@ -232,6 +232,27 @@ describe("PR batch routing", () => {
 		assert.match(decision.reason, /stays on ubuntu-24\.04/u);
 	});
 
+	it("diverts a saturated same-repository PR batch to hobo-trunk when trunk is taking jobs", async () => {
+		const trunkPickup = {
+			run_id: 40,
+			status: "completed",
+			labels: ["hobo-trunk"],
+			runner_name: "runner-1",
+			created_at: new Date(Date.now() - 65_000).toISOString(),
+			started_at: new Date(Date.now() - 60_000).toISOString(),
+		};
+		const decision = await main([], env, {
+			routingConfig: routing("auto"),
+			eventPayload: sameRepositoryPayload,
+			fetch: hostedQueueFetch([...saturatedHostedJobs, trunkPickup]),
+		});
+		assert.deepEqual(
+			[decision.tier, decision.runner],
+			["fleet", "hobo-trunk"],
+		);
+		assert.match(decision.reason, /no idle capacity/u);
+	});
+
 	it("fails closed when PR-batch hosted queue probe has no token", async () => {
 		await assert.rejects(
 			main(
@@ -265,7 +286,7 @@ describe("PR batch routing", () => {
 		assert.match(decision.reason, /hosted-runner queue probe failed/u);
 	});
 
-	it("warns with both queue summaries while keeping an unclaimed batch hosted", async () => {
+	it("warns and keeps a saturated same-repository PR batch hosted when the fleet ladder is unavailable", async () => {
 		const lines: string[] = [];
 		const log = console.log;
 		console.log = (...parts: unknown[]) => {
@@ -293,21 +314,13 @@ describe("PR batch routing", () => {
 			[decision.tier, decision.runner, decision.refusedBy],
 			["github", "ubuntu-24.04", "queue"],
 		);
-		assert.match(
-			decision.reason,
-			/no idle capacity \(GitHub-hosted/u,
-			decision.reason,
-		);
-		assert.match(
-			decision.reason,
-			/the same-repository batch stays on ubuntu-24\.04 \(the fleet has /u,
-			decision.reason,
-		);
+		assert.match(decision.reason, /no idle capacity/u);
+		assert.match(decision.reason, /same-repository batch stays on ubuntu-24\.04/u);
 		assert.ok(
 			lines.some(
 				(line) =>
 					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
-					line.includes("the same-repository PR batch stays on ubuntu-24.04"),
+					line.includes("same-repository PR batch stays on ubuntu-24.04"),
 			),
 			lines.join("\n"),
 		);

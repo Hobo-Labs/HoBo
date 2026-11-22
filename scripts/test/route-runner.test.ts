@@ -3258,7 +3258,7 @@ describe("hobo pool saturation overflow", () => {
 		);
 	});
 
-	it("keeps an unclaimed same-repository PR batch hosted during saturation", async () => {
+	it("diverts an unclaimed saturated same-repository PR batch to agent37 overflow when the hobo pool is saturated and overflow is idle", async () => {
 		const batchFetch: typeof fetch = async (url) => {
 			const repo = publicRepo(url);
 			if (repo) return repo;
@@ -3293,8 +3293,8 @@ describe("hobo pool saturation overflow", () => {
 			),
 		);
 		assert.deepEqual(
-			[decision.tier, decision.runner, decision.refusedBy],
-			["github", "ubuntu-24.04", "queue"],
+			[decision.tier, decision.runner],
+			["fleet", AGENT37_OVERFLOW_RUNNER_LABEL],
 		);
 		assert.match(
 			decision.reason,
@@ -3304,20 +3304,17 @@ describe("hobo pool saturation overflow", () => {
 			decision.reason,
 			/the hobo pool has no idle capacity \(5 of 5 online hobo runners busy\)/u,
 		);
-		assert.match(decision.reason, /batch stays on ubuntu-24\.04/u);
 		assert.ok(
 			warningsIn(lines).some(
 				(line) =>
 					line.startsWith("::warning title=hobo-ci-route-fallback::") &&
-					line.includes("GitHub-hosted runners have no idle capacity") &&
-					line.includes("the hobo pool has no idle capacity") &&
-					line.includes("no Broker claim and stays on ubuntu-24.04"),
+					line.includes("overflows to hobo-agent37"),
 			),
 			lines.join("\n"),
 		);
 	});
 
-	it("keeps an unclaimed saturated PR batch hosted despite idle fleet runners", async () => {
+	it("keeps an unclaimed saturated PR batch hosted when the fleet ladder is unavailable despite idle hobo runners", async () => {
 		let runnerPageReads = 0;
 		const batchFetch: typeof fetch = async (url) => {
 			const repo = publicRepo(url);
@@ -3359,16 +3356,11 @@ describe("hobo pool saturation overflow", () => {
 			[decision.tier, decision.runner, decision.refusedBy],
 			["github", "ubuntu-24.04", "queue"],
 		);
+		assert.match(decision.reason, /no idle capacity/u);
 		assert.match(decision.reason, /batch stays on ubuntu-24\.04/u);
-		assert.match(
-			decision.reason,
-			/no idle hobo-agent37 runner was verified on the fetched runner page/u,
-		);
 		assert.ok(
 			warningsIn(lines).some((line) =>
-				line.includes(
-					"no idle hobo-agent37 runner was verified on the fetched runner page",
-				),
+				line.includes("same-repository PR batch stays on ubuntu-24.04"),
 			),
 			lines.join("\n"),
 		);
@@ -3448,17 +3440,11 @@ describe("hobo pool saturation overflow", () => {
 				[decision.tier, decision.runner, decision.refusedBy],
 				["github", "ubuntu-24.04", "queue"],
 			);
-			assert.match(
-				decision.reason,
-				/no idle hobo runner was verified on the fetched runner page/u,
-			);
+			assert.match(decision.reason, /no idle capacity/u);
+			assert.match(decision.reason, /batch stays on ubuntu-24\.04/u);
 			assert.ok(
-				warningsIn(lines).some(
-					(line) =>
-						line.includes(
-							"no idle hobo runner was verified on the fetched runner page",
-						) &&
-						line.includes("the same-repository PR batch stays on ubuntu-24.04"),
+				warningsIn(lines).some((line) =>
+					line.includes("same-repository PR batch stays on ubuntu-24.04"),
 				),
 				lines.join("\n"),
 			);
