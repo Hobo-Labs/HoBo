@@ -2025,18 +2025,19 @@ describe("release-train version pin commit selection", () => {
 		);
 	});
 
-	it("fails closed unless an explicit local-only override is set", () => {
+	it("fails closed unless an explicit local-only override is set", async () => {
+		const { repoRoot: scratchRepo } = await scratchMergeRepo();
 		const failingNbgv = () => {
 			throw new Error("nbgv unavailable");
 		};
 		stubCiOff();
 		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", undefined);
 		expect(() =>
-			releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
+			releaseTrainVersionForPluginGate(scratchRepo, failingNbgv),
 		).toThrow("nbgv unavailable");
 		vi.stubEnv("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN", "1");
 		expect(
-			releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
+			releaseTrainVersionForPluginGate(scratchRepo, failingNbgv),
 		).toBeUndefined();
 		for (const [variable, value] of [
 			["CI", "1"],
@@ -2045,7 +2046,7 @@ describe("release-train version pin commit selection", () => {
 		] as const) {
 			vi.stubEnv(variable, value);
 			expect(() =>
-				releaseTrainVersionForPluginGate(repoRoot, failingNbgv),
+				releaseTrainVersionForPluginGate(scratchRepo, failingNbgv),
 			).toThrow("HOBO_AGENT_PLUGIN_SKIP_RELEASE_TRAIN is not allowed in CI");
 			vi.stubEnv(variable, undefined);
 		}

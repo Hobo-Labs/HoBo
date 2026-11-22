@@ -48,16 +48,12 @@ function ensureBundle(): void {
 	]) {
 		delete buildEnv[key];
 	}
-	const build = spawnSync(
-		process.execPath,
-		["--import", "tsx", "scripts/build-agent-plugin.mts"],
-		{
-			cwd: repoRoot,
-			encoding: "utf8",
-			env: buildEnv,
-			timeout: 300_000,
-		},
-	);
+	const build = spawnSync("pnpm", ["run", "agent-plugin:build"], {
+		cwd: repoRoot,
+		encoding: "utf8",
+		env: buildEnv,
+		timeout: 300_000,
+	});
 	if (build.status !== 0 || !existsSync(bundle)) {
 		throw new Error(
 			`The agent-plugin bundle could not be built (exit ${build.status}): ${build.stdout}\n${build.stderr}`,
@@ -164,7 +160,9 @@ describe("agent plugin bundle", { timeout: 300_000 }, () => {
 		const { scanTextForSecrets } = await import(
 			"../../../scripts/check-agent-plugin.ts"
 		);
-		const secret = ["sk", "-ant-", "api03-secret-shaped-boundary-value"].join("");
+		const secret = ["sk", "-ant-", "api03-secret-shaped-boundary-value"].join(
+			"",
+		);
 		const largeText = `${"x".repeat(1024 * 1024)}\n${secret}\n${"y".repeat(1024 * 1024)}`;
 		expect(
 			scanTextForSecrets("large.txt", largeText).map((issue) => issue.message),
