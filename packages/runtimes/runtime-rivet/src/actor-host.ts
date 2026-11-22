@@ -10,6 +10,7 @@ import {
 } from "@hobo/core";
 import type { ActorLocalJournal } from "./journal.js";
 import { cloneAsJson, type JsonValue, parseJsonValue } from "./json.js";
+import { parseRivetActorFidelity } from "./parse.js";
 import { RivetJournalError } from "./types.js";
 
 /** Core `ActorLease` (ADR-0156) tagged with the Rivet placement. */
@@ -48,14 +49,9 @@ export class RivetLeaseConflictError extends Error {
 
 export function createRivetActorHost(options: {
 	journal: ActorLocalJournal;
-	fidelity?: "local-sqlite" | "rivetkit";
+	fidelity?: "local-sqlite";
 }): RivetActorHost {
-	if (options.fidelity !== undefined && options.fidelity !== "local-sqlite") {
-		throw new RivetJournalError(
-			"PARSE",
-			"RivetKit fidelity is not implemented by the local journal",
-		);
-	}
+	parseRivetActorFidelity(options.fidelity);
 	const leases = new Map<string, RivetActorLease>();
 	const journal = options.journal;
 	let epoch = 0n;

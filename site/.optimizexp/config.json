@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "project",
   "projectId": "site",
-  "label": "Public site (Astro / DESIGN.md)",
+  "label": "Public site (Astro)",
   "defaults": {
     "experiences": ["ux"],
     "driver": "web",

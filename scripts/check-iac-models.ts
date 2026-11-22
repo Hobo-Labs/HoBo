@@ -13,8 +13,8 @@ import { assertTlcExited, runBoundedTlc } from "./lib/bounded-tlc.ts";
 
 const configuredJar = process.env.HOBO_TLA_TOOLS;
 const expected =
-	"7e53aa636dac8a3cb0533f343115c0548e03fc0ce5edc7739becf58d3d0fb84f";
-if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.8.0");
+	"936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88";
+if (!configuredJar) throw new Error("Set HOBO_TLA_TOOLS to tla2tools 1.7.4");
 const jar = resolve(configuredJar);
 const actual = createHash("sha256").update(readFileSync(jar)).digest("hex");
 if (actual !== expected)
@@ -135,6 +135,8 @@ try {
 		);
 	process.stdout.write("IacRouting mutation: counterexample found\n");
 	for (const name of [
+		"IacAgreementStatus",
+		"IacSharedFixedQuantity",
 		"IacPricingScope",
 		"IacDestroyPricing",
 		"IacFixedPricing",
@@ -266,6 +268,22 @@ try {
 		"PricedActualNeverExceedsBudget",
 	);
 	const mutations = [
+		["IacAgreementStatus", "IF NeedsRejection", "IF FALSE"],
+		[
+			"IacSharedFixedQuantity",
+			"Eligible == targetKnown /\\ otherKnown /\\ selectorKnown",
+			"Eligible == targetKnown /\\ selectorKnown",
+		],
+		[
+			"IacSharedFixedQuantity",
+			"Eligible == targetKnown /\\ otherKnown /\\ selectorKnown",
+			"Eligible == targetKnown /\\ otherKnown",
+		],
+		[
+			"IacSharedFixedQuantity",
+			"BaselineAmount == otherCost",
+			'BaselineAmount == IF status = "past-due" THEN 0 ELSE otherCost',
+		],
 		[
 			"IacDestroyPricing",
 			'ELSE IF operation = "destroy" /\\ model # "destroy" THEN "unsupported"',
@@ -340,6 +358,14 @@ try {
 		);
 	}
 	for (const [name, invariant] of [
+		["IacAgreementStatus", "AgreementNoUnavailable"],
+		["IacAgreementStatus", "AgreementNoContinuation"],
+		["IacAgreementStatus", "NoUnknownStatusRejection"],
+		["IacAgreementStatus", "NoUnreferencedTrialRejection"],
+		["IacSharedFixedQuantity", "NoMissingQuantity"],
+		["IacSharedFixedQuantity", "NoUnknownSelector"],
+		["IacSharedFixedQuantity", "NoExplicitZeroQuote"],
+		["IacSharedFixedQuantity", "NoPastDueQuote"],
 		["IacDestroyPricing", "NoPricedHold"],
 		["IacDestroyPricing", "NoUnpricedHold"],
 		["IacFixedPricing", "NoFixedZero"],

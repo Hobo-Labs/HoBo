@@ -33,9 +33,9 @@ const Attempt = z
 const MAX_ATTEMPTS = 64;
 
 export class ClaimStoreUnavailableError extends Error {
-	constructor(store: string) {
+	constructor() {
 		super(
-			`${store} offers no verified atomic create, so it cannot hold a provisioning claim; provision the database yourself and keep its connection string in the store, or use a store that does.`,
+			"A durable, owner-scoped store with verified atomic creation or an existing complete journal fleet is required.",
 		);
 		this.name = "ClaimStoreUnavailableError";
 	}
@@ -61,7 +61,7 @@ export function secretStoreClaims(
 		createOnly === undefined ||
 		(store.port.kind === "memory-fixture" && options.allowFixture !== true)
 	)
-		throw new ClaimStoreUnavailableError(store.id);
+		throw new ClaimStoreUnavailableError();
 
 	// A provisioner creates a store per operation. An instance cannot claim the
 	// same key twice: the IdempotencyStore interface carries no attempt token on

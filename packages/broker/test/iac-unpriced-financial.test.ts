@@ -1,24 +1,31 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
 import {
 	createTargetPricingInventory,
+	ProviderAgreementSchema,
+	RateCardSchema,
 	targetPricingUnavailable,
 } from "@hobo/pricing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	fixedCharge,
 	makeScenario,
 	perUnitCharge,
+	rehashScenario,
 	usage,
 	workload,
 } from "../../pricing/test/fixtures.js";
 import {
 	admitUnpricedIacTarget,
+	BudgetEntitlementSchema,
 	type BudgetIdentity,
 	BudgetLedgerSnapshotSchema,
+	BudgetReservationSchema,
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
+	EntitlementClaimSchema,
 	IacUnpricedPolicyProofSchema,
 	IacUnpricedScopeProofSchema,
 } from "../src/index.js";
@@ -105,6 +112,141 @@ function fixture() {
 }
 
 describe("policy-directed unpriced IaC admission", () => {
+	it.each([
+		["suspended", true],
+		["trialing", false],
+		["future-status", false],
+	] as const)("does not turn an unavailable %s agreement into unpriced authorization", async (status, referenced) => {
+		const { authority, plan, authorize } = fixture();
+		try {
+			const scenario = makeScenario({
+				charges: [perUnitCharge("runtime", "minute", "0.25")],
+				candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+			});
+			const state = scenario.state;
+			const agreement = state?.agreements[0];
+			const product = scenario.catalog?.products[0];
+			const candidate = scenario.candidate[0];
+			if (!state || !agreement || !product || !candidate)
+				throw new Error("missing pricing fixture");
+			state.tenantId = "tenant";
+			agreement.tenantId = "tenant";
+			agreement.providerAccountRef = "account";
+			agreement.productId = "compute";
+			agreement.status = status;
+			product.id = "compute";
+			product.providerId = "provider";
+			candidate.productRef = "compute";
+			const active = clone(ProviderAgreementSchema, agreement);
+			active.id = "agreement-b";
+			active.status = "active";
+			state.agreements.push(active);
+			if (!referenced) candidate.agreementRef = active.id;
+			rehashScenario(scenario);
+			const unpriced = vi.fn(authorize);
+			const financial = createIacFinancialServices({
+				authority,
+				now: () => now,
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario,
+					bindings: [{ resourceId: "worker", candidateIndex: 0 }],
+				},
+				unpriced: { authorize: unpriced },
+			});
+			expect(financial.assess(plan)).toMatchObject({
+				quote: { ok: false, code: "PRICING_AGREEMENT_UNAVAILABLE" },
+				admissionPath: {
+					kind: "unavailable",
+					code: "PRICING_AGREEMENT_UNAVAILABLE",
+				},
+			});
+			expect(await financial.admit("inactive-agreement", plan)).toMatchObject({
+				status: "denied",
+				code: "PRICING_AGREEMENT_UNAVAILABLE",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(unpriced).not.toHaveBeenCalled();
+			expect(authority.read(now).unboundedExposureCount).toBe(0);
+		} finally {
+			authority.close();
+		}
+	});
+
+	it.each([
+		"quantity",
+		"selector",
+	] as const)("does not turn a missing fixed %s into unpriced authorization", async (missing) => {
+		const { authority, plan, authorize } = fixture();
+		try {
+			const scenario = makeScenario({
+				charges: [perUnitCharge("runtime", "minute", "0.25")],
+				candidate: [workload("agreement-a", [usage("minute", "4", "minute")])],
+			});
+			const state = scenario.state;
+			const catalog = scenario.catalog;
+			const agreement = state?.agreements[0];
+			const product = catalog?.products[0];
+			const card = catalog?.rateCards[0];
+			const candidate = scenario.candidate[0];
+			if (!state || !catalog || !agreement || !product || !card || !candidate)
+				throw new Error("missing pricing fixture");
+			state.tenantId = "tenant";
+			agreement.tenantId = "tenant";
+			agreement.providerAccountRef = "account";
+			agreement.productId = "compute";
+			product.id = "compute";
+			candidate.productRef = "compute";
+			product.providerId = "provider";
+			const other = clone(ProviderAgreementSchema, agreement);
+			other.id = "agreement-b";
+			other.providerAccountRef = "other-account";
+			for (const entry of other.rateSchedule) entry.rateCardId = "card-b";
+			if (missing === "selector") other.quantities.seat = "0";
+			state.agreements.push(other);
+			const otherCard = clone(RateCardSchema, card);
+			otherCard.id = "card-b";
+			const fixed = makeScenario({ charges: [fixedCharge("seat", "10")] })
+				.catalog?.rateCards[0]?.charges[0];
+			if (fixed?.variant.case !== "fixed" || !fixed.base)
+				throw new Error("missing fixed charge fixture");
+			fixed.variant.value.quantityDimension = "seat";
+			if (missing === "selector") fixed.base.selectors.region = "west";
+			otherCard.charges.push(fixed);
+			catalog.rateCards.push(otherCard);
+			rehashScenario(scenario);
+			const unpriced = vi.fn(authorize);
+			const financial = createIacFinancialServices({
+				authority,
+				now: () => now,
+				pricing: {
+					modelId: "terms",
+					revision: "1",
+					scenario,
+					bindings: [{ resourceId: "worker", candidateIndex: 0 }],
+				},
+				unpriced: { authorize: unpriced },
+			});
+			expect(financial.assess(plan)).toMatchObject({
+				quote: { ok: false, code: "TARGET_PRICING_INCOMPLETE" },
+				admissionPath: {
+					kind: "unavailable",
+					code: "TARGET_PRICING_INCOMPLETE",
+				},
+			});
+			expect(await financial.admit("incomplete-fixed", plan)).toMatchObject({
+				status: "denied",
+				code: "TARGET_PRICING_INCOMPLETE",
+				budget: { evaluation: "unavailable", reservation: "not-created" },
+			});
+			expect(unpriced).not.toHaveBeenCalled();
+			expect(authority.read(now).unboundedExposureCount).toBe(0);
+		} finally {
+			authority.close();
+		}
+	});
+
 	it("requires explicit unpriced policy for a destroy without a model", async () => {
 		const { authority, plan, authorize } = fixture();
 		try {
@@ -695,6 +837,67 @@ describe("policy-directed unpriced IaC admission", () => {
 			budget: { evaluation: "bypassed", reservation: "held" },
 		});
 		authority.close();
+	});
+
+	it("replays kindless legacy reservation claims against normalized reopened entitlements", async () => {
+		const { authority, plan, authorize } = fixture();
+		try {
+			const inventory = createTargetPricingInventory({
+				...plan,
+				complete: true,
+			});
+			const pricing = targetPricingUnavailable("no model");
+			const request = {
+				requestId: "legacy-reopen",
+				inventory,
+				pricing,
+			};
+			const deps = {
+				authority,
+				now: () => now,
+				authorizeUnpriced: authorize,
+			};
+			expect(await admitUnpricedIacTarget(request, deps)).toMatchObject({
+				status: "admitted",
+			});
+			const existing = authority.lookup("iac:legacy-reopen");
+			if (!existing) throw new Error("legacy reservation missing");
+			const legacy = clone(BudgetReservationSchema, existing);
+			legacy.entitlementClaims = [
+				create(EntitlementClaimSchema, {
+					kind: "",
+					bucketId: "legacy",
+					unit: "request",
+					units: 0,
+				}),
+			];
+			const reopened = authority.read(now);
+			reopened.entitlements = [
+				create(BudgetEntitlementSchema, {
+					kind: "allowance",
+					bucketId: "legacy",
+					unit: "request",
+					periodId: "2026-01",
+					remainingUnits: 1,
+					observedAt: "2026-01-01T00:00:00Z",
+					validUntil: end,
+				}),
+			];
+			const custom = {
+				...authority,
+				read: () => create(BudgetLedgerSnapshotSchema, reopened),
+				reserveUnbounded: () => clone(BudgetReservationSchema, legacy),
+			};
+			expect(
+				await admitUnpricedIacTarget(request, { ...deps, authority: custom }),
+			).toMatchObject({
+				status: "replay",
+				code: "EXECUTION_ALREADY_CLAIMED",
+				reservation: { entitlementClaims: [{ kind: "" }] },
+			});
+		} finally {
+			authority.close();
+		}
 	});
 
 	it.each([

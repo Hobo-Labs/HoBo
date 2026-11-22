@@ -40,6 +40,22 @@ Unsupported inventory stays unknown. An Actions workflow continues
 to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
 
+Automatically routed `merge_group` batches in `hobo-ci.yml` pin the **Route
+runners** job on `hobo-trunk`, then the `mergeGroupFabric` path defaults routed
+work to `hobo-trunk` and the `hobo` pool unless a live GitHub-hosted queue probe
+shows zero queued jobs on `ubuntu-24.04`. The general `hobo` fleet label is used
+only as trunk-overflow saturation routing, not as the merge-queue default. For automatically routed `merge_group`
+batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
+verifying the public repository and committed routing policy. It does not
+dispatch the optional box job: a one-time fleet observation cannot reserve
+capacity or recover jobs if the fleet becomes unavailable after routing. Missing
+evidence stops the release batch before jobs are queued. Explicit operator pins
+remain in effect.
+On pull requests, the route action, its executable dependencies, and routing
+policy come from the event's base checkout. Proposed workflow content can still
+change the job graph itself; that requires a separately trusted required
+workflow to enforce.
+
 The candidates are general PR routes and enabled provider inventory. The
 special `runnerRouting.boxRunner` label is reserved for the deps-image job and
 is not a general PR route, so the local coordinator does not select it. That
@@ -92,6 +108,7 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | A recent timely pickup names a candidate alongside other runner labels | Keep that candidate unknown for fallback; a multi-label pickup is not proof of a single-label route |
 | More runs or jobs exist outside the sampled pages | The decision is based only on the bounded sample, not a complete inventory; recheck or use independent operational evidence |
 | Local extension is missing or lacks `--commit` | Fail before starting the local run |
+| An environment-supplied GitHub App user token's target installation explicitly has read-only commit statuses | Fail before starting the local run; use a credential that can write commit statuses |
 | Dirty checkout, base not contained in HEAD, stale remote base, changed HEAD, bad signature, or workflow/description drift | Refuse the relevant run or publication; do not post new success statuses |
 | A local check fails, is interrupted, or changes tracked files | Fail the run; no new signoff is posted. Once a run starts it removes its earlier local record for that tree |
 | Missing container engine or intentionally omitted jobs | Omit affected jobs, including the coupled PR impact group where applicable; do not report those jobs successful |
@@ -100,6 +117,8 @@ evidence; they cannot override a pin, healthy pickup, or failed queue read.
 | Older base, changed workflow or local plan, classifier dependency or resolution input, or incomplete GitHub tree response | Omit the coupled PR impact group; independently covered jobs remain eligible. A record that claims the unverified group cannot be published |
 | GitHub status write fails partway through | Report failure; some individual statuses may already exist. Inspect GitHub before retrying |
 | Base moves or a retry fails on the same SHA | Existing GitHub statuses do not automatically expire or disappear. Update the branch, rerun, and inspect old statuses |
+| A merge-queue entry is removed, retargeted, or assigned a different base or head | Refuse its local run or signoff; remove a newly written run record when the entry changes during execution |
+| A merge-group ref is not the first squash commit directly on the current base | Refuse it; wait for that group to be rebuilt on the current base |
 
 The queue observation reads a single page of recent runs and one page per
 selected run, with bounded lookups and timeouts. An old queued job eventually
@@ -136,7 +155,12 @@ a protected required workflow or review of workflow changes is still needed to
 prevent a pull request from replacing the verification step.
 
 The extension requires a pushed commit and a credential allowed to write commit
-statuses. These statuses use the credential's authority, rather than the
+statuses. The fleet preflight detects an explicitly read-only GitHub App user
+token supplied in the environment when GitHub supplies its installation
+permissions. Credentials in the `gh` credential store, other credential types,
+and unavailable installation metadata remain unknown until publication; a
+permission check is not a guarantee that the later write will succeed. These
+statuses use the credential's authority, rather than the
 base-branch trust list used for workflow-reuse attestations. Local commands run
 with the invoking user's authority, so only run trusted code. Serialize local
 runs in a checkout and inspect statuses after an interrupted publication.
@@ -179,12 +203,26 @@ serialize access to the checkout while running and signing.
 The attestor key's new parent directory is created with mode `0700` or more
 restrictive according to the umask. An existing parent must already deny
 group and other access; the command refuses to change its permissions.
+Keep the key outside the checkout and shared tool directories, including an
+explicit `TMPDIR`. The tests give child commands a separate temporary directory
+so their fixture keys remain private even when the parent sets `TMPDIR`.
+They also isolate inherited Git configuration paths and settings injected by a
+parent `git -c` command, so fixture-local settings remain the values exercised
+by the signoff tests.
 
 Statuses are `signoff/hobo-ci/local/<event>/<job>` on the tested head. They are
 separate from Actions job results, cannot complete queued jobs, and do not by
 themselves satisfy HoBo's existing required checks or merge-queue policy. A
-`merge_group` signoff on a PR head represents a local simulation, not a status
-on GitHub's generated merge-group commit. No branch-protection rule is changed.
+`merge_group` signoff on a PR head represents a local simulation. To verify a
+GitHub-generated group commit itself, fetch the live `gh-readonly-queue/<base>/pr-<number>-<base SHA>`
+branch, check out its head, and pass `--merge-group-ref=<branch>` to `run` and
+`signoff`, or to the opted-in `fleet` command. The run binds its record to the
+exact commit it executed. HoBo checks the published ref and GitHub's current
+queue entry before and after the run and again around status publication. This
+path currently accepts only a squash commit whose sole parent is the current
+base; later groups stacked on another queued commit must wait for a rebuilt
+group. A removed or changed group cannot authorize a new signoff. No
+branch-protection rule is changed.
 
 ## Evidence and live boundary
 

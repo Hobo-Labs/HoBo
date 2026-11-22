@@ -142,6 +142,9 @@ export const SIGNED_LOCAL_RUN_TESTS = [
 	"scripts/test/local-attest.test.ts",
 	"scripts/test/fleet-signoff.test.ts",
 	"scripts/test/github-pr-target.test.ts",
+	"scripts/test/github-status-permission.test.ts",
+	"scripts/test/github-merge-group.test.ts",
+	"scripts/test/local-merge-group.test.ts",
 ];
 
 const SIGNED_LOCAL_RUN_GUARDED = new Set([
@@ -156,6 +159,8 @@ const SIGNED_LOCAL_RUN_GUARDED = new Set([
 	"scripts/ci/fleet-signoff.mts",
 	"scripts/ci/github-pr-target.mts",
 	"scripts/ci/github-target.mts",
+	"scripts/ci/github-status-permission.mts",
+	"scripts/ci/github-merge-group.mts",
 	"scripts/ci/route-runner.mts",
 	// The route script loads it, so it is on the attested path too.
 	"scripts/ci/runner-routing.mts",
@@ -270,15 +275,26 @@ export function selectRelevantChecks(
 		touched(["apps/web", "packages/ui", "site"]) ||
 		touchedAny([
 			/\.(tsx|jsx|css|astro)$/u,
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/check-visual-tokens\.mts$/u,
 		]);
-	const designMdChanged =
+	const uiDiscoveryManifestChanged = touchedAny([
+		/^(?:packages|examples|apps)\/.+\/package\.json$/u,
+	]);
+	const visualTokensChanged =
 		touchedAny([
-			/(^|\/)DESIGN\.md$/u,
-			/^scripts\/check-design-md\.mts$/u,
+			/^scripts\/(?:check-visual-tokens\.mts|visual-token-contract\.json)$/u,
+			/^test\/visual-tokens\.test\.ts$/u,
+			/^turbo\.json$/u,
+			/^packages\/connect-ui\/(?:src\/client\/styles\.css|test\/connect-ui-design-lint\.test\.ts)$/u,
+			/^packages\/control-yard\/(?:public\/yard\.css|test\/design-lint\.test\.ts)$/u,
+			/^packages\/mcp\/(?:src\/secret-capture\/html\.ts|test\/secret-capture-design-lint\.test\.ts)$/u,
+			/^packages\/status-page\/(?:src\/tokens\.ts|test\/status-page-design-lint\.test\.ts)$/u,
+			/(?:^|\/)(?:palette|visual-tokens?|themes?)(?:\.[^/]+)?$/u,
+			/(?:^|\/)DESIGN\.md$/u,
 			/^site\/(src\/styles|src\/components|src\/layouts)\//u,
-		]) || uiChanged;
+		]) ||
+		uiChanged ||
+		uiDiscoveryManifestChanged;
 	const behaviorChanged =
 		touched(["tests/behavior"]) ||
 		// Feature files and step definitions live inside proof packages
@@ -752,6 +768,25 @@ export function selectRelevantChecks(
 			reason: "agent workflow/eval changed; live evals are manual only",
 		});
 
+	const openSaasVitestInputs = (file: string) => {
+		const normalized = file.replaceAll("\\", "/");
+		return (
+			normalized.startsWith("examples/wasp-opensaas/app/src/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/test/") ||
+			normalized.startsWith("examples/wasp-opensaas/app/scripts/") ||
+			normalized === "examples/wasp-opensaas/app/package.json" ||
+			normalized === "examples/wasp-opensaas/app/vitest.config.ts"
+		);
+	};
+	if (files.some(openSaasVitestInputs)) {
+		checks.push({
+			command: "npm",
+			args: ["--prefix", "examples/wasp-opensaas/app", "run", "ci:test:unit"],
+			reason:
+				"Open SaaS example app source/tests changed; npm ci:test:unit lane (not a pnpm workspace)",
+		});
+	}
+
 	if (touched(["scripts", "test", "tests"]) || rootConfigChanged) {
 		checks.push({
 			command: "pnpm",
@@ -844,14 +879,12 @@ export function selectRelevantChecks(
 		});
 	}
 
-	// Google DESIGN.md visual contract for every web UI package (site + future apps).
-	// Pre-commit routes here via check:relevant:staged when UI/DESIGN.md changes.
-	if (designMdChanged || automationChanged) {
+	if (visualTokensChanged || automationChanged) {
 		checks.push({
 			command: "pnpm",
 			args: ["run", "design:lint"],
 			reason:
-				"web UI or DESIGN.md changed; Google designmd lint must pass for all web UI projects",
+				"UI changes must preserve the implemented palette contrast requirements",
 		});
 	}
 
@@ -905,7 +938,7 @@ export function selectRelevantChecks(
 		schemaChanged && "schema",
 		pactChanged && "contract",
 		uiChanged && "ui",
-		designMdChanged && "design-md",
+		visualTokensChanged && "visual-tokens",
 		behaviorChanged && "behavior",
 		visualChanged && "visual",
 		agentEvalChanged && "agent-eval",

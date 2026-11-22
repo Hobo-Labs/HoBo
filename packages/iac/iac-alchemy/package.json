@@ -108,7 +108,7 @@
 		"rivetkit": "3.0.0",
 		"ws": "8.21.0",
 		"vitest": "^4.1.9",
-		"@types/node": "^22.15.29",
+		"@types/node": "^24.13.2",
 		"miniflare": "4.20260722.0"
 	},
 	"scripts": {

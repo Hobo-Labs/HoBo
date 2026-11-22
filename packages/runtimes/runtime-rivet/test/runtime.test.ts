@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -49,6 +51,17 @@ describe("@hobo/runtime-rivet", () => {
 		expect(packageJson.version).toBe(RIVETKIT_PIN.version);
 	});
 
+	it("installs the engine CLI at the pinned Rivet 3 version", () => {
+		const require = createRequire(import.meta.url);
+		const rivetRequire = createRequire(require.resolve("rivetkit"));
+		const engineEntry = rivetRequire.resolve("@rivetkit/engine-cli");
+		const packageJson = JSON.parse(
+			readFileSync(join(dirname(engineEntry), "package.json"), "utf8"),
+		);
+		expect(packageJson.name).toBe("@rivetkit/engine-cli");
+		expect(packageJson.version).toBe(RIVETKIT_PIN.version);
+	});
+
 	it("ensure reports rivet kind and local-sqlite fidelity offline", async () => {
 		const bundle = createRivetRuntimeHost({ tenantId: "t1", campId: "c1" });
 		expect(bundle.host.kind).toBe("rivet");
@@ -74,12 +87,13 @@ describe("@hobo/runtime-rivet", () => {
 		const journal = createActorLocalJournal();
 		try {
 			expect(() =>
+				// @ts-expect-error
 				createRivetActorHost({ journal, fidelity: "rivetkit" }),
 			).toThrow(/RivetKit fidelity.*not implemented/i);
-			// @ts-expect-error invalid fidelity is intentionally tested
 			expect(() =>
+				// @ts-expect-error
 				createRivetActorHost({ journal, fidelity: "remote" }),
-			).toThrow(/RivetKit fidelity.*not implemented/i);
+			).toThrow(/rivet fidelity must be local-sqlite/i);
 		} finally {
 			journal.close();
 		}

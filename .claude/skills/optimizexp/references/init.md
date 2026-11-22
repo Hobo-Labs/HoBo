@@ -10,7 +10,7 @@ timestamp: 2026-07-30T00:00:00Z
 
 `/optimizexp --init` (or `harness/init.mts`) **bootstraps** OptimizeXP for a product repo:
 
-1. **Traverse** the tree for product signals (README, site, DESIGN.md, packages, CLI, MCP, AGENTS.md, package scripts, draft exp-proofs, site roles).
+1. **Traverse** the tree for product signals (README, site, UI tokens, packages, CLI, MCP, AGENTS.md, package scripts, draft exp-proofs, site roles).
 2. **Create personas** for **UX**, **DX**, and **AX** that match what the product does.
 3. **Create feature folders** (per-persona Gherkin, bindings, tests) for inferred critical journeys.
 4. **Best-effort implement** step bindings when real scripts/commands exist.
@@ -74,7 +74,7 @@ node --import tsx .agents/skills/optimizexp/harness/init.mts --experiences ux,dx
 
 | Signal | Typical personas / features |
 |---|---|
-| `site/`, `DESIGN.md` | UX end-user, designer; public site + design-system features |
+| `site/`, UI tokens | UX end-user, designer; public site + design-system features |
 | `packages/cli`, `hobo`, scripts | DX app developer, platform engineer; narrow validation, CLI doctor |
 | `AGENTS.md`, `.mcp.json`, `packages/mcp` | AX agent operator, coding agent; agent tooling setup |
 | `src/draft/exp-proofs` | Navigation feature for experience proofs |

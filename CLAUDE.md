@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 The repository-wide rules at the start of [AGENTS.md](AGENTS.md) apply to Claude
-and every plugin or skill, including the prohibition on explanatory comments,
-deferred work markers, and planning or design documents.
+and every plugin or skill, including the completion discipline, the prohibition
+on explanatory comments, deferred work markers, and planning or design documents.
 
 **Repo:** HoBo — a cloud-agnostic, AI-native hosting platform: an active design suite **plus a production `packages/` workspace** (140+ package manifests, ~400k lines of non-test TypeScript; S0–S3 stage-gate lanes green). Honest-scope caveats (in-memory Pulumi stand-in default, synthetic componentize bytes, not on npm) live in the README status summary and `docs/design/live-provider-matrix.md`. The design suite is in [`docs/design/`](docs/design/index.md); formal requirements are archived in [`docs/archive/requirements/`](docs/archive/requirements/index.md); competitor research is in [`docs/competitors/`](docs/competitors/index.md). Production packages live under `packages/`; draft proofs and agent tooling remain under `src/draft/` and `.agents/`/`.claude/`/`scripts/`.
 
@@ -12,7 +12,7 @@ This repo is wired with the agent tools listed in the docs/agent-tooling.md tabl
 - **superpowers** (`obra/Superpowers`) — plugin: code-review, TDD, and debugging workflows; planning and design artifacts are prohibited; enabled repo-wide via `.claude/settings.json`; loads at session start.
 - **mattpocock/skills** — engineering disciplines incl. **`grill-with-docs`** (design interview → ADRs+glossary), `domain-modeling`, `codebase-design`, `tdd`; one-time `/setup-matt-pocock-skills` to configure.
 - **caveman** — terse-output compression (active by default; `/caveman` to adjust).
-- **impeccable** (`pbakaus/impeccable`) — design skill (23 commands: `/impeccable shape|critique|audit|polish`, dials like `bolder`/`quieter`). **Always-on for UI/TUI/dashboard work** — do not wait to be asked (see **AGENTS.md “Design system + lint”**). `PRODUCT.md` holds product truth; **`site/DESIGN.md` remains the design authority** (ADR-0149) — do not run `/impeccable document` at the repo root. Its daily phone-home (from `scripts/context.mjs` run as a command — the hook does **not** fetch) is disabled by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`, which covers Claude Code sessions; the config-file opt-out is cwd-relative and misses subdirectories; it installs a per-edit hook for Codex/Cursor/Copilot only.
+- **impeccable** (`pbakaus/impeccable`) — design skill (23 commands: `/impeccable shape|critique|audit|polish`, dials like `bolder`/`quieter`). **Always-on for UI/TUI/dashboard work** — do not wait to be asked (see **AGENTS.md “Visual quality”**). `PRODUCT.md` holds product truth; visual tokens and components live in source. Do not run commands that generate design documents. Its daily phone-home (from `scripts/context.mjs` run as a command — the hook does **not** fetch) is disabled by `IMPECCABLE_NO_UPDATE_CHECK=1` in `.claude/settings.json`, which covers Claude Code sessions; the config-file opt-out is cwd-relative and misses subdirectories; it installs a per-edit hook for Codex/Cursor/Copilot only.
 - **Higgsfield MCP** — official hosted image/video generation (`mcp__higgsfield__*`); account OAuth, no key in-repo, needs human approval before use.
 - **spriterrific** (local CLI, `uv tool`) / **spriterrific-api** (hosted) — sprite generation. **Always prefer the local skill**: same engine, but it writes a reviewable run folder and catches a bad anchor before paying to animate it. Needs `FAL_KEY` in `.env`. Runs are gitignored; promote the asset, not the run. **`--auto-orient` is a mirror and defaults on — pass `--no-auto-orient` for Bo.** See AGENTS.md "Generated-art rules".
 - **ponytail** — minimalist-solution skill (YAGNI/stdlib-first); `/ponytail`, `/ponytail-review`, `/ponytail-audit` (invocation-based, no keys).
@@ -33,5 +33,5 @@ Install the binaries once with [`scripts/setup-agent-tools.sh`](scripts/setup-ag
 - **Contract effects (ADR-0136):** optional `EffectSpec` + secondary `ResilienceProfile` on BoundaryContract; effect widening can break can-deploy; never retry `policy.Decided`/terminal; no Effect-TS/Polly/XState public deps. See AGENTS.md “Contract effects + visible resiliency”.
 - Site/agents/OKF: design suite under `docs/design/` (OKF bundle; `pnpm run docs:okf`); GitHub Pages from `site/` (Astro → `gh-pages`); agent briefing `site/public/llms.txt` + `/llms-full.txt`.
 - Run `npm run architecture:guard` for implementation-package changes; pre-commit runs the staged variant before the slower tests.
-- **Design system is standing, not opt-in.** Visual/dashboard edits use the owning package `DESIGN.md` tokens and shared components. Run `pnpm run design:lint` plus the package design-lint tests, and run impeccable critique/audit on the changed surface, without being asked. See AGENTS.md “Design system + lint”.
+- **Design system is standing, not opt-in.** Visual and dashboard edits use the owning package’s tokens and shared components. Run `pnpm run design:lint` and the affected rendered-surface tests. Do not generate design documents. See AGENTS.md “Visual quality”.
 - Conventional, scoped commits.
