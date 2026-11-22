@@ -68,6 +68,7 @@ export interface PricedDispatchEventRanking {
 	rank: number;
 	incrementalBilled: { decimal: string; currency: string };
 	quoteHash: string;
+	pricingModel?: PricedDispatchRanking["pricingModel"];
 }
 
 export type PricedDispatchDecision =
@@ -341,6 +342,9 @@ export function decidePricedDispatch(
 						currency: entry.incrementalBilled.currency,
 					},
 					quoteHash: entry.quote.quoteHash,
+					...(entry.pricingModel !== undefined
+						? { pricingModel: { ...entry.pricingModel } }
+						: {}),
 				})),
 				rejectedCandidates,
 			},

@@ -155,11 +155,18 @@ message PricedDispatchAmountRecord {
   string currency = 2;
 }
 
+message PricedDispatchPricingModelRecord {
+  string source = 1;
+  string model_id = 2;
+  string revision = 3;
+}
+
 message PricedDispatchRankRecord {
   string provider_id = 1;
   uint32 rank = 2;
   PricedDispatchAmountRecord incremental_billed = 3;
   string quote_hash = 4;
+  PricedDispatchPricingModelRecord pricing_model = 5;
 }
 
 message PricedDispatchRejectionRecord {

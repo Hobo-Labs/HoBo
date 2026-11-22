@@ -139,7 +139,22 @@ describe("priced dispatcher", () => {
 			],
 		});
 		if (!decision.ok) throw new Error(decision.reason);
-		expect(decision.dispatchEvent.data.ranking).toEqual(decision.ranking);
+		expect(decision.dispatchEvent.data.ranking).toEqual([
+			{
+				providerId: "priced",
+				rank: 1,
+				incrementalBilled: decision.ranking[0]?.incrementalBilled && {
+					decimal: decision.ranking[0].incrementalBilled.decimal,
+					currency: decision.ranking[0].incrementalBilled.currency,
+				},
+				quoteHash: decision.ranking[0]?.quote.quoteHash,
+				pricingModel: {
+					source: "developer-supplied",
+					modelId: "my-contract",
+					revision: "2",
+				},
+			},
+		]);
 		expect(decidePricedDispatch(request)).toEqual(decision);
 	});
 

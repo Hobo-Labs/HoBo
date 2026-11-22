@@ -153,11 +153,18 @@ package data_models
 	currency: string & !=""
 }
 
+#PricedDispatchPricingModelRecord: {
+	source: "developer-supplied"
+	modelId: string & !=""
+	revision: string & !=""
+}
+
 #PricedDispatchRankRecord: {
 	providerId: string & !=""
 	rank: int & >0
 	incrementalBilled: #PricedDispatchAmountRecord
 	quoteHash: string & =~"^sha256:[a-f0-9]{64}$"
+	pricingModel?: #PricedDispatchPricingModelRecord
 }
 
 #PricedDispatchRejectionRecord: {

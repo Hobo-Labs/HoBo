@@ -1,13 +1,13 @@
 import { developerPricing, pricingUnavailable } from "@hobo/pricing";
 import { describe, expect, it } from "vitest";
 import {
-	type PricedDispatchCandidate,
 	decidePricedDispatch,
+	type PricedDispatchCandidate,
 } from "../src/priced-dispatch.js";
 import {
 	dispatchQuoteScenario,
 	staleDispatchQuoteScenario,
-} from "./dispatcher-v2-fixtures.js";
+} from "./priced-dispatch-fixtures.js";
 
 type ModelState = "unavailable" | "partial" | "stale" | "zero" | "paid";
 const states: readonly ModelState[] = [
@@ -18,7 +18,10 @@ const states: readonly ModelState[] = [
 	"paid",
 ];
 
-function candidate(providerId: string, state: ModelState): PricedDispatchCandidate {
+function candidate(
+	providerId: string,
+	state: ModelState,
+): PricedDispatchCandidate {
 	if (state === "unavailable")
 		return { providerId, pricing: pricingUnavailable("no model") };
 	const scenario =
