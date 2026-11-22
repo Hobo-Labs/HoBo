@@ -61,6 +61,8 @@ the same `capabilityForTool` triples). Its only inward dependency beyond this
 package is the `SecretStoreConnector` port it is given; it imports no store
 adapter. Each step is an audited `secret.Capture*` fact
 (`hobo.secret-capture/v1`, references only). Its records are generated from
-`data-models/secret_capture.proto` (this package's first `buf.yaml` module),
-and its form follows [`DESIGN.md`](./DESIGN.md).
+`data-models/secret_capture.proto` (this package's first `buf.yaml` module).
+The form's security requirements and their enforcing tests are indexed in
+[`README.md#security-boundaries`](README.md#security-boundaries); its rendering
+implementation is `src/secret-capture/html.ts`.
 

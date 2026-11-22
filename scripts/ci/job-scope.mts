@@ -47,6 +47,7 @@ const ALWAYS = [
 	/^tools\/pins\//,
 	/^vitest\.config\.[^/]+$/,
 	/^scripts\/ci\/(job-scope|affected-lanes)\.mts$/,
+	/^scripts\/test\/release-integration-job\.test\.ts$/,
 	/^scripts\/lib\/read-stdin\.mts$/,
 	// The runner image the jobs and the cold dev loop's container run in.
 	/^packages\/ci-gh-actions\/deploy\/ci-runner\//,

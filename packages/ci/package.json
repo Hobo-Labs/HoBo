@@ -46,6 +46,10 @@
       "types": "./dist/mesh/index.d.ts",
       "default": "./dist/mesh/index.js"
     },
+    "./insights": {
+      "types": "./dist/insights/index.d.ts",
+      "default": "./dist/insights/index.js"
+    },
     "./workspace-backend": {
       "types": "./dist/workspace-backend.d.ts",
       "default": "./dist/workspace-backend.js"
@@ -68,6 +72,7 @@
   },
   "devDependencies": {
     "@types/pg": "8.15.5",
+    "fast-check": "^4.3.0",
     "pg": "8.22.0",
     "testcontainers": "11.8.1"
   }

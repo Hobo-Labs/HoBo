@@ -5,6 +5,7 @@ import {
 	CiProjectProviderSchema,
 } from "./project-providers.js";
 import { RunnerIntegrationsSchema } from "./runner-integrations.js";
+import { RunnerOrderDocumentSchema } from "./runner-order-config.js";
 import { RunnerRoutingSchema } from "./runner-routing.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/);
@@ -261,6 +262,8 @@ export const CiProjectDocumentSchema = z
 		 * route job and the box; never by the relay's environment selection.
 		 */
 		runnerRouting: RunnerRoutingSchema.optional(),
+
+		runnerOrder: RunnerOrderDocumentSchema.optional(),
 		/**
 		 * The shared Turborepo cache (`.github/actions/turbo-cache`). `api` is
 		 * the base URL of a self-hosted cache server
@@ -314,6 +317,7 @@ export function ciProjectJsonSchema() {
 	const { $defs, ...root } = z.toJSONSchema(CiProjectDocumentSchema, {
 		target: "draft-2020-12",
 		reused: "ref",
+		io: "input",
 	});
 	const definitions = {
 		...object.parse($defs ?? {}),
@@ -369,6 +373,7 @@ export function resolveCiProjectReferences(
 		integrations: _integrations,
 		agent: _agent,
 		runnerRouting: _runnerRouting,
+		runnerOrder: _runnerOrder,
 		turboCache: _turboCache,
 		...document
 	} = input;

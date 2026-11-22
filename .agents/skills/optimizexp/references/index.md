@@ -30,7 +30,7 @@ Progressive-disclosure bundle for the optimizexp skill. Route by need; do not lo
 ## UX (user experience)
 
 - [ux/design-systems.md](ux/design-systems.md) — design-system inventory and audit patterns
-- [ux/design-md.md](ux/design-md.md) — DESIGN.md contracts, tokens, lint gates
+- [ux/design-md.md](ux/design-md.md) — implemented tokens and contrast gates
 
 ## DX (developer experience)
 
@@ -48,7 +48,7 @@ Load [**ax/index.md**](ax/index.md) first (section map + load order), then only 
 
 | Section | File |
 |---|---|
-| Specs & standing contracts | [ax/specs.md](ax/specs.md) — AGENTS, WorkOS AUTH.md/auth.md, DESIGN.md, llms.txt, env examples |
+| Specs & standing contracts | [ax/specs.md](ax/specs.md) — AGENTS, WorkOS AUTH.md/auth.md, UI tokens, llms.txt, env examples |
 | MCP | [ax/mcp.md](ax/mcp.md) — servers, shared fail-closed launchers |
 | Agent skills | [ax/agent-skills.md](ax/agent-skills.md) — progressive disclosure, mirrors |
 | Harness CLIs | [ax/harness-clis.md](ax/harness-clis.md) — setup, doctor, agent:check, host CLIs, sdlc --finish |

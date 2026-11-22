@@ -212,6 +212,18 @@ export async function startFakeInfisical(
 				secret: { secretKey: key, version: secrets.get(at)?.version ?? 1 },
 			});
 		}
+		if (
+			method === "POST" &&
+			/^\/api\/v1\/projects\/[^/]+\/identities$/u.test(url.pathname)
+		)
+			return send(200, {
+				identity: { id: "00000000-0000-4000-8000-0000000000cd" },
+			});
+		const oidc = /^\/api\/v1\/auth\/oidc-auth\/identities\/([^/]+)$/u.exec(
+			url.pathname,
+		);
+		if (oidc !== null)
+			return send(200, { identityOidcAuth: { identityId: oidc[1] } });
 		const project = /^\/api\/v1\/projects\/([^/]+)$/u.exec(url.pathname);
 		if (project !== null && method === "GET")
 			return send(200, { project: { id: project[1], orgId: organizationId } });

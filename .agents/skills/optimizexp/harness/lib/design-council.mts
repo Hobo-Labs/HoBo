@@ -336,6 +336,15 @@ export type CouncilSubject = {
 
 export type CouncilStatus = "open" | "discussing" | "voting" | "rework-required" | "approved" | "stale" | "blocked" | "closed";
 
+export type SupersedingReview = {
+	runId: string;
+	reviewId: string;
+	cycle: number;
+	headSha: string;
+	proposalDigest: string;
+	openingEntryId: string;
+};
+
 export type CouncilState = {
 	schemaVersion: 1;
 	protocolSchemaVersion: 1;
@@ -350,7 +359,8 @@ export type CouncilState = {
 	latestConsensusEntryId: string | null;
 	maxTurns: number | null;
 	blockedReason: string | null;
-	closedResult: "yay" | "blocked" | "user" | "safety" | null;
+	closedResult: "yay" | "blocked" | "user" | "safety" | "superseded" | null;
+	supersededBy?: SupersedingReview;
 	closedAt: string | null;
 	createdAt: string;
 	updatedAt: string;

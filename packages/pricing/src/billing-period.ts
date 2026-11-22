@@ -2,6 +2,7 @@ import type {
 	ProviderAgreement,
 	QuoteScenario,
 } from "./_generated/pricing_pb.js";
+import { hasV2BaselineCharges } from "./agreement-status.js";
 import { PricingFault } from "./state.js";
 import { utcMillis } from "./time-order.js";
 
@@ -78,6 +79,6 @@ export function validateV2BillingPeriods(scenario: QuoteScenario): void {
 		...scenario.candidate.map((item) => item.agreementRef),
 	]);
 	for (const agreement of state.agreements)
-		if (agreement.status === "active" || used.has(agreement.id))
+		if (hasV2BaselineCharges(agreement.status) || used.has(agreement.id))
 			validatePeriod(agreement, at, horizon);
 }

@@ -40,6 +40,22 @@ Unsupported inventory stays unknown. An Actions workflow continues
 to use its own PR batch capacity proof; the local coordinator does not create
 that proof.
 
+Automatically routed `merge_group` batches in `hobo-ci.yml` pin the **Route
+runners** job on `hobo-trunk`, then the `mergeGroupFabric` path defaults routed
+work to `hobo-trunk` and the `hobo` pool unless a live GitHub-hosted queue probe
+shows zero queued jobs on `ubuntu-24.04`. The general `hobo` fleet label is used
+only as trunk-overflow saturation routing, not as the merge-queue default. For automatically routed `merge_group`
+batches in `release-hobo.yml`, the workflow selects `ubuntu-24.04` only after
+verifying the public repository and committed routing policy. It does not
+dispatch the optional box job: a one-time fleet observation cannot reserve
+capacity or recover jobs if the fleet becomes unavailable after routing. Missing
+evidence stops the release batch before jobs are queued. Explicit operator pins
+remain in effect.
+On pull requests, the route action, its executable dependencies, and routing
+policy come from the event's base checkout. Proposed workflow content can still
+change the job graph itself; that requires a separately trusted required
+workflow to enforce.
+
 The candidates are general PR routes and enabled provider inventory. The
 special `runnerRouting.boxRunner` label is reserved for the deps-image job and
 is not a general PR route, so the local coordinator does not select it. That
