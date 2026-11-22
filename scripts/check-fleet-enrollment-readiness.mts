@@ -76,7 +76,7 @@ if (
 	}
 	try {
 		const path = resolve(
-			process.argv[2] ?? "docs/design/fleet-enrollment-scorecard.md",
+			process.argv[2] ?? "docs/ci/fleet-enrollment-scorecard.md",
 		);
 		const result = assessScorecard(readFileSync(path, "utf8"));
 		if (result.ready) console.log(result.message);

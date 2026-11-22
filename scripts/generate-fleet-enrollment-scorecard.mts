@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** Generates docs/design/fleet-enrollment-scorecard.md */
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,9 +22,9 @@ function add(section: string, item: string, evidence: string, status: Status) {
 }
 
 const G9_CREDENTIALS =
-	"Requires completed strict integrations and authorized staging: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/design/fleet-enrollment-operator.md §G9";
+	"Requires completed strict integrations and authorized staging: test GitHub App (App ID + Installation ID + PEM private key), test org/repos; staging transactional Postgres; stable HTTPS controller origin; Kubernetes/Station connection kubeconfig; operator Dagger engine; staging backup/restore access — see docs/ci/fleet-enrollment.md §G9";
 const UNVERIFIED =
-	"No requirement-specific verification result has been recorded; see docs/design/fleet-enrollment-design.md";
+	"No requirement-specific verification result has been recorded";
 
 const sections = {
 	"0": ["Continuous coordinated delivery directive acknowledged"],
@@ -120,7 +119,7 @@ for (let i = 1; i <= 20; i++) {
 	add(
 		"19",
 		`Guardrail ${i}`,
-		"No guardrail-specific test or review evidence is recorded; see design section 19",
+		"No guardrail-specific test or review evidence is recorded",
 		"not-verified",
 	);
 }
@@ -230,7 +229,7 @@ for (let cut = 1; cut <= 15; cut++) {
 	add(
 		"16.6",
 		`Crash cut ${cut}`,
-		"No crash-cut-specific fault-injection evidence is recorded; see design section 16.6",
+		"No crash-cut-specific fault-injection evidence is recorded",
 		"not-verified",
 	);
 }
@@ -289,7 +288,7 @@ const lines = [
 	"",
 	"# Fleet enrollment scorecard",
 	"",
-	"Ratings for [`fleet-enrollment-design.md`](./fleet-enrollment-design.md). A `pass` names scoped evidence and its verified commit; it does not establish current production readiness. Refresh it when covered behavior changes. `not-verified` means no requirement-specific result is recorded, and `not-implemented` identifies a known implementation gap. The CI evaluation checks the status vocabulary and prevents unsupported blanket passes.",
+	"Ratings for CI fleet enrollment; operator semantics and limits are in [`fleet-enrollment.md`](./fleet-enrollment.md). A `pass` names scoped evidence and its verified commit; it does not establish current production readiness. Refresh it when covered behavior changes. `not-verified` means no requirement-specific result is recorded, and `not-implemented` identifies a known implementation gap. The CI evaluation checks the status vocabulary and prevents unsupported blanket passes.",
 	"",
 	"| Section | Requirement | Status | Evidence |",
 	"| --- | --- | --- | --- |",
@@ -306,7 +305,7 @@ if (
 	process.argv[1] &&
 	resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-	const out = join(process.cwd(), "docs/design/fleet-enrollment-scorecard.md");
+	const out = join(process.cwd(), "docs/ci/fleet-enrollment-scorecard.md");
 	writeFileSync(out, lines.join("\n"));
 	console.log(
 		`wrote ${out} (${rows.length} rows, ${passCount} pass, ${notVerifiedCount} not-verified, ${blockedCount} blocked-on-credentials, ${notImplementedCount} not-implemented)`,

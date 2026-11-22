@@ -8,7 +8,7 @@ import { assessScorecard } from "../scripts/check-fleet-enrollment-readiness.mts
 const scorecardPath = join(
 	import.meta.dirname,
 	"..",
-	"docs/design/fleet-enrollment-scorecard.md",
+	"docs/ci/fleet-enrollment-scorecard.md",
 );
 
 type ParsedRow = {

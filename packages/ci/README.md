@@ -764,7 +764,7 @@ lost-response retry is a receipt for that committed authorization.
 
 The GitHub assignment lookup, optional start handler, and hook are not yet wired into the
 production controller, so these store guarantees alone do not make strict CI
-runner starts available. See the [fleet operator guide](../../docs/design/fleet-enrollment-operator.md).
+runner starts available. See the [fleet operator guide](../../docs/ci/fleet-enrollment.md).
 
 An unclaimed runner slot that becomes uncertain retains its reservation.
 After a trusted controller confirms teardown, it can retry the
