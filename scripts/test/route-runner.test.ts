@@ -2476,6 +2476,7 @@ describe("the workflows that route", () => {
 		assert.deepEqual([...routed].sort(), [
 			".github/workflows/hobo-ci.yml",
 			".github/workflows/pricing-ci.yml",
+			".github/workflows/relay-deploy.yml",
 			".github/workflows/release-hobo.yml",
 			".github/workflows/release-pricing.yml",
 			".github/workflows/release-ts-autocode.yml",

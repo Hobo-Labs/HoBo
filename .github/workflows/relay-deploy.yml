@@ -339,8 +339,10 @@ jobs:
             --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
             --target preview --build prebuilt --provision --wait --deadline "$DEPLOY_DEADLINE" \
             --json > "$RUNNER_TEMP/relay-preview.json" || status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-preview.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
-          exit "$status"
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/relay-deploy-result-report.mts \
+            "$RUNNER_TEMP/relay-preview.json" "Deploy the relay (preview)" "" "$status" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Deploy the relay (production)
         if: needs.gate.outputs.run == 'true'
         timeout-minutes: 17
@@ -353,8 +355,10 @@ jobs:
             --cwd packages/ci-vercel --sha "$GITHUB_SHA" --ref "$GITHUB_REF_NAME" \
             --target production --build prebuilt --provision --wait --deadline "$DEPLOY_DEADLINE" \
             --json > "$RUNNER_TEMP/relay-production.json" || status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/relay-production.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
-          exit "$status"
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/relay-deploy-result-report.mts \
+            "$RUNNER_TEMP/relay-production.json" "Deploy the relay (production)" "" "$status" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
       # The deploy is done only when the production origin serves the relay
       # this run built: /healthz must answer 200 naming GITHUB_SHA, /readyz
       # must answer 200. The step fails the job — never `|| true` — with a
@@ -529,10 +533,12 @@ jobs:
           APP_OWNER_ID: ${{ github.event.inputs.owner_id }}
         run: |
           set -uo pipefail
+          status=0
           node packages/hobo/dist/bin/hobo.js ci app deposit \
             --cwd packages/ci-vercel \
             --relay "$RELAY_ORIGIN" --owner-id "$APP_OWNER_ID" \
-            --json > "$RUNNER_TEMP/app-deposit.json"
-          status=$?
-          node -e 'const r = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(`${r.code ?? "HOBO_OK"}: ${r.message ?? ""}`);' "$RUNNER_TEMP/app-deposit.json" | tee -a "$GITHUB_STEP_SUMMARY" || true
-          exit "$status"
+            --json > "$RUNNER_TEMP/app-deposit.json" || status=$?
+          node --experimental-strip-types --no-warnings \
+            scripts/ci/relay-deploy-result-report.mts \
+            "$RUNNER_TEMP/app-deposit.json" "Convert the manifest code and store the credentials (GitHub OIDC)" "" "$status" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

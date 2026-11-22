@@ -4,6 +4,7 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
@@ -454,6 +455,75 @@ describe("the relay deploy workflow", () => {
 		assert.doesNotMatch(workflow, /INFISICAL_|VERCEL_TEAM_ID/u);
 	});
 
+	it("reports deploy results through the redacting, fail-closed envelope report", () => {
+		const script = "scripts/ci/relay-deploy-result-report.mts";
+		assert.ok(existsSync(join(root, script)), `${script} is missing`);
+		for (const name of [
+			"Deploy the relay (preview)",
+			"Deploy the relay (production)",
+			"Convert the manifest code and store the credentials (GitHub OIDC)",
+		]) {
+			const run = step(name);
+			assert.match(run, /relay-deploy-result-report\.mts/u, name);
+			assert.doesNotMatch(
+				run,
+				/node -e 'const r = JSON\.parse/u,
+				`${name} still prints the raw envelope inline`,
+			);
+		}
+		const dir = mkdtempSync(join(tmpdir(), "hobo-relay-result-report-"));
+		try {
+			const json = join(dir, "result.json");
+			const secret =
+				"ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+			writeFileSync(
+				json,
+				JSON.stringify({
+					ok: false,
+					code: "HOBO_FAIL",
+					message: `token ${secret}`,
+				}),
+			);
+			const redacted = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(root, script),
+					json,
+					"Deploy the relay (preview)",
+					"",
+					"1",
+				],
+				{ cwd: root, encoding: "utf8" },
+			);
+			assert.equal(redacted.status, 1);
+			assert.match(redacted.stdout, /\[redacted\]/u);
+			assert.doesNotMatch(redacted.stdout, /ghp_/u);
+
+			const missing = spawnSync(
+				process.execPath,
+				[
+					"--experimental-strip-types",
+					"--no-warnings",
+					join(root, script),
+					join(dir, "missing.json"),
+					"Deploy the relay (preview)",
+					"",
+					"1",
+				],
+				{ cwd: root, encoding: "utf8" },
+			);
+			assert.equal(missing.status, 1);
+			assert.match(
+				missing.stdout,
+				/command did not emit a valid JSON envelope/u,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("builds the CLI unprivileged and runs only its digest-pinned artifact", () => {
 		const build = workflow
 			.split("\n  deploy-build:\n")[1]
@@ -556,7 +626,8 @@ describe("the relay deploy workflow", () => {
 			assert.match(deployStep, /--ref "\$GITHUB_REF_NAME"/u);
 			assert.match(deployStep, /--build prebuilt --provision --wait/u);
 			assert.match(deployStep, /--deadline "\$DEPLOY_DEADLINE"/u);
-			assert.match(deployStep, /exit "\$status"/u);
+			assert.match(deployStep, /relay-deploy-result-report\.mts/u);
+			assert.match(deployStep, /"\$status"/u);
 			assert.doesNotMatch(deployStep, /--adopt/u);
 		}
 		assert.match(step("Deploy the relay (preview)"), /--target preview/u);
@@ -587,6 +658,28 @@ describe("the relay deploy workflow", () => {
 				join(bin, "hobo.js"),
 				'process.stdout.write(JSON.stringify({code:"HOBO_TEST_REFUSED",message:"deployment unavailable"})); process.exitCode = 27;',
 			);
+			const scripts = join(work, "scripts/ci");
+			mkdirSync(scripts, { recursive: true });
+			for (const file of [
+				"relay-deploy-result-report.mts",
+				"relay-deploy-redaction.mts",
+			])
+				writeFileSync(
+					join(scripts, file),
+					readFileSync(join(root, "scripts/ci", file)),
+				);
+			const redactionDist = join(
+				work,
+				"packages/provider-redaction/dist",
+			);
+			mkdirSync(redactionDist, { recursive: true });
+			for (const file of readdirSync(
+				join(root, "packages/provider-redaction/dist"),
+			))
+				writeFileSync(
+					join(redactionDist, file),
+					readFileSync(join(root, "packages/provider-redaction/dist", file)),
+				);
 			const summary = join(work, "summary.md");
 			const lines = step("Deploy the relay (preview)").split("\n");
 			const start = lines.findIndex((line) => line.trim() === "run: |");

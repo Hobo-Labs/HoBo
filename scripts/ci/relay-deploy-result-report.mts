@@ -47,14 +47,18 @@ function parseEnvelope(raw: string): JsonObject | undefined {
 		return undefined;
 	}
 	const envelope = asObject(root);
-	if (envelope === undefined || tagOf.call(envelope.ok) !== "[object Boolean]")
-		return undefined;
+	if (envelope === undefined) return undefined;
+	const hasOk = tagOf.call(envelope.ok) === "[object Boolean]";
+	const hasCode = tagOf.call(envelope.code) === "[object String]";
+	const hasMessage = tagOf.call(envelope.message) === "[object String]";
+	if (!hasOk && !hasCode && !hasMessage) return undefined;
 	for (const key of ["code", "message"])
 		if (
 			envelope[key] !== undefined &&
 			tagOf.call(envelope[key]) !== "[object String]"
 		)
 			return undefined;
+	if (envelope.ok !== undefined && !hasOk) return undefined;
 	return envelope;
 }
 
