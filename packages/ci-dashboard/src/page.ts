@@ -26,12 +26,14 @@ const {
 	codeBg,
 	nightBg,
 	nightRaised,
+	nightSpark,
+	nightGo,
 } = DASHBOARD_TOKENS;
 
 const GRAIN =
 	"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E";
 
-const NIGHT = `--ink:${cream};--paper:${nightRaised};--cream:${nightBg};--mute:${borderStrong};--faint:${borderStrong};--border:${mute};--border-strong:${mute};--inset:${nightRaised};--code-bg:${nightRaised}`;
+const NIGHT = `--ink:${cream};--paper:${nightRaised};--cream:${nightBg};--mute:${borderStrong};--faint:${borderStrong};--border:${mute};--border-strong:${mute};--inset:${nightRaised};--code-bg:${nightRaised};--spark:${nightSpark};--go:${nightGo}`;
 
 /** The page's stylesheet: DESIGN.md tokens only, sticker shadows on pressables only. */
 export function dashboardCss(): string {

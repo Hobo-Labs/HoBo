@@ -47,24 +47,30 @@ the sum of its files):
   `vitest run` test script), never on the shard count, so the planning job and
   every shard job expand identically. `planShardCount` never plans fewer shards
   than one sliced suite has file shards.
-- **Slow suites moved to a release lane**: the four suites above now run only in
-  `test:release-integration` (`vitest.release-integration.config.ts`,
-  `test/support/release-integration-test-files.ts`), in release-hobo.yml's
-  `release-hobo-integration` job, blocking `release-publish` and `release-npm`.
-  A pull request pays for them only when its diff reaches the suites or the lane
-  (the workflow's path filters plus a `job-scope` step); every release runs
-  them. The job checks out with `submodules: "false"` like every job in this
-  workflow, so it fetches the pinned ts-autocode itself (`pins:fetch
-  ts-autocode`) before install, the same order `release-contract` uses —
-  without it the install fails on the missing workspace members the lane's
-  turbo graph builds. The default suite re-measured at 170 s wall; the table
-  says 170 s (the fast merge-queue lane's measured weight, no startup padding),
-  which slices hobo into 4 vitest shards.
+- **Slow suites moved to four hosted release shards**: the four suites above run
+  only in `test:release-integration` (`vitest.release-integration.config.ts`,
+  `test/support/release-integration-test-files.ts`). The unfiltered
+  `release-hobo-pr.yml` runs four GitHub-hosted shards on pull requests and merge
+  groups, with an 8-minute job ceiling and the `HoBo release integration PR gate`.
+  Merge groups diff `github.event.merge_group.base_sha`; a missing base runs the
+  lane, fetch or object-verification failure fails scope, and only a successfully
+  computed out-of-scope diff skips install and tests successfully. Shard indexes
+  use bash `$((SHARD_INDEX + 1))`, not a GitHub expression. The train's
+  `release-hobo-integration` job still blocks `release-publish` and `release-npm`,
+  but `HoBo release PR gate (required)` no longer needs it. Hosted PR shims in the
+  train and Fabric exercise the lane before `release-hobo-pr.yml` reaches `main`;
+  Fabric's shards are pull-request-only and are not a PR-impact-gate dependency.
+  Every shard fetches the pinned ts-autocode before install, and only shard zero
+  prunes or saves the L1 Turbo archive. Turbo credentials and remote writes are
+  enabled only for same-repository pull requests, never forks or merge groups.
+  The default suite remains measured at
+  170 s and slices hobo into four workspace Vitest shards.
 - **Turbo concurrency from memory-env**: the workspace-tests step-level
   `HOBO_TURBO_CONCURRENCY: "1"` pin is gone (main shards never had one); the
   cgroup-derived value `memory-env` writes during ci-runner-preflight applies.
-- **One cache save per matrix**: `workspace_tests` and `main_workspace_tests`
-  save the Turbo cache only on `matrix.shard == 0`, like `scripts-tests`.
+- **One cache save per matrix**: `workspace_tests`, `main_workspace_tests`, and
+  each release-integration matrix save only on `matrix.shard == 0`. The scripts
+  matrix instead leaves its sole save to `scripts-tests-build`.
 
 ## Verification
 
@@ -75,9 +81,11 @@ the sum of its files):
   suites are excluded from both default projects and included, isolated, exactly
   once in the release lane.
 - The release lane run on this tree: 4 files, 147 tests, 0 failures.
-- Workflow pins: `merge-group-gate.test.ts` (no step-level concurrency pin,
-  shard-0-only cache saves, the release gate's new job),
-  `attested-jobs.test.ts` (plan synced; blob pins updated).
+- Workflow pins: `release-integration-job.test.ts` (four hosted shards,
+  unfiltered triggers, fail-closed merge-group scope, out-of-scope skips, gate
+  results and bash shard math), `merge-group-gate.test.ts` (protected realize gate
+  without an integration dependency), and `attested-jobs.test.ts` (plan synced;
+  blob pins updated).
 
 ## Risks
 
@@ -85,7 +93,9 @@ the sum of its files):
   the build-once call is unchanged and keeps sharing hashes with plain
   `turbo run test`.
 - `vitest --shard` with inline `projects` (the isolated/shared split) shards
-  each project's files; `--passWithNoTests` covers a slice that draws no file.
-- The merge queue no longer fails on a broken release-integration suite at merge
-  time; it fails at publish. That is the accepted trade: the release gate runs
-  on every planned release and on every PR that touches the lane.
+  each project's files; the workspace planner retains `--passWithNoTests` for a
+  slice that draws no file. The four-suite release lane deliberately does not
+  use that flag.
+- A broken release-integration suite now fails its merge-queue gate as well as
+  publication. Hosted capacity and the 7-minute queue target require a
+  production run observation; the workflow contract alone does not prove either.

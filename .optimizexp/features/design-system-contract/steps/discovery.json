@@ -1,6 +1,6 @@
 {
   "featureId": "design-system-contract",
-  "seed": "A designer or agent edits UI using the DESIGN.md contract; design lint (or equivalent) fails closed on contrast/token breaks with file references.",
+  "seed": "A designer or agent edits UI using implemented palette tokens and CSS; design lint (or equivalent) fails closed on contrast/token breaks with file references.",
   "scannedAt": "2026-07-31T15:00:05.420Z",
   "bindings": [
     {
@@ -9,7 +9,7 @@
       "scriptName": "design:lint",
       "command": "pnpm run design:lint",
       "confidence": "high",
-      "reason": "seed requires DESIGN.md / designmd fail-closed for web UI; design:lint is the contract gate",
+      "reason": "seed requires implemented palette tokens fail-closed for web UI; design:lint is the contract gate",
       "implementsSteps": [
         "I exercise the surface as this persona would",
         "I observe the failure as this persona"
@@ -21,7 +21,7 @@
       "scriptName": "docs:design-lint",
       "command": "pnpm run docs:design-lint",
       "confidence": "low",
-      "reason": "package.json scripts[\"docs:design-lint\"] exists [demoted: design-doc prose lint, not DESIGN.md contract]",
+      "reason": "package.json scripts[\"docs:design-lint\"] exists [demoted: design-doc prose lint, not implemented token contract]",
       "implementsSteps": [
         "I exercise the surface as this persona would"
       ]

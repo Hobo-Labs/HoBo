@@ -439,14 +439,19 @@ hobo ci deploy --cwd packages/ci-vercel --ref main \
 | `--wait` | wait up to 15 minutes for READY and verify the relay; requires `HOBO_CI_RELAY_PREVIEW_URL` for preview or `HOBO_CI_RELAY_URL` for production; ERROR, CANCELED or timeout is `HOBO_CI_DEPLOY_NOT_READY` |
 | `--dry-run` | print the plan and send nothing |
 
-A real run needs the deploy token in the owner's secret store. An embedding
-caller can provide it in a run-scoped vault; a GitHub Actions job with
-`id-token: write` can read it through the committed secret-store binding. A
-`VERCEL_TOKEN` supplied in the command's environment is ignored. When
-`--provision` runs the Vercel CLI, HoBo passes that child the token from the
-vault. The target project must build `packages/ci-vercel` (or the chosen
-`--root-directory`), and Vercel's GitHub integration must be able to read the
+A real run reads the deploy token from the owner's secret store as the
+dedicated deploy reader. A GitHub Actions job with `id-token: write` reads it
+through the committed secret-store binding; a token preloaded in an embedding
+caller's vault never bypasses that reader. A `VERCEL_TOKEN` supplied in the
+command's environment is ignored. When `--provision` runs the Vercel CLI, HoBo
+passes that child the token from the run's fresh vault. The target project must
+build `packages/ci-vercel` (or the chosen `--root-directory`), and Vercel's
+GitHub integration must be able to read the
 repository.
+
+A credential-free legacy binding may omit `deployOidcSubject` or carry the
+exact writer subject. Any other nonempty subject is malformed and makes the
+workflow gate fatal rather than a credential-free skip.
 
 What it deliberately does not do:
 

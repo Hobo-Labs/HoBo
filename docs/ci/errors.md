@@ -354,7 +354,7 @@ Returned from `packages/hobo/src/ci-app-create.ts`.
 Message:
 
 ```text
-GitHub created the App's one-time code, but `gh workflow run relay-deploy.yml` did not start. The code expires within an hour; check `gh auth status`, then delete the App GitHub may have created (https://github.com/settings/apps) and run the command again.
+GitHub created the App's one-time code, but `gh workflow run app-credentials.yml` did not start. The code expires within an hour; check `gh auth status`, then delete the App GitHub may have created (https://github.com/settings/apps) and run the command again.
 ```
 
 What to do: follow the message.
@@ -1806,11 +1806,15 @@ Returned from `packages/hobo/src/ci-secret-store-connect.ts`, `packages/hobo/src
 Messages:
 
 ```text
-Those ids do not make a valid binding: two distinct identities, a deploy project (if given) other than the relay's, ids of letters, digits, - and _, an https origin, and a team_ id.
+hobo-ci-deploy-reader must be a different identity from both hobo-ci-writer and hobo-ci-relay; the writer's identity would read the deploy token with the writer's privileges, and the relay's would reach it from the relay's sign-in.
 ```
 
 ```text
-{SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). Run hobo ci secret-store provision again.
+Those ids do not make a valid binding: distinct relay, writer and deploy-credential identities, a deploy project other than the relay's, ids of letters, digits, - and _, an https origin, and a team_ id.
+```
+
+```text
+{SECRET_STORE_BINDING_FILE} is not a valid secret store binding (coordinates only). A deploy credential needs both a deploy project other than the relay's, a deployCredentialIdentityId distinct from the relay and writer identities, and deployOidcSubject; re-run hobo ci secret-store connect with --deploy-project-id and --deploy-credential-identity-id to configure one.
 ```
 
 What to do: follow the message.
@@ -1834,7 +1838,7 @@ Returned from `packages/hobo/src/ci-secret-store-connect.ts`.
 Message:
 
 ```text
-Wrote {written} (coordinates only). {trustLine} Commit it; then run hobo ci secret-store verify where each identity can sign in.
+Wrote {written} (coordinates only). {writerTrustLine}{readerTrustLine} Commit it; then run hobo ci secret-store verify where each identity can sign in.
 ```
 
 What to do: follow the message.
@@ -1942,11 +1946,15 @@ Returned from `packages/hobo/src/ci-secret-store-connect.ts`, `packages/hobo/src
 Messages:
 
 ```text
-hobo ci secret-store connect needs {…} (identifiers from the Infisical dashboard and the Vercel team id; none is a secret).
+hobo ci secret-store connect needs {…} (identifiers from the Infisical dashboard and the Vercel team id; none is a secret{…}).
 ```
 
 ```text
 hobo ci secret-store connect needs --repo <owner/name> (or the relay Yard's repository): the deploy identity trusts that repository's GitHub OIDC tokens.
+```
+
+```text
+--identity must be reader, writer, or relay.
 ```
 
 What to do: follow the message.
