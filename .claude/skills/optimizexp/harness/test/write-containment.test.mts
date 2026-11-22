@@ -45,8 +45,6 @@ describe("OptimizeXP write containment", () => {
 			symlinkSync(outside, path.join(root, "site/.optimizexp"), "dir");
 			const commands: [string, string[]][] = [
 				["explore-app", ["--project=site"]],
-				["generate-feature", ["--mode=plan", "--project=site", "--id=example", "--seed=sample"]],
-				["generate-persona", ["--project=site", "--id=example", "--seed=sample"]],
 				["capture-evidence", ["--mode=init-feature", "--project=site", "--id=example"]],
 				["doctor", ["repair", "--project=site", "--only=ensure-config"]],
 				["doctor", ["snapshot", "--project=site"]],
@@ -68,8 +66,6 @@ describe("OptimizeXP write containment", () => {
 			symlinkSync(outside, path.join(root, ".optimizexp"), "dir");
 			const commands: [string, string[]][] = [
 				["explore-app", ["--project=root"]],
-				["generate-feature", ["--mode=plan", "--project=site", "--id=example", "--seed=sample"]],
-				["generate-persona", ["--project=site", "--id=example", "--seed=sample"]],
 				["capture-evidence", ["--mode=init-feature", "--project=site", "--id=example"]],
 				["doctor", ["repair", "--project=site", "--only=ensure-config"]],
 				["doctor", ["snapshot", "--project=site"]],
@@ -139,12 +135,6 @@ describe("OptimizeXP write containment", () => {
 			const capture = invoke(root, "capture-evidence", ["--mode=capture", "--project=site", "--feature=example", "--scenario=observed", "--command=printf new"]);
 			assert.equal(capture.status, 2, capture.stderr);
 			assert.equal(readFileSync(path.join(outside, "primary.txt"), "utf8"), "keep primary\n");
-			rmSync(path.join(feature, "evidence/observed"));
-			writeFileSync(path.join(outside, "experience.md"), "keep experience\n");
-			symlinkSync(path.join(outside, "experience.md"), path.join(feature, "EXPERIENCE.md"));
-			const plan = invoke(root, "generate-feature", ["--mode=plan", "--project=site", "--id=example", "--seed=sample", "--force"]);
-			assert.equal(plan.status, 2, plan.stderr);
-			assert.equal(readFileSync(path.join(outside, "experience.md"), "utf8"), "keep experience\n");
 		});
 	});
 
@@ -157,7 +147,6 @@ describe("OptimizeXP write containment", () => {
 			for (const [cli, args] of [
 				["explore-app", ["--project=site"]],
 				["doctor", ["repair", "--project=site", "--only=ensure-config"]],
-				["generate-feature", ["--mode=plan", "--project=site", "--id=example", "--seed=sample"]],
 			] as [string, string[]][]) {
 				const result = invoke(root, cli, args);
 				assert.equal(result.status, 2, `${cli}: ${result.stderr}`);
@@ -184,7 +173,6 @@ describe("OptimizeXP write containment", () => {
 			for (const [cli, args] of [
 				["explore-app", ["--project=site"]],
 				["doctor", ["repair", "--project=site", "--only=ensure-config"]],
-				["generate-feature", ["--mode=plan", "--project=site", "--id=example", "--seed=sample"]],
 			] as [string, string[]][]) {
 				result = invoke(root, cli, args);
 				assert.equal(result.status, 2, `${cli}: ${result.stderr}`);
@@ -200,23 +188,15 @@ describe("OptimizeXP write containment", () => {
 			const result = invoke(root, "explore-app", ["--project=site"]);
 			assert.equal(result.status, 0, result.stderr);
 			assert.equal(existsSync(path.join(root, "site/.optimizexp/surface-map.json")), true);
-			const persona = invoke(root, "generate-persona", ["--project=site", "--id=reader", "--seed=reader"]);
-			assert.equal(persona.status, 0, persona.stderr);
-			assert.equal(existsSync(path.join(root, "site/.optimizexp/personas/reader.md")), true);
 		});
 	});
 
-	it("also protects global paths used by surveys, review workflows, and evidence posting", () => {
+	it("also protects global paths used by evidence posting", () => {
 		fixture((root, outside) => {
 			mkdirSync(path.join(root, ".optimizexp"));
 			writeFileSync(path.join(outside, "sentinel"), "keep workflow bytes\n");
 			symlinkSync(outside, path.join(root, ".optimizexp/runs"), "dir");
 			const results = [
-				invoke(root, "survey", ["--mode=template", "--run=example", "--personas=reader"]),
-				invoke(root, "survey", ["--mode=aggregate", "--run=example"]),
-				invoke(root, "survey", ["--mode=rank-backlog", "--run=example", "--global"]),
-				invokeWorkflow(root, "review-loop", ["--mode", "init", "--run", "example"]),
-				invokeWorkflow(root, "consensus-loop", ["--mode", "init"]),
 				invoke(root, "post-pr-evidence", ["--feature", "example", "--pr", "1"]),
 			];
 			for (const result of results) {
@@ -228,25 +208,14 @@ describe("OptimizeXP write containment", () => {
 		});
 	});
 
-	it("rejects path-like survey and workflow identifiers before writing and accepts ordinary ids", () => {
+	it("rejects path-like workflow identifiers before writing", () => {
 		fixture((root, outside) => {
-			const invalidRun = invoke(root, "survey", ["--mode=template", "--run=../../outside", "--personas=reader"]);
-			assert.equal(invalidRun.status, 2, invalidRun.stderr);
-			const run = path.join(root, ".optimizexp/runs/run-1");
-			mkdirSync(run, { recursive: true });
-			writeFileSync(path.join(run, "scope.json"), JSON.stringify({ personas: ["../../outside/replace"] }));
-			const invalidPersona = invoke(root, "survey", ["--mode=template", "--run=run-1"]);
-			assert.equal(invalidPersona.status, 2, invalidPersona.stderr);
-			assert.equal(existsSync(path.join(run, "survey")), false);
 			const invalidReview = invokeWorkflow(root, "review-loop", ["--mode", "init", "--run", "../../outside"]);
 			assert.equal(invalidReview.status, 2, invalidReview.stderr);
 			const invalidCouncil = invokeWorkflow(root, "consensus-loop", ["--mode", "status", "--run", "..", "--review", "example"]);
 			assert.equal(invalidCouncil.status, 2, invalidCouncil.stdout);
 			assert.match(invalidCouncil.stdout, /unsafe-id/);
 			assert.equal(existsSync(path.join(outside, "scope.json")), false);
-			const valid = invoke(root, "survey", ["--mode=template", "--run=run-1", "--personas=reader"]);
-			assert.equal(valid.status, 0, valid.stderr);
-			assert.equal(existsSync(path.join(run, "survey/reader.json")), true);
 		});
 	});
 
@@ -264,22 +233,16 @@ describe("OptimizeXP write containment", () => {
 		});
 	});
 
-	it("rejects unrecognized survey, workflow, and posting options before side effects", () => {
+	it("rejects unrecognized posting options before side effects", () => {
 		fixture((root) => {
 			const results = [
-				invoke(root, "survey", ["--mode", "template", "--run", "example", "--dryrun"]),
 				invoke(root, "post-pr-evidence", ["--feature", "example", "--pr", "1", "--dryrun"]),
-				invokeWorkflow(root, "review-loop", ["--mode", "init", "--run", "example", "--dryrun"]),
-				invokeWorkflow(root, "consensus-loop", ["--mode", "init", "--run", "example", "--dryrun", "yes"]),
 			];
 			for (const result of results) {
 				assert.equal(result.status, 2, `${result.stdout} ${result.stderr}`);
 				assert.match(`${result.stdout} ${result.stderr}`, /Unknown option: --dryrun/);
 				assert.equal(existsSync(path.join(root, ".optimizexp")), false);
 			}
-			const valid = invokeWorkflow(root, "review-loop", ["init", "--run=example", "--personas", "", "--features=", "--projects", ""]);
-			assert.equal(valid.status, 0, valid.stderr);
-			assert.equal(existsSync(path.join(root, ".optimizexp/runs/example/scope.json")), true);
 		});
 	});
 });

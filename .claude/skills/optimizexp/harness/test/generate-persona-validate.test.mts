@@ -22,9 +22,8 @@ const GP = path.join(
 	REPO,
 	".agents/skills/optimizexp/harness/generate-persona.mts",
 );
-// Real schema-v2 seed-generated persona used as the valid template.
 const TEMPLATE = readFileSync(
-	path.join(REPO, ".optimizexp/personas/role-sre.md"),
+	new URL("./fixtures/role-sre.md", import.meta.url),
 	"utf8",
 );
 
