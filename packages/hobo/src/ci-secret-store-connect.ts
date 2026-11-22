@@ -179,7 +179,9 @@ export async function runCiSecretStoreConnect(
 		const subject = await resolveDeploySubject({
 			repository,
 			env: input.env,
-			...(credentialFetch !== undefined ? { fetch: credentialFetch } : undefined),
+			...(credentialFetch !== undefined
+				? { fetch: credentialFetch }
+				: undefined),
 		});
 		trust = githubDeployTrust(subject);
 		readerTrust = githubDeployReaderTrust(subject);
@@ -264,7 +266,9 @@ export async function runCiSecretStoreConnect(
 					ownerAccessToken: ownerToken,
 					deployIdentityId: update.identityId,
 					trust: update.trust,
-					...(credentialFetch !== undefined ? { fetch: credentialFetch } : undefined),
+					...(credentialFetch !== undefined
+						? { fetch: credentialFetch }
+						: undefined),
 				});
 				updated.push(`${update.identity} (${update.identityId})`);
 			} catch (error) {
@@ -941,7 +945,9 @@ export async function runCiSecretStoreVerify(
 							identityId: store.relayIdentityId,
 							jwt: async () => vercelJwt,
 						}),
-						...(credentialFetch !== undefined ? { fetch: credentialFetch } : undefined),
+						...(credentialFetch !== undefined
+							? { fetch: credentialFetch }
+							: undefined),
 					}),
 				)
 			: {

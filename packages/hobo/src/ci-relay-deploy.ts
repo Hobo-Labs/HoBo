@@ -47,6 +47,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { create, toJson } from "@bufbuild/protobuf";
+import { githubActionsJwtSource } from "@hobo/adapter-infisical";
 import {
 	assertNoBindleProviderSelection,
 	type BindleDefinition,
@@ -77,7 +78,6 @@ import {
 	VercelGitDeploymentPlanSchema,
 } from "./_generated/vercel_git_deployment_pb.js";
 import { loadDeliveryFile } from "./cd-delivery-module.js";
-import { githubActionsJwtSource } from "@hobo/adapter-infisical";
 import {
 	deliverRelay,
 	RELAY_DELIVERY_FILE,
@@ -1211,7 +1211,6 @@ export async function runCiRelayDeploy(
 
 	const now = input.now ?? Date.now;
 	const startedAt = now();
-	const deadlineRequested = stagedProduction || parsedDeadlineAt !== undefined;
 	const deadlineAt =
 		parsedDeadlineAt ??
 		(stagedProduction ? startedAt + WAIT_LIMIT_MS : undefined);
@@ -1252,7 +1251,7 @@ export async function runCiRelayDeploy(
 	const commitVerified =
 		protectedPreview ||
 		stagedProduction ||
-		(target === "production" && wait && sha !== undefined);
+		(wait && sha !== undefined && verifyOrigin !== undefined);
 	if (
 		verifyOrigin !== undefined &&
 		sha !== undefined &&

@@ -1247,10 +1247,7 @@ export function createVercelClient(options: VercelClientOptions): VercelClient {
 		);
 		if (!response.ok) throw await failure("get project", response, secrets);
 		const payload = await payloadFrom("get project", response);
-		if (
-			!isJsonString(payload.id) ||
-			!/^prj_[A-Za-z0-9]+$/u.test(payload.id)
-		)
+		if (!isJsonString(payload.id) || !/^prj_[A-Za-z0-9]+$/u.test(payload.id))
 			throw new Error(
 				"vercel-client: project read returned an invalid identity",
 			);

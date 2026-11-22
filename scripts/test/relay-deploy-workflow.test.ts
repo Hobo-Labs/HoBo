@@ -474,8 +474,7 @@ describe("the relay deploy workflow", () => {
 		const dir = mkdtempSync(join(tmpdir(), "hobo-relay-result-report-"));
 		try {
 			const json = join(dir, "result.json");
-			const secret =
-				"ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+			const secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
 			writeFileSync(
 				json,
 				JSON.stringify({
@@ -668,10 +667,7 @@ describe("the relay deploy workflow", () => {
 					join(scripts, file),
 					readFileSync(join(root, "scripts/ci", file)),
 				);
-			const redactionDist = join(
-				work,
-				"packages/provider-redaction/dist",
-			);
+			const redactionDist = join(work, "packages/provider-redaction/dist");
 			mkdirSync(redactionDist, { recursive: true });
 			for (const file of readdirSync(
 				join(root, "packages/provider-redaction/dist"),

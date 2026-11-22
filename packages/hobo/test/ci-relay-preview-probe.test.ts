@@ -25,7 +25,9 @@ describe("protected preview probe", () => {
 		});
 		expect((await probe(request)).status).toBe(200);
 		expect(sent).toHaveLength(1);
-		expect(sent[0]?.url).toBe("https://hobo-ci-git-main.example.vercel.app/healthz");
+		expect(sent[0]?.url).toBe(
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
+		);
 		expect(sent[0]?.headers["x-vercel-trusted-oidc-idp-token"]).toBe(
 			"synthetic-oidc-token",
 		);
@@ -102,7 +104,9 @@ describe("protected preview probe", () => {
 		const answer = await probe(request);
 		expect(answer.status).toBe(302);
 		expect(calls).toHaveLength(1);
-		expect(calls[0]?.url).toBe("https://hobo-ci-git-main.example.vercel.app/healthz");
+		expect(calls[0]?.url).toBe(
+			"https://hobo-ci-git-main.example.vercel.app/healthz",
+		);
 		expect(calls[0]?.init.redirect).toBe("manual");
 		expect(
 			new Headers(calls[0]?.init.headers).get(
