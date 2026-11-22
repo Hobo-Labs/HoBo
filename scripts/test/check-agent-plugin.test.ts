@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import {
+	cp,
 	mkdir,
 	mkdtemp,
 	readFile,
@@ -14,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { buildAgentPlugin } from "../build-agent-plugin.mts";
 import {
 	AGENT_TOOLING_HEADING,
 	agentToolingReferenceDriftIssues,
@@ -53,21 +56,43 @@ afterEach(async () => {
 	}
 });
 
-function ensureRealBundle(): void {
-	const bundle = path.join(realPluginRoot, "bin/hobo-mcp.mjs");
-	if (existsSync(bundle)) return;
-	const build = spawnSync(
-		process.execPath,
-		["--import", "tsx", "scripts/build-agent-plugin.mts"],
-		{
-			cwd: repoRoot,
-			encoding: "utf8",
-			env: { ...process.env, HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" },
-			timeout: 300_000,
+async function buildRealPluginForCheck(): Promise<string> {
+	const scratch = await mkdtemp(path.join(tmpdir(), "hobo-real-plugin-"));
+	scratches.push(scratch);
+	const pluginRoot = path.join(scratch, "plugin");
+	const excluded = new Set([
+		"bin",
+		"fixtures/deploy",
+		"node_modules",
+		".agent-plugin-build.lock",
+		".agent-plugin-nonpublishing.json",
+		".bundle-attestation.json",
+	]);
+	await cp(realPluginRoot, pluginRoot, {
+		recursive: true,
+		filter: (source) => {
+			const relative = path
+				.relative(realPluginRoot, source)
+				.replaceAll("\\", "/");
+			return ![...excluded].some(
+				(name) => relative === name || relative.startsWith(`${name}/`),
+			);
 		},
-	);
-	expect(build.status).toBe(0);
-	expect(existsSync(bundle)).toBe(true);
+	});
+	stubCiOff();
+	vi.stubEnv("HOBO_AGENT_PLUGIN_LOCAL_BUILD", "1");
+	const previousExitCode = process.exitCode;
+	process.exitCode = undefined;
+	let buildExitCode: typeof process.exitCode;
+	try {
+		await buildAgentPlugin(pluginRoot);
+		buildExitCode = process.exitCode;
+	} finally {
+		process.exitCode = previousExitCode;
+	}
+	expect(buildExitCode).toBeUndefined();
+	expect(existsSync(path.join(pluginRoot, "bin/hobo-mcp.mjs"))).toBe(true);
+	return pluginRoot;
 }
 
 function git(root: string, ...args: string[]): string {
@@ -556,6 +581,11 @@ describe("parseMcpConfig + mcpSemanticIssues", () => {
 			"https://${ATTACKER_HOST}/mcp",
 			"https://mcp.example.com/a/../b",
 			"https://mcp.example.com/%2e%2e/b",
+			"https://mcp.example.com/%2E%2e/b",
+			"https://mcp.example.com/%2f%2F/b",
+			"https://mcp.example.com/%2F%2f/b",
+			"https://mcp.example.com/%5c%5C/b",
+			"https://mcp.example.com/%5C%5c/b",
 			"https://user:pass@mcp.example.com/mcp",
 			"https://mcp.example.com.evil.test/mcp",
 		]) {
@@ -710,10 +740,10 @@ describe("frontmatter helpers", () => {
 
 describe("checkAgentPlugin (integration)", () => {
 	it("validates the repository's real plugin with no issues", async () => {
-		ensureRealBundle();
+		const pluginRoot = await buildRealPluginForCheck();
 		stubCiOff();
 		const report = await checkAgentPlugin({
-			pluginRoot: realPluginRoot,
+			pluginRoot,
 			repoRoot,
 			versionFromReleaseTrain: undefined,
 		});
@@ -754,6 +784,41 @@ describe("checkAgentPlugin (integration)", () => {
 		const client = new BitwardenClient({});
 		expect(() => client.secrets()).toThrowError(
 			/@bitwarden\/sdk-napi[\s\S]*portable bundle cannot carry/u,
+		);
+	});
+
+	it("refuses a Bitwarden SDK resolved from an ancestor of a portable plugin", async () => {
+		const source = readFileSync(
+			path.join(repoRoot, "plugins/hobo/src/bitwarden-sdk-napi.mts"),
+			"utf8",
+		);
+		const { pluginRoot } = await scratchPlugin({
+			"src/bitwarden-sdk-napi.mts": source,
+		});
+		const decoy = path.join(
+			pluginRoot,
+			"..",
+			"node_modules",
+			"@bitwarden",
+			"sdk-napi",
+		);
+		await mkdir(decoy, { recursive: true });
+		await writeFile(
+			path.join(decoy, "package.json"),
+			`${JSON.stringify({
+				name: "@bitwarden/sdk-napi",
+				version: "0.0.0",
+				main: "index.js",
+			})}\n`,
+		);
+		await writeFile(
+			path.join(decoy, "index.js"),
+			"exports.BitwardenClient = class {};\n",
+		);
+		const portableShim = path.join(pluginRoot, "src/bitwarden-sdk-napi.mts");
+		const { BitwardenClient } = await import(pathToFileURL(portableShim).href);
+		expect(() => new BitwardenClient({}).secrets()).toThrowError(
+			/resolved outside trusted root/u,
 		);
 	});
 
@@ -1240,33 +1305,91 @@ describe("checkAgentPlugin (integration)", () => {
 		).toBe(true);
 	});
 
-	it("validates PR and merge-group bundles without provenance or credentials", async () => {
+	it("binds non-publishing bundles to the current event, run, attempt, commit, and digest", async () => {
 		stubCiOff();
 		vi.stubEnv("CI", "1");
 		vi.stubEnv("GITHUB_ACTIONS", "true");
+		vi.stubEnv("GITHUB_RUN_ID", "run-current");
+		vi.stubEnv("GITHUB_RUN_ATTEMPT", "1");
+		vi.stubEnv("GITHUB_SHA", "a".repeat(40));
+		const bundleBody = "x".repeat(1024 * 1024);
 		const { pluginRoot, repoRoot: scratchRepo } = await scratchPlugin({
-			"bin/hobo-mcp.mjs": "x".repeat(1024 * 1024),
+			"bin/hobo-mcp.mjs": bundleBody,
 			"fixtures/deploy/vercel/package.json": "{}\n",
 		});
-		for (const eventName of ["pull_request", "merge_group"]) {
+		const markerPath = path.join(
+			pluginRoot,
+			".agent-plugin-nonpublishing.json",
+		);
+		const digest = createHash("sha256").update(bundleBody).digest("hex");
+		for (const eventName of ["pull_request", "merge_group"] as const) {
 			vi.stubEnv("GITHUB_EVENT_NAME", eventName);
+			await rm(markerPath, { force: true });
 			let verified = false;
+			const verifyAttestation = async () => {
+				verified = true;
+			};
+			const missing = await checkAgentPlugin({
+				pluginRoot,
+				repoRoot: scratchRepo,
+				verifyAttestation,
+			});
+			expect(
+				missing.issues.some(
+					(issue) =>
+						issue.file === ".agent-plugin-nonpublishing.json" &&
+						/requires a bundle marker/u.test(issue.message),
+				),
+			).toBe(true);
+			const marker = {
+				publishable: false,
+				reason: eventName,
+				runId: "run-current",
+				runAttempt: "1",
+				commitSha: "a".repeat(40),
+				digest,
+			};
+			await writeFile(markerPath, JSON.stringify(marker));
 			const report = await checkAgentPlugin({
 				pluginRoot,
 				repoRoot: scratchRepo,
-				verifyAttestation: async () => {
-					verified = true;
-				},
+				verifyAttestation,
 			});
 			expect(verified).toBe(false);
 			expect(
-				report.issues.some((issue) => /provenance/u.test(issue.message)),
-			).toBe(false);
+				report.issues.filter(
+					(issue) => issue.file === ".agent-plugin-nonpublishing.json",
+				),
+			).toEqual([]);
 			expect(
 				report.notes.some((note) =>
 					/non-publishing PR validation rebuilt and checked/u.test(note),
 				),
 			).toBe(true);
+			for (const changes of [
+				{ publishable: true },
+				{
+					reason: eventName === "pull_request" ? "merge_group" : "pull_request",
+				},
+				{ runId: "run-previous" },
+				{ runAttempt: "2" },
+				{ commitSha: "b".repeat(40) },
+				{ digest: createHash("sha256").update("stale").digest("hex") },
+			]) {
+				await writeFile(markerPath, JSON.stringify({ ...marker, ...changes }));
+				const stale = await checkAgentPlugin({
+					pluginRoot,
+					repoRoot: scratchRepo,
+					verifyAttestation,
+				});
+				expect(
+					stale.issues.some(
+						(issue) =>
+							issue.file === ".agent-plugin-nonpublishing.json" &&
+							/not a valid|does not bind/u.test(issue.message),
+					),
+				).toBe(true);
+			}
 		}
 	});
 

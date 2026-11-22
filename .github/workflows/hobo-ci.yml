@@ -1437,9 +1437,9 @@ jobs:
     # merge-queue-green, finding 154): GitHub fast-forwards main to the commit the
     # merge_group run tested, so this job would repeat that run. Schedule and
     # workflow_dispatch always run it. runnerRouting.mainGate.reuseMergeQueue false turns the skip off.
-    needs: [route, ci-runner-image]
+    needs: [route, ci-runner-image, agent-plugin-provenance]
     if: >-
-      !cancelled() &&
+      !cancelled() && needs.agent-plugin-provenance.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       needs.route.outputs.merge-queue-green != 'true' && (
       github.event_name == 'push' || github.event_name == 'schedule' ||
@@ -1629,7 +1629,7 @@ jobs:
       - name: Verify agent plugin attestation
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run agent-plugin:check -- --verify-attestation
+        run: pnpm run agent-plugin:build && pnpm run agent-plugin:check -- --verify-attestation
       - name: S0 gate set
         timeout-minutes: 20
         env:
@@ -1644,7 +1644,6 @@ jobs:
           if [ "$SCOPE" = "affected" ]; then
             pnpm agent:check -- --base="$BASE" --external-workspace-tests
           else
-            pnpm run agent-plugin:build
             pnpm run check:all
           fi
       - name: Generated-output drift

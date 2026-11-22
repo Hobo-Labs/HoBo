@@ -56,17 +56,20 @@ On trusted `main` pushes, schedules, and manual runs, HoBo Fabric's isolated
 provenance with pinned `actions/attest-build-provenance`. It is the only
 `hobo-ci.yml` job with `id-token: write` and `attestations: write`. Pull-request
 and merge-group jobs have only `contents: read`, no OIDC grant, and no
-`GH_TOKEN`; they build a bundle marked non-publishing, validate the current
-bundle, and cannot be mistaken for trusted provenance. The build writes no
-bearer token or local attestation record.
-`GITHUB_ACTIONS=true`, a caller-provided token, and custom environment switches
-cannot admit a build or substitute for verification. Trusted publication
-requires the isolated job's OIDC capability; trusted verification requires
-complete run identity and a read token.
+`GH_TOKEN`; they build a bundle marked non-publishing. The marker binds the
+event, run ID, run attempt, commit, and bundle SHA-256 digest. Validation
+requires that marker and rejects a missing, malformed, stale, wrong-event, or
+wrong-digest record. The build writes no bearer token or local attestation
+record. `GITHUB_ACTIONS=true`, a caller-provided token, and custom environment
+switches cannot admit a build or substitute for verification. Trusted
+publication requires the isolated job's OIDC capability; trusted verification
+requires complete run identity and a read token.
 
 On trusted `main`, `main-gate` has `contents: read` and `attestations: read`.
-Only its verification and S0 steps receive the step-scoped `GH_TOKEN`; it is
-never exported through `GITHUB_ENV`. The signed subject is the sha256 of
+It rebuilds the current commit's bundle immediately before verification on both
+affected and full-scope paths, and requires the current run's provenance job to
+succeed. Only its verification and S0 steps receive the step-scoped `GH_TOKEN`;
+it is never exported through `GITHUB_ENV`. The signed subject is the sha256 of
 `bin/hobo-mcp.mjs`; copied `fixtures/deploy` is checked separately for presence
 and secrets, not attestation bytes.
 

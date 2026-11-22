@@ -11,26 +11,33 @@ export UNITY_NON_INTERACTIVE=1
 export UNITY_NO_BANNER=1
 export UNITY_FORMAT=json
 
-unity --version || {
+unity_version="$(unity --version)" || {
   echo "unity CLI missing: stop for human provisioning; agents never install it"
   exit 1
 }
+if [ "$unity_version" != "1.0.0-beta.2" ]; then
+  echo "unexpected unity CLI version: stop for human provisioning"
+  exit 1
+fi
 
 unity doctor
-unity auth status
+unity auth status >/dev/null   # exit-status check only; never capture this output
 # Interactive machines: unity auth login
 ```
 
 Credentialed CI jobs may run only on protected, trusted refs and environments,
 never on forked or otherwise untrusted pull requests whose tests and build
-methods execute repository-controlled code. Prefer short-lived, least-privilege
+methods execute repository-controlled code. The shell guard below is
+defense-in-depth, not authorization: grant credentials only from a protected
+platform environment with approvals and branch protection, and allowlist the
+trusted events, repository, and ref there. Prefer short-lived, least-privilege
 federated credentials where supported, and never commit credentials.
 
-A missing CLI is a stop condition, never an install step: jobs and CI lanes run
-a pre-installed `unity` binary whose version and image digest are recorded in
-the controlled image, and agents never download or run an installer.
-`unity --version` should report the field-tested `1.0.0-beta.2`; treat any other
-version as drift and re-verify flags against live `--help`.
+A missing or unexpected CLI is a stop condition, never an install or help-retry
+step. Credentialed or reused CI runners must stop before this bootstrap unless
+trusted infrastructure has pinned the image by digest and verified its
+provenance; recording a digest or reading `unity --version` is not attestation.
+Agents never download or run an installer.
 
 ## Workflow A — First-time project enablement
 
@@ -78,8 +85,15 @@ Prefer **spawned** Editor jobs for isolation:
 
 ```bash
 set -euo pipefail
-if [ "${GITHUB_EVENT_NAME-}" = "pull_request" ] || [ "${GITHUB_REF-}" != "refs/heads/main" ]; then
-  echo "credentialed build/test requires a protected trusted ref"
+case "${GITHUB_ACTIONS-}:${GITHUB_EVENT_NAME-}:${GITHUB_REPOSITORY-}:${GITHUB_REF-}" in
+  true:push:Hobo-Labs/HoBo:refs/heads/main|true:schedule:Hobo-Labs/HoBo:refs/heads/main|true:workflow_dispatch:Hobo-Labs/HoBo:refs/heads/main) ;;
+  *)
+    echo "credentialed build/test requires GitHub Actions on the HoBo main ref from push, schedule, or workflow_dispatch"
+    exit 1
+    ;;
+esac
+if [ "${GITHUB_REF_PROTECTED-}" != "true" ]; then
+  echo "credentialed build/test requires a protected ref"
   exit 1
 fi
 unity test "$PROJECT_PATH" --mode EditMode --output test-results.xml

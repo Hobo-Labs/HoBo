@@ -11,8 +11,6 @@
     "GITHUB_ACTIONS",
     "GITHUB_EVENT_NAME",
     "GITHUB_HEAD_SHA",
-    "GITHUB_RUN_ATTEMPT",
-    "GITHUB_RUN_ID",
     "GITHUB_SHA",
     "GITHUB_REPOSITORY",
     "GITHUB_SERVER_URL",
@@ -64,6 +62,7 @@
     "test": {
       "dependsOn": ["build"],
       "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"],
+      "env": ["GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID"],
       "outputs": []
     },
     "@hobo/iac-alchemy#test": { "dependsOn": ["build", "@hobo/broker#build", "@hobo/dispatcher#build", "@hobo/pricing#build"], "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "!**/__snapshots__/**"], "outputs": [] },

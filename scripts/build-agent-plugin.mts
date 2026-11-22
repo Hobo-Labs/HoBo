@@ -21,10 +21,7 @@ import { agentPluginCiActive } from "./check-agent-plugin.ts";
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const pluginRoot = path.join(repoRoot, "plugins", "hobo");
 const entry = path.join(repoRoot, "packages/hobo/src/bin/hobo-mcp.ts");
-const outdir = path.join(pluginRoot, "bin");
-const outfile = path.join(outdir, "hobo-mcp.mjs");
 const fixturesSource = path.join(repoRoot, "packages/hobo/fixtures/deploy");
-const fixturesTarget = path.join(pluginRoot, "fixtures/deploy");
 const buildLockPath = path.join(pluginRoot, ".agent-plugin-build.lock");
 const nonPublishingMarker = ".agent-plugin-nonpublishing.json";
 
@@ -108,7 +105,7 @@ export function agentPluginBuildIsNonPublishing(
 
 export function agentPluginBuildAttestationIssue(
 	env: NodeJS.ProcessEnv = process.env,
-	headSha?: string | undefined,
+	headSha: string | undefined,
 ): string | undefined {
 	if (agentPluginLocalBuildAllowed(env)) return undefined;
 	if (!agentPluginCiActive(env)) {
@@ -119,6 +116,16 @@ export function agentPluginBuildAttestationIssue(
 	}
 	const eventName = env.GITHUB_EVENT_NAME?.trim();
 	const nonPublishing = agentPluginBuildIsNonPublishing(env);
+	const nonPublishingRef =
+		eventName === "pull_request"
+			? /^refs\/pull\/[1-9][0-9]*\/(?:merge|head)$/u.test(
+					env.GITHUB_REF?.trim() ?? "",
+				)
+			: eventName === "merge_group"
+				? /^refs\/heads\/gh-readonly-queue\/.+\/pr-[1-9][0-9]*-[0-9a-f]{40}$/u.test(
+						env.GITHUB_REF?.trim() ?? "",
+					)
+				: false;
 	const runIdentity = [
 		"GITHUB_RUN_ID",
 		"GITHUB_RUN_ATTEMPT",
@@ -134,20 +141,24 @@ export function agentPluginBuildAttestationIssue(
 			"https://github.com" ||
 		!identityComplete ||
 		(nonPublishing
-			? !/^refs\/pull\/\d+\/(?:merge|head)$/u.test(env.GITHUB_REF?.trim() ?? "")
+			? !nonPublishingRef
 			: (eventName !== "push" &&
 					eventName !== "schedule" &&
 					eventName !== "workflow_dispatch") ||
 				env.GITHUB_REF !== "refs/heads/main")
 	) {
 		return nonPublishing
-			? "non-publishing PR bundle builds require the HoBo repository, a GitHub pull-request ref, and complete run, attempt, commit, and server identity"
+			? "non-publishing PR bundle builds require the HoBo repository, the event's GitHub pull-request or merge-group ref, and complete run, attempt, commit, and server identity"
 			: "CI bundle builds require non-publishing PR validation or the HoBo repository's trusted main ref with complete run, attempt, commit, and server identity";
 	}
-	if (
-		headSha !== undefined &&
-		headSha.toLowerCase() !== env.GITHUB_SHA?.trim().toLowerCase()
-	) {
+	const commitPattern = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu;
+	if (!commitPattern.test(env.GITHUB_SHA?.trim() ?? "")) {
+		return "GITHUB_SHA must be a full commit ID";
+	}
+	if (headSha === undefined || !commitPattern.test(headSha)) {
+		return "could not resolve the checked-out HEAD commit";
+	}
+	if (headSha.toLowerCase() !== env.GITHUB_SHA?.trim().toLowerCase()) {
 		return "GITHUB_SHA does not match the checked-out commit";
 	}
 	if (nonPublishing) return undefined;
@@ -176,12 +187,16 @@ function trustedBuildFromDirtyTree(): boolean {
 	return status === undefined || status.length > 0;
 }
 
-function removeStaleOutputs(): void {
+function removeStaleOutputs(
+	targetPluginRoot: string,
+	targetOutfile: string,
+	targetFixtures: string,
+): void {
 	for (const stale of [
-		path.join(pluginRoot, ".bundle-attestation.json"),
-		path.join(pluginRoot, nonPublishingMarker),
-		outfile,
-		fixturesTarget,
+		path.join(targetPluginRoot, ".bundle-attestation.json"),
+		path.join(targetPluginRoot, nonPublishingMarker),
+		targetOutfile,
+		targetFixtures,
 	]) {
 		rmSync(stale, { recursive: true, force: true });
 		if (existsSync(stale)) {
@@ -192,7 +207,12 @@ function removeStaleOutputs(): void {
 	}
 }
 
-async function buildAgentPlugin(): Promise<void> {
+export async function buildAgentPlugin(
+	targetPluginRoot = pluginRoot,
+): Promise<void> {
+	const targetOutdir = path.join(targetPluginRoot, "bin");
+	const targetOutfile = path.join(targetOutdir, "hobo-mcp.mjs");
+	const targetFixtures = path.join(targetPluginRoot, "fixtures/deploy");
 	const attestationIssue = agentPluginBuildAttestationIssue(
 		process.env,
 		gitOutput(["rev-parse", "HEAD"]),
@@ -209,15 +229,15 @@ async function buildAgentPlugin(): Promise<void> {
 		process.exitCode = 1;
 		return;
 	}
-	removeStaleOutputs();
-	mkdirSync(outdir, { recursive: true });
+	removeStaleOutputs(targetPluginRoot, targetOutfile, targetFixtures);
+	mkdirSync(targetOutdir, { recursive: true });
 	const result = await esbuild.build({
 		entryPoints: [entry],
 		bundle: true,
 		platform: "node",
 		format: "esm",
 		target: "node22",
-		outfile,
+		outfile: targetOutfile,
 		allowOverwrite: true,
 		sourcemap: false,
 		legalComments: "none",
@@ -234,22 +254,24 @@ async function buildAgentPlugin(): Promise<void> {
 		},
 	});
 	if (result.errors.length > 0) {
-		rmSync(outfile, { force: true });
+		rmSync(targetOutfile, { force: true });
 		process.exitCode = 1;
 		return;
 	}
-	cpSync(fixturesSource, fixturesTarget, { recursive: true });
+	cpSync(fixturesSource, targetFixtures, { recursive: true });
 	if (agentPluginBuildIsNonPublishing()) {
 		const marker = {
 			publishable: false,
 			reason: process.env.GITHUB_EVENT_NAME?.trim(),
-			runId: process.env.GITHUB_RUN_ID,
-			runAttempt: process.env.GITHUB_RUN_ATTEMPT,
-			commitSha: process.env.GITHUB_SHA,
-			digest: createHash("sha256").update(readFileSync(outfile)).digest("hex"),
+			runId: process.env.GITHUB_RUN_ID?.trim(),
+			runAttempt: process.env.GITHUB_RUN_ATTEMPT?.trim(),
+			commitSha: process.env.GITHUB_SHA?.trim(),
+			digest: createHash("sha256")
+				.update(readFileSync(targetOutfile))
+				.digest("hex"),
 		};
 		writeFileSync(
-			path.join(pluginRoot, nonPublishingMarker),
+			path.join(targetPluginRoot, nonPublishingMarker),
 			`${JSON.stringify(marker, null, 2)}\n`,
 			{ flag: "wx" },
 		);

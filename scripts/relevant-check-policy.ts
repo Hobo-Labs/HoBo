@@ -581,31 +581,6 @@ export function selectRelevantChecks(
 		});
 	}
 
-	const agentPluginChanged = files.some(
-		(file) =>
-			file.startsWith("plugins/hobo/") ||
-			file === "scripts/check-agent-plugin.ts" ||
-			file === "scripts/lib/nbgv-release-version.mts" ||
-			file === "scripts/build-agent-plugin.mts" ||
-			file === "scripts/test/check-agent-plugin.test.ts" ||
-			file.startsWith("packages/agent-skills/") ||
-			file.startsWith("packages/hobo-ci/") ||
-			file.startsWith("packages/hobo/src/") ||
-			file === "packages/hobo/test/agent-plugin-bundle.test.ts" ||
-			file.startsWith("tools/agent-plugins/schemas/") ||
-			file === "docs/agent-tooling.md" ||
-			file === "version.json" ||
-			file.startsWith(".agents/skills/hobo-setup/") ||
-			file.startsWith(".agents/skills/hobo-deploy/"),
-	);
-	if (agentPluginChanged) {
-		checks.push({
-			command: "pnpm",
-			args: ["run", "agent-plugin:check"],
-			reason:
-				"the plugins/hobo manifest, MCP wiring, synced skills, agent-tooling extract, and release-train version pin must satisfy Agent Plugins 1.0.0",
-		});
-	}
 	const agentPluginBundleInputs = files.some(
 		(file) =>
 			/^plugins\/hobo\/(bin|fixtures|src)\//u.test(file) ||
@@ -644,6 +619,32 @@ export function selectRelevantChecks(
 			reason:
 				"the portable MCP bundle must build and answer initialize/tools/list when its inputs change",
 			serial: true,
+		});
+	}
+	const agentPluginChanged = files.some(
+		(file) =>
+			file.startsWith("plugins/hobo/") ||
+			file === "scripts/check-agent-plugin.ts" ||
+			file === "scripts/lib/nbgv-release-version.mts" ||
+			file === "scripts/build-agent-plugin.mts" ||
+			file === "scripts/test/check-agent-plugin.test.ts" ||
+			file.startsWith("packages/agent-skills/") ||
+			file.startsWith("packages/hobo-ci/") ||
+			file.startsWith("packages/hobo/src/") ||
+			file === "packages/hobo/test/agent-plugin-bundle.test.ts" ||
+			file.startsWith("tools/agent-plugins/schemas/") ||
+			file === "docs/agent-tooling.md" ||
+			file === "version.json" ||
+			file.startsWith(".agents/skills/hobo-setup/") ||
+			file.startsWith(".agents/skills/hobo-deploy/"),
+	);
+	if (agentPluginChanged) {
+		checks.push({
+			command: "pnpm",
+			args: ["run", "agent-plugin:check"],
+			reason:
+				"the plugins/hobo manifest, MCP wiring, synced skills, agent-tooling extract, and release-train version pin must satisfy Agent Plugins 1.0.0",
+			serial: agentPluginBundleInputs,
 		});
 	}
 

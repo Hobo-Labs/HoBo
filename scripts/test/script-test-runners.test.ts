@@ -219,6 +219,24 @@ test("fixture ${index}", async () => {
 		);
 	});
 
+	it("rebuilds the agent-plugin bundle before checking it", () => {
+		const { checks } = selectRelevantChecks({
+			files: ["packages/hobo/src/bin/hobo-mcp.ts"],
+			base: "origin/main",
+		});
+		const bundleTest = checks.findIndex((check) =>
+			check.args.includes("test/agent-plugin-bundle.test.ts"),
+		);
+		const pluginCheck = checks.findIndex(
+			(check) =>
+				check.args[0] === "run" && check.args[1] === "agent-plugin:check",
+		);
+		assert.notEqual(bundleTest, -1);
+		assert.notEqual(pluginCheck, -1);
+		assert.ok(bundleTest < pluginCheck);
+		assert.equal(checks[pluginCheck]?.serial, true);
+	});
+
 	it("runs each scripts test the relevant-check policy selects under that runner too", () => {
 		const policy = readFileSync(
 			join(root, "scripts/relevant-check-policy.ts"),

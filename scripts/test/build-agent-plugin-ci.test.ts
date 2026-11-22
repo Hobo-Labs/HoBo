@@ -53,110 +53,135 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 		);
 	});
 
-	it("admits only trusted main publication, main verification, or identity-checked non-publishing PR builds", () => {
+	it("admits only trusted main publication, main verification, or identity-checked non-publishing builds", () => {
+		const head = "a".repeat(40);
 		const trustedMain = {
 			...githubRun,
 			GITHUB_EVENT_NAME: "push",
 			GITHUB_REF: "refs/heads/main",
 		};
-		expect(agentPluginBuildAttestationIssue(githubRun)).toMatch(
+		expect(agentPluginBuildAttestationIssue(githubRun, head)).toMatch(
 			/trusted main ref/u,
 		);
 		expect(
-			agentPluginBuildAttestationIssue({
-				...trustedMain,
-				GITHUB_JOB: "agent-plugin-provenance",
-				ACTIONS_ID_TOKEN_REQUEST_URL: "https://actions.example/oidc",
-				ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-capability",
-			}),
+			agentPluginBuildAttestationIssue(
+				{
+					...trustedMain,
+					GITHUB_JOB: "agent-plugin-provenance",
+					ACTIONS_ID_TOKEN_REQUEST_URL: "https://actions.example/oidc",
+					ACTIONS_ID_TOKEN_REQUEST_TOKEN: "request-capability",
+				},
+				head,
+			),
 		).toBeUndefined();
 		expect(
-			agentPluginBuildAttestationIssue({
-				...trustedMain,
-				GITHUB_JOB: "main-gate",
-			}),
+			agentPluginBuildAttestationIssue(
+				{ ...trustedMain, GITHUB_JOB: "main-gate" },
+				head,
+			),
 		).toBeUndefined();
 		expect(
-			agentPluginBuildAttestationIssue({
-				...trustedMain,
-				GITHUB_JOB: "agent-plugin-provenance",
-			}),
+			agentPluginBuildAttestationIssue(
+				{ ...trustedMain, GITHUB_JOB: "agent-plugin-provenance" },
+				head,
+			),
 		).toMatch(/OIDC capability/u);
-		for (const eventName of ["pull_request", "merge_group"]) {
-			const pr = {
-				...githubRun,
-				GITHUB_EVENT_NAME: eventName,
-				GITHUB_REF: "refs/pull/2913/merge",
-			};
-			expect(agentPluginBuildIsNonPublishing(pr)).toBe(true);
-			expect(agentPluginBuildAttestationIssue(pr)).toBeUndefined();
-			expect(
-				agentPluginBuildAttestationIssue(pr, "a".repeat(40)),
-			).toBeUndefined();
-			expect(agentPluginBuildAttestationIssue(pr, "b".repeat(40))).toMatch(
+		const pullRequest = {
+			...githubRun,
+			GITHUB_EVENT_NAME: "pull_request",
+			GITHUB_REF: "refs/pull/2913/merge",
+		};
+		const mergeGroup = {
+			...githubRun,
+			GITHUB_EVENT_NAME: "merge_group",
+			GITHUB_REF: `refs/heads/gh-readonly-queue/main/pr-2913-${head}`,
+		};
+		for (const build of [pullRequest, mergeGroup]) {
+			expect(agentPluginBuildIsNonPublishing(build)).toBe(true);
+			expect(agentPluginBuildAttestationIssue(build, head)).toBeUndefined();
+			expect(agentPluginBuildAttestationIssue(build, undefined)).toMatch(
+				/could not resolve the checked-out HEAD commit/u,
+			);
+			expect(agentPluginBuildAttestationIssue(build, "unparseable")).toMatch(
+				/could not resolve the checked-out HEAD commit/u,
+			);
+			expect(agentPluginBuildAttestationIssue(build, "b".repeat(40))).toMatch(
 				/does not match the checked-out commit/u,
 			);
-			expect(
-				agentPluginBuildAttestationIssue({
-					...pr,
-					GITHUB_REPOSITORY: "attacker/fork",
-				}),
-			).toMatch(/non-publishing PR bundle builds require/u);
-			expect(
-				agentPluginBuildAttestationIssue({
-					...pr,
-					GITHUB_SERVER_URL: "https://github.com.evil",
-				}),
-			).toMatch(/non-publishing PR bundle builds require/u);
-			expect(
-				agentPluginBuildAttestationIssue({
-					...pr,
-					GITHUB_REF: "refs/heads/main",
-				}),
-			).toMatch(/non-publishing PR bundle builds require/u);
+			for (const changes of [
+				{ GITHUB_REPOSITORY: "attacker/fork" },
+				{ GITHUB_SERVER_URL: "https://github.com.evil" },
+				{ GITHUB_REF: "refs/heads/main" },
+			]) {
+				expect(
+					agentPluginBuildAttestationIssue({ ...build, ...changes }, head),
+				).toMatch(/non-publishing PR bundle builds require/u);
+			}
 		}
 		expect(
-			agentPluginBuildAttestationIssue({
-				...trustedMain,
-				GITHUB_REF: "refs/heads/feature",
-				GITHUB_JOB: "main-gate",
-			}),
+			agentPluginBuildAttestationIssue(
+				{ ...mergeGroup, GITHUB_REF: pullRequest.GITHUB_REF },
+				head,
+			),
+		).toMatch(/non-publishing PR bundle builds require/u);
+		expect(
+			agentPluginBuildAttestationIssue(
+				{ ...pullRequest, GITHUB_REF: mergeGroup.GITHUB_REF },
+				head,
+			),
+		).toMatch(/non-publishing PR bundle builds require/u);
+		expect(
+			agentPluginBuildAttestationIssue(
+				{
+					...trustedMain,
+					GITHUB_REF: "refs/heads/feature",
+					GITHUB_JOB: "main-gate",
+				},
+				head,
+			),
 		).toMatch(/trusted main ref/u);
 	});
 
 	it("refuses unguarded builds outside recognized CI", () => {
-		expect(agentPluginBuildAttestationIssue({})).toMatch(
+		expect(agentPluginBuildAttestationIssue({}, undefined)).toMatch(
 			/HOBO_AGENT_PLUGIN_LOCAL_BUILD=1/u,
 		);
 		expect(
-			agentPluginBuildAttestationIssue({
-				HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1",
-			}),
+			agentPluginBuildAttestationIssue(
+				{ HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1" },
+				undefined,
+			),
 		).toBeUndefined();
 		expect(
-			agentPluginBuildAttestationIssue({
-				HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1",
-				CI: "1",
-			}),
+			agentPluginBuildAttestationIssue(
+				{ HOBO_AGENT_PLUGIN_LOCAL_BUILD: "1", CI: "1" },
+				undefined,
+			),
 		).toMatch(/GitHub Actions/u);
 	});
 
 	it("does not treat custom environment switches as attestation evidence", () => {
 		expect(
-			agentPluginBuildAttestationIssue({
-				CI: "1",
-				GITHUB_ACTIONS: "true",
-				HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1",
-			}),
+			agentPluginBuildAttestationIssue(
+				{
+					CI: "1",
+					GITHUB_ACTIONS: "true",
+					HOBO_AGENT_PLUGIN_ATTESTED_EXTERNALLY: "1",
+				},
+				undefined,
+			),
 		).toMatch(/trusted main ref/u);
 		expect(
-			agentPluginBuildAttestationIssue({
-				...githubRun,
-				GITHUB_EVENT_NAME: "push",
-				GITHUB_REF: "refs/heads/main",
-				HOBO_AGENT_PLUGIN_VERIFY: "1",
-				GH_TOKEN: "verification-token",
-			}),
+			agentPluginBuildAttestationIssue(
+				{
+					...githubRun,
+					GITHUB_EVENT_NAME: "push",
+					GITHUB_REF: "refs/heads/main",
+					HOBO_AGENT_PLUGIN_VERIFY: "1",
+					GH_TOKEN: "verification-token",
+				},
+				"a".repeat(40),
+			),
 		).toMatch(/main-gate verification job/u);
 	});
 
@@ -170,7 +195,7 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 		expect(source).not.toContain("fetch(");
 	});
 
-	it("passes run identity through without hashing every test task", () => {
+	it("hashes run identity into every test task", () => {
 		const turbo = z
 			.object({
 				globalPassThroughEnv: z.array(z.string()),
@@ -182,8 +207,8 @@ describe("build-agent-plugin CI posture", { timeout: 300_000 }, () => {
 				JSON.parse(readFileSync(path.join(repoRoot, "turbo.json"), "utf8")),
 			);
 		for (const name of ["GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID"]) {
-			expect(turbo.globalPassThroughEnv).toContain(name);
-			expect(turbo.tasks.test.env ?? []).not.toContain(name);
+			expect(turbo.globalPassThroughEnv).not.toContain(name);
+			expect(turbo.tasks.test.env ?? []).toContain(name);
 		}
 	});
 });

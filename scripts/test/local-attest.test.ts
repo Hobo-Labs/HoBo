@@ -1550,6 +1550,46 @@ describe("a local run", () => {
 		assert.equal(existsSync(home), false);
 	});
 
+	it("supplies event-specific GitHub identity for plugin builds", async () => {
+		const run = await runIn(
+			planOf([
+				{
+					id: "ci-guard",
+					steps: [
+						{
+							run: 'echo "$GITHUB_EVENT_NAME $GITHUB_JOB $GITHUB_REF $GITHUB_REPOSITORY $GITHUB_RUN_ID $GITHUB_RUN_ATTEMPT $GITHUB_SHA $GITHUB_SERVER_URL" >> "$RECORD"',
+							local: "run",
+						},
+					],
+				},
+			]),
+			["pull_request", "merge_group"],
+		);
+		await run.outcome;
+		const lines = run.lines();
+		assert.equal(lines.length, 2);
+		let sharedRunId = "";
+		for (const [index, event] of ["pull_request", "merge_group"].entries()) {
+			const [name, job, ref, repository, runId, attempt, sha, server] =
+				lines[index]?.split(" ") ?? [];
+			assert.equal(name, event);
+			assert.equal(job, "ci-guard");
+			assert.equal(
+				ref,
+				event === "pull_request"
+					? "refs/pull/1/merge"
+					: `refs/heads/gh-readonly-queue/${run.target.baseBranch}/pr-1-${run.target.base}`,
+			);
+			assert.equal(repository, "Hobo-Labs/HoBo");
+			assert.match(runId ?? "", /^[0-9]+$/u);
+			assert.equal(attempt, "1");
+			assert.equal(sha, run.target.mergeCommit);
+			assert.equal(server, "https://github.com");
+			if (sharedRunId) assert.equal(runId, sharedRunId);
+			sharedRunId = runId ?? "";
+		}
+	});
+
 	it("signs nothing when a command fails, and still puts HEAD back", async () => {
 		const run = await runIn(
 			planOf([

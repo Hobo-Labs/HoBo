@@ -33,7 +33,7 @@ Think of the Unity CLI as three stacked surfaces:
 | Layer | Role | Typical verbs |
 |-------|------|----------------|
 | **Manage** | Machine setup — Editors, modules, auth, projects | `editors`, `auth`, `open` |
-| **Drive** | Control a live Editor/Player via Pipeline | `pipeline install`, `command`, `list`, `status` |
+| **Drive** | Control a live Editor/Player via Pipeline | `command`, `list`, `status` |
 | **Reach** | Ad-hoc power when no registered command fits | `command eval`, `command eval_file` |
 
 **Agent loop**: observe → act → verify. Prefer structured results over scraping console text.
@@ -59,16 +59,23 @@ Think of the Unity CLI as three stacked surfaces:
 
 ```bash
 # Verify a preinstalled CLI. Installation is not an agent or CI step.
-unity --version   # must report the field-tested 1.0.0-beta.2; anything else is drift
+unity_version="$(unity --version)" || {
+  echo "unity CLI missing: stop for human provisioning; agents never install it"
+  exit 1
+}
+if [ "$unity_version" != "1.0.0-beta.2" ]; then
+  echo "unexpected unity CLI version: stop for human provisioning"
+  exit 1
+fi
 unity --help
 unity doctor --format json
-unity auth status --format json   # never log or commit this output
+unity auth status --format json >/dev/null   # exit-status check only; never capture this output
 unity editors -i --format json
 ```
 
 Binary typically lives under `~/.unity/bin` (sourced via `~/.unity/env`). Automation hosts use a preinstalled, version-pinned CLI from a controlled image.
 
-**Trust boundary**: a version string is not authenticity. CI must record the image digest/signature and binary hash out of band; this skill never downloads or runs an installer. A missing CLI or a drifted version is a stop condition requiring human provisioning. Re-verify flags against live `--help` before trusting this skill's command catalog.
+**Trust boundary**: a version string is not authenticity. Before running Unity, CI must verify the image signature and digest and compare the CLI binary hash against an approved pin; missing, unverifiable, or mismatched evidence is a stop condition. Recording a digest or reading `unity --version` is not attestation. This skill never downloads or runs an installer. A missing CLI or a drifted version is a stop condition requiring human provisioning. Re-verify flags against live `--help` before trusting this skill's command catalog.
 
 **Global flags worth muscle memory**:
 - `--format json|tsv|human|ndjson` / env `UNITY_FORMAT`
@@ -118,7 +125,7 @@ unity editors add /Applications/Unity/Hub/Editor/6000.5.4f1/Unity.app
 ```bash
 unity open ./MyProject                  # or: unity ./MyProject
 unity auth login
-unity auth status --format json
+unity auth status --format json >/dev/null   # exit-status check only; never capture this output
 unity auth logout
 ```
 
@@ -128,15 +135,14 @@ Deep flags, logs, Hub migration: see `references/cli-reference.md`.
 
 ## Drive Layer (Pipeline + Commands)
 
-Requires **Unity 6.0+**, signed-in CLI (`unity auth login`), and package in the project:
+Requires **Unity 6.0+**, signed-in CLI (`unity auth login`), and the reviewed `com.unity.pipeline` package already provisioned in the project:
 
 ```bash
-unity pipeline install --project-path . --package-version 0.3.1-exp.1
 unity pipeline list --format json
 unity status --format json
 ```
 
-After install, the Editor must import/recompile. Package present ≠ server reachable — wait until `pipeline list` / `status` shows a reachable server.
+Pipeline installation is a human provisioning step. After provisioning, the Editor must import/recompile. Package present ≠ server reachable — wait until `pipeline list` / `status` shows a reachable server.
 
 ```bash
 unity command                           # list commands on connected Editor
@@ -293,7 +299,7 @@ Better: read the actual output of every restore call before declaring the scene 
 
 **IMPORTANT**: Choose the path from context — do not always open the Editor, always eval, or always batchmode.
 
-- **Greenfield machine** → human provisions pinned CLI/Editor/modules → auth → open project → pinned pipeline install
+- **Greenfield machine** → human provisions pinned CLI/Editor/modules and the reviewed pipeline package → auth → open project → verify pipeline list/status
 - **Day-to-day gameplay fix with Editor open** → `status` → discover commands → mutate → Play Mode → console/logs
 - **Agent-built scenes / kitbash vignettes** → Workflow G: rebuild recipe + composition audit + dual screenshots
 - **CI regression** → non-interactive `unity test` / `unity build` with JSON/XML artifacts

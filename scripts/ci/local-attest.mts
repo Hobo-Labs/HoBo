@@ -1346,6 +1346,15 @@ export async function runAttestedJobs(input: {
 									CI: "true",
 									GITHUB_ACTIONS: "true",
 									GITHUB_EVENT_NAME: event,
+									GITHUB_JOB: job.id,
+									GITHUB_REF:
+										event === "pull_request"
+											? "refs/pull/1/merge"
+											: `refs/heads/gh-readonly-queue/${target.baseBranch}/pr-1-${target.base}`,
+									GITHUB_REPOSITORY: "Hobo-Labs/HoBo",
+									GITHUB_RUN_ATTEMPT: "1",
+									GITHUB_RUN_ID: String(startedAt.getTime()),
+									GITHUB_SERVER_URL: "https://github.com",
 									GITHUB_SHA: target.mergeCommit,
 									GITHUB_WORKSPACE: root,
 									RUNNER_TEMP: scratch,

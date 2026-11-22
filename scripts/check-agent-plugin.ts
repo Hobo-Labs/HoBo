@@ -60,6 +60,14 @@ const FORBIDDEN_ENV_KEYS: readonly string[] = [
 const MCP_ENTRYPOINT = "${PLUGIN_ROOT}/bin/hobo-mcp.mjs";
 const BUNDLE_ATTESTATION = ".bundle-attestation.json";
 const NON_PUBLISHING_MARKER = ".agent-plugin-nonpublishing.json";
+const NonPublishingMarkerSchema = z.strictObject({
+	publishable: z.literal(false),
+	reason: z.enum(["pull_request", "merge_group"]),
+	runId: z.string().min(1),
+	runAttempt: z.string().min(1),
+	commitSha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu),
+	digest: z.string().regex(/^[0-9a-f]{64}$/u),
+});
 const SECRET_KEY_PATTERN =
 	/(?:token|secret|password|passwd|credential|api[-_]?key|private[-_]?key)/iu;
 export const SECRET_VALUE_PATTERN =
@@ -503,7 +511,7 @@ export function checkMcpEndpointUrl(
 	const issue = (message: string): AgentPluginIssue[] => [
 		{ file: where, message },
 	];
-	if (/\$\{|[\\\s]|%2(?:e|f|5c)/iu.test(value) || value.includes("..")) {
+	if (/\$\{|[\\\s]|%(?:2e|2f|5c)/iu.test(value) || value.includes("..")) {
 		return issue("MCP endpoint URL must not contain expansion or traversal");
 	}
 	let url: URL;
@@ -1310,18 +1318,59 @@ async function bundleAttestationIssues(
 			BUNDLE_ATTESTATION,
 		);
 	}
+	const eventName = process.env.GITHUB_EVENT_NAME?.trim();
 	const nonPublishing =
-		process.env.GITHUB_EVENT_NAME === "pull_request" ||
-		process.env.GITHUB_EVENT_NAME === "merge_group";
-	if (existsSync(path.join(pluginRoot, NON_PUBLISHING_MARKER))) {
-		return nonPublishing
-			? []
-			: failure(
-					"is an untrusted non-publishing PR bundle; rebuild in the trusted agent-plugin-provenance job before verification",
-					NON_PUBLISHING_MARKER,
-				);
+		eventName === "pull_request" || eventName === "merge_group";
+	const markerPath = path.join(pluginRoot, NON_PUBLISHING_MARKER);
+	if (!nonPublishing) {
+		if (existsSync(markerPath)) {
+			return failure(
+				"is an untrusted non-publishing PR bundle; rebuild in the trusted agent-plugin-provenance job before verification",
+				NON_PUBLISHING_MARKER,
+			);
+		}
+	} else {
+		if (!existsSync(markerPath)) {
+			return failure(
+				"non-publishing PR validation requires a bundle marker from the current build",
+				NON_PUBLISHING_MARKER,
+			);
+		}
+		let parsed: ReturnType<typeof NonPublishingMarkerSchema.safeParse>;
+		try {
+			parsed = NonPublishingMarkerSchema.safeParse(
+				JSON.parse(readFileSync(markerPath, "utf8")),
+			);
+		} catch {
+			return failure(
+				"is not a valid non-publishing bundle marker; rebuild in the current PR job",
+				NON_PUBLISHING_MARKER,
+			);
+		}
+		if (!parsed.success) {
+			return failure(
+				"is not a valid non-publishing bundle marker; rebuild in the current PR job",
+				NON_PUBLISHING_MARKER,
+			);
+		}
+		const digest = createHash("sha256")
+			.update(readFileSync(bundlePath))
+			.digest("hex");
+		if (
+			parsed.data.reason !== eventName ||
+			parsed.data.runId !== process.env.GITHUB_RUN_ID?.trim() ||
+			parsed.data.runAttempt !== process.env.GITHUB_RUN_ATTEMPT?.trim() ||
+			parsed.data.commitSha.toLowerCase() !==
+				process.env.GITHUB_SHA?.trim().toLowerCase() ||
+			parsed.data.digest !== digest
+		) {
+			return failure(
+				"does not bind this bundle to the current event, commit, run, attempt, and digest; rebuild in the current PR job",
+				NON_PUBLISHING_MARKER,
+			);
+		}
+		return [];
 	}
-	if (nonPublishing) return [];
 	if ((process.env.GH_TOKEN ?? "").trim().length === 0) {
 		return failure(
 			"attestation verification requires GH_TOKEN with attestations:read; refusing to downgrade to an unverified bundle",

@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
@@ -13,15 +13,6 @@ import { BitwardenClient as ShimmedBitwardenClient } from "../../../plugins/hobo
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const bundle = path.join(repoRoot, "plugins/hobo/bin/hobo-mcp.mjs");
 
-function agentPluginCiActive(): boolean {
-	return [process.env.CI, process.env.GITHUB_ACTIONS, process.env.TF_BUILD].some(
-		(value) => {
-			const normalized = (value ?? "").trim().toLowerCase();
-			return normalized !== "" && normalized !== "0" && normalized !== "false";
-		},
-	);
-}
-
 const Message = z.object({
 	id: z.union([z.string(), z.number()]).optional(),
 	result: z.record(z.string(), z.json()).optional(),
@@ -33,13 +24,6 @@ afterEach(() => {
 });
 
 function ensureBundle(): void {
-	if (
-		!agentPluginCiActive() &&
-		existsSync(bundle) &&
-		statSync(bundle).size >= 1024 * 1024
-	) {
-		return;
-	}
 	const build = spawnSync(
 		process.execPath,
 		["--import", "tsx", "scripts/build-agent-plugin.mts"],

@@ -39,6 +39,14 @@ describe("main full gate workspace sharding", () => {
 		assert.match(plan, /main-gate-plan-\$\{\{ github\.sha \}\}/u);
 		assert.match(main, /resolve-main-test-base\.mts/u);
 		assert.match(main, /--external-workspace-tests/u);
+		const verification = main.slice(
+			main.indexOf("      - name: Verify agent plugin attestation"),
+			main.indexOf("      - name: S0 gate set"),
+		);
+		assert.match(
+			verification,
+			/run: pnpm run agent-plugin:build && pnpm run agent-plugin:check -- --verify-attestation/u,
+		);
 		assert.doesNotMatch(main, /name: Workspace tests/u);
 		assert.doesNotMatch(main, /Plan main workspace test shards/u);
 	});
@@ -78,10 +86,13 @@ describe("main full gate workspace sharding", () => {
 			gateStart,
 			workflow.indexOf("  main_workspace_tests:", gateStart),
 		);
-		assert.match(gate, /needs: \[route, ci-runner-image\]/u);
 		assert.match(
 			gate,
-			/!cancelled\(\) &&\s+github\.ref == 'refs\/heads\/main' &&\s+needs\.route\.outputs\.merge-queue-green != 'true' && \(/u,
+			/needs: \[route, ci-runner-image, agent-plugin-provenance\]/u,
+		);
+		assert.match(
+			gate,
+			/!cancelled\(\) && needs\.agent-plugin-provenance\.result == 'success' &&\s+github\.ref == 'refs\/heads\/main' &&\s+needs\.route\.outputs\.merge-queue-green != 'true' && \(/u,
 		);
 		const planStart = workflow.indexOf("  main-gate-plan:");
 		const plan = workflow.slice(planStart, gateStart);
@@ -131,7 +142,10 @@ describe("main full gate workspace sharding", () => {
 			job("main-gate-plan"),
 			/^      shard_runner: \$\{\{ steps\.reroute\.outputs\.shard_runner \|\| needs\.route\.outputs\.shard_runner \}\}$/mu,
 		);
-		assert.match(job("main-gate"), /^    needs: \[route, ci-runner-image\]$/mu);
+		assert.match(
+			job("main-gate"),
+			/^    needs: \[route, ci-runner-image, agent-plugin-provenance\]$/mu,
+		);
 	});
 
 	it("the re-ask runs after the full checkout and falls back to the run's route", () => {

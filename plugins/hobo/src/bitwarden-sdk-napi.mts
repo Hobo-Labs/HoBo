@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,14 +50,33 @@ type RealBitwardenClientConstructor = new (
 	options: BitwardenClientOptions,
 ) => RealBitwardenClient;
 
+function isHoBoCheckout(checkoutRoot: string, pluginRoot: string): boolean {
+	try {
+		const manifest: { name?: unknown } = JSON.parse(
+			readFileSync(path.join(checkoutRoot, "package.json"), "utf8"),
+		);
+		if (manifest.name !== "hobo-design") return false;
+		if (!existsSync(path.join(checkoutRoot, "pnpm-workspace.yaml"))) return false;
+		return (
+			realpathSync(path.join(checkoutRoot, "plugins/hobo")) ===
+			realpathSync(pluginRoot)
+		);
+	} catch {
+		return false;
+	}
+}
+
 function anchorCandidates(): { anchor: string; trustedRoot: string }[] {
 	const pluginRoot = fileURLToPath(new URL("..", import.meta.url));
 	const checkoutRoot = fileURLToPath(new URL("../../..", import.meta.url));
-	return [
+	const candidates = [
 		{
 			anchor: path.join(pluginRoot, "agent-plugin-anchor.js"),
 			trustedRoot: pluginRoot,
 		},
+	];
+	if (!isHoBoCheckout(checkoutRoot, pluginRoot)) return candidates;
+	candidates.push(
 		{
 			anchor: path.join(checkoutRoot, "packages/hobo-ci/package.json"),
 			trustedRoot: checkoutRoot,
@@ -66,7 +85,8 @@ function anchorCandidates(): { anchor: string; trustedRoot: string }[] {
 			anchor: path.join(checkoutRoot, "packages/hobo/package.json"),
 			trustedRoot: checkoutRoot,
 		},
-	];
+	);
+	return candidates;
 }
 
 function resolvedUnderTrustedRoot(
