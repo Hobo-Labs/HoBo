@@ -927,7 +927,7 @@ jobs:
           sparse-checkout-cone-mode: true
       - uses: $/.github/actions/hobo-checkout
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"
@@ -1058,7 +1058,7 @@ jobs:
           sparse-checkout-cone-mode: true
       - uses: $/.github/actions/hobo-checkout
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           ref: ${{ env.HOBO_RELEASE_CHECKOUT_REF }}
           sparse-paths: ${{ env.RELEASE_SPARSE_PATHS }}
           submodules: "false"

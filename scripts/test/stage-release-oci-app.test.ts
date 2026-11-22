@@ -178,6 +178,71 @@ describe("release OCI app staging", () => {
 		}
 	});
 
+	it("peels an annotated release tag to a commit before passing the turbo filter", {
+		timeout: GIT_FIXTURE_TIMEOUT_MS,
+	}, () => {
+		const repo = mkdtempSync(
+			join(tmpdir(), "hobo-release-turbo-annotated-tag-"),
+		);
+		const previousBase = process.env.HOBO_RELEASE_TURBO_BASE;
+		const git = (...args: string[]): void => {
+			const result = spawnSync("git", args, { cwd: repo, stdio: "ignore" });
+			expect(result.status).toBe(0);
+		};
+		try {
+			git("init", "--quiet");
+			for (const message of ["previous release", "head"]) {
+				git(
+					"-c",
+					"user.name=Release Test",
+					"-c",
+					"user.email=release@example.com",
+					"-c",
+					"commit.gpgsign=false",
+					"commit",
+					"--allow-empty",
+					"-m",
+					message,
+				);
+				if (message === "previous release") {
+					git(
+						"-c",
+						"user.name=Release Test",
+						"-c",
+						"user.email=release@example.com",
+						"tag",
+						"-a",
+						"-m",
+						"previous release",
+						"v0.0.0-alpha.2",
+					);
+				}
+			}
+			const peeled = spawnSync(
+				"git",
+				["rev-parse", "v0.0.0-alpha.2^{commit}"],
+				{ cwd: repo, encoding: "utf8" },
+			);
+			expect(peeled.status).toBe(0);
+			const commit = peeled.stdout.trim();
+			process.env.HOBO_RELEASE_TURBO_BASE = "v0.0.0-alpha.2";
+			expect(resolveReleaseTurboBase(repo, "v0.0.0-alpha.2")).toBe(commit);
+			expect(releaseOciTurboBuildArgs(repo, ["@hobo/hobo..."])).toEqual([
+				"exec",
+				"turbo",
+				"run",
+				"build",
+				`--filter=...[${commit}...HEAD]`,
+				"--filter=@hobo/hobo...",
+			]);
+		} finally {
+			if (previousBase === undefined)
+				delete process.env.HOBO_RELEASE_TURBO_BASE;
+			else process.env.HOBO_RELEASE_TURBO_BASE = previousBase;
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+
 	it("combines SCM-affected and requested image filters", {
 		timeout: GIT_FIXTURE_TIMEOUT_MS,
 	}, () => {
