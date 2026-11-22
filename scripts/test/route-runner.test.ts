@@ -2345,7 +2345,6 @@ describe("the script reading the slip", () => {
 				["{}", "slip malformed"],
 			] as const) {
 				const { decision, lines } = await route(apiUrl, message);
-				// What the queue alone decides: the fleet took the probe a minute ago.
 				assert.deepEqual(
 					[decision.tier, decision.runner, decision.refusedBy],
 					["fleet", "hobo", "none"],
@@ -2368,7 +2367,6 @@ describe("the script reading the slip", () => {
 	});
 
 	it("takes nothing about routing from the environment", async () => {
-		// What a repository variable or a worker once handed over the old way.
 		await withGithub(fleetUpPages, async (apiUrl) => {
 			const { decision } = await route(apiUrl, undefined, {
 				HOBO_CI_ROUTE: "github",

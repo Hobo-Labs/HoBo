@@ -1258,9 +1258,16 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
-        with:
-          python-version: "3.12"
+      - name: Use locked Python from mise
+        shell: bash
+        run: |
+          set -euo pipefail
+          python_bin="$(mise which python)"
+          python_dir="$(dirname "$python_bin")"
+          echo "PYTHON_BIN=$python_bin" >> "$GITHUB_ENV"
+          echo "$python_dir" >> "$GITHUB_PATH"
+          export PATH="$python_dir:$PATH"
+          python3 --version
       - uses: $/.github/actions/pnpm-store
       - name: Link deps layer
         run: node --experimental-strip-types scripts/ci/deps-layer.mts link
