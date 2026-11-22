@@ -692,7 +692,6 @@ interface VitestReport {
 	}>;
 }
 
-/** What one vitest JSON report says: totals and the titles of skipped and todo tests. */
 export interface VitestTally {
 	readonly tests: number;
 	readonly failed: number;
@@ -701,7 +700,6 @@ export interface VitestTally {
 
 const SKIPPED = new Set(["skipped", "pending", "todo", "disabled"]);
 
-/** Tallies a vitest JSON report: totals and the titles of skipped and todo tests. */
 export function tallyVitest(path: string): VitestTally {
 	if (!existsSync(path)) return { tests: 0, failed: 0, skipped: [] };
 	const report: VitestReport = JSON.parse(readFileSync(path, "utf8"));

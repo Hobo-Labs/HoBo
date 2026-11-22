@@ -67,15 +67,16 @@ outcome table (Check commands, Threshold, fallback threshold and the
 assumptions it names) as data. It fails an outcome whose named file is missing
 without running anything, runs the commands in order through `bash -c` (each
 `vitest run` with `--reporter=json --outputFile=<tmp>`), stops at the first
-nonzero exit, fails on any skipped or todo test, then evaluates the threshold
+nonzero exit, fails on any test whose vitest status is skipped, pending, todo
+or disabled, then evaluates the threshold
 (for O20, the figures of `fleet-soak.json`). It prints
 `{ id, pass, command, evidence, measured, fallbacks }` on stdout and exits 0
 only when the outcome passes (2 on an unknown id).
 
 When `fleet-fallbacks.json` lists an assumption the outcome names, the outcome
 is judged against its fallback threshold: a skipped test whose title starts
-with that id in brackets (`[A13] …`) is allowed. O21 (cutover) and O23 (the
-deferred lane) are never passed by this command. Turbo-run checks
+with that id in brackets (`[A13] …`) is allowed. O21 (cutover) is never
+passed by this command. Turbo-run checks
 (`turbo run test`) are judged by exit code only: their skipped tests are not
 counted.
 
