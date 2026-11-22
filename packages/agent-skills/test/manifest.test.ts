@@ -145,10 +145,8 @@ describe("loadSkillsManifest", () => {
 describe("checkSkillsConformance", () => {
 	it("rejects trailing and unescaped content in single-quoted scalars", async () => {
 		const root = await scratchTree({
-			trailing:
-				"---\nname: trailing\ndescription: 'closed' trailing\n---\n",
-			unescaped:
-				"---\nname: unescaped\ndescription: 'owner's store'\n---\n",
+			trailing: "---\nname: trailing\ndescription: 'closed' trailing\n---\n",
+			unescaped: "---\nname: unescaped\ndescription: 'owner's store'\n---\n",
 			valid: "---\nname: valid\ndescription: 'owner''s store'\n---\n",
 		});
 		const issues = await checkSkillsConformance(root);
