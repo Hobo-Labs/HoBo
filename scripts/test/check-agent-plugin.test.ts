@@ -1751,14 +1751,7 @@ describe("agent-tooling extract drift gate", () => {
 			),
 			"utf8",
 		);
-		const marker =
-			"Commands marked **repo-only** need the HoBo repository checkout.";
-		const mutated = referenceMarkdown.includes(marker)
-			? referenceMarkdown.replace(
-					marker,
-					"Commands marked **repo only** need the HoBo repository checkout.",
-				)
-			: `${referenceMarkdown}\n<!-- drift -->\n`;
+		const mutated = `${referenceMarkdown}\n<!-- drift -->\n`;
 		const issues = agentToolingReferenceDriftIssues({
 			docsMarkdown,
 			referenceMarkdown: mutated,

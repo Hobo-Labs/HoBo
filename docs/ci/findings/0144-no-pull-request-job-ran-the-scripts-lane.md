@@ -66,3 +66,5 @@ On `claude/relay-fleet-verdict` (`d805016b`), in a clean container, the lane fai
 Both jobs retain a 20-minute ceiling. The build's 6-minute step and each shard's 12-minute lane fail independently instead of being cancelled without a named step.
 
 Shadow attestation workflow and plan pins in `scripts/ci/attestation.mts` are refreshed when the reviewed workflow or plan content changes.
+
+Agent-plugin drift-gate tests accept source-paragraph stripping when asserting reference extraction drift.
