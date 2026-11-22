@@ -36,7 +36,7 @@ const browserUtil = {
 		}));
 		builder.onLoad({ filter: /.*/, namespace: "browser-util" }, () => ({
 			contents:
-				"const VT = /[\\u001b\\u009b][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))/g;\nexport function stripVTControlCharacters(text) { return String(text).replace(VT, \"\"); }\n",
+				'const VT = /[\\u001b\\u009b][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[-a-zA-Z\\d\\/#&.:=?%@~_]*)*)?\\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PR-TZcf-ntqry=><~]))/g;\nexport function stripVTControlCharacters(text) { return String(text).replace(VT, ""); }\n',
 			loader: "js",
 		}));
 	},
