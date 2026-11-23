@@ -19,13 +19,10 @@ import {
 } from "../../pricing/test/fixtures.js";
 import {
 	admitUnpricedIacTarget,
-	BudgetEntitlementSchema,
 	type BudgetIdentity,
 	BudgetLedgerSnapshotSchema,
-	BudgetReservationSchema,
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
-	EntitlementClaimSchema,
 	IacUnpricedPolicyProofSchema,
 	IacUnpricedScopeProofSchema,
 } from "../src/index.js";
@@ -837,67 +834,6 @@ describe("policy-directed unpriced IaC admission", () => {
 			budget: { evaluation: "bypassed", reservation: "held" },
 		});
 		authority.close();
-	});
-
-	it("replays kindless legacy reservation claims against normalized reopened entitlements", async () => {
-		const { authority, plan, authorize } = fixture();
-		try {
-			const inventory = createTargetPricingInventory({
-				...plan,
-				complete: true,
-			});
-			const pricing = targetPricingUnavailable("no model");
-			const request = {
-				requestId: "legacy-reopen",
-				inventory,
-				pricing,
-			};
-			const deps = {
-				authority,
-				now: () => now,
-				authorizeUnpriced: authorize,
-			};
-			expect(await admitUnpricedIacTarget(request, deps)).toMatchObject({
-				status: "admitted",
-			});
-			const existing = authority.lookup("iac:legacy-reopen");
-			if (!existing) throw new Error("legacy reservation missing");
-			const legacy = clone(BudgetReservationSchema, existing);
-			legacy.entitlementClaims = [
-				create(EntitlementClaimSchema, {
-					kind: "",
-					bucketId: "legacy",
-					unit: "request",
-					units: 0,
-				}),
-			];
-			const reopened = authority.read(now);
-			reopened.entitlements = [
-				create(BudgetEntitlementSchema, {
-					kind: "allowance",
-					bucketId: "legacy",
-					unit: "request",
-					periodId: "2026-01",
-					remainingUnits: 1,
-					observedAt: "2026-01-01T00:00:00Z",
-					validUntil: end,
-				}),
-			];
-			const custom = {
-				...authority,
-				read: () => create(BudgetLedgerSnapshotSchema, reopened),
-				reserveUnbounded: () => clone(BudgetReservationSchema, legacy),
-			};
-			expect(
-				await admitUnpricedIacTarget(request, { ...deps, authority: custom }),
-			).toMatchObject({
-				status: "replay",
-				code: "EXECUTION_ALREADY_CLAIMED",
-				reservation: { entitlementClaims: [{ kind: "" }] },
-			});
-		} finally {
-			authority.close();
-		}
 	});
 
 	it.each([

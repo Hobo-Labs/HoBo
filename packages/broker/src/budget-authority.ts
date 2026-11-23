@@ -138,13 +138,9 @@ function validEntitlementKind(kind: string): boolean {
 
 type EntitlementScope = { kind: string; bucketId: string; unit: string };
 
-function persistedEntitlementKind(kind: string): string {
-	return kind === "" ? "allowance" : kind;
-}
-
 function entitlementScopeKey(row: EntitlementScope): string {
 	return JSON.stringify([
-		persistedEntitlementKind(row.kind),
+		row.kind,
 		row.bucketId,
 		row.unit,
 	]);
@@ -155,15 +151,6 @@ function sameEntitlementScope(
 	right: EntitlementScope,
 ): boolean {
 	return entitlementScopeKey(left) === entitlementScopeKey(right);
-}
-
-function normalizeLegacyBudgetSnapshot(
-	snapshot: BudgetLedgerSnapshot,
-): BudgetLedgerSnapshot {
-	const normalized = clone(BudgetLedgerSnapshotSchema, snapshot);
-	for (const entitlement of normalized.entitlements)
-		entitlement.kind = persistedEntitlementKind(entitlement.kind);
-	return normalized;
 }
 
 function unboundedFingerprint(input: {
@@ -440,7 +427,6 @@ export function validateBudgetSnapshot(
 export function validateHostingQuote(
 	quote: HostingQuote,
 	now: string,
-	options?: { allowLegacyKindless?: boolean },
 ): void {
 	if (
 		!quote.quoteId ||
@@ -483,9 +469,7 @@ export function validateHostingQuote(
 			"provider-account exposures must itemize the liability bound",
 		);
 	for (const row of quote.entitlementClaims) {
-		const kind =
-			options?.allowLegacyKindless && row.kind === "" ? "allowance" : row.kind;
-		if (!validEntitlementKind(kind))
+		if (!validEntitlementKind(row.kind))
 			throw new TypeError("unsupported entitlement kind");
 		if (!row.bucketId || !row.unit)
 			throw new TypeError("entitlement scope missing");
@@ -596,12 +580,7 @@ export function createBudgetAdmissionAuthority(options: {
 		evidence?: { liabilityResolutionEvidenceRef?: string },
 	): void;
 } {
-	let current =
-		options.priorEvents === undefined
-			? clone(BudgetLedgerSnapshotSchema, options.snapshot)
-			: normalizeLegacyBudgetSnapshot(
-					clone(BudgetLedgerSnapshotSchema, options.snapshot),
-				);
+	let current = clone(BudgetLedgerSnapshotSchema, options.snapshot);
 	let reservations = new Map<string, BudgetReservation>();
 	let committing = false;
 	let commitOutcomeUncertain = false;
@@ -630,7 +609,7 @@ export function createBudgetAdmissionAuthority(options: {
 			entitlements: snapshot.entitlements
 				.map((row) =>
 					[
-						persistedEntitlementKind(row.kind),
+						row.kind,
 						row.bucketId,
 						row.unit,
 						row.periodId,
@@ -655,7 +634,7 @@ export function createBudgetAdmissionAuthority(options: {
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	) =>
 		JSON.stringify([
-			persistedEntitlementKind(bucket.kind),
+			bucket.kind,
 			bucket.periodId,
 			bucket.bucketId,
 			bucket.unit,
@@ -664,7 +643,7 @@ export function createBudgetAdmissionAuthority(options: {
 		bucket: BudgetLedgerSnapshot["entitlements"][number],
 	) =>
 		JSON.stringify([
-			persistedEntitlementKind(bucket.kind),
+			bucket.kind,
 			bucket.periodId,
 			bucket.bucketId,
 		]);
@@ -762,8 +741,6 @@ export function createBudgetAdmissionAuthority(options: {
 		throw new TypeError("reservation history required for held exposure");
 	for (const persistedEvent of options.priorEvents ?? []) {
 		const event = clone(BudgetAuthorityEventSchema, persistedEvent);
-		if (event.snapshot)
-			event.snapshot = normalizeLegacyBudgetSnapshot(event.snapshot);
 		for (const reservation of event.reservations) {
 			if (
 				reservation.fenceSettlementGuard !== undefined &&
@@ -1599,9 +1576,7 @@ export function createBudgetAdmissionAuthority(options: {
 			)
 				throw new Error("budget reservation scope mismatch");
 			const previous = reservations.get(input.reservationId);
-			validateHostingQuote(input.quote, input.now, {
-				allowLegacyKindless: !!previous,
-			});
+			validateHostingQuote(input.quote, input.now);
 			const quoteDigest = hostingQuoteDigest(input.quote);
 			if (previous) {
 				if (
@@ -1610,32 +1585,9 @@ export function createBudgetAdmissionAuthority(options: {
 						budgetIdentityKey(current.identity)
 				)
 					throw new Error("reservation belongs to a superseded budget policy");
-				let legacyQuoteDigest: string | undefined;
-				if (
-					previous.entitlementClaims.every((claim) => claim.kind === "") &&
-					input.quote.entitlementClaims.every(
-						(claim) => persistedEntitlementKind(claim.kind) === "allowance",
-					)
-				) {
-					const legacyQuote = clone(HostingQuoteSchema, input.quote);
-					for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
-					legacyQuoteDigest = createHash("sha256")
-						.update(toJsonString(HostingQuoteSchema, legacyQuote))
-						.digest("hex");
-				}
-				let legacyEmptyQuoteDigest: string | undefined;
-				if (previous.entitlementClaims.length === 0) {
-					const legacyQuote = clone(HostingQuoteSchema, input.quote);
-					legacyQuote.entitlementClaims = [];
-					legacyEmptyQuoteDigest = createHash("sha256")
-						.update(toJsonString(HostingQuoteSchema, legacyQuote))
-						.digest("hex");
-				}
 				if (
 					previous.requestDigest !== input.requestDigest ||
-					(previous.quoteDigest !== quoteDigest &&
-						previous.quoteDigest !== legacyQuoteDigest &&
-						previous.quoteDigest !== legacyEmptyQuoteDigest) ||
+					previous.quoteDigest !== quoteDigest ||
 					JSON.stringify(previous.iacPricingPin) !==
 						JSON.stringify(input.iacPricingPin) ||
 					!!previous.fenceSettlementGuard !== !!input.fenceSettlementGuard ||
@@ -2139,8 +2091,8 @@ export function createBudgetAdmissionAuthority(options: {
 				const old = current.entitlements.find(
 					(row) =>
 						row.bucketId === bucket.bucketId &&
-						persistedEntitlementKind(row.kind) ===
-							persistedEntitlementKind(bucket.kind),
+						row.kind ===
+							bucket.kind,
 				);
 				if (
 					old &&

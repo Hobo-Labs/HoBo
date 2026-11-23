@@ -2,8 +2,6 @@ package broker
 
 // CUE constraints for yard_placement.proto wire forms.
 
-#YardJsonValue: null | bool | number | string | [...#YardJsonValue] | {[string]: #YardJsonValue}
-
 // ECMAScript String.trim whitespace: preserve nonblank input without normalizing it.
 #PlacementNonblank: string & !~"^[\\x{0009}-\\x{000D}\\x{0020}\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]*$"
 #CampNonblank:      #PlacementNonblank
@@ -20,7 +18,6 @@ package broker
 	env_type?: #CampNonblank & !~"/"
 	require?: [...#CampNonblank]
 	prefer?: [...#CampNonblank]
-	labels?: {[string]: string}
 	runtime_requirements?: [...#CampNonblank]
 	canonical_labels?: [...#PlacementLabelEntry]
 }
@@ -31,12 +28,10 @@ package broker
 	regions: [...string]
 	require: [...string]
 	prefer: [...string]
-	labels?: {[string]: string}
 	residency?: [...string]
 	isolation?: [...string]
 	network?: [...string]
 	component_hosts?: [...string]
-	properties?: {[string]: #YardJsonValue}
 	camps?: [...#CampPlacementLayout]
 	canonical_labels?: [...#PlacementLabelEntry]
 	properties_json?: string
@@ -59,7 +54,6 @@ package broker
 	require?: [...string]
 	prefer?: [...string]
 	runtimes?: [...string]
-	labels?: {[string]: string}
 	canonical_labels?: [...#PlacementLabelEntry]
 }
 
@@ -119,12 +113,9 @@ package broker
 	owner_tenant_id:     string & !=""
 	bindle_requirements: #BindleRequirements
 	resources?: [...#YardResourceRequest]
-	camp?:                 #CampPlacementInput
-	work_binding_version!: 1 | 2
-	request_digest:        string & =~"^sha256:[0-9a-f]{64}$"
-	if work_binding_version == 2 {
-		yard: requested_shape: properties_json!: string
-	}
+	camp?:          #CampPlacementInput
+	request_digest: string & =~"^sha256:[0-9a-f]{64}$"
+	yard: requested_shape: properties_json!: string
 }
 
 #YardPlacementReceipt: {

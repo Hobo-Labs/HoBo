@@ -28,7 +28,7 @@ import {
 	prepareYardHostingWork,
 	resolveBindleDeployment,
 } from "../src/index.js";
-import { cloneAsJson, parseJsonObject } from "../src/json.js";
+import { cloneAsJson } from "../src/json.js";
 import { approveLocalHosting } from "./helpers/local-hosting.js";
 
 // This name is part of the existing protobuf JSON contract.
@@ -52,12 +52,12 @@ it("preserves Yard placement inputs through a protobuf round trip", () => {
 				regions: ["eu"],
 				require: ["secure"],
 				prefer: [],
-				labels: { owner: "team" },
+				canonicalLabels: [{ key: "owner", value: "team" }],
 				residency: ["eu"],
 				isolation: ["isolated"],
 				network: ["private"],
 				componentHosts: ["wasm"],
-				properties: { tier: "gold", replicas: 2 },
+				propertiesJson: '{"replicas":2,"tier":"gold"}',
 				camps: [
 					{ id: "camp:prod", envType: "production", require: ["secure"] },
 				],
@@ -70,7 +70,7 @@ it("preserves Yard placement inputs through a protobuf round trip", () => {
 			require: ["database"],
 			prefer: [],
 			runtimes: ["wasm"],
-			labels: { tier: "prod" },
+			canonicalLabels: [{ key: "tier", value: "prod" }],
 		},
 		resources: [
 			{
@@ -85,7 +85,6 @@ it("preserves Yard placement inputs through a protobuf round trip", () => {
 			campId: "camp:prod",
 			layout: { envType: "production", require: ["secure"] },
 		},
-		workBindingVersion: 1,
 		requestDigest: "sha256:digest",
 	};
 	const encoded = fromJsonString(
@@ -106,7 +105,6 @@ it("preserves Yard placement inputs through a protobuf round trip", () => {
 		bindleRequirements: document.bindleRequirements,
 		resources: document.resources,
 		camp: document.camp,
-		workBindingVersion: 1,
 		requestDigest: "sha256:digest",
 	});
 });
@@ -310,11 +308,8 @@ describe("complete Yard placement request wire binding", () => {
 				requestId: base.requestId,
 			}),
 		);
-		expect(() => decodeBindleDeploymentRequest(old)).toThrow(/work binding/);
+		expect(() => decodeBindleDeploymentRequest(old)).toThrow(/incomplete/);
 		for (const bytes of [
-			mutate((m) => {
-				m.workBindingVersion = 3;
-			}),
 			mutate((m) => {
 				m.yard = undefined;
 			}),
@@ -365,75 +360,7 @@ describe("complete Yard placement request wire binding", () => {
 		).toThrow(/unknown/);
 	});
 
-	it("refuses a complete request with an unsupported version", () => {
-		const message = fromWire(encodeBindleDeploymentRequest(completeRequest()));
-		message.workBindingVersion = 3;
-		expect(() =>
-			decodeBindleDeploymentRequest(
-				toBinary(BindleDeploymentRequestSchema, message),
-			),
-		).toThrow(/work binding/);
-	});
-
-	it("continues to decode complete version 1 requests", () => {
-		const request = completeRequest();
-		const { yard, ...rest } = request;
-		const { requestedLayout, ...yardFields } = yard;
-		const message = fromJsonString(
-			BindleDeploymentRequestSchema,
-			JSON.stringify({
-				...rest,
-				yard: { ...yardFields, [YARD_LAYOUT_FIELD]: requestedLayout },
-				workBindingVersion: 1,
-				requestDigest: contentHashOf(request),
-			}),
-		);
-		expect(
-			decodeBindleDeploymentRequest(
-				toBinary(BindleDeploymentRequestSchema, message),
-			),
-		).toEqual(request);
-		if (!message.bindleRequirements) throw new Error("missing requirements");
-		message.bindleRequirements.canonicalLabels.push(
-			create(PlacementLabelEntrySchema, { key: "extra", value: "v2" }),
-		);
-		expect(() =>
-			decodeBindleDeploymentRequest(
-				toBinary(BindleDeploymentRequestSchema, message),
-			),
-		).toThrow(/version 1/);
-	});
-
-	it("refuses version 1 when its map encoding loses a special key", () => {
-		const request = completeRequest();
-		const withSpecial = parseBindleDeploymentRequest(
-			cloneAsJson({
-				...request,
-				bindleRequirements: {
-					...request.bindleRequirements,
-					labels: parseJsonObject('{"__proto__":"prod"}'),
-				},
-			}),
-		);
-		const { yard, ...rest } = withSpecial;
-		const { requestedLayout, ...yardFields } = yard;
-		const message = fromJsonString(
-			BindleDeploymentRequestSchema,
-			JSON.stringify({
-				...rest,
-				yard: { ...yardFields, [YARD_LAYOUT_FIELD]: requestedLayout },
-				workBindingVersion: 1,
-				requestDigest: contentHashOf(withSpecial),
-			}),
-		);
-		expect(() =>
-			decodeBindleDeploymentRequest(
-				toBinary(BindleDeploymentRequestSchema, message),
-			),
-		).toThrow(/digest mismatch/);
-	});
-
-	it("rejects incomplete or ambiguous version 2 value encodings", () => {
+	it("rejects incomplete or ambiguous value encodings", () => {
 		const encoded = encodeBindleDeploymentRequest(completeRequest());
 		const change = (mutate: (message: ReturnType<typeof fromWire>) => void) => {
 			const message = fromWire(encoded);
@@ -462,10 +389,6 @@ describe("complete Yard placement request wire binding", () => {
 							value: "payments",
 						}),
 					);
-			}),
-			change((message) => {
-				if (message.bindleRequirements)
-					message.bindleRequirements.labels = { legacy: "unexpected" };
 			}),
 		])
 			expect(() => decodeBindleDeploymentRequest(bytes)).toThrow();
@@ -861,8 +784,7 @@ describe("Yard request CUE contract", () => {
 		});
 	}, 30_000);
 	it.each([
-		["missing version", document.replace('"work_binding_version":2,', "")],
-		["missing version 2 properties", missingPropertiesDocument],
+		["missing properties", missingPropertiesDocument],
 		["missing estimate", document.replace('"spend_estimate_usd":3.25,', "")],
 		["bad digest", document.replace(/sha256:[0-9a-f]{64}(?="})/, "sha256:bad")],
 	])("refuses a %s", (_description, input) => {

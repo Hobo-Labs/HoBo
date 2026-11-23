@@ -4,11 +4,11 @@ EXTENDS Naturals
 \* Finite request classes supplied to decodeBindleDeploymentRequest.
 \* Rebound has a changed request and a recomputed matching digest: the codec
 \* accepts it because its embedded digest is not an authentication mechanism.
-CONSTANTS CheckUnknown, CheckVersion, CheckAmount, CheckParsedAmount, CheckParsedResidency, CheckIdentity,
-          CheckV1Labels, CheckV2Labels, CheckPropertyText, CheckCanonical, CheckDigest
-Cases == {"valid-v1", "valid-v2", "rebound", "bad-binary", "unknown", "legacy", "unsupported",
+CONSTANTS CheckUnknown, CheckAmount, CheckParsedAmount, CheckParsedResidency, CheckIdentity,
+          CheckLabels, CheckPropertyText, CheckCanonical, CheckDigest
+Cases == {"valid", "rebound", "bad-binary", "unknown",
           "incomplete", "negative", "bad-mode", "empty-identity", "bad-digest",
-          "missing-v2-properties", "mixed-v1-label", "duplicate-v2-label", "mixed-v2-label",
+          "missing-properties", "duplicate-label",
           "noncanonical-property-text", "invalid-residency", "noncanonical", "mismatch"}
 VARIABLES requestCase, phase
 vars == <<requestCase, phase>>
@@ -18,10 +18,7 @@ Decode == /\ phase = "binary"
           /\ phase' = IF requestCase = "bad-binary" THEN "refused" ELSE "unknown"
           /\ UNCHANGED requestCase
 InspectUnknown == /\ phase = "unknown"
-                  /\ phase' = IF requestCase = "unknown" /\ CheckUnknown THEN "refused" ELSE "version"
-                  /\ UNCHANGED requestCase
-InspectVersion == /\ phase = "version"
-                  /\ phase' = IF requestCase \in {"legacy", "unsupported"} /\ CheckVersion THEN "refused" ELSE "envelope"
+                  /\ phase' = IF requestCase = "unknown" /\ CheckUnknown THEN "refused" ELSE "envelope"
                   /\ UNCHANGED requestCase
 InspectEnvelope == /\ phase = "envelope"
                    /\ phase' = IF requestCase = "incomplete" THEN "refused" ELSE "amount"
@@ -40,9 +37,8 @@ InspectDigestFormat == /\ phase = "digest-format"
                        /\ UNCHANGED requestCase
 ParseDomain == /\ phase = "parse-domain"
                /\ phase' = IF (requestCase = "negative" /\ CheckParsedAmount) \/
-                              requestCase = "missing-v2-properties" \/
-                              (requestCase = "mixed-v1-label" /\ CheckV1Labels) \/
-                              (requestCase \in {"duplicate-v2-label", "mixed-v2-label"} /\ CheckV2Labels) \/
+                              requestCase = "missing-properties" \/
+                              (requestCase = "duplicate-label" /\ CheckLabels) \/
                               (requestCase = "noncanonical-property-text" /\ CheckPropertyText) \/
                               (requestCase = "invalid-residency" /\ CheckParsedResidency)
                            THEN "refused" ELSE "compare"
@@ -53,23 +49,21 @@ Compare == /\ phase = "compare"
                        THEN "refused" ELSE "accepted"
            /\ UNCHANGED requestCase
 Done == /\ phase \in {"refused", "accepted"} /\ UNCHANGED vars
-Next == Decode \/ InspectUnknown \/ InspectVersion \/ InspectEnvelope \/ InspectAmount \/
+Next == Decode \/ InspectUnknown \/ InspectEnvelope \/ InspectAmount \/
         InspectSelection \/ InspectIdentity \/ InspectDigestFormat \/ ParseDomain \/ Compare \/ Done
 Spec == Init /\ [][Next]_vars
 
 TypeOK == /\ requestCase \in Cases
-          /\ phase \in {"binary", "unknown", "version", "envelope", "amount", "selection",
+          /\ phase \in {"binary", "unknown", "envelope", "amount", "selection",
                        "identity", "digest-format", "parse-domain", "compare", "refused", "accepted"}
 NoUnknown == phase = "accepted" => requestCase # "unknown"
-NoLegacy == phase = "accepted" => requestCase \notin {"legacy", "unsupported"}
-NoInvalidEnvelope == phase = "accepted" => requestCase \notin {"bad-binary", "incomplete", "bad-mode", "bad-digest", "missing-v2-properties"}
+NoInvalidEnvelope == phase = "accepted" => requestCase \notin {"bad-binary", "incomplete", "bad-mode", "bad-digest", "missing-properties"}
 NoNegative == phase = "accepted" => requestCase # "negative"
 NoEmptyIdentity == phase = "accepted" => requestCase # "empty-identity"
-NoMixedV1Labels == phase = "accepted" => requestCase # "mixed-v1-label"
-NoAmbiguousV2Labels == phase = "accepted" => requestCase \notin {"duplicate-v2-label", "mixed-v2-label"}
+NoDuplicateLabels == phase = "accepted" => requestCase # "duplicate-label"
 CanonicalPropertyText == phase = "accepted" => requestCase # "noncanonical-property-text"
 ValidResidency == phase = "accepted" => requestCase # "invalid-residency"
 Canonical == phase = "accepted" => requestCase # "noncanonical"
 MatchingDigest == phase = "accepted" => requestCase # "mismatch"
-CompleteAccepted == phase = "refused" => requestCase \notin {"valid-v1", "valid-v2", "rebound"}
+CompleteAccepted == phase = "refused" => requestCase \notin {"valid", "rebound"}
 =============================================================================

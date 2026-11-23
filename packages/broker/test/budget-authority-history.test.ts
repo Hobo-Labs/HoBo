@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { clone, create } from "@bufbuild/protobuf";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -479,66 +478,16 @@ describe("durable budget history fences", () => {
 		);
 	});
 
-	it("rejects a kindless fresh memory seed but reopens a persisted base", () => {
-		const legacy = snapshot();
-		const entitlement = legacy.entitlements[0];
-		if (!entitlement) throw new Error("legacy entitlement missing");
-		entitlement.kind = "";
-		expect(() => createBudgetAdmissionAuthority({ snapshot: legacy })).toThrow(
-			"entitlement scope",
-		);
-		const reopened = createBudgetAdmissionAuthority({
-			snapshot: legacy,
-			priorEvents: [],
-		});
-		expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
-	});
-
-	it("reopens a legacy SQLite snapshot with an implicit allowance kind", () => {
-		const directory = mkdtempSync(join(tmpdir(), "hobo-legacy-budget-kind-"));
-		directories.push(directory);
-		const path = join(directory, "budget.sqlite");
-		const options = { path, snapshot: snapshot(), now: () => NOW };
-		const initial = createSqliteBudgetAdmissionAuthority(options);
-		initial.close();
-		const database = new DatabaseSync(path);
-		database
-			.prepare(
-				"UPDATE budget_base SET body=json_remove(body, '$.entitlements[0].kind') WHERE id=1",
-			)
-			.run();
-		database.close();
-		const legacySeed = snapshot();
-		const legacyEntitlement = legacySeed.entitlements[0];
-		if (!legacyEntitlement) throw new Error("legacy seed entitlement missing");
-		legacyEntitlement.kind = "";
-		const reopened = createSqliteBudgetAdmissionAuthority({
-			path,
-			snapshot: legacySeed,
-			now: () => NOW,
-		});
-		try {
-			expect(reopened.read(NOW).entitlements[0]?.kind).toBe("allowance");
-			const invalidWrite = reopened.read(NOW);
-			const entitlement = invalidWrite.entitlements[0];
-			if (!entitlement) throw new Error("legacy entitlement missing");
-			entitlement.kind = "";
-			expect(() => reopened.configure(invalidWrite, 0, NOW)).toThrow(
-				"entitlement scope",
-			);
-		} finally {
-			reopened.close();
-		}
-		const fresh = snapshot();
-		const entitlement = fresh.entitlements[0];
-		if (!entitlement) throw new Error("fresh entitlement missing");
+	it("rejects a kindless seed whether fresh or reopened", () => {
+		const kindless = snapshot();
+		const entitlement = kindless.entitlements[0];
+		if (!entitlement) throw new Error("entitlement missing");
 		entitlement.kind = "";
 		expect(() =>
-			createSqliteBudgetAdmissionAuthority({
-				path: join(directory, "fresh.sqlite"),
-				snapshot: fresh,
-				now: () => NOW,
-			}),
+			createBudgetAdmissionAuthority({ snapshot: kindless }),
+		).toThrow("entitlement scope");
+		expect(() =>
+			createBudgetAdmissionAuthority({ snapshot: kindless, priorEvents: [] }),
 		).toThrow("entitlement scope");
 	});
 

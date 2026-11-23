@@ -2,11 +2,8 @@ syntax = "proto3";
 
 package hobo.broker.yard.v1;
 
-import "google/protobuf/struct.proto";
-
 // Wire contracts for Yard-first placement (artifacts, not topology primitives).
 
-// Version 2 carries labels as entries, including inherited-name keys.
 message PlacementLabelEntry {
   string key = 1;
   string value = 2;
@@ -18,7 +15,8 @@ message CampPlacementLayout {
   optional string env_type = 3;
   repeated string require = 4;
   repeated string prefer = 5;
-  map<string, string> labels = 6;
+  reserved 6;
+  reserved "labels";
   repeated string runtime_requirements = 7;
   repeated PlacementLabelEntry canonical_labels = 8;
 }
@@ -29,12 +27,12 @@ message YardShape {
   repeated string regions = 3;
   repeated string require = 4;
   repeated string prefer = 5;
-  map<string, string> labels = 6;
+  reserved 6, 11;
+  reserved "labels", "properties";
   repeated string residency = 7;
   repeated string isolation = 8;
   repeated string network = 9;
   repeated string component_hosts = 10;
-  google.protobuf.Struct properties = 11;
   repeated CampPlacementLayout camps = 12;
   repeated PlacementLabelEntry canonical_labels = 13;
   optional string properties_json = 14;
@@ -55,7 +53,8 @@ message BindleRequirements {
   repeated string require = 1;
   repeated string prefer = 2;
   repeated string runtimes = 3;
-  map<string, string> labels = 4;
+  reserved 4;
+  reserved "labels";
   repeated PlacementLabelEntry canonical_labels = 5;
 }
 
@@ -115,8 +114,8 @@ message BindleDeploymentRequest {
   BindleRequirements bindle_requirements = 9;
   repeated YardResourceRequest resources = 10;
   CampPlacementInput camp = 11;
-  // Versions 1 and 2 mark complete placement snapshots, including empty lists.
-  optional uint32 work_binding_version = 12;
+  reserved 12;
+  reserved "work_binding_version";
   // SHA-256 of the canonical domain request; this is not a signature.
   string request_digest = 13;
 }

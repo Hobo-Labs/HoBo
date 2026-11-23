@@ -50,11 +50,10 @@ string bounded by the runtime's nonnegative safe-integer range; admission also
 decodes legacy fixed64 `maximumMicros` evidence in that range. Normalized claim
 scope includes kind, bucket and unit, while the latest observation across each
 kind and bucket lineage fences stale unit migrations, including A→B→A restores.
-Persisted pre-kind snapshots reopen with an empty kind normalized to `allowance`,
-while fresh writes require an explicit kind. An exact idempotent retry may replay
-a persisted kindless quote before strict validation. Legacy evidence and receipt
-rows that both omit entitlement claims retain their original quote digest; current
-claims are still recomputed from the pinned pricing model.
+Every snapshot, quote and reservation names an explicit entitlement kind, and a
+reservation replays only with the digest of the exact quote it was made for. The
+policy proof must carry that quote digest; an empty or different digest denies
+admission before a hold.
 Fenced reservations pin their settlement payload version through journal replay;
 v1 signs kindless claims and v2 signs explicit kinds.
 The admission request accepts only its declared own data fields; unknown fields,
@@ -373,18 +372,15 @@ stateDiagram-v2
 ```
 
 `encodeBindleDeploymentRequest` and `decodeBindleDeploymentRequest` provide a
-versioned protobuf snapshot of the complete normalized placement request,
+protobuf snapshot of the complete normalized placement request,
 including Yard constraints, Bindle requirements, resources and Camp layout.
 They preserve the request digest used for quoting, distinguish a zero estimate
 from a missing one, and reject unsupported, incomplete or inconsistent work.
 An encoder rejects noncanonical requests; use `parseBindleDeploymentRequest`
-first. The encoder emits version 2, which carries labels as explicit entries and
-Yard properties as JSON object text so special keys are not lost by protobuf
-map handling. Version 2 property text must match `JSON.stringify` of the parsed
-object, and duplicate label entries are refused. The decoder also accepts
-complete version 1 requests; a version 1-only receiver must be upgraded before
-using version 2. Older messages without a completeness marker must be rebuilt
-from the original request; an old quote or reservation may need reconciliation.
+first. The encoding carries labels as explicit entries and Yard properties as
+JSON object text so special keys are not lost by protobuf map handling. Property
+text must match `JSON.stringify` of the parsed object, and duplicate label
+entries are refused.
 
 Exact Yard selection requires a nonblank `requestedYardId`; supplied IDs must
 also be nonblank for other selection modes. The parser, decoder and CUE contract
@@ -1061,10 +1057,8 @@ The in-memory factory is explicitly marked `persistence: 'memory'` and cannot
 authorize funded Yard hosting.
 
 `createFleetBudgetAdmissionAuthority` replays decisions from a fixed,
-majority-chosen journal. Reopen and interrupted initialization normalize legacy
-kindless entitlement records from the persisted base instead of strictly
-validating the reopen seed; entirely fresh initialization still requires
-explicit entitlement kinds. Its inspection calls
+majority-chosen journal. Fresh, reopened and interrupted initialization all
+require explicit entitlement kinds. Its inspection calls
 do not repair an undecided tail. For active workloads,
 `createOperationalFleetBudgetAdmissionAuthority` can
 recover an already offered entry under a separately funded, revalidated actor

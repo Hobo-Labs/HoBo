@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { types as utilTypes } from "node:util";
 import { clone, create, toJson, toJsonString } from "@bufbuild/protobuf";
 import {
@@ -39,6 +38,7 @@ import {
 	HostingPolicyProofSchema,
 	type HostingQuote,
 	HostingQuoteSchema,
+	hostingQuoteDigest,
 	validateHostingQuote,
 } from "./budget-authority.js";
 import type { AsyncBudgetAdmissionAuthority } from "./budget-postgres.js";
@@ -236,10 +236,6 @@ function accountRows(
 		.sort();
 }
 
-function persistedClaimKind(kind: string): string {
-	return kind === "" ? "allowance" : kind;
-}
-
 function entitlementRows(
 	rows: readonly Pick<
 		EntitlementClaim,
@@ -247,14 +243,7 @@ function entitlementRows(
 	>[],
 ): string[] {
 	return rows
-		.map((row) =>
-			JSON.stringify([
-				persistedClaimKind(row.kind),
-				row.bucketId,
-				row.unit,
-				row.units,
-			]),
-		)
+		.map((row) => JSON.stringify([row.kind, row.bucketId, row.unit, row.units]))
 		.sort();
 }
 
@@ -627,6 +616,7 @@ export async function admitIacTarget(
 			"budget policy authorization failed",
 		);
 	}
+	const quoteDigest = hostingQuoteDigest(quote);
 	let proof: HostingPolicyProof;
 	try {
 		if (!policy || !isBoundedPricingInput(policy))
@@ -656,6 +646,7 @@ export async function admitIacTarget(
 		!proof.evidenceRef ||
 		proof.requestDigest !== requestDigest ||
 		proof.quoteId !== quote.quoteId ||
+		proof.quoteDigest !== quoteDigest ||
 		proof.identity === undefined ||
 		budgetIdentityKey(proof.identity) !== budgetIdentityKey(identity)
 	)
@@ -675,45 +666,17 @@ export async function admitIacTarget(
 		evidenceHash,
 		validUntil: quote.validUntil,
 	});
-	const quoteDigest = createHash("sha256")
-		.update(toJsonString(HostingQuoteSchema, quote))
-		.digest("hex");
-	let legacyQuoteDigest: string | undefined;
-	if (
-		quote.entitlementClaims.every(
-			(claim) => persistedClaimKind(claim.kind) === "allowance",
-		)
-	) {
-		const legacyQuote = clone(HostingQuoteSchema, quote);
-		for (const claim of legacyQuote.entitlementClaims) claim.kind = "";
-		legacyQuoteDigest = createHash("sha256")
-			.update(toJsonString(HostingQuoteSchema, legacyQuote))
-			.digest("hex");
-	}
-	let legacyEmptyQuoteDigest: string | undefined;
-	if (evidence.entitlementClaims.length === 0) {
-		const legacyQuote = clone(HostingQuoteSchema, quote);
-		legacyQuote.entitlementClaims = [];
-		legacyEmptyQuoteDigest = createHash("sha256")
-			.update(toJsonString(HostingQuoteSchema, legacyQuote))
-			.digest("hex");
-	}
 	const captureReceipt = (
 		raw: BudgetReservation,
 	): BudgetReservation | undefined => {
 		try {
 			if (!isExactProtoMessage(BudgetReservationSchema, raw)) return undefined;
 			const row = clone(BudgetReservationSchema, raw);
-			const legacyEmptyClaims =
-				row.entitlementClaims.length === 0 &&
-				row.quoteDigest === legacyEmptyQuoteDigest;
 			if (
 				row.reservationId !== reservationId ||
 				row.requestDigest !== requestDigest ||
 				row.quoteId !== quote.quoteId ||
-				(row.quoteDigest !== quoteDigest &&
-					row.quoteDigest !== legacyQuoteDigest &&
-					!legacyEmptyClaims) ||
+				row.quoteDigest !== quoteDigest ||
 				row.financialPlanHash !== financialPlanHash ||
 				row.identity === undefined ||
 				budgetIdentityKey(row.identity) !== budgetIdentityKey(identity) ||
@@ -727,9 +690,8 @@ export async function admitIacTarget(
 					toJsonString(IacPricingPinSchema, pricingPin) ||
 				JSON.stringify(accountRows(row.providerAccounts)) !==
 					JSON.stringify(accountRows(quote.providerAccounts)) ||
-				(!legacyEmptyClaims &&
-					JSON.stringify(entitlementRows(row.entitlementClaims)) !==
-						JSON.stringify(entitlementRows(quote.entitlementClaims)))
+				JSON.stringify(entitlementRows(row.entitlementClaims)) !==
+					JSON.stringify(entitlementRows(quote.entitlementClaims))
 			)
 				return undefined;
 			return row;

@@ -248,8 +248,7 @@ const pricedPolicy: Check = (value) =>
 			evidenceRef: named,
 			obligationsSatisfied: (item) => item === true,
 			quoteDigest: (item) =>
-				item === "" ||
-				(typeof item === "string" && /^[a-f0-9]{64}$/u.test(item)),
+				typeof item === "string" && /^[a-f0-9]{64}$/u.test(item),
 		},
 		[
 			"requestDigest",
@@ -259,6 +258,7 @@ const pricedPolicy: Check = (value) =>
 			"effect",
 			"evidenceRef",
 			"obligationsSatisfied",
+			"quoteDigest",
 		],
 	);
 const component: Check = (value) =>

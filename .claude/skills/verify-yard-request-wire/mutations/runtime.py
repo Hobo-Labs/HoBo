@@ -26,13 +26,10 @@ if len(yard_nonblank) != 1:
 
 cases = [
     ('unknown', 'if (!Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'if (false && !Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))', 'refuses unknown root'),
-    ('version', 'message.workBindingVersion !== 1 &&\n\t\tmessage.workBindingVersion !== WORK_BINDING_VERSION', 'false', 'refuses a complete request with an unsupported version'),
     ('amount', 'message.spendEstimateUsd < 0', 'false', 'refuses a negative estimate even'),
     ('tenant', '!message.ownerTenantId || !message.objective || !message.yard.requestId', '!message.objective || !message.yard.requestId', 'refuses an empty tenant'),
-    ('version1-labels', 'if (entries.length !== 0)\n\t\t\tthrow new TypeError("version 1 cannot carry version 2 labels");', '', 'continues to decode complete version 1 requests'),
-    ('version2-legacy-labels', 'if (Object.keys(legacy).length !== 0)\n\t\tthrow new TypeError("version 2 cannot carry legacy labels");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
-    ('version2-duplicate-labels', 'if (seen.has(entry.key)) throw new TypeError("duplicate placement label");', '', 'rejects incomplete or ambiguous version 2 value encodings'),
-    ('version2-property-text', '!isJsonObject(properties) ||\n\t\t\tJSON.stringify(properties) !== yardLayout.propertiesJson', '!isJsonObject(properties)', 'rejects incomplete or ambiguous version 2 value encodings'),
+    ('duplicate-labels', 'if (seen.has(entry.key)) throw new TypeError("duplicate placement label");', '', 'rejects incomplete or ambiguous value encodings'),
+    ('property-text', '!isJsonObject(properties) ||\n\t\tJSON.stringify(properties) !== yardLayout.propertiesJson', '!isJsonObject(properties)', 'rejects incomplete or ambiguous value encodings'),
     ('residency', '\t\t\t\tparseYardResidencyTag(entry);', '\t\t\t\t/* omit preflight */', 'refuses invalid residency even when the digest matches'),
     ('camp-exact-decoder', 'if (raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)', 'if (false && raw.camp.selectionMode === "exact" && raw.camp.campId === undefined)', 'refuses an exact Camp without an ID even when'),
     ('camp-exact-cue', '\tif selection_mode == "exact" {\n\t\tcamp_id!: #CampNonblank\n\t}\n', '', 'Yard request CUE contract.*refuses an exact Camp without an ID'),

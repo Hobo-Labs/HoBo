@@ -13,6 +13,7 @@ import {
 	createIacFinancialServices,
 	createSqliteBudgetAdmissionAuthority,
 	HostingPolicyProofSchema,
+	hostingQuoteDigest,
 	type IacFinancialServicesOptions,
 	IacTargetLiabilityEvidenceSchema,
 } from "../../../broker/src/index.js";
@@ -141,6 +142,7 @@ function fixture(withPricing: boolean) {
 			proof: create(HostingPolicyProofSchema, {
 				requestDigest,
 				quoteId: quote.quoteId,
+				quoteDigest: hostingQuoteDigest(quote),
 				identity,
 				effect: "allow",
 				policyHash: "policy:1",

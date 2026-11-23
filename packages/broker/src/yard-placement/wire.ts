@@ -5,12 +5,7 @@ import {
 	type CampPlacementLayout,
 	type PlacementLabelEntry,
 } from "../_generated/yard_placement_pb.js";
-import {
-	cloneAsJson,
-	isJsonObject,
-	type JsonValue,
-	parseJsonValue,
-} from "../json.js";
+import { cloneAsJson, isJsonObject, parseJsonValue } from "../json.js";
 import { parseBindleDeploymentRequest } from "./deploy.js";
 import {
 	type BindleDeploymentRequest,
@@ -19,7 +14,6 @@ import {
 	type YardSelectionMode,
 } from "./types.js";
 
-const WORK_BINDING_VERSION = 2;
 const REQUEST_DIGEST = /^sha256:[0-9a-f]{64}$/;
 // Keep the original protobuf JSON field name for compatibility.
 const YARD_LAYOUT_FIELD = "requestedShape";
@@ -36,18 +30,7 @@ function labelEntries(labels: Readonly<Record<string, string>>) {
 	return Object.entries(labels).map(([key, value]) => ({ key, value }));
 }
 
-function readLabels(
-	legacy: Readonly<Record<string, string>>,
-	entries: readonly PlacementLabelEntry[],
-	version: number,
-) {
-	if (version === 1) {
-		if (entries.length !== 0)
-			throw new TypeError("version 1 cannot carry version 2 labels");
-		return legacy;
-	}
-	if (Object.keys(legacy).length !== 0)
-		throw new TypeError("version 2 cannot carry legacy labels");
+function readLabels(entries: readonly PlacementLabelEntry[]) {
 	const seen = new Set<string>();
 	for (const entry of entries) {
 		if (seen.has(entry.key)) throw new TypeError("duplicate placement label");
@@ -61,22 +44,18 @@ function wireCampLayout(layout: CampLayout) {
 	return { ...rest, canonicalLabels: labelEntries(labels) };
 }
 
-function campLayout(layout: CampPlacementLayout, version: number) {
+function campLayout(layout: CampPlacementLayout) {
 	return {
 		...(layout.id !== undefined ? { id: layout.id } : undefined),
 		...(layout.env !== undefined ? { env: layout.env } : undefined),
 		...(layout.envType !== undefined ? { envType: layout.envType } : undefined),
 		require: layout.require,
 		prefer: layout.prefer,
-		labels: readLabels(layout.labels, layout.canonicalLabels, version),
+		labels: readLabels(layout.canonicalLabels),
 		runtimeRequirements: layout.runtimeRequirements,
 	};
 }
 
-/**
- * Encode a canonical domain request as a complete versioned work snapshot.
- * The digest detects disagreement with the snapshot, but is not authentication.
- */
 export function encodeBindleDeploymentRequest(
 	request: BindleDeploymentRequest,
 ): Uint8Array {
@@ -120,7 +99,6 @@ export function encodeBindleDeploymentRequest(
 			...(camp
 				? { camp: { ...camp, layout: wireCampLayout(camp.layout) } }
 				: undefined),
-			workBindingVersion: WORK_BINDING_VERSION,
 			requestDigest: contentHashOf(normalized),
 		}),
 	);
@@ -148,12 +126,6 @@ export function decodeBindleDeploymentRequest(
 	if (!Buffer.from(withUnknown).equals(Buffer.from(withoutUnknown)))
 		throw new TypeError("unknown deployment request fields");
 	if (
-		message.workBindingVersion !== 1 &&
-		message.workBindingVersion !== WORK_BINDING_VERSION
-	)
-		throw new TypeError("unsupported or incomplete work binding version");
-	const version = message.workBindingVersion;
-	if (
 		!message.yard?.[YARD_LAYOUT_FIELD] ||
 		!message.bindleRequirements ||
 		(message.camp !== undefined && !message.camp.layout)
@@ -179,28 +151,16 @@ export function decodeBindleDeploymentRequest(
 	if (!REQUEST_DIGEST.test(message.requestDigest))
 		throw new TypeError("invalid request digest");
 	const yardLayout = message.yard[YARD_LAYOUT_FIELD];
-	let properties: JsonValue;
-	if (version === 1) {
-		if (yardLayout.propertiesJson !== undefined)
-			throw new TypeError("version 1 cannot carry version 2 properties");
-		properties = yardLayout.properties ?? {};
-	} else {
-		if (
-			yardLayout.properties !== undefined ||
-			yardLayout.propertiesJson === undefined
-		)
-			throw new TypeError(
-				"version 2 properties must be present without legacy properties",
-			);
-		properties = parseJsonValue(yardLayout.propertiesJson);
-		if (
-			!isJsonObject(properties) ||
-			JSON.stringify(properties) !== yardLayout.propertiesJson
-		)
-			throw new TypeError(
-				"version 2 properties must be canonical JSON object text",
-			);
-	}
+	if (yardLayout.propertiesJson === undefined)
+		throw new TypeError("placement properties must be present");
+	const properties = parseJsonValue(yardLayout.propertiesJson);
+	if (
+		!isJsonObject(properties) ||
+		JSON.stringify(properties) !== yardLayout.propertiesJson
+	)
+		throw new TypeError(
+			"placement properties must be canonical JSON object text",
+		);
 	const raw = {
 		schemaVersion: message.schemaVersion,
 		requestId: message.requestId,
@@ -210,11 +170,7 @@ export function decodeBindleDeploymentRequest(
 			require: message.bindleRequirements.require,
 			prefer: message.bindleRequirements.prefer,
 			runtimes: message.bindleRequirements.runtimes,
-			labels: readLabels(
-				message.bindleRequirements.labels,
-				message.bindleRequirements.canonicalLabels,
-				version,
-			),
+			labels: readLabels(message.bindleRequirements.canonicalLabels),
 		},
 		yard: {
 			requestId: message.yard.requestId,
@@ -236,13 +192,9 @@ export function decodeBindleDeploymentRequest(
 				isolation: yardLayout.isolation,
 				network: yardLayout.network,
 				componentHosts: yardLayout.componentHosts,
-				labels: readLabels(
-					yardLayout.labels,
-					yardLayout.canonicalLabels,
-					version,
-				),
+				labels: readLabels(yardLayout.canonicalLabels),
 				properties,
-				camps: yardLayout.camps.map((item) => campLayout(item, version)),
+				camps: yardLayout.camps.map((item) => campLayout(item)),
 			},
 			bindleManifestHash: message.yard.bindleManifestHash,
 			bindleRequirementsHash: message.yard.bindleRequirementsHash,
@@ -255,7 +207,7 @@ export function decodeBindleDeploymentRequest(
 						...(message.camp.campId !== undefined
 							? { campId: message.camp.campId }
 							: undefined),
-						layout: campLayout(message.camp.layout, version),
+						layout: campLayout(message.camp.layout),
 					},
 				}
 			: undefined),
