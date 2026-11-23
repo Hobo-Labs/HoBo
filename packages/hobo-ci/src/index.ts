@@ -137,6 +137,11 @@ export {
 	ownerCaptureLine,
 } from "./owner-channel.js";
 export {
+	type OwnerSignInOutcome,
+	type OwnerSignInRefusal,
+	signInOwnerStore,
+} from "./owner-sign-in.js";
+export {
 	CI_RELAY_FOLDER,
 	EGRESS_PROXY_SIGN_IN,
 	familySettings,
