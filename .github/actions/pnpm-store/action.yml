@@ -36,7 +36,7 @@ runs:
           echo "pnpm store is the node's shared store (${HOBO_CI_PNPM_STORE_DIR}); skipping actions/cache"
         elif [ "${RUNNER_ENVIRONMENT}" != "github-hosted" ]; then
           echo "use-cache=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=hobo-ci-cold-pnpm-store::self-hosted runner without a shared pnpm store; every package downloads from the registry (scripts/ci/arc-runner-caches.mts mounts one)"
+          echo "::warning title=hobo-ci-cold-pnpm-store::self-hosted runner without a shared pnpm store; every package downloads from the registry (hobo ci fleet caches --apply mounts one)"
         else
           echo "use-cache=true" >> "$GITHUB_OUTPUT"
           echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"

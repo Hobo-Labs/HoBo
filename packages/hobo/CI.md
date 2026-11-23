@@ -294,6 +294,47 @@ tool with `args: ["fleet", "status"]` (or `["fleet", "restart", "<vm>"]`) and
 the project directory as `cwd`. The verb manages machines only; it does not
 register runners or the `hobo-arc` scale set on them.
 
+## Give the fleet's ARC pods node caches
+
+```sh
+hobo ci fleet caches --plan
+hobo ci fleet caches --apply --prewarm 4da35cfd92854b07ea368680fcc19a621faa928f
+hobo ci fleet caches --status --scale-set hobo-trunk
+```
+
+ARC runner pods start with an empty pnpm store and image cache. `hobo ci fleet
+caches` patches each `AutoscalingRunnerSet` so its pods mount the node's
+`/var/lib/hobo-ci/pnpm-store` and `/var/lib/hobo-ci/images` and name them in
+`HOBO_CI_PNPM_STORE_DIR` and `HOBO_CI_IMAGE_CACHE_DIR`, and with
+`--prewarm <sha>` creates a Job that fills the node store from that commit's
+lockfile. `--plan` (the default) shows the JSON patch and the Job without
+sending them; `--apply` sends them and is idempotent; `--status` reports
+whether each scale set has the caches mounted and whether its newest prewarm
+Job succeeded. `--json` carries the `CiFleetCaches` record as
+`data.fleetCaches`.
+
+The cluster is the kubernetes pool with a scale set in `.hobo/ci.json`'s
+default environment (`hostinger-arc`, namespace `arc-runners`); `--cluster
+<pool>` picks one when several exist, `--namespace` overrides the namespace,
+and `--scale-set <name>` (repeatable) narrows the default of every scale set
+in it. The verb reaches the API server directly over HTTPS with the pool's
+kubeconfig, which the owner keeps in their store under the pool's
+`connectionRef` upper-cased with `_KUBECONFIG` appended:
+`owner://HOSTINGER_ARC_KUBECONFIG` (`env://HOSTINGER_ARC_KUBECONFIG` is
+accepted for the same entry). It verifies the server against the kubeconfig's
+`certificate-authority-data` and authenticates with its `token` or inline
+client certificate; it reads no kubeconfig file and refuses exec plugins,
+file paths and skipped TLS verification
+(`HOBO_CI_FLEET_KUBECONFIG_UNSUPPORTED`). Without an established owner store
+session or that entry it refuses with `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`
+before any network call. The client can only list, read and JSON-patch
+`autoscalingrunnersets.actions.github.com` and create and list `jobs.batch`;
+anything else is refused before a request leaves the process. No output,
+error included, carries the kubeconfig, its token or its key. An agent runs it
+through HoBo MCP as the `ci` tool with
+`args: ["fleet", "caches", "--apply", "--prewarm", "<sha>"]` and the project
+directory as `cwd`.
+
 ## Move workflow jobs to the fleet
 
 ```sh
