@@ -91,7 +91,7 @@ const ENV_INDEX_READ =
 	/\b(?:os\.environ|ENV)\s*\[\s*['"`]([^'"`]+)['"`]\s*\]/gu;
 const ENV_DESTRUCTURE =
 	/\{([^{}]*)\}\s*=\s*(?:process\.env|import\.meta\.env|Bun\.env|env)\b/gu;
-const SHELL_READ = /\$\{?([A-Za-z_][A-Za-z0-9_]*)/gu;
+const SHELL_READ = /\$\{?([A-Z_][A-Z0-9_]*)\b/gu;
 const ENVIRONMENT_LOCATOR = /\benv:\/\/([A-Za-z_][A-Za-z0-9_.-]*)/gu;
 
 const CODE_EXTENSIONS = new Set([

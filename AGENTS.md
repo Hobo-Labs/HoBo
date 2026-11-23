@@ -56,7 +56,8 @@ edits to secret files, and credential-storing tools such as
 `request_credential` before they run. `secrets:guard` also runs in the
 pre-commit hook and in `agent:check`, so CI checks each pull request's diff
 against its base; it rejects added Actions secret and variable references
-other than the per-job token, secret files, environment credential reads,
+other than the per-job token, secret files, environment credential reads
+(code such as `process.env` lookups and uppercase shell variables),
 `env://` locators, and secret-storing commands. The source guard covers TypeScript, JavaScript, shell, Python,
 CSS, HTML, Astro, YAML, TOML, CUE, Protobuf, WIT, Prisma, SQL, Rust, Go, C/C++, Java,
 Kotlin, Ruby, Lua, and Swift, including source templates; the same rule applies to every other language.

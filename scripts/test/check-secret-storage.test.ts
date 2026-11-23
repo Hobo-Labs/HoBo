@@ -200,6 +200,10 @@ describe("secrets:guard patterns", () => {
 			messages([change("run.sh", `curl -H "x: $${"SLACK_TOKEN"}"`)]).join(),
 			/SLACK_TOKEN/u,
 		);
+		assert.deepEqual(
+			messages([change("run.sh", 'for key in a b; do echo "$key"; done')]),
+			[],
+		);
 		for (const line of [
 			envRead("PORT"),
 			envRead("HOBO_CI_RELAY_URL"),
