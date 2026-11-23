@@ -474,6 +474,12 @@ export const PROVIDER_DELIVERY_COVERAGE: readonly ProviderDeliveryCoverage[] =
 			"createUpstashTemporaryRedisResolver",
 		),
 		refused(
+			"agent37",
+			"@hobo/provider-agent37",
+			"Agent37 is an offline Sandbox API fake and Testcontainers test boundary; it is not a delivery target.",
+			NOT_A_TARGET,
+		),
+		refused(
 			"agentv",
 			"@hobo/provider-agentv",
 			"agentV grades recorded agent trajectories; it is an evaluation engine, not a delivery target.",
