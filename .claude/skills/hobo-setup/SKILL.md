@@ -73,8 +73,12 @@ and admits no exceptions.
   values never reach you. `doctor` reports `ownerStoreSession`. For example,
   the `ci` tool with `args: ["fleet", "status"]` lists the CI fleet's
   Hostinger VPS, and `["fleet", "restart", "<vm>"]` or
-  `["fleet", "start", "<vm>"]` repairs one the account owns; on
-  `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call `choose_secret_store` first.
+  `["fleet", "start", "<vm>"]` repairs one the account owns, and
+  `["fleet", "caches", "--status"]` (or `--plan`, or
+  `--apply --prewarm <sha>`) checks or mounts the ARC scale sets' node caches
+  with the cluster kubeconfig `owner://HOSTINGER_ARC_KUBECONFIG`; never run
+  kubectl for it. On `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call
+  `choose_secret_store` first.
 - `sign-in-needed` (with a code): the choice is kept; call
   `choose_secret_store` again when the owner is ready. Do not claim the store
   is connected.

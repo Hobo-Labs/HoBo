@@ -59,7 +59,7 @@ How the self-hosted HoBo CI keeps PR gates fast, and where to look when it slows
   and sets `HOBO_CI_PNPM_STORE_MOUNTED=1`; `.github/actions/pnpm-store` reads that from the process env
   (an `if: env.X` expression never sees container env) and skips `actions/cache`. An ARC pod gets its
   node's store as a hostPath at `/pnpm-store` (`HOBO_CI_PNPM_STORE_DIR`, applied by
-  `scripts/ci/arc-runner-caches.mts`), which `scripts/ci/pnpm-install.mts` installs into when it is
+  `hobo ci fleet caches --apply`), which `scripts/ci/pnpm-install.mts` installs into when it is
   writable. A self-hosted runner with neither installs from the registry and the pnpm-store action warns
   `hobo-ci-cold-pnpm-store`: on `hobo-trunk` ARC pods that downloaded at 2–17 KiB/s per tarball and never
   finished ([finding 160](../ci/findings/0160-arc-pods-installed-from-a-cold-store-every-job.md)). Only
