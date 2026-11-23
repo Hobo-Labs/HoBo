@@ -53,6 +53,14 @@ this estimate is not a hard billing cap or proof of the globally cheapest price.
 A publisher must obtain and refresh provider-specific rates and free balances;
 no live Vercel inventory or price verification is built into this package.
 
+## Strict fleet starts
+
+The SQLite and PostgreSQL fleet stores commit one start authorization per job
+attempt. A retry for the same claim and runner returns the existing receipt only
+while the assignment, credential, controller incarnation, offer, capacity group,
+and execution profile remain eligible. Revoking an offer or worker prevents a
+later retry from authorizing a start.
+
 ## Event cursor
 
 Every lease and job change is appended to the partition's event journal inside

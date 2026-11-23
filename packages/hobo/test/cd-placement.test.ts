@@ -178,7 +178,7 @@ describe("hobo cd up hands each resource to whoever makes it", () => {
 });
 
 describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
-	it("deploys packages/cd-vercel at the current commit to CD's preview", async () => {
+	it("deploys packages/cd-vercel at the current commit to CD's production", async () => {
 		const runtime = createDefaultYardRuntime({ env: {} });
 		trackRuntimeLocalStore(runtime);
 		const vault = createTrustedVault();
@@ -229,7 +229,7 @@ describe("hobo cd up delivers CD on Vercel by a git deployment", () => {
 			token: "tok_test",
 			teamId: "team_abc",
 			projectName: "hobo-cd",
-			target: "preview",
+			target: "production",
 			createMissingProject: true,
 			configuration: {
 				INFISICAL_PROJECT_ID: "proj-1",

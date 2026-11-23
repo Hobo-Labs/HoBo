@@ -24,6 +24,9 @@ const INFISICAL_CLOUD = "https://app.infisical.com";
 
 export type CdDeployEnvironment = "preview" | "production";
 
+// public-contract: the Vercel environment in the CD workload identity's OIDC subject; cd-vercel opens the journal only there.
+export const CD_DEPLOY_ENVIRONMENT: CdDeployEnvironment = "production";
+
 export function vercelProjectTrust(
 	input: Readonly<{
 		teamSlug: string;

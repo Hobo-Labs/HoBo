@@ -13,6 +13,7 @@ import {
 } from "@hobo/cloud";
 import type { TrustedVault } from "@hobo/core";
 import {
+	CD_DEPLOY_ENVIRONMENT,
 	CD_DEPLOY_SETTINGS,
 	CD_PLACEMENT_YARDS,
 	cdConfigYard,
@@ -266,7 +267,11 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 				return refusedUp("HOBO_CD_UP_NO_YARD", "CD declares no Yard.", []);
 			let placement: ReturnType<typeof resolveRelayPlacement>;
 			try {
-				placement = resolveRelayPlacement(cdYard, "preview", joined);
+				placement = resolveRelayPlacement(
+					cdYard,
+					CD_DEPLOY_ENVIRONMENT,
+					joined,
+				);
 			} catch (error) {
 				if (error instanceof RelayPlacementRefusal)
 					return refusedUp(error.code, error.message, []);
@@ -300,7 +305,7 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 				token: token(),
 				...(teamId !== undefined ? { teamId } : undefined),
 				projectName: placement.project,
-				target: "preview",
+				target: CD_DEPLOY_ENVIRONMENT,
 				createMissingProject: true,
 				...(Object.keys(configuration).length > 0
 					? { configuration }
@@ -316,7 +321,7 @@ export function createCdVercelUpCommand<R extends YardRuntime>(
 				},
 			});
 			input.emitProgress(
-				`delivering ${head.ref}@${head.sha.slice(0, 12)} to CD's preview on Vercel (project ${placement.project})`,
+				`delivering ${head.ref}@${head.sha.slice(0, 12)} to CD's ${CD_DEPLOY_ENVIRONMENT} on Vercel (project ${placement.project})`,
 			);
 			return deps
 				.upWith({

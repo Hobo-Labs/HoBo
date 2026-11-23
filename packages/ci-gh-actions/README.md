@@ -2026,3 +2026,19 @@ route decision re-run by nothing, nothing with each flag off);
 HTTP (a webhook folded into run history, the page, the read API behind its
 token, and none of it with the flags off); `packages/hobo/test/ci-serve.test.ts` drives `hobo ci serve` and its
 poller. No relay has run with a flag on against GitHub yet.
+
+## Strict pre-job hook
+
+`templates/fleet-pre-job-hook.sh` sends the slot credential and execution key to
+an HTTPS start-fence endpoint before workflow steps run. It requires a bounded
+response with a matching JSON authorization receipt and rejects redirects,
+network failures, and mismatched runner context. `createGithubAssignmentLookup`
+verifies the repository, workflow attempt, assigned runner ID and group, job
+state, and required labels using the central GitHub App transport. Its scope
+must come from trusted controller configuration. An embedded relay can serve
+`POST /v1/fleet/start-fence` by passing an initialized `StrictFleetStore` and
+trusted `StartFencePolicy` entries as `strictFleet` to `createRelayHost`.
+The same option is available to callers of `startRelayFromEnvironment`.
+The endpoint verifies the slot credential and actual GitHub assignment, commits
+the binding, then returns the receipt. With no strict fleet configuration, the
+route is unavailable. The caller owns the strict store's lifecycle.

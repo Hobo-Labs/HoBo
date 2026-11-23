@@ -1,4 +1,9 @@
+import type { StrictFleetStore } from "@hobo/ci/fleet-v2";
 import type { ControlAuthenticator } from "./control-auth.js";
+import {
+	createStartFenceHandler,
+	type StartFencePolicy,
+} from "./fleet-v2/start-fence-handler.js";
 import {
 	createMemoryFleetVerdicts,
 	FLEET_VERDICT_DAILY_BLOCK_MINUTES,
@@ -64,6 +69,12 @@ export function createRelayHost(options: {
 	 */
 	mcpStore?: RelayMcpStore;
 	github: GithubAppTransport;
+	strictFleet?:
+		| {
+				store: StrictFleetStore;
+				policies: readonly StartFencePolicy[];
+		  }
+		| undefined;
 	identity: IdentityVerifier;
 	webhookSecret: string;
 	ingressForwardSecret?: string | undefined;
@@ -102,6 +113,9 @@ export function createRelayHost(options: {
 	wiring?: RelayHostWiring | undefined;
 }) {
 	const { store, github, identity, webhookSecret } = options;
+	const startFence = options.strictFleet
+		? createStartFenceHandler({ ...options.strictFleet, github })
+		: undefined;
 	const now = options.now ?? (() => new Date().toISOString());
 	const log = (entry: RelayServiceLog) => {
 		try {
@@ -139,8 +153,10 @@ export function createRelayHost(options: {
 		github,
 		identity,
 		webhookSecret,
-		control: async (request) =>
-			createHostedControlPlane({
+		control: async (request) => {
+			const startResponse = await startFence?.(request);
+			if (startResponse) return startResponse;
+			return createHostedControlPlane({
 				relay: await relay(),
 				store,
 				github,
@@ -151,7 +167,8 @@ export function createRelayHost(options: {
 				fullAccountUpdates: true,
 				meshNodes: options.meshNodes,
 				fleetVerdicts,
-			})(request),
+			})(request);
+		},
 		onLeaseFailure: (leaseId) =>
 			log({ level: "error", event: "worker.lease_failed", leaseId }),
 		now,

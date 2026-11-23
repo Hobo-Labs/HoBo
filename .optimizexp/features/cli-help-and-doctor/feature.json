@@ -7,20 +7,10 @@
     "ax"
   ],
   "personas": [
-    "product-app-developer",
-    "product-agent-operator",
-    "product-platform-engineer",
-    "product-coding-agent",
-    "role-developers",
-    "role-devsecops",
-    "role-finops",
-    "role-platform-engineers",
-    "role-sre"
+    "product-app-developer"
   ],
   "interfaces": [
-    "cli",
-    "mcp",
-    "web"
+    "cli"
   ],
   "driver": "cli",
   "surfaces": [
@@ -32,11 +22,8 @@
     "@dx",
     "@ax"
   ],
-  "generatedFromSeed": true,
-  "seedDigest": "d3758ceb39138871",
-  "personaResolution": "explicit --personas",
   "bindings": {
-    "steps": "steps/bindings.steps.ts (delegates to ../cli-product/steps/bindings.steps.ts)",
+    "steps": "steps/bindings.steps.ts",
     "implementations": "steps/implementations.ts",
     "tests": "test/cli-help-and-doctor.bindings.test.ts"
   },

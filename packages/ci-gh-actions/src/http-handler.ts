@@ -277,7 +277,8 @@ export function createRelayHandler(options: {
 				// enrolled reporter's signature; reporter status, read by a
 				// workflow of the repository with its OIDC token.
 				path.startsWith("/v1/fleet/verdicts/") ||
-				path.startsWith("/v1/fleet/reporters/")) &&
+				path.startsWith("/v1/fleet/reporters/") ||
+				path === "/v1/fleet/start-fence") &&
 			!/%2f|%5c/i.test(path)
 		) {
 			try {

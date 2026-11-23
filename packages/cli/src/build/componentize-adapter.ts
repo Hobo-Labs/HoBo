@@ -21,7 +21,6 @@ export type ComponentizeOutput = {
 		readonly witWorld: string;
 	};
 	// public-contract: optional OCI descriptor beside the component. Populated
-	// by the real componentize lane (D13); absent on the synthetic floor.
 	readonly oci?: WasmOciDescriptor;
 };
 
@@ -47,7 +46,6 @@ export const defaultComponentize: ComponentizeFn = async (input) => {
 };
 
 // public-contract: adapts the @hobo/componentize real lane onto the CLI
-// ComponentizeFn seam (Uint8Array -> Buffer, OCI descriptor passthrough).
 export function adaptRealComponentize(real: RealComponentize): ComponentizeFn {
 	return async (input) => {
 		const result = await real.componentize({
