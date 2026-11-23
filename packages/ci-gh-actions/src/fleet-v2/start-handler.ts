@@ -125,7 +125,8 @@ export function createStartFenceHandler(deps: {
 				claim.profileId === binding.profileId &&
 				(claim.state === "start-authorized" || claim.state === "running") &&
 				executionKeyId(claim.key) === executionKeyId(parsedBinding.key);
-			if (!matchesClaim(result.claim)) return answer(503, { authorized: false });
+			if (!matchesClaim(result.claim))
+				return answer(503, { authorized: false });
 			const current = await lookup.lookupAssignment(binding.runnerName);
 			if (
 				!current ||

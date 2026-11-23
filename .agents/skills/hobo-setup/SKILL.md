@@ -53,7 +53,11 @@ in commands or the repository.
 
 - `established`: the session is ready. HoBo verbs read the provider
   credentials they need (for example `owner://HOSTINGER_API_TOKEN`) from it;
-  values never reach you. `doctor` reports `ownerStoreSession`.
+  values never reach you. `doctor` reports `ownerStoreSession`. For example,
+  the `ci` tool with `args: ["fleet", "status"]` lists the CI fleet's
+  Hostinger VPS, and `["fleet", "restart", "<vm>"]` or
+  `["fleet", "start", "<vm>"]` repairs one the account owns; on
+  `HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE`, call `choose_secret_store` first.
 - `sign-in-needed` (with a code): the choice is kept; call
   `choose_secret_store` again when the owner is ready. Do not claim the store
   is connected.

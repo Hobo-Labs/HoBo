@@ -314,7 +314,11 @@ vault IDs, hosts, or references. Once established, `hobo deploy` resolves
 credential locators `owner://<NAME>` (and `env://<NAME>` absent from the
 environment) from that session's CD location (Infisical folder `/hobo-cd`), so provider resolvers such as Hostinger's get
 `HOSTINGER_API_TOKEN` from the owner's store without the value reaching the
-agent; `doctor` reports `ownerStoreSession` as `established` and the store's
+agent; `hobo ci fleet status|restart|start` (the `ci` tool with
+`args: ["fleet", ...]`) reads the same `owner://HOSTINGER_API_TOKEN` to list and
+power-cycle the CI fleet's Hostinger VPS, and refuses with
+`HOBO_CI_FLEET_CREDENTIAL_UNAVAILABLE` until the session holds it;
+`doctor` reports `ownerStoreSession` as `established` and the store's
 name only. Re-run `choose_secret_store` with `reselect: true` to choose a
 different store.
 The relay's existing capture adapter reads a separately configured Infisical
